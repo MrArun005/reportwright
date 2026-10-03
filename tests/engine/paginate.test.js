@@ -26,7 +26,7 @@ describe('paginator', () => {
     const all = out.pages.flatMap(texts).filter(s => /^Row \d+$/.test(s));
     expect(all.length).toBe(100);
     expect(new Set(all).size).toBe(100);
-    expect(texts(out.pages.at(-1))).toContain('5,050');
+    expect(texts(out.pages.at(-1))).toContain('5050');
   });
 
   it('never places a row across the page bottom', async () => {

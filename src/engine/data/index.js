@@ -100,18 +100,27 @@ export async function loadSources(def, opt) {
     try {
       if (src.type === 'json') out[src.name] = typeof src.data === 'string' ? JSON.parse(src.data) : src.data;
       else if (src.type === 'csv' && src.data) out[src.name] = parseCsv(src.data);
-      else if (src.type === 'rest' || src.type === 'csv') {
+      else if (src.type === 'rest' || src.type === 'csv' || src.type === 'graphql') {
         if (!f) throw new Error('No fetch() available');
         let url = String(evalValue(src.url || '', ctx));
         if (src.useProxy) url = `/api/data/proxy?url=${encodeURIComponent(url)}`;
         if (opt.baseUrl && url.startsWith('/')) url = opt.baseUrl.replace(/\/$/, '') + url;
         const headers = {};
         for (const [k, v] of Object.entries(src.headers || {})) headers[k] = String(evalValue(v, ctx));
-        const init = { method: src.method || 'GET', headers };
-        if (src.body && init.method !== 'GET') init.body = String(evalValue(src.body, ctx));
+        const init = { method: src.type === 'graphql' ? 'POST' : src.method || 'GET', headers };
+        if (src.type === 'graphql') {
+          headers['content-type'] ||= 'application/json';
+          const vars = src.variables ? JSON.parse(String(evalValue(src.variables, ctx))) : {};
+          init.body = JSON.stringify({ query: src.query, variables: vars });
+        } else if (src.body && init.method !== 'GET') init.body = String(evalValue(src.body, ctx));
         const res = await f(url, init);
         if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
-        out[src.name] = src.type === 'csv' ? parseCsv(await res.text()) : await res.json();
+        if (src.type === 'csv') out[src.name] = parseCsv(await res.text());
+        else {
+          const json = await res.json();
+          if (src.type === 'graphql' && json.errors?.length) throw new Error(`GraphQL: ${json.errors[0].message}`);
+          out[src.name] = src.type === 'graphql' ? json.data : json;
+        }
       } else throw new Error(`Unknown data source type "${src.type}"`);
     } catch (e) {
       throw new Error(`Data source "${src.name}": ${e.message}`);
@@ -168,7 +177,11 @@ export function applyFilters(rows, filters, baseCtx) {
         case '>=': return a >= b;
         case '<': return a < b;
         case '<=': return a <= b;
-        case 'in': return (Array.isArray(b) ? b : String(b).split(',').map(s => s.trim())).some(x => looseEq(a, x));
+        case 'in': {
+          // an empty list (nothing picked in a multi-value parameter) means "all"
+          const list = Array.isArray(b) ? b : b == null || b === '' ? [] : String(b).split(',').map(s => s.trim());
+          return list.length === 0 || list.some(x => looseEq(a, x));
+        }
         case 'like': return new RegExp('^' + String(b).replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i').test(String(a ?? ''));
         case 'contains': return String(a ?? '').toLowerCase().includes(String(b ?? '').toLowerCase());
         default: throw new Error(`Unknown filter operator "${f.op}"`);

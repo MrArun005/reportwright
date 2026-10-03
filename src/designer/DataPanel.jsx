@@ -127,6 +127,16 @@ function ParamDialog({ index, onClose }) {
         <Field label="Default" hint="A value or =expression, e.g. =Today()"><TextInput value={p.default} onChange={v => setP({ ...p, default: v })} mono /></Field>
       </div>
       <Check label="Required" checked={p.required} onChange={v => setP({ ...p, required: v })} />
+      <Check label="Allow several values (use with the 'in' filter, or Join(Parameters.x))" checked={p.multi} onChange={v => setP({ ...p, multi: v || undefined })} />
+      <Field label="Fixed choices (one per line: value or value=label)">
+        <textarea className="textarea" rows={3} value={(p.options || []).map(o => (o.label != null && o.label !== String(o.value) ? `${o.value}=${o.label}` : String(o.value))).join('\n')}
+          onChange={e => { const list = e.target.value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const [v, ...lb] = l.split('='); return { value: v.trim(), label: (lb.join('=') || v).trim() }; }); setP({ ...p, options: list.length ? list : undefined }); }} />
+      </Field>
+      <div className="grid2">
+        <Field label="Or choices from a data set"><Select value={p.optionsFrom?.dataSet} options={(def.dataSets || []).map(d => d.name)} allowEmpty onChange={v => setP({ ...p, optionsFrom: v ? { dataSet: v, value: p.optionsFrom?.value || '', label: p.optionsFrom?.label } : undefined })} /></Field>
+        {p.optionsFrom && <Field label="Value field"><Select value={p.optionsFrom.value?.replace(/^=Fields\./, '')} options={(def.dataSets.find(d => d.name === p.optionsFrom.dataSet)?.fields || []).map(f => f.name)} onChange={v => setP({ ...p, optionsFrom: { ...p.optionsFrom, value: `=Fields.${v}` } })} /></Field>}
+      </div>
+      {p.optionsFrom && <div className="hint">The data set can filter on other parameters (=Parameters.x). The viewer then reloads the choices when those change (cascading).</div>}
       {err && p.name && <div className="err">{err}</div>}
       <div className="hint">Use it in expressions as <code>Parameters.{p.name || 'name'}</code> and in a REST URL as <code>{'{Parameters.'}{p.name || 'name'}{'}'}</code>.</div>
     </Dialog>
@@ -143,11 +153,13 @@ function SourceDialog({ index, onClose }) {
   let data;
   if (!err && s.type === 'json') { try { data = JSON.parse(s.dataText || 'null'); } catch (e) { err = `The JSON is not valid: ${e.message}`; } }
   if (!err && s.type === 'csv' && !s.url && !s.dataText.trim()) err = 'Give a URL or paste CSV text';
-  if (!err && s.type === 'rest' && !s.url) err = 'Give a URL';
+  if (!err && (s.type === 'rest' || s.type === 'graphql') && !s.url) err = 'Give a URL';
+  if (!err && s.type === 'graphql' && !s.query) err = 'Give a GraphQL query';
 
   const save = () => {
     const v = { name: s.name, type: s.type };
-    if (s.type === 'rest' || (s.type === 'csv' && s.url)) { v.url = s.url; v.method = s.method; if (headers) v.headers = headers; if (s.useProxy) v.useProxy = true; if (s.body && s.method !== 'GET') v.body = s.body; }
+    if (s.type === 'rest' || s.type === 'graphql' || (s.type === 'csv' && s.url)) { v.url = s.url; v.method = s.type === 'graphql' ? 'POST' : s.method; if (headers) v.headers = headers; if (s.useProxy) v.useProxy = true; if (s.body && s.method !== 'GET') v.body = s.body; }
+    if (s.type === 'graphql') { v.query = s.query || ''; if (s.variables) v.variables = s.variables; }
     if (s.type === 'json') v.data = data;
     if (s.type === 'csv' && !s.url) v.data = s.dataText;
     useDesigner.getState().apply(d => {
@@ -169,15 +181,19 @@ function SourceDialog({ index, onClose }) {
       footer={<>{orig && <button className="btn danger" style={{ marginRight: 'auto' }} onClick={del}>Delete</button>}<button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!!err} onClick={save}>Save</button></>}>
       <div className="grid2">
         <Field label="Name"><TextInput value={s.name} onChange={v => setS({ ...s, name: v })} autoFocus /></Field>
-        <Field label="Type"><Select value={s.type} options={[{ value: 'rest', label: 'REST API (JSON)' }, { value: 'json', label: 'Inline JSON' }, { value: 'csv', label: 'CSV' }]} onChange={v => setS({ ...s, type: v })} /></Field>
+        <Field label="Type"><Select value={s.type} options={[{ value: 'rest', label: 'REST API (JSON)' }, { value: 'json', label: 'Inline JSON' }, { value: 'csv', label: 'CSV' }, { value: 'graphql', label: 'GraphQL' }]} onChange={v => setS({ ...s, type: v })} /></Field>
       </div>
-      {(s.type === 'rest' || s.type === 'csv') && <>
+      {(s.type === 'rest' || s.type === 'csv' || s.type === 'graphql') && <>
         <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: 8 }}>
           <Field label="Method"><Select value={s.method} options={['GET', 'POST']} onChange={v => setS({ ...s, method: v })} /></Field>
           <Field label="URL" hint="Use {Parameters.x} for values. A relative URL calls this app."><TextInput value={s.url} onChange={v => setS({ ...s, url: v })} mono placeholder="/api/... or https://..." /></Field>
         </div>
         <Field label="Headers (JSON)"><textarea className="textarea" rows={3} value={s.headersText} onChange={e => setS({ ...s, headersText: e.target.value })} placeholder='{"Authorization": "Bearer {Parameters.token}"}' /></Field>
-        {s.method === 'POST' && <Field label="Body"><textarea className="textarea" rows={3} value={s.body || ''} onChange={e => setS({ ...s, body: e.target.value })} /></Field>}
+        {s.method === 'POST' && s.type !== 'graphql' && <Field label="Body"><textarea className="textarea" rows={3} value={s.body || ''} onChange={e => setS({ ...s, body: e.target.value })} /></Field>}
+        {s.type === 'graphql' && <>
+          <Field label="GraphQL query"><textarea className="textarea" rows={5} value={s.query || ''} onChange={e => setS({ ...s, query: e.target.value })} placeholder="query ($id: ID!) { account(id: $id) { name payments { due amount } } }" /></Field>
+          <Field label="Variables (JSON, {Parameters.x} allowed)"><textarea className="textarea" rows={2} value={s.variables || ''} onChange={e => setS({ ...s, variables: e.target.value })} placeholder='{"id": "{Parameters.accountId}"}' /></Field>
+        </>}
         <Check label="Call through the server proxy (for CORS; the host must be in PW_PROXY_ALLOW)" checked={s.useProxy} onChange={v => setS({ ...s, useProxy: v })} />
       </>}
       {(s.type === 'json' || (s.type === 'csv' && !s.url)) && (
@@ -261,6 +277,20 @@ function DataSetDialog({ index, onClose, onSaved }) {
             </div>
           ))}
           <div><button className="btn sm" onClick={() => setD({ ...d, fields: [...d.fields, { name: '', type: 'string' }] })}>Add field</button></div>
+        </div>
+      </div>
+      <div>
+        <div className="hint" style={{ marginBottom: 6 }}>Filters (all must match)</div>
+        <div style={{ display: 'grid', gap: 6 }}>
+          {(d.filters || []).map((f, i) => (
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 90px 1fr auto', gap: 6 }}>
+              <TextInput value={f.expr} onChange={v => setD({ ...d, filters: d.filters.map((x, j) => j === i ? { ...x, expr: v } : x) })} mono aria-label="Filter field" />
+              <Select value={f.op || '='} options={['=', '<>', '>', '>=', '<', '<=', 'in', 'like', 'contains']} onChange={v => setD({ ...d, filters: d.filters.map((x, j) => j === i ? { ...x, op: v } : x) })} />
+              <TextInput value={f.value} onChange={v => setD({ ...d, filters: d.filters.map((x, j) => j === i ? { ...x, value: v } : x) })} mono placeholder="value or =Parameters.x" aria-label="Filter value" />
+              <button className="btn sm ghost danger" onClick={() => setD({ ...d, filters: d.filters.filter((_, j) => j !== i) })} aria-label="Remove filter">✕</button>
+            </div>
+          ))}
+          <div><button className="btn sm" onClick={() => setD({ ...d, filters: [...(d.filters || []), { expr: d.fields[0] ? `=Fields.${d.fields[0].name}` : '', op: '=', value: '' }] })}>Add filter</button></div>
         </div>
       </div>
       <div className="grid2">

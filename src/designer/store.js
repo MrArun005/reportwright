@@ -9,8 +9,16 @@ export const SECTIONS = [
   { key: 'body', label: 'Body' },
   { key: 'pageFooter', label: 'Page footer' },
 ];
+export const NESTING = new Set(['container', 'list']);
 
 const rid = () => Math.random().toString(36).slice(2, 10);
+
+/** Visit every item, nested ones included. fn(item, list, index, parent, section) */
+export function walk(def, fn) {
+  const go = (list, parent, section) => list.forEach((it, i) => { fn(it, list, i, parent, section); if (Array.isArray(it.items)) go(it.items, it, section); });
+  for (const { key } of SECTIONS) go(def.sections?.[key]?.items || [], null, key);
+}
+const allNames = (d) => { const s = new Set(); walk(d, it => { if (it.name) s.add(it.name); }); return s; };
 
 /** Give every item an id and a unique name. Runs once on load. */
 export function normalize(def) {
@@ -20,14 +28,12 @@ export function normalize(def) {
       d.sections[key] ||= { height: key === 'body' ? 420 : 0, items: [] };
       d.sections[key].items ||= [];
     }
-    const used = new Set();
-    for (const { key } of SECTIONS) for (const it of d.sections[key].items) { if (it.name) used.add(it.name); }
-    for (const { key } of SECTIONS) {
-      for (const it of d.sections[key].items) {
-        it.id ||= rid();
-        if (!it.name) it.name = uniqueName(used, ITEMS[it.type]?.label.replace(/\s/g, '') || 'Item');
-      }
-    }
+    const used = allNames(d);
+    walk(d, (it) => {
+      it.id ||= rid();
+      if (!it.name) it.name = uniqueName(used, ITEMS[it.type]?.label.replace(/\s/g, '') || 'Item');
+      if (NESTING.has(it.type)) it.items ||= [];
+    });
     const b = d.sections.body;
     const bottom = Math.max(0, ...b.items.map(i => i.y + i.h));
     if (!b.height || b.height < bottom + 24) b.height = Math.ceil(bottom + 60);
@@ -40,13 +46,11 @@ function uniqueName(used, base) {
   return `${base}${i}`;
 }
 
+/** Find an item anywhere. Returns { section, list, index, item, parent } or null. */
 export function findItem(def, id) {
-  for (const { key } of SECTIONS) {
-    const items = def.sections?.[key]?.items || [];
-    const index = items.findIndex(i => i.id === id);
-    if (index >= 0) return { section: key, index, item: items[index] };
-  }
-  return null;
+  let hit = null;
+  walk(def, (it, list, index, parent, section) => { if (!hit && it.id === id) hit = { section, list, index, item: it, parent }; });
+  return hit;
 }
 
 export const useDesigner = create((set, get) => ({
@@ -64,7 +68,7 @@ export const useDesigner = create((set, get) => ({
   grid: 4,
   snap: true,
   unit: 'pt',
-  sample: null, // { dataSets, error, loading }
+  sample: null,
   lastKey: null,
   lastAt: 0,
 
@@ -96,7 +100,10 @@ export const useDesigner = create((set, get) => ({
     if (sel.kind === 'items') {
       const ids = sel.ids.filter(id => findItem(def, id));
       set({ sel: ids.length ? { kind: 'items', ids } : { kind: 'report' } });
-    } else if (sel.kind === 'cell' && !findItem(def, sel.id)) set({ sel: { kind: 'report' } });
+    } else if (sel.kind === 'cell') {
+      const f = findItem(def, sel.id);
+      if (!f || !rowsOf(f.item, sel.part)?.[sel.row]) set({ sel: f ? { kind: 'items', ids: [sel.id] } : { kind: 'report' } });
+    }
   },
   select(sel) { set({ sel, lastKey: null }); },
   setUi(patch) { set(patch); },
@@ -118,41 +125,49 @@ export const useDesigner = create((set, get) => ({
 const S = () => useDesigner.getState();
 
 export function bodyWidth(def) { return resolvePage(def.page).bodyWidth; }
+/** Width available to an item: the band width, or its parent's width. */
+function roomFor(d, f) { return f.parent ? f.parent.w : bodyWidth(d); }
 
-export function addItem(type, section, x, y, extra = {}) {
+export function addItem(type, section, x, y, extra = {}, parentId = null) {
   const spec = ITEMS[type];
   const id = rid();
   S().apply((d) => {
-    const used = new Set(SECTIONS.flatMap(s => d.sections[s.key].items.map(i => i.name)));
+    const used = allNames(d);
     const it = { ...spec.defaults(), ...extra, id, name: uniqueName(used, spec.label.replace(/\s/g, '')) };
-    const bw = bodyWidth(d);
-    it.w = Math.min(it.w, bw);
-    it.x = clamp(x, 0, Math.max(0, bw - it.w));
-    it.y = Math.max(0, y);
+    const parent = parentId ? findItem(d, parentId)?.item : null;
+    const room = parent ? parent.w : bodyWidth(d);
     if (type === 'table') it.w = it.columns.reduce((s, c) => s + c.width, 0);
-    d.sections[section].items.push(it);
-    const sec = d.sections[section];
-    if (it.y + it.h > sec.height) sec.height = Math.ceil(it.y + it.h + (section === 'body' ? 24 : 4));
+    else it.w = Math.min(it.w, room);
+    it.x = clamp(x, 0, Math.max(0, room - it.w));
+    it.y = Math.max(0, y);
+    if (parent) {
+      parent.items.push(it);
+      if (it.y + it.h > parent.h) parent.h = Math.ceil(it.y + it.h);
+    } else {
+      d.sections[section].items.push(it);
+      const sec = d.sections[section];
+      if (it.y + it.h > sec.height) sec.height = Math.ceil(it.y + it.h + (section === 'body' ? 24 : 4));
+    }
   });
   S().select({ kind: 'items', ids: [id] });
   return id;
 }
 
 export function updateItem(id, recipe, key) {
-  S().apply((d) => { const f = findItem(d, id); if (f) recipe(f.item, d, f.section); }, key);
+  S().apply((d) => { const f = findItem(d, id); if (f) recipe(f.item, d, f.section, f); }, key);
 }
 
 export function moveItems(ids, dx, dy) {
   if (!dx && !dy) return;
   S().apply((d) => {
-    const bw = bodyWidth(d);
     for (const id of ids) {
       const f = findItem(d, id);
       if (!f) continue;
-      f.item.x = round(clamp(f.item.x + dx, 0, Math.max(0, bw - f.item.w)));
+      const room = roomFor(d, f);
+      f.item.x = round(clamp(f.item.x + dx, 0, Math.max(0, room - f.item.w)));
       f.item.y = round(Math.max(0, f.item.y + dy));
-      const sec = d.sections[f.section];
-      if (f.item.y + f.item.h > sec.height) sec.height = Math.ceil(f.item.y + f.item.h);
+      if (f.parent) { if (f.item.y + f.item.h > f.parent.h) f.parent.h = Math.ceil(f.item.y + f.item.h); }
+      else { const sec = d.sections[f.section]; if (f.item.y + f.item.h > sec.height) sec.height = Math.ceil(f.item.y + f.item.h); }
     }
   });
 }
@@ -161,9 +176,16 @@ export function deleteSelection() {
   const { sel } = S();
   if (sel.kind !== 'items') return;
   S().apply((d) => {
-    for (const id of sel.ids) { const f = findItem(d, id); if (f) d.sections[f.section].items.splice(f.index, 1); }
+    for (const id of sel.ids) { const f = findItem(d, id); if (f) f.list.splice(f.index, 1); }
   });
   S().select({ kind: 'report' });
+}
+
+function cloneWithIds(it, used) {
+  const c = JSON.parse(JSON.stringify(it));
+  const fix = (x) => { x.id = rid(); x.name = uniqueName(used, String(x.name || 'Item').replace(/\d+$/, '')); (x.items || []).forEach(fix); };
+  fix(c);
+  return c;
 }
 
 export function duplicateSelection() {
@@ -171,34 +193,84 @@ export function duplicateSelection() {
   if (sel.kind !== 'items') return;
   const newIds = [];
   S().apply((d) => {
-    const used = new Set(SECTIONS.flatMap(s => d.sections[s.key].items.map(i => i.name)));
+    const used = allNames(d);
     for (const id of sel.ids) {
       const f = findItem(d, id);
       if (!f) continue;
-      const copy = JSON.parse(JSON.stringify(f.item));
-      copy.id = rid();
-      copy.name = uniqueName(used, f.item.name.replace(/\d+$/, ''));
+      const copy = cloneWithIds(f.item, used);
       copy.x += 8; copy.y += 8;
-      d.sections[f.section].items.push(copy);
+      f.list.push(copy);
       newIds.push(copy.id);
     }
   });
   if (newIds.length) S().select({ kind: 'items', ids: newIds });
 }
 
-/* ---- table commands ---- */
+/* ---- clipboard: copy / paste items, also across reports (JSON on the system clipboard) ---- */
+const CLIP = 'pagewright/items@1';
+export async function copySelection() {
+  const { sel, def } = S();
+  if (sel.kind !== 'items') return 0;
+  const items = sel.ids.map(id => findItem(def, id)?.item).filter(Boolean);
+  const text = JSON.stringify({ kind: CLIP, items });
+  try { await navigator.clipboard.writeText(text); } catch { /* clipboard blocked: keep the in-memory copy */ }
+  memClip = text;
+  return items.length;
+}
+let memClip = null;
+export async function pasteItems(section = 'body') {
+  let text = null;
+  try { text = await navigator.clipboard.readText(); } catch { text = memClip; }
+  if (!text || !text.includes(CLIP)) text = memClip;
+  let data;
+  try { data = JSON.parse(text); } catch { return 0; }
+  if (data?.kind !== CLIP || !Array.isArray(data.items)) return 0;
+  const ids = [];
+  S().apply((d) => {
+    const used = allNames(d);
+    for (const it of data.items) {
+      const c = cloneWithIds(it, used);
+      c.x += 12; c.y += 12;
+      if (c.type === 'table' && section !== 'body') continue;
+      d.sections[section].items.push(c);
+      ids.push(c.id);
+    }
+  });
+  if (ids.length) S().select({ kind: 'items', ids });
+  return ids.length;
+}
+
+/* ---- table parts: header, group headers, detail, group footers, footer ---- */
 export const PARTS = ['header', 'detail', 'footer'];
+
+/** Rows of a part id: 'header' | 'detail' | 'footer' | 'g<level>h' | 'g<level>f'. */
+export function rowsOf(t, part) {
+  const m = /^g(\d+)([hf])$/.exec(part);
+  if (m) { const g = t.groups?.[Number(m[1])]; return g ? (g[m[2] === 'h' ? 'header' : 'footer'] ||= []) : null; }
+  return (t[part] ||= []);
+}
+/** Parts in display order with labels and gutter tags. */
+export function tableParts(t) {
+  const gs = t.groups || [];
+  return [
+    { part: 'header', tag: 'H', label: 'Header' },
+    ...gs.map((g, i) => ({ part: `g${i}h`, tag: `G${i + 1}`, label: `${g.name || `Group ${i + 1}`} header` })),
+    { part: 'detail', tag: 'D', label: 'Detail' },
+    ...gs.map((g, i) => ({ part: `g${i}f`, tag: `F${i + 1}`, label: `${g.name || `Group ${i + 1}`} footer` })).reverse(),
+    { part: 'footer', tag: 'F', label: 'Footer' },
+  ];
+}
+const allRows = (t) => tableParts(t).flatMap(p => rowsOf(t, p.part) || []);
 const blankRow = (n, height = 18) => ({ height, cells: Array.from({ length: n }, () => ({ value: '' })) });
 
 export function tableSync(t) {
   t.w = round(t.columns.reduce((s, c) => s + c.width, 0));
-  t.h = round(PARTS.reduce((s, p) => s + (t[p] || []).reduce((a, r) => a + (r.height || 18), 0), 0));
+  t.h = round(allRows(t).reduce((a, r) => a + (r.height || 18), 0));
 }
 export function tableInsertColumn(id, at) {
   updateItem(id, (t) => {
-    const w = 72;
-    t.columns.splice(at, 0, { width: w });
-    for (const p of PARTS) for (const r of t[p] || []) r.cells.splice(at, 0, { value: '' });
+    t.columns.splice(at, 0, { width: 72 });
+    for (const r of allRows(t)) r.cells.splice(at, 0, { value: '' });
     tableSync(t);
   });
 }
@@ -206,9 +278,8 @@ export function tableDeleteColumn(id, at) {
   updateItem(id, (t) => {
     if (t.columns.length <= 1) return;
     t.columns.splice(at, 1);
-    for (const p of PARTS) for (const r of t[p] || []) {
+    for (const r of allRows(t)) {
       r.cells.splice(at, 1);
-      // a span that covered the removed column shrinks
       for (let i = 0; i < r.cells.length; i++) { const c = r.cells[i]; if (c && c.colSpan > 1 && i + c.colSpan > r.cells.length) c.colSpan = r.cells.length - i; }
       for (let i = 0; i < r.cells.length; i++) if (r.cells[i] === null && !coveredBySpan(r.cells, i)) r.cells[i] = { value: '' };
     }
@@ -220,12 +291,13 @@ function coveredBySpan(cells, i) {
   return false;
 }
 export function tableInsertRow(id, part, at) {
-  updateItem(id, (t) => { t[part] ||= []; t[part].splice(at, 0, blankRow(t.columns.length)); tableSync(t); });
+  updateItem(id, (t) => { rowsOf(t, part).splice(at, 0, blankRow(t.columns.length)); tableSync(t); });
 }
 export function tableDeleteRow(id, part, at) {
   updateItem(id, (t) => {
-    if (part === 'detail' && (t.detail || []).length <= 1) return;
-    t[part].splice(at, 1);
+    const rows = rowsOf(t, part);
+    if (part === 'detail' && rows.length <= 1 && !(t.groups || []).length) return;
+    rows.splice(at, 1);
     tableSync(t);
   });
 }
@@ -234,7 +306,7 @@ export function tableSetColumnWidth(id, col, width, key) {
 }
 export function tableMergeRight(id, part, row, col) {
   updateItem(id, (t) => {
-    const cells = t[part][row].cells;
+    const cells = rowsOf(t, part)[row].cells;
     const c = cells[col];
     const span = c.colSpan || 1;
     if (col + span >= cells.length) return;
@@ -244,12 +316,34 @@ export function tableMergeRight(id, part, row, col) {
 }
 export function tableSplit(id, part, row, col) {
   updateItem(id, (t) => {
-    const cells = t[part][row].cells;
+    const cells = rowsOf(t, part)[row].cells;
     const c = cells[col];
     const span = c.colSpan || 1;
     for (let k = 1; k < span; k++) cells[col + k] = { value: '' };
     delete c.colSpan;
   });
+}
+/** Add an innermost group. The header shows the group value; the footer sums number columns. */
+export function tableAddGroup(id, field, numericCols = []) {
+  updateItem(id, (t) => {
+    t.groups ||= [];
+    const n = t.columns.length;
+    const used = new Set(t.groups.map(g => g.name));
+    let name = field ? field.replace(/^./, c => c.toUpperCase()) : 'Group';
+    while (used.has(name)) name += '_';
+    const header = blankRow(n);
+    header.style = { fontWeight: 'bold', backgroundColor: '#f8fafc' };
+    header.cells[0].value = field ? `=Fields.${field}` : '';
+    const footer = blankRow(n);
+    footer.style = { fontWeight: '600', borderTop: '0.5 solid #cbd5e1' };
+    footer.cells[0].value = field ? `Subtotal {Fields.${field}}` : 'Subtotal';
+    for (const [ci, f] of numericCols) if (ci > 0 && ci < n) footer.cells[ci] = { value: `=Sum(Fields.${f})`, style: { format: 'N2' } };
+    t.groups.push({ name, expr: field ? `=Fields.${field}` : '', sort: 'asc', header: [header], footer: [footer] });
+    tableSync(t);
+  });
+}
+export function tableRemoveGroup(id, level) {
+  updateItem(id, (t) => { t.groups.splice(level, 1); tableSync(t); });
 }
 
 export const round = (v) => Math.round(v * 100) / 100;

@@ -4,7 +4,7 @@ import { render, FontStore } from '@/engine/index.js';
 import { exportPdf } from '@/exporters/pdf.js';
 import { createSubsetter } from '@/exporters/subset.js';
 
-const subset = createSubsetter(async () => (await fetch('/harfbuzz-subset.wasm')).arrayBuffer());
+export const subsetter = createSubsetter(async () => (await fetch('/harfbuzz-subset.wasm')).arrayBuffer());
 
 let worker = null;
 let workerBroken = false;
@@ -42,18 +42,19 @@ function getWorker() {
   return worker;
 }
 
-async function renderMain(def, params) {
-  return render(def, { parameters: params, fontStore: fontStore(), baseUrl: window.location.origin });
+const loadReport = async (rid) => { const r = await fetch(`/api/reports/${rid}`); if (!r.ok) throw new Error(`Report "${rid}" not found`); return r.json(); };
+async function renderMain(def, params, state) {
+  return render(def, { parameters: params, state, fontStore: fontStore(), baseUrl: window.location.origin, loadReport });
 }
 
 /** @returns {Promise<any>} page model */
-export function renderReport(def, params = {}) {
+export function renderReport(def, params = {}, state = {}) {
   const w = getWorker();
-  if (!w) return renderMain(def, params);
+  if (!w) return renderMain(def, params, state);
   return new Promise((resolve, reject) => {
     const id = ++seq;
-    waiting.set(id, { resolve, reject, retry: () => renderMain(def, params).then(resolve, reject) });
-    w.postMessage({ id, def, params });
+    waiting.set(id, { resolve, reject, retry: () => renderMain(def, params, state).then(resolve, reject) });
+    w.postMessage({ id, def, params, state });
   });
 }
 
@@ -64,7 +65,7 @@ export async function pdfBlob(model, title) {
   await store.load();
   const bytes = await exportPdf(model, store, {
     title,
-    subset,
+    subset: subsetter,
     fetchImage: async (src) => { try { const r = await fetch(src); return r.ok ? new Uint8Array(await r.arrayBuffer()) : null; } catch { return null; } },
   });
   return new Blob([bytes], { type: 'application/pdf' });

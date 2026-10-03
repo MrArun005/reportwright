@@ -32,6 +32,16 @@ export function pageToSvg(page, w, h) {
         for (const l of it.lines) out.push(`<text x="${n(l.x)}" y="${n(l.y)}" ${attrs} xml:space="preserve">${esc(l.text)}</text>`);
         break;
       }
+      case 'path': {
+        const stroke = it.stroke ? ` stroke="${cssColor(it.stroke)}" stroke-width="${n(it.strokeWidth || 1)}" stroke-linecap="round" stroke-linejoin="round"` : '';
+        out.push(`<path transform="translate(${n(it.x)} ${n(it.y)})" d="${esc(it.d)}" fill="${cssColor(it.fill)}"${stroke}/>`);
+        break;
+      }
+      case 'link': {
+        const a = esc(JSON.stringify(it.action));
+        out.push(`<rect class="pw-link" x="${n(it.x)}" y="${n(it.y)}" width="${n(it.w)}" height="${n(it.h)}" fill="transparent" data-action="${a}" style="cursor:pointer"><title>${esc(linkTitle(it.action))}</title></rect>`);
+        break;
+      }
       case 'image': {
         const par = it.fit === 'fill' ? 'none' : it.fit === 'cover' ? 'xMidYMid slice' : 'xMidYMid meet';
         out.push(`<image x="${n(it.x)}" y="${n(it.y)}" width="${n(it.w)}" height="${n(it.h)}" href="${esc(it.src)}" preserveAspectRatio="${par}"/>`);
@@ -41,6 +51,15 @@ export function pageToSvg(page, w, h) {
   }
   out.push('</svg>');
   return out.join('');
+}
+
+function linkTitle(a) {
+  if (a.type === 'url') return a.href;
+  if (a.type === 'drill') return `Open ${a.report}`;
+  if (a.type === 'toggle') return 'Show or hide details';
+  if (a.type === 'sort') return 'Sort';
+  if (a.type === 'bookmark') return `Go to ${a.target}`;
+  return '';
 }
 
 /** @font-face rules for report fonts served from /fonts. */

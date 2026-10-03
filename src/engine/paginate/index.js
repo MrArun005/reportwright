@@ -27,6 +27,17 @@ export function paginate(units, tables, pageH, warn) {
   // Candidate break lines: unit tops and bottoms.
   const cand = [...new Set(units.flatMap(u => [u.top, u.top + u.height]).map(v => Math.round(v * 100) / 100))].sort((a, b) => a - b);
 
+  // keep-together blocks: a break may not cut a block that fits on one page
+  const blockMap = new Map();
+  for (const u of units) if (u.block) {
+    const b = blockMap.get(u.block);
+    if (b) { b.top = Math.min(b.top, u.top); b.bottom = Math.max(b.bottom, u.top + u.height); }
+    else blockMap.set(u.block, { top: u.top, bottom: u.top + u.height });
+  }
+  const blocks = [...blockMap.values()].filter(b => b.bottom - b.top <= pageH + EPS);
+  for (const b of blocks) cand.push(b.top, b.bottom);
+  cand.sort((a, b) => a - b);
+
   const valid = (y) => {
     for (const u of units) {
       const b = u.top + u.height;
@@ -34,6 +45,7 @@ export function paginate(units, tables, pageH, warn) {
       if (u.keepWithNext && Math.abs(b - y) < EPS && b < end - EPS) return false;
       if (u.keepWithPrevious && Math.abs(u.top - y) < EPS) return false;
     }
+    for (const bl of blocks) if (bl.top < y - EPS && bl.bottom > y + EPS) return false;
     return true;
   };
 
@@ -48,10 +60,16 @@ export function paginate(units, tables, pageH, warn) {
     let limit = top + Math.max(pageH - offset, 1);
 
     // forced page breaks
-    for (const u of units) if (u.breakBefore && u.top > top + EPS && u.top < limit) { limit = u.top; break; }
+    for (const u of units) {
+      if (u.breakBefore && u.top > top + EPS && u.top < limit) limit = u.top;
+      const ub = u.top + u.height;
+      if (u.breakAfter && ub > top + EPS && ub < limit && ub < end - EPS) limit = ub;
+    }
+    const forced = limit < top + Math.max(pageH - offset, 1) - EPS;
 
     let bottom;
     if (limit >= end - EPS) bottom = end;
+    else if (forced && valid(limit)) bottom = limit;
     else {
       bottom = -1;
       for (let i = cand.length - 1; i >= 0; i--) {

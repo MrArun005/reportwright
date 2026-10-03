@@ -1,6 +1,6 @@
 'use client';
 import { useRef, useState } from 'react';
-import { useDesigner, SECTIONS, bodyWidth, addItem, moveItems, updateItem, findItem, tableSetColumnWidth, PARTS, round } from './store.js';
+import { useDesigner, SECTIONS, bodyWidth, addItem, moveItems, updateItem, findItem, tableSetColumnWidth, tableParts, rowsOf, round, NESTING } from './store.js';
 import { BASE_STYLE, parseBorder } from '@/engine/style.js';
 import { isDynamic } from '@/engine/expr/evaluate.js';
 import { resolveFontKey } from '@/engine/text/fonts.js';
@@ -146,9 +146,7 @@ function Band({ section, label, scale, bw, drag, setDrag }) {
         onDragLeave={() => setDropping(false)}
         onDrop={onDrop}
       >
-        {sec.items.map(it => it.type === 'table'
-          ? <TableView key={it.id} item={it} scale={scale} drag={drag} setDrag={setDrag} bw={bw} />
-          : <ItemView key={it.id} item={it} scale={scale} drag={drag} setDrag={setDrag} bw={bw} />)}
+        {sec.items.map(it => <AnyItem key={it.id} item={it} scale={scale} drag={drag} setDrag={setDrag} bw={bw} section={section} />)}
         {marquee && <div className="marquee" style={{ left: marquee.x * scale, top: marquee.y * scale, width: marquee.w * scale, height: marquee.h * scale }} />}
         <div className="band-resize" onPointerDown={onResizeDown} title="Drag to change the band height" />
       </div>
@@ -207,9 +205,41 @@ function rectOf(item, drag) {
 }
 
 /* ---------------------------------------------------------------- items */
+function AnyItem(props) {
+  const t = props.item.type;
+  if (t === 'table') return <TableView {...props} />;
+  if (NESTING.has(t)) return <ItemView {...props} nest />;
+  return <ItemView {...props} />;
+}
+
+/** Children of a container or list, drawn inside it. Drops land in the parent. */
+function NestChildren({ item, scale, drag, setDrag, section }) {
+  const ref = useRef(null);
+  const [over, setOver] = useState(false);
+  const accepts = (e) => e.dataTransfer.types.includes(MIME_TOOL) || e.dataTransfer.types.includes(MIME_FIELD);
+  const onDrop = (e) => {
+    setOver(false);
+    if (!accepts(e)) return;
+    e.preventDefault(); e.stopPropagation();
+    const r = ref.current.getBoundingClientRect();
+    const x = snapV((e.clientX - r.left) / scale), y = snapV((e.clientY - r.top) / scale);
+    const tool = e.dataTransfer.getData(MIME_TOOL);
+    if (tool) { addItem(tool, section, x, y, {}, item.id); return; }
+    const f = JSON.parse(e.dataTransfer.getData(MIME_FIELD) || 'null');
+    if (f) addItem('textbox', section, x, y, { value: `=Fields.${f.field}`, dataSet: f.dataSet === item.dataSet ? undefined : f.dataSet, w: 120, h: 16, style: fieldStyle(f) }, item.id);
+  };
+  return (
+    <div ref={ref} className={`nest${over ? ' drop' : ''}`}
+      onDragOver={(e) => { if (accepts(e)) { e.preventDefault(); e.stopPropagation(); setOver(true); } }}
+      onDragLeave={() => setOver(false)} onDrop={onDrop}>
+      {(item.items || []).map(ch => <AnyItem key={ch.id} item={ch} scale={scale} drag={drag} setDrag={setDrag} bw={item.w} section={section} />)}
+    </div>
+  );
+}
+
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 
-function ItemView({ item, scale, drag, setDrag, bw }) {
+function ItemView({ item, scale, drag, setDrag, bw, nest, section }) {
   const selected = useDesigner(s => s.sel.kind === 'items' && s.sel.ids.includes(item.id));
   const single = useDesigner(s => s.sel.kind === 'items' && s.sel.ids.length === 1);
   const onDown = useItemDrag(item, scale, setDrag);
@@ -255,11 +285,19 @@ function ItemView({ item, scale, drag, setDrag, bw }) {
     <div className={`it${selected ? ' sel' : ''}`} data-item={item.name}
       style={{ left: r.x * scale, top: r.y * scale, width: Math.max(r.w * scale, 2), height: Math.max(r.h * scale, 2) }}
       onPointerDown={onDown}>
-      <ItemBody item={{ ...item, ...r }} scale={scale} />
+      {nest ? <NestBox item={{ ...item, ...r }} scale={scale} /> : <ItemBody item={{ ...item, ...r }} scale={scale} />}
+      {nest && <NestChildren item={item} scale={scale} drag={drag} setDrag={setDrag} section={section} />}
       {selected && single && HANDLES.map(d => <div key={d} className="handle" style={handlePos(d)} onPointerDown={onHandle(d)} />)}
       {showBadge && <div className="guide-badge" style={{ left: 0, top: -18 }}>{drag.mode === 'move' ? `${round(r.x)}, ${round(r.y)}` : `${round(r.w)} × ${round(r.h)}`}</div>}
     </div>
   );
+}
+
+function NestBox({ item, scale }) {
+  const base = useDesigner(s => s.def.styles?.base);
+  const c = textCss([base, item.style], scale, false);
+  const label = item.type === 'list' ? `List · ${item.dataSet || 'no data set'}${item.groupBy ? ` · by ${String(item.groupBy).replace(/^=Fields\./, '')}` : ''}` : 'Container';
+  return <div className="box nest-box" style={c.box}><span className="nest-tag">{label}</span></div>;
 }
 
 function ItemBody({ item, scale }) {
@@ -305,6 +343,16 @@ function ItemBody({ item, scale }) {
       </div>
     );
   }
+  if (item.type === 'checkbox') {
+    const c = textCss([base, item.style], scale, false);
+    const size = Math.min(item.h, ((Number(item.style?.fontSize) || Number(base?.fontSize) || 9) + 2)) * scale;
+    return (
+      <div className="box" style={{ ...c.box, alignItems: 'center', gap: 4 * scale, padding: 0 }}>
+        <span style={{ width: size, height: size, border: '1px solid #1f2328', borderRadius: 2, flex: 'none', display: 'grid', placeItems: 'center', fontSize: size * 0.8 }}>✓</span>
+        <div className={`tx${isDynamic(item.text) ? ' dyn' : ''}`} style={c.text}>{shown(item.text)}</div>
+      </div>
+    );
+  }
   return <div className="box"><span className="hint">{item.type}</span></div>;
 }
 
@@ -334,7 +382,7 @@ function TableView({ item, scale, drag, setDrag }) {
     const f = JSON.parse(e.dataTransfer.getData(MIME_FIELD));
     updateItem(item.id, (t) => {
       if (!t.dataSet) t.dataSet = f.dataSet;
-      const cell = t[part][ri].cells[ci];
+      const cell = rowsOf(t, part)[ri].cells[ci];
       if (part === 'detail') {
         cell.value = `=Fields.${f.field}`;
         const fs = fieldStyle(f);
@@ -343,7 +391,7 @@ function TableView({ item, scale, drag, setDrag }) {
         const h = t.header?.[t.header.length - 1]?.cells?.[ci];
         if (h && (!h.value || /^Column \d+$/.test(h.value))) h.value = f.field.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase());
         if (h && f.type === 'number') h.style = { ...(h.style || {}), textAlign: 'right' };
-      } else if (part === 'footer' && f.type === 'number') {
+      } else if ((part === 'footer' || /^g\d+f$/.test(part)) && f.type === 'number') {
         cell.value = `=Sum(Fields.${f.field})`;
         cell.style = { ...(cell.style || {}), ...fieldStyle(f) };
       }
@@ -356,7 +404,7 @@ function TableView({ item, scale, drag, setDrag }) {
   return (
     <div className={`tbl${tableSelected ? ' sel' : ''}`} data-item={item.name} style={{ left: r.x * scale, top: r.y * scale }}>
       <div className="grip" title="Select or move the table" onPointerDown={onGrip}>⠿</div>
-      {PARTS.map(part => (item[part] || []).map((row, ri) => {
+      {tableParts(item).map(({ part, tag }) => (rowsOf(item, part) || []).map((row, ri) => {
         const rowStyle = row.style;
         const isFirst = first; first = false;
         let ci = 0;
@@ -383,7 +431,7 @@ function TableView({ item, scale, drag, setDrag }) {
         }
         return (
           <div className="row" key={`${part}${ri}`} style={{ height: (row.height || 18) * scale }}>
-            <div className="row-tag">{part[0].toUpperCase()}</div>
+            <div className="row-tag" title={part}>{tag}</div>
             {cells}
           </div>
         );

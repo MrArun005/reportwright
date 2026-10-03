@@ -1,5 +1,5 @@
 // @ts-check
-import { PDFDocument, rgb, pushGraphicsState, popGraphicsState, rectangle, clip, endPath } from 'pdf-lib';
+import { PDFDocument, PDFName, PDFString, rgb, pushGraphicsState, popGraphicsState, rectangle, clip, endPath } from 'pdf-lib';
 import fontkitModule from '@pdf-lib/fontkit';
 import { parseColor } from './color.js';
 
@@ -65,6 +65,7 @@ export async function exportPdf(model, fontStore, opt = {}) {
   };
 
   const H = model.height;
+  const links = [];
   for (const pg of model.pages) {
     const p = doc.addPage([model.width, model.height]);
     for (const it of pg.items) {
@@ -110,6 +111,15 @@ export async function exportPdf(model, fontStore, opt = {}) {
           if (it.clip) p.pushOperators(popGraphicsState());
           break;
         }
+        case 'path': {
+          const fill = col(it.fill), stroke = col(it.stroke);
+          p.drawSvgPath(it.d, { x: it.x, y: H - it.y, color: fill?.color, opacity: fill?.opacity, borderColor: stroke?.color, borderWidth: stroke ? it.strokeWidth || 1 : 0, borderOpacity: stroke?.opacity, borderLineCap: 1 });
+          break;
+        }
+        case 'link': {
+          if (it.action?.type === 'url') links.push({ page: p, rect: [it.x, H - it.y - it.h, it.x + it.w, H - it.y], href: it.action.href });
+          break;
+        }
         case 'image': {
           const img = await image(it.src);
           if (!img) break;
@@ -124,7 +134,35 @@ export async function exportPdf(model, fontStore, opt = {}) {
       }
     }
   }
+  // URL links as PDF annotations
+  for (const l of links) {
+    const annot = doc.context.obj({ Type: 'Annot', Subtype: 'Link', Rect: l.rect, Border: [0, 0, 0], A: { Type: 'Action', S: 'URI', URI: PDFString.of(l.href) } });
+    const ref = doc.context.register(annot);
+    const annots = l.page.node.lookup(PDFName.of('Annots'));
+    if (annots) annots.push(ref); else l.page.node.set(PDFName.of('Annots'), doc.context.obj([ref]));
+  }
+  if (model.bookmarks?.length) addOutline(doc, model.bookmarks, H);
   return doc.save();
+}
+
+/** PDF outline (the bookmarks panel) from the page model bookmarks. Flat list, levels as indentation. */
+function addOutline(doc, bookmarks, H) {
+  const ctx = doc.context;
+  const pages = doc.getPages();
+  const outlineRef = ctx.nextRef();
+  const refs = bookmarks.map(() => ctx.nextRef());
+  bookmarks.forEach((b, i) => {
+    const page = pages[b.page - 1];
+    if (!page) return;
+    const title = '  '.repeat(b.level || 0) + b.label;
+    const dict = { Title: PDFString.of(title), Parent: outlineRef, Dest: [page.ref, PDFName.of('XYZ'), null, H - b.y + 4, null] };
+    if (i > 0) dict.Prev = refs[i - 1];
+    if (i < refs.length - 1) dict.Next = refs[i + 1];
+    ctx.assign(refs[i], ctx.obj(dict));
+  });
+  ctx.assign(outlineRef, ctx.obj({ Type: 'Outlines', First: refs[0], Last: refs[refs.length - 1], Count: refs.length }));
+  doc.catalog.set(PDFName.of('Outlines'), outlineRef);
+  doc.catalog.set(PDFName.of('PageMode'), PDFName.of('UseOutlines'));
 }
 
 function roundRect(x, y, w, h, r) {

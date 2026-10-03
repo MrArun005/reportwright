@@ -15,7 +15,7 @@ import { formatValue } from './format.js';
  * @property {string} [currency]
  */
 
-const ROOTS = { fields: 'Fields', parameters: 'Parameters', globals: 'Globals' };
+const ROOTS = { fields: 'Fields', parameters: 'Parameters', globals: 'Globals', parent: 'Parent' };
 
 /* ------------------------------------------------------------------ cache */
 const astCache = new Map();
@@ -112,7 +112,7 @@ export function evaluate(n, ctx) {
     case 'id': {
       const r = ROOTS[n.name.toLowerCase()];
       if (r) return { __root: r };
-      throw new ExprError(`Unknown name "${n.name}". Use Fields.x, Parameters.x or Globals.x`, n.p);
+      throw new ExprError(`Unknown name "${n.name}". Use Fields.x, Parameters.x, Globals.x or Parent.x`, n.p);
     }
     case 'member': {
       const o = evaluate(n.obj, ctx);
@@ -136,7 +136,7 @@ export function evaluate(n, ctx) {
 
 function member(o, prop, ctx) {
   if (o && o.__root) {
-    const src = o.__root === 'Fields' ? ctx.fields : o.__root === 'Parameters' ? ctx.params : ctx.globals;
+    const src = o.__root === 'Fields' ? ctx.fields : o.__root === 'Parameters' ? ctx.params : o.__root === 'Parent' ? ctx.parentFields : ctx.globals;
     if (!src) return null;
     if (prop in src) return src[prop];
     const lower = prop.toLowerCase();
@@ -204,7 +204,7 @@ function binary(n, ctx) {
 function scopeRows(args, idx, ctx, fname) {
   if (args.length > idx) {
     const s = evaluate(args[idx], ctx);
-    const rows = ctx.dataSets[s];
+    const rows = ctx.scopes?.[s]?.rows || ctx.dataSets[s];
     if (!rows) throw new ExprError(`${fname}: the scope "${s}" does not exist`);
     return rows;
   }
@@ -281,6 +281,9 @@ export const FUNCTIONS = {
   trim: (ctx, s) => S(s).trim(),
   replace: (ctx, s, a, b) => S(s).split(S(a)).join(S(b)),
   instr: (ctx, s, sub) => S(s).indexOf(S(sub)) + 1,
+  join: (ctx, arr, sep) => (Array.isArray(arr) ? arr.map(v => toText(v, null, ctx)).join(sep == null ? ', ' : S(sep)) : toText(arr, null, ctx)),
+  contains: (ctx, hay, needle) => (Array.isArray(hay) ? hay.some(v => cmpVal(v, needle) === 0) : S(hay).toLowerCase().includes(S(needle).toLowerCase())),
+  inlist: (ctx, v, ...list) => list.flat().some(x => cmpVal(v, x) === 0),
   cstr: (ctx, v) => toText(v, null, ctx),
   cdbl: (ctx, v) => num(v), cnum: (ctx, v) => num(v), val: (ctx, v) => num(v),
   cint: (ctx, v) => (v == null ? null : Math.round(Number(v))),
@@ -309,7 +312,7 @@ export const FUNCTIONS = {
 /** Names shown in the designer's expression helper. */
 export const FUNCTION_NAMES = [
   'Sum', 'Avg', 'Count', 'CountDistinct', 'CountRows', 'Min', 'Max', 'First', 'Last', 'RunningValue', 'RowNumber',
-  'IIF', 'Switch', 'IsNull', 'Coalesce',
+  'IIF', 'Switch', 'IsNull', 'Coalesce', 'Lookup', 'Join', 'Contains', 'InList',
   ...['Format', 'Upper', 'Lower', 'Left', 'Right', 'Mid', 'Len', 'Trim', 'Replace', 'InStr', 'CStr', 'CDbl', 'CInt', 'CDate', 'CBool',
     'Round', 'Abs', 'Floor', 'Ceiling', 'Int', 'Pow', 'Sqrt', 'Now', 'Today', 'DateAdd', 'DateDiff', 'DateSerial', 'Year', 'Month', 'Day', 'MonthName'],
 ];
@@ -333,13 +336,34 @@ function call(n, ctx) {
     return AGG[name](mapRows(rows, args[0], ctx));
   }
   if (name === 'countrows') return scopeRows(args, 0, ctx, n.name).length;
-  if (name === 'rownumber') return ctx.rowNumber ?? 1;
+  if (name === 'rownumber') {
+    if (args.length) { const sc = ctx.scopes?.[evaluate(args[0], ctx)]; if (!sc) throw new ExprError('RowNumber: unknown scope', n.p); return sc.index + 1; }
+    return ctx.rowNumber ?? 1;
+  }
   if (name === 'runningvalue') {
     if (args.length < 2) throw new ExprError('RunningValue needs 2 arguments: RunningValue(expr, "Sum")', n.p);
     const fn = String(evaluate(args[1], ctx)).toLowerCase();
     if (!(fn in AGG)) throw new ExprError(`RunningValue: unknown function "${fn}"`, n.p);
-    const rows = ctx.runningRows || (ctx.aggRows && ctx.rowNumber ? ctx.aggRows.slice(0, ctx.rowNumber) : ctx.fields ? [ctx.fields] : []);
+    let rows;
+    if (args.length > 2) {
+      const sc = ctx.scopes?.[evaluate(args[2], ctx)];
+      if (!sc) throw new ExprError('RunningValue: unknown scope', n.p);
+      rows = sc.rows.slice(0, sc.index + 1);
+    } else if (ctx.runningRows) rows = ctx.runningRows;
+    else if (ctx.aggRows && ctx.aggIndex != null) rows = ctx.aggRows.slice(0, ctx.aggIndex + 1);
+    else rows = ctx.fields ? [ctx.fields] : [];
     return AGG[fn](mapRows(rows, args[0], ctx));
+  }
+  if (name === 'lookup') {
+    // Lookup(sourceExpr, destExpr, resultExpr, "DataSet"): first matching row in another data set
+    if (args.length !== 4) throw new ExprError('Lookup needs 4 arguments: Lookup(source, destination, result, "DataSet")', n.p);
+    const key = evaluate(args[0], ctx);
+    const setName = evaluate(args[3], ctx);
+    const rows = ctx.dataSets[setName];
+    if (!rows) throw new ExprError(`Lookup: the data set "${setName}" does not exist`, n.p);
+    const c = Object.assign({}, ctx);
+    for (const r of rows) { c.fields = r; if (cmpVal(evaluate(args[1], c), key) === 0) return evaluate(args[2], c); }
+    return null;
   }
   const f = FUNCTIONS[name];
   if (!f) throw new ExprError(`Unknown function "${n.name}"`, n.p);

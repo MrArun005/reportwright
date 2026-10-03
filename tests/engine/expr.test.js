@@ -35,7 +35,7 @@ describe('functions', () => {
     expect(evalValue('=Max(Fields.amt, "Rows")', ctx({ aggRows: [] }))).toBe(30.5);
   });
   it('computes running values and row numbers', () => {
-    expect(evalValue('=RunningValue(Fields.amt, "Sum")', ctx({ fields: rows[1], rowNumber: 2 }))).toBe(30);
+    expect(evalValue('=RunningValue(Fields.amt, "Sum")', ctx({ fields: rows[1], rowNumber: 2, aggIndex: 1 }))).toBe(30);
     expect(evalValue('=RowNumber()', ctx({ rowNumber: 3 }))).toBe(3);
   });
   it('evaluates IIF lazily', () => expect(evalValue('=IIF(True, 1, Fields.nope)', ctx())).toBe(1));

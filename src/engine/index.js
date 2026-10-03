@@ -8,11 +8,12 @@ import { resolvePage } from './units.js';
 import { FontStore, ALL_FONT_KEYS } from './text/fonts.js';
 import { TextMeasurer } from './text/measure.js';
 import { loadSources, buildDataSets, coerce } from './data/index.js';
-import { evalValue } from './expr/evaluate.js';
+import { evalValue, evaluate } from './expr/evaluate.js';
 import { BASE_STYLE } from './style.js';
 import { ITEMS } from './items/index.js';
 import { shiftItems } from './items/paint.js';
 import { paginate } from './paginate/index.js';
+import { layoutItems } from './layout.js';
 import { validate } from './schema/validate.js';
 
 export class ReportError extends Error {
@@ -68,44 +69,30 @@ export async function render(def, opts = {}) {
   if (contentH < 24) throw new ReportError('The page header and footer leave no room for the body. Make them shorter or the margins smaller.');
 
   const base = { ...BASE_STYLE, ...(def.styles?.base || {}) };
-  const makeLc = (globals, fixed) => ({
-    m, base, dataSets, warn, fixed, maxUnitHeight: contentH,
-    ctxFor: (item) => {
-      const ds = item.dataSet || defaultDs;
-      const rows = (ds && dataSets[ds]) || [];
-      return { ...baseCtx, globals, fields: rows[0] || null, aggRows: rows };
-    },
-  });
+  let idSeq = 0;
+  const regions = [];
+  const makeLc = (globals, fixed) => {
+    const lc = {
+      m, base, dataSets, warn, fixed, maxUnitHeight: contentH, state: opts.state || {}, regions,
+      named: def.styles?.named || {},
+      nextId: () => ++idSeq,
+      layoutItems: (items, l, o) => layoutItems(items, l, o),
+      linkFor: (it, ctx, rect) => linkFor(it, ctx, rect, warn),
+      ctxFor: (item) => {
+        const ds = item.dataSet || defaultDs;
+        const rows = (ds && dataSets[ds]) || [];
+        return { ...baseCtx, globals, fields: rows[0] || null, aggRows: rows };
+      },
+      subreports: null,
+    };
+    return lc;
+  };
 
   /* ---------------- body: layout + push-down ---------------- */
   const lc = makeLc(baseCtx.globals, false);
-  const bodyItems = [...(sec.body?.items || [])].sort((a, b) => a.y - b.y || a.x - b.x);
-  const laid = bodyItems.map((it, idx) => {
-    const spec = ITEMS[it.type];
-    if (!spec) { warn(`Unknown item type "${it.type}"`); return { it, res: { height: 0, units: [] }, idx }; }
-    return { it, res: spec.layout(it, lc), idx };
-  });
-  const shift = new Array(laid.length).fill(0);
-  const units = [], tables = [];
-  laid.forEach((L, i) => {
-    const it = L.it;
-    let s = 0;
-    for (let j = 0; j < i; j++) {
-      const J = laid[j].it;
-      const overlapX = J.x < it.x + Math.max(it.w, 1) - EPS && it.x < J.x + Math.max(J.w, 1) - EPS;
-      if (overlapX && J.y + J.h <= it.y + EPS) {
-        let delta = laid[j].res.height - J.h;
-        if (delta < 0 && !(J.canShrink || laid[j].res.units.length === 0)) delta = 0;
-        s = Math.max(s, shift[j] + delta);
-      }
-    }
-    shift[i] = s;
-    const top = it.y + s;
-    const x0 = it.x, x1 = it.x + (L.res.width ?? it.w);
-    L.res.units.forEach((u, k) => units.push({ ...u, x0, x1, top: top + u.top, tableId: L.res.table ? i : undefined, breakBefore: k === 0 && !!it.pageBreakBefore }));
-    if (L.res.table) tables.push({ id: i, top, bottom: top + L.res.height, x0, x1, ...L.res.table });
-  });
-  units.sort((a, b) => a.top - b.top);
+  lc.subreports = opts._subreports || null;
+  const body = layoutItems(sec.body?.items || [], lc);
+  const units = body.units, tables = body.tables;
 
   const slices = paginate(units, tables, contentH, warn);
   const total = slices.length;
@@ -113,6 +100,7 @@ export async function render(def, opts = {}) {
   /* ---------------- pages ---------------- */
   const ml = page.margins.left, mt = page.margins.top;
   const bodyTop = mt + headerH;
+  const bookmarks = [];
   const pages = slices.map((p, k) => {
     const items = [];
     const globals = { ...baseCtx.globals, PageNumber: k + 1, TotalPages: total };
@@ -121,15 +109,11 @@ export async function render(def, opts = {}) {
       if (!section) return;
       if (first && section.printOnFirstPage === false) return;
       if (last && section.printOnLastPage === false) return;
-      for (const it of section.items || []) {
-        const spec = ITEMS[it.type];
-        if (!spec) continue;
-        const r = spec.layout(it, plc);
-        for (const u of r.units) items.push(...shiftItems(u.items, ml, y0 + it.y + u.top));
-      }
+      const r = layoutItems(section.items || [], plc);
+      for (const u of r.units) items.push(...shiftItems(u.items, ml, y0 + u.top));
     };
     band(header, mt, k === 0, k === total - 1);
-    for (const t of p.repeat) items.push(...shiftItems(t.headerItems, ml, bodyTop));
+    for (const t of p.repeat) items.push(...shiftItems(t.headerItems, ml + 0, bodyTop));
     for (const u of p.units) {
       // Only items under a continued table move down by its repeated header.
       let off = 0;
@@ -137,17 +121,77 @@ export async function render(def, opts = {}) {
       items.push(...shiftItems(u.items, ml, bodyTop + off + (u.top - p.top)));
     }
     band(footer, page.height - page.margins.bottom - footerH, k === 0, k === total - 1);
-    return { items };
+    const kept = [];
+    for (const it of items) {
+      if (it.t === 'bookmark') bookmarks.push({ label: it.label, page: k + 1, y: it.y, level: it.level || 0 });
+      else kept.push(it);
+    }
+    return { items: kept };
   });
 
   return {
-    width: page.width, height: page.height, pages, warnings,
+    width: page.width, height: page.height, pages, warnings, bookmarks, regions, name: def.name || '',
     stats: { ms: Date.now() - t0, pages: pages.length, rows: Object.fromEntries(Object.entries(dataSets).map(([k, r]) => [k, r.length])) },
   };
 }
 
+/** Hyperlink, drill-through or bookmark jump for an item or a cell. */
+function linkFor(it, ctx, rect, warn) {
+  const a = it?.action;
+  if (!a || !a.type || a.type === 'none') return null;
+  try {
+    if (a.type === 'url') {
+      const href = String(evalValue(a.url ?? '', ctx) ?? '');
+      if (!/^(https?:|mailto:|\/)/i.test(href)) return null;
+      return { t: 'link', ...rect, action: { type: 'url', href } };
+    }
+    if (a.type === 'report') {
+      const params = {};
+      for (const [k, v] of Object.entries(a.params || {})) { const x = evalValue(v, ctx); params[k] = x instanceof Date ? x.toISOString().slice(0, 10) : x; }
+      return { t: 'link', ...rect, action: { type: 'drill', report: String(evalValue(a.report, ctx)), params } };
+    }
+    if (a.type === 'bookmark') return { t: 'link', ...rect, action: { type: 'bookmark', target: String(evalValue(a.target, ctx)) } };
+  } catch (e) { warn(`${it.name || 'Link'}: ${e.message}`); }
+  return null;
+}
+
+/**
+ * Options for parameters that list values from a data set (cascading parameters:
+ * the data set may filter on other parameters).
+ * @returns {Promise<Record<string, {value: any, label: string}[]>>}
+ */
+export async function parameterOptions(def, given = {}, opts = {}) {
+  const out = {};
+  const dyn = (def.parameters || []).filter(p => p.optionsFrom?.dataSet);
+  for (const p of def.parameters || []) if (Array.isArray(p.options)) out[p.name] = p.options.map(o => (typeof o === 'object' ? { value: o.value, label: String(o.label ?? o.value) } : { value: o, label: String(o) }));
+  if (!dyn.length) return out;
+  const params = resolveParameters(def, given, { lenient: true });
+  const need = new Set(dyn.map(p => p.optionsFrom.dataSet));
+  const sets = (def.dataSets || []).filter(d => need.has(d.name));
+  const srcNames = new Set(sets.map(d => d.source));
+  const sub = { ...def, dataSources: (def.dataSources || []).filter(s => srcNames.has(s.name)), dataSets: sets };
+  const sources = opts.sources || await loadSources(sub, { params, fetch: opts.fetch, baseUrl: opts.baseUrl });
+  const ctx = { params, globals: { ExecutionTime: new Date() }, dataSets: {}, fields: null };
+  const built = buildDataSets(sub, sources, ctx);
+  for (const p of dyn) {
+    const rows = built[p.optionsFrom.dataSet] || [];
+    const seen = new Set(), list = [];
+    const c = { ...ctx, dataSets: built };
+    for (const r of rows) {
+      c.fields = r;
+      const v = evalValue(p.optionsFrom.value || '', c);
+      const k = v instanceof Date ? v.getTime() : v;
+      if (v == null || seen.has(k)) continue;
+      seen.add(k);
+      list.push({ value: v instanceof Date ? v.toISOString().slice(0, 10) : v, label: String(p.optionsFrom.label ? evalValue(p.optionsFrom.label, c) : v) });
+    }
+    out[p.name] = list;
+  }
+  return out;
+}
+
 /** Defaults, types and required checks for report parameters. */
-export function resolveParameters(def, given) {
+export function resolveParameters(def, given, { lenient = false } = {}) {
   const out = {}, missing = [];
   const ctx = { params: {}, globals: { ExecutionTime: new Date() }, dataSets: {}, fields: null };
   for (const p of def.parameters || []) {
@@ -155,12 +199,18 @@ export function resolveParameters(def, given) {
     if ((val == null || val === '') && p.default != null && p.default !== '') {
       try { val = evalValue(p.default, ctx); } catch { val = null; }
     }
-    val = val === '' && p.type !== 'string' ? null : coerce(val, p.type || 'string');
-    if (p.required && (val == null || val === '')) missing.push(p.name);
+    if (p.multi) {
+      let list = Array.isArray(val) ? val : val == null || val === '' ? [] : String(val).split(',').map(x => x.trim()).filter(Boolean);
+      val = list.map(x => coerce(x, p.type || 'string'));
+      if (p.required && !val.length) missing.push(p.name);
+    } else {
+      val = val === '' && p.type !== 'string' ? null : coerce(val, p.type || 'string');
+      if (p.required && (val == null || val === '')) missing.push(p.name);
+    }
     out[p.name] = val;
     ctx.params[p.name] = val;
   }
-  if (missing.length) throw new ReportError(`Enter a value for: ${missing.join(', ')}`, { missingParameters: missing });
+  if (missing.length && !lenient) throw new ReportError(`Enter a value for: ${missing.join(', ')}`, { missingParameters: missing });
   return out;
 }
 

@@ -28,7 +28,8 @@ export function formatValue(value, fmt, opt = {}) {
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? '' : formatDate(value, fmt || 'dd MMM yyyy');
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) return String(value);
-    if (!fmt) return nf(locale, { maximumFractionDigits: 10 }).format(value);
+    // No format: plain digits, no grouping (a year stays 2026). Use N0/N2/C2 to group.
+    if (!fmt) return nf('en-US', { maximumFractionDigits: 10, useGrouping: false }).format(value);
     const m = /^([CcNnFfPpDdEe])(\d{0,2})$/.exec(fmt);
     if (m) {
       const k = m[1].toUpperCase();

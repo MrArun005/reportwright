@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
-import { useDesigner, findItem, updateItem, deleteSelection, duplicateSelection, SECTIONS, PARTS,
-  tableInsertColumn, tableDeleteColumn, tableInsertRow, tableDeleteRow, tableSetColumnWidth, tableMergeRight, tableSplit, tableSync, round } from './store.js';
+import { useDesigner, findItem, updateItem, deleteSelection, duplicateSelection, SECTIONS, walk, tableParts, rowsOf,
+  tableInsertColumn, tableDeleteColumn, tableInsertRow, tableDeleteRow, tableSetColumnWidth, tableMergeRight, tableSplit, tableSync, tableAddGroup, tableRemoveGroup, round } from './store.js';
 import { ITEMS, stylePropsFor, TEXT_STYLE_PROPS } from '@/engine/items/index.js';
 import { FONT_FAMILIES } from '@/engine/text/fonts.js';
 import { PAGE_SIZES, fromPt, toPt } from '@/engine/units.js';
@@ -53,6 +53,7 @@ function PropEditor({ p, value, onChange, openExpr, dataSet }) {
     case 'color': return <Field label={p.label}><ColorInput value={value} onChange={onChange} /></Field>;
     case 'font': return <Field label={p.label}><Select value={value} onChange={onChange} options={Object.keys(FONT_FAMILIES)} allowEmpty /></Field>;
     case 'dataset': return <Field label={p.label}><Select value={value} onChange={onChange} options={(def.dataSets || []).map(d => d.name)} allowEmpty /></Field>;
+    case 'action': return <ActionEditor value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet} />;
     default: return <Field label={p.label}><TextInput value={value} onChange={v => onChange(v === '' ? undefined : v)} /></Field>;
   }
 }
@@ -85,7 +86,7 @@ function ItemProps({ item, section, openExpr }) {
   const set = (k, v) => updateItem(item.id, it => setOrDelete(it, k, v), `${item.id}.${k}`);
   const setStyle = (k, v) => updateItem(item.id, it => { it.style ||= {}; setOrDelete(it.style, k, v); }, `${item.id}.style.${k}`);
   const rename = (v) => {
-    const taken = SECTIONS.some(s => def.sections[s.key].items.some(i => i.id !== item.id && i.name === v));
+    let taken = false; walk(def, (i) => { if (i.id !== item.id && i.name === v) taken = true; });
     setNameErr(!/^[A-Za-z_][\w]*$/.test(v) ? 'Use letters, digits and _' : taken ? 'This name is in use' : null);
     if (/^[A-Za-z_][\w]*$/.test(v) && !taken) set('name', v);
   };
@@ -107,7 +108,7 @@ function ItemProps({ item, section, openExpr }) {
           {item.type !== 'table' && <Geo label="Width" value={item.w} onChange={v => set('w', Math.max(0, v))} />}
           {item.type !== 'table' && <Geo label="Height" value={item.h} onChange={v => set('h', Math.max(0, v))} />}
         </div>
-        <div className="hint">In the {SECTIONS.find(s => s.key === section).label.toLowerCase()}.</div>
+        <div className="hint">In the {SECTIONS.find(s => s.key === section).label.toLowerCase()}{findItem(def, item.id)?.parent ? `, inside ${findItem(def, item.id).parent.name}` : ''}.</div>
       </div>
       {groupBy(spec?.props || []).map(([cat, ps]) => (
         <div className="cat" key={cat}>
@@ -115,7 +116,9 @@ function ItemProps({ item, section, openExpr }) {
           {ps.map(p => <PropEditor key={p.key} p={p} value={item[p.key]} onChange={v => set(p.key, v)} openExpr={openExpr} dataSet={dataSet} />)}
         </div>
       ))}
-      {item.type === 'table' && <TableProps table={item} />}
+      {item.type === 'table' && <TableProps table={item} openExpr={openExpr} />}
+      {item.type === 'list' && <SortFilterEditor item={item} />}
+      {(item.type === 'list' || item.type === 'container') && <div className="cat"><span className="hint">Drag tools and fields into the {item.type}. Items inside a list repeat for each record{item.groupBy ? ' (one row per group)' : ''}. A table inside a list can filter with =Parent.field.</span></div>}
       <StyleCats props={stylePropsFor(item.type)} style={item.style} onSet={setStyle} openExpr={openExpr} dataSet={dataSet} />
       <div className="cat"><div className="btnrow">
         <button className="btn sm" onClick={duplicateSelection}>Duplicate <span className="kbd">⌘D</span></button>
@@ -125,7 +128,7 @@ function ItemProps({ item, section, openExpr }) {
   );
 }
 
-function TableProps({ table }) {
+function TableProps({ table, openExpr }) {
   return (
     <>
       <div className="cat">
@@ -142,36 +145,125 @@ function TableProps({ table }) {
       </div>
       <div className="cat">
         <h5>Rows</h5>
-        {PARTS.map(p => (
-          <div key={p} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>{p[0].toUpperCase() + p.slice(1)} rows: <b>{(table[p] || []).length}</b></span>
-            <button className="btn sm" onClick={() => tableInsertRow(table.id, p, (table[p] || []).length)}>Add</button>
+        {tableParts(table).map(({ part, label }) => (
+          <div key={part} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>{label} rows: <b>{(rowsOf(table, part) || []).length}</b></span>
+            <button className="btn sm" onClick={() => tableInsertRow(table.id, part, (rowsOf(table, part) || []).length)}>Add</button>
           </div>
         ))}
         <div className="hint">Click a cell to edit its value and style.</div>
       </div>
+      <GroupsEditor table={table} openExpr={openExpr} />
+      <SortFilterEditor item={table} />
     </>
+  );
+}
+
+function fieldsOf(def, dsName) { return (def.dataSets?.find(d => d.name === dsName)?.fields || []); }
+
+function GroupsEditor({ table, openExpr }) {
+  const def = useDesigner(s => s.def);
+  const fields = fieldsOf(def, table.dataSet);
+  const [pick, setPick] = useState('');
+  const setG = (i, k, v) => updateItem(table.id, t => { if (v === undefined || v === '' || v === false) delete t.groups[i][k]; else t.groups[i][k] = v; }, `${table.id}.g${i}.${k}`);
+  const numericCols = () => (table.detail?.[0]?.cells || []).map((c, ci) => [ci, /^=Fields\.(\w+)$/.exec(c?.value || '')?.[1]]).filter(([, f]) => f && fields.find(x => x.name === f)?.type === 'number');
+  return (
+    <div className="cat">
+      <h5>Groups</h5>
+      {(table.groups || []).map((g, i) => (
+        <div className="group-card" key={i}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><b>{i + 1}. {g.name}</b>
+            <button className="btn sm ghost danger" onClick={() => tableRemoveGroup(table.id, i)}>Remove</button></div>
+          <div className="grid2">
+            <Field label="Name (scope)"><TextInput value={g.name} onChange={v => setG(i, 'name', v.replace(/\W/g, ''))} /></Field>
+            <Field label="Sort groups"><Select value={g.sort || ''} options={['asc', 'desc']} allowEmpty onChange={v => setG(i, 'sort', v)} /></Field>
+          </div>
+          <Field label="Group by"><ExprInput value={g.expr} onChange={v => setG(i, 'expr', v)} onOpen={() => openExpr({ value: g.expr, dataSet: table.dataSet, onSave: v => setG(i, 'expr', v), title: 'Group by' })} /></Field>
+          <Field label="Page break"><Select value={g.pageBreak || ''} options={[{ value: 'between', label: 'Between groups' }, { value: 'after', label: 'After each group' }]} allowEmpty onChange={v => setG(i, 'pageBreak', v)} /></Field>
+          <Check label="Keep the group on one page" checked={g.keepTogether} onChange={v => setG(i, 'keepTogether', v)} />
+          <Check label="Drill-down: show a toggle" checked={g.collapsible} onChange={v => setG(i, 'collapsible', v)} />
+          {g.collapsible && <Check label="Start collapsed" checked={g.initiallyCollapsed} onChange={v => setG(i, 'initiallyCollapsed', v)} />}
+        </div>
+      ))}
+      <div className="expr-row">
+        <Select value={pick} options={fields.map(f => f.name)} allowEmpty onChange={v => setPick(v || '')} aria-label="Field to group by" />
+        <button className="btn sm" disabled={!pick} onClick={() => { tableAddGroup(table.id, pick, numericCols()); setPick(''); }}>Add group</button>
+      </div>
+      <div className="hint">Use the group name as a scope: Sum(Fields.amount, "{(table.groups || [])[0]?.name || 'Region'}").</div>
+    </div>
+  );
+}
+
+const OPS = ['=', '<>', '>', '>=', '<', '<=', 'in', 'like', 'contains'];
+function SortFilterEditor({ item }) {
+  const def = useDesigner(s => s.def);
+  const fields = fieldsOf(def, item.dataSet).map(f => f.name);
+  const set = (fn) => updateItem(item.id, fn, `${item.id}.sf`);
+  const sort = item.sort?.[0];
+  return (
+    <div className="cat">
+      <h5>Sort and filter (this item only)</h5>
+      <div className="grid2">
+        <Field label="Sort by"><Select value={sort?.by?.replace(/^=Fields\./, '') || ''} options={fields} allowEmpty onChange={v => set(t => { if (v) t.sort = [{ by: `=Fields.${v}`, dir: sort?.dir || 'asc' }]; else delete t.sort; })} /></Field>
+        <Field label="Direction"><Select value={sort?.dir || 'asc'} options={['asc', 'desc']} onChange={v => set(t => { if (t.sort?.[0]) t.sort[0].dir = v; })} /></Field>
+      </div>
+      {(item.filters || []).map((f, i) => (
+        <div className="rowx" key={i}>
+          <TextInput mono value={f.expr} onChange={v => set(t => { t.filters[i].expr = v; })} aria-label="Filter expression" />
+          <Select value={f.op || '='} options={OPS} onChange={v => set(t => { t.filters[i].op = v; })} />
+          <TextInput mono value={f.value} onChange={v => set(t => { t.filters[i].value = v; })} aria-label="Filter value" />
+          <button className="btn sm ghost danger" onClick={() => set(t => { t.filters.splice(i, 1); if (!t.filters.length) delete t.filters; })} aria-label="Remove filter">✕</button>
+        </div>
+      ))}
+      <div><button className="btn sm" onClick={() => set(t => { t.filters ||= []; t.filters.push({ expr: fields[0] ? `=Fields.${fields[0]}` : '', op: '=', value: '' }); })}>Add filter</button></div>
+      <div className="hint">Value can be text, a number, =Parameters.x, or =Parent.x inside a list.</div>
+    </div>
+  );
+}
+
+function ActionEditor({ value, onChange, openExpr, dataSet }) {
+  const a = value || { type: 'none' };
+  const set = (patch) => { const n = { ...a, ...patch }; onChange(n.type === 'none' ? undefined : n); };
+  return (
+    <div style={{ display: 'grid', gap: 6 }}>
+      <Field label="Action on click"><Select value={a.type} options={[{ value: 'none', label: 'None' }, { value: 'url', label: 'Open a URL' }, { value: 'report', label: 'Open another report (drill-through)' }, { value: 'bookmark', label: 'Jump to a bookmark' }]} onChange={v => set({ type: v || 'none' })} /></Field>
+      {a.type === 'url' && <Field label="URL"><ExprInput value={a.url} onChange={v => set({ url: v })} onOpen={() => openExpr({ value: a.url, dataSet, onSave: v => set({ url: v }), title: 'URL' })} /></Field>}
+      {a.type === 'bookmark' && <Field label="Bookmark"><ExprInput value={a.target} onChange={v => set({ target: v })} onOpen={() => openExpr({ value: a.target, dataSet, onSave: v => set({ target: v }), title: 'Bookmark' })} /></Field>}
+      {a.type === 'report' && <>
+        <Field label="Report id"><TextInput value={a.report} onChange={v => set({ report: v })} mono placeholder="loan-statement" /></Field>
+        <Field label="Parameters (name=expression, one per line)">
+          <textarea className="textarea" rows={3} value={Object.entries(a.params || {}).map(([k, v]) => `${k}=${v}`).join('\n')}
+            onChange={e => set({ params: Object.fromEntries(e.target.value.split('\n').map(l => l.split('=')).filter(x => x[0] && x.length > 1).map(([k, ...v]) => [k.trim(), v.join('=').trim()])) })} />
+        </Field>
+      </>}
+    </div>
   );
 }
 
 /* ---------------------------------------------------------------- cell */
 function CellProps({ table, sel, openExpr }) {
-  const row = table[sel.part]?.[sel.row];
+  const row = rowsOf(table, sel.part)?.[sel.row];
   const cell = row?.cells?.[sel.col];
   if (!row || !cell) return <div className="cat"><span className="hint">This cell no longer exists.</span></div>;
   const key = `${table.id}.${sel.part}.${sel.row}.${sel.col}`;
-  const setCell = (k, v) => updateItem(table.id, t => setOrDelete(t[sel.part][sel.row].cells[sel.col], k, v), `${key}.${k}`);
-  const setCellStyle = (k, v) => updateItem(table.id, t => { const c = t[sel.part][sel.row].cells[sel.col]; c.style ||= {}; setOrDelete(c.style, k, v); }, `${key}.s.${k}`);
-  const setRow = (k, v) => updateItem(table.id, t => { setOrDelete(t[sel.part][sel.row], k, v); tableSync(t); }, `${key}.r.${k}`);
-  const setRowStyle = (k, v) => updateItem(table.id, t => { const r = t[sel.part][sel.row]; r.style ||= {}; setOrDelete(r.style, k, v); }, `${key}.rs.${k}`);
-  const partLabel = { header: 'Header', detail: 'Detail', footer: 'Footer' }[sel.part];
+  const setCell = (k, v) => updateItem(table.id, t => setOrDelete(rowsOf(t, sel.part)[sel.row].cells[sel.col], k, v), `${key}.${k}`);
+  const setCellStyle = (k, v) => updateItem(table.id, t => { const c = rowsOf(t, sel.part)[sel.row].cells[sel.col]; c.style ||= {}; setOrDelete(c.style, k, v); }, `${key}.s.${k}`);
+  const setRow = (k, v) => updateItem(table.id, t => { setOrDelete(rowsOf(t, sel.part)[sel.row], k, v); tableSync(t); }, `${key}.r.${k}`);
+  const setRowStyle = (k, v) => updateItem(table.id, t => { const r = rowsOf(t, sel.part)[sel.row]; r.style ||= {}; setOrDelete(r.style, k, v); }, `${key}.rs.${k}`);
+  const partLabel = tableParts(table).find(p => p.part === sel.part)?.label || sel.part;
   return (
     <>
       <div className="insp-head"><b>{table.name} · cell</b><span className="ty">{partLabel} row {sel.row + 1}, col {sel.col + 1}</span></div>
       <div className="cat">
         <h5>Data</h5>
         <Field label="Value"><ExprInput value={cell.value} onChange={v => setCell('value', v)} onOpen={() => openExpr({ value: cell.value, dataSet: table.dataSet, onSave: v => setCell('value', v), title: `${table.name} · ${partLabel} cell` })} /></Field>
-        <div className="hint">{sel.part === 'detail' ? 'Detail rows repeat once for each record. Fields.x is the current record.' : 'Aggregates such as Sum(Fields.x) use all the records of the table.'}</div>
+        <div className="hint">{sel.part === 'detail' ? 'Detail rows repeat once for each record. Fields.x is the current record.' : /^g/.test(sel.part) ? 'Group rows repeat once for each group. Sum(Fields.x) adds up the group.' : 'Aggregates such as Sum(Fields.x) use all the records of the table.'}</div>
+      </div>
+      <div className="cat">
+        <h5>Interactivity</h5>
+        {sel.part === 'header' && <Field label="Interactive sort: sort by" hint="Readers click the header to sort."><ExprInput value={cell.sortBy} onChange={v => setCell('sortBy', v || undefined)} onOpen={() => openExpr({ value: cell.sortBy, dataSet: table.dataSet, onSave: v => setCell('sortBy', v || undefined), title: 'Sort by' })} placeholder="=Fields.amount" /></Field>}
+        <Field label="Bookmark"><ExprInput value={cell.bookmark} onChange={v => setCell('bookmark', v || undefined)} onOpen={() => openExpr({ value: cell.bookmark, dataSet: table.dataSet, onSave: v => setCell('bookmark', v || undefined), title: 'Bookmark' })} /></Field>
+        <ActionEditor value={cell.action} onChange={v => setCell('action', v)} openExpr={openExpr} dataSet={table.dataSet} />
       </div>
       <div className="cat">
         <h5>Structure</h5>
