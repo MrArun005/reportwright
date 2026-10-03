@@ -13,6 +13,7 @@ import { ALL_FONT_KEYS } from '@/engine/text/fonts.js';
 import ThemeToggle from '@/theme/ThemeToggle.jsx';
 import ChartWizard from './ChartWizard.jsx';
 import TableWizard from './TableWizard.jsx';
+import AskAi from './AskAi.jsx';
 
 const FONT_CSS = fontFaceCss(ALL_FONT_KEYS);
 
@@ -169,6 +170,7 @@ export default function Designer({ id, initial }) {
           <button aria-pressed={tab === 'design'} onClick={() => st().setUi({ tab: 'design' })}>Design</button>
           <button aria-pressed={tab === 'preview'} onClick={() => st().setUi({ tab: 'preview' })} data-testid="tab-preview">Preview</button>
         </div>
+        <button className="btn sm ghost" onClick={() => setDialog('ai')} title="Describe a change and let AI draft it">Ask AI</button>
         <button className="btn sm ghost" onClick={() => setDialog('history')} title="Saved versions">History</button>
         <button className="btn sm ghost icon" onClick={() => setDialog('keys')} title="Keyboard shortcuts (?)">?</button>
         <ThemeToggle />
@@ -181,6 +183,7 @@ export default function Designer({ id, initial }) {
         </Dialog>
       )}
       {dialog === 'history' && <HistoryDialog id={id} onClose={() => setDialog(null)} />}
+      {dialog === 'ai' && <AskAi onClose={() => setDialog(null)} />}
       {wizard && <ChartWizard />}
       {tableWizard && <TableWizard />}
       {tab === 'preview' ? (

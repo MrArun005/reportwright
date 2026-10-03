@@ -1,4 +1,4 @@
-// POST /api/ai/report { prompt, sample?, url?, base? } → { definition, warnings, tries }
+// POST /api/ai/report { prompt, sample?, url?, base?: id | definition?: object, sources? } → { definition, warnings, tries }
 // Drafts a report with Claude. Nothing is saved: POST /api/reports with the definition saves it.
 // Designer role when accounts are on (proxy.js). Needs ANTHROPIC_API_KEY.
 import Anthropic from '@anthropic-ai/sdk';
@@ -9,7 +9,7 @@ import { readReport, safeId } from '@/server/reports.js';
 export const runtime = 'nodejs';
 export const maxDuration = 300; // a draft with retries can take minutes
 
-const MAX_BODY = 256 * 1024;
+const MAX_BODY = 1024 * 1024; // the designer sends the report and a trimmed copy of its data
 const err = (error, status) => Response.json({ error }, { status });
 let client;
 
@@ -22,14 +22,15 @@ export async function POST(req) {
   let body;
   try {
     const text = await req.text();
-    if (text.length > MAX_BODY) return err('The request is larger than 256 KB.', 413);
+    if (text.length > MAX_BODY) return err('The request is larger than 1 MB.', 413);
     body = JSON.parse(text);
   } catch { return err('Send JSON: { prompt, sample?, url?, base? }', 400); }
   try {
-    const base = body.base ? await readReport(safeId(String(body.base))) : null;
+    // the report to change: unsaved from the designer (definition), or a saved one (base id)
+    const base = body.definition ?? (body.base ? await readReport(safeId(String(body.base))) : null);
     if (body.base && !base) return err(`Report "${body.base}" not found.`, 404);
     client ||= new Anthropic(); // reads ANTHROPIC_API_KEY
-    return Response.json(await draftReport({ prompt: body.prompt, sample: body.sample, url: body.url, base }, { client, fontStore: fontStore() }));
+    return Response.json(await draftReport({ prompt: body.prompt, sample: body.sample, url: body.url, base, sources: body.sources }, { client, fontStore: fontStore() }));
   } catch (e) {
     return err(e.message, e.status || 500);
   }

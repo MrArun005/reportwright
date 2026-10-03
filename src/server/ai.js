@@ -44,26 +44,31 @@ ${JSON.stringify(blankReport('Example'))}`;
 }
 
 /**
- * @param {{ prompt: string, sample?: any, url?: string, base?: object }} input
- *   sample: rows (or the JSON a URL returns); url: where the real data will come from; base: a report to change
+ * @param {{ prompt: string, sample?: any, url?: string, base?: object, sources?: Record<string, any> }} input
+ *   sample: rows (or the JSON a URL returns; with base: { dataSetName: rows }); url: where the real data will
+ *   come from; base: a report to change; sources: data already loaded for base's sources (for the trial render)
  * @param {{ client: any, fontStore: any, fetch?: Function }} deps
  */
 export async function draftReport(input, { client, fontStore, fetch }) {
-  const { prompt, sample, url, base } = input || {};
+  const { prompt, sample, url, base, sources } = input || {};
   if (typeof prompt !== 'string' || !prompt.trim()) throw fail('Describe the report you want.', 400);
   if (prompt.length > MAX_PROMPT) throw fail(`The description can be at most ${MAX_PROMPT} characters.`, 400);
   if (sample != null && typeof sample !== 'object') throw fail('"sample" must be rows of data (a JSON array or object).', 400);
   if (url != null && !/^https?:\/\//i.test(String(url))) throw fail('"url" must be an http or https URL.', 400);
+  if (sources != null && (typeof sources !== 'object' || Array.isArray(sources))) throw fail('"sources" must map source names to their data.', 400);
+  if (base != null && (typeof base !== 'object' || Array.isArray(base))) throw fail('"base" must be a report definition.', 400);
   const rows = Array.isArray(sample) ? sample.slice(0, 50) : sample;
   const rowsJson = rows == null ? null : JSON.stringify(rows);
   if (rowsJson && rowsJson.length > MAX_SAMPLE_JSON) throw fail('The sample data is too large: send up to 50 rows.', 400);
 
   const parts = [`What the report should show:\n${prompt.trim()}`];
-  if (rowsJson) parts.push(url
+  if (base) {
+    parts.push(`Change this existing report, and keep what the description does not mention (its data sources stay as they are):\n${JSON.stringify(base)}`);
+    if (rowsJson) parts.push(`Its data, the first rows of each data set:\n${rowsJson}`);
+  } else if (rowsJson) parts.push(url
     ? `The data source is a rest source named "data" with url "${url}". It returns this (first rows):\n${rowsJson}`
     : `The data, to embed as a json data source named "data" with data { "rows": [...] } and a data set path "$.rows" (first rows):\n${rowsJson}`);
   else parts.push('There is no data yet: add a json data source named "data" with { "rows": [...] } holding a few realistic sample rows.');
-  if (base) parts.push(`Change this existing report, and keep what the description does not mention:\n${JSON.stringify(base)}`);
   const messages = [{ role: 'user', content: parts.join('\n\n') }];
 
   let problems = [];
@@ -71,7 +76,7 @@ export async function draftReport(input, { client, fontStore, fetch }) {
     const msg = await ask(client, messages);
     if (msg.stop_reason === 'refusal') throw fail('Claude declined this request. Try describing the report differently.', 422);
     const text = msg.content.filter(b => b.type === 'text').map(b => b.text).join('');
-    const res = await check(text, { rows, url, fontStore, fetch });
+    const res = await check(text, { rows: base ? null : rows, url, fontStore, fetch, sources });
     if (!res.errors.length) return { definition: res.definition, warnings: res.warnings, tries: t };
     problems = res.errors;
     // send the whole answer back unchanged (thinking blocks included), then the problems
@@ -108,7 +113,7 @@ function extractJson(text) {
 const SAMPLE_VALUE = { string: 'x', number: 1, boolean: false };
 
 /** Parse, validate and trial-render one answer. A trial render never fetches anything. */
-async function check(text, { rows, url, fontStore, fetch }) {
+async function check(text, { rows, url, fontStore, fetch, sources }) {
   let def;
   try { def = extractJson(text); } catch { return { errors: ['The answer was not one JSON object in a ```json block.'] }; }
   if (!def || typeof def !== 'object' || Array.isArray(def)) return { errors: ['The answer was not one JSON object.'] };
@@ -120,10 +125,12 @@ async function check(text, { rows, url, fontStore, fetch }) {
   const v = validate(def);
   if (v.errors.length) return { errors: v.errors };
   const noFetch = () => { throw new Error('a trial render cannot load data: put the rows in the json data source "data"'); };
-  const sources = url ? Object.fromEntries((def.dataSources || []).map(s => [s.name, s.type === 'json' ? s.data : s.name === 'data' ? rows ?? [] : []])) : undefined;
+  // data for the trial render: what the designer already loaded, or the sample for a URL source
+  const given = sources || (url ? { data: rows ?? [] } : null);
+  const loaded = given ? Object.fromEntries((def.dataSources || []).map(s => [s.name, s.name in given ? given[s.name] : s.type === 'json' ? s.data : []])) : undefined;
   const parameters = Object.fromEntries((def.parameters || []).map(p => [p.name, p.type === 'date' ? new Date().toISOString().slice(0, 10) : SAMPLE_VALUE[p.type] ?? 'x']));
   try {
-    const out = await render(def, { fontStore, sources, parameters, fetch: fetch || noFetch });
+    const out = await render(def, { fontStore, sources: loaded, parameters, fetch: fetch || noFetch });
     return { definition: def, warnings: [...v.warnings, ...out.warnings], errors: [] };
   } catch (e) {
     return { errors: [`The trial render failed: ${e.message}`] };

@@ -59,6 +59,7 @@ Engine, expressions, data sources, text box / image / line / shape / table, pagi
 | 3 | SQL on the server + connection test | Done (SQL sources were Phase C1). The data panel has a SQL source type, a connection picker (names only) and a Test button; unsaved queries preview for designers (accounts on) or behind `PW_BASIC_AUTH`. |
 | 4 | Table and matrix gallery; drag a data set → table | Done. Inserting a table or matrix opens a gallery (list, grouped with subtotals, summary per group, matrix) drawn live with the report's rows; dragging a data set onto the page makes a table with labels, formats and totals (only for fields that add up). Proof: `reports/invoice-gallery.pw.json`, built from blank by `tests/e2e/galleries.mjs`. |
 | 9 | CLI `pw render / test / diff` + GitHub Action | Done. Proof: `reports/__tests__/loan-statement.test.json`; changing one instalment fails `pw test` and shows the moved total on page 8. The Action and CI workflow are checked for syntax only (not run on GitHub yet). |
+| 11 | AI builder: describe → preview → insert | Done. Home page: "Describe a report (AI)" drafts, saves and opens a new report. Designer: "Ask AI" sends the report and its loaded data, shows what changes and a rendered page 1, and applies as one undoable step. Every draft passes validate() and a trial render first (3 tries). Proof: `tests/e2e/ai.mjs` runs both flows through the real SDK against a local mock of the Messages API; no live API call has been made. |
 
 ## Honest gaps
 

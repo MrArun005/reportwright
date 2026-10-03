@@ -62,6 +62,24 @@ describe('AI report drafting', () => {
     await expect(draftReport({ prompt: 'x', sample }, { client, fontStore })).rejects.toMatchObject({ status: 422, message: expect.stringMatching(/declined/) });
   });
 
+  it('changes an existing report: the current definition goes to the model', async () => {
+    const client = fakeClient([answer(JSON.stringify(good))]);
+    const base = { ...good, name: 'Current report', sections: { body: { items: [{ type: 'textbox', name: 'Hello', x: 0, y: 0, w: 100, h: 14, value: 'Hello' }] } } };
+    await draftReport({ prompt: 'add a table of sales by city', sample, base }, { client, fontStore });
+    const sent = JSON.stringify(client.calls[0].messages);
+    expect(sent).toContain('Change this existing report');
+    expect(sent).toContain('Current report');
+  });
+
+  it('changing a report with a REST source: the trial render uses the data the designer already loaded', async () => {
+    const withRest = { ...good, dataSources: [{ name: 'api', type: 'rest', url: 'https://api.example.com/sales' }], dataSets: [{ name: 'Rows', source: 'api', path: '$.rows' }] };
+    const client = fakeClient([answer(JSON.stringify(withRest))]);
+    const noFetch = () => { throw new Error('no fetch in a trial render'); };
+    const out = await draftReport({ prompt: 'add a total', base: withRest, sample: { Rows: sample }, sources: { api: { rows: sample } } }, { client, fontStore, fetch: noFetch });
+    expect(out.definition.dataSources[0]).toMatchObject({ type: 'rest', url: 'https://api.example.com/sales' }); // kept as it was
+    expect(JSON.stringify(client.calls[0].messages)).toContain('Pune'); // the rows went along as context
+  });
+
   it('checks its input', async () => {
     const client = fakeClient([answer(JSON.stringify(good))]);
     await expect(draftReport({ prompt: '' }, { client, fontStore })).rejects.toMatchObject({ status: 400 });
