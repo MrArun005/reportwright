@@ -1,8 +1,9 @@
-// Fails when src/engine imports React, Next, or touches the DOM. The engine must run in a Worker and in Node.
+// Fails when src/engine (or src/importers) imports React, Next or Node modules, or touches the DOM.
+// The engine and the importers must run in a Worker, in the browser and in Node.
 import fs from 'node:fs';
 import path from 'node:path';
-const root = path.join(import.meta.dirname, '..', 'src', 'engine');
-const bad = [/from ['"](react|react-dom|next)(\/[^'"]*)?['"]/, /\b(document|window|localStorage|navigator)\./, /from ['"]\.\.\/\.\.\/(designer|viewer)/];
+const roots = ['engine', 'importers'].map(d => path.join(import.meta.dirname, '..', 'src', d));
+const bad = [/from ['"](react|react-dom|next|node:[^'"]+)(\/[^'"]*)?['"]/, /\b(document|window|localStorage|navigator)\./, /from ['"]\.\.\/\.\.\/(designer|viewer)/];
 const problems = [];
 const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).forEach((e) => {
   const f = path.join(d, e.name);
@@ -13,6 +14,6 @@ const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).forEach((e) => {
     for (const re of bad) if (re.test(line)) problems.push(`${path.relative(process.cwd(), f)}:${i + 1}: ${line.trim()}`);
   });
 });
-walk(root);
+for (const r of roots) if (fs.existsSync(r)) walk(r);
 if (problems.length) { console.error('Engine boundary broken:\n' + problems.join('\n')); process.exit(1); }
-console.log('Engine boundary OK: no React, Next or DOM in src/engine');
+console.log('Engine boundary OK: no React, Next, Node modules or DOM in src/engine and src/importers');

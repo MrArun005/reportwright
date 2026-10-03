@@ -1,0 +1,67 @@
+{
+  "Name": "StaffDirectory",
+  "Width": "7in",
+  "Page": { "PageWidth": "11in", "PageHeight": "8.5in", "LeftMargin": "0.75in", "RightMargin": "0.75in", "TopMargin": "0.5in", "BottomMargin": "0.5in", "PaperOrientation": "Landscape" },
+  "DataSources": [
+    { "Name": "Staff", "ConnectionProperties": { "DataProvider": "JSON", "ConnectString": "jsondata=[{\"dept\":\"Credit\",\"name\":\"Meera Rao\",\"title\":\"Analyst\",\"salary\":61000,\"joined\":\"2021-04-01\"},{\"dept\":\"Credit\",\"name\":\"Arjun Pillai\",\"title\":\"Manager\",\"salary\":98000,\"joined\":\"2018-07-15\"},{\"dept\":\"Operations\",\"name\":\"Divya Kapoor\",\"title\":\"Officer\",\"salary\":52000,\"joined\":\"2022-01-10\"},{\"dept\":\"Operations\",\"name\":\"Kabir Sen\",\"title\":\"Lead\",\"salary\":74000,\"joined\":\"2019-11-20\"},{\"dept\":\"Operations\",\"name\":\"Lata Joshi\",\"title\":\"Officer\",\"salary\":50500,\"joined\":\"2023-06-05\"}]" } },
+    { "Name": "Warehouse", "ConnectionProperties": { "DataProvider": "SQL", "ConnectString": "Data Source=db01;Initial Catalog=HR" } }
+  ],
+  "DataSets": [
+    { "Name": "People", "Query": { "DataSourceName": "Staff", "CommandText": "jpath=$.*" },
+      "Fields": [ { "Name": "dept", "DataField": "dept" }, { "Name": "name", "DataField": "name" }, { "Name": "title", "DataField": "title" },
+        { "Name": "salary", "DataField": "salary" }, { "Name": "joined", "DataField": "joined[Date|YYYY-MM-DD]" } ] },
+    { "Name": "Budgets", "Query": { "DataSourceName": "Warehouse", "CommandText": "select dept, budget from budgets where year = @year",
+      "QueryParameters": [{ "Name": "@year", "Value": "=Parameters!Year.Value" }] },
+      "Fields": [ { "Name": "dept", "DataField": "dept" }, { "Name": "budget", "DataField": "budget" } ] }
+  ],
+  "ReportParameters": [ { "Name": "Year", "DataType": "Integer", "DefaultValue": { "Values": ["=Year(Today())"] } } ],
+  "Body": { "Height": "6in", "ReportItems": [
+    { "Type": "bandedlist", "Name": "Directory", "DataSetName": "People", "Width": "7in", "Height": "1.6in",
+      "Header": { "Height": "0.4in", "ReportItems": [
+        { "Type": "textbox", "Name": "DirTitle", "Value": "=\"Staff directory (\" & Count(Fields!name.Value) & \" people)\"", "Width": "7in", "Height": "0.4in", "Style": { "FontSize": "14pt", "FontWeight": "Bold" } } ] },
+      "Groups": [ { "Group": { "Name": "DeptGroup", "GroupExpressions": ["=Fields!dept.Value"], "DocumentMapLabel": "=Fields!dept.Value", "PageBreak": "Between" },
+        "Header": { "Height": "0.3in", "RepeatOnNewPage": true, "ReportItems": [
+          { "Type": "textbox", "Name": "DeptName", "Value": "=Fields!dept.Value", "Width": "4in", "Height": "0.3in", "Style": { "FontWeight": "Bold", "Color": "Teal" } } ] },
+        "Footer": { "Height": "0.3in", "ReportItems": [
+          { "Type": "textbox", "Name": "DeptTotal", "Value": "=\"Payroll \" & Format(Sum(Fields!salary.Value, \"DeptGroup\"), \"n0\")", "Width": "4in", "Height": "0.3in", "Style": { "FontStyle": "Italic" } } ] } } ],
+      "Details": { "Height": "0.3in", "ReportItems": [
+        { "Type": "textbox", "Name": "PersonName", "Value": "=Fields!name.Value", "Left": "0.2in", "Width": "2.5in", "Height": "0.3in" },
+        { "Type": "textbox", "Name": "PersonTitle", "Value": "=Fields!title.Value.ToUpper()", "Left": "2.8in", "Width": "2in", "Height": "0.3in" },
+        { "Type": "textbox", "Name": "PersonSalary", "Value": "=Fields!salary.Value", "Left": "5in", "Width": "2in", "Height": "0.3in", "Style": { "Format": "n0", "TextAlign": "Right" },
+          "Action": { "Hyperlink": "=\"https://hr.example.com/people/\" & Fields!name.Value" } } ] },
+      "Footer": { "Height": "0.3in", "ReportItems": [
+        { "Type": "textbox", "Name": "GrandPayroll", "Value": "=\"Total payroll \" & Format(Sum(Fields!salary.Value), \"n0\")", "Width": "7in", "Height": "0.3in", "Style": { "FontWeight": "Bold" } } ] } },
+    { "Type": "list", "Name": "TitleList", "DataSetName": "People", "Top": "1.8in", "Width": "3in", "Height": "0.3in",
+      "Group": { "Name": "TitleGroup", "GroupExpressions": ["=Fields!title.Value"] },
+      "ReportItems": [ { "Type": "textbox", "Name": "TitleCount", "Value": "=Fields!title.Value & \": \" & CountRows()", "Width": "3in", "Height": "0.3in" } ] },
+    { "Type": "tablix", "Name": "Roster", "DataSetName": "People", "Top": "2.3in", "Width": "6in", "Height": "0.75in",
+      "RepeatColumnHeaders": true,
+      "Corner": [[ { "Item": { "Type": "textbox", "Name": "RCorner", "Value": "Department" } } ]],
+      "ColumnHierarchy": { "LevelSizes": ["0.25in"], "Members": [
+        { "Header": { "Item": { "Type": "textbox", "Name": "RHName", "Value": "Name", "Style": { "FontWeight": "Bold" } } } },
+        { "Header": { "Item": { "Type": "textbox", "Name": "RHJoined", "Value": "Joined", "Style": { "FontWeight": "Bold" } } } } ] },
+      "RowHierarchy": { "LevelSizes": ["1.5in"], "Members": [
+        { "Header": { "Item": { "Type": "textbox", "Name": "RDept", "Value": "=Fields!dept.Value" } },
+          "Group": { "Name": "RosterDept", "GroupExpressions": ["=Fields!dept.Value"] },
+          "Children": [ { "Group": { "Name": "RosterDetails" }, "BodyIndex": 0 } ] },
+        { "Header": { "Item": { "Type": "textbox", "Name": "RTotalLabel", "Value": "Headcount" } }, "BodyIndex": 1 } ] },
+      "Body": { "Columns": ["2.5in", "2in"], "Rows": [
+        { "Height": "0.25in", "Cells": [ { "Item": { "Type": "textbox", "Name": "RName", "Value": "=Fields!name.Value" } }, { "Item": { "Type": "textbox", "Name": "RJoined", "Value": "=Fields!joined.Value", "Style": { "Format": "MMM yyyy" } } } ] },
+        { "Height": "0.25in", "Cells": [ { "Item": { "Type": "textbox", "Name": "RCount", "Value": "=CountRows()" } }, null ] } ] } },
+    { "Type": "chart", "Name": "PayChart", "DataSetName": "People", "Top": "3.2in", "Width": "4in", "Height": "2in",
+      "Header": { "Title": "Payroll by department" },
+      "PlotArea": { "Axes": [ { "AxisType": "X" }, { "AxisType": "Y", "Format": "n0" } ] },
+      "Plots": [ { "Name": "Plot 1", "PlotType": "Bar", "Config": { "SwapAxes": true },
+        "CategoryGroupings": [ { "Grouping": { "GroupExpressions": ["=Fields!dept.Value"] } } ],
+        "DataSeries": [ { "Name": "Payroll", "Values": [ { "Value": "=Sum(Fields!salary.Value)" } ],
+          "Action": { "Drillthrough": { "ReportName": "/DeptDetail.rdlx-json", "Parameters": [ { "ParameterName": "Dept", "Value": "=Fields!dept.Value" } ] } } } ] } ] },
+    { "Type": "subreport", "Name": "Notes", "ReportName": "StaffNotes.rdlx-json", "Top": "5.3in", "Width": "4in", "Height": "0.3in",
+      "Parameters": [ { "ParameterName": "Year", "Value": "=Parameters!Year.Value" } ] },
+    { "Type": "textbox", "Name": "Echo", "Value": "=ReportItems!DirTitle.Value", "Top": "5.3in", "Left": "4.5in", "Width": "2.5in", "Height": "0.3in" },
+    { "Type": "textbox", "Name": "Custom", "Value": "=Code.Greeting(Parameters!Year.Value)", "Top": "5.65in", "Left": "4.5in", "Width": "2.5in", "Height": "0.3in",
+      "Visibility": { "Hidden": "=Parameters!Year.Value < 2000" } },
+    { "Type": "shape", "Name": "Badge", "ShapeStyle": "Ellipse", "Top": "3.2in", "Left": "4.5in", "Width": "0.5in", "Height": "0.5in",
+      "Style": { "BackgroundColor": "Khaki", "Border": { "Style": "Solid", "Color": "DarkKhaki" } } },
+    { "Type": "map", "Name": "OfficeMap", "Top": "3.8in", "Left": "4.5in", "Width": "2in", "Height": "1.2in" }
+  ] }
+}
