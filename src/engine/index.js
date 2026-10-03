@@ -97,6 +97,10 @@ export async function render(def, opts = {}) {
 
   /* ---------------- body: layout + push-down ---------------- */
   const lc = makeLc(baseCtx.globals, false);
+  // opts.firstPages: lay out only enough rows for that many pages (a fast first look; the full render follows).
+  // 8 pt is the smallest sensible row, so this budget always fills the pages asked for. Not with a table of contents.
+  const firstPages = Number(opts.firstPages) || 0;
+  lc.rowBudget = firstPages > 0 && !opts.bodyOnly && !hasType(sec.body?.items, 'toc') ? { left: Math.ceil((firstPages * contentH) / 8), cut: false } : null;
 
   // Subreports: one pass collects what to load, then each child renders its body with its own data.
   if (hasType(sec.body?.items, 'subreport')) {
@@ -140,6 +144,7 @@ export async function render(def, opts = {}) {
     // one page that grows: page breaks have nothing to break
     if (page.pageless) for (const u of body.units) { u.breakBefore = false; u.breakAfter = false; }
     const slices = paginate(body.units, body.tables, contentH, warn);
+    if (lc.rowBudget?.cut) slices.length = Math.min(slices.length, firstPages * colCount);
     let pageH = page.height;
     if (page.pageless) {
       if (slices.length === 1) pageH = Math.max(page.minHeight, page.margins.top + headerH + slices[0].bottom - slices[0].top + footerH + page.margins.bottom);
@@ -152,7 +157,7 @@ export async function render(def, opts = {}) {
     const pages = [];
     for (let k = 0; k < total; k++) {
       const items = [];
-      const globals = { ...baseCtx.globals, PageNumber: k + 1, TotalPages: total };
+      const globals = { ...baseCtx.globals, PageNumber: k + 1, TotalPages: lc.rowBudget?.cut ? '…' : total };
       const plc = makeLc(globals, true);
       const band = (section, y0, first, last) => {
         if (!section) return;
@@ -200,7 +205,7 @@ export async function render(def, opts = {}) {
   const { pages, bookmarks, height } = result;
 
   return {
-    width: page.width, height, pages, warnings, bookmarks, regions, name: def.name || '',
+    width: page.width, height, pages, warnings, bookmarks, regions, name: def.name || '', partial: !!lc.rowBudget?.cut,
     stats: { ms: Date.now() - t0, pages: pages.length, rows: Object.fromEntries(Object.entries(dataSets).map(([k, r]) => [k, r.length])) },
   };
 }

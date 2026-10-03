@@ -34,6 +34,7 @@ function getWorker() {
     worker.onmessage = (e) => {
       const w = waiting.get(e.data.id);
       if (!w) return;
+      if (e.data.partial) { w.onPartial?.(e.data.model); return; } // the full model follows
       waiting.delete(e.data.id);
       if (e.data.ok) w.resolve(e.data.model);
       else w.reject(Object.assign(new Error(e.data.error.message), e.data.error));
@@ -67,15 +68,16 @@ async function renderMain(def, params, state, reportId) {
 
 /**
  * @param {string} [reportId] the saved report: the server runs its SQL sources
+ * @param {{ onPartial?: (model: any) => void }} [opt] onPartial: gets the first pages of a long report first
  * @returns {Promise<any>} page model
  */
-export function renderReport(def, params = {}, state = {}, reportId = undefined) {
+export function renderReport(def, params = {}, state = {}, reportId = undefined, { onPartial } = {}) {
   const w = getWorker();
   if (!w) return renderMain(def, params, state, reportId);
   return new Promise((resolve, reject) => {
     const id = ++seq;
-    waiting.set(id, { resolve, reject, retry: () => renderMain(def, params, state, reportId).then(resolve, reject) });
-    w.postMessage({ id, def, params, state, reportId });
+    waiting.set(id, { resolve, reject, onPartial, retry: () => renderMain(def, params, state, reportId).then(resolve, reject) });
+    w.postMessage({ id, def, params, state, reportId, firstPages: onPartial ? 2 : 0 });
   });
 }
 

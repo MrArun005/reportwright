@@ -9,6 +9,8 @@ p.on('pageerror', e => errs.push(e.message));
 
 await p.goto(`${BASE}/viewer/loan-statement`);
 await p.waitForSelector('.vpage');
+// a long report shows its first pages first; wait for the whole report before counting
+await p.waitForFunction(() => !document.querySelector('.stat[title*="still rendering"]'));
 assert.equal(await p.locator('.vpage').count(), 8);
 await p.screenshot({ path: '/tmp/shots/viewer.png' });
 

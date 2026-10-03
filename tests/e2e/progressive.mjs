@@ -2,7 +2,7 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 const BASE = process.env.BASE || 'http://localhost:3000';
-const N = 20000;
+const N = Number(process.env.ROWS) || 20000;
 const rows = Array.from({ length: N }, (_, i) => ({ n: i + 1, name: `Customer ${i + 1}`, amt: (i * 37) % 1000 + 0.5 }));
 const definition = {
   $schema: 'pagewright/report@1', name: 'e2e progressive', page: { size: 'A4', margins: [36, 36, 36, 36] },
@@ -24,10 +24,12 @@ const t0 = Date.now();
 await p.goto(`${BASE}/viewer/${id}`);
 await p.waitForSelector('.vpage svg', { timeout: 60000 });
 const firstMs = Date.now() - t0;
+// the first pages arrive before the full render: wait for the full one before counting
+await p.waitForFunction(() => !document.querySelector('.stat[title*="still rendering"]'), null, { timeout: 60000 });
 const pages = await p.locator('.vpage').count();
 const drawn = await p.locator('.vpage svg').count();
 console.log(`${N} rows → ${pages} pages; first page after ${firstMs} ms; ${drawn} pages drawn`);
-assert.ok(pages > 400, 'all pages are laid out');
+assert.ok(pages > N / 50, "all pages are laid out");
 assert.ok(drawn <= 7, 'only the pages near the current one are drawn');
 
 const t1 = Date.now();

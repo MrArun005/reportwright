@@ -60,6 +60,7 @@ Engine, expressions, data sources, text box / image / line / shape / table, pagi
 | 4 | Table and matrix gallery; drag a data set → table | Done. Inserting a table or matrix opens a gallery (list, grouped with subtotals, summary per group, matrix) drawn live with the report's rows; dragging a data set onto the page makes a table with labels, formats and totals (only for fields that add up). Proof: `reports/invoice-gallery.pw.json`, built from blank by `tests/e2e/galleries.mjs`. |
 | 9 | CLI `pw render / test / diff` + GitHub Action | Done. Proof: `reports/__tests__/loan-statement.test.json`; changing one instalment fails `pw test` and shows the moved total on page 8. The Action and CI workflow are checked for syntax only (not run on GitHub yet). |
 | 11 | AI builder: describe → preview → insert | Done. Home page: "Describe a report (AI)" drafts, saves and opens a new report. Designer: "Ask AI" sends the report and its loaded data, shows what changes and a rendered page 1, and applies as one undoable step. Every draft passes validate() and a trial render first (3 tries). Proof: `tests/e2e/ai.mjs` runs both flows through the real SDK against a local mock of the Messages API; no live API call has been made. |
+| 12a | First page fast | Done. The viewer's worker first lays out only enough rows for 2 pages (no totals, "Page 1 of …", "2+" pages in the toolbar), shows them, then the whole report. 50,000 rows: page 1 after 464–768 ms (was 1.7–2.1 s), measured with Playwright (`ROWS=50000 node tests/e2e/progressive.mjs`). |
 
 ## Honest gaps
 

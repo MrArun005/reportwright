@@ -91,7 +91,9 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     setStatus({ state: 'running' });
     const top = scroller.current?.scrollTop || 0;
     try {
-      const [m] = await Promise.all([renderReport(definition, p, st, reportId), loadFonts()]);
+      // a fresh run shows the first pages of a long report while the rest renders
+      const onPartial = keepScroll ? undefined : (pm) => { if (id === runId.current) { setModel(pm); setCurrent(1); } };
+      const [m] = await Promise.all([renderReport(definition, p, st, reportId, { onPartial }), loadFonts()]);
       if (id !== runId.current) return;
       setModel(m);
       setStatus({ state: 'done' });
@@ -294,7 +296,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
           <button className="btn sm icon" title={T('firstPage')} onClick={() => go(1)} disabled={!total || current === 1}>⏮</button>
           <button className="btn sm icon" title={T('previousPage')} onClick={() => go(current - 1)} disabled={!total || current === 1}>◀</button>
           <input className="input pageno" aria-label={T('page')} value={total ? current : ''} onChange={e => { const n = parseInt(e.target.value, 10); if (n) go(n); }} />
-          <span className="stat">/ {total || '–'}</span>
+          <span className="stat" title={model?.partial ? 'The rest of the report is still rendering' : undefined}>/ {total ? (model?.partial ? `${total}+` : total) : '–'}</span>
           <button className="btn sm icon" title={T('nextPage')} onClick={() => go(current + 1)} disabled={!total || current === total}>▶</button>
           <button className="btn sm icon" title={T('lastPage')} onClick={() => go(total)} disabled={!total || current === total}>⏭</button>
         </div>

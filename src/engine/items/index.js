@@ -301,6 +301,7 @@ register('table', {
     const emit = (level, grows, ctx, chain, keyPath) => {
       if (level === groups.length) {
         for (let i = 0; i < grows.length; i++) {
+          if (lc.rowBudget && lc.rowBudget.left-- <= 0) { lc.rowBudget.cut = true; return; } // first pages only
           rowNo++;
           for (const s of chain) { s.index++; s.run.push(grows[i]); }
           const dctx = { ...ctx, fields: grows[i], aggRows: grows, aggIndex: i, rowNumber: rowNo };
@@ -314,6 +315,7 @@ register('table', {
         buckets.sort((a, b) => cmpKey(a.key, b.key) * (g.sort === 'desc' ? -1 : 1));
       }
       buckets.forEach((bk, bi) => {
+        if (lc.rowBudget?.cut) return;
         const sc = { rows: bk.rows, index: -1, run: [] };
         const gname = g.name || `Group${level + 1}`;
         const gctx = { ...ctx, fields: bk.rows[0], aggRows: bk.rows, aggIndex: undefined, scopes: { ...ctx.scopes, [gname]: sc }, groupKey: bk.key };
@@ -338,7 +340,8 @@ register('table', {
     };
     emit(0, rows, base, [tableScope], '');
 
-    const footerUnits = (item.footer || []).map(r => layRow(r, base, 'footer'));
+    // a total of the first rows only would be wrong: no footer in a partial (first pages) render
+    const footerUnits = lc.rowBudget?.cut ? [] : (item.footer || []).map(r => layRow(r, base, 'footer'));
     if (footerUnits.length) footerUnits[0].keepWithPrevious = true;
 
     if (!lc.fixed) lc.regions?.push(region);
@@ -437,6 +440,7 @@ register('list', {
     let y = 0;
     const listScope = { rows, index: -1, run: [] };
     reps.forEach((rs, i) => {
+      if (lc.rowBudget && lc.rowBudget.left-- <= 0) { lc.rowBudget.cut = true; return; }
       listScope.index = i;
       for (const r of rs) listScope.run.push(r);
       const rctx = { ...ctx, fields: rs[0], aggRows: rs, aggIndex: undefined, rowNumber: i + 1, parentFields: rs[0], scopes: { ...(ctx.scopes || {}), [item.name]: listScope } };
