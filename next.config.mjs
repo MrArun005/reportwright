@@ -4,8 +4,10 @@ const cors = (value) => [{ key: 'Access-Control-Allow-Origin', value }, { key: '
 
 const nextConfig = {
   reactStrictMode: true,
+  // the Docker image runs Next's standalone server (PW_STANDALONE=1 at build time); `next start` stays as it was
+  ...(process.env.PW_STANDALONE ? { output: 'standalone' } : {}),
   // report definitions and fonts are read from disk by API routes
-  outputFileTracingIncludes: { '/api/**': ['./reports/**', './public/fonts/**', './public/harfbuzz-subset.wasm'] },
+  outputFileTracingIncludes: { '/api/**': ['./reports/**', './public/fonts/**', './public/harfbuzz-subset.wasm', './public/icc/**'] },
   async headers() {
     return [
       // static assets the embeddable viewer needs on other sites

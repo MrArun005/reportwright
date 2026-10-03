@@ -28,6 +28,16 @@ Open the home page. Three sample reports are there: **Loan statement**, **Sales 
 
 Reports are JSON files in `reports/*.pw.json`. Commit them with your code. Each save keeps a version in `reports/.history/` (last 50). With `PW_STORAGE` set to a database, reports, versions, schedules, job records and users live there instead (see below).
 
+## Docker
+
+```bash
+docker build -t pagewright .                     # add --build-arg PW_EMBED_ORIGINS=https://your.site for embeds
+docker run -p 3000:3000 -e PW_BASIC_AUTH=admin:change-me \
+  -v pw-data:/app/data -v pw-reports:/app/reports pagewright
+```
+
+The image runs Next's standalone server as the `node` user, keeps run-time state in `/app/data` and reports in `/app/reports` (or set `PW_STORAGE` for a database), and has a health check. Every setting in the table below is an environment variable.
+
 ## Put the viewer in another app
 
 ```html

@@ -1,0 +1,10 @@
+node_modules
+.next
+data
+.git
+*.log
+pagewright.bundle
+Claude outputs
+reports/.history
+reports/e2e-*
+test-results
