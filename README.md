@@ -24,8 +24,9 @@ Open the home page. Three sample reports are there: **Loan statement**, **Sales 
 | `/api/reports/<id>/pdf?format=pdf\|xlsx\|html\|csv` | The report rendered **on the server** |
 | `/api/v1/*` | Automation API: render, batches, schedules (needs an API key) |
 | `/embed/pagewright-viewer.js` | Script to put the viewer in another web app |
+| `/login`, `/admin/users` | Sign-in and user management, when accounts are on (`PW_AUTH=users`, see [Users and roles](#users-and-roles)) |
 
-Reports are JSON files in `reports/*.pw.json`. Commit them with your code. Each save keeps a version in `reports/.history/` (last 50).
+Reports are JSON files in `reports/*.pw.json`. Commit them with your code. Each save keeps a version in `reports/.history/` (last 50). With `PW_STORAGE` set to a database, reports, versions, schedules, job records and users live there instead (see below).
 
 ## Put the viewer in another app
 
@@ -54,18 +55,41 @@ The viewer runs in a Shadow DOM, so the host page styles do not change it. Set `
 | `PW_BASE_URL` | run time | Public URL of this server, used for relative data URLs in batches and schedules |
 | `PW_BATCH_CONCURRENCY` | run time | Reports rendered at the same time in a batch (default 2) |
 | `PW_SCHEDULER` | run time | `off` stops the built-in scheduler (for example on extra replicas) |
-| `PW_BASIC_AUTH` | run time | `user:password` for the whole app (designer, viewer, report storage, server renders). `/api/v1` keeps its API keys; the embed script and fonts stay open. **Set this, or put the app behind your SSO proxy, before you expose it.** |
+| `PW_AUTH` | run time | `users` turns on user accounts with roles ([Users and roles](#users-and-roles)). Any other value makes the server refuse every request (500), so a typo cannot leave the app open. |
+| `PW_SESSION_SECRET` | run time | Signs the session cookie (HMAC-SHA256). At least 32 random characters (`openssl rand -hex 32`). **Required with `PW_AUTH=users` in production**: without it the server logs why and refuses every request (500). In development a random secret is made per process (sessions end on restart). The same secret on every server. |
+| `PW_ADMIN_EMAIL`, `PW_ADMIN_PASSWORD` | run time | The first admin. Used once, at the first sign-in, when there are no users yet. You can remove them after that. |
+| `PW_STORAGE` | run time | Where reports, versions, schedules, job records and users live. `file` (default): `reports/` and `data/` in the app folder. `sqlite:/abs/path.db`, `postgres://user:pass@host/db` or `mysql://user:pass@host/db` (or `sql:<name>` for the URL in `PW_DB_<NAME>`): tables `pw_reports`, `pw_report_versions`, `pw_schedules`, `pw_jobs`, `pw_users`, made on first use. This connection writes, so give it a user that may (not the read-only one for data sources). Batch output files (zip, merged PDF, folders) stay in `data/`: several servers need a shared volume for it. Switching does not copy existing reports: PUT them to `/api/reports/<id>` once. |
+| `PW_BASIC_AUTH` | run time | `user:password` for the whole app (designer, viewer, report storage, server renders). `/api/v1` keeps its API keys; the embed script and fonts stay open. **Set this, `PW_AUTH=users`, or put the app behind your SSO proxy, before you expose it.** Ignored (with a warning at start) when `PW_AUTH=users`. |
 | `PW_INTERNAL_HOSTS` | run time | Host names that server-side fetches may reach on a private network (internal data APIs, a webhook receiver on your LAN). Comma-separated. Every other private or local address is refused (SSRF guard). |
 | `PW_SIGN_P12`, `PW_SIGN_PASSWORD` | run time | A .p12 certificate and its password. With them, `/api/v1/render`, batches and schedules can sign PDFs (`"sign": true`; a detached PKCS#7 signature over the whole file). Only API-key routes sign. |
 | `ANTHROPIC_API_KEY`, `PW_AI_MODEL` | run time | Turns on AI drafting (`/api/ai/report`). The model defaults to `claude-opus-5`. |
 | `PW_PROXY_ALLOW` | run time | Hosts that `/api/data/proxy` may call (comma-separated). Private network addresses are always blocked. |
 | `PW_DB_<NAME>` | run time | A database for SQL data sources. `connection: 'main'` in a report reads `PW_DB_MAIN` (any case). `sqlite:/path/file.db` (built into Node 22), `postgres://user:pass@host/db` (needs `npm install pg`) or `mysql://user:pass@host/db` (needs `npm install mysql2`). Give it a database user that can only read. |
-| `PW_EMBED_ORIGINS` | **build time** | Origin allowed to read `/api/reports` and `/api/sample` from another site (CORS) |
+| `PW_EMBED_ORIGINS` | **build time** | Origin allowed to read `/api/reports` and `/api/sample` from another site (CORS). With accounts on, set it at run time too: then report definitions (`GET /api/reports/<id>`) and `/api/sample/*` stay open without sign-in, for the embedded viewer. |
+
+## Users and roles
+
+Set `PW_AUTH=users` and `PW_SESSION_SECRET`, and people sign in at `/login` with their own email and password. Admins manage users at `/admin/users`.
+
+| Role | Can |
+|---|---|
+| `viewer` | Open the report list and the viewer, export, server PDF (`/api/reports/<id>/pdf`), read report definitions and their versions, run the SQL saved in a report, the data proxy and sample data |
+| `designer` | Everything a viewer can, plus the designer: create, save, delete, restore and import reports, preview SQL typed in the designer (also in production), AI authoring |
+| `admin` | Everything, plus `/admin/users` and `/api/users` |
+
+- **The first admin**: set `PW_ADMIN_EMAIL` and `PW_ADMIN_PASSWORD`; the first sign-in creates that admin when there are no users. Or run `node scripts/user.mjs add you@example.com admin` in the app folder (with the same `PW_STORAGE`); it asks for the password, or reads `PW_NEW_PASSWORD`.
+- **Passwords**: at least 10 characters, stored as scrypt hashes with a random salt. No API ever returns a hash.
+- **Sessions**: an HttpOnly, SameSite=Lax cookie (`Secure` over https), signed with `PW_SESSION_SECRET`, good for 12 hours. Every request reads the user again, so a role change, a disabled or a deleted user counts at once (other servers see it within 10 s). Signing out, a new password and disabling end all of that user's sessions.
+- **Sign-in limit**: 10 failed tries in 15 minutes per address and email, and 50 per email from all addresses, then 429. Counted in memory, per server process. Behind a reverse proxy, let it append the client address to `X-Forwarded-For` (nginx: `proxy_add_x_forwarded_for`).
+- **Cross-site requests**: a write (POST, PUT, PATCH, DELETE) must carry an `Origin` (or `Referer`) of this site. Scripts that call the app with a session cookie must send one; `/api/v1` uses API keys and is not affected.
+- **Always open**: `/login`, static files, the embed script, and `/api/v1` (API keys). Every other path needs a role; a path the table does not list is for admins only. The table is `RULES` in `src/server/access.js`, enforced in `proxy.js`.
+- **Server renders** that load data from this server (relative URLs such as `/api/sample/...`) send a viewer pass that is good for that one request only.
+- Not included: SSO (SAML, OIDC), per-report permissions, password reset by email, two-factor sign-in.
 
 ## Test it
 
 ```bash
-npm test                                   # unit, golden and security tests (Vitest), 130 tests; needs Node 22+ (PW_TEST_PG=postgres://… adds 3 Postgres tests)
+npm test                                   # unit, golden and security tests (Vitest), 254 tests; needs Node 22+ (PW_TEST_PG=postgres://… adds 9 Postgres tests: SQL sources and storage)
 ./scripts/restart.sh                       # build and start on :3000 with test keys (PORT=3100 ./scripts/restart.sh for another port)
 node tests/e2e/build-from-scratch.mjs      # Phase 1 exit test: build a report in the designer
 node tests/e2e/smoke.mjs                   # viewer smoke test
@@ -74,6 +98,7 @@ node tests/e2e/phase2.mjs                  # groups, drill-down, sort, map, sear
 node tests/e2e/phase3.mjs                  # charts, matrix, barcodes, subreports in the designer and viewer
 node tests/e2e/phase4.mjs                  # smart guides, shortcuts, themes, history, columns, TOC, embed
 node tests/e2e/api.mjs                     # render API, auth, batches, webhooks, schedules
+node tests/e2e/users.mjs                   # accounts and roles: start the server as its header says (PW_AUTH=users …)
 node scripts/check-pdf-matches-model.mjs   # every page-model line is in the PDF at the same place
 node scripts/check-engine-boundary.mjs     # src/engine has no React, Next or DOM
 npm run perf                               # 50,000 rows → 1,112 pages

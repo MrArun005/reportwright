@@ -1,21 +1,20 @@
-// Schedules: run a batch on a cron expression. Stored in data/schedules.json; checked every 30 s.
-import fs from 'node:fs/promises';
-import path from 'node:path';
+// Schedules: run a batch on a cron expression. Stored by src/server/storage (data/schedules.json by default); checked every 30 s.
 import crypto from 'node:crypto';
 import { parseCron, nextRun } from './cron.js';
 import { createBatch } from './jobs.js';
+import { store } from './storage/index.js';
 
-const FILE = path.join(process.cwd(), 'data', 'schedules.json');
 const g = globalThis;
 g.__pwSched ||= { timer: null };
 
+/** Every schedule, oldest first. */
 export async function readSchedules() {
-  try { return JSON.parse(await fs.readFile(FILE, 'utf8')); } catch { return []; }
+  try {
+    return (await store().list('schedules')).map(r => JSON.parse(r.text)).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  } catch { return []; }
 }
-async function writeSchedules(list) {
-  await fs.mkdir(path.dirname(FILE), { recursive: true });
-  await fs.writeFile(FILE, JSON.stringify(list, null, 2));
-}
+const readOne = async (id) => { const t = await store().get('schedules', String(id)); return t ? JSON.parse(t) : null; };
+const save = (s) => store().put('schedules', s.id, JSON.stringify(s));
 
 export function validateSchedule(s) {
   if (!s || typeof s !== 'object') throw Object.assign(new Error('Send a schedule object'), { status: 400 });
@@ -28,38 +27,28 @@ export function validateSchedule(s) {
 const withNext = (s) => ({ ...s, nextRunAt: s.enabled === false ? null : nextRun(s.cron, s.timezone || 'UTC')?.toISOString() || null });
 
 export async function listSchedules() { return (await readSchedules()).map(withNext); }
-export async function getSchedule(id) { const s = (await readSchedules()).find(x => x.id === id); return s ? withNext(s) : null; }
+export async function getSchedule(id) { const s = await readOne(id); return s ? withNext(s) : null; }
 
 export async function createSchedule(body) {
   validateSchedule(body);
   const s = { enabled: true, timezone: 'UTC', format: 'pdf', ...body, id: `s_${crypto.randomBytes(5).toString('hex')}`, createdAt: new Date().toISOString() };
-  const list = await readSchedules();
-  list.push(s);
-  await writeSchedules(list);
+  await save(s);
   return withNext(s);
 }
 export async function updateSchedule(id, patch) {
-  const list = await readSchedules();
-  const i = list.findIndex(x => x.id === id);
-  if (i < 0) return null;
-  const next = { ...list[i], ...patch, id, createdAt: list[i].createdAt, updatedAt: new Date().toISOString() };
+  const cur = await readOne(id);
+  if (!cur) return null;
+  const next = { ...cur, ...patch, id: cur.id, createdAt: cur.createdAt, updatedAt: new Date().toISOString() };
   validateSchedule(next);
-  list[i] = next;
-  await writeSchedules(list);
+  await save(next);
   return withNext(next);
 }
-export async function deleteSchedule(id) {
-  const list = await readSchedules();
-  const n = list.filter(x => x.id !== id);
-  await writeSchedules(n);
-  return n.length !== list.length;
-}
+export async function deleteSchedule(id) { return store().remove('schedules', String(id)); }
 
 export async function runSchedule(s, reason = 'manual') {
   const job = await createBatch({ template: s.template, items: s.items, itemsFrom: s.itemsFrom, format: s.format, output: s.output, webhook: s.webhook, fileName: s.fileName, pdfa: s.pdfa, sign: s.sign, schedule: { id: s.id, reason } });
-  const list = await readSchedules();
-  const i = list.findIndex(x => x.id === s.id);
-  if (i >= 0) { list[i].lastRunAt = new Date().toISOString(); list[i].lastJobId = job.id; await writeSchedules(list); }
+  const cur = await readOne(s.id);
+  if (cur) { cur.lastRunAt = new Date().toISOString(); cur.lastJobId = job.id; await save(cur); }
   return job;
 }
 

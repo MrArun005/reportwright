@@ -1,8 +1,11 @@
 // POST /api/data/sql — rows for a SQL data source, for renders in the browser.
 // { report, source, params } runs the query saved in that report. The browser never sends SQL in this
 // mode: a "query" or "connection" next to "report" is ignored.
-// { connection, query, params } runs SQL from the request (a preview of unsaved work), outside production only.
+// { connection, query, params } runs SQL from the request (a preview of unsaved work): with accounts on
+// (PW_AUTH=users) for designers and admins only; with accounts off, outside production only.
 import { runSql, runSavedSql } from '@/server/sql.js';
+import { accountsOn } from '@/server/session.js';
+import { requireRole } from '@/server/access.js';
 
 export const runtime = 'nodejs';
 
@@ -19,8 +22,10 @@ export async function POST(req) {
       return Response.json({ rows: await runSavedSql(body.report, body.source, params) });
     }
     if (body.query == null) return bad('Give the report id and the source name');
-    // C2: with users on, allow ad-hoc SQL for the designer role here (and still refuse it for everyone else).
-    if (process.env.NODE_ENV === 'production') return bad('SQL from the request is off in production. Save the report: its saved query runs instead.', 403);
+    if (accountsOn()) { // with accounts on: designers and admins may preview SQL, in production too; nobody else
+      const { res } = await requireRole(req, 'designer');
+      if (res) return bad('Only designers can run SQL from the request. Save the report: its saved query runs instead.', 403);
+    } else if (process.env.NODE_ENV === 'production') return bad('SQL from the request is off in production. Save the report: its saved query runs instead.', 403);
     return Response.json({ rows: await runSql({ connection: body.connection, query: body.query }, params) });
   } catch (e) {
     return Response.json({ error: e.message }, { status: e.status || 500 });

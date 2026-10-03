@@ -1,5 +1,6 @@
 // Batch jobs: render one template for many parameter sets, then deliver.
-// In-process queue with a small worker pool. Job state lives in data/jobs/<id>/.
+// In-process queue with a small worker pool. Job records go to src/server/storage (data/jobs/<id>/job.json
+// by default); output files (zip, merged PDF, folders) always go to data/, so several servers need a shared volume.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -9,6 +10,7 @@ import { loadTemplate, renderTo, baseUrl as defaultBase } from './renderer.js';
 import { serverFetch } from './safeFetch.js';
 import { jsonPath } from '@/engine/data/index.js';
 import { evalValue } from '@/engine/expr/evaluate.js';
+import { store } from './storage/index.js';
 
 const DATA = path.join(process.cwd(), 'data');
 const JOBS = path.join(DATA, 'jobs');
@@ -20,7 +22,7 @@ g.__pwJobs ||= { jobs: new Map(), queue: [], running: 0 };
 const S = g.__pwJobs;
 
 const rid = () => `b_${Date.now().toString(36)}${crypto.randomBytes(3).toString('hex')}`;
-const save = async (job) => { await fs.mkdir(path.join(JOBS, job.id), { recursive: true }); await fs.writeFile(path.join(JOBS, job.id, 'job.json'), JSON.stringify(publicJob(job), null, 2)); };
+const save = (job) => store().put('jobs', job.id, JSON.stringify(publicJob(job), null, 2));
 
 export function publicJob(job) {
   const { items, _def, ...rest } = job;
@@ -70,12 +72,12 @@ export async function getJob(id) {
   if (!/^b_[a-z0-9]+$/.test(id)) return null;
   const j = S.jobs.get(id);
   if (j) return publicJob(j);
-  try { return JSON.parse(await fs.readFile(path.join(JOBS, id, 'job.json'), 'utf8')); } catch { return null; }
+  try { const t = await store().get('jobs', id); return t ? JSON.parse(t) : null; } catch { return null; }
 }
 
 export async function listJobs() {
   let names = [];
-  try { names = await fs.readdir(JOBS); } catch { return []; }
+  try { names = await store().ids('jobs'); } catch { return []; }
   const out = [];
   for (const n of names.sort().reverse().slice(0, 50)) { const j = await getJob(n); if (j) out.push(j); }
   return out;
@@ -114,6 +116,7 @@ async function run(job) {
   job.startedAt = new Date().toISOString();
   await save(job);
   const dir = path.join(JOBS, job.id);
+  await fs.mkdir(dir, { recursive: true }); // output files stay on disk whatever PW_STORAGE says
   const outputs = [];
   let next = 0;
   const worker = async () => {
