@@ -2,3 +2,4 @@ node_modules
 .next
 *.log
 test-results
+reports/e2e-*.pw.json
