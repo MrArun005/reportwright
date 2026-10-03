@@ -1,4 +1,4 @@
-// Starts the report scheduler when the Node server boots, and checks the account settings.
+// Starts the report scheduler and the batch worker when the Node server boots, and checks the account settings.
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     if (process.env.PW_AUTH && process.env.PW_AUTH !== 'users') throw new Error('PW_AUTH must be "users" (or not set at all).');
@@ -9,5 +9,7 @@ export async function register() {
     }
     const { startScheduler } = await import('./src/server/schedules.js');
     startScheduler();
+    // run queued batches here too (also ones another server left when it stopped); PW_WORKER=off for a web-only server
+    if (process.env.PW_WORKER !== 'off') (await import('./src/server/jobs.js')).startWorker();
   }
 }

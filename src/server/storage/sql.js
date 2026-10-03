@@ -52,6 +52,7 @@ export function sqlStore(url) {
       const ready = connect(url, dialect).then(async (run) => {
         for (const t of Object.values(TABLES)) await run(`CREATE TABLE IF NOT EXISTS ${t} (id VARCHAR(255) PRIMARY KEY, data ${text} NOT NULL, updated_at VARCHAR(32) NOT NULL)`);
         await run(`CREATE TABLE IF NOT EXISTS pw_report_versions (id VARCHAR(255) NOT NULL, stamp VARCHAR(32) NOT NULL, data ${text} NOT NULL, PRIMARY KEY (id, stamp))`);
+        await run('CREATE TABLE IF NOT EXISTS pw_leases (name VARCHAR(255) PRIMARY KEY, owner VARCHAR(255) NOT NULL, expires_at BIGINT NOT NULL)');
         return run;
       });
       conns.set(url, ready);
@@ -81,5 +82,19 @@ export function sqlStore(url) {
       const old = (await q('SELECT stamp FROM pw_report_versions WHERE id = ? ORDER BY stamp DESC', [id])).slice(keep);
       for (const r of old) await q('DELETE FROM pw_report_versions WHERE id = ? AND stamp = ?', [id, r.stamp]);
     },
+
+    // A lease is taken in one statement: when it is free, has expired, or is already ours.
+    async lease(name, owner, ttl) {
+      const now = Date.now();
+      if (dialect === 'mysql') {
+        // assignments run left to right: owner first, then expires_at only when we now hold it
+        await q('INSERT INTO pw_leases (name, owner, expires_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE owner = IF(owner = VALUES(owner) OR expires_at < ?, VALUES(owner), owner), expires_at = IF(owner = VALUES(owner), VALUES(expires_at), expires_at)', [name, owner, now + ttl, now]);
+      } else {
+        await q('INSERT INTO pw_leases (name, owner, expires_at) VALUES (?, ?, ?) ON CONFLICT (name) DO UPDATE SET owner = excluded.owner, expires_at = excluded.expires_at WHERE pw_leases.owner = excluded.owner OR pw_leases.expires_at < ?', [name, owner, now + ttl, now]);
+      }
+      const [r] = await q('SELECT owner FROM pw_leases WHERE name = ?', [name]);
+      return r?.owner === owner;
+    },
+    async release(name, owner) { await q('DELETE FROM pw_leases WHERE name = ? AND owner = ?', [name, owner]); },
   };
 }

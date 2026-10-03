@@ -120,5 +120,17 @@ export function fileStore(root) {
       const old = (await fs.readdir(dir)).filter(n => n.endsWith('.pw.json')).sort();
       for (const n of old.slice(0, Math.max(0, old.length - keep))) await fs.rm(path.join(dir, n), { force: true });
     },
+
+    // ponytail: leases in memory: file storage is for one server. Several servers use PW_STORAGE=sqlite|postgres|mysql.
+    async lease(name, owner, ttl) {
+      const cur = leases.get(name);
+      if (cur && cur.owner !== owner && cur.expires > Date.now()) return false;
+      leases.set(name, { owner, expires: Date.now() + ttl });
+      return true;
+    },
+    async release(name, owner) { if (leases.get(name)?.owner === owner) leases.delete(name); },
   };
 }
+
+/** @type {Map<string, { owner: string, expires: number }>} */
+const leases = (/** @type {any} */ (globalThis).__pwLeases ||= new Map());
