@@ -129,5 +129,6 @@ Cron supports `*`, lists `1,15`, ranges `1-5` and steps `*/15`. Names such as `M
 | `GET /api/reports/<id>/versions` | Saved versions |
 | `POST /api/reports/<id>/versions` | `{ version }`: restore that version |
 | `GET /api/reports/<id>/pdf?format=…&param=value` | Render on the server |
+| `GET /api/reports/<id>/thumb` | Page 1 as SVG with default parameters (home page cards); cached until the file changes |
 
 These routes have no API key check. Put them behind your own login when the server is public (see `STATUS.md`, gap 1).

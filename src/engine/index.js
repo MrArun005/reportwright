@@ -200,9 +200,23 @@ function hasType(items, type) {
 
 /** Hyperlink, drill-through or bookmark jump for an item or a cell. */
 function linkFor(it, ctx, rect, warn) {
+  let tip;
+  if (it?.tooltip) { try { const t = evalValue(it.tooltip, ctx); if (t != null && t !== '') tip = String(t); } catch (e) { warn(`${it.name || 'Tooltip'}: ${e.message}`); } }
+  const l = linkAction(it, ctx, rect, warn);
+  if (l) return tip ? { ...l, tip } : l;
+  return tip ? { t: 'link', ...rect, action: null, tip } : null; // a tooltip without an action
+}
+
+function linkAction(it, ctx, rect, warn) {
   const a = it?.action;
   if (!a || !a.type || a.type === 'none') return null;
   try {
+    if (a.type === 'params') {
+      // Set report parameters and run the report again (cross-filtering). toggle: a second click on the same value clears it.
+      const params = {};
+      for (const [k, v] of Object.entries(a.params || {})) { const x = evalValue(v, ctx); params[k] = x instanceof Date ? isoDate(x) : x == null ? '' : x; }
+      return { t: 'link', ...rect, action: { type: 'params', params, toggle: a.toggle !== false } };
+    }
     if (a.type === 'url') {
       const href = String(evalValue(a.url ?? '', ctx) ?? '');
       if (!/^(https?:|mailto:|\/)/i.test(href)) return null;

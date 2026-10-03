@@ -1,0 +1,609 @@
+{
+ "$schema": "pagewright/report@1",
+ "name": "Product detail (live API)",
+ "locale": "en-US",
+ "currency": "USD",
+ "page": {
+  "size": "A4",
+  "orientation": "portrait",
+  "margins": [
+   32,
+   36,
+   28,
+   36
+  ]
+ },
+ "parameters": [
+  {
+   "name": "id",
+   "type": "number",
+   "prompt": "Product id",
+   "required": true,
+   "default": 1
+  }
+ ],
+ "dataSources": [
+  {
+   "name": "product",
+   "type": "rest",
+   "method": "GET",
+   "url": "https://dummyjson.com/products/{Parameters.id}"
+  }
+ ],
+ "dataSets": [
+  {
+   "name": "Product",
+   "source": "product",
+   "path": "$",
+   "fields": [
+    {
+     "name": "id",
+     "type": "number"
+    },
+    {
+     "name": "title",
+     "type": "string"
+    },
+    {
+     "name": "description",
+     "type": "string"
+    },
+    {
+     "name": "category",
+     "type": "string"
+    },
+    {
+     "name": "brand",
+     "type": "string"
+    },
+    {
+     "name": "sku",
+     "type": "string"
+    },
+    {
+     "name": "price",
+     "type": "number"
+    },
+    {
+     "name": "discountPercentage",
+     "type": "number"
+    },
+    {
+     "name": "rating",
+     "type": "number"
+    },
+    {
+     "name": "stock",
+     "type": "number"
+    },
+    {
+     "name": "weight",
+     "type": "number"
+    },
+    {
+     "name": "warrantyInformation",
+     "type": "string"
+    },
+    {
+     "name": "shippingInformation",
+     "type": "string"
+    },
+    {
+     "name": "availabilityStatus",
+     "type": "string"
+    },
+    {
+     "name": "returnPolicy",
+     "type": "string"
+    },
+    {
+     "name": "minimumOrderQuantity",
+     "type": "number"
+    },
+    {
+     "name": "thumbnail",
+     "type": "string"
+    },
+    {
+     "name": "netPrice",
+     "type": "number",
+     "expr": "=Round(Fields.price * (1 - Fields.discountPercentage / 100), 2)"
+    }
+   ]
+  },
+  {
+   "name": "Reviews",
+   "source": "product",
+   "path": "$.reviews",
+   "fields": [
+    {
+     "name": "rating",
+     "type": "number"
+    },
+    {
+     "name": "comment",
+     "type": "string"
+    },
+    {
+     "name": "date",
+     "type": "date"
+    },
+    {
+     "name": "reviewerName",
+     "type": "string"
+    }
+   ],
+   "sort": [
+    {
+     "by": "=Fields.date",
+     "dir": "desc"
+    }
+   ]
+  }
+ ],
+ "styles": {
+  "base": {
+   "fontFamily": "Inter",
+   "fontSize": 8.5,
+   "color": "#16202a"
+  }
+ },
+ "sections": {
+  "pageHeader": {
+   "height": 0,
+   "items": []
+  },
+  "body": {
+   "height": 700,
+   "items": [
+    {
+     "type": "textbox",
+     "name": "Back",
+     "x": 0,
+     "y": 0,
+     "w": 200,
+     "h": 12,
+     "value": "← All products",
+     "canGrow": false,
+     "style": {
+      "fontSize": 8,
+      "color": "#0e7490"
+     },
+     "action": {
+      "type": "report",
+      "report": "product-catalogue",
+      "params": {}
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Raw",
+     "x": 323.28,
+     "y": 0,
+     "w": 200,
+     "h": 12,
+     "value": "Open the raw JSON ↗",
+     "canGrow": false,
+     "style": {
+      "fontSize": 8,
+      "color": "#0e7490",
+      "textAlign": "right"
+     },
+     "action": {
+      "type": "url",
+      "url": "https://dummyjson.com/products/{Parameters.id}"
+     }
+    },
+    {
+     "type": "image",
+     "name": "Photo",
+     "x": 0,
+     "y": 24,
+     "w": 150,
+     "h": 150,
+     "dataSet": "Product",
+     "src": "=Fields.thumbnail",
+     "fit": "contain",
+     "style": {
+      "backgroundColor": "#f5f7f9"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Cat",
+     "x": 166,
+     "y": 26,
+     "w": 357.28,
+     "h": 12,
+     "dataSet": "Product",
+     "value": "=Upper(Fields.category & '  ·  ' & Coalesce(Fields.brand, 'No brand') & '  ·  ' & Fields.sku)",
+     "canGrow": false,
+     "style": {
+      "fontSize": 7.5,
+      "fontWeight": "600",
+      "color": "#0e7490"
+     },
+     "action": {
+      "type": "report",
+      "report": "product-catalogue",
+      "params": {
+       "categories": "=Fields.category"
+      }
+     },
+     "tooltip": "=\"Open the catalogue filtered to \" & Fields.category"
+    },
+    {
+     "type": "textbox",
+     "name": "Title",
+     "x": 166,
+     "y": 40,
+     "w": 357.28,
+     "h": 26,
+     "dataSet": "Product",
+     "value": "=Fields.title",
+     "canGrow": true,
+     "style": {
+      "fontSize": 19,
+      "fontWeight": "bold"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Desc",
+     "x": 166,
+     "y": 70,
+     "w": 357.28,
+     "h": 40,
+     "dataSet": "Product",
+     "value": "=Fields.description",
+     "canGrow": true,
+     "style": {
+      "fontSize": 8.5,
+      "color": "#374151",
+      "lineHeight": 1.4
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Price",
+     "x": 166,
+     "y": 120,
+     "w": 120,
+     "h": 24,
+     "dataSet": "Product",
+     "value": "=Fields.netPrice",
+     "canGrow": false,
+     "style": {
+      "fontSize": 18,
+      "fontWeight": "bold",
+      "color": "#155e75",
+      "format": "C2",
+      "textAlign": "left"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Was",
+     "x": 290,
+     "y": 126,
+     "w": 233.28,
+     "h": 14,
+     "dataSet": "Product",
+     "value": "was {Format(Fields.price, 'C2')} · {Format(Fields.discountPercentage, 'N1')}% off",
+     "canGrow": false,
+     "style": {
+      "fontSize": 8,
+      "color": "#5f6b77"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Avail",
+     "x": 166,
+     "y": 150,
+     "w": 357.28,
+     "h": 14,
+     "dataSet": "Product",
+     "value": "{Fields.availabilityStatus} · {Fields.stock} in stock · minimum order {Fields.minimumOrderQuantity}",
+     "canGrow": false,
+     "style": {
+      "fontSize": 8.5,
+      "fontWeight": "600",
+      "color": "=Switch(Fields.availabilityStatus = 'Out of Stock', '#b42318', Fields.availabilityStatus = 'Low Stock', '#b54708', True, '#067647')"
+     }
+    },
+    {
+     "type": "table",
+     "name": "Facts",
+     "x": 0,
+     "y": 192,
+     "w": 523.28,
+     "h": 60,
+     "dataSet": "Product",
+     "columns": [
+      {
+       "width": 130
+      },
+      {
+       "width": 131.64
+      },
+      {
+       "width": 130
+      },
+      {
+       "width": 131.64
+      }
+     ],
+     "style": {
+      "padding": [
+       4,
+       6,
+       4,
+       6
+      ]
+     },
+     "header": [],
+     "detail": [
+      {
+       "height": 18,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb"
+       },
+       "cells": [
+        {
+         "value": "Rating",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "",
+         "visual": {
+          "type": "bullet",
+          "value": "=Fields.rating",
+          "target": 4,
+          "max": 5,
+          "color": "=IIF(Fields.rating < 4, '#b54708', '#0e7490')"
+         }
+        },
+        {
+         "value": "Weight",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "{Fields.weight} kg"
+        }
+       ]
+      },
+      {
+       "height": 18,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb"
+       },
+       "cells": [
+        {
+         "value": "Warranty",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "=Fields.warrantyInformation"
+        },
+        {
+         "value": "Shipping",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "=Fields.shippingInformation"
+        }
+       ]
+      },
+      {
+       "height": 18,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb"
+       },
+       "cells": [
+        {
+         "value": "Returns",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "=Fields.returnPolicy"
+        },
+        {
+         "value": "Rating (number)",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "=Fields.rating",
+         "style": {
+          "format": "N2"
+         }
+        }
+       ]
+      }
+     ],
+     "footer": []
+    },
+    {
+     "type": "textbox",
+     "name": "RevTitle",
+     "x": 0,
+     "y": 272,
+     "w": 300,
+     "h": 16,
+     "value": "Customer reviews",
+     "canGrow": false,
+     "style": {
+      "fontSize": 11,
+      "fontWeight": "bold"
+     }
+    },
+    {
+     "type": "table",
+     "name": "ReviewTable",
+     "x": 0,
+     "y": 292,
+     "w": 523.28,
+     "h": 60,
+     "dataSet": "Reviews",
+     "repeatHeader": true,
+     "columns": [
+      {
+       "width": 120
+      },
+      {
+       "width": 80
+      },
+      {
+       "width": 95
+      },
+      {
+       "width": 228.28
+      }
+     ],
+     "style": {
+      "padding": [
+       4,
+       6,
+       4,
+       6
+      ],
+      "verticalAlign": "middle"
+     },
+     "header": [
+      {
+       "height": 18,
+       "style": {
+        "fontWeight": "bold",
+        "color": "#ffffff",
+        "backgroundColor": "#155e75",
+        "fontSize": 7.5
+       },
+       "cells": [
+        {
+         "value": "Reviewer",
+         "sortBy": "=Fields.reviewerName"
+        },
+        {
+         "value": "Date",
+         "sortBy": "=Fields.date"
+        },
+        {
+         "value": "Stars",
+         "sortBy": "=Fields.rating"
+        },
+        {
+         "value": "Comment"
+        }
+       ]
+      }
+     ],
+     "detail": [
+      {
+       "height": 18,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb"
+       },
+       "cells": [
+        {
+         "value": "=Fields.reviewerName"
+        },
+        {
+         "value": "=Fields.date",
+         "style": {
+          "format": "dd MMM yyyy",
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "",
+         "visual": {
+          "type": "databar",
+          "value": "=Fields.rating",
+          "max": 5,
+          "format": "N0",
+          "color": "=IIF(Fields.rating <= 2, '#b42318', IIF(Fields.rating = 3, '#b54708', '#0e7490'))"
+         }
+        },
+        {
+         "value": "=Fields.comment",
+         "canGrow": true
+        }
+       ]
+      }
+     ],
+     "footer": [
+      {
+       "height": 20,
+       "style": {
+        "fontWeight": "bold",
+        "borderTop": "1 solid #155e75"
+       },
+       "cells": [
+        {
+         "value": "{CountRows()} reviews",
+         "colSpan": 2
+        },
+        null,
+        {
+         "value": "=Avg(Fields.rating)",
+         "style": {
+          "format": "N1"
+         }
+        },
+        {
+         "value": ""
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "pageFooter": {
+   "height": 18,
+   "items": [
+    {
+     "type": "textbox",
+     "name": "Gen",
+     "x": 0,
+     "y": 4,
+     "w": 420,
+     "h": 12,
+     "value": "Live data: dummyjson.com (demo store, fake products) · generated {Format(Globals.ExecutionTime, 'dd MMM yyyy, hh:mm tt')}",
+     "canGrow": true,
+     "style": {
+      "fontSize": 7,
+      "color": "#5f6b77"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Pg",
+     "x": 323.28,
+     "y": 4,
+     "w": 200,
+     "h": 12,
+     "value": "Page {Globals.PageNumber} of {Globals.TotalPages}",
+     "canGrow": true,
+     "style": {
+      "fontSize": 7,
+      "color": "#5f6b77",
+      "textAlign": "right"
+     }
+    }
+   ]
+  }
+ }
+}

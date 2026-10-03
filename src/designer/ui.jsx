@@ -57,7 +57,7 @@ export function Check({ label, checked, onChange }) {
   return <label className="check"><input type="checkbox" checked={!!checked} onChange={e => onChange(e.target.checked)} />{label}</label>;
 }
 
-export function Dialog({ title, children, onClose, footer, wide }) {
+export function Dialog({ title, children, onClose, footer, wide, className = '' }) {
   useEffect(() => {
     const k = (e) => { if (e.key === 'Escape' && !e.defaultPrevented) onClose(); }; // CodeMirror uses Escape to close its suggestions
     window.addEventListener('keydown', k);
@@ -65,7 +65,7 @@ export function Dialog({ title, children, onClose, footer, wide }) {
   }, [onClose]);
   return (
     <div className="scrim" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className={`dialog${wide ? ' wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
+      <div className={`dialog${wide ? ' wide' : ''}${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" aria-label={title}>
         <header>{title}</header>
         <div className="dbody">{children}</div>
         <footer>{footer}</footer>

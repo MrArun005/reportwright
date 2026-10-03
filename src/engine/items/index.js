@@ -69,6 +69,7 @@ register('textbox', {
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
     { key: 'bookmark', label: 'Bookmark (document map)', type: 'expr', category: 'Interactivity' },
     { key: 'action', label: 'Action', type: 'action', category: 'Interactivity' },
+    { key: 'tooltip', label: 'Tooltip (hover text)', type: 'expr', category: 'Interactivity' },
   ],
   layout(item, lc) {
     const ctx = lc.ctxFor(item);
@@ -508,6 +509,9 @@ register('chart', {
     { key: 'valueFormat', label: 'Value format', type: 'text', category: 'Chart' },
     { key: 'legend', label: 'Legend', type: 'select', options: ['bottom', 'none'], category: 'Chart' },
     { key: 'xValue', label: 'X value (scatter)', type: 'expr', category: 'Chart' },
+    { key: 'pointAction', label: 'Click on a bar or slice', type: 'action', category: 'Interactivity' },
+    { key: 'pointColor', label: 'Bar or slice colour (expression, e.g. highlight the selected one)', type: 'expr', category: 'Interactivity' },
+    { key: 'tooltips', label: 'Tooltips on hover', type: 'bool', category: 'Interactivity' },
     { key: 'xTitle', label: 'X axis title', type: 'text', category: 'Chart' },
     { key: 'fontSize', label: 'Text size', type: 'number', category: 'Chart' },
     { key: 'background', label: 'Background', type: 'color', category: 'Chart' },

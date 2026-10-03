@@ -7,6 +7,7 @@ const STRINGS = {
     exporting: 'Exporting…', viewReport: 'View report', didNotRun: 'The report did not run.', true: 'True', false: 'False',
     commaSeparated: 'Values, separated by commas',
     pagesRows: '{pages} pages · {rows} rows · {ms} ms', warnings: '{n} warning(s)',
+    back: 'Back', drillDepth: 'Drill level {n}', liveHint: 'Changes apply as you pick them.',
   },
   hi: {
     parameters: 'पैरामीटर', documentMap: 'दस्तावेज़ मानचित्र', run: 'चलाएँ', running: 'चल रहा है…', runningReport: 'रिपोर्ट चल रही है…',
@@ -15,6 +16,7 @@ const STRINGS = {
     exporting: 'निर्यात हो रहा है…', viewReport: 'रिपोर्ट देखें', didNotRun: 'रिपोर्ट नहीं चली।', true: 'हाँ', false: 'नहीं',
     commaSeparated: 'मान, अल्पविराम से अलग',
     pagesRows: '{pages} पृष्ठ · {rows} पंक्तियाँ · {ms} ms', warnings: '{n} चेतावनी',
+    back: 'वापस', drillDepth: 'ड्रिल स्तर {n}', liveHint: 'बदलाव तुरंत लागू होते हैं।',
   },
 };
 

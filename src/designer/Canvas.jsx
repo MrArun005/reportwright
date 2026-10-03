@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { useDesigner, SECTIONS, bodyWidth, addItem, moveItems, updateItem, findItem, tableSetColumnWidth, tableParts, rowsOf, round, NESTING } from './store.js';
+import { useDesigner, SECTIONS, bodyWidth, addItem, insertItem, moveItems, updateItem, findItem, tableSetColumnWidth, tableParts, rowsOf, round, NESTING } from './store.js';
 import { BASE_STYLE, parseBorder } from '@/engine/style.js';
 import { isDynamic } from '@/engine/expr/evaluate.js';
 import { resolveFontKey } from '@/engine/text/fonts.js';
@@ -70,8 +70,8 @@ function Ruler({ width, scale }) {
   const ticks = [];
   for (let x = 0, i = 0; x <= width + 0.01; x += minor, i++) {
     const isMajor = Math.abs((x / major) - Math.round(x / major)) < 1e-6;
-    ticks.push(<line key={i} x1={x * scale} x2={x * scale} y1={isMajor ? 4 : 11} y2={16} stroke="#8e99a4" strokeWidth={isMajor ? 1 : 0.6} />);
-    if (isMajor && x > 0) ticks.push(<text key={`t${i}`} x={x * scale + 2} y={10} fontSize="9" fill="#5f6b77" fontFamily="var(--mono)">{Math.round(x / major) * (unit === 'mm' ? 10 : unit === 'pt' ? 72 : 1)}</text>);
+    ticks.push(<line key={i} x1={x * scale} x2={x * scale} y1={isMajor ? 4 : 11} y2={16} stroke="var(--ruler-tick)" strokeWidth={isMajor ? 1 : 0.6} />);
+    if (isMajor && x > 0) ticks.push(<text key={`t${i}`} x={x * scale + 2} y={10} fontSize="9" fill="var(--ruler-text)" fontFamily="var(--mono)">{Math.round(x / major) * (unit === 'mm' ? 10 : unit === 'pt' ? 72 : 1)}</text>);
   }
   return <svg className="ruler" width={width * scale} height={16} style={{ display: 'block', margin: '0 auto 2px' }} aria-hidden="true">{ticks}</svg>;
 }
@@ -138,7 +138,7 @@ function Band({ section, label, scale, bw, drag, setDrag }) {
     const tool = e.dataTransfer.getData(MIME_TOOL);
     if (tool) {
       if ((tool === 'table' || tool === 'matrix' || tool === 'subreport') && section !== 'body') return alertOnce('Tables, matrices and subreports can only go in the body.');
-      addItem(tool, section, snapV(p.x), snapV(p.y));
+      insertItem(tool, section, snapV(p.x), snapV(p.y));
       return;
     }
     const f = JSON.parse(e.dataTransfer.getData(MIME_FIELD) || 'null');
@@ -274,7 +274,7 @@ function NestChildren({ item, scale, drag, setDrag, section }) {
     const r = ref.current.getBoundingClientRect();
     const x = snapV((e.clientX - r.left) / scale), y = snapV((e.clientY - r.top) / scale);
     const tool = e.dataTransfer.getData(MIME_TOOL);
-    if (tool) { addItem(tool, section, x, y, {}, item.id); return; }
+    if (tool) { insertItem(tool, section, x, y, {}, item.id); return; }
     const f = JSON.parse(e.dataTransfer.getData(MIME_FIELD) || 'null');
     if (f) addItem('textbox', section, x, y, { value: `=Fields.${f.field}`, dataSet: f.dataSet === item.dataSet ? undefined : f.dataSet, w: 120, h: 16, style: fieldStyle(f) }, item.id);
   };
@@ -353,6 +353,31 @@ function NestBox({ item, scale }) {
 const LIVE = new Set(['chart', 'matrix', 'barcode', 'sparkline', 'databar', 'bullet']);
 let measurer = null;
 
+/**
+ * Paint one item with the real engine and the sample data. Returns {html, h} (SVG at the item's size).
+ * Used by the canvas and by the chart gallery.
+ */
+export async function paintItemSvg(shape, def, sample) {
+  const store = fontStore();
+  await store.load();
+  measurer ||= new TextMeasurer(store);
+  const dataSets = sample?.dataSets || {};
+  let params = {};
+  try { params = resolveParameters(def, {}, { lenient: true }); } catch { /* defaults only */ }
+  const base = { fontFamily: 'Inter', fontSize: 9, color: '#1f2937', padding: 2, lineHeight: 1.25, textAlign: 'auto', verticalAlign: 'top', ...(def.styles?.base || {}) };
+  const ctxBase = { params, globals: { PageNumber: 1, TotalPages: 1, ExecutionTime: new Date(), ReportName: def.name }, dataSets, fields: null, locale: def.locale, currency: def.currency };
+  let seq = 0;
+  const lc = {
+    m: measurer, base, dataSets, warn: () => {}, fixed: true, maxUnitHeight: 1e6, state: {}, regions: [], nextId: () => ++seq,
+    layoutItems: (its, l, o) => layoutItems(its, l, o), linkFor: () => null, bodyWidth: shape.w, subreports: null,
+    ctxFor: (it) => { const ds = it.dataSet || def.dataSets?.[0]?.name; const rows = (ds && dataSets[ds]) || []; return { ...ctxBase, fields: rows[0] || null, aggRows: rows }; },
+  };
+  const res = ITEMS[shape.type].layout({ ...shape, x: 0, y: 0 }, lc);
+  const items = res.units.flatMap(u => shiftItems(u.items, 0, u.top));
+  const h = Math.max(shape.h, res.height || 0);
+  return { html: pageToSvg({ items }, shape.w, h, { background: false }), h };
+}
+
 /** Draw chart-like items with the real engine and the sample data, so the design looks like the output. */
 function LivePreview({ item, scale }) {
   const sample = useDesigner(s => s.sample);
@@ -364,24 +389,8 @@ function LivePreview({ item, scale }) {
     let alive = true;
     const t = setTimeout(async () => {
       try {
-        const store = fontStore();
-        await store.load();
-        measurer ||= new TextMeasurer(store);
-        const dataSets = sample?.dataSets || {};
-        let params = {};
-        try { params = resolveParameters(def, {}, { lenient: true }); } catch { /* defaults only */ }
-        const base = { fontFamily: 'Inter', fontSize: 9, color: '#1f2937', padding: 2, lineHeight: 1.25, textAlign: 'auto', verticalAlign: 'top', ...(def.styles?.base || {}) };
-        const ctxBase = { params, globals: { PageNumber: 1, TotalPages: 1, ExecutionTime: new Date(), ReportName: def.name }, dataSets, fields: null, locale: def.locale, currency: def.currency };
-        let seq = 0;
-        const lc = {
-          m: measurer, base, dataSets, warn: () => {}, fixed: true, maxUnitHeight: 1e6, state: {}, regions: [], nextId: () => ++seq,
-          layoutItems: (its, l, o) => layoutItems(its, l, o), linkFor: () => null, bodyWidth: shape.w, subreports: null,
-          ctxFor: (it) => { const ds = it.dataSet || def.dataSets?.[0]?.name; const rows = (ds && dataSets[ds]) || []; return { ...ctxBase, fields: rows[0] || null, aggRows: rows }; },
-        };
-        const res = ITEMS[shape.type].layout({ ...shape, x: 0, y: 0 }, lc);
-        const items = res.units.flatMap(u => shiftItems(u.items, 0, u.top));
-        const h = Math.max(shape.h, res.height || 0);
-        if (alive) setSvg({ html: pageToSvg({ items }, shape.w, h, { background: false }), h });
+        const out = await paintItemSvg(shape, def, sample);
+        if (alive) setSvg(out);
       } catch (e) { if (alive) setSvg({ error: e.message }); }
     }, 120);
     return () => { alive = false; clearTimeout(t); };

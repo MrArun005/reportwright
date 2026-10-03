@@ -24,20 +24,24 @@ const lang = StreamLanguage.define({
   },
 });
 const hl = HighlightStyle.define([
-  { tag: tags.string, color: '#b45309' },
-  { tag: tags.number, color: '#0e7490' },
-  { tag: tags.keyword, color: '#7c3aed', fontWeight: '600' },
-  { tag: tags.function(tags.variableName), color: '#1d4ed8' },
-  { tag: tags.special(tags.variableName), color: '#be185d', fontWeight: '600' },
-  { tag: tags.brace, color: '#6d28d9', fontWeight: '700' },
+  { tag: tags.string, color: 'var(--cm-string)' },
+  { tag: tags.number, color: 'var(--cm-number)' },
+  { tag: tags.keyword, color: 'var(--cm-keyword)', fontWeight: '600' },
+  { tag: tags.function(tags.variableName), color: 'var(--cm-fn)' },
+  { tag: tags.special(tags.variableName), color: 'var(--cm-special)', fontWeight: '600' },
+  { tag: tags.brace, color: 'var(--expr)', fontWeight: '700' },
 ]);
 
 const theme = EditorView.theme({
-  '&': { border: '1px solid var(--line)', borderRadius: '6px', fontSize: '13px', background: '#fff' },
+  '&': { border: '1px solid var(--line-strong)', borderRadius: '6px', fontSize: 'var(--fs-base)', background: 'var(--panel)', color: 'var(--ink)' },
   '&.cm-focused': { outline: '2px solid var(--accent)', outlineOffset: '1px' },
   '.cm-content': { fontFamily: 'var(--mono)', minHeight: '120px', padding: '8px 0' },
   '.cm-scroller': { maxHeight: '260px' },
-  '.cm-tooltip-autocomplete': { fontFamily: 'var(--mono)', fontSize: '12px' },
+  '.cm-tooltip-autocomplete': { fontFamily: 'var(--mono)', fontSize: 'var(--fs-sm)' },
+  '.cm-cursor': { borderLeftColor: 'var(--ink)' },
+  '.cm-tooltip': { background: 'var(--panel)', color: 'var(--ink)', border: '1px solid var(--line)' },
+  '.cm-tooltip-autocomplete ul li[aria-selected]': { background: 'var(--accent-soft)', color: 'var(--accent)' },
+  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { background: 'var(--accent-soft)' },
 });
 
 /**

@@ -38,8 +38,15 @@ export function pageToSvg(page, w, h, { background = true } = {}) {
         break;
       }
       case 'link': {
-        const a = esc(JSON.stringify(it.action));
-        out.push(`<rect class="pw-link" x="${n(it.x)}" y="${n(it.y)}" width="${n(it.w)}" height="${n(it.h)}" fill="transparent" data-action="${a}" style="cursor:pointer"><title>${esc(linkTitle(it.action))}</title></rect>`);
+        const tip = it.tip ?? (it.action ? linkTitle(it.action) : '');
+        const title = tip ? `<title>${esc(tip)}</title>` : '';
+        // a slice of a pie is a path; it moved with the item, so translate by how far the hit box moved
+        const tag = it.d ? 'path' : 'rect';
+        const geo = it.d
+          ? `transform="translate(${n(it.x - (it.x0 ?? it.x))} ${n(it.y - (it.y0 ?? it.y))})" d="${esc(it.d)}"`
+          : `x="${n(it.x)}" y="${n(it.y)}" width="${n(it.w)}" height="${n(it.h)}"`;
+        if (!it.action) out.push(`<${tag} class="pw-tip" ${geo} fill="transparent">${title}</${tag}>`);
+        else out.push(`<${tag} class="pw-link" ${geo} fill="transparent" data-action="${esc(JSON.stringify(it.action))}" style="cursor:pointer">${title}</${tag}>`);
         break;
       }
       case 'image': {
@@ -59,6 +66,7 @@ function linkTitle(a) {
   if (a.type === 'toggle') return 'Show or hide details';
   if (a.type === 'sort') return 'Sort';
   if (a.type === 'bookmark') return `Go to ${a.target}`;
+  if (a.type === 'params') return 'Filter the report';
   return '';
 }
 

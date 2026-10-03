@@ -9,7 +9,7 @@ let css = fs.readFileSync(path.join(root, 'app/globals.css'), 'utf8')
   .replace(/:root\b/g, ':host')
   .replace(/html,\s*body\s*\{[^}]*\}/g, '')
   .replace(/(^|\n)body\s*\{/g, '$1.pw-embed{');
-css += '\n.pw-embed{display:block;font:13px/1.45 var(--ui);color:var(--ink);background:var(--desk);border:1px solid var(--line);border-radius:8px;overflow:hidden}\n';
+css += '\n.pw-embed{display:block;font:var(--fw-regular) var(--fs-base)/var(--lh) var(--ui);color:var(--ink);background:var(--desk);border:1px solid var(--line);border-radius:8px;overflow:hidden}\n';
 await build({
   entryPoints: [path.join(root, 'src/embed/index.js')],
   bundle: true, minify: true, format: 'iife', target: ['es2020'],
