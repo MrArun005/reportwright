@@ -1,0 +1,30 @@
+{
+  "name": "pagewright",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "test": "vitest run",
+    "lint:engine": "node scripts/check-engine-boundary.mjs",
+    "test:e2e": "node tests/e2e/build-from-scratch.mjs && node tests/e2e/smoke.mjs",
+    "sample": "node scripts/make-sample.mjs"
+  },
+  "dependencies": {
+    "@pdf-lib/fontkit": "^1.1.1",
+    "immer": "^11.1.21",
+    "next": "^16.3.8",
+    "pdf-lib": "^1.17.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@expo-google-fonts/inter": "^0.4.2",
+    "@expo-google-fonts/jetbrains-mono": "^0.4.1",
+    "playwright": "^1.56.0",
+    "vitest": "^5.0.3"
+  }
+}

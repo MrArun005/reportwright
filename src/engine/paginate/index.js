@@ -1,0 +1,82 @@
+// @ts-check
+/**
+ * Paginator.
+ *
+ * The body is one vertical strip of units. A unit is atomic: a break may
+ * never cut it. The paginator picks, for each page, the lowest break line
+ * that fits the page and does not cut any unit.
+ *
+ * Unit: { top, height, items, breakBefore?, keepWithNext?, keepWithPrevious?, tableId? }
+ * Table: { id, top, bottom, headerHeight, headerItems }  (strip coordinates)
+ */
+
+const EPS = 0.01;
+
+/**
+ * @param {any[]} units  sorted by top
+ * @param {any[]} tables
+ * @param {number} pageH  content height available for the body
+ * @param {(msg: string) => void} warn
+ * @returns {{ top: number, bottom: number, offset: number, repeat: any[], units: any[] }[]}
+ */
+export function paginate(units, tables, pageH, warn) {
+  const end = units.reduce((m, u) => Math.max(m, u.top + u.height), 0);
+  const pages = [];
+  if (!units.length) return [{ top: 0, bottom: 0, offset: 0, repeat: [], units: [] }];
+
+  // Candidate break lines: unit tops and bottoms.
+  const cand = [...new Set(units.flatMap(u => [u.top, u.top + u.height]).map(v => Math.round(v * 100) / 100))].sort((a, b) => a - b);
+
+  const valid = (y) => {
+    for (const u of units) {
+      const b = u.top + u.height;
+      if (u.top < y - EPS && b > y + EPS) return false;                 // cuts a unit
+      if (u.keepWithNext && Math.abs(b - y) < EPS && b < end - EPS) return false;
+      if (u.keepWithPrevious && Math.abs(u.top - y) < EPS) return false;
+    }
+    return true;
+  };
+
+  let top = 0, guard = 0;
+  while (top < end - EPS) {
+    if (++guard > 100000) { warn('Pagination stopped: too many pages'); break; }
+    // tables that continue onto this page repeat their header
+    const repeat = pages.length
+      ? tables.filter(t => t.top < top - EPS && t.bottom > top + EPS)
+      : [];
+    const offset = repeat.reduce((m, t) => Math.max(m, t.headerHeight), 0);
+    let limit = top + Math.max(pageH - offset, 1);
+
+    // forced page breaks
+    for (const u of units) if (u.breakBefore && u.top > top + EPS && u.top < limit) { limit = u.top; break; }
+
+    let bottom;
+    if (limit >= end - EPS) bottom = end;
+    else {
+      bottom = -1;
+      for (let i = cand.length - 1; i >= 0; i--) {
+        const y = cand[i];
+        if (y > limit + EPS) continue;
+        if (y <= top + EPS) break;
+        if (valid(y)) { bottom = y; break; }
+      }
+      if (bottom < 0) {
+        // Nothing valid: drop keep-rules and try again, then cut.
+        for (let i = cand.length - 1; i >= 0; i--) {
+          const y = cand[i];
+          if (y > limit + EPS) continue;
+          if (y <= top + EPS) break;
+          if (!units.some(u => u.top < y - EPS && u.top + u.height > y + EPS)) { bottom = y; break; }
+        }
+        if (bottom < 0) {
+          bottom = limit;
+          warn(`An item is taller than the page (page ${pages.length + 1}). Its lower part is cut.`);
+        }
+      }
+    }
+    const onPage = units.filter(u => u.top >= top - EPS && u.top < bottom - EPS);
+    pages.push({ top, bottom, offset, repeat, units: onPage });
+    top = bottom;
+  }
+  return pages;
+}
