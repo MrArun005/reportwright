@@ -227,7 +227,7 @@ register('table', {
     if (footerUnits.length) footerUnits[0].keepWithPrevious = true;
 
     return {
-      height: y, units,
+      height: y, units, width,
       table: item.repeatHeader !== false && headerHeight ? { headerHeight, headerItems, x: item.x } : null,
     };
   },

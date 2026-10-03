@@ -1,0 +1,27 @@
+// Expression editor: CodeMirror completion and live preview.
+import { chromium } from 'playwright';
+import assert from 'node:assert/strict';
+const BASE = process.env.BASE || 'http://localhost:3000';
+const b = await chromium.launch();
+const p = await (await b.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
+const errs = []; p.on('pageerror', e => errs.push(e.message));
+await p.goto(`${BASE}/designer/loan-statement`);
+await p.waitForSelector('[data-testid=paper]');
+await p.locator('.field-chip').first().waitFor();
+await p.locator('[data-cell="footer-0-2"]').click();
+await p.locator('[data-testid=inspector] .fx').first().click();
+const ed = p.locator('[data-testid=expr-code] .cm-content');
+await ed.waitFor();
+await p.keyboard.press('ControlOrMeta+a'); await p.keyboard.press('Backspace');
+await p.keyboard.type('=Avg(Fields.');
+await p.locator('.cm-tooltip-autocomplete').waitFor();
+const opts = await p.locator('.cm-tooltip-autocomplete li').allInnerTexts();
+assert.ok(opts.some(o => o.includes('emi')), 'field completion offered: ' + opts.slice(0, 5));
+await p.keyboard.type('emi)');
+await p.waitForFunction(() => /\d/.test(document.querySelector('.sample')?.textContent || ''), null, { timeout: 5000 });
+const preview = await p.locator('.sample').innerText();
+assert.match(preview, /11,330/);
+await p.screenshot({ path: '/tmp/shots/expr-editor.png' });
+await b.close();
+assert.deepEqual(errs, []);
+console.log('PASS expression editor ·', preview.replace(/\s+/g, ' '));

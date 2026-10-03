@@ -79,3 +79,19 @@ describe('paginator', () => {
     await expect(render(def, { fontStore })).rejects.toMatchObject({ missingParameters: ['acc'] });
   });
 });
+
+describe('repeated headers', () => {
+  it('move only the items under the table', async () => {
+    const tbl = { type: 'table', name: 'T', x: 0, y: 0, w: 200, h: 54, dataSet: 'Rows', repeatHeader: true, columns: [{ width: 200 }],
+      header: [{ height: 30, cells: [{ value: 'Head' }] }], detail: [{ height: 20, cells: [{ value: '=Fields.name' }] }] };
+    const side = { type: 'textbox', name: 'Side', x: 300, y: 0, w: 200, h: 14, value: 'side', pageBreakBefore: false };
+    const rows = { rows: Array.from({ length: 80 }, (_, i) => ({ name: `Row ${i + 1}` })) };
+    const def = report([tbl, side], { data: rows });
+    const out = await render(def, { fontStore });
+    const p2 = out.pages[1];
+    const firstRow = p2.items.find(i => i.t === 'text' && /^Row /.test(i.lines[0].text));
+    const head = p2.items.find(i => i.t === 'text' && i.lines[0].text === 'Head');
+    expect(head).toBeTruthy();
+    expect(firstRow.lines[0].y).toBeGreaterThan(head.lines[0].y + 25); // row sits below the repeated header
+  });
+});

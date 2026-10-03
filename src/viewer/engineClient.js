@@ -2,6 +2,9 @@
 // Runs the engine in a Web Worker. Falls back to the main thread if the worker cannot start.
 import { render, FontStore } from '@/engine/index.js';
 import { exportPdf } from '@/exporters/pdf.js';
+import { createSubsetter } from '@/exporters/subset.js';
+
+const subset = createSubsetter(async () => (await fetch('/harfbuzz-subset.wasm')).arrayBuffer());
 
 let worker = null;
 let workerBroken = false;
@@ -61,6 +64,7 @@ export async function pdfBlob(model, title) {
   await store.load();
   const bytes = await exportPdf(model, store, {
     title,
+    subset,
     fetchImage: async (src) => { try { const r = await fetch(src); return r.ok ? new Uint8Array(await r.arrayBuffer()) : null; } catch { return null; } },
   });
   return new Blob([bytes], { type: 'application/pdf' });

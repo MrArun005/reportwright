@@ -11,7 +11,9 @@ const col = (c) => { const p = parseColor(c); return p ? { color: rgb(p.r, p.g, 
  * Page model → PDF bytes. Draws exactly the lines the engine made.
  * @param {any} model  render() output
  * @param {import('../engine/text/fonts.js').FontStore} fontStore
- * @param {{ title?: string, author?: string, fetchImage?: (src: string) => Promise<Uint8Array|null> }} [opt]
+ * @param {{ title?: string, author?: string, fetchImage?: (src: string) => Promise<Uint8Array|null>,
+ *   subset?: (font: Uint8Array, codePoints: Iterable<number>) => Promise<Uint8Array> }} [opt]
+ *   subset: a HarfBuzz subsetter (see subset.js). Without it, fonts embed in full.
  */
 export async function exportPdf(model, fontStore, opt = {}) {
   const doc = await PDFDocument.create();
@@ -21,12 +23,29 @@ export async function exportPdf(model, fontStore, opt = {}) {
   doc.setCreator('Pagewright');
   if (opt.author) doc.setAuthor(opt.author);
 
+  // Which characters each font must draw.
+  const used = new Map();
+  for (const pg of model.pages) for (const it of pg.items) if (it.t === 'text') {
+    let s = used.get(it.font);
+    if (!s) { s = new Set([32]); used.set(it.font, s); }
+    for (const l of it.lines) for (const ch of l.text) s.add(/** @type {number} */ (ch.codePointAt(0)));
+  }
   const fonts = new Map();
   const font = async (key) => {
     if (!fonts.has(key)) {
-      const bytes = fontStore.bytes.get(key);
+      let bytes = fontStore.bytes.get(key);
       if (!bytes) throw new Error(`Font "${key}" is not loaded`);
-      fonts.set(key, await doc.embedFont(bytes, { subset: opt.subset ?? false }));
+      if (opt.subset) {
+        const cps = used.get(key) || new Set([32]);
+        try {
+          const sub = await opt.subset(bytes, cps);
+          // fontkit cannot read some subsets (an empty last glyph). Check every glyph we need.
+          const f = fontkit.create(sub);
+          for (const cp of cps) { const g = f.glyphForCodePoint(cp); void g.advanceWidth; void g.bbox; }
+          bytes = sub;
+        } catch { /* embed the full font */ }
+      }
+      fonts.set(key, await doc.embedFont(bytes, { subset: false }));
     }
     return fonts.get(key);
   };

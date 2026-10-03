@@ -1,5 +1,6 @@
 'use client';
 import { useMemo, useRef, useState } from 'react';
+import ExprCode from './ExprCode.jsx';
 import { Dialog } from './ui.jsx';
 import { useDesigner } from './store.js';
 import { checkValue, evalValue, toText, FUNCTION_NAMES } from '@/engine/expr/evaluate.js';
@@ -24,15 +25,7 @@ export default function ExpressionEditor({ value, dataSet, onSave, onClose, titl
   const ds = def.dataSets?.find(d => d.name === dsName);
   const fields = (ds?.fields || []).map(f => f.name);
 
-  const insert = (s) => {
-    const el = ta.current;
-    const start = el?.selectionStart ?? text.length, end = el?.selectionEnd ?? text.length;
-    let ins = s;
-    if (!text.startsWith('=') && !text.includes('{') && text === '') ins = '=' + s;
-    const next = text.slice(0, start) + ins + text.slice(end);
-    setText(next);
-    requestAnimationFrame(() => { el?.focus(); const p = start + ins.length; el?.setSelectionRange(p, p); });
-  };
+  const insert = (s) => ta.current?.insert(s);
 
   const err = checkValue(text);
   const preview = useMemo(() => {
@@ -60,8 +53,8 @@ export default function ExpressionEditor({ value, dataSet, onSave, onClose, titl
           {FUNCTION_NAMES.map(f => <button key={f} onClick={() => insert(SNIPPETS[f] || `${f}()`)}>{f}</button>)}
         </div>
         <div style={{ display: 'grid', gap: 10, alignContent: 'start', minWidth: 0 }}>
-          <textarea ref={ta} className={`textarea${err ? ' invalid' : ''}`} rows={6} value={text} onChange={e => setText(e.target.value)} spellCheck={false} autoFocus aria-label="Expression" />
-          {err ? <div className="err">{err}</div> : <div className="hint">Start with = for one expression, or write text with {'{expression}'} parts. Example: <code>Page {'{Globals.PageNumber}'} of {'{Globals.TotalPages}'}</code></div>}
+          <ExprCode ref={ta} value={text} onChange={setText} fields={fields} parameters={(def.parameters || []).map(p => p.name)} invalid={!!err} />
+          {err ? <div className="err">{err}</div> : <div className="hint">Start with = for one expression, or write text with {'{expression}'} parts. Ctrl+Space shows suggestions. Example: <code>Page {'{Globals.PageNumber}'} of {'{Globals.TotalPages}'}</code></div>}
           <div>
             <div className="hint" style={{ marginBottom: 4 }}>Preview with the first row of {dsName || 'the data'}</div>
             <div className="sample">{preview ? (preview.ok ? <>{preview.text || <i>(empty)</i>} <span className="hint">· {preview.type}</span></> : <span className="err">{preview.text}</span>) : <span className="hint">{sample?.loading ? 'Loading sample data…' : sample?.error ? `No sample data: ${sample.error}` : 'Load sample data in the Data panel to see a preview.'}</span>}</div>

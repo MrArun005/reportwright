@@ -59,7 +59,7 @@ export function Check({ label, checked, onChange }) {
 
 export function Dialog({ title, children, onClose, footer, wide }) {
   useEffect(() => {
-    const k = (e) => { if (e.key === 'Escape') onClose(); };
+    const k = (e) => { if (e.key === 'Escape' && !e.defaultPrevented) onClose(); }; // CodeMirror uses Escape to close its suggestions
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, [onClose]);

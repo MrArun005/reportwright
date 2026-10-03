@@ -101,8 +101,9 @@ export async function render(def, opts = {}) {
     }
     shift[i] = s;
     const top = it.y + s;
-    L.res.units.forEach((u, k) => units.push({ ...u, top: top + u.top, tableId: L.res.table ? i : undefined, breakBefore: k === 0 && !!it.pageBreakBefore }));
-    if (L.res.table) tables.push({ id: i, top, bottom: top + L.res.height, ...L.res.table });
+    const x0 = it.x, x1 = it.x + (L.res.width ?? it.w);
+    L.res.units.forEach((u, k) => units.push({ ...u, x0, x1, top: top + u.top, tableId: L.res.table ? i : undefined, breakBefore: k === 0 && !!it.pageBreakBefore }));
+    if (L.res.table) tables.push({ id: i, top, bottom: top + L.res.height, x0, x1, ...L.res.table });
   });
   units.sort((a, b) => a.top - b.top);
 
@@ -129,7 +130,12 @@ export async function render(def, opts = {}) {
     };
     band(header, mt, k === 0, k === total - 1);
     for (const t of p.repeat) items.push(...shiftItems(t.headerItems, ml, bodyTop));
-    for (const u of p.units) items.push(...shiftItems(u.items, ml, bodyTop + p.offset + (u.top - p.top)));
+    for (const u of p.units) {
+      // Only items under a continued table move down by its repeated header.
+      let off = 0;
+      for (const t of p.repeat) if (u.x0 < t.x1 - EPS && t.x0 < u.x1 - EPS) off = Math.max(off, t.headerHeight);
+      items.push(...shiftItems(u.items, ml, bodyTop + off + (u.top - p.top)));
+    }
     band(footer, page.height - page.margins.bottom - footerH, k === 0, k === total - 1);
     return { items };
   });
