@@ -10,9 +10,10 @@ export async function GET(req, { params }) {
     const def = await readReport(safeId(id));
     if (!def) return Response.json({ error: 'Report not found' }, { status: 404 });
     const url = new URL(req.url);
-    const parameters = Object.fromEntries([...url.searchParams.entries()].filter(([k]) => k !== 'format'));
+    // ?pdfa=1 gives PDF/A-2b. Signing is not offered here: this route has no API key (use /api/v1/render).
+    const parameters = Object.fromEntries([...url.searchParams.entries()].filter(([k]) => k !== 'format' && k !== 'pdfa'));
     const format = url.searchParams.get('format') || 'pdf';
-    const r = await renderTo(def, { parameters, format, baseUrl: baseUrl(req) });
+    const r = await renderTo(def, { parameters, format, baseUrl: baseUrl(req), pdfa: url.searchParams.get('pdfa') === '1' });
     return new Response(r.bytes, {
       headers: {
         'content-type': r.contentType,

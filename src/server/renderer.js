@@ -9,12 +9,15 @@ import { exportXlsx } from '@/exporters/xlsx.js';
 import { createSubsetter } from '@/exporters/subset.js';
 import { readReport } from './reports.js';
 import { serverFetch } from './safeFetch.js';
+import { pdfSigner } from './sign.js';
 import { runSql } from './sql.js';
 
 const ROOT = process.cwd();
 let store;
 export const fontStore = () => (store ||= new FontStore((k) => fs.readFile(path.join(ROOT, 'public', 'fonts', `${k}.ttf`))));
 const subset = createSubsetter(() => fs.readFile(path.join(ROOT, 'public', 'harfbuzz-subset.wasm')));
+let icc;
+const iccProfile = async () => (icc ||= await fs.readFile(path.join(ROOT, 'public', 'icc', 'sRGB-v2-magic.icc')));
 
 export const FORMATS = {
   pdf: { type: 'application/pdf', ext: 'pdf' },
@@ -44,6 +47,7 @@ export async function loadTemplate(template) {
  *   data: { sourceName: json } replaces those data sources (push data instead of pull)
  *   self: this server's origin, which data sources may call even though it is local. Defaults to baseUrl;
  *   pass it when baseUrl came from an API caller. Every other private address is refused (SSRF).
+ *   pdfa: a PDF/A-2b file. sign: sign the PDF with PW_SIGN_P12 (only for routes behind an API key).
  */
 export async function renderTo(def, opt = {}) {
   const format = opt.format || 'pdf';
@@ -52,6 +56,8 @@ export async function renderTo(def, opt = {}) {
   if (opt.data && typeof opt.data === 'object') {
     d = { ...def, dataSources: (def.dataSources || []).map(s => (s.name in opt.data ? { name: s.name, type: 'json', data: opt.data[s.name] } : s)) };
   }
+  if ((opt.pdfa || opt.sign) && format !== 'pdf') throw Object.assign(new Error('PDF/A and signing apply to the pdf format only'), { status: 400 });
+  const signing = opt.sign ? await pdfSigner({ name: def.name || 'Pagewright' }) : null; // fail before rendering
   const base = opt.baseUrl || baseUrl();
   const fetch = serverFetch(opt.self || base);
   const model = await render(d, {
@@ -62,7 +68,10 @@ export async function renderTo(def, opt = {}) {
   let bytes;
   // images by URL (a logo) go through the same guard; one that fails to load is left out, as in the viewer
   const fetchImage = async (src) => { try { const r = await fetch(new URL(src, base)); return r.ok ? new Uint8Array(await r.arrayBuffer()) : null; } catch { return null; } };
-  if (format === 'pdf') bytes = await exportPdf(model, fontStore(), { title: def.name, subset, fetchImage });
+  if (format === 'pdf') {
+    bytes = await exportPdf(model, fontStore(), { title: def.name, subset, fetchImage, pdfa: opt.pdfa ? { icc: await iccProfile() } : undefined, prepare: signing?.prepare, save: signing?.save });
+    if (signing) bytes = await signing.sign(bytes);
+  }
   else if (format === 'html') bytes = Buffer.from(await exportHtml(model, fontStore(), { title: def.name, subset }));
   else if (format === 'csv') bytes = Buffer.from(exportCsv(model, { locale: def.locale, currency: def.currency }));
   else if (format === 'xlsx') { const ExcelJS = (await import('exceljs')).default; bytes = await exportXlsx(model, ExcelJS, { currency: def.currency, title: def.name }); }

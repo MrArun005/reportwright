@@ -2,6 +2,7 @@
 import { PDFDocument, PDFName, PDFString, rgb, pushGraphicsState, popGraphicsState, rectangle, clip, endPath } from 'pdf-lib';
 import fontkitModule from '@pdf-lib/fontkit';
 import { parseColor } from './color.js';
+import { makePdfA } from './pdfa.js';
 
 const fontkit = /** @type {any} */ (fontkitModule).default || fontkitModule;
 
@@ -12,8 +13,11 @@ const col = (c) => { const p = parseColor(c); return p ? { color: rgb(p.r, p.g, 
  * @param {any} model  render() output
  * @param {import('../engine/text/fonts.js').FontStore} fontStore
  * @param {{ title?: string, author?: string, fetchImage?: (src: string) => Promise<Uint8Array|null>,
- *   subset?: (font: Uint8Array, codePoints: Iterable<number>) => Promise<Uint8Array> }} [opt]
+ *   subset?: (font: Uint8Array, codePoints: Iterable<number>) => Promise<Uint8Array>,
+ *   pdfa?: { icc?: Uint8Array }, prepare?: (doc: PDFDocument) => any, save?: object }} [opt]
  *   subset: a HarfBuzz subsetter (see subset.js). Without it, fonts embed in full.
+ *   pdfa: make a PDF/A-2b file (needs an sRGB ICC profile). prepare: last change before saving
+ *   (the server adds a signature placeholder there). save: extra pdf-lib save options.
  */
 export async function exportPdf(model, fontStore, opt = {}) {
   const doc = await PDFDocument.create();
@@ -170,14 +174,16 @@ export async function exportPdf(model, fontStore, opt = {}) {
   }
   // URL links as PDF annotations
   for (const l of links) {
-    const annot = doc.context.obj({ Type: 'Annot', Subtype: 'Link', Rect: l.rect, Border: [0, 0, 0], A: { Type: 'Action', S: 'URI', URI: PDFString.of(l.href) } });
+    const annot = doc.context.obj({ Type: 'Annot', Subtype: 'Link', F: 4, Rect: l.rect, Border: [0, 0, 0], A: { Type: 'Action', S: 'URI', URI: PDFString.of(l.href) } });
     const ref = doc.context.register(annot);
     const annots = l.page.node.lookup(PDFName.of('Annots'));
     if (annots) annots.push(ref); else l.page.node.set(PDFName.of('Annots'), doc.context.obj([ref]));
   }
   if (model.bookmarks?.length) addOutline(doc, model.bookmarks, H);
+  if (opt.prepare) await opt.prepare(doc);
+  if (opt.pdfa) makePdfA(doc, { ...opt.pdfa, title: opt.title || 'Report', author: opt.author });
   // appearances are already drawn in the report font; regenerating would switch them to Helvetica
-  return doc.save({ updateFieldAppearances: false });
+  return doc.save({ updateFieldAppearances: false, ...(opt.save || {}) });
 }
 
 /** PDF outline (the bookmarks panel) from the page model bookmarks. Flat list, levels as indentation. */

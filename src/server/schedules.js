@@ -56,7 +56,7 @@ export async function deleteSchedule(id) {
 }
 
 export async function runSchedule(s, reason = 'manual') {
-  const job = await createBatch({ template: s.template, items: s.items, itemsFrom: s.itemsFrom, format: s.format, output: s.output, webhook: s.webhook, fileName: s.fileName, schedule: { id: s.id, reason } });
+  const job = await createBatch({ template: s.template, items: s.items, itemsFrom: s.itemsFrom, format: s.format, output: s.output, webhook: s.webhook, fileName: s.fileName, pdfa: s.pdfa, sign: s.sign, schedule: { id: s.id, reason } });
   const list = await readSchedules();
   const i = list.findIndex(x => x.id === s.id);
   if (i >= 0) { list[i].lastRunAt = new Date().toISOString(); list[i].lastJobId = job.id; await writeSchedules(list); }

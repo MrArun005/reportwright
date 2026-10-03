@@ -11,7 +11,7 @@ export async function POST(req) {
   try {
     const body = await req.json().catch(() => { throw Object.assign(new Error('Send a JSON body'), { status: 400 }); });
     const def = await loadTemplate(body.template);
-    const r = await renderTo(def, { parameters: body.parameters, data: body.data, format: body.format, baseUrl: baseUrl(req), state: body.state });
+    const r = await renderTo(def, { parameters: body.parameters, data: body.data, format: body.format, baseUrl: baseUrl(req), state: body.state, pdfa: !!body.pdfa, sign: !!body.sign });
     const name = (body.fileName || def.name || 'report').replace(/[^\w.-]+/g, '-');
     return new Response(r.bytes, {
       headers: {

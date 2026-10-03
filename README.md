@@ -56,6 +56,7 @@ The viewer runs in a Shadow DOM, so the host page styles do not change it. Set `
 | `PW_SCHEDULER` | run time | `off` stops the built-in scheduler (for example on extra replicas) |
 | `PW_BASIC_AUTH` | run time | `user:password` for the whole app (designer, viewer, report storage, server renders). `/api/v1` keeps its API keys; the embed script and fonts stay open. **Set this, or put the app behind your SSO proxy, before you expose it.** |
 | `PW_INTERNAL_HOSTS` | run time | Host names that server-side fetches may reach on a private network (internal data APIs, a webhook receiver on your LAN). Comma-separated. Every other private or local address is refused (SSRF guard). |
+| `PW_SIGN_P12`, `PW_SIGN_PASSWORD` | run time | A .p12 certificate and its password. With them, `/api/v1/render`, batches and schedules can sign PDFs (`"sign": true`; a detached PKCS#7 signature over the whole file). Only API-key routes sign. |
 | `PW_PROXY_ALLOW` | run time | Hosts that `/api/data/proxy` may call (comma-separated). Private network addresses are always blocked. |
 | `PW_DB_<NAME>` | run time | A database for SQL data sources. `connection: 'main'` in a report reads `PW_DB_MAIN` (any case). `sqlite:/path/file.db` (built into Node 22), `postgres://user:pass@host/db` (needs `npm install pg`) or `mysql://user:pass@host/db` (needs `npm install mysql2`). Give it a database user that can only read. |
 | `PW_EMBED_ORIGINS` | **build time** | Origin allowed to read `/api/reports` and `/api/sample` from another site (CORS) |
@@ -93,6 +94,11 @@ reports/         report definitions (+ .history versions)
 data/            run-time state: jobs, schedules, folder outputs (not in git)
 tests/           unit, golden and end-to-end tests
 ```
+
+## PDF/A and signatures
+
+- **PDF/A-2b**: add `"pdfa": true` to `/api/v1/render` or a batch, or `?pdfa=1` to `/api/reports/<id>/pdf`. The file gets XMP metadata, the sRGB output intent (`public/icc`), a file id and printable annotations. The sample loan statement passes veraPDF 1.30 (PDF/A-2B profile), signed and unsigned.
+- **Signatures**: add `"sign": true` to `/api/v1/render`, a batch or a schedule, with `PW_SIGN_P12` and `PW_SIGN_PASSWORD` set. The signature is `adbe.pkcs7.detached` over the whole file (Poppler `pdfsig`: "Signature is Valid"). It is not a PAdES baseline signature (no signing-certificate attribute, no timestamp).
 
 ## Data sources
 

@@ -56,7 +56,7 @@ export async function createBatch(spec, req) {
   const format = spec.format || 'pdf';
   const job = {
     id: rid(), status: 'queued', createdAt: new Date().toISOString(), template: typeof spec.template === 'string' ? spec.template : def.name,
-    format, output: spec.output || { type: 'zip' }, webhook: spec.webhook || null, fileName: spec.fileName || null, schedule: spec.schedule || null,
+    format, output: spec.output || { type: 'zip' }, webhook: spec.webhook || null, fileName: spec.fileName || null, schedule: spec.schedule || null, pdfa: !!spec.pdfa, sign: !!spec.sign,
     total: items.length, done: 0, failed: 0, results: [], errors: [], base, self, items, _def: def,
   };
   S.jobs.set(job.id, job);
@@ -122,7 +122,7 @@ async function run(job) {
       const item = job.items[i];
       const name = `${itemName(job, item, i)}.${job.format === 'json' ? 'json' : job.format}`;
       try {
-        const r = await renderTo(job._def, { parameters: item.parameters, data: item.data, format: job.format, baseUrl: job.base, self: job.self });
+        const r = await renderTo(job._def, { parameters: item.parameters, data: item.data, format: job.format, baseUrl: job.base, self: job.self, pdfa: job.pdfa, sign: job.sign });
         outputs[i] = { name, bytes: r.bytes, pages: r.model.pages.length };
         if (item.putUrl) {
           const res = await serverFetch(job.self)(item.putUrl, { method: 'PUT', body: r.bytes, headers: { 'content-type': r.contentType } });
