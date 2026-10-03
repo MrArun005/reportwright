@@ -157,6 +157,17 @@ A test case names the report, its parameters, pushed data (`-d`-style JSON files
 - Needs `ANTHROPIC_API_KEY`. In production it also needs accounts (`PW_AUTH=users`, designer role) or `PW_BASIC_AUTH`, because every draft costs money.
 - Your sample rows are sent to the Anthropic API. Send a few representative rows, not personal data you may not share.
 
+## Import from ActiveReports
+
+On the home page, **Import ActiveReports file** takes an ActiveReportsJS `.rdlx-json` file, saves it as a new report and lists every note. From code: `POST /api/reports/import?name=<report name>` with the file's JSON as the body (at most 5 MB) returns `{ id, warnings, stats }` (201). The converter is `importRdlx()` in `src/importers/rdlx.js`; it is pure JavaScript and never throws.
+
+- **What maps:** both file layouts (`Body`/`PageHeader`/`PageFooter`, and `ReportSections` with continuous and fixed pages), page size and margins, parameters (types, defaults, multi-value, value lists, lists from a data set), JSON data (endpoint and URI, embedded `jsondata`, headers, GraphQL bodies), CSV, nested `$dataset:` sets, fields (paths, type hints, calculated), filters and sorts; text boxes, images (embedded, URL), lines, rectangles, shapes, check boxes, barcodes, subreports, tables (groups, drill-down, column spans, sort links, document map), tablix (row groups → table, pivot → matrix), lists, banded lists, charts (both chart formats), styles, colour names and links.
+- **Expressions:** `Fields!x.Value`, `Parameters!x.Value`, `Globals!…`, `&`, `IIF`, `Switch`, `Choose`, `Is Nothing`, `Mod`, `Like`, aggregates with their scopes, `RunningValue`, `Lookup`, `Format`/`FormatNumber`/`FormatCurrency`, dates, conversions, `.ToString()` and other methods, interpolated strings.
+- **What becomes a note:** `ReportItems!`, custom `Code.` and functions Pagewright lacks (`Previous`, `StDev`, `Weekday`…) stay visible as text. Also noted: group headers that repeat on new pages, sort links outside the table header, groups sorted by an aggregate, row spans, rounded corners, more than one chart plot, fonts that are not bundled (Inter or JetBrains Mono is used), hidden parameters, SQL connections (set `PW_DB_<NAME>`), nested data sets (flattened). Tables whose cells hold images, barcodes or other tables become banded lists.
+- **Drill-through and subreports** point at the report id made from the target's file name, so import those files too.
+- **Conversion rate:** the 9 MESCIUS sample reports (10 files) and 30 public `.rdlx-json` files from GitHub all import, validate and render. All 40 keep every item (mapped or approximated); none is dropped. `stats` counts each report item as mapped, approximated (a note says what changed) or dropped. Proof: `tests/fixtures/rdlx/regional-sales.rdlx-json` → `reports/imported-regional-sales.pw.json`.
+- Not yet: SSRS XML (`.rdl`, `.rdlx`).
+
 ## PDF/A and signatures
 
 - **PDF/A-2b**: add `"pdfa": true` to `/api/v1/render` or a batch, or `?pdfa=1` to `/api/reports/<id>/pdf`. The file gets XMP metadata, the sRGB output intent (`public/icc`), a file id and printable annotations. The sample loan statement passes veraPDF 1.30 (PDF/A-2B profile), signed and unsigned.

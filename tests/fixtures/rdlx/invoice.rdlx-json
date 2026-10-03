@@ -1,0 +1,79 @@
+{
+  "Name": "Invoice",
+  "Type": "report",
+  "Width": "7.5in",
+  "Language": "en-US",
+  "Page": { "PageWidth": "8.5in", "PageHeight": "11in", "LeftMargin": "0.5in", "RightMargin": "0.5in", "TopMargin": "0.5in", "BottomMargin": "0.5in", "PageOrientation": "Portrait" },
+  "EmbeddedImages": [
+    { "Name": "Logo", "MIMEType": "image/png", "ImageData": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=" }
+  ],
+  "ReportParameters": [
+    { "Name": "InvoiceNo", "DataType": "Integer", "Prompt": "Invoice number", "DefaultValue": { "Values": ["1001"] },
+      "ValidValues": { "ParameterValues": [{ "Value": "1001", "Label": "INV-1001" }, { "Value": "1002", "Label": "INV-1002" }] } },
+    { "Name": "ShowNotes", "DataType": "Boolean", "Nullable": true, "Hidden": true }
+  ],
+  "DataSources": [
+    { "Name": "Inline", "ConnectionProperties": { "DataProvider": "JSON",
+      "ConnectString": "jsondata={\"invoices\":[{\"no\":1001,\"customer\":\"Asha Traders\",\"city\":\"Pune\",\"date\":\"2026-03-01\",\"paid\":true},{\"no\":1002,\"customer\":\"Bose & Sons\",\"city\":\"Kolkata\",\"date\":\"2026-03-04\",\"paid\":false}],\"lines\":[{\"invoice\":1001,\"item\":\"Steel bracket\",\"qty\":4,\"price\":120.5},{\"invoice\":1001,\"item\":\"Hinge pack\",\"qty\":10,\"price\":15},{\"invoice\":1002,\"item\":\"Copper wire\",\"qty\":2,\"price\":900}]}" } }
+  ],
+  "DataSets": [
+    { "Name": "Invoice",
+      "Fields": [
+        { "Name": "no", "DataField": "no" }, { "Name": "customer", "DataField": "customer" }, { "Name": "city", "DataField": "city" },
+        { "Name": "date", "DataField": "date[Date|YYYY-MM-DD]" }, { "Name": "paid", "DataField": "paid" }
+      ],
+      "Query": { "DataSourceName": "Inline", "CommandText": "jpath=$.invoices.*" },
+      "Filters": [{ "FilterExpression": "=Fields!no.Value", "Operator": "Equal", "FilterValues": ["=Parameters!InvoiceNo.Value"] }] },
+    { "Name": "Lines",
+      "Fields": [
+        { "Name": "invoice", "DataField": "invoice" }, { "Name": "item", "DataField": "item" }, { "Name": "qty", "DataField": "qty" },
+        { "Name": "price", "DataField": "price" }, { "Name": "amount", "Value": "=Fields!qty.Value * Fields!price.Value" }
+      ],
+      "Query": { "DataSourceName": "Inline", "CommandText": "jpath=$.lines.*" },
+      "Filters": [{ "FilterExpression": "=Fields!invoice.Value", "Operator": "Equal", "FilterValues": ["=Parameters!InvoiceNo.Value"] }] }
+  ],
+  "PageHeader": { "Height": "1in", "PrintOnFirstPage": true, "PrintOnLastPage": true, "ReportItems": [
+    { "Type": "image", "Name": "LogoImage", "Source": "Embedded", "Value": "Logo", "Sizing": "FitProportional", "MIMEType": "image/png", "Left": "6.5in", "Width": "1in", "Height": "0.8in" },
+    { "Type": "textbox", "Name": "Title", "Value": "Tax Invoice", "Width": "4in", "Height": "0.5in",
+      "Style": { "FontFamily": "Arial", "FontSize": "20pt", "FontWeight": "Bold", "Color": "SteelBlue" } },
+    { "Type": "textbox", "Name": "Printed", "Value": "=\"Printed \" & Format(Globals!ExecutionTime, \"dd MMM yyyy\")", "Top": "0.55in", "Width": "4in", "Height": "0.25in",
+      "Style": { "FontSize": "8pt", "Color": "Gray" } }
+  ] },
+  "Body": { "Height": "4in", "ReportItems": [
+    { "Type": "textbox", "Name": "BillTo", "Value": "=First(Fields!customer.Value, \"Invoice\")", "Width": "3.5in", "Height": "0.3in", "CanGrow": true,
+      "Style": { "FontWeight": "SemiBold", "PaddingLeft": "2pt", "PaddingTop": "2pt", "PaddingRight": "2pt", "PaddingBottom": "2pt" } },
+    { "Type": "textbox", "Name": "InvoiceDate", "Value": "=First(Fields!date.Value, \"Invoice\")", "Left": "4in", "Width": "3.5in", "Height": "0.3in",
+      "Style": { "Format": "dd MMM yyyy", "TextAlign": "Right" } },
+    { "Type": "line", "Name": "Rule", "Top": "0.4in", "Width": "7.5in", "Height": "0in", "Style": { "Border": { "Color": "#cccccc", "Style": "Dashed", "Width": "0.5pt" } } },
+    { "Type": "rectangle", "Name": "StatusBox", "Top": "0.5in", "Width": "7.5in", "Height": "0.7in",
+      "Style": { "BackgroundColor": "WhiteSmoke", "Border": { "Style": "Solid", "Color": "Gainsboro", "Width": "1pt" } },
+      "ReportItems": [
+        { "Type": "checkbox", "Name": "PaidBox", "Checked": "=First(Fields!paid.Value, \"Invoice\")", "Text": "Paid", "Left": "0.1in", "Top": "0.1in", "Width": "1.5in", "Height": "0.25in" },
+        { "Type": "barcode", "Name": "InvoiceCode", "Symbology": "Code_128auto", "Value": "=\"INV-\" & First(Fields!no.Value, \"Invoice\")", "CaptionLocation": "Below", "Left": "4.5in", "Top": "0.05in", "Width": "2.8in", "Height": "0.6in" }
+      ] },
+    { "Type": "table", "Name": "LineItems", "DataSetName": "Lines", "Top": "1.4in", "Width": "7.5in", "Height": "0.9in",
+      "TableColumns": [{ "Width": "4.5in" }, { "Width": "1in" }, { "Width": "1in" }, { "Width": "1in" }],
+      "Header": { "RepeatOnNewPage": true, "TableRows": [{ "Height": "0.3in", "TableCells": [
+        { "Item": { "Type": "textbox", "Name": "HItem", "Value": "Item", "Style": { "FontWeight": "Bold", "BackgroundColor": "#eef2f7", "BottomBorder": { "Style": "Solid", "Color": "#9aa5b1" } } } },
+        { "Item": { "Type": "textbox", "Name": "HQty", "Value": "Qty", "Style": { "FontWeight": "Bold", "TextAlign": "Right", "BackgroundColor": "#eef2f7", "BottomBorder": { "Style": "Solid", "Color": "#9aa5b1" } } } },
+        { "Item": { "Type": "textbox", "Name": "HPrice", "Value": "Price", "Style": { "FontWeight": "Bold", "TextAlign": "Right", "BackgroundColor": "#eef2f7", "BottomBorder": { "Style": "Solid", "Color": "#9aa5b1" } } } },
+        { "Item": { "Type": "textbox", "Name": "HAmount", "Value": "Amount", "Style": { "FontWeight": "Bold", "TextAlign": "Right", "BackgroundColor": "#eef2f7", "BottomBorder": { "Style": "Solid", "Color": "#9aa5b1" } } } }
+      ] }] },
+      "Details": { "TableRows": [{ "Height": "0.25in", "TableCells": [
+        { "Item": { "Type": "textbox", "Name": "DItem", "Value": "=Fields!item.Value", "CanGrow": true } },
+        { "Item": { "Type": "textbox", "Name": "DQty", "Value": "=Fields!qty.Value", "Style": { "Format": "n0" } } },
+        { "Item": { "Type": "textbox", "Name": "DPrice", "Value": "=Fields!price.Value", "Style": { "Format": "c2" } } },
+        { "Item": { "Type": "textbox", "Name": "DAmount", "Value": "=Fields!amount.Value", "Style": { "Format": "c2" } } }
+      ] }] },
+      "Footer": { "TableRows": [{ "Height": "0.3in", "TableCells": [
+        { "Item": { "Type": "textbox", "Name": "FLabel", "Value": "Total", "Style": { "FontWeight": "Bold", "TextAlign": "Right" } }, "ColSpan": 3 },
+        null, null,
+        { "Item": { "Type": "textbox", "Name": "FTotal", "Value": "=Sum(Fields!amount.Value)", "Style": { "FontWeight": "Bold", "Format": "c2", "TopBorder": { "Style": "Double", "Width": "2pt" } } } }
+      ] }] }
+    }
+  ] },
+  "PageFooter": { "Height": "0.4in", "ReportItems": [
+    { "Type": "textbox", "Name": "PageNo", "Value": "=\"Page \" & Globals!PageNumber & \" of \" & Globals!TotalPages", "Top": "0.1in", "Left": "5.5in", "Width": "2in", "Height": "0.25in",
+      "Style": { "TextAlign": "Right", "FontSize": "8pt" } }
+  ] }
+}

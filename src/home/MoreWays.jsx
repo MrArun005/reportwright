@@ -36,7 +36,9 @@ export default function MoreWays({ name }) {
     e.target.value = '';
     if (!f) return;
     run('import', async () => {
-      const { id, warnings: w } = await call('/api/reports/import', { method: 'POST', headers: { 'content-type': 'application/json' }, body: await f.text() });
+      // the file name names the report, so drill-through links between imported reports find their target
+      const fileName = encodeURIComponent(f.name.replace(/\.(rdlx-json|rdlx|json)$/i, ''));
+      const { id, warnings: w } = await call(`/api/reports/import?name=${fileName}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: await f.text() });
       if (w?.length) { setWarnings({ id, list: w }); setBusy(null); } else router.push(`/designer/${id}`);
     });
   };
