@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { useDesigner, SECTIONS, bodyWidth, addItem, insertItem, moveItems, updateItem, findItem, tableSetColumnWidth, tableParts, rowsOf, round, NESTING } from './store.js';
+import { tableFor } from './tableGen.js';
 import { BASE_STYLE, parseBorder } from '@/engine/style.js';
 import { isDynamic } from '@/engine/expr/evaluate.js';
 import { resolveFontKey } from '@/engine/text/fonts.js';
@@ -16,6 +17,7 @@ import { fontStore } from '@/viewer/engineClient.js';
 export const PX = 96 / 72;
 export const MIME_TOOL = 'application/x-pw-tool';
 export const MIME_FIELD = 'application/x-pw-field';
+export const MIME_DATASET = 'application/x-pw-dataset';
 
 /* ---------------------------------------------------------------- style → css */
 function staticStyle(layers) {
@@ -129,7 +131,7 @@ function Band({ section, label, scale, bw, drag, setDrag }) {
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
   };
 
-  const accepts = (e) => e.dataTransfer.types.includes(MIME_TOOL) || e.dataTransfer.types.includes(MIME_FIELD);
+  const accepts = (e) => e.dataTransfer.types.includes(MIME_TOOL) || e.dataTransfer.types.includes(MIME_FIELD) || e.dataTransfer.types.includes(MIME_DATASET);
   const onDrop = (e) => {
     setDropping(false);
     if (!accepts(e)) return;
@@ -139,6 +141,18 @@ function Band({ section, label, scale, bw, drag, setDrag }) {
     if (tool) {
       if ((tool === 'table' || tool === 'matrix' || tool === 'subreport') && section !== 'body') return alertOnce('Tables, matrices and subreports can only go in the body.');
       insertItem(tool, section, snapV(p.x), snapV(p.y));
+      return;
+    }
+    const dsDrop = JSON.parse(e.dataTransfer.getData(MIME_DATASET) || 'null');
+    if (dsDrop) {
+      // a data set dropped on the page: a table of its rows, with totals for the number fields
+      if (section !== 'body') return alertOnce('Tables can only go in the body.');
+      const st = useDesigner.getState();
+      const ds = (st.def.dataSets || []).find(d => d.name === dsDrop.dataSet);
+      if (!ds?.fields?.length) return alertOnce('Detect the fields of this data set first (Edit → Detect fields).');
+      const x = snapV(p.x);
+      const { type, x: _x, y: _y, ...props } = tableFor(ds, { layout: 'list', width: Math.max(120, bodyWidth(st.def) - x), rows: st.sample?.dataSets?.[ds.name], fields: ds.fields.slice(0, 8).map(f => f.name) });
+      addItem('table', section, x, snapV(p.y), props);
       return;
     }
     const f = JSON.parse(e.dataTransfer.getData(MIME_FIELD) || 'null');

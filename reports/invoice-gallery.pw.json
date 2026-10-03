@@ -1,0 +1,509 @@
+{
+  "$schema": "pagewright/report@1",
+  "name": "Invoice (built with the table gallery)",
+  "locale": "en-IN",
+  "currency": "INR",
+  "page": {
+    "size": "A4",
+    "orientation": "portrait",
+    "margins": [
+      36,
+      36,
+      36,
+      36
+    ]
+  },
+  "parameters": [],
+  "dataSources": [
+    {
+      "name": "invoice",
+      "type": "json",
+      "data": {
+        "number": "INV-2026-0147",
+        "date": "2026-10-04",
+        "customer": {
+          "name": "Asha Traders",
+          "city": "Pune"
+        },
+        "lines": [
+          {
+            "item": "Thermal paper roll",
+            "category": "Supplies",
+            "qty": 12,
+            "rate": 85.5,
+            "amount": 1026
+          },
+          {
+            "item": "Barcode scanner",
+            "category": "Hardware",
+            "qty": 2,
+            "rate": 4200,
+            "amount": 8400
+          },
+          {
+            "item": "Label printer",
+            "category": "Hardware",
+            "qty": 1,
+            "rate": 11800,
+            "amount": 11800
+          },
+          {
+            "item": "Setup and training",
+            "category": "Services",
+            "qty": 3,
+            "rate": 1500,
+            "amount": 4500
+          }
+        ]
+      }
+    }
+  ],
+  "dataSets": [
+    {
+      "name": "Lines",
+      "source": "invoice",
+      "path": "$.lines",
+      "fields": [
+        {
+          "name": "item",
+          "type": "string"
+        },
+        {
+          "name": "category",
+          "type": "string"
+        },
+        {
+          "name": "qty",
+          "type": "number"
+        },
+        {
+          "name": "rate",
+          "type": "number"
+        },
+        {
+          "name": "amount",
+          "type": "number"
+        }
+      ]
+    }
+  ],
+  "styles": {
+    "base": {
+      "fontFamily": "Inter",
+      "fontSize": 9,
+      "color": "#1f2937"
+    }
+  },
+  "sections": {
+    "pageHeader": {
+      "height": 36,
+      "items": [
+        {
+          "id": "h1",
+          "type": "textbox",
+          "name": "ReportTitle",
+          "x": 0,
+          "y": 0,
+          "w": 320,
+          "h": 22,
+          "value": "Invoice",
+          "canGrow": true,
+          "style": {
+            "fontSize": 14,
+            "fontWeight": "bold"
+          }
+        }
+      ]
+    },
+    "body": {
+      "height": 420,
+      "items": [
+        {
+          "type": "table",
+          "w": 523.2800000000001,
+          "h": 54,
+          "dataSet": "Lines",
+          "repeatHeader": true,
+          "noRowsText": "No rows",
+          "columns": [
+            {
+              "width": 149.50857142857143
+            },
+            {
+              "width": 149.50857142857143
+            },
+            {
+              "width": 74.75428571428571
+            },
+            {
+              "width": 74.75428571428571
+            },
+            {
+              "width": 74.75428571428571
+            }
+          ],
+          "header": [
+            {
+              "height": 18,
+              "style": {
+                "fontWeight": "bold",
+                "backgroundColor": "#f1f5f9",
+                "borderBottom": "0.75 solid #94a3b8"
+              },
+              "cells": [
+                {
+                  "value": "Item",
+                  "style": {}
+                },
+                {
+                  "value": "Category",
+                  "style": {}
+                },
+                {
+                  "value": "Qty",
+                  "style": {
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "Rate",
+                  "style": {
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "Amount",
+                  "style": {
+                    "textAlign": "right"
+                  }
+                }
+              ]
+            }
+          ],
+          "groups": [],
+          "detail": [
+            {
+              "height": 18,
+              "style": {
+                "borderBottom": "0.5 solid #e5e7eb"
+              },
+              "cells": [
+                {
+                  "value": "=Fields.item",
+                  "style": {}
+                },
+                {
+                  "value": "=Fields.category",
+                  "style": {}
+                },
+                {
+                  "value": "=Fields.qty",
+                  "style": {
+                    "format": "N0",
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "=Fields.rate",
+                  "style": {
+                    "format": "N2",
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "=Fields.amount",
+                  "style": {
+                    "format": "N0",
+                    "textAlign": "right"
+                  }
+                }
+              ]
+            }
+          ],
+          "footer": [
+            {
+              "height": 18,
+              "cells": [
+                {
+                  "value": "Total",
+                  "style": {
+                    "fontWeight": "bold",
+                    "borderTop": "0.75 solid #94a3b8"
+                  }
+                },
+                {
+                  "value": "",
+                  "style": {
+                    "fontWeight": "bold",
+                    "borderTop": "0.75 solid #94a3b8"
+                  }
+                },
+                {
+                  "value": "=Sum(Fields.qty)",
+                  "style": {
+                    "format": "N0",
+                    "textAlign": "right",
+                    "fontWeight": "bold",
+                    "borderTop": "0.75 solid #94a3b8"
+                  }
+                },
+                {
+                  "value": "",
+                  "style": {
+                    "fontWeight": "bold",
+                    "borderTop": "0.75 solid #94a3b8"
+                  }
+                },
+                {
+                  "value": "=Sum(Fields.amount)",
+                  "style": {
+                    "format": "N0",
+                    "textAlign": "right",
+                    "fontWeight": "bold",
+                    "borderTop": "0.75 solid #94a3b8"
+                  }
+                }
+              ]
+            }
+          ],
+          "style": {
+            "padding": [
+              3,
+              4,
+              3,
+              4
+            ]
+          },
+          "id": "fd82ry1q",
+          "name": "Table1",
+          "x": 0,
+          "y": 24
+        },
+        {
+          "type": "table",
+          "w": 523,
+          "h": 90,
+          "dataSet": "Lines",
+          "repeatHeader": true,
+          "noRowsText": "No rows",
+          "columns": [
+            {
+              "width": 209.2
+            },
+            {
+              "width": 104.6
+            },
+            {
+              "width": 104.6
+            },
+            {
+              "width": 104.6
+            }
+          ],
+          "header": [
+            {
+              "height": 18,
+              "style": {
+                "fontWeight": "bold",
+                "backgroundColor": "#f1f5f9",
+                "borderBottom": "0.75 solid #94a3b8"
+              },
+              "cells": [
+                {
+                  "value": "Item",
+                  "style": {}
+                },
+                {
+                  "value": "Qty",
+                  "style": {
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "Rate",
+                  "style": {
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "Amount",
+                  "style": {
+                    "textAlign": "right"
+                  }
+                }
+              ]
+            }
+          ],
+          "groups": [
+            {
+              "name": "ByCategory",
+              "expr": "=Fields.category",
+              "sort": "asc",
+              "header": [
+                {
+                  "height": 18,
+                  "cells": [
+                    {
+                      "value": "=Fields.category",
+                      "colSpan": 4,
+                      "style": {
+                        "fontWeight": "bold",
+                        "textAlign": "left"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "footer": [
+                {
+                  "height": 18,
+                  "cells": [
+                    {
+                      "value": "Subtotal",
+                      "style": {
+                        "fontWeight": "bold",
+                        "borderTop": "0.75 solid #94a3b8"
+                      }
+                    },
+                    {
+                      "value": "=Sum(Fields.qty)",
+                      "style": {
+                        "format": "N0",
+                        "textAlign": "right",
+                        "fontWeight": "bold",
+                        "borderTop": "0.75 solid #94a3b8"
+                      }
+                    },
+                    {
+                      "value": "",
+                      "style": {
+                        "fontWeight": "bold",
+                        "borderTop": "0.75 solid #94a3b8"
+                      }
+                    },
+                    {
+                      "value": "=Sum(Fields.amount)",
+                      "style": {
+                        "format": "N0",
+                        "textAlign": "right",
+                        "fontWeight": "bold",
+                        "borderTop": "0.75 solid #94a3b8"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "detail": [
+            {
+              "height": 18,
+              "style": {
+                "borderBottom": "0.5 solid #e5e7eb"
+              },
+              "cells": [
+                {
+                  "value": "=Fields.item",
+                  "style": {}
+                },
+                {
+                  "value": "=Fields.qty",
+                  "style": {
+                    "format": "N0",
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "=Fields.rate",
+                  "style": {
+                    "format": "N2",
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "=Fields.amount",
+                  "style": {
+                    "format": "N0",
+                    "textAlign": "right"
+                  }
+                }
+              ]
+            }
+          ],
+          "footer": [
+            {
+              "height": 18,
+              "cells": [
+                {
+                  "value": "Total",
+                  "style": {
+                    "fontWeight": "bold",
+                    "borderTop": "0.75 solid #94a3b8"
+                  }
+                },
+                {
+                  "value": "=Sum(Fields.qty)",
+                  "style": {
+                    "format": "N0",
+                    "textAlign": "right",
+                    "fontWeight": "bold",
+                    "borderTop": "0.75 solid #94a3b8"
+                  }
+                },
+                {
+                  "value": "",
+                  "style": {
+                    "fontWeight": "bold",
+                    "borderTop": "0.75 solid #94a3b8"
+                  }
+                },
+                {
+                  "value": "=Sum(Fields.amount)",
+                  "style": {
+                    "format": "N0",
+                    "textAlign": "right",
+                    "fontWeight": "bold",
+                    "borderTop": "0.75 solid #94a3b8"
+                  }
+                }
+              ]
+            }
+          ],
+          "style": {
+            "padding": [
+              3,
+              4,
+              3,
+              4
+            ]
+          },
+          "id": "yd5om7xa",
+          "name": "Table2",
+          "x": 0,
+          "y": 120
+        }
+      ]
+    },
+    "pageFooter": {
+      "height": 24,
+      "items": [
+        {
+          "id": "f1",
+          "type": "textbox",
+          "name": "PageNumber",
+          "x": 323.28,
+          "y": 6,
+          "w": 200,
+          "h": 12,
+          "value": "Page {Globals.PageNumber} of {Globals.TotalPages}",
+          "canGrow": false,
+          "style": {
+            "fontSize": 7.5,
+            "color": "#6b7280",
+            "textAlign": "right"
+          }
+        }
+      ]
+    }
+  }
+}

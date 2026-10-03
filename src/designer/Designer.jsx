@@ -12,6 +12,7 @@ import { fontFaceCss } from '@/exporters/svg.js';
 import { ALL_FONT_KEYS } from '@/engine/text/fonts.js';
 import ThemeToggle from '@/theme/ThemeToggle.jsx';
 import ChartWizard from './ChartWizard.jsx';
+import TableWizard from './TableWizard.jsx';
 
 const FONT_CSS = fontFaceCss(ALL_FONT_KEYS);
 
@@ -118,6 +119,7 @@ export default function Designer({ id, initial }) {
   const st = useDesigner.getState;
   const [dialog, setDialog] = useState(null);
   const wizard = useDesigner(s => s.wizard);
+  const tableWizard = useDesigner(s => s.tableWizard);
 
   useEffect(() => { loadSample(); }, []);
 
@@ -180,6 +182,7 @@ export default function Designer({ id, initial }) {
       )}
       {dialog === 'history' && <HistoryDialog id={id} onClose={() => setDialog(null)} />}
       {wizard && <ChartWizard />}
+      {tableWizard && <TableWizard />}
       {tab === 'preview' ? (
         <ReportViewer definition={def} reportId={id} compact />
       ) : (

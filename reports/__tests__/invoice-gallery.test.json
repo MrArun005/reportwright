@@ -1,0 +1,4 @@
+{
+  "report": "../invoice-gallery.pw.json",
+  "cases": [{ "name": "default", "now": "2026-10-04T10:00:00" }]
+}

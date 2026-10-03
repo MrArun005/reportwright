@@ -1,0 +1,67 @@
+# invoice-gallery › default · 1 pages
+--- page 1
+Invoice
+Item
+Category
+Qty
+Rate
+Amount
+Thermal paper roll
+Supplies
+12
+85.50
+1,026
+Barcode scanner
+Hardware
+2
+4,200.00
+8,400
+Label printer
+Hardware
+1
+11,800.00
+11,800
+Setup and training
+Services
+3
+1,500.00
+4,500
+Total
+18
+25,726
+Item
+Qty
+Rate
+Amount
+Hardware
+Barcode scanner
+2
+4,200.00
+8,400
+Label printer
+1
+11,800.00
+11,800
+Subtotal
+3
+20,200
+Services
+Setup and training
+3
+1,500.00
+4,500
+Subtotal
+3
+4,500
+Supplies
+Thermal paper roll
+12
+85.50
+1,026
+Subtotal
+12
+1,026
+Total
+18
+25,726
+Page 1 of 1

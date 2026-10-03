@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { rowArrays, bestRows } from './explore.js';
 import { useDesigner, SECTIONS } from './store.js';
-import { MIME_FIELD } from './Canvas.jsx';
+import { MIME_FIELD, MIME_DATASET } from './Canvas.jsx';
 import { loadSources, buildDataSets, detectFields, jsonPath } from '@/engine/data/index.js';
 import { resolveParameters } from '@/engine/index.js';
 import { Dialog, Field, TextInput, Select, Check } from './ui.jsx';
@@ -69,7 +69,8 @@ export default function DataPanel() {
               <li key={d.name}>
                 <div className="trow">
                   <button className="btn sm ghost icon" style={{ width: 18, height: 18 }} onClick={() => toggle(d.name)} aria-label="Show fields">{open.has(d.name) ? '▾' : '▸'}</button>
-                  <span className="nm"><b>{d.name}</b></span>
+                  <span className="nm" draggable title="Drag onto the page for a table of these rows"
+                    onDragStart={(e) => { e.dataTransfer.setData(MIME_DATASET, JSON.stringify({ dataSet: d.name })); e.dataTransfer.effectAllowed = 'copy'; }}><b>{d.name}</b></span>
                   <span className="ty">{sample?.dataSets?.[d.name] ? `${sample.dataSets[d.name].length} rows` : ''}</span>
                   <button className="btn sm ghost act" onClick={() => setDlg({ kind: 'dataset', index: i })}>Edit</button>
                 </div>

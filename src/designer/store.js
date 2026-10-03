@@ -71,6 +71,7 @@ export const useDesigner = create((set, get) => ({
   sample: null,
   /** chart gallery dialog: {mode:'insert', section, x, y, extra, parentId} | {mode:'edit', id} */
   wizard: null,
+  tableWizard: null,
   lastKey: null,
   lastAt: 0,
 
@@ -159,6 +160,11 @@ export function addItem(type, section, x, y, extra = {}, parentId = null) {
 export function insertItem(type, section, x, y, extra = {}, parentId = null) {
   if (type === 'chart' && (S().def.dataSets || []).length) {
     S().setUi({ wizard: { mode: 'insert', section, x, y, extra, parentId } });
+    return null;
+  }
+  // tables and matrices open the table gallery (list, grouped, summary, matrix) when the report has data
+  if ((type === 'table' || type === 'matrix') && (S().def.dataSets || []).some(d => (d.fields || []).length)) {
+    S().setUi({ tableWizard: { type, section, x, y, extra, parentId } });
     return null;
   }
   return addItem(type, section, x, y, extra, parentId);

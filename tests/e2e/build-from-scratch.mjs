@@ -46,6 +46,8 @@ await p.locator('.field-chip', { hasText: 'installment' }).waitFor();
 
 step('drop a table and bind fields');
 await p.dragAndDrop('[data-tool=table]', '[data-section=body]', { targetPosition: { x: 30, y: 60 } });
+// a report with data opens the table gallery; this test builds the table by hand
+await p.getByRole('button', { name: 'Insert an empty table' }).click();
 await p.waitForSelector('.tbl');
 for (const [field, col] of [['installment', 0], ['dueDate', 1], ['emi', 2]]) {
   await p.dragAndDrop(`.field-chip:has(.nm:text-is("${field}"))`, `[data-cell="detail-0-${col}"]`);

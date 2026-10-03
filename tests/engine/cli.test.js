@@ -43,7 +43,7 @@ describe('pw test', () => {
     const r = run(['test', 'reports']);
     expect(r.err).toBe('');
     expect(r.code).toBe(0);
-    expect(r.out).toMatch(/1 passed/);
+    expect(r.out).toMatch(/\d+ passed, 0 failed/);
   });
 
   it('fails when the statement total changes, and shows the lines', () => {
