@@ -233,7 +233,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     setExporting(fmt);
     try {
       const blob = fmt === 'pdf' ? await pdfBlob(model, definition.name) : await exportBlob(fmt, model, definition, { params, state, lang, ...(exportHtmlOptions || {}), ...(level.id ? { reportId: level.id } : {}) });
-      const ext = { pdf: 'pdf', xlsx: 'xlsx', html: 'html', csv: 'csv' }[fmt];
+      const ext = { pdf: 'pdf', xlsx: 'xlsx', docx: 'docx', html: 'html', csv: 'csv' }[fmt];
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = `${(definition.name || 'report').replace(/[^\w-]+/g, '-')}.${ext}`;
@@ -318,6 +318,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
         <div className="tgroup export" role="group" aria-label="Export">
           <button className="btn sm primary" onClick={() => doExport('pdf')} disabled={!model || !!exporting} data-testid="export-pdf">{exporting === 'pdf' ? T('exporting') : 'PDF'}</button>
           <button className="btn sm" onClick={() => doExport('xlsx')} disabled={!model || !!exporting} data-testid="export-xlsx">{exporting === 'xlsx' ? T('exporting') : 'Excel'}</button>
+          <button className="btn sm" onClick={() => doExport('docx')} disabled={!model || !!exporting} data-testid="export-docx" title="Text and tables, to edit in Word">{exporting === 'docx' ? T('exporting') : 'Word'}</button>
           <button className="btn sm" onClick={() => doExport('html')} disabled={!model || !!exporting} data-testid="export-html">{exporting === 'html' ? T('exporting') : 'HTML'}</button>
           <button className="btn sm" onClick={() => doExport('csv')} disabled={!model || !!exporting} data-testid="export-csv">{exporting === 'csv' ? T('exporting') : 'CSV'}</button>
         </div>

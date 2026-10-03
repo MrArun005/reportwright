@@ -36,6 +36,10 @@ export async function exportBlob(fmt, model, def, opt = {}) {
     await store.load();
     return new Blob([await exportHtml(model, store, { title: def.name, subset: subsetter })], { type: 'text/html;charset=utf-8' });
   }
+  if (fmt === 'docx') {
+    const { exportDocx } = await import('@/exporters/docx.js');
+    return new Blob([await exportDocx(model, { title: def.name })], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+  }
   if (fmt === 'xlsx') {
     const ExcelJS = await loadExcel();
     const bytes = await exportXlsx(model, ExcelJS, { currency: def.currency, title: def.name });

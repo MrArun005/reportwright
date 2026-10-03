@@ -9,9 +9,10 @@ import { exportPdf } from '../src/exporters/pdf.js';
 import { exportHtml } from '../src/exporters/html.js';
 import { exportCsv } from '../src/exporters/csv.js';
 import { exportXlsx } from '../src/exporters/xlsx.js';
+import { exportDocx } from '../src/exporters/docx.js';
 
 const ROOT = path.join(import.meta.dirname, '..');
-const HELP = `pw render <report.pw.json> [-p name=value]… [-d source=data.json]… [-f pdf|xlsx|html|csv|json|txt] [-o file|-] [--base URL] [--pdfa]
+const HELP = `pw render <report.pw.json> [-p name=value]… [-d source=data.json]… [-f pdf|xlsx|docx|html|csv|json|txt] [-o file|-] [--base URL] [--pdfa]
 pw test [folder] [--update]        render every <folder>/__tests__/*.test.json case and compare it with its snapshot
 pw diff <old.pw.json> <new.pw.json> [-p name=value]… [-d source=data.json]… [--base URL]
 
@@ -93,6 +94,7 @@ async function cmdRender(args) {
   else if (fmt === 'html') bytes = await exportHtml(model, fontStore, { title: def.name });
   else if (fmt === 'csv') bytes = exportCsv(model, { locale: def.locale, currency: def.currency });
   else if (fmt === 'xlsx') bytes = await exportXlsx(model, (await import('exceljs')).default, { currency: def.currency, title: def.name });
+  else if (fmt === 'docx') bytes = await exportDocx(model, { title: def.name });
   else if (fmt === 'json') bytes = JSON.stringify(model);
   else if (fmt === 'txt') bytes = snapshotText(def.name || positionals[0], model);
   else usage(`unknown format "${fmt}"`);

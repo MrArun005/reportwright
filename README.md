@@ -21,7 +21,7 @@ Open the home page. Three sample reports are there: **Loan statement**, **Sales 
 | `/` | Report list. Create a report. |
 | `/designer/<id>` | Designer: toolbox, inspector, data panel, Preview tab, ⌘S to save, `?` for shortcuts |
 | `/viewer/<id>?param=value&lang=hi` | Viewer: parameters, paging, zoom, search, document map, drill-down, exports |
-| `/api/reports/<id>/pdf?format=pdf\|xlsx\|html\|csv` | The report rendered **on the server** |
+| `/api/reports/<id>/pdf?format=pdf\|xlsx\|docx\|html\|csv` | The report rendered **on the server** |
 | `/api/v1/*` | Automation API: render, batches, schedules (needs an API key) |
 | `/embed/pagewright-viewer.js` | Script to put the viewer in another web app |
 | `/login`, `/admin/users` | Sign-in and user management, when accounts are on (`PW_AUTH=users`, see [Users and roles](#users-and-roles)) |

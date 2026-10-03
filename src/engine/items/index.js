@@ -212,6 +212,8 @@ register('table', {
     const units = [];
     let y = 0;
     let repeatH = 0; // header height that repeats above continued rows
+    let rowSeq = 0;
+    const colWidths = cols.map(c => c.width); // one array shared by every cell tag
 
     const layRow = (row, ctx, kind, extra) => {
       const rst = resolveStyle([lc.base, lc.named?.[item.styleName], item.style, lc.named?.[row.styleName], row.style], ctx);
@@ -238,7 +240,7 @@ register('table', {
       }
       region.rows.push({ kind, level: extra?.level ?? 0, cells: cells.map(c => ({ col: Math.round((c.x - item.x) * 100), value: c.raw instanceof Date || typeof c.raw === 'boolean' ? c.raw : typeof c.raw === 'number' ? roundFor(c.raw, c.st.format) : c.plain, format: c.st.format || null, bold: c.st.fontWeight === 'bold' || Number(c.st.fontWeight) >= 600, span: c.span, colIndex: colX.indexOf(c.x) })) });
       // h: height of this piece; lines: per-cell lines when the row is split; first: links, visuals and toggles go on the first piece
-      const paint = (h, lines, first) => {
+      const paint = (h, lines, first, rowId) => {
         const items = [];
         cells.forEach((c, k) => {
           if (c.cell.visual?.type) {
@@ -246,7 +248,10 @@ register('table', {
             if (first) items.push(...paintVisual(c.cell.visual, { x: c.x, y: 0, w: c.w, h }, c.ctx, lc, c.st, `${item.name} cell`));
             return;
           }
-          items.push(...paintBox({ x: c.x, y: 0, w: c.w, h, st: c.st, tl: lines ? { ...c.tl, lines: lines[k] } : c.tl, numeric: c.numeric, m: lc.m }));
+          const box = paintBox({ x: c.x, y: 0, w: c.w, h, st: c.st, tl: lines ? { ...c.tl, lines: lines[k] } : c.tl, numeric: c.numeric, m: lc.m });
+          // cell text knows its table, row and column, so the Word export can rebuild the table
+          for (const b of box) if (b.t === 'text') b.cell = { table: item.name, row: rowId, col: colX.indexOf(c.x), span: c.span, kind, cols: colWidths, bg: c.st.backgroundColor || null };
+          items.push(...box);
           if (!first) return;
           const link = lc.linkFor?.(c.cell, c.ctx, { x: c.x, y: 0, w: c.w, h });
           if (link) items.push(link);
@@ -273,7 +278,7 @@ register('table', {
       } else pieces.push({ lines: null, h: need });
       let u;
       pieces.forEach((pc, i) => {
-        u = { top: y, height: pc.h, items: paint(pc.h, pc.lines, i === 0), kind };
+        u = { top: y, height: pc.h, items: paint(pc.h, pc.lines, i === 0, ++rowSeq), kind };
         y += pc.h;
         units.push(u);
       });

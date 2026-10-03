@@ -6,6 +6,7 @@ import { exportPdf } from '@/exporters/pdf.js';
 import { exportHtml } from '@/exporters/html.js';
 import { exportCsv } from '@/exporters/csv.js';
 import { exportXlsx } from '@/exporters/xlsx.js';
+import { exportDocx } from '@/exporters/docx.js';
 import { createSubsetter } from '@/exporters/subset.js';
 import { readReport } from './reports.js';
 import { serverFetch } from './safeFetch.js';
@@ -22,6 +23,7 @@ const iccProfile = async () => (icc ||= await fs.readFile(path.join(ROOT, 'publi
 export const FORMATS = {
   pdf: { type: 'application/pdf', ext: 'pdf' },
   xlsx: { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ext: 'xlsx' },
+  docx: { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', ext: 'docx' },
   html: { type: 'text/html; charset=utf-8', ext: 'html' },
   csv: { type: 'text/csv; charset=utf-8', ext: 'csv' },
   json: { type: 'application/json', ext: 'json' },
@@ -51,7 +53,7 @@ export async function loadTemplate(template) {
  */
 export async function renderTo(def, opt = {}) {
   const format = opt.format || 'pdf';
-  if (!FORMATS[format]) throw Object.assign(new Error(`Unknown format "${format}". Use pdf, xlsx, html, csv or json.`), { status: 400 });
+  if (!FORMATS[format]) throw Object.assign(new Error(`Unknown format "${format}". Use pdf, xlsx, docx, html, csv or json.`), { status: 400 });
   let d = def;
   if (opt.data && typeof opt.data === 'object') {
     d = { ...def, dataSources: (def.dataSources || []).map(s => (s.name in opt.data ? { name: s.name, type: 'json', data: opt.data[s.name] } : s)) };
@@ -74,6 +76,7 @@ export async function renderTo(def, opt = {}) {
   }
   else if (format === 'html') bytes = Buffer.from(await exportHtml(model, fontStore(), { title: def.name, subset }));
   else if (format === 'csv') bytes = Buffer.from(exportCsv(model, { locale: def.locale, currency: def.currency }));
+  else if (format === 'docx') bytes = Buffer.from(await exportDocx(model, { title: def.name }));
   else if (format === 'xlsx') { const ExcelJS = (await import('exceljs')).default; bytes = await exportXlsx(model, ExcelJS, { currency: def.currency, title: def.name }); }
   else bytes = Buffer.from(JSON.stringify(model));
   return { bytes, model, contentType: FORMATS[format].type, ext: FORMATS[format].ext };
