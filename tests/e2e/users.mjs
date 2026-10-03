@@ -106,6 +106,12 @@ assert.equal((await req(`/designer/${RID}`, { cookie: viewer.cookie })).status, 
 assert.equal((await req('/admin/users', { cookie: viewer.cookie })).status, 403);
 assert.equal((await req('/api/users', { cookie: viewer.cookie })).status, 403);
 assert.equal((await req('/api/data/sql', { method: 'POST', cookie: viewer.cookie, headers: H, body: { connection: 'nope', query: 'select 1' } })).status, 403);
+// the home page hides what a viewer cannot use, and shows it to a designer
+const home = async (c) => (await req('/', { cookie: c })).text();
+const vh = await home(viewer.cookie), dh = await home(designer.cookie);
+assert.ok(!vh.includes('New report') && !vh.includes('/designer/'), 'viewer home: no create or design');
+assert.ok(vh.includes('Sign out') && vh.includes(`/viewer/${RID}`), 'viewer home: sign-out and view links');
+assert.ok(dh.includes('New report') && dh.includes(`/designer/${RID}`), 'designer home: create and design');
 // path tricks
 assert.equal((await req('/api/reports%2F..%2Fusers', { cookie: viewer.cookie })).status, 400);
 assert.equal((await req('/API/USERS', { cookie: designer.cookie })).status, 403);
