@@ -26,12 +26,16 @@ function initialParams(def, given) {
   return out;
 }
 
-const Page = ({ page, w, h, scale, index, hits }) => {
-  const html = useMemo(() => pageToSvg(page, w, h), [page, w, h]);
+// Pages further than this from the current page are empty boxes of the right size, so a
+// 1,000-page report shows its first page at once and scrolls without building every SVG.
+const WINDOW = 3;
+
+const Page = ({ page, w, h, scale, index, hits, near }) => {
+  const html = useMemo(() => (near ? pageToSvg(page, w, h) : ''), [page, w, h, near]);
   return (
     <div className="vpage" data-page={index + 1} style={{ width: w * scale, height: h * scale }}>
-      <div style={{ width: '100%', height: '100%' }} dangerouslySetInnerHTML={{ __html: html }} />
-      {hits?.map((r, i) => <div key={i} className={`hl${r.cur ? ' cur' : ''}`} style={{ left: r.x * scale, top: r.y * scale, width: r.w * scale, height: r.h * scale }} />)}
+      {near && <div style={{ width: '100%', height: '100%' }} dangerouslySetInnerHTML={{ __html: html }} />}
+      {near && hits?.map((r, i) => <div key={i} className={`hl${r.cur ? ' cur' : ''}`} style={{ left: r.x * scale, top: r.y * scale, width: r.w * scale, height: r.h * scale }} />)}
     </div>
   );
 };
@@ -275,7 +279,7 @@ export default function ReportViewer({ definition, params: given, title, compact
             <details className="warnings"><summary>{T('warnings', { n: model.warnings.length })}</summary>
               <ul>{model.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul></details>
           )}
-          {model?.pages.map((pg, i) => <Page key={i} index={i} page={pg} w={model.width} h={model.height} scale={scale} hits={hitsByPage.get(i)} />)}
+          {model?.pages.map((pg, i) => <Page key={i} index={i} page={pg} w={model.width} h={model.height} scale={scale} hits={hitsByPage.get(i)} near={Math.abs(i - (current - 1)) <= WINDOW} />)}
         </div>
       </div>
     </div>
