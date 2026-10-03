@@ -47,18 +47,21 @@ function getWorker() {
 }
 
 const loadReport = async (rid) => { const r = await fetch(`${assetBase}/api/reports/${rid}`); if (!r.ok) throw new Error(`Report "${rid}" not found`); return r.json(); };
-async function renderMain(def, params, state) {
-  return render(def, { parameters: params, state, fontStore: fontStore(), baseUrl: origin(), loadReport });
+async function renderMain(def, params, state, reportId) {
+  return render(def, { parameters: params, state, reportId, fontStore: fontStore(), baseUrl: origin(), loadReport });
 }
 
-/** @returns {Promise<any>} page model */
-export function renderReport(def, params = {}, state = {}) {
+/**
+ * @param {string} [reportId] the saved report: the server runs its SQL sources
+ * @returns {Promise<any>} page model
+ */
+export function renderReport(def, params = {}, state = {}, reportId = undefined) {
   const w = getWorker();
-  if (!w) return renderMain(def, params, state);
+  if (!w) return renderMain(def, params, state, reportId);
   return new Promise((resolve, reject) => {
     const id = ++seq;
-    waiting.set(id, { resolve, reject, retry: () => renderMain(def, params, state).then(resolve, reject) });
-    w.postMessage({ id, def, params, state });
+    waiting.set(id, { resolve, reject, retry: () => renderMain(def, params, state, reportId).then(resolve, reject) });
+    w.postMessage({ id, def, params, state, reportId });
   });
 }
 

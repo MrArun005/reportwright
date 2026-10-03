@@ -12,7 +12,7 @@ export default function ViewerShell({ id, def, params }) {
         <div className="spacer" />
         <Link className="btn sm" href={`/designer/${id}`}>Edit in designer</Link>
       </div>
-      <ReportViewer definition={def} params={rest} lang={lang || 'en'} />
+      <ReportViewer definition={def} reportId={id} params={rest} lang={lang || 'en'} />
     </div>
   );
 }

@@ -174,7 +174,7 @@ export default function Designer({ id, initial }) {
       )}
       {dialog === 'history' && <HistoryDialog id={id} onClose={() => setDialog(null)} />}
       {tab === 'preview' ? (
-        <ReportViewer definition={def} compact />
+        <ReportViewer definition={def} reportId={id} compact />
       ) : (
         <div className="dmain">
           <aside className="dleft"><Toolbox /><DataPanel /></aside>

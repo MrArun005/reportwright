@@ -9,6 +9,7 @@ import { exportXlsx } from '@/exporters/xlsx.js';
 import { createSubsetter } from '@/exporters/subset.js';
 import { readReport } from './reports.js';
 import { serverFetch } from './safeFetch.js';
+import { runSql } from './sql.js';
 
 const ROOT = process.cwd();
 let store;
@@ -55,6 +56,7 @@ export async function renderTo(def, opt = {}) {
   const fetch = serverFetch(opt.self || base);
   const model = await render(d, {
     parameters: opt.parameters || {}, state: opt.state || {}, fontStore: fontStore(), baseUrl: base, fetch,
+    sql: runSql, // SQL sources query the database directly, not through /api/data/sql
     loadReport: async (id) => { const r = await readReport(id); if (!r) throw new Error(`Report "${id}" not found`); return r; },
   });
   let bytes;
