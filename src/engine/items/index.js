@@ -7,6 +7,7 @@ import { applyFilters, applySort } from '../data/index.js';
 import { paintChart, CHART_TYPES } from './chart.js';
 import { paintVisual } from './visuals.js';
 import { paintBarcode, BARCODE_TYPES } from './barcode.js';
+import { paintMap } from './map.js';
 import { shiftItems } from './paint.js';
 import { resolveFontKey } from '../text/fonts.js';
 
@@ -519,6 +520,41 @@ register('chart', {
     const ctx = lc.ctxFor(item);
     if (hidden(item, ctx, lc)) return { height: 0, units: [] };
     const items = paintChart(item, ctx, lc, lc.base);
+    addInteractivity(items, item, ctx, lc, { x: item.x, y: 0, w: item.w, h: item.h });
+    return { height: item.h, units: [{ top: 0, height: item.h, items }] };
+  },
+});
+
+/* ---------------------------------------------------------------- map */
+register('map', {
+  label: 'Map',
+  defaults: () => ({ type: 'map', w: 360, h: 240, geojson: '', shapeKey: '=Fields.name', colorLow: '#dbeafe', colorHigh: '#1e3a8a', legend: 'bottom', valueFormat: 'N0' }),
+  props: [
+    { key: 'geojson', label: 'Shapes: GeoJSON text', type: 'text', category: 'Shapes' },
+    { key: 'dataSet', label: 'Shapes: data set of features (instead of the text)', type: 'dataset', category: 'Shapes' },
+    { key: 'geometry', label: 'Shapes: geometry (data set)', type: 'expr', category: 'Shapes' },
+    { key: 'shapeKey', label: 'Shapes: key (e.g. =Fields.name)', type: 'expr', category: 'Shapes' },
+    { key: 'valueDataSet', label: 'Colour by: data set', type: 'dataset', category: 'Colour' },
+    { key: 'valueKey', label: 'Colour by: key that matches the shape key', type: 'expr', category: 'Colour' },
+    { key: 'value', label: 'Colour by: value (aggregate)', type: 'expr', category: 'Colour' },
+    { key: 'valueFormat', label: 'Value format', type: 'text', category: 'Colour' },
+    { key: 'colorLow', label: 'Lowest value colour', type: 'color', category: 'Colour' },
+    { key: 'colorHigh', label: 'Highest value colour', type: 'color', category: 'Colour' },
+    { key: 'legend', label: 'Legend', type: 'select', options: ['bottom', 'none'], category: 'Colour' },
+    { key: 'pointDataSet', label: 'Points: data set', type: 'dataset', category: 'Points' },
+    { key: 'lat', label: 'Points: latitude', type: 'expr', category: 'Points' },
+    { key: 'lon', label: 'Points: longitude', type: 'expr', category: 'Points' },
+    { key: 'pointSize', label: 'Points: size by', type: 'expr', category: 'Points' },
+    { key: 'pointLabel', label: 'Points: label', type: 'expr', category: 'Points' },
+    { key: 'pointColor', label: 'Points: colour', type: 'color', category: 'Points' },
+    { key: 'keepTogether', label: 'Keep on one page', type: 'bool', category: 'Layout' },
+    { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
+  ],
+  styleProps: [],
+  layout(item, lc) {
+    const ctx = lc.ctxFor(item);
+    if (hidden(item, ctx, lc)) return { height: 0, units: [] };
+    const items = paintMap(item, ctx, lc, lc.base);
     addInteractivity(items, item, ctx, lc, { x: item.x, y: 0, w: item.w, h: item.h });
     return { height: item.h, units: [{ top: 0, height: item.h, items }] };
   },
