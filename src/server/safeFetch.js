@@ -8,6 +8,7 @@ import https from 'node:https';
 import dns from 'node:dns';
 import net from 'node:net';
 import { Readable, Transform } from 'node:stream';
+import { accountsOn, internalCookie } from './session.js';
 
 const MAX_BYTES = 20 * 1024 * 1024;
 const TIMEOUT_MS = 30000;
@@ -35,12 +36,16 @@ export const internalHosts = () => (process.env.PW_INTERNAL_HOSTS || '').split('
 
 /**
  * A fetch for server-side work: this server's own origin plus PW_INTERNAL_HOSTS are allowed.
- * With PW_BASIC_AUTH on, calls back into this server (relative data URLs) send the app password.
+ * Calls back into this server (relative data URLs) sign in: with accounts on (PW_AUTH=users) by a viewer pass
+ * for that one GET, else with the PW_BASIC_AUTH password when it is set.
  */
 export const serverFetch = (selfOrigin) => (url, init = {}) => {
   const self = selfOrigin && safeOrigin(selfOrigin);
   const headers = new Headers(init.headers || {});
-  if (process.env.PW_BASIC_AUTH && self && safeOrigin(String(url)) === self && !headers.has('authorization')) {
+  const toSelf = self && safeOrigin(String(url)) === self;
+  if (toSelf && accountsOn()) {
+    if ((init.method || 'GET').toUpperCase() === 'GET' && !headers.has('cookie')) headers.set('cookie', internalCookie(String(url)));
+  } else if (toSelf && process.env.PW_BASIC_AUTH && !headers.has('authorization')) {
     headers.set('authorization', `Basic ${Buffer.from(process.env.PW_BASIC_AUTH).toString('base64')}`);
   }
   return safeFetch(url, { ...init, headers }, { allow: [selfOrigin, ...internalHosts()].filter(Boolean) });
