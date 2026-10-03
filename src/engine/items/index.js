@@ -7,6 +7,7 @@ import { paintChart, CHART_TYPES } from './chart.js';
 import { paintVisual } from './visuals.js';
 import { paintBarcode, BARCODE_TYPES } from './barcode.js';
 import { shiftItems } from './paint.js';
+import { resolveFontKey } from '../text/fonts.js';
 
 /**
  * Item registry. Each item type has:
@@ -40,7 +41,7 @@ function hidden(item, ctx, lc) {
 
 /* ---------------------------------------------------------------- textbox */
 function paintTextbox(item, lc, ctx, forcedH) {
-  const st = resolveStyle([lc.base, item.style], ctx);
+  const st = resolveStyle([lc.base, lc.named?.[item.styleName], item.style], ctx);
   const r = evalSafe(item.value ?? '', ctx, lc, item.name || 'TextBox');
   const text = textOf(r.v, st, ctx);
   const tl = layoutTextLines(text, st, item.w, lc.m);
@@ -59,6 +60,7 @@ register('textbox', {
   props: [
     { key: 'value', label: 'Value', type: 'expr', category: 'Data' },
     { key: 'dataSet', label: 'Data set', type: 'dataset', category: 'Data' },
+    { key: 'styleName', label: 'Named style', type: 'stylename', category: 'Text' },
     { key: 'canGrow', label: 'Can grow', type: 'bool', category: 'Layout' },
     { key: 'canShrink', label: 'Can shrink', type: 'bool', category: 'Layout' },
     { key: 'pageBreakBefore', label: 'Page break before', type: 'bool', category: 'Layout' },
@@ -111,7 +113,7 @@ register('image', {
   layout(item, lc) {
     const ctx = lc.ctxFor(item);
     if (hidden(item, ctx, lc)) return { height: 0, units: [] };
-    const st = resolveStyle([lc.base, item.style], ctx);
+    const st = resolveStyle([lc.base, lc.named?.[item.styleName], item.style], ctx);
     const src = evalSafe(item.src ?? '', ctx, lc, item.name || 'Image').v;
     const items = paintBox({ x: item.x, y: 0, w: item.w, h: item.h, st, tl: null, m: lc.m });
     if (src && src !== '#Error') items.splice(st.backgroundColor ? 1 : 0, 0, { t: 'image', x: item.x, y: 0, w: item.w, h: item.h, src: String(src), fit: item.fit || 'contain' });
@@ -131,7 +133,7 @@ register('line', {
   layout(item, lc) {
     const ctx = lc.ctxFor(item);
     if (hidden(item, ctx, lc)) return { height: 0, units: [] };
-    const st = resolveStyle([lc.base, item.style], ctx);
+    const st = resolveStyle([lc.base, lc.named?.[item.styleName], item.style], ctx);
     const up = item.direction === 'up';
     const sw = Number(st.strokeWidth) || 1;
     const dash = st.strokeDash === 'dashed' ? [4, 3] : st.strokeDash === 'dotted' ? [1, 2] : null;
@@ -154,7 +156,7 @@ register('shape', {
   layout(item, lc) {
     const ctx = lc.ctxFor(item);
     if (hidden(item, ctx, lc)) return { height: 0, units: [] };
-    const st = resolveStyle([lc.base, item.style], ctx);
+    const st = resolveStyle([lc.base, lc.named?.[item.styleName], item.style], ctx);
     const sw = st.stroke && st.stroke !== 'none' ? Number(st.strokeWidth) || 0 : 0;
     const dash = st.strokeDash === 'dashed' ? [4, 3] : st.strokeDash === 'dotted' ? [1, 2] : null;
     const shape = item.shape === 'ellipse'
@@ -207,7 +209,7 @@ register('table', {
     let y = 0;
 
     const layRow = (row, ctx, kind, extra) => {
-      const rst = resolveStyle([lc.base, item.style, row.style], ctx);
+      const rst = resolveStyle([lc.base, lc.named?.[item.styleName], item.style, lc.named?.[row.styleName], row.style], ctx);
       const cells = [];
       let need = row.height || 18;
       for (let ci = 0; ci < cols.length; ci++) {
@@ -216,7 +218,7 @@ register('table', {
         const span = Math.max(1, Math.min(cell.colSpan || 1, cols.length - ci));
         let cw = 0;
         for (let k = 0; k < span; k++) cw += cols[ci + k].width;
-        const st = resolveStyle([rst, cell.style], ctx);
+        const st = resolveStyle([rst, lc.named?.[cell.styleName], cell.style], ctx);
         const r = evalSafe(cell.value ?? '', ctx, lc, `${item.name || 'Table'} cell`);
         let text = textOf(r.v, st, ctx);
         const plain = text;
@@ -376,7 +378,7 @@ register('container', {
 /** Wrap child units of a container or list row: background, border, keep-together block. */
 function frame(item, lc, ctx, res, blockId) {
   const h = Math.max(item.h, res.height);
-  const st = resolveStyle([lc.base, item.style], ctx);
+  const st = resolveStyle([lc.base, lc.named?.[item.styleName], item.style], ctx);
   const deco = paintBox({ x: item.x, y: 0, w: item.w, h, st, tl: null, m: lc.m });
   const units = res.units.map(u => ({ ...u, block: u.block || blockId }));
   if (deco.length) {
@@ -438,7 +440,7 @@ register('checkbox', {
   layout(item, lc) {
     const ctx = lc.ctxFor(item);
     if (hidden(item, ctx, lc)) return { height: 0, units: [] };
-    const st = resolveStyle([lc.base, item.style], ctx);
+    const st = resolveStyle([lc.base, lc.named?.[item.styleName], item.style], ctx);
     const r = evalSafe(item.value ?? false, ctx, lc, item.name || 'CheckBox');
     const on = r.v === true || r.v === 1 || (typeof r.v === 'string' && ['true', 'yes', 'y', '1'].includes(r.v.toLowerCase()));
     const size = Math.min(item.h, (Number(st.fontSize) || 9) + 2);
@@ -542,7 +544,7 @@ register('barcode', {
   layout(item, lc) {
     const ctx = lc.ctxFor(item);
     if (hidden(item, ctx, lc)) return { height: 0, units: [] };
-    const st = resolveStyle([lc.base, item.style], ctx);
+    const st = resolveStyle([lc.base, lc.named?.[item.styleName], item.style], ctx);
     const r = evalSafe(item.value ?? '', ctx, lc, item.name || 'Barcode');
     const text = r.err ? '' : textOf(r.v, st, ctx);
     const size = Number(st.fontSize) || 8;
@@ -664,6 +666,57 @@ register('subreport', {
     const tables = res.tables.map(t => ({ ...t, x0: t.x0 + item.x, x1: t.x1 + item.x, headerItems: shiftItems(t.headerItems, item.x, 0), id: `sub${lc.nextId()}` }));
     for (const r of res.regions || []) lc.regions?.push(r);
     return { height: res.height, units: units.length ? units : [{ top: 0, height: 0, items: [] }], tables };
+  },
+});
+
+/* ---------------------------------------------------------------- table of contents */
+register('toc', {
+  label: 'Table of contents',
+  defaults: () => ({ type: 'toc', w: 400, h: 40, title: 'Contents', levels: 3, style: {} }),
+  props: [
+    { key: 'title', label: 'Title', type: 'text', category: 'Data' },
+    { key: 'levels', label: 'Levels to show', type: 'number', category: 'Data' },
+    { key: 'styleName', label: 'Named style', type: 'stylename', category: 'Text' },
+    { key: 'pageBreakAfter', label: 'Page break after', type: 'bool', category: 'Layout' },
+  ],
+  layout(item, lc) {
+    const ctx = lc.ctxFor(item);
+    const st = resolveStyle([lc.base, lc.named?.[item.styleName], item.style], ctx);
+    const units = [];
+    let y = 0;
+    if (item.title) {
+      const tst = { ...st, fontWeight: 'bold', fontSize: (Number(st.fontSize) || 9) * 1.5, padding: [0, 0, 6, 0] };
+      const tl = layoutTextLines(String(item.title), tst, item.w, lc.m);
+      units.push({ top: 0, height: tl.needed, items: paintBox({ x: item.x, y: 0, w: item.w, h: tl.needed, st: tst, tl, m: lc.m }), keepWithNext: true });
+      y += tl.needed;
+    }
+    const entries = (lc.toc || []).filter(e => (e.level || 0) < (item.levels || 3));
+    if (!entries.length) {
+      const tl = layoutTextLines('Entries appear here: add bookmarks to items or cells.', { ...st, fontStyle: 'italic', color: '#9ca3af' }, item.w, lc.m);
+      units.push({ top: y, height: tl.needed, items: paintBox({ x: item.x, y: 0, w: item.w, h: tl.needed, st: { ...st, fontStyle: 'italic', color: '#9ca3af' }, tl, m: lc.m }) });
+      return { height: Math.max(item.h, y + tl.needed), units };
+    }
+    const key = resolveFontKey(st.fontFamily, st.fontWeight, st.fontStyle);
+    const size = Number(st.fontSize) || 9;
+    const lh = size * 1.6;
+    const { ascent } = lc.m.metrics(key, size);
+    for (const e of entries) {
+      const indent = (e.level || 0) * 12;
+      const num = String(e.page);
+      const nw = lc.m.width(num, key, size);
+      const label = lc.m.ellipsize(e.label, key, size, item.w - indent - nw - 24);
+      const lw = lc.m.width(label, key, size);
+      const base = (lh - size) / 2 + ascent * 0.9;
+      const items = [
+        { t: 'text', font: key, size, color: st.color || '#111', lines: [{ x: item.x + indent, y: base, text: label, w: lw }] },
+        { t: 'line', x1: item.x + indent + lw + 4, y1: base, x2: item.x + item.w - nw - 4, y2: base, stroke: '#9ca3af', strokeWidth: 0.6, dash: [0.6, 2.4] },
+        { t: 'text', font: key, size, color: st.color || '#111', lines: [{ x: item.x + item.w - nw, y: base, text: num, w: nw }] },
+        { t: 'link', x: item.x, y: 0, w: item.w, h: lh, action: { type: 'bookmark', target: e.label } },
+      ];
+      units.push({ top: y, height: lh, items });
+      y += lh;
+    }
+    return { height: Math.max(item.h, y), units };
   },
 });
 

@@ -38,8 +38,14 @@ export function paginate(units, tables, pageH, warn) {
   for (const b of blocks) cand.push(b.top, b.bottom);
   cand.sort((a, b) => a - b);
 
+  // Units are sorted by top. Only units that start within maxH above y can cut y.
+  const maxH = units.reduce((m, u) => Math.max(m, u.height), 0);
+  const firstAtOrAfter = (v) => { let lo = 0, hi = units.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (units[mid].top < v) lo = mid + 1; else hi = mid; } return lo; };
   const valid = (y) => {
-    for (const u of units) {
+    const from = firstAtOrAfter(y - maxH - 1);
+    const to = firstAtOrAfter(y + EPS * 2);
+    for (let i = from; i < to + 1 && i < units.length; i++) {
+      const u = units[i];
       const b = u.top + u.height;
       if (u.top < y - EPS && b > y + EPS) return false;                 // cuts a unit
       if (u.keepWithNext && Math.abs(b - y) < EPS && b < end - EPS) return false;
@@ -60,7 +66,8 @@ export function paginate(units, tables, pageH, warn) {
     let limit = top + Math.max(pageH - offset, 1);
 
     // forced page breaks
-    for (const u of units) {
+    for (let i = firstAtOrAfter(top - maxH - 1); i < units.length && units[i].top < limit; i++) {
+      const u = units[i];
       if (u.breakBefore && u.top > top + EPS && u.top < limit) limit = u.top;
       const ub = u.top + u.height;
       if (u.breakAfter && ub > top + EPS && ub < limit && ub < end - EPS) limit = ub;
@@ -92,7 +99,8 @@ export function paginate(units, tables, pageH, warn) {
         }
       }
     }
-    const onPage = units.filter(u => u.top >= top - EPS && u.top < bottom - EPS);
+    const onPage = [];
+    for (let i = firstAtOrAfter(top - EPS); i < units.length && units[i].top < bottom - EPS; i++) onPage.push(units[i]);
     pages.push({ top, bottom, offset, repeat, units: onPage });
     top = bottom;
   }

@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { renderReport, pdfBlob, usingWorker } from './engineClient.js';
+import { renderReport, pdfBlob, usingWorker, origin } from './engineClient.js';
 import { exportBlob } from './exports.js';
 import { pageToSvg, fontFaceCss, fontFamilyCss } from '@/exporters/svg.js';
 import { ALL_FONT_KEYS } from '@/engine/text/fonts.js';
@@ -8,7 +8,8 @@ import { parameterOptions } from '@/engine/index.js';
 import { t as tr } from './i18n.js';
 
 const PX = 96 / 72;
-const FONT_CSS = fontFaceCss(ALL_FONT_KEYS);
+let FONT_CSS = fontFaceCss(ALL_FONT_KEYS);
+export function setFontBase(base) { FONT_CSS = fontFaceCss(ALL_FONT_KEYS, `${base}/fonts`); return FONT_CSS; }
 let fontsReady = null;
 function loadFonts() {
   if (!fontsReady) fontsReady = Promise.all(ALL_FONT_KEYS.map(k => document.fonts.load(`12px "${fontFamilyCss(k)}"`))).catch(() => {});
@@ -100,7 +101,7 @@ export default function ReportViewer({ definition, params: given, title, compact
   useEffect(() => {
     if (!(definition.parameters || []).some(p => p.options || p.optionsFrom)) return;
     const t = setTimeout(() => {
-      parameterOptions(definition, params, { baseUrl: window.location.origin }).then(setOptions).catch(() => {});
+      parameterOptions(definition, params, { baseUrl: origin() }).then(setOptions).catch(() => {});
     }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps

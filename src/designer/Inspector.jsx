@@ -54,6 +54,7 @@ function PropEditor({ p, value, onChange, openExpr, dataSet }) {
     case 'font': return <Field label={p.label}><Select value={value} onChange={onChange} options={Object.keys(FONT_FAMILIES)} allowEmpty /></Field>;
     case 'dataset': return <Field label={p.label}><Select value={value} onChange={onChange} options={(def.dataSets || []).map(d => d.name)} allowEmpty /></Field>;
     case 'action': return <ActionEditor value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet} />;
+    case 'stylename': return <Field label={p.label}><Select value={value} onChange={onChange} options={Object.keys(def.styles?.named || {})} allowEmpty /></Field>;
     case 'series': return <SeriesEditor value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet} />;
     case 'params': return <ParamsEditor label={p.label} value={value} onChange={onChange} />;
     default: return <Field label={p.label}><TextInput value={value} onChange={v => onChange(v === '' ? undefined : v)} /></Field>;
@@ -340,6 +341,7 @@ function CellProps({ table, sel, openExpr }) {
           <div style={{ gridColumn: '1 / -1' }}><PropEditor p={{ key: 'backgroundColor', label: 'Row background (color or =expression)', type: 'color' }} value={row.style?.backgroundColor} onChange={v => setRowStyle('backgroundColor', v)} openExpr={openExpr} /></div>
         </div>
       </div>
+      <div className="cat"><PropEditor p={{ key: 'styleName', label: 'Named style', type: 'stylename' }} value={cell.styleName} onChange={v => setCell('styleName', v)} openExpr={openExpr} /></div>
       <StyleCats props={TEXT_STYLE_PROPS} style={cell.style} onSet={setCellStyle} openExpr={openExpr} dataSet={table.dataSet} />
     </>
   );
@@ -359,7 +361,17 @@ function Multi({ ids }) {
           <button className="btn sm" onClick={() => align(its => { const v = Math.min(...its.map(i => i.x)); its.forEach(i => { i.x = v; }); })}>Left</button>
           <button className="btn sm" onClick={() => align(its => { const v = Math.max(...its.map(i => i.x + i.w)); its.forEach(i => { i.x = round(v - i.w); }); })}>Right</button>
           <button className="btn sm" onClick={() => align(its => { const v = Math.min(...its.map(i => i.y)); its.forEach(i => { i.y = v; }); })}>Top</button>
+          <button className="btn sm" onClick={() => align(its => { const v = Math.max(...its.map(i => i.y + i.h)); its.forEach(i => { i.y = round(v - i.h); }); })}>Bottom</button>
+          <button className="btn sm" onClick={() => align(its => { const l = Math.min(...its.map(i => i.x)), r = Math.max(...its.map(i => i.x + i.w)); its.forEach(i => { i.x = round((l + r) / 2 - i.w / 2); }); })}>Centre</button>
           <button className="btn sm" onClick={() => align(its => { const w = Math.max(...its.map(i => i.w)); its.forEach(i => { if (i.type !== 'table') i.w = w; }); })}>Same width</button>
+          <button className="btn sm" onClick={() => align(its => { const h = Math.max(...its.map(i => i.h)); its.forEach(i => { if (i.type !== 'table') i.h = h; }); })}>Same height</button>
+        </div>
+      </div>
+      <div className="cat">
+        <h5>Distribute</h5>
+        <div className="btnrow">
+          <button className="btn sm" disabled={items.length < 3} onClick={() => align(its => { const s2 = [...its].sort((a, b) => a.x - b.x); const total = s2[s2.length - 1].x + s2[s2.length - 1].w - s2[0].x; const gap = (total - s2.reduce((a, i) => a + i.w, 0)) / (s2.length - 1); let x = s2[0].x; s2.forEach(i => { i.x = round(x); x += i.w + gap; }); })}>Horizontally</button>
+          <button className="btn sm" disabled={items.length < 3} onClick={() => align(its => { const s2 = [...its].sort((a, b) => a.y - b.y); const total = s2[s2.length - 1].y + s2[s2.length - 1].h - s2[0].y; const gap = (total - s2.reduce((a, i) => a + i.h, 0)) / (s2.length - 1); let y = s2[0].y; s2.forEach(i => { i.y = round(y); y += i.h + gap; }); })}>Vertically</button>
         </div>
       </div>
       <div className="cat"><div className="btnrow">
@@ -383,6 +395,10 @@ function SectionProps({ section }) {
         <Field label="Height (pt)" hint={section === 'body' ? 'Design height only. The body grows with its data at run time.' : 'Fixed on every page. Use 0 to remove the band.'}>
           <NumberInput value={sec.height || 0} step={1} onChange={v => set('height', Math.max(minH, v))} />
         </Field>
+        {section === 'body' && <div className="grid2">
+          <Field label="Columns" hint="Newspaper columns: the body fills each column, then the next."><NumberInput value={sec.columns?.count || 1} step={1} min={1} onChange={v => useDesigner.getState().apply(d => { const n = Math.max(1, Math.min(6, Math.round(v))); if (n === 1) delete d.sections.body.columns; else d.sections.body.columns = { gap: d.sections.body.columns?.gap ?? 18, count: n }; })} /></Field>
+          {sec.columns?.count > 1 && <Field label="Gap (pt)"><NumberInput value={sec.columns.gap ?? 18} step={1} onChange={v => useDesigner.getState().apply(d => { d.sections.body.columns.gap = Math.max(0, v); }, 'colgap')} /></Field>}
+        </div>}
         {section !== 'body' && <>
           <Check label="Print on the first page" checked={sec.printOnFirstPage !== false} onChange={v => set('printOnFirstPage', v ? undefined : false)} />
           <Check label="Print on the last page" checked={sec.printOnLastPage !== false} onChange={v => set('printOnLastPage', v ? undefined : false)} />
@@ -429,7 +445,58 @@ function ReportProps() {
           <div style={{ gridColumn: '1 / -1' }}><Field label="Color"><ColorInput value={base.color} onChange={v => set(d => { d.styles ||= {}; d.styles.base ||= {}; setOrDelete(d.styles.base, 'color', v); }, 'basecolor')} /></Field></div>
         </div>
       </div>
+      <NamedStyles />
       <div className="cat"><span className="hint">Select an item, a cell or a band to edit it. Drag tools and fields from the left onto the page.</span></div>
     </>
+  );
+}
+
+const THEMES = {
+  Slate: { accent: '#334155', base: { fontFamily: 'Inter', fontSize: 9, color: '#1e293b' } },
+  Teal: { accent: '#0f766e', base: { fontFamily: 'Inter', fontSize: 9, color: '#134e4a' } },
+  Indigo: { accent: '#4338ca', base: { fontFamily: 'Inter', fontSize: 9, color: '#1e1b4b' } },
+  Mono: { accent: '#111827', base: { fontFamily: 'JetBrains Mono', fontSize: 8.5, color: '#111827' } },
+};
+function themeStyles(t) {
+  const a = t.accent;
+  return {
+    base: t.base,
+    named: {
+      Title: { fontSize: 18, fontWeight: 'bold', color: a },
+      Heading: { fontSize: 12, fontWeight: 'bold', color: a },
+      Label: { fontSize: 8, color: '#6b7280' },
+      Value: { fontWeight: '600' },
+      TableHeader: { fontWeight: 'bold', color: '#ffffff', backgroundColor: a },
+      Total: { fontWeight: 'bold', borderTop: `1 solid ${a}` },
+      Muted: { fontSize: 7.5, color: '#6b7280' },
+    },
+  };
+}
+
+function NamedStyles() {
+  const def = useDesigner(s => s.def);
+  const named = def.styles?.named || {};
+  const [newName, setNewName] = useState('');
+  const setS = (name, k, v) => useDesigner.getState().apply(d => { d.styles ||= {}; d.styles.named ||= {}; d.styles.named[name] ||= {}; if (v === undefined || v === '') delete d.styles.named[name][k]; else d.styles.named[name][k] = v; }, `ns.${name}.${k}`);
+  return (
+    <div className="cat">
+      <h5>Named styles and themes</h5>
+      <Field label="Apply a theme (replaces the default text and named styles)">
+        <Select value="" allowEmpty options={Object.keys(THEMES)} onChange={v => { if (v) useDesigner.getState().apply(d => { d.styles = themeStyles(THEMES[v]); }); }} />
+      </Field>
+      {Object.entries(named).map(([name, st]) => (
+        <div className="style-card" key={name}>
+          <b style={{ fontSize: 12 }}>{name}</b>
+          <NumberInput value={st.fontSize} step={0.5} onChange={v => setS(name, 'fontSize', v)} aria-label={`${name} size`} />
+          <Select value={st.fontWeight} options={['normal', '600', 'bold']} allowEmpty onChange={v => setS(name, 'fontWeight', v)} />
+          <input type="color" value={/^#[0-9a-f]{6}$/i.test(st.color || '') ? st.color : '#000000'} onChange={e => setS(name, 'color', e.target.value)} aria-label={`${name} colour`} style={{ width: 26, height: 26, border: '1px solid var(--line)', borderRadius: 5, padding: 0 }} />
+        </div>
+      ))}
+      <div className="expr-row">
+        <TextInput value={newName} onChange={v => setNewName(v.replace(/\W/g, ''))} placeholder="New style name" aria-label="New style name" />
+        <button className="btn sm" disabled={!newName || named[newName]} onClick={() => { setS(newName, 'fontSize', 9); setNewName(''); }}>Add</button>
+      </div>
+      <div className="hint">Items and cells pick a named style in their Text section. Their own style still wins.</div>
+    </div>
   );
 }

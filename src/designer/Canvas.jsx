@@ -55,11 +55,25 @@ export default function Canvas() {
 
   return (
     <div className="cscroll" onPointerDown={(e) => { if (e.target === e.currentTarget) useDesigner.getState().select({ kind: 'report' }); }}>
+      <Ruler width={bw} scale={scale} />
       <div className="paper" style={{ width: bw * scale }} data-testid="paper">
         {SECTIONS.map(s => <Band key={s.key} section={s.key} label={s.label} scale={scale} bw={bw} drag={drag} setDrag={setDrag} />)}
       </div>
     </div>
   );
+}
+
+const UNIT_STEP = { pt: [72, 12], mm: [72 / 25.4 * 10, 72 / 25.4 * 2], cm: [72 / 2.54, 72 / 2.54 / 5], in: [72, 72 / 8] };
+function Ruler({ width, scale }) {
+  const unit = useDesigner(s => s.unit);
+  const [major, minor] = UNIT_STEP[unit] || UNIT_STEP.pt;
+  const ticks = [];
+  for (let x = 0, i = 0; x <= width + 0.01; x += minor, i++) {
+    const isMajor = Math.abs((x / major) - Math.round(x / major)) < 1e-6;
+    ticks.push(<line key={i} x1={x * scale} x2={x * scale} y1={isMajor ? 4 : 11} y2={16} stroke="#8e99a4" strokeWidth={isMajor ? 1 : 0.6} />);
+    if (isMajor && x > 0) ticks.push(<text key={`t${i}`} x={x * scale + 2} y={10} fontSize="9" fill="#5f6b77" fontFamily="var(--mono)">{Math.round(x / major) * (unit === 'mm' ? 10 : unit === 'pt' ? 72 : 1)}</text>);
+  }
+  return <svg className="ruler" width={width * scale} height={16} style={{ display: 'block', margin: '0 auto 2px' }} aria-hidden="true">{ticks}</svg>;
 }
 
 function snapV(v) {
@@ -154,6 +168,15 @@ function Band({ section, label, scale, bw, drag, setDrag }) {
       >
         {sec.items.map(it => <AnyItem key={it.id} item={it} scale={scale} drag={drag} setDrag={setDrag} bw={bw} section={section} />)}
         {marquee && <div className="marquee" style={{ left: marquee.x * scale, top: marquee.y * scale, width: marquee.w * scale, height: marquee.h * scale }} />}
+        {drag?.mode === 'move' && !drag.guideParent && sec.items.some(i => drag.ids.includes(i.id)) && (drag.guides || []).map((g, i) => (
+          g.x != null
+            ? <div key={i} className="guide v" style={{ left: g.x * scale }} />
+            : <div key={i} className="guide h" style={{ top: g.y * scale }} />
+        ))}
+        {section === 'body' && sec.columns?.count > 1 && Array.from({ length: sec.columns.count - 1 }, (_, i) => {
+          const cw = (bw - (sec.columns.gap ?? 18) * (sec.columns.count - 1)) / sec.columns.count;
+          return <div key={`c${i}`} className="col-guide" style={{ left: ((i + 1) * cw + i * (sec.columns.gap ?? 18)) * scale, width: (sec.columns.gap ?? 18) * scale }} />;
+        })}
         <div className="band-resize" onPointerDown={onResizeDown} title="Drag to change the band height" />
       </div>
     </>
@@ -188,12 +211,33 @@ function useItemDrag(item, scale, setDrag) {
     st.select({ kind: 'items', ids });
     const x0 = e.clientX, y0 = e.clientY;
     let moved = false, dx = 0, dy = 0;
+    // smart guides: edges and centres of the other items in the same band or container
+    const f = findItem(st.def, item.id);
+    const room = f?.parent ? f.parent.w : bodyWidth(st.def);
+    const others = (f?.list || []).filter(o => !ids.includes(o.id));
+    const gx = [0, room / 2, room, ...others.flatMap(o => [o.x, o.x + o.w / 2, o.x + o.w])];
+    const gy = others.flatMap(o => [o.y, o.y + o.h / 2, o.y + o.h]);
+    const thr = 5 / scale;
+    const snapTo = (pos, size, cands) => {
+      let best = null;
+      for (const [edge, off] of [[pos, 0], [pos + size / 2, size / 2], [pos + size, size]]) {
+        for (const c of cands) { const d = Math.abs(edge - c); if (d < thr && (!best || d < best.d)) best = { d, at: c, pos: c - off }; }
+      }
+      return best;
+    };
     const move = (ev) => {
       const rx = (ev.clientX - x0) / scale, ry = (ev.clientY - y0) / scale;
       if (!moved && Math.abs(ev.clientX - x0) + Math.abs(ev.clientY - y0) < 3) return;
       moved = true;
-      dx = snapV(item.x + rx) - item.x; dy = snapV(item.y + ry) - item.y;
-      setDrag({ mode: 'move', ids, dx, dy });
+      let nx = snapV(item.x + rx), ny = snapV(item.y + ry);
+      const guides = [];
+      if (!ev.altKey) {
+        const sx = snapTo(item.x + rx, item.w, gx), sy = snapTo(item.y + ry, item.h, gy);
+        if (sx) { nx = round(sx.pos); guides.push({ x: sx.at }); }
+        if (sy) { ny = round(sy.pos); guides.push({ y: sy.at }); }
+      }
+      dx = nx - item.x; dy = ny - item.y;
+      setDrag({ mode: 'move', ids, dx, dy, guides, guideParent: f?.parent?.id || null });
     };
     const up = () => {
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);

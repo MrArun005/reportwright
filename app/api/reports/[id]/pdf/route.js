@@ -1,17 +1,8 @@
-// Server-side render: the same engine, running in Node.
-import fs from 'node:fs/promises';
-import path from 'node:path';
+// GET /api/reports/<id>/pdf?param=value[&format=xlsx|html|csv] — server-side render for links and quick checks.
 import { readReport, safeId } from '@/server/reports.js';
-import { render, FontStore } from '@/engine/index.js';
-import { exportPdf } from '@/exporters/pdf.js';
-import { createSubsetter } from '@/exporters/subset.js';
-
-const subset = createSubsetter(() => fs.readFile(path.join(process.cwd(), 'public', 'harfbuzz-subset.wasm')));
+import { renderTo, baseUrl } from '@/server/renderer.js';
 
 export const runtime = 'nodejs';
-
-let store;
-const fonts = () => (store ||= new FontStore((k) => fs.readFile(path.join(process.cwd(), 'public', 'fonts', `${k}.ttf`))));
 
 export async function GET(req, { params }) {
   try {
@@ -19,18 +10,18 @@ export async function GET(req, { params }) {
     const def = await readReport(safeId(id));
     if (!def) return Response.json({ error: 'Report not found' }, { status: 404 });
     const url = new URL(req.url);
-    const parameters = Object.fromEntries(url.searchParams.entries());
-    const model = await render(def, { parameters, fontStore: fonts(), baseUrl: url.origin });
-    const bytes = await exportPdf(model, fonts(), { title: def.name, subset });
-    return new Response(bytes, {
+    const parameters = Object.fromEntries([...url.searchParams.entries()].filter(([k]) => k !== 'format'));
+    const format = url.searchParams.get('format') || 'pdf';
+    const r = await renderTo(def, { parameters, format, baseUrl: baseUrl(req) });
+    return new Response(r.bytes, {
       headers: {
-        'content-type': 'application/pdf',
-        'content-disposition': `inline; filename="${id}.pdf"`,
-        'x-pagewright-pages': String(model.pages.length),
-        'x-pagewright-ms': String(model.stats.ms),
+        'content-type': r.contentType,
+        'content-disposition': `inline; filename="${id}.${r.ext}"`,
+        'x-pagewright-pages': String(r.model.pages.length),
+        'x-pagewright-ms': String(r.model.stats.ms),
       },
     });
   } catch (e) {
-    return Response.json({ error: e.message, missingParameters: e.missingParameters }, { status: e.missingParameters ? 400 : 500 });
+    return Response.json({ error: e.message, missingParameters: e.missingParameters }, { status: e.status || (e.missingParameters ? 400 : 500) });
   }
 }

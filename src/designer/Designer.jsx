@@ -1,5 +1,6 @@
 'use client';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Dialog } from './ui.jsx';
 import Link from 'next/link';
 import { useDesigner, addItem, deleteSelection, duplicateSelection, moveItems, copySelection, pasteItems } from './store.js';
 import Canvas, { MIME_TOOL } from './Canvas.jsx';
@@ -27,6 +28,7 @@ const TOOLS = [
   { type: 'databar', icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1.5" y="4" width="9" height="6" rx="1" fill="currentColor" /></svg> },
   { type: 'bullet', icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1" y="4" width="12" height="6" fill="none" stroke="currentColor" /><rect x="1" y="5.8" width="7" height="2.4" fill="currentColor" /><path d="M10 3v8" stroke="currentColor" strokeWidth="1.5" /></svg> },
   { type: 'subreport', icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1.5" y="1.5" width="11" height="11" rx="1" stroke="currentColor" fill="none" /><rect x="4" y="5" width="7" height="5" stroke="currentColor" fill="none" /></svg> },
+  { type: 'toc', icon: <svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 3h7M2 7h7M2 11h7" stroke="currentColor" strokeWidth="1.3" /><path d="M11 3h1M11 7h1M11 11h1" stroke="currentColor" strokeWidth="1.3" /></svg> },
   { type: 'checkbox', icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="2" y="2" width="10" height="10" rx="2" stroke="currentColor" fill="none" /><path d="M4.5 7.2l1.8 1.8 3.4-3.6" stroke="currentColor" fill="none" strokeWidth="1.4" /></svg> },
 ];
 
@@ -59,6 +61,42 @@ function isTyping(e) {
   return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
 }
 
+const SHORTCUTS = [
+  ['⌘/Ctrl S', 'Save'], ['⌘/Ctrl Z', 'Undo'], ['⇧⌘/Ctrl Z or ⌘/Ctrl Y', 'Redo'], ['⌘/Ctrl C / V', 'Copy and paste items (works across reports)'],
+  ['⌘/Ctrl D', 'Duplicate'], ['Delete / Backspace', 'Delete the selection'], ['Arrows', 'Nudge 1 pt'], ['⇧ Arrows', 'Nudge 4 grid steps'],
+  ['⇧ Click', 'Add to or remove from the selection'], ['Drag on empty space', 'Select an area'], ['Alt while dragging', 'Ignore smart guides'],
+  ['Esc', 'Clear the selection'], ['?', 'Show this list'],
+];
+
+function HistoryDialog({ id, onClose }) {
+  const [list, setList] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => { fetch(`/api/reports/${id}/versions`).then(r => r.json()).then(setList).catch(e => setErr(e.message)); }, [id]);
+  const restore = async (v) => {
+    const res = await fetch(`/api/reports/${id}/versions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: v }) });
+    if (!res.ok) { setErr((await res.json()).error); return; }
+    const def = await res.json();
+    useDesigner.getState().init(id, def);
+    onClose();
+  };
+  return (
+    <Dialog title="Version history" onClose={onClose} footer={<button className="btn" onClick={onClose}>Close</button>}>
+      <div className="hint">Each save keeps the previous version (the last 50). Restoring makes the current version a version too, so you can undo a restore.</div>
+      {err && <div className="err">{err}</div>}
+      {!list && !err && <div className="hint">Loading…</div>}
+      {list && !list.length && <div className="hint">No earlier versions yet. Save a change first.</div>}
+      {list?.map(v => (
+        <div className="ver-row" key={v.version}>
+          <span>{new Date(v.savedAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'medium' })} <span className="hint">· {(v.bytes / 1024).toFixed(1)} KB</span></span>
+          <span className="btnrow">
+            <button className="btn sm" onClick={() => restore(v.version)}>Restore</button>
+          </span>
+        </div>
+      ))}
+    </Dialog>
+  );
+}
+
 export default function Designer({ id, initial }) {
   const ready = useRef(false);
   // The store is module-global: never fill it on the server, where requests share it.
@@ -74,6 +112,7 @@ export default function Designer({ id, initial }) {
   const canUndo = useDesigner(s => s.past.length > 0);
   const canRedo = useDesigner(s => s.future.length > 0);
   const st = useDesigner.getState;
+  const [dialog, setDialog] = useState(null);
 
   useEffect(() => { loadSample(); }, []);
 
@@ -89,6 +128,7 @@ export default function Designer({ id, initial }) {
       if (mod && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteItems(st().sel.kind === 'section' ? st().sel.section : 'body'); return; }
       if (e.key === 'Delete' || e.key === 'Backspace') { if (st().sel.kind === 'items') { e.preventDefault(); deleteSelection(); } return; }
       if (e.key === 'Escape') { st().select({ kind: 'report' }); return; }
+      if (e.key === '?') { setDialog(d => (d === 'keys' ? null : 'keys')); return; }
       const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
       if (arrows[e.key] && st().sel.kind === 'items') {
         e.preventDefault();
@@ -122,9 +162,17 @@ export default function Designer({ id, initial }) {
           <button aria-pressed={tab === 'design'} onClick={() => st().setUi({ tab: 'design' })}>Design</button>
           <button aria-pressed={tab === 'preview'} onClick={() => st().setUi({ tab: 'preview' })} data-testid="tab-preview">Preview</button>
         </div>
+        <button className="btn sm ghost" onClick={() => setDialog('history')} title="Saved versions">History</button>
+        <button className="btn sm ghost icon" onClick={() => setDialog('keys')} title="Keyboard shortcuts (?)">?</button>
         <a className="btn sm" href={`/viewer/${id}`} target="_blank" rel="noreferrer" title="Opens the saved version">Open viewer</a>
         <button className="btn sm primary" onClick={() => st().save()} disabled={saving || saved} data-testid="save">Save <span className="kbd" style={{ background: 'transparent', color: 'inherit', borderColor: 'rgba(255,255,255,.4)' }}>⌘S</span></button>
       </div>
+      {dialog === 'keys' && (
+        <Dialog title="Keyboard shortcuts" onClose={() => setDialog(null)} footer={<button className="btn" onClick={() => setDialog(null)}>Close</button>}>
+          <div className="kbd-grid">{SHORTCUTS.map(([k, d]) => <><span className="kbd" key={k}>{k}</span><span key={d}>{d}</span></>)}</div>
+        </Dialog>
+      )}
+      {dialog === 'history' && <HistoryDialog id={id} onClose={() => setDialog(null)} />}
       {tab === 'preview' ? (
         <ReportViewer definition={def} compact />
       ) : (

@@ -115,44 +115,72 @@ export async function render(def, opts = {}) {
       lc.subreports = { mode: 'use', results };
     }
   }
-  const body = layoutItems(sec.body?.items || [], lc);
-  if (opts.bodyOnly) return { units: body.units, tables: body.tables, height: body.height, regions, warnings };
-  const units = body.units, tables = body.tables;
+  // Multi-column body: the strip fills column slots left to right, then the next page.
+  const colCount = Math.max(1, Math.min(6, Number(sec.body?.columns?.count) || 1));
+  const colGap = Number(sec.body?.columns?.gap ?? 18);
+  const colW = (page.bodyWidth - colGap * (colCount - 1)) / colCount;
+  lc.bodyWidth = colCount > 1 ? colW : lc.bodyWidth;
 
-  const slices = paginate(units, tables, contentH, warn);
-  const total = slices.length;
+  /** Lay out the body and assemble pages. A table of contents needs a second pass. */
+  const assemble = (tocEntries) => {
+    regions.length = 0;
+    lc.toc = tocEntries;
+    const body = layoutItems(sec.body?.items || [], lc);
+    if (opts.bodyOnly) return { body };
+    const slices = paginate(body.units, body.tables, contentH, warn);
+    const total = Math.ceil(slices.length / colCount);
+    const ml = page.margins.left, mt = page.margins.top;
+    const bodyTop = mt + headerH;
+    const bookmarks = [];
+    const pages = [];
+    for (let k = 0; k < total; k++) {
+      const items = [];
+      const globals = { ...baseCtx.globals, PageNumber: k + 1, TotalPages: total };
+      const plc = makeLc(globals, true);
+      const band = (section, y0, first, last) => {
+        if (!section) return;
+        if (first && section.printOnFirstPage === false) return;
+        if (last && section.printOnLastPage === false) return;
+        const r = layoutItems(section.items || [], plc);
+        for (const u of r.units) items.push(...shiftItems(u.items, ml, y0 + u.top));
+      };
+      band(header, mt, k === 0, k === total - 1);
+      for (let c = 0; c < colCount; c++) {
+        const p = slices[k * colCount + c];
+        if (!p) break;
+        const cx = ml + c * (colW + colGap);
+        for (const t of p.repeat) items.push(...shiftItems(t.headerItems, cx, bodyTop));
+        for (const u of p.units) {
+          // Only items under a continued table move down by its repeated header.
+          let off = 0;
+          for (const t of p.repeat) if (u.x0 < t.x1 - EPS && t.x0 < u.x1 - EPS) off = Math.max(off, t.headerHeight);
+          items.push(...shiftItems(u.items, cx, bodyTop + off + (u.top - p.top)));
+        }
+      }
+      band(footer, page.height - page.margins.bottom - footerH, k === 0, k === total - 1);
+      const kept = [];
+      for (const it of items) {
+        if (it.t === 'bookmark') bookmarks.push({ label: it.label, page: k + 1, y: it.y, level: it.level || 0 });
+        else kept.push(it);
+      }
+      pages.push({ items: kept });
+    }
+    return { pages, bookmarks };
+  };
 
-  /* ---------------- pages ---------------- */
-  const ml = page.margins.left, mt = page.margins.top;
-  const bodyTop = mt + headerH;
-  const bookmarks = [];
-  const pages = slices.map((p, k) => {
-    const items = [];
-    const globals = { ...baseCtx.globals, PageNumber: k + 1, TotalPages: total };
-    const plc = makeLc(globals, true);
-    const band = (section, y0, first, last) => {
-      if (!section) return;
-      if (first && section.printOnFirstPage === false) return;
-      if (last && section.printOnLastPage === false) return;
-      const r = layoutItems(section.items || [], plc);
-      for (const u of r.units) items.push(...shiftItems(u.items, ml, y0 + u.top));
-    };
-    band(header, mt, k === 0, k === total - 1);
-    for (const t of p.repeat) items.push(...shiftItems(t.headerItems, ml + 0, bodyTop));
-    for (const u of p.units) {
-      // Only items under a continued table move down by its repeated header.
-      let off = 0;
-      for (const t of p.repeat) if (u.x0 < t.x1 - EPS && t.x0 < u.x1 - EPS) off = Math.max(off, t.headerHeight);
-      items.push(...shiftItems(u.items, ml, bodyTop + off + (u.top - p.top)));
+  let result = assemble([]);
+  if (opts.bodyOnly) return { units: result.body.units, tables: result.body.tables, height: result.body.height, regions, warnings };
+  if (hasType(sec.body?.items, 'toc')) {
+    // The table of contents changes the page count, which changes its own numbers: repeat until stable.
+    for (let pass = 0; pass < 3; pass++) {
+      const entries = result.bookmarks.map(b => ({ label: b.label, level: b.level, page: b.page }));
+      const next = assemble(entries);
+      const same = JSON.stringify(next.bookmarks.map(b => b.page)) === JSON.stringify(result.bookmarks.map(b => b.page));
+      result = next;
+      if (same && pass > 0) break;
     }
-    band(footer, page.height - page.margins.bottom - footerH, k === 0, k === total - 1);
-    const kept = [];
-    for (const it of items) {
-      if (it.t === 'bookmark') bookmarks.push({ label: it.label, page: k + 1, y: it.y, level: it.level || 0 });
-      else kept.push(it);
-    }
-    return { items: kept };
-  });
+  }
+  const { pages, bookmarks } = result;
 
   return {
     width: page.width, height: page.height, pages, warnings, bookmarks, regions, name: def.name || '',

@@ -31,6 +31,23 @@ export const BASE_STYLE = {
  * @param {(object|null|undefined)[]} layers @param {any} ctx
  */
 export function resolveStyle(layers, ctx) {
+  // Fast path: every layer is static → reuse one merged object per layer combination.
+  let node = null, allStatic = true;
+  for (const l of layers) {
+    if (!l) continue;
+    if (hasDynamic(l)) { allStatic = false; break; }
+  }
+  if (allStatic) {
+    let map = CACHE;
+    for (const l of layers) {
+      if (!l) continue;
+      let next = map.get(l);
+      if (!next) { next = { map: new WeakMap(), value: null }; map.set(l, next); }
+      node = next;
+      map = next.map;
+    }
+    if (node?.value) return node.value;
+  }
   const out = {};
   for (const l of layers) {
     if (!l) continue;
@@ -40,7 +57,19 @@ export function resolveStyle(layers, ctx) {
       out[k] = isDynamic(v) ? safe(v, ctx) : v;
     }
   }
+  if (allStatic && node) node.value = Object.freeze(out);
   return out;
+}
+const CACHE = new WeakMap();
+const DYN = new WeakMap();
+function hasDynamic(l) {
+  let d = DYN.get(l);
+  if (d === undefined) {
+    d = false;
+    for (const k in l) if (isDynamic(l[k])) { d = true; break; }
+    DYN.set(l, d);
+  }
+  return d;
 }
 function safe(v, ctx) {
   try { return evalValue(v, ctx); } catch { return undefined; }

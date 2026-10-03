@@ -4,7 +4,11 @@ import { render, FontStore } from '@/engine/index.js';
 import { exportPdf } from '@/exporters/pdf.js';
 import { createSubsetter } from '@/exporters/subset.js';
 
-export const subsetter = createSubsetter(async () => (await fetch('/harfbuzz-subset.wasm')).arrayBuffer());
+// Where fonts, the WASM subsetter and report definitions come from ('' = this site; set for embedding).
+let assetBase = '';
+export function setAssetBase(url) { assetBase = String(url || '').replace(/\/$/, ''); mainStore = null; }
+export const origin = () => assetBase || window.location.origin;
+export const subsetter = createSubsetter(async () => (await fetch(`${assetBase}/harfbuzz-subset.wasm`)).arrayBuffer());
 
 let worker = null;
 let workerBroken = false;
@@ -13,12 +17,12 @@ const waiting = new Map();
 let mainStore = null;
 
 export function fontStore() {
-  if (!mainStore) mainStore = new FontStore(async (k) => (await fetch(`/fonts/${k}.ttf`)).arrayBuffer());
+  if (!mainStore) mainStore = new FontStore(async (k) => (await fetch(`${assetBase}/fonts/${k}.ttf`)).arrayBuffer());
   return mainStore;
 }
 
 function getWorker() {
-  if (workerBroken || typeof Worker === 'undefined') return null;
+  if (workerBroken || typeof Worker === 'undefined' || assetBase) return null; // embedded: run on the main thread
   if (worker) return worker;
   try {
     worker = new Worker(new URL('../worker/engine.worker.js', import.meta.url), { type: 'module' });
@@ -42,9 +46,9 @@ function getWorker() {
   return worker;
 }
 
-const loadReport = async (rid) => { const r = await fetch(`/api/reports/${rid}`); if (!r.ok) throw new Error(`Report "${rid}" not found`); return r.json(); };
+const loadReport = async (rid) => { const r = await fetch(`${assetBase}/api/reports/${rid}`); if (!r.ok) throw new Error(`Report "${rid}" not found`); return r.json(); };
 async function renderMain(def, params, state) {
-  return render(def, { parameters: params, state, fontStore: fontStore(), baseUrl: window.location.origin, loadReport });
+  return render(def, { parameters: params, state, fontStore: fontStore(), baseUrl: origin(), loadReport });
 }
 
 /** @returns {Promise<any>} page model */

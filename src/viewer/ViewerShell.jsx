@@ -3,6 +3,7 @@ import Link from 'next/link';
 import ReportViewer from './ReportViewer.jsx';
 
 export default function ViewerShell({ id, def, params }) {
+  const { lang, ...rest } = params || {};
   return (
     <div style={{ height: '100%', display: 'grid', gridTemplateRows: 'auto 1fr' }}>
       <div className="dtop">
@@ -11,7 +12,7 @@ export default function ViewerShell({ id, def, params }) {
         <div className="spacer" />
         <Link className="btn sm" href={`/designer/${id}`}>Edit in designer</Link>
       </div>
-      <ReportViewer definition={def} params={params} />
+      <ReportViewer definition={def} params={rest} lang={lang || 'en'} />
     </div>
   );
 }
