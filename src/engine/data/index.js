@@ -92,7 +92,7 @@ export function parseCsv(text) {
  * Load every data source used by the report.
  * @param {any} def
  * @param {{params: object, fetch?: typeof fetch, baseUrl?: string, reportId?: string,
- *   sql?: (src: any, params: Record<string, any>) => Promise<object[]>}} opt
+ *   sql?: (src: any, params: Record<string, any>) => Promise<object[]>, sqlPreview?: boolean}} opt
  *   sql: runs a SQL source directly (server renders). Without it the server runs the saved report's
  *   query: the browser sends the report id and source name, never SQL.
  */
@@ -140,9 +140,11 @@ async function loadSql(src, params, opt, f) {
   const p = Object.fromEntries(Object.entries(params || {}).map(([k, v]) => [k, Array.isArray(v) ? v.map(day) : day(v)]));
   if (opt.sql) return opt.sql(src, p);
   if (!f) throw new Error('No fetch() available');
-  if (!opt.reportId) throw new Error('Save the report first: SQL runs on the server, from the saved report.');
+  // sqlPreview: the designer's unsaved query (the server allows it for designers only)
+  if (!opt.reportId && !opt.sqlPreview) throw new Error('Save the report first: SQL runs on the server, from the saved report.');
   const url = `${(opt.baseUrl || '').replace(/\/$/, '')}/api/data/sql`;
-  const res = await f(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ report: opt.reportId, source: src.name, params: p }) });
+  const body = opt.sqlPreview ? { connection: src.connection, query: src.query, params: p } : { report: opt.reportId, source: src.name, params: p };
+  const res = await f(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(json.error || `HTTP ${res.status} from ${url}`), { status: res.status });
   return json.rows;

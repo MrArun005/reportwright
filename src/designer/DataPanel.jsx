@@ -1,5 +1,6 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { rowArrays, bestRows } from './explore.js';
 import { useDesigner, SECTIONS } from './store.js';
 import { MIME_FIELD } from './Canvas.jsx';
 import { loadSources, buildDataSets, detectFields, jsonPath } from '@/engine/data/index.js';
@@ -14,7 +15,7 @@ export async function loadSample() {
   useDesigner.setState({ sample: { loading: true } });
   try {
     const params = resolveParameters(def, {});
-    const sources = await loadSources(def, { params, baseUrl: window.location.origin });
+    const sources = await loadSources(def, { params, baseUrl: window.location.origin, sqlPreview: true });
     const ctx = { params, globals: { ExecutionTime: new Date() }, dataSets: {}, fields: null, locale: def.locale, currency: def.currency };
     const dataSets = buildDataSets(def, sources, ctx);
     useDesigner.setState({ sample: { dataSets, sources, at: Date.now() } });
@@ -155,6 +156,21 @@ function SourceDialog({ index, onClose }) {
   if (!err && s.type === 'csv' && !s.url && !s.dataText.trim()) err = 'Give a URL or paste CSV text';
   if (!err && (s.type === 'rest' || s.type === 'graphql') && !s.url) err = 'Give a URL';
   if (!err && s.type === 'graphql' && !s.query) err = 'Give a GraphQL query';
+  if (!err && s.type === 'sql' && !s.connection) err = 'Pick a connection';
+  if (!err && s.type === 'sql' && !/^\s*(select|with)\b/i.test(s.query || '')) err = 'Write a SELECT query';
+  const [conns, setConns] = useState(null);
+  const [probe, setProbe] = useState(null);
+  useEffect(() => {
+    if (s.type !== 'sql' || conns) return;
+    fetch('/api/data/sql/connections').then(r => (r.ok ? r.json() : [])).then(setConns).catch(() => setConns([]));
+  }, [s.type, conns]);
+  const testConn = async () => {
+    setProbe({ state: 'testing' });
+    try {
+      const r = await (await fetch('/api/data/sql/test', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ connection: s.connection }) })).json();
+      setProbe(r.ok ? { state: 'ok', text: `Connected in ${r.ms} ms` } : { state: 'error', text: r.error });
+    } catch (e) { setProbe({ state: 'error', text: e.message }); }
+  };
 
   const save = () => {
     const v = { name: s.name, type: s.type };
@@ -162,6 +178,7 @@ function SourceDialog({ index, onClose }) {
     if (s.type === 'graphql') { v.query = s.query || ''; if (s.variables) v.variables = s.variables; }
     if (s.type === 'json') v.data = data;
     if (s.type === 'csv' && !s.url) v.data = s.dataText;
+    if (s.type === 'sql') { v.connection = s.connection; v.query = s.query; }
     useDesigner.getState().apply(d => {
       d.dataSources ||= [];
       if (index != null) {
@@ -181,7 +198,7 @@ function SourceDialog({ index, onClose }) {
       footer={<>{orig && <button className="btn danger" style={{ marginRight: 'auto' }} onClick={del}>Delete</button>}<button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!!err} onClick={save}>Save</button></>}>
       <div className="grid2">
         <Field label="Name"><TextInput value={s.name} onChange={v => setS({ ...s, name: v })} autoFocus /></Field>
-        <Field label="Type"><Select value={s.type} options={[{ value: 'rest', label: 'REST API (JSON)' }, { value: 'json', label: 'Inline JSON' }, { value: 'csv', label: 'CSV' }, { value: 'graphql', label: 'GraphQL' }]} onChange={v => setS({ ...s, type: v })} /></Field>
+        <Field label="Type"><Select value={s.type} options={[{ value: 'rest', label: 'REST API (JSON)' }, { value: 'json', label: 'Inline JSON' }, { value: 'csv', label: 'CSV' }, { value: 'graphql', label: 'GraphQL' }, { value: 'sql', label: 'SQL database (on the server)' }]} onChange={v => setS({ ...s, type: v })} /></Field>
       </div>
       {(s.type === 'rest' || s.type === 'csv' || s.type === 'graphql') && <>
         <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: 8 }}>
@@ -195,6 +212,19 @@ function SourceDialog({ index, onClose }) {
           <Field label="Variables (JSON, {Parameters.x} allowed)"><textarea className="textarea" rows={2} value={s.variables || ''} onChange={e => setS({ ...s, variables: e.target.value })} placeholder='{"id": "{Parameters.accountId}"}' /></Field>
         </>}
         <Check label="Call through the server proxy (for CORS; the host must be in PW_PROXY_ALLOW)" checked={s.useProxy} onChange={v => setS({ ...s, useProxy: v })} />
+      </>}
+      {s.type === 'sql' && <>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'end' }}>
+          <Field label="Connection" hint="Set up on the server as PW_DB_<NAME> (SQLite, Postgres or MySQL).">
+            <Select value={s.connection || ''} allowEmpty options={(conns || []).map(c => ({ value: c.name, label: `${c.name} (${c.kind})` }))} onChange={v => { setS({ ...s, connection: v }); setProbe(null); }} />
+          </Field>
+          <button className="btn" onClick={testConn} disabled={!s.connection || probe?.state === 'testing'}>{probe?.state === 'testing' ? 'Testing…' : 'Test'}</button>
+        </div>
+        {conns && !conns.length && <div className="hint">No connections on this server yet. Set PW_DB_MAIN=sqlite:/path/file.db (or a postgres:// / mysql:// URL) and restart.</div>}
+        {probe && probe.state !== 'testing' && <div className={probe.state === 'ok' ? 'hint' : 'err'} role="status">{probe.text}</div>}
+        <Field label="Query" hint="SELECT only. @name uses the report parameter name (bound, never pasted into the SQL). Lists work with in (@name).">
+          <textarea className="textarea" rows={6} value={s.query || ''} onChange={e => setS({ ...s, query: e.target.value })} placeholder="select region, month, sum(amount) as amount from sales where year = @year group by region, month" style={{ fontFamily: 'var(--mono)' }} />
+        </Field>
       </>}
       {(s.type === 'json' || (s.type === 'csv' && !s.url)) && (
         <Field label={s.type === 'json' ? 'JSON data' : 'CSV text (first row = headers)'}><textarea className="textarea" rows={10} value={s.dataText} onChange={e => setS({ ...s, dataText: e.target.value })} /></Field>
@@ -211,12 +241,33 @@ function DataSetDialog({ index, onClose, onSaved }) {
   const [detect, setDetect] = useState({ state: 'idle' });
   const err = !NAME.test(d.name) ? 'The name must start with a letter and hold only letters, digits and _' : !uniqueIn(def.dataSets, d.name, index) ? 'Another data set has this name' : !d.source ? 'Pick a source' : null;
 
+  const [explore, setExplore] = useState(null);
+  const loadRaw = async () => {
+    const params = resolveParameters(useDesigner.getState().def, {});
+    const src = useDesigner.getState().def.dataSources.find(s => s.name === d.source);
+    return (await loadSources({ dataSources: [src] }, { params, baseUrl: window.location.origin, sqlPreview: true }))[src.name];
+  };
+  // Response explorer: every list in the response, with its path and fields; pick one to use it as the rows.
+  const openExplorer = async () => {
+    setExplore({ state: 'loading' });
+    try {
+      const raw = await loadRaw();
+      const arrays = rowArrays(raw);
+      setExplore({ state: 'done', arrays, best: bestRows(raw)?.path, raw });
+    } catch (e) { setExplore({ state: 'error', message: e.message }); }
+  };
+  const pick = (path) => {
+    let list = jsonPath(explore.raw, path);
+    if (!Array.isArray(list)) list = [list];
+    const keep = new Map(d.fields.map(f => [f.name, f]));
+    setD({ ...d, path, fields: detectFields(list).map(f => keep.get(f.name) || f).concat(d.fields.filter(f => f.expr)) });
+    setDetect({ state: 'done', rows: list.length });
+    setExplore(null);
+  };
   const run = async () => {
     setDetect({ state: 'loading' });
     try {
-      const params = resolveParameters(useDesigner.getState().def, {});
-      const src = useDesigner.getState().def.dataSources.find(s => s.name === d.source);
-      const raw = (await loadSources({ dataSources: [src] }, { params, baseUrl: window.location.origin }))[src.name];
+      const raw = await loadRaw();
       let list = jsonPath(raw, d.path || '$');
       if (list == null) throw new Error(`Nothing at the path "${d.path}"`);
       if (!Array.isArray(list)) list = [list];
@@ -262,9 +313,25 @@ function DataSetDialog({ index, onClose, onSaved }) {
       <Field label="Path to the rows" hint="JSONPath subset: $, $.items, $.data[*].lines"><TextInput value={d.path} onChange={v => setD({ ...d, path: v })} mono /></Field>
       <div className="btnrow" style={{ alignItems: 'center' }}>
         <button className="btn" onClick={run} disabled={!d.source || detect.state === 'loading'}>{detect.state === 'loading' ? 'Reading the source…' : 'Detect fields'}</button>
+        <button className="btn" onClick={openExplorer} disabled={!d.source || explore?.state === 'loading'}>{explore?.state === 'loading' ? 'Reading the source…' : 'Explore the response'}</button>
         {detect.state === 'done' && <span className="hint">Found {detect.rows} rows.</span>}
         {detect.state === 'error' && <span className="err">{detect.message}</span>}
       </div>
+      {explore?.state === 'error' && <div className="err">{explore.message}</div>}
+      {explore?.state === 'done' && (
+        <div className="explorer" role="list" aria-label="Lists in the response" style={{ display: 'grid', gap: 4, maxHeight: 260, overflow: 'auto', border: '1px solid var(--line)', borderRadius: 6, padding: 6 }}>
+          {!explore.arrays.length && <div className="hint">The response has no lists. Use the path $ for a single row.</div>}
+          {explore.arrays.map(a => (
+            <div key={a.path} role="listitem" style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center' }}>
+              <div>
+                <code>{a.path}</code> <span className="hint">· {a.rows} {a.rows === 1 ? 'row' : 'rows'}{a.path === explore.best ? ' · suggested' : ''}</span>
+                {a.objects && <div className="hint" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.fields.join(', ') || 'no plain fields'}</div>}
+              </div>
+              <button className={`btn sm${a.path === explore.best ? ' primary' : ''}`} disabled={!a.objects} onClick={() => pick(a.path)} title={a.objects ? 'Use these rows' : 'A list of plain values cannot be rows with fields'}>Use</button>
+            </div>
+          ))}
+        </div>
+      )}
       <div>
         <div className="hint" style={{ marginBottom: 6 }}>Fields</div>
         <div style={{ display: 'grid', gap: 6 }}>

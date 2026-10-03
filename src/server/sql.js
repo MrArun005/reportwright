@@ -87,6 +87,28 @@ export async function runSql({ connection, query }, params = {}) {
 // Postgres query_canceled, MySQL max_execution_time, MariaDB max_statement_time
 const TIMEOUT_CODES = new Set(['57014', 'ER_QUERY_TIMEOUT', 'ER_STATEMENT_TIMEOUT']);
 
+/** The connections set up on this server: names and kinds only (the URLs hold passwords). */
+export function listConnections() {
+  return Object.entries(process.env)
+    .filter(([k, v]) => /^PW_DB_\w+$/.test(k) && v)
+    .map(([k, v]) => ({ name: k.slice(6).toLowerCase(), kind: /^sqlite:/.test(v) ? 'sqlite' : /^postgres(ql)?:\/\//.test(v) ? 'postgres' : /^mysql:\/\//.test(v) ? 'mysql' : 'unknown' }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Try a connection with a read-only "select 1". Errors never show the connection URL. */
+export async function testConnection(name) {
+  const t0 = Date.now();
+  try {
+    await runSql({ connection: name, query: 'select 1 as ok' }, {});
+    return { ok: true, ms: Date.now() - t0 };
+  } catch (e) {
+    let msg = String(e.message || e);
+    const url = process.env[`PW_DB_${String(name).toUpperCase()}`];
+    if (url) for (const part of [url, url.replace(/^sqlite:/, ''), ...url.split(/[/@:?]/).filter(x => x.length > 3)]) msg = msg.split(part).join('…');
+    return { ok: false, ms: Date.now() - t0, error: msg };
+  }
+}
+
 /**
  * Run the query saved in a report: the client names the report and the source, never the SQL.
  * Parameters get the report's defaults and types, as in a render.

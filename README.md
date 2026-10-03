@@ -121,6 +121,11 @@ data/            run-time state: jobs, schedules, folder outputs (not in git)
 tests/           unit, golden and end-to-end tests
 ```
 
+## Data setup in the designer
+
+- **Explore the response** (data set dialog): every list in the source's response with its path, row count and fields; the likely rows are marked *suggested*; **Use** fills the path and detects the fields. Nested lists get `[*]` paths (`$.orders[*].lines[*]`).
+- **SQL sources**: pick a connection set up on the server (`PW_DB_<NAME>`; the designer sees names only), press **Test** (a read-only `select 1`), write a `SELECT` with `@parameter` placeholders. Unsaved queries preview for designers when accounts are on, or behind `PW_BASIC_AUTH`; on a production server where nobody signs in, only saved queries run.
+
 ## Command line: render, test and diff
 
 `bin/pw.mjs` (`npm run pw -- …`, or `pw` once the package is installed) uses the same engine with no server:

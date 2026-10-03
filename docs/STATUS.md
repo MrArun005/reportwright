@@ -55,6 +55,8 @@ Engine, expressions, data sources, text box / image / line / shape / table, pagi
 
 | Week | Increment | State |
 |---|---|---|
+| 2 | Response explorer | Done. "Explore the response" in the data set dialog lists every list in the response with its path, row count and fields, suggests the likely rows, and fills the path and fields on one click. Proof: `tests/e2e/data-setup.mjs` builds a data set from the loan API with no JSONPath typed. |
+| 3 | SQL on the server + connection test | Done (SQL sources were Phase C1). The data panel has a SQL source type, a connection picker (names only) and a Test button; unsaved queries preview for designers (accounts on) or behind `PW_BASIC_AUTH`. |
 | 9 | CLI `pw render / test / diff` + GitHub Action | Done. Proof: `reports/__tests__/loan-statement.test.json`; changing one instalment fails `pw test` and shows the moved total on page 8. The Action and CI workflow are checked for syntax only (not run on GitHub yet). |
 
 ## Honest gaps

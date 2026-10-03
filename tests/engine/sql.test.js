@@ -137,7 +137,10 @@ describe('saved-query mode', () => {
       const r = await post({ connection: 'main', query: 'select * from accounts', params: {} });
       expect(r.status).toBe(403);
       expect((await r.json()).error).toMatch(/production/);
-    } finally { process.env.NODE_ENV = env; }
+      // with the shared password on, whoever gets here could save the same query anyway: allowed
+      process.env.PW_BASIC_AUTH = 'a:b';
+      expect((await post({ connection: 'main', query: 'select name from accounts where id = @id', params: { id: 3 } })).status).toBe(200);
+    } finally { process.env.NODE_ENV = env; delete process.env.PW_BASIC_AUTH; }
   });
 });
 

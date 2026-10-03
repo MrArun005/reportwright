@@ -1,0 +1,74 @@
+// Data setup in the designer (ROADMAP weeks 2–3): pick rows from the response explorer; SQL source with a
+// connection test. For the SQL part, start the server and this test with the same PW_DB_MAIN=sqlite:/abs/file.db
+// (this test creates the file).
+import { chromium } from 'playwright';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const BASE = process.env.BASE || 'http://localhost:3000';
+// BASIC=user:password when the server runs with PW_BASIC_AUTH (needed in production for SQL previews)
+const [user, pass] = (process.env.BASIC || '').split(':');
+const AUTH = user ? { authorization: `Basic ${Buffer.from(`${user}:${pass}`).toString('base64')}` } : {};
+const step = (s) => console.log('·', s);
+
+const SQLITE = /^sqlite:(.+)$/.exec(process.env.PW_DB_MAIN || '')?.[1];
+if (SQLITE) {
+  fs.rmSync(SQLITE, { force: true });
+  const { DatabaseSync } = process.getBuiltinModule('node:sqlite');
+  const db = new DatabaseSync(SQLITE);
+  db.exec("create table sales (region text, month int, amount real); insert into sales values ('North', 1, 120.5), ('South', 1, 98), ('North', 2, 130), ('East', 2, 77.25)");
+  db.close();
+}
+
+const r = await fetch(`${BASE}/api/reports`, { method: 'POST', headers: { 'content-type': 'application/json', origin: BASE, ...AUTH }, body: JSON.stringify({ name: 'e2e data setup' }) });
+const { id } = await r.json();
+const b = await chromium.launch();
+const p = await (await b.newContext({ viewport: { width: 1400, height: 900 }, ...(user ? { httpCredentials: { username: user, password: pass } } : {}) })).newPage();
+const errs = [];
+p.on('pageerror', e => errs.push(e.message));
+await p.goto(`${BASE}/designer/${id}`);
+await p.waitForSelector('[data-testid=paper]');
+
+step('REST source, then rows picked in the response explorer (no JSONPath typed)');
+await p.getByRole('button', { name: '+ Add' }).nth(1).click();
+let dlg = p.getByRole('dialog');
+await dlg.getByLabel('Name').fill('loans');
+await dlg.getByLabel('URL').fill('/api/sample/loans/LN-2025-001982');
+await dlg.getByRole('button', { name: 'Save' }).click();
+await p.getByRole('button', { name: '+ Add' }).nth(2).click();
+dlg = p.getByRole('dialog');
+await dlg.getByLabel('Name').fill('Payments');
+await dlg.getByRole('button', { name: 'Explore the response' }).click();
+const row = dlg.getByRole('listitem').filter({ hasText: '$.schedule' });
+await row.getByText('suggested').waitFor();
+await row.getByRole('button', { name: 'Use' }).click();
+await dlg.getByText('Found 36 rows.').waitFor();
+assert.equal(await dlg.getByLabel('Path to the rows').inputValue(), '$.schedule');
+await dlg.getByRole('button', { name: 'Save' }).click();
+await p.locator('.field-chip', { hasText: 'installment' }).waitFor();
+
+if (SQLITE) {
+  step('SQL source: pick the connection, test it, preview the query');
+  await p.getByRole('button', { name: '+ Add' }).nth(1).click();
+  dlg = p.getByRole('dialog');
+  await dlg.getByLabel('Name').fill('db');
+  await dlg.getByLabel('Type').selectOption('sql');
+  await dlg.getByLabel('Connection').selectOption('main');
+  await dlg.getByRole('button', { name: 'Test' }).click();
+  await dlg.getByText(/Connected in \d+ ms/).waitFor();
+  await dlg.getByLabel('Query').fill('select region, month, amount from sales order by month, region');
+  await dlg.getByRole('button', { name: 'Save' }).click();
+  await p.getByRole('button', { name: '+ Add' }).nth(2).click();
+  dlg = p.getByRole('dialog');
+  await dlg.getByLabel('Name').fill('Sales');
+  await dlg.getByLabel('Source').selectOption('db');
+  await dlg.getByRole('button', { name: 'Explore the response' }).click();
+  await dlg.getByRole('listitem').filter({ hasText: '4 rows' }).getByRole('button', { name: 'Use' }).click();
+  await dlg.getByText('Found 4 rows.').waitFor();
+  await dlg.getByRole('button', { name: 'Save' }).click();
+  await p.locator('.field-chip', { hasText: 'region' }).waitFor();
+} else console.log('  (SQL part skipped: set PW_DB_MAIN=sqlite:/abs/file.db for the server and this test)');
+
+await b.close();
+await fetch(`${BASE}/api/reports/${id}`, { method: 'DELETE', headers: { origin: BASE, ...AUTH } });
+assert.deepEqual(errs, []);
+console.log('PASS data setup');

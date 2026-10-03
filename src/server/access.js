@@ -18,6 +18,8 @@ export const RULES = [
   ['GET', /^\/api\/reports$/, 'viewer'],
   ['GET', /^\/api\/reports\/[^/]+(\/(pdf|versions|thumb))?$/, 'viewer'], // read, server render, history
   ['POST', /^\/api\/data\/sql$/, 'viewer'],                               // saved queries; the route allows ad-hoc SQL to designers only
+  ['GET', /^\/api\/data\/sql\/connections$/, 'designer'],                 // names and kinds, for the data panel
+  ['POST', /^\/api\/data\/sql\/test$/, 'designer'],
   ['GET', /^\/api\/data\/proxy$/, 'viewer'],
   ['GET', /^\/api\/sample\/.+$/, 'viewer'],
   ['GET', /^\/api\/auth\/me$/, 'viewer'],
