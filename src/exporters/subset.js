@@ -8,6 +8,7 @@
 const HB_MEMORY_MODE_WRITABLE = 2;
 const HB_SUBSET_SETS_DROP_TABLE_TAG = 3;
 const HB_SUBSET_SETS_LAYOUT_FEATURE_TAG = 6;
+const HB_SUBSET_FLAGS_RETAIN_GIDS = 2;
 const tag = (s) => [...s].reduce((a, c) => (a << 8) + c.charCodeAt(0), 0) >>> 0;
 
 /** @param {() => Promise<ArrayBuffer|Uint8Array>} loadWasm */
@@ -23,11 +24,14 @@ export function createSubsetter(loadWasm) {
   })());
 
   /**
-   * @param {Uint8Array} font  TrueType bytes
+   * @param {Uint8Array} font  TrueType or OpenType (CFF) bytes
    * @param {Iterable<number>} codePoints
+   * @param {{ glyphs?: Iterable<number>, layout?: boolean }} [opt]
+   *   glyphs: shaped glyphs to keep as well (conjuncts, joined Arabic forms); their IDs stay the same, because
+   *   the PDF draws them by ID. layout: keep GSUB/GPOS for a browser that shapes the text itself (HTML export).
    * @returns {Promise<Uint8Array>}
    */
-  return async function subset(font, codePoints) {
+  return async function subset(font, codePoints, opt = {}) {
     const x = await hb();
     const heap = () => new Uint8Array(x.memory.buffer);
     const input = x.hb_subset_input_create_or_fail();
@@ -38,13 +42,21 @@ export function createSubsetter(loadWasm) {
     const face = x.hb_face_create(blob, 0);
     x.hb_blob_destroy(blob);
     try {
-      // No OpenType layout: the engine measures plain advances, so the PDF must not
-      // apply substitutions such as Inter's contextual colon (calt) either.
-      x.hb_set_clear(x.hb_subset_input_set(input, HB_SUBSET_SETS_LAYOUT_FEATURE_TAG));
-      const drop = x.hb_subset_input_set(input, HB_SUBSET_SETS_DROP_TABLE_TAG);
-      for (const t of ['GSUB', 'GPOS', 'GDEF', 'kern', 'morx', 'mort']) x.hb_set_add(drop, tag(t));
+      if (!opt.layout) {
+        // No OpenType layout: the engine measures plain advances (or shaped the text already), so the PDF
+        // must not apply substitutions such as Inter's contextual colon (calt) either.
+        x.hb_set_clear(x.hb_subset_input_set(input, HB_SUBSET_SETS_LAYOUT_FEATURE_TAG));
+        const drop = x.hb_subset_input_set(input, HB_SUBSET_SETS_DROP_TABLE_TAG);
+        for (const t of ['GSUB', 'GPOS', 'GDEF', 'kern', 'morx', 'mort']) x.hb_set_add(drop, tag(t));
+      }
       const uni = x.hb_subset_input_unicode_set(input);
       for (const cp of codePoints) x.hb_set_add(uni, cp);
+      if (opt.glyphs) {
+        x.hb_subset_input_set_flags(input, x.hb_subset_input_get_flags(input) | HB_SUBSET_FLAGS_RETAIN_GIDS);
+        const gs = x.hb_subset_input_glyph_set(input);
+        for (const g of opt.glyphs) x.hb_set_add(gs, g);
+      }
+      x.hb_subset_input_pin_all_axes_to_default(input, face); // a variable font becomes its default instance
       const sub = x.hb_subset_or_fail(face, input);
       if (!sub) throw new Error('HarfBuzz: subsetting failed');
       const res = x.hb_face_reference_blob(sub);

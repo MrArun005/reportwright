@@ -1,9 +1,9 @@
 // @ts-check
 // SQL storage: SQLite (node:sqlite), Postgres (pg) or MySQL (mysql2). A connection of its own that may write,
 // never the read-only one SQL data sources use. Tables are made on first use; records are JSON in a text column.
-//   pw_reports, pw_schedules, pw_jobs, pw_users (id, data, updated_at)   pw_report_versions (id, stamp, data)
+//   pw_reports, pw_schedules, pw_jobs, pw_users, pw_fonts (id, data, updated_at)   pw_report_versions (id, stamp, data)
 
-const TABLES = { reports: 'pw_reports', schedules: 'pw_schedules', jobs: 'pw_jobs', users: 'pw_users' };
+const TABLES = { reports: 'pw_reports', schedules: 'pw_schedules', jobs: 'pw_jobs', users: 'pw_users', fonts: 'pw_fonts' };
 const table = (k) => { if (!TABLES[k]) throw new Error(`Unknown storage kind "${k}"`); return TABLES[k]; };
 
 /** @typedef {(text: string, values?: any[]) => Promise<any[]>} Query rows for a SELECT, [] otherwise */

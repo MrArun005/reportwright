@@ -2,12 +2,13 @@
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { render, FontStore } from '../src/engine/index.js';
+import { fontFile } from '../src/engine/text/fonts.js';
 import { exportPdf } from '../src/exporters/pdf.js';
 import { sampleLoan } from '../src/sample/loans.js';
 import { createSubsetter } from '../src/exporters/subset.js';
 const subset = createSubsetter(async () => fs.readFileSync(new URL('../public/harfbuzz-subset.wasm', import.meta.url)));
 const def = JSON.parse(fs.readFileSync(new URL('../reports/loan-statement.pw.json', import.meta.url)));
-const store = new FontStore(async k => fs.readFileSync(new URL(`../public/fonts/${k}.ttf`, import.meta.url)));
+const store = new FontStore(async k => fs.readFileSync(new URL(`../public/fonts/${fontFile(k)}`, import.meta.url)));
 const model = await render(def, { fontStore: store, sources: { loans: sampleLoan('LN-2026-004417') } });
 const pdfBytes = await exportPdf(model, store, { subset });
 fs.writeFileSync('/tmp/check.pdf', pdfBytes);

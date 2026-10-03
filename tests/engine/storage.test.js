@@ -29,7 +29,7 @@ describe.each(backends)('storage on %s', (kind, setup) => {
       await store().ids('jobs');
       const pg = new (await import('pg')).default.Client(process.env.PW_TEST_PG);
       await pg.connect();
-      for (const t of ['pw_reports', 'pw_report_versions', 'pw_schedules', 'pw_jobs', 'pw_users']) await pg.query(`DELETE FROM ${t}`);
+      for (const t of ['pw_reports', 'pw_report_versions', 'pw_schedules', 'pw_jobs', 'pw_users', 'pw_fonts']) await pg.query(`DELETE FROM ${t}`);
       await pg.end();
     }
   });
@@ -114,6 +114,15 @@ describe.each(backends)('storage on %s', (kind, setup) => {
     expect(await s.remove('jobs', 'b_1aaa')).toBe(true);
     expect(await s.remove('jobs', 'b_1bbb')).toBe(true);
     expect(await listJobs()).toEqual([]);
+  });
+
+  it('stores uploaded fonts', async () => {
+    expect(await store().ids('fonts')).toEqual([]);
+    await store().put('fonts', '0123456789abcdef', JSON.stringify({ id: '0123456789abcdef', family: 'Brand', data: 'AAEAAA==' }));
+    expect(await store().ids('fonts')).toEqual(['0123456789abcdef']);
+    expect(JSON.parse(await store().get('fonts', '0123456789abcdef')).family).toBe('Brand');
+    expect(await store().remove('fonts', '0123456789abcdef')).toBe(true);
+    expect(await store().ids('fonts')).toEqual([]);
   });
 
   it('stores users', async () => {

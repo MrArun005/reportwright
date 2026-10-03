@@ -16,6 +16,7 @@ const nextConfig = {
       ...(embedOrigin ? [
         { source: '/api/reports/:path*', headers: cors(embedOrigin) },
         { source: '/api/sample/:path*', headers: cors(embedOrigin) },
+        { source: '/api/fonts', headers: cors(embedOrigin) },
       ] : []),
     ];
   },

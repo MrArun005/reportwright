@@ -2,6 +2,7 @@
 import { fontStore, subsetter, origin } from './engineClient.js';
 import { exportCsv } from '@/exporters/csv.js';
 import { exportHtml } from '@/exporters/html.js';
+import { fontKeysOf } from '@/exporters/svg.js';
 import { exportXlsx } from '@/exporters/xlsx.js';
 
 /* global __PW_EMBED__ */
@@ -33,7 +34,7 @@ export async function exportBlob(fmt, model, def, opt = {}) {
   }
   if (fmt === 'html') {
     const store = fontStore();
-    await store.load();
+    await store.load(fontKeysOf(model));
     return new Blob([await exportHtml(model, store, { title: def.name, subset: subsetter })], { type: 'text/html;charset=utf-8' });
   }
   if (fmt === 'xlsx') {

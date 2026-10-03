@@ -2,6 +2,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { render, FontStore } from '@/engine/index.js';
+import { fontFile, setCustomFonts } from '@/engine/text/fonts.js';
 import { exportPdf } from '@/exporters/pdf.js';
 import { exportHtml } from '@/exporters/html.js';
 import { exportCsv } from '@/exporters/csv.js';
@@ -11,10 +12,23 @@ import { readReport } from './reports.js';
 import { serverFetch } from './safeFetch.js';
 import { pdfSigner } from './sign.js';
 import { runSql } from './sql.js';
+import { listFonts, readFont } from './fonts.js';
 
 const ROOT = process.cwd();
 let store;
-export const fontStore = () => (store ||= new FontStore((k) => fs.readFile(path.join(ROOT, 'public', 'fonts', `${k}.ttf`))));
+/** Bundled fonts from public/fonts; uploaded ones ("u-<id>") from the storage. */
+export const fontStore = () => (store ||= new FontStore(async (k) => {
+  if (!k.startsWith('u-')) return fs.readFile(path.join(ROOT, 'public', 'fonts', fontFile(k)));
+  const f = await readFont(k.slice(2));
+  if (!f) throw new Error(`The uploaded font ${k} is gone`);
+  return f.bytes;
+}));
+
+/** Tell the engine which fonts are uploaded (by family) before a render. A font that failed may load now. */
+export async function syncFonts() {
+  setCustomFonts(await listFonts());
+  for (const k of fontStore().failed) if (k.startsWith('u-')) fontStore().failed.delete(k);
+}
 const subset = createSubsetter(() => fs.readFile(path.join(ROOT, 'public', 'harfbuzz-subset.wasm')));
 let icc;
 const iccProfile = async () => (icc ||= await fs.readFile(path.join(ROOT, 'public', 'icc', 'sRGB-v2-magic.icc')));
@@ -60,6 +74,7 @@ export async function renderTo(def, opt = {}) {
   const signing = opt.sign ? await pdfSigner({ name: def.name || 'Pagewright' }) : null; // fail before rendering
   const base = opt.baseUrl || baseUrl();
   const fetch = serverFetch(opt.self || base);
+  await syncFonts();
   const model = await render(d, {
     parameters: opt.parameters || {}, state: opt.state || {}, fontStore: fontStore(), baseUrl: base, fetch,
     sql: runSql, // SQL sources query the database directly, not through /api/data/sql

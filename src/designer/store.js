@@ -69,6 +69,8 @@ export const useDesigner = create((set, get) => ({
   snap: true,
   unit: 'pt',
   sample: null,
+  /** fonts uploaded to the server: [{ id, family, weight, style, bytes }] */
+  fonts: [],
   /** chart gallery dialog: {mode:'insert', section, x, y, extra, parentId} | {mode:'edit', id} */
   wizard: null,
   lastKey: null,

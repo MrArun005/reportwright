@@ -21,8 +21,10 @@ export const RULES = [
   ['GET', /^\/api\/data\/proxy$/, 'viewer'],
   ['GET', /^\/api\/sample\/.+$/, 'viewer'],
   ['GET', /^\/api\/auth\/me$/, 'viewer'],
+  ['GET', /^\/api\/fonts$/, 'viewer'],                                  // the uploaded fonts (the files are under /fonts/, open)
   ['GET', /^\/designer\/[^/]+$/, 'designer'],
   ['*', /^\/api\/reports(\/.*)?$/, 'designer'],                           // save, create, delete, restore, import
+  ['*', /^\/api\/fonts(\/[^/]+)?$/, 'designer'],                           // upload, delete
   ['POST', /^\/api\/ai(\/.*)?$/, 'designer'],
   ['*', /^\/(admin|api\/users)(\/.*)?$/, 'admin'],
 ];
@@ -52,8 +54,8 @@ export function decide(method, rawPath, role) {
   if (path === null) return 'bad';
   const m = method.toUpperCase() === 'HEAD' ? 'GET' : method.toUpperCase();
   if (OPEN_EXACT.includes(path) || OPEN_PREFIX.some(p => path.startsWith(p))) return 'open';
-  // with PW_EMBED_ORIGINS, embedded viewers on that site read report definitions and sample data (as without accounts)
-  if (process.env.PW_EMBED_ORIGINS && m === 'GET' && (/^\/api\/reports\/[^/]+$/.test(path) || path.startsWith('/api/sample/'))) return 'open';
+  // with PW_EMBED_ORIGINS, embedded viewers on that site read report definitions, sample data and the font list (as without accounts)
+  if (process.env.PW_EMBED_ORIGINS && m === 'GET' && (/^\/api\/reports\/[^/]+$/.test(path) || path.startsWith('/api/sample/') || path === '/api/fonts')) return 'open';
   if (!role) return 'signin';
   const row = RULES.find(([rm, re]) => (rm === '*' || rm === m) && re.test(path));
   const need = row ? row[2] : 'admin';

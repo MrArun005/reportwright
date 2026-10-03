@@ -3,9 +3,9 @@
 // the report fonts and a snapshot of the data. Open it in any browser: parameters, open/close, sorting,
 // chart clicks, tooltips, document map and drill-through keep working. Live data sources are called again
 // when the file is opened; the snapshot is the fallback when a call fails (offline, CORS, server gone).
-import { origin, fetchReport } from './engineClient.js';
-import { ALL_FONT_KEYS } from '@/engine/text/fonts.js';
-import { fontFamilyCss } from '@/exporters/svg.js';
+import { origin, fetchReport, customFonts } from './engineClient.js';
+import { ALL_FONT_KEYS, SHAPER, fontFile } from '@/engine/text/fonts.js';
+import { fontKeysOf } from '@/exporters/svg.js';
 import { loadSources } from '@/engine/data/index.js';
 import { resolveParameters } from '@/engine/index.js';
 
@@ -90,9 +90,13 @@ export async function exportInteractiveHtml(def, opt = {}) {
   if (!bundleRes.ok) throw Object.assign(new Error('The viewer bundle is missing. Run "npm run build:embed" (it also runs in "npm run build").'), { code: 'NO_BUNDLE' });
   const bundle = (await bundleRes.text()).replace(/<\/script/gi, '<\\/script');
 
+  // the default fonts, the ones this view draws with (fallbacks, uploaded fonts) and the shaper when text needs it
+  const used = fontKeysOf(opt.model);
+  const shaped = (opt.model?.pages || []).some(pg => pg.items.some(it => it.t === 'text' && it.lines.some(l => l.runs?.some(r => r.shaped || r.rtl))));
+  const keys = [...new Set([...ALL_FONT_KEYS, ...used, ...(shaped ? [SHAPER] : [])])];
   const fonts = {};
-  await Promise.all(ALL_FONT_KEYS.map(async (k) => { fonts[k] = toB64(await getBuf(`${base}/fonts/${k}.ttf`)); }));
-  const fontCss = ALL_FONT_KEYS.map(k => `@font-face{font-family:"${fontFamilyCss(k)}";src:url(data:font/ttf;base64,${fonts[k]}) format("truetype");font-display:block}`).join('\n');
+  await Promise.all(keys.map(async (k) => { fonts[k] = toB64(await getBuf(`${base}/fonts/${fontFile(k)}`)); }));
+  const uploaded = (await customFonts()).filter(f => keys.includes(`u-${f.id}`));
 
   // interface font (Latin only, to keep the file small); falls back to the system font for other scripts
   let uiCss = '';
@@ -106,7 +110,7 @@ export async function exportInteractiveHtml(def, opt = {}) {
   const { snapshot, drillTargets, drillSnapshots } = await snapshotData(def, opt.params || {}, opt.model, reports);
 
   const config = {
-    server: base, definition: def, params: opt.params || {}, lang: opt.lang || 'en', reports, fonts, fontCss, uiFontCss: uiCss, snapshot,
+    server: base, definition: def, params: opt.params || {}, lang: opt.lang || 'en', reports, fonts, customFonts: uploaded, uiFontCss: uiCss, snapshot,
     height: '100vh', title: def.name,
   };
   const json = JSON.stringify(config).replace(/</g, '\\u003c');

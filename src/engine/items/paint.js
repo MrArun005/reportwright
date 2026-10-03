@@ -15,7 +15,10 @@ export function layoutTextLines(text, st, width, m, { wrap = true } = {}) {
   const inner = Math.max(1, width - pad[1] - pad[3]);
   const lines = wrap && st.wrap !== false
     ? m.wrap(text, key, size, inner)
-    : String(text).split(/\r?\n/).map(t => ({ text: t, width: m.width(t, key, size) }));
+    : String(text).split(/\r?\n/).map((t) => {
+      const dir = m.direction(t, key); // set for text that needs shaping or bidi
+      return dir ? { text: t, width: m.width(t, key, size, dir), dir } : { text: t, width: m.width(t, key, size) };
+    });
   const lh = size * (Number(st.lineHeight) || 1.25);
   return { key, size, lines, lh, pad, inner, needed: lines.length * lh + pad[0] + pad[2] };
 }
@@ -36,8 +39,8 @@ export function paintBox({ x, y, w, h, st, tl, numeric = false, m, ellipsis = tr
       lines = lines.slice(0, maxLines);
       if (ellipsis) {
         const last = lines[lines.length - 1];
-        const t = m.ellipsize(last.text + ' …', key, size, tl.inner);
-        lines[lines.length - 1] = { text: t, width: m.width(t, key, size) };
+        const t = m.ellipsize(last.text + ' …', key, size, tl.inner, last.dir);
+        lines[lines.length - 1] = { ...last, text: t, width: m.width(t, key, size, last.dir) };
       }
     }
     const { ascent, descent } = m.metrics(key, size);
@@ -45,13 +48,17 @@ export function paintBox({ x, y, w, h, st, tl, numeric = false, m, ellipsis = tr
     let top = y + pad[0];
     if (st.verticalAlign === 'middle') top = y + pad[0] + (avail - blockH) / 2;
     else if (st.verticalAlign === 'bottom') top = y + h - pad[2] - blockH;
-    const align = st.textAlign === 'auto' || !st.textAlign ? (numeric ? 'right' : 'left') : st.textAlign;
+    const auto = st.textAlign === 'auto' || !st.textAlign;
     const half = (lh - (ascent + descent)) / 2;
     const out = lines.map((ln, i) => {
+      // auto: numbers right, text by its paragraph direction (Arabic and Hebrew right)
+      const align = auto ? (numeric || ln.dir === 'rtl' ? 'right' : 'left') : st.textAlign;
       let lx = x + pad[3];
       if (align === 'right') lx = x + w - pad[1] - ln.width;
       else if (align === 'center') lx = x + pad[3] + (tl.inner - ln.width) / 2;
-      return { x: lx, y: top + i * lh + half + ascent, text: ln.text, w: ln.width };
+      const o = { x: lx, y: top + i * lh + half + ascent, text: ln.text, w: ln.width };
+      if (ln.dir) o.dir = ln.dir;
+      return o;
     }).filter(l => l.text !== '');
     if (out.length) items.push({ t: 'text', font: key, size, color: st.color || '#000', lines: out, clip: { x, y, w, h } });
   }

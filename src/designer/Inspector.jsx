@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useDesigner, findItem, updateItem, deleteSelection, duplicateSelection, SECTIONS, walk, tableParts, rowsOf,
   tableInsertColumn, tableDeleteColumn, tableInsertRow, tableDeleteRow, tableSetColumnWidth, tableMergeRight, tableSplit, tableSync, tableAddGroup, tableRemoveGroup, round } from './store.js';
 import { ITEMS, stylePropsFor, TEXT_STYLE_PROPS } from '@/engine/items/index.js';
-import { FONT_FAMILIES } from '@/engine/text/fonts.js';
+import { useFontFamilies, FontsDialog } from './Fonts.jsx';
 import { PAGE_SIZES, fromPt, toPt } from '@/engine/units.js';
 import { TextInput, NumberInput, Select, ColorInput, ExprInput, Field, Check } from './ui.jsx';
 import ExpressionEditor from './ExpressionEditor.jsx';
@@ -45,13 +45,14 @@ function Geo({ label, value, onChange }) {
 
 function PropEditor({ p, value, onChange, openExpr, dataSet }) {
   const def = useDesigner(s => s.def);
+  const families = useFontFamilies();
   switch (p.type) {
     case 'expr': return <Field label={p.label}><ExprInput value={value} onChange={onChange} onOpen={() => openExpr({ value, dataSet, onSave: onChange, title: p.label })} /></Field>;
     case 'number': return <Field label={p.label}><NumberInput value={value} onChange={onChange} /></Field>;
     case 'bool': return <Check label={p.label} checked={value} onChange={onChange} />;
     case 'select': return <Field label={p.label}><Select value={value} onChange={onChange} options={p.options} allowEmpty /></Field>;
     case 'color': return <Field label={p.label}><ColorInput value={value} onChange={onChange} /></Field>;
-    case 'font': return <Field label={p.label}><Select value={value} onChange={onChange} options={Object.keys(FONT_FAMILIES)} allowEmpty /></Field>;
+    case 'font': return <Field label={p.label}><Select value={value} onChange={onChange} options={families} allowEmpty /></Field>;
     case 'dataset': return <Field label={p.label}><Select value={value} onChange={onChange} options={(def.dataSets || []).map(d => d.name)} allowEmpty /></Field>;
     case 'action': return <ActionEditor value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet} />;
     case 'stylename': return <Field label={p.label}><Select value={value} onChange={onChange} options={Object.keys(def.styles?.named || {})} allowEmpty /></Field>;
@@ -424,6 +425,8 @@ function SectionProps({ section }) {
 /* ---------------------------------------------------------------- report */
 function ReportProps() {
   const def = useDesigner(s => s.def);
+  const families = useFontFamilies();
+  const [fontsOpen, setFontsOpen] = useState(false);
   const set = (fn, key) => useDesigner.getState().apply(fn, key);
   const m = Array.isArray(def.page?.margins) ? def.page.margins : [36, 36, 36, 36];
   const base = def.styles?.base || {};
@@ -456,10 +459,12 @@ function ReportProps() {
       <div className="cat">
         <h5>Default text</h5>
         <div className="grid2">
-          <Field label="Font"><Select value={base.fontFamily} options={Object.keys(FONT_FAMILIES)} onChange={v => set(d => { d.styles ||= {}; d.styles.base ||= {}; d.styles.base.fontFamily = v; })} /></Field>
+          <Field label="Font"><Select value={base.fontFamily} options={families} onChange={v => set(d => { d.styles ||= {}; d.styles.base ||= {}; d.styles.base.fontFamily = v; })} /></Field>
           <Field label="Size"><NumberInput value={base.fontSize ?? 9} onChange={v => set(d => { d.styles ||= {}; d.styles.base ||= {}; d.styles.base.fontSize = v; }, 'basesize')} /></Field>
           <div style={{ gridColumn: '1 / -1' }}><Field label="Color"><ColorInput value={base.color} onChange={v => set(d => { d.styles ||= {}; d.styles.base ||= {}; setOrDelete(d.styles.base, 'color', v); }, 'basecolor')} /></Field></div>
         </div>
+        <div className="btnrow"><button className="btn sm" onClick={() => setFontsOpen(true)}>Upload a font…</button></div>
+        {fontsOpen && <FontsDialog onClose={() => setFontsOpen(false)} />}
       </div>
       <NamedStyles />
       <div className="cat"><span className="hint">Select an item, a cell or a band to edit it. Drag tools and fields from the left onto the page.</span></div>
