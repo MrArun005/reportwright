@@ -1,0 +1,1320 @@
+{
+  "$schema": "pagewright/report@1",
+  "name": "Imported regional sales",
+  "locale": "en-IN",
+  "currency": "INR",
+  "page": {
+    "size": "A4",
+    "orientation": "portrait",
+    "margins": [
+      34.02,
+      42.52,
+      34.02,
+      42.52
+    ]
+  },
+  "parameters": [
+    {
+      "name": "Regions",
+      "type": "string",
+      "prompt": "Regions",
+      "multi": true,
+      "default": "North,South,East,West",
+      "optionsFrom": {
+        "dataSet": "RegionList",
+        "value": "=Fields.name",
+        "label": "=Fields.name"
+      }
+    },
+    {
+      "name": "MinAmount",
+      "type": "number",
+      "prompt": "Smallest amount to list",
+      "default": 0
+    }
+  ],
+  "dataSources": [
+    {
+      "name": "Ledger",
+      "type": "json",
+      "data": {
+        "regions": [
+          {
+            "name": "North",
+            "manager": "R. Iyer"
+          },
+          {
+            "name": "South",
+            "manager": "K. Menon"
+          },
+          {
+            "name": "East",
+            "manager": "S. Das"
+          },
+          {
+            "name": "West",
+            "manager": "P. Shah"
+          }
+        ],
+        "sales": [
+          {
+            "region": "North",
+            "month": "Jan",
+            "monthNo": 1,
+            "quarter": "Q1",
+            "product": "Home loan",
+            "units": 3,
+            "amount": 2000
+          },
+          {
+            "region": "North",
+            "month": "Jan",
+            "monthNo": 1,
+            "quarter": "Q1",
+            "product": "Car loan",
+            "units": 6,
+            "amount": 7000
+          },
+          {
+            "region": "North",
+            "month": "Jan",
+            "monthNo": 1,
+            "quarter": "Q1",
+            "product": "Gold loan",
+            "units": 9,
+            "amount": 12000
+          },
+          {
+            "region": "North",
+            "month": "Feb",
+            "monthNo": 2,
+            "quarter": "Q1",
+            "product": "Home loan",
+            "units": 8,
+            "amount": 9000
+          },
+          {
+            "region": "North",
+            "month": "Feb",
+            "monthNo": 2,
+            "quarter": "Q1",
+            "product": "Car loan",
+            "units": 11,
+            "amount": 14000
+          },
+          {
+            "region": "North",
+            "month": "Feb",
+            "monthNo": 2,
+            "quarter": "Q1",
+            "product": "Gold loan",
+            "units": 5,
+            "amount": 6000
+          },
+          {
+            "region": "North",
+            "month": "Mar",
+            "monthNo": 3,
+            "quarter": "Q1",
+            "product": "Home loan",
+            "units": 4,
+            "amount": 3000
+          },
+          {
+            "region": "North",
+            "month": "Mar",
+            "monthNo": 3,
+            "quarter": "Q1",
+            "product": "Car loan",
+            "units": 7,
+            "amount": 8000
+          },
+          {
+            "region": "North",
+            "month": "Mar",
+            "monthNo": 3,
+            "quarter": "Q1",
+            "product": "Gold loan",
+            "units": 10,
+            "amount": 13000
+          },
+          {
+            "region": "North",
+            "month": "Apr",
+            "monthNo": 4,
+            "quarter": "Q2",
+            "product": "Home loan",
+            "units": 9,
+            "amount": 10000
+          },
+          {
+            "region": "North",
+            "month": "Apr",
+            "monthNo": 4,
+            "quarter": "Q2",
+            "product": "Car loan",
+            "units": 3,
+            "amount": 2000
+          },
+          {
+            "region": "North",
+            "month": "Apr",
+            "monthNo": 4,
+            "quarter": "Q2",
+            "product": "Gold loan",
+            "units": 6,
+            "amount": 7000
+          },
+          {
+            "region": "North",
+            "month": "May",
+            "monthNo": 5,
+            "quarter": "Q2",
+            "product": "Home loan",
+            "units": 5,
+            "amount": 4000
+          },
+          {
+            "region": "North",
+            "month": "May",
+            "monthNo": 5,
+            "quarter": "Q2",
+            "product": "Car loan",
+            "units": 8,
+            "amount": 9000
+          },
+          {
+            "region": "North",
+            "month": "May",
+            "monthNo": 5,
+            "quarter": "Q2",
+            "product": "Gold loan",
+            "units": 11,
+            "amount": 14000
+          },
+          {
+            "region": "North",
+            "month": "Jun",
+            "monthNo": 6,
+            "quarter": "Q2",
+            "product": "Home loan",
+            "units": 10,
+            "amount": 11000
+          },
+          {
+            "region": "North",
+            "month": "Jun",
+            "monthNo": 6,
+            "quarter": "Q2",
+            "product": "Car loan",
+            "units": 4,
+            "amount": 3000
+          },
+          {
+            "region": "North",
+            "month": "Jun",
+            "monthNo": 6,
+            "quarter": "Q2",
+            "product": "Gold loan",
+            "units": 7,
+            "amount": 8000
+          },
+          {
+            "region": "South",
+            "month": "Jan",
+            "monthNo": 1,
+            "quarter": "Q1",
+            "product": "Home loan",
+            "units": 10,
+            "amount": 13000
+          },
+          {
+            "region": "South",
+            "month": "Jan",
+            "monthNo": 1,
+            "quarter": "Q1",
+            "product": "Car loan",
+            "units": 4,
+            "amount": 5000
+          },
+          {
+            "region": "South",
+            "month": "Jan",
+            "monthNo": 1,
+            "quarter": "Q1",
+            "product": "Gold loan",
+            "units": 7,
+            "amount": 10000
+          },
+          {
+            "region": "South",
+            "month": "Feb",
+            "monthNo": 2,
+            "quarter": "Q1",
+            "product": "Home loan",
+            "units": 6,
+            "amount": 7000
+          },
+          {
+            "region": "South",
+            "month": "Feb",
+            "monthNo": 2,
+            "quarter": "Q1",
+            "product": "Car loan",
+            "units": 9,
+            "amount": 12000
+          },
+          {
+            "region": "South",
+            "month": "Feb",
+            "monthNo": 2,
+            "quarter": "Q1",
+            "product": "Gold loan",
+            "units": 3,
+            "amount": 4000
+          },
+          {
+            "region": "South",
+            "month": "Mar",
+            "monthNo": 3,
+            "quarter": "Q1",
+            "product": "Home loan",
+            "units": 11,
+            "amount": 14000
+          },
+          {
+            "region": "South",
+            "month": "Mar",
+            "monthNo": 3,
+            "quarter": "Q1",
+            "product": "Car loan",
+            "units": 5,
+            "amount": 6000
+          },
+          {
+            "region": "South",
+            "month": "Mar",
+            "monthNo": 3,
+            "quarter": "Q1",
+            "product": "Gold loan",
+            "units": 8,
+            "amount": 11000
+          },
+          {
+            "region": "South",
+            "month": "Apr",
+            "monthNo": 4,
+            "quarter": "Q2",
+            "product": "Home loan",
+            "units": 7,
+            "amount": 8000
+          },
+          {
+            "region": "South",
+            "month": "Apr",
+            "monthNo": 4,
+            "quarter": "Q2",
+            "product": "Car loan",
+            "units": 10,
+            "amount": 13000
+          },
+          {
+            "region": "South",
+            "month": "Apr",
+            "monthNo": 4,
+            "quarter": "Q2",
+            "product": "Gold loan",
+            "units": 4,
+            "amount": 5000
+          },
+          {
+            "region": "South",
+            "month": "May",
+            "monthNo": 5,
+            "quarter": "Q2",
+            "product": "Home loan",
+            "units": 3,
+            "amount": 2000
+          },
+          {
+            "region": "South",
+            "month": "May",
+            "monthNo": 5,
+            "quarter": "Q2",
+            "product": "Car loan",
+            "units": 6,
+            "amount": 7000
+          },
+          {
+            "region": "South",
+            "month": "May",
+            "monthNo": 5,
+            "quarter": "Q2",
+            "product": "Gold loan",
+            "units": 9,
+            "amount": 12000
+          },
+          {
+            "region": "South",
+            "month": "Jun",
+            "monthNo": 6,
+            "quarter": "Q2",
+            "product": "Home loan",
+            "units": 8,
+            "amount": 9000
+          },
+          {
+            "region": "South",
+            "month": "Jun",
+            "monthNo": 6,
+            "quarter": "Q2",
+            "product": "Car loan",
+            "units": 11,
+            "amount": 14000
+          },
+          {
+            "region": "South",
+            "month": "Jun",
+            "monthNo": 6,
+            "quarter": "Q2",
+            "product": "Gold loan",
+            "units": 5,
+            "amount": 6000
+          },
+          {
+            "region": "East",
+            "month": "Jan",
+            "monthNo": 1,
+            "quarter": "Q1",
+            "product": "Home loan",
+            "units": 8,
+            "amount": 11000
+          },
+          {
+            "region": "East",
+            "month": "Jan",
+            "monthNo": 1,
+            "quarter": "Q1",
+            "product": "Car loan",
+            "units": 11,
+            "amount": 3000
+          },
+          {
+            "region": "East",
+            "month": "Jan",
+            "monthNo": 1,
+            "quarter": "Q1",
+            "product": "Gold loan",
+            "units": 5,
+            "amount": 8000
+          },
+          {
+            "region": "East",
+            "month": "Feb",
+            "monthNo": 2,
+            "quarter": "Q1",
+            "product": "Home loan",
+            "units": 4,
+            "amount": 5000
+          },
+          {
+            "region": "East",
+            "month": "Feb",
+            "monthNo": 2,
+            "quarter": "Q1",
+            "product": "Car loan",
+            "units": 7,
+            "amount": 10000
+          },
+          {
+            "region": "East",
+            "month": "Feb",
+            "monthNo": 2,
+            "quarter": "Q1",
+            "product": "Gold loan",
+            "units": 10,
+            "amount": 2000
+          },
+          {
+            "region": "East",
+            "month": "Mar",
+            "monthNo": 3,
+            "quarter": "Q1",
+            "product": "Home loan",
+            "units": 9,
+            "amount": 12000
+          },
+          {
+            "region": "East",
+            "month": "Mar",
+            "monthNo": 3,
+            "quarter": "Q1",
+            "product": "Car loan",
+            "units": 3,
+            "amount": 4000
+          },
+          {
+            "region": "East",
+            "month": "Mar",
+            "monthNo": 3,
+            "quarter": "Q1",
+            "product": "Gold loan",
+            "units": 6,
+            "amount": 9000
+          },
+          {
+            "region": "East",
+            "month": "Apr",
+            "monthNo": 4,
+            "quarter": "Q2",
+            "product": "Home loan",
+            "units": 5,
+            "amount": 6000
+          },
+          {
+            "region": "East",
+            "month": "Apr",
+            "monthNo": 4,
+            "quarter": "Q2",
+            "product": "Car loan",
+            "units": 8,
+            "amount": 11000
+          },
+          {
+            "region": "East",
+            "month": "Apr",
+            "monthNo": 4,
+            "quarter": "Q2",
+            "product": "Gold loan",
+            "units": 11,
+            "amount": 3000
+          },
+          {
+            "region": "East",
+            "month": "May",
+            "monthNo": 5,
+            "quarter": "Q2",
+            "product": "Home loan",
+            "units": 10,
+            "amount": 13000
+          },
+          {
+            "region": "East",
+            "month": "May",
+            "monthNo": 5,
+            "quarter": "Q2",
+            "product": "Car loan",
+            "units": 4,
+            "amount": 5000
+          },
+          {
+            "region": "East",
+            "month": "May",
+            "monthNo": 5,
+            "quarter": "Q2",
+            "product": "Gold loan",
+            "units": 7,
+            "amount": 10000
+          },
+          {
+            "region": "East",
+            "month": "Jun",
+            "monthNo": 6,
+            "quarter": "Q2",
+            "product": "Home loan",
+            "units": 6,
+            "amount": 7000
+          },
+          {
+            "region": "East",
+            "month": "Jun",
+            "monthNo": 6,
+            "quarter": "Q2",
+            "product": "Car loan",
+            "units": 9,
+            "amount": 12000
+          },
+          {
+            "region": "East",
+            "month": "Jun",
+            "monthNo": 6,
+            "quarter": "Q2",
+            "product": "Gold loan",
+            "units": 3,
+            "amount": 4000
+          },
+          {
+            "region": "West",
+            "month": "Jan",
+            "monthNo": 1,
+            "quarter": "Q1",
+            "product": "Home loan",
+            "units": 6,
+            "amount": 9000
+          },
+          {
+            "region": "West",
+            "month": "Jan",
+            "monthNo": 1,
+            "quarter": "Q1",
+            "product": "Car loan",
+            "units": 9,
+            "amount": 14000
+          },
+          {
+            "region": "West",
+            "month": "Jan",
+            "monthNo": 1,
+            "quarter": "Q1",
+            "product": "Gold loan",
+            "units": 3,
+            "amount": 6000
+          },
+          {
+            "region": "West",
+            "month": "Feb",
+            "monthNo": 2,
+            "quarter": "Q1",
+            "product": "Home loan",
+            "units": 11,
+            "amount": 3000
+          },
+          {
+            "region": "West",
+            "month": "Feb",
+            "monthNo": 2,
+            "quarter": "Q1",
+            "product": "Car loan",
+            "units": 5,
+            "amount": 8000
+          },
+          {
+            "region": "West",
+            "month": "Feb",
+            "monthNo": 2,
+            "quarter": "Q1",
+            "product": "Gold loan",
+            "units": 8,
+            "amount": 13000
+          },
+          {
+            "region": "West",
+            "month": "Mar",
+            "monthNo": 3,
+            "quarter": "Q1",
+            "product": "Home loan",
+            "units": 7,
+            "amount": 10000
+          },
+          {
+            "region": "West",
+            "month": "Mar",
+            "monthNo": 3,
+            "quarter": "Q1",
+            "product": "Car loan",
+            "units": 10,
+            "amount": 2000
+          },
+          {
+            "region": "West",
+            "month": "Mar",
+            "monthNo": 3,
+            "quarter": "Q1",
+            "product": "Gold loan",
+            "units": 4,
+            "amount": 7000
+          },
+          {
+            "region": "West",
+            "month": "Apr",
+            "monthNo": 4,
+            "quarter": "Q2",
+            "product": "Home loan",
+            "units": 3,
+            "amount": 4000
+          },
+          {
+            "region": "West",
+            "month": "Apr",
+            "monthNo": 4,
+            "quarter": "Q2",
+            "product": "Car loan",
+            "units": 6,
+            "amount": 9000
+          },
+          {
+            "region": "West",
+            "month": "Apr",
+            "monthNo": 4,
+            "quarter": "Q2",
+            "product": "Gold loan",
+            "units": 9,
+            "amount": 14000
+          },
+          {
+            "region": "West",
+            "month": "May",
+            "monthNo": 5,
+            "quarter": "Q2",
+            "product": "Home loan",
+            "units": 8,
+            "amount": 11000
+          },
+          {
+            "region": "West",
+            "month": "May",
+            "monthNo": 5,
+            "quarter": "Q2",
+            "product": "Car loan",
+            "units": 11,
+            "amount": 3000
+          },
+          {
+            "region": "West",
+            "month": "May",
+            "monthNo": 5,
+            "quarter": "Q2",
+            "product": "Gold loan",
+            "units": 5,
+            "amount": 8000
+          },
+          {
+            "region": "West",
+            "month": "Jun",
+            "monthNo": 6,
+            "quarter": "Q2",
+            "product": "Home loan",
+            "units": 4,
+            "amount": 5000
+          },
+          {
+            "region": "West",
+            "month": "Jun",
+            "monthNo": 6,
+            "quarter": "Q2",
+            "product": "Car loan",
+            "units": 7,
+            "amount": 10000
+          },
+          {
+            "region": "West",
+            "month": "Jun",
+            "monthNo": 6,
+            "quarter": "Q2",
+            "product": "Gold loan",
+            "units": 10,
+            "amount": 2000
+          }
+        ]
+      }
+    }
+  ],
+  "dataSets": [
+    {
+      "name": "RegionList",
+      "source": "Ledger",
+      "path": "$.regions[*]",
+      "fields": [
+        {
+          "name": "name"
+        },
+        {
+          "name": "manager"
+        }
+      ]
+    },
+    {
+      "name": "Sales",
+      "source": "Ledger",
+      "path": "$.sales[*]",
+      "fields": [
+        {
+          "name": "region"
+        },
+        {
+          "name": "month"
+        },
+        {
+          "name": "monthNo"
+        },
+        {
+          "name": "quarter"
+        },
+        {
+          "name": "product"
+        },
+        {
+          "name": "units"
+        },
+        {
+          "name": "amount"
+        },
+        {
+          "name": "avgTicket",
+          "expr": "=Fields.amount / Fields.units"
+        }
+      ],
+      "filters": [
+        {
+          "expr": "=Fields.region",
+          "op": "in",
+          "value": "=Parameters.Regions"
+        },
+        {
+          "expr": "=Fields.amount",
+          "op": ">=",
+          "value": "=Parameters.MinAmount"
+        }
+      ]
+    }
+  ],
+  "styles": {
+    "base": {
+      "fontFamily": "Inter",
+      "fontSize": 10,
+      "color": "#000000",
+      "padding": 0
+    }
+  },
+  "sections": {
+    "pageHeader": {
+      "height": 62.36,
+      "items": [
+        {
+          "type": "shape",
+          "name": "pageHeaderBackground",
+          "shape": "rect",
+          "x": 0,
+          "y": 0,
+          "w": 510.24,
+          "h": 62.36,
+          "style": {
+            "fill": "#f3f6fa",
+            "stroke": "none",
+            "strokeWidth": 0,
+            "radius": 0
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "Title",
+          "x": 8.5,
+          "y": 5.67,
+          "w": 340.16,
+          "h": 28.35,
+          "value": "Regional sales, first half",
+          "canGrow": false,
+          "style": {
+            "fontFamily": "Inter",
+            "fontSize": 18,
+            "fontWeight": "bold",
+            "color": "#1f4e79"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "Subtitle",
+          "x": 8.5,
+          "y": 34.02,
+          "w": 340.16,
+          "h": 17.01,
+          "value": "Regions: {Join(Parameters.Regions, \", \")}",
+          "canGrow": false,
+          "style": {
+            "fontSize": 9,
+            "color": "#696969"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "RunDate",
+          "x": 354.33,
+          "y": 34.02,
+          "w": 147.4,
+          "h": 17.01,
+          "value": "=Globals.ExecutionTime",
+          "canGrow": false,
+          "style": {
+            "fontSize": 8,
+            "color": "#808080",
+            "textAlign": "right",
+            "format": "dd MMM yyyy HH:mm"
+          }
+        }
+      ],
+      "printOnFirstPage": true,
+      "printOnLastPage": true
+    },
+    "body": {
+      "height": 566.93,
+      "items": [
+        {
+          "type": "chart",
+          "name": "MonthlyChart",
+          "x": 0,
+          "y": 0,
+          "w": 510.24,
+          "h": 198.43,
+          "dataSet": "Sales",
+          "title": "Sales by month and region",
+          "legend": "bottom",
+          "valueFormat": "n0",
+          "chartType": "column",
+          "category": "=Fields.month",
+          "seriesGroup": "=Fields.region",
+          "stacked": true,
+          "series": [
+            {
+              "name": "amount",
+              "value": "=Sum(Fields.amount)"
+            }
+          ],
+          "sort": [
+            {
+              "by": "=Fields.monthNo",
+              "dir": "asc"
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "name": "SalesTable",
+          "x": 0,
+          "y": 212.6,
+          "w": 510.25,
+          "h": 85.04,
+          "columns": [
+            {
+              "width": 113.39
+            },
+            {
+              "width": 113.39
+            },
+            {
+              "width": 127.56
+            },
+            {
+              "width": 70.87
+            },
+            {
+              "width": 85.04
+            }
+          ],
+          "dataSet": "Sales",
+          "repeatHeader": true,
+          "header": [
+            {
+              "height": 22.68,
+              "cells": [
+                {
+                  "value": "Region",
+                  "style": {
+                    "fontWeight": "bold",
+                    "color": "#ffffff",
+                    "verticalAlign": "middle",
+                    "backgroundColor": "#1f4e79",
+                    "padding": [
+                      2,
+                      4,
+                      2,
+                      4
+                    ]
+                  }
+                },
+                {
+                  "value": "Month",
+                  "style": {
+                    "fontWeight": "bold",
+                    "color": "#ffffff",
+                    "verticalAlign": "middle",
+                    "backgroundColor": "#1f4e79",
+                    "padding": [
+                      2,
+                      4,
+                      2,
+                      4
+                    ]
+                  },
+                  "sortBy": "=Fields.monthNo"
+                },
+                {
+                  "value": "Product",
+                  "style": {
+                    "fontWeight": "bold",
+                    "color": "#ffffff",
+                    "verticalAlign": "middle",
+                    "backgroundColor": "#1f4e79",
+                    "padding": [
+                      2,
+                      4,
+                      2,
+                      4
+                    ]
+                  },
+                  "sortBy": "=Fields.product"
+                },
+                {
+                  "value": "Units",
+                  "style": {
+                    "fontWeight": "bold",
+                    "color": "#ffffff",
+                    "textAlign": "right",
+                    "verticalAlign": "middle",
+                    "backgroundColor": "#1f4e79",
+                    "padding": [
+                      2,
+                      4,
+                      2,
+                      4
+                    ]
+                  }
+                },
+                {
+                  "value": "Amount",
+                  "style": {
+                    "fontWeight": "bold",
+                    "color": "#ffffff",
+                    "textAlign": "right",
+                    "verticalAlign": "middle",
+                    "backgroundColor": "#1f4e79",
+                    "padding": [
+                      2,
+                      4,
+                      2,
+                      4
+                    ]
+                  },
+                  "sortBy": "=Fields.amount"
+                }
+              ]
+            }
+          ],
+          "groups": [
+            {
+              "name": "RegionGroup",
+              "expr": "=Fields.region",
+              "header": [
+                {
+                  "height": 19.84,
+                  "cells": [
+                    {
+                      "value": "=Fields.region",
+                      "style": {
+                        "fontWeight": "bold",
+                        "verticalAlign": "middle",
+                        "padding": [
+                          2,
+                          4,
+                          2,
+                          4
+                        ],
+                        "borderBottom": "0.5 solid #dcdcdc"
+                      },
+                      "bookmark": "=Fields.region"
+                    },
+                    {
+                      "value": "Manager: {Lookup(Fields.region, Fields.name, Fields.manager, \"RegionList\")}",
+                      "style": {
+                        "color": "#696969",
+                        "verticalAlign": "middle",
+                        "padding": [
+                          2,
+                          4,
+                          2,
+                          4
+                        ],
+                        "borderBottom": "0.5 solid #dcdcdc"
+                      },
+                      "colSpan": 2
+                    },
+                    null,
+                    {
+                      "value": "=Sum(Fields.units)",
+                      "style": {
+                        "fontWeight": "bold",
+                        "verticalAlign": "middle",
+                        "format": "n0",
+                        "padding": [
+                          2,
+                          4,
+                          2,
+                          4
+                        ],
+                        "borderBottom": "0.5 solid #dcdcdc"
+                      }
+                    },
+                    {
+                      "value": "=Sum(Fields.amount)",
+                      "style": {
+                        "fontWeight": "bold",
+                        "verticalAlign": "middle",
+                        "format": "c0",
+                        "padding": [
+                          2,
+                          4,
+                          2,
+                          4
+                        ],
+                        "borderBottom": "0.5 solid #dcdcdc"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "footer": [
+                {
+                  "height": 17.01,
+                  "cells": [
+                    {
+                      "value": "Share of total: {Format(Sum(Fields.amount) / Sum(Fields.amount, \"Sales\"), \"P1\")}",
+                      "style": {
+                        "fontStyle": "italic",
+                        "color": "#808080",
+                        "verticalAlign": "middle",
+                        "padding": [
+                          2,
+                          4,
+                          2,
+                          4
+                        ]
+                      },
+                      "colSpan": 5
+                    },
+                    null,
+                    null,
+                    null,
+                    null
+                  ]
+                }
+              ],
+              "sort": "asc",
+              "collapsible": true,
+              "initiallyCollapsed": false
+            }
+          ],
+          "detail": [
+            {
+              "height": 17.01,
+              "cells": [
+                {
+                  "value": "",
+                  "style": {
+                    "verticalAlign": "middle",
+                    "padding": [
+                      2,
+                      4,
+                      2,
+                      4
+                    ]
+                  }
+                },
+                {
+                  "value": "=Fields.month",
+                  "style": {
+                    "verticalAlign": "middle",
+                    "padding": [
+                      2,
+                      4,
+                      2,
+                      4
+                    ]
+                  }
+                },
+                {
+                  "value": "=Fields.product",
+                  "style": {
+                    "verticalAlign": "middle",
+                    "padding": [
+                      2,
+                      4,
+                      2,
+                      4
+                    ]
+                  }
+                },
+                {
+                  "value": "=Fields.units",
+                  "style": {
+                    "verticalAlign": "middle",
+                    "format": "n0",
+                    "padding": [
+                      2,
+                      4,
+                      2,
+                      4
+                    ]
+                  }
+                },
+                {
+                  "value": "=Fields.amount",
+                  "style": {
+                    "color": "=IIF(Fields.amount >= 10000, \"#2e8b57\", \"#000000\")",
+                    "verticalAlign": "middle",
+                    "format": "c0",
+                    "padding": [
+                      2,
+                      4,
+                      2,
+                      4
+                    ]
+                  }
+                }
+              ]
+            }
+          ],
+          "footer": [
+            {
+              "height": 22.68,
+              "cells": [
+                {
+                  "value": "Grand total",
+                  "style": {
+                    "fontWeight": "bold",
+                    "verticalAlign": "middle",
+                    "padding": [
+                      2,
+                      4,
+                      2,
+                      4
+                    ],
+                    "borderTop": "1 solid #000000"
+                  },
+                  "colSpan": 3
+                },
+                null,
+                null,
+                {
+                  "value": "=Sum(Fields.units)",
+                  "style": {
+                    "fontWeight": "bold",
+                    "verticalAlign": "middle",
+                    "format": "n0",
+                    "padding": [
+                      2,
+                      4,
+                      2,
+                      4
+                    ],
+                    "borderTop": "1 solid #000000"
+                  }
+                },
+                {
+                  "value": "=Sum(Fields.amount)",
+                  "style": {
+                    "fontWeight": "bold",
+                    "verticalAlign": "middle",
+                    "format": "c0",
+                    "padding": [
+                      2,
+                      4,
+                      2,
+                      4
+                    ],
+                    "borderTop": "1 solid #000000"
+                  }
+                }
+              ]
+            }
+          ],
+          "sort": [
+            {
+              "by": "=Fields.monthNo",
+              "dir": "asc"
+            }
+          ],
+          "noRowsText": ""
+        },
+        {
+          "type": "matrix",
+          "name": "QuarterPivot",
+          "x": 0,
+          "y": 325.98,
+          "w": 340.16,
+          "h": 56.69,
+          "dataSet": "Sales",
+          "value": "=Sum(Fields.amount)",
+          "valueFormat": "n0",
+          "rowGroup": "=Fields.region",
+          "columnGroup": "=Fields.quarter",
+          "rowSort": "asc",
+          "columnSort": "asc",
+          "rowTotals": true,
+          "columnTotals": true,
+          "corner": "Region",
+          "rowHeaderWidth": 113.39,
+          "columnWidth": 85.04,
+          "headerStyle": {
+            "fontWeight": "bold",
+            "textAlign": "right",
+            "backgroundColor": "#eef2f7",
+            "padding": [
+              2,
+              4,
+              2,
+              4
+            ]
+          },
+          "cellStyle": {
+            "padding": [
+              2,
+              4,
+              2,
+              4
+            ]
+          },
+          "totalStyle": {
+            "fontWeight": "bold",
+            "padding": [
+              2,
+              4,
+              2,
+              4
+            ]
+          },
+          "style": {
+            "padding": [
+              2,
+              4,
+              2,
+              4
+            ]
+          }
+        }
+      ]
+    },
+    "pageFooter": {
+      "height": 22.68,
+      "items": [
+        {
+          "type": "line",
+          "name": "FooterRule",
+          "x": 0,
+          "y": 2.83,
+          "w": 510.24,
+          "h": 0,
+          "style": {
+            "stroke": "#c0c0c0",
+            "strokeWidth": 0.5,
+            "strokeDash": "solid"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "PageNo",
+          "x": 340.16,
+          "y": 5.67,
+          "w": 170.08,
+          "h": 14.17,
+          "value": "Page {Globals.PageNumber} of {Globals.TotalPages}",
+          "canGrow": false,
+          "style": {
+            "fontSize": 8,
+            "textAlign": "right"
+          }
+        }
+      ],
+      "printOnFirstPage": true,
+      "printOnLastPage": true
+    }
+  }
+}

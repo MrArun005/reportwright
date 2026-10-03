@@ -433,3 +433,11 @@ describe.skipIf(!corpusDirs.length)('real ActiveReports reports', () => {
     });
   }
 });
+
+describe('proof report', () => {
+  it('reports/imported-regional-sales.pw.json is what the importer makes of the fixture', () => {
+    // regenerate after an importer change: importRdlx(fixture, { name: 'Imported regional sales' }).definition
+    const stored = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'reports', 'imported-regional-sales.pw.json'), 'utf8'));
+    expect(importRdlx(fs.readFileSync(path.join(FIX, 'regional-sales.rdlx-json'), 'utf8'), { name: 'Imported regional sales' }).definition).toEqual(stored);
+  });
+});
