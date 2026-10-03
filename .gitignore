@@ -10,3 +10,4 @@ packages/*/dist
 packages/engine/public
 packages/*/LICENSE
 *.tgz
+packages/*/package.json
