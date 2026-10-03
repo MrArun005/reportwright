@@ -3,6 +3,6 @@ node_modules
 *.log
 test-results
 reports/e2e-*.pw.json
-data/
+/data/
 public/embed/
 reports/.history/e2e-*
