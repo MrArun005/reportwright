@@ -3,7 +3,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { readReport, safeId } from '@/server/reports.js';
 import { renderTo, baseUrl } from '@/server/renderer.js';
-import { pageToSvg } from '@/exporters/svg.js';
+import { pageToSvg, fontFaceCss, fontKeysOf } from '@/exporters/svg.js';
+import { ALL_FONT_KEYS } from '@/engine/text/fonts.js';
 
 export const runtime = 'nodejs';
 const cache = (globalThis.__pwThumbs ||= new Map());
@@ -19,7 +20,10 @@ export async function GET(req, { params }) {
       const def = await readReport(id);
       const r = await renderTo(def, { format: 'json', baseUrl: baseUrl(req) });
       const pg = r.model.pages[0];
-      hit = { mtime, svg: pg ? pageToSvg(pg, r.model.width, r.model.height) : '', pages: r.model.pages.length };
+      // the home page declares the default fonts; a thumbnail declares the others it uses (fallbacks, uploads)
+      const extra = pg ? fontKeysOf({ pages: [pg] }).filter(k => !ALL_FONT_KEYS.includes(k)) : [];
+      const svg = pg ? pageToSvg(pg, r.model.width, r.model.height) : '';
+      hit = { mtime, svg: extra.length ? svg.replace(/^(<svg[^>]*>)/, `$1<style>${fontFaceCss(extra)}</style>`) : svg, pages: r.model.pages.length };
       cache.set(id, hit);
     }
     return new Response(hit.svg, { headers: { 'content-type': 'image/svg+xml', 'cache-control': 'no-cache', 'x-pagewright-pages': String(hit.pages) } });

@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { FontStore } from '../src/engine/index.js';
-export const fontStore = new FontStore(async (k) => fs.readFileSync(path.join(import.meta.dirname, '..', 'public', 'fonts', `${k}.ttf`)));
+import { fontFile } from '../src/engine/text/fonts.js';
+export const fontStore = new FontStore(async (k) => fs.readFileSync(path.join(import.meta.dirname, '..', 'public', 'fonts', fontFile(k))));
 export const texts = (page) => page.items.filter(i => i.t === 'text').flatMap(i => i.lines.map(l => l.text));
 export const report = (body, extra = {}) => ({
   $schema: 'pagewright/report@1', name: 'T', page: { size: 'A4', margins: [36, 36, 36, 36] },

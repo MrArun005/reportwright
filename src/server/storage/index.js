@@ -1,14 +1,14 @@
 // @ts-check
 // One storage for reports, report versions, schedules, job records and users.
 // PW_STORAGE=file (the default): today's files: reports/<id>.pw.json, reports/.history/<id>/,
-//   data/schedules.json, data/jobs/<id>/job.json, data/users.json.
+//   data/schedules.json, data/jobs/<id>/job.json, data/users.json, data/fonts/<id>.json.
 // PW_STORAGE=sqlite:/abs/path.db | postgres://… | mysql://… (or sql:<name> for the URL in PW_DB_<NAME>):
-//   tables pw_reports, pw_report_versions, pw_schedules, pw_jobs, pw_users, so several servers share them.
+//   tables pw_reports, pw_report_versions, pw_schedules, pw_jobs, pw_users, pw_fonts, so several servers share them.
 // Values are text (JSON); the callers own the format. Batch output files always stay in data/.
 import { fileStore } from './file.js';
 import { sqlStore } from './sql.js';
 
-/** @typedef {'reports'|'schedules'|'jobs'|'users'} Kind */
+/** @typedef {'reports'|'schedules'|'jobs'|'users'|'fonts'} Kind */
 /**
  * @typedef {object} Store
  * @property {(kind: Kind, id: string) => Promise<string|null>} get

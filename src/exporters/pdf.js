@@ -1,5 +1,6 @@
 // @ts-check
-import { PDFDocument, PDFName, PDFString, rgb, pushGraphicsState, popGraphicsState, rectangle, clip, endPath } from 'pdf-lib';
+import { PDFDocument, PDFName, PDFString, PDFHexString, PDFNumber, PDFArray, PDFOperator, PDFOperatorNames, rgb, pushGraphicsState, popGraphicsState,
+  rectangle, clip, endPath, beginText, endText, setFontAndSize, setTextMatrix, setTextRise, setFillingColor, setGraphicsState } from 'pdf-lib';
 import fontkitModule from '@pdf-lib/fontkit';
 import { parseColor } from './color.js';
 import { makePdfA } from './pdfa.js';
@@ -27,12 +28,22 @@ export async function exportPdf(model, fontStore, opt = {}) {
   doc.setCreator('Pagewright');
   if (opt.author) doc.setAuthor(opt.author);
 
-  // Which characters each font must draw.
+  // Which characters each font must draw, and which shaped glyphs (by ID, with the text each one stands for).
   const used = new Map();
+  /** @type {Map<string, Map<number, string>>} */
+  const shaped = new Map();
+  const chars = (key) => { let c = used.get(key); if (!c) { c = new Set([32]); used.set(key, c); } return c; };
   for (const pg of model.pages) for (const it of pg.items) if (it.t === 'text') {
-    let s = used.get(it.font);
-    if (!s) { s = new Set([32]); used.set(it.font, s); }
-    for (const l of it.lines) for (const ch of l.text) s.add(/** @type {number} */ (ch.codePointAt(0)));
+    for (const l of it.lines) {
+      if (!l.runs) { const c = chars(it.font); for (const ch of l.text) c.add(/** @type {number} */ (ch.codePointAt(0))); continue; }
+      for (const r of l.runs) {
+        const c = chars(r.font);
+        for (const ch of r.text) c.add(/** @type {number} */ (ch.codePointAt(0)));
+        let g = shaped.get(r.font);
+        if (!g) { g = new Map(); shaped.set(r.font, g); }
+        glyphText(r, fontStore.get(r.font), g);
+      }
+    }
   }
   // A filled-in form field can hold any character: fonts that fields use embed in full.
   const fieldFonts = new Set();
@@ -42,17 +53,22 @@ export async function exportPdf(model, fontStore, opt = {}) {
     if (!fonts.has(key)) {
       let bytes = fontStore.bytes.get(key);
       if (!bytes) throw new Error(`Font "${key}" is not loaded`);
-      if (opt.subset && !fieldFonts.has(key)) {
+      const glyphs = shaped.get(key);
+      // fsType "no subsetting": the licence wants the whole font embedded
+      if (opt.subset && !fieldFonts.has(key) && !fontStore.get(key)['OS/2']?.fsType?.noSubsetting) {
         const cps = used.get(key) || new Set([32]);
         try {
-          const sub = await opt.subset(bytes, cps);
+          const sub = await opt.subset(bytes, cps, glyphs ? { glyphs: glyphs.keys() } : undefined);
           // fontkit cannot read some subsets (an empty last glyph). Check every glyph we need.
           const f = fontkit.create(sub);
           for (const cp of cps) { const g = f.glyphForCodePoint(cp); void g.advanceWidth; void g.bbox; }
+          for (const id of glyphs?.keys() || []) { const g = f.getGlyph(id); void g.advanceWidth; void g.bbox; }
           bytes = sub;
         } catch { /* embed the full font */ }
       }
-      fonts.set(key, await doc.embedFont(bytes, { subset: false }));
+      const pf = await doc.embedFont(bytes, { subset: false });
+      if (glyphs) addGlyphs(pf, glyphs);
+      fonts.set(key, pf);
     }
     return fonts.get(key);
   };
@@ -111,12 +127,15 @@ export async function exportPdf(model, fontStore, opt = {}) {
           break;
         }
         case 'text': {
-          const f = await font(it.font);
+          const f = it.lines.some(l => !l.runs) ? await font(it.font) : null; // lines with runs name their own fonts
           const c = col(it.color) || { color: rgb(0, 0, 0), opacity: 1 };
           if (it.clip) {
             p.pushOperators(pushGraphicsState(), rectangle(it.clip.x, H - it.clip.y - it.clip.h, it.clip.w, it.clip.h), clip(), endPath());
           }
-          for (const l of it.lines) p.drawText(l.text, { x: l.x, y: H - l.y, size: it.size, font: f, color: c.color, opacity: c.opacity });
+          for (const l of it.lines) {
+            if (!l.runs) { p.drawText(l.text, { x: l.x, y: H - l.y, size: it.size, font: f, color: c.color, opacity: c.opacity }); continue; }
+            for (const r of l.runs) if (r.text.trim()) drawRun(doc, p, r, l.x + r.x, H - l.y, it.size, await font(r.font), c);
+          }
           if (it.clip) p.pushOperators(popGraphicsState());
           break;
         }
@@ -184,6 +203,91 @@ export async function exportPdf(model, fontStore, opt = {}) {
   if (opt.pdfa) makePdfA(doc, { ...opt.pdfa, title: opt.title || 'Report', author: opt.author });
   // appearances are already drawn in the report font; regenerating would switch them to Helvetica
   return doc.save({ updateFieldAppearances: false, ...(opt.save || {}) });
+}
+
+/**
+ * Draw one run of shaped glyphs by ID, where the engine placed them: a TJ array whose numbers move each
+ * glyph from where the font's own advance (the W array) leaves it to the shaper's position; marks that sit
+ * higher or lower use the text rise. /ActualText gives copy and search the characters: for a left-to-right
+ * run the whole run in reading order; for a right-to-left run (drawn in visual order, which readers reorder
+ * themselves) each cluster that is not one glyph for one character.
+ */
+function drawRun(doc, p, run, x, y, size, pf, c) {
+  const names = (p.__pwFonts ||= new Map());
+  if (!names.has(pf)) names.set(pf, p.node.newFontDictionary(pf.name, pf.ref));
+  const f = pf.embedder.font;
+  const per = 1000 / size;
+  const span = (text) => PDFOperator.of(PDFOperatorNames.BeginMarkedContentSequence, [PDFName.of('Span'), doc.context.obj({ ActualText: PDFHexString.fromText(text) })]);
+  const emc = () => PDFOperator.of(PDFOperatorNames.EndMarkedContent);
+  const ops = [pushGraphicsState(), setFillingColor(c.color)];
+  if (c.opacity < 1) ops.push(setGraphicsState(p.maybeEmbedGraphicsState({ opacity: c.opacity })));
+  if (!run.rtl) ops.push(span(run.text));
+  ops.push(beginText(), setFontAndSize(names.get(pf), size), setTextMatrix(1, 0, 0, 1, x, y));
+  let arr = PDFArray.withContext(doc.context);
+  let pen = 0, rise = 0;
+  const flush = () => { if (arr.size()) ops.push(PDFOperator.of(PDFOperatorNames.ShowTextAdjusted, [arr])); arr = PDFArray.withContext(doc.context); };
+  const g = run.glyphs;
+  const starts = run.rtl ? [...new Set(g.filter((_, i) => i % 4 === 3))].sort((a, b) => a - b) : [];
+  let inSpan = false;
+  for (let i = 0; i < g.length; i += 4) {
+    const id = g[i], gx = g[i + 1], gy = g[i + 2], cl = g[i + 3];
+    if (run.rtl && (i === 0 || g[i - 1] !== cl)) { // the first glyph of a cluster
+      let n = 0;
+      for (let j = i; j < g.length && g[j + 3] === cl; j += 4) n++;
+      const text = run.text.slice(cl, starts[starts.indexOf(cl) + 1] ?? run.text.length);
+      if (n > 1 || [...text].length > 1) { flush(); ops.push(span(text)); inSpan = true; }
+    }
+    if (gy !== rise) { flush(); ops.push(setTextRise(gy)); rise = gy; }
+    const adj = Math.round((pen - gx) * per * 1000) / 1000;
+    if (adj) arr.push(PDFNumber.of(adj));
+    arr.push(PDFHexString.of(id.toString(16).padStart(4, '0')));
+    pen = gx + (f.getGlyph(id).advanceWidth * size) / f.unitsPerEm;
+    if (inSpan && (i + 4 >= g.length || g[i + 7] !== cl)) { flush(); ops.push(emc()); inSpan = false; }
+  }
+  flush();
+  ops.push(endText());
+  if (!run.rtl) ops.push(emc());
+  ops.push(popGraphicsState());
+  p.pushOperators(...ops);
+}
+
+/**
+ * The text each shaped glyph stands for, for the font's ToUnicode map: the character whose own (character-map)
+ * glyph it is, else the characters of its cluster that have no glyph of their own there (a conjunct, a joined
+ * Arabic form, a reph). A glyph used twice keeps its first text.
+ * @param {any} run @param {any} font fontkit font @param {Map<number, string>} out
+ */
+function glyphText(run, font, out) {
+  const g = run.glyphs;
+  const starts = [...new Set(g.filter((_, i) => i % 4 === 3))].sort((a, b) => a - b);
+  for (let k = 0; k < starts.length; k++) {
+    const chars = [...run.text.slice(starts[k], starts[k + 1] ?? run.text.length)];
+    const ids = [];
+    for (let i = 0; i < g.length; i += 4) if (g[i + 3] === starts[k]) ids.push(g[i]);
+    const own = new Map(chars.map(ch => [font.glyphForCodePoint(ch.codePointAt(0)).id, ch]));
+    const rest = chars.filter(ch => !ids.includes(font.glyphForCodePoint(ch.codePointAt(0)).id)).join('');
+    for (const id of ids) if (!out.has(id)) out.set(id, own.get(id) ?? rest);
+  }
+}
+
+/**
+ * pdf-lib writes widths (W) and ToUnicode for the glyphs of the character map, each mapped to its code point.
+ * Shaped glyphs need entries too (a conjunct has no code point), and a joined Arabic form should read as its
+ * letter, not as a presentation-form code point.
+ */
+function addGlyphs(pf, glyphs) {
+  const e = pf.embedder;
+  const byId = new Map(e.glyphCache.access().map(g => [g.id, g]));
+  // plain objects: fontkit caches its glyphs with the code points of their first use
+  for (const [id, text] of glyphs) byId.set(id, { id, advanceWidth: e.font.getGlyph(id).advanceWidth, codePoints: [...text].map(ch => ch.codePointAt(0)) });
+  const all = [...byId.values()].sort((a, b) => a.id - b.id);
+  e.glyphCache = { access: () => all };
+  const cmap = e.embedUnicodeCmap.bind(e);
+  // a glyph that stands for no character of its own stays out of ToUnicode
+  e.embedUnicodeCmap = (ctx) => {
+    e.glyphCache = { access: () => all.filter(g => g.codePoints.length) };
+    try { return cmap(ctx); } finally { e.glyphCache = { access: () => all }; }
+  };
 }
 
 /** PDF outline (the bookmarks panel) from the page model bookmarks. Flat list, levels as indentation. */

@@ -6,7 +6,7 @@
  */
 import { resolvePage } from './units.js';
 import { FontStore, ALL_FONT_KEYS } from './text/fonts.js';
-import { TextMeasurer } from './text/measure.js';
+import { TextMeasurer, finishText } from './text/measure.js';
 import { loadSources, buildDataSets, coerce } from './data/index.js';
 import { evalValue, evaluate } from './expr/evaluate.js';
 import { isoDate } from './expr/format.js';
@@ -56,7 +56,7 @@ export async function render(def, opts = {}) {
 
   const store = opts.fontStore || new FontStore(/** @type {any} */ (opts.loadFont));
   await store.load(ALL_FONT_KEYS);
-  const m = new TextMeasurer(store);
+  let m = new TextMeasurer(store);
 
   const now = opts.now || new Date();
   const baseCtx = {
@@ -67,6 +67,7 @@ export async function render(def, opts = {}) {
   const dataSets = buildDataSets(def, sources, baseCtx);
   baseCtx.dataSets = dataSets;
   const defaultDs = def.dataSets?.[0]?.name;
+  const kept = warnings.length; // a second layout pass starts from here
 
   const sec = def.sections || {};
   const header = sec.pageHeader?.height ? sec.pageHeader : null;
@@ -98,102 +99,107 @@ export async function render(def, opts = {}) {
   };
 
   /* ---------------- body: layout + push-down ---------------- */
-  const lc = makeLc(baseCtx.globals, false);
-  // opts.firstPages: lay out only enough rows for that many pages (a fast first look; the full render follows).
-  // 8 pt is the smallest sensible row, so this budget always fills the pages asked for. Not with a table of contents.
   const firstPages = Number(opts.firstPages) || 0;
-  lc.rowBudget = firstPages > 0 && !opts.bodyOnly && !hasType(sec.body?.items, 'toc') ? { left: Math.ceil((firstPages * contentH) / 8), cut: false } : null;
+  let cutRows = () => false;
+  const layoutAll = async () => {
+    warnings.length = kept;
+    idSeq = 0;
+    const lc = makeLc(baseCtx.globals, false);
+    // opts.firstPages: lay out only enough rows for that many pages (a fast first look; the full render follows).
+    // 8 pt is the smallest sensible row, so this budget always fills the pages asked for. Not with a table of contents.
+    lc.rowBudget = firstPages > 0 && !opts.bodyOnly && !hasType(sec.body?.items, 'toc') ? { left: Math.ceil((firstPages * contentH) / 8), cut: false } : null;
+    cutRows = () => !!lc.rowBudget?.cut;
 
-  // Subreports: one pass collects what to load, then each child renders its body with its own data.
-  if (hasType(sec.body?.items, 'subreport')) {
-    if (!opts.loadReport) lc.subreports = null;
-    else {
-      const depth = opts.depth || 0;
-      if (depth > 3) throw new ReportError('Subreports are nested more than 3 levels deep');
-      const requests = new Map();
-      layoutItems(sec.body?.items || [], { ...lc, regions: [], warn: () => {}, subreports: { mode: 'collect', requests } });
-      // one budget for the whole render, all levels: a subreport per row of a big table would otherwise multiply
-      const budget = opts.budget || { used: 0 };
-      if (budget.used + requests.size > MAX_SUBREPORTS) throw new ReportError(`This report would render more than ${MAX_SUBREPORTS} subreports. Filter the data, or show the rows in a table.`);
-      budget.used += requests.size;
-      const results = new Map();
-      const defs = new Map();
-      for (const [key, rq] of requests) {
-        try {
-          if ((opts.chain || []).includes(rq.report)) throw new Error('it includes itself');
-          if (!defs.has(rq.report)) defs.set(rq.report, await opts.loadReport(rq.report));
-          const child = defs.get(rq.report);
-          const r = await render(child, { ...opts, reportId: rq.report, budget, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, rq.report], bodyWidth: page.bodyWidth, state: {} });
-          results.set(key, r);
-          for (const w of r.warnings) warn(`Subreport ${rq.report}: ${w}`);
-        } catch (e) { results.set(key, { error: e.message }); }
-      }
-      lc.subreports = { mode: 'use', results };
-    }
-  }
-  // Multi-column body: the strip fills column slots left to right, then the next page.
-  const colCount = Math.max(1, Math.min(6, Number(sec.body?.columns?.count) || 1));
-  const colGap = Number(sec.body?.columns?.gap ?? 18);
-  const colW = (page.bodyWidth - colGap * (colCount - 1)) / colCount;
-  lc.bodyWidth = colCount > 1 ? colW : lc.bodyWidth;
-
-  /** Lay out the body and assemble pages. A table of contents needs a second pass. */
-  const assemble = (tocEntries) => {
-    regions.length = 0;
-    lc.toc = tocEntries;
-    const body = layoutItems(sec.body?.items || [], lc);
-    if (opts.bodyOnly) return { body };
-    // one page that grows: page breaks have nothing to break
-    if (page.pageless) for (const u of body.units) { u.breakBefore = false; u.breakAfter = false; }
-    const slices = paginate(body.units, body.tables, contentH, warn);
-    if (lc.rowBudget?.cut) slices.length = Math.min(slices.length, firstPages * colCount);
-    let pageH = page.height;
-    if (page.pageless) {
-      if (slices.length === 1) pageH = Math.max(page.minHeight, page.margins.top + headerH + slices[0].bottom - slices[0].top + footerH + page.margins.bottom);
-      else warn(`This pageless report is taller than 200 inches, the largest PDF page, so it is split into ${slices.length} pages.`);
-    }
-    const total = Math.ceil(slices.length / colCount);
-    const ml = page.margins.left, mt = page.margins.top;
-    const bodyTop = mt + headerH;
-    const bookmarks = [];
-    const pages = [];
-    for (let k = 0; k < total; k++) {
-      const items = [];
-      const globals = { ...baseCtx.globals, PageNumber: k + 1, TotalPages: lc.rowBudget?.cut ? '…' : total };
-      const plc = makeLc(globals, true);
-      const band = (section, y0, first, last) => {
-        if (!section) return;
-        if (first && section.printOnFirstPage === false) return;
-        if (last && section.printOnLastPage === false) return;
-        const r = layoutItems(section.items || [], plc);
-        for (const u of r.units) items.push(...shiftItems(u.items, ml, y0 + u.top));
-      };
-      band(header, mt, k === 0, k === total - 1);
-      for (let c = 0; c < colCount; c++) {
-        const p = slices[k * colCount + c];
-        if (!p) break;
-        const cx = ml + c * (colW + colGap);
-        for (const t of p.repeat) items.push(...shiftItems(t.headerItems, cx, bodyTop));
-        for (const u of p.units) {
-          // Only items under a continued table move down by its repeated header.
-          let off = 0;
-          for (const t of p.repeat) if (u.x0 < t.x1 - EPS && t.x0 < u.x1 - EPS) off = Math.max(off, t.headerHeight);
-          items.push(...shiftItems(u.items, cx, bodyTop + off + (u.top - p.top)));
+    // Subreports: one pass collects what to load, then each child renders its body with its own data.
+    if (hasType(sec.body?.items, 'subreport')) {
+      if (!opts.loadReport) lc.subreports = null;
+      else {
+        const depth = opts.depth || 0;
+        if (depth > 3) throw new ReportError('Subreports are nested more than 3 levels deep');
+        const requests = new Map();
+        layoutItems(sec.body?.items || [], { ...lc, regions: [], warn: () => {}, subreports: { mode: 'collect', requests } });
+        // one budget for the whole render, all levels: a subreport per row of a big table would otherwise multiply
+        const budget = opts.budget || { used: 0 };
+        if (budget.used + requests.size > MAX_SUBREPORTS) throw new ReportError(`This report would render more than ${MAX_SUBREPORTS} subreports. Filter the data, or show the rows in a table.`);
+        budget.used += requests.size;
+        const results = new Map();
+        const defs = new Map();
+        for (const [key, rq] of requests) {
+          try {
+            if ((opts.chain || []).includes(rq.report)) throw new Error('it includes itself');
+            if (!defs.has(rq.report)) defs.set(rq.report, await opts.loadReport(rq.report));
+            const child = defs.get(rq.report);
+            const r = await render(child, { ...opts, reportId: rq.report, budget, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, rq.report], bodyWidth: page.bodyWidth, state: {} });
+            results.set(key, r);
+            for (const w of r.warnings) warn(`Subreport ${rq.report}: ${w}`);
+          } catch (e) { results.set(key, { error: e.message }); }
         }
+        lc.subreports = { mode: 'use', results };
       }
-      band(footer, pageH - page.margins.bottom - footerH, k === 0, k === total - 1);
-      const kept = [];
-      for (const it of items) {
-        if (it.t === 'bookmark') bookmarks.push({ label: it.label, page: k + 1, y: it.y, level: it.level || 0 });
-        else kept.push(it);
-      }
-      pages.push({ items: kept });
     }
-    return { pages, bookmarks, height: pageH };
+    // Multi-column body: the strip fills column slots left to right, then the next page.
+    const colCount = Math.max(1, Math.min(6, Number(sec.body?.columns?.count) || 1));
+    const colGap = Number(sec.body?.columns?.gap ?? 18);
+    const colW = (page.bodyWidth - colGap * (colCount - 1)) / colCount;
+    lc.bodyWidth = colCount > 1 ? colW : lc.bodyWidth;
+
+    /** Lay out the body and assemble pages. A table of contents needs a second pass. */
+    const assemble = (tocEntries) => {
+      regions.length = 0;
+      lc.toc = tocEntries;
+      const body = layoutItems(sec.body?.items || [], lc);
+      if (opts.bodyOnly) return { body };
+      // one page that grows: page breaks have nothing to break
+      if (page.pageless) for (const u of body.units) { u.breakBefore = false; u.breakAfter = false; }
+      const slices = paginate(body.units, body.tables, contentH, warn);
+      if (lc.rowBudget?.cut) slices.length = Math.min(slices.length, firstPages * colCount);
+      let pageH = page.height;
+      if (page.pageless) {
+        if (slices.length === 1) pageH = Math.max(page.minHeight, page.margins.top + headerH + slices[0].bottom - slices[0].top + footerH + page.margins.bottom);
+        else warn(`This pageless report is taller than 200 inches, the largest PDF page, so it is split into ${slices.length} pages.`);
+      }
+      const total = Math.ceil(slices.length / colCount);
+      const ml = page.margins.left, mt = page.margins.top;
+      const bodyTop = mt + headerH;
+      const bookmarks = [];
+      const pages = [];
+      for (let k = 0; k < total; k++) {
+        const items = [];
+        const globals = { ...baseCtx.globals, PageNumber: k + 1, TotalPages: lc.rowBudget?.cut ? '…' : total };
+        const plc = makeLc(globals, true);
+        const band = (section, y0, first, last) => {
+          if (!section) return;
+          if (first && section.printOnFirstPage === false) return;
+          if (last && section.printOnLastPage === false) return;
+          const r = layoutItems(section.items || [], plc);
+          for (const u of r.units) items.push(...shiftItems(u.items, ml, y0 + u.top));
+        };
+        band(header, mt, k === 0, k === total - 1);
+        for (let c = 0; c < colCount; c++) {
+          const p = slices[k * colCount + c];
+          if (!p) break;
+          const cx = ml + c * (colW + colGap);
+          for (const t of p.repeat) items.push(...shiftItems(t.headerItems, cx, bodyTop));
+          for (const u of p.units) {
+            // Only items under a continued table move down by its repeated header.
+            let off = 0;
+            for (const t of p.repeat) if (u.x0 < t.x1 - EPS && t.x0 < u.x1 - EPS) off = Math.max(off, t.headerHeight);
+            items.push(...shiftItems(u.items, cx, bodyTop + off + (u.top - p.top)));
+          }
+        }
+        band(footer, pageH - page.margins.bottom - footerH, k === 0, k === total - 1);
+        const kept = [];
+        for (const it of items) {
+          if (it.t === 'bookmark') bookmarks.push({ label: it.label, page: k + 1, y: it.y, level: it.level || 0 });
+          else kept.push(it);
+        }
+        pages.push({ items: kept });
+      }
+      return { pages, bookmarks, height: pageH };
   };
 
   let result = assemble([]);
-  if (opts.bodyOnly) return { units: result.body.units, tables: result.body.tables, height: result.body.height, regions, warnings };
+  if (opts.bodyOnly) return result;
   if (hasType(sec.body?.items, 'toc')) {
     // The table of contents changes the page count, which changes its own numbers: repeat until stable.
     for (let pass = 0; pass < 3; pass++) {
@@ -204,10 +210,24 @@ export async function render(def, opts = {}) {
       if (same && pass > 0) break;
     }
   }
+  return result;
+  };
+
+  // Text may need fonts that are not loaded yet (a fallback for Hindi, an uploaded font) or the shaper:
+  // load them and lay out again. A font that does not load falls back to Inter, so this ends.
+  let result = await layoutAll();
+  for (let pass = 0; m.missing.size && pass < 3; pass++) {
+    await store.load([...m.missing]);
+    m = new TextMeasurer(store);
+    result = await layoutAll();
+  }
+  if (m.noGlyph.size) warn(`No font has these characters, so they show as boxes: ${[...m.noGlyph].slice(0, 20).join(' ')}. Upload a font that has them and use it for this text.`);
+  if (opts.bodyOnly) return { units: result.body.units, tables: result.body.tables, height: result.body.height, regions, warnings };
   const { pages, bookmarks, height } = result;
+  for (const pg of pages) finishText(pg.items, m);
 
   return {
-    width: page.width, height, pages, warnings, bookmarks, regions, name: def.name || '', partial: !!lc.rowBudget?.cut,
+    width: page.width, height, pages, warnings, bookmarks, regions, name: def.name || '', partial: cutRows(),
     stats: { ms: Date.now() - t0, pages: pages.length, rows: Object.fromEntries(Object.entries(dataSets).map(([k, r]) => [k, r.length])) },
   };
 }
@@ -309,4 +329,4 @@ export function resolveParameters(def, given, { lenient = false } = {}) {
   return out;
 }
 
-export { FontStore, TextMeasurer, ITEMS };
+export { FontStore, TextMeasurer, ITEMS, finishText };

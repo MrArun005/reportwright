@@ -1,7 +1,9 @@
 'use client';
 // Runs the engine in a Web Worker. Falls back to the main thread if the worker cannot start.
 import { render, FontStore } from '@/engine/index.js';
+import { fontFile, setCustomFonts, SHAPER, ALL_FONT_KEYS } from '@/engine/text/fonts.js';
 import { createSubsetter } from '@/exporters/subset.js';
+import { fontFamilyCss, fontKeysOf } from '@/exporters/svg.js';
 
 // Where fonts, the WASM subsetter and report definitions come from ('' = this site; set for embedding).
 let assetBase = '';
@@ -15,13 +17,21 @@ let seq = 0;
 const waiting = new Map();
 let mainStore = null;
 
-// Fonts bundled with the page as base64 (the interactive HTML export), so it works offline.
+// Fonts bundled with the page as base64 (the interactive HTML export), so it works offline; `list` names the
+// uploaded ones among them.
 let bundledFonts = null;
-export function setBundledFonts(map) { bundledFonts = map || null; mainStore = null; }
+let bundledList = null;
+export function setBundledFonts(map, list) { bundledFonts = map || null; bundledList = list || null; mainStore = null; fontList = null; }
 const b64ToBuffer = (b64) => { const s = atob(b64); const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u.buffer; };
+const getFont = async (k) => {
+  if (bundledFonts?.[k]) return b64ToBuffer(bundledFonts[k]);
+  const r = await fetch(`${assetBase}/fonts/${fontFile(k)}`);
+  if (!r.ok) throw new Error(`Font "${k}" did not load (HTTP ${r.status})`);
+  return r.arrayBuffer();
+};
 
 export function fontStore() {
-  if (!mainStore) mainStore = new FontStore(async (k) => (bundledFonts?.[k] ? b64ToBuffer(bundledFonts[k]) : (await fetch(`${assetBase}/fonts/${k}.ttf`)).arrayBuffer()));
+  if (!mainStore) mainStore = new FontStore(getFont);
   return mainStore;
 }
 
@@ -30,6 +40,35 @@ export function fontStore() {
 // so bundlers such as Vite do not try to resolve a worker file that is not shipped.
 const makeWorker = typeof __PW_EMBED__ !== 'undefined' && __PW_EMBED__ ? null
   : () => new Worker(new URL('../worker/engine.worker.js', import.meta.url), { type: 'module' });
+
+/** Fonts uploaded to the server, known to the engine by family. Cached; refresh after an upload. */
+let fontList = null;
+export function customFonts(refresh = false) {
+  if (!fontList || refresh) {
+    fontList = (bundledList ? Promise.resolve(bundledList) : fetch(`${assetBase}/api/fonts`).then(r => (r.ok ? r.json() : [])).catch(() => []))
+      .then((list) => { setCustomFonts(list); return list; });
+  }
+  return fontList;
+}
+
+/**
+ * Declare and load the fonts a page model draws with. FontFace on the document (not CSS in the component),
+ * so viewers inside a shadow root (the embed) see them too.
+ */
+const faces = new Map();
+export function loadReportFonts(keys) {
+  if (typeof document === 'undefined' || !document.fonts || typeof FontFace === 'undefined') return Promise.resolve();
+  return Promise.all(keys.filter(k => k !== SHAPER).map((k) => {
+    if (!faces.has(k)) {
+      const src = bundledFonts?.[k] ? b64ToBuffer(bundledFonts[k]) : `url("${assetBase}/fonts/${fontFile(k)}")`;
+      const face = new FontFace(fontFamilyCss(k), src, { display: 'block' });
+      document.fonts.add(face);
+      faces.set(k, face.load().catch(() => {}));
+    }
+    return faces.get(k);
+  }));
+}
+export const loadModelFonts = (model) => loadReportFonts([...new Set([...ALL_FONT_KEYS, ...fontKeysOf(model)])]);
 
 function getWorker() {
   if (!makeWorker || workerBroken || typeof Worker === 'undefined' || assetBase || bundledFonts) return null; // embedded: run on the main thread
@@ -68,6 +107,7 @@ const loadReport = async (rid) => {
 };
 export const fetchReport = loadReport;
 async function renderMain(def, params, state, reportId) {
+  await customFonts();
   return render(def, { parameters: params, state, reportId, fontStore: fontStore(), baseUrl: origin(), loadReport });
 }
 
@@ -76,13 +116,14 @@ async function renderMain(def, params, state, reportId) {
  * @param {{ onPartial?: (model: any) => void }} [opt] onPartial: gets the first pages of a long report first
  * @returns {Promise<any>} page model
  */
-export function renderReport(def, params = {}, state = {}, reportId = undefined, { onPartial } = {}) {
+export async function renderReport(def, params = {}, state = {}, reportId = undefined, { onPartial } = {}) {
   const w = getWorker();
   if (!w) return renderMain(def, params, state, reportId);
+  const fonts = await customFonts(); // the worker has its own copy of the font list
   return new Promise((resolve, reject) => {
     const id = ++seq;
     waiting.set(id, { resolve, reject, onPartial, retry: () => renderMain(def, params, state, reportId).then(resolve, reject) });
-    w.postMessage({ id, def, params, state, reportId, firstPages: onPartial ? 2 : 0 });
+    w.postMessage({ id, def, params, state, reportId, fonts, firstPages: onPartial ? 2 : 0 });
   });
 }
 
@@ -90,7 +131,8 @@ export const usingWorker = () => !!worker && !workerBroken;
 
 export async function pdfBlob(model, title) {
   const store = fontStore();
-  await store.load();
+  await customFonts();
+  await store.load(fontKeysOf(model));
   const { exportPdf } = await import('@/exporters/pdf.js'); // pdf-lib loads on the first PDF export
   const bytes = await exportPdf(model, store, {
     title,

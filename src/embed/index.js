@@ -2,11 +2,11 @@
 // Pagewright.mountViewer('#el', { server: 'https://reports.example.com', report: 'loan-statement', params: {...} })
 //
 // The interactive HTML export uses the same entry point with everything bundled in:
-//   { definition, reports: {id: def}, fonts: {key: base64}, fontCss, uiFontCss, snapshot: {url: json} }
+//   { definition, reports: {id: def}, fonts: {key: base64}, customFonts: [uploaded font info], uiFontCss, snapshot: {url: json} }
 // so the file keeps working (filters, open/close, sort, chart clicks, drill-through) without the Pagewright server.
 import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
-import ReportViewer, { setFontBase, setFontFaceCss } from '../viewer/ReportViewer.jsx';
+import ReportViewer from '../viewer/ReportViewer.jsx';
 import { setAssetBase, registerReports, setBundledFonts } from '../viewer/engineClient.js';
 import { uiFontCss } from '../viewer/uiFonts.js';
 
@@ -31,7 +31,7 @@ function installSnapshot(snapshot) {
 /**
  * @param {string|HTMLElement} target
  * @param {{ server?: string, report?: string, definition?: object, params?: Record<string,string>, lang?: string, height?: string, onDrill?: Function,
- *   reports?: Record<string, object>, fonts?: Record<string, string>, fontCss?: string, uiFontCss?: string, snapshot?: Record<string, any>, title?: string }} opts
+ *   reports?: Record<string, object>, fonts?: Record<string, string>, customFonts?: object[], uiFontCss?: string, snapshot?: Record<string, any>, title?: string }} opts
  */
 export function mountViewer(target, opts = {}) {
   const el = typeof target === 'string' ? document.querySelector(target) : target;
@@ -39,11 +39,11 @@ export function mountViewer(target, opts = {}) {
   const server = String(opts.server || '').replace(/\/$/, '');
   setAssetBase(server);
   if (opts.reports) registerReports(opts.reports);
-  if (opts.fonts) setBundledFonts(opts.fonts);
+  if (opts.fonts) setBundledFonts(opts.fonts, opts.customFonts);
   if (opts.snapshot) installSnapshot(opts.snapshot);
   // Fonts must be declared on the document; the rest of the styles live in a shadow root.
-  const reportFonts = opts.fontCss ? setFontFaceCss(opts.fontCss) : setFontBase(server);
-  const fontCss = reportFonts + '\n' + (opts.uiFontCss ?? uiFontCss(server));
+  // (Report fonts are added as FontFace objects by the viewer; this is the interface font.)
+  const fontCss = opts.uiFontCss ?? uiFontCss(server);
   if (!document.getElementById('pw-embed-fonts')) {
     const st = document.createElement('style');
     st.id = 'pw-embed-fonts';

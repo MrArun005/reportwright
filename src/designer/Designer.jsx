@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Dialog } from './ui.jsx';
 import Link from 'next/link';
 import { useDesigner, insertItem, deleteSelection, duplicateSelection, moveItems, copySelection, pasteItems } from './store.js';
@@ -9,13 +9,12 @@ import DataPanel, { loadSample } from './DataPanel.jsx';
 import ReportViewer from '@/viewer/ReportViewer.jsx';
 import { ITEMS } from '@/engine/items/index.js';
 import { fontFaceCss } from '@/exporters/svg.js';
-import { ALL_FONT_KEYS } from '@/engine/text/fonts.js';
+import { allFontKeys } from '@/engine/text/fonts.js';
+import { customFonts } from '@/viewer/engineClient.js';
 import ThemeToggle from '@/theme/ThemeToggle.jsx';
 import ChartWizard from './ChartWizard.jsx';
 import TableWizard from './TableWizard.jsx';
 import AskAi from './AskAi.jsx';
-
-const FONT_CSS = fontFaceCss(ALL_FONT_KEYS);
 
 const TOOLS = [
   { type: 'textbox', icon: <svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 3h10M7 3v9" stroke="currentColor" strokeWidth="1.6" fill="none" /></svg> },
@@ -115,6 +114,11 @@ export default function Designer({ id, initial }) {
   const zoom = useDesigner(s => s.zoom);
   const snap = useDesigner(s => s.snap);
   const unit = useDesigner(s => s.unit);
+  // every report font, bundled and uploaded: the canvas draws text boxes as HTML in them (the browser only
+  // downloads the ones it uses, e.g. Noto Sans Devanagari once there is Hindi on the page)
+  const fonts = useDesigner(s => s.fonts);
+  const fontCss = useMemo(() => fontFaceCss(allFontKeys()), [fonts]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { customFonts().then(list => useDesigner.getState().setUi({ fonts: list })); }, []);
   const canUndo = useDesigner(s => s.past.length > 0);
   const canRedo = useDesigner(s => s.future.length > 0);
   const st = useDesigner.getState;
@@ -157,7 +161,7 @@ export default function Designer({ id, initial }) {
 
   return (
     <div className="designer" data-testid="designer">
-      <style>{FONT_CSS}</style>
+      <style>{fontCss}</style>
       <div className="dtop">
         <Link href="/" className="brand"><i />Pagewright</Link>
         <input className="name" value={def.name || ''} aria-label="Report name" onChange={e => st().apply(d => { d.name = e.target.value; }, 'name')} />

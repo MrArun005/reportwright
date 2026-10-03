@@ -6,15 +6,15 @@ import { loadBarcodes } from '@/engine/items/barcode.js';
 const hasType = (items, t) => (items || []).some(i => i.type === t || hasType(i.items, t));
 import { BASE_STYLE, parseBorder } from '@/engine/style.js';
 import { isDynamic } from '@/engine/expr/evaluate.js';
-import { resolveFontKey } from '@/engine/text/fonts.js';
+import { resolveFontKey, fallbackKeys } from '@/engine/text/fonts.js';
 import { normBox } from '@/engine/units.js';
 import { fontFamilyCss, pageToSvg } from '@/exporters/svg.js';
 import { ITEMS } from '@/engine/items/index.js';
-import { TextMeasurer } from '@/engine/text/measure.js';
+import { TextMeasurer, finishText } from '@/engine/text/measure.js';
 import { layoutItems } from '@/engine/layout.js';
 import { shiftItems } from '@/engine/items/paint.js';
 import { resolveParameters } from '@/engine/index.js';
-import { fontStore } from '@/viewer/engineClient.js';
+import { fontStore, customFonts, loadModelFonts } from '@/viewer/engineClient.js';
 
 export const PX = 96 / 72;
 export const MIME_TOOL = 'application/x-pw-tool';
@@ -31,7 +31,9 @@ function cssBorder(b, s) { const p = parseBorder(b); return p ? `${Math.max(1, p
 export function textCss(layers, s, numeric = false) {
   const st = staticStyle(layers);
   const pad = normBox(st.padding);
-  const align = st.textAlign === 'auto' ? (numeric ? 'right' : 'left') : st.textAlign;
+  // auto: numbers right, text by its own direction (Arabic and Hebrew paragraphs right), as the engine does
+  const align = st.textAlign === 'auto' ? (numeric ? 'right' : 'start') : st.textAlign;
+  const key = resolveFontKey(st.fontFamily, st.fontWeight, st.fontStyle);
   return {
     box: {
       background: st.backgroundColor || undefined,
@@ -41,8 +43,8 @@ export function textCss(layers, s, numeric = false) {
       borderBottom: cssBorder(st.borderBottom ?? st.border, s), borderLeft: cssBorder(st.borderLeft ?? st.border, s),
     },
     text: {
-      fontFamily: `"${fontFamilyCss(resolveFontKey(st.fontFamily, st.fontWeight, st.fontStyle))}"`,
-      fontSize: `${(Number(st.fontSize) || 9) * s}px`, color: st.color, textAlign: align,
+      fontFamily: [key, ...fallbackKeys(key)].map(k => `"${fontFamilyCss(k)}"`).join(', '), // the bundled fallbacks, like the engine
+      fontSize: `${(Number(st.fontSize) || 9) * s}px`, color: st.color, textAlign: align, unicodeBidi: 'plaintext',
       lineHeight: st.lineHeight || 1.25, fontKerning: 'none',
     },
   };
@@ -375,7 +377,7 @@ let measurer = null;
  */
 export async function paintItemSvg(shape, def, sample) {
   const store = fontStore();
-  await store.load();
+  await Promise.all([store.load(), customFonts()]);
   if (shape.type === 'barcode' || hasType(shape.items, 'barcode')) await loadBarcodes();
   measurer ||= new TextMeasurer(store);
   const dataSets = sample?.dataSets || {};
@@ -389,9 +391,16 @@ export async function paintItemSvg(shape, def, sample) {
     layoutItems: (its, l, o) => layoutItems(its, l, o), linkFor: () => null, bodyWidth: shape.w, subreports: null,
     ctxFor: (it) => { const ds = it.dataSet || def.dataSets?.[0]?.name; const rows = (ds && dataSets[ds]) || []; return { ...ctxBase, fields: rows[0] || null, aggRows: rows }; },
   };
-  const res = ITEMS[shape.type].layout({ ...shape, x: 0, y: 0 }, lc);
+  let res = ITEMS[shape.type].layout({ ...shape, x: 0, y: 0 }, lc);
+  if (measurer.missing.size) { // text that needs a fallback font or the shaper: load them, lay out again (as render() does)
+    await store.load([...measurer.missing]);
+    measurer = lc.m = new TextMeasurer(store);
+    res = ITEMS[shape.type].layout({ ...shape, x: 0, y: 0 }, lc);
+  }
   const items = res.units.flatMap(u => shiftItems(u.items, 0, u.top));
+  finishText(items, measurer);
   const h = Math.max(shape.h, res.height || 0);
+  await loadModelFonts({ pages: [{ items }] });
   return { html: pageToSvg({ items }, shape.w, h, { background: false }), h };
 }
 

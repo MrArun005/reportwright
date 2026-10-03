@@ -1,22 +1,13 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { renderReport, pdfBlob, usingWorker, origin, fetchReport } from './engineClient.js';
-import { exportBlob } from './exports.js';
-import { pageToSvg, fontFaceCss, fontFamilyCss } from '@/exporters/svg.js';
+import { renderReport, pdfBlob, usingWorker, origin, fetchReport, loadModelFonts, loadReportFonts } from './engineClient.js';
 import { ALL_FONT_KEYS } from '@/engine/text/fonts.js';
+import { exportBlob } from './exports.js';
+import { pageToSvg } from '@/exporters/svg.js';
 import { parameterOptions } from '@/engine/index.js';
 import { t as tr } from './i18n.js';
 
 const PX = 96 / 72;
-let FONT_CSS = fontFaceCss(ALL_FONT_KEYS);
-export function setFontBase(base) { FONT_CSS = fontFaceCss(ALL_FONT_KEYS, `${base}/fonts`); return FONT_CSS; }
-/** Report fonts as data URIs (interactive HTML export). */
-export function setFontFaceCss(css) { FONT_CSS = css; fontsReady = null; return FONT_CSS; }
-let fontsReady = null;
-function loadFonts() {
-  if (!fontsReady) fontsReady = Promise.all(ALL_FONT_KEYS.map(k => document.fonts.load(`12px "${fontFamilyCss(k)}"`))).catch(() => {});
-  return fontsReady;
-}
 
 function initialParams(def, given) {
   const out = {};
@@ -92,8 +83,9 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     const top = scroller.current?.scrollTop || 0;
     try {
       // a fresh run shows the first pages of a long report while the rest renders
-      const onPartial = keepScroll ? undefined : (pm) => { if (id === runId.current) { setModel(pm); setCurrent(1); } };
-      const [m] = await Promise.all([renderReport(definition, p, st, reportId, { onPartial }), loadFonts()]);
+      const onPartial = keepScroll ? undefined : (pm) => { if (id === runId.current) { loadModelFonts(pm).then(() => { if (id === runId.current) { setModel(pm); setCurrent(1); } }); } };
+      const [m] = await Promise.all([renderReport(definition, p, st, reportId, { onPartial }), loadReportFonts(ALL_FONT_KEYS)]);
+      await loadModelFonts(m); // and the fallback or uploaded fonts this model draws with
       if (id !== runId.current) return;
       setModel(m);
       setStatus({ state: 'done' });
@@ -272,7 +264,6 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
 
   return (
     <div className="viewer" data-testid="viewer">
-      <style>{FONT_CSS}</style>
       {levels.length > 1 && (
         <nav className="vcrumbs" aria-label="Drill-through path">
           <button type="button" className="btn sm" onClick={() => back()} data-testid="drill-back">← {T('back')}</button>
