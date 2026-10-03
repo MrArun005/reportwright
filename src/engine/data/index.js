@@ -91,7 +91,10 @@ export function parseCsv(text) {
 /**
  * Load every data source used by the report.
  * @param {any} def
- * @param {{params: object, fetch?: typeof fetch, baseUrl?: string}} opt
+ * @param {{params: object, fetch?: typeof fetch, baseUrl?: string, reportId?: string,
+ *   sql?: (src: any, params: Record<string, any>) => Promise<object[]>}} opt
+ *   sql: runs a SQL source directly (server renders). Without it the server runs the saved report's
+ *   query: the browser sends the report id and source name, never SQL.
  */
 export async function loadSources(def, opt) {
   const ctx = { params: opt.params, globals: {}, dataSets: {}, fields: null };
@@ -100,6 +103,7 @@ export async function loadSources(def, opt) {
   await Promise.all((def.dataSources || []).map(async (src) => {
     try {
       if (src.type === 'json') out[src.name] = typeof src.data === 'string' ? JSON.parse(src.data) : src.data;
+      else if (src.type === 'sql') out[src.name] = await loadSql(src, ctx.params, opt, f);
       else if (src.type === 'csv' && src.data) out[src.name] = parseCsv(src.data);
       else if (src.type === 'rest' || src.type === 'csv' || src.type === 'graphql') {
         if (!f) throw new Error('No fetch() available');
@@ -128,6 +132,20 @@ export async function loadSources(def, opt) {
     }
   }));
   return out;
+}
+
+/** A SQL source: run it here (server) or ask the server to run the saved report's query (browser). */
+async function loadSql(src, params, opt, f) {
+  const day = (v) => (v instanceof Date ? isoDate(v) : v);
+  const p = Object.fromEntries(Object.entries(params || {}).map(([k, v]) => [k, Array.isArray(v) ? v.map(day) : day(v)]));
+  if (opt.sql) return opt.sql(src, p);
+  if (!f) throw new Error('No fetch() available');
+  if (!opt.reportId) throw new Error('Save the report first: SQL runs on the server, from the saved report.');
+  const url = `${(opt.baseUrl || '').replace(/\/$/, '')}/api/data/sql`;
+  const res = await f(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ report: opt.reportId, source: src.name, params: p }) });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(json.error || `HTTP ${res.status} from ${url}`), { status: res.status });
+  return json.rows;
 }
 
 const plain = (x, ctx) => (x instanceof Date ? isoDate(x) : toText(x, null, ctx));

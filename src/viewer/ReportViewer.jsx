@@ -54,9 +54,9 @@ function findText(model, q) {
 }
 
 /**
- * @param {{ definition: any, params?: Record<string,string>, title?: string, compact?: boolean, autoRun?: boolean, lang?: string, onDrill?: (report: string, params: object) => void }} props
+ * @param {{ definition: any, reportId?: string, params?: Record<string,string>, title?: string, compact?: boolean, autoRun?: boolean, lang?: string, onDrill?: (report: string, params: object) => void }} props
  */
-export default function ReportViewer({ definition, params: given, title, compact = false, autoRun = true, lang = 'en', onDrill }) {
+export default function ReportViewer({ definition, reportId, params: given, title, compact = false, autoRun = true, lang = 'en', onDrill }) {
   const T = (k, v) => tr(lang, k, v);
   const [params, setParams] = useState(() => initialParams(definition, given));
   const [state, setState] = useState({ toggles: {}, sort: {} });
@@ -79,7 +79,7 @@ export default function ReportViewer({ definition, params: given, title, compact
     setStatus({ state: 'running' });
     const top = scroller.current?.scrollTop || 0;
     try {
-      const [m] = await Promise.all([renderReport(definition, p, st), loadFonts()]);
+      const [m] = await Promise.all([renderReport(definition, p, st, reportId), loadFonts()]);
       if (id !== runId.current) return;
       setModel(m);
       setStatus({ state: 'done' });
@@ -91,7 +91,7 @@ export default function ReportViewer({ definition, params: given, title, compact
       setStatus({ state: 'error', message: e.message, missing: e.missingParameters });
       if (e.missingParameters) setPanel('params');
     }
-  }, [definition, params, state]);
+  }, [definition, params, state, reportId]);
 
   useEffect(() => {
     const p0 = initialParams(definition, given);
@@ -105,7 +105,7 @@ export default function ReportViewer({ definition, params: given, title, compact
   useEffect(() => {
     if (!(definition.parameters || []).some(p => p.options || p.optionsFrom)) return;
     const t = setTimeout(() => {
-      parameterOptions(definition, params, { baseUrl: origin() }).then(setOptions).catch(() => {});
+      parameterOptions(definition, params, { baseUrl: origin(), reportId }).then(setOptions).catch(() => {});
     }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps

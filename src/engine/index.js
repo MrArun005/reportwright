@@ -35,7 +35,11 @@ const MAX_SUBREPORTS = 2000; // per render, all nesting levels together
  *   baseUrl?: string,
  *   sources?: Record<string, any>,
  *   now?: Date,
+ *   reportId?: string,
+ *   sql?: (src: any, params: Record<string, any>) => Promise<object[]>,
  * }} opts
+ *   reportId: the saved report, whose SQL sources the server runs for a browser render.
+ *   sql: runs SQL sources directly (server renders).
  */
 export async function render(def, opts = {}) {
   const t0 = Date.now();
@@ -57,7 +61,7 @@ export async function render(def, opts = {}) {
     params, globals: { ExecutionTime: now, ReportName: def.name || '', PageNumber: 1, TotalPages: 1 },
     dataSets: {}, fields: null, locale: def.locale || 'en-IN', currency: def.currency || 'INR',
   };
-  const sources = opts.sources || await loadSources(def, { params, fetch: opts.fetch, baseUrl: opts.baseUrl });
+  const sources = opts.sources || await loadSources(def, { params, fetch: opts.fetch, baseUrl: opts.baseUrl, sql: opts.sql, reportId: opts.reportId });
   const dataSets = buildDataSets(def, sources, baseCtx);
   baseCtx.dataSets = dataSets;
   const defaultDs = def.dataSets?.[0]?.name;
@@ -113,7 +117,7 @@ export async function render(def, opts = {}) {
           if ((opts.chain || []).includes(rq.report)) throw new Error('it includes itself');
           if (!defs.has(rq.report)) defs.set(rq.report, await opts.loadReport(rq.report));
           const child = defs.get(rq.report);
-          const r = await render(child, { ...opts, budget, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, rq.report], bodyWidth: page.bodyWidth, state: {} });
+          const r = await render(child, { ...opts, reportId: rq.report, budget, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, rq.report], bodyWidth: page.bodyWidth, state: {} });
           results.set(key, r);
           for (const w of r.warnings) warn(`Subreport ${rq.report}: ${w}`);
         } catch (e) { results.set(key, { error: e.message }); }
@@ -240,7 +244,7 @@ export async function parameterOptions(def, given = {}, opts = {}) {
   const sets = (def.dataSets || []).filter(d => need.has(d.name));
   const srcNames = new Set(sets.map(d => d.source));
   const sub = { ...def, dataSources: (def.dataSources || []).filter(s => srcNames.has(s.name)), dataSets: sets };
-  const sources = opts.sources || await loadSources(sub, { params, fetch: opts.fetch, baseUrl: opts.baseUrl });
+  const sources = opts.sources || await loadSources(sub, { params, fetch: opts.fetch, baseUrl: opts.baseUrl, sql: opts.sql, reportId: opts.reportId });
   const ctx = { params, globals: { ExecutionTime: new Date() }, dataSets: {}, fields: null };
   const built = buildDataSets(sub, sources, ctx);
   for (const p of dyn) {

@@ -57,12 +57,13 @@ The viewer runs in a Shadow DOM, so the host page styles do not change it. Set `
 | `PW_BASIC_AUTH` | run time | `user:password` for the whole app (designer, viewer, report storage, server renders). `/api/v1` keeps its API keys; the embed script and fonts stay open. **Set this, or put the app behind your SSO proxy, before you expose it.** |
 | `PW_INTERNAL_HOSTS` | run time | Host names that server-side fetches may reach on a private network (internal data APIs, a webhook receiver on your LAN). Comma-separated. Every other private or local address is refused (SSRF guard). |
 | `PW_PROXY_ALLOW` | run time | Hosts that `/api/data/proxy` may call (comma-separated). Private network addresses are always blocked. |
+| `PW_DB_<NAME>` | run time | A database for SQL data sources. `connection: 'main'` in a report reads `PW_DB_MAIN` (any case). `sqlite:/path/file.db` (built into Node 22), `postgres://user:pass@host/db` (needs `npm install pg`) or `mysql://user:pass@host/db` (needs `npm install mysql2`). Give it a database user that can only read. |
 | `PW_EMBED_ORIGINS` | **build time** | Origin allowed to read `/api/reports` and `/api/sample` from another site (CORS) |
 
 ## Test it
 
 ```bash
-npm test                                   # unit, golden and security tests (Vitest), 109 tests; needs Node 22+
+npm test                                   # unit, golden and security tests (Vitest), 130 tests; needs Node 22+ (PW_TEST_PG=postgres://… adds 3 Postgres tests)
 ./scripts/restart.sh                       # build and start on :3000 with test keys (PORT=3100 ./scripts/restart.sh for another port)
 node tests/e2e/build-from-scratch.mjs      # Phase 1 exit test: build a report in the designer
 node tests/e2e/smoke.mjs                   # viewer smoke test
@@ -98,6 +99,7 @@ tests/           unit, golden and end-to-end tests
 - **REST** (GET/POST, headers): a relative URL calls this app; `{Parameters.x}` fills values. Set `useProxy: true` to call another host through `/api/data/proxy`.
 - **GraphQL**: query and variables, with `{Parameters.x}` templating.
 - **Inline JSON** and **CSV** (inline or by URL).
+- **SQL** (SQLite, Postgres, MySQL): `{ type: 'sql', connection: 'main', query: 'select … where id = @accountId and region in (@regions)' }`. The connection comes from `PW_DB_MAIN`; a report never holds a host or a password. `@name` binds the report parameter `name` through the driver, so a value is never pasted into the SQL. A multi-value parameter becomes a list (`in (@regions)`); an empty list matches nothing (it becomes `NULL`, so `not in (@regions)` matches nothing too). Only one `SELECT` (or `WITH … SELECT`) statement runs, in a read-only transaction (SQLite: the file opened read-only), for at most 30 s and 100,000 rows. Server renders query the database directly. In the browser the viewer sends only the report id, the source name and the parameters to `/api/data/sql`, and the server runs **the query saved in that report**. A query sent with the request (a preview of unsaved work) runs only outside production. SQLite queries run on the server's main thread, so the 30 s limit does not stop them: keep SQLite for small local files.
 - **Pushed data**: the render API and batches can send the data in the request. It replaces the source with the same name.
 
 The sample endpoints `/api/sample/loans`, `/api/sample/loans/<account>` and `/api/sample/sales/<year>` serve fictional data.

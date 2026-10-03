@@ -28,7 +28,7 @@ export function mountViewer(target, opts = {}) {
   const shadow = el.shadowRoot || el.attachShadow({ mode: 'open' });
   shadow.innerHTML = `<style>${CSS}</style><div class="pw-embed" style="height:${opts.height || '720px'}"></div>`;
   const root = createRoot(shadow.querySelector('.pw-embed'));
-  const show = (definition) => root.render(createElement(ReportViewer, { definition, params: opts.params, lang: opts.lang, onDrill: opts.onDrill, title: opts.title }));
+  const show = (definition) => root.render(createElement(ReportViewer, { definition, reportId: opts.report, params: opts.params, lang: opts.lang, onDrill: opts.onDrill, title: opts.title }));
   if (opts.definition) show(opts.definition);
   else fetch(`${server}/api/reports/${encodeURIComponent(opts.report)}`)
     .then(r => (r.ok ? r.json() : r.json().then(j => Promise.reject(new Error(j.error || `HTTP ${r.status}`)))))
