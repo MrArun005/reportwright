@@ -2,6 +2,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useDesigner, SECTIONS, bodyWidth, addItem, insertItem, moveItems, updateItem, findItem, tableSetColumnWidth, tableParts, rowsOf, round, NESTING } from './store.js';
 import { tableFor } from './tableGen.js';
+import { loadBarcodes } from '@/engine/items/barcode.js';
+const hasType = (items, t) => (items || []).some(i => i.type === t || hasType(i.items, t));
 import { BASE_STYLE, parseBorder } from '@/engine/style.js';
 import { isDynamic } from '@/engine/expr/evaluate.js';
 import { resolveFontKey } from '@/engine/text/fonts.js';
@@ -374,6 +376,7 @@ let measurer = null;
 export async function paintItemSvg(shape, def, sample) {
   const store = fontStore();
   await store.load();
+  if (shape.type === 'barcode' || hasType(shape.items, 'barcode')) await loadBarcodes();
   measurer ||= new TextMeasurer(store);
   const dataSets = sample?.dataSets || {};
   let params = {};

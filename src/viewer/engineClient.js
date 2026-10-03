@@ -1,7 +1,6 @@
 'use client';
 // Runs the engine in a Web Worker. Falls back to the main thread if the worker cannot start.
 import { render, FontStore } from '@/engine/index.js';
-import { exportPdf } from '@/exporters/pdf.js';
 import { createSubsetter } from '@/exporters/subset.js';
 
 // Where fonts, the WASM subsetter and report definitions come from ('' = this site; set for embedding).
@@ -86,6 +85,7 @@ export const usingWorker = () => !!worker && !workerBroken;
 export async function pdfBlob(model, title) {
   const store = fontStore();
   await store.load();
+  const { exportPdf } = await import('@/exporters/pdf.js'); // pdf-lib loads on the first PDF export
   const bytes = await exportPdf(model, store, {
     title,
     subset: subsetter,

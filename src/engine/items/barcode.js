@@ -1,9 +1,11 @@
 // @ts-check
 /** Barcodes from bwip-js (100+ symbologies), turned into page-model paths. */
-import bwipModule from 'bwip-js';
-
+// bwip-js is about 1 MB: it loads only for reports that have a barcode (render() calls loadBarcodes first)
 /** @type {any} */
-const bwip = /** @type {any} */ (bwipModule).default || bwipModule;
+let bwip = null;
+export async function loadBarcodes() {
+  if (!bwip) { const m = /** @type {any} */ (await import('bwip-js')); bwip = m.default || m; }
+}
 
 export const BARCODE_TYPES = ['code128', 'code39', 'ean13', 'ean8', 'upca', 'itf14', 'qrcode', 'datamatrix', 'pdf417', 'azteccode', 'gs1-128'];
 const TWO_D = new Set(['qrcode', 'datamatrix', 'pdf417', 'azteccode', 'microqrcode']);
@@ -42,6 +44,7 @@ export function transformPath(d, sx, sy, tx, ty) {
  */
 export function paintBarcode({ type = 'code128', text, x, y, w, h, color = '#000000', showText = true, textHeight = 0 }) {
   if (!text) return { items: [] };
+  if (!bwip) return { items: [], error: 'The barcode library is not loaded (call loadBarcodes() before layout)' };
   let svg;
   try {
     svg = bwip.toSVG({ bcid: type, text: String(text), scale: 1, height: 10, includetext: false, paddingwidth: 0, paddingheight: 0 });

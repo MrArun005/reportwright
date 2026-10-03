@@ -86,7 +86,8 @@ async function snapshotData(def, params, model, reports) {
  */
 export async function exportInteractiveHtml(def, opt = {}) {
   const base = origin();
-  const bundleRes = await fetch(`${base}/embed/pagewright-viewer.js`);
+  // the single-file bundle (the loader in pagewright-viewer.js would need the server)
+  const bundleRes = await fetch(`${base}/embed/pagewright-viewer.full.js`);
   if (!bundleRes.ok) throw Object.assign(new Error('The viewer bundle is missing. Run "npm run build:embed" (it also runs in "npm run build").'), { code: 'NO_BUNDLE' });
   const bundle = (await bundleRes.text()).replace(/<\/script/gi, '<\\/script');
 

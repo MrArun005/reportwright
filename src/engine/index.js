@@ -12,6 +12,7 @@ import { evalValue, evaluate } from './expr/evaluate.js';
 import { isoDate } from './expr/format.js';
 import { BASE_STYLE } from './style.js';
 import { ITEMS } from './items/index.js';
+import { loadBarcodes } from './items/barcode.js';
 import { shiftItems } from './items/paint.js';
 import { paginate } from './paginate/index.js';
 import { layoutItems } from './layout.js';
@@ -50,6 +51,7 @@ export async function render(def, opts = {}) {
   const warn = (msg) => { if (warnings.length < 200 && !warnings.includes(msg)) warnings.push(msg); };
 
   const page = resolvePage(def.page);
+  if (['pageHeader', 'body', 'pageFooter'].some(k => hasType(def.sections?.[k]?.items, 'barcode'))) await loadBarcodes();
   const params = resolveParameters(def, opts.parameters || {});
 
   const store = opts.fontStore || new FontStore(/** @type {any} */ (opts.loadFont));
