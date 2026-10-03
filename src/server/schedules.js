@@ -2,12 +2,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { parseCron, matches, nextRun } from './cron.js';
+import { parseCron, nextRun } from './cron.js';
 import { createBatch } from './jobs.js';
 
 const FILE = path.join(process.cwd(), 'data', 'schedules.json');
 const g = globalThis;
-g.__pwSched ||= { timer: null, lastMinute: null };
+g.__pwSched ||= { timer: null };
 
 export async function readSchedules() {
   try { return JSON.parse(await fs.readFile(FILE, 'utf8')); } catch { return []; }
@@ -32,7 +32,7 @@ export async function getSchedule(id) { const s = (await readSchedules()).find(x
 
 export async function createSchedule(body) {
   validateSchedule(body);
-  const s = { id: `s_${crypto.randomBytes(5).toString('hex')}`, enabled: true, createdAt: new Date().toISOString(), timezone: 'UTC', format: 'pdf', ...body };
+  const s = { enabled: true, timezone: 'UTC', format: 'pdf', ...body, id: `s_${crypto.randomBytes(5).toString('hex')}`, createdAt: new Date().toISOString() };
   const list = await readSchedules();
   list.push(s);
   await writeSchedules(list);
@@ -42,7 +42,7 @@ export async function updateSchedule(id, patch) {
   const list = await readSchedules();
   const i = list.findIndex(x => x.id === id);
   if (i < 0) return null;
-  const next = { ...list[i], ...patch, id };
+  const next = { ...list[i], ...patch, id, createdAt: list[i].createdAt, updatedAt: new Date().toISOString() };
   validateSchedule(next);
   list[i] = next;
   await writeSchedules(list);
@@ -63,14 +63,23 @@ export async function runSchedule(s, reason = 'manual') {
   return job;
 }
 
+/**
+ * Due when a run time has passed since the last run (or the last edit). lastRunAt is on disk, so a
+ * restart does not fire twice, and after downtime a missed run happens once, late.
+ * ponytail: one process only; extra replicas set PW_SCHEDULER=off (a lock file or DB row if that changes).
+ */
+export function isDue(s, now = new Date()) {
+  if (s.enabled === false) return false;
+  const stamps = [s.lastRunAt, s.updatedAt, s.createdAt].map(t => Date.parse(t || '')).filter(Number.isFinite);
+  const since = stamps.length ? Math.max(...stamps) : now.getTime() - 60000;
+  const at = nextRun(s.cron, s.timezone || 'UTC', new Date(since));
+  return !!at && at <= now;
+}
+
 async function tick() {
   const now = new Date();
-  const minute = Math.floor(now.getTime() / 60000);
-  if (g.__pwSched.lastMinute === minute) return;
-  g.__pwSched.lastMinute = minute;
   for (const s of await readSchedules()) {
-    if (s.enabled === false) continue;
-    try { if (matches(s.cron, now, s.timezone || 'UTC')) await runSchedule(s, 'cron'); }
+    try { if (isDue(s, now)) await runSchedule(s, 'cron'); }
     catch (e) { console.error(`[pagewright] schedule ${s.id}: ${e.message}`); }
   }
 }
