@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import MoreWays from './MoreWays.jsx';
 
 export default function NewReport() {
   const [name, setName] = useState('');
@@ -22,6 +23,7 @@ export default function NewReport() {
       <input className="input" placeholder="Report name" value={name} onChange={e => setName(e.target.value)} aria-label="New report name" />
       <button className="btn primary" disabled={busy}>{busy ? 'Creating…' : 'New report'}</button>
       {err && <span className="err">{err}</span>}
+      <MoreWays name={name} />
     </form>
   );
 }
