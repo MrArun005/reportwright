@@ -119,7 +119,8 @@ function vbLex(src) {
       if (!m) bad(`the number "${src.slice(i, i + 8)}"`);
       toks.push({ t: 'num', v: Number(m[1]) }); i += m[0].length; continue;
     }
-    if (c === '"' || c === '“' || c === '”') {
+    if (c === '$' && src[i + 1] === '"') { const r = interpolated(src, i + 2); toks.push({ t: 'istr', parts: r.parts }); i = r.end; continue; }
+    if (c === '"' || c === '“' || c === '”') { // VB accepts curly quotes too
       let j = i + 1, s = '';
       for (;;) {
         if (j >= src.length) bad('a string without its closing quote');
@@ -148,6 +149,38 @@ function vbLex(src) {
   return toks;
 }
 
+/** $"text {expr} {expr:format}" → text parts and expression sources, and the index after the closing quote. */
+function interpolated(src, i) {
+  const parts = [];
+  let text = '';
+  for (;;) {
+    if (i >= src.length) bad('an interpolated string without its closing quote');
+    const c = src[i];
+    if (c === '"') { if (src[i + 1] === '"') { text += '"'; i += 2; continue; } break; }
+    if (c === '{' && src[i + 1] === '{') { text += '{'; i += 2; continue; }
+    if (c === '}' && src[i + 1] === '}') { text += '}'; i += 2; continue; }
+    if (c === '{') {
+      let j = i + 1, depth = 0, quote = false, colon = -1;
+      for (; j < src.length; j++) {
+        const d = src[j];
+        if (quote) { if (d === '"') quote = false; continue; }
+        if (d === '"') quote = true;
+        else if (d === '(') depth++;
+        else if (d === ')') depth--;
+        else if (d === ':' && depth === 0 && colon < 0) colon = j;
+        else if (d === '}' && depth === 0) break;
+      }
+      if (j >= src.length) bad('an interpolated string with an unclosed {');
+      if (text) { parts.push({ text }); text = ''; }
+      parts.push({ expr: src.slice(i + 1, colon < 0 ? j : colon), fmt: colon < 0 ? null : src.slice(colon + 1, j) });
+      i = j + 1; continue;
+    }
+    text += c; i++;
+  }
+  if (text || !parts.length) parts.push({ text });
+  return { parts, end: i + 1 };
+}
+
 // VB precedence, low to high. Not sits at 5, unary minus at 13, member access and calls at 20.
 const BIN = { xor: 2, or: 3, orelse: 3, and: 4, andalso: 4, '=': 6, '<>': 6, '<': 6, '>': 6, '<=': 6, '>=': 6, is: 6, isnot: 6, like: 6,
   '&': 8, '+': 9, '-': 9, mod: 10, '\\': 11, '*': 12, '/': 12, '^': 14 };
@@ -163,6 +196,14 @@ function vbParse(src) {
     if (t.t === 'num') return { k: 'num', v: t.v };
     if (t.t === 'str') return { k: 'str', v: t.v };
     if (t.t === 'date') return { k: 'date', v: t.v };
+    if (t.t === 'istr') {
+      const nodes = t.parts.map(p => {
+        if ('text' in p) return { k: 'str', v: p.text };
+        const e = vbParse(p.expr);
+        return p.fmt ? { k: 'call', fn: { k: 'id', name: 'Format' }, args: [e, { k: 'str', v: p.fmt }] } : e;
+      });
+      return nodes.reduce((a, b) => ({ k: 'bin', op: '&', a, b }));
+    }
     if (t.t === 'id') {
       const w = t.v.toLowerCase();
       if (w === 'not') return { k: 'not', arg: expr(5) };
@@ -456,6 +497,7 @@ function emFunc(name, args, o, res) {
     case 'mid': if (args.length > 3) return no('Mid with extra arguments'); break;
   }
   if (SAME[w]) return fn(SAME[w], all());
+  if (CONVERT[w] && args.length === 1) return fn(CONVERT[w], all()); // ToDecimal(x): a Convert method on its own
   return no(`the function ${name}()`);
 }
 
@@ -1181,7 +1223,7 @@ function tableAsBands(ar) {
     Type: 'bandedlist', Name: ar.Name, DataSetName: ar.DataSetName, Left: ar.Left, Top: ar.Top, Width: `${r2(widths.reduce((a, b) => a + b, 0))}pt`,
     Visibility: ar.Visibility, Filters: ar.Filters, SortExpressions: ar.SortExpressions ?? ar.Details?.SortExpressions, PageBreak: ar.PageBreak,
     Header: band(ar.Header?.TableRows), Details: band(ar.Details?.TableRows), Footer: band(ar.Footer?.TableRows),
-    Groups: (ar.TableGroups || []).filter(Boolean).map(g => ({ Group: g.Group, SortExpressions: g.SortExpressions, KeepTogether: g.KeepTogether, Header: band(g.Header?.TableRows), Footer: band(g.Footer?.TableRows) })),
+    Groups: (ar.TableGroups || []).filter(Boolean).map(g => ({ Group: g.Group || g.Grouping, SortExpressions: g.SortExpressions, KeepTogether: g.KeepTogether, Header: band(g.Header?.TableRows), Footer: band(g.Footer?.TableRows) })),
     __note: 'its cells hold more than text, so each row becomes a band of positioned items: cells no longer grow together and the header does not repeat on new pages.',
   };
 }
@@ -1204,7 +1246,7 @@ function table(ar, cx, ctx) {
   it.header = tableRows(ar.Header?.TableRows, N, cx, t, rctx, 'header');
   const sorts = sortList(ar.SortExpressions ?? ar.Details?.SortExpressions, cx, t, rctx, it.dataSet);
   it.groups = (Array.isArray(ar.TableGroups) ? ar.TableGroups : []).filter(Boolean).map((g, i) => {
-    const G = g.Group || {};
+    const G = g.Group || g.Grouping || {};
     const keys = (G.GroupExpressions || []).map(e => ex(cx, t, e, rctx, { what: 'a group expression' })).filter(k => k !== undefined);
     /** @type {Record<string, any>} */
     const out = { name: G.Name || uniq(cx, `${it.name}_Group${i + 1}`, true), expr: keys.length ? joinKeys(keys) : '=""' };
@@ -1227,6 +1269,7 @@ function table(ar, cx, ctx) {
   it.detail = tableRows(ar.Details?.TableRows, N, cx, t, rctx, 'detail');
   it.footer = tableRows(ar.Footer?.TableRows, N, cx, t, rctx, 'footer');
   toggles(it.groups, [...(ar.TableGroups || []).filter(Boolean).map(g => g.Visibility), ar.Details?.Visibility], t);
+  if ((ar.Details?.Group || ar.Details?.Grouping)?.GroupExpressions?.length) t.approx('its detail rows are grouped (one row per group) in ActiveReports; Pagewright shows every row.');
   if (ar.Details?.Visibility && !ar.Details.Visibility.ToggleItem && isTrue(ar.Details.Visibility.Hidden)) it.detail = [];
   regionData(ar, it, cx, t, rctx, ctx);
   if (sorts.length) it.sort = sorts;
@@ -1237,6 +1280,7 @@ function table(ar, cx, ctx) {
 
 /** Filters of a data region, plus the parent keys when it sits in a grouped list over the same data. */
 function regionData(ar, it, cx, t, rctx, ctx) {
+  if (it.dataSet && !cx.dsFields.has(it.dataSet)) t.note(`its data set "${it.dataSet}" is not in the file, so it shows no rows.`);
   const f = filterList(ar.Filters, cx, t, rctx, it.dataSet);
   if (it.dataSet && it.dataSet === ctx.listDataSet) {
     if (ctx.parentFilters?.length) f.unshift(...ctx.parentFilters);
@@ -1536,6 +1580,7 @@ function bandedlist(ar, cx, ctx) {
   const W = toPt(ar.Width);
   const groups = (Array.isArray(ar.Groups) ? ar.Groups : []).filter(Boolean);
   const rctx = { ...ctx, region: name, dataSet: ds, top: false };
+  if (ds && !cx.dsFields.has(ds)) t.note(`its data set "${ds}" is not in the file, so it shows no rows.`);
   const base = filterList(ar.Filters, cx, t, rctx, ds);
   if (ctx.listDataSet === ds && ctx.parentFilters?.length) base.unshift(...ctx.parentFilters);
   const band = (b, c) => ({ h: toPt(b?.Height), items: convertItems(b?.ReportItems, cx, c) });
@@ -1800,7 +1845,8 @@ function dataPart(ar, cx) {
         if (!src.inlineName) {
           let data;
           if (src.provider === 'CSV') data = src.inline;
-          else try { data = JSON.parse(src.inline); } catch (e) { cx.warn(`Data source "${src.name}": its embedded JSON is not valid (${e.message}), so it has no rows.`); data = []; }
+          else if (!src.inline.trim()) { cx.warn(`Data source "${src.name}" has no embedded data, so it has no rows.`); data = []; }
+          else try { data = parseEmbedded(src.inline); } catch (e) { cx.warn(`Data source "${src.name}": its embedded JSON is not valid (${e.message}), so it has no rows.`); data = []; }
           src.inlineName = addSource(src.provider === 'CSV' ? { name: src.name, type: 'csv', data } : { name: src.name, type: 'json', data });
         }
         out.source = src.inlineName;
@@ -1814,6 +1860,8 @@ function dataPart(ar, cx) {
         /** @type {Record<string, string>} */
         const headers = {};
         for (const [k, v] of [...src.kv, ...cmd]) if (/^header\$/i.test(k)) headers[k.slice(7)] = v;
+        const secret = Object.keys(headers).find(h => /auth|token|key|secret|password|cookie/i.test(h));
+        if (secret) cx.warn(`Data source "${src.name}" sends the header "${secret}"; it is copied into the report, where anyone who can open the report can read it.`);
         const method = String(getKey(cmd, 'method') || 'GET').trim().toUpperCase();
         const body = getKey(cmd, 'body');
         const sname = src.used > 1 ? `${src.name}_${name}` : src.name;
@@ -1837,7 +1885,11 @@ function dataPart(ar, cx) {
             /** @type {Record<string, any>} */
             const r = { name: sname, type: 'rest', method, url };
             if (Object.keys(headers).length) r.headers = headers;
-            if (body && method !== 'GET') r.body = body;
+            if (body && method !== 'GET') {
+              r.body = body;
+              // a JSON body written with \n outside its strings: send it as clean JSON
+              if (!/\{[^{]/.test(body.replace(/\{\{|\}\}/g, ''))) { try { r.body = escText(JSON.stringify(parseEmbedded(unescapeTpl(body)))); } catch { /* not JSON: send it as it is */ } }
+            }
             out.source = addSource(r);
             out.path = pathOf(jp || '$');
           }
@@ -1865,6 +1917,21 @@ function dataPart(ar, cx) {
     cx.warn(`Data set "${out.name}": it lists the ${chain.slice(1).join('/')} of every ${chain[0]} row together (Pagewright has no nested data sets); filter it by the parent key if the report shows more than one ${chain[0]}.`);
   }
   return { dataSources: sources, dataSets: sets };
+}
+
+/** Embedded JSON: ActiveReports may write its line breaks and tabs as \n and \t outside the strings. */
+function parseEmbedded(s) {
+  try { return JSON.parse(s); } catch {
+    let out = '', inStr = false;
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i];
+      if (inStr) { out += c; if (c === '\\') out += s[++i] ?? ''; else if (c === '"') inStr = false; continue; }
+      if (c === '"') inStr = true;
+      if (c === '\\' && /[nrt]/.test(s[i + 1] || '')) { out += ' '; i++; continue; }
+      out += c;
+    }
+    return JSON.parse(out);
+  }
 }
 
 function uniqIn(set, base) { let k = base, i = 2; while (set.has(k)) k = `${base}_${i++}`; set.add(k); return k; }
@@ -2076,7 +2143,7 @@ function collectScopes(ar, cx) {
     if (o.Name && typeof o.Name === 'string' && type) cx.reserved.add(o.Name);
     if (o.Name && ['table', 'tablix', 'list', 'chart', 'dvchart'].includes(type)) cx.scopes.set(o.Name, type.includes('chart') ? null : o.Name);
     if (o.Name && type === 'bandedlist') cx.scopes.set(o.Name, o.DataSetName || null);
-    if (type === 'table') for (const g of o.TableGroups || []) if (g?.Group?.Name) cx.scopes.set(g.Group.Name, g.Group.Name);
+    if (type === 'table') for (const g of o.TableGroups || []) { const G = g?.Group || g?.Grouping; if (G?.Name) cx.scopes.set(G.Name, G.Name); }
     if (type === 'bandedlist') for (const g of o.Groups || []) if (g?.Group?.Name) cx.scopes.set(g.Group.Name, null);
     if (type === 'list' && o.Group?.Name) cx.scopes.set(o.Group.Name, null);
     if (type === 'tablix') {

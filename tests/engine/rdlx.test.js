@@ -69,6 +69,9 @@ describe('expressions', () => {
     ['=Fields!Name.Value Like "A*"', '=Left(Fields.Name, 1) = "A"'],
     ['=Now', '=Now()'],
     ['=MonthName(Month(Fields!d.Value), True)', '=MonthName(Month(Fields.d), true)'],
+    ['=ToDecimal(Fields!x.Value) * 2', '=CDbl(Fields.x) * 2'],
+    ['=$"Total: {Fields!n.Value:N2} ({Fields!c.Value} items)"', 'Total: {Format(Fields.n, "N2")} ({Fields.c} items)'],
+    ['=$"{{literal}} " & Fields!x.Value', '{{literal}} {Fields.x}'],
   ];
   for (const [src, want] of cases) {
     it(`${src} → ${want}`, () => {
@@ -325,6 +328,25 @@ describe('staff directory (banded list, list, tablix, chart, subreport, notes)',
     expect(flat).toContain('ANALYST');
     expect(t).toContain('Total payroll 335,500');
     expect(out.pages.length).toBeGreaterThanOrEqual(2); // page break between departments
+  });
+});
+
+describe('real-world shapes', () => {
+  it('reads embedded JSON whose line breaks are written as \\n, and an RDL 2005 Grouping', () => {
+    const r = importRdlx({
+      DataSources: [{ Name: 'E', ConnectionProperties: { DataProvider: 'JSONEMBED', ConnectString: 'jsondata=[\\n\\t{"name": "A\\nB", "dept": "X"}\\n]' } }],
+      DataSets: [{ Name: 'D', Query: { DataSourceName: 'E', CommandText: 'jpath=$.*' }, Fields: [{ Name: 'name', DataField: 'name' }, { Name: 'dept', DataField: 'dept' }] }],
+      Body: { ReportItems: [{ Type: 'Table', Name: 'T', DataSetName: 'D', TableColumns: [{ Width: '2in' }],
+        TableGroups: [{ Grouping: { Name: 'ByDept', GroupExpressions: ['=Fields!dept.Value'] }, Header: { TableRows: [{ Height: '0.25in', TableCells: [{ Item: { Type: 'TextBox', Value: '=Fields!dept.Value' } }] }] } }],
+        Details: { TableRows: [{ Height: '0.25in', TableCells: [{ Item: { Type: 'TextBox', Value: '=Fields!name.Value' } }] }] } }] },
+    });
+    expect(r.definition.dataSources[0].data).toEqual([{ name: 'A\nB', dept: 'X' }]);
+    expect(r.definition.sections.body.items[0].groups[0]).toMatchObject({ name: 'ByDept', expr: '=Fields.dept' });
+    expect(r.warnings).toEqual([]);
+  });
+  it('says when embedded data is empty', () => {
+    const r = importRdlx({ DataSources: [{ Name: 'E', ConnectionProperties: { DataProvider: 'JSON', ConnectString: 'jsondata=' } }], DataSets: [{ Name: 'D', Query: { DataSourceName: 'E' } }], Body: {} });
+    expect(r.warnings.join(' ')).toMatch(/E.*no embedded data/);
   });
 });
 
