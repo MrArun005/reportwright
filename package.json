@@ -15,6 +15,7 @@
     "test:e2e": "for t in build-from-scratch smoke expr-editor phase2 phase3 phase4 api progressive phase-bc data-setup galleries ai; do node tests/e2e/$t.mjs || exit 1; done",
     "sample": "node scripts/make-sample.mjs",
     "build:embed": "node scripts/build-embed.mjs",
+    "build:packages": "node scripts/build-embed.mjs && node scripts/build-packages.mjs",
     "perf": "node scripts/perf.mjs"
   },
   "dependencies": {

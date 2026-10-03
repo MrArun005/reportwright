@@ -25,11 +25,17 @@ export function fontStore() {
   return mainStore;
 }
 
+/* global __PW_EMBED__ */
+// The embedded viewer (and @pagewright/viewer) renders on the main thread: leave the worker out of those builds,
+// so bundlers such as Vite do not try to resolve a worker file that is not shipped.
+const makeWorker = typeof __PW_EMBED__ !== 'undefined' && __PW_EMBED__ ? null
+  : () => new Worker(new URL('../worker/engine.worker.js', import.meta.url), { type: 'module' });
+
 function getWorker() {
-  if (workerBroken || typeof Worker === 'undefined' || assetBase || bundledFonts) return null; // embedded: run on the main thread
+  if (!makeWorker || workerBroken || typeof Worker === 'undefined' || assetBase || bundledFonts) return null; // embedded: run on the main thread
   if (worker) return worker;
   try {
-    worker = new Worker(new URL('../worker/engine.worker.js', import.meta.url), { type: 'module' });
+    worker = makeWorker();
     worker.onmessage = (e) => {
       const w = waiting.get(e.data.id);
       if (!w) return;

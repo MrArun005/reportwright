@@ -6,3 +6,7 @@ reports/e2e-*.pw.json
 /data/
 public/embed/
 reports/.history/e2e-*
+packages/*/dist
+packages/engine/public
+packages/*/LICENSE
+*.tgz
