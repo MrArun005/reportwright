@@ -16,7 +16,7 @@ const invoice = {
 };
 
 const t0 = Date.now();
-const res = await fetch(`${BASE}/api/reports`, { method: 'POST', headers: { 'content-type': 'application/json', origin: BASE }, body: JSON.stringify({ name: 'Invoice' }) });
+const res = await fetch(`${BASE}/api/reports`, { method: 'POST', headers: { 'content-type': 'application/json', origin: BASE }, body: JSON.stringify({ name: 'e2e invoice' }) });
 const { id } = await res.json();
 const b = await chromium.launch();
 const p = await (await b.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
