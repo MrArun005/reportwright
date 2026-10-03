@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { renderReport, pdfBlob, usingWorker, origin } from './engineClient.js';
+import { renderReport, pdfBlob, usingWorker, origin, fetchReport } from './engineClient.js';
 import { exportBlob } from './exports.js';
 import { pageToSvg, fontFaceCss, fontFamilyCss } from '@/exporters/svg.js';
 import { ALL_FONT_KEYS } from '@/engine/text/fonts.js';
@@ -10,6 +10,8 @@ import { t as tr } from './i18n.js';
 const PX = 96 / 72;
 let FONT_CSS = fontFaceCss(ALL_FONT_KEYS);
 export function setFontBase(base) { FONT_CSS = fontFaceCss(ALL_FONT_KEYS, `${base}/fonts`); return FONT_CSS; }
+/** Report fonts as data URIs (interactive HTML export). */
+export function setFontFaceCss(css) { FONT_CSS = css; fontsReady = null; return FONT_CSS; }
 let fontsReady = null;
 function loadFonts() {
   if (!fontsReady) fontsReady = Promise.all(ALL_FONT_KEYS.map(k => document.fonts.load(`12px "${fontFamilyCss(k)}"`))).catch(() => {});
@@ -56,8 +58,16 @@ function findText(model, q) {
 /**
  * @param {{ definition: any, reportId?: string, params?: Record<string,string>, title?: string, compact?: boolean, autoRun?: boolean, lang?: string, onDrill?: (report: string, params: object) => void }} props
  */
-export default function ReportViewer({ definition, reportId, params: given, title, compact = false, autoRun = true, lang = 'en', onDrill }) {
+export default function ReportViewer({ definition: rootDef, reportId: rootReportId, params: rootParams, title, compact = false, autoRun = true, lang = 'en', onDrill, exportHtmlOptions }) {
   const T = (k, v) => tr(lang, k, v);
+  // Drill-through stays in this viewer: a stack of reports, root first. Each level keeps its own parameters,
+  // so Back returns to the filters the user had. There is no depth limit.
+  const [levels, setLevels] = useState(() => [{ def: rootDef, params: rootParams, id: rootReportId }]);
+  useEffect(() => { setLevels([{ def: rootDef, params: rootParams, id: rootReportId }]); }, [rootDef]); // eslint-disable-line react-hooks/exhaustive-deps
+  const level = levels[levels.length - 1];
+  const definition = level.def;
+  const given = level.params;
+  const reportId = level.id; // the saved report behind this level: its SQL sources run on the server
   const [params, setParams] = useState(() => initialParams(definition, given));
   const [state, setState] = useState({ toggles: {}, sort: {} });
   const [model, setModel] = useState(null);
@@ -74,8 +84,10 @@ export default function ReportViewer({ definition, reportId, params: given, titl
   const [fitW, setFitW] = useState(800);
   const runId = useRef(0);
 
+  const lastRun = useRef('');
   const run = useCallback(async (p = params, st = state, keepScroll = false) => {
     const id = ++runId.current;
+    lastRun.current = JSON.stringify(p);
     setStatus({ state: 'running' });
     const top = scroller.current?.scrollTop || 0;
     try {
@@ -94,11 +106,41 @@ export default function ReportViewer({ definition, reportId, params: given, titl
   }, [definition, params, state, reportId]);
 
   useEffect(() => {
-    const p0 = initialParams(definition, given);
-    setState({ toggles: {}, sort: {} });
-    if (autoRun) run(p0, { toggles: {}, sort: {} });
+    const p0 = level.saved || initialParams(definition, given);
+    const st0 = level.state || { toggles: {}, sort: {} };
+    setParams(p0);
+    setState(st0);
+    setModel(null);
+    if (autoRun) run(p0, st0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [definition]);
+  }, [definition, levels.length]);
+
+  // Parameters apply as you change them (debounced), like a dashboard. "liveParameters": false in the report turns it off.
+  const live = definition.liveParameters !== false;
+  useEffect(() => {
+    if (!live || !model) return;
+    const key = JSON.stringify(params);
+    if (key === lastRun.current) return;
+    const t = setTimeout(() => { const st = { toggles: {}, sort: state.sort }; setState(st); run(params, st, true); }, 450);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params, live]);
+
+  const drillTo = async (report, p, newTab) => {
+    const qs = new URLSearchParams(Object.entries(p || {}).map(([k, v]) => [k, v == null ? '' : String(v)]));
+    if (newTab) { window.open(`${origin()}/viewer/${encodeURIComponent(report)}?${qs}`, '_blank', 'noopener'); return; }
+    setStatus({ state: 'running' });
+    try {
+      const def = await fetchReport(report);
+      const strParams = Object.fromEntries(Object.entries(p || {}).map(([k, v]) => [k, v == null ? '' : String(v)]));
+      setLevels(ls => [...ls.slice(0, -1), { ...ls[ls.length - 1], saved: params, state }, { def, params: strParams, id: report }]);
+    } catch (e) { setStatus({ state: 'error', message: e.message }); }
+  };
+  const back = (to = levels.length - 2) => { if (to >= 0) setLevels(ls => ls.slice(0, to + 1)); };
+  const crumb = (lv) => {
+    const first = (lv.def.parameters || []).find(pp => lv.params?.[pp.name] != null && lv.params[pp.name] !== '');
+    return first && lv !== levels[0] ? `${lv.def.name || lv.id} · ${lv.params[first.name]}` : (lv.def.name || lv.id || 'Report');
+  };
 
   // choices for parameters (fixed lists and cascading lists from data sets)
   const optKey = JSON.stringify(params);
@@ -166,10 +208,18 @@ export default function ReportViewer({ definition, reportId, params: given, titl
       window.open(a.href, '_blank', 'noopener');
     } else if (a.type === 'drill') {
       if (onDrill) onDrill(a.report, a.params);
-      else {
-        const qs = new URLSearchParams(Object.entries(a.params || {}).map(([k, v]) => [k, v == null ? '' : String(v)]));
-        window.open(`/viewer/${encodeURIComponent(a.report)}?${qs}`, '_blank', 'noopener');
+      else drillTo(a.report, a.params, e.metaKey || e.ctrlKey);
+    } else if (a.type === 'params') {
+      // cross-filter: set parameters from the clicked value; clicking the same value again clears it
+      const next = { ...params };
+      for (const [k, v] of Object.entries(a.params || {})) {
+        const val = v == null ? '' : String(v);
+        const pdef = (definition.parameters || []).find(pp => pp.name === k);
+        const fallback = pdef && pdef.default != null && !(typeof pdef.default === 'string' && pdef.default.startsWith('=')) ? String(pdef.default) : '';
+        next[k] = a.toggle && String(params[k] ?? '') === val ? fallback : val;
       }
+      const st = { toggles: {}, sort: state.sort };
+      setParams(next); setState(st); run(next, st, true);
     } else if (a.type === 'bookmark') {
       const b = model?.bookmarks?.find(x => x.label === a.target);
       if (b) scrollToPoint(b.page, b.y);
@@ -180,7 +230,7 @@ export default function ReportViewer({ definition, reportId, params: given, titl
     if (!model) return;
     setExporting(fmt);
     try {
-      const blob = fmt === 'pdf' ? await pdfBlob(model, definition.name) : await exportBlob(fmt, model, definition);
+      const blob = fmt === 'pdf' ? await pdfBlob(model, definition.name) : await exportBlob(fmt, model, definition, { params, state, lang, ...(exportHtmlOptions || {}), ...(level.id ? { reportId: level.id } : {}) });
       const ext = { pdf: 'pdf', xlsx: 'xlsx', html: 'html', csv: 'csv' }[fmt];
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -221,37 +271,54 @@ export default function ReportViewer({ definition, reportId, params: given, titl
   return (
     <div className="viewer" data-testid="viewer">
       <style>{FONT_CSS}</style>
+      {levels.length > 1 && (
+        <nav className="vcrumbs" aria-label="Drill-through path">
+          <button type="button" className="btn sm" onClick={() => back()} data-testid="drill-back">← {T('back')}</button>
+          <ol>
+            {levels.map((lv, i) => (
+              <li key={i}>{i < levels.length - 1
+                ? <button type="button" className="linklike" onClick={() => back(i)}>{crumb(lv)}</button>
+                : <b aria-current="page">{crumb(lv)}</b>}</li>
+            ))}
+          </ol>
+          <span className="hint">{T('drillDepth', { n: levels.length - 1 })}</span>
+        </nav>
+      )}
       <div className="vbar">
-        {title && !compact && <b style={{ marginRight: 6 }}>{title}</b>}
+        {title && !compact && levels.length === 1 && <b style={{ marginRight: 6 }}>{title}</b>}
         {hasParams && <button className="btn sm" aria-pressed={side === 'params'} onClick={() => setPanel(s => (s === 'params' ? null : 'params'))}>{T('parameters')}</button>}
         {bookmarks.length > 0 && <button className="btn sm" aria-pressed={side === 'map'} onClick={() => setPanel(s => (s === 'map' ? null : 'map'))}>{T('documentMap')}</button>}
         <button className="btn sm" onClick={() => run()} disabled={status.state === 'running'}>{status.state === 'running' ? T('running') : T('run')}</button>
         <span className="sep" />
-        <button className="btn sm icon" title={T('firstPage')} onClick={() => go(1)} disabled={!total || current === 1}>⏮</button>
-        <button className="btn sm icon" title={T('previousPage')} onClick={() => go(current - 1)} disabled={!total || current === 1}>◀</button>
-        <input className="input pageno" aria-label={T('page')} value={total ? current : ''} onChange={e => { const n = parseInt(e.target.value, 10); if (n) go(n); }} />
-        <span className="stat">/ {total || '–'}</span>
-        <button className="btn sm icon" title={T('nextPage')} onClick={() => go(current + 1)} disabled={!total || current === total}>▶</button>
-        <button className="btn sm icon" title={T('lastPage')} onClick={() => go(total)} disabled={!total || current === total}>⏭</button>
-        <span className="sep" />
-        <button className="btn sm icon" title={T('zoomOut')} onClick={() => zoomBy(1 / 1.2)}>−</button>
-        <span className="stat" style={{ width: 44, textAlign: 'center' }}>{Math.round((scale / PX) * 100)}%</span>
-        <button className="btn sm icon" title={T('zoomIn')} onClick={() => zoomBy(1.2)}>+</button>
-        <button className="btn sm" aria-pressed={zoom === 'fit'} onClick={() => setZoom('fit')}>{T('fitWidth')}</button>
-        <span className="sep" />
+        <div className="tgroup" role="group" aria-label="Paging">
+          <button className="btn sm icon" title={T('firstPage')} onClick={() => go(1)} disabled={!total || current === 1}>⏮</button>
+          <button className="btn sm icon" title={T('previousPage')} onClick={() => go(current - 1)} disabled={!total || current === 1}>◀</button>
+          <input className="input pageno" aria-label={T('page')} value={total ? current : ''} onChange={e => { const n = parseInt(e.target.value, 10); if (n) go(n); }} />
+          <span className="stat">/ {total || '–'}</span>
+          <button className="btn sm icon" title={T('nextPage')} onClick={() => go(current + 1)} disabled={!total || current === total}>▶</button>
+          <button className="btn sm icon" title={T('lastPage')} onClick={() => go(total)} disabled={!total || current === total}>⏭</button>
+        </div>
+        <div className="tgroup" role="group" aria-label="Zoom">
+          <button className="btn sm icon" title={T('zoomOut')} onClick={() => zoomBy(1 / 1.2)}>−</button>
+          <span className="stat zoomval">{Math.round((scale / PX) * 100)}%</span>
+          <button className="btn sm icon" title={T('zoomIn')} onClick={() => zoomBy(1.2)}>+</button>
+          <button className="btn sm" aria-pressed={zoom === 'fit'} onClick={() => setZoom('fit')}>{T('fitWidth')}</button>
+        </div>
+        {model && <span className="stat vstats" title={usingWorker() ? 'Rendered in a Web Worker' : 'Rendered on the main thread'}>
+          {T('pagesRows', { pages: total, rows: Object.values(model.stats.rows).reduce((a, b) => a + b, 0), ms: model.stats.ms })}{usingWorker() ? ' · worker' : ''}
+        </span>}
+        <span className="vbar-gap" />
         <form className="search" onSubmit={(e) => { e.preventDefault(); goHit(hitIdx + 1); }}>
-          <input className="input" placeholder={T('search')} aria-label={T('search')} value={query} onChange={e => { setQuery(e.target.value); setHitIdx(0); }} />
+          <input className="input" type="search" placeholder={T('search')} aria-label={T('search')} value={query} onChange={e => { setQuery(e.target.value); setHitIdx(0); }} />
           {query && <span className="stat">{hits.length ? `${hitIdx + 1}/${hits.length}` : '0'}</span>}
           {query && hits.length > 0 && <><button type="button" className="btn sm icon" onClick={() => goHit(hitIdx - 1)} aria-label={T('previousMatch')}>↑</button><button type="submit" className="btn sm icon" aria-label={T('nextMatch')}>↓</button></>}
         </form>
-        <span className="sep" />
-        <button className="btn sm primary" onClick={() => doExport('pdf')} disabled={!model || !!exporting} data-testid="export-pdf">{exporting === 'pdf' ? T('exporting') : 'PDF'}</button>
-        <button className="btn sm" onClick={() => doExport('xlsx')} disabled={!model || !!exporting} data-testid="export-xlsx">{exporting === 'xlsx' ? T('exporting') : 'Excel'}</button>
-        <button className="btn sm" onClick={() => doExport('html')} disabled={!model || !!exporting} data-testid="export-html">{exporting === 'html' ? T('exporting') : 'HTML'}</button>
-        <button className="btn sm" onClick={() => doExport('csv')} disabled={!model || !!exporting} data-testid="export-csv">{exporting === 'csv' ? T('exporting') : 'CSV'}</button>
-        {model && <span className="stat" title={usingWorker() ? 'Rendered in a Web Worker' : 'Rendered on the main thread'}>
-          {T('pagesRows', { pages: total, rows: Object.values(model.stats.rows).reduce((a, b) => a + b, 0), ms: model.stats.ms })}{usingWorker() ? ' · worker' : ''}
-        </span>}
+        <div className="tgroup export" role="group" aria-label="Export">
+          <button className="btn sm primary" onClick={() => doExport('pdf')} disabled={!model || !!exporting} data-testid="export-pdf">{exporting === 'pdf' ? T('exporting') : 'PDF'}</button>
+          <button className="btn sm" onClick={() => doExport('xlsx')} disabled={!model || !!exporting} data-testid="export-xlsx">{exporting === 'xlsx' ? T('exporting') : 'Excel'}</button>
+          <button className="btn sm" onClick={() => doExport('html')} disabled={!model || !!exporting} data-testid="export-html">{exporting === 'html' ? T('exporting') : 'HTML'}</button>
+          <button className="btn sm" onClick={() => doExport('csv')} disabled={!model || !!exporting} data-testid="export-csv">{exporting === 'csv' ? T('exporting') : 'CSV'}</button>
+        </div>
       </div>
       <div className="vbody" style={{ gridTemplateColumns: side ? '240px 1fr' : '1fr' }}>
         {side === 'params' && (
@@ -264,6 +331,7 @@ export default function ReportViewer({ definition, reportId, params: given, titl
               </div>
             ))}
             <button className="btn primary" type="submit">{T('viewReport')}</button>
+            {live && <span className="hint">{T('liveHint')}</span>}
           </form>
         )}
         {side === 'map' && (

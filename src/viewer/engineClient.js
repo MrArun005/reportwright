@@ -16,13 +16,18 @@ let seq = 0;
 const waiting = new Map();
 let mainStore = null;
 
+// Fonts bundled with the page as base64 (the interactive HTML export), so it works offline.
+let bundledFonts = null;
+export function setBundledFonts(map) { bundledFonts = map || null; mainStore = null; }
+const b64ToBuffer = (b64) => { const s = atob(b64); const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u.buffer; };
+
 export function fontStore() {
-  if (!mainStore) mainStore = new FontStore(async (k) => (await fetch(`${assetBase}/fonts/${k}.ttf`)).arrayBuffer());
+  if (!mainStore) mainStore = new FontStore(async (k) => (bundledFonts?.[k] ? b64ToBuffer(bundledFonts[k]) : (await fetch(`${assetBase}/fonts/${k}.ttf`)).arrayBuffer()));
   return mainStore;
 }
 
 function getWorker() {
-  if (workerBroken || typeof Worker === 'undefined' || assetBase) return null; // embedded: run on the main thread
+  if (workerBroken || typeof Worker === 'undefined' || assetBase || bundledFonts) return null; // embedded: run on the main thread
   if (worker) return worker;
   try {
     worker = new Worker(new URL('../worker/engine.worker.js', import.meta.url), { type: 'module' });
@@ -46,7 +51,16 @@ function getWorker() {
   return worker;
 }
 
-const loadReport = async (rid) => { const r = await fetch(`${assetBase}/api/reports/${rid}`); if (!r.ok) throw new Error(`Report "${rid}" not found`); return r.json(); };
+// Report definitions bundled with the page (the interactive HTML export) win over the server.
+const bundled = new Map();
+export function registerReports(map) { for (const [k, v] of Object.entries(map || {})) bundled.set(k, v); }
+const loadReport = async (rid) => {
+  if (bundled.has(rid)) return structuredClone(bundled.get(rid));
+  const r = await fetch(`${assetBase}/api/reports/${encodeURIComponent(rid)}`);
+  if (!r.ok) throw new Error(`Report "${rid}" not found`);
+  return r.json();
+};
+export const fetchReport = loadReport;
 async function renderMain(def, params, state, reportId) {
   return render(def, { parameters: params, state, reportId, fontStore: fontStore(), baseUrl: origin(), loadReport });
 }

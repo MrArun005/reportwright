@@ -69,6 +69,8 @@ export const useDesigner = create((set, get) => ({
   snap: true,
   unit: 'pt',
   sample: null,
+  /** chart gallery dialog: {mode:'insert', section, x, y, extra, parentId} | {mode:'edit', id} */
+  wizard: null,
   lastKey: null,
   lastAt: 0,
 
@@ -151,6 +153,15 @@ export function addItem(type, section, x, y, extra = {}, parentId = null) {
   });
   S().select({ kind: 'items', ids: [id] });
   return id;
+}
+
+/** Insert from the toolbox or a drop. Charts open the chart gallery first (when the report has data), other items go straight in. */
+export function insertItem(type, section, x, y, extra = {}, parentId = null) {
+  if (type === 'chart' && (S().def.dataSets || []).length) {
+    S().setUi({ wizard: { mode: 'insert', section, x, y, extra, parentId } });
+    return null;
+  }
+  return addItem(type, section, x, y, extra, parentId);
 }
 
 export function updateItem(id, recipe, key) {

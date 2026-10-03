@@ -1,0 +1,1337 @@
+{
+ "$schema": "pagewright/report@1",
+ "name": "Product catalogue (interactive)",
+ "locale": "en-US",
+ "currency": "USD",
+ "page": {
+  "size": "A4",
+  "orientation": "landscape",
+  "margins": [
+   28,
+   32,
+   24,
+   32
+  ]
+ },
+ "parameters": [
+  {
+   "name": "q",
+   "type": "string",
+   "prompt": "Search products"
+  },
+  {
+   "name": "categories",
+   "type": "string",
+   "prompt": "Categories",
+   "multi": true,
+   "optionsFrom": {
+    "dataSet": "Categories",
+    "value": "=Fields.slug",
+    "label": "=Fields.name"
+   }
+  },
+  {
+   "name": "status",
+   "type": "string",
+   "prompt": "Availability",
+   "options": [
+    {
+     "value": "In Stock",
+     "label": "In stock"
+    },
+    {
+     "value": "Low Stock",
+     "label": "Low stock"
+    },
+    {
+     "value": "Out of Stock",
+     "label": "Out of stock"
+    }
+   ]
+  },
+  {
+   "name": "brand",
+   "type": "string",
+   "prompt": "Brand (click one in the table)"
+  },
+  {
+   "name": "minRating",
+   "type": "number",
+   "prompt": "Minimum rating",
+   "required": true,
+   "default": 0,
+   "options": [
+    {
+     "value": 0,
+     "label": "Any"
+    },
+    {
+     "value": 3,
+     "label": "3 ★ and up"
+    },
+    {
+     "value": 4,
+     "label": "4 ★ and up"
+    },
+    {
+     "value": 4.5,
+     "label": "4.5 ★ and up"
+    }
+   ]
+  },
+  {
+   "name": "lowStock",
+   "type": "number",
+   "prompt": "Low-stock alert below",
+   "required": true,
+   "default": 10,
+   "options": [
+    {
+     "value": 5,
+     "label": "5 units"
+    },
+    {
+     "value": 10,
+     "label": "10 units"
+    },
+    {
+     "value": 25,
+     "label": "25 units"
+    },
+    {
+     "value": 50,
+     "label": "50 units"
+    }
+   ]
+  },
+  {
+   "name": "onlyLow",
+   "type": "string",
+   "prompt": "Show",
+   "options": [
+    {
+     "value": "yes",
+     "label": "Only low or out of stock"
+    }
+   ]
+  }
+ ],
+ "dataSources": [
+  {
+   "name": "store",
+   "type": "rest",
+   "method": "GET",
+   "url": "https://dummyjson.com/products?limit=0"
+  },
+  {
+   "name": "cats",
+   "type": "rest",
+   "method": "GET",
+   "url": "https://dummyjson.com/products/categories"
+  }
+ ],
+ "dataSets": [
+  {
+   "name": "Categories",
+   "source": "cats",
+   "path": "$",
+   "fields": [
+    {
+     "name": "slug",
+     "type": "string"
+    },
+    {
+     "name": "name",
+     "type": "string"
+    }
+   ]
+  },
+  {
+   "name": "Products",
+   "source": "store",
+   "path": "$.products",
+   "fields": [
+    {
+     "name": "id",
+     "type": "number"
+    },
+    {
+     "name": "title",
+     "type": "string"
+    },
+    {
+     "name": "category",
+     "type": "string"
+    },
+    {
+     "name": "brand",
+     "type": "string"
+    },
+    {
+     "name": "price",
+     "type": "number"
+    },
+    {
+     "name": "discountPercentage",
+     "type": "number"
+    },
+    {
+     "name": "rating",
+     "type": "number"
+    },
+    {
+     "name": "stock",
+     "type": "number"
+    },
+    {
+     "name": "availabilityStatus",
+     "type": "string"
+    },
+    {
+     "name": "sku",
+     "type": "string"
+    },
+    {
+     "name": "netPrice",
+     "type": "number",
+     "expr": "=Round(Fields.price * (1 - Fields.discountPercentage / 100), 2)"
+    },
+    {
+     "name": "stockValue",
+     "type": "number",
+     "expr": "=Fields.netPrice * Fields.stock"
+    }
+   ],
+   "filters": [
+    {
+     "expr": "=Fields.category",
+     "op": "in",
+     "value": "=Parameters.categories"
+    },
+    {
+     "expr": "=Fields.rating",
+     "op": ">=",
+     "value": "=Parameters.minRating"
+    },
+    {
+     "expr": "=Fields.availabilityStatus",
+     "op": "in",
+     "value": "=Parameters.status"
+    },
+    {
+     "expr": "=Coalesce(Fields.brand, '')",
+     "op": "in",
+     "value": "=Parameters.brand"
+    },
+    {
+     "expr": "=Fields.title & ' ' & Coalesce(Fields.brand, '') & ' ' & Fields.category",
+     "op": "contains",
+     "value": "=Coalesce(Parameters.q, '')"
+    },
+    {
+     "expr": "=IIF(Parameters.onlyLow = 'yes', Fields.stock < Parameters.lowStock, True)",
+     "op": "=",
+     "value": "=True"
+    }
+   ],
+   "sort": [
+    {
+     "by": "=Fields.stockValue",
+     "dir": "desc"
+    }
+   ]
+  },
+  {
+   "name": "AllCategories",
+   "source": "store",
+   "path": "$.products",
+   "fields": [
+    {
+     "name": "id",
+     "type": "number"
+    },
+    {
+     "name": "title",
+     "type": "string"
+    },
+    {
+     "name": "category",
+     "type": "string"
+    },
+    {
+     "name": "brand",
+     "type": "string"
+    },
+    {
+     "name": "price",
+     "type": "number"
+    },
+    {
+     "name": "discountPercentage",
+     "type": "number"
+    },
+    {
+     "name": "rating",
+     "type": "number"
+    },
+    {
+     "name": "stock",
+     "type": "number"
+    },
+    {
+     "name": "availabilityStatus",
+     "type": "string"
+    },
+    {
+     "name": "sku",
+     "type": "string"
+    },
+    {
+     "name": "netPrice",
+     "type": "number",
+     "expr": "=Round(Fields.price * (1 - Fields.discountPercentage / 100), 2)"
+    },
+    {
+     "name": "stockValue",
+     "type": "number",
+     "expr": "=Fields.netPrice * Fields.stock"
+    }
+   ],
+   "filters": [
+    {
+     "expr": "=Fields.rating",
+     "op": ">=",
+     "value": "=Parameters.minRating"
+    },
+    {
+     "expr": "=Fields.availabilityStatus",
+     "op": "in",
+     "value": "=Parameters.status"
+    },
+    {
+     "expr": "=Coalesce(Fields.brand, '')",
+     "op": "in",
+     "value": "=Parameters.brand"
+    },
+    {
+     "expr": "=Fields.title & ' ' & Coalesce(Fields.brand, '') & ' ' & Fields.category",
+     "op": "contains",
+     "value": "=Coalesce(Parameters.q, '')"
+    },
+    {
+     "expr": "=IIF(Parameters.onlyLow = 'yes', Fields.stock < Parameters.lowStock, True)",
+     "op": "=",
+     "value": "=True"
+    }
+   ],
+   "sort": [
+    {
+     "by": "=Fields.stockValue",
+     "dir": "desc"
+    }
+   ]
+  },
+  {
+   "name": "AllStatuses",
+   "source": "store",
+   "path": "$.products",
+   "fields": [
+    {
+     "name": "id",
+     "type": "number"
+    },
+    {
+     "name": "title",
+     "type": "string"
+    },
+    {
+     "name": "category",
+     "type": "string"
+    },
+    {
+     "name": "brand",
+     "type": "string"
+    },
+    {
+     "name": "price",
+     "type": "number"
+    },
+    {
+     "name": "discountPercentage",
+     "type": "number"
+    },
+    {
+     "name": "rating",
+     "type": "number"
+    },
+    {
+     "name": "stock",
+     "type": "number"
+    },
+    {
+     "name": "availabilityStatus",
+     "type": "string"
+    },
+    {
+     "name": "sku",
+     "type": "string"
+    },
+    {
+     "name": "netPrice",
+     "type": "number",
+     "expr": "=Round(Fields.price * (1 - Fields.discountPercentage / 100), 2)"
+    },
+    {
+     "name": "stockValue",
+     "type": "number",
+     "expr": "=Fields.netPrice * Fields.stock"
+    }
+   ],
+   "filters": [
+    {
+     "expr": "=Fields.category",
+     "op": "in",
+     "value": "=Parameters.categories"
+    },
+    {
+     "expr": "=Fields.rating",
+     "op": ">=",
+     "value": "=Parameters.minRating"
+    },
+    {
+     "expr": "=Coalesce(Fields.brand, '')",
+     "op": "in",
+     "value": "=Parameters.brand"
+    },
+    {
+     "expr": "=Fields.title & ' ' & Coalesce(Fields.brand, '') & ' ' & Fields.category",
+     "op": "contains",
+     "value": "=Coalesce(Parameters.q, '')"
+    },
+    {
+     "expr": "=IIF(Parameters.onlyLow = 'yes', Fields.stock < Parameters.lowStock, True)",
+     "op": "=",
+     "value": "=True"
+    }
+   ],
+   "sort": [
+    {
+     "by": "=Fields.stockValue",
+     "dir": "desc"
+    }
+   ]
+  }
+ ],
+ "styles": {
+  "base": {
+   "fontFamily": "Inter",
+   "fontSize": 8,
+   "color": "#16202a"
+  }
+ },
+ "sections": {
+  "pageHeader": {
+   "height": 26,
+   "items": [
+    {
+     "type": "shape",
+     "name": "Mark",
+     "x": 0,
+     "y": 2,
+     "w": 5,
+     "h": 14,
+     "shape": "rect",
+     "style": {
+      "stroke": "none",
+      "fill": "#0e7490",
+      "radius": 4
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Brand",
+     "x": 10,
+     "y": 2,
+     "w": 360,
+     "h": 14,
+     "value": "Pagewright · Catalogue health",
+     "canGrow": false,
+     "style": {
+      "fontSize": 10,
+      "fontWeight": "bold",
+      "color": "#155e75"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Filters",
+     "x": 397.89,
+     "y": 3,
+     "w": 380,
+     "h": 12,
+     "value": "Rating ≥ {Parameters.minRating} · low stock < {Parameters.lowStock} units",
+     "canGrow": false,
+     "style": {
+      "fontSize": 7.5,
+      "color": "#5f6b77",
+      "textAlign": "right"
+     }
+    },
+    {
+     "type": "line",
+     "name": "Rule",
+     "x": 0,
+     "y": 21,
+     "w": 777.89,
+     "h": 0,
+     "style": {
+      "stroke": "#e5e7eb",
+      "strokeWidth": 0.75
+     }
+    }
+   ]
+  },
+  "body": {
+   "height": 560,
+   "items": [
+    {
+     "type": "textbox",
+     "name": "Title",
+     "x": 0,
+     "y": 0,
+     "w": 560,
+     "h": 26,
+     "value": "Product catalogue",
+     "canGrow": true,
+     "style": {
+      "fontSize": 20,
+      "fontWeight": "bold"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Sub",
+     "x": 0,
+     "y": 28,
+     "w": 777.89,
+     "h": 14,
+     "value": "Live from dummyjson.com. Click a bar, a slice, a brand or a tile to filter · click again to clear · click a product to open it.",
+     "canGrow": true,
+     "style": {
+      "fontSize": 8,
+      "color": "#5f6b77"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Active",
+     "x": 0,
+     "y": 46,
+     "w": 620,
+     "h": 14,
+     "canGrow": true,
+     "value": "=IIF(Len(Join(Parameters.categories, ', ') & Coalesce(Parameters.status, '') & Coalesce(Parameters.brand, '') & Coalesce(Parameters.q, '') & Coalesce(Parameters.onlyLow, '')) = 0, 'No filters: showing every product.', 'Filtered by: ' & IIF(Len(Join(Parameters.categories, ', ')) > 0, 'category ' & Join(Parameters.categories, ', ') & '   ', '') & IIF(Len(Coalesce(Parameters.status, '')) > 0, 'status ' & Parameters.status & '   ', '') & IIF(Len(Coalesce(Parameters.brand, '')) > 0, 'brand ' & Parameters.brand & '   ', '') & IIF(Len(Coalesce(Parameters.q, '')) > 0, 'search \"' & Parameters.q & '\"   ', '') & IIF(Parameters.onlyLow = 'yes', 'low stock only', ''))",
+     "style": {
+      "fontSize": 8,
+      "fontWeight": "600",
+      "color": "#155e75"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "ClearAll",
+     "x": 637.89,
+     "y": 46,
+     "w": 140,
+     "h": 14,
+     "canGrow": false,
+     "value": "✕ Clear all filters",
+     "style": {
+      "fontSize": 8,
+      "fontWeight": "600",
+      "color": "#0e7490",
+      "textAlign": "right"
+     },
+     "action": {
+      "type": "params",
+      "params": {
+       "categories": "",
+       "status": "",
+       "brand": "",
+       "q": "",
+       "onlyLow": ""
+      },
+      "toggle": false
+     },
+     "tooltip": "Remove every filter",
+     "hidden": "=Len(Join(Parameters.categories, ', ') & Coalesce(Parameters.status, '') & Coalesce(Parameters.brand, '') & Coalesce(Parameters.q, '') & Coalesce(Parameters.onlyLow, '')) = 0"
+    },
+    {
+     "type": "shape",
+     "name": "KpiProductsBox",
+     "x": 0,
+     "y": 68,
+     "w": 150,
+     "h": 52,
+     "shape": "rect",
+     "style": {
+      "stroke": "none",
+      "fill": "#f5f7f9",
+      "radius": 4
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "KpiProductsLabel",
+     "x": 10,
+     "y": 74,
+     "w": 130,
+     "h": 11,
+     "value": "PRODUCTS",
+     "canGrow": false,
+     "style": {
+      "fontSize": 7,
+      "fontWeight": "600",
+      "color": "#5f6b77"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "KpiProducts",
+     "x": 10,
+     "y": 88,
+     "w": 130,
+     "h": 24,
+     "dataSet": "Products",
+     "value": "=CountRows()",
+     "canGrow": false,
+     "style": {
+      "fontSize": 17,
+      "fontWeight": "bold",
+      "color": "#16202a",
+      "format": "N0"
+     }
+    },
+    {
+     "type": "shape",
+     "name": "KpiBrandsBox",
+     "x": 158,
+     "y": 68,
+     "w": 150,
+     "h": 52,
+     "shape": "rect",
+     "style": {
+      "stroke": "none",
+      "fill": "#f5f7f9",
+      "radius": 4
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "KpiBrandsLabel",
+     "x": 168,
+     "y": 74,
+     "w": 130,
+     "h": 11,
+     "value": "BRANDS",
+     "canGrow": false,
+     "style": {
+      "fontSize": 7,
+      "fontWeight": "600",
+      "color": "#5f6b77"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "KpiBrands",
+     "x": 168,
+     "y": 88,
+     "w": 130,
+     "h": 24,
+     "dataSet": "Products",
+     "value": "=CountDistinct(Fields.brand)",
+     "canGrow": false,
+     "style": {
+      "fontSize": 17,
+      "fontWeight": "bold",
+      "color": "#16202a",
+      "format": "N0"
+     }
+    },
+    {
+     "type": "shape",
+     "name": "KpiRatingBox",
+     "x": 316,
+     "y": 68,
+     "w": 150,
+     "h": 52,
+     "shape": "rect",
+     "style": {
+      "stroke": "none",
+      "fill": "#f5f7f9",
+      "radius": 4
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "KpiRatingLabel",
+     "x": 326,
+     "y": 74,
+     "w": 130,
+     "h": 11,
+     "value": "AVERAGE RATING",
+     "canGrow": false,
+     "style": {
+      "fontSize": 7,
+      "fontWeight": "600",
+      "color": "#5f6b77"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "KpiRating",
+     "x": 326,
+     "y": 88,
+     "w": 130,
+     "h": 24,
+     "dataSet": "Products",
+     "value": "=Avg(Fields.rating)",
+     "canGrow": false,
+     "style": {
+      "fontSize": 17,
+      "fontWeight": "bold",
+      "color": "#16202a",
+      "format": "N2"
+     },
+     "tooltip": "=Format(CountRows(), 'N0') & ' products, average ' & Format(Avg(Fields.rating), 'N2') & ' ★'"
+    },
+    {
+     "type": "shape",
+     "name": "KpiValueBox",
+     "x": 474,
+     "y": 68,
+     "w": 150,
+     "h": 52,
+     "shape": "rect",
+     "style": {
+      "stroke": "none",
+      "fill": "#f5f7f9",
+      "radius": 4
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "KpiValueLabel",
+     "x": 484,
+     "y": 74,
+     "w": 130,
+     "h": 11,
+     "value": "INVENTORY VALUE (NET)",
+     "canGrow": false,
+     "style": {
+      "fontSize": 7,
+      "fontWeight": "600",
+      "color": "#5f6b77"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "KpiValue",
+     "x": 484,
+     "y": 88,
+     "w": 130,
+     "h": 24,
+     "dataSet": "Products",
+     "value": "=Sum(Fields.stockValue)",
+     "canGrow": false,
+     "style": {
+      "fontSize": 17,
+      "fontWeight": "bold",
+      "color": "#16202a",
+      "format": "C0"
+     },
+     "tooltip": "Net price × units in stock, for the products shown"
+    },
+    {
+     "type": "shape",
+     "name": "KpiLowBox",
+     "x": 632,
+     "y": 68,
+     "w": 145.89,
+     "h": 52,
+     "shape": "rect",
+     "style": {
+      "stroke": "none",
+      "fill": "=IIF(Parameters.onlyLow = 'yes', '#fff4e5', '#f5f7f9')",
+      "radius": 4
+     },
+     "action": {
+      "type": "params",
+      "params": {
+       "onlyLow": "yes"
+      },
+      "toggle": true
+     },
+     "tooltip": "=IIF(Parameters.onlyLow = 'yes', 'Showing only low stock: click to show everything', 'Click to show only products below ' & Parameters.lowStock & ' units')"
+    },
+    {
+     "type": "textbox",
+     "name": "KpiLowLabel",
+     "x": 642,
+     "y": 74,
+     "w": 125.88999999999999,
+     "h": 11,
+     "value": "LOW OR OUT OF STOCK",
+     "canGrow": false,
+     "style": {
+      "fontSize": 7,
+      "fontWeight": "600",
+      "color": "#5f6b77"
+     },
+     "action": {
+      "type": "params",
+      "params": {
+       "onlyLow": "yes"
+      },
+      "toggle": true
+     },
+     "tooltip": "=IIF(Parameters.onlyLow = 'yes', 'Showing only low stock: click to show everything', 'Click to show only products below ' & Parameters.lowStock & ' units')"
+    },
+    {
+     "type": "textbox",
+     "name": "KpiLow",
+     "x": 642,
+     "y": 88,
+     "w": 125.88999999999999,
+     "h": 24,
+     "dataSet": "Products",
+     "value": "=Sum(IIF(Fields.stock < Parameters.lowStock, 1, 0))",
+     "canGrow": false,
+     "style": {
+      "fontSize": 17,
+      "fontWeight": "bold",
+      "color": "=IIF(Sum(IIF(Fields.stock < Parameters.lowStock, 1, 0)) > 0, '#b54708', '#067647')",
+      "format": "N0"
+     },
+     "action": {
+      "type": "params",
+      "params": {
+       "onlyLow": "yes"
+      },
+      "toggle": true
+     },
+     "tooltip": "=IIF(Parameters.onlyLow = 'yes', 'Showing only low stock: click to show everything', 'Click to show only products below ' & Parameters.lowStock & ' units')"
+    },
+    {
+     "type": "chart",
+     "name": "ValueByCategory",
+     "x": 0,
+     "y": 134,
+     "w": 300,
+     "h": 196,
+     "chartType": "bar",
+     "dataSet": "AllCategories",
+     "title": "Inventory value by category · click to filter",
+     "category": "=Fields.category",
+     "series": [
+      {
+       "name": "Value",
+       "value": "=Sum(Fields.stockValue)"
+      }
+     ],
+     "valueFormat": "N0",
+     "pointAction": {
+      "type": "params",
+      "params": {
+       "categories": "=Fields.category"
+      },
+      "toggle": true
+     },
+     "pointColor": "=IIF(Len(Join(Parameters.categories, ',')) = 0, '#0e7490', IIF(InStr(',' & Join(Parameters.categories, ',') & ',', ',' & Fields.category & ',') > 0, '#155e75', '#c3ced8'))"
+    },
+    {
+     "type": "chart",
+     "name": "Availability",
+     "x": 312,
+     "y": 134,
+     "w": 175,
+     "h": 196,
+     "chartType": "donut",
+     "dataSet": "AllStatuses",
+     "title": "Availability · click a slice",
+     "category": "=Fields.availabilityStatus",
+     "series": [
+      {
+       "name": "Products",
+       "value": "=CountRows()"
+      }
+     ],
+     "valueFormat": "N0",
+     "pointAction": {
+      "type": "params",
+      "params": {
+       "status": "=Fields.availabilityStatus"
+      },
+      "toggle": true
+     },
+     "pointColor": "=IIF(Len(Coalesce(Parameters.status, '')) = 0, Switch(Fields.availabilityStatus = 'In Stock', '#0e7490', Fields.availabilityStatus = 'Low Stock', '#d97706', True, '#b42318'), IIF(Fields.availabilityStatus = Parameters.status, Switch(Fields.availabilityStatus = 'In Stock', '#0e7490', Fields.availabilityStatus = 'Low Stock', '#d97706', True, '#b42318'), '#c3ced8'))"
+    },
+    {
+     "type": "chart",
+     "name": "TopProducts",
+     "x": 499,
+     "y": 134,
+     "w": 278.89,
+     "h": 196,
+     "chartType": "bar",
+     "dataSet": "Products",
+     "title": "Top 8 by stock value · click to open",
+     "category": "=Fields.title",
+     "maxCategories": 8,
+     "series": [
+      {
+       "name": "Value",
+       "value": "=Sum(Fields.stockValue)"
+      }
+     ],
+     "valueFormat": "N0",
+     "pointAction": {
+      "type": "report",
+      "report": "product-detail",
+      "params": {
+       "id": "=Fields.id"
+      }
+     },
+     "pointColor": "#155e75"
+    },
+    {
+     "type": "textbox",
+     "name": "PivotTitle",
+     "x": 0,
+     "y": 330,
+     "w": 400,
+     "h": 14,
+     "value": "Stock units: category × availability",
+     "canGrow": false,
+     "style": {
+      "fontSize": 10,
+      "fontWeight": "bold"
+     },
+     "pageBreakBefore": true
+    },
+    {
+     "type": "matrix",
+     "name": "Pivot",
+     "x": 0,
+     "y": 348,
+     "w": 777.89,
+     "h": 54,
+     "dataSet": "Products",
+     "rowGroup": "=Fields.category",
+     "columnGroup": "=Fields.availabilityStatus",
+     "value": "=Sum(Fields.stock)",
+     "valueFormat": "N0",
+     "corner": "Category",
+     "rowHeaderWidth": 180,
+     "columnWidth": 110
+    },
+    {
+     "type": "textbox",
+     "name": "TableTitle",
+     "x": 0,
+     "y": 420,
+     "w": 400,
+     "h": 14,
+     "value": "Catalogue by category",
+     "canGrow": false,
+     "style": {
+      "fontSize": 10,
+      "fontWeight": "bold"
+     },
+     "bookmark": "Catalogue"
+    },
+    {
+     "type": "table",
+     "name": "Catalogue",
+     "x": 0,
+     "y": 438,
+     "w": 777.89,
+     "h": 80,
+     "dataSet": "Products",
+     "repeatHeader": true,
+     "columns": [
+      {
+       "width": 180
+      },
+      {
+       "width": 85
+      },
+      {
+       "width": 60
+      },
+      {
+       "width": 45
+      },
+      {
+       "width": 60
+      },
+      {
+       "width": 95
+      },
+      {
+       "width": 105
+      },
+      {
+       "width": 75
+      },
+      {
+       "width": 72.89
+      }
+     ],
+     "style": {
+      "padding": [
+       3,
+       5,
+       3,
+       5
+      ],
+      "verticalAlign": "middle"
+     },
+     "header": [
+      {
+       "height": 20,
+       "style": {
+        "fontWeight": "bold",
+        "color": "#ffffff",
+        "backgroundColor": "#155e75",
+        "fontSize": 7.5
+       },
+       "cells": [
+        {
+         "value": "Category / product (click to open)",
+         "sortBy": "=Fields.title"
+        },
+        {
+         "value": "Brand",
+         "sortBy": "=Fields.brand"
+        },
+        {
+         "value": "Price",
+         "style": {
+          "textAlign": "right"
+         },
+         "sortBy": "=Fields.price"
+        },
+        {
+         "value": "Disc %",
+         "style": {
+          "textAlign": "right"
+         },
+         "sortBy": "=Fields.discountPercentage"
+        },
+        {
+         "value": "Net",
+         "style": {
+          "textAlign": "right"
+         },
+         "sortBy": "=Fields.netPrice"
+        },
+        {
+         "value": "Rating (target 4)",
+         "sortBy": "=Fields.rating"
+        },
+        {
+         "value": "Stock",
+         "sortBy": "=Fields.stock"
+        },
+        {
+         "value": "Status",
+         "sortBy": "=Fields.availabilityStatus"
+        },
+        {
+         "value": "Value",
+         "style": {
+          "textAlign": "right"
+         },
+         "sortBy": "=Fields.stockValue"
+        }
+       ]
+      }
+     ],
+     "groups": [
+      {
+       "name": "Category",
+       "expr": "=Fields.category",
+       "sort": "asc",
+       "collapsible": true,
+       "initiallyCollapsed": true,
+       "header": [
+        {
+         "height": 20,
+         "style": {
+          "fontWeight": "bold",
+          "fontSize": 8.5,
+          "backgroundColor": "#ecfeff",
+          "borderTop": "1 solid #0e7490"
+         },
+         "cells": [
+          {
+           "value": "=Upper(Left(Fields.category, 1)) & Mid(Fields.category, 2)",
+           "bookmark": "=Fields.category",
+           "tooltip": "Click ▶ to open or close"
+          },
+          {
+           "value": "{CountRows()} products",
+           "style": {
+            "fontWeight": "normal",
+            "color": "#5f6b77"
+           }
+          },
+          {
+           "value": "=Avg(Fields.price)",
+           "style": {
+            "textAlign": "right",
+            "format": "C0",
+            "fontWeight": "normal"
+           }
+          },
+          {
+           "value": "=Avg(Fields.discountPercentage)",
+           "style": {
+            "textAlign": "right",
+            "format": "N1",
+            "fontWeight": "normal"
+           }
+          },
+          {
+           "value": ""
+          },
+          {
+           "value": "",
+           "visual": {
+            "type": "bullet",
+            "value": "=Avg(Fields.rating)",
+            "target": 4,
+            "max": 5,
+            "color": "=IIF(Avg(Fields.rating) < 4, '#b54708', '#0e7490')"
+           }
+          },
+          {
+           "value": "=Sum(IIF(Fields.stock < Parameters.lowStock, 1, 0)) & ' low'",
+           "style": {
+            "color": "=IIF(Sum(IIF(Fields.stock < Parameters.lowStock, 1, 0)) > 0, '#b54708', '#5f6b77')"
+           }
+          },
+          {
+           "value": ""
+          },
+          {
+           "value": "=Sum(Fields.stockValue)",
+           "style": {
+            "textAlign": "right",
+            "format": "C0"
+           }
+          }
+         ]
+        }
+       ],
+       "footer": []
+      }
+     ],
+     "detail": [
+      {
+       "height": 17,
+       "style": {
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)",
+        "borderBottom": "0.5 solid #e5e7eb"
+       },
+       "cells": [
+        {
+         "value": "=Fields.title",
+         "style": {
+          "padding": [
+           3,
+           5,
+           3,
+           14
+          ],
+          "color": "#0e7490"
+         },
+         "action": {
+          "type": "report",
+          "report": "product-detail",
+          "params": {
+           "id": "=Fields.id"
+          }
+         },
+         "tooltip": "=Fields.title & ' · ' & Format(Fields.rating, 'N2') & ' ★ · ' & Fields.stock & ' in stock. Click to open.'"
+        },
+        {
+         "value": "=Coalesce(Fields.brand, '—')",
+         "style": {
+          "color": "#0e7490"
+         },
+         "action": {
+          "type": "params",
+          "params": {
+           "brand": "=Coalesce(Fields.brand, '')"
+          },
+          "toggle": true
+         },
+         "tooltip": "=IIF(Fields.brand = Parameters.brand, 'Click to show every brand', 'Click to show only ' & Coalesce(Fields.brand, 'no brand'))"
+        },
+        {
+         "value": "=Fields.price",
+         "style": {
+          "textAlign": "right",
+          "format": "C2"
+         }
+        },
+        {
+         "value": "=Fields.discountPercentage",
+         "style": {
+          "textAlign": "right",
+          "format": "N1"
+         }
+        },
+        {
+         "value": "=Fields.netPrice",
+         "style": {
+          "textAlign": "right",
+          "format": "C2",
+          "fontWeight": "600"
+         }
+        },
+        {
+         "value": "",
+         "visual": {
+          "type": "bullet",
+          "value": "=Fields.rating",
+          "target": 4,
+          "max": 5,
+          "color": "=IIF(Fields.rating < 4, '#b54708', '#0e7490')"
+         }
+        },
+        {
+         "value": "",
+         "visual": {
+          "type": "databar",
+          "value": "=Fields.stock",
+          "max": "=Max(Fields.stock, \"Products\")",
+          "format": "N0",
+          "color": "=Switch(Fields.stock = 0, '#b42318', Fields.stock < Parameters.lowStock, '#b54708', True, '#067647')"
+         }
+        },
+        {
+         "value": "=Fields.availabilityStatus",
+         "style": {
+          "fontWeight": "600",
+          "color": "=Switch(Fields.availabilityStatus = 'Out of Stock', '#b42318', Fields.availabilityStatus = 'Low Stock', '#b54708', True, '#067647')"
+         }
+        },
+        {
+         "value": "=Fields.stockValue",
+         "style": {
+          "textAlign": "right",
+          "format": "C0"
+         }
+        }
+       ]
+      }
+     ],
+     "footer": [
+      {
+       "height": 22,
+       "style": {
+        "fontWeight": "bold",
+        "fontSize": 8.5,
+        "borderTop": "1.5 solid #155e75"
+       },
+       "cells": [
+        {
+         "value": "All shown ({CountRows()} products)",
+         "colSpan": 2
+        },
+        null,
+        {
+         "value": "=Avg(Fields.price)",
+         "style": {
+          "textAlign": "right",
+          "format": "C0"
+         }
+        },
+        {
+         "value": "=Avg(Fields.discountPercentage)",
+         "style": {
+          "textAlign": "right",
+          "format": "N1"
+         }
+        },
+        {
+         "value": ""
+        },
+        {
+         "value": "=Avg(Fields.rating)",
+         "style": {
+          "format": "N2"
+         }
+        },
+        {
+         "value": "=Sum(Fields.stock)",
+         "style": {
+          "format": "N0"
+         }
+        },
+        {
+         "value": ""
+        },
+        {
+         "value": "=Sum(Fields.stockValue)",
+         "style": {
+          "textAlign": "right",
+          "format": "C0"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "pageFooter": {
+   "height": 20,
+   "items": [
+    {
+     "type": "textbox",
+     "name": "Gen",
+     "x": 0,
+     "y": 6,
+     "w": 420,
+     "h": 12,
+     "value": "Live data: dummyjson.com (demo store, fake products) · generated {Format(Globals.ExecutionTime, 'dd MMM yyyy, hh:mm tt')}",
+     "canGrow": true,
+     "style": {
+      "fontSize": 7,
+      "color": "#5f6b77"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Pg",
+     "x": 577.89,
+     "y": 6,
+     "w": 200,
+     "h": 12,
+     "value": "Page {Globals.PageNumber} of {Globals.TotalPages}",
+     "canGrow": true,
+     "style": {
+      "fontSize": 7,
+      "color": "#5f6b77",
+      "textAlign": "right"
+     }
+    }
+   ]
+  }
+ },
+ "liveParameters": true
+}

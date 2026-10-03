@@ -1,4 +1,5 @@
 import './globals.css';
+import { THEME_BOOT } from '@/theme/theme.js';
 
 export const metadata = {
   title: 'Pagewright',
@@ -7,7 +8,11 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    // data-theme is set before first paint by THEME_BOOT, so React must not warn about it.
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
+      </head>
       <body>{children}</body>
     </html>
   );

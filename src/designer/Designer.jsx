@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Dialog } from './ui.jsx';
 import Link from 'next/link';
-import { useDesigner, addItem, deleteSelection, duplicateSelection, moveItems, copySelection, pasteItems } from './store.js';
+import { useDesigner, insertItem, deleteSelection, duplicateSelection, moveItems, copySelection, pasteItems } from './store.js';
 import Canvas, { MIME_TOOL } from './Canvas.jsx';
 import Inspector from './Inspector.jsx';
 import DataPanel, { loadSample } from './DataPanel.jsx';
@@ -10,6 +10,8 @@ import ReportViewer from '@/viewer/ReportViewer.jsx';
 import { ITEMS } from '@/engine/items/index.js';
 import { fontFaceCss } from '@/exporters/svg.js';
 import { ALL_FONT_KEYS } from '@/engine/text/fonts.js';
+import ThemeToggle from '@/theme/ThemeToggle.jsx';
+import ChartWizard from './ChartWizard.jsx';
 
 const FONT_CSS = fontFaceCss(ALL_FONT_KEYS);
 
@@ -39,7 +41,7 @@ function Toolbox() {
     const def = useDesigner.getState().def;
     const items = def.sections.body.items;
     const y = items.length ? Math.max(...items.map(i => i.y + i.h)) + 8 : 0;
-    addItem(type, 'body', 0, Math.ceil(y / 4) * 4);
+    insertItem(type, 'body', 0, Math.ceil(y / 4) * 4);
   };
   return (
     <div className="pane">
@@ -115,6 +117,7 @@ export default function Designer({ id, initial }) {
   const canRedo = useDesigner(s => s.future.length > 0);
   const st = useDesigner.getState;
   const [dialog, setDialog] = useState(null);
+  const wizard = useDesigner(s => s.wizard);
 
   useEffect(() => { loadSample(); }, []);
 
@@ -166,8 +169,9 @@ export default function Designer({ id, initial }) {
         </div>
         <button className="btn sm ghost" onClick={() => setDialog('history')} title="Saved versions">History</button>
         <button className="btn sm ghost icon" onClick={() => setDialog('keys')} title="Keyboard shortcuts (?)">?</button>
+        <ThemeToggle />
         <a className="btn sm" href={`/viewer/${id}`} target="_blank" rel="noreferrer" title="Opens the saved version">Open viewer</a>
-        <button className="btn sm primary" onClick={() => st().save()} disabled={saving || saved} data-testid="save">Save <span className="kbd" style={{ background: 'transparent', color: 'inherit', borderColor: 'rgba(255,255,255,.4)' }}>⌘S</span></button>
+        <button className="btn sm primary" onClick={() => st().save()} disabled={saving || saved} data-testid="save">Save <span className="kbd" style={{ background: 'transparent', color: 'inherit', borderColor: 'currentColor', opacity: 0.7 }}>⌘S</span></button>
       </div>
       {dialog === 'keys' && (
         <Dialog title="Keyboard shortcuts" onClose={() => setDialog(null)} footer={<button className="btn" onClick={() => setDialog(null)}>Close</button>}>
@@ -175,6 +179,7 @@ export default function Designer({ id, initial }) {
         </Dialog>
       )}
       {dialog === 'history' && <HistoryDialog id={id} onClose={() => setDialog(null)} />}
+      {wizard && <ChartWizard />}
       {tab === 'preview' ? (
         <ReportViewer definition={def} reportId={id} compact />
       ) : (

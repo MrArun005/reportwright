@@ -75,7 +75,7 @@ export function chartData(item, ctx, lc) {
   } else {
     defs.forEach((sd, i) => series.push({ name: sd.name || `Series ${i + 1}`, color: sd.color || PALETTE[i % PALETTE.length], values: cats.map(cat => agg(cat.rows, sd.value)) }));
   }
-  return { categories: cats.map(c2 => labelOf(c2.key)), series, rows };
+  return { categories: cats.map(c2 => labelOf(c2.key)), buckets: cats, series, rows };
 }
 
 /**
@@ -103,13 +103,26 @@ export function paintChart(item, ctx, lc, base) {
 
   const data = chartData(item, ctx, lc);
   const type = CHART_TYPES.includes(item.chartType) ? item.chartType : 'column';
+  // Interactivity per point: pointAction (any action, usually "params" to filter the report), pointColor and tooltips.
+  // The point's scope is its category: Fields = first row, aggregates over the category's rows.
+  const links = [];
+  const pointCtx = (ci) => { const b = data.buckets[ci]; return { ...ctx, fields: b?.rows[0] || null, aggRows: b?.rows || [], aggIndex: undefined }; };
+  const pointFill = (ci, fallback) => { if (!item.pointColor) return fallback; const v = safe(item.pointColor, pointCtx(ci), lc, item.name || 'Chart'); return v ? String(v) : fallback; };
+  const pointLink = (ci, rect, tip, d) => {
+    let l = item.pointAction ? lc.linkFor({ action: item.pointAction, name: item.name }, pointCtx(ci), rect) : null;
+    if (!l && item.tooltips === false) return;
+    if (!l) l = { t: 'link', ...rect, action: null };
+    if (tip && item.tooltips !== false) l.tip = tip;
+    if (d) { l.d = d; l.x0 = rect.x; l.y0 = rect.y; }
+    links.push(l);
+  };
   let top = 4, bottom = H - 4;
   const title = item.title ? String(safe(item.title, ctx, lc, item.name) ?? '') : '';
   if (title) { text(title, X + 4, top + fs * 1.4, { size: fs * 1.35, f: bold, color: '#111827', maxW: W - 8 }); top += fs * 2.1; }
 
   // legend at the bottom
   const pie = type === 'pie' || type === 'donut';
-  const legendItems = pie ? data.categories.map((c, i) => ({ name: c, color: PALETTE[i % PALETTE.length] })) : data.series.map(s => ({ name: s.name, color: s.color }));
+  const legendItems = pie ? data.categories.map((c, i) => ({ name: c, color: pointFill(i, PALETTE[i % PALETTE.length]) })) : data.series.map(s => ({ name: s.name, color: s.color }));
   if (item.legend !== 'none' && (pie || data.series.length > 1)) {
     const rowsL = [];
     let line = [], lw = 0;
@@ -148,7 +161,11 @@ export function paintChart(item, ctx, lc, base) {
     let a0 = -Math.PI / 2;
     vals.forEach((v, i) => {
       const a1 = a0 + (v / total) * Math.PI * 2;
-      if (v > 0) out.push({ t: 'path', x: 0, y: 0, d: arc(cx, cy, r, ri, a0, Math.min(a1, a0 + Math.PI * 2 - 1e-4)), fill: PALETTE[i % PALETTE.length], stroke: '#ffffff', strokeWidth: 0.75 });
+      if (v > 0) {
+        const d = arc(cx, cy, r, ri, a0, Math.min(a1, a0 + Math.PI * 2 - 1e-4));
+        out.push({ t: 'path', x: 0, y: 0, d, fill: pointFill(i, PALETTE[i % PALETTE.length]), stroke: '#ffffff', strokeWidth: 0.75 });
+        pointLink(i, { x: cx - r, y: cy - r, w: r * 2, h: r * 2 }, `${data.categories[i]}: ${fmtV(v)} (${Math.round((v / total) * 100)}%)`, d);
+      }
       const mid = (a0 + a1) / 2, frac = v / total;
       if (frac >= 0.05 && item.showValues !== false) {
         const lr = ri ? (r + ri) / 2 : r * 0.62;
@@ -159,7 +176,7 @@ export function paintChart(item, ctx, lc, base) {
     if (type === 'donut' && item.centerText !== false) {
       text(fmtV(total), cx, cy + fs * 0.45, { align: 'center', size: fs * 1.4, f: bold, color: '#111827' });
     }
-    return out;
+    return out.concat(links);
   }
 
   const stacked = !!item.stacked && (type === 'column' || type === 'bar' || type === 'area');
@@ -226,9 +243,12 @@ export function paintChart(item, ctx, lc, base) {
         const p0 = vpos(a), p1 = vpos(b);
         const off = center(ci) - groupW / 2 + (stacked ? 0 : si * bw);
         const rect = horiz
-          ? { t: 'rect', x: Math.min(p0, p1), y: off + bw * 0.08, w: Math.abs(p1 - p0), h: bw * 0.84, fill: s.color }
-          : { t: 'rect', x: off + bw * 0.08, y: Math.min(p0, p1), w: bw * 0.84, h: Math.abs(p1 - p0), fill: s.color };
+          ? { t: 'rect', x: Math.min(p0, p1), y: off + bw * 0.08, w: Math.abs(p1 - p0), h: bw * 0.84, fill: data.series.length === 1 ? pointFill(ci, s.color) : s.color }
+          : { t: 'rect', x: off + bw * 0.08, y: Math.min(p0, p1), w: bw * 0.84, h: Math.abs(p1 - p0), fill: data.series.length === 1 ? pointFill(ci, s.color) : s.color };
         out.push(rect);
+        // the hit area spans the whole category band, so short bars are easy to click
+        const hit = horiz ? { x: left, y: rect.y, w: right - left, h: rect.h } : { x: rect.x, y: plotTop, w: rect.w, h: plotBottom - plotTop };
+        pointLink(ci, hit, `${data.categories[ci]}${data.series.length > 1 ? ` · ${s.name}` : ''}: ${fmtV(v)}`);
         if (item.showValues && !stacked) {
           if (horiz) text(fmtV(v), Math.max(p0, p1) + 3, rect.y + rect.h / 2 + fs * 0.35, { size: fs * 0.9 });
           else text(fmtV(v), rect.x + rect.w / 2, Math.min(p0, p1) - 3, { align: 'center', size: fs * 0.9 });
@@ -245,7 +265,7 @@ export function paintChart(item, ctx, lc, base) {
         const base0 = stacked ? acc[ci] : 0;
         const val = stacked ? base0 + v : v;
         if (stacked) acc[ci] = val;
-        pts.push({ x: center(ci), y: vpos(val), b: vpos(base0), v });
+        pts.push({ x: center(ci), y: vpos(val), b: vpos(base0), v, ci });
       });
       if (!pts.length) return;
       if (type === 'area') {
@@ -254,10 +274,11 @@ export function paintChart(item, ctx, lc, base) {
       }
       out.push({ t: 'path', x: 0, y: 0, d: 'M ' + pts.map(p => `${f(p.x)} ${f(p.y)}`).join(' L '), fill: null, stroke: s.color, strokeWidth: 1.6 });
       if (type === 'line' && pts.length <= 40) for (const p of pts) out.push({ t: 'ellipse', cx: p.x, cy: p.y, rx: 2, ry: 2, fill: '#ffffff', stroke: s.color, strokeWidth: 1.2 });
+      for (const p of pts) pointLink(p.ci, { x: p.x - band / 2, y: plotTop, w: band, h: plotBottom - plotTop }, `${data.categories[p.ci]}${data.series.length > 1 ? ` · ${s.name}` : ''}: ${fmtV(p.v)}`);
       if (item.showValues) for (const p of pts) text(fmtV(p.v), p.x, p.y - 4, { align: 'center', size: fs * 0.85 });
     });
   }
-  return out;
+  return out.concat(links);
 }
 
 function paintScatter(item, ctx, lc, data, out, g) {

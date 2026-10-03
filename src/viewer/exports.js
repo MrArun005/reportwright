@@ -18,8 +18,19 @@ async function loadExcel() {
 }
 
 /** Excel, HTML and CSV in the browser. ExcelJS loads only when needed. */
-export async function exportBlob(fmt, model, def) {
+export async function exportBlob(fmt, model, def, opt = {}) {
   if (fmt === 'csv') return new Blob([exportCsv(model, { locale: def.locale, currency: def.currency })], { type: 'text/csv;charset=utf-8' });
+  if (fmt === 'html' && opt.interactive !== false) {
+    // interactive by default: the downloaded file runs the viewer itself
+    try {
+      const { exportInteractiveHtml } = await import('./interactiveHtml.js');
+      const { html } = await exportInteractiveHtml(def, { params: opt.params, reportId: opt.reportId, lang: opt.lang, model });
+      return new Blob([html], { type: 'text/html;charset=utf-8' });
+    } catch (e) {
+      if (e.code !== 'NO_BUNDLE') throw e;
+      console.warn(`${e.message} Exporting static HTML instead.`);
+    }
+  }
   if (fmt === 'html') {
     const store = fontStore();
     await store.load();

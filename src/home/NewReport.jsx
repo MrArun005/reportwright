@@ -19,8 +19,8 @@ export default function NewReport() {
     } catch (ex) { setErr(`The report was not created: ${ex.message}`); setBusy(false); }
   };
   return (
-    <form onSubmit={create} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-      <input className="input" placeholder="Report name" value={name} onChange={e => setName(e.target.value)} aria-label="New report name" />
+    <form onSubmit={create} className="newrep">
+      <input className="input" placeholder="Name a new report" value={name} onChange={e => setName(e.target.value)} aria-label="New report name" />
       <button className="btn primary" disabled={busy}>{busy ? 'Creating…' : 'New report'}</button>
       {err && <span className="err">{err}</span>}
       <MoreWays name={name} />

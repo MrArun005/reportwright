@@ -103,6 +103,12 @@ function ItemProps({ item, section, openExpr }) {
         </div>
         <span className="ty">{spec?.label || item.type}</span>
       </div>
+      {item.type === 'chart' && (
+        <div className="cat">
+          <button className="btn sm" data-testid="open-chart-gallery" onClick={() => useDesigner.getState().setUi({ wizard: { mode: 'edit', id: item.id } })}>Chart gallery and data preview…</button>
+          <span className="hint">See every chart type drawn with your API data, then pick one.</span>
+        </div>
+      )}
       <div className="cat">
         <h5>Position</h5>
         <div className="grid2">
@@ -274,9 +280,16 @@ function ActionEditor({ value, onChange, openExpr, dataSet }) {
   const set = (patch) => { const n = { ...a, ...patch }; onChange(n.type === 'none' ? undefined : n); };
   return (
     <div style={{ display: 'grid', gap: 6 }}>
-      <Field label="Action on click"><Select value={a.type} options={[{ value: 'none', label: 'None' }, { value: 'url', label: 'Open a URL' }, { value: 'report', label: 'Open another report (drill-through)' }, { value: 'bookmark', label: 'Jump to a bookmark' }]} onChange={v => set({ type: v || 'none' })} /></Field>
+      <Field label="Action on click"><Select value={a.type} options={[{ value: 'none', label: 'None' }, { value: 'url', label: 'Open a URL' }, { value: 'report', label: 'Open another report (drill-through)' }, { value: 'params', label: 'Filter this report (set parameters)' }, { value: 'bookmark', label: 'Jump to a bookmark' }]} onChange={v => set({ type: v || 'none' })} /></Field>
       {a.type === 'url' && <Field label="URL"><ExprInput value={a.url} onChange={v => set({ url: v })} onOpen={() => openExpr({ value: a.url, dataSet, onSave: v => set({ url: v }), title: 'URL' })} /></Field>}
       {a.type === 'bookmark' && <Field label="Bookmark"><ExprInput value={a.target} onChange={v => set({ target: v })} onOpen={() => openExpr({ value: a.target, dataSet, onSave: v => set({ target: v }), title: 'Bookmark' })} /></Field>}
+      {a.type === 'params' && <>
+        <Field label="Set parameters (name=expression, one per line)" hint="Example: categories==Fields.category (after the first =, an expression starts with =). The report runs again with the new values.">
+          <textarea className="textarea" rows={3} value={Object.entries(a.params || {}).map(([k, v]) => `${k}=${v}`).join('\n')}
+            onChange={e => set({ params: Object.fromEntries(e.target.value.split('\n').map(l => l.split('=')).filter(x => x[0] && x.length > 1).map(([k, ...v]) => [k.trim(), v.join('=').trim()])) })} />
+        </Field>
+        <Check label="A second click on the same value clears the filter" checked={a.toggle !== false} onChange={v => set({ toggle: v ? undefined : false })} />
+      </>}
       {a.type === 'report' && <>
         <Field label="Report id"><TextInput value={a.report} onChange={v => set({ report: v })} mono placeholder="loan-statement" /></Field>
         <Field label="Parameters (name=expression, one per line)">
@@ -489,7 +502,7 @@ function NamedStyles() {
       </Field>
       {Object.entries(named).map(([name, st]) => (
         <div className="style-card" key={name}>
-          <b style={{ fontSize: 12 }}>{name}</b>
+          <b style={{ fontSize: 'var(--fs-sm)' }}>{name}</b>
           <NumberInput value={st.fontSize} step={0.5} onChange={v => setS(name, 'fontSize', v)} aria-label={`${name} size`} />
           <Select value={st.fontWeight} options={['normal', '600', 'bold']} allowEmpty onChange={v => setS(name, 'fontWeight', v)} />
           <input type="color" value={/^#[0-9a-f]{6}$/i.test(st.color || '') ? st.color : '#000000'} onChange={e => setS(name, 'color', e.target.value)} aria-label={`${name} colour`} style={{ width: 26, height: 26, border: '1px solid var(--line)', borderRadius: 5, padding: 0 }} />

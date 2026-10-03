@@ -15,6 +15,8 @@ await p.screenshot({ path: '/tmp/shots/dash-designer.png' });
 
 // add a pie chart from the toolbox and bind it
 await p.dragAndDrop('[data-tool=chart]', '[data-section=body]', { targetPosition: { x: 300, y: 20 } });
+// a report with data opens the chart gallery first; this test sets the chart up by hand
+await p.getByRole('button', { name: 'Insert an empty chart' }).click();
 await p.waitForSelector('[data-item=Chart1]');
 const insp = p.locator('[data-testid=inspector]');
 await insp.getByLabel('Chart type').selectOption('pie');
