@@ -133,7 +133,14 @@ export async function render(def, opts = {}) {
     lc.toc = tocEntries;
     const body = layoutItems(sec.body?.items || [], lc);
     if (opts.bodyOnly) return { body };
+    // one page that grows: page breaks have nothing to break
+    if (page.pageless) for (const u of body.units) { u.breakBefore = false; u.breakAfter = false; }
     const slices = paginate(body.units, body.tables, contentH, warn);
+    let pageH = page.height;
+    if (page.pageless) {
+      if (slices.length === 1) pageH = Math.max(page.minHeight, page.margins.top + headerH + slices[0].bottom - slices[0].top + footerH + page.margins.bottom);
+      else warn(`This pageless report is taller than 200 inches, the largest PDF page, so it is split into ${slices.length} pages.`);
+    }
     const total = Math.ceil(slices.length / colCount);
     const ml = page.margins.left, mt = page.margins.top;
     const bodyTop = mt + headerH;
@@ -163,7 +170,7 @@ export async function render(def, opts = {}) {
           items.push(...shiftItems(u.items, cx, bodyTop + off + (u.top - p.top)));
         }
       }
-      band(footer, page.height - page.margins.bottom - footerH, k === 0, k === total - 1);
+      band(footer, pageH - page.margins.bottom - footerH, k === 0, k === total - 1);
       const kept = [];
       for (const it of items) {
         if (it.t === 'bookmark') bookmarks.push({ label: it.label, page: k + 1, y: it.y, level: it.level || 0 });
@@ -171,7 +178,7 @@ export async function render(def, opts = {}) {
       }
       pages.push({ items: kept });
     }
-    return { pages, bookmarks };
+    return { pages, bookmarks, height: pageH };
   };
 
   let result = assemble([]);
@@ -186,10 +193,10 @@ export async function render(def, opts = {}) {
       if (same && pass > 0) break;
     }
   }
-  const { pages, bookmarks } = result;
+  const { pages, bookmarks, height } = result;
 
   return {
-    width: page.width, height: page.height, pages, warnings, bookmarks, regions, name: def.name || '',
+    width: page.width, height, pages, warnings, bookmarks, regions, name: def.name || '',
     stats: { ms: Date.now() - t0, pages: pages.length, rows: Object.fromEntries(Object.entries(dataSets).map(([k, r]) => [k, r.length])) },
   };
 }

@@ -11,6 +11,9 @@ export const PAGE_SIZES = {
 
 export const UNITS = { pt: 1, in: 72, cm: 72 / 2.54, mm: 72 / 25.4, px: 0.75 };
 
+/** A pageless report grows to fit its content, up to the largest PDF page (200 inches). */
+export const PAGELESS_MAX = 14400;
+
 /** @param {number} v @param {keyof UNITS} unit */
 export function toPt(v, unit) { return v * UNITS[unit]; }
 /** @param {number} pt @param {keyof UNITS} unit */
@@ -20,6 +23,11 @@ export function fromPt(pt, unit) { return pt / UNITS[unit]; }
  * @param {{size?: string, width?: number, height?: number, orientation?: string, margins?: number[]|number}} page
  */
 export function resolvePage(page = {}) {
+  if (page.size === 'Pageless') {
+    const w = Number(page.width) || 960;
+    const m = normBox(page.margins ?? 24);
+    return { width: w, height: PAGELESS_MAX, margins: { top: m[0], right: m[1], bottom: m[2], left: m[3] }, bodyWidth: w - m[1] - m[3], pageless: true, minHeight: Number(page.minHeight) || 0 };
+  }
   let [w, h] = page.size && PAGE_SIZES[page.size] ? PAGE_SIZES[page.size] : [page.width || PAGE_SIZES.A4[0], page.height || PAGE_SIZES.A4[1]];
   if (page.orientation === 'landscape' && h > w) [w, h] = [h, w];
   const m = normBox(page.margins ?? 36);

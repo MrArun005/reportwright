@@ -420,9 +420,12 @@ function ReportProps() {
       <div className="cat">
         <h5>Page</h5>
         <div className="grid2">
-          <Field label="Size"><Select value={def.page?.size || 'A4'} options={Object.keys(PAGE_SIZES)} onChange={v => set(d => { d.page.size = v; })} /></Field>
-          <Field label="Orientation"><Select value={def.page?.orientation || 'portrait'} options={['portrait', 'landscape']} onChange={v => set(d => { d.page.orientation = v; })} /></Field>
+          <Field label="Size"><Select value={def.page?.size || 'A4'} options={[...Object.keys(PAGE_SIZES), 'Pageless']} onChange={v => set(d => { d.page.size = v; })} /></Field>
+          {def.page?.size === 'Pageless'
+            ? <Field label="Width"><NumberInput value={def.page?.width || 960} step={8} onChange={v => set(d => { d.page.width = Math.max(144, v); }, 'pageWidth')} /></Field>
+            : <Field label="Orientation"><Select value={def.page?.orientation || 'portrait'} options={['portrait', 'landscape']} onChange={v => set(d => { d.page.orientation = v; })} /></Field>}
         </div>
+        {def.page?.size === 'Pageless' && <div className="hint">One page that grows to fit the content (up to 200 inches). Good for dashboards and screen reports.</div>}
         <div className="grid4">
           {['Top', 'Right', 'Bottom', 'Left'].map((l, i) => (
             <Field key={l} label={l}><NumberInput value={m[i]} step={1} onChange={v => set(d => { const mm = Array.isArray(d.page.margins) ? d.page.margins : [36, 36, 36, 36]; mm[i] = Math.max(0, v); d.page.margins = mm; }, `margin${i}`)} /></Field>
