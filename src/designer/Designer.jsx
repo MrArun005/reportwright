@@ -20,6 +20,13 @@ const TOOLS = [
   { type: 'shape', icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="2" y="3" width="10" height="8" rx="2" stroke="currentColor" fill="none" strokeWidth="1.4" /></svg> },
   { type: 'list', icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1.5" y="1.5" width="11" height="4.5" rx="1" stroke="currentColor" fill="none" /><rect x="1.5" y="8" width="11" height="4.5" rx="1" stroke="currentColor" fill="none" strokeDasharray="2 1.5" /></svg> },
   { type: 'container', icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1.5" y="2" width="11" height="10" rx="1.5" stroke="currentColor" fill="none" strokeDasharray="2.5 1.5" /></svg> },
+  { type: 'chart', icon: <svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 12V7M5.5 12V3M9 12V6M12.5 12V9" stroke="currentColor" strokeWidth="2" /></svg> },
+  { type: 'matrix', icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1.5" y="1.5" width="11" height="11" rx="1" stroke="currentColor" fill="none" /><path d="M1.5 5h11M5 1.5v11M8.7 5v7.5M5 8.7h7.5" stroke="currentColor" fill="none" /></svg> },
+  { type: 'barcode', icon: <svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 2v10M4 2v10M5.5 2v10M8 2v10M9.5 2v10M12 2v10" stroke="currentColor" strokeWidth="1.2" /></svg> },
+  { type: 'sparkline', icon: <svg width="14" height="14" viewBox="0 0 14 14"><path d="M1 10l3-4 3 3 3-6 3 4" stroke="currentColor" fill="none" strokeWidth="1.4" /></svg> },
+  { type: 'databar', icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1.5" y="4" width="9" height="6" rx="1" fill="currentColor" /></svg> },
+  { type: 'bullet', icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1" y="4" width="12" height="6" fill="none" stroke="currentColor" /><rect x="1" y="5.8" width="7" height="2.4" fill="currentColor" /><path d="M10 3v8" stroke="currentColor" strokeWidth="1.5" /></svg> },
+  { type: 'subreport', icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1.5" y="1.5" width="11" height="11" rx="1" stroke="currentColor" fill="none" /><rect x="4" y="5" width="7" height="5" stroke="currentColor" fill="none" /></svg> },
   { type: 'checkbox', icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="2" y="2" width="10" height="10" rx="2" stroke="currentColor" fill="none" /><path d="M4.5 7.2l1.8 1.8 3.4-3.6" stroke="currentColor" fill="none" strokeWidth="1.4" /></svg> },
 ];
 

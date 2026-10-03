@@ -20,7 +20,7 @@ assert.ok(opts.some(o => o.includes('emi')), 'field completion offered: ' + opts
 await p.keyboard.type('emi)');
 await p.waitForFunction(() => /\d/.test(document.querySelector('.sample')?.textContent || ''), null, { timeout: 5000 });
 const preview = await p.locator('.sample').innerText();
-assert.match(preview, /11,330/);
+assert.match(preview, /11330/);
 await p.screenshot({ path: '/tmp/shots/expr-editor.png' });
 await b.close();
 assert.deepEqual(errs, []);

@@ -244,10 +244,13 @@ export async function pasteItems(section = 'body') {
 export const PARTS = ['header', 'detail', 'footer'];
 
 /** Rows of a part id: 'header' | 'detail' | 'footer' | 'g<level>h' | 'g<level>f'. */
-export function rowsOf(t, part) {
+export function rowsOf(t, part, create = false) {
   const m = /^g(\d+)([hf])$/.exec(part);
-  if (m) { const g = t.groups?.[Number(m[1])]; return g ? (g[m[2] === 'h' ? 'header' : 'footer'] ||= []) : null; }
-  return (t[part] ||= []);
+  const holder = m ? t.groups?.[Number(m[1])] : t;
+  if (!holder) return null;
+  const key = m ? (m[2] === 'h' ? 'header' : 'footer') : part;
+  if (!holder[key]) { if (!create) return []; holder[key] = []; }   // never write to frozen state while rendering
+  return holder[key];
 }
 /** Parts in display order with labels and gutter tags. */
 export function tableParts(t) {
@@ -291,7 +294,7 @@ function coveredBySpan(cells, i) {
   return false;
 }
 export function tableInsertRow(id, part, at) {
-  updateItem(id, (t) => { rowsOf(t, part).splice(at, 0, blankRow(t.columns.length)); tableSync(t); });
+  updateItem(id, (t) => { rowsOf(t, part, true).splice(at, 0, blankRow(t.columns.length)); tableSync(t); });
 }
 export function tableDeleteRow(id, part, at) {
   updateItem(id, (t) => {

@@ -54,6 +54,8 @@ function PropEditor({ p, value, onChange, openExpr, dataSet }) {
     case 'font': return <Field label={p.label}><Select value={value} onChange={onChange} options={Object.keys(FONT_FAMILIES)} allowEmpty /></Field>;
     case 'dataset': return <Field label={p.label}><Select value={value} onChange={onChange} options={(def.dataSets || []).map(d => d.name)} allowEmpty /></Field>;
     case 'action': return <ActionEditor value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet} />;
+    case 'series': return <SeriesEditor value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet} />;
+    case 'params': return <ParamsEditor label={p.label} value={value} onChange={onChange} />;
     default: return <Field label={p.label}><TextInput value={value} onChange={v => onChange(v === '' ? undefined : v)} /></Field>;
   }
 }
@@ -221,6 +223,51 @@ function SortFilterEditor({ item }) {
   );
 }
 
+function SeriesEditor({ value, onChange, openExpr, dataSet }) {
+  const list = value || [];
+  const set = (i, k, v) => onChange(list.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
+  return (
+    <div style={{ display: 'grid', gap: 6 }}>
+      <span className="hint">Series: one value per category, usually an aggregate such as =Sum(Fields.amount).</span>
+      {list.map((sr, i) => (
+        <div className="group-card" key={i}>
+          <div className="expr-row">
+            <TextInput value={sr.name} onChange={v => set(i, 'name', v)} aria-label="Series name" placeholder="Name" />
+            <input type="color" value={/^#[0-9a-f]{6}$/i.test(sr.color || '') ? sr.color : '#2563eb'} onChange={e => set(i, 'color', e.target.value)} aria-label="Series color" style={{ width: 26, height: 26, border: '1px solid var(--line)', borderRadius: 5, padding: 0 }} />
+            <button className="btn sm ghost danger" onClick={() => onChange(list.filter((_, j) => j !== i))} aria-label="Remove series">✕</button>
+          </div>
+          <ExprInput value={sr.value} onChange={v => set(i, 'value', v)} onOpen={() => openExpr({ value: sr.value, dataSet, onSave: v => set(i, 'value', v), title: `Series ${sr.name || i + 1}` })} placeholder="=Sum(Fields.amount)" />
+        </div>
+      ))}
+      <div><button className="btn sm" onClick={() => onChange([...list, { name: `Series ${list.length + 1}`, value: '' }])}>Add series</button></div>
+    </div>
+  );
+}
+
+function ParamsEditor({ label, value, onChange }) {
+  return (
+    <Field label={`${label} (name=expression, one per line)`}>
+      <textarea className="textarea" rows={3} value={Object.entries(value || {}).map(([k, v]) => `${k}=${v}`).join('\n')}
+        onChange={e => onChange(Object.fromEntries(e.target.value.split('\n').map(l => l.split('=')).filter(x => x[0] && x.length > 1).map(([k, ...v]) => [k.trim(), v.join('=').trim()])))} />
+    </Field>
+  );
+}
+
+function VisualEditor({ cell, setCell, openExpr, dataSet }) {
+  const v = cell.visual || null;
+  const set = (patch) => { const n = { ...(v || {}), ...patch }; setCell('visual', n.type ? n : undefined); };
+  return (
+    <div style={{ display: 'grid', gap: 6 }}>
+      <Field label="Cell shows"><Select value={v?.type || ''} options={[{ value: 'sparkline', label: 'Sparkline' }, { value: 'databar', label: 'Data bar' }, { value: 'bullet', label: 'Bullet' }]} allowEmpty onChange={t => (t ? set({ type: t }) : setCell('visual', undefined))} /></Field>
+      {v?.type === 'sparkline' && <Field label="One point per"><ExprInput value={v.category} onChange={x => set({ category: x || undefined })} onOpen={() => openExpr({ value: v.category, dataSet, onSave: x => set({ category: x }), title: 'Point per' })} placeholder="=Fields.month" /></Field>}
+      {v?.type && <Field label="Value"><ExprInput value={v.value} onChange={x => set({ value: x })} onOpen={() => openExpr({ value: v.value, dataSet, onSave: x => set({ value: x }), title: 'Value' })} placeholder="=Sum(Fields.amount)" /></Field>}
+      {(v?.type === 'databar' || v?.type === 'bullet') && <Field label="Maximum"><ExprInput value={v.max} onChange={x => set({ max: x })} onOpen={() => openExpr({ value: v.max, dataSet, onSave: x => set({ max: x }), title: 'Maximum' })} placeholder='=Max(Fields.amount, "Table1")' /></Field>}
+      {v?.type === 'bullet' && <Field label="Target"><ExprInput value={v.target} onChange={x => set({ target: x })} onOpen={() => {}} /></Field>}
+      {v?.type && <Field label="Color (or =expression)"><ColorInput value={v.color} onChange={x => set({ color: x })} /></Field>}
+    </div>
+  );
+}
+
 function ActionEditor({ value, onChange, openExpr, dataSet }) {
   const a = value || { type: 'none' };
   const set = (patch) => { const n = { ...a, ...patch }; onChange(n.type === 'none' ? undefined : n); };
@@ -258,6 +305,10 @@ function CellProps({ table, sel, openExpr }) {
         <h5>Data</h5>
         <Field label="Value"><ExprInput value={cell.value} onChange={v => setCell('value', v)} onOpen={() => openExpr({ value: cell.value, dataSet: table.dataSet, onSave: v => setCell('value', v), title: `${table.name} · ${partLabel} cell` })} /></Field>
         <div className="hint">{sel.part === 'detail' ? 'Detail rows repeat once for each record. Fields.x is the current record.' : /^g/.test(sel.part) ? 'Group rows repeat once for each group. Sum(Fields.x) adds up the group.' : 'Aggregates such as Sum(Fields.x) use all the records of the table.'}</div>
+      </div>
+      <div className="cat">
+        <h5>Visual</h5>
+        <VisualEditor cell={cell} setCell={setCell} openExpr={openExpr} dataSet={table.dataSet} />
       </div>
       <div className="cat">
         <h5>Interactivity</h5>

@@ -3,6 +3,10 @@ import { evalValue, toText, isDynamic } from '../expr/evaluate.js';
 import { resolveStyle } from '../style.js';
 import { layoutTextLines, paintBox } from './paint.js';
 import { applyFilters, applySort } from '../data/index.js';
+import { paintChart, CHART_TYPES } from './chart.js';
+import { paintVisual } from './visuals.js';
+import { paintBarcode, BARCODE_TYPES } from './barcode.js';
+import { shiftItems } from './paint.js';
 
 /**
  * Item registry. Each item type has:
@@ -228,6 +232,11 @@ register('table', {
       region.rows.push({ kind, level: extra?.level ?? 0, cells: cells.map(c => ({ col: Math.round((c.x - item.x) * 100), value: c.raw instanceof Date || typeof c.raw === 'boolean' ? c.raw : typeof c.raw === 'number' ? roundFor(c.raw, c.st.format) : c.plain, format: c.st.format || null, bold: c.st.fontWeight === 'bold' || Number(c.st.fontWeight) >= 600, span: c.span, colIndex: colX.indexOf(c.x) })) });
       const items = [];
       for (const c of cells) {
+        if (c.cell.visual?.type) {
+          items.push(...paintBox({ x: c.x, y: 0, w: c.w, h: need, st: c.st, tl: null, m: lc.m }));
+          items.push(...paintVisual(c.cell.visual, { x: c.x, y: 0, w: c.w, h: need }, c.ctx, lc, c.st, `${item.name} cell`));
+          continue;
+        }
         items.push(...paintBox({ x: c.x, y: 0, w: c.w, h: need, st: c.st, tl: c.tl, numeric: c.numeric, m: lc.m }));
         const link = lc.linkFor?.(c.cell, c.ctx, { x: c.x, y: 0, w: c.w, h: need });
         if (link) items.push(link);
@@ -286,9 +295,11 @@ register('table', {
         const open = !g.collapsible ? true : (lc.state?.toggles?.[tkey] ?? !g.initiallyCollapsed);
         const start = units.length;
         const hu = (g.header || []).map((r, ri) => layRow(r, gctx, 'groupHeader', { level, ...(ri === 0 && g.collapsible ? { toggle: { key: tkey, open } } : {}) }));
-        if (hu.length) hu[hu.length - 1].keepWithNext = true;
+        const before = units.length;
         if (open) emit(level + 1, bk.rows, gctx, [...chain, sc], path);
         else for (const s of [...chain, sc]) s.index += bk.rows.length;
+        // keep a group header with the group's content, never with the next group
+        if (hu.length && units.length > before) hu[hu.length - 1].keepWithNext = true;
         const fu = (g.footer || []).map(r => layRow(r, gctx, 'groupFooter', { level }));
         if (fu.length && open) fu[0].keepWithPrevious = true;
         if (units.length > start) {
@@ -453,6 +464,208 @@ function shiftLocal(items, dy) {
     return { ...it, y: it.y + dy };
   });
 }
+
+/* ---------------------------------------------------------------- chart */
+register('chart', {
+  label: 'Chart',
+  defaults: () => ({ type: 'chart', w: 320, h: 180, chartType: 'column', dataSet: null, category: '', series: [{ name: 'Value', value: '' }], legend: 'bottom', valueFormat: 'N0', title: '' }),
+  props: [
+    { key: 'chartType', label: 'Chart type', type: 'select', options: CHART_TYPES, category: 'Chart' },
+    { key: 'dataSet', label: 'Data set', type: 'dataset', category: 'Chart' },
+    { key: 'title', label: 'Title', type: 'expr', category: 'Chart' },
+    { key: 'category', label: 'Category (x axis / slices)', type: 'expr', category: 'Chart' },
+    { key: 'categorySort', label: 'Sort categories', type: 'select', options: ['asc', 'desc'], category: 'Chart' },
+    { key: 'categoryFormat', label: 'Category format', type: 'text', category: 'Chart' },
+    { key: 'series', label: 'Series', type: 'series', category: 'Chart' },
+    { key: 'seriesGroup', label: 'One series per value of', type: 'expr', category: 'Chart' },
+    { key: 'stacked', label: 'Stacked', type: 'bool', category: 'Chart' },
+    { key: 'showValues', label: 'Show values', type: 'bool', category: 'Chart' },
+    { key: 'valueFormat', label: 'Value format', type: 'text', category: 'Chart' },
+    { key: 'legend', label: 'Legend', type: 'select', options: ['bottom', 'none'], category: 'Chart' },
+    { key: 'xValue', label: 'X value (scatter)', type: 'expr', category: 'Chart' },
+    { key: 'xTitle', label: 'X axis title', type: 'text', category: 'Chart' },
+    { key: 'fontSize', label: 'Text size', type: 'number', category: 'Chart' },
+    { key: 'background', label: 'Background', type: 'color', category: 'Chart' },
+    { key: 'keepTogether', label: 'Keep on one page', type: 'bool', category: 'Layout' },
+    { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
+  ],
+  styleProps: [],
+  layout(item, lc) {
+    const ctx = lc.ctxFor(item);
+    if (hidden(item, ctx, lc)) return { height: 0, units: [] };
+    const items = paintChart(item, ctx, lc, lc.base);
+    addInteractivity(items, item, ctx, lc, { x: item.x, y: 0, w: item.w, h: item.h });
+    return { height: item.h, units: [{ top: 0, height: item.h, items }] };
+  },
+});
+
+/* ---------------------------------------------------------------- sparkline / data bar / bullet */
+for (const [type, label, defaults] of [
+  ['sparkline', 'Sparkline', { value: '', style: 'line' }],
+  ['databar', 'Data bar', { value: '', max: '' }],
+  ['bullet', 'Bullet', { value: '', max: '', target: '' }],
+]) {
+  register(type, {
+    label,
+    defaults: () => ({ type, w: 120, h: 18, color: '#2563eb', ...defaults }),
+    props: [
+      { key: 'dataSet', label: 'Data set', type: 'dataset', category: 'Data' },
+      ...(type === 'sparkline' ? [{ key: 'category', label: 'One point per (e.g. =Fields.month)', type: 'expr', category: 'Data' }] : []),
+      { key: 'value', label: type === 'sparkline' ? 'Value (aggregate when a category is set)' : 'Value', type: 'expr', category: 'Data' },
+      ...(type === 'sparkline' ? [{ key: 'style', label: 'Style', type: 'select', options: ['line', 'column'], category: 'Data' }] : []),
+      ...(type !== 'sparkline' ? [{ key: 'max', label: 'Maximum', type: 'expr', category: 'Data' }] : []),
+      ...(type === 'bullet' ? [{ key: 'target', label: 'Target', type: 'expr', category: 'Data' }] : []),
+      { key: 'color', label: 'Color', type: 'color', category: 'Data' },
+      { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
+    ],
+    styleProps: [],
+    layout(item, lc) {
+      const ctx = lc.ctxFor(item);
+      if (hidden(item, ctx, lc)) return { height: 0, units: [] };
+      const items = paintVisual({ ...item, type }, { x: item.x, y: 0, w: item.w, h: item.h }, ctx, lc, lc.base, item.name);
+      return { height: item.h, units: [{ top: 0, height: item.h, items }] };
+    },
+  });
+}
+
+/* ---------------------------------------------------------------- barcode */
+register('barcode', {
+  label: 'Barcode',
+  defaults: () => ({ type: 'barcode', w: 160, h: 48, symbology: 'code128', value: '', showText: true, style: { fontSize: 8, textAlign: 'center' } }),
+  props: [
+    { key: 'symbology', label: 'Symbology', type: 'select', options: BARCODE_TYPES, category: 'Barcode' },
+    { key: 'value', label: 'Value', type: 'expr', category: 'Barcode' },
+    { key: 'dataSet', label: 'Data set', type: 'dataset', category: 'Barcode' },
+    { key: 'showText', label: 'Show text under the bars', type: 'bool', category: 'Barcode' },
+    { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
+  ],
+  layout(item, lc) {
+    const ctx = lc.ctxFor(item);
+    if (hidden(item, ctx, lc)) return { height: 0, units: [] };
+    const st = resolveStyle([lc.base, item.style], ctx);
+    const r = evalSafe(item.value ?? '', ctx, lc, item.name || 'Barcode');
+    const text = r.err ? '' : textOf(r.v, st, ctx);
+    const size = Number(st.fontSize) || 8;
+    const th = item.showText !== false ? size * 1.4 : 0;
+    const bc = paintBarcode({ type: item.symbology || 'code128', text, x: item.x, y: 0, w: item.w, h: item.h, color: st.color || '#000', showText: item.showText !== false, textHeight: th });
+    const items = [...bc.items];
+    if (bc.error) {
+      lc.warn(`${item.name}: ${bc.error}`);
+      const tl = layoutTextLines(`Barcode error: ${bc.error}`, { ...st, color: '#b91c1c' }, item.w, lc.m);
+      items.push(...paintBox({ x: item.x, y: 0, w: item.w, h: item.h, st: { ...st, color: '#b91c1c', border: '0.5 dashed #b91c1c' }, tl, m: lc.m }));
+    } else if (item.showText !== false && !bc.twoD && text) {
+      const tl = layoutTextLines(text, { ...st, padding: 0 }, item.w, lc.m, { wrap: false });
+      items.push(...paintBox({ x: item.x, y: item.h - th, w: item.w, h: th, st: { ...st, padding: 0, verticalAlign: 'bottom', textAlign: st.textAlign === 'auto' ? 'center' : st.textAlign }, tl, m: lc.m }));
+    }
+    return { height: item.h, units: [{ top: 0, height: item.h, items }] };
+  },
+});
+
+/* ---------------------------------------------------------------- matrix (pivot) */
+register('matrix', {
+  label: 'Matrix',
+  defaults: () => ({ type: 'matrix', w: 360, h: 54, dataSet: null, rowGroup: '', columnGroup: '', value: '=Count(Fields)', valueFormat: 'N0',
+    corner: '', rowHeaderWidth: 110, columnWidth: 64, rowTotals: true, columnTotals: true, columnSort: 'asc', rowSort: 'asc',
+    headerStyle: { fontWeight: 'bold', backgroundColor: '#f1f5f9', borderBottom: '1 solid #94a3b8' }, style: { padding: [3, 4, 3, 4] } }),
+  props: [
+    { key: 'dataSet', label: 'Data set', type: 'dataset', category: 'Data' },
+    { key: 'rowGroup', label: 'Rows: group by', type: 'expr', category: 'Data' },
+    { key: 'columnGroup', label: 'Columns: group by', type: 'expr', category: 'Data' },
+    { key: 'value', label: 'Value (aggregate)', type: 'expr', category: 'Data' },
+    { key: 'valueFormat', label: 'Value format', type: 'text', category: 'Data' },
+    { key: 'corner', label: 'Corner text', type: 'text', category: 'Data' },
+    { key: 'rowSort', label: 'Sort rows', type: 'select', options: ['asc', 'desc'], category: 'Data' },
+    { key: 'columnSort', label: 'Sort columns', type: 'select', options: ['asc', 'desc'], category: 'Data' },
+    { key: 'rowTotals', label: 'Total column at the right', type: 'bool', category: 'Layout' },
+    { key: 'columnTotals', label: 'Total row at the bottom', type: 'bool', category: 'Layout' },
+    { key: 'rowHeaderWidth', label: 'Row header width', type: 'number', category: 'Layout' },
+    { key: 'columnWidth', label: 'Column width', type: 'number', category: 'Layout' },
+    { key: 'repeatHeader', label: 'Repeat header on each page', type: 'bool', category: 'Layout' },
+    { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
+  ],
+  layout(item, lc) {
+    const ctx = lc.ctxFor(item);
+    if (hidden(item, ctx, lc)) return { height: 0, units: [] };
+    let rows = (item.dataSet && lc.dataSets[item.dataSet]) || [];
+    if (item.filters?.length) rows = applyFilters(rows, item.filters, ctx);
+    const who = item.name || 'Matrix';
+    const sortB = (bs, dir) => { if (dir === 'asc' || dir === 'desc') bs.sort((a, b) => cmpKey(a.key, b.key) * (dir === 'desc' ? -1 : 1)); return bs; };
+    const rowB = sortB(groupRows(rows, item.rowGroup || "=''", ctx, lc, who), item.rowSort);
+    const colB = sortB(groupRows(rows, item.columnGroup || "=''", ctx, lc, who), item.columnSort);
+    const agg = (rs) => { if (!rs.length) return null; const r = evalSafe(item.value || '=Count(Fields)', { ...ctx, fields: rs[0], aggRows: rs, aggIndex: undefined }, lc, who); return r.err ? null : r.v; };
+    // fit the page: shrink value columns if needed
+    const room = (lc.bodyWidth ?? 1e9) - item.x;
+    let cw = item.columnWidth || 64;
+    const nCols = colB.length + (item.rowTotals !== false ? 1 : 0);
+    const rhw = item.rowHeaderWidth || 110;
+    if (rhw + cw * nCols > room) {
+      const fit = (room - rhw) / nCols;
+      if (fit < 28) lc.warn(`${who}: ${colB.length} columns do not fit the page; showing the first ${Math.max(1, Math.floor((room - rhw) / 28) - 1)}`);
+      cw = Math.max(28, fit);
+    }
+    const maxCols = Math.max(1, Math.floor((room - rhw) / cw) - (item.rowTotals !== false ? 1 : 0));
+    const cols = colB.slice(0, maxCols);
+    const fmt = { format: item.valueFormat || null };
+    const vstyle = { ...fmt, textAlign: 'right' };
+    const label = (k) => textOf(k, {}, ctx);
+    const synthRows = rowB.map(rb => {
+      const o = { __label: label(rb.key) };
+      const set = new Set(rb.rows);
+      cols.forEach((cb, i) => { o[`c${i}`] = agg(cb.rows.filter(r => set.has(r))); });
+      o.__total = agg(rb.rows);
+      return o;
+    });
+    const table = {
+      type: 'table', name: who, x: item.x, y: item.y, w: 0, h: item.h, dataSet: '__matrix', repeatHeader: item.repeatHeader !== false, style: item.style,
+      columns: [{ width: rhw }, ...cols.map(() => ({ width: cw })), ...(item.rowTotals !== false ? [{ width: cw }] : [])],
+      header: [{ height: 18, style: item.headerStyle, cells: [{ value: item.corner || '' }, ...cols.map(cb => ({ value: label(cb.key), style: { textAlign: 'right' } })), ...(item.rowTotals !== false ? [{ value: 'Total', style: { textAlign: 'right' } }] : [])] }],
+      detail: [{ height: 16, style: item.cellStyle || { borderBottom: '0.5 solid #e5e7eb' }, cells: [{ value: '=Fields.__label' }, ...cols.map((_, i) => ({ value: `=Fields.c${i}`, style: vstyle })), ...(item.rowTotals !== false ? [{ value: '=Fields.__total', style: { ...vstyle, fontWeight: 'bold' } }] : [])] }],
+      footer: item.columnTotals !== false ? [{ height: 18, style: item.totalStyle || { fontWeight: 'bold', borderTop: '1 solid #94a3b8' }, cells: [{ value: 'Total' },
+        ...cols.map(cb => ({ value: agg(cb.rows), style: vstyle })), ...(item.rowTotals !== false ? [{ value: agg(rows), style: vstyle }] : [])] }] : [],
+      noRowsText: 'No data',
+    };
+    return ITEMS.table.layout(table, { ...lc, dataSets: { ...lc.dataSets, __matrix: synthRows } });
+  },
+});
+
+/* ---------------------------------------------------------------- subreport */
+register('subreport', {
+  label: 'Subreport',
+  defaults: () => ({ type: 'subreport', w: 360, h: 60, report: '', params: {} }),
+  props: [
+    { key: 'report', label: 'Report id', type: 'text', category: 'Data' },
+    { key: 'params', label: 'Parameters', type: 'params', category: 'Data' },
+    { key: 'keepTogether', label: 'Keep on one page', type: 'bool', category: 'Layout' },
+    { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
+  ],
+  layout(item, lc) {
+    const ctx = lc.ctxFor(item);
+    if (hidden(item, ctx, lc)) return { height: 0, units: [] };
+    const params = {};
+    for (const [k, v] of Object.entries(item.params || {})) {
+      const r = evalSafe(v, ctx, lc, `${item.name} parameter ${k}`);
+      params[k] = r.v instanceof Date ? r.v.toISOString().slice(0, 10) : r.v;
+    }
+    const key = `${item.report}|${JSON.stringify(params)}`;
+    const sub = lc.subreports;
+    const placeholder = (msg) => {
+      const st = resolveStyle([lc.base, { color: '#b91c1c', fontStyle: 'italic', border: '0.5 dashed #b91c1c', padding: 4 }], ctx);
+      const tl = layoutTextLines(msg, st, item.w, lc.m);
+      return { height: item.h, units: [{ top: 0, height: item.h, items: paintBox({ x: item.x, y: 0, w: item.w, h: item.h, st, tl, m: lc.m }) }] };
+    };
+    if (!item.report) return placeholder('Pick a report for this subreport');
+    if (!sub) return placeholder(`Subreport "${item.report}" needs a report loader`);
+    if (sub.mode === 'collect') { sub.requests.set(key, { report: item.report, params }); return { height: item.h, units: [{ top: 0, height: item.h, items: [] }] }; }
+    const res = sub.results.get(key);
+    if (!res) return placeholder(`Subreport "${item.report}" did not load`);
+    if (res.error) { lc.warn(`${item.name}: ${res.error}`); return placeholder(`Subreport "${item.report}": ${res.error}`); }
+    const block = item.keepTogether ? `s:${item.name}:${lc.nextId()}` : undefined;
+    const units = res.units.map(u => ({ ...u, items: shiftItems(u.items, item.x, 0), x0: (u.x0 ?? 0) + item.x, x1: (u.x1 ?? item.w) + item.x, block: u.block || block, tableId: undefined }));
+    const tables = res.tables.map(t => ({ ...t, x0: t.x0 + item.x, x1: t.x1 + item.x, headerItems: shiftItems(t.headerItems, item.x, 0), id: `sub${lc.nextId()}` }));
+    for (const r of res.regions || []) lc.regions?.push(r);
+    return { height: res.height, units: units.length ? units : [{ top: 0, height: 0, items: [] }], tables };
+  },
+});
 
 /* ------------------------------------------------------- style metadata */
 export const TEXT_STYLE_PROPS = [

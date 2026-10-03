@@ -84,14 +84,39 @@ export async function render(def, opts = {}) {
         return { ...baseCtx, globals, fields: rows[0] || null, aggRows: rows };
       },
       subreports: null,
+      bodyWidth: opts.bodyWidth ?? page.bodyWidth,
     };
     return lc;
   };
 
   /* ---------------- body: layout + push-down ---------------- */
   const lc = makeLc(baseCtx.globals, false);
-  lc.subreports = opts._subreports || null;
+
+  // Subreports: one pass collects what to load, then each child renders its body with its own data.
+  if (hasType(sec.body?.items, 'subreport')) {
+    if (!opts.loadReport) lc.subreports = null;
+    else {
+      const depth = opts.depth || 0;
+      if (depth > 3) throw new ReportError('Subreports are nested more than 3 levels deep');
+      const requests = new Map();
+      layoutItems(sec.body?.items || [], { ...lc, regions: [], warn: () => {}, subreports: { mode: 'collect', requests } });
+      const results = new Map();
+      const defs = new Map();
+      for (const [key, rq] of requests) {
+        try {
+          if ((opts.chain || []).includes(rq.report)) throw new Error('it includes itself');
+          if (!defs.has(rq.report)) defs.set(rq.report, await opts.loadReport(rq.report));
+          const child = defs.get(rq.report);
+          const r = await render(child, { ...opts, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, rq.report], bodyWidth: page.bodyWidth, state: {} });
+          results.set(key, r);
+          for (const w of r.warnings) warn(`Subreport ${rq.report}: ${w}`);
+        } catch (e) { results.set(key, { error: e.message }); }
+      }
+      lc.subreports = { mode: 'use', results };
+    }
+  }
   const body = layoutItems(sec.body?.items || [], lc);
+  if (opts.bodyOnly) return { units: body.units, tables: body.tables, height: body.height, regions, warnings };
   const units = body.units, tables = body.tables;
 
   const slices = paginate(units, tables, contentH, warn);
@@ -133,6 +158,10 @@ export async function render(def, opts = {}) {
     width: page.width, height: page.height, pages, warnings, bookmarks, regions, name: def.name || '',
     stats: { ms: Date.now() - t0, pages: pages.length, rows: Object.fromEntries(Object.entries(dataSets).map(([k, r]) => [k, r.length])) },
   };
+}
+
+function hasType(items, type) {
+  return (items || []).some(i => i.type === type || hasType(i.items, type));
 }
 
 /** Hyperlink, drill-through or bookmark jump for an item or a cell. */

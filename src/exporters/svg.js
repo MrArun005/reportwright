@@ -8,9 +8,9 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 const n = (v) => Math.round(v * 100) / 100;
 
 /** @param {any} page @param {number} w @param {number} h */
-export function pageToSvg(page, w, h) {
-  const out = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n(w)} ${n(h)}" width="${n(w)}" height="${n(h)}" style="font-kerning:none;font-variant-ligatures:none;text-rendering:geometricPrecision">`,
-    `<rect width="${n(w)}" height="${n(h)}" fill="#ffffff"/>`];
+export function pageToSvg(page, w, h, { background = true } = {}) {
+  const out = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n(w)} ${n(h)}" width="${n(w)}" height="${n(h)}" style="font-kerning:none;font-variant-ligatures:none;text-rendering:geometricPrecision">`];
+  if (background) out.push(`<rect width="${n(w)}" height="${n(h)}" fill="#ffffff"/>`);
   for (const it of page.items) {
     switch (it.t) {
       case 'rect': {
@@ -33,7 +33,7 @@ export function pageToSvg(page, w, h) {
         break;
       }
       case 'path': {
-        const stroke = it.stroke ? ` stroke="${cssColor(it.stroke)}" stroke-width="${n(it.strokeWidth || 1)}" stroke-linecap="round" stroke-linejoin="round"` : '';
+        const stroke = it.stroke ? ` stroke="${cssColor(it.stroke)}" stroke-width="${n(it.strokeWidth || 1)}" stroke-linecap="${it.lineCap || 'round'}" stroke-linejoin="round"` : '';
         out.push(`<path transform="translate(${n(it.x)} ${n(it.y)})" d="${esc(it.d)}" fill="${cssColor(it.fill)}"${stroke}/>`);
         break;
       }

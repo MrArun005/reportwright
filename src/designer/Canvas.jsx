@@ -1,11 +1,17 @@
 'use client';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useDesigner, SECTIONS, bodyWidth, addItem, moveItems, updateItem, findItem, tableSetColumnWidth, tableParts, rowsOf, round, NESTING } from './store.js';
 import { BASE_STYLE, parseBorder } from '@/engine/style.js';
 import { isDynamic } from '@/engine/expr/evaluate.js';
 import { resolveFontKey } from '@/engine/text/fonts.js';
 import { normBox } from '@/engine/units.js';
-import { fontFamilyCss } from '@/exporters/svg.js';
+import { fontFamilyCss, pageToSvg } from '@/exporters/svg.js';
+import { ITEMS } from '@/engine/items/index.js';
+import { TextMeasurer } from '@/engine/text/measure.js';
+import { layoutItems } from '@/engine/layout.js';
+import { shiftItems } from '@/engine/items/paint.js';
+import { resolveParameters } from '@/engine/index.js';
+import { fontStore } from '@/viewer/engineClient.js';
 
 export const PX = 96 / 72;
 export const MIME_TOOL = 'application/x-pw-tool';
@@ -117,7 +123,7 @@ function Band({ section, label, scale, bw, drag, setDrag }) {
     const p = toPt(e);
     const tool = e.dataTransfer.getData(MIME_TOOL);
     if (tool) {
-      if (tool === 'table' && section !== 'body') return alertOnce('Tables can only go in the body.');
+      if ((tool === 'table' || tool === 'matrix' || tool === 'subreport') && section !== 'body') return alertOnce('Tables, matrices and subreports can only go in the body.');
       addItem(tool, section, snapV(p.x), snapV(p.y));
       return;
     }
@@ -300,8 +306,54 @@ function NestBox({ item, scale }) {
   return <div className="box nest-box" style={c.box}><span className="nest-tag">{label}</span></div>;
 }
 
+const LIVE = new Set(['chart', 'matrix', 'barcode', 'sparkline', 'databar', 'bullet']);
+let measurer = null;
+
+/** Draw chart-like items with the real engine and the sample data, so the design looks like the output. */
+function LivePreview({ item, scale }) {
+  const sample = useDesigner(s => s.sample);
+  const def = useDesigner(s => s.def);
+  const [svg, setSvg] = useState(null);
+  const { x, y, ...shape } = item;
+  const key = JSON.stringify(shape);
+  useEffect(() => {
+    let alive = true;
+    const t = setTimeout(async () => {
+      try {
+        const store = fontStore();
+        await store.load();
+        measurer ||= new TextMeasurer(store);
+        const dataSets = sample?.dataSets || {};
+        let params = {};
+        try { params = resolveParameters(def, {}, { lenient: true }); } catch { /* defaults only */ }
+        const base = { fontFamily: 'Inter', fontSize: 9, color: '#1f2937', padding: 2, lineHeight: 1.25, textAlign: 'auto', verticalAlign: 'top', ...(def.styles?.base || {}) };
+        const ctxBase = { params, globals: { PageNumber: 1, TotalPages: 1, ExecutionTime: new Date(), ReportName: def.name }, dataSets, fields: null, locale: def.locale, currency: def.currency };
+        let seq = 0;
+        const lc = {
+          m: measurer, base, dataSets, warn: () => {}, fixed: true, maxUnitHeight: 1e6, state: {}, regions: [], nextId: () => ++seq,
+          layoutItems: (its, l, o) => layoutItems(its, l, o), linkFor: () => null, bodyWidth: shape.w, subreports: null,
+          ctxFor: (it) => { const ds = it.dataSet || def.dataSets?.[0]?.name; const rows = (ds && dataSets[ds]) || []; return { ...ctxBase, fields: rows[0] || null, aggRows: rows }; },
+        };
+        const res = ITEMS[shape.type].layout({ ...shape, x: 0, y: 0 }, lc);
+        const items = res.units.flatMap(u => shiftItems(u.items, 0, u.top));
+        const h = Math.max(shape.h, res.height || 0);
+        if (alive) setSvg({ html: pageToSvg({ items }, shape.w, h, { background: false }), h });
+      } catch (e) { if (alive) setSvg({ error: e.message }); }
+    }, 120);
+    return () => { alive = false; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, sample, def.styles, def.parameters]);
+  if (!svg) return <div className="box"><span className="hint">{ITEMS[item.type].label}</span></div>;
+  if (svg.error) return <div className="box"><span className="err">{svg.error}</span></div>;
+  return <div className="box live" style={{ overflow: 'visible' }}><div style={{ width: item.w * scale, height: svg.h * scale }} dangerouslySetInnerHTML={{ __html: svg.html }} /></div>;
+}
+
 function ItemBody({ item, scale }) {
   const base = useDesigner(s => s.def.styles?.base);
+  if (LIVE.has(item.type)) return <LivePreview item={item} scale={scale} />;
+  if (item.type === 'subreport') {
+    return <div className="box" style={{ background: '#f5f3ff', alignItems: 'center', justifyContent: 'center' }}><span className="hint" style={{ color: '#6d28d9' }}>Subreport · {item.report || 'pick a report'}</span></div>;
+  }
   if (item.type === 'textbox') {
     const dyn = isDynamic(item.value);
     const c = textCss([base, item.style], scale, false);
@@ -423,7 +475,7 @@ function TableView({ item, scale, drag, setDrag }) {
               onDragOver={(e) => { if (e.dataTransfer.types.includes(MIME_FIELD)) { e.preventDefault(); e.stopPropagation(); setDropCell(`${part}${ri}${col}`); } }}
               onDragLeave={() => setDropCell(null)}
               onDrop={cellDrop(part, ri, col)}>
-              <div className={`tx${isDynamic(cell?.value) ? ' dyn' : ''}`} style={c.text}>{shown(cell?.value)}</div>
+              <div className={`tx${isDynamic(cell?.value) || cell?.visual ? ' dyn' : ''}`} style={c.text}>{cell?.visual?.type ? `∿ ${cell.visual.type}` : shown(cell?.value)}</div>
               {isFirst && <div className="col-resize" onPointerDown={colDown(ci + span - 1)} title="Drag to change the column width" />}
             </div>,
           );
