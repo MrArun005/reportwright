@@ -19,6 +19,9 @@ import { sqlStore } from './sql.js';
  * @property {(id: string) => Promise<{ version: string, bytes: number }[]>} versions a report's saved versions, newest first
  * @property {(id: string, version: string) => Promise<string|null>} getVersion
  * @property {(id: string, version: string, text: string, keep: number) => Promise<void>} addVersion then drop all but the newest `keep`
+ * @property {(name: string, owner: string, ttlMs: number) => Promise<boolean>} lease take or renew a named lease; false when
+ *   another owner holds it and it has not expired (one job runner per batch, one scheduler for all servers)
+ * @property {(name: string, owner: string) => Promise<void>} release
  */
 
 /** @type {{ key: string, store: Store } | null} */

@@ -1,7 +1,7 @@
 // Schedules: run a batch on a cron expression. Stored by src/server/storage (data/schedules.json by default); checked every 30 s.
 import crypto from 'node:crypto';
 import { parseCron, nextRun } from './cron.js';
-import { createBatch } from './jobs.js';
+import { createBatch, ME } from './jobs.js';
 import { store } from './storage/index.js';
 
 const g = globalThis;
@@ -53,9 +53,9 @@ export async function runSchedule(s, reason = 'manual') {
 }
 
 /**
- * Due when a run time has passed since the last run (or the last edit). lastRunAt is on disk, so a
- * restart does not fire twice, and after downtime a missed run happens once, late.
- * ponytail: one process only; extra replicas set PW_SCHEDULER=off (a lock file or DB row if that changes).
+ * Due when a run time has passed since the last run (or the last edit). lastRunAt is in storage, so a
+ * restart does not fire twice, and after downtime a missed run happens once, late. With several servers,
+ * only the one holding the "scheduler" lease runs schedules (tickAs).
  */
 export function isDue(s, now = new Date()) {
   if (s.enabled === false) return false;
@@ -65,8 +65,13 @@ export function isDue(s, now = new Date()) {
   return !!at && at <= now;
 }
 
-async function tick() {
-  const now = new Date();
+// the tick runs every 30 s and a stopped leader is replaced within 90 s (both can be shorter for tests)
+const tickMs = () => Number(process.env.PW_SCHEDULER_TICK_MS) || 30000;
+const leaderMs = () => Number(process.env.PW_SCHEDULER_LEASE_MS) || 3 * tickMs();
+
+/** One scheduler tick as `owner`: nothing unless this server holds (or takes) the scheduler lease. */
+export async function tickAs(owner, now = new Date()) {
+  if (!(await store().lease('scheduler', owner, leaderMs()))) return;
   for (const s of await readSchedules()) {
     try { if (isDue(s, now)) await runSchedule(s, 'cron'); }
     catch (e) { console.error(`[pagewright] schedule ${s.id}: ${e.message}`); }
@@ -75,6 +80,6 @@ async function tick() {
 
 export function startScheduler() {
   if (g.__pwSched.timer || process.env.PW_SCHEDULER === 'off') return;
-  g.__pwSched.timer = setInterval(() => { tick().catch(() => {}); }, 30000);
+  g.__pwSched.timer = setInterval(() => { tickAs(ME).catch(() => {}); }, tickMs());
   g.__pwSched.timer.unref?.();
 }

@@ -1,9 +1,12 @@
 // Batch jobs: render one template for many parameter sets, then deliver.
-// In-process queue with a small worker pool. Job records go to src/server/storage (data/jobs/<id>/job.json
-// by default); output files (zip, merged PDF, folders) always go to data/, so several servers need a shared volume.
+// The queue is the job records in storage (src/server/storage): any server can run a queued job. A server takes a job
+// with a lease (renewed while it works); if it dies, the lease runs out and another server goes on from the last
+// finished item, because every rendered item is written to data/jobs/<id>/items/ as it is made. Output files
+// (items, zip, merged PDF, folders) go to data/, so several servers need a shared volume for data/.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import os from 'node:os';
 import { zipSync } from 'fflate';
 import { PDFDocument } from 'pdf-lib';
 import { loadTemplate, renderTo, baseUrl as defaultBase } from './renderer.js';
@@ -17,15 +20,20 @@ const JOBS = path.join(DATA, 'jobs');
 const MAX_ITEMS = 10000;
 const CONCURRENCY = Math.max(1, Number(process.env.PW_BATCH_CONCURRENCY) || 2);
 
+/** This server, as a lease owner. */
+export const ME = `${os.hostname()}:${process.pid}:${crypto.randomBytes(3).toString('hex')}`;
+const leaseMs = () => Number(process.env.PW_JOB_LEASE_MS) || 60000;
+
 const g = globalThis;
-g.__pwJobs ||= { jobs: new Map(), queue: [], running: 0 };
-const S = g.__pwJobs;
+g.__pwQueue ||= { started: false, busy: false, timer: null };
+const Q = g.__pwQueue;
 
 const rid = () => `b_${Date.now().toString(36)}${crypto.randomBytes(3).toString('hex')}`;
-const save = (job) => store().put('jobs', job.id, JSON.stringify(publicJob(job), null, 2));
+// the record holds the job's inputs (_work: items and template) until it finishes, so any server can run it
+const save = (job) => store().put('jobs', job.id, JSON.stringify(job, null, 2));
 
 export function publicJob(job) {
-  const { items, _def, ...rest } = job;
+  const { items, _def, _work, ...rest } = job;
   return { ...rest, total: job.total, done: job.done, failed: job.failed };
 }
 
@@ -59,20 +67,16 @@ export async function createBatch(spec, req) {
   const job = {
     id: rid(), status: 'queued', createdAt: new Date().toISOString(), template: typeof spec.template === 'string' ? spec.template : def.name,
     format, output: spec.output || { type: 'zip' }, webhook: spec.webhook || null, fileName: spec.fileName || null, schedule: spec.schedule || null, pdfa: !!spec.pdfa, sign: !!spec.sign,
-    total: items.length, done: 0, failed: 0, results: [], errors: [], base, self, items, _def: def,
+    total: items.length, done: 0, failed: 0, results: [], errors: [], failedItems: [], base, self, _work: { items, def },
   };
-  S.jobs.set(job.id, job);
   await save(job);
-  S.queue.push(job.id);
-  pump();
+  poke();
   return publicJob(job);
 }
 
 export async function getJob(id) {
   if (!/^b_[a-z0-9]+$/.test(id)) return null;
-  const j = S.jobs.get(id);
-  if (j) return publicJob(j);
-  try { const t = await store().get('jobs', id); return t ? JSON.parse(t) : null; } catch { return null; }
+  try { const t = await store().get('jobs', id); return t ? publicJob(JSON.parse(t)) : null; } catch { return null; }
 }
 
 export async function listJobs() {
@@ -89,14 +93,48 @@ export async function jobFile(id) {
   return { path: path.join(JOBS, id, j.download.file), name: j.download.name, type: j.download.type };
 }
 
-function pump() {
-  while (S.running < 1 && S.queue.length) {
-    const id = S.queue.shift();
-    const job = S.jobs.get(id);
-    if (!job) continue;
-    S.running++;
-    run(job).catch(e => { job.status = 'failed'; job.errors.push(e.message); }).finally(async () => { S.running--; await save(job); pump(); });
+/**
+ * Take one unfinished job this server may run (queued, or running with a lease that ran out) and run it.
+ * @param {string} owner lease owner (this server: ME)
+ * @param {{ stopAfter?: number }} [opt] stopAfter: stop after that many items, holding the lease (tests: a server that dies)
+ * @returns {Promise<{ id: string, stopped: boolean } | null>} null when there was nothing to run
+ */
+export async function workOnce(owner, { stopAfter } = {}) {
+  // ponytail: reads every job record per poll; an index of open jobs when there are many thousands of them
+  const open = [];
+  for (const r of await store().list('jobs')) {
+    try { const j = JSON.parse(r.text); if ((j.status === 'queued' || j.status === 'running') && j._work) open.push(j); } catch { /* skip */ }
   }
+  open.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  for (const cand of open) {
+    const name = `job:${cand.id}`;
+    if (!(await store().lease(name, owner, leaseMs()))) continue;
+    const text = await store().get('jobs', cand.id); // read again: it may have finished meanwhile
+    const job = text ? JSON.parse(text) : null;
+    if (!job?._work || (job.status !== 'queued' && job.status !== 'running')) { await store().release(name, owner); continue; }
+    let stopped = false;
+    const beat = setInterval(() => { store().lease(name, owner, leaseMs()).catch(() => {}); }, Math.max(50, leaseMs() / 3));
+    try { stopped = await run(job, owner, stopAfter); }
+    catch (e) { job.status = 'failed'; job.errors.push(e.message); delete job._work; await save(job); }
+    finally { clearInterval(beat); }
+    if (!stopped) await store().release(name, owner);
+    return { id: job.id, stopped };
+  }
+  return null;
+}
+
+/** Run queued jobs on this server: now (poke) and every PW_QUEUE_POLL_MS (2 s), for jobs other servers left. */
+function poke() {
+  if (!Q.started || Q.busy) return;
+  Q.busy = true;
+  (async () => { try { while (await workOnce(ME)); } catch (e) { console.error(`[pagewright] batch queue: ${e.message}`); } finally { Q.busy = false; } })();
+}
+export function startWorker() {
+  if (Q.started) return;
+  Q.started = true;
+  Q.timer = setInterval(poke, Number(process.env.PW_QUEUE_POLL_MS) || 2000);
+  Q.timer.unref?.();
+  poke();
 }
 
 // letters, digits and . _ @ - only, and never a leading dot, so ".." or ".x" cannot name a path outside data/outputs
@@ -111,63 +149,77 @@ function itemName(job, item, i) {
   return safeName(p || `item-${i + 1}`);
 }
 
-async function run(job) {
+async function run(job, owner, stopAfter) {
+  const { items, def } = job._work;
   job.status = 'running';
-  job.startedAt = new Date().toISOString();
+  job.startedAt ||= new Date().toISOString();
+  job.failedItems ||= [];
   await save(job);
   const dir = path.join(JOBS, job.id);
-  await fs.mkdir(dir, { recursive: true }); // output files stay on disk whatever PW_STORAGE says
-  const outputs = [];
-  let next = 0;
+  const itemDir = path.join(dir, 'items');
+  await fs.mkdir(itemDir, { recursive: true }); // output files stay on disk whatever PW_STORAGE says
+  // go on where the last server stopped: items with a result (or a failure) are done
+  const finished = new Set([...job.results.map(r => r.index), ...job.failedItems]);
+  const todo = items.map((_, i) => i).filter(i => !finished.has(i));
+  let taken = 0;
+  let saving = Promise.resolve();
+  const saveSoon = () => { saving = saving.then(() => save(job)); return saving; }; // one write at a time
   const worker = async () => {
-    while (next < job.items.length) {
-      const i = next++;
-      const item = job.items[i];
+    while (todo.length) {
+      if (stopAfter != null && taken >= stopAfter) return;
+      taken++;
+      const i = /** @type {number} */ (todo.shift());
+      const item = items[i];
       const name = `${itemName(job, item, i)}.${job.format === 'json' ? 'json' : job.format}`;
       try {
-        const r = await renderTo(job._def, { parameters: item.parameters, data: item.data, format: job.format, baseUrl: job.base, self: job.self, pdfa: job.pdfa, sign: job.sign });
-        outputs[i] = { name, bytes: r.bytes, pages: r.model.pages.length };
+        const r = await renderTo(def, { parameters: item.parameters, data: item.data, format: job.format, baseUrl: job.base, self: job.self, pdfa: job.pdfa, sign: job.sign });
         if (item.putUrl) {
           const res = await serverFetch(job.self)(item.putUrl, { method: 'PUT', body: r.bytes, headers: { 'content-type': r.contentType } });
           if (!res.ok) throw new Error(`upload: HTTP ${res.status}`);
         }
-        job.results.push({ index: i, name, pages: r.model.pages.length, bytes: r.bytes.length });
+        await fs.writeFile(path.join(itemDir, `${i}`), r.bytes);
+        job.results.push({ index: i, name, pages: r.model.pages.length, bytes: r.bytes.length, by: owner });
         job.done++;
       } catch (e) {
         job.failed++;
+        job.failedItems.push(i);
         job.errors.push(`${name}: ${e.message}`);
       }
-      if ((job.done + job.failed) % 25 === 0) await save(job);
+      await saveSoon(); // after every item: another server must see exactly what is done
     }
   };
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, job.items.length) }, worker));
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, items.length) }, worker));
+  await saving;
+  if (todo.length) return true; // stopped early (tests): the lease is kept, the job stays running
 
-  const ok = outputs.filter(Boolean);
+  const ok = [...job.results].sort((a, b) => a.index - b.index);
+  const bytesOf = (r) => fs.readFile(path.join(itemDir, String(r.index)));
   const out = job.output || { type: 'zip' };
   if (ok.length) {
     if (out.type === 'merged' && job.format === 'pdf') {
       const merged = await PDFDocument.create();
-      for (const o of ok) { const d = await PDFDocument.load(o.bytes); (await merged.copyPages(d, d.getPageIndices())).forEach(p => merged.addPage(p)); }
+      for (const r of ok) { const d = await PDFDocument.load(await bytesOf(r)); (await merged.copyPages(d, d.getPageIndices())).forEach(p => merged.addPage(p)); }
       await fs.writeFile(path.join(dir, 'merged.pdf'), await merged.save());
       job.download = { file: 'merged.pdf', name: `${safeName(job.template)}.pdf`, type: 'application/pdf' };
     } else if (out.type === 'folder') {
       const target = path.join(DATA, 'outputs', safeName(out.folder || job.template));
       await fs.mkdir(target, { recursive: true });
-      for (const o of ok) await fs.writeFile(path.join(target, o.name), o.bytes);
+      for (const r of ok) await fs.writeFile(path.join(target, r.name), await bytesOf(r));
       job.folder = path.relative(process.cwd(), target);
     } else if (out.type !== 'none') {
       const files = {};
-      for (const o of ok) files[o.name] = new Uint8Array(o.bytes);
+      for (const r of ok) files[r.name] = new Uint8Array(await bytesOf(r));
       await fs.writeFile(path.join(dir, 'output.zip'), zipSync(files, { level: 6 }));
       job.download = { file: 'output.zip', name: `${safeName(job.template)}.zip`, type: 'application/zip' };
     }
   }
+  await fs.rm(itemDir, { recursive: true, force: true });
   job.status = job.failed && !job.done ? 'failed' : job.failed ? 'completed_with_errors' : 'completed';
   job.finishedAt = new Date().toISOString();
-  job.items = [];
-  delete job._def;
+  delete job._work;
   await save(job);
   if (job.webhook) await notify(job);
+  return false;
 }
 
 /** POST the job summary to the webhook, signed with HMAC-SHA256 of the body (PW_WEBHOOK_SECRET). */
