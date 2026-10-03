@@ -74,6 +74,7 @@ export function shiftItems(items, dx, dy) {
       case 'text': return { ...it, lines: it.lines.map(l => ({ ...l, x: l.x + dx, y: l.y + dy })), clip: it.clip && { ...it.clip, x: it.clip.x + dx, y: it.clip.y + dy } };
       case 'line': return { ...it, x1: it.x1 + dx, y1: it.y1 + dy, x2: it.x2 + dx, y2: it.y2 + dy };
       case 'ellipse': return { ...it, cx: it.cx + dx, cy: it.cy + dy };
+      case 'field': return { ...it, x: it.x + dx, y: it.y + dy, draw: shiftItems(it.draw, dx, dy) };
       default: return { ...it, x: it.x + dx, y: it.y + dy };
     }
   });

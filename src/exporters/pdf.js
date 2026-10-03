@@ -30,12 +30,15 @@ export async function exportPdf(model, fontStore, opt = {}) {
     if (!s) { s = new Set([32]); used.set(it.font, s); }
     for (const l of it.lines) for (const ch of l.text) s.add(/** @type {number} */ (ch.codePointAt(0)));
   }
+  // A filled-in form field can hold any character: fonts that fields use embed in full.
+  const fieldFonts = new Set();
+  for (const pg of model.pages) for (const it of pg.items) if (it.t === 'field') fieldFonts.add(it.font);
   const fonts = new Map();
   const font = async (key) => {
     if (!fonts.has(key)) {
       let bytes = fontStore.bytes.get(key);
       if (!bytes) throw new Error(`Font "${key}" is not loaded`);
-      if (opt.subset) {
+      if (opt.subset && !fieldFonts.has(key)) {
         const cps = used.get(key) || new Set([32]);
         try {
           const sub = await opt.subset(bytes, cps);
@@ -66,6 +69,8 @@ export async function exportPdf(model, fontStore, opt = {}) {
 
   const H = model.height;
   const links = [];
+  const taken = new Set();
+  const uniqueName = (n) => { let name = n, i = 1; while (taken.has(name)) name = `${n}_${++i}`; taken.add(name); return name; };
   for (const pg of model.pages) {
     const p = doc.addPage([model.width, model.height]);
     for (const it of pg.items) {
@@ -116,6 +121,35 @@ export async function exportPdf(model, fontStore, opt = {}) {
           p.drawSvgPath(it.d, { x: it.x, y: H - it.y, color: fill?.color, opacity: fill?.opacity, borderColor: stroke?.color, borderWidth: stroke ? it.strokeWidth || 1 : 0, borderOpacity: stroke?.opacity, borderLineCap: it.lineCap === 'butt' ? 0 : 1 });
           break;
         }
+        case 'field': {
+          const form = doc.getForm();
+          const f = await font(it.font);
+          const name = uniqueName(it.name);
+          const box = { x: it.x, y: H - it.y - it.h, width: it.w, height: it.h, borderColor: rgb(0.61, 0.64, 0.69), borderWidth: 0.75, backgroundColor: rgb(1, 1, 1) };
+          let field;
+          if (it.kind === 'checkbox') {
+            field = form.createCheckBox(name);
+            field.addToPage(p, box);
+            if (it.value) field.check();
+          } else {
+            if (it.kind === 'choice') {
+              field = form.createDropdown(name);
+              field.addOptions(it.options);
+              field.addToPage(p, { ...box, font: f });
+              if (it.options.includes(String(it.value))) field.select(String(it.value));
+            } else {
+              field = form.createTextField(name);
+              if (it.kind === 'multiline') field.enableMultiline();
+              field.addToPage(p, { ...box, font: f });
+              field.setText(String(it.value ?? ''));
+            }
+            field.setFontSize(it.size);
+            field.updateAppearances(f); // in the report font; the default would be Helvetica
+          }
+          if (it.required) field.enableRequired();
+          if (it.readOnly) field.enableReadOnly();
+          break;
+        }
         case 'link': {
           if (it.action?.type === 'url') links.push({ page: p, rect: [it.x, H - it.y - it.h, it.x + it.w, H - it.y], href: it.action.href });
           break;
@@ -142,7 +176,8 @@ export async function exportPdf(model, fontStore, opt = {}) {
     if (annots) annots.push(ref); else l.page.node.set(PDFName.of('Annots'), doc.context.obj([ref]));
   }
   if (model.bookmarks?.length) addOutline(doc, model.bookmarks, H);
-  return doc.save();
+  // appearances are already drawn in the report font; regenerating would switch them to Helvetica
+  return doc.save({ updateFieldAppearances: false });
 }
 
 /** PDF outline (the bookmarks panel) from the page model bookmarks. Flat list, levels as indentation. */

@@ -10,7 +10,7 @@ import { pageToSvg, fontFamilyCss } from './svg.js';
  */
 export async function exportHtml(model, fontStore, opt = {}) {
   const used = new Map();
-  for (const pg of model.pages) for (const it of pg.items) if (it.t === 'text') {
+  for (const pg of model.pages) for (const it of pg.items.flatMap(i => (i.t === 'field' ? i.draw : [i]))) if (it.t === 'text') {
     let s = used.get(it.font);
     if (!s) { s = new Set([32]); used.set(it.font, s); }
     for (const l of it.lines) for (const ch of l.text) s.add(/** @type {number} */ (ch.codePointAt(0)));

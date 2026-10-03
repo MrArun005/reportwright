@@ -487,6 +487,7 @@ function shiftLocal(items, dy) {
     if (it.t === 'text') return { ...it, lines: it.lines.map(l => ({ ...l, y: l.y + dy })), clip: it.clip && { ...it.clip, y: it.clip.y + dy } };
     if (it.t === 'line') return { ...it, y1: it.y1 + dy, y2: it.y2 + dy };
     if (it.t === 'ellipse') return { ...it, cy: it.cy + dy };
+    if (it.t === 'field') return { ...it, y: it.y + dy, draw: shiftLocal(it.draw, dy) };
     return { ...it, y: it.y + dy };
   });
 }
@@ -522,6 +523,55 @@ register('chart', {
     const items = paintChart(item, ctx, lc, lc.base);
     addInteractivity(items, item, ctx, lc, { x: item.x, y: 0, w: item.w, h: item.h });
     return { height: item.h, units: [{ top: 0, height: item.h, items }] };
+  },
+});
+
+/* ---------------------------------------------------------------- form field */
+const FIELD_KINDS = ['text', 'multiline', 'checkbox', 'choice'];
+// A fillable field. The PDF gets a real form widget; the viewer and HTML draw `draw` instead.
+register('field', {
+  label: 'Form field',
+  defaults: () => ({ type: 'field', w: 180, h: 18, kind: 'text', fieldName: 'field1', value: '', style: {} }),
+  props: [
+    { key: 'kind', label: 'Kind', type: 'select', options: FIELD_KINDS, category: 'Field' },
+    { key: 'fieldName', label: 'Field name (unique; {Fields.x} allowed)', type: 'expr', category: 'Field' },
+    { key: 'value', label: 'Starting value', type: 'expr', category: 'Field' },
+    { key: 'options', label: 'Choices (comma-separated or =expression)', type: 'expr', category: 'Field' },
+    { key: 'required', label: 'Required', type: 'bool', category: 'Field' },
+    { key: 'readOnly', label: 'Read only', type: 'bool', category: 'Field' },
+    { key: 'dataSet', label: 'Data set', type: 'dataset', category: 'Data' },
+    { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
+  ],
+  layout(item, lc) {
+    const ctx = lc.ctxFor(item);
+    if (hidden(item, ctx, lc)) return { height: 0, units: [] };
+    const who = item.name || 'Field';
+    const st = resolveStyle([lc.base, { border: '0.75 solid #9ca3af', padding: '2 3', backgroundColor: '#ffffff' }, lc.named?.[item.styleName], item.style], ctx);
+    const kind = FIELD_KINDS.includes(item.kind) ? item.kind : 'text';
+    // "." means a field hierarchy in PDF forms; spaces trip some readers
+    const name = String(evalSafe(item.fieldName || item.name || 'field', ctx, lc, who).v || 'field').replace(/[.\s]+/g, '_');
+    const raw = evalSafe(item.value ?? '', ctx, lc, who).v;
+    let options = [];
+    if (kind === 'choice') {
+      const o = evalSafe(item.options ?? '', ctx, lc, who).v;
+      options = (Array.isArray(o) ? o : String(o ?? '').split(',')).map(s => String(s).trim()).filter(Boolean);
+    }
+    const value = kind === 'checkbox' ? truthy(raw) : raw == null ? '' : textOf(raw, st, ctx);
+    const draw = [];
+    if (kind === 'checkbox') {
+      const size = Math.min(item.w, item.h);
+      draw.push({ t: 'rect', x: item.x, y: 0, w: size, h: size, fill: st.backgroundColor, stroke: '#9ca3af', strokeWidth: 0.75 });
+      if (value) draw.push({ t: 'path', x: item.x, y: 0, d: `M ${size * 0.2} ${size * 0.52} L ${size * 0.42} ${size * 0.74} L ${size * 0.8} ${size * 0.26}`, stroke: st.color || '#1f2328', strokeWidth: Math.max(1, size * 0.12), fill: null });
+    } else {
+      const tl = layoutTextLines(String(value), st, item.w - (kind === 'choice' ? 12 : 0), lc.m, { wrap: kind === 'multiline' });
+      draw.push(...paintBox({ x: item.x, y: 0, w: item.w, h: item.h, st, tl, m: lc.m }));
+      if (kind === 'choice') draw.push({ t: 'path', x: item.x + item.w - 10, y: item.h / 2 - 2, d: 'M 0 0 L 3 3 L 6 0', stroke: '#6b7280', strokeWidth: 1, fill: null });
+    }
+    const field = {
+      t: 'field', kind, name, value, options, required: !!item.required, readOnly: !!item.readOnly,
+      x: item.x, y: 0, w: item.w, h: item.h, font: resolveFontKey(st.fontFamily, st.fontWeight, st.fontStyle), size: Number(st.fontSize) || 9, draw,
+    };
+    return { height: item.h, units: [{ top: 0, height: item.h, items: [field] }] };
   },
 });
 

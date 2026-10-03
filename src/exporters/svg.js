@@ -11,7 +11,8 @@ const n = (v) => Math.round(v * 100) / 100;
 export function pageToSvg(page, w, h, { background = true } = {}) {
   const out = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n(w)} ${n(h)}" width="${n(w)}" height="${n(h)}" style="font-kerning:none;font-variant-ligatures:none;text-rendering:geometricPrecision">`];
   if (background) out.push(`<rect width="${n(w)}" height="${n(h)}" fill="#ffffff"/>`);
-  for (const it of page.items) {
+  // a form field is drawn from its `draw` items (the PDF makes a real widget instead)
+  for (const it of page.items.flatMap(i => (i.t === 'field' ? i.draw : [i]))) {
     switch (it.t) {
       case 'rect': {
         const r = it.radius ? ` rx="${n(it.radius)}"` : '';
