@@ -51,6 +51,12 @@ Engine, expressions, data sources, text box / image / line / shape / table, pagi
 | Performance | Style cache and windowed paginator: 50k rows in 1.6 s |
 | Automation API | Render API with pushed data; batches (zip / merged PDF / folder / PUT upload); data list from a URL; signed webhooks; cron schedules with time zones; API keys. See [`API.md`](API.md) |
 
+## Roadmap increments
+
+| Week | Increment | State |
+|---|---|---|
+| 9 | CLI `pw render / test / diff` + GitHub Action | Done. Proof: `reports/__tests__/loan-statement.test.json`; changing one instalment fails `pw test` and shows the moved total on page 8. The Action and CI workflow are checked for syntax only (not run on GitHub yet). |
+
 ## Honest gaps
 
 1. **Accounts and roles, but no SSO and no per-report permissions.** With `PW_AUTH=users` people sign in with their own email and password and get a role: viewer, designer or admin (`src/server/access.js` has the table; `proxy.js` enforces it, `/api/users` and ad-hoc SQL check again in the route). Passwords are scrypt hashes; sessions are HMAC-signed cookies that are checked against the user on every request; sign-ins are rate-limited; writes need a same-site `Origin`. Still missing: SSO (SAML, OIDC; put the app behind your SSO proxy if you need it), permissions per report or folder (every viewer sees every report, including its data source settings), password reset by email, two-factor sign-in, an audit log. The sign-in limit is counted in memory per process, so several servers each allow their own 10/50. Accounts are off by default: then the app has only the optional shared `PW_BASIC_AUTH` password, as before. `/api/v1` keeps its API keys either way. Server-side fetches refuse private addresses unless listed in `PW_INTERNAL_HOSTS`.

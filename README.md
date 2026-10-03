@@ -121,6 +121,19 @@ data/            run-time state: jobs, schedules, folder outputs (not in git)
 tests/           unit, golden and end-to-end tests
 ```
 
+## Command line: render, test and diff
+
+`bin/pw.mjs` (`npm run pw -- …`, or `pw` once the package is installed) uses the same engine with no server:
+
+```bash
+pw render reports/loan-statement.pw.json -p accountId=LN-2026-004417 -d loans=data.json -f pdf -o statement.pdf [--pdfa]
+pw test reports            # render every reports/__tests__/<id>.test.json case; compare with <id>.<case>.snap.txt
+pw test reports --update   # accept the new pages
+pw diff old.pw.json new.pw.json -d loans=data.json   # what changed on the pages
+```
+
+A test case names the report, its parameters, pushed data (`-d`-style JSON files) and a fixed `now`. Snapshots are plain text, one line per text run and a marker per page, so a pull request shows exactly which totals moved. `pw test` exits 1 when a page changes; the GitHub Action in `action.yml` runs it in CI (`.github/workflows/ci.yml` does so for this repo).
+
 ## Draft a report with AI
 
 `POST /api/ai/report` with `{ "prompt": "Monthly sales by region with a chart", "sample": [ …rows… ], "url"?: "https://…", "base"?: "<report id to change>" }` returns `{ definition, warnings, tries }`. Nothing is saved: review the draft, then `POST /api/reports` with `{ name, definition }`.

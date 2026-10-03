@@ -1,0 +1,11 @@
+{
+  "report": "../loan-statement.pw.json",
+  "cases": [
+    {
+      "name": "home-loan",
+      "parameters": { "accountId": "LN-2026-004417" },
+      "data": { "loans": "loan-statement.data.json" },
+      "now": "2026-10-03T10:30:00"
+    }
+  ]
+}

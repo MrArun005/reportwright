@@ -1,0 +1,19 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      TZ: Asia/Kolkata
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx vitest run
+      - run: node scripts/check-engine-boundary.mjs
+      - name: Report snapshots (fails when a page or a total changes)
+        run: node bin/pw.mjs test reports
+      - run: npm run build
