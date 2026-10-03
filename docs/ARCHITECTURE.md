@@ -37,7 +37,7 @@ This decision has three consequences:
 
 1. **The engine measures text with fontkit, not the DOM.** It uses the same font files that the PDF embeds. The widths are the same everywhere, so the line breaks and page breaks are also the same everywhere.
 2. **Renderers never wrap text.** The engine breaks text into lines. A renderer only draws the lines it gets. This rule is not optional.
-3. **The engine runs in a Web Worker and in Node.** The browser stays responsive. A Next.js route can also render PDFs on the server, for batch jobs. ActiveReportsJS cannot do this, because it runs on the client only.
+3. **The engine runs in a Web Worker and in Node.** The browser stays responsive. A Next.js route can also render PDFs on the server, for batch jobs. ActiveReportsJS runs in the browser; on a server it needs a headless browser (its own documentation says so).
 
 ---
 
@@ -392,28 +392,35 @@ Effort is in **focused dev-days**. Each phase ends with an exit test. Phase N+1 
 
 ## 15. Feature parity map
 
-| ActiveReportsJS feature | Pagewright | Phase |
+Updated 4 Oct 2026 after Phases B and C (`docs/PLAN-PHASE-BC.md`).
+
+| ActiveReportsJS feature | Pagewright | Where |
 |---|---|---|
-| Standalone desktop designer | Web designer only (no desktop app) | 1 |
-| Embeddable designer component | Yes | 4 |
-| Report viewer | Yes | 1 |
-| Continuous-page (RDL) reports | Yes | 1 |
-| Fixed-page reports | Yes | 4 |
-| Table / Tablix / List / Banded list | Table 1, List 2, Tablix 3, banded via List + Container 2 | 1–3 |
-| Chart, Sparkline, Bullet | Yes | 3 |
-| Barcode | Code 128, EAN-13, QR | 3 |
-| Subreport | Yes | 3 |
-| Input field (fillable PDF) | **Not planned** | — |
-| Parameters (multi-value, cascading) | Yes | 2 / 3 |
-| Drill-down, drill-through, interactive sort | Yes | 3 |
-| REST, JSON | Yes | 1 |
-| CSV, GraphQL, OData | Yes | 2 / 3 |
-| Databases | Server route only | 4 |
-| PDF export | Yes | 1 |
-| HTML, Excel, CSV export | Yes | 3 |
-| Server-side rendering | **Yes — ActiveReportsJS has no equivalent** | 3 |
-| AI assistant | **Not planned** | — |
-| Themes, i18n | Yes | 4 |
+| Standalone desktop designer | Web designer only (no desktop app) | — |
+| Embeddable designer component | Yes | Phase 4 |
+| Report viewer | Yes; draws only the pages near the one in view | Phase 1, C5 |
+| Continuous-page (RDL) reports | Yes | Phase 1 |
+| Fixed-page reports | Yes | Phase 4 |
+| Pageless and dashboard reports | Yes: `Pageless` page size, dashboard template | B3 |
+| Table / Tablix / List / Banded list | Table, List, Tablix (matrix), banded via List + Container | Phases 1–3 |
+| Chart, Sparkline, Bullet | Yes | Phase 3 |
+| Map | Yes: choropleth from your GeoJSON, sized points | B4 |
+| Barcode | Code 128, EAN-13, QR and others | Phase 3 |
+| Subreport | Yes (at most 2,000 per render) | Phase 3 |
+| Input field (fillable PDF) | Yes: text, multi-line, check box, choice | B2 |
+| Parameters (multi-value, cascading) | Yes | Phases 2–3 |
+| Drill-down, drill-through, interactive sort | Yes | Phase 3 |
+| REST, JSON, CSV, GraphQL | Yes | Phases 1–3 |
+| OData | As a REST source | — |
+| Databases | Yes, on the server: SQLite, Postgres, MySQL; read-only, bound parameters, saved queries only from the browser | C1 |
+| PDF, HTML, Excel, CSV export | Yes | Phases 1–3 |
+| PDF/A, digital signatures | Yes: PDF/A-2b (veraPDF passes), detached PKCS#7 signatures | C4 |
+| Import ActiveReports `.rdlx-json` | See STATUS | B1 |
+| Server-side rendering | **Yes. ActiveReportsJS needs a headless browser for this.** | Phase 3 |
+| Automation API (batches, schedules, webhooks) | **Yes. ActiveReportsJS has none.** | Phase 4 |
+| User accounts and roles | Yes: viewer, designer, admin (`PW_AUTH=users`) | C2 |
+| AI assistant | Yes: draft a report from a description (Claude) | C3 |
+| Themes, i18n | Yes | Phase 4 |
 
 ---
 
