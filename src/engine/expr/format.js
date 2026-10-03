@@ -13,6 +13,32 @@ function nf(locale, opts) {
   return f;
 }
 
+/**
+ * Read a value as a Date. A date-only string ("2026-03-01") is local midnight, the same as
+ * DateSerial and the date formatter; new Date() would read it as UTC midnight and shift the day.
+ */
+export function toDate(v) {
+  if (v == null || v === '') return null;
+  if (v instanceof Date) return v;
+  const m = typeof v === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(v.trim()) : null;
+  const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Local calendar date as "yyyy-MM-dd" (toISOString would give the UTC day). */
+export const isoDate = (d) => formatDate(d, 'yyyy-MM-dd');
+
+/**
+ * Round half away from zero on the decimal value, like Intl and Excel: 1.005 → 1.01.
+ * Shifting by exponent strings avoids the binary error in 1.005 * 100 = 100.49999…
+ * @param {number} v @param {number} [digits] may be negative (1234 → 1200 with -2)
+ */
+export function roundHalfAway(v, digits = 0) {
+  if (!Number.isFinite(v)) return v;
+  const shift = (x, e) => { const [m, k = '0'] = String(x).split('e'); return Number(`${m}e${Number(k) + e}`); };
+  return Math.sign(v) * shift(Math.round(shift(Math.abs(v), digits)), -digits) + 0; // + 0 turns -0 into 0
+}
+
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -37,7 +63,7 @@ export function formatValue(value, fmt, opt = {}) {
       switch (k) {
         case 'C': return nf(locale, { style: 'currency', currency, minimumFractionDigits: d ?? 2, maximumFractionDigits: d ?? 2 }).format(value);
         case 'N': return nf(locale, { minimumFractionDigits: d ?? 2, maximumFractionDigits: d ?? 2 }).format(value);
-        case 'F': return value.toFixed(d ?? 2);
+        case 'F': return roundHalfAway(value, d ?? 2).toFixed(d ?? 2);
         case 'P': return nf(locale, { style: 'percent', minimumFractionDigits: d ?? 2, maximumFractionDigits: d ?? 2 }).format(value);
         case 'D': return String(Math.trunc(value)).padStart(d ?? 0, '0');
         case 'E': return value.toExponential(d ?? 6);
@@ -48,8 +74,8 @@ export function formatValue(value, fmt, opt = {}) {
   }
   if (typeof value === 'boolean') return value ? 'True' : 'False';
   if (typeof value === 'string' && fmt && /^\d{4}-\d{2}-\d{2}/.test(value)) {
-    const d = new Date(value);
-    if (!Number.isNaN(d.getTime()) && /[yMd]/.test(fmt)) return formatDate(d, fmt);
+    const d = toDate(value);
+    if (d && /[yMd]/.test(fmt)) return formatDate(d, fmt);
   }
   return String(value);
 }

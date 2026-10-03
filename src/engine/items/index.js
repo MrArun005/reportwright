@@ -1,5 +1,6 @@
 // @ts-check
-import { evalValue, toText, isDynamic } from '../expr/evaluate.js';
+import { evalValue, toText, isDynamic, truthy } from '../expr/evaluate.js';
+import { isoDate, roundHalfAway } from '../expr/format.js';
 import { resolveStyle } from '../style.js';
 import { layoutTextLines, paintBox } from './paint.js';
 import { applyFilters, applySort } from '../data/index.js';
@@ -36,7 +37,7 @@ function hidden(item, ctx, lc) {
   if (item.hidden == null || item.hidden === false || item.hidden === '') return false;
   if (item.hidden === true) return true;
   const r = evalSafe(item.hidden, ctx, lc, item.name || item.type);
-  return !r.err && Boolean(r.v) && r.v !== 'false';
+  return !r.err && truthy(r.v);
 }
 
 /* ---------------------------------------------------------------- textbox */
@@ -202,11 +203,13 @@ register('table', {
     const width = acc - item.x;
 
     const region = { name: item.name, columns: cols.map(c => c.width), rows: [] };
-    const tableScope = { rows, index: -1 };
+    // run: rows shown so far, in display order (groups reorder rows), for RunningValue over a scope
+    const tableScope = { rows, index: -1, run: [] };
     const scopes = { ...(tctx.scopes || {}), [item.name]: tableScope };
     const base = { ...tctx, aggRows: rows, aggIndex: undefined, fields: rows[0] || null, scopes };
     const units = [];
     let y = 0;
+    let repeatH = 0; // header height that repeats above continued rows
 
     const layRow = (row, ctx, kind, extra) => {
       const rst = resolveStyle([lc.base, lc.named?.[item.styleName], item.style, lc.named?.[row.styleName], row.style], ctx);
@@ -232,33 +235,53 @@ register('table', {
         cells.push({ x: colX[ci], w: cw, st, tl, numeric: typeof r.v === 'number', cell, ctx, raw: r.v, span, plain });
       }
       region.rows.push({ kind, level: extra?.level ?? 0, cells: cells.map(c => ({ col: Math.round((c.x - item.x) * 100), value: c.raw instanceof Date || typeof c.raw === 'boolean' ? c.raw : typeof c.raw === 'number' ? roundFor(c.raw, c.st.format) : c.plain, format: c.st.format || null, bold: c.st.fontWeight === 'bold' || Number(c.st.fontWeight) >= 600, span: c.span, colIndex: colX.indexOf(c.x) })) });
-      const items = [];
-      for (const c of cells) {
-        if (c.cell.visual?.type) {
-          items.push(...paintBox({ x: c.x, y: 0, w: c.w, h: need, st: c.st, tl: null, m: lc.m }));
-          items.push(...paintVisual(c.cell.visual, { x: c.x, y: 0, w: c.w, h: need }, c.ctx, lc, c.st, `${item.name} cell`));
-          continue;
+      // h: height of this piece; lines: per-cell lines when the row is split; first: links, visuals and toggles go on the first piece
+      const paint = (h, lines, first) => {
+        const items = [];
+        cells.forEach((c, k) => {
+          if (c.cell.visual?.type) {
+            items.push(...paintBox({ x: c.x, y: 0, w: c.w, h, st: c.st, tl: null, m: lc.m }));
+            if (first) items.push(...paintVisual(c.cell.visual, { x: c.x, y: 0, w: c.w, h }, c.ctx, lc, c.st, `${item.name} cell`));
+            return;
+          }
+          items.push(...paintBox({ x: c.x, y: 0, w: c.w, h, st: c.st, tl: lines ? { ...c.tl, lines: lines[k] } : c.tl, numeric: c.numeric, m: lc.m }));
+          if (!first) return;
+          const link = lc.linkFor?.(c.cell, c.ctx, { x: c.x, y: 0, w: c.w, h });
+          if (link) items.push(link);
+          if (cell_bookmark(c.cell)) { const b = evalSafe(c.cell.bookmark, c.ctx, lc, 'bookmark').v; if (b) items.push({ t: 'bookmark', label: String(b), x: c.x, y: 0, level: c.cell.bookmarkLevel || 0 }); }
+          if (c.cell.sortBy && kind === 'header') {
+            const cur = (lc.state?.sort?.[item.name] || [])[0];
+            const dir = cur && cur.by === c.cell.sortBy && cur.dir === 'asc' ? 'desc' : 'asc';
+            items.push({ t: 'link', x: c.x, y: 0, w: c.w, h, action: { type: 'sort', table: item.name, by: c.cell.sortBy, dir } });
+          }
+        });
+        if (first && extra?.toggle) items.push({ t: 'link', x: colX[0], y: 0, w: cols[0]?.width || 20, h, action: { type: 'toggle', key: extra.toggle.key, open: extra.toggle.open } });
+        return items;
+      };
+      // Taller than a page (less a repeated header): split into pieces of whole lines, like a text box, so it continues on the next pages.
+      const room = (lc.maxUnitHeight ?? Infinity) - repeatH;
+      const pieces = [];
+      if (!lc.fixed && need > room && cells.some(c => c.tl.lines.length > 1)) {
+        const per = cells.map(c => Math.max(1, Math.floor((room - c.tl.pad[0] - c.tl.pad[2]) / c.tl.lh)));
+        const n = Math.max(...cells.map((c, k) => Math.ceil(c.tl.lines.length / per[k])));
+        for (let i = 0; i < n; i++) {
+          const lines = cells.map((c, k) => c.tl.lines.slice(i * per[k], (i + 1) * per[k]));
+          pieces.push({ lines, h: Math.max(...cells.map((c, k) => lines[k].length * c.tl.lh + c.tl.pad[0] + c.tl.pad[2])) });
         }
-        items.push(...paintBox({ x: c.x, y: 0, w: c.w, h: need, st: c.st, tl: c.tl, numeric: c.numeric, m: lc.m }));
-        const link = lc.linkFor?.(c.cell, c.ctx, { x: c.x, y: 0, w: c.w, h: need });
-        if (link) items.push(link);
-        if (cell_bookmark(c.cell)) { const b = evalSafe(c.cell.bookmark, c.ctx, lc, 'bookmark').v; if (b) items.push({ t: 'bookmark', label: String(b), x: c.x, y: 0, level: c.cell.bookmarkLevel || 0 }); }
-        if (c.cell.sortBy && kind === 'header') {
-          const cur = (lc.state?.sort?.[item.name] || [])[0];
-          const dir = cur && cur.by === c.cell.sortBy && cur.dir === 'asc' ? 'desc' : 'asc';
-          items.push({ t: 'link', x: c.x, y: 0, w: c.w, h: need, action: { type: 'sort', table: item.name, by: c.cell.sortBy, dir } });
-        }
-      }
-      if (extra?.toggle) items.push({ t: 'link', x: colX[0], y: 0, w: cols[0]?.width || 20, h: need, action: { type: 'toggle', key: extra.toggle.key, open: extra.toggle.open } });
-      const u = { top: y, height: need, items, kind };
-      y += need;
-      units.push(u);
+      } else pieces.push({ lines: null, h: need });
+      let u;
+      pieces.forEach((pc, i) => {
+        u = { top: y, height: pc.h, items: paint(pc.h, pc.lines, i === 0), kind };
+        y += pc.h;
+        units.push(u);
+      });
       return u;
     };
 
     // table header
     const headerUnits = (item.header || []).map(r => layRow(r, base, 'header'));
     const headerHeight = headerUnits.reduce((s, u) => s + u.height, 0);
+    if (item.repeatHeader !== false) repeatH = headerHeight;
     const headerItems = [];
     for (const u of headerUnits) for (const it of shiftLocal(u.items.filter(i => i.t !== 'link' && i.t !== 'bookmark'), u.top)) headerItems.push(it);
     if (headerUnits.length) headerUnits[headerUnits.length - 1].keepWithNext = true;
@@ -277,7 +300,7 @@ register('table', {
       if (level === groups.length) {
         for (let i = 0; i < grows.length; i++) {
           rowNo++;
-          for (const s of chain) s.index++;
+          for (const s of chain) { s.index++; s.run.push(grows[i]); }
           const dctx = { ...ctx, fields: grows[i], aggRows: grows, aggIndex: i, rowNumber: rowNo };
           for (const r of item.detail || []) layRow(r, dctx, 'detail', { level: groups.length });
         }
@@ -289,7 +312,7 @@ register('table', {
         buckets.sort((a, b) => cmpKey(a.key, b.key) * (g.sort === 'desc' ? -1 : 1));
       }
       buckets.forEach((bk, bi) => {
-        const sc = { rows: bk.rows, index: -1 };
+        const sc = { rows: bk.rows, index: -1, run: [] };
         const gname = g.name || `Group${level + 1}`;
         const gctx = { ...ctx, fields: bk.rows[0], aggRows: bk.rows, aggIndex: undefined, scopes: { ...ctx.scopes, [gname]: sc }, groupKey: bk.key };
         const path = `${keyPath}/${bk.text}`;
@@ -299,7 +322,7 @@ register('table', {
         const hu = (g.header || []).map((r, ri) => layRow(r, gctx, 'groupHeader', { level, ...(ri === 0 && g.collapsible ? { toggle: { key: tkey, open } } : {}) }));
         const before = units.length;
         if (open) emit(level + 1, bk.rows, gctx, [...chain, sc], path);
-        else for (const s of [...chain, sc]) s.index += bk.rows.length;
+        else for (const s of [...chain, sc]) { s.index += bk.rows.length; for (const r of bk.rows) s.run.push(r); }
         // keep a group header with the group's content, never with the next group
         if (hu.length && units.length > before) hu[hu.length - 1].keepWithNext = true;
         const fu = (g.footer || []).map(r => layRow(r, gctx, 'groupFooter', { level }));
@@ -329,10 +352,9 @@ const cell_bookmark = (c) => c && c.bookmark;
 /** Round a number for data export to the precision its format shows (percent keeps 2 more places). */
 function roundFor(v, fmt) {
   const m = /^([CcNnFfPp])(\d{0,2})$/.exec(fmt || '');
-  if (!m) return Number.isInteger(v) ? v : Math.round(v * 1e6) / 1e6;
+  if (!m) return Number.isInteger(v) ? v : roundHalfAway(v, 6);
   const d = (m[2] === '' ? 2 : Number(m[2])) + (m[1].toUpperCase() === 'P' ? 2 : 0);
-  const k = 10 ** d;
-  return Math.round(v * k) / k;
+  return roundHalfAway(v, d); // same rule as the Intl formatter that drew the cell
 }
 
 function groupRows(rows, expr, ctx, lc, who) {
@@ -411,9 +433,10 @@ register('list', {
     const reps = item.groupBy ? groupRows(rows, item.groupBy, ctx, lc, item.name).map(b => b.rows) : rows.map(r => [r]);
     const units = [], tables = [];
     let y = 0;
-    const listScope = { rows, index: -1 };
+    const listScope = { rows, index: -1, run: [] };
     reps.forEach((rs, i) => {
       listScope.index = i;
+      for (const r of rs) listScope.run.push(r);
       const rctx = { ...ctx, fields: rs[0], aggRows: rs, aggIndex: undefined, rowNumber: i + 1, parentFields: rs[0], scopes: { ...(ctx.scopes || {}), [item.name]: listScope } };
       const child = { ...lc, ctxFor: (it) => (it.dataSet && it.dataSet !== item.dataSet ? { ...lc.ctxFor(it), parentFields: rs[0], scopes: rctx.scopes } : rctx) };
       const res = lc.layoutItems(item.items, child, { dx: item.x });
@@ -610,6 +633,8 @@ register('matrix', {
     const fmt = { format: item.valueFormat || null };
     const vstyle = { ...fmt, textAlign: 'right' };
     const label = (k) => textOf(k, {}, ctx);
+    // a data key becomes cell text, never a template or an expression ("=1+1", "{x}")
+    const lit = (s) => `="${s.replace(/[\\"]/g, '\\$&')}"`;
     const synthRows = rowB.map(rb => {
       const o = { __label: label(rb.key) };
       const set = new Set(rb.rows);
@@ -620,7 +645,7 @@ register('matrix', {
     const table = {
       type: 'table', name: who, x: item.x, y: item.y, w: 0, h: item.h, dataSet: '__matrix', repeatHeader: item.repeatHeader !== false, style: item.style,
       columns: [{ width: rhw }, ...cols.map(() => ({ width: cw })), ...(item.rowTotals !== false ? [{ width: cw }] : [])],
-      header: [{ height: 18, style: item.headerStyle, cells: [{ value: item.corner || '' }, ...cols.map(cb => ({ value: label(cb.key), style: { textAlign: 'right' } })), ...(item.rowTotals !== false ? [{ value: 'Total', style: { textAlign: 'right' } }] : [])] }],
+      header: [{ height: 18, style: item.headerStyle, cells: [{ value: item.corner || '' }, ...cols.map(cb => ({ value: lit(label(cb.key)), style: { textAlign: 'right' } })), ...(item.rowTotals !== false ? [{ value: 'Total', style: { textAlign: 'right' } }] : [])] }],
       detail: [{ height: 16, style: item.cellStyle || { borderBottom: '0.5 solid #e5e7eb' }, cells: [{ value: '=Fields.__label' }, ...cols.map((_, i) => ({ value: `=Fields.c${i}`, style: vstyle })), ...(item.rowTotals !== false ? [{ value: '=Fields.__total', style: { ...vstyle, fontWeight: 'bold' } }] : [])] }],
       footer: item.columnTotals !== false ? [{ height: 18, style: item.totalStyle || { fontWeight: 'bold', borderTop: '1 solid #94a3b8' }, cells: [{ value: 'Total' },
         ...cols.map(cb => ({ value: agg(cb.rows), style: vstyle })), ...(item.rowTotals !== false ? [{ value: agg(rows), style: vstyle }] : [])] }] : [],
@@ -646,7 +671,7 @@ register('subreport', {
     const params = {};
     for (const [k, v] of Object.entries(item.params || {})) {
       const r = evalSafe(v, ctx, lc, `${item.name} parameter ${k}`);
-      params[k] = r.v instanceof Date ? r.v.toISOString().slice(0, 10) : r.v;
+      params[k] = r.v instanceof Date ? isoDate(r.v) : r.v;
     }
     const key = `${item.report}|${JSON.stringify(params)}`;
     const sub = lc.subreports;

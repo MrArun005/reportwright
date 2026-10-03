@@ -1,5 +1,6 @@
 // @ts-check
-import { evalValue, evaluate, compile } from '../expr/evaluate.js';
+import { evalValue, evaluate, compile, parseValue, toText } from '../expr/evaluate.js';
+import { toDate, isoDate } from '../expr/format.js';
 
 /**
  * Data layer: sources → raw JSON; data sets → typed, filtered, sorted rows.
@@ -36,7 +37,7 @@ export function coerce(v, type) {
   if (v == null || v === '') return v === '' && type === 'string' ? '' : null;
   switch (type) {
     case 'number': { const n = typeof v === 'number' ? v : Number(String(v).replace(/,/g, '')); return Number.isNaN(n) ? null : n; }
-    case 'date': { if (v instanceof Date) return v; const d = new Date(v); return Number.isNaN(d.getTime()) ? null : d; }
+    case 'date': return toDate(v);
     case 'boolean': return typeof v === 'boolean' ? v : ['true', '1', 'yes', 'y'].includes(String(v).toLowerCase());
     case 'string': return typeof v === 'string' ? v : String(v);
     default: return v;
@@ -102,7 +103,7 @@ export async function loadSources(def, opt) {
       else if (src.type === 'csv' && src.data) out[src.name] = parseCsv(src.data);
       else if (src.type === 'rest' || src.type === 'csv' || src.type === 'graphql') {
         if (!f) throw new Error('No fetch() available');
-        let url = String(evalValue(src.url || '', ctx));
+        let url = urlFrom(src.url || '', ctx);
         if (src.useProxy) url = `/api/data/proxy?url=${encodeURIComponent(url)}`;
         if (opt.baseUrl && url.startsWith('/')) url = opt.baseUrl.replace(/\/$/, '') + url;
         const headers = {};
@@ -110,7 +111,7 @@ export async function loadSources(def, opt) {
         const init = { method: src.type === 'graphql' ? 'POST' : src.method || 'GET', headers };
         if (src.type === 'graphql') {
           headers['content-type'] ||= 'application/json';
-          const vars = src.variables ? JSON.parse(String(evalValue(src.variables, ctx))) : {};
+          const vars = src.variables ? variablesFrom(src.variables, ctx) : {};
           init.body = JSON.stringify({ query: src.query, variables: vars });
         } else if (src.body && init.method !== 'GET') init.body = String(evalValue(src.body, ctx));
         const res = await f(url, init);
@@ -127,6 +128,51 @@ export async function loadSources(def, opt) {
     }
   }));
   return out;
+}
+
+const plain = (x, ctx) => (x instanceof Date ? isoDate(x) : toText(x, null, ctx));
+
+/** URL from a template: typed-in values are encoded, so "A&B" stays one value. A leading {…} may hold a base URL. */
+function urlFrom(v, ctx) {
+  const p = parseValue(v);
+  if (p.kind !== 'tpl') return String(evalValue(v, ctx) ?? '');
+  return p.parts.map((part, i) => {
+    if (typeof part === 'string') return part;
+    const s = plain(evaluate(part.ast, ctx), ctx);
+    return i === 0 ? s : encodeURIComponent(s);
+  }).join('');
+}
+
+/** GraphQL variables: JSON whose strings may hold {Parameters.x}. A string that is just one {…} keeps the value's type. */
+function variablesFrom(src, ctx) {
+  let json;
+  try { json = JSON.parse(src); } catch { return JSON.parse(String(evalValue(src, ctx))); } // older form: a template that builds JSON
+  const fill = (v) => {
+    if (Array.isArray(v)) return v.map(fill);
+    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fill(x)]));
+    if (typeof v !== 'string') return v;
+    const p = parseValue(v);
+    if (p.kind === 'tpl' && p.parts.length === 1 && typeof p.parts[0] !== 'string') {
+      const x = evaluate(p.parts[0].ast, ctx);
+      return x instanceof Date ? isoDate(x) : x;
+    }
+    return evalValue(v, ctx);
+  };
+  return fill(json);
+}
+
+/** Wildcards: * any run, ? one character, any case. No regex: at most len(s) × len(pattern) steps, so "a*a*a*…b" cannot hang the server. */
+function like(s, p) {
+  s = s.toLowerCase(); p = p.toLowerCase();
+  let i = 0, j = 0, star = -1, mark = 0;
+  while (i < s.length) {
+    if (j < p.length && (p[j] === '?' || p[j] === s[i])) { i++; j++; }
+    else if (j < p.length && p[j] === '*') { star = j++; mark = i; }
+    else if (star >= 0) { j = star + 1; i = ++mark; }
+    else return false;
+  }
+  while (p[j] === '*') j++;
+  return j === p.length;
 }
 
 /**
@@ -182,7 +228,7 @@ export function applyFilters(rows, filters, baseCtx) {
           const list = Array.isArray(b) ? b : b == null || b === '' ? [] : String(b).split(',').map(s => s.trim());
           return list.length === 0 || list.some(x => looseEq(a, x));
         }
-        case 'like': return new RegExp('^' + String(b).replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i').test(String(a ?? ''));
+        case 'like': return like(String(a ?? ''), String(b ?? ''));
         case 'contains': return String(a ?? '').toLowerCase().includes(String(b ?? '').toLowerCase());
         default: throw new Error(`Unknown filter operator "${f.op}"`);
       }

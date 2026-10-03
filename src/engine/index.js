@@ -9,6 +9,7 @@ import { FontStore, ALL_FONT_KEYS } from './text/fonts.js';
 import { TextMeasurer } from './text/measure.js';
 import { loadSources, buildDataSets, coerce } from './data/index.js';
 import { evalValue, evaluate } from './expr/evaluate.js';
+import { isoDate } from './expr/format.js';
 import { BASE_STYLE } from './style.js';
 import { ITEMS } from './items/index.js';
 import { shiftItems } from './items/paint.js';
@@ -204,7 +205,7 @@ function linkFor(it, ctx, rect, warn) {
     }
     if (a.type === 'report') {
       const params = {};
-      for (const [k, v] of Object.entries(a.params || {})) { const x = evalValue(v, ctx); params[k] = x instanceof Date ? x.toISOString().slice(0, 10) : x; }
+      for (const [k, v] of Object.entries(a.params || {})) { const x = evalValue(v, ctx); params[k] = x instanceof Date ? isoDate(x) : x; }
       return { t: 'link', ...rect, action: { type: 'drill', report: String(evalValue(a.report, ctx)), params } };
     }
     if (a.type === 'bookmark') return { t: 'link', ...rect, action: { type: 'bookmark', target: String(evalValue(a.target, ctx)) } };
@@ -240,7 +241,7 @@ export async function parameterOptions(def, given = {}, opts = {}) {
       const k = v instanceof Date ? v.getTime() : v;
       if (v == null || seen.has(k)) continue;
       seen.add(k);
-      list.push({ value: v instanceof Date ? v.toISOString().slice(0, 10) : v, label: String(p.optionsFrom.label ? evalValue(p.optionsFrom.label, c) : v) });
+      list.push({ value: v instanceof Date ? isoDate(v) : v, label: String(p.optionsFrom.label ? evalValue(p.optionsFrom.label, c) : v) });
     }
     out[p.name] = list;
   }

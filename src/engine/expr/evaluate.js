@@ -1,6 +1,6 @@
 // @ts-check
 import { parse, ExprError } from './parser.js';
-import { formatValue } from './format.js';
+import { formatValue, toDate, roundHalfAway } from './format.js';
 
 /**
  * @typedef {object} EvalCtx
@@ -151,7 +151,7 @@ function member(o, prop, ctx) {
   return null;
 }
 
-function truthy(v) {
+export function truthy(v) {
   if (v == null) return false;
   if (typeof v === 'string') return v !== '' && v.toLowerCase() !== 'false';
   return Boolean(v);
@@ -229,12 +229,6 @@ const AGG = {
 };
 
 /* --------------------------------------------------------------- dates */
-function toDate(v) {
-  if (v == null || v === '') return null;
-  if (v instanceof Date) return v;
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
 function dateAdd(interval, n, d) {
   d = toDate(d); if (!d) return null;
   const r = new Date(d.getTime());
@@ -291,7 +285,7 @@ export const FUNCTIONS = {
   cdate: (ctx, v) => toDate(v),
   isnull: (ctx, v) => v == null, isnothing: (ctx, v) => v == null,
   coalesce: (ctx, ...vs) => { for (const v of vs) if (v != null && v !== '') return v; return null; },
-  round: (ctx, v, d) => { if (v == null) return null; const p = 10 ** Number(d || 0); return Math.round(Number(v) * p) / p; },
+  round: (ctx, v, d) => (v == null ? null : roundHalfAway(Number(v), Number(d || 0))),
   abs: (ctx, v) => (v == null ? null : Math.abs(Number(v))),
   floor: (ctx, v) => (v == null ? null : Math.floor(Number(v))),
   ceiling: (ctx, v) => (v == null ? null : Math.ceil(Number(v))),
@@ -348,7 +342,7 @@ function call(n, ctx) {
     if (args.length > 2) {
       const sc = ctx.scopes?.[evaluate(args[2], ctx)];
       if (!sc) throw new ExprError('RunningValue: unknown scope', n.p);
-      rows = sc.rows.slice(0, sc.index + 1);
+      rows = sc.run || sc.rows.slice(0, sc.index + 1);
     } else if (ctx.runningRows) rows = ctx.runningRows;
     else if (ctx.aggRows && ctx.aggIndex != null) rows = ctx.aggRows.slice(0, ctx.aggIndex + 1);
     else rows = ctx.fields ? [ctx.fields] : [];

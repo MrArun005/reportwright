@@ -126,7 +126,7 @@ export function parse(src) {
       return { type: 'index', obj: left, key: e };
     }
     if (t.v === '?') {
-      const a = expr(0); expect(':'); const b = expr(0.5);
+      const a = expr(0); expect(':'); const b = expr(0); // right-assoc: a ? b : c ? d : e
       return { type: 'cond', test: left, a, b };
     }
     return { type: 'bin', op: t.v, a: left, b: expr(BIN[t.v]) };
