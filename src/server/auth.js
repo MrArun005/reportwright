@@ -4,7 +4,9 @@
 import crypto from 'node:crypto';
 
 const keys = () => (process.env.PW_API_KEYS || '').split(',').map(s => s.trim()).filter(Boolean);
-const eq = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+// Compare digests: equal length always, so no early exit and no throw on multi-byte characters.
+const digest = (s) => crypto.createHash('sha256').update(s).digest();
+const eq = (a, b) => crypto.timingSafeEqual(digest(a), digest(b));
 
 export function authorize(req) {
   const list = keys();

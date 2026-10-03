@@ -54,14 +54,16 @@ The viewer runs in a Shadow DOM, so the host page styles do not change it. Set `
 | `PW_BASE_URL` | run time | Public URL of this server, used for relative data URLs in batches and schedules |
 | `PW_BATCH_CONCURRENCY` | run time | Reports rendered at the same time in a batch (default 2) |
 | `PW_SCHEDULER` | run time | `off` stops the built-in scheduler (for example on extra replicas) |
+| `PW_BASIC_AUTH` | run time | `user:password` for the whole app (designer, viewer, report storage, server renders). `/api/v1` keeps its API keys; the embed script and fonts stay open. **Set this, or put the app behind your SSO proxy, before you expose it.** |
+| `PW_INTERNAL_HOSTS` | run time | Host names that server-side fetches may reach on a private network (internal data APIs, a webhook receiver on your LAN). Comma-separated. Every other private or local address is refused (SSRF guard). |
 | `PW_PROXY_ALLOW` | run time | Hosts that `/api/data/proxy` may call (comma-separated). Private network addresses are always blocked. |
 | `PW_EMBED_ORIGINS` | **build time** | Origin allowed to read `/api/reports` and `/api/sample` from another site (CORS) |
 
 ## Test it
 
 ```bash
-npm test                                   # engine unit + golden tests (Vitest), 65 tests
-./scripts/restart.sh                       # build and start on :3000 with test keys
+npm test                                   # unit, golden and security tests (Vitest), 109 tests; needs Node 22+
+./scripts/restart.sh                       # build and start on :3000 with test keys (PORT=3100 ./scripts/restart.sh for another port)
 node tests/e2e/build-from-scratch.mjs      # Phase 1 exit test: build a report in the designer
 node tests/e2e/smoke.mjs                   # viewer smoke test
 node tests/e2e/expr-editor.mjs             # CodeMirror expression editor

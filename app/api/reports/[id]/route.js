@@ -1,4 +1,4 @@
-import { readReport, writeReport, deleteReport, safeId } from '@/server/reports.js';
+import { readReport, writeReport, deleteReport, safeId, readDefinition } from '@/server/reports.js';
 import { validate } from '@/engine/schema/validate.js';
 
 export const runtime = 'nodejs';
@@ -16,7 +16,7 @@ export async function GET(_req, { params }) {
 export async function PUT(req, { params }) {
   try {
     const { id } = await params;
-    const def = await req.json();
+    const def = await readDefinition(req);
     const v = validate(def);
     // Save even with errors: the designer may hold work in progress.
     await writeReport(safeId(id), def);

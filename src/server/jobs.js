@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import { zipSync } from 'fflate';
 import { PDFDocument } from 'pdf-lib';
 import { loadTemplate, renderTo, baseUrl as defaultBase } from './renderer.js';
+import { serverFetch } from './safeFetch.js';
 import { jsonPath } from '@/engine/data/index.js';
 import { evalValue } from '@/engine/expr/evaluate.js';
 
@@ -27,7 +28,7 @@ export function publicJob(job) {
 }
 
 /** Expand itemsFrom: fetch a list and map each element to parameters. */
-async function expandItems(spec, base) {
+async function expandItems(spec, base, fetch) {
   if (Array.isArray(spec.items)) return spec.items;
   if (!spec.itemsFrom?.url) throw Object.assign(new Error('Give "items" or "itemsFrom.url"'), { status: 400 });
   let url = spec.itemsFrom.url;
@@ -45,16 +46,18 @@ async function expandItems(spec, base) {
 }
 
 export async function createBatch(spec, req) {
-  const base = spec.baseUrl || defaultBase(req);
+  // self: this server, the one local address batch fetches may reach; baseUrl may come from the caller
+  const self = defaultBase(req);
+  const base = spec.baseUrl || self;
   const def = await loadTemplate(spec.template);
-  const items = await expandItems(spec, base);
+  const items = await expandItems(spec, base, serverFetch(self));
   if (!items.length) throw Object.assign(new Error('The batch has no items'), { status: 400 });
   if (items.length > MAX_ITEMS) throw Object.assign(new Error(`A batch can hold at most ${MAX_ITEMS} items`), { status: 400 });
   const format = spec.format || 'pdf';
   const job = {
     id: rid(), status: 'queued', createdAt: new Date().toISOString(), template: typeof spec.template === 'string' ? spec.template : def.name,
     format, output: spec.output || { type: 'zip' }, webhook: spec.webhook || null, fileName: spec.fileName || null, schedule: spec.schedule || null,
-    total: items.length, done: 0, failed: 0, results: [], errors: [], base, items, _def: def,
+    total: items.length, done: 0, failed: 0, results: [], errors: [], base, self, items, _def: def,
   };
   S.jobs.set(job.id, job);
   await save(job);
@@ -94,7 +97,8 @@ function pump() {
   }
 }
 
-const safeName = (s) => String(s || 'report').replace(/[^\w.@-]+/g, '-').slice(0, 120);
+// letters, digits and . _ @ - only, and never a leading dot, so ".." or ".x" cannot name a path outside data/outputs
+export const safeName = (s) => String(s || 'report').replace(/[^\w.@-]+/g, '-').replace(/^\.+/, '').slice(0, 120) || 'report';
 
 function itemName(job, item, i) {
   if (item.name) return safeName(item.name);
@@ -118,10 +122,10 @@ async function run(job) {
       const item = job.items[i];
       const name = `${itemName(job, item, i)}.${job.format === 'json' ? 'json' : job.format}`;
       try {
-        const r = await renderTo(job._def, { parameters: item.parameters, data: item.data, format: job.format, baseUrl: job.base });
+        const r = await renderTo(job._def, { parameters: item.parameters, data: item.data, format: job.format, baseUrl: job.base, self: job.self });
         outputs[i] = { name, bytes: r.bytes, pages: r.model.pages.length };
         if (item.putUrl) {
-          const res = await fetch(item.putUrl, { method: 'PUT', body: r.bytes, headers: { 'content-type': r.contentType } });
+          const res = await serverFetch(job.self)(item.putUrl, { method: 'PUT', body: r.bytes, headers: { 'content-type': r.contentType } });
           if (!res.ok) throw new Error(`upload: HTTP ${res.status}`);
         }
         job.results.push({ index: i, name, pages: r.model.pages.length, bytes: r.bytes.length });
@@ -169,7 +173,7 @@ async function notify(job) {
   const headers = { 'content-type': 'application/json', 'user-agent': 'Pagewright' };
   if (process.env.PW_WEBHOOK_SECRET) headers['x-pagewright-signature'] = 'sha256=' + crypto.createHmac('sha256', process.env.PW_WEBHOOK_SECRET).update(body).digest('hex');
   try {
-    const res = await fetch(job.webhook, { method: 'POST', headers, body });
+    const res = await serverFetch(job.self)(job.webhook, { method: 'POST', headers, body });
     job.webhookStatus = res.status;
   } catch (e) { job.webhookStatus = `error: ${e.message}`; }
   await save(job);

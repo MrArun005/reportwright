@@ -124,7 +124,7 @@ export async function loadSources(def, opt) {
         }
       } else throw new Error(`Unknown data source type "${src.type}"`);
     } catch (e) {
-      throw new Error(`Data source "${src.name}": ${e.message}`);
+      throw Object.assign(new Error(`Data source "${src.name}": ${e.message}`), { status: e.status }); // keep 403 for a refused address
     }
   }));
   return out;

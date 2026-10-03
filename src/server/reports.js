@@ -6,6 +6,16 @@ export const REPORTS_DIR = path.join(process.cwd(), 'reports');
 const HISTORY_DIR = path.join(REPORTS_DIR, '.history');
 const KEEP_VERSIONS = 50;
 const ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const MAX_DEF_BYTES = 5 * 1024 * 1024; // a real report is under 200 KB
+
+/** A request body as JSON, refusing anything over 5 MB. */
+export async function readDefinition(req) {
+  const tooBig = () => Object.assign(new Error('A report can be at most 5 MB'), { status: 413 });
+  if (Number(req.headers.get('content-length')) > MAX_DEF_BYTES) throw tooBig();
+  const text = await req.text(); // ponytail: a chunked body without a length is read before the check; cap at the reverse proxy if that matters
+  if (text.length > MAX_DEF_BYTES) throw tooBig();
+  try { return JSON.parse(text); } catch { throw Object.assign(new Error('Send the report as JSON'), { status: 400 }); }
+}
 
 export function safeId(id) {
   if (!ID.test(String(id))) throw Object.assign(new Error('Bad report id'), { status: 400 });

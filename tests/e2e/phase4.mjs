@@ -67,7 +67,7 @@ const t = await p.$$eval('.vpage text', ns => ns.map(n => n.textContent));
 assert.ok(t.includes('Contents') && t.includes('North'), 'contents listed');
 
 step('embed on another origin');
-const host = http.createServer((req, res) => { res.setHeader('content-type', 'text/html'); res.end(fs.readFileSync('tests/e2e/embed-host.html')); }).listen(4000);
+const host = http.createServer((req, res) => { res.setHeader('content-type', 'text/html'); res.end(fs.readFileSync('tests/e2e/embed-host.html', 'utf8').replaceAll('http://localhost:3000', BASE)); }).listen(4000);
 const e = await ctx.newPage();
 const embedErrs = []; e.on('pageerror', x => embedErrs.push(x.message)); e.on('console', m => { if (m.type() === 'error') embedErrs.push(m.text()); });
 await e.goto('http://localhost:4000/');

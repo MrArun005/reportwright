@@ -6,7 +6,7 @@
 
 | Check | Result |
 |---|---|
-| Vitest (engine unit + golden) | 9 files, **65 tests pass** |
+| Vitest (engine unit + golden + security) | 11 files, **109 tests pass**; dates checked in 4 time zones |
 | e2e: build-from-scratch, smoke, expr-editor, phase2, phase3, phase4, api | **all pass**, 0 console errors |
 | PDF matches page model (300-row sample) | 2,237 lines on 8 pages, **0 mismatches**, 260 KB |
 | Engine boundary | no React, Next or DOM in `src/engine` |
@@ -53,7 +53,7 @@ Engine, expressions, data sources, text box / image / line / shape / table, pagi
 
 ## Honest gaps
 
-1. **No users and no permissions.** `/api/v1` has API keys. The designer and `/api/reports` have **no login**. Put the app behind your own login (SSO proxy, VPN) before you expose it.
+1. **No users and no permissions.** `/api/v1` has API keys. The rest of the app has one shared password (`PW_BASIC_AUTH`), off by default. There are no per-user accounts or roles. Set the password or put the app behind your SSO proxy before you expose it. Server-side fetches refuse private addresses unless listed in `PW_INTERNAL_HOSTS`.
 2. **Storage is files on one server.** Reports in `reports/`, jobs and schedules in `data/`. More than one server needs shared storage or a database (planned interface: `src/server/reports.js`, `jobs.js`, `schedules.js`).
 3. **Batch queue is in the process.** A restart loses queued and running jobs (finished jobs stay on disk). For heavy load, move the queue to Redis / a job service.
 4. **No ActiveReports (.rdlx) or SSRS (.rdl) importer.** Reports must be made again in the designer.

@@ -23,6 +23,7 @@ export class ReportError extends Error {
 }
 
 const EPS = 0.01;
+const MAX_SUBREPORTS = 2000; // per render, all nesting levels together
 
 /**
  * @param {any} def report definition
@@ -101,6 +102,10 @@ export async function render(def, opts = {}) {
       if (depth > 3) throw new ReportError('Subreports are nested more than 3 levels deep');
       const requests = new Map();
       layoutItems(sec.body?.items || [], { ...lc, regions: [], warn: () => {}, subreports: { mode: 'collect', requests } });
+      // one budget for the whole render, all levels: a subreport per row of a big table would otherwise multiply
+      const budget = opts.budget || { used: 0 };
+      if (budget.used + requests.size > MAX_SUBREPORTS) throw new ReportError(`This report would render more than ${MAX_SUBREPORTS} subreports. Filter the data, or show the rows in a table.`);
+      budget.used += requests.size;
       const results = new Map();
       const defs = new Map();
       for (const [key, rq] of requests) {
@@ -108,7 +113,7 @@ export async function render(def, opts = {}) {
           if ((opts.chain || []).includes(rq.report)) throw new Error('it includes itself');
           if (!defs.has(rq.report)) defs.set(rq.report, await opts.loadReport(rq.report));
           const child = defs.get(rq.report);
-          const r = await render(child, { ...opts, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, rq.report], bodyWidth: page.bodyWidth, state: {} });
+          const r = await render(child, { ...opts, budget, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, rq.report], bodyWidth: page.bodyWidth, state: {} });
           results.set(key, r);
           for (const w of r.warnings) warn(`Subreport ${rq.report}: ${w}`);
         } catch (e) { results.set(key, { error: e.message }); }
