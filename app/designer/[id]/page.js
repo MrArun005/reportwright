@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { safeId } from '@/server/reports.js';
 import { principalFromCookie, readReportFor, checkReport } from '@/server/perms.js';
+import { audit } from '@/server/audit.js';
 import Designer from '@/designer/Designer.jsx';
 
 export const dynamic = 'force-dynamic';
@@ -21,5 +22,7 @@ export default async function DesignerPage({ params, searchParams }) {
   if (level === 'view') redirect(`/viewer/${id}${lang ? `?lang=${encodeURIComponent(lang)}` : ''}`);
   let def;
   try { def = await readReportFor(p, id, 'edit'); } catch { notFound(); }
+  const h = await headers();
+  await audit('report.view', { req: new Request('http://pagewright.local/', { headers: { 'x-forwarded-for': h.get('x-forwarded-for') || '' } }), principal: p, report: id, detail: { via: 'designer' } });
   return <Designer id={id} initial={def} lang={lang} />;
 }

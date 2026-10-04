@@ -280,6 +280,8 @@ describe('review fixes: identities, linking, binding', () => {
     const ok = await oidcSignIn({ user: { sub: 'r1', email: 'root@example.com', groups: ['pw-admins'] } });
     expect(await signedInAs(ok.res)).toBe('root@example.com');
     expect((await users.getUser('root@example.com')).sso).toMatchObject({ via: 'oidc', issuer: oidc.issuer, subject: 'r1' });
+    const { queryAudit } = await import('../../src/server/audit.js');
+    expect((await queryAudit({ type: 'auth.sso_link', limit: 1 }))[0]).toMatchObject({ actor: 'user:root@example.com', detail: { method: 'oidc' } }); // the binding is in the log
   });
 
   it('an account is bound to one IdP identity (issuer, subject): another subject with the same email is refused', async () => {

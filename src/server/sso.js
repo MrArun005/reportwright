@@ -162,6 +162,7 @@ async function upsertNow(id, via) {
   if (u.disabled) throw fail('This account is disabled.', 403, 'disabled');
   if (!u.allowSso && (u.passwordHash || (u.sso && typeof u.sso === 'object'))) throw linked();
   await updateUser(u.email, { role: id.role, groups: id.groups, sso });
+  if (u.allowSso) await (await import('./audit.js')).audit('auth.sso_link', { actor: `user:${u.email}`, detail: { method: via, issuer: id.issuer } }); // an admin's "allow SSO" was used
   return u.email;
 }
 
