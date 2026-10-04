@@ -7,6 +7,7 @@ import { makePdfA } from './pdfa.js';
 import { safeUrl } from '../engine/url.js';
 import { dataUriBytesOf, dataUriBytes, imageInfoOf, IMAGE_LIMITS } from '../engine/image.js';
 import { parseSvg, drawSvg } from './svgimage.js';
+import { encryptPdf } from './encrypt.js';
 
 const fontkit = /** @type {any} */ (fontkitModule).default || fontkitModule;
 
@@ -22,6 +23,7 @@ const col = (c) => { const p = parseColor(c); return p ? { color: rgb(p.r, p.g, 
  *   subset: a HarfBuzz subsetter (see subset.js). Without it, fonts embed in full.
  *   pdfa: make a PDF/A-2b file (needs an sRGB ICC profile). prepare: last change before saving
  *   (the server adds a signature placeholder there). save: extra pdf-lib save options.
+ *   encrypt: { userPassword, ownerPassword, permissions } — AES-256 (see encrypt.js); not with pdfa or prepare.
  */
 export async function exportPdf(model, fontStore, opt = {}) {
   const doc = await PDFDocument.create();
@@ -225,6 +227,13 @@ export async function exportPdf(model, fontStore, opt = {}) {
   if (model.bookmarks?.length) addOutline(doc, model.bookmarks, H);
   if (opt.prepare) await opt.prepare(doc);
   if (opt.pdfa) makePdfA(doc, { ...opt.pdfa, title: opt.title || 'Report', author: opt.author });
+  if (opt.encrypt) {
+    // PDF/A forbids encryption; a signature would need its /Contents left plain inside an encrypted file
+    if (opt.pdfa) throw Object.assign(new Error('A PDF/A file cannot have a password. Turn off PDF/A or the password.'), { status: 400 });
+    if (opt.prepare) throw Object.assign(new Error('A signed PDF cannot have a password here. Turn off signing or the password.'), { status: 400 });
+    await encryptPdf(doc, opt.encrypt);
+    return doc.save({ updateFieldAppearances: false, ...(opt.save || {}), useObjectStreams: false });
+  }
   // appearances are already drawn in the report font; regenerating would switch them to Helvetica
   return doc.save({ updateFieldAppearances: false, ...(opt.save || {}) });
 }

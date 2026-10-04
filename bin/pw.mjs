@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { render, FontStore } from '../src/engine/index.js';
+import { pdfEncryptOptions } from '../src/exporters/encrypt.js';
 import { exportPdf } from '../src/exporters/pdf.js';
 import { exportHtml } from '../src/exporters/html.js';
 import { exportCsv } from '../src/exporters/csv.js';
@@ -14,12 +15,14 @@ import { textRows } from '../src/exporters/regions.js';
 
 const ROOT = path.join(import.meta.dirname, '..');
 const HELP = `pw render <report.pw.json> [-p name=value]… [-d source=data.json]… [-f pdf|xlsx|docx|html|csv|json|txt] [-o file|-] [--base URL] [--pdfa]
+          [--password PW] [--owner-password PW] [--deny print|modify|copy|annotate|fillForms|accessibility|assemble|printHighQuality]…
 pw test [folder] [--update]        render every <folder>/__tests__/*.test.json case and compare it with its snapshot
 pw diff <old.pw.json> <new.pw.json> [-p name=value]… [-d source=data.json]… [--base URL]
 
   -p  a report parameter            -d  replace a data source with a JSON file
   -f  output format (default pdf)   -o  output file, or - for stdout
   --base  where relative data URLs go (e.g. http://localhost:3000)
+  --password, --owner-password, --deny  a password-protected PDF (AES-256); --deny takes away a permission
 Exit codes: 0 ok, 1 a test failed or the pages differ, 2 bad usage.`;
 
 const fontStore = new FontStore((k) => fs.readFileSync(path.join(ROOT, 'public', 'fonts', `${k}.ttf`)));
@@ -84,14 +87,20 @@ function compare(label, before, after) {
 }
 
 async function cmdRender(args) {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { p: { type: 'string', multiple: true }, d: { type: 'string', multiple: true }, f: { type: 'string', default: 'pdf' }, o: { type: 'string' }, base: { type: 'string' }, pdfa: { type: 'boolean' } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { p: { type: 'string', multiple: true }, d: { type: 'string', multiple: true }, f: { type: 'string', default: 'pdf' }, o: { type: 'string' }, base: { type: 'string' }, pdfa: { type: 'boolean' }, password: { type: 'string' }, 'owner-password': { type: 'string' }, deny: { type: 'string', multiple: true } } });
   if (positionals.length !== 1) usage('give one report file');
   const def = readJson(positionals[0]);
   const data = Object.fromEntries(Object.entries(pairs(values.d)).map(([k, f]) => [k, readJson(f)]));
   const model = await renderModel(def, { parameters: pairs(values.p), data, base: values.base });
   const fmt = values.f;
   let bytes;
-  if (fmt === 'pdf') bytes = await exportPdf(model, fontStore, { title: def.name, pdfa: values.pdfa ? { icc: fs.readFileSync(path.join(ROOT, 'public', 'icc', 'sRGB-v2-magic.icc')) } : undefined });
+  let encrypt;
+  try {
+    encrypt = pdfEncryptOptions({ userPassword: values.password, ownerPassword: values['owner-password'], permissions: Object.fromEntries((values.deny || []).map(k => [k, false])) });
+  } catch (e) { usage(e.message); }
+  if (encrypt && fmt !== 'pdf') usage('--password, --owner-password and --deny apply to -f pdf only');
+  if (encrypt && values.pdfa) usage('a PDF/A file cannot have a password');
+  if (fmt === 'pdf') bytes = await exportPdf(model, fontStore, { title: def.name, encrypt, pdfa: values.pdfa ? { icc: fs.readFileSync(path.join(ROOT, 'public', 'icc', 'sRGB-v2-magic.icc')) } : undefined });
   else if (fmt === 'html') bytes = await exportHtml(model, fontStore, { title: def.name });
   else if (fmt === 'csv') bytes = exportCsv(model, { locale: def.locale, currency: def.currency });
   else if (fmt === 'xlsx') bytes = await exportXlsx(model, (await import('exceljs')).default, { currency: def.currency, title: def.name });

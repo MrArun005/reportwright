@@ -1,15 +1,21 @@
 // Phase 7: TOC numbering, image sources and sizes, barcode options, PDF passwords.
 import { describe, it, expect } from 'vitest';
-import { deflateSync } from 'node:zlib';
+import { deflateSync, inflateSync } from 'node:zlib';
+import crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { render } from '../../src/engine/index.js';
 import { fontStore, report, texts } from '../helpers.js';
 import { tocNumbers, formatNumber } from '../../src/engine/items/toc.js';
 import { toDataUri, imageInfo, imageInfoOf, svgRootAttrs, IMAGE_LIMITS } from '../../src/engine/image.js';
 import { parseSvg, parseTransform } from '../../src/exporters/svgimage.js';
 import { exportPdf } from '../../src/exporters/pdf.js';
+import { pdfEncryptOptions } from '../../src/exporters/encrypt.js';
 import { pageToSvg } from '../../src/exporters/svg.js';
 import { SYMBOLOGIES, bwipOptions, paintBarcode, loadBarcodes } from '../../src/engine/items/barcode.js';
-import { PDFDocument, PDFArray, PDFRawStream, decodePDFRawStream } from 'pdf-lib';
+import { PDFDocument, PDFArray, PDFName, PDFRawStream, decodePDFRawStream } from 'pdf-lib';
 
 const tb = (name, value, y, extra = {}) => ({ type: 'textbox', name, x: 0, y, w: 300, h: 18, value, ...extra });
 
@@ -229,5 +235,100 @@ describe('image resource caps (security)', () => {
   it('a data URI is base64 or not by one rule, for the cap and for decoding', () => {
     const odd = 'data:image/svg+xml;base64x,' + encodeURIComponent('<svg viewBox="0 0 4 2"/>');
     expect(imageInfo(odd)).toMatchObject({ type: 'svg', w: 4, h: 2 });
+  });
+});
+
+/* ---- PDF passwords: decrypted here with node:crypto, apart from the code under test (WebCrypto) ---- */
+const sha = (alg, b) => crypto.createHash(alg).update(b).digest();
+function hash2B(pw, salt, ud) {
+  let K = sha('sha256', Buffer.concat([pw, salt, ud]));
+  for (let r = 0; ; r++) {
+    const K1 = Buffer.concat(Array(64).fill(Buffer.concat([pw, K, ud])));
+    const c = crypto.createCipheriv('aes-128-cbc', K.subarray(0, 16), K.subarray(16, 32)); c.setAutoPadding(false);
+    const E = Buffer.concat([c.update(K1), c.final()]);
+    let sum = 0; for (let i = 0; i < 16; i++) sum += E[i];
+    K = sha(['sha256', 'sha384', 'sha512'][sum % 3], E);
+    if (r >= 63 && E[E.length - 1] <= r + 1 - 32) return K.subarray(0, 32);
+  }
+}
+const aes = (mode, key, iv, data, pad) => { const d = crypto.createDecipheriv(mode, key, iv); d.setAutoPadding(pad); return Buffer.concat([d.update(data), d.final()]); };
+async function encOf(pdf) {
+  const doc = await PDFDocument.load(pdf, { ignoreEncryption: true });
+  const e = doc.context.lookup(doc.context.trailerInfo.Encrypt);
+  const b = (k) => Buffer.from(e.get(PDFName.of(k)).asBytes());
+  return { doc, e, U: b('U'), UE: b('UE'), O: b('O'), OE: b('OE'), Perms: b('Perms'), P: e.get(PDFName.of('P')).asNumber() };
+}
+async function fileKey(pdf, password, owner = false) {
+  const { U, UE, O, OE } = await encOf(pdf);
+  const pw = Buffer.from(password.normalize('NFKC'));
+  const [H, ud, E] = owner ? [O, U, OE] : [U, Buffer.alloc(0), UE];
+  if (!hash2B(pw, H.subarray(32, 40), ud).equals(H.subarray(0, 32))) throw new Error('wrong password');
+  return aes('aes-256-cbc', hash2B(pw, H.subarray(40, 48), ud), Buffer.alloc(16), E, false);
+}
+const decrypt = (key, bytes) => aes('aes-256-cbc', key, bytes.subarray(0, 16), bytes.subarray(16), true);
+const pdfOf = async (opt, def = report([tb('T', 'Hello secret', 0)])) => exportPdf(await render(def, { fontStore }), fontStore, { title: 'Secret title', ...opt });
+
+describe('PDF passwords (AES-256, R6)', () => {
+  it('encrypts strings and streams; the user password unlocks them, a wrong one does not', async () => {
+    const pdf = await pdfOf({ encrypt: { userPassword: 'öpen sesame', permissions: { copy: false } } });
+    await expect(PDFDocument.load(pdf)).rejects.toThrow(/encrypt/i);
+    expect(Buffer.from(pdf).toString('latin1')).not.toContain('Secret title');
+    expect(Buffer.from(pdf).toString('latin1')).toMatch(/\/V 5[\s\S]*\/R 6|\/R 6[\s\S]*\/V 5/);
+    const key = await fileKey(pdf, 'öpen sesame');
+    await expect(fileKey(pdf, 'wrong')).rejects.toThrow(/wrong password/);
+    const { doc } = await encOf(pdf);
+    const info = doc.context.lookup(doc.context.trailerInfo.Info);
+    expect(decrypt(key, Buffer.from(info.get(PDFName.of('Title')).asBytes())).toString('utf16le').replace(/^￾/, '')).toBeTruthy();
+    const title = decrypt(key, Buffer.from(info.get(PDFName.of('Title')).asBytes()));
+    expect(title.swap16().toString('utf16le')).toContain('Secret title'); // UTF-16BE with a BOM
+    const page = doc.getPage(0).node.Contents();
+    const raw = page instanceof PDFArray ? doc.context.lookup(page.get(0)) : page;
+    expect(inflateSync(decrypt(key, Buffer.from(raw.contents))).toString('latin1')).toMatch(/\bBT\b/);
+  });
+  it('/P and the encrypted /Perms agree; permissions default to allowed', async () => {
+    const pdf = await pdfOf({ encrypt: { userPassword: 'x', ownerPassword: 'boss', permissions: { copy: false, modify: false } } });
+    const { P, Perms } = await encOf(pdf);
+    const key = await fileKey(pdf, 'boss', true); // the owner password opens it too
+    const perms = aes('aes-256-ecb', key, null, Perms, false);
+    expect(perms.readInt32LE(0)).toBe(P);
+    expect(perms.subarray(9, 12).toString()).toBe('adb');
+    const bit = (n) => !!(P & (1 << (n - 1)));
+    expect([bit(3), bit(4), bit(5), bit(12)]).toEqual([true, false, false, true]);
+  });
+  it('without an owner password, the user password does not unlock the owner key', async () => {
+    const pdf = await pdfOf({ encrypt: { userPassword: 'u' } });
+    await expect(fileKey(pdf, 'u', true)).rejects.toThrow(/wrong password/);
+    await expect(fileKey(pdf, '', true)).rejects.toThrow(/wrong password/);
+  });
+  it('refuses PDF/A, signing, unknown permissions and passwords over 127 bytes; no password in the error', async () => {
+    const secret = 'é'.repeat(70); // 140 bytes
+    await expect(pdfOf({ encrypt: { userPassword: secret } })).rejects.toThrow(/too long/);
+    await pdfOf({ encrypt: { userPassword: secret } }).catch(e => expect(e.message).not.toContain(secret));
+    await expect(pdfOf({ encrypt: { userPassword: 'a' }, pdfa: { icc: new Uint8Array(1) } })).rejects.toThrow(/PDF\/A/);
+    await expect(pdfOf({ encrypt: { userPassword: 'a' }, prepare: async () => {} })).rejects.toThrow(/signed/);
+    await expect(pdfOf({ encrypt: { userPassword: 'a', permissions: { root: false } } })).rejects.toThrow(/Unknown PDF permission/);
+  });
+  it('checks the API request shape (400s), with no password in any message', () => {
+    expect(pdfEncryptOptions(undefined)).toBeUndefined();
+    expect(pdfEncryptOptions({})).toBeUndefined();
+    expect(pdfEncryptOptions({ userPassword: 'a', permissions: { copy: false } })).toEqual({ userPassword: 'a', ownerPassword: undefined, permissions: { copy: false } });
+    for (const bad of ['x', [], { userPassword: 1 }, { permissions: { copy: 'no' } }, { permissions: { root: false } }, { evil: 1 }, { userPassword: 'ü'.repeat(64) }]) {
+      let err; try { pdfEncryptOptions(bad); } catch (e) { err = e; }
+      expect(err?.status, JSON.stringify(bad)).toBe(400);
+      expect(err.message).not.toContain('ü'.repeat(64));
+    }
+  });
+  const hasPoppler = (() => { try { execFileSync('pdfinfo', ['-v'], { stdio: 'ignore' }); return true; } catch { return false; } })();
+  it.skipIf(!hasPoppler)('poppler opens it with the password and reads the text', async () => {
+    const f = path.join(os.tmpdir(), `pw-enc-${process.pid}.pdf`);
+    fs.writeFileSync(f, await pdfOf({ encrypt: { userPassword: 'öpen sesame', permissions: { copy: false } } }));
+    try {
+      const info = execFileSync('pdfinfo', ['-upw', 'öpen sesame', f]).toString();
+      expect(info).toMatch(/Encrypted:\s+yes/);
+      expect(info).toMatch(/AES-256/);
+      expect(info).toMatch(/copy:no/);
+      expect(execFileSync('pdftotext', ['-upw', 'öpen sesame', f, '-']).toString()).toContain('Hello secret');
+      expect(() => execFileSync('pdftotext', ['-upw', 'nope', f, '-'], { stdio: 'pipe' })).toThrow();
+    } finally { fs.rmSync(f, { force: true }); }
   });
 });
