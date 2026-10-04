@@ -6,6 +6,7 @@ import { MIME_FIELD, MIME_DATASET } from './Canvas.jsx';
 import { loadSources, buildDataSets, detectFields, jsonPath } from '@/engine/data/index.js';
 import { resolveParameters } from '@/engine/index.js';
 import { Dialog, Field, TextInput, Select, Check } from './ui.jsx';
+import { t } from '@/i18n/index.js';
 
 const NAME = /^[A-Za-z_][\w]*$/;
 
@@ -105,42 +106,73 @@ export default function DataPanel() {
 /* ---------------------------------------------------------------- dialogs */
 function uniqueIn(list, name, skip) { return !(list || []).some((x, i) => i !== skip && x.name === name); }
 
+const EDITORS = ['slider', 'range', 'dateRange', 'radio', 'list', 'toggle'];
+const RANGE_EDITORS = new Set(['range', 'dateRange']);
+
 function ParamDialog({ index, onClose }) {
   const def = useDesigner(s => s.def);
+  const lang = useDesigner(s => s.lang);
+  const T = (k, v) => t(lang, k, v);
   const orig = index != null ? def.parameters[index] : null;
   const [p, setP] = useState(orig || { name: '', type: 'string', prompt: '', default: '', required: false });
-  const err = !NAME.test(p.name) ? 'The name must start with a letter and hold only letters, digits and _' : !uniqueIn(def.parameters, p.name, index) ? 'Another parameter has this name' : null;
+  const [columns, setColumns] = useState(String(def.parameterLayout?.columns || 1));
+  const err = !NAME.test(p.name) ? T('paramNameRule') : !uniqueIn(def.parameters, p.name, index) ? T('paramNameTaken') : null;
+  // a limit is a number for number parameters, a date (yyyy-mm-dd) for date parameters
+  const limit = (v) => (v === '' || v == null ? undefined : p.type === 'number' && !Number.isNaN(Number(v)) ? Number(v) : v);
+  const setEditor = (editor) => setP({ ...p, editor, ...(RANGE_EDITORS.has(editor) ? { multi: true } : {}) });
   const save = () => {
     useDesigner.getState().apply(d => {
       d.parameters ||= [];
       const v = { ...p }; if (v.default === '') delete v.default; if (!v.prompt) delete v.prompt;
+      if (!v.editor) { delete v.editor; delete v.min; delete v.max; delete v.step; }
+      for (const k of ['min', 'max', 'step']) if (v[k] === undefined) delete v[k];
       if (index != null) d.parameters[index] = v; else d.parameters.push(v);
+      const n = Number(columns);
+      if (n > 1) d.parameterLayout = { ...(d.parameterLayout || {}), columns: n }; else delete d.parameterLayout;
     });
     onClose();
   };
   const del = () => { useDesigner.getState().apply(d => { d.parameters.splice(index, 1); }); onClose(); };
+  const needsChoices = (p.editor === 'radio' || p.editor === 'list') && !p.options && !p.optionsFrom;
+  const limits = p.editor === 'slider' || RANGE_EDITORS.has(p.editor);
   return (
-    <Dialog title={orig ? `Parameter ${orig.name}` : 'New parameter'} onClose={onClose}
-      footer={<>{orig && <button className="btn danger" style={{ marginRight: 'auto' }} onClick={del}>Delete</button>}<button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!!err} onClick={save}>Save</button></>}>
+    <Dialog title={orig ? T('paramTitle', { name: orig.name }) : T('paramNew')} onClose={onClose}
+      footer={<>{orig && <button className="btn danger" style={{ marginInlineEnd: 'auto' }} onClick={del}>{T('delete')}</button>}<button className="btn" onClick={onClose}>{T('cancel')}</button><button className="btn primary" disabled={!!err} onClick={save}>{T('save')}</button></>}>
       <div className="grid2">
-        <Field label="Name"><TextInput value={p.name} onChange={v => setP({ ...p, name: v })} autoFocus /></Field>
-        <Field label="Type"><Select value={p.type} options={['string', 'number', 'date', 'boolean']} onChange={v => setP({ ...p, type: v })} /></Field>
-        <Field label="Prompt"><TextInput value={p.prompt} onChange={v => setP({ ...p, prompt: v })} /></Field>
-        <Field label="Default" hint="A value or =expression, e.g. =Today()"><TextInput value={p.default} onChange={v => setP({ ...p, default: v })} mono /></Field>
+        <Field label={T('name')}><TextInput value={p.name} onChange={v => setP({ ...p, name: v })} autoFocus /></Field>
+        <Field label={T('paramType')}><Select value={p.type} options={['string', 'number', 'date', 'boolean']} onChange={v => setP({ ...p, type: v })} /></Field>
+        <Field label={T('prompt')}><TextInput value={p.prompt} onChange={v => setP({ ...p, prompt: v })} /></Field>
+        <Field label={T('defaultValue')} hint={T('defaultHint')}><TextInput value={p.default} onChange={v => setP({ ...p, default: v })} mono /></Field>
       </div>
-      <Check label="Required" checked={p.required} onChange={v => setP({ ...p, required: v })} />
-      <Check label="Allow several values (use with the 'in' filter, or Join(Parameters.x))" checked={p.multi} onChange={v => setP({ ...p, multi: v || undefined })} />
-      <Field label="Fixed choices (one per line: value or value=label)">
+      <Check label={T('required')} checked={p.required} onChange={v => setP({ ...p, required: v })} />
+      <Check label={T('multiHint')} checked={p.multi} onChange={v => setP({ ...p, multi: v || undefined })} />
+      <Field label={T('fixedChoices')}>
         <textarea className="textarea" rows={3} value={(p.options || []).map(o => (o.label != null && o.label !== String(o.value) ? `${o.value}=${o.label}` : String(o.value))).join('\n')}
           onChange={e => { const list = e.target.value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const [v, ...lb] = l.split('='); return { value: v.trim(), label: (lb.join('=') || v).trim() }; }); setP({ ...p, options: list.length ? list : undefined }); }} />
       </Field>
       <div className="grid2">
-        <Field label="Or choices from a data set"><Select value={p.optionsFrom?.dataSet} options={(def.dataSets || []).map(d => d.name)} allowEmpty onChange={v => setP({ ...p, optionsFrom: v ? { dataSet: v, value: p.optionsFrom?.value || '', label: p.optionsFrom?.label } : undefined })} /></Field>
-        {p.optionsFrom && <Field label="Value field"><Select value={p.optionsFrom.value?.replace(/^=Fields\./, '')} options={(def.dataSets.find(d => d.name === p.optionsFrom.dataSet)?.fields || []).map(f => f.name)} onChange={v => setP({ ...p, optionsFrom: { ...p.optionsFrom, value: `=Fields.${v}` } })} /></Field>}
+        <Field label={T('choicesFrom')}><Select value={p.optionsFrom?.dataSet} options={(def.dataSets || []).map(d => d.name)} allowEmpty onChange={v => setP({ ...p, optionsFrom: v ? { dataSet: v, value: p.optionsFrom?.value || '', label: p.optionsFrom?.label } : undefined })} /></Field>
+        {p.optionsFrom && <Field label={T('valueField')}><Select value={p.optionsFrom.value?.replace(/^=Fields\./, '')} options={(def.dataSets.find(d => d.name === p.optionsFrom.dataSet)?.fields || []).map(f => f.name)} onChange={v => setP({ ...p, optionsFrom: { ...p.optionsFrom, value: `=Fields.${v}` } })} /></Field>}
       </div>
-      {p.optionsFrom && <div className="hint">The data set can filter on other parameters (=Parameters.x). The viewer then reloads the choices when those change (cascading).</div>}
+      {p.optionsFrom && <div className="hint">{T('cascadeHint')}</div>}
+      <div className="grid2">
+        <Field label={T('editor')} hint={T(`editorHint_${p.editor || 'auto'}`)}>
+          <Select value={p.editor} allowEmpty onChange={setEditor} options={EDITORS.map(e => ({ value: e, label: T(`editor_${e}`) }))} />
+        </Field>
+        <Field label={T('panelColumns')} hint={T('panelColumnsHint')}>
+          <Select value={columns} onChange={v => setColumns(v || '1')} options={['1', '2', '3', '4']} />
+        </Field>
+      </div>
+      {limits && (
+        <div className="grid3">
+          <Field label={T('minimum')}><TextInput value={p.min ?? ''} onChange={v => setP({ ...p, min: limit(v) })} mono type={p.type === 'date' ? 'date' : 'text'} /></Field>
+          <Field label={T('maximum')}><TextInput value={p.max ?? ''} onChange={v => setP({ ...p, max: limit(v) })} mono type={p.type === 'date' ? 'date' : 'text'} /></Field>
+          {p.type !== 'date' && <Field label={T('step')}><TextInput value={p.step ?? ''} onChange={v => setP({ ...p, step: v === '' || Number.isNaN(Number(v)) ? undefined : Number(v) })} mono /></Field>}
+        </div>
+      )}
+      {needsChoices && <div className="err">{T('editorNeedsChoices')}</div>}
       {err && p.name && <div className="err">{err}</div>}
-      <div className="hint">Use it in expressions as <code>Parameters.{p.name || 'name'}</code> and in a REST URL as <code>{'{Parameters.'}{p.name || 'name'}{'}'}</code>.</div>
+      <div className="hint">{T('useAsA')} <code>Parameters.{p.name || 'name'}</code> {T('useAsB')} <code>{'{Parameters.'}{p.name || 'name'}{'}'}</code>.</div>
     </Dialog>
   );
 }
