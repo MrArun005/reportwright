@@ -360,6 +360,7 @@ function emMember(n, o) {
     const root = ROOT(n.obj);
     if (root === 'fields') return atom(`${o.fields || 'Fields'}.${safeName(n.name)}`);
     if (root === 'parameters') return atom(`Parameters.${safeName(n.name)}`);
+    if (root === 'partproperties') return atom(`PartProperties.${safeName(n.name)}`);
     if (root === 'globals') return emGlobal(n.name);
     if (root === 'reportitems') return no(`ReportItems!${n.name} (the value of another item)`);
     if (root === 'user') return no(`User!${n.name} (who runs the report)`);
@@ -645,6 +646,9 @@ function newContext() {
     /** @type {Map<string, Set<string>>} data set → its field names (lower case) */ dsFields: new Map(),
     /** @type {Set<string>} parameter names (lower case) */ params: new Set(),
     /** @type {Record<string, string>} embedded images: referenced as embedded:name, stored once */ imageData: {},
+    /** @type {Set<string>} layer names declared or used */ layers: new Set(),
+    /** @type {{ name: string }[]} layers items use without a declaration */ extraLayers: [],
+    /** @type {Set<string>} part libraries referenced (report ids) */ libraries: new Set(),
     cells: 0,
     warn(msg) { if (!cx.warnings.includes(msg)) cx.warnings.push(msg); },
   };
@@ -835,8 +839,81 @@ const CONVERTERS = {
   inputfield: (ar, cx, ctx) => inputField(ar, cx, ctx),
   indicator: (ar, cx, ctx) => indicator(ar, cx, ctx),
   visual: (ar, cx, ctx) => visual(ar, cx, ctx),
+  reportpart: (ar, cx, ctx) => reportPart(ar, cx, ctx),
+  contentplaceholder: (ar, cx, ctx) => { const t = track(cx, ar); return finish(cx, t, common(ar, cx, t, ctx, 'placeholder')); },
   overflowplaceholder: (ar, cx) => { const t = track(cx, ar); t.approx('the table it continues flows onto the next pages by itself, so this placeholder is not needed.'); return finish(cx, t, null); },
 };
+
+/* ================================================================ reuse: layers, report parts, master reports */
+
+/**
+ * A Pagewright report id for an ActiveReports file name ("Sales Library.rdlx-json" → "sales-library"): the id the
+ * library or master must be saved under for the reference to work.
+ */
+export function reportIdOf(file) {
+  const base = String(file ?? '').split(/[\\/]/).pop().replace(/\.(rdlx-json|rdlx-master|rdlx|rdl|rdlc|json)$/i, '');
+  const id = base.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64).replace(/-+$/, '');
+  return id || 'report';
+}
+// TargetDevice → Pagewright layer target
+const TARGETS = { all: 'all', screen: 'screen', paper: 'print', print: 'print', export: 'export', none: 'design' };
+/** The report's layers (not "default", where every item is anyway). */
+function layersOf(ar, cx) {
+  const out = [];
+  for (const l of Array.isArray(ar.Layers) ? ar.Layers.slice(0, 200) : []) {
+    if (!l?.Name || String(l.Name).toLowerCase() === 'default') continue;
+    /** @type {Record<string, any>} */
+    const o = { name: String(l.Name) };
+    const tg = TARGETS[String(l.TargetDevice ?? '').toLowerCase()];
+    if (tg && tg !== 'all') o.target = tg;
+    if (l.Visible === false || isFalse(l.Visible ?? true)) o.visible = false;
+    if (l.TargetDevice && !tg) cx.warn(`Layer "${l.Name}": the target device "${l.TargetDevice}" is not known; it shows everywhere.`);
+    out.push(o);
+    cx.layers.add(o.name);
+  }
+  return out;
+}
+/** An item's layer name, or undefined on the default layer. */
+function layerOf(ar, cx) {
+  const n = ar.LayerName;
+  if (n == null || n === '' || String(n).toLowerCase() === 'default') return undefined;
+  const name = String(n).slice(0, 200);
+  if (!cx.layers.has(name)) { cx.layers.add(name); cx.extraLayers.push({ name }); cx.warn(`Layer "${name}" is used by an item but not declared; it was added, shown everywhere.`); }
+  return name;
+}
+/** A library's report parts → Pagewright parts ({ name, item, properties }). */
+function partsOf(ar, cx) {
+  const out = [];
+  for (const p of Array.isArray(ar.ReportParts) ? ar.ReportParts.slice(0, 500) : []) {
+    const item = p?.ReportItemName ?? p?.ReportItem ?? p?.ItemName;
+    if (!p?.Name || !item) { cx.warn(`A report part without a name or an item${p?.Name ? ` ("${p.Name}")` : ''} was left out.`); continue; }
+    /** @type {Record<string, any>} */
+    const o = { name: String(p.Name), item: String(item) };
+    if (p.Description) o.description = String(p.Description).slice(0, 2000);
+    const props = (Array.isArray(p.Properties) ? p.Properties : []).filter(q => q?.Name).map(q => ({ name: safeName(q.Name), default: q.DefaultValue ?? q.Value ?? null }));
+    o.properties = props;
+    out.push(o);
+  }
+  return out;
+}
+/** A report part instance → a Pagewright part item, its library referenced by report id. */
+function reportPart(ar, cx, ctx) {
+  const t = track(cx, ar);
+  const it = common(ar, cx, t, ctx, 'part');
+  const lib = ar.Library ?? ar.LibraryName ?? ar.ReportLibrary;
+  const part = ar.ReportPart ?? ar.PartName ?? ar.Part;
+  if (!lib || !part) { t.drop('a report part without its library or part name was left out.'); return finish(cx, t, null); }
+  it.library = reportIdOf(lib);
+  it.part = String(part);
+  it.properties = {};
+  for (const q of Array.isArray(ar.Properties) ? ar.Properties : []) {
+    if (!q?.Name) continue;
+    const v = ex(cx, t, q.Value, ctx, { what: `the part property ${q.Name}` });
+    if (v !== undefined) it.properties[safeName(q.Name)] = v;
+  }
+  if (!cx.libraries.has(it.library)) { cx.libraries.add(it.library); cx.warn(`Report parts come from the library "${lib}": import it too and save it as the report "${it.library}".`); }
+  return finish(cx, t, it);
+}
 
 /** One item. A converter that fails drops only its own item. */
 function convertItem(ar, cx, ctx) {
@@ -882,6 +959,8 @@ function dropInside(ar, cx) {
 function common(ar, cx, t, ctx, type) {
   /** @type {Record<string, any>} */
   const it = { type, name: uniq(cx, ar.Name || type), x: toPt(ar.Left), y: toPt(ar.Top), w: toPt(ar.Width), h: toPt(ar.Height) };
+  const layer = layerOf(ar, cx);
+  if (layer) it.layer = layer;
   const hidden = visibility(ar.Visibility, cx, t, ctx);
   if (hidden !== undefined) it.hidden = hidden;
   const pb = breaks(ar);
@@ -2566,6 +2645,10 @@ function convertReport(ar, cx, opts) {
   const parameters = parametersOf(ar.ReportParameters, cx);
   for (const p of parameters) cx.params.add(p.name.toLowerCase());
   const { dataSources, dataSets } = dataPart(ar, cx);
+  const layers = layersOf(ar, cx);
+  const parts = partsOf(ar, cx);
+  const master = ar.MasterReport ? reportIdOf(ar.MasterReport) : undefined;
+  if (master) cx.warn(`The report uses the master report "${ar.MasterReport}": import it too and save it as the report "${master}". Its page header, footer and items frame this report; the body goes in its first content placeholder.`);
   const fnHint = 'Rewrite reusable formulas as report functions ("functions", written in the expression language and called as Code.Name(…)).';
   if (ar.Code) cx.warn(`The report has custom code (Code); Pagewright does not run JavaScript, and expressions that call it are shown as text. ${fnHint}`);
   if (Array.isArray(ar.CustomCodeBlocks) && ar.CustomCodeBlocks.length) cx.warn(`The report has custom code; Pagewright does not run JavaScript. ${fnHint}`);
@@ -2620,6 +2703,9 @@ function convertReport(ar, cx, opts) {
     dataSets,
     styles: { base: { fontFamily: 'Inter', fontSize: 10, color: '#000000', padding: 0 } },
     ...(Object.keys(cx.imageData).length ? { images: cx.imageData } : {}),
+    ...(master ? { master } : {}),
+    ...(layers.length || cx.extraLayers.length ? { layers: [...layers, ...cx.extraLayers] } : {}),
+    ...(parts.length ? { parts } : {}),
     sections: { pageHeader: header, body: more.length ? [body, ...more] : body, pageFooter: footer },
   };
 }
