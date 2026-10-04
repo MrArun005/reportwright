@@ -1,6 +1,7 @@
 'use client';
 // Ask AI in the designer: describe a change, see what it does to the report, apply it as one undoable step.
 // The report and a trimmed copy of its loaded data go to /api/ai/report; nothing changes until Apply.
+import { reportFetch } from '@/viewer/dataFetch.js';
 import { useEffect, useState } from 'react';
 import { useDesigner, sectionList, secOf } from './store.js';
 import { loadSample } from './DataPanel.jsx';
@@ -42,7 +43,7 @@ export default function AskAi({ onClose }) {
       let preview = null;
       try {
         const params = resolveParameters(out.definition, {}, { lenient: true });
-        const model = await render(out.definition, { fontStore: fontStore(), parameters: params, sources: sources ? Object.fromEntries((out.definition.dataSources || []).map(s => [s.name, sources[s.name] ?? (s.type === 'json' ? s.data : [])])) : undefined, baseUrl: window.location.origin });
+        const model = await render(out.definition, { fontStore: fontStore(), parameters: params, sources: sources ? Object.fromEntries((out.definition.dataSources || []).map(s => [s.name, sources[s.name] ?? (s.type === 'json' ? s.data : [])])) : undefined, baseUrl: window.location.origin, fetch: reportFetch(window.location.origin) });
         preview = { html: pageToSvg(model.pages[0], model.width, model.height), pages: model.pages.length };
       } catch (e) { preview = { error: e.message }; }
       setSt({ state: 'done', next: out.definition, warnings: out.warnings || [], diff: changes(def, out.definition), preview });

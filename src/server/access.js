@@ -44,7 +44,7 @@ export const RULES = [
  * broken percent-encoding. A trailing slash is dropped.
  * @param {string} raw
  */
-function canonical(raw) {
+export function canonical(raw) {
   let segs;
   try { segs = raw.split('/').map(decodeURIComponent); } catch { return null; }
   if (segs[0] !== '') return null;

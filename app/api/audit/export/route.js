@@ -14,6 +14,7 @@ export async function POST(req) {
     if (!body || typeof body.report !== 'string' || !FORMATS.has(body.format)) return Response.json({ error: 'Send { report, format }' }, { status: 400 });
     const p = await principalOf(req);
     if (accountsOn() && p.kind !== 'user') return Response.json({ error: 'Sign in first.' }, { status: 401 });
+    if (p.kind === 'public') return Response.json({ error: 'Anonymous exports are not logged (PW_PUBLIC_READONLY): nobody can fill the audit log.' }, { status: 403 });
     await readReportFor(p, safeId(body.report), 'view'); // 404 for a report that is not there too
     await audit('report.export', { req, principal: p, report: body.report, format: body.format, params: body.parameters && typeof body.parameters === 'object' ? body.parameters : null, detail: { client: true } });
     return Response.json({ ok: true });

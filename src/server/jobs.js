@@ -38,11 +38,16 @@ export function publicJob(job) {
   return { ...rest, total: job.total, done: job.done, failed: job.failed };
 }
 
-/** The URLs a batch or schedule will call later (webhook, uploads, the item list), checked when they are saved. */
-export async function checkDelivery(spec) {
-  if (spec.webhook != null) await checkTarget(spec.webhook, '"webhook"');
-  if (spec.itemsFrom?.url != null) await checkTarget(spec.itemsFrom.url, '"itemsFrom.url"', { relative: true });
-  for (const it of Array.isArray(spec.items) ? spec.items : []) if (it?.putUrl != null) await checkTarget(it.putUrl, '"putUrl"');
+/**
+ * The URLs a batch or schedule will call later (webhook, uploads, the item list), checked when they are saved. Only a
+ * designer (or a service key) may aim them at PW_INTERNAL_HOSTS: a viewer's key reaches public hosts only.
+ * @param {any} spec @param {import('./perms.js').Principal} [p]
+ */
+export async function checkDelivery(spec, p = defaultPrincipal()) {
+  const internal = canDesign(p);
+  if (spec.webhook != null) await checkTarget(spec.webhook, '"webhook"', { internal });
+  if (spec.itemsFrom?.url != null) await checkTarget(spec.itemsFrom.url, '"itemsFrom.url"', { relative: true, internal });
+  for (const it of Array.isArray(spec.items) ? spec.items : []) if (it?.putUrl != null) await checkTarget(it.putUrl, '"putUrl"', { internal });
 }
 
 /** Expand itemsFrom: fetch a list and map each element to parameters. */
@@ -71,10 +76,11 @@ async function expandItems(spec, base, fetch) {
 export async function createBatch(spec, req, principal = defaultPrincipal()) {
   // self: this server, the one local address batch fetches may reach; baseUrl may come from the caller
   const self = defaultBase(req);
-  const base = spec.baseUrl || self;
+  const designer = canDesign(principal);
+  const base = (designer && spec.baseUrl) || self; // a viewer's key cannot send the report's relative URLs elsewhere
   const def = await loadTemplate(spec.template, principal);
-  await checkDelivery(spec);
-  const items = await expandItems(spec, base, serverFetch(self));
+  await checkDelivery(spec, principal);
+  const items = await expandItems(spec, base, serverFetch(self, { internal: designer }));
   if (!items.length) throw Object.assign(new Error('The batch has no items'), { status: 400 });
   if (!canDesign(principal) && items.some(i => i?.data)) throw Object.assign(new Error('Only a designer can send data for a render. Render the report with its own data.'), { status: 403 });
   if (items.length > MAX_ITEMS) throw Object.assign(new Error(`A batch can hold at most ${MAX_ITEMS} items`), { status: 400 });
@@ -213,7 +219,7 @@ async function run(job, owner, stopAfter) {
         const principal = await allowed().catch((e) => { throw (ended = new Error(`The owner may no longer run this report (${e.message}).`)); });
         const r = await renderTo(def, { parameters: item.parameters, data: item.data, format: job.format, baseUrl: job.base, self: job.self, pdfa: job.pdfa, sign: job.sign, principal });
         if (item.putUrl) {
-          const res = await serverFetch(job.self)(item.putUrl, { method: 'PUT', body: r.bytes, headers: { 'content-type': r.contentType } });
+          const res = await serverFetch(job.self, { internal: canDesign(principal) })(item.putUrl, { method: 'PUT', body: r.bytes, headers: { 'content-type': r.contentType } });
           if (!res.ok) throw new Error(`upload: HTTP ${res.status}`);
         }
         await fs.writeFile(path.join(itemDir, `${i}`), r.bytes);
@@ -269,7 +275,8 @@ async function notify(job) {
   const headers = { 'content-type': 'application/json', 'user-agent': 'Pagewright' };
   if (process.env.PW_WEBHOOK_SECRET) headers['x-pagewright-signature'] = 'sha256=' + crypto.createHmac('sha256', process.env.PW_WEBHOOK_SECRET).update(body).digest('hex');
   try {
-    const res = await serverFetch(job.self)(job.webhook, { method: 'POST', headers, body });
+    const owner = job.owner ? await principalFromId(job.owner, job.ownerKey) : defaultPrincipal(); // as the owner is now
+    const res = await serverFetch(job.self, { internal: canDesign(owner) })(job.webhook, { method: 'POST', headers, body });
     job.webhookStatus = res.status;
   } catch (e) { job.webhookStatus = `error: ${e.message}`; }
   await save(job);

@@ -53,12 +53,15 @@ export const serverFetch = (selfOrigin, { internal = true } = {}) => async (url,
   const self = selfOrigin && safeOrigin(selfOrigin);
   if (safeOrigin(String(url)) === NO_BASE_URL) throw Object.assign(new Error('A relative data URL needs PW_BASE_URL in production (this server\'s public URL): the server never takes its own address from a request.'), { status: 500 });
   const headers = new Headers(init.headers || {});
+  // the connection is ours to frame: a report cannot pick the virtual host (Host) or the body's framing
+  for (const k of ['host', 'content-length', 'transfer-encoding', 'connection', 'te', 'upgrade', 'x-pagewright-proxy-secret']) headers.delete(k);
   const toSelf = self && safeOrigin(String(url)) === self;
   if (toSelf) {
     if (!['GET', 'HEAD'].includes((init.method || 'GET').toUpperCase())) throw Object.assign(new Error('A data source may only read (GET) from this server.'), { status: 403 });
     for (const k of ['origin', 'referer', 'cookie', 'authorization', 'x-api-key']) headers.delete(k);
     if (accountsOn()) headers.set('cookie', internalCookie(String(url)));
     else if (basicOn()) headers.set('authorization', `Basic ${Buffer.from(String(process.env.PW_BASIC_AUTH)).toString('base64')}`);
+    if (process.env.PW_AUTH === 'proxy' && process.env.PW_PROXY_SECRET) headers.set('x-pagewright-proxy-secret', process.env.PW_PROXY_SECRET);
   }
   return safeFetch(url, { ...init, headers }, { allow: [selfOrigin, ...(internal ? internalHosts() : [])].filter(Boolean) });
 };
@@ -69,13 +72,13 @@ export const serverFetch = (selfOrigin, { internal = true } = {}) => async (url,
  * used (the name may point elsewhere by then). relative: a path on this server is fine (itemsFrom).
  * @param {any} url @param {string} what @param {{ relative?: boolean }} [o]
  */
-export async function checkTarget(url, what, { relative = false } = {}) {
+export async function checkTarget(url, what, { relative = false, internal = true } = {}) {
   if (relative && typeof url === 'string' && url.startsWith('/') && !url.startsWith('//')) return;
   let u;
   try { u = new URL(String(url)); } catch { throw Object.assign(new Error(`${what} must be an http(s) URL.`), { status: 400 }); }
   if (!/^https?:$/.test(u.protocol)) throw Object.assign(new Error(`${what} must be an http(s) URL.`), { status: 400 });
   const host = u.hostname.replace(/^\[|\]$/g, '').toLowerCase();
-  if (internalHosts().includes(host)) return;
+  if (internal && internalHosts().includes(host)) return;
   const ips = net.isIP(host) ? [host] : (await dns.promises.lookup(host, { all: true }).catch(() => [])).map(a => a.address);
   if (ips.some(isPrivate)) throw refuse(host);
 }
@@ -120,7 +123,7 @@ export async function safeFetch(input, init = {}, { allow = [], hops = 3, deadli
     const same = next.origin === url.origin;
     const keepBody = res.statusCode === 307 || res.statusCode === 308;
     // credentials never follow a redirect to another site
-    const h = same ? headers : Object.fromEntries(Object.entries(headers).filter(([k]) => !/^(authorization|cookie|x-api-key)$/i.test(k)));
+    const h = same ? headers : Object.fromEntries(Object.entries(headers).filter(([k]) => !/^(authorization|cookie|x-api-key|x-pagewright-proxy-secret)$/i.test(k)));
     // a public first hop cannot redirect into the allow list (this server, PW_INTERNAL_HOSTS): its redirects get none
     return safeFetch(next, keepBody ? { ...init, headers: h } : { headers: h }, { allow: trusted ? allow : [], hops: hops - 1, deadline });
   }

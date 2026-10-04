@@ -21,6 +21,9 @@ import { principalOf, principalFromId, serverSources, stampDefinition, readRunna
 import { apiPrincipal } from '../../src/server/auth.js';
 import { baseUrl, renderTo, assertFixedHosts } from '../../src/server/renderer.js';
 import { serverFetch } from '../../src/server/safeFetch.js';
+import { checkDelivery } from '../../src/server/jobs.js';
+import { reportFetch } from '../../src/viewer/dataFetch.js';
+import { POST as auditExport } from '../../app/api/audit/export/route.js';
 
 const ORIGIN = 'http://pw.test';
 const EVIL = 'http://evil.example';
@@ -37,6 +40,8 @@ const rq = (p, { method = 'GET', origin = ORIGIN, body, headers = {} } = {}) => 
 });
 const P = (id) => ({ params: Promise.resolve({ id }) });
 const SQL_DEF = { name: 'Payroll', dataSources: [{ name: 'db', type: 'sql', connection: 'main', query: 'select name, salary from salaries' }], dataSets: [], sections: { body: { items: [] } } };
+const SECRET = 'a-long-secret-the-reverse-proxy-sends';
+const VIA_PROXY = { 'x-pagewright-proxy-secret': SECRET };
 const runSaved = (id, o = {}) => runSqlRoute(rq('/api/data/sql', { method: 'POST', body: { report: id, source: 'db' }, ...o }));
 
 let tmp, dbn = 0;
@@ -143,10 +148,19 @@ describe('each way to sign in still works in production', () => {
     expect((await proxy(rq('/'))).status).toBe(401); // the password is asked for
     await saveAndRun({ authorization });
   }));
-  it('PW_AUTH=proxy: a reverse proxy in front signs people in; the app trusts what reaches it, same-site writes only', () => withEnv({ ...PROD_OPEN, PW_AUTH: 'proxy' }, async () => {
-    expect(await proxy(rq('/designer/x'))).toBe(undefined);
-    await saveAndRun();
+  it('PW_AUTH=proxy: the reverse proxy in front signs people in and proves it with PW_PROXY_SECRET; same-site writes only', () => withEnv({ ...PROD_OPEN, PW_AUTH: 'proxy', PW_PROXY_SECRET: SECRET }, async () => {
+    expect(await proxy(rq('/designer/x', { headers: VIA_PROXY }))).toBe(undefined);
+    await saveAndRun(VIA_PROXY);
   }));
+  it('PW_AUTH=proxy in production without a PW_PROXY_SECRET (or a short one) is no sign-in at all: it fails closed', async () => {
+    for (const secret of [undefined, 'short']) {
+      await withEnv({ ...PROD_OPEN, PW_AUTH: 'proxy', PW_PROXY_SECRET: secret }, async () => {
+        expect((await proxy(rq('/designer/x', { headers: VIA_PROXY })))?.status).toBe(401);
+        expect((await proxy(rq('/api/reports', { method: 'POST', body: {} })))?.status).toBe(401);
+        expect(await principalOf(rq('/'))).toEqual(NOBODY);
+      });
+    }
+  });
   it('API keys: with accounts off a user\'s key ("email|key") is a service key (it was the open server before)', () => withEnv({ ...PROD_OPEN, PW_API_KEYS: 'a@x.io|k1,k2' }, async () => {
     for (const k of ['k1', 'k2']) {
       const { principal } = await apiPrincipal(rq('/api/v1/render', { method: 'POST', headers: { authorization: `Bearer ${k}` } }));
@@ -235,7 +249,7 @@ describe('this server\'s own origin and credentials', () => {
     });
   });
 
-  it('production without PW_BASE_URL refuses relative data URLs (fail closed) and names the setting', () => withEnv({ NODE_ENV: 'production', PW_BASE_URL: undefined, PW_AUTH: 'proxy' }, async () => {
+  it('production without PW_BASE_URL refuses relative data URLs (fail closed) and names the setting', () => withEnv({ NODE_ENV: 'production', PW_BASE_URL: undefined, PW_AUTH: 'proxy', PW_PROXY_SECRET: SECRET }, async () => {
     const def = { name: 'r', dataSources: [{ name: 'd', type: 'rest', url: '/api/sample/sales/2024' }], dataSets: [], sections: { body: { items: [] } } };
     await expect(renderTo(def, { format: 'json', baseUrl: baseUrl(), principal: OPEN })).rejects.toThrow(/PW_BASE_URL/);
   }));
@@ -251,6 +265,63 @@ describe('this server\'s own origin and credentials', () => {
     // any other host (an internal one included) never gets the password
     await f(at(other));
     expect(seen[1].h.authorization).toBeUndefined();
+  }));
+
+  it('a report cannot pick the Host header or the framing of a server-side request', () => withEnv({ PW_INTERNAL_HOSTS: '127.0.0.1' }, async () => {
+    await serverFetch(at(self, ''))(at(other), { headers: { host: 'admin.internal', 'transfer-encoding': 'chunked', connection: 'upgrade' } });
+    expect(seen[0].h.host).toBe(`127.0.0.1:${other.address().port}`);
+    expect(seen[0].h['transfer-encoding']).toBeUndefined();
+  }));
+
+  it('PW_AUTH=proxy: the server\'s calls to itself carry PW_PROXY_SECRET (and only those)', () => withEnv({ NODE_ENV: 'production', PW_AUTH: 'proxy', PW_PROXY_SECRET: SECRET, PW_INTERNAL_HOSTS: '127.0.0.1' }, async () => {
+    const f = serverFetch(at(self, ''));
+    await f(at(self), { headers: { 'x-pagewright-proxy-secret': 'forged' } });
+    await f(at(other), { headers: { 'x-pagewright-proxy-secret': 'forged' } });
+    expect(seen[0].h['x-pagewright-proxy-secret']).toBe(SECRET);
+    expect(seen[1].h['x-pagewright-proxy-secret']).toBeUndefined();
+  }));
+
+  it('a viewer\'s API key cannot aim batches or schedules at PW_INTERNAL_HOSTS; a designer or service key can', () => withEnv({ PW_INTERNAL_HOSTS: '127.0.0.1' }, async () => {
+    const viewer = { kind: 'user', email: 'v@x.io', role: 'viewer', groups: [] };
+    for (const spec of [{ itemsFrom: { url: at(other) } }, { webhook: at(other) }, { items: [{ putUrl: at(other) }] }]) {
+      await expect(checkDelivery(spec, viewer), JSON.stringify(spec)).rejects.toMatchObject({ status: 403 });
+      await checkDelivery(spec, { kind: 'service' });
+    }
+    await expect(serverFetch(at(self, ''), { internal: false })(at(other))).rejects.toMatchObject({ status: 403 });
+    expect(seen).toHaveLength(0);
+  }));
+});
+
+describe('a report\'s data sources in the browser (reportFetch)', () => {
+  const calls = [];
+  const f = reportFetch('https://pw.example.com', async (u, init) => { calls.push([init.method || 'GET', u, init.credentials]); return new Response('[]'); });
+  it('may read data on this server: sample data, the data proxy, saved SQL, and paths that are not Pagewright\'s', async () => {
+    await f('/api/sample/sales/2024');
+    await f('https://pw.example.com/api/data/proxy?url=x');
+    await f('/api/data/sql', { method: 'POST', body: '{}' });
+    await f('/my-api/rows.json');
+    expect(calls.map(c => c[2])).toEqual(['same-origin', 'same-origin', 'same-origin', 'same-origin']);
+  });
+  it('may not call Pagewright\'s other APIs or pages with the viewer\'s cookie (an admin opening it would create users)', async () => {
+    calls.length = 0;
+    for (const [url, method] of [['/api/users', 'POST'], ['/api/users', 'GET'], ['/api/folders/root', 'PATCH'], ['/api/reports/x', 'DELETE'], ['/api/audit', 'GET'],
+      ['/admin/users', 'GET'], ['/api/sample/x', 'POST'], ['/api/sample/%2e%2e/%2e%2e/api/users', 'GET'], ['/api/sample%2f..%2f..%2fusers', 'GET'], ['/api/data/sql/test', 'POST'], ['/', 'GET']]) {
+      await expect(f(url, { method }), `${method} ${url}`).rejects.toMatchObject({ status: 403 });
+    }
+    expect(calls).toHaveLength(0);
+  });
+  it('sends no cookies to other sites', async () => {
+    calls.length = 0;
+    await f('https://api.example.com/x', { method: 'POST' });
+    expect(calls[0][2]).toBe('omit');
+  });
+});
+
+describe('the audit log', () => {
+  it('anonymous read-only visitors cannot fill it', () => withEnv({ ...PROD_OPEN, PW_PUBLIC_READONLY: '1' }, async () => {
+    await stampDefinition({ kind: 'service' }, 'r', { name: 'r' });
+    await writeReport('r', { name: 'r', sections: { body: { items: [] } } });
+    expect((await auditExport(rq('/api/audit/export', { method: 'POST', body: { report: 'r', format: 'pdf' } }))).status).toBe(403);
   }));
 });
 
@@ -293,10 +364,35 @@ describe('records and modes', () => {
     expect((await proxy(rq('/api/reports', { method: 'POST', body: {} }))).status).toBe(401);
     for (const v of [':', 'u:', ':p']) await withEnv({ PW_BASIC_AUTH: v }, async () => expect(await principalOf(rq('/'))).toEqual(NOBODY));
   }));
-  it('PW_AUTH=proxy with PW_PROXY_SECRET: requests without the reverse proxy\'s header are refused', () => withEnv({ ...PROD_OPEN, PW_AUTH: 'proxy', PW_PROXY_SECRET: 's3cret-from-the-proxy' }, async () => {
+  it('PW_AUTH=proxy with PW_PROXY_SECRET: requests without the reverse proxy\'s header are refused', () => withEnv({ ...PROD_OPEN, PW_AUTH: 'proxy', PW_PROXY_SECRET: SECRET }, async () => {
     expect((await proxy(rq('/designer/x'))).status).toBe(401);
     expect((await proxy(rq('/designer/x', { headers: { 'x-pagewright-proxy-secret': 'wrong' } }))).status).toBe(401);
-    expect(await proxy(rq('/designer/x', { headers: { 'x-pagewright-proxy-secret': 's3cret-from-the-proxy' } }))).toBe(undefined);
+    expect((await proxy(rq('/api/data/sql', { method: 'POST', body: {} }))).status).toBe(401); // reached around the proxy
+    expect(await proxy(rq('/designer/x', { headers: VIA_PROXY }))).toBe(undefined);
     expect(await proxy(rq('/api/v1/templates'))).toBe(undefined); // its own keys
   }));
+});
+
+describe('paths the proxy lets through', () => {
+  it('tricks on /api/v1 and static prefixes do not skip the Origin check or the sign-in', () => withEnv({ ...PROD_OPEN, PW_BASIC_AUTH: 'u:p' }, async () => {
+    const authorization = `Basic ${Buffer.from('u:p').toString('base64')}`;
+    // an encoded dot-segment under /api/v1/ is /api/reports (the URL parser resolves it), not a keyed API call
+    expect((await proxy(rq('/api/v1/%2e%2e/reports', { method: 'POST', origin: EVIL, headers: { authorization }, body: {} })))?.status).toBe(403);
+    expect((await proxy(rq('/api/v1%2freports', { method: 'POST', origin: EVIL, headers: { authorization }, body: {} })))?.status).toBe(400);
+    expect((await proxy(rq('/api/v1x/reports', { method: 'POST', origin: EVIL, headers: { authorization }, body: {} })))?.status).toBe(403);
+    expect((await proxy(rq('/_next/%2e%2e/api/reports')))?.status).toBe(401); // /api/reports: the password is asked for
+    expect((await proxy(rq('/fonts/..%2fapi/reports')))?.status).toBe(400);
+  }));
+  it('the same in production with no sign-in, and in read-only mode', async () => {
+    await withEnv(PROD_OPEN, async () => {
+      expect((await proxy(rq('/api/v1x/templates')))?.status).toBe(401);
+      expect((await proxy(rq('/API/reports')))?.status).toBe(401);
+      expect((await proxy(rq('/embed/%2e%2e/api/reports')))?.status).toBe(401);
+      expect((await proxy(rq('/embed/..%2fapi/reports')))?.status).toBe(400);
+    });
+    await withEnv({ ...PROD_OPEN, PW_PUBLIC_READONLY: '1' }, async () => {
+      expect((await proxy(rq('/viewer/x/../../designer/x')))?.status).toBe(401); // the URL parser makes it /designer/x
+      expect((await proxy(rq('/api/reports/x%2f..%2fversions')))?.status).toBe(400);
+    });
+  });
 });

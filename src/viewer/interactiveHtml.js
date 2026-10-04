@@ -3,6 +3,7 @@
 // the report fonts and a snapshot of the data. Open it in any browser: parameters, open/close, sorting,
 // chart clicks, tooltips, document map and drill-through keep working. Live data sources are called again
 // when the file is opened; the snapshot is the fallback when a call fails (offline, CORS, server gone).
+import { reportFetch } from './dataFetch.js';
 import { origin, fetchReport, customFonts } from './engineClient.js';
 import { ALL_FONT_KEYS, SHAPER, fontFile } from '@/engine/text/fonts.js';
 import { fontKeysOf } from '@/exporters/svg.js';
@@ -61,7 +62,7 @@ async function snapshotData(def, params, model, reports) {
   const base = origin();
   const recording = async (url, init) => {
     if (url in snapshot) return new Response(JSON.stringify(snapshot[url]), { status: 200, headers: { 'content-type': 'application/json' } });
-    const res = await fetch(url, init);
+    const res = await reportFetch(base)(url, init);
     if (res.ok) { try { snapshot[url] = await res.clone().json(); } catch { /* not JSON (CSV): no snapshot */ } }
     return res;
   };

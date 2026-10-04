@@ -20,14 +20,14 @@ PW_BASIC_AUTH=admin:change-me PW_API_KEYS=change-me npm start
 |---|---|
 | `PW_AUTH=users` (+ `PW_SESSION_SECRET`) | People with their own accounts and roles, or single sign-on (OIDC, SAML). See [Users and roles](#users-and-roles). |
 | `PW_BASIC_AUTH=user:password` | Everyone who has the shared password. They can do everything, SQL included. |
-| `PW_AUTH=proxy` | Everyone who reaches the app. Only behind a reverse proxy that signs people in (oauth2-proxy, Cloudflare Access, your SSO gateway) and that nothing can bypass. Set `PW_PROXY_SECRET` and have the proxy send it as `x-pagewright-proxy-secret`: then a request that reaches the app port around the proxy is refused (401). |
+| `PW_AUTH=proxy` | Everyone who reaches the app. Only behind a reverse proxy that signs people in (oauth2-proxy, Cloudflare Access, your SSO gateway) and that nothing can bypass. **`PW_PROXY_SECRET` is required in production** (16+ random characters; the server refuses to start without it): the proxy sends it as `x-pagewright-proxy-secret`, and a request that reaches the app port around the proxy is refused (401). Pagewright reads no identity header from the proxy: whoever comes through it is one trusted operator, as with `PW_BASIC_AUTH`. |
 | `PW_PUBLIC_READONLY=1` (with none of the above) | Anyone may open and render the saved reports, **including the rows their saved queries return**; nobody can change anything, run SQL of their own, or open the designer. |
 
 In every mode, a change (POST, PUT, PATCH, DELETE outside `/api/v1`) must come from a Pagewright page: the `Origin` (or `Referer`) header must name this server, so another site cannot post to it. A report's SQL, and its data sources that may reach a host in `PW_INTERNAL_HOSTS`, run only as a designer (or a service API key) saved them: the server records a fingerprint of those sources at each save, and a definition changed any other way (a file edited on disk, a storage row, a report saved while an older version of the server was open) refuses to run them until a designer saves it again. After upgrading, open and save each report that uses SQL once.
 
 `PW_BASIC_AUTH` must be `user:password` with both parts set; any other value is ignored (with a warning at start), so the server stays closed.
 
-Set **`PW_BASE_URL`** (this server's public URL) in production. The server never takes its own address from a request (Host, X-Forwarded-Host): relative data URLs (`/api/...`) in server renders, thumbnails, batches and schedules resolve against `PW_BASE_URL`, and without it they fail with a message naming it. A data source may only read (GET) from this server; the server's own credentials (the `PW_BASIC_AUTH` password, a one-request viewer pass with accounts on) go to this server only, never to another host, and a report's own `Origin`, `Cookie` and `Authorization` headers are dropped on those calls. A redirect from a public host cannot lead into this server or a `PW_INTERNAL_HOSTS` host.
+Set **`PW_BASE_URL`** (this server's public URL) in production. The server never takes its own address from a request (Host, X-Forwarded-Host): relative data URLs (`/api/...`) in server renders, thumbnails, batches and schedules resolve against `PW_BASE_URL`, and without it they fail with a message naming it. A report's data sources in the browser (viewer, designer preview) may only read data from this server too: sample data, the data proxy, saved SQL, and paths that are not Pagewright's own; never another Pagewright API with the viewer's cookie. A viewer's API key cannot aim batches or schedules (`itemsFrom`, `putUrl`, `webhook`, `baseUrl`) at `PW_INTERNAL_HOSTS`. A data source may only read (GET) from this server; the server's own credentials (the `PW_BASIC_AUTH` password, a one-request viewer pass with accounts on) go to this server only, never to another host, and a report's own `Origin`, `Cookie` and `Authorization` headers are dropped on those calls. A redirect from a public host cannot lead into this server or a `PW_INTERNAL_HOSTS` host.
 
 **Hosts in data URLs are fixed in production** (`PW_FIXED_FETCH_HOSTS`, default `1` in production and `0` in development): a data source the server fetches must write its host out. Parameters and expressions may fill the path and the query (`https://api.example.com/loans/{Parameters.id}?from={Parameters.from}`), not the host (`={Parameters.url}`, `http://{Parameters.host}/x`); such a report answers 403 in server renders. Image URLs then do not reach `PW_INTERNAL_HOSTS` either. Set `PW_FIXED_FETCH_HOSTS=0` to allow dynamic hosts (they still pass the SSRF guard).
 
@@ -85,7 +85,7 @@ The viewer runs in a Shadow DOM, so the host page styles do not change it. Set `
 | `PW_WEBHOOK_SECRET` | run time | Signs webhook bodies: header `x-pagewright-signature: sha256=<HMAC-SHA256 hex>` |
 | `PW_BASE_URL` | run time | Public URL of this server. Relative data URLs in server renders, thumbnails, batches and schedules resolve against it, and the server's calls to itself go there. **Required in production** for reports with relative data URLs: the server never takes its own address from a request. In development the address Next listens on. |
 | `PW_FIXED_FETCH_HOSTS` | run time | `1` (default in production): a server-side data fetch must write its host out; parameters and expressions fill only the path and query. `0` (default in development) allows hosts made by expressions. |
-| `PW_PROXY_SECRET` | run time | With `PW_AUTH=proxy`: a secret the reverse proxy sends as `x-pagewright-proxy-secret`. Requests without it are refused, so nothing can go around the proxy. |
+| `PW_PROXY_SECRET` | run time | With `PW_AUTH=proxy`: a secret (16+ characters) the reverse proxy sends as `x-pagewright-proxy-secret`. Requests without it are refused, so nothing can go around the proxy. Required in production. The server's own calls to itself send it too. |
 | `PW_DEV_HOSTS` | run time | Development only: more host names (comma-separated) a `next dev` server with no sign-in answers to, besides `localhost`, `127.0.0.1` and `::1`. |
 | `PW_BATCH_CONCURRENCY` | run time | Reports rendered at the same time in a batch (default 2) |
 | `PW_SCHEDULER` | run time | `off` stops the built-in scheduler (for example on extra replicas) |
@@ -126,6 +126,7 @@ Set `PW_AUTH=users` and `PW_SESSION_SECRET`, and people sign in at `/login` with
 ```bash
 npm test                                   # unit, golden and security tests (Vitest), 254 tests; needs Node 22+ (PW_TEST_PG=postgres://… adds Postgres tests and PW_TEST_MSSQL=mssql://… SQL Server tests: SQL sources and storage)
 ./scripts/restart.sh                       # build and start on :3000 with test keys (PORT=3100 ./scripts/restart.sh for another port)
+npm run test:e2e                           # all the browser suites against it (BASE=http://localhost:3100 for another port)
 node tests/e2e/build-from-scratch.mjs      # Phase 1 exit test: build a report in the designer
 node tests/e2e/smoke.mjs                   # viewer smoke test
 node tests/e2e/expr-editor.mjs             # CodeMirror expression editor
@@ -138,6 +139,8 @@ node scripts/check-pdf-matches-model.mjs   # every page-model line is in the PDF
 node scripts/check-engine-boundary.mjs     # src/engine has no React, Next or DOM
 npm run perf                               # 50,000 rows → 1,112 pages
 ```
+
+The e2e suites need a server that lets them in. `scripts/restart.sh` is the one documented way: a production build with `PW_AUTH=proxy`, behind `scripts/e2e-proxy.mjs` (a stand-in for the signing-in reverse proxy that adds `PW_PROXY_SECRET`), with `PW_BASE_URL`, `PW_API_KEYS=test-key`, `PW_WEBHOOK_SECRET=testsecret`, `PW_INTERNAL_HOSTS=localhost,127.0.0.1` and `PW_EMBED_ORIGINS=http://localhost:4000` (set at build time too). `npm run dev` with the same `PW_API_KEYS`, `PW_WEBHOOK_SECRET`, `PW_INTERNAL_HOSTS` and `PW_EMBED_ORIGINS` also works (no sign-in in development; the suites use `localhost`).
 
 ## Layout
 

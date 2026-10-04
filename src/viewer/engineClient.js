@@ -1,5 +1,6 @@
 'use client';
 // Runs the engine in a Web Worker. Falls back to the main thread if the worker cannot start.
+import { reportFetch } from './dataFetch.js';
 import { render, FontStore } from '@/engine/index.js';
 import { fontFile, setCustomFonts, SHAPER, ALL_FONT_KEYS } from '@/engine/text/fonts.js';
 import { createSubsetter } from '@/exporters/subset.js';
@@ -108,7 +109,7 @@ const loadReport = async (rid) => {
 export const fetchReport = loadReport;
 async function renderMain(def, params, state, reportId) {
   await customFonts();
-  return render(def, { parameters: params, state, reportId, fontStore: fontStore(), baseUrl: origin(), loadReport });
+  return render(def, { parameters: params, state, reportId, fontStore: fontStore(), baseUrl: origin(), loadReport, fetch: reportFetch(origin()) }); // a report reads data, never calls our API as the viewer
 }
 
 /**

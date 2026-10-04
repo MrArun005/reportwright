@@ -6,13 +6,15 @@
 // PW_PUBLIC_READONLY=1 what a viewer may do (open and render the saved reports). See openTrusted in session.js.
 import { basicAuth } from './src/server/basicAuth.js';
 import { accountsOn, sameOrigin, openTrusted, publicReadonly, devOpen, devHostOk, proxySecretOk, NO_AUTH_HELP } from './src/server/session.js';
-import { guard, decide, UNSAFE, CROSS_SITE_WRITES } from './src/server/access.js';
+import { guard, decide, canonical, UNSAFE, CROSS_SITE_WRITES } from './src/server/access.js';
 
 export async function proxy(request) {
   if (accountsOn()) return (await guard(request)) ?? undefined;
   // a typo must not leave the app open: refuse to serve
   if (process.env.PW_AUTH && process.env.PW_AUTH !== 'proxy') return new Response('PW_AUTH must be "users" or "proxy" (or not set at all).', { status: 500 });
-  const { pathname } = new URL(request.url);
+  // every check below reads the path as the router does; a path trick (encoded dot segments or slashes) is refused
+  const pathname = canonical(new URL(request.url).pathname);
+  if (pathname === null) return Response.json({ error: 'Bad path' }, { status: 400 });
   const method = request.method.toUpperCase();
   if (devOpen() && !devHostOk(request)) {
     return Response.json({ error: 'This development server answers only on localhost (DNS rebinding). Add the host name to PW_DEV_HOSTS, or set PW_BASIC_AUTH.' }, { status: 403 });

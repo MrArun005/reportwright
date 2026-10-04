@@ -17,11 +17,17 @@ export const accountsOn = () => process.env.PW_AUTH === 'users';
  * (next dev) yes; in production only behind PW_BASIC_AUTH, or with PW_AUTH=proxy (a reverse proxy in front of the app
  * signs everyone in). Production with none of them fails closed: see openGate in proxy.js.
  */
-export const openTrusted = () => !accountsOn() && (process.env.NODE_ENV !== 'production' || basicOn() || process.env.PW_AUTH === 'proxy');
+export const openTrusted = () => !accountsOn() && (process.env.NODE_ENV !== 'production' || basicOn() || proxyOn());
+/**
+ * PW_AUTH=proxy as a sign-in: in production only with PW_PROXY_SECRET (16+ characters), which the reverse proxy sends
+ * and proxySecretOk checks, so a request that reaches the app port around the proxy proves nothing. Pagewright reads no
+ * identity header in this mode: whoever comes through the proxy is the one trusted operator (as PW_BASIC_AUTH).
+ */
+export const proxyOn = () => process.env.PW_AUTH === 'proxy' && (process.env.NODE_ENV !== 'production' || (process.env.PW_PROXY_SECRET || '').length >= 16);
 /** PW_BASIC_AUTH as "user:password", both parts non-empty. Anything else ("x", ":", "u:") is not a sign-in. */
 export const basicOn = () => /^[^:]+:.+$/.test(process.env.PW_BASIC_AUTH || '');
 /** Development with nobody signing in: trusted only because it is next dev (see devHostOk). */
-export const devOpen = () => !accountsOn() && process.env.NODE_ENV !== 'production' && !basicOn() && process.env.PW_AUTH !== 'proxy';
+export const devOpen = () => !accountsOn() && process.env.NODE_ENV !== 'production' && !basicOn() && !proxyOn();
 /**
  * next dev with nobody signing in answers only to a local host name: a page that re-points its own name at 127.0.0.1
  * (DNS rebinding) sends its own name as Host. localhost, 127.0.0.1, ::1, the PW_BASE_URL host and PW_DEV_HOSTS.
@@ -49,7 +55,7 @@ export function proxySecretOk(req) {
 /** Production with nobody signing in, and PW_PUBLIC_READONLY=1: anyone may open and render the saved reports, nothing more. */
 export const publicReadonly = () => !accountsOn() && !openTrusted() && process.env.PW_PUBLIC_READONLY === '1';
 /** What a production server with no sign-in answers (and logs when it starts). */
-export const NO_AUTH_HELP = 'This Pagewright server runs in production with no sign-in, so it refuses changes and server-side data. Set PW_AUTH=users (accounts, SSO), or PW_BASIC_AUTH="user:password", or PW_AUTH=proxy when a reverse proxy in front signs people in. PW_PUBLIC_READONLY=1 lets anyone open and render the saved reports (and their saved queries), read-only.';
+export const NO_AUTH_HELP = 'This Pagewright server runs in production with no sign-in, so it refuses changes and server-side data. Set PW_AUTH=users (accounts, SSO), or PW_BASIC_AUTH="user:password", or PW_AUTH=proxy with PW_PROXY_SECRET (16+ characters, sent by the signing-in reverse proxy as x-pagewright-proxy-secret). PW_PUBLIC_READONLY=1 lets anyone open and render the saved reports (and their saved queries), read-only.';
 
 /** PW_SESSION_SECRET; in development a random one per process (sessions end on restart). */
 export function sessionSecret() {

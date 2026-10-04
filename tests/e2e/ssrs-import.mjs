@@ -8,8 +8,11 @@ const b = await chromium.launch();
 const p = await (await b.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
 const errs = [];
 p.on('pageerror', e => errs.push(e.message));
+// the file input works once React has hydrated it (next dev compiles slowly; a file set before that is lost)
+const hydrated = () => p.waitForFunction(() => { const i = document.querySelector('input[type=file][accept*=".rdl"]'); return i && Object.keys(i).some(k => k.startsWith('__reactProps')); });
 
 await p.goto(`${BASE}/`);
+await hydrated();
 const input = p.locator('input[type=file][accept*=".rdl"]');
 assert.match(await input.getAttribute('accept'), /\.rdlc/);
 
@@ -37,6 +40,7 @@ await p.screenshot({ path: '/tmp/shots/ssrs-import.png' }).catch(() => {});
 
 // a hostile file is refused with a readable error, nothing is created
 await p.goto(`${BASE}/`);
+await hydrated();
 const [bad] = await Promise.all([
   p.waitForResponse(r => r.url().includes('/api/reports/import') && r.request().method() === 'POST'),
   p.locator('input[type=file][accept*=".rdl"]').setInputFiles({ name: 'xxe.rdl', mimeType: 'application/xml',

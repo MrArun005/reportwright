@@ -9,6 +9,7 @@ import { functionTable } from '@/engine/expr/evaluate.js';
 import { Dialog, Field, TextInput, Select, Check } from './ui.jsx';
 import { t } from '@/i18n/index.js';
 import { origin } from '@/viewer/engineClient.js';
+import { reportFetch } from '@/viewer/dataFetch.js';
 import { OPS } from './Inspector.jsx';
 
 const NAME = /^[A-Za-z_][\w]*$/;
@@ -19,7 +20,7 @@ export async function loadSample() {
   useDesigner.setState({ sample: { loading: true } });
   try {
     const params = resolveParameters(def, {});
-    const sources = await loadSources(def, { params, baseUrl: origin(), sqlPreview: true }); // the Pagewright server, also when embedded
+    const sources = await loadSources(def, { params, baseUrl: origin(), sqlPreview: true, fetch: reportFetch(origin()) }); // the Pagewright server, also when embedded
     const ctx = { params, globals: { ExecutionTime: new Date() }, dataSets: {}, fields: null, locale: def.locale, currency: def.currency, functions: functionTable(def) };
     const dataSets = buildDataSets(def, sources, ctx);
     useDesigner.setState({ sample: { dataSets, sources, at: Date.now() } });
@@ -353,7 +354,7 @@ function DataSetDialog({ index, onClose, onSaved }) {
     const params = resolveParameters(useDesigner.getState().def, {});
     const src = useDesigner.getState().def.dataSources.find(s => s.name === name);
     if (!src) throw new Error(T('dsNoSource', { name }));
-    return (await loadSources({ dataSources: [src] }, { params, baseUrl: window.location.origin, sqlPreview: true }))[src.name];
+    return (await loadSources({ dataSources: [src] }, { params, baseUrl: window.location.origin, sqlPreview: true, fetch: reportFetch(window.location.origin) }))[src.name];
   };
   /** The raw rows of a data set: its source at its path, or for a nested one each parent row's children. */
   const rawRowsOf = async (ds, seen = new Set()) => {
