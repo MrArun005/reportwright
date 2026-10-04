@@ -106,6 +106,10 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 
 - Expression language close to ActiveReportsJS, with its function names: text, math, dates, inspection, choice and conversion functions; `Globals`, `Parameters` and `Fields`.
 - Aggregates: Sum, Avg, Count, Min, Max, Median, Mode, StDev, StDevP, Var, VarP, DistinctSum, AggregateIf, with scopes.
+- VB / SSRS semantics, checked by a conformance suite (`tests/engine/conformance/`, ~350 cases): DateAdd clamps to the month's end (31 Jan + 1 month = 28 Feb) and works on the wall clock; DateDiff, DatePart, Weekday and WeekdayName follow the .NET runtime; `Round` rounds half to even like Math.Round (`RoundHalfAway` rounds half away from zero, as displayed numbers do); `Int` rounds down, `Fix` truncates; CInt rounds half to even; .NET format strings (C N F P D E X G R, custom sections, date patterns).
+- Decimal arithmetic: a number stands for its shortest decimal form, and `+`, `-`, `*`, Sum, Avg and RunningValue are exact on it (0.1 + 0.2 = 0.3; ten 0.1s sum to 1), like SSRS's Decimal money fields. Numbers with no short decimal form use double arithmetic.
+- Locale: a report's `locale` and `currency`. With no currency, "C" uses the locale's country (en-IN → ₹); with neither set, numbers are en-US and "C" shows no currency symbol.
+- Deliberately not VB: Nothing stays null through arithmetic and comparisons (VB treats it as 0); IIf evaluates only the chosen branch; And/Or short-circuit and are never bitwise; x / 0 is null, not Infinity.
 - `Previous`, `GroupIndex`, `Level`, `Lookup`, `LookupSet`.
 - Filters: equals, `in` (multi-value), TopN, BottomN, TopPercent, BottomPercent, Between; filters run in order.
 - Data sources: JSON, REST, GraphQL, CSV (separator, quote, header row, start row), OData (as REST), inline data, pushed data via the API.
