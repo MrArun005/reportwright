@@ -110,8 +110,10 @@ export function evaluate(n, ctx) {
   switch (n.type) {
     case 'lit': return n.v;
     case 'id': {
-      const r = ROOTS[n.name.toLowerCase()];
+      const lower = n.name.toLowerCase();
+      const r = ROOTS[lower];
       if (r) return { __root: r };
+      if (lower in CONSTANTS) return CONSTANTS[lower];
       throw new ExprError(`Unknown name "${n.name}". Use Fields.x, Parameters.x, Globals.x or Parent.x`, n.p);
     }
     case 'member': {
@@ -387,6 +389,182 @@ export const FUNCTIONS = {
   },
 };
 
+/* ------------------------------------------------- Phase 3 function library */
+const MAX_TEXT = 1_000_000; // longest string a function may build
+const capText = (fname, n) => { if (n > MAX_TEXT) throw new ExprError(`${fname}: the result would be longer than 1,000,000 characters`); };
+/** A finite number or null: Log(0), Asin(2) and friends give null, like 1 / 0. */
+const fin = (x) => (Number.isFinite(x) ? x : null);
+/** Run f on a number argument; null in, null out. */
+const math1 = (f) => (ctx, v) => (v == null || v === '' ? null : fin(f(num(v))));
+/** A date argument, or null when it is not a date. */
+const dt = (v) => toDate(v);
+/** Days since Sunday (0..6) shifted so firstDay (1 = Sunday … 7 = Saturday) is 1. */
+const weekday = (d, first) => ((d.getDay() - ((Number(first) || 1) - 1) + 7) % 7) + 1;
+function dayOfYear(d) {
+  return Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - new Date(d.getFullYear(), 0, 1).getTime()) / 86400000) + 1;
+}
+/** .NET AddMonths: keeps the day, clamped to the end of the target month (31 Jan + 1 month = 28 Feb). */
+function addMonths(v, n) {
+  const d = dt(v);
+  if (!d || n == null || !Number.isFinite(Number(n))) return null;
+  const r = new Date(d.getTime());
+  const day = r.getDate();
+  r.setDate(1);
+  r.setMonth(r.getMonth() + Math.trunc(Number(n)));
+  r.setDate(Math.min(day, new Date(r.getFullYear(), r.getMonth() + 1, 0).getDate()));
+  return r;
+}
+/** Add a number of milliseconds-per-unit; whole days move the calendar day (local wall clock). */
+function addUnits(v, n, ms) {
+  const d = dt(v);
+  if (!d || n == null || !Number.isFinite(Number(n))) return null;
+  const r = new Date(d.getTime());
+  n = Number(n);
+  if (ms === 86400000) { const whole = Math.trunc(n); r.setDate(r.getDate() + whole); n -= whole; }
+  r.setTime(r.getTime() + n * ms);
+  return r;
+}
+function datePart(interval, v, first) {
+  const d = dt(v);
+  if (!d) return null;
+  switch (String(interval).toLowerCase()) {
+    case 'yyyy': case 'year': return d.getFullYear();
+    case 'q': case 'quarter': return Math.floor(d.getMonth() / 3) + 1;
+    case 'm': case 'month': return d.getMonth() + 1;
+    case 'y': case 'dayofyear': return dayOfYear(d);
+    case 'd': case 'day': return d.getDate();
+    case 'w': case 'weekday': return weekday(d, first);
+    case 'ww': case 'weekofyear': {
+      // week 1 holds 1 January; weeks start on firstDay (Sunday by default), as VB's DatePart
+      const jan1 = weekday(new Date(d.getFullYear(), 0, 1), first) - 1;
+      return Math.floor((dayOfYear(d) - 1 + jan1) / 7) + 1;
+    }
+    case 'h': case 'hour': return d.getHours();
+    case 'n': case 'minute': return d.getMinutes();
+    case 's': case 'second': return d.getSeconds();
+    default: throw new ExprError(`DatePart: unknown interval "${interval}"`);
+  }
+}
+/** Text that reads as a number ("12.5", " 7 ", "1e3"); "" and text with letters do not. */
+const numericText = (v) => typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v.trim()));
+function isDate(v) {
+  if (v instanceof Date) return !Number.isNaN(v.getTime());
+  if (typeof v !== 'string') return false;
+  const s = v.trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (iso) { const d = toDate(s.slice(0, 10)); if (!d || d.getMonth() + 1 !== Number(iso[2]) || d.getDate() !== Number(iso[3])) return false; }
+  // a date needs separated parts or a month name: new Date("1") would read a bare number as a year
+  return /\d{1,4}[-/.]\d{1,2}|[A-Za-z]{3}/.test(s) && toDate(s) != null;
+}
+/** Convert.ToXxx: null stays null, anything that does not convert is an error (the cell shows #Error). */
+function toNumber(fname, v) {
+  if (v == null) return null;
+  if (typeof v === 'boolean') return v ? 1 : 0;
+  if (typeof v === 'number') return v;
+  const n = typeof v === 'string' && v.trim() !== '' ? Number(v.replace(/,/g, '').trim()) : NaN;
+  if (!Number.isFinite(n)) throw new ExprError(`${fname}: "${String(v).slice(0, 40)}" is not a number`);
+  return n;
+}
+/** Round half to even, as .NET Convert.ToInt32 does, then check the range. */
+function toInt(fname, v, bits) {
+  const n = toNumber(fname, v);
+  if (n == null) return null;
+  const f = Math.floor(n), diff = n - f;
+  const r = diff > 0.5 || (diff === 0.5 && f % 2 !== 0) ? f + 1 : f;
+  const lim = 2 ** (bits - 1);
+  if (r < -lim || r >= lim) throw new ExprError(`${fname}: ${n} is outside the Int${bits} range`);
+  return r + 0;
+}
+const firstChar = (c) => (c == null || c === '' ? ' ' : [...String(c)][0]);
+function pad(fname, s, width, c, left) {
+  s = S(s);
+  const w = Number(width) || 0;
+  capText(fname, w);
+  if (w <= s.length) return s;
+  const fill = firstChar(c).repeat(w - s.length);
+  return left ? fill + s : s + fill;
+}
+
+Object.assign(FUNCTIONS, {
+  // text
+  startswith: (ctx, s, p) => S(s).startsWith(S(p)),
+  endswith: (ctx, s, p) => S(s).endsWith(S(p)),
+  indexof: (ctx, s, sub, start) => S(s).indexOf(S(sub), Number(start) || 0),
+  lastindexof: (ctx, s, sub, start) => (start == null ? S(s).lastIndexOf(S(sub)) : S(s).lastIndexOf(S(sub), Number(start))),
+  substring: (ctx, s, start, len) => { const a = Math.max(0, Number(start) || 0); return len == null ? S(s).slice(a) : S(s).slice(a, a + Math.max(0, Number(len) || 0)); },
+  padleft: (ctx, s, w, c) => pad('PadLeft', s, w, c, true),
+  padright: (ctx, s, w, c) => pad('PadRight', s, w, c, false),
+  split: (ctx, s, sep) => (s == null ? [] : sep == null || sep === '' ? [S(s)] : S(s).split(S(sep))),
+  chr: (ctx, c) => { const n = Number(c); return c == null || !Number.isInteger(n) || n < 0 || n > 0x10ffff ? null : String.fromCodePoint(n); },
+  asc: (ctx, s) => (s == null || s === '' ? null : S(s).codePointAt(0) ?? null),
+  trimstart: (ctx, s) => S(s).trimStart(),
+  trimend: (ctx, s) => S(s).trimEnd(),
+  strreverse: (ctx, s) => { s = S(s); capText('StrReverse', s.length); return [...s].reverse().join(''); },
+  space: (ctx, n) => { n = Math.max(0, Number(n) || 0); capText('Space', n); return ' '.repeat(n); },
+  // math
+  sign: math1(Math.sign),
+  log: (ctx, v, base) => (v == null || v === '' ? null : fin(base == null ? Math.log(num(v)) : Math.log(num(v)) / Math.log(num(base)))),
+  log10: math1(Math.log10),
+  exp: math1(Math.exp),
+  truncate: math1(Math.trunc), fix: math1(Math.trunc),
+  sin: math1(Math.sin), cos: math1(Math.cos), tan: math1(Math.tan),
+  asin: math1(Math.asin), acos: math1(Math.acos), atan: math1(Math.atan),
+  atan2: (ctx, y, x) => (y == null || x == null ? null : fin(Math.atan2(num(y), num(x)))),
+  pi: () => Math.PI,
+  e: () => Math.E,
+  // dates
+  datepart: (ctx, i, d, first) => datePart(i, d, first),
+  weekday: (ctx, d, first) => (dt(d) ? weekday(dt(d), first) : null),
+  weekdayname: (ctx, n, abbr, first) => {
+    n = Number(n);
+    if (!Number.isInteger(n) || n < 1 || n > 7) return null;
+    const d = new Date(2000, 0, 2 + n - 1 + ((Number(first) || 1) - 1)); // 2 Jan 2000 was a Sunday
+    return formatDate(d, truthy(abbr) ? 'ddd' : 'dddd', ctx.locale);
+  },
+  quarter: (ctx, d) => (dt(d) ? Math.floor(dt(d).getMonth() / 3) + 1 : null),
+  quartername: (ctx, d) => (dt(d) ? `Q${Math.floor(dt(d).getMonth() / 3) + 1}` : null),
+  hour: (ctx, d) => dt(d)?.getHours() ?? null,
+  minute: (ctx, d) => dt(d)?.getMinutes() ?? null,
+  second: (ctx, d) => dt(d)?.getSeconds() ?? null,
+  addyears: (ctx, d, n) => addMonths(d, n == null ? null : 12 * Math.trunc(Number(n))),
+  addmonths: (ctx, d, n) => addMonths(d, n),
+  adddays: (ctx, d, n) => addUnits(d, n, 86400000),
+  addhours: (ctx, d, n) => addUnits(d, n, 3600000),
+  addminutes: (ctx, d, n) => addUnits(d, n, 60000),
+  addseconds: (ctx, d, n) => addUnits(d, n, 1000),
+  datevalue: (ctx, v) => { const d = dt(v); if (!d) return null; const r = new Date(d.getTime()); r.setHours(0, 0, 0, 0); return r; },
+  timeserial: (ctx, h, m, s) => { const d = new Date(2000, 0, 1); d.setFullYear(1, 0, 1); d.setHours(Number(h) || 0, Number(m) || 0, Number(s) || 0, 0); return d; },
+  datestring: (ctx) => formatDate(FUNCTIONS.now(ctx), 'MM-dd-yyyy'),
+  // inspection
+  isnumeric: (ctx, v) => (typeof v === 'number' ? Number.isFinite(v) : numericText(v)),
+  isdate: (ctx, v) => isDate(v),
+  isarray: (ctx, v) => Array.isArray(v),
+  // conversion
+  tostring: (ctx, v, f) => toText(v, f, ctx),
+  toint16: (ctx, v) => toInt('ToInt16', v, 16),
+  toint32: (ctx, v) => toInt('ToInt32', v, 32),
+  toint64: (ctx, v) => toInt('ToInt64', v, 64),
+  todouble: (ctx, v) => toNumber('ToDouble', v),
+  tosingle: (ctx, v) => toNumber('ToSingle', v),
+  todecimal: (ctx, v) => toNumber('ToDecimal', v),
+  toboolean: (ctx, v) => {
+    if (v == null) return null;
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'number') return v !== 0;
+    const t = String(v).trim().toLowerCase();
+    if (t === 'true' || t === 'false') return t === 'true';
+    throw new ExprError(`ToBoolean: "${String(v).slice(0, 40)}" is not True or False`);
+  },
+  todatetime: (ctx, v) => {
+    if (v == null) return null;
+    const d = dt(v);
+    if (!d) throw new ExprError(`ToDateTime: "${String(v).slice(0, 40)}" is not a date`);
+    return d;
+  },
+});
+/** Names that may be written without brackets. */
+const CONSTANTS = { pi: Math.PI, e: Math.E };
+
 /** Names shown in the designer's expression helper. */
 export const FUNCTION_NAMES = [
   'Sum', 'Avg', 'Count', 'CountDistinct', 'CountRows', 'Min', 'Max', 'First', 'Last', 'RunningValue', 'RowNumber',
@@ -394,6 +572,12 @@ export const FUNCTION_NAMES = [
   'IIF', 'Switch', 'IsNull', 'Coalesce', 'Lookup', 'Join', 'Contains', 'InList',
   ...['Format', 'Upper', 'Lower', 'Left', 'Right', 'Mid', 'Len', 'Trim', 'Replace', 'InStr', 'CStr', 'CDbl', 'CInt', 'CDate', 'CBool',
     'Round', 'Abs', 'Floor', 'Ceiling', 'Int', 'Pow', 'Sqrt', 'Now', 'Today', 'DateAdd', 'DateDiff', 'DateSerial', 'Year', 'Month', 'Day', 'MonthName'],
+  'StartsWith', 'EndsWith', 'IndexOf', 'LastIndexOf', 'Substring', 'PadLeft', 'PadRight', 'Split', 'Chr', 'Asc', 'TrimStart', 'TrimEnd', 'StrReverse', 'Space', 'LCase', 'UCase',
+  'Sign', 'Log', 'Log10', 'Exp', 'Truncate', 'Fix', 'Sin', 'Cos', 'Tan', 'Asin', 'Acos', 'Atan', 'Atan2', 'PI', 'E',
+  'DatePart', 'Weekday', 'WeekdayName', 'Quarter', 'QuarterName', 'Hour', 'Minute', 'Second',
+  'AddYears', 'AddMonths', 'AddDays', 'AddHours', 'AddMinutes', 'AddSeconds', 'DateValue', 'TimeSerial', 'DateString',
+  'IsNumeric', 'IsDate', 'IsArray', 'Choose',
+  'ToString', 'ToInt16', 'ToInt32', 'ToInt64', 'ToDouble', 'ToSingle', 'ToDecimal', 'ToBoolean', 'ToDateTime',
 ];
 
 function call(n, ctx) {
@@ -403,6 +587,12 @@ function call(n, ctx) {
   if (name === 'iif') {
     if (args.length !== 3) throw new ExprError('IIF needs 3 arguments: IIF(test, ifTrue, ifFalse)', n.p);
     return truthy(evaluate(args[0], ctx)) ? evaluate(args[1], ctx) : evaluate(args[2], ctx);
+  }
+  if (name === 'choose') {
+    // Choose(index, a, b, …): 1-based; only the chosen argument is evaluated
+    if (!args.length) throw new ExprError('Choose needs an index and choices: Choose(2, "a", "b")', n.p);
+    const i = Number(evaluate(args[0], ctx));
+    return Number.isInteger(i) && i >= 1 && i < args.length ? evaluate(args[i], ctx) : null;
   }
   if (name === 'switch') {
     for (let i = 0; i + 1 < args.length; i += 2) if (truthy(evaluate(args[i], ctx))) return evaluate(args[i + 1], ctx);
