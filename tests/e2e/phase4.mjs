@@ -40,7 +40,7 @@ await p.locator('.paper').click({ position: { x: 5, y: 2 } }).catch(() => {});
 await p.keyboard.press('Escape');
 const insp = p.locator('[data-testid=inspector]');
 await insp.getByLabel('Apply a theme (replaces the default text and named styles)').selectOption('Teal');
-await insp.getByText('TableHeader').waitFor();
+await insp.locator('.style-card b', { hasText: 'TableHeader' }).waitFor(); // the style's card (its name is also an option of the other cards' "Based on")
 await p.keyboard.press('Control+s');
 await p.getByTestId('save-state').filter({ hasText: /^Saved$/ }).waitFor();
 let saved = await (await fetch(`${BASE}/api/reports/${id}`)).json();
