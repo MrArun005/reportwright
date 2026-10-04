@@ -104,7 +104,9 @@ function mergeMaster(c, m) {
       : { x: 0, y: below, w: Math.max(0, ...items.map(i => (Number(i.x) || 0) + (Number(i.w) || 0))), h: Math.max(0, ...items.map(i => (Number(i.y) || 0) + (Number(i.h) || 0))) };
     // a container that does not keep together: the content still grows, splits across pages and pushes the master's items below it
     const content = { type: 'container', name: k ? `MasterContent${k + 1}` : 'MasterContent', ...box, keepTogether: false, style: { border: 'none', backgroundColor: null, backgroundImage: null, padding: 0 }, items };
-    return { ...(b || {}), items: [...others, content] };
+    // every body section gets the master's items; copies after the first get their own names (names are unique)
+    const mine = k ? others.map(i => (i.name ? { ...i, name: `${i.name}_${k + 1}` } : i)) : others;
+    return { ...(b || {}), items: [...mine, content] };
   };
   const body = Array.isArray(cs.body) ? cs.body.map(wrap) : wrap(cs.body, 0);
   const st = (x) => x.styles || {};

@@ -1,0 +1,298 @@
+{
+  "$schema": "pagewright/report@1",
+  "name": "Reuse parts",
+  "locale": "en-IN",
+  "currency": "INR",
+  "page": {
+    "size": "A4",
+    "orientation": "portrait",
+    "margins": [
+      36,
+      36,
+      36,
+      36
+    ]
+  },
+  "parameters": [],
+  "dataSources": [
+    {
+      "name": "sales",
+      "type": "json",
+      "data": {
+        "rows": [
+          {
+            "region": "North",
+            "product": "Paper",
+            "amount": 1000
+          },
+          {
+            "region": "South",
+            "product": "Scanner",
+            "amount": 1377
+          },
+          {
+            "region": "East",
+            "product": "Printer",
+            "amount": 1754
+          },
+          {
+            "region": "West",
+            "product": "Paper",
+            "amount": 2131
+          },
+          {
+            "region": "North",
+            "product": "Scanner",
+            "amount": 2508
+          },
+          {
+            "region": "South",
+            "product": "Printer",
+            "amount": 2885
+          },
+          {
+            "region": "East",
+            "product": "Paper",
+            "amount": 3262
+          },
+          {
+            "region": "West",
+            "product": "Scanner",
+            "amount": 3639
+          },
+          {
+            "region": "North",
+            "product": "Printer",
+            "amount": 1116
+          },
+          {
+            "region": "South",
+            "product": "Paper",
+            "amount": 1493
+          },
+          {
+            "region": "East",
+            "product": "Scanner",
+            "amount": 1870
+          },
+          {
+            "region": "West",
+            "product": "Printer",
+            "amount": 2247
+          },
+          {
+            "region": "North",
+            "product": "Paper",
+            "amount": 2624
+          },
+          {
+            "region": "South",
+            "product": "Scanner",
+            "amount": 3001
+          },
+          {
+            "region": "East",
+            "product": "Printer",
+            "amount": 3378
+          },
+          {
+            "region": "West",
+            "product": "Paper",
+            "amount": 3755
+          },
+          {
+            "region": "North",
+            "product": "Scanner",
+            "amount": 1232
+          },
+          {
+            "region": "South",
+            "product": "Printer",
+            "amount": 1609
+          },
+          {
+            "region": "East",
+            "product": "Paper",
+            "amount": 1986
+          },
+          {
+            "region": "West",
+            "product": "Scanner",
+            "amount": 2363
+          },
+          {
+            "region": "North",
+            "product": "Printer",
+            "amount": 2740
+          },
+          {
+            "region": "South",
+            "product": "Paper",
+            "amount": 3117
+          },
+          {
+            "region": "East",
+            "product": "Scanner",
+            "amount": 3494
+          },
+          {
+            "region": "West",
+            "product": "Printer",
+            "amount": 3871
+          }
+        ]
+      }
+    }
+  ],
+  "dataSets": [
+    {
+      "name": "Sales",
+      "source": "sales",
+      "path": "$.rows",
+      "fields": [
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "product",
+          "type": "string"
+        },
+        {
+          "name": "amount",
+          "type": "number"
+        }
+      ]
+    }
+  ],
+  "styles": {
+    "base": {
+      "fontFamily": "Inter",
+      "fontSize": 9,
+      "color": "#1f2937"
+    },
+    "named": {
+      "Brand": {
+        "fontSize": 14,
+        "fontWeight": "bold",
+        "color": "#7c2d12"
+      },
+      "BrandSmall": {
+        "fontSize": 9,
+        "parent": "Brand"
+      }
+    }
+  },
+  "sections": {
+    "pageHeader": {
+      "height": 36,
+      "items": [
+        {
+          "id": "h1",
+          "type": "textbox",
+          "name": "ReportTitle",
+          "x": 0,
+          "y": 0,
+          "w": 320,
+          "h": 22,
+          "value": "Reuse parts",
+          "canGrow": true,
+          "style": {
+            "fontSize": 14,
+            "fontWeight": "bold"
+          }
+        }
+      ]
+    },
+    "body": {
+      "height": 420,
+      "items": [
+        {
+          "type": "container",
+          "w": 240,
+          "h": 72,
+          "items": [
+            {
+              "type": "textbox",
+              "w": 144,
+              "h": 18,
+              "value": "=UCase(PartProperties.Title)",
+              "canGrow": true,
+              "canShrink": false,
+              "style": {},
+              "id": "r4uky2fk",
+              "name": "KpiTitle",
+              "x": 4,
+              "y": 4,
+              "styleName": "BrandSmall"
+            },
+            {
+              "type": "textbox",
+              "w": 144,
+              "h": 18,
+              "value": "=Format(Sum(Fields.amount) * PartProperties.Factor, \"N0\")",
+              "canGrow": true,
+              "canShrink": false,
+              "style": {},
+              "id": "ltb2ybhq",
+              "name": "KpiValue",
+              "x": 4,
+              "y": 20,
+              "dataSet": "Sales",
+              "styleName": "Brand"
+            }
+          ],
+          "keepTogether": true,
+          "style": {
+            "border": "0.75 solid #d0d7de",
+            "padding": 0
+          },
+          "id": "dkgdrjdb",
+          "name": "KpiCard",
+          "x": 0,
+          "y": 0
+        }
+      ]
+    },
+    "pageFooter": {
+      "height": 24,
+      "items": [
+        {
+          "id": "f1",
+          "type": "textbox",
+          "name": "PageNumber",
+          "x": 323.28,
+          "y": 6,
+          "w": 200,
+          "h": 12,
+          "value": "Page {Globals.PageNumber} of {Globals.TotalPages}",
+          "canGrow": false,
+          "style": {
+            "fontSize": 7.5,
+            "color": "#6b7280",
+            "textAlign": "right"
+          }
+        }
+      ]
+    }
+  },
+  "parts": [
+    {
+      "name": "Kpi",
+      "item": "KpiCard",
+      "label": "KPI card",
+      "properties": [
+        {
+          "name": "Title",
+          "type": "string",
+          "default": "Total sales"
+        },
+        {
+          "name": "Factor",
+          "type": "number",
+          "default": 1
+        }
+      ]
+    }
+  ]
+}

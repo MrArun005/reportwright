@@ -319,6 +319,7 @@ register('table', {
     { key: 'dataSet', label: 'Data set', type: 'dataset', category: 'Data' },
     { key: 'repeatHeader', label: 'Repeat header on each page', type: 'bool', category: 'Layout' },
     { key: 'printAtBottom', label: 'Footer at the bottom of the page', type: 'bool', category: 'Layout' },
+    { key: 'overflowTo', label: 'Fixed frame: continue rows in', labelKey: 'overflowTo', type: 'overflowTarget', category: 'Layout' },
     { key: 'overflow', label: 'Wider than the page', type: 'select', options: [{ value: 'paginate', label: 'Continue on the next pages' }], category: 'Layout' },
     { key: 'repeatColumns', label: 'Columns repeated on each page set', type: 'number', category: 'Layout', showIf: (it) => it.overflow === 'paginate' },
     { key: 'pageOrder', label: 'Page order', type: 'select', options: [{ value: 'down', label: 'Down, then across' }, { value: 'across', label: 'Across, then down' }], category: 'Layout', showIf: (it) => it.overflow === 'paginate' },
@@ -1297,6 +1298,7 @@ const emptyBox = (item) => ({ height: item.h, units: [{ top: 0, height: item.h, 
 // A linked report part: the library's item, drawn here with this instance's property values (engine/reuse.js loads it).
 register('part', {
   label: 'Report part',
+  styleProps: [], // no style of its own
   defaults: () => ({ type: 'part', w: 200, h: 60, library: '', part: '', properties: {} }),
   props: [
     { key: 'pageBreakBefore', label: 'Page break before', type: 'bool', category: 'Layout' },
@@ -1324,6 +1326,7 @@ register('part', {
 // Where a content report's body goes in a master report. Rendering the master alone leaves the room empty.
 register('placeholder', {
   label: 'Content placeholder',
+  styleProps: [], // no style of its own
   defaults: () => ({ type: 'placeholder', w: 400, h: 160 }),
   props: [],
   layout: (item) => emptyBox(item),
@@ -1346,6 +1349,7 @@ function stack(units, dx) {
 // A fixed-page form: rows that do not fit a table's frame continue here (table.overflowTo), header repeated.
 register('overflow', {
   label: 'Overflow placeholder',
+  styleProps: [], // no style of its own
   defaults: () => ({ type: 'overflow', w: 360, h: 200 }),
   props: [
     { key: 'overflowTo', label: 'Then continue in', labelKey: 'overflowThen', type: 'overflowTarget', category: 'Data' },

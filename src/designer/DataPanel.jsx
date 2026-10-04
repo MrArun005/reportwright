@@ -30,6 +30,8 @@ export async function loadSample() {
 
 export default function DataPanel() {
   const def = useDesigner(s => s.def);
+  const lang = useDesigner(s => s.lang);
+  const T = (k, v) => t(lang, k, v);
   const sample = useDesigner(s => s.sample);
   const [dlg, setDlg] = useState(null);
   const [open, setOpen] = useState(() => new Set((def.dataSets || []).map(d => d.name)));
@@ -99,6 +101,10 @@ export default function DataPanel() {
                   <span className="ty">{sample?.dataSets?.[d.name] ? `${sample.dataSets[d.name].length} rows` : ''}</span>
                   <button className="btn sm ghost act" onClick={() => setDlg({ kind: 'dataset', index: i })}>Edit</button>
                 </div>
+                {(d.fields || []).length > 0 && <div className="btnrow" style={{ margin: '2px 0 4px 22px' }}>
+                  <button type="button" className="btn sm ghost" onClick={() => useDesigner.getState().setUi({ instantVisuals: { dataSet: d.name } })} data-testid={`instant-${d.name}`}>{T('instantVisuals')}</button>
+                  <button type="button" className="btn sm ghost" onClick={() => useDesigner.getState().setUi({ pivotWizard: { dataSet: d.name } })} data-testid={`pivot-wizard-${d.name}`}>{T('pivotWizard')}</button>
+                </div>}
                 {open.has(d.name) && (
                   <ul className="tree" style={{ paddingLeft: 18 }}>
                     {(d.fields || []).map(f => (

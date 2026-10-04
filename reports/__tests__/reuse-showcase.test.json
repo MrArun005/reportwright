@@ -1,0 +1,16 @@
+{
+  "report": "../reuse-showcase.pw.json",
+  "cases": [
+    {
+      "name": "default",
+      "now": "2026-10-04T10:00:00"
+    },
+    {
+      "name": "screen",
+      "now": "2026-10-04T10:00:00",
+      "state": {
+        "target": "screen"
+      }
+    }
+  ]
+}

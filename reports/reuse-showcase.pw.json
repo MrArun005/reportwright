@@ -1,0 +1,572 @@
+{
+  "$schema": "pagewright/report@1",
+  "name": "Reuse showcase",
+  "locale": "en-IN",
+  "currency": "INR",
+  "page": {
+    "size": "A4",
+    "orientation": "portrait",
+    "margins": [
+      36,
+      36,
+      36,
+      36
+    ]
+  },
+  "parameters": [
+    {
+      "name": "ThemeId",
+      "type": "string",
+      "default": "reuse-theme",
+      "required": false
+    }
+  ],
+  "dataSources": [
+    {
+      "name": "sales",
+      "type": "json",
+      "data": {
+        "rows": [
+          {
+            "region": "North",
+            "product": "Paper",
+            "amount": 1000
+          },
+          {
+            "region": "South",
+            "product": "Scanner",
+            "amount": 1377
+          },
+          {
+            "region": "East",
+            "product": "Printer",
+            "amount": 1754
+          },
+          {
+            "region": "West",
+            "product": "Paper",
+            "amount": 2131
+          },
+          {
+            "region": "North",
+            "product": "Scanner",
+            "amount": 2508
+          },
+          {
+            "region": "South",
+            "product": "Printer",
+            "amount": 2885
+          },
+          {
+            "region": "East",
+            "product": "Paper",
+            "amount": 3262
+          },
+          {
+            "region": "West",
+            "product": "Scanner",
+            "amount": 3639
+          },
+          {
+            "region": "North",
+            "product": "Printer",
+            "amount": 1116
+          },
+          {
+            "region": "South",
+            "product": "Paper",
+            "amount": 1493
+          },
+          {
+            "region": "East",
+            "product": "Scanner",
+            "amount": 1870
+          },
+          {
+            "region": "West",
+            "product": "Printer",
+            "amount": 2247
+          },
+          {
+            "region": "North",
+            "product": "Paper",
+            "amount": 2624
+          },
+          {
+            "region": "South",
+            "product": "Scanner",
+            "amount": 3001
+          },
+          {
+            "region": "East",
+            "product": "Printer",
+            "amount": 3378
+          },
+          {
+            "region": "West",
+            "product": "Paper",
+            "amount": 3755
+          },
+          {
+            "region": "North",
+            "product": "Scanner",
+            "amount": 1232
+          },
+          {
+            "region": "South",
+            "product": "Printer",
+            "amount": 1609
+          },
+          {
+            "region": "East",
+            "product": "Paper",
+            "amount": 1986
+          },
+          {
+            "region": "West",
+            "product": "Scanner",
+            "amount": 2363
+          },
+          {
+            "region": "North",
+            "product": "Printer",
+            "amount": 2740
+          },
+          {
+            "region": "South",
+            "product": "Paper",
+            "amount": 3117
+          },
+          {
+            "region": "East",
+            "product": "Scanner",
+            "amount": 3494
+          },
+          {
+            "region": "West",
+            "product": "Printer",
+            "amount": 3871
+          }
+        ]
+      }
+    }
+  ],
+  "dataSets": [
+    {
+      "name": "Sales",
+      "source": "sales",
+      "path": "$.rows",
+      "fields": [
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "product",
+          "type": "string"
+        },
+        {
+          "name": "amount",
+          "type": "number"
+        }
+      ]
+    }
+  ],
+  "styles": {
+    "base": {
+      "fontFamily": "Inter",
+      "fontSize": 9,
+      "color": "#1f2937"
+    },
+    "sheet": "reuse-parts",
+    "named": {
+      "Brand": {
+        "fontSize": 14,
+        "fontWeight": "bold",
+        "color": "#7c2d12"
+      },
+      "BrandSmall": {
+        "fontSize": 9,
+        "parent": "Brand"
+      }
+    }
+  },
+  "sections": {
+    "pageHeader": {
+      "height": 0,
+      "items": []
+    },
+    "body": [
+      {
+        "name": "Section1",
+        "height": 718,
+        "items": [
+          {
+            "type": "part",
+            "w": 240,
+            "h": 72,
+            "library": "reuse-parts",
+            "part": "Kpi",
+            "properties": {},
+            "id": "dqqyfpwr",
+            "name": "KpiTotal",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "type": "part",
+            "w": 240,
+            "h": 72,
+            "library": "reuse-parts",
+            "part": "Kpi",
+            "properties": {
+              "Title": "With tax",
+              "Factor": 1.18
+            },
+            "id": "efcltdel",
+            "name": "KpiWithTax",
+            "x": 0,
+            "y": 80
+          },
+          {
+            "type": "container",
+            "w": 240,
+            "h": 72,
+            "items": [
+              {
+                "type": "textbox",
+                "w": 144,
+                "h": 18,
+                "value": "=PartProperties.Title",
+                "canGrow": true,
+                "canShrink": false,
+                "style": {},
+                "id": "8i9izh5m",
+                "name": "KpiTitle1",
+                "x": 4,
+                "y": 4,
+                "styleName": "BrandSmall"
+              },
+              {
+                "type": "textbox",
+                "w": 144,
+                "h": 18,
+                "value": "=Format(Sum(Fields.amount) * PartProperties.Factor, \"N0\")",
+                "canGrow": true,
+                "canShrink": false,
+                "style": {},
+                "id": "6vawgk8h",
+                "name": "KpiValue1",
+                "x": 4,
+                "y": 20,
+                "dataSet": "Sales",
+                "styleName": "Brand"
+              }
+            ],
+            "keepTogether": true,
+            "style": {
+              "border": "0.75 solid #d0d7de",
+              "padding": 0
+            },
+            "x": 0,
+            "y": 160,
+            "partProps": {
+              "Title": "Copied card",
+              "Factor": 1
+            },
+            "id": "gxq9jt8f",
+            "name": "KpiCopy"
+          },
+          {
+            "type": "matrix",
+            "w": 523,
+            "h": 54,
+            "dataSet": "Sales",
+            "rowGroup": "",
+            "columnGroup": "",
+            "value": "=Count(Fields)",
+            "valueFormat": "N0",
+            "corner": "Region",
+            "rowHeaderWidth": 110,
+            "columnWidth": 64,
+            "rowTotals": true,
+            "columnTotals": true,
+            "columnSort": "asc",
+            "rowSort": "asc",
+            "headerStyle": {
+              "fontWeight": "bold",
+              "backgroundColor": "#f1f5f9",
+              "borderBottom": "1 solid #94a3b8"
+            },
+            "style": {
+              "padding": [
+                3,
+                4,
+                3,
+                4
+              ]
+            },
+            "rowGroups": [
+              {
+                "name": "Region",
+                "expr": "=Fields.region",
+                "sort": "asc",
+                "total": "after"
+              }
+            ],
+            "columnGroups": [
+              {
+                "name": "Product",
+                "expr": "=Fields.product",
+                "sort": "asc",
+                "total": "after"
+              }
+            ],
+            "values": [
+              {
+                "label": "Sum of Amount",
+                "value": "=Sum(Fields.amount)",
+                "format": "N0"
+              },
+              {
+                "label": "Sum of Amount",
+                "value": "=Sum(Fields.amount)",
+                "show": "percentOfTotal"
+              }
+            ],
+            "overflow": "shrink",
+            "repeatHeader": true,
+            "id": "xsv5vdjs",
+            "name": "Matrix1",
+            "x": 0,
+            "y": 240
+          },
+          {
+            "type": "chart",
+            "w": 420,
+            "h": 200,
+            "chartType": "column",
+            "dataSet": "Sales",
+            "category": "=Fields.region",
+            "series": [
+              {
+                "name": "Amount",
+                "value": "=Sum(Fields.amount)"
+              }
+            ],
+            "legend": "bottom",
+            "valueFormat": "N0",
+            "title": "Amount by Region",
+            "id": "gz1hyqi7",
+            "name": "Chart1",
+            "x": 0,
+            "y": 302
+          },
+          {
+            "type": "textbox",
+            "w": 144,
+            "h": 18,
+            "value": "Styled from the sheet",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {},
+            "id": "mhdqii6q",
+            "name": "Styled",
+            "x": 0,
+            "y": 512,
+            "styleName": "BrandSmall"
+          },
+          {
+            "type": "textbox",
+            "w": 144,
+            "h": 18,
+            "value": "Shown on screen only",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {},
+            "id": "09ljeru3",
+            "name": "OnScreen",
+            "x": 0,
+            "y": 540,
+            "layer": "ScreenOnly"
+          },
+          {
+            "type": "textbox",
+            "w": 144,
+            "h": 18,
+            "value": "Design note",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {},
+            "id": "n3ogc1ud",
+            "name": "DesignNote",
+            "x": 0,
+            "y": 568,
+            "layer": "Notes"
+          },
+          {
+            "type": "textbox",
+            "w": 144,
+            "h": 24,
+            "value": "Placed in cell mode",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {},
+            "id": "58o6or8f",
+            "name": "InCells",
+            "x": 0,
+            "y": 600
+          },
+          {
+            "type": "table",
+            "w": 523.28,
+            "h": 54,
+            "dataSet": "Sales",
+            "repeatHeader": true,
+            "noRowsText": "No rows",
+            "columns": [
+              {
+                "width": 209.31199999999998
+              },
+              {
+                "width": 209.31199999999998
+              },
+              {
+                "width": 104.65599999999999
+              }
+            ],
+            "header": [
+              {
+                "height": 18,
+                "style": {
+                  "fontWeight": "bold",
+                  "backgroundColor": "#f1f5f9",
+                  "borderBottom": "0.75 solid #94a3b8"
+                },
+                "cells": [
+                  {
+                    "value": "Region",
+                    "style": {}
+                  },
+                  {
+                    "value": "Product",
+                    "style": {}
+                  },
+                  {
+                    "value": "Amount",
+                    "style": {
+                      "textAlign": "right"
+                    }
+                  }
+                ]
+              }
+            ],
+            "groups": [],
+            "detail": [
+              {
+                "height": 18,
+                "style": {
+                  "borderBottom": "0.5 solid #e5e7eb"
+                },
+                "cells": [
+                  {
+                    "value": "=Fields.region",
+                    "style": {}
+                  },
+                  {
+                    "value": "=Fields.product",
+                    "style": {}
+                  },
+                  {
+                    "value": "=Fields.amount",
+                    "style": {
+                      "format": "N0",
+                      "textAlign": "right"
+                    }
+                  }
+                ]
+              }
+            ],
+            "footer": [
+              {
+                "height": 18,
+                "cells": [
+                  {
+                    "value": "Total",
+                    "style": {
+                      "fontWeight": "bold",
+                      "borderTop": "0.75 solid #94a3b8"
+                    }
+                  },
+                  {
+                    "value": "",
+                    "style": {
+                      "fontWeight": "bold",
+                      "borderTop": "0.75 solid #94a3b8"
+                    }
+                  },
+                  {
+                    "value": "=Sum(Fields.amount)",
+                    "style": {
+                      "format": "N0",
+                      "textAlign": "right",
+                      "fontWeight": "bold",
+                      "borderTop": "0.75 solid #94a3b8"
+                    }
+                  }
+                ]
+              }
+            ],
+            "style": {
+              "padding": [
+                3,
+                4,
+                3,
+                4
+              ]
+            },
+            "id": "0z1g5lmo",
+            "name": "Lines",
+            "x": 0,
+            "y": 640,
+            "overflowTo": "MoreRows"
+          }
+        ]
+      },
+      {
+        "name": "Section2",
+        "height": 300,
+        "items": [
+          {
+            "type": "overflow",
+            "w": 360,
+            "h": 180,
+            "id": "jxql5cua",
+            "name": "MoreRows",
+            "x": 0,
+            "y": 4
+          }
+        ]
+      }
+    ],
+    "pageFooter": {
+      "height": 0,
+      "items": []
+    }
+  },
+  "master": "reuse-master",
+  "theme": "=Parameters.ThemeId",
+  "libraries": [
+    "reuse-parts"
+  ],
+  "layers": [
+    {
+      "name": "ScreenOnly",
+      "target": "screen"
+    },
+    {
+      "name": "Notes",
+      "target": "design"
+    }
+  ]
+}

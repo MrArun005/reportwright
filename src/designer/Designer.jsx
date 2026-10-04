@@ -16,6 +16,8 @@ import ThemeToggle from '@/theme/ThemeToggle.jsx';
 import ChartWizard from './ChartWizard.jsx';
 import TableWizard from './TableWizard.jsx';
 import AskAi from './AskAi.jsx';
+import { PartsPanel, LayersPanel } from './Reuse.jsx';
+import PivotWizard, { InstantVisuals } from './PivotWizard.jsx';
 import { t, dirOf, pickLang } from '@/i18n/index.js';
 
 const TOOLS = [
@@ -39,6 +41,8 @@ const TOOLS = [
   { type: 'toc', icon: <svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 3h7M2 7h7M2 11h7" stroke="currentColor" strokeWidth="1.3" /><path d="M11 3h1M11 7h1M11 11h1" stroke="currentColor" strokeWidth="1.3" /></svg> },
   { type: 'field', icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1.5" y="3.5" width="11" height="7" rx="1" stroke="currentColor" fill="none" /><path d="M4 5.5v3" stroke="currentColor" /></svg> },
   { type: 'map', icon: <svg width="14" height="14" viewBox="0 0 14 14"><path d="M1.5 3.5l3.5-1.5 4 1.5 3.5-1.5v8.5l-3.5 1.5-4-1.5-3.5 1.5z" stroke="currentColor" fill="none" strokeLinejoin="round" /><path d="M5 2v8.5M9 3.5V12" stroke="currentColor" /></svg> },
+  { type: 'placeholder', icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1.5" y="1.5" width="11" height="11" rx="1" stroke="currentColor" fill="none" strokeDasharray="2 1.5" /><path d="M4.5 7h5M7 4.5v5" stroke="currentColor" /></svg> },
+  { type: 'overflow', icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1.5" y="1.5" width="11" height="11" rx="1" stroke="currentColor" fill="none" strokeDasharray="2 1.5" /><path d="M4 5h6M4 7.5h6M7 9.5l-1.5 1.5M7 9.5l1.5 1.5" stroke="currentColor" fill="none" /></svg> },
   { type: 'checkbox', icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="2" y="2" width="10" height="10" rx="2" stroke="currentColor" fill="none" /><path d="M4.5 7.2l1.8 1.8 3.4-3.6" stroke="currentColor" fill="none" strokeWidth="1.4" /></svg> },
 ];
 
@@ -148,8 +152,14 @@ export default function Designer({ id, initial, lang: langIn, embed = null }) {
   const [dialog, setDialog] = useState(null);
   const wizard = useDesigner(s => s.wizard);
   const tableWizard = useDesigner(s => s.tableWizard);
+  const pivotWizard = useDesigner(s => s.pivotWizard);
+  const instantVisuals = useDesigner(s => s.instantVisuals);
+  const cells = useDesigner(s => s.cells);
+  const cellSize = useDesigner(s => s.cellSize);
 
-  useEffect(() => { loadSample(); }, []);
+  // sample data again whenever a data source or data set comes or goes (a report part brings its own)
+  const dataKey = useDesigner(s => `${(s.def?.dataSources || []).map(x => x.name)}|${(s.def?.dataSets || []).map(x => x.name)}`);
+  useEffect(() => { loadSample(); }, [dataKey]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -169,7 +179,7 @@ export default function Designer({ id, initial, lang: langIn, embed = null }) {
       const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
       if (arrows[e.key] && st().sel.kind === 'items') {
         e.preventDefault();
-        const step = e.shiftKey ? st().grid * 4 : 1;
+        const step = st().cells ? st().cellSize : e.shiftKey ? st().grid * 4 : 1; // cell mode: a cell at a time
         const [dx, dy] = arrows[e.key];
         const s = st();
         s.lastKey = null;
@@ -230,12 +240,14 @@ export default function Designer({ id, initial, lang: langIn, embed = null }) {
       {dialog === 'ai' && <AskAi onClose={() => setDialog(null)} />}
       {wizard && <ChartWizard />}
       {tableWizard && <TableWizard />}
+      {pivotWizard && <PivotWizard />}
+      {instantVisuals && <InstantVisuals />}
       {tab === 'preview' ? (
         <ReportViewer definition={def} reportId={id} compact lang={lang} />
       ) : (
         <div className="dmain">
           {(!readOnly || embed?.panels?.data !== false) && (
-            <aside className="dleft">{!readOnly && <Toolbox T={T} hide={embed?.toolbox?.hide} />}{embed?.panels?.data !== false && <DataPanel />}<Outline /></aside>
+            <aside className="dleft">{!readOnly && <Toolbox T={T} hide={embed?.toolbox?.hide} />}<PartsPanel />{embed?.panels?.data !== false && <DataPanel />}<LayersPanel /><Outline /></aside>
           )}
           <section className="dcenter">
             <div className="cbar">
@@ -245,6 +257,12 @@ export default function Designer({ id, initial, lang: langIn, embed = null }) {
                 </select>
               </label>
               <label className="check"><input type="checkbox" checked={snap} onChange={e => st().setUi({ snap: e.target.checked })} />{T('snapToGrid')}</label>
+              <label className="check" title={T('cellModeHint')}><input type="checkbox" checked={cells} onChange={e => st().setUi({ cells: e.target.checked })} data-testid="cell-mode" />{T('cellMode')}</label>
+              {cells && <label className="check">{T('cellSize')}
+                <select className="select" style={{ width: 64, height: 24 }} value={cellSize} onChange={e => st().setUi({ cellSize: Number(e.target.value) })} data-testid="cell-size">
+                  {[6, 8, 12, 16, 18, 24, 36].map(c => <option key={c} value={c}>{c} pt</option>)}
+                </select>
+              </label>}
               <label className="check">{T('units')}
                 <select className="select" style={{ width: 64, height: 24 }} value={unit} onChange={e => st().setUi({ unit: e.target.value })}>
                   {['pt', 'mm', 'cm', 'in'].map(u => <option key={u}>{u}</option>)}

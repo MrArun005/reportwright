@@ -1,0 +1,112 @@
+{
+  "$schema": "pagewright/report@1",
+  "name": "Reuse master",
+  "locale": "en-IN",
+  "currency": "INR",
+  "page": {
+    "size": "A4",
+    "orientation": "portrait",
+    "margins": [
+      36,
+      36,
+      36,
+      36
+    ]
+  },
+  "parameters": [],
+  "dataSources": [],
+  "dataSets": [],
+  "styles": {
+    "base": {
+      "fontFamily": "Inter",
+      "fontSize": 9,
+      "color": "#1f2937"
+    }
+  },
+  "sections": {
+    "pageHeader": {
+      "height": 36,
+      "items": [
+        {
+          "id": "h1",
+          "type": "textbox",
+          "name": "ReportTitle",
+          "x": 0,
+          "y": 0,
+          "w": 320,
+          "h": 22,
+          "value": "=Theme.Constants.Company",
+          "canGrow": true,
+          "style": {
+            "fontSize": 14,
+            "fontWeight": "bold",
+            "color": "=Theme.Colors.Accent1"
+          }
+        }
+      ]
+    },
+    "body": {
+      "height": 420,
+      "items": [
+        {
+          "type": "textbox",
+          "w": 144,
+          "h": 18,
+          "value": "Quarterly sales pack",
+          "canGrow": true,
+          "canShrink": false,
+          "style": {
+            "color": "=Theme.Colors.Accent2"
+          },
+          "id": "96x6cn00",
+          "name": "MasterIntro",
+          "x": 0,
+          "y": 4
+        },
+        {
+          "type": "placeholder",
+          "w": 400,
+          "h": 200,
+          "id": "76p7ya7q",
+          "name": "Content",
+          "x": 0,
+          "y": 20
+        },
+        {
+          "type": "textbox",
+          "w": 144,
+          "h": 18,
+          "value": "End of the pack",
+          "canGrow": true,
+          "canShrink": false,
+          "style": {},
+          "id": "v9f9ljy9",
+          "name": "MasterOutro",
+          "x": 0,
+          "y": 252
+        }
+      ]
+    },
+    "pageFooter": {
+      "height": 24,
+      "items": [
+        {
+          "id": "f1",
+          "type": "textbox",
+          "name": "PageNumber",
+          "x": 323.28,
+          "y": 6,
+          "w": 200,
+          "h": 12,
+          "value": "Page {Globals.PageNumber} of {Globals.TotalPages}",
+          "canGrow": false,
+          "style": {
+            "fontSize": 7.5,
+            "color": "#6b7280",
+            "textAlign": "right"
+          }
+        }
+      ]
+    }
+  }
+}

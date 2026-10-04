@@ -7,6 +7,7 @@ import { loadSample } from './DataPanel.jsx';
 import { paintItemSvg } from './Canvas.jsx';
 import { tableFor, matrixFor, labelOf } from './tableGen.js';
 import { Dialog, Field, Select, Check } from './ui.jsx';
+import { t } from '@/i18n/index.js';
 
 const LAYOUTS = [
   { id: 'list', label: 'List', when: 'Every row, with totals' },
@@ -74,6 +75,7 @@ export default function TableWizard() {
     <Dialog className="cw" title="Insert a table" onClose={close}
       footer={<>
         <button className="btn ghost" style={{ marginRight: 'auto' }} onClick={plain}>Insert an empty {wiz.type === 'matrix' ? 'matrix' : 'table'}</button>
+        <button className="btn ghost" onClick={() => { useDesigner.getState().setUi({ tableWizard: null, pivotWizard: { section: wiz.section, x: wiz.x, y: wiz.y, parentId: wiz.parentId, dataSet: c.dataSet } }); }} data-testid="open-pivot-wizard">{t(useDesigner.getState().lang, 'pivotWizard')}…</button>
         <button className="btn" onClick={close}>Cancel</button>
         <button className="btn primary" onClick={insert} disabled={!ds || !itemFor(c.layout, width) || sample?.loading} data-testid="table-wizard-apply">Insert {c.layout === 'matrix' ? 'matrix' : 'table'}</button>
       </>}>

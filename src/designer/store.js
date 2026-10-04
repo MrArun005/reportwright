@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { produce } from 'immer';
 import { ITEMS } from '@/engine/items/index.js';
 import { resolvePage } from '@/engine/units.js';
+import { t } from '@/i18n/index.js';
 
 export const SECTIONS = [
   { key: 'pageHeader', label: 'Page header' },
@@ -40,7 +41,7 @@ export function walk(def, fn) {
   const go = (list, parent, section) => list.forEach((it, i) => { fn(it, list, i, parent, section); if (Array.isArray(it.items)) go(it.items, it, section); });
   for (const { key } of sectionList(def)) go(secOf(def, key)?.items || [], null, key);
 }
-const allNames = (d) => { const s = new Set(); walk(d, it => { if (it.name) s.add(it.name); }); return s; };
+export const allNames = (d) => { const s = new Set(); walk(d, it => { if (it.name) s.add(it.name); }); return s; };
 
 /** Give every item an id and a unique name. Runs once on load. */
 export function normalize(def) {
@@ -61,7 +62,7 @@ export function normalize(def) {
     }
   });
 }
-function uniqueName(used, base) {
+export function uniqueName(used, base) {
   let i = 1;
   while (used.has(`${base}${i}`)) i++;
   used.add(`${base}${i}`);
@@ -89,6 +90,13 @@ export const useDesigner = create((set, get) => ({
   zoom: 1.25,
   grid: 4,
   snap: true,
+  /** cell-based design (Phase 8): items snap to whole cells of cellSize pt and may not overlap */
+  cells: false,
+  cellSize: 12,
+  /** reports this one reuses, fetched for display: id → definition (or { __error }) */
+  reused: {},
+  pivotWizard: null,
+  instantVisuals: null,
   unit: 'pt',
   sample: null,
   /** fonts uploaded to the server: [{ id, family, weight, style, bytes }] */
@@ -197,6 +205,9 @@ export function addItem(type, section, x, y, extra = {}, parentId = null) {
     else it.w = Math.min(it.w, room);
     it.x = clamp(x, 0, Math.max(0, room - it.w));
     it.y = Math.max(0, y);
+    // cell mode: whole cells, and the first free place at or below the drop point
+    const sibs = parent ? parent.items : secOf(d, section).items;
+    if (S().cells) { snapCells(it); for (let k = 0; k < 400 && overlapsAny(it, sibs); k++) it.y += S().cellSize; }
     if (parent) {
       parent.items.push(it);
       if (it.y + it.h > parent.h) parent.h = Math.ceil(it.y + it.h);
@@ -230,6 +241,7 @@ export function updateItem(id, recipe, key) {
 
 export function moveItems(ids, dx, dy) {
   if (!dx && !dy) return;
+  if (S().cells && wouldOverlap(S().def, ids, (it) => ({ x: it.x + dx, y: it.y + dy, w: it.w, h: it.h }))) { S().setUi({ saveError: CELL_TAKEN() }); setTimeout(() => S().setUi({ saveError: null }), 2500); return; }
   S().apply((d) => {
     for (const id of ids) {
       const f = findItem(d, id);
@@ -280,7 +292,7 @@ export function deleteSelection() {
   S().select({ kind: 'report' });
 }
 
-function cloneWithIds(it, used) {
+export function cloneWithIds(it, used) {
   const c = JSON.parse(JSON.stringify(it));
   const fix = (x) => { x.id = rid(); x.name = uniqueName(used, String(x.name || 'Item').replace(/\d+$/, '')); (x.items || []).forEach(fix); };
   fix(c);
@@ -508,3 +520,23 @@ export function tableRemoveGroup(id, level) {
 
 export const round = (v) => Math.round(v * 100) / 100;
 export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+/* ---- cell-based design: whole cells, no overlap (stored as plain x/y/w/h) ---- */
+const CELL_TAKEN = () => t(S().lang, 'cellTaken');
+const overlap = (a, b) => a.x < b.x + Math.max(b.w, 1) - 0.01 && b.x < a.x + Math.max(a.w, 1) - 0.01 && a.y < b.y + Math.max(b.h, 1) - 0.01 && b.y < a.y + Math.max(a.h, 1) - 0.01;
+export const overlapsAny = (it, list) => list.some(o => o !== it && o.id !== it.id && overlap(it, o));
+export function snapCells(it) {
+  const c = S().cellSize;
+  for (const k of ['x', 'y']) it[k] = Math.round(it[k] / c) * c;
+  for (const k of ['w', 'h']) if (it.type !== 'line' && it.type !== 'table') it[k] = Math.max(c, Math.round(it[k] / c) * c);
+}
+/** Would moving or resizing these items (rectOf gives each new box) overlap an item beside them? */
+export function wouldOverlap(def, ids, rectOf) {
+  for (const id of ids) {
+    const f = findItem(def, id);
+    if (!f) continue;
+    const r = rectOf(f.item);
+    if (f.list.some(o => !ids.includes(o.id) && overlap(r, o))) return true;
+  }
+  return false;
+}

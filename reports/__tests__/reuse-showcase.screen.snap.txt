@@ -1,0 +1,195 @@
+# reuse-showcase › screen · 5 pages
+--- page 1
+Asha Traders Pvt Ltd
+Quarterly sales pack
+TOTAL SALES
+58,452
+WITH TAX
+68,973
+Copied card
+58,452
+Region
+Paper
+Printer
+Scanner
+Total
+Sum of
+Amount
+Sum of
+Amount
+Sum of
+Amount
+Sum of
+Amount
+Sum of
+Amount
+Sum of
+Amount
+Sum of
+Amount
+Sum of
+Amount
+East
+5,248
+9.0%
+5,132
+8.8%
+5,364
+9.2%
+15,744
+26.9%
+North
+3,624
+6.2%
+3,856
+6.6%
+3,740
+6.4%
+11,220
+19.2%
+South
+4,610
+7.9%
+4,494
+7.7%
+4,378
+7.5%
+13,482
+23.1%
+West
+5,886
+10.1%
+6,118
+10.5%
+6,002
+10.3%
+18,006
+30.8%
+Total
+19,368
+33.1%
+19,600
+33.5%
+19,484
+33.3%
+58,452
+100.0%
+Amount by Region
+0
+5,000
+10,000
+15,000
+20,000
+North
+South
+East
+West
+Styled from the sheet
+Shown on screen only
+Page 1 of 5
+--- page 2
+Asha Traders Pvt Ltd
+Placed in cell mode
+Region
+Product
+Amount
+North
+Paper
+1,000
+South
+Scanner
+1,377
+End of the pack
+Page 2 of 5
+--- page 3
+Asha Traders Pvt Ltd
+Quarterly sales pack
+Region
+Product
+Amount
+East
+Printer
+1,754
+West
+Paper
+2,131
+North
+Scanner
+2,508
+South
+Printer
+2,885
+East
+Paper
+3,262
+West
+Scanner
+3,639
+North
+Printer
+1,116
+South
+Paper
+1,493
+East
+Scanner
+1,870
+End of the pack
+Page 3 of 5
+--- page 4
+Asha Traders Pvt Ltd
+Quarterly sales pack
+Region
+Product
+Amount
+West
+Printer
+2,247
+North
+Paper
+2,624
+South
+Scanner
+3,001
+East
+Printer
+3,378
+West
+Paper
+3,755
+North
+Scanner
+1,232
+South
+Printer
+1,609
+East
+Paper
+1,986
+West
+Scanner
+2,363
+End of the pack
+Page 4 of 5
+--- page 5
+Asha Traders Pvt Ltd
+Quarterly sales pack
+Region
+Product
+Amount
+North
+Printer
+2,740
+South
+Paper
+3,117
+East
+Scanner
+3,494
+West
+Printer
+3,871
+Total
+58,452
+End of the pack
+Page 5 of 5

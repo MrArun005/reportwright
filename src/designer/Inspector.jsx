@@ -11,6 +11,7 @@ import { TextInput, NumberInput, Select, ColorInput, ExprInput, Field, Check } f
 import ExpressionEditor from './ExpressionEditor.jsx';
 import { checkFunctions, isDynamic } from '@/engine/expr/evaluate.js';
 import { PALETTES } from '@/engine/items/chart-kit.js';
+import { ReuseSection, ThemeSection, LayerField, PartInstance, PartValues, PublishPart, useStyleNames } from './Reuse.jsx';
 
 /** The designer's UI language (set by the Designer) as a translate function. */
 function useT() { const lang = useDesigner(s => s.lang); return (k, v) => t(lang, k, v); }
@@ -67,7 +68,8 @@ function PropEditor({ p: spec, value, onChange, openExpr, dataSet, item }) {
     case 'font': return <Field label={p.label}><Select value={value} onChange={onChange} options={families} allowEmpty /></Field>;
     case 'dataset': return <Field label={p.label}><Select value={value} onChange={onChange} options={(def.dataSets || []).map(d => d.name)} allowEmpty /></Field>;
     case 'action': return <ActionEditor value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet} />;
-    case 'stylename': return <Field label={p.label}><Select value={value} onChange={onChange} options={Object.keys(def.styles?.named || {})} allowEmpty /></Field>;
+    case 'stylename': return <Field label={p.label}><StyleNameSelect value={value} onChange={onChange} /></Field>;
+    case 'overflowTarget': return <Field label={p.label}><OverflowTarget value={value} onChange={onChange} self={item?.name} /></Field>;
     case 'series': return <SeriesEditor value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet} chartType={item?.chartType || 'column'} />;
     case 'stacked': return <Field label={p.label}><Select value={value === 'percent' ? 'percent' : value ? 'stacked' : ''} options={[{ value: '', label: 'Side by side' }, { value: 'stacked', label: 'Stacked' }, { value: 'percent', label: 'Stacked to 100%' }]} onChange={v => onChange(v === 'percent' ? 'percent' : v ? true : undefined)} /></Field>;
     case 'axes': return <AxesEditor value={value} onChange={onChange} chartType={item?.chartType || 'column'} hasSecondary={(item?.series || []).some(sr => sr.axis === 'secondary')} />;
@@ -75,6 +77,17 @@ function PropEditor({ p: spec, value, onChange, openExpr, dataSet, item }) {
     case 'params': return <ParamsEditor label={p.label} value={value} onChange={onChange} />;
     default: return <Field label={p.label}><TextInput value={value} onChange={v => onChange(v === '' ? undefined : v)} /></Field>;
   }
+}
+
+function StyleNameSelect({ value, onChange }) {
+  return <Select value={value} onChange={onChange} options={useStyleNames()} allowEmpty />;
+}
+/** The overflow placeholders of the report (a fixed table frame, or another placeholder, continues there). */
+function OverflowTarget({ value, onChange, self }) {
+  const def = useDesigner(s => s.def);
+  const names = [];
+  walk(def, (it) => { if (it.type === 'overflow' && it.name !== self) names.push(it.name); });
+  return <Select value={value} onChange={onChange} options={names} allowEmpty data-testid="overflow-target" />;
 }
 
 /** A fixed value (the normal control) or an expression: a font size, weight or style can be =IIf(…). */
@@ -160,7 +173,8 @@ function ItemProps({ item, section, openExpr }) {
   const rename = (v) => {
     let taken = false; walk(def, (i) => { if (i.id !== item.id && i.name === v) taken = true; });
     setNameErr(!/^[A-Za-z_][\w]*$/.test(v) ? 'Use letters, digits and _' : taken ? 'This name is in use' : null);
-    if (/^[A-Za-z_][\w]*$/.test(v) && !taken) set('name', v);
+    // a published report part follows its item's new name
+    if (/^[A-Za-z_][\w]*$/.test(v) && !taken) useDesigner.getState().apply(d => { const f = findItem(d, item.id); if (!f) return; for (const p of d.parts || []) if (p.item === f.item.name) p.item = v; f.item.name = v; }, `${item.id}.name`);
   };
   const dataSet = item.dataSet;
   return (
@@ -187,7 +201,10 @@ function ItemProps({ item, section, openExpr }) {
           {item.type !== 'table' && <Geo label="Height" value={item.h} onChange={v => set('h', Math.max(0, v))} />}
         </div>
         <div className="hint">In the {(sectionList(def).find(s => s.key === section)?.label || section).toLowerCase()}{findItem(def, item.id)?.parent ? `, inside ${findItem(def, item.id).parent.name}` : ''}.</div>
+        <LayerField item={item} />
       </div>
+      {item.type === 'part' && <PartInstance item={item} />}
+      {item.partProps && typeof item.partProps === 'object' && <PartValues item={item} />}
       {groupBy((spec?.props || []).filter(p => !p.showIf || p.showIf(item))).map(([cat, ps]) => (
         <div className="cat" key={cat}>
           <h5>{cat}</h5>
@@ -201,6 +218,7 @@ function ItemProps({ item, section, openExpr }) {
       {item.type === 'matrix' && <SortFilterEditor item={item} noSort />}
       {(item.type === 'list' || item.type === 'container') && <div className="cat"><span className="hint">Drag tools and fields into the {item.type}. Items inside a list repeat for each record{item.groupBy ? ' (one row per group)' : ''}. A table inside a list can filter with =Parent.field.</span></div>}
       <StyleCats props={stylePropsFor(item.type)} style={item.style} onSet={setStyle} openExpr={openExpr} dataSet={dataSet} />
+      {item.type !== 'part' && item.type !== 'placeholder' && <PublishPart item={item} />}
       <div className="cat"><div className="btnrow">
         <button className="btn sm" onClick={duplicateSelection}>Duplicate <span className="kbd">⌘D</span></button>
         <button className="btn sm danger" onClick={deleteSelection}>Delete <span className="kbd">Del</span></button>
@@ -810,6 +828,7 @@ function ReportProps() {
         </div>
         <div className="hint">Margins in points. Changing the page width does not move items.</div>
       </div>
+      <ReuseSection />
       <div className="cat">
         <h5>Regional</h5>
         <div className="grid2">
@@ -829,6 +848,7 @@ function ReportProps() {
       </div>
       <ReportImages />
       <ReportFunctions />
+      <ThemeSection />
       <NamedStyles />
       <div className="cat"><span className="hint">Select an item, a cell or a band to edit it. Drag tools and fields from the left onto the page.</span></div>
     </>
@@ -933,6 +953,8 @@ function themeStyles(t) {
 }
 
 function NamedStyles() {
+  const T = useT();
+  const styleNames = useStyleNames();
   const def = useDesigner(s => s.def);
   const named = def.styles?.named || {};
   const [newName, setNewName] = useState('');
@@ -949,6 +971,7 @@ function NamedStyles() {
           <NumberInput value={st.fontSize} step={0.5} onChange={v => setS(name, 'fontSize', v)} aria-label={`${name} size`} />
           <Select value={st.fontWeight} options={['normal', '600', 'bold']} allowEmpty onChange={v => setS(name, 'fontWeight', v)} />
           <input type="color" value={/^#[0-9a-f]{6}$/i.test(st.color || '') ? st.color : '#000000'} onChange={e => setS(name, 'color', e.target.value)} aria-label={`${name} colour`} style={{ width: 26, height: 26, border: '1px solid var(--line)', borderRadius: 5, padding: 0 }} />
+          <Select value={st.parent} allowEmpty options={styleNames.filter(n => n !== name)} onChange={v => setS(name, 'parent', v)} aria-label={T('styleParentOf', { name })} title={T('styleParent')} data-testid={`style-parent-${name}`} />
         </div>
       ))}
       <div className="expr-row">

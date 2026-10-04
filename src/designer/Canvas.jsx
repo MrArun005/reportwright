@@ -15,6 +15,11 @@ import { layoutItems } from '@/engine/layout.js';
 import { shiftItems } from '@/engine/items/paint.js';
 import { resolveParameters } from '@/engine/index.js';
 import { fontStore, customFonts, loadModelFonts } from '@/viewer/engineClient.js';
+import { withPartProps } from '@/engine/items/index.js';
+import { t } from '@/i18n/index.js';
+import { themeContext, findItemNamed } from '@/engine/reuse.js';
+import { MIME_PART, insertPart, useReused, useLayerOf, useT } from './Reuse.jsx';
+import { wouldOverlap } from './store.js';
 
 export const PX = 96 / 72;
 export const MIME_TOOL = 'application/x-pw-tool';
@@ -101,15 +106,39 @@ function Ruler({ width, scale }) {
 }
 
 function snapV(v) {
-  const { snap, grid } = useDesigner.getState();
+  const { snap, grid, cells, cellSize } = useDesigner.getState();
+  if (cells) return Math.round(v / cellSize) * cellSize; // cell mode: whole cells
   return snap ? Math.round(v / grid) * grid : round(v);
 }
 
 /* ---------------------------------------------------------------- band */
-function Band({ section, label, scale, bw, drag, setDrag }) {
+/** A master report's band as the content report sees it: items (locked), and where the content goes. */
+function masterBand(m, section) {
+  if (!m?.sections) return null;
+  if (!isBodyKey(section)) {
+    const b = m.sections[section];
+    return b?.height ? { items: b.items || [], height: b.height, off: null } : null;
+  }
+  const b = (Array.isArray(m.sections.body) ? m.sections.body[0] : m.sections.body) || {};
+  const all = b.items || [];
+  const ph = all.find(i => i.type === 'placeholder');
+  const items = all.filter(i => i !== ph);
+  const below = items.length ? Math.max(...items.map(i => i.y + i.h)) + 6 : 0;
+  return { items, height: Math.max(b.height || 0, below), off: ph ? { x: ph.x, y: ph.y, w: ph.w, h: ph.h } : { x: 0, y: below, w: null, h: 0 } };
+}
+
+function Band({ section, label, scale, bw: bandW, drag, setDrag }) {
+  const T = useT();
   const sec = useDesigner(s => secOf(s.def, section));
   const sel = useDesigner(s => s.sel);
   const grid = useDesigner(s => s.grid);
+  const cells = useDesigner(s => s.cells);
+  const cellSize = useDesigner(s => s.cellSize);
+  const masterId = useDesigner(s => s.def.master);
+  const master = useReused(masterId);
+  const mb = masterId ? masterBand(master, section) : null;
+  const off = mb?.off || null; // the body of a content report: its items sit in the master's content placeholder
+  const bw = off?.w || bandW;
   const ref = useRef(null);
   const [marquee, setMarquee] = useState(null);
   const [dropping, setDropping] = useState(false);
@@ -133,7 +162,9 @@ function Band({ section, label, scale, bw, drag, setDrag }) {
       const r = { x: Math.min(p0.x, p.x), y: Math.min(p0.y, p.y), w: Math.abs(p.x - p0.x), h: Math.abs(p.y - p0.y) };
       setMarquee(null);
       if (r.w < 3 && r.h < 3) { if (!additive) st.select({ kind: 'section', section }); return; }
+      const lay = useDesigner.getState().def.layers || [];
       const hit = secOf(useDesigner.getState().def, section).items
+        .filter(i => !lay.some(l => l.name === i.layer && (l.locked || l.visible === false)))
         .filter(i => i.x < r.x + r.w && i.x + Math.max(i.w, 1) > r.x && i.y < r.y + r.h && i.y + Math.max(i.h, 1) > r.y).map(i => i.id);
       const ids = [...new Set([...prev, ...hit])];
       st.select(ids.length ? { kind: 'items', ids } : { kind: 'section', section });
@@ -155,12 +186,15 @@ function Band({ section, label, scale, bw, drag, setDrag }) {
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
   };
 
-  const accepts = (e) => e.dataTransfer.types.includes(MIME_TOOL) || e.dataTransfer.types.includes(MIME_FIELD) || e.dataTransfer.types.includes(MIME_DATASET);
+  const accepts = (e) => e.dataTransfer.types.includes(MIME_TOOL) || e.dataTransfer.types.includes(MIME_FIELD) || e.dataTransfer.types.includes(MIME_DATASET) || e.dataTransfer.types.includes(MIME_PART);
   const onDrop = (e) => {
     setDropping(false);
     if (!accepts(e)) return;
     e.preventDefault();
+    if (mb && !off) return alertOnce(T('masterBandLocked'));
     const p = toPt(e);
+    const part = JSON.parse(e.dataTransfer.getData(MIME_PART) || 'null');
+    if (part) { insertPart(part.library, part.part, { section, x: snapV(p.x), y: snapV(p.y) }); return; }
     const tool = e.dataTransfer.getData(MIME_TOOL);
     if (tool) {
       if ((tool === 'table' || tool === 'matrix' || tool === 'subreport') && !isBodyKey(section)) return alertOnce('Tables, matrices and subreports can only go in the body.');
@@ -184,20 +218,20 @@ function Band({ section, label, scale, bw, drag, setDrag }) {
   };
 
   const gridPx = grid * scale;
+  const cellPx = cellSize * scale;
   const secSelected = sel.kind === 'section' && sel.section === section;
-  return (
-    <>
-      <div className={`band-label${secSelected ? ' sel' : ''}`} onClick={() => useDesigner.getState().select({ kind: 'section', section })}>
-        <span>{label}</span><span className="h">{round(h)} pt</span>
-      </div>
+  const surface = (
       <div
         ref={ref}
-        className={`band${dropping ? ' drop' : ''}`}
+        className={`band${dropping ? ' drop' : ''}${off ? ' master-content' : ''}${mb && !off ? ' master-locked' : ''}`}
         data-section={section}
         style={{
           height: (h + (dropping ? DROP_ROOM : 0)) * scale, width: bw * scale,
-          backgroundImage: gridPx >= 5 ? 'radial-gradient(circle, rgba(95,107,119,.28) 0.8px, transparent 1px)' : undefined,
-          backgroundSize: `${gridPx * 2}px ${gridPx * 2}px`,
+          ...(off ? { position: 'absolute', left: off.x * scale, top: off.y * scale } : {}),
+          // cell mode: the cells as lines; otherwise the snap grid as dots
+          backgroundImage: cells ? 'linear-gradient(to right, rgba(14,116,144,.18) 1px, transparent 1px), linear-gradient(to bottom, rgba(14,116,144,.18) 1px, transparent 1px)'
+            : gridPx >= 5 ? 'radial-gradient(circle, rgba(95,107,119,.28) 0.8px, transparent 1px)' : undefined,
+          backgroundSize: cells ? `${cellPx}px ${cellPx}px` : `${gridPx * 2}px ${gridPx * 2}px`,
         }}
         onPointerDown={onBgDown}
         onDragOver={(e) => { if (accepts(e)) { e.preventDefault(); setDropping(true); } }}
@@ -217,7 +251,31 @@ function Band({ section, label, scale, bw, drag, setDrag }) {
         })}
         <div className="band-resize" onPointerDown={onResizeDown} title="Drag to change the band height" />
       </div>
+  );
+  return (
+    <>
+      <div className={`band-label${secSelected ? ' sel' : ''}`} onClick={() => useDesigner.getState().select({ kind: 'section', section })}>
+        <span>{label}{mb ? ` · ${T('fromMaster')}` : ''}</span><span className="h">{round(h)} pt</span>
+      </div>
+      {mb ? (
+        <div className="band master-host" style={{ height: (mb.height + (off ? Math.max(0, h - off.h) : 0)) * scale, width: bandW * scale }} data-master={masterId}>
+          {/* the master's items below the placeholder move down as the content grows, as they will when rendered */}
+          <div className="master-layer" aria-hidden="true">{mb.items.map((it, i) => <StaticItem key={it.id || i} item={off && it.y >= off.y + off.h ? { ...it, y: it.y + Math.max(0, h - off.h) } : it} scale={scale} />)}</div>
+          {surface}
+        </div>
+      ) : surface}
     </>
+  );
+}
+
+/** A master report's item in a content report: drawn, never selected or moved. */
+function StaticItem({ item, scale }) {
+  return (
+    <div className="it" style={{ left: item.x * scale, top: item.y * scale, width: Math.max(item.w * scale, 2), height: Math.max(item.h * scale, 2) }} data-master-item={item.name}>
+      {NESTING.has(item.type) ? <><NestBox item={item} scale={scale} />{(item.items || []).map((c, i) => <StaticItem key={c.id || i} item={c} scale={scale} />)}</>
+        : item.type === 'table' ? <div className="box"><span className="hint">{ITEMS.table.label} · {item.name}</span></div>
+          : <ItemBody item={item} scale={scale} />}
+    </div>
   );
 }
 
@@ -292,22 +350,25 @@ function rectOf(item, drag) {
 /* ---------------------------------------------------------------- items */
 function AnyItem(props) {
   const t = props.item.type;
-  if (t === 'table') return <TableView {...props} />;
-  if (NESTING.has(t)) return <ItemView {...props} nest />;
-  return <ItemView {...props} />;
+  const layer = useLayerOf(props.item);
+  if (layer?.visible === false) return null; // a hidden layer is hidden here too
+  const el = t === 'table' ? <TableView {...props} /> : NESTING.has(t) ? <ItemView {...props} nest /> : <ItemView {...props} />;
+  return layer?.locked ? <div className="layer-locked" data-locked={props.item.name}>{el}</div> : el;
 }
 
 /** Children of a container or list, drawn inside it. Drops land in the parent. */
 function NestChildren({ item, scale, drag, setDrag, section }) {
   const ref = useRef(null);
   const [over, setOver] = useState(false);
-  const accepts = (e) => e.dataTransfer.types.includes(MIME_TOOL) || e.dataTransfer.types.includes(MIME_FIELD);
+  const accepts = (e) => e.dataTransfer.types.includes(MIME_TOOL) || e.dataTransfer.types.includes(MIME_FIELD) || e.dataTransfer.types.includes(MIME_PART);
   const onDrop = (e) => {
     setOver(false);
     if (!accepts(e)) return;
     e.preventDefault(); e.stopPropagation();
     const r = ref.current.getBoundingClientRect();
     const x = snapV((e.clientX - r.left) / scale), y = snapV((e.clientY - r.top) / scale);
+    const part = JSON.parse(e.dataTransfer.getData(MIME_PART) || 'null');
+    if (part) { insertPart(part.library, part.part, { section, x, y, parentId: item.id }); return; }
     const tool = e.dataTransfer.getData(MIME_TOOL);
     if (tool) { insertItem(tool, section, x, y, {}, item.id); return; }
     const f = JSON.parse(e.dataTransfer.getData(MIME_FIELD) || 'null');
@@ -350,6 +411,7 @@ function ItemView({ item, scale, drag, setDrag, bw, nest, section }) {
     const up = () => {
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
       setDrag(null);
+      if (rect !== o && useDesigner.getState().cells && wouldOverlap(useDesigner.getState().def, [item.id], () => rect)) { alertOnce(t(useDesigner.getState().lang, 'cellTaken')); return; }
       if (rect !== o) updateItem(item.id, (it, d, section) => {
         Object.assign(it, rect);
         const sec = secOf(d, section);
@@ -402,18 +464,20 @@ export async function paintItemSvg(shape, def, sample) {
   let params = {};
   try { params = resolveParameters(def, {}, { lenient: true }); } catch { /* defaults only */ }
   const base = { fontFamily: 'Inter', fontSize: 9, color: '#1f2937', padding: 2, lineHeight: 1.25, textAlign: 'auto', verticalAlign: 'top', ...(def.styles?.base || {}) };
-  const ctxBase = { params, globals: { PageNumber: 1, TotalPages: 1, ExecutionTime: new Date(), ReportName: def.name }, dataSets, fields: null, locale: def.locale, currency: def.currency, functions: functionTable(def) };
+  const theme = themeContext((typeof def.theme === 'string' && useDesigner.getState().reused[def.theme]?.themeDef) || def.themeDef);
+  const ctxBase = { params, globals: { PageNumber: 1, TotalPages: 1, ExecutionTime: new Date(), ReportName: def.name }, dataSets, fields: null, locale: def.locale, currency: def.currency, functions: functionTable(def), theme };
   let seq = 0;
   const lc = {
     m: measurer, base, dataSets, warn: () => {}, fixed: true, maxUnitHeight: 1e6, state: {}, regions: [], nextId: () => ++seq,
     layoutItems: (its, l, o) => layoutItems(its, l, o), linkFor: () => null, bodyWidth: shape.w, subreports: null,
     ctxFor: (it) => { const ds = it.dataSet || def.dataSets?.[0]?.name; const rows = (ds && dataSets[ds]) || []; return { ...ctxBase, fields: rows[0] || null, aggRows: rows }; },
   };
-  let res = ITEMS[shape.type].layout({ ...shape, x: 0, y: 0 }, lc);
+  const plc = shape.partProps ? withPartProps(lc, shape.partProps) : lc; // a report part: PartProperties
+  let res = ITEMS[shape.type].layout({ ...shape, x: 0, y: 0 }, plc);
   if (measurer.missing.size) { // text that needs a fallback font or the shaper: load them, lay out again (as render() does)
     await store.load([...measurer.missing]);
     measurer = lc.m = new TextMeasurer(store);
-    res = ITEMS[shape.type].layout({ ...shape, x: 0, y: 0 }, lc);
+    res = ITEMS[shape.type].layout({ ...shape, x: 0, y: 0 }, shape.partProps ? withPartProps(lc, shape.partProps) : lc);
   }
   const items = res.units.flatMap(u => shiftItems(u.items, 0, u.top));
   finishText(items, measurer);
@@ -445,9 +509,34 @@ function LivePreview({ item, scale }) {
   return <div className="box live" style={{ overflow: 'visible' }}><div style={{ width: item.w * scale, height: svg.h * scale }} dangerouslySetInnerHTML={{ __html: svg.html }} /></div>;
 }
 
+/** A linked report part, drawn by the engine from its library with this instance's property values. */
+function PartPreview({ item, scale }) {
+  const lib = useReused(item.library);
+  const def = useDesigner(s => s.def);
+  const sample = useDesigner(s => s.sample);
+  const p = (lib?.parts || []).find(q => q.name === item.part);
+  const src = p && findItemNamed(lib, p.item);
+  const props = { ...Object.fromEntries((p?.properties || []).map(q => [q.name, q.default ?? null])), ...(item.properties || {}) };
+  const [svg, setSvg] = useState(null);
+  const key = JSON.stringify([src, props]);
+  useEffect(() => {
+    if (!src) return undefined;
+    let alive = true;
+    const t = setTimeout(() => { paintItemSvg({ ...src, partProps: props }, def, sample).then(o => { if (alive) setSvg(o); }, e => { if (alive) setSvg({ error: e.message }); }); }, 120);
+    return () => { alive = false; clearTimeout(t); };
+  }, [key, sample]); // eslint-disable-line react-hooks/exhaustive-deps
+  const tag = <span className="nest-tag">{ITEMS.part.label} · {p?.label || item.part}</span>;
+  if (!src || !svg || svg.error) return <div className="box reuse-box"><span className={svg?.error ? 'err' : 'hint'}>{svg?.error || `${item.library} / ${item.part}`}</span>{tag}</div>;
+  return <div className="box live reuse-part" style={{ overflow: 'visible' }}><div style={{ width: src.w * scale, height: svg.h * scale }} dangerouslySetInnerHTML={{ __html: svg.html }} />{tag}</div>;
+}
+
 function ItemBody({ item, scale }) {
   const base = useDesigner(s => s.def.styles?.base);
   if (LIVE.has(item.type)) return <LivePreview item={item} scale={scale} />;
+  if (item.type === 'part') return <PartPreview item={item} scale={scale} />;
+  if (item.type === 'placeholder' || item.type === 'overflow') {
+    return <div className="box reuse-box" data-kind={item.type}><span className="hint">{ITEMS[item.type].label}{item.type === 'overflow' ? ` · ${item.name}${item.overflowTo ? ` → ${item.overflowTo}` : ''}` : ''}</span></div>;
+  }
   if (item.type === 'subreport') {
     return <div className="box" style={{ background: '#f5f3ff', alignItems: 'center', justifyContent: 'center' }}><span className="hint" style={{ color: '#6d28d9' }}>Subreport · {item.report || 'pick a report'}</span></div>;
   }
