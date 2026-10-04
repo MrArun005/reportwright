@@ -2,7 +2,7 @@
 import { evalValue, toText, isDynamic, truthy } from '../expr/evaluate.js';
 import { isoDate, roundHalfAway } from '../expr/format.js';
 import { resolveStyle, padding } from '../style.js';
-import { layoutTextLines, paintBox, OWNED } from './paint.js';
+import { layoutTextLines, paintBox, paintBoxAt, OWNED } from './paint.js';
 import { applyFilters, applySort, related } from '../data/index.js';
 import { paintChart, CHART_TYPES } from './chart.js';
 import { PALETTES } from './chart-kit.js';
@@ -360,10 +360,11 @@ register('table', {
     let repeatH = 0; // header height that repeats above continued rows
     let rowSeq = 0;
     const colWidths = cols.map(c => c.width); // one array shared by every cell tag
+    const colIdx = colX.map(x => colX.indexOf(x)); // a column's index as cell tags give it (a 0-wide column shares its neighbour's)
 
     /** A cell as the data exports (Excel, CSV) see it. */
     const regionCell = (c) => {
-      const o = { col: Math.round((c.x - item.x) * 100), value: c.raw instanceof Date || typeof c.raw === 'boolean' ? c.raw : typeof c.raw === 'number' ? roundFor(c.raw, c.st.format) : c.plain, format: c.st.format || null, bold: c.st.fontWeight === 'bold' || Number(c.st.fontWeight) >= 600, span: c.span, colIndex: colX.indexOf(c.x) };
+      const o = { col: Math.round((c.x - item.x) * 100), value: c.raw instanceof Date || typeof c.raw === 'boolean' ? c.raw : typeof c.raw === 'number' ? roundFor(c.raw, c.st.format) : c.plain, format: c.st.format || null, bold: c.st.fontWeight === 'bold' || Number(c.st.fontWeight) >= 600, span: c.span, colIndex: c.ci != null ? colIdx[c.ci] : colX.indexOf(c.x) };
       if (c.left > 1) o.rowSpan = c.left;
       return o;
     };
@@ -395,8 +396,10 @@ register('table', {
         let st = resolveStyle([rst, lc.named?.[cell.styleName], cell.style], cctx);
         // a recursive group's indent: the first cell's left padding grows by level
         if (ctx.indent > 0 && !cells.length && !started) { const pd = padding(st); st = { ...st, padding: [pd[0], pd[1], pd[2], pd[3] + ctx.indent] }; }
-        const r = 'raw' in cell ? { v: cell.raw } : evalSafe(cell.value ?? '', cctx, lc, `${item.name || 'Table'} cell`);
-        let text = textOf(r.v, st, cctx);
+        let v; // evalSafe without its result object: this runs for every cell
+        if ('raw' in cell) v = cell.raw;
+        else try { v = evalValue(cell.value ?? '', cctx); } catch (e) { lc.warn(`${item.name || 'Table'} cell: ${e.message}`); v = '#Error'; }
+        let text = textOf(v, st, cctx);
         const plain = text;
         const toggle = cell.toggle || (extra?.toggle && ci === 0 ? extra.toggle : null);
         if (toggle) text = `${toggle.open ? '▼' : '▶'} ${text}`;
@@ -406,7 +409,7 @@ register('table', {
         }
         const nested = cell.item?.type && ITEMS[cell.item.type] ? layoutInCell(cell.item, colX[ci], cw, st, cctx, row) : null;
         const tl = nested ? { ...layoutTextLines('', st, cw, lc.m), lines: [], needed: nested.height } : layoutTextLines(text, st, cw, lc.m);
-        const c = { x: colX[ci], w: cw, st, tl, numeric: typeof r.v === 'number', cell, ctx: cctx, raw: r.v, span, plain: nested ? '' : plain, toggle, nested };
+        const c = { x: colX[ci], w: cw, st, tl, numeric: typeof v === 'number', cell, ctx: cctx, raw: v, span, plain: nested ? '' : plain, toggle, nested, ci };
         const rs = Math.floor(Number(cell.rowSpan)) || 1;
         if (rs > 1) { (started ||= []).push({ ...c, ci, cols: span, left: rs, units: [], kind }); continue; }
         // an item in the cell (a table, list, chart) always grows its row, as in SSRS; canGrow: false keeps text to the row
@@ -439,10 +442,10 @@ register('table', {
             if (first) items.push(...c.nested.items);
             return;
           }
-          const box = paintBox({ x: c.x, y: 0, w: c.w, h, st: c.st, tl: lines ? { ...c.tl, lines: lines[k] } : c.tl, numeric: c.numeric, m: lc.m });
+          const at = items.length;
+          paintBoxAt(c.x, 0, c.w, h, c.st, lines ? { ...c.tl, lines: lines[k] } : c.tl, c.numeric, lc.m, true, items);
           // cell text knows its table, row and column, so the Word export can rebuild the table
-          for (const b of box) if (b.t === 'text') b.cell = { table: item.name, row: rowId, col: colX.indexOf(c.x), span: c.span, kind, cols: colWidths, bg: c.st.backgroundColor || null };
-          items.push(...box);
+          for (let i = at; i < items.length; i++) if (items[i].t === 'text') items[i].cell = { table: item.name, row: rowId, col: colIdx[c.ci], span: c.span, kind, cols: colWidths, bg: c.st.backgroundColor || null };
           if (first) cellLinks(items, c, h, kind);
         });
         if (first) for (const c of cells) if (c.cell.toggle) items.push(toggleLink(c, c.w, h));
@@ -771,11 +774,16 @@ const CELL_ITEM_UNITS = 100000;
 
 /** Round a number for data export to the precision its format shows (percent keeps 2 more places). */
 function roundFor(v, fmt) {
-  const m = /^([CcNnFfPp])(\d{0,2})$/.exec(fmt || '');
-  if (!m) return Number.isInteger(v) ? v : roundHalfAway(v, 6);
-  const d = (m[2] === '' ? 2 : Number(m[2])) + (m[1].toUpperCase() === 'P' ? 2 : 0);
+  let d = ROUND_DIGITS.get(fmt);
+  if (d === undefined) {
+    const m = /^([CcNnFfPp])(\d{0,2})$/.exec(fmt || '');
+    d = m ? (m[2] === '' ? 2 : Number(m[2])) + (m[1].toUpperCase() === 'P' ? 2 : 0) : -1;
+    if (ROUND_DIGITS.size < 1000) ROUND_DIGITS.set(fmt, d);
+  }
+  if (d < 0) return Number.isInteger(v) ? v : roundHalfAway(v, 6);
   return roundHalfAway(v, d); // same rule as the Intl formatter that drew the cell
 }
+const ROUND_DIGITS = new Map(); // a format's decimals for roundFor (-1: not a fixed-decimals format)
 
 /* ---------------------------------------------------------------- container */
 register('container', {

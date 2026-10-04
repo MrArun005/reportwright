@@ -29,10 +29,18 @@ export function layoutTextLines(text, st, width, m, opt) {
   byText.set(text, Object.freeze(out));
   return out;
 }
+/** A style's font key, size, padding and line height; a frozen style's once per render (on the measurer: fonts can change). */
+function lookOf(st, m) {
+  let l = m.looks && Object.isFrozen(st) ? m.looks.get(st) : undefined;
+  if (!l) {
+    const size = Number(st.fontSize) || 9;
+    l = { key: resolveFontKey(st.fontFamily, st.fontWeight, st.fontStyle), size, pad: padding(st), lh: size * (Number(st.lineHeight) || 1.25) };
+    if (m.looks && Object.isFrozen(st)) m.looks.set(st, l);
+  }
+  return l;
+}
 function layoutText(text, st, width, m, wrap) {
-  const key = resolveFontKey(st.fontFamily, st.fontWeight, st.fontStyle);
-  const size = Number(st.fontSize) || 9;
-  const pad = padding(st);
+  const { key, size, pad, lh } = lookOf(st, m);
   const inner = Math.max(1, width - pad[1] - pad[3]);
   const lines = wrap && st.wrap !== false
     ? m.wrap(text, key, size, inner)
@@ -40,16 +48,18 @@ function layoutText(text, st, width, m, wrap) {
       const dir = m.direction(t, key); // set for text that needs shaping or bidi
       return dir ? { text: t, width: m.width(t, key, size, dir), dir } : { text: t, width: m.width(t, key, size) };
     });
-  const lh = size * (Number(st.lineHeight) || 1.25);
   return { key, size, lines, lh, pad, inner, needed: lines.length * lh + pad[0] + pad[2] };
 }
 
 /**
  * Paint a box: background, text lines, borders.
- * @returns {any[]} page-model items
+ * @returns {any[]} page-model items (appended to `out` when given)
  */
-export function paintBox({ x, y, w, h, st, tl, numeric = false, m, ellipsis = true }) {
-  const items = [];
+export function paintBox({ x, y, w, h, st, tl, numeric = false, m, ellipsis = true, out = null }) {
+  return paintBoxAt(x, y, w, h, st, tl, numeric, m, ellipsis, out || []);
+}
+/** paintBox with positional arguments (no argument object: table cells call it hundreds of thousands of times). */
+export function paintBoxAt(x, y, w, h, st, tl, numeric, m, ellipsis, items) {
   // rounded corners (text boxes, containers, cells): the background and an all-round border become rounded rects
   const radius = Math.max(0, Math.min(Number(st.radius) || 0, w / 2, h / 2));
   if (st.backgroundColor) items.push(radius ? { t: 'rect', x, y, w, h, fill: st.backgroundColor, radius } : { t: 'rect', x, y, w, h, fill: st.backgroundColor });
@@ -103,7 +113,8 @@ export function paintBox({ x, y, w, h, st, tl, numeric = false, m, ellipsis = tr
       out.push(o);
     }
     if (out.length) {
-      const text = { t: 'text', font: key, size, color: st.color || '#000', lines: out, clip: { x, y, w, h } };
+      // an exact-size array: one grown by push keeps 16 slots, and the page model holds one per text
+      const text = { t: 'text', font: key, size, color: st.color || '#000', lines: out.length === 1 ? [out[0]] : out.slice(), clip: { x, y, w, h } };
       items.push(text);
       const deco = st.textDecoration && st.textDecoration !== 'none' ? String(st.textDecoration).toLowerCase() : '';
       const under = deco.includes('underline'), strike = deco.includes('line-through');
@@ -112,7 +123,7 @@ export function paintBox({ x, y, w, h, st, tl, numeric = false, m, ellipsis = tr
         // decorations are plain lines, so every exporter draws them without special code; their position and
         // thickness come from the font's own underline and strikeout metrics
         const d = m.decoration(key, size), stroke = st.textDecorationColor || st.color || '#000';
-        for (const l of out) {
+        for (const l of text.lines) {
           if (under) items.push({ t: 'line', x1: l.x, y1: l.y + d.underlineY, x2: l.x + l.w, y2: l.y + d.underlineY, stroke, strokeWidth: d.underlineWidth, dash: null });
           if (strike) items.push({ t: 'line', x1: l.x, y1: l.y + d.strikeY, x2: l.x + l.w, y2: l.y + d.strikeY, stroke, strokeWidth: d.strikeWidth, dash: null });
         }
@@ -120,7 +131,6 @@ export function paintBox({ x, y, w, h, st, tl, numeric = false, m, ellipsis = tr
     }
   }
   const b = bordersOf(st);
-  const same = (p, q) => p && q && p.width === q.width && p.style === q.style && p.color === q.color;
   if (radius && same(b.top, b.right) && same(b.top, b.bottom) && same(b.top, b.left)) {
     items.push({ t: 'rect', x, y, w, h, fill: null, stroke: b.top.color, strokeWidth: b.top.width, dash: DASH[b.top.style] || null, radius });
     return items;
@@ -131,6 +141,8 @@ export function paintBox({ x, y, w, h, st, tl, numeric = false, m, ellipsis = tr
   if (b.right) items.push(line(x + w, y, x + w, y + h, b.right));
   return items;
 }
+
+const same = (p, q) => p && q && p.width === q.width && p.style === q.style && p.color === q.color;
 
 /** A frozen (static, shared) style's borders, parsed once. */
 const BORDERS = new WeakMap();

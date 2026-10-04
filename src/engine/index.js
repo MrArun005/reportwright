@@ -293,12 +293,14 @@ export async function render(def0, opts = {}) {
           }
         }
         band(footer, ph - pg.margins.bottom - footerH, n === 0, n === total - 1);
-        const kept = [];
-        for (const it of items) {
+        let j = 0; // bookmarks leave the page's items (compacted in place: a page holds hundreds of items)
+        for (let i = 0; i < items.length; i++) {
+          const it = items[i];
           if (it.t === 'bookmark') (it.heading ? headings : bookmarks).push({ label: it.label, page: n + 1, y: it.y, level: it.level || 0 });
-          else kept.push(it);
+          else items[j++] = it;
         }
-        const out = frozen.length ? { items: kept, frozen } : { items: kept };
+        items.length = j;
+        const out = frozen.length ? { items, frozen } : { items };
         // a section with another page size: the page carries its own
         if (pg.width !== first.width || ph !== pageH) { out.width = pg.width; out.height = ph; }
         pages.push(out);
@@ -364,13 +366,17 @@ export async function render(def0, opts = {}) {
   // without the layout context, maybe from a field or an embedded name) and subreports' images included.
   // Images already counted are in imageBudget.seen, so they are not counted twice.
   // A form field's background is in its `draw` items, which the SVG, HTML and viewer draw: check those too.
-  const capImages = (items) => items.filter(it => {
-    if (it.t === 'field') { it.draw = capImages(it.draw); return true; }
+  const keepItem = (it) => {
+    if (it.t === 'field') { it.draw = it.draw.filter(keepItem); return true; }
     if (it.t !== 'image') return true;
     it.src = resolveImageSrc(it.src, 'Background image', { images: def.images || {}, budget: imageBudget, warn });
     return !!it.src;
-  });
-  for (const pg of pages) pg.items = capImages(pg.items);
+  };
+  for (const pg of pages) { // in place: the page arrays are this render's own
+    let j = 0;
+    for (const it of pg.items) if (keepItem(it)) pg.items[j++] = it;
+    pg.items.length = j;
+  }
 
   return {
     width: result.width ?? page.width, height, pages, warnings, bookmarks, regions, name: def.name || '', partial: cutRows(),

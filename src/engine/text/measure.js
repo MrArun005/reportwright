@@ -73,6 +73,8 @@ export class TextMeasurer {
     /** text layouts of boxes in a static (frozen) style: style → width → text → layout (items/paint.js) */
     this.boxes = new WeakMap();
     this.boxCount = 0;
+    /** a frozen style's font key, size, padding and line height (items/paint.js) */
+    this.looks = new WeakMap();
     /** @type {Map<string, Map<number, boolean>>} */
     this.cover = new Map();
     /** @type {Map<string, any>} complex layouts at size 1 */
@@ -216,9 +218,14 @@ export class TextMeasurer {
     const out = [];
     const k = this.usable(key);
     const sp = this.width(' ', k, size);
-    for (const para of String(text).split(/\r?\n/)) {
+    const str = String(text);
+    for (const para of str.includes('\n') ? str.split(/\r?\n/) : [str]) {
       const dir = this.direction(para, k);
       if (dir) { this.wrapComplex(para, k, size, maxWidth, dir, sp, out); continue; }
+      if (!para.includes(' ')) { // one word (most cells): what the loop below does for it, without splitting
+        const ww = this.width(para, k, size);
+        if (ww <= maxWidth || maxWidth <= 0) { out.push({ text: para, width: ww, end: true }); continue; }
+      }
       const words = para.split(/ +/);
       let line = '', lw = 0;
       const push = () => { out.push({ text: line, width: lw }); line = ''; lw = 0; };
