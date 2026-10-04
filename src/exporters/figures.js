@@ -11,13 +11,12 @@ export const FIGURE_KINDS = new Set(['image', 'chart', 'map', 'barcode', 'shape'
 
 /**
  * The figures of a page, in page order: { tag, items, at, box } (at: index of the first item). A figure's items are
- * consecutive in the page. One shared tag object marks one figure; a model that went through JSON has a copy per item,
- * then consecutive items with equal tags are one figure (two identical figures side by side would merge: rare).
+ * consecutive in the page. One tag id marks one figure, also in a model that went through JSON (a tag copy per item).
  * @param {any[]} items page items
  */
 export function figures(items) {
   const shared = items.some((it, i) => i > 0 && it.tag && it.tag === items[i - 1].tag);
-  const same = (a, b) => a === b || (!shared && !!a && !!b && a.k === b.k && a.alt === b.alt && a.h === b.h);
+  const same = (a, b) => a === b || (!!a && !!b && (a.id != null ? a.id === b.id : !shared && a.k === b.k && a.alt === b.alt && a.h === b.h));
   const out = [];
   let cur = null;
   items.forEach((it, i) => {

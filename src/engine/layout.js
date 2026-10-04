@@ -3,6 +3,7 @@ import { ITEMS, withPartProps } from './items/index.js';
 
 const EPS = 0.01;
 const FIGURES = new Set(['image', 'chart', 'map', 'barcode', 'shape', 'line', 'sparkline', 'databar', 'bullet', 'iconset', 'rangebar']);
+let tagSeq = 0; // tells two figures apart in a page model that went through JSON
 
 /**
  * Lay out a set of free-positioned items (a band body, a container, one list row).
@@ -47,7 +48,7 @@ export function layoutItems(items, lc, { dx = 0 } = {}) {
     const x0 = it.x, x1 = it.x + (L.res.width ?? it.w);
     const own = L.res.table ? { id: lc.nextId(), ...L.res.table } : null;
     const us = L.res.units;
-    const tag = it.alt || it.headingLevel || FIGURES.has(it.type) ? { k: it.type, alt: it.alt ? String(it.alt).slice(0, 2000) : undefined, h: Number(it.headingLevel) || undefined } : null; // exports (Word, PowerPoint, tagged PDF): what drew these items
+    const tag = it.alt || it.headingLevel || FIGURES.has(it.type) ? { k: it.type, id: ++tagSeq, alt: it.alt ? String(it.alt).slice(0, 2000) : undefined, h: Number(it.headingLevel) || undefined } : null; // exports (Word, PowerPoint, tagged PDF): what drew these items
     // units are fresh from the item's layout and used once: placed in this set's coordinates in place, not copied
     for (let k = 0; k < us.length; k++) {
       const u = us[k];
