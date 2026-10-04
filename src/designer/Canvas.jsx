@@ -374,7 +374,8 @@ function NestBox({ item, scale }) {
   return <div className="box nest-box" style={c.box}><span className="nest-tag">{label}</span></div>;
 }
 
-const LIVE = new Set(['chart', 'matrix', 'barcode', 'sparkline', 'databar', 'bullet']);
+// drawn by the engine (pageToSvg escapes all text): rich text never puts the report's HTML into the designer DOM
+const LIVE = new Set(['chart', 'matrix', 'barcode', 'sparkline', 'databar', 'bullet', 'richtext']);
 let measurer = null;
 
 /**

@@ -48,6 +48,7 @@ function PropEditor({ p, value, onChange, openExpr, dataSet }) {
   const families = useFontFamilies();
   switch (p.type) {
     case 'expr': return <Field label={p.label}><ExprInput value={value} onChange={onChange} onOpen={() => openExpr({ value, dataSet, onSave: onChange, title: p.label })} /></Field>;
+    case 'html': return <Field label={p.label}><textarea className="input mono" rows={7} spellCheck={false} data-testid={`prop-${p.key}`} style={{ width: '100%', resize: 'vertical', fontSize: 11 }} value={value ?? ''} onChange={e => onChange(e.target.value === '' ? undefined : e.target.value)} /></Field>;
     case 'number': return <Field label={p.label}><NumberInput value={value} onChange={onChange} /></Field>;
     case 'bool': return <Check label={p.label} checked={value} onChange={onChange} />;
     case 'select': return <Field label={p.label}><Select value={value} onChange={onChange} options={p.options} allowEmpty /></Field>;
