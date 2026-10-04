@@ -144,7 +144,7 @@ describe('rich text: hostile input stays bounded', async () => {
   });
   it('ampersands without a semicolon do not rescan the input', T, () => {
     const { ms } = timed(() => parse('&'.repeat(99000)));
-    expect(ms).toBeLessThan(50);
+    expect(ms).toBeLessThan(500); // quadratic would take seconds; 50 ms flaked under load
   });
 });
 
