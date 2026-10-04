@@ -6,6 +6,7 @@ const root = path.join(import.meta.dirname, '..');
 // viewer styles, scoped to the shadow root
 let css = fs.readFileSync(path.join(root, 'app/globals.css'), 'utf8')
   .replace(/@font-face\s*\{[^}]*\}/g, '')
+  .replace(/:root\[data-theme="dark"\]/g, ':host([data-theme="dark"])') // dark theme: data-theme on the host element
   .replace(/:root\b/g, ':host')
   .replace(/html,\s*body\s*\{[^}]*\}/g, '')
   .replace(/(^|\n)body\s*\{/g, '$1.pw-embed{');
