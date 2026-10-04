@@ -140,6 +140,15 @@ describe('search', () => {
     expect(findText(m, 'a+b (c')).toHaveLength(1);
     expect(findText(m, '.*')).toHaveLength(0);
   });
+  it('rich text fragments of one line are joined without spaces, as textRows() joins them', () => {
+    const m = { pages: [{ items: [
+      { t: 'text', size: 10, rich: { id: 1, l: 0 }, lines: [{ text: 'bold', x: 0, y: 10, w: 20 }] },
+      { t: 'text', size: 10, rich: { id: 1, l: 0 }, lines: [{ text: 'face and ', x: 20, y: 10, w: 40 }] },
+      { t: 'text', size: 10, rich: { id: 1, l: 0 }, lines: [{ text: 'italic', x: 60, y: 10, w: 25 }] },
+    ] }] };
+    expect(findText(m, 'boldface and italic').map(h => h.text)).toEqual(['boldface and italic']);
+    expect(findText(m, 'boldface', { wholeWord: true })).toHaveLength(1);
+  });
   it('hits carry the page, a highlight box and the line text', () => {
     const [h] = findText(model, 'due');
     expect(h).toMatchObject({ page: 0, text: 'Total due' });

@@ -78,3 +78,41 @@ describe('exporters', () => {
     expect(doc.catalog.lookup(PDFName.of('Outlines'))).toBeTruthy();
   });
 });
+
+describe('HTML export links', () => {
+  const linked = (action, tooltip) => report([{ type: 'textbox', name: 'L', x: 0, y: 0, w: 200, h: 20, value: 'Open', action, ...(tooltip ? { tooltip } : {}) }]);
+  const html = async (def) => exportHtml(await render(def, { fontStore }), fontStore);
+  it('the href is the action URL, never the tooltip', async () => {
+    const out = await html(linked({ type: 'url', url: 'https://ok.example/a?b=1&c=2' }, 'javascript:alert(1)'));
+    expect(out).toContain('href="https://ok.example/a?b=1&amp;c=2"');
+    expect(out).not.toMatch(/href="javascript:/i);
+  });
+  it('drops links that a browser would open somewhere else or run', async () => {
+    for (const url of ['//evil.example/x', '/\\evil.example', 'javascript:alert(1)', ' javascript:alert(1)', 'java\tscript:alert(1)', 'data:text/html,x']) {
+      const out = await html(linked({ type: 'url', url }));
+      expect(out, url).not.toMatch(/<a href/);
+    }
+  });
+  it('keeps safe relative and mailto links', async () => {
+    expect(await html(linked({ type: 'url', url: '/viewer/x?y=1' }))).toContain('href="/viewer/x?y=1"');
+    expect(await html(linked({ type: 'url', url: 'mailto:a@b.example' }))).toContain('href="mailto:a@b.example"');
+  });
+});
+
+describe('PDF strings cannot break out of their objects', () => {
+  const evil = 'Q3) >> /S /JavaScript /JS (app.alert(1)) /X (';
+  it('bookmark titles and link URLs with parentheses add no JavaScript action, and titles round-trip', async () => {
+    const { PDFDocument, PDFDict, PDFName } = await import('pdf-lib');
+    const def = report([{ type: 'textbox', name: 'B', x: 0, y: 0, w: 300, h: 20, value: 'Region', bookmark: `="${evil}"`, action: { type: 'url', url: `https://ok.example/a${encodeURIComponent(')')})/x)>>/S/JavaScript/JS(app.alert(2))` } },
+      { type: 'textbox', name: 'H', x: 0, y: 30, w: 300, h: 20, value: 'हिंदी', bookmark: '=\"दक्षिण क्षेत्र\"' }]);
+    const doc = await PDFDocument.load(await exportPdf(await render(def, { fontStore }), fontStore));
+    const dicts = doc.context.enumerateIndirectObjects().map(([, o]) => o).filter(o => o instanceof PDFDict);
+    for (const d of dicts) {
+      expect(d.get(PDFName.of('S'))?.toString()).not.toBe('/JavaScript');
+      expect(d.has(PDFName.of('JS'))).toBe(false);
+    }
+    const titles = dicts.filter(d => d.has(PDFName.of('Title')) && d.has(PDFName.of('Dest'))).map(d => d.lookup(PDFName.of('Title')).decodeText());
+    expect(titles).toContain(evil);
+    expect(titles).toContain('दक्षिण क्षेत्र');
+  });
+});

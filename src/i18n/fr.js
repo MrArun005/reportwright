@@ -33,7 +33,7 @@ export default {
   item_textbox: 'Zone de texte', item_table: 'Tableau', item_image: 'Image', item_line: 'Ligne', item_shape: 'Forme', item_list: 'Liste',
   item_container: 'Conteneur', item_chart: 'Graphique', item_matrix: 'Matrice', item_barcode: 'Code-barres', item_sparkline: 'Graphique sparkline',
   item_databar: 'Barre de données', item_bullet: 'Graphique à puces', item_subreport: 'Sous-rapport', item_toc: 'Table des matières', item_field: 'Champ de formulaire',
-  item_map: 'Carte', item_checkbox: 'Case à cocher',
+  item_richtext: 'Texte enrichi', item_map: 'Carte', item_checkbox: 'Case à cocher',
 
   /* ---- designer: parameter dialog ---- */
   paramNew: 'Nouveau paramètre', paramTitle: 'Paramètre {name}', name: 'Nom', paramType: 'Type', prompt: 'Libellé',

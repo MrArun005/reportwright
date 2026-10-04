@@ -10,7 +10,7 @@ import { exportHtml } from '../src/exporters/html.js';
 import { exportCsv } from '../src/exporters/csv.js';
 import { exportXlsx } from '../src/exporters/xlsx.js';
 import { exportDocx } from '../src/exporters/docx.js';
-import { visualLines } from '../src/exporters/regions.js';
+import { textRows } from '../src/exporters/regions.js';
 
 const ROOT = path.join(import.meta.dirname, '..');
 const HELP = `pw render <report.pw.json> [-p name=value]… [-d source=data.json]… [-f pdf|xlsx|docx|html|csv|json|txt] [-o file|-] [--base URL] [--pdfa]
@@ -47,7 +47,7 @@ async function renderModel(def, { parameters = {}, data, base, now } = {}) {
 
 /** The text of every page, one line per visual line: what a snapshot and a diff compare. */
 function pageTexts(model) {
-  return model.pages.map(p => p.items.flatMap(i => (i.t === 'field' ? i.draw : [i])).filter(i => i.t === 'text').flatMap(i => visualLines(i))); // a justified line is one run per word: snapshot whole lines
+  return model.pages.map(p => textRows(p.items.flatMap(i => (i.t === 'field' ? i.draw : [i])))); // whole lines: a justified line is one run per word, rich text one item per styled piece
 }
 const snapshotText = (title, model) => [`# ${title} · ${model.pages.length} pages`, ...pageTexts(model).flatMap((lines, i) => [`--- page ${i + 1}`, ...lines]), ...(model.warnings.length ? ['--- warnings', ...model.warnings] : [])].join('\n') + '\n';
 

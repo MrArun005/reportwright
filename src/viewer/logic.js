@@ -47,8 +47,10 @@ export function frozenAt(page, y) {
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
- * Find text in a page model, one visual line at a time: a justified line is one run per word, so runs on one
- * baseline are joined (in x order, with spaces) before matching.
+ * Find text in a page model, one visual line at a time, joined as textRows() in src/exporters/regions.js joins
+ * them for the text exports: a justified line is one run per word on one baseline (joined with spaces); rich text
+ * is one item per styled fragment, `rich: {id, l}` (the fragments of one line joined with nothing: they keep their
+ * own spaces). textRows() gives strings only; search also needs each line's box, so it groups the runs itself.
  * @returns {{page: number, x: number, y: number, w: number, h: number, text: string}[]} boxes in points
  */
 export function findText(model, q, { matchCase = false, wholeWord = false } = {}) {
@@ -57,17 +59,23 @@ export function findText(model, q, { matchCase = false, wholeWord = false } = {}
   const re = new RegExp(wholeWord ? `(?<!${W})${escapeRe(q)}(?!${W})` : escapeRe(q), `u${matchCase ? '' : 'i'}`);
   const out = [];
   model.pages.forEach((pg, pi) => {
-    for (const it of pg.items) if (it.t === 'text') {
-      const rows = new Map();
-      for (const l of it.lines) { const r = rows.get(l.y); if (r) r.push(l); else rows.set(l.y, [l]); }
-      for (const [y, row] of rows) {
-        row.sort((a, b) => a.x - b.x);
-        const text = row.map(l => l.text).join(' ');
-        if (!re.test(text)) continue;
-        const x0 = row[0].x, last = row[row.length - 1];
-        const x1 = last.x + (last.w || it.size * last.text.length * 0.5);
-        out.push({ page: pi, x: x0 - 1, y: y - it.size * 0.95, w: x1 - x0 + 2, h: it.size * 1.25, text });
+    const rows = new Map();
+    pg.items.forEach((it, k) => {
+      if (it.t !== 'text') return;
+      for (const l of it.lines) {
+        const key = it.rich ? `r${it.rich.id}\u0001${it.rich.l}` : `${k}\u0001${l.y}`;
+        const r = rows.get(key);
+        if (r) r.lines.push(l); else rows.set(key, { rich: !!it.rich, size: it.size, lines: [l] });
       }
+    });
+    for (const { rich, size, lines: row } of rows.values()) {
+      row.sort((a, b) => a.x - b.x);
+      const text = row.map(l => l.text).join(rich ? '' : ' ');
+      if (!re.test(text)) continue;
+      const x0 = row[0].x, last = row[row.length - 1];
+      const x1 = last.x + (last.w || size * last.text.length * 0.5);
+      const y = Math.max(...row.map(l => l.y));
+      out.push({ page: pi, x: x0 - 1, y: y - size * 0.95, w: x1 - x0 + 2, h: size * 1.25, text });
     }
   });
   return out;

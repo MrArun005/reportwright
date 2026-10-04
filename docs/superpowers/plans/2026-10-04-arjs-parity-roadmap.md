@@ -18,7 +18,8 @@ This roadmap closes the 30 "behind" and 20 "partial" rows.
 |---|---|---|
 | 0. Stabilise and ship | **not started** | Added in review, see below. Do it next. |
 | 1. Text and styling | **done, 4 Oct 2026** | 35 new tests, all gates green. The code is in the `pw-drill` worktree, not committed yet. The plan file lists 12 corrections to the plan, including a wrong rotation sign in the importer. |
-| 2–9 | not started | |
+| 2. Rich text and vertical text | **done, 4 Oct 2026** (branch `feat/p2-rich-text`, not merged) | See the plan's Status: 4 security fixes from review, gate green. |
+| 3–9 | not started | |
 
 **Shape:** 9 phases. Each phase:
 - is its own branch,

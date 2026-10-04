@@ -1,5 +1,6 @@
 // @ts-check
 import { pageToSvg, fontFamilyCss } from './svg.js';
+import { safeUrl } from '../engine/url.js';
 
 /**
  * One self-contained HTML file: every page as inline SVG, fonts embedded as
@@ -30,8 +31,13 @@ export async function exportHtml(model, fontStore, opt = {}) {
     faces.push(`@font-face{font-family:"${fontFamilyCss(key)}";src:url(data:font/ttf;base64,${b64(bytes)}) format("truetype")}`);
   }
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
-  const pages = model.pages.map((p, i) => `<section class="page" id="page-${i + 1}">${pageToSvg({ items: p.items.filter(it => it.t !== 'link' || it.action?.type === 'url') }, model.width, model.height)
-    .replace(/<rect class="pw-link"([^>]*?)data-action="([^"]*)"[^>]*><title>([^<]*)<\/title><\/rect>/g, (m, a, act, ttl) => `<a href="${ttl}" target="_blank" rel="noopener"><rect${a}/></a>`)}</section>`).join('\n');
+  const pages = model.pages.map((p, i) => `<section class="page" id="page-${i + 1}">${pageToSvg({ items: p.items.filter(it => it.t !== 'link' || (it.action?.type === 'url' && safeUrl(it.action.href))) }, model.width, model.height)
+    .replace(/<rect class="pw-link"([^>]*?)data-action="([^"]*)"[^>]*>(<title>[^<]*<\/title>)?<\/rect>/g, (m, a, act, ttl = '') => {
+      // the href comes from the action, never from the hover text (a tooltip can come from data)
+      let href = null;
+      try { href = safeUrl(JSON.parse(act.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')).href); } catch { /* not a link */ }
+      return href ? `<a href="${attr(href)}" target="_blank" rel="noopener"><rect${a}/>${ttl}</a>` : `<rect${a}/>`;
+    })}</section>`).join('\n');
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(opt.title || model.name || 'Report')}</title>
@@ -46,6 +52,7 @@ ${pages}
 </body></html>`;
 }
 
+const attr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 function b64(u8) {
   if (typeof Buffer !== 'undefined') return Buffer.from(u8).toString('base64');
   let s = '';

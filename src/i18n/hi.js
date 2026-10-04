@@ -33,7 +33,7 @@ export default {
   item_textbox: 'टेक्स्ट बॉक्स', item_table: 'तालिका', item_image: 'चित्र', item_line: 'रेखा', item_shape: 'आकृति', item_list: 'सूची',
   item_container: 'कंटेनर', item_chart: 'चार्ट', item_matrix: 'मैट्रिक्स', item_barcode: 'बारकोड', item_sparkline: 'स्पार्कलाइन',
   item_databar: 'डेटा बार', item_bullet: 'बुलेट चार्ट', item_subreport: 'उप-रिपोर्ट', item_toc: 'विषय-सूची', item_field: 'फ़ॉर्म फ़ील्ड',
-  item_map: 'मानचित्र', item_checkbox: 'चेक बॉक्स',
+  item_richtext: 'रिच टेक्स्ट', item_map: 'मानचित्र', item_checkbox: 'चेक बॉक्स',
 
   /* ---- designer: parameter dialog ---- */
   paramNew: 'नया पैरामीटर', paramTitle: 'पैरामीटर {name}', name: 'नाम', paramType: 'प्रकार', prompt: 'संकेत',

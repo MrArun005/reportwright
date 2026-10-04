@@ -33,7 +33,7 @@ export default {
   item_textbox: 'Textfeld', item_table: 'Tabelle', item_image: 'Bild', item_line: 'Linie', item_shape: 'Form', item_list: 'Liste',
   item_container: 'Container', item_chart: 'Diagramm', item_matrix: 'Matrix', item_barcode: 'Strichcode', item_sparkline: 'Sparkline',
   item_databar: 'Datenbalken', item_bullet: 'Bullet-Diagramm', item_subreport: 'Unterbericht', item_toc: 'Inhaltsverzeichnis', item_field: 'Formularfeld',
-  item_map: 'Karte', item_checkbox: 'Kontrollkästchen',
+  item_richtext: 'Formatierter Text', item_map: 'Karte', item_checkbox: 'Kontrollkästchen',
 
   /* ---- designer: parameter dialog ---- */
   paramNew: 'Neuer Parameter', paramTitle: 'Parameter {name}', name: 'Name', paramType: 'Typ', prompt: 'Beschriftung',

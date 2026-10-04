@@ -21,6 +21,7 @@ export const BASE_STYLE = {
   wrap: true,
   textDecoration: 'none', // underline | line-through | both
   textDecorationColor: null, // the line's colour; null = the text colour
+  writingMode: 'lr-tb',   // tb-rl = vertical: columns right to left, CJK upright, other text turned 90°
   // shapes and lines
   fill: null,
   stroke: '#1f2328',

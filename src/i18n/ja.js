@@ -33,7 +33,7 @@ export default {
   item_textbox: 'テキストボックス', item_table: '表', item_image: '画像', item_line: '線', item_shape: '図形', item_list: 'リスト',
   item_container: 'コンテナー', item_chart: 'グラフ', item_matrix: 'マトリックス', item_barcode: 'バーコード', item_sparkline: 'スパークライン',
   item_databar: 'データバー', item_bullet: 'ブレットグラフ', item_subreport: 'サブレポート', item_toc: '目次', item_field: 'フォームフィールド',
-  item_map: '地図', item_checkbox: 'チェックボックス',
+  item_richtext: 'リッチテキスト', item_map: '地図', item_checkbox: 'チェックボックス',
 
   /* ---- designer: parameter dialog ---- */
   paramNew: '新しいパラメーター', paramTitle: 'パラメーター {name}', name: '名前', paramType: '型', prompt: '表示名',

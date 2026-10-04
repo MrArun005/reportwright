@@ -471,3 +471,30 @@ describe('text styling (phase 1)', () => {
     expect(r.warnings.join(' ')).toMatch(/background image/);
   });
 });
+
+describe('rich text and vertical text (phase 2)', () => {
+  const one = (Item) => importRdlx({ Body: { ReportItems: [{ Name: 'F', Width: '3in', Height: '0.5in', ...Item }] } });
+  it('FormattedText keeps its HTML; mail-merge fields become escaped {…} parts', () => {
+    const r = one({ Type: 'formattedtext', Html: '<b>Hi</b> <%Name%>, {not a field}', MailMergeFields: [{ Name: 'Name', Value: '=Fields!Customer.Value' }] });
+    const it = r.definition.sections.body.items[0];
+    expect(it).toMatchObject({ type: 'richtext', value: '<b>Hi</b> {Fields.Customer}, {{not a field}}' });
+    expect(it.htmlFromData).toBeUndefined();
+    expect(r.warnings.join(' ')).not.toMatch(/HTML\) is lost|formatting/);
+  });
+  it('HTML from an expression keeps working, as htmlFromData, with a warning that names it', () => {
+    const r = one({ Type: 'formattedtext', Html: '=Fields!Notes.Value' });
+    const it = r.definition.sections.body.items[0];
+    expect(it).toMatchObject({ type: 'richtext', value: '=Fields.Notes', htmlFromData: true });
+    expect(r.warnings.join(' ')).toMatch(/htmlFromData/);
+  });
+  it('renders: bold run and the merged field', async () => {
+    const r = one({ Type: 'formattedtext', Html: '<p><b>Hi</b> <%Name%></p>', MailMergeFields: [{ Name: 'Name', Value: '="Ann"' }] });
+    const m = await render(r.definition, { fontStore });
+    expect(m.pages[0].items.filter(i => i.t === 'text').map(i => i.lines[0].text).join('')).toBe('Hi Ann');
+  });
+  it('WritingMode tb-rl maps to writingMode', () => {
+    const r = one({ Type: 'textbox', Value: '縦', Style: { WritingMode: 'tb-rl' } });
+    expect(r.definition.sections.body.items[0].style.writingMode).toBe('tb-rl');
+    expect(r.warnings.join(' ')).not.toMatch(/vertical/i);
+  });
+});
