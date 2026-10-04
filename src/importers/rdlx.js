@@ -699,7 +699,9 @@ function textStyle(st, cx, t, ctx, { box = false } = {}) {
     else if (deco === 'linethrough') set('textDecoration', 'line-through');
     else if (deco && deco !== 'none') t.approx(`its ${deco} is not drawn.`);
     if (/rtl/i.test(String(st.Direction || ''))) t.approx('right-to-left text is drawn left to right.');
-    if (/^(tb|vertical)/i.test(String(st.WritingMode || ''))) t.approx('vertical text is drawn horizontally.');
+    const wm = String(st.WritingMode || '').toLowerCase();
+    if (wm === 'tb-rl' || wm === 'vertical') set('writingMode', 'tb-rl');
+    else if (wm && wm !== 'lr-tb' && wm !== 'horizontal') t.approx(`its writing mode "${st.WritingMode}" is drawn horizontally.`);
   }
   set('backgroundColor', styleVal(st.BackgroundColor, cx, t, ctx, 'background', hexColor, 'color'));
   const bg = st.BackgroundImage;
@@ -738,7 +740,8 @@ function convertItems(list, cx, ctx) {
 
 const CONVERTERS = {
   textbox: (ar, cx, ctx) => textbox(ar, cx, ctx),
-  formattedtext: (ar, cx, ctx) => textbox(ar, cx, ctx, true),
+  formattedtext: (ar, cx, ctx) => richtext(ar, cx, ctx),
+  richtext: (ar, cx, ctx) => richtext(ar, cx, ctx),
   image: (ar, cx, ctx) => image(ar, cx, ctx),
   line: (ar, cx, ctx) => line(ar, cx, ctx),
   rectangle: (ar, cx, ctx) => container(ar, cx, ctx),
@@ -874,14 +877,48 @@ function interactivity(ar, it, cx, t, ctx) {
   if (ar.ToolTip != null && ar.ToolTip !== '') it.tooltip = ex(cx, t, ar.ToolTip, ctx, { text: true });
 }
 
-function textbox(ar, cx, ctx, html = false) {
+/**
+ * FormattedText (and RichText): the HTML is kept as a Pagewright rich text item. Literal HTML is the author's
+ * markup; its mail-merge fields (<%Name%>) become {…} parts, which the engine escapes. HTML that comes from an
+ * expression is data: ActiveReports renders it as HTML, so htmlFromData is set and a warning names it.
+ */
+function richtext(ar, cx, ctx) {
+  const t = track(cx, ar);
+  const it = common(ar, cx, t, ctx, 'richtext');
+  const raw = ar.Html ?? ar.Value ?? ar.Text ?? '';
+  if (isExpr(raw)) {
+    const e = ex(cx, t, raw, ctx, { what: 'its HTML' });
+    if (e !== undefined) {
+      it.value = e;
+      it.htmlFromData = true;
+      t.approx('its HTML comes from an expression, as in ActiveReports, so "htmlFromData" is set: field values are read as HTML. Turn it off unless that data is trusted.');
+    }
+  } else {
+    let v = String(raw).replace(/\{/g, '{{').replace(/\}/g, '}}');
+    for (const f of Array.isArray(ar.MailMergeFields) ? ar.MailMergeFields : []) {
+      const name = String(f?.Name ?? '');
+      if (!name) continue;
+      const e = ex(cx, t, f.Value ?? '', ctx, { what: `the mail-merge field ${name}` });
+      const part = e === undefined ? '' : isExpr(e) ? `{${e.slice(1)}}` : String(e).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\{/g, '{{').replace(/\}/g, '}}');
+      v = v.split(`<%${name}%>`).join(part).split(`&lt;%${name}%&gt;`).join(part);
+    }
+    it.value = v;
+  }
+  it.canGrow = isTrue(ar.CanGrow);
+  if (isTrue(ar.CanShrink)) it.canShrink = true;
+  const st = textStyle(ar.Style, cx, t, ctx);
+  if (Object.keys(st).length) it.style = st;
+  interactivity(ar, it, cx, t, ctx);
+  return finish(cx, t, it);
+}
+
+/** The words of some HTML (for places that hold plain text). */
+const stripHtml = (s) => s.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+
+function textbox(ar, cx, ctx) {
   const t = track(cx, ar);
   const it = common(ar, cx, t, ctx, 'textbox');
-  let v = ar.Value ?? ar.Html ?? ar.Text ?? '';
-  if (html) {
-    if (!isExpr(v)) v = String(v).replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-    t.approx('its formatting (HTML) is lost; the text is kept.');
-  }
+  const v = ar.Value ?? ar.Text ?? '';
   it.value = ex(cx, t, v, ctx, { text: true });
   it.canGrow = isTrue(ar.CanGrow);
   if (isTrue(ar.CanShrink)) it.canShrink = true;
@@ -1112,7 +1149,14 @@ function cellOf(c, cx, tt, ctx, kind, opt = {}) {
   if (ar && typeof ar === 'object') {
     const type = String(ar.Type || '').toLowerCase();
     const t = track(cx, ar);
-    if (type === 'textbox' || type === 'formattedtext') {
+    if (type === 'formattedtext' || type === 'richtext') {
+      // a table cell is plain text in Pagewright: keep the words of the HTML
+      const v = ar.Html ?? ar.Value ?? '';
+      cell.value = isExpr(v) ? ex(cx, t, v, ctx, { text: true }) : ex(cx, t, stripHtml(String(v)), ctx, { text: true });
+      t.approx('its formatting (HTML) is lost in a table cell; the text is kept.');
+      const st = textStyle(ar.Style, cx, t, ctx);
+      if (Object.keys(st).length) cell.style = st;
+    } else if (type === 'textbox') {
       cell.value = opt.firstOf ? firstOf(ex(cx, t, ar.Value ?? '', ctx, { what: 'its value' }), opt.firstOf) : ex(cx, t, ar.Value ?? '', ctx, { text: true });
       const st = textStyle(ar.Style, cx, t, ctx);
       if (Object.keys(st).length) cell.style = st;
