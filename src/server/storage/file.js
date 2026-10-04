@@ -28,6 +28,34 @@ function locked(file, fn) {
   return run;
 }
 
+// Audit events are appended in groups: while one write runs, the events that arrive wait and go in the next write, one
+// per file. Each caller still resolves only once its own line is written. One open/write/close per group, not per event.
+/** @type {{ dir: string, file: string, line: string, resolve: () => void, reject: (e: any) => void }[]} */
+const auditQ = [];
+const auditDirs = new Set();
+let auditBusy = false;
+async function flushAudit() {
+  if (auditBusy) return;
+  auditBusy = true;
+  try {
+    while (auditQ.length) {
+      const batch = auditQ.splice(0);
+      const files = new Map();
+      for (const e of batch) files.set(e.file, [...(files.get(e.file) || []), e]);
+      for (const [file, es] of files) {
+        try {
+          const text = es.map(e => e.line).join('');
+          const mk = async () => { await fs.mkdir(es[0].dir, { recursive: true, mode: 0o700 }); auditDirs.add(es[0].dir); };
+          if (!auditDirs.has(es[0].dir)) await mk();
+          // the folder was removed since (cleanup, a test): make it again
+          await fs.appendFile(file, text, { mode: 0o600 }).catch(async (e) => { if (!missing(e)) throw e; await mk(); await fs.appendFile(file, text, { mode: 0o600 }); });
+          for (const e of es) e.resolve();
+        } catch (err) { auditDirs.delete(es[0].dir); for (const e of es) e.reject(err); }
+      }
+    }
+  } finally { auditBusy = false; }
+}
+
 /** @param {string} root @returns {import('./index.js').Store} */
 export function fileStore(root) {
   const reports = path.join(root, 'reports');
@@ -128,10 +156,9 @@ export function fileStore(root) {
 
     // Audit log: one JSON line per event, one file per UTC day (data/audit/2026-10-04.jsonl, owner only). Appending
     // never rewrites what is there; retention removes whole days.
-    async appendAudit(entry) {
+    appendAudit(entry) {
       const dir = path.join(data, 'audit');
-      await fs.mkdir(dir, { recursive: true, mode: 0o700 });
-      await fs.appendFile(path.join(dir, `${entry.at.slice(0, 10)}.jsonl`), `${JSON.stringify(entry)}\n`, { mode: 0o600 });
+      return new Promise((resolve, reject) => { auditQ.push({ dir, file: path.join(dir, `${entry.at.slice(0, 10)}.jsonl`), line: `${JSON.stringify(entry)}\n`, resolve, reject }); flushAudit(); });
     },
     async queryAudit(q) {
       const dir = path.join(data, 'audit');

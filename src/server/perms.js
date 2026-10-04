@@ -226,7 +226,7 @@ export async function checkReport(p, ref, need = 'view') {
   if (version && need === 'view') need = 'edit';
   if (!(await store().get('reports', id))) throw fail('Report not found', 404); // an absent report is not "at the top"
   p = await asNow(p);
-  if (p.kind === 'open') return 'manage';
+  if (isAll(p)) return 'manage'; // open, service keys and admins: reportLevel's answer, without reading every grant
   const lvl = reportLevel(await snapshot(), p, id);
   if (p.kind === 'nobody' && !accountsOn()) throw fail(NO_AUTH_HELP, 401); // production with no sign-in
   if (!atLeast(lvl, 'view')) throw fail('Report not found', 404);
