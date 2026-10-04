@@ -51,6 +51,23 @@ export const serverFetch = (selfOrigin) => (url, init = {}) => {
   return safeFetch(url, { ...init, headers }, { allow: [selfOrigin, ...internalHosts()].filter(Boolean) });
 };
 
+/**
+ * A delivery or source URL saved for later (a webhook, an upload, a list of items): http(s), and not a private or
+ * local address unless its host is in PW_INTERNAL_HOSTS. Checked when it is saved; safeFetch checks again when it is
+ * used (the name may point elsewhere by then). relative: a path on this server is fine (itemsFrom).
+ * @param {any} url @param {string} what @param {{ relative?: boolean }} [o]
+ */
+export async function checkTarget(url, what, { relative = false } = {}) {
+  if (relative && typeof url === 'string' && url.startsWith('/') && !url.startsWith('//')) return;
+  let u;
+  try { u = new URL(String(url)); } catch { throw Object.assign(new Error(`${what} must be an http(s) URL.`), { status: 400 }); }
+  if (!/^https?:$/.test(u.protocol)) throw Object.assign(new Error(`${what} must be an http(s) URL.`), { status: 400 });
+  const host = u.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (internalHosts().includes(host)) return;
+  const ips = net.isIP(host) ? [host] : (await dns.promises.lookup(host, { all: true }).catch(() => [])).map(a => a.address);
+  if (ips.some(isPrivate)) throw refuse(host);
+}
+
 const refuse = (host) => Object.assign(new Error(`"${host}" is a private or local address. Add it to PW_INTERNAL_HOSTS to allow it.`), { code: 'EPRIVATE', status: 403 });
 
 /**

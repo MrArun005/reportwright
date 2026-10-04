@@ -634,6 +634,46 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     expect(await getJob(run.id, { kind: 'service' })).toMatchObject({ status: 'completed' });
   });
 
+  it('review: schedules: owner from the server, other users\' schedules hidden, targets checked, runs as the owner now', async () => {
+    const { runSchedule, getSchedule } = await import('../../src/server/schedules.js');
+    const { store } = await import('../../src/server/storage/index.js');
+    const sch = (key, body, method = 'POST', id = '') => v1[id ? 'schedule' : 'schedules'][method](req(`/api/v1/schedules${id ? `/${id}` : ''}`, { key, method, body }), { params: Promise.resolve({ id }) });
+    const base = { template: 'overview', cron: '0 7 * * *', items: [{ parameters: {} }], output: { type: 'none' } };
+    // a report the caller may not view: not on create, not by an update
+    expect((await sch('bob-key', { ...base, template: 'salary' })).status).toBe(404);
+    const mine = await json(await sch('bob-key', { ...base, owner: 'service', ownerKey: 'x' })); // owner fields in the body are ignored
+    expect(mine.status).toBe(201);
+    const id = mine.body.id;
+    expect(JSON.parse(await store().get('schedules', id))).toMatchObject({ owner: 'user:bob@x.io' });
+    expect((await sch('bob-key', { template: 'salary' }, 'PUT', id)).status).toBe(404);
+    expect((await sch('bob-key', { owner: 'service' }, 'PUT', id)).status).toBe(200);
+    expect(JSON.parse(await store().get('schedules', id)).owner).toBe('user:bob@x.io');
+    // another user's key sees nothing of it
+    expect((await json(await v1.schedules.GET(req('/api/v1/schedules', { key: 'carol-key' })))).body.map(x => x.id)).not.toContain(id);
+    for (const m of ['GET', 'PUT', 'DELETE']) expect((await sch('carol-key', m === 'PUT' ? { enabled: false } : undefined, m, id)).status, m).toBe(404);
+    // delivery targets: http(s) and not a private or local address, when saved
+    for (const bad of [{ webhook: 'http://127.0.0.1:9/x' }, { webhook: 'file:///etc/passwd' }, { items: [{ parameters: {}, putUrl: 'http://169.254.169.254/latest' }] }, { itemsFrom: { url: 'http://10.0.0.1/list' } }]) {
+      expect((await sch('bob-key', { ...base, ...bad })).status, JSON.stringify(bad)).toBeGreaterThanOrEqual(400);
+      expect((await sch('bob-key', bad, 'PUT', id)).status, JSON.stringify(bad)).toBeGreaterThanOrEqual(400);
+    }
+    // and when it runs (a record changed behind the API): the upload is refused, nothing leaves
+    const rec = JSON.parse(await store().get('schedules', id));
+    await store().put('schedules', id, JSON.stringify({ ...rec, items: [{ parameters: {}, putUrl: 'http://127.0.0.1:9/steal' }] }));
+    await expect(runSchedule(await getSchedule(id, { kind: 'service' }))).rejects.toMatchObject({ status: 403, message: expect.stringMatching(/private or local/) });
+    // runs as the owner now: a demoted owner's inline schedule, a deleted owner's schedule
+    const inline = await json(await sch('bob-key', { ...base, template: def('Inline') }));
+    expect(inline.status).toBe(201);
+    await users.updateUser('bob@x.io', { role: 'viewer' });
+    try { await expect(runSchedule(await getSchedule(inline.body.id, { kind: 'service' }))).rejects.toMatchObject({ status: 403 }); }
+    finally { await users.updateUser('bob@x.io', { role: 'designer' }); }
+    await users.createUser({ email: 'gone@x.io', role: 'designer', password: 'a long password' });
+    const { createSchedule } = await import('../../src/server/schedules.js');
+    const g = await createSchedule(base, await perms.userPrincipal('gone@x.io'));
+    await users.deleteUser('gone@x.io');
+    await expect(runSchedule(await getSchedule(g.id, { kind: 'service' }))).rejects.toMatchObject({ status: 404 });
+    for (const x of [id, inline.body.id, g.id]) await store().remove('schedules', x);
+  });
+
   it('review: a queued inline batch fails when its owner is now a viewer', async () => {
     const { createBatch, workOnce, getJob } = await import('../../src/server/jobs.js');
     const job = await createBatch({ template: def('Inline'), items: [{ parameters: {} }], output: { type: 'none' }, format: 'csv' }, undefined, await perms.userPrincipal('bob@x.io'));

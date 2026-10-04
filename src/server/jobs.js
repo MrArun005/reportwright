@@ -10,7 +10,7 @@ import os from 'node:os';
 import { zipSync } from 'fflate';
 import { PDFDocument } from 'pdf-lib';
 import { loadTemplate, renderTo, baseUrl as defaultBase } from './renderer.js';
-import { serverFetch } from './safeFetch.js';
+import { serverFetch, checkTarget } from './safeFetch.js';
 import { jsonPath } from '@/engine/data/index.js';
 import { evalValue } from '@/engine/expr/evaluate.js';
 import { store } from './storage/index.js';
@@ -36,6 +36,13 @@ const save = (job) => store().put('jobs', job.id, JSON.stringify(job, null, 2));
 export function publicJob(job) {
   const { items, _def, _work, owner, ownerKey, ...rest } = job;
   return { ...rest, total: job.total, done: job.done, failed: job.failed };
+}
+
+/** The URLs a batch or schedule will call later (webhook, uploads, the item list), checked when they are saved. */
+export async function checkDelivery(spec) {
+  if (spec.webhook != null) await checkTarget(spec.webhook, '"webhook"');
+  if (spec.itemsFrom?.url != null) await checkTarget(spec.itemsFrom.url, '"itemsFrom.url"', { relative: true });
+  for (const it of Array.isArray(spec.items) ? spec.items : []) if (it?.putUrl != null) await checkTarget(it.putUrl, '"putUrl"');
 }
 
 /** Expand itemsFrom: fetch a list and map each element to parameters. */
@@ -66,6 +73,7 @@ export async function createBatch(spec, req, principal = defaultPrincipal()) {
   const self = defaultBase(req);
   const base = spec.baseUrl || self;
   const def = await loadTemplate(spec.template, principal);
+  await checkDelivery(spec);
   const items = await expandItems(spec, base, serverFetch(self));
   if (!items.length) throw Object.assign(new Error('The batch has no items'), { status: 400 });
   if (principal?.kind === 'user' && principal.role === 'viewer' && items.some(i => i?.data)) throw Object.assign(new Error('Only a designer can send data for a render. Render the report with its own data.'), { status: 403 });

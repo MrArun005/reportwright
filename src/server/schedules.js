@@ -1,7 +1,7 @@
 // Schedules: run a batch on a cron expression. Stored by src/server/storage (data/schedules.json by default); checked every 30 s.
 import crypto from 'node:crypto';
 import { parseCron, nextRun } from './cron.js';
-import { createBatch, ME } from './jobs.js';
+import { createBatch, ME, checkDelivery } from './jobs.js';
 import { store, withLock } from './storage/index.js';
 import { principalId, principalFromId, checkReport, vet, defaultPrincipal } from './perms.js';
 import { audit } from './audit.js';
@@ -49,6 +49,7 @@ export async function getSchedule(id, p = defaultPrincipal()) { const s = await 
 export async function createSchedule(body, p = defaultPrincipal()) {
   validateSchedule(body);
   await checkTemplate(p, body.template);
+  await checkDelivery(body);
   const s = { enabled: true, timezone: 'UTC', format: 'pdf', ...body, id: `s_${crypto.randomBytes(5).toString('hex')}`, createdAt: new Date().toISOString(), owner: principalId(p), ownerKey: vet(p).viaKey || null };
   await withLock('schedules', () => save(s));
   return shown(s);
@@ -62,6 +63,7 @@ async function updateNow(id, patch, p) {
   const next = { ...cur, ...rest, id: cur.id, createdAt: cur.createdAt, owner: cur.owner, ownerKey: cur.ownerKey || null, updatedAt: new Date().toISOString() };
   validateSchedule(next);
   if (next.template !== cur.template) await checkTemplate(p, next.template);
+  await checkDelivery(next);
   await save(next);
   return shown(next);
 }
