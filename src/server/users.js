@@ -114,6 +114,9 @@ export async function createUser({ email, role, password, groups = [], sso }) {
   checkRole(role);
   const g = checkGroups(groups);
   const passwordHash = sso ? null : await hashPassword(/** @type {string} */ (password));
+  return withLock('acl', () => createNow(e, role, g, passwordHash, sso));
+}
+async function createNow(e, role, g, passwordHash, sso) {
   if (await getUser(e)) throw fail(`There is already a user ${e}.`, 409);
   const now = new Date().toISOString();
   // a new account's sessions start at a random version: a cookie of a deleted account with this email never works again
@@ -123,7 +126,7 @@ export async function createUser({ email, role, password, groups = [], sso }) {
 }
 
 const activeAdmin = (u) => u && u.role === 'admin' && !u.disabled;
-// ponytail: check-then-write, so two admins demoting each other at the same moment could both pass; a DB transaction if that ever matters
+// every user write runs under the 'acl' lock (withLock): two admins demoting each other are ordered, not both passed
 async function keepAnAdmin(before, after) {
   if (!activeAdmin(before) || activeAdmin(after)) return;
   if (!(await all()).some(u => u.email !== before.email && activeAdmin(u))) throw fail('You cannot remove the last admin. Make another user an admin first.', 409);
@@ -163,9 +166,9 @@ async function deleteUserNow(email) {
 }
 
 /** Sign-out: every session cookie this user holds stops working. */
-export async function endSessions(email) {
-  const u = await getUser(email);
-  if (u) await save({ ...u, sessionVersion: (u.sessionVersion || 0) + 1 });
+export function endSessions(email) {
+  // under the lock and re-read there: a sign-out must never write back a record an admin just changed
+  return withLock('acl', async () => { const u = await getUser(email); if (u) await save({ ...u, sessionVersion: (u.sessionVersion || 0) + 1 }); });
 }
 
 let dummy;

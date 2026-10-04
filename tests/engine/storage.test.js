@@ -122,6 +122,20 @@ describe.each(backends)('storage on %s', (kind, setup) => {
     expect(await deleteSchedule(a.id)).toBe(true);
   });
 
+  it('schedule writes are ordered: an update waiting on another server never brings back a deleted schedule', async () => {
+    await writeReport('loan-statement', def('Loan'));
+    const s = await createSchedule({ ...schedule, name: 'Gone soon' }, { kind: 'service' });
+    expect(await store().lease('lock:schedules', 'elsewhere', 30000)).toBe(true);
+    let done = false;
+    const upd = updateSchedule(s.id, { name: 'Renamed' }, { kind: 'service' }).then((r) => { done = true; return r; });
+    await new Promise(r => setTimeout(r, 300));
+    expect(done).toBe(false);
+    await store().remove('schedules', s.id); // deleted on the other server
+    await store().release('lock:schedules', 'elsewhere');
+    expect(await upd).toBe(null);
+    expect(await store().get('schedules', s.id)).toBe(null);
+  });
+
   it('stores job records', async () => {
     const s = store();
     await s.put('jobs', 'b_1aaa', JSON.stringify({ id: 'b_1aaa', status: 'completed' }));

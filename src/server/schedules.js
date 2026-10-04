@@ -2,7 +2,7 @@
 import crypto from 'node:crypto';
 import { parseCron, nextRun } from './cron.js';
 import { createBatch, ME } from './jobs.js';
-import { store } from './storage/index.js';
+import { store, withLock } from './storage/index.js';
 import { principalId, principalFromId, checkReport, vet, defaultPrincipal } from './perms.js';
 import { audit } from './audit.js';
 
@@ -54,7 +54,8 @@ export async function createSchedule(body, p = defaultPrincipal()) {
   return shown(s);
 }
 /** @param {string} id @param {any} patch @param {Principal} [p] */
-export async function updateSchedule(id, patch, p = defaultPrincipal()) {
+export function updateSchedule(id, patch, p = defaultPrincipal()) { return withLock('schedules', () => updateNow(id, patch, p)); }
+async function updateNow(id, patch, p) {
   const cur = await readOne(id);
   if (!cur || !mine(p, cur)) return null;
   const { owner: _ignored, ...rest } = patch || {};
@@ -65,10 +66,12 @@ export async function updateSchedule(id, patch, p = defaultPrincipal()) {
   return shown(next);
 }
 /** @param {string} id @param {Principal} [p] */
-export async function deleteSchedule(id, p = defaultPrincipal()) {
-  const cur = await readOne(id);
-  if (!cur || !mine(p, cur)) return false;
-  return store().remove('schedules', String(id));
+export function deleteSchedule(id, p = defaultPrincipal()) {
+  return withLock('schedules', async () => {
+    const cur = await readOne(id);
+    if (!cur || !mine(p, cur)) return false;
+    return store().remove('schedules', String(id));
+  });
 }
 
 /** Run now, as the schedule's owner. @param {any} s a schedule (its owner is read from storage) */
@@ -84,8 +87,8 @@ export async function runSchedule(s, reason = 'manual') {
     throw e;
   }
   await audit('schedule.run', { actor: rec.owner || 'nobody', report, format: job.format, detail: { schedule: s.id, reason, batch: job.id, items: job.total } });
-  const cur = await readOne(s.id);
-  if (cur) { cur.lastRunAt = new Date().toISOString(); cur.lastJobId = job.id; await save(cur); }
+  // re-read under the lock: bookkeeping never writes back a schedule changed or deleted meanwhile
+  await withLock('schedules', async () => { const cur = await readOne(s.id); if (cur) { cur.lastRunAt = new Date().toISOString(); cur.lastJobId = job.id; await save(cur); } });
   return job;
 }
 

@@ -177,6 +177,26 @@ describe('sign-in and the session cookie', () => {
   });
 });
 
+describe('review: every user write is ordered with the others', () => {
+  it('sign-out and a new user wait for the permissions lock, and never write back an older record', async () => {
+    const { endSessions } = await import('../../src/server/users.js');
+    await createUser({ email: 'race@x.io', role: 'designer', password: PW });
+    expect(await store().lease('lock:acl', 'admin-elsewhere', 30000)).toBe(true);
+    let ended = false, made = false;
+    const end = endSessions('race@x.io').then(() => { ended = true; });
+    const mk = createUser({ email: 'race2@x.io', role: 'viewer', password: PW }).then(() => { made = true; });
+    await new Promise(r => setTimeout(r, 300));
+    expect([ended, made]).toEqual([false, false]);
+    // meanwhile an admin on another server disables race@ (its own write, under the lock it holds)
+    const u = JSON.parse(await store().get('users', 'race@x.io'));
+    await store().put('users', 'race@x.io', JSON.stringify({ ...u, disabled: true, role: 'viewer', sessionVersion: u.sessionVersion + 1 }));
+    await store().release('lock:acl', 'admin-elsewhere');
+    await end; await mk;
+    expect(await getUser('race@x.io')).toMatchObject({ disabled: true, role: 'viewer', sessionVersion: u.sessionVersion + 2 });
+    expect(await getUser('race2@x.io')).toMatchObject({ role: 'viewer' });
+  });
+});
+
 describe('sign-in rate limit', () => {
   it('allows 10 failures per address and email in 15 minutes, then answers 429 even to the right password', async () => {
     await createUser({ email: 'r@x.io', role: 'viewer', password: PW });
