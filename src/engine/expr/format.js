@@ -69,7 +69,7 @@ export const currencyOf = (locale) => {
   if (CURRENCY_OF.has(l)) return CURRENCY_OF.get(l);
   const m = /^[a-z]{2,3}-(?:[A-Za-z]{4}-)?([A-Za-z]{2})$/i.exec(l);
   const c = m ? REGION_CURRENCY[m[1].toUpperCase()] : undefined;
-  if (CURRENCY_OF.size < 1000) CURRENCY_OF.set(l, c);
+  if (CURRENCY_OF.size < 1000 && l.length <= 35) CURRENCY_OF.set(l, c);
   return c;
 };
 const CURRENCY_OF = new Map();
@@ -106,7 +106,7 @@ export function formatValue(value, fmt, opt = {}) {
   }
   if (typeof value === 'boolean') return value ? 'True' : 'False';
   if (typeof value === 'string' && fmt && /^\d{4}-\d{2}-\d{2}/.test(value)) {
-    const memo = opt.fmtMemo ? memoFor(opt.fmtMemo, 's', fmt, locale) : null;
+    const memo = opt.fmtMemo && value.length <= 40 ? memoFor(opt.fmtMemo, 's', fmt, locale) : null;
     let out = memo?.get(value);
     if (out === undefined) {
       const d = toDate(value);
@@ -122,8 +122,9 @@ const PLAIN = new Intl.NumberFormat('en-US', { maximumFractionDigits: 10, useGro
 function memoFor(all, kind, fmt, locale) {
   const key = `${kind}\u0001${fmt}\u0001${locale}`;
   let memo = all.get(key);
-  if (!memo) { if (all.size > 200) all.clear(); memo = new Map(); all.set(key, memo); }
-  else if (memo.size > 10000) memo.clear(); // ponytail: cleared when full, an LRU if a profile ever asks
+  // bounded per render: 50 formats × 5,000 values. ponytail: cleared when full, an LRU if a profile ever asks
+  if (!memo) { if (all.size >= 50) all.clear(); memo = new Map(); all.set(key, memo); }
+  else if (memo.size >= 5000) memo.clear();
   return memo;
 }
 /** @type {Map<string, (v: number) => string>} a number format, compiled once per format, locale and currency */
@@ -133,8 +134,10 @@ function numberFn(fmt, locale, currency) {
   let fn = numberFns.get(key);
   if (!fn) {
     fn = compileNumber(fmt, locale, currency);
-    if (numberFns.size > 2000) numberFns.clear();
-    numberFns.set(key, fn);
+    if (key.length <= 128) { // formats from expressions can be any text: only short keys, at most 2,000
+      if (numberFns.size >= 2000) numberFns.clear();
+      numberFns.set(key, fn);
+    }
   }
   return fn;
 }

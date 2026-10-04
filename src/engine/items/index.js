@@ -587,7 +587,9 @@ register('table', {
     const emit = (level, grows, ctx, chain, keyPath) => {
       if (level === groups.length) {
         for (let i = 0; i < grows.length; i++) {
-          if (lc.rowBudget && lc.rowBudget.left-- <= 0) { lc.rowBudget.cut = true; return; } // first pages only
+          if (lc.rowBudget && lc.rowBudget.left-- <= 0) { lc.rowBudget.cut = true; return; }
+      lc.tick?.(); // first pages only
+          lc.tick?.(); // the time limit, per row: rows whose cells all fail never reach evaluate()
           rowNo++;
           for (const s of chain) { s.index++; s.run.push(grows[i]); }
           const dctx = { ...ctx, fields: grows[i], aggRows: grows, aggIndex: i, rowNumber: rowNo };
@@ -709,6 +711,7 @@ register('table', {
       // rows already built (a pivot): each with its own scope
       for (const b of item.__body) {
         if (lc.rowBudget && lc.rowBudget.left-- <= 0) { lc.rowBudget.cut = true; break; }
+        lc.tick?.();
         layRow(b.row, b.ctx || base, b.kind || 'detail', { level: b.level ?? 0 });
       }
       endBand();
@@ -778,7 +781,7 @@ function roundFor(v, fmt) {
   if (d === undefined) {
     const m = /^([CcNnFfPp])(\d{0,2})$/.exec(fmt || '');
     d = m ? (m[2] === '' ? 2 : Number(m[2])) + (m[1].toUpperCase() === 'P' ? 2 : 0) : -1;
-    if (ROUND_DIGITS.size < 1000) ROUND_DIGITS.set(fmt, d);
+    if (ROUND_DIGITS.size < 1000 && (fmt == null || fmt.length <= 64)) ROUND_DIGITS.set(fmt, d);
   }
   if (d < 0) return Number.isInteger(v) ? v : roundHalfAway(v, 6);
   return roundHalfAway(v, d); // same rule as the Intl formatter that drew the cell

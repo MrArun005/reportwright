@@ -7,12 +7,15 @@ import { borders, padding, DASH } from '../style.js';
  * coordinates; the paginator moves them to their final place.
  */
 
+const MAX_CACHED_TEXT = 256;
+
 /** Text layout for a box: lines, font key, needed height. */
 export function layoutTextLines(text, st, width, m, opt) {
   const wrap = opt?.wrap ?? true;
   // A frozen style is a static one shared by every cell that uses it (style.js): the same text at the same width lays
   // out once per render. Tables repeat most cell texts (a region, a status, a date), so most cells hit this.
-  if (typeof text !== 'string' || !m.boxes || !Object.isFrozen(st)) return layoutText(text, st, width, m, wrap);
+  // only short texts (a cell's value), at most 200,000 per render: memory stays bounded whatever the data holds
+  if (typeof text !== 'string' || text.length > MAX_CACHED_TEXT || !m.boxes || !Object.isFrozen(st)) return layoutText(text, st, width, m, wrap);
   let byW = m.boxes.get(st);
   if (!byW) { byW = new Map(); m.boxes.set(st, byW); }
   const wk = wrap ? width : -1 - width;

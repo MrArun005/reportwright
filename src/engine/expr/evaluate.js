@@ -42,7 +42,20 @@ const tplCache = new Map();
 export function parseValue(v) {
   if (typeof v !== 'string') return { kind: 'lit', v };
   let p = tplCache.get(v);
-  if (p) return p;
+  if (p) { if (p.kind === 'err') throw p.error; return p; }
+  try { p = parseFresh(v); } catch (e) {
+    // a value that does not parse is parsed once: every cell that uses it rethrows the same error (#Error there)
+    if (!(e instanceof ExprError)) throw e;
+    p = { kind: 'err', error: e };
+  }
+  if (tplCache.size > 5000) tplCache.clear();
+  tplCache.set(v, p);
+  if (p.kind === 'err') throw p.error;
+  return p;
+}
+/** @param {string} v */
+function parseFresh(v) {
+  let p;
   if (v.startsWith('=')) { const ast = compile(v.slice(1)); p = { kind: 'expr', ast, fn: closureFor(ast) }; }
   else if (!v.includes('{')) p = { kind: 'lit', v };
   else {
@@ -63,8 +76,6 @@ export function parseValue(v) {
     if (buf) parts.push(buf);
     p = { kind: 'tpl', parts };
   }
-  if (tplCache.size > 5000) tplCache.clear();
-  tplCache.set(v, p);
   return p;
 }
 function findClose(s, i) {
@@ -88,7 +99,13 @@ export function isDynamic(v) {
  * @param {any} v @param {EvalCtx} ctx
  */
 export function evalValue(v, ctx) {
-  const p = parseValue(v);
+  let p;
+  try { p = parseValue(v); } catch (e) {
+    // a failed parse counts against the render's time limit like an evaluation: a table of failing cells stops on time
+    const clock = ctx.clock;
+    if (clock && (clock.over || ((++clock.n & 1023) === 0 && Date.now() > clock.until && (clock.over = true)))) throw new ExprError(OVER_TIME, 0);
+    throw e;
+  }
   if (p.kind === 'lit') return p.v;
   if (p.kind === 'expr') return p.fn ? p.fn(ctx) : evaluate(p.ast, ctx);
   let out = '';

@@ -130,8 +130,10 @@ export class TextMeasurer {
       units += a;
     }
     // ponytail: bounded by clearing; an LRU only if a report with >50k distinct words per face shows up in a profile
-    if (f.words.size > 50000) f.words.clear();
-    f.words.set(text, units);
+    if (text.length <= 256) { // short words only: the cache holds at most 50,000 of them per face and render
+      if (f.words.size >= 50000) f.words.clear();
+      f.words.set(text, units);
+    }
     return units;
   }
 

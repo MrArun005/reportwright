@@ -66,7 +66,7 @@ export async function render(def0, opts = {}) {
   const fatal = v.errors.filter(e => !cellErrors.has(e));
   if (fatal.length) throw new ReportError(fatal[0], { errors: v.errors });
   /** @type {string[]} */
-  const warnings = [...v.warnings, ...cellErrors, ...reuseWarnings];
+  const warnings = [...v.warnings, ...[...cellErrors].slice(0, 100), ...reuseWarnings].slice(0, 200); // warn() keeps it at 200
   const warn = (msg) => { if (warnings.length < 200 && !warnings.includes(msg)) warnings.push(msg); };
 
   const page = resolvePage(def.page);
@@ -130,6 +130,8 @@ export async function render(def0, opts = {}) {
       m, base, dataSets, warn, fixed, maxUnitHeight: contentH, state: opts.state || {}, regions,
       named, parts, layerOff,
       nextId: () => ++idSeq,
+      // the time limit, read every 256 rows of tables and lists (expr/evaluate.js counts evaluations the same way)
+      tick: clock ? () => { if (clock.over || ((++clock.n & 255) === 0 && Date.now() > clock.until)) { clock.over = true; overTime(); } } : null,
       layoutItems: (items, l, o) => layoutItems(items, l, o),
       linkFor: (it, ctx, rect) => linkFor(it, ctx, rect, warn, opts.state),
       ctxFor: (item) => {
