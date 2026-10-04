@@ -42,7 +42,7 @@ const res = await fetch('https://reports.example.com/api/v1/render', {
   headers: { authorization: 'Bearer key1', 'content-type': 'application/json' },
   body: JSON.stringify({
     template: 'loan-statement',
-    format: 'pdf',                       // pdf | xlsx | html | csv | json (the page model)
+    format: 'pdf',                       // pdf | xlsx | docx | pptx | html | csv | json (the page model)
     parameters: { accountId: 'LN-2025-001982' },
     data: { loan: { /* your JSON */ } },  // optional: replaces the data source named "loan"
     fileName: 'statement-LN-2025-001982',
@@ -52,6 +52,8 @@ const pdf = await res.arrayBuffer();
 ```
 
 Response headers: `x-pagewright-pages`, `x-pagewright-ms`, `x-pagewright-warnings`.
+
+Export options in the body (see [EXPORTS.md](EXPORTS.md)): `ua: true` an accessible PDF (PDF/UA-1; with `pdfa: true` it is PDF/A-2a), `formulas: false` Excel totals as values instead of live `SUBTOTAL` formulas, `static: true` an HTML file without its Tables view. The server link `GET /api/reports/:id/pdf` takes `?ua=1` (and `?pdfa=1`, `?format=`).
 
 Errors are JSON `{ error, missingParameters? }`: 400 for a bad request or missing parameters, 401 for a bad key, 404 for an unknown template.
 
@@ -263,7 +265,7 @@ Every built-in item has a stable id. `toolbar.hide` removes items by id; `toolba
 
 `parameters` and `documentMap` show only when the report has parameters or bookmarks; `fullScreen` only where the browser allows it. In the page each item is wrapped in an element with `data-toolbar-id="<id>"`.
 
-`onClick` gets `api`: `{ page, pages, goTo(n), run(), print(), exportAs('pdf' | 'xlsx' | 'docx' | 'html' | 'csv' | 'json') }`. `json` is the laid-out pages, the same as the API's `json` format.
+`onClick` gets `api`: `{ page, pages, goTo(n), run(), print(), exportAs('pdf' | 'xlsx' | 'docx' | 'pptx' | 'html' | 'csv' | 'json') }`. Built-in export ids: `pdf`, `excel`, `word`, `powerpoint`, `html`, `csv`, `json`, `exportOptions` (the ⚙ menu: accessible PDF, PDF/A, Excel formulas, kind of HTML file; kept in the browser). `json` is the laid-out pages, the same as the API's `json` format.
 
 Narrower than 640 px (the viewer's own width, so an embed in a sidebar counts), the toolbar keeps `parameters`, `previousPage`, `pageNumber`, `nextPage` and `search` and puts the rest in a "More" menu (custom items too). Side panels open as bottom sheets, and a swipe left or right turns the page.
 
