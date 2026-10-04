@@ -50,7 +50,10 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 ## 3. Text and styling
 
 - Fonts: any uploaded TTF/OTF/WOFF/WOFF2; HarfBuzz shaping and Unicode bidi.
-- Hindi, Arabic and Hebrew bundled (Noto fallbacks); CJK through an uploaded font. Viewer and PDF match within 1 px on the Hindi proof report.
+- Hindi, Arabic and Hebrew bundled (Noto fallbacks); since batch 6 also Thai, Lao, Khmer, Myanmar, Tamil, Bengali, Telugu, Kannada and Gujarati (regular and bold, 1.74 MB on disk, each face fetched only when text uses its script; `@font-face` carries a `unicode-range`). CJK through an uploaded font. Viewer and PDF match within 1 px on the Hindi proof report.
+- Line breaking: Thai, Lao, Khmer and Myanmar break between words (Intl.Segmenter's ICU dictionaries; without a segmenter a too-long word breaks between grapheme clusters); CJK breaks between ideographs with kinsoku (no closing punctuation, small kana or iteration marks at a line start, no opening bracket at a line end). Measurement, viewer, PDF and HTML draw the same lines.
+- PDF text extraction: Arabic, Persian, Urdu and Hebrew come out of `pdftotext` in logical order without stray spaces (ToUnicode maps each joined letter once; the dots of a letter and marks in a span stand for nothing, in an empty `/ActualText`); Indic and Thai runs carry `/ActualText`. Vowel-pointed Arabic and Hebrew (harakat, niqqud) still extract with the marks apart: poppler only joins marks that have precomposed forms.
+- PDF form fields: a pre-filled value that needs shaping (Arabic, Indic, Thai) or a script fallback is drawn with the engine's glyphs in the field's appearance, and the field's font (DA) is that script's font, embedded in full. Typing into the field later is the PDF viewer's own text layout (Acrobat shapes complex scripts there; simpler viewers may draw unjoined letters).
 - Underline, strike-through, justify, background images on any box.
 - Shrink-to-fit, rotation at any angle, condensed text.
 - Vertical text (`tb-rl`) for CJK labels.
@@ -176,6 +179,7 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 ## 13. Migration
 
 - ActiveReportsJS importer (`.rdlx-json`): both layouts, FixedPage, tablix (incl. nested), banded lists, charts (incl. the Phase 5 types), expressions, recursive groups, row spans, sections. 40 real files imported, validated and rendered with no item dropped; what changed is listed as notes.
+- JasperReports importer (`.jrxml`, JR 3–6 and the 7.x format) and BIRT importer (`.rptdesign`), both through the home page's Import; ActiveReports master reports, report parts and layers map to Pagewright's master, parts and layers. See API.md, "JasperReports import" and "BIRT import". 49 Jasper demo samples: 99.8% of elements kept; 29 BIRT samples: 99.5%.
 - SSRS / Report Builder importer (`.rdl`, `.rdlc`; RDL 2008, 2010, 2016): data sources and sets (SQL with @parameters, "Enter Data" rows), parameters (cascading, multi-value, hidden), text runs and rich text, tablix as table / matrix / list / banded list, charts (combos, secondary axis, data bars, sparklines), gauges and indicators (approximated), images, subreports, actions, document map, Variables / ReportItems / Me.Value, VB expressions. A safe XML reader (no DTDs, size and depth caps, linear). Maps and custom code are not converted (noted; code kept as text). 32 Microsoft sample reports imported, validated and rendered, no item dropped. See API.md, "SSRS import".
 
 ## 14. Report library (`reports/`)
@@ -214,9 +218,9 @@ Sample data APIs (stand-ins for customer data): `/api/sample/hard?rows=N` (nasty
 | Tools | Phase 9 deferred: desktop designer, VS Code extension. |
 | Charts | Word export leaves charts out; no leader lines on outside pie labels; overlays not in the legend; half-circle gauges only. |
 | Tables | A pivot's recursion is on its innermost row group only. A framed (bordered, keep-together) container inside a cell is still kept whole. |
-| Engine | A `pageBreakBefore` on an item already moved to a new page leaves a blank page. |
+| Engine | A `pageBreakBefore` on an item already moved to a new page leaves a blank page. (Fixed in batch 6: tall overlapping items no longer leave page 1 blank, and the cut-off part of an item taller than the page makes no blank pages.) |
 | Scale | Batch output files go to one server's disk; the embed viewer has no Web Worker (100k rows block the page for about 5 s). |
-| Fonts | Thai, Khmer and other Indic scripts need an uploaded font; no dictionary line breaking. |
+| Fonts | Scripts beyond the bundled ones (Sinhala, Tibetan, Malayalam, Gurmukhi, Oriya, Ethiopic…) need an uploaded font. Vowel-pointed Arabic/Hebrew extract with their marks apart (pdftotext). |
 | Publishing | npm packages and the GitHub Action not published or run; Docker image not built. |
 | Security | SQL Server (**[not released]**): an automated review still reports a resource-cap bypass (value types TEXTSIZE does not limit, very wide rows, message floods, the per-database probe without a time bound). Use a read-only login; do not offer SQL Server sources to untrusted report authors until this is closed. |
 | Speed | Fixed: scope aggregates are computed once per render (stress ledger 38 s → ~2 s), and a table of contents keeps the fast first page (page numbers fill in after). Open: the home-page thumbnail now draws in a worker thread (security track) and has not been re-measured. |
