@@ -7,6 +7,7 @@ import http from 'node:http';
 import https from 'node:https';
 import dns from 'node:dns';
 import net from 'node:net';
+import { domainToASCII } from 'node:url';
 import { Readable, Transform } from 'node:stream';
 import { accountsOn, internalCookie, basicOn } from './session.js';
 
@@ -46,13 +47,15 @@ export function isPrivate(ip) {
 export function strictUrl(input) {
   const s = input instanceof URL ? input.href : String(input);
   const bad = (why) => Object.assign(new Error(`Refused URL (${why}): ${s.slice(0, 200)}`), { status: 400 });
-  if (/[\x00-\x20\x7f\\]/.test(s)) throw bad('whitespace, a control character or a backslash');
+  if (/[\x00-\x1f\x7f\\]/.test(s) || s.trim() !== s) throw bad('a control character, a backslash or surrounding space');
   const m = /^(https?):\/\/([^/?#]*)/i.exec(s);
   if (!m) throw bad('only absolute http and https URLs');
+  if (m[2].includes(' ')) throw bad('a space in the host'); // a space in the path or query is only encoded
   let u;
   try { u = new URL(s); } catch { throw bad('not a URL'); }
   if (u.username || u.password || m[2].includes('@')) throw bad('a user name or password in the URL');
-  const host = m[2].replace(/:\d*$/, '').toLowerCase(); // as written, without the port
+  const written = m[2].replace(/:\d*$/, '').toLowerCase(); // as written, without the port
+  const host = /[^\x00-\x7f]/.test(written) ? domainToASCII(written) : written; // an international name: its punycode
   if (host !== u.hostname || host.endsWith('.') || host.includes('%')) throw bad(`the host "${m[2]}" is not written plainly`);
   return u;
 }

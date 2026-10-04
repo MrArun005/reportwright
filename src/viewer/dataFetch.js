@@ -19,14 +19,16 @@ export function reportFetch(base, f = (...a) => fetch(...a)) {
     const u = new URL(String(input instanceof Request ? input.url : input), base);
     const method = String(init.method || 'GET').toUpperCase();
     if (u.origin !== self) return f(u.href, { ...init, credentials: 'omit' }); // another site (the host page too) gets no cookies
-    // the path as the server's router sees it (encoded dot segments resolved by URL already; an encoded slash is refused)
-    const path = u.pathname;
-    const read = ['GET', 'HEAD'].includes(method) && !/%2f|%5c/i.test(path) && (DATA.some(r => r.test(path)) || !OURS.test(path));
-    if (!read && !(method === 'POST' && path === '/api/data/sql')) {
+    // the path as the server's router sees it: decoded (Next also tries /%61pi as /api) and with repeated slashes
+    // collapsed (Next redirects //api/users to /api/users); an encoded slash or broken encoding is refused
+    let path;
+    try { path = decodeURIComponent(u.pathname).replace(/\/{2,}/g, '/'); } catch { path = null; }
+    const read = path !== null && ['GET', 'HEAD'].includes(method) && !/%2f|%5c/i.test(u.pathname) && (DATA.some(r => r.test(path)) || !OURS.test(path));
+    if (!read && !(method === 'POST' && u.pathname === '/api/data/sql')) {
       throw Object.assign(new Error(`A data source may only read data from this Pagewright server (sample data, the data proxy, saved SQL), not ${method} ${path}.`), { status: 403 });
     }
     // cookies only for our own data routes; no redirect followed on this server (one could lead into /api/users)
-    const ours = DATA.some(r => r.test(path)) || path === '/api/data/sql';
+    const ours = DATA.some(r => r.test(u.pathname)) || u.pathname === '/api/data/sql'; // as written, not decoded
     return f(u.href, { ...init, credentials: ours ? 'same-origin' : 'omit', redirect: 'error' });
   });
 }

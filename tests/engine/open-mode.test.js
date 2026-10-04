@@ -329,7 +329,7 @@ describe('a report\'s data sources in the browser (reportFetch)', () => {
   });
   it('may not call Pagewright\'s other APIs or pages with the viewer\'s cookie (an admin opening it would create users)', async () => {
     calls.length = 0;
-    for (const [url, method] of [['/api/users', 'POST'], ['/api/users', 'GET'], ['/api/folders/root', 'PATCH'], ['/api/reports/x', 'DELETE'], ['/api/audit', 'GET'],
+    for (const [url, method] of [['/api/users', 'POST'], ['/api/users', 'GET'], ['https://pw.example.com//api/users', 'GET'], ['/.//api/users', 'GET'], ['/%61pi/users', 'GET'], ['https://pw.example.com//api/audit', 'GET'], ['/%zz', 'GET'], ['/api/folders/root', 'PATCH'], ['/api/reports/x', 'DELETE'], ['/api/audit', 'GET'],
       ['/admin/users', 'GET'], ['/api/sample/x', 'POST'], ['/api/sample/%2e%2e/%2e%2e/api/users', 'GET'], ['/api/sample%2f..%2f..%2fusers', 'GET'], ['/api/data/sql/test', 'POST'], ['/', 'GET']]) {
       await expect(f(url, { method }), `${method} ${url}`).rejects.toMatchObject({ status: 403 });
     }
@@ -450,7 +450,7 @@ describe('one parse for the check and the fetch (strictUrl)', () => {
   it.each(BYPASS)('refuses %j', (u) => {
     expect(() => strictUrl(u)).toThrow();
   });
-  it.each(['http://api.example.com/x?a=1#f', 'https://API.Example.COM:8443/x', 'http://127.0.0.1:3000/api/sample/x', 'http://[::1]:3000/', 'https://xn--bcher-kva.example/'])('accepts %j', (u) => {
+  it.each(['http://api.example.com/x?name=John Smith', 'http://münchen.example/x', 'http://api.example.com/x?a=1#f', 'https://API.Example.COM:8443/x', 'http://127.0.0.1:3000/api/sample/x', 'http://[::1]:3000/', 'https://xn--bcher-kva.example/'])('accepts %j', (u) => {
     expect(strictUrl(u)).toBeInstanceOf(URL);
   });
   it('safeFetch, serverFetch and the data proxy refuse them before any lookup or connection', () => withEnv({ PW_INTERNAL_HOSTS: '127.0.0.1', PW_PROXY_ALLOW: 'example.com' }, async () => {
@@ -460,5 +460,18 @@ describe('one parse for the check and the fetch (strictUrl)', () => {
     }
     const r = await dataProxy(new Request(`http://pw.test/api/data/proxy?url=${encodeURIComponent('http://exa%6dple.com/x')}`));
     expect(r.status).toBe(400);
+  }));
+});
+
+describe('round 3', () => {
+  it('next dev with PW_AUTH=proxy and no secret still answers only to local host names (DNS rebinding)', () => withEnv({ NODE_ENV: 'development', PW_AUTH: 'proxy', PW_PROXY_SECRET: undefined, PW_BASIC_AUTH: undefined, PW_DEV_HOSTS: undefined, PW_BASE_URL: undefined }, async () => {
+    const r = await proxy(new Request('http://evil.example:3000/api/reports', { method: 'POST', headers: { host: 'evil.example:3000', origin: 'http://evil.example:3000' }, body: '{}' }));
+    expect(r?.status).toBe(403);
+  }));
+  it('PW_AUTH=proxy: only static files and /api/v1 skip the proxy secret; embed reads of definitions need it too', () => withEnv({ ...PROD_OPEN, PW_AUTH: 'proxy', PW_PROXY_SECRET: SECRET, PW_EMBED_ORIGINS: 'http://localhost:4000' }, async () => {
+    expect((await proxy(rq('/api/reports/x')))?.status).toBe(401);
+    expect((await proxy(rq('/api/sample/sales')))?.status).toBe(401);
+    expect(await proxy(rq('/api/reports/x', { headers: VIA_PROXY }))).toBe(undefined);
+    expect(await proxy(rq('/embed/pagewright-viewer.js'))).toBe(undefined);
   }));
 });

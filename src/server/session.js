@@ -27,7 +27,7 @@ export const proxyOn = () => process.env.PW_AUTH === 'proxy' && (process.env.NOD
 /** PW_BASIC_AUTH as "user:password", both parts non-empty. Anything else ("x", ":", "u:") is not a sign-in. */
 export const basicOn = () => /^[^:]+:.+$/.test(process.env.PW_BASIC_AUTH || '');
 /** Development with nobody signing in: trusted only because it is next dev (see devHostOk). */
-export const devOpen = () => !accountsOn() && process.env.NODE_ENV !== 'production' && !basicOn() && !proxyOn();
+export const devOpen = () => !accountsOn() && process.env.NODE_ENV !== 'production' && !basicOn() && !(process.env.PW_AUTH === 'proxy' && process.env.PW_PROXY_SECRET);
 /**
  * next dev with nobody signing in answers only to a local host name: a page that re-points its own name at 127.0.0.1
  * (DNS rebinding) sends its own name as Host. localhost, 127.0.0.1, ::1, the PW_BASE_URL host and PW_DEV_HOSTS.

@@ -354,7 +354,7 @@ function DataSetDialog({ index, onClose, onSaved }) {
     const params = resolveParameters(useDesigner.getState().def, {});
     const src = useDesigner.getState().def.dataSources.find(s => s.name === name);
     if (!src) throw new Error(T('dsNoSource', { name }));
-    return (await loadSources({ dataSources: [src] }, { params, baseUrl: window.location.origin, sqlPreview: true, fetch: reportFetch(window.location.origin) }))[src.name];
+    return (await loadSources({ dataSources: [src] }, { params, baseUrl: origin(), sqlPreview: true, fetch: reportFetch(origin()) }))[src.name]; // the Pagewright server, also when embedded
   };
   /** The raw rows of a data set: its source at its path, or for a nested one each parent row's children. */
   const rawRowsOf = async (ds, seen = new Set()) => {

@@ -23,7 +23,8 @@ export async function proxy(request) {
   if (UNSAFE.has(method) && !pathname.startsWith('/api/v1/') && !CROSS_SITE_WRITES.includes(pathname) && !sameOrigin(request)) {
     return Response.json({ error: 'This request did not come from a Pagewright page (Origin check).' }, { status: 403 });
   }
-  if (!proxySecretOk(request) && decide(method, pathname, 'viewer') !== 'open') {
+  // around the proxy only static files and /api/v1 (its own keys): not the embed's reads of definitions either
+  if (!proxySecretOk(request) && !/^\/(_next|fonts|icc|embed)\/|^\/api\/v1\/|^\/favicon|^\/harfbuzz-subset\.wasm$/.test(pathname)) {
     return Response.json({ error: 'This request did not come through the signing-in reverse proxy (PW_PROXY_SECRET).' }, { status: 401 });
   }
   if (!openTrusted()) {
