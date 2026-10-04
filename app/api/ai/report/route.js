@@ -5,7 +5,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { draftReport } from '@/server/ai.js';
 import { fontStore } from '@/server/renderer.js';
 import { safeId } from '@/server/reports.js';
-import { principalOf, readReportFor } from '@/server/perms.js';
+import { principalOf, readReportFor, canDesign } from '@/server/perms.js';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; // a draft with retries can take minutes
@@ -17,9 +17,7 @@ let client;
 export async function POST(req) {
   if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) return err('AI drafting is off: set ANTHROPIC_API_KEY on the server.', 501);
   // every draft costs money: in production, only people who signed in may ask for one
-  if (process.env.NODE_ENV === 'production' && process.env.PW_AUTH !== 'users' && !process.env.PW_BASIC_AUTH) {
-    return err('Turn on accounts (PW_AUTH=users) or PW_BASIC_AUTH to use AI drafting in production.', 403);
-  }
+  if (!canDesign(await principalOf(req))) return err('Only designers can draft with AI (in production that needs a sign-in: PW_AUTH=users or PW_BASIC_AUTH).', 403);
   let body;
   try {
     const text = await req.text();

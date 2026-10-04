@@ -12,8 +12,8 @@ const errs = []; p.on('pageerror', e => errs.push(e.message)); p.on('console', m
 
 // a scratch copy of the loan statement
 const def = await (await fetch(`${BASE}/api/reports/loan-statement`)).json();
-await fetch(`${BASE}/api/reports/e2e-phase4`, { method: 'DELETE' });
-const created = await (await fetch(`${BASE}/api/reports`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'e2e phase4', definition: def }) })).json();
+await fetch(`${BASE}/api/reports/e2e-phase4`, { method: 'DELETE', headers: { origin: BASE } });
+const created = await (await fetch(`${BASE}/api/reports`, { method: 'POST', headers: { 'content-type': 'application/json', origin: BASE }, body: JSON.stringify({ name: 'e2e phase4', definition: def }) })).json();
 const id = created.id;
 
 step('smart guide while dragging');
@@ -80,7 +80,7 @@ assert.notEqual(btnBg, 'rgb(255, 0, 0)', 'host styles do not leak in');
 await e.screenshot({ path: '/tmp/shots/embed.png' });
 host.close();
 
-await fetch(`${BASE}/api/reports/${id}`, { method: 'DELETE' });
+await fetch(`${BASE}/api/reports/${id}`, { method: 'DELETE', headers: { origin: BASE } });
 await b.close();
 console.log('errors:', errs.length ? errs : 'none', '| embed errors:', embedErrs.length ? embedErrs : 'none');
 assert.deepEqual(errs, []);

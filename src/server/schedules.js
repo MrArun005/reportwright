@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { parseCron, nextRun } from './cron.js';
 import { createBatch, ME, checkDelivery } from './jobs.js';
 import { store, withLock } from './storage/index.js';
-import { principalId, principalFromId, checkReport, vet, defaultPrincipal } from './perms.js';
+import { principalId, principalFromId, checkReport, vet, defaultPrincipal, canDesign } from './perms.js';
 import { audit } from './audit.js';
 
 const g = globalThis;
@@ -38,7 +38,7 @@ const shown = ({ owner, ownerKey, ...s }) => withNext(s);
 /** A template a principal may render: an id it may view, or (designers, service keys) an inline definition. */
 async function checkTemplate(p, template) {
   if (typeof template === 'string') return void await checkReport(p, template);
-  if (p.kind === 'user' && p.role === 'viewer') throw Object.assign(new Error('Only a designer can schedule a definition sent in the request.'), { status: 403 });
+  if (!canDesign(p)) throw Object.assign(new Error('Only a designer can schedule a definition sent in the request.'), { status: 403 });
 }
 
 /** @param {Principal} [p] */

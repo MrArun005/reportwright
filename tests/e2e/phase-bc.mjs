@@ -54,6 +54,6 @@ await p.getByRole('button', { name: 'Draft the report' }).click();
 await p.getByText(/AI drafting is off/).waitFor();
 
 await b.close();
-for (const rid of created) await fetch(`${BASE}/api/reports/${rid}`, { method: 'DELETE' });
+for (const rid of created) await fetch(`${BASE}/api/reports/${rid}`, { method: 'DELETE', headers: { origin: BASE } });
 assert.deepEqual(errs, []);
 console.log('PASS phase B/C');

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { runSql, runSavedSql, bindSql, limits } from '../../src/server/sql.js';
 import { writeReport, deleteReport } from '../../src/server/reports.js';
+import { stampDefinition } from '../../src/server/perms.js';
 import { POST } from '../../app/api/data/sql/route.js';
 import { loadSources } from '../../src/engine/data/index.js';
 import { render } from '../../src/engine/index.js';
@@ -106,7 +107,7 @@ describe('saved-query mode', () => {
     ],
   } });
   const post = (body) => POST(new Request('http://x/api/data/sql', { method: 'POST', body: JSON.stringify(body) }));
-  beforeAll(() => writeReport(id, def));
+  beforeAll(async () => { await stampDefinition({ kind: 'service' }, id, def); await writeReport(id, def); }); // as a designer saves it
   afterAll(() => deleteReport(id));
 
   it('runs the query saved in the report, with its parameter defaults and types', async () => {

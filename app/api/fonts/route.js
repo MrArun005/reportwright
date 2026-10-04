@@ -2,6 +2,7 @@
 // POST takes multipart/form-data (file, family, weight, style) or the raw file with ?family=&weight=&style=.
 // Empty names are read from the font. TTF, OTF, WOFF and WOFF2 up to 20 MB.
 import { listFonts, saveFont, MAX_FONT_BYTES } from '@/server/fonts.js';
+import { principalOf, canDesign } from '@/server/perms.js';
 
 export const runtime = 'nodejs';
 
@@ -13,6 +14,7 @@ export async function GET() {
 
 export async function POST(req) {
   try {
+    if (!canDesign(await principalOf(req))) return fail(Object.assign(new Error('Only designers can upload fonts.'), { status: 403 }));
     if (Number(req.headers.get('content-length')) > MAX_FONT_BYTES + 64 * 1024) return fail(Object.assign(new Error('A font can be at most 20 MB.'), { status: 413 }));
     let bytes, names;
     if ((req.headers.get('content-type') || '').startsWith('multipart/form-data')) {

@@ -11,8 +11,21 @@ npm install
 npm run dev                 # http://localhost:3000
 # or, for production:
 npm run build               # also builds the embed bundle
-PW_API_KEYS=change-me npm start
+PW_BASIC_AUTH=admin:change-me PW_API_KEYS=change-me npm start
 ```
+
+**Production needs a sign-in.** With `NODE_ENV=production` (`npm start`, the Docker image) and no sign-in set up, the server fails closed: it logs a warning at start and answers 401, with how to fix it, to every page and API except static files and `/api/v1` (which has its own keys). Pick one:
+
+| Setting | Who gets in |
+|---|---|
+| `PW_AUTH=users` (+ `PW_SESSION_SECRET`) | People with their own accounts and roles, or single sign-on (OIDC, SAML). See [Users and roles](#users-and-roles). |
+| `PW_BASIC_AUTH=user:password` | Everyone who has the shared password. They can do everything, SQL included. |
+| `PW_AUTH=proxy` | Everyone who reaches the app. Only behind a reverse proxy that signs people in (oauth2-proxy, Cloudflare Access, your SSO gateway) and that nothing can bypass. |
+| `PW_PUBLIC_READONLY=1` (with none of the above) | Anyone may open and render the saved reports, **including the rows their saved queries return**; nobody can change anything, run SQL of their own, or open the designer. |
+
+In every mode, a change (POST, PUT, PATCH, DELETE outside `/api/v1`) must come from a Pagewright page: the `Origin` (or `Referer`) header must name this server, so another site cannot post to it. A report's SQL, and its data sources that may reach a host in `PW_INTERNAL_HOSTS`, run only as a designer (or a service API key) saved them: the server records a fingerprint of those sources at each save, and a definition changed any other way (a file edited on disk, a storage row, a report saved while an older version of the server was open) refuses to run them until a designer saves it again. After upgrading, open and save each report that uses SQL once.
+
+`npm run dev` (development) stays open to whoever reaches it, writes from this site only. Do not expose a dev server to a network: `next dev` listens on every interface, so run it as `npx next dev -H 127.0.0.1` or set `PW_BASIC_AUTH`.
 
 Open the home page. Three sample reports are there: **Loan statement**, **Sales by region** (groups, drill-down, cascading parameters) and **Sales dashboard** (charts, matrix, QR code, sparklines).
 
@@ -60,16 +73,17 @@ The viewer runs in a Shadow DOM, so the host page styles do not change it. Set `
 | Variable | When read | What it does |
 |---|---|---|
 | `PW_API_KEYS` | run time | Comma-separated keys for `/api/v1`. Send `Authorization: Bearer <key>` or `x-api-key`. **Required in production.** |
-| `PW_ALLOW_KEYLESS` | run time | `1` lets `/api/v1` answer without a key in production. Do not use this on a public server. |
+| `PW_ALLOW_KEYLESS` | run time | `1` lets `/api/v1` answer without a key in production, read-only: `GET`s and `POST /api/v1/render` of a saved template, with no definition or data in the request, no signing, no batches or schedules. Anyone can then render every report. In development the API answers without a key, and refuses a keyless write that carries another site's `Origin`. |
 | `PW_WEBHOOK_SECRET` | run time | Signs webhook bodies: header `x-pagewright-signature: sha256=<HMAC-SHA256 hex>` |
 | `PW_BASE_URL` | run time | Public URL of this server, used for relative data URLs in batches and schedules |
 | `PW_BATCH_CONCURRENCY` | run time | Reports rendered at the same time in a batch (default 2) |
 | `PW_SCHEDULER` | run time | `off` stops the built-in scheduler (for example on extra replicas) |
-| `PW_AUTH` | run time | `users` turns on user accounts with roles ([Users and roles](#users-and-roles)). Any other value makes the server refuse every request (500), so a typo cannot leave the app open. |
+| `PW_AUTH` | run time | `users` turns on user accounts with roles ([Users and roles](#users-and-roles)). `proxy`: no accounts, the app trusts every request that reaches it, because a reverse proxy in front signs people in ([Production needs a sign-in](#run-it)). Any other value makes the server refuse every request (500), so a typo cannot leave the app open. |
+| `PW_PUBLIC_READONLY` | run time | `1`, in production with no sign-in: anyone may open the report list and the viewer, render on the server and run the queries saved in reports. Nothing can be changed. Without it such a server answers 401 to everything. |
 | `PW_SESSION_SECRET` | run time | Signs the session cookie (HMAC-SHA256). At least 32 random characters (`openssl rand -hex 32`). **Required with `PW_AUTH=users` in production**: without it the server logs why and refuses every request (500). In development a random secret is made per process (sessions end on restart). The same secret on every server. |
 | `PW_ADMIN_EMAIL`, `PW_ADMIN_PASSWORD` | run time | The first admin. Used once, at the first sign-in, when there are no users yet. You can remove them after that. |
 | `PW_STORAGE` | run time | Where reports, versions, schedules, job records and users live. `file` (default): `reports/` and `data/` in the app folder. `sqlite:/abs/path.db`, `postgres://user:pass@host/db`, `mysql://user:pass@host/db` or `mssql://user:pass@host:1433/db` (or `sql:<name>` for the URL in `PW_DB_<NAME>`): tables `pw_reports`, `pw_report_versions`, `pw_schedules`, `pw_jobs`, `pw_users`, made on first use. This connection writes, so give it a user that may (not the read-only one for data sources). Batch output files (zip, merged PDF, folders) stay in `data/`: several servers need a shared volume for it. Switching does not copy existing reports: PUT them to `/api/reports/<id>` once. |
-| `PW_BASIC_AUTH` | run time | `user:password` for the whole app (designer, viewer, report storage, server renders). `/api/v1` keeps its API keys; the embed script and fonts stay open. **Set this, `PW_AUTH=users`, or put the app behind your SSO proxy, before you expose it.** Ignored (with a warning at start) when `PW_AUTH=users`. |
+| `PW_BASIC_AUTH` | run time | `user:password` for the whole app (designer, viewer, report storage, server renders). `/api/v1` keeps its API keys; the embed script and fonts stay open. In production one of this, `PW_AUTH=users` or `PW_AUTH=proxy` is required (see [Run it](#run-it)). Ignored (with a warning at start) when `PW_AUTH=users`. |
 | `PW_INTERNAL_HOSTS` | run time | Host names that server-side fetches may reach on a private network (internal data APIs, a webhook receiver on your LAN). Comma-separated. Every other private or local address is refused (SSRF guard). |
 | `PW_SIGN_P12`, `PW_SIGN_PASSWORD` | run time | A .p12 certificate and its password. With them, `/api/v1/render`, batches and schedules can sign PDFs (`"sign": true`; a detached PKCS#7 signature over the whole file). Only API-key routes sign. |
 | `ANTHROPIC_API_KEY`, `PW_AI_MODEL` | run time | Turns on AI drafting (`/api/ai/report`). The model defaults to `claude-opus-5`. |
@@ -84,7 +98,7 @@ Set `PW_AUTH=users` and `PW_SESSION_SECRET`, and people sign in at `/login` with
 | Role | Can |
 |---|---|
 | `viewer` | Open the report list and the viewer, export, server PDF (`/api/reports/<id>/pdf`), read report definitions and their versions, run the SQL saved in a report, the data proxy and sample data |
-| `designer` | Everything a viewer can, plus the designer: create, save, delete, restore and import reports, preview SQL typed in the designer (also in production), AI authoring |
+| `designer` | Everything a viewer can, plus the designer: create, save, delete, restore and import reports (only designers and admins can save a report with SQL or internal data sources), preview SQL typed in the designer (also in production), test connections, upload fonts, AI authoring |
 | `admin` | Everything, plus `/admin/users` and `/api/users` |
 
 - **The first admin**: set `PW_ADMIN_EMAIL` and `PW_ADMIN_PASSWORD`; the first sign-in creates that admin when there are no users. Or run `node scripts/user.mjs add you@example.com admin` in the app folder (with the same `PW_STORAGE`); it asks for the password, or reads `PW_NEW_PASSWORD`.
@@ -134,7 +148,7 @@ tests/           unit, golden and end-to-end tests
 ## Data setup in the designer
 
 - **Explore the response** (data set dialog): every list in the source's response with its path, row count and fields; the likely rows are marked *suggested*; **Use** fills the path and detects the fields. Nested lists get `[*]` paths (`$.orders[*].lines[*]`).
-- **SQL sources**: pick a connection set up on the server (`PW_DB_<NAME>`; the designer sees names only), press **Test** (a read-only `select 1`), write a `SELECT` with `@parameter` placeholders. Unsaved queries preview for designers when accounts are on, or behind `PW_BASIC_AUTH`; on a production server where nobody signs in, only saved queries run.
+- **SQL sources**: pick a connection set up on the server (`PW_DB_<NAME>`; the designer sees names only), press **Test** (a read-only `select 1`), write a `SELECT` with `@parameter` placeholders. Unsaved queries preview for designers when accounts are on, behind `PW_BASIC_AUTH` or `PW_AUTH=proxy`, and in development; a production server where nobody signs in runs none (with `PW_PUBLIC_READONLY=1`, only the queries saved in reports).
 
 ## Command line: render, test and diff
 
@@ -154,7 +168,7 @@ A test case names the report, its parameters, pushed data (`-d`-style JSON files
 `POST /api/ai/report` with `{ "prompt": "Monthly sales by region with a chart", "sample": [ …rows… ], "url"?: "https://…", "base"?: "<report id to change>" }` returns `{ definition, warnings, tries }`. Nothing is saved: review the draft, then `POST /api/reports` with `{ name, definition }`.
 
 - Claude (`claude-opus-5`, override with `PW_AI_MODEL`) writes the definition from a description of the format built from the engine's own item list. Pagewright checks it with `validate()` and a trial render on your sample rows (which never fetches anything), and sends any problems back, 3 tries in all. Refusals come back as a clear 422; the request opts in to the API's server-side fallback model.
-- Needs `ANTHROPIC_API_KEY`. In production it also needs accounts (`PW_AUTH=users`, designer role) or `PW_BASIC_AUTH`, because every draft costs money.
+- Needs `ANTHROPIC_API_KEY`. In production it also needs a sign-in (`PW_AUTH=users` with the designer role, `PW_BASIC_AUTH` or `PW_AUTH=proxy`), because every draft costs money.
 - Your sample rows are sent to the Anthropic API. Send a few representative rows, not personal data you may not share.
 
 ## Import from ActiveReports
@@ -178,7 +192,7 @@ On the home page, **Import ActiveReports file** takes an ActiveReportsJS `.rdlx-
 - **REST** (GET/POST, headers): a relative URL calls this app; `{Parameters.x}` fills values. Set `useProxy: true` to call another host through `/api/data/proxy`.
 - **GraphQL**: query and variables, with `{Parameters.x}` templating.
 - **Inline JSON** and **CSV** (inline or by URL).
-- **SQL** (SQLite, Postgres, MySQL): `{ type: 'sql', connection: 'main', query: 'select … where id = @accountId and region in (@regions)' }`. The connection comes from `PW_DB_MAIN`; a report never holds a host or a password. `@name` binds the report parameter `name` through the driver, so a value is never pasted into the SQL. A multi-value parameter becomes a list (`in (@regions)`); an empty list matches nothing (it becomes `NULL`, so `not in (@regions)` matches nothing too). Only one `SELECT` (or `WITH … SELECT`) statement runs, in a read-only transaction (SQLite: the file opened read-only), for at most 30 s and 100,000 rows. Server renders query the database directly. In the browser the viewer sends only the report id, the source name and the parameters to `/api/data/sql`, and the server runs **the query saved in that report**. A query sent with the request (a preview of unsaved work) runs only outside production. SQLite queries run on the server's main thread, so the 30 s limit does not stop them: keep SQLite for small local files.
+- **SQL** (SQLite, Postgres, MySQL): `{ type: 'sql', connection: 'main', query: 'select … where id = @accountId and region in (@regions)' }`. The connection comes from `PW_DB_MAIN`; a report never holds a host or a password. `@name` binds the report parameter `name` through the driver, so a value is never pasted into the SQL. A multi-value parameter becomes a list (`in (@regions)`); an empty list matches nothing (it becomes `NULL`, so `not in (@regions)` matches nothing too). Only one `SELECT` (or `WITH … SELECT`) statement runs, in a read-only transaction (SQLite: the file opened read-only), for at most 30 s and 100,000 rows. Server renders query the database directly. In the browser the viewer sends only the report id, the source name and the parameters to `/api/data/sql`, and the server runs **the query saved in that report**. A query sent with the request (a preview of unsaved work) runs only for a designer: one with accounts on, anyone behind `PW_BASIC_AUTH` or `PW_AUTH=proxy`, anyone in development; never on a production server where nobody signs in. The saved query runs only as a designer saved it (see [Run it](#run-it)). SQLite queries run on the server's main thread, so the 30 s limit does not stop them: keep SQLite for small local files.
 - **Pushed data**: the render API and batches can send the data in the request. It replaces the source with the same name.
 
 The sample endpoints `/api/sample/loans`, `/api/sample/loans/<account>` and `/api/sample/sales/<year>` serve fictional data.

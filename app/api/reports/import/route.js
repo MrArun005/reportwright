@@ -35,9 +35,9 @@ export async function POST(req) {
     const { definition, warnings, stats, error } = xml ? importRdl(body, { name }) : importRdlx(body, { name });
     if (error) return Response.json({ error }, { status: 400 });
     const id = await withLock('acl', async () => {
-      await canCreateIn(p, folder);
+      await canCreateIn(p, folder, definition); // an imported SQL data set: designers only
       const nid = await newId(definition.name);
-      await recordNewReport(p, nid, folder);
+      await recordNewReport(p, nid, folder, definition);
       await writeReport(nid, definition);
       return nid;
     });

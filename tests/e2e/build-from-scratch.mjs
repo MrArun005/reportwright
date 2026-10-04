@@ -11,7 +11,7 @@ p.on('pageerror', e => errs.push(e.message));
 p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
 const step = (s) => console.log('·', s);
 
-await fetch(`${BASE}/api/reports/e2e-statement`, { method: 'DELETE' });
+await fetch(`${BASE}/api/reports/e2e-statement`, { method: 'DELETE', headers: { origin: BASE } });
 step('create report');
 await p.goto(BASE);
 await p.getByLabel('New report name').fill('E2E statement');

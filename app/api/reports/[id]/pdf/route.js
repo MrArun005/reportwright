@@ -1,7 +1,7 @@
 // GET /api/reports/<id>/pdf?param=value[&format=xlsx|html|csv] — server-side render for links and quick checks (view access).
 import { safeId } from '@/server/reports.js';
 import { renderTo, baseUrl } from '@/server/renderer.js';
-import { principalOf, readReportFor } from '@/server/perms.js';
+import { principalOf, readRunnable } from '@/server/perms.js';
 import { audit } from '@/server/audit.js';
 
 export const runtime = 'nodejs';
@@ -10,7 +10,7 @@ export async function GET(req, { params }) {
   try {
     const { id } = await params;
     const principal = await principalOf(req);
-    const def = await readReportFor(principal, safeId(id), 'view');
+    const def = await readRunnable(principal, safeId(id));
     const url = new URL(req.url);
     // ?pdfa=1 gives PDF/A-2b. Signing is not offered here: this route has no API key (use /api/v1/render).
     const parameters = Object.fromEntries([...url.searchParams.entries()].filter(([k]) => k !== 'format' && k !== 'pdfa'));

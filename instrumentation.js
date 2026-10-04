@@ -1,7 +1,10 @@
 // Starts the report scheduler and the batch worker when the Node server boots, and checks the account settings.
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
-    if (process.env.PW_AUTH && process.env.PW_AUTH !== 'users') throw new Error('PW_AUTH must be "users" (or not set at all).');
+    if (process.env.PW_AUTH && !['users', 'proxy'].includes(process.env.PW_AUTH)) throw new Error('PW_AUTH must be "users" or "proxy" (or not set at all).');
+    const { openTrusted, accountsOn, publicReadonly, NO_AUTH_HELP } = await import('./src/server/session.js');
+    // production with nobody signing in fails closed (proxy.js): say so loudly at start, not only in each 401
+    if (!accountsOn() && !openTrusted()) console.warn(`[pagewright] ${publicReadonly() ? 'PW_PUBLIC_READONLY=1: anyone can open and render the saved reports; nothing can be changed.' : 'Every page and API (but /api/v1 with keys) answers 401.'} ${NO_AUTH_HELP}`);
     if (process.env.PW_AUTH === 'users') {
       const { sessionSecret } = await import('./src/server/session.js');
       sessionSecret(); // throws in production without PW_SESSION_SECRET: Next logs it and answers 500 to everything

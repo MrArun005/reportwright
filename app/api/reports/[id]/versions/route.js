@@ -1,6 +1,6 @@
 // GET: saved versions of a report. POST { version }: restore one (the current file becomes a version too). Edit access.
 import { listVersions, readReport, writeReport, safeId } from '@/server/reports.js';
-import { principalOf, checkReport } from '@/server/perms.js';
+import { principalOf, checkReport, stampDefinition } from '@/server/perms.js';
 import { audit } from '@/server/audit.js';
 import { withLock } from '@/server/storage/index.js';
 
@@ -22,7 +22,7 @@ export async function POST(req, { params }) {
     const def = await withLock('acl', async () => {
       await checkReport(p, id, 'edit');
       const d = await readReport(`${id}@${version}`);
-      if (d) await writeReport(id, d);
+      if (d) { await stampDefinition(p, id, d); await writeReport(id, d); } // whoever restores vouches for its SQL
       return d;
     });
     if (!def) return Response.json({ error: 'Version not found' }, { status: 404 });

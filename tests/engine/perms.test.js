@@ -101,6 +101,13 @@ const def = (name, body = [{ type: 'textbox', x: 0, y: 0, w: 200, h: 16, value: 
   sections: { body: { items: body } },
 });
 const P = (id) => ({ params: Promise.resolve({ id }) });
+// a report as a designer saves it: its SQL is recorded as theirs (perms.readRunnable runs no other)
+const designerSaves = async (id, d) => {
+  const { stampDefinition } = await import('../../src/server/perms.js');
+  const { writeReport } = await import('../../src/server/reports.js');
+  await stampDefinition({ kind: 'service' }, id, d);
+  await writeReport(id, d);
+};
 // a user as their API key acts (batches and schedules record the key that made them)
 const keyId = (k) => crypto.createHash('sha256').update(k).digest('hex').slice(0, 8);
 
@@ -161,10 +168,10 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     const fin = await perms.createFolder(admin, { name: 'Finance' });
     await perms.updateFolder(admin, fin.id, { inherit: false, grants: [{ to: 'group:finance', level: 'view' }, { to: 'user:alice@x.io', level: 'edit' }] });
     R.fin = fin.id;
-    await writeReport('salary', def('Salary'));
-    await writeReport('salary', def('Salary v2')); // a version in the history
+    await designerSaves('salary', def('Salary'));
+    await designerSaves('salary', def('Salary v2')); // a version in the history
     await perms.setReportAccess(admin, 'salary', { folder: fin.id });
-    await writeReport('overview', def('Overview', [{ type: 'subreport', name: 'Sub', x: 0, y: 0, w: 300, h: 40, report: 'salary' }]));
+    await designerSaves('overview', def('Overview', [{ type: 'subreport', name: 'Sub', x: 0, y: 0, w: 300, h: 40, report: 'salary' }]));
   });
 
   it('lists only what each user may view, with their level', async () => {
@@ -341,8 +348,8 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
 
   it('review: a deleted report takes its history with it; absent ids are not found everywhere', async () => {
     const { writeReport, listVersions } = await import('../../src/server/reports.js');
-    await writeReport('payroll', def('CEO salary 9,999,999'));
-    await writeReport('payroll', def('Payroll v2'));
+    await designerSaves('payroll', def('CEO salary 9,999,999'));
+    await designerSaves('payroll', def('Payroll v2'));
     await perms.setReportAccess({ kind: 'service' }, 'payroll', { folder: R.fin });
     expect((await listVersions('payroll')).length).toBe(1);
     expect((await R.one.DELETE(req('/api/reports/payroll', { who: 'admin', method: 'DELETE' }), P('payroll'))).status).toBe(200);
@@ -351,7 +358,7 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
       expect((await route(req('/api/reports/payroll/x', { who: 'admin', ...init }), P('payroll'))).status).toBe(404);
     }
     // the same name again: a new report with no old versions
-    await writeReport('payroll', def('New payroll'));
+    await designerSaves('payroll', def('New payroll'));
     expect(await listVersions('payroll')).toEqual([]);
     await R.one.DELETE(req('/api/reports/payroll', { who: 'admin', method: 'DELETE' }), P('payroll'));
   });
@@ -393,7 +400,7 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
   it('review: the check and the write are one step (a revoke in between wins)', async () => {
     const { store } = await import('../../src/server/storage/index.js');
     const { writeReport } = await import('../../src/server/reports.js');
-    await writeReport('race', def('Race'));
+    await designerSaves('race', def('Race'));
     await perms.setReportAccess({ kind: 'service' }, 'race', { grants: [{ to: 'user:bob@x.io', level: 'edit' }] });
     // someone holds the permissions lock (a revoke in progress) while bob saves
     expect(await store().lease('lock:acl', 'revoker', 30000)).toBe(true);
@@ -411,7 +418,7 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
   it('review: the check inside the lock uses the user as they are now, not as the request began', async () => {
     const { store } = await import('../../src/server/storage/index.js');
     const { writeReport } = await import('../../src/server/reports.js');
-    await writeReport('race2', def('Race 2'));
+    await designerSaves('race2', def('Race 2'));
     await perms.setReportAccess({ kind: 'service' }, 'race2', { inherit: false, grants: [{ to: 'group:editors', level: 'edit' }] });
     await users.updateUser('bob@x.io', { groups: ['Editors'] });
     try {
@@ -443,7 +450,7 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
 
   it('review: a thumbnail is checked on every request: revoked view is 404 even when one was drawn', async () => {
     const { writeReport } = await import('../../src/server/reports.js');
-    await writeReport('pic', def('Picture'));
+    await designerSaves('pic', def('Picture'));
     await perms.setReportAccess({ kind: 'service' }, 'pic', { inherit: false, grants: [{ to: 'user:dan@x.io', level: 'view' }] });
     const res = await thumbOf('dan', 'pic');
     expect(res.status).toBe(200);
@@ -457,14 +464,14 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     const { writeReport } = await import('../../src/server/reports.js');
     const { thumbsIdle } = await import('../../src/server/thumbs.js');
     const id = `two-${kind}`;
-    await writeReport(id, def('Two', [{ type: 'subreport', name: 'Sub', x: 0, y: 0, w: 300, h: 40, report: 'salary' }]));
+    await designerSaves(id, def('Two', [{ type: 'subreport', name: 'Sub', x: 0, y: 0, w: 300, h: 40, report: 'salary' }]));
     await perms.setReportAccess({ kind: 'service' }, id, { inherit: false, grants: [{ to: 'user:carol@x.io', level: 'view' }, { to: 'user:dan@x.io', level: 'view' }] });
     try {
       // carol (Finance) sees the salary subreport, dan does not: the same report, two drawings
       expect(await (await thumbOf('carol', id)).text()).toContain('Salary');
       expect(await (await thumbOf('dan', id)).text()).not.toContain('Salary');
       // queued while carol could see the subreport, drawn after she lost it: never served
-      await writeReport(id, def('Two b', [{ type: 'subreport', name: 'Sub', x: 0, y: 0, w: 300, h: 40, report: 'salary' }]));
+      await designerSaves(id, def('Two b', [{ type: 'subreport', name: 'Sub', x: 0, y: 0, w: 300, h: 40, report: 'salary' }]));
       expect((await thumb.GET(req(`/api/reports/${id}/thumb`, { who: 'carol' }), P(id))).status).toBe(202);
       await users.updateUser('carol@x.io', { groups: [] });
       await thumbsIdle();
@@ -484,7 +491,7 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
   it('review: thumbnails: content pulled from another report by a master is not served after access to it is gone', async () => {
     const { writeReport } = await import('../../src/server/reports.js');
     const id = `mst-${kind}`;
-    await writeReport(id, { ...def('Child'), master: 'salary' });
+    await designerSaves(id, { ...def('Child'), master: 'salary' });
     await perms.setReportAccess({ kind: 'service' }, id, { inherit: false, grants: [{ to: 'user:carol@x.io', level: 'view' }] });
     try {
       expect(await (await thumbOf('carol', id)).text()).toContain('Salary');
@@ -501,7 +508,7 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     const { thumbsIdle } = await import('../../src/server/thumbs.js');
     const id = `mid-${kind}`;
     const rows = Array.from({ length: 600 }, (_, i) => ({ id: i }));
-    await writeReport(id, { ...def('Mid', [
+    await designerSaves(id, { ...def('Mid', [
       { type: 'subreport', name: 'Sub', x: 0, y: 0, w: 300, h: 40, report: 'salary' },
       { type: 'table', name: 'T', dataSet: 'Rows', x: 0, y: 50, w: 500, h: 40, columns: [{ width: 500 }], detail: [{ height: 14, cells: [{ value: '=Len(Replace(Space(200000), " ", "ab"))' }] }] },
     ]), dataSources: [{ name: 'src', type: 'json', data: { rows } }], dataSets: [{ name: 'Rows', source: 'src', path: '$.rows' }] });
@@ -520,7 +527,7 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     const { thumbsIdle } = await import('../../src/server/thumbs.js');
     const id = `crash-${kind}`;
     const rows = Array.from({ length: 1500 }, (_, i) => ({ id: i }));
-    await writeReport(id, { ...def('Crash', [{ type: 'table', name: 'T', dataSet: 'Rows', x: 0, y: 0, w: 500, h: 40, columns: [{ width: 500 }], detail: [{ height: 14, cells: [{ value: '=Len(Replace(Space(200000), " ", "ab"))' }] }] }]),
+    await designerSaves(id, { ...def('Crash', [{ type: 'table', name: 'T', dataSet: 'Rows', x: 0, y: 0, w: 500, h: 40, columns: [{ width: 500 }], detail: [{ height: 14, cells: [{ value: '=Len(Replace(Space(200000), " ", "ab"))' }] }] }]),
       dataSources: [{ name: 'src', type: 'json', data: { rows } }], dataSets: [{ name: 'Rows', source: 'src', path: '$.rows' }] });
     try {
       await thumbsIdle();
@@ -544,7 +551,7 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     const keep = process.env.PW_RENDER_TIMEOUT_MS;
     process.env.PW_RENDER_TIMEOUT_MS = '1500';
     try {
-      await writeReport(id, heavy(0));
+      await designerSaves(id, heavy(0));
       await thumbsIdle();
       const g = globalThis.__pwThumbJobs;
       const before = g.seq;
@@ -554,7 +561,7 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
       expect((await thumb.GET(req(`/api/reports/${id}/thumb`, { who: 'admin' }), P(id))).status).toBe(202);
       expect(Date.now() - t0).toBeLessThan(1000); // the request does not wait for the drawing
       // five saves while it draws: the newest waits, the ones in between are never drawn
-      for (let n = 1; n <= 5; n++) { await writeReport(id, heavy(n)); expect((await thumb.GET(req(`/api/reports/${id}/thumb`, { who: 'admin' }), P(id))).status).toBe(202); }
+      for (let n = 1; n <= 5; n++) { await designerSaves(id, heavy(n)); expect((await thumb.GET(req(`/api/reports/${id}/thumb`, { who: 'admin' }), P(id))).status).toBe(202); }
       await thumbsIdle();
       clearInterval(tick);
       expect(gap).toBeLessThan(500); // the event loop kept turning
@@ -570,7 +577,7 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
   it('review: a lost folder or a folder loop gives nothing, not the top-level grants', async () => {
     const { store } = await import('../../src/server/storage/index.js');
     const { writeReport } = await import('../../src/server/reports.js');
-    await writeReport('lost', def('Lost'));
+    await designerSaves('lost', def('Lost'));
     await store().put('reportacl', 'lost', JSON.stringify({ id: 'lost', folder: 'f_gone000000', inherit: true, grants: [] }));
     expect((await R.one.GET(req('/api/reports/lost', { who: 'bob' }), P('lost'))).status).toBe(404);
     await store().put('folders', 'f_loopa00000', JSON.stringify({ id: 'f_loopa00000', name: 'A', parent: 'f_loopb00000', grants: [] }));
@@ -632,7 +639,7 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     const { createBatch, workOnce, getJob } = await import('../../src/server/jobs.js');
     const id = `long-${kind}`;
     const rows = Array.from({ length: 150 }, (_, i) => ({ id: i }));
-    await writeReport(id, { ...def('Long', [{ type: 'table', name: 'T', dataSet: 'Rows', x: 0, y: 0, w: 500, h: 40, columns: [{ width: 500 }], detail: [{ height: 14, cells: [{ value: '=Len(Replace(Space(200000), " ", "ab"))' }] }] }]),
+    await designerSaves(id, { ...def('Long', [{ type: 'table', name: 'T', dataSet: 'Rows', x: 0, y: 0, w: 500, h: 40, columns: [{ width: 500 }], detail: [{ height: 14, cells: [{ value: '=Len(Replace(Space(200000), " ", "ab"))' }] }] }]),
       dataSources: [{ name: 'src', type: 'json', data: { rows } }], dataSets: [{ name: 'Rows', source: 'src', path: '$.rows' }] });
     await perms.setReportAccess({ kind: 'service' }, id, { inherit: false, grants: [{ to: 'user:bob@x.io', level: 'view' }] });
     try {
@@ -776,7 +783,7 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
 
   it('a deleted report takes its permissions with it: a new report with the same id starts fresh', async () => {
     const { writeReport } = await import('../../src/server/reports.js');
-    await writeReport('temp', def('Temp'));
+    await designerSaves('temp', def('Temp'));
     await perms.setReportAccess({ kind: 'service' }, 'temp', { grants: [{ to: 'user:bob@x.io', level: 'manage' }] });
     expect((await R.one.DELETE(req('/api/reports/temp', { who: 'admin', method: 'DELETE' }), P('temp'))).status).toBe(200);
     expect((await perms.snapshot()).reports.has('temp')).toBe(false);

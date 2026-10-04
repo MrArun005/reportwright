@@ -27,11 +27,12 @@ export async function POST(req) {
     const p = await principalOf(req);
     const folder = folderParam(body.folder);
     const name = String(body.name || 'Untitled report').slice(0, 120);
+    const def = body.definition || (body.template === 'dashboard' ? blankDashboard(name) : blankReport(name));
     const id = await withLock('acl', async () => {
-      await canCreateIn(p, folder);
+      await canCreateIn(p, folder, def); // SQL or internal data in it: designers only
       const nid = await newId(name);
-      await recordNewReport(p, nid, folder);
-      await writeReport(nid, body.definition || (body.template === 'dashboard' ? blankDashboard(name) : blankReport(name)));
+      await recordNewReport(p, nid, folder, def);
+      await writeReport(nid, def);
       return nid;
     });
     await audit('report.create', { req, principal: p, report: id, detail: { folder, template: body.definition ? 'definition' : body.template || 'blank' } });

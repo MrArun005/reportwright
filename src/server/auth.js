@@ -1,11 +1,13 @@
 // API keys for /api/v1. Set PW_API_KEYS="key1,key2" and send "Authorization: Bearer <key>".
 // A key is a service key (it may do everything, as before), or with "email|key" it acts as that user: with
 // accounts on (PW_AUTH=users) it sees and renders only what that user may (src/server/perms.js).
-// Without keys the API answers only in development (next dev) or with PW_ALLOW_KEYLESS=1.
+// Without keys the API answers only in development (next dev) or with PW_ALLOW_KEYLESS=1; keyless in production is
+// read-only (render a saved template, list them): no definitions or data in the request, no signing, no batches or
+// schedules. A keyless write from a browser must come from this site's pages (a no-key request carries no secret).
 // (A Host-header check is not safe: any client can send "Host: localhost".)
 import crypto from 'node:crypto';
-import { accountsOn } from './session.js';
-import { userPrincipal, OPEN } from './perms.js';
+import { accountsOn, sameOrigin } from './session.js';
+import { userPrincipal, OPEN, PUBLIC } from './perms.js';
 import { audit } from './audit.js';
 
 /** [{ key, email|null }] */
@@ -29,7 +31,15 @@ export async function apiPrincipal(req) {
   const list = keys();
   if (!list.length) {
     // with accounts on there is no keyless API: it would let anyone render every report
-    if (!accountsOn() && (process.env.NODE_ENV !== 'production' || process.env.PW_ALLOW_KEYLESS === '1')) return { principal: OPEN };
+    if (!accountsOn() && (process.env.NODE_ENV !== 'production' || process.env.PW_ALLOW_KEYLESS === '1')) {
+      const { pathname } = new URL(req.url);
+      const write = !['GET', 'HEAD'].includes(req.method.toUpperCase());
+      // another site's page may post here (a form, or fetch with text/plain): it must not use the keyless API
+      if (write && req.headers.get('origin') && !sameOrigin(req)) return { res: Response.json({ error: 'A keyless API call from another site is refused (Origin check). Set PW_API_KEYS.' }, { status: 403 }) };
+      if (process.env.NODE_ENV !== 'production') return { principal: OPEN };
+      if (write && pathname !== '/api/v1/render') return { res: Response.json({ error: 'The keyless API is read-only in production: set PW_API_KEYS to make batches and schedules.' }, { status: 401 }) };
+      return { principal: PUBLIC };
+    }
     return { res: Response.json({ error: 'The API is off: set PW_API_KEYS on the server' }, { status: 401 }) };
   }
   const h = req.headers.get('authorization') || '';
@@ -44,8 +54,7 @@ export async function apiPrincipal(req) {
   const key = keyId(hit.key);
   /** @type {import('./perms.js').Principal} */
   let principal;
-  if (!hit.email) principal = { kind: 'service', key };
-  else if (!accountsOn()) principal = OPEN;
+  if (!hit.email || !accountsOn()) principal = { kind: 'service', key }; // with accounts off a user's key has no user to act as
   else {
     const p = await userPrincipal(hit.email);
     if (p.kind !== 'user') {

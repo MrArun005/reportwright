@@ -3,7 +3,7 @@
 // placeholder and Retry-After, and the browser asks again.
 import { safeId } from '@/server/reports.js';
 import { baseUrl } from '@/server/renderer.js';
-import { principalOf, readReportFor } from '@/server/perms.js';
+import { principalOf, readRunnable } from '@/server/perms.js';
 import { thumbnail } from '@/server/thumbs.js';
 import { audit } from '@/server/audit.js';
 
@@ -14,7 +14,7 @@ export async function GET(req, { params }) {
   try {
     const id = safeId((await params).id);
     const principal = await principalOf(req);
-    const def = await readReportFor(principal, id, 'view');
+    const def = await readRunnable(principal, id); // its SQL runs here too
     const t = await thumbnail(id, def, principal, baseUrl(req));
     if (t.pending) return new Response(PLACEHOLDER, { status: 202, headers: { 'content-type': 'image/svg+xml', 'cache-control': 'no-store', 'retry-after': '1', 'x-pagewright-pending': '1' } });
     if (t.error) return Response.json({ error: t.error }, { status: t.status || 500 });

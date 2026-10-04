@@ -24,16 +24,16 @@ async function pdfFonts(buf) {
 }
 
 // start clean: no fonts from an earlier run with these families
-for (const f of await (await fetch(`${BASE}/api/fonts`)).json()) if (['E2E Brand', 'Poppins', 'E2E Plex'].includes(f.family)) await fetch(`${BASE}/api/fonts/${f.id}`, { method: 'DELETE' });
-await fetch(`${BASE}/api/reports/e2e-fonts`, { method: 'DELETE' });
+for (const f of await (await fetch(`${BASE}/api/fonts`)).json()) if (['E2E Brand', 'Poppins', 'E2E Plex'].includes(f.family)) await fetch(`${BASE}/api/fonts/${f.id}`, { method: 'DELETE', headers: { origin: BASE } });
+await fetch(`${BASE}/api/reports/e2e-fonts`, { method: 'DELETE', headers: { origin: BASE } });
 
 step('the API refuses a file that is not a font');
-let r = await fetch(`${BASE}/api/fonts?family=Nope`, { method: 'POST', body: Buffer.from('%PDF-1.7 not a font') });
+let r = await fetch(`${BASE}/api/fonts?family=Nope`, { method: 'POST', headers: { origin: BASE }, body: Buffer.from('%PDF-1.7 not a font') });
 assert.equal(r.status, 415);
 assert.match((await r.json()).error, /not a font file/);
 
 step('the API takes a WOFF2 as the raw body');
-r = await fetch(`${BASE}/api/fonts?family=E2E%20Plex`, { method: 'POST', body: fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'public', 'fonts', 'ui', 'ibm-plex-sans-latin-400-normal.woff2')) });
+r = await fetch(`${BASE}/api/fonts?family=E2E%20Plex`, { method: 'POST', headers: { origin: BASE }, body: fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'public', 'fonts', 'ui', 'ibm-plex-sans-latin-400-normal.woff2')) });
 assert.equal(r.status, 201);
 const plex = await r.json();
 assert.equal(plex.family, 'E2E Plex');
@@ -97,7 +97,7 @@ for (const [file, weight] of [['Poppins-Regular.ttf', 400], ['Poppins-SemiBold.t
   form.set('file', new Blob([fs.readFileSync(path.join(FIX, file))]), file);
   form.set('family', 'Poppins');
   form.set('weight', String(weight));
-  r = await fetch(`${BASE}/api/fonts`, { method: 'POST', body: form });
+  r = await fetch(`${BASE}/api/fonts`, { method: 'POST', headers: { origin: BASE }, body: form });
   assert.equal(r.status, 201, await r.clone().text());
 }
 r = await fetch(`${BASE}/api/reports/loan-statement-hindi/pdf`);
@@ -111,7 +111,7 @@ await p.waitForFunction(() => [...document.querySelectorAll('.vpage text')].some
 if (process.env.SHOT) await p.locator('.vpage').first().screenshot({ path: process.env.SHOT });
 
 await b.close();
-await fetch(`${BASE}/api/reports/e2e-fonts`, { method: 'DELETE' });
-for (const f of await (await fetch(`${BASE}/api/fonts`)).json()) if (['E2E Brand', 'E2E Plex'].includes(f.family) || (f.family === 'Poppins' && !process.env.KEEP_FONTS)) await fetch(`${BASE}/api/fonts/${f.id}`, { method: 'DELETE' });
+await fetch(`${BASE}/api/reports/e2e-fonts`, { method: 'DELETE', headers: { origin: BASE } });
+for (const f of await (await fetch(`${BASE}/api/fonts`)).json()) if (['E2E Brand', 'E2E Plex'].includes(f.family) || (f.family === 'Poppins' && !process.env.KEEP_FONTS)) await fetch(`${BASE}/api/fonts/${f.id}`, { method: 'DELETE', headers: { origin: BASE } });
 assert.deepEqual(errs, []);
 console.log('PASS fonts');

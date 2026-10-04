@@ -13,7 +13,8 @@
 // view: open, render, export, run its saved SQL. edit: save, restore, version history. manage: delete, move, share.
 import crypto from 'node:crypto';
 import { store } from './storage/index.js';
-import { accountsOn, currentUser } from './session.js';
+import { accountsOn, currentUser, openTrusted, publicReadonly, NO_AUTH_HELP } from './session.js';
+import { internalHosts } from './safeFetch.js';
 import { normEmail, GROUP, getUser } from './users.js';
 import { readReport } from './reports.js';
 
@@ -21,13 +22,17 @@ export const LEVELS = /** @type {const} */ (['view', 'edit', 'manage']);
 const RANK = { none: 0, view: 1, edit: 2, manage: 3 };
 /** @typedef {'none'|'view'|'edit'|'manage'} Level */
 /**
- * @typedef {{ kind: 'open' } | { kind: 'service', key?: string } | { kind: 'nobody' } | { kind: 'anon' } |
+ * @typedef {{ kind: 'open' } | { kind: 'service', key?: string } | { kind: 'nobody' } | { kind: 'anon' } | { kind: 'public' } |
  *   { kind: 'user', email: string, role: 'viewer'|'designer'|'admin', groups: string[], viaKey?: string }} Principal
- * open: accounts are off (no identity: nothing is enforced). service: an API key that is not tied to a user.
+ * open: accounts are off and the server trusts whoever reaches it (openTrusted: next dev, PW_BASIC_AUTH, PW_AUTH=proxy);
+ * nothing is enforced. Never in production without one of those: there it is nobody (vet).
+ * public: accounts are off, production, nobody signs in, PW_PUBLIC_READONLY=1: views every report, changes nothing.
+ * service: an API key that is not tied to a user.
  * nobody: no access at all (the server's own internal pass, or a caller that forgot to say who it is).
  * anon: not signed in (only embed reads reach a route this way).
  */
 export const OPEN = Object.freeze({ kind: 'open' });
+export const PUBLIC = Object.freeze({ kind: 'public' });
 export const NOBODY = Object.freeze({ kind: 'nobody' });
 export const DEFAULT_ROOT = Object.freeze([{ to: 'group:everyone', level: 'manage' }]);
 const fail = (msg, status) => Object.assign(new Error(msg), { status });
@@ -37,7 +42,7 @@ export const principalId = (p) => (!p ? 'nobody' : p.kind === 'user' ? `user:${p
 
 /** The principal of a request to a page or a route (not /api/v1: see auth.js). @param {Request} req @returns {Promise<Principal>} */
 export async function principalOf(req) {
-  if (!accountsOn()) return OPEN;
+  if (!accountsOn()) return openTrusted() ? OPEN : publicReadonly() ? PUBLIC : NOBODY; // production with no sign-in: fail closed
   const u = await currentUser(req);
   if (!u) return { kind: 'anon' };
   if (u.internal) return NOBODY; // a report must never read another report's definition through a data source URL
@@ -47,10 +52,12 @@ export async function principalOf(req) {
 /** For server pages: the principal of the request whose Cookie header this is. @param {string} cookie */
 export const principalFromCookie = (cookie) => principalOf(new Request('http://pagewright.local/', { headers: { cookie: cookie || '' } }));
 
-/** The ids (first 8 hex of the SHA-256) of the service keys in PW_API_KEYS now. */
+/** The ids (first 8 hex of the SHA-256) of the service keys in PW_API_KEYS now. With accounts off a user's key
+ *  ("email|key") is a service key too: there are no users to act as. */
 function serviceKeyIds() {
-  return new Set((process.env.PW_API_KEYS || '').split(',').map(x => x.trim()).filter(x => x && !(x.indexOf('|') > 0 && x.slice(0, x.indexOf('|')).includes('@')))
-    .map(k => crypto.createHash('sha256').update(k).digest('hex').slice(0, 8)));
+  const isUserKey = (x) => x.indexOf('|') > 0 && x.slice(0, x.indexOf('|')).includes('@');
+  return new Set((process.env.PW_API_KEYS || '').split(',').map(x => x.trim()).filter(x => x && (!accountsOn() || !isUserKey(x)))
+    .map(k => crypto.createHash('sha256').update(isUserKey(k) ? k.slice(k.indexOf('|') + 1).trim() : k).digest('hex').slice(0, 8)));
 }
 
 /** A user principal by email, read from storage now (schedules and jobs run later as their owner). */
@@ -69,7 +76,8 @@ export async function userPrincipal(email) {
  */
 export function vet(p) {
   if (!p || typeof p !== 'object') return defaultPrincipal();
-  if (p.kind === 'open') return accountsOn() ? NOBODY : OPEN;
+  if (p.kind === 'open') return openTrusted() ? OPEN : NOBODY;
+  if (p.kind === 'public') return accountsOn() ? NOBODY : PUBLIC; // issued only by principalOf (PW_PUBLIC_READONLY) and the keyless API in production
   if (p.kind === 'nobody' || p.kind === 'anon') return p;
   if (p.kind === 'service') return p.key === undefined || (typeof p.key === 'string' && serviceKeyIds().has(p.key)) ? p : NOBODY;
   if (p.kind === 'user') return typeof p.email === 'string' && ['viewer', 'designer', 'admin'].includes(p.role) && Array.isArray(p.groups) && p.groups.every(g => typeof g === 'string') ? p : NOBODY;
@@ -100,17 +108,20 @@ function userKeyIds(email) {
  * @param {string} id @param {string} [viaKey] @returns {Promise<Principal>}
  */
 export async function principalFromId(id, viaKey) {
-  if (String(id).startsWith('user:') && accountsOn()) {
+  id = String(id);
+  if (id.startsWith('user:') && accountsOn()) {
     // only API keys make schedules and batches: a user's record with no key id is from before keys were recorded
     if (!viaKey) return NOBODY;
-    const p = await userPrincipal(String(id).slice(5));
+    const p = await userPrincipal(id.slice(5));
     return p.kind === 'user' && userKeyIds(p.email).has(String(viaKey)) ? { ...p, viaKey: String(viaKey) } : NOBODY;
   }
-  if (!accountsOn() && !String(id).startsWith('user:')) return OPEN;
-  if (String(id).startsWith('service:')) return serviceKeyIds().has(String(id).slice(8)) ? { kind: 'service', key: String(id).slice(8) } : NOBODY; // a removed key's schedules stop
+  if (id.startsWith('service:') && serviceKeyIds().has(id.slice(8))) return { kind: 'service', key: id.slice(8) };
   if (id === 'service') return { kind: 'service' };
-  if (String(id).startsWith('user:')) return accountsOn() ? userPrincipal(String(id).slice(5)) : OPEN;
-  return id === 'open' ? (accountsOn() ? NOBODY : OPEN) : NOBODY;
+  if (id === 'public') return vet(PUBLIC);
+  // with accounts off, records of users, removed keys and the open server run as the open server (as before), and
+  // only while it is trusted: in production with no sign-in they are no one's
+  if (!accountsOn() && (id === 'open' || id.startsWith('user:') || id.startsWith('service:'))) return vet(OPEN);
+  return NOBODY; // a removed key's schedules stop
 }
 
 /* ---------------- the data ---------------- */
@@ -182,6 +193,7 @@ const rev = () => crypto.randomBytes(8).toString('hex');
 export function reportLevel(s, p, id) {
   p = vet(p);
   if (isAll(p)) return 'manage';
+  if (p.kind === 'public') return 'view';
   const names = namesOf(p);
   const r = s.reports.get(id);
   let n = best(r?.grants || [], names);
@@ -193,6 +205,7 @@ export function reportLevel(s, p, id) {
 export function folderLevel(s, p, id) {
   p = vet(p);
   if (isAll(p)) return 'manage';
+  if (p.kind === 'public') return 'view';
   const names = namesOf(p);
   const n = !id || id === 'root' ? best(s.root, names) : chain(s, id, names);
   return levelName(Math.min(n, ceiling(p)));
@@ -215,6 +228,7 @@ export async function checkReport(p, ref, need = 'view') {
   p = await asNow(p);
   if (p.kind === 'open') return 'manage';
   const lvl = reportLevel(await snapshot(), p, id);
+  if (p.kind === 'nobody' && !accountsOn()) throw fail(NO_AUTH_HELP, 401); // production with no sign-in
   if (!atLeast(lvl, 'view')) throw fail('Report not found', 404);
   if (!atLeast(lvl, need)) throw fail(`You cannot ${need === 'edit' ? 'change' : 'manage'} this report.`, 403);
   return lvl;
@@ -231,8 +245,88 @@ export async function readReportFor(p, ref, need = 'view') {
   return def;
 }
 
-/** The principal a server-side render runs as when the caller did not say: nobody with accounts on (fail closed). */
-export const defaultPrincipal = () => (accountsOn() ? NOBODY : OPEN);
+/** The principal a server-side render runs as when the caller did not say: nobody with accounts on, or in production
+ *  with no sign-in (fail closed). */
+export const defaultPrincipal = () => vet(OPEN);
+
+/**
+ * Whether a principal may do what a designer does: store a definition with server-side data (SQL on a server connection,
+ * a fetch to an internal host), send a definition or data with a render, run SQL from the request, change fonts.
+ * Designers and admins, service keys, and the open server where it is trusted. Never a viewer, anonymous or public.
+ * @param {Principal} p
+ */
+export function canDesign(p) {
+  p = vet(p);
+  return p.kind === 'open' || p.kind === 'service' || (p.kind === 'user' && p.role !== 'viewer');
+}
+
+/* ---------------- server-side data in stored definitions ---------------- */
+
+const FETCHED = ['rest', 'csv', 'graphql'];
+/**
+ * The data sources of a definition that the server runs with its own reach: SQL on a server connection, and fetches
+ * that may reach a host in PW_INTERNAL_HOSTS (an absolute URL to one, or a URL built by an expression: it could be
+ * anything). A relative URL is this server (its own checks apply); useProxy goes through /api/data/proxy, which
+ * reaches public PW_PROXY_ALLOW hosts only. Inline json and csv data are not server data.
+ * @param {any} def @returns {any[]}
+ */
+export function serverSources(def) {
+  const internal = internalHosts();
+  const reaches = (src) => {
+    if (!internal.length || src.useProxy || (src.type === 'csv' && src.data)) return false;
+    const u = String(src.url ?? '').trim();
+    if (/^\/(?![/\\])/.test(u)) return false; // a path: this server
+    try { return internal.includes(new URL(u).hostname.toLowerCase().replace(/^\[|\]$/g, '')); } catch { return true; }
+  };
+  return (Array.isArray(def?.dataSources) ? def.dataSources : []).filter(s => s && typeof s === 'object' && (s.type === 'sql' || (FETCHED.includes(s.type) && reaches(s))));
+}
+const sourcesHash = (list) => crypto.createHash('sha256').update(JSON.stringify(list)).digest('hex');
+const KEEP_STAMPS = 60; // a little over the versions a report keeps (reports.js): an old version keeps running
+
+/** Refuses (403) a definition with server-side data from a principal who may not store one. @param {Principal} p @param {any} def */
+export function assertMayStore(p, def) {
+  const n = serverSources(def).length;
+  if (n && !canDesign(p)) throw fail(vet(p).kind === 'nobody' && !accountsOn() ? NO_AUTH_HELP
+    : 'Only a designer can save a report with SQL, or with data from an internal host (PW_INTERNAL_HOSTS).', 403);
+}
+
+/**
+ * After the permission checks, before the write: record that `p` (who may) stored this definition's server-side data.
+ * The record is the hash of those sources in the report's access record (kept apart from the definition, so a
+ * definition cannot vouch for itself); readRunnable runs server-side data only when its hash is recorded.
+ * @param {Principal} p @param {string} id @param {any} def
+ */
+export async function stampDefinition(p, id, def) {
+  assertMayStore(p, def);
+  const src = serverSources(def);
+  if (!src.length) return;
+  const text = await store().get('reportacl', id);
+  const rec = text ? JSON.parse(text) : { id, folder: null, inherit: true, grants: [] };
+  const h = sourcesHash(src);
+  const data = Array.isArray(rec.data) ? rec.data : [];
+  if (data[0] === h) return;
+  await store().put('reportacl', id, JSON.stringify({ ...rec, data: [h, ...data.filter(x => x !== h)].slice(0, KEEP_STAMPS), rev: rev() }));
+}
+
+/**
+ * A report's definition for running it on the server (render, saved SQL, thumbnail), when the principal may view it:
+ * its server-side data must be as someone allowed stored it (stampDefinition). A definition stored any other way
+ * (changed outside Pagewright, or saved while an open production server let anyone save) does not run its SQL or
+ * internal fetches until a designer saves it again: the stored definition cannot raise what its author could do.
+ * @param {Principal} p @param {string} ref "id" or "id@version"
+ */
+export async function readRunnable(p, ref) {
+  const def = await readReportFor(p, ref, 'view');
+  const src = serverSources(def);
+  if (!src.length) return def;
+  const [id] = String(ref).split('@');
+  const text = await store().get('reportacl', id);
+  const data = text ? JSON.parse(text).data : null;
+  if (!Array.isArray(data) || !data.includes(sourcesHash(src))) {
+    throw fail(`The report "${id}" has SQL or internal data sources that no designer saved on this server. A designer must open it and save it again.`, 403);
+  }
+  return def;
+}
 
 /**
  * Reports a principal may view, each with its level and folder (the list from reports.js, filtered).
@@ -377,22 +471,26 @@ export async function setReportAccess(p, id, patch) {
 }
 
 /**
- * A new report: it goes in `folder` (edit there needed) and its creator manages it.
- * @param {Principal} p @param {string|null} folder
+ * A new report: it goes in `folder` (edit there needed) and its creator manages it. With `def`: it may hold server-side
+ * data only when `p` may store it (assertMayStore).
+ * @param {Principal} p @param {string|null} folder @param {any} [def]
  */
-export async function canCreateIn(p, folder) {
+export async function canCreateIn(p, folder, def) {
   p = await asNow(p);
+  if (p.kind === 'nobody' && !accountsOn()) throw fail(NO_AUTH_HELP, 401); // production with no sign-in
+  assertMayStore(p, def);
   if (p.kind === 'open') return;
   const s = await snapshot();
   if (folder && !s.folders.has(folder)) throw fail('No such folder.', 404);
   if (!atLeast(folderLevel(s, p, folder || null), 'edit')) throw fail('You cannot add reports here.', 403);
 }
-/** @param {Principal} p @param {string} id @param {string|null} folder */
-export async function recordNewReport(p, id, folder) {
+/** Its access record (and the stamp of its server-side data, stampDefinition). @param {Principal} p @param {string} id @param {string|null} folder @param {any} [def] */
+export async function recordNewReport(p, id, folder, def) {
   await store().removeVersions(id); // a new report starts with no history, whatever an older one with this id left
   const grants = p.kind === 'user' ? [{ to: `user:${p.email}`, level: 'manage' }] : [];
-  if (!folder && !grants.length) { await store().remove('reportacl', id); return; } // a stale record of an older report with this id
-  await store().put('reportacl', id, JSON.stringify({ id, folder: folder || null, inherit: true, grants, rev: rev() }));
+  await store().remove('reportacl', id); // a stale record of an older report with this id
+  if (folder || grants.length) await store().put('reportacl', id, JSON.stringify({ id, folder: folder || null, inherit: true, grants, rev: rev() }));
+  if (def) await stampDefinition(p, id, def);
 }
 /** @param {string} id */
 export const forgetReport = (id) => store().remove('reportacl', id);

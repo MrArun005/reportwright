@@ -12,7 +12,7 @@ const definition = {
     detail: [{ height: 16, cells: [{ value: '=Fields.n' }, { value: '=Fields.name' }, { value: '=Fields.amt', style: { format: 'N2' } }] }],
     footer: [{ height: 18, cells: [{ value: 'Total' }, null, { value: '=Sum(Fields.amt)', style: { format: 'N2' } }] }] }] } },
 };
-const r = await fetch(`${BASE}/api/reports`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'e2e progressive', definition }) });
+const r = await fetch(`${BASE}/api/reports`, { method: 'POST', headers: { 'content-type': 'application/json', origin: BASE }, body: JSON.stringify({ name: 'e2e progressive', definition }) });
 assert.equal(r.status, 201);
 const { id } = await r.json();
 
@@ -41,6 +41,6 @@ assert.ok(t.includes('Total'), 'the last page shows the total');
 assert.ok(await p.locator('[data-page="1"] svg').count() === 0, 'page 1 is released after the jump');
 
 await b.close();
-await fetch(`${BASE}/api/reports/${id}`, { method: 'DELETE' });
+await fetch(`${BASE}/api/reports/${id}`, { method: 'DELETE', headers: { origin: BASE } });
 assert.deepEqual(errs, []);
 console.log('PASS progressive viewer');

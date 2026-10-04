@@ -9,7 +9,7 @@ import { exportCsv } from '@/exporters/csv.js';
 import { exportXlsx } from '@/exporters/xlsx.js';
 import { exportDocx } from '@/exporters/docx.js';
 import { createSubsetter } from '@/exporters/subset.js';
-import { readReportFor, defaultPrincipal, vet } from './perms.js';
+import { readRunnable, defaultPrincipal, vet, canDesign } from './perms.js';
 import { serverFetch } from './safeFetch.js';
 import { pdfSigner } from './sign.js';
 import { runSql } from './sql.js';
@@ -55,16 +55,17 @@ export function baseUrl(req) {
 
 /**
  * Resolve a template reference: "id", "id@version", or an inline definition object, as `principal` may.
- * An inline definition can name any SQL connection and any subreport, so it needs a designer (or a service key).
+ * An inline definition can name any SQL connection and any subreport, so it needs a designer (or a service key). A saved
+ * one runs its server-side data only as a designer stored it (readRunnable).
  * @param {any} template @param {import('./perms.js').Principal} [principal]
  */
 export async function loadTemplate(template, principal = defaultPrincipal()) {
   principal = vet(principal);
   if (template && typeof template === 'object') {
-    if (principal.kind === 'user' ? principal.role === 'viewer' : !['open', 'service'].includes(principal.kind)) throw Object.assign(new Error('Only a designer can render a definition sent in the request. Render a saved template by its id.'), { status: 403 });
+    if (!canDesign(principal)) throw Object.assign(new Error('Only a designer can render a definition sent in the request. Render a saved template by its id.'), { status: 403 });
     return template;
   }
-  try { return await readReportFor(principal, String(template || '')); }
+  try { return await readRunnable(principal, String(template || '')); }
   catch (e) { throw e.status === 404 ? Object.assign(new Error(`Template "${template}" not found`), { status: 404 }) : e; }
 }
 
@@ -84,13 +85,14 @@ export async function renderTo(def, opt = {}) {
   if (!FORMATS[format]) throw Object.assign(new Error(`Unknown format "${format}". Use pdf, xlsx, docx, html, csv or json.`), { status: 400 });
   let d = def;
   // pushed data replaces the report's own sources: a render of made-up rows under the report's name (and signature)
-  if (opt.data && opt.principal?.kind === 'user' && opt.principal.role === 'viewer') throw Object.assign(new Error('Only a designer can send data for a render. Render the report with its own data.'), { status: 403 });
+  if (opt.data && opt.principal && !canDesign(opt.principal)) throw Object.assign(new Error('Only a designer can send data for a render. Render the report with its own data.'), { status: 403 });
   if (opt.data && typeof opt.data === 'object') {
     d = { ...def, dataSources: (def.dataSources || []).map(s => (s.name in opt.data ? { name: s.name, type: 'json', data: opt.data[s.name] } : s)) };
   }
   if ((opt.pdfa || opt.sign || opt.encrypt) && format !== 'pdf') throw Object.assign(new Error('PDF/A, signing and passwords apply to the pdf format only'), { status: 400 });
   if (opt.encrypt && opt.pdfa) throw Object.assign(new Error('A PDF/A file cannot have a password. Turn off PDF/A or the password.'), { status: 400 });
   if (opt.encrypt && opt.sign) throw Object.assign(new Error('A signed PDF cannot have a password. Turn off signing or the password.'), { status: 400 });
+  if (opt.sign && opt.principal && vet(opt.principal).kind === 'public') throw Object.assign(new Error('Signing needs an API key (PW_API_KEYS).'), { status: 401 });
   const signing = opt.sign ? await pdfSigner({ name: def.name || 'Pagewright' }) : null; // fail before rendering
   const base = opt.baseUrl || baseUrl();
   const fetch = serverFetch(opt.self || base);
@@ -99,8 +101,8 @@ export async function renderTo(def, opt = {}) {
     parameters: opt.parameters || {}, state: opt.state || {}, fontStore: fontStore(), baseUrl: base, fetch, timeoutMs: renderTimeoutMs(),
     sql: runSql, // SQL sources query the database directly, not through /api/data/sql
     loadReport: async (id) => {
-      try { return await readReportFor(opt.principal || defaultPrincipal(), id); }
-      catch { throw new Error(`Report "${id}" not found`); } // the same words whether it is missing or not allowed
+      try { return await readRunnable(opt.principal || defaultPrincipal(), id); }
+      catch (e) { throw e.status === 403 && /no designer saved/.test(e.message) ? e : new Error(`Report "${id}" not found`); } // the same words whether it is missing or not allowed
     },
   });
   let bytes;

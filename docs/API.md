@@ -10,7 +10,7 @@ Set `PW_API_KEYS="key1,key2"` on the server. Send one key with each request:
 Authorization: Bearer key1        (or)        x-api-key: key1
 ```
 
-In production the API refuses all requests when `PW_API_KEYS` is empty. In `next dev` it answers without a key.
+In production the API refuses all requests when `PW_API_KEYS` is empty, unless `PW_ALLOW_KEYLESS=1`: then it answers without a key **read-only** (list templates, render a saved template; no definition or `data` in the request, no `sign`, no batches or schedules: those answer 401 or 403). In `next dev` it answers without a key, but refuses a keyless write that carries another site's `Origin` (a page elsewhere cannot use your local server).
 
 A plain key is a **service key**: it may render, batch and schedule every report. With accounts on (`PW_AUTH=users`) a key written `email|key` (for example `PW_API_KEYS="svc-key,reports@acme.com|k2"`) acts as that user: it sees, renders and schedules only what that user may view (permissions below), renders a definition sent in the request only when the user is a designer, and sees only the batches and schedules made with that same key. A disabled or deleted user's key stops working. Batches and schedules remember the key that made them: once a key is out of `PW_API_KEYS` (a service key or a user's), what it scheduled or queued no longer runs. Every call is in the audit log under the key's id (the first 8 hex of its SHA-256), never the key.
 
@@ -164,7 +164,14 @@ Cron supports `*`, lists `1,15`, ranges `1-5` and steps `*/15`. Names such as `M
 | `POST /api/reports/import?name=…&folder=…` | Import a report file (at most 5 MB): ActiveReportsJS `.rdlx-json` as JSON, or an SSRS `.rdl` / `.rdlc` sent as `application/xml`. `201 { id, warnings, stats }`; `400 { error }` when the file is not a report |
 | `POST /api/audit/export` | `{ report, format }`: the viewer reports an export it made in the browser (logged as `client: true`) |
 
-These routes use the app's sign-in (`PW_AUTH=users`, or the shared `PW_BASIC_AUTH`), not API keys.
+These routes use the app's sign-in (`PW_AUTH=users`, the shared `PW_BASIC_AUTH`, or `PW_AUTH=proxy` behind a reverse proxy that signs people in), not API keys. In production with none of them they answer **401** with how to set one up, or, with `PW_PUBLIC_READONLY=1`, allow only what a viewer does (read and render saved reports, run their saved queries). Every write must come from a Pagewright page in every mode: an `Origin` (or `Referer`) naming this server, else **403**.
+
+Saving, creating, importing or restoring a report whose data sources include SQL, or a fetch that may reach a host in `PW_INTERNAL_HOSTS`, needs a designer (or admin) in every mode; others get **403**. The server records a fingerprint of those sources with each such save. When a report runs on the server (`/api/data/sql` with `{ report, source }`, `/pdf`, `/thumb`, `/api/v1/render`, batches, schedules, subreports), its SQL and internal fetches run only if their fingerprint was recorded: a definition changed outside Pagewright answers **403** (`… no designer saved on this server. A designer must open it and save it again.`) until a designer saves it.
+
+| Route | Who may call it with accounts off |
+|---|---|
+| `POST /api/data/sql` `{ connection, query }` (unsaved SQL) | Development, `PW_BASIC_AUTH`, `PW_AUTH=proxy`. Never in production with no sign-in. With accounts on: designers and admins. |
+| `POST /api/data/sql/test`, `GET /api/data/sql/connections`, `POST /api/fonts`, `DELETE /api/fonts/<id>`, `POST /api/ai/report` | The same (designers with accounts on). |
 
 ### Permissions
 

@@ -2,7 +2,7 @@
 // A report the caller may not view is "not found" whatever the method.
 import { readReport, writeReport, deleteReport, safeId, readDefinition } from '@/server/reports.js';
 import { validate } from '@/engine/schema/validate.js';
-import { principalOf, readReportFor, checkReport, canCreateIn, recordNewReport, forgetReport } from '@/server/perms.js';
+import { principalOf, readReportFor, checkReport, canCreateIn, recordNewReport, forgetReport, stampDefinition } from '@/server/perms.js';
 import { audit } from '@/server/audit.js';
 import { withLock } from '@/server/storage/index.js';
 
@@ -32,7 +32,8 @@ export async function PUT(req, { params }) {
       // a new id where the user may not create answers as a hidden report does (the id does not leak)
       if (fresh) await canCreateIn(p, null).catch((e) => { throw e.status === 403 ? Object.assign(new Error('Report not found'), { status: 404 }) : e; });
       else await checkReport(p, id, 'edit');
-      if (fresh) await recordNewReport(p, id, null);
+      // SQL or internal data in it: designers only, and recorded so that it runs (readRunnable)
+      if (fresh) await recordNewReport(p, id, null, def); else await stampDefinition(p, id, def);
       // Save even with errors: the designer may hold work in progress.
       await writeReport(id, def);
       return fresh;

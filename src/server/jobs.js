@@ -14,7 +14,7 @@ import { serverFetch, checkTarget } from './safeFetch.js';
 import { jsonPath } from '@/engine/data/index.js';
 import { evalValue } from '@/engine/expr/evaluate.js';
 import { store } from './storage/index.js';
-import { principalId, principalFromId, defaultPrincipal, vet } from './perms.js';
+import { principalId, principalFromId, defaultPrincipal, vet, canDesign } from './perms.js';
 
 const DATA = path.join(process.cwd(), 'data');
 const JOBS = path.join(DATA, 'jobs');
@@ -76,7 +76,7 @@ export async function createBatch(spec, req, principal = defaultPrincipal()) {
   await checkDelivery(spec);
   const items = await expandItems(spec, base, serverFetch(self));
   if (!items.length) throw Object.assign(new Error('The batch has no items'), { status: 400 });
-  if (principal?.kind === 'user' && principal.role === 'viewer' && items.some(i => i?.data)) throw Object.assign(new Error('Only a designer can send data for a render. Render the report with its own data.'), { status: 403 });
+  if (!canDesign(principal) && items.some(i => i?.data)) throw Object.assign(new Error('Only a designer can send data for a render. Render the report with its own data.'), { status: 403 });
   if (items.length > MAX_ITEMS) throw Object.assign(new Error(`A batch can hold at most ${MAX_ITEMS} items`), { status: 400 });
   const format = spec.format || 'pdf';
   const job = {

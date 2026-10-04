@@ -12,6 +12,17 @@ const INTERNAL_AGE = 120;
 
 export const accountsOn = () => process.env.PW_AUTH === 'users';
 
+/**
+ * With accounts off: whether the server trusts whoever reaches it (saves reports, runs SQL). Outside production
+ * (next dev) yes; in production only behind PW_BASIC_AUTH, or with PW_AUTH=proxy (a reverse proxy in front of the app
+ * signs everyone in). Production with none of them fails closed: see openGate in proxy.js.
+ */
+export const openTrusted = () => !accountsOn() && (process.env.NODE_ENV !== 'production' || !!process.env.PW_BASIC_AUTH || process.env.PW_AUTH === 'proxy');
+/** Production with nobody signing in, and PW_PUBLIC_READONLY=1: anyone may open and render the saved reports, nothing more. */
+export const publicReadonly = () => !accountsOn() && !openTrusted() && process.env.PW_PUBLIC_READONLY === '1';
+/** What a production server with no sign-in answers (and logs when it starts). */
+export const NO_AUTH_HELP = 'This Pagewright server runs in production with no sign-in, so it refuses changes and server-side data. Set PW_AUTH=users (accounts, SSO), or PW_BASIC_AUTH="user:password", or PW_AUTH=proxy when a reverse proxy in front signs people in. PW_PUBLIC_READONLY=1 lets anyone open and render the saved reports (and their saved queries), read-only.';
+
 /** PW_SESSION_SECRET; in development a random one per process (sessions end on restart). */
 export function sessionSecret() {
   const s = process.env.PW_SESSION_SECRET;
