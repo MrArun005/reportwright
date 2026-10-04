@@ -78,3 +78,23 @@ describe('exporters', () => {
     expect(doc.catalog.lookup(PDFName.of('Outlines'))).toBeTruthy();
   });
 });
+
+describe('HTML export links', () => {
+  const linked = (action, tooltip) => report([{ type: 'textbox', name: 'L', x: 0, y: 0, w: 200, h: 20, value: 'Open', action, ...(tooltip ? { tooltip } : {}) }]);
+  const html = async (def) => exportHtml(await render(def, { fontStore }), fontStore);
+  it('the href is the action URL, never the tooltip', async () => {
+    const out = await html(linked({ type: 'url', url: 'https://ok.example/a?b=1&c=2' }, 'javascript:alert(1)'));
+    expect(out).toContain('href="https://ok.example/a?b=1&amp;c=2"');
+    expect(out).not.toMatch(/href="javascript:/i);
+  });
+  it('drops links that a browser would open somewhere else or run', async () => {
+    for (const url of ['//evil.example/x', '/\\evil.example', 'javascript:alert(1)', ' javascript:alert(1)', 'java\tscript:alert(1)', 'data:text/html,x']) {
+      const out = await html(linked({ type: 'url', url }));
+      expect(out, url).not.toMatch(/<a href/);
+    }
+  });
+  it('keeps safe relative and mailto links', async () => {
+    expect(await html(linked({ type: 'url', url: '/viewer/x?y=1' }))).toContain('href="/viewer/x?y=1"');
+    expect(await html(linked({ type: 'url', url: 'mailto:a@b.example' }))).toContain('href="mailto:a@b.example"');
+  });
+});

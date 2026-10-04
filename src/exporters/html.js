@@ -31,7 +31,12 @@ export async function exportHtml(model, fontStore, opt = {}) {
   }
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const pages = model.pages.map((p, i) => `<section class="page" id="page-${i + 1}">${pageToSvg({ items: p.items.filter(it => it.t !== 'link' || it.action?.type === 'url') }, model.width, model.height)
-    .replace(/<rect class="pw-link"([^>]*?)data-action="([^"]*)"[^>]*><title>([^<]*)<\/title><\/rect>/g, (m, a, act, ttl) => `<a href="${ttl}" target="_blank" rel="noopener"><rect${a}/></a>`)}</section>`).join('\n');
+    .replace(/<rect class="pw-link"([^>]*?)data-action="([^"]*)"[^>]*>(<title>[^<]*<\/title>)?<\/rect>/g, (m, a, act, ttl = '') => {
+      // the href comes from the action, never from the hover text (a tooltip can come from data)
+      let href = null;
+      try { href = safeHref(JSON.parse(act.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')).href); } catch { /* not a link */ }
+      return href ? `<a href="${attr(href)}" target="_blank" rel="noopener"><rect${a}/>${ttl}</a>` : `<rect${a}/>`;
+    })}</section>`).join('\n');
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(opt.title || model.name || 'Report')}</title>
@@ -44,6 +49,13 @@ html{background:#e6eaee}body{margin:0;padding:24px 12px;display:flex;flex-direct
 </style></head><body>
 ${pages}
 </body></html>`;
+}
+
+const attr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+/** http(s) with //, mailto, or a path on this site; nothing a browser would read as another host or a script. */
+function safeHref(u) {
+  if (typeof u !== 'string' || /[\x00-\x20\x7f\\]/.test(u)) return null;
+  return /^https?:\/\//i.test(u) || /^mailto:/i.test(u) || /^\/(?![/\\])/.test(u) ? u : null;
 }
 
 function b64(u8) {
