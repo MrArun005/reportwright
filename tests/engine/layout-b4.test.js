@@ -269,3 +269,28 @@ describe('an item in a table cell continues on the next page', () => {
     expect(nums(out.pages[0])).toEqual([1, 2, 3, 1, 2, 3]);
   });
 });
+
+import { normalize, sectionList, secOf, findItem, isBodyKey, bodyKeyOf } from '../../src/designer/store.js';
+describe('designer store: section bands, placeholders and AI items', () => {
+  const def = () => ({
+    $schema: 'pagewright/report@1', name: 'x', page: { size: 'A4' }, master: 'm',
+    sections: {
+      pageHeader: { height: 20, items: [] },
+      body: [{ name: 'A', items: [] }, { name: 'B', pageHeader: { height: 30, items: [{ type: 'textbox', x: 0, y: 0, w: 50, h: 12, value: 'H' }] }, pageFooter: { hidden: true }, items: [] }],
+      content: [{ placeholder: 'Side', items: [{ type: 'textbox', x: 0, y: 0, w: 50, h: 12, value: 'S' }] }],
+      pageFooter: { height: 20, items: [] },
+    },
+  });
+  it('lists a section\'s own band (not a hidden one) and the named placeholders', () => {
+    const keys = sectionList(def()).map(s => s.key);
+    expect(keys).toEqual(['pageHeader', 'body', 'body:1:pageHeader', 'body:1', 'content:0', 'pageFooter']);
+    expect(secOf(def(), 'body:1:pageHeader').height).toBe(30);
+    expect([isBodyKey('body:1'), isBodyKey('body:1:pageHeader'), bodyKeyOf('body:1:pageFooter'), bodyKeyOf('body:0:pageHeader'), bodyKeyOf('pageHeader')]).toEqual([true, false, 'body:1', 'body', null]);
+  });
+  it('Ask AI: items the AI adds (no id, no name) get both when applied, everywhere', () => {
+    const d = normalize(def());
+    const h = secOf(d, 'body:1:pageHeader').items[0], s = secOf(d, 'content:0').items[0];
+    for (const it of [h, s]) { expect(it.id).toBeTruthy(); expect(it.name).toMatch(/^Textbox\d+$/); expect(findItem(d, it.id).item).toBe(it); }
+    expect(h.name).not.toBe(s.name);
+  });
+});

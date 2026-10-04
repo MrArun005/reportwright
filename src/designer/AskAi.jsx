@@ -3,7 +3,7 @@
 // The report and a trimmed copy of its loaded data go to /api/ai/report; nothing changes until Apply.
 import { reportFetch } from '@/viewer/dataFetch.js';
 import { useEffect, useState } from 'react';
-import { useDesigner, sectionList, secOf } from './store.js';
+import { useDesigner, sectionList, secOf, normalize } from './store.js';
 import { loadSample } from './DataPanel.jsx';
 import { Dialog } from './ui.jsx';
 import { render, resolveParameters } from '@/engine/index.js';
@@ -51,7 +51,9 @@ export default function AskAi({ onClose }) {
   };
   const apply = () => {
     const next = st.next;
-    useDesigner.getState().apply((d) => { for (const k of Object.keys(d)) delete d[k]; Object.assign(d, JSON.parse(JSON.stringify(next))); });
+    // the AI's items have no ids (and maybe no names): give them both now, as loading the report would, so they can be selected
+    const fixed = JSON.parse(JSON.stringify(normalize(next)));
+    useDesigner.getState().apply((d) => { for (const k of Object.keys(d)) delete d[k]; Object.assign(d, fixed); });
     onClose();
   };
   const list = (label, names) => (names.length ? <li>{label}: {names.join(', ')}</li> : null);
