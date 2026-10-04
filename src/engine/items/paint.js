@@ -30,7 +30,8 @@ export function layoutTextLines(text, st, width, m, { wrap = true } = {}) {
 export function paintBox({ x, y, w, h, st, tl, numeric = false, m, ellipsis = true }) {
   const items = [];
   if (st.backgroundColor) items.push({ t: 'rect', x, y, w, h, fill: st.backgroundColor });
-  if (st.backgroundImage) items.push({ t: 'image', x, y, w, h, src: String(st.backgroundImage), fit: st.backgroundFit || 'cover' });
+  // bytes stay bytes (String() would copy them per box): the image pass in render() converts and caps every src
+  if (st.backgroundImage) items.push({ t: 'image', x, y, w, h, src: st.backgroundImage, fit: st.backgroundFit || 'cover' });
   if (tl && tl.lines.length) {
     const { key, size, lh, pad } = tl;
     let lines = tl.lines;

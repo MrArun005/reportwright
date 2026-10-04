@@ -19,6 +19,13 @@ function num(expr, ctx, lc, who) {
  *   iconSet?: string, lower?: string, upper?: string, low?: string, high?: string}} v
  * @param {{x:number, y:number, w:number, h:number}} box
  */
+/** The first MAX_POINTS entries, cut before they are evaluated: per row in a table, a cap after the work bounds nothing. */
+function capped(list, lc, who) {
+  if (list.length <= MAX_POINTS) return list;
+  lc.warn(`${who}: ${list.length} values; only the first ${MAX_POINTS} are drawn`);
+  return list.slice(0, MAX_POINTS);
+}
+
 export function paintVisual(v, box, ctx, lc, base, who = 'Visual') {
   const out = [];
   const pad = 3;
@@ -29,7 +36,7 @@ export function paintVisual(v, box, ctx, lc, base, who = 'Visual') {
     // one point per row of the current scope (a group in a table, or the data set)
     let vals = [];
     if (v.values) {
-      try { const arr = evalValue(v.values, ctx); if (Array.isArray(arr)) vals = arr.map(Number); } catch (e) { lc.warn(`${who}: ${e.message}`); }
+      try { const arr = evalValue(v.values, ctx); if (Array.isArray(arr)) vals = capped(arr, lc, who).map(Number); } catch (e) { lc.warn(`${who}: ${e.message}`); }
     } else if (v.category) {
       // one point per category (e.g. month): aggregate the value over that category's rows
       const rows = ctx.aggRows || [];
@@ -42,15 +49,14 @@ export function paintVisual(v, box, ctx, lc, base, who = 'Visual') {
         if (!buckets.has(kk)) buckets.set(kk, []);
         buckets.get(kk).push(r);
       }
-      const keys = [...buckets.keys()].sort((a, b) => (a > b ? 1 : a < b ? -1 : 0));
+      const keys = capped([...buckets.keys()].sort((a, b) => (a > b ? 1 : a < b ? -1 : 0)), lc, who);
       vals = keys.map(k => { const rs = buckets.get(k); return num(v.value, { ...ctx, fields: rs[0], aggRows: rs, aggIndex: undefined }, lc, who); });
     } else {
-      const rows = ctx.aggRows || [];
+      const rows = capped(ctx.aggRows || [], lc, who);
       const c = { ...ctx };
       vals = rows.map(r => { c.fields = r; return num(v.value, c, lc, who); });
     }
     vals = vals.filter(n => Number.isFinite(n));
-    if (vals.length > MAX_POINTS) { lc.warn(`${who}: ${vals.length} values; only the first ${MAX_POINTS} are drawn`); vals = vals.slice(0, MAX_POINTS); }
     if (vals.length < 2) return out;
     let lo = Infinity, hi = -Infinity;
     for (const n of vals) { if (n < lo) lo = n; if (n > hi) hi = n; }
