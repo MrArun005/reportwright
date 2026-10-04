@@ -13,6 +13,7 @@ More than one AI agent is editing this repo at the same time. Read this file bef
 
 | Agent | Area | Files | Since |
 |---|---|---|---|
+| Claude Code (exports, batch 2) | Exporters, viewer export options, lazy regions/cell tags | src/exporters/*, src/viewer/exports.js, src/viewer/ReportViewer.jsx (export group only), src/i18n/* (export strings), bin/pw.mjs (export flags), tests/engine/export-*.test.js, docs/EXPORTS.md; ONE-LINE additive tags in src/engine/layout.js (layoutItems: `tag`) and src/engine/index.js (band: header/footer `art`), `alt` prop in src/engine/items/index.js props; lazy `exportData` flag in src/engine/items/index.js table region/cell-tag lines (small, additive) | 2026-10-05 |
 
 ## Design decisions (shared)
 
