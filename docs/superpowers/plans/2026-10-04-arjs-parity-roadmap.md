@@ -12,19 +12,45 @@
 
 This roadmap closes the 30 "behind" and 20 "partial" rows.
 
+## Progress
+
+| Phase | State | Notes |
+|---|---|---|
+| 0. Stabilise and ship | **not started** | Added in review, see below. Do it next. |
+| 1. Text and styling | **done, 4 Oct 2026** | 35 new tests, all gates green. The code is in the `pw-drill` worktree, not committed yet. The plan file lists 12 corrections to the plan, including a wrong rotation sign in the importer. |
+| 2–9 | not started | |
+
 **Shape:** 9 phases. Each phase:
 - is its own branch,
 - has its own detailed test-first plan (`2026-10-04-pN-*.md`), written just before the phase starts so it matches the code at that point,
 - ends at a gate: all unit tests, the `pw test` snapshots, the e2e suites and a visual check,
 - then merges to `main`.
 
-Phase 1's detailed plan is written: `2026-10-04-p1-text-styling.md`.
+Phase 1's detailed plan is written and done: `2026-10-04-p1-text-styling.md` (its "Status" section lists what changed while building it).
 
-**Coordination:** another session is fixing engine bugs from the stress test in `~/Documents/pagewright-bc`. Before starting a phase, rebase on `main` and read `docs/COORDINATION.md`. Phases 1, 2 and 4 touch `src/engine/items/index.js` and `src/engine/items/paint.js`, which that work also touches.
+**Coordination:** another session was fixing engine bugs from the stress test in `~/Documents/pagewright-bc` (those bugs are now Phase 0). Before starting a phase, rebase on `main` and read `docs/COORDINATION.md`. Phases 1, 2 and 4 touch `src/engine/items/index.js` and `src/engine/items/paint.js`, which that work also touches.
 
-**Order:** by what customers hit first, and by dependency.
-- Text styling comes first because rich text and charts build on it.
-- Expressions come before tables, because pivot tables and recursive hierarchies need `Level`, `Previous` and `GroupIndex`.
+**Order.** The phase numbers stay as they are (the plan files are named after them), but they are **not** built in number order. The first draft ordered by "what customers hit first" from a feature audit; the review found that put cheap polish first and adoption blockers last. Build in this order:
+
+| Step | Phase | Why here | Estimate (one developer + agent) |
+|---|---|---|---|
+| 1 | **0. Stabilise and ship** | Nobody can adopt a repo that is not public. The stress-test bugs (blank page before a forced break, TOC out of place) are the first things a new user sees, and they touch the same files as Phases 1, 2 and 4. | 3–5 days |
+| 2 | 1. Text and styling | Done. | (done) |
+| 3 | 3. Expressions, data, parameters | Cheap, table-driven, and Phase 4 needs `Previous`, `GroupIndex`, `Level`. | 1–1.5 weeks |
+| 4 | **7a. Framework wrappers + TypeScript types (row 36 only)** | Moved up from Phase 7. A React or Angular developer evaluating us looks for `npm i @pagewright/react` and types in the first five minutes; without them the evaluation ends. | 1 week |
+| 5 | 4. Tables, pivot tables, pagination | The biggest gap (pivot tables). Needs its spec first. | 3–4 weeks |
+| 6 | 5. Charts | The second biggest gap. | 2 weeks |
+| 7 | 2. Rich text and vertical text | Builds on Phase 1's runs; fewer customers depend on it than on pivots and charts. | 1.5 weeks |
+| 8 | 6. Viewer | Print, mobile, toolbar API, languages. | 1.5–2 weeks |
+| 9 | 7b. The rest of Phase 7 | Designer API, PDF passwords, barcodes, images, TOC numbering. | 1.5 weeks |
+| 10 | 8. Reuse and authoring | Master reports, part libraries, layers. | 3 weeks |
+| — | 9. Desktop / VS Code | Deferred. | — |
+
+**Total: about 4–5 months** for one developer working with an agent, if each phase hits its estimate (they will not all). Re-estimate after Phase 3 using the real time Phase 1 took.
+
+**Let real files reorder the middle.** The importer has only **3 real `.rdlx-json` fixtures** (`tests/fixtures/rdlx/`). A feature audit says what ActiveReports *can* do; real files say what customers *use*. Collect at least 20 real reports (MESCIUS forums and samples, GitHub search for `.rdlx-json`, prospects), run them through the importer, and count the warnings by kind. If, say, "rich text is lost" tops the count, Phase 2 moves ahead of Phase 5. Re-run the count at every phase gate.
+
+**A parallel track, not a phase: distribution.** Every phase ships features nobody sees until the repo is public and documented. From Phase 3 on, one day a week: README for strangers, CONTRIBUTING, SECURITY, the docs site with the live playground (see `docs/ROADMAP.md`, week 8), and publishing `@pagewright/*` to npm once the licence and name are decided.
 
 Sizes:
 - **S** = under 1 day
@@ -34,7 +60,18 @@ Sizes:
 
 ---
 
-## Phase 1: Text and styling (S–M)
+## Phase 0: Stabilise and ship (S–M), added in review
+
+| # | Item | Delivers |
+|---|---|---|
+| 0.1 | Stress-test engine bugs (`docs/STRESS-TEST.md` in `pagewright-bc`) | Fix the blank page before a forced page break; the table of contents drawn out of place; `Parent.*` lost after a `[*]` spread; an empty image `src` drawing a box; no warning for an item that runs off the page; `CStr(object)`; `Format()` above 2^53. Decide the syntax-error policy (`#Error` in the viewer, fail in the designer). |
+| 0.2 | HTML export spacing in mixed Devanagari + Latin lines | Found in Phase 1: the SVG exporter centres each shaped run using the browser's advance widths, so spaces move (`गुरुवार05 मार्च  2026`). Draw shaped runs from the engine's positions: anchor at the run start and set `textLength` to the engine width. |
+| 0.3 | Merge the open branches | `pagewright-bc` (stress test, calculated-field `Lookup()` fix), `plan/arjs-parity`, `feat/p1-text-styling`. One `main`, tests green. |
+| 0.4 | Ship | Decide the licence (MIT is in the repo) and check the name; add the `license` field to `package.json`; push to GitHub; tag `v0.6`. |
+
+**Gate:** the stress-test report renders with no blank page and the TOC in place; all suites green on the merged `main`; the repo is public.
+
+## Phase 1: Text and styling (S–M): done 4 Oct 2026
 
 Plan: `2026-10-04-p1-text-styling.md`.
 
@@ -103,7 +140,7 @@ Plan: `2026-10-04-p1-text-styling.md`.
 | 29 | Print, full screen, continuous and galley views | behind | A Print button (renders the PDF in a hidden iframe and calls `print()`); full screen; `viewMode: 'single' \| 'continuous' \| 'galley'`. Galley reuses the pageless renderer. |
 | 30 | Mobile layout | behind | A compact toolbar under 640px, swipe between pages, and the side panels become sheets. |
 | 31 | Toolbar customisation API | behind | `mountViewer({toolbar: {add, remove, replace}})` plus the matching React prop. Every built-in item gets an id. |
-| 32 | UI languages | behind | Designer, home and admin strings move into the same i18n tables as the viewer. Ship en, hi, plus es, fr, de, ja, zh, pt-BR, ar (with an RTL UI). |
+| 32 | UI languages | behind | Designer, home and admin strings move into the same i18n tables as the viewer. Ship en, hi, plus es, fr, de, ja, zh, pt-BR, ar (with an RTL UI). **A native speaker reviews each language before it ships**; a machine-translated UI reads as careless. Ship fewer languages rather than unreviewed ones. |
 | 33 | Frozen header rows and columns | behind | In continuous view, the repeated header and the first N columns stay visible while scrolling. |
 | 34 | Search options | partial | Match case, whole word, and a results list with page numbers. |
 | 35 | Custom parameter panel | behind | Parameter `editor: 'slider' \| 'range' \| 'dateRange' \| 'radio' \| 'list' \| 'toggle'`, with a layout grid in the designer's parameter dialog. |
@@ -112,7 +149,7 @@ Plan: `2026-10-04-p1-text-styling.md`.
 
 | # | Audit row | Was | Delivers |
 |---|---|---|---|
-| 36 | React / Angular / Vue / Svelte components and TypeScript types | behind | `@pagewright/react`, `/vue`, `/angular`, `/svelte`: thin wrappers over `mountViewer` and a new `mountDesigner`. `.d.ts` files are generated from the JSDoc with `tsc --declaration --allowJs --emitDeclarationOnly`, plus a hand-written `report.d.ts` for the report JSON schema. |
+| 36 | React / Angular / Vue / Svelte components and TypeScript types (**built early, as step 7a; see Order**) | behind | `@pagewright/react`, `/vue`, `/angular`, `/svelte`: thin wrappers over `mountViewer` and a new `mountDesigner`. `.d.ts` files are generated from the JSDoc with `tsc --declaration --allowJs --emitDeclarationOnly`, plus a hand-written `report.d.ts` for the report JSON schema. |
 | 37 | Designer customisation API | behind | `mountDesigner(el, {onSave, onOpen, toolbox: {hide}, panels, readOnly, dataSourceTemplates})`. |
 | 38 | PDF passwords and permissions | behind | `pdf: {userPassword, ownerPassword, permissions}`, using AES-128 or AES-256 through an encryption pass (pdf-lib has no built-in encryption). Must not break PDF/A or signing; PDF/A forbids encryption, so validation rejects that combination. |
 | 39 | Barcode options | partial | Per-symbology options passed to bwip-js (QR error level, version, DataMatrix size, PDF417 columns) and caption position; the picker grows to 30+ symbologies. |
@@ -150,7 +187,7 @@ Plan: `2026-10-04-p1-text-styling.md`.
 3. **PDF encryption library (Phase 7, #38):**
    - Option A: write AES encryption on pdf-lib's object graph.
    - Option B: add a dependency (`@pdfsmaller/pdf-encrypt-lite`, MIT [verify]) or run `qpdf` server-side.
-   - **Recommendation:** A, if the security handler code stays under about 400 lines, for both browser and Node.
+   - **Recommendation (changed in review): B.** Encryption is security code where a subtle mistake (weak key derivation, a reused IV, a wrong permission bit) is invisible in tests and fatal in use. Use a maintained, reviewed implementation: `qpdf` on the server, plus a vetted library in the browser only if browser-side encryption is needed at all. Option A only with an outside review of the security handler.
 4. **Phase 9:** confirm the deferral.
 
 ## Phase gate (every phase)
@@ -164,5 +201,15 @@ PW_EMBED_ORIGINS=http://localhost:4000 npm run build
 PW_API_KEYS=test-key PW_WEBHOOK_SECRET=testsecret PW_INTERNAL_HOSTS=127.0.0.1 npx next start -p 3200   # separate terminal
 for t in smoke phase2 phase3 phase4 phase-bc galleries progressive drilldown; do BASE=http://localhost:3200 node tests/e2e/$t.mjs; done
 ```
+
+Also, at every gate:
+
+```bash
+node scripts/check-pdf-matches-model.mjs         # PDF text sits where the page model says (0 mismatches)
+for i in 1 2 3; do node scripts/perf.mjs; done   # 50k rows; compare with main: no more than ~5% slower
+```
+
+- Re-run the importer warning count over the real-file corpus (see Order) and note the top five losses in the phase's plan file.
+- Anything that reads a text item's `lines` as "one entry per visual line" must use `visualLines()` (`src/exporters/regions.js`): justified text is one run per word.
 
 Then update the audit artifact's rows for the phase (status → parity), merge to `main`, and push.

@@ -9,6 +9,8 @@ export const BASE_STYLE = {
   fontStyle: 'normal',
   color: '#1f2328',
   backgroundColor: null,
+  backgroundImage: null,  // URL or data URI (an expression is fine)
+  backgroundFit: 'cover', // cover | contain | fill
   textAlign: 'auto',      // auto = numbers right, text left
   verticalAlign: 'top',
   padding: 2,
@@ -17,6 +19,8 @@ export const BASE_STYLE = {
   borderTop: null, borderRight: null, borderBottom: null, borderLeft: null,
   format: null,
   wrap: true,
+  textDecoration: 'none', // underline | line-through | both
+  textDecorationColor: null, // the line's colour; null = the text colour
   // shapes and lines
   fill: null,
   stroke: '#1f2328',

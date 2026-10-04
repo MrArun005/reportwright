@@ -164,3 +164,23 @@ describe('PW_STORAGE', () => {
     try { expect(() => store()).toThrow(/PW_STORAGE/); } finally { delete process.env.PW_STORAGE; }
   });
 });
+
+describe('file storage leases across processes', () => {
+  it('a lease taken by one process holds for another process on the same folder (two servers, one data dir)', async () => {
+    const { execFileSync } = await import('node:child_process');
+    const fsx = await import('node:fs');
+    const osx = await import('node:os');
+    const px = await import('node:path');
+    const root = fsx.mkdtempSync(px.join(osx.tmpdir(), 'pw-lease-'));
+    const { fileStore } = await import('../../src/server/storage/file.js');
+    const s = fileStore(root);
+    expect(await s.lease('job:b_1', 'A', 5000)).toBe(true);
+    const other = (owner) => execFileSync(process.execPath, ['--input-type=module', '-e',
+      `import { fileStore } from ${JSON.stringify(px.resolve('src/server/storage/file.js'))}; console.log(await fileStore(${JSON.stringify(root)}).lease('job:b_1', '${owner}', 5000));`]).toString().trim();
+    expect(other('B')).toBe('false');
+    await s.release('job:b_1', 'A');
+    expect(other('B')).toBe('true');
+    expect(await s.lease('job:b_1', 'A', 5000)).toBe(false);
+    fsx.rmSync(root, { recursive: true, force: true });
+  });
+});

@@ -20,6 +20,46 @@
 
 ---
 
+## Status: done (4 Oct 2026)
+
+All nine tasks are implemented, test-first (12 commits in the cloud copy: one per task, a speed fix, the canvas preview, and "nothing fixed" below). It was merged with another session's concurrent edits to `evaluate.js` (RunningValue cache) and `pdf.js` (plain glyph encoding); the tests above ran on the merged files. The changed files are written into this worktree, uncommitted: commit them on a new branch with `git switch -c feat/p1-text-styling && git add -A && git commit`. Gate results on the cloud copy of `main` (d3a4b7d):
+
+- Vitest: 464 passed, 5 skipped (was 426). 38 new tests: 31 in `tests/engine/text-styling.test.js`, 2 in `tests/engine/docx.test.js`, 5 in `tests/engine/rdlx.test.js`.
+- `pw test reports`: 8 passed (new `style-showcase` snapshot).
+- Engine boundary: OK. `check-pdf-matches-model`: 2,237 lines, 0 mismatches.
+- `npm run build`: OK. E2E: smoke, phase2, phase3, phase4, phase-bc, galleries, progressive, drilldown all pass.
+- Speed: 50,000 rows in 1.21–1.26 s, against 1.23–1.33 s before (no slowdown).
+- Looked at: the showcase in the PDF, the HTML export, the viewer and the designer canvas. Word: underline, strike and justify are in `document.xml`.
+
+### Where the code differs from the plan below, and why
+
+The plan was written before the code was read line by line. These are the corrections; the task text below is updated to match.
+
+1. **Importer angle sign (Task 8, a real bug in the plan).** ActiveReports' `Angle` turns text *counter-clockwise* ("Returns the number of degrees the text is rotated counter-clockwise", ActiveReports `PageReportModel.TextBox.Angle`). Pagewright's `rotate` is clockwise, so the importer stores `rotate = (-Angle) mod 360`: `Angle 90` → `rotate 270`. The plan mapped 90 → 90, which would turn every imported label the wrong way.
+2. **Image items lost their picture under a background image (Task 3).** `paintBox` now adds the background image, so the image item's own picture must go after it. The `image` layout's `splice` index counts the background image too. Test: "an image item draws its own picture above its background image".
+3. **A second place moves items (Task 5).** `shiftLocal()` in `src/engine/items/index.js` (repeated table headers) also moves page-model items; it now moves `rotate.cy` too. Test: "a rotated box inside a list or container keeps its centre".
+4. **Justify must not stretch a line cut short with an ellipsis (Task 2).** The check is "is this the last *visible* line of a box that was cut", not `i < tl.lines.length - 1`. Test added. Two worries from the review were checked and are not problems: `wrap()` already collapses repeated spaces, and a blank line pushes its own empty line, so `end: true` lands on the right line.
+5. **Justified text in Excel, CSV, snapshots and viewer search (Task 7, not in the plan).** One run per word would have put one word per row in the Excel and CSV text dumps, one word per line in `pw test` snapshots, and broken phrase search. A shared `visualLines(item)` in `src/exporters/regions.js` joins runs on one baseline; Word, Excel, CSV, `bin/pw.mjs` snapshots and `findText()` in the viewer use it. The snapshot diff's fake lines now carry `y` so the join works there too.
+6. **PDF rotation test checks the direction (Task 5).** The plan's test only looked for a `cm` operator. The test now applies the matrix to a point and checks that 270° reads upwards and 90° downwards.
+7. **Shrink-to-fit is a binary search (Task 4).** About 5 layouts for a long text instead of up to 16.
+8. **`paintBox` was made allocation-free again.** The first version (`flatMap`, decoration regex per box) cost about 6% on the 50,000-row benchmark; a plain loop and "decorations only when set" brought it back.
+9. **The canvas previews rotation (Task 9).** The plan left rotated boxes upright on the canvas. A narrow 20 × 120 box then showed one letter per line, which is useless while designing. The canvas now turns the box with CSS, as the engine does.
+10. **Embedded background images are imported (Task 8).** `cx.images` already holds the file's embedded images, so `Source: Embedded` maps too. Only database and expression sources still warn.
+11. **Things the review worried about that are fine:** the HTML export is built from the SVG exporter, so it rotates for free; background images by URL go through the server's SSRF-guarded `fetchImage` like any image; `formatValue` already had `locale` in scope.
+12. **Nothing fixed in the code (Arun's rule: no hard-coded values).** The plan put underline and strike-through at fixed fractions of the font size (`size * 0.12`, `size * 0.28`, thickness `size / 14`). They now come from each font's own tables (`post.underlinePosition/underlineThickness`, `OS/2.yStrikeoutPosition/yStrikeoutSize`) through `TextMeasurer.decoration()`, so an uploaded font draws its lines where its designer put them; a font without the tables falls back to its descent and x-height. `textDecorationColor` sets the line colour (default: the text colour). Shrink-to-fit's 4pt floor and 0.5pt step are defaults in `SHRINK_DEFAULTS`; each text box can set `minFontSize` and `shrinkStep` in the inspector. The "is this locale English" test is one exported `english()` in `format.js`, used by `Format` and `MonthName`. Tests: "nothing fixed: …" in `text-styling.test.js`.
+13. **The Hindi loan statement does not change (Task 6).** Its `locale` is `en-IN`, so its months stay English. Set `"locale": "hi-IN"` on it if Hindi month names are wanted.
+
+### Known limits after Phase 1
+
+- Justify skips shaped and right-to-left lines (Indic, Arabic, Hebrew): they stay as aligned.
+- A rotated box never grows or splits; its link hit area stays the upright rectangle; a box at an angle other than 90°/270° can overhang its designed rectangle.
+- The canvas does not preview shrink-to-fit (it shows the text at full size); the Preview tab does.
+- Word leaves out rotation and background images; Excel and CSV ignore all of Phase 1's styling (they export data, not looks).
+- Month names come from the runtime's ICU data, so a browser and Node could in theory spell a non-English month differently.
+- Found while checking, not caused by Phase 1: in the **HTML export** a line that mixes Devanagari and Latin (`गुरुवार 05 मार्च 2026`) loses the space after the Devanagari word and gains one before the year; the PDF and the viewer are right. It comes from the SVG exporter centring each shaped run (`text-anchor="middle"`) with the browser's own advance widths. Logged for the stress-test bug list.
+
+---
+
 ## Conventions for whoever runs this plan
 
 - Work in a worktree off `main` on branch `feat/p1-text-styling`. Node 22: prefix commands with `PATH=/usr/local/bin:$PATH`. Set `TZ=Asia/Kolkata` for tests.
@@ -58,7 +98,7 @@
 - Modify: `src/engine/items/paint.js` (`paintBox`, the block that pushes the `text` item)
 - Create: `tests/engine/text-styling.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/engine/text-styling.test.js`:
 
@@ -108,12 +148,12 @@ describe('text decoration', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to make sure it fails**
+- [x] **Step 2: Run the test to make sure it fails**
 
 Run: `PATH=/usr/local/bin:$PATH TZ=Asia/Kolkata npx vitest run tests/engine/text-styling.test.js`
 Expected: FAIL. The decoration tests find 0 `line` items, and `t.deco` is undefined.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `src/engine/items/paint.js`, replace this line in `paintBox`:
 
@@ -140,19 +180,19 @@ with:
 
 Then add `textDecoration: 'none',` to `BASE_STYLE` in `src/engine/style.js`, after `wrap: true,`. That documents the key, and named styles can then reset it.
 
-- [ ] **Step 4: Run the tests to make sure they pass**
+- [x] **Step 4: Run the tests to make sure they pass**
 
 Run: `PATH=/usr/local/bin:$PATH TZ=Asia/Kolkata npx vitest run tests/engine/text-styling.test.js`
 Expected: 4 passed.
 
-- [ ] **Step 5: Run everything (snapshots must not change: no existing report sets textDecoration)**
+- [x] **Step 5: Run everything (snapshots must not change: no existing report sets textDecoration)**
 
 Run: `PATH=/usr/local/bin:$PATH TZ=Asia/Kolkata npx vitest run && node bin/pw.mjs test reports`
 Expected: all pass, and `pw test` reports `0 failed`.
 
 `reports/sales-explorer.pw.json` and its siblings set `textDecoration: 'underline'` on their drill links. Those snapshots only hold text, so they do not change, but the links now render underlined. That is intended.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/engine/items/paint.js src/engine/style.js tests/engine/text-styling.test.js
@@ -168,7 +208,7 @@ git commit -m "feat(engine): underline and strike-through (textDecoration)"
 - Modify: `src/engine/items/paint.js` (`paintBox`, the `lines.map(...)` that positions lines)
 - Test: `tests/engine/text-styling.test.js`
 
-- [ ] **Step 1: Write the failing test** (append to `tests/engine/text-styling.test.js`)
+- [x] **Step 1: Write the failing test** (append to `tests/engine/text-styling.test.js`)
 
 ```js
 describe('justify', () => {
@@ -201,12 +241,12 @@ describe('justify', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to make sure it fails**
+- [x] **Step 2: Run the test to make sure it fails**
 
 Run: `PATH=/usr/local/bin:$PATH TZ=Asia/Kolkata npx vitest run tests/engine/text-styling.test.js -t justify`
 Expected: FAIL. `rows[0]` has length 1, because lines are not split into words.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 (a) In `src/engine/text/measure.js`, `wrap()` fast path: mark the paragraph's last line. Replace the `push();` that follows the `for (let wi …)` loop (the last statement inside `for (const para …)` before its closing brace) with:
 
@@ -246,17 +286,17 @@ Complex scripts (`wrapComplex`) are not marked, and justify skips lines that hav
 
 Underlines (Task 1) now draw per word for justified lines, leaving the gaps between words plain. That matches Word's default "underline words only" look closely enough, and is accepted.
 
-- [ ] **Step 4: Run the tests to make sure they pass**
+- [x] **Step 4: Run the tests to make sure they pass**
 
 Run: `PATH=/usr/local/bin:$PATH TZ=Asia/Kolkata npx vitest run tests/engine/text-styling.test.js`
 Expected: 6 passed.
 
-- [ ] **Step 5: Run everything**
+- [x] **Step 5: Run everything**
 
 Run: `PATH=/usr/local/bin:$PATH TZ=Asia/Kolkata npx vitest run && node bin/pw.mjs test reports`
 Expected: all pass. The `end` flag is an extra property, so nothing else reads it.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/engine/text/measure.js src/engine/items/paint.js tests/engine/text-styling.test.js
@@ -273,7 +313,7 @@ git commit -m "feat(engine): justified text"
 - Modify: `src/exporters/pdf.js` (`case 'image'`)
 - Test: `tests/engine/text-styling.test.js`
 
-- [ ] **Step 1: Write the failing tests** (append)
+- [x] **Step 1: Write the failing tests** (append)
 
 ```js
 import { PDFDocument, PDFArray, PDFRawStream, decodePDFRawStream } from 'pdf-lib';
@@ -322,14 +362,14 @@ describe('PDF: cover images are clipped to their box', () => {
 
 (That data URI was generated and checked: pdf-lib embeds it as a 2×1 image.)
 
-- [ ] **Step 2: Run the tests to make sure they fail**
+- [x] **Step 2: Run the tests to make sure they fail**
 
 Run: `PATH=/usr/local/bin:$PATH TZ=Asia/Kolkata npx vitest run tests/engine/text-styling.test.js -t "background|cover"`
 Expected:
 - The background tests FAIL (no `image` item).
 - The PDF cover test FAILS (no clip before `Do`).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 (a) `src/engine/style.js` `BASE_STYLE`: add after `backgroundColor: null,`:
 
@@ -346,6 +386,8 @@ Expected:
 
 `resolveStyle` already evaluates `=expressions` and drops failures to `undefined`. An empty-string result is falsy, so no image is drawn.
 
+(b2) `src/engine/items/index.js`, `image` layout: the picture is spliced in after the background. Change the splice index to `(st.backgroundColor ? 1 : 0) + (st.backgroundImage ? 1 : 0)`, and add the test "an image item draws its own picture above its background image".
+
 (c) `src/exporters/pdf.js` `case 'image'`: replace the final `p.drawImage(img, { x, y: H - y - h, width: w, height: h });` with:
 
 ```js
@@ -357,17 +399,17 @@ Expected:
 
 `pushGraphicsState`, `rectangle`, `clip`, `endPath` and `popGraphicsState` are already imported at the top of `pdf.js`.
 
-- [ ] **Step 4: Run the tests to make sure they pass**
+- [x] **Step 4: Run the tests to make sure they pass**
 
 Run: `PATH=/usr/local/bin:$PATH TZ=Asia/Kolkata npx vitest run tests/engine/text-styling.test.js`
 Expected: 10 passed.
 
-- [ ] **Step 5: Run everything**
+- [x] **Step 5: Run everything**
 
 Run: `PATH=/usr/local/bin:$PATH TZ=Asia/Kolkata npx vitest run && node bin/pw.mjs test reports`
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/engine/style.js src/engine/items/paint.js src/exporters/pdf.js tests/engine/text-styling.test.js
@@ -382,7 +424,7 @@ git commit -m "feat(engine): background images on any box; fix(pdf): clip cover 
 - Modify: `src/engine/items/index.js` (`paintTextbox`, about line 45; the textbox `props`)
 - Test: `tests/engine/text-styling.test.js`
 
-- [ ] **Step 1: Write the failing test** (append)
+- [x] **Step 1: Write the failing test** (append)
 
 ```js
 describe('shrink to fit', () => {
@@ -412,12 +454,12 @@ describe('shrink to fit', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to make sure it fails**
+- [x] **Step 2: Run the test to make sure it fails**
 
 Run: `PATH=/usr/local/bin:$PATH TZ=Asia/Kolkata npx vitest run tests/engine/text-styling.test.js -t "shrink"`
 Expected: FAIL. The size stays 12 and the box grows.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Replace `paintTextbox` in `src/engine/items/index.js` with:
 
@@ -455,17 +497,17 @@ Add to the textbox `props` array, after the `canShrink` entry:
 
 The roadmap says "condensed text" is folded in. ActiveReportsJS's MinCondenseRate squeezes text horizontally, and shrink-to-fit is the closest output we produce. The importer (Task 8) maps both to `shrinkToFit`.
 
-- [ ] **Step 4: Run the tests to make sure they pass**
+- [x] **Step 4: Run the tests to make sure they pass**
 
 Run: `PATH=/usr/local/bin:$PATH TZ=Asia/Kolkata npx vitest run tests/engine/text-styling.test.js`
 Expected: 14 passed.
 
-- [ ] **Step 5: Run everything**
+- [x] **Step 5: Run everything**
 
 Run: `PATH=/usr/local/bin:$PATH TZ=Asia/Kolkata npx vitest run && node bin/pw.mjs test reports`
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/engine/items/index.js tests/engine/text-styling.test.js
@@ -490,7 +532,7 @@ git commit -m "feat(engine): shrink text to fit"
 - Every page-model item the box produces carries `rotate: {a, cx, cy}`, and the exporters wrap it in a rotation transform.
 - A rotated box never grows or splits across pages. Its link hit area stays the unrotated rectangle.
 
-- [ ] **Step 1: Write the failing tests** (append)
+- [x] **Step 1: Write the failing tests** (append)
 
 ```js
 import { pageToSvg } from '../../src/exporters/svg.js';
@@ -520,9 +562,16 @@ describe('rotation', () => {
     const svg = pageToSvg(out.pages[0], out.width, out.height);
     expect(svg).toMatch(/<g transform="rotate\(270 [\d.]+ [\d.]+\)"><text/);
   });
-  it('PDF applies a transformation matrix around rotated items', async () => {
-    const ops = await pageOps(await exportPdf(await render(tall(), { fontStore }), fontStore));
-    expect(ops).toMatch(/q\s+[-\d.]+ [-\d.]+ [-\d.]+ [-\d.]+ [-\d.]+ [-\d.]+ cm/);
+  it('PDF turns 270° text to read upwards, and 90° to read downwards', async () => {
+    // cmApply(ops, x, y): the last `a b c d e f cm` before the first BT, applied to a point
+    for (const [a, dy] of [[270, 10], [90, -10]]) {
+      const out = await render(tall(a), { fontStore });
+      const t = out.pages[0].items.find(i => i.t === 'text');
+      const px = t.rotate.cx, py = out.height - t.rotate.cy;
+      const [x, y] = cmApply(await pageOps(await exportPdf(out, fontStore)), px + 10, py);
+      expect(x).toBeCloseTo(px, 3);
+      expect(y).toBeCloseTo(py + dy, 3); // PDF y is up
+    }
   });
   it('moving a rotated item moves its centre', () => {
     const [moved] = shiftItems([{ t: 'text', lines: [{ x: 0, y: 0, text: 'a', w: 1 }], clip: { x: 0, y: 0, w: 1, h: 1 }, rotate: { a: 90, cx: 5, cy: 6 } }], 10, 20);
@@ -531,12 +580,12 @@ describe('rotation', () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to make sure they fail**
+- [x] **Step 2: Run the tests to make sure they fail**
 
 Run: `PATH=/usr/local/bin:$PATH TZ=Asia/Kolkata npx vitest run tests/engine/text-styling.test.js -t rotation`
 Expected: FAIL. `t.rotate` is undefined, and the text wraps into many lines.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 (a) `src/engine/items/index.js`: at the top of `paintTextbox`, compute the layout box for a rotation. Replace the start of `paintTextbox`, from `let st = …` through `let tl = layoutTextLines(text, st, item.w, lc.m);`, with:
 
@@ -608,7 +657,7 @@ export function shiftItems(items, dx, dy) {
 }
 ```
 
-Before relying on `shiftItems` alone, check that nothing else moves items: `grep -rn "\.y + \|y: it.y" src/engine/paginate src/engine/index.js`. Any other place that rebuilds items with new coordinates must also shift `rotate`. If one is found, route it through `shiftItems`, or add the same `rotate` line there.
+**`shiftLocal()` in `src/engine/items/index.js` also moves items** (repeated table headers): give it the same `if (it.rotate) o.rotate = { ...it.rotate, cy: it.rotate.cy + dy };`. Then check that nothing else moves items: `grep -rn "\.y + \|y: it.y" src/engine/paginate src/engine/index.js`. Any other place that rebuilds items with new coordinates must also shift `rotate`. If one is found, route it through `shiftItems`, or add the same `rotate` line there.
 
 (d) `src/exporters/svg.js` `pageToSvg`: wrap each rotated item. At the top of the `for (const it of …)` loop body add:
 
@@ -643,12 +692,12 @@ and after the `switch (it.t) { … }` closing brace, still inside the loop:
 
 Check that no `case` returns or `continue`s out of the loop. Every case ends in `break`; if one uses `continue`, change it to `break` so the pop always runs.
 
-- [ ] **Step 4: Run the tests to make sure they pass**
+- [x] **Step 4: Run the tests to make sure they pass**
 
 Run: `PATH=/usr/local/bin:$PATH TZ=Asia/Kolkata npx vitest run tests/engine/text-styling.test.js`
 Expected: 19 passed.
 
-- [ ] **Step 5: Look at it**
+- [x] **Step 5: Look at it**
 
 Render the PDF and the SVG and check that the text reads bottom-to-top inside the 20×120 box:
 
@@ -665,12 +714,12 @@ PATH=/usr/local/bin:$PATH node bin/pw.mjs render /tmp/rot.pw.json -f pdf -o /tmp
 
 Expected: the label is centred in the frame and reads upwards. If it reads downwards, the PDF sign is wrong: flip `t` to `+it.rotate.a …` and re-run the tests and the look.
 
-- [ ] **Step 6: Run everything**
+- [x] **Step 6: Run everything**
 
 Run: `PATH=/usr/local/bin:$PATH TZ=Asia/Kolkata npx vitest run && node bin/pw.mjs test reports && node scripts/check-engine-boundary.mjs`
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/engine/items/index.js src/engine/items/paint.js src/exporters/svg.js src/exporters/pdf.js tests/engine/text-styling.test.js
@@ -690,7 +739,7 @@ git commit -m "feat(engine): rotated text boxes (SVG, PDF and viewer)"
 - Locales starting with `en` keep today's English names, so snapshots do not move and `MMM` stays a three-letter cut.
 - Any other locale uses `Intl.DateTimeFormat(locale)` names.
 
-- [ ] **Step 1: Write the failing test** (append)
+- [x] **Step 1: Write the failing test** (append)
 
 ```js
 import { formatValue } from '../../src/engine/expr/format.js';
@@ -715,12 +764,12 @@ describe('locale names', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to make sure it fails**
+- [x] **Step 2: Run the test to make sure it fails**
 
 Run: `PATH=/usr/local/bin:$PATH TZ=Asia/Kolkata npx vitest run tests/engine/text-styling.test.js -t "locale names"`
 Expected: FAIL. You get `'05 March 2026'` for hi-IN.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `src/engine/expr/format.js`:
 - In `formatValue`, change the date branch to pass the locale:
@@ -786,22 +835,22 @@ export function formatDate(d, fmt, locale) {
   },
 ```
 
-- [ ] **Step 4: Run the tests to make sure they pass**
+- [x] **Step 4: Run the tests to make sure they pass**
 
 Run: `PATH=/usr/local/bin:$PATH TZ=Asia/Kolkata npx vitest run tests/engine/text-styling.test.js`
 Expected: 22 passed. If the `hi-IN` assertion differs only in how Node's ICU spells the month, print the actual value with `node -e "console.log(new Intl.DateTimeFormat('hi-IN',{month:'long'}).format(new Date(2026,2,5)))"` and use that exact string. The assertion is about the locale being used, not the spelling.
 
-- [ ] **Step 5: Run everything, including the Hindi sample report's snapshot**
+- [x] **Step 5: Run everything, including the Hindi sample report's snapshot**
 
 Run: `PATH=/usr/local/bin:$PATH TZ=Asia/Kolkata npx vitest run && node bin/pw.mjs test reports`
 
-Expected: all pass. If `loan-statement-hindi` has `locale: 'hi-IN'` and formats dates with `MMM`, its PDF changes (Hindi month names, which is the point). It has no `pw test` case, so no snapshot fails. Render it once and look:
+Expected: all pass. `loan-statement-hindi` has `locale: 'en-IN'`, so nothing in it changes; switch it to `hi-IN` if its months should be Hindi. Render it once and look:
 
 ```bash
 node bin/pw.mjs render reports/loan-statement-hindi.pw.json -d loans=reports/__tests__/loan-statement.data.json -f pdf -o /tmp/hi.pdf && open /tmp/hi.pdf
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/engine/expr/format.js src/engine/expr/evaluate.js tests/engine/text-styling.test.js
@@ -816,7 +865,7 @@ git commit -m "feat(engine): month and day names follow the report locale"
 - Modify: `src/exporters/docx.js` (`rPr`, `alignOf`)
 - Test: `tests/engine/docx.test.js`
 
-- [ ] **Step 1: Write the failing test** (append inside `describe('Word export', …)` in `tests/engine/docx.test.js`)
+- [x] **Step 1: Write the failing test** (append inside `describe('Word export', …)` in `tests/engine/docx.test.js`)
 
 ```js
   it('keeps underline, strike-through and justify', async () => {
@@ -834,14 +883,14 @@ git commit -m "feat(engine): month and day names follow the report locale"
   });
 ```
 
-- [ ] **Step 2: Run the test to make sure it fails**
+- [x] **Step 2: Run the test to make sure it fails**
 
 Run: `PATH=/usr/local/bin:$PATH TZ=Asia/Kolkata npx vitest run tests/engine/docx.test.js`
 Expected: FAIL on `<w:u w:val="single"/>`.
 
 The justified box exports as many one-word runs, each its own paragraph. That is why `alignOf` needs to know about justify. A justified box must stay one paragraph, so step 3(b) merges a justified text item's runs back into lines.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 (a) `rPr(it)`: add decorations. Replace the `<w:color …/>` segment's surroundings so the function reads:
 
@@ -870,17 +919,21 @@ const justified = (it) => new Set(it.lines.map(l => l.y)).size < it.lines.length
 
 In `alignOf(it)`, return `'both'` first: add `if (justified(it)) return 'both';` as the first line of the function. `w:jc` with `both` is Word's justify.
 
-- [ ] **Step 4: Run the tests to make sure they pass**
+- [x] **Step 4: Run the tests to make sure they pass**
 
 Run: `PATH=/usr/local/bin:$PATH TZ=Asia/Kolkata npx vitest run tests/engine/docx.test.js`
 Expected: 5 passed (4 old, 1 new). The textutil test still passes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/exporters/docx.js tests/engine/docx.test.js
 git commit -m "feat(docx): underline, strike-through and justified paragraphs"
 ```
+
+---
+
+**Also (added while implementing):** justified lines are one run per word, so every consumer that reads `lines` as "one entry per visual line" must join runs on the same baseline. Add `visualLines(item)` and `isJustified(item)` to `src/exporters/regions.js` and use them in `docx.js` (`textOf`, `alignOf`), the text-dump fallbacks of `xlsx.js` and `csv.js`, `pageTexts()` in `bin/pw.mjs` (give the snapshot diff's fake lines `x: 0, y: index`), and `findText()` in `src/viewer/ReportViewer.jsx`. Test: "CSV and Excel text dumps keep a justified line as one line".
 
 ---
 
@@ -890,17 +943,21 @@ git commit -m "feat(docx): underline, strike-through and justified paragraphs"
 - Modify: `src/importers/rdlx.js` (`ALIGN` at line 68; `textStyle` deco and background lines; `textbox()`)
 - Test: `tests/engine/rdlx.test.js`
 
-- [ ] **Step 1: Write the failing test** (append to `tests/engine/rdlx.test.js`)
+- [x] **Step 1: Write the failing test** (append to `tests/engine/rdlx.test.js`)
 
 ```js
 describe('text styling (phase 1)', () => {
   const one = (Item) => importRdlx({ Body: { ReportItems: [{ Type: 'textbox', Name: 'T', Value: 'Hi', Width: '2in', Height: '0.25in', ...Item }] } });
   it('maps decoration, justify, background image, shrink-to-fit and angle without warnings', () => {
-    const r = one({ Style: { TextDecoration: 'Underline', TextAlign: 'Justify', BackgroundImage: { Source: 'External', Value: 'https://example.com/bg.png' } }, ShrinkToFit: 'true', Angle: '90' });
+    const r = one({ Style: { TextDecoration: 'Underline', TextAlign: 'Justify', BackgroundImage: { Source: 'External', Value: 'https://example.com/bg.png' } }, ShrinkToFit: 'true' });
     const t = r.definition.sections.body.items[0];
     expect(t.style).toMatchObject({ textDecoration: 'underline', textAlign: 'justify', backgroundImage: 'https://example.com/bg.png' });
     expect(t.shrinkToFit).toBe(true);
-    expect(t.rotate).toBe(90);
+  });
+  it('turns ActiveReports angles (counter-clockwise) into Pagewright rotation (clockwise)', () => {
+    expect(one({ Angle: '90' }).definition.sections.body.items[0].rotate).toBe(270);
+    expect(one({ Angle: '-90' }).definition.sections.body.items[0].rotate).toBe(90);
+    expect(one({ Angle: '0' }).definition.sections.body.items[0].rotate).toBeUndefined();
     expect(r.warnings.join(' ')).not.toMatch(/underline|background image|justify/i);
   });
   it('maps LineThrough and MinCondenseRate', () => {
@@ -915,12 +972,12 @@ describe('text styling (phase 1)', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to make sure it fails**
+- [x] **Step 2: Run the test to make sure it fails**
 
 Run: `PATH=/usr/local/bin:$PATH TZ=Asia/Kolkata npx vitest run tests/engine/rdlx.test.js -t "phase 1"`
 Expected: FAIL. `textDecoration` is undefined, and the warnings mention underline.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 - Line 68: change `justify: 'left'` to `justify: 'justify'`.
 - In `textStyle`, replace the two lines that warn about decoration with:
@@ -938,7 +995,10 @@ Expected: FAIL. `textDecoration` is undefined, and the warnings mention underlin
   const bg = st.BackgroundImage;
   if (bg?.Value) {
     // an external URL works as is; embedded and database images need Phase 7's image sources
-    if (/^external$/i.test(String(bg.Source || 'External')) && !isExpr(bg.Value)) set('backgroundImage', String(bg.Value));
+    const src = String(bg.Source || 'External').toLowerCase();
+    if (isExpr(bg.Value)) t.approx('its background image is set by an expression; it is not drawn.');
+    else if (src === 'embedded' && cx.images.has(bg.Value)) set('backgroundImage', cx.images.get(bg.Value));
+    else if (src === 'external' && /^(https?:|data:)/i.test(String(bg.Value))) set('backgroundImage', String(bg.Value));
     else t.approx('its background image is not drawn.');
   }
 ```
@@ -947,16 +1007,17 @@ Expected: FAIL. `textDecoration` is undefined, and the warnings mention underlin
 
 ```js
   if (isTrue(ar.ShrinkToFit) || Number(ar.MinCondenseRate) > 0 && Number(ar.MinCondenseRate) < 100) it.shrinkToFit = true;
-  const angle = Number(ar.Angle);
-  if (angle && !isExpr(ar.Angle)) it.rotate = angle;
+  // ActiveReports turns text counter-clockwise; Pagewright's rotate is clockwise
+  const angle = Number(ar.Angle), cw = ((-angle % 360) + 360) % 360;
+  if (cw && !isExpr(ar.Angle)) it.rotate = cw;
 ```
 
-- [ ] **Step 4: Run the tests to make sure they pass**
+- [x] **Step 4: Run the tests to make sure they pass**
 
 Run: `PATH=/usr/local/bin:$PATH TZ=Asia/Kolkata npx vitest run tests/engine/rdlx.test.js`
 Expected: all pass, including the 40 existing ones. If an existing fixture test asserted a "not drawn" warning for a decoration or justify, update it: that loss is now handled. Note this in the commit message.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/importers/rdlx.js tests/engine/rdlx.test.js
@@ -972,7 +1033,7 @@ git commit -m "feat(importer): map text decoration, justify, background URL, shr
 - Modify: `src/designer/Canvas.jsx` (`textCss`)
 - Create: `reports/style-showcase.pw.json`, `reports/__tests__/style-showcase.test.json`
 
-- [ ] **Step 1: Inspector props**
+- [x] **Step 1: Inspector props**
 
 In `TEXT_STYLE_PROPS` (`src/engine/items/index.js`):
 - Change the `textAlign` options to `['auto', 'left', 'center', 'right', 'justify']`.
@@ -989,7 +1050,7 @@ In `TEXT_STYLE_PROPS` (`src/engine/items/index.js`):
   { key: 'backgroundFit', label: 'Background fit', type: 'select', options: ['cover', 'contain', 'fill'], category: 'Box' },
 ```
 
-- [ ] **Step 2: Canvas preview**
+- [x] **Step 2: Canvas preview**
 
 In `src/designer/Canvas.jsx` `textCss`:
 - Add to the `box` object:
@@ -1008,9 +1069,9 @@ In `src/designer/Canvas.jsx` `textCss`:
 
 `textAlign: align` already passes `justify` through. CSS `text-align: justify` matches the engine except on the last line, which CSS also leaves ragged.
 
-Rotation is **not** previewed on the canvas: the designer shows the box upright, with its value, and the Preview tab shows the real rotation. Add `title="Rotated {n}° in the preview"` to the item's wrapper element where the canvas renders text items, if the item has `rotate`. Find the element with `grep -n "data-item=" src/designer/Canvas.jsx`.
+Rotation **is** previewed on the canvas (changed while implementing: an upright 20 × 120 box shows one letter per line). In `ItemBody`'s textbox branch, when `item.rotate` is set, give the `.box` element the turned size (`h × w` for 90°/270°), centre it in the item, and add `transform: rotate(<a>deg)`.
 
-- [ ] **Step 3: A showcase report and its snapshot**
+- [x] **Step 3: A showcase report and its snapshot**
 
 Create `reports/style-showcase.pw.json`. It has one A4 page with:
 - a heading,
@@ -1033,7 +1094,7 @@ Expected: `… passed, 0 failed, 1 snapshot written`.
 
 Open the snapshot and check the Hindi date reads `गुरुवार 05 मार्च 2026`. The justified paragraph's words appear one per line in the snapshot, because a snapshot lists text runs.
 
-- [ ] **Step 4: Look at every output**
+- [x] **Step 4: Look at every output**
 
 ```bash
 for f in pdf html docx; do PATH=/usr/local/bin:$PATH node bin/pw.mjs render reports/style-showcase.pw.json -f $f -o /tmp/showcase.$f; done
@@ -1044,11 +1105,11 @@ Expected:
 - PDF and HTML look identical: underline, strike, justify, the shrunk label, the upward label inside its frame, a cropped background image.
 - Word shows underline, strike and the justified paragraph; it leaves out the rotation and the image.
 
-- [ ] **Step 5: Phase gate**
+- [x] **Step 5: Phase gate**
 
 Run the gate from the roadmap: unit tests, engine boundary, `pw test`, production build, then all e2e suites, including `drilldown` (its links are now underlined). Expected: all pass. Stop the server on :3200 afterwards.
 
-- [ ] **Step 6: Commit, merge, update the audit**
+- [x] **Step 6: Commit, merge, update the audit**
 
 ```bash
 git add src/engine/items/index.js src/designer/Canvas.jsx reports/style-showcase.pw.json reports/__tests__/style-showcase.test.json reports/__tests__/style-showcase.default.snap.txt
@@ -1074,9 +1135,9 @@ Then:
 - **Known limits, stated in the tasks:**
   - Justify skips shaped and right-to-left lines.
   - Rotated boxes do not grow, split or rotate their link hit area.
-  - The canvas does not preview rotation.
+  - The canvas does not preview shrink-to-fit (it does preview rotation).
   - Word leaves out rotation and background images.
-  - Viewer search does not match a phrase across justified word runs, because each word is its own run. A Phase 6 search task (results list) must join same-baseline runs before matching.
+  - Viewer search, snapshots and the Excel/CSV/Word text join justified word runs with `visualLines()`; anything new that reads `lines` must do the same.
 - **Name consistency:** these names are used the same way across the engine, exporters, importer and designer:
   - `textDecoration` (style)
   - `deco` (text item → docx)

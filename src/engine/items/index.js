@@ -42,18 +42,47 @@ function hidden(item, ctx, lc) {
 }
 
 /* ---------------------------------------------------------------- textbox */
+/** Shrink-to-fit defaults; a text box can set its own `minFontSize` and `shrinkStep`. */
+export const SHRINK_DEFAULTS = { minFontSize: 4, step: 0.5 };
+/** A text box's rotation: degrees clockwise (any angle); swap = the layout box is turned on its side (90°, 270°). */
+function rotationOf(item) {
+  const a = ((Number(item.rotate) || 0) % 360 + 360) % 360;
+  if (!a) return null;
+  return { a, swap: a === 90 || a === 270 };
+}
 function paintTextbox(item, lc, ctx, forcedH) {
-  const st = resolveStyle([lc.base, lc.named?.[item.styleName], item.style], ctx);
+  let st = resolveStyle([lc.base, lc.named?.[item.styleName], item.style], ctx);
   const r = evalSafe(item.value ?? '', ctx, lc, item.name || 'TextBox');
   const text = textOf(r.v, st, ctx);
-  const tl = layoutTextLines(text, st, item.w, lc.m);
+  const rot = rotationOf(item);
+  // a box turned on its side lays its text out along its height
+  const layoutW = rot?.swap ? item.h : item.w, layoutH = rot?.swap ? item.w : item.h;
+  let tl = layoutTextLines(text, st, layoutW, lc.m);
+  // shrink to fit: the largest size, in 0.5pt steps down to 4pt, at which the text fits the designed height.
+  // A binary search, so a long text costs about 5 layouts, not 16.
+  if (item.shrinkToFit && tl.needed > layoutH + GROW_TOLERANCE) {
+    const size0 = Number(st.fontSize) || 9;
+    const min = Math.max(1, Number(item.minFontSize) || SHRINK_DEFAULTS.minFontSize);
+    const step = Number(item.shrinkStep) > 0 ? Number(item.shrinkStep) : SHRINK_DEFAULTS.step;
+    const steps = Math.max(0, Math.floor((size0 - min) / step + 1e-9));
+    const at = (i) => { const s2 = { ...st, fontSize: Math.max(min, size0 - step * (i + 1)) }; return { s2, t2: layoutTextLines(text, s2, layoutW, lc.m) }; };
+    let lo = 0, hi = steps - 1, best = null;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const c = at(mid);
+      if (c.t2.needed <= layoutH + GROW_TOLERANCE) { best = c; hi = mid - 1; } else lo = mid + 1;
+    }
+    if (!best && steps > 0) best = at(steps - 1); // still too long at the minimum: draw at the minimum, the box ellipsises
+    if (best) { st = best.s2; tl = best.t2; }
+  }
   let h = item.h;
   if (forcedH == null) {
-    // Growth under 1pt is ignored: it would only push items below by a hair.
-    if (item.canGrow !== false && tl.needed > h + GROW_TOLERANCE) h = tl.needed;
-    if (item.canShrink && tl.needed < h) h = tl.needed;
+    // Growth under 1pt is ignored: it would only push items below by a hair. Shrink-to-fit never grows.
+    // A rotated box keeps its designed size: it never grows, shrinks or splits.
+    if (item.canGrow !== false && !item.shrinkToFit && !rot && tl.needed > h + GROW_TOLERANCE) h = tl.needed;
+    if (item.canShrink && !rot && tl.needed < h) h = tl.needed;
   } else h = forcedH;
-  return { st, tl, h, numeric: typeof r.v === 'number' };
+  return { st, tl, h, numeric: typeof r.v === 'number', rot };
 }
 
 register('textbox', {
@@ -65,6 +94,10 @@ register('textbox', {
     { key: 'styleName', label: 'Named style', type: 'stylename', category: 'Text' },
     { key: 'canGrow', label: 'Can grow', type: 'bool', category: 'Layout' },
     { key: 'canShrink', label: 'Can shrink', type: 'bool', category: 'Layout' },
+    { key: 'shrinkToFit', label: 'Shrink text to fit', type: 'bool', category: 'Layout' },
+    { key: 'minFontSize', label: 'Shrink no smaller than (pt, default 4)', type: 'number', category: 'Layout' },
+    { key: 'shrinkStep', label: 'Shrink step (pt, default 0.5)', type: 'number', category: 'Layout' },
+    { key: 'rotate', label: 'Rotate (degrees clockwise)', type: 'number', category: 'Layout' },
     { key: 'pageBreakBefore', label: 'Page break before', type: 'bool', category: 'Layout' },
     { key: 'pageBreakAfter', label: 'Page break after', type: 'bool', category: 'Layout' },
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
@@ -75,9 +108,9 @@ register('textbox', {
   layout(item, lc) {
     const ctx = lc.ctxFor(item);
     if (hidden(item, ctx, lc)) return { height: 0, units: [] };
-    const { st, tl, h, numeric } = paintTextbox(item, lc, ctx, lc.fixed ? item.h : null);
+    const { st, tl, h, numeric, rot } = paintTextbox(item, lc, ctx, lc.fixed ? item.h : null);
     // Taller than a page: split into chunks of whole lines.
-    if (!lc.fixed && h > lc.maxUnitHeight && tl.lines.length > 1) {
+    if (!rot && !lc.fixed && h > lc.maxUnitHeight && tl.lines.length > 1) {
       const per = Math.max(1, Math.floor((lc.maxUnitHeight - tl.pad[0] - tl.pad[2]) / tl.lh));
       const units = [];
       for (let i = 0, top = 0; i < tl.lines.length; i += per) {
@@ -88,7 +121,14 @@ register('textbox', {
       }
       return { height: units.reduce((s, u) => s + u.height, 0), units };
     }
-    const items = paintBox({ x: item.x, y: 0, w: item.w, h, st, tl, numeric, m: lc.m });
+    let items;
+    if (rot) {
+      // lay out in the turned box, centred on the item's centre, then rotate every piece about that centre.
+      // The link hit area (added below) stays the upright rectangle.
+      const cx = item.x + item.w / 2, cy = h / 2;
+      const bw = rot.swap ? h : item.w, bh = rot.swap ? item.w : h;
+      items = paintBox({ x: cx - bw / 2, y: cy - bh / 2, w: bw, h: bh, st, tl, numeric, m: lc.m }).map(i => ({ ...i, rotate: { a: rot.a, cx, cy } }));
+    } else items = paintBox({ x: item.x, y: 0, w: item.w, h, st, tl, numeric, m: lc.m });
     addInteractivity(items, item, ctx, lc, { x: item.x, y: 0, w: item.w, h });
     return { height: h, units: [{ top: 0, height: h, items }] };
   },
@@ -119,7 +159,8 @@ register('image', {
     const st = resolveStyle([lc.base, lc.named?.[item.styleName], item.style], ctx);
     const src = evalSafe(item.src ?? '', ctx, lc, item.name || 'Image').v;
     const items = paintBox({ x: item.x, y: 0, w: item.w, h: item.h, st, tl: null, m: lc.m });
-    if (src && src !== '#Error') items.splice(st.backgroundColor ? 1 : 0, 0, { t: 'image', x: item.x, y: 0, w: item.w, h: item.h, src: String(src), fit: item.fit || 'contain' });
+    // the picture goes above the box's background (colour and image) and below its borders
+    if (src && src !== '#Error') items.splice((st.backgroundColor ? 1 : 0) + (st.backgroundImage ? 1 : 0), 0, { t: 'image', x: item.x, y: 0, w: item.w, h: item.h, src: String(src), fit: item.fit || 'contain' });
     return { height: item.h, units: [{ top: 0, height: item.h, items }] };
   },
 });
@@ -515,11 +556,14 @@ register('checkbox', {
 
 function shiftLocal(items, dy) {
   return items.map((it) => {
-    if (it.t === 'text') return { ...it, lines: it.lines.map(l => ({ ...l, y: l.y + dy })), clip: it.clip && { ...it.clip, y: it.clip.y + dy } };
-    if (it.t === 'line') return { ...it, y1: it.y1 + dy, y2: it.y2 + dy };
-    if (it.t === 'ellipse') return { ...it, cy: it.cy + dy };
-    if (it.t === 'field') return { ...it, y: it.y + dy, draw: shiftLocal(it.draw, dy) };
-    return { ...it, y: it.y + dy };
+    let o;
+    if (it.t === 'text') o = { ...it, lines: it.lines.map(l => ({ ...l, y: l.y + dy })), clip: it.clip && { ...it.clip, y: it.clip.y + dy } };
+    else if (it.t === 'line') o = { ...it, y1: it.y1 + dy, y2: it.y2 + dy };
+    else if (it.t === 'ellipse') o = { ...it, cy: it.cy + dy };
+    else if (it.t === 'field') o = { ...it, y: it.y + dy, draw: shiftLocal(it.draw, dy) };
+    else o = { ...it, y: it.y + dy };
+    if (it.rotate) o.rotate = { ...it.rotate, cy: it.rotate.cy + dy };
+    return o;
   });
 }
 
@@ -872,11 +916,15 @@ export const TEXT_STYLE_PROPS = [
   { key: 'fontWeight', label: 'Weight', type: 'select', options: ['normal', '600', 'bold'], category: 'Text' },
   { key: 'fontStyle', label: 'Style', type: 'select', options: ['normal', 'italic'], category: 'Text' },
   { key: 'color', label: 'Color', type: 'color', category: 'Text' },
-  { key: 'textAlign', label: 'Align', type: 'select', options: ['auto', 'left', 'center', 'right'], category: 'Text' },
+  { key: 'textAlign', label: 'Align', type: 'select', options: ['auto', 'left', 'center', 'right', 'justify'], category: 'Text' },
   { key: 'verticalAlign', label: 'Vertical align', type: 'select', options: ['top', 'middle', 'bottom'], category: 'Text' },
   { key: 'format', label: 'Format (C2, N0, dd MMM yyyy)', type: 'text', category: 'Text' },
   { key: 'lineHeight', label: 'Line height', type: 'number', category: 'Text' },
+  { key: 'textDecoration', label: 'Decoration', type: 'select', options: ['none', 'underline', 'line-through', 'underline line-through'], category: 'Text' },
+  { key: 'textDecorationColor', label: 'Decoration colour', type: 'color', category: 'Text' },
   { key: 'backgroundColor', label: 'Background', type: 'color', category: 'Box' },
+  { key: 'backgroundImage', label: 'Background image (URL or =expression)', type: 'text', category: 'Box' },
+  { key: 'backgroundFit', label: 'Background fit', type: 'select', options: ['cover', 'contain', 'fill'], category: 'Box' },
   { key: 'padding', label: 'Padding (t r b l)', type: 'text', category: 'Box' },
   { key: 'border', label: 'Border (1 solid #ccc)', type: 'text', category: 'Box' },
   { key: 'borderTop', label: 'Border top', type: 'text', category: 'Box' },

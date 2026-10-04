@@ -57,3 +57,28 @@ describe('Word export', () => {
     expect(txt).toContain('Arjun Mehta');
   });
 });
+
+describe('text styling in Word, Excel and CSV (phase 1)', () => {
+  const styled = async () => {
+    const { report } = await import('../helpers.js');
+    return render(report([
+      { type: 'textbox', name: 'U', x: 0, y: 0, w: 200, h: 20, value: 'Underlined', style: { textDecoration: 'underline' } },
+      { type: 'textbox', name: 'S', x: 0, y: 30, w: 200, h: 20, value: 'Struck', style: { textDecoration: 'line-through' } },
+      { type: 'textbox', name: 'J', x: 0, y: 60, w: 140, h: 120, value: 'The quick brown fox jumps over the lazy dog while the cat watches.', style: { textAlign: 'justify' } },
+    ]), { fontStore });
+  };
+  it('Word keeps underline, strike-through and justify, and a justified box stays one paragraph', async () => {
+    const doc = strFromU8(unzipSync(await exportDocx(await styled()))['word/document.xml']);
+    const runOf = (text) => doc.split('<w:r>').find(r => r.includes(`>${text}<`));
+    expect(runOf('Underlined')).toContain('<w:u w:val="single"/>');
+    expect(runOf('Struck')).toContain('<w:strike/>');
+    expect(doc).toContain('<w:jc w:val="both"/>');
+    expect(doc).toContain('>The quick brown fox jumps over the lazy dog while the cat watches.<');
+  });
+  it('CSV and Excel text dumps keep a justified line as one line, not one word per row', async () => {
+    const { exportCsv } = await import('../../src/exporters/csv.js');
+    const csv = exportCsv(await styled()).split('\r\n');
+    expect(csv.length).toBeLessThan(8);
+    expect(csv.some(l => l.startsWith('The quick'))).toBe(true);
+  });
+});

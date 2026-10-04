@@ -4,6 +4,7 @@
 // row repeating on each Word page. Charts, images and shapes are left out: use PDF for an exact copy.
 // Written by hand with fflate (WordprocessingML is small), no Word library.
 import { zipSync, strToU8 } from 'fflate';
+import { visualLines, isJustified } from './regions.js';
 
 const TW = 20; // twips per point
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -13,11 +14,14 @@ const hex = (c) => { const m = /^#?([0-9a-f]{6})$/i.exec(String(c || '').trim())
 function rPr(it) {
   const f = String(it.font || '');
   const family = /mono/i.test(f) ? 'JetBrains Mono' : f.split('-')[0] || 'Inter';
-  return `<w:rPr><w:rFonts w:ascii="${esc(family)}" w:hAnsi="${esc(family)}" w:cs="${esc(family)}"/>${/bold/i.test(f) ? '<w:b/>' : ''}${/italic/i.test(f) ? '<w:i/>' : ''}<w:color w:val="${hex(it.color)}"/><w:sz w:val="${Math.round((it.size || 9) * 2)}"/></w:rPr>`;
+  const deco = String(it.deco || '');
+  // element order follows the schema: rFonts, b, i, strike, color, sz, u
+  return `<w:rPr><w:rFonts w:ascii="${esc(family)}" w:hAnsi="${esc(family)}" w:cs="${esc(family)}"/>${/bold/i.test(f) ? '<w:b/>' : ''}${/italic/i.test(f) ? '<w:i/>' : ''}${deco.includes('line-through') ? '<w:strike/>' : ''}<w:color w:val="${hex(it.color)}"/><w:sz w:val="${Math.round((it.size || 9) * 2)}"/>${deco.includes('underline') ? '<w:u w:val="single"/>' : ''}</w:rPr>`;
 }
 
 /** Left, right or centre, from where the lines sit in their box. */
 function alignOf(it) {
+  if (isJustified(it)) return 'both'; // Word's justify
   const c = it.clip;
   if (!c || !it.lines.length) return 'left';
   const l = it.lines[0];
@@ -26,7 +30,7 @@ function alignOf(it) {
   return right < left - 2 ? 'right' : 'left';
 }
 
-const textOf = (it) => it.lines.map(l => l.text).join(' ');
+const textOf = (it) => visualLines(it).join(' ');
 const para = (it, indentPt) => `<w:p><w:pPr><w:spacing w:before="0" w:after="${Math.round((it.size || 9) * 4)}"/>${indentPt > 0 ? `<w:ind w:left="${Math.round(indentPt * TW)}"/>` : ''}<w:jc w:val="${alignOf(it)}"/></w:pPr><w:r>${rPr(it)}<w:t xml:space="preserve">${esc(textOf(it))}</w:t></w:r></w:p>`;
 
 const BORDER = '<w:tblBorders><w:top w:val="single" w:sz="4" w:color="CBD5E1"/><w:left w:val="single" w:sz="4" w:color="CBD5E1"/><w:bottom w:val="single" w:sz="4" w:color="CBD5E1"/><w:right w:val="single" w:sz="4" w:color="CBD5E1"/><w:insideH w:val="single" w:sz="4" w:color="CBD5E1"/><w:insideV w:val="single" w:sz="4" w:color="CBD5E1"/></w:tblBorders>';

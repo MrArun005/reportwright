@@ -1,5 +1,5 @@
 // @ts-check
-import { mergedRegions } from './regions.js';
+import { mergedRegions, visualLines } from './regions.js';
 
 /** .NET-style format → Excel number format. */
 export function excelFormat(fmt, currencySymbol = '₹') {
@@ -47,7 +47,7 @@ export async function exportXlsx(model, ExcelJS, { currency = 'INR', title } = {
   if (!regions.length) {
     const ws = wb.addWorksheet(sheetName(title || 'Report'));
     model.pages.forEach((p, pi) => {
-      for (const it of p.items) if (it.t === 'text') for (const l of it.lines) ws.addRow([pi + 1, l.text]);
+      for (const it of p.items) if (it.t === 'text') for (const l of visualLines(it)) ws.addRow([pi + 1, l]);
     });
     ws.getColumn(1).width = 6; ws.getColumn(2).width = 80;
   }

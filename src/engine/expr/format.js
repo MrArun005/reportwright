@@ -51,7 +51,7 @@ export function formatValue(value, fmt, opt = {}) {
   const locale = opt.locale || 'en-IN';
   const currency = opt.currency || 'INR';
   if (value == null) return '';
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? '' : formatDate(value, fmt || 'dd MMM yyyy');
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? '' : formatDate(value, fmt || 'dd MMM yyyy', locale);
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) return String(value);
     // No format: plain digits, no grouping (a year stays 2026). Use N0/N2/C2 to group.
@@ -94,21 +94,37 @@ function customNumber(v, fmt, locale) {
   return prefix + s + suffix;
 }
 
-/** @param {Date} d @param {string} fmt */
-export function formatDate(d, fmt) {
-  if (fmt === 'd') return formatDate(d, 'dd/MM/yyyy');
-  if (fmt === 'D') return formatDate(d, 'dddd, dd MMMM yyyy');
-  if (fmt === 'g') return formatDate(d, 'dd/MM/yyyy HH:mm');
+const dtfCache = new Map();
+/** Month or weekday name in a non-English locale. English keeps the fixed tables, so its output never shifts. */
+function localName(locale, kind, style, d) {
+  const key = `${locale}|${kind}|${style}`;
+  let f = dtfCache.get(key);
+  if (f === undefined) {
+    try { f = new Intl.DateTimeFormat(locale, { [kind]: style }); } catch { f = null; } // an unknown locale: English
+    dtfCache.set(key, f);
+  }
+  return f ? f.format(d) : null;
+}
+/** English locales keep the fixed English names (so existing reports never shift). */
+export const english = (locale) => !locale || /^en\b/i.test(locale);
+
+/** @param {Date} d @param {string} fmt @param {string} [locale] month and day names follow it */
+export function formatDate(d, fmt, locale) {
+  if (fmt === 'd') return formatDate(d, 'dd/MM/yyyy', locale);
+  if (fmt === 'D') return formatDate(d, 'dddd, dd MMMM yyyy', locale);
+  if (fmt === 'g') return formatDate(d, 'dd/MM/yyyy HH:mm', locale);
+  const en = english(locale);
+  const name = (kind, style, fallback) => (en ? fallback : localName(locale, kind, style, d) ?? fallback);
   return fmt.replace(/yyyy|yy|MMMM|MMM|MM|M|dddd|ddd|dd|d|HH|H|hh|h|mm|ss|tt|'[^']*'/g, (tok) => {
     switch (tok) {
       case 'yyyy': return String(d.getFullYear());
       case 'yy': return String(d.getFullYear()).slice(-2);
-      case 'MMMM': return MONTHS[d.getMonth()];
-      case 'MMM': return MONTHS[d.getMonth()].slice(0, 3);
+      case 'MMMM': return name('month', 'long', MONTHS[d.getMonth()]);
+      case 'MMM': return name('month', 'short', MONTHS[d.getMonth()].slice(0, 3));
       case 'MM': return String(d.getMonth() + 1).padStart(2, '0');
       case 'M': return String(d.getMonth() + 1);
-      case 'dddd': return DAYS[d.getDay()];
-      case 'ddd': return DAYS[d.getDay()].slice(0, 3);
+      case 'dddd': return name('weekday', 'long', DAYS[d.getDay()]);
+      case 'ddd': return name('weekday', 'short', DAYS[d.getDay()].slice(0, 3));
       case 'dd': return String(d.getDate()).padStart(2, '0');
       case 'd': return String(d.getDate());
       case 'HH': return String(d.getHours()).padStart(2, '0');

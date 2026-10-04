@@ -1,0 +1,27 @@
+# style-showcase › default · 1 pages
+--- page 1
+Text and styling showcase
+Phase 1 of the ActiveReportsJS parity roadmap: every feature on one page.
+UNDERLINE (a link-style text box)
+Open the regional sales report
+STRIKE-THROUGH
+Was ₹1,200
+Now ₹999
+JUSTIFIED PARAGRAPH
+Pagewright lays out every line itself, so a justified
+paragraph looks the same in the viewer, the PDF and the
+HTML export. Each line is stretched to both edges by
+widening the spaces between its words. The last line of
+each paragraph stays ragged, as in any book or newspaper.
+SHRINK TO FIT (120 × 14 box)
+Disbursements across four regions and twelve cities, all
+products
+ROTATED LABELS (270° and 90°, in 20 × 120 frames)
+Quarter one revenue
+Reads top to bottom
+Tilted 20°
+BACKGROUND IMAGE (cover) WITH TEXT OVER IT
+Quarterly results
+DATE IN THE REPORT LOCALE (hi-IN)
+गुरुवार 05 मार्च 2026
+दिसंबर

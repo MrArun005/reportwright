@@ -1,6 +1,6 @@
 // @ts-check
 import { PDFDocument, PDFName, PDFString, PDFHexString, PDFNumber, PDFArray, PDFOperator, PDFOperatorNames, rgb, pushGraphicsState, popGraphicsState,
-  rectangle, clip, endPath, beginText, endText, setFontAndSize, setTextMatrix, setTextRise, setFillingColor, setGraphicsState } from 'pdf-lib';
+  rectangle, clip, endPath, concatTransformationMatrix, beginText, endText, setFontAndSize, setTextMatrix, setTextRise, setFillingColor, setGraphicsState } from 'pdf-lib';
 import fontkitModule from '@pdf-lib/fontkit';
 import { parseColor } from './color.js';
 import { makePdfA } from './pdfa.js';
@@ -67,6 +67,7 @@ export async function exportPdf(model, fontStore, opt = {}) {
         } catch { /* embed the full font */ }
       }
       const pf = await doc.embedFont(bytes, { subset: false });
+      plainEncoding(pf);
       if (glyphs) addGlyphs(pf, glyphs);
       fonts.set(key, pf);
     }
@@ -94,6 +95,12 @@ export async function exportPdf(model, fontStore, opt = {}) {
   for (const pg of model.pages) {
     const p = doc.addPage([model.width, model.height]);
     for (const it of pg.items) {
+      if (it.rotate) {
+        // screen rotation is clockwise with y down; PDF's y is up, so the angle flips
+        const t = -it.rotate.a * Math.PI / 180, c = Math.cos(t), sn = Math.sin(t);
+        const px = it.rotate.cx, py = H - it.rotate.cy;
+        p.pushOperators(pushGraphicsState(), concatTransformationMatrix(c, sn, -sn, c, px - px * c + py * sn, py - px * sn - py * c));
+      }
       switch (it.t) {
         case 'rect': {
           const fill = col(it.fill), stroke = col(it.stroke);
@@ -185,10 +192,14 @@ export async function exportPdf(model, fontStore, opt = {}) {
             const s = it.fit === 'cover' ? Math.max(it.w / img.width, it.h / img.height) : Math.min(it.w / img.width, it.h / img.height);
             w = img.width * s; h = img.height * s; x = it.x + (it.w - w) / 2; y = it.y + (it.h - h) / 2;
           }
+          // cover overflows its box by design: clip it, as SVG's preserveAspectRatio slice does
+          if (it.fit === 'cover') p.pushOperators(pushGraphicsState(), rectangle(it.x, H - it.y - it.h, it.w, it.h), clip(), endPath());
           p.drawImage(img, { x, y: H - y - h, width: w, height: h });
+          if (it.fit === 'cover') p.pushOperators(popGraphicsState());
           break;
         }
       }
+      if (it.rotate) p.pushOperators(popGraphicsState());
     }
   }
   // URL links as PDF annotations
@@ -275,6 +286,24 @@ function glyphText(run, font, out) {
  * Shaped glyphs need entries too (a conjunct has no code point), and a joined Arabic form should read as its
  * letter, not as a presentation-form code point.
  */
+/**
+ * Plain (unshaped) lines: one glyph per character, without OpenType layout. The engine measured them that way
+ * (advance widths, no kerning or ligatures), so this draws what was measured, and it skips fontkit's layout, which
+ * was about 70% of export time. Shaped and right-to-left text never comes here: drawRun places its glyphs itself.
+ */
+function plainEncoding(pf) {
+  const e = pf.embedder, f = e.font, memo = new Map();
+  e.encodeText = (text) => {
+    let hex = memo.get(text);
+    if (hex === undefined) {
+      hex = '';
+      for (const ch of text) hex += f.glyphForCodePoint(/** @type {number} */ (ch.codePointAt(0))).id.toString(16).padStart(4, '0');
+      memo.set(text, hex);
+    }
+    return PDFHexString.of(hex);
+  };
+}
+
 function addGlyphs(pf, glyphs) {
   const e = pf.embedder;
   const byId = new Map(e.glyphCache.access().map(g => [g.id, g]));

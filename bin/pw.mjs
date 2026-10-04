@@ -10,6 +10,7 @@ import { exportHtml } from '../src/exporters/html.js';
 import { exportCsv } from '../src/exporters/csv.js';
 import { exportXlsx } from '../src/exporters/xlsx.js';
 import { exportDocx } from '../src/exporters/docx.js';
+import { visualLines } from '../src/exporters/regions.js';
 
 const ROOT = path.join(import.meta.dirname, '..');
 const HELP = `pw render <report.pw.json> [-p name=value]… [-d source=data.json]… [-f pdf|xlsx|docx|html|csv|json|txt] [-o file|-] [--base URL] [--pdfa]
@@ -44,9 +45,9 @@ async function renderModel(def, { parameters = {}, data, base, now } = {}) {
   }
 }
 
-/** The text of every page, one line per text run: what a snapshot and a diff compare. */
+/** The text of every page, one line per visual line: what a snapshot and a diff compare. */
 function pageTexts(model) {
-  return model.pages.map(p => p.items.flatMap(i => (i.t === 'field' ? i.draw : [i])).filter(i => i.t === 'text').flatMap(i => i.lines.map(l => l.text)));
+  return model.pages.map(p => p.items.flatMap(i => (i.t === 'field' ? i.draw : [i])).filter(i => i.t === 'text').flatMap(i => visualLines(i))); // a justified line is one run per word: snapshot whole lines
 }
 const snapshotText = (title, model) => [`# ${title} · ${model.pages.length} pages`, ...pageTexts(model).flatMap((lines, i) => [`--- page ${i + 1}`, ...lines]), ...(model.warnings.length ? ['--- warnings', ...model.warnings] : [])].join('\n') + '\n';
 
@@ -125,7 +126,7 @@ async function cmdTest(args) {
       if (old === text) { passed++; continue; }
       failed++;
       const pages = old.split(/\n--- page \d+\n/).slice(1).map(s => s.split('\n--- warnings\n')[0].replace(/\n$/, '').split('\n'));
-      if (!compare(label, { pages: pages.map(lines => ({ items: [{ t: 'text', lines: lines.map(text => ({ text })) }] })) }, model)) console.log(`${label}: the warnings changed`);
+      if (!compare(label, { pages: pages.map(lines => ({ items: [{ t: 'text', lines: lines.map((text, y) => ({ text, x: 0, y })) }] })) }, model)) console.log(`${label}: the warnings changed`);
     }
   }
   console.log(`${passed} passed, ${failed} failed${written ? `, ${written} snapshot${written > 1 ? 's' : ''} written` : ''}`);
