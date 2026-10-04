@@ -182,8 +182,8 @@ Sample data APIs (stand-ins for customer data): `/api/sample/hard?rows=N` (nasty
 
 ## 15. Live demo
 
-- https://mrarun005.github.io/pagewright-demo/: a static site (public repo `pagewright-demo`, built files only; source stays private) running 12 reports, a 5k–100k-row browser scale test, the embedded designer and embed code for 6 frameworks, with no server.
-- Not yet on it: charts and pivot showcases, Stress ledger, Torture Test, and the latest fixes (needs a rebuild and republish).
+- https://mrarun005.github.io/pagewright-demo/: a static site (public repo `pagewright-demo`, built files only; source stays private) running 18 reports, a 5k–100k-row browser scale test, the embedded designer and embed code for 6 frameworks, with no server.
+- `npm run build:site` now adds the charts and pivot showcases, Stress ledger (+ Account detail), Torture Test (Designer), Reuse showcase and the SSRS-imported transcript; the published copy updates when it is republished.
 
 ---
 

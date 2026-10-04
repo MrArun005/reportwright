@@ -40,7 +40,7 @@
     <div class="hero-copy">
       <p class="kicker"><span class="mark">●</span> Report designer · viewer · engine</p>
       <h1>Pixel-exact business reports, <em>laid out in the browser.</em></h1>
-      <p class="lede">Pagewright is an MIT-licensed alternative to ActiveReportsJS: a banded report designer, a viewer you embed with one call, and an engine that lays out every line itself, so the screen, the PDF and the printout match. Every report on this page is rendered live, in this tab. There is no server behind this site.</p>
+      <p class="lede">Pagewright is an MIT-licensed alternative to ActiveReportsJS: a banded report designer, a viewer you embed with one call, and an engine that lays out every line itself, so the screen, the PDF and the printout match. Every report on this page is rendered live, in this tab, including a 5,000-row ledger built entirely in the designer. There is no server behind this site.</p>
       <div class="hero-actions">
         <a class="btn btn-solid" href="#gallery">Open the live gallery</a>
         <a class="btn" href="#designer">Try the designer</a>
@@ -48,14 +48,17 @@
       </div>
     </div>
     <dl class="spec">
-      <div><dt>Exports</dt><dd>PDF, Excel, Word, HTML, CSV, print</dd></div>
+      <div><dt>Exports</dt><dd>PDF, Excel, Word, HTML, CSV, JSON, print</dd></div>
       <div><dt>Scale</dt><dd>50,000 rows → 1,112 pages in 1.6 s <small>(Node, measured)</small></dd></div>
       <div><dt>Scripts</dt><dd>HarfBuzz shaping + bidi: Hindi, Arabic, Hebrew</dd></div>
-      <div><dt>Items</dt><dd>Grouped tables, matrix, list, subreports, rich text, charts, sparklines, data bars, bullets, TOC</dd></div>
+      <div><dt>Items</dt><dd>Grouped tables, pivot tables, merged cells, list, subreports, rich text, sparklines, data bars, bullets, TOC</dd></div>
+      <div><dt>Charts</dt><dd>14 types incl. combo, radar, candlestick, gauge, funnel; trend lines, reference bands, 12 palettes</dd></div>
       <div><dt>Barcodes</dt><dd>49 symbologies, drawn as vectors</dd></div>
       <div><dt>Interaction</dt><dd>Parameters, drill-down, drill-through, interactive sort, search</dd></div>
       <div><dt>Embedding</dt><dd>Script tag or ES module in a Shadow DOM; React, Vue, Svelte, Angular wrappers</dd></div>
-      <div><dt>Migration</dt><dd>Imports ActiveReportsJS <code>.rdlx-json</code></dd></div>
+      <div><dt>Reuse</dt><dd>Master reports, report part libraries, themes, layers</dd></div>
+      <div><dt>Migration</dt><dd>Imports SSRS <code>.rdl</code> / <code>.rdlc</code> and ActiveReportsJS <code>.rdlx-json</code></dd></div>
+      <div><dt>Server</dt><dd>Per-report permissions, audit log, OIDC and SAML sign-in <small>(in the server app, not this static demo)</small></dd></div>
     </dl>
   </section>
 
@@ -63,7 +66,7 @@
     <header class="sect-head">
       <p class="num">01</p>
       <h2 id="gallery-h">Live gallery</h2>
-      <p class="sect-note">Real report definitions from the repository, rendered by the embedded viewer. Page through them, change parameters, drill in, export.</p>
+      <p class="sect-note">Real report definitions from the repository, rendered by the embedded viewer. Page through them, change parameters, drill in, export. The ones marked designer-built were made in the designer with no code.</p>
     </header>
     <div class="split">
       <ol class="demo-list" id="demo-list" role="tablist" aria-label="Reports"></ol>
@@ -139,16 +142,21 @@
       <article><h3>Layout engine</h3><p>Page bands, multi-column body, keep-together and keep-with-next, page breaks between groups, table of contents with final page numbers, galley (pageless) view. Pure JavaScript with no DOM, so the same code renders in the browser and in Node.</p></article>
       <article><h3>Data</h3><p>JSON, CSV, REST, GraphQL, and SQL run on the server (SQLite, Postgres, MySQL). A response explorer finds the rows in an API response. Filters, sorts, lookups, nested data sets, report functions.</p></article>
       <article><h3>Interactivity</h3><p>Parameters with sliders, ranges, date ranges, cascading lists and options from data. Collapsible groups whose totals and paging stay correct, click-to-sort headers, drill-through with a breadcrumb, document map, search.</p></article>
-      <article><h3>Visuals</h3><p>Column, bar, line, area, pie, donut and scatter charts; pivot matrix with totals; sparkline, data bar and bullet in table cells; 49 barcode symbologies as vectors; rich text with lists, links and mixed styles; rotated and vertical text.</p></article>
-      <article><h3>Output</h3><p>PDF with links and an outline, Excel, Word (real tables), HTML and CSV from the viewer. On the server: every format by URL, batches, schedules with time zones, signed webhooks, API keys, and a <code>pw</code> CLI that renders and diff-tests reports in CI.</p></article>
-      <article><h3>Designer</h3><p>Smart guides, rulers, align and distribute, groups, sort and filter editors, table and matrix gallery, drag a data set to get a table, themes and named styles, version history, an expression editor with completion.</p></article>
+      <article><h3>Charts</h3><p>Column, bar, line, area, pie, donut, scatter, bubble, radar, polar, candlestick, OHLC, gauge and funnel. Combo charts with a second axis, 100% stacked and range series, log axes, trend lines, moving averages, reference lines and bands, data-label templates, 12 palettes or your own colours.</p></article>
+      <article><h3>Tables and pivots</h3><p>Pivot tables with nested row and column groups, totals, % of total, row or column, and expand and collapse. Merged cells, recursive groups, body sections, tables wider than the page, items inside cells. Sparkline, data bar and bullet in cells; 49 barcode symbologies as vectors; rich text.</p></article>
+      <article><h3>Reuse</h3><p>Master reports with a content placeholder (masters can have masters). Report part libraries, inserted linked or as a copy, with typed properties. Themes chosen at run time, named styles, and layers for screen, print, export or the designer only.</p></article>
+      <article><h3>Migration</h3><p>Imports SSRS / Report Builder <code>.rdl</code> and <code>.rdlc</code> (RDL 2008, 2010, 2016): data sets, parameters, tablix, charts, subreports, actions, VB expressions. Imports ActiveReportsJS <code>.rdlx-json</code>. What changed is listed as notes.</p></article>
+      <article><h3>Output</h3><p>PDF with links and an outline, Excel, Word (real tables), HTML, CSV and JSON (the laid-out pages) from the viewer. On the server: every format by URL, batches, schedules with time zones, signed webhooks, API keys, and a <code>pw</code> CLI that renders and diff-tests reports in CI.</p></article>
+      <article><h3>Designer</h3><p>Smart guides, rulers, align and distribute, groups, sort and filter editors, table and matrix gallery, a pivot wizard, instant visuals, chart series and overlay editors, drag a data set to get a table, version history, an expression editor with completion.</p></article>
+      <article><h3>Governance <small>(server app)</small></h3><p>Folders and permissions per report and folder for users and groups, enforced on every path. An append-only audit log of sign-ins, views, renders and exports. Single sign-on with OpenID Connect and SAML 2.0, IdP groups mapped to roles. Not part of this static demo.</p></article>
       <article><h3>Languages</h3><p>Viewer UI in English, Hindi, Spanish, French, German, Japanese, Chinese, Portuguese (BR) and Arabic (right-to-left). Report text is shaped with HarfBuzz, with bundled Noto fallbacks for Devanagari, Arabic and Hebrew.</p></article>
       <article class="gaps"><h3>Not yet</h3><ul>
-        <li>No SSO and no per-report permissions.</li>
-        <li>SSRS XML (<code>.rdl</code>) is not imported; only ActiveReportsJS JSON.</li>
+        <li>SSRS maps and custom report items are not imported; custom code is kept as text; gauges are approximated.</li>
+        <li>Word export leaves charts out.</li>
+        <li>No two-factor sign-in and no SAML single logout.</li>
         <li>Indic scripts other than Devanagari, and Thai, need an uploaded font.</li>
-        <li>The embed's first load is 1.5 MB; the 400 KB target is not met.</li>
-        <li>The batch queue lives in the server process.</li>
+        <li>The embed's first load is 1.8 MB; the 400 KB target is not met.</li>
+        <li>Batch output files go to one server's disk.</li>
         <li>Non-English UI strings are machine translations.</li>
       </ul></article>
     </div>
@@ -157,7 +165,7 @@
 
 <footer class="foot">
   <p><strong>Pagewright</strong> · MIT licensed. Interface fonts IBM Plex and report fonts Inter, JetBrains Mono, Noto: SIL Open Font Licence.</p>
-  <p>Loan, sales and stress data are fictional and generated by the repository's sample code. Product data is a snapshot of <a href="https://dummyjson.com" rel="noopener">dummyjson.com</a>. <a data-get-it href="#embed">Get it</a></p>
+  <p>Loan, portfolio, sales, ledger and stress data are fictional and generated by the repository's sample code. The transcript is a Microsoft SSRS sample with its fictitious data. Product data is a snapshot of <a href="https://dummyjson.com" rel="noopener">dummyjson.com</a>. <a data-get-it href="#embed">Get it</a></p>
 </footer>
 <script type="module" src="site.js"></script>
 </body>

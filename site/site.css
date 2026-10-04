@@ -104,6 +104,7 @@ h2 { font-size: clamp(26px, 2.6vw, 38px); letter-spacing: -.025em; line-height: 
 .stage-head { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 8px 24px; align-items: end; }
 .stage-head h3 { margin: 0 0 4px; font-size: 20px; letter-spacing: -.01em; }
 .stage-what { margin: 0; color: var(--muted); }
+.made { display: inline-block; font-family: var(--mono); font-size: 11.5px; letter-spacing: .04em; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 1px 9px; margin-right: 4px; vertical-align: 1px; }
 .stage-try { margin: 0; font-size: 13.5px; padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 6px 6px 0; }
 .stage-try b { font-family: var(--mono); font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; margin-right: 6px; }
 

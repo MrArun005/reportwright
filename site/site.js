@@ -45,6 +45,21 @@ const DEMOS = [
   { id: 'sales-explorer', title: 'Sales explorer', k: 'drill-down · drill-through',
     what: 'Region › city › product groups that open and close with the totals and paging kept correct, sortable headers, and charts you can click.',
     try: 'Click a bar or a blue city name to drill through to the city report, then back with the breadcrumb. ▶ expands a group.' },
+  { id: 'stress-ledger', title: 'Stress ledger', k: '5,000 rows · drill-down · pivot', designer: true,
+    what: '5,000 deliberately messy transactions (nulls, Unicode, bad dates, mixed types): KPIs, five charts, a 3-level region › branch › account ledger that opens and closes, a pivot, a contents page and barcodes, over 300 pages. Its one warning is real: the data has Japanese text and this site ships no CJK font.',
+    try: 'Expand a region with ▶, change Regions and watch Branches cascade, then click an account ID to drill through to its detail report.' },
+  { id: 'torture-test-designer', title: 'Torture test', k: '18 pages · combo chart · bookmarks', designer: true,
+    what: 'A 180-loan lending portfolio: cover with a QR code, numbered contents, KPI band, region × product pivot, combo chart on two axes, a grouped register with sparklines, and loan detail pages.',
+    try: 'Untick a region or a status in the parameters, sort the register by a column header, or click a watchlist loan to jump to its detail page.' },
+  { id: 'charts-showcase', title: 'Charts', k: 'every chart type · overlays · palettes',
+    what: 'Column, bar, line, area, pie, donut, scatter, bubble, radar, polar, candlestick, OHLC, gauge and funnel; trend lines, moving averages, reference bands, data-label templates and the palettes, all drawn by the engine.',
+    try: 'Export the PDF and compare it with the screen: the charts are the same drawing, not a screenshot.' },
+  { id: 'tablix-showcase', title: 'Pivot tables', k: 'pivot · merged cells · recursive groups',
+    what: 'Region › city × year pivots with % of row and subtotals, merged header cells, a recursive cost hierarchy, a three-across grid list, and an 18-month table wider than the page that continues with its first column repeated.',
+    try: 'Page to the wide table: the columns that do not fit move to the next page and the region column comes with them.' },
+  { id: 'reuse-showcase', title: 'Master report and parts', k: 'master · part library · theme · layers', designer: true,
+    what: 'A content report placed inside a master report (header, footer, styles), report parts inserted linked and as a copy from a part library, a theme chosen by a parameter, and screen-only and designer-only layers.',
+    try: 'Open it in the Designer playground below: the master\'s items are drawn locked around the content, and the designer-only Notes layer appears.' },
   { id: 'invoice-gallery', title: 'Invoice', k: 'table gallery · totals',
     what: 'An invoice made with the designer\'s table gallery: grouped lines, formats, totals and a "Page n of m" footer.',
     try: 'Export it: PDF, Excel and Word buttons are in the toolbar (on a phone, under More).' },
@@ -75,13 +90,16 @@ const DEMOS = [
   { id: 'imported-regional-sales', title: 'Imported from ActiveReports', k: '.rdlx-json import',
     what: 'A report converted from an ActiveReportsJS .rdlx-json file by the importer: chart, matrix, Lookup and share-of-total expressions kept.',
     try: 'Pick fewer regions in the parameters; the chart, matrix and shares follow.' },
+  { id: 'imported-ssrs-transcript', title: 'Imported from SSRS', k: '.rdl import · Microsoft sample',
+    what: 'A Microsoft SQL Server Reporting Services sample report (a certification transcript), converted from .rdl by the importer: lists, tables, an embedded image and the page footer kept.',
+    try: 'Export it to Word or Excel: an SSRS report, now rendered with no SSRS server.' },
 ];
 
 const list = $('#demo-list');
 const host = $('#gallery-viewer');
 let current = null, handle = null, galleryLive = false;
 const tabs = DEMOS.map((d) => {
-  const b = el('button', { type: 'button', role: 'tab', id: `tab-${d.id}` }, el('span', { className: 't', textContent: d.title }), el('span', { className: 'k', textContent: d.k }));
+  const b = el('button', { type: 'button', role: 'tab', id: `tab-${d.id}` }, el('span', { className: 't', textContent: d.title }), el('span', { className: 'k', textContent: d.designer ? `designer-built · ${d.k}` : d.k }));
   b.setAttribute('aria-controls', 'gallery-viewer');
   b.addEventListener('click', () => { show(d.id); history.replaceState(null, '', `#demo=${d.id}`); });
   list.append(el('li', {}, b));
@@ -93,7 +111,7 @@ async function show(id) {
   current = d.id;
   tabs.forEach((b, i) => b.setAttribute('aria-selected', String(DEMOS[i] === d)));
   $('#demo-title').textContent = d.title;
-  $('#demo-what').textContent = d.what;
+  $('#demo-what').replaceChildren(...(d.designer ? [el('span', { className: 'made', textContent: 'Built entirely in the Designer, no code' }), ' '] : []), d.what);
   $('#demo-try').replaceChildren(el('b', { textContent: 'Try' }), d.try);
   if (!galleryLive) return;
   handle?.unmount(); handle = null;
@@ -172,6 +190,8 @@ whenNear(scaleHost, () => loadViewer()); // warm the bundle so the timing measur
 const SAMPLES = [
   ['invoice-gallery', 'Invoice'],
   ['sales-dashboard', 'Sales dashboard'],
+  ['stress-ledger', 'Stress ledger (built in the designer)'],
+  ['reuse-showcase', 'Master report and parts (built in the designer)'],
   ['loan-statement', 'Loan statement'],
   ['richtext-showcase', 'Rich text'],
   ['style-showcase', 'Text and styling'],
