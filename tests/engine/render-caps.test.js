@@ -60,4 +60,18 @@ describe('render caps', () => {
     expect(mb).toBeLessThan(40); // was ~430 MB of "137,80,…" strings
   });
 
+  it('subreports share the render\'s 50 MB image budget during layout', async () => {
+    const child = (k) => report([0, 1, 2].map(j => ({ type: 'image', name: `I${j}`, x: 0, y: j * 12, w: 20, h: 10, src: mb9(k * 3 + j) })));
+    const kids = { A: child(0), B: child(1) };
+    const def = report([
+      { type: 'subreport', name: 'SA', report: 'A', x: 0, y: 0, w: 200, h: 40 },
+      { type: 'subreport', name: 'SB', report: 'B', x: 0, y: 50, w: 200, h: 40 },
+    ]);
+    const m = await render(def, { fontStore, loadReport: async (id) => kids[id] });
+    // 6 × 9 MB: the second child's third image is over 50 MB in all, and the child itself says so
+    expect(m.warnings.join('\n')).toMatch(/^Subreport B: .*pass 50 MB in all/m);
+    const total = m.pages.flatMap(p => p.items).filter(i => i.t === 'image').reduce((s, i) => s + i.src.length * 3 / 4, 0);
+    expect(total).toBeLessThanOrEqual(50 * 1048576);
+  });
+
 });

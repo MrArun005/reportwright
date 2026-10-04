@@ -83,7 +83,9 @@ export async function render(def, opts = {}) {
   const base = { ...BASE_STYLE, ...(def.styles?.base || {}) };
   let idSeq = 0;
   const regions = [];
-  let imageBudget = { seen: new Set(), bytes: 0 }; // 50 MB of images per render, each distinct image once
+  // 50 MB of images per render, each distinct image once: subreports share their parent's, and every layout pass
+  // the same one (an image is counted once, so a second pass adds nothing)
+  const imageBudget = opts.imageBudget || { seen: new Set(), bytes: 0 };
   const makeLc = (globals, fixed) => {
     const lc = {
       m, base, dataSets, warn, fixed, maxUnitHeight: contentH, state: opts.state || {}, regions,
@@ -109,7 +111,6 @@ export async function render(def, opts = {}) {
   const layoutAll = async () => {
     warnings.length = kept;
     idSeq = 0;
-    imageBudget = { seen: new Set(), bytes: 0 };
     if (!opts.fnCount) fnCount.n = 0; // each layout pass (fonts, TOC) gets the full budget
     const lc = makeLc(baseCtx.globals, false);
     // opts.firstPages: lay out only enough rows for that many pages (a fast first look; the full render follows).
@@ -136,7 +137,7 @@ export async function render(def, opts = {}) {
             if ((opts.chain || []).includes(rq.report)) throw new Error('it includes itself');
             if (!defs.has(rq.report)) defs.set(rq.report, await opts.loadReport(rq.report));
             const child = defs.get(rq.report);
-            const r = await render(child, { ...opts, reportId: rq.report, budget, fnCount, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, rq.report], bodyWidth: page.bodyWidth, state: {} });
+            const r = await render(child, { ...opts, reportId: rq.report, budget, fnCount, imageBudget, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, rq.report], bodyWidth: page.bodyWidth, state: {} });
             results.set(key, r);
             for (const w of r.warnings) warn(`Subreport ${rq.report}: ${w}`);
           } catch (e) { results.set(key, { error: e.message }); }
