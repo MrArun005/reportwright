@@ -1232,17 +1232,31 @@
           "w": 340.16,
           "h": 56.69,
           "dataSet": "Sales",
-          "value": "=Sum(Fields.amount)",
-          "valueFormat": "n0",
-          "rowGroup": "=Fields.region",
-          "columnGroup": "=Fields.quarter",
-          "rowSort": "asc",
-          "columnSort": "asc",
-          "rowTotals": true,
-          "columnTotals": true,
-          "corner": "Region",
-          "rowHeaderWidth": 113.39,
+          "rowGroups": [
+            {
+              "expr": "=Fields.region",
+              "name": "PivotRegion",
+              "sort": "asc",
+              "total": "after",
+              "width": 113.39
+            }
+          ],
+          "columnGroups": [
+            {
+              "expr": "=Fields.quarter",
+              "name": "QuarterGroup",
+              "sort": "asc",
+              "total": "after"
+            }
+          ],
+          "values": [
+            {
+              "value": "=Sum(Fields.amount)",
+              "format": "n0"
+            }
+          ],
           "columnWidth": 85.04,
+          "corner": "Region",
           "headerStyle": {
             "fontWeight": "bold",
             "textAlign": "right",
@@ -1278,7 +1292,8 @@
               2,
               4
             ]
-          }
+          },
+          "repeatHeader": false
         }
       ]
     },

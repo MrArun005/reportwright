@@ -452,10 +452,13 @@ function emFunc(name, args, o, res) {
   if (AGG[w]) {
     if (!args.length) return no(`${name}() without an expression`);
     const sc = scopeArg(args[1], o, name);
-    if (args.length > 2) o.notes.push(`${name}: the third argument is ignored`);
-    return fn(AGG[w], sc ? [em(args[0], o), sc] : [em(args[0], o)]);
+    // Sum(x, "Group", Recursive): a recursive group's node and the nodes below it
+    const rec = args.length > 2 && sc && args[2].k === 'id' && args[2].name.toLowerCase() === 'recursive';
+    if (args.length > 2 && !rec) o.notes.push(`${name}: the third argument is ignored`);
+    return fn(AGG[w], sc ? [em(args[0], o), sc, ...(rec ? [atom('"Recursive"')] : [])] : [em(args[0], o)]);
   }
   switch (w) {
+    case 'level': { const sc = args.length ? scopeArg(args[0], o, name) : null; return fn('Level', sc ? [sc] : []); }
     case 'countrows': { const sc = scopeArg(args[0], o, name); return fn('CountRows', sc ? [sc] : []); }
     case 'rownumber': { const sc = scopeArg(args[0], o, name); return fn('RowNumber', sc ? [sc] : []); }
     case 'runningvalue': {
@@ -1144,7 +1147,6 @@ function groupSort(list, key, cx, t, ctx, label, ds) {
 function cellOf(c, cx, tt, ctx, kind, opt = {}) {
   const ar = c?.Item ?? (Array.isArray(c?.ReportItems) ? c.ReportItems[0] : undefined);
   const span = Math.max(1, Math.floor(Number(c?.ColSpan) || 1));
-  if (Number(c?.RowSpan) > 1) tt.approx(`a cell spans ${c.RowSpan} rows; Pagewright shows it in the first row only.`);
   /** @type {Record<string, any>} */
   let cell = { value: '' };
   if (ar && typeof ar === 'object') {
@@ -1189,6 +1191,7 @@ function cellOf(c, cx, tt, ctx, kind, opt = {}) {
       const innerCell = cellOf({ Item: ar.ReportItems[0] }, cx, tt, ctx, kind, opt);
       cell = { ...innerCell, style: { ...textStyle(ar.Style, cx, t, ctx, { box: true }), ...innerCell.style } };
       if (span > 1) cell.colSpan = span;
+      if (Number(c?.RowSpan) > 1) cell.rowSpan = Math.floor(Number(c.RowSpan));
       return cell;
     } else if (type === 'tablix' || type === 'table' || type === 'list' || type === 'chart' || type === 'dvchart' || type === 'image' || type === 'subreport' || type === 'barcode' || type === 'rectangle' || type === 'bandedlist') {
       t.drop(`a ${ar.Type} inside a table cell is not supported, so the cell is empty.`);
@@ -1197,6 +1200,7 @@ function cellOf(c, cx, tt, ctx, kind, opt = {}) {
     finish(cx, t, null);
   }
   if (span > 1) cell.colSpan = span;
+  if (Number(c?.RowSpan) > 1) cell.rowSpan = Math.floor(Number(c.RowSpan));
   return cell;
 }
 
@@ -1490,6 +1494,9 @@ function tablixTable(ar, cx, ctx) {
       if (gs.rows) sorts.splice(i, 0, gs.rows);
       const pb = breaks(g.m.Group);
       if (pb.between) out.pageBreak = String(g.m.Group.PageBreak?.BreakLocation ?? g.m.Group.PageBreak).toLowerCase() === 'end' ? 'after' : 'between';
+      if (isTrue(g.m.Group.PageBreak?.ResetPageNumber)) { out.newSection = true; delete out.pageBreak; }
+      // a recursive hierarchy: Parent is the parent's id
+      if (g.m.Group.Parent != null && g.m.Group.Parent !== '') { const pe = ex(cx, t, g.m.Group.Parent, rctx, { what: 'a recursive parent' }); if (pe !== undefined) out.parent = pe; }
       if (isTrue(g.m.KeepTogether)) out.keepTogether = true;
       if (Array.isArray(g.m.Group.Filters) && g.m.Group.Filters.length) t.approx(`the group "${g.name}" has filters, which Pagewright groups do not support, so all its rows show.`);
       const label = g.m.Group.DocumentMapLabel;
@@ -1509,85 +1516,116 @@ function tablixTable(ar, cx, ctx) {
   return finish(cx, t, it);
 }
 
-/** A tablix with column groups: a Pagewright matrix (one row group × one column group, totals). */
+/**
+ * A tablix with column groups: a Pagewright matrix in the array form (spec §6). Each chain of dynamic members
+ * becomes rowGroups / columnGroups (outer → inner), a static member beside a dynamic one becomes that group's
+ * total, the static children of the innermost column group become several values.
+ */
 function tablixMatrix(ar, cx, ctx) {
   const t = track(cx, ar);
-  const allGroups = [];
-  const collect = (ms) => { for (const m of ms || []) { if (m?.Group?.Name) allGroups.push(m.Group.Name); collect(m?.Children); } };
-  collect(ar.RowHierarchy?.Members); collect(ar.ColumnHierarchy?.Members);
-  for (const g of allGroups) cx.scopes.set(g, null); // a matrix cell aggregates over its own rows
   const it = common(ar, cx, t, ctx, 'matrix');
   const rctx = { ...ctx, region: it.name, top: false };
   it.dataSet = ar.DataSetName || ctx.dataSet;
   const rowMs = members(ar.RowHierarchy), colMs = members(ar.ColumnHierarchy);
-  const rowDyn = rowMs.find(isDyn), colDyn = colMs.find(isDyn);
-  const nested = (ms) => ms.filter(isDyn).length > 1 || ms.some(m => anyDyn(m.Children));
-  if (nested(rowMs) || nested(colMs)) t.approx('its nested groups are reduced to one row group and one column group.');
   // leaf index of each member (its body row or column)
   const leafIndex = (ms) => { const map = new Map(); let n = 0; const walk = (list) => { for (const m of list) { map.set(m, m.BodyIndex ?? n); const kids = members({ Members: m.Children }); if (kids.length) walk(kids); else n++; } }; walk(ms); return map; };
   const rIdx = leafIndex(rowMs), cIdx = leafIndex(colMs);
-  const ri = rowDyn ? rIdx.get(rowDyn) : 0, ci = colDyn ? cIdx.get(colDyn) : 0;
-  const cellAt = (r, c) => ar.Body.Rows?.[r]?.Cells?.[c]?.Item;
+  /** The chain of dynamic members, with the static member beside each (its total) and the leaves under the innermost. */
+  const chainOf = (ms, which) => {
+    const levels = [];
+    let list = ms, leaves = [];
+    while (list.length) {
+      const dyns = list.filter(isDyn);
+      if (!dyns.length) { leaves = list; break; }
+      if (dyns.length > 1) t.approx(`two ${which} groups sit side by side; only the first is kept.`);
+      const d = dyns[0], i = list.indexOf(d);
+      const before = list.slice(0, i).find(m => !m.Group), after = list.slice(i + 1).find(m => !m.Group);
+      levels.push({ m: d, total: after ? 'after' : before ? 'before' : 'none', tm: after || before || null });
+      list = members({ Members: d.Children });
+      if (!list.length) leaves = [d];
+    }
+    return { levels, leaves };
+  };
+  const rc = chainOf(rowMs, 'row'), cc = chainOf(colMs, 'column');
+  if (rc.levels.length > 8 || cc.levels.length > 8) t.approx('it has more than 8 levels of groups; the deeper levels are left out.');
   const used = new Set();
-  const valueItem = cellAt(ri, ci);
-  const value = valueItem ? ex(cx, t, valueItem.Value ?? '', rctx, { what: 'its cell value' }) : undefined;
-  if (valueItem) used.add(valueItem);
-  it.value = value ?? '=Count(Fields)';
-  const vfmt = formatOf(valueItem?.Style?.Format);
-  if (vfmt) it.valueFormat = vfmt;
-  const key = (m, which) => {
+  const cellAt = (r, c) => ar.Body.Rows?.[r]?.Cells?.[c]?.Item;
+  for (const L of [...rc.levels, ...cc.levels]) cx.scopes.set(L.m.Group.Name || '', L.m.Group.Name || null);
+  const groupOf = (L, l, which) => {
+    const m = L.m;
     const keys = (m.Group.GroupExpressions || []).map(e => ex(cx, t, e, rctx, { what: 'a group expression' })).filter(k => k !== undefined);
-    const k = keys.length ? joinKeys(keys) : '=""';
+    /** @type {Record<string, any>} */
+    const g = { expr: keys.length ? joinKeys(keys) : '=""' };
+    if (m.Group.Name) g.name = m.Group.Name;
     const hv = m.Header?.Item?.Value;
     if (m.Header?.Item) used.add(m.Header.Item);
-    if (isExpr(hv)) {
-      const label = translateExpression(hv, { scopes: cx.scopes }).value;
-      if (typeof label === 'string' && label !== k && /Fields\./.test(label) && !AGG_RE.test(label)) {
-        t.approx(`its ${which} are grouped by their header text (${label}) so the labels show; two groups with the same text become one.`);
-        return label;
-      }
+    if (isExpr(hv)) { const label = ex(cx, t, hv, rctx, { what: 'a group header' }); if (typeof label === 'string' && label !== g.expr) g.label = label; }
+    const s = sortList(m.SortExpressions, cx, t, rctx, it.dataSet)[0];
+    if (s) { g.sort = s.dir; if (s.by !== g.expr) g.sortBy = s.by; }
+    if (L.total !== 'none') {
+      g.total = L.total;
+      if (L.tm.Header?.Item) used.add(L.tm.Header.Item);
+      const tv = L.tm.Header?.Item?.Value;
+      if (tv != null && !isExpr(tv) && String(tv).trim() !== 'Total') g.totalLabel = String(tv);
     }
-    return k;
+    if (which === 'row') { const w = ar.RowHierarchy?.LevelSizes?.[l]; if (w != null) g.width = toPt(w, 110); }
+    if (Array.isArray(m.Group.Filters) && m.Group.Filters.length) t.approx(`the group "${m.Group.Name}" has filters, which Pagewright groups do not support, so all its rows show.`);
+    return g;
   };
-  it.rowGroup = rowDyn ? key(rowDyn, 'rows') : '=""';
-  it.columnGroup = colDyn ? key(colDyn, 'columns') : '=""';
-  const sortOf = (m) => { const s = sortList(m?.SortExpressions, cx, t, rctx, it.dataSet)[0]; return s ? s.dir : undefined; };
-  const rs = sortOf(rowDyn), cs = sortOf(colDyn);
-  if (rs) it.rowSort = rs;
-  if (cs) it.columnSort = cs;
-  // totals: a static member next to the group
-  const staticAfter = (ms, dyn) => ms.find((m, i) => !m.Group && i > ms.indexOf(dyn));
-  const colTotal = colDyn && staticAfter(colMs, colDyn), rowTotal = rowDyn && staticAfter(rowMs, rowDyn);
-  it.rowTotals = !!colTotal;
-  it.columnTotals = !!rowTotal;
-  for (const [m, r, c] of [[colTotal, ri, colTotal && cIdx.get(colTotal)], [rowTotal, rowTotal && rIdx.get(rowTotal), ci], [rowTotal && colTotal, rowTotal && rIdx.get(rowTotal), colTotal && cIdx.get(colTotal)]]) {
-    if (!m) continue;
-    if (m.Header?.Item) used.add(m.Header.Item);
+  it.rowGroups = rc.levels.slice(0, 8).map((L, l) => groupOf(L, l, 'row'));
+  it.columnGroups = cc.levels.slice(0, 8).map((L, l) => groupOf(L, l, 'column'));
+  // drill-down: a member hidden behind a toggle makes the group above it collapsible
+  for (const [ch, gs] of [[rc, it.rowGroups], [cc, it.columnGroups]]) {
+    ch.levels.forEach((L, l) => {
+      const v = L.m.Visibility;
+      if (l > 0 && v?.ToggleItem) { gs[l - 1].collapsible = true; if (isTrue(v.Hidden)) gs[l - 1].initiallyCollapsed = true; }
+      else if (v && !isFalse(v.Hidden)) t.approx('a hidden group is shown.');
+    });
+  }
+  // values: the cells where the innermost row leaf meets each innermost column leaf
+  const rLeaf = rc.leaves[0] || rowMs[0], cLeaves = cc.leaves.length ? cc.leaves : colMs.slice(0, 1);
+  if (rc.leaves.length > 1) t.approx('several rows under the innermost row group are reduced to the first.');
+  const ri = rLeaf ? rIdx.get(rLeaf) : 0;
+  it.values = cLeaves.map((cm) => {
+    const ci = cIdx.get(cm) ?? 0;
+    const vi = cellAt(ri, ci);
+    /** @type {Record<string, any>} */
+    const v = { value: vi ? ex(cx, t, vi.Value ?? '', rctx, { what: 'its cell value' }) ?? '=Count(Fields)' : '=Count(Fields)' };
+    if (vi) { used.add(vi); const f = formatOf(vi.Style?.Format); if (f) v.format = f; }
+    if (cLeaves.length > 1 && cm.Header?.Item) { used.add(cm.Header.Item); v.label = ex(cx, t, cm.Header.Item.Value ?? '', rctx, { text: true }); }
+    return v;
+  });
+  it.columnWidth = toPt(ar.Body.Columns[cIdx.get(cLeaves[0]) ?? 0], 64);
+  // total cells: Pagewright totals use the value formulas
+  const totRows = rc.levels.filter(L => L.tm).map(L => rIdx.get(L.tm)), totCols = cc.levels.filter(L => L.tm).map(L => cIdx.get(L.tm));
+  for (const r of [ri, ...totRows]) for (const c of [...cLeaves.map(m => cIdx.get(m)), ...totCols]) {
     const ti = cellAt(r, c);
-    if (!ti) continue;
+    if (!ti || used.has(ti)) continue;
     used.add(ti);
-    if (translateExpression(ti.Value, { scopes: cx.scopes }).value !== it.value) t.approx(`a total cell uses ${ti.Value}; Pagewright totals use the same formula as the cells (${it.value}).`);
+    const tv = translateExpression(ti.Value, { scopes: cx.scopes }).value;
+    if (!it.values.some(v => v.value === tv)) t.approx(`a total cell uses ${ti.Value}; Pagewright totals use the same formula as the cells.`);
   }
-  for (const m of [colTotal, rowTotal]) {
-    const hv = m?.Header?.Item?.Value;
-    if (hv != null && String(hv).trim() !== 'Total') t.approx(`a total header says "${hv}"; Pagewright writes "Total".`);
-  }
+  // corner: one text, or one header per row group in its last row
+  const crow = ar.Corner?.[ar.Corner.length - 1] || [];
   const corner = ar.Corner?.[0]?.[0]?.Item;
-  if (corner) { used.add(corner); it.corner = ex(cx, t, corner.Value ?? '', rctx, { text: true }); }
-  it.rowHeaderWidth = toPt(ar.RowHierarchy?.LevelSizes?.[0], 110);
-  it.columnWidth = toPt(ar.Body.Columns[ci], 64);
+  if (crow.length > 1 && it.rowGroups.length > 1) {
+    crow.forEach((c, k) => { if (c?.Item && k < it.rowGroups.length) { used.add(c.Item); it.rowGroups[k].header = ex(cx, t, c.Item.Value ?? '', rctx, { text: true }); } });
+  } else if (corner) { used.add(corner); it.corner = ex(cx, t, corner.Value ?? '', rctx, { text: true }); }
+  const colDyn = cc.levels[0]?.m;
   const hs = colDyn?.Header?.Item ? textStyle(colDyn.Header.Item.Style, cx, t, rctx) : null;
   if (hs && Object.keys(hs).length) it.headerStyle = hs;
+  const valueItem = cellAt(ri, cIdx.get(cLeaves[0]) ?? 0);
   if (valueItem) { const cs2 = textStyle(valueItem.Style, cx, t, rctx); delete cs2.format; if (Object.keys(cs2).length) it.cellStyle = cs2; }
-  const tItem = rowTotal ? cellAt(rIdx.get(rowTotal), ci) : null;
+  const tItem = totRows.length ? cellAt(totRows[0], cIdx.get(cLeaves[0]) ?? 0) : null;
   if (tItem) { const ts = textStyle(tItem.Style, cx, t, rctx); delete ts.format; if (Object.keys(ts).length) it.totalStyle = ts; }
-  const rhs = rowDyn?.Header?.Item?.Style;
+  const rhs = rc.levels[0]?.m.Header?.Item?.Style;
   if (rhs && Object.keys(textStyle(rhs, cx, t, rctx)).length) it.style = { padding: textStyle(rhs, cx, t, rctx).padding ?? 0 };
+  if (isFalse(ar.RepeatColumnHeaders)) it.repeatHeader = false;
   regionData(ar, it, cx, t, rctx, ctx);
   // count the items inside: what the matrix shows is mapped, the rest is noted
   for (const inside of tablixItems(ar)) {
     const ti = track(cx, inside);
-    if (!used.has(inside) && inside.Value != null && String(inside.Value).trim() !== '') ti.approx('this cell is not shown: a Pagewright matrix has one value cell, totals and headers.');
+    if (!used.has(inside) && inside.Value != null && String(inside.Value).trim() !== '') ti.approx('this cell is not shown: a Pagewright matrix shows group headers, values and totals.');
     finish(cx, ti, null);
   }
   return finish(cx, t, it);
@@ -1613,6 +1651,7 @@ function list(ar, cx, ctx) {
   const lk = levelKeys(G, cx, t, ctx);
   if (lk) it.groupBy = lk.key;
   if (breaks(G).between || breaks(G).after) it.pageBreakBetween = true;
+  if (isTrue(G?.PageBreak?.ResetPageNumber)) { it.newSection = true; delete it.pageBreakBetween; }
   const st = textStyle(ar.Style, cx, t, ctx, { box: true });
   delete st.padding;
   if (Object.keys(st).length) it.style = st;
@@ -2256,14 +2295,18 @@ function convertReport(ar, cx, opts) {
     bodyItems = convertItems(src.Body?.ReportItems, cx, { band: 'body', top: true });
     bodyH = toPt(src.Body?.Height);
   }
-  // more sections: each starts on a new page; only the first section's page setup, header and footer are used
+  // more sections: body sections, each with its own page setup; the first section's header and footer are used
+  const more = [];
   for (const [k, s] of sections.slice(1).entries()) {
     if (s.PageHeader?.ReportItems?.length || s.PageFooter?.ReportItems?.length) cx.warn(`Section ${k + 2} has its own page header or footer; Pagewright uses the first section's for every page.`);
+    const sp = s.Page ? pageOf(s.Page, cx) : pinfo;
     const f = s.FixedPage || (String(s.Type || '').toLowerCase() === 'fixedpage' ? s : null);
-    const its = f?.Pages ? fixedPage(f, cx, pinfo).items : convertItems(s.Body?.ReportItems, cx, { band: 'body', top: false });
-    const h = Math.max(toPt(s.Body?.Height), ...its.map(i => i.y + i.h));
-    bodyItems.push({ type: 'container', name: uniq(cx, s.Name || `Section${k + 2}`, true), x: 0, y: r2(bodyH), w: pinfo.bodyWidth, h: r2(h), pageBreakBefore: true, keepTogether: false, style: {}, items: its });
-    bodyH = r2(bodyH + h);
+    const its = f?.Pages ? fixedPage(f, cx, sp).items : convertItems(s.Body?.ReportItems, cx, { band: 'body', top: true });
+    const h = Math.max(toPt(s.Body?.Height), ...its.map(i => i.y + i.h), 0);
+    /** @type {Record<string, any>} */
+    const b = { name: s.Name || `Section${k + 2}`, height: r2(h), items: its };
+    if (JSON.stringify(sp.page) !== JSON.stringify(pinfo.page)) b.page = sp.page;
+    more.push(b);
   }
   // Pagewright needs room for the body between the header and the footer
   if (pinfo.contentH - header.height - footer.height < 24) {
@@ -2275,6 +2318,7 @@ function convertReport(ar, cx, opts) {
   /** @type {Record<string, any>} */
   const body = { height: r2(Math.max(bodyH, ...bodyItems.map(i => i.y + i.h), 0)), items: bodyItems };
   if (cx.columns) body.columns = cx.columns;
+  if (more.length) body.name = sec0?.Name || 'Section1';
   return {
     $schema: 'pagewright/report@1',
     name,
@@ -2285,7 +2329,7 @@ function convertReport(ar, cx, opts) {
     dataSources,
     dataSets,
     styles: { base: { fontFamily: 'Inter', fontSize: 10, color: '#000000', padding: 0 } },
-    sections: { pageHeader: header, body, pageFooter: footer },
+    sections: { pageHeader: header, body: more.length ? [body, ...more] : body, pageFooter: footer },
   };
 }
 

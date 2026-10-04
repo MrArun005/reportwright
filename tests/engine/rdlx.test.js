@@ -243,9 +243,11 @@ describe('regional sales (newer layout: ReportSections)', () => {
   });
   it('maps the pivot tablix to a matrix with totals', () => {
     const m = byName(def, 'QuarterPivot');
-    expect(m).toMatchObject({ type: 'matrix', dataSet: 'Sales', rowGroup: '=Fields.region', columnGroup: '=Fields.quarter', value: '=Sum(Fields.amount)',
-      valueFormat: 'n0', corner: 'Region', rowTotals: true, columnTotals: true, rowSort: 'asc', columnSort: 'asc' });
-    expect(m.rowHeaderWidth).toBeCloseTo(113.39, 1);
+    expect(m).toMatchObject({ type: 'matrix', dataSet: 'Sales', corner: 'Region',
+      rowGroups: [{ name: 'PivotRegion', expr: '=Fields.region', sort: 'asc', total: 'after' }],
+      columnGroups: [{ name: 'QuarterGroup', expr: '=Fields.quarter', sort: 'asc', total: 'after' }],
+      values: [{ value: '=Sum(Fields.amount)', format: 'n0' }] });
+    expect(m.rowGroups[0].width).toBeCloseTo(113.39, 1);
   });
   it('converts every item', () => {
     expect(stats.dropped).toBe(0);
@@ -496,5 +498,73 @@ describe('rich text and vertical text (phase 2)', () => {
     const r = one({ Type: 'textbox', Value: '縦', Style: { WritingMode: 'tb-rl' } });
     expect(r.definition.sections.body.items[0].style.writingMode).toBe('tb-rl');
     expect(r.warnings.join(' ')).not.toMatch(/vertical/i);
+  });
+});
+
+describe('phase 4: nested tablix, recursive groups, row spans, sections', () => {
+  const tb = (name, Value, extra = {}) => ({ Item: { Type: 'textbox', Name: name, Value, ...extra } });
+  const ds = { DataSources: [{ Name: 'S', ConnectionProperties: { DataProvider: 'JSON', ConnectString: 'jsondata=[]' } }],
+    DataSets: [{ Name: 'Sales', Query: { DataSourceName: 'S', CommandText: '$.[*]' }, Fields: ['region', 'city', 'year', 'amount', 'id', 'boss'].map(n => ({ Name: n, DataField: n })) }] };
+  const nested = {
+    Type: 'tablix', Name: 'Pivot', DataSetName: 'Sales', Width: '6in', Height: '1in',
+    Corner: [[tb('C1', 'Sales')]],
+    RowHierarchy: { LevelSizes: ['1in', '1in'], Members: [
+      { Header: tb('HRegion', '=Fields!region.Value'), Group: { Name: 'Region', GroupExpressions: ['=Fields!region.Value'] }, SortExpressions: [{ Value: '=Fields!region.Value' }],
+        Children: [
+          { Header: tb('HCity', '=Fields!city.Value'), Group: { Name: 'City', GroupExpressions: ['=Fields!city.Value'] }, Visibility: { Hidden: true, ToggleItem: 'HRegion' } },
+          { Header: tb('HCityTotal', 'Subtotal') },
+        ] },
+      { Header: tb('HTotal', 'Total') },
+    ] },
+    ColumnHierarchy: { LevelSizes: ['0.25in'], Members: [
+      { Header: tb('HYear', '=Fields!year.Value'), Group: { Name: 'Year', GroupExpressions: ['=Fields!year.Value'] } },
+      { Header: tb('HYearTotal', 'Total') },
+    ] },
+    Body: { Columns: ['0.8in', '0.8in'], Rows: [
+      { Height: '0.25in', Cells: [tb('V', '=Sum(Fields!amount.Value)', { Style: { Format: 'n0' } }), tb('V2', '=Sum(Fields!amount.Value)')] },
+      { Height: '0.25in', Cells: [tb('V3', '=Sum(Fields!amount.Value)'), tb('V4', '=Sum(Fields!amount.Value)')] },
+      { Height: '0.25in', Cells: [tb('V5', '=Sum(Fields!amount.Value)'), tb('V6', '=Sum(Fields!amount.Value)')] },
+    ] },
+  };
+  const rep = (items, extra = {}) => importRdlx({ Name: 'R', ...ds, Page: { PageWidth: '8.5in', PageHeight: '11in' }, Body: { ReportItems: items, Height: '3in' }, ...extra });
+  it('a tablix with nested row groups becomes the array form with totals and drill-down', () => {
+    const r = rep([nested]);
+    const m = byName(r.definition, 'Pivot');
+    expect(m.rowGroups).toEqual([
+      { expr: '=Fields.region', name: 'Region', sort: 'asc', total: 'after', width: 72, collapsible: true, initiallyCollapsed: true },
+      { expr: '=Fields.city', name: 'City', total: 'after', totalLabel: 'Subtotal', width: 72 },
+    ]);
+    expect(m.columnGroups).toEqual([{ expr: '=Fields.year', name: 'Year', total: 'after' }]);
+    expect(m.values).toEqual([{ value: '=Sum(Fields.amount)', format: 'n0' }]);
+    expect(m.corner).toBe('Sales');
+    expect(validate(r.definition).errors).toEqual([]);
+    expect(r.stats.dropped).toBe(0);
+  });
+  it('a recursive group, Level() and Recursive aggregates; row spans; reset page numbers', () => {
+    const t = {
+      Type: 'tablix', Name: 'Org', DataSetName: 'Sales', Width: '4in', Height: '0.5in',
+      RowHierarchy: { Members: [{ Group: { Name: 'Emp', GroupExpressions: ['=Fields!id.Value'], Parent: '=Fields!boss.Value', PageBreak: { BreakLocation: 'Between', ResetPageNumber: true } } }] },
+      ColumnHierarchy: { Members: [{}, {}] },
+      Body: { Columns: ['2in', '2in'], Rows: [{ Height: '0.25in', Cells: [tb('N', '=Level()'), tb('S', '=Sum(Fields!amount.Value, "Emp", Recursive)')] }] },
+    };
+    const r = rep([t]);
+    const g = byName(r.definition, 'Org').groups[0];
+    expect(g).toMatchObject({ name: 'Emp', expr: '=Fields.id', parent: '=Fields.boss', newSection: true });
+    expect(g.pageBreak).toBeUndefined();
+    expect(JSON.stringify(byName(r.definition, 'Org'))).toContain('Sum(Fields.amount, \\"Emp\\", \\"Recursive\\")');
+    expect(JSON.stringify(byName(r.definition, 'Org'))).toContain('=Level()');
+    const sp = translateExpression('=Level("Emp")', { scopes: new Map([['Emp', 'Emp']]) });
+    expect(sp.value).toBe('=Level("Emp")');
+  });
+  it('several report sections become body sections, each with its own page', () => {
+    const r = importRdlx({ Name: 'R', ...ds, ReportSections: [
+      { Name: 'Cover', Page: { PageWidth: '8.5in', PageHeight: '11in' }, Body: { Height: '1in', ReportItems: [{ Type: 'textbox', Name: 'T1', Value: 'Cover', Width: '2in', Height: '0.3in' }] } },
+      { Name: 'Wide', Page: { PageWidth: '11in', PageHeight: '8.5in' }, Body: { Height: '1in', ReportItems: [{ Type: 'textbox', Name: 'T2', Value: 'Wide', Width: '2in', Height: '0.3in' }] } },
+    ] });
+    const b = r.definition.sections.body;
+    expect(Array.isArray(b)).toBe(true);
+    expect(b.map(s => s.name)).toEqual(['Cover', 'Wide']);
+    expect(b[1].page).toMatchObject({ size: 'Letter', orientation: 'landscape' });
+    expect(validate(r.definition).errors).toEqual([]);
   });
 });
