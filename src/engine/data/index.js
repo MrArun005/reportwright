@@ -69,6 +69,12 @@ export function coerce(v, type) {
     case 'date': return toDate(v);
     case 'boolean': return typeof v === 'boolean' ? v : ['true', '1', 'yes', 'y'].includes(String(v).toLowerCase());
     case 'string': return typeof v === 'string' ? v : String(v);
+    // a list of values (a sparkline's points): an array as it is, or text split at commas or semicolons
+    case 'list': {
+      if (Array.isArray(v)) return v;
+      if (typeof v !== 'string') return [v];
+      return v.split(/[,;]/).map(x => x.trim()).filter(x => x !== '').map(x => (/^-?\d+(\.\d+)?$/.test(x) ? Number(x) : x));
+    }
     default: return v;
   }
 }
@@ -79,8 +85,10 @@ export function detectFields(rows) {
   for (const r of rows.slice(0, 50)) {
     if (!r || typeof r !== 'object') continue;
     for (const [k, v] of Object.entries(r)) {
-      if (v != null && typeof v === 'object' && !(v instanceof Date)) continue;
-      const t = guessType(v);
+      // an array of plain values is a list field (an array of objects is rows: a nested data set)
+      const list = Array.isArray(v) && v.every(x => x == null || typeof x !== 'object');
+      if (v != null && typeof v === 'object' && !(v instanceof Date) && !list) continue;
+      const t = list ? 'list' : guessType(v);
       if (!out.has(k) || out.get(k) === 'null') out.set(k, t);
       else if (out.get(k) !== t && t !== 'null') out.set(k, 'string');
     }

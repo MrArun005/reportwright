@@ -582,6 +582,16 @@ function ParamsEditor({ label, value, onChange }) {
   );
 }
 
+/** A sparkline's points from a list field of the data set (one point per value). */
+function ListFieldPick({ dataSet, value, onPick }) {
+  const T = useT();
+  const def = useDesigner(s => s.def);
+  const lists = fieldsOf(def, dataSet).filter(f => f.type === 'list').map(f => f.name);
+  if (!lists.length) return <div className="hint">{T('visListHint')}</div>;
+  const cur = /^=Fields\.(\w+)$/.exec(String(value || ''))?.[1];
+  return <Field label={T('visListField')}><Select value={lists.includes(cur) ? cur : ''} allowEmpty options={lists} onChange={f => onPick(f ? `=Fields.${f}` : undefined)} data-testid="sparkline-list-field" /></Field>;
+}
+
 function VisualEditor({ cell, setCell, openExpr, dataSet }) {
   const T = useT();
   const v = cell.visual || null;
@@ -594,6 +604,7 @@ function VisualEditor({ cell, setCell, openExpr, dataSet }) {
       {ty === 'sparkline' && E('category', 'One point per', '=Fields.month')}
       {ty && ty !== 'rangebar' && E('value', 'Value', '=Sum(Fields.amount)')}
       {ty === 'sparkline' && E('values', T('visValues'), '=Fields.history')}
+      {ty === 'sparkline' && <ListFieldPick dataSet={dataSet} value={v.values} onPick={x => set({ values: x })} />}
       {ty === 'sparkline' && <>
         <Field label="Style"><Select value={v.style || 'line'} options={[{ value: 'line', label: 'Line' }, { value: 'column', label: 'Columns' }, { value: 'area', label: 'Area' }, { value: 'winloss', label: 'Win / loss' }]} onChange={x => set({ style: x })} /></Field>
         {E('bandLow', 'Range band from', '=0')}

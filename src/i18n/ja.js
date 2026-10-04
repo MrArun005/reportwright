@@ -438,4 +438,8 @@ export default {
   instant_table: "表",
   instant_pivot: "ピボット",
   instantPick: "テキストフィールドと数値フィールドを選んでください。",
+  fieldType: "フィールドの型",
+  fieldTypeList: "リスト（複数の値）",
+  visListField: "リストフィールドの点",
+  visListHint: "リストフィールド（配列、または 3,5,2 のようなテキスト）は値ごとに 1 点になります。データセットでフィールドの型をリストにします。",
 };

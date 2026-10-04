@@ -438,4 +438,8 @@ export default {
   instant_table: "جدول",
   instant_pivot: "جدول محوري",
   instantPick: "حدد حقلًا نصيًا وحقلًا رقميًا.",
+  fieldType: "نوع الحقل",
+  fieldTypeList: "قائمة (عدة قيم)",
+  visListField: "نقاط من حقل قائمة",
+  visListHint: "حقل القائمة (مصفوفة، أو نص مثل 3,5,2) يعطي نقطة لكل قيمة: اجعل نوع الحقل قائمة في مجموعة البيانات.",
 };

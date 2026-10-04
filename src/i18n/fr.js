@@ -438,4 +438,8 @@ export default {
   instant_table: "Tableau",
   instant_pivot: "Tableau croisé",
   instantPick: "Cochez un champ texte et un champ numérique.",
+  fieldType: "Type de champ",
+  fieldTypeList: "liste (plusieurs valeurs)",
+  visListField: "Points d’un champ liste",
+  visListHint: "Un champ liste (un tableau, ou un texte comme 3,5,2) donne un point par valeur : mettez le type du champ à liste dans le jeu de données.",
 };

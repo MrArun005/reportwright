@@ -438,4 +438,8 @@ export default {
   instant_table: "Tabelle",
   instant_pivot: "Pivot-Tabelle",
   instantPick: "Kreuzen Sie ein Textfeld und ein Zahlenfeld an.",
+  fieldType: "Feldtyp",
+  fieldTypeList: "Liste (mehrere Werte)",
+  visListField: "Punkte aus einem Listenfeld",
+  visListHint: "Ein Listenfeld (ein Array oder Text wie 3,5,2) ergibt einen Punkt pro Wert: Setzen Sie den Feldtyp im Datensatz auf Liste.",
 };

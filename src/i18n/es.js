@@ -438,4 +438,8 @@ export default {
   instant_table: "Tabla",
   instant_pivot: "Tabla dinámica",
   instantPick: "Marque un campo de texto y un campo numérico.",
+  fieldType: "Tipo de campo",
+  fieldTypeList: "lista (varios valores)",
+  visListField: "Puntos de un campo de lista",
+  visListHint: "Un campo de lista (un array, o texto como 3,5,2) da un punto por valor: ponga el tipo del campo en lista en el conjunto de datos.",
 };

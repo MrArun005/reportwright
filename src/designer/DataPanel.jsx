@@ -497,7 +497,7 @@ function DataSetDialog({ index, onClose, onSaved }) {
           {d.fields.map((f, i) => (
             <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 120px 1.4fr auto', gap: 6 }}>
               <TextInput value={f.name} onChange={v => setField(i, 'name', v)} mono aria-label={T('dsFieldName')} />
-              <Select value={f.type} options={['string', 'number', 'date', 'boolean']} onChange={v => setField(i, 'type', v)} />
+              <Select value={f.type} options={['string', 'number', 'date', 'boolean', { value: 'list', label: T('fieldTypeList') }]} onChange={v => setField(i, 'type', v)} aria-label={T('fieldType')} />
               <TextInput value={f.expr || ''} onChange={v => setField(i, 'expr', v || undefined)} mono placeholder={T('dsCalcPlaceholder')} />
               <button className="btn sm ghost danger" onClick={() => setD({ ...d, fields: d.fields.filter((_, j) => j !== i) })} aria-label={T('dsRemoveField')}>✕</button>
             </div>
