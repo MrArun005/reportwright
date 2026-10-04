@@ -285,11 +285,11 @@ Build them with `npm run build:packages`; `tests/fixtures/types/consumer.ts` is 
 
 ### Table of contents: headings and numbering
 
-A text box with `headingLevel` (1–6) is a heading. A table of contents with `"source": "headings"` lists the headings (the PDF's bookmarks panel keeps the bookmarks only); without it, it lists bookmarks as before. `numbering` numbers the lines: `"decimal"` (1, 1.1, 1.2), `"roman"` (I, II), `"alpha"` (A, B), or one per level, `["roman", "alpha"]` or `"roman,alpha"` (the last repeats for deeper levels). A level that is skipped counts as 1. Clicking a heading line goes to the heading.
+A text box with `headingLevel` (1–6) is a heading. A table of contents with `"source": "headings"` lists the headings (the PDF's bookmarks panel keeps the bookmarks only); without it, it lists bookmarks as before. `numbering` numbers the lines: `"decimal"` (1, 1.1, 1.2), `"roman"` (I, II), `"alpha"` (A, B), or one per level, `["roman", "alpha"]` or `"roman,alpha"` (the last repeats for deeper levels). A level that is skipped counts as 1. In the viewer, clicking a line goes to its heading.
 
 ### Barcodes
 
-50 symbologies in the designer with their usual names (Code 128, GS1-128, EAN-13, UPC-A, ITF-14, Codabar, Intelligent Mail, QR Code, Data Matrix, PDF417, Aztec, MaxiCode, …); any other bwip-js id still works in the JSON. Options:
+49 symbologies in the designer with their usual names (Code 128, GS1-128, EAN-13, UPC-A, ITF-14, Codabar, Intelligent Mail, QR Code, Data Matrix, PDF417, Aztec, MaxiCode, …); any other bwip-js id still works in the JSON. Options:
 
 | Key | For | Values |
 |---|---|---|
