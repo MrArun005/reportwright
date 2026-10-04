@@ -68,7 +68,7 @@ describe('exporters', () => {
 
   it('adds URL annotations and an outline to the PDF', async () => {
     const out = await render(def(), { fontStore });
-    expect(out.bookmarks.map(b => b.label)).toEqual(['Footer link']);
+    expect(out.bookmarks.map(b => b.label)).toEqual(['Sales', 'Footer link']); // the table's own bookmark counts too
     const bytes = await exportPdf(out, fontStore);
     const { PDFDocument, PDFName } = await import('pdf-lib');
     const doc = await PDFDocument.load(bytes);

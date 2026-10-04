@@ -110,7 +110,7 @@ export async function render(def, opts = {}) {
       named: def.styles?.named || {},
       nextId: () => ++idSeq,
       layoutItems: (items, l, o) => layoutItems(items, l, o),
-      linkFor: (it, ctx, rect) => linkFor(it, ctx, rect, warn),
+      linkFor: (it, ctx, rect) => linkFor(it, ctx, rect, warn, opts.state),
       ctxFor: (item) => {
         const ds = item.dataSet || defaultDs;
         const rows = (ds && dataSets[ds]) || [];
@@ -356,18 +356,23 @@ function hasType(items, type) {
 }
 
 /** Hyperlink, drill-through or bookmark jump for an item or a cell. */
-function linkFor(it, ctx, rect, warn) {
+function linkFor(it, ctx, rect, warn, state) {
   let tip;
   if (it?.tooltip) { try { const t = evalValue(it.tooltip, ctx); if (t != null && t !== '') tip = String(t); } catch (e) { warn(`${it.name || 'Tooltip'}: ${e.message}`); } }
-  const l = linkAction(it, ctx, rect, warn);
+  const l = linkAction(it, ctx, rect, warn, state);
   if (l) return tip ? { ...l, tip } : l;
   return tip ? { t: 'link', ...rect, action: null, tip } : null; // a tooltip without an action
 }
 
-function linkAction(it, ctx, rect, warn) {
+function linkAction(it, ctx, rect, warn, state) {
   const a = it?.action;
   if (!a || !a.type || a.type === 'none') return null;
   try {
+    if (a.type === 'toggleItem') {
+      // show or hide another item (by name): the viewer flips state.toggles['item:<name>'] and renders again
+      const key = `item:${String(a.target || '')}`;
+      return a.target ? { t: 'link', ...rect, action: { type: 'toggle', key, open: !!state?.toggles?.[key] } } : null;
+    }
     if (a.type === 'params') {
       // Set report parameters and run the report again (cross-filtering). toggle: a second click on the same value clears it.
       const params = {};

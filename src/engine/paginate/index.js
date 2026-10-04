@@ -7,7 +7,8 @@
  * that fits the page and does not cut any unit.
  *
  * Unit: { top, height, items, breakBefore?, keepWithNext?, keepWithPrevious?, tableId? }
- * Table: { id, top, bottom, headerHeight, headerItems }  (strip coordinates)
+ * Table: { id, top, bottom, headerHeight, headerItems, owner?, depth? }  (strip coordinates; a repeating group header is
+ *        one more entry of its table, owner the same, depth its level + 1)
  */
 
 const EPS = 0.01;
@@ -59,9 +60,11 @@ export function paginate(units, tables, pageH, warn) {
   while (top < end - EPS) {
     if (++guard > 100000) { warn('Pagination stopped: too many pages'); break; }
     // tables that continue onto this page repeat their header
-    const repeat = pages.length
+    let repeat = pages.length
       ? tables.filter(t => t.top < top - EPS && t.bottom > top + EPS)
       : [];
+    // a repeating group header comes with its table's header (and outer groups'): the deepest one stands for them all
+    if (repeat.length > 1) repeat = repeat.filter(t => !t.owner || !repeat.some(r => r !== t && r.owner === t.owner && r.depth > t.depth));
     const offset = repeat.reduce((m, t) => Math.max(m, t.headerHeight), 0);
     let limit = top + Math.max(pageH - offset, 1);
 

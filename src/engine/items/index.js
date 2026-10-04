@@ -45,10 +45,11 @@ function textOf(raw, st, ctx) {
   return toText(raw, st.format, ctx);
 }
 function hidden(item, ctx, lc) {
-  if (item.hidden == null || item.hidden === false || item.hidden === '') return false;
-  if (item.hidden === true) return true;
-  const r = evalSafe(item.hidden, ctx, lc, item.name || item.type);
-  return !r.err && truthy(r.v);
+  let h = false;
+  if (item.hidden === true) h = true;
+  else if (item.hidden != null && item.hidden !== false && item.hidden !== '') { const r = evalSafe(item.hidden, ctx, lc, item.name || item.type); h = !r.err && truthy(r.v); }
+  // another item's "toggle visibility" action flips it (the viewer keeps that in state.toggles)
+  return item.name && lc.state?.toggles?.[`item:${item.name}`] ? !h : h;
 }
 
 /* ---------------------------------------------------------------- textbox */
@@ -232,6 +233,7 @@ register('image', {
   defaults: () => ({ type: 'image', w: 96, h: 64, src: '', fit: 'contain', style: {} }),
   props: [
     { key: 'src', label: 'Source (URL, data URI, embedded:name, or a field with base64 or bytes)', type: 'expr', category: 'Data' },
+    { key: 'dataSet', label: 'Data set', type: 'dataset', category: 'Data' },
     { key: 'fit', label: 'Fit', type: 'select', options: ['contain', 'cover', 'fill', 'clip'], category: 'Layout' },
     { key: 'autoSize', label: 'Size to the image (96 dpi)', type: 'bool', category: 'Layout' },
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
@@ -321,6 +323,7 @@ register('table', {
     { key: 'repeatColumns', label: 'Columns repeated on each page set', type: 'number', category: 'Layout', showIf: (it) => it.overflow === 'paginate' },
     { key: 'pageOrder', label: 'Page order', type: 'select', options: [{ value: 'down', label: 'Down, then across' }, { value: 'across', label: 'Across, then down' }], category: 'Layout', showIf: (it) => it.overflow === 'paginate' },
     { key: 'noRowsText', label: 'Text when no rows', type: 'text', category: 'Data' },
+    { key: 'bookmark', label: 'Bookmark (document map)', type: 'expr', category: 'Interactivity' },
     { key: 'pageBreakBefore', label: 'Page break before', type: 'bool', category: 'Layout' },
     { key: 'pageBreakAfter', label: 'Page break after', type: 'bool', category: 'Layout' },
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
@@ -368,6 +371,15 @@ register('table', {
     const cover = new Array(cols.length).fill(null); // the open span over each column: O(1) per cell
     const covered = (ci) => cover[ci] !== null;
     const layRow = (row, ctx, kind, extra) => {
+      // a row hidden by its expression (per record for detail rows) takes no space; merged cells over it still count it
+      if (row.hidden != null && row.hidden !== false && row.hidden !== '' && hidden({ hidden: row.hidden, name: `${item.name || 'Table'} row` }, ctx, lc)) {
+        if (openSpans.length) {
+          for (const s of openSpans) s.left--;
+          for (const s of openSpans) if (s.left <= 0) closeSpan(s);
+          openSpans = openSpans.filter(s => s.left > 0);
+        }
+        return null;
+      }
       const rst = resolveStyle([lc.base, lc.named?.[item.styleName], item.style, lc.named?.[row.styleName], row.style], ctx);
       const cells = [];
       let started = null; // merged cells that start on this row (rare: no array otherwise)
@@ -546,7 +558,7 @@ register('table', {
     const endBand = () => { for (const s of openSpans) closeSpan(s); openSpans = []; };
 
     // table header
-    const headerUnits = (item.header || []).map(r => layRow(r, base, 'header'));
+    const headerUnits = (item.header || []).map(r => layRow(r, base, 'header')).filter(Boolean);
     endBand();
     const headerHeight = headerUnits.reduce((s, u) => s + u.height, 0);
     if (item.repeatHeader !== false) repeatH = headerHeight;
@@ -564,6 +576,8 @@ register('table', {
     // groups (outer → inner), then detail rows
     const groups = item.groups || [];
     let rowNo = 0;
+    const groupTables = []; // groups whose header repeats: paginated like a table header (paginate/index.js)
+    const tableKey = `${item.name}#${lc.nextId()}`;
     const emit = (level, grows, ctx, chain, keyPath) => {
       if (level === groups.length) {
         for (let i = 0; i < grows.length; i++) {
@@ -635,9 +649,16 @@ register('table', {
         const dflt = kids && g.expandLevels != null ? depth < Number(g.expandLevels) : !g.initiallyCollapsed;
         const open = !g.collapsible ? true : (lc.state?.toggles?.[tkey] ?? dflt);
         const start = units.length;
-        const hu = (g.header || []).map((r, ri) => layRow(r, gctx, 'groupHeader', { level, ...(ri === 0 && g.collapsible ? { toggle: { key: tkey, open } } : {}) }));
+        const hu = (g.header || []).map((r, ri) => layRow(r, gctx, 'groupHeader', { level, ...(ri === 0 && g.collapsible ? { toggle: { key: tkey, open } } : {}) })).filter(Boolean);
         endBand();
         const before = units.length;
+        // a group header that repeats on each page its group continues on, under the table's (and outer groups') headers
+        const rep = g.repeatHeader && before > start && !lc.fixed ? [...(ctx.__rep || []), (() => {
+          const hdr = units.slice(start, before), h0 = hdr[0].top, its = [];
+          for (const u of hdr) for (const it of shiftLocal(u.items.filter(i => i.t !== 'link' && i.t !== 'bookmark'), u.top - h0)) its.push(it);
+          return { items: its, height: hdr.reduce((a, u) => a + u.height, 0) };
+        })()] : null;
+        if (rep) gctx.__rep = rep;
         const ch = kids?.get(bk) || [];
         if (open) {
           emit(level + 1, bk.rows, gctx, [...chain, sc], path);
@@ -650,8 +671,14 @@ register('table', {
         }
         // keep a group header with the group's content, never with the next group
         if (hu.length && units.length > before) hu[hu.length - 1].keepWithNext = true;
-        const fu = (g.footer || []).map(r => layRow(r, gctx, 'groupFooter', { level }));
+        const fu = (g.footer || []).map(r => layRow(r, gctx, 'groupFooter', { level })).filter(Boolean);
         endBand();
+        if (rep && units.length > before) {
+          let off = item.repeatHeader !== false ? headerHeight : 0;
+          const its = item.repeatHeader !== false ? [...headerItems] : [];
+          for (const r of rep) { for (const it of shiftLocal(r.items, off)) its.push(it); off += r.height; }
+          groupTables.push({ top: units[before].top, bottom: y, headerHeight: off, headerItems: its, x0: item.x, x1: item.x + width, owner: tableKey, depth: rep.length });
+        }
         if (fu.length && open) fu[0].keepWithPrevious = true;
         if (units.length > start) {
           if ((g.pageBreak === 'between' || g.newSection) && bi > 0) units[start].breakBefore = true;
@@ -683,7 +710,7 @@ register('table', {
 
     // a total of the first rows only would be wrong: no footer in a partial (first pages) render
     const fStart = units.length;
-    const footerUnits = lc.rowBudget?.cut ? [] : (item.footer || []).map(r => layRow(r, base, 'footer'));
+    const footerUnits = lc.rowBudget?.cut ? [] : (item.footer || []).map(r => layRow(r, base, 'footer')).filter(Boolean);
     endBand();
     if (footerUnits.length) footerUnits[0].keepWithPrevious = true;
     if (item.printAtBottom && footerUnits.length && !lc.fixed) {
@@ -692,6 +719,11 @@ register('table', {
       units[units.length - 1].breakAfter = true;
     }
 
+    // the table's own bookmark (document map, jump targets): at its top, on the page where it starts
+    if (item.bookmark && units.length) {
+      const b = evalSafe(item.bookmark, base, lc, `${item.name || 'Table'} bookmark`).v;
+      if (b != null && b !== '' && b !== '#Error') units[0].items.unshift({ t: 'bookmark', label: String(b), x: item.x, y: 0, level: item.bookmarkLevel ?? 0 });
+    }
     if (!lc.fixed) lc.regions?.push(region);
     // wider than the page: the columns continue on the next page set (spec §3.3)
     const room = (lc.bodyWidth ?? Infinity) - item.x;
@@ -706,7 +738,8 @@ register('table', {
     }
     return {
       height: y, units, width,
-      table: item.repeatHeader !== false && headerHeight ? { headerHeight, headerItems, x: item.x } : null,
+      table: item.repeatHeader !== false && headerHeight ? { headerHeight, headerItems, x: item.x, owner: tableKey, depth: 0 } : null,
+      ...(groupTables.length ? { tables: groupTables } : {}),
     };
   },
 });
@@ -728,6 +761,7 @@ register('container', {
   label: 'Container',
   defaults: () => ({ type: 'container', w: 240, h: 72, items: [], keepTogether: true, style: { border: '0.75 solid #d0d7de', padding: 0 } }),
   props: [
+    { key: 'dataSet', label: 'Data set (for its hidden expression and style)', type: 'dataset', category: 'Data' },
     { key: 'keepTogether', label: 'Keep together on one page', type: 'bool', category: 'Layout' },
     { key: 'pageBreakBefore', label: 'Page break before', type: 'bool', category: 'Layout' },
     { key: 'pageBreakAfter', label: 'Page break after', type: 'bool', category: 'Layout' },
