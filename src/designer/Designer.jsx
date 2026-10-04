@@ -39,7 +39,7 @@ const TOOLS = [
   { type: 'checkbox', icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="2" y="2" width="10" height="10" rx="2" stroke="currentColor" fill="none" /><path d="M4.5 7.2l1.8 1.8 3.4-3.6" stroke="currentColor" fill="none" strokeWidth="1.4" /></svg> },
 ];
 
-function Toolbox({ T }) {
+function Toolbox({ T, hide = [] }) {
   const add = (type) => {
     const def = useDesigner.getState().def;
     const items = def.sections.body.items;
@@ -50,7 +50,7 @@ function Toolbox({ T }) {
     <div className="pane">
       <h4>{T('insert')}</h4>
       <div className="pane-body tools">
-        {TOOLS.map(t => (
+        {TOOLS.filter(t => !hide.includes(t.type)).map(t => (
           <div key={t.type} className="tool" draggable role="button" tabIndex={0} data-tool={t.type}
             title={T('toolHint')}
             onDragStart={(e) => { e.dataTransfer.setData(MIME_TOOL, t.type); e.dataTransfer.effectAllowed = 'copy'; }}
@@ -64,7 +64,8 @@ function Toolbox({ T }) {
 }
 
 function isTyping(e) {
-  const t = e.target;
+  // inside a shadow root (the embed) e.target is the host element: the real target is the first in the path
+  const t = e.composedPath?.()[0] || e.target;
   return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
 }
 
@@ -104,13 +105,20 @@ function HistoryDialog({ id, onClose, T, lang }) {
   );
 }
 
-export default function Designer({ id, initial, lang: langIn }) {
+/**
+ * @param {{ id?: string, initial: object, lang?: string, embed?: { onSave?: (def: object) => any, onOpen?: () => any, readOnly?: boolean,
+ *   toolbox?: { hide?: string[] }, panels?: { data?: boolean, inspector?: boolean }, dataSourceTemplates?: object[], server?: string } }} props
+ *   embed: set by mountDesigner (another site); none on Pagewright's own pages
+ */
+export default function Designer({ id, initial, lang: langIn, embed = null }) {
   const lang = pickLang(langIn);
   const T = (k, v) => t(lang, k, v);
   const q = lang === 'en' ? '' : `?lang=${encodeURIComponent(lang)}`;
   const ready = useRef(false);
   // The store is module-global: never fill it on the server, where requests share it.
-  if (!ready.current && typeof window !== 'undefined') { useDesigner.getState().init(id, initial); useDesigner.getState().setUi({ lang }); ready.current = true; }
+  if (!ready.current && typeof window !== 'undefined') { useDesigner.getState().init(id, initial); useDesigner.getState().setUi({ lang, embed, readOnly: !!embed?.readOnly }); ready.current = true; }
+  const readOnly = !!embed?.readOnly;
+  const rootRef = useRef(null);
   const def = useDesigner(s => s.def);
   const tab = useDesigner(s => s.tab);
   const saved = useDesigner(s => s.saved);
@@ -122,7 +130,14 @@ export default function Designer({ id, initial, lang: langIn }) {
   // every report font, bundled and uploaded: the canvas draws text boxes as HTML in them (the browser only
   // downloads the ones it uses, e.g. Noto Sans Devanagari once there is Hindi on the page)
   const fonts = useDesigner(s => s.fonts);
-  const fontCss = useMemo(() => fontFaceCss(allFontKeys()), [fonts]); // eslint-disable-line react-hooks/exhaustive-deps
+  const fontCss = useMemo(() => fontFaceCss(allFontKeys(), `${embed?.server || ''}/fonts`), [fonts]); // eslint-disable-line react-hooks/exhaustive-deps
+  // embedded: @font-face is ignored inside a shadow root, so the report fonts are declared on the host document
+  useEffect(() => {
+    if (!embed) return;
+    let el = document.getElementById('pw-designer-fonts');
+    if (!el) { el = document.createElement('style'); el.id = 'pw-designer-fonts'; document.head.appendChild(el); }
+    el.textContent = fontCss;
+  }, [embed, fontCss]);
   useEffect(() => { customFonts().then(list => useDesigner.getState().setUi({ fonts: list })); }, []);
   const canUndo = useDesigner(s => s.past.length > 0);
   const canRedo = useDesigner(s => s.future.length > 0);
@@ -135,6 +150,8 @@ export default function Designer({ id, initial, lang: langIn }) {
 
   useEffect(() => {
     const onKey = (e) => {
+      // embedded: only keys typed inside the designer, never the host page's
+      if (embed && !(e.composedPath?.() || []).includes(rootRef.current)) return;
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); st().save(); return; }
       if (isTyping(e) || st().tab !== 'design') return;
@@ -158,19 +175,23 @@ export default function Designer({ id, initial, lang: langIn }) {
     };
     const onLeave = (e) => { if (!st().saved) { e.preventDefault(); e.returnValue = ''; } };
     window.addEventListener('keydown', onKey);
-    window.addEventListener('beforeunload', onLeave);
+    if (!embed) window.addEventListener('beforeunload', onLeave); // the host page decides about leaving
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('beforeunload', onLeave); };
-  }, [st]);
+  }, [st, embed]);
+  const open = async () => {
+    const d = await embed.onOpen();
+    if (d && typeof d === 'object') { st().init(id, d); loadSample(); }
+  };
 
   if (!def) return <div className="designer" dir={dirOf(lang)} lang={lang}><div className="dtop"><span className="brand"><i />Pagewright</span><span className="hint">{T('loadingDesigner')}</span></div></div>;
 
   return (
-    <div className="designer" data-testid="designer" dir={dirOf(lang)} lang={lang}>
-      <style>{fontCss}</style>
+    <div className="designer" data-testid="designer" dir={dirOf(lang)} lang={lang} ref={rootRef} data-readonly={readOnly || undefined}>
+      {!embed && <style>{fontCss}</style>}
       <div className="dtop">
-        <Link href={`/${q}`} className="brand"><i />Pagewright</Link>
-        <input className="name" value={def.name || ''} aria-label={T('reportName')} onChange={e => st().apply(d => { d.name = e.target.value; }, 'name')} />
-        <span className={`saved${saved ? '' : ' dirty'}`} data-testid="save-state">{saving ? T('saving') : saved ? T('saved') : T('unsaved')}</span>
+        {embed ? <span className="brand"><i />Pagewright</span> : <Link href={`/${q}`} className="brand"><i />Pagewright</Link>}
+        <input className="name" value={def.name || ''} aria-label={T('reportName')} readOnly={readOnly} onChange={e => st().apply(d => { d.name = e.target.value; }, 'name')} />
+        {!readOnly && <span className={`saved${saved ? '' : ' dirty'}`} data-testid="save-state">{saving ? T('saving') : saved ? T('saved') : T('unsaved')}</span>}
         {saveError && <span className="err">{saveError}</span>}
         <div className="spacer" />
         <button className="btn sm icon" title={T('undo')} aria-label={T('undo')} disabled={!canUndo} onClick={() => st().undo()}>↶</button>
@@ -179,12 +200,13 @@ export default function Designer({ id, initial, lang: langIn }) {
           <button aria-pressed={tab === 'design'} onClick={() => st().setUi({ tab: 'design' })}>{T('design')}</button>
           <button aria-pressed={tab === 'preview'} onClick={() => st().setUi({ tab: 'preview' })} data-testid="tab-preview">{T('preview')}</button>
         </div>
-        <button className="btn sm ghost" onClick={() => setDialog('ai')} title={T('askAiHint')}>{T('askAi')}</button>
-        <button className="btn sm ghost" onClick={() => setDialog('history')} title={T('historyHint')}>{T('history')}</button>
+        {!embed && <button className="btn sm ghost" onClick={() => setDialog('ai')} title={T('askAiHint')}>{T('askAi')}</button>}
+        {!embed && <button className="btn sm ghost" onClick={() => setDialog('history')} title={T('historyHint')}>{T('history')}</button>}
         <button className="btn sm ghost icon" onClick={() => setDialog('keys')} title={T('shortcutsHint')} aria-label={T('shortcutsHint')}>?</button>
-        <ThemeToggle />
-        <a className="btn sm" href={`/viewer/${id}${q}`} target="_blank" rel="noreferrer" title={T('openViewerHint')}>{T('openViewer')}</a>
-        <button className="btn sm primary" onClick={() => st().save()} disabled={saving || saved} data-testid="save">{T('save')} <span className="kbd" style={{ background: 'transparent', color: 'inherit', borderColor: 'currentColor', opacity: 0.7 }}>⌘S</span></button>
+        {!embed && <ThemeToggle />}
+        {!embed && <a className="btn sm" href={`/viewer/${id}${q}`} target="_blank" rel="noreferrer" title={T('openViewerHint')}>{T('openViewer')}</a>}
+        {embed?.onOpen && <button className="btn sm" onClick={open} data-testid="open">Open…</button>}
+        {!readOnly && <button className="btn sm primary" onClick={() => st().save()} disabled={saving || saved} data-testid="save">{T('save')} <span className="kbd" style={{ background: 'transparent', color: 'inherit', borderColor: 'currentColor', opacity: 0.7 }}>⌘S</span></button>}
       </div>
       {dialog === 'keys' && (
         <Dialog title={T('shortcuts')} onClose={() => setDialog(null)} footer={<button className="btn" onClick={() => setDialog(null)}>{T('close')}</button>}>
@@ -199,7 +221,9 @@ export default function Designer({ id, initial, lang: langIn }) {
         <ReportViewer definition={def} reportId={id} compact lang={lang} />
       ) : (
         <div className="dmain">
-          <aside className="dleft"><Toolbox T={T} /><DataPanel /></aside>
+          {(!readOnly || embed?.panels?.data !== false) && (
+            <aside className="dleft">{!readOnly && <Toolbox T={T} hide={embed?.toolbox?.hide} />}{embed?.panels?.data !== false && <DataPanel />}</aside>
+          )}
           <section className="dcenter">
             <div className="cbar">
               <label className="check">{T('zoom')}
@@ -217,7 +241,7 @@ export default function Designer({ id, initial, lang: langIn }) {
             </div>
             <Canvas />
           </section>
-          <aside className="dright"><Inspector /></aside>
+          {embed?.panels?.inspector !== false && <aside className="dright"><Inspector /></aside>}
         </div>
       )}
     </div>

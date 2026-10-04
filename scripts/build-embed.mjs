@@ -1,4 +1,4 @@
-// Builds public/embed/pagewright-viewer.js: React + viewer + engine in one script for other sites.
+// Builds public/embed/: the viewer (and, in the ESM build, the designer) for other sites.
 import { build } from 'esbuild';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,7 +13,7 @@ css += '\n.pw-embed{display:block;font:var(--fw-regular) var(--fs-base)/var(--lh
 const common = {
   entryPoints: [path.join(root, 'src/embed/index.js')],
   bundle: true, minify: true, target: ['es2020'],
-  alias: { '@': path.join(root, 'src') },
+  alias: { '@': path.join(root, 'src'), 'next/link': path.join(root, 'src/embed/link.js') },
   loader: { '.js': 'jsx', '.jsx': 'jsx' }, jsx: 'automatic',
   define: { 'process.env.NODE_ENV': '"production"', __PW_CSS__: JSON.stringify(css), __PW_EMBED__: 'true' },
   external: ['exceljs'],
@@ -24,13 +24,19 @@ const common = {
 await build({ ...common, format: 'iife', outfile: path.join(root, 'public/embed/pagewright-viewer.full.js') });
 // 2. For other sites: ES modules split in chunks, so PDF export (pdf-lib) and barcodes (bwip-js) load only when used.
 fs.rmSync(path.join(root, 'public/embed/esm'), { recursive: true, force: true });
-await build({ ...common, format: 'esm', splitting: true, outdir: path.join(root, 'public/embed/esm'), entryNames: 'viewer', chunkNames: 'chunk-[hash]' });
+//    The designer is a second entry: it shares React, the engine and the viewer with it.
+await build({ ...common, entryPoints: { viewer: path.join(root, 'src/embed/index.js'), designer: path.join(root, 'src/embed/designer.js') }, format: 'esm', splitting: true, outdir: path.join(root, 'public/embed/esm'), entryNames: '[name]', chunkNames: 'chunk-[hash]' });
 // 3. The script tag people paste: a tiny loader that keeps the Pagewright.mountViewer(...) call working.
 fs.writeFileSync(path.join(root, 'public/embed/pagewright-viewer.js'), `/* Pagewright viewer loader: the viewer itself is in esm/ */
 (function () {
   var s = document.currentScript, base = s && s.src ? s.src.replace(/[^/]*$/, '') : '/embed/';
-  var ready = import(base + 'esm/viewer.js');
-  window.Pagewright = { mountViewer: function (t, o) { return ready.then(function (m) { return m.mountViewer(t, o); }); }, ready: ready };
+  var ready = import(base + 'esm/viewer.js'), designer = null;
+  window.Pagewright = {
+    mountViewer: function (t, o) { return ready.then(function (m) { return m.mountViewer(t, o); }); },
+    // the designer loads only when a page asks for it
+    mountDesigner: function (t, o) { designer = designer || import(base + 'esm/designer.js'); return designer.then(function (m) { return m.mountDesigner(t, o); }); },
+    ready: ready
+  };
 })();
 `);
 fs.copyFileSync(path.join(root, 'node_modules/exceljs/dist/exceljs.min.js'), path.join(root, 'public/embed/exceljs.min.js'));
@@ -41,5 +47,6 @@ const walk = (f) => { if (first.has(f)) return; first.add(f); for (const m of fs
 walk('viewer.js');
 const size = (f) => fs.statSync(path.join(dir, f)).size;
 const kb = (n) => `${(n / 1024).toFixed(0)} KB`;
-const lazy = fs.readdirSync(dir).filter(f => !first.has(f));
+const lazy = fs.readdirSync(dir).filter(f => !first.has(f) && f !== 'designer.js');
+console.log(`embed designer entry ${kb(size('designer.js'))} (+ shared chunks)`);
 console.log(`embed: first load ${kb([...first].reduce((s, f) => s + size(f), 0))}; on demand ${lazy.map(f => kb(size(f))).join(', ')}; offline single file ${kb(fs.statSync(path.join(root, 'public/embed/pagewright-viewer.full.js')).size)}`);

@@ -79,11 +79,15 @@ export const useDesigner = create((set, get) => ({
   lastKey: null,
   lastAt: 0,
 
+  /** set by mountDesigner: { onSave, onOpen, readOnly, toolbox, panels, dataSourceTemplates, server } */
+  embed: null,
+  readOnly: false,
   init(id, def) { set({ id, def: normalize(def), saved: true, past: [], future: [], sel: { kind: 'report' } }); },
 
   /** Apply an immer recipe to the definition and record history. Same key within 800 ms merges. */
   apply(recipe, key = null) {
-    const { def, past, lastKey, lastAt } = get();
+    const { def, past, lastKey, lastAt, readOnly } = get();
+    if (readOnly) return; // every edit comes through here: read-only stops them all
     const next = produce(def, recipe);
     if (next === def) return;
     const now = Date.now();
@@ -92,13 +96,13 @@ export const useDesigner = create((set, get) => ({
   },
   undo() {
     const { past, def, future } = get();
-    if (!past.length) return;
+    if (!past.length || get().readOnly) return;
     set({ def: past[past.length - 1], past: past.slice(0, -1), future: [def, ...future].slice(0, 200), saved: false, lastKey: null });
     get().fixSelection();
   },
   redo() {
     const { past, def, future } = get();
-    if (!future.length) return;
+    if (!future.length || get().readOnly) return;
     set({ def: future[0], future: future.slice(1), past: [...past, def], saved: false, lastKey: null });
     get().fixSelection();
   },
@@ -116,11 +120,17 @@ export const useDesigner = create((set, get) => ({
   setUi(patch) { set(patch); },
 
   async save() {
-    const { id, def } = get();
+    const { id, def, embed, readOnly } = get();
+    if (readOnly) return;
     set({ saving: true, saveError: null });
     try {
-      const res = await fetch(`/api/reports/${id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(def) });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+      // embedded: the host app saves (onSave gets a plain copy), or the Pagewright server it named
+      if (embed?.onSave) await embed.onSave(JSON.parse(JSON.stringify(def)));
+      else {
+        if (!id) throw new Error('This report has no id to save to');
+        const res = await fetch(`${embed?.server || ''}/api/reports/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(def) });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+      }
       if (get().def === def) set({ saved: true });
     } catch (e) {
       set({ saveError: e.message });

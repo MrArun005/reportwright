@@ -7,6 +7,7 @@ import { loadSources, buildDataSets, detectFields, jsonPath } from '@/engine/dat
 import { resolveParameters } from '@/engine/index.js';
 import { Dialog, Field, TextInput, Select, Check } from './ui.jsx';
 import { t } from '@/i18n/index.js';
+import { origin } from '@/viewer/engineClient.js';
 
 const NAME = /^[A-Za-z_][\w]*$/;
 
@@ -16,7 +17,7 @@ export async function loadSample() {
   useDesigner.setState({ sample: { loading: true } });
   try {
     const params = resolveParameters(def, {});
-    const sources = await loadSources(def, { params, baseUrl: window.location.origin, sqlPreview: true });
+    const sources = await loadSources(def, { params, baseUrl: origin(), sqlPreview: true }); // the Pagewright server, also when embedded
     const ctx = { params, globals: { ExecutionTime: new Date() }, dataSets: {}, fields: null, locale: def.locale, currency: def.currency };
     const dataSets = buildDataSets(def, sources, ctx);
     useDesigner.setState({ sample: { dataSets, sources, at: Date.now() } });
@@ -31,6 +32,18 @@ export default function DataPanel() {
   const [dlg, setDlg] = useState(null);
   const [open, setOpen] = useState(() => new Set((def.dataSets || []).map(d => d.name)));
   const toggle = (n) => setOpen(s => { const x = new Set(s); x.has(n) ? x.delete(n) : x.add(n); return x; });
+  // embedded: data sources the host app offers ready-made, { label, source: { name, type, url, … } }
+  const templates = useDesigner(s => s.embed?.dataSourceTemplates) || [];
+  const addFromTemplate = (tpl) => {
+    const src = JSON.parse(JSON.stringify(tpl.source || tpl));
+    useDesigner.getState().apply(d => {
+      const names = new Set((d.dataSources || []).map(x => x.name));
+      let name = String(src.name || 'source'), n = 1;
+      while (names.has(name)) name = `${src.name || 'source'}${++n}`;
+      (d.dataSources ||= []).push({ ...src, name });
+    });
+    loadSample();
+  };
 
   return (
     <>
@@ -50,6 +63,15 @@ export default function DataPanel() {
       </div>
       <div className="pane">
         <h4>Data sources <button className="btn sm ghost" onClick={() => setDlg({ kind: 'source' })}>+ Add</button></h4>
+        {templates.length > 0 && (
+          <div className="pane-body" style={{ paddingBottom: 0 }}>
+            <select className="select" style={{ width: '100%' }} value="" aria-label="Add a data source from a template" data-testid="source-templates"
+              onChange={e => { const tpl = templates[Number(e.target.value)]; if (tpl) addFromTemplate(tpl); }}>
+              <option value="">+ Add from a template…</option>
+              {templates.map((tpl, i) => <option key={i} value={i}>{tpl.label || (tpl.source || tpl).name}</option>)}
+            </select>
+          </div>
+        )}
         <div className="pane-body">
           <ul className="tree">
             {(def.dataSources || []).map((s, i) => (
