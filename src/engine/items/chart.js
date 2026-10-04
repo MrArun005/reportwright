@@ -182,10 +182,14 @@ export function paintChart(item, ctx, lc, base) {
   /** A data label: drawn only if it overlaps no label drawn before it and stays in the chart (else it tries `alt`). */
   const label = (s, x, y, { size = fs * 0.9, align = 'center', color = ink, f: fk = font, alt = null } = {}) => {
     const { str, w } = measure(s, { size, f: fk });
-    for (const yy of alt == null ? [y] : [y, alt]) {
-      const lx = align === 'right' ? x - w : align === 'center' ? x - w / 2 : x;
-      if (placer.place({ x: lx, y: yy - size * 0.8, w, h: size })) {
-        out.push({ t: 'text', font: fk, size, color, lines: [{ x: lx, y: yy, text: str, w }] });
+    if (!str.trim()) return false; // a template that gives nothing for this point
+    // alt: a second place to try, a y (same x) or {x, y, align, color}
+    const tries = [{ x, y, align, color }];
+    if (alt != null) tries.push(typeof alt === 'number' ? { x, y: alt, align, color } : { x, y, align, color, ...alt });
+    for (const p of tries) {
+      const lx = p.align === 'right' ? p.x - w : p.align === 'center' ? p.x - w / 2 : p.x;
+      if (placer.place({ x: lx, y: p.y - size * 0.8, w, h: size })) {
+        out.push({ t: 'text', font: fk, size, color: p.color, lines: [{ x: lx, y: p.y, text: str, w }] });
         return true;
       }
     }
@@ -506,8 +510,8 @@ function paintCartesian(type, g) {
         else if (where === 'inside') {
           if (horiz) label(str, back ? rect.x + 3 : rect.x + rect.w - 3, rect.y + rect.h / 2 + sz * 0.35, { align: back ? 'left' : 'right', color, size: sz });
           else label(str, rect.x + rect.w / 2, back ? rect.y + rect.h - 3 : rect.y + sz + 2, { color, size: sz });
-        } else if (horiz) label(str, Math.max(p0, p1) + 3, rect.y + rect.h / 2 + fs * 0.35, { align: 'left', size: sz });
-        else label(str, rect.x + rect.w / 2, Math.min(p0, p1) - 3, { size: sz });
+        } else if (horiz) label(str, Math.max(p0, p1) + 3, rect.y + rect.h / 2 + fs * 0.35, { align: 'left', size: sz, alt: { x: Math.max(p0, p1) - 3, align: 'right', color: inkOn(fill) } });
+        else label(str, rect.x + rect.w / 2, Math.min(p0, p1) - 3, { size: sz, alt: { y: Math.min(p0, p1) + sz + 2, color: inkOn(fill) } }); // no room outside: inside the bar
       });
       continue;
     }
@@ -617,9 +621,12 @@ function paintXY(type, g) {
   const leftTitle = ys.title, bottomTitle = xs.title || item.xTitle;
   const left = X + 10 + (leftTitle ? fs * 1.6 : 0) + Math.max(...ay.ticks.map(t => lc.m.width(fmtY(t), font, fs)));
   const right = X + W - 6, pb = bottom - fs * 1.8 - (bottomTitle ? fs * 1.6 : 0), pt = top + fs * 0.6;
+  // bubbles keep inside the plot: the scale is laid out on a plot inset by the largest radius
+  const maxR = Math.max(4, Math.min(right - left, pb - pt) / 12);
+  const ins = type === 'bubble' ? maxR : 0;
   const clamp = (v) => Math.max(0, Math.min(1, v ?? 0));
-  const px = (v) => { const fr = clamp(axx.frac(v)); return xs.reversed ? right - fr * (right - left) : left + fr * (right - left); };
-  const py = (v) => { const fr = clamp(ay.frac(v)); return ys.reversed ? pt + fr * (pb - pt) : pb - fr * (pb - pt); };
+  const px = (v) => { const fr = clamp(axx.frac(v)); return xs.reversed ? right - ins - fr * (right - left - 2 * ins) : left + ins + fr * (right - left - 2 * ins); };
+  const py = (v) => { const fr = clamp(ay.frac(v)); return ys.reversed ? pt + ins + fr * (pb - pt - 2 * ins) : pb - ins - fr * (pb - pt - 2 * ins); };
   if (bottomTitle) text(bottomTitle, (left + right) / 2, bottom - 2, { align: 'center', color: '#6b7280' });
   if (leftTitle) text(leftTitle, X + 4 + fs, (pt + pb) / 2, { align: 'center', color: '#6b7280', rotate: { a: -90, cx: X + 4 + fs, cy: (pt + pb) / 2 } });
   for (const t of ay.ticks) { if (ys.gridlines !== false) out.push({ t: 'line', x1: left, y1: py(t), x2: right, y2: py(t), stroke: grid, strokeWidth: 0.5 }); text(fmtY(t), left - 5, py(t) + fs * 0.35, { align: 'right' }); }
@@ -635,7 +642,6 @@ function paintXY(type, g) {
     const v = overlayValues(o, g); if (v.length !== 2) continue;
     out.push({ t: 'rect', x: left, y: Math.min(py(v[0]), py(v[1])), w: right - left, h: Math.abs(py(v[0]) - py(v[1])), fill: (/^#[0-9a-f]{6}$/i.test(o.color || '') ? o.color : '#f59e0b') + '26' });
   }
-  const maxR = Math.max(4, Math.min(right - left, pb - pt) / 10);
   const multi = sets.length > 1;
   for (const { s, pts, i: si } of sets) {
     const col = s.color || g.pal[si % g.pal.length];
@@ -664,7 +670,7 @@ function paintXY(type, g) {
       const kind = o.kind === 'exp' || o.kind === 'poly' ? o.kind : 'linear';
       const fit = fitTrend(set.pts.map(p => [p.x, p.y]), kind, o.order);
       if (!fit) { lc.warn(`${who}: not enough values for the ${kind} trend line`); continue; }
-      const steps = kind === 'linear' ? 1 : 60;
+      const steps = 60; // sampled, so a line that leaves the plot is cut where it leaves
       const pts = [];
       for (let i = 0; i <= steps; i++) { const x = axx.lo + (axx.hi - axx.lo) * i / steps; const y = fit.at(x); if (Number.isFinite(y) && y >= ay.lo && y <= ay.hi) pts.push({ x: px(x), y: py(y) }); }
       if (pts.length > 1) {
@@ -692,7 +698,7 @@ function paintPolar(g, sets) {
     out.push({ t: 'line', x1: cx, y1: cy, x2: e.x, y2: e.y, stroke: grid, strokeWidth: 0.5 });
     text(`${d}°`, l.x, l.y + fs * 0.35, { align: Math.abs(l.x - cx) < 1 ? 'center' : l.x > cx ? 'left' : 'right', size: fs * 0.85, color: '#6b7280' });
   }
-  for (const t of ay.ticks) text(fmtY(t), cx + 2, cy - rad(t) - 1.5, { size: fs * 0.8, color: '#6b7280' });
+  for (const t of ay.ticks) if (rad(t) > 0 && rad(t) < R - 0.5) text(fmtY(t), cx + 3, cy - rad(t) + fs * 0.3, { size: fs * 0.8, color: '#6b7280' });
   for (const { s, pts, i } of sets) {
     const q = pts.map(p => ({ ...at(p.x, rad(p.y)), p }));
     if (s.def.type === 'line' || s.def.type === 'area') {

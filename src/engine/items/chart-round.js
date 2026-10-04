@@ -75,7 +75,8 @@ function paintRadar(g) {
   // polygon grid, spokes, tick values up the first spoke
   if (ys.gridlines !== false) for (const t of ticks) if (rad(t) > 0) out.push({ t: 'path', x: 0, y: 0, d: n > 2 ? poly(rad(t)) : '', fill: null, stroke: grid, strokeWidth: 0.5 });
   for (let i = 0; i < n; i++) { const e = at(i, R); out.push({ t: 'line', x1: cx, y1: cy, x2: e.x, y2: e.y, stroke: grid, strokeWidth: 0.5 }); }
-  for (const t of ticks) text(fmtV(t), cx + 2, cy - rad(t) - 1.5, { size: fs * 0.8, color: '#6b7280' });
+  // tick values up the first spoke; not 0 (the centre) nor the outer ring (the first category's label is there)
+  for (const t of ticks) if (rad(t) > 0 && rad(t) < R - 0.5) text(fmtV(t), cx + 3, cy - rad(t) + fs * 0.3, { size: fs * 0.8, color: '#6b7280' });
   data.categories.forEach((c, i) => {
     const p = at(i, R + 4), cos = Math.cos(ang(i));
     text(c, p.x, p.y + fs * 0.35 + (Math.sin(ang(i)) > 0.5 ? fs * 0.5 : 0), { align: Math.abs(cos) < 0.2 ? 'center' : cos > 0 ? 'left' : 'right', maxW: catW });
@@ -163,7 +164,7 @@ function paintFunnel(g) {
       const { w } = measure(s, { size: sz });
       const narrow = Math.min(tw, bw);
       if (w + 6 < narrow) text(s, cx, y + sh / 2 + sz * 0.35, { align: 'center', size: sz, color: inkOn(fill) });
-      else text(s, cx + maxW / 2 + 6, y + sh / 2 + sz * 0.35, { size: sz, maxW: X + W - (cx + maxW / 2 + 8) });
+      else { const lx = cx + (tw + Math.min(tw, bw)) / 4 + 6; text(s, lx, y + sh / 2 + sz * 0.35, { size: sz, maxW: X + W - lx - 2 }); }
     }
     y += sh + gap;
   });

@@ -76,7 +76,7 @@ function niceNum(x, round) {
 export function linearTicks(lo, hi, step) {
   const out = [];
   if (!(step > 0) || !Number.isFinite(lo) || !Number.isFinite(hi)) return [lo, hi];
-  for (let v = lo, i = 0; v <= hi + step / 2 && i < 200; v += step, i++) out.push(Math.round(v * 1e9) / 1e9);
+  for (let v = lo, i = 0; v <= hi + step / 2 && i < 200; v += step, i++) out.push(Math.round(v * 1e9) / 1e9 || 0); // || 0: never "-0"
   return out;
 }
 /** Powers of ten covering [min, max] (both > 0); at least two. */
