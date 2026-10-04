@@ -184,8 +184,7 @@ Kochi · 8 loans
 Page 2 of 4
 --- page 3
 Tablix showcase · pivots, hierarchies and pagination
-18 months by region: wider than the page, so it continues on the next page with the
-region column repeated
+18 months by region: wider than the page, so it continues on the next page with the region column repeated
 Region
 Jan 25
 Feb 25
