@@ -1,0 +1,4107 @@
+{
+ "$schema": "pagewright/report@1",
+ "name": "Stress test (every feature)",
+ "locale": "en-IN",
+ "currency": "INR",
+ "page": {
+  "size": "A4",
+  "orientation": "portrait",
+  "margins": [
+   36,
+   36,
+   30,
+   36
+  ]
+ },
+ "liveParameters": true,
+ "parameters": [
+  {
+   "name": "region",
+   "type": "string",
+   "prompt": "Regions",
+   "multi": true,
+   "optionsFrom": {
+    "dataSet": "Regions",
+    "value": "=Fields.name",
+    "label": "=Fields.name & ' (' & Fields.branches & ')'"
+   }
+  },
+  {
+   "name": "minPrincipal",
+   "type": "number",
+   "prompt": "Min principal",
+   "required": true,
+   "default": 0
+  },
+  {
+   "name": "showClosed",
+   "type": "string",
+   "prompt": "Show closed accounts",
+   "default": "yes",
+   "options": [
+    {
+     "value": "yes",
+     "label": "Yes"
+    },
+    {
+     "value": "no",
+     "label": "No"
+    }
+   ]
+  },
+  {
+   "name": "asOf",
+   "type": "date",
+   "prompt": "As of",
+   "default": "=Today()"
+  },
+  {
+   "name": "q",
+   "type": "string",
+   "prompt": "Status filter (set by chart click)"
+  },
+  {
+   "name": "subId",
+   "type": "string",
+   "prompt": "Subreport product id (last 2 digits)",
+   "default": "LN-12"
+  },
+  {
+   "name": "unused",
+   "type": "boolean",
+   "prompt": "Unused boolean parameter"
+  }
+ ],
+ "dataSources": [
+  {
+   "name": "hard",
+   "type": "rest",
+   "method": "GET",
+   "url": "/api/sample/hard?rows=3000"
+  }
+ ],
+ "dataSets": [
+  {
+   "name": "Regions",
+   "source": "hard",
+   "path": "$.regions",
+   "fields": [
+    {
+     "name": "name",
+     "type": "string"
+    },
+    {
+     "name": "branches",
+     "type": "number"
+    }
+   ]
+  },
+  {
+   "name": "FX",
+   "source": "hard",
+   "path": "$.fx",
+   "fields": [
+    {
+     "name": "currency",
+     "type": "string"
+    },
+    {
+     "name": "toInr",
+     "type": "number"
+    }
+   ]
+  },
+  {
+   "name": "Branches",
+   "source": "hard",
+   "path": "$.branches",
+   "fields": [
+    {
+     "name": "id",
+     "type": "string"
+    },
+    {
+     "name": "region",
+     "type": "string"
+    },
+    {
+     "name": "city",
+     "type": "string"
+    },
+    {
+     "name": "name",
+     "type": "string"
+    },
+    {
+     "name": "opened",
+     "type": "date"
+    },
+    {
+     "name": "target",
+     "type": "number"
+    },
+    {
+     "name": "manager",
+     "type": "string"
+    }
+   ]
+  },
+  {
+   "name": "Accounts",
+   "source": "hard",
+   "path": "$.accounts",
+   "fields": [
+    {
+     "name": "accountId",
+     "type": "string"
+    },
+    {
+     "name": "branchId",
+     "type": "string"
+    },
+    {
+     "name": "region",
+     "type": "string"
+    },
+    {
+     "name": "product",
+     "type": "string"
+    },
+    {
+     "name": "customer",
+     "type": "string"
+    },
+    {
+     "name": "city",
+     "type": "string"
+    },
+    {
+     "name": "principal",
+     "type": "number"
+    },
+    {
+     "name": "rate",
+     "type": "number"
+    },
+    {
+     "name": "months",
+     "type": "number"
+    },
+    {
+     "name": "emi",
+     "type": "number"
+    },
+    {
+     "name": "disbursed",
+     "type": "date"
+    },
+    {
+     "name": "lastPayment",
+     "type": "date"
+    },
+    {
+     "name": "status",
+     "type": "string"
+    },
+    {
+     "name": "dpd",
+     "type": "number"
+    },
+    {
+     "name": "outstanding",
+     "type": "number"
+    },
+    {
+     "name": "score",
+     "type": "string"
+    },
+    {
+     "name": "tags",
+     "type": "string"
+    },
+    {
+     "name": "notes",
+     "type": "string"
+    },
+    {
+     "name": "kyc",
+     "type": "string"
+    },
+    {
+     "name": "flags",
+     "type": "string"
+    },
+    {
+     "name": "ageDays",
+     "type": "number",
+     "expr": "=IIF(IsNull(Fields.disbursed), null, DateDiff('d', Fields.disbursed, Parameters.asOf))"
+    }
+   ],
+   "filters": [
+    {
+     "expr": "=Fields.region",
+     "op": "in",
+     "value": "=Parameters.region"
+    },
+    {
+     "expr": "=Fields.principal",
+     "op": ">=",
+     "value": "=Parameters.minPrincipal"
+    },
+    {
+     "expr": "=IIF(Parameters.showClosed = 'no', Trim(Lower(Coalesce(Fields.status,''))) <> 'closed', True)",
+     "op": "=",
+     "value": "=True"
+    },
+    {
+     "expr": "=IIF(Len(Coalesce(Parameters.q,'')) = 0, True, Trim(Lower(Coalesce(Fields.status,''))) = Parameters.q)",
+     "op": "=",
+     "value": "=True"
+    }
+   ]
+  },
+  {
+   "name": "Transactions",
+   "source": "hard",
+   "path": "$.transactions",
+   "fields": [
+    {
+     "name": "id",
+     "type": "number"
+    },
+    {
+     "name": "accountId",
+     "type": "string"
+    },
+    {
+     "name": "region",
+     "type": "string"
+    },
+    {
+     "name": "date",
+     "type": "date"
+    },
+    {
+     "name": "type",
+     "type": "string"
+    },
+    {
+     "name": "amount",
+     "type": "number"
+    },
+    {
+     "name": "currency",
+     "type": "string"
+    },
+    {
+     "name": "channel",
+     "type": "string"
+    },
+    {
+     "name": "reference",
+     "type": "string"
+    },
+    {
+     "name": "ok",
+     "type": "boolean"
+    },
+    {
+     "name": "amountInr",
+     "type": "number",
+     "expr": "=Fields.amount * Coalesce(Lookup(Coalesce(Fields.currency,'INR'), Fields.currency, Fields.toInr, 'FX'), 1)"
+    }
+   ]
+  },
+  {
+   "name": "Wide",
+   "source": "hard",
+   "path": "$.wide",
+   "fields": [
+    {
+     "name": "id",
+     "type": "number"
+    },
+    {
+     "name": "name",
+     "type": "string"
+    },
+    {
+     "name": "m01",
+     "type": "number"
+    },
+    {
+     "name": "m02",
+     "type": "number"
+    },
+    {
+     "name": "m03",
+     "type": "number"
+    },
+    {
+     "name": "m04",
+     "type": "number"
+    },
+    {
+     "name": "m05",
+     "type": "number"
+    },
+    {
+     "name": "m06",
+     "type": "number"
+    },
+    {
+     "name": "m07",
+     "type": "number"
+    },
+    {
+     "name": "m08",
+     "type": "number"
+    },
+    {
+     "name": "m09",
+     "type": "number"
+    },
+    {
+     "name": "m10",
+     "type": "number"
+    },
+    {
+     "name": "m11",
+     "type": "number"
+    },
+    {
+     "name": "m12",
+     "type": "number"
+    },
+    {
+     "name": "m13",
+     "type": "number"
+    },
+    {
+     "name": "m14",
+     "type": "number"
+    },
+    {
+     "name": "m15",
+     "type": "number"
+    },
+    {
+     "name": "m16",
+     "type": "number"
+    },
+    {
+     "name": "m17",
+     "type": "number"
+    },
+    {
+     "name": "m18",
+     "type": "number"
+    },
+    {
+     "name": "m19",
+     "type": "number"
+    },
+    {
+     "name": "m20",
+     "type": "number"
+    },
+    {
+     "name": "m21",
+     "type": "number"
+    },
+    {
+     "name": "m22",
+     "type": "number"
+    },
+    {
+     "name": "m23",
+     "type": "number"
+    },
+    {
+     "name": "m24",
+     "type": "number"
+    },
+    {
+     "name": "m25",
+     "type": "number"
+    },
+    {
+     "name": "m26",
+     "type": "number"
+    },
+    {
+     "name": "m27",
+     "type": "number"
+    },
+    {
+     "name": "m28",
+     "type": "number"
+    },
+    {
+     "name": "m29",
+     "type": "number"
+    },
+    {
+     "name": "m30",
+     "type": "number"
+    },
+    {
+     "name": "m31",
+     "type": "number"
+    },
+    {
+     "name": "m32",
+     "type": "number"
+    },
+    {
+     "name": "m33",
+     "type": "number"
+    },
+    {
+     "name": "m34",
+     "type": "number"
+    },
+    {
+     "name": "m35",
+     "type": "number"
+    },
+    {
+     "name": "m36",
+     "type": "number"
+    },
+    {
+     "name": "m37",
+     "type": "number"
+    },
+    {
+     "name": "m38",
+     "type": "number"
+    }
+   ]
+  },
+  {
+   "name": "Messy",
+   "source": "hard",
+   "path": "$.messy",
+   "fields": [
+    {
+     "name": "k",
+     "type": "string"
+    },
+    {
+     "name": "v",
+     "type": "string"
+    }
+   ]
+  },
+  {
+   "name": "Unicode",
+   "source": "hard",
+   "path": "$.unicode",
+   "fields": [
+    {
+     "name": "script",
+     "type": "string"
+    },
+    {
+     "name": "text",
+     "type": "string"
+    },
+    {
+     "name": "long",
+     "type": "string"
+    }
+   ]
+  },
+  {
+   "name": "Positions",
+   "source": "hard",
+   "path": "$.portfolio.books[*].positions[*]",
+   "fields": [
+    {
+     "name": "product",
+     "type": "string"
+    },
+    {
+     "name": "exposure",
+     "type": "number"
+    },
+    {
+     "name": "limit",
+     "type": "number"
+    },
+    {
+     "name": "utilisation",
+     "type": "number"
+    },
+    {
+     "name": "book",
+     "type": "string",
+     "expr": "=Coalesce(Parent.book, 'book?')"
+    }
+   ]
+  },
+  {
+   "name": "Empty",
+   "source": "hard",
+   "path": "$.empty",
+   "fields": [
+    {
+     "name": "x",
+     "type": "string"
+    }
+   ]
+  },
+  {
+   "name": "Single",
+   "source": "hard",
+   "path": "$.single",
+   "fields": [
+    {
+     "name": "only",
+     "type": "string"
+    }
+   ]
+  }
+ ],
+ "styles": {
+  "base": {
+   "fontFamily": "Inter",
+   "fontSize": 8.5,
+   "color": "#16202a"
+  }
+ },
+ "sections": {
+  "pageHeader": {
+   "height": 22,
+   "items": [
+    {
+     "type": "textbox",
+     "name": "PH",
+     "x": 0,
+     "y": 2,
+     "w": 350,
+     "h": 12,
+     "value": "Pagewright · stress test · {Globals.ReportName}",
+     "canGrow": false,
+     "style": {
+      "fontSize": 7.5,
+      "fontWeight": "bold",
+      "color": "#155e75"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "PHR",
+     "x": 350,
+     "y": 2,
+     "w": 173.28,
+     "h": 12,
+     "value": "Σ accounts shown: {CountRows()}",
+     "dataSet": "Accounts",
+     "canGrow": false,
+     "style": {
+      "fontSize": 7.5,
+      "color": "#5f6b77",
+      "textAlign": "right"
+     }
+    },
+    {
+     "type": "line",
+     "name": "PHL",
+     "x": 0,
+     "y": 17,
+     "w": 523.28,
+     "h": 0,
+     "style": {
+      "stroke": "#e5e7eb",
+      "strokeWidth": 0.75
+     }
+    }
+   ]
+  },
+  "body": {
+   "height": 5600,
+   "items": [
+    {
+     "type": "textbox",
+     "name": "Title",
+     "x": 0,
+     "y": 0,
+     "w": 523.28,
+     "h": 24,
+     "value": "Stress test: every feature, nasty data",
+     "canGrow": true,
+     "style": {
+      "fontSize": 18,
+      "color": "#16202a",
+      "fontWeight": "bold"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Subtitle",
+     "x": 0,
+     "y": 26,
+     "w": 523.28,
+     "h": 14,
+     "value": "Nulls, empty strings, six scripts, RTL, emoji, 3,400-char notes, words with no spaces, negative and huge numbers, dates in five formats, numbers as strings, a 400-row group, duplicate names. If a section looks wrong, that is the point: fix the engine, not the data.",
+     "canGrow": true,
+     "style": {
+      "fontSize": 7.5,
+      "color": "#5f6b77"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Params",
+     "x": 0,
+     "y": 54,
+     "w": 523.28,
+     "h": 12,
+     "value": "Region: {IIF(Len(Join(Parameters.region, ', ')) = 0, 'all', Join(Parameters.region, ', '))} · min principal: {Format(Parameters.minPrincipal, 'C0')} · show closed: {Parameters.showClosed} · as of {Format(Parameters.asOf, 'dd MMM yyyy')} · run {Format(Globals.ExecutionTime, 'dd MMM yyyy HH:mm')} · report «{Globals.ReportName}»",
+     "canGrow": true,
+     "style": {
+      "fontSize": 7.5,
+      "color": "#0e7490"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "H1",
+     "x": 0,
+     "y": 76,
+     "w": 523.28,
+     "h": 16,
+     "value": "1 · Aggregates over nulls, zeros and negatives",
+     "canGrow": true,
+     "style": {
+      "fontSize": 11,
+      "color": "#155e75",
+      "fontWeight": "bold"
+     },
+     "bookmark": "1 · Aggregates over nulls, zeros and negatives"
+    },
+    {
+     "type": "shape",
+     "name": "T0Box",
+     "x": 0,
+     "y": 96,
+     "w": 82,
+     "h": 40,
+     "shape": "rect",
+     "style": {
+      "fill": "#f5f7f9",
+      "stroke": "none",
+      "radius": 4
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "T0L",
+     "x": 5,
+     "y": 100,
+     "w": 72,
+     "h": 18,
+     "value": "Accounts",
+     "canGrow": true,
+     "style": {
+      "fontSize": 6.5,
+      "color": "#5f6b77"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "T0V",
+     "x": 5,
+     "y": 118,
+     "w": 72,
+     "h": 14,
+     "value": "=CountRows()",
+     "canGrow": false,
+     "style": {
+      "fontSize": 10,
+      "fontWeight": "bold",
+      "color": "#16202a",
+      "format": "N0"
+     },
+     "dataSet": "Accounts"
+    },
+    {
+     "type": "shape",
+     "name": "T1Box",
+     "x": 88.26,
+     "y": 96,
+     "w": 82,
+     "h": 40,
+     "shape": "rect",
+     "style": {
+      "fill": "#f5f7f9",
+      "stroke": "none",
+      "radius": 4
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "T1L",
+     "x": 93.26,
+     "y": 100,
+     "w": 72,
+     "h": 18,
+     "value": "Distinct customers",
+     "canGrow": true,
+     "style": {
+      "fontSize": 6.5,
+      "color": "#5f6b77"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "T1V",
+     "x": 93.26,
+     "y": 118,
+     "w": 72,
+     "h": 14,
+     "value": "=CountDistinct(Fields.customer)",
+     "canGrow": false,
+     "style": {
+      "fontSize": 10,
+      "fontWeight": "bold",
+      "color": "#16202a",
+      "format": "N0"
+     },
+     "dataSet": "Accounts"
+    },
+    {
+     "type": "shape",
+     "name": "T2Box",
+     "x": 176.52,
+     "y": 96,
+     "w": 82,
+     "h": 40,
+     "shape": "rect",
+     "style": {
+      "fill": "#f5f7f9",
+      "stroke": "none",
+      "radius": 4
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "T2L",
+     "x": 181.52,
+     "y": 100,
+     "w": 72,
+     "h": 18,
+     "value": "Σ principal",
+     "canGrow": true,
+     "style": {
+      "fontSize": 6.5,
+      "color": "#5f6b77"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "T2V",
+     "x": 181.52,
+     "y": 118,
+     "w": 72,
+     "h": 14,
+     "value": "=Sum(Fields.principal)",
+     "canGrow": false,
+     "style": {
+      "fontSize": 10,
+      "fontWeight": "bold",
+      "color": "#16202a",
+      "format": "C0"
+     },
+     "dataSet": "Accounts"
+    },
+    {
+     "type": "shape",
+     "name": "T3Box",
+     "x": 264.78000000000003,
+     "y": 96,
+     "w": 82,
+     "h": 40,
+     "shape": "rect",
+     "style": {
+      "fill": "#f5f7f9",
+      "stroke": "none",
+      "radius": 4
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "T3L",
+     "x": 269.78000000000003,
+     "y": 100,
+     "w": 72,
+     "h": 18,
+     "value": "Avg rate (nulls skipped?)",
+     "canGrow": true,
+     "style": {
+      "fontSize": 6.5,
+      "color": "#5f6b77"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "T3V",
+     "x": 269.78000000000003,
+     "y": 118,
+     "w": 72,
+     "h": 14,
+     "value": "=Avg(Fields.rate)",
+     "canGrow": false,
+     "style": {
+      "fontSize": 10,
+      "fontWeight": "bold",
+      "color": "#16202a",
+      "format": "N2"
+     },
+     "dataSet": "Accounts"
+    },
+    {
+     "type": "shape",
+     "name": "T4Box",
+     "x": 353.04,
+     "y": 96,
+     "w": 82,
+     "h": 40,
+     "shape": "rect",
+     "style": {
+      "fill": "#f5f7f9",
+      "stroke": "none",
+      "radius": 4
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "T4L",
+     "x": 358.04,
+     "y": 100,
+     "w": 72,
+     "h": 18,
+     "value": "Min outstanding (negative)",
+     "canGrow": true,
+     "style": {
+      "fontSize": 6.5,
+      "color": "#5f6b77"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "T4V",
+     "x": 358.04,
+     "y": 118,
+     "w": 72,
+     "h": 14,
+     "value": "=Min(Fields.outstanding)",
+     "canGrow": false,
+     "style": {
+      "fontSize": 10,
+      "fontWeight": "bold",
+      "color": "#16202a",
+      "format": "C2"
+     },
+     "dataSet": "Accounts"
+    },
+    {
+     "type": "shape",
+     "name": "T5Box",
+     "x": 441.3,
+     "y": 96,
+     "w": 82,
+     "h": 40,
+     "shape": "rect",
+     "style": {
+      "fill": "#f5f7f9",
+      "stroke": "none",
+      "radius": 4
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "T5L",
+     "x": 446.3,
+     "y": 100,
+     "w": 72,
+     "h": 18,
+     "value": "Max principal (huge)",
+     "canGrow": true,
+     "style": {
+      "fontSize": 6.5,
+      "color": "#5f6b77"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "T5V",
+     "x": 446.3,
+     "y": 118,
+     "w": 72,
+     "h": 14,
+     "value": "=Max(Fields.principal)",
+     "canGrow": false,
+     "style": {
+      "fontSize": 10,
+      "fontWeight": "bold",
+      "color": "#16202a",
+      "format": "C2"
+     },
+     "dataSet": "Accounts"
+    },
+    {
+     "type": "textbox",
+     "name": "H2",
+     "x": 0,
+     "y": 146,
+     "w": 523.28,
+     "h": 16,
+     "value": "2 · Expressions: string, date, null and type edge cases",
+     "canGrow": true,
+     "style": {
+      "fontSize": 11,
+      "color": "#155e75",
+      "fontWeight": "bold"
+     },
+     "bookmark": "2 · Expressions: string, date, null and type edge cases"
+    },
+    {
+     "type": "table",
+     "name": "Exprs",
+     "x": 0,
+     "y": 166,
+     "w": 523.28,
+     "h": 60,
+     "dataSet": "Single",
+     "repeatHeader": true,
+     "columns": [
+      {
+       "width": 150
+      },
+      {
+       "width": 190
+      },
+      {
+       "width": 183.28
+      }
+     ],
+     "style": {
+      "padding": [
+       2,
+       5,
+       2,
+       5
+      ],
+      "verticalAlign": "middle"
+     },
+     "header": [
+      {
+       "height": 16,
+       "style": {
+        "fontWeight": "bold",
+        "color": "#fff",
+        "backgroundColor": "#155e75",
+        "fontSize": 7.5
+       },
+       "cells": [
+        {
+         "value": "Case"
+        },
+        {
+         "value": "Expression"
+        },
+        {
+         "value": "Result"
+        }
+       ]
+      }
+     ],
+     "detail": [
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "Trim + Lower on ' Active '",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=Trim(Lower(' Active ')) & '|'",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=Trim(Lower(' Active ')) & '|'",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "Coalesce(null, '', 'x')",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=Coalesce(Null, '', 'x')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=Coalesce(Null, '', 'x')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "IsNull(Fields.rate) for first row",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=IsNull(First(Fields.rate, \"Accounts\"))",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=IsNull(First(Fields.rate, \"Accounts\"))",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "Len of 3,400-char note",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=Len(Max(Fields.notes, \"Accounts\"))",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=Len(Max(Fields.notes, \"Accounts\"))",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "Left/Mid/Right on Unicode",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=Left('ಕನ್ನಡ ಪಠ್ಯ', 3) & ' · ' & Mid('हिन्दी', 2, 3) & ' · ' & Right('🎉🚀✅', 1)",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=Left('ಕನ್ನಡ ಪಠ್ಯ', 3) & ' · ' & Mid('हिन्दी', 2, 3) & ' · ' & Right('🎉🚀✅', 1)",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "Upper on mixed scripts",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=Upper('abc ñ ß 中文 عربي')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=Upper('abc ñ ß 中文 عربي')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "Replace + InStr",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=Replace('a,b,,c', ',,', ',—,') & ' @ ' & InStr('needle in haystack', 'hay')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=Replace('a,b,,c', ',,', ',—,') & ' @ ' & InStr('needle in haystack', 'hay')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "CInt('720') + CDbl('1e3')",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=CInt('720') + CDbl('1e3')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=CInt('720') + CDbl('1e3')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "CDate('30/09/2026') (dd/MM?)",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=CDate('30/09/2026')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=CDate('30/09/2026')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "DateDiff days to asOf",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=DateDiff('d', CDate('2026-01-01'), Parameters.asOf)",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=DateDiff('d', CDate('2026-01-01'), Parameters.asOf)",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "DateAdd month end (31 Jan + 1m)",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=Format(DateAdd('m', 1, CDate('2026-01-31')), 'dd MMM yyyy')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=Format(DateAdd('m', 1, CDate('2026-01-31')), 'dd MMM yyyy')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "Format negative currency",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=Format(-1234567.891, 'C2')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=Format(-1234567.891, 'C2')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "Format tiny number",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=Format(0.000001234, 'N6')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=Format(0.000001234, 'N6')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "Format 1e21",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=Format(1000000000000000000000, 'N0')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=Format(1000000000000000000000, 'N0')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "Round half .5 cases",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=Round(2.5, 0) & ' ' & Round(3.5, 0) & ' ' & Round(-2.5, 0) & ' ' & Round(1.005, 2)",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=Round(2.5, 0) & ' ' & Round(3.5, 0) & ' ' & Round(-2.5, 0) & ' ' & Round(1.005, 2)",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "Divide by zero guarded",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=IIF(Sum(Fields.months, \"Accounts\") = 0, 'n/a', Sum(Fields.principal, \"Accounts\") / Sum(Fields.months, \"Accounts\"))",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=IIF(Sum(Fields.months, \"Accounts\") = 0, 'n/a', Sum(Fields.principal, \"Accounts\") / Sum(Fields.months, \"Accounts\"))",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "Divide by zero unguarded",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=1 / 0",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=1 / 0",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "Join on array field (tags)",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=Join(First(Fields.tags, \"Accounts\"), ' | ')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=Join(First(Fields.tags, \"Accounts\"), ' | ')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "Nested field kyc.method",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=First(Fields.kyc.method, \"Accounts\")",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=First(Fields.kyc.method, \"Accounts\")",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "Deep field kyc.address.pin",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=First(Fields.kyc.address.pin, \"Accounts\")",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=First(Fields.kyc.address.pin, \"Accounts\")",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "Lookup FX rate USD",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=Lookup('USD', Fields.currency, Fields.toInr, 'FX')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=Lookup('USD', Fields.currency, Fields.toInr, 'FX')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "Switch with no match (null?)",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=Switch(1 = 2, 'a', 2 = 3, 'b')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=Switch(1 = 2, 'a', 2 = 3, 'b')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "String compare case",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=IIF('Active' = 'active', 'equal', 'different')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=IIF('Active' = 'active', 'equal', 'different')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "Boolean coercions",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=CBool('yes') & ' ' & CBool(0) & ' ' & CBool('true')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=CBool('yes') & ' ' & CBool(0) & ' ' & CBool('true')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "Score as string + number",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=Sum(IIF(IsNull(Fields.score), 0, CDbl(Fields.score)), \"Accounts\")",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=Sum(IIF(IsNull(Fields.score), 0, CDbl(Fields.score)), \"Accounts\")",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "Unknown field (should warn)",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=Fields.doesNotExist",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=Fields.doesNotExist",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      },
+      {
+       "height": 14,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "backgroundColor": "=IIF(RowNumber() % 2 = 0, '#f8fafc', null)"
+       },
+       "cells": [
+        {
+         "value": "Unknown function (should warn)",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "​=Frobnicate(1)",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=Frobnicate(1)",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7.5,
+          "fontWeight": "600"
+         }
+        }
+       ]
+      }
+     ],
+     "footer": []
+    },
+    {
+     "type": "textbox",
+     "name": "H3",
+     "x": 0,
+     "y": 600,
+     "w": 523.28,
+     "h": 16,
+     "value": "3 · Text: scripts, RTL, emoji, no-space words, multiline, 3,400 chars",
+     "canGrow": true,
+     "style": {
+      "fontSize": 11,
+      "color": "#155e75",
+      "fontWeight": "bold"
+     },
+     "bookmark": "3 · Text: scripts, RTL, emoji, no-space words, multiline, 3,400 chars",
+     "pageBreakBefore": true
+    },
+    {
+     "type": "table",
+     "name": "Unicode",
+     "x": 0,
+     "y": 620,
+     "w": 523.28,
+     "h": 60,
+     "dataSet": "Unicode",
+     "repeatHeader": true,
+     "columns": [
+      {
+       "width": 80
+      },
+      {
+       "width": 160
+      },
+      {
+       "width": 283.28
+      }
+     ],
+     "style": {
+      "padding": [
+       3,
+       5,
+       3,
+       5
+      ]
+     },
+     "header": [
+      {
+       "height": 16,
+       "style": {
+        "fontWeight": "bold",
+        "color": "#fff",
+        "backgroundColor": "#155e75",
+        "fontSize": 7.5
+       },
+       "cells": [
+        {
+         "value": "Script"
+        },
+        {
+         "value": "Short"
+        },
+        {
+         "value": "Long (must wrap, never overflow)"
+        }
+       ]
+      }
+     ],
+     "detail": [
+      {
+       "height": 16,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "verticalAlign": "top"
+       },
+       "cells": [
+        {
+         "value": "=Fields.script",
+         "style": {
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "=Fields.text",
+         "style": {
+          "fontSize": 9
+         }
+        },
+        {
+         "value": "=Fields.long",
+         "canGrow": true,
+         "style": {
+          "fontSize": 8
+         }
+        }
+       ]
+      }
+     ],
+     "footer": []
+    },
+    {
+     "type": "textbox",
+     "name": "NoSpace",
+     "x": 0,
+     "y": 900,
+     "w": 160,
+     "h": 14,
+     "value": "Narrow box, no spaces: Supercalifragilisticexpialidocious",
+     "canGrow": true,
+     "style": {
+      "fontSize": 8,
+      "color": "#16202a",
+      "borderStyle": "solid",
+      "border": "0.5 solid #e11d48"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Tiny",
+     "x": 170,
+     "y": 900,
+     "w": 40,
+     "h": 14,
+     "value": "=First(Fields.notes)",
+     "canGrow": true,
+     "style": {
+      "fontSize": 6,
+      "color": "#16202a",
+      "border": "0.5 solid #e11d48"
+     },
+     "dataSet": "Accounts"
+    },
+    {
+     "type": "textbox",
+     "name": "Multiline",
+     "x": 220,
+     "y": 900,
+     "w": 150,
+     "h": 14,
+     "value": "Line 1\nLine 2 longer\n\nLine 4 after blank\n\tTabbed",
+     "canGrow": true,
+     "style": {
+      "fontSize": 8,
+      "color": "#16202a",
+      "border": "0.5 solid #e11d48"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "RTL",
+     "x": 380,
+     "y": 900,
+     "w": 143.28,
+     "h": 14,
+     "value": "هذا نص عربي طويل جداً لاختبار الالتفاف من اليمين إلى اليسار في مربع ضيق",
+     "canGrow": true,
+     "style": {
+      "fontSize": 8,
+      "color": "#16202a",
+      "textAlign": "right",
+      "border": "0.5 solid #e11d48"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Shrink",
+     "x": 0,
+     "y": 940,
+     "w": 100,
+     "h": 10,
+     "value": "canShrink + canGrow=false: this text is far too long for its box and must clip, not overflow the page",
+     "canGrow": false,
+     "style": {
+      "fontSize": 7,
+      "color": "#16202a",
+      "border": "0.5 solid #e11d48"
+     },
+     "canShrink": false
+    },
+    {
+     "type": "textbox",
+     "name": "Zero",
+     "x": 110,
+     "y": 940,
+     "w": 0,
+     "h": 0,
+     "value": "Zero-size box",
+     "canGrow": true,
+     "style": {
+      "fontSize": 7,
+      "color": "#16202a"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "OffPage",
+     "x": 500,
+     "y": 940,
+     "w": 120,
+     "h": 12,
+     "value": "Starts inside, ends off the right edge →",
+     "canGrow": true,
+     "style": {
+      "fontSize": 7,
+      "color": "#b42318"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "H4",
+     "x": 0,
+     "y": 1200,
+     "w": 523.28,
+     "h": 16,
+     "value": "4 · Nested groups (region › branch › status), one 400-row branch, running totals, conditional colours",
+     "canGrow": true,
+     "pageBreakBefore": true,
+     "bookmark": "4 · Nested groups",
+     "style": {
+      "fontSize": 11,
+      "fontWeight": "bold",
+      "color": "#155e75"
+     }
+    },
+    {
+     "type": "table",
+     "name": "Accounts",
+     "x": 0,
+     "y": 1220,
+     "w": 523.28,
+     "h": 80,
+     "dataSet": "Accounts",
+     "repeatHeader": true,
+     "columns": [
+      {
+       "width": 78
+      },
+      {
+       "width": 110
+      },
+      {
+       "width": 62
+      },
+      {
+       "width": 60
+      },
+      {
+       "width": 40
+      },
+      {
+       "width": 40
+      },
+      {
+       "width": 66
+      },
+      {
+       "width": 67.28
+      }
+     ],
+     "style": {
+      "padding": [
+       2,
+       4,
+       2,
+       4
+      ],
+      "verticalAlign": "middle"
+     },
+     "header": [
+      {
+       "height": 16,
+       "style": {
+        "fontWeight": "bold",
+        "color": "#fff",
+        "backgroundColor": "#155e75",
+        "fontSize": 7
+       },
+       "cells": [
+        {
+         "value": "Account",
+         "sortBy": "=Fields.accountId"
+        },
+        {
+         "value": "Customer",
+         "sortBy": "=Fields.customer"
+        },
+        {
+         "value": "Principal",
+         "style": {
+          "textAlign": "right"
+         },
+         "sortBy": "=Fields.principal"
+        },
+        {
+         "value": "Outstanding",
+         "style": {
+          "textAlign": "right"
+         },
+         "sortBy": "=Fields.outstanding"
+        },
+        {
+         "value": "Rate",
+         "style": {
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "DPD",
+         "style": {
+          "textAlign": "right"
+         },
+         "sortBy": "=Fields.dpd"
+        },
+        {
+         "value": "Last paid"
+        },
+        {
+         "value": "Running Σ",
+         "style": {
+          "textAlign": "right"
+         }
+        }
+       ]
+      }
+     ],
+     "groups": [
+      {
+       "name": "Region",
+       "expr": "=Fields.region",
+       "sort": "asc",
+       "pageBreak": "",
+       "header": [
+        {
+         "height": 18,
+         "style": {
+          "fontWeight": "bold",
+          "fontSize": 9,
+          "backgroundColor": "#ecfeff",
+          "borderTop": "1 solid #0e7490"
+         },
+         "cells": [
+          {
+           "value": "=Coalesce(Fields.region, '(no region)')",
+           "colSpan": 2,
+           "bookmark": "=Fields.region"
+          },
+          null,
+          {
+           "value": "=Sum(Fields.principal)",
+           "style": {
+            "textAlign": "right",
+            "format": "C0"
+           }
+          },
+          {
+           "value": "=Sum(Fields.outstanding)",
+           "style": {
+            "textAlign": "right",
+            "format": "C0",
+            "color": "=IIF(Sum(Fields.outstanding) < 0, '#b42318', '#16202a')"
+           }
+          },
+          {
+           "value": "=Avg(Fields.rate)",
+           "style": {
+            "textAlign": "right",
+            "format": "N1"
+           }
+          },
+          {
+           "value": "=Max(Fields.dpd)",
+           "style": {
+            "textAlign": "right",
+            "format": "N0"
+           }
+          },
+          {
+           "value": "{CountRows()} accts · {CountDistinct(Fields.branchId)} branches",
+           "colSpan": 2,
+           "style": {
+            "fontWeight": "normal",
+            "color": "#5f6b77",
+            "fontSize": 7
+           }
+          },
+          null
+         ]
+        }
+       ],
+       "footer": [
+        {
+         "height": 14,
+         "style": {
+          "fontSize": 7,
+          "color": "#5f6b77",
+          "borderBottom": "1 solid #0e7490"
+         },
+         "cells": [
+          {
+           "value": "End of {Fields.region} · share of book {Format(Sum(Fields.principal) / Sum(Fields.principal, \"Accounts\"), 'P1')}",
+           "colSpan": 8
+          },
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+         ]
+        }
+       ]
+      },
+      {
+       "name": "Branch",
+       "expr": "=Fields.branchId",
+       "sort": "asc",
+       "collapsible": true,
+       "initiallyCollapsed": false,
+       "keepTogether": false,
+       "header": [
+        {
+         "height": 15,
+         "style": {
+          "fontWeight": "600",
+          "fontSize": 8,
+          "borderBottom": "0.5 solid #e5e7eb"
+         },
+         "cells": [
+          {
+           "value": "=Fields.branchId & ' · ' & Lookup(Fields.branchId, Fields.id, Fields.name, 'Branches') & ' (' & Coalesce(Lookup(Fields.branchId, Fields.id, Fields.city, 'Branches'), 'no city') & ')'",
+           "colSpan": 2,
+           "style": {
+            "padding": [
+             2,
+             4,
+             2,
+             12
+            ]
+           }
+          },
+          null,
+          {
+           "value": "=Sum(Fields.principal)",
+           "style": {
+            "textAlign": "right",
+            "format": "C0"
+           }
+          },
+          {
+           "value": "=Sum(Fields.outstanding)",
+           "style": {
+            "textAlign": "right",
+            "format": "C0"
+           }
+          },
+          {
+           "value": ""
+          },
+          {
+           "value": "",
+           "visual": {
+            "type": "databar",
+            "value": "=Sum(IIF(Fields.dpd > 0, 1, 0))",
+            "max": "=CountRows()",
+            "format": "N0",
+            "color": "#b54708"
+           }
+          },
+          {
+           "value": "=CountRows() & ' accounts' & IIF(CountRows() = 1, ' (single!)', IIF(CountRows() >= 400, ' (huge)', ''))",
+           "colSpan": 2,
+           "style": {
+            "fontWeight": "normal",
+            "color": "#5f6b77",
+            "fontSize": 7
+           }
+          },
+          null
+         ]
+        }
+       ],
+       "footer": []
+      },
+      {
+       "name": "Status",
+       "expr": "=Trim(Lower(Coalesce(Fields.status, '(null)')))",
+       "sort": "asc",
+       "header": [
+        {
+         "height": 13,
+         "style": {
+          "fontSize": 7,
+          "color": "#5f6b77",
+          "backgroundColor": "#fafafa"
+         },
+         "cells": [
+          {
+           "value": "=Upper(Left(Trim(Lower(Coalesce(Fields.status, '(null)'))), 1)) & Mid(Trim(Lower(Coalesce(Fields.status, '(null)'))), 2) & ' · ' & CountRows()",
+           "colSpan": 8,
+           "style": {
+            "padding": [
+             2,
+             4,
+             2,
+             20
+            ]
+           }
+          },
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+         ]
+        }
+       ],
+       "footer": []
+      }
+     ],
+     "detail": [
+      {
+       "height": 13,
+       "style": {
+        "borderBottom": "0.5 solid #f1f5f9",
+        "backgroundColor": "=IIF(Fields.flags.fraud = True, '#fff1f2', IIF(RowNumber() % 2 = 0, '#f8fafc', null))"
+       },
+       "cells": [
+        {
+         "value": "=Fields.accountId",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7,
+          "padding": [
+           2,
+           4,
+           2,
+           28
+          ]
+         },
+         "action": {
+          "type": "report",
+          "report": "stress-test",
+          "params": {
+           "region": "=Fields.region"
+          }
+         }
+        },
+        {
+         "value": "=Coalesce(Fields.customer, '— no name —') & IIF(Fields.flags.deceased = True, ' †', '') & IIF(Fields.flags.politically_exposed = True, ' ⚑', '')",
+         "style": {
+          "fontSize": 7.5
+         }
+        },
+        {
+         "value": "=Fields.principal",
+         "style": {
+          "textAlign": "right",
+          "format": "C2",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=Fields.outstanding",
+         "style": {
+          "textAlign": "right",
+          "format": "C2",
+          "fontSize": 7,
+          "color": "=IIF(Fields.outstanding < 0, '#b42318', '#16202a')"
+         }
+        },
+        {
+         "value": "=IIF(IsNull(Fields.rate), '—', Format(Fields.rate, 'N2') & '%')",
+         "style": {
+          "textAlign": "right",
+          "fontSize": 7
+         }
+        },
+        {
+         "value": "=Fields.dpd",
+         "style": {
+          "textAlign": "right",
+          "format": "N0",
+          "fontSize": 7,
+          "fontWeight": "=IIF(Fields.dpd >= 90, 'bold', 'normal')",
+          "color": "=IIF(Fields.dpd >= 90, '#b42318', IIF(Fields.dpd > 0, '#b54708', '#067647'))"
+         }
+        },
+        {
+         "value": "=Fields.lastPayment",
+         "style": {
+          "fontSize": 6.5,
+          "format": "dd MMM yy",
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "value": "=RunningValue(Fields.principal, 'Sum', 'Branch')",
+         "style": {
+          "textAlign": "right",
+          "format": "C0",
+          "fontSize": 7,
+          "color": "#5f6b77"
+         }
+        }
+       ]
+      }
+     ],
+     "footer": [
+      {
+       "height": 18,
+       "style": {
+        "fontWeight": "bold",
+        "fontSize": 8,
+        "borderTop": "1.5 solid #155e75"
+       },
+       "cells": [
+        {
+         "value": "Whole book · {CountRows()} accounts",
+         "colSpan": 2
+        },
+        null,
+        {
+         "value": "=Sum(Fields.principal)",
+         "style": {
+          "textAlign": "right",
+          "format": "C0"
+         }
+        },
+        {
+         "value": "=Sum(Fields.outstanding)",
+         "style": {
+          "textAlign": "right",
+          "format": "C0"
+         }
+        },
+        {
+         "value": "=Avg(Fields.rate)",
+         "style": {
+          "textAlign": "right",
+          "format": "N1"
+         }
+        },
+        {
+         "value": "=Max(Fields.dpd)",
+         "style": {
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": ""
+        },
+        {
+         "value": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "type": "textbox",
+     "name": "H5",
+     "x": 0,
+     "y": 2400,
+     "w": 523.28,
+     "h": 16,
+     "value": "5 · Matrix (region × product, 10 columns), charts over nulls, a 40-column sparse table",
+     "canGrow": true,
+     "pageBreakBefore": true,
+     "bookmark": "5 · Matrix and charts",
+     "style": {
+      "fontSize": 11,
+      "fontWeight": "bold",
+      "color": "#155e75"
+     }
+    },
+    {
+     "type": "matrix",
+     "name": "Pivot",
+     "x": 0,
+     "y": 2420,
+     "w": 523.28,
+     "h": 60,
+     "dataSet": "Accounts",
+     "rowGroup": "=Fields.region",
+     "columnGroup": "=Fields.product",
+     "value": "=Sum(Fields.outstanding)",
+     "valueFormat": "C0",
+     "corner": "Region \\ product",
+     "rowHeaderWidth": 70,
+     "columnWidth": 45
+    },
+    {
+     "type": "chart",
+     "name": "C1",
+     "x": 0,
+     "y": 2630,
+     "w": 255,
+     "h": 160,
+     "chartType": "column",
+     "dataSet": "Accounts",
+     "title": "Σ principal by status (dirty values)",
+     "category": "=Trim(Lower(Coalesce(Fields.status, '(null)')))",
+     "series": [
+      {
+       "name": "Principal",
+       "value": "=Sum(Fields.principal)"
+      }
+     ],
+     "valueFormat": "N0",
+     "pointAction": {
+      "type": "params",
+      "params": {
+       "q": "=Trim(Lower(Coalesce(Fields.status, '')))"
+      }
+     },
+     "tooltips": true
+    },
+    {
+     "type": "chart",
+     "name": "C2",
+     "x": 268,
+     "y": 2630,
+     "w": 255.28,
+     "h": 160,
+     "chartType": "line",
+     "dataSet": "Transactions",
+     "title": "Transactions by month (mixed date formats)",
+     "category": "=Format(Fields.date, 'yyyy-MM')",
+     "categorySort": "asc",
+     "series": [
+      {
+       "name": "Amount",
+       "value": "=Sum(Fields.amount)"
+      },
+      {
+       "name": "Count",
+       "value": "=CountRows()"
+      }
+     ],
+     "valueFormat": "N0"
+    },
+    {
+     "type": "chart",
+     "name": "C3",
+     "x": 0,
+     "y": 2800,
+     "w": 170,
+     "h": 150,
+     "chartType": "donut",
+     "dataSet": "Accounts",
+     "title": "Score buckets (strings + numbers + nulls)",
+     "category": "=IIF(IsNull(Fields.score), 'null', IIF(Fields.score = 'N/A', 'N/A', IIF(CDbl(Fields.score) < 0, 'negative', IIF(CDbl(Fields.score) < 700, '<700', '700+'))))",
+     "series": [
+      {
+       "name": "Accounts",
+       "value": "=CountRows()"
+      }
+     ]
+    },
+    {
+     "type": "chart",
+     "name": "C4",
+     "x": 180,
+     "y": 2800,
+     "w": 170,
+     "h": 150,
+     "chartType": "scatter",
+     "dataSet": "Accounts",
+     "title": "Rate vs DPD (nulls dropped?)",
+     "xValue": "=Fields.rate",
+     "series": [
+      {
+       "name": "DPD",
+       "value": "=Fields.dpd"
+      }
+     ],
+     "valueFormat": "N0"
+    },
+    {
+     "type": "chart",
+     "name": "C5",
+     "x": 360,
+     "y": 2800,
+     "w": 163.28,
+     "h": 150,
+     "chartType": "pie",
+     "dataSet": "Empty",
+     "title": "Empty data set",
+     "category": "=Fields.x",
+     "series": [
+      {
+       "name": "v",
+       "value": "=CountRows()"
+      }
+     ]
+    },
+    {
+     "type": "textbox",
+     "name": "WideT",
+     "x": 0,
+     "y": 2960,
+     "w": 523.28,
+     "h": 12,
+     "value": "Wide, sparse table: 40 columns in 523 pt. Expect clipping or tiny text; it must not crash.",
+     "canGrow": true,
+     "style": {
+      "fontSize": 7.5,
+      "color": "#5f6b77"
+     }
+    },
+    {
+     "type": "table",
+     "name": "Wide",
+     "x": 0,
+     "y": 2974,
+     "w": 523.28,
+     "h": 40,
+     "dataSet": "Wide",
+     "repeatHeader": true,
+     "columns": [
+      {
+       "width": 22
+      },
+      {
+       "width": 60
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      },
+      {
+       "width": 11.6
+      }
+     ],
+     "style": {
+      "padding": [
+       1,
+       1,
+       1,
+       1
+      ]
+     },
+     "header": [
+      {
+       "height": 10,
+       "style": {
+        "fontWeight": "bold",
+        "backgroundColor": "#f1f5f9",
+        "fontSize": 5
+       },
+       "cells": [
+        {
+         "value": "id"
+        },
+        {
+         "value": "name"
+        },
+        {
+         "value": "m01",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m02",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m03",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m04",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m05",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m06",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m07",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m08",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m09",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m10",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m11",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m12",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m13",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m14",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m15",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m16",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m17",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m18",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m19",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m20",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m21",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m22",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m23",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m24",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m25",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m26",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m27",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m28",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m29",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m30",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m31",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m32",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m33",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m34",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m35",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m36",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m37",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "m38",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right"
+         }
+        }
+       ]
+      }
+     ],
+     "detail": [
+      {
+       "height": 8,
+       "style": {
+        "borderBottom": "0.25 solid #eee"
+       },
+       "cells": [
+        {
+         "value": "=Fields.id",
+         "style": {
+          "fontSize": 5
+         }
+        },
+        {
+         "value": "=Fields.name",
+         "style": {
+          "fontSize": 5
+         }
+        },
+        {
+         "value": "=Fields.m01",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m02",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m03",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m04",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m05",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m06",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m07",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m08",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m09",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m10",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m11",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m12",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m13",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m14",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m15",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m16",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m17",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m18",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m19",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m20",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m21",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m22",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m23",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m24",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m25",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m26",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m27",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m28",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m29",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m30",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m31",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m32",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m33",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m34",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m35",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m36",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m37",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.m38",
+         "style": {
+          "fontSize": 4.5,
+          "textAlign": "right",
+          "format": "N0"
+         }
+        }
+       ]
+      }
+     ],
+     "footer": []
+    },
+    {
+     "type": "textbox",
+     "name": "H6",
+     "x": 0,
+     "y": 3600,
+     "w": 523.28,
+     "h": 16,
+     "value": "6 · List per branch with nested table, container, check boxes, barcodes from dirty strings, image from bad URL, subreport, deep JSONPath",
+     "canGrow": true,
+     "pageBreakBefore": true,
+     "bookmark": "6 · Lists and nesting",
+     "style": {
+      "fontSize": 11,
+      "fontWeight": "bold",
+      "color": "#155e75"
+     }
+    },
+    {
+     "type": "list",
+     "name": "BranchCards",
+     "x": 0,
+     "y": 3620,
+     "w": 523.28,
+     "h": 110,
+     "dataSet": "Branches",
+     "keepTogether": true,
+     "filters": [
+      {
+       "expr": "=Fields.region",
+       "op": "in",
+       "value": "=Parameters.region"
+      }
+     ],
+     "sort": [
+      {
+       "by": "=Fields.target",
+       "dir": "desc"
+      }
+     ],
+     "style": {
+      "borderBottom": "0.5 solid #e5e7eb"
+     },
+     "items": [
+      {
+       "type": "container",
+       "name": "Card",
+       "x": 0,
+       "y": 4,
+       "w": 523.28,
+       "h": 100,
+       "style": {
+        "border": "0.5 solid #d1d5db",
+        "radius": 4,
+        "padding": 6
+       },
+       "items": [
+        {
+         "type": "textbox",
+         "name": "BName",
+         "x": 6,
+         "y": 4,
+         "w": 300,
+         "h": 14,
+         "value": "{Fields.name} · {Fields.id} · {Coalesce(Fields.city, 'no city')} · {Coalesce(Fields.region, '?')}",
+         "canGrow": true,
+         "style": {
+          "fontSize": 10,
+          "fontWeight": "bold"
+         }
+        },
+        {
+         "type": "textbox",
+         "name": "BMgr",
+         "x": 6,
+         "y": 20,
+         "w": 300,
+         "h": 12,
+         "value": "Manager: {Coalesce(Fields.manager, '— vacant —')} · opened {IIF(IsNull(Fields.opened), 'unknown', Format(Fields.opened, 'MMM yyyy'))} · target {Format(Fields.target, 'C0')}",
+         "canGrow": true,
+         "style": {
+          "fontSize": 7.5,
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "type": "checkbox",
+         "name": "HasTarget",
+         "x": 320,
+         "y": 4,
+         "w": 90,
+         "h": 12,
+         "value": "=Fields.target > 0",
+         "text": "Has target"
+        },
+        {
+         "type": "checkbox",
+         "name": "IsMain",
+         "x": 320,
+         "y": 18,
+         "w": 90,
+         "h": 12,
+         "value": "=Fields.name = 'Main Branch'",
+         "text": "Named 'Main Branch' (dupes!)"
+        },
+        {
+         "type": "barcode",
+         "name": "Bar",
+         "x": 420,
+         "y": 4,
+         "w": 90,
+         "h": 28,
+         "symbology": "code128",
+         "value": "=Coalesce(Fields.id, '')"
+        },
+        {
+         "type": "barcode",
+         "name": "QR",
+         "x": 420,
+         "y": 36,
+         "w": 30,
+         "h": 30,
+         "symbology": "qrcode",
+         "value": "=Coalesce(Fields.manager, 'nobody')"
+        },
+        {
+         "type": "barcode",
+         "name": "EAN",
+         "x": 455,
+         "y": 36,
+         "w": 55,
+         "h": 30,
+         "symbology": "ean13",
+         "value": "=Fields.id"
+        },
+        {
+         "type": "textbox",
+         "name": "BAccts",
+         "x": 6,
+         "y": 36,
+         "w": 400,
+         "h": 12,
+         "value": "Accounts in this branch (table inside list, filtered by Parent):",
+         "canGrow": true,
+         "style": {
+          "fontSize": 7.5,
+          "color": "#5f6b77"
+         }
+        },
+        {
+         "type": "table",
+         "name": "BranchAccounts",
+         "x": 6,
+         "y": 50,
+         "w": 400,
+         "h": 30,
+         "dataSet": "Accounts",
+         "repeatHeader": false,
+         "noRowsText": "No accounts in this branch (expected for Ghost branch)",
+         "filters": [
+          {
+           "expr": "=Fields.branchId",
+           "op": "=",
+           "value": "=Parent.id"
+          }
+         ],
+         "sort": [
+          {
+           "by": "=Fields.outstanding",
+           "dir": "desc"
+          }
+         ],
+         "columns": [
+          {
+           "width": 70
+          },
+          {
+           "width": 150
+          },
+          {
+           "width": 90
+          },
+          {
+           "width": 90
+          }
+         ],
+         "style": {
+          "padding": [
+           1,
+           3,
+           1,
+           3
+          ]
+         },
+         "header": [
+          {
+           "height": 12,
+           "style": {
+            "fontSize": 6.5,
+            "fontWeight": "bold",
+            "backgroundColor": "#f1f5f9"
+           },
+           "cells": [
+            {
+             "value": "Account"
+            },
+            {
+             "value": "Customer"
+            },
+            {
+             "value": "Outstanding",
+             "style": {
+              "textAlign": "right"
+             }
+            },
+            {
+             "value": "Status"
+            }
+           ]
+          }
+         ],
+         "detail": [
+          {
+           "height": 11,
+           "style": {
+            "fontSize": 6.5
+           },
+           "cells": [
+            {
+             "value": "=Fields.accountId"
+            },
+            {
+             "value": "=Coalesce(Fields.customer, '—')"
+            },
+            {
+             "value": "=Fields.outstanding",
+             "style": {
+              "textAlign": "right",
+              "format": "C0"
+             }
+            },
+            {
+             "value": "=Coalesce(Fields.status, '(null)')",
+             "style": {
+              "color": "=Switch(Trim(Lower(Coalesce(Fields.status,''))) = 'overdue', '#b42318', Trim(Lower(Coalesce(Fields.status,''))) = 'npa', '#b42318', Trim(Lower(Coalesce(Fields.status,''))) = 'legal', '#7f1d1d', Trim(Lower(Coalesce(Fields.status,''))) = 'closed', '#5f6b77', True, '#067647')"
+             }
+            }
+           ]
+          }
+         ],
+         "footer": [
+          {
+           "height": 11,
+           "style": {
+            "fontSize": 6.5,
+            "fontWeight": "bold"
+           },
+           "cells": [
+            {
+             "value": "{CountRows()} rows"
+            },
+            {
+             "value": ""
+            },
+            {
+             "value": "=Sum(Fields.outstanding)",
+             "style": {
+              "textAlign": "right",
+              "format": "C0"
+             }
+            },
+            {
+             "value": ""
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "type": "textbox",
+     "name": "H7",
+     "x": 0,
+     "y": 4800,
+     "w": 523.28,
+     "h": 16,
+     "value": "7 · Deep JSONPath ($.portfolio.books[*].positions[*]), single-row and empty sets, image from a bad URL, subreport",
+     "canGrow": true,
+     "pageBreakBefore": true,
+     "bookmark": "7 · Deep paths",
+     "style": {
+      "fontSize": 11,
+      "fontWeight": "bold",
+      "color": "#155e75"
+     }
+    },
+    {
+     "type": "table",
+     "name": "Positions",
+     "x": 0,
+     "y": 4820,
+     "w": 523.28,
+     "h": 40,
+     "dataSet": "Positions",
+     "repeatHeader": true,
+     "columns": [
+      {
+       "width": 150
+      },
+      {
+       "width": 120
+      },
+      {
+       "width": 120
+      },
+      {
+       "width": 133.28
+      }
+     ],
+     "style": {
+      "padding": [
+       2,
+       4,
+       2,
+       4
+      ]
+     },
+     "header": [
+      {
+       "height": 14,
+       "style": {
+        "fontWeight": "bold",
+        "color": "#fff",
+        "backgroundColor": "#155e75",
+        "fontSize": 7.5
+       },
+       "cells": [
+        {
+         "value": "Product"
+        },
+        {
+         "value": "Exposure",
+         "style": {
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "Limit",
+         "style": {
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "Utilisation (bullet, target 0.8)"
+        }
+       ]
+      }
+     ],
+     "groups": [
+      {
+       "name": "Book",
+       "expr": "=Fields.book",
+       "sort": "asc",
+       "header": [
+        {
+         "height": 14,
+         "style": {
+          "fontWeight": "bold",
+          "backgroundColor": "#ecfeff"
+         },
+         "cells": [
+          {
+           "value": "=Fields.book"
+          },
+          {
+           "value": "=Sum(Fields.exposure)",
+           "style": {
+            "textAlign": "right",
+            "format": "C0"
+           }
+          },
+          {
+           "value": "=Sum(Fields.limit)",
+           "style": {
+            "textAlign": "right",
+            "format": "C0"
+           }
+          },
+          {
+           "value": "=Sum(Fields.exposure) / Sum(Fields.limit)",
+           "style": {
+            "format": "P1"
+           }
+          }
+         ]
+        }
+       ],
+       "footer": []
+      }
+     ],
+     "detail": [
+      {
+       "height": 13,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb"
+       },
+       "cells": [
+        {
+         "value": "=Fields.product",
+         "style": {
+          "padding": [
+           2,
+           4,
+           2,
+           12
+          ]
+         }
+        },
+        {
+         "value": "=Fields.exposure",
+         "style": {
+          "textAlign": "right",
+          "format": "C0"
+         }
+        },
+        {
+         "value": "=Fields.limit",
+         "style": {
+          "textAlign": "right",
+          "format": "C0"
+         }
+        },
+        {
+         "value": "",
+         "visual": {
+          "type": "bullet",
+          "value": "=Fields.utilisation",
+          "target": 0.8,
+          "max": 1,
+          "color": "=IIF(Fields.utilisation > 0.8, '#b42318', '#0e7490')"
+         }
+        }
+       ]
+      }
+     ],
+     "footer": []
+    },
+    {
+     "type": "textbox",
+     "name": "Single",
+     "x": 0,
+     "y": 5000,
+     "w": 250,
+     "h": 14,
+     "value": "Single-row set: {First(Fields.only)} · rows = {CountRows()}",
+     "dataSet": "Single",
+     "canGrow": true,
+     "style": {
+      "fontSize": 8
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "EmptyS",
+     "x": 260,
+     "y": 5000,
+     "w": 263.28,
+     "h": 14,
+     "value": "Empty set: rows = {CountRows()} · First(Fields.x) = «{Coalesce(First(Fields.x), 'null')}»",
+     "dataSet": "Empty",
+     "canGrow": true,
+     "style": {
+      "fontSize": 8
+     }
+    },
+    {
+     "type": "table",
+     "name": "EmptyTable",
+     "x": 0,
+     "y": 5020,
+     "w": 523.28,
+     "h": 30,
+     "dataSet": "Empty",
+     "noRowsText": "✓ Empty data set shows this message instead of crashing",
+     "columns": [
+      {
+       "width": 523.28
+      }
+     ],
+     "style": {
+      "padding": [
+       3,
+       4,
+       3,
+       4
+      ]
+     },
+     "header": [
+      {
+       "height": 14,
+       "style": {
+        "fontWeight": "bold",
+        "backgroundColor": "#f1f5f9",
+        "fontSize": 7.5
+       },
+       "cells": [
+        {
+         "value": "Empty table"
+        }
+       ]
+      }
+     ],
+     "detail": [
+      {
+       "height": 12,
+       "cells": [
+        {
+         "value": "=Fields.x"
+        }
+       ]
+      }
+     ],
+     "footer": []
+    },
+    {
+     "type": "table",
+     "name": "Messy",
+     "x": 0,
+     "y": 5070,
+     "w": 523.28,
+     "h": 30,
+     "dataSet": "Messy",
+     "repeatHeader": true,
+     "columns": [
+      {
+       "width": 100
+      },
+      {
+       "width": 423.28
+      }
+     ],
+     "style": {
+      "padding": [
+       2,
+       4,
+       2,
+       4
+      ]
+     },
+     "header": [
+      {
+       "height": 14,
+       "style": {
+        "fontWeight": "bold",
+        "backgroundColor": "#f1f5f9",
+        "fontSize": 7.5
+       },
+       "cells": [
+        {
+         "value": "k (objects, strings, numbers, arrays mixed)"
+        },
+        {
+         "value": "v"
+        }
+       ]
+      }
+     ],
+     "detail": [
+      {
+       "height": 12,
+       "style": {
+        "borderBottom": "0.5 solid #e5e7eb",
+        "fontSize": 7
+       },
+       "cells": [
+        {
+         "value": "=Coalesce(Fields.k, '(not an object)')"
+        },
+        {
+         "value": "=Coalesce(CStr(Fields.v), '(null)')",
+         "style": {
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 7
+         }
+        }
+       ]
+      }
+     ],
+     "footer": []
+    },
+    {
+     "type": "image",
+     "name": "BadImg",
+     "x": 0,
+     "y": 5280,
+     "w": 120,
+     "h": 60,
+     "src": "https://example.invalid/does-not-exist.png",
+     "fit": "contain",
+     "style": {
+      "backgroundColor": "#f5f7f9",
+      "border": "0.5 solid #e11d48"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "BadImgT",
+     "x": 126,
+     "y": 5280,
+     "w": 200,
+     "h": 30,
+     "value": "← image from a URL that does not resolve: must leave a box, never block the render",
+     "canGrow": true,
+     "style": {
+      "fontSize": 7.5,
+      "color": "#5f6b77"
+     }
+    },
+    {
+     "type": "image",
+     "name": "ExprImg",
+     "x": 0,
+     "y": 5350,
+     "w": 120,
+     "h": 40,
+     "src": "=IIF(Parameters.showClosed = 'yes', 'https://example.invalid/a.png', '')",
+     "fit": "contain",
+     "style": {
+      "backgroundColor": "#f5f7f9"
+     }
+    },
+    {
+     "type": "subreport",
+     "name": "Sub",
+     "x": 0,
+     "y": 5400,
+     "w": 523.28,
+     "h": 60,
+     "report": "product-detail",
+     "params": {
+      "id": "=CInt(Right(Parameters.subId, 2))"
+     },
+     "keepTogether": true
+    },
+    {
+     "type": "textbox",
+     "name": "SubT",
+     "x": 0,
+     "y": 5464,
+     "w": 523.28,
+     "h": 12,
+     "value": "↑ subreport «product-detail» with id from a parameter (live external API; may fail offline, must not crash) · self-reference guard: a subreport pointing at «stress-test» should be refused, not loop",
+     "canGrow": true,
+     "style": {
+      "fontSize": 7.5,
+      "color": "#5f6b77"
+     }
+    },
+    {
+     "type": "toc",
+     "name": "TOC",
+     "x": 0,
+     "y": 690,
+     "w": 523.28,
+     "h": 40,
+     "title": "Contents (bookmarks, with final page numbers)",
+     "levels": 2
+    }
+   ]
+  },
+  "pageFooter": {
+   "height": 20,
+   "items": [
+    {
+     "type": "textbox",
+     "name": "PF",
+     "x": 0,
+     "y": 5,
+     "w": 350,
+     "h": 12,
+     "value": "Generated {Format(Globals.ExecutionTime, 'dd MMM yyyy, hh:mm tt')} · fictional data · nulls and bad values are intentional",
+     "canGrow": false,
+     "style": {
+      "fontSize": 6.5,
+      "color": "#5f6b77"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "PFN",
+     "x": 350,
+     "y": 5,
+     "w": 173.28,
+     "h": 12,
+     "value": "Page {Globals.PageNumber} of {Globals.TotalPages}",
+     "canGrow": false,
+     "style": {
+      "fontSize": 7,
+      "color": "#5f6b77",
+      "textAlign": "right"
+     }
+    }
+   ]
+  }
+ }
+}

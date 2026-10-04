@@ -311,8 +311,18 @@ export function buildDataSets(def, sources, baseCtx) {
       return o;
     });
     if (calc.length) {
-      const c = { ...baseCtx, fields: null };
-      for (const r of rows) { c.fields = r; for (const fd of calc) r[fd.name] = coerce(evalValue(fd.expr, c), fd.type); }
+      // Calculated fields see the data sets built before this one (so Lookup() into an earlier set works).
+      // A failing expression gives null for that field, with one warning, instead of stopping the report.
+      const c = { ...baseCtx, dataSets: { ...(baseCtx.dataSets || {}), ...sets }, fields: null };
+      const failed = new Set();
+      for (const r of rows) {
+        c.fields = r;
+        for (const fd of calc) {
+          if (failed.has(fd.name)) { r[fd.name] = null; continue; }
+          try { r[fd.name] = coerce(evalValue(fd.expr, c), fd.type); }
+          catch (e) { failed.add(fd.name); r[fd.name] = null; baseCtx.warn?.(`Data set "${ds.name}", field "${fd.name}": ${e.message}`); }
+        }
+      }
     }
     // filters and sorts may Lookup into the data sets defined above this one
     const setCtx = { ...baseCtx, dataSets: { ...baseCtx.dataSets, ...sets } };

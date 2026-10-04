@@ -44,3 +44,21 @@ describe('interactive reports', () => {
     expect(l.tip).toBe('Remove filters');
   });
 });
+
+describe('calculated fields', () => {
+  it('can Lookup() into a data set built earlier, and a failing field gives null plus one warning', async () => {
+    const d = report([{ type: 'textbox', name: 'T', x: 0, y: 0, w: 200, h: 14, value: '=Sum(Fields.inr)', dataSet: 'Tx' }], {
+      data: { fx: [{ cur: 'USD', rate: 80 }], tx: [{ cur: 'USD', amt: 2 }, { cur: 'INR', amt: 5 }] },
+      def: { dataSets: [
+        { name: 'FX', source: 'src', path: '$.fx', fields: [{ name: 'cur', type: 'string' }, { name: 'rate', type: 'number' }] },
+        { name: 'Tx', source: 'src', path: '$.tx', fields: [{ name: 'cur', type: 'string' }, { name: 'amt', type: 'number' },
+          { name: 'inr', type: 'number', expr: "=Fields.amt * Coalesce(Lookup(Fields.cur, Fields.cur, Fields.rate, 'FX'), 1)" },
+          { name: 'bad', type: 'number', expr: '=Nope(1)' }] },
+      ] },
+    });
+    const out = await render(d, { fontStore });
+    const t = out.pages[0].items.filter(i => i.t === 'text').flatMap(i => i.lines.map(l => l.text));
+    expect(t.some(s => s.includes('165'))).toBe(true); // 2*80 + 5*1
+    expect(out.warnings.filter(w => w.includes('"bad"')).length).toBe(1);
+  });
+});

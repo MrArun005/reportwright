@@ -67,7 +67,7 @@ export async function render(def, opts = {}) {
     dataSets: {}, fields: null, locale: def.locale || 'en-IN', currency: def.currency || 'INR', functions: functionTable(def, fnCount),
   };
   const sources = opts.sources || await loadSources(def, { params, fetch: opts.fetch, baseUrl: opts.baseUrl, sql: opts.sql, reportId: opts.reportId });
-  const dataSets = buildDataSets(def, sources, baseCtx);
+  const dataSets = buildDataSets(def, sources, { ...baseCtx, warn });
   baseCtx.dataSets = dataSets;
   const defaultDs = def.dataSets?.[0]?.name;
   const kept = warnings.length; // a second layout pass starts from here
