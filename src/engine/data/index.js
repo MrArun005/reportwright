@@ -1,5 +1,5 @@
 // @ts-check
-import { evalValue, evaluate, compile, parseValue, toText, functionTable } from '../expr/evaluate.js';
+import { evalValue, evaluate, compile, parseValue, toText, functionTable, cmpVal } from '../expr/evaluate.js';
 import { toDate, isoDate } from '../expr/format.js';
 
 /**
@@ -229,33 +229,72 @@ export function buildDataSets(def, sources, baseCtx) {
   return sets;
 }
 
-/** @param {any[]} rows @param {any[]|undefined} filters */
+/**
+ * Filters run in the order listed. Row filters (=, <, in, like, Between …) test each row; set filters
+ * (TopN, BottomN, TopPercent, BottomPercent) rank all rows left by the filters before them.
+ * @param {any[]} rows @param {any[]|undefined} filters
+ */
 export function applyFilters(rows, filters, baseCtx) {
   if (!filters || !filters.length) return rows;
   const c = { ...baseCtx };
-  return rows.filter((r) => {
-    c.fields = r;
-    return filters.every((f) => {
-      const a = evalValue(f.expr, c);
-      const b = evalValue(f.value, c);
-      switch (f.op || '=') {
-        case '=': return looseEq(a, b);
-        case '<>': return !looseEq(a, b);
-        case '>': return a > b;
-        case '>=': return a >= b;
-        case '<': return a < b;
-        case '<=': return a <= b;
-        case 'in': {
-          // an empty list (nothing picked in a multi-value parameter) means "all"
-          const list = Array.isArray(b) ? b : b == null || b === '' ? [] : String(b).split(',').map(s => s.trim());
-          return list.length === 0 || list.some(x => looseEq(a, x));
-        }
-        case 'like': return like(String(a ?? ''), String(b ?? ''));
-        case 'contains': return String(a ?? '').toLowerCase().includes(String(b ?? '').toLowerCase());
-        default: throw new Error(`Unknown filter operator "${f.op}"`);
-      }
-    });
-  });
+  let i = 0;
+  while (i < filters.length) {
+    const f = filters[i];
+    if (SET_OPS.has(String(f.op || '').toLowerCase())) { rows = rankFilter(rows, f, c); i++; continue; }
+    let j = i; // a run of row filters: one pass
+    while (j < filters.length && !SET_OPS.has(String(filters[j].op || '').toLowerCase())) j++;
+    const run = filters.slice(i, j);
+    rows = rows.filter((r) => { c.fields = r; return run.every(f => rowFilter(f, c)); });
+    i = j;
+  }
+  return rows;
+}
+
+const SET_OPS = new Set(['topn', 'bottomn', 'toppercent', 'bottompercent']);
+
+function rowFilter(f, c) {
+  const a = evalValue(f.expr, c);
+  const b = evalValue(f.value, c);
+  switch (f.op || '=') {
+    case '=': return looseEq(a, b);
+    case '<>': return !looseEq(a, b);
+    case '>': return a > b;
+    case '>=': return a >= b;
+    case '<': return a < b;
+    case '<=': return a <= b;
+    case 'in': {
+      // an empty list (nothing picked in a multi-value parameter) means "all"
+      const list = Array.isArray(b) ? b : b == null || b === '' ? [] : String(b).split(',').map(s => s.trim());
+      return list.length === 0 || list.some(x => looseEq(a, x));
+    }
+    case 'like': return like(String(a ?? ''), String(b ?? ''));
+    case 'contains': return String(a ?? '').toLowerCase().includes(String(b ?? '').toLowerCase());
+    case 'between': case 'Between': {
+      // inclusive at both ends; value may be a [low, high] pair instead of value + value2
+      const [lo, hi] = Array.isArray(b) ? b : [b, evalValue(f.value2, c)];
+      return a != null && lo != null && hi != null && cmpVal(a, lo) >= 0 && cmpVal(a, hi) <= 0;
+    }
+    default: throw new Error(`Unknown filter operator "${f.op}"`);
+  }
+}
+
+/**
+ * TopN / BottomN / TopPercent / BottomPercent, ranked by the filter's expression. Ties with the last
+ * value kept are kept too (so more than N rows may pass, as in RDL); rows with no value drop out. Row order stays.
+ */
+function rankFilter(rows, f, c) {
+  const op = String(f.op).toLowerCase();
+  c.fields = rows[0] || null;
+  const n = Number(evalValue(f.value, c));
+  if (!Number.isFinite(n)) throw new Error(`The ${f.op} filter needs a number, not "${String(f.value).slice(0, 40)}"`);
+  const keys = rows.map((r) => { c.fields = r; return evalValue(f.expr, c); });
+  const ranked = keys.filter(k => k != null && k !== '');
+  const count = op.endsWith('percent') ? Math.ceil((ranked.length * Math.min(n, 100)) / 100) : Math.min(n, ranked.length);
+  if (count <= 0) return [];
+  const top = op.startsWith('top');
+  ranked.sort((x, y) => (top ? cmpVal(y, x) : cmpVal(x, y)));
+  const edge = ranked[Math.ceil(count) - 1];
+  return rows.filter((_, i) => keys[i] != null && keys[i] !== '' && (top ? cmpVal(keys[i], edge) >= 0 : cmpVal(keys[i], edge) <= 0));
 }
 function looseEq(a, b) {
   if (a instanceof Date) a = a.getTime();

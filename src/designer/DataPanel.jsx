@@ -8,6 +8,7 @@ import { resolveParameters } from '@/engine/index.js';
 import { functionTable } from '@/engine/expr/evaluate.js';
 import { Dialog, Field, TextInput, Select, Check } from './ui.jsx';
 import { t } from '@/i18n/index.js';
+import { OPS } from './Inspector.jsx';
 
 const NAME = /^[A-Za-z_][\w]*$/;
 
@@ -386,8 +387,11 @@ function DataSetDialog({ index, onClose, onSaved }) {
           {(d.filters || []).map((f, i) => (
             <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 90px 1fr auto', gap: 6 }}>
               <TextInput value={f.expr} onChange={v => setD({ ...d, filters: d.filters.map((x, j) => j === i ? { ...x, expr: v } : x) })} mono aria-label="Filter field" />
-              <Select value={f.op || '='} options={['=', '<>', '>', '>=', '<', '<=', 'in', 'like', 'contains']} onChange={v => setD({ ...d, filters: d.filters.map((x, j) => j === i ? { ...x, op: v } : x) })} />
-              <TextInput value={f.value} onChange={v => setD({ ...d, filters: d.filters.map((x, j) => j === i ? { ...x, value: v } : x) })} mono placeholder="value or =Parameters.x" aria-label="Filter value" />
+              <Select value={f.op || '='} options={OPS} onChange={v => setD({ ...d, filters: d.filters.map((x, j) => j === i ? { ...x, op: v } : x) })} />
+              <div style={{ display: 'flex', gap: 4 }}>
+                <TextInput value={f.value} onChange={v => setD({ ...d, filters: d.filters.map((x, j) => j === i ? { ...x, value: v } : x) })} mono placeholder="value or =Parameters.x" aria-label="Filter value" />
+                {f.op === 'Between' && <TextInput value={f.value2} onChange={v => setD({ ...d, filters: d.filters.map((x, j) => j === i ? { ...x, value2: v } : x) })} mono placeholder="and" aria-label="Upper value" />}
+              </div>
               <button className="btn sm ghost danger" onClick={() => setD({ ...d, filters: d.filters.filter((_, j) => j !== i) })} aria-label="Remove filter">✕</button>
             </div>
           ))}

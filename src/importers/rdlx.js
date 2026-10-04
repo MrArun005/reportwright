@@ -1089,7 +1089,8 @@ function unknownRefs(v, ds, cx) {
 }
 const missing = (refs, ds) => `${refs.join(' and ')}, which ${ds ? `the data set "${ds}"` : 'the report'} does not have`;
 
-const FILTER_OPS = { equal: '=', notequal: '<>', greaterthan: '>', greaterthanorequal: '>=', lessthan: '<', lessthanorequal: '<=', like: 'like' };
+const FILTER_OPS = { equal: '=', notequal: '<>', greaterthan: '>', greaterthanorequal: '>=', lessthan: '<', lessthanorequal: '<=', like: 'like',
+  topn: 'TopN', bottomn: 'BottomN', toppercent: 'TopPercent', bottompercent: 'BottomPercent' };
 
 function filterList(list, cx, t, ctx, ds) {
   const out = [];
@@ -1108,7 +1109,7 @@ function filterList(list, cx, t, ctx, ds) {
     if (refs.length) { t.approx(`a filter uses ${missing(refs, ds)}, so it is left out.`); continue; }
     if (FILTER_OPS[op]) out.push({ expr, op: FILTER_OPS[op], value: vals[0] ?? '' });
     else if (op === 'in') out.push(vals.length === 1 ? { expr, op: 'in', value: vals[0] } : { expr: `=InList(${inner(expr)}, ${vals.map(inner).join(', ')})`, op: '=', value: '=true' });
-    else if (op === 'between' && vals.length >= 2) out.push({ expr, op: '>=', value: vals[0] }, { expr, op: '<=', value: vals[1] });
+    else if (op === 'between' && vals.length >= 2) out.push({ expr, op: 'Between', value: vals[0], value2: vals[1] });
     else t.approx(`the filter operator "${f.Operator}" is not supported, so that filter is left out and more rows may show.`);
   }
   return out;

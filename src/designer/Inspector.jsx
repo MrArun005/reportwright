@@ -207,7 +207,7 @@ function GroupsEditor({ table, openExpr }) {
   );
 }
 
-const OPS = ['=', '<>', '>', '>=', '<', '<=', 'in', 'like', 'contains'];
+export const OPS = ['=', '<>', '>', '>=', '<', '<=', 'in', 'like', 'contains', 'Between', 'TopN', 'BottomN', 'TopPercent', 'BottomPercent'];
 function SortFilterEditor({ item }) {
   const def = useDesigner(s => s.def);
   const fields = fieldsOf(def, item.dataSet).map(f => f.name);
@@ -224,12 +224,13 @@ function SortFilterEditor({ item }) {
         <div className="rowx" key={i}>
           <TextInput mono value={f.expr} onChange={v => set(t => { t.filters[i].expr = v; })} aria-label="Filter expression" />
           <Select value={f.op || '='} options={OPS} onChange={v => set(t => { t.filters[i].op = v; })} />
-          <TextInput mono value={f.value} onChange={v => set(t => { t.filters[i].value = v; })} aria-label="Filter value" />
+          <TextInput mono value={f.value} onChange={v => set(t => { t.filters[i].value = v; })} aria-label="Filter value" placeholder={/^(top|bottom)/i.test(f.op || '') ? 'N' : undefined} />
+          {f.op === 'Between' && <TextInput mono value={f.value2} onChange={v => set(t => { t.filters[i].value2 = v; })} aria-label="Upper value" placeholder="and" />}
           <button className="btn sm ghost danger" onClick={() => set(t => { t.filters.splice(i, 1); if (!t.filters.length) delete t.filters; })} aria-label="Remove filter">✕</button>
         </div>
       ))}
       <div><button className="btn sm" onClick={() => set(t => { t.filters ||= []; t.filters.push({ expr: fields[0] ? `=Fields.${fields[0]}` : '', op: '=', value: '' }); })}>Add filter</button></div>
-      <div className="hint">Value can be text, a number, =Parameters.x, or =Parent.x inside a list.</div>
+      <div className="hint">Value can be text, a number, =Parameters.x, or =Parent.x inside a list. TopN keeps the N highest values of the expression (ties too). Filters run in order.</div>
     </div>
   );
 }

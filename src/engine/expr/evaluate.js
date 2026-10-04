@@ -160,7 +160,7 @@ export function truthy(v) {
   return Boolean(v);
 }
 const num = (v) => (v == null || v === '' ? null : v instanceof Date ? v.getTime() : Number(v));
-function cmpVal(a, b) {
+export function cmpVal(a, b) {
   if (a instanceof Date) a = a.getTime();
   if (b instanceof Date) b = b.getTime();
   if (typeof a === 'number' && typeof b === 'string' && b.trim() !== '' && !Number.isNaN(Number(b))) b = Number(b);
