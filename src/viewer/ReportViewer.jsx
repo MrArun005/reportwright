@@ -54,7 +54,7 @@ const MODES = ['single', 'continuous', 'galley'];
  *   onDrill?: (report: string, params: object) => void, exportHtmlOptions?: object,
  *   toolbar?: { hide?: string[], add?: ToolbarItem[] }, viewMode?: 'single' | 'continuous' | 'galley' }} props
  */
-export default function ReportViewer({ definition: rootDef, reportId: rootReportId, params: rootParams, title, compact = false, autoRun = true, lang: langIn = 'en', onDrill, exportHtmlOptions, toolbar, viewMode = 'continuous' }) {
+export default function ReportViewer({ definition: rootDef, reportId: rootReportId, params: rootParams, title, compact = false, autoRun = true, lang: langIn = 'en', onDrill, exportHtmlOptions, toolbar, viewMode = 'continuous', onExported }) {
   const lang = pickLang(langIn);
   const dir = dirOf(lang);
   const T = (k, v) => tr(lang, k, v);
@@ -325,6 +325,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
       a.href = url; a.download = `${(definition.name || 'report').replace(/[^\w-]+/g, '-')}.${ext}`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 10000);
+      onExported?.(fmt, level.id, params); // the app's own pages tell the server, for the audit log
     } catch (e) {
       setStatus({ state: 'error', message: T('exportFailed', { fmt: fmt.toUpperCase(), message: e.message }) });
     } finally { setExporting(null); }
@@ -337,6 +338,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     setExporting('print');
     try {
       const blob = await pdfBlob(await pagedModel(), definition.name);
+      onExported?.('print', level.id, params);
       const url = URL.createObjectURL(blob);
       document.querySelector('iframe[data-pw-print]')?.remove();
       const f = document.createElement('iframe');

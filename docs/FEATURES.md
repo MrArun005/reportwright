@@ -124,6 +124,10 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 - Render any report to any format on the server.
 - Automation API (`/api/v1`): render with pushed data; batches (zip, merged PDF, folder, PUT upload); data list from a URL; signed webhooks; cron schedules with time zones; API keys.
 - Accounts and roles (viewer, designer, admin) with scrypt passwords, signed session cookies, rate-limited sign-in, same-site origin checks. Off by default (an optional shared password instead).
+- Folders and permissions per report and per folder: grants to users and groups (view, edit, manage), inherited from the folder chain (inheritance can be turned off), a top-level default, the role as a ceiling, admins see everything. Enforced on every path: the home page (folders, search, only the controls the user can use), viewer, designer, `/api/reports*`, server renders and exports, thumbnails, saved SQL, subreports and drill-through, `/api/v1` (API keys can act as a user: `email|key`), batches and schedules (owners, re-checked at every run). A report one may not view is not found. Works on every storage backend; tested on files, SQLite, Postgres, MySQL and SQL Server.
+- Audit log: sign-ins and failures, sign-outs, single sign-on, report create/update/delete/restore/import/view/render/export, permission and folder changes, user changes, API key use (by key id), batches and schedule runs; who, what, format, a keyed hash of the parameters, when, from where. Append-only, in the configured storage, retention `PW_AUDIT_RETENTION_DAYS` (365). Admin page with filters and CSV export. Never passwords, keys, tokens or parameter values.
+- Single sign-on: OpenID Connect (authorization code + PKCE, state, nonce, ID token signature and iss/aud/azp/exp checks, cached JWKS) and SAML 2.0 (signed assertions required, audience, recipient, destination, time and InResponseTo checks, each assertion used once across servers, the response bound to the browser that began the sign-in). IdP groups map to roles and to permission groups; accounts are made on first sign-in. Password sign-in can be turned off. Tested against a mock OIDC provider and a test SAML IdP, in a browser too.
+- Render time limit on the server (`PW_RENDER_TIMEOUT_MS`, default 60 s): an evaluation budget in the engine, shared with subreports; a report quadratic in its rows stops with a 504 instead of holding the server.
 - Shared storage in SQLite, PostgreSQL, MySQL or SQL Server for reports, versions, schedules, jobs and users, so several servers can share it.
 - Queue and scheduler that work across several servers (database leases).
 - Server-side fetches refuse private addresses unless allowed.
@@ -142,8 +146,8 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 |---|---|
 | SSRS | No `.rdl` / `.rdlx` XML importer. |
 | SQL | No Oracle, Snowflake or BigQuery connector. |
-| Identity | No SSO (SAML / OIDC), no two-factor sign-in, no password reset by email. |
-| Governance | No per-report or per-folder permissions (every viewer sees every report); no audit log. |
+| Identity | No two-factor sign-in, no password reset by email; no SAML single logout. |
+| Governance | Permissions are not applied with accounts off (the shared `PW_BASIC_AUTH` password is all or nothing). The audit log takes the browser's word for exports made in the viewer; it has no tamper-evidence (hash chain) and is not shipped to a SIEM. |
 | Reuse | Phase 8 not started: master reports, part libraries, layers. |
 | Tools | Phase 9 deferred: desktop designer, VS Code extension. |
 | Charts | Word export leaves charts out; no leader lines on outside pie labels; overlays not in the legend; half-circle gauges only. |

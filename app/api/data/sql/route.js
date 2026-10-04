@@ -6,6 +6,7 @@
 import { runSql, runSavedSql } from '@/server/sql.js';
 import { accountsOn } from '@/server/session.js';
 import { requireRole } from '@/server/access.js';
+import { principalOf } from '@/server/perms.js';
 
 export const runtime = 'nodejs';
 
@@ -19,7 +20,7 @@ export async function POST(req) {
   try {
     if (body.report != null) {
       if (typeof body.report !== 'string' || typeof body.source !== 'string') return bad('Give the report id and the source name');
-      return Response.json({ rows: await runSavedSql(body.report, body.source, params) });
+      return Response.json({ rows: await runSavedSql(body.report, body.source, params, await principalOf(req)) });
     }
     if (body.query == null) return bad('Give the report id and the source name');
     if (accountsOn()) { // with accounts on: designers and admins may preview SQL, in production too; nobody else

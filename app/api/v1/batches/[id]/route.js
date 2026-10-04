@@ -1,12 +1,12 @@
-import { authorize } from '@/server/auth.js';
+import { apiPrincipal } from '@/server/auth.js';
 import { getJob } from '@/server/jobs.js';
 
 export const runtime = 'nodejs';
 
 export async function GET(req, { params }) {
-  const denied = authorize(req);
-  if (denied) return denied;
+  const { principal, res } = await apiPrincipal(req);
+  if (res) return res;
   const { id } = await params;
-  const job = await getJob(id);
+  const job = await getJob(id, principal);
   return job ? Response.json(job) : Response.json({ error: 'Batch not found' }, { status: 404 });
 }

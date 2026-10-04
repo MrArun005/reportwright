@@ -1,6 +1,7 @@
 // GET /api/users — every user (never a password hash). POST { email, role, password } — add one. Admins only.
 import { listUsers, createUser } from '@/server/users.js';
 import { requireRole } from '@/server/access.js';
+import { audit } from '@/server/audit.js';
 
 export const runtime = 'nodejs';
 
@@ -10,10 +11,12 @@ export async function GET(req) {
 }
 
 export async function POST(req) {
-  const { res } = await requireRole(req, 'admin');
+  const { user: me, res } = await requireRole(req, 'admin');
   if (res) return res;
   try {
     const body = await req.json().catch(() => ({}));
-    return Response.json(await createUser({ email: body.email, role: body.role, password: body.password }), { status: 201 });
+    const u = await createUser({ email: body.email, role: body.role, password: body.password, groups: body.groups ?? [] });
+    await audit('user.create', { req, actor: `user:${me.email}`, detail: { user: u.email, role: u.role, groups: u.groups } });
+    return Response.json(u, { status: 201 });
   } catch (e) { return Response.json({ error: e.message }, { status: e.status || 500 }); }
 }

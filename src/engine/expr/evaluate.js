@@ -11,6 +11,7 @@ import { formatValue, formatDate, english, toDate, roundHalfAway } from './forma
  * @property {any[]} [runningRows]                   rows from scope start up to the current row
  * @property {number} [rowNumber]
  * @property {Record<string, any[]>} dataSets
+ * @property {{ until: number, n: number, over: boolean }} [clock] the render's time limit (see evaluate)
  * @property {string} [locale]
  * @property {string} [currency]
  */
@@ -105,8 +106,15 @@ export function checkValue(v) {
 }
 
 /* ------------------------------------------------------------- evaluator */
+/**
+ * A render's time limit (render(def, { timeoutMs })): ctx.clock = { until, n, over }. The clock is read every 1,024
+ * evaluations; once the limit has passed every evaluation throws at once, so even a quadratic report unwinds fast.
+ */
+export const OVER_TIME = 'The report ran past its time limit.';
 /** @param {any} n @param {EvalCtx} ctx @returns {any} */
 export function evaluate(n, ctx) {
+  const clock = ctx.clock;
+  if (clock && (clock.over || ((++clock.n & 1023) === 0 && Date.now() > clock.until && (clock.over = true)))) throw new ExprError(OVER_TIME, n.p);
   switch (n.type) {
     case 'lit': return n.v;
     case 'id': {

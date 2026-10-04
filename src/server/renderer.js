@@ -9,7 +9,7 @@ import { exportCsv } from '@/exporters/csv.js';
 import { exportXlsx } from '@/exporters/xlsx.js';
 import { exportDocx } from '@/exporters/docx.js';
 import { createSubsetter } from '@/exporters/subset.js';
-import { readReport } from './reports.js';
+import { readReportFor, defaultPrincipal } from './perms.js';
 import { serverFetch } from './safeFetch.js';
 import { pdfSigner } from './sign.js';
 import { runSql } from './sql.js';
@@ -43,18 +43,28 @@ export const FORMATS = {
   json: { type: 'application/json', ext: 'json' },
 };
 
+/** The server's render time limit: PW_RENDER_TIMEOUT_MS, default 60 s. Every server render (routes, batches,
+ *  schedules, thumbnails) stops there with a 504, so one slow report cannot hold the server. */
+export const renderTimeoutMs = () => { const n = Number(process.env.PW_RENDER_TIMEOUT_MS); return Number.isFinite(n) && n > 0 ? n : 60000; };
+
 export function baseUrl(req) {
   if (process.env.PW_BASE_URL) return process.env.PW_BASE_URL.replace(/\/$/, '');
   if (req) return new URL(req.url).origin;
   return `http://127.0.0.1:${process.env.PORT || 3000}`;
 }
 
-/** Resolve a template reference: "id", "id@version", or an inline definition object. */
-export async function loadTemplate(template) {
-  if (template && typeof template === 'object') return template;
-  const def = await readReport(String(template || ''));
-  if (!def) throw Object.assign(new Error(`Template "${template}" not found`), { status: 404 });
-  return def;
+/**
+ * Resolve a template reference: "id", "id@version", or an inline definition object, as `principal` may.
+ * An inline definition can name any SQL connection and any subreport, so it needs a designer (or a service key).
+ * @param {any} template @param {import('./perms.js').Principal} [principal]
+ */
+export async function loadTemplate(template, principal = defaultPrincipal()) {
+  if (template && typeof template === 'object') {
+    if (principal.kind === 'user' ? principal.role === 'viewer' : !['open', 'service'].includes(principal.kind)) throw Object.assign(new Error('Only a designer can render a definition sent in the request. Render a saved template by its id.'), { status: 403 });
+    return template;
+  }
+  try { return await readReportFor(principal, String(template || '')); }
+  catch (e) { throw e.status === 404 ? Object.assign(new Error(`Template "${template}" not found`), { status: 404 }) : e; }
 }
 
 /**
@@ -65,6 +75,8 @@ export async function loadTemplate(template) {
  *   pass it when baseUrl came from an API caller. Every other private address is refused (SSRF).
  *   pdfa: a PDF/A-2b file. sign: sign the PDF with PW_SIGN_P12 (only for routes behind an API key).
  *   encrypt: passwords and permissions (pdfEncryptOptions); not with pdfa or sign.
+ *   principal: who the render runs for (perms.js): subreports it may not view are "not found". Default: nobody
+ *   with accounts on, so a caller that forgets cannot show more than it should.
  */
 export async function renderTo(def, opt = {}) {
   const format = opt.format || 'pdf';
@@ -81,9 +93,12 @@ export async function renderTo(def, opt = {}) {
   const fetch = serverFetch(opt.self || base);
   await syncFonts();
   const model = await render(d, {
-    parameters: opt.parameters || {}, state: opt.state || {}, fontStore: fontStore(), baseUrl: base, fetch,
+    parameters: opt.parameters || {}, state: opt.state || {}, fontStore: fontStore(), baseUrl: base, fetch, timeoutMs: renderTimeoutMs(),
     sql: runSql, // SQL sources query the database directly, not through /api/data/sql
-    loadReport: async (id) => { const r = await readReport(id); if (!r) throw new Error(`Report "${id}" not found`); return r; },
+    loadReport: async (id) => {
+      try { return await readReportFor(opt.principal || defaultPrincipal(), id); }
+      catch { throw new Error(`Report "${id}" not found`); } // the same words whether it is missing or not allowed
+    },
   });
   let bytes;
   // images by URL (a logo) go through the same guard; one that fails to load is left out, as in the viewer

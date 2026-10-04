@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { t } from '@/i18n/index.js';
 
 /** Sign-in form. `next` is already checked on the server: a path on this site. */
-export default function LoginForm({ next, lang }) {
+export default function LoginForm({ next, lang, sso = {}, password: passwordOn = true, ssoError = null }) {
   const T = (k, v) => t(lang, k, v);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -39,7 +39,18 @@ export default function LoginForm({ next, lang }) {
       </div>
     );
   }
+  const n = encodeURIComponent(next);
+  const ssoButtons = (sso.oidc || sso.saml) && (
+    <div style={{ display: 'grid', gap: 8, marginBottom: passwordOn ? 18 : 0 }}>
+      {ssoError && <p className="err" role="alert" style={{ margin: 0, fontSize: 13 }}>{T('ssoFailed')}</p>}
+      {sso.oidc && <a className="btn primary" style={{ justifyContent: 'center', height: 34 }} href={`/api/auth/oidc/start?next=${n}`}>{T('signInWith', { name: sso.oidc })}</a>}
+      {sso.saml && <a className="btn primary" style={{ justifyContent: 'center', height: 34 }} href={`/api/auth/saml/login?next=${n}`}>{T('signInWith', { name: sso.saml })}</a>}
+      {passwordOn && <p className="hint" style={{ margin: '6px 0 0', textAlign: 'center' }}>{T('orWithPassword')}</p>}
+    </div>
+  );
+  if (!passwordOn) return ssoButtons || <p className="vmsg">{T('noSignInMethod')}</p>;
   return (
+    <>{ssoButtons}
     <form onSubmit={submit} style={{ display: 'grid', gap: 12 }} aria-describedby={err ? 'login-error' : undefined}>
       <label className="field">
         <span>{T('email')}</span>
@@ -50,7 +61,8 @@ export default function LoginForm({ next, lang }) {
         <input className="input" type="password" name="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} style={{ height: 32 }} />
       </label>
       {err && <p id="login-error" className="err" role="alert" style={{ margin: 0, fontSize: 13 }}>{err}</p>}
-      <div><button className="btn primary" disabled={busy}>{busy ? T('signingIn') : T('signIn')}</button></div>
+      <div><button className={sso.oidc || sso.saml ? 'btn' : 'btn primary'} disabled={busy}>{busy ? T('signingIn') : T('signIn')}</button></div>
     </form>
+    </>
   );
 }

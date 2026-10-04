@@ -59,9 +59,9 @@ function cookie(req, name) {
 }
 
 /**
- * The signed-in user, read again from storage: { email, role }, or null. Null also when accounts are off.
+ * The signed-in user, read again from storage: { email, role, groups }, or null. Null also when accounts are off.
  * A server-to-itself pass (internalCookie) gives { role: 'viewer', internal: true } for its one GET only.
- * @param {Request} req @returns {Promise<{ email: string, role: 'viewer'|'designer'|'admin', internal?: boolean } | null>}
+ * @param {Request} req @returns {Promise<{ email: string, role: 'viewer'|'designer'|'admin', groups: string[], internal?: boolean } | null>}
  */
 export async function currentUser(req) {
   if (!accountsOn()) return null;
@@ -69,11 +69,11 @@ export async function currentUser(req) {
   if (!p) return null;
   if (p.srv) {
     const u = new URL(req.url);
-    return (req.method === 'GET' || req.method === 'HEAD') && p.path === u.pathname + u.search ? { email: '', role: 'viewer', internal: true } : null;
+    return (req.method === 'GET' || req.method === 'HEAD') && p.path === u.pathname + u.search ? { email: '', role: 'viewer', groups: [], internal: true } : null;
   }
   const user = typeof p.e === 'string' ? await cachedUser(p.e) : null;
   if (!user || user.disabled || (user.sessionVersion || 0) !== p.v || !(user.role in ROLE_RANK)) return null;
-  return { email: user.email, role: user.role };
+  return { email: user.email, role: user.role, groups: user.groups || [] };
 }
 
 const isHttps = (req) => new URL(req.url).protocol === 'https:' || (req.headers.get('x-forwarded-proto') || '').split(',')[0].trim() === 'https';

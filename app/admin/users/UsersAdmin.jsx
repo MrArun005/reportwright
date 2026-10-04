@@ -54,6 +54,7 @@ export default function UsersAdmin({ lang }) {
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
         <h1 style={{ flex: 1 }}>{T('users')}</h1>
         {me && <span className="hint" style={{ fontSize: 13 }}>{T('signedInAs', { email: me.email, role: me.role })}</span>}
+        <a className="btn" href={`/admin/audit${q}`}>{T('auditLog')}</a>
         <a className="btn" href={`/${q}`}>{T('reports')}</a>
         <button type="button" className="btn" onClick={signOut}>{T('signOut')}</button>
       </div>
@@ -85,7 +86,7 @@ export default function UsersAdmin({ lang }) {
       <div className="rlist">
         <table style={{ width: '100%', borderCollapse: 'collapse' }} aria-label={T('users')}>
           <thead>
-            <tr>{[T('email'), T('role'), T('status'), T('actions')].map(h => <th key={h} scope="col" style={{ ...cell, borderTop: 0, fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>{h}</th>)}</tr>
+            <tr>{[T('email'), T('role'), T('groups'), T('status'), T('actions')].map(h => <th key={h} scope="col" style={{ ...cell, borderTop: 0, fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>{h}</th>)}</tr>
           </thead>
           <tbody>
             {(users || []).map(u => (
@@ -97,7 +98,17 @@ export default function UsersAdmin({ lang }) {
                     {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </td>
-                <td style={cell}>{u.disabled ? T('disabled') : T('active')}</td>
+                <td style={cell}>
+                  <form style={{ display: 'flex', gap: 6, alignItems: 'center' }} onSubmit={(e) => {
+                    e.preventDefault();
+                    const groups = String(new FormData(e.currentTarget).get('groups') || '').split(',').map(g => g.trim()).filter(Boolean);
+                    act(() => call(one(u.email), 'PATCH', { groups }), T('groupsSaved', { email: u.email }));
+                  }}>
+                    <input className="input" name="groups" aria-label={T('groupsOf', { email: u.email })} defaultValue={(u.groups || []).join(', ')} key={(u.groups || []).join(',')} placeholder={T('groupsHint')} style={{ minWidth: 160 }} readOnly={!!u.sso} title={u.sso ? T('groupsFromSso') : undefined} />
+                    {!u.sso && <button className="btn sm">{T('save')}</button>}
+                  </form>
+                </td>
+                <td style={cell}>{u.disabled ? T('disabled') : T('active')}{u.sso && <span className="hint"> · {u.sso.toUpperCase()}</span>}</td>
                 <td style={cell}>
                   {reset.email === u.email ? (
                     <form onSubmit={savePassword} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -120,8 +131,8 @@ export default function UsersAdmin({ lang }) {
                 </td>
               </tr>
             ))}
-            {users && !users.length && <tr><td style={cell} colSpan={4}><span className="hint">{T('noUsers')}</span></td></tr>}
-            {!users && !err && <tr><td style={cell} colSpan={4}><span className="hint">{T('loading')}</span></td></tr>}
+            {users && !users.length && <tr><td style={cell} colSpan={5}><span className="hint">{T('noUsers')}</span></td></tr>}
+            {!users && !err && <tr><td style={cell} colSpan={5}><span className="hint">{T('loading')}</span></td></tr>}
           </tbody>
         </table>
       </div>

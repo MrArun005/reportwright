@@ -1,6 +1,7 @@
 import { accountsOn, safeNext } from '@/server/session.js';
 import { countUsers } from '@/server/users.js';
 import LoginForm from './LoginForm.jsx';
+import { ssoLabels, passwordLoginOn } from '@/server/sso.js';
 import { t, tParts, dirOf, pickLang } from '@/i18n/index.js';
 
 /** A translated sentence with code elements where its {placeholders} are. */
@@ -28,7 +29,7 @@ export default async function LoginPage({ searchParams }) {
           </ul>
         </div>
       )}
-      {on && <LoginForm next={safeNext(sp.next)} lang={lang} />}
+      {on && <LoginForm next={safeNext(sp.next)} lang={lang} sso={ssoLabels()} password={passwordLoginOn()} ssoError={typeof sp.sso_error === 'string' ? sp.sso_error.slice(0, 40) : null} />}
     </main>
   );
 }

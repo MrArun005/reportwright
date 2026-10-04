@@ -71,6 +71,8 @@ export function sqlStore(url) {
         for (const t of Object.values(TABLES)) await run(create(t, `id VARCHAR(255) PRIMARY KEY, data ${text} NOT NULL, updated_at VARCHAR(32) NOT NULL`));
         await run(create('pw_report_versions', `id VARCHAR(255) NOT NULL, stamp VARCHAR(32) NOT NULL, data ${text} NOT NULL, PRIMARY KEY (id, stamp)`));
         await run(create('pw_leases', 'name VARCHAR(255) PRIMARY KEY, owner VARCHAR(255) NOT NULL, expires_at BIGINT NOT NULL'));
+        // the audit log: only ever inserted into (and old rows deleted by retention); id sorts by time
+        await run(create('pw_audit', `id VARCHAR(64) PRIMARY KEY, at VARCHAR(32) NOT NULL, type VARCHAR(64) NOT NULL, actor VARCHAR(400) NOT NULL, report VARCHAR(255), data ${text} NOT NULL`));
         return run;
       });
       conns.set(url, ready);
@@ -99,6 +101,28 @@ export function sqlStore(url) {
       await q(upsert('pw_report_versions', ['id', 'stamp'], ['data']), [id, version, data]);
       const old = (await q('SELECT stamp FROM pw_report_versions WHERE id = ? ORDER BY stamp DESC', [id])).slice(keep);
       for (const r of old) await q('DELETE FROM pw_report_versions WHERE id = ? AND stamp = ?', [id, r.stamp]);
+    },
+
+    async appendAudit(e) {
+      await q('INSERT INTO pw_audit (id, at, type, actor, report, data) VALUES (?, ?, ?, ?, ?, ?)', [e.id, e.at, e.type, e.actor, e.report ?? null, JSON.stringify(e)]);
+    },
+    async queryAudit(f) {
+      const where = [], vals = [];
+      if (f.from) { where.push('at >= ?'); vals.push(f.from); }
+      if (f.to) { where.push('at < ?'); vals.push(f.to); }
+      if (f.before) { where.push('id < ?'); vals.push(f.before); }
+      if (f.type) { if (f.type.endsWith('.')) { where.push('type LIKE ?'); vals.push(`${f.type.replace(/[%_\\]/g, '')}%`); } else { where.push('type = ?'); vals.push(f.type); } }
+      if (f.actor) { where.push('actor = ?'); vals.push(f.actor); }
+      if (f.report) { where.push('report = ?'); vals.push(f.report); }
+      const n = Math.max(1, Math.min(10000, Number(f.limit) || 100));
+      const w = where.length ? ` WHERE ${where.join(' AND ')}` : '';
+      const sqlText = dialect === 'mssql' ? `SELECT TOP ${n} data FROM pw_audit${w} ORDER BY id DESC` : `SELECT data FROM pw_audit${w} ORDER BY id DESC LIMIT ${n}`;
+      return (await q(sqlText, vals)).map(r => JSON.parse(String(r.data)));
+    },
+    async pruneAudit(before) {
+      const [r] = await q('SELECT COUNT(*) AS n FROM pw_audit WHERE at < ?', [before]);
+      await q('DELETE FROM pw_audit WHERE at < ?', [before]);
+      return Number(r?.n || 0);
     },
 
     // A lease is taken in one statement: when it is free, has expired, or is already ours.

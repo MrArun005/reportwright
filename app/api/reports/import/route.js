@@ -2,6 +2,8 @@
 // (the home page sends the file name, so drill-through and subreport links between imported reports line up).
 import { readDefinition, writeReport, newId } from '@/server/reports.js';
 import { importRdlx } from '@/importers/rdlx.js';
+import { principalOf, canCreateIn, recordNewReport, folderParam } from '@/server/perms.js';
+import { audit } from '@/server/audit.js';
 
 export const runtime = 'nodejs';
 
@@ -13,11 +15,17 @@ export async function POST(req) {
   if (!body || typeof body !== 'object' || Array.isArray(body) || !AR_KEYS.some(k => k in body)) {
     return Response.json({ error: 'This is not an ActiveReports report: it has no Body, ReportSections or FixedPage.' }, { status: 400 });
   }
-  const name = new URL(req.url).searchParams.get('name')?.trim().slice(0, 120) || undefined;
-  const { definition, warnings, stats } = importRdlx(body, { name });
+  const sp = new URL(req.url).searchParams;
+  const name = sp.get('name')?.trim().slice(0, 120) || undefined;
   try {
+    const p = await principalOf(req);
+    const folder = folderParam(sp.get('folder'));
+    await canCreateIn(p, folder);
+    const { definition, warnings, stats } = importRdlx(body, { name });
     const id = await newId(definition.name);
+    await recordNewReport(p, id, folder);
     await writeReport(id, definition);
+    await audit('report.import', { req, principal: p, report: id, detail: { folder, warnings: warnings.length } });
     return Response.json({ id, warnings, stats }, { status: 201 });
   } catch (e) { return Response.json({ error: e.message }, { status: e.status || 500 }); }
 }

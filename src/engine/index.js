@@ -40,9 +40,12 @@ const MAX_SUBREPORTS = 2000; // per render, all nesting levels together
  *   now?: Date,
  *   reportId?: string,
  *   sql?: (src: any, params: Record<string, any>) => Promise<object[]>,
+ *   timeoutMs?: number,
+ *   deadline?: number,
  * }} opts
  *   reportId: the saved report, whose SQL sources the server runs for a browser render.
  *   sql: runs SQL sources directly (server renders).
+ *   timeoutMs: stop with a ReportError (status 504) when the render runs longer; subreports share the deadline.
  */
 export async function render(def, opts = {}) {
   const t0 = Date.now();
@@ -60,15 +63,24 @@ export async function render(def, opts = {}) {
   await store.load(ALL_FONT_KEYS);
   let m = new TextMeasurer(store);
 
+  // the time limit: an absolute deadline, the same for this render and its subreports
+  const deadline = opts.deadline ?? (Number(opts.timeoutMs) > 0 ? t0 + Number(opts.timeoutMs) : null);
+  const clock = deadline ? { until: deadline, n: 0, over: false } : null;
+  const overTime = () => {
+    if (clock && (clock.over || Date.now() > clock.until)) {
+      throw new ReportError(`The report ran longer than ${Math.round(Number(opts.timeoutMs || deadline - t0) / 100) / 10} s, the time limit on this server. Filter the data, or avoid aggregates over the whole data set in every row.`, { status: 504, timeout: true });
+    }
+  };
   const now = opts.now || new Date();
   const fnCount = opts.fnCount || { n: 0 }; // report function calls, for this render and its subreports
   const baseCtx = {
     params, globals: { ExecutionTime: now, ReportName: def.name || '', PageNumber: 1, TotalPages: 1 },
-    dataSets: {}, fields: null, locale: def.locale || 'en-IN', currency: def.currency || 'INR', functions: functionTable(def, fnCount),
+    dataSets: {}, fields: null, locale: def.locale || 'en-IN', currency: def.currency || 'INR', functions: functionTable(def, fnCount), clock,
   };
   const sources = opts.sources || await loadSources(def, { params, fetch: opts.fetch, baseUrl: opts.baseUrl, sql: opts.sql, reportId: opts.reportId });
   const dataSets = buildDataSets(def, sources, { ...baseCtx, warn });
   baseCtx.dataSets = dataSets;
+  overTime();
   const defaultDs = def.dataSets?.[0]?.name;
   const kept = warnings.length; // a second layout pass starts from here
 
@@ -141,10 +153,10 @@ export async function render(def, opts = {}) {
             if ((opts.chain || []).includes(rq.report)) throw new Error('it includes itself');
             if (!defs.has(rq.report)) defs.set(rq.report, await opts.loadReport(rq.report));
             const child = defs.get(rq.report);
-            const r = await render(child, { ...opts, reportId: rq.report, budget, fnCount, imageBudget, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, rq.report], bodyWidth: page.bodyWidth, state: {} });
+            const r = await render(child, { ...opts, deadline: deadline ?? undefined, reportId: rq.report, budget, fnCount, imageBudget, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, rq.report], bodyWidth: page.bodyWidth, state: {} });
             results.set(key, r);
             for (const w of r.warnings) warn(`Subreport ${rq.report}: ${w}`);
-          } catch (e) { results.set(key, { error: e.message }); }
+          } catch (e) { if (e.timeout) throw e; results.set(key, { error: e.message }); }
         }
         lc.subreports = { mode: 'use', results };
       }
@@ -285,6 +297,7 @@ export async function render(def, opts = {}) {
     m = new TextMeasurer(store);
     result = await layoutAll();
   }
+  overTime();
   if (m.noGlyph.size) warn(`No font has these characters, so they show as boxes: ${[...m.noGlyph].slice(0, 20).join(' ')}. Upload a font that has them and use it for this text.`);
   if (opts.bodyOnly) return { units: result.body.units, tables: result.body.tables, height: result.body.height, regions, warnings };
   const { pages, bookmarks, height } = result;

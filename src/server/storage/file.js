@@ -125,6 +125,37 @@ export function fileStore(root) {
       for (const n of old.slice(0, Math.max(0, old.length - keep))) await fs.rm(path.join(dir, n), { force: true });
     },
 
+    // Audit log: one JSON line per event, one file per UTC day (data/audit/2026-10-04.jsonl, owner only). Appending
+    // never rewrites what is there; retention removes whole days.
+    async appendAudit(entry) {
+      const dir = path.join(data, 'audit');
+      await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+      await fs.appendFile(path.join(dir, `${entry.at.slice(0, 10)}.jsonl`), `${JSON.stringify(entry)}\n`, { mode: 0o600 });
+    },
+    async queryAudit(q) {
+      const dir = path.join(data, 'audit');
+      let days = [];
+      try { days = (await fs.readdir(dir)).filter(n => /^\d{4}-\d{2}-\d{2}\.jsonl$/.test(n)).sort().reverse(); } catch (e) { if (!missing(e)) throw e; }
+      const out = [];
+      for (const d of days) {
+        const day = d.slice(0, 10);
+        if ((q.from && day < q.from.slice(0, 10)) || (q.to && day > q.to.slice(0, 10))) continue;
+        const lines = (await fs.readFile(path.join(dir, d), 'utf8')).split('\n').filter(Boolean).reverse();
+        for (const l of lines) {
+          let e;
+          try { e = JSON.parse(l); } catch { continue; }
+          if (auditMatch(e, q)) { out.push(e); if (out.length >= q.limit) return out; }
+        }
+      }
+      return out;
+    },
+    async pruneAudit(before) {
+      const dir = path.join(data, 'audit');
+      let n = 0;
+      try { for (const d of await fs.readdir(dir)) if (/^\d{4}-\d{2}-\d{2}\.jsonl$/.test(d) && d.slice(0, 10) < before.slice(0, 10)) { await fs.rm(path.join(dir, d), { force: true }); n++; } } catch (e) { if (!missing(e)) throw e; }
+      return n;
+    },
+
     // Leases are files, so two processes on one folder (a dev server and a test server, say) see each other's.
     // ponytail: file storage is still one machine; servers on several machines use PW_STORAGE=sqlite|postgres|mysql.
     async lease(name, owner, ttl) {
@@ -141,6 +172,17 @@ export function fileStore(root) {
       await withFileLock(file, async () => { if ((await readLease(file))?.owner === owner) await fs.rm(file, { force: true }); });
     },
   };
+}
+
+/** One audit event against a query: time range [from, to), type (exact or "prefix."), actor, report, before (id). */
+export function auditMatch(e, q) {
+  if (q.from && e.at < q.from) return false;
+  if (q.to && e.at >= q.to) return false;
+  if (q.before && e.id >= q.before) return false;
+  if (q.type && !(q.type.endsWith('.') ? String(e.type).startsWith(q.type) : e.type === q.type)) return false;
+  if (q.actor && e.actor !== q.actor) return false;
+  if (q.report && e.report !== q.report) return false;
+  return true;
 }
 
 const leaseFile = (data, name) => path.join(data, 'leases', `${String(name).replace(/[^\w.-]/g, '_')}.json`);

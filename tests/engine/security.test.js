@@ -90,9 +90,9 @@ describe('batches', () => {
 
 describe('API keys', () => {
   it('a key with non-ASCII characters is refused, not a crash', () => withEnv({ PW_API_KEYS: 'abc' }, async () => {
-    const res = authorize(new Request('http://x/api/v1/render', { headers: { authorization: 'Bearer ébc' } }));
+    const res = await authorize(new Request('http://x/api/v1/render', { headers: { authorization: 'Bearer ébc' } }));
     expect(res.status).toBe(401);
-    expect(authorize(new Request('http://x/api/v1/render', { headers: { authorization: 'Bearer abc' } }))).toBe(null);
+    expect(await authorize(new Request('http://x/api/v1/render', { headers: { authorization: 'Bearer abc' } }))).toBe(null);
   }));
 });
 

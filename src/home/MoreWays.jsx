@@ -13,7 +13,7 @@ async function call(url, init) {
 
 /** Other ways to start a report: a dashboard, an ActiveReports file, or a description for AI.
  *  Lives inside the New report form, so every control here is type="button". */
-export default function MoreWays({ name, lang }) {
+export default function MoreWays({ name, lang, folder = null }) {
   const T = (k, v) => t(lang, k, v);
   const q = lang && lang !== 'en' ? `?lang=${encodeURIComponent(lang)}` : '';
   const router = useRouter();
@@ -31,7 +31,7 @@ export default function MoreWays({ name, lang }) {
     try { await fn(); } catch (e) { setErr(e.message); setBusy(null); }
   };
   const dashboard = () => run('dashboard', async () => {
-    const { id } = await call('/api/reports', json({ name: title(), template: 'dashboard' }));
+    const { id } = await call('/api/reports', json({ name: title(), template: 'dashboard', folder }));
     router.push(`/designer/${id}${q}`);
   });
   const importFile = (e) => {
@@ -41,7 +41,7 @@ export default function MoreWays({ name, lang }) {
     run('import', async () => {
       // the file name names the report, so drill-through links between imported reports find their target
       const fileName = encodeURIComponent(f.name.replace(/\.(rdlx-json|rdlx|json)$/i, ''));
-      const { id, warnings: w } = await call(`/api/reports/import?name=${fileName}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: await f.text() });
+      const { id, warnings: w } = await call(`/api/reports/import?name=${fileName}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: await f.text() });
       if (w?.length) { setWarnings({ id, list: w }); setBusy(null); } else router.push(`/designer/${id}${q}`);
     });
   };
@@ -52,7 +52,7 @@ export default function MoreWays({ name, lang }) {
         try { rows = JSON.parse(sample); } catch { throw new Error(T('badSample')); }
       }
       const { definition, warnings: w } = await call('/api/ai/report', json({ prompt, sample: rows }));
-      const { id } = await call('/api/reports', json({ name: definition.name || title(), definition }));
+      const { id } = await call('/api/reports', json({ name: definition.name || title(), definition, folder }));
       if (w?.length) { setWarnings({ id, list: w }); setBusy(null); } else router.push(`/designer/${id}${q}`);
     });
   };

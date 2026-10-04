@@ -18,6 +18,7 @@ const backends = [
   ['sqlite', () => { process.chdir(home); return `sqlite:${path.join(tmp, 'store.db')}`; }],
 ];
 if (process.env.PW_TEST_PG) backends.push(['postgres', () => { process.chdir(home); return process.env.PW_TEST_PG; }]);
+if (process.env.PW_TEST_MYSQL) backends.push(['mysql', () => { process.chdir(home); return process.env.PW_TEST_MYSQL; }]);
 if (process.env.PW_TEST_MSSQL) backends.push(['mssql', () => { process.chdir(home); return process.env.PW_TEST_MSSQL; }]);
 
 const STORE_TABLES = ['pw_reports', 'pw_report_versions', 'pw_schedules', 'pw_jobs', 'pw_users', 'pw_fonts', 'pw_leases', 'pw_folders', 'pw_report_acl', 'pw_tokens'];
@@ -33,6 +34,12 @@ describe.each(backends)('storage on %s', (kind, setup) => {
       await pg.connect();
       for (const t of STORE_TABLES) await pg.query(`DELETE FROM ${t}`);
       await pg.end();
+    }
+    if (kind === 'mysql') {
+      await store().ids('jobs');
+      const c = await (await import('mysql2/promise')).default.createConnection(process.env.PW_TEST_MYSQL);
+      for (const t of STORE_TABLES) await c.query(`DELETE FROM ${t}`);
+      await c.end();
     }
     if (kind === 'mssql') {
       await store().ids('jobs'); // makes the tables

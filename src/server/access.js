@@ -1,11 +1,15 @@
 // @ts-check
 // Who may call what when accounts are on (PW_AUTH=users). proxy.js runs guard() before every request.
-// The whole policy is the OPEN list and the RULES table below: read them, not the code.
+// The whole role policy is the OPEN list and the RULES table below: read them, not the code. Which reports and
+// folders a user may see or change is decided per report by src/server/perms.js, in the routes and pages.
 import { accountsOn, currentUser, sameOrigin, sessionSecret, ROLE_RANK } from './session.js';
 
 /** Open to everyone: sign-in, static files, the embed script, and /api/v1 (it has its own API keys). */
 const OPEN_PREFIX = ['/_next/', '/fonts/', '/icc/', '/embed/', '/api/v1/', '/favicon'];
-const OPEN_EXACT = ['/login', '/api/auth/login', '/api/auth/logout', '/harfbuzz-subset.wasm'];
+const OPEN_EXACT = ['/login', '/api/auth/login', '/api/auth/logout', '/harfbuzz-subset.wasm',
+  '/api/auth/oidc/start', '/api/auth/oidc/callback', '/api/auth/saml/login', '/api/auth/saml/acs', '/api/auth/saml/finish', '/api/auth/saml/metadata'];
+/** Writes that come from another site by design: the SAML IdP posts the response (its signature protects it). */
+const CROSS_SITE_WRITES = ['/api/auth/saml/acs'];
 
 /**
  * [method, path, least role]. The first row that matches wins; a path no row matches is for admins only.
@@ -24,7 +28,10 @@ export const RULES = [
   ['GET', /^\/api\/sample\/.+$/, 'viewer'],
   ['GET', /^\/api\/auth\/me$/, 'viewer'],
   ['GET', /^\/api\/fonts$/, 'viewer'],                                  // the uploaded fonts (the files are under /fonts/, open)
+  ['GET', /^\/api\/folders$/, 'viewer'],                                 // folders the user may see
+  ['POST', /^\/api\/audit\/export$/, 'viewer'],                          // the viewer says it exported (the log itself: admins)
   ['GET', /^\/designer\/[^/]+$/, 'designer'],
+  ['*', /^\/api\/folders(\/[^/]+)?$/, 'designer'],                        // create, rename, move, share (perms.js checks each folder)
   ['*', /^\/api\/reports(\/.*)?$/, 'designer'],                           // save, create, delete, restore, import
   ['*', /^\/api\/fonts(\/[^/]+)?$/, 'designer'],                           // upload, delete
   ['POST', /^\/api\/ai(\/.*)?$/, 'designer'],
@@ -73,7 +80,7 @@ export async function guard(req) {
   const api = url.pathname.startsWith('/api/');
   try { sessionSecret(); } catch (e) { return new Response(e.message, { status: 500 }); }
   // CSRF: every write must come from this site's pages (API keys on /api/v1 are not cookies, so they are exempt)
-  if (UNSAFE.has(req.method.toUpperCase()) && !url.pathname.startsWith('/api/v1/') && !sameOrigin(req)) {
+  if (UNSAFE.has(req.method.toUpperCase()) && !url.pathname.startsWith('/api/v1/') && !CROSS_SITE_WRITES.includes(url.pathname) && !sameOrigin(req)) {
     return json('This request did not come from a Pagewright page (Origin check).', 403);
   }
   let d = decide(req.method, url.pathname, null);

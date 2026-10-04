@@ -12,6 +12,8 @@ Authorization: Bearer key1        (or)        x-api-key: key1
 
 In production the API refuses all requests when `PW_API_KEYS` is empty. In `next dev` it answers without a key.
 
+A plain key is a **service key**: it may render, batch and schedule every report. With accounts on (`PW_AUTH=users`) a key written `email|key` (for example `PW_API_KEYS="svc-key,reports@acme.com|k2"`) acts as that user: it sees, renders and schedules only what that user may view (permissions below), renders a definition sent in the request only when the user is a designer, and sees only its own batches and schedules. A disabled or deleted user's key stops working. Every call is in the audit log under the key's id (the first 8 hex of its SHA-256), never the key.
+
 ## Rich text and data
 
 A `richtext` item's `value` is an HTML subset (p, div, span, br, b/strong, i/em, u, s/strike/del, sup, sub, ul/ol/li, a[href], h1–h6, inline `style` with color, font-size, font-weight, font-style, text-decoration, background-color, text-align).
@@ -154,9 +156,32 @@ Cron supports `*`, lists `1,15`, ranges `1-5` and steps `*/15`. Names such as `M
 | `GET /api/reports/<id>/versions` | Saved versions |
 | `POST /api/reports/<id>/versions` | `{ version }`: restore that version |
 | `GET /api/reports/<id>/pdf?format=…&param=value` | Render on the server |
-| `GET /api/reports/<id>/thumb` | Page 1 as SVG with default parameters (home page cards); cached until the file changes |
+| `GET /api/reports/<id>/thumb` | Page 1 as SVG with default parameters (home page cards); cached per report content and viewer |
+| `GET / PUT /api/reports/<id>/access` | Its folder, inheritance and grants; `PUT { folder?, inherit?, grants? }` moves or shares it (manage) |
+| `GET / POST /api/folders` | Folders the caller may see (and its level on each), `{ root: { access }, folders }`; `POST { name, parent? }` adds one (manage on the parent) |
+| `GET / PATCH / DELETE /api/folders/<id>` | A folder with its grants; `PATCH { name?, parent?, inherit?, grants? }`; `DELETE` an empty folder. `<id>` = `root`: the top-level grants (admins) |
+| `GET /api/audit?from&to&type&actor&report&limit&before[&format=csv]` | The audit log, newest first (admins). `type` ending in `.` is a prefix (`report.`) |
+| `POST /api/audit/export` | `{ report, format }`: the viewer reports an export it made in the browser (logged as `client: true`) |
 
-These routes have no API key check. Put them behind your own login when the server is public (see `STATUS.md`, gap 1).
+These routes use the app's sign-in (`PW_AUTH=users`, or the shared `PW_BASIC_AUTH`), not API keys.
+
+### Permissions
+
+With accounts on, each report has a level for each user: `view` (open, run, export, run its saved SQL), `edit` (also save, restore, version history) or `manage` (also share, move, delete). A grant is `{ "to": "user:ann@acme.com" | "group:finance", "level": "view" | "edit" | "manage" }`. A report gets the highest grant on itself, then on its folder and the folders above while `inherit` is true, then the top-level grants (default `group:everyone` manage, i.e. as before permissions). The role is a ceiling: viewers view at most, admins manage everything. `group:everyone` is every signed-in user; `group:public` also anonymous viewers embedded from `PW_EMBED_ORIGINS`. A report a user may not view is **not found** (404) on every route, the viewer, the designer, thumbnails, exports, `/api/v1`, saved SQL, and as a subreport. A new report's creator manages it. Old versions (`id@version`) need edit.
+
+## Single sign-on
+
+| Setting | |
+|---|---|
+| `PW_OIDC_ISSUER`, `PW_OIDC_CLIENT_ID`, `PW_OIDC_CLIENT_SECRET` | OpenID Connect (authorization code + PKCE). Register `https://<PW_BASE_URL>/api/auth/oidc/callback` as the redirect URI. `PW_OIDC_SCOPES` (default `openid email profile`), `PW_OIDC_GROUPS_CLAIM` (default `groups`), `PW_OIDC_NAME` (button label), `PW_OIDC_TRUST_EMAIL=1` to accept an email without `email_verified` |
+| `PW_SAML_ENTRY_POINT`, `PW_SAML_IDP_CERT` (PEM or base64, or `PW_SAML_IDP_CERT_FILE`), `PW_SAML_IDP_ISSUER` | SAML 2.0 (HTTP-Redirect request, HTTP-POST response, signed assertions required). SP metadata: `/api/auth/saml/metadata`; ACS: `/api/auth/saml/acs`. `PW_SAML_ISSUER` (SP entity id), `PW_SAML_EMAIL_ATTR`, `PW_SAML_GROUPS_ATTR` (default `groups`), `PW_SAML_NAME` |
+| `PW_SSO_ROLE_MAP` | `idp-admins=admin,idp-designers=designer`: an IdP group or role value → Pagewright role (the highest wins) |
+| `PW_SSO_DEFAULT_ROLE` | Role without a mapped value: `viewer` (default), `designer`, `admin`, or `none` to refuse the sign-in |
+| `PW_PASSWORD_LOGIN=off` | No password sign-in while SSO is set up |
+| `PW_BASE_URL` | Set it: the redirect URI, ACS and audience come from it |
+
+Accounts are made on first sign-in and their role and groups follow the IdP at every sign-in. Every valid group name the IdP sends becomes a group for permissions.
+
 
 ## Viewer (embedding)
 

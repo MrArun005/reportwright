@@ -1,8 +1,9 @@
-// PATCH /api/users/<email> { role?, password?, disabled? } — change a user. DELETE — remove one. Admins only.
+// PATCH /api/users/<email> { role?, password?, disabled?, groups? } — change a user. DELETE — remove one. Admins only.
 // The last admin cannot be demoted, disabled or deleted (409).
 import { updateUser, deleteUser, getUser } from '@/server/users.js';
 import { requireRole } from '@/server/access.js';
 import { sessionCookie } from '@/server/session.js';
+import { audit } from '@/server/audit.js';
 
 export const runtime = 'nodejs';
 
@@ -17,8 +18,9 @@ export async function PATCH(req, { params }) {
     const email = await target(params);
     const body = await req.json().catch(() => ({}));
     const patch = {};
-    for (const k of ['role', 'password', 'disabled']) if (body[k] !== undefined) patch[k] = body[k];
+    for (const k of ['role', 'password', 'disabled', 'groups']) if (body[k] !== undefined) patch[k] = body[k];
     const u = await updateUser(email, patch);
+    await audit('user.update', { req, actor: `user:${me.email}`, detail: { user: u.email, ...('role' in patch && { role: u.role }), ...('groups' in patch && { groups: u.groups }), ...('disabled' in patch && { disabled: u.disabled }), ...('password' in patch && { password: 'changed' }) } });
     // a new password ends the user's sessions; an admin who changed their own stays signed in
     const headers = u.email === me.email && patch.password !== undefined ? { 'set-cookie': sessionCookie(req, await getUser(u.email)) } : undefined;
     return Response.json(u, { headers });
@@ -26,9 +28,12 @@ export async function PATCH(req, { params }) {
 }
 
 export async function DELETE(req, { params }) {
-  const { res } = await requireRole(req, 'admin');
+  const { user: me, res } = await requireRole(req, 'admin');
   if (res) return res;
   try {
-    return (await deleteUser(await target(params))) ? Response.json({ ok: true }) : Response.json({ error: 'No such user.' }, { status: 404 });
+    const email = await target(params);
+    if (!(await deleteUser(email))) return Response.json({ error: 'No such user.' }, { status: 404 });
+    await audit('user.delete', { req, actor: `user:${me.email}`, detail: { user: String(email).toLowerCase() } });
+    return Response.json({ ok: true });
   } catch (e) { return fail(e); }
 }

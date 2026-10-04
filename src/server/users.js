@@ -1,6 +1,8 @@
 // @ts-check
 // User accounts (PW_AUTH=users). Records live in src/server/storage, keyed by lower-case email:
-// { email, role, passwordHash, createdAt, updatedAt, disabled?, sessionVersion }.
+// { email, role, passwordHash, createdAt, updatedAt, disabled?, sessionVersion, groups?, sso? }.
+// groups: names for report and folder permissions (src/server/perms.js). sso: 'oidc' | 'saml' for accounts made at
+// single sign-on; they have no password (passwordHash null), so password sign-in can never open them.
 // Passwords: scrypt with a random 16-byte salt; the parameters are stored with the hash, so they can change later.
 // sessionVersion goes up on sign-out, a password change and disabling: every older session cookie stops working.
 import crypto from 'node:crypto';
@@ -48,8 +50,20 @@ export function normEmail(email) {
 }
 const checkRole = (role) => { if (!ROLES.includes(role)) throw fail(`The role must be ${ROLES.join(', ')}.`, 400); return role; };
 
+export const GROUP = /^[\w][\w .@-]{0,63}$/;
+/** A list of group names: trimmed, unique, at most 50; "everyone" and "public" are built in and cannot be given. */
+export function checkGroups(groups) {
+  if (!Array.isArray(groups) || groups.length > 50) throw fail('Groups must be a list of at most 50 names.', 400);
+  const out = [...new Set(groups.map(g => String(g ?? '').trim()))].filter(Boolean);
+  for (const g of out) {
+    if (!GROUP.test(g)) throw fail(`"${g.slice(0, 70)}" is not a group name (letters, digits, space . @ - _, at most 64).`, 400);
+    if (['everyone', 'public'].includes(g.toLowerCase())) throw fail(`"${g}" is a built-in group.`, 400);
+  }
+  return out.sort();
+}
+
 /** What the API shows: never the hash. */
-const publicUser = (u) => ({ email: u.email, role: u.role, disabled: !!u.disabled, createdAt: u.createdAt, updatedAt: u.updatedAt });
+const publicUser = (u) => ({ email: u.email, role: u.role, disabled: !!u.disabled, groups: u.groups || [], sso: u.sso || null, createdAt: u.createdAt, updatedAt: u.updatedAt });
 
 /** @returns {Promise<any[]>} full records */
 async function all() { return (await store().list('users')).map(r => JSON.parse(r.text)); }
@@ -85,14 +99,18 @@ async function save(u) {
 export async function listUsers() { return (await all()).map(publicUser).sort((a, b) => a.email.localeCompare(b.email)); }
 export async function countUsers() { return (await store().ids('users')).length; }
 
-/** @param {{ email: string, role: string, password: string }} u */
-export async function createUser({ email, role, password }) {
+/**
+ * A password account, or with `sso` an account made at single sign-on (no password).
+ * @param {{ email: string, role: string, password?: string, groups?: string[], sso?: 'oidc'|'saml' }} u
+ */
+export async function createUser({ email, role, password, groups = [], sso }) {
   const e = normEmail(email);
   checkRole(role);
-  const passwordHash = await hashPassword(password);
+  const g = checkGroups(groups);
+  const passwordHash = sso ? null : await hashPassword(/** @type {string} */ (password));
   if (await getUser(e)) throw fail(`There is already a user ${e}.`, 409);
   const now = new Date().toISOString();
-  const u = { email: e, role, passwordHash, createdAt: now, updatedAt: now, disabled: false, sessionVersion: 0 };
+  const u = { email: e, role, passwordHash, createdAt: now, updatedAt: now, disabled: false, sessionVersion: 0, groups: g, ...(sso ? { sso } : {}) };
   await save(u);
   return publicUser(u);
 }
@@ -105,8 +123,8 @@ async function keepAnAdmin(before, after) {
 }
 
 /**
- * Change the role, the password or disabled. A new password or disabling ends the user's sessions.
- * @param {string} email @param {{ role?: string, password?: string, disabled?: boolean }} patch
+ * Change the role, the password, the groups or disabled. A new password or disabling ends the user's sessions.
+ * @param {string} email @param {{ role?: string, password?: string, disabled?: boolean, groups?: string[] }} patch
  */
 export async function updateUser(email, patch) {
   const u = await getUser(email);
@@ -114,6 +132,7 @@ export async function updateUser(email, patch) {
   const next = { ...u, updatedAt: new Date().toISOString() };
   if (patch.role !== undefined) next.role = checkRole(patch.role);
   if (patch.disabled !== undefined) next.disabled = !!patch.disabled;
+  if (patch.groups !== undefined) next.groups = checkGroups(patch.groups);
   if (patch.password !== undefined) next.passwordHash = await hashPassword(patch.password);
   if (patch.password !== undefined || (next.disabled && !u.disabled)) next.sessionVersion = (u.sessionVersion || 0) + 1;
   await keepAnAdmin(u, next);

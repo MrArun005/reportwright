@@ -14,6 +14,7 @@ import { serverFetch } from './safeFetch.js';
 import { jsonPath } from '@/engine/data/index.js';
 import { evalValue } from '@/engine/expr/evaluate.js';
 import { store } from './storage/index.js';
+import { principalId, principalFromId, defaultPrincipal } from './perms.js';
 
 const DATA = path.join(process.cwd(), 'data');
 const JOBS = path.join(DATA, 'jobs');
@@ -33,7 +34,7 @@ const rid = () => `b_${Date.now().toString(36)}${crypto.randomBytes(3).toString(
 const save = (job) => store().put('jobs', job.id, JSON.stringify(job, null, 2));
 
 export function publicJob(job) {
-  const { items, _def, _work, ...rest } = job;
+  const { items, _def, _work, owner, ...rest } = job;
   return { ...rest, total: job.total, done: job.done, failed: job.failed };
 }
 
@@ -55,40 +56,57 @@ async function expandItems(spec, base, fetch) {
   });
 }
 
-export async function createBatch(spec, req) {
+/**
+ * @param {any} spec @param {Request} [req]
+ * @param {import('./perms.js').Principal} [principal] who asks: the template and its subreports are checked for them,
+ *   now and again when the items render (a schedule's owner may have lost access since)
+ */
+export async function createBatch(spec, req, principal = defaultPrincipal()) {
   // self: this server, the one local address batch fetches may reach; baseUrl may come from the caller
   const self = defaultBase(req);
   const base = spec.baseUrl || self;
-  const def = await loadTemplate(spec.template);
+  const def = await loadTemplate(spec.template, principal);
   const items = await expandItems(spec, base, serverFetch(self));
   if (!items.length) throw Object.assign(new Error('The batch has no items'), { status: 400 });
   if (items.length > MAX_ITEMS) throw Object.assign(new Error(`A batch can hold at most ${MAX_ITEMS} items`), { status: 400 });
   const format = spec.format || 'pdf';
   const job = {
     id: rid(), status: 'queued', createdAt: new Date().toISOString(), template: typeof spec.template === 'string' ? spec.template : def.name,
+    templateRef: typeof spec.template === 'string' ? spec.template : null,
     format, output: spec.output || { type: 'zip' }, webhook: spec.webhook || null, fileName: spec.fileName || null, schedule: spec.schedule || null, pdfa: !!spec.pdfa, sign: !!spec.sign,
-    total: items.length, done: 0, failed: 0, results: [], errors: [], failedItems: [], base, self, _work: { items, def },
+    total: items.length, done: 0, failed: 0, results: [], errors: [], failedItems: [], base, self, owner: principalId(principal), _work: { items, def },
   };
   await save(job);
   poke();
   return publicJob(job);
 }
 
-export async function getJob(id) {
+/** A user's key sees its own jobs only; service keys (and accounts off) see all. */
+const mine = (p, job) => p.kind === 'open' || p.kind === 'service' || (job.owner || 'service') === principalId(p);
+
+/** @param {string} id @param {import('./perms.js').Principal} [p] */
+export async function getJob(id, p = { kind: 'service' }) {
   if (!/^b_[a-z0-9]+$/.test(id)) return null;
-  try { const t = await store().get('jobs', id); return t ? publicJob(JSON.parse(t)) : null; } catch { return null; }
+  try {
+    const t = await store().get('jobs', id);
+    const j = t ? JSON.parse(t) : null;
+    return j && mine(p, j) ? publicJob(j) : null;
+  } catch { return null; }
 }
 
-export async function listJobs() {
+/** @param {import('./perms.js').Principal} [p] */
+export async function listJobs(p = { kind: 'service' }) {
   let names = [];
   try { names = await store().ids('jobs'); } catch { return []; }
   const out = [];
-  for (const n of names.sort().reverse().slice(0, 50)) { const j = await getJob(n); if (j) out.push(j); }
+  // ponytail: a scoped key reads up to 500 records to find its 50; an owner index if that gets slow
+  for (const n of names.sort().reverse().slice(0, p.kind === 'user' ? 500 : 50)) { const j = await getJob(n, p); if (j) out.push(j); if (out.length >= 50) break; }
   return out;
 }
 
-export async function jobFile(id) {
-  const j = await getJob(id);
+/** @param {string} id @param {import('./perms.js').Principal} [p] */
+export async function jobFile(id, p) {
+  const j = await getJob(id, p);
   if (!j?.download) return null;
   return { path: path.join(JOBS, id, j.download.file), name: j.download.name, type: j.download.type };
 }
@@ -151,6 +169,9 @@ function itemName(job, item, i) {
 
 async function run(job, owner, stopAfter) {
   const { items, def } = job._work;
+  // the owner as they are now: a user who lost access, or was disabled, gets no further items
+  const principal = await principalFromId(job.owner || 'service');
+  if (job.templateRef) await loadTemplate(job.templateRef, principal); // throws: the job fails (workOnce)
   job.status = 'running';
   job.startedAt ||= new Date().toISOString();
   job.failedItems ||= [];
@@ -172,7 +193,7 @@ async function run(job, owner, stopAfter) {
       const item = items[i];
       const name = `${itemName(job, item, i)}.${job.format === 'json' ? 'json' : job.format}`;
       try {
-        const r = await renderTo(def, { parameters: item.parameters, data: item.data, format: job.format, baseUrl: job.base, self: job.self, pdfa: job.pdfa, sign: job.sign });
+        const r = await renderTo(def, { parameters: item.parameters, data: item.data, format: job.format, baseUrl: job.base, self: job.self, pdfa: job.pdfa, sign: job.sign, principal });
         if (item.putUrl) {
           const res = await serverFetch(job.self)(item.putUrl, { method: 'PUT', body: r.bytes, headers: { 'content-type': r.contentType } });
           if (!res.ok) throw new Error(`upload: HTTP ${res.status}`);

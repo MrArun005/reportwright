@@ -4,7 +4,13 @@ import ReportViewer from './ReportViewer.jsx';
 import ThemeToggle from '@/theme/ThemeToggle.jsx';
 import { t, dirOf, pickLang } from '@/i18n/index.js';
 
-export default function ViewerShell({ id, def, params }) {
+// the browser makes exports itself: it tells the server so they are in the audit log (fire and forget)
+const exported = (format, report, parameters) => {
+  if (!report) return;
+  fetch('/api/audit/export', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ report, format, parameters }) }).catch(() => {});
+};
+
+export default function ViewerShell({ id, def, params, canEdit = true }) {
   const { lang: langIn, ...rest } = params || {};
   const lang = pickLang(langIn);
   const q = lang === 'en' ? '' : `?lang=${encodeURIComponent(lang)}`;
@@ -15,9 +21,9 @@ export default function ViewerShell({ id, def, params }) {
         <span style={{ fontWeight: 'var(--fw-strong)' }}>{def.name}</span>
         <div className="spacer" />
         <ThemeToggle />
-        <Link className="btn sm" href={`/designer/${id}${q}`}>{t(lang, 'editInDesigner')}</Link>
+        {canEdit && <Link className="btn sm" href={`/designer/${id}${q}`}>{t(lang, 'editInDesigner')}</Link>}
       </div>
-      <ReportViewer definition={def} reportId={id} params={rest} lang={lang} exportHtmlOptions={{ reportId: id }} />
+      <ReportViewer definition={def} reportId={id} params={rest} lang={lang} exportHtmlOptions={{ reportId: id }} onExported={exported} />
     </div>
   );
 }

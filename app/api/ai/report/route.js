@@ -4,7 +4,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { draftReport } from '@/server/ai.js';
 import { fontStore } from '@/server/renderer.js';
-import { readReport, safeId } from '@/server/reports.js';
+import { safeId } from '@/server/reports.js';
+import { principalOf, readReportFor } from '@/server/perms.js';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; // a draft with retries can take minutes
@@ -27,8 +28,7 @@ export async function POST(req) {
   } catch { return err('Send JSON: { prompt, sample?, url?, base? }', 400); }
   try {
     // the report to change: unsaved from the designer (definition), or a saved one (base id)
-    const base = body.definition ?? (body.base ? await readReport(safeId(String(body.base))) : null);
-    if (body.base && !base) return err(`Report "${body.base}" not found.`, 404);
+    const base = body.definition ?? (body.base ? await readReportFor(await principalOf(req), safeId(String(body.base)), 'view') : null);
     client ||= new Anthropic(); // reads ANTHROPIC_API_KEY
     return Response.json(await draftReport({ prompt: body.prompt, sample: body.sample, url: body.url, base, sources: body.sources }, { client, fontStore: fontStore() }));
   } catch (e) {

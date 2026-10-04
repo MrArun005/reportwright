@@ -7,6 +7,7 @@ export default function Account({ email, role, lang }) {
     <div className="account" style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>
       <span className="hint">{email} · {role}</span>
       {role === 'admin' && <a className="btn sm" href={`/admin/users${lang && lang !== 'en' ? `?lang=${encodeURIComponent(lang)}` : ''}`}>{t(lang, 'users')}</a>}
+      {role === 'admin' && <a className="btn sm" href={`/admin/audit${lang && lang !== 'en' ? `?lang=${encodeURIComponent(lang)}` : ''}`}>{t(lang, 'auditLog')}</a>}
       <button type="button" className="btn sm" onClick={signOut}>{t(lang, 'signOut')}</button>
     </div>
   );
