@@ -307,6 +307,43 @@ describe.skipIf(!process.env.PW_TEST_MSSQL)('SQL Server (live)', () => {
     } finally { Object.assign(limits, keep); }
   }, 60000);
 
+  it('review 2: the worst row is bounded before a byte is read: many (MAX) columns, wide rows, many columns, xml', async () => {
+    const keep = { ...limits };
+    Object.assign(limits, { bytes: 3 * 1048576 });
+    const cols = (n, expr) => `with x as (select ${expr} as v) select ${Array.from({ length: n }, (_, i) => `v as c${i}`).join(', ')} from x`;
+    try {
+      global.gc?.();
+      const before = process.memoryUsage().rss;
+      let t0 = Date.now();
+      // 300 columns of 1 MB each: one row would be 300 MB
+      await expect(runSql(ms(cols(300, "replicate(cast('a' as varchar(max)), 1000000)")), {})).rejects.toThrow(/too many large columns|MB/);
+      // 10 columns of 1 MB: each value is cut at its share of the cap and refused
+      await expect(runSql(ms(cols(10, "replicate(cast('a' as varchar(max)), 1000000)")), {})).rejects.toThrow(/MB/);
+      // 1,000 columns of nvarchar(4000): an 8 MB row
+      await expect(runSql(ms(cols(1000, "cast(replicate(N'b', 4000) as nvarchar(4000))")), {})).rejects.toThrow(/row|MB/);
+      // more columns than a report can use
+      await expect(runSql(ms(cols(1100, '1')), {})).rejects.toThrow(/columns/);
+      expect(process.memoryUsage().rss - before).toBeLessThan(80 * 1048576);
+      expect(Date.now() - t0).toBeLessThan(15000);
+      // xml is refused before the server builds it
+      t0 = Date.now();
+      await expect(runSql(ms('select (select top 2000000 a.name from sys.all_objects a cross join sys.all_objects b for xml path, type) as x'), {})).rejects.toThrow(/xml/i);
+      expect(Date.now() - t0).toBeLessThan(3000);
+      // a sensible report still runs: a few (MAX) columns and some fixed ones
+      expect(await runSql(ms("select id, name, cast(name as nvarchar(max)) as n2, replicate(cast('q' as varchar(max)), 1000) as q from dbo.pw_accounts"), {})).toHaveLength(5);
+    } finally { Object.assign(limits, keep); }
+  }, 60000);
+
+  it('review 2: a query whose plan is larger than the cap is refused (the plan is cut, not buffered)', async () => {
+    const keep = { ...limits };
+    Object.assign(limits, { bytes: 262144, ms: 60000 });
+    try {
+      const q = `select count(*) as n from ${Array.from({ length: 60 }, (_, i) => `sys.all_objects t${i}`).join(' cross join ')}`;
+      await expect(runSql(ms(q), {})).rejects.toThrow(/plan|large|one SELECT/i);
+    } finally { Object.assign(limits, keep); }
+    expect(await runSql(ms('select 1 as a'), {})).toEqual([{ a: 1 }]);
+  }, 60000);
+
   it('review: a login that can write in any other user database is refused', async () => {
     const sql = (await import('mssql')).default;
     const admin = await new sql.ConnectionPool(mssqlConfig(process.env.PW_TEST_MSSQL)).connect();

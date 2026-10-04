@@ -360,6 +360,8 @@ const DRIVERS = {
       try {
         await quiet('SET SHOWPLAN_XML OFF');
         await quiet('SET ROWCOUNT 0; SET TEXTSIZE 2147483647');
+        // the plan is text too: cut at the cap (isOneSelect refuses a plan that does not end)
+        await req().batch(`SET TEXTSIZE ${textSize()}`);
         await req().batch('SET SHOWPLAN_XML ON');
         let plan;
         try {
@@ -371,13 +373,19 @@ const DRIVERS = {
         } finally { await quiet('SET SHOWPLAN_XML OFF'); }
         overdue();
         const kind = isOneSelect(plan);
-        if (!kind) throw fail('A SQL source can only run one SELECT query (one statement).', 400);
+        if (!kind) throw fail('A SQL source can only run one SELECT query (one statement), and its plan must fit the size cap.', 400);
+        // the worst row, before a byte of it is read: the server describes the result (a read, no extra rights)
+        const describe = req();
+        describe.input('t', sql.NVarChar(sql.MAX), text);
+        describe.input('p', sql.NVarChar(sql.MAX), types.map((t, i) => `@pw_${i + 1} ${t.decl}`).join(', '));
+        const lobSize = rowBudget((await describe.query('EXEC sp_describe_first_result_set @tsql = @t, @params = @p')).recordset || []);
+        overdue();
         // the server's own caps: rows (the client counts too) and the size of any one (MAX) value: TEXTSIZE is the
         // smallest even number above the byte cap (an nvarchar is cut at whole characters), so a value the server
         // cut is always over the cap on the client and is refused, and no more than that crosses the wire
-        await req().batch(`SET ROWCOUNT ${Number(limits.rows) + 1}; SET TEXTSIZE ${textSize()}`);
+        await req().batch(`SET ROWCOUNT ${Number(limits.rows) + 1}; SET TEXTSIZE ${lobSize}`);
         try {
-          const { rows, cols } = await streamRows(req(), text, values, types, overdue, sql);
+          const { rows, cols } = await streamRows(req(), text, values, types, overdue, sql, lobSize);
           for (const row of rows) for (const c of cols) row[c.name] = mssqlCell(sql, c.type, row[c.name]);
           // FOR XML / FOR JSON pack the rows into text (in chunks), in one column the server names with a fixed GUID
           // (the plan does not always say XML/JSON SELECT). SET ROWCOUNT stops them at rows + 1 source rows without a
@@ -414,6 +422,7 @@ export function isOneSelect(plan) {
   if (cells.length !== 1 || typeof cells[0] !== 'string') return false;
   const xml = cells[0];
   if (!/^\s*(<\?xml[^>]*\?>\s*)?<ShowPlanXML[\s>]/.test(xml) || (xml.match(/<ShowPlanXML[\s>]/g) || []).length !== 1) return false;
+  if (!/<\/ShowPlanXML>\s*$/.test(xml)) return false; // cut at TEXTSIZE: not a whole plan
   if ((xml.match(/<Batch[\s>]/g) || []).length !== 1) return false;
   const stmts = xml.match(/<Stmt[A-Za-z]*[\s>/]/g) || [];
   if (stmts.length !== 1 || !stmts[0].startsWith('<StmtSimple')) return false;
@@ -432,7 +441,35 @@ const textSize = () => Number(limits.bytes) + 2 - (Number(limits.bytes) % 2);
 /** The server bytes a value can have been, at most: max(UTF-8, 2 × length) for text, the length for binary. */
 const sizeOf = (v) => (typeof v === 'string' ? Math.max(Buffer.byteLength(v), v.length * 2) : Buffer.isBuffer(v) ? v.length : 8);
 
-function streamRows(r, text, values, types, overdue, sql) {
+const MAX_COLUMNS = 1024, MIN_LOB = 16384; // a LOB share under 16 kB is too small to tell a cut value from a fixed one
+/**
+ * The TEXTSIZE that keeps the worst row within limits.bytes, from sp_describe_first_result_set: the fixed columns take
+ * their max_length, the (MAX)/text/ntext/image columns share the rest (an even number). Refuses xml and CLR columns
+ * (TEXTSIZE does not cut them), more than MAX_COLUMNS columns, and a row whose fixed part, or whose LOB share, does
+ * not fit. Fails closed on anything it does not know.
+ * @param {any[]} desc @returns {number}
+ */
+export function rowBudget(desc) {
+  const cols = desc.filter(c => !c.is_hidden);
+  if (!cols.length) throw fail('SQL Server could not describe what the query returns.', 400);
+  if (cols.length > MAX_COLUMNS) throw fail(`The query returns ${cols.length} columns; a SQL source can have at most ${MAX_COLUMNS}.`, 400);
+  let fixed = 0, lobs = 0;
+  for (const c of cols) {
+    const t = Number(c.system_type_id), n = Number(c.max_length);
+    if (t === 241 || t === 240 || c.is_xml_document) throw fail(`The column "${String(c.name).slice(0, 60)}" is xml or a CLR type, which a SQL source cannot read. CAST it to NVARCHAR(MAX) in the query.`, 400);
+    if (n === -1 || [34, 35, 99].includes(t)) lobs++;
+    else if (Number.isFinite(n) && n >= 0) fixed += n;
+    else throw fail(`SQL Server did not say how large the column "${String(c.name).slice(0, 60)}" can be.`, 400);
+  }
+  const cap = Number(limits.bytes);
+  if (fixed >= cap) throw fail(`One row of this query can be ${Math.ceil(fixed / 1048576)} MB, more than the ${Math.round(cap / 1048576)} MB a SQL source may read. Select fewer or narrower columns.`, 400);
+  if (!lobs) return textSize();
+  const share = Math.floor((cap - fixed) / lobs / 2) * 2;
+  if (share < MIN_LOB) throw fail(`The query has too many large columns (${lobs} of (MAX) size) for the ${Math.round(cap / 1048576)} MB a SQL source may read.`, 400);
+  return Math.min(share, textSize());
+}
+
+function streamRows(r, text, values, types, overdue, sql, lobSize = textSize()) {
   values.forEach((v, i) => r.input(`pw_${i + 1}`, types[i].type, v));
   r.stream = true;
   return new Promise((resolve, reject) => {
@@ -449,7 +486,12 @@ function streamRows(r, text, values, types, overdue, sql) {
     r.on('row', (row) => {
       if (stop) return;
       rows.push(row);
-      for (const v of Object.values(row)) bytes += sizeOf(v); // a value the server cut at TEXTSIZE is over the cap here
+      for (const v of Object.values(row)) {
+        const n = sizeOf(v);
+        // a value the server cut at TEXTSIZE measures at least TEXTSIZE here: refused, never passed on cut short
+        if (n >= lobSize) return halt(fail(`A value is larger than the ${Math.round(lobSize / 1048576 * 10) / 10} MB this query may read in one column. Filter or shorten it in SQL.`, 400));
+        bytes += n;
+      }
       if (rows.length > limits.rows) halt(fail(`The query returned more than ${limits.rows} rows. Filter or group it in SQL.`, 400));
       else if (bytes > limits.bytes) halt(fail(`The query returned more than ${Math.round(limits.bytes / 1048576)} MB. Filter or group it in SQL.`, 400));
     });
