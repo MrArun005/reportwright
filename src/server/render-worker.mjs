@@ -2,11 +2,14 @@
 // Plain Node, outside the bundler: the "@/" imports of the server code are mapped to src/ here. The engine's fonts,
 // HarfBuzz and the ICC profile load once per worker (module state in renderer.js) and serve every render after.
 // A built copy (scripts/build-worker.mjs) has the server code bundled in and no "@/" left: the hook is then idle.
-import { parentPort } from 'node:worker_threads';
+import { parentPort, workerData } from 'node:worker_threads';
 import { register } from 'node:module';
 
 const src = new URL('../', import.meta.url).href;
 register(`data:text/javascript,${encodeURIComponent(`export function resolve(s, c, next) { return next(s.startsWith('@/') ? ${JSON.stringify(src)} + s.slice(2) : s, c); }`)}`);
+
+// development without PW_SESSION_SECRET: the request thread's random secret, so the server's calls to itself check out
+if (workerData?.devSecret) globalThis.__pwDevSecret = workerData.devSecret;
 
 let mod;
 try {
