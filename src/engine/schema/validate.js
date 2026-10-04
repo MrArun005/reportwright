@@ -12,7 +12,12 @@ export function validate(def) {
   const errors = [], warnings = [];
   if (!def || typeof def !== 'object') return { errors: ['The report definition is empty'], warnings };
   if (def.$schema && def.$schema !== SCHEMA_ID) warnings.push(`Unknown schema "${def.$schema}". Expected "${SCHEMA_ID}".`);
-  if (!def.sections || !def.sections.body) errors.push('The report has no body section');
+  const body = def.sections?.body;
+  if (!body || (Array.isArray(body) && !body.length)) errors.push('The report has no body section');
+  if (Array.isArray(body)) body.forEach((b, i) => {
+    if (!b || typeof b !== 'object' || Array.isArray(b)) errors.push(`Body section ${i + 1} is not an object`);
+    else if (b.page != null && (typeof b.page !== 'object' || Array.isArray(b.page))) errors.push(`Body section ${i + 1}: "page" must be an object`);
+  });
 
   errors.push(...checkFunctions(def.functions));
 
@@ -49,10 +54,14 @@ export function validate(def) {
       warnings.push(`${label}: PageNumber and TotalPages work only in the page header and footer`);
     }
   };
+  const lists = [];
   for (const where of ['pageHeader', 'body', 'pageFooter']) {
     const sec = def.sections?.[where];
     if (!sec) continue;
-    for (const it of sec.items || []) {
+    for (const b of Array.isArray(sec) ? sec : [sec]) if (b && typeof b === 'object') lists.push([where, b.items]);
+  }
+  for (const [where, items] of lists) {
+    for (const it of Array.isArray(items) ? items : []) {
       const label = it.name || it.type;
       if (!ITEMS[it.type]) { warnings.push(`Unknown item type "${it.type}"`); continue; }
       if (it.name) {
@@ -64,7 +73,18 @@ export function validate(def) {
       check(where, it.src, label);
       check(where, it.hidden, label);
       if (it.dataSet && !dsNames.has(it.dataSet)) warnings.push(`${label}: the data set "${it.dataSet}" does not exist`);
+      if (it.type === 'matrix') {
+        for (const k of ['rowGroups', 'columnGroups', 'values']) {
+          if (it[k] == null) continue;
+          if (!Array.isArray(it[k])) { errors.push(`${label}: "${k}" must be a list`); continue; }
+          it[k].forEach((g, i) => {
+            if (!g || typeof g !== 'object') { errors.push(`${label}: ${k} ${i + 1} is not an object`); return; }
+            for (const e of ['expr', 'label', 'sortBy', 'value']) check(where, g[e], `${label} ${k} ${i + 1}`);
+          });
+        }
+      }
       if (it.type === 'table') {
+        for (const g of it.groups || []) for (const e of ['expr', 'parent', 'sortBy']) check(where, g?.[e], `${label} group`);
         if (!Array.isArray(it.columns) || !it.columns.length) errors.push(`${label}: the table has no columns`);
         if (where !== 'body') errors.push(`${label}: tables can only be in the body`);
         for (const part of ['header', 'detail', 'footer']) {
