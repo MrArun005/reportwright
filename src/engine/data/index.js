@@ -1,14 +1,12 @@
 // @ts-check
-import { evalValue, evaluate, compile, parseValue, toText, functionTable, cmpVal } from '../expr/evaluate.js';
+import { evalValue, evaluate, compile, parseValue, toText, functionTable, cmpVal, ROW_PARENT } from '../expr/evaluate.js';
 import { toDate, isoDate } from '../expr/format.js';
 
 /**
  * Data layer: sources → raw JSON; data sets → typed, filtered, sorted rows.
  */
 
-/** Minimal JSONPath: $, $.a.b, $.a[0].b, $.a[*].b, $['a b'] */
-export function jsonPath(obj, path) {
-  if (!path || path === '$') return obj;
+function pathTokens(path) {
   const toks = [];
   const re = /\.([A-Za-z_$][\w$]*)|\[(\d+|\*)\]|\['([^']+)'\]|\["([^"]+)"\]/g;
   const p = path.startsWith('$') ? path.slice(1) : '.' + path;
@@ -19,17 +17,48 @@ export function jsonPath(obj, path) {
     last = re.lastIndex;
   }
   if (last !== p.length) throw new Error(`Bad data path "${path}"`);
+  return toks;
+}
+
+/** Minimal JSONPath: $, $.a.b, $.a[0].b, $.a[*].b, $['a b'] */
+export function jsonPath(obj, path) {
+  if (!path || path === '$') return obj;
   let cur = [obj], spread = false;
-  for (const t of toks) {
+  for (const t of pathTokens(path)) {
     const nxt = [];
     for (const c of cur) {
       if (c == null) continue;
-      if (t === '*') { if (Array.isArray(c)) nxt.push(...c); else nxt.push(...Object.values(c)); spread = true; }
+      if (t === '*') { if (typeof c === 'object') for (const k of Array.isArray(c) ? c : Object.values(c)) nxt.push(k); spread = true; }
       else nxt.push(c[t]);
     }
     cur = nxt;
   }
   return spread ? cur : cur[0];
+}
+
+/**
+ * jsonPath that also says, for each result of a [*] spread, which object held the spread collection
+ * (for $.books[*].positions[*], the book of each position): Parent.* in the data set's rows.
+ * @returns {{rows: any, parents: any[]|null}}
+ */
+export function jsonPathRows(obj, path) {
+  if (!path || path === '$') return { rows: obj, parents: null };
+  let cur = [obj], hold = [null], par = [null], spread = false;
+  for (const t of pathTokens(path)) {
+    const nv = [], nh = [], np = [];
+    for (let i = 0; i < cur.length; i++) {
+      const c = cur[i];
+      if (c == null) continue;
+      if (t === '*') {
+        if (typeof c !== 'object') continue;
+        const kids = Array.isArray(c) ? c : Object.values(c);
+        for (const k of kids) { nv.push(k); nh.push(c); np.push(hold[i]); }
+        spread = true;
+      } else { nv.push(c[t]); nh.push(c); np.push(par[i]); }
+    }
+    cur = nv; hold = nh; par = np;
+  }
+  return spread ? { rows: cur, parents: par } : { rows: cur[0], parents: null };
 }
 
 /** @param {any} v @param {string} type */
@@ -248,18 +277,37 @@ function like(s, p) {
 export function buildDataSets(def, sources, baseCtx) {
   /** @type {Record<string, any[]>} */
   const sets = {};
+  // rows of a data set that others hang off (relation.parent) keep their raw object
+  const raws = new Set((def.dataSets || []).filter(d => d.relation).map(d => d.relation.parent));
   for (const ds of def.dataSets || []) {
-    const raw = sources[ds.source];
-    if (raw === undefined) throw new Error(`Data set "${ds.name}": the source "${ds.source}" does not exist`);
-    let list = jsonPath(raw, ds.path || '$');
-    if (list == null) list = [];
-    if (!Array.isArray(list)) list = [list];
+    let list, parents = null;
+    if (ds.relation) {
+      // nested data set: the children of every parent row, each knowing its parent row
+      const prows = sets[ds.relation.parent];
+      if (!prows) throw new Error(`Data set "${ds.name}": its parent "${ds.relation.parent}" must be a data set declared above it`);
+      list = []; parents = [];
+      for (const p of prows) {
+        let kids = jsonPath(RAW.get(p), ds.relation.path || '$');
+        if (kids == null) continue;
+        if (!Array.isArray(kids)) kids = [kids];
+        for (const k of kids) { list.push(k); parents.push(p); }
+      }
+    } else {
+      const raw = sources[ds.source];
+      if (raw === undefined) throw new Error(`Data set "${ds.name}": the source "${ds.source}" does not exist`);
+      ({ rows: list, parents } = jsonPathRows(raw, ds.path || '$'));
+      if (list == null) list = [];
+      if (!Array.isArray(list)) list = [list];
+    }
     const fields = ds.fields && ds.fields.length ? ds.fields : detectFields(list);
     const plain = fields.filter(fd => !fd.expr);
     const calc = fields.filter(fd => fd.expr);
-    let rows = list.map((r) => {
+    const keepRaw = raws.has(ds.name);
+    let rows = list.map((r, i) => {
       const o = {};
       for (const fd of plain) o[fd.name] = coerce(fd.path ? jsonPath(r, fd.path) : r?.[fd.name], fd.type);
+      if (parents && parents[i] != null) ROW_PARENT.set(o, parents[i]);
+      if (keepRaw) RAW.set(o, r);
       return o;
     });
     if (calc.length) {
@@ -270,9 +318,39 @@ export function buildDataSets(def, sources, baseCtx) {
     const setCtx = { ...baseCtx, dataSets: { ...baseCtx.dataSets, ...sets } };
     rows = applyFilters(rows, ds.filters, setCtx);
     rows = applySort(rows, ds.sort, setCtx);
+    if (ds.relation) {
+      const byParent = new Map();
+      for (const r of rows) {
+        const p = ROW_PARENT.get(r);
+        let a = byParent.get(p);
+        if (!a) byParent.set(p, a = []);
+        a.push(r);
+      }
+      RELATIONS.set(rows, { parent: ds.relation.parent, byParent });
+    }
     sets[ds.name] = rows;
   }
   return sets;
+}
+
+/** Typed row → its raw source object (only for parents of nested data sets). */
+const RAW = new WeakMap();
+/** Rows array of a nested data set → {parent, byParent: Map(parent row → child rows)}. */
+const RELATIONS = new WeakMap();
+
+/**
+ * Rows a region bound to a data set should show: for a nested data set inside a list (or group) bound to its
+ * parent, only the current parent rows' children; anywhere else, all rows.
+ * @param {any[]} rows @param {any} ctx
+ */
+export function related(rows, ctx) {
+  const rel = RELATIONS.get(rows);
+  const cur = rel && ctx?.current?.[rel.parent];
+  if (!cur) return rows;
+  if (cur.length === 1) return rel.byParent.get(cur[0]) || [];
+  const out = [];
+  for (const p of cur) for (const r of rel.byParent.get(p) || []) out.push(r);
+  return out;
 }
 
 /**

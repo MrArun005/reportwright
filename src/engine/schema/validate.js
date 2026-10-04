@@ -26,8 +26,12 @@ export function validate(def) {
   for (const d of def.dataSets || []) {
     if (!d.name) errors.push('A data set has no name');
     if (dsNames.has(d.name)) errors.push(`Two data sets have the name "${d.name}"`);
+    if (d.relation) {
+      // a nested data set: rows come from each parent row, so the parent must be built first
+      if (!d.relation.parent || !dsNames.has(d.relation.parent)) errors.push(`Data set "${d.name}": its parent "${d.relation.parent}" must be a data set declared above it`);
+      if (d.relation.path != null && typeof d.relation.path !== 'string') errors.push(`Data set "${d.name}": the relation path must be text, e.g. $.items[*]`);
+    } else if (!srcNames.has(d.source)) errors.push(`Data set "${d.name}" uses the source "${d.source}", which does not exist`);
     dsNames.add(d.name);
-    if (!srcNames.has(d.source)) errors.push(`Data set "${d.name}" uses the source "${d.source}", which does not exist`);
   }
 
   const names = new Set();

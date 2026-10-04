@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { applyFilters, parseCsv, loadSources } from '../../src/engine/data/index.js';
+import { applyFilters, parseCsv, loadSources, buildDataSets, jsonPathRows } from '../../src/engine/data/index.js';
+import { render, parameterOptions } from '../../src/engine/index.js';
+import { validate } from '../../src/engine/schema/validate.js';
+import { fontStore, texts, report } from '../helpers.js';
 
 const rows = [{ n: 'a', v: 5, d: '2026-01-05' }, { n: 'b', v: 9, d: '2026-02-01' }, { n: 'c', v: 9, d: '2026-03-01' }, { n: 'd', v: 1, d: '2026-01-31' }, { n: 'e', v: null, d: null }, { n: 'f', v: 7, d: '2026-02-28' }];
 const base = { params: { k: 2 }, globals: {}, dataSets: {} };
@@ -87,5 +90,72 @@ describe('CSV options', () => {
   it('a csv source passes its options', async () => {
     const out = await loadSources({ dataSources: [{ name: 's', type: 'csv', data: 'x;y\n1;2', separator: ';' }] }, { params: {} });
     expect(out.s).toEqual([{ x: '1', y: '2' }]);
+  });
+});
+
+describe('nested data sets and Parent after a spread', () => {
+  const orders = { orders: [
+    { id: 1, cust: 'A', items: [{ sku: 'p', q: 2 }, { sku: 'q', q: 1 }] },
+    { id: 2, cust: 'B', items: [{ sku: 'r', q: 5 }] },
+    { id: 3, cust: 'C', items: [] },
+  ] };
+  const sets = [
+    { name: 'Orders', source: 'src', path: '$.orders[*]', fields: [{ name: 'id', type: 'number' }, { name: 'cust', type: 'string' }] },
+    { name: 'Items', relation: { parent: 'Orders', path: '$.items[*]' }, fields: [{ name: 'sku', type: 'string' }, { name: 'q', type: 'number' }, { name: 'cust', type: 'string', expr: '=Parent.cust' }] },
+  ];
+  const tb = (value, extra = {}) => ({ type: 'textbox', name: `t${Math.random()}`, x: 0, y: 0, w: 200, h: 14, value, ...extra });
+
+  it('builds the children of every parent row, with Parent.* to the parent row', () => {
+    const built = buildDataSets({ dataSets: sets }, { src: orders }, { params: {}, globals: {}, dataSets: {} });
+    expect(built.Items.map(r => `${r.sku}/${r.cust}`)).toEqual(['p/A', 'q/A', 'r/B']);
+  });
+  it('a table bound to the child inside a list bound to the parent shows that row\'s children', async () => {
+    const table = { type: 'table', name: 'T', x: 0, y: 14, w: 200, h: 14, dataSet: 'Items', columns: [{ width: 200 }], noRowsText: 'none',
+      detail: [{ height: 14, cells: [{ value: '=Fields.sku & " " & Parent.id' }] }], footer: [{ height: 14, cells: [{ value: '="sum " & Sum(Fields.q)' }] }] };
+    const list = { type: 'list', name: 'L', x: 0, y: 0, w: 200, h: 42, dataSet: 'Orders', items: [tb('="#" & Fields.id'), table, tb('="n " & Count(Fields.sku)', { y: 28, dataSet: 'Items' })] };
+    const r = await render(report([list], { data: orders, def: { dataSets: sets } }), { fontStore });
+    expect(texts(r.pages[0])).toEqual(['#1', 'p 1', 'q 1', 'sum 3', 'n 2', '#2', 'r 2', 'sum 5', 'n 1', '#3', 'none', 'sum 0', 'n 0']);
+  });
+  it('at top level the child data set has every child, Parent.* still works', async () => {
+    const table = { type: 'table', name: 'T', x: 0, y: 0, w: 200, h: 14, dataSet: 'Items', columns: [{ width: 200 }], detail: [{ height: 14, cells: [{ value: '=Fields.sku & " " & Parent.cust' }] }] };
+    const r = await render(report([table], { data: orders, def: { dataSets: sets } }), { fontStore });
+    expect(texts(r.pages[0])).toEqual(['p A', 'q A', 'r B']);
+  });
+  it('a grouped list of the parent shows the children of every row in the group', async () => {
+    const data = { orders: [{ id: 1, g: 'x', items: [{ sku: 'a' }] }, { id: 2, g: 'x', items: [{ sku: 'b' }] }, { id: 3, g: 'y', items: [{ sku: 'c' }] }] };
+    const ds = [{ name: 'Orders', source: 'src', path: '$.orders[*]', fields: [{ name: 'id', type: 'number' }, { name: 'g', type: 'string' }] },
+      { name: 'Items', relation: { parent: 'Orders', path: '$.items[*]' }, fields: [{ name: 'sku', type: 'string' }] }];
+    const list = { type: 'list', name: 'L', x: 0, y: 0, w: 200, h: 14, dataSet: 'Orders', groupBy: '=Fields.g', items: [tb('=Count(Fields.sku) & " " & First(Fields.sku) & "-" & Last(Fields.sku)', { dataSet: 'Items' })] };
+    const r = await render(report([list], { data, def: { dataSets: ds } }), { fontStore });
+    expect(texts(r.pages[0])).toEqual(['2 a-b', '1 c-c']);
+  });
+  it('children of filtered-out parents are not built; child filters and sorts apply', () => {
+    const ds = [{ ...sets[0], filters: [{ expr: '=Fields.id', op: '<>', value: 1 }] }, { ...sets[1], sort: [{ by: '=Fields.q', dir: 'desc' }] }];
+    const built = buildDataSets({ dataSets: ds }, { src: orders }, { params: {}, globals: {}, dataSets: {} });
+    expect(built.Items.map(r => r.sku)).toEqual(['r']);
+  });
+  it('Parent.* after a [*] spread reaches the object that held the array', () => {
+    const src = { portfolio: { books: [{ book: 'Rates', positions: [{ id: 1 }, { id: 2 }] }, { book: 'FX', positions: [{ id: 3 }] }] } };
+    const ds = [{ name: 'P', source: 'src', path: '$.portfolio.books[*].positions[*]', fields: [{ name: 'id', type: 'number' }, { name: 'book', type: 'string', expr: '=Coalesce(Parent.book, "book?")' }] }];
+    const built = buildDataSets({ dataSets: ds }, { src }, { params: {}, globals: {}, dataSets: {} });
+    expect(built.P.map(r => `${r.id}${r.book}`)).toEqual(['1Rates', '2Rates', '3FX']);
+    expect(jsonPathRows(src, '$.portfolio.books[*]').parents[0]).toBe(src.portfolio);
+    expect(jsonPathRows(src, '$.portfolio').parents).toBeNull();
+  });
+  it('a list row still wins over the spread parent (tables in a list filter by Parent.id)', async () => {
+    const data = { rows: [{ id: 1 }, { id: 2 }], kids: [{ pid: 1, n: 'a' }, { pid: 2, n: 'b' }, { pid: 1, n: 'c' }] };
+    const ds = [{ name: 'Rows', source: 'src', path: '$.rows[*]' }, { name: 'Kids', source: 'src', path: '$.kids[*]' }];
+    const table = { type: 'table', name: 'T', x: 0, y: 14, w: 200, h: 14, dataSet: 'Kids', columns: [{ width: 200 }], filters: [{ expr: '=Fields.pid', op: '=', value: '=Parent.id' }], detail: [{ height: 14, cells: [{ value: '=Fields.n' }] }] };
+    const list = { type: 'list', name: 'L', x: 0, y: 0, w: 200, h: 28, dataSet: 'Rows', items: [tb('=Fields.id'), table] };
+    const r = await render(report([list], { data, def: { dataSets: ds } }), { fontStore });
+    expect(texts(r.pages[0])).toEqual(['1', 'a', 'c', '2', 'b']);
+  });
+  it('validate: the parent must be declared above; a relation needs no source', () => {
+    expect(validate(report([], { def: { dataSets: [sets[1], sets[0]] } })).errors.join()).toMatch(/must be a data set declared above/);
+    expect(validate(report([], { def: { dataSets: sets } })).errors).toEqual([]);
+  });
+  it('parameter choices from a nested data set load its parent too', async () => {
+    const def = report([], { data: orders, def: { dataSets: sets, parameters: [{ name: 's', optionsFrom: { dataSet: 'Items', value: '=Fields.sku' } }] } });
+    expect((await parameterOptions(def)).s.map(o => o.value)).toEqual(['p', 'q', 'r']);
   });
 });

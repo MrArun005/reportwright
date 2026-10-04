@@ -3,7 +3,7 @@ import { evalValue, toText, isDynamic, truthy } from '../expr/evaluate.js';
 import { isoDate, roundHalfAway } from '../expr/format.js';
 import { resolveStyle, padding } from '../style.js';
 import { layoutTextLines, paintBox } from './paint.js';
-import { applyFilters, applySort } from '../data/index.js';
+import { applyFilters, applySort, related } from '../data/index.js';
 import { paintChart, CHART_TYPES } from './chart.js';
 import { paintVisual } from './visuals.js';
 import { paintBarcode, BARCODE_TYPES } from './barcode.js';
@@ -303,6 +303,7 @@ register('table', {
     const tctx = lc.ctxFor(item);
     if (hidden(item, tctx, lc)) return { height: 0, units: [] };
     let rows = (item.dataSet && lc.dataSets[item.dataSet]) || [];
+    rows = related(rows, tctx); // a nested data set inside a list of its parent: that row's children
     if (item.dataSet && !lc.dataSets[item.dataSet]) lc.warn(`${item.name || 'Table'}: the data set "${item.dataSet}" does not exist`);
     if (item.filters?.length) rows = applyFilters(rows, item.filters, tctx);
     const sort = lc.state?.sort?.[item.name] || item.sort;
@@ -570,6 +571,7 @@ register('list', {
     const ctx = lc.ctxFor(item);
     if (hidden(item, ctx, lc)) return { height: 0, units: [] };
     let rows = (item.dataSet && lc.dataSets[item.dataSet]) || [];
+    rows = related(rows, ctx); // a nested data set inside a list of its parent: that row's children
     if (item.dataSet && !lc.dataSets[item.dataSet]) lc.warn(`${item.name}: the data set "${item.dataSet}" does not exist`);
     if (item.filters?.length) rows = applyFilters(rows, item.filters, ctx);
     if (item.sort?.length) rows = applySort(rows, item.sort, ctx);
@@ -583,8 +585,15 @@ register('list', {
       listScope.prevRows = i > 0 ? reps[i - 1] : null;
       if (item.groupBy) listScope.number = i + 1;
       for (const r of rs) listScope.run.push(r);
-      const rctx = { ...ctx, fields: rs[0], aggRows: rs, aggIndex: undefined, rowNumber: i + 1, parentFields: rs[0], scopes: { ...(ctx.scopes || {}), [item.name]: listScope }, region: listScope, group: item.groupBy ? listScope : undefined };
-      const child = { ...lc, ctxFor: (it) => (it.dataSet && it.dataSet !== item.dataSet ? { ...lc.ctxFor(it), parentFields: rs[0], scopes: rctx.scopes } : rctx) };
+      // current: the rows of each data set this row stands for, so nested data sets inside see only their children
+      const current = item.dataSet ? { ...(ctx.current || {}), [item.dataSet]: rs } : ctx.current;
+      const rctx = { ...ctx, fields: rs[0], aggRows: rs, aggIndex: undefined, rowNumber: i + 1, parentFields: rs[0], scopes: { ...(ctx.scopes || {}), [item.name]: listScope }, region: listScope, group: item.groupBy ? listScope : undefined, current };
+      const child = { ...lc, ctxFor: (it) => {
+        if (!(it.dataSet && it.dataSet !== item.dataSet)) return rctx;
+        const c = { ...lc.ctxFor(it), parentFields: rs[0], scopes: rctx.scopes, current };
+        const kids = related(c.aggRows, c);
+        return kids === c.aggRows ? c : { ...c, aggRows: kids, fields: kids[0] || null };
+      } };
       const res = lc.layoutItems(item.items, child, { dx: item.x });
       const fr = frame({ ...item, name: `${item.name}[${i + 1}]` }, child, rctx, res, item.keepTogether !== false ? `l:${item.name}:${i}:${lc.nextId()}` : null);
       fr.units.forEach((u, k) => units.push({ ...u, top: u.top + y, breakBefore: u.breakBefore || (k === 0 && i > 0 && !!item.pageBreakBetween) }));
@@ -849,6 +858,7 @@ register('matrix', {
     const ctx = lc.ctxFor(item);
     if (hidden(item, ctx, lc)) return { height: 0, units: [] };
     let rows = (item.dataSet && lc.dataSets[item.dataSet]) || [];
+    rows = related(rows, ctx); // a nested data set inside a list of its parent: that row's children
     if (item.filters?.length) rows = applyFilters(rows, item.filters, ctx);
     const who = item.name || 'Matrix';
     const sortB = (bs, dir) => { if (dir === 'asc' || dir === 'desc') bs.sort((a, b) => cmpKey(a.key, b.key) * (dir === 'desc' ? -1 : 1)); return bs; };

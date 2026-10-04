@@ -137,11 +137,18 @@ export function evaluate(n, ctx) {
   throw new ExprError('Bad expression node');
 }
 
+/**
+ * Data-set row → its parent: the parent data set's row (nested data sets) or the raw object that held a
+ * [*]-spread array. Parent.* reads it when no list row supplies a parent.
+ */
+export const ROW_PARENT = new WeakMap();
+
 function member(o, prop, ctx) {
   if (o && o.__root) {
-    const src = o.__root === 'Fields' ? ctx.fields : o.__root === 'Parameters' ? ctx.params : o.__root === 'Parent' ? ctx.parentFields : ctx.globals;
-    if (!src) return null;
-    if (prop in src) return src[prop];
+    const src = o.__root === 'Fields' ? ctx.fields : o.__root === 'Parameters' ? ctx.params
+      : o.__root === 'Parent' ? ctx.parentFields ?? (ctx.fields && typeof ctx.fields === 'object' ? ROW_PARENT.get(ctx.fields) : null) : ctx.globals;
+    if (!src || typeof src !== 'object') return null;
+    if (Object.hasOwn(src, prop)) return src[prop];
     const lower = prop.toLowerCase();
     for (const k of Object.keys(src)) if (k.toLowerCase() === lower) return src[k];
     if (o.__root === 'Fields' && ctx.fields && Object.keys(ctx.fields).length) throw new ExprError(`The field "${prop}" does not exist`);

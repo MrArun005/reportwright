@@ -294,6 +294,8 @@ export async function parameterOptions(def, given = {}, opts = {}) {
   if (!dyn.length) return out;
   const params = resolveParameters(def, given, { lenient: true });
   const need = new Set(dyn.map(p => p.optionsFrom.dataSet));
+  // nested data sets need their parents (declared above them, so one backwards pass finds them all)
+  for (const d of [...(def.dataSets || [])].reverse()) if (need.has(d.name) && d.relation?.parent) need.add(d.relation.parent);
   const sets = (def.dataSets || []).filter(d => need.has(d.name));
   const srcNames = new Set(sets.map(d => d.source));
   const sub = { ...def, dataSources: (def.dataSources || []).filter(s => srcNames.has(s.name)), dataSets: sets };
