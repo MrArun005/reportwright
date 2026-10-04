@@ -1,10 +1,13 @@
 // Phase 6 viewer: UI languages, search, toolbar arrangement, galley view, frozen table headers.
 import { describe, it, expect } from 'vitest';
-import { STRINGS, LANGUAGES, t, dirOf, pickLang } from '../../src/i18n/index.js';
+import { STRINGS, LANGUAGES, t, tParts, dirOf, pickLang } from '../../src/i18n/index.js';
 
 const vars = (s) => [...String(s).matchAll(/\{(\w+)\}/g)].map(m => m[1]).sort();
 
 describe('UI languages', () => {
+  it('ships nine languages', () => {
+    expect(LANGUAGES).toEqual(['en', 'hi', 'es', 'fr', 'de', 'ja', 'zh', 'pt-BR', 'ar']);
+  });
   it.each(LANGUAGES)('%s has every key, with the same placeholders, and is not an English copy', (lang) => {
     const en = STRINGS.en, tab = STRINGS[lang];
     expect(Object.keys(tab).sort()).toEqual(Object.keys(en).sort());
@@ -22,6 +25,11 @@ describe('UI languages', () => {
     expect(t('xx', 'parameters')).toBe('Parameters');
     expect(t('hi', 'pagesRows', { pages: 2, rows: 3, ms: 4 })).toBe('2 पृष्ठ · 3 पंक्तियाँ · 4 ms');
     expect(dirOf('hi')).toBe('ltr');
+    expect(dirOf('ar')).toBe('rtl');
+    expect(dirOf('ar-EG')).toBe('rtl');
+    expect(pickLang('pt-br')).toBe('pt-BR');
+    expect(pickLang('pt')).toBe('en'); // only Brazilian Portuguese ships
+    expect(tParts('en', 'accountsOff')).toEqual(['Accounts are off on this server. Set ', 'setting', ' to turn them on.']);
     expect(t('hi', 'noSuchKey')).toBe('noSuchKey');
   });
 });

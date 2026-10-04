@@ -1,5 +1,6 @@
-// English: the source table. Every other language has the same keys.
+// English: the source table. Every other language has the same keys (tests/engine/viewer-p6.test.js).
 export default {
+  /* ---- viewer ---- */
   parameters: 'Parameters', documentMap: 'Document map', run: 'Run', running: 'Running…', runningReport: 'Running the report…',
   firstPage: 'First page', previousPage: 'Previous page', nextPage: 'Next page', lastPage: 'Last page', page: 'Page',
   zoomIn: 'Zoom in', zoomOut: 'Zoom out', fitWidth: 'Fit width', search: 'Search', previousMatch: 'Previous match', nextMatch: 'Next match',
@@ -14,4 +15,80 @@ export default {
   groupPaging: 'Paging', groupZoom: 'Zoom', groupView: 'View', groupExport: 'Export',
   stillRendering: 'The rest of the report is still rendering', exportFailed: '{fmt} failed: {message}',
   drillPath: 'Drill-through path', wordHint: 'Text and tables, to edit in Word',
+  editInDesigner: 'Edit in designer',
+
+  /* ---- designer ---- */
+  loadingDesigner: 'Loading the designer…', reportName: 'Report name', saving: 'Saving…', saved: 'Saved', unsaved: 'Unsaved changes',
+  undo: 'Undo (⌘Z)', redo: 'Redo (⇧⌘Z)', mode: 'Mode', design: 'Design', preview: 'Preview',
+  askAi: 'Ask AI', askAiHint: 'Describe a change and let AI draft it', history: 'History', historyHint: 'Saved versions',
+  shortcutsHint: 'Keyboard shortcuts (?)', shortcuts: 'Keyboard shortcuts', openViewer: 'Open viewer', openViewerHint: 'Opens the saved version', save: 'Save',
+  insert: 'Insert', toolHint: 'Drag onto the page, or click to add it to the body',
+  zoom: 'Zoom', snapToGrid: 'Snap to grid', units: 'Units',
+  canvasHint: 'Shift+click to add to the selection · drag on empty space to select an area · arrows nudge',
+  versionHistory: 'Version history', versionHint: 'Each save keeps the previous version (the last 50). Restoring makes the current version a version too, so you can undo a restore.',
+  loading: 'Loading…', noVersions: 'No earlier versions yet. Save a change first.', restore: 'Restore',
+  sc_save: 'Save', sc_undo: 'Undo', sc_redo: 'Redo', sc_copy: 'Copy and paste items (works across reports)', sc_duplicate: 'Duplicate',
+  sc_delete: 'Delete the selection', sc_nudge: 'Nudge 1 pt', sc_nudge4: 'Nudge 4 grid steps', sc_toggle: 'Add to or remove from the selection',
+  sc_marquee: 'Select an area', sc_guides: 'Ignore smart guides', sc_clear: 'Clear the selection', sc_help: 'Show this list',
+  item_textbox: 'Text box', item_table: 'Table', item_image: 'Image', item_line: 'Line', item_shape: 'Shape', item_list: 'List',
+  item_container: 'Container', item_chart: 'Chart', item_matrix: 'Matrix', item_barcode: 'Barcode', item_sparkline: 'Sparkline',
+  item_databar: 'Data bar', item_bullet: 'Bullet', item_subreport: 'Subreport', item_toc: 'Table of contents', item_field: 'Form field',
+  item_map: 'Map', item_checkbox: 'Check box',
+
+  /* ---- designer: parameter dialog ---- */
+  paramNew: 'New parameter', paramTitle: 'Parameter {name}', name: 'Name', paramType: 'Type', prompt: 'Prompt',
+  defaultValue: 'Default', defaultHint: 'A value or =expression, e.g. =Today()', required: 'Required',
+  multiHint: "Allow several values (use with the 'in' filter, or Join(Parameters.x))",
+  fixedChoices: 'Fixed choices (one per line: value or value=label)', choicesFrom: 'Or choices from a data set', valueField: 'Value field',
+  cascadeHint: 'The data set can filter on other parameters (=Parameters.x). The viewer then reloads the choices when those change (cascading).',
+  paramNameRule: 'The name must start with a letter and hold only letters, digits and _', paramNameTaken: 'Another parameter has this name',
+  useAsA: 'Use it in expressions as', useAsB: 'and in a REST URL as',
+  delete: 'Delete', cancel: 'Cancel',
+  editor: 'Editor in the viewer',
+  editor_slider: 'Slider', editor_range: 'Number range', editor_dateRange: 'Date range', editor_radio: 'Radio buttons', editor_list: 'List box', editor_toggle: 'Switch',
+  editorHint_auto: 'Standard: a box, a date picker or a drop-down list, from the type and the choices.',
+  editorHint_slider: 'For a number. Set the minimum, maximum and step.',
+  editorHint_range: 'Two numbers, from and to. The parameter holds both: Parameters.x[0] and Parameters.x[1].',
+  editorHint_dateRange: 'Two dates, from and to. The parameter holds both: Parameters.x[0] and Parameters.x[1].',
+  editorHint_radio: 'One of the choices, all visible at once.',
+  editorHint_list: 'A list box. With "several values", the user can pick more than one.',
+  editorHint_toggle: 'On or off, for a true/false parameter.',
+  editorNeedsChoices: 'This editor needs choices: fixed choices or a data set.',
+  minimum: 'Minimum', maximum: 'Maximum', step: 'Step',
+  panelColumns: 'Parameter panel columns', panelColumnsHint: 'For the whole report: more than one puts the panel above the pages, in a grid.',
+
+  /* ---- home ---- */
+  tagline: 'Designer · Viewer · Automation API', reports: 'Reports',
+  lede: 'Design a report, bind it to data, and get the same pages on screen and in the PDF.',
+  itemOne: '1 item', itemMany: '{n} items', paramOne: '1 parameter', paramMany: '{n} parameters', savedAgo: 'Saved {ago}', justNow: 'just now',
+  view: 'View', serverPdf: 'Server PDF ↗', serverPdfHint: 'Rendered on the server',
+  noReports: 'No reports yet.', noReportsDesigner: 'Name your first report above and press New report.', noReportsViewer: 'Reports appear here when a designer saves one.',
+  newReportName: 'New report name', newReportPlaceholder: 'Name a new report', newReport: 'New report', creating: 'Creating…',
+  notCreated: 'The report was not created: {message}', untitled: 'Untitled report',
+  newDashboard: 'New dashboard', importHint: 'Open an ActiveReportsJS .rdlx-json file', importing: 'Importing…', importFile: 'Import ActiveReports file',
+  importFileLabel: 'ActiveReports file to import', describeAi: 'Describe a report (AI)', aiPrompt: 'What should the report show?',
+  aiPromptPlaceholder: 'Monthly sales by region, a column chart, and a table with totals',
+  aiSample: 'Sample rows as JSON (optional; sent to the AI service)', drafting: 'Drafting… (up to a minute)', draftReport: 'Draft the report',
+  badSample: 'The sample data is not valid JSON.', createdWithNotes: 'The report was created with {n} note(s):', openInDesigner: 'Open in the designer',
+  firstPageOf: 'First page of {name}', noPreview: 'No preview', pageOne: '1 page', pageMany: '{n} pages',
+  users: 'Users', signOut: 'Sign out',
+
+  /* ---- admin: users ---- */
+  signedInAs: 'Signed in as {email} ({role})',
+  rolesLede: 'Viewers view and export reports. Designers also edit reports and preview SQL. Admins also manage users.',
+  addUserForm: 'Add a user', email: 'Email', role: 'Role', passwordMin: 'Password (at least 10 characters)', addUser: 'Add user',
+  status: 'Status', actions: 'Actions', you: '(you)', roleOf: 'Role of {email}', disabled: 'Disabled', active: 'Active',
+  newPasswordFor: 'New password for {email}', savePassword: 'Save password', resetPassword: 'Reset password',
+  enable: 'Enable', disable: 'Disable', deleteUser: 'Delete {email}', noUsers: 'No users.',
+  added: 'Added {email} as {role}.', passwordSet: 'New password set for {email}. Their other sessions are signed out.',
+  confirmDelete: 'Delete {email}? They can no longer sign in.', deleted: 'Deleted {email}.', nowRole: '{email} is now {role}.',
+  isEnabled: '{email} is enabled.', isDisabled: '{email} is disabled.',
+
+  /* ---- sign in ---- */
+  signIn: 'Sign in', signingIn: 'Signing in…', signInLede: 'Pagewright reports', password: 'Password',
+  signInFailed: 'Sign-in failed (HTTP {status}).', signedInAsLong: 'You are signed in as', continue: 'Continue',
+  accountsOff: 'Accounts are off on this server. Set {setting} to turn them on.',
+  noUsersYet: 'There are no users yet.', firstAdmin: 'Create the first admin in one of two ways:',
+  firstAdminEnv: 'set {email} and {password} and restart the server, then sign in with them; or',
+  firstAdminCli: 'run {command} in the app folder.',
 };

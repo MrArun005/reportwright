@@ -398,7 +398,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .vmatches button { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vmatches button[aria-current] { background: var(--accent-soft); color: var(--accent); }
 .vparams-go { display: grid; gap: 12px; }
-.vparams.top { width: auto; border-inline-end: 0; border-bottom: 1px solid var(--line); align-items: end; }
+.vparams.top { width: auto; border-inline-end: 0; border-bottom: 1px solid var(--line); align-items: start; }
 .vparams.top h3, .vparams.top .vparams-go { grid-column: 1 / -1; }
 .vparams.top .vparams-go { display: flex; align-items: center; }
 .pslider { display: flex; align-items: center; gap: 8px; }
@@ -428,3 +428,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .vsheet { position: absolute; inset-inline: 0; bottom: 0; max-height: 75%; overflow: auto; background: var(--panel); border-radius: 14px 14px 0 0; box-shadow: var(--shadow-dialog); }
 .vsheet .vparams, .vsheet .vside { width: auto; border: 0; padding: 16px; }
 .vsheet-close { position: absolute; top: 10px; inset-inline-end: 12px; z-index: 1; }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+/* the designer page is drawn at fixed coordinates: never mirrored */
+.cscroll { direction: ltr; }
