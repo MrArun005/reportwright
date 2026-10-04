@@ -275,3 +275,21 @@ describe('nothing fixed: decoration metrics come from the font, shrink limits fr
     expect(Number.isInteger(t2.size)).toBe(true);
   });
 });
+
+describe('shrink to fit: hostile settings cannot hang the render', () => {
+  const long = 'Disbursements across four regions and twelve cities, all products';
+  for (const [label, style, extra] of [
+    ['a microscopic step', { fontSize: 12 }, { shrinkStep: 1e-12 }],
+    ['an enormous font', { fontSize: 1e12 }, {}],
+    ['both, with a microscopic minimum', { fontSize: 1e15 }, { shrinkStep: 1e-9, minFontSize: 1e-9 }],
+  ]) {
+    it(`finishes quickly with ${label}`, async () => {
+      const t0 = performance.now();
+      const items = await itemsOf(box(style, { w: 120, h: 16, value: long, shrinkToFit: true, ...extra }));
+      expect(performance.now() - t0).toBeLessThan(2000);
+      const t = items.find(i => i.t === 'text');
+      expect(t.size).toBeLessThanOrEqual(12);
+      expect(t.size).toBeGreaterThanOrEqual(1);
+    }, 5000);
+  }
+});

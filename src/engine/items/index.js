@@ -63,12 +63,14 @@ function paintTextbox(item, lc, ctx, forcedH) {
   if (item.shrinkToFit && tl.needed > layoutH + GROW_TOLERANCE) {
     const size0 = Number(st.fontSize) || 9;
     const min = Math.max(1, Number(item.minFontSize) || SHRINK_DEFAULTS.minFontSize);
-    const step = Number(item.shrinkStep) > 0 ? Number(item.shrinkStep) : SHRINK_DEFAULTS.step;
-    const steps = Math.max(0, Math.floor((size0 - min) / step + 1e-9));
+    // a definition can come from anyone with an API key: never more than 4,096 candidate sizes (12 layouts)
+    const asked = Number(item.shrinkStep) > 0 ? Number(item.shrinkStep) : SHRINK_DEFAULTS.step;
+    const step = Math.max(asked, 0.05, (size0 - min) / 4096);
+    const steps = Number.isFinite(size0) ? Math.max(0, Math.floor((size0 - min) / step + 1e-9)) : 0;
     const at = (i) => { const s2 = { ...st, fontSize: Math.max(min, size0 - step * (i + 1)) }; return { s2, t2: layoutTextLines(text, s2, layoutW, lc.m) }; };
     let lo = 0, hi = steps - 1, best = null;
     while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
+      const mid = Math.floor((lo + hi) / 2);
       const c = at(mid);
       if (c.t2.needed <= layoutH + GROW_TOLERANCE) { best = c; hi = mid - 1; } else lo = mid + 1;
     }
