@@ -34,7 +34,7 @@ export default {
   item_textbox: 'Text box', item_table: 'Table', item_image: 'Image', item_line: 'Line', item_shape: 'Shape', item_list: 'List',
   item_container: 'Container', item_chart: 'Chart', item_matrix: 'Matrix', item_barcode: 'Barcode', item_sparkline: 'Sparkline',
   item_databar: 'Data bar', item_bullet: 'Bullet', item_subreport: 'Subreport', item_toc: 'Table of contents', item_field: 'Form field',
-  item_richtext: 'Rich text', item_map: 'Map', item_checkbox: 'Check box',
+  item_richtext: 'Rich text', item_map: 'Map', item_checkbox: 'Check box', item_iconset: 'Icon set', item_rangebar: 'Range bar',
 
   /* ---- designer: parameter dialog ---- */
   paramNew: 'New parameter', paramTitle: 'Parameter {name}', name: 'Name', paramType: 'Type', prompt: 'Prompt',

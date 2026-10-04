@@ -34,7 +34,7 @@ export default {
   item_textbox: 'Cuadro de texto', item_table: 'Tabla', item_image: 'Imagen', item_line: 'Línea', item_shape: 'Forma', item_list: 'Lista',
   item_container: 'Contenedor', item_chart: 'Gráfico', item_matrix: 'Matriz', item_barcode: 'Código de barras', item_sparkline: 'Minigráfico',
   item_databar: 'Barra de datos', item_bullet: 'Gráfico de viñeta', item_subreport: 'Subinforme', item_toc: 'Índice', item_field: 'Campo de formulario',
-  item_richtext: 'Texto enriquecido', item_map: 'Mapa', item_checkbox: 'Casilla',
+  item_richtext: 'Texto enriquecido', item_map: 'Mapa', item_checkbox: 'Casilla', item_iconset: 'Conjunto de iconos', item_rangebar: 'Barra de rango',
 
   /* ---- designer: parameter dialog ---- */
   paramNew: 'Nuevo parámetro', paramTitle: 'Parámetro {name}', name: 'Nombre', paramType: 'Tipo', prompt: 'Etiqueta',

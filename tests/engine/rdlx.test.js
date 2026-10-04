@@ -498,3 +498,94 @@ describe('rich text and vertical text (phase 2)', () => {
     expect(r.warnings.join(' ')).not.toMatch(/vertical/i);
   });
 });
+
+/* ---------------------------------------------------------------- Phase 5: charts */
+
+describe('Phase 5 charts', () => {
+  const rows = [{ m: 'Jan', amt: 10, q: 2, lo: 5, hi: 12, o: 10, h: 14, l: 8, c: 12, x: 1, size: 4 }, { m: 'Feb', amt: 30, q: 3, lo: 20, hi: 35, o: 12, h: 13, l: 9, c: 10, x: 2, size: 9 }];
+  const F = (n) => ({ Field: { Value: [`=Fields!${n}.Value`] } });
+  const imp = (chart) => {
+    const r = importRdlx({
+      DataSources: [{ Name: 'S', ConnectionProperties: { DataProvider: 'JSON', ConnectString: `jsondata=${JSON.stringify({ rows })}` } }],
+      DataSets: [{ Name: 'D', Fields: Object.keys(rows[0]).map(k => ({ Name: k, DataField: k })), Query: { DataSourceName: 'S', CommandText: 'jpath=$.rows.*' } }],
+      Body: { ReportItems: [{ Type: 'dvchart', Name: 'Ch', DataSetName: 'D', Width: '6in', Height: '3in', ...chart }] },
+    });
+    return { c: byName(r.definition, 'Ch'), warnings: r.warnings, def: r.definition };
+  };
+  const plot = (type, enc, extra = {}) => ({ PlotName: 'P1', PlotChartType: type, Encodings: { Category: F('m'), ...enc }, ...extra });
+
+  it('100% stacked, spline and step lines', () => {
+    const a = imp({ Plots: [plot('Column', { Values: [{ ...F('amt'), Aggregate: 'Sum' }] }, { PlotChartSubtype: 'PercentStacked' })] });
+    expect(a.c.stacked).toBe('percent');
+    expect(a.warnings.join()).not.toMatch(/100%/);
+    expect(imp({ Plots: [plot('Line', { Values: [F('amt')] }, { Config: { LineAspect: 'Spline' } })] }).c.line).toBe('smooth');
+    const st = imp({ Plots: [plot('Line', { Values: [F('amt')] }, { Config: { LineAspect: 'StepLeft' } })] });
+    expect(st.c.line).toBe('step');
+    expect(st.warnings.join()).toMatch(/step/i);
+  });
+  it('range plots: two values become low and high', () => {
+    const { c } = imp({ Plots: [plot('Area', { Values: [{ Field: { Value: ['=Fields!lo.Value', '=Fields!hi.Value'] }, Aggregate: 'Sum' }] })] });
+    expect(c.series[0]).toMatchObject({ low: '=Sum(Fields.lo)', high: '=Sum(Fields.hi)' });
+    expect(c.series[0].value).toBeUndefined();
+  });
+  it('axes: min, max, log, reversed, label angle, grid lines, titles', () => {
+    const { c } = imp({ Plots: [plot('Column', { Values: [F('amt')] })], PlotArea: { Axes: [
+      { AxisType: 'X', LabelAngle: -45, Reversed: true, MajorGrid: true, Title: 'Month' },
+      { AxisType: 'Y', Min: 0, Max: 100, Scale: 'Logarithmic', Title: 'Amount', MajorGrid: false, Format: 'n0' }] } });
+    expect(c.axes).toEqual({ x: { labelAngle: -45, reversed: true, gridlines: true, title: 'Month' }, y: { min: 0, max: 100, log: true, title: 'Amount', gridlines: false } });
+    expect(c.valueFormat).toBe('n0');
+  });
+  it('a second plot on a second Y axis becomes a combo series', () => {
+    const { c, warnings } = imp({
+      Plots: [plot('Column', { Values: [F('amt')] }), { ...plot('Line', { Values: [F('q')] }), PlotName: 'P2' }],
+      PlotArea: { Axes: [{ AxisType: 'X' }, { AxisType: 'Y', Plots: ['P1'] }, { AxisType: 'Y', Plots: ['P2'], Format: 'n1' }] },
+    });
+    expect(c.chartType).toBe('column');
+    expect(c.series).toHaveLength(2);
+    expect(c.series[1]).toMatchObject({ type: 'line', axis: 'secondary' });
+    expect(c.axes.y2).toEqual({ format: 'n1' });
+    expect(warnings.join()).not.toMatch(/only its first plot/);
+  });
+  it('bubble, radar, polar, candlestick, OHLC, funnel and gauge', () => {
+    const bubble = imp({ Plots: [{ PlotName: 'P', PlotChartType: 'Bubble', Encodings: { Values: [{ Field: { Value: ['=Fields!amt.Value', '=Fields!size.Value'] } }], Category: F('x') } }] }).c;
+    expect(bubble).toMatchObject({ chartType: 'bubble', xValue: '=Fields.x' });
+    expect(bubble.series[0].size).toMatch(/Fields\.size/);
+    expect(imp({ Plots: [plot('Line', { Values: [F('amt')] }, { Config: { AxisMode: 'Polygonal' } })] }).c.chartType).toBe('radar');
+    expect(imp({ Plots: [plot('Area', { Values: [F('amt')] }, { Config: { AxisMode: 'Radial' } })] }).c.chartType).toBe('radar');
+    expect(imp({ Plots: [{ PlotName: 'P', PlotChartType: 'Scatter', Encodings: { Values: [F('amt')], Category: F('x') }, Config: { AxisMode: 'Radial' } }] }).c.chartType).toBe('polar');
+    const candle = imp({ Plots: [plot('Candlestick', { Values: [{ Field: { Value: ['=Fields!h.Value', '=Fields!l.Value', '=Fields!o.Value', '=Fields!c.Value'] } }] })] }).c;
+    expect(candle.chartType).toBe('candlestick');
+    expect(candle.series[0]).toMatchObject({ high: '=Sum(Fields.h)', low: '=Sum(Fields.l)', open: '=Sum(Fields.o)', close: '=Sum(Fields.c)' });
+    expect(imp({ Plots: [plot('HighLowOpenClose', { Values: [{ Field: { Value: ['=Fields!h.Value', '=Fields!l.Value', '=Fields!o.Value', '=Fields!c.Value'] } }] })] }).c.chartType).toBe('ohlc');
+    const hlc = imp({ Plots: [plot('HighLowClose', { Values: [{ Field: { Value: ['=Fields!h.Value', '=Fields!l.Value', '=Fields!c.Value'] } }] })] }).c;
+    expect(hlc).toMatchObject({ chartType: 'ohlc' });
+    expect(hlc.series[0].open).toBeUndefined();
+    expect(imp({ Plots: [plot('Funnel', { Values: [F('amt')] })] }).c.chartType).toBe('funnel');
+    const pyr = imp({ Plots: [plot('Pyramid', { Values: [F('amt')] })] });
+    expect(pyr.c.chartType).toBe('funnel');
+    expect(pyr.warnings.join()).toMatch(/pyramid/i);
+    expect(imp({ Plots: [plot('Gauge', { Values: [F('amt')] })] }).c.chartType).toBe('gauge');
+  });
+  it('palettes, overlays and label positions', () => {
+    const { c, warnings } = imp({ Palette: 'Office', Plots: [plot('Line', { Values: [F('amt')] }, { Config: {
+      Text: { Template: '{value}', TextPosition: 'Inside' },
+      Overlays: [{ Type: 'LinearTrendline' }, { Type: 'MovingAverageTrendline', Period: 3 }, { Type: 'PolynomialTrendline', Order: 3 }, { Type: 'ExponentialTrendline' }, { Type: 'ReferenceLine', Value: 20, LegendLabel: 'Goal' }, { Type: 'ReferenceBand', Start: 5, End: 15 }, { Type: 'PowerTrendline' }] } })] });
+    expect(c.palette).toBe('office');
+    expect(c.labelPosition).toBe('inside');
+    expect(c.showValues).toBe(true);
+    expect(c.overlays).toEqual([{ type: 'trend' }, { type: 'movingAverage', period: 3 }, { type: 'trend', kind: 'poly', order: 3 }, { type: 'trend', kind: 'exp' }, { type: 'line', value: 20, label: 'Goal' }, { type: 'band', from: 5, to: 15 }, { type: 'trend' }]);
+    expect(warnings.join()).toMatch(/power trend line is drawn as a linear one/i);
+    expect(imp({ Palette: 'Cerulean', Plots: [plot('Column', { Values: [F('amt')] })] }).c.palette).toBe('ocean');
+  });
+  it('the imported charts render with no warnings', async () => {
+    for (const chart of [
+      { Plots: [plot('Candlestick', { Values: [{ Field: { Value: ['=Fields!h.Value', '=Fields!l.Value', '=Fields!o.Value', '=Fields!c.Value'] } }] })] },
+      { Plots: [plot('Column', { Values: [F('amt')] }), { ...plot('Line', { Values: [F('q')] }), PlotName: 'P2' }], PlotArea: { Axes: [{ AxisType: 'X' }, { AxisType: 'Y', Plots: ['P1'] }, { AxisType: 'Y', Plots: ['P2'] }] } },
+    ]) {
+      const { def } = imp(chart);
+      expect(validate(def).errors).toEqual([]);
+      const out = await render(def, { fontStore });
+      expect(out.warnings).toEqual([]);
+    }
+  });
+});

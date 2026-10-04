@@ -34,7 +34,7 @@ Engine, expressions, data sources, text box / image / line / shape / table, pagi
 
 | Area | Delivered |
 |---|---|
-| Charts | Column, bar, line, area, pie, donut, scatter; series editor; nice axis scales; live preview in the designer |
+| Charts | Column, bar, line, area, pie, donut, scatter; series editor; nice axis scales; live preview in the designer. Parity Phase 5 (4 Oct 2026, `docs/superpowers/plans/2026-10-04-p5-charts.md`): bubble, radar, polar, candlestick, OHLC, gauge, funnel; combo charts on two value axes; 100% stacks, range series, smooth and step lines; axis min/max/log/format/titles/grid lines/label angle/reversed; trend lines, moving averages, reference lines and bands; label templates, positions and collision avoidance; 12 palettes; viewer-only animations; sparkline area/win-loss/bands, icon sets, range bars. Showcase: `reports/charts-showcase.pw.json` |
 | Matrix | Pivot rows × columns with totals |
 | Barcodes | Code 128, QR, EAN-13 and others via bwip-js, drawn as vector paths (sharp in PDF) |
 | Data visuals | Sparkline, data bar and bullet in table cells, with colour expressions |

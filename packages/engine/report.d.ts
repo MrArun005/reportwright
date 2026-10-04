@@ -87,14 +87,47 @@ export interface Table extends ItemBase {
 export interface Container extends ItemBase { type: 'container'; items: Item[] }
 export interface List extends ItemBase { type: 'list'; items: Item[]; groupBy?: Expr<string>; pageBreakBetween?: boolean; sortBy?: unknown; filters?: unknown[] }
 export interface CheckBox extends ItemBase { type: 'checkbox'; value?: Expr<boolean>; text?: Expr<string> }
+export interface ChartAxis {
+  title?: string; format?: string; min?: number; max?: number; log?: boolean; gridlines?: boolean;
+  /** category axis only: turn the labels, e.g. -45 */
+  labelAngle?: number; reversed?: boolean;
+}
+export interface ChartSeries {
+  name?: string; value?: Expr; color?: string;
+  /** combo charts: draw this series as columns, a line or an area */
+  type?: 'column' | 'bar' | 'line' | 'area';
+  axis?: 'primary' | 'secondary';
+  /** a range series (low + high), or with open + close a candlestick / OHLC series */
+  low?: Expr; high?: Expr; open?: Expr; close?: Expr;
+  /** bubble size, per row */
+  size?: Expr;
+  line?: 'straight' | 'smooth' | 'step';
+  [key: string]: unknown;
+}
+export type ChartOverlay =
+  | { type: 'trend'; kind?: 'linear' | 'exp' | 'poly'; order?: number; series?: number; color?: string; label?: string }
+  | { type: 'movingAverage'; period?: number; series?: number; color?: string; label?: string }
+  | { type: 'line'; value: number | Expr; axis?: 'primary' | 'secondary'; color?: string; label?: string; showValue?: boolean }
+  | { type: 'band'; from: number | Expr; to: number | Expr; axis?: 'primary' | 'secondary'; color?: string; label?: string };
+export type ChartPalette = 'default' | 'office' | 'colorblind' | 'vivid' | 'pastel' | 'ocean' | 'sunset' | 'forest' | 'berry' | 'earth' | 'grayscale' | 'highContrast';
 export interface Chart extends ItemBase {
   type: 'chart';
-  chartType?: 'column' | 'bar' | 'line' | 'area' | 'pie' | 'donut' | 'scatter';
+  chartType?: 'column' | 'bar' | 'line' | 'area' | 'pie' | 'donut' | 'scatter' | 'bubble' | 'radar' | 'polar' | 'candlestick' | 'ohlc' | 'gauge' | 'funnel';
   title?: Expr<string>; category?: Expr<string>; categorySort?: 'asc' | 'desc'; categoryFormat?: string;
-  series?: { name?: string; value: Expr; color?: string; [key: string]: unknown }[];
-  seriesGroup?: Expr<string>; stacked?: boolean; showValues?: boolean; valueFormat?: string; legend?: 'bottom' | 'none';
+  series?: ChartSeries[];
+  seriesGroup?: Expr<string>; stacked?: boolean | 'percent'; showValues?: boolean; valueFormat?: string; legend?: 'bottom' | 'none';
   xValue?: Expr; pointAction?: Action; pointColor?: Expr<string>; tooltips?: boolean; xTitle?: string; fontSize?: number; background?: string;
   maxCategories?: number;
+  line?: 'straight' | 'smooth' | 'step';
+  axes?: { x?: ChartAxis; y?: ChartAxis; y2?: ChartAxis };
+  overlays?: ChartOverlay[];
+  /** {value} {category} {series} {percent}, or an =expression in the point's scope */
+  labelTemplate?: string;
+  labelPosition?: 'outside' | 'inside' | 'center';
+  palette?: ChartPalette | string[];
+  /** viewer only; exports stay static */
+  animation?: 'none' | 'grow' | 'fade';
+  upColor?: string; downColor?: string;
 }
 export interface FormField extends ItemBase { type: 'field'; kind?: 'text' | 'multiline' | 'checkbox' | 'choice'; fieldName?: Expr<string>; value?: Expr; options?: Expr; required?: boolean; readOnly?: boolean }
 export interface MapItem extends ItemBase {
@@ -103,9 +136,11 @@ export interface MapItem extends ItemBase {
   colorLow?: string; colorHigh?: string; legend?: 'bottom' | 'none';
   pointDataSet?: string; lat?: Expr<number>; lon?: Expr<number>; pointSize?: Expr<number>; pointLabel?: Expr<string>; pointColor?: string;
 }
-export interface Sparkline extends ItemBase { type: 'sparkline'; category?: Expr; value?: Expr<number>; color?: string }
+export interface Sparkline extends ItemBase { type: 'sparkline'; category?: Expr; value?: Expr<number>; color?: string; style?: 'line' | 'column' | 'area' | 'winloss'; bandLow?: Expr<number>; bandHigh?: Expr<number>; bandColor?: string; negColor?: string }
 export interface DataBar extends ItemBase { type: 'databar'; value?: Expr<number>; max?: Expr<number>; color?: string }
 export interface Bullet extends ItemBase { type: 'bullet'; value?: Expr<number>; max?: Expr<number>; target?: Expr<number>; color?: string }
+export interface IconSet extends ItemBase { type: 'iconset'; value?: Expr<number>; iconSet?: 'trafficLights' | 'arrows' | 'symbols' | 'flags' | 'ratings'; lower?: Expr<number>; upper?: Expr<number> }
+export interface RangeBar extends ItemBase { type: 'rangebar'; low?: Expr<number>; high?: Expr<number>; min?: Expr<number>; max?: Expr<number>; color?: string }
 export interface Barcode extends ItemBase {
   type: 'barcode';
   /** a bwip-js id: code128, qrcode, datamatrix, pdf417, ean13, gs1-128, … */
@@ -140,7 +175,7 @@ export interface TableOfContents extends ItemBase {
 }
 
 export type Item = TextBox | RichText | Image | Line | Shape | Table | Container | List | CheckBox | Chart | FormField | MapItem
-  | Sparkline | DataBar | Bullet | Barcode | Matrix | Subreport | TableOfContents;
+  | Sparkline | DataBar | Bullet | IconSet | RangeBar | Barcode | Matrix | Subreport | TableOfContents;
 export type ItemType = Item['type'];
 
 export interface Band { height?: number; items: Item[]; printOnFirstPage?: boolean; printOnLastPage?: boolean }

@@ -1705,7 +1705,67 @@ function bandedlist(ar, cx, ctx) {
 /* ================================================================ charts */
 
 const CHART_TYPES = { column: 'column', bar: 'bar', line: 'line', area: 'area', pie: 'pie', doughnut: 'donut', donut: 'donut', scatter: 'scatter',
-  bubble: 'scatter', spline: 'line', stepline: 'line', splinearea: 'area' };
+  bubble: 'bubble', spline: 'line', stepline: 'line', splinearea: 'area', candlestick: 'candlestick', highlowopenclose: 'ohlc', highlowclose: 'ohlc',
+  funnel: 'funnel', pyramid: 'funnel', gauge: 'gauge', radar: 'radar', polar: 'polar', rangearea: 'area', rangebar: 'bar', rangecolumn: 'column' };
+// ActiveReports palette names → the nearest of Pagewright's 12 named palettes
+const PALETTES = { office: 'office', office2010: 'office', office2016: 'office', standard: 'default', light: 'pastel', dark: 'vivid', blue: 'ocean', cerulean: 'ocean',
+  green: 'forest', orange: 'sunset', red: 'sunset', yellow: 'sunset', coral: 'sunset', pink: 'berry', purple: 'berry', violet: 'berry', grey: 'grayscale', gray: 'grayscale', grayscale: 'grayscale', cocoa: 'earth' };
+const SERIES_KIND = { column: 'column', bar: 'bar', line: 'line', area: 'area', spline: 'line', splinearea: 'area', stepline: 'line', rangearea: 'area', rangebar: 'bar', rangecolumn: 'column' };
+
+/** Line aspect → `line`: Spline is smooth, any step is Pagewright's centred step. */
+function lineOf(cfg, pt, t) {
+  const a = String(cfg?.LineAspect || '').toLowerCase();
+  if (a === 'spline' || pt === 'spline' || pt === 'splinearea') return 'smooth';
+  if (a.startsWith('step') || pt === 'stepline') {
+    if (a && a !== 'stepcenter') t.approx(`its ${cfg.LineAspect} line is drawn with the step in the middle between points.`);
+    return 'step';
+  }
+  return undefined;
+}
+
+/** An axis's settings that Pagewright can draw. */
+function axisOf(a, t, which) {
+  if (!a || typeof a !== 'object') return {};
+  const o = {};
+  const num = (v) => (v === '' || v == null || isExpr(v) || !Number.isFinite(Number(v)) ? undefined : Number(v));
+  if (which !== 'x') { if (num(a.Min) != null) o.min = num(a.Min); if (num(a.Max) != null) o.max = num(a.Max); }
+  if (/log/i.test(String(a.Scale || ''))) {
+    o.log = true;
+    if (num(a.LogBase) != null && num(a.LogBase) !== 10) t.approx(`its log axis uses base ${a.LogBase}; Pagewright uses base 10.`);
+  }
+  if (isTrue(a.Reversed)) o.reversed = true;
+  if (which === 'x' && num(a.LabelAngle)) o.labelAngle = num(a.LabelAngle);
+  const grid = typeof a.MajorGrid === 'object' && a.MajorGrid ? !isTrue(a.MajorGrid.Hidden) && a.MajorGrid.Visible !== false : a.MajorGrid;
+  if (typeof grid === 'boolean') o.gridlines = grid;
+  if (a.Title && !isExpr(a.Title)) o.title = String(a.Title);
+  return o;
+}
+
+/** Trend lines, moving averages and reference lines/bands of a plot. */
+function overlaysOf(p, t) {
+  const list = p.Config?.Overlays ?? p.Overlays;
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  const num = (v) => (v === '' || v == null || !Number.isFinite(Number(v)) ? undefined : Number(v));
+  for (const o of list) {
+    if (!o || typeof o !== 'object') continue;
+    const ty = String(o.Type || '').toLowerCase();
+    const label = o.LegendLabel || o.Label || o.Name;
+    let r = null;
+    if (/moving/.test(ty)) r = { type: 'movingAverage', ...(num(o.Period) ? { period: num(o.Period) } : {}) };
+    else if (/poly/.test(ty)) r = { type: 'trend', kind: 'poly', ...(num(o.Order) ? { order: num(o.Order) } : {}) };
+    else if (/exp/.test(ty)) r = { type: 'trend', kind: 'exp' };
+    else if (/trend|linear|power|log/.test(ty)) {
+      if (/power|log/.test(ty)) t.approx(`its ${/power/.test(ty) ? 'power' : 'logarithmic'} trend line is drawn as a linear one.`);
+      r = { type: 'trend' };
+    } else if (/band|range/.test(ty) && num(o.Start) != null && num(o.End) != null) r = { type: 'band', from: num(o.Start), to: num(o.End) };
+    else if (/line|reference/.test(ty) && num(o.Value ?? o.Start) != null) r = { type: 'line', value: num(o.Value ?? o.Start) };
+    if (!r) { t.approx(`its "${o.Type}" overlay is left out.`); continue; }
+    if (label && !isExpr(label) && r.type !== 'trend' && r.type !== 'movingAverage') r.label = String(label);
+    out.push(r);
+  }
+  return out;
+}
 
 function chart(ar, cx, ctx, dv) {
   const t = track(cx, ar);
@@ -1713,17 +1773,20 @@ function chart(ar, cx, ctx, dv) {
   const rctx = { ...ctx, region: it.name, top: false };
   it.dataSet = ar.DataSetName || ctx.dataSet;
   const plots = (Array.isArray(ar.Plots) ? ar.Plots : []).filter(Boolean);
-  if (plots.length > 1) t.approx(`only its first plot is drawn; ${plots.length - 1} more ${plots.length > 2 ? 'are' : 'is'} left out.`);
   const p = plots[0] || {};
   const cfg = p.Config || {};
   if (ar.Header?.Title) it.title = ex(cx, t, ar.Header.Title, rctx, { text: true });
   it.legend = isTrue(ar.Legend?.Hidden) ? 'none' : 'bottom';
-  const axes = ar.PlotArea?.Axes || [];
-  const yAxis = axes.find(a => /y/i.test(String(a?.AxisType || ''))), xAxis = axes.find(a => /x/i.test(String(a?.AxisType || '')));
+  const axes = (Array.isArray(ar.PlotArea?.Axes) ? ar.PlotArea.Axes : []).filter(a => a && typeof a === 'object');
+  const yAxes = axes.filter(a => /y/i.test(String(a.AxisType || ''))), xAxis = axes.find(a => /x/i.test(String(a.AxisType || '')));
+  const yAxis = yAxes[0];
+  // plots bound to the second Y axis draw on Pagewright's secondary axis
+  const secondary = new Set(yAxes.slice(1).flatMap(a => (Array.isArray(a.Plots) ? a.Plots : []).map(String)));
   const vf = formatOf(yAxis?.Format);
   if (vf) it.valueFormat = vf;
   if (xAxis?.Title && !isExpr(xAxis.Title)) it.xTitle = String(xAxis.Title);
   const field = (e) => { const v = e?.Field?.Value ?? e?.Field; return Array.isArray(v) ? v[0] : v; };
+  const fieldsOf = (e) => { const v = e?.Field?.Value ?? e?.Field; return (Array.isArray(v) ? v : [v]).filter(x => x != null && x !== ''); };
   let type, category, seriesGroup, sortBy, sortDir, stacked = false, showValues = false;
   const series = [];
   if (dv) {
@@ -1731,38 +1794,112 @@ function chart(ar, cx, ctx, dv) {
     const pt = String(p.PlotChartType || 'Column').toLowerCase();
     type = CHART_TYPES[pt];
     if (!type) { type = 'column'; t.approx(`the "${p.PlotChartType}" chart type is drawn as a column chart.`); }
-    if (pt === 'bubble') t.approx('bubble sizes are not drawn; it is drawn as a scatter chart.');
+    if (pt === 'pyramid') t.approx('the pyramid is drawn as a funnel (widest stage first).');
+    if (pt === 'gauge') t.approx('the gauge is drawn as a half-circle gauge from the first value.');
+    const mode = String(cfg.AxisMode || '').toLowerCase();
+    if (mode === 'polygonal' || (mode === 'radial' && (type === 'line' || type === 'area'))) type = 'radar';
+    else if (mode === 'radial' && (type === 'scatter' || type === 'bubble')) type = 'polar';
     if (isTrue(cfg.Radial) && (type === 'column' || type === 'bar')) type = 'pie';
     if (type === 'pie' && Number(cfg.InnerRadius) > 0) type = 'donut';
+    const perRow = type === 'scatter' || type === 'bubble' || type === 'polar';
     const details = (Array.isArray(enc.Details) ? enc.Details : []).filter(d => field(d));
     const color = field(enc.Color);
     category = field(enc.Category);
-    if (type === 'pie' || type === 'donut') category ??= field(details[0]) ?? color;
-    else seriesGroup = field(details[0]) ?? (color && color !== category ? color : undefined);
+    if (type === 'pie' || type === 'donut' || type === 'funnel') category ??= field(details[0]) ?? color;
+    else if (!perRow) seriesGroup = field(details[0]) ?? (color && color !== category ? color : undefined);
     if (details.length > 1) t.approx('only its first detail level splits the series.');
-    stacked = /stack/i.test(String(p.PlotChartSubtype || '')) || /stack/i.test(String(details[0]?.Group || ''));
-    if (/percent/i.test(String(p.PlotChartSubtype || ''))) t.approx('it is stacked to 100% in ActiveReports; Pagewright stacks the values.');
+    stacked = /percent/i.test(String(p.PlotChartSubtype || '')) ? 'percent' : /stack/i.test(String(p.PlotChartSubtype || '')) || /stack/i.test(String(details[0]?.Group || ''));
     sortDir = enc.Category?.Sort; sortBy = enc.Category?.SortingField;
-    (Array.isArray(enc.Values) ? enc.Values : []).filter(Boolean).forEach((v, i) => {
-      const src = field(v);
-      if (src == null) return;
-      const agg = AGG[String(v.Aggregate || 'Sum').toLowerCase()] || (/^(none|list)$/i.test(String(v.Aggregate)) ? 'First' : null);
-      if (!agg) t.approx(`the "${v.Aggregate}" aggregate is drawn as a sum.`);
-      const raw = ex(cx, t, src, rctx, { what: 'a series value' });
-      if (raw === undefined) return;
-      const m = /^=Fields!([\w ]+)\.Value$/i.exec(String(src).trim());
-      series.push({ name: v.Caption || (m ? safeName(m[1]) : `Series ${i + 1}`), value: AGG_RE.test(String(raw)) ? raw : `=${agg || 'Sum'}(${isExpr(raw) ? raw.slice(1) : inner(raw)})` });
-    });
+    const line = lineOf(cfg, pt, t);
+    if (line) it.line = line;
+    /** The series of one plot; extra = type/axis for a combo plot. */
+    const seriesOf = (pl, extra) => {
+      const e = pl.Encodings || {};
+      const ptype = String(pl.PlotChartType || '').toLowerCase();
+      (Array.isArray(e.Values) ? e.Values : []).filter(Boolean).forEach((v, i) => {
+        const srcs = fieldsOf(v);
+        if (!srcs.length) return;
+        const agg = AGG[String(v.Aggregate || 'Sum').toLowerCase()] || (/^(none|list)$/i.test(String(v.Aggregate)) ? 'First' : null);
+        if (!agg) t.approx(`the "${v.Aggregate}" aggregate is drawn as a sum.`);
+        const wrap = (src) => {
+          const raw = ex(cx, t, src, rctx, { what: 'a series value' });
+          if (raw === undefined) return undefined;
+          return AGG_RE.test(String(raw)) ? raw : `=${agg || 'Sum'}(${isExpr(raw) ? raw.slice(1) : inner(raw)})`;
+        };
+        const m = /^=Fields!([\w ]+)\.Value$/i.exec(String(srcs[0]).trim());
+        const sr = { name: v.Caption || (m ? safeName(m[1]) : `Series ${series.length + 1}`), ...extra };
+        const fin = type === 'candlestick' || type === 'ohlc';
+        if (fin && !extra) {
+          // high, low, open, close (HighLowClose: high, low, close)
+          const keys = ptype === 'highlowclose' || srcs.length === 3 ? ['high', 'low', 'close'] : ['high', 'low', 'open', 'close'];
+          if (srcs.length < keys.length) { t.approx(`its ${p.PlotChartType} plot needs ${keys.length} values; the series is left out.`); return; }
+          keys.forEach((k, j) => { const w = wrap(srcs[j]); if (w !== undefined) sr[k] = w; });
+        } else if (type === 'bubble' && !extra) {
+          const y = wrap(srcs[0]); if (y === undefined) return;
+          sr.value = y;
+          const size = srcs[1] ?? field(e.Size);
+          if (size != null) { const w = wrap(size); if (w !== undefined) sr.size = w; } else t.approx('it has no bubble size, so every bubble is the same size.');
+        } else if (srcs.length >= 2 && !perRow && !['pie', 'donut', 'funnel', 'gauge', 'radar'].includes(type)) {
+          const lo = wrap(srcs[0]), hi = wrap(srcs[1]);
+          if (lo === undefined || hi === undefined) return;
+          sr.low = lo; sr.high = hi;
+        } else {
+          const w = wrap(srcs[0]); if (w === undefined) return;
+          sr.value = w;
+        }
+        series.push(sr);
+        if (i === 0 && extra?.line) delete extra.line;
+      });
+    };
+    seriesOf(p, null);
+    if (perRow && category != null) { const xv = ex(cx, t, category, rctx, { what: 'the x value' }); if (xv !== undefined) it.xValue = xv; category = undefined; }
+    // more plots: a combo chart when they share the category
+    for (const pl of plots.slice(1)) {
+      const kind = SERIES_KIND[String(pl.PlotChartType || '').toLowerCase()];
+      if (!kind || perRow || !['column', 'bar', 'line', 'area', 'candlestick', 'ohlc'].includes(type) || String(field(pl.Encodings?.Category) ?? '') !== String(category ?? '')) {
+        t.approx(`its plot "${pl.PlotName || pl.PlotChartType}" cannot be combined with the first one and is left out.`);
+        continue;
+      }
+      const extra = { type: type === 'bar' && kind === 'column' ? 'bar' : kind };
+      if (secondary.has(String(pl.PlotName))) extra.axis = 'secondary';
+      const ln = lineOf(pl.Config || {}, String(pl.PlotChartType || '').toLowerCase(), t);
+      if (ln) extra.line = ln;
+      seriesOf(pl, extra);
+    }
+    if (secondary.has(String(p.PlotName)) && yAxes.length > 1) for (const sr of series.filter(x => !x.axis)) sr.axis = 'secondary';
     const tx = cfg.Text;
     showValues = !!(tx && tx.Template && !/^none$/i.test(String(tx.TextPosition || '')));
-    const pal = Array.isArray(ar.CustomPalette) && /custom/i.test(String(ar.Palette || 'Custom')) ? ar.CustomPalette.map(hexColor) : [];
-    if (!seriesGroup) series.forEach((s, i) => { if (pal[i]) s.color = pal[i]; });
+    if (showValues) {
+      const pos = String(tx.TextPosition || '').toLowerCase();
+      if (pos === 'inside' || pos === 'outside' || pos === 'center') it.labelPosition = pos;
+      const tpl = String(tx.Template);
+      if (isExpr(tpl)) { const e2 = ex(cx, t, tpl, rctx, { what: 'the label text' }); if (e2 !== undefined) it.labelTemplate = e2; }
+      else if (!/^\{value\}$/i.test(tpl.trim())) {
+        if ([...tpl.matchAll(/\{(\w+)\}/g)].every(m2 => /^(value|category|series|percent)$/i.test(m2[1]))) it.labelTemplate = tpl;
+        else t.approx(`its label template "${tpl.slice(0, 60)}" uses fields Pagewright cannot fill; the labels show the values.`);
+      }
+    }
+    const palName = String(ar.Palette || '').toLowerCase();
+    const pal = Array.isArray(ar.CustomPalette) && /custom/i.test(String(ar.Palette || 'Custom')) ? ar.CustomPalette.map(hexColor).filter(Boolean) : [];
+    if (pal.length) { if (seriesGroup) it.palette = pal; else series.forEach((sr, i) => { if (pal[i]) sr.color = pal[i]; }); }
+    else if (palName && palName !== 'custom') { if (PALETTES[palName]) it.palette = PALETTES[palName]; else t.approx(`its "${ar.Palette}" palette is drawn with the default colours.`); }
     if (p.Action) { const a = action(p.Action, cx, t, rctx); if (a) it.pointAction = a; }
+    const ovs = plots.flatMap(pl => overlaysOf(pl, t));
+    if (ovs.length) it.overlays = ovs;
+    const ax = { x: axisOf(xAxis, t, 'x'), y: axisOf(yAxis, t, 'y') };
+    if (yAxes.length > 1 && series.some(sr => sr.axis === 'secondary')) {
+      ax.y2 = axisOf(yAxes[1], t, 'y');
+      const f2 = formatOf(yAxes[1].Format);
+      if (f2) ax.y2.format = f2;
+    }
+    for (const k of Object.keys(ax)) if (!Object.keys(ax[k]).length) delete ax[k];
+    if (Object.keys(ax).length) it.axes = ax;
   } else {
+    if (plots.length > 1) t.approx(`only its first plot is drawn; ${plots.length - 1} more ${plots.length > 2 ? 'are' : 'is'} left out.`);
     const pt = String(p.PlotType || 'Bar').toLowerCase();
     type = pt === 'bar' ? (isTrue(cfg.SwapAxes) ? 'bar' : 'column') : CHART_TYPES[pt];
     if (!type) { type = 'column'; t.approx(`the "${p.PlotType}" chart type is drawn as a column chart.`); }
-    if (pt === 'bubble') t.approx('bubble sizes are not drawn; it is drawn as a scatter chart.');
+    if (type === 'bubble' || type === 'gauge' || type === 'funnel' || type === 'candlestick' || type === 'ohlc') { t.approx(`its ${p.PlotType} plot is drawn as a column chart.`); type = 'column'; }
     if (isTrue(cfg.Radial) && (type === 'column' || type === 'bar')) type = Number(cfg.InnerRadius) > 0 ? 'donut' : 'pie';
     const cg = (p.CategoryGroupings || [])[0];
     category = cg?.Grouping?.GroupExpressions?.[0];
@@ -1771,20 +1908,20 @@ function chart(ar, cx, ctx, dv) {
     const sgExpr = (p.SeriesGroupings || [])[0]?.Grouping?.GroupExpressions?.[0];
     const colorField = p.ColorSeries?.Field;
     seriesGroup = isExpr(colorField) && !AGG_RE.test(colorField) ? colorField : sgExpr;
-    stacked = /stack/i.test(String(cfg.SeriesArrangement || ''));
-    if (/100/.test(String(cfg.SeriesArrangement || ''))) t.approx('it is stacked to 100% in ActiveReports; Pagewright stacks the values.');
-    (Array.isArray(p.DataSeries) ? p.DataSeries : []).filter(Boolean).forEach((s, i) => {
-      const v = ex(cx, t, s.Values?.[0]?.Value ?? '', rctx, { what: 'a series value' });
+    stacked = /100/.test(String(cfg.SeriesArrangement || '')) ? 'percent' : /stack/i.test(String(cfg.SeriesArrangement || ''));
+    (Array.isArray(p.DataSeries) ? p.DataSeries : []).filter(Boolean).forEach((s2, i) => {
+      const v = ex(cx, t, s2.Values?.[0]?.Value ?? '', rctx, { what: 'a series value' });
       if (v === undefined || v === '') return;
-      series.push({ name: s.Name || `Series ${i + 1}`, value: v });
-      if (s.Label?.Value != null && !/^none$/i.test(String(s.Label.TextPosition || ''))) showValues = true;
-      if (i === 0 && s.Action) { const a = action(s.Action, cx, t, rctx); if (a) it.pointAction = a; }
+      series.push({ name: s2.Name || `Series ${i + 1}`, value: v });
+      if (s2.Label?.Value != null && !/^none$/i.test(String(s2.Label.TextPosition || ''))) showValues = true;
+      if (i === 0 && s2.Action) { const a = action(s2.Action, cx, t, rctx); if (a) it.pointAction = a; }
     });
+    if (type === 'scatter' && category != null) { const xv = ex(cx, t, category, rctx, { what: 'the x value' }); if (xv !== undefined) it.xValue = xv; }
   }
   it.chartType = type;
   if (category != null) it.category = ex(cx, t, category, rctx, { what: 'the category' });
   if (seriesGroup != null) { const sg = ex(cx, t, seriesGroup, rctx, { what: 'the series grouping' }); if (sg !== undefined) it.seriesGroup = sg; }
-  if (stacked && type !== 'pie' && type !== 'donut') it.stacked = true;
+  if (stacked && !['pie', 'donut', 'funnel', 'gauge', 'radar', 'scatter', 'bubble', 'polar'].includes(type)) it.stacked = stacked;
   if (showValues) it.showValues = true;
   if (series.length) it.series = series;
   if (sortBy != null || sortDir) {

@@ -1,0 +1,48 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`existing chart geometry > area 1`] = `"07d3003b3678c6fc"`;
+
+exports[`existing chart geometry > areaStacked 1`] = `"090df20737236789"`;
+
+exports[`existing chart geometry > bar 1`] = `"105f00646dae7d87"`;
+
+exports[`existing chart geometry > barStacked 1`] = `"f624666805f813a6"`;
+
+exports[`existing chart geometry > column 1`] = `"3af23bae6572cefa"`;
+
+exports[`existing chart geometry > columnGroups 1`] = `"326960a7b3461f31"`;
+
+exports[`existing chart geometry > columnStacked 1`] = `"27c690deb4aeff74"`;
+
+exports[`existing chart geometry > donut 1`] = `"5f4f5c7e9da22dbc"`;
+
+exports[`existing chart geometry > empty 1`] = `"981faa0171de5aa2"`;
+
+exports[`existing chart geometry > line 1`] = `"88fd34a5bf3b3729"`;
+
+exports[`existing chart geometry > pie 1`] = `"903a890c8ce33c92"`;
+
+exports[`existing chart geometry > pointColor 1`] = `"7357cfe79a881c66"`;
+
+exports[`existing chart geometry > reports/sales-city.pw.json 1`] = `
+[
+  "2791d80996a4ebee",
+  "cd14a94401cac992",
+  "9e756eb58bdc66d9",
+]
+`;
+
+exports[`existing chart geometry > reports/sales-explorer.pw.json 1`] = `
+[
+  "a0612e83236edef7",
+  "327b4e6c60819626",
+]
+`;
+
+exports[`existing chart geometry > reports/sales-month.pw.json 1`] = `
+[
+  "bf6ea459cddbcce5",
+]
+`;
+
+exports[`existing chart geometry > scatter 1`] = `"839f3c2d6a0c5107"`;

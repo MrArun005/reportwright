@@ -34,7 +34,7 @@ export default {
   item_textbox: '文本框', item_table: '表格', item_image: '图像', item_line: '直线', item_shape: '形状', item_list: '列表',
   item_container: '容器', item_chart: '图表', item_matrix: '矩阵', item_barcode: '条形码', item_sparkline: '迷你图',
   item_databar: '数据条', item_bullet: '子弹图', item_subreport: '子报表', item_toc: '目录', item_field: '表单字段',
-  item_richtext: '富文本', item_map: '地图', item_checkbox: '复选框',
+  item_richtext: '富文本', item_map: '地图', item_checkbox: '复选框', item_iconset: '图标集', item_rangebar: '范围条',
 
   /* ---- designer: parameter dialog ---- */
   paramNew: '新参数', paramTitle: '参数 {name}', name: '名称', paramType: '类型', prompt: '提示文字',

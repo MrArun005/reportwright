@@ -5,7 +5,11 @@ import { resolveStyle, padding } from '../style.js';
 import { layoutTextLines, paintBox } from './paint.js';
 import { applyFilters, applySort, related } from '../data/index.js';
 import { paintChart, CHART_TYPES } from './chart.js';
-import { paintVisual } from './visuals.js';
+import { PALETTES } from './chart-kit.js';
+
+const ROW_CHARTS = new Set(['scatter', 'bubble', 'polar']);
+const AXIS_CHARTS = new Set(['column', 'bar', 'line', 'area', 'candlestick', 'ohlc']);
+import { paintVisual, ICON_SETS } from './visuals.js';
 import { paintBarcode, SYMBOLOGIES, BARCODE_OPTIONS, bwipOptions, isTwoD } from './barcode.js';
 import { paintMap } from './map.js';
 import { shiftItems } from './paint.js';
@@ -672,22 +676,31 @@ register('chart', {
     { key: 'chartType', label: 'Chart type', type: 'select', options: CHART_TYPES, category: 'Chart' },
     { key: 'dataSet', label: 'Data set', type: 'dataset', category: 'Chart' },
     { key: 'title', label: 'Title', type: 'expr', category: 'Chart' },
-    { key: 'category', label: 'Category (x axis / slices)', type: 'expr', category: 'Chart' },
-    { key: 'categorySort', label: 'Sort categories', type: 'select', options: ['asc', 'desc'], category: 'Chart' },
-    { key: 'categoryFormat', label: 'Category format', type: 'text', category: 'Chart' },
+    { key: 'category', label: 'Category (x axis / slices)', type: 'expr', category: 'Chart', showIf: (i) => !ROW_CHARTS.has(i.chartType) && i.chartType !== 'gauge' },
+    { key: 'categorySort', label: 'Sort categories', type: 'select', options: ['asc', 'desc'], category: 'Chart', showIf: (i) => !ROW_CHARTS.has(i.chartType) && i.chartType !== 'gauge' },
+    { key: 'categoryFormat', label: 'Category format', type: 'text', category: 'Chart', showIf: (i) => !ROW_CHARTS.has(i.chartType) && i.chartType !== 'gauge' },
+    { key: 'xValue', label: 'X value (scatter, bubble) or angle in degrees (polar)', type: 'expr', category: 'Chart', showIf: (i) => ROW_CHARTS.has(i.chartType) },
     { key: 'series', label: 'Series', type: 'series', category: 'Chart' },
-    { key: 'seriesGroup', label: 'One series per value of', type: 'expr', category: 'Chart' },
-    { key: 'stacked', label: 'Stacked', type: 'bool', category: 'Chart' },
-    { key: 'showValues', label: 'Show values', type: 'bool', category: 'Chart' },
-    { key: 'valueFormat', label: 'Value format', type: 'text', category: 'Chart' },
-    { key: 'legend', label: 'Legend', type: 'select', options: ['bottom', 'none'], category: 'Chart' },
-    { key: 'xValue', label: 'X value (scatter)', type: 'expr', category: 'Chart' },
+    { key: 'seriesGroup', label: 'One series per value of', type: 'expr', category: 'Chart', showIf: (i) => !ROW_CHARTS.has(i.chartType) && !['pie', 'donut', 'gauge', 'funnel'].includes(i.chartType) },
+    { key: 'stacked', label: 'Stacking', type: 'stacked', category: 'Chart', showIf: (i) => AXIS_CHARTS.has(i.chartType || 'column') },
+    { key: 'line', label: 'Lines', type: 'select', options: ['straight', 'smooth', 'step'], category: 'Chart', showIf: (i) => AXIS_CHARTS.has(i.chartType || 'column') },
+    { key: 'upColor', label: 'Rising colour', type: 'color', category: 'Chart', showIf: (i) => i.chartType === 'candlestick' || i.chartType === 'ohlc' },
+    { key: 'downColor', label: 'Falling colour', type: 'color', category: 'Chart', showIf: (i) => i.chartType === 'candlestick' || i.chartType === 'ohlc' },
+    { key: 'axes', label: 'Axes', type: 'axes', category: 'Axes', showIf: (i) => !['pie', 'donut', 'funnel'].includes(i.chartType) },
+    { key: 'xTitle', label: 'X axis title', type: 'text', category: 'Axes', showIf: (i) => !i.axes?.x?.title && !['pie', 'donut', 'funnel', 'gauge', 'radar', 'polar'].includes(i.chartType) },
+    { key: 'overlays', label: 'Trend lines, reference lines and bands', type: 'overlays', category: 'Overlays', showIf: (i) => !['pie', 'donut', 'funnel', 'radar', 'polar'].includes(i.chartType) },
+    { key: 'showValues', label: 'Show values', type: 'bool', category: 'Labels' },
+    { key: 'labelTemplate', label: 'Label text: {value} {category} {series} {percent}, or =expression', type: 'text', category: 'Labels' },
+    { key: 'labelPosition', label: 'Label position', type: 'select', options: ['outside', 'inside', 'center'], category: 'Labels' },
+    { key: 'valueFormat', label: 'Value format', type: 'text', category: 'Labels' },
+    { key: 'legend', label: 'Legend', type: 'select', options: ['bottom', 'none'], category: 'Look' },
+    { key: 'palette', label: 'Palette', type: 'select', options: Object.keys(PALETTES), category: 'Look' },
+    { key: 'animation', label: 'Animation in the viewer', type: 'select', options: ['none', 'grow', 'fade'], category: 'Look' },
+    { key: 'fontSize', label: 'Text size', type: 'number', category: 'Look' },
+    { key: 'background', label: 'Background', type: 'color', category: 'Look' },
     { key: 'pointAction', label: 'Click on a bar or slice', type: 'action', category: 'Interactivity' },
     { key: 'pointColor', label: 'Bar or slice colour (expression, e.g. highlight the selected one)', type: 'expr', category: 'Interactivity' },
     { key: 'tooltips', label: 'Tooltips on hover', type: 'bool', category: 'Interactivity' },
-    { key: 'xTitle', label: 'X axis title', type: 'text', category: 'Chart' },
-    { key: 'fontSize', label: 'Text size', type: 'number', category: 'Chart' },
-    { key: 'background', label: 'Background', type: 'color', category: 'Chart' },
     { key: 'keepTogether', label: 'Keep on one page', type: 'bool', category: 'Layout' },
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
   ],
@@ -790,6 +803,8 @@ for (const [type, label, defaults] of [
   ['sparkline', 'Sparkline', { value: '', style: 'line' }],
   ['databar', 'Data bar', { value: '', max: '' }],
   ['bullet', 'Bullet', { value: '', max: '', target: '' }],
+  ['iconset', 'Icon set', { value: '', iconSet: 'trafficLights', lower: '=33', upper: '=67', w: 18, h: 18 }],
+  ['rangebar', 'Range bar', { low: '', high: '', min: '', max: '' }],
 ]) {
   register(type, {
     label,
@@ -797,11 +812,26 @@ for (const [type, label, defaults] of [
     props: [
       { key: 'dataSet', label: 'Data set', type: 'dataset', category: 'Data' },
       ...(type === 'sparkline' ? [{ key: 'category', label: 'One point per (e.g. =Fields.month)', type: 'expr', category: 'Data' }] : []),
-      { key: 'value', label: type === 'sparkline' ? 'Value (aggregate when a category is set)' : 'Value', type: 'expr', category: 'Data' },
-      ...(type === 'sparkline' ? [{ key: 'style', label: 'Style', type: 'select', options: ['line', 'column'], category: 'Data' }] : []),
-      ...(type !== 'sparkline' ? [{ key: 'max', label: 'Maximum', type: 'expr', category: 'Data' }] : []),
+      ...(type !== 'rangebar' ? [{ key: 'value', label: type === 'sparkline' ? 'Value (aggregate when a category is set)' : 'Value', type: 'expr', category: 'Data' }] : []),
+      ...(type === 'sparkline' ? [
+        { key: 'style', label: 'Style', type: 'select', options: ['line', 'column', 'area', 'winloss'], category: 'Data' },
+        { key: 'bandLow', label: 'Range band from', type: 'expr', category: 'Data' },
+        { key: 'bandHigh', label: 'Range band to', type: 'expr', category: 'Data' },
+        { key: 'bandColor', label: 'Range band colour', type: 'color', category: 'Data' },
+      ] : []),
+      ...(type === 'iconset' ? [
+        { key: 'iconSet', label: 'Icons', type: 'select', options: ICON_SETS, category: 'Data' },
+        { key: 'lower', label: 'Low below', type: 'expr', category: 'Data' },
+        { key: 'upper', label: 'High from', type: 'expr', category: 'Data' },
+      ] : []),
+      ...(type === 'rangebar' ? [
+        { key: 'low', label: 'From', type: 'expr', category: 'Data' },
+        { key: 'high', label: 'To', type: 'expr', category: 'Data' },
+        { key: 'min', label: 'Scale minimum', type: 'expr', category: 'Data' },
+      ] : []),
+      ...(type !== 'sparkline' && type !== 'iconset' ? [{ key: 'max', label: 'Maximum', type: 'expr', category: 'Data' }] : []),
       ...(type === 'bullet' ? [{ key: 'target', label: 'Target', type: 'expr', category: 'Data' }] : []),
-      { key: 'color', label: 'Color', type: 'color', category: 'Data' },
+      ...(type !== 'iconset' ? [{ key: 'color', label: 'Color', type: 'color', category: 'Data' }] : []),
       { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
     ],
     styleProps: [],

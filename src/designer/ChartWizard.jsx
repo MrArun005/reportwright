@@ -15,7 +15,13 @@ const TYPES = [
   { type: 'pie', label: 'Pie', when: 'Share of a whole, ≤ 6 slices' },
   { type: 'donut', label: 'Donut', when: 'Share, with the total' },
   { type: 'scatter', label: 'Scatter', when: 'Two numbers per row' },
+  { type: 'bubble', label: 'Bubble', when: 'Three numbers per row' },
+  { type: 'radar', label: 'Radar', when: 'Several measures side by side' },
+  { type: 'funnel', label: 'Funnel', when: 'Stages that narrow' },
+  { type: 'gauge', label: 'Gauge', when: 'One number against a range' },
 ];
+const PER_ROW = new Set(['scatter', 'bubble']);
+const NO_SPLIT = new Set(['pie', 'donut', 'scatter', 'bubble', 'funnel', 'gauge']);
 const AGGS = [
   { value: 'Sum', label: 'Sum' }, { value: 'Avg', label: 'Average' }, { value: 'Count', label: 'Count of rows' },
   { value: 'CountDistinct', label: 'Count distinct' }, { value: 'Min', label: 'Minimum' }, { value: 'Max', label: 'Maximum' },
@@ -33,10 +39,12 @@ export function chartFromConfig(c, size) {
     title: c.title ?? '', category: c.category ? `=Fields.${c.category}` : '',
     series: [{ name, value: valueExpr }], valueFormat: c.format || 'N0', legend: 'bottom',
   };
-  if (c.split && c.chartType !== 'pie' && c.chartType !== 'donut' && c.chartType !== 'scatter') out.seriesGroup = `=Fields.${c.split}`;
+  if (c.split && !NO_SPLIT.has(c.chartType)) out.seriesGroup = `=Fields.${c.split}`;
   if (c.stacked && out.seriesGroup) out.stacked = true;
   if (c.top > 0) out.maxCategories = Number(c.top);
-  if (c.chartType === 'scatter') { out.xValue = `=Fields.${c.category}`; out.series = [{ name: c.value, value: `=Sum(Fields.${c.value})` }]; }
+  if (PER_ROW.has(c.chartType)) { out.xValue = `=Fields.${c.category}`; out.series = [{ name: c.value, value: `=Sum(Fields.${c.value})` }]; }
+  if (c.chartType === 'bubble') out.series[0].size = c.size ? `=Sum(Fields.${c.size})` : '=1';
+  if (c.chartType === 'gauge') out.category = '';
   return out;
 }
 
@@ -47,7 +55,7 @@ function configFromChart(item) {
   const m = /^=(\w+)\(Fields\.(\w+)\)$/.exec(v);
   return {
     chartType: item.chartType || 'column', dataSet: item.dataSet, title: item.title ?? '',
-    category: field(item.chartType === 'scatter' ? item.xValue : item.category),
+    category: field(PER_ROW.has(item.chartType) ? item.xValue : item.category), size: field(item.series?.[0]?.size),
     agg: v === '=CountRows()' ? 'Count' : m?.[1] || 'Sum', value: m?.[2] || '', custom: !!v && v !== '=CountRows()' && !m,
     split: field(item.seriesGroup), stacked: !!item.stacked, top: item.maxCategories || 0, format: item.valueFormat || 'N0',
   };
@@ -136,7 +144,7 @@ export default function ChartWizard() {
     const { x, y, w, h, type, ...props } = chartFromConfig(c, { w: editing?.w || 360, h: editing?.h || 220 });
     if (editing) {
       updateItem(editing.id, it => {
-        for (const k of ['seriesGroup', 'stacked', 'maxCategories', 'xValue']) delete it[k];
+        for (const k of ['seriesGroup', 'stacked', 'maxCategories', 'xValue', 'category']) delete it[k];
         Object.assign(it, props);
       });
     } else {
@@ -155,7 +163,7 @@ export default function ChartWizard() {
       footer={<>
         {!editing && <button className="btn ghost" style={{ marginRight: 'auto' }} onClick={plain}>Insert an empty chart</button>}
         <button className="btn" onClick={close}>Cancel</button>
-        <button className="btn primary" onClick={apply} disabled={!c.dataSet || (!c.category && c.chartType !== 'scatter')} data-testid="chart-wizard-apply">{editing ? 'Apply to the chart' : 'Insert chart'}</button>
+        <button className="btn primary" onClick={apply} disabled={!c.dataSet || (!c.category && c.chartType !== 'gauge')} data-testid="chart-wizard-apply">{editing ? 'Apply to the chart' : 'Insert chart'}</button>
       </>}>
       <div className="cw-body">
         <section className="cw-side" aria-label="Data for the chart">
@@ -165,14 +173,15 @@ export default function ChartWizard() {
             <button className="btn sm" onClick={loadSample} disabled={loading}>{loading ? 'Calling the API…' : 'Call the API again'}</button>
             {sample?.error && <span className="err">{sample.error}</span>}
           </div>
-          <Field label={c.chartType === 'scatter' ? 'X axis (a number field)' : 'Category (x axis or slices)'}>
+          <Field label={PER_ROW.has(c.chartType) ? 'X axis (a number field)' : 'Category (x axis or slices)'}>
             <Select value={c.category} allowEmpty options={fields.map(f => ({ value: f.name, label: `${f.name} · ${f.type}` }))} onChange={v => set({ category: v || '' })} />
           </Field>
           <div className="grid2">
             <Field label="Value"><Select value={c.agg} options={AGGS} onChange={v => set({ agg: v })} /></Field>
             {c.agg !== 'Count' && <Field label="of field"><Select value={c.value} allowEmpty options={(numFields.length ? numFields : fields).map(f => f.name)} onChange={v => set({ value: v || '' })} /></Field>}
           </div>
-          {c.chartType !== 'pie' && c.chartType !== 'donut' && c.chartType !== 'scatter' && <>
+          {c.chartType === 'bubble' && <Field label="Bubble size"><Select value={c.size} allowEmpty options={(numFields.length ? numFields : fields).map(f => f.name)} onChange={v => set({ size: v || '' })} /></Field>}
+          {!NO_SPLIT.has(c.chartType) && <>
             <Field label="Split into series by (optional)"><Select value={c.split} allowEmpty options={fields.filter(f => f.type !== 'number').map(f => f.name)} onChange={v => set({ split: v || '' })} /></Field>
             {c.split && <Check label="Stack the series" checked={c.stacked} onChange={v => set({ stacked: v })} />}
           </>}
@@ -193,7 +202,7 @@ export default function ChartWizard() {
                   onClick={() => set({ chartType: t.type })} data-chart-type={t.type}>
                   <span className="cw-thumb">
                     {!sample?.dataSets ? <span className="hint">{loading ? 'Calling the API…' : 'No data yet'}</span>
-                      : t.type === 'scatter' && fields.find(f => f.name === c.category)?.type !== 'number' ? <span className="hint">Pick a number field for the X axis</span>
+                      : PER_ROW.has(t.type) && fields.find(f => f.name === c.category)?.type !== 'number' ? <span className="hint">Pick a number field for the X axis</span>
                       : th?.error ? <span className="err">{th.error}</span>
                         : th ? <span dangerouslySetInnerHTML={{ __html: th.html }} /> : <span className="hint">Drawing…</span>}
                   </span>
@@ -215,7 +224,7 @@ export default function ChartWizard() {
                   <thead><tr>{shown.map(f => (
                     <th key={f.name} className={f.name === c.category ? 'cw-cat' : f.name === c.value ? 'cw-val' : f.name === c.split ? 'cw-spl' : ''}>
                       <button type="button" className="linklike" title={f.type === 'number' ? `Use ${f.name} as the value` : `Use ${f.name} as the category`}
-                        onClick={() => (f.type === 'number' && c.chartType !== 'scatter' ? set({ value: f.name, agg: c.agg === 'Count' ? 'Sum' : c.agg }) : set({ category: f.name }))}>{f.name}</button>
+                        onClick={() => (f.type === 'number' && !PER_ROW.has(c.chartType) ? set({ value: f.name, agg: c.agg === 'Count' ? 'Sum' : c.agg }) : set({ category: f.name }))}>{f.name}</button>
                     </th>))}</tr></thead>
                   <tbody>{rows.slice(0, 8).map((r, i) => <tr key={i}>{shown.map(f => <td key={f.name} className={f.name === c.category ? 'cw-cat' : f.name === c.value ? 'cw-val' : ''}>{fmt(r[f.name])}</td>)}</tr>)}</tbody>
                 </table>

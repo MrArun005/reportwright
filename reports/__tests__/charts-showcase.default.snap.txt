@@ -1,0 +1,188 @@
+# charts-showcase › default · 2 pages
+--- page 1
+Charts showcase
+Phase 5 of the ActiveReportsJS parity roadmap: every new chart feature, drawn by the engine, so the viewer, PDF and HTML match.
+Combo: revenue and margin (right axis)
+Revenue
+Margin
+Revenue (₹ lakh)
+Margin
+0
+100
+200
+300
+0%
+10%
+20%
+30%
+40%
+50%
+Jan
+Feb
+Mar
+Apr
+May
+Jun
+Average 150
+100% stacked, labels show each share
+North
+South
+0%
+20%
+40%
+60%
+80%
+100%
+Jan
+Feb
+Mar
+Apr
+May
+Jun
+60%
+75%
+50%
+30%
+45%
+80%
+40%
+25%
+50%
+70%
+55%
+20%
+Range band with a smooth average line
+Low – high
+Average
+°C
+10
+20
+30
+40
+50
+Jan
+Feb
+Mar
+Apr
+May
+Jun
+Step line, moving average, trend
+0
+20
+40
+60
+80
+100
+January
+February
+March
+April
+May
+June
+Avg 3
+Trend
+Log scale: revenue across four decades
+Revenue (₹ lakh, log)
+10
+100
+1,000
+10,000
+1,00,000
+Corner shop
+Regional chain
+National retailer
+Global group
+12
+180
+2,400 ★
+31,000 ★
+Bubble: ad spend, sales and customers
+Ad spend
+Sales
+0
+50
+100
+150
+0
+20
+40
+60
+80
+Trend
+Page 1 of 2
+--- page 2
+Radar: two teams, five skills
+Team A
+Team B
+2
+4
+6
+8
+Design
+Data
+Testing
+Delivery
+Support
+Polar: wind speed by direction
+0°
+45°
+90°
+135°
+180°
+225°
+270°
+315°
+5
+10
+15
+Gauge: customer score (target 80)
+0
+100
+72
+Candlestick with a 3-day moving average
+95
+100
+105
+110
+115
+D1
+D2
+D3
+D4
+D5
+D6
+D7
+D8
+OHLC bars
+95
+100
+105
+110
+115
+D1
+D2
+D3
+D4
+D5
+D6
+D7
+D8
+Funnel: sales pipeline
+Leads: 1,000
+Qualified: 600
+Proposals: 300
+Won: 120
+Product
+Trend (area, band 15–20)
+Win / loss
+Score
+Rate range (0–100)
+Home loans
+82
+Car loans
+28
+Gold loans
+55
+Personal loans
+67
+Page 2 of 2

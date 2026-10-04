@@ -29,7 +29,7 @@ function initialParams(def, given) {
 const WINDOW = 3;
 
 const Page = ({ page, w, h, scale, index, hits, near }) => {
-  const html = useMemo(() => (near ? pageToSvg(page, w, h) : ''), [page, w, h, near]);
+  const html = useMemo(() => (near ? pageToSvg(page, w, h, { animate: true }) : ''), [page, w, h, near]); // charts with `animation` play it once
   return (
     <div className="vpage" data-page={index + 1} style={{ width: w * scale, height: h * scale }}>
       {near && <div style={{ width: '100%', height: '100%' }} dangerouslySetInnerHTML={{ __html: html }} />}

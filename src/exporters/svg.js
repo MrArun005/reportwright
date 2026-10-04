@@ -9,11 +9,29 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 const n = (v) => Math.round(v * 100) / 100;
 
 /** @param {any} page @param {number} w @param {number} h */
-export function pageToSvg(page, w, h, { background = true } = {}) {
+/**
+ * Chart entrance animations (viewer only: `animate`). The engine tags marks with `anim`; each animated mark is wrapped
+ * in a <g> so the CSS transform never replaces the mark's own transform attribute, and the origin is a side of its box.
+ */
+const ANIM_CSS = '<style>@media (prefers-reduced-motion:no-preference){.pw-a{transform-box:fill-box;animation:pw-fade .55s ease-out both}'
+  + '.pw-a-growY{animation-name:pw-growY}.pw-a-growX{animation-name:pw-growX}.pw-a-scale{animation-name:pw-scale}'
+  + '@keyframes pw-fade{from{opacity:0}}@keyframes pw-growY{from{transform:scaleY(0)}}@keyframes pw-growX{from{transform:scaleX(0)}}'
+  + '@keyframes pw-scale{from{transform:scale(0);opacity:0}}}</style>';
+const ANIM_KINDS = new Set(['growY', 'growX', 'scale', 'fade']);
+const ANIM_ORIGIN = { bottom: 'center bottom', top: 'center top', left: 'left center', right: 'right center' };
+
+export function pageToSvg(page, w, h, { background = true, animate = false } = {}) {
   const out = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n(w)} ${n(h)}" width="${n(w)}" height="${n(h)}" style="font-kerning:none;font-variant-ligatures:none;text-rendering:geometricPrecision">`];
   if (background) out.push(`<rect width="${n(w)}" height="${n(h)}" fill="#ffffff"/>`);
   // a form field is drawn from its `draw` items (the PDF makes a real widget instead)
+  let animated = false;
   for (const it of page.items.flatMap(i => (i.t === 'field' ? i.draw : [i]))) {
+    const an = animate && it.anim && ANIM_KINDS.has(it.anim.k) ? it.anim : null;
+    if (an) {
+      if (!animated) { out.push(ANIM_CSS); animated = true; }
+      const origin = ANIM_ORIGIN[an.o] || 'center';
+      out.push(`<g class="pw-a pw-a-${an.k}" style="transform-origin:${origin};animation-delay:${Math.min(40, Math.max(0, Math.round(Number(an.i)) || 0)) * 25}ms">`);
+    }
     if (it.rotate) out.push(`<g transform="rotate(${n(it.rotate.a)} ${n(it.rotate.cx)} ${n(it.rotate.cy)})">`);
     switch (it.t) {
       case 'rect': {
@@ -48,7 +66,7 @@ export function pageToSvg(page, w, h, { background = true } = {}) {
         break;
       }
       case 'path': {
-        const stroke = it.stroke ? ` stroke="${cssColor(it.stroke)}" stroke-width="${n(it.strokeWidth || 1)}" stroke-linecap="${it.lineCap || 'round'}" stroke-linejoin="round"` : '';
+        const stroke = it.stroke ? ` stroke="${cssColor(it.stroke)}" stroke-width="${n(it.strokeWidth || 1)}" stroke-linecap="${it.lineCap || 'round'}" stroke-linejoin="round"${it.dash ? ` stroke-dasharray="${it.dash.join(' ')}"` : ''}` : '';
         out.push(`<path transform="translate(${n(it.x)} ${n(it.y)})" d="${esc(it.d)}" fill="${cssColor(it.fill)}"${stroke}/>`);
         break;
       }
@@ -75,6 +93,7 @@ export function pageToSvg(page, w, h, { background = true } = {}) {
       }
     }
     if (it.rotate) out.push('</g>');
+    if (an) out.push('</g>');
   }
   out.push('</svg>');
   return out.join('');

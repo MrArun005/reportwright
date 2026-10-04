@@ -34,7 +34,7 @@ export default {
   item_textbox: 'مربع نص', item_table: 'جدول', item_image: 'صورة', item_line: 'خط', item_shape: 'شكل', item_list: 'قائمة',
   item_container: 'حاوية', item_chart: 'مخطط', item_matrix: 'مصفوفة', item_barcode: 'رمز شريطي', item_sparkline: 'خط مؤشر',
   item_databar: 'شريط بيانات', item_bullet: 'مخطط نقطي', item_subreport: 'تقرير فرعي', item_toc: 'جدول المحتويات', item_field: 'حقل نموذج',
-  item_richtext: 'نص منسّق', item_map: 'خريطة', item_checkbox: 'خانة اختيار',
+  item_richtext: 'نص منسّق', item_map: 'خريطة', item_checkbox: 'خانة اختيار', item_iconset: 'مجموعة أيقونات', item_rangebar: 'شريط النطاق',
 
   /* ---- designer: parameter dialog ---- */
   paramNew: 'معلمة جديدة', paramTitle: 'المعلمة {name}', name: 'الاسم', paramType: 'النوع', prompt: 'التسمية',
