@@ -343,30 +343,46 @@ register('table', {
     let rowSeq = 0;
     const colWidths = cols.map(c => c.width); // one array shared by every cell tag
 
+    // merged cells across rows: spans still open, each { ci, cols, left, x, w, st, tl, numeric, cell, ctx, raw, plain, units }
+    let openSpans = [];
+    const covered = (ci) => openSpans.some(s => ci >= s.ci && ci < s.ci + s.cols);
     const layRow = (row, ctx, kind, extra) => {
       const rst = resolveStyle([lc.base, lc.named?.[item.styleName], item.style, lc.named?.[row.styleName], row.style], ctx);
       const cells = [];
+      const started = [];
       let need = row.height || 18;
       for (let ci = 0; ci < cols.length; ci++) {
         const cell = row.cells?.[ci];
-        if (!cell) continue;
+        if (!cell || covered(ci)) continue;
         const span = Math.max(1, Math.min(cell.colSpan || 1, cols.length - ci));
         let cw = 0;
         for (let k = 0; k < span; k++) cw += cols[ci + k].width;
-        const st = resolveStyle([rst, lc.named?.[cell.styleName], cell.style], ctx);
-        const r = evalSafe(cell.value ?? '', ctx, lc, `${item.name || 'Table'} cell`);
-        let text = textOf(r.v, st, ctx);
+        const cctx = cell.ctx || ctx; // a pivot value cell carries its own scope
+        const st = resolveStyle([rst, lc.named?.[cell.styleName], cell.style], cctx);
+        const r = 'raw' in cell ? { v: cell.raw } : evalSafe(cell.value ?? '', cctx, lc, `${item.name || 'Table'} cell`);
+        let text = textOf(r.v, st, cctx);
         const plain = text;
-        if (extra?.toggle && ci === 0) text = `${extra.toggle.open ? '▼' : '▶'} ${text}`;
+        const toggle = cell.toggle || (extra?.toggle && ci === 0 ? extra.toggle : null);
+        if (toggle) text = `${toggle.open ? '▼' : '▶'} ${text}`;
         if (cell.sortBy && kind === 'header') {
           const cur = (lc.state?.sort?.[item.name] || [])[0];
           if (cur && cur.by === cell.sortBy) text += cur.dir === 'desc' ? ' ↓' : ' ↑';
         }
         const tl = layoutTextLines(text, st, cw, lc.m);
+        const c = { x: colX[ci], w: cw, st, tl, numeric: typeof r.v === 'number', cell, ctx: cctx, raw: r.v, span, plain, toggle };
+        const rs = Math.floor(Number(cell.rowSpan)) || 1;
+        if (rs > 1) { started.push({ ...c, ci, cols: span, left: rs, units: [], kind }); continue; }
         if (row.canGrow !== false && tl.needed > need + GROW_TOLERANCE) need = tl.needed;
-        cells.push({ x: colX[ci], w: cw, st, tl, numeric: typeof r.v === 'number', cell, ctx, raw: r.v, span, plain });
+        cells.push(c);
       }
-      region.rows.push({ kind, level: extra?.level ?? 0, cells: cells.map(c => ({ col: Math.round((c.x - item.x) * 100), value: c.raw instanceof Date || typeof c.raw === 'boolean' ? c.raw : typeof c.raw === 'number' ? roundFor(c.raw, c.st.format) : c.plain, format: c.st.format || null, bold: c.st.fontWeight === 'bold' || Number(c.st.fontWeight) >= 600, span: c.span, colIndex: colX.indexOf(c.x) })) });
+      openSpans.push(...started);
+      // a merged cell that ends on this row: the row grows if the merged text needs more than the rows above gave
+      for (const s of openSpans) if (s.left === 1) {
+        const above = s.units.reduce((t, u) => t + u.height, 0);
+        if (s.tl.needed - above > need + GROW_TOLERANCE) need = s.tl.needed - above;
+      }
+      const regionCell = (c) => ({ col: Math.round((c.x - item.x) * 100), value: c.raw instanceof Date || typeof c.raw === 'boolean' ? c.raw : typeof c.raw === 'number' ? roundFor(c.raw, c.st.format) : c.plain, format: c.st.format || null, bold: c.st.fontWeight === 'bold' || Number(c.st.fontWeight) >= 600, span: c.span, colIndex: colX.indexOf(c.x), ...(c.left > 1 ? { rowSpan: c.left } : {}) });
+      region.rows.push({ kind, level: extra?.level ?? 0, cells: (started.length ? [...cells, ...started].sort((a, b) => a.x - b.x) : cells).map(regionCell) });
       // h: height of this piece; lines: per-cell lines when the row is split; first: links, visuals and toggles go on the first piece
       const paint = (h, lines, first, rowId) => {
         const items = [];
@@ -380,28 +396,20 @@ register('table', {
           // cell text knows its table, row and column, so the Word export can rebuild the table
           for (const b of box) if (b.t === 'text') b.cell = { table: item.name, row: rowId, col: colX.indexOf(c.x), span: c.span, kind, cols: colWidths, bg: c.st.backgroundColor || null };
           items.push(...box);
-          if (!first) return;
-          const link = lc.linkFor?.(c.cell, c.ctx, { x: c.x, y: 0, w: c.w, h });
-          if (link) items.push(link);
-          if (cell_bookmark(c.cell)) { const b = evalSafe(c.cell.bookmark, c.ctx, lc, 'bookmark').v; if (b) items.push({ t: 'bookmark', label: String(b), x: c.x, y: 0, level: c.cell.bookmarkLevel || 0 }); }
-          if (c.cell.sortBy && kind === 'header') {
-            const cur = (lc.state?.sort?.[item.name] || [])[0];
-            const dir = cur && cur.by === c.cell.sortBy && cur.dir === 'asc' ? 'desc' : 'asc';
-            items.push({ t: 'link', x: c.x, y: 0, w: c.w, h, action: { type: 'sort', table: item.name, by: c.cell.sortBy, dir } });
-          }
+          if (first) cellLinks(items, c, h, kind);
         });
+        if (first) for (const c of cells) if (c.cell.toggle) items.push(toggleLink(c, c.w, h));
         if (first && extra?.toggle) {
           // the whole first cell toggles, unless that cell has its own action (a drill-through): then only the ▶ does
           const c0 = cells[0];
-          const w = c0?.cell.action ? Math.min(c0.w, padding(c0.st)[3] + (Number(c0.st.fontSize) || 9) * 1.4) : cols[0]?.width || 20;
-          items.push({ t: 'link', x: colX[0], y: 0, w, h, action: { type: 'toggle', key: extra.toggle.key, open: extra.toggle.open } });
+          items.push(toggleLink({ x: colX[0], toggle: extra.toggle, cell: c0?.cell || {}, st: c0?.st, w: c0?.w }, cols[0]?.width || 20, h));
         }
         return items;
       };
       // Taller than a page (less a repeated header): split into pieces of whole lines, like a text box, so it continues on the next pages.
       const room = (lc.maxUnitHeight ?? Infinity) - repeatH;
       const pieces = [];
-      if (!lc.fixed && need > room && cells.some(c => c.tl.lines.length > 1)) {
+      if (!lc.fixed && !openSpans.length && need > room && cells.some(c => c.tl.lines.length > 1)) {
         const per = cells.map(c => Math.max(1, Math.floor((room - c.tl.pad[0] - c.tl.pad[2]) / c.tl.lh)));
         const n = Math.max(...cells.map((c, k) => Math.ceil(c.tl.lines.length / per[k])));
         for (let i = 0; i < n; i++) {
@@ -411,22 +419,75 @@ register('table', {
       } else pieces.push({ lines: null, h: need });
       let u;
       pieces.forEach((pc, i) => {
-        u = { top: y, height: pc.h, items: paint(pc.h, pc.lines, i === 0, ++rowSeq), kind };
+        u = { top: y, height: pc.h, items: paint(pc.h, pc.lines, i === 0, ++rowSeq), kind, rowId: rowSeq };
         y += pc.h;
         units.push(u);
       });
+      for (const s of openSpans) { s.units.push(u); s.left--; }
+      if (openSpans.some(s => s.left <= 0)) { for (const s of openSpans) if (s.left <= 0) paintSpan(s); openSpans = openSpans.filter(s => s.left > 0); }
       return u;
     };
+    /** Links, bookmarks, sort and toggle hot spots of a cell, on the first piece of its row. */
+    const cellLinks = (items, c, h, kind) => {
+      const link = lc.linkFor?.(c.cell, c.ctx, { x: c.x, y: 0, w: c.w, h });
+      if (link) items.push(link);
+      if (cell_bookmark(c.cell)) { const b = evalSafe(c.cell.bookmark, c.ctx, lc, 'bookmark').v; if (b) items.push({ t: 'bookmark', label: String(b), x: c.x, y: 0, level: c.cell.bookmarkLevel || 0 }); }
+      if (c.cell.sortBy && kind === 'header') {
+        const cur = (lc.state?.sort?.[item.name] || [])[0];
+        const dir = cur && cur.by === c.cell.sortBy && cur.dir === 'asc' ? 'desc' : 'asc';
+        items.push({ t: 'link', x: c.x, y: 0, w: c.w, h, action: { type: 'sort', table: item.name, by: c.cell.sortBy, dir } });
+      }
+    };
+    /** The toggle hot spot: the whole cell (w), or only the ▶ when the cell has its own action (a drill-through). */
+    const toggleLink = (c, w, h) => ({ t: 'link', x: c.x, y: 0, w: c.cell.action ? Math.min(c.w, padding(c.st)[3] + (Number(c.st.fontSize) || 9) * 1.4) : w, h, action: { type: 'toggle', key: c.toggle.key, open: c.toggle.open } });
+    const NO_BOX = { backgroundColor: null, backgroundImage: null, border: null, borderTop: null, borderRight: null, borderBottom: null, borderLeft: null };
+    /** A merged cell, once its rows are laid out: background and side borders on every row, the text once across them all. */
+    const paintSpan = (s) => {
+      const kind = s.kind;
+      const H = s.units.reduce((t, u) => t + u.height, 0);
+      const n = s.units.length;
+      s.units.forEach((u, k) => {
+        const st = k === 0 && n === 1 ? s.st : { ...s.st, ...(k > 0 ? { borderTop: 'none' } : {}), ...(k < n - 1 ? { borderBottom: 'none' } : {}) };
+        const add = paintBox({ x: s.x, y: 0, w: s.w, h: u.height, st, tl: null, m: lc.m });
+        if (k === 0) {
+          const text = paintBox({ x: s.x, y: 0, w: s.w, h: H, st: { ...s.st, ...NO_BOX }, tl: s.tl, numeric: s.numeric, m: lc.m });
+          for (const b of text) if (b.t === 'text') b.cell = { table: item.name, row: u.rowId, col: colX.indexOf(s.x), span: s.cols, rowSpan: n, kind, cols: colWidths, bg: s.st.backgroundColor || null };
+          add.splice(s.st.backgroundColor ? 1 : 0, 0, ...text);
+          cellLinks(add, s, u.height, kind);
+          if (s.toggle) add.push(toggleLink(s, s.w, u.height));
+        }
+        // in reading order: before the cells to its right
+        const at = u.items.findIndex(it => itemLeft(it) >= s.x + s.w - 0.01);
+        u.items.splice(at < 0 ? u.items.length : at, 0, ...add);
+      });
+      // text that reaches below the first row (more lines, or centred): keep the rows on one page when they fit
+      if (s.tl.needed > s.units[0].height + GROW_TOLERANCE || (s.st.verticalAlign && s.st.verticalAlign !== 'top')) {
+        const id = `${item.name}:span:${lc.nextId()}`;
+        for (const u of s.units) u.block ||= id;
+      } else {
+        // a page break inside the merged rows draws the text again at the top of the next page
+        let above = s.units[0].height;
+        for (let k = 1; k < n; k++) {
+          const u = s.units[k];
+          const cont = paintBox({ x: s.x, y: 0, w: s.w, h: H - above, st: { ...s.st, ...NO_BOX, verticalAlign: 'top' }, tl: s.tl, numeric: s.numeric, m: lc.m });
+          (u.cont ||= []).push(...cont);
+          above += u.height;
+        }
+      }
+    };
+    /** Close merged cells at the end of a band of rows (a span never reaches into the next band). */
+    const endBand = () => { for (const s of openSpans) if (s.units.length) paintSpan(s); openSpans = []; };
 
     // table header
     const headerUnits = (item.header || []).map(r => layRow(r, base, 'header'));
+    endBand();
     const headerHeight = headerUnits.reduce((s, u) => s + u.height, 0);
     if (item.repeatHeader !== false) repeatH = headerHeight;
     const headerItems = [];
     for (const u of headerUnits) for (const it of shiftLocal(u.items.filter(i => i.t !== 'link' && i.t !== 'bookmark'), u.top)) headerItems.push(it);
     if (headerUnits.length) headerUnits[headerUnits.length - 1].keepWithNext = true;
 
-    if (rows.length === 0 && item.noRowsText) {
+    if ((item.__body ? item.__body.length : rows.length) === 0 && item.noRowsText) {
       const st = resolveStyle([lc.base, item.style, { fontStyle: 'italic', color: '#868e96' }], base);
       const tl = layoutTextLines(String(item.noRowsText), st, width, lc.m);
       units.push({ top: y, height: tl.needed, items: paintBox({ x: item.x, y: 0, w: width, h: tl.needed, st, tl, m: lc.m }), kind: 'detail' });
@@ -444,6 +505,7 @@ register('table', {
           for (const s of chain) { s.index++; s.run.push(grows[i]); }
           const dctx = { ...ctx, fields: grows[i], aggRows: grows, aggIndex: i, rowNumber: rowNo };
           for (const r of item.detail || []) layRow(r, dctx, 'detail', { level: groups.length });
+          endBand();
         }
         return;
       }
@@ -479,12 +541,14 @@ register('table', {
         const open = !g.collapsible ? true : (lc.state?.toggles?.[tkey] ?? !g.initiallyCollapsed);
         const start = units.length;
         const hu = (g.header || []).map((r, ri) => layRow(r, gctx, 'groupHeader', { level, ...(ri === 0 && g.collapsible ? { toggle: { key: tkey, open } } : {}) }));
+        endBand();
         const before = units.length;
         if (open) emit(level + 1, bk.rows, gctx, [...chain, sc], path);
         else for (const s of [...chain, sc]) { s.index += bk.rows.length; for (const r of bk.rows) s.run.push(r); }
         // keep a group header with the group's content, never with the next group
         if (hu.length && units.length > before) hu[hu.length - 1].keepWithNext = true;
         const fu = (g.footer || []).map(r => layRow(r, gctx, 'groupFooter', { level }));
+        endBand();
         if (fu.length && open) fu[0].keepWithPrevious = true;
         if (units.length > start) {
           if (g.pageBreak === 'between' && bi > 0) units[start].breakBefore = true;
@@ -493,10 +557,18 @@ register('table', {
         }
       });
     };
-    emit(0, rows, base, [tableScope], '');
+    if (item.__body) {
+      // rows already built (a pivot): each with its own scope
+      for (const b of item.__body) {
+        if (lc.rowBudget && lc.rowBudget.left-- <= 0) { lc.rowBudget.cut = true; break; }
+        layRow(b.row, b.ctx || base, b.kind || 'detail', { level: b.level ?? 0 });
+      }
+      endBand();
+    } else emit(0, rows, base, [tableScope], '');
 
     // a total of the first rows only would be wrong: no footer in a partial (first pages) render
     const footerUnits = lc.rowBudget?.cut ? [] : (item.footer || []).map(r => layRow(r, base, 'footer'));
+    endBand();
     if (footerUnits.length) footerUnits[0].keepWithPrevious = true;
 
     if (!lc.fixed) lc.regions?.push(region);
@@ -508,6 +580,13 @@ register('table', {
 });
 
 const cell_bookmark = (c) => c && c.bookmark;
+/** The left edge of a page-model item. */
+export function itemLeft(it) {
+  if (it.t === 'text') return it.clip ? it.clip.x : Math.min(...it.lines.map(l => l.x));
+  if (it.t === 'line') return Math.min(it.x1, it.x2);
+  if (it.t === 'ellipse') return it.cx - it.rx;
+  return it.x ?? 0;
+}
 
 /** Round a number for data export to the precision its format shows (percent keeps 2 more places). */
 function roundFor(v, fmt) {
@@ -943,7 +1022,7 @@ register('subreport', {
     if (!res) return placeholder(`Subreport "${item.report}" did not load`);
     if (res.error) { lc.warn(`${item.name}: ${res.error}`); return placeholder(`Subreport "${item.report}": ${res.error}`); }
     const block = item.keepTogether ? `s:${item.name}:${lc.nextId()}` : undefined;
-    const units = res.units.map(u => ({ ...u, items: shiftItems(u.items, item.x, 0), x0: (u.x0 ?? 0) + item.x, x1: (u.x1 ?? item.w) + item.x, block: u.block || block, tableId: undefined }));
+    const units = res.units.map(u => ({ ...u, items: shiftItems(u.items, item.x, 0), ...(u.cont ? { cont: shiftItems(u.cont, item.x, 0) } : {}), x0: (u.x0 ?? 0) + item.x, x1: (u.x1 ?? item.w) + item.x, block: u.block || block, tableId: undefined }));
     const tables = res.tables.map(t => ({ ...t, x0: t.x0 + item.x, x1: t.x1 + item.x, headerItems: shiftItems(t.headerItems, item.x, 0), id: `sub${lc.nextId()}` }));
     for (const r of res.regions || []) lc.regions?.push(r);
     return { height: res.height, units: units.length ? units : [{ top: 0, height: 0, items: [] }], tables };
