@@ -354,7 +354,8 @@ register('table', {
 
     // merged cells across rows: spans still open, each { ci, cols, left, x, w, st, tl, numeric, cell, ctx, raw, plain, units }
     let openSpans = [];
-    const covered = (ci) => openSpans.some(s => ci >= s.ci && ci < s.ci + s.cols);
+    const cover = new Array(cols.length).fill(null); // the open span over each column: O(1) per cell
+    const covered = (ci) => cover[ci] !== null;
     const layRow = (row, ctx, kind, extra) => {
       const rst = resolveStyle([lc.base, lc.named?.[item.styleName], item.style, lc.named?.[row.styleName], row.style], ctx);
       const cells = [];
@@ -388,6 +389,7 @@ register('table', {
         cells.push(c);
       }
       openSpans.push(...started);
+      for (const st of started) for (let k = st.ci; k < st.ci + st.cols; k++) cover[k] = st;
       // a merged cell that ends on this row: the row grows if the merged text needs more than the rows above gave
       for (const s of openSpans) if (s.left === 1) {
         const above = s.units.reduce((t, u) => t + u.height, 0);
@@ -441,7 +443,7 @@ register('table', {
         units.push(u);
       });
       for (const s of openSpans) { s.units.push(u); s.left--; }
-      if (openSpans.some(s => s.left <= 0)) { for (const s of openSpans) if (s.left <= 0) paintSpan(s); openSpans = openSpans.filter(s => s.left > 0); }
+      if (openSpans.some(s => s.left <= 0)) { for (const s of openSpans) if (s.left <= 0) closeSpan(s); openSpans = openSpans.filter(s => s.left > 0); }
       return u;
     };
     /**
@@ -461,7 +463,11 @@ register('table', {
           const kids = related(c.aggRows, c);
           return kids === c.aggRows ? c : { ...c, aggRows: kids, fields: kids[0] || null };
         } };
+      // items in cells multiply with the rows: one budget for the render (an unrelated data set in every row is rows × rows)
+      const budget = lc.cellItems || (lc.cellItems = { left: CELL_ITEM_UNITS });
+      if (budget.left <= 0) { lc.warn(`${item.name}: more than ${CELL_ITEM_UNITS} rows of items inside cells; the rest are left empty`); return { items: [], height: 0 }; }
       const res = lc.layoutItems([it], child);
+      budget.left -= Math.max(1, res.units.length);
       const items = [];
       for (const u of res.units) for (const i of shiftLocal(u.items.filter(i => i.t !== 'bookmark'), u.top + pd[0])) items.push(i.cell ? { ...i, cell: undefined } : i); // its own cells are not the outer table's (Word)
       return { items, height: res.height + pd[0] + pd[2] };
@@ -515,7 +521,8 @@ register('table', {
       }
     };
     /** Close merged cells at the end of a band of rows (a span never reaches into the next band). */
-    const endBand = () => { for (const s of openSpans) if (s.units.length) paintSpan(s); openSpans = []; };
+    const closeSpan = (s) => { for (let k = s.ci; k < s.ci + s.cols; k++) cover[k] = null; if (s.units.length) paintSpan(s); };
+    const endBand = () => { for (const s of openSpans) closeSpan(s); openSpans = []; };
 
     // table header
     const headerUnits = (item.header || []).map(r => layRow(r, base, 'header'));
@@ -682,6 +689,7 @@ register('table', {
 
 const cell_bookmark = (c) => c && c.bookmark;
 const MAX_TREE_DEPTH = 64;
+const CELL_ITEM_UNITS = 100000;
 
 /** Round a number for data export to the precision its format shows (percent keeps 2 more places). */
 function roundFor(v, fmt) {

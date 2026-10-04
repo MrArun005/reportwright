@@ -217,3 +217,32 @@ describe('grid lists, footers at the bottom, orphaned headers', () => {
     for (const p of out.pages) expect(texts(p).at(-1)).toMatch(/^n/);
   });
 });
+
+describe('caps on untrusted sizes (phase 4)', () => {
+  it('items in cells share one budget: an unrelated data set in every row stops at the cap', async () => {
+    const outer = Array.from({ length: 400 }, (_, i) => ({ id: i }));
+    const inner = Array.from({ length: 300 }, (_, i) => ({ k: i }));
+    const sets = [{ name: 'Rows', source: 'src', path: '$.rows' }, { name: 'Other', source: 'src', path: '$.other' }];
+    const t = table({ columns: [{ width: 100 }, { width: 100 }], detail: [{ height: 14, cells: [{ value: '=Fields.id' }, { value: '', item: { type: 'table', dataSet: 'Other', columns: [{ width: 90 }], detail: [{ height: 12, cells: [{ value: '=Fields.k' }] }] } }] }] });
+    const t0 = Date.now();
+    const out = await render(report([t], { data: { rows: outer, other: inner }, def: { dataSets: sets } }), { fontStore });
+    expect(out.warnings.join()).toMatch(/more than 100000 rows of items inside cells/);
+    expect(Date.now() - t0).toBeLessThan(30000);
+  }, 60000);
+  it('a pivot with thousands of values keeps the first 50', async () => {
+    const { buildPivot } = await import('../../src/engine/items/pivot.js');
+    const w = [];
+    const p = buildPivot({ name: 'P', rowGroups: [], columnGroups: [], values: Array.from({ length: 5000 }, () => ({ value: '=Count(Fields)' })) }, [{ a: 1 }], { params: {}, globals: {}, dataSets: {} }, { warn: (m) => w.push(m), state: {} });
+    expect(p.cols.length).toBe(50);
+    expect(w.join()).toMatch(/more than 50 values/);
+  });
+  it('a band of merged cells over many columns stays linear', async () => {
+    const n = 300;
+    const t = table({ columns: Array.from({ length: n }, () => ({ width: 2 })), detail: [
+      { height: 10, cells: Array.from({ length: n }, () => ({ value: 'x', rowSpan: 2 })) }, { height: 10, cells: Array.from({ length: n }, () => null) }] });
+    const rows = Array.from({ length: 300 }, (_, i) => ({ i }));
+    const t0 = Date.now();
+    await render(report([t], { data: { rows } }), { fontStore });
+    expect(Date.now() - t0).toBeLessThan(20000);
+  }, 60000);
+});

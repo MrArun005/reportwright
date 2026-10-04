@@ -102,6 +102,7 @@ export async function render(def, opts = {}) {
       subreports: null,
       bodyWidth: opts.bodyWidth ?? page.bodyWidth,
       images: def.images || {}, imageBudget,
+      cellItems: { left: 100000 }, // rows of items inside table cells, for the whole render (items/index.js)
     };
     return lc;
   };

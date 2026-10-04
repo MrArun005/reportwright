@@ -6,7 +6,7 @@
  */
 import { evalValue, toText } from '../expr/evaluate.js';
 
-export const PIVOT_LIMITS = { depth: 8, columns: 1000, cells: 250000 };
+export const PIVOT_LIMITS = { depth: 8, values: 50, columns: 1000, cells: 250000 };
 
 /** Rows → buckets by an expression's value, in first-seen order. */
 export function groupRows(rows, expr, ctx, lc, who) {
@@ -164,11 +164,12 @@ export function buildPivot(item, rows, ctx, lc) {
   const who = item.name || 'Matrix';
   const spec = normalizeMatrix(item);
   let rg = spec.rowGroups, cg = spec.columnGroups;
-  const vals = spec.values;
   if (rg.length > PIVOT_LIMITS.depth || cg.length > PIVOT_LIMITS.depth) {
     lc.warn(`${who}: more than ${PIVOT_LIMITS.depth} levels of row or column groups; the deeper levels are left out`);
     rg = rg.slice(0, PIVOT_LIMITS.depth); cg = cg.slice(0, PIVOT_LIMITS.depth);
   }
+  let vals = spec.values;
+  if (vals.length > PIVOT_LIMITS.values) { lc.warn(`${who}: more than ${PIVOT_LIMITS.values} values; the rest are left out`); vals = vals.slice(0, PIVOT_LIMITS.values); }
   const R = rg.length, C = cg.length, V = vals.length;
   const rowRoot = buildTree(rg, rows, ctx, lc, who, 'r', lc.state);
   const colRoot = buildTree(cg, rows, ctx, lc, who, 'c', lc.state);
@@ -287,5 +288,5 @@ export function buildPivot(item, rows, ctx, lc) {
     });
     body.push({ kind: re.kind, level: re.level, node: rn, cells });
   });
-  return { R, C, V, spec: { ...spec, rowGroups: rg, columnGroups: cg }, cols, header, body, valueRow, empty: !rows.length };
+  return { R, C, V, spec: { ...spec, rowGroups: rg, columnGroups: cg, values: vals }, cols, header, body, valueRow, empty: !rows.length };
 }
