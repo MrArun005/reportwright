@@ -74,3 +74,49 @@ describe('cells', () => {
     expect(link).toMatchObject({ x: 136, w: 100, action: { type: 'toggle', key: 'k1', open: false } });
   });
 });
+
+describe('wide tables paginate sideways (horizontal pagination)', () => {
+  const wide = (n, extra) => {
+    const rows = Array.from({ length: 6 }, (_, i) => Object.fromEntries([['name', `Row ${i + 1}`], ...Array.from({ length: n }, (_, c) => [`c${c}`, (i + 1) * 100 + c])]));
+    const t = table({ columns: [{ width: 80 }, ...Array.from({ length: n }, () => ({ width: 50 }))],
+      header: [{ height: 16, cells: [{ value: 'Name' }, ...Array.from({ length: n }, (_, c) => ({ value: `C${c}` }))] }],
+      detail: [{ height: 16, cells: [{ value: '=Fields.name' }, ...Array.from({ length: n }, (_, c) => ({ value: `=Fields.c${c}` }))] }],
+      overflow: 'paginate', repeatColumns: 1, ...extra });
+    return { def: report([t], { data: { rows } }), rows };
+  };
+  it('down, then across: every row with the first column set, then the next set, row headers repeated', async () => {
+    const { def } = wide(20);
+    const out = await render(def, { fontStore });
+    // body 523 pt: 80 for Name leaves 443 → 8 columns of 50 per set: C0–C7, C8–C15, C16–C19
+    expect(out.pages.length).toBe(3);
+    const p = out.pages.map(texts);
+    expect(p[0].slice(0, 10)).toEqual(['Name', 'C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'Row 1']);
+    expect(p[1].slice(0, 10)).toEqual(['Name', 'C8', 'C9', 'C10', 'C11', 'C12', 'C13', 'C14', 'C15', 'Row 1']);
+    expect(p[2].slice(0, 6)).toEqual(['Name', 'C16', 'C17', 'C18', 'C19', 'Row 1']);
+    const c8 = out.pages[1].items.find(i => i.t === 'text' && i.lines[0].text === 'C8');
+    expect(c8.clip.x).toBe(36 + 80); // right after the repeated column
+    expect(out.regions[0].columns.length).toBe(21); // the data export keeps every column
+    expect(c8.cell).toMatchObject({ col: 1, cols: [80, 50, 50, 50, 50, 50, 50, 50, 50] });
+  });
+  it('across, then down: each block of rows on every column set before the next rows', async () => {
+    const rows = Array.from({ length: 100 }, (_, i) => ({ name: `Row ${i + 1}`, ...Object.fromEntries(Array.from({ length: 12 }, (_, c) => [`c${c}`, c])) }));
+    const { def } = wide(12, { pageOrder: 'across' });
+    def.dataSources[0].data = { rows };
+    const out = await render(def, { fontStore });
+    const firstRow = out.pages.map(p => texts(p)[texts(p).findIndex(t => t.startsWith('Row '))]);
+    const firstCol = out.pages.map(p => texts(p)[1]);
+    expect(firstCol.slice(0, 4)).toEqual(['C0', 'C8', 'C0', 'C8']);
+    expect(firstRow[0]).toBe('Row 1');
+    expect(firstRow[1]).toBe('Row 1');
+    expect(firstRow[2]).toBe(firstRow[3]);
+    expect(firstRow[2]).not.toBe('Row 1');
+  });
+  it('a pivot paginates sideways with its row headers repeated', async () => {
+    const rows = Array.from({ length: 40 }, (_, i) => ({ r: i % 2 ? 'B' : 'A', m: `M${String(i).padStart(2, '0')}`, v: i }));
+    const def = report([{ type: 'matrix', name: 'P', x: 0, y: 0, w: 500, h: 40, dataSet: 'Rows', rowGroups: [{ expr: '=Fields.r', width: 60, total: 'after' }], columnGroups: [{ expr: '=Fields.m', sort: 'asc', total: 'after' }], values: [{ value: '=Sum(Fields.v)' }], columnWidth: 40 }], { data: { rows } });
+    const out = await render(def, { fontStore });
+    expect(out.pages.length).toBe(4); // 41 value columns, 11 per set
+    for (const p of out.pages) expect(texts(p)).toEqual(expect.arrayContaining(['A', 'B', 'Total']));
+    expect(texts(out.pages[3])).toContain('380'); // the total column, last set: 0+2+…+38
+  });
+});

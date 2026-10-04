@@ -135,7 +135,7 @@ const matrix = (extra) => ({ type: 'matrix', name: 'P', x: 0, y: 0, w: 400, h: 6
 
 describe('matrix layout from the pivot', () => {
   it('draws nested headers once, subtotals and the grand total', async () => {
-    const out = await render(report([matrix({ columnGroups: [{ ...two.columnGroups[0] }, { name: 'Q', expr: '=Fields.q', sort: 'asc', label: '="Q" & Fields.q' }] })], { data: { rows: DATA } }), { fontStore });
+    const out = await render(report([matrix({ columnWidth: 50, columnGroups: [{ ...two.columnGroups[0] }, { name: 'Q', expr: '=Fields.q', sort: 'asc', label: '="Q" & Fields.q' }] })], { data: { rows: DATA } }), { fontStore });
     expect(out.warnings).toEqual([]);
     const t = texts(out.pages[0]);
     expect(t.slice(0, 11)).toEqual(['Sales', '2025', '2026', 'Total', 'Q1', 'Q2', 'Q3', 'Q1', 'Q2', 'Q3', 'North']);

@@ -15,6 +15,7 @@ import { resolveFontKey } from '../text/fonts.js';
 import { tocNumbers } from './toc.js';
 import { resolveImageSrc, imageInfo, PX } from '../image.js';
 import { groupRows, cmpKey, buildPivot, isTablix } from './pivot.js';
+import { sliceColumns, itemLeft } from './hpage.js';
 
 /**
  * Item registry. Each item type has:
@@ -576,6 +577,17 @@ register('table', {
     if (footerUnits.length) footerUnits[0].keepWithPrevious = true;
 
     if (!lc.fixed) lc.regions?.push(region);
+    // wider than the page: the columns continue on the next page set (spec §3.3)
+    const room = (lc.bodyWidth ?? Infinity) - item.x;
+    if (item.overflow === 'paginate' && !lc.fixed && width > room + 0.01) {
+      const hc = units.findIndex(u => u.kind !== 'header');
+      const sliced = sliceColumns({
+        units, height: y, headerCount: hc < 0 ? units.length : hc, headerHeight, repeatHeader: item.repeatHeader !== false,
+        colX, widths: colWidths, x: item.x, repeat: item.repeatColumns || 0, room, order: item.pageOrder === 'across' ? 'across' : 'down',
+        pageH: lc.maxUnitHeight ?? Infinity, name: item.name || 'Table', nextId: lc.nextId, warn: lc.warn, shiftLocal,
+      });
+      if (sliced) return sliced;
+    }
     return {
       height: y, units, width,
       table: item.repeatHeader !== false && headerHeight ? { headerHeight, headerItems, x: item.x } : null,
@@ -584,13 +596,6 @@ register('table', {
 });
 
 const cell_bookmark = (c) => c && c.bookmark;
-/** The left edge of a page-model item. */
-export function itemLeft(it) {
-  if (it.t === 'text') return it.clip ? it.clip.x : Math.min(...it.lines.map(l => l.x));
-  if (it.t === 'line') return Math.min(it.x1, it.x2);
-  if (it.t === 'ellipse') return it.cx - it.rx;
-  return it.x ?? 0;
-}
 
 /** Round a number for data export to the precision its format shows (percent keeps 2 more places). */
 function roundFor(v, fmt) {
@@ -1021,6 +1026,7 @@ register('matrix', {
     const table = {
       type: 'table', name: who, x: item.x, y: item.y, w: 0, h: item.h, dataSet: null, repeatHeader: item.repeatHeader !== false, style: item.style,
       columns, header, footer, __body: rows.length ? body : [], __rows: rows, __ctx: ctx, noRowsText: 'No data',
+      ...(spec.overflow === 'paginate' ? { overflow: 'paginate', repeatColumns: R, pageOrder: spec.pageOrder } : {}),
     };
     return ITEMS.table.layout(table, lc);
   },
