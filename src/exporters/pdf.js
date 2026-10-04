@@ -90,7 +90,8 @@ export async function exportPdf(model, fontStore, opt = {}) {
         if (svg) img = { svg, width: svg.w, height: svg.h };
       } else if (info?.type === 'png') {
         // a small PNG can inflate to gigabytes: refuse very large pixel counts before decoding
-        if ('w' in info && info.w * info.h <= IMAGE_LIMITS.pixels) img = await doc.embedPng(bytes);
+        // the size is read the way the decoder reads it (last IHDR); animated or multi-IHDR files are refused
+        if ('w' in info && !info.suspect && info.w * info.h <= IMAGE_LIMITS.pixels) img = await doc.embedPng(bytes);
       } else if (info?.type === 'jpeg') img = await doc.embedJpg(bytes);
     } catch { img = null; }
     images.set(src, img);

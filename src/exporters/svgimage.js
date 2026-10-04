@@ -8,7 +8,7 @@
  */
 import { pushGraphicsState, popGraphicsState, concatTransformationMatrix, rgb } from 'pdf-lib';
 import { parseColor } from './color.js';
-import { svgRootAttrs, svgLength, IMAGE_LIMITS } from '../engine/image.js';
+import { svgRootAttrs, svgLength, xmlTags, xmlAttrs, IMAGE_LIMITS } from '../engine/image.js';
 
 /** @typedef {[number, number, number, number, number, number]} M */
 /** @param {M} a @param {M} b a∘b (apply b first) */
@@ -16,11 +16,17 @@ const mul = (a, b) => [a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1], a[0
 /** @type {M} */
 const I = [1, 0, 0, 1, 0, 0];
 
-/** @param {string} s @returns {M} */
+const TRANSFORMS = new Set(['matrix', 'translate', 'scale', 'rotate', 'skewX', 'skewY']);
+/** A transform list, split on ")" and "(": linear, no backtracking. @param {string} s @returns {M} */
 export function parseTransform(s) {
   let m = I;
-  for (const [, fn, args] of String(s || '').matchAll(/(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)/g)) {
-    const a = args.split(/[\s,]+/).filter(Boolean).map(Number);
+  const parts = String(s || '').split(')');
+  for (let k = 0; k < parts.length && k < 64; k++) {
+    const part = parts[k], p = part.indexOf('(');
+    if (p < 0) continue;
+    const fn = part.slice(0, p).replace(/[\s,]/g, '');
+    if (!TRANSFORMS.has(fn)) continue;
+    const a = part.slice(p + 1, p + 200).split(/[\s,]+/).filter(Boolean).map(Number);
     if (a.some(x => !Number.isFinite(x))) continue;
     const r = (d) => d * Math.PI / 180;
     /** @type {M} */
@@ -38,11 +44,9 @@ export function parseTransform(s) {
   return m;
 }
 
-/** @param {string} s */
+/** Attributes plus the declarations of a style attribute (style wins). @param {string} s */
 function attrs(s) {
-  /** @type {Record<string,string>} */
-  const a = {};
-  for (const x of s.matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) a[x[1]] = x[2] ?? x[3];
+  const a = xmlAttrs(s);
   for (const d of String(a.style || '').split(';')) {
     const i = d.indexOf(':');
     if (i > 0) a[d.slice(0, i).trim()] = d.slice(i + 1).trim();
@@ -107,12 +111,10 @@ export function parseSvg(text) {
     base = [s, 0, 0, s, (w - vb[2] * s) / 2 - vb[0] * s, (h - vb[3] * s) / 2 - vb[1] * s];
   }
   const shapes = [];
-  const body = text.replace(/<!--[\s\S]*?-->/g, '').replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, '');
   const top = { m: base, fill: '#000', stroke: 'none', sw: 1, op: 1, fo: 1, so: 1, skip: 0 };
   const stack = [top];
   let seenRoot = false;
-  for (const t of body.matchAll(/<(\/?)([a-zA-Z][\w:-]*)([^>]*?)(\/?)>/g)) {
-    const [, close, tag, rest, self] = t;
+  for (const { close, name: tag, attrs: rest, self } of xmlTags(text)) {
     const cur = stack[stack.length - 1];
     if (close) { if (stack.length > 1) stack.pop(); continue; }
     if (tag === 'svg' && !seenRoot) { seenRoot = true; if (self) break; continue; }

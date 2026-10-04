@@ -1,9 +1,10 @@
 // Phase 7: TOC numbering, image sources and sizes, barcode options, PDF passwords.
 import { describe, it, expect } from 'vitest';
+import { deflateSync } from 'node:zlib';
 import { render } from '../../src/engine/index.js';
 import { fontStore, report, texts } from '../helpers.js';
 import { tocNumbers, formatNumber } from '../../src/engine/items/toc.js';
-import { toDataUri, imageInfo, IMAGE_LIMITS } from '../../src/engine/image.js';
+import { toDataUri, imageInfo, imageInfoOf, svgRootAttrs, IMAGE_LIMITS } from '../../src/engine/image.js';
 import { parseSvg, parseTransform } from '../../src/exporters/svgimage.js';
 import { exportPdf } from '../../src/exporters/pdf.js';
 import { pageToSvg } from '../../src/exporters/svg.js';
@@ -61,6 +62,7 @@ const SVG = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w
 async function pageOps(bytes) {
   const doc = await PDFDocument.load(bytes);
   const c = doc.getPage(0).node.Contents();
+  if (!c) return ''; // nothing drawn
   const streams = c instanceof PDFArray ? c.asArray().map(r => doc.context.lookup(r)) : [c];
   return streams.map(s => Buffer.from(s instanceof PDFRawStream ? decodePDFRawStream(s).decode() : s.getContents()).toString('latin1')).join('\n');
 }
@@ -169,5 +171,63 @@ describe('barcodes', () => {
     expect(px(await at({ quietZone: 10 })) - px(below)).toBeCloseTo(10, 3);
     const rot = await at({ rotate: '90' });
     expect(rot.filter(i => i.t !== 'link').every(i => i.rotate?.a === 90)).toBe(true);
+  });
+});
+
+// Security review of 8086120: crafted images must be rejected quickly, never decoded at a size the caps forbid.
+const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+const crc32 = (b) => { let x = 0xffffffff; for (const v of b) x = crcTable[(x ^ v) & 255] ^ (x >>> 8); return (x ^ 0xffffffff) >>> 0; };
+const chunk = (type, data) => {
+  const out = new Uint8Array(12 + data.length), dv = new DataView(out.buffer);
+  dv.setUint32(0, data.length); out.set(new TextEncoder().encode(type), 4); out.set(data, 8);
+  dv.setUint32(8 + data.length, crc32(out.subarray(4, 8 + data.length)));
+  return out;
+};
+const ihdr = (w, h) => { const d = new Uint8Array(13), dv = new DataView(d.buffer); dv.setUint32(0, w); dv.setUint32(4, h); d[8] = 8; d[9] = 2; return d; };
+const u32s = (...v) => { const d = new Uint8Array(v.length * 4), dv = new DataView(d.buffer); v.forEach((x, i) => dv.setUint32(i * 4, x)); return d; };
+const concat = (...a) => { const out = new Uint8Array(a.reduce((s, x) => s + x.length, 0)); let o = 0; for (const x of a) { out.set(x, o); o += x.length; } return out; };
+const SIG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const IDAT = chunk('IDAT', Uint8Array.from(deflateSync(Buffer.alloc(7))));
+const uri = (b) => 'data:image/png;base64,' + Buffer.from(b).toString('base64');
+
+describe('image resource caps (security)', () => {
+  const quick = (fn, ms = 300) => { const t0 = performance.now(); const r = fn(); expect(performance.now() - t0).toBeLessThan(ms); return r; };
+  it('SVG parsing is linear: unclosed tags, comments, long names and transforms finish fast', () => {
+    const n = IMAGE_LIMITS.svgBytes - 64;
+    const crafted = [
+      '<svg>' + '<a'.repeat(n / 2),                                     // many unclosed tags
+      '<svg>' + '<!--'.repeat(n / 4),                                   // many unterminated comments
+      '<svg>' + '<![CDATA['.repeat(n / 9),
+      '<svg ' + 'a'.repeat(n),                                          // one huge attribute name, no >
+      '<svg><g ' + 'a'.repeat(n) + '>',                                 // a huge attribute name in a closed tag
+      '<svg><g transform="' + 'matrix('.repeat(n / 8) + '"/>',          // unclosed transform functions
+      '<svg width="1' + ' '.repeat(n) + 'x">',                          // a long length value
+    ];
+    for (const t of crafted) {
+      quick(() => parseSvg(t));
+      quick(() => svgRootAttrs(t));
+      quick(() => imageInfo('data:image/svg+xml,' + encodeURIComponent(t)));
+    }
+    quick(() => svgRootAttrs('<svg'.repeat(n / 4)));
+    quick(() => parseTransform('rotate('.repeat(n / 7)));
+  });
+  it('PNG size comes from the IHDR the decoder uses (the last one), not bytes 16–23', () => {
+    const png = concat(SIG, chunk('IHDR', ihdr(1, 1)), chunk('IHDR', ihdr(9000, 9000)), IDAT, chunk('IEND', new Uint8Array()));
+    expect(imageInfoOf(png)).toMatchObject({ type: 'png', w: 9000, h: 9000 });
+  });
+  it('the PDF refuses a PNG whose real IHDR or animation frames pass the pixel cap, quickly', async () => {
+    const twoIhdr = concat(SIG, chunk('IHDR', ihdr(1, 1)), chunk('IHDR', ihdr(9000, 9000)), IDAT, chunk('IEND', new Uint8Array()));
+    const apng = concat(SIG, chunk('IHDR', ihdr(1, 1)), chunk('acTL', u32s(1, 0)), chunk('fcTL', concat(u32s(0, 9000, 9000, 0, 0), new Uint8Array(6))), IDAT,
+      chunk('fdAT', concat(u32s(1), IDAT.subarray(8, IDAT.length - 4))), chunk('IEND', new Uint8Array()));
+    for (const b of [twoIhdr, apng]) {
+      const t0 = performance.now();
+      const ops = await pageOps(await exportPdf(await render(report([img({ src: uri(b) })]), { fontStore }), fontStore));
+      expect(performance.now() - t0).toBeLessThan(1500);
+      expect(ops).not.toMatch(/\bDo\b/);
+    }
+  });
+  it('a data URI is base64 or not by one rule, for the cap and for decoding', () => {
+    const odd = 'data:image/svg+xml;base64x,' + encodeURIComponent('<svg viewBox="0 0 4 2"/>');
+    expect(imageInfo(odd)).toMatchObject({ type: 'svg', w: 4, h: 2 });
   });
 });

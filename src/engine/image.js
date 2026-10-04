@@ -68,25 +68,37 @@ export function toDataUri(v) {
   return type ? `data:${MIME[type]};base64,${s}` : v;
 }
 
-/** Decoded size of a data URI, without decoding it. @param {string} uri */
-export function dataUriBytes(uri) {
+/**
+ * The parts of a data URI: one rule for every caller (the size cap and the decoder must agree).
+ * Base64 when the last parameter is exactly "base64".
+ * @param {string} uri
+ */
+export function splitDataUri(uri) {
+  if (typeof uri !== 'string' || !/^data:/i.test(uri)) return null;
   const c = uri.indexOf(',');
-  const meta = uri.slice(0, c), body = uri.length - c - 1;
-  return /;base64$/i.test(meta) ? Math.floor(body * 3 / 4) : body;
+  if (c < 0) return null;
+  const meta = uri.slice(5, c);
+  return { meta, b64: meta.slice(meta.lastIndexOf(';') + 1).trim().toLowerCase() === 'base64' && meta.includes(';'), body: uri.slice(c + 1) };
+}
+
+/** Decoded size of a data URI, without decoding it (an upper bound). @param {string} uri */
+export function dataUriBytes(uri) {
+  const d = splitDataUri(uri);
+  if (!d) return 0;
+  return d.b64 ? Math.floor(d.body.length * 3 / 4) : d.body.length;
 }
 
 /**
- * The first bytes of a data URI (enough for any image header), or the whole SVG text for an SVG.
+ * The first bytes of a data URI (enough for any image header), or all of it with max = Infinity.
  * @param {string} uri
  * @returns {Uint8Array | null}
  */
 export function dataUriHead(uri, max = 262144) {
-  const m = /^data:([^,;]*)((?:;[^,;]*)*),/i.exec(uri);
-  if (!m) return null;
-  const body = uri.slice(m[0].length);
+  const d = splitDataUri(uri);
+  if (!d) return null;
   try {
-    if (/;base64/i.test(m[2])) return fromBase64(body.slice(0, Math.ceil(max / 3) * 4).replace(/\s/g, ''));
-    return new TextEncoder().encode(decodeURIComponent(body.slice(0, max)));
+    if (d.b64) return fromBase64(d.body.slice(0, Number.isFinite(max) ? Math.ceil(max / 3) * 4 : undefined).replace(/\s/g, ''));
+    return new TextEncoder().encode(decodeURIComponent(d.body.slice(0, max)));
   } catch { return null; }
 }
 
@@ -96,19 +108,82 @@ export function dataUriBytesOf(uri) { return dataUriHead(uri, Infinity); }
 const UNIT = { px: 1, pt: 4 / 3, pc: 16, mm: 96 / 25.4, cm: 96 / 2.54, in: 96, '': 1 };
 /** An SVG length in px; null for a percentage or nonsense. @param {string|undefined} v */
 export function svgLength(v) {
-  const m = /^\s*([\d.]+(?:e[-+]?\d+)?)\s*(px|pt|pc|mm|cm|in)?\s*$/i.exec(v || '');
+  const t = String(v ?? '').trim();
+  if (t.length > 64) return null;
+  const m = /^([\d.]+(?:e[-+]?\d+)?)(px|pt|pc|mm|cm|in)?$/i.exec(t);
   if (!m) return null;
   const n = Number(m[1]) * UNIT[(m[2] || '').toLowerCase()];
   return Number.isFinite(n) && n > 0 ? n : null;
 }
+
+const isName = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c === '_' || c === ':' || c === '-' || c === '.';
+const isSpace = (c) => c === ' ' || c === '\t' || c === '\n' || c === '\r';
+
+/**
+ * The tags of an XML text, in order: one pass with indexOf and a quote-aware scan, so the time is linear in
+ * the length whatever the input (no regular expression that can backtrack). Comments, CDATA, <?…?> and
+ * <!…> are skipped; an unfinished construct ends the scan.
+ * @param {string} text
+ * @returns {Generator<{ close: boolean, name: string, attrs: string, self: boolean }>}
+ */
+export function* xmlTags(text) {
+  const n = text.length;
+  let i = 0;
+  while (i < n) {
+    const lt = text.indexOf('<', i);
+    if (lt < 0) return;
+    if (text.startsWith('<!--', lt)) { const e = text.indexOf('-->', lt + 4); if (e < 0) return; i = e + 3; continue; }
+    if (text.startsWith('<![CDATA[', lt)) { const e = text.indexOf(']]>', lt + 9); if (e < 0) return; i = e + 3; continue; }
+    if (text[lt + 1] === '?' || text[lt + 1] === '!') { const e = text.indexOf('>', lt + 2); if (e < 0) return; i = e + 1; continue; }
+    let j = lt + 1, q = '';
+    for (; j < n; j++) {
+      const c = text[j];
+      if (q) { if (c === q) q = ''; } else if (c === '"' || c === "'") q = c; else if (c === '>') break;
+    }
+    if (j >= n) return;
+    i = j + 1;
+    let body = text.slice(lt + 1, j);
+    const close = body[0] === '/';
+    if (close) body = body.slice(1);
+    const self = body.endsWith('/');
+    if (self) body = body.slice(0, -1);
+    let k = 0;
+    while (k < body.length && isName(body[k])) k++;
+    const name = body.slice(0, k);
+    if (!/^[a-zA-Z]/.test(name)) continue;
+    yield { close, name, attrs: body.slice(k), self };
+  }
+}
+
+/** name="value" / name='value' pairs, in one linear pass. @param {string} s @returns {Record<string,string>} */
+export function xmlAttrs(s) {
+  /** @type {Record<string,string>} */
+  const a = Object.create(null);
+  const n = s.length;
+  let i = 0;
+  while (i < n) {
+    while (i < n && !isName(s[i])) i++;
+    const st = i;
+    while (i < n && isName(s[i])) i++;
+    const name = s.slice(st, i);
+    while (i < n && isSpace(s[i])) i++;
+    if (s[i] !== '=') continue;
+    i++;
+    while (i < n && isSpace(s[i])) i++;
+    const q = s[i];
+    if (q !== '"' && q !== "'") continue;
+    const e = s.indexOf(q, i + 1);
+    if (e < 0) break;
+    if (name) a[name] = s.slice(i + 1, e);
+    i = e + 1;
+  }
+  return a;
+}
+
 /** Attributes of the root <svg> tag. @param {string} text */
 export function svgRootAttrs(text) {
-  const m = /<svg\b([^>]*)>/i.exec(text);
-  if (!m) return null;
-  /** @type {Record<string,string>} */
-  const a = {};
-  for (const x of m[1].matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) a[x[1]] = x[2] ?? x[3];
-  return a;
+  for (const t of xmlTags(String(text))) if (!t.close && t.name.toLowerCase() === 'svg') return xmlAttrs(t.attrs);
+  return null;
 }
 /** Natural size of an SVG in px: width/height, else the viewBox. @param {string} text */
 export function svgSize(text) {
@@ -132,7 +207,7 @@ export function imageInfoOf(b) {
   const type = sniff(b);
   if (!type) return null;
   const u32 = (i) => ((b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]) >>> 0;
-  if (type === 'png' && b.length >= 24) return { type, w: u32(16), h: u32(20) };
+  if (type === 'png') return pngInfo(b);
   if (type === 'gif' && b.length >= 10) return { type, w: b[6] | (b[7] << 8), h: b[8] | (b[9] << 8) };
   if (type === 'jpeg') {
     for (let i = 2; i + 9 < b.length;) {
@@ -150,6 +225,28 @@ export function imageInfoOf(b) {
     return s ? { type, ...s } : { type };
   }
   return { type };
+}
+
+/**
+ * PNG size as pdf-lib's decoder (UPNG) will see it: it walks every chunk and keeps the LAST IHDR, and an
+ * animated PNG (acTL/fcTL/fdAT) allocates a buffer per frame from the frame's own size. So walk the chunks
+ * exactly as it does, and report animation, rather than trusting the bytes after the signature.
+ * @param {Uint8Array} b
+ */
+export function pngInfo(b) {
+  const u32 = (i) => ((b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]) >>> 0;
+  let w = 0, h = 0, ihdrs = 0, animated = false;
+  for (let off = 8; off + 8 <= b.length;) {
+    const len = u32(off);
+    const t = String.fromCharCode(b[off + 4], b[off + 5], b[off + 6], b[off + 7]);
+    const d = off + 8;
+    if (t === 'IHDR' && d + 8 <= b.length) { w = u32(d); h = u32(d + 4); ihdrs++; }
+    else if (t === 'acTL' || t === 'fcTL' || t === 'fdAT') animated = true;
+    else if (t === 'IEND') break;
+    off = d + len + 4;
+  }
+  if (!ihdrs) return { type: 'png' };
+  return { type: 'png', w, h, ...(animated || ihdrs > 1 ? { suspect: true } : {}) };
 }
 
 /** Type and natural size (px) of a data URI image. @param {string} uri */
