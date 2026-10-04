@@ -250,6 +250,13 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     expect(csv).not.toContain('Salary');
   });
 
+  it('a server-rendered HTML export links drill-through to this server\'s viewer', async () => {
+    const { renderTo } = await import('../../src/server/renderer.js');
+    const d = def('Drill', [{ type: 'textbox', name: 'D', x: 0, y: 0, w: 200, h: 16, value: 'Open', action: { type: 'report', report: 'salary', params: { region: 'North' } } }]);
+    const html = String((await renderTo(d, { format: 'html', baseUrl: 'http://pw.test', principal: { kind: 'service' } })).bytes);
+    expect(html).toContain('http://pw.test/viewer/salary?region=North');
+  });
+
   it('the server\'s internal pass (data source URLs) never reads a report', async () => {
     const { internalCookie } = await import('../../src/server/session.js');
     const r = new Request(`${BASE}/api/reports/overview`, { headers: { cookie: internalCookie(`${BASE}/api/reports/overview`) } });

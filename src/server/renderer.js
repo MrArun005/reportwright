@@ -110,7 +110,7 @@ export async function renderTo(def, opt = {}) {
     bytes = await exportPdf(model, fontStore(), { title: def.name, subset, fetchImage, pdfa: opt.pdfa ? { icc: await iccProfile() } : undefined, prepare: signing?.prepare, save: signing?.save, encrypt: opt.encrypt });
     if (signing) bytes = await signing.sign(bytes);
   }
-  else if (format === 'html') bytes = Buffer.from(await exportHtml(model, fontStore(), { title: def.name, subset }));
+  else if (format === 'html') bytes = Buffer.from(await exportHtml(model, fontStore(), { title: def.name, subset, drillBase: opt.self || base })); // drill-through opens this server's viewer (never a caller's baseUrl)
   else if (format === 'csv') bytes = Buffer.from(exportCsv(model, { locale: def.locale, currency: def.currency }));
   else if (format === 'docx') bytes = Buffer.from(await exportDocx(model, { title: def.name }));
   else if (format === 'xlsx') { const ExcelJS = (await import('exceljs')).default; bytes = await exportXlsx(model, ExcelJS, { currency: def.currency, title: def.name }); }
