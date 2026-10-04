@@ -61,9 +61,12 @@ export async function render(def0, opts = {}) {
     ({ def, parts } = await resolveReuse(def0, getReport, (m) => { if (!reuseWarnings.includes(m)) reuseWarnings.push(m); }, opts.reportId ? [opts.reportId] : [], opts.reuseBudget || (opts.reuseBudget = { items: 0 })));
   }
   const v = validate(def);
-  if (v.errors.length) throw new ReportError(v.errors[0], { errors: v.errors });
+  // an expression that does not parse stops only its own item or cell (#Error there, a warning here)
+  const cellErrors = new Set(v.exprErrors);
+  const fatal = v.errors.filter(e => !cellErrors.has(e));
+  if (fatal.length) throw new ReportError(fatal[0], { errors: v.errors });
   /** @type {string[]} */
-  const warnings = [...v.warnings, ...reuseWarnings];
+  const warnings = [...v.warnings, ...cellErrors, ...reuseWarnings];
   const warn = (msg) => { if (warnings.length < 200 && !warnings.includes(msg)) warnings.push(msg); };
 
   const page = resolvePage(def.page);

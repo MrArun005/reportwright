@@ -5,12 +5,14 @@ import { ITEMS } from '../items/index.js';
 export const SCHEMA_ID = 'pagewright/report@1';
 
 /**
- * Structural checks. Errors stop the render; warnings do not.
+ * Structural checks. Errors stop the render; warnings do not. exprErrors: the errors that are an item's expression
+ * that does not parse. They are in `errors` too (the designer shows them), but render() goes on and draws #Error in
+ * that item or cell with a warning, as SSRS does.
  * @param {any} def
  */
 export function validate(def) {
-  const errors = [], warnings = [];
-  if (!def || typeof def !== 'object') return { errors: ['The report definition is empty'], warnings };
+  const errors = [], warnings = [], exprErrors = [];
+  if (!def || typeof def !== 'object') return { errors: ['The report definition is empty'], warnings, exprErrors };
   if (def.$schema && def.$schema !== SCHEMA_ID) warnings.push(`Unknown schema "${def.$schema}". Expected "${SCHEMA_ID}".`);
   const body = def.sections?.body;
   if (!body || (Array.isArray(body) && !body.length)) errors.push('The report has no body section');
@@ -49,7 +51,7 @@ export function validate(def) {
   const check = (where, v, label) => {
     if (v == null) return;
     const err = checkValue(v);
-    if (err) errors.push(`${label}: ${err}`);
+    if (err) { errors.push(`${label}: ${err}`); exprErrors.push(`${label}: ${err}`); }
     else if (where === 'body' && typeof v === 'string' && /Globals\s*\.\s*(PageNumber|TotalPages)/i.test(v)) {
       warnings.push(`${label}: PageNumber and TotalPages work only in the page header and footer`);
     }
@@ -93,5 +95,5 @@ export function validate(def) {
       }
     }
   }
-  return { errors, warnings };
+  return { errors, warnings, exprErrors };
 }
