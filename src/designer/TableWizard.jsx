@@ -2,7 +2,7 @@
 // Table gallery: a list, a grouped list with subtotals, a summary per group, or a matrix, each drawn live
 // with the report's own rows. Pick a data set, the fields and a layout, then insert. Same look as the chart gallery.
 import { useEffect, useState } from 'react';
-import { useDesigner, addItem, bodyWidth } from './store.js';
+import { useDesigner, addItem, bodyWidth, findItem } from './store.js';
 import { loadSample } from './DataPanel.jsx';
 import { paintItemSvg } from './Canvas.jsx';
 import { tableFor, matrixFor, labelOf } from './tableGen.js';
@@ -21,7 +21,9 @@ export default function TableWizard() {
   const def = useDesigner(s => s.def);
   const sample = useDesigner(s => s.sample);
   const close = () => useDesigner.getState().setUi({ tableWizard: null });
-  const width = Math.max(120, Math.round(bodyWidth(def) - (wiz?.x || 0)));
+  // the band the table goes into (a landscape section is wider), or the container it is dropped in
+  const parent = wiz?.parentId ? findItem(def, wiz.parentId)?.item : null;
+  const width = Math.max(120, Math.round((parent ? parent.w : bodyWidth(def, wiz?.section || 'body')) - (wiz?.x || 0)));
 
   const [c, setC] = useState(() => ({ dataSet: wiz?.dataSet || def.dataSets?.[0]?.name, layout: wiz?.type === 'matrix' ? 'matrix' : 'list', groupBy: '', fields: null, mRows: '', mCols: '', mValue: '' }));
   const set = (patch) => setC(x => ({ ...x, ...patch }));
@@ -73,7 +75,7 @@ export default function TableWizard() {
       footer={<>
         <button className="btn ghost" style={{ marginRight: 'auto' }} onClick={plain}>Insert an empty {wiz.type === 'matrix' ? 'matrix' : 'table'}</button>
         <button className="btn" onClick={close}>Cancel</button>
-        <button className="btn primary" onClick={insert} disabled={!ds || !itemFor(c.layout, width)} data-testid="table-wizard-apply">Insert {c.layout === 'matrix' ? 'matrix' : 'table'}</button>
+        <button className="btn primary" onClick={insert} disabled={!ds || !itemFor(c.layout, width) || sample?.loading} data-testid="table-wizard-apply">Insert {c.layout === 'matrix' ? 'matrix' : 'table'}</button>
       </>}>
       <div className="cw-body">
         <section className="cw-side" aria-label="Data for the table">

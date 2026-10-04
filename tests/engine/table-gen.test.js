@@ -1,0 +1,23 @@
+// Galleries: number formats from the field, also before sample data has loaded.
+import { describe, it, expect } from 'vitest';
+import { formatFor, tableFor } from '../../src/designer/tableGen.js';
+
+describe('gallery number formats', () => {
+  it('ids, codes and years are plain, before and after the sample loads', () => {
+    for (const name of ['id', 'loanId', 'customer_id', 'year', 'pinCode']) {
+      expect(formatFor({ name, type: 'number' }, []), name).toBe('0');
+      expect(formatFor({ name, type: 'number' }, [{ [name]: 2785 }]), name).toBe('0');
+    }
+  });
+  it('without sample rows, counts are whole and amounts have decimals; with rows, the values decide', () => {
+    expect(formatFor({ name: 'qty', type: 'number' }, undefined)).toBe('N0');
+    expect(formatFor({ name: 'amount', type: 'number' }, [])).toBe('N2');
+    expect(formatFor({ name: 'amount', type: 'number' }, [{ amount: 12 }, { amount: 30 }])).toBe('N0');
+    expect(formatFor({ name: 'date', type: 'date' }, [])).toBe('dd MMM yyyy');
+  });
+  it('a table made before the data loads shows an id as 2785, not 2,785.00', () => {
+    const t = tableFor({ name: 'S', fields: [{ name: 'id', type: 'number' }, { name: 'amount', type: 'number' }] }, { rows: [] });
+    expect(t.detail[0].cells.map(c => c.style.format)).toEqual(['0', 'N2']);
+    expect(t.footer[0].cells[0].value).toBe('Total'); // an id is never summed
+  });
+});

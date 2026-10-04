@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { useDesigner, sectionList, secOf, isBodyKey, bodyWidth, addItem, insertItem, moveItems, updateItem, findItem, tableSetColumnWidth, tableParts, rowsOf, round, NESTING } from './store.js';
-import { tableFor } from './tableGen.js';
+import { tableFor, formatFor } from './tableGen.js';
 import { loadBarcodes } from '@/engine/items/barcode.js';
 const hasType = (items, t) => (items || []).some(i => i.type === t || hasType(i.items, t));
 import { BASE_STYLE, parseBorder } from '@/engine/style.js';
@@ -225,11 +225,8 @@ let alerted = 0;
 function alertOnce(msg) { if (Date.now() - alerted > 3000) { alerted = Date.now(); useDesigner.setState({ saveError: msg }); setTimeout(() => useDesigner.setState({ saveError: null }), 3000); } }
 /** Default format for a dropped field. Whole numbers in the sample data get N0, other numbers N2. */
 export function fieldStyle(f) {
-  if (f.type === 'date') return { format: 'dd MMM yyyy' };
-  if (f.type !== 'number') return {};
-  const rows = useDesigner.getState().sample?.dataSets?.[f.dataSet] || [];
-  const vals = rows.slice(0, 200).map(r => r[f.field]).filter(v => typeof v === 'number');
-  return { format: vals.length && vals.every(Number.isInteger) ? 'N0' : 'N2' };
+  const format = formatFor({ name: f.field, type: f.type }, (useDesigner.getState().sample?.dataSets?.[f.dataSet] || []).slice(0, 200));
+  return format ? { format } : {};
 }
 
 /* ---------------------------------------------------------------- shared drag */

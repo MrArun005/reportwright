@@ -6,6 +6,7 @@ import { useDesigner, addItem, updateItem, findItem } from './store.js';
 import { loadSample } from './DataPanel.jsx';
 import { paintItemSvg } from './Canvas.jsx';
 import { Dialog, Field, Select, Check } from './ui.jsx';
+import { labelOf } from './tableGen.js';
 
 const TYPES = [
   { type: 'column', label: 'Column', when: 'Compare a few categories' },
@@ -33,12 +34,14 @@ const BIG = { w: 520, h: 290 };
 export function chartFromConfig(c, size) {
   const valueExpr = c.agg === 'Count' ? '=CountRows()' : `=${c.agg}(Fields.${c.value})`;
   const aggLabel = AGGS.find(a => a.value === c.agg)?.label || c.agg;
-  const name = c.agg === 'Count' ? 'Rows' : `${aggLabel} of ${c.value}`;
+  // the legend reads "Amount", not "Sum of amount"; other aggregates say what they are
+  const name = c.agg === 'Count' ? 'Rows' : c.agg === 'Sum' ? labelOf(c.value) : `${aggLabel} ${labelOf(c.value).toLowerCase()}`;
   const out = {
     type: 'chart', x: 0, y: 0, w: size.w, h: size.h, chartType: c.chartType, dataSet: c.dataSet,
     title: c.title ?? '', category: c.category ? `=Fields.${c.category}` : '',
     series: [{ name, value: valueExpr }], valueFormat: c.format || 'N0', legend: 'bottom',
   };
+  if (c.dateCategory && !PER_ROW.has(c.chartType) && c.chartType !== 'gauge') out.categorySort = 'asc'; // months in order, not as the rows come
   if (c.split && !NO_SPLIT.has(c.chartType)) out.seriesGroup = `=Fields.${c.split}`;
   if (c.stacked && out.seriesGroup) out.stacked = true;
   if (typeof c.top === 'string' && c.top) out.maxCategories = c.top; // an expression set in the Inspector (=Parameters.top)
@@ -112,6 +115,7 @@ export default function ChartWizard() {
   const raw = ds && sample?.sources ? sample.sources[ds.source] : undefined;
   const numFields = fields.filter(f => f.type === 'number');
   const good = suggested(c, rows, fields);
+  const dateCategory = fields.find(f => f.name === c.category)?.type === 'date';
 
   // a new data set: start from its best guess
   const pickDataSet = (name) => { const d = def.dataSets.find(x => x.name === name); setC(x => ({ ...x, split: '', ...guess(d, sample?.dataSets?.[name] || []) })); };
@@ -131,18 +135,18 @@ export default function ChartWizard() {
     const t = setTimeout(async () => {
       const out = {};
       for (const ty of TYPES) {
-        try { out[ty.type] = await paintItemSvg(chartFromConfig({ ...c, chartType: ty.type, title: '' }, THUMB), def, sample); }
+        try { out[ty.type] = await paintItemSvg(chartFromConfig({ ...c, dateCategory, chartType: ty.type, title: '' }, THUMB), def, sample); }
         catch (e) { out[ty.type] = { error: e.message }; }
       }
       let b = null;
-      try { b = await paintItemSvg(chartFromConfig(c, BIG), def, sample); } catch (e) { b = { error: e.message }; }
+      try { b = await paintItemSvg(chartFromConfig({ ...c, dateCategory }, BIG), def, sample); } catch (e) { b = { error: e.message }; }
       if (alive) { setThumbs(out); setBig(b); }
     }, 150);
     return () => { alive = false; clearTimeout(t); };
   }, [cfgKey, sample, def]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const apply = () => {
-    const { x, y, w, h, type, ...props } = chartFromConfig(c, { w: editing?.w || 360, h: editing?.h || 220 });
+    const { x, y, w, h, type, ...props } = chartFromConfig({ ...c, dateCategory }, { w: editing?.w || 360, h: editing?.h || 220 });
     if (editing) {
       updateItem(editing.id, it => {
         for (const k of ['seriesGroup', 'stacked', 'maxCategories', 'xValue', 'category']) delete it[k];

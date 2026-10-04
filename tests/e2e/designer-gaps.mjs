@@ -149,6 +149,28 @@ try {
   assert.ok(dropped, `the dropped text box exists: ${JSON.stringify(items.map(i => [i.name, i.type, i.y]))} band ${def.sections.body.height}`);
   assert.ok(dropped.y >= oldH && def.sections.body.height >= dropped.y + dropped.h, `dropped below the old height (y ${dropped.y}, band ${def.sections.body.height})`);
 
+  step('Galleries: a table in a landscape section is as wide as that section; ids plain; chart months in order, series "Amount"');
+  id = await create(base([], { sections: { body: [{ name: 'Portrait', height: 200, items: [] }, { name: 'Wide', height: 200, items: [], page: { orientation: 'landscape' } }] } }));
+  await open(id);
+  await p.dragAndDrop('[data-tool=table]', '[data-section="body:1"]', { targetPosition: { x: 4, y: 20 } });
+  dlg = p.getByRole('dialog');
+  await dlg.getByTestId('table-wizard-apply').click();
+  await p.dragAndDrop('[data-tool=chart]', '[data-section="body"]', { targetPosition: { x: 4, y: 20 } });
+  dlg = p.getByRole('dialog');
+  await field(dlg, 'Category \\(x axis or slices\\)').selectOption('month');
+  await field(dlg, 'Value').selectOption('Sum');
+  await field(dlg, 'of field').selectOption('amount');
+  await dlg.getByTestId('chart-wizard-apply').click();
+  await save();
+  def = await read(id);
+  const wideTable = def.sections.body[1].items[0];
+  assert.ok(wideTable.w > 700, `table as wide as the landscape section, got ${wideTable.w}`);
+  const idCol = wideTable.header[0].cells.findIndex(c => c.value === 'Id');
+  assert.equal(wideTable.detail[0].cells[idCol].style.format, '0');
+  const chart = def.sections.body[0].items[0];
+  assert.equal(chart.series[0].name, 'Amount');
+  assert.equal(chart.categorySort, 'asc');
+
   assert.deepEqual(errs, []);
   console.log('PASS designer gaps');
 } finally {

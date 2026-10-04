@@ -16,12 +16,19 @@ export function labelOf(name) {
   return words.length ? words[0][0].toUpperCase() + words[0].slice(1) + (words.length > 1 ? ' ' + words.slice(1).join(' ') : '') : name;
 }
 
-/** N0 when every sample value is a whole number, else N2; dates as 12 Jan 2026. */
-function formatFor(f, rows) {
+// ids, codes and years read as they are: 2785, not 2,785 or 2,785.00
+const CODE_LIKE = /^id$|_id$|[a-z]Id$|^year$|code$|^no$|number$|^pin$|zip/i;
+// counts are whole numbers even before sample data is there
+const WHOLE = /count|qty|quantity|units|^n$|days|items/i;
+/** Ids and years plain (0); N0 when every sample value is whole, else N2; dates as 12 Jan 2026.
+ *  Without sample rows (the data has not loaded yet) the name decides, never a guess of N2 for an id. */
+export function formatFor(f, rows) {
   if (f.type === 'date') return 'dd MMM yyyy';
   if (f.type !== 'number') return undefined;
+  if (CODE_LIKE.test(f.name)) return '0';
   const vals = (rows || []).map(r => r?.[f.name]).filter(v => typeof v === 'number');
-  return vals.length && vals.every(Number.isInteger) ? 'N0' : 'N2';
+  if (!vals.length) return WHOLE.test(f.name) ? 'N0' : 'N2';
+  return vals.every(Number.isInteger) ? 'N0' : 'N2';
 }
 const cellStyle = (f, rows) => {
   const format = formatFor(f, rows);
