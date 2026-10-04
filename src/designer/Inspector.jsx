@@ -61,7 +61,8 @@ function PropEditor({ p: spec, value, onChange, openExpr, dataSet, item }) {
     case 'html': return <Field label={p.label}><textarea className="input mono" rows={7} spellCheck={false} data-testid={`prop-${p.key}`} style={{ width: '100%', resize: 'vertical', fontSize: 11 }} value={value ?? ''} onChange={e => onChange(e.target.value === '' ? undefined : e.target.value)} /></Field>;
     case 'number': return p.expr ? <ExprOr p={p} value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet}><NumberInput value={value} onChange={onChange} /></ExprOr> : <Field label={p.label}><NumberInput value={value} onChange={onChange} /></Field>;
     case 'bool': return <Check label={p.label} checked={value} onChange={onChange} />;
-    case 'select': return p.expr ? <ExprOr p={p} value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet}><Select value={value} onChange={onChange} options={p.options} allowEmpty /></ExprOr> : <Field label={p.label}><Select value={value} onChange={onChange} options={p.options} allowEmpty /></Field>;
+    case 'select': if (p.number) return <Field label={p.label}><Select value={value == null ? '' : String(value)} onChange={v => onChange(v == null ? undefined : Number(v))} options={p.options} allowEmpty /></Field>; // stored as a number
+      return p.expr ? <ExprOr p={p} value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet}><Select value={value} onChange={onChange} options={p.options} allowEmpty /></ExprOr> : <Field label={p.label}><Select value={value} onChange={onChange} options={p.options} allowEmpty /></Field>;
     case 'palette': return <PaletteEditor label={p.label} value={value} onChange={onChange} />;
     case 'report': return <Field label={p.label}><ReportPicker value={value} onChange={onChange} /></Field>;
     case 'color': return <Field label={p.label}><ColorInput value={value} onChange={onChange} /></Field>;

@@ -39,7 +39,6 @@ export default function Outline() {
       <div className="pane-body">
         {sectionList(def).map(({ key, label }) => {
           const items = secOf(def, key)?.items || [];
-          if (!items.length && key !== 'body') return null;
           return (
             <div key={key}>
               <button type="button" className={`linklike outline-band${sel.kind === 'section' && sel.section === key ? ' sel' : ''}`} onClick={() => useDesigner.getState().select({ kind: 'section', section: key })}><b>{label}</b></button>

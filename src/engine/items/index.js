@@ -111,7 +111,7 @@ register('textbox', {
     { key: 'minFontSize', label: 'Shrink no smaller than (pt, default 4)', type: 'number', category: 'Layout' },
     { key: 'shrinkStep', label: 'Shrink step (pt, default 0.5)', type: 'number', category: 'Layout' },
     { key: 'rotate', label: 'Rotate (degrees clockwise)', type: 'number', category: 'Layout' },
-    { key: 'headingLevel', label: 'Heading level (1–6, for a table of contents)', type: 'select', options: ['1', '2', '3', '4', '5', '6'], category: 'Interactivity' },
+    { key: 'headingLevel', label: 'Heading level (1–6, for a table of contents)', type: 'select', number: true, options: ['1', '2', '3', '4', '5', '6'], category: 'Interactivity' },
     { key: 'pageBreakBefore', label: 'Page break before', type: 'bool', category: 'Layout' },
     { key: 'pageBreakAfter', label: 'Page break after', type: 'bool', category: 'Layout' },
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },

@@ -121,3 +121,11 @@ describe('gallery defaults (#7)', () => {
     expect(r.pages[0].items.filter(i => i.t === 'text').flatMap(i => i.lines.map(l => l.text))).toEqual(expect.arrayContaining(['N', 'S', 'P', 'Total', '5.00']));
   });
 });
+
+import { ITEMS } from '../../src/engine/items/index.js';
+describe('small fixes', () => {
+  it('headingLevel is picked as a number; the outline lists empty bands', () => {
+    expect(ITEMS.textbox.props.find(p => p.key === 'headingLevel').number).toBe(true);
+    expect(fs.readFileSync(new URL('../../src/designer/Outline.jsx', import.meta.url), 'utf8')).not.toMatch(/!items\.length && key !== 'body'\) return null/);
+  });
+});
