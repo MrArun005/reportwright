@@ -185,6 +185,17 @@ describe('engine', () => {
 });
 
 // Opt-in: PW_TEST_PG=postgres://user@127.0.0.1:5432/db npx vitest run tests/engine/sql.test.js
+describe('size cap', () => {
+  it('one huge value counts against the byte cap, not just the rows', async () => {
+    const keep = { ...limits };
+    Object.assign(limits, { bytes: 100000 });
+    try {
+      await expect(runSql(main("select printf('%.*c', 200000, 'x') as big"), {})).rejects.toThrow(/more than 0 MB|more than/);
+      expect((await runSql(main("select printf('%.*c', 1000, 'x') as small"), {}))[0].small.length).toBe(1000);
+    } finally { Object.assign(limits, keep); }
+  });
+});
+
 describe.skipIf(!process.env.PW_TEST_PG)('postgres', () => {
   beforeAll(() => { process.env.PW_DB_PG = process.env.PW_TEST_PG; });
   afterAll(() => { delete process.env.PW_DB_PG; });

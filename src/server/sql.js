@@ -8,9 +8,10 @@
 import { readReport } from './reports.js';
 import { resolveParameters } from '@/engine/index.js';
 import { isoDate } from '@/engine/expr/format.js';
+import crypto from 'node:crypto';
 
 /** Mutable so tests can lower them. */
-export const limits = { rows: 100000, ms: 30000 };
+export const limits = { rows: 100000, ms: 30000, bytes: 64 * 1024 * 1024 };
 
 /** @param {string} msg @param {number} status */
 const fail = (msg, status) => Object.assign(new Error(msg), { status });
@@ -77,8 +78,8 @@ export function tsqlParts(q) {
     const c = q[i], d = q[i + 1];
     if (c === '-' && d === '-') {
       push(true, i);
-      const e = q.indexOf('\n', i);
-      i = e < 0 ? q.length : e;
+      const e = q.slice(i).search(/[\r\n]/); // SQL Server ends a -- comment at a CR as well as an LF
+      i = e < 0 ? q.length : i + e;
       push(false, i);
     } else if (c === '/' && d === '*') {
       push(true, i);
@@ -153,9 +154,15 @@ export async function runSql({ connection, query }, params = {}) {
     rows = await DRIVERS[dialect](url, text, values);
   } catch (e) {
     if (TIMEOUT_CODES.has(e.code)) throw fail(`The query ran longer than ${limits.ms / 1000} s.`, 504);
-    throw e;
+    // the report author sees this message: never the connection URL or a part of it (the password)
+    throw Object.assign(new Error(scrub(String(e.message || e), url)), { status: e.status, code: e.code });
   }
   if (rows.length > limits.rows) throw fail(`The query returned more than ${limits.rows} rows. Filter or group it in SQL.`, 400);
+  // the row cap does not bound one huge value (string_agg, FOR JSON in a subquery, repeat()): count the text too
+  // ponytail: counted after the driver has the rows; stream them with a byte budget if this needs to be tighter
+  let bytes = 0;
+  for (const r of rows) for (const v of Object.values(r)) bytes += typeof v === 'string' ? v.length * 2 : v instanceof Uint8Array ? v.length : 8;
+  if (bytes > limits.bytes) throw fail(`The query returned more than ${Math.round(limits.bytes / 1048576)} MB. Filter or group it in SQL.`, 400);
   return rows.map(plainRow);
 }
 
@@ -189,6 +196,12 @@ export function listConnections() {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** A message with the connection URL and its parts (user, password, host) taken out. */
+function scrub(msg, url) {
+  for (const part of [url, url.replace(/^sqlite:/, ''), ...url.split(/[/@:?&=]/).filter(x => x.length > 3).flatMap(x => { try { return [x, decodeURIComponent(x)]; } catch { return [x]; } })]) msg = msg.split(part).join('…');
+  return msg;
+}
+
 /** Try a connection with a read-only "select 1". Errors never show the connection URL. */
 export async function testConnection(name) {
   const t0 = Date.now();
@@ -196,9 +209,8 @@ export async function testConnection(name) {
     await runSql({ connection: name, query: 'select 1 as ok' }, {});
     return { ok: true, ms: Date.now() - t0 };
   } catch (e) {
-    let msg = String(e.message || e);
     const url = process.env[`PW_DB_${String(name).toUpperCase()}`];
-    if (url) for (const part of [url, url.replace(/^sqlite:/, ''), ...url.split(/[/@:?&=]/).filter(x => x.length > 3).flatMap(x => { try { return [x, decodeURIComponent(x)]; } catch { return [x]; } })]) msg = msg.split(part).join('…');
+    const msg = url ? scrub(String(e.message || e), url) : String(e.message || e);
     return { ok: false, ms: Date.now() - t0, error: msg };
   }
 }
@@ -290,13 +302,13 @@ const DRIVERS = {
     }
   },
 
-  // SQL Server. Give the connection a login that can only read (db_datareader, no other rights): that is the guard
-  // that holds. What follows is a second one. SQL Server has no read-only transaction and needs no ";" between
-  // statements, so a report's text is checked twice: no statement keyword outside strings and comments (bindTsql),
-  // and the server compiles the EXACT text that will run, with the same @pw_n declared, under SHOWPLAN_XML (compiled,
-  // not run): the plan must list exactly one statement, a SELECT. Anything else, or a plan this code does not
-  // recognise, is refused. It then runs in a transaction that is always rolled back, under SET ROWCOUNT (the row
-  // cap) and the pool's request timeout (the time limit).
+  // SQL Server. The guard that holds is the login: before a connection runs any report query, the server is asked
+  // what the login may do (probeReadOnly), and a login that could write anything (sysadmin, db_owner, db_datawriter,
+  // db_ddladmin, INSERT/UPDATE/DELETE/ALTER/EXECUTE/CREATE rights, …) is refused outright; a CREATE TABLE in a
+  // rolled-back transaction must fail too. The probe repeats every 10 minutes. Then, as a second guard: no statement
+  // keyword outside strings and comments (bindTsql); the server compiles the same text with the same @pw_n declared,
+  // under SHOWPLAN_XML (compiled, not run), and the plan must be exactly one SELECT; it runs in a transaction that is
+  // always rolled back, under SET ROWCOUNT (the row cap) and the pool's request timeout (the time limit).
   async mssql(url, text, values) {
     const key = `mssql|${url}`;
     const sql = (await driver('mssql', 'SQL Server')).default;
@@ -307,10 +319,19 @@ const DRIVERS = {
       pool.on('error', () => {});
       const ready = pool.connect();
       ready.catch(() => { if (pools.get(key)?.ready === ready) pools.delete(key); }); // handled at once: no unhandled rejection
-      pools.set(key, { ms: limits.ms, ready });
+      pools.set(key, { ms: limits.ms, ready, probe: null });
     }
+    const entry = pools.get(key);
+    const pool = await entry.ready;
+    if (!entry.probe || Date.now() - entry.probe.at > PROBE_MS) {
+      const at = Date.now();
+      entry.probe = { at, result: probeReadOnly(sql, pool) };
+      entry.probe.result.catch(() => { if (entry.probe?.at === at) entry.probe = null; }); // a failed probe (not a refusal) runs again next time
+    }
+    const why = await entry.probe.result;
+    if (why) throw fail(`This SQL Server login can write (${why}). Give report connections a login that can only read: a database user in db_datareader, with GRANT SHOWPLAN, and nothing else.`, 500);
     const types = values.map(v => mssqlType(sql, v));
-    const tx = new sql.Transaction(await pools.get(key).ready);
+    const tx = new sql.Transaction(pool);
     await tx.begin();
     const req = () => new sql.Request(tx);
     try {
@@ -322,7 +343,8 @@ const DRIVERS = {
       } catch (e) {
         throw e.status ? e : fail(`SQL Server cannot compile the query: ${String(e.message || e).slice(0, 300)}`, 400);
       } finally { await req().batch('SET SHOWPLAN_XML OFF'); }
-      if (!isOneSelect(plan)) throw fail('A SQL source can only run one SELECT query (one statement).', 400);
+      const kind = isOneSelect(plan);
+      if (!kind) throw fail('A SQL source can only run one SELECT query (one statement).', 400);
       await req().batch(`SET ROWCOUNT ${Number(limits.rows) + 1}`);
       try {
         const r = req();
@@ -330,7 +352,18 @@ const DRIVERS = {
         const out = await r.query(text);
         if ((out.recordsets || []).length !== 1) throw fail('A SQL source can only run one SELECT query (one statement).', 400);
         const cols = Object.values(out.recordset?.columns || {});
-        return (out.recordset || []).map(row => { for (const c of cols) row[c.name] = mssqlCell(sql, c.type, row[c.name]); return row; });
+        const rows = (out.recordset || []).map(row => { for (const c of cols) row[c.name] = mssqlCell(sql, c.type, row[c.name]); return row; });
+        // FOR XML / FOR JSON pack the rows into text (in chunks), in one column the server names with a fixed GUID
+        // (the plan does not always say XML/JSON SELECT). SET ROWCOUNT stopped them at rows + 1 source rows without a
+        // word: FOR JSON's rows are counted here and refused as a plain SELECT would be; FOR XML cannot be counted.
+        const packed = cols.length === 1 && /^(XML|JSON)_F52E2B61-18A1-11d1-B105-00805F49916B$/i.exec(cols[0].name);
+        if (kind === 'XML SELECT' || (packed && packed[1].toUpperCase() === 'XML')) throw fail('FOR XML is not supported in a SQL source: use a plain SELECT, or FOR JSON.', 400);
+        if (kind === 'JSON SELECT' || packed) {
+          let n = 0;
+          try { const v = JSON.parse(rows.map(r => Object.values(r)[0] ?? '').join('') || '[]'); n = Array.isArray(v) ? v.length : 1; } catch { n = limits.rows + 1; }
+          if (n > limits.rows) return Array.from({ length: limits.rows + 1 }, () => ({})); // runSql reports "more than N rows"
+        }
+        return rows;
       } finally { await req().batch('SET ROWCOUNT 0').catch(() => {}); }
     } finally { await tx.rollback().catch(() => {}); }
   },
@@ -338,11 +371,11 @@ const DRIVERS = {
 
 /**
  * True only for a SHOWPLAN_XML result of exactly one plan document holding exactly one statement element, a
- * StmtSimple whose StatementType is a read: SELECT, SELECT WITHOUT QUERY (constants), XML SELECT or JSON SELECT
- * (FOR XML / FOR JSON). Fails closed.
+ * StmtSimple whose StatementType is a read: SELECT, SELECT WITHOUT QUERY (constants) or JSON SELECT (FOR JSON).
+ * Returns that type, or false. Fails closed.
  * @param {any} plan the batch result
  */
-const SELECT_TYPES = new Set(['SELECT', 'SELECT WITHOUT QUERY', 'XML SELECT', 'JSON SELECT']);
+const SELECT_TYPES = new Set(['SELECT', 'SELECT WITHOUT QUERY', 'JSON SELECT', 'XML SELECT']); // XML is refused after it runs (see below)
 export function isOneSelect(plan) {
   const sets = plan?.recordsets || [];
   if (sets.length !== 1 || sets[0].length !== 1) return false;
@@ -356,7 +389,92 @@ export function isOneSelect(plan) {
   const tag = xml.slice(xml.indexOf('<StmtSimple')).match(/^<StmtSimple(\s[^>]*)?>/);
   if (!tag) return false;
   const types = [...(tag[1] || '').matchAll(/\sStatementType="([^"]*)"/g)].map(m => m[1]);
-  return types.length === 1 && SELECT_TYPES.has(types[0]);
+  return types.length === 1 && SELECT_TYPES.has(types[0]) ? types[0] : false;
+}
+
+const PROBE_MS = 10 * 60 * 1000;
+// database rights a reading login may hold; anything else (and any VIEW … right is fine) counts as a right to change
+const READ_DB = new Set(['CONNECT', 'SELECT', 'SHOWPLAN', 'REFERENCES']);
+const READ_SERVER = new Set(['CONNECT SQL', 'CONNECT ANY DATABASE', 'SELECT ALL USER SECURABLES']);
+
+/**
+ * What this login could change, or '' when it can only read. Asks the server for every right granted to the login's
+ * database user, its roles (nested) and public, in every permission class (column, schema and principal grants such as
+ * IMPERSONATE too), its server rights, its effective database and server permissions and its effective rights on every
+ * user object, and what it or its roles own (schemas, objects); then tries a CREATE TABLE in a transaction that is rolled back, which must fail. Fails closed: only
+ * CONNECT, SELECT, SHOWPLAN, REFERENCES and VIEW … rights are taken as reading.
+ */
+export async function probeReadOnly(sql, pool) {
+  // every permission GRANTed to this database user, to every role it is in (nested) and to public, of every class
+  // (database, schema, object, column, principal, type, assembly, …), minus rights on system objects
+  const r = (await pool.request().query(`
+    WITH roles AS (
+      SELECT USER_ID() AS id UNION ALL SELECT 0
+      UNION ALL SELECT m.role_principal_id FROM sys.database_role_members m JOIN roles r ON m.member_principal_id = r.id
+    ), srv AS (
+      SELECT principal_id FROM sys.server_principals WHERE principal_id = SUSER_ID() OR (type = 'R' AND IS_SRVROLEMEMBER(name) = 1)
+    )
+    SELECT
+      IS_SRVROLEMEMBER('sysadmin') AS sysadmin,
+      (SELECT STRING_AGG(r, ',') FROM (VALUES ('db_owner'), ('db_datawriter'), ('db_ddladmin'), ('db_securityadmin'), ('db_accessadmin'), ('db_backupoperator')) v(r) WHERE IS_ROLEMEMBER(r) = 1) AS roles,
+      (SELECT STRING_AGG(CONCAT(p.permission_name, ' (', p.class_desc, CASE WHEN p.class = 1 THEN CONCAT(' ', QUOTENAME(OBJECT_SCHEMA_NAME(p.major_id)), '.', QUOTENAME(OBJECT_NAME(p.major_id))) WHEN p.class = 3 THEN CONCAT(' ', QUOTENAME(SCHEMA_NAME(p.major_id))) ELSE '' END, ')'), ', ')
+        FROM sys.database_permissions p
+        WHERE p.grantee_principal_id IN (SELECT DISTINCT id FROM roles) AND p.state IN ('G', 'W')
+          AND NOT (p.class = 1 AND ISNULL(OBJECTPROPERTY(p.major_id, 'IsMSShipped'), 1) = 1)
+          AND (p.state = 'W' -- WITH GRANT OPTION: it may hand rights out, so it can change permissions
+            OR (p.permission_name NOT IN ('CONNECT', 'SELECT', 'SHOWPLAN', 'REFERENCES', 'VIEW DEFINITION', 'VIEW CHANGE TRACKING')
+              AND p.permission_name NOT LIKE 'VIEW %'))) AS granted,
+      -- other things it or its roles own: database principals (roles), types, keys, certificates, assemblies, …
+      (SELECT STRING_AGG(CAST(n AS NVARCHAR(400)) COLLATE DATABASE_DEFAULT, ', ') FROM (
+        SELECT CONCAT('role ', QUOTENAME(name)) AS n FROM sys.database_principals WHERE is_fixed_role = 0 AND owning_principal_id IN (SELECT DISTINCT id FROM roles) AND principal_id <> USER_ID()
+        UNION ALL SELECT CONCAT('type ', QUOTENAME(name)) FROM sys.types WHERE is_user_defined = 1 AND principal_id IN (SELECT DISTINCT id FROM roles)
+        UNION ALL SELECT CONCAT('certificate ', QUOTENAME(name)) FROM sys.certificates WHERE principal_id IN (SELECT DISTINCT id FROM roles)
+        UNION ALL SELECT CONCAT('asymmetric key ', QUOTENAME(name)) FROM sys.asymmetric_keys WHERE principal_id IN (SELECT DISTINCT id FROM roles)
+        UNION ALL SELECT CONCAT('symmetric key ', QUOTENAME(name)) FROM sys.symmetric_keys WHERE principal_id IN (SELECT DISTINCT id FROM roles)
+        UNION ALL SELECT CONCAT('XML schema collection ', QUOTENAME(name)) FROM sys.xml_schema_collections WHERE xml_collection_id > 65535 AND principal_id IN (SELECT DISTINCT id FROM roles)
+        UNION ALL SELECT CONCAT('assembly ', QUOTENAME(name)) FROM sys.assemblies WHERE is_user_defined = 1 AND principal_id IN (SELECT DISTINCT id FROM roles)
+        UNION ALL SELECT CONCAT('full-text catalog ', QUOTENAME(name)) FROM sys.fulltext_catalogs WHERE principal_id IN (SELECT DISTINCT id FROM roles)
+        UNION ALL SELECT CONCAT('service ', QUOTENAME(name)) FROM sys.services WHERE service_id > 3 AND principal_id IN (SELECT DISTINCT id FROM roles)
+        UNION ALL SELECT CONCAT('contract ', QUOTENAME(name)) FROM sys.service_contracts WHERE service_contract_id > 6 AND principal_id IN (SELECT DISTINCT id FROM roles)
+        UNION ALL SELECT CONCAT('message type ', QUOTENAME(name)) FROM sys.service_message_types WHERE message_type_id > 14 AND principal_id IN (SELECT DISTINCT id FROM roles)
+        UNION ALL SELECT CONCAT('route ', QUOTENAME(name)) FROM sys.routes WHERE route_id > 65535 AND principal_id IN (SELECT DISTINCT id FROM roles)
+        UNION ALL SELECT CONCAT('server principal ', QUOTENAME(name)) FROM sys.server_principals WHERE owning_principal_id IN (SELECT principal_id FROM srv)
+      ) o) AS ownsOther,
+      -- an owner has every right on what it owns, and ownership is not in sys.database_permissions: schemas the user
+      -- or its roles own (user schemas only: ids 5..16383; the fixed role schemas such as db_datareader are owned by
+      -- those roles and hold nothing), and objects with an explicit owner
+      (SELECT STRING_AGG(QUOTENAME(name), ', ') FROM sys.schemas WHERE schema_id BETWEEN 5 AND 16383 AND principal_id IN (SELECT DISTINCT id FROM roles)) AS ownsSchemas,
+      (SELECT STRING_AGG(QUOTENAME(name), ', ') FROM sys.objects WHERE is_ms_shipped = 0 AND principal_id IN (SELECT DISTINCT id FROM roles)) AS ownsObjects,
+      (SELECT STRING_AGG(permission_name, ',') FROM fn_my_permissions(NULL, 'DATABASE')) AS db,
+      (SELECT STRING_AGG(permission_name, ',') FROM fn_my_permissions(NULL, 'SERVER')) AS srv,
+      -- server rights of every class (IMPERSONATE on a login, CONTROL on a server role, …) to the login, its server
+      -- roles (nested) and public; public's CONNECT on the default endpoints is fine
+      (SELECT STRING_AGG(CONCAT(sp.permission_name, ' (', sp.class_desc, ')'), ', ') FROM sys.server_permissions sp
+        WHERE sp.grantee_principal_id IN (SELECT principal_id FROM srv) AND sp.state IN ('G', 'W')
+          AND NOT (sp.class = 105 AND sp.permission_name = 'CONNECT')
+          AND (sp.state = 'W' OR (sp.permission_name NOT IN ('CONNECT SQL', 'CONNECT ANY DATABASE', 'SELECT ALL USER SECURABLES') AND sp.permission_name NOT LIKE 'VIEW %'))) AS srvgranted,
+      (SELECT TOP 1 QUOTENAME(SCHEMA_NAME(o.schema_id)) + '.' + QUOTENAME(o.name) FROM sys.objects o
+        CROSS APPLY (SELECT QUOTENAME(SCHEMA_NAME(o.schema_id)) + '.' + QUOTENAME(o.name) AS n) x
+        WHERE o.is_ms_shipped = 0 AND EXISTS (SELECT 1 FROM (VALUES ('INSERT'), ('UPDATE'), ('DELETE'), ('ALTER'), ('CONTROL'), ('EXECUTE'), ('TAKE OWNERSHIP'), ('IMPERSONATE')) p(p)
+          WHERE HAS_PERMS_BY_NAME(x.n, 'OBJECT', p.p) = 1)) AS obj`)).recordset[0] || {};
+  if (r.sysadmin !== 0) return 'sysadmin';
+  if (r.roles) return r.roles;
+  if (r.ownsSchemas) return `owner of the schema ${String(r.ownsSchemas).slice(0, 200)}`;
+  if (r.ownsObjects) return `owner of ${String(r.ownsObjects).slice(0, 200)}`;
+  if (r.ownsOther) return `owner of ${String(r.ownsOther).slice(0, 200)}`;
+  if (r.granted) return `granted ${String(r.granted).slice(0, 200)}`;
+  if (r.srvgranted) return `granted ${String(r.srvgranted).slice(0, 200)}`;
+  const db = String(r.db || '').split(',').filter(x => x && !READ_DB.has(x) && !x.startsWith('VIEW '));
+  if (db.length) return `database rights: ${db.slice(0, 5).join(', ')}`;
+  const srv = String(r.srv || '').split(',').filter(x => x && !READ_SERVER.has(x) && !x.startsWith('VIEW '));
+  if (srv.length) return `server rights: ${srv.slice(0, 5).join(', ')}`;
+  if (r.obj) return `rights to change ${r.obj}`;
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    await new sql.Request(tx).batch(`CREATE TABLE dbo.pw_probe_${crypto.randomBytes(6).toString('hex')} (a INT)`);
+    return 'it could create a table';
+  } catch { return ''; } finally { await tx.rollback().catch(() => {}); }
 }
 
 /** The SQL Server type of a bound value, for the request input and for the DECLARE in the parse-only check. */
