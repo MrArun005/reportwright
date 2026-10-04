@@ -1,6 +1,8 @@
 # Pagewright: feature list
 
-Version 0.6.0+ (`main` at `bea2841`, 4 Oct 2026). Everything below is built, merged and covered by tests unless it is marked otherwise.
+Version 0.6.0+ (`main`, 4 Oct 2026). Everything below is built and covered by tests unless it is marked otherwise.
+
+> **Built, not yet released:** items marked **[not released]** are committed on the local `main` only. They have open security findings (SSO account linking, report-route authorisation, SQL Server time and memory caps) and must not be pushed or used in production until those are fixed.
 Live demo: https://mrarun005.github.io/pagewright-demo/
 
 Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 PDF-vs-screen mismatches, production build OK.
@@ -78,6 +80,8 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 ## 7. Barcodes and images
 
 - 49 barcode symbologies (Code 128, QR, Data Matrix, PDF417, EAN-13 and more), drawn as vectors; caption above or below, quiet zone, rotation, per-symbology options.
+- 2D codes (QR, Data Matrix, Aztec, Han Xin) keep their aspect ratio and are centred in the box, so a QR code is always square and scannable.
+- A barcode can carry an action (web link, bookmark jump, drill-through), clickable in the viewer and the PDF.
 - Images: URLs, data URIs, embedded images (`embedded:name`), base64 or byte fields; SVG drawn as vector paths in PDF; auto-size, clip, fit.
 - Size limits: 10 MB per image, 50 MB per report, 40 megapixels per PNG.
 
@@ -88,7 +92,7 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 - `Previous`, `GroupIndex`, `Level`, `Lookup`, `LookupSet`.
 - Filters: equals, `in` (multi-value), TopN, BottomN, TopPercent, BottomPercent, Between; filters run in order.
 - Data sources: JSON, REST, GraphQL, CSV (separator, quote, header row, start row), OData (as REST), inline data, pushed data via the API.
-- SQL on the server: PostgreSQL, MySQL, SQLite, SQL Server (`mssql://`). Read-only, single statement, time and row limits, parameters bound through the driver. Connections are set by the admin only. SQL Server: a connection is refused unless its login can only read (the server is asked for every right of the login, its roles and public); then no statement words outside strings and comments (a T-SQL scanner with nested comments and `]]`), then the server compiles the exact text that will run (`SHOWPLAN_XML`, parameters declared) and the plan must be exactly one SELECT; it then runs in a transaction that is always rolled back, with `SET ROWCOUNT` as the row cap. Tested against a real SQL Server (Azure SQL Edge in Docker).
+- **[not released]** SQL on the server: PostgreSQL, MySQL, SQLite, SQL Server (`mssql://`). Read-only, single statement, time and row limits, parameters bound through the driver. Connections are set by the admin only. SQL Server: a connection is refused unless its login can only read (the server is asked for every right of the login, its roles and public); then no statement words outside strings and comments (a T-SQL scanner with nested comments and `]]`), then the server compiles the exact text that will run (`SHOWPLAN_XML`, parameters declared) and the plan must be exactly one SELECT; it then runs in a transaction that is always rolled back, with `SET ROWCOUNT` as the row cap. Tested against a real SQL Server (Azure SQL Edge in Docker).
 - Nested data sets: a child data set filtered to the current parent row; `Parent.*` access.
 - Parameters: option lists, options from a data set, multi-value, cascading, hidden, nullable, allow-blank, select-all; custom editors (slider, range, date range, radio, list, toggle).
 
@@ -106,7 +110,9 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 
 ## 10. Export formats
 
-- PDF: text as text, links and outline, embedded and subset fonts.
+- PDF: text as text, embedded and subset fonts.
+- PDF links: web links, plus internal links that jump to the right page and position (table-of-contents entries, bookmark jumps, drill-through to a section, "back" links).
+- PDF outline (bookmarks panel) nested by level; a bookmarked heading takes its heading level.
 - PDF/A-2b, digital signatures, fillable PDF form fields.
 - PDF passwords (AES-256, user and owner passwords, permissions).
 - Excel (merged cells), Word `.docx` (real tables, section page sizes; charts and images are left out), HTML (incl. a single-file offline interactive version), CSV, SVG, print.
@@ -124,10 +130,10 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 - Render any report to any format on the server.
 - Automation API (`/api/v1`): render with pushed data; batches (zip, merged PDF, folder, PUT upload); data list from a URL; signed webhooks; cron schedules with time zones; API keys.
 - Accounts and roles (viewer, designer, admin) with scrypt passwords, signed session cookies, rate-limited sign-in, same-site origin checks. Off by default (an optional shared password instead).
-- Folders and permissions per report and per folder: grants to users and groups (view, edit, manage), inherited from the folder chain (inheritance can be turned off), a top-level default, the role as a ceiling, admins see everything. Enforced on every path: the home page (folders, search, only the controls the user can use), viewer, designer, `/api/reports*`, server renders and exports, thumbnails, saved SQL, subreports and drill-through, `/api/v1` (API keys can act as a user: `email|key`), batches and schedules (owners, re-checked at every run). A report one may not view is not found. Works on every storage backend; tested on files, SQLite, Postgres, MySQL and SQL Server.
-- Audit log: sign-ins and failures, sign-outs, single sign-on, report create/update/delete/restore/import/view/render/export, permission and folder changes, user changes, API key use (by key id), batches and schedule runs; who, what, format, a keyed hash of the parameters, when, from where. Append-only, in the configured storage, retention `PW_AUDIT_RETENTION_DAYS` (365). Admin page with filters and CSV export. Never passwords, keys, tokens or parameter values.
-- Single sign-on: OpenID Connect (authorization code + PKCE, state, nonce, ID token signature and iss/aud/azp/exp checks, cached JWKS) and SAML 2.0 (signed assertions required, audience, recipient, destination, time and InResponseTo checks, each assertion used once across servers, the response bound to the browser that began the sign-in). IdP groups map to roles and to permission groups; accounts are made on first sign-in. Password sign-in can be turned off. Tested against a mock OIDC provider and a test SAML IdP, in a browser too.
-- Render time limit on the server (`PW_RENDER_TIMEOUT_MS`, default 60 s): an evaluation budget in the engine, shared with subreports; a report quadratic in its rows stops with a 504 instead of holding the server.
+- **[not released]** Folders and permissions per report and per folder: grants to users and groups (view, edit, manage), inherited from the folder chain (inheritance can be turned off), a top-level default, the role as a ceiling, admins see everything. Enforced on every path: the home page (folders, search, only the controls the user can use), viewer, designer, `/api/reports*`, server renders and exports, thumbnails, saved SQL, subreports and drill-through, `/api/v1` (API keys can act as a user: `email|key`), batches and schedules (owners, re-checked at every run). A report one may not view is not found. Works on every storage backend; tested on files, SQLite, Postgres, MySQL and SQL Server.
+- **[not released]** Audit log: sign-ins and failures, sign-outs, single sign-on, report create/update/delete/restore/import/view/render/export, permission and folder changes, user changes, API key use (by key id), batches and schedule runs; who, what, format, a keyed hash of the parameters, when, from where. Append-only, in the configured storage, retention `PW_AUDIT_RETENTION_DAYS` (365). Admin page with filters and CSV export. Never passwords, keys, tokens or parameter values.
+- **[not released]** Single sign-on: OpenID Connect (authorization code + PKCE, state, nonce, ID token signature and iss/aud/azp/exp checks, cached JWKS) and SAML 2.0 (signed assertions required, audience, recipient, destination, time and InResponseTo checks, each assertion used once across servers, the response bound to the browser that began the sign-in). IdP groups map to roles and to permission groups; accounts are made on first sign-in. Password sign-in can be turned off. Tested against a mock OIDC provider and a test SAML IdP, in a browser too.
+- **[not released]** Render time limit on the server (`PW_RENDER_TIMEOUT_MS`, default 60 s): an evaluation budget in the engine, shared with subreports; a report quadratic in its rows stops with a 504 instead of holding the server.
 - Shared storage in SQLite, PostgreSQL, MySQL or SQL Server for reports, versions, schedules, jobs and users, so several servers can share it.
 - Queue and scheduler that work across several servers (database leases).
 - Server-side fetches refuse private addresses unless allowed.
@@ -137,6 +143,27 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 ## 13. Migration
 
 - ActiveReportsJS importer (`.rdlx-json`): both layouts, FixedPage, tablix (incl. nested), banded lists, charts (incl. the Phase 5 types), expressions, recursive groups, row spans, sections. 40 real files imported, validated and rendered with no item dropped; what changed is listed as notes.
+
+## 14. Report library (`reports/`)
+
+| Report | Shows | How it was made |
+|---|---|---|
+| **Stress ledger** | 5,000 nasty rows, 6 data sets, 7 parameters (cascading, ranges, slider, switch, chart-click), 3-level drill-down ledger with in-cell visuals and sort, pivot, 5 charts, TOC, barcodes, subreport; 337 pages | **Designer only** |
+| **Account detail** | Drill-through target for Stress ledger | **Designer only** |
+| Invoice gallery | Tables from the gallery, totals | Designer, by an automated UI test from a blank page |
+| Pagewright Torture Test | 180-loan portfolio: KPIs, pivot, combo chart, grouped register with sparklines, 6 drill-through pages, QR, watermark; 18 pages | Script (to be rebuilt in the Designer) |
+| Stress test | 58 items on deliberately broken data; 88 pages | Script |
+| Sales dashboard, Sales explorer → city → month | Charts, matrix, 3-level drill-through | Script |
+| Loan statement (+ Hindi) | 8-page amortisation; HarfBuzz Devanagari | Script |
+| Charts, Tablix, Expressions, Rich text, Platform, Style showcases | One per phase | Script |
+| Product catalogue / detail, Parameter editors, Imported regional sales | Filters, parameter editors, an imported ActiveReports file | Script / importer |
+
+Sample data APIs (stand-ins for customer data): `/api/sample/hard?rows=N` (nasty data, up to 200,000 rows), `/api/sample/torture`, sales, loans and stress sets.
+
+## 15. Live demo
+
+- https://mrarun005.github.io/pagewright-demo/: a static site (public repo `pagewright-demo`, built files only; source stays private) running 12 reports, a 5k–100k-row browser scale test, the embedded designer and embed code for 6 frameworks, with no server.
+- Not yet on it: charts and pivot showcases, Stress ledger, Torture Test, and the latest fixes (needs a rebuild and republish).
 
 ---
 
@@ -156,4 +183,7 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 | Scale | Batch output files go to one server's disk; the embed viewer has no Web Worker (100k rows block the page for about 5 s). |
 | Fonts | Thai, Khmer and other Indic scripts need an uploaded font; no dictionary line breaking. |
 | Publishing | npm packages and the GitHub Action not published or run; Docker image not built. |
-| Security | Two possible size-limit bypasses reported by an automated review are being fixed. |
+| Security | Open findings on the **[not released]** items: SSO could link a sign-in to an existing account by email (account takeover); the report route checks the wrong permission level and has a check-then-write race; cached thumbnails show after access is revoked; SQL Server's time limit can be missed by requests started after the deadline, one huge text value can use hundreds of MB before the size cap, and the read-only check covers only the connected database. |
+| Speed | A whole-scope aggregate inside a table row (e.g. a data bar's `Max(...,"Ledger")`) is recalculated per row: a 5,000-row report takes ~45 s instead of ~1.4 s, and each click ~20 s. A table of contents turns off the fast first page. The server's home-page thumbnail blocks it for ~29 s after saving a heavy report. |
+| Designer | ~30 gaps: no filter on charts or pivots; no item tree; shortcuts lost after using the inspector; phantom cells after "Add column"; no row visibility; font weight and size can't take expressions; table-row style only takes a background; pivot header/cell/total styles, custom chart palettes, nested data sets and embedded images have no controls; saving a data set drops its parent link. Templates must be built in the Designer, so these block it. |
+| Export | HTML export has no working links; in-cell icon sets draw too large. |
