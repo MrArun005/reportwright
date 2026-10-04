@@ -585,8 +585,10 @@ function paintCartesian(type, g) {
 function rowPoints(type, g) {
   const { item, ctx, lc, data, who } = g;
   const c = { ...ctx };
+  // the cap is for the whole chart: every series evaluates every row
+  const cap = Math.max(1, Math.floor(CAPS.points / Math.max(1, data.series.length)));
   let rows = data.rows;
-  if (rows.length > CAPS.points) { lc.warn(`${who}: ${rows.length} rows; only the first ${CAPS.points} points are drawn`); rows = rows.slice(0, CAPS.points); }
+  if (rows.length > cap) { lc.warn(`${who}: ${rows.length} rows; only the first ${cap} points are drawn`); rows = rows.slice(0, cap); }
   return data.series.map((s, si) => {
     const pts = [];
     for (const r of rows) {

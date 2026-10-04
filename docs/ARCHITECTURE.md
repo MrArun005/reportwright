@@ -121,11 +121,11 @@ Two expression forms:
 | List | Repeats a free-form container for each record or group | 2 |
 | Container | Groups items; page break before/after | 2 |
 | CheckBox | Bound boolean | 2 |
-| Chart | Bar, column, line, area, pie/donut, scatter | 3 |
+| Chart | Column, bar, line, area, pie/donut, scatter; since parity Phase 5 also bubble, radar, polar, candlestick, OHLC, gauge, funnel, combos, 100% stacks, ranges, two value axes, trend/reference overlays, label templates, palettes | 3, P5 |
 | Tablix (matrix) | Row groups and column groups (pivot) | 3 |
 | Subreport | Embeds another report with parameters | 3 |
 | Barcode | Code 128, EAN-13, QR | 3 |
-| Sparkline, Bullet | Small in-cell charts | 3 |
+| Sparkline, Bullet, Data bar, Icon set, Range bar | Small in-cell charts (sparklines: line, column, area, win/loss, range band) | 3, P5 |
 | Table of contents | Built from bookmarks | 4 |
 | Fixed-page layout | Designed pages for forms (invoice templates) | 4 |
 
@@ -403,7 +403,7 @@ Updated 4 Oct 2026 after Phases B and C (`docs/PLAN-PHASE-BC.md`).
 | Fixed-page reports | Yes | Phase 4 |
 | Pageless and dashboard reports | Yes: `Pageless` page size, dashboard template | B3 |
 | Table / Tablix / List / Banded list | Table, List, Tablix (matrix), banded via List + Container | Phases 1–3 |
-| Chart, Sparkline, Bullet | Yes | Phase 3 |
+| Chart, Sparkline, Bullet | Yes; the chart types and options of ActiveReportsJS 6 since parity Phase 5 | Phase 3, P5 |
 | Map | Yes: choropleth from your GeoJSON, sized points | B4 |
 | Barcode | Code 128, EAN-13, QR and others | Phase 3 |
 | Subreport | Yes (at most 2,000 per render) | Phase 3 |

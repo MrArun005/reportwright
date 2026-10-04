@@ -304,6 +304,8 @@ describe('untrusted sizes', () => {
     const { items, warnings } = await draw({ chartType: 'scatter', xValue: '=Fields.m' }, data);
     expect(warnings.join()).toMatch(/only the first 10000 points/);
     expect(items.filter(i => i.t === 'ellipse')).toHaveLength(10000);
+    const four = await draw({ chartType: 'scatter', xValue: '=Fields.m', series: [1, 2, 3, 4].map(k => ({ name: `S${k}`, value: `=Fields.amt * ${k}` })) }, data);
+    expect(four.items.filter(i => i.t === 'ellipse')).toHaveLength(10000); // the cap is per chart, not per series
     const long = await draw({ category: '=Fields.region', title: 'x'.repeat(100000), labelTemplate: '{value}'.repeat(10000) });
     expect(long.items.every(i => i.t !== 'text' || i.lines[0].text.length <= 201)).toBe(true);
   });
