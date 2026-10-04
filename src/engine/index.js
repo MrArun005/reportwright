@@ -325,7 +325,9 @@ export function resolveParameters(def, given, { lenient = false } = {}) {
   const ctx = { params: {}, globals: { ExecutionTime: new Date() }, dataSets: {}, fields: null, functions: functionTable(def) };
   for (const p of def.parameters || []) {
     let val = given[p.name];
-    if ((val == null || val === '') && p.default != null && p.default !== '') {
+    // nullable: an explicit null is a value, so the default does not replace it
+    const chosenNull = val === null && p.nullable && !p.multi && Object.hasOwn(given, p.name);
+    if (!chosenNull && (val == null || val === '') && p.default != null && p.default !== '') {
       try { val = evalValue(p.default, ctx); } catch { val = null; }
     }
     if (p.multi) {
@@ -333,8 +335,10 @@ export function resolveParameters(def, given, { lenient = false } = {}) {
       val = list.map(x => coerce(x, p.type || 'string'));
       if (p.required && !val.length) missing.push(p.name);
     } else {
-      val = val === '' && p.type !== 'string' ? null : coerce(val, p.type || 'string');
-      if (p.required && (val == null || val === '')) missing.push(p.name);
+      // a blank is a value only for allowBlank (text); a nullable parameter reads it as null
+      if (val === '' && (p.type !== 'string' || (p.nullable && !p.allowBlank))) val = null;
+      else val = coerce(val, p.type || 'string');
+      if (p.required && ((val == null && !p.nullable) || (val === '' && !p.allowBlank))) missing.push(p.name);
     }
     out[p.name] = val;
     ctx.params[p.name] = val;

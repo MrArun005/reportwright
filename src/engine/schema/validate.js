@@ -16,6 +16,12 @@ export function validate(def) {
 
   errors.push(...checkFunctions(def.functions));
 
+  for (const p of def.parameters || []) {
+    if (p?.hidden && p.required && (p.default == null || p.default === '') && !p.nullable) {
+      warnings.push(`Parameter "${p.name}" is hidden and required but has no default: only a URL, the API or a drill-through can set it`);
+    }
+  }
+
   const srcNames = new Set();
   for (const s of def.dataSources || []) {
     if (!s.name) errors.push('A data source has no name');
