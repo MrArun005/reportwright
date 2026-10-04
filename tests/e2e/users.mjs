@@ -62,6 +62,8 @@ for (const [email, role] of [[VIEWER, 'viewer'], [DESIGNER, 'designer']]) {
   await form.getByLabel(/^Password/).fill(PW);
   await form.getByRole('button', { name: 'Add user' }).click();
   await pa.getByText(`Added ${email} as ${role}.`).waitFor();
+  // the form clears after the list reloads (UsersAdmin act): typing before that is wiped
+  await pa.waitForFunction(() => document.querySelector('form[aria-label="Add a user"] input[type=email], form[aria-label="Add a user"] input')?.value === '');
 }
 await pa.getByRole('cell', { name: VIEWER, exact: true }).waitFor();
 await pa.screenshot({ path: '/tmp/shots/users-admin.png' });
