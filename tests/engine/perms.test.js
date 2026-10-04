@@ -481,6 +481,21 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     }
   });
 
+  it('review: thumbnails: content pulled from another report by a master is not served after access to it is gone', async () => {
+    const { writeReport } = await import('../../src/server/reports.js');
+    const id = `mst-${kind}`;
+    await writeReport(id, { ...def('Child'), master: 'salary' });
+    await perms.setReportAccess({ kind: 'service' }, id, { inherit: false, grants: [{ to: 'user:carol@x.io', level: 'view' }] });
+    try {
+      expect(await (await thumbOf('carol', id)).text()).toContain('Salary');
+      await users.updateUser('carol@x.io', { groups: [] });
+      expect(await (await thumbOf('carol', id)).text()).not.toContain('Salary');
+    } finally {
+      await users.updateUser('carol@x.io', { groups: ['Finance'] });
+      await R.one.DELETE(req(`/api/reports/${id}`, { who: 'admin', method: 'DELETE' }), P(id));
+    }
+  });
+
   it('review: thumbnails: a grant changed (and changed back) while one is drawn is not cached', async () => {
     const { writeReport } = await import('../../src/server/reports.js');
     const { thumbsIdle } = await import('../../src/server/thumbs.js');

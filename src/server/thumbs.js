@@ -5,7 +5,7 @@
 // queues one render; saves in quick succession replace the queued render, so only the newest version is drawn.
 //
 // The cache is per report and per viewer (a subreport may show for one user and not another), keyed by a hash of the
-// definition; with a subreport in it, also by the permissions now (perms.accessStamp: every folder and report grant
+// definition and by the permissions now (perms.accessStamp: every folder and report grant
 // and the viewer's record, each with a rev that every change renews), so a revoke is never answered from an older
 // drawing, and a drawing is not kept when any of that changed while it was queued or drawn. It is drawn as the viewer
 // who asked (never as the server). The route checks view access on every request before it looks here.
@@ -44,8 +44,9 @@ export async function drawThumb({ def, principal, base }) {
  */
 export async function thumbnail(id, def, principal, base) {
   const json = JSON.stringify(def);
-  const stamp = json.includes('"subreport"') ? await accessStamp(principal) : null;
-  const hash = sha(stamp ? `${json}\0${stamp}` : json);
+  // always: a report can draw others (subreports, a master, part libraries, stylesheets, themes, by expression too)
+  const stamp = await accessStamp(principal);
+  const hash = sha(`${json}\0${stamp}`);
   const slot = `${id}|${principalId(principal)}`;
   const hit = g.cache.get(slot);
   if (hit?.hash === hash) return hit;
