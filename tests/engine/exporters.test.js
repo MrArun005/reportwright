@@ -98,3 +98,21 @@ describe('HTML export links', () => {
     expect(await html(linked({ type: 'url', url: 'mailto:a@b.example' }))).toContain('href="mailto:a@b.example"');
   });
 });
+
+describe('PDF strings cannot break out of their objects', () => {
+  const evil = 'Q3) >> /S /JavaScript /JS (app.alert(1)) /X (';
+  it('bookmark titles and link URLs with parentheses add no JavaScript action, and titles round-trip', async () => {
+    const { PDFDocument, PDFDict, PDFName } = await import('pdf-lib');
+    const def = report([{ type: 'textbox', name: 'B', x: 0, y: 0, w: 300, h: 20, value: 'Region', bookmark: `="${evil}"`, action: { type: 'url', url: `https://ok.example/a${encodeURIComponent(')')})/x)>>/S/JavaScript/JS(app.alert(2))` } },
+      { type: 'textbox', name: 'H', x: 0, y: 30, w: 300, h: 20, value: 'हिंदी', bookmark: '=\"दक्षिण क्षेत्र\"' }]);
+    const doc = await PDFDocument.load(await exportPdf(await render(def, { fontStore }), fontStore));
+    const dicts = doc.context.enumerateIndirectObjects().map(([, o]) => o).filter(o => o instanceof PDFDict);
+    for (const d of dicts) {
+      expect(d.get(PDFName.of('S'))?.toString()).not.toBe('/JavaScript');
+      expect(d.has(PDFName.of('JS'))).toBe(false);
+    }
+    const titles = dicts.filter(d => d.has(PDFName.of('Title')) && d.has(PDFName.of('Dest'))).map(d => d.lookup(PDFName.of('Title')).decodeText());
+    expect(titles).toContain(evil);
+    expect(titles).toContain('दक्षिण क्षेत्र');
+  });
+});
