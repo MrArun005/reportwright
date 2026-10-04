@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { allNames, cloneWithIds } from './store.js';
 import { useDesigner, findItem, updateItem, deleteSelection, duplicateSelection, sectionList, secOf, isBodyKey, addBodySection, removeBodySection, walk, tableParts, rowsOf,
   tableInsertColumn, tableDeleteColumn, tableInsertRow, tableDeleteRow, tableSetColumnWidth, tableMergeRight, tableSplit, tableMergeDown, tableSplitRows, tableSync, tableAddGroup, tableRemoveGroup, round, growToFit } from './store.js';
 import { normalizeMatrix, isTablix } from '@/engine/items/pivot.js';
@@ -824,6 +825,7 @@ function SectionProps({ section }) {
         <Field label={T('i_heightPt')} hint={T(isBody ? 'i_bodyHeightHint' : 'i_bandHeightHint')}>
           <NumberInput value={sec.height || 0} step={1} onChange={v => set('height', Math.max(minH, v))} />
         </Field>
+        {isBody && <SectionBands sec={sec} apply={apply} />}
         {isBody && <div className="grid2">
           <Field label={T('i_columns')} hint={T('i_newspaperHint')}><NumberInput value={sec.columns?.count || 1} step={1} min={1} onChange={v => apply(x => { const n = Math.max(1, Math.min(6, Math.round(v))); if (n === 1) delete x.columns; else x.columns = { gap: x.columns?.gap ?? 18, count: n }; })} /></Field>
           {sec.columns?.count > 1 && <Field label={T('i_gapPt')}><NumberInput value={sec.columns.gap ?? 18} step={1} onChange={v => apply(x => { x.columns.gap = Math.max(0, v); }, 'colgap')} /></Field>}
@@ -848,6 +850,32 @@ function SectionProps({ section }) {
         </div>
         <div className="hint">{T('sectionHint')}</div>
       </div>}
+    </>
+  );
+}
+
+/** A body section's page header and footer: the report's (shared), its own (a band of its own), or none. */
+function SectionBands({ sec, apply }) {
+  const T = useT();
+  const modeOf = (k) => (sec[k] && typeof sec[k] === 'object' ? (sec[k].hidden ? 'none' : 'own') : 'shared');
+  const setMode = (k, mode) => apply((x, d) => {
+    if (mode === 'shared') delete x[k];
+    else if (mode === 'none') x[k] = { hidden: true };
+    else if (!x[k] || x[k].hidden) {
+      // its own band starts as a copy of the shared one (new ids and names), so it is an override, not a blank
+      const src = d.sections[k] || {};
+      const used = allNames(d);
+      x[k] = { height: Number(src.height) > 0 ? src.height : 36, items: (src.items || []).map(it => cloneWithIds(it, used)) };
+    }
+  });
+  const opts = [{ value: 'shared', label: T('secBandShared') }, { value: 'own', label: T('secBandOwn') }, { value: 'none', label: T('secBandNone') }];
+  return (
+    <>
+      <div className="grid2">
+        <Field label={T('band_pageHeader')}><Select value={modeOf('pageHeader')} options={opts} onChange={v => setMode('pageHeader', v || 'shared')} aria-label={T('band_pageHeader')} data-testid="sec-header-mode" /></Field>
+        <Field label={T('band_pageFooter')}><Select value={modeOf('pageFooter')} options={opts} onChange={v => setMode('pageFooter', v || 'shared')} aria-label={T('band_pageFooter')} data-testid="sec-footer-mode" /></Field>
+      </div>
+      <div className="hint">{T('secBandHint')}</div>
     </>
   );
 }

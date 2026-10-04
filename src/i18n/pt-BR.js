@@ -934,4 +934,10 @@ export default {
   band_body: "Corpo",
   band_pageFooter: "Rodapé da página",
   band_section: "Seção {n}",
+  band_sectionHeader: "{section} · cabeçalho da página",
+  band_sectionFooter: "{section} · rodapé da página",
+  secBandShared: "O do relatório (compartilhado)",
+  secBandOwn: "Próprio",
+  secBandNone: "Nenhum",
+  secBandHint: "O cabeçalho ou rodapé próprio começa como cópia do relatório e aparece como uma faixa acima ou abaixo desta seção.",
 };

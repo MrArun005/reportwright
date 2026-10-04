@@ -934,4 +934,10 @@ export default {
   band_body: "المتن",
   band_pageFooter: "تذييل الصفحة",
   band_section: "القسم {n}",
+  band_sectionHeader: "{section} · رأس الصفحة",
+  band_sectionFooter: "{section} · تذييل الصفحة",
+  secBandShared: "الخاص بالتقرير (مشترك)",
+  secBandOwn: "خاص به",
+  secBandNone: "لا شيء",
+  secBandHint: "يبدأ الرأس أو التذييل الخاص كنسخة من الخاص بالتقرير ويظهر كشريط فوق هذا القسم أو تحته.",
 };

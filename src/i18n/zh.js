@@ -934,4 +934,10 @@ export default {
   band_body: "正文",
   band_pageFooter: "页脚",
   band_section: "节 {n}",
+  band_sectionHeader: "{section} · 页眉",
+  band_sectionFooter: "{section} · 页脚",
+  secBandShared: "报表的（共用）",
+  secBandOwn: "本节专用",
+  secBandNone: "无",
+  secBandHint: "专用页眉或页脚以报表的副本开始，显示为本节上方或下方的一个带区。",
 };

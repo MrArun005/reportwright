@@ -934,4 +934,10 @@ export default {
   band_body: "मुख्य भाग",
   band_pageFooter: "पृष्ठ पादलेख",
   band_section: "अनुभाग {n}",
+  band_sectionHeader: "{section} · पृष्ठ शीर्षलेख",
+  band_sectionFooter: "{section} · पृष्ठ पादलेख",
+  secBandShared: "रिपोर्ट का (साझा)",
+  secBandOwn: "अपना",
+  secBandNone: "कोई नहीं",
+  secBandHint: "अपना शीर्षलेख या पादलेख रिपोर्ट वाले की प्रति से शुरू होता है और इस सेक्शन के ऊपर या नीचे एक बैंड के रूप में दिखता है।",
 };

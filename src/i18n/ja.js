@@ -934,4 +934,10 @@ export default {
   band_body: "本文",
   band_pageFooter: "ページフッター",
   band_section: "セクション {n}",
+  band_sectionHeader: "{section} · ページヘッダー",
+  band_sectionFooter: "{section} · ページフッター",
+  secBandShared: "レポート共通",
+  secBandOwn: "このセクション専用",
+  secBandNone: "なし",
+  secBandHint: "専用のヘッダー／フッターはレポート共通のもののコピーから始まり、このセクションの上または下にバンドとして表示されます。",
 };

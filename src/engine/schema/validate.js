@@ -19,6 +19,7 @@ export function validate(def) {
   if (Array.isArray(body)) body.forEach((b, i) => {
     if (!b || typeof b !== 'object' || Array.isArray(b)) errors.push(`Body section ${i + 1} is not an object`);
     else if (b.page != null && (typeof b.page !== 'object' || Array.isArray(b.page))) errors.push(`Body section ${i + 1}: "page" must be an object`);
+    for (const k of ['pageHeader', 'pageFooter']) if (b && b[k] != null && (typeof b[k] !== 'object' || Array.isArray(b[k]))) errors.push(`Body section ${i + 1}: "${k}" must be an object`);
   });
 
   errors.push(...checkFunctions(def.functions));
@@ -62,6 +63,8 @@ export function validate(def) {
     if (!sec) continue;
     for (const b of Array.isArray(sec) ? sec : [sec]) if (b && typeof b === 'object') lists.push([where, b.items]);
   }
+  // a body section's own page header and footer are checked as the shared ones are
+  if (Array.isArray(body)) for (const b of body) for (const k of ['pageHeader', 'pageFooter']) if (b?.[k] && typeof b[k] === 'object') lists.push([k, b[k].items]);
   for (const [where, items] of lists) {
     for (const it of Array.isArray(items) ? items : []) {
       const label = it.name || it.type;

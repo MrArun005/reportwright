@@ -70,7 +70,7 @@ export async function render(def0, opts = {}) {
   const warn = (msg) => { if (warnings.length < 200 && !warnings.includes(msg)) warnings.push(msg); };
 
   const page = resolvePage(def.page);
-  if (['pageHeader', 'body', 'pageFooter'].some(k => hasType(k === 'body' && Array.isArray(def.sections?.body) ? def.sections.body.flatMap(b => b.items || []) : def.sections?.[k]?.items, 'barcode'))) await loadBarcodes();
+  if (['pageHeader', 'body', 'pageFooter'].some(k => hasType(k === 'body' && Array.isArray(def.sections?.body) ? def.sections.body.flatMap(b => [...(b?.items || []), ...(b?.pageHeader?.items || []), ...(b?.pageFooter?.items || [])]) : def.sections?.[k]?.items, 'barcode'))) await loadBarcodes();
   const params = resolveParameters(def, opts.parameters || {});
 
   const store = opts.fontStore || new FontStore(/** @type {any} */ (opts.loadFont));
@@ -193,12 +193,15 @@ export async function render(def0, opts = {}) {
     /** One body section's page geometry. Multi-column body: the strip fills column slots left to right, then the next page. */
     const geometry = (b, bi) => {
       const pg = bi === 0 && !b.page ? page : resolvePage({ ...(def.page || {}), ...(b.page || {}) });
-      const cH = pg.height - pg.margins.top - pg.margins.bottom - headerH - footerH;
+      // a body section may have its own page header and footer (hidden: none), like an SSRS/ActiveReports report section
+      const hdr = sectionBand(b.pageHeader, header), ftr = sectionBand(b.pageFooter, footer);
+      const hH = hdr?.height || 0, fH = ftr?.height || 0;
+      const cH = pg.height - pg.margins.top - pg.margins.bottom - hH - fH;
       if (cH < 24) throw new ReportError(`Body section ${bi + 1}: the page header and footer leave no room for the body.`);
       const colCount = Math.max(1, Math.min(6, Number(b.columns?.count) || 1));
       const colGap = Number(b.columns?.gap ?? 18);
       const colW = (pg.bodyWidth - colGap * (colCount - 1)) / colCount;
-      return { pg, cH, colCount, colGap, colW, bodyWidth: colCount > 1 ? colW : (bi === 0 && !b.page ? lc.bodyWidth : pg.bodyWidth) };
+      return { pg, cH, colCount, colGap, colW, hdr, ftr, hH, fH, own: { h: hdr !== header, f: ftr !== footer }, bodyWidth: colCount > 1 ? colW : (bi === 0 && !b.page ? lc.bodyWidth : pg.bodyWidth) };
     };
     const geos = bodies.map(geometry);
     lc.bodyWidth = geos[0].bodyWidth;
@@ -213,7 +216,7 @@ export async function render(def0, opts = {}) {
       const parts = [];
       sections: for (let bi = 0; bi < bodies.length; bi++) {
         const g = geos[bi];
-        const blc = bi === 0 && !bodies[0].page ? lc : { ...lc, bodyWidth: g.bodyWidth, maxUnitHeight: g.cH };
+        const blc = bi === 0 && !bodies[0].page && g.cH === contentH ? lc : { ...lc, bodyWidth: g.bodyWidth, maxUnitHeight: g.cH };
         // a section whose last overflow placeholder still has rows is laid out again, page after page
         for (let rep = 0; ; rep++) {
           overflow.more = null; overflow.repeat = rep > 0; overflow.head = null;
@@ -231,7 +234,7 @@ export async function render(def0, opts = {}) {
       if (!lc.rowBudget?.cut) for (const p of overflow.pending.values()) warn(`${p.table}: ${p.units.length} rows did not fit its frame and there is no overflow placeholder "${p.to}" after it.`);
       // the page list: [part, index of the page in its part]
       const list = [];
-      for (const part of parts) for (let k = 0; k < Math.ceil(part.slices.length / part.g.colCount); k++) list.push({ part, k });
+      for (const part of parts) { const nk = Math.ceil(part.slices.length / part.g.colCount); for (let k = 0; k < nk; k++) list.push({ part, k, last: k === nk - 1 }); }
       if (lc.rowBudget?.cut) list.length = Math.min(list.length, firstPages);
       const total = list.length;
       // numbering sections: a page where a newSection group or list row starts opens one (the first page always does)
@@ -248,18 +251,18 @@ export async function render(def0, opts = {}) {
       let pageH = first.height;
       if (first.pageless && parts.length === 1) {
         const sl = parts[0].slices;
-        if (sl.length === 1) pageH = Math.max(first.minHeight, first.margins.top + headerH + sl[0].bottom - sl[0].top + footerH + first.margins.bottom);
+        if (sl.length === 1) pageH = Math.max(first.minHeight, first.margins.top + parts[0].g.hH + sl[0].bottom - sl[0].top + parts[0].g.fH + first.margins.bottom);
         else warn(`This pageless report is taller than 200 inches, the largest PDF page, so it is split into ${sl.length} pages.`);
       }
       const bookmarks = [];
       const headings = []; // text boxes with headingLevel: for a table of contents only, not the PDF outline
       const pages = [];
-      list.forEach(({ part, k }, n) => {
+      list.forEach(({ part, k, last }, n) => {
         const { body, slices, g } = part;
         const { pg, colCount, colW, colGap, cH } = g;
         const ph = parts.length === 1 ? pageH : pg.height;
         const ml = pg.margins.left, mt = pg.margins.top;
-        const bodyTop = mt + headerH;
+        const bodyTop = mt + g.hH;
         const items = [];
         const cut = lc.rowBudget?.cut;
         const globals = { ...baseCtx.globals, PageNumber: n - secStart[n] + 1, TotalPages: cut ? '…' : secLen.get(secStart[n]), OverallPageNumber: n + 1, OverallTotalPages: cut ? '…' : total };
@@ -272,7 +275,8 @@ export async function render(def0, opts = {}) {
           for (const u of r.units) for (const d of u.items) d.art = 1; // page header and footer: an artifact in a tagged PDF
           for (const u of r.units) placeItems(u.items, ml, y0 + u.top, items);
         };
-        band(header, mt, n === 0, n === total - 1);
+        // a section's own band: first and last are the section's pages; the shared one: the report's
+        band(g.hdr, mt, g.own.h ? k === 0 : n === 0, g.own.h ? last : n === total - 1);
         const frozen = []; // table headers on this page and where each table ends: viewers keep them in view while scrolling
         for (let c = 0; c < colCount; c++) {
           const p = slices[k * colCount + c];
@@ -298,7 +302,7 @@ export async function render(def0, opts = {}) {
             placeItems(u.items, cx, bodyTop + off + (u.top - p.top), items);
           }
         }
-        band(footer, ph - pg.margins.bottom - footerH, n === 0, n === total - 1);
+        band(g.ftr, ph - pg.margins.bottom - g.fH, g.own.f ? k === 0 : n === 0, g.own.f ? last : n === total - 1);
         let j = 0; // bookmarks leave the page's items (compacted in place: a page holds hundreds of items)
         for (let i = 0; i < items.length; i++) {
           const it = items[i];
@@ -388,6 +392,12 @@ export async function render(def0, opts = {}) {
     width: result.width ?? page.width, height, pages, warnings, bookmarks, regions, name: def.name || '', partial: cutRows(),
     stats: { ms: Date.now() - t0, pages: pages.length, rows: Object.fromEntries(Object.entries(dataSets).map(([k, r]) => [k, r.length])) },
   };
+}
+
+/** A body section's page header or footer: its own band (an object; hidden or no height: none), else the shared one. */
+function sectionBand(own, shared) {
+  if (!own || typeof own !== 'object' || Array.isArray(own)) return shared;
+  return own.hidden || !(Number(own.height) > 0) ? null : own;
 }
 
 function hasType(items, type) {

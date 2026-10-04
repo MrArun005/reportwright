@@ -70,7 +70,7 @@ export default function Canvas() {
   const zoom = useDesigner(s => s.zoom);
   const bands = sectionList(def);
   // a body section with its own page may be wider (landscape): each band has its own width
-  const widths = Object.fromEntries(bands.map(s => [s.key, bodyWidth(def, isBodyKey(s.key) ? s.key : 'body')]));
+  const widths = Object.fromEntries(bands.map(s => [s.key, bodyWidth(def, s.key)]));
   const bw = Math.max(...Object.values(widths));
   // zoom "fit": the page fills the canvas width (it follows the window)
   const scrollRef = useRef(null);

@@ -934,4 +934,10 @@ export default {
   band_body: "Hauptteil",
   band_pageFooter: "Seitenfuß",
   band_section: "Abschnitt {n}",
+  band_sectionHeader: "{section} · Seitenkopf",
+  band_sectionFooter: "{section} · Seitenfuß",
+  secBandShared: "Der des Berichts (gemeinsam)",
+  secBandOwn: "Eigener",
+  secBandNone: "Keiner",
+  secBandHint: "Ein eigener Kopf oder Fuß beginnt als Kopie des Berichts und erscheint als Band über oder unter diesem Abschnitt.",
 };

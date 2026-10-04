@@ -17,11 +17,17 @@ export const NESTING = new Set(['container', 'list']);
  * Keys: 'pageHeader', 'body' (the first body section), 'body:1', 'body:2' …, 'pageFooter'.
  */
 export function secOf(d, key) {
-  const [k, i] = String(key).split(':');
+  const [k, i, sub] = String(key).split(':');
   const s = d?.sections?.[k];
-  return Array.isArray(s) ? s[Number(i || 0)] : s;
+  const b = Array.isArray(s) ? s[Number(i || 0)] : s;
+  return sub ? b?.[sub] : b;
 }
-export const isBodyKey = (key) => String(key).split(':')[0] === 'body';
+/** A body section's key ('body', 'body:2'); not its own page header or footer ('body:2:pageHeader'). */
+export const isBodyKey = (key) => { const p = String(key).split(':'); return p[0] === 'body' && !p[2]; };
+/** The body section a band belongs to: itself, or the section whose own page header or footer it is. */
+export const bodyKeyOf = (key) => { const p = String(key).split(':'); return p[0] === 'body' ? (p[1] && p[1] !== '0' ? `body:${p[1]}` : 'body') : null; };
+/** A body section's own page header or footer (an object, not hidden): it gets a band of its own. */
+export const ownBand = (b, k) => !!(b && b[k] && typeof b[k] === 'object' && !Array.isArray(b[k]) && !b[k].hidden);
 /** Every band of the report, in page order. */
 export function sectionList(def) {
   const b = def?.sections?.body;
@@ -29,11 +35,22 @@ export function sectionList(def) {
   const lang = typeof useDesigner === 'function' ? useDesigner.getState().lang : 'en';
   const L = (k, en) => { const s = t(lang, k); return s === k ? en : s; };
   const bodies = Array.isArray(b) ? b.map((x, i) => ({ key: i ? `body:${i}` : 'body', label: x?.name || L('band_section', `Section ${i + 1}`).replace('{n}', i + 1), index: i })) : [{ key: 'body', label: L('band_body', 'Body'), index: 0 }];
-  return [{ ...SECTIONS[0], label: L('band_pageHeader', SECTIONS[0].label) }, ...bodies, { ...SECTIONS[2], label: L('band_pageFooter', SECTIONS[2].label) }];
+  // a body section with its own page header or footer: those bands sit above and below it
+  const list = Array.isArray(b) ? b : [b];
+  const withOwn = bodies.flatMap((s) => {
+    const x = list[s.index];
+    return [
+      ...(ownBand(x, 'pageHeader') ? [{ key: `body:${s.index}:pageHeader`, label: L('band_sectionHeader', '{section} · page header').replace('{section}', s.label), index: s.index, own: 'pageHeader' }] : []),
+      s,
+      ...(ownBand(x, 'pageFooter') ? [{ key: `body:${s.index}:pageFooter`, label: L('band_sectionFooter', '{section} · page footer').replace('{section}', s.label), index: s.index, own: 'pageFooter' }] : []),
+    ];
+  });
+  return [{ ...SECTIONS[0], label: L('band_pageHeader', SECTIONS[0].label) }, ...withOwn, { ...SECTIONS[2], label: L('band_pageFooter', SECTIONS[2].label) }];
 }
 /** The page of a band: the report's page, with a body section's own page settings on top. */
 export function pageOf(def, key = 'body') {
-  const sec = isBodyKey(key) && Array.isArray(def.sections?.body) ? secOf(def, key) : null;
+  const bk = bodyKeyOf(key); // a section's own page header and footer have its page
+  const sec = bk && Array.isArray(def.sections?.body) ? secOf(def, bk) : null;
   return resolvePage({ ...(def.page || {}), ...(sec?.page || {}) });
 }
 

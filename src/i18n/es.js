@@ -934,4 +934,10 @@ export default {
   band_body: "Cuerpo",
   band_pageFooter: "Pie de página",
   band_section: "Sección {n}",
+  band_sectionHeader: "{section} · encabezado de página",
+  band_sectionFooter: "{section} · pie de página",
+  secBandShared: "El del informe (compartido)",
+  secBandOwn: "Propio",
+  secBandNone: "Ninguno",
+  secBandHint: "Su propio encabezado o pie empieza como copia del informe y aparece como una banda encima o debajo de esta sección.",
 };

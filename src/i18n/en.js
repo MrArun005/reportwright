@@ -934,4 +934,10 @@ export default {
   band_body: "Body",
   band_pageFooter: "Page footer",
   band_section: "Section {n}",
+  band_sectionHeader: "{section} · page header",
+  band_sectionFooter: "{section} · page footer",
+  secBandShared: "The report's (shared)",
+  secBandOwn: "Its own",
+  secBandNone: "None",
+  secBandHint: "Its own header or footer starts as a copy of the report's and shows as a band above or below this section.",
 };

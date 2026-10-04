@@ -934,4 +934,10 @@ export default {
   band_body: "Corps",
   band_pageFooter: "Pied de page",
   band_section: "Section {n}",
+  band_sectionHeader: "{section} · en-tête de page",
+  band_sectionFooter: "{section} · pied de page",
+  secBandShared: "Celui du rapport (partagé)",
+  secBandOwn: "Le sien",
+  secBandNone: "Aucun",
+  secBandHint: "Son propre en-tête ou pied commence comme une copie de celui du rapport et s'affiche en bande au-dessus ou au-dessous de cette section.",
 };
