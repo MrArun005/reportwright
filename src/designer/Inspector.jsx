@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useDesigner, findItem, updateItem, deleteSelection, duplicateSelection, sectionList, secOf, isBodyKey, addBodySection, removeBodySection, walk, tableParts, rowsOf,
   tableInsertColumn, tableDeleteColumn, tableInsertRow, tableDeleteRow, tableSetColumnWidth, tableMergeRight, tableSplit, tableMergeDown, tableSplitRows, tableSync, tableAddGroup, tableRemoveGroup, round } from './store.js';
 import { normalizeMatrix, isTablix } from '@/engine/items/pivot.js';
@@ -9,7 +9,8 @@ import { useFontFamilies, FontsDialog } from './Fonts.jsx';
 import { PAGE_SIZES, fromPt, toPt } from '@/engine/units.js';
 import { TextInput, NumberInput, Select, ColorInput, ExprInput, Field, Check } from './ui.jsx';
 import ExpressionEditor from './ExpressionEditor.jsx';
-import { checkFunctions } from '@/engine/expr/evaluate.js';
+import { checkFunctions, isDynamic } from '@/engine/expr/evaluate.js';
+import { PALETTES } from '@/engine/items/chart-kit.js';
 
 /** The designer's UI language (set by the Designer) as a translate function. */
 function useT() { const lang = useDesigner(s => s.lang); return (k, v) => t(lang, k, v); }
@@ -57,9 +58,11 @@ function PropEditor({ p: spec, value, onChange, openExpr, dataSet, item }) {
   switch (p.type) {
     case 'expr': return <Field label={p.label}><ExprInput value={value} onChange={onChange} onOpen={() => openExpr({ value, dataSet, onSave: onChange, title: p.label })} /></Field>;
     case 'html': return <Field label={p.label}><textarea className="input mono" rows={7} spellCheck={false} data-testid={`prop-${p.key}`} style={{ width: '100%', resize: 'vertical', fontSize: 11 }} value={value ?? ''} onChange={e => onChange(e.target.value === '' ? undefined : e.target.value)} /></Field>;
-    case 'number': return <Field label={p.label}><NumberInput value={value} onChange={onChange} /></Field>;
+    case 'number': return p.expr ? <ExprOr p={p} value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet}><NumberInput value={value} onChange={onChange} /></ExprOr> : <Field label={p.label}><NumberInput value={value} onChange={onChange} /></Field>;
     case 'bool': return <Check label={p.label} checked={value} onChange={onChange} />;
-    case 'select': return <Field label={p.label}><Select value={value} onChange={onChange} options={p.options} allowEmpty /></Field>;
+    case 'select': return p.expr ? <ExprOr p={p} value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet}><Select value={value} onChange={onChange} options={p.options} allowEmpty /></ExprOr> : <Field label={p.label}><Select value={value} onChange={onChange} options={p.options} allowEmpty /></Field>;
+    case 'palette': return <PaletteEditor label={p.label} value={value} onChange={onChange} />;
+    case 'report': return <Field label={p.label}><ReportPicker value={value} onChange={onChange} /></Field>;
     case 'color': return <Field label={p.label}><ColorInput value={value} onChange={onChange} /></Field>;
     case 'font': return <Field label={p.label}><Select value={value} onChange={onChange} options={families} allowEmpty /></Field>;
     case 'dataset': return <Field label={p.label}><Select value={value} onChange={onChange} options={(def.dataSets || []).map(d => d.name)} allowEmpty /></Field>;
@@ -72,6 +75,59 @@ function PropEditor({ p: spec, value, onChange, openExpr, dataSet, item }) {
     case 'params': return <ParamsEditor label={p.label} value={value} onChange={onChange} />;
     default: return <Field label={p.label}><TextInput value={value} onChange={v => onChange(v === '' ? undefined : v)} /></Field>;
   }
+}
+
+/** A fixed value (the normal control) or an expression: a font size, weight or style can be =IIf(…). */
+function ExprOr({ p, value, onChange, openExpr, dataSet, children }) {
+  const T = useT();
+  const [on, setOn] = useState(isDynamic(value));
+  const label = T(on ? 'useFixed' : 'useExpr');
+  return (
+    <Field label={p.label}>
+      <div className="expr-row">
+        {on ? <ExprInput value={value} onChange={v => onChange(v || undefined)} onOpen={() => openExpr({ value, dataSet, onSave: onChange, title: p.label })} placeholder="=IIf(Fields.amount < 0, 'bold', 'normal')" /> : children}
+        <button type="button" className="btn sm ghost" aria-pressed={on} title={label} aria-label={`${p.label}: ${label}`} onClick={() => { if (on || isDynamic(value)) onChange(undefined); setOn(!on); }}>{on ? '×' : '='}</button>
+      </div>
+    </Field>
+  );
+}
+
+/** A named palette, or the report's own list of colours. */
+function PaletteEditor({ label, value, onChange }) {
+  const T = useT();
+  const custom = Array.isArray(value);
+  const [text, setText] = useState(custom ? value.join(', ') : '');
+  const parse = (t) => t.split(/[\s,;]+/).map(x => x.trim()).filter(x => /^#[0-9a-f]{6}$/i.test(x));
+  return (
+    <div style={{ display: 'grid', gap: 6 }}>
+      <Field label={label}>
+        <Select value={custom ? '__custom' : value} allowEmpty options={[...Object.keys(PALETTES), { value: '__custom', label: T('paletteCustom') }]}
+          onChange={v => { if (v === '__custom') { const list = parse(text); onChange(list.length ? list : [...PALETTES.default]); if (!list.length) setText(PALETTES.default.join(', ')); } else onChange(v); }} data-testid="chart-palette" />
+      </Field>
+      {custom && <Field label={T('paletteColours')} hint={T('paletteColoursHint')}>
+        <TextInput value={text} mono onChange={t => { setText(t); const list = parse(t); if (list.length) onChange(list); }} data-testid="chart-palette-colours" />
+      </Field>}
+      {custom && <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }} aria-hidden="true">{value.map((c, i) => <span key={i} style={{ width: 14, height: 14, borderRadius: 3, background: c, border: '1px solid var(--line)' }} />)}</div>}
+    </div>
+  );
+}
+
+let reportList = null;
+/** Report ids for drill-through and subreports: a list to pick from, still free text (an =expression works). */
+function ReportPicker({ value, onChange }) {
+  const [list, setList] = useState(reportList || []);
+  const listId = useState(() => `reports-${Math.random().toString(36).slice(2, 8)}`)[0];
+  useEffect(() => {
+    if (reportList) return;
+    const server = useDesigner.getState().embed?.server || '';
+    fetch(`${server}/api/reports`).then(r => (r.ok ? r.json() : [])).then(l => { reportList = Array.isArray(l) ? l : []; setList(reportList); }).catch(() => {});
+  }, []);
+  return (
+    <>
+      <TextInput value={value} onChange={v => onChange(v || undefined)} mono list={listId} placeholder="loan-statement" data-testid="report-picker" />
+      <datalist id={listId}>{list.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</datalist>
+    </>
+  );
 }
 
 function groupBy(props) {
@@ -138,6 +194,7 @@ function ItemProps({ item, section, openExpr }) {
           {ps.map(p => <PropEditor key={p.key} p={p} value={item[p.key]} onChange={v => set(p.key, v)} openExpr={openExpr} dataSet={dataSet} item={item} />)}
         </div>
       ))}
+      {item.type === 'image' && <EmbeddedPicker item={item} onPick={v => set('src', v)} />}
       {item.type === 'table' && <TableProps table={item} openExpr={openExpr} />}
       {item.type === 'matrix' && <PivotEditor item={item} openExpr={openExpr} />}
       {(item.type === 'list' || item.type === 'chart') && <SortFilterEditor item={item} />}
@@ -249,6 +306,7 @@ function PivotEditor({ item, openExpr }) {
           </div>
           <Field label={T('pivotLabel')}>{exprField(list, i, 'label', g.label, T('pivotLabel'))}</Field>
           {list === 'rowGroups' && <Field label={T('pivotHeader')}><TextInput value={g.header || ''} onChange={v => setK(list, i, 'header', v)} /></Field>}
+          {g.total && g.total !== 'none' && <Field label={T('pivotTotalLabel')}><TextInput value={g.totalLabel ?? ''} onChange={v => setK(list, i, 'totalLabel', v)} placeholder="Total" aria-label={`${T('pivotTotalLabel')} ${i + 1}`} /></Field>}
           {i < spec[list].length - 1 && <Check label={T('pivotCollapsible')} checked={g.collapsible} onChange={v => setK(list, i, 'collapsible', v)} />}
           {g.collapsible && <Check label={T('pivotStartCollapsed')} checked={g.initiallyCollapsed} onChange={v => setK(list, i, 'initiallyCollapsed', v)} />}
         </div>
@@ -277,9 +335,29 @@ function PivotEditor({ item, openExpr }) {
         {adder('values')}
         <div className="hint">{T('pivotHint')}</div>
       </div>
+      <div className="cat" data-testid="pivot-styles">
+        <h5>{T('pivotStyles')}</h5>
+        {MATRIX_STYLES.map(([k, labelKey, dflt]) => (
+          <details className="group-card" key={k} data-testid={`pivot-${k}`}>
+            <summary>{T(labelKey)}</summary>
+            <div className="grid2">
+              {MINI_STYLE.map(p => <div key={p.key} style={p.type === 'color' || p.type === 'text' ? { gridColumn: '1 / -1' } : undefined}>
+                <PropEditor p={p} value={(item[k] || dflt)[p.key]} openExpr={openExpr} dataSet={item.dataSet}
+                  onChange={v => edit(it => { it[k] ||= { ...dflt }; setOrDelete(it[k], p.key, v); }, `${item.id}.${k}.${p.key}`)} />
+              </div>)}
+            </div>
+          </details>
+        ))}
+      </div>
     </>
   );
 }
+// the engine's defaults (items/index.js matrix): the first edit starts from them, so the look does not jump
+const MATRIX_STYLES = [['headerStyle', 'pivotHeaderStyle', {}], ['cellStyle', 'pivotCellStyle', { borderBottom: '0.5 solid #e5e7eb' }], ['totalStyle', 'pivotTotalStyle', { fontWeight: 'bold', borderTop: '1 solid #94a3b8' }]];
+const MINI_KEYS = ['fontWeight', 'fontSize', 'fontStyle', 'color', 'backgroundColor', 'textAlign', 'verticalAlign', 'border', 'borderTop', 'borderBottom'];
+const MINI_STYLE = MINI_KEYS.map(k => TEXT_STYLE_PROPS.find(p => p.key === k)).filter(Boolean);
+const ROW_KEYS = ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'color', 'textAlign', 'verticalAlign', 'backgroundColor', 'padding', 'border', 'borderTop', 'borderBottom'];
+const ROW_STYLE = ROW_KEYS.map(k => TEXT_STYLE_PROPS.find(p => p.key === k)).filter(Boolean);
 
 function fieldsOf(def, dsName) { return (def.dataSets?.find(d => d.name === dsName)?.fields || []); }
 
@@ -305,6 +383,7 @@ function GroupsEditor({ table, openExpr }) {
           <Field label="Sort groups by (empty: the group value)"><ExprInput value={g.sortBy || ''} onChange={v => setG(i, 'sortBy', v)} onOpen={() => openExpr({ value: g.sortBy || '', dataSet: table.dataSet, onSave: v => setG(i, 'sortBy', v), title: 'Sort groups by, e.g. =Sum(Fields.amount)' })} /></Field>
           <Field label="Page break"><Select value={g.pageBreak || ''} options={[{ value: 'between', label: 'Between groups' }, { value: 'after', label: 'After each group' }]} allowEmpty onChange={v => setG(i, 'pageBreak', v)} /></Field>
           <Check label="Keep the group on one page" checked={g.keepTogether} onChange={v => setG(i, 'keepTogether', v)} />
+          <Check label={T('groupRepeatHeader')} checked={g.repeatHeader} onChange={v => setG(i, 'repeatHeader', v)} />
           <Check label="Drill-down: show a toggle" checked={g.collapsible} onChange={v => setG(i, 'collapsible', v)} />
           {g.collapsible && <Check label="Start collapsed" checked={g.initiallyCollapsed} onChange={v => setG(i, 'initiallyCollapsed', v)} />}
           <Field label={T('groupParent')} hint={T('groupParentHint')}><ExprInput value={g.parent || ''} onChange={v => setG(i, 'parent', v)} onOpen={() => openExpr({ value: g.parent || '', dataSet: table.dataSet, onSave: v => setG(i, 'parent', v), title: T('groupParent') })} placeholder="=Fields.managerId" /></Field>
@@ -356,6 +435,7 @@ function SortFilterEditor({ item, noSort }) {
 const FINANCIAL = new Set(['candlestick', 'ohlc']);
 const COMBO = new Set(['column', 'bar', 'line', 'area', 'candlestick', 'ohlc']);
 function SeriesEditor({ value, onChange, openExpr, dataSet, chartType }) {
+  const T = useT();
   const list = value || [];
   const set = (i, k, v) => onChange(list.map((x, j) => { if (j !== i) return x; const n = { ...x, [k]: v }; if (v === undefined || v === '') delete n[k]; return n; }));
   const expr = (sr, i, key, label, placeholder) => (
@@ -382,6 +462,7 @@ function SeriesEditor({ value, onChange, openExpr, dataSet, chartType }) {
               <div className="grid2">
                 <Field label="Draw as"><Select value={sr.type} allowEmpty options={chartType === 'bar' ? ['bar', 'line', 'area'] : ['column', 'line', 'area']} onChange={v => set(i, 'type', v)} aria-label="Series type" /></Field>
                 <Field label="Axis"><Select value={sr.axis || 'primary'} options={[{ value: 'primary', label: 'Primary' }, { value: 'secondary', label: 'Secondary' }]} onChange={v => set(i, 'axis', v === 'primary' ? undefined : v)} aria-label="Series axis" /></Field>
+                {['line', 'area'].includes(sr.type || chartType) && <Field label={T('seriesLine')}><Select value={sr.line} allowEmpty options={[{ value: 'straight', label: T('lineStraight') }, { value: 'smooth', label: T('lineSmooth') }, { value: 'step', label: T('lineStep') }]} onChange={v => set(i, 'line', v)} aria-label={`${T('seriesLine')} ${i + 1}`} /></Field>}
               </div>
             )}
             {COMBO.has(chartType) && !fin && <Check label="Range (from – to)" checked={range} onChange={on => onChange(list.map((x, j) => {
@@ -440,6 +521,7 @@ function AxesEditor({ value, onChange, chartType, hasSecondary }) {
 
 const OVERLAY_TYPES = [{ value: 'trend', label: 'Trend line' }, { value: 'movingAverage', label: 'Moving average' }, { value: 'line', label: 'Reference line' }, { value: 'band', label: 'Band' }];
 function OverlaysEditor({ value, onChange, openExpr, dataSet, chartType }) {
+  const T = useT();
   const list = value || [];
   const set = (i, k, v) => onChange(list.map((x, j) => { if (j !== i) return x; const n = { ...x, [k]: v }; if (v === undefined || v === '') delete n[k]; return n; }));
   const types = chartType === 'gauge' ? OVERLAY_TYPES.slice(2) : ['scatter', 'bubble'].includes(chartType) ? OVERLAY_TYPES.filter(t => t.value !== 'movingAverage') : OVERLAY_TYPES;
@@ -463,6 +545,8 @@ function OverlaysEditor({ value, onChange, openExpr, dataSet, chartType }) {
           {(o.type === 'trend' || o.type === 'movingAverage') && <Field label="Of series number"><NumberInput value={(o.series ?? 0) + 1} step={1} min={1} onChange={v => set(i, 'series', Math.max(0, v - 1) || undefined)} /></Field>}
           {o.type === 'line' && numOrExpr(o, i, 'value', 'At')}
           {o.type === 'band' && <div className="grid2">{numOrExpr(o, i, 'from', 'From')}{numOrExpr(o, i, 'to', 'To')}</div>}
+          {(o.type === 'line' || o.type === 'band') && chartType !== 'gauge' && <Field label={T('overlayAxis')}><Select value={o.axis || 'primary'} options={[{ value: 'primary', label: T('axisPrimary') }, { value: 'secondary', label: T('axisSecondary') }]} onChange={v => set(i, 'axis', v === 'primary' ? undefined : v)} aria-label={`${T('overlayAxis')} ${i + 1}`} /></Field>}
+          {o.type === 'line' && <Check label={T('overlayShowValue')} checked={o.showValue !== false} onChange={v => set(i, 'showValue', v ? undefined : false)} />}
           <Field label="Label"><TextInput value={o.label} onChange={v => set(i, 'label', v)} aria-label="Overlay label" /></Field>
         </div>
       ))}
@@ -481,6 +565,7 @@ function ParamsEditor({ label, value, onChange }) {
 }
 
 function VisualEditor({ cell, setCell, openExpr, dataSet }) {
+  const T = useT();
   const v = cell.visual || null;
   const set = (patch) => { const n = { ...(v || {}), ...patch }; setCell('visual', n.type ? n : undefined); };
   const E = (key, label, placeholder) => <Field label={label}><ExprInput value={v[key]} onChange={x => set({ [key]: x || undefined })} onOpen={() => openExpr({ value: v[key], dataSet, onSave: x => set({ [key]: x }), title: label })} placeholder={placeholder} /></Field>;
@@ -490,10 +575,17 @@ function VisualEditor({ cell, setCell, openExpr, dataSet }) {
       <Field label="Cell shows"><Select value={ty || ''} options={[{ value: 'sparkline', label: 'Sparkline' }, { value: 'databar', label: 'Data bar' }, { value: 'bullet', label: 'Bullet' }, { value: 'iconset', label: 'Icon set' }, { value: 'rangebar', label: 'Range bar' }]} allowEmpty onChange={t => (t ? set({ type: t }) : setCell('visual', undefined))} /></Field>
       {ty === 'sparkline' && E('category', 'One point per', '=Fields.month')}
       {ty && ty !== 'rangebar' && E('value', 'Value', '=Sum(Fields.amount)')}
+      {ty === 'sparkline' && E('values', T('visValues'), '=Fields.history')}
       {ty === 'sparkline' && <>
         <Field label="Style"><Select value={v.style || 'line'} options={[{ value: 'line', label: 'Line' }, { value: 'column', label: 'Columns' }, { value: 'area', label: 'Area' }, { value: 'winloss', label: 'Win / loss' }]} onChange={x => set({ style: x })} /></Field>
         {E('bandLow', 'Range band from', '=0')}
         {E('bandHigh', 'Range band to', '=100')}
+        {(v.bandLow || v.bandHigh) && <Field label={T('visBandColor')}><ColorInput value={v.bandColor} onChange={x => set({ bandColor: x })} /></Field>}
+        {v.style === 'winloss' && <Field label={T('visNegColor')}><ColorInput value={v.negColor} onChange={x => set({ negColor: x })} /></Field>}
+      </>}
+      {ty === 'databar' && <>
+        <Check label={T('visShowValue')} checked={v.showValue !== false} onChange={x => set({ showValue: x ? undefined : false })} />
+        {v.showValue !== false && <Field label={T('visFormat')}><TextInput value={v.format} onChange={x => set({ format: x || undefined })} placeholder="N0" mono aria-label={T('visFormat')} /></Field>}
       </>}
       {ty === 'iconset' && <>
         <Field label="Icons"><Select value={v.iconSet || 'trafficLights'} options={[{ value: 'trafficLights', label: 'Traffic lights' }, { value: 'arrows', label: 'Arrows' }, { value: 'symbols', label: 'Symbols' }, { value: 'flags', label: 'Flags' }, { value: 'ratings', label: 'Ratings' }]} onChange={x => set({ iconSet: x })} /></Field>
@@ -509,11 +601,15 @@ function VisualEditor({ cell, setCell, openExpr, dataSet }) {
 }
 
 function ActionEditor({ value, onChange, openExpr, dataSet }) {
+  const T = useT();
+  const def = useDesigner(s => s.def);
+  const itemNames = []; walk(def, (it) => { if (it.name) itemNames.push(it.name); });
   const a = value || { type: 'none' };
   const set = (patch) => { const n = { ...a, ...patch }; onChange(n.type === 'none' ? undefined : n); };
   return (
     <div style={{ display: 'grid', gap: 6 }}>
-      <Field label="Action on click"><Select value={a.type} options={[{ value: 'none', label: 'None' }, { value: 'url', label: 'Open a URL' }, { value: 'report', label: 'Open another report (drill-through)' }, { value: 'params', label: 'Filter this report (set parameters)' }, { value: 'bookmark', label: 'Jump to a bookmark' }]} onChange={v => set({ type: v || 'none' })} /></Field>
+      <Field label="Action on click"><Select value={a.type} options={[{ value: 'none', label: 'None' }, { value: 'url', label: 'Open a URL' }, { value: 'report', label: 'Open another report (drill-through)' }, { value: 'params', label: 'Filter this report (set parameters)' }, { value: 'bookmark', label: 'Jump to a bookmark' }, { value: 'toggleItem', label: T('actionToggleItem') }]} onChange={v => set({ type: v || 'none' })} /></Field>
+      {a.type === 'toggleItem' && <Field label={T('actionToggleTarget')} hint={T('actionToggleHint')}><Select value={a.target} allowEmpty options={itemNames} onChange={v => set({ target: v })} data-testid="toggle-target" /></Field>}
       {a.type === 'url' && <Field label="URL"><ExprInput value={a.url} onChange={v => set({ url: v })} onOpen={() => openExpr({ value: a.url, dataSet, onSave: v => set({ url: v }), title: 'URL' })} /></Field>}
       {a.type === 'bookmark' && <Field label="Bookmark"><ExprInput value={a.target} onChange={v => set({ target: v })} onOpen={() => openExpr({ value: a.target, dataSet, onSave: v => set({ target: v }), title: 'Bookmark' })} /></Field>}
       {a.type === 'params' && <>
@@ -524,7 +620,7 @@ function ActionEditor({ value, onChange, openExpr, dataSet }) {
         <Check label="A second click on the same value clears the filter" checked={a.toggle !== false} onChange={v => set({ toggle: v ? undefined : false })} />
       </>}
       {a.type === 'report' && <>
-        <Field label="Report id"><TextInput value={a.report} onChange={v => set({ report: v })} mono placeholder="loan-statement" /></Field>
+        <Field label={T('drillReport')}><ReportPicker value={a.report} onChange={v => set({ report: v })} /></Field>
         <Field label="Parameters (name=expression, one per line)">
           <textarea className="textarea" rows={3} value={Object.entries(a.params || {}).map(([k, v]) => `${k}=${v}`).join('\n')}
             onChange={e => set({ params: Object.fromEntries(e.target.value.split('\n').map(l => l.split('=')).filter(x => x[0] && x.length > 1).map(([k, ...v]) => [k.trim(), v.join('=').trim()])) })} />
@@ -583,12 +679,19 @@ function CellProps({ table, sel, openExpr }) {
           <button className="btn sm" disabled={!(cell.rowSpan > 1)} onClick={() => tableSplitRows(table.id, sel.part, sel.row, sel.col)}>{T('splitRows')}</button>
         </div>
       </div>
-      <div className="cat">
-        <h5>Row</h5>
+      <div className="cat" data-testid="row-props">
+        <h5>{T('rowTitle')}</h5>
         <div className="grid2">
           <Field label="Height (pt)"><NumberInput value={row.height || 18} step={1} onChange={v => setRow('height', Math.max(6, v))} /></Field>
-          <div style={{ gridColumn: '1 / -1' }}><PropEditor p={{ key: 'backgroundColor', label: 'Row background (color or =expression)', type: 'color' }} value={row.style?.backgroundColor} onChange={v => setRowStyle('backgroundColor', v)} openExpr={openExpr} /></div>
+          <Check label={T('rowCanGrow')} checked={row.canGrow !== false} onChange={v => setRow('canGrow', v ? undefined : false)} />
         </div>
+        <Field label={T('rowHidden')} hint={T('rowHiddenHint')}><ExprInput value={row.hidden} onChange={v => setRow('hidden', v || undefined)} onOpen={() => openExpr({ value: row.hidden, dataSet: table.dataSet, onSave: v => setRow('hidden', v || undefined), title: T('rowHidden') })} placeholder="=Fields.amount = 0" /></Field>
+        <div className="grid2">
+          {ROW_STYLE.map(p => <div key={p.key} style={p.type === 'color' || p.type === 'text' ? { gridColumn: '1 / -1' } : undefined}>
+            <PropEditor p={p} value={row.style?.[p.key]} onChange={v => setRowStyle(p.key, v)} openExpr={openExpr} dataSet={table.dataSet} />
+          </div>)}
+        </div>
+        <div className="hint">{T('rowStyleHint')}</div>
       </div>
       <div className="cat"><PropEditor p={{ key: 'styleName', label: 'Named style', type: 'stylename' }} value={cell.styleName} onChange={v => setCell('styleName', v)} openExpr={openExpr} /></div>
       <StyleCats props={TEXT_STYLE_PROPS} style={cell.style} onSet={setCellStyle} openExpr={openExpr} dataSet={table.dataSet} />
@@ -724,10 +827,61 @@ function ReportProps() {
         <div className="btnrow"><button className="btn sm" onClick={() => setFontsOpen(true)}>Upload a font…</button></div>
         {fontsOpen && <FontsDialog onClose={() => setFontsOpen(false)} />}
       </div>
+      <ReportImages />
       <ReportFunctions />
       <NamedStyles />
       <div className="cat"><span className="hint">Select an item, a cell or a band to edit it. Drag tools and fields from the left onto the page.</span></div>
     </>
+  );
+}
+
+const IMAGE_MAX = 10 * 1024 * 1024; // the engine's limit per image
+/** Images kept in the report (images: { name: data URI }), used as embedded:name by images and backgrounds. */
+function ReportImages() {
+  const T = useT();
+  const images = useDesigner(s => s.def.images) || {};
+  const [err, setErr] = useState(null);
+  const set = (fn) => useDesigner.getState().apply(d => { d.images ||= {}; fn(d.images); if (!Object.keys(d.images).length) delete d.images; });
+  const upload = async (files) => {
+    setErr(null);
+    for (const f of files) {
+      if (!/^image\/(png|jpeg|gif|webp|svg\+xml)$/.test(f.type)) { setErr(T('imageType', { name: f.name })); continue; }
+      if (f.size > IMAGE_MAX) { setErr(T('imageTooBig', { name: f.name })); continue; }
+      const uri = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(f); });
+      const base = f.name.replace(/\.[^.]+$/, '').replace(/\W+/g, '_').replace(/^_+|_+$/g, '') || 'image';
+      set(m => { let n = base, k = 2; while (m[n]) n = `${base}${k++}`; m[n] = uri; });
+    }
+  };
+  return (
+    <div className="cat" data-testid="report-images">
+      <h5>{T('images')}</h5>
+      {Object.entries(images).map(([name, uri]) => (
+        <div key={name} className="trow" style={{ gap: 8 }}>
+          <img src={typeof uri === 'string' && uri.startsWith('data:image/') ? uri : undefined} alt="" style={{ width: 28, height: 28, objectFit: 'contain', border: '1px solid var(--line)', borderRadius: 4 }} />
+          <span className="nm"><code>embedded:{name}</code></span>
+          <button type="button" className="btn sm ghost danger" onClick={() => set(m => { delete m[name]; })} aria-label={T('imageRemove', { name })}>✕</button>
+        </div>
+      ))}
+      <label className="btn sm" style={{ justifySelf: 'start' }}>{T('imageUpload')}
+        <input type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" multiple hidden onChange={e => { upload([...e.target.files]); e.target.value = ''; }} data-testid="image-upload" />
+      </label>
+      {err && <div className="err">{err}</div>}
+      <span className="hint">{T('imagesHint')}</span>
+    </div>
+  );
+}
+
+/** Pick one of the report's images for an image item (src embedded:name). */
+function EmbeddedPicker({ item, onPick }) {
+  const T = useT();
+  const names = Object.keys(useDesigner(s => s.def.images) || {});
+  const cur = /^embedded:(.+)$/.exec(String(item.src || ''))?.[1];
+  return (
+    <div className="cat">
+      <Field label={T('embeddedImage')} hint={names.length ? undefined : T('embeddedNone')}>
+        <Select value={cur} allowEmpty options={names} onChange={v => onPick(v ? `embedded:${v}` : undefined)} data-testid="embedded-picker" />
+      </Field>
+    </div>
   );
 }
 

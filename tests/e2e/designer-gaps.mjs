@@ -171,6 +171,69 @@ try {
   assert.equal(chart.series[0].name, 'Amount');
   assert.equal(chart.categorySort, 'asc');
 
+  step('Properties: row visibility and style, a font weight from an expression, group repeat, matrix styles, palette, images, actions');
+  id = await create(base([
+    { type: 'table', id: 't1', name: 'Table1', x: 0, y: 0, w: 200, h: 54, dataSet: 'Sales', columns: [{ width: 100 }, { width: 100 }],
+      header: [{ height: 18, cells: [{ value: 'Region' }, { value: 'Amount' }] }],
+      groups: [{ name: 'Region', expr: '=Fields.region', header: [{ height: 18, cells: [{ value: '=Fields.region' }, null] }] }],
+      detail: [{ height: 18, cells: [{ value: '=Fields.region' }, { value: '=Fields.amount' }] }] },
+    { type: 'matrix', id: 'm1', name: 'Matrix1', x: 0, y: 120, w: 320, h: 60, dataSet: 'Sales', rowGroups: [{ name: 'Region', expr: '=Fields.region', total: 'after' }], columnGroups: [], values: [{ label: 'Amount', value: '=Sum(Fields.amount)' }] },
+    { type: 'chart', id: 'c1', name: 'Chart1', x: 0, y: 200, w: 320, h: 160, chartType: 'line', dataSet: 'Sales', category: '=Fields.region', series: [{ name: 'Amount', value: '=Sum(Fields.amount)' }] },
+    { type: 'image', id: 'i1', name: 'Logo', x: 340, y: 0, w: 60, h: 40, src: '' },
+    { type: 'textbox', id: 'x1', name: 'Switch', x: 340, y: 60, w: 100, h: 16, value: 'More' },
+  ]));
+  await open(id);
+  // row: hidden expression and a bold, red style
+  await p.locator('[data-cell="detail-0-1"]').click();
+  const rowProps = p.getByTestId('row-props');
+  await field(rowProps, 'Hidden \\(true/false or =expression\\)').fill('=Fields.amount < 80');
+  await field(rowProps, 'Weight').selectOption('bold');
+  await rowProps.getByRole('button', { name: 'Size: Use an expression' }).click();
+  await field(rowProps, 'Size').fill('=IIf(Fields.amount > 100, 11, 9)');
+  // the group header repeats after a page break
+  await p.locator('[data-item=Table1] .grip').click();
+  await insp.getByLabel('Repeat the group header on each page it continues on').check();
+  // matrix: total label and the value cells' style
+  await p.locator('[data-item=Matrix1]').click();
+  await insp.getByLabel('Total label 1').fill('All regions');
+  await insp.getByTestId('pivot-cellStyle').locator('summary').click();
+  await field(insp.getByTestId('pivot-cellStyle'), 'Weight').selectOption('600');
+  // chart: a custom palette and a smooth line
+  await p.locator('[data-item=Chart1]').click();
+  await insp.getByTestId('chart-palette').selectOption('__custom');
+  await insp.getByTestId('chart-palette-colours').fill('#0f766e, #f59e0b');
+  await insp.getByLabel('Line 1').selectOption('smooth');
+  // images: upload one, pick it for the image item
+  await p.locator('[data-item=Switch]').click();
+  await p.keyboard.press('Escape'); // the report's properties
+  await insp.getByTestId('image-upload').setInputFiles({ name: 'company logo.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64') });
+  await insp.getByText('embedded:company_logo').waitFor();
+  await p.locator('[data-item=Logo]').click();
+  await insp.getByTestId('embedded-picker').selectOption('company_logo');
+  // a text box that shows or hides the logo
+  await p.locator('[data-item=Switch]').click();
+  await field(insp, 'Action on click').selectOption('toggleItem');
+  await insp.getByTestId('toggle-target').selectOption('Logo');
+  await save();
+  def = await read(id);
+  const [tb, mx, chart2, logo, sw] = def.sections.body.items;
+  assert.equal(tb.detail[0].hidden, '=Fields.amount < 80');
+  assert.deepEqual(tb.detail[0].style, { fontWeight: 'bold', fontSize: '=IIf(Fields.amount > 100, 11, 9)' });
+  assert.equal(tb.groups[0].repeatHeader, true);
+  assert.equal(mx.rowGroups[0].totalLabel, 'All regions');
+  assert.deepEqual(mx.cellStyle, { borderBottom: '0.5 solid #e5e7eb', fontWeight: '600' });
+  assert.deepEqual(chart2.palette, ['#0f766e', '#f59e0b']);
+  assert.equal(chart2.series[0].line, 'smooth');
+  assert.match(def.images.company_logo, /^data:image\/png;base64,/);
+  assert.equal(logo.src, 'embedded:company_logo');
+  assert.deepEqual(sw.action, { type: 'toggleItem', target: 'Logo' });
+
+  step('Subreport and drill-through targets come from a report list');
+  await p.locator('[data-item=Switch]').click();
+  await field(insp, 'Action on click').selectOption('report');
+  await insp.locator('datalist option').first().waitFor({ state: 'attached' }); // the reports, to pick from
+  await insp.getByTestId('report-picker').fill('sales-by-region');
+
   assert.deepEqual(errs, []);
   console.log('PASS designer gaps');
 } finally {

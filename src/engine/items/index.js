@@ -927,7 +927,7 @@ register('chart', {
     { key: 'labelPosition', label: 'Label position', type: 'select', options: ['outside', 'inside', 'center'], category: 'Labels' },
     { key: 'valueFormat', label: 'Value format', type: 'text', category: 'Labels' },
     { key: 'legend', label: 'Legend', type: 'select', options: ['bottom', 'none'], category: 'Look' },
-    { key: 'palette', label: 'Palette', type: 'select', options: Object.keys(PALETTES), category: 'Look' },
+    { key: 'palette', label: 'Palette', labelKey: 'chartPalette', type: 'palette', options: Object.keys(PALETTES), category: 'Look' },
     { key: 'animation', label: 'Animation in the viewer', type: 'select', options: ['none', 'grow', 'fade'], category: 'Look' },
     { key: 'fontSize', label: 'Text size', type: 'number', category: 'Look' },
     { key: 'background', label: 'Background', type: 'color', category: 'Look' },
@@ -1230,7 +1230,7 @@ register('subreport', {
   label: 'Subreport',
   defaults: () => ({ type: 'subreport', w: 360, h: 60, report: '', params: {} }),
   props: [
-    { key: 'report', label: 'Report id', type: 'text', category: 'Data' },
+    { key: 'report', label: 'Report', labelKey: 'subreportTarget', type: 'report', category: 'Data' },
     { key: 'params', label: 'Parameters', type: 'params', category: 'Data' },
     { key: 'keepTogether', label: 'Keep on one page', type: 'bool', category: 'Layout' },
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
@@ -1325,9 +1325,9 @@ register('toc', {
 /* ------------------------------------------------------- style metadata */
 export const TEXT_STYLE_PROPS = [
   { key: 'fontFamily', label: 'Font', type: 'font', category: 'Text' },
-  { key: 'fontSize', label: 'Size', type: 'number', category: 'Text' },
-  { key: 'fontWeight', label: 'Weight', type: 'select', options: ['normal', '600', 'bold'], category: 'Text' },
-  { key: 'fontStyle', label: 'Style', type: 'select', options: ['normal', 'italic'], category: 'Text' },
+  { key: 'fontSize', label: 'Size', type: 'number', category: 'Text', expr: true },
+  { key: 'fontWeight', label: 'Weight', type: 'select', options: ['normal', '600', 'bold'], category: 'Text', expr: true },
+  { key: 'fontStyle', label: 'Style', type: 'select', options: ['normal', 'italic'], category: 'Text', expr: true },
   { key: 'color', label: 'Color', type: 'color', category: 'Text' },
   { key: 'textAlign', label: 'Align', type: 'select', options: ['auto', 'left', 'center', 'right', 'justify'], category: 'Text' },
   { key: 'verticalAlign', label: 'Vertical align', type: 'select', options: ['top', 'middle', 'bottom'], category: 'Text' },
