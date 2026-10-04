@@ -352,6 +352,12 @@ register('table', {
     let rowSeq = 0;
     const colWidths = cols.map(c => c.width); // one array shared by every cell tag
 
+    /** A cell as the data exports (Excel, CSV) see it. */
+    const regionCell = (c) => {
+      const o = { col: Math.round((c.x - item.x) * 100), value: c.raw instanceof Date || typeof c.raw === 'boolean' ? c.raw : typeof c.raw === 'number' ? roundFor(c.raw, c.st.format) : c.plain, format: c.st.format || null, bold: c.st.fontWeight === 'bold' || Number(c.st.fontWeight) >= 600, span: c.span, colIndex: colX.indexOf(c.x) };
+      if (c.left > 1) o.rowSpan = c.left;
+      return o;
+    };
     // merged cells across rows: spans still open, each { ci, cols, left, x, w, st, tl, numeric, cell, ctx, raw, plain, units }
     let openSpans = [];
     const cover = new Array(cols.length).fill(null); // the open span over each column: O(1) per cell
@@ -359,7 +365,7 @@ register('table', {
     const layRow = (row, ctx, kind, extra) => {
       const rst = resolveStyle([lc.base, lc.named?.[item.styleName], item.style, lc.named?.[row.styleName], row.style], ctx);
       const cells = [];
-      const started = [];
+      let started = null; // merged cells that start on this row (rare: no array otherwise)
       let need = row.height || 18;
       for (let ci = 0; ci < cols.length; ci++) {
         const cell = row.cells?.[ci];
@@ -370,7 +376,7 @@ register('table', {
         const cctx = cell.ctx || ctx; // a pivot value cell carries its own scope
         let st = resolveStyle([rst, lc.named?.[cell.styleName], cell.style], cctx);
         // a recursive group's indent: the first cell's left padding grows by level
-        if (ctx.indent > 0 && !cells.length && !started.length) { const pd = padding(st); st = { ...st, padding: [pd[0], pd[1], pd[2], pd[3] + ctx.indent] }; }
+        if (ctx.indent > 0 && !cells.length && !started) { const pd = padding(st); st = { ...st, padding: [pd[0], pd[1], pd[2], pd[3] + ctx.indent] }; }
         const r = 'raw' in cell ? { v: cell.raw } : evalSafe(cell.value ?? '', cctx, lc, `${item.name || 'Table'} cell`);
         let text = textOf(r.v, st, cctx);
         const plain = text;
@@ -384,19 +390,20 @@ register('table', {
         const tl = nested ? { ...layoutTextLines('', st, cw, lc.m), lines: [], needed: nested.height } : layoutTextLines(text, st, cw, lc.m);
         const c = { x: colX[ci], w: cw, st, tl, numeric: typeof r.v === 'number', cell, ctx: cctx, raw: r.v, span, plain: nested ? '' : plain, toggle, nested };
         const rs = Math.floor(Number(cell.rowSpan)) || 1;
-        if (rs > 1) { started.push({ ...c, ci, cols: span, left: rs, units: [], kind }); continue; }
+        if (rs > 1) { (started ||= []).push({ ...c, ci, cols: span, left: rs, units: [], kind }); continue; }
         if (row.canGrow !== false && tl.needed > need + GROW_TOLERANCE) need = tl.needed;
         cells.push(c);
       }
-      openSpans.push(...started);
-      for (const st of started) for (let k = st.ci; k < st.ci + st.cols; k++) cover[k] = st;
+      if (started) {
+        openSpans.push(...started);
+        for (const st of started) for (let k = st.ci; k < st.ci + st.cols; k++) cover[k] = st;
+      }
       // a merged cell that ends on this row: the row grows if the merged text needs more than the rows above gave
-      for (const s of openSpans) if (s.left === 1) {
+      if (openSpans.length) for (const s of openSpans) if (s.left === 1) {
         const above = s.units.reduce((t, u) => t + u.height, 0);
         if (s.tl.needed - above > need + GROW_TOLERANCE) need = s.tl.needed - above;
       }
-      const regionCell = (c) => ({ col: Math.round((c.x - item.x) * 100), value: c.raw instanceof Date || typeof c.raw === 'boolean' ? c.raw : typeof c.raw === 'number' ? roundFor(c.raw, c.st.format) : c.plain, format: c.st.format || null, bold: c.st.fontWeight === 'bold' || Number(c.st.fontWeight) >= 600, span: c.span, colIndex: colX.indexOf(c.x), ...(c.left > 1 ? { rowSpan: c.left } : {}) });
-      region.rows.push({ kind, level: extra?.level ?? 0, cells: (started.length ? [...cells, ...started].sort((a, b) => a.x - b.x) : cells).map(regionCell) });
+      region.rows.push({ kind, level: extra?.level ?? 0, cells: (started ? [...cells, ...started].sort((a, b) => a.x - b.x) : cells).map(regionCell) });
       // h: height of this piece; lines: per-cell lines when the row is split; first: links, visuals and toggles go on the first piece
       const paint = (h, lines, first, rowId) => {
         const items = [];
@@ -442,8 +449,8 @@ register('table', {
         y += pc.h;
         units.push(u);
       });
-      for (const s of openSpans) { s.units.push(u); s.left--; }
-      if (openSpans.some(s => s.left <= 0)) { for (const s of openSpans) if (s.left <= 0) closeSpan(s); openSpans = openSpans.filter(s => s.left > 0); }
+      if (openSpans.length) for (const s of openSpans) { s.units.push(u); s.left--; }
+      if (openSpans.length && openSpans.some(s => s.left <= 0)) { for (const s of openSpans) if (s.left <= 0) closeSpan(s); openSpans = openSpans.filter(s => s.left > 0); }
       return u;
     };
     /**

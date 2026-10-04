@@ -19,7 +19,8 @@ This roadmap closes the 30 "behind" and 20 "partial" rows.
 | 0. Stabilise and ship | **not started** | Added in review, see below. Do it next. |
 | 1. Text and styling | **done, 4 Oct 2026** | 35 new tests, all gates green. The code is in the `pw-drill` worktree, not committed yet. The plan file lists 12 corrections to the plan, including a wrong rotation sign in the importer. |
 | 2. Rich text and vertical text | **done, 4 Oct 2026** (branch `feat/p2-rich-text`, not merged) | See the plan's Status: 4 security fixes from review, gate green. |
-| 3–9 | not started | |
+| 4. Tables, pivot tables, pagination | **done, 4 Oct 2026** (branch `feat/p4-tablix`, not merged) | Spec `specs/2026-10-04-tablix-design.md`; rows 14–20 shipped; see the plan's Status for gate results and gaps. |
+| 3, 5–9 | see their plans | |
 
 **Shape:** 9 phases. Each phase:
 - is its own branch,
