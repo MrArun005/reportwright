@@ -32,6 +32,8 @@ import { sliceColumns, itemLeft } from './hpage.js';
 export const ITEMS = {};
 export const GROW_TOLERANCE = 1;
 export function register(type, spec) { ITEMS[type] = { type, ...spec }; }
+/** Alternative text for a picture, chart, map, barcode, shape or visual: the tagged PDF's Figure /Alt and Word's description. */
+const ALT = { key: 'alt', label: 'Alternative text (screen readers: accessible PDF, Word)', type: 'text', category: 'Accessibility' };
 
 /* ---------------------------------------------------------------- helpers */
 function evalSafe(v, ctx, lc, who) {
@@ -236,6 +238,7 @@ register('image', {
     { key: 'dataSet', label: 'Data set', type: 'dataset', category: 'Data' },
     { key: 'fit', label: 'Fit', type: 'select', options: ['contain', 'cover', 'fill', 'clip'], category: 'Layout' },
     { key: 'autoSize', label: 'Size to the image (96 dpi)', type: 'bool', category: 'Layout' },
+    ALT,
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
   ],
   layout(item, lc) {
@@ -264,6 +267,7 @@ register('line', {
   defaults: () => ({ type: 'line', w: 144, h: 0, direction: 'down', style: { stroke: '#1f2328', strokeWidth: 1 } }),
   props: [
     { key: 'direction', label: 'Direction', type: 'select', options: ['down', 'up'], category: 'Layout' },
+    ALT,
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
   ],
   styleProps: ['stroke', 'strokeWidth', 'strokeDash'],
@@ -287,6 +291,7 @@ register('shape', {
   defaults: () => ({ type: 'shape', shape: 'rect', w: 96, h: 48, style: { fill: '#eef2ff', stroke: '#4f46e5', strokeWidth: 1, radius: 4 } }),
   props: [
     { key: 'shape', label: 'Shape', type: 'select', options: ['rect', 'ellipse'], category: 'Layout' },
+    ALT,
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
   ],
   styleProps: ['fill', 'stroke', 'strokeWidth', 'strokeDash', 'radius'],
@@ -971,6 +976,7 @@ register('chart', {
     { key: 'pointColor', label: 'Bar or slice colour (expression, e.g. highlight the selected one)', type: 'expr', category: 'Interactivity' },
     { key: 'tooltips', label: 'Tooltips on hover', type: 'bool', category: 'Interactivity' },
     { key: 'keepTogether', label: 'Keep on one page', type: 'bool', category: 'Layout' },
+    ALT,
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
   ],
   styleProps: [],
@@ -1055,6 +1061,7 @@ register('map', {
     { key: 'pointLabel', label: 'Points: label', type: 'expr', category: 'Points' },
     { key: 'pointColor', label: 'Points: colour', type: 'color', category: 'Points' },
     { key: 'keepTogether', label: 'Keep on one page', type: 'bool', category: 'Layout' },
+    ALT,
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
   ],
   styleProps: [],
@@ -1101,6 +1108,7 @@ for (const [type, label, defaults] of [
       ...(type !== 'sparkline' && type !== 'iconset' ? [{ key: 'max', label: 'Maximum', type: 'expr', category: 'Data' }] : []),
       ...(type === 'bullet' ? [{ key: 'target', label: 'Target', type: 'expr', category: 'Data' }] : []),
       ...(type !== 'iconset' ? [{ key: 'color', label: 'Color', type: 'color', category: 'Data' }] : []),
+      ALT,
       { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
     ],
     styleProps: [],
@@ -1127,6 +1135,7 @@ register('barcode', {
     { key: 'rotate', label: 'Rotate', type: 'select', options: ['0', '90', '180', '270'], category: 'Barcode' },
     ...BARCODE_OPTIONS.map(o => ({ key: o.key, label: o.label, type: o.enum ? 'select' : o.bool ? 'bool' : o.size ? 'text' : 'number', options: o.enum, category: 'Barcode options', showIf: (it) => o.for.includes(it.symbology || 'code128') })),
     { key: 'action', label: 'Action', type: 'action', category: 'Interactivity' },
+    ALT,
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
   ],
   layout(item, lc) {

@@ -9,7 +9,7 @@ import { fontStore, report } from '../helpers.js';
 
 const ROOT = path.join(import.meta.dirname, '..', '..');
 const read = (f) => JSON.parse(fs.readFileSync(path.join(ROOT, f), 'utf8'));
-const r2 = (k, v) => (typeof v === 'number' ? Math.round(v * 100) / 100 : v);
+const r2 = (k, v) => (k === 'tag' || k === 'art' ? undefined : typeof v === 'number' ? Math.round(v * 100) / 100 : v); // tag, art: export tags (what drew the items, page header or footer), not geometry
 const digest = (items) => crypto.createHash('sha1').update(JSON.stringify(items, r2)).digest('hex').slice(0, 16);
 
 const rows = { rows: [

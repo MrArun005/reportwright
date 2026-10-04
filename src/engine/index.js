@@ -269,6 +269,7 @@ export async function render(def0, opts = {}) {
           if (isFirst && section.printOnFirstPage === false) return;
           if (isLast && section.printOnLastPage === false) return;
           const r = layoutItems(section.items || [], plc);
+          for (const u of r.units) for (const d of u.items) d.art = 1; // page header and footer: an artifact in a tagged PDF
           for (const u of r.units) placeItems(u.items, ml, y0 + u.top, items);
         };
         band(header, mt, n === 0, n === total - 1);
