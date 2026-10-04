@@ -233,6 +233,12 @@ describe('SAML 2.0', () => {
     await refusedSaml((rid) => respond(rid, signed({ email: eve, inResponseTo: rid, notBefore: Date.now() + 1800000, notOnOrAfter: Date.now() + 3600000 })), 'not yet', /not yet valid/);
   });
 
+  it('a bearer confirmation past its NotOnOrAfter is refused, even when the conditions still hold', async () => {
+    const past = new Date(Date.now() - 1800000).toISOString();
+    await refusedSaml((rid) => respond(rid, signAssertion(assertionXml({ issuer: IDP, audience: SP, recipient: ACS, email: 'eve@example.com', inResponseTo: rid })
+      .replace(/(<saml:SubjectConfirmationData NotOnOrAfter=")[^"]*/, `$1${past}`), idp.key, idp.cert)), 'stale confirmation', /confirmation .*expired|NotOnOrAfter/);
+  });
+
   it('answers only requests this server made, each once, in the browser that made it', async () => {
     // unknown request id, and IdP-initiated (no InResponseTo)
     await refusedSaml(() => respond('_unknown', signed({ email: eve, inResponseTo: '_unknown' })), 'unknown request', /does not belong to this browser/); // the request is in the browser's signed cookie

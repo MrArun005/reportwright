@@ -328,6 +328,12 @@ export async function samlAcs(req, samlResponse) {
   // the request this answers must be named inside the SIGNED assertion: the Response's InResponseTo is not signed, so
   // an assertion with none of its own (IdP-initiated) could be wrapped to answer anyone's request
   if (!profile.inResponseTo || !bearer.every(c => kids(c, 'SubjectConfirmationData').every(cd => cd?.$?.InResponseTo === profile.inResponseTo))) throw fail('The SAML assertion does not answer a sign-in from this server.', 401, 'in_response_to');
+  // node-saml checks a bearer confirmation's times only while it validates InResponseTo itself: here instead
+  const skew = 60000, now = Date.now();
+  for (const cd of bearer.flatMap(c => kids(c, 'SubjectConfirmationData'))) {
+    const noa = cd?.$?.NotOnOrAfter, nb = cd?.$?.NotBefore;
+    if ((noa && !(Date.parse(noa) + skew > now)) || (nb && !(Date.parse(nb) - skew <= now))) throw fail('The SAML subject confirmation has expired (NotOnOrAfter) or is not valid yet.', 401, 'expired');
+  }
   const issuer = /** @type {any} */ (profile).issuer;
   if (!issuer || issuer !== process.env.PW_SAML_IDP_ISSUER) throw fail('The SAML assertion is from another identity provider.', 401, 'issuer');
   if (!profile.nameID) throw fail('The SAML assertion has no NameID.', 401, 'subject');
