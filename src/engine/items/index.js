@@ -1449,6 +1449,7 @@ export const TEXT_STYLE_PROPS = [
   { key: 'backgroundFit', label: 'Background fit', type: 'select', options: ['cover', 'contain', 'fill'], category: 'Box' },
   { key: 'padding', label: 'Padding (t r b l)', type: 'text', category: 'Box' },
   { key: 'border', label: 'Border (1 solid #ccc)', type: 'text', category: 'Box' },
+  { key: 'radius', label: 'Corner radius', labelKey: 'cornerRadius', type: 'number', category: 'Box' },
   { key: 'borderTop', label: 'Border top', type: 'text', category: 'Box' },
   { key: 'borderBottom', label: 'Border bottom', type: 'text', category: 'Box' },
 ];

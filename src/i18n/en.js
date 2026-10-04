@@ -442,4 +442,5 @@ export default {
   fieldTypeList: "list (several values)",
   visListField: "Points from a list field",
   visListHint: "A list field (an array, or text such as 3,5,2) gives one point per value: set the field's type to list in the data set.",
+  cornerRadius: "Corner radius",
 };

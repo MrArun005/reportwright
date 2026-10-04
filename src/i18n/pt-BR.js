@@ -442,4 +442,5 @@ export default {
   fieldTypeList: "lista (vários valores)",
   visListField: "Pontos de um campo de lista",
   visListHint: "Um campo de lista (um array, ou texto como 3,5,2) dá um ponto por valor: defina o tipo do campo como lista no conjunto de dados.",
+  cornerRadius: "Raio dos cantos",
 };

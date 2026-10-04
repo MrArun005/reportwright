@@ -56,3 +56,25 @@ describe('band height stays consistent (#3)', () => {
     expect(findItem(useDesigner.getState().def, 'a').item.y).toBe(500);
   });
 });
+
+import { exportPdf } from '../../src/exporters/pdf.js';
+import { pageToSvg } from '../../src/exporters/svg.js';
+describe('corner radius on text boxes and containers (#4)', () => {
+  it('a rounded background and one rounded border; drawn by the SVG and PDF exporters', async () => {
+    const def = report([
+      { type: 'textbox', name: 'T', x: 0, y: 0, w: 120, h: 30, value: 'Hi', style: { backgroundColor: '#eeeeee', border: '1 solid #333333', radius: 6 } },
+      { type: 'container', name: 'C', x: 0, y: 40, w: 120, h: 40, items: [], style: { border: '1 solid #333333', radius: 8 } },
+    ]);
+    const m = await render(def, { fontStore });
+    const rects = m.pages[0].items.filter(i => i.t === 'rect');
+    expect(rects.map(r => r.radius)).toEqual([6, 6, 8]);
+    expect(m.pages[0].items.filter(i => i.t === 'line')).toEqual([]);
+    expect(pageToSvg(m.pages[0], m.width, m.height).match(/rx="/g).length).toBe(3);
+    expect((await exportPdf(m, fontStore)).length).toBeGreaterThan(500);
+  });
+  it('mixed side borders stay lines; the radius never exceeds half the box', async () => {
+    const m = await render(report([{ type: 'textbox', name: 'T', x: 0, y: 0, w: 40, h: 10, value: '', canGrow: false, style: { backgroundColor: '#eee', borderBottom: '1 solid #000', radius: 50 } }]), { fontStore });
+    expect(m.pages[0].items.find(i => i.t === 'rect').radius).toBe(5);
+    expect(m.pages[0].items.filter(i => i.t === 'line').length).toBe(1);
+  });
+});

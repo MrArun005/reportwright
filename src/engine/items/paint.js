@@ -29,7 +29,9 @@ export function layoutTextLines(text, st, width, m, { wrap = true } = {}) {
  */
 export function paintBox({ x, y, w, h, st, tl, numeric = false, m, ellipsis = true }) {
   const items = [];
-  if (st.backgroundColor) items.push({ t: 'rect', x, y, w, h, fill: st.backgroundColor });
+  // rounded corners (text boxes, containers, cells): the background and an all-round border become rounded rects
+  const radius = Math.max(0, Math.min(Number(st.radius) || 0, w / 2, h / 2));
+  if (st.backgroundColor) items.push(radius ? { t: 'rect', x, y, w, h, fill: st.backgroundColor, radius } : { t: 'rect', x, y, w, h, fill: st.backgroundColor });
   // bytes stay bytes (String() would copy them per box): the image pass in render() converts and caps every src
   if (st.backgroundImage) items.push({ t: 'image', x, y, w, h, src: st.backgroundImage, fit: st.backgroundFit || 'cover' });
   if (tl && tl.lines.length) {
@@ -97,6 +99,11 @@ export function paintBox({ x, y, w, h, st, tl, numeric = false, m, ellipsis = tr
     }
   }
   const b = borders(st);
+  const same = (p, q) => p && q && p.width === q.width && p.style === q.style && p.color === q.color;
+  if (radius && same(b.top, b.right) && same(b.top, b.bottom) && same(b.top, b.left)) {
+    items.push({ t: 'rect', x, y, w, h, fill: null, stroke: b.top.color, strokeWidth: b.top.width, dash: DASH[b.top.style] || null, radius });
+    return items;
+  }
   if (b.top) items.push(line(x, y, x + w, y, b.top));
   if (b.bottom) items.push(line(x, y + h, x + w, y + h, b.bottom));
   if (b.left) items.push(line(x, y, x, y + h, b.left));

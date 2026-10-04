@@ -50,6 +50,7 @@ export function textCss(layers, s, numeric = false) {
       alignItems: st.verticalAlign === 'middle' ? 'center' : st.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start',
       borderTop: cssBorder(st.borderTop ?? st.border, s), borderRight: cssBorder(st.borderRight ?? st.border, s),
       borderBottom: cssBorder(st.borderBottom ?? st.border, s), borderLeft: cssBorder(st.borderLeft ?? st.border, s),
+      borderRadius: Number(st.radius) > 0 ? Number(st.radius) * s : undefined,
     },
     text: {
       fontFamily: [key, ...fallbackKeys(key)].map(k => `"${fontFamilyCss(k)}"`).join(', '), // the bundled fallbacks, like the engine

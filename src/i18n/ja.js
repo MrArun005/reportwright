@@ -442,4 +442,5 @@ export default {
   fieldTypeList: "リスト（複数の値）",
   visListField: "リストフィールドの点",
   visListHint: "リストフィールド（配列、または 3,5,2 のようなテキスト）は値ごとに 1 点になります。データセットでフィールドの型をリストにします。",
+  cornerRadius: "角の丸み",
 };
