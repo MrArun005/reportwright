@@ -417,7 +417,7 @@ register('table', {
         cells.forEach((c, k) => {
           if (c.cell.visual?.type) {
             items.push(...paintBox({ x: c.x, y: 0, w: c.w, h, st: c.st, tl: null, m: lc.m }));
-            if (first) items.push(...paintVisual(c.cell.visual, { x: c.x, y: 0, w: c.w, h }, c.ctx, lc, c.st, `${item.name} cell`));
+            if (first) items.push(...paintVisual(c.cell.visual, { x: c.x, y: 0, w: c.w, h }, c.ctx, lc, c.st, `${item.name} cell`, { cell: true }));
             return;
           }
           if (c.nested) {

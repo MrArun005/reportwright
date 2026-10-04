@@ -61,10 +61,11 @@ export function formatValue(value, fmt, opt = {}) {
       const k = m[1].toUpperCase();
       const d = m[2] === '' ? null : Number(m[2]);
       switch (k) {
-        case 'C': return nf(locale, { style: 'currency', currency, minimumFractionDigits: d ?? 2, maximumFractionDigits: d ?? 2 }).format(value);
-        case 'N': return nf(locale, { minimumFractionDigits: d ?? 2, maximumFractionDigits: d ?? 2 }).format(value);
+        // signDisplay 'negative': a value that rounds to zero shows 0.0, never -0.0
+        case 'C': return nf(locale, { style: 'currency', currency, minimumFractionDigits: d ?? 2, maximumFractionDigits: d ?? 2, signDisplay: 'negative' }).format(value);
+        case 'N': return nf(locale, { minimumFractionDigits: d ?? 2, maximumFractionDigits: d ?? 2, signDisplay: 'negative' }).format(value);
         case 'F': return roundHalfAway(value, d ?? 2).toFixed(d ?? 2);
-        case 'P': return nf(locale, { style: 'percent', minimumFractionDigits: d ?? 2, maximumFractionDigits: d ?? 2 }).format(value);
+        case 'P': return nf(locale, { style: 'percent', minimumFractionDigits: d ?? 2, maximumFractionDigits: d ?? 2, signDisplay: 'negative' }).format(value);
         case 'D': return String(Math.trunc(value)).padStart(d ?? 0, '0');
         case 'E': return value.toExponential(d ?? 6);
       }
@@ -90,7 +91,7 @@ function customNumber(v, fmt, locale) {
   const grouping = body.includes(',');
   const intPart = dot >= 0 ? body.slice(0, dot) : body;
   const minInt = (intPart.match(/0/g) || []).length || 1;
-  const s = nf(locale, { useGrouping: grouping, minimumFractionDigits: minDec, maximumFractionDigits: decimals, minimumIntegerDigits: minInt }).format(v);
+  const s = nf(locale, { useGrouping: grouping, minimumFractionDigits: minDec, maximumFractionDigits: decimals, minimumIntegerDigits: minInt, signDisplay: 'negative' }).format(v);
   return prefix + s + suffix;
 }
 

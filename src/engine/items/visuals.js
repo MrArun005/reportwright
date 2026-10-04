@@ -2,6 +2,7 @@
 /** Small in-cell visuals: sparkline, data bar, bullet, icon set, range bar. Used by table cells and as items. */
 import { evalValue, toText, isDynamic } from '../expr/evaluate.js';
 import { resolveFontKey } from '../text/fonts.js';
+import { padding } from '../style.js';
 
 const MAX_POINTS = 5000;
 export const ICON_SETS = ['trafficLights', 'arrows', 'symbols', 'flags', 'ratings'];
@@ -26,10 +27,29 @@ function capped(list, lc, who) {
   return list.slice(0, MAX_POINTS);
 }
 
-export function paintVisual(v, box, ctx, lc, base, who = 'Visual') {
+/**
+ * In a table cell, the first text line of the cell (where its neighbours' text sits): its top, height and baseline.
+ * The row may be taller (a neighbour wraps); an icon or a data bar stays the size of one line, aligned like the text.
+ */
+function lineBox(box, base, lc) {
+  const key = resolveFontKey(base.fontFamily, 'normal', 'normal');
+  const size = Number(base.fontSize) || 9;
+  const pd = padding(base);
+  const lh = Math.min(size * (Number(base.lineHeight) || 1.25), Math.max(1, box.h - pd[0] - pd[2]));
+  const avail = box.h - pd[0] - pd[2];
+  let top = box.y + pd[0];
+  if (base.verticalAlign === 'middle') top += (avail - lh) / 2;
+  else if (base.verticalAlign === 'bottom') top = box.y + box.h - pd[2] - lh;
+  const { ascent, descent } = lc.m.metrics(key, size);
+  return { key, size, top, lh, baseline: top + (lh - (ascent + descent)) / 2 + ascent };
+}
+
+/** @param {{ cell?: boolean }} [opt] cell: drawn in a table cell, sized and aligned to its text line */
+export function paintVisual(v, box, ctx, lc, base, who = 'Visual', opt = {}) {
   const out = [];
   const pad = 3;
   const x = box.x + pad, y = box.y + pad, w = Math.max(1, box.w - pad * 2), h = Math.max(1, box.h - pad * 2);
+  const line = opt.cell ? lineBox(box, base, lc) : null;
   let color = v.color || '#2563eb';
   if (isDynamic(color)) { try { color = String(evalValue(color, ctx) || '#2563eb'); } catch { color = '#2563eb'; } }
   if (v.type === 'sparkline') {
@@ -96,7 +116,7 @@ export function paintVisual(v, box, ctx, lc, base, who = 'Visual') {
     if (val == null) return out;
     const lower = num(v.lower, ctx, lc, who) ?? 33, upper = num(v.upper, ctx, lc, who) ?? 67;
     const state = val < lower ? 0 : val < upper ? 1 : 2;
-    const sz = Math.max(4, Math.min(w, h)), ix = x + (w - sz) / 2, iy = y + (h - sz) / 2;
+    const sz = Math.max(4, Math.min(w, line ? line.lh : h)), ix = x + (w - sz) / 2, iy = line ? line.top + (line.lh - sz) / 2 : y + (h - sz) / 2;
     out.push(...icon(ICON_SETS.includes(v.iconSet) ? v.iconSet : 'trafficLights', state, ix, iy, sz));
     return out;
   }
@@ -117,14 +137,16 @@ export function paintVisual(v, box, ctx, lc, base, who = 'Visual') {
   const max = num(v.max, ctx, lc, who) ?? Math.max(val, 1);
   const frac = Math.max(0, Math.min(1, max ? val / max : 0));
   if (v.type === 'databar') {
-    out.push({ t: 'rect', x, y: y + h * 0.18, w: w * frac, h: h * 0.64, fill: color + 'cc', radius: 1 });
+    // in a cell: the bar spans the text line and the value sits on its neighbours' baseline
+    out.push(line ? { t: 'rect', x, y: line.top + line.lh * 0.05, w: w * frac, h: line.lh * 0.9, fill: color + 'cc', radius: 1 }
+      : { t: 'rect', x, y: y + h * 0.18, w: w * frac, h: h * 0.64, fill: color + 'cc', radius: 1 });
     if (v.showValue !== false) {
       const key = resolveFontKey(base.fontFamily, 'normal', 'normal');
-      const size = Math.min(h * 0.75, Number(base.fontSize) || 8);
+      const size = line ? line.size : Math.min(h * 0.75, Number(base.fontSize) || 8);
       const s = toText(val, v.format || 'N0', ctx);
       const tw = lc.m.width(s, key, size);
       const inside = w * frac > tw + 6;
-      out.push({ t: 'text', font: key, size, color: inside ? '#ffffff' : '#374151', lines: [{ x: inside ? x + w * frac - tw - 3 : x + w * frac + 3, y: y + h / 2 + size * 0.35, text: s, w: tw }] });
+      out.push({ t: 'text', font: key, size, color: inside ? '#ffffff' : '#374151', lines: [{ x: inside ? x + w * frac - tw - 3 : x + w * frac + 3, y: line ? line.baseline : y + h / 2 + size * 0.35, text: s, w: tw }] });
     }
     return out;
   }
