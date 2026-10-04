@@ -20,12 +20,20 @@ PW_BASIC_AUTH=admin:change-me PW_API_KEYS=change-me npm start
 |---|---|
 | `PW_AUTH=users` (+ `PW_SESSION_SECRET`) | People with their own accounts and roles, or single sign-on (OIDC, SAML). See [Users and roles](#users-and-roles). |
 | `PW_BASIC_AUTH=user:password` | Everyone who has the shared password. They can do everything, SQL included. |
-| `PW_AUTH=proxy` | Everyone who reaches the app. Only behind a reverse proxy that signs people in (oauth2-proxy, Cloudflare Access, your SSO gateway) and that nothing can bypass. |
+| `PW_AUTH=proxy` | Everyone who reaches the app. Only behind a reverse proxy that signs people in (oauth2-proxy, Cloudflare Access, your SSO gateway) and that nothing can bypass. Set `PW_PROXY_SECRET` and have the proxy send it as `x-pagewright-proxy-secret`: then a request that reaches the app port around the proxy is refused (401). |
 | `PW_PUBLIC_READONLY=1` (with none of the above) | Anyone may open and render the saved reports, **including the rows their saved queries return**; nobody can change anything, run SQL of their own, or open the designer. |
 
 In every mode, a change (POST, PUT, PATCH, DELETE outside `/api/v1`) must come from a Pagewright page: the `Origin` (or `Referer`) header must name this server, so another site cannot post to it. A report's SQL, and its data sources that may reach a host in `PW_INTERNAL_HOSTS`, run only as a designer (or a service API key) saved them: the server records a fingerprint of those sources at each save, and a definition changed any other way (a file edited on disk, a storage row, a report saved while an older version of the server was open) refuses to run them until a designer saves it again. After upgrading, open and save each report that uses SQL once.
 
-`npm run dev` (development) stays open to whoever reaches it, writes from this site only. Do not expose a dev server to a network: `next dev` listens on every interface, so run it as `npx next dev -H 127.0.0.1` or set `PW_BASIC_AUTH`.
+`PW_BASIC_AUTH` must be `user:password` with both parts set; any other value is ignored (with a warning at start), so the server stays closed.
+
+Set **`PW_BASE_URL`** (this server's public URL) in production. The server never takes its own address from a request (Host, X-Forwarded-Host): relative data URLs (`/api/...`) in server renders, thumbnails, batches and schedules resolve against `PW_BASE_URL`, and without it they fail with a message naming it. A data source may only read (GET) from this server; the server's own credentials (the `PW_BASIC_AUTH` password, a one-request viewer pass with accounts on) go to this server only, never to another host, and a report's own `Origin`, `Cookie` and `Authorization` headers are dropped on those calls. A redirect from a public host cannot lead into this server or a `PW_INTERNAL_HOSTS` host.
+
+**Hosts in data URLs are fixed in production** (`PW_FIXED_FETCH_HOSTS`, default `1` in production and `0` in development): a data source the server fetches must write its host out. Parameters and expressions may fill the path and the query (`https://api.example.com/loans/{Parameters.id}?from={Parameters.from}`), not the host (`={Parameters.url}`, `http://{Parameters.host}/x`); such a report answers 403 in server renders. Image URLs then do not reach `PW_INTERNAL_HOSTS` either. Set `PW_FIXED_FETCH_HOSTS=0` to allow dynamic hosts (they still pass the SSRF guard).
+
+Schedules and batches belong to the API key that made them: once the key is out of `PW_API_KEYS` they stop, in every mode. In production, ones made without a key (keyless API) are no one's and stop too: recreate them with a key.
+
+`npm run dev` (development) stays open to whoever reaches it, writes from this site only, and answers only to a local host name (`localhost`, `127.0.0.1`, `::1`, the `PW_BASE_URL` host, and `PW_DEV_HOSTS`), so a web page cannot reach it by DNS rebinding. That check reads the Host header, which a client on your network can set: do not expose a dev server to a network. `next dev` listens on every interface, so run it as `npx next dev -H 127.0.0.1`, or set `PW_BASIC_AUTH`.
 
 Open the home page. Three sample reports are there: **Loan statement**, **Sales by region** (groups, drill-down, cascading parameters) and **Sales dashboard** (charts, matrix, QR code, sparklines).
 
@@ -75,7 +83,10 @@ The viewer runs in a Shadow DOM, so the host page styles do not change it. Set `
 | `PW_API_KEYS` | run time | Comma-separated keys for `/api/v1`. Send `Authorization: Bearer <key>` or `x-api-key`. **Required in production.** |
 | `PW_ALLOW_KEYLESS` | run time | `1` lets `/api/v1` answer without a key in production, read-only: `GET`s and `POST /api/v1/render` of a saved template, with no definition or data in the request, no signing, no batches or schedules. Anyone can then render every report. In development the API answers without a key, and refuses a keyless write that carries another site's `Origin`. |
 | `PW_WEBHOOK_SECRET` | run time | Signs webhook bodies: header `x-pagewright-signature: sha256=<HMAC-SHA256 hex>` |
-| `PW_BASE_URL` | run time | Public URL of this server, used for relative data URLs in batches and schedules |
+| `PW_BASE_URL` | run time | Public URL of this server. Relative data URLs in server renders, thumbnails, batches and schedules resolve against it, and the server's calls to itself go there. **Required in production** for reports with relative data URLs: the server never takes its own address from a request. In development the address Next listens on. |
+| `PW_FIXED_FETCH_HOSTS` | run time | `1` (default in production): a server-side data fetch must write its host out; parameters and expressions fill only the path and query. `0` (default in development) allows hosts made by expressions. |
+| `PW_PROXY_SECRET` | run time | With `PW_AUTH=proxy`: a secret the reverse proxy sends as `x-pagewright-proxy-secret`. Requests without it are refused, so nothing can go around the proxy. |
+| `PW_DEV_HOSTS` | run time | Development only: more host names (comma-separated) a `next dev` server with no sign-in answers to, besides `localhost`, `127.0.0.1` and `::1`. |
 | `PW_BATCH_CONCURRENCY` | run time | Reports rendered at the same time in a batch (default 2) |
 | `PW_SCHEDULER` | run time | `off` stops the built-in scheduler (for example on extra replicas) |
 | `PW_AUTH` | run time | `users` turns on user accounts with roles ([Users and roles](#users-and-roles)). `proxy`: no accounts, the app trusts every request that reaches it, because a reverse proxy in front signs people in ([Production needs a sign-in](#run-it)). Any other value makes the server refuse every request (500), so a typo cannot leave the app open. |

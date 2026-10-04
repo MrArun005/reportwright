@@ -8,7 +8,7 @@ import https from 'node:https';
 import dns from 'node:dns';
 import net from 'node:net';
 import { Readable, Transform } from 'node:stream';
-import { accountsOn, internalCookie } from './session.js';
+import { accountsOn, internalCookie, basicOn } from './session.js';
 
 const MAX_BYTES = 20 * 1024 * 1024;
 const TIMEOUT_MS = 30000;
@@ -37,21 +37,30 @@ export function isPrivate(ip) {
 /** Hosts in PW_INTERNAL_HOSTS may resolve to private addresses (internal data APIs). */
 export const internalHosts = () => (process.env.PW_INTERNAL_HOSTS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
 
+/** The self origin when production has no PW_BASE_URL (renderer.baseUrl): a name that never resolves. */
+export const NO_BASE_URL = 'http://pw-base-url-not-set.invalid';
+
 /**
- * A fetch for server-side work: this server's own origin plus PW_INTERNAL_HOSTS are allowed.
- * Calls back into this server (relative data URLs) sign in: with accounts on (PW_AUTH=users) by a viewer pass
- * for that one GET, else with the PW_BASIC_AUTH password when it is set.
+ * A fetch for server-side work: this server's own origin (selfOrigin: PW_BASE_URL, or the address Next listens on;
+ * never a request header) plus PW_INTERNAL_HOSTS are allowed; internal: false leaves PW_INTERNAL_HOSTS out.
+ * Calls back into this server (relative data URLs) are reads only (GET, HEAD), with the caller's Origin, Referer,
+ * Cookie and Authorization taken out, so a report cannot make a request look like this site's page or carry its own
+ * credentials; they sign in with accounts on (PW_AUTH=users) by a viewer pass for that one GET, else with the
+ * PW_BASIC_AUTH password. No other host ever gets either.
+ * @param {string} selfOrigin @param {{ internal?: boolean }} [o]
  */
-export const serverFetch = (selfOrigin) => (url, init = {}) => {
+export const serverFetch = (selfOrigin, { internal = true } = {}) => async (url, init = {}) => {
   const self = selfOrigin && safeOrigin(selfOrigin);
+  if (safeOrigin(String(url)) === NO_BASE_URL) throw Object.assign(new Error('A relative data URL needs PW_BASE_URL in production (this server\'s public URL): the server never takes its own address from a request.'), { status: 500 });
   const headers = new Headers(init.headers || {});
   const toSelf = self && safeOrigin(String(url)) === self;
-  if (toSelf && accountsOn()) {
-    if ((init.method || 'GET').toUpperCase() === 'GET' && !headers.has('cookie')) headers.set('cookie', internalCookie(String(url)));
-  } else if (toSelf && process.env.PW_BASIC_AUTH && !headers.has('authorization')) {
-    headers.set('authorization', `Basic ${Buffer.from(process.env.PW_BASIC_AUTH).toString('base64')}`);
+  if (toSelf) {
+    if (!['GET', 'HEAD'].includes((init.method || 'GET').toUpperCase())) throw Object.assign(new Error('A data source may only read (GET) from this server.'), { status: 403 });
+    for (const k of ['origin', 'referer', 'cookie', 'authorization', 'x-api-key']) headers.delete(k);
+    if (accountsOn()) headers.set('cookie', internalCookie(String(url)));
+    else if (basicOn()) headers.set('authorization', `Basic ${Buffer.from(String(process.env.PW_BASIC_AUTH)).toString('base64')}`);
   }
-  return safeFetch(url, { ...init, headers }, { allow: [selfOrigin, ...internalHosts()].filter(Boolean) });
+  return safeFetch(url, { ...init, headers }, { allow: [selfOrigin, ...(internal ? internalHosts() : [])].filter(Boolean) });
 };
 
 /**
@@ -112,7 +121,8 @@ export async function safeFetch(input, init = {}, { allow = [], hops = 3, deadli
     const keepBody = res.statusCode === 307 || res.statusCode === 308;
     // credentials never follow a redirect to another site
     const h = same ? headers : Object.fromEntries(Object.entries(headers).filter(([k]) => !/^(authorization|cookie|x-api-key)$/i.test(k)));
-    return safeFetch(next, keepBody ? { ...init, headers: h } : { headers: h }, { allow, hops: hops - 1, deadline });
+    // a public first hop cannot redirect into the allow list (this server, PW_INTERNAL_HOSTS): its redirects get none
+    return safeFetch(next, keepBody ? { ...init, headers: h } : { headers: h }, { allow: trusted ? allow : [], hops: hops - 1, deadline });
   }
 
   const empty = [204, 205, 304].includes(res.statusCode) || init.method === 'HEAD';

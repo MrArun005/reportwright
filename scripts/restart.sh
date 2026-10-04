@@ -11,7 +11,8 @@ PW_EMBED_ORIGINS=${PW_EMBED_ORIGINS:-http://localhost:4000} npm run build > /tmp
 # The api e2e test receives webhooks on 127.0.0.1, which the SSRF guard blocks unless listed.
 # A production server with no sign-in refuses everything (proxy.js): the e2e suites run as an app behind a
 # signing-in reverse proxy (PW_AUTH=proxy); users.mjs and sso.mjs start their own servers with accounts.
-PW_AUTH=${PW_AUTH:-proxy} PW_API_KEYS=${PW_API_KEYS:-test-key} PW_WEBHOOK_SECRET=${PW_WEBHOOK_SECRET:-testsecret} PW_INTERNAL_HOSTS=${PW_INTERNAL_HOSTS:-127.0.0.1} \
+# Production takes its own address only from PW_BASE_URL (relative data URLs in server renders and thumbnails).
+PW_AUTH=${PW_AUTH:-proxy} PW_BASE_URL=${PW_BASE_URL:-http://localhost:$PORT} PW_API_KEYS=${PW_API_KEYS:-test-key} PW_WEBHOOK_SECRET=${PW_WEBHOOK_SECRET:-testsecret} PW_INTERNAL_HOSTS=${PW_INTERNAL_HOSTS:-127.0.0.1} \
   nohup npx next start -p "$PORT" > /tmp/next.log 2>&1 < /dev/null &
 sleep 5
 curl -s -o /dev/null -w "server %{http_code} on :$PORT\n" "localhost:$PORT/"

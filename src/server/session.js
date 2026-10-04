@@ -17,7 +17,35 @@ export const accountsOn = () => process.env.PW_AUTH === 'users';
  * (next dev) yes; in production only behind PW_BASIC_AUTH, or with PW_AUTH=proxy (a reverse proxy in front of the app
  * signs everyone in). Production with none of them fails closed: see openGate in proxy.js.
  */
-export const openTrusted = () => !accountsOn() && (process.env.NODE_ENV !== 'production' || !!process.env.PW_BASIC_AUTH || process.env.PW_AUTH === 'proxy');
+export const openTrusted = () => !accountsOn() && (process.env.NODE_ENV !== 'production' || basicOn() || process.env.PW_AUTH === 'proxy');
+/** PW_BASIC_AUTH as "user:password", both parts non-empty. Anything else ("x", ":", "u:") is not a sign-in. */
+export const basicOn = () => /^[^:]+:.+$/.test(process.env.PW_BASIC_AUTH || '');
+/** Development with nobody signing in: trusted only because it is next dev (see devHostOk). */
+export const devOpen = () => !accountsOn() && process.env.NODE_ENV !== 'production' && !basicOn() && process.env.PW_AUTH !== 'proxy';
+/**
+ * next dev with nobody signing in answers only to a local host name: a page that re-points its own name at 127.0.0.1
+ * (DNS rebinding) sends its own name as Host. localhost, 127.0.0.1, ::1, the PW_BASE_URL host and PW_DEV_HOSTS.
+ * ponytail: a Host header is the client's word, so this stops browsers, not a LAN client: run next dev -H 127.0.0.1.
+ * @param {Request} req
+ */
+export function devHostOk(req) {
+  let host;
+  try { host = new URL(`http://${req.headers.get('host') || new URL(req.url).host}`).hostname.replace(/^\[|\]$/g, '').toLowerCase(); } catch { return false; }
+  const ok = ['localhost', '127.0.0.1', '::1', ...(process.env.PW_DEV_HOSTS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean)];
+  try { if (process.env.PW_BASE_URL) ok.push(new URL(process.env.PW_BASE_URL).hostname.toLowerCase()); } catch { /* ignore */ }
+  return ok.includes(host);
+}
+/**
+ * PW_AUTH=proxy with PW_PROXY_SECRET: the reverse proxy sends it as x-pagewright-proxy-secret, so a request that
+ * reaches the app port directly (around the proxy) is refused. Without PW_PROXY_SECRET: true (and a warning at start).
+ * @param {Request} req
+ */
+export function proxySecretOk(req) {
+  const want = process.env.PW_PROXY_SECRET;
+  if (process.env.PW_AUTH !== 'proxy' || !want) return true;
+  const d = (s) => crypto.createHash('sha256').update(s).digest();
+  return crypto.timingSafeEqual(d(req.headers.get('x-pagewright-proxy-secret') || ''), d(want));
+}
 /** Production with nobody signing in, and PW_PUBLIC_READONLY=1: anyone may open and render the saved reports, nothing more. */
 export const publicReadonly = () => !accountsOn() && !openTrusted() && process.env.PW_PUBLIC_READONLY === '1';
 /** What a production server with no sign-in answers (and logs when it starts). */

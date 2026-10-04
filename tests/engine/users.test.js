@@ -442,8 +442,8 @@ describe('the proxy', () => {
       expect((await proxy(rq('/designer/x'))).status).toBe(401);
       expect(await proxy(rq('/designer/x', { headers: { authorization: `Basic ${Buffer.from('u:p').toString('base64')}` } }))).toBe(undefined);
     });
-    await withEnv({ PW_AUTH: undefined, PW_BASIC_AUTH: undefined }, async () => {
-      expect(await proxy(rq('/admin/users'))).toBe(undefined); // exactly as before: no gate at all
+    await withEnv({ PW_AUTH: undefined, PW_BASIC_AUTH: undefined, PW_DEV_HOSTS: 'pw.test' }, async () => {
+      expect(await proxy(rq('/admin/users'))).toBe(undefined); // development: no gate but the local-host check (pw.test allowed here)
     });
     await withEnv({ PW_BASIC_AUTH: 'u:p' }, async () => {
       const res = await proxy(rq('/designer/x', { headers: { authorization: `Basic ${Buffer.from('u:p').toString('base64')}` } }));

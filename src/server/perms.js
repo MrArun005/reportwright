@@ -115,13 +115,13 @@ export async function principalFromId(id, viaKey) {
     const p = await userPrincipal(id.slice(5));
     return p.kind === 'user' && userKeyIds(p.email).has(String(viaKey)) ? { ...p, viaKey: String(viaKey) } : NOBODY;
   }
-  if (id.startsWith('service:') && serviceKeyIds().has(id.slice(8))) return { kind: 'service', key: id.slice(8) };
+  if (id.startsWith('service:')) return serviceKeyIds().has(id.slice(8)) ? { kind: 'service', key: id.slice(8) } : NOBODY; // a removed key's schedules stop
   if (id === 'service') return { kind: 'service' };
   if (id === 'public') return vet(PUBLIC);
-  // with accounts off, records of users, removed keys and the open server run as the open server (as before), and
-  // only while it is trusted: in production with no sign-in they are no one's
-  if (!accountsOn() && (id === 'open' || id.startsWith('user:') || id.startsWith('service:'))) return vet(OPEN);
-  return NOBODY; // a removed key's schedules stop
+  // records made without a key ("open") or by a user's key while accounts were on: the open server's, in development
+  // only. In production nobody can say who made them (a keyless caller, before keyless became read-only): no one's.
+  if (!accountsOn() && process.env.NODE_ENV !== 'production' && (id === 'open' || id.startsWith('user:'))) return vet(OPEN);
+  return NOBODY;
 }
 
 /* ---------------- the data ---------------- */
@@ -264,6 +264,19 @@ export function canDesign(p) {
 
 const FETCHED = ['rest', 'csv', 'graphql'];
 /**
+ * The host of a data source URL as it is written: '' for a path on this server, null when an expression or a parameter
+ * builds it (it could be any host), else the host name (lower case, no brackets).
+ * @param {any} url
+ */
+export function writtenHost(url) {
+  const u = String(url ?? '').trim();
+  if (u.startsWith('=')) return null;
+  if (/^\/(?![/\\])/.test(u)) return '';
+  const m = /^(?:https?:)?\/\/([^/?#\\]*)/i.exec(u);
+  if (!m || m[1].includes('{')) return null;
+  try { return new URL(`http://${m[1]}`).hostname.toLowerCase().replace(/^\[|\]$/g, ''); } catch { return null; }
+}
+/**
  * The data sources of a definition that the server runs with its own reach: SQL on a server connection, and fetches
  * that may reach a host in PW_INTERNAL_HOSTS (an absolute URL to one, or a URL built by an expression: it could be
  * anything). A relative URL is this server (its own checks apply); useProxy goes through /api/data/proxy, which
@@ -274,9 +287,8 @@ export function serverSources(def) {
   const internal = internalHosts();
   const reaches = (src) => {
     if (!internal.length || src.useProxy || (src.type === 'csv' && src.data)) return false;
-    const u = String(src.url ?? '').trim();
-    if (/^\/(?![/\\])/.test(u)) return false; // a path: this server
-    try { return internal.includes(new URL(u).hostname.toLowerCase().replace(/^\[|\]$/g, '')); } catch { return true; }
+    const h = writtenHost(src.url);
+    return h === null || (h !== '' && internal.includes(h)); // '': a path on this server (GET only, serverFetch)
   };
   return (Array.isArray(def?.dataSources) ? def.dataSources : []).filter(s => s && typeof s === 'object' && (s.type === 'sql' || (FETCHED.includes(s.type) && reaches(s))));
 }

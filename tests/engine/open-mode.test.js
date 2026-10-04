@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import http from 'node:http';
 import { proxy } from '../../proxy.js';
 import { POST as createReport } from '../../app/api/reports/route.js';
 import { PUT as saveReport } from '../../app/api/reports/[id]/route.js';
@@ -18,6 +19,8 @@ import { POST as v1Schedules } from '../../app/api/v1/schedules/route.js';
 import { writeReport, readReport, listVersions } from '../../src/server/reports.js';
 import { principalOf, principalFromId, serverSources, stampDefinition, readRunnable, canDesign, OPEN, PUBLIC, NOBODY } from '../../src/server/perms.js';
 import { apiPrincipal } from '../../src/server/auth.js';
+import { baseUrl, renderTo, assertFixedHosts } from '../../src/server/renderer.js';
+import { serverFetch } from '../../src/server/safeFetch.js';
 
 const ORIGIN = 'http://pw.test';
 const EVIL = 'http://evil.example';
@@ -154,7 +157,7 @@ describe('each way to sign in still works in production', () => {
 });
 
 describe('development with no sign-in', () => {
-  const DEV = { NODE_ENV: 'development', PW_AUTH: undefined, PW_BASIC_AUTH: undefined };
+  const DEV = { NODE_ENV: 'development', PW_AUTH: undefined, PW_BASIC_AUTH: undefined, PW_DEV_HOSTS: 'pw.test' }; // the tests' host name
   it('stays open on this site, and refuses writes and SQL from another site (or with no Origin)', () => withEnv(DEV, async () => {
     expect(await principalOf(rq('/'))).toEqual(OPEN);
     expect(await proxy(rq('/api/reports', { method: 'POST', body: {} }))).toBe(undefined);
@@ -208,5 +211,92 @@ describe('SQL in a stored definition runs only as a designer stored it', () => {
     expect(serverSources(src('//hr.internal/x'))).toHaveLength(1);
     expect(serverSources(src('http://hr.internal/x', { useProxy: true }))).toHaveLength(0);
     expect(serverSources({ dataSources: [{ name: 'j', type: 'json', data: [] }, { name: 'c', type: 'csv', data: 'a\n1' }] })).toHaveLength(0);
+  }));
+});
+
+// Second review round (2026-10-04): the self-origin, the server's own credentials, hosts chosen by parameters.
+describe('this server\'s own origin and credentials', () => {
+  let self, other, seen;
+  const listen = () => new Promise((resolve) => {
+    const s = http.createServer((q, r) => { seen.push({ port: s.address().port, method: q.method, url: q.url, h: q.headers }); r.setHeader('content-type', 'application/json'); r.end('[{"n":1}]'); });
+    s.listen(0, '127.0.0.1', () => resolve(s));
+  });
+  beforeAll(async () => { self = await listen(); other = await listen(); });
+  afterAll(() => { self.close(); other.close(); });
+  beforeEach(() => { seen = []; });
+  const at = (s, p = '/x') => `http://127.0.0.1:${s.address().port}${p}`;
+
+  it('never comes from the request: Host and X-Forwarded-Host do not move it', () => {
+    const req = new Request('http://localhost:3600/api/reports/x/pdf', { headers: { host: '169.254.169.254', 'x-forwarded-host': 'evil.example', 'x-forwarded-proto': 'https' } });
+    return withEnv({ NODE_ENV: 'development', PW_BASE_URL: undefined }, async () => {
+      expect(baseUrl(req)).toBe('http://localhost:3600'); // the address Next listens on (it builds req.url itself), plain http
+      await withEnv({ PW_BASE_URL: 'https://reports.example.com/' }, () => expect(baseUrl(req)).toBe('https://reports.example.com'));
+      await withEnv({ NODE_ENV: 'production' }, () => expect(baseUrl(req)).toMatch(/\.invalid$/)); // not set: no self at all
+    });
+  });
+
+  it('production without PW_BASE_URL refuses relative data URLs (fail closed) and names the setting', () => withEnv({ NODE_ENV: 'production', PW_BASE_URL: undefined, PW_AUTH: 'proxy' }, async () => {
+    const def = { name: 'r', dataSources: [{ name: 'd', type: 'rest', url: '/api/sample/sales/2024' }], dataSets: [], sections: { body: { items: [] } } };
+    await expect(renderTo(def, { format: 'json', baseUrl: baseUrl(), principal: OPEN })).rejects.toThrow(/PW_BASE_URL/);
+  }));
+
+  it('a data source cannot use the server\'s password or cookie: only GETs go to itself, with its own headers stripped', () => withEnv({ NODE_ENV: 'production', PW_BASIC_AUTH: 'u:secret', PW_INTERNAL_HOSTS: '127.0.0.1' }, async () => {
+    const f = serverFetch(at(self, ''));
+    // the review's attack: POST /api/data/sql to itself with a forged Origin, riding on the Basic password
+    await expect(f(at(self, '/api/data/sql'), { method: 'POST', headers: { origin: at(self, ''), 'content-type': 'application/json' }, body: '{}' })).rejects.toMatchObject({ status: 403 });
+    expect(seen).toHaveLength(0);
+    await f(at(self), { headers: { origin: 'http://evil.example', referer: 'http://evil.example/', cookie: 'pw_session=forged', authorization: 'Basic Zm9yZ2Vk' } });
+    expect(seen[0].h.authorization).toBe(`Basic ${Buffer.from('u:secret').toString('base64')}`);
+    for (const k of ['origin', 'referer', 'cookie']) expect(seen[0].h[k], k).toBeUndefined();
+    // any other host (an internal one included) never gets the password
+    await f(at(other));
+    expect(seen[1].h.authorization).toBeUndefined();
+  }));
+});
+
+describe('hosts chosen by parameters (PW_FIXED_FETCH_HOSTS)', () => {
+  const def = (url) => ({ name: 'r', dataSources: [{ name: 'd', type: 'rest', url }], dataSets: [], sections: { body: { items: [] } } });
+  it('counts a host built by an expression as internal (it could be one)', () => withEnv({ PW_INTERNAL_HOSTS: 'hr.internal' }, () => {
+    for (const u of ['http://{Parameters.h}/x', 'http://x{Parameters.h}/', 'http://{Parameters.h}.corp/', '={Parameters.u}', 'http://hr.internal{Parameters.p}']) expect(serverSources(def(u)), u).toHaveLength(1);
+    expect(serverSources(def('https://api.example.com/x/{Parameters.id}?q={Parameters.q}'))).toHaveLength(0); // only the path and query vary
+  }));
+  it('in production only the path and query of a server-side fetch may be dynamic; PW_FIXED_FETCH_HOSTS=0 turns it off', async () => {
+    await withEnv({ NODE_ENV: 'production', PW_FIXED_FETCH_HOSTS: undefined }, async () => {
+      for (const u of ['http://{Parameters.h}/x', '={Parameters.u}', '{Parameters.base}/x', 'http://api.example.com{Parameters.p}']) expect(() => assertFixedHosts(def(u)), u).toThrow(/PW_FIXED_FETCH_HOSTS/);
+      for (const u of ['https://api.example.com/x/{Parameters.id}?q={Parameters.q}', '/api/sample/{Parameters.y}', 'https://api.example.com/x']) expect(() => assertFixedHosts(def(u)), u).not.toThrow();
+      await expect(renderTo(def('={Parameters.u}'), { format: 'json', baseUrl: 'http://127.0.0.1:1', principal: { kind: 'service' } })).rejects.toMatchObject({ status: 403 });
+      await withEnv({ PW_FIXED_FETCH_HOSTS: '0' }, () => expect(() => assertFixedHosts(def('={Parameters.u}'))).not.toThrow());
+    });
+    await withEnv({ NODE_ENV: 'development', PW_FIXED_FETCH_HOSTS: undefined }, () => expect(() => assertFixedHosts(def('={Parameters.u}'))).not.toThrow());
+    await withEnv({ NODE_ENV: 'development', PW_FIXED_FETCH_HOSTS: '1' }, () => expect(() => assertFixedHosts(def('={Parameters.u}'))).toThrow());
+  });
+});
+
+describe('records and modes', () => {
+  it('a removed key\'s schedules stop in every mode; keyless and user records run only in development', () => withEnv({ NODE_ENV: 'production', PW_BASIC_AUTH: 'u:p', PW_API_KEYS: 'newkey', PW_AUTH: undefined }, async () => {
+    for (const id of ['service:deadbeef', 'open', 'user:a@x.io', 'nobody']) expect(await principalFromId(id), id).toEqual(NOBODY);
+    const key = (await apiPrincipal(rq('/api/v1/templates', { headers: { authorization: 'Bearer newkey' } }))).principal.key;
+    expect(await principalFromId(`service:${key}`)).toEqual({ kind: 'service', key });
+    await withEnv({ NODE_ENV: 'development', PW_BASIC_AUTH: undefined }, async () => {
+      expect(await principalFromId('open')).toEqual(OPEN);
+      expect(await principalFromId('service:deadbeef')).toEqual(NOBODY);
+    });
+  }));
+  it('development answers only on a local host name (DNS rebinding); PW_DEV_HOSTS adds more', () => withEnv({ NODE_ENV: 'development', PW_AUTH: undefined, PW_BASIC_AUTH: undefined, PW_BASE_URL: undefined }, async () => {
+    const at = (host, m = 'POST') => proxy(new Request(`http://${host}/api/data/sql`, { method: m, headers: { host, origin: `http://${host}`, 'content-type': 'application/json' }, body: m === 'GET' ? undefined : '{}' }));
+    expect((await at('rebind.evil.example:3000')).status).toBe(403);
+    expect((await at('rebind.evil.example:3000', 'GET'))?.status).toBe(403);
+    for (const h of ['localhost:3000', '127.0.0.1:3000', '[::1]:3000']) expect(await at(h), h).toBe(undefined);
+    await withEnv({ PW_DEV_HOSTS: 'mybox.lan' }, async () => expect(await at('mybox.lan:3000')).toBe(undefined));
+  }));
+  it('a PW_BASIC_AUTH without a user and a password is not a sign-in (fails closed)', () => withEnv({ ...PROD_OPEN, PW_BASIC_AUTH: 'x' }, async () => {
+    expect((await proxy(rq('/api/reports', { method: 'POST', body: {} }))).status).toBe(401);
+    for (const v of [':', 'u:', ':p']) await withEnv({ PW_BASIC_AUTH: v }, async () => expect(await principalOf(rq('/'))).toEqual(NOBODY));
+  }));
+  it('PW_AUTH=proxy with PW_PROXY_SECRET: requests without the reverse proxy\'s header are refused', () => withEnv({ ...PROD_OPEN, PW_AUTH: 'proxy', PW_PROXY_SECRET: 's3cret-from-the-proxy' }, async () => {
+    expect((await proxy(rq('/designer/x'))).status).toBe(401);
+    expect((await proxy(rq('/designer/x', { headers: { 'x-pagewright-proxy-secret': 'wrong' } }))).status).toBe(401);
+    expect(await proxy(rq('/designer/x', { headers: { 'x-pagewright-proxy-secret': 's3cret-from-the-proxy' } }))).toBe(undefined);
+    expect(await proxy(rq('/api/v1/templates'))).toBe(undefined); // its own keys
   }));
 });

@@ -9,8 +9,8 @@ import { exportCsv } from '@/exporters/csv.js';
 import { exportXlsx } from '@/exporters/xlsx.js';
 import { exportDocx } from '@/exporters/docx.js';
 import { createSubsetter } from '@/exporters/subset.js';
-import { readRunnable, defaultPrincipal, vet, canDesign } from './perms.js';
-import { serverFetch } from './safeFetch.js';
+import { readRunnable, defaultPrincipal, vet, canDesign, writtenHost } from './perms.js';
+import { serverFetch, NO_BASE_URL } from './safeFetch.js';
 import { pdfSigner } from './sign.js';
 import { runSql } from './sql.js';
 import { listFonts, readFont } from './fonts.js';
@@ -47,10 +47,32 @@ export const FORMATS = {
  *  schedules, thumbnails) stops there with a 504, so one slow report cannot hold the server. */
 export const renderTimeoutMs = () => { const n = Number(process.env.PW_RENDER_TIMEOUT_MS); return Number.isFinite(n) && n > 0 ? n : 60000; };
 
+/**
+ * This server's own URL, for relative data URLs and its calls to itself: PW_BASE_URL. Never a request header: outside
+ * production, the address Next listens on (Next builds req.url from its own host and port, not the Host header; plain
+ * http, X-Forwarded-Proto aside). Production without PW_BASE_URL: NO_BASE_URL, which serverFetch refuses (fail closed).
+ * @param {Request} [req]
+ */
 export function baseUrl(req) {
   if (process.env.PW_BASE_URL) return process.env.PW_BASE_URL.replace(/\/$/, '');
-  if (req) return new URL(req.url).origin;
+  if (process.env.NODE_ENV === 'production') return NO_BASE_URL;
+  if (req) return `http://${new URL(req.url).host}`;
   return `http://127.0.0.1:${process.env.PORT || 3000}`;
+}
+
+/** PW_FIXED_FETCH_HOSTS: 1 (the default in production), 0 (the default in development). */
+const fixedHosts = () => (process.env.PW_FIXED_FETCH_HOSTS ? process.env.PW_FIXED_FETCH_HOSTS !== '0' : process.env.NODE_ENV === 'production');
+/**
+ * With PW_FIXED_FETCH_HOSTS on: a data source the server fetches must write its host out; parameters and expressions
+ * may fill the path and the query only (they are URL-encoded there), so a viewer cannot point the server at a host.
+ * @param {any} def
+ */
+export function assertFixedHosts(def) {
+  if (!fixedHosts()) return;
+  for (const s of Array.isArray(def?.dataSources) ? def.dataSources : []) {
+    if (!s || !['rest', 'csv', 'graphql'].includes(s.type) || (s.type === 'csv' && s.data)) continue;
+    if (writtenHost(s.url) === null) throw Object.assign(new Error(`Data source "${s.name}": its host is made by an expression or a parameter. Write the host out (only the path and the query may vary), or set PW_FIXED_FETCH_HOSTS=0.`), { status: 403 });
+  }
 }
 
 /**
@@ -94,6 +116,7 @@ export async function renderTo(def, opt = {}) {
   if (opt.encrypt && opt.sign) throw Object.assign(new Error('A signed PDF cannot have a password. Turn off signing or the password.'), { status: 400 });
   if (opt.sign && opt.principal && vet(opt.principal).kind === 'public') throw Object.assign(new Error('Signing needs an API key (PW_API_KEYS).'), { status: 401 });
   const signing = opt.sign ? await pdfSigner({ name: def.name || 'Pagewright' }) : null; // fail before rendering
+  assertFixedHosts(d);
   const base = opt.baseUrl || baseUrl();
   const fetch = serverFetch(opt.self || base);
   await syncFonts();
@@ -101,13 +124,18 @@ export async function renderTo(def, opt = {}) {
     parameters: opt.parameters || {}, state: opt.state || {}, fontStore: fontStore(), baseUrl: base, fetch, timeoutMs: renderTimeoutMs(),
     sql: runSql, // SQL sources query the database directly, not through /api/data/sql
     loadReport: async (id) => {
-      try { return await readRunnable(opt.principal || defaultPrincipal(), id); }
+      let sub;
+      try { sub = await readRunnable(opt.principal || defaultPrincipal(), id); }
       catch (e) { throw e.status === 403 && /no designer saved/.test(e.message) ? e : new Error(`Report "${id}" not found`); } // the same words whether it is missing or not allowed
+      assertFixedHosts(sub);
+      return sub;
     },
   });
   let bytes;
   // images by URL (a logo) go through the same guard; one that fails to load is left out, as in the viewer
-  const fetchImage = async (src) => { try { const r = await fetch(new URL(src, base)); return r.ok ? new Uint8Array(await r.arrayBuffer()) : null; } catch { return null; } };
+  // with fixed hosts an image URL (often made by an expression) does not reach PW_INTERNAL_HOSTS either
+  const imageFetch = fixedHosts() ? serverFetch(opt.self || base, { internal: false }) : fetch;
+  const fetchImage = async (src) => { try { const r = await imageFetch(new URL(src, base)); return r.ok ? new Uint8Array(await r.arrayBuffer()) : null; } catch { return null; } };
   if (format === 'pdf') {
     bytes = await exportPdf(model, fontStore(), { title: def.name, subset, fetchImage, pdfa: opt.pdfa ? { icc: await iccProfile() } : undefined, prepare: signing?.prepare, save: signing?.save, encrypt: opt.encrypt });
     if (signing) bytes = await signing.sign(bytes);

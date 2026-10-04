@@ -166,6 +166,8 @@ Cron supports `*`, lists `1,15`, ranges `1-5` and steps `*/15`. Names such as `M
 
 These routes use the app's sign-in (`PW_AUTH=users`, the shared `PW_BASIC_AUTH`, or `PW_AUTH=proxy` behind a reverse proxy that signs people in), not API keys. In production with none of them they answer **401** with how to set one up, or, with `PW_PUBLIC_READONLY=1`, allow only what a viewer does (read and render saved reports, run their saved queries). Every write must come from a Pagewright page in every mode: an `Origin` (or `Referer`) naming this server, else **403**.
 
+Server-side fetches: relative data URLs resolve against `PW_BASE_URL` (required in production; the server never takes its own address from a request header). A data source may only GET from this server, and only this server receives its credentials. In production a data source's host must be written out: parameters and expressions may fill only the path and query (`PW_FIXED_FETCH_HOSTS`, 403 otherwise). Redirects from public hosts cannot reach this server or `PW_INTERNAL_HOSTS`.
+
 Saving, creating, importing or restoring a report whose data sources include SQL, or a fetch that may reach a host in `PW_INTERNAL_HOSTS`, needs a designer (or admin) in every mode; others get **403**. The server records a fingerprint of those sources with each such save. When a report runs on the server (`/api/data/sql` with `{ report, source }`, `/pdf`, `/thumb`, `/api/v1/render`, batches, schedules, subreports), its SQL and internal fetches run only if their fingerprint was recorded: a definition changed outside Pagewright answers **403** (`… no designer saved on this server. A designer must open it and save it again.`) until a designer saves it.
 
 | Route | Who may call it with accounts off |
