@@ -58,3 +58,55 @@ describe('multi-section reports', () => {
     expect(validate(d).errors.join()).toMatch(/"page" must be an object/);
   });
 });
+
+import ExcelJS from 'exceljs';
+import { unzipSync, strFromU8 } from 'fflate';
+import { exportPdf } from '../../src/exporters/pdf.js';
+import { exportDocx } from '../../src/exporters/docx.js';
+import { exportXlsx } from '../../src/exporters/xlsx.js';
+import { exportHtml } from '../../src/exporters/html.js';
+
+describe('exporters: page sizes per section, merged cells', () => {
+  const twoSizes = async () => {
+    const d = report([], { data: { rows: [{ n: 1 }] } });
+    d.sections.body = [{ items: [{ type: 'textbox', name: 'a', x: 0, y: 0, w: 200, h: 14, value: 'Portrait' }] },
+      { page: { orientation: 'landscape' }, items: [{ type: 'textbox', name: 'b', x: 0, y: 0, w: 200, h: 14, value: 'Landscape' }] }];
+    return render(d, { fontStore });
+  };
+  it('PDF: each page has its section\'s size', async () => {
+    const { PDFDocument } = await import('pdf-lib');
+    const doc = await PDFDocument.load(await exportPdf(await twoSizes(), fontStore));
+    expect(doc.getPages().map(p => [Math.round(p.getWidth()), Math.round(p.getHeight())])).toEqual([[595, 842], [842, 595]]);
+  });
+  it('Word: a section break carries the portrait size, the last section is landscape', async () => {
+    const doc = strFromU8(unzipSync(await exportDocx(await twoSizes()))['word/document.xml']);
+    expect(doc).toMatch(/<w:p><w:pPr><w:sectPr><w:pgSz w:w="11906" w:h="16838"\/>/);
+    expect(doc).toMatch(/<w:sectPr><w:pgSz w:w="16838" w:h="11906" w:orient="landscape"\/>[^]*<\/w:body>/);
+  });
+  it('HTML: the landscape page is drawn at its own size', async () => {
+    const html = await exportHtml(await twoSizes(), fontStore);
+    expect(html).toMatch(/viewBox="0 0 841.89 595.28"/);
+    expect(html).toMatch(/viewBox="0 0 595.28 841.89"/);
+  });
+  const spanned = async () => {
+    const t = { type: 'table', name: 'T', x: 0, y: 0, w: 300, h: 40, dataSet: 'Rows', columns: [{ width: 100 }, { width: 100 }, { width: 100 }],
+      header: [{ height: 18, cells: [{ value: 'Name', rowSpan: 2 }, { value: 'Amounts', colSpan: 2 }, null] }, { height: 18, cells: [null, { value: 'Paid' }, { value: 'Due' }] }],
+      detail: [{ height: 16, cells: [{ value: '=Fields.n' }, { value: '=Fields.n * 2' }, { value: '=Fields.n * 3' }] }] };
+    return render(report([t], { data: { rows: [{ n: 1 }, { n: 2 }] } }), { fontStore });
+  };
+  it('Word: a cell merged down becomes vMerge restart + continue', async () => {
+    const doc = strFromU8(unzipSync(await exportDocx(await spanned()))['word/document.xml']);
+    expect(doc).toContain('<w:vMerge w:val="restart"/>');
+    expect((doc.match(/<w:vMerge\/>/g) || []).length).toBe(1);
+  });
+  it('Excel: header cells merged across and down', async () => {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await exportXlsx(await spanned(), ExcelJS));
+    const ws = wb.worksheets[0];
+    expect(ws.getCell('A1').value).toBe('Name');
+    expect(ws.getCell('A2').isMerged).toBe(true);
+    expect(ws.getCell('C1').isMerged).toBe(true);
+    expect(ws.getCell('A3').value).toBe(1);
+    expect(ws.rowCount).toBe(4);
+  });
+});

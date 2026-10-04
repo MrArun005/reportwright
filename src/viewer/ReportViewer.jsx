@@ -201,7 +201,9 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     root.current?.requestFullscreen?.()?.catch?.(() => {});
   };
 
-  const scale = model ? (zoom === 'fit' ? Math.min(2.5, Math.max(0.3, fitW / (model.width * PX))) * PX : zoom * PX) : PX;
+  // body sections may have pages of other sizes (page.width / page.height): fit the widest
+  const maxW = model ? model.pages.reduce((m, p) => Math.max(m, p.width || 0), model.width) : 0;
+  const scale = model ? (zoom === 'fit' ? Math.min(2.5, Math.max(0.3, fitW / (maxW * PX))) * PX : zoom * PX) : PX;
   const total = model?.pages.length || 0;
 
   const hits = useMemo(() => findText(model, query, { matchCase, wholeWord }), [model, query, matchCase, wholeWord]);
@@ -216,14 +218,17 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   const onScroll = () => {
     const el = scroller.current;
     if (!el || !model || single) return;
-    const pageH = model.height * scale + GAP;
-    setCurrent(Math.min(total, Math.max(1, Math.floor((el.scrollTop + el.clientHeight * 0.35) / pageH) + 1)));
+    // page i starts at tops[i] (pages may differ in height)
+    const tops = [0];
+    for (const p of model.pages) tops.push(tops[tops.length - 1] + (p.height ?? model.height) * scale + GAP);
+    const at = (y) => { let lo = 0, hi = total - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (tops[mid] <= y) lo = mid; else hi = mid - 1; } return lo; };
+    setCurrent(Math.min(total, Math.max(1, at(el.scrollTop + el.clientHeight * 0.35) + 1)));
     // the table header to keep in view: the page at the top edge, and how far down that page the view starts
     const first = el.querySelector('.vpage');
     if (!first) return;
     const y = el.scrollTop - topOf(first);
-    const i = Math.min(total - 1, Math.max(0, Math.floor(y / pageH)));
-    const region = frozenAt(model.pages[i], (y - i * pageH) / scale);
+    const i = Math.min(total - 1, Math.max(0, at(y)));
+    const region = frozenAt(model.pages[i], (y - tops[i]) / scale);
     setFrozen(f => (region ? (f?.region === region ? f : { page: i, region }) : null));
   };
   const scrollToPoint = (page, y = 0) => {
@@ -527,11 +532,11 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
               <ul>{model.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul></details>
           )}
           {model && !single && (
-            <div className="vfrozen" style={{ width: model.width * scale }}>
-              {frozen && model.pages[frozen.page] && <Frozen page={model.pages[frozen.page]} region={frozen.region} w={model.width} h={model.height} scale={scale} />}
+            <div className="vfrozen" style={{ width: (model.pages[frozen?.page]?.width ?? model.width) * scale }}>
+              {frozen && model.pages[frozen.page] && <Frozen page={model.pages[frozen.page]} region={frozen.region} w={model.pages[frozen.page].width ?? model.width} h={model.pages[frozen.page].height ?? model.height} scale={scale} />}
             </div>
           )}
-          {shown.map(i => <Page key={i} index={i} page={model.pages[i]} w={model.width} h={model.height} scale={scale} hits={hitsByPage.get(i)} near={single || Math.abs(i - (current - 1)) <= WINDOW} />)}
+          {shown.map(i => <Page key={i} index={i} page={model.pages[i]} w={model.pages[i].width ?? model.width} h={model.pages[i].height ?? model.height} scale={scale} hits={hitsByPage.get(i)} near={single || Math.abs(i - (current - 1)) <= WINDOW} />)}
         </div>
       </div>
     </div>

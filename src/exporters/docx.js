@@ -64,16 +64,27 @@ function table(cells, indentPt) {
     r.byCol.set(it.cell.col, it);
   }
   const grid = cols.map(w => `<w:gridCol w:w="${Math.round(w * TW)}"/>`).join('');
+  const vm = new Map(); // col → { left, span }: a cell merged down (rowSpan) still covering rows below
   const out = [...rows.values()].sort((a, b) => a.y - b.y).map((r) => {
     const tcs = [];
     for (let c = 0; c < cols.length;) {
+      const down = vm.get(c);
+      if (down && !r.byCol.has(c)) {
+        const w = cols.slice(c, c + down.span).reduce((s, x) => s + x, 0);
+        tcs.push(`<w:tc><w:tcPr><w:tcW w:w="${Math.round(w * TW)}" w:type="dxa"/>${down.span > 1 ? `<w:gridSpan w:val="${down.span}"/>` : ''}<w:vMerge/></w:tcPr><w:p/></w:tc>`);
+        if (--down.left <= 0) vm.delete(c);
+        c += down.span;
+        continue;
+      }
       const it = r.byCol.get(c);
+      const rs = Math.max(1, it?.cell.rowSpan || 1);
+      if (rs > 1) vm.set(c, { left: rs - 1, span: Math.max(1, it.cell.span || 1) });
       const span = Math.max(1, it?.cell.span || 1);
       const w = cols.slice(c, c + span).reduce((s, x) => s + x, 0);
       const bg = it?.cell.bg && /^#?[0-9a-f]{6}$/i.test(it.cell.bg) ? hex(it.cell.bg) : r.kind === 'header' ? 'F1F5F9' : null;
       const shade = bg ? `<w:shd w:val="clear" w:color="auto" w:fill="${bg}"/>` : '';
       const p = it ? `<w:p><w:pPr><w:spacing w:before="0" w:after="0"/><w:jc w:val="${alignOf(it)}"/></w:pPr><w:r>${rPr(it)}<w:t xml:space="preserve">${esc(textOf(it))}</w:t></w:r></w:p>` : '<w:p/>';
-      tcs.push(`<w:tc><w:tcPr><w:tcW w:w="${Math.round(w * TW)}" w:type="dxa"/>${span > 1 ? `<w:gridSpan w:val="${span}"/>` : ''}${shade}</w:tcPr>${p}</w:tc>`);
+      tcs.push(`<w:tc><w:tcPr><w:tcW w:w="${Math.round(w * TW)}" w:type="dxa"/>${span > 1 ? `<w:gridSpan w:val="${span}"/>` : ''}${rs > 1 ? '<w:vMerge w:val="restart"/>' : ''}${shade}</w:tcPr>${p}</w:tc>`);
       c += span;
     }
     return `<w:tr>${r.kind === 'header' ? '<w:trPr><w:tblHeader/></w:trPr>' : ''}${tcs.join('')}</w:tr>`;
@@ -113,11 +124,25 @@ export async function exportDocx(model, opt = {}) {
     }
     blocks.sort((a, b) => a.y - b.y || a.x - b.x);
     return blocks.map(b => (b.kind === 'table' ? table(b.cells, b.x - margin) : b.kind === 'rich' ? richPara(b.items, b.x - margin) : para(b.it, (b.it.clip?.x ?? b.x) - margin))).join('');
-  }).join('<w:p><w:r><w:br w:type="page"/></w:r></w:p>');
-
-  const W = Math.round(model.width * TW), H = Math.round(model.height * TW), M = margin * TW;
+  });
+  // pages of one size share a Word section; a page of another size (a body section) starts a new one
+  const M = margin * TW;
+  const sectPr = (pg) => {
+    const W = Math.round((pg.width ?? model.width) * TW), H = Math.round((pg.height ?? model.height) * TW);
+    return `<w:sectPr><w:pgSz w:w="${W}" w:h="${H}"${W > H ? ' w:orient="landscape"' : ''}/><w:pgMar w:top="${M}" w:right="${M}" w:bottom="${M}" w:left="${M}" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr>`;
+  };
+  const sizeOf = (pg) => `${pg.width ?? model.width}x${pg.height ?? model.height}`;
+  let xml = '';
+  model.pages.forEach((pg, i) => {
+    xml += body[i];
+    const next = model.pages[i + 1];
+    if (!next) return;
+    // the section break carries the size of the pages before it
+    xml += sizeOf(next) !== sizeOf(pg) ? `<w:p><w:pPr>${sectPr(pg)}</w:pPr></w:p>` : '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+  });
+  const last = model.pages[model.pages.length - 1] || {};
   const document = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>${body}<w:sectPr><w:pgSz w:w="${W}" w:h="${H}"/><w:pgMar w:top="${M}" w:right="${M}" w:bottom="${M}" w:left="${M}" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>${xml}${sectPr(last)}</w:body></w:document>`;
   const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Inter" w:hAnsi="Inter" w:cs="Inter"/><w:sz w:val="18"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>`;
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');

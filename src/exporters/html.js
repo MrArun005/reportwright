@@ -31,7 +31,7 @@ export async function exportHtml(model, fontStore, opt = {}) {
     faces.push(`@font-face{font-family:"${fontFamilyCss(key)}";src:url(data:font/ttf;base64,${b64(bytes)}) format("truetype")}`);
   }
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
-  const pages = model.pages.map((p, i) => `<section class="page" id="page-${i + 1}">${pageToSvg({ items: p.items.filter(it => it.t !== 'link' || (it.action?.type === 'url' && safeUrl(it.action.href))) }, model.width, model.height)
+  const pages = model.pages.map((p, i) => `<section class="page${p.width ? ' wide' : ''}" id="page-${i + 1}"${p.width ? ` style="width:min(100%,${Math.round(p.width * 96 / 72)}px)"` : ''}>${pageToSvg({ items: p.items.filter(it => it.t !== 'link' || (it.action?.type === 'url' && safeUrl(it.action.href))) }, p.width ?? model.width, p.height ?? model.height)
     .replace(/<rect class="pw-link"([^>]*?)data-action="([^"]*)"[^>]*>(<title>[^<]*<\/title>)?<\/rect>/g, (m, a, act, ttl = '') => {
       // the href comes from the action, never from the hover text (a tooltip can come from data)
       let href = null;
