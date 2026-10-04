@@ -129,3 +129,28 @@ describe('small fixes', () => {
     expect(fs.readFileSync(new URL('../../src/designer/Outline.jsx', import.meta.url), 'utf8')).not.toMatch(/!items\.length && key !== 'body'\) return null/);
   });
 });
+
+describe('items nested in a table cell grow the row (SSRS importer gap)', () => {
+  const inner = { type: 'table', name: 'Inner', dataSet: 'Kids', x: 0, y: 0, w: 100, h: 18, columns: [{ width: 100 }], detail: [{ height: 18, cells: [{ value: '=Fields.k' }] }] };
+  const outer = (cellItem) => ({ type: 'table', name: 'Outer', dataSet: 'Rows', x: 0, y: 0, w: 200, h: 36, columns: [{ width: 120 }, { width: 80 }],
+    detail: [{ height: 18, cells: [{ item: cellItem }, { value: '=Fields.n' }] }] });
+  const def = (cellItem) => report([outer(cellItem), { type: 'textbox', name: 'Below', x: 0, y: 40, w: 100, h: 14, value: 'below' }], {
+    data: { rows: [{ n: 'A' }, { n: 'B' }], kids: Array.from({ length: 5 }, (_, i) => ({ k: `kid${i}` })) },
+    def: { dataSets: [{ name: 'Rows', source: 'src', path: '$.rows' }, { name: 'Kids', source: 'src', path: '$.kids' }] } });
+  const yOf = (m, s) => m.pages[0].items.find(i => i.t === 'text' && i.lines.some(l => l.text === s)).lines[0].y;
+  it('a nested table of 5 rows makes its row 5 rows tall; the next row and the items below move down', async () => {
+    const m = await render(def(inner), { fontStore });
+    expect(yOf(m, 'B') - yOf(m, 'A')).toBeGreaterThanOrEqual(5 * 18 - 1);
+    expect(yOf(m, 'below') - yOf(m, 'B')).toBeGreaterThanOrEqual(5 * 18 - 1);
+  });
+  it('even in a row that does not grow for text (the importers set canGrow: false)', async () => {
+    const d = def(inner);
+    d.sections.body.items[0].detail[0].canGrow = false;
+    const m = await render(d, { fontStore });
+    expect(yOf(m, 'B') - yOf(m, 'A')).toBeGreaterThanOrEqual(5 * 18 - 1);
+  });
+  it('a nested table inside a list inside a cell too', async () => {
+    const m = await render(def({ type: 'container', name: 'Box', x: 0, y: 0, w: 110, h: 18, keepTogether: false, items: [{ ...inner, name: 'Inner2' }] }), { fontStore });
+    expect(yOf(m, 'B') - yOf(m, 'A')).toBeGreaterThanOrEqual(5 * 18 - 1);
+  });
+});

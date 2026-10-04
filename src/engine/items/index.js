@@ -409,7 +409,8 @@ register('table', {
         const c = { x: colX[ci], w: cw, st, tl, numeric: typeof r.v === 'number', cell, ctx: cctx, raw: r.v, span, plain: nested ? '' : plain, toggle, nested };
         const rs = Math.floor(Number(cell.rowSpan)) || 1;
         if (rs > 1) { (started ||= []).push({ ...c, ci, cols: span, left: rs, units: [], kind }); continue; }
-        if (row.canGrow !== false && tl.needed > need + GROW_TOLERANCE) need = tl.needed;
+        // an item in the cell (a table, list, chart) always grows its row, as in SSRS; canGrow: false keeps text to the row
+        if ((row.canGrow !== false || nested) && tl.needed > need + GROW_TOLERANCE) need = tl.needed;
         cells.push(c);
       }
       if (started) {
