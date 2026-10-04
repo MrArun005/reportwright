@@ -74,4 +74,11 @@ describe('render caps', () => {
     expect(total).toBeLessThanOrEqual(50 * 1048576);
   });
 
+  it('a sparkline evaluates at most its point cap, not every row in scope', () => {
+    let reads = 0;
+    const rows = Array.from({ length: 50000 }, () => ({ get v() { reads++; return 1; } }));
+    const lc = { warn: () => {} };
+    paintVisual({ type: 'sparkline', value: '=Fields.v' }, { x: 0, y: 0, w: 100, h: 20 }, { fields: rows[0], aggRows: rows, dataSets: {}, params: {}, globals: {} }, lc, {});
+    expect(reads).toBeLessThanOrEqual(5000);
+  });
 });
