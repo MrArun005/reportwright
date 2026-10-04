@@ -113,6 +113,18 @@ describe('images', () => {
     const { imgs } = await imgsOf(def);
     expect(imgs[0].src).toBe(PNG40);
   });
+  it('background images from data obey the 10 MB and 50 MB caps (security)', async () => {
+    const mb9 = (k) => 'data:image/png;base64,' + PNG_B64.slice(0, 32) + String.fromCharCode(66 + k).repeat(9 * 1048576 * 4 / 3);
+    const row = { big: mb9(0) + 'A'.repeat(2 * 1048576 * 4 / 3) };
+    for (let k = 1; k <= 7; k++) row['b' + k] = mb9(k);
+    const box = (name, f, y) => ({ type: 'textbox', name, dataSet: 'Rows', x: 0, y, w: 100, h: 20, value: 'x', style: { backgroundImage: `=Fields.${f}` } });
+    const def = report([box('Big', 'big', 0), ...Array.from({ length: 7 }, (_, k) => box('B' + (k + 1), 'b' + (k + 1), 24 * (k + 1)))], { data: { rows: [row] } });
+    const { m, imgs } = await imgsOf(def);
+    const w = m.warnings.join('\n');
+    expect(w).toMatch(/limited to 10 MB each/);
+    expect(w).toMatch(/pass 50 MB in all/);
+    expect(imgs).toHaveLength(5); // 5 × 9 MB fit under 50 MB; the 6th and 7th do not
+  });
   it('parses SVG shapes, transforms and paint; skips text and junk', () => {
     const s = parseSvg(decodeURIComponent(SVG.split(',')[1]));
     expect(s.shapes).toHaveLength(2);

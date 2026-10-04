@@ -243,10 +243,12 @@ export async function render(def, opts = {}) {
   if (opts.bodyOnly) return { units: result.body.units, tables: result.body.tables, height: result.body.height, regions, warnings };
   const { pages, bookmarks, height } = result;
   for (const pg of pages) finishText(pg.items, m);
-  // background images (a style, painted without the layout context) may name an embedded image
+  // Every image on every page passes the caps here, whatever drew it: background images (a style, painted
+  // without the layout context, maybe from a field or an embedded name) and subreports' images included.
+  // Images already counted are in imageBudget.seen, so they are not counted twice.
   for (const pg of pages) {
     pg.items = pg.items.filter(it => {
-      if (it.t !== 'image' || !String(it.src).startsWith('embedded:')) return true;
+      if (it.t !== 'image') return true;
       it.src = resolveImageSrc(it.src, 'Background image', { images: def.images || {}, budget: imageBudget, warn });
       return !!it.src;
     });
