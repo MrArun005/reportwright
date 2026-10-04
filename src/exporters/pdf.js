@@ -205,7 +205,7 @@ export async function exportPdf(model, fontStore, opt = {}) {
   }
   // URL links as PDF annotations
   for (const l of links) {
-    const annot = doc.context.obj({ Type: 'Annot', Subtype: 'Link', F: 4, Rect: l.rect, Border: [0, 0, 0], A: { Type: 'Action', S: 'URI', URI: PDFString.of(l.href) } });
+    const annot = doc.context.obj({ Type: 'Annot', Subtype: 'Link', F: 4, Rect: l.rect, Border: [0, 0, 0], A: { Type: 'Action', S: 'URI', URI: pdfLiteral(l.href) } });
     const ref = doc.context.register(annot);
     const annots = l.page.node.lookup(PDFName.of('Annots'));
     if (annots) annots.push(ref); else l.page.node.set(PDFName.of('Annots'), doc.context.obj([ref]));
@@ -288,6 +288,12 @@ function glyphText(run, font, out) {
  * letter, not as a presentation-form code point.
  */
 /**
+ * A literal PDF string with \ ( ) escaped. pdf-lib writes PDFString.of() as is, so a ')' in data would end the
+ * string and the rest would become PDF syntax (a /JavaScript action, say).
+ */
+const pdfLiteral = (s) => PDFString.of(String(s).replace(/[\\()]/g, '\\$&'));
+
+/**
  * Plain (unshaped) lines: one glyph per character, without OpenType layout. The engine measured them that way
  * (advance widths, no kerning or ligatures), so this draws what was measured, and it skips fontkit's layout, which
  * was about 70% of export time. Shaped and right-to-left text never comes here: drawRun places its glyphs itself.
@@ -330,7 +336,7 @@ function addOutline(doc, bookmarks, H) {
     const page = pages[b.page - 1];
     if (!page) return;
     const title = '  '.repeat(b.level || 0) + b.label;
-    const dict = { Title: PDFString.of(title), Parent: outlineRef, Dest: [page.ref, PDFName.of('XYZ'), null, H - b.y + 4, null] };
+    const dict = { Title: PDFHexString.fromText(title), Parent: outlineRef, Dest: [page.ref, PDFName.of('XYZ'), null, H - b.y + 4, null] };
     if (i > 0) dict.Prev = refs[i - 1];
     if (i < refs.length - 1) dict.Next = refs[i + 1];
     ctx.assign(refs[i], ctx.obj(dict));
