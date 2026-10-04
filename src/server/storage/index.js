@@ -1,14 +1,15 @@
 // @ts-check
 // One storage for reports, report versions, schedules, job records and users.
 // PW_STORAGE=file (the default): today's files: reports/<id>.pw.json, reports/.history/<id>/,
-//   data/schedules.json, data/jobs/<id>/job.json, data/users.json, data/fonts/<id>.json.
-// PW_STORAGE=sqlite:/abs/path.db | postgres://… | mysql://… (or sql:<name> for the URL in PW_DB_<NAME>):
+//   data/schedules.json, data/jobs/<id>/job.json, data/users.json, data/fonts/<id>.json, data/folders.json,
+//   data/report-access.json (permissions), data/tokens.json (sign-in state).
+// PW_STORAGE=sqlite:/abs/path.db | postgres://… | mysql://… | mssql://… (or sql:<name> for the URL in PW_DB_<NAME>):
 //   tables pw_reports, pw_report_versions, pw_schedules, pw_jobs, pw_users, pw_fonts, so several servers share them.
 // Values are text (JSON); the callers own the format. Batch output files always stay in data/.
 import { fileStore } from './file.js';
 import { sqlStore } from './sql.js';
 
-/** @typedef {'reports'|'schedules'|'jobs'|'users'|'fonts'} Kind */
+/** @typedef {'reports'|'schedules'|'jobs'|'users'|'fonts'|'folders'|'reportacl'|'tokens'} Kind */
 /**
  * @typedef {object} Store
  * @property {(kind: Kind, id: string) => Promise<string|null>} get
@@ -39,8 +40,8 @@ export function store() {
   }
   let s;
   if (spec === 'file') s = fileStore(process.cwd());
-  else if (/^(sqlite:|postgres(ql)?:\/\/|mysql:\/\/)/.test(spec)) s = sqlStore(spec);
-  else throw new Error('PW_STORAGE must be file, sqlite:/path/file.db, postgres://…, mysql://… or sql:<connection name>.');
+  else if (/^(sqlite:|postgres(ql)?:\/\/|mysql:\/\/|mssql:\/\/)/.test(spec)) s = sqlStore(spec);
+  else throw new Error('PW_STORAGE must be file, sqlite:/path/file.db, postgres://…, mysql://…, mssql://… or sql:<connection name>.');
   current = { key, store: s };
   return s;
 }

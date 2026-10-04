@@ -44,6 +44,9 @@ export function fileStore(root) {
   const arrays = {
     schedules: { file: path.join(data, 'schedules.json'), key: 'id', mode: 0o644 },
     users: { file: path.join(data, 'users.json'), key: 'email', mode: 0o600 },
+    folders: { file: path.join(data, 'folders.json'), key: 'id', mode: 0o644 },
+    reportacl: { file: path.join(data, 'report-access.json'), key: 'id', mode: 0o644 },
+    tokens: { file: path.join(data, 'tokens.json'), key: 'id', mode: 0o600 }, // short-lived sign-in state (SAML request ids)
   };
   const readArray = async (a) => {
     try { return JSON.parse(await fs.readFile(a.file, 'utf8')); } catch (e) { if (missing(e)) return []; throw e; }

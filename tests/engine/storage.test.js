@@ -18,7 +18,9 @@ const backends = [
   ['sqlite', () => { process.chdir(home); return `sqlite:${path.join(tmp, 'store.db')}`; }],
 ];
 if (process.env.PW_TEST_PG) backends.push(['postgres', () => { process.chdir(home); return process.env.PW_TEST_PG; }]);
+if (process.env.PW_TEST_MSSQL) backends.push(['mssql', () => { process.chdir(home); return process.env.PW_TEST_MSSQL; }]);
 
+const STORE_TABLES = ['pw_reports', 'pw_report_versions', 'pw_schedules', 'pw_jobs', 'pw_users', 'pw_fonts', 'pw_leases', 'pw_folders', 'pw_report_acl', 'pw_tokens'];
 const def = (name, n = 1) => ({ $schema: 'pagewright/report@1', name, parameters: [{ name: 'p', type: 'number', required: true }], sections: { body: { items: Array.from({ length: n }, () => ({ type: 'text' })) } } });
 const schedule = { template: 'loan-statement', cron: '0 7 1 * *', timezone: 'Asia/Kolkata', items: [{ parameters: {} }] };
 
@@ -29,8 +31,16 @@ describe.each(backends)('storage on %s', (kind, setup) => {
       await store().ids('jobs');
       const pg = new (await import('pg')).default.Client(process.env.PW_TEST_PG);
       await pg.connect();
-      for (const t of ['pw_reports', 'pw_report_versions', 'pw_schedules', 'pw_jobs', 'pw_users', 'pw_fonts']) await pg.query(`DELETE FROM ${t}`);
+      for (const t of STORE_TABLES) await pg.query(`DELETE FROM ${t}`);
       await pg.end();
+    }
+    if (kind === 'mssql') {
+      await store().ids('jobs'); // makes the tables
+      const sql = (await import('mssql')).default;
+      const { mssqlConfig } = await import('../../src/server/sql.js');
+      const pool = await new sql.ConnectionPool(mssqlConfig(process.env.PW_TEST_MSSQL)).connect();
+      for (const t of STORE_TABLES) await pool.request().batch(`IF OBJECT_ID(N'${t}') IS NOT NULL DELETE FROM ${t}`);
+      await pool.close();
     }
   });
 
@@ -123,6 +133,20 @@ describe.each(backends)('storage on %s', (kind, setup) => {
     expect(JSON.parse(await store().get('fonts', '0123456789abcdef')).family).toBe('Brand');
     expect(await store().remove('fonts', '0123456789abcdef')).toBe(true);
     expect(await store().ids('fonts')).toEqual([]);
+  });
+
+  it('leases: one owner at a time, renewable, free after release or expiry', async () => {
+    const s = store();
+    expect(await s.lease('t:lease', 'A', 60000)).toBe(true);
+    expect(await s.lease('t:lease', 'B', 60000)).toBe(false);
+    expect(await s.lease('t:lease', 'A', 60000)).toBe(true);
+    await s.release('t:lease', 'B'); // not B's to release
+    expect(await s.lease('t:lease', 'B', 60000)).toBe(false);
+    await s.release('t:lease', 'A');
+    expect(await s.lease('t:lease', 'B', 1)).toBe(true);
+    await new Promise(r => setTimeout(r, 10));
+    expect(await s.lease('t:lease', 'A', 60000)).toBe(true); // B's ran out
+    await s.release('t:lease', 'A');
   });
 
   it('stores users', async () => {

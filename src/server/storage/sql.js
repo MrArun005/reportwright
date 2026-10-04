@@ -1,9 +1,9 @@
 // @ts-check
-// SQL storage: SQLite (node:sqlite), Postgres (pg) or MySQL (mysql2). A connection of its own that may write,
+// SQL storage: SQLite (node:sqlite), Postgres (pg), MySQL (mysql2) or SQL Server (mssql). A connection of its own that may write,
 // never the read-only one SQL data sources use. Tables are made on first use; records are JSON in a text column.
-//   pw_reports, pw_schedules, pw_jobs, pw_users, pw_fonts (id, data, updated_at)   pw_report_versions (id, stamp, data)
+//   pw_reports, pw_schedules, pw_jobs, pw_users, pw_fonts, pw_folders, pw_report_acl, pw_tokens (id, data, updated_at)   pw_report_versions (id, stamp, data)
 
-const TABLES = { reports: 'pw_reports', schedules: 'pw_schedules', jobs: 'pw_jobs', users: 'pw_users', fonts: 'pw_fonts' };
+const TABLES = { reports: 'pw_reports', schedules: 'pw_schedules', jobs: 'pw_jobs', users: 'pw_users', fonts: 'pw_fonts', folders: 'pw_folders', reportacl: 'pw_report_acl', tokens: 'pw_tokens' };
 const table = (k) => { if (!TABLES[k]) throw new Error(`Unknown storage kind "${k}"`); return TABLES[k]; };
 
 /** @typedef {(text: string, values?: any[]) => Promise<any[]>} Query rows for a SELECT, [] otherwise */
@@ -17,8 +17,21 @@ async function load(pkg) {
   catch { const name = pkg.split('/')[0]; throw new Error(`PW_STORAGE needs ${name}: npm install ${name}`); }
 }
 
-/** @param {string} url @param {'sqlite'|'postgres'|'mysql'} dialect @returns {Promise<Query>} */
+/** @param {string} url @param {'sqlite'|'postgres'|'mysql'|'mssql'} dialect @returns {Promise<Query>} */
 async function connect(url, dialect) {
+  if (dialect === 'mssql') {
+    const sql = (await load('mssql')).default;
+    const { mssqlConfig } = await import('../sql.js');
+    const pool = await new sql.ConnectionPool({ ...mssqlConfig(url), pool: { max: 5 }, connectionTimeout: 10000 }).connect();
+    pool.on('error', () => {});
+    // our statements have no "?" inside quotes, so each one is a placeholder
+    return async (text, values = []) => {
+      const r = pool.request();
+      let i = 0;
+      values.forEach((v, k) => r.input(`p${k + 1}`, typeof v === 'number' ? sql.BigInt : sql.NVarChar(sql.MAX), v));
+      return (await r.query(text.replace(/\?/g, () => `@p${++i}`))).recordset || [];
+    };
+  }
   if (dialect === 'sqlite') {
     const { DatabaseSync } = /** @type {typeof import('node:sqlite')} */ (process.getBuiltinModule('node:sqlite'));
     const db = new DatabaseSync(url.slice('sqlite:'.length));
@@ -39,20 +52,25 @@ async function connect(url, dialect) {
 
 /** @param {string} url @returns {import('./index.js').Store} */
 export function sqlStore(url) {
-  const dialect = url.startsWith('sqlite:') ? 'sqlite' : url.startsWith('mysql://') ? 'mysql' : 'postgres';
-  const text = dialect === 'mysql' ? 'LONGTEXT' : 'TEXT'; // a report may be 5 MB
+  const dialect = url.startsWith('sqlite:') ? 'sqlite' : url.startsWith('mysql://') ? 'mysql' : url.startsWith('mssql://') ? 'mssql' : 'postgres';
+  const text = dialect === 'mysql' ? 'LONGTEXT' : dialect === 'mssql' ? 'NVARCHAR(MAX)' : 'TEXT'; // a report may be 5 MB
+  const all = (keys, cols) => [...keys, ...cols];
   const upsert = (t, keys, cols) => dialect === 'mysql'
-    ? `INSERT INTO ${t} (${[...keys, ...cols].join(', ')}) VALUES (${[...keys, ...cols].map(() => '?').join(', ')}) ON DUPLICATE KEY UPDATE ${cols.map(c => `${c} = VALUES(${c})`).join(', ')}`
-    : `INSERT INTO ${t} (${[...keys, ...cols].join(', ')}) VALUES (${[...keys, ...cols].map(() => '?').join(', ')}) ON CONFLICT (${keys.join(', ')}) DO UPDATE SET ${cols.map(c => `${c} = excluded.${c}`).join(', ')}`;
-  const bytes = dialect === 'postgres' ? 'octet_length(data)' : dialect === 'mysql' ? 'LENGTH(data)' : 'LENGTH(CAST(data AS BLOB))';
+    ? `INSERT INTO ${t} (${all(keys, cols).join(', ')}) VALUES (${all(keys, cols).map(() => '?').join(', ')}) ON DUPLICATE KEY UPDATE ${cols.map(c => `${c} = VALUES(${c})`).join(', ')}`
+    : dialect === 'mssql'
+      ? `MERGE ${t} WITH (HOLDLOCK) AS t USING (SELECT ${all(keys, cols).map(c => `? AS ${c}`).join(', ')}) AS s ON ${keys.map(k => `t.${k} = s.${k}`).join(' AND ')} WHEN MATCHED THEN UPDATE SET ${cols.map(c => `${c} = s.${c}`).join(', ')} WHEN NOT MATCHED THEN INSERT (${all(keys, cols).join(', ')}) VALUES (${all(keys, cols).map(c => `s.${c}`).join(', ')});`
+      : `INSERT INTO ${t} (${all(keys, cols).join(', ')}) VALUES (${all(keys, cols).map(() => '?').join(', ')}) ON CONFLICT (${keys.join(', ')}) DO UPDATE SET ${cols.map(c => `${c} = excluded.${c}`).join(', ')}`;
+  const bytes = dialect === 'postgres' ? 'octet_length(data)' : dialect === 'mysql' ? 'LENGTH(data)' : dialect === 'mssql' ? 'DATALENGTH(CAST(data AS VARCHAR(MAX)))' : 'LENGTH(CAST(data AS BLOB))';
+  // SQL Server has no CREATE TABLE IF NOT EXISTS
+  const create = (t, cols) => (dialect === 'mssql' ? `IF OBJECT_ID(N'${t}') IS NULL CREATE TABLE ${t} (${cols})` : `CREATE TABLE IF NOT EXISTS ${t} (${cols})`);
 
   /** @type {Query} */
   const q = async (sql, values) => {
     if (!conns.has(url)) {
       const ready = connect(url, dialect).then(async (run) => {
-        for (const t of Object.values(TABLES)) await run(`CREATE TABLE IF NOT EXISTS ${t} (id VARCHAR(255) PRIMARY KEY, data ${text} NOT NULL, updated_at VARCHAR(32) NOT NULL)`);
-        await run(`CREATE TABLE IF NOT EXISTS pw_report_versions (id VARCHAR(255) NOT NULL, stamp VARCHAR(32) NOT NULL, data ${text} NOT NULL, PRIMARY KEY (id, stamp))`);
-        await run('CREATE TABLE IF NOT EXISTS pw_leases (name VARCHAR(255) PRIMARY KEY, owner VARCHAR(255) NOT NULL, expires_at BIGINT NOT NULL)');
+        for (const t of Object.values(TABLES)) await run(create(t, `id VARCHAR(255) PRIMARY KEY, data ${text} NOT NULL, updated_at VARCHAR(32) NOT NULL`));
+        await run(create('pw_report_versions', `id VARCHAR(255) NOT NULL, stamp VARCHAR(32) NOT NULL, data ${text} NOT NULL, PRIMARY KEY (id, stamp)`));
+        await run(create('pw_leases', 'name VARCHAR(255) PRIMARY KEY, owner VARCHAR(255) NOT NULL, expires_at BIGINT NOT NULL'));
         return run;
       });
       conns.set(url, ready);
@@ -86,7 +104,9 @@ export function sqlStore(url) {
     // A lease is taken in one statement: when it is free, has expired, or is already ours.
     async lease(name, owner, ttl) {
       const now = Date.now();
-      if (dialect === 'mysql') {
+      if (dialect === 'mssql') {
+        await q('MERGE pw_leases WITH (HOLDLOCK) AS t USING (SELECT ? AS name, ? AS owner, ? AS expires_at) AS s ON t.name = s.name WHEN MATCHED AND (t.owner = s.owner OR t.expires_at < ?) THEN UPDATE SET owner = s.owner, expires_at = s.expires_at WHEN NOT MATCHED THEN INSERT (name, owner, expires_at) VALUES (s.name, s.owner, s.expires_at);', [name, owner, now + ttl, now]);
+      } else if (dialect === 'mysql') {
         // assignments run left to right: owner first, then expires_at only when we now hold it
         await q('INSERT INTO pw_leases (name, owner, expires_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE owner = IF(owner = VALUES(owner) OR expires_at < ?, VALUES(owner), owner), expires_at = IF(owner = VALUES(owner), VALUES(expires_at), expires_at)', [name, owner, now + ttl, now]);
       } else {

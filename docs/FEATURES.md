@@ -88,7 +88,7 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 - `Previous`, `GroupIndex`, `Level`, `Lookup`, `LookupSet`.
 - Filters: equals, `in` (multi-value), TopN, BottomN, TopPercent, BottomPercent, Between; filters run in order.
 - Data sources: JSON, REST, GraphQL, CSV (separator, quote, header row, start row), OData (as REST), inline data, pushed data via the API.
-- SQL on the server: PostgreSQL, MySQL, SQLite. Read-only, single statement, time and row limits, parameters bound through the driver. Connections are set by the admin only.
+- SQL on the server: PostgreSQL, MySQL, SQLite, SQL Server (`mssql://`). Read-only, single statement, time and row limits, parameters bound through the driver. Connections are set by the admin only. SQL Server: the server parses the query first (`SHOWPLAN_XML`) and it must be exactly one SELECT; it then runs in a transaction that is always rolled back, with `SET ROWCOUNT` as the row cap. Tested against a real SQL Server (Azure SQL Edge in Docker).
 - Nested data sets: a child data set filtered to the current parent row; `Parent.*` access.
 - Parameters: option lists, options from a data set, multi-value, cascading, hidden, nullable, allow-blank, select-all; custom editors (slider, range, date range, radio, list, toggle).
 
@@ -124,7 +124,7 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 - Render any report to any format on the server.
 - Automation API (`/api/v1`): render with pushed data; batches (zip, merged PDF, folder, PUT upload); data list from a URL; signed webhooks; cron schedules with time zones; API keys.
 - Accounts and roles (viewer, designer, admin) with scrypt passwords, signed session cookies, rate-limited sign-in, same-site origin checks. Off by default (an optional shared password instead).
-- Shared storage in SQLite, PostgreSQL or MySQL for reports, versions, schedules, jobs and users, so several servers can share it.
+- Shared storage in SQLite, PostgreSQL, MySQL or SQL Server for reports, versions, schedules, jobs and users, so several servers can share it.
 - Queue and scheduler that work across several servers (database leases).
 - Server-side fetches refuse private addresses unless allowed.
 - Docker image (written and checked as a standalone server; the image itself not built here).
@@ -141,7 +141,7 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 | Area | Gap |
 |---|---|
 | SSRS | No `.rdl` / `.rdlx` XML importer. |
-| SQL | No SQL Server, Oracle, Snowflake or BigQuery connector. |
+| SQL | No Oracle, Snowflake or BigQuery connector. |
 | Identity | No SSO (SAML / OIDC), no two-factor sign-in, no password reset by email. |
 | Governance | No per-report or per-folder permissions (every viewer sees every report); no audit log. |
 | Reuse | Phase 8 not started: master reports, part libraries, layers. |

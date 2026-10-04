@@ -287,7 +287,7 @@ function SourceDialog({ index, onClose }) {
           </Field>
           <button className="btn" onClick={testConn} disabled={!s.connection || probe?.state === 'testing'}>{probe?.state === 'testing' ? 'Testing…' : 'Test'}</button>
         </div>
-        {conns && !conns.length && <div className="hint">No connections on this server yet. Set PW_DB_MAIN=sqlite:/path/file.db (or a postgres:// / mysql:// URL) and restart.</div>}
+        {conns && !conns.length && <div className="hint">No connections on this server yet. Set PW_DB_MAIN=sqlite:/path/file.db (or a postgres:// / mysql:// / mssql:// URL) and restart.</div>}
         {probe && probe.state !== 'testing' && <div className={probe.state === 'ok' ? 'hint' : 'err'} role="status">{probe.text}</div>}
         <Field label="Query" hint="SELECT only. @name uses the report parameter name (bound, never pasted into the SQL). Lists work with in (@name).">
           <textarea className="textarea" rows={6} value={s.query || ''} onChange={e => setS({ ...s, query: e.target.value })} placeholder="select region, month, sum(amount) as amount from sales where year = @year group by region, month" style={{ fontFamily: 'var(--mono)' }} />
