@@ -461,4 +461,10 @@ export default {
   o_gaugeIndicator_needle: "Nadel",
   o_gaugeIndicator_pointer: "Zeiger auf der Skala",
   o_gaugeIndicator_bar: "Balken entlang der Skala",
+  /* ---- outline drag and drop (batch 1) ---- */
+  outlineKeys: "Ziehen Sie eine Zeile, um sie zu verschieben: auf den Rand einer Zeile für davor oder danach, auf einen Container oder eine Liste für hinein. Tastatur: Alt+↑/↓ verschiebt, Alt+→ legt sie in den Container darüber, Alt+← nimmt sie heraus.",
+  outlineMovedInto: "{name} nach {parent} verschoben, Position {n} von {of}.",
+  outlineMovedBand: "{name} verschoben, Position {n} von {of}.",
+  outlineCannotMove: "Dort kann es nicht hin.",
+  outlineNoContainerAbove: "Direkt darüber gibt es keinen Container und keine Liste zum Hineinlegen.",
 };

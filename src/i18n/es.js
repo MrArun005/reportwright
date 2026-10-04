@@ -461,4 +461,10 @@ export default {
   o_gaugeIndicator_needle: "Aguja",
   o_gaugeIndicator_pointer: "Puntero sobre la escala",
   o_gaugeIndicator_bar: "Barra a lo largo de la escala",
+  /* ---- outline drag and drop (batch 1) ---- */
+  outlineKeys: "Arrastre una fila para moverla: sobre el borde de una fila la coloca antes o después; sobre un contenedor o lista, dentro. Teclado: Alt+↑/↓ mueve, Alt+→ la mete en el contenedor de arriba, Alt+← la saca.",
+  outlineMovedInto: "{name} movido a {parent}, posición {n} de {of}.",
+  outlineMovedBand: "{name} movido, posición {n} de {of}.",
+  outlineCannotMove: "No se puede colocar ahí.",
+  outlineNoContainerAbove: "No hay un contenedor o lista justo arriba donde meterlo.",
 };

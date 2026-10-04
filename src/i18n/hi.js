@@ -461,4 +461,10 @@ export default {
   o_gaugeIndicator_needle: "सुई",
   o_gaugeIndicator_pointer: "स्केल पर पॉइंटर",
   o_gaugeIndicator_bar: "स्केल के साथ बार",
+  /* ---- outline drag and drop (batch 1) ---- */
+  outlineKeys: "किसी पंक्ति को खींचकर ले जाएँ: किसी पंक्ति के किनारे पर छोड़ें तो उससे पहले या बाद में, कंटेनर या सूची पर छोड़ें तो उसके अंदर। कीबोर्ड: Alt+↑/↓ से खिसकाएँ, Alt+→ ऊपर वाले कंटेनर में डालता है, Alt+← बाहर निकालता है।",
+  outlineMovedInto: "{name} को {parent} में ले जाया गया, स्थान {of} में से {n}।",
+  outlineMovedBand: "{name} को ले जाया गया, स्थान {of} में से {n}।",
+  outlineCannotMove: "इसे वहाँ नहीं रखा जा सकता।",
+  outlineNoContainerAbove: "ठीक ऊपर कोई कंटेनर या सूची नहीं है जिसमें इसे डाला जा सके।",
 };

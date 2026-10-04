@@ -216,6 +216,15 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .outline-row .linklike.nm, .outline-band { text-decoration: none; color: var(--ink); text-align: start; }
 .outline-row.sel .linklike.nm, .outline-band.sel { color: var(--accent); }
 .outline-row.sel .act, .outline-row:focus-within .act { opacity: 1; }
+.outline-row[draggable="true"] { cursor: grab; }
+.outline-row .grip { color: var(--faint); font-size: 10px; line-height: 1; margin-inline-start: -2px; opacity: .55; }
+.outline-row:hover .grip { opacity: 1; }
+.outline-row.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+.outline-row.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+.outline-row.drop-into { background: var(--accent-soft); outline: 1.5px dashed var(--accent); outline-offset: -1.5px; }
+.outline-sec.drop-band > .outline-band { color: var(--accent); }
+.outline-sec.drop-band > .tree { box-shadow: inset 0 -2px 0 var(--accent); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .field-chip { cursor: grab; }
 .field-chip .nm::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 2px; background: var(--accent); margin-right: 7px; vertical-align: 1px; }
 .subtle { color: var(--faint); font-size: var(--fs-xs); padding: 2px 6px; }

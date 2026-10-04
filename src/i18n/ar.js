@@ -461,4 +461,10 @@ export default {
   o_gaugeIndicator_needle: "إبرة",
   o_gaugeIndicator_pointer: "مؤشر على التدريج",
   o_gaugeIndicator_bar: "شريط على طول التدريج",
+  /* ---- outline drag and drop (batch 1) ---- */
+  outlineKeys: "اسحب صفًا لنقله: على حافة صف لوضعه قبله أو بعده، وعلى حاوية أو قائمة لوضعه داخلها. لوحة المفاتيح: Alt+↑/↓ للنقل، وAlt+→ يضعه في الحاوية التي فوقه، وAlt+← يخرجه منها.",
+  outlineMovedInto: "تم نقل {name} إلى {parent}، الموضع {n} من {of}.",
+  outlineMovedBand: "تم نقل {name}، الموضع {n} من {of}.",
+  outlineCannotMove: "لا يمكن وضعه هناك.",
+  outlineNoContainerAbove: "لا توجد حاوية أو قائمة فوقه مباشرة لوضعه فيها.",
 };

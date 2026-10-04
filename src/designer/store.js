@@ -293,6 +293,43 @@ export function moveOutOfParent(id) {
   });
 }
 
+/**
+ * The outline's drag and drop (and its keyboard moves): put an item at `index` in the list of `parentId` (a container or
+ * list; null for the band). The canvas's rules: an item stays in its band, any item can go into a container or list but
+ * never into itself or one of its own children; it keeps its place on the page, kept inside its new parent's width, and
+ * the parent (or band) grows to fit it. `index` counts the destination list as it is before the move.
+ * @returns {boolean} whether it moved
+ */
+export function moveItemTo(id, parentId, index) {
+  let moved = false;
+  S().apply((d) => {
+    const f = findItem(d, id);
+    if (!f) return;
+    const dp = parentId ? findItem(d, parentId) : null;
+    if (parentId && (!dp || !NESTING.has(dp.item.type) || dp.section !== f.section)) return;
+    for (let q = dp; q; q = q.parent ? findItem(d, q.parent.id) : null) if (q.item.id === id) return; // into itself
+    // where each list's x/y 0 is on the band: the sum of its parents' positions
+    const origin = (ff) => { let x = 0, y = 0; for (let q = ff; q?.parent;) { q = findItem(d, q.parent.id); x += q.item.x; y += q.item.y; } return { x, y }; };
+    const from = origin(f);
+    const to = dp ? (({ x, y }) => ({ x: x + dp.item.x, y: y + dp.item.y }))(origin(dp)) : { x: 0, y: 0 };
+    const dest = dp ? (dp.item.items ||= []) : secOf(d, f.section).items;
+    let at = Math.max(0, Math.min(dest.length, Math.round(Number(index)) || 0));
+    if (dest === f.list) { if (at > f.index) at--; if (at === f.index) return; }
+    const it = f.item;
+    f.list.splice(f.index, 1);
+    const room = dp ? dp.item.w : bodyWidth(d, f.section);
+    if (it.type !== 'table') it.w = Math.min(it.w, room);
+    it.x = round(clamp(it.x + from.x - to.x, 0, Math.max(0, room - it.w)));
+    it.y = round(Math.max(0, it.y + from.y - to.y));
+    dest.splice(at, 0, it);
+    const nf = findItem(d, id);
+    growToFit(d, nf);
+    if (nf.parent) { const pf = findItem(d, nf.parent.id); if (pf) growToFit(d, pf); }
+    moved = true;
+  });
+  return moved;
+}
+
 export function deleteSelection() {
   const { sel } = S();
   if (sel.kind !== 'items') return;

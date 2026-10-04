@@ -461,4 +461,10 @@ export default {
   o_gaugeIndicator_needle: "針",
   o_gaugeIndicator_pointer: "目盛り上のポインター",
   o_gaugeIndicator_bar: "目盛りに沿ったバー",
+  /* ---- outline drag and drop (batch 1) ---- */
+  outlineKeys: "行をドラッグして移動します。行の端にドロップするとその前後へ、コンテナーやリストの上にドロップするとその中へ移動します。キーボード: Alt+↑/↓ で移動、Alt+→ で上のコンテナーに入れ、Alt+← で外に出します。",
+  outlineMovedInto: "{name} を {parent} に移動しました（{of} 中 {n} 番目）。",
+  outlineMovedBand: "{name} を移動しました（{of} 中 {n} 番目）。",
+  outlineCannotMove: "そこには移動できません。",
+  outlineNoContainerAbove: "すぐ上に入れられるコンテナーやリストがありません。",
 };

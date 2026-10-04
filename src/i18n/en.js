@@ -461,4 +461,10 @@ export default {
   o_gaugeIndicator_needle: "Needle",
   o_gaugeIndicator_pointer: "Pointer on the scale",
   o_gaugeIndicator_bar: "Bar along the scale",
+  /* ---- outline drag and drop (batch 1) ---- */
+  outlineKeys: "Drag a row to move it: onto a row's edge to put it before or after, onto a container or list to put it inside. Keyboard: Alt+↑/↓ moves, Alt+→ puts it into the container above, Alt+← takes it out.",
+  outlineMovedInto: "{name} moved into {parent}, position {n} of {of}.",
+  outlineMovedBand: "{name} moved, position {n} of {of}.",
+  outlineCannotMove: "It cannot go there.",
+  outlineNoContainerAbove: "There is no container or list just above to move it into.",
 };

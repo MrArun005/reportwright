@@ -461,4 +461,10 @@ export default {
   o_gaugeIndicator_needle: "指针",
   o_gaugeIndicator_pointer: "刻度上的标记",
   o_gaugeIndicator_bar: "沿刻度的条形",
+  /* ---- outline drag and drop (batch 1) ---- */
+  outlineKeys: "拖动一行即可移动：放到某行的边缘会放在它之前或之后，放到容器或列表上会放入其中。键盘：Alt+↑/↓ 移动，Alt+→ 放入上方的容器，Alt+← 移出。",
+  outlineMovedInto: "{name} 已移入 {parent}，第 {n} 个，共 {of} 个。",
+  outlineMovedBand: "{name} 已移动，第 {n} 个，共 {of} 个。",
+  outlineCannotMove: "不能放在那里。",
+  outlineNoContainerAbove: "正上方没有可放入的容器或列表。",
 };

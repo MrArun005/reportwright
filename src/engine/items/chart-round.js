@@ -38,7 +38,7 @@ function paintPie(type, g) {
   let r, cx = X + W / 2;
   const cy = (top + bottom) / 2;
   if (outside) {
-    const gap = 20, minR = Math.min(W, bottom - top) * 0.25;
+    const gap = 18, minR = Math.min(W, bottom - top) * 0.2; // ponytail: below this radius long labels are cut (…), not wrapped
     const fit = (W - lw[0] - lw[1] - gap * 2) / 2;
     if (fit < minR) { const k = Math.max(0, (W - gap * 2 - minR * 2) / Math.max(1, lw[0] + lw[1])); lw[0] *= k; lw[1] *= k; }
     r = Math.max(4, Math.min((W - lw[0] - lw[1] - gap * 2) / 2, (bottom - top) / 2 - fs));
