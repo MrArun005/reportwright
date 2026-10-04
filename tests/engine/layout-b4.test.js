@@ -213,3 +213,59 @@ describe('recursive row groups in a matrix', () => {
     expect(warnings.join()).toMatch(/only the innermost row group can be recursive/);
   });
 });
+
+describe('an item in a table cell continues on the next page', () => {
+  const lines = Array.from({ length: 120 }, (_, i) => ({ k: i + 1 }));
+  const inner = (extra = {}) => ({ type: 'table', dataSet: 'Lines', columns: [{ width: 120 }], header: [{ height: 16, cells: [{ value: 'Inner H' }] }], detail: [{ height: 14, cells: [{ value: '=Fields.k' }] }], ...extra });
+  const def = (cellItem, extra = {}) => {
+    const d = report([{ type: 'table', name: 'Outer', x: 0, y: 0, w: 260, h: 40, dataSet: 'Rows', repeatHeader: true,
+      columns: [{ width: 120 }, { width: 140 }],
+      header: [{ height: 18, cells: [{ value: 'Outer H' }, { value: 'Lines' }] }],
+      detail: [{ height: 16, cells: [{ value: '=Fields.name' }, { value: '', item: cellItem }] }] }],
+    { data: { rows: [{ name: 'Order A' }, { name: 'Order B' }], lines } });
+    d.dataSets.push({ name: 'Lines', source: 'src', path: '$.lines' });
+    return { ...d, ...extra };
+  };
+  const nums = (p) => texts(p).filter(s => /^\d+$/.test(s)).map(Number);
+  it('a nested table splits at its rows, repeating its header on each page (and the outer header)', async () => {
+    const out = await render(def(inner()), { fontStore });
+    // two orders × 120 lines: several pages, every line once per order, in order
+    expect(out.pages.length).toBeGreaterThan(4);
+    const all = out.pages.flatMap(nums);
+    expect(all).toEqual([...lines.map(l => l.k), ...lines.map(l => l.k)]);
+    for (const p of out.pages) {
+      const t = texts(p);
+      expect(t[0]).toBe('Outer H');
+      if (nums(p).length) expect(t).toContain('Inner H');
+    }
+    expect(out.warnings.join()).not.toMatch(/taller than the page/);
+  });
+  it('the row\'s other cells show on its first piece only', async () => {
+    const out = await render(def(inner()), { fontStore });
+    expect(out.pages.flatMap(texts).filter(s => s === 'Order A')).toHaveLength(1);
+  });
+  it('a nested list splits too; a nested table without a repeated header does not repeat it', async () => {
+    const list = { type: 'list', dataSet: 'Lines', w: 120, h: 14, keepTogether: false, style: {}, items: [{ type: 'textbox', x: 0, y: 0, w: 100, h: 14, value: '=Fields.k' }] };
+    const a = await render(def(list), { fontStore });
+    expect(a.pages.length).toBeGreaterThan(4);
+    expect(a.pages.flatMap(nums)).toEqual([...lines.map(l => l.k), ...lines.map(l => l.k)]);
+    expect(a.warnings.join()).not.toMatch(/taller than the page/);
+    const b = await render(def(inner({ repeatHeader: false })), { fontStore });
+    expect(b.pages.flatMap(texts).filter(s => s === 'Inner H')).toHaveLength(2);
+  });
+  it('adversarial: 200,000 nested rows are capped by the cell-item budget, quickly', async () => {
+    const big = Array.from({ length: 200000 }, (_, i) => ({ k: i }));
+    const d = def(inner());
+    d.dataSources = [{ name: 'src', type: 'json', data: { rows: [{ name: 'X' }], lines: big } }];
+    const t0 = Date.now();
+    const out = await render(d, { fontStore, timeoutMs: 60000 });
+    expect(out.warnings.join()).toMatch(/rows of items inside cells/);
+    expect(out.pages.flatMap(nums).length).toBe(0); // over the budget: the cell is left empty, not drawn in part
+    expect(Date.now() - t0).toBeLessThan(20000);
+  }, 60000);
+  it('a row that fits stays whole; the fixed (header/footer) path is unchanged', async () => {
+    const out = await render(def(inner({ filters: [{ expr: '=Fields.k', op: '<=', value: '3' }] })), { fontStore });
+    expect(out.pages).toHaveLength(1);
+    expect(nums(out.pages[0])).toEqual([1, 2, 3, 1, 2, 3]);
+  });
+});

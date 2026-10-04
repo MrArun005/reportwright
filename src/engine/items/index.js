@@ -435,7 +435,7 @@ register('table', {
       if (started) for (const st of started) st.region = rcells.find(rc => rc.colIndex === colX.indexOf(st.x)); // its rowSpan is set to the rows it really covered when it closes
       region.rows.push({ kind, level: extra?.level ?? 0, cells: rcells });
       // h: height of this piece; lines: per-cell lines when the row is split; first: links, visuals and toggles go on the first piece
-      const paint = (h, lines, first, rowId) => {
+      const paint = (h, lines, first, rowId, chunk) => {
         const items = [];
         cells.forEach((c, k) => {
           if (c.cell.visual?.type) {
@@ -445,7 +445,8 @@ register('table', {
           }
           if (c.nested) {
             items.push(...paintBox({ x: c.x, y: 0, w: c.w, h, st: c.st, tl: null, m: lc.m }));
-            if (first) items.push(...c.nested.items);
+            if (chunk && chunk.cell === c) items.push(...chunk.items); // a piece of an item that continues on the next page
+            else if (first) items.push(...c.nested.items);
             return;
           }
           const at = items.length;
@@ -466,7 +467,12 @@ register('table', {
       // Taller than a page (less a repeated header): split into pieces of whole lines, like a text box, so it continues on the next pages.
       const room = (lc.maxUnitHeight ?? Infinity) - repeatH;
       const pieces = [];
-      if (!lc.fixed && !openSpans.length && need > room && cells.some(c => c.tl.lines.length > 1)) {
+      // an item in a cell (a table, a list) taller than the page: the row splits between its rows, a nested table's header again on top
+      const nc = !lc.fixed && !openSpans.length && !started && need > room ? cells.find(c => c.nested?.units?.length > 1) : null;
+      const chunks = nc ? splitNested(nc.nested, room) : null;
+      if (chunks) {
+        chunks.forEach((ch, i) => pieces.push({ h: i ? ch.h : Math.max(ch.h, row.height || 18, ...cells.filter(c => c !== nc).map(c => c.tl.needed)), lines: i ? cells.map(() => []) : null, chunk: { cell: nc, items: ch.items } }));
+      } else if (!lc.fixed && !openSpans.length && need > room && cells.some(c => c.tl.lines.length > 1)) {
         const per = cells.map(c => Math.max(1, Math.floor((room - c.tl.pad[0] - c.tl.pad[2]) / c.tl.lh)));
         const n = Math.max(...cells.map((c, k) => Math.ceil(c.tl.lines.length / per[k])));
         for (let i = 0; i < n; i++) {
@@ -476,7 +482,7 @@ register('table', {
       } else pieces.push({ lines: null, h: need });
       let u;
       pieces.forEach((pc, i) => {
-        u = { top: y, height: pc.h, items: paint(pc.h, pc.lines, i === 0, ++rowSeq), kind, rowId: rowSeq };
+        u = { top: y, height: pc.h, items: paint(pc.h, pc.lines, i === 0, ++rowSeq, pc.chunk), kind, rowId: rowSeq };
         y += pc.h;
         units.push(u);
       });
@@ -511,7 +517,8 @@ register('table', {
       budget.left -= res.units.length;
       const items = [];
       for (const u of res.units) for (const i of shiftLocal(u.items.filter(i => i.t !== 'bookmark'), u.top + pd[0])) items.push(i.cell ? { ...i, cell: undefined } : i); // its own cells are not the outer table's (Word)
-      return { items, height: res.height + pd[0] + pd[2] };
+      // units and tables: for a row that splits between the item's own rows (splitNested)
+      return { items, height: res.height + pd[0] + pd[2], units: res.units, tables: res.tables, pad: [pd[0], pd[2]] };
     };
     /** Links, bookmarks, sort and toggle hot spots of a cell, on the first piece of its row. */
     const cellLinks = (items, c, h, kind) => {
@@ -760,6 +767,36 @@ register('table', {
 });
 
 const cell_bookmark = (c) => c && c.bookmark;
+
+/**
+ * An item in a cell, in pieces that each fit `room`: cut between its units (a nested table's or list's rows), a nested table's
+ * repeated header on top of each later piece. Null when it cannot be cut (one unit, overlapping units, a framed box).
+ * Linear in the units; the units are already capped by the render's cell-item budget.
+ * @returns {{ h: number, items: any[] }[] | null}
+ */
+function splitNested(nested, room) {
+  const us = nested.units;
+  if (us.some(u => u.deco)) return null;
+  for (let i = 1; i < us.length; i++) if (us[i].top < us[i - 1].top + us[i - 1].height - 0.01) return null;
+  const [pt, pb] = nested.pad;
+  const head = (y) => { for (const t of nested.tables || []) if (t.headerItems && t.top < y - 0.01 && t.bottom > y + 0.01) return t; return null; };
+  const out = [];
+  let a = 0;
+  while (a < us.length) {
+    const t = a ? head(us[a].top) : null;
+    const hh = t ? t.headerHeight : 0;
+    let b = a + 1;
+    while (b < us.length && us[b].top + us[b].height - us[a].top + hh + pt + pb <= room + 0.01) b++;
+    // a header row kept with the row after it: the cut moves before it
+    if (b < us.length && b - 1 > a && us[b - 1].keepWithNext) b--;
+    const items = [];
+    if (t) for (const i of shiftLocal(t.headerItems, pt)) items.push(i);
+    for (let k = a; k < b; k++) for (const i of shiftLocal(us[k].items.filter(i => i.t !== 'bookmark'), us[k].top - us[a].top + hh + pt)) items.push(i.cell ? { ...i, cell: undefined } : i);
+    out.push({ h: us[b - 1].top + us[b - 1].height - us[a].top + hh + pt + pb, items });
+    a = b;
+  }
+  return out.length > 1 ? out : null;
+}
 
 // A table with overflowTo is a fixed frame: it keeps its designed height and hands the rows that do not fit to the
 // overflow placeholder of that name (on a later body section, the next page of the form). On a page repeated for
