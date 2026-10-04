@@ -138,6 +138,23 @@ function table(cells, indentPt, pics) {
   return `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>${indentPt > 0 ? `<w:tblInd w:w="${Math.round(indentPt * TW)}" w:type="dxa"/>` : ''}<w:tblBorders>${tblB}</w:tblBorders><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="60" w:type="dxa"/><w:right w:w="60" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${out}</w:tbl><w:p><w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr></w:p>`;
 }
 
+/** Text boxes side by side as one row of a borderless table: a column per box, a spacer column for each gap. */
+function layoutRow(row, margin) {
+  const cols = [], cells = [];
+  let x = row[0].it.clip.x;
+  for (const r of row) {
+    const c = r.it.clip;
+    if (c.x - x > 0.5) { cols.push(c.x - x); cells.push('<w:tc><w:tcPr><w:tcW w:w="' + Math.round((c.x - x) * TW) + '" w:type="dxa"/></w:tcPr><w:p/></w:tc>'); }
+    cols.push(c.w);
+    const d = r.decor;
+    const bdr = d && Object.keys(d.sides).length ? `<w:tcBorders>${['top', 'left', 'bottom', 'right'].map(sd => (d.sides[sd] ? edge(sd, d.sides[sd]) : '')).join('')}</w:tcBorders>` : '';
+    cells.push(`<w:tc><w:tcPr><w:tcW w:w="${Math.round(c.w * TW)}" w:type="dxa"/>${bdr}${shading(d?.fill)}</w:tcPr><w:p><w:pPr><w:spacing w:before="0" w:after="0"/><w:jc w:val="${alignOf(r.it)}"/></w:pPr><w:r>${rPr(r.it)}<w:t xml:space="preserve">${esc(textOf(r.it))}</w:t></w:r></w:p></w:tc>`);
+    x = c.x + c.w;
+  }
+  const ind = row[0].it.clip.x - margin;
+  return `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>${Math.abs(ind) > 0.5 ? `<w:tblInd w:w="${Math.round(ind * TW)}" w:type="dxa"/>` : ''}<w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar><w:tblLook w:val="0000"/></w:tblPr><w:tblGrid>${cols.map(w => `<w:gridCol w:w="${Math.round(w * TW)}"/>`).join('')}</w:tblGrid><w:tr>${cells.join('')}</w:tr></w:tbl><w:p><w:pPr><w:spacing w:before="0" w:after="40"/><w:rPr><w:sz w:val="4"/></w:rPr></w:pPr></w:p>`;
+}
+
 /**
  * @param {any} model render() output
  * @param {{ title?: string, author?: string, lang?: string, fontStore?: any, fetchImage?: (src: string) => Promise<Uint8Array|null>,
@@ -195,7 +212,17 @@ export async function exportDocx(model, opt = {}) {
       } else blocks.push({ kind: 'text', y: it.lines[0].y, x: it.lines[0].x, it, decor: boxDecor(all, i) });
     });
     const visuals = opt.figures === false ? new Map() : cellVisuals(all, used, tables);
-    for (const f of figs) blocks.push({ kind: 'fig', y: f.box.y, x: f.box.x, fig: f });
+    // a box shape behind text boxes (a KPI tile, a banner) becomes the shading and border of their cells, not a picture
+    const frames = figs.filter(f => f.tag.k === 'shape' && f.items.length === 1 && f.items[0].t === 'rect');
+    for (const b of blocks) {
+      const c = b.kind === 'text' && b.it.clip;
+      const fr = c && frames.find(f => { const r = f.items[0]; return c.x >= r.x - 0.5 && c.y >= r.y - 0.5 && c.x + c.w <= r.x + r.w + 0.5 && c.y + c.h <= r.y + r.h + 0.5; });
+      if (!fr) continue;
+      const r = fr.items[0];
+      fr.used = true;
+      b.decor = { fill: b.decor?.fill || hexOrNull(r.fill), sides: Object.keys(b.decor?.sides || {}).length ? b.decor.sides : {} };
+    }
+    for (const f of figs) if (!f.used) blocks.push({ kind: 'fig', y: f.box.y, x: f.box.x, fig: f });
     blocks.sort((a, b) => a.y - b.y || a.x - b.x);
     let xml = '';
     for (let bi = 0; bi < blocks.length; bi++) {
@@ -223,7 +250,16 @@ export async function exportDocx(model, opt = {}) {
         }
         xml += table(b.cells, b.x - margin, pics);
       } else if (b.kind === 'rich') xml += richPara(b.items, b.x - margin);
-      else xml += para(b.it, (b.it.clip?.x ?? b.x) - margin, b.decor);
+      else {
+        // text boxes side by side (a row of tiles, a label and its value): one row of a borderless layout table
+        const row = [b];
+        const top = (t) => t.it.clip?.y ?? t.y - t.it.size;
+        while (blocks[bi + 1]?.kind === 'text' && Math.abs(top(blocks[bi + 1]) - top(b)) < 3 && blocks[bi + 1].it.clip && b.it.clip) row.push(blocks[++bi]);
+        row.sort((p, q) => p.it.clip.x - q.it.clip.x);
+        const apart = row.every((r, k) => k === 0 || r.it.clip.x >= row[k - 1].it.clip.x + row[k - 1].it.clip.w - 0.5);
+        if (row.length > 1 && apart) xml += layoutRow(row, margin);
+        else for (const r of row) xml += para(r.it, (r.it.clip?.x ?? r.x) - margin, r.decor);
+      }
     }
     body.push(xml);
   }

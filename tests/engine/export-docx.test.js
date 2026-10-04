@@ -62,6 +62,20 @@ describe('Word export: figures', () => {
     expect(doc).toMatch(/<w:tcBorders><w:bottom w:val="single" w:sz="6" w:space="0" w:color="94A3B8"\/><\/w:tcBorders>/);
   });
 
+  it('KPI tiles: text boxes side by side are one row of a layout table; the tile shape behind them is the cell shading', async () => {
+    const tile = (x, label) => [
+      { type: 'shape', name: `S${x}`, x, y: 0, w: 120, h: 40, shape: 'rect', style: { fill: '#f1f5f9', stroke: 'none' } },
+      { type: 'textbox', name: `T${x}`, x: x + 6, y: 6, w: 108, h: 16, value: label },
+    ];
+    const m = await render(report([...tile(0, 'Products'), ...tile(130, 'Brands')]), { fontStore });
+    const files = unzipSync(await exportDocx(m, { fontStore }));
+    const doc = strFromU8(files['word/document.xml']);
+    const row = doc.split('<w:tr>').find(r => r.includes('>Products<'));
+    expect(row).toContain('>Brands<'); // the same row
+    expect(row).toContain('w:fill="F1F5F9"');
+    expect(Object.keys(files).some(f => f.startsWith('word/media/'))).toBe(false); // no pictures of the tiles
+  });
+
   it('figures: false gives the text-only document of before', async () => {
     const files = await docx({ figures: false });
     expect(Object.keys(files).some(f => f.startsWith('word/media/'))).toBe(false);
