@@ -319,3 +319,33 @@ describe('rich text: hostile layout stays bounded', () => {
     expect(m.pages.length).toBeLessThan(10);
   });
 });
+
+describe('rich text: PDF, SVG and HTML', async () => {
+  const { pageToSvg } = await import('../../src/exporters/svg.js');
+  const { exportPdf } = await import('../../src/exporters/pdf.js');
+  const { exportHtml } = await import('../../src/exporters/html.js');
+  const def = rich('Plain <b>bold</b> <a href="https://example.com/x">link</a> <a href="//evil.example">bad</a> x<sup>2</sup>');
+  it('SVG: one <text> per fragment at the model position, and the link', async () => {
+    const m = await out(def);
+    const svg = pageToSvg(m.pages[0], m.width, m.height);
+    for (const t of m.pages[0].items.filter(i => i.t === 'text' && i.lines[0].text.trim())) {
+      const l = t.lines[0];
+      expect(svg).toContain(`<text x="${Math.round(l.x * 100) / 100}" y="${Math.round(l.y * 100) / 100}"`);
+    }
+    expect(svg).toContain('data-action="{&quot;type&quot;:&quot;url&quot;,&quot;href&quot;:&quot;https://example.com/x&quot;}"');
+    expect(svg).not.toContain('evil');
+  });
+  it('PDF: a URI annotation for the safe link only', async () => {
+    const bytes = await exportPdf(await out(def), fontStore);
+    const { PDFDocument, PDFName } = await import('pdf-lib');
+    const doc = await PDFDocument.load(bytes);
+    const annots = doc.getPage(0).node.Annots()?.asArray() || [];
+    const uris = annots.map(r => doc.context.lookup(r).lookup(PDFName.of('A')).lookup(PDFName.of('URI')).decodeText());
+    expect(uris).toEqual(['https://example.com/x']);
+  });
+  it('HTML: the safe link is an <a href>', async () => {
+    const html = await exportHtml(await out(def), fontStore);
+    expect(html).toContain('<a href="https://example.com/x"');
+    expect(html).not.toContain('evil');
+  });
+});
