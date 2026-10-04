@@ -37,7 +37,8 @@ export async function exportBlob(fmt, model, def, opt = {}) {
   if (fmt === 'html') {
     const store = fontStore();
     await store.load(fontKeysOf(model));
-    return new Blob([await exportHtml(model, store, { title: def.name, subset: subsetter })], { type: 'text/html;charset=utf-8' });
+    // drill-through links open the report in this server's viewer
+    return new Blob([await exportHtml(model, store, { title: def.name, subset: subsetter, drillBase: origin() })], { type: 'text/html;charset=utf-8' });
   }
   if (fmt === 'docx') {
     const { exportDocx } = await import('@/exporters/docx.js');

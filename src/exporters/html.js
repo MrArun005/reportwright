@@ -4,10 +4,11 @@ import { safeUrl } from '../engine/url.js';
 
 /**
  * One self-contained HTML file: every page as inline SVG, fonts embedded as
- * base64 (subset when a subsetter is given), links still clickable for URLs.
+ * base64 (subset when a subsetter is given). URLs open, bookmark jumps and TOC entries scroll to their target, and
+ * drill-through opens the Pagewright viewer at drillBase (without one it is shown disabled).
  * @param {any} model
  * @param {import('../engine/text/fonts.js').FontStore} fontStore
- * @param {{ title?: string, subset?: (font: Uint8Array, cps: Iterable<number>, o?: { layout?: boolean }) => Promise<Uint8Array> }} [opt]
+ * @param {{ title?: string, drillBase?: string, subset?: (font: Uint8Array, cps: Iterable<number>, o?: { layout?: boolean }) => Promise<Uint8Array> }} [opt]
  */
 export async function exportHtml(model, fontStore, opt = {}) {
   const used = new Map();
@@ -31,20 +32,53 @@ export async function exportHtml(model, fontStore, opt = {}) {
     faces.push(`@font-face{font-family:"${fontFamilyCss(key)}";src:url(data:font/ttf;base64,${b64(bytes)}) format("truetype")}`);
   }
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
-  const pages = model.pages.map((p, i) => `<section class="page${p.width ? ' wide' : ''}" id="page-${i + 1}"${p.width ? ` style="width:min(100%,${Math.round(p.width * 96 / 72)}px)"` : ''}>${pageToSvg({ items: p.items.filter(it => it.t !== 'link' || (it.action?.type === 'url' && safeUrl(it.action.href))) }, p.width ?? model.width, p.height ?? model.height)
+  // Links: URLs open; bookmark jumps and table-of-contents entries go to an anchor at the target's page and height
+  // (as in the PDF); drill-through opens the report in the Pagewright viewer at opt.drillBase, or is shown disabled.
+  const anchors = new Map(); // `${page}:${y}` → { id, page, y }
+  const jumpTo = (a) => {
+    const to = a.page ? a : model.bookmarks?.find(b => b.label === a.target) || model.headings?.find(b => b.label === a.target);
+    if (!to?.page) return null;
+    const y = Math.max(0, Math.round(to.y || 0));
+    const key = `${to.page}:${y}`;
+    if (!anchors.has(key)) anchors.set(key, { id: `at-${to.page}-${y}`, page: to.page, y });
+    return `#${anchors.get(key).id}`;
+  };
+  const drillHref = (a) => {
+    if (!opt.drillBase || !a.report) return null;
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(a.params || {})) for (const x of Array.isArray(v) ? v : [v]) q.append(k, x == null ? '' : String(x));
+    const href = safeUrl(`${String(opt.drillBase).replace(/\/$/, '')}/viewer/${encodeURIComponent(a.report)}${q.size ? `?${q}` : ''}`);
+    return href || null;
+  };
+  /** @returns {{ href: string, external?: boolean } | { off: string } | null} */
+  const target = (a) => {
+    if (a?.type === 'url') { const h = safeUrl(a.href); return h ? { href: h, external: true } : null; }
+    if (a?.type === 'bookmark') { const h = jumpTo(a); return h ? { href: h } : null; }
+    if (a?.type === 'drill') { const h = drillHref(a); return h ? { href: h, external: true } : { off: `Opens the report "${a.report}" in the Pagewright viewer` }; }
+    return null; // sorting, open/close, filters: they run the report again, which a file cannot
+  };
+  const svgs = model.pages.map((p) => pageToSvg({ items: p.items.filter(it => it.t !== 'link' || target(it.action)) }, p.width ?? model.width, p.height ?? model.height)
     .replace(/<rect class="pw-link"([^>]*?)data-action="([^"]*)"[^>]*>(<title>[^<]*<\/title>)?<\/rect>/g, (m, a, act, ttl = '') => {
       // the href comes from the action, never from the hover text (a tooltip can come from data)
-      let href = null;
-      try { href = safeUrl(JSON.parse(act.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')).href); } catch { /* not a link */ }
-      return href ? `<a href="${attr(href)}" target="_blank" rel="noopener"><rect${a}/>${ttl}</a>` : `<rect${a}/>`;
-    })}</section>`).join('\n');
+      let t = null;
+      try { t = target(JSON.parse(act.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'))); } catch { /* not a link */ }
+      if (t && 'href' in t) return `<a href="${attr(t.href)}"${t.external ? ' target="_blank" rel="noopener"' : ''}><rect${a}/>${ttl}</a>`;
+      if (t && 'off' in t) return `<g class="pw-off"><rect${a}/><title>${esc(t.off)}</title></g>`;
+      return `<rect${a}/>`;
+    }));
+  const pages = model.pages.map((p, i) => {
+    const H = p.height ?? model.height;
+    const marks = [...anchors.values()].filter(x => x.page === i + 1).map(x => `<a class="pw-at" id="${x.id}" style="top:${((Math.min(x.y, H) / H) * 100).toFixed(3)}%"></a>`).join('');
+    return `<section class="page${p.width ? ' wide' : ''}" id="page-${i + 1}"${p.width ? ` style="width:min(100%,${Math.round(p.width * 96 / 72)}px)"` : ''}>${marks}${svgs[i]}</section>`;
+  }).join('\n');
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(opt.title || model.name || 'Report')}</title>
 <style>
 ${faces.join('\n')}
 html{background:#e6eaee}body{margin:0;padding:24px 12px;display:flex;flex-direction:column;align-items:center;gap:18px;font-family:system-ui,sans-serif}
-.page{width:min(100%,${Math.round(model.width * 96 / 72)}px);background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.08),0 6px 20px rgba(0,0,0,.08)}
+.page{position:relative;width:min(100%,${Math.round(model.width * 96 / 72)}px);background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.08),0 6px 20px rgba(0,0,0,.08)}
+.pw-at{position:absolute;left:0;width:1px;height:1px;scroll-margin-top:12px}.pw-off{cursor:not-allowed}
 .page svg{display:block;width:100%;height:auto}
 @media print{html{background:#fff}body{padding:0;gap:0}.page{box-shadow:none;width:100%;break-after:page}@page{size:${model.width}pt ${model.height}pt;margin:0}}
 </style></head><body>
