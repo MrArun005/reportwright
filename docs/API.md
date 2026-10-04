@@ -53,6 +53,23 @@ Response headers: `x-pagewright-pages`, `x-pagewright-ms`, `x-pagewright-warning
 
 Errors are JSON `{ error, missingParameters? }`: 400 for a bad request or missing parameters, 401 for a bad key, 404 for an unknown template.
 
+### PDF passwords and permissions
+
+```js
+body: JSON.stringify({
+  template: 'loan-statement', format: 'pdf', parameters: { accountId: 'LN-2025-001982' },
+  pdf: {
+    userPassword: 'to open it',            // '' or left out: anyone can open it, the permissions still apply
+    ownerPassword: 'to change the rules',  // left out: a random one nobody knows
+    permissions: { copy: false, modify: false },  // each one allowed unless set to false
+  },
+}),
+```
+
+Permissions: `print`, `printHighQuality`, `modify`, `copy`, `annotate`, `fillForms`, `accessibility`, `assemble`. The file is AES-256 (the PDF 2.0 standard security handler, revision 6), which Acrobat X and later, pdf.js, poppler and macOS Preview open. Passwords are Unicode (NFKC-normalised) and at most 127 bytes in UTF-8; longer is refused, not cut. A password is never in an error message. A password cannot go with `pdfa` (PDF/A forbids encryption) or `sign`: both are refused with 400.
+
+CLI: `pw render report.pw.json --password 'to open it' --owner-password 'boss' --deny copy --deny modify -o out.pdf`. In code: `exportPdf(model, fonts, { encrypt: { userPassword, ownerPassword, permissions } })`.
+
 ## Batches
 
 `POST /api/v1/batches` → `202` with the job. The job runs in the background.
@@ -215,3 +232,84 @@ A range with one bound filled takes the other from `min`/`max`. Filter with both
 ### UI languages
 
 `?lang=` on any page (`/`, `/viewer/<id>`, `/designer/<id>`, `/admin/users`, `/login`) or the `lang` option: `en`, `hi`, `es`, `fr`, `de`, `ja`, `zh`, `pt-BR`, `ar`. Arabic turns the interface right-to-left; report pages are never mirrored. Links from the home page keep the language. Strings live in `src/i18n/<lang>.js`; a unit test checks that every language has every key. The translations other than English are machine quality and need a native speaker's review. The designer's property inspector, data dialogs and wizards are still English.
+
+## Designer (embedding)
+
+The designer embeds like the viewer. It loads only on pages that ask for it (the viewer's script stays the same size), and it renders in a shadow root so the host page's styles do not leak in.
+
+```html
+<script src="https://reports.example.com/embed/pagewright-viewer.js"></script>
+<script>
+  const designer = await Pagewright.mountDesigner('#designer', {
+    server: 'https://reports.example.com',
+    definition,                              // or report: 'id' to load it from the server
+    onSave: (def) => saveToMyApp(def),       // without onSave, Save writes to the Pagewright server (PUT /api/reports/<report>)
+    onOpen: () => pickAReport(),             // adds an Open… button; return a definition (or a promise of one)
+    readOnly: false,                         // true: no Save, no toolbox, nothing can be changed
+    toolbox: { hide: ['map', 'chart'] },     // tool ids: textbox, richtext, table, image, line, shape, list, container, chart,
+                                             // matrix, barcode, sparkline, databar, bullet, subreport, toc, field, map, checkbox
+    panels: { data: true, inspector: true }, // false hides the data panel or the property inspector
+    dataSourceTemplates: [{ label: 'Orders API', source: { name: 'orders', type: 'rest', url: 'https://api.example.com/orders' } }],
+    height: '760px',
+  });
+  designer.getDefinition();                  // the definition as it is now
+  designer.save();
+</script>
+```
+
+Keyboard shortcuts work only for keys typed in the designer, never in the host page; typing in the designer's own inputs is never a shortcut (Backspace in a field does not delete the selected item). One designer per page. As an ES module: `import { mountDesigner } from '@pagewright/viewer/designer'`.
+
+## Framework packages and types
+
+| Package | Use |
+|---|---|
+| `@pagewright/viewer` | `mountViewer`, and `mountDesigner` from `@pagewright/viewer/designer` |
+| `@pagewright/react` | `<PagewrightViewer server report params style />`, `<PagewrightDesigner server definition onSave />` |
+| `@pagewright/vue` | `<PagewrightViewer :options="{ server, report }" />`, `<PagewrightDesigner :options="…" @ready="…" />` |
+| `@pagewright/svelte` | `<div use:pagewrightViewer={{ server, report }}>`, `use:pagewrightDesigner` (actions: no compiler step) |
+| `@pagewright/angular` | `definePagewrightElements()`, then `<pagewright-viewer [options]="…">` and `<pagewright-designer (pw-save)="…">` with `CUSTOM_ELEMENTS_SCHEMA` |
+| `@pagewright/engine` | `render`, the exporters, the `pw` CLI |
+
+The wrappers are thin: the framework and `@pagewright/viewer` are peer dependencies, nothing is bundled, and the viewer loads on mount, so server rendering (Next.js, Nuxt, SvelteKit, Angular SSR) never touches `window`. A viewer remounts when what it shows changes; a designer only for another `report` or a new `definition` object, so it keeps its edits. In React, a `style.height` on the component makes the viewer fill it.
+
+Types: every package ships `.d.ts`. The engine's API and the viewer's options are generated from their JSDoc; the report definition has hand-written types:
+
+```ts
+import type { Report, Item } from '@pagewright/engine';
+const report: Report = { $schema: 'pagewright/report@1', sections: { body: { items: [{ type: 'textbox', x: 0, y: 0, w: 200, h: 20, value: '=Fields.name' }] } } };
+```
+
+Build them with `npm run build:packages`; `tests/fixtures/types/consumer.ts` is type-checked by the unit tests.
+
+## Report features
+
+### Table of contents: headings and numbering
+
+A text box with `headingLevel` (1–6) is a heading. A table of contents with `"source": "headings"` lists the headings (the PDF's bookmarks panel keeps the bookmarks only); without it, it lists bookmarks as before. `numbering` numbers the lines: `"decimal"` (1, 1.1, 1.2), `"roman"` (I, II), `"alpha"` (A, B), or one per level, `["roman", "alpha"]` or `"roman,alpha"` (the last repeats for deeper levels). A level that is skipped counts as 1. Clicking a heading line goes to the heading.
+
+### Barcodes
+
+50 symbologies in the designer with their usual names (Code 128, GS1-128, EAN-13, UPC-A, ITF-14, Codabar, Intelligent Mail, QR Code, Data Matrix, PDF417, Aztec, MaxiCode, …); any other bwip-js id still works in the JSON. Options:
+
+| Key | For | Values |
+|---|---|---|
+| `captionPosition` | linear codes | `below` (default), `above`; `showText: false` hides it |
+| `quietZone` | all | points of white inside the box, on every side |
+| `rotate` | all | `0`, `90`, `180`, `270` |
+| `qrErrorLevel`, `qrVersion`, `qrMask` | QR codes | `L`/`M`/`Q`/`H`, 1–40, 1–8 |
+| `dmShape`, `dmSize` | Data Matrix | `square`/`rectangle`, `"24x24"` |
+| `pdfColumns`, `pdfRows`, `pdfErrorLevel`, `pdfCompact` | PDF417 | 1–30, 3–90, 0–8, true |
+| `aztecLayers`, `aztecErrorPercent` | Aztec | 1–32, 5–95 |
+| `maxiMode` | MaxiCode | 2–6 |
+| `checkDigit`, `barRatio` | Code 39, Code 93, Interleaved 2 of 5, Codabar, Code 11, MSI | true, 2–3 |
+
+Every option is checked against its list or range before it reaches bwip-js; anything else is ignored. A value longer than the symbology can hold is refused at once with an error on the page (QR: 7,089 characters; most linear codes: 128).
+
+### Images
+
+An image's `src` can be a URL, a data URI, `embedded:<name>` for an image the report carries in `"images": { "<name>": "data:image/png;base64,…" }` (also in `backgroundImage`), or a data field that holds base64 text (with or without a `data:` prefix) or bytes (a database BLOB). PNG, JPEG, GIF, WebP and SVG are recognised from their first bytes.
+
+`fit`: `contain` (default), `cover`, `fill`, or `clip` (the image at its natural size from the top-left corner, cut to the box). `autoSize: true` sizes the box to the image. Natural size is 96 dpi (one pixel is 0.75 pt), and is known for data, embedded and base64 images; a URL image's size is not known before it loads, so it is fitted inside the box with a warning.
+
+In the PDF, SVG images are drawn as vector paths: path, rect, circle, ellipse, line, polyline, polygon, groups, transforms, fill, stroke and opacity. Text, gradients, patterns, clip paths, masks, filters and `<use>` are not drawn there (the viewer and the HTML export show SVG fully). Limits: 10 MB per image and 50 MB of images per report (each distinct image once); larger ones are left out with a warning. In the PDF, an SVG over 2 MB or 10,000 shapes, and a PNG over 40 megapixels or animated, are left out.
+
