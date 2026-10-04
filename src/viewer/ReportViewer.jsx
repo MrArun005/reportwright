@@ -366,8 +366,8 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     hasParams && { id: 'parameters', group: 'panels', primary: true, node: <button className="btn sm" aria-pressed={side === 'params'} onClick={() => setPanel(s => (s === 'params' ? null : 'params'))}>{T('parameters')}</button> },
     bookmarks.length > 0 && { id: 'documentMap', group: 'panels', node: <button className="btn sm" aria-pressed={side === 'map'} onClick={() => setPanel(s => (s === 'map' ? null : 'map'))}>{T('documentMap')}</button> },
     { id: 'run', group: 'panels', node: <button className="btn sm" onClick={() => run()} disabled={status.state === 'running'}>{status.state === 'running' ? T('running') : T('run')}</button> },
-    { id: 'firstPage', group: 'paging', node: <button className="btn sm icon" title={T('firstPage')} aria-label={T('firstPage')} onClick={() => go(1)} disabled={!total || current === 1}><span className="flip">⏮</span></button> },
-    { id: 'previousPage', group: 'paging', primary: true, node: <button className="btn sm icon" title={T('previousPage')} aria-label={T('previousPage')} onClick={() => go(current - 1)} disabled={!total || current === 1}><span className="flip">◀</span></button> },
+    { id: 'firstPage', group: 'paging', node: <button className="btn sm icon" title={T('firstPage')} onClick={() => go(1)} disabled={!total || current === 1}><span className="flip">⏮</span></button> },
+    { id: 'previousPage', group: 'paging', primary: true, node: <button className="btn sm icon" title={T('previousPage')} onClick={() => go(current - 1)} disabled={!total || current === 1}><span className="flip">◀</span></button> },
     {
       id: 'pageNumber', group: 'paging', primary: true,
       node: <>
@@ -375,8 +375,8 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
         <span className="stat" title={model?.partial ? T('stillRendering') : undefined}>/ {total ? (model?.partial ? `${total}+` : total) : '–'}</span>
       </>,
     },
-    { id: 'nextPage', group: 'paging', primary: true, node: <button className="btn sm icon" title={T('nextPage')} aria-label={T('nextPage')} onClick={() => go(current + 1)} disabled={!total || current === total}><span className="flip">▶</span></button> },
-    { id: 'lastPage', group: 'paging', node: <button className="btn sm icon" title={T('lastPage')} aria-label={T('lastPage')} onClick={() => go(total)} disabled={!total || current === total}><span className="flip">⏭</span></button> },
+    { id: 'nextPage', group: 'paging', primary: true, node: <button className="btn sm icon" title={T('nextPage')} onClick={() => go(current + 1)} disabled={!total || current === total}><span className="flip">▶</span></button> },
+    { id: 'lastPage', group: 'paging', node: <button className="btn sm icon" title={T('lastPage')} onClick={() => go(total)} disabled={!total || current === total}><span className="flip">⏭</span></button> },
     { id: 'zoomOut', group: 'zoom', node: <button className="btn sm icon" title={T('zoomOut')} aria-label={T('zoomOut')} onClick={() => zoomBy(1 / 1.2)}>−</button> },
     { id: 'zoomValue', group: 'zoom', node: <span className="stat zoomval">{Math.round((scale / PX) * 100)}%</span> },
     { id: 'zoomIn', group: 'zoom', node: <button className="btn sm icon" title={T('zoomIn')} aria-label={T('zoomIn')} onClick={() => zoomBy(1.2)}>+</button> },
