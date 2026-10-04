@@ -1,0 +1,818 @@
+{
+  "$schema": "pagewright/report@1",
+  "name": "Parameter editors",
+  "locale": "en-IN",
+  "page": {
+    "size": "A4",
+    "margins": [
+      36,
+      36,
+      36,
+      36
+    ]
+  },
+  "liveParameters": true,
+  "parameterLayout": {
+    "columns": 3
+  },
+  "parameters": [
+    {
+      "name": "minAmount",
+      "type": "number",
+      "prompt": "Smallest amount",
+      "editor": "slider",
+      "min": 0,
+      "max": 1000,
+      "step": 50,
+      "default": 0
+    },
+    {
+      "name": "amountRange",
+      "type": "number",
+      "prompt": "Amount between",
+      "multi": true,
+      "editor": "range",
+      "min": 0,
+      "max": 1000,
+      "step": 10
+    },
+    {
+      "name": "period",
+      "type": "date",
+      "prompt": "Date between",
+      "multi": true,
+      "editor": "dateRange",
+      "min": "2026-01-01",
+      "max": "2026-12-31"
+    },
+    {
+      "name": "region",
+      "type": "string",
+      "prompt": "Region",
+      "editor": "radio",
+      "options": [
+        {
+          "value": "",
+          "label": "All"
+        },
+        {
+          "value": "North",
+          "label": "North"
+        },
+        {
+          "value": "South",
+          "label": "South"
+        },
+        {
+          "value": "East",
+          "label": "East"
+        },
+        {
+          "value": "West",
+          "label": "West"
+        }
+      ]
+    },
+    {
+      "name": "categories",
+      "type": "string",
+      "prompt": "Categories",
+      "multi": true,
+      "editor": "list",
+      "options": [
+        {
+          "value": "Home",
+          "label": "Home"
+        },
+        {
+          "value": "Auto",
+          "label": "Auto"
+        },
+        {
+          "value": "Gold",
+          "label": "Gold"
+        },
+        {
+          "value": "Personal",
+          "label": "Personal"
+        }
+      ]
+    },
+    {
+      "name": "activeOnly",
+      "type": "boolean",
+      "prompt": "Active loans only",
+      "editor": "toggle",
+      "default": false
+    }
+  ],
+  "dataSources": [
+    {
+      "name": "src",
+      "type": "json",
+      "data": {
+        "rows": [
+          {
+            "id": 1,
+            "region": "North",
+            "category": "Home",
+            "amount": 50,
+            "date": "2026-01-01",
+            "active": false
+          },
+          {
+            "id": 2,
+            "region": "South",
+            "category": "Personal",
+            "amount": 187,
+            "date": "2026-02-06",
+            "active": true
+          },
+          {
+            "id": 3,
+            "region": "East",
+            "category": "Gold",
+            "amount": 324,
+            "date": "2026-03-11",
+            "active": true
+          },
+          {
+            "id": 4,
+            "region": "West",
+            "category": "Auto",
+            "amount": 461,
+            "date": "2026-04-16",
+            "active": false
+          },
+          {
+            "id": 5,
+            "region": "North",
+            "category": "Home",
+            "amount": 598,
+            "date": "2026-05-21",
+            "active": true
+          },
+          {
+            "id": 6,
+            "region": "South",
+            "category": "Personal",
+            "amount": 735,
+            "date": "2026-06-26",
+            "active": true
+          },
+          {
+            "id": 7,
+            "region": "East",
+            "category": "Gold",
+            "amount": 872,
+            "date": "2026-07-04",
+            "active": false
+          },
+          {
+            "id": 8,
+            "region": "West",
+            "category": "Auto",
+            "amount": 59,
+            "date": "2026-08-09",
+            "active": true
+          },
+          {
+            "id": 9,
+            "region": "North",
+            "category": "Home",
+            "amount": 196,
+            "date": "2026-09-14",
+            "active": true
+          },
+          {
+            "id": 10,
+            "region": "South",
+            "category": "Personal",
+            "amount": 333,
+            "date": "2026-10-19",
+            "active": false
+          },
+          {
+            "id": 11,
+            "region": "East",
+            "category": "Gold",
+            "amount": 470,
+            "date": "2026-11-24",
+            "active": true
+          },
+          {
+            "id": 12,
+            "region": "West",
+            "category": "Auto",
+            "amount": 607,
+            "date": "2026-12-02",
+            "active": true
+          },
+          {
+            "id": 13,
+            "region": "North",
+            "category": "Home",
+            "amount": 744,
+            "date": "2026-01-07",
+            "active": false
+          },
+          {
+            "id": 14,
+            "region": "South",
+            "category": "Personal",
+            "amount": 881,
+            "date": "2026-02-12",
+            "active": true
+          },
+          {
+            "id": 15,
+            "region": "East",
+            "category": "Gold",
+            "amount": 68,
+            "date": "2026-03-17",
+            "active": true
+          },
+          {
+            "id": 16,
+            "region": "West",
+            "category": "Auto",
+            "amount": 205,
+            "date": "2026-04-22",
+            "active": false
+          },
+          {
+            "id": 17,
+            "region": "North",
+            "category": "Home",
+            "amount": 342,
+            "date": "2026-05-27",
+            "active": true
+          },
+          {
+            "id": 18,
+            "region": "South",
+            "category": "Personal",
+            "amount": 479,
+            "date": "2026-06-05",
+            "active": true
+          },
+          {
+            "id": 19,
+            "region": "East",
+            "category": "Gold",
+            "amount": 616,
+            "date": "2026-07-10",
+            "active": false
+          },
+          {
+            "id": 20,
+            "region": "West",
+            "category": "Auto",
+            "amount": 753,
+            "date": "2026-08-15",
+            "active": true
+          },
+          {
+            "id": 21,
+            "region": "North",
+            "category": "Home",
+            "amount": 890,
+            "date": "2026-09-20",
+            "active": true
+          },
+          {
+            "id": 22,
+            "region": "South",
+            "category": "Personal",
+            "amount": 77,
+            "date": "2026-10-25",
+            "active": false
+          },
+          {
+            "id": 23,
+            "region": "East",
+            "category": "Gold",
+            "amount": 214,
+            "date": "2026-11-03",
+            "active": true
+          },
+          {
+            "id": 24,
+            "region": "West",
+            "category": "Auto",
+            "amount": 351,
+            "date": "2026-12-08",
+            "active": true
+          },
+          {
+            "id": 25,
+            "region": "North",
+            "category": "Home",
+            "amount": 488,
+            "date": "2026-01-13",
+            "active": false
+          },
+          {
+            "id": 26,
+            "region": "South",
+            "category": "Personal",
+            "amount": 625,
+            "date": "2026-02-18",
+            "active": true
+          },
+          {
+            "id": 27,
+            "region": "East",
+            "category": "Gold",
+            "amount": 762,
+            "date": "2026-03-23",
+            "active": true
+          },
+          {
+            "id": 28,
+            "region": "West",
+            "category": "Auto",
+            "amount": 899,
+            "date": "2026-04-01",
+            "active": false
+          },
+          {
+            "id": 29,
+            "region": "North",
+            "category": "Home",
+            "amount": 86,
+            "date": "2026-05-06",
+            "active": true
+          },
+          {
+            "id": 30,
+            "region": "South",
+            "category": "Personal",
+            "amount": 223,
+            "date": "2026-06-11",
+            "active": true
+          },
+          {
+            "id": 31,
+            "region": "East",
+            "category": "Gold",
+            "amount": 360,
+            "date": "2026-07-16",
+            "active": false
+          },
+          {
+            "id": 32,
+            "region": "West",
+            "category": "Auto",
+            "amount": 497,
+            "date": "2026-08-21",
+            "active": true
+          },
+          {
+            "id": 33,
+            "region": "North",
+            "category": "Home",
+            "amount": 634,
+            "date": "2026-09-26",
+            "active": true
+          },
+          {
+            "id": 34,
+            "region": "South",
+            "category": "Personal",
+            "amount": 771,
+            "date": "2026-10-04",
+            "active": false
+          },
+          {
+            "id": 35,
+            "region": "East",
+            "category": "Gold",
+            "amount": 908,
+            "date": "2026-11-09",
+            "active": true
+          },
+          {
+            "id": 36,
+            "region": "West",
+            "category": "Auto",
+            "amount": 95,
+            "date": "2026-12-14",
+            "active": true
+          },
+          {
+            "id": 37,
+            "region": "North",
+            "category": "Home",
+            "amount": 232,
+            "date": "2026-01-19",
+            "active": false
+          },
+          {
+            "id": 38,
+            "region": "South",
+            "category": "Personal",
+            "amount": 369,
+            "date": "2026-02-24",
+            "active": true
+          },
+          {
+            "id": 39,
+            "region": "East",
+            "category": "Gold",
+            "amount": 506,
+            "date": "2026-03-02",
+            "active": true
+          },
+          {
+            "id": 40,
+            "region": "West",
+            "category": "Auto",
+            "amount": 643,
+            "date": "2026-04-07",
+            "active": false
+          },
+          {
+            "id": 41,
+            "region": "North",
+            "category": "Home",
+            "amount": 780,
+            "date": "2026-05-12",
+            "active": true
+          },
+          {
+            "id": 42,
+            "region": "South",
+            "category": "Personal",
+            "amount": 917,
+            "date": "2026-06-17",
+            "active": true
+          },
+          {
+            "id": 43,
+            "region": "East",
+            "category": "Gold",
+            "amount": 104,
+            "date": "2026-07-22",
+            "active": false
+          },
+          {
+            "id": 44,
+            "region": "West",
+            "category": "Auto",
+            "amount": 241,
+            "date": "2026-08-27",
+            "active": true
+          },
+          {
+            "id": 45,
+            "region": "North",
+            "category": "Home",
+            "amount": 378,
+            "date": "2026-09-05",
+            "active": true
+          },
+          {
+            "id": 46,
+            "region": "South",
+            "category": "Personal",
+            "amount": 515,
+            "date": "2026-10-10",
+            "active": false
+          },
+          {
+            "id": 47,
+            "region": "East",
+            "category": "Gold",
+            "amount": 652,
+            "date": "2026-11-15",
+            "active": true
+          },
+          {
+            "id": 48,
+            "region": "West",
+            "category": "Auto",
+            "amount": 789,
+            "date": "2026-12-20",
+            "active": true
+          },
+          {
+            "id": 49,
+            "region": "North",
+            "category": "Home",
+            "amount": 926,
+            "date": "2026-01-25",
+            "active": false
+          },
+          {
+            "id": 50,
+            "region": "South",
+            "category": "Personal",
+            "amount": 113,
+            "date": "2026-02-03",
+            "active": true
+          },
+          {
+            "id": 51,
+            "region": "East",
+            "category": "Gold",
+            "amount": 250,
+            "date": "2026-03-08",
+            "active": true
+          },
+          {
+            "id": 52,
+            "region": "West",
+            "category": "Auto",
+            "amount": 387,
+            "date": "2026-04-13",
+            "active": false
+          },
+          {
+            "id": 53,
+            "region": "North",
+            "category": "Home",
+            "amount": 524,
+            "date": "2026-05-18",
+            "active": true
+          },
+          {
+            "id": 54,
+            "region": "South",
+            "category": "Personal",
+            "amount": 661,
+            "date": "2026-06-23",
+            "active": true
+          },
+          {
+            "id": 55,
+            "region": "East",
+            "category": "Gold",
+            "amount": 798,
+            "date": "2026-07-01",
+            "active": false
+          },
+          {
+            "id": 56,
+            "region": "West",
+            "category": "Auto",
+            "amount": 935,
+            "date": "2026-08-06",
+            "active": true
+          },
+          {
+            "id": 57,
+            "region": "North",
+            "category": "Home",
+            "amount": 122,
+            "date": "2026-09-11",
+            "active": true
+          },
+          {
+            "id": 58,
+            "region": "South",
+            "category": "Personal",
+            "amount": 259,
+            "date": "2026-10-16",
+            "active": false
+          },
+          {
+            "id": 59,
+            "region": "East",
+            "category": "Gold",
+            "amount": 396,
+            "date": "2026-11-21",
+            "active": true
+          },
+          {
+            "id": 60,
+            "region": "West",
+            "category": "Auto",
+            "amount": 533,
+            "date": "2026-12-26",
+            "active": true
+          }
+        ]
+      }
+    }
+  ],
+  "dataSets": [
+    {
+      "name": "Loans",
+      "source": "src",
+      "path": "$.rows",
+      "fields": [
+        {
+          "name": "id",
+          "type": "number"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "category",
+          "type": "string"
+        },
+        {
+          "name": "amount",
+          "type": "number"
+        },
+        {
+          "name": "date",
+          "type": "date"
+        },
+        {
+          "name": "active",
+          "type": "boolean"
+        }
+      ],
+      "filters": [
+        {
+          "expr": "=Fields.amount",
+          "op": ">=",
+          "value": "=Coalesce(Parameters.minAmount, 0)"
+        },
+        {
+          "expr": "=Fields.amount",
+          "op": ">=",
+          "value": "=Coalesce(Parameters.amountRange[0], 0)"
+        },
+        {
+          "expr": "=Fields.amount",
+          "op": "<=",
+          "value": "=Coalesce(Parameters.amountRange[1], 1000000)"
+        },
+        {
+          "expr": "=Fields.date",
+          "op": ">=",
+          "value": "=Coalesce(Parameters.period[0], CDate(\"1900-01-01\"))"
+        },
+        {
+          "expr": "=Fields.date",
+          "op": "<=",
+          "value": "=Coalesce(Parameters.period[1], CDate(\"2999-12-31\"))"
+        },
+        {
+          "expr": "=Fields.region",
+          "op": "in",
+          "value": "=Parameters.region"
+        },
+        {
+          "expr": "=Fields.category",
+          "op": "in",
+          "value": "=Parameters.categories"
+        },
+        {
+          "expr": "=IIf(Parameters.activeOnly, Fields.active, true)",
+          "op": "=",
+          "value": "=true"
+        }
+      ]
+    }
+  ],
+  "sections": {
+    "pageHeader": {
+      "height": 0,
+      "items": []
+    },
+    "body": {
+      "items": [
+        {
+          "type": "textbox",
+          "name": "Title",
+          "x": 0,
+          "y": 0,
+          "w": 523,
+          "h": 24,
+          "value": "Parameter editors",
+          "style": {
+            "fontSize": 16,
+            "fontWeight": "bold"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "Summary",
+          "x": 0,
+          "y": 28,
+          "w": 523,
+          "h": 16,
+          "canGrow": true,
+          "value": "=CStr(CountRows(\"Loans\")) & \" loans · amount ≥ \" & CStr(Coalesce(Parameters.minAmount, 0)) & \" · region \" & IIf(Len(Coalesce(Parameters.region, \"\")) = 0, \"all\", Parameters.region) & \" · active only \" & IIf(Parameters.activeOnly, \"yes\", \"no\")",
+          "style": {
+            "color": "#495057"
+          }
+        },
+        {
+          "type": "table",
+          "name": "Rows",
+          "x": 0,
+          "y": 56,
+          "w": 523,
+          "h": 40,
+          "dataSet": "Loans",
+          "repeatHeader": true,
+          "columns": [
+            {
+              "width": 50
+            },
+            {
+              "width": 110
+            },
+            {
+              "width": 110
+            },
+            {
+              "width": 100
+            },
+            {
+              "width": 90
+            },
+            {
+              "width": 63
+            }
+          ],
+          "style": {
+            "padding": [
+              3,
+              5,
+              3,
+              5
+            ]
+          },
+          "header": [
+            {
+              "height": 18,
+              "style": {
+                "fontWeight": "bold",
+                "color": "#fff",
+                "backgroundColor": "#0e7490",
+                "verticalAlign": "middle"
+              },
+              "cells": [
+                {
+                  "value": "#"
+                },
+                {
+                  "value": "Region"
+                },
+                {
+                  "value": "Category"
+                },
+                {
+                  "value": "Date"
+                },
+                {
+                  "value": "Amount",
+                  "style": {
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "Active"
+                }
+              ]
+            }
+          ],
+          "detail": [
+            {
+              "height": 16,
+              "cells": [
+                {
+                  "value": "=Fields.id"
+                },
+                {
+                  "value": "=Fields.region"
+                },
+                {
+                  "value": "=Fields.category"
+                },
+                {
+                  "value": "=Fields.date",
+                  "style": {
+                    "format": "dd MMM yyyy"
+                  }
+                },
+                {
+                  "value": "=Fields.amount",
+                  "style": {
+                    "textAlign": "right",
+                    "format": "N0"
+                  }
+                },
+                {
+                  "value": "=IIf(Fields.active, \"yes\", \"no\")"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "pageFooter": {
+      "height": 0,
+      "items": []
+    }
+  }
+}
