@@ -209,4 +209,11 @@ export default {
   signInWith: "{name} でサインイン",
   orWithPassword: "またはパスワードで",
   noSignInMethod: "このサーバーにはサインイン方法が設定されていません。",
+
+  /* ---- enterprise: SSO account linking ---- */
+  allowSso: "SSO を許可",
+  stopSso: "SSO 連携を取り消す",
+  allowSsoHint: "このメールでの次のシングルサインオンがこのアカウントを引き継ぎます（パスワードは残ります）",
+  ssoAllowed: "{email} は次回のサインインでシングルサインオンと連携できます。",
+  ssoNotAllowed: "{email} はシングルサインオンと連携できなくなりました。",
 };

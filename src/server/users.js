@@ -44,8 +44,11 @@ export async function verifyPassword(pw, stored) {
 
 /** Lower-case, trimmed; no slashes (it is a URL path segment in /api/users/<email>). */
 export function normEmail(email) {
-  const e = String(email ?? '').trim().toLowerCase();
-  if (e.length > 254 || !/^[^\s@/\\]+@[^\s@/\\]+$/.test(e)) throw fail('Give a valid email address.', 400);
+  const raw = String(email ?? '').trim();
+  const e = raw.toLowerCase();
+  // ASCII only: toLowerCase() folds some other letters into ASCII ones (the Kelvin sign K → k), which would let two
+  // different addresses name one account
+  if (e.length > 254 || !/^[^\s@/\\]+@[^\s@/\\]+$/.test(e) || /[^\x21-\x7e]/.test(raw)) throw fail('Give a valid email address.', 400);
   return e;
 }
 const checkRole = (role) => { if (!ROLES.includes(role)) throw fail(`The role must be ${ROLES.join(', ')}.`, 400); return role; };
@@ -63,10 +66,13 @@ export function checkGroups(groups) {
 }
 
 /** What the API shows: never the hash. */
-const publicUser = (u) => ({ email: u.email, role: u.role, disabled: !!u.disabled, groups: u.groups || [], sso: u.sso || null, createdAt: u.createdAt, updatedAt: u.updatedAt });
+const publicUser = (u) => ({ email: u.email, role: u.role, disabled: !!u.disabled, groups: u.groups || [], sso: u.sso?.via || null, allowSso: !!u.allowSso, createdAt: u.createdAt, updatedAt: u.updatedAt });
 
 /** @returns {Promise<any[]>} full records */
 async function all() { return (await store().list('users')).map(r => JSON.parse(r.text)); }
+
+/** Every full record. Server code only. */
+export const allUsers = () => all();
 
 /** The full record (with the hash), or null. Server code only. */
 export async function getUser(email) {
@@ -101,7 +107,7 @@ export async function countUsers() { return (await store().ids('users')).length;
 
 /**
  * A password account, or with `sso` an account made at single sign-on (no password).
- * @param {{ email: string, role: string, password?: string, groups?: string[], sso?: 'oidc'|'saml' }} u
+ * @param {{ email: string, role: string, password?: string, groups?: string[], sso?: { via: 'oidc'|'saml', issuer: string, subject: string } }} u
  */
 export async function createUser({ email, role, password, groups = [], sso }) {
   const e = normEmail(email);
@@ -110,7 +116,8 @@ export async function createUser({ email, role, password, groups = [], sso }) {
   const passwordHash = sso ? null : await hashPassword(/** @type {string} */ (password));
   if (await getUser(e)) throw fail(`There is already a user ${e}.`, 409);
   const now = new Date().toISOString();
-  const u = { email: e, role, passwordHash, createdAt: now, updatedAt: now, disabled: false, sessionVersion: 0, groups: g, ...(sso ? { sso } : {}) };
+  // a new account's sessions start at a random version: a cookie of a deleted account with this email never works again
+  const u = { email: e, role, passwordHash, createdAt: now, updatedAt: now, disabled: false, sessionVersion: crypto.randomInt(1, 2 ** 40), groups: g, ...(sso ? { sso } : {}) };
   await save(u);
   return publicUser(u);
 }
@@ -124,7 +131,9 @@ async function keepAnAdmin(before, after) {
 
 /**
  * Change the role, the password, the groups or disabled. A new password or disabling ends the user's sessions.
- * @param {string} email @param {{ role?: string, password?: string, disabled?: boolean, groups?: string[] }} patch
+ * allowSso (admins): the next single sign-on with this email may bind to this password account.
+ * sso (server code only, never from a request): the IdP identity this account is bound to.
+ * @param {string} email @param {{ role?: string, password?: string, disabled?: boolean, groups?: string[], allowSso?: boolean, sso?: any }} patch
  */
 export async function updateUser(email, patch) {
   const u = await getUser(email);
@@ -133,6 +142,8 @@ export async function updateUser(email, patch) {
   if (patch.role !== undefined) next.role = checkRole(patch.role);
   if (patch.disabled !== undefined) next.disabled = !!patch.disabled;
   if (patch.groups !== undefined) next.groups = checkGroups(patch.groups);
+  if (patch.allowSso !== undefined) next.allowSso = !!patch.allowSso;
+  if (patch.sso !== undefined) { next.sso = patch.sso; delete next.allowSso; }
   if (patch.password !== undefined) next.passwordHash = await hashPassword(patch.password);
   if (patch.password !== undefined || (next.disabled && !u.disabled)) next.sessionVersion = (u.sessionVersion || 0) + 1;
   await keepAnAdmin(u, next);

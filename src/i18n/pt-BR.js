@@ -209,4 +209,11 @@ export default {
   signInWith: "Entrar com {name}",
   orWithPassword: "ou com uma senha",
   noSignInMethod: "Nenhuma forma de login está configurada neste servidor.",
+
+  /* ---- enterprise: SSO account linking ---- */
+  allowSso: "Permitir SSO",
+  stopSso: "Cancelar vínculo SSO",
+  allowSsoHint: "O próximo login único com este e-mail assume esta conta (a senha continua)",
+  ssoAllowed: "{email} poderá ser vinculado ao login único no próximo login.",
+  ssoNotAllowed: "{email} não pode mais ser vinculado ao login único.",
 };

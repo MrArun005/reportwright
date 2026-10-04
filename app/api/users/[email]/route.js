@@ -18,7 +18,7 @@ export async function PATCH(req, { params }) {
     const email = await target(params);
     const body = await req.json().catch(() => ({}));
     const patch = {};
-    for (const k of ['role', 'password', 'disabled', 'groups']) if (body[k] !== undefined) patch[k] = body[k];
+    for (const k of ['role', 'password', 'disabled', 'groups', 'allowSso']) if (body[k] !== undefined) patch[k] = body[k];
     const u = await updateUser(email, patch);
     await audit('user.update', { req, actor: `user:${me.email}`, detail: { user: u.email, ...('role' in patch && { role: u.role }), ...('groups' in patch && { groups: u.groups }), ...('disabled' in patch && { disabled: u.disabled }), ...('password' in patch && { password: 'changed' }) } });
     // a new password ends the user's sessions; an admin who changed their own stays signed in

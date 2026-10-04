@@ -209,4 +209,11 @@ export default {
   signInWith: "Mit {name} anmelden",
   orWithPassword: "oder mit einem Passwort",
   noSignInMethod: "Auf diesem Server ist keine Anmeldemethode eingerichtet.",
+
+  /* ---- enterprise: SSO account linking ---- */
+  allowSso: "SSO erlauben",
+  stopSso: "SSO-Verknüpfung abbrechen",
+  allowSsoHint: "Die nächste Single-Sign-on-Anmeldung mit dieser E-Mail übernimmt dieses Konto (das Passwort bleibt)",
+  ssoAllowed: "{email} kann bei der nächsten Anmeldung mit Single Sign-on verknüpft werden.",
+  ssoNotAllowed: "{email} kann nicht mehr mit Single Sign-on verknüpft werden.",
 };

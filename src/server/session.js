@@ -76,7 +76,7 @@ export async function currentUser(req) {
   return { email: user.email, role: user.role, groups: user.groups || [] };
 }
 
-const isHttps = (req) => new URL(req.url).protocol === 'https:' || (req.headers.get('x-forwarded-proto') || '').split(',')[0].trim() === 'https';
+const isHttps = (req) => new URL(req.url).protocol === 'https:' || (req.headers.get('x-forwarded-proto') || '').split(',')[0].trim() === 'https' || /^https:/.test(process.env.PW_BASE_URL || '');
 
 /** Set-Cookie for a new session of this user. @param {Request} req @param {{ email: string, role: string, sessionVersion?: number }} user */
 export function sessionCookie(req, user) {

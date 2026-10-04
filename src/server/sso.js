@@ -24,7 +24,7 @@
 // PW_PASSWORD_LOGIN=off turns password sign-in off while SSO is set up.
 import crypto from 'node:crypto';
 import { signSession, readToken, sessionSecret, safeNext } from './session.js';
-import { getUser, createUser, updateUser, normEmail, ROLES, GROUP } from './users.js';
+import { getUser, createUser, updateUser, normEmail, allUsers, ROLES, GROUP } from './users.js';
 import { store } from './storage/index.js';
 
 const fail = (msg, status = 400, code = 'sso') => Object.assign(new Error(msg), { status, code });
@@ -33,7 +33,8 @@ const rand = (n = 32) => b64u(crypto.randomBytes(n));
 const same = (a, b) => typeof a === 'string' && typeof b === 'string' && crypto.timingSafeEqual(crypto.createHash('sha256').update(a).digest(), crypto.createHash('sha256').update(b).digest());
 
 export const oidcOn = () => !!(process.env.PW_OIDC_ISSUER && process.env.PW_OIDC_CLIENT_ID);
-export const samlOn = () => !!(process.env.PW_SAML_ENTRY_POINT && (process.env.PW_SAML_IDP_CERT || process.env.PW_SAML_IDP_CERT_FILE));
+// the IdP's entity id is required: an account is bound to (issuer, NameID), and the issuer must be pinned
+export const samlOn = () => !!(process.env.PW_SAML_ENTRY_POINT && (process.env.PW_SAML_IDP_CERT || process.env.PW_SAML_IDP_CERT_FILE) && process.env.PW_SAML_IDP_ISSUER);
 export const ssoOn = () => oidcOn() || samlOn();
 /** Password sign-in is off only when SSO is set up (an admin cannot lock everyone out by a typo). */
 export const passwordLoginOn = () => !(process.env.PW_PASSWORD_LOGIN === 'off' && ssoOn());
@@ -75,15 +76,30 @@ export async function finishSignIn(req, step, via) {
   const back = (path, cookies) => { const h = new Headers({ location: `${publicBase(req)}${path}` }); for (const c of cookies) h.append('set-cookie', c); return new Response(null, { status: 303, headers: h }); };
   try {
     const { identity, next } = await step();
-    await upsertSsoUser(identity, via);
-    const user = await getUser(identity.email);
-    await audit('auth.sso', { req, actor: `user:${identity.email}`, detail: { method: via, role: identity.role, groups: identity.groups } });
+    const email = await upsertSsoUser(identity, via);
+    const user = await getUser(email);
+    await audit('auth.sso', { req, actor: `user:${email}`, detail: { method: via, issuer: identity.issuer, role: identity.role, groups: identity.groups } });
     return back(safeNext(next), [sessionCookie(req, user), clearState(req)]);
   } catch (e) {
     const err = /** @type {any} */ (e);
     await audit('auth.sso_failed', { req, status: 'failed', detail: { method: via, reason: String(err.message).slice(0, 200) } });
     return back(`/login?sso_error=${encodeURIComponent(err.code || 'sso')}`, [clearState(req)]);
   }
+}
+
+/* ---------------- rate limit for starting sign-ins ---------------- */
+
+// ponytail: per process, like the password sign-in limit; a shared store if several servers must count together
+const starts = (/** @type {any} */ (globalThis).__pwSsoStarts ||= new Map());
+/** True when this address started more than 60 sign-ins in the last minute. @param {Request} req */
+export function tooManyStarts(req) {
+  const ip = (req.headers.get('x-forwarded-for') || '').split(',').pop()?.trim() || '-';
+  const now = Date.now();
+  const list = (starts.get(ip) || []).filter(t => t > now - 60000);
+  list.push(now);
+  if (starts.size > 10000) starts.clear();
+  starts.set(ip, list.slice(-61));
+  return list.length > 60;
 }
 
 /* ---------------- users from IdP claims ---------------- */
@@ -100,11 +116,16 @@ function roleMap() {
 const RANK = { viewer: 1, designer: 2, admin: 3 };
 
 /**
- * The account an IdP's answer gives: { email, role, groups }. Throws when there is no usable email or no role.
- * @param {string} email @param {string[]} values the groups/roles claim
+ * The account an IdP's answer gives: { email, role, groups, issuer, subject }. Throws when there is no usable email,
+ * the domain is not allowed (PW_SSO_ALLOWED_DOMAINS), or there is no role.
+ * @param {string} email @param {string[]} values the groups/roles claim @param {{ issuer: string, subject: string }} who
  */
-export function mapIdentity(email, values) {
-  const e = normEmail(email);
+export function mapIdentity(email, values, who) {
+  let e;
+  try { e = normEmail(email); } catch { throw fail('The identity provider sent an email address Pagewright does not take.', 401, 'email'); }
+  if (!who?.issuer || !who?.subject) throw fail('The identity provider did not say who this is (issuer, subject).', 401, 'subject');
+  const domains = (process.env.PW_SSO_ALLOWED_DOMAINS || '').split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
+  if (domains.length && !domains.includes(e.split('@')[1])) throw fail('Accounts of this email domain cannot sign in here.', 403, 'domain');
   const vals = (Array.isArray(values) ? values : values == null ? [] : [values]).map(v => String(v)).slice(0, 500);
   const map = roleMap();
   let role = null;
@@ -113,15 +134,33 @@ export function mapIdentity(email, values) {
   if (!role) role = fallback === 'none' ? null : ROLES.includes(/** @type {any} */ (fallback)) ? fallback : 'viewer';
   if (!role) throw fail('Your account has no role in Pagewright. Ask an admin to add you to a group that has one.', 403, 'no_role');
   const groups = [...new Set(vals.map(v => v.trim()).filter(v => GROUP.test(v) && !['everyone', 'public'].includes(v.toLowerCase())))].slice(0, 50).sort();
-  return { email: e, role, groups };
+  return { email: e, role, groups, issuer: String(who.issuer), subject: String(who.subject) };
 }
 
-/** Make or update the account. @param {{ email: string, role: string, groups: string[] }} id @param {'oidc'|'saml'} via */
+/**
+ * The account for an IdP identity; returns its email. An account is bound to one identity (via, issuer, subject):
+ *  - bound already: that account (even if the IdP's email has changed since), with role and groups from the IdP;
+ *  - an account with this email bound to another identity, or with a password: refused ('linked'), unless an admin
+ *    set allowSso on it, and then this sign-in binds it (the password stays);
+ *  - no account: one is made, bound, with no password.
+ * @param {{ email: string, role: string, groups: string[], issuer: string, subject: string }} id @param {'oidc'|'saml'} via
+ */
 export async function upsertSsoUser(id, via) {
+  const sso = { via, issuer: id.issuer, subject: id.subject };
+  const same = (u) => u.sso && typeof u.sso === 'object' && u.sso.via === via && u.sso.issuer === sso.issuer && u.sso.subject === sso.subject;
+  const bound = (await allUsers()).find(same);
+  const linked = () => fail('An account with this email already exists and is not linked to this sign-in. Ask an admin to allow single sign-on for it.', 403, 'linked');
+  if (bound) {
+    if (bound.disabled) throw fail('This account is disabled.', 403, 'disabled');
+    await updateUser(bound.email, { role: id.role, groups: id.groups });
+    return bound.email;
+  }
   const u = await getUser(id.email);
-  if (!u) return createUser({ ...id, sso: via });
+  if (!u) { await createUser({ email: id.email, role: id.role, groups: id.groups, sso }); return id.email; }
   if (u.disabled) throw fail('This account is disabled.', 403, 'disabled');
-  return updateUser(id.email, { role: id.role, groups: id.groups });
+  if (!u.allowSso && (u.passwordHash || (u.sso && typeof u.sso === 'object'))) throw linked();
+  await updateUser(u.email, { role: id.role, groups: id.groups, sso });
+  return u.email;
 }
 
 /* ---------------- OIDC ---------------- */
@@ -190,7 +229,7 @@ export async function oidcCallback(req) {
   if (typeof claims.email !== 'string') throw fail('The identity provider sent no email for this account.', 401, 'email');
   if (claims.email_verified !== true && process.env.PW_OIDC_TRUST_EMAIL !== '1') throw fail('The identity provider has not verified this email address.', 401, 'email');
   const values = claims[process.env.PW_OIDC_GROUPS_CLAIM || 'groups'];
-  return { identity: mapIdentity(claims.email, /** @type {any} */ (values)), next: st.next || '/' };
+  return { identity: mapIdentity(claims.email, /** @type {any} */ (values), { issuer: d.issuer, subject: String(claims.sub) }), next: st.next || '/' };
 }
 
 /** @param {string} idToken @param {any} d discovery @param {string} nonce */
@@ -205,7 +244,7 @@ export async function verifyIdToken(idToken, d, nonce) {
     ({ payload } = await jwtVerify(idToken, jwks, { issuer: d.issuer, audience: String(process.env.PW_OIDC_CLIENT_ID), algorithms: algs.length ? algs : ['RS256'], clockTolerance: 60, requiredClaims: ['exp', 'iat', 'sub'] }));
   } catch (e) { throw fail(`The ID token is not valid: ${/** @type {Error} */ (e).message}`, 401, 'id_token'); }
   if (!same(String(payload.nonce || ''), nonce)) throw fail('The ID token is not for this sign-in (nonce).', 401, 'nonce');
-  if (Array.isArray(payload.aud) && payload.aud.length > 1 && payload.azp !== process.env.PW_OIDC_CLIENT_ID) throw fail('The ID token was issued to another client (azp).', 401, 'azp');
+  if ((payload.azp !== undefined || (Array.isArray(payload.aud) && payload.aud.length > 1)) && payload.azp !== process.env.PW_OIDC_CLIENT_ID) throw fail('The ID token was issued to another client (azp).', 401, 'azp');
   return payload;
 }
 
@@ -284,6 +323,12 @@ export async function samlAcs(req, samlResponse) {
   const confirmations = kids(kids(a, 'Subject')[0], 'SubjectConfirmation');
   const bearer = confirmations.filter(c => c?.$?.Method === 'urn:oasis:names:tc:SAML:2.0:cm:bearer');
   if (!bearer.length || !bearer.every(c => kids(c, 'SubjectConfirmationData').every(cd => cd?.$?.Recipient === ACS(req)))) throw fail('The SAML assertion is for another address (Recipient).', 401, 'recipient');
+  // the request this answers must be named inside the SIGNED assertion: the Response's InResponseTo is not signed, so
+  // an assertion with none of its own (IdP-initiated) could be wrapped to answer anyone's request
+  if (!profile.inResponseTo || !bearer.every(c => kids(c, 'SubjectConfirmationData').every(cd => cd?.$?.InResponseTo === profile.inResponseTo))) throw fail('The SAML assertion does not answer a sign-in from this server.', 401, 'in_response_to');
+  const issuer = /** @type {any} */ (profile).issuer;
+  if (!issuer || issuer !== process.env.PW_SAML_IDP_ISSUER) throw fail('The SAML assertion is from another identity provider.', 401, 'issuer');
+  if (!profile.nameID) throw fail('The SAML assertion has no NameID.', 401, 'subject');
   // each assertion once, on every server: a lease that never comes back while the assertion could still be valid
   const once = await store().lease(`saml-assertion:${crypto.createHash('sha256').update(String(a.$.ID)).digest('hex')}`, rand(8), 24 * 3600000);
   if (!once) throw fail('This SAML response was used already.', 401, 'replay');
@@ -293,9 +338,9 @@ export async function samlAcs(req, samlResponse) {
   const attr = (n) => { const v = /** @type {any} */ (profile)[n] ?? profile.attributes?.[n]; return Array.isArray(v) ? v : v == null ? [] : [v]; };
   const emailAttr = process.env.PW_SAML_EMAIL_ATTR;
   const email = (emailAttr ? attr(emailAttr)[0] : attr('email')[0] || attr('http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress')[0] || attr('mail')[0])
-    || (/emailAddress$/.test(profile.nameIDFormat || '') || /@/.test(profile.nameID || '') ? profile.nameID : null);
+    || (/:nameid-format:emailAddress$/.test(profile.nameIDFormat || '') ? profile.nameID : null); // a NameID is an email only when it says so
   if (!email) throw fail('The SAML response has no email for this account.', 401, 'email');
-  const identity = mapIdentity(String(email), attr(process.env.PW_SAML_GROUPS_ATTR || 'groups'));
+  const identity = mapIdentity(String(email), attr(process.env.PW_SAML_GROUPS_ATTR || 'groups'), { issuer, subject: `${profile.nameIDFormat || ''}|${profile.nameID}` });
   const handle = rand(24);
   await store().put('tokens', `samlh:${handle}`, JSON.stringify({ id: `samlh:${handle}`, rid, identity, expires: Date.now() + 120000 }));
   return `${publicBase(req)}/api/auth/saml/finish?h=${encodeURIComponent(handle)}`;

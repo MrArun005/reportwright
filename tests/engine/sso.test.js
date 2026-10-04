@@ -82,14 +82,14 @@ describe('OpenID Connect', () => {
   });
 
   it('signs in, makes the account with the mapped role and groups, and goes on to next', async () => {
-    const { res } = await oidcSignIn({ user: { email: 'Olga@Example.com', groups: ['pw-design', 'finance', 'bad/group'] } });
+    const { res } = await oidcSignIn({ user: { sub: 'olga', email: 'Olga@Example.com', groups: ['pw-design', 'finance', 'bad/group'] } });
     expect(res.status).toBe(303);
     expect(res.headers.get('location')).toBe(`${BASE}/viewer/sales`);
     expect(await signedInAs(res)).toBe('olga@example.com');
     const u = await users.getUser('olga@example.com');
-    expect(u).toMatchObject({ role: 'designer', groups: ['finance', 'pw-design'], sso: 'oidc', passwordHash: null });
+    expect(u).toMatchObject({ role: 'designer', groups: ['finance', 'pw-design'], sso: { via: 'oidc', issuer: oidc.issuer, subject: 'olga' }, passwordHash: null });
     // the IdP is the source of truth: the next sign-in updates role and groups
-    const again = await oidcSignIn({ user: { email: 'olga@example.com', groups: ['pw-admins'] } });
+    const again = await oidcSignIn({ user: { sub: 'olga', email: 'olga@example.com', groups: ['pw-admins'] } });
     expect(await signedInAs(again.res)).toBe('olga@example.com');
     expect(await users.getUser('olga@example.com')).toMatchObject({ role: 'admin', groups: ['pw-admins'] });
     // an SSO account has no password: password sign-in cannot open it
@@ -176,7 +176,7 @@ describe('SAML 2.0', () => {
     const r = await samlComplete(respond(rid, signed({ email: 'sam@example.com', inResponseTo: rid, groups: ['pw-admins', 'ops'] })), cookie);
     expect(r.email).toBe('sam@example.com');
     expect(r.loc).toBe(`${BASE}/viewer/sales`);
-    expect(await users.getUser('sam@example.com')).toMatchObject({ role: 'admin', groups: ['ops', 'pw-admins'], sso: 'saml' });
+    expect(await users.getUser('sam@example.com')).toMatchObject({ role: 'admin', groups: ['ops', 'pw-admins'], sso: { via: 'saml', issuer: IDP } });
   });
 
   const refusedSaml = async (build, why, reason) => {
@@ -262,6 +262,76 @@ describe('SAML 2.0', () => {
     expect(await guard(new Request(ACS, { method: 'POST', headers: { origin: 'https://idp.example.com' } }))).toBe(null);
     expect((await guard(new Request(`${BASE}/api/auth/login`, { method: 'POST', headers: { origin: 'https://idp.example.com' } })))?.status).toBe(403);
     expect((await guard(new Request(`${BASE}/api/auth/saml/acs/x`, { method: 'POST', headers: { origin: 'https://idp.example.com' } })))?.status).toBe(403);
+  });
+});
+
+describe('review fixes: identities, linking, binding', () => {
+  it('an SSO sign-in never takes over an existing password account (an admin must allow it first)', async () => {
+    await users.createUser({ email: 'root@example.com', role: 'admin', password: 'root password 123' });
+    const { res } = await oidcSignIn({ user: { sub: 'r1', email: 'root@example.com', groups: [] } });
+    expect(res.headers.get('location')).toBe(`${BASE}/login?sso_error=linked`);
+    expect(await users.getUser('root@example.com')).toMatchObject({ role: 'admin' }); // not demoted
+    // SAML too
+    const { cookie, rid } = await samlBegin();
+    const r = await samlComplete(respond(rid, signed({ email: 'root@example.com', inResponseTo: rid })), cookie);
+    expect(r.email).toBe(null);
+    // an admin allows it: the next sign-in binds this IdP identity to the account, and keeps the password
+    await users.updateUser('root@example.com', { allowSso: true });
+    const ok = await oidcSignIn({ user: { sub: 'r1', email: 'root@example.com', groups: ['pw-admins'] } });
+    expect(await signedInAs(ok.res)).toBe('root@example.com');
+    expect((await users.getUser('root@example.com')).sso).toMatchObject({ via: 'oidc', issuer: oidc.issuer, subject: 'r1' });
+  });
+
+  it('an account is bound to one IdP identity (issuer, subject): another subject with the same email is refused', async () => {
+    const first = await oidcSignIn({ user: { sub: 'alice-1', email: 'alice@example.com' } });
+    expect(await signedInAs(first.res)).toBe('alice@example.com');
+    const other = await oidcSignIn({ user: { sub: 'someone-else', email: 'alice@example.com' } });
+    expect(other.res.headers.get('location')).toBe(`${BASE}/login?sso_error=linked`);
+    // the SAML IdP asserting the same email is another identity too
+    const { cookie, rid } = await samlBegin();
+    expect((await samlComplete(respond(rid, signed({ email: 'alice@example.com', inResponseTo: rid })), cookie)).email).toBe(null);
+    // the same subject with a new email at the IdP is still the same account
+    const moved = await oidcSignIn({ user: { sub: 'alice-1', email: 'alice.new@example.com' } });
+    expect(await signedInAs(moved.res)).toBe('alice@example.com');
+  });
+
+  it('an assertion with no InResponseTo of its own cannot be bound to someone else\'s request', async () => {
+    const attacker = await samlBegin();
+    // a captured IdP-initiated assertion for the boss, wrapped in a Response that names the attacker's request
+    const xml = respond(attacker.rid, signed({ email: 'boss@example.com', groups: ['pw-admins'] }));
+    expect((await samlComplete(xml, attacker.cookie)).email).toBe(null);
+    expect(await users.getUser('boss@example.com')).toBe(null);
+  });
+
+  it('a NameID is the email only when its format says so; non-ASCII emails are refused', async () => {
+    const { cookie, rid } = await samlBegin();
+    const xml = respond(rid, signAssertion(assertionXml({ issuer: IDP, audience: SP, recipient: ACS, inResponseTo: rid, email: 'x', rawEmail: 'pat@example.com' }).replace(/<saml:Attribute Name="email">.*?<\/saml:Attribute>/, '').replace('urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress', 'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent'), idp.key, idp.cert));
+    expect((await samlComplete(xml, cookie)).email).toBe(null);
+    await users.createUser({ email: 'kate@example.com', role: 'viewer', password: 'kate password 1' });
+    const kelvin = await oidcSignIn({ user: { sub: 'k1', email: 'Kate@example.com' } });
+    expect(kelvin.res.headers.get('location')).toMatch(/sso_error=/);
+    expect(() => users.normEmail('Kate@example.com')).toThrow();
+  });
+
+  it('PW_SSO_ALLOWED_DOMAINS limits who may sign in', async () => {
+    process.env.PW_SSO_ALLOWED_DOMAINS = 'example.com, corp.example';
+    try {
+      const out = await oidcSignIn({ user: { sub: 'o1', email: 'outsider@gmail.com' } });
+      expect(out.res.headers.get('location')).toBe(`${BASE}/login?sso_error=domain`);
+      expect(await signedInAs((await oidcSignIn({ user: { sub: 'c1', email: 'carl@corp.example' } })).res)).toBe('carl@corp.example');
+    } finally { delete process.env.PW_SSO_ALLOWED_DOMAINS; }
+  });
+
+  it('refuses an azp that is not this client, even with one audience', async () => {
+    const { res } = await oidcSignIn({ user: { sub: 'z1', email: 'zed@example.com' }, tamper: { azp: 'another-client' } });
+    expect(res.headers.get('location')).toBe(`${BASE}/login?sso_error=azp`);
+  });
+
+  it('starting SAML sign-ins is rate-limited per address', async () => {
+    let last;
+    for (let i = 0; i < 70; i++) last = await routes.samlLogin(new Request(`${BASE}/api/auth/saml/login`, { headers: { 'x-forwarded-for': '198.51.100.7' } }));
+    expect(last.status).toBe(429);
+    expect((await routes.samlLogin(new Request(`${BASE}/api/auth/saml/login`, { headers: { 'x-forwarded-for': '198.51.100.8' } }))).status).toBe(302);
   });
 });
 

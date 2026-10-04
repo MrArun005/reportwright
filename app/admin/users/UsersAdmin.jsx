@@ -125,6 +125,7 @@ export default function UsersAdmin({ lang }) {
                       <button type="button" className="btn sm" onClick={() => act(() => call(one(u.email), 'PATCH', { disabled: !u.disabled }), T(u.disabled ? 'isEnabled' : 'isDisabled', { email: u.email }))}>
                         {u.disabled ? T('enable') : T('disable')}
                       </button>
+                      {!u.sso && <button type="button" className="btn sm" title={T('allowSsoHint')} onClick={() => act(() => call(one(u.email), 'PATCH', { allowSso: !u.allowSso }), T(u.allowSso ? 'ssoNotAllowed' : 'ssoAllowed', { email: u.email }))}>{u.allowSso ? T('stopSso') : T('allowSso')}</button>}
                       <button type="button" className="btn sm danger" onClick={() => remove(u)} aria-label={T('deleteUser', { email: u.email })}>{T('delete')}</button>
                     </div>
                   )}

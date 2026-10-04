@@ -174,13 +174,14 @@ With accounts on, each report has a level for each user: `view` (open, run, expo
 | Setting | |
 |---|---|
 | `PW_OIDC_ISSUER`, `PW_OIDC_CLIENT_ID`, `PW_OIDC_CLIENT_SECRET` | OpenID Connect (authorization code + PKCE). Register `https://<PW_BASE_URL>/api/auth/oidc/callback` as the redirect URI. `PW_OIDC_SCOPES` (default `openid email profile`), `PW_OIDC_GROUPS_CLAIM` (default `groups`), `PW_OIDC_NAME` (button label), `PW_OIDC_TRUST_EMAIL=1` to accept an email without `email_verified` |
-| `PW_SAML_ENTRY_POINT`, `PW_SAML_IDP_CERT` (PEM or base64, or `PW_SAML_IDP_CERT_FILE`), `PW_SAML_IDP_ISSUER` | SAML 2.0 (HTTP-Redirect request, HTTP-POST response, signed assertions required). SP metadata: `/api/auth/saml/metadata`; ACS: `/api/auth/saml/acs`. `PW_SAML_ISSUER` (SP entity id), `PW_SAML_EMAIL_ATTR`, `PW_SAML_GROUPS_ATTR` (default `groups`), `PW_SAML_NAME` |
+| `PW_SAML_ENTRY_POINT`, `PW_SAML_IDP_CERT` (PEM or base64, or `PW_SAML_IDP_CERT_FILE`), `PW_SAML_IDP_ISSUER` (all three required) | SAML 2.0 (HTTP-Redirect request, HTTP-POST response, signed assertions required). SP metadata: `/api/auth/saml/metadata`; ACS: `/api/auth/saml/acs`. `PW_SAML_ISSUER` (SP entity id), `PW_SAML_EMAIL_ATTR`, `PW_SAML_GROUPS_ATTR` (default `groups`), `PW_SAML_NAME` |
 | `PW_SSO_ROLE_MAP` | `idp-admins=admin,idp-designers=designer`: an IdP group or role value → Pagewright role (the highest wins) |
 | `PW_SSO_DEFAULT_ROLE` | Role without a mapped value: `viewer` (default), `designer`, `admin`, or `none` to refuse the sign-in |
 | `PW_PASSWORD_LOGIN=off` | No password sign-in while SSO is set up |
+| `PW_SSO_ALLOWED_DOMAINS` | `acme.com,acme.co.uk`: only these email domains may sign in with SSO |
 | `PW_BASE_URL` | Set it: the redirect URI, ACS and audience come from it |
 
-Accounts are made on first sign-in and their role and groups follow the IdP at every sign-in. Every valid group name the IdP sends becomes a group for permissions.
+An account made by single sign-on is bound to the IdP identity (OIDC issuer and `sub`; SAML issuer and NameID), not to the email: the same identity is the same account even if its email changes, and another identity with the same email is refused. SSO never takes over an existing password account by itself: an admin first presses **Allow SSO** on the user (`PATCH /api/users/<email> { allowSso: true }`), and the next single sign-on with that email binds it (the password stays). Emails must be ASCII. Accounts are made on first sign-in and their role and groups follow the IdP at every sign-in. Every valid group name the IdP sends becomes a group for permissions.
 
 
 ## Viewer (embedding)

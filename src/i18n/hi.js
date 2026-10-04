@@ -209,4 +209,11 @@ export default {
   signInWith: "{name} से साइन इन करें",
   orWithPassword: "या पासवर्ड से",
   noSignInMethod: "इस सर्वर पर साइन इन का कोई तरीका सेट नहीं है।",
+
+  /* ---- enterprise: SSO account linking ---- */
+  allowSso: "SSO की अनुमति दें",
+  stopSso: "SSO लिंक रद्द करें",
+  allowSsoHint: "इस ईमेल से अगला सिंगल साइन-ऑन इस खाते को ले सकेगा (पासवर्ड बना रहेगा)",
+  ssoAllowed: "{email} अगली बार साइन इन पर सिंगल साइन-ऑन से जुड़ सकता है।",
+  ssoNotAllowed: "{email} अब सिंगल साइन-ऑन से नहीं जुड़ सकता।",
 };

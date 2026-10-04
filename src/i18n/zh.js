@@ -209,4 +209,11 @@ export default {
   signInWith: "使用 {name} 登录",
   orWithPassword: "或使用密码",
   noSignInMethod: "此服务器未设置任何登录方式。",
+
+  /* ---- enterprise: SSO account linking ---- */
+  allowSso: "允许 SSO",
+  stopSso: "取消 SSO 关联",
+  allowSsoHint: "使用此邮箱的下一次单点登录将接管此账户（密码保留）",
+  ssoAllowed: "{email} 可在下次登录时关联单点登录。",
+  ssoNotAllowed: "{email} 不再能关联单点登录。",
 };

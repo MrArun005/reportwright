@@ -209,4 +209,11 @@ export default {
   signInWith: "Sign in with {name}",
   orWithPassword: "or with a password",
   noSignInMethod: "No way to sign in is set up on this server.",
+
+  /* ---- enterprise: SSO account linking ---- */
+  allowSso: "Allow SSO",
+  stopSso: "Cancel SSO link",
+  allowSsoHint: "Lets the next single sign-on with this email take over this account (it keeps its password)",
+  ssoAllowed: "{email} can now be linked to single sign-on at the next sign-in.",
+  ssoNotAllowed: "{email} can no longer be linked to single sign-on.",
 };
