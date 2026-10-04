@@ -120,3 +120,45 @@ describe('wide tables paginate sideways (horizontal pagination)', () => {
     expect(texts(out.pages[3])).toContain('380'); // the total column, last set: 0+2+…+38
   });
 });
+
+describe('recursive hierarchies', () => {
+  // CEO(1) → Ana(2), Bo(3); Ana → Cy(4), Di(5); Cy → Ed(6); Bo → Fay(7); Gil(8) has a parent that does not exist → a root
+  const org = { rows: [
+    { id: 1, boss: null, name: 'CEO', cost: 100 }, { id: 2, boss: 1, name: 'Ana', cost: 50 }, { id: 3, boss: 1, name: 'Bo', cost: 40 },
+    { id: 4, boss: 2, name: 'Cy', cost: 20 }, { id: 5, boss: 2, name: 'Di', cost: 15 }, { id: 6, boss: 4, name: 'Ed', cost: 5 },
+    { id: 7, boss: 3, name: 'Fay', cost: 10 }, { id: 8, boss: 99, name: 'Gil', cost: 1 },
+  ] };
+  const orgTable = (g = {}) => table({ columns: [{ width: 160 }, { width: 60 }, { width: 60 }, { width: 60 }],
+    groups: [{ name: 'Org', expr: '=Fields.id', parent: '=Fields.boss', indent: 12, header: [{ height: 16, cells: [
+      { value: '=Fields.name' }, { value: '=Level()' }, { value: '=Sum(Fields.cost)' }, { value: '=Sum(Fields.cost, "Org", "Recursive")' }] }], ...g }] });
+  const rowsOf = (out) => out.regions[0].rows.map(r => r.cells.map(c => c.value));
+
+  it('lists the tree depth first with Level(), own and Recursive totals', async () => {
+    const out = await render(report([orgTable()], { data: org }), { fontStore });
+    expect(rowsOf(out)).toEqual([
+      ['CEO', 0, 100, 240], ['Ana', 1, 50, 90], ['Cy', 2, 20, 25], ['Ed', 3, 5, 5], ['Di', 2, 15, 15], ['Bo', 1, 40, 50], ['Fay', 2, 10, 10], ['Gil', 0, 1, 1],
+    ]);
+    expect(out.warnings).toEqual([]);
+  });
+  it('indents the first cell by level', async () => {
+    const pg = (await render(report([orgTable()], { data: org }), { fontStore })).pages[0];
+    const x = (s) => textAt(pg, s)[0].lines[0].x;
+    expect(x('Ana') - x('CEO')).toBeCloseTo(12, 5);
+    expect(x('Ed') - x('CEO')).toBeCloseTo(36, 5);
+  });
+  it('breaks cycles and lists each node once', async () => {
+    const rows = [{ id: 1, boss: 2, name: 'A', cost: 1 }, { id: 2, boss: 1, name: 'B', cost: 2 }, { id: 3, boss: null, name: 'C', cost: 3 }];
+    const out = await render(report([orgTable()], { data: { rows } }), { fontStore });
+    expect(rowsOf(out).map(r => r[0])).toEqual(['C', 'A', 'B']);
+    expect(out.warnings.join()).toMatch(/no root/);
+  });
+  it('drill-down by level: expandLevels opens the first levels, toggles open the rest', async () => {
+    const def = report([orgTable({ collapsible: true, expandLevels: 1 })], { data: org });
+    const out = await render(def, { fontStore });
+    expect(rowsOf(out).map(r => r[0])).toEqual(['▼ CEO', '▶ Ana', '▶ Bo', '▼ Gil'].map(s => s.slice(2)));
+    expect(texts(out.pages[0]).filter(t => /^[▼▶]/.test(t))).toEqual(['▼ CEO', '▶ Ana', '▶ Bo', '▼ Gil']);
+    const key = out.pages[0].items.find(i => i.t === 'link' && i.action.key.endsWith('/1/2')).action.key;
+    const more = await render(def, { fontStore, state: { toggles: { [key]: true } } });
+    expect(rowsOf(more).map(r => r[0])).toEqual(['CEO', 'Ana', 'Cy', 'Di', 'Bo', 'Gil']);
+  });
+});

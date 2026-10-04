@@ -363,7 +363,9 @@ register('table', {
         let cw = 0;
         for (let k = 0; k < span; k++) cw += cols[ci + k].width;
         const cctx = cell.ctx || ctx; // a pivot value cell carries its own scope
-        const st = resolveStyle([rst, lc.named?.[cell.styleName], cell.style], cctx);
+        let st = resolveStyle([rst, lc.named?.[cell.styleName], cell.style], cctx);
+        // a recursive group's indent: the first cell's left padding grows by level
+        if (ctx.indent > 0 && !cells.length && !started.length) { const pd = padding(st); st = { ...st, padding: [pd[0], pd[1], pd[2], pd[3] + ctx.indent] }; }
         const r = 'raw' in cell ? { v: cell.raw } : evalSafe(cell.value ?? '', cctx, lc, `${item.name || 'Table'} cell`);
         let text = textOf(r.v, st, cctx);
         const plain = text;
@@ -535,32 +537,77 @@ register('table', {
           return 0;
         });
       }
-      buckets.forEach((bk, bi) => {
-        if (lc.rowBudget?.cut) return;
+      const gname = g.name || `Group${level + 1}`;
+      // a recursive group (parent: the parent's id): instances form a tree, shown depth first
+      let roots = buckets, kids = null;
+      const recOf = new Map();
+      if (g.parent) {
+        const byText = new Map(buckets.map(b => [b.text, b]));
+        kids = new Map(); roots = [];
+        for (const b of buckets) {
+          const pk = evalSafe(g.parent, { ...ctx, fields: b.rows[0], aggRows: b.rows, aggIndex: undefined }, lc, `${item.name} group parent`).v;
+          const pr = pk == null || pk === '' ? null : byText.get(pk instanceof Date ? String(pk.getTime()) : String(pk));
+          if (!pr || pr === b) roots.push(b);
+          else { let k = kids.get(pr); if (!k) kids.set(pr, k = []); k.push(b); }
+        }
+        // each node's rows and its descendants' (Recursive aggregates); bounded depth, each node once
+        const seen = new Set();
+        const rec = (b, d) => {
+          seen.add(b);
+          let all = b.rows;
+          for (const c of kids.get(b) || []) if (!seen.has(c) && d < MAX_TREE_DEPTH) all = all.concat(rec(c, d + 1));
+          recOf.set(b, all);
+          return all;
+        };
+        for (const r of roots) rec(r, 0);
+        for (const b of buckets) if (!recOf.has(b)) rec(b, 0);
+      }
+      const shown = new Set();
+      const node = (bk, bi, sibs, depth, parentPath) => {
+        if (lc.rowBudget?.cut || shown.has(bk)) return;
+        shown.add(bk);
         // number: GroupIndex(); prevRows: Previous() in a group header or footer
-        const sc = { rows: bk.rows, index: -1, run: [], number: bi + 1, prevRows: bi > 0 ? buckets[bi - 1].rows : null };
-        const gname = g.name || `Group${level + 1}`;
+        const sc = { rows: bk.rows, index: -1, run: [], number: bi + 1, prevRows: bi > 0 ? sibs[bi - 1].rows : null, ...(kids ? { level: depth, recRows: recOf.get(bk) } : {}) };
         const gctx = { ...ctx, fields: bk.rows[0], aggRows: bk.rows, aggIndex: undefined, scopes: { ...ctx.scopes, [gname]: sc }, groupKey: bk.key, group: sc };
-        const path = `${keyPath}/${bk.text}`;
+        if (kids) { gctx.level = depth; if (g.indent) gctx.indent = (ctx.indent || 0) + depth * Number(g.indent); }
+        const path = `${parentPath}/${bk.text}`;
         const tkey = `${item.name}|${level}|${path}`;
-        const open = !g.collapsible ? true : (lc.state?.toggles?.[tkey] ?? !g.initiallyCollapsed);
+        const dflt = kids && g.expandLevels != null ? depth < Number(g.expandLevels) : !g.initiallyCollapsed;
+        const open = !g.collapsible ? true : (lc.state?.toggles?.[tkey] ?? dflt);
         const start = units.length;
         const hu = (g.header || []).map((r, ri) => layRow(r, gctx, 'groupHeader', { level, ...(ri === 0 && g.collapsible ? { toggle: { key: tkey, open } } : {}) }));
         endBand();
         const before = units.length;
-        if (open) emit(level + 1, bk.rows, gctx, [...chain, sc], path);
-        else for (const s of [...chain, sc]) { s.index += bk.rows.length; for (const r of bk.rows) s.run.push(r); }
+        const ch = kids?.get(bk) || [];
+        if (open) {
+          emit(level + 1, bk.rows, gctx, [...chain, sc], path);
+          if (ch.length && depth + 1 >= MAX_TREE_DEPTH) lc.warn(`${item.name}: the group "${gname}" is more than ${MAX_TREE_DEPTH} levels deep; deeper rows are listed at the top level`);
+          else ch.forEach((c, ci) => node(c, ci, ch, depth + 1, path));
+        } else {
+          const rs = recOf.get(bk) || bk.rows;
+          for (const s of [...chain, sc]) { s.index += rs.length; for (const r of rs) s.run.push(r); }
+          for (const c of ch) markShown(c);
+        }
         // keep a group header with the group's content, never with the next group
         if (hu.length && units.length > before) hu[hu.length - 1].keepWithNext = true;
         const fu = (g.footer || []).map(r => layRow(r, gctx, 'groupFooter', { level }));
         endBand();
         if (fu.length && open) fu[0].keepWithPrevious = true;
         if (units.length > start) {
-          if (g.pageBreak === 'between' && bi > 0) units[start].breakBefore = true;
-          if (g.pageBreak === 'after' && bi < buckets.length - 1) units[units.length - 1].breakAfter = true;
+          if ((g.pageBreak === 'between' || g.newSection) && bi > 0) units[start].breakBefore = true;
+          if (g.newSection) units[start].sectionStart = true;
+          if (g.pageBreak === 'after' && bi < sibs.length - 1) units[units.length - 1].breakAfter = true;
           if (g.keepTogether) { const id = `${item.name}:g${level}:${path}:${lc.nextId()}`; for (let k = start; k < units.length; k++) units[k].block ||= id; }
         }
-      });
+      };
+      // a collapsed node hides its subtree: those nodes count as shown
+      const markShown = (b) => { if (shown.has(b)) return; shown.add(b); for (const c of kids?.get(b) || []) markShown(c); };
+      roots.forEach((bk, bi) => node(bk, bi, roots, 0, keyPath));
+      if (kids) {
+        // nodes in a cycle (A → B → A) or cut off by the depth limit: listed at the top level, once
+        const rest = buckets.filter(b => !shown.has(b));
+        if (rest.length) { lc.warn(`${item.name}: ${rest.length} rows of the group "${gname}" have no root (a cycle or too deep); they are listed at the top level`); rest.forEach((bk, bi) => node(bk, bi, rest, 0, keyPath)); }
+      }
     };
     if (item.__body) {
       // rows already built (a pivot): each with its own scope
@@ -596,6 +643,7 @@ register('table', {
 });
 
 const cell_bookmark = (c) => c && c.bookmark;
+const MAX_TREE_DEPTH = 64;
 
 /** Round a number for data export to the precision its format shows (percent keeps 2 more places). */
 function roundFor(v, fmt) {
