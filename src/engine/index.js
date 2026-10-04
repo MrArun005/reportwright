@@ -246,13 +246,14 @@ export async function render(def, opts = {}) {
   // Every image on every page passes the caps here, whatever drew it: background images (a style, painted
   // without the layout context, maybe from a field or an embedded name) and subreports' images included.
   // Images already counted are in imageBudget.seen, so they are not counted twice.
-  for (const pg of pages) {
-    pg.items = pg.items.filter(it => {
-      if (it.t !== 'image') return true;
-      it.src = resolveImageSrc(it.src, 'Background image', { images: def.images || {}, budget: imageBudget, warn });
-      return !!it.src;
-    });
-  }
+  // A form field's background is in its `draw` items, which the SVG, HTML and viewer draw: check those too.
+  const capImages = (items) => items.filter(it => {
+    if (it.t === 'field') { it.draw = capImages(it.draw); return true; }
+    if (it.t !== 'image') return true;
+    it.src = resolveImageSrc(it.src, 'Background image', { images: def.images || {}, budget: imageBudget, warn });
+    return !!it.src;
+  });
+  for (const pg of pages) pg.items = capImages(pg.items);
 
   return {
     width: page.width, height, pages, warnings, bookmarks, regions, name: def.name || '', partial: cutRows(),
