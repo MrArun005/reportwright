@@ -229,14 +229,14 @@ describe('SAML 2.0', () => {
     await refusedSaml((rid) => respond(rid, signed({ email: eve, inResponseTo: rid, recipient: 'https://other-sp.example.com/acs' })), 'recipient', /Recipient/);
     await refusedSaml((rid) => respond(rid, signed({ email: eve, inResponseTo: rid }), { destination: 'https://other-sp.example.com/acs' }), 'destination', /Destination/);
     await refusedSaml((rid) => respond(rid, signed({ email: eve, inResponseTo: rid, method: 'urn:oasis:names:tc:SAML:2.0:cm:holder-of-key' })), 'method', /Recipient/);
-    await refusedSaml((rid) => respond(rid, signed({ email: eve, inResponseTo: rid, notBefore: Date.now() - 3600000, notOnOrAfter: Date.now() - 1800000 })), 'expired', /No valid subject confirmation/);
+    await refusedSaml((rid) => respond(rid, signed({ email: eve, inResponseTo: rid, notBefore: Date.now() - 3600000, notOnOrAfter: Date.now() - 1800000 })), 'expired', /No valid subject confirmation|expired/);
     await refusedSaml((rid) => respond(rid, signed({ email: eve, inResponseTo: rid, notBefore: Date.now() + 1800000, notOnOrAfter: Date.now() + 3600000 })), 'not yet', /not yet valid/);
   });
 
   it('answers only requests this server made, each once, in the browser that made it', async () => {
     // unknown request id, and IdP-initiated (no InResponseTo)
-    await refusedSaml(() => respond('_unknown', signed({ email: eve, inResponseTo: '_unknown' })), 'unknown request', /InResponseTo is not valid/);
-    await refusedSaml(() => respond(null, signed({ email: eve })), 'idp-initiated', /InResponseTo is missing/);
+    await refusedSaml(() => respond('_unknown', signed({ email: eve, inResponseTo: '_unknown' })), 'unknown request', /does not belong to this browser/); // the request is in the browser's signed cookie
+    await refusedSaml(() => respond(null, signed({ email: eve })), 'idp-initiated', /does not answer a sign-in from this server/);
     // replay: the same response twice
     const { cookie, rid } = await samlBegin();
     const xml = respond(rid, signed({ email: eve, inResponseTo: rid }));
@@ -358,6 +358,17 @@ describe('review fixes: identities, linking, binding', () => {
     expect(out.map(o => o.status).sort()).toEqual(['fulfilled', 'rejected']);
     const won = out[0].status === 'fulfilled' ? 'twin-a' : 'twin-b';
     expect((await users.getUser('twin@example.com')).sso.subject).toBe(won);
+  });
+
+  it('starting a SAML sign-in stores nothing on the server (the request is in the signed browser cookie)', async () => {
+    const { store } = await import('../../src/server/storage/index.js');
+    const before = (await store().ids('tokens')).length;
+    for (let i = 0; i < 20; i++) await routes.samlLogin(new Request(`${BASE}/api/auth/saml/login`, { headers: { 'x-forwarded-for': `203.0.113.${i}` } }));
+    expect((await store().ids('tokens')).length).toBe(before);
+    // and the binding still holds: a response for a request this browser did not start never signs in
+    const { cookie } = await samlBegin();
+    const other = await samlBegin();
+    expect((await samlComplete(respond(other.rid, signed({ email: 'bind@example.com', inResponseTo: other.rid })), cookie)).email).toBe(null);
   });
 
   it('starting SAML sign-ins is rate-limited per address', async () => {

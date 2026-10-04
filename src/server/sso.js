@@ -8,8 +8,8 @@
 // algorithms; never "none".
 //
 // SAML (PW_SAML_ENTRY_POINT, PW_SAML_IDP_CERT): @node-saml/node-saml checks the XML signature (signed assertions are
-// required), the audience and the time conditions, and InResponseTo against the requests this server made (kept in
-// storage, so any server can finish a sign-in). On top of that this module checks the Recipient and the Destination
+// required), the audience and the time conditions. The request this answers is in the signed pw_sso cookie of the
+// browser that began it (nothing is stored per start); InResponseTo must name it, in the signed assertion. On top of that this module checks the Recipient and the Destination
 // (the ACS URL), the bearer method, and uses each assertion ID once (a storage lease, so across servers too).
 // The IdP posts the response from its own site, so the browser sends no Lax cookie with it: the ACS keeps the result
 // under a one-time handle for 2 minutes and redirects to /api/auth/saml/finish, a top-level GET that carries the
@@ -263,19 +263,18 @@ async function idpCerts() {
   return pem || String(raw).split(',').map(s => s.replace(/\s+/g, '')).filter(Boolean);
 }
 
-/** node-saml's request-id cache, in storage: a sign-in can begin on one server and end on another. */
+// The AuthnRequest id is kept in the signed, HttpOnly, 10-minute pw_sso cookie of the browser that began the
+// sign-in, not on the server: an unauthenticated start writes nothing (no storage to flood). node-saml does not
+// check InResponseTo; samlAcs requires one in the Response and in every bearer SubjectConfirmationData of the signed
+// assertion, and samlFinish requires it to be the id in this browser's cookie.
 let swept = 0;
-/** Drop expired sign-in records (abandoned sign-ins), at most once a minute. */
+/** Drop expired sign-in handles (an ACS answer never finished), at most once a minute. */
 async function sweep() {
   if (Date.now() - swept < 60000) return;
   swept = Date.now();
   for (const r of await store().list('tokens')) { try { if (JSON.parse(r.text).expires < Date.now()) await store().remove('tokens', r.id); } catch { /* skip */ } }
 }
-const samlCache = {
-  async saveAsync(key, value) { await sweep().catch(() => {}); const createdAt = Date.now(); await store().put('tokens', `saml:${key}`, JSON.stringify({ id: `saml:${key}`, value, createdAt, expires: createdAt + 600000 })); return { value, createdAt }; },
-  async getAsync(key) { const t = await store().get('tokens', `saml:${key}`); const r = t ? JSON.parse(t) : null; return r && r.expires > Date.now() ? r.value : null; },
-  async removeAsync(key) { if (key) await store().remove('tokens', `saml:${key}`); return key; },
-};
+const noCache = { async saveAsync(key, value) { return { value, createdAt: Date.now() }; }, async getAsync() { return null; }, async removeAsync(key) { return key; } };
 
 /** @param {Request} req @param {string} [id] the AuthnRequest ID this server uses */
 async function samlFor(req, id) {
@@ -284,7 +283,7 @@ async function samlFor(req, id) {
     entryPoint: process.env.PW_SAML_ENTRY_POINT, idpCert: await idpCerts(), issuer: spEntity(req), callbackUrl: ACS(req), audience: spEntity(req),
     idpIssuer: process.env.PW_SAML_IDP_ISSUER || undefined,
     wantAssertionsSigned: true, wantAuthnResponseSigned: false, signatureAlgorithm: 'sha256',
-    validateInResponseTo: /** @type {any} */ ('always'), requestIdExpirationPeriodMs: 600000, cacheProvider: samlCache,
+    validateInResponseTo: /** @type {any} */ ('never'), cacheProvider: noCache, // see above: the browser's cookie holds the request
     acceptedClockSkewMs: 60000, maxAssertionAgeMs: 10 * 60000,
     identifierFormat: null, disableRequestedAuthnContext: true,
     ...(id ? { generateUniqueId: () => id } : {}),
@@ -344,6 +343,7 @@ export async function samlAcs(req, samlResponse) {
     || (/:nameid-format:emailAddress$/.test(profile.nameIDFormat || '') ? profile.nameID : null); // a NameID is an email only when it says so
   if (!email) throw fail('The SAML response has no email for this account.', 401, 'email');
   const identity = mapIdentity(String(email), attr(process.env.PW_SAML_GROUPS_ATTR || 'groups'), { issuer, subject: `${profile.nameIDFormat || ''}|${profile.nameID}` });
+  await sweep().catch(() => {});
   const handle = rand(24);
   await store().put('tokens', `samlh:${handle}`, JSON.stringify({ id: `samlh:${handle}`, rid, identity, expires: Date.now() + 120000 }));
   return `${publicBase(req)}/api/auth/saml/finish?h=${encodeURIComponent(handle)}`;
