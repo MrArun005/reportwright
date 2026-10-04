@@ -512,3 +512,26 @@ describe('round 4', () => {
     for (const ip of ['::7f00:1', '::ffff:0:7f00:1']) expect(isPrivate(ip), ip).toBe(true);
   });
 });
+
+describe('round 5', () => {
+  it('every engine call in the browser code passes a guarded fetch (the engine falls back to the global fetch)', () => {
+    const dirs = ['src/viewer', 'src/designer', 'src/worker', 'src/embed', 'src/home', 'src/theme'];
+    const files = dirs.flatMap(d => fs.existsSync(d) ? fs.readdirSync(d, { recursive: true }).map(f => path.join(d, String(f))) : []).filter(f => /\.(m?js|jsx)$/.test(f));
+    const bad = [];
+    for (const f of files) {
+      const lines = fs.readFileSync(f, 'utf8').split('\n');
+      lines.forEach((l, i) => {
+        if (!/\b(parameterOptions|loadSources|render)\(/.test(l) || /function |\.render\(|createRoot|^\s*\/\/|as render\(\) does/.test(l)) return;
+        // the options are on this line, or spread from an object built with fetch (the worker's opts)
+        if (!/fetch:\s*(reportFetch|recording)|\.\.\.opts/.test(l)) bad.push(`${f}:${i + 1}`);
+      });
+      if (lines.some(l => /\.\.\.opts/.test(l)) && !lines.some(l => /const opts = .*fetch: reportFetch/.test(l))) bad.push(`${f}: opts without reportFetch`);
+      if (/fetchImage: async \(src\) => \{ try \{ const r = await fetch\(/.test(lines.join('\n'))) bad.push(`${f}: fetchImage with the plain fetch`);
+    }
+    expect(bad).toEqual([]);
+  });
+  it('isPrivate covers NAT64 (one group too), local-use NAT64, 6to4 and Teredo', () => {
+    for (const ip of ['64:ff9b::1', '64:ff9b:1::7f00:1', '2002:7f00:1::', '2001:0:4136:e378::1']) expect(isPrivate(ip), ip).toBe(true);
+    expect(isPrivate('2606:4700:4700::1111')).toBe(false);
+  });
+});

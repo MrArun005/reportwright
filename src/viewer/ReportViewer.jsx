@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { renderReport, pdfBlob, usingWorker, origin, fetchReport, loadModelFonts, loadReportFonts } from './engineClient.js';
+import { reportFetch } from './dataFetch.js';
 import { ALL_FONT_KEYS } from '@/engine/text/fonts.js';
 import { exportBlob } from './exports.js';
 import { pageToSvg } from '@/exporters/svg.js';
@@ -173,7 +174,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   useEffect(() => {
     if (!(definition.parameters || []).some(p => p.options || p.optionsFrom)) return;
     const t = setTimeout(() => {
-      parameterOptions(definition, params, { baseUrl: origin(), reportId }).then(setOptions).catch(() => {});
+      parameterOptions(definition, params, { baseUrl: origin(), reportId, fetch: reportFetch(origin()) }).then(setOptions).catch(() => {});
     }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps

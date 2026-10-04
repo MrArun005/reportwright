@@ -20,19 +20,29 @@ const deadlineMs = () => Number(process.env.PW_FETCH_DEADLINE_MS) || 60000;
 const blocked = new net.BlockList(); // also matches IPv4-mapped IPv6 (::ffff:127.0.0.1)
 for (const [a, p] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12],
   ['192.0.0.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['224.0.0.0', 3]]) blocked.addSubnet(a, p, 'ipv4');
-for (const [a, p] of [['::', 96], ['::ffff:0:0:0', 96], ['fc00::', 7], ['fe80::', 10], ['fec0::', 10], ['ff00::', 8]]) blocked.addSubnet(a, p, 'ipv6');
+// ::/96 and ::ffff:0:0:0/96 carry IPv4; local-use NAT64, 6to4 and Teredo can reach anything behind a gateway that routes them
+for (const [a, p] of [['::', 96], ['::ffff:0:0:0', 96], ['64:ff9b:1::', 48], ['2002::', 16], ['2001::', 32], ['fc00::', 7], ['fe80::', 10], ['fec0::', 10], ['ff00::', 8]]) blocked.addSubnet(a, p, 'ipv6');
+
+/** The 8 groups of an IPv6 address. @param {string} ip */
+function expand6(ip) {
+  const [h, t = ''] = ip.split('::');
+  const a = h ? h.split(':') : [], b = t ? t.split(':') : [];
+  if (b.length && b[b.length - 1].includes('.')) { const q = b.pop().split('.').map(Number); b.push(((q[0] << 8) | q[1]).toString(16), ((q[2] << 8) | q[3]).toString(16)); }
+  return [...a, ...Array(8 - a.length - b.length).fill('0'), ...b].map(x => parseInt(x, 16) || 0);
+}
 
 /** True for loopback, private, link-local, shared, multicast and reserved addresses. */
 export function isPrivate(ip) {
   if (!net.isIPv6(ip)) return blocked.check(ip, 'ipv4');
-  // NAT64 (64:ff9b::/96) carries an IPv4 address in its last 32 bits
-  const m = /^64:ff9b::(?:([0-9a-f]{1,4}):([0-9a-f]{1,4})|(\d+\.\d+\.\d+\.\d+))$/i.exec(ip);
-  if (m) {
-    if (m[3]) return isPrivate(m[3]);
-    const hi = parseInt(m[1], 16), lo = parseInt(m[2], 16);
-    return isPrivate(`${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`);
+  // NAT64 (64:ff9b::/96) carries an IPv4 address in its last 32 bits (any spelling: BlockList normalises)
+  if (blocked.check(ip, 'ipv6')) return true;
+  const sl = new net.SocketAddress({ address: ip, family: 'ipv6' }).address; // canonical form
+  const nat = new net.BlockList(); nat.addSubnet('64:ff9b::', 96, 'ipv6');
+  if (nat.check(sl, 'ipv6')) {
+    const g = expand6(sl);
+    return isPrivate(`${g[6] >> 8}.${g[6] & 255}.${g[7] >> 8}.${g[7] & 255}`);
   }
-  return blocked.check(ip, 'ipv6');
+  return false;
 }
 
 /**

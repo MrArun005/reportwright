@@ -138,7 +138,8 @@ export async function pdfBlob(model, title) {
   const bytes = await exportPdf(model, store, {
     title,
     subset: subsetter,
-    fetchImage: async (src) => { try { const r = await fetch(src); return r.ok ? new Uint8Array(await r.arrayBuffer()) : null; } catch { return null; } },
+    // a report's image: a GET under the same rules as its data (no cookies to our other routes or to other sites)
+    fetchImage: async (src) => { try { const r = await reportFetch(origin())(src); return r.ok ? new Uint8Array(await r.arrayBuffer()) : null; } catch { return null; } },
   });
   return new Blob([bytes], { type: 'application/pdf' });
 }
