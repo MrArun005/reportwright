@@ -559,6 +559,17 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     fs.rmSync(path.resolve(path.dirname(path.dirname(bobs))), { recursive: true, force: true }); // outputs/users
   });
 
+  it('review: reading a report through the API is audited (definition and thumbnail)', async () => {
+    const { queryAudit } = await import('../../src/server/audit.js');
+    const before = (await queryAudit({ type: 'report.view', actor: 'user:carol@x.io', limit: 500 })).length;
+    expect((await R.one.GET(req('/api/reports/salary', { who: 'carol' }), P('salary'))).status).toBe(200);
+    expect((await thumbOf('carol', 'salary')).status).toBe(200);
+    const events = await queryAudit({ type: 'report.view', actor: 'user:carol@x.io', limit: 500 });
+    expect(events.length - before).toBe(2);
+    expect(events.slice(0, 2).map(e => e.detail?.via).sort()).toEqual(['api', 'thumbnail']);
+    expect(events[0].report).toBe('salary');
+  });
+
   it('review: a queued inline batch fails when its owner is now a viewer', async () => {
     const { createBatch, workOnce, getJob } = await import('../../src/server/jobs.js');
     const job = await createBatch({ template: def('Inline'), items: [{ parameters: {} }], output: { type: 'none' }, format: 'csv' }, undefined, await perms.userPrincipal('bob@x.io'));

@@ -12,8 +12,11 @@ const fail = (e) => Response.json({ error: e.message }, { status: e.status || 50
 
 export async function GET(req, { params }) {
   try {
-    const { id } = await params;
-    return Response.json(await readReportFor(await principalOf(req), safeId(id), 'view'));
+    const id = safeId((await params).id);
+    const p = await principalOf(req);
+    const def = await readReportFor(p, id, 'view');
+    await audit('report.view', { req, principal: p, report: id, detail: { via: 'api' } });
+    return Response.json(def);
   } catch (e) { return fail(e); }
 }
 
