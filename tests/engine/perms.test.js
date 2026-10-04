@@ -109,6 +109,13 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const json = async (res) => ({ status: res.status, body: await res.json().catch(() => null) });
+  // a thumbnail is drawn in the background: 202 and a placeholder first, the drawing once it is ready
+  const thumbOf = async (who, id) => {
+    const { thumbsIdle } = await import('../../src/server/thumbs.js');
+    let res = await thumb.GET(req(`/api/reports/${id}/thumb`, { who }), P(id));
+    for (let i = 0; res.status === 202 && i < 5; i++) { await thumbsIdle(); res = await thumb.GET(req(`/api/reports/${id}/thumb`, { who }), P(id)); }
+    return res;
+  };
 
   beforeAll(async () => {
     process.env.PW_STORAGE = setup();
@@ -195,7 +202,7 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     expect((await R.one.GET(req('/api/reports/salary', { who: 'carol' }), P('salary'))).status).toBe(200);
     const c = await pdf.GET(req('/api/reports/salary/pdf?format=csv', { who: 'carol' }), P('salary'));
     expect(c.status, await c.clone().text()).toBe(200);
-    expect((await thumb.GET(req('/api/reports/salary/thumb', { who: 'carol' }), P('salary'))).status).toBe(200);
+    expect((await thumbOf('carol', 'salary')).status).toBe(200);
     expect((await json(await sqlRoute.POST(req('/api/data/sql', { who: 'carol', method: 'POST', body: { report: 'salary', source: 'db' } })))).body).toEqual({ rows: [{ n: 1 }] });
     expect((await R.one.PUT(req('/api/reports/salary', { who: 'carol', method: 'PUT', body: def('x') }), P('salary'))).status).toBe(403);
     expect((await R.one.DELETE(req('/api/reports/salary', { who: 'carol', method: 'DELETE' }), P('salary'))).status).toBe(403);
@@ -400,14 +407,60 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
 
   it('review: a thumbnail never shows a subreport after access to it is gone', async () => {
     await perms.setReportAccess({ kind: 'service' }, 'overview', { grants: [] });
-    const first = await (await thumb.GET(req('/api/reports/overview/thumb', { who: 'carol' }), P('overview'))).text();
+    const first = await (await thumbOf('carol', 'overview')).text();
     expect(first).toContain('Salary');
     await users.updateUser('carol@x.io', { groups: [] });
     try {
-      const after = await (await thumb.GET(req('/api/reports/overview/thumb', { who: 'carol' }), P('overview'))).text();
+      const after = await (await thumbOf('carol', 'overview')).text();
       expect(after).not.toContain('Salary');
     } finally { await users.updateUser('carol@x.io', { groups: ['Finance'] }); }
   });
+
+  it('review: a thumbnail is checked on every request: revoked view is 404 even when one was drawn', async () => {
+    const { writeReport } = await import('../../src/server/reports.js');
+    await writeReport('pic', def('Picture'));
+    await perms.setReportAccess({ kind: 'service' }, 'pic', { inherit: false, grants: [{ to: 'user:dan@x.io', level: 'view' }] });
+    const res = await thumbOf('dan', 'pic');
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('Picture');
+    await perms.setReportAccess({ kind: 'service' }, 'pic', { grants: [] });
+    expect((await thumb.GET(req('/api/reports/pic/thumb', { who: 'dan' }), P('pic'))).status).toBe(404);
+    await R.one.DELETE(req('/api/reports/pic', { who: 'admin', method: 'DELETE' }), P('pic'));
+  });
+
+  it('review: a heavy thumbnail is drawn off the event loop, under the time limit, once for many saves', async () => {
+    const { writeReport } = await import('../../src/server/reports.js');
+    const { thumbsIdle } = await import('../../src/server/thumbs.js');
+    const rows = Array.from({ length: 3000 }, (_, i) => ({ id: i }));
+    // every row builds a 400 kB string: many seconds of work on one thread, stopped by the render time limit
+    const heavy = (n) => ({ ...def(`Heavy ${n}`, [{ type: 'table', name: 'T', dataSet: 'Rows', x: 0, y: 0, w: 500, h: 40, columns: [{ width: 250 }, { width: 250 }],
+      detail: [{ height: 14, cells: [{ value: '=Fields.id' }, { value: '=Len(Replace(Space(200000), " ", "ab"))' }] }] }]),
+      dataSources: [{ name: 'src', type: 'json', data: { rows } }], dataSets: [{ name: 'Rows', source: 'src', path: '$.rows' }] });
+    const id = `heavy-${kind}`; // the thumbnail cache is per process: one id per backend
+    const keep = process.env.PW_RENDER_TIMEOUT_MS;
+    process.env.PW_RENDER_TIMEOUT_MS = '1500';
+    try {
+      await writeReport(id, heavy(0));
+      const g = globalThis.__pwThumbJobs;
+      const before = g.seq;
+      let gap = 0, last = Date.now();
+      const tick = setInterval(() => { gap = Math.max(gap, Date.now() - last); last = Date.now(); }, 10);
+      const t0 = Date.now();
+      expect((await thumb.GET(req(`/api/reports/${id}/thumb`, { who: 'admin' }), P(id))).status).toBe(202);
+      expect(Date.now() - t0).toBeLessThan(1000); // the request does not wait for the drawing
+      // five saves while it draws: the newest waits, the ones in between are never drawn
+      for (let n = 1; n <= 5; n++) { await writeReport(id, heavy(n)); expect((await thumb.GET(req(`/api/reports/${id}/thumb`, { who: 'admin' }), P(id))).status).toBe(202); }
+      await thumbsIdle();
+      clearInterval(tick);
+      expect(gap).toBeLessThan(500); // the event loop kept turning
+      expect(g.seq - before).toBe(2); // the first version, then only the newest
+      const res = await thumb.GET(req(`/api/reports/${id}/thumb`, { who: 'admin' }), P(id));
+      expect(res.status).toBe(504); // the time limit, as for any server render
+    } finally {
+      if (keep === undefined) delete process.env.PW_RENDER_TIMEOUT_MS; else process.env.PW_RENDER_TIMEOUT_MS = keep;
+      await R.one.DELETE(req(`/api/reports/${id}`, { who: 'admin', method: 'DELETE' }), P(id));
+    }
+  }, 60000);
 
   it('review: a lost folder or a folder loop gives nothing, not the top-level grants', async () => {
     const { store } = await import('../../src/server/storage/index.js');

@@ -125,7 +125,11 @@ await pc.waitForURL(`${BASE}/viewer/${rid}`);
 await pc.locator('.vpage').first().waitFor({ timeout: 30000 });
 assert.equal(await pc.getByRole('link', { name: 'Edit in designer' }).count(), 0);
 assert.equal((await req(`/api/reports/${rid}`, { method: 'PUT', cookie: carol, body: { name: 'x' } })).status, 403);
-assert.equal((await req(`/api/reports/${rid}/thumb`, { cookie: carol })).status, 200);
+{ // drawn in the background: 202 with a placeholder, then the drawing
+  let r = await req(`/api/reports/${rid}/thumb`, { cookie: carol });
+  for (let i = 0; r.status === 202 && i < 30; i++) { await new Promise(res => setTimeout(res, 500)); r = await req(`/api/reports/${rid}/thumb`, { cookie: carol }); }
+  assert.equal(r.status, 200);
+}
 
 step('alice (edit) designs it but cannot share or delete it');
 const pal = await pageAs(alice);

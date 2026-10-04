@@ -131,6 +131,17 @@ function chain(s, folderId, names) {
   }
 }
 
+/**
+ * A fingerprint of everything that decides what a principal may view now: every folder and report grant, and the
+ * principal as stored now. Equal stamps, equal access (for caches of rendered output that pulls in other reports).
+ * @param {Principal} p
+ */
+export async function accessStamp(p) {
+  const [fl, rl] = await Promise.all([store().list('folders'), store().list('reportacl')]);
+  const all = [...fl.map(r => `f${r.id}\n${r.text}`), ...rl.map(r => `r${r.id}\n${r.text}`)].sort().join('\0');
+  return crypto.createHash('sha256').update(`${JSON.stringify(await asNow(p))}\0${all}`).digest('hex');
+}
+
 /** A principal's level on a report, from a snapshot. @param {Snapshot} s @param {Principal} p @param {string} id @returns {Level} */
 export function reportLevel(s, p, id) {
   if (isAll(p)) return 'manage';

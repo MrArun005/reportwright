@@ -13,12 +13,17 @@ export function ReportFonts() {
 export default function Thumb({ id, name, lang }) {
   const [state, setState] = useState({ svg: null, pages: 0, failed: false });
   useEffect(() => {
-    let live = true;
-    fetch(`/api/reports/${encodeURIComponent(id)}/thumb`)
-      .then(r => (r.ok ? r.text().then(svg => ({ svg, pages: Number(r.headers.get('x-pagewright-pages')) || 0 })) : Promise.reject()))
-      .then(s => live && setState({ ...s, failed: false }))
+    let live = true, timer = null;
+    // 202: the server is still drawing it (in the background); ask again, a little later each time
+    const load = (n) => fetch(`/api/reports/${encodeURIComponent(id)}/thumb`)
+      .then(r => {
+        if (r.status === 202 && n < 30) { timer = setTimeout(() => live && load(n + 1), Math.min(1000 * 1.5 ** n, 10000)); return null; }
+        return r.ok && r.status === 200 ? r.text().then(svg => ({ svg, pages: Number(r.headers.get('x-pagewright-pages')) || 0 })) : Promise.reject();
+      })
+      .then(s => s && live && setState({ ...s, failed: false }))
       .catch(() => live && setState({ svg: null, pages: 0, failed: true }));
-    return () => { live = false; };
+    load(0);
+    return () => { live = false; clearTimeout(timer); };
   }, [id]);
   return (
     <div className="thumb" aria-label={t(lang, 'firstPageOf', { name })} role="img">

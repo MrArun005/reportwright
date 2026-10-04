@@ -1,36 +1,23 @@
-// GET /api/reports/<id>/thumb — page 1 as SVG, with default parameters (view access). Cached per report content and
-// per viewer (a subreport in it may show for one user and not another).
-import crypto from 'node:crypto';
+// GET /api/reports/<id>/thumb — page 1 as SVG, with default parameters (view access, checked on every request).
+// Drawn in a worker thread (src/server/thumbs.js): until this version is drawn the answer is 202 with a blank
+// placeholder and Retry-After, and the browser asks again.
 import { safeId } from '@/server/reports.js';
-import { renderTo, baseUrl } from '@/server/renderer.js';
-import { pageToSvg, fontFaceCss, fontKeysOf } from '@/exporters/svg.js';
-import { ALL_FONT_KEYS } from '@/engine/text/fonts.js';
-import { principalOf, readReportFor, principalId } from '@/server/perms.js';
+import { baseUrl } from '@/server/renderer.js';
+import { principalOf, readReportFor } from '@/server/perms.js';
+import { thumbnail } from '@/server/thumbs.js';
 
 export const runtime = 'nodejs';
-const cache = (globalThis.__pwThumbs ||= new Map());
+const PLACEHOLDER = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 595 842"><rect width="595" height="842" fill="#fff"/></svg>';
 
 export async function GET(req, { params }) {
   try {
     const id = safeId((await params).id);
     const principal = await principalOf(req);
     const def = await readReportFor(principal, id, 'view');
-    const key = `${id}|${principalId(principal)}`;
-    const hash = crypto.createHash('sha256').update(JSON.stringify(def)).digest('hex');
-    // a subreport can show content whose access may change at any time: never cached (the check above runs every time)
-    const cacheable = !JSON.stringify(def).includes('"subreport"');
-    let hit = cacheable ? cache.get(key) : null;
-    if (!hit || hit.hash !== hash) {
-      const r = await renderTo(def, { format: 'json', baseUrl: baseUrl(req), principal });
-      const pg = r.model.pages[0];
-      // the home page declares the default fonts; a thumbnail declares the others it uses (fallbacks, uploads)
-      const extra = pg ? fontKeysOf({ pages: [pg] }).filter(k => !ALL_FONT_KEYS.includes(k)) : [];
-      const svg = pg ? pageToSvg(pg, r.model.width, r.model.height) : '';
-      hit = { hash, svg: extra.length ? svg.replace(/^(<svg[^>]*>)/, `$1<style>${fontFaceCss(extra)}</style>`) : svg, pages: r.model.pages.length };
-      if (cache.size > 2000) cache.clear();
-      if (cacheable) cache.set(key, hit);
-    }
-    return new Response(hit.svg, { headers: { 'content-type': 'image/svg+xml', 'cache-control': 'private, no-cache', 'x-pagewright-pages': String(hit.pages) } });
+    const t = await thumbnail(id, def, principal, baseUrl(req));
+    if (t.pending) return new Response(PLACEHOLDER, { status: 202, headers: { 'content-type': 'image/svg+xml', 'cache-control': 'no-store', 'retry-after': '1', 'x-pagewright-pending': '1' } });
+    if (t.error) return Response.json({ error: t.error }, { status: t.status || 500 });
+    return new Response(t.svg, { headers: { 'content-type': 'image/svg+xml', 'cache-control': 'private, no-cache', 'x-pagewright-pages': String(t.pages) } });
   } catch (e) {
     return Response.json({ error: e.message }, { status: e.status || (e.missingParameters ? 422 : 500) });
   }

@@ -1,0 +1,114 @@
+// @ts-check
+// Report thumbnails (page 1 as SVG, default parameters), rendered off the request and off the event loop: in one
+// worker thread (thumb-worker.mjs), one at a time, under the render time limit (the engine's budget, and the worker is
+// terminated a little after it). A request that finds no thumbnail for this exact version gets a placeholder (202) and
+// queues one render; saves in quick succession replace the queued render, so only the newest version is drawn.
+//
+// The cache is per report and per viewer (a subreport may show for one user and not another), keyed by a hash of the
+// definition; with a subreport in it, also by the permissions now (every folder and report grant, and the viewer as
+// stored now), so a revoke is never answered from an older drawing. The route checks view access on every request
+// before it looks here.
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { Worker, SHARE_ENV } from 'node:worker_threads';
+import { renderTo, renderTimeoutMs } from './renderer.js';
+import { pageToSvg, fontFaceCss, fontKeysOf } from '../exporters/svg.js';
+import { ALL_FONT_KEYS } from '../engine/text/fonts.js';
+import { principalId, accessStamp } from './perms.js';
+
+const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
+const g = /** @type {any} */ (globalThis).__pwThumbJobs ||= { cache: new Map(), queue: new Map(), running: null, busy: null, worker: null, noWorker: false, seq: 0 };
+
+/** Page 1 of a definition as SVG, with the fonts it needs beyond the defaults. Runs in the worker (or here as a fallback). */
+export async function drawThumb({ def, principal, base }) {
+  try {
+    const r = await renderTo(def, { format: 'json', baseUrl: base, principal });
+    const pg = r.model.pages[0];
+    // the home page declares the default fonts; a thumbnail declares the others it uses (fallbacks, uploads)
+    const extra = pg ? fontKeysOf({ pages: [pg] }).filter(k => !ALL_FONT_KEYS.includes(k)) : [];
+    const svg = pg ? pageToSvg(pg, r.model.width, r.model.height) : '';
+    return { svg: extra.length ? svg.replace(/^(<svg[^>]*>)/, `$1<style>${fontFaceCss(extra)}</style>`) : svg, pages: r.model.pages.length };
+  } catch (e) {
+    const err = /** @type {any} */ (e);
+    return { error: String(err.message), status: err.status || (err.missingParameters ? 422 : 500) };
+  }
+}
+
+/**
+ * The thumbnail of this version for this viewer: { svg, pages }, { error, status }, or { pending: true } (one render
+ * is queued). The caller has checked that the viewer may view the report.
+ * @param {string} id @param {any} def @param {import('./perms.js').Principal} principal @param {string} base
+ */
+export async function thumbnail(id, def, principal, base) {
+  const json = JSON.stringify(def);
+  const hash = sha(json.includes('"subreport"') ? `${json}\0${await accessStamp(principal)}` : json);
+  const slot = `${id}|${principalId(principal)}`;
+  const hit = g.cache.get(slot);
+  if (hit?.hash === hash) return hit;
+  if (!(g.running?.slot === slot && g.running.hash === hash)) {
+    g.queue.delete(slot); // a newer save replaces the render still waiting (and goes to the back)
+    g.queue.set(slot, { slot, hash, def, principal, base });
+    pump();
+  }
+  return { pending: true };
+}
+
+/** Resolves when no thumbnail is queued or rendering (tests). */
+export async function thumbsIdle() { while (g.busy) await g.busy; }
+
+function pump() {
+  if (g.busy || !g.queue.size) return;
+  const [slot, job] = g.queue.entries().next().value;
+  g.queue.delete(slot);
+  g.running = job;
+  g.busy = run(job).then((r) => {
+    if (g.cache.size > 2000) g.cache.clear();
+    g.cache.set(slot, { hash: job.hash, ...r });
+  }).finally(() => { g.running = null; g.busy = null; pump(); });
+}
+
+/** The worker script: next to this file in the sources (dev, `next start`, tests), else under the working directory. */
+function workerFile() {
+  const here = import.meta.url; // not new URL(…, import.meta.url): a bundler would copy the file without its imports
+  const list = [];
+  try { list.push(path.join(path.dirname(fileURLToPath(here)), 'thumb-worker.mjs')); } catch { /* not a file URL */ }
+  list.push(path.join(process.cwd(), 'src', 'server', 'thumb-worker.mjs'));
+  return list.find(f => fs.existsSync(f)) || null;
+}
+
+function worker() {
+  if (g.worker || g.noWorker) return g.worker;
+  const file = workerFile();
+  if (!file) { g.noWorker = true; console.warn('[pagewright] thumbnails render on the main thread: src/server/thumb-worker.mjs is not here'); return null; }
+  const w = new Worker(file, { env: SHARE_ENV });
+  w.unref();
+  w.on('error', (e) => { console.warn(`[pagewright] thumbnail worker: ${e.message}`); if (g.worker === w) g.worker = null; });
+  w.on('exit', () => { if (g.worker === w) g.worker = null; });
+  g.worker = w;
+  return w;
+}
+
+/** One render in the worker, with a hard stop a little after the render time limit. */
+function run(job) {
+  const w = worker();
+  if (!w) return drawThumb(job);
+  const n = ++g.seq;
+  return new Promise((resolve) => {
+    const detach = () => { clearTimeout(kill); w.off('message', onMsg); w.off('error', onErr); w.off('exit', onExit); };
+    const done = (r) => { detach(); resolve(r); };
+    const onMsg = (m) => {
+      if (m?.ready === false) { // the worker cannot load the server code here: draw on this thread from now on
+        detach(); g.noWorker = true; g.worker = null; w.terminate();
+        console.warn(`[pagewright] thumbnails render on the main thread: ${m.error}`);
+        drawThumb(job).then(resolve);
+      } else if (m?.n === n) done(m.result);
+    };
+    const onErr = (e) => done({ error: `The thumbnail could not be drawn: ${e.message}`, status: 500 });
+    const onExit = () => done({ error: 'The thumbnail could not be drawn.', status: 500 });
+    const kill = setTimeout(() => { g.worker = null; w.terminate(); done({ error: `The report took longer than ${Math.round(renderTimeoutMs() / 1000)} s to draw.`, status: 504 }); }, renderTimeoutMs() + 10000);
+    w.on('message', onMsg); w.on('error', onErr); w.on('exit', onExit);
+    w.postMessage({ n, def: job.def, principal: job.principal, base: job.base });
+  });
+}
