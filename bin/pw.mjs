@@ -7,6 +7,7 @@ import { parseArgs } from 'node:util';
 import { render, FontStore } from '../src/engine/index.js';
 import { pdfEncryptOptions } from '../src/exporters/encrypt.js';
 import { exportPdf } from '../src/exporters/pdf.js';
+import { createSubsetter } from '../src/exporters/subset.js';
 import { exportHtml } from '../src/exporters/html.js';
 import { exportCsv } from '../src/exporters/csv.js';
 import { exportXlsx } from '../src/exporters/xlsx.js';
@@ -26,6 +27,8 @@ pw diff <old.pw.json> <new.pw.json> [-p name=value]… [-d source=data.json]… 
 Exit codes: 0 ok, 1 a test failed or the pages differ, 2 bad usage.`;
 
 const fontStore = new FontStore((k) => fs.readFileSync(path.join(ROOT, 'public', 'fonts', `${k}.ttf`)));
+// PDFs embed only the glyphs they use, as the server's do
+const subset = createSubsetter(() => fs.promises.readFile(path.join(ROOT, 'public', 'harfbuzz-subset.wasm')));
 const readJson = (f) => JSON.parse(fs.readFileSync(f, 'utf8').replace(/^﻿/, ''));
 const pairs = (list = []) => Object.fromEntries(list.map((s) => { const i = s.indexOf('='); if (i < 1) usage(`"${s}" should be name=value`); return [s.slice(0, i), s.slice(i + 1)]; }));
 function usage(msg) { if (msg) console.error(`pw: ${msg}\n`); console.error(HELP); process.exit(2); }
@@ -106,7 +109,7 @@ async function cmdRender(args) {
   } catch (e) { usage(e.message); }
   if (encrypt && fmt !== 'pdf') usage('--password, --owner-password and --deny apply to -f pdf only');
   if (encrypt && values.pdfa) usage('a PDF/A file cannot have a password');
-  if (fmt === 'pdf') bytes = await exportPdf(model, fontStore, { title: def.name, encrypt, pdfa: values.pdfa ? { icc: fs.readFileSync(path.join(ROOT, 'public', 'icc', 'sRGB-v2-magic.icc')) } : undefined });
+  if (fmt === 'pdf') bytes = await exportPdf(model, fontStore, { title: def.name, subset, encrypt, pdfa: values.pdfa ? { icc: fs.readFileSync(path.join(ROOT, 'public', 'icc', 'sRGB-v2-magic.icc')) } : undefined });
   else if (fmt === 'html') bytes = await exportHtml(model, fontStore, { title: def.name });
   else if (fmt === 'csv') bytes = exportCsv(model, { locale: def.locale, currency: def.currency });
   else if (fmt === 'xlsx') bytes = await exportXlsx(model, (await import('exceljs')).default, { currency: def.currency, title: def.name });
