@@ -2,7 +2,7 @@
 import { mergedRegions, textRows } from './regions.js';
 
 /** .NET-style format → Excel number format. */
-export function excelFormat(fmt, currencySymbol = '₹') {
+export function excelFormat(fmt, currencySymbol = '') {
   if (!fmt) return null;
   const m = /^([CcNnFfPpDd])(\d{0,2})$/.exec(fmt);
   if (m) {
@@ -30,7 +30,7 @@ const SYMBOL = { INR: '₹', USD: '$', EUR: '€', GBP: '£', JPY: '¥' };
  * @param {any} ExcelJS  the exceljs module (passed in so the browser can load it lazily)
  * @returns {Promise<Uint8Array>}
  */
-export async function exportXlsx(model, ExcelJS, { currency = 'INR', title } = {}) {
+export async function exportXlsx(model, ExcelJS, { currency, title } = {}) {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Pagewright';
   wb.created = new Date();
@@ -65,7 +65,7 @@ export async function exportXlsx(model, ExcelJS, { currency = 'INR', title } = {
       for (const c of row.cells) {
         if (c.colIndex < 0) continue;
         const cell = xr.getCell(c.colIndex + 1);
-        const nf = excelFormat(c.format, SYMBOL[currency] || currency);
+        const nf = excelFormat(c.format, SYMBOL[currency] || currency || '');
         if (nf && (typeof c.value === 'number' || c.value instanceof Date)) cell.numFmt = nf;
         else if (c.value instanceof Date) cell.numFmt = 'dd mmm yyyy';
         if (c.bold || row.kind !== 'detail') cell.font = { bold: c.bold || row.kind === 'header' };

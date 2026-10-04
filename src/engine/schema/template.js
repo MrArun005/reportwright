@@ -5,7 +5,6 @@ export function blankReport(name = 'Untitled report') {
   return {
     $schema: 'pagewright/report@1',
     name,
-    locale: 'en-IN', currency: 'INR',
     page: { size: 'A4', orientation: 'portrait', margins: [36, 36, 36, 36] },
     parameters: [],
     dataSources: [],
@@ -38,7 +37,6 @@ export function blankDashboard(name = 'Dashboard') {
   return {
     $schema: 'pagewright/report@1',
     name,
-    locale: 'en-IN', currency: 'INR',
     page: { size: 'Pageless', width: 960, margins: [24, 24, 24, 24], minHeight: 540 },
     parameters: [],
     dataSources: [{ name: 'sample', type: 'json', data: { rows } }],
