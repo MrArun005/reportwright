@@ -174,3 +174,57 @@ describe('adversarial data stays capped and fast', () => {
     expect(ms).toBeLessThan(10000);
   }, 30000);
 });
+
+describe('map: region drill, colour legends, line layers', () => {
+  const square = (name, x0) => ({ type: 'Feature', properties: { name }, geometry: { type: 'Polygon', coordinates: [[[x0, 0], [x0 + 10, 0], [x0 + 10, 10], [x0, 10], [x0, 0]]] } });
+  const road = { type: 'Feature', properties: { name: 'Road' }, geometry: { type: 'LineString', coordinates: [[0, 5], [10, 6], [20, 5]] } };
+  const rail = { type: 'Feature', properties: { name: 'Rail' }, geometry: { type: 'MultiLineString', coordinates: [[[0, 1], [20, 1]], [[0, 9], [20, 9]]] } };
+  const GEO = { type: 'FeatureCollection', features: [square('West', 0), square('East', 10), square('North', 20), road, rail] };
+  const rows = [{ region: 'West', amount: 10 }, { region: 'East', amount: 55 }, { region: 'North', amount: 100 }];
+  const mapItem = (extra = {}) => ({ type: 'map', name: 'M', x: 0, y: 0, w: 300, h: 200, geojson: JSON.stringify(GEO), shapeKey: '=Fields.name',
+    valueDataSet: 'Rows', valueKey: '=Fields.region', value: '=Sum(Fields.amount)', colorLow: '#ffffff', colorHigh: '#000000', legend: 'bottom', valueFormat: 'N0', ...extra });
+  const drawMap = async (extra) => { const out = await render(report([mapItem(extra)], { data: { rows } }), { fontStore }); return { items: out.pages[0].items, warnings: out.warnings }; };
+
+  it('a click on a region sets parameters (or drills through), in the region\'s scope; hover shows its value', async () => {
+    const { items } = await drawMap({ regionAction: { type: 'params', params: { region: '=Fields.region' } } });
+    const links = items.filter(i => i.t === 'link' && i.d);
+    expect(links.map(l => l.action.params.region)).toEqual(['West', 'East', 'North']);
+    expect(links.map(l => l.tip)).toEqual(['West: 10', 'East: 55', 'North: 100']);
+    // the hit area is the region's own outline, in page coordinates (like a pie slice)
+    expect(links[0].d).toMatch(/^M [\d.]+ [\d.]+ L/);
+    const drill = await drawMap({ regionAction: { type: 'report', report: 'region-detail', params: { r: '=Fields.region' } } });
+    expect(drill.items.filter(i => i.t === 'link' && i.d)[1].action).toEqual({ type: 'drill', report: 'region-detail', params: { r: 'East' } });
+  });
+  it('line layers: LineString and MultiLineString drawn as strokes, not filled', async () => {
+    const { items } = await drawMap({ lineColor: '#ff0000', lineWidth: 2 });
+    const lines = items.filter(i => i.t === 'path' && i.fill === null && i.stroke === '#ff0000');
+    expect(lines.map(l => l.shape)).toEqual(['Road', 'Rail']);
+    expect(lines[1].d.match(/M/g)).toHaveLength(2);
+    expect(lines[0].strokeWidth).toBe(2);
+  });
+  it('graduated legend: classes of equal width, each region filled with its class colour, ranges in the legend', async () => {
+    const { items } = await drawMap({ colorScale: 'classes', classes: 3 });
+    const fills = items.filter(i => i.t === 'path' && i.shape && i.fill).map(i => i.fill);
+    expect(fills).toEqual(['#ffffff', '#808080', '#000000']);
+    expect(textsOf(items)).toEqual(expect.arrayContaining(['10 – 40', '40 – 70', '70 – 100']));
+  });
+  it('heat legend: a continuous gradient between the lowest and highest value', async () => {
+    const { items } = await drawMap({});
+    const swatches = items.filter(i => i.t === 'rect' && i.h === 8);
+    expect(swatches.length).toBeGreaterThanOrEqual(16);
+    expect(textsOf(items)).toEqual(expect.arrayContaining(['10', '100']));
+  });
+  it('adversarial: shapes, coordinates and points are capped', async () => {
+    const huge = { type: 'Feature', properties: { name: 'Huge' }, geometry: { type: 'Polygon', coordinates: [Array.from({ length: 300000 }, (_, i) => [Math.cos(i) * 10, Math.sin(i) * 10])] } };
+    const many = Array.from({ length: 6000 }, (_, i) => square(`S${i}`, i % 100));
+    const t0 = Date.now();
+    const one = (features) => render(report([mapItem({ geojson: JSON.stringify({ type: 'FeatureCollection', features }), valueDataSet: null, legend: 'none' })], { data: { rows } }), { fontStore });
+    const a = await one([square('Small', 0), huge]);
+    expect(a.warnings.join()).toMatch(/more than 200,000 coordinates/);
+    expect(a.pages[0].items.filter(i => i.t === 'path')).toHaveLength(1);
+    const b = await one(many);
+    expect(b.warnings.join()).toMatch(/more than 5,000 shapes/);
+    expect(b.pages[0].items.filter(i => i.t === 'path').length).toBeLessThanOrEqual(5000);
+    expect(Date.now() - t0).toBeLessThan(10000);
+  }, 30000);
+});
