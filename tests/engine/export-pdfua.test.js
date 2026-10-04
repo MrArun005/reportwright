@@ -106,5 +106,10 @@ describe('accessible PDF (PDF/UA-1)', () => {
     expect(run('ua1', aa)).toMatch(/^PASS /m);
     expect(run('2a', aa)).toMatch(/^PASS /m);
     if (fs.existsSync(path.join(tmp, 'form.pdf'))) expect(run('ua1', path.join(tmp, 'form.pdf'))).toMatch(/^PASS /m);
+    // characters the font does not have (CJK, emoji, a zero-width space in Inter) are left out, not drawn as .notdef
+    const nd = path.join(tmp, 'notdef.pdf');
+    const d = report([{ type: 'textbox', name: 'T', x: 0, y: 0, w: 300, h: 18, value: 'ok 中文 \u200b✅ ok' }, { type: 'textbox', name: 'M', x: 0, y: 20, w: 300, h: 18, value: '\u200b=Trim(x) 中', style: { fontFamily: 'JetBrains Mono' } }]);
+    fs.writeFileSync(nd, await exportPdf(await render(d, { fontStore }), fontStore, { title: 'N', tagged: {} }));
+    expect(run('ua1', nd)).toMatch(/^PASS /m);
   }, 120000);
 });
