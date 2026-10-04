@@ -6,7 +6,7 @@
  */
 import { evalValue, toText } from '../expr/evaluate.js';
 
-export const PIVOT_LIMITS = { depth: 8, values: 50, columns: 1000, cells: 250000 };
+export const PIVOT_LIMITS = { depth: 8, values: 50, columns: 1000, cells: 250000, tree: 64 };
 
 /** Rows → buckets by an expression's value, in first-seen order. */
 export function groupRows(rows, expr, ctx, lc, who) {
@@ -81,6 +81,57 @@ function sortBuckets(bs, g, ctx, lc, who) {
  * lo/hi: the range of full-depth leaf ordinals under the node.
  */
 function buildTree(groups, rows, ctx, lc, who, axis, state) {
+  let warnedRec = false;
+  /**
+   * A recursive group (parent: the parent's key): the instances under n form a tree. n.children keeps the roots; each node
+   * gets rec (its child nodes), depth, a path through its ancestors, and rows = its own rows and its descendants' (a node
+   * shows its subtree's total). Linear: each node once, depth capped (deeper nodes and cycles are listed at the top level).
+   */
+  const recurse = (n, g, l) => {
+    const nodes = n.children;
+    const byText = new Map(nodes.map(x => [x.text, x]));
+    const roots = [];
+    for (const x of nodes) {
+      let pk;
+      try { pk = evalValue(g.parent, { ...ctx, fields: x.rows[0], aggRows: x.rows, aggIndex: undefined }); } catch (e) { lc.warn(`${who}: ${e.message}`); pk = null; }
+      const pr = pk == null || pk === '' ? null : byText.get(pk instanceof Date ? String(pk.getTime()) : String(pk));
+      if (!pr || pr === x) roots.push(x); else (pr.rec ||= []).push(x);
+    }
+    const seen = new Set(), late = [];
+    let deep = false;
+    const visit = (x, d, path) => {
+      seen.add(x);
+      x.depth = d; x.path = `${path}/${x.text}`;
+      let all = x.rows;
+      const kids = [];
+      for (const c of x.rec || []) {
+        if (seen.has(c)) continue;
+        if (d + 1 >= PIVOT_LIMITS.tree) { deep = true; late.push(c); continue; }
+        kids.push(c);
+        all = all.concat(visit(c, d + 1, x.path));
+      }
+      x.rec = kids;
+      x.rows = all;
+      // open: a toggle's state, else the first expandLevels levels (or all unless initiallyCollapsed)
+      const coll = g.collapsible || g.expandLevels != null;
+      if (coll && kids.length) {
+        const key = `${who}|${axis}${l}|${x.path}`;
+        const dflt = g.expandLevels != null ? d < Number(g.expandLevels) : !g.initiallyCollapsed;
+        x.open = state?.toggles?.[key] ?? dflt;
+        x.toggle = { key, open: x.open };
+      }
+      return all;
+    };
+    for (const r of roots) visit(r, 0, n.path);
+    const top = [...roots];
+    // nodes cut off by the depth limit or in a cycle: listed at the top level, once
+    const rest = [...late, ...nodes.filter(x => !seen.has(x))];
+    if (deep) lc.warn(`${who}: the recursive group is more than ${PIVOT_LIMITS.tree} levels deep; deeper rows are listed at the top level`);
+    let cyc = 0;
+    for (const x of rest) if (!seen.has(x)) { if (!late.includes(x)) cyc++; visit(x, 0, n.path); top.push(x); }
+    if (cyc) lc.warn(`${who}: ${cyc} rows of the recursive group have no root (a cycle); they are listed at the top level`);
+    n.children = top;
+  };
   const root = { key: null, label: '', rows, level: -1, parent: null, children: null, path: '', open: true, lo: 0, hi: 0 };
   let frontier = [root];
   groups.forEach((g, l) => {
@@ -88,7 +139,7 @@ function buildTree(groups, rows, ctx, lc, who, axis, state) {
     for (const n of frontier) {
       const bs = sortBuckets(groupRows(n.rows, g.expr || "=''", ctx, lc, who), g, ctx, lc, who);
       n.children = bs.map((b) => {
-        const node = { key: b.key, label: '', rows: b.rows, level: l, parent: n, children: null, path: `${n.path}/${b.text}`, open: true, lo: 0, hi: 0, toggle: null };
+        const node = { key: b.key, text: b.text, label: '', rows: b.rows, level: l, parent: n, children: null, path: `${n.path}/${b.text}`, open: true, lo: 0, hi: 0, toggle: null };
         if (g.label) {
           let v;
           try { v = evalValue(g.label, { ...ctx, fields: b.rows[0], aggRows: b.rows, aggIndex: undefined }); } catch (e) { lc.warn(`${who}: ${e.message}`); v = '#Error'; }
@@ -101,6 +152,10 @@ function buildTree(groups, rows, ctx, lc, who, axis, state) {
         }
         return node;
       });
+      if (g.parent && axis === 'r') {
+        if (l === groups.length - 1) recurse(n, g, l);
+        else if (!warnedRec) { warnedRec = true; lc.warn(`${who}: only the innermost row group can be recursive; "parent" on an outer group is left out`); }
+      }
       next.push(...n.children);
     }
     frontier = next;
@@ -127,8 +182,13 @@ function visible(root, groups) {
     const g = groups[l];
     const total = { kind: 'total', node: n, level: l, chain: chainOf(n) };
     if (g.total === 'before') out.push(total);
+    // a recursive node, then its open subtree, depth first (a loop: the tree may be 64 levels deep)
+    const leaf = (c) => {
+      const st = [c];
+      while (st.length) { const x = st.pop(); out.push({ kind: 'leaf', node: x, level: l, chain: chainOf(x) }); if (x.open && x.rec) for (let i = x.rec.length - 1; i >= 0; i--) st.push(x.rec[i]); }
+    };
     for (const c of n.children || []) {
-      if (l === groups.length - 1) out.push({ kind: 'leaf', node: c, level: l, chain: chainOf(c) });
+      if (l === groups.length - 1) leaf(c);
       else if (!c.open) out.push({ kind: 'collapsed', node: c, level: l, chain: chainOf(c) });
       else walk(c, l + 1);
     }
@@ -271,7 +331,7 @@ export function buildPivot(item, rows, ctx, lc) {
     re.chain.forEach((n, l) => {
       if (rs.first.get(n) !== i) return;
       const last = re.kind === 'collapsed' && l === re.level;
-      cells.push({ c: l, text: n.label, rowSpan: last ? 1 : rs.count.get(n), colSpan: last ? R - l : 1, role: 'rowHeader', level: l, toggle: n.toggle || undefined });
+      cells.push({ c: l, text: n.label, rowSpan: last ? 1 : rs.count.get(n), colSpan: last ? R - l : 1, role: 'rowHeader', level: l, toggle: n.toggle || undefined, ...(n.depth ? { indent: n.depth * (Number(rg[l].indent) || 12) } : {}) });
     });
     if (re.kind === 'total') cells.push({ c: re.level, text: rg[re.level].totalLabel ?? 'Total', rowSpan: 1, colSpan: R - re.level, role: 'total', level: re.level });
     const rn = re.node;

@@ -358,7 +358,15 @@ function PivotEditor({ item, openExpr }) {
           <Field label={T('pivotLabel')}>{exprField(list, i, 'label', g.label, T('pivotLabel'))}</Field>
           {list === 'rowGroups' && <Field label={T('pivotHeader')}><TextInput value={g.header || ''} onChange={v => setK(list, i, 'header', v)} /></Field>}
           {g.total && g.total !== 'none' && <Field label={T('pivotTotalLabel')}><TextInput value={g.totalLabel ?? ''} onChange={v => setK(list, i, 'totalLabel', v)} placeholder={T('i_total')} aria-label={`${T('pivotTotalLabel')} ${i + 1}`} /></Field>}
-          {i < spec[list].length - 1 && <Check label={T('pivotCollapsible')} checked={g.collapsible} onChange={v => setK(list, i, 'collapsible', v)} />}
+          {list === 'rowGroups' && i === spec[list].length - 1 && <>
+            {/* the innermost row group can be recursive (an org chart): parent is the key of the row's parent */}
+            <Field label={T('groupParent')} hint={T('groupParentHint')}>{exprField(list, i, 'parent', g.parent, T('groupParent'))}</Field>
+            {g.parent && <div className="grid2">
+              <Field label={T('groupIndent')}><NumberInput value={g.indent ?? 12} step={1} onChange={v => setK(list, i, 'indent', Math.max(0, Math.min(72, v)))} /></Field>
+              <Field label={T('groupExpandLevels')}><NumberInput value={g.expandLevels ?? ''} step={1} onChange={v => setK(list, i, 'expandLevels', Number.isFinite(v) && v >= 0 ? Math.round(v) : undefined)} /></Field>
+            </div>}
+          </>}
+          {(i < spec[list].length - 1 || (list === 'rowGroups' && g.parent)) && <Check label={T('pivotCollapsible')} checked={g.collapsible} onChange={v => setK(list, i, 'collapsible', v)} />}
           {g.collapsible && <Check label={T('pivotStartCollapsed')} checked={g.initiallyCollapsed} onChange={v => setK(list, i, 'initiallyCollapsed', v)} />}
         </div>
       ))}

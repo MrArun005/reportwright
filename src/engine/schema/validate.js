@@ -84,7 +84,7 @@ export function validate(def) {
           if (!Array.isArray(it[k])) { errors.push(`${label}: "${k}" must be a list`); continue; }
           it[k].forEach((g, i) => {
             if (!g || typeof g !== 'object') { errors.push(`${label}: ${k} ${i + 1} is not an object`); return; }
-            for (const e of ['expr', 'label', 'sortBy', 'value']) check(where, g[e], `${label} ${k} ${i + 1}`);
+            for (const e of ['expr', 'label', 'sortBy', 'value', 'parent']) check(where, g[e], `${label} ${k} ${i + 1}`);
           });
         }
       }

@@ -401,6 +401,7 @@ register('table', {
         let st = resolveStyle([rst, lc.named?.[cell.styleName], cell.style], cctx);
         // a recursive group's indent: the first cell's left padding grows by level
         if (ctx.indent > 0 && !cells.length && !started) { const pd = padding(st); st = { ...st, padding: [pd[0], pd[1], pd[2], pd[3] + ctx.indent] }; }
+        else if (cell.indent > 0) { const pd = padding(st); st = { ...st, padding: [pd[0], pd[1], pd[2], pd[3] + Math.min(Number(cell.indent), cw / 2)] }; } // a pivot's recursive row header
         let v; // evalSafe without its result object: this runs for every cell
         if ('raw' in cell) v = cell.raw;
         else try { v = evalValue(cell.value ?? '', cctx); } catch (e) { lc.warn(`${item.name || 'Table'} cell: ${e.message}`); v = '#Error'; }
@@ -1247,6 +1248,7 @@ register('matrix', {
         if (c.rowSpan > 1) o.rowSpan = c.rowSpan;
         if (c.colSpan > 1) o.colSpan = c.colSpan;
         if (c.toggle) o.toggle = c.toggle;
+        if (c.indent) o.indent = c.indent;
         const gs = spec.rowGroups[c.level]?.style;
         if (gs && c.role !== 'total') o.style = gs;
         cells[c.c] = o;

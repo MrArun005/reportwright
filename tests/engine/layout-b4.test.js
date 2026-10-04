@@ -154,3 +154,62 @@ describe('several content placeholders in a master, filled by name', () => {
     expect(pb > pl || (pb === pl && yb > yl)).toBe(true);
   });
 });
+
+import { buildPivot } from '../../src/engine/items/pivot.js';
+describe('recursive row groups in a matrix', () => {
+  // an org chart: CEO → VP A (→ M1 → E1, E2), VP B (→ M2); sales per person
+  const people = [
+    ['ceo', null, 'CEO', 10], ['va', 'ceo', 'VP A', 20], ['vb', 'ceo', 'VP B', 30],
+    ['m1', 'va', 'M1', 5], ['m2', 'vb', 'M2', 7], ['e1', 'm1', 'E1', 1], ['e2', 'm1', 'E2', 2],
+  ].map(([id, boss, name, sales]) => ({ id, boss, name, sales, region: id === 'vb' || id === 'm2' ? 'S' : 'N' }));
+  const warnings = [];
+  const lc = (state = {}) => ({ warn: (m) => warnings.push(m), state });
+  const ctx = { params: {}, globals: {}, dataSets: {}, fields: null };
+  const org = { rowGroups: [{ name: 'Person', expr: '=Fields.id', label: '=Fields.name', parent: '=Fields.boss', indent: 10, collapsible: true, expandLevels: 2, total: 'after' }], values: [{ value: '=Sum(Fields.sales)' }] };
+  const grid = (p) => p.body.map(r => r.cells.map(c => (c.role === 'value' ? c.raw : c.text)));
+  const pv = (extra, state, rows = people) => buildPivot({ type: 'matrix', name: 'Org', ...org, ...extra }, rows, ctx, lc(state));
+
+  it('nodes depth first, each with the total of its subtree; expandLevels opens the first levels', () => {
+    const p = pv();
+    expect(grid(p)).toEqual([['CEO', 75], ['VP A', 28], ['M1', 8], ['VP B', 37], ['M2', 7], ['Total', 75]]);
+    expect(p.body.map(r => r.cells[0].indent || 0)).toEqual([0, 10, 20, 10, 20, 0]);
+    // M1 has reports and is collapsed (depth 2): it has a toggle; M2 has none (no reports)
+    expect(p.body[2].cells[0].toggle).toEqual({ key: 'Org|r0|/ceo/va/m1', open: false });
+    expect(p.body[4].cells[0].toggle).toBeUndefined();
+  });
+  it('a toggle opens a node; collapsing a node hides its subtree', () => {
+    expect(grid(pv({}, { toggles: { 'Org|r0|/ceo/va/m1': true } })).map(r => r[0])).toEqual(['CEO', 'VP A', 'M1', 'E1', 'E2', 'VP B', 'M2', 'Total']);
+    expect(grid(pv({}, { toggles: { 'Org|r0|/ceo': false } }))).toEqual([['CEO', 75], ['Total', 75]]);
+  });
+  it('with column groups, every cell is its node\'s subtree in that column', () => {
+    const p = pv({ columnGroups: [{ expr: '=Fields.region', sort: 'asc' }] });
+    expect(grid(p)[0]).toEqual(['CEO', 38, 37]);
+    expect(grid(p)[3]).toEqual(['VP B', null, 37]);
+  });
+  it('draws: the label cell is indented by level', async () => {
+    const def = report([{ type: 'matrix', name: 'Org', x: 0, y: 0, w: 300, h: 40, dataSet: 'Rows', ...org, rowHeaderWidth: 160, columnWidth: 60 }], { data: { rows: people } });
+    const out = await render(def, { fontStore });
+    const x = (s) => out.pages[0].items.find(i => i.t === 'text' && i.lines[0].text.endsWith(s)).lines[0].x;
+    expect(x('VP A') - x('CEO')).toBeCloseTo(10, 0);
+    expect(x('M1') - x('CEO')).toBeCloseTo(20, 0);
+  });
+  it('adversarial: a 50,000-deep chain and a cycle stay bounded and linear', () => {
+    warnings.length = 0;
+    const chain = Array.from({ length: 50000 }, (_, i) => ({ id: `n${i}`, boss: i ? `n${i - 1}` : null, name: `N${i}`, sales: 1 }));
+    const t0 = Date.now();
+    const p = pv({ rowGroups: [{ ...org.rowGroups[0], collapsible: false, expandLevels: undefined }] }, {}, chain);
+    expect(Date.now() - t0).toBeLessThan(5000);
+    expect(p.body.length).toBeLessThanOrEqual(50001);
+    expect(Math.max(...p.body.map(r => r.cells[0].indent || 0))).toBeLessThanOrEqual(63 * 10);
+    expect(warnings.join()).toMatch(/more than 64 levels deep/);
+    warnings.length = 0;
+    const cyc = [{ id: 'a', boss: 'b', name: 'A', sales: 1 }, { id: 'b', boss: 'a', name: 'B', sales: 2 }];
+    expect(grid(pv({}, {}, cyc)).map(r => r[0]).sort()).toEqual(['A', 'B', 'Total']);
+    expect(warnings.join()).toMatch(/no root/);
+  });
+  it('recursion applies to the innermost row group only', () => {
+    warnings.length = 0;
+    pv({ rowGroups: [{ expr: '=Fields.region', parent: '=Fields.boss' }, { expr: '=Fields.id' }] });
+    expect(warnings.join()).toMatch(/only the innermost row group can be recursive/);
+  });
+});
