@@ -445,4 +445,6 @@ export default {
   cornerRadius: "Eckenradius",
   cellBookmark: "Lesezeichen (diese Zelle)",
   jumpToBookmark: "Zum Lesezeichen springen",
+  tableSize: "Größe (aus Spalten und Zeilen)",
+  tableSizeHint: "Ändern Sie Spaltenbreiten und Zeilenhöhen, um die Tabelle anzupassen.",
 };

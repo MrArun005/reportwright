@@ -445,4 +445,6 @@ export default {
   cornerRadius: "角の丸み",
   cellBookmark: "ブックマーク（このセル）",
   jumpToBookmark: "ブックマークへ移動",
+  tableSize: "サイズ（列と行から）",
+  tableSizeHint: "表のサイズは列の幅と行の高さで変えます。",
 };

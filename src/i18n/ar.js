@@ -445,4 +445,6 @@ export default {
   cornerRadius: "نصف قطر الزوايا",
   cellBookmark: "إشارة مرجعية (هذه الخلية)",
   jumpToBookmark: "الانتقال إلى الإشارة المرجعية",
+  tableSize: "الحجم (من أعمدته وصفوفه)",
+  tableSizeHint: "غيّر عرض الأعمدة وارتفاع الصفوف لتغيير حجم الجدول.",
 };

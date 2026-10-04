@@ -55,6 +55,8 @@ export function normalize(def) {
       it.id ||= rid();
       if (!it.name) it.name = uniqueName(used, ITEMS[it.type]?.label.replace(/\s/g, '') || 'Item');
       if (NESTING.has(it.type)) it.items ||= [];
+      // a table's height is its rows': kept in step, so items below it do not shift when it is first edited
+      if (it.type === 'table' && Array.isArray(it.columns)) tableSync(it);
     });
     // a body lower than its lowest item grows to it (no extra room added: opening a report never moves a band)
     for (const b of Array.isArray(d.sections.body) ? d.sections.body : [d.sections.body]) {
@@ -203,7 +205,7 @@ export function addItem(type, section, x, y, extra = {}, parentId = null) {
     const it = { ...spec.defaults(), ...extra, id, name: uniqueName(used, spec.label.replace(/\s/g, '')) };
     const parent = parentId ? findItem(d, parentId)?.item : null;
     const room = parent ? parent.w : bodyWidth(d, section);
-    if (type === 'table') it.w = it.columns.reduce((s, c) => s + c.width, 0);
+    if (type === 'table') tableSync(it); // width and height come from its columns and rows
     else it.w = Math.min(it.w, room);
     it.x = clamp(x, 0, Math.max(0, room - it.w));
     it.y = Math.max(0, y);

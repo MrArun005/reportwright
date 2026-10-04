@@ -445,4 +445,6 @@ export default {
   cornerRadius: "Rayon des coins",
   cellBookmark: "Signet (cette cellule)",
   jumpToBookmark: "Aller au signet",
+  tableSize: "Taille (d’après ses colonnes et lignes)",
+  tableSizeHint: "Changez la largeur des colonnes et la hauteur des lignes pour redimensionner le tableau.",
 };

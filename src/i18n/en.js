@@ -445,4 +445,6 @@ export default {
   cornerRadius: "Corner radius",
   cellBookmark: "Bookmark (this cell)",
   jumpToBookmark: "Jump to bookmark",
+  tableSize: "Size (from its columns and rows)",
+  tableSizeHint: "Change column widths and row heights to resize the table.",
 };

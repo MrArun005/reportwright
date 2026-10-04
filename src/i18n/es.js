@@ -445,4 +445,6 @@ export default {
   cornerRadius: "Radio de las esquinas",
   cellBookmark: "Marcador (esta celda)",
   jumpToBookmark: "Ir al marcador",
+  tableSize: "Tamaño (de sus columnas y filas)",
+  tableSizeHint: "Cambie el ancho de las columnas y el alto de las filas para redimensionar la tabla.",
 };

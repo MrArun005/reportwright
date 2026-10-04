@@ -165,6 +165,7 @@ function StyleCats({ props, style, onSet, openExpr, dataSet, skipBox }) {
 
 /* ---------------------------------------------------------------- item */
 function ItemProps({ item, section, openExpr }) {
+  const T = useT();
   const def = useDesigner(s => s.def);
   const spec = ITEMS[item.type];
   const [nameErr, setNameErr] = useState(null);
@@ -201,6 +202,7 @@ function ItemProps({ item, section, openExpr }) {
           <Geo label="Y" value={item.y} onChange={v => setGeo('y', Math.max(0, v))} />
           {item.type !== 'table' && <Geo label="Width" value={item.w} onChange={v => setGeo('w', Math.max(0, v))} />}
           {item.type !== 'table' && <Geo label="Height" value={item.h} onChange={v => setGeo('h', Math.max(0, v))} />}
+          {item.type === 'table' && <Field label={T('tableSize')} hint={T('tableSizeHint')}><TextInput value={`${round(item.w)} × ${round(item.h)} pt`} readOnly data-testid="table-size" /></Field>}
         </div>
         <div className="hint">In the {(sectionList(def).find(s => s.key === section)?.label || section).toLowerCase()}{findItem(def, item.id)?.parent ? `, inside ${findItem(def, item.id).parent.name}` : ''}.</div>
         <LayerField item={item} />

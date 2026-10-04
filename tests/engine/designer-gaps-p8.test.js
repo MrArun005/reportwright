@@ -87,3 +87,14 @@ describe('a cell has two different bookmark labels (#5)', () => {
     expect(fs.readFileSync(new URL('../../src/designer/Inspector.jsx', import.meta.url), 'utf8')).not.toMatch(/label="Bookmark"/);
   });
 });
+
+import { addItem } from '../../src/designer/store.js';
+describe('a table’s stored height is its rows’ (#6)', () => {
+  it('on load and on insert', () => {
+    const tbl = { id: 't', type: 'table', name: 'T', x: 0, y: 0, w: 10, h: 300, columns: [{ width: 50 }, { width: 70 }], header: [{ height: 20, cells: [{}, {}] }], detail: [{ height: 18, cells: [{}, {}] }], footer: [] };
+    useDesigner.getState().init('x', { $schema: 'pagewright/report@1', name: 'x', page: { size: 'A4' }, sections: { body: { height: 400, items: [tbl] } } });
+    expect(findItem(useDesigner.getState().def, 't').item).toMatchObject({ w: 120, h: 38 });
+    const id = addItem('table', 'body', 0, 100, { columns: [{ width: 40 }], header: [], detail: [{ height: 25, cells: [{}] }], footer: [{ height: 18, cells: [{}] }], groups: [] });
+    expect(findItem(useDesigner.getState().def, id).item).toMatchObject({ w: 40, h: 43 });
+  });
+});

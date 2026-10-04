@@ -445,4 +445,6 @@ export default {
   cornerRadius: "圆角半径",
   cellBookmark: "书签（此单元格）",
   jumpToBookmark: "跳转到书签",
+  tableSize: "大小（由列和行决定）",
+  tableSizeHint: "更改列宽和行高即可调整表格大小。",
 };

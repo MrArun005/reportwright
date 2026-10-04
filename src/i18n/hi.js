@@ -445,4 +445,6 @@ export default {
   cornerRadius: "कोने की गोलाई",
   cellBookmark: "बुकमार्क (यह सेल)",
   jumpToBookmark: "बुकमार्क पर जाएँ",
+  tableSize: "आकार (स्तंभों और पंक्तियों से)",
+  tableSizeHint: "तालिका का आकार बदलने के लिए स्तंभ चौड़ाई और पंक्ति ऊँचाई बदलें।",
 };

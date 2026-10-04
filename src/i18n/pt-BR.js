@@ -445,4 +445,6 @@ export default {
   cornerRadius: "Raio dos cantos",
   cellBookmark: "Marcador (esta célula)",
   jumpToBookmark: "Ir para o marcador",
+  tableSize: "Tamanho (das colunas e linhas)",
+  tableSizeHint: "Mude a largura das colunas e a altura das linhas para redimensionar a tabela.",
 };
