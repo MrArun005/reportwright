@@ -269,4 +269,7 @@ export default {
   jsonHint: "Die gesetzten Seiten als JSON, wie das json-Format der API",
   downloadDef: "Herunterladen",
   downloadDefHint: "Die Definition als .pw.json-Datei herunterladen, mit ungespeicherten Änderungen",
+  labelField: "Beschriftungsfeld",
+  labelFieldHint: "Was der Leser für jede Auswahl sieht (leer: der Wert)",
+  liveParams: "Parameter beim Ändern sofort anwenden (live; aus: Schaltfläche „Bericht anzeigen“)",
 };

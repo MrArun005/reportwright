@@ -269,4 +269,7 @@ export default {
   jsonHint: "The laid-out pages as JSON, the same as the API's json format",
   downloadDef: "Download",
   downloadDefHint: "Download the definition as a .pw.json file, unsaved changes included",
+  labelField: "Label field",
+  labelFieldHint: "What the reader sees for each choice (empty: the value)",
+  liveParams: "Apply parameters as the reader changes them (live; off: a View report button)",
 };

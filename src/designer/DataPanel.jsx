@@ -130,6 +130,15 @@ export default function DataPanel() {
 /* ---------------------------------------------------------------- dialogs */
 function uniqueIn(list, name, skip) { return !(list || []).some((x, i) => i !== skip && x.name === name); }
 
+/** One line of the fixed choices box: "value" or "value=label". A choice is a plain value or { value, label }. */
+const optionLine = (o) => (o != null && typeof o === 'object' ? (o.label != null && String(o.label) !== String(o.value) ? `${o.value}=${o.label}` : String(o.value)) : String(o));
+function parseOptionLine(l, type) {
+  const [raw, ...lb] = l.split('=');
+  const v = raw.trim();
+  const value = type === 'number' && v !== '' && !Number.isNaN(Number(v)) ? Number(v) : v;
+  return lb.length ? { value, label: lb.join('=').trim() || v } : value;
+}
+
 const EDITORS = ['slider', 'range', 'dateRange', 'radio', 'list', 'toggle'];
 const RANGE_EDITORS = new Set(['range', 'dateRange']);
 
@@ -140,6 +149,12 @@ function ParamDialog({ index, onClose }) {
   const orig = index != null ? def.parameters[index] : null;
   const [p, setP] = useState(orig || { name: '', type: 'string', prompt: '', default: '', required: false });
   const [columns, setColumns] = useState(String(def.parameterLayout?.columns || 1));
+  const [live, setLive] = useState(def.liveParameters !== false);
+  // the box keeps what is typed ("North=" mid-word); the choices are parsed from it
+  const [choicesText, setChoicesText] = useState(() => (p.options || []).map(optionLine).join('\n'));
+  const fromFields = (def.dataSets?.find(d => d.name === p.optionsFrom?.dataSet)?.fields || []).map(f => f.name);
+  // the label is an expression: a field picks =Fields.x; another expression from the file stays as one more choice
+  const labelOpts = [...fromFields.map(f => ({ value: `=Fields.${f}`, label: f })), ...(p.optionsFrom?.label && !fromFields.some(f => `=Fields.${f}` === p.optionsFrom.label) ? [{ value: p.optionsFrom.label, label: p.optionsFrom.label }] : [])];
   const err = !NAME.test(p.name) ? T('paramNameRule') : !uniqueIn(def.parameters, p.name, index) ? T('paramNameTaken') : null;
   // a limit is a number for number parameters, a date (yyyy-mm-dd) for date parameters
   const limit = (v) => (v === '' || v == null ? undefined : p.type === 'number' && !Number.isNaN(Number(v)) ? Number(v) : v);
@@ -153,10 +168,12 @@ function ParamDialog({ index, onClose }) {
       if (index != null) d.parameters[index] = v; else d.parameters.push(v);
       const n = Number(columns);
       if (n > 1) d.parameterLayout = { ...(d.parameterLayout || {}), columns: n }; else delete d.parameterLayout;
+      if (live) delete d.liveParameters; else d.liveParameters = false;
     });
     onClose();
+    loadSample(); // the sample was loaded with the old parameters: an error about a missing one is stale now
   };
-  const del = () => { useDesigner.getState().apply(d => { d.parameters.splice(index, 1); }); onClose(); };
+  const del = () => { useDesigner.getState().apply(d => { d.parameters.splice(index, 1); }); onClose(); loadSample(); };
   const needsChoices = (p.editor === 'radio' || p.editor === 'list') && !p.options && !p.optionsFrom;
   const limits = p.editor === 'slider' || RANGE_EDITORS.has(p.editor);
   return (
@@ -174,12 +191,13 @@ function ParamDialog({ index, onClose }) {
       <Check label={T('paramHidden')} checked={p.hidden} onChange={v => setP({ ...p, hidden: v || undefined })} />
       <Check label={T('multiHint')} checked={p.multi} onChange={v => setP({ ...p, multi: v || undefined })} />
       <Field label={T('fixedChoices')}>
-        <textarea className="textarea" rows={3} value={(p.options || []).map(o => (o.label != null && o.label !== String(o.value) ? `${o.value}=${o.label}` : String(o.value))).join('\n')}
-          onChange={e => { const list = e.target.value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const [v, ...lb] = l.split('='); return { value: v.trim(), label: (lb.join('=') || v).trim() }; }); setP({ ...p, options: list.length ? list : undefined }); }} />
+        <textarea className="textarea" rows={3} value={choicesText} data-testid="param-choices"
+          onChange={e => { setChoicesText(e.target.value); const list = e.target.value.split('\n').map(l => l.trim()).filter(Boolean).map(l => parseOptionLine(l, p.type)); setP({ ...p, options: list.length ? list : undefined }); }} />
       </Field>
       <div className="grid2">
         <Field label={T('choicesFrom')}><Select value={p.optionsFrom?.dataSet} options={(def.dataSets || []).map(d => d.name)} allowEmpty onChange={v => setP({ ...p, optionsFrom: v ? { dataSet: v, value: p.optionsFrom?.value || '', label: p.optionsFrom?.label } : undefined })} /></Field>
-        {p.optionsFrom && <Field label={T('valueField')}><Select value={p.optionsFrom.value?.replace(/^=Fields\./, '')} options={(def.dataSets.find(d => d.name === p.optionsFrom.dataSet)?.fields || []).map(f => f.name)} onChange={v => setP({ ...p, optionsFrom: { ...p.optionsFrom, value: `=Fields.${v}` } })} /></Field>}
+        {p.optionsFrom && <Field label={T('valueField')}><Select value={p.optionsFrom.value?.replace(/^=Fields\./, '')} options={fromFields} onChange={v => setP({ ...p, optionsFrom: { ...p.optionsFrom, value: `=Fields.${v}` } })} data-testid="param-value-field" /></Field>}
+        {p.optionsFrom && <Field label={T('labelField')} hint={T('labelFieldHint')}><Select value={p.optionsFrom.label} options={labelOpts} allowEmpty onChange={v => setP({ ...p, optionsFrom: { ...p.optionsFrom, label: v || undefined } })} data-testid="param-label-field" /></Field>}
       </div>
       {p.optionsFrom && <div className="hint">{T('cascadeHint')}</div>}
       <div className="grid2">
@@ -190,6 +208,7 @@ function ParamDialog({ index, onClose }) {
           <Select value={columns} onChange={v => setColumns(v || '1')} options={['1', '2', '3', '4']} />
         </Field>
       </div>
+      <Check label={T('liveParams')} checked={live} onChange={setLive} />
       {limits && (
         <div className="grid3">
           <Field label={T('minimum')}><TextInput value={p.min ?? ''} onChange={v => setP({ ...p, min: limit(v) })} mono type={p.type === 'date' ? 'date' : 'text'} /></Field>
@@ -255,10 +274,11 @@ function SourceDialog({ index, onClose }) {
       } else d.dataSources.push(v);
     });
     onClose();
+    loadSample();
   };
   const del = () => {
     if (def.dataSets?.some(d => d.source === orig.name)) { window.alert('A data set still uses this source. Delete or change that data set first.'); return; }
-    useDesigner.getState().apply(d => { d.dataSources.splice(index, 1); }); onClose();
+    useDesigner.getState().apply(d => { d.dataSources.splice(index, 1); }); onClose(); loadSample();
   };
   return (
     <Dialog wide title={orig ? `Data source ${orig.name}` : 'New data source'} onClose={onClose}
@@ -413,6 +433,7 @@ function DataSetDialog({ index, onClose, onSaved }) {
       walk(x, (it) => { if (it.dataSet === orig.name) delete it.dataSet; });
     });
     onClose();
+    loadSample();
   };
   const setField = (i, k, v) => setD({ ...d, fields: d.fields.map((f, j) => (j === i ? { ...f, [k]: v } : f)) });
   const setFilter = (i, k, v) => setD({ ...d, filters: d.filters.map((x, j) => (j === i ? { ...x, [k]: v } : x)) });

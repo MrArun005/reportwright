@@ -269,4 +269,7 @@ export default {
   jsonHint: "Las páginas maquetadas en JSON, igual que el formato json de la API",
   downloadDef: "Descargar",
   downloadDefHint: "Descargar la definición como archivo .pw.json, con los cambios sin guardar",
+  labelField: "Campo de etiqueta",
+  labelFieldHint: "Lo que ve el lector en cada opción (vacío: el valor)",
+  liveParams: "Aplicar los parámetros al cambiarlos (en vivo; desactivado: botón Ver informe)",
 };

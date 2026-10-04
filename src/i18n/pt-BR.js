@@ -269,4 +269,7 @@ export default {
   jsonHint: "As páginas diagramadas em JSON, igual ao formato json da API",
   downloadDef: "Baixar",
   downloadDefHint: "Baixar a definição como arquivo .pw.json, com as alterações não salvas",
+  labelField: "Campo do rótulo",
+  labelFieldHint: "O que o leitor vê em cada opção (vazio: o valor)",
+  liveParams: "Aplicar os parâmetros ao mudar (ao vivo; desligado: botão Ver relatório)",
 };

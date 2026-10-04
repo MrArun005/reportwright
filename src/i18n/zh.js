@@ -269,4 +269,7 @@ export default {
   jsonHint: "排版后的页面，JSON 格式（与 API 的 json 格式相同）",
   downloadDef: "下载",
   downloadDefHint: "将定义下载为 .pw.json 文件（包含未保存的更改）",
+  labelField: "标签字段",
+  labelFieldHint: "每个选项向读者显示的内容（留空则显示值）",
+  liveParams: "读者更改参数时立即应用（实时；关闭：使用“查看报表”按钮）",
 };

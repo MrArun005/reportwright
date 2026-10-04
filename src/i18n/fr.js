@@ -269,4 +269,7 @@ export default {
   jsonHint: "Les pages mises en page en JSON, comme le format json de l’API",
   downloadDef: "Télécharger",
   downloadDefHint: "Télécharger la définition en fichier .pw.json, modifications non enregistrées comprises",
+  labelField: "Champ du libellé",
+  labelFieldHint: "Ce que le lecteur voit pour chaque choix (vide : la valeur)",
+  liveParams: "Appliquer les paramètres dès qu’ils changent (en direct ; sinon : bouton Afficher le rapport)",
 };

@@ -269,4 +269,7 @@ export default {
   jsonHint: "レイアウト済みのページを JSON で（API の json 形式と同じ）",
   downloadDef: "ダウンロード",
   downloadDefHint: "定義を .pw.json ファイルとしてダウンロード（未保存の変更を含む）",
+  labelField: "ラベルのフィールド",
+  labelFieldHint: "各選択肢に表示する内容（空欄なら値）",
+  liveParams: "パラメーターを変更するとすぐに適用（ライブ。オフ：レポート表示ボタン）",
 };
