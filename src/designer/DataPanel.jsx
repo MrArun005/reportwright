@@ -192,6 +192,7 @@ function SourceDialog({ index, onClose }) {
   let data;
   if (!err && s.type === 'json') { try { data = JSON.parse(s.dataText || 'null'); } catch (e) { err = `The JSON is not valid: ${e.message}`; } }
   if (!err && s.type === 'csv' && !s.url && !s.dataText.trim()) err = 'Give a URL or paste CSV text';
+  if (!err && s.type === 'csv' && ((s.separator && s.separator !== 'tab' && s.separator.length !== 1) || (s.quote && s.quote.length !== 1))) err = 'The separator and the quote are one character each';
   if (!err && (s.type === 'rest' || s.type === 'graphql') && !s.url) err = 'Give a URL';
   if (!err && s.type === 'graphql' && !s.query) err = 'Give a GraphQL query';
   if (!err && s.type === 'sql' && !s.connection) err = 'Pick a connection';
@@ -216,6 +217,12 @@ function SourceDialog({ index, onClose }) {
     if (s.type === 'graphql') { v.query = s.query || ''; if (s.variables) v.variables = s.variables; }
     if (s.type === 'json') v.data = data;
     if (s.type === 'csv' && !s.url) v.data = s.dataText;
+    if (s.type === 'csv') {
+      if (s.separator && s.separator !== ',') v.separator = s.separator;
+      if (s.quote && s.quote !== '"') v.quote = s.quote;
+      if (s.headerRow === false) v.headerRow = false;
+      if (Number(s.startRow) > 1) v.startRow = Number(s.startRow);
+    }
     if (s.type === 'sql') { v.connection = s.connection; v.query = s.query; }
     useDesigner.getState().apply(d => {
       d.dataSources ||= [];
@@ -264,6 +271,12 @@ function SourceDialog({ index, onClose }) {
           <textarea className="textarea" rows={6} value={s.query || ''} onChange={e => setS({ ...s, query: e.target.value })} placeholder="select region, month, sum(amount) as amount from sales where year = @year group by region, month" style={{ fontFamily: 'var(--mono)' }} />
         </Field>
       </>}
+      {s.type === 'csv' && <div className="grid2">
+        <Field label="Separator" hint='One character; "tab" for a tab'><TextInput value={s.separator ?? ','} onChange={v => setS({ ...s, separator: v })} mono /></Field>
+        <Field label="Quote"><TextInput value={s.quote ?? '"'} onChange={v => setS({ ...s, quote: v })} mono /></Field>
+        <Field label="Start row" hint="Rows above it are skipped"><TextInput value={s.startRow ?? 1} onChange={v => setS({ ...s, startRow: v })} mono /></Field>
+        <Check label="First row has the column names" checked={s.headerRow !== false} onChange={v => setS({ ...s, headerRow: v })} />
+      </div>}
       {(s.type === 'json' || (s.type === 'csv' && !s.url)) && (
         <Field label={s.type === 'json' ? 'JSON data' : 'CSV text (first row = headers)'}><textarea className="textarea" rows={10} value={s.dataText} onChange={e => setS({ ...s, dataText: e.target.value })} /></Field>
       )}
