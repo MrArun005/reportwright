@@ -1,0 +1,304 @@
+{
+ "$schema": "pagewright/report@1",
+ "name": "Stress test (scale)",
+ "page": {
+  "size": "A4",
+  "margins": [
+   36,
+   36,
+   36,
+   36
+  ]
+ },
+ "dataSources": [
+  {
+   "name": "s",
+   "type": "rest",
+   "method": "GET",
+   "url": "/api/sample/stress/{Parameters.rows}"
+  }
+ ],
+ "dataSets": [
+  {
+   "name": "R",
+   "source": "s",
+   "path": "$.rows",
+   "fields": [
+    {
+     "name": "n",
+     "type": "number"
+    },
+    {
+     "name": "city",
+     "type": "string"
+    },
+    {
+     "name": "product",
+     "type": "string"
+    },
+    {
+     "name": "month",
+     "type": "number"
+    },
+    {
+     "name": "amt",
+     "type": "number"
+    },
+    {
+     "name": "npa",
+     "type": "number"
+    }
+   ]
+  }
+ ],
+ "sections": {
+  "pageHeader": {
+   "height": 20,
+   "items": [
+    {
+     "type": "textbox",
+     "name": "H",
+     "x": 0,
+     "y": 0,
+     "w": 520,
+     "h": 14,
+     "value": "Stress test · {Format(Parameters.rows, \"N0\")} rows · cities ordered by total, products, every row"
+    }
+   ]
+  },
+  "body": {
+   "items": [
+    {
+     "type": "table",
+     "name": "T",
+     "x": 0,
+     "y": 0,
+     "w": 520,
+     "h": 54,
+     "dataSet": "R",
+     "repeatHeader": true,
+     "columns": [
+      {
+       "width": 60
+      },
+      {
+       "width": 140
+      },
+      {
+       "width": 120
+      },
+      {
+       "width": 100
+      },
+      {
+       "width": 100
+      }
+     ],
+     "header": [
+      {
+       "height": 18,
+       "style": {
+        "fontWeight": "bold",
+        "backgroundColor": "#1d4ed8",
+        "color": "#ffffff"
+       },
+       "cells": [
+        {
+         "value": "#"
+        },
+        {
+         "value": "City / product"
+        },
+        {
+         "value": "Trend"
+        },
+        {
+         "value": "Amount"
+        },
+        {
+         "value": "Running"
+        }
+       ]
+      }
+     ],
+     "groups": [
+      {
+       "name": "City",
+       "expr": "=Fields.city",
+       "sort": "desc",
+       "sortBy": "=Sum(Fields.amt)",
+       "header": [
+        {
+         "height": 18,
+         "style": {
+          "fontWeight": "bold",
+          "backgroundColor": "#eff6ff"
+         },
+         "cells": [
+          {
+           "value": ""
+          },
+          {
+           "value": "=Fields.city",
+           "bookmark": "=Fields.city"
+          },
+          {
+           "value": "",
+           "visual": {
+            "type": "sparkline",
+            "category": "=Fields.month",
+            "value": "=Sum(Fields.amt)"
+           }
+          },
+          {
+           "value": "=Sum(Fields.amt)",
+           "style": {
+            "format": "N2"
+           }
+          },
+          {
+           "value": "=Sum(Fields.amt) / Sum(Fields.amt, \"T\")",
+           "style": {
+            "format": "P1"
+           }
+          }
+         ]
+        }
+       ],
+       "footer": [],
+       "collapsible": true
+      },
+      {
+       "name": "Product",
+       "expr": "=Fields.product",
+       "sort": "asc",
+       "header": [
+        {
+         "height": 16,
+         "cells": [
+          {
+           "value": ""
+          },
+          {
+           "value": "=Fields.product"
+          },
+          {
+           "value": "",
+           "visual": {
+            "type": "databar",
+            "value": "=Sum(Fields.amt)",
+            "max": "=Sum(Fields.amt, \"City\")"
+           }
+          },
+          {
+           "value": "=Sum(Fields.amt)",
+           "style": {
+            "format": "N2"
+           }
+          },
+          {
+           "value": ""
+          }
+         ]
+        }
+       ],
+       "footer": [],
+       "collapsible": true
+      }
+     ],
+     "detail": [
+      {
+       "height": 14,
+       "cells": [
+        {
+         "value": "=Fields.n"
+        },
+        {
+         "value": "=Fields.product & \" · \" & MonthName(Fields.month, True)"
+        },
+        {
+         "value": "=IIF(Fields.npa > 2.5, 'over cap', '')",
+         "style": {
+          "color": "=IIF(Fields.npa > 2.5, '#b91c1c', '#111827')"
+         }
+        },
+        {
+         "value": "=Fields.amt",
+         "style": {
+          "format": "N2"
+         }
+        },
+        {
+         "value": "=RunningValue(Fields.amt, \"Sum\", \"Product\")",
+         "style": {
+          "format": "N2"
+         }
+        }
+       ]
+      }
+     ],
+     "footer": [
+      {
+       "height": 18,
+       "cells": [
+        {
+         "value": "Total"
+        },
+        null,
+        null,
+        {
+         "value": "=Sum(Fields.amt)",
+         "style": {
+          "format": "N2"
+         }
+        },
+        null
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "pageFooter": {
+   "height": 20,
+   "items": [
+    {
+     "type": "textbox",
+     "name": "P",
+     "x": 0,
+     "y": 4,
+     "w": 200,
+     "h": 12,
+     "value": "Page {Globals.PageNumber} of {Globals.TotalPages}"
+    }
+   ]
+  }
+ },
+ "parameters": [
+  {
+   "name": "rows",
+   "type": "number",
+   "prompt": "Rows",
+   "required": true,
+   "default": 5000,
+   "options": [
+    {
+     "value": 5000,
+     "label": "5,000 rows"
+    },
+    {
+     "value": 20000,
+     "label": "20,000 rows"
+    },
+    {
+     "value": 50000,
+     "label": "50,000 rows"
+    },
+    {
+     "value": 100000,
+     "label": "1,00,000 rows"
+    }
+   ]
+  }
+ ]
+}

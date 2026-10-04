@@ -7,11 +7,11 @@ import { exportDocx } from '../src/exporters/docx.js';
 import { exportHtml } from '../src/exporters/html.js';
 import { exportCsv } from '../src/exporters/csv.js';
 import { fontStore } from '../tests/helpers.js';
+import { sampleStress } from '../src/sample/stress.js';
 
 const N = Number(process.argv[2] || 50000);
 const formats = (process.argv[3] || 'pdf,xlsx,docx,html,csv').split(',');
-const cities = ['Bengaluru', 'Pune', 'Delhi', 'Mumbai', 'Chennai', 'Kolkata', 'Jaipur', 'Patna'];
-const rows = Array.from({ length: N }, (_, i) => ({ n: i + 1, city: cities[i % 8], product: ['Home', 'Gold', 'Personal'][i % 3], month: (i % 12) + 1, amt: ((i * 37) % 1000) + 0.5, npa: (i % 50) / 10 }));
+const rows = sampleStress(N).rows;
 const def = {
   $schema: 'pagewright/report@1', name: 'Stress', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 's', type: 'json', data: { rows } }], dataSets: [{ name: 'R', source: 's', path: '$.rows' }],
