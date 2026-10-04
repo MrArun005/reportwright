@@ -83,10 +83,11 @@ export async function exportPdf(model, fontStore, opt = {}) {
           // fontkit reads a glyph header even for an empty glyph: when the last glyph is empty (often the space) and
           // glyf is the last table, that read runs past the end. Zero padding after the tables makes it read zeros.
           const sub = withPadding(await opt.subset(bytes, cps, glyphs ? { glyphs: glyphs.keys() } : undefined));
-          // Check every glyph we need: a subset fontkit cannot read embeds the full font instead.
+          // Check every glyph we need: a subset fontkit cannot read embeds the full font instead. (The advance reads the
+          // glyph header too; pdf-lib needs no more. The outline, which g.bbox would decode, is never read.)
           const f = fontkit.create(sub);
-          for (const cp of cps) { const g = f.glyphForCodePoint(cp); void g.advanceWidth; void g.bbox; }
-          for (const id of glyphs?.keys() || []) { const g = f.getGlyph(id); void g.advanceWidth; void g.bbox; }
+          for (const cp of cps) void f.glyphForCodePoint(cp).advanceWidth;
+          for (const id of glyphs?.keys() || []) void f.getGlyph(id).advanceWidth;
           bytes = sub;
         } catch { /* embed the full font */ }
       }
@@ -94,6 +95,9 @@ export async function exportPdf(model, fontStore, opt = {}) {
       const pf = await doc.embedFont(bytes, { subset: false, customName: bytes === full ? undefined : `${subsetTag(bytes)}+${fontStore.get(key).postscriptName || 'Font'}` });
       plainEncoding(pf);
       if (glyphs) addGlyphs(pf, glyphs);
+      // the font file through our deflate (pdf-lib's is pako, on the main thread), with the Length1 TrueType wants
+      const file = bytes, e = /** @type {any} */ (pf).embedder;
+      if (!e.isCFF()) e.embedFontStream = async (c) => c.register(PDFRawStream.of(c.obj({ Filter: 'FlateDecode', Length1: file.length }), await deflate(file)));
       fonts.set(key, pf);
     }
     return fonts.get(key);
@@ -558,13 +562,20 @@ class Content {
 
 /** one byte per char: the content stream holds the glyph bytes of literal strings as chars 0–255 */
 function latin1(s) {
+  const B = /** @type {any} */ (globalThis).Buffer;
+  if (B) return B.from(s, 'latin1'); // Node: native, several times faster than the loop
   const out = new Uint8Array(s.length);
   for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
   return out;
 }
 
-/** zlib (Flate) compression: the platform's own (CompressionStream, in browsers and Node 18+), else fflate */
+/**
+ * zlib (Flate) compression: Node's zlib on its thread pool (pages compress in parallel, off the main thread), else
+ * the platform's CompressionStream (browsers; in Node it is the same zlib behind web streams, slower), else fflate.
+ */
 async function deflate(bytes) {
+  const zlib = /** @type {any} */ (globalThis).process?.getBuiltinModule?.('node:zlib');
+  if (zlib) return new Promise((ok, fail) => zlib.deflate(bytes, (e, z) => (e ? fail(e) : ok(z))));
   if (typeof CompressionStream === 'undefined') return (await import('fflate')).zlibSync(bytes);
   return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
 }
