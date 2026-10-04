@@ -56,9 +56,26 @@ export function paginate(units, tables, pageH, warn) {
     return true;
   };
 
-  let top = 0, guard = 0;
+  // A page with nothing on it, made so that what starts at y moves to the next page, helps only when that fits
+  // a page there. Tall items (or tall items that overlap) that fit no page are cut where this page ends instead:
+  // moving them past a gap made a blank page 1.
+  const emptyFor = (top, y) => { const f = firstAtOrAfter(top - EPS); return f >= units.length || units[f].top >= y - EPS; };
+  const fitsFrom = (y) => {
+    if (y + pageH >= end - EPS) return true;
+    for (const c of cand) if (c > y + EPS && c <= y + pageH + EPS && valid(c)) return true;
+    return false;
+  };
+  const useless = (top, y) => emptyFor(top, y) && !fitsFrom(y);
+
+  let top = 0, guard = 0, cut = false;
   while (top < end - EPS) {
     if (++guard > 100000) { warn('Pagination stopped: too many pages'); break; }
+    if (cut) { // the cut part of an item is not drawn: the next page starts at the next unit, and there is none after the last
+      cut = false;
+      const f = firstAtOrAfter(top - EPS);
+      if (f >= units.length) break;
+      top = Math.max(top, units[f].top);
+    }
     // A page that would begin with a gap and then an item with a page break before it: the break is already met
     // (the item did not fit the page before). The page starts at the item, as a forced break would start it,
     // instead of making a page of the gap alone.
@@ -100,7 +117,7 @@ export function paginate(units, tables, pageH, warn) {
         const y = cand[i];
         if (y > limit + EPS) continue;
         if (y <= top + EPS) break;
-        if (valid(y)) { bottom = y; break; }
+        if (valid(y) && !useless(top, y)) { bottom = y; break; }
       }
       if (bottom < 0) {
         // Nothing valid: drop keep-rules and try again, then cut.
@@ -108,10 +125,11 @@ export function paginate(units, tables, pageH, warn) {
           const y = cand[i];
           if (y > limit + EPS) continue;
           if (y <= top + EPS) break;
-          if (!units.some(u => u.top < y - EPS && u.top + u.height > y + EPS)) { bottom = y; break; }
+          if (!units.some(u => u.top < y - EPS && u.top + u.height > y + EPS) && !useless(top, y)) { bottom = y; break; }
         }
         if (bottom < 0) {
           bottom = limit;
+          cut = true;
           warn(`An item is taller than the page (page ${pages.length + 1}). Its lower part is cut.`);
         }
       }
