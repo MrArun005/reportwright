@@ -21,7 +21,11 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 - Drag a data set onto the page to get a table with labels, formats and totals.
 - Pivot editor (rows, columns, values), recursive-group and section options, merge down / split rows, add and remove body sections.
 - Chart editors for axes, overlays and per-series type, axis, range, size and open/high/low/close.
-- Data set dialog with a response explorer: lists every array in an API response with its path, row count and fields, and fills them in with one click.
+- Data set dialog with a response explorer: lists every array in an API response with its path, row count and fields, and fills them in with one click. Nested data sets (rows from each row of a parent), any number of sort keys; saving keeps every property.
+- Outline panel: every band and item as a tree; select any item (also one hidden under another), change the drawing order, move an item out of its container.
+- Controls for: table row visibility and row style; font size, weight and style as expressions; matrix header/cell/total styles and total labels; chart filter, sort and "show at most N" (from a parameter or expression), per-series line type, overlay axis, custom palettes; cell visuals (list values, band colour, data-bar value and format); table bookmarks; report images (upload) with an embedded-image picker; "repeat group header on each page"; "show or hide another item"; drill-through and subreport targets picked from the report list.
+- Parameter dialog: label field for choices from a data set, live-parameters toggle; plain choices keep their values.
+- Download the definition as `.pw.json` (unsaved changes included).
 - AI builder: "Describe a report" drafts and opens a new report; "Ask AI" in the designer proposes changes with a rendered preview and applies them as one undoable step. Every draft is validated and test-rendered first. (Tested against a mock of the API; no live API call made yet.)
 - Embeddable designer (`mountDesigner`) with `onSave`/`onOpen`, read-only mode, toolbox and panel options, data source templates.
 - UI in 9 languages for the new strings. Older inspector labels are English only.
@@ -49,7 +53,8 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 - Merged cells (`rowSpan`); the label repeats after a page break.
 - Items inside table cells (a table, list or chart per row, seeing only that row's data).
 - Recursive hierarchies: `parent` grouping, `Level()`, indentation by level, `Recursive` aggregates, drill-down by level.
-- Footers printed at the bottom of the page; a group header never ends a page.
+- Footers printed at the bottom of the page; a group header never ends a page; a group header can repeat on each page its group continues on.
+- Row visibility: a hidden expression per row (per record in detail rows); a hidden row takes no space.
 - Grid lists (several records across), multi-column body (newspaper columns).
 - Wide tables continue sideways onto further pages (down-then-across or across-then-down) with repeated row headers.
 - Page numbers restart per group or list row (`newSection`); overall page number and total pages.
@@ -115,7 +120,8 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 - PDF outline (bookmarks panel) nested by level; a bookmarked heading takes its heading level.
 - PDF/A-2b, digital signatures, fillable PDF form fields.
 - PDF passwords (AES-256, user and owner passwords, permissions).
-- Excel (merged cells), Word `.docx` (real tables, section page sizes; charts and images are left out), HTML (incl. a single-file offline interactive version), CSV, SVG, print.
+- Excel (merged cells), Word `.docx` (real tables, section page sizes; charts and images are left out), HTML (incl. a single-file offline interactive version), CSV, SVG, JSON (the laid-out pages, in the viewer and the API), print.
+- Static HTML links: web links, bookmark jumps and table-of-contents entries (anchors at the target page and height), drill-through opening the Pagewright viewer.
 
 ## 11. Embedding and developer platform
 
@@ -184,6 +190,6 @@ Sample data APIs (stand-ins for customer data): `/api/sample/hard?rows=N` (nasty
 | Fonts | Thai, Khmer and other Indic scripts need an uploaded font; no dictionary line breaking. |
 | Publishing | npm packages and the GitHub Action not published or run; Docker image not built. |
 | Security | Open findings on the **[not released]** items: SSO could link a sign-in to an existing account by email (account takeover); the report route checks the wrong permission level and has a check-then-write race; cached thumbnails show after access is revoked; SQL Server's time limit can be missed by requests started after the deadline, one huge text value can use hundreds of MB before the size cap, and the read-only check covers only the connected database. |
-| Speed | A whole-scope aggregate inside a table row (e.g. a data bar's `Max(...,"Ledger")`) is recalculated per row: a 5,000-row report takes ~45 s instead of ~1.4 s, and each click ~20 s. A table of contents turns off the fast first page. The server's home-page thumbnail blocks it for ~29 s after saving a heavy report. |
-| Designer | ~30 gaps: no filter on charts or pivots; no item tree; shortcuts lost after using the inspector; phantom cells after "Add column"; no row visibility; font weight and size can't take expressions; table-row style only takes a background; pivot header/cell/total styles, custom chart palettes, nested data sets and embedded images have no controls; saving a data set drops its parent link. Templates must be built in the Designer, so these block it. |
-| Export | HTML export has no working links; in-cell icon sets draw too large. |
+| Speed | Fixed: scope aggregates are computed once per render (stress ledger 38 s → ~2 s), and a table of contents keeps the fast first page (page numbers fill in after). Open: the home-page thumbnail now draws in a worker thread (security track) and has not been re-measured. |
+| Designer | The Oct 2026 gap list is closed (outline, filters, row visibility and style, expression styles, matrix styles, palettes, images, galleries, data set and parameter dialogs, focus, merged-cell columns). Still open: older inspector labels are English only; the outline reorders with buttons, not drag and drop, and cannot move an item into a container; "show or hide another item" works in the viewer and the interactive HTML; a static export keeps the state it was exported in. |
+| Export | Static HTML cannot re-sort, open/close or filter (the interactive HTML can). HTML rendered on the server shows drill-through disabled until the renderer passes its base URL (`drillBase`). |
