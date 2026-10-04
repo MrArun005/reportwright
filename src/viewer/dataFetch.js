@@ -5,6 +5,20 @@
 // call; the server checks who may run what). Never another Pagewright API with the viewer's cookie: an admin who opens
 // a report must not create a user, change permissions or read the audit log for it. Other sites get no cookies.
 
+/**
+ * POST /api/data/sql as the engine sends it: { report, source, params } runs that report's saved SQL (which the server
+ * checks), and nothing else; a REST source cannot send { connection, query } as the viewer. sqlPreview: the designer's
+ * own unsaved query may (DataPanel).
+ */
+function sqlCall(body, sqlPreview) {
+  let b;
+  try { b = JSON.parse(String(body)); } catch { return false; }
+  if (!b || typeof b !== 'object' || Array.isArray(b)) return false;
+  const keys = Object.keys(b);
+  if (typeof b.report === 'string' && typeof b.source === 'string') return keys.every(k => ['report', 'source', 'params'].includes(k));
+  return sqlPreview && typeof b.query === 'string' && keys.every(k => ['connection', 'query', 'params'].includes(k));
+}
+
 const DATA = [/^\/api\/sample\//, /^\/api\/data\/proxy$/];
 const OURS = /^\/(?:$|api(?:\/|$)|admin(?:\/|$)|designer(?:\/|$)|viewer(?:\/|$)|login(?:\/|$)|embed(?:\/|$)|_next(?:\/|$))/i;
 
@@ -13,7 +27,7 @@ const OURS = /^\/(?:$|api(?:\/|$)|admin(?:\/|$)|designer(?:\/|$)|viewer(?:\/|$)|
  * @param {typeof fetch} [f]
  * @returns {typeof fetch}
  */
-export function reportFetch(base, f = (...a) => fetch(...a)) {
+export function reportFetch(base, f = (...a) => fetch(...a), { sqlPreview = false } = {}) {
   const self = new URL(base).origin;
   return /** @type {any} */ (async (input, init = {}) => {
     const u = new URL(String(input instanceof Request ? input.url : input), base);
@@ -24,7 +38,7 @@ export function reportFetch(base, f = (...a) => fetch(...a)) {
     let path;
     try { path = decodeURIComponent(u.pathname).replace(/\/{2,}/g, '/'); } catch { path = null; }
     const read = path !== null && ['GET', 'HEAD'].includes(method) && !/%2f|%5c/i.test(u.pathname) && (DATA.some(r => r.test(path)) || !OURS.test(path));
-    if (!read && !(method === 'POST' && u.pathname === '/api/data/sql')) {
+    if (!read && !(method === 'POST' && u.pathname === '/api/data/sql' && sqlCall(init.body, sqlPreview))) {
       throw Object.assign(new Error(`A data source may only read data from this Pagewright server (sample data, the data proxy, saved SQL), not ${method} ${path}.`), { status: 403 });
     }
     // cookies only for our own data routes; no redirect followed on this server (one could lead into /api/users)

@@ -14,6 +14,8 @@ p.on('pageerror', e => errs.push(e.message));
 
 step('new dashboard from the home page');
 await p.goto(BASE);
+// next dev hydrates late: a click before that does nothing
+await p.waitForFunction(() => { const i = document.querySelector('[aria-label="New report name"]'); return i && Object.keys(i).some(k => k.startsWith('__reactProps')); });
 await p.getByLabel('New report name').fill('e2e dashboard');
 await p.getByRole('button', { name: 'New dashboard' }).click();
 await p.waitForURL(/\/designer\//);

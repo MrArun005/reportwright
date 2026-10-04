@@ -20,7 +20,7 @@ import { writeReport, readReport, listVersions } from '../../src/server/reports.
 import { principalOf, principalFromId, serverSources, stampDefinition, readRunnable, canDesign, OPEN, PUBLIC, NOBODY } from '../../src/server/perms.js';
 import { apiPrincipal } from '../../src/server/auth.js';
 import { baseUrl, renderTo, assertFixedHosts } from '../../src/server/renderer.js';
-import { serverFetch, safeFetch, strictUrl } from '../../src/server/safeFetch.js';
+import { serverFetch, safeFetch, strictUrl, isPrivate, proxiedType } from '../../src/server/safeFetch.js';
 import { GET as dataProxy } from '../../app/api/data/proxy/route.js';
 import { checkDelivery } from '../../src/server/jobs.js';
 import { reportFetch } from '../../src/viewer/dataFetch.js';
@@ -323,7 +323,7 @@ describe('a report\'s data sources in the browser (reportFetch)', () => {
   it('may read data on this server: sample data, the data proxy, saved SQL, and paths that are not Pagewright\'s', async () => {
     await f('/api/sample/sales/2024');
     await f('https://pw.example.com/api/data/proxy?url=x');
-    await f('/api/data/sql', { method: 'POST', body: '{}' });
+    await f('/api/data/sql', { method: 'POST', body: JSON.stringify({ report: 'r', source: 'db', params: {} }) });
     await f('/my-api/rows.json');
     expect(calls.map(c => c[2])).toEqual(['same-origin', 'same-origin', 'same-origin', 'omit']); // not ours: no cookie
   });
@@ -474,4 +474,41 @@ describe('round 3', () => {
     expect(await proxy(rq('/api/reports/x', { headers: VIA_PROXY }))).toBe(undefined);
     expect(await proxy(rq('/embed/pagewright-viewer.js'))).toBe(undefined);
   }));
+});
+
+describe('round 4', () => {
+  it('a report\'s REST source cannot use POST /api/data/sql to run SQL of its choice as the viewer (only saved SQL by id)', async () => {
+    const calls = [];
+    const f = reportFetch('https://pw.example.com', async (u, init) => { calls.push(init.body); return new Response('{"rows":[]}'); });
+    await f('/api/data/sql', { method: 'POST', body: JSON.stringify({ report: 'r', source: 'db', params: {} }) }); // the engine's own call
+    for (const body of [JSON.stringify({ connection: 'main', query: 'select 1' }), JSON.stringify({ report: 'r', source: 'db', query: 'select 1' }), 'nope', undefined]) {
+      await expect(f('/api/data/sql', { method: 'POST', body }), String(body)).rejects.toMatchObject({ status: 403 });
+    }
+    expect(calls).toHaveLength(1);
+    // the designer's preview of unsaved SQL may send a query: only where it was asked for
+    const g = reportFetch('https://pw.example.com', async () => new Response('{"rows":[]}'), { sqlPreview: true });
+    await g('/api/data/sql', { method: 'POST', body: JSON.stringify({ connection: 'main', query: 'select 1', params: {} }) });
+  });
+  it('the data proxy follows no redirect off PW_PROXY_ALLOW and never serves the upstream\'s type (no HTML on our origin)', async () => {
+    const up = http.createServer((q, r) => {
+      if (q.url === '/go') { r.writeHead(302, { location: `http://localhost:${up.address().port}/x` }); return r.end(); }
+      r.writeHead(200, { 'content-type': 'text/html' }); r.end('<script>alert(1)</script>');
+    });
+    await new Promise(r => up.listen(0, '127.0.0.1', r));
+    const at = (p) => `http://127.0.0.1:${up.address().port}${p}`;
+    // every hop must be a listed host (the route passes PW_PROXY_ALLOW); allow is only so that the test may use 127.0.0.1
+    await expect(safeFetch(at('/go'), {}, { allow: ['127.0.0.1', 'localhost'], hostsOnly: ['127.0.0.1'] })).rejects.toMatchObject({ status: 403 });
+    expect((await safeFetch(at('/x'), {}, { allow: ['127.0.0.1'], hostsOnly: ['127.0.0.1'] })).status).toBe(200);
+    up.close();
+    for (const [t, want] of [['text/html', 'application/octet-stream'], ['image/svg+xml', 'application/octet-stream'], ['application/xml', 'application/octet-stream'],
+      ['application/json; charset=utf-8', 'application/json'], ['application/vnd.api+json', 'application/json'], ['text/csv', 'text/csv; charset=utf-8'], ['text/plain', 'text/plain; charset=utf-8'], [null, 'application/octet-stream']]) {
+      expect(proxiedType(t), String(t)).toBe(want);
+    }
+    const r = await dataProxy(new Request(`http://pw.test/api/data/proxy?url=${encodeURIComponent('http://127.0.0.1:1/x')}`));
+    expect(r.headers.get('x-content-type-options')).toBe('nosniff'); // on errors too
+  });
+  it('strictUrl refuses a non-ASCII host that is really an IP address; isPrivate covers IPv4-compatible forms', () => {
+    for (const u of ['http://０x7f.1/', 'http://①②⑦.0.0.1/', 'http://127。0。0。1/']) expect(() => strictUrl(u), u).toThrow();
+    for (const ip of ['::7f00:1', '::ffff:0:7f00:1']) expect(isPrivate(ip), ip).toBe(true);
+  });
 });

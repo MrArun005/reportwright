@@ -20,7 +20,7 @@ const deadlineMs = () => Number(process.env.PW_FETCH_DEADLINE_MS) || 60000;
 const blocked = new net.BlockList(); // also matches IPv4-mapped IPv6 (::ffff:127.0.0.1)
 for (const [a, p] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12],
   ['192.0.0.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['224.0.0.0', 3]]) blocked.addSubnet(a, p, 'ipv4');
-for (const [a, p] of [['::', 128], ['::1', 128], ['fc00::', 7], ['fe80::', 10], ['fec0::', 10], ['ff00::', 8]]) blocked.addSubnet(a, p, 'ipv6');
+for (const [a, p] of [['::', 96], ['::ffff:0:0:0', 96], ['fc00::', 7], ['fe80::', 10], ['fec0::', 10], ['ff00::', 8]]) blocked.addSubnet(a, p, 'ipv6');
 
 /** True for loopback, private, link-local, shared, multicast and reserved addresses. */
 export function isPrivate(ip) {
@@ -56,6 +56,7 @@ export function strictUrl(input) {
   if (u.username || u.password || m[2].includes('@')) throw bad('a user name or password in the URL');
   const written = m[2].replace(/:\d*$/, '').toLowerCase(); // as written, without the port
   const host = /[^\x00-\x7f]/.test(written) ? domainToASCII(written) : written; // an international name: its punycode
+  if (host !== written && net.isIP(host)) throw bad('a host that is an IP address in other characters');
   if (host !== u.hostname || host.endsWith('.') || host.includes('%')) throw bad(`the host "${m[2]}" is not written plainly`);
   return u;
 }
@@ -122,8 +123,10 @@ const refuse = (host) => Object.assign(new Error(`"${host}" is a private or loca
  * @param {{ allow?: string[], hops?: number }} [opt] allow: origins ("http://host:port") or host names
  * @returns {Promise<Response>}
  */
-export async function safeFetch(input, init = {}, { allow = [], hops = 3, deadline = Date.now() + deadlineMs() } = {}) {
+export async function safeFetch(input, init = {}, { allow = [], hops = 3, deadline = Date.now() + deadlineMs(), hostsOnly = null } = {}) {
   const url = strictUrl(input);
+  // hostsOnly (the data proxy's PW_PROXY_ALLOW): every hop, redirects included, must be one of these hosts
+  if (hostsOnly && !hostsOnly.includes(url.hostname)) throw Object.assign(new Error(`The host "${url.hostname}" is not allowed here (a redirect off the allowed hosts?)`), { status: 403 });
   const late = () => new Error(`${url.host} did not finish in ${Math.round(deadlineMs() / 1000)} s (the limit for one request)`);
   if (Date.now() >= deadline) throw late();
   if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error(`Only http and https URLs can be fetched, not ${url.protocol}`);
@@ -156,7 +159,7 @@ export async function safeFetch(input, init = {}, { allow = [], hops = 3, deadli
     // credentials never follow a redirect to another site
     const h = same ? headers : Object.fromEntries(Object.entries(headers).filter(([k]) => !/^(authorization|cookie|x-api-key|x-pagewright-proxy-secret)$/i.test(k)));
     // a public first hop cannot redirect into the allow list (this server, PW_INTERNAL_HOSTS): its redirects get none
-    return safeFetch(next, keepBody ? { ...init, headers: h } : { headers: h }, { allow: trusted ? allow : [], hops: hops - 1, deadline });
+    return safeFetch(next, keepBody ? { ...init, headers: h } : { headers: h }, { allow: trusted ? allow : [], hops: hops - 1, deadline, hostsOnly });
   }
 
   const empty = [204, 205, 304].includes(res.statusCode) || init.method === 'HEAD';
@@ -178,6 +181,15 @@ export async function safeFetch(input, init = {}, { allow = [], hops = 3, deadli
   }
   const outHeaders = Object.entries(res.headers).flatMap(([k, v]) => (Array.isArray(v) ? v.map(x => [k, x]) : [[k, String(v)]]));
   return new Response(body, { status: res.statusCode, statusText: res.statusMessage, headers: outHeaders });
+}
+
+/** The type the data proxy answers with: data types as such, anything else (HTML, SVG, XML) as bytes. @param {string|null} t */
+export function proxiedType(t) {
+  const m = String(t || '').split(';')[0].trim().toLowerCase();
+  if (m === 'application/json' || /^application\/[\w.+-]+\+json$/.test(m)) return 'application/json';
+  if (m === 'text/csv') return 'text/csv; charset=utf-8';
+  if (m === 'text/plain') return 'text/plain; charset=utf-8';
+  return 'application/octet-stream';
 }
 
 function safeOrigin(s) {

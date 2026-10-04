@@ -32,6 +32,8 @@ const selectReport = async () => { await p.locator('.cscroll').click({ position:
 const save = async () => { await p.keyboard.press(`${mod}+s`); await p.getByTestId('save-state').filter({ hasText: 'Saved' }).waitFor(); };
 const newReport = async (n, id) => {
   await p.goto(BASE);
+  // next dev hydrates late: a name typed before that is reset, and the report gets a default name
+  await p.waitForFunction(() => { const i = document.querySelector('[aria-label="New report name"]'); return i && Object.keys(i).some(k => k.startsWith('__reactProps')); });
   await p.getByLabel('New report name').fill(n);
   await p.getByRole('button', { name: 'New report' }).click();
   await p.waitForURL(new RegExp(`/designer/${id}`), { timeout: 120000 });
