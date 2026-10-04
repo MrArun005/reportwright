@@ -116,13 +116,23 @@ const leaderMs = () => Number(process.env.PW_SCHEDULER_LEASE_MS) || 3 * tickMs()
 export async function tickAs(owner, now = new Date()) {
   if (!(await store().lease('scheduler', owner, leaderMs()))) return;
   for (const s of await readSchedules()) {
-    try { if (isDue(s, now)) await runSchedule(s, 'cron'); }
+    try {
+      // claim the run first (under the lock): a slow item list or upload cannot make the next tick run it again
+      const claimed = await withLock('schedules', async () => {
+        const cur = await readOne(s.id);
+        if (!cur || !isDue(cur, now)) return false;
+        await save({ ...cur, lastRunAt: now.toISOString() });
+        return true;
+      });
+      if (claimed) await runSchedule(s, 'cron');
+    }
     catch (e) { console.error(`[pagewright] schedule ${s.id}: ${e.message}`); }
   }
 }
 
 export function startScheduler() {
   if (g.__pwSched.timer || process.env.PW_SCHEDULER === 'off') return;
-  g.__pwSched.timer = setInterval(() => { tickAs(ME).catch(() => {}); }, tickMs());
+  // one tick at a time: a tick still running (a slow schedule) is not joined by the next
+  g.__pwSched.timer = setInterval(() => { if (g.__pwSched.busy) return; g.__pwSched.busy = tickAs(ME).catch(() => {}).finally(() => { g.__pwSched.busy = null; }); }, tickMs());
   g.__pwSched.timer.unref?.();
 }

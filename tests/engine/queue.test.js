@@ -69,3 +69,40 @@ describe('one scheduler for all replicas', () => {
     expect(runs).toHaveLength(1);
   });
 });
+
+describe('review: a slow delivery target cannot hold the scheduler or the queue', () => {
+  it('safeFetch has one deadline for headers and body, across a drip-feed', async () => {
+    const http = await import('node:http');
+    const net = await import('node:net');
+    const { safeFetch } = await import('../../src/server/safeFetch.js');
+    const body = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.write('['); const t = setInterval(() => res.write(' '), 100); res.on('close', () => clearInterval(t)); });
+    const head = net.createServer((sock) => { let i = 0; const msg = 'HTTP/1.1 200 OK\r\n' + 'X-Slow: a\r\n'.repeat(500); const t = setInterval(() => { if (i < msg.length) sock.write(msg[i++]); }, 50); sock.on('close', () => clearInterval(t)); sock.on('error', () => {}); });
+    await new Promise(r => body.listen(0, '127.0.0.1', r));
+    await new Promise(r => head.listen(0, '127.0.0.1', r));
+    process.env.PW_FETCH_DEADLINE_MS = '800';
+    try {
+      for (const srv of [body, head]) {
+        const url = `http://127.0.0.1:${srv.address().port}/x`;
+        const t0 = Date.now();
+        await expect(safeFetch(url, {}, { allow: [new URL(url).origin] }).then(r => r.text())).rejects.toThrow(/did not finish|longer than/);
+        expect(Date.now() - t0).toBeLessThan(3000);
+      }
+    } finally { delete process.env.PW_FETCH_DEADLINE_MS; body.close(); head.close(); body.closeAllConnections?.(); }
+  });
+
+  it('a tick claims a due schedule before its slow work: overlapping ticks run it once', async () => {
+    const http = await import('node:http');
+    const srv = http.createServer((req, res) => setTimeout(() => { res.writeHead(200, { 'content-type': 'application/json' }); res.end('[{"n":"a"}]'); }, 600));
+    await new Promise(r => srv.listen(0, '127.0.0.1', r));
+    process.env.PW_INTERNAL_HOSTS = '127.0.0.1';
+    try {
+      const s = await schedules.createSchedule({ template: def, cron: '* * * * *', itemsFrom: { url: `http://127.0.0.1:${srv.address().port}/list`, map: { n: 'n' } }, format: 'json' });
+      const later = new Date(Date.now() + 61000);
+      const first = schedules.tickAs('A', later);
+      await sleep(100);
+      await schedules.tickAs('A', later); // the same server's next tick, while the first waits on the slow list
+      await first;
+      expect((await jobs.listJobs()).filter(j => j.schedule?.id === s.id)).toHaveLength(1);
+    } finally { delete process.env.PW_INTERNAL_HOSTS; srv.close(); }
+  });
+});

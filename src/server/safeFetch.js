@@ -12,6 +12,9 @@ import { accountsOn, internalCookie } from './session.js';
 
 const MAX_BYTES = 20 * 1024 * 1024;
 const TIMEOUT_MS = 30000;
+/** One deadline for a whole fetch (every redirect, the headers and the body): a server that drips bytes cannot hold a
+ *  request open (a socket timeout only counts silence). PW_FETCH_DEADLINE_MS, default 60 s. */
+const deadlineMs = () => Number(process.env.PW_FETCH_DEADLINE_MS) || 60000;
 
 const blocked = new net.BlockList(); // also matches IPv4-mapped IPv6 (::ffff:127.0.0.1)
 for (const [a, p] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12],
@@ -77,8 +80,10 @@ const refuse = (host) => Object.assign(new Error(`"${host}" is a private or loca
  * @param {{ allow?: string[], hops?: number }} [opt] allow: origins ("http://host:port") or host names
  * @returns {Promise<Response>}
  */
-export async function safeFetch(input, init = {}, { allow = [], hops = 3 } = {}) {
+export async function safeFetch(input, init = {}, { allow = [], hops = 3, deadline = Date.now() + deadlineMs() } = {}) {
   const url = new URL(input);
+  const late = () => new Error(`${url.host} did not finish in ${Math.round(deadlineMs() / 1000)} s (the limit for one request)`);
+  if (Date.now() >= deadline) throw late();
   if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error(`Only http and https URLs can be fetched, not ${url.protocol}`);
   const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
   const trusted = allow.some(a => (a.includes('://') ? safeOrigin(a) === url.origin : a.toLowerCase() === host));
@@ -89,12 +94,15 @@ export async function safeFetch(input, init = {}, { allow = [], hops = 3 } = {})
     return opts.all ? cb(null, list) : cb(null, list[0].address, list[0].family);
   });
   const headers = Object.fromEntries(new Headers(init.headers || {}));
+  let timer;
   const res = await new Promise((resolve, reject) => {
     const req = (url.protocol === 'https:' ? https : http).request(url, { method: init.method || 'GET', headers, lookup, timeout: TIMEOUT_MS }, resolve);
     req.on('timeout', () => req.destroy(new Error(`${url.host} did not answer in ${TIMEOUT_MS / 1000} s`)));
     req.on('error', reject);
+    timer = setTimeout(() => req.destroy(late()), deadline - Date.now()); // headers too: a drip-fed status line
     req.end(init.body ?? undefined);
-  });
+  }).catch((e) => { clearTimeout(timer); throw e; });
+  clearTimeout(timer);
 
   if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
     res.resume();
@@ -104,7 +112,7 @@ export async function safeFetch(input, init = {}, { allow = [], hops = 3 } = {})
     const keepBody = res.statusCode === 307 || res.statusCode === 308;
     // credentials never follow a redirect to another site
     const h = same ? headers : Object.fromEntries(Object.entries(headers).filter(([k]) => !/^(authorization|cookie|x-api-key)$/i.test(k)));
-    return safeFetch(next, keepBody ? { ...init, headers: h } : { headers: h }, { allow, hops: hops - 1 });
+    return safeFetch(next, keepBody ? { ...init, headers: h } : { headers: h }, { allow, hops: hops - 1, deadline });
   }
 
   let size = 0;
@@ -114,6 +122,10 @@ export async function safeFetch(input, init = {}, { allow = [], hops = 3 } = {})
       cb(size > MAX_BYTES ? new Error(`The response from ${url.host} is larger than ${MAX_BYTES / 1048576} MB`) : null, chunk);
     },
   }));
+  // the body within the same deadline
+  const bodyTimer = setTimeout(() => { capped.destroy(late()); res.destroy(); }, Math.max(0, deadline - Date.now()));
+  bodyTimer.unref?.();
+  capped.on('close', () => clearTimeout(bodyTimer));
   const empty = [204, 205, 304].includes(res.statusCode) || init.method === 'HEAD';
   if (empty) res.resume();
   const outHeaders = Object.entries(res.headers).flatMap(([k, v]) => (Array.isArray(v) ? v.map(x => [k, x]) : [[k, String(v)]]));
