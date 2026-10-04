@@ -17,7 +17,7 @@ import { formatValue, formatDate, english, toDate, roundHalfAway } from './forma
  * @property {string} [currency]
  */
 
-const ROOTS = { fields: 'Fields', parameters: 'Parameters', globals: 'Globals', parent: 'Parent' };
+const ROOTS = { fields: 'Fields', parameters: 'Parameters', globals: 'Globals', parent: 'Parent', theme: 'Theme', partproperties: 'PartProperties' };
 
 /* ------------------------------------------------------------------ cache */
 const astCache = new Map();
@@ -155,7 +155,8 @@ export const ROW_PARENT = new WeakMap();
 function member(o, prop, ctx) {
   if (o && o.__root) {
     const src = o.__root === 'Fields' ? ctx.fields : o.__root === 'Parameters' ? ctx.params
-      : o.__root === 'Parent' ? ctx.parentFields ?? (ctx.fields && typeof ctx.fields === 'object' ? ROW_PARENT.get(ctx.fields) : null) : ctx.globals;
+      : o.__root === 'Parent' ? ctx.parentFields ?? (ctx.fields && typeof ctx.fields === 'object' ? ROW_PARENT.get(ctx.fields) : null)
+        : o.__root === 'Theme' ? ctx.theme : o.__root === 'PartProperties' ? ctx.partProps : ctx.globals;
     if (!src || typeof src !== 'object') return null;
     if (Object.hasOwn(src, prop)) return src[prop];
     const lower = prop.toLowerCase();
@@ -278,7 +279,7 @@ function pureRows(ast) {
   let r = PURE_ROWS.get(ast);
   if (r === undefined) {
     const walk = (n) => !n || typeof n !== 'object' || (Array.isArray(n) ? n.every(walk)
-      : !(n.type === 'id' && (n.name.toLowerCase() === 'globals' || n.name.toLowerCase() === 'parent')) && Object.values(n).every(walk));
+      : !(n.type === 'id' && ['globals', 'parent', 'partproperties'].includes(n.name.toLowerCase())) && Object.values(n).every(walk));
     r = rowLocal(ast) && walk(ast);
     PURE_ROWS.set(ast, r);
   }

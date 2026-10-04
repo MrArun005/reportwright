@@ -106,7 +106,8 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     try {
       // a fresh run shows the first pages of a long report while the rest renders
       const onPartial = keepScroll ? undefined : (pm) => { if (id === runId.current) { loadModelFonts(pm).then(() => { if (id === runId.current) { setModel(pm); setCurrent(1); } }); } };
-      const [m] = await Promise.all([renderReport(renderDef, p, st, reportId, { onPartial }), loadReportFonts(ALL_FONT_KEYS)]);
+      // target: layers meant for the screen show here; print and export render again for theirs (pagedModel)
+      const [m] = await Promise.all([renderReport(renderDef, p, { ...st, target: 'screen' }, reportId, { onPartial }), loadReportFonts(ALL_FONT_KEYS)]);
       await loadModelFonts(m); // and the fallback or uploaded fonts this model draws with
       if (id !== runId.current) return;
       setModel(m);
@@ -310,14 +311,15 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     }
   };
 
-  // Galley view shows one long page; print and the exports are of the paged report.
-  const pagedModel = () => (galley ? renderReport(definition, params, state, reportId) : model);
+  // Galley view shows one long page; print and the exports are of the paged report. A report with layers (or a
+  // master, which may bring layers) renders again for the print or export target: a screen-only layer stays on screen.
+  const pagedModel = (target) => (galley || definition.layers?.length || definition.master ? renderReport(definition, params, { ...state, target }, reportId) : model);
 
   const doExport = async (fmt) => {
     if (!model) return;
     setExporting(fmt);
     try {
-      const m = await pagedModel();
+      const m = await pagedModel('export');
       const blob = fmt === 'pdf' ? await pdfBlob(m, definition.name) : await exportBlob(fmt, m, definition, { params, state, lang, ...(exportHtmlOptions || {}), ...(level.id ? { reportId: level.id } : {}) });
       const ext = { pdf: 'pdf', xlsx: 'xlsx', docx: 'docx', html: 'html', csv: 'csv', json: 'json' }[fmt];
       const url = URL.createObjectURL(blob);
@@ -337,7 +339,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     if (!model) return;
     setExporting('print');
     try {
-      const blob = await pdfBlob(await pagedModel(), definition.name);
+      const blob = await pdfBlob(await pagedModel('print'), definition.name);
       onExported?.('print', level.id, params);
       const url = URL.createObjectURL(blob);
       document.querySelector('iframe[data-pw-print]')?.remove();

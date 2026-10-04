@@ -1,5 +1,5 @@
 // @ts-check
-import { ITEMS } from './items/index.js';
+import { ITEMS, withPartProps } from './items/index.js';
 
 const EPS = 0.01;
 
@@ -15,12 +15,15 @@ const EPS = 0.01;
  *   units and tables in coordinates relative to the top of this set
  */
 export function layoutItems(items, lc, { dx = 0 } = {}) {
-  const sorted = [...(items || [])].sort((a, b) => a.y - b.y || a.x - b.x);
+  // items on a layer that is hidden, or not for this render's target (screen, print, export), take no part
+  const shown = lc.layerOff ? (items || []).filter(it => !lc.layerOff(it)) : items || [];
+  const sorted = [...shown].sort((a, b) => a.y - b.y || a.x - b.x);
   const laid = sorted.map((it0) => {
     const it = dx ? { ...it0, x: it0.x + dx } : it0;
     const spec = ITEMS[it.type];
     if (!spec) { lc.warn(`Unknown item type "${it.type}"`); return { it, res: { height: 0, units: [] } }; }
-    return { it, res: spec.layout(it, lc) };
+    // a copy of a report part: its expressions read PartProperties
+    return { it, res: spec.layout(it, it.partProps && typeof it.partProps === 'object' ? withPartProps(lc, it.partProps) : lc) };
   });
 
   const shift = new Array(laid.length).fill(0);
@@ -62,4 +65,19 @@ export function layoutItems(items, lc, { dx = 0 } = {}) {
   }
   units.sort((a, b) => a.top - b.top);
   return { units, tables, height };
+}
+
+/**
+ * Which items a render leaves out because of their layer: `layers: [{ name, target, visible }]`. Targets follow
+ * ActiveReports' TargetDevice: all, screen, print (paper), export, design (none: the designer only).
+ * @returns {((it: any) => boolean) | null}
+ */
+export function layerFilter(layers, target) {
+  const off = new Set();
+  for (const l of Array.isArray(layers) ? layers : []) {
+    if (!l || typeof l.name !== 'string') continue;
+    const t = l.target || 'all';
+    if (l.visible === false || t === 'design' || (t !== 'all' && t !== target)) off.add(l.name);
+  }
+  return off.size ? (it) => it.layer != null && off.has(it.layer) : null;
 }

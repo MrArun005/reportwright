@@ -19,6 +19,8 @@ import { shiftItems } from './items/paint.js';
 import { paginate } from './paginate/index.js';
 import { layoutItems } from './layout.js';
 import { validate } from './schema/validate.js';
+import { makeLoader, resolveReuse, resolveTheme, flattenNamed, REUSE_LIMITS } from './reuse.js';
+import { layerFilter } from './layout.js';
 
 export class ReportError extends Error {
   /** @param {string} msg @param {object} [extra] */
@@ -48,12 +50,19 @@ const MAX_SUBREPORTS = 2000; // per render, all nesting levels together
  *   sql: runs SQL sources directly (server renders).
  *   timeoutMs: stop with a ReportError (status 504) when the render runs longer; subreports share the deadline.
  */
-export async function render(def, opts = {}) {
+export async function render(def0, opts = {}) {
   const t0 = Date.now();
+  // masters, stylesheets and part libraries: other saved reports, each loaded once for this render and its subreports
+  const reuseWarnings = [];
+  const getReport = makeLoader(opts.loadReport, opts.reportCache || (opts.reportCache = new Map()));
+  let def = def0, parts = null;
+  if (def0 && typeof def0 === 'object' && !Array.isArray(def0)) {
+    ({ def, parts } = await resolveReuse(def0, getReport, (m) => { if (!reuseWarnings.includes(m)) reuseWarnings.push(m); }, opts.reportId ? [opts.reportId] : []));
+  }
   const v = validate(def);
   if (v.errors.length) throw new ReportError(v.errors[0], { errors: v.errors });
   /** @type {string[]} */
-  const warnings = [...v.warnings];
+  const warnings = [...v.warnings, ...reuseWarnings];
   const warn = (msg) => { if (warnings.length < 200 && !warnings.includes(msg)) warnings.push(msg); };
 
   const page = resolvePage(def.page);
@@ -79,6 +88,12 @@ export async function render(def, opts = {}) {
     dataSets: {}, fields: null, locale: def.locale || 'en-IN', currency: def.currency || 'INR', functions: functionTable(def, fnCount), clock,
     aggCache: new WeakMap(), // aggregate results for this render (expr/evaluate.js)
   };
+  // Theme.* in expressions: a theme report (maybe picked by a parameter), the report's own theme, or the default
+  baseCtx.theme = await resolveTheme(def, baseCtx, getReport, warn);
+  // where this render goes: layers can be for the screen, print or export only (the viewer says which; else export)
+  const target = opts.target || opts.state?.target || 'export';
+  const layerOff = layerFilter(def.layers, target);
+  const named = flattenNamed(def.styles?.named, warn);
   const sources = opts.sources || await loadSources(def, { params, fetch: opts.fetch, baseUrl: opts.baseUrl, sql: opts.sql, reportId: opts.reportId });
   opts.onSources?.(sources); // the worker's first-pages render hands its data to the full render that follows
   const dataSets = buildDataSets(def, sources, { ...baseCtx, warn });
@@ -107,7 +122,7 @@ export async function render(def, opts = {}) {
   const makeLc = (globals, fixed) => {
     const lc = {
       m, base, dataSets, warn, fixed, maxUnitHeight: contentH, state: opts.state || {}, regions,
-      named: def.styles?.named || {},
+      named, parts, layerOff,
       nextId: () => ++idSeq,
       layoutItems: (items, l, o) => layoutItems(items, l, o),
       linkFor: (it, ctx, rect) => linkFor(it, ctx, rect, warn, opts.state),
@@ -159,7 +174,7 @@ export async function render(def, opts = {}) {
             if ((opts.chain || []).includes(rq.report)) throw new Error('it includes itself');
             if (!defs.has(rq.report)) defs.set(rq.report, await opts.loadReport(rq.report));
             const child = defs.get(rq.report);
-            const r = await render(child, { ...opts, onSources: undefined, deadline: deadline ?? undefined, reportId: rq.report, budget, fnCount, imageBudget, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, rq.report], bodyWidth: page.bodyWidth, state: {} });
+            const r = await render(child, { ...opts, target, onSources: undefined, deadline: deadline ?? undefined, reportId: rq.report, budget, fnCount, imageBudget, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, rq.report], bodyWidth: page.bodyWidth, state: {} });
             results.set(key, r);
             for (const w of r.warnings) warn(`Subreport ${rq.report}: ${w}`);
           } catch (e) { if (e.timeout) throw e; results.set(key, { error: e.message }); }
@@ -184,19 +199,28 @@ export async function render(def, opts = {}) {
     const assemble = (tocEntries) => {
       regions.length = 0;
       lc.toc = tocEntries;
+      // rows a fixed table frame hands on to overflow placeholders (items/index.js): name → rows still to show
+      const overflow = lc.overflow = { pending: new Map(), more: null, repeat: false, head: null };
       // each body section: laid out and paginated with its own page
       const parts = [];
-      for (let bi = 0; bi < bodies.length; bi++) {
+      sections: for (let bi = 0; bi < bodies.length; bi++) {
         const g = geos[bi];
         const blc = bi === 0 && !bodies[0].page ? lc : { ...lc, bodyWidth: g.bodyWidth, maxUnitHeight: g.cH };
-        const body = layoutItems(bodies[bi].items || [], blc);
-        if (opts.bodyOnly) return { body };
-        // one page that grows: page breaks have nothing to break
-        if (g.pg.pageless) for (const u of body.units) { u.breakBefore = false; u.breakAfter = false; }
-        const slices = paginate(body.units, body.tables, g.cH, warn);
-        parts.push({ body, slices, g });
-        if (lc.rowBudget?.cut) break;
+        // a section whose last overflow placeholder still has rows is laid out again, page after page
+        for (let rep = 0; ; rep++) {
+          overflow.more = null; overflow.repeat = rep > 0; overflow.head = null;
+          const body = layoutItems(bodies[bi].items || [], blc);
+          if (opts.bodyOnly) return { body };
+          // one page that grows: page breaks have nothing to break
+          if (g.pg.pageless) for (const u of body.units) { u.breakBefore = false; u.breakAfter = false; }
+          const slices = paginate(body.units, body.tables, g.cH, warn);
+          parts.push({ body, slices, g });
+          if (lc.rowBudget?.cut) break sections;
+          if (!overflow.more) break;
+          if (rep + 1 >= REUSE_LIMITS.repeats) { warn(`${overflow.more}: the rows need more than ${REUSE_LIMITS.repeats} continuation pages; the rest are left out.`); overflow.pending.clear(); break; }
+        }
       }
+      if (!lc.rowBudget?.cut) for (const p of overflow.pending.values()) warn(`${p.table}: ${p.units.length} rows did not fit its frame and there is no overflow placeholder "${p.to}" after it.`);
       // the page list: [part, index of the page in its part]
       const list = [];
       for (const part of parts) for (let k = 0; k < Math.ceil(part.slices.length / part.g.colCount); k++) list.push({ part, k });

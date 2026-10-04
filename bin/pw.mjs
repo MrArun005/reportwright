@@ -39,9 +39,15 @@ function withData(def, data) {
   return { ...def, dataSources: def.dataSources.map(s => (s.name in data ? { name: s.name, type: 'json', data: data[s.name] } : s)) };
 }
 
-async function renderModel(def, { parameters = {}, data, base, now, state } = {}) {
+/** Subreports, masters, part libraries, stylesheets and themes: the report's sibling <id>.pw.json files. */
+const siblingLoader = (file) => async (id) => {
+  if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(id)) throw new Error(`Report "${id}" not found`);
+  try { return readJson(path.join(path.dirname(path.resolve(file)), `${id}.pw.json`)); } catch { throw new Error(`Report "${id}" not found`); }
+};
+
+async function renderModel(def, { parameters = {}, data, base, now, state, file } = {}) {
   try {
-    return await render(withData(def, data), { fontStore, parameters, baseUrl: base, now: now ? new Date(now) : undefined, ...(state ? { state } : {}) });
+    return await render(withData(def, data), { fontStore, parameters, baseUrl: base, now: now ? new Date(now) : undefined, ...(state ? { state } : {}), ...(file ? { loadReport: siblingLoader(file) } : {}) });
   } catch (e) {
     const relative = /fetch|URL|Invalid URL/i.test(e.message) && !base;
     fail(`${e.message}${relative ? '\n    A data source needs a server: pass --base http://localhost:3000, or push the data with -d source=file.json.' : ''}`);
@@ -91,7 +97,7 @@ async function cmdRender(args) {
   if (positionals.length !== 1) usage('give one report file');
   const def = readJson(positionals[0]);
   const data = Object.fromEntries(Object.entries(pairs(values.d)).map(([k, f]) => [k, readJson(f)]));
-  const model = await renderModel(def, { parameters: pairs(values.p), data, base: values.base });
+  const model = await renderModel(def, { parameters: pairs(values.p), data, base: values.base, file: positionals[0] });
   const fmt = values.f;
   let bytes;
   let encrypt;
@@ -126,7 +132,7 @@ async function cmdTest(args) {
     const def = readJson(path.resolve(testsDir, spec.report));
     for (const c of spec.cases || [{ name: 'default' }]) {
       const data = Object.fromEntries(Object.entries(c.data || {}).map(([k, v]) => [k, typeof v === 'string' ? readJson(path.resolve(testsDir, v)) : v]));
-      const model = await renderModel(def, { parameters: c.parameters, data, now: c.now || '2026-01-01T09:00:00', state: c.state }); // state: drill-down toggles, e.g. {"toggles": {"Pivot|r0|/North": false}}
+      const model = await renderModel(def, { parameters: c.parameters, data, now: c.now || '2026-01-01T09:00:00', state: c.state, file: path.resolve(testsDir, spec.report) }); // state: drill-down toggles, e.g. {"toggles": {"Pivot|r0|/North": false}}
       const label = `${id} › ${c.name}`;
       const snapFile = path.join(testsDir, `${id}.${c.name}.snap.txt`);
       const text = snapshotText(label, model);
@@ -147,7 +153,7 @@ async function cmdDiff(args) {
   if (positionals.length !== 2) usage('give two report files');
   const data = Object.fromEntries(Object.entries(pairs(values.d)).map(([k, f]) => [k, readJson(f)]));
   const opts = { parameters: pairs(values.p), data, base: values.base, now: '2026-01-01T09:00:00' };
-  const [a, b] = await Promise.all(positionals.map(f => renderModel(readJson(f), opts)));
+  const [a, b] = await Promise.all(positionals.map(f => renderModel(readJson(f), { ...opts, file: f })));
   if (!compare(path.basename(positionals[1]), a, b)) { console.log('No differences.'); return; }
   process.exit(1);
 }

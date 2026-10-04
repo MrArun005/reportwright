@@ -8,6 +8,7 @@ import { ALL_FONT_KEYS, SHAPER, fontFile } from '@/engine/text/fonts.js';
 import { fontKeysOf } from '@/exporters/svg.js';
 import { loadSources } from '@/engine/data/index.js';
 import { resolveParameters } from '@/engine/index.js';
+import { reuseRefs } from '@/engine/reuse.js';
 
 const toB64 = (buf) => {
   const u8 = new Uint8Array(buf);
@@ -17,9 +18,10 @@ const toB64 = (buf) => {
 };
 const getBuf = async (url) => { const r = await fetch(url); if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`); return r.arrayBuffer(); };
 
-/** Report ids this definition can open: drill-through actions and subreports (fixed ids only, not expressions). */
+/** Report ids this definition can open or reuses: drill-through actions, subreports, its master, part libraries,
+ *  stylesheet and theme (fixed ids only, not expressions). */
 export function reachableReportIds(def) {
-  const out = new Set();
+  const out = reuseRefs(def);
   const walk = (o) => {
     if (!o || typeof o !== 'object') return;
     if (Array.isArray(o)) { o.forEach(walk); return; }

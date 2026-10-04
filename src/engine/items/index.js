@@ -745,6 +745,24 @@ register('table', {
 });
 
 const cell_bookmark = (c) => c && c.bookmark;
+
+// A table with overflowTo is a fixed frame: it keeps its designed height and hands the rows that do not fit to the
+// overflow placeholder of that name (on a later body section, the next page of the form). On a page repeated for
+// more rows the table is not drawn again.
+{
+  const base = ITEMS.table.layout;
+  ITEMS.table.layout = (item, lc) => {
+    if (!item.overflowTo || !lc.overflow || item.__body || lc.fixed) return base(item, lc);
+    if (lc.overflow.repeat) return emptyBox(item);
+    const res = base({ ...item, overflowTo: undefined }, { ...lc, maxUnitHeight: Infinity });
+    if (!res.units.length) return res;
+    const head = res.units.filter(u => u.kind === 'header');
+    const rows = res.units.filter(u => u.kind !== 'header');
+    const n = fitRows(rows, item.h - head.reduce((a, u) => a + u.height, 0));
+    if (n < rows.length) lc.overflow.pending.set(String(item.overflowTo), { table: item.name || 'Table', to: String(item.overflowTo), head, units: rows.slice(n), x: item.x });
+    return { height: item.h, units: [{ top: 0, height: item.h, items: stack([...head, ...rows.slice(0, n)], 0) }] };
+  };
+}
 const MAX_TREE_DEPTH = 64;
 const CELL_ITEM_UNITS = 100000;
 
@@ -1261,6 +1279,92 @@ register('subreport', {
     const tables = res.tables.map(t => ({ ...t, x0: t.x0 + item.x, x1: t.x1 + item.x, headerItems: shiftItems(t.headerItems, item.x, 0), id: `sub${lc.nextId()}` }));
     for (const r of res.regions || []) lc.regions?.push(r);
     return { height: res.height, units: units.length ? units : [{ top: 0, height: 0, items: [] }], tables };
+  },
+});
+
+/* ---------------------------------------------------------------- reuse: parts, placeholders, overflow */
+/** A layout context whose expressions read PartProperties.<name> from `props` (a report part's values). */
+export function withPartProps(lc, props) {
+  return { ...lc, ctxFor: (x) => ({ ...lc.ctxFor(x), partProps: props }) };
+}
+function notice(item, lc, msg) {
+  const st = resolveStyle([lc.base, { color: '#b91c1c', fontStyle: 'italic', border: '0.5 dashed #b91c1c', padding: 4 }], lc.ctxFor(item));
+  const tl = layoutTextLines(msg, st, item.w, lc.m);
+  return { height: item.h, units: [{ top: 0, height: item.h, items: paintBox({ x: item.x, y: 0, w: item.w, h: item.h, st, tl, m: lc.m }) }] };
+}
+const emptyBox = (item) => ({ height: item.h, units: [{ top: 0, height: item.h, items: [] }] });
+
+// A linked report part: the library's item, drawn here with this instance's property values (engine/reuse.js loads it).
+register('part', {
+  label: 'Report part',
+  defaults: () => ({ type: 'part', w: 200, h: 60, library: '', part: '', properties: {} }),
+  props: [
+    { key: 'pageBreakBefore', label: 'Page break before', type: 'bool', category: 'Layout' },
+    { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
+  ],
+  layout(item, lc) {
+    const ctx = lc.ctxFor(item);
+    if (hidden(item, ctx, lc)) return { height: 0, units: [] };
+    const who = item.name || 'Part';
+    if (!item.library || !item.part) return notice(item, lc, 'Pick a report part');
+    if (item.__cycle) return notice(item, lc, `Part "${item.part}" would include itself`);
+    const p = lc.parts?.get(`${item.library}\u0000${item.part}`);
+    if (!p) { lc.warn(`${who}: the part "${item.part}" of "${item.library}" needs a report loader`); return notice(item, lc, `Part "${item.part}" of "${item.library}"`); }
+    if (p.error) { lc.warn(`${who}: ${p.error}`); return notice(item, lc, `${p.error}`); }
+    const it = { ...p.item, x: item.x, y: item.y, name: who, partProps: undefined, layer: undefined };
+    const props = { ...(p.item.partProps || {}), ...p.props, ...(item.properties && typeof item.properties === 'object' ? item.properties : {}) };
+    const spec = ITEMS[it.type];
+    if (!spec) return notice(item, lc, `Unknown item type "${it.type}"`);
+    const res = spec.layout(it, withPartProps(lc, props));
+    if (item.pageBreakBefore && res.units[0]) res.units[0] = { ...res.units[0], breakBefore: true };
+    return res;
+  },
+});
+
+// Where a content report's body goes in a master report. Rendering the master alone leaves the room empty.
+register('placeholder', {
+  label: 'Content placeholder',
+  defaults: () => ({ type: 'placeholder', w: 400, h: 160 }),
+  props: [],
+  layout: (item) => emptyBox(item),
+});
+
+/** Rows of a stacked list of units that fit `room` (at least one, so a row taller than the frame still moves on). */
+function fitRows(units, room) {
+  let h = 0, n = 0;
+  for (const u of units) { if (n && h + u.height > room + 0.01) break; h += u.height; n++; }
+  return n;
+}
+/** Units stacked from the top as one unit's items, moved right by dx. */
+function stack(units, dx) {
+  const items = [];
+  let y = 0;
+  for (const u of units) { for (const i of shiftItems(u.items, dx, y)) items.push(i); y += u.height; }
+  return items;
+}
+
+// A fixed-page form: rows that do not fit a table's frame continue here (table.overflowTo), header repeated.
+register('overflow', {
+  label: 'Overflow placeholder',
+  defaults: () => ({ type: 'overflow', w: 360, h: 200 }),
+  props: [
+    { key: 'overflowTo', label: 'Then continue in', labelKey: 'overflowThen', type: 'overflowTarget', category: 'Data' },
+  ],
+  layout(item, lc) {
+    const o = lc.overflow;
+    const p = o?.pending.get(item.name);
+    if (!p) return emptyBox(item);
+    o.pending.delete(item.name);
+    o.head ||= item.name; // the first placeholder filled on this page: a repeated page starts there again
+    const hh = p.head.reduce((a, u) => a + u.height, 0);
+    const n = fitRows(p.units, item.h - hh);
+    const items = stack([...p.head, ...p.units.slice(0, n)], item.x - p.x);
+    if (n < p.units.length) {
+      const rest = { ...p, units: p.units.slice(n) };
+      if (item.overflowTo) o.pending.set(item.overflowTo, { ...rest, to: item.overflowTo });
+      else { o.pending.set(o.head, rest); o.more = item.name; }
+    }
+    return { height: item.h, units: [{ top: 0, height: item.h, items }] };
   },
 });
 
