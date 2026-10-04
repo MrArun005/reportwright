@@ -5,6 +5,7 @@ import { useDesigner, SECTIONS } from './store.js';
 import { MIME_FIELD, MIME_DATASET } from './Canvas.jsx';
 import { loadSources, buildDataSets, detectFields, jsonPath } from '@/engine/data/index.js';
 import { resolveParameters } from '@/engine/index.js';
+import { functionTable } from '@/engine/expr/evaluate.js';
 import { Dialog, Field, TextInput, Select, Check } from './ui.jsx';
 import { t } from '@/i18n/index.js';
 
@@ -17,7 +18,7 @@ export async function loadSample() {
   try {
     const params = resolveParameters(def, {});
     const sources = await loadSources(def, { params, baseUrl: window.location.origin, sqlPreview: true });
-    const ctx = { params, globals: { ExecutionTime: new Date() }, dataSets: {}, fields: null, locale: def.locale, currency: def.currency };
+    const ctx = { params, globals: { ExecutionTime: new Date() }, dataSets: {}, fields: null, locale: def.locale, currency: def.currency, functions: functionTable(def) };
     const dataSets = buildDataSets(def, sources, ctx);
     useDesigner.setState({ sample: { dataSets, sources, at: Date.now() } });
   } catch (e) {
