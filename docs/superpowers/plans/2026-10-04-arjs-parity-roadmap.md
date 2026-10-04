@@ -22,7 +22,8 @@ This roadmap closes the 30 "behind" and 20 "partial" rows.
 | 4. Tables, pivot tables, pagination | **done, 4 Oct 2026**, merged to `main` | Spec `specs/2026-10-04-tablix-design.md`; rows 14–20 shipped; see the plan's Status for gate results and gaps. |
 | 5. Charts | **done, 4 Oct 2026**, merged to `main` | All 8 rows (#21–#28). See `2026-10-04-p5-charts.md` Status: decisions taken, importer gaps, gate results. |
 | 3, 6, 7 | done, merged to `main` | |
-| 8–9 | not started (9 deferred) | |
+| 8. Reuse and authoring | **done, 4 Oct 2026**, on `main` | All 8 rows (#42–#49). See `2026-10-04-p8-reuse.md` Status. |
+| 9 | deferred | |
 
 **Shape:** 9 phases. Each phase:
 - is its own branch,

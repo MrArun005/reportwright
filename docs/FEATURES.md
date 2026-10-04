@@ -30,6 +30,18 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 - Embeddable designer (`mountDesigner`) with `onSave`/`onOpen`, read-only mode, toolbox and panel options, data source templates.
 - UI in 9 languages for the new strings. Older inspector labels are English only.
 
+## 1a. Reuse and authoring (Phase 8)
+
+- **Master reports:** a report picks a master (Report → Reuse). The master's page setup, page header and footer, styles, data sources, data sets, parameters, functions, images and layers wrap it; its body goes in the master's **content placeholder** (and grows, splits across pages and pushes the master's items below it down). Masters can have masters (4 levels). Changes to a master show on the next run. The designer draws the master's items locked and the content inside the placeholder.
+- **Report part libraries:** any item of a report can be published as a part (Inspector → Report part) with typed properties that its expressions read as `=PartProperties.Name`. Other reports add the library (Report parts panel) and insert parts **linked** (they follow the library) or as an **independent copy**; a linked part can be detached. A part brings the data sources, data sets, parameters and named styles it needs.
+- **Stylesheets and style inheritance:** a named style can be based on another (`parent`); a report can use another report's named styles as its stylesheet.
+- **Themes:** colours (Accent1–6, Dark/Light 1–2, Hyperlink), major and minor fonts, and constants, read as `=Theme.Colors.Accent1`, `=Theme.Fonts.MajorFont.Family`, `=Theme.Constants.Name`. A report has its own theme or uses a theme report, chosen by an expression at run time if wanted (e.g. from a parameter); a default (Office) theme otherwise.
+- **Layers:** named layers with visible, locked and a target: everywhere, screen only, print only, export only or designer only. The viewer shows screen layers and prints or exports with the others.
+- **Fixed-page forms:** a table can be a fixed frame whose extra rows continue in an **overflow placeholder** on the next body section, with the header repeated; placeholders chain, and the last one repeats its page until the rows run out.
+- **Cell-based design mode:** items snap to whole cells and cannot overlap (stored as plain positions).
+- **Pivot wizard** (fields to rows, columns and values, aggregate and % of total / row / column, live preview) and **instant visuals** (tick fields: a suggested chart, table and pivot, drawn with the data).
+- Untrusted input: each reused report is loaded once per render, at most 50 per render and 20,000 items each; nesting is capped at 4 levels; a master or part that includes itself is skipped with a warning; report parts are priced before they are drawn (at most 20,000 items per render, shared with subreports), so a part of parts of parts is refused, not expanded.
+
 ## 2. Report items
 
 - Text box, image, line, shape, check box, container, list, table, matrix/pivot, chart, barcode, subreport, rich text, table of contents.
@@ -158,6 +170,7 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 | **Stress ledger** | 5,000 nasty rows, 6 data sets, 7 parameters (cascading, ranges, slider, switch, chart-click), 3-level drill-down ledger with in-cell visuals and sort, pivot, 5 charts, TOC, barcodes, subreport; 337 pages | **Designer only** |
 | **Account detail** | Drill-through target for Stress ledger | **Designer only** |
 | Invoice gallery | Tables from the gallery, totals | Designer, by an automated UI test from a blank page |
+| **Reuse showcase** (+ Reuse master, Reuse parts, Reuse theme) | A content report on a master, linked and copied report parts, a stylesheet, a theme picked by parameter, a pivot from the pivot wizard, a chart from instant visuals, screen-only and designer-only layers, a fixed table frame continued in an overflow placeholder; 5 pages | **Designer only**, by an automated UI test (`tests/e2e/reuse.mjs`, `PROOF=1`) |
 | Pagewright Torture Test | 180-loan portfolio: KPIs, pivot, combo chart, grouped register with sparklines, 6 drill-through pages, QR, watermark; 18 pages | Script (to be rebuilt in the Designer) |
 | Stress test | 58 items on deliberately broken data; 88 pages | Script |
 | Sales dashboard, Sales explorer → city → month | Charts, matrix, 3-level drill-through | Script |
@@ -182,7 +195,7 @@ Sample data APIs (stand-ins for customer data): `/api/sample/hard?rows=N` (nasty
 | SQL | No Oracle, Snowflake or BigQuery connector. |
 | Identity | No two-factor sign-in, no password reset by email; no SAML single logout. |
 | Governance | Permissions are not applied with accounts off (the shared `PW_BASIC_AUTH` password is all or nothing). The audit log takes the browser's word for exports made in the viewer; it has no tamper-evidence (hash chain) and is not shipped to a SIEM. |
-| Reuse | Phase 8 not started: master reports, part libraries, layers. |
+| Reuse | One content placeholder per master (ActiveReports allows several). The ActiveReports importer does not map master reports, report parts or layers yet. Themes use `Theme.Colors.Accent1`, not ActiveReports' `!` syntax. Word and Excel exports draw no rounded corners (no borders as lines there either). |
 | Tools | Phase 9 deferred: desktop designer, VS Code extension. |
 | Charts | Word export leaves charts out; no leader lines on outside pie labels; overlays not in the legend; half-circle gauges only. |
 | Tables | Recursive groups in tables only, not inside a pivot; body sections share one header and footer; an item inside a cell does not split across pages. |
