@@ -53,7 +53,7 @@ export async function render(def, opts = {}) {
   const warn = (msg) => { if (warnings.length < 200 && !warnings.includes(msg)) warnings.push(msg); };
 
   const page = resolvePage(def.page);
-  if (['pageHeader', 'body', 'pageFooter'].some(k => hasType(def.sections?.[k]?.items, 'barcode'))) await loadBarcodes();
+  if (['pageHeader', 'body', 'pageFooter'].some(k => hasType(k === 'body' && Array.isArray(def.sections?.body) ? def.sections.body.flatMap(b => b.items || []) : def.sections?.[k]?.items, 'barcode'))) await loadBarcodes();
   const params = resolveParameters(def, opts.parameters || {});
 
   const store = opts.fontStore || new FontStore(/** @type {any} */ (opts.loadFont));
@@ -73,6 +73,9 @@ export async function render(def, opts = {}) {
   const kept = warnings.length; // a second layout pass starts from here
 
   const sec = def.sections || {};
+  // sections.body: one body, or an array of body sections each with its own page (spec §3.8)
+  const bodies = Array.isArray(sec.body) ? (sec.body.length ? sec.body : [{}]) : [sec.body || {}];
+  const allBody = bodies.flatMap(b => b.items || []);
   const header = sec.pageHeader?.height ? sec.pageHeader : null;
   const footer = sec.pageFooter?.height ? sec.pageFooter : null;
   const headerH = header?.height || 0;
@@ -99,6 +102,7 @@ export async function render(def, opts = {}) {
       subreports: null,
       bodyWidth: opts.bodyWidth ?? page.bodyWidth,
       images: def.images || {}, imageBudget,
+      cellItems: { left: 100000 }, // rows of items inside table cells, for the whole render (items/index.js)
     };
     return lc;
   };
@@ -114,17 +118,17 @@ export async function render(def, opts = {}) {
     const lc = makeLc(baseCtx.globals, false);
     // opts.firstPages: lay out only enough rows for that many pages (a fast first look; the full render follows).
     // 8 pt is the smallest sensible row, so this budget always fills the pages asked for. Not with a table of contents.
-    lc.rowBudget = firstPages > 0 && !opts.bodyOnly && !hasType(sec.body?.items, 'toc') ? { left: Math.ceil((firstPages * contentH) / 8), cut: false } : null;
+    lc.rowBudget = firstPages > 0 && !opts.bodyOnly && !hasType(allBody, 'toc') ? { left: Math.ceil((firstPages * contentH) / 8), cut: false } : null;
     cutRows = () => !!lc.rowBudget?.cut;
 
     // Subreports: one pass collects what to load, then each child renders its body with its own data.
-    if (hasType(sec.body?.items, 'subreport')) {
+    if (hasType(allBody, 'subreport')) {
       if (!opts.loadReport) lc.subreports = null;
       else {
         const depth = opts.depth || 0;
         if (depth > 3) throw new ReportError('Subreports are nested more than 3 levels deep');
         const requests = new Map();
-        layoutItems(sec.body?.items || [], { ...lc, regions: [], warn: () => {}, subreports: { mode: 'collect', requests } });
+        layoutItems(allBody, { ...lc, regions: [], warn: () => {}, subreports: { mode: 'collect', requests } });
         // one budget for the whole render, all levels: a subreport per row of a big table would otherwise multiply
         const budget = opts.budget || { used: 0 };
         if (budget.used + requests.size > MAX_SUBREPORTS) throw new ReportError(`This report would render more than ${MAX_SUBREPORTS} subreports. Filter the data, or show the rows in a table.`);
@@ -144,45 +148,79 @@ export async function render(def, opts = {}) {
         lc.subreports = { mode: 'use', results };
       }
     }
-    // Multi-column body: the strip fills column slots left to right, then the next page.
-    const colCount = Math.max(1, Math.min(6, Number(sec.body?.columns?.count) || 1));
-    const colGap = Number(sec.body?.columns?.gap ?? 18);
-    const colW = (page.bodyWidth - colGap * (colCount - 1)) / colCount;
-    lc.bodyWidth = colCount > 1 ? colW : lc.bodyWidth;
+    /** One body section's page geometry. Multi-column body: the strip fills column slots left to right, then the next page. */
+    const geometry = (b, bi) => {
+      const pg = bi === 0 && !b.page ? page : resolvePage({ ...(def.page || {}), ...(b.page || {}) });
+      const cH = pg.height - pg.margins.top - pg.margins.bottom - headerH - footerH;
+      if (cH < 24) throw new ReportError(`Body section ${bi + 1}: the page header and footer leave no room for the body.`);
+      const colCount = Math.max(1, Math.min(6, Number(b.columns?.count) || 1));
+      const colGap = Number(b.columns?.gap ?? 18);
+      const colW = (pg.bodyWidth - colGap * (colCount - 1)) / colCount;
+      return { pg, cH, colCount, colGap, colW, bodyWidth: colCount > 1 ? colW : (bi === 0 && !b.page ? lc.bodyWidth : pg.bodyWidth) };
+    };
+    const geos = bodies.map(geometry);
+    lc.bodyWidth = geos[0].bodyWidth;
 
     /** Lay out the body and assemble pages. A table of contents needs a second pass. */
     const assemble = (tocEntries) => {
       regions.length = 0;
       lc.toc = tocEntries;
-      const body = layoutItems(sec.body?.items || [], lc);
-      if (opts.bodyOnly) return { body };
-      // one page that grows: page breaks have nothing to break
-      if (page.pageless) for (const u of body.units) { u.breakBefore = false; u.breakAfter = false; }
-      const slices = paginate(body.units, body.tables, contentH, warn);
-      if (lc.rowBudget?.cut) slices.length = Math.min(slices.length, firstPages * colCount);
-      let pageH = page.height;
-      if (page.pageless) {
-        if (slices.length === 1) pageH = Math.max(page.minHeight, page.margins.top + headerH + slices[0].bottom - slices[0].top + footerH + page.margins.bottom);
-        else warn(`This pageless report is taller than 200 inches, the largest PDF page, so it is split into ${slices.length} pages.`);
+      // each body section: laid out and paginated with its own page
+      const parts = [];
+      for (let bi = 0; bi < bodies.length; bi++) {
+        const g = geos[bi];
+        const blc = bi === 0 && !bodies[0].page ? lc : { ...lc, bodyWidth: g.bodyWidth, maxUnitHeight: g.cH };
+        const body = layoutItems(bodies[bi].items || [], blc);
+        if (opts.bodyOnly) return { body };
+        // one page that grows: page breaks have nothing to break
+        if (g.pg.pageless) for (const u of body.units) { u.breakBefore = false; u.breakAfter = false; }
+        const slices = paginate(body.units, body.tables, g.cH, warn);
+        parts.push({ body, slices, g });
+        if (lc.rowBudget?.cut) break;
       }
-      const total = Math.ceil(slices.length / colCount);
-      const ml = page.margins.left, mt = page.margins.top;
-      const bodyTop = mt + headerH;
+      // the page list: [part, index of the page in its part]
+      const list = [];
+      for (const part of parts) for (let k = 0; k < Math.ceil(part.slices.length / part.g.colCount); k++) list.push({ part, k });
+      if (lc.rowBudget?.cut) list.length = Math.min(list.length, firstPages);
+      const total = list.length;
+      // numbering sections: a page where a newSection group or list row starts opens one (the first page always does)
+      const secStart = new Array(total).fill(0);
+      list.forEach((e, i) => {
+        if (i === 0) return;
+        const p = e.part.slices[e.k * e.part.g.colCount];
+        e.part.starts ||= new Set(e.part.body.units.filter(u => u.sectionStart).map(u => Math.round(u.top * 100)));
+        secStart[i] = e.part.starts.has(Math.round(p.top * 100)) ? i : secStart[i - 1];
+      });
+      const secLen = new Map();
+      for (const st of secStart) secLen.set(st, (secLen.get(st) || 0) + 1);
+      const first = parts[0].g.pg;
+      let pageH = first.height;
+      if (first.pageless && parts.length === 1) {
+        const sl = parts[0].slices;
+        if (sl.length === 1) pageH = Math.max(first.minHeight, first.margins.top + headerH + sl[0].bottom - sl[0].top + footerH + first.margins.bottom);
+        else warn(`This pageless report is taller than 200 inches, the largest PDF page, so it is split into ${sl.length} pages.`);
+      }
       const bookmarks = [];
       const headings = []; // text boxes with headingLevel: for a table of contents only, not the PDF outline
       const pages = [];
-      for (let k = 0; k < total; k++) {
+      list.forEach(({ part, k }, n) => {
+        const { body, slices, g } = part;
+        const { pg, colCount, colW, colGap, cH } = g;
+        const ph = parts.length === 1 ? pageH : pg.height;
+        const ml = pg.margins.left, mt = pg.margins.top;
+        const bodyTop = mt + headerH;
         const items = [];
-        const globals = { ...baseCtx.globals, PageNumber: k + 1, TotalPages: lc.rowBudget?.cut ? '…' : total };
+        const cut = lc.rowBudget?.cut;
+        const globals = { ...baseCtx.globals, PageNumber: n - secStart[n] + 1, TotalPages: cut ? '…' : secLen.get(secStart[n]), OverallPageNumber: n + 1, OverallTotalPages: cut ? '…' : total };
         const plc = makeLc(globals, true);
-        const band = (section, y0, first, last) => {
+        const band = (section, y0, isFirst, isLast) => {
           if (!section) return;
-          if (first && section.printOnFirstPage === false) return;
-          if (last && section.printOnLastPage === false) return;
+          if (isFirst && section.printOnFirstPage === false) return;
+          if (isLast && section.printOnLastPage === false) return;
           const r = layoutItems(section.items || [], plc);
           for (const u of r.units) items.push(...shiftItems(u.items, ml, y0 + u.top));
         };
-        band(header, mt, k === 0, k === total - 1);
+        band(header, mt, n === 0, n === total - 1);
         const frozen = []; // table headers on this page and where each table ends: viewers keep them in view while scrolling
         for (let c = 0; c < colCount; c++) {
           const p = slices[k * colCount + c];
@@ -201,23 +239,30 @@ export async function render(def, opts = {}) {
             // Only items under a continued table move down by its repeated header.
             let off = 0;
             for (const t of p.repeat) if (u.x0 < t.x1 - EPS && t.x0 < u.x1 - EPS) off = Math.max(off, t.headerHeight);
+            // a footer printed at the bottom of the page (it is the last thing on its page)
+            if (u.atBottom) off += Math.max(0, cH - off - (p.bottom - p.top));
+            // the text of a merged cell, again at the top of a page its rows continue on
+            if (u.cont && u.top <= p.top + EPS) items.push(...shiftItems(u.cont, cx, bodyTop + off));
             items.push(...shiftItems(u.items, cx, bodyTop + off + (u.top - p.top)));
           }
         }
-        band(footer, pageH - page.margins.bottom - footerH, k === 0, k === total - 1);
+        band(footer, ph - pg.margins.bottom - footerH, n === 0, n === total - 1);
         const kept = [];
         for (const it of items) {
-          if (it.t === 'bookmark') (it.heading ? headings : bookmarks).push({ label: it.label, page: k + 1, y: it.y, level: it.level || 0 });
+          if (it.t === 'bookmark') (it.heading ? headings : bookmarks).push({ label: it.label, page: n + 1, y: it.y, level: it.level || 0 });
           else kept.push(it);
         }
-        pages.push(frozen.length ? { items: kept, frozen } : { items: kept });
-      }
-      return { pages, bookmarks, headings, height: pageH };
+        const out = frozen.length ? { items: kept, frozen } : { items: kept };
+        // a section with another page size: the page carries its own
+        if (pg.width !== first.width || ph !== pageH) { out.width = pg.width; out.height = ph; }
+        pages.push(out);
+      });
+      return { pages, bookmarks, headings, height: pageH, width: first.width };
   };
 
   let result = assemble([]);
   if (opts.bodyOnly) return result;
-  if (hasType(sec.body?.items, 'toc')) {
+  if (hasType(allBody, 'toc')) {
     // The table of contents changes the page count, which changes its own numbers: repeat until stable.
     for (let pass = 0; pass < 3; pass++) {
       const entries = [...result.bookmarks.map(b => ({ label: b.label, level: b.level, page: b.page })), ...result.headings.map(b => ({ label: b.label, level: b.level, page: b.page, y: b.y, heading: true }))];
@@ -255,7 +300,7 @@ export async function render(def, opts = {}) {
   }
 
   return {
-    width: page.width, height, pages, warnings, bookmarks, regions, name: def.name || '', partial: cutRows(),
+    width: result.width ?? page.width, height, pages, warnings, bookmarks, regions, name: def.name || '', partial: cutRows(),
     stats: { ms: Date.now() - t0, pages: pages.length, rows: Object.fromEntries(Object.entries(dataSets).map(([k, r]) => [k, r.length])) },
   };
 }

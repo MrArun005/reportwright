@@ -73,5 +73,5 @@ describe('Previous, GroupIndex, LookupSet, Level', () => {
     expect(evalValue('=Count(LookupSet(9, Fields.k, Fields.n, "L"))', c)).toBe(0);
     expect(() => evalValue('=LookupSet(1, Fields.k, Fields.n, "Nope")', c)).toThrow(/does not exist/);
   });
-  it('Level() waits for recursive groups', () => expect(() => ev('=Level()')).toThrow(/Phase 4/));
+  it('Level() is 0 outside a recursive group', () => expect(ev('=Level()')).toBe(0));
 });

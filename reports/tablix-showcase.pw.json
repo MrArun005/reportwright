@@ -1,0 +1,1131 @@
+{
+  "$schema": "pagewright/report@1",
+  "name": "Tablix showcase",
+  "locale": "en-IN",
+  "currency": "INR",
+  "page": {
+    "size": "A4",
+    "orientation": "portrait",
+    "margins": [
+      36,
+      36,
+      36,
+      36
+    ]
+  },
+  "dataSources": [
+    {
+      "name": "src",
+      "type": "json",
+      "data": {
+        "sales": [
+          {
+            "region": "North",
+            "city": "Pune",
+            "year": 2025,
+            "q": 1,
+            "amount": 50
+          },
+          {
+            "region": "North",
+            "city": "Pune",
+            "year": 2025,
+            "q": 2,
+            "amount": 20
+          },
+          {
+            "region": "North",
+            "city": "Pune",
+            "year": 2026,
+            "q": 1,
+            "amount": 60
+          },
+          {
+            "region": "North",
+            "city": "Delhi",
+            "year": 2025,
+            "q": 1,
+            "amount": 100
+          },
+          {
+            "region": "North",
+            "city": "Delhi",
+            "year": 2025,
+            "q": 3,
+            "amount": 30
+          },
+          {
+            "region": "North",
+            "city": "Delhi",
+            "year": 2026,
+            "q": 2,
+            "amount": 170
+          },
+          {
+            "region": "South",
+            "city": "Chennai",
+            "year": 2025,
+            "q": 1,
+            "amount": 80
+          },
+          {
+            "region": "South",
+            "city": "Chennai",
+            "year": 2026,
+            "q": 1,
+            "amount": 120
+          },
+          {
+            "region": "South",
+            "city": "Chennai",
+            "year": 2026,
+            "q": 2,
+            "amount": 40
+          },
+          {
+            "region": "South",
+            "city": "Kochi",
+            "year": 2025,
+            "q": 2,
+            "amount": 180
+          },
+          {
+            "region": "South",
+            "city": "Kochi",
+            "year": 2026,
+            "q": 1,
+            "amount": 90
+          },
+          {
+            "region": "South",
+            "city": "Kochi",
+            "year": 2026,
+            "q": 3,
+            "amount": 60
+          }
+        ],
+        "monthly": [
+          {
+            "region": "North",
+            "m": 1,
+            "month": "Jan 25",
+            "amount": 1
+          },
+          {
+            "region": "South",
+            "m": 1,
+            "month": "Jan 25",
+            "amount": 2
+          },
+          {
+            "region": "West",
+            "m": 1,
+            "month": "Jan 25",
+            "amount": 3
+          },
+          {
+            "region": "North",
+            "m": 2,
+            "month": "Feb 25",
+            "amount": 2
+          },
+          {
+            "region": "South",
+            "m": 2,
+            "month": "Feb 25",
+            "amount": 4
+          },
+          {
+            "region": "West",
+            "m": 2,
+            "month": "Feb 25",
+            "amount": 6
+          },
+          {
+            "region": "North",
+            "m": 3,
+            "month": "Mar 25",
+            "amount": 3
+          },
+          {
+            "region": "South",
+            "m": 3,
+            "month": "Mar 25",
+            "amount": 6
+          },
+          {
+            "region": "West",
+            "m": 3,
+            "month": "Mar 25",
+            "amount": 9
+          },
+          {
+            "region": "North",
+            "m": 4,
+            "month": "Apr 25",
+            "amount": 4
+          },
+          {
+            "region": "South",
+            "m": 4,
+            "month": "Apr 25",
+            "amount": 8
+          },
+          {
+            "region": "West",
+            "m": 4,
+            "month": "Apr 25",
+            "amount": 12
+          },
+          {
+            "region": "North",
+            "m": 5,
+            "month": "May 25",
+            "amount": 5
+          },
+          {
+            "region": "South",
+            "m": 5,
+            "month": "May 25",
+            "amount": 10
+          },
+          {
+            "region": "West",
+            "m": 5,
+            "month": "May 25",
+            "amount": 15
+          },
+          {
+            "region": "North",
+            "m": 6,
+            "month": "Jun 25",
+            "amount": 6
+          },
+          {
+            "region": "South",
+            "m": 6,
+            "month": "Jun 25",
+            "amount": 12
+          },
+          {
+            "region": "West",
+            "m": 6,
+            "month": "Jun 25",
+            "amount": 18
+          },
+          {
+            "region": "North",
+            "m": 7,
+            "month": "Jul 25",
+            "amount": 7
+          },
+          {
+            "region": "South",
+            "m": 7,
+            "month": "Jul 25",
+            "amount": 14
+          },
+          {
+            "region": "West",
+            "m": 7,
+            "month": "Jul 25",
+            "amount": 21
+          },
+          {
+            "region": "North",
+            "m": 8,
+            "month": "Aug 25",
+            "amount": 8
+          },
+          {
+            "region": "South",
+            "m": 8,
+            "month": "Aug 25",
+            "amount": 16
+          },
+          {
+            "region": "West",
+            "m": 8,
+            "month": "Aug 25",
+            "amount": 24
+          },
+          {
+            "region": "North",
+            "m": 9,
+            "month": "Sep 25",
+            "amount": 9
+          },
+          {
+            "region": "South",
+            "m": 9,
+            "month": "Sep 25",
+            "amount": 18
+          },
+          {
+            "region": "West",
+            "m": 9,
+            "month": "Sep 25",
+            "amount": 27
+          },
+          {
+            "region": "North",
+            "m": 10,
+            "month": "Oct 25",
+            "amount": 10
+          },
+          {
+            "region": "South",
+            "m": 10,
+            "month": "Oct 25",
+            "amount": 20
+          },
+          {
+            "region": "West",
+            "m": 10,
+            "month": "Oct 25",
+            "amount": 30
+          },
+          {
+            "region": "North",
+            "m": 11,
+            "month": "Nov 25",
+            "amount": 11
+          },
+          {
+            "region": "South",
+            "m": 11,
+            "month": "Nov 25",
+            "amount": 22
+          },
+          {
+            "region": "West",
+            "m": 11,
+            "month": "Nov 25",
+            "amount": 33
+          },
+          {
+            "region": "North",
+            "m": 12,
+            "month": "Dec 25",
+            "amount": 12
+          },
+          {
+            "region": "South",
+            "m": 12,
+            "month": "Dec 25",
+            "amount": 24
+          },
+          {
+            "region": "West",
+            "m": 12,
+            "month": "Dec 25",
+            "amount": 36
+          },
+          {
+            "region": "North",
+            "m": 13,
+            "month": "Jan 26",
+            "amount": 13
+          },
+          {
+            "region": "South",
+            "m": 13,
+            "month": "Jan 26",
+            "amount": 26
+          },
+          {
+            "region": "West",
+            "m": 13,
+            "month": "Jan 26",
+            "amount": 39
+          },
+          {
+            "region": "North",
+            "m": 14,
+            "month": "Feb 26",
+            "amount": 14
+          },
+          {
+            "region": "South",
+            "m": 14,
+            "month": "Feb 26",
+            "amount": 28
+          },
+          {
+            "region": "West",
+            "m": 14,
+            "month": "Feb 26",
+            "amount": 42
+          },
+          {
+            "region": "North",
+            "m": 15,
+            "month": "Mar 26",
+            "amount": 15
+          },
+          {
+            "region": "South",
+            "m": 15,
+            "month": "Mar 26",
+            "amount": 30
+          },
+          {
+            "region": "West",
+            "m": 15,
+            "month": "Mar 26",
+            "amount": 45
+          },
+          {
+            "region": "North",
+            "m": 16,
+            "month": "Apr 26",
+            "amount": 16
+          },
+          {
+            "region": "South",
+            "m": 16,
+            "month": "Apr 26",
+            "amount": 32
+          },
+          {
+            "region": "West",
+            "m": 16,
+            "month": "Apr 26",
+            "amount": 48
+          },
+          {
+            "region": "North",
+            "m": 17,
+            "month": "May 26",
+            "amount": 17
+          },
+          {
+            "region": "South",
+            "m": 17,
+            "month": "May 26",
+            "amount": 34
+          },
+          {
+            "region": "West",
+            "m": 17,
+            "month": "May 26",
+            "amount": 51
+          },
+          {
+            "region": "North",
+            "m": 18,
+            "month": "Jun 26",
+            "amount": 18
+          },
+          {
+            "region": "South",
+            "m": 18,
+            "month": "Jun 26",
+            "amount": 36
+          },
+          {
+            "region": "West",
+            "m": 18,
+            "month": "Jun 26",
+            "amount": 54
+          }
+        ],
+        "org": [
+          {
+            "id": 1,
+            "boss": null,
+            "name": "Chief executive",
+            "cost": 100
+          },
+          {
+            "id": 2,
+            "boss": 1,
+            "name": "Finance",
+            "cost": 50
+          },
+          {
+            "id": 3,
+            "boss": 1,
+            "name": "Operations",
+            "cost": 40
+          },
+          {
+            "id": 4,
+            "boss": 2,
+            "name": "Accounts",
+            "cost": 20
+          },
+          {
+            "id": 5,
+            "boss": 2,
+            "name": "Treasury",
+            "cost": 15
+          },
+          {
+            "id": 6,
+            "boss": 4,
+            "name": "Payables",
+            "cost": 5
+          },
+          {
+            "id": 7,
+            "boss": 3,
+            "name": "Branches",
+            "cost": 10
+          }
+        ],
+        "cards": [
+          {
+            "name": "Asha",
+            "branch": "Pune",
+            "loans": 12
+          },
+          {
+            "name": "Ravi",
+            "branch": "Delhi",
+            "loans": 9
+          },
+          {
+            "name": "Meera",
+            "branch": "Chennai",
+            "loans": 15
+          },
+          {
+            "name": "Kabir",
+            "branch": "Kochi",
+            "loans": 7
+          },
+          {
+            "name": "Zoya",
+            "branch": "Pune",
+            "loans": 11
+          },
+          {
+            "name": "Dev",
+            "branch": "Delhi",
+            "loans": 4
+          },
+          {
+            "name": "Isha",
+            "branch": "Kochi",
+            "loans": 8
+          }
+        ]
+      }
+    }
+  ],
+  "dataSets": [
+    {
+      "name": "Sales",
+      "source": "src",
+      "path": "$.sales[*]",
+      "fields": [
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "city",
+          "type": "string"
+        },
+        {
+          "name": "year",
+          "type": "number"
+        },
+        {
+          "name": "q",
+          "type": "number"
+        },
+        {
+          "name": "amount",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "Monthly",
+      "source": "src",
+      "path": "$.monthly[*]",
+      "fields": [
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "m",
+          "type": "number"
+        },
+        {
+          "name": "month",
+          "type": "string"
+        },
+        {
+          "name": "amount",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "Org",
+      "source": "src",
+      "path": "$.org[*]",
+      "fields": [
+        {
+          "name": "id",
+          "type": "number"
+        },
+        {
+          "name": "boss",
+          "type": "number"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "cost",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "Cards",
+      "source": "src",
+      "path": "$.cards[*]",
+      "fields": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "branch",
+          "type": "string"
+        },
+        {
+          "name": "loans",
+          "type": "number"
+        }
+      ]
+    }
+  ],
+  "sections": {
+    "pageHeader": {
+      "height": 24,
+      "items": [
+        {
+          "type": "textbox",
+          "name": "Title",
+          "x": 0,
+          "y": 0,
+          "w": 523,
+          "h": 18,
+          "value": "Tablix showcase · pivots, hierarchies and pagination",
+          "style": {
+            "fontSize": 13,
+            "fontWeight": "bold"
+          }
+        }
+      ]
+    },
+    "body": [
+      {
+        "name": "Pivots",
+        "height": 760,
+        "items": [
+          {
+            "type": "textbox",
+            "name": "H1",
+            "x": 0,
+            "y": 0,
+            "w": 523,
+            "h": 18,
+            "value": "Region › city × year: amount and share of the row",
+            "style": {
+              "fontSize": 12,
+              "fontWeight": "bold",
+              "color": "#0f172a"
+            }
+          },
+          {
+            "type": "matrix",
+            "name": "SalesPivot",
+            "x": 0,
+            "y": 22,
+            "w": 523,
+            "h": 60,
+            "dataSet": "Sales",
+            "corner": "",
+            "columnWidth": 58,
+            "headerStyle": {
+              "fontWeight": "bold",
+              "backgroundColor": "#f1f5f9",
+              "borderBottom": "1 solid #94a3b8"
+            },
+            "rowGroups": [
+              {
+                "name": "Region",
+                "expr": "=Fields.region",
+                "sort": "asc",
+                "total": "after",
+                "totalLabel": "All regions",
+                "collapsible": true,
+                "width": 70,
+                "header": "Region"
+              },
+              {
+                "name": "City",
+                "expr": "=Fields.city",
+                "sort": "asc",
+                "total": "after",
+                "width": 80,
+                "header": "City"
+              }
+            ],
+            "columnGroups": [
+              {
+                "name": "Year",
+                "expr": "=Fields.year",
+                "sort": "asc",
+                "total": "after"
+              }
+            ],
+            "values": [
+              {
+                "label": "Amount",
+                "value": "=Sum(Fields.amount)",
+                "format": "N0"
+              },
+              {
+                "label": "% of row",
+                "value": "=Sum(Fields.amount)",
+                "show": "percentOfRow",
+                "format": "P1"
+              }
+            ]
+          },
+          {
+            "type": "textbox",
+            "name": "H2",
+            "x": 0,
+            "y": 110,
+            "w": 523,
+            "h": 18,
+            "value": "Year › quarter columns, subtotals before each region",
+            "style": {
+              "fontSize": 12,
+              "fontWeight": "bold",
+              "color": "#0f172a"
+            }
+          },
+          {
+            "type": "matrix",
+            "name": "QuarterPivot",
+            "x": 0,
+            "y": 132,
+            "w": 523,
+            "h": 60,
+            "dataSet": "Sales",
+            "corner": "Region",
+            "columnWidth": 44,
+            "rowHeaderWidth": 80,
+            "headerStyle": {
+              "fontWeight": "bold",
+              "backgroundColor": "#f1f5f9",
+              "borderBottom": "1 solid #94a3b8"
+            },
+            "rowGroups": [
+              {
+                "name": "R",
+                "expr": "=Fields.region",
+                "sort": "asc",
+                "total": "before",
+                "totalLabel": "All"
+              }
+            ],
+            "columnGroups": [
+              {
+                "name": "Y",
+                "expr": "=Fields.year",
+                "sort": "asc",
+                "total": "after",
+                "totalLabel": "Total"
+              },
+              {
+                "name": "Q",
+                "expr": "=Fields.q",
+                "sort": "asc",
+                "label": "=\"Q\" & Fields.q"
+              }
+            ],
+            "values": [
+              {
+                "value": "=Sum(Fields.amount)",
+                "format": "N0"
+              }
+            ]
+          },
+          {
+            "type": "textbox",
+            "name": "H3",
+            "x": 0,
+            "y": 220,
+            "w": 523,
+            "h": 18,
+            "value": "A recursive hierarchy: cost of each unit and everything under it",
+            "style": {
+              "fontSize": 12,
+              "fontWeight": "bold",
+              "color": "#0f172a"
+            }
+          },
+          {
+            "type": "table",
+            "name": "OrgTable",
+            "x": 0,
+            "y": 242,
+            "w": 380,
+            "h": 40,
+            "dataSet": "Org",
+            "columns": [
+              {
+                "width": 200
+              },
+              {
+                "width": 50
+              },
+              {
+                "width": 60
+              },
+              {
+                "width": 70
+              }
+            ],
+            "header": [
+              {
+                "height": 18,
+                "style": {
+                  "fontWeight": "bold",
+                  "backgroundColor": "#f1f5f9",
+                  "borderBottom": "1 solid #94a3b8"
+                },
+                "cells": [
+                  {
+                    "value": "Unit"
+                  },
+                  {
+                    "value": "Level",
+                    "style": {
+                      "textAlign": "right"
+                    }
+                  },
+                  {
+                    "value": "Own",
+                    "style": {
+                      "textAlign": "right"
+                    }
+                  },
+                  {
+                    "value": "With units below",
+                    "style": {
+                      "textAlign": "right"
+                    }
+                  }
+                ]
+              }
+            ],
+            "groups": [
+              {
+                "name": "Unit",
+                "expr": "=Fields.id",
+                "parent": "=Fields.boss",
+                "indent": 12,
+                "header": [
+                  {
+                    "height": 16,
+                    "style": {
+                      "borderBottom": "0.5 solid #e5e7eb"
+                    },
+                    "cells": [
+                      {
+                        "value": "=Fields.name"
+                      },
+                      {
+                        "value": "=Level()"
+                      },
+                      {
+                        "value": "=Sum(Fields.cost)",
+                        "style": {
+                          "format": "N0"
+                        }
+                      },
+                      {
+                        "value": "=Sum(Fields.cost, \"Unit\", \"Recursive\")",
+                        "style": {
+                          "format": "N0",
+                          "fontWeight": "bold"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "detail": []
+          },
+          {
+            "type": "textbox",
+            "name": "H4",
+            "x": 0,
+            "y": 330,
+            "w": 523,
+            "h": 18,
+            "value": "Merged header cells (a cell across rows and columns)",
+            "style": {
+              "fontSize": 12,
+              "fontWeight": "bold",
+              "color": "#0f172a"
+            }
+          },
+          {
+            "type": "table",
+            "name": "Merged",
+            "x": 0,
+            "y": 352,
+            "w": 330,
+            "h": 40,
+            "dataSet": "Cards",
+            "columns": [
+              {
+                "width": 110
+              },
+              {
+                "width": 110
+              },
+              {
+                "width": 110
+              }
+            ],
+            "header": [
+              {
+                "height": 18,
+                "style": {
+                  "fontWeight": "bold",
+                  "backgroundColor": "#f1f5f9",
+                  "borderBottom": "1 solid #94a3b8"
+                },
+                "cells": [
+                  {
+                    "value": "Officer",
+                    "rowSpan": 2,
+                    "style": {
+                      "verticalAlign": "top"
+                    }
+                  },
+                  {
+                    "value": "Portfolio",
+                    "colSpan": 2,
+                    "style": {
+                      "textAlign": "center"
+                    }
+                  },
+                  null
+                ]
+              },
+              {
+                "height": 18,
+                "style": {
+                  "fontWeight": "bold",
+                  "backgroundColor": "#f1f5f9",
+                  "borderBottom": "1 solid #94a3b8"
+                },
+                "cells": [
+                  null,
+                  {
+                    "value": "Branch"
+                  },
+                  {
+                    "value": "Loans",
+                    "style": {
+                      "textAlign": "right"
+                    }
+                  }
+                ]
+              }
+            ],
+            "detail": [
+              {
+                "height": 16,
+                "style": {
+                  "borderBottom": "0.5 solid #e5e7eb"
+                },
+                "cells": [
+                  {
+                    "value": "=Fields.name"
+                  },
+                  {
+                    "value": "=Fields.branch"
+                  },
+                  {
+                    "value": "=Fields.loans"
+                  }
+                ]
+              }
+            ],
+            "footer": [
+              {
+                "height": 18,
+                "style": {
+                  "fontWeight": "bold",
+                  "borderTop": "1 solid #94a3b8"
+                },
+                "cells": [
+                  {
+                    "value": "Total",
+                    "colSpan": 2
+                  },
+                  null,
+                  {
+                    "value": "=Sum(Fields.loans)"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "textbox",
+            "name": "H5",
+            "x": 0,
+            "y": 540,
+            "w": 523,
+            "h": 18,
+            "value": "A grid list: three officers across",
+            "style": {
+              "fontSize": 12,
+              "fontWeight": "bold",
+              "color": "#0f172a"
+            }
+          },
+          {
+            "type": "list",
+            "name": "Grid",
+            "x": 0,
+            "y": 562,
+            "w": 168,
+            "h": 40,
+            "dataSet": "Cards",
+            "columns": 3,
+            "columnGap": 9,
+            "keepTogether": true,
+            "style": {
+              "border": "0.5 solid #cbd5e1"
+            },
+            "items": [
+              {
+                "type": "textbox",
+                "name": "CardName",
+                "x": 4,
+                "y": 4,
+                "w": 160,
+                "h": 14,
+                "value": "=Fields.name",
+                "style": {
+                  "fontWeight": "bold"
+                }
+              },
+              {
+                "type": "textbox",
+                "name": "CardLine",
+                "x": 4,
+                "y": 20,
+                "w": 160,
+                "h": 14,
+                "value": "=Fields.branch & \" · \" & Fields.loans & \" loans\""
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Wide pivot",
+        "page": {
+          "orientation": "landscape"
+        },
+        "height": 200,
+        "items": [
+          {
+            "type": "textbox",
+            "name": "H6",
+            "x": 0,
+            "y": 0,
+            "w": 770,
+            "h": 18,
+            "value": "18 months by region: wider than the page, so it continues on the next page with the region column repeated",
+            "style": {
+              "fontSize": 12,
+              "fontWeight": "bold",
+              "color": "#0f172a"
+            }
+          },
+          {
+            "type": "matrix",
+            "name": "WidePivot",
+            "x": 0,
+            "y": 24,
+            "w": 770,
+            "h": 60,
+            "dataSet": "Monthly",
+            "corner": "Region",
+            "columnWidth": 52,
+            "rowHeaderWidth": 70,
+            "headerStyle": {
+              "fontWeight": "bold",
+              "backgroundColor": "#f1f5f9",
+              "borderBottom": "1 solid #94a3b8"
+            },
+            "rowGroups": [
+              {
+                "name": "Rg",
+                "expr": "=Fields.region",
+                "sort": "asc",
+                "total": "after"
+              }
+            ],
+            "columnGroups": [
+              {
+                "name": "Mo",
+                "expr": "=Fields.m",
+                "sort": "asc",
+                "label": "=Fields.month",
+                "total": "after"
+              }
+            ],
+            "values": [
+              {
+                "value": "=Sum(Fields.amount)",
+                "format": "N0"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "pageFooter": {
+      "height": 20,
+      "items": [
+        {
+          "type": "textbox",
+          "name": "PageNo",
+          "x": 0,
+          "y": 4,
+          "w": 523,
+          "h": 12,
+          "value": "Page {Globals.PageNumber} of {Globals.TotalPages}",
+          "style": {
+            "fontSize": 8,
+            "color": "#64748b"
+          }
+        }
+      ]
+    }
+  }
+}

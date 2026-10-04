@@ -1,0 +1,7 @@
+{
+  "report": "../tablix-showcase.pw.json",
+  "cases": [
+    { "name": "default", "now": "2026-10-04T10:00:00" },
+    { "name": "north-collapsed", "now": "2026-10-04T10:00:00", "state": { "toggles": { "SalesPivot|r0|/North": false } } }
+  ]
+}

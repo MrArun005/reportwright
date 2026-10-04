@@ -17,10 +17,12 @@ This roadmap closes the 30 "behind" and 20 "partial" rows.
 | Phase | State | Notes |
 |---|---|---|
 | 0. Stabilise and ship | **not started** | Added in review, see below. Do it next. |
-| 1. Text and styling | **done, 4 Oct 2026** | 35 new tests, all gates green. The code is in the `pw-drill` worktree, not committed yet. The plan file lists 12 corrections to the plan, including a wrong rotation sign in the importer. |
-| 2. Rich text and vertical text | **done, 4 Oct 2026** (branch `feat/p2-rich-text`, not merged) | See the plan's Status: 4 security fixes from review, gate green. |
-| 3–9 | not started | |
-| 5. Charts | **done, 4 Oct 2026** (branch `feat/p5-charts`, not merged) | All 8 rows (#21–#28). See `2026-10-04-p5-charts.md` Status: decisions taken, importer gaps, gate results. |
+| 1. Text and styling | **done, 4 Oct 2026** | 35 new tests, all gates green. The plan file lists 12 corrections to the plan, including a wrong rotation sign in the importer. |
+| 2. Rich text and vertical text | **done, 4 Oct 2026**, merged to `main` | See the plan's Status: 4 security fixes from review, gate green. |
+| 4. Tables, pivot tables, pagination | **done, 4 Oct 2026**, merged to `main` | Spec `specs/2026-10-04-tablix-design.md`; rows 14–20 shipped; see the plan's Status for gate results and gaps. |
+| 5. Charts | **done, 4 Oct 2026**, merged to `main` | All 8 rows (#21–#28). See `2026-10-04-p5-charts.md` Status: decisions taken, importer gaps, gate results. |
+| 3, 6, 7 | done, merged to `main` | |
+| 8–9 | not started (9 deferred) | |
 
 **Shape:** 9 phases. Each phase:
 - is its own branch,

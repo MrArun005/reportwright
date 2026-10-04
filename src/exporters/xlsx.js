@@ -55,6 +55,7 @@ export async function exportXlsx(model, ExcelJS, { currency = 'INR', title } = {
     const ws = wb.addWorksheet(sheetName(r.name));
     r.columns.forEach((w, i) => { ws.getColumn(i + 1).width = Math.max(6, Math.round(w / 5.5)); });
     let headerRows = 0;
+    const merges = []; // applied after the rows exist (a merge down would otherwise create rows ahead of addRow)
     for (const row of r.rows) {
       const values = new Array(r.columns.length).fill(null);
       for (const c of row.cells) if (c.colIndex >= 0) values[c.colIndex] = c.value === '' ? null : c.value;
@@ -68,10 +69,12 @@ export async function exportXlsx(model, ExcelJS, { currency = 'INR', title } = {
         if (nf && (typeof c.value === 'number' || c.value instanceof Date)) cell.numFmt = nf;
         else if (c.value instanceof Date) cell.numFmt = 'dd mmm yyyy';
         if (c.bold || row.kind !== 'detail') cell.font = { bold: c.bold || row.kind === 'header' };
-        if (c.span > 1) ws.mergeCells(xr.number, c.colIndex + 1, xr.number, c.colIndex + c.span);
+        if (c.span > 1 || c.rowSpan > 1) merges.push([xr.number, c.colIndex + 1, xr.number + Math.max(1, c.rowSpan || 1) - 1, c.colIndex + Math.max(1, c.span || 1)]);
       }
       if (row.kind === 'header') xr.eachCell(cell => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8EEF3' } }; });
     }
+    const last = ws.rowCount;
+    for (const [r1, c1, r2, c2] of merges) { try { ws.mergeCells(r1, c1, Math.min(r2, last), c2); } catch { /* overlaps a merge already made */ } }
     if (headerRows) ws.views = [{ state: 'frozen', ySplit: headerRows }];
     ws.properties.outlineLevelRow = Math.max(0, ...r.rows.map(x => (x.kind === 'detail' ? x.level : 0)));
   }

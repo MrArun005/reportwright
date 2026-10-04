@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { useDesigner, SECTIONS, bodyWidth, addItem, insertItem, moveItems, updateItem, findItem, tableSetColumnWidth, tableParts, rowsOf, round, NESTING } from './store.js';
+import { useDesigner, sectionList, secOf, isBodyKey, bodyWidth, addItem, insertItem, moveItems, updateItem, findItem, tableSetColumnWidth, tableParts, rowsOf, round, NESTING } from './store.js';
 import { tableFor } from './tableGen.js';
 import { loadBarcodes } from '@/engine/items/barcode.js';
 const hasType = (items, t) => (items || []).some(i => i.type === t || hasType(i.items, t));
@@ -63,14 +63,17 @@ export default function Canvas() {
   const def = useDesigner(s => s.def);
   const zoom = useDesigner(s => s.zoom);
   const scale = zoom * PX;
-  const bw = bodyWidth(def);
+  const bands = sectionList(def);
+  // a body section with its own page may be wider (landscape): each band has its own width
+  const widths = Object.fromEntries(bands.map(s => [s.key, bodyWidth(def, isBodyKey(s.key) ? s.key : 'body')]));
+  const bw = Math.max(...Object.values(widths));
   const [drag, setDrag] = useState(null); // {mode:'move', ids, dx, dy} | {mode:'resize', id, rect} | {mode:'band', section, h} | {mode:'col', id, col, w}
 
   return (
     <div className="cscroll" onPointerDown={(e) => { if (e.target === e.currentTarget) useDesigner.getState().select({ kind: 'report' }); }}>
       <Ruler width={bw} scale={scale} />
       <div className="paper" style={{ width: bw * scale }} data-testid="paper">
-        {SECTIONS.map(s => <Band key={s.key} section={s.key} label={s.label} scale={scale} bw={bw} drag={drag} setDrag={setDrag} />)}
+        {bands.map(s => <Band key={s.key} section={s.key} label={s.label} scale={scale} bw={widths[s.key]} drag={drag} setDrag={setDrag} />)}
       </div>
     </div>
   );
@@ -96,7 +99,7 @@ function snapV(v) {
 
 /* ---------------------------------------------------------------- band */
 function Band({ section, label, scale, bw, drag, setDrag }) {
-  const sec = useDesigner(s => s.def.sections[section]);
+  const sec = useDesigner(s => secOf(s.def, section));
   const sel = useDesigner(s => s.sel);
   const grid = useDesigner(s => s.grid);
   const ref = useRef(null);
@@ -120,7 +123,7 @@ function Band({ section, label, scale, bw, drag, setDrag }) {
       const r = { x: Math.min(p0.x, p.x), y: Math.min(p0.y, p.y), w: Math.abs(p.x - p0.x), h: Math.abs(p.y - p0.y) };
       setMarquee(null);
       if (r.w < 3 && r.h < 3) { if (!additive) st.select({ kind: 'section', section }); return; }
-      const hit = useDesigner.getState().def.sections[section].items
+      const hit = secOf(useDesigner.getState().def, section).items
         .filter(i => i.x < r.x + r.w && i.x + Math.max(i.w, 1) > r.x && i.y < r.y + r.h && i.y + Math.max(i.h, 1) > r.y).map(i => i.id);
       const ids = [...new Set([...prev, ...hit])];
       st.select(ids.length ? { kind: 'items', ids } : { kind: 'section', section });
@@ -137,7 +140,7 @@ function Band({ section, label, scale, bw, drag, setDrag }) {
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
       const nh = Math.max(minH, snapV(h0 + (ev.clientY - y0) / scale));
       setDrag(null);
-      if (nh !== h0) useDesigner.getState().apply(d => { d.sections[section].height = nh; });
+      if (nh !== h0) useDesigner.getState().apply(d => { secOf(d, section).height = nh; });
     };
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
   };
@@ -150,19 +153,19 @@ function Band({ section, label, scale, bw, drag, setDrag }) {
     const p = toPt(e);
     const tool = e.dataTransfer.getData(MIME_TOOL);
     if (tool) {
-      if ((tool === 'table' || tool === 'matrix' || tool === 'subreport') && section !== 'body') return alertOnce('Tables, matrices and subreports can only go in the body.');
+      if ((tool === 'table' || tool === 'matrix' || tool === 'subreport') && !isBodyKey(section)) return alertOnce('Tables, matrices and subreports can only go in the body.');
       insertItem(tool, section, snapV(p.x), snapV(p.y));
       return;
     }
     const dsDrop = JSON.parse(e.dataTransfer.getData(MIME_DATASET) || 'null');
     if (dsDrop) {
       // a data set dropped on the page: a table of its rows, with totals for the number fields
-      if (section !== 'body') return alertOnce('Tables can only go in the body.');
+      if (!isBodyKey(section)) return alertOnce('Tables can only go in the body.');
       const st = useDesigner.getState();
       const ds = (st.def.dataSets || []).find(d => d.name === dsDrop.dataSet);
       if (!ds?.fields?.length) return alertOnce('Detect the fields of this data set first (Edit → Detect fields).');
       const x = snapV(p.x);
-      const { type, x: _x, y: _y, ...props } = tableFor(ds, { layout: 'list', width: Math.max(120, bodyWidth(st.def) - x), rows: st.sample?.dataSets?.[ds.name], fields: ds.fields.slice(0, 8).map(f => f.name) });
+      const { type, x: _x, y: _y, ...props } = tableFor(ds, { layout: 'list', width: Math.max(120, bodyWidth(st.def, section) - x), rows: st.sample?.dataSets?.[ds.name], fields: ds.fields.slice(0, 8).map(f => f.name) });
       addItem('table', section, x, snapV(p.y), props);
       return;
     }
@@ -182,7 +185,7 @@ function Band({ section, label, scale, bw, drag, setDrag }) {
         className={`band${dropping ? ' drop' : ''}`}
         data-section={section}
         style={{
-          height: h * scale,
+          height: h * scale, width: bw * scale,
           backgroundImage: gridPx >= 5 ? 'radial-gradient(circle, rgba(95,107,119,.28) 0.8px, transparent 1px)' : undefined,
           backgroundSize: `${gridPx * 2}px ${gridPx * 2}px`,
         }}
@@ -198,7 +201,7 @@ function Band({ section, label, scale, bw, drag, setDrag }) {
             ? <div key={i} className="guide v" style={{ left: g.x * scale }} />
             : <div key={i} className="guide h" style={{ top: g.y * scale }} />
         ))}
-        {section === 'body' && sec.columns?.count > 1 && Array.from({ length: sec.columns.count - 1 }, (_, i) => {
+        {isBodyKey(section) && sec.columns?.count > 1 && Array.from({ length: sec.columns.count - 1 }, (_, i) => {
           const cw = (bw - (sec.columns.gap ?? 18) * (sec.columns.count - 1)) / sec.columns.count;
           return <div key={`c${i}`} className="col-guide" style={{ left: ((i + 1) * cw + i * (sec.columns.gap ?? 18)) * scale, width: (sec.columns.gap ?? 18) * scale }} />;
         })}
@@ -238,7 +241,7 @@ function useItemDrag(item, scale, setDrag) {
     let moved = false, dx = 0, dy = 0;
     // smart guides: edges and centres of the other items in the same band or container
     const f = findItem(st.def, item.id);
-    const room = f?.parent ? f.parent.w : bodyWidth(st.def);
+    const room = f?.parent ? f.parent.w : bodyWidth(st.def, f?.section);
     const others = (f?.list || []).filter(o => !ids.includes(o.id));
     const gx = [0, room / 2, room, ...others.flatMap(o => [o.x, o.x + o.w / 2, o.x + o.w])];
     const gy = others.flatMap(o => [o.y, o.y + o.h / 2, o.y + o.h]);
@@ -342,7 +345,7 @@ function ItemView({ item, scale, drag, setDrag, bw, nest, section }) {
       setDrag(null);
       if (rect !== o) updateItem(item.id, (it, d, section) => {
         Object.assign(it, rect);
-        const sec = d.sections[section];
+        const sec = secOf(d, section);
         if (it.y + it.h > sec.height) sec.height = Math.ceil(it.y + it.h);
       });
     };
@@ -551,21 +554,31 @@ function TableView({ item, scale, drag, setDrag }) {
   return (
     <div className={`tbl${tableSelected ? ' sel' : ''}`} data-item={item.name} style={{ left: r.x * scale, top: r.y * scale }}>
       <div className="grip" title="Select or move the table" onPointerDown={onGrip}>⠿</div>
-      {tableParts(item).map(({ part, tag }) => (rowsOf(item, part) || []).map((row, ri) => {
+      {tableParts(item).map(({ part, tag }) => { const prows = rowsOf(item, part) || []; const down = {}; return prows.map((row, ri) => {
         const rowStyle = row.style;
         const isFirst = first; first = false;
         let ci = 0;
         const cells = [];
         while (ci < item.columns.length) {
           const cell = row.cells?.[ci];
+          // a cell merged down from a row above: keep its place, draw nothing
+          if (down[ci]?.left > 0) {
+            const d = down[ci]; d.left--;
+            cells.push(<div key={ci} className="cell" style={{ width: widths.slice(ci, ci + d.span).reduce((a, b) => a + b, 0) * scale, visibility: 'hidden' }} />);
+            ci += d.span;
+            continue;
+          }
           const span = Math.max(1, Math.min(cell?.colSpan || 1, item.columns.length - ci));
           const w = widths.slice(ci, ci + span).reduce((a, b) => a + b, 0);
+          const rs = Math.max(1, Math.min(cell?.rowSpan || 1, prows.length - ri));
+          if (rs > 1) down[ci] = { left: rs - 1, span };
+          const tall = rs > 1 ? { height: prows.slice(ri, ri + rs).reduce((a, r) => a + (r.height || 18), 0) * scale, alignSelf: 'flex-start', position: 'relative', zIndex: 1 } : null;
           const c = textCss([base, item.style, rowStyle, cell?.style], scale, false);
           const isSel = sel.kind === 'cell' && sel.id === item.id && sel.part === part && sel.row === ri && sel.col === ci;
           const col = ci;
           cells.push(
             <div key={ci} className={`cell${isSel ? ' sel' : ''}${dropCell === `${part}${ri}${col}` ? ' drop' : ''}`}
-              style={{ width: w * scale, ...c.box }} data-cell={`${part}-${ri}-${col}`}
+              style={{ width: w * scale, ...c.box, ...tall }} data-cell={`${part}-${ri}-${col}`}
               onPointerDown={(e) => { e.stopPropagation(); useDesigner.getState().select({ kind: 'cell', id: item.id, part, row: ri, col }); }}
               onDragOver={(e) => { if (e.dataTransfer.types.includes(MIME_FIELD)) { e.preventDefault(); e.stopPropagation(); setDropCell(`${part}${ri}${col}`); } }}
               onDragLeave={() => setDropCell(null)}
@@ -582,7 +595,7 @@ function TableView({ item, scale, drag, setDrag }) {
             {cells}
           </div>
         );
-      }))}
+      }); })}
     </div>
   );
 }

@@ -1,0 +1,296 @@
+# tablix-showcase › default · 4 pages
+--- page 1
+Tablix showcase · pivots, hierarchies and pagination
+Region › city × year: amount and share of the row
+2025
+2026
+Total
+Region
+City
+Amount
+% of row
+Amount
+% of row
+Amount
+% of row
+▼ North
+Delhi
+130
+43.3%
+170
+56.7%
+300
+100.0%
+Pune
+70
+53.8%
+60
+46.2%
+130
+100.0%
+Total
+200
+46.5%
+230
+53.5%
+430
+100.0%
+▼ South
+Chennai
+80
+33.3%
+160
+66.7%
+240
+100.0%
+Kochi
+180
+54.5%
+150
+45.5%
+330
+100.0%
+Total
+260
+45.6%
+310
+54.4%
+570
+100.0%
+All regions
+460
+46.0%
+540
+54.0%
+1,000
+100.0%
+Year › quarter columns, subtotals before each region
+Region
+2025
+2026
+Total
+Q1
+Q2
+Q3
+Q1
+Q2
+Q3
+All
+230
+200
+30
+270
+210
+60
+1,000
+North
+150
+20
+30
+60
+170
+430
+South
+80
+180
+210
+40
+60
+570
+A recursive hierarchy: cost of each unit and everything under it
+Unit
+Level
+Own
+With units
+below
+Chief executive
+0
+100
+240
+Finance
+1
+50
+90
+Accounts
+2
+20
+25
+Payables
+3
+5
+5
+Treasury
+2
+15
+15
+Operations
+1
+40
+50
+Branches
+2
+10
+10
+Merged header cells (a cell across rows and columns)
+Officer
+Portfolio
+Branch
+Loans
+Asha
+Pune
+12
+Ravi
+Delhi
+9
+Meera
+Chennai
+15
+Kabir
+Kochi
+7
+Zoya
+Pune
+11
+Dev
+Delhi
+4
+Page 1 of 4
+--- page 2
+Tablix showcase · pivots, hierarchies and pagination
+Officer
+Portfolio
+Branch
+Loans
+Isha
+Kochi
+8
+Total
+66
+A grid list: three officers across
+Asha
+Pune · 12 loans
+Ravi
+Delhi · 9 loans
+Meera
+Chennai · 15 loans
+Kabir
+Kochi · 7 loans
+Zoya
+Pune · 11 loans
+Dev
+Delhi · 4 loans
+Isha
+Kochi · 8 loans
+Page 2 of 4
+--- page 3
+Tablix showcase · pivots, hierarchies and pagination
+18 months by region: wider than the page, so it continues on the next page with the region column repeated
+Region
+Jan 25
+Feb 25
+Mar 25
+Apr 25
+May 25
+Jun 25
+Jul 25
+Aug 25
+Sep 25
+Oct 25
+Nov 25
+Dec 25
+Jan 26
+North
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+South
+2
+4
+6
+8
+10
+12
+14
+16
+18
+20
+22
+24
+26
+West
+3
+6
+9
+12
+15
+18
+21
+24
+27
+30
+33
+36
+39
+Total
+6
+12
+18
+24
+30
+36
+42
+48
+54
+60
+66
+72
+78
+Page 3 of 4
+--- page 4
+Tablix showcase · pivots, hierarchies and pagination
+Region
+Feb 26
+Mar 26
+Apr 26
+May 26
+Jun 26
+Total
+North
+14
+15
+16
+17
+18
+171
+South
+28
+30
+32
+34
+36
+342
+West
+42
+45
+48
+51
+54
+513
+Total
+84
+90
+96
+102
+108
+1,026
+Page 4 of 4

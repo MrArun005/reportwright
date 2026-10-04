@@ -216,7 +216,10 @@ const MONTH_NAMES = Array.from({ length: 12 }, (_, i) => new Date(2000, i, 1).to
 function scopeRows(args, idx, ctx, fname) {
   if (args.length > idx) {
     const s = evaluate(args[idx], ctx);
-    const rows = ctx.scopes?.[s]?.rows || ctx.dataSets[s];
+    const sc = ctx.scopes?.[s];
+    // Sum(x, "Group", "Recursive"): a recursive group's node and every node below it
+    if (sc?.recRows && args.length > idx + 1 && String(evaluate(args[idx + 1], ctx)).toLowerCase() === 'recursive') return sc.recRows;
+    const rows = sc?.rows || ctx.dataSets[s];
     if (!rows) throw new ExprError(`${fname}: the scope "${s}" does not exist`);
     return rows;
   }
@@ -583,7 +586,7 @@ const CONSTANTS = { pi: Math.PI, e: Math.E };
 export const FUNCTION_NAMES = [
   'Sum', 'Avg', 'Count', 'CountDistinct', 'CountRows', 'Min', 'Max', 'First', 'Last', 'RunningValue', 'RowNumber',
   'Median', 'Mode', 'StDev', 'StDevP', 'Var', 'VarP', 'DistinctSum', 'AggregateIf',
-  'IIF', 'Switch', 'IsNull', 'Coalesce', 'Lookup', 'LookupSet', 'Previous', 'GroupIndex', 'Join', 'Contains', 'InList',
+  'IIF', 'Switch', 'IsNull', 'Coalesce', 'Lookup', 'LookupSet', 'Previous', 'GroupIndex', 'Level', 'Join', 'Contains', 'InList',
   ...['Format', 'Upper', 'Lower', 'Left', 'Right', 'Mid', 'Len', 'Trim', 'Replace', 'InStr', 'CStr', 'CDbl', 'CInt', 'CDate', 'CBool',
     'Round', 'Abs', 'Floor', 'Ceiling', 'Int', 'Pow', 'Sqrt', 'Now', 'Today', 'DateAdd', 'DateDiff', 'DateSerial', 'Year', 'Month', 'Day', 'MonthName'],
   'StartsWith', 'EndsWith', 'IndexOf', 'LastIndexOf', 'Substring', 'PadLeft', 'PadRight', 'Split', 'Chr', 'Asc', 'TrimStart', 'TrimEnd', 'StrReverse', 'Space', 'LCase', 'UCase',
@@ -693,7 +696,11 @@ function call(n, ctx) {
     if (args.length && !sc) throw new ExprError('GroupIndex: unknown scope', n.p);
     return sc?.number ?? null;
   }
-  if (name === 'level') throw new ExprError('Level() needs a recursive group (Phase 4)', n.p);
+  if (name === 'level') {
+    // 0-based depth in a recursive group (0 outside one, as in RDL)
+    if (args.length) { const sc = ctx.scopes?.[evaluate(args[0], ctx)]; if (!sc) throw new ExprError('Level: unknown scope', n.p); return sc.level ?? 0; }
+    return ctx.level ?? 0;
+  }
   if (name === 'lookupset') {
     // LookupSet(sourceExpr, destExpr, resultExpr, "DataSet"): every matching row's result, as an array
     if (args.length !== 4) throw new ExprError('LookupSet needs 4 arguments: LookupSet(source, destination, result, "DataSet")', n.p);

@@ -1,13 +1,18 @@
 'use client';
 import { useState } from 'react';
-import { useDesigner, findItem, updateItem, deleteSelection, duplicateSelection, SECTIONS, walk, tableParts, rowsOf,
-  tableInsertColumn, tableDeleteColumn, tableInsertRow, tableDeleteRow, tableSetColumnWidth, tableMergeRight, tableSplit, tableSync, tableAddGroup, tableRemoveGroup, round } from './store.js';
+import { useDesigner, findItem, updateItem, deleteSelection, duplicateSelection, sectionList, secOf, isBodyKey, addBodySection, removeBodySection, walk, tableParts, rowsOf,
+  tableInsertColumn, tableDeleteColumn, tableInsertRow, tableDeleteRow, tableSetColumnWidth, tableMergeRight, tableSplit, tableMergeDown, tableSplitRows, tableSync, tableAddGroup, tableRemoveGroup, round } from './store.js';
+import { normalizeMatrix, isTablix } from '@/engine/items/pivot.js';
+import { t } from '@/i18n/index.js';
 import { ITEMS, stylePropsFor, TEXT_STYLE_PROPS } from '@/engine/items/index.js';
 import { useFontFamilies, FontsDialog } from './Fonts.jsx';
 import { PAGE_SIZES, fromPt, toPt } from '@/engine/units.js';
 import { TextInput, NumberInput, Select, ColorInput, ExprInput, Field, Check } from './ui.jsx';
 import ExpressionEditor from './ExpressionEditor.jsx';
 import { checkFunctions } from '@/engine/expr/evaluate.js';
+
+/** The designer's UI language (set by the Designer) as a translate function. */
+function useT() { const lang = useDesigner(s => s.lang); return (k, v) => t(lang, k, v); }
 
 export default function Inspector() {
   const sel = useDesigner(s => s.sel);
@@ -123,7 +128,7 @@ function ItemProps({ item, section, openExpr }) {
           {item.type !== 'table' && <Geo label="Width" value={item.w} onChange={v => set('w', Math.max(0, v))} />}
           {item.type !== 'table' && <Geo label="Height" value={item.h} onChange={v => set('h', Math.max(0, v))} />}
         </div>
-        <div className="hint">In the {SECTIONS.find(s => s.key === section).label.toLowerCase()}{findItem(def, item.id)?.parent ? `, inside ${findItem(def, item.id).parent.name}` : ''}.</div>
+        <div className="hint">In the {(sectionList(def).find(s => s.key === section)?.label || section).toLowerCase()}{findItem(def, item.id)?.parent ? `, inside ${findItem(def, item.id).parent.name}` : ''}.</div>
       </div>
       {groupBy((spec?.props || []).filter(p => !p.showIf || p.showIf(item))).map(([cat, ps]) => (
         <div className="cat" key={cat}>
@@ -132,6 +137,7 @@ function ItemProps({ item, section, openExpr }) {
         </div>
       ))}
       {item.type === 'table' && <TableProps table={item} openExpr={openExpr} />}
+      {item.type === 'matrix' && <PivotEditor item={item} openExpr={openExpr} />}
       {item.type === 'list' && <SortFilterEditor item={item} />}
       {(item.type === 'list' || item.type === 'container') && <div className="cat"><span className="hint">Drag tools and fields into the {item.type}. Items inside a list repeat for each record{item.groupBy ? ' (one row per group)' : ''}. A table inside a list can filter with =Parent.field.</span></div>}
       <StyleCats props={stylePropsFor(item.type)} style={item.style} onSet={setStyle} openExpr={openExpr} dataSet={dataSet} />
@@ -174,9 +180,108 @@ function TableProps({ table, openExpr }) {
   );
 }
 
+
+/* ---------------------------------------------------------------- pivot (matrix) */
+const LEGACY_MATRIX = ['rowGroup', 'columnGroup', 'value', 'valueFormat', 'rowSort', 'columnSort', 'rowTotals', 'columnTotals'];
+/** Rows, columns and values of a matrix. The first edit turns the old single-group form into the array form (same look). */
+function PivotEditor({ item, openExpr }) {
+  const T = useT();
+  const def = useDesigner(s => s.def);
+  const fields = fieldsOf(def, item.dataSet);
+  const spec = normalizeMatrix(item);
+  const [pick, setPick] = useState({ rowGroups: '', columnGroups: '', values: '' });
+  const edit = (fn, key) => updateItem(item.id, (it) => {
+    if (!isTablix(it)) {
+      const n = normalizeMatrix(it);
+      Object.assign(it, { rowGroups: n.rowGroups, columnGroups: n.columnGroups, values: n.values });
+      if (it.overflow == null) it.overflow = 'shrink'; // the old fit-to-page look
+      for (const k of LEGACY_MATRIX) delete it[k];
+    }
+    fn(it);
+  }, key);
+  const setK = (list, i, k, v) => edit(it => { const o = it[list][i]; if (v === undefined || v === '' || v === false) delete o[k]; else o[k] = v; }, `${item.id}.${list}${i}.${k}`);
+  const move = (list, i, d) => edit(it => { const a = it[list]; const j = i + d; if (j < 0 || j >= a.length) return; [a[i], a[j]] = [a[j], a[i]]; });
+  const remove = (list, i) => edit(it => { it[list].splice(i, 1); });
+  const usedNames = () => new Set([...spec.rowGroups, ...spec.columnGroups].map(g => g.name).filter(Boolean));
+  const add = (list) => {
+    const f = pick[list];
+    if (!f) return;
+    const type = fields.find(x => x.name === f)?.type;
+    edit(it => {
+      if (list === 'values') { it.values.push({ label: f, value: type === 'number' ? `=Sum(Fields.${f})` : `=Count(Fields.${f})`, format: type === 'number' ? 'N0' : undefined }); return; }
+      const names = usedNames();
+      let name = f.replace(/\W/g, '').replace(/^./, c => c.toUpperCase()) || 'Group', n = name, k = 2;
+      while (names.has(n)) n = `${name}${k++}`;
+      it[list].push({ name: n, expr: `=Fields.${f}`, sort: 'asc' });
+    });
+    setPick({ ...pick, [list]: '' });
+  };
+  const exprField = (list, i, k, v, title) => <ExprInput value={v || ''} onChange={x => setK(list, i, k, x)} onOpen={() => openExpr({ value: v || '', dataSet: item.dataSet, onSave: x => setK(list, i, k, x), title })} />;
+  const tools = (list, i, n) => (
+    <span className="btnrow" style={{ margin: 0 }}>
+      <button className="btn sm ghost" disabled={i === 0} onClick={() => move(list, i, -1)} aria-label={T('moveUp')} title={T('moveUp')}>↑</button>
+      <button className="btn sm ghost" disabled={i === n - 1} onClick={() => move(list, i, 1)} aria-label={T('moveDown')} title={T('moveDown')}>↓</button>
+      <button className="btn sm ghost danger" onClick={() => remove(list, i)}>{T('pivotRemove')}</button>
+    </span>
+  );
+  const adder = (list) => (
+    <div className="expr-row">
+      <Select value={pick[list]} options={fields.map(f => f.name)} allowEmpty onChange={v => setPick({ ...pick, [list]: v || '' })} aria-label={T('pivotAddField')} data-testid={`pivot-pick-${list}`} />
+      <button className="btn sm" disabled={!pick[list]} onClick={() => add(list)} data-testid={`pivot-add-${list}`}>{T('pivotAdd')}</button>
+    </div>
+  );
+  const totals = [{ value: 'none', label: T('totalNone') }, { value: 'before', label: T('totalBefore') }, { value: 'after', label: T('totalAfter') }];
+  const groupList = (list, title) => (
+    <div className="cat" data-testid={`pivot-${list}`}>
+      <h5>{title}</h5>
+      {spec[list].map((g, i) => (
+        <div className="group-card" key={i}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}><b>{i + 1}. {g.name || g.expr}</b>{tools(list, i, spec[list].length)}</div>
+          <Field label={T('pivotGroupBy')}>{exprField(list, i, 'expr', g.expr, T('pivotGroupBy'))}</Field>
+          <div className="grid2">
+            <Field label={T('pivotName')}><TextInput value={g.name || ''} onChange={v => setK(list, i, 'name', v.replace(/\W/g, ''))} /></Field>
+            <Field label={T('pivotSort')}><Select value={g.sort || ''} options={['asc', 'desc']} allowEmpty onChange={v => setK(list, i, 'sort', v)} /></Field>
+            <Field label={T('pivotTotal')}><Select value={g.total || 'none'} options={totals} onChange={v => setK(list, i, 'total', v === 'none' ? undefined : v)} /></Field>
+            {list === 'rowGroups' && <Field label={T('pivotWidth')}><NumberInput value={g.width ?? item.rowHeaderWidth ?? 110} step={1} onChange={v => setK(list, i, 'width', Math.max(12, v))} /></Field>}
+          </div>
+          <Field label={T('pivotLabel')}>{exprField(list, i, 'label', g.label, T('pivotLabel'))}</Field>
+          {list === 'rowGroups' && <Field label={T('pivotHeader')}><TextInput value={g.header || ''} onChange={v => setK(list, i, 'header', v)} /></Field>}
+          {i < spec[list].length - 1 && <Check label={T('pivotCollapsible')} checked={g.collapsible} onChange={v => setK(list, i, 'collapsible', v)} />}
+          {g.collapsible && <Check label={T('pivotStartCollapsed')} checked={g.initiallyCollapsed} onChange={v => setK(list, i, 'initiallyCollapsed', v)} />}
+        </div>
+      ))}
+      {adder(list)}
+    </div>
+  );
+  const shows = [{ value: 'value', label: T('showValue') }, { value: 'percentOfTotal', label: T('showPctTotal') }, { value: 'percentOfRow', label: T('showPctRow') }, { value: 'percentOfColumn', label: T('showPctColumn') }];
+  return (
+    <>
+      {groupList('rowGroups', T('pivotRows'))}
+      {groupList('columnGroups', T('pivotColumns'))}
+      <div className="cat" data-testid="pivot-values">
+        <h5>{T('pivotValues')}</h5>
+        {spec.values.map((v, i) => (
+          <div className="group-card" key={i}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}><b>{i + 1}. {v.label || v.value}</b>{tools('values', i, spec.values.length)}</div>
+            <Field label={T('pivotValue')}>{exprField('values', i, 'value', v.value, T('pivotValue'))}</Field>
+            <div className="grid2">
+              <Field label={T('pivotLabel')}><TextInput value={v.label || ''} onChange={x => setK('values', i, 'label', x)} /></Field>
+              <Field label={T('pivotFormat')}><TextInput value={v.format || ''} onChange={x => setK('values', i, 'format', x)} placeholder="N0" /></Field>
+              <Field label={T('pivotShow')}><Select value={v.show || 'value'} options={shows} onChange={x => setK('values', i, 'show', x === 'value' ? undefined : x)} /></Field>
+            </div>
+          </div>
+        ))}
+        {adder('values')}
+        <div className="hint">{T('pivotHint')}</div>
+      </div>
+    </>
+  );
+}
+
 function fieldsOf(def, dsName) { return (def.dataSets?.find(d => d.name === dsName)?.fields || []); }
 
 function GroupsEditor({ table, openExpr }) {
+  const T = useT();
   const def = useDesigner(s => s.def);
   const fields = fieldsOf(def, table.dataSet);
   const [pick, setPick] = useState('');
@@ -199,6 +304,12 @@ function GroupsEditor({ table, openExpr }) {
           <Check label="Keep the group on one page" checked={g.keepTogether} onChange={v => setG(i, 'keepTogether', v)} />
           <Check label="Drill-down: show a toggle" checked={g.collapsible} onChange={v => setG(i, 'collapsible', v)} />
           {g.collapsible && <Check label="Start collapsed" checked={g.initiallyCollapsed} onChange={v => setG(i, 'initiallyCollapsed', v)} />}
+          <Field label={T('groupParent')} hint={T('groupParentHint')}><ExprInput value={g.parent || ''} onChange={v => setG(i, 'parent', v)} onOpen={() => openExpr({ value: g.parent || '', dataSet: table.dataSet, onSave: v => setG(i, 'parent', v), title: T('groupParent') })} placeholder="=Fields.managerId" /></Field>
+          {g.parent && <div className="grid2">
+            <Field label={T('groupIndent')}><NumberInput value={g.indent || 0} step={1} onChange={v => setG(i, 'indent', Math.max(0, v) || undefined)} /></Field>
+            {g.collapsible && <Field label={T('groupExpandLevels')}><NumberInput value={g.expandLevels ?? ''} step={1} onChange={v => setG(i, 'expandLevels', Number.isFinite(v) && v >= 0 ? Math.round(v) : undefined)} /></Field>}
+          </div>}
+          <Check label={T('groupNewSection')} checked={g.newSection} onChange={v => setG(i, 'newSection', v)} />
         </div>
       ))}
       <div className="expr-row">
@@ -421,6 +532,7 @@ function ActionEditor({ value, onChange, openExpr, dataSet }) {
 
 /* ---------------------------------------------------------------- cell */
 function CellProps({ table, sel, openExpr }) {
+  const T = useT();
   const row = rowsOf(table, sel.part)?.[sel.row];
   const cell = row?.cells?.[sel.col];
   if (!row || !cell) return <div className="cat"><span className="hint">This cell no longer exists.</span></div>;
@@ -463,6 +575,8 @@ function CellProps({ table, sel, openExpr }) {
         <div className="btnrow">
           <button className="btn sm" onClick={() => tableMergeRight(table.id, sel.part, sel.row, sel.col)}>Merge right</button>
           <button className="btn sm" disabled={!(cell.colSpan > 1)} onClick={() => tableSplit(table.id, sel.part, sel.row, sel.col)}>Split</button>
+          <button className="btn sm" disabled={sel.row + (cell.rowSpan || 1) >= (rowsOf(table, sel.part) || []).length} onClick={() => tableMergeDown(table.id, sel.part, sel.row, sel.col)}>{T('mergeDown')}</button>
+          <button className="btn sm" disabled={!(cell.rowSpan > 1)} onClick={() => tableSplitRows(table.id, sel.part, sel.row, sel.col)}>{T('splitRows')}</button>
         </div>
       </div>
       <div className="cat">
@@ -515,26 +629,49 @@ function Multi({ ids }) {
 
 /* ---------------------------------------------------------------- section */
 function SectionProps({ section }) {
-  const sec = useDesigner(s => s.def.sections[section]);
-  const label = SECTIONS.find(s => s.key === section).label;
-  const set = (k, v) => useDesigner.getState().apply(d => setOrDelete(d.sections[section], k, v), `sec.${section}.${k}`);
+  const T = useT();
+  const def = useDesigner(s => s.def);
+  const sec = secOf(def, section);
+  const label = sectionList(def).find(s => s.key === section)?.label || section;
+  const isBody = isBodyKey(section);
+  const multi = Array.isArray(def.sections.body);
+  const apply = (fn, key) => useDesigner.getState().apply(d => fn(secOf(d, section), d), key);
+  const set = (k, v) => apply(x => setOrDelete(x, k, v), `sec.${section}.${k}`);
   const minH = Math.max(0, ...sec.items.map(i => i.y + i.h));
+  const pg = sec.page || {};
+  const setPage = (k, v) => apply(x => { x.page ||= {}; if (v === undefined || v === '') delete x.page[k]; else x.page[k] = v; if (!Object.keys(x.page).length) delete x.page; }, `sec.${section}.page.${k}`);
   return (
     <>
       <div className="insp-head"><b>{label}</b><span className="ty">section</span></div>
       <div className="cat">
-        <Field label="Height (pt)" hint={section === 'body' ? 'Design height only. The body grows with its data at run time.' : 'Fixed on every page. Use 0 to remove the band.'}>
+        {isBody && multi && <Field label={T('sectionName')}><TextInput value={sec.name || ''} onChange={v => set('name', v || undefined)} /></Field>}
+        <Field label="Height (pt)" hint={isBody ? 'Design height only. The body grows with its data at run time.' : 'Fixed on every page. Use 0 to remove the band.'}>
           <NumberInput value={sec.height || 0} step={1} onChange={v => set('height', Math.max(minH, v))} />
         </Field>
-        {section === 'body' && <div className="grid2">
-          <Field label="Columns" hint="Newspaper columns: the body fills each column, then the next."><NumberInput value={sec.columns?.count || 1} step={1} min={1} onChange={v => useDesigner.getState().apply(d => { const n = Math.max(1, Math.min(6, Math.round(v))); if (n === 1) delete d.sections.body.columns; else d.sections.body.columns = { gap: d.sections.body.columns?.gap ?? 18, count: n }; })} /></Field>
-          {sec.columns?.count > 1 && <Field label="Gap (pt)"><NumberInput value={sec.columns.gap ?? 18} step={1} onChange={v => useDesigner.getState().apply(d => { d.sections.body.columns.gap = Math.max(0, v); }, 'colgap')} /></Field>}
+        {isBody && <div className="grid2">
+          <Field label="Columns" hint="Newspaper columns: the body fills each column, then the next."><NumberInput value={sec.columns?.count || 1} step={1} min={1} onChange={v => apply(x => { const n = Math.max(1, Math.min(6, Math.round(v))); if (n === 1) delete x.columns; else x.columns = { gap: x.columns?.gap ?? 18, count: n }; })} /></Field>
+          {sec.columns?.count > 1 && <Field label="Gap (pt)"><NumberInput value={sec.columns.gap ?? 18} step={1} onChange={v => apply(x => { x.columns.gap = Math.max(0, v); }, 'colgap')} /></Field>}
         </div>}
-        {section !== 'body' && <>
+        {!isBody && <>
           <Check label="Print on the first page" checked={sec.printOnFirstPage !== false} onChange={v => set('printOnFirstPage', v ? undefined : false)} />
           <Check label="Print on the last page" checked={sec.printOnLastPage !== false} onChange={v => set('printOnLastPage', v ? undefined : false)} />
         </>}
       </div>
+      {isBody && <div className="cat" data-testid="body-sections">
+        <h5>{T('bodySections')}</h5>
+        {multi && <>
+          <div className="grid2">
+            <Field label={T('sectionPageSize')}><Select value={pg.size || ''} options={Object.keys(PAGE_SIZES)} allowEmpty onChange={v => setPage('size', v || undefined)} /></Field>
+            <Field label={T('sectionOrientation')}><Select value={pg.orientation || ''} options={['portrait', 'landscape']} allowEmpty onChange={v => setPage('orientation', v || undefined)} /></Field>
+          </div>
+          <div className="hint">{T('sectionPageHint')}</div>
+        </>}
+        <div className="btnrow">
+          <button className="btn sm" onClick={addBodySection} data-testid="add-body-section">{T('addSection')}</button>
+          {multi && def.sections.body.length > 1 && <button className="btn sm danger" onClick={() => removeBodySection(section)}>{T('removeSection')}</button>}
+        </div>
+        <div className="hint">{T('sectionHint')}</div>
+      </div>}
     </>
   );
 }

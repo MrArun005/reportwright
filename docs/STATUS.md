@@ -51,6 +51,17 @@ Engine, expressions, data sources, text box / image / line / shape / table, pagi
 | Performance | Style cache and windowed paginator: 50k rows in 1.6 s |
 | Automation API | Render API with pushed data; batches (zip / merged PDF / folder / PUT upload); data list from a URL; signed webhooks; cron schedules with time zones; API keys. See [`API.md`](API.md) |
 
+## ActiveReports parity, Phase 4 — tables, pivot tables, pagination (branch `feat/p4-tablix`)
+
+| Area | Delivered |
+|---|---|
+| Pivot (tablix) | `matrix` with `rowGroups` / `columnGroups` / `values`: nested groups, totals before or after any group, several values, % of total / row / column, expand/collapse on row and column instances, repeated column headers and row headers. Older matrices render exactly as before. |
+| Tables | `rowSpan` merged cells (label repeated after a page break), items inside cells scoped to the row, recursive groups (`parent`, `Level()`, indent, `Recursive` aggregates, drill-down by level), `printAtBottom` footers |
+| Pagination | wide tables and pivots continue sideways (`overflow: 'paginate'`, down or across), `newSection` restarts page numbers per group or list row, `sections.body` as an array of sections with their own page sizes |
+| Lists | `columns` for grid lists |
+| Import / export | importer maps nested tablixes, `Parent`, `RowSpan`, `ResetPageNumber`, `ReportSections`; Word `vMerge` and section page sizes; Excel merged header cells; PDF/HTML/viewer per-page sizes |
+| Proof | `reports/tablix-showcase.pw.json` (snapshots, hand-checked numbers, PDF position check); `tests/e2e/tablix.mjs` |
+
 ## Roadmap increments
 
 | Week | Increment | State |

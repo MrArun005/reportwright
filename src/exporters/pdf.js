@@ -101,12 +101,13 @@ export async function exportPdf(model, fontStore, opt = {}) {
     return img;
   };
 
-  const H = model.height;
   const links = [];
   const taken = new Set();
   const uniqueName = (n) => { let name = n, i = 1; while (taken.has(name)) name = `${n}_${++i}`; taken.add(name); return name; };
   for (const pg of model.pages) {
-    const p = doc.addPage([model.width, model.height]);
+    // a page of another body section may have its own size
+    const H = pg.height ?? model.height;
+    const p = doc.addPage([pg.width ?? model.width, H]);
     for (const it of pg.items) {
       if (it.rotate) {
         // screen rotation is clockwise with y down; PDF's y is up, so the angle flips
@@ -225,7 +226,7 @@ export async function exportPdf(model, fontStore, opt = {}) {
     const annots = l.page.node.lookup(PDFName.of('Annots'));
     if (annots) annots.push(ref); else l.page.node.set(PDFName.of('Annots'), doc.context.obj([ref]));
   }
-  if (model.bookmarks?.length) addOutline(doc, model.bookmarks, H);
+  if (model.bookmarks?.length) addOutline(doc, model.bookmarks, (n) => model.pages[n - 1]?.height ?? model.height);
   if (opt.prepare) await opt.prepare(doc);
   if (opt.pdfa) makePdfA(doc, { ...opt.pdfa, title: opt.title || 'Report', author: opt.author });
   if (opt.encrypt) {
@@ -348,7 +349,7 @@ function addGlyphs(pf, glyphs) {
   };
 }
 
-/** PDF outline (the bookmarks panel) from the page model bookmarks. Flat list, levels as indentation. */
+/** PDF outline (the bookmarks panel) from the page model bookmarks. Flat list, levels as indentation. H(page): that page's height. */
 function addOutline(doc, bookmarks, H) {
   const ctx = doc.context;
   const pages = doc.getPages();
@@ -358,7 +359,7 @@ function addOutline(doc, bookmarks, H) {
     const page = pages[b.page - 1];
     if (!page) return;
     const title = '  '.repeat(b.level || 0) + b.label;
-    const dict = { Title: PDFHexString.fromText(title), Parent: outlineRef, Dest: [page.ref, PDFName.of('XYZ'), null, H - b.y + 4, null] };
+    const dict = { Title: PDFHexString.fromText(title), Parent: outlineRef, Dest: [page.ref, PDFName.of('XYZ'), null, H(b.page) - b.y + 4, null] };
     if (i > 0) dict.Prev = refs[i - 1];
     if (i < refs.length - 1) dict.Next = refs[i + 1];
     ctx.assign(refs[i], ctx.obj(dict));

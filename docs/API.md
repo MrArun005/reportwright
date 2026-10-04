@@ -313,3 +313,42 @@ An image's `src` can be a URL, a data URI, `embedded:<name>` for an image the re
 
 In the PDF, SVG images are drawn as vector paths: path, rect, circle, ellipse, line, polyline, polygon, groups, transforms, fill, stroke and opacity. Text, gradients, patterns, clip paths, masks, filters and `<use>` are not drawn there (the viewer and the HTML export show SVG fully). Limits: 10 MB per image and 50 MB of images per report (each distinct image once); larger ones are left out with a warning. In the PDF, an SVG over 2 MB or 10,000 shapes, and a PNG over 40 megapixels or animated, are left out.
 
+
+### Pivot tables (matrix / tablix)
+
+A `matrix` with `rowGroups`, `columnGroups` and `values` arrays is a pivot table (the older `rowGroup` / `columnGroup` / `value` keys still work and render as before). Design: `docs/superpowers/specs/2026-10-04-tablix-design.md`.
+
+```json
+{ "type": "matrix", "name": "Pivot", "dataSet": "Sales", "x": 0, "y": 0, "w": 520, "h": 60,
+  "rowGroups": [{ "name": "Region", "expr": "=Fields.region", "sort": "asc", "total": "after", "collapsible": true, "width": 80, "header": "Region" },
+                { "name": "City", "expr": "=Fields.city", "total": "after" }],
+  "columnGroups": [{ "name": "Year", "expr": "=Fields.year", "total": "after" }, { "expr": "=Fields.q", "label": "=\"Q\" & Fields.q" }],
+  "values": [{ "label": "Amount", "value": "=Sum(Fields.amount)", "format": "N0" }, { "label": "Share", "value": "=Sum(Fields.amount)", "show": "percentOfRow" }],
+  "overflow": "paginate", "pageOrder": "down" }
+```
+
+| Key | Meaning |
+|---|---|
+| group `expr`, `label`, `format`, `sort`, `sortBy` | the key; the text shown (default: the key); `asc`/`desc`; an expression in the instance's scope to sort by (`=Sum(Fields.amount)`) |
+| group `total`, `totalLabel` | `before` / `after`: a total of this group's instances inside the group above; on the first group it is the grand total |
+| group `collapsible`, `initiallyCollapsed` | a ▼/▶ toggle on each instance; a collapsed instance is one row (or column) with the instance's values |
+| row group `width`, `header` | the header column's width and the title over it |
+| value `show` | `value`, `percentOfTotal`, `percentOfRow`, `percentOfColumn` (format `P1` unless given) |
+| `overflow` | `paginate` (default for the array form): columns that do not fit continue on the next pages, the row headers repeated; `shrink`: the older narrow-then-cut rule |
+| `pageOrder` | `down` (all rows for the first columns, then the next columns) or `across` (each block of rows on every column set first; starts on a new page) |
+
+A group's `name` is a scope in value expressions: `Sum(Fields.x, "Region")` is the region instance across all columns. Limits: 8 levels of groups per axis, 50 values, 1,000 value columns, 250,000 cells (more is cut with a warning). Keys and labels are data: they are never evaluated as expressions.
+
+### Tables: merged cells, items in cells, wide tables, recursive groups
+
+- `rowSpan` on a cell merges it down over the next rows of the same band (the header rows, one group's rows, one record's detail rows, the footer rows). If its rows break across pages, the text is drawn again at the top of the next page. Word gets `vMerge`, Excel merged cells.
+- `item` on a cell lays out an item (table, list, chart, sparkline…) in the cell. The table's data set means the cell's rows; a `relation` data set gets that row's children. One render lays out at most 100,000 rows of items in cells.
+- `overflow: "paginate"` on a table wider than the page continues the columns on the next pages; `repeatColumns: n` repeats the first n columns on each page set; `pageOrder` as for pivots. Excel and CSV keep every column.
+- `printAtBottom: true` puts the table footer at the bottom of the page the table ends on.
+- A group with `parent` (e.g. `=Fields.managerId`; `expr` is the row's id) is a recursive hierarchy: depth first, `Level()` is the depth (0 at the top), `indent` adds points of left padding per level, `Sum(Fields.cost, "Group", "Recursive")` adds the node and everything under it, `collapsible` with `expandLevels: n` opens the first n levels. Cycles are broken and depth stops at 64, with a warning.
+
+### Lists, sections and page numbers
+
+- `columns: n` on a list puts n records across (a grid list), `columnGap` points apart.
+- `newSection: true` on a table group or a list: each instance starts on a new page and `Globals.PageNumber` / `TotalPages` count inside it (one PDF of many invoices, each "Page 1 of 2"). `Globals.OverallPageNumber` / `OverallTotalPages` count the whole report.
+- `sections.body` can be an array of body sections, `{ name, page, items, height, columns }`, each with its own page (`page` keys override the report's). Page numbers continue across sections; the page header and footer are shared. Pages of another size carry `width` / `height` in the page model; PDF, HTML, Word and the viewer use them.

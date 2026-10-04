@@ -75,17 +75,35 @@ export interface Image extends ItemBase {
 export interface Line extends ItemBase { type: 'line'; direction?: 'down' | 'up' }
 export interface Shape extends ItemBase { type: 'shape'; shape?: 'rect' | 'ellipse' }
 
-export interface TableCell { value?: Expr; style?: Style; colSpan?: number; action?: Action; [key: string]: unknown }
+export interface TableCell {
+  value?: Expr; style?: Style; colSpan?: number;
+  /** merged down over this many rows of the same band (header, a group's rows, one record's detail rows, footer) */
+  rowSpan?: number;
+  /** an item laid out inside the cell, scoped to the row (a related data set gets that row's children) */
+  item?: Item;
+  action?: Action; [key: string]: unknown
+}
 export interface TableRow { cells: TableCell[]; height?: number; style?: Style; [key: string]: unknown }
-export interface TableGroup { expr: string; header?: TableRow[]; footer?: TableRow[]; sort?: unknown; pageBreak?: string; collapsible?: boolean; initiallyCollapsed?: boolean; [key: string]: unknown }
+export interface TableGroup {
+  expr: string; name?: string; header?: TableRow[]; footer?: TableRow[]; sort?: unknown; pageBreak?: string; collapsible?: boolean; initiallyCollapsed?: boolean;
+  /** recursive hierarchy: the parent's id; expr is the node's id. Level() is the depth. */
+  parent?: Expr; indent?: number; expandLevels?: number;
+  /** each instance starts on a new page and restarts Globals.PageNumber / TotalPages */
+  newSection?: boolean;
+  [key: string]: unknown
+}
 export interface Table extends ItemBase {
   type: 'table';
   columns: { width: number; [key: string]: unknown }[];
   header?: TableRow[]; groups?: TableGroup[]; detail?: TableRow[]; footer?: TableRow[];
   repeatHeader?: boolean; noRowsText?: string; sortBy?: unknown; filters?: unknown[];
+  /** the footer at the bottom of the page the table ends on */
+  printAtBottom?: boolean;
+  /** wider than the page: continue on the next page set, repeating the first repeatColumns columns */
+  overflow?: 'paginate'; repeatColumns?: number; pageOrder?: 'down' | 'across';
 }
 export interface Container extends ItemBase { type: 'container'; items: Item[] }
-export interface List extends ItemBase { type: 'list'; items: Item[]; groupBy?: Expr<string>; pageBreakBetween?: boolean; sortBy?: unknown; filters?: unknown[] }
+export interface List extends ItemBase { type: 'list'; items: Item[]; groupBy?: Expr<string>; pageBreakBetween?: boolean; sortBy?: unknown; filters?: unknown[]; /** records across (a grid list) */ columns?: number; columnGap?: number; newSection?: boolean }
 export interface CheckBox extends ItemBase { type: 'checkbox'; value?: Expr<boolean>; text?: Expr<string> }
 export interface ChartAxis {
   title?: string; format?: string; min?: number; max?: number; log?: boolean; gridlines?: boolean;
@@ -157,11 +175,24 @@ export interface Barcode extends ItemBase {
   aztecLayers?: number; aztecErrorPercent?: number; maxiMode?: number;
   checkDigit?: boolean; barRatio?: number;
 }
+export interface PivotGroup {
+  expr: Expr; name?: string; label?: Expr<string>; format?: string; sort?: 'asc' | 'desc'; sortBy?: Expr;
+  /** a total of this group's instances inside the group above (the first group's total is the grand total) */
+  total?: 'none' | 'before' | 'after'; totalLabel?: string;
+  collapsible?: boolean; initiallyCollapsed?: boolean;
+  /** row groups: the header column's width and title */
+  width?: number; header?: string; style?: Style;
+}
+export interface PivotValue { value: Expr; name?: string; label?: string; format?: string; show?: 'value' | 'percentOfTotal' | 'percentOfRow' | 'percentOfColumn'; width?: number; style?: Style }
 export interface Matrix extends ItemBase {
   type: 'matrix';
-  rowGroup?: Expr<string>; columnGroup?: Expr<string>; value?: Expr; valueFormat?: string; corner?: string;
+  /** the tablix form: nested row and column groups, several values */
+  rowGroups?: PivotGroup[]; columnGroups?: PivotGroup[]; values?: PivotValue[];
+  overflow?: 'paginate' | 'shrink'; pageOrder?: 'down' | 'across';
+  /** the older single-group form (still read when the arrays are absent) */
+  rowGroup?: Expr<string>; columnGroup?: Expr<string>; value?: Expr; valueFormat?: string;
   rowSort?: 'asc' | 'desc'; columnSort?: 'asc' | 'desc'; rowTotals?: boolean; columnTotals?: boolean;
-  rowHeaderWidth?: number; columnWidth?: number; repeatHeader?: boolean; headerStyle?: Style; cellStyle?: Style; totalStyle?: Style;
+  corner?: string; rowHeaderWidth?: number; columnWidth?: number; repeatHeader?: boolean; headerStyle?: Style; cellStyle?: Style; totalStyle?: Style;
 }
 export interface Subreport extends ItemBase { type: 'subreport'; report: string; params?: Record<string, Expr> }
 export interface TableOfContents extends ItemBase {
@@ -178,7 +209,9 @@ export type Item = TextBox | RichText | Image | Line | Shape | Table | Container
   | Sparkline | DataBar | Bullet | IconSet | RangeBar | Barcode | Matrix | Subreport | TableOfContents;
 export type ItemType = Item['type'];
 
-export interface Band { height?: number; items: Item[]; printOnFirstPage?: boolean; printOnLastPage?: boolean }
+export interface Band { height?: number; items: Item[]; printOnFirstPage?: boolean; printOnLastPage?: boolean; columns?: { count: number; gap?: number } }
+/** A body section with its own page settings (missing keys come from the report's page). */
+export interface BodySection extends Band { name?: string; page?: Report['page'] }
 
 export interface Parameter {
   name: string;
@@ -233,5 +266,5 @@ export interface Report {
   styles?: { base?: Style; named?: Record<string, Style> };
   /** images the report carries, by name, as data:image/… URIs; an image's src "embedded:<name>" uses one */
   images?: Record<string, `data:image/${string}`>;
-  sections: { pageHeader?: Band; body: Band; pageFooter?: Band };
+  sections: { pageHeader?: Band; body: Band | BodySection[]; pageFooter?: Band };
 }

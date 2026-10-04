@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { rowArrays, bestRows } from './explore.js';
-import { useDesigner, SECTIONS } from './store.js';
+import { useDesigner, walk } from './store.js';
 import { MIME_FIELD, MIME_DATASET } from './Canvas.jsx';
 import { loadSources, buildDataSets, detectFields, jsonPath } from '@/engine/data/index.js';
 import { resolveParameters } from '@/engine/index.js';
@@ -360,7 +360,7 @@ function DataSetDialog({ index, onClose, onSaved }) {
       if (index != null) {
         const old = x.dataSets[index].name;
         x.dataSets[index] = v;
-        if (old !== v.name) for (const s of SECTIONS) for (const it of x.sections[s.key].items) if (it.dataSet === old) it.dataSet = v.name;
+        if (old !== v.name) walk(x, (it) => { if (it.dataSet === old) it.dataSet = v.name; });
       } else x.dataSets.push(v);
     });
     onSaved?.(d.name);
@@ -370,7 +370,7 @@ function DataSetDialog({ index, onClose, onSaved }) {
   const del = () => {
     useDesigner.getState().apply(x => {
       x.dataSets.splice(index, 1);
-      for (const s of SECTIONS) for (const it of x.sections[s.key].items) if (it.dataSet === orig.name) delete it.dataSet;
+      walk(x, (it) => { if (it.dataSet === orig.name) delete it.dataSet; });
     });
     onClose();
   };

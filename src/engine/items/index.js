@@ -18,6 +18,8 @@ import { parseRich } from '../text/rich.js';
 import { resolveFontKey } from '../text/fonts.js';
 import { tocNumbers } from './toc.js';
 import { resolveImageSrc, imageInfo, PX } from '../image.js';
+import { groupRows, cmpKey, buildPivot, isTablix } from './pivot.js';
+import { sliceColumns, itemLeft } from './hpage.js';
 
 /**
  * Item registry. Each item type has:
@@ -313,20 +315,28 @@ register('table', {
   props: [
     { key: 'dataSet', label: 'Data set', type: 'dataset', category: 'Data' },
     { key: 'repeatHeader', label: 'Repeat header on each page', type: 'bool', category: 'Layout' },
+    { key: 'printAtBottom', label: 'Footer at the bottom of the page', type: 'bool', category: 'Layout' },
+    { key: 'overflow', label: 'Wider than the page', type: 'select', options: [{ value: 'paginate', label: 'Continue on the next pages' }], category: 'Layout' },
+    { key: 'repeatColumns', label: 'Columns repeated on each page set', type: 'number', category: 'Layout', showIf: (it) => it.overflow === 'paginate' },
+    { key: 'pageOrder', label: 'Page order', type: 'select', options: [{ value: 'down', label: 'Down, then across' }, { value: 'across', label: 'Across, then down' }], category: 'Layout', showIf: (it) => it.overflow === 'paginate' },
     { key: 'noRowsText', label: 'Text when no rows', type: 'text', category: 'Data' },
     { key: 'pageBreakBefore', label: 'Page break before', type: 'bool', category: 'Layout' },
     { key: 'pageBreakAfter', label: 'Page break after', type: 'bool', category: 'Layout' },
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
   ],
   layout(item, lc) {
-    const tctx = lc.ctxFor(item);
+    const tctx = item.__ctx || lc.ctxFor(item);
     if (hidden(item, tctx, lc)) return { height: 0, units: [] };
-    let rows = (item.dataSet && lc.dataSets[item.dataSet]) || [];
-    rows = related(rows, tctx); // a nested data set inside a list of its parent: that row's children
-    if (item.dataSet && !lc.dataSets[item.dataSet]) lc.warn(`${item.name || 'Table'}: the data set "${item.dataSet}" does not exist`);
-    if (item.filters?.length) rows = applyFilters(rows, item.filters, tctx);
-    const sort = lc.state?.sort?.[item.name] || item.sort;
-    if (sort?.length) rows = applySort(rows, sort, tctx);
+    let rows;
+    if (item.__body) rows = item.__rows || []; // a pivot: its rows are built, these are only its scope
+    else {
+      rows = (item.dataSet && lc.dataSets[item.dataSet]) || [];
+      rows = related(rows, tctx); // a nested data set inside a list of its parent: that row's children
+      if (item.dataSet && !lc.dataSets[item.dataSet]) lc.warn(`${item.name || 'Table'}: the data set "${item.dataSet}" does not exist`);
+      if (item.filters?.length) rows = applyFilters(rows, item.filters, tctx);
+      const sort = lc.state?.sort?.[item.name] || item.sort;
+      if (sort?.length) rows = applySort(rows, sort, tctx);
+    }
 
     const cols = item.columns || [];
     const colX = [];
@@ -346,30 +356,60 @@ register('table', {
     let rowSeq = 0;
     const colWidths = cols.map(c => c.width); // one array shared by every cell tag
 
+    /** A cell as the data exports (Excel, CSV) see it. */
+    const regionCell = (c) => {
+      const o = { col: Math.round((c.x - item.x) * 100), value: c.raw instanceof Date || typeof c.raw === 'boolean' ? c.raw : typeof c.raw === 'number' ? roundFor(c.raw, c.st.format) : c.plain, format: c.st.format || null, bold: c.st.fontWeight === 'bold' || Number(c.st.fontWeight) >= 600, span: c.span, colIndex: colX.indexOf(c.x) };
+      if (c.left > 1) o.rowSpan = c.left;
+      return o;
+    };
+    // merged cells across rows: spans still open, each { ci, cols, left, x, w, st, tl, numeric, cell, ctx, raw, plain, units }
+    let openSpans = [];
+    const cover = new Array(cols.length).fill(null); // the open span over each column: O(1) per cell
+    const covered = (ci) => cover[ci] !== null;
     const layRow = (row, ctx, kind, extra) => {
       const rst = resolveStyle([lc.base, lc.named?.[item.styleName], item.style, lc.named?.[row.styleName], row.style], ctx);
       const cells = [];
+      let started = null; // merged cells that start on this row (rare: no array otherwise)
       let need = row.height || 18;
       for (let ci = 0; ci < cols.length; ci++) {
         const cell = row.cells?.[ci];
-        if (!cell) continue;
+        if (!cell || covered(ci)) continue;
         const span = Math.max(1, Math.min(cell.colSpan || 1, cols.length - ci));
         let cw = 0;
         for (let k = 0; k < span; k++) cw += cols[ci + k].width;
-        const st = resolveStyle([rst, lc.named?.[cell.styleName], cell.style], ctx);
-        const r = evalSafe(cell.value ?? '', ctx, lc, `${item.name || 'Table'} cell`);
-        let text = textOf(r.v, st, ctx);
+        const cctx = cell.ctx || ctx; // a pivot value cell carries its own scope
+        let st = resolveStyle([rst, lc.named?.[cell.styleName], cell.style], cctx);
+        // a recursive group's indent: the first cell's left padding grows by level
+        if (ctx.indent > 0 && !cells.length && !started) { const pd = padding(st); st = { ...st, padding: [pd[0], pd[1], pd[2], pd[3] + ctx.indent] }; }
+        const r = 'raw' in cell ? { v: cell.raw } : evalSafe(cell.value ?? '', cctx, lc, `${item.name || 'Table'} cell`);
+        let text = textOf(r.v, st, cctx);
         const plain = text;
-        if (extra?.toggle && ci === 0) text = `${extra.toggle.open ? '▼' : '▶'} ${text}`;
+        const toggle = cell.toggle || (extra?.toggle && ci === 0 ? extra.toggle : null);
+        if (toggle) text = `${toggle.open ? '▼' : '▶'} ${text}`;
         if (cell.sortBy && kind === 'header') {
           const cur = (lc.state?.sort?.[item.name] || [])[0];
           if (cur && cur.by === cell.sortBy) text += cur.dir === 'desc' ? ' ↓' : ' ↑';
         }
-        const tl = layoutTextLines(text, st, cw, lc.m);
+        const nested = cell.item?.type && ITEMS[cell.item.type] ? layoutInCell(cell.item, colX[ci], cw, st, cctx, row) : null;
+        const tl = nested ? { ...layoutTextLines('', st, cw, lc.m), lines: [], needed: nested.height } : layoutTextLines(text, st, cw, lc.m);
+        const c = { x: colX[ci], w: cw, st, tl, numeric: typeof r.v === 'number', cell, ctx: cctx, raw: r.v, span, plain: nested ? '' : plain, toggle, nested };
+        const rs = Math.floor(Number(cell.rowSpan)) || 1;
+        if (rs > 1) { (started ||= []).push({ ...c, ci, cols: span, left: rs, units: [], kind }); continue; }
         if (row.canGrow !== false && tl.needed > need + GROW_TOLERANCE) need = tl.needed;
-        cells.push({ x: colX[ci], w: cw, st, tl, numeric: typeof r.v === 'number', cell, ctx, raw: r.v, span, plain });
+        cells.push(c);
       }
-      region.rows.push({ kind, level: extra?.level ?? 0, cells: cells.map(c => ({ col: Math.round((c.x - item.x) * 100), value: c.raw instanceof Date || typeof c.raw === 'boolean' ? c.raw : typeof c.raw === 'number' ? roundFor(c.raw, c.st.format) : c.plain, format: c.st.format || null, bold: c.st.fontWeight === 'bold' || Number(c.st.fontWeight) >= 600, span: c.span, colIndex: colX.indexOf(c.x) })) });
+      if (started) {
+        openSpans.push(...started);
+        for (const st of started) for (let k = st.ci; k < st.ci + st.cols; k++) cover[k] = st;
+      }
+      // a merged cell that ends on this row: the row grows if the merged text needs more than the rows above gave
+      if (openSpans.length) for (const s of openSpans) if (s.left === 1) {
+        const above = s.units.reduce((t, u) => t + u.height, 0);
+        if (s.tl.needed - above > need + GROW_TOLERANCE) need = s.tl.needed - above;
+      }
+      const rcells = (started ? [...cells, ...started].sort((a, b) => a.x - b.x) : cells).map(regionCell);
+      if (started) for (const st of started) st.region = rcells.find(rc => rc.colIndex === colX.indexOf(st.x)); // its rowSpan is set to the rows it really covered when it closes
+      region.rows.push({ kind, level: extra?.level ?? 0, cells: rcells });
       // h: height of this piece; lines: per-cell lines when the row is split; first: links, visuals and toggles go on the first piece
       const paint = (h, lines, first, rowId) => {
         const items = [];
@@ -379,32 +419,29 @@ register('table', {
             if (first) items.push(...paintVisual(c.cell.visual, { x: c.x, y: 0, w: c.w, h }, c.ctx, lc, c.st, `${item.name} cell`));
             return;
           }
+          if (c.nested) {
+            items.push(...paintBox({ x: c.x, y: 0, w: c.w, h, st: c.st, tl: null, m: lc.m }));
+            if (first) items.push(...c.nested.items);
+            return;
+          }
           const box = paintBox({ x: c.x, y: 0, w: c.w, h, st: c.st, tl: lines ? { ...c.tl, lines: lines[k] } : c.tl, numeric: c.numeric, m: lc.m });
           // cell text knows its table, row and column, so the Word export can rebuild the table
           for (const b of box) if (b.t === 'text') b.cell = { table: item.name, row: rowId, col: colX.indexOf(c.x), span: c.span, kind, cols: colWidths, bg: c.st.backgroundColor || null };
           items.push(...box);
-          if (!first) return;
-          const link = lc.linkFor?.(c.cell, c.ctx, { x: c.x, y: 0, w: c.w, h });
-          if (link) items.push(link);
-          if (cell_bookmark(c.cell)) { const b = evalSafe(c.cell.bookmark, c.ctx, lc, 'bookmark').v; if (b) items.push({ t: 'bookmark', label: String(b), x: c.x, y: 0, level: c.cell.bookmarkLevel || 0 }); }
-          if (c.cell.sortBy && kind === 'header') {
-            const cur = (lc.state?.sort?.[item.name] || [])[0];
-            const dir = cur && cur.by === c.cell.sortBy && cur.dir === 'asc' ? 'desc' : 'asc';
-            items.push({ t: 'link', x: c.x, y: 0, w: c.w, h, action: { type: 'sort', table: item.name, by: c.cell.sortBy, dir } });
-          }
+          if (first) cellLinks(items, c, h, kind);
         });
+        if (first) for (const c of cells) if (c.cell.toggle) items.push(toggleLink(c, c.w, h));
         if (first && extra?.toggle) {
           // the whole first cell toggles, unless that cell has its own action (a drill-through): then only the ▶ does
           const c0 = cells[0];
-          const w = c0?.cell.action ? Math.min(c0.w, padding(c0.st)[3] + (Number(c0.st.fontSize) || 9) * 1.4) : cols[0]?.width || 20;
-          items.push({ t: 'link', x: colX[0], y: 0, w, h, action: { type: 'toggle', key: extra.toggle.key, open: extra.toggle.open } });
+          items.push(toggleLink({ x: colX[0], toggle: extra.toggle, cell: c0?.cell || {}, st: c0?.st, w: c0?.w }, cols[0]?.width || 20, h));
         }
         return items;
       };
       // Taller than a page (less a repeated header): split into pieces of whole lines, like a text box, so it continues on the next pages.
       const room = (lc.maxUnitHeight ?? Infinity) - repeatH;
       const pieces = [];
-      if (!lc.fixed && need > room && cells.some(c => c.tl.lines.length > 1)) {
+      if (!lc.fixed && !openSpans.length && need > room && cells.some(c => c.tl.lines.length > 1)) {
         const per = cells.map(c => Math.max(1, Math.floor((room - c.tl.pad[0] - c.tl.pad[2]) / c.tl.lh)));
         const n = Math.max(...cells.map((c, k) => Math.ceil(c.tl.lines.length / per[k])));
         for (let i = 0; i < n; i++) {
@@ -414,22 +451,109 @@ register('table', {
       } else pieces.push({ lines: null, h: need });
       let u;
       pieces.forEach((pc, i) => {
-        u = { top: y, height: pc.h, items: paint(pc.h, pc.lines, i === 0, ++rowSeq), kind };
+        u = { top: y, height: pc.h, items: paint(pc.h, pc.lines, i === 0, ++rowSeq), kind, rowId: rowSeq };
         y += pc.h;
         units.push(u);
       });
+      if (openSpans.length) for (const s of openSpans) { s.units.push(u); s.left--; }
+      if (openSpans.length && openSpans.some(s => s.left <= 0)) { for (const s of openSpans) if (s.left <= 0) closeSpan(s); openSpans = openSpans.filter(s => s.left > 0); }
       return u;
     };
+    /**
+     * An item inside a cell (a table, list, chart…), laid out in the cell's inner box with the cell's scope:
+     * the table's own data set is the cell's rows, and a related data set gets that row's children.
+     */
+    const layoutInCell = (inner, x, cw, st, cctx, row) => {
+      const pd = padding(st);
+      const it = { ...inner, name: inner.name || `${item.name}_cell`, x: x + pd[3], y: 0, w: Math.max(1, cw - pd[1] - pd[3]), h: Number(inner.h) || Math.max(1, (row.height || 18) - pd[0] - pd[2]) };
+      const scopeRows = cctx.aggIndex != null ? [cctx.fields] : cctx.aggRows || [];
+      const current = item.dataSet ? { ...(cctx.current || {}), [item.dataSet]: scopeRows } : cctx.current;
+      const child = { ...lc, regions: null, rowBudget: null, maxUnitHeight: Infinity,
+        dataSets: item.dataSet ? { ...lc.dataSets, [item.dataSet]: scopeRows } : lc.dataSets,
+        ctxFor: (x) => {
+          if (!x.dataSet || x.dataSet === item.dataSet) return { ...cctx, fields: scopeRows[0] || null, aggRows: scopeRows, aggIndex: undefined, current };
+          const c = { ...lc.ctxFor(x), parentFields: cctx.fields, scopes: cctx.scopes, current };
+          const kids = related(c.aggRows, c);
+          return kids === c.aggRows ? c : { ...c, aggRows: kids, fields: kids[0] || null };
+        } };
+      // items in cells multiply with the rows: one budget for the render (an unrelated data set in every row is rows × rows)
+      // charged by the data rows the item reads (a pivot over an unrelated data set reads every row) and the rows it draws
+      const budget = lc.cellItems || (lc.cellItems = { left: CELL_ITEM_UNITS });
+      const reads = (it.dataSet && it.dataSet !== item.dataSet ? child.ctxFor(it).aggRows?.length : scopeRows.length) || 1;
+      if (budget.left < reads) { budget.left = 0; lc.warn(`${item.name}: more than ${CELL_ITEM_UNITS} rows of items inside cells; the rest are left empty`); return { items: [], height: 0 }; }
+      budget.left -= reads;
+      const res = lc.layoutItems([it], child);
+      budget.left -= res.units.length;
+      const items = [];
+      for (const u of res.units) for (const i of shiftLocal(u.items.filter(i => i.t !== 'bookmark'), u.top + pd[0])) items.push(i.cell ? { ...i, cell: undefined } : i); // its own cells are not the outer table's (Word)
+      return { items, height: res.height + pd[0] + pd[2] };
+    };
+    /** Links, bookmarks, sort and toggle hot spots of a cell, on the first piece of its row. */
+    const cellLinks = (items, c, h, kind) => {
+      const link = lc.linkFor?.(c.cell, c.ctx, { x: c.x, y: 0, w: c.w, h });
+      if (link) items.push(link);
+      if (cell_bookmark(c.cell)) { const b = evalSafe(c.cell.bookmark, c.ctx, lc, 'bookmark').v; if (b) items.push({ t: 'bookmark', label: String(b), x: c.x, y: 0, level: c.cell.bookmarkLevel || 0 }); }
+      if (c.cell.sortBy && kind === 'header') {
+        const cur = (lc.state?.sort?.[item.name] || [])[0];
+        const dir = cur && cur.by === c.cell.sortBy && cur.dir === 'asc' ? 'desc' : 'asc';
+        items.push({ t: 'link', x: c.x, y: 0, w: c.w, h, action: { type: 'sort', table: item.name, by: c.cell.sortBy, dir } });
+      }
+    };
+    /** The toggle hot spot: the whole cell (w), or only the ▶ when the cell has its own action (a drill-through). */
+    const toggleLink = (c, w, h) => ({ t: 'link', x: c.x, y: 0, w: c.cell.action ? Math.min(c.w, padding(c.st)[3] + (Number(c.st.fontSize) || 9) * 1.4) : w, h, action: { type: 'toggle', key: c.toggle.key, open: c.toggle.open } });
+    const NO_BOX = { backgroundColor: null, backgroundImage: null, border: null, borderTop: null, borderRight: null, borderBottom: null, borderLeft: null };
+    /** A merged cell, once its rows are laid out: background and side borders on every row, the text once across them all. */
+    const paintSpan = (s) => {
+      const kind = s.kind;
+      const H = s.units.reduce((t, u) => t + u.height, 0);
+      const n = s.units.length;
+      s.units.forEach((u, k) => {
+        const st = k === 0 && n === 1 ? s.st : { ...s.st, ...(k > 0 ? { borderTop: 'none' } : {}), ...(k < n - 1 ? { borderBottom: 'none' } : {}) };
+        const add = paintBox({ x: s.x, y: 0, w: s.w, h: u.height, st, tl: null, m: lc.m });
+        if (k === 0) {
+          const text = paintBox({ x: s.x, y: 0, w: s.w, h: H, st: { ...s.st, ...NO_BOX }, tl: s.tl, numeric: s.numeric, m: lc.m });
+          for (const b of text) if (b.t === 'text') b.cell = { table: item.name, row: u.rowId, col: colX.indexOf(s.x), span: s.cols, rowSpan: n, kind, cols: colWidths, bg: s.st.backgroundColor || null };
+          add.splice(s.st.backgroundColor ? 1 : 0, 0, ...text);
+          cellLinks(add, s, u.height, kind);
+          if (s.toggle) add.push(toggleLink(s, s.w, u.height));
+        }
+        // in reading order: before the cells to its right
+        const at = u.items.findIndex(it => itemLeft(it) >= s.x + s.w - 0.01);
+        u.items.splice(at < 0 ? u.items.length : at, 0, ...add);
+      });
+      // text that reaches below the first row (more lines, or centred): keep the rows on one page when they fit
+      if (s.tl.needed > s.units[0].height + GROW_TOLERANCE || (s.st.verticalAlign && s.st.verticalAlign !== 'top')) {
+        const id = `${item.name}:span:${lc.nextId()}`;
+        for (const u of s.units) u.block ||= id;
+      } else {
+        // a page break inside the merged rows draws the text again at the top of the next page
+        let above = s.units[0].height;
+        for (let k = 1; k < n; k++) {
+          const u = s.units[k];
+          const cont = paintBox({ x: s.x, y: 0, w: s.w, h: H - above, st: { ...s.st, ...NO_BOX, verticalAlign: 'top' }, tl: s.tl, numeric: s.numeric, m: lc.m });
+          (u.cont ||= []).push(...cont);
+          above += u.height;
+        }
+      }
+    };
+    /** Close merged cells at the end of a band of rows (a span never reaches into the next band). */
+    const closeSpan = (s) => {
+      for (let k = s.ci; k < s.ci + s.cols; k++) cover[k] = null;
+      if (s.region) { if (s.units.length > 1) s.region.rowSpan = s.units.length; else delete s.region.rowSpan; } // a band ends the span early
+      if (s.units.length) paintSpan(s);
+    };
+    const endBand = () => { for (const s of openSpans) closeSpan(s); openSpans = []; };
 
     // table header
     const headerUnits = (item.header || []).map(r => layRow(r, base, 'header'));
+    endBand();
     const headerHeight = headerUnits.reduce((s, u) => s + u.height, 0);
     if (item.repeatHeader !== false) repeatH = headerHeight;
     const headerItems = [];
     for (const u of headerUnits) for (const it of shiftLocal(u.items.filter(i => i.t !== 'link' && i.t !== 'bookmark'), u.top)) headerItems.push(it);
     if (headerUnits.length) headerUnits[headerUnits.length - 1].keepWithNext = true;
 
-    if (rows.length === 0 && item.noRowsText) {
+    if ((item.__body ? item.__body.length : rows.length) === 0 && item.noRowsText) {
       const st = resolveStyle([lc.base, item.style, { fontStyle: 'italic', color: '#868e96' }], base);
       const tl = layoutTextLines(String(item.noRowsText), st, width, lc.m);
       units.push({ top: y, height: tl.needed, items: paintBox({ x: item.x, y: 0, w: width, h: tl.needed, st, tl, m: lc.m }), kind: 'detail' });
@@ -447,6 +571,7 @@ register('table', {
           for (const s of chain) { s.index++; s.run.push(grows[i]); }
           const dctx = { ...ctx, fields: grows[i], aggRows: grows, aggIndex: i, rowNumber: rowNo };
           for (const r of item.detail || []) layRow(r, dctx, 'detail', { level: groups.length });
+          endBand();
         }
         return;
       }
@@ -471,38 +596,113 @@ register('table', {
           return 0;
         });
       }
-      buckets.forEach((bk, bi) => {
-        if (lc.rowBudget?.cut) return;
+      const gname = g.name || `Group${level + 1}`;
+      // a recursive group (parent: the parent's id): instances form a tree, shown depth first
+      let roots = buckets, kids = null;
+      const recOf = new Map();
+      if (g.parent) {
+        const byText = new Map(buckets.map(b => [b.text, b]));
+        kids = new Map(); roots = [];
+        for (const b of buckets) {
+          const pk = evalSafe(g.parent, { ...ctx, fields: b.rows[0], aggRows: b.rows, aggIndex: undefined }, lc, `${item.name} group parent`).v;
+          const pr = pk == null || pk === '' ? null : byText.get(pk instanceof Date ? String(pk.getTime()) : String(pk));
+          if (!pr || pr === b) roots.push(b);
+          else { let k = kids.get(pr); if (!k) kids.set(pr, k = []); k.push(b); }
+        }
+        // each node's rows and its descendants' (Recursive aggregates); bounded depth, each node once
+        const seen = new Set();
+        const rec = (b, d) => {
+          seen.add(b);
+          let all = b.rows;
+          for (const c of kids.get(b) || []) if (!seen.has(c) && d < MAX_TREE_DEPTH) all = all.concat(rec(c, d + 1));
+          recOf.set(b, all);
+          return all;
+        };
+        for (const r of roots) rec(r, 0);
+        for (const b of buckets) if (!recOf.has(b)) rec(b, 0);
+      }
+      const shown = new Set();
+      const node = (bk, bi, sibs, depth, parentPath) => {
+        if (lc.rowBudget?.cut || shown.has(bk)) return;
+        shown.add(bk);
         // number: GroupIndex(); prevRows: Previous() in a group header or footer
-        const sc = { rows: bk.rows, index: -1, run: [], number: bi + 1, prevRows: bi > 0 ? buckets[bi - 1].rows : null };
-        const gname = g.name || `Group${level + 1}`;
+        const sc = { rows: bk.rows, index: -1, run: [], number: bi + 1, prevRows: bi > 0 ? sibs[bi - 1].rows : null, ...(kids ? { level: depth, recRows: recOf.get(bk) } : {}) };
         const gctx = { ...ctx, fields: bk.rows[0], aggRows: bk.rows, aggIndex: undefined, scopes: { ...ctx.scopes, [gname]: sc }, groupKey: bk.key, group: sc };
-        const path = `${keyPath}/${bk.text}`;
+        if (kids) { gctx.level = depth; if (g.indent) gctx.indent = (ctx.indent || 0) + depth * Number(g.indent); }
+        const path = `${parentPath}/${bk.text}`;
         const tkey = `${item.name}|${level}|${path}`;
-        const open = !g.collapsible ? true : (lc.state?.toggles?.[tkey] ?? !g.initiallyCollapsed);
+        const dflt = kids && g.expandLevels != null ? depth < Number(g.expandLevels) : !g.initiallyCollapsed;
+        const open = !g.collapsible ? true : (lc.state?.toggles?.[tkey] ?? dflt);
         const start = units.length;
         const hu = (g.header || []).map((r, ri) => layRow(r, gctx, 'groupHeader', { level, ...(ri === 0 && g.collapsible ? { toggle: { key: tkey, open } } : {}) }));
+        endBand();
         const before = units.length;
-        if (open) emit(level + 1, bk.rows, gctx, [...chain, sc], path);
-        else for (const s of [...chain, sc]) { s.index += bk.rows.length; for (const r of bk.rows) s.run.push(r); }
+        const ch = kids?.get(bk) || [];
+        if (open) {
+          emit(level + 1, bk.rows, gctx, [...chain, sc], path);
+          if (ch.length && depth + 1 >= MAX_TREE_DEPTH) lc.warn(`${item.name}: the group "${gname}" is more than ${MAX_TREE_DEPTH} levels deep; deeper rows are listed at the top level`);
+          else ch.forEach((c, ci) => node(c, ci, ch, depth + 1, path));
+        } else {
+          const rs = recOf.get(bk) || bk.rows;
+          for (const s of [...chain, sc]) { s.index += rs.length; for (const r of rs) s.run.push(r); }
+          for (const c of ch) markShown(c);
+        }
         // keep a group header with the group's content, never with the next group
         if (hu.length && units.length > before) hu[hu.length - 1].keepWithNext = true;
         const fu = (g.footer || []).map(r => layRow(r, gctx, 'groupFooter', { level }));
+        endBand();
         if (fu.length && open) fu[0].keepWithPrevious = true;
         if (units.length > start) {
-          if (g.pageBreak === 'between' && bi > 0) units[start].breakBefore = true;
-          if (g.pageBreak === 'after' && bi < buckets.length - 1) units[units.length - 1].breakAfter = true;
+          if ((g.pageBreak === 'between' || g.newSection) && bi > 0) units[start].breakBefore = true;
+          if (g.newSection) units[start].sectionStart = true;
+          if (g.pageBreak === 'after' && bi < sibs.length - 1) units[units.length - 1].breakAfter = true;
           if (g.keepTogether) { const id = `${item.name}:g${level}:${path}:${lc.nextId()}`; for (let k = start; k < units.length; k++) units[k].block ||= id; }
         }
-      });
+      };
+      // a collapsed node hides its subtree: those nodes count as shown
+      const markShown = (b) => { // a loop, not recursion: a chain of 50,000 rows must not overflow the stack
+        const st = [b];
+        while (st.length) { const x = st.pop(); if (shown.has(x)) continue; shown.add(x); for (const c of kids?.get(x) || []) st.push(c); }
+      };
+      roots.forEach((bk, bi) => node(bk, bi, roots, 0, keyPath));
+      if (kids) {
+        // nodes in a cycle (A → B → A) or cut off by the depth limit: listed at the top level, once
+        const rest = buckets.filter(b => !shown.has(b));
+        if (rest.length) { lc.warn(`${item.name}: ${rest.length} rows of the group "${gname}" have no root (a cycle or too deep); they are listed at the top level`); rest.forEach((bk, bi) => node(bk, bi, rest, 0, keyPath)); }
+      }
     };
-    emit(0, rows, base, [tableScope], '');
+    if (item.__body) {
+      // rows already built (a pivot): each with its own scope
+      for (const b of item.__body) {
+        if (lc.rowBudget && lc.rowBudget.left-- <= 0) { lc.rowBudget.cut = true; break; }
+        layRow(b.row, b.ctx || base, b.kind || 'detail', { level: b.level ?? 0 });
+      }
+      endBand();
+    } else emit(0, rows, base, [tableScope], '');
 
     // a total of the first rows only would be wrong: no footer in a partial (first pages) render
+    const fStart = units.length;
     const footerUnits = lc.rowBudget?.cut ? [] : (item.footer || []).map(r => layRow(r, base, 'footer'));
+    endBand();
     if (footerUnits.length) footerUnits[0].keepWithPrevious = true;
+    if (item.printAtBottom && footerUnits.length && !lc.fixed) {
+      // the footer sits at the bottom of the page the table ends on; what follows starts on the next page
+      for (let k = fStart; k < units.length; k++) { units[k].atBottom = true; if (k > fStart) units[k].keepWithPrevious = true; }
+      units[units.length - 1].breakAfter = true;
+    }
 
     if (!lc.fixed) lc.regions?.push(region);
+    // wider than the page: the columns continue on the next page set (spec §3.3)
+    const room = (lc.bodyWidth ?? Infinity) - item.x;
+    if (item.overflow === 'paginate' && !lc.fixed && width > room + 0.01) {
+      const hc = units.findIndex(u => u.kind !== 'header');
+      const sliced = sliceColumns({
+        units, height: y, headerCount: hc < 0 ? units.length : hc, headerHeight, repeatHeader: item.repeatHeader !== false,
+        colX, widths: colWidths, x: item.x, repeat: item.repeatColumns || 0, room, order: item.pageOrder === 'across' ? 'across' : 'down',
+        pageH: lc.maxUnitHeight ?? Infinity, name: item.name || 'Table', nextId: lc.nextId, warn: lc.warn, shiftLocal,
+      });
+      if (sliced) return sliced;
+    }
     return {
       height: y, units, width,
       table: item.repeatHeader !== false && headerHeight ? { headerHeight, headerItems, x: item.x } : null,
@@ -511,6 +711,8 @@ register('table', {
 });
 
 const cell_bookmark = (c) => c && c.bookmark;
+const MAX_TREE_DEPTH = 64;
+const CELL_ITEM_UNITS = 100000;
 
 /** Round a number for data export to the precision its format shows (percent keeps 2 more places). */
 function roundFor(v, fmt) {
@@ -518,28 +720,6 @@ function roundFor(v, fmt) {
   if (!m) return Number.isInteger(v) ? v : roundHalfAway(v, 6);
   const d = (m[2] === '' ? 2 : Number(m[2])) + (m[1].toUpperCase() === 'P' ? 2 : 0);
   return roundHalfAway(v, d); // same rule as the Intl formatter that drew the cell
-}
-
-function groupRows(rows, expr, ctx, lc, who) {
-  const map = new Map();
-  const c = { ...ctx };
-  for (const r of rows) {
-    c.fields = r;
-    let key;
-    try { key = evalValue(expr, c); } catch (e) { lc.warn(`${who} group: ${e.message}`); key = '#Error'; }
-    const text = key instanceof Date ? String(key.getTime()) : String(key);
-    let b = map.get(text);
-    if (!b) { b = { key, text, rows: [] }; map.set(text, b); }
-    b.rows.push(r);
-  }
-  return [...map.values()];
-}
-function cmpKey(a, b) {
-  if (a instanceof Date) a = a.getTime();
-  if (b instanceof Date) b = b.getTime();
-  if (a == null) return 1;
-  if (b == null) return -1;
-  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 /* ---------------------------------------------------------------- container */
@@ -583,6 +763,9 @@ register('list', {
     { key: 'groupBy', label: 'Group by (one row per group)', type: 'expr', category: 'Data' },
     { key: 'keepTogether', label: 'Keep each row on one page', type: 'bool', category: 'Layout' },
     { key: 'pageBreakBetween', label: 'Page break between rows', type: 'bool', category: 'Layout' },
+    { key: 'columns', label: 'Records across (grid)', type: 'number', category: 'Layout' },
+    { key: 'columnGap', label: 'Gap between records across (pt)', type: 'number', category: 'Layout', showIf: (it) => Number(it.columns) > 1 },
+    { key: 'newSection', label: 'Each row starts a section (page numbers restart)', type: 'bool', category: 'Layout' },
     { key: 'pageBreakBefore', label: 'Page break before', type: 'bool', category: 'Layout' },
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
   ],
@@ -598,6 +781,9 @@ register('list', {
     const units = [], tables = [];
     let y = 0;
     const listScope = { rows, index: -1, run: [] };
+    const ncol = Math.max(1, Math.min(50, Math.floor(Number(item.columns)) || 1));
+    const gap = Number(item.columnGap ?? 6) || 0;
+    let cells = null;
     reps.forEach((rs, i) => {
       if (lc.rowBudget && lc.rowBudget.left-- <= 0) { lc.rowBudget.cut = true; return; }
       listScope.index = i;
@@ -613,14 +799,25 @@ register('list', {
         const kids = related(c.aggRows, c);
         return kids === c.aggRows ? c : { ...c, aggRows: kids, fields: kids[0] || null };
       } };
-      const res = lc.layoutItems(item.items, child, { dx: item.x });
-      const fr = frame({ ...item, name: `${item.name}[${i + 1}]` }, child, rctx, res, item.keepTogether !== false ? `l:${item.name}:${i}:${lc.nextId()}` : null);
-      fr.units.forEach((u, k) => units.push({ ...u, top: u.top + y, breakBefore: u.breakBefore || (k === 0 && i > 0 && !!item.pageBreakBetween) }));
+      const k = i % ncol;
+      const res = lc.layoutItems(item.items, child, { dx: item.x + k * (item.w + gap) });
+      const fr = frame({ ...item, x: item.x + k * (item.w + gap), name: `${item.name}[${i + 1}]` }, child, rctx, res, item.keepTogether !== false ? `l:${item.name}:${i}:${lc.nextId()}` : null);
+      if (ncol > 1) {
+        // a grid list: n records side by side, each row of the grid one unit
+        if (k === 0) { cells = { top: y, height: 0, items: [], x0: item.x, x1: item.x + ncol * item.w + (ncol - 1) * gap, block: undefined }; units.push(cells); }
+        for (const u of fr.units) for (const it of shiftLocal(u.items, u.top)) cells.items.push(it);
+        cells.height = Math.max(cells.height, fr.height);
+        if (k === ncol - 1 || i === reps.length - 1) y += cells.height;
+        if (k === 0 && i > 0 && (item.pageBreakBetween || item.newSection)) cells.breakBefore = true;
+        if (k === 0 && item.newSection) cells.sectionStart = true;
+        return;
+      }
+      fr.units.forEach((u, j) => units.push({ ...u, top: u.top + y, breakBefore: u.breakBefore || (j === 0 && i > 0 && !!(item.pageBreakBetween || item.newSection)), ...(j === 0 && item.newSection ? { sectionStart: true } : {}) }));
       for (const t of fr.tables || []) tables.push({ ...t, top: t.top + y, bottom: t.bottom + y });
       y += fr.height;
     });
     if (!reps.length) units.push({ top: 0, height: 0, items: [] });
-    return { height: y, units, tables, width: item.w };
+    return { height: y, units, tables, width: ncol > 1 ? ncol * item.w + (ncol - 1) * gap : item.w };
   },
 });
 
@@ -898,20 +1095,15 @@ register('matrix', {
   defaults: () => ({ type: 'matrix', w: 360, h: 54, dataSet: null, rowGroup: '', columnGroup: '', value: '=Count(Fields)', valueFormat: 'N0',
     corner: '', rowHeaderWidth: 110, columnWidth: 64, rowTotals: true, columnTotals: true, columnSort: 'asc', rowSort: 'asc',
     headerStyle: { fontWeight: 'bold', backgroundColor: '#f1f5f9', borderBottom: '1 solid #94a3b8' }, style: { padding: [3, 4, 3, 4] } }),
+  // rows, columns and values: the designer's pivot editor (rowGroups / columnGroups / values, or the old single-group keys)
   props: [
     { key: 'dataSet', label: 'Data set', type: 'dataset', category: 'Data' },
-    { key: 'rowGroup', label: 'Rows: group by', type: 'expr', category: 'Data' },
-    { key: 'columnGroup', label: 'Columns: group by', type: 'expr', category: 'Data' },
-    { key: 'value', label: 'Value (aggregate)', type: 'expr', category: 'Data' },
-    { key: 'valueFormat', label: 'Value format', type: 'text', category: 'Data' },
     { key: 'corner', label: 'Corner text', type: 'text', category: 'Data' },
-    { key: 'rowSort', label: 'Sort rows', type: 'select', options: ['asc', 'desc'], category: 'Data' },
-    { key: 'columnSort', label: 'Sort columns', type: 'select', options: ['asc', 'desc'], category: 'Data' },
-    { key: 'rowTotals', label: 'Total column at the right', type: 'bool', category: 'Layout' },
-    { key: 'columnTotals', label: 'Total row at the bottom', type: 'bool', category: 'Layout' },
     { key: 'rowHeaderWidth', label: 'Row header width', type: 'number', category: 'Layout' },
     { key: 'columnWidth', label: 'Column width', type: 'number', category: 'Layout' },
     { key: 'repeatHeader', label: 'Repeat header on each page', type: 'bool', category: 'Layout' },
+    { key: 'overflow', label: 'Wider than the page', type: 'select', options: [{ value: 'paginate', label: 'Continue on the next pages' }, { value: 'shrink', label: 'Narrow the columns' }], category: 'Layout' },
+    { key: 'pageOrder', label: 'Page order', type: 'select', options: [{ value: 'down', label: 'Down, then across' }, { value: 'across', label: 'Across, then down' }], category: 'Layout' },
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
   ],
   layout(item, lc) {
@@ -921,44 +1113,77 @@ register('matrix', {
     rows = related(rows, ctx); // a nested data set inside a list of its parent: that row's children
     if (item.filters?.length) rows = applyFilters(rows, item.filters, ctx);
     const who = item.name || 'Matrix';
-    const sortB = (bs, dir) => { if (dir === 'asc' || dir === 'desc') bs.sort((a, b) => cmpKey(a.key, b.key) * (dir === 'desc' ? -1 : 1)); return bs; };
-    const rowB = sortB(groupRows(rows, item.rowGroup || "=''", ctx, lc, who), item.rowSort);
-    const colB = sortB(groupRows(rows, item.columnGroup || "=''", ctx, lc, who), item.columnSort);
-    const agg = (rs) => { if (!rs.length) return null; const r = evalSafe(item.value || '=Count(Fields)', { ...ctx, fields: rs[0], aggRows: rs, aggIndex: undefined }, lc, who); return r.err ? null : r.v; };
-    // fit the page: shrink value columns if needed
-    const room = (lc.bodyWidth ?? 1e9) - item.x;
-    let cw = item.columnWidth || 64;
-    const nCols = colB.length + (item.rowTotals !== false ? 1 : 0);
+    const it = { ...item, name: who };
+    let p = buildPivot(it, rows, ctx, lc);
+    const { spec, R, V } = p;
     const rhw = item.rowHeaderWidth || 110;
-    if (rhw + cw * nCols > room) {
-      const fit = (room - rhw) / nCols;
-      if (fit < 28) lc.warn(`${who}: ${colB.length} columns do not fit the page; showing the first ${Math.max(1, Math.floor((room - rhw) / 28) - 1)}`);
+    const hw = spec.rowGroups.map(g => Number(g.width) || rhw);
+    const headW = hw.reduce((a, b) => a + b, 0);
+    let cw = item.columnWidth || 64;
+    const room = (lc.bodyWidth ?? 1e9) - item.x;
+    if (spec.overflow === 'shrink' && headW + cw * p.cols.length > room) {
+      // fit the page: narrow the value columns, then leave out the columns that still do not fit
+      const nTot = p.cols.filter(c => c.kind === 'total').length;
+      const nLeaf = (p.cols.length - nTot) / V;
+      const fit = (room - headW) / p.cols.length;
+      if (fit < 28) lc.warn(`${who}: ${nLeaf} columns do not fit the page; showing the first ${Math.max(1, Math.floor((room - headW) / 28) - nTot)}`);
       cw = Math.max(28, fit);
+      const keep = Math.max(1, Math.floor((room - headW) / cw) - nTot);
+      if (keep < p.cols.length - nTot) p = buildPivot(it, rows, ctx, { ...lc, colLimit: Math.max(1, Math.floor(keep / V)) }); // colLimit counts column instances, each V columns wide
     }
-    const maxCols = Math.max(1, Math.floor((room - rhw) / cw) - (item.rowTotals !== false ? 1 : 0));
-    const cols = colB.slice(0, maxCols);
-    const fmt = { format: item.valueFormat || null };
-    const vstyle = { ...fmt, textAlign: 'right' };
-    const label = (k) => textOf(k, {}, ctx);
-    // a data key becomes cell text, never a template or an expression ("=1+1", "{x}")
-    const lit = (s) => `="${s.replace(/[\\"]/g, '\\$&')}"`;
-    const synthRows = rowB.map(rb => {
-      const o = { __label: label(rb.key) };
-      const set = new Set(rb.rows);
-      cols.forEach((cb, i) => { o[`c${i}`] = agg(cb.rows.filter(r => set.has(r))); });
-      o.__total = agg(rb.rows);
+    const fmtOf = (v) => v.format ?? (['percentOfTotal', 'percentOfRow', 'percentOfColumn'].includes(v.show) ? 'P1' : null);
+    const vstyles = spec.values.map(v => ({ format: fmtOf(v), textAlign: 'right', ...(v.style || {}) }));
+    const vbold = vstyles.map(s => ({ ...s, fontWeight: 'bold' }));
+    const right = { textAlign: 'right' };
+    const cellStyle = item.cellStyle || { borderBottom: '0.5 solid #e5e7eb' };
+    const totalStyle = item.totalStyle || { fontWeight: 'bold', borderTop: '1 solid #94a3b8' };
+    const N = R + p.cols.length;
+    const columns = [...hw.map(width => ({ width })), ...p.cols.map(c => ({ width: Number(spec.values[c.v].width) || cw }))];
+    // a key or label is data: it goes in as a raw value, never as an expression or template
+    const hcell = (c) => {
+      const o = c.role === 'corner' ? { value: c.text } : { raw: c.text };
+      if (c.rowSpan > 1) o.rowSpan = c.rowSpan;
+      if (c.colSpan > 1) o.colSpan = c.colSpan;
+      if (c.toggle) o.toggle = c.toggle;
+      if (c.role !== 'corner') o.style = spec.legacy || c.colSpan === 1 ? right : { textAlign: 'center' };
       return o;
+    };
+    const header = p.header.map(hr => {
+      const cells = new Array(N).fill(null);
+      for (const c of hr) cells[c.c] = hcell(c);
+      return { height: 18, style: item.headerStyle, cells };
+    });
+    const bodyRow = (br) => {
+      const cells = new Array(N).fill(null);
+      for (const c of br.cells) {
+        if (c.role === 'value') {
+          cells[c.c] = { raw: c.raw, ctx: c.ctx, style: c.colTotal && br.kind !== 'total' ? vbold[c.v] : vstyles[c.v] };
+          continue;
+        }
+        const o = { raw: c.text };
+        if (c.rowSpan > 1) o.rowSpan = c.rowSpan;
+        if (c.colSpan > 1) o.colSpan = c.colSpan;
+        if (c.toggle) o.toggle = c.toggle;
+        const gs = spec.rowGroups[c.level]?.style;
+        if (gs && c.role !== 'total') o.style = gs;
+        cells[c.c] = o;
+      }
+      const total = br.kind === 'total';
+      return { height: total && br.level === 0 ? 18 : 16, style: total ? totalStyle : cellStyle, cells };
+    };
+    const body = [], footer = [];
+    p.body.forEach((br, i) => {
+      // the grand total after the rows is the table footer: it stays with the last rows and is left out of a first-pages render
+      if (br.kind === 'total' && br.level === 0 && i === p.body.length - 1) { footer.push(bodyRow(br)); return; }
+      const kind = br.kind !== 'total' ? 'detail' : br.level === 0 ? 'footer' : spec.rowGroups[br.level].total === 'before' ? 'groupHeader' : 'groupFooter';
+      body.push({ row: bodyRow(br), kind, level: br.kind === 'total' ? br.level : Math.max(0, br.level) });
     });
     const table = {
-      type: 'table', name: who, x: item.x, y: item.y, w: 0, h: item.h, dataSet: '__matrix', repeatHeader: item.repeatHeader !== false, style: item.style,
-      columns: [{ width: rhw }, ...cols.map(() => ({ width: cw })), ...(item.rowTotals !== false ? [{ width: cw }] : [])],
-      header: [{ height: 18, style: item.headerStyle, cells: [{ value: item.corner || '' }, ...cols.map(cb => ({ value: lit(label(cb.key)), style: { textAlign: 'right' } })), ...(item.rowTotals !== false ? [{ value: 'Total', style: { textAlign: 'right' } }] : [])] }],
-      detail: [{ height: 16, style: item.cellStyle || { borderBottom: '0.5 solid #e5e7eb' }, cells: [{ value: '=Fields.__label' }, ...cols.map((_, i) => ({ value: `=Fields.c${i}`, style: vstyle })), ...(item.rowTotals !== false ? [{ value: '=Fields.__total', style: { ...vstyle, fontWeight: 'bold' } }] : [])] }],
-      footer: item.columnTotals !== false ? [{ height: 18, style: item.totalStyle || { fontWeight: 'bold', borderTop: '1 solid #94a3b8' }, cells: [{ value: 'Total' },
-        ...cols.map(cb => ({ value: agg(cb.rows), style: vstyle })), ...(item.rowTotals !== false ? [{ value: agg(rows), style: vstyle }] : [])] }] : [],
-      noRowsText: 'No data',
+      type: 'table', name: who, x: item.x, y: item.y, w: 0, h: item.h, dataSet: null, repeatHeader: item.repeatHeader !== false, style: item.style,
+      columns, header, footer, __body: rows.length ? body : [], __rows: rows, __ctx: ctx, noRowsText: 'No data',
+      ...(spec.overflow === 'paginate' ? { overflow: 'paginate', repeatColumns: R, pageOrder: spec.pageOrder } : {}),
     };
-    return ITEMS.table.layout(table, { ...lc, dataSets: { ...lc.dataSets, __matrix: synthRows } });
+    return ITEMS.table.layout(table, lc);
   },
 });
 
@@ -994,7 +1219,7 @@ register('subreport', {
     if (!res) return placeholder(`Subreport "${item.report}" did not load`);
     if (res.error) { lc.warn(`${item.name}: ${res.error}`); return placeholder(`Subreport "${item.report}": ${res.error}`); }
     const block = item.keepTogether ? `s:${item.name}:${lc.nextId()}` : undefined;
-    const units = res.units.map(u => ({ ...u, items: shiftItems(u.items, item.x, 0), x0: (u.x0 ?? 0) + item.x, x1: (u.x1 ?? item.w) + item.x, block: u.block || block, tableId: undefined }));
+    const units = res.units.map(u => ({ ...u, items: shiftItems(u.items, item.x, 0), ...(u.cont ? { cont: shiftItems(u.cont, item.x, 0) } : {}), x0: (u.x0 ?? 0) + item.x, x1: (u.x1 ?? item.w) + item.x, block: u.block || block, tableId: undefined }));
     const tables = res.tables.map(t => ({ ...t, x0: t.x0 + item.x, x1: t.x1 + item.x, headerItems: shiftItems(t.headerItems, item.x, 0), id: `sub${lc.nextId()}` }));
     for (const r of res.regions || []) lc.regions?.push(r);
     return { height: res.height, units: units.length ? units : [{ top: 0, height: 0, items: [] }], tables };
