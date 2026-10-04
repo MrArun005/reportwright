@@ -12,6 +12,7 @@
 import { PAGE_SIZES } from '../engine/units.js';
 import { FONT_FAMILIES } from '../engine/text/fonts.js';
 import { checkValue } from '../engine/expr/evaluate.js';
+import { currencyOf } from '../engine/expr/format.js';
 import { jsonPath } from '../engine/data/index.js';
 
 /* ================================================================ units, colours, fonts, formats */
@@ -257,16 +258,16 @@ const DATEFORMAT = { generaldate: 0, longdate: 1, shortdate: 2, longtime: 3, sho
 const AGG = { sum: 'Sum', avg: 'Avg', average: 'Avg', count: 'Count', countdistinct: 'CountDistinct', min: 'Min', max: 'Max', first: 'First', last: 'Last',
   stdev: 'StDev', stdevp: 'StDevP', var: 'Var', varp: 'VarP' };
 const SAME = { format: 'Format', left: 'Left', right: 'Right', mid: 'Mid', len: 'Len', trim: 'Trim', replace: 'Replace', cstr: 'CStr', cdbl: 'CDbl',
-  cint: 'CInt', cbool: 'CBool', cdate: 'CDate', round: 'Round', abs: 'Abs', floor: 'Floor', ceiling: 'Ceiling', int: 'Int', sqrt: 'Sqrt', now: 'Now',
+  cint: 'CInt', cbool: 'CBool', cdate: 'CDate', abs: 'Abs', floor: 'Floor', ceiling: 'Ceiling', int: 'Int', sqrt: 'Sqrt', now: 'Now',
   today: 'Today', dateadd: 'DateAdd', datediff: 'DateDiff', dateserial: 'DateSerial', year: 'Year', month: 'Month', day: 'Day', monthname: 'MonthName',
   ucase: 'Upper', lcase: 'Lower', upper: 'Upper', lower: 'Lower', val: 'Val', join: 'Join', lookup: 'Lookup', inlist: 'InList', coalesce: 'Coalesce',
-  isnothing: 'IsNull', isnull: 'IsNull', isdbnull: 'IsNull', cdec: 'CDbl', csng: 'CDbl', clng: 'CInt', cshort: 'CInt', cbyte: 'CInt', fix: 'Int',
+  isnothing: 'IsNull', isnull: 'IsNull', isdbnull: 'IsNull', cdec: 'CDbl', csng: 'CDbl', clng: 'ToInt64', cshort: 'ToInt16', cbyte: 'CInt', fix: 'Fix',
   isempty: 'IsNull', space: 'Space', weekday: 'Weekday', weekdayname: 'WeekdayName', hour: 'Hour', minute: 'Minute', second: 'Second', sign: 'Sign',
   chr: 'Chr', chrw: 'Chr', asc: 'Asc', ascw: 'Asc', strreverse: 'StrReverse', isnumeric: 'IsNumeric', isdate: 'IsDate', datevalue: 'DateValue',
   timeserial: 'TimeSerial', lookupset: 'LookupSet' };
-const CONVERT = { tostring: 'CStr', todecimal: 'CDbl', todouble: 'CDbl', tosingle: 'CDbl', toint16: 'CInt', toint32: 'CInt', toint64: 'CInt',
+const CONVERT = { tostring: 'CStr', todecimal: 'CDbl', todouble: 'CDbl', tosingle: 'CDbl', toint16: 'ToInt16', toint32: 'ToInt32', toint64: 'ToInt64',
   todatetime: 'CDate', toboolean: 'CBool' };
-const MATH = { round: 'Round', abs: 'Abs', floor: 'Floor', ceiling: 'Ceiling', sqrt: 'Sqrt', pow: 'Pow', truncate: 'Int', sign: 'Sign', log: 'Log', log10: 'Log10', exp: 'Exp' };
+const MATH = { abs: 'Abs', floor: 'Floor', ceiling: 'Ceiling', sqrt: 'Sqrt', pow: 'Pow', truncate: 'Fix', sign: 'Sign', log: 'Log', log10: 'Log10', exp: 'Exp' };
 
 /**
  * @typedef {{ notes: string[], fields?: string, region?: string, scopes?: Map<string, string|null>, lit?: (s: string) => string }} EmitOpts
@@ -309,7 +310,8 @@ function emBin(n, o) {
     case '+': case '-': return { s: `${wrap(A(), 6)} ${n.op} ${wrap(B(), 7)}`, p: 6 };
     case '*': case '/': return { s: `${wrap(A(), 7)} ${n.op} ${wrap(B(), 8)}`, p: 7 };
     case 'mod': return { s: `${wrap(A(), 7)} % ${wrap(B(), 8)}`, p: 7 };
-    case '\\': return atom(`Int(${wrap(A(), 7)} / ${wrap(B(), 8)})`);
+    // VB \ rounds both sides to Long (half to even), then truncates the quotient
+    case '\\': return fn('Fix', [atom(`ToInt64(${A().s}) / ToInt64(${B().s})`)]);
     case '^': return fn('Pow', [A(), B()]);
     case '=': case '<>': case '<': case '>': case '<=': case '>=': return { s: `${wrap(A(), 5)} ${n.op} ${wrap(B(), 5)}`, p: 4 };
     case 'is': case 'isnot': {
@@ -336,12 +338,15 @@ function emBin(n, o) {
   return no(`the operator "${n.op}"`);
 }
 
+const VB_DAYS = ['vbusesystemdayofweek', 'vbsunday', 'vbmonday', 'vbtuesday', 'vbwednesday', 'vbthursday', 'vbfriday', 'vbsaturday'];
 function emId(n) {
   const w = n.name.toLowerCase();
   if (w === 'vbcrlf' || w === 'vbnewline' || w === 'vbcr' || w === 'vblf') return atom(q('\n'));
   if (w === 'vbtab') return atom(q('\t'));
   if (w === 'now') return atom('Now()');
   if (w === 'today') return atom('Today()');
+  const day = VB_DAYS.indexOf(w);
+  if (day >= 0) return atom(String(day)); // vbUseSystemDayOfWeek (0: Sunday here), vbSunday (1) … vbSaturday (7)
   return no(`the name "${n.name}"`);
 }
 
@@ -410,6 +415,7 @@ function emCall(n, o, res) {
     if (root === 'code') return no(`custom code (Code.${f.name})`);
     const sysMath = f.obj.k === 'dot' && ROOT(f.obj.obj) === 'system' && f.obj.name.toLowerCase() === 'math';
     if (root === 'math' || sysMath) {
+      if (m === 'round') return emRound(args, o);
       if (m === 'max' || m === 'min') { const a = em(args[0], o), b = em(args[1], o); return atom(`IIF(${a.s} ${m === 'max' ? '>' : '<'} ${b.s}, ${a.s}, ${b.s})`); }
       return MATH[m] ? fn(MATH[m], args.map(a => em(a, o))) : no(`Math.${f.name}`);
     }
@@ -460,6 +466,19 @@ function scopeArg(node, o, fname) {
   return null;
 }
 
+/**
+ * Round(x[, digits][, MidpointRounding.X]): VB's Round and Math.Round round half to even (Pagewright Round);
+ * MidpointRounding.AwayFromZero is Pagewright RoundHalfAway.
+ */
+function emRound(args, o) {
+  const last = args[args.length - 1];
+  const mode = last?.k === 'dot' && ROOT(last.obj) === 'midpointrounding' ? last.name.toLowerCase() : null;
+  if (mode && mode !== 'awayfromzero' && mode !== 'toeven') return no(`MidpointRounding.${last.name}`);
+  const rest = mode ? args.slice(0, -1) : args;
+  if (!rest.length || rest.length > 2) return no('Round with those arguments');
+  return fn(mode === 'awayfromzero' ? 'RoundHalfAway' : 'Round', rest.map(a => em(a, o)));
+}
+
 function emFunc(name, args, o, res) {
   const w = name.toLowerCase();
   const all = () => args.map(a => em(a, o));
@@ -502,19 +521,22 @@ function emFunc(name, args, o, res) {
       const f = ['g', 'D', 'd', 'HH:mm:ss', 'HH:mm'][k] ?? no('FormatDateTime with that format');
       return fn('Format', [em(args[0], o), atom(q(f))]);
     }
-    case 'datepart': {
-      const iv = args[0]?.k === 'str' ? args[0].v.toLowerCase() : args[0] ? JSON.parse(em(args[0], o).s) : '';
-      const part = { yyyy: 'Year', m: 'Month', d: 'Day', h: 'Hour', n: 'Minute', s: 'Second', w: 'Weekday' }[iv] || no(`DatePart("${iv}")`);
-      return fn(part, [em(args[1], o)]);
+    case 'datepart': // DatePart(interval, date[, firstDayOfWeek]); FirstWeekOfYear other than Jan1 is not supported
+      if (args.length > 3) return no('DatePart with a FirstWeekOfYear');
+      return fn('DatePart', all());
+    case 'round': return emRound(args, o);
+    case 'instr': {
+      if (args.length !== 3) return fn('InStr', all());
+      if (args[0].k === 'num' && args[0].v === 1) return fn('InStr', [em(args[1], o), em(args[2], o)]);
+      // InStr(start, s, find): 1-based, from start
+      return { s: `IndexOf(${em(args[1], o).s}, ${em(args[2], o).s}, ${wrap(em(args[0], o), 7)} - 1) + 1`, p: 6 };
     }
-    case 'instr':
-      if (args.length === 3) return args[0].k === 'num' && args[0].v === 1 ? fn('InStr', [em(args[1], o), em(args[2], o)]) : no('InStr with a start position');
-      return fn('InStr', all());
     case 'instrrev': // VB: 1-based position of the last occurrence (0: none)
       if (args.length !== 2) return no('InStrRev with a start position');
       return { s: `LastIndexOf(${em(args[0], o).s}, ${em(args[1], o).s}) + 1`, p: 6 };
     case 'previous': { const sc = args[1] ? scopeArg(args[1], o, name) : null; return fn('Previous', sc ? [em(args[0], o), sc] : [em(args[0], o)]); }
-    case 'ltrim': case 'rtrim': o.notes.push(`${name} trims both ends in Pagewright`); return fn('Trim', all());
+    case 'ltrim': return fn('TrimStart', all());
+    case 'rtrim': return fn('TrimEnd', all());
     case 'mid': if (args.length > 3) return no('Mid with extra arguments'); break;
   }
   if (SAME[w]) return fn(SAME[w], all());
@@ -2415,10 +2437,6 @@ function parametersOf(list, cx) {
 
 /* ================================================================ page, sections, report */
 
-const CURRENCY = { US: 'USD', IN: 'INR', GB: 'GBP', DE: 'EUR', FR: 'EUR', ES: 'EUR', IT: 'EUR', NL: 'EUR', BE: 'EUR', AT: 'EUR', PT: 'EUR', IE: 'EUR', FI: 'EUR',
-  GR: 'EUR', JP: 'JPY', CN: 'CNY', CA: 'CAD', AU: 'AUD', NZ: 'NZD', CH: 'CHF', SG: 'SGD', AE: 'AED', SA: 'SAR', BR: 'BRL', MX: 'MXN', ZA: 'ZAR', KR: 'KRW',
-  RU: 'RUB', ID: 'IDR', MY: 'MYR', PH: 'PHP', TH: 'THB', VN: 'VND', PK: 'PKR', BD: 'BDT', LK: 'LKR', NP: 'NPR', SE: 'SEK', NO: 'NOK', DK: 'DKK', PL: 'PLN',
-  TR: 'TRY', IL: 'ILS', EG: 'EGP', NG: 'NGN', KE: 'KES', HK: 'HKD', TW: 'TWD' };
 
 function pageOf(p, cx) {
   if (!p || typeof p !== 'object') p = {};
@@ -2535,7 +2553,6 @@ function convertReport(ar, cx, opts) {
   }
   collectScopes(ar, cx);
   const lang = typeof ar.Language === 'string' && !isExpr(ar.Language) && /^[a-z]{2}(-[A-Za-z]{2,4})?$/i.test(ar.Language) ? ar.Language : 'en-US';
-  const region = (lang.split('-')[1] || 'US').toUpperCase();
   const sections = Array.isArray(ar.ReportSections) ? ar.ReportSections.filter(s => s && typeof s === 'object') : [];
   const sec0 = sections[0];
   const pinfo = pageOf(sec0?.Page || ar.Page, cx);
@@ -2589,7 +2606,7 @@ function convertReport(ar, cx, opts) {
     $schema: 'pagewright/report@1',
     name,
     locale: lang,
-    currency: CURRENCY[region] || 'USD',
+    ...(currencyOf(lang) ? { currency: currencyOf(lang) } : {}), // the Language's country; none for a bare "fr"
     page: pinfo.page,
     parameters,
     dataSources,

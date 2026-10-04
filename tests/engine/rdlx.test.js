@@ -50,7 +50,7 @@ describe('expressions', () => {
     ['=CStr(Fields!n.Value)', '=CStr(Fields.n)'],
     ['=Fields!a.Value Mod 2 = 0', '=Fields.a % 2 = 0'],
     ['=2 ^ 3', '=Pow(2, 3)'],
-    ['=7 \\ 2', '=Int(7 / 2)'],
+    ['=7 \\ 2', '=Fix(ToInt64(7) / ToInt64(2))'], // VB rounds both sides to Long, then truncates
     ['=(Fields!a.Value + 1) * 2', '=(Fields.a + 1) * 2'],
     ['=Not Fields!b.Value And Fields!c.Value OrElse False', '=not Fields.b and Fields.c or false'],
     ['=Fields!Name.Value.ToUpper()', '=Upper(Fields.Name)'],

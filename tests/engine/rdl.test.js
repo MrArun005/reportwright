@@ -318,7 +318,7 @@ describe('expressions', () => {
     ['=System.Math.Floor(Fields!x.Value)', '=Floor(Fields.x)'],
     ['=Fields!x.Value Mod 2 = 0 And Not Fields!y.Value Or False', '=Fields.x % 2 = 0 and not Fields.y or false'],
     ['=CStr(Fields!x.Value) & CDbl("1.5")', '{CStr(Fields.x)}{CDbl("1.5")}'],
-    ['=WeekdayName(DatePart(DateInterval.Weekday, Fields!d.Value), True, FirstDayOfWeek.Monday)', '=WeekdayName(Weekday(Fields.d), true, 2)'],
+    ['=WeekdayName(DatePart(DateInterval.Weekday, Fields!d.Value), True, FirstDayOfWeek.Monday)', '=WeekdayName(DatePart("w", Fields.d), true, 2)'],
     ['=RowNumber(Nothing)', '=RowNumber()'],
     ['=Join(Parameters!p.Value, ", ")', '=Join(Parameters.p, ", ")'],
   ];
