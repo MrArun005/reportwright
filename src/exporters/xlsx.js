@@ -1,5 +1,6 @@
 // @ts-check
 import { mergedRegions, textRows } from './regions.js';
+import { figures, figurePicture, altOf, b64 } from './figures.js';
 
 /** .NET-style format → Excel number format. */
 export function excelFormat(fmt, currencySymbol = '') {
@@ -23,14 +24,87 @@ export function excelFormat(fmt, currencySymbol = '') {
 
 const SYMBOL = { INR: '₹', USD: '$', EUR: '€', GBP: '£', JPY: '¥' };
 
+/** Excel's column letters for a 1-based column. */
+const colName = (c) => { let s = ''; for (let n = c; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s; return s; };
+/** decimals a .NET format shows (N2 → 2, C0 → 0, P1 → 1, #,##0.00 → 2), or null when unknown */
+const decimalsOf = (fmt) => {
+  const m = /^[CcNnFfPp](\d{0,2})$/.exec(fmt || '');
+  if (m) return (m[1] === '' ? 2 : Number(m[1])) + (/^[Pp]/.test(fmt) ? 2 : 0);
+  const d = /\.(0+)/.exec(fmt || '');
+  return d ? d[1].length : fmt ? 0 : null;
+};
+
+/**
+ * A group footer's or table footer's total as a live formula: SUBTOTAL over the detail rows it covers, when the shown
+ * value is the sum, count, average, minimum or maximum of those rows (checked here, to the format's decimals).
+ * Otherwise null: the value stays a value. SUBTOTAL leaves out the subtotals inside a range, so a grand total
+ * over the whole data area does not count the group subtotals twice.
+ * @param {any[]} rows the sheet's rows ({ kind, level, cells, n: sheet row }) @param {number} at this row's index
+ * @param {{ colIndex: number, value: any, format?: string }} c
+ * @param {Map<string, string>} made `${row}|${col}` → formula already given (the cells a range may include)
+ */
+function totalFormula(rows, at, c, made) {
+  const row = rows[at];
+  if (typeof c.value !== 'number' || !Number.isFinite(c.value)) return null;
+  // the detail rows this total covers: back to this group's start (its header, or the footer of the group before)
+  const covered = [];
+  for (let k = at - 1; k >= 0; k--) {
+    const r = rows[k];
+    if (r.kind === 'header') break;
+    if (row.kind === 'groupFooter' && (r.kind === 'groupFooter' || r.kind === 'groupHeader') && r.level <= row.level) break;
+    if (r.kind === 'detail') covered.push(k);
+  }
+  if (!covered.length) return null;
+  covered.reverse();
+  const vals = covered.map(k => rows[k].cells.find(x => x.colIndex === c.colIndex)?.value).filter(v => v != null && v !== '');
+  const nums = vals.filter(v => typeof v === 'number' && Number.isFinite(v));
+  const d = decimalsOf(c.format);
+  const tol = d == null ? 1e-9 * Math.max(1, Math.abs(c.value)) : 0.5 * 10 ** -d + 1e-9;
+  const same = (v) => Math.abs(v - c.value) <= tol;
+  let fn = null;
+  const sum = nums.reduce((s, v) => s + v, 0);
+  if (nums.length && same(sum)) fn = 9;
+  else if (same(vals.length)) fn = nums.length === vals.length ? 2 : 3; // COUNT, or COUNTA when there is text
+  // average, minimum, maximum: only when the values differ (a column of equal ratios matches all three by chance)
+  else if (nums.length > 1 && nums.some(v => v !== nums[0])) {
+    if (same(sum / nums.length)) fn = 1;
+    else if (same(Math.min(...nums))) fn = 5;
+    else if (same(Math.max(...nums))) fn = 4;
+  }
+  if (!fn) return null;
+  const col = colName(c.colIndex + 1);
+  // runs of consecutive covered rows
+  const runs = [];
+  for (const k of covered) {
+    const last = runs[runs.length - 1];
+    if (last && rows[k].n === last[1] + 1) last[1] = rows[k].n; else runs.push([rows[k].n, rows[k].n]);
+  }
+  let refs = runs.map(([a, b]) => (a === b ? `${col}${a}` : `${col}${a}:${col}${b}`));
+  if (refs.length > 30) {
+    // one range over the whole span, when everything else in it is a subtotal formula or empty (SUBTOTAL skips subtotals)
+    const first = covered[0], last = covered[covered.length - 1];
+    for (let k = first; k <= last; k++) {
+      if (rows[k].kind === 'detail') continue;
+      const v = rows[k].cells.find(x => x.colIndex === c.colIndex)?.value;
+      if (v != null && v !== '' && !made.has(`${k}|${c.colIndex}`)) return null;
+    }
+    refs = [`${col}${rows[first].n}:${col}${rows[last].n}`];
+  }
+  return `SUBTOTAL(${fn},${refs.join(',')})`;
+}
+
 /**
  * Excel workbook in "data mode": one sheet per table, typed cells, number formats,
- * bold header and group rows, and outline levels for grouped detail rows.
+ * bold header and group rows, and outline levels for grouped detail rows. Group and table totals that are a sum,
+ * count, average, minimum or maximum of their column are live SUBTOTAL formulas (formulas: false keeps values).
+ * Charts and pictures go on a sheet of their own as pictures (PNG; needs a rasteriser, see figures.js).
  * @param {any} model  render() output
  * @param {any} ExcelJS  the exceljs module (passed in so the browser can load it lazily)
+ * @param {{ currency?: string, title?: string, formulas?: boolean, pictures?: boolean, fontStore?: any,
+ *   fetchImage?: (src: string) => Promise<Uint8Array|null>, rasterize?: any }} [opt]
  * @returns {Promise<Uint8Array>}
  */
-export async function exportXlsx(model, ExcelJS, { currency, title } = {}) {
+export async function exportXlsx(model, ExcelJS, { currency, title, formulas = true, pictures = true, fontStore, fetchImage, rasterize } = {}) {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Pagewright';
   wb.created = new Date();
@@ -56,10 +130,13 @@ export async function exportXlsx(model, ExcelJS, { currency, title } = {}) {
     r.columns.forEach((w, i) => { ws.getColumn(i + 1).width = Math.max(6, Math.round(w / 5.5)); });
     let headerRows = 0;
     const merges = []; // applied after the rows exist (a merge down would otherwise create rows ahead of addRow)
-    for (const row of r.rows) {
+    const rows = r.rows.map(row => ({ ...row, n: 0 }));
+    const made = new Map();
+    rows.forEach((row, ri) => {
       const values = new Array(r.columns.length).fill(null);
       for (const c of row.cells) if (c.colIndex >= 0) values[c.colIndex] = c.value === '' ? null : c.value;
       const xr = ws.addRow(values);
+      row.n = xr.number;
       if (row.kind === 'header') headerRows++;
       if (row.kind === 'detail' && row.level > 0) xr.outlineLevel = Math.min(7, row.level);
       for (const c of row.cells) {
@@ -70,14 +147,36 @@ export async function exportXlsx(model, ExcelJS, { currency, title } = {}) {
         else if (c.value instanceof Date) cell.numFmt = 'dd mmm yyyy';
         if (c.bold || row.kind !== 'detail') cell.font = { bold: c.bold || row.kind === 'header' };
         if (c.span > 1 || c.rowSpan > 1) merges.push([xr.number, c.colIndex + 1, xr.number + Math.max(1, c.rowSpan || 1) - 1, c.colIndex + Math.max(1, c.span || 1)]);
+        if (formulas && (row.kind === 'groupFooter' || row.kind === 'footer') && !(c.span > 1)) {
+          const f = totalFormula(rows, ri, c, made);
+          if (f) { cell.value = { formula: f, result: c.value }; made.set(`${ri}|${c.colIndex}`, f); }
+        }
       }
       if (row.kind === 'header') xr.eachCell(cell => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8EEF3' } }; });
-    }
+    });
     const last = ws.rowCount;
     for (const [r1, c1, r2, c2] of merges) { try { ws.mergeCells(r1, c1, Math.min(r2, last), c2); } catch { /* overlaps a merge already made */ } }
     if (headerRows) ws.views = [{ state: 'frozen', ySplit: headerRows }];
     ws.properties.outlineLevelRow = Math.max(0, ...r.rows.map(x => (x.kind === 'detail' ? x.level : 0)));
   }
+  if (pictures) {
+    // charts, pictures, maps, barcodes: one below the other on their own sheet, each with its description above it
+    let ws = null, row = 1;
+    for (const pg of model.pages) for (const f of figures(pg.items)) {
+      if (f.tag.k === 'shape' || f.tag.k === 'line') continue; // decoration, not data
+      const pic = await figurePicture(f, { fontStore, fetchImage, rasterize });
+      const bytes = pic.png || pic.jpeg;
+      if (!bytes) continue;
+      ws ||= wb.addWorksheet(sheetName('Charts'));
+      ws.getCell(row, 1).value = altOf(f.tag);
+      ws.getCell(row, 1).font = { bold: true };
+      const id = wb.addImage({ base64: `data:image/${pic.png ? 'png' : 'jpeg'};base64,${b64(bytes)}`, extension: pic.png ? 'png' : 'jpeg' });
+      const w = Math.round(pic.w * 4 / 3), h = Math.round(pic.h * 4 / 3); // points → pixels
+      ws.addImage(id, { tl: { col: 0, row }, ext: { width: w, height: h }, editAs: 'oneCell' });
+      row += 2 + Math.ceil(h / 20); // default rows are 20 px
+    }
+  }
+  if (formulas) wb.calcProperties.fullCalcOnLoad = true; // Excel works the totals out again on open
   const buf = await wb.xlsx.writeBuffer();
   return new Uint8Array(buf);
 }

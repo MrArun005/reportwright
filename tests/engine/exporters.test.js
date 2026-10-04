@@ -50,7 +50,7 @@ describe('exporters', () => {
     expect(r3.getCell(3).numFmt).toBe('#,##0.00');
     expect(r3.outlineLevel).toBe(1);
     const last = ws.getRow(ws.rowCount);
-    expect(last.getCell(3).value).toBe(1484.5);
+    expect(last.getCell(3).value).toEqual({ formula: 'SUBTOTAL(9,C3,C5:C6)', result: 1484.5 }); // a live total (exports batch 2)
     expect(last.getCell(3).numFmt).toBe('"₹"#,##0.00');
     expect(ws.model.merges.length).toBeGreaterThan(0);
     expect(excelFormat('dd MMM yyyy')).toBe('dd mmm yyyy');
