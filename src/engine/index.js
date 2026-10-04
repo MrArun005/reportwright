@@ -41,6 +41,7 @@ const MAX_SUBREPORTS = 2000; // per render, all nesting levels together
  *   reportId?: string,
  *   sql?: (src: any, params: Record<string, any>) => Promise<object[]>,
  *   timeoutMs?: number,
+ *   onSources?: (sources: Record<string, any>) => void,
  *   deadline?: number,
  * }} opts
  *   reportId: the saved report, whose SQL sources the server runs for a browser render.
@@ -76,8 +77,10 @@ export async function render(def, opts = {}) {
   const baseCtx = {
     params, globals: { ExecutionTime: now, ReportName: def.name || '', PageNumber: 1, TotalPages: 1 },
     dataSets: {}, fields: null, locale: def.locale || 'en-IN', currency: def.currency || 'INR', functions: functionTable(def, fnCount), clock,
+    aggCache: new WeakMap(), // aggregate results for this render (expr/evaluate.js)
   };
   const sources = opts.sources || await loadSources(def, { params, fetch: opts.fetch, baseUrl: opts.baseUrl, sql: opts.sql, reportId: opts.reportId });
+  opts.onSources?.(sources); // the worker's first-pages render hands its data to the full render that follows
   const dataSets = buildDataSets(def, sources, { ...baseCtx, warn });
   baseCtx.dataSets = dataSets;
   overTime();
@@ -131,7 +134,10 @@ export async function render(def, opts = {}) {
     const lc = makeLc(baseCtx.globals, false);
     // opts.firstPages: lay out only enough rows for that many pages (a fast first look; the full render follows).
     // 8 pt is the smallest sensible row, so this budget always fills the pages asked for. Not with a table of contents.
-    lc.rowBudget = firstPages > 0 && !opts.bodyOnly && !hasType(allBody, 'toc') ? { left: Math.ceil((firstPages * contentH) / 8), cut: false } : null;
+    // With a table of contents the budget starts after a full pass that finds its entries (below).
+    const budget = () => ({ left: Math.ceil((firstPages * contentH) / 8), cut: false });
+    const hasToc = hasType(allBody, 'toc');
+    lc.rowBudget = firstPages > 0 && !opts.bodyOnly && !hasToc ? budget() : null;
     cutRows = () => !!lc.rowBudget?.cut;
 
     // Subreports: one pass collects what to load, then each child renders its body with its own data.
@@ -153,7 +159,7 @@ export async function render(def, opts = {}) {
             if ((opts.chain || []).includes(rq.report)) throw new Error('it includes itself');
             if (!defs.has(rq.report)) defs.set(rq.report, await opts.loadReport(rq.report));
             const child = defs.get(rq.report);
-            const r = await render(child, { ...opts, deadline: deadline ?? undefined, reportId: rq.report, budget, fnCount, imageBudget, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, rq.report], bodyWidth: page.bodyWidth, state: {} });
+            const r = await render(child, { ...opts, onSources: undefined, deadline: deadline ?? undefined, reportId: rq.report, budget, fnCount, imageBudget, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, rq.report], bodyWidth: page.bodyWidth, state: {} });
             results.set(key, r);
             for (const w of r.warnings) warn(`Subreport ${rq.report}: ${w}`);
           } catch (e) { if (e.timeout) throw e; results.set(key, { error: e.message }); }
@@ -270,20 +276,45 @@ export async function render(def, opts = {}) {
         if (pg.width !== first.width || ph !== pageH) { out.width = pg.width; out.height = ph; }
         pages.push(out);
       });
+      // A table of contents: its entries' page numbers are the ones this pass found. Its height does not depend on
+      // them (one line per entry, room for 4 digits), so they are filled in here rather than in another pass.
+      const found = [...bookmarks, ...headings];
+      if (tocEntries.length && !lc.rowBudget?.cut && found.length === tocEntries.length && found.every((f, i) => f.label === tocEntries[i].label)) {
+        for (const pg of pages) {
+          const shift = new Map();
+          for (const it of pg.items) {
+            if (it.tocPage == null) continue;
+            const f = found[it.tocPage], ln = it.lines[0], num = String(f.page);
+            const nw = m.width(num, it.font, it.size);
+            shift.set(it.tocPage, ln.w - nw);
+            ln.x += ln.w - nw; ln.w = nw; ln.text = num;
+          }
+          for (const it of pg.items) {
+            if (it.tocDots != null) it.x2 += shift.get(it.tocDots) || 0;
+            if (it.tocLink != null && it.action.page != null) { it.action.page = found[it.tocLink].page; it.action.y = found[it.tocLink].y; }
+          }
+        }
+      }
+      for (const pg of pages) for (const it of pg.items) if (it.tocPage != null || it.tocDots != null || it.tocLink != null) { delete it.tocPage; delete it.tocDots; delete it.tocLink; }
       return { pages, bookmarks, headings, height: pageH, width: first.width };
   };
+  const tocOf = (r, pending) => [...r.bookmarks.map(b => ({ label: b.label, level: b.level, page: pending ? '…' : b.page })), ...r.headings.map(b => ({ label: b.label, level: b.level, page: pending ? '…' : b.page, y: pending ? undefined : b.y, heading: true }))];
 
   let result = assemble([]);
   if (opts.bodyOnly) return result;
-  if (hasType(allBody, 'toc')) {
-    // The table of contents changes the page count, which changes its own numbers: repeat until stable.
+  if (hasToc) {
+    // first pages: the entries are known now, their page numbers when the full render ends ("…" until then)
+    if (firstPages > 0) {
+      lc.rowBudget = budget();
+      return assemble(tocOf(result, true));
+    }
+    // The table of contents moves what follows it; its numbers are filled in by the pass that lays it out (above).
+    // Another pass only when that pass found different entries.
     for (let pass = 0; pass < 3; pass++) {
-      const entries = [...result.bookmarks.map(b => ({ label: b.label, level: b.level, page: b.page })), ...result.headings.map(b => ({ label: b.label, level: b.level, page: b.page, y: b.y, heading: true }))];
-      const next = assemble(entries);
-      const at = (r) => JSON.stringify([r.bookmarks.map(b => b.page), r.headings.map(b => [b.page, b.y])]);
-      const same = at(next) === at(result);
-      result = next;
-      if (same && pass > 0) break;
+      const entries = tocOf(result, false);
+      result = assemble(entries);
+      const found = [...result.bookmarks, ...result.headings];
+      if (found.length === entries.length && found.every((f, i) => f.label === entries[i].label)) break;
     }
   }
   return result;

@@ -1253,7 +1253,8 @@ register('toc', {
       y += tl.needed;
     }
     const fromHeadings = item.source === 'headings';
-    const entries = (lc.toc || []).filter(e => !!e.heading === fromHeadings && (e.level || 0) < (item.levels || 3));
+    // each entry keeps its index in lc.toc: the render fills in the page numbers once the pages are known (engine/index.js)
+    const entries = (lc.toc || []).map((e, i) => ({ ...e, i })).filter(e => !!e.heading === fromHeadings && (e.level || 0) < (item.levels || 3));
     const kinds = (Array.isArray(item.numbering) ? item.numbering : String(item.numbering || '').split(',')).map(k => String(k).trim()).filter(k => ['decimal', 'roman', 'alpha'].includes(k));
     const nums = kinds.length ? tocNumbers(entries, kinds) : null;
     if (!entries.length) {
@@ -1269,14 +1270,15 @@ register('toc', {
       const indent = (e.level || 0) * 12;
       const num = String(e.page);
       const nw = lc.m.width(num, key, size);
-      const label = lc.m.ellipsize(nums ? `${nums[ei]} ${e.label}` : e.label, key, size, item.w - indent - nw - 24);
+      // room for a 4-digit page number whatever this pass shows, so the final numbers never re-wrap a label
+      const label = lc.m.ellipsize(nums ? `${nums[ei]} ${e.label}` : e.label, key, size, item.w - indent - Math.max(nw, lc.m.width('0000', key, size)) - 24);
       const lw = lc.m.width(label, key, size);
       const base = (lh - size) / 2 + ascent * 0.9;
       const items = [
         { t: 'text', font: key, size, color: st.color || '#111', lines: [{ x: item.x + indent, y: base, text: label, w: lw }] },
-        { t: 'line', x1: item.x + indent + lw + 4, y1: base, x2: item.x + item.w - nw - 4, y2: base, stroke: '#9ca3af', strokeWidth: 0.6, dash: [0.6, 2.4] },
-        { t: 'text', font: key, size, color: st.color || '#111', lines: [{ x: item.x + item.w - nw, y: base, text: num, w: nw }] },
-        { t: 'link', x: item.x, y: 0, w: item.w, h: lh, action: e.heading ? { type: 'bookmark', target: e.label, page: e.page, y: e.y } : { type: 'bookmark', target: e.label } },
+        { t: 'line', x1: item.x + indent + lw + 4, y1: base, x2: item.x + item.w - nw - 4, y2: base, stroke: '#9ca3af', strokeWidth: 0.6, dash: [0.6, 2.4], tocDots: e.i },
+        { t: 'text', font: key, size, color: st.color || '#111', lines: [{ x: item.x + item.w - nw, y: base, text: num, w: nw }], tocPage: e.i },
+        { t: 'link', x: item.x, y: 0, w: item.w, h: lh, action: e.heading && typeof e.page === 'number' ? { type: 'bookmark', target: e.label, page: e.page, y: e.y } : { type: 'bookmark', target: e.label }, tocLink: e.i },
       ];
       units.push({ top: y, height: lh, items });
       y += lh;

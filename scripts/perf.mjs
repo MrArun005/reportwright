@@ -26,3 +26,15 @@ const pdef = { ...def, dataSources: [{ name: 's', type: 'json', data: { rows: pr
 const t1 = Date.now();
 const pout = await render(pdef, { fontStore });
 console.log(`${N} rows → pivot of ${pout.regions[0].rows.length} rows × ${pout.regions[0].columns.length} columns, ${pout.pages.length} pages in ${Date.now() - t1} ms`);
+
+// The stress ledger (built in the Designer): scope aggregates in every detail row, a table of contents, 5,000 rows.
+const { sampleHard } = await import('../src/sample/hard.js');
+const fs = await import('node:fs');
+const ledger = JSON.parse(fs.readFileSync(new URL('../reports/stress-ledger.pw.json', import.meta.url), 'utf8'));
+const hard = sampleHard(5000);
+const lsrc = Object.fromEntries(ledger.dataSources.map(s => [s.name, hard]));
+const t2 = Date.now();
+const lpart = await render(ledger, { fontStore, sources: lsrc, firstPages: 2 });
+const t3 = Date.now();
+const lout = await render(ledger, { fontStore, sources: lsrc });
+console.log(`stress ledger: first ${lpart.pages.length} pages in ${t3 - t2} ms, all ${lout.pages.length} pages in ${Date.now() - t3} ms`);

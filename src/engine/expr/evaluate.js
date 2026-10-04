@@ -8,6 +8,7 @@ import { formatValue, formatDate, english, toDate, roundHalfAway } from './forma
  * @property {Record<string, any>} params
  * @property {Record<string, any>} globals
  * @property {any[]} [aggRows]                       rows for aggregates in the current scope
+ * @property {WeakMap<any[], Map<any, any>>} [aggCache] aggregate results for this render, per row array and call
  * @property {any[]} [runningRows]                   rows from scope start up to the current row
  * @property {number} [rowNumber]
  * @property {Record<string, any[]>} dataSets
@@ -267,6 +268,19 @@ function rowLocal(ast) {
     const walk = (n) => !n || typeof n !== 'object' || (Array.isArray(n) ? n.every(walk) : local(n) && Object.values(n).every(walk));
     r = walk(ast);
     ROW_LOCAL.set(ast, r);
+  }
+  return r;
+}
+
+const PURE_ROWS = new WeakMap();
+/** Row-local, and reads neither Globals (page numbers change between passes) nor Parent (the caller's row). */
+function pureRows(ast) {
+  let r = PURE_ROWS.get(ast);
+  if (r === undefined) {
+    const walk = (n) => !n || typeof n !== 'object' || (Array.isArray(n) ? n.every(walk)
+      : !(n.type === 'id' && (n.name.toLowerCase() === 'globals' || n.name.toLowerCase() === 'parent')) && Object.values(n).every(walk));
+    r = rowLocal(ast) && walk(ast);
+    PURE_ROWS.set(ast, r);
   }
   return r;
 }
@@ -651,6 +665,20 @@ function call(n, ctx) {
   if (name in AGG) {
     if (!args.length) throw new ExprError(`${n.name} needs an expression, e.g. ${n.name}(Fields.amount)`, n.p);
     const rows = scopeRows(args, 1, ctx, n.name);
+    // memoised per render (ctx.aggCache) for each (row array, call): a group total asked in every detail row is
+    // computed once. Row arrays are rebuilt for each render (sort, filter, drill state), and only ever grow (a scope's run)
+    // within one, so a result keyed by array, call and length never goes stale.
+    const cache = ctx.aggCache;
+    if (cache && rows.length > 1 && pureRows(args[0])) {
+      let m = cache.get(rows);
+      if (!m) cache.set(rows, m = new Map());
+      // a scope's run grows as rows are shown: a result counts only for the length it was computed at
+      const hit = m.get(n);
+      if (hit && hit.len === rows.length) return hit.v;
+      const v = AGG[name](aggValues(rows, args[0], ctx));
+      m.set(n, { len: rows.length, v });
+      return v;
+    }
     return AGG[name](aggValues(rows, args[0], ctx));
   }
   if (name === 'distinctsum') {

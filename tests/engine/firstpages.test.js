@@ -34,3 +34,24 @@ describe('first pages', () => {
     expect(texts(out.pages[0])).toContain('Total');
   });
 });
+
+describe('first pages with a table of contents', () => {
+  const groups = (n) => ({ rows: Array.from({ length: n }, (_, i) => ({ n: i + 1, g: `G${Math.floor(i / 400) + 1}`, amt: i % 7 })) });
+  const grouped = { ...table, groups: [{ name: 'G', expr: '=Fields.g', header: [{ height: 18, cells: [{ value: '=Fields.g', bookmark: '=Fields.g' }, { value: '=Sum(Fields.amt)' }] }] }] };
+  const def = report([{ type: 'toc', name: 'Toc', x: 0, y: 0, w: 300, h: 40, title: 'Contents' }, { ...grouped, y: 50 }], { data: groups(8000), footer });
+
+  it('shows the first pages with the entries and their page numbers pending, then the full render fills them in', async () => {
+    const part = await render(def, { fontStore, firstPages: 2 });
+    expect(part.partial).toBe(true);
+    expect(part.pages).toHaveLength(2);
+    const t = texts(part.pages[0]);
+    expect(t[0]).toBe('Contents');
+    expect(t[t.indexOf('G1') + 1]).toBe('…');
+    expect(t[t.indexOf('G20') + 1]).toBe('…');
+
+    const full = await render(def, { fontStore });
+    const ft = texts(full.pages[0]);
+    for (const b of full.bookmarks) expect(ft[ft.indexOf(b.label) + 1]).toBe(String(b.page));
+    expect(full.bookmarks).toHaveLength(20);
+  });
+});
