@@ -49,17 +49,19 @@ const P = g.__pwRenderPool ||= { startFails: 0, dying: new Set(), slots: [], que
 const busy = (msg, status, retryMs) => Object.assign(new Error(msg), { status, retryAfter: Math.max(1, Math.ceil(retryMs / 1000)) });
 const bump = (m, k, d) => { const n = (m.get(k) || 0) + d; if (n > 0) m.set(k, n); else m.delete(k); };
 
-/** The worker script: next to this file in the sources (dev, `next start`, tests), else the built copy (standalone). */
+/** The worker script. Production (next start, standalone): the bundle built with this build (scripts/build-worker.mjs),
+ *  so the workers run the same code as the server, and a standalone output (no src/) has one. Development and tests:
+ *  the sources, so a stale bundle is never run. Either falls back to the other. */
 function workerFile() {
   // Paths the bundler cannot work out (Turbopack follows process.cwd() and import.meta.url joins, then traces and tries
   // to bundle the whole repository): the worker is plain Node, run from the sources or from its own bundle.
   const proc = globalThis['process'], meta = import.meta;
-  const list = [];
-  try { list.push(path.join(path.dirname(fileURLToPath(meta['url'])), 'render-worker.mjs')); } catch { /* not a file URL */ }
-  list.push([proc['cwd'](), 'src', 'server', 'render-worker.mjs'].join(path.sep));
-  list.push([proc['cwd'](), 'pw-worker', 'render-worker.mjs'].join(path.sep)); // scripts/build-worker.mjs
-  // the sources only where they are all there: a standalone build may trace the worker file alone
-  return list.find(f => fs.existsSync(f) && (f.endsWith(path.join('pw-worker', 'render-worker.mjs')) || fs.existsSync(path.join(path.dirname(f), 'renderer.js')))) || null;
+  const sources = [];
+  try { sources.push(path.join(path.dirname(fileURLToPath(meta['url'])), 'render-worker.mjs')); } catch { /* not a file URL */ }
+  sources.push([proc['cwd'](), 'src', 'server', 'render-worker.mjs'].join(path.sep));
+  const bundle = [proc['cwd'](), 'pw-worker', 'render-worker.mjs'].join(path.sep);
+  const list = proc['env']['NODE_ENV'] === 'production' ? [bundle, ...sources] : [...sources, bundle];
+  return list.find(f => fs.existsSync(f)) || null;
 }
 
 /** Start the workers now (instrumentation.js), so the first renders do not wait for them. */

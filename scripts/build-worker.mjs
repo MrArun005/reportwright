@@ -1,6 +1,7 @@
 // Builds pw-worker/render-worker.mjs: the render worker (src/server/render-worker.mjs) with the server code it runs
-// bundled in, for builds that ship without src/ (the standalone output in the Docker image). next.config.mjs traces
-// pw-worker/ into that output. A server that has src/ (next dev, next start in this folder) runs the sources instead.
+// bundled in. A production server (next start, and the standalone output in the Docker image, which has no src/) runs
+// this copy, so its workers run the code of the same build; next.config.mjs traces pw-worker/ into the standalone
+// output. next dev and the tests run the sources (src/server/pool.js, workerFile).
 import { build } from 'esbuild';
 import path from 'node:path';
 const root = path.join(import.meta.dirname, '..');
