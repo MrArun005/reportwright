@@ -1,0 +1,3703 @@
+# torture-test › default · 18 pages
+--- page 1
+Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+SAMPLE DATA
+PAGEWRIGHT · REPORT ENGINE STRESS TEST
+Pagewright Torture Test
+Interactive report PDF: every feature a report engine must get right
+Lending portfolio · period ending 30 Sep 2026 · Oct 2025 – Sep 2026
+Generated for Arun / Pagewright
+Links
+Live demo: https://mrarun005.github.io/pagewright-demo/
+Source: https://github.com/MrArun005
+Synthetic data
+Every borrower, amount and date in this report is made up by a seeded generator (seed
+20261004, src/sample/torture.js). The same seed gives the same report every run. No real
+customer data.
+Scan for the live demo
+What this report exercises
+Cover, links, QR code, watermark
+Numbered contents + PDF outline
+KPI band: aggregates, conditional colour
+Pivot: region × product, % of total
+Combo chart, 2nd axis, target line
+Donut and DPD bucket bars
+Grouped register, subtotals, sorting
+Sparklines and data bars per row
+Repeated headers, keep-together
+Drill-down (collapsible regions)
+Drill-through to loan detail pages
+Parameters, rich text, Code 128
+In the viewer: change the parameters (regions, statuses, minimum outstanding), click a register column header to sort, collapse a region,
+and click a watchlist loan to jump to its detail page. In the PDF: the outline (bookmarks panel) lists every section, and the cover links open
+in a browser.
+Page 1 of 18
+SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
+--- page 2
+Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+SAMPLE DATA
+Contents
+1 Methodology and data
+2
+2 Portfolio at a glance
+3
+2.1 Outstanding by region and product (₹ lakh)
+3
+2.2 Status mix and delinquency
+3
+2.3 Monthly disbursement and collection, Oct 2025 – Sep 2026
+4
+3 Loan register
+5
+3.1 Drill-through watchlist: largest Overdue and NPA loans by outstanding
+5
+3.2 All loans by region and product
+5
+4 Drill-through: loan details
+13
+4.1 LN-2026-0011 · Borrower 011
+13
+4.2 LN-2026-0023 · Borrower 023
+14
+4.3 LN-2026-0134 · Borrower 134
+15
+4.4 LN-2026-0026 · Borrower 026
+16
+4.5 LN-2026-0017 · Borrower 017
+17
+4.6 LN-2026-0158 · Borrower 158
+18
+Methodology and data
+How the numbers are made
+The portfolio has 180 loans across five regions and five products. Each loan is simulated month by month from its disbursal:
+interest on the opening balance at rate ÷ 1200, then the payment. Before the 12-month window every installment is paid in full;
+inside it, Overdue and NPA loans pay several partial installments, and Closed loans pay a few partials and then settle the
+balance.
+• EMI: the standard amortising installment, P·i·(1+i)n ÷ ((1+i)n − 1), rounded to the paisa.
+• Collection efficiency: amount collected ÷ amount due in the month. Settlements of Closed loans count as collections, so a
+month can exceed 100%.
+• Overdue: days past due above 30. NPA: over 180 days past due. Ratios are shares of outstanding.
+• DPD buckets: 0, 1–30, 31–60, 61–90, 90+.
+Data is synthetic (seed 20261004). Parameters filter the KPIs, the pivot, the status and DPD charts and the register; the monthly
+series and the drill-through pages always show the whole book.
+Page 2 of 18
+SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
+--- page 3
+Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+SAMPLE DATA
+Portfolio at a glance
+Filtered by the parameters: regions Central, East, North, South, West · statuses Current, Overdue, Closed, NPA · outstanding ≥ ₹0
+Loans
+Principal disbursed
+Outstanding
+Collection efficiency
+Overdue > 30 DPD
+NPA
+180
+₹6,80,77,500
+₹2,78,95,711
+99.8%
+22.2%
+5.0%
+of 180 in the book
+avg ₹3,78,208
+41.0% of principal
+collected ÷ due, 12
+months · target 95%
+26 loans · share of
+outstanding
+5 loans · gross NPA
+ratio
+Outstanding by region and product (₹ lakh)
+Auto
+Education
+Gold
+Merchant
+Personal
+All products
+Region
+₹ lakh
+% total
+₹ lakh
+% total
+₹ lakh
+% total
+₹ lakh
+% total
+₹ lakh
+% total
+₹ lakh
+% total
+Central
+3.68
+1.3%
+21.39
+7.7%
+6.61
+2.4%
+9.29
+3.3%
+35.67
+12.8%
+76.64
+27.5%
+East
+5.46
+2.0%
+8.75
+3.1%
+18.74
+6.7%
+19.33
+6.9%
+1.92
+0.7%
+54.21
+19.4%
+North
+3.63
+1.3%
+2.58
+0.9%
+27.17
+9.7%
+13.99
+5.0%
+0.05
+0.0%
+47.42
+17.0%
+South
+8.34
+3.0%
+1.05
+0.4%
+7.23
+2.6%
+5.33
+1.9%
+15.26
+5.5%
+37.21
+13.3%
+West
+8.28
+3.0%
+18.52
+6.6%
+18.21
+6.5%
+16.94
+6.1%
+1.53
+0.5%
+63.48
+22.8%
+All regions
+29.40
+10.5%
+52.29
+18.7%
+77.96
+27.9%
+64.87
+23.3%
+54.44
+19.5%
+278.96
+100.0%
+Status mix and delinquency
+Loans by status
+Current
+Overdue
+Closed
+NPA
+132 (73%)
+30 (17%)
+13 (7%)
+180
+Outstanding by DPD bucket (₹ lakh)
+Days past due
+0.0
+50.0
+100.0
+150.0
+200.0
+0
+1–30
+31–60
+61–90
+90+
+197.0
+20.2
+30.8
+17.0
+14.0
+Page 3 of 18
+SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
+--- page 4
+Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+SAMPLE DATA
+Monthly disbursement and collection, Oct 2025 – Sep 2026
+Disbursed vs collected (₹ lakh), with collection efficiency on the right axis
+Disbursed
+Collected
+Collection efficiency
+₹ lakh
+Efficiency
+0
+10
+20
+30
+40
+50
+60%
+80%
+100%
+120%
+140%
+Oct 2025
+Nov 2025
+Dec 2025
+Jan 2026
+Feb 2026
+Mar 2026
+Apr 2026
+May 2026
+Jun 2026
+Jul 2026
+Aug 2026
+Sep 2026
+Target 95%
+Month
+Disbursed
+Due
+Collected
+Efficiency
+Oct 2025
+₹4,48,500
+₹26,02,490
+₹24,31,132
+93.4%
+Nov 2025
+₹29,22,000
+₹25,84,848
+₹23,81,948
+92.2%
+Dec 2025
+₹23,42,000
+₹27,30,772
+₹30,67,757
+112.3%
+Jan 2026
+₹30,05,000
+₹28,24,437
+₹28,49,456
+100.9%
+Feb 2026
+₹44,26,000
+₹28,32,664
+₹26,78,996
+94.6%
+Mar 2026
+₹34,79,000
+₹31,52,746
+₹31,79,174
+100.8%
+Apr 2026
+₹32,35,500
+₹26,67,459
+₹29,20,130
+109.5%
+May 2026
+₹2,77,500
+₹27,20,249
+₹22,90,639
+84.2%
+Jun 2026
+₹11,26,000
+₹26,58,297
+₹35,32,251
+132.9%
+Jul 2026
+₹7,68,000
+₹22,37,754
+₹18,61,017
+83.2%
+Aug 2026
+₹32,45,500
+₹22,93,694
+₹18,86,383
+82.2%
+Sep 2026
+₹0
+₹23,60,429
+₹25,21,298
+106.8%
+12 months
+₹2,52,75,000
+₹3,16,65,838
+₹3,16,00,181
+99.8%
+Page 4 of 18
+SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
+--- page 5
+Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+SAMPLE DATA
+Loan register
+Grouped by region, then product; sorted by outstanding (largest first). Rows: NPA in red, Overdue in amber. ★ marks the 6 drill-through loans. In the viewer, click a column header to sort and the ▼ on a region to
+collapse it.
+Drill-through watchlist: largest Overdue and NPA loans by outstanding
+Loan (click for detail)
+Borrower
+Region
+Status
+DPD
+Outstanding
+Detail
+LN-2026-0011
+Borrower 011
+West
+Overdue
+17
+₹9,62,426.77
+→ go to LN-2026-0011
+LN-2026-0023
+Borrower 023
+North
+NPA
+327
+₹8,70,036.23
+→ go to LN-2026-0023
+LN-2026-0134
+Borrower 134
+East
+Overdue
+70
+₹7,83,018.78
+→ go to LN-2026-0134
+LN-2026-0026
+Borrower 026
+East
+Overdue
+51
+₹7,59,076.73
+→ go to LN-2026-0026
+LN-2026-0017
+Borrower 017
+West
+Overdue
+38
+₹7,58,048.82
+→ go to LN-2026-0017
+LN-2026-0158
+Borrower 158
+East
+Overdue
+59
+₹5,18,829.12
+→ go to LN-2026-0158
+All loans by region and product
+Loan
+Borrower
+Status
+Rate
+Tenure
+EMI
+Principal
+Outstanding
+Outstanding bar
+DPD
+Bucket
+Payments Oct–Sep
+Disbursed
+▼ Central region
+40 loans
+₹1,79,56,000
+₹76,63,840
+27.5% of book
+2 overdue · 0 NPA
+Auto · 11 loans
+₹27,03,500
+₹3,68,244
+max 68
+LN-2026-0058
+Borrower 058
+Current
+10.01%
+24m
+24,551.56
+5,32,000
+1,43,102.36
+0
+0
+10 Mar 25
+LN-2026-0089
+Borrower 089
+Current
+23.61%
+24m
+5,531.05
+1,05,000
+71,242.97
+0
+0
+15 Dec 25
+LN-2026-0076
+Borrower 076
+Current
+15.12%
+36m
+2,517.50
+72,500
+60,838.55
+0
+0
+18 Feb 26
+LN-2026-0003
+Borrower 003
+Overdue
+17.03%
+36m
+2,336.23
+65,500
+48,211.80
+68
+61–90
+01 Jul 25
+LN-2026-0086
+Borrower 086
+Current
+15.93%
+36m
+1,387.34
+39,500
+26,318.40
+0
+0
+24 Jul 25
+LN-2026-0036
+Borrower 036
+Current
+14.66%
+36m
+689.98
+20,000
+9,972.72
+0
+0
+18 Jan 25
+LN-2026-0091
+Borrower 091
+Current
+11.48%
+36m
+758.23
+23,000
+8,557.30
+0
+0
+11 Sep 24
+LN-2026-0032
+Borrower 032
+Current
+14.80%
+6m
+34,352.08
+1,97,500
+0.00
+0
+0
+26 Feb 26
+LN-2026-0071
+Borrower 071
+Current
+10.77%
+12m
+1,17,007.73
+13,25,500
+0.00
+0
+0
+02 Jun 25
+LN-2026-0073
+Borrower 073
+Current
+14.31%
+24m
+10,257.97
+2,13,000
+0.00
+0
+0
+24 Apr 24
+LN-2026-0161
+Borrower 161
+Current
+9.80%
+6m
+18,860.91
+1,10,000
+0.00
+0
+0
+04 Dec 24
+Page 5 of 18
+SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
+--- page 6
+Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+SAMPLE DATA
+Loan
+Borrower
+Status
+Rate
+Tenure
+EMI
+Principal
+Outstanding
+Outstanding bar
+DPD
+Bucket
+Payments Oct–Sep
+Disbursed
+Education · 10 loans
+₹65,55,000
+₹21,38,677
+max 0
+LN-2026-0163
+Borrower 163
+Current
+23.06%
+36m
+40,523.09
+10,46,000
+8,71,199.07
+0
+0
+06 Jan 26
+LN-2026-0175
+Borrower 175
+Current
+9.97%
+36m
+22,851.32
+7,08,500
+5,32,366.00
+0
+0
+19 Nov 25
+LN-2026-0145
+Borrower 145
+Current
+10.99%
+36m
+18,429.23
+5,63,000
+4,81,515.65
+0
+0
+15 Mar 26
+LN-2026-0034
+Borrower 034
+Current
+13.84%
+36m
+8,865.99
+2,60,000
+1,98,186.06
+0
+0
+07 Nov 25
+LN-2026-0054
+Borrower 054
+Current
+9.60%
+24m
+3,470.02
+75,500
+36,399.83
+0
+0
+12 Aug 25
+LN-2026-0079
+Borrower 079
+Current
+10.56%
+48m
+768.97
+30,000
+19,010.01
+0
+0
+05 Jan 25
+LN-2026-0002
+Borrower 002
+Current
+21.80%
+6m
+2,45,287.09
+13,82,500
+0.00
+0
+0
+21 Feb 26
+LN-2026-0046
+Borrower 046
+Current
+11.19%
+6m
+84,180.53
+4,89,000
+0.00
+0
+0
+04 Jun 25
+LN-2026-0125
+Borrower 125
+Current
+15.81%
+12m
+1,24,223.45
+13,70,500
+0.00
+0
+0
+15 Aug 24
+LN-2026-0177
+Borrower 177
+Closed
+17.26%
+24m
+31,227.39
+6,30,000
+0.00
+0
+0
+03 Nov 25
+Gold · 4 loans
+₹9,49,000
+₹6,60,768
+max 0
+LN-2026-0059
+Borrower 059
+Current
+16.12%
+12m
+45,666.19
+5,03,000
+3,84,697.27
+0
+0
+05 Jun 26
+LN-2026-0136
+Borrower 136
+Current
+10.36%
+24m
+13,476.58
+2,91,000
+2,57,822.37
+0
+0
+11 Jun 26
+LN-2026-0044
+Borrower 044
+Current
+17.43%
+48m
+668.79
+23,000
+18,248.54
+0
+0
+27 Aug 25
+LN-2026-0152
+Borrower 152
+Current
+17.45%
+12m
+12,067.23
+1,32,000
+0.00
+0
+0
+01 Jun 24
+Merchant · 7 loans
+₹32,21,500
+₹9,29,384
+max 47
+LN-2026-0093
+Borrower 093
+Current
+22.59%
+48m
+29,599.35
+9,30,000
+6,90,360.42
+0
+0
+27 Apr 25
+LN-2026-0106
+Borrower 106
+Current
+19.94%
+36m
+15,707.27
+4,23,000
+1,56,725.38
+0
+0
+07 Aug 24
+LN-2026-0102
+Borrower 102
+Current
+23.92%
+18m
+15,965.79
+2,39,500
+60,803.26
+0
+0
+14 Jul 25
+LN-2026-0139
+Borrower 139
+Overdue
+15.11%
+6m
+10,184.17
+58,500
+21,495.34
+47
+31–60
+14 Mar 26
+LN-2026-0005
+Borrower 005
+Current
+12.02%
+6m
+25,279.78
+1,46,500
+0.00
+0
+0
+10 Apr 25
+LN-2026-0069
+Borrower 069
+Current
+18.00%
+12m
+2,337.84
+25,500
+0.00
+0
+0
+10 Dec 24
+LN-2026-0173
+Borrower 173
+Current
+21.83%
+24m
+72,434.25
+13,98,500
+0.00
+0
+0
+12 May 24
+Personal · 8 loans
+₹45,27,000
+₹35,66,767
+max 0
+LN-2026-0107
+Borrower 107
+Current
+20.60%
+48m
+42,912.96
+13,95,500
+12,76,764.16
+0
+0
+13 Mar 26
+LN-2026-0117
+Borrower 117
+Current
+23.73%
+36m
+56,076.37
+14,34,500
+12,28,642.33
+0
+0
+20 Feb 26
+LN-2026-0070
+Borrower 070
+Current
+15.94%
+18m
+85,351.94
+13,58,500
+10,12,907.24
+0
+0
+13 Apr 26
+LN-2026-0072
+Borrower 072
+Current
+18.60%
+6m
+24,791.21
+1,41,000
+48,453.02
+0
+0
+01 May 26
+LN-2026-0012
+Borrower 012
+Current
+22.13%
+18m
+3,815.92
+58,000
+0.00
+0
+0
+15 Aug 24
+LN-2026-0013
+Borrower 013
+Current
+10.29%
+6m
+3,605.79
+21,000
+0.00
+0
+0
+28 Jul 24
+LN-2026-0043
+Borrower 043
+Closed
+11.55%
+18m
+5,986.16
+98,500
+0.00
+0
+0
+25 Nov 25
+LN-2026-0064
+Borrower 064
+Closed
+21.94%
+6m
+3,549.86
+20,000
+0.00
+0
+0
+15 Dec 25
+Subtotal Central
+12,67,555
+₹1,79,56,000
+₹76,63,840
+68
+max
+collected ₹78,81,142
+Page 6 of 18
+SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
+--- page 7
+Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+SAMPLE DATA
+Loan
+Borrower
+Status
+Rate
+Tenure
+EMI
+Principal
+Outstanding
+Outstanding bar
+DPD
+Bucket
+Payments Oct–Sep
+Disbursed
+▼ East region
+38 loans
+₹1,32,08,000
+₹54,20,542
+19.4% of book
+7 overdue · 1 NPA
+Auto · 7 loans
+₹15,16,500
+₹5,46,370
+max 49
+LN-2026-0025
+Borrower 025
+Current
+15.40%
+18m
+29,597.12
+4,73,000
+3,27,231.09
+0
+0
+04 Mar 26
+LN-2026-0132
+Borrower 132
+Current
+11.21%
+12m
+14,466.42
+1,63,500
+1,37,501.01
+0
+0
+16 Jul 26
+LN-2026-0121
+Borrower 121
+Current
+10.58%
+24m
+2,251.03
+48,500
+44,837.08
+0
+0
+21 Jul 26
+LN-2026-0078
+Borrower 078
+Overdue
+15.92%
+18m
+1,507.65
+24,000
+19,822.35
+49
+31–60
+12 Feb 26
+LN-2026-0045
+Borrower 045
+Current
+22.79%
+24m
+1,724.88
+33,000
+16,978.41
+0
+0
+05 Aug 25
+LN-2026-0108
+Borrower 108
+Closed
+23.68%
+24m
+39,770.84
+7,54,500
+0.00
+0
+0
+14 Nov 24
+LN-2026-0118
+Borrower 118
+Current
+12.42%
+6m
+3,455.12
+20,000
+0.00
+0
+0
+08 Oct 24
+Education · 6 loans
+₹18,53,000
+₹8,75,071
+max 13
+LN-2026-0001
+Borrower 001
+Current
+15.38%
+48m
+27,337.17
+9,75,500
+6,58,645.08
+0
+0
+13 Feb 25
+LN-2026-0174
+Borrower 174
+Current
+12.12%
+48m
+3,206.72
+1,21,500
+1,19,520.43
+0
+0
+07 Aug 26
+LN-2026-0180
+Borrower 180
+Current
+18.56%
+24m
+9,261.00
+1,84,500
+77,252.47
+0
+0
+07 Jun 25
+LN-2026-0004
+Borrower 004
+Overdue
+13.66%
+36m
+935.35
+27,500
+19,653.23
+13
+1–30
+02 Jul 25
+LN-2026-0085
+Borrower 085
+Closed
+23.15%
+24m
+27,456.43
+5,23,500
+0.00
+0
+0
+14 Dec 24
+LN-2026-0166
+Borrower 166
+Current
+22.02%
+12m
+1,918.88
+20,500
+0.00
+0
+0
+04 Jun 24
+Gold · 10 loans
+₹44,03,000
+₹18,74,345
+max 70
+LN-2026-0134
+Borrower 134 ★
+Overdue
+19.52%
+48m
+27,097.34
+8,98,000
+7,83,018.78
+70
+61–90
+16 Aug 25
+LN-2026-0158
+Borrower 158 ★
+Overdue
+11.15%
+12m
+66,825.22
+7,55,500
+5,18,829.12
+59
+31–60
+25 Feb 26
+LN-2026-0153
+Borrower 153
+Current
+23.82%
+18m
+88,829.99
+13,33,500
+2,56,250.18
+0
+0
+05 Jun 25
+LN-2026-0038
+Borrower 038
+Overdue
+12.90%
+36m
+5,198.28
+1,54,500
+92,239.82
+69
+61–90
+14 Mar 25
+LN-2026-0049
+Borrower 049
+Current
+12.46%
+36m
+5,265.92
+1,57,500
+90,377.82
+0
+0
+04 Apr 25
+LN-2026-0006
+Borrower 006
+Current
+13.22%
+24m
+4,431.01
+93,000
+68,352.06
+0
+0
+16 Feb 26
+LN-2026-0172
+Borrower 172
+Current
+14.80%
+48m
+3,050.24
+1,10,000
+65,277.55
+0
+0
+03 Oct 24
+LN-2026-0052
+Borrower 052
+Current
+20.39%
+18m
+53,487.01
+8,23,500
+0.00
+0
+0
+28 Oct 24
+LN-2026-0088
+Borrower 088
+Current
+10.15%
+6m
+8,152.68
+47,500
+0.00
+0
+0
+19 Jun 24
+LN-2026-0144
+Borrower 144
+Current
+22.13%
+24m
+1,558.27
+30,000
+0.00
+0
+0
+26 Sep 24
+Page 7 of 18
+SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
+--- page 8
+Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+SAMPLE DATA
+Loan
+Borrower
+Status
+Rate
+Tenure
+EMI
+Principal
+Outstanding
+Outstanding bar
+DPD
+Bucket
+Payments Oct–Sep
+Disbursed
+Merchant · 10 loans
+₹41,46,500
+₹19,32,514
+max 407
+LN-2026-0026
+Borrower 026 ★
+Overdue
+15.99%
+18m
+76,993.34
+12,25,000
+7,59,076.73
+51
+31–60
+15 Nov 25
+LN-2026-0150
+Borrower 150
+Current
+18.48%
+12m
+84,739.72
+9,22,000
+5,58,263.51
+0
+0
+16 Apr 26
+LN-2026-0131
+Borrower 131
+Overdue
+22.07%
+18m
+67,998.52
+10,34,000
+2,69,080.23
+76
+61–90
+09 Apr 25
+LN-2026-0114
+Borrower 114
+Overdue
+22.35%
+6m
+69,302.33
+3,90,000
+1,90,183.15
+24
+1–30
+28 Mar 26
+LN-2026-0100
+Borrower 100
+Current
+19.45%
+36m
+9,921.78
+2,69,000
+73,884.20
+0
+0
+13 May 24
+LN-2026-0138
+Borrower 138
+Current
+17.02%
+36m
+1,872.29
+52,500
+37,860.88
+0
+0
+07 Sep 25
+LN-2026-0112
+Borrower 112
+Current
+21.03%
+48m
+1,533.60
+49,500
+26,750.78
+0
+0
+21 Jun 24
+LN-2026-0113
+Borrower 113
+NPA
+11.91%
+36m
+779.53
+23,500
+17,414.11
+407
+90+
+12 May 25
+LN-2026-0111
+Borrower 111
+Current
+17.98%
+6m
+7,810.43
+44,500
+0.00
+0
+0
+08 Oct 25
+LN-2026-0176
+Borrower 176
+Current
+21.87%
+6m
+24,223.00
+1,36,500
+0.00
+0
+0
+23 Apr 25
+Personal · 5 loans
+₹12,89,000
+₹1,92,242
+max 12
+LN-2026-0156
+Borrower 156
+Current
+20.55%
+36m
+4,792.89
+1,28,000
+1,25,399.11
+0
+0
+15 Aug 26
+LN-2026-0097
+Borrower 097
+Current
+17.27%
+18m
+6,631.40
+1,04,500
+43,858.83
+0
+0
+19 Oct 25
+LN-2026-0143
+Borrower 143
+Overdue
+13.71%
+18m
+1,235.59
+20,000
+15,803.28
+12
+1–30
+06 Mar 26
+LN-2026-0154
+Borrower 154
+Current
+15.35%
+18m
+1,250.99
+20,000
+7,181.08
+0
+0
+09 Sep 25
+LN-2026-0167
+Borrower 167
+Current
+11.05%
+6m
+1,74,918.53
+10,16,500
+0.00
+0
+0
+02 Sep 25
+Subtotal East
+9,60,789
+₹1,32,08,000
+₹54,20,542
+407
+max
+collected ₹70,36,186
+▼ North region
+34 loans
+₹1,05,86,000
+₹47,42,007
+17.0% of book
+6 overdue · 1 NPA
+Auto · 10 loans
+₹28,39,000
+₹3,62,674
+max 82
+LN-2026-0151
+Borrower 151
+Overdue
+11.40%
+24m
+35,071.93
+7,49,500
+2,77,714.68
+22
+1–30
+20 Jan 25
+LN-2026-0126
+Borrower 126
+Current
+11.48%
+6m
+4,824.16
+28,000
+18,843.83
+0
+0
+21 Jul 26
+LN-2026-0033
+Borrower 033
+Overdue
+18.64%
+18m
+1,506.62
+23,500
+18,291.41
+33
+31–60
+11 Mar 26
+LN-2026-0055
+Borrower 055
+Overdue
+14.60%
+12m
+6,530.05
+72,500
+17,888.22
+82
+61–90
+25 Oct 25
+LN-2026-0037
+Borrower 037
+Current
+10.63%
+48m
+577.49
+22,500
+17,734.09
+0
+0
+04 Sep 25
+LN-2026-0119
+Borrower 119
+Current
+9.82%
+48m
+505.52
+20,000
+12,202.01
+0
+0
+23 Dec 24
+LN-2026-0029
+Borrower 029
+Current
+14.44%
+6m
+1,95,823.10
+11,27,000
+0.00
+0
+0
+27 May 24
+LN-2026-0031
+Borrower 031
+Current
+20.89%
+6m
+41,852.83
+2,36,500
+0.00
+0
+0
+28 Dec 25
+LN-2026-0080
+Borrower 080
+Current
+15.00%
+24m
+25,770.65
+5,31,500
+0.00
+0
+0
+02 May 24
+LN-2026-0178
+Borrower 178
+Current
+10.19%
+6m
+4,806.34
+28,000
+0.00
+0
+0
+21 Sep 24
+Education · 2 loans
+₹9,43,500
+₹2,57,801
+max 19
+LN-2026-0098
+Borrower 098
+Overdue
+14.71%
+36m
+17,123.65
+4,96,000
+2,57,801.17
+19
+1–30
+15 Dec 24
+LN-2026-0047
+Borrower 047
+Current
+22.16%
+12m
+41,917.95
+4,47,500
+0.00
+0
+0
+17 Aug 25
+Page 8 of 18
+SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
+--- page 9
+Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+SAMPLE DATA
+Loan
+Borrower
+Status
+Rate
+Tenure
+EMI
+Principal
+Outstanding
+Outstanding bar
+DPD
+Bucket
+Payments Oct–Sep
+Disbursed
+Gold · 10 loans
+₹35,32,500
+₹27,17,211
+max 33
+LN-2026-0027
+Borrower 027
+Current
+22.06%
+12m
+1,38,609.23
+14,80,500
+13,69,107.30
+0
+0
+01 Aug 26
+LN-2026-0042
+Borrower 042
+Current
+15.76%
+18m
+20,799.32
+3,31,500
+2,98,392.77
+0
+0
+04 Jul 26
+LN-2026-0095
+Borrower 095
+Current
+15.82%
+18m
+26,866.15
+4,28,000
+2,73,427.63
+0
+0
+17 Feb 26
+LN-2026-0096
+Borrower 096
+Overdue
+19.90%
+48m
+13,244.42
+4,36,000
+2,72,945.87
+27
+1–30
+02 Aug 24
+LN-2026-0122
+Borrower 122
+Overdue
+13.12%
+48m
+6,358.80
+2,36,500
+1,82,351.42
+33
+31–60
+23 May 25
+LN-2026-0022
+Borrower 022
+Current
+18.18%
+18m
+12,203.30
+1,91,000
+1,43,019.80
+0
+0
+16 Apr 26
+LN-2026-0056
+Borrower 056
+Current
+14.09%
+48m
+3,298.28
+1,20,500
+73,533.41
+0
+0
+15 Nov 24
+LN-2026-0087
+Borrower 087
+Current
+20.91%
+36m
+3,631.19
+96,500
+60,877.28
+0
+0
+19 May 25
+LN-2026-0147
+Borrower 147
+Current
+11.67%
+18m
+11,101.27
+1,82,500
+32,666.36
+0
+0
+18 Jun 25
+LN-2026-0066
+Borrower 066
+Overdue
+21.67%
+18m
+1,934.28
+29,500
+10,889.42
+27
+1–30
+19 Aug 25
+Merchant · 6 loans
+₹21,73,500
+₹13,99,068
+max 327
+LN-2026-0023
+Borrower 023 ★
+NPA
+15.31%
+6m
+1,69,310.39
+9,72,000
+8,70,036.23
+327
+90+
+17 Sep 25
+LN-2026-0016
+Borrower 016
+Current
+14.07%
+48m
+9,207.18
+3,36,500
+2,50,755.41
+0
+0
+07 Jun 25
+LN-2026-0081
+Borrower 081
+Overdue
+21.56%
+18m
+17,984.02
+2,74,500
+1,95,644.79
+77
+61–90
+04 Jan 26
+LN-2026-0101
+Borrower 101
+Current
+14.95%
+24m
+5,137.07
+1,06,000
+74,103.10
+0
+0
+20 Jan 26
+LN-2026-0063
+Borrower 063
+Current
+22.00%
+24m
+2,230.76
+43,000
+8,528.60
+0
+0
+06 Jan 25
+LN-2026-0137
+Borrower 137
+Current
+18.49%
+18m
+28,273.49
+4,41,500
+0.00
+0
+0
+06 Sep 24
+Personal · 6 loans
+₹10,97,500
+₹5,252
+max 81
+LN-2026-0077
+Borrower 077
+Overdue
+13.24%
+6m
+3,636.39
+21,000
+5,252.24
+81
+61–90
+05 Mar 26
+LN-2026-0018
+Borrower 018
+Closed
+19.60%
+48m
+5,756.46
+1,90,500
+0.00
+0
+0
+09 Dec 25
+LN-2026-0035
+Borrower 035
+Current
+18.34%
+6m
+1,36,602.56
+7,77,500
+0.00
+0
+0
+12 Jun 25
+LN-2026-0041
+Borrower 041
+Closed
+11.33%
+12m
+3,674.23
+41,500
+0.00
+0
+0
+20 Oct 25
+LN-2026-0115
+Borrower 115
+Current
+20.58%
+6m
+8,133.38
+46,000
+0.00
+0
+0
+20 Jan 25
+LN-2026-0124
+Borrower 124
+Current
+12.49%
+6m
+3,628.60
+21,000
+0.00
+0
+0
+10 Jan 25
+Subtotal North
+10,07,931
+₹1,05,86,000
+₹47,42,007
+327
+max
+collected ₹37,11,542
+Page 9 of 18
+SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
+--- page 10
+Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+SAMPLE DATA
+Loan
+Borrower
+Status
+Rate
+Tenure
+EMI
+Principal
+Outstanding
+Outstanding bar
+DPD
+Bucket
+Payments Oct–Sep
+Disbursed
+▼ South region
+36 loans
+₹1,25,28,500
+₹37,21,345
+13.3% of book
+8 overdue · 3 NPA
+Auto · 8 loans
+₹27,83,500
+₹8,34,228
+max 319
+LN-2026-0040
+Borrower 040
+Current
+20.98%
+48m
+23,401.93
+7,56,000
+5,42,720.05
+0
+0
+17 Mar 25
+LN-2026-0155
+Borrower 155
+Current
+17.41%
+18m
+46,500.21
+7,32,000
+1,79,445.40
+0
+0
+14 Jul 25
+LN-2026-0067
+Borrower 067
+Current
+11.07%
+18m
+5,056.00
+83,500
+61,672.41
+0
+0
+10 Apr 26
+LN-2026-0116
+Borrower 116
+NPA
+17.04%
+36m
+1,908.49
+53,500
+32,426.54
+319
+90+
+06 Nov 24
+LN-2026-0135
+Borrower 135
+NPA
+14.00%
+18m
+1,238.30
+20,000
+13,507.41
+216
+90+
+11 Sep 25
+LN-2026-0103
+Borrower 103
+Overdue
+14.58%
+24m
+965.75
+20,000
+4,456.19
+67
+61–90
+04 Nov 24
+LN-2026-0010
+Borrower 010
+Current
+23.12%
+12m
+8,707.42
+92,500
+0.00
+0
+0
+05 Apr 25
+LN-2026-0094
+Borrower 094
+Closed
+14.52%
+6m
+1,78,314.43
+10,26,000
+0.00
+0
+0
+15 Dec 25
+Education · 5 loans
+₹14,75,500
+₹1,05,418
+max 0
+LN-2026-0051
+Borrower 051
+Current
+17.02%
+36m
+4,814.46
+1,35,000
+68,484.61
+0
+0
+18 Jan 25
+LN-2026-0008
+Borrower 008
+Current
+16.29%
+36m
+706.01
+20,000
+19,125.08
+0
+0
+14 Jul 26
+LN-2026-0068
+Borrower 068
+Current
+14.55%
+18m
+1,305.64
+21,000
+17,808.57
+0
+0
+07 Jun 26
+LN-2026-0104
+Borrower 104
+Closed
+17.12%
+24m
+47,000.20
+9,49,500
+0.00
+0
+0
+07 Sep 25
+LN-2026-0129
+Borrower 129
+Current
+14.29%
+6m
+60,788.60
+3,50,000
+0.00
+0
+0
+19 Mar 25
+Gold · 5 loans
+₹13,07,500
+₹7,22,932
+max 60
+LN-2026-0015
+Borrower 015
+Overdue
+10.03%
+48m
+18,601.34
+7,33,000
+4,48,706.93
+60
+31–60
+07 Sep 24
+LN-2026-0149
+Borrower 149
+Current
+12.23%
+12m
+17,524.41
+1,97,000
+1,81,483.35
+0
+0
+04 Aug 26
+LN-2026-0120
+Borrower 120
+Current
+19.75%
+36m
+4,092.51
+1,10,500
+83,324.12
+0
+0
+22 Oct 25
+LN-2026-0075
+Borrower 075
+Overdue
+10.23%
+6m
+3,433.50
+20,000
+9,417.47
+20
+1–30
+20 Mar 26
+LN-2026-0168
+Borrower 168
+Closed
+14.86%
+36m
+8,545.41
+2,47,000
+0.00
+0
+0
+11 Jun 25
+Merchant · 7 loans
+₹28,91,500
+₹5,32,520
+max 218
+LN-2026-0110
+Borrower 110
+NPA
+23.76%
+48m
+17,403.54
+5,36,000
+4,70,492.41
+218
+90+
+22 Feb 25
+LN-2026-0105
+Borrower 105
+Current
+23.81%
+18m
+12,888.90
+1,93,500
+37,181.46
+0
+0
+02 Jun 25
+LN-2026-0133
+Borrower 133
+Current
+14.96%
+12m
+7,444.75
+82,500
+21,788.79
+0
+0
+18 Dec 25
+LN-2026-0082
+Borrower 082
+Current
+19.20%
+24m
+1,565.68
+31,000
+3,057.82
+0
+0
+13 Nov 24
+LN-2026-0028
+Borrower 028
+Closed
+11.34%
+6m
+1,12,202.87
+6,51,500
+0.00
+0
+0
+05 Dec 25
+LN-2026-0061
+Borrower 061
+Current
+12.52%
+24m
+5,559.71
+1,17,500
+0.00
+0
+0
+06 Apr 24
+LN-2026-0140
+Borrower 140
+Current
+15.74%
+12m
+1,15,932.76
+12,79,500
+0.00
+0
+0
+04 Feb 25
+Page 10 of 18
+SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
+--- page 11
+Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+SAMPLE DATA
+Loan
+Borrower
+Status
+Rate
+Tenure
+EMI
+Principal
+Outstanding
+Outstanding bar
+DPD
+Bucket
+Payments Oct–Sep
+Disbursed
+Personal · 11 loans
+₹40,70,500
+₹15,26,247
+max 89
+LN-2026-0128
+Borrower 128
+Current
+21.78%
+48m
+28,059.77
+8,94,000
+6,76,569.94
+0
+0
+14 May 25
+LN-2026-0171
+Borrower 171
+Current
+19.79%
+48m
+35,381.79
+11,67,000
+6,72,690.33
+0
+0
+14 Aug 24
+LN-2026-0014
+Borrower 014
+Overdue
+12.29%
+48m
+5,109.95
+1,93,000
+1,13,772.87
+71
+61–90
+14 Jun 24
+LN-2026-0170
+Borrower 170
+Overdue
+20.43%
+24m
+1,967.59
+38,500
+32,205.61
+89
+61–90
+01 Feb 26
+LN-2026-0179
+Borrower 179
+Current
+22.71%
+6m
+10,050.15
+56,500
+19,543.74
+0
+0
+13 May 26
+LN-2026-0123
+Borrower 123
+Overdue
+14.82%
+18m
+4,018.36
+64,500
+11,464.02
+86
+61–90
+27 Apr 25
+LN-2026-0084
+Borrower 084
+Current
+19.72%
+18m
+49,731.77
+7,69,500
+0.00
+0
+0
+27 Oct 24
+LN-2026-0109
+Borrower 109
+Current
+13.15%
+6m
+12,118.20
+70,000
+0.00
+0
+0
+27 Jul 25
+LN-2026-0130
+Borrower 130
+Current
+23.43%
+12m
+46,152.00
+4,89,500
+0.00
+0
+0
+28 Mar 25
+LN-2026-0164
+Borrower 164
+Closed
+15.93%
+48m
+8,562.09
+3,02,500
+0.00
+0
+0
+23 Sep 24
+LN-2026-0165
+Borrower 165
+Current
+22.38%
+6m
+4,531.69
+25,500
+0.00
+0
+0
+19 Jan 26
+Subtotal South
+9,11,586
+₹1,25,28,500
+₹37,21,345
+319
+max
+collected ₹71,33,421
+▼ West region
+32 loans
+₹1,37,99,000
+₹63,47,976
+22.8% of book
+3 overdue · 0 NPA
+Auto · 6 loans
+₹26,09,500
+₹8,28,267
+max 74
+LN-2026-0062
+Borrower 062
+Current
+19.22%
+24m
+33,138.21
+6,56,000
+4,64,468.70
+0
+0
+07 Jan 26
+LN-2026-0157
+Borrower 157
+Current
+11.91%
+12m
+27,618.88
+3,11,000
+2,36,670.52
+0
+0
+09 Jun 26
+LN-2026-0169
+Borrower 169
+Overdue
+13.26%
+6m
+50,479.50
+2,91,500
+1,27,127.84
+74
+61–90
+03 Mar 26
+LN-2026-0024
+Borrower 024
+Current
+14.78%
+12m
+1,15,307.65
+12,79,000
+0.00
+0
+0
+13 Jan 25
+LN-2026-0142
+Borrower 142
+Current
+10.01%
+18m
+1,231.26
+20,500
+0.00
+0
+0
+07 Nov 24
+LN-2026-0159
+Borrower 159
+Current
+11.77%
+18m
+3,135.08
+51,500
+0.00
+0
+0
+06 Jul 24
+Education · 9 loans
+₹37,69,000
+₹18,52,110
+max 0
+LN-2026-0009
+Borrower 009
+Current
+11.88%
+6m
+2,11,644.09
+12,27,000
+10,27,503.21
+0
+0
+16 Aug 26
+LN-2026-0030
+Borrower 030
+Current
+18.02%
+36m
+16,417.74
+4,54,000
+4,04,535.70
+0
+0
+07 Apr 26
+LN-2026-0050
+Borrower 050
+Current
+16.41%
+12m
+20,594.51
+2,26,500
+1,36,588.71
+0
+0
+18 Apr 26
+LN-2026-0007
+Borrower 007
+Current
+13.80%
+6m
+30,611.97
+1,76,500
+1,19,006.86
+0
+0
+25 Jul 26
+LN-2026-0060
+Borrower 060
+Current
+20.80%
+6m
+16,188.41
+91,500
+76,897.59
+0
+0
+03 Aug 26
+LN-2026-0148
+Borrower 148
+Current
+21.51%
+48m
+3,967.56
+1,27,000
+71,609.59
+0
+0
+07 Jul 24
+LN-2026-0057
+Borrower 057
+Current
+17.37%
+18m
+1,905.18
+30,000
+15,968.68
+0
+0
+06 Dec 25
+LN-2026-0048
+Borrower 048
+Current
+13.83%
+12m
+13,186.95
+1,47,000
+0.00
+0
+0
+02 Jul 25
+LN-2026-0065
+Borrower 065
+Current
+14.93%
+6m
+2,24,371.82
+12,89,500
+0.00
+0
+0
+07 Sep 25
+Page 11 of 18
+SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
+--- page 12
+Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+SAMPLE DATA
+Loan
+Borrower
+Status
+Rate
+Tenure
+EMI
+Principal
+Outstanding
+Outstanding bar
+DPD
+Bucket
+Payments Oct–Sep
+Disbursed
+Gold · 4 loans
+₹22,38,000
+₹18,20,666
+max 38
+LN-2026-0011
+Borrower 011 ★
+Overdue
+20.73%
+36m
+43,242.14
+11,52,000
+9,62,426.77
+17
+1–30
+12 Sep 25
+LN-2026-0017
+Borrower 017 ★
+Overdue
+11.28%
+48m
+24,318.88
+9,36,000
+7,58,048.82
+38
+31–60
+13 Aug 25
+LN-2026-0020
+Borrower 020
+Current
+19.96%
+24m
+6,486.72
+1,27,500
+1,00,190.40
+0
+0
+25 Mar 26
+LN-2026-0021
+Borrower 021
+Current
+19.41%
+18m
+1,450.80
+22,500
+0.00
+0
+0
+05 Apr 24
+Merchant · 8 loans
+₹34,73,000
+₹16,93,795
+max 57
+LN-2026-0090
+Borrower 090
+Current
+19.07%
+48m
+33,499.58
+11,19,000
+5,70,118.39
+0
+0
+18 May 24
+LN-2026-0146
+Borrower 146
+Current
+19.05%
+48m
+17,342.41
+5,79,500
+5,10,620.48
+0
+0
+04 Jan 26
+LN-2026-0141
+Borrower 141
+Overdue
+23.21%
+48m
+14,651.90
+4,55,500
+3,49,980.06
+57
+31–60
+09 Jan 25
+LN-2026-0127
+Borrower 127
+Current
+15.13%
+12m
+28,676.49
+3,17,500
+1,11,179.59
+0
+0
+07 Jan 26
+LN-2026-0099
+Borrower 099
+Current
+11.62%
+36m
+2,642.65
+80,000
+72,418.83
+0
+0
+20 May 26
+LN-2026-0053
+Borrower 053
+Current
+12.06%
+18m
+5,826.45
+95,500
+65,556.40
+0
+0
+14 Mar 26
+LN-2026-0074
+Borrower 074
+Current
+18.91%
+48m
+656.76
+22,000
+13,921.60
+0
+0
+28 Nov 24
+LN-2026-0083
+Borrower 083
+Current
+16.81%
+6m
+1,40,646.06
+8,04,000
+0.00
+0
+0
+24 Jun 24
+Personal · 5 loans
+₹17,09,500
+₹1,53,138
+max 0
+LN-2026-0092
+Borrower 092
+Current
+17.48%
+18m
+39,342.51
+6,19,000
+1,14,670.65
+0
+0
+23 Jun 25
+LN-2026-0162
+Borrower 162
+Current
+11.97%
+18m
+4,572.61
+75,000
+30,768.43
+0
+0
+28 Oct 25
+LN-2026-0039
+Borrower 039
+Current
+10.44%
+36m
+893.04
+27,500
+7,698.56
+0
+0
+13 Jun 24
+LN-2026-0019
+Borrower 019
+Closed
+18.57%
+18m
+8,682.55
+1,35,500
+0.00
+0
+0
+11 Jul 25
+LN-2026-0160
+Borrower 160
+Current
+21.38%
+12m
+79,535.05
+8,52,500
+0.00
+0
+0
+01 Mar 25
+Subtotal West
+12,22,265
+₹1,37,99,000
+₹63,47,976
+74
+max
+collected ₹58,37,890
+Whole book · 180 loans
+53,70,126
+₹6,80,77,500
+₹2,78,95,711
+407
+max
+collected ₹3,16,00,181
+Page 12 of 18
+SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
+--- page 13
+Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+SAMPLE DATA
+Drill-through: loan details
+The 6 Overdue and NPA loans with the largest outstanding balance, one per page: the last 12 months of the schedule as simulated (opening
+balance, interest, payment, closing balance). Shortfall months are shaded.
+LN-2026-0011 · Borrower 011
+LN-2026-0011
+West region · Gold loan · disbursed 12 Sep 2025
+Overdue · 17 days past due
+Principal
+Rate
+Tenure
+EMI
+₹11,52,000
+20.73%
+36 months
+₹43,242.14
+Outstanding
+Collected, 12 months
+Shortfall, 12 months
+DPD bucket
+₹9,62,426.77
+₹4,04,295.60
+₹1,14,610.08
+1–30
+Due vs paid each month, with the closing balance (right axis)
+Due (EMI)
+Paid
+Closing balance
+0
+10,000
+20,000
+30,000
+40,000
+50,000
+0
+5,00,000
+10,00,000
+15,00,000
+Oct 2025
+Nov 2025
+Dec 2025
+Jan 2026
+Feb 2026
+Mar 2026
+Apr 2026
+May 2026
+Jun 2026
+Jul 2026
+Aug 2026
+Sep 2026
+Month
+Inst.
+Opening
+Due (EMI)
+Paid
+Shortfall
+Interest
+Principal
+Closing
+Oct 2025
+1
+11,52,000.00
+43,242.14
+43,242.14
+19,900.80
+23,341.34
+11,28,658.66
+Nov 2025
+2
+11,28,658.66
+43,242.14
+43,242.14
+19,497.58
+23,744.56
+11,04,914.10
+Dec 2025
+3
+11,04,914.10
+43,242.14
+43,242.14
+19,087.39
+24,154.75
+10,80,759.35
+Jan 2026
+4
+10,80,759.35
+43,242.14
+43,242.14
+18,670.12
+24,572.02
+10,56,187.33
+Feb 2026
+5
+10,56,187.33
+43,242.14
+43,242.14
+18,245.64
+24,996.50
+10,31,190.83
+Mar 2026
+6
+10,31,190.83
+43,242.14
+43,242.14
+17,813.82
+25,428.32
+10,05,762.51
+Apr 2026
+7
+10,05,762.51
+43,242.14
+43,242.14
+17,374.55
+25,867.59
+9,79,894.92
+May 2026
+8
+9,79,894.92
+43,242.14
+12,978.49
+30,263.65
+16,927.68
+0.00
+9,83,844.11
+Jun 2026
+9
+9,83,844.11
+43,242.14
+24,214.07
+19,028.07
+16,995.91
+7,218.16
+9,76,625.95
+Jul 2026
+10
+9,76,625.95
+43,242.14
+28,547.79
+14,694.35
+16,871.21
+11,676.58
+9,64,949.37
+Aug 2026
+11
+9,64,949.37
+43,242.14
+16,746.51
+26,495.63
+16,669.50
+77.01
+9,64,872.36
+Sep 2026
+12
+9,64,872.36
+43,242.14
+19,113.76
+24,128.38
+16,668.17
+2,445.59
+9,62,426.77
+12 months
+5,18,905.68
+4,04,295.60
+1,14,610.08
+2,14,722.37
+1,93,522.42
+← Back to the watchlist
+Page 13 of 18
+SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
+--- page 14
+Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+SAMPLE DATA
+LN-2026-0023 · Borrower 023
+LN-2026-0023
+North region · Merchant loan · disbursed 17 Sep 2025
+NPA · 327 days past due
+Principal
+Rate
+Tenure
+EMI
+₹9,72,000
+15.31%
+6 months
+₹1,69,310.39
+Outstanding
+Collected, 12 months
+Shortfall, 12 months
+DPD bucket
+₹8,70,036.23
+₹2,37,557.81
+₹7,78,304.53
+90+
+Due vs paid each month, with the closing balance (right axis)
+Due (EMI)
+Paid
+Closing balance
+0
+50,000
+1,00,000
+1,50,000
+2,00,000
+0
+2,00,000
+4,00,000
+6,00,000
+8,00,000
+10,00,000
+Oct 2025
+Nov 2025
+Dec 2025
+Jan 2026
+Feb 2026
+Mar 2026
+Apr 2026
+May 2026
+Jun 2026
+Jul 2026
+Aug 2026
+Sep 2026
+Month
+Inst.
+Opening
+Due (EMI)
+Paid
+Shortfall
+Interest
+Principal
+Closing
+Oct 2025
+1
+9,72,000.00
+1,69,310.39
+12,018.59
+1,57,291.80
+12,401.10
+0.00
+9,72,382.51
+Nov 2025
+2
+9,72,382.51
+1,69,310.39
+8,949.23
+1,60,361.16
+12,405.98
+0.00
+9,75,839.26
+Dec 2025
+3
+9,75,839.26
+1,69,310.39
+76,400.06
+92,910.33
+12,450.08
+63,949.98
+9,11,889.28
+Jan 2026
+4
+9,11,889.28
+1,69,310.39
+4,050.08
+1,65,260.31
+11,634.19
+0.00
+9,19,473.39
+Feb 2026
+5
+9,19,473.39
+1,69,310.39
+49,730.67
+1,19,579.72
+11,730.95
+37,999.72
+8,81,473.67
+Mar 2026
+6
+8,81,473.67
+1,69,310.39
+86,409.18
+82,901.21
+11,246.13
+75,163.05
+8,06,310.62
+Apr 2026
+—
+8,06,310.62
+0.00
+0.00
+10,287.18
+0.00
+8,16,597.80
+May 2026
+—
+8,16,597.80
+0.00
+0.00
+10,418.43
+0.00
+8,27,016.23
+Jun 2026
+—
+8,27,016.23
+0.00
+0.00
+10,551.35
+0.00
+8,37,567.58
+Jul 2026
+—
+8,37,567.58
+0.00
+0.00
+10,685.97
+0.00
+8,48,253.55
+Aug 2026
+—
+8,48,253.55
+0.00
+0.00
+10,822.30
+0.00
+8,59,075.85
+Sep 2026
+—
+8,59,075.85
+0.00
+0.00
+10,960.38
+0.00
+8,70,036.23
+12 months
+10,15,862.34
+2,37,557.81
+7,78,304.53
+1,35,594.04
+1,77,112.75
+← Back to the watchlist
+Page 14 of 18
+SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
+--- page 15
+Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+SAMPLE DATA
+LN-2026-0134 · Borrower 134
+LN-2026-0134
+East region · Gold loan · disbursed 16 Aug 2025
+Overdue · 70 days past due
+Principal
+Rate
+Tenure
+EMI
+₹8,98,000
+19.52%
+48 months
+₹27,097.34
+Outstanding
+Collected, 12 months
+Shortfall, 12 months
+DPD bucket
+₹7,83,018.78
+₹2,62,908.35
+₹62,259.73
+61–90
+Due vs paid each month, with the closing balance (right axis)
+Due (EMI)
+Paid
+Closing balance
+0
+10,000
+20,000
+30,000
+0
+2,00,000
+4,00,000
+6,00,000
+8,00,000
+10,00,000
+Oct 2025
+Nov 2025
+Dec 2025
+Jan 2026
+Feb 2026
+Mar 2026
+Apr 2026
+May 2026
+Jun 2026
+Jul 2026
+Aug 2026
+Sep 2026
+Month
+Inst.
+Opening
+Due (EMI)
+Paid
+Shortfall
+Interest
+Principal
+Closing
+Oct 2025
+2
+8,85,510.13
+27,097.34
+27,097.34
+14,404.30
+12,693.04
+8,72,817.09
+Nov 2025
+3
+8,72,817.09
+27,097.34
+27,097.34
+14,197.82
+12,899.52
+8,59,917.57
+Dec 2025
+4
+8,59,917.57
+27,097.34
+27,097.34
+13,987.99
+13,109.35
+8,46,808.22
+Jan 2026
+5
+8,46,808.22
+27,097.34
+27,097.34
+13,774.75
+13,322.59
+8,33,485.63
+Feb 2026
+6
+8,33,485.63
+27,097.34
+27,097.34
+13,558.03
+13,539.31
+8,19,946.32
+Mar 2026
+7
+8,19,946.32
+27,097.34
+27,097.34
+13,337.79
+13,759.55
+8,06,186.77
+Apr 2026
+8
+8,06,186.77
+27,097.34
+27,097.34
+13,113.97
+13,983.37
+7,92,203.40
+May 2026
+9
+7,92,203.40
+27,097.34
+9,370.47
+17,726.87
+12,886.51
+0.00
+7,95,719.44
+Jun 2026
+10
+7,95,719.44
+27,097.34
+21,733.25
+5,364.09
+12,943.70
+8,789.55
+7,86,929.89
+Jul 2026
+11
+7,86,929.89
+27,097.34
+14,838.28
+12,259.06
+12,800.73
+2,037.55
+7,84,892.34
+Aug 2026
+12
+7,84,892.34
+27,097.34
+20,375.12
+6,722.22
+12,767.58
+7,607.54
+7,77,284.80
+Sep 2026
+13
+7,77,284.80
+27,097.34
+6,909.85
+20,187.49
+12,643.83
+0.00
+7,83,018.78
+12 months
+3,25,168.08
+2,62,908.35
+62,259.73
+1,60,417.00
+1,11,741.37
+← Back to the watchlist
+Page 15 of 18
+SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
+--- page 16
+Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+SAMPLE DATA
+LN-2026-0026 · Borrower 026
+LN-2026-0026
+East region · Merchant loan · disbursed 15 Nov 2025
+Overdue · 51 days past due
+Principal
+Rate
+Tenure
+EMI
+₹12,25,000
+15.99%
+18 months
+₹76,993.34
+Outstanding
+Collected, 12 months
+Shortfall, 12 months
+DPD bucket
+₹7,59,076.73
+₹5,95,577.00
+₹1,74,356.40
+31–60
+Due vs paid each month, with the closing balance (right axis)
+Due (EMI)
+Paid
+Closing balance
+0
+20,000
+40,000
+60,000
+80,000
+0
+5,00,000
+10,00,000
+15,00,000
+Oct 2025
+Nov 2025
+Dec 2025
+Jan 2026
+Feb 2026
+Mar 2026
+Apr 2026
+May 2026
+Jun 2026
+Jul 2026
+Aug 2026
+Sep 2026
+Month
+Inst.
+Opening
+Due (EMI)
+Paid
+Shortfall
+Interest
+Principal
+Closing
+Oct 2025
+—
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+Nov 2025
+—
+0.00
+0.00
+0.00
+0.00
+0.00
+12,25,000.00
+Dec 2025
+1
+12,25,000.00
+76,993.34
+76,993.34
+16,323.13
+60,670.21
+11,64,329.79
+Jan 2026
+2
+11,64,329.79
+76,993.34
+76,993.34
+15,514.69
+61,478.65
+11,02,851.14
+Feb 2026
+3
+11,02,851.14
+76,993.34
+76,993.34
+14,695.49
+62,297.85
+10,40,553.29
+Mar 2026
+4
+10,40,553.29
+76,993.34
+76,993.34
+13,865.37
+63,127.97
+9,77,425.32
+Apr 2026
+5
+9,77,425.32
+76,993.34
+76,993.34
+13,024.19
+63,969.15
+9,13,456.17
+May 2026
+6
+9,13,456.17
+76,993.34
+57,760.67
+19,232.67
+12,171.80
+45,588.87
+8,67,867.30
+Jun 2026
+7
+8,67,867.30
+76,993.34
+31,886.90
+45,106.44
+11,564.33
+20,322.57
+8,47,544.73
+Jul 2026
+8
+8,47,544.73
+76,993.34
+52,191.99
+24,801.35
+11,293.53
+40,898.46
+8,06,646.27
+Aug 2026
+9
+8,06,646.27
+76,993.34
+32,956.71
+44,036.63
+10,748.56
+22,208.15
+7,84,438.12
+Sep 2026
+10
+7,84,438.12
+76,993.34
+35,814.03
+41,179.31
+10,452.64
+25,361.39
+7,59,076.73
+12 months
+7,69,933.40
+5,95,577.00
+1,74,356.40
+1,29,653.73
+4,65,923.27
+← Back to the watchlist
+Page 16 of 18
+SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
+--- page 17
+Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+SAMPLE DATA
+LN-2026-0017 · Borrower 017
+LN-2026-0017
+West region · Gold loan · disbursed 13 Aug 2025
+Overdue · 38 days past due
+Principal
+Rate
+Tenure
+EMI
+₹9,36,000
+11.28%
+48 months
+₹24,318.88
+Outstanding
+Collected, 12 months
+Shortfall, 12 months
+DPD bucket
+₹7,58,048.82
+₹2,56,594.46
+₹35,232.10
+31–60
+Due vs paid each month, with the closing balance (right axis)
+Due (EMI)
+Paid
+Closing balance
+0
+10,000
+20,000
+30,000
+0
+2,00,000
+4,00,000
+6,00,000
+8,00,000
+10,00,000
+Oct 2025
+Nov 2025
+Dec 2025
+Jan 2026
+Feb 2026
+Mar 2026
+Apr 2026
+May 2026
+Jun 2026
+Jul 2026
+Aug 2026
+Sep 2026
+Month
+Inst.
+Opening
+Due (EMI)
+Paid
+Shortfall
+Interest
+Principal
+Closing
+Oct 2025
+2
+9,20,479.52
+24,318.88
+24,318.88
+8,652.51
+15,666.37
+9,04,813.15
+Nov 2025
+3
+9,04,813.15
+24,318.88
+24,318.88
+8,505.24
+15,813.64
+8,88,999.51
+Dec 2025
+4
+8,88,999.51
+24,318.88
+24,318.88
+8,356.60
+15,962.28
+8,73,037.23
+Jan 2026
+5
+8,73,037.23
+24,318.88
+24,318.88
+8,206.55
+16,112.33
+8,56,924.90
+Feb 2026
+6
+8,56,924.90
+24,318.88
+24,318.88
+8,055.09
+16,263.79
+8,40,661.11
+Mar 2026
+7
+8,40,661.11
+24,318.88
+24,318.88
+7,902.21
+16,416.67
+8,24,244.44
+Apr 2026
+8
+8,24,244.44
+24,318.88
+24,318.88
+7,747.90
+16,570.98
+8,07,673.46
+May 2026
+9
+8,07,673.46
+24,318.88
+24,318.88
+7,592.13
+16,726.75
+7,90,946.71
+Jun 2026
+10
+7,90,946.71
+24,318.88
+24,318.88
+7,434.90
+16,883.98
+7,74,062.73
+Jul 2026
+11
+7,74,062.73
+24,318.88
+8,267.84
+16,051.04
+7,276.19
+991.65
+7,73,071.08
+Aug 2026
+12
+7,73,071.08
+24,318.88
+17,830.35
+6,488.53
+7,266.87
+10,563.48
+7,62,507.60
+Sep 2026
+13
+7,62,507.60
+24,318.88
+11,626.35
+12,692.53
+7,167.57
+4,458.78
+7,58,048.82
+12 months
+2,91,826.56
+2,56,594.46
+35,232.10
+94,163.76
+1,62,430.70
+← Back to the watchlist
+Page 17 of 18
+SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
+--- page 18
+Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+SAMPLE DATA
+LN-2026-0158 · Borrower 158
+LN-2026-0158
+East region · Gold loan · disbursed 25 Feb 2026
+Overdue · 59 days past due
+Principal
+Rate
+Tenure
+EMI
+₹7,55,500
+11.15%
+12 months
+₹66,825.22
+Outstanding
+Collected, 12 months
+Shortfall, 12 months
+DPD bucket
+₹5,18,829.12
+₹2,77,755.90
+₹1,90,020.64
+31–60
+Due vs paid each month, with the closing balance (right axis)
+Due (EMI)
+Paid
+Closing balance
+0
+20,000
+40,000
+60,000
+80,000
+0
+2,00,000
+4,00,000
+6,00,000
+8,00,000
+Oct 2025
+Nov 2025
+Dec 2025
+Jan 2026
+Feb 2026
+Mar 2026
+Apr 2026
+May 2026
+Jun 2026
+Jul 2026
+Aug 2026
+Sep 2026
+Month
+Inst.
+Opening
+Due (EMI)
+Paid
+Shortfall
+Interest
+Principal
+Closing
+Oct 2025
+—
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+Nov 2025
+—
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+Dec 2025
+—
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+Jan 2026
+—
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+Feb 2026
+—
+0.00
+0.00
+0.00
+0.00
+0.00
+7,55,500.00
+Mar 2026
+1
+7,55,500.00
+66,825.22
+66,825.22
+7,019.85
+59,805.37
+6,95,694.63
+Apr 2026
+2
+6,95,694.63
+66,825.22
+66,825.22
+6,464.16
+60,361.06
+6,35,333.57
+May 2026
+3
+6,35,333.57
+66,825.22
+14,009.37
+52,815.85
+5,903.31
+8,106.06
+6,27,227.51
+Jun 2026
+4
+6,27,227.51
+66,825.22
+57,241.73
+9,583.49
+5,827.99
+51,413.74
+5,75,813.77
+Jul 2026
+5
+5,75,813.77
+66,825.22
+1,610.28
+65,214.94
+5,350.27
+0.00
+5,79,553.76
+Aug 2026
+6
+5,79,553.76
+66,825.22
+32,355.49
+34,469.73
+5,385.02
+26,970.47
+5,52,583.29
+Sep 2026
+7
+5,52,583.29
+66,825.22
+38,888.59
+27,936.63
+5,134.42
+33,754.17
+5,18,829.12
+12 months
+4,67,776.54
+2,77,755.90
+1,90,020.64
+41,085.02
+2,40,410.87
+← Back to the watchlist
+Page 18 of 18
+SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005

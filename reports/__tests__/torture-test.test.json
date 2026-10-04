@@ -1,0 +1,8 @@
+{
+  "report": "../torture-test.pw.json",
+  "cases": [
+    { "name": "default", "data": { "torture": "torture-test.data.json" }, "now": "2026-10-04T10:00:00" },
+    { "name": "north-troubled", "data": { "torture": "torture-test.data.json" }, "now": "2026-10-04T10:00:00", "parameters": { "region": ["North"], "status": ["Overdue", "NPA"], "minOutstanding": 10000 } },
+    { "name": "sorted-dpd-central-collapsed", "data": { "torture": "torture-test.data.json" }, "now": "2026-10-04T10:00:00", "state": { "sort": { "Register": [{ "by": "=Fields.dpd", "dir": "desc" }] }, "toggles": { "Register|0|/Central": false } } }
+  ]
+}
