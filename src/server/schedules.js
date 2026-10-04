@@ -32,7 +32,8 @@ const withNext = (s) => ({ ...s, nextRunAt: s.enabled === false ? null : nextRun
 // service keys see all. Every run checks the template again as the owner is now.
 /** @typedef {import('./perms.js').Principal} Principal */
 // a missing principal is the default (nobody with accounts on); a record with no owner is no one's
-const mine = (p, s) => { p = vet(p); return p.kind === 'open' || p.kind === 'service' || (p.kind === 'user' && !!s.owner && s.owner === principalId(p)); };
+// a user's schedules belong to the key that made them: another key of the same user cannot see or retarget them
+const mine = (p, s) => { p = vet(p); return p.kind === 'open' || p.kind === 'service' || (p.kind === 'user' && !!s.owner && s.owner === principalId(p) && (s.ownerKey || null) === (p.viaKey || null)); };
 const shown = ({ owner, ownerKey, ...s }) => withNext(s);
 /** A template a principal may render: an id it may view, or (designers, service keys) an inline definition. */
 async function checkTemplate(p, template) {

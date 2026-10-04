@@ -96,12 +96,13 @@ function userKeyIds(email) {
 
 /**
  * The principal named by principalId, as it is now. viaKey: the user's API key that made the record (a schedule or a
- * batch): once that key is out of PW_API_KEYS, the record is no one's.
+ * batch): once that key is out of PW_API_KEYS, the record is no one's; a user's record with no key is no one's.
  * @param {string} id @param {string} [viaKey] @returns {Promise<Principal>}
  */
 export async function principalFromId(id, viaKey) {
-  if (viaKey && String(id).startsWith('user:')) {
-    if (!accountsOn()) return OPEN;
+  if (String(id).startsWith('user:') && accountsOn()) {
+    // only API keys make schedules and batches: a user's record with no key id is from before keys were recorded
+    if (!viaKey) return NOBODY;
     const p = await userPrincipal(String(id).slice(5));
     return p.kind === 'user' && userKeyIds(p.email).has(String(viaKey)) ? { ...p, viaKey: String(viaKey) } : NOBODY;
   }

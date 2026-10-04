@@ -5,6 +5,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { reportLevel, folderLevel, checkGrants, DEFAULT_ROOT } from '../../src/server/perms.js';
 
 const S = (o = {}) => ({ folders: new Map(Object.entries(o.folders || {})), reports: new Map(Object.entries(o.reports || {})), root: o.root || DEFAULT_ROOT });
@@ -100,6 +101,8 @@ const def = (name, body = [{ type: 'textbox', x: 0, y: 0, w: 200, h: 16, value: 
   sections: { body: { items: body } },
 });
 const P = (id) => ({ params: Promise.resolve({ id }) });
+// a user as their API key acts (batches and schedules record the key that made them)
+const keyId = (k) => crypto.createHash('sha256').update(k).digest('hex').slice(0, 8);
 
 describe.each(backends)('routes on %s storage', (kind, setup) => {
   let R, cookie, users, perms, sqlRoute, v1, folders, folderOne, access, thumb, pdf, versions;
@@ -568,7 +571,7 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
       return (await getJob(job.id, svc)).folder;
     };
     const shared = await run(svc);
-    const bobs = await run(await perms.userPrincipal('bob@x.io'));
+    const bobs = await run({ ...(await perms.userPrincipal('bob@x.io')), viaKey: keyId('bob-key') });
     expect(shared).toMatch(/outputs[\\/]payroll-slips$/);
     expect(bobs).not.toBe(shared);
     expect(bobs).toMatch(/outputs[\\/]users[\\/][0-9a-f]{16}[\\/]payroll-slips$/);
@@ -601,7 +604,7 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
       dataSources: [{ name: 'src', type: 'json', data: { rows } }], dataSets: [{ name: 'Rows', source: 'src', path: '$.rows' }] });
     await perms.setReportAccess({ kind: 'service' }, id, { inherit: false, grants: [{ to: 'user:bob@x.io', level: 'view' }] });
     try {
-      const job = await createBatch({ template: id, items: Array.from({ length: 12 }, (_, n) => ({ name: `i${n}`, parameters: {} })), output: { type: 'none' }, format: 'csv' }, undefined, await perms.userPrincipal('bob@x.io'));
+      const job = await createBatch({ template: id, items: Array.from({ length: 12 }, (_, n) => ({ name: `i${n}`, parameters: {} })), output: { type: 'none' }, format: 'csv' }, undefined, { ...(await perms.userPrincipal('bob@x.io')), viaKey: keyId('bob-key') });
       const working = workOnce('test-runner');
       while (!((await getJob(job.id, { kind: 'service' }))?.done >= 1)) await new Promise(r => setTimeout(r, 20));
       await perms.setReportAccess({ kind: 'service' }, id, { grants: [] }); // bob loses the report mid-run
@@ -674,9 +677,30 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     for (const x of [id, inline.body.id, g.id]) await store().remove('schedules', x);
   });
 
+  it('review: a user\'s schedules belong to the key that made them; a record with no key does not run', async () => {
+    const { runSchedule, getSchedule } = await import('../../src/server/schedules.js');
+    const { store } = await import('../../src/server/storage/index.js');
+    const keep = process.env.PW_API_KEYS;
+    process.env.PW_API_KEYS = `${keep},carol@x.io|carol-key2`;
+    try {
+      const base = { template: 'salary', cron: '0 7 * * *', items: [{ parameters: {} }], output: { type: 'none' } };
+      const made = await json(await v1.schedules.POST(req('/api/v1/schedules', { key: 'carol-key', method: 'POST', body: base })));
+      const id = made.body.id;
+      // carol's other key neither sees nor changes it (a leaked second key cannot retarget the first one's schedules)
+      expect((await json(await v1.schedules.GET(req('/api/v1/schedules', { key: 'carol-key2' })))).body.map(x => x.id)).not.toContain(id);
+      expect((await v1.schedule.PUT(req(`/api/v1/schedules/${id}`, { key: 'carol-key2', method: 'PUT', body: { webhook: 'https://example.com/hook' } }), P(id))).status).toBe(404);
+      expect((await v1.schedule.GET(req(`/api/v1/schedules/${id}`, { key: 'carol-key' }), P(id))).status).toBe(200);
+      // a user's record with no key (made before keys were recorded) is no one's
+      const rec = JSON.parse(await store().get('schedules', id));
+      await store().put('schedules', id, JSON.stringify({ ...rec, ownerKey: null }));
+      await expect(runSchedule(await getSchedule(id, { kind: 'service' }))).rejects.toMatchObject({ status: 404 });
+      await store().remove('schedules', id);
+    } finally { process.env.PW_API_KEYS = keep; }
+  });
+
   it('review: a queued inline batch fails when its owner is now a viewer', async () => {
     const { createBatch, workOnce, getJob } = await import('../../src/server/jobs.js');
-    const job = await createBatch({ template: def('Inline'), items: [{ parameters: {} }], output: { type: 'none' }, format: 'csv' }, undefined, await perms.userPrincipal('bob@x.io'));
+    const job = await createBatch({ template: def('Inline'), items: [{ parameters: {} }], output: { type: 'none' }, format: 'csv' }, undefined, { ...(await perms.userPrincipal('bob@x.io')), viaKey: keyId('bob-key') });
     await users.updateUser('bob@x.io', { role: 'viewer' });
     try {
       await workOnce('test-runner');

@@ -12,7 +12,7 @@ Authorization: Bearer key1        (or)        x-api-key: key1
 
 In production the API refuses all requests when `PW_API_KEYS` is empty. In `next dev` it answers without a key.
 
-A plain key is a **service key**: it may render, batch and schedule every report. With accounts on (`PW_AUTH=users`) a key written `email|key` (for example `PW_API_KEYS="svc-key,reports@acme.com|k2"`) acts as that user: it sees, renders and schedules only what that user may view (permissions below), renders a definition sent in the request only when the user is a designer, and sees only its own batches and schedules. A disabled or deleted user's key stops working. Batches and schedules remember the key that made them: once a key is out of `PW_API_KEYS` (a service key or a user's), what it scheduled or queued no longer runs. Every call is in the audit log under the key's id (the first 8 hex of its SHA-256), never the key.
+A plain key is a **service key**: it may render, batch and schedule every report. With accounts on (`PW_AUTH=users`) a key written `email|key` (for example `PW_API_KEYS="svc-key,reports@acme.com|k2"`) acts as that user: it sees, renders and schedules only what that user may view (permissions below), renders a definition sent in the request only when the user is a designer, and sees only the batches and schedules made with that same key. A disabled or deleted user's key stops working. Batches and schedules remember the key that made them: once a key is out of `PW_API_KEYS` (a service key or a user's), what it scheduled or queued no longer runs. Every call is in the audit log under the key's id (the first 8 hex of its SHA-256), never the key.
 
 ## Rich text and data
 

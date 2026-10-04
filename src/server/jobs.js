@@ -91,7 +91,7 @@ export async function createBatch(spec, req, principal = defaultPrincipal()) {
 }
 
 /** A user's key sees its own jobs only; service keys (and accounts off) see all. */
-const mine = (p, job) => { p = vet(p); return p.kind === 'open' || p.kind === 'service' || (p.kind === 'user' && !!job.owner && job.owner === principalId(p)); };
+const mine = (p, job) => { p = vet(p); return p.kind === 'open' || p.kind === 'service' || (p.kind === 'user' && !!job.owner && job.owner === principalId(p) && (job.ownerKey || null) === (p.viaKey || null)); }; // per key, as schedules
 
 /** @param {string} id @param {import('./perms.js').Principal} [p] */
 export async function getJob(id, p = defaultPrincipal()) {
