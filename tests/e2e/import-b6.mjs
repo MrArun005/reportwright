@@ -16,7 +16,7 @@ const hydrated = () => p.waitForFunction((s) => { const i = document.querySelect
 const ids = [];
 for (const [file, expect] of [
   [path.join(FIX, 'jrxml', 'corpus', 'jr6-csvdatasource-CsvDataSourceReport.jrxml'), /Street/],
-  [path.join(FIX, 'birt', 'corpus', 'birt-example_simple.rptdesign'), /Congratulations!/],
+  [path.join(FIX, 'birt', 'corpus', 'Accessibility-hello_world.rptdesign'), /Das ist die Überschrift/],
 ]) {
   await p.goto(`${BASE}/`);
   await hydrated();
@@ -28,12 +28,12 @@ for (const [file, expect] of [
   assert.equal(res.status(), 201, await res.text());
   assert.equal(res.request().headers()['content-type'], 'application/xml');
   const { id, stats, warnings } = await res.json();
-  assert.ok(stats.items > 5 && stats.dropped <= 1, JSON.stringify(stats));
+  assert.ok(stats.items >= 2 && stats.dropped === 0, JSON.stringify(stats));
   assert.ok(warnings.length > 0);
   await p.getByText(/The report was created with \d+ note/).waitFor();
   ids.push(id);
   await p.goto(`${BASE}/viewer/${id}`);
-  await p.waitForSelector('.vpage');
+  await p.waitForSelector('.vpage').catch(async (e) => { await p.screenshot({ path: '/tmp/shots/import-b6-fail.png' }); console.log((await p.textContent('body')).slice(0, 400)); throw e; });
   await p.waitForFunction(() => !document.querySelector('.stat[title*="still rendering"]'));
   const t = (await p.$$eval('.vpage text', ns => ns.map(n => n.textContent))).join(' ');
   assert.match(t, expect, `${path.basename(file)}: ${t.slice(0, 300)}`);
