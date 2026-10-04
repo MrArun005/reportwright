@@ -1,14 +1,18 @@
 // @ts-check
 import { pageToSvg, fontFamilyCss } from './svg.js';
 import { safeUrl } from '../engine/url.js';
+import { tablesData, DATA_SCRIPT, DATA_CSS, DATA_STRINGS, cspHash } from './htmldata.js';
 
 /**
  * One self-contained HTML file: every page as inline SVG, fonts embedded as
  * base64 (subset when a subsetter is given). URLs open, bookmark jumps and TOC entries scroll to their target, and
  * drill-through opens the Pagewright viewer at drillBase (without one it is shown disabled).
+ * Unless static, a file whose report has tables also gets a Tables view (htmldata.js): the tables as HTML, re-sorted on
+ * their interactive-sort columns, groups opened and closed, rows filtered, by one inline script the file's CSP allows.
  * @param {any} model
  * @param {import('../engine/text/fonts.js').FontStore} fontStore
- * @param {{ title?: string, drillBase?: string, subset?: (font: Uint8Array, cps: Iterable<number>, o?: { layout?: boolean }) => Promise<Uint8Array> }} [opt]
+ * @param {{ title?: string, drillBase?: string, subset?: (font: Uint8Array, cps: Iterable<number>, o?: { layout?: boolean }) => Promise<Uint8Array>,
+ *   static?: boolean, locale?: string, currency?: string, lang?: string, strings?: Partial<typeof DATA_STRINGS> }} [opt]
  */
 export async function exportHtml(model, fontStore, opt = {}) {
   const used = new Map();
@@ -71,9 +75,13 @@ export async function exportHtml(model, fontStore, opt = {}) {
     const marks = [...anchors.values()].filter(x => x.page === i + 1).map(x => `<a class="pw-at" id="${x.id}" style="top:${((Math.min(x.y, H) / H) * 100).toFixed(3)}%"></a>`).join('');
     return `<section class="page${p.width ? ' wide' : ''}" id="page-${i + 1}"${p.width ? ` style="width:min(100%,${Math.round(p.width * 96 / 72)}px)"` : ''}>${marks}${svgs[i]}</section>`;
   }).join('\n');
+  const data = opt.static ? null : tablesData(model, { locale: opt.locale, currency: opt.currency });
+  const S = { ...DATA_STRINGS, ...(opt.strings || {}) };
+  const csp = data ? `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-${await cspHash(DATA_SCRIPT)}'; style-src 'unsafe-inline'; font-src data:; img-src data: https: http:; base-uri 'none'; form-action 'none'">\n` : '';
+  const lang = opt.lang && /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(opt.lang) ? opt.lang : 'en';
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(opt.title || model.name || 'Report')}</title>
+<html lang="${data ? lang : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+${csp}<title>${esc(opt.title || model.name || 'Report')}</title>
 <style>
 ${faces.join('\n')}
 html{background:#e6eaee}body{margin:0;padding:24px 12px;display:flex;flex-direction:column;align-items:center;gap:18px;font-family:system-ui,sans-serif}
@@ -81,9 +89,12 @@ html{background:#e6eaee}body{margin:0;padding:24px 12px;display:flex;flex-direct
 .pw-at{position:absolute;left:0;width:1px;height:1px;scroll-margin-top:12px}.pw-off{cursor:not-allowed}
 .page svg{display:block;width:100%;height:auto}
 @media print{html{background:#fff}body{padding:0;gap:0}.page{box-shadow:none;width:100%;break-after:page}@page{size:${model.width}pt ${model.height}pt;margin:0}}
-</style></head><body>
-${pages}
-</body></html>`;
+${data ? DATA_CSS + '\n' : ''}</style></head><body>
+${data ? `<nav class="pw-bar" id="pw-bar" hidden><button type="button" data-view="pages" aria-pressed="true">${esc(S.pages)}</button><button type="button" data-view="tables" aria-pressed="false">${esc(S.tables)}</button></nav>\n` : ''}${pages}
+${data ? `<div id="pw-tables" hidden></div>
+<script type="application/json" id="pw-data">${JSON.stringify({ tables: data, strings: S }).replace(/</g, '\\u003c')}</script>
+<script>${DATA_SCRIPT}</script>
+` : ''}</body></html>`;
 }
 
 const attr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
