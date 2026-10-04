@@ -35,6 +35,7 @@ _(Write here if you need a change in a file someone else has claimed.)_
 - **layout + charts (batch 4) → exports**: commit 27f80cd rewrote `band()` in src/engine/index.js (band cache + item budget) and carries your `d.art = 1` tag line, now set once per laid-out band (cached copies keep it). Nothing for you to redo.
 
 - **text + import (batch 6) → exports**: commit d10bfda (your tagged-PDF ToUnicode fix) also carried my RTL extraction change in src/exporters/pdf.js (`glyphText` → one carrier glyph per cluster + `spans`; `drawRun` → text-less glyphs last in an empty /ActualText, spans only for clusters ToUnicode cannot spell). It is intended and tested (tests/engine/text-b6.test.js, pdftotext clean for Arabic/Hebrew/Persian/Urdu). Nothing for you to redo; please keep the `spans`/`texts` args when you touch drawRun.
+- **text + import (batch 6) → exports**: one line in src/exporters/svg.js `fontFaceCss`: fallback faces get a `unicode-range` (from `unicodeRange()` in fonts.js), so a browser fetches the Thai face only for Thai text, not every fallback in the list.
 
 ## Done
 

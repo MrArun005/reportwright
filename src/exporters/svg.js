@@ -1,6 +1,6 @@
 // @ts-check
 import { cssColor } from './color.js';
-import { fontFile } from '../engine/text/fonts.js';
+import { fontFile, unicodeRange } from '../engine/text/fonts.js';
 import { textOutline } from './figures.js';
 
 /** Each font file gets its own CSS family, so local fonts can never replace it. */
@@ -121,8 +121,8 @@ function linkTitle(a) {
 /** @font-face rules for report fonts served from /fonts (uploaded ones from /fonts/custom). */
 export function fontFaceCss(keys, base = '/fonts') {
   return keys.map((k) => {
-    const file = fontFile(k);
-    return `@font-face{font-family:"${fontFamilyCss(k)}";src:url("${base}/${file}")${file.endsWith('.ttf') ? ' format("truetype")' : ''};font-display:block}`;
+    const file = fontFile(k), range = unicodeRange(k); // a script fallback downloads only for text in its script
+    return `@font-face{font-family:"${fontFamilyCss(k)}";src:url("${base}/${file}")${file.endsWith('.ttf') ? ' format("truetype")' : ''};font-display:block${range ? `;unicode-range:${range}` : ''}}`;
   }).join('\n');
 }
 

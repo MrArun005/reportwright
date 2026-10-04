@@ -15,6 +15,9 @@ const BUNDLED = [
   ['Noto Sans Devanagari', 'NotoSansDevanagari-Regular', 400], ['Noto Sans Devanagari', 'NotoSansDevanagari-Bold', 700],
   ['Noto Sans Arabic', 'NotoSansArabic-Regular', 400], ['Noto Sans Arabic', 'NotoSansArabic-Bold', 700],
   ['Noto Sans Hebrew', 'NotoSansHebrew-Regular', 400], ['Noto Sans Hebrew', 'NotoSansHebrew-Bold', 700],
+  // fallbacks loaded only when text uses the script (docs/TEXT.md has the sizes)
+  ...['Thai', 'Lao', 'Khmer', 'Myanmar', 'Tamil', 'Bengali', 'Telugu', 'Kannada', 'Gujarati'].flatMap(s => [
+    [`Noto Sans ${s}`, `NotoSans${s}-Regular`, 400], [`Noto Sans ${s}`, `NotoSans${s}-Bold`, 700]]),
 ];
 
 /** family → its faces: the bundled families, then the fonts uploaded to the server (setCustomFonts). @type {Record<string, Face[]>} */
@@ -86,6 +89,11 @@ const FALLBACK = [
   [0x0590, 0x05ff, 'Noto Sans Hebrew'], [0xfb1d, 0xfb4f, 'Noto Sans Hebrew'],
   [0x0600, 0x08ff, 'Noto Sans Arabic'], [0xfb50, 0xfdff, 'Noto Sans Arabic'], [0xfe70, 0xfefe, 'Noto Sans Arabic'],
   [0x0900, 0x097f, 'Noto Sans Devanagari'], [0xa8e0, 0xa8ff, 'Noto Sans Devanagari'], [0x1cd0, 0x1cff, 'Noto Sans Devanagari'],
+  [0x0980, 0x09ff, 'Noto Sans Bengali'], [0x0a80, 0x0aff, 'Noto Sans Gujarati'], [0x0b80, 0x0bff, 'Noto Sans Tamil'],
+  [0x11fc0, 0x11fff, 'Noto Sans Tamil'], [0x0c00, 0x0c7f, 'Noto Sans Telugu'], [0x0c80, 0x0cff, 'Noto Sans Kannada'],
+  [0x0e00, 0x0e7f, 'Noto Sans Thai'], [0x0e80, 0x0eff, 'Noto Sans Lao'], [0x1000, 0x109f, 'Noto Sans Myanmar'],
+  [0xa9e0, 0xa9ff, 'Noto Sans Myanmar'], [0xaa60, 0xaa7f, 'Noto Sans Myanmar'], [0x1780, 0x17ff, 'Noto Sans Khmer'],
+  [0x19e0, 0x19ff, 'Noto Sans Khmer'],
 ];
 /** Every registered key: bundled and uploaded. */
 export const allFontKeys = () => [...FACES.keys()];
@@ -94,6 +102,18 @@ export const allFontKeys = () => [...FACES.keys()];
 export function fallbackKeys(key) {
   const c = fontCss(key);
   return [...new Set(FALLBACK.map(f => String(f[2])))].map(family => resolveFontKey(family, c.weight, c.style));
+}
+
+/**
+ * CSS unicode-range for a bundled fallback face, else null: its script's blocks plus the marks, joiners and
+ * dotted circle a run in that font can carry. A browser then downloads the face only for text in that script
+ * (without it, a font-family list of fallbacks fetches every face before the one that has the glyph).
+ * @param {string} key
+ */
+export function unicodeRange(key) {
+  const family = FACES.get(key)?.family;
+  const r = FALLBACK.filter(f => f[2] === family).map(([a, b]) => `U+${Number(a).toString(16)}-${Number(b).toString(16)}`);
+  return r.length ? [...r, 'U+300-36F', 'U+2000-206F', 'U+25CC', 'U+FE00-FE0F'].join(',') : null;
 }
 
 /** The bundled fallback face for a code point, in the weight and style of `key`; null when there is none. */
