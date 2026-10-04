@@ -33,7 +33,7 @@ export const DEFAULT_ROOT = Object.freeze([{ to: 'group:everyone', level: 'manag
 const fail = (msg, status) => Object.assign(new Error(msg), { status });
 
 /** A stable name for a principal (job and schedule owners, cache keys, the audit log). @param {Principal} p */
-export const principalId = (p) => (p.kind === 'user' ? `user:${p.email}` : p.kind === 'service' ? `service${p.key ? `:${p.key}` : ''}` : p.kind);
+export const principalId = (p) => (!p ? 'nobody' : p.kind === 'user' ? `user:${p.email}` : p.kind === 'service' ? `service${p.key ? `:${p.key}` : ''}` : p.kind);
 
 /** The principal of a request to a page or a route (not /api/v1: see auth.js). @param {Request} req @returns {Promise<Principal>} */
 export async function principalOf(req) {
@@ -61,11 +61,28 @@ export async function userPrincipal(email) {
 }
 
 /**
+ * The principal as the resolver may trust it. Anything missing, malformed or not valid in this mode is nobody (fail
+ * closed): with accounts off, the old all-or-nothing (open) is the only principal and a missing one is open; with
+ * accounts on, "open" and a missing principal are nobody, a user needs an email, a known role and a list of groups,
+ * and a service key must be in PW_API_KEYS now (a keyless service principal is the server's own code).
+ * @param {any} p @returns {Principal}
+ */
+export function vet(p) {
+  if (!p || typeof p !== 'object') return defaultPrincipal();
+  if (p.kind === 'open') return accountsOn() ? NOBODY : OPEN;
+  if (p.kind === 'nobody' || p.kind === 'anon') return p;
+  if (p.kind === 'service') return p.key === undefined || (typeof p.key === 'string' && serviceKeyIds().has(p.key)) ? p : NOBODY;
+  if (p.kind === 'user') return typeof p.email === 'string' && ['viewer', 'designer', 'admin'].includes(p.role) && Array.isArray(p.groups) && p.groups.every(g => typeof g === 'string') ? p : NOBODY;
+  return NOBODY;
+}
+
+/**
  * A user principal as the user is now in storage (role, groups, disabled), not as a cached session saw it: checks that
  * guard a write run inside the "acl" lock, and a change made on another server while the request waited must count.
  * @param {Principal} p @returns {Promise<Principal>}
  */
 async function asNow(p) {
+  p = vet(p);
   if (p.kind !== 'user') return p;
   const q = await userPrincipal(p.email);
   return q.kind === 'user' && p.viaKey ? { ...q, viaKey: p.viaKey } : q;
@@ -144,6 +161,7 @@ export async function accessStamp(p) {
 
 /** A principal's level on a report, from a snapshot. @param {Snapshot} s @param {Principal} p @param {string} id @returns {Level} */
 export function reportLevel(s, p, id) {
+  p = vet(p);
   if (isAll(p)) return 'manage';
   const names = namesOf(p);
   const r = s.reports.get(id);
@@ -154,6 +172,7 @@ export function reportLevel(s, p, id) {
 
 /** A principal's level on a folder ("root" or null is the top). @param {Snapshot} s @param {Principal} p @param {string|null} id @returns {Level} */
 export function folderLevel(s, p, id) {
+  p = vet(p);
   if (isAll(p)) return 'manage';
   const names = namesOf(p);
   const n = !id || id === 'root' ? best(s.root, names) : chain(s, id, names);
@@ -174,8 +193,8 @@ export async function checkReport(p, ref, need = 'view') {
   const [id, version] = String(ref).split('@');
   if (version && need === 'view') need = 'edit';
   if (!(await store().get('reports', id))) throw fail('Report not found', 404); // an absent report is not "at the top"
-  if (p.kind === 'open') return 'manage';
   p = await asNow(p);
+  if (p.kind === 'open') return 'manage';
   const lvl = reportLevel(await snapshot(), p, id);
   if (!atLeast(lvl, 'view')) throw fail('Report not found', 404);
   if (!atLeast(lvl, need)) throw fail(`You cannot ${need === 'edit' ? 'change' : 'manage'} this report.`, 403);
@@ -202,6 +221,7 @@ export const defaultPrincipal = () => (accountsOn() ? NOBODY : OPEN);
  * @returns {Promise<(T & { access: Level, folder: string|null })[]>}
  */
 export async function visibleReports(p, list) {
+  p = await asNow(p);
   const s = await snapshot();
   return list.map(r => ({ ...r, access: reportLevel(s, p, r.id), folder: s.reports.get(r.id)?.folder || null }))
     .filter(r => atLeast(r.access, 'view'));
@@ -213,6 +233,7 @@ export async function visibleReports(p, list) {
  * @param {Principal} p @param {{ folder: string|null }[]} reports from visibleReports
  */
 export async function visibleFolders(p, reports) {
+  p = await asNow(p);
   const s = await snapshot();
   const keep = new Set();
   const up = (f) => { for (let i = 0; f && !keep.has(f) && i < 64; i++) { keep.add(f); f = s.folders.get(f)?.parent || null; } };
@@ -341,8 +362,8 @@ export async function setReportAccess(p, id, patch) {
  * @param {Principal} p @param {string|null} folder
  */
 export async function canCreateIn(p, folder) {
-  if (p.kind === 'open') return;
   p = await asNow(p);
+  if (p.kind === 'open') return;
   const s = await snapshot();
   if (folder && !s.folders.has(folder)) throw fail('No such folder.', 404);
   if (!atLeast(folderLevel(s, p, folder || null), 'edit')) throw fail('You cannot add reports here.', 403);

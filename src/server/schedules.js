@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { parseCron, nextRun } from './cron.js';
 import { createBatch, ME } from './jobs.js';
 import { store } from './storage/index.js';
-import { principalId, principalFromId, checkReport } from './perms.js';
+import { principalId, principalFromId, checkReport, vet, defaultPrincipal } from './perms.js';
 import { audit } from './audit.js';
 
 const g = globalThis;
@@ -31,8 +31,8 @@ const withNext = (s) => ({ ...s, nextRunAt: s.enabled === false ? null : nextRun
 // A schedule belongs to whoever made it (owner: a principal id). A user's API key sees and changes its own only;
 // service keys see all. Every run checks the template again as the owner is now.
 /** @typedef {import('./perms.js').Principal} Principal */
-const SERVICE = /** @type {Principal} */ ({ kind: 'service' });
-const mine = (p, s) => p.kind === 'open' || p.kind === 'service' || (s.owner || 'service') === principalId(p);
+// a missing principal is the default (nobody with accounts on); a record with no owner is no one's
+const mine = (p, s) => { p = vet(p); return p.kind === 'open' || p.kind === 'service' || (p.kind === 'user' && !!s.owner && s.owner === principalId(p)); };
 const shown = ({ owner, ...s }) => withNext(s);
 /** A template a principal may render: an id it may view, or (designers, service keys) an inline definition. */
 async function checkTemplate(p, template) {
@@ -41,12 +41,12 @@ async function checkTemplate(p, template) {
 }
 
 /** @param {Principal} [p] */
-export async function listSchedules(p = SERVICE) { return (await readSchedules()).filter(s => mine(p, s)).map(shown); }
+export async function listSchedules(p = defaultPrincipal()) { return (await readSchedules()).filter(s => mine(p, s)).map(shown); }
 /** @param {string} id @param {Principal} [p] */
-export async function getSchedule(id, p = SERVICE) { const s = await readOne(id); return s && mine(p, s) ? shown(s) : null; }
+export async function getSchedule(id, p = defaultPrincipal()) { const s = await readOne(id); return s && mine(p, s) ? shown(s) : null; }
 
 /** @param {any} body @param {Principal} [p] */
-export async function createSchedule(body, p = SERVICE) {
+export async function createSchedule(body, p = defaultPrincipal()) {
   validateSchedule(body);
   await checkTemplate(p, body.template);
   const s = { enabled: true, timezone: 'UTC', format: 'pdf', ...body, id: `s_${crypto.randomBytes(5).toString('hex')}`, createdAt: new Date().toISOString(), owner: principalId(p) };
@@ -54,7 +54,7 @@ export async function createSchedule(body, p = SERVICE) {
   return shown(s);
 }
 /** @param {string} id @param {any} patch @param {Principal} [p] */
-export async function updateSchedule(id, patch, p = SERVICE) {
+export async function updateSchedule(id, patch, p = defaultPrincipal()) {
   const cur = await readOne(id);
   if (!cur || !mine(p, cur)) return null;
   const { owner: _ignored, ...rest } = patch || {};
@@ -65,7 +65,7 @@ export async function updateSchedule(id, patch, p = SERVICE) {
   return shown(next);
 }
 /** @param {string} id @param {Principal} [p] */
-export async function deleteSchedule(id, p = SERVICE) {
+export async function deleteSchedule(id, p = defaultPrincipal()) {
   const cur = await readOne(id);
   if (!cur || !mine(p, cur)) return false;
   return store().remove('schedules', String(id));
@@ -74,16 +74,16 @@ export async function deleteSchedule(id, p = SERVICE) {
 /** Run now, as the schedule's owner. @param {any} s a schedule (its owner is read from storage) */
 export async function runSchedule(s, reason = 'manual') {
   const rec = (await readOne(s.id)) || s;
-  const principal = await principalFromId(rec.owner || 'service'); // schedules from before owners came from service keys
+  const principal = rec.owner ? await principalFromId(rec.owner) : defaultPrincipal(); // no owner: no one's (fail closed)
   const report = typeof s.template === 'string' ? s.template : null;
   let job;
   try {
     job = await createBatch({ template: s.template, items: s.items, itemsFrom: s.itemsFrom, format: s.format, output: s.output, webhook: s.webhook, fileName: s.fileName, pdfa: s.pdfa, sign: s.sign, schedule: { id: s.id, reason } }, undefined, principal);
   } catch (e) {
-    await audit('schedule.run', { actor: rec.owner || 'service', report, status: 'failed', detail: { schedule: s.id, reason, error: e.message } });
+    await audit('schedule.run', { actor: rec.owner || 'nobody', report, status: 'failed', detail: { schedule: s.id, reason, error: e.message } });
     throw e;
   }
-  await audit('schedule.run', { actor: rec.owner || 'service', report, format: job.format, detail: { schedule: s.id, reason, batch: job.id, items: job.total } });
+  await audit('schedule.run', { actor: rec.owner || 'nobody', report, format: job.format, detail: { schedule: s.id, reason, batch: job.id, items: job.total } });
   const cur = await readOne(s.id);
   if (cur) { cur.lastRunAt = new Date().toISOString(); cur.lastJobId = job.id; await save(cur); }
   return job;

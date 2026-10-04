@@ -14,7 +14,7 @@ import { serverFetch } from './safeFetch.js';
 import { jsonPath } from '@/engine/data/index.js';
 import { evalValue } from '@/engine/expr/evaluate.js';
 import { store } from './storage/index.js';
-import { principalId, principalFromId, defaultPrincipal } from './perms.js';
+import { principalId, principalFromId, defaultPrincipal, vet } from './perms.js';
 
 const DATA = path.join(process.cwd(), 'data');
 const JOBS = path.join(DATA, 'jobs');
@@ -82,10 +82,10 @@ export async function createBatch(spec, req, principal = defaultPrincipal()) {
 }
 
 /** A user's key sees its own jobs only; service keys (and accounts off) see all. */
-const mine = (p, job) => p.kind === 'open' || p.kind === 'service' || (job.owner || 'service') === principalId(p);
+const mine = (p, job) => { p = vet(p); return p.kind === 'open' || p.kind === 'service' || (p.kind === 'user' && !!job.owner && job.owner === principalId(p)); };
 
 /** @param {string} id @param {import('./perms.js').Principal} [p] */
-export async function getJob(id, p = { kind: 'service' }) {
+export async function getJob(id, p = defaultPrincipal()) {
   if (!/^b_[a-z0-9]+$/.test(id)) return null;
   try {
     const t = await store().get('jobs', id);
@@ -95,7 +95,7 @@ export async function getJob(id, p = { kind: 'service' }) {
 }
 
 /** @param {import('./perms.js').Principal} [p] */
-export async function listJobs(p = { kind: 'service' }) {
+export async function listJobs(p = defaultPrincipal()) {
   let names = [];
   try { names = await store().ids('jobs'); } catch { return []; }
   const out = [];
@@ -170,7 +170,7 @@ function itemName(job, item, i) {
 async function run(job, owner, stopAfter) {
   const { items, def } = job._work;
   // the owner as they are now: a user who lost access, or was disabled, gets no further items
-  const principal = await principalFromId(job.owner || 'service');
+  const principal = job.owner ? await principalFromId(job.owner) : defaultPrincipal(); // no owner: no one's
   // as the owner is now: the template must still be theirs to view; an inline definition needs a designer or a service
   await loadTemplate(job.templateRef || def, principal); // throws: the job fails (workOnce)
   job.status = 'running';

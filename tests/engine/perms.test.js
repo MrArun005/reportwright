@@ -305,13 +305,13 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     // carol leaves the finance group: the next run fails as soon as it starts
     await users.updateUser('carol@x.io', { groups: [] });
     const { runSchedule, getSchedule } = await import('../../src/server/schedules.js');
-    await expect(runSchedule(await getSchedule(sid))).rejects.toMatchObject({ status: 404 });
+    await expect(runSchedule(await getSchedule(sid, { kind: 'service' }))).rejects.toMatchObject({ status: 404 });
     await users.updateUser('carol@x.io', { groups: ['Finance'] });
     const { createBatch, workOnce, getJob } = await import('../../src/server/jobs.js');
     const job = await createBatch({ template: 'salary', items: [{ parameters: {} }], output: { type: 'none' }, format: 'csv' }, undefined, await perms.userPrincipal('carol@x.io'));
     await users.updateUser('carol@x.io', { groups: [] }); // access lost while queued
     await workOnce('test-runner');
-    expect(await getJob(job.id)).toMatchObject({ status: 'failed' });
+    expect(await getJob(job.id, { kind: 'service' })).toMatchObject({ status: 'failed' });
     expect(await getJob(job.id, await perms.userPrincipal('bob@x.io'))).toBe(null); // not bob's
     await users.updateUser('carol@x.io', { groups: ['Finance'] });
   });
@@ -483,8 +483,10 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
       expect((await v1.render.POST(req('/api/v1/render', { method: 'POST', body: { template: 'salary', format: 'csv' } }))).status).toBe(401);
     } finally { process.env.PW_API_KEYS = keep; }
     const { createSchedule, runSchedule } = await import('../../src/server/schedules.js');
-    const s = await createSchedule({ template: 'salary', cron: '0 7 * * *', items: [{ parameters: {} }], output: { type: 'none' } }, { kind: 'service', key: 'deadbeef' });
-    await expect(runSchedule(s)).rejects.toMatchObject({ status: 404 });
+    const svc = { kind: 'service', key: (await import('node:crypto')).createHash('sha256').update('svc-key').digest('hex').slice(0, 8) };
+    const s = await createSchedule({ template: 'salary', cron: '0 7 * * *', items: [{ parameters: {} }], output: { type: 'none' } }, svc);
+    process.env.PW_API_KEYS = keep.replace('svc-key,', ''); // the key is taken out of service
+    try { await expect(runSchedule(s)).rejects.toMatchObject({ status: 404 }); } finally { process.env.PW_API_KEYS = keep; }
   });
 
   it('review: a queued inline batch fails when its owner is now a viewer', async () => {
@@ -493,8 +495,42 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     await users.updateUser('bob@x.io', { role: 'viewer' });
     try {
       await workOnce('test-runner');
-      expect(await getJob(job.id)).toMatchObject({ status: 'failed' });
+      expect(await getJob(job.id, { kind: 'service' })).toMatchObject({ status: 'failed' });
     } finally { await users.updateUser('bob@x.io', { role: 'designer' }); }
+  });
+
+  it('review: a missing, partial, legacy or stale principal gets nothing with accounts on', async () => {
+    const crypto = await import('node:crypto');
+    const svcId = crypto.createHash('sha256').update('svc-key').digest('hex').slice(0, 8);
+    const bad = [undefined, null, {}, { kind: 'bogus' }, { kind: 'open' }, { kind: 'user' }, { kind: 'user', email: 'bob@x.io' },
+      { kind: 'user', email: 'bob@x.io', role: 'superuser', groups: [] }, { kind: 'user', email: 'nobody@x.io', role: 'admin', groups: [] },
+      { kind: 'user', email: 'bob@x.io', role: 'admin', groups: 'Finance' }, { kind: 'service', key: 'deadbeef' }, { kind: 'service', key: 42 }, { kind: 'anon' }];
+    for (const p of bad) {
+      for (const need of ['view', 'edit', 'manage']) await expect(perms.checkReport(p, 'salary', need), `${JSON.stringify(p)} ${need}`).rejects.toMatchObject({ status: 404 });
+      await expect(perms.canCreateIn(p, null), JSON.stringify(p)).rejects.toMatchObject({ status: 403 });
+      await expect(perms.setReportAccess(p, 'salary', { grants: [] }), JSON.stringify(p)).rejects.toMatchObject({ status: 404 });
+      await expect(perms.updateFolder(p, 'root', { grants: [] }), JSON.stringify(p)).rejects.toMatchObject({ status: 403 });
+      expect(await perms.visibleReports(p, [{ id: 'salary' }, { id: 'overview' }]), JSON.stringify(p)).toEqual([]);
+    }
+    // a role in the principal is not trusted over the stored user: bob as "admin" is still bob
+    await expect(perms.checkReport({ kind: 'user', email: 'bob@x.io', role: 'admin', groups: [] }, 'salary', 'view')).rejects.toMatchObject({ status: 404 });
+    // a service key that is configured now manages everything (documented); the same with no key id is the server itself
+    for (const need of ['view', 'edit', 'manage']) expect(await perms.checkReport({ kind: 'service', key: svcId }, 'salary', need)).toBe('manage');
+    // schedules and batches: a missing principal sees nothing, a record with no owner is no one's
+    const { listSchedules } = await import('../../src/server/schedules.js');
+    const { listJobs } = await import('../../src/server/jobs.js');
+    const { store } = await import('../../src/server/storage/index.js');
+    await store().put('schedules', 's_legacy01', JSON.stringify({ id: 's_legacy01', template: 'salary', cron: '0 7 * * *', items: [{ parameters: {} }], enabled: true, timezone: 'UTC', format: 'pdf' }));
+    try {
+      expect(await listSchedules()).toEqual([]);
+      expect(await listSchedules({ kind: 'open' })).toEqual([]);
+      expect(await listJobs()).toEqual([]);
+      const { runSchedule } = await import('../../src/server/schedules.js');
+      await expect(runSchedule({ id: 's_legacy01', template: 'salary', items: [{ parameters: {} }] })).rejects.toMatchObject({ status: 404 }); // runs as no one
+      const { loadTemplate } = await import('../../src/server/renderer.js');
+      await expect(loadTemplate(def('Inline'), { kind: 'open' })).rejects.toMatchObject({ status: 403 });
+      await expect(loadTemplate(def('Inline'), undefined)).rejects.toMatchObject({ status: 403 });
+    } finally { await store().remove('schedules', 's_legacy01'); }
   });
 
   it('a deleted report takes its permissions with it: a new report with the same id starts fresh', async () => {

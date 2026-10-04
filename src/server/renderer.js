@@ -9,7 +9,7 @@ import { exportCsv } from '@/exporters/csv.js';
 import { exportXlsx } from '@/exporters/xlsx.js';
 import { exportDocx } from '@/exporters/docx.js';
 import { createSubsetter } from '@/exporters/subset.js';
-import { readReportFor, defaultPrincipal } from './perms.js';
+import { readReportFor, defaultPrincipal, vet } from './perms.js';
 import { serverFetch } from './safeFetch.js';
 import { pdfSigner } from './sign.js';
 import { runSql } from './sql.js';
@@ -59,6 +59,7 @@ export function baseUrl(req) {
  * @param {any} template @param {import('./perms.js').Principal} [principal]
  */
 export async function loadTemplate(template, principal = defaultPrincipal()) {
+  principal = vet(principal);
   if (template && typeof template === 'object') {
     if (principal.kind === 'user' ? principal.role === 'viewer' : !['open', 'service'].includes(principal.kind)) throw Object.assign(new Error('Only a designer can render a definition sent in the request. Render a saved template by its id.'), { status: 403 });
     return template;
