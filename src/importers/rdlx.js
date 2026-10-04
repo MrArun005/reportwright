@@ -92,7 +92,8 @@ export const safeName = (n) => { let s = String(n ?? '').replace(/[^A-Za-z0-9_]/
 
 /** "Reports/Sub Report.rdlx-json" → "sub-report": the id the importer route gives that report (same rule as newId). */
 export function reportId(name) {
-  const base = String(name ?? '').split(/[\\/]/).pop().replace(/\.(rdlx-json|rdlx|rdl|json)$/i, '');
+  const base = String(name ?? '').split(/[\\/]/).pop()
+    .replace(/\.(rdlx-json|rdlx-master|rdlx|rdlc?|json|jrxml|jasper|rptdesign)$/i, '');
   return (base.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'report').slice(0, 48);
 }
 
@@ -270,7 +271,7 @@ const CONVERT = { tostring: 'CStr', todecimal: 'CDbl', todouble: 'CDbl', tosingl
 const MATH = { abs: 'Abs', floor: 'Floor', ceiling: 'Ceiling', sqrt: 'Sqrt', pow: 'Pow', truncate: 'Fix', sign: 'Sign', log: 'Log', log10: 'Log10', exp: 'Exp' };
 
 /**
- * @typedef {{ notes: string[], fields?: string, region?: string, scopes?: Map<string, string|null>, lit?: (s: string) => string }} EmitOpts
+ * @typedef {{ notes: string[], fields?: string, region?: string, scopes?: Map<string, string|null>, runScopes?: Map<string, string>, lit?: (s: string) => string }} EmitOpts
  * @param {any} n @param {EmitOpts} o @param {boolean} [res] a result position: style literals ("Red") are mapped here
  * @returns {{s: string, p: number}}
  */
@@ -461,6 +462,7 @@ function scopeArg(node, o, fname) {
   if (node.k === 'null') return o.region ? atom(q(o.region)) : null;
   if (node.k !== 'str') return no(`${fname} with a computed scope`);
   const s = node.v;
+  if (/^(runningvalue|rownumber)$/i.test(fname) && o.runScopes?.has(s)) return atom(q(o.runScopes.get(s)));
   if (!o.scopes) return atom(q(s));
   if (o.scopes.has(s)) { const m = o.scopes.get(s); return m ? atom(q(m)) : null; }
   o.notes.push(`the scope "${s}" is not known here, so ${fname} uses the current scope`);
@@ -582,7 +584,7 @@ export function translateExpression(src, opt = {}) {
     const v = escText(src);
     return { value: !opt.text && lit ? lit(v) : v, ok: true, notes };
   }
-  const o = { notes, fields: opt.fields, region: opt.region, scopes: opt.scopes, lit };
+  const o = { notes, fields: opt.fields, region: opt.region, scopes: opt.scopes, runScopes: opt.runScopes, lit };
   try {
     const ast = vbParse(src.trimStart().slice(1));
     let value = opt.text ? asTemplate(ast, o) : undefined;
@@ -647,6 +649,7 @@ function newContext() {
     /** @type {Set<string>} parameter names (lower case) */ params: new Set(),
     /** @type {Record<string, string>} embedded images: referenced as embedded:name, stored once */ imageData: {},
     /** @type {Set<string>} layer names declared or used */ layers: new Set(),
+    /** @type {Map<string, string>} banded list and group → the list whose rows a running value counts */ runScopes: new Map(),
     /** @type {{ name: string }[]} layers items use without a declaration */ extraLayers: [],
     /** @type {Set<string>} part libraries referenced (report ids) */ libraries: new Set(),
     cells: 0,
@@ -692,7 +695,7 @@ function uniq(cx, base, generated = false) {
  * @param {{ text?: boolean, what?: string, fields?: string, lit?: string }} [opt]
  */
 function ex(cx, t, v, ctx, opt = {}) {
-  const r = translateExpression(v, { text: opt.text, fields: opt.fields, lit: opt.lit, region: ctx.region, scopes: cx.scopes });
+  const r = translateExpression(v, { text: opt.text, fields: opt.fields, lit: opt.lit, region: ctx.region, scopes: cx.scopes, runScopes: cx.runScopes });
   if (!r.ok) t.approx(`${r.notes.join('; ')}; ${opt.text ? 'the expression is shown as text' : `${opt.what || 'that setting'} is left out`}.`);
   else for (const n of r.notes) t.approx(`${n}.`);
   return r.value;
@@ -846,15 +849,6 @@ const CONVERTERS = {
 
 /* ================================================================ reuse: layers, report parts, master reports */
 
-/**
- * A Pagewright report id for an ActiveReports file name ("Sales Library.rdlx-json" → "sales-library"): the id the
- * library or master must be saved under for the reference to work.
- */
-export function reportIdOf(file) {
-  const base = String(file ?? '').split(/[\\/]/).pop().replace(/\.(rdlx-json|rdlx-master|rdlx|rdl|rdlc|json)$/i, '');
-  const id = base.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64).replace(/-+$/, '');
-  return id || 'report';
-}
 // TargetDevice → Pagewright layer target
 const TARGETS = { all: 'all', screen: 'screen', paper: 'print', print: 'print', export: 'export', none: 'design' };
 /** The report's layers (not "default", where every item is anyway). */
@@ -903,7 +897,7 @@ function reportPart(ar, cx, ctx) {
   const lib = ar.Library ?? ar.LibraryName ?? ar.ReportLibrary;
   const part = ar.ReportPart ?? ar.PartName ?? ar.Part;
   if (!lib || !part) { t.drop('a report part without its library or part name was left out.'); return finish(cx, t, null); }
-  it.library = reportIdOf(lib);
+  it.library = reportId(lib);
   it.part = String(part);
   it.properties = {};
   for (const q of Array.isArray(ar.Properties) ? ar.Properties : []) {
@@ -2611,7 +2605,13 @@ function collectScopes(ar, cx) {
     const type = String(o.Type || '').toLowerCase();
     if (o.Name && typeof o.Name === 'string' && type) cx.reserved.add(o.Name);
     if (o.Name && ['table', 'tablix', 'list', 'chart', 'dvchart'].includes(type)) cx.scopes.set(o.Name, type.includes('chart') ? null : o.Name);
-    if (o.Name && type === 'bandedlist') cx.scopes.set(o.Name, o.DataSetName || null);
+    if (o.Name && type === 'bandedlist') {
+      cx.scopes.set(o.Name, o.DataSetName || null);
+      // running values and row numbers count the rows shown: the list of its detail rows (named as bandedlist() names it)
+      const det = (o.Groups || []).length ? `${o.Name}_Details` : o.Name;
+      cx.runScopes.set(o.Name, det);
+      for (const g of o.Groups || []) if (g?.Group?.Name) cx.runScopes.set(g.Group.Name, det);
+    }
     if (type === 'table') for (const g of o.TableGroups || []) { const G = g?.Group || g?.Grouping; if (G?.Name) cx.scopes.set(G.Name, G.Name); }
     if (type === 'bandedlist') for (const g of o.Groups || []) if (g?.Group?.Name) cx.scopes.set(g.Group.Name, null);
     if (type === 'list' && o.Group?.Name) cx.scopes.set(o.Group.Name, null);
@@ -2647,7 +2647,7 @@ function convertReport(ar, cx, opts) {
   const { dataSources, dataSets } = dataPart(ar, cx);
   const layers = layersOf(ar, cx);
   const parts = partsOf(ar, cx);
-  const master = ar.MasterReport ? reportIdOf(ar.MasterReport) : undefined;
+  const master = ar.MasterReport ? reportId(ar.MasterReport) : undefined;
   if (master) cx.warn(`The report uses the master report "${ar.MasterReport}": import it too and save it as the report "${master}". Its page header, footer and items frame this report; the body goes in its first content placeholder.`);
   const fnHint = 'Rewrite reusable formulas as report functions ("functions", written in the expression language and called as Code.Name(…)).';
   if (ar.Code) cx.warn(`The report has custom code (Code); Pagewright does not run JavaScript, and expressions that call it are shown as text. ${fnHint}`);

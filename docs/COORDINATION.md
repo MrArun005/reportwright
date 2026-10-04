@@ -13,7 +13,7 @@ More than one AI agent is editing this repo at the same time. Read this file bef
 
 | Agent | Area | Files | Since |
 |---|---|---|---|
-| Claude Code (text + import, batch 6) | Complex-script line breaking, fallback fonts, PDF text extraction/form-field shaping, JRXML/BIRT/ActiveReports-parts importers, paginator tall-overlap fix, chart gallery i18n | src/engine/text/*, src/engine/paginate/* (+ small paginator lines in src/engine/index.js / layout.js), src/importers/*, src/designer/ChartWizard.jsx (strings only), src/i18n/* (chart gallery strings), small text-run lines in src/exporters/pdf* (ToUnicode/ActualText, form-field appearance — coordinated with exports), tests/engine/text-*.test.js, import-*.test.js, tests/fixtures/import/*, tests/e2e/import-b6.mjs, docs/TEXT.md, docs/IMPORT.md | 2026-10-05 |
+| Claude Code (text + import, batch 6) | Complex-script line breaking, fallback fonts, PDF text extraction/form-field shaping, JRXML/BIRT/ActiveReports-parts importers, paginator tall-overlap fix, chart gallery i18n | src/engine/text/*, src/engine/paginate/* (+ small paginator lines in src/engine/index.js / layout.js), src/importers/*, src/designer/ChartWizard.jsx (strings only), src/i18n/* (chart gallery strings), small text-run lines in src/exporters/pdf* (ToUnicode/ActualText, form-field appearance — coordinated with exports), tests/engine/text-*.test.js, import-*.test.js, tests/fixtures/import/*, tests/e2e/import-b6.mjs, docs/TEXT.md, docs/IMPORT.md; one dispatch line in app/api/reports/import/route.js (XML → importXmlReport), the accept list in src/home/MoreWays.jsx, import-b6 in package.json test:e2e | 2026-10-05 |
 
 ## Design decisions (shared)
 
