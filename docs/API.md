@@ -55,6 +55,12 @@ Response headers: `x-pagewright-pages`, `x-pagewright-ms`, `x-pagewright-warning
 
 Errors are JSON `{ error, missingParameters? }`: 400 for a bad request or missing parameters, 401 for a bad key, 404 for an unknown template.
 
+Renders run in a pool of worker threads, never on the thread that answers requests. When the server is full the answer comes at once, with a `Retry-After` header (seconds): **429** when too many of your own renders are waiting, **503** when the queue is full or the wait would be longer than `PW_RENDER_MAX_WAIT_MS`. **504** when a render ran past the time limit (`PW_RENDER_TIMEOUT_MS`, which covers reading the template, fetching data, layout and export). Wait `Retry-After` seconds before you try again.
+
+### Health
+
+`GET /api/v1/health` (a service key, or an admin's key with accounts on): the render pool's workers (`size`, `alive`, `ready`, `busy`), queue depth by class (`interactive`, `background`), the estimated wait in ms, and totals since start (`done`, `failed`, `rejected`, `timedOut`, `crashed`, `recycled`, `dropped`).
+
 ### PDF passwords and permissions
 
 ```js
