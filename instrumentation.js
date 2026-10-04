@@ -18,5 +18,7 @@ export async function register() {
     startScheduler();
     // run queued batches here too (also ones another server left when it stopped); PW_WORKER=off for a web-only server
     if (process.env.PW_WORKER !== 'off') (await import('./src/server/jobs.js')).startWorker();
+    // start the render workers now (src/server/pool.js), so the first renders do not wait for them to load
+    (await import('./src/server/pool.js')).warmPool();
   }
 }

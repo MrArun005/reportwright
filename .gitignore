@@ -12,3 +12,4 @@ packages/*/LICENSE
 *.tgz
 packages/*/package.json
 dist-site/
+pw-worker/

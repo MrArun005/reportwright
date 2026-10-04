@@ -7,7 +7,8 @@ const nextConfig = {
   // the Docker image runs Next's standalone server (PW_STANDALONE=1 at build time); `next start` stays as it was
   ...(process.env.PW_STANDALONE ? { output: 'standalone' } : {}),
   // report definitions and fonts are read from disk by API routes
-  outputFileTracingIncludes: { '/api/**': ['./reports/**', './public/fonts/**', './public/harfbuzz-subset.wasm', './public/icc/**'] },
+  // pw-worker/: the render worker's own bundle (scripts/build-worker.mjs), for the standalone output, which has no src/
+  outputFileTracingIncludes: { '/api/**': ['./reports/**', './public/fonts/**', './public/harfbuzz-subset.wasm', './public/icc/**', './pw-worker/**'] },
   async headers() {
     return [
       // static assets the embeddable viewer needs on other sites

@@ -70,6 +70,9 @@ export async function apiPrincipal(req) {
 /** @deprecated kept for callers that only need yes/no: null when the key is good. */
 export async function authorize(req) { return (await apiPrincipal(req)).res || null; }
 
+/** Retry-After on a 429 or 503 from the render pool (src/server/pool.js). @param {any} e */
+export const busyHeaders = (e) => (e?.retryAfter ? { 'retry-after': String(e.retryAfter) } : undefined);
+
 export function fail(e) {
-  return Response.json({ error: e.message, missingParameters: e.missingParameters }, { status: e.status || (e.missingParameters ? 400 : 500) });
+  return Response.json({ error: e.message, missingParameters: e.missingParameters }, { status: e.status || (e.missingParameters ? 400 : 500), headers: busyHeaders(e) });
 }

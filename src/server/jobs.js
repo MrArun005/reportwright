@@ -9,7 +9,8 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 import { zipSync } from 'fflate';
 import { PDFDocument } from 'pdf-lib';
-import { loadTemplate, renderTo, baseUrl as defaultBase } from './renderer.js';
+import { loadTemplate, baseUrl as defaultBase } from './renderer.js';
+import { renderInPool } from './pool.js';
 import { serverFetch, checkTarget } from './safeFetch.js';
 import { jsonPath } from '@/engine/data/index.js';
 import { evalValue } from '@/engine/expr/evaluate.js';
@@ -217,13 +218,14 @@ async function run(job, owner, stopAfter) {
       try {
         if (ended) throw ended;
         const principal = await allowed().catch((e) => { throw (ended = new Error(`The owner may no longer run this report (${e.message}).`)); });
-        const r = await renderTo(def, { parameters: item.parameters, data: item.data, format: job.format, baseUrl: job.base, self: job.self, pdfa: job.pdfa, sign: job.sign, principal });
+        // in the render pool, behind interactive renders (allowed() checked the template as the owner is now)
+        const r = await renderInPool({ def, opt: { parameters: item.parameters, data: item.data, format: job.format, baseUrl: job.base, self: job.self, pdfa: job.pdfa, sign: job.sign, principal } }, { background: true });
         if (item.putUrl) {
           const res = await serverFetch(job.self, { internal: canDesign(principal) })(item.putUrl, { method: 'PUT', body: r.bytes, headers: { 'content-type': r.contentType } });
           if (!res.ok) throw new Error(`upload: HTTP ${res.status}`);
         }
         await fs.writeFile(path.join(itemDir, `${i}`), r.bytes);
-        job.results.push({ index: i, name, pages: r.model.pages.length, bytes: r.bytes.length, by: owner });
+        job.results.push({ index: i, name, pages: r.pages, bytes: r.bytes.length, by: owner });
         job.done++;
       } catch (e) {
         job.failed++;

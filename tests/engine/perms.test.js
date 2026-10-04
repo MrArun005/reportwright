@@ -532,8 +532,9 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     try {
       await thumbsIdle();
       expect((await thumb.GET(req(`/api/reports/${id}/thumb`, { who: 'admin' }), P(id))).status).toBe(202);
-      await new Promise(r => setTimeout(r, 300));
-      await globalThis.__pwThumbJobs.worker?.terminate(); // the worker thread dies while drawing
+      let slot;
+      while (!(slot = globalThis.__pwRenderPool.slots.find(s => s.job))) await new Promise(r => setTimeout(r, 20));
+      await slot.w.terminate(); // the render worker dies while drawing
       await thumbsIdle();
       expect((await thumb.GET(req(`/api/reports/${id}/thumb`, { who: 'admin' }), P(id))).status).toBe(202); // drawn again, not a cached 500
     } finally { await thumbsIdle(); await R.one.DELETE(req(`/api/reports/${id}`, { who: 'admin', method: 'DELETE' }), P(id)); }
