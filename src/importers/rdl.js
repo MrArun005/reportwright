@@ -645,7 +645,8 @@ function toRdlx(root, notes, year) {
     const pointer = kids(kid(scale, 'GaugePointers'))[0];
     const value = val(kid(pointer, 'GaugeInputValue'), 'Value');
     note('its ranges, ticks, extra pointers and frame are left out.');
-    return { ...it, DataSetName: raw(e, 'DataSetName'), Plots: value ? [{ PlotChartType: 'Gauge', Encodings: { Values: [{ Field: { Value: [value] } }] } }] : [],
+    const gcfg = { Sweep: num(raw(scale, 'SweepAngle')), PointerType: raw(pointer, 'Type') }; // shape from the sweep; Needle, Marker or Bar
+    return { ...it, DataSetName: raw(e, 'DataSetName'), Plots: value ? [{ PlotChartType: 'Gauge', Config: gcfg, Encodings: { Values: [{ Field: { Value: [value] } }] } }] : [],
       PlotArea: { Axes: [{ AxisType: 'Y', Min: num(raw(kid(scale, 'MinimumValue'), 'Value')), Max: num(raw(kid(scale, 'MaximumValue'), 'Value')) }] }, Legend: { Hidden: true } };
   }
 

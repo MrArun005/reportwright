@@ -449,4 +449,16 @@ export default {
   tableSizeHint: "Changez la largeur des colonnes et la hauteur des lignes pour redimensionner le tableau.",
   rowClearCellStyles: "Appliquer le style de la ligne à toutes les cellules",
   rowClearCellStylesHint: "Efface les styles propres des cellules de cette ligne (formats de nombre et alignement conservés) pour que le style de la ligne s’applique à toutes.",
+  /* ---- gauges and overlays (batch 1) ---- */
+  gaugeShape: "Forme de la jauge",
+  gaugeIndicator: "Valeur indiquée par",
+  gaugePointerColor: "Couleur de l’aiguille ou du curseur",
+  gaugeTicks: "Graduations et valeurs",
+  overlayInLegend: "Afficher dans la légende",
+  o_gaugeShape_half: "Demi-cercle",
+  o_gaugeShape_threeQuarter: "Trois quarts de cercle",
+  o_gaugeShape_full: "Cercle complet",
+  o_gaugeIndicator_needle: "Aiguille",
+  o_gaugeIndicator_pointer: "Curseur sur l’échelle",
+  o_gaugeIndicator_bar: "Barre le long de l’échelle",
 };

@@ -449,4 +449,16 @@ export default {
   tableSizeHint: "Ändern Sie Spaltenbreiten und Zeilenhöhen, um die Tabelle anzupassen.",
   rowClearCellStyles: "Zeilenstil für alle Zellen verwenden",
   rowClearCellStylesHint: "Entfernt die eigenen Stile der Zellen dieser Zeile (Zahlenformate und Ausrichtung bleiben), damit der Zeilenstil für alle gilt.",
+  /* ---- gauges and overlays (batch 1) ---- */
+  gaugeShape: "Form des Messinstruments",
+  gaugeIndicator: "Wert angezeigt durch",
+  gaugePointerColor: "Farbe von Nadel oder Zeiger",
+  gaugeTicks: "Skalenstriche und Werte",
+  overlayInLegend: "In der Legende zeigen",
+  o_gaugeShape_half: "Halbkreis",
+  o_gaugeShape_threeQuarter: "Dreiviertelkreis",
+  o_gaugeShape_full: "Vollkreis",
+  o_gaugeIndicator_needle: "Nadel",
+  o_gaugeIndicator_pointer: "Zeiger auf der Skala",
+  o_gaugeIndicator_bar: "Balken entlang der Skala",
 };

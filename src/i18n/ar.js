@@ -449,4 +449,16 @@ export default {
   tableSizeHint: "غيّر عرض الأعمدة وارتفاع الصفوف لتغيير حجم الجدول.",
   rowClearCellStyles: "استخدام نمط الصف لكل الخلايا",
   rowClearCellStylesHint: "يمسح الأنماط الخاصة بخلايا هذا الصف (مع الإبقاء على تنسيق الأرقام والمحاذاة) ليُطبَّق نمط الصف عليها كلها.",
+  /* ---- gauges and overlays (batch 1) ---- */
+  gaugeShape: "شكل المقياس",
+  gaugeIndicator: "عرض القيمة بواسطة",
+  gaugePointerColor: "لون الإبرة أو المؤشر",
+  gaugeTicks: "علامات التدريج والقيم",
+  overlayInLegend: "إظهار في وسيلة الإيضاح",
+  o_gaugeShape_half: "نصف دائرة",
+  o_gaugeShape_threeQuarter: "ثلاثة أرباع دائرة",
+  o_gaugeShape_full: "دائرة كاملة",
+  o_gaugeIndicator_needle: "إبرة",
+  o_gaugeIndicator_pointer: "مؤشر على التدريج",
+  o_gaugeIndicator_bar: "شريط على طول التدريج",
 };

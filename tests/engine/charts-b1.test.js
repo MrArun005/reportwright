@@ -141,3 +141,30 @@ describe('the new chart options draw the same in PDF and HTML', () => {
     expect(pdf.length).toBeGreaterThan(1000);
   });
 });
+
+describe('importers map gauge shapes and pointers', async () => {
+  const { importRdl } = await import('../../src/importers/rdl.js');
+  const { importRdlx } = await import('../../src/importers/rdlx.js');
+  const find = (def, name) => { let hit; const walk = (list) => { for (const i of list || []) { if (i.name === name) hit = i; walk(i.items); } }; for (const s of Object.values(def.sections || {})) walk(s.items); for (const b of def.bodies || []) walk(b.items); return hit; };
+  const NS = 'http://schemas.microsoft.com/sqlserver/reporting/2016/01/reportdefinition';
+  const gaugeRdl = (scaleExtra, pointerExtra) => `<?xml version="1.0"?><Report xmlns="${NS}"><DataSets><DataSet Name="D"><Query><DataSourceName>S</DataSourceName></Query><Fields><Field Name="v"><DataField>v</DataField></Field></Fields></DataSet></DataSets><ReportSections><ReportSection><Body><ReportItems>
+    <GaugePanel Name="G"><RadialGauges><RadialGauge Name="R1"><GaugeScales><RadialScale Name="S1">${scaleExtra}
+      <GaugePointers><RadialPointer Name="P1">${pointerExtra}<GaugeInputValue><Value>=Sum(Fields!v.Value)</Value></GaugeInputValue></RadialPointer></GaugePointers>
+      <MaximumValue><Value>100</Value></MaximumValue><MinimumValue><Value>0</Value></MinimumValue></RadialScale></GaugeScales></RadialGauge></RadialGauges>
+      <DataSetName>D</DataSetName><Top>0in</Top><Left>0in</Left><Height>2in</Height><Width>2in</Width></GaugePanel>
+    </ReportItems><Height>2in</Height></Body><Width>6in</Width><Page /></ReportSection></ReportSections></Report>`;
+  it('SSRS: the sweep angle picks the shape, a Marker or Bar pointer the indicator', () => {
+    expect(find(importRdl(gaugeRdl('<SweepAngle>320</SweepAngle>', '<Type>Marker</Type>')).definition, 'G')).toMatchObject({ chartType: 'gauge', gaugeShape: 'full', gaugeIndicator: 'pointer' });
+    expect(find(importRdl(gaugeRdl('<SweepAngle>270</SweepAngle>', '<Type>Bar</Type>')).definition, 'G')).toMatchObject({ gaugeShape: 'threeQuarter', gaugeIndicator: 'bar' });
+    const half = find(importRdl(gaugeRdl('', '')).definition, 'G');
+    expect(half.gaugeShape).toBeUndefined();
+    expect(half.gaugeIndicator).toBeUndefined();
+  });
+  it('ActiveReports: Config.Sweep and Config.PointerType', () => {
+    const r = importRdlx({ DataSources: [{ Name: 'S', ConnectionProperties: { DataProvider: 'JSON', ConnectString: 'jsondata={"rows":[{"v":1}]}' } }],
+      DataSets: [{ Name: 'D', Fields: [{ Name: 'v', DataField: 'v' }], Query: { DataSourceName: 'S', CommandText: 'jpath=$.rows.*' } }],
+      Body: { ReportItems: [{ Type: 'dvchart', Name: 'G', DataSetName: 'D', Width: '3in', Height: '3in', Plots: [{ PlotName: 'P', PlotChartType: 'Gauge', Config: { Sweep: 270, PointerType: 'Marker' }, Encodings: { Values: [{ Field: { Value: ['=Fields!v.Value'] } }] } }] }] } });
+    expect(find(r.definition, 'G')).toMatchObject({ chartType: 'gauge', gaugeShape: 'threeQuarter', gaugeIndicator: 'pointer' });
+    expect(r.warnings.join()).not.toMatch(/half circle/);
+  });
+});

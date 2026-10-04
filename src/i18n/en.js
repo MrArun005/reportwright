@@ -449,4 +449,16 @@ export default {
   tableSizeHint: "Change column widths and row heights to resize the table.",
   rowClearCellStyles: "Use the row style for every cell",
   rowClearCellStylesHint: "Clears the cells' own styles in this row (keeping number formats and alignment), so the row style applies to all of them.",
+  /* ---- gauges and overlays (batch 1) ---- */
+  gaugeShape: "Gauge shape",
+  gaugeIndicator: "Value shown by",
+  gaugePointerColor: "Needle or pointer colour",
+  gaugeTicks: "Tick marks and values",
+  overlayInLegend: "Show in the legend",
+  o_gaugeShape_half: "Half circle",
+  o_gaugeShape_threeQuarter: "Three-quarter circle",
+  o_gaugeShape_full: "Full circle",
+  o_gaugeIndicator_needle: "Needle",
+  o_gaugeIndicator_pointer: "Pointer on the scale",
+  o_gaugeIndicator_bar: "Bar along the scale",
 };

@@ -449,4 +449,16 @@ export default {
   tableSizeHint: "तालिका का आकार बदलने के लिए स्तंभ चौड़ाई और पंक्ति ऊँचाई बदलें।",
   rowClearCellStyles: "हर सेल पर पंक्ति शैली लगाएँ",
   rowClearCellStylesHint: "इस पंक्ति के सेलों की अपनी शैलियाँ हटाता है (संख्या प्रारूप और संरेखण रहते हैं), ताकि पंक्ति शैली सब पर लगे।",
+  /* ---- gauges and overlays (batch 1) ---- */
+  gaugeShape: "गेज का आकार",
+  gaugeIndicator: "मान दिखाने का तरीका",
+  gaugePointerColor: "सुई या पॉइंटर का रंग",
+  gaugeTicks: "टिक चिह्न और मान",
+  overlayInLegend: "लेजेंड में दिखाएँ",
+  o_gaugeShape_half: "अर्धवृत्त",
+  o_gaugeShape_threeQuarter: "तीन-चौथाई वृत्त",
+  o_gaugeShape_full: "पूर्ण वृत्त",
+  o_gaugeIndicator_needle: "सुई",
+  o_gaugeIndicator_pointer: "स्केल पर पॉइंटर",
+  o_gaugeIndicator_bar: "स्केल के साथ बार",
 };

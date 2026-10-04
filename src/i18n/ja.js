@@ -449,4 +449,16 @@ export default {
   tableSizeHint: "表のサイズは列の幅と行の高さで変えます。",
   rowClearCellStyles: "すべてのセルに行のスタイルを使う",
   rowClearCellStylesHint: "この行のセル独自のスタイルを消去し（数値書式と配置は残します）、行のスタイルがすべてに適用されるようにします。",
+  /* ---- gauges and overlays (batch 1) ---- */
+  gaugeShape: "ゲージの形",
+  gaugeIndicator: "値の表示方法",
+  gaugePointerColor: "針またはポインターの色",
+  gaugeTicks: "目盛りと値",
+  overlayInLegend: "凡例に表示",
+  o_gaugeShape_half: "半円",
+  o_gaugeShape_threeQuarter: "4分の3円",
+  o_gaugeShape_full: "全円",
+  o_gaugeIndicator_needle: "針",
+  o_gaugeIndicator_pointer: "目盛り上のポインター",
+  o_gaugeIndicator_bar: "目盛りに沿ったバー",
 };

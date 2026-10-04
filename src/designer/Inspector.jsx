@@ -15,6 +15,17 @@ import { ReuseSection, ThemeSection, LayerField, PartInstance, PartValues, Publi
 
 /** The designer's UI language (set by the Designer) as a translate function. */
 function useT() { const lang = useDesigner(s => s.lang); return (k, v) => t(lang, k, v); }
+/** Like useT, with a fallback for keys no table has (a property label or option added without a translation yet). */
+function useTk() { const lang = useDesigner(s => s.lang); return (k, fb) => { const s = t(lang, k); return s === k ? fb : s; }; }
+/**
+ * A property's label in the UI language: its labelKey, else p_<itemType>_<key> (a label special to one item type),
+ * else p_<key>, else the English label in the item spec. Style properties use the item type "style".
+ */
+const propLabel = (tk, spec, type) => (spec.labelKey ? tk(spec.labelKey, spec.label) : tk(`p_${type}_${spec.key}`, tk(`p_${spec.key}`, spec.label)));
+/** Select options in the UI language: o_<propKey>_<value>, else the option's own label (or its value). */
+const optLabels = (tk, key, options) => options.map(o => (typeof o === 'string' ? { value: o, label: tk(`o_${key}_${o}`, o) } : { ...o, label: tk(`o_${key}_${o.value}`, o.label) }));
+/** A property category heading in the UI language. */
+const catLabel = (tk, cat) => tk(`cat_${cat}`, cat);
 
 export default function Inspector() {
   const sel = useDesigner(s => s.sel);
@@ -53,14 +64,15 @@ function Geo({ label, value, onChange }) {
 
 function PropEditor({ p: spec, value, onChange, openExpr, dataSet, item }) {
   const T = useT();
-  const p = spec.labelKey ? { ...spec, label: T(spec.labelKey) } : spec; // newer props are translated
+  const tk = useTk();
+  const p = { ...spec, label: propLabel(tk, spec, item?.type || 'style'), ...(spec.options ? { options: optLabels(tk, spec.key, spec.options) } : {}) };
   const def = useDesigner(s => s.def);
   const families = useFontFamilies();
   switch (p.type) {
     case 'expr': return <Field label={p.label}><ExprInput value={value} onChange={onChange} onOpen={() => openExpr({ value, dataSet, onSave: onChange, title: p.label })} /></Field>;
     case 'html': return <Field label={p.label}><textarea className="input mono" rows={7} spellCheck={false} data-testid={`prop-${p.key}`} style={{ width: '100%', resize: 'vertical', fontSize: 11 }} value={value ?? ''} onChange={e => onChange(e.target.value === '' ? undefined : e.target.value)} /></Field>;
     case 'number': return p.expr ? <ExprOr p={p} value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet}><NumberInput value={value} onChange={onChange} /></ExprOr> : <Field label={p.label}><NumberInput value={value} onChange={onChange} /></Field>;
-    case 'bool': return <Check label={p.label} checked={value} onChange={onChange} />;
+    case 'bool': return p.defaultOn ? <Check label={p.label} checked={value !== false} onChange={v => onChange(v ? undefined : false)} /> : <Check label={p.label} checked={value} onChange={onChange} />;
     case 'select': if (p.number) return <Field label={p.label}><Select value={value == null ? '' : String(value)} onChange={v => onChange(v == null ? undefined : Number(v))} options={p.options} allowEmpty /></Field>; // stored as a number
       return p.expr ? <ExprOr p={p} value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet}><Select value={value} onChange={onChange} options={p.options} allowEmpty /></ExprOr> : <Field label={p.label}><Select value={value} onChange={onChange} options={p.options} allowEmpty /></Field>;
     case 'palette': return <PaletteEditor label={p.label} value={value} onChange={onChange} />;
@@ -152,9 +164,10 @@ function groupBy(props) {
 const setOrDelete = (obj, k, v) => { if (v === undefined || v === '') delete obj[k]; else obj[k] = v; };
 
 function StyleCats({ props, style, onSet, openExpr, dataSet, skipBox }) {
+  const tk = useTk();
   return groupBy(props.filter(p => !(skipBox && p.category === 'Box'))).map(([cat, ps]) => (
     <div className="cat" key={cat}>
-      <h5>{cat}</h5>
+      <h5>{catLabel(tk, cat)}</h5>
       <div className="grid2">
         {ps.map(p => <div key={p.key} style={p.type === 'color' || p.type === 'text' ? { gridColumn: '1 / -1' } : undefined}>
           <PropEditor p={p} value={style?.[p.key]} onChange={v => onSet(p.key, v)} openExpr={openExpr} dataSet={dataSet} />
@@ -167,6 +180,7 @@ function StyleCats({ props, style, onSet, openExpr, dataSet, skipBox }) {
 /* ---------------------------------------------------------------- item */
 function ItemProps({ item, section, openExpr }) {
   const T = useT();
+  const tk = useTk();
   const def = useDesigner(s => s.def);
   const spec = ITEMS[item.type];
   const [nameErr, setNameErr] = useState(null);
@@ -212,7 +226,7 @@ function ItemProps({ item, section, openExpr }) {
       {item.partProps && typeof item.partProps === 'object' && <PartValues item={item} />}
       {groupBy((spec?.props || []).filter(p => !p.showIf || p.showIf(item))).map(([cat, ps]) => (
         <div className="cat" key={cat}>
-          <h5>{cat}</h5>
+          <h5>{catLabel(tk, cat)}</h5>
           {ps.map(p => <PropEditor key={p.key} p={p} value={item[p.key]} onChange={v => set(p.key, v)} openExpr={openExpr} dataSet={dataSet} item={item} />)}
         </div>
       ))}
@@ -570,6 +584,7 @@ function OverlaysEditor({ value, onChange, openExpr, dataSet, chartType }) {
           {o.type === 'band' && <div className="grid2">{numOrExpr(o, i, 'from', 'From')}{numOrExpr(o, i, 'to', 'To')}</div>}
           {(o.type === 'line' || o.type === 'band') && chartType !== 'gauge' && <Field label={T('overlayAxis')}><Select value={o.axis || 'primary'} options={[{ value: 'primary', label: T('axisPrimary') }, { value: 'secondary', label: T('axisSecondary') }]} onChange={v => set(i, 'axis', v === 'primary' ? undefined : v)} aria-label={`${T('overlayAxis')} ${i + 1}`} /></Field>}
           {o.type === 'line' && <Check label={T('overlayShowValue')} checked={o.showValue !== false} onChange={v => set(i, 'showValue', v ? undefined : false)} />}
+          {chartType !== 'gauge' && <Check label={T('overlayInLegend')} checked={o.legend !== false} onChange={v => set(i, 'legend', v ? undefined : false)} />}
           <Field label="Label"><TextInput value={o.label} onChange={v => set(i, 'label', v)} aria-label="Overlay label" /></Field>
         </div>
       ))}

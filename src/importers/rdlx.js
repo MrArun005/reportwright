@@ -1981,7 +1981,13 @@ function chart(ar, cx, ctx, dv) {
     type = CHART_TYPES[pt];
     if (!type) { type = 'column'; t.approx(`the "${p.PlotChartType}" chart type is drawn as a column chart.`); }
     if (pt === 'pyramid') t.approx('the pyramid is drawn as a funnel (widest stage first).');
-    if (pt === 'gauge') t.approx('the gauge is drawn as a half-circle gauge from the first value.');
+    if (pt === 'gauge') {
+      // the sweep picks the shape (up to 200° a half circle, up to 290° three quarters, else full); Marker and Bar pointers map
+      const sw = Number(cfg.Sweep ?? cfg.SweepAngle), pk = String(cfg.PointerType || '').toLowerCase();
+      if (sw > 290) it.gaugeShape = 'full'; else if (sw > 200) it.gaugeShape = 'threeQuarter';
+      if (pk === 'marker') it.gaugeIndicator = 'pointer'; else if (pk === 'bar') it.gaugeIndicator = 'bar';
+      t.approx(`the gauge is drawn ${it.gaugeShape ? '' : 'as a half circle '}from its first value.`);
+    }
     const mode = String(cfg.AxisMode || '').toLowerCase();
     if (mode === 'polygonal' || (mode === 'radial' && (type === 'line' || type === 'area'))) type = 'radar';
     else if (mode === 'radial' && (type === 'scatter' || type === 'bubble')) type = 'polar';

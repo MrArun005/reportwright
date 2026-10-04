@@ -449,4 +449,16 @@ export default {
   tableSizeHint: "Mude a largura das colunas e a altura das linhas para redimensionar a tabela.",
   rowClearCellStyles: "Usar o estilo da linha em todas as células",
   rowClearCellStylesHint: "Limpa os estilos próprios das células desta linha (mantendo formatos de número e alinhamento), para que o estilo da linha valha para todas.",
+  /* ---- gauges and overlays (batch 1) ---- */
+  gaugeShape: "Formato do medidor",
+  gaugeIndicator: "Valor indicado por",
+  gaugePointerColor: "Cor do ponteiro ou marcador",
+  gaugeTicks: "Marcas e valores da escala",
+  overlayInLegend: "Mostrar na legenda",
+  o_gaugeShape_half: "Semicírculo",
+  o_gaugeShape_threeQuarter: "Três quartos de círculo",
+  o_gaugeShape_full: "Círculo completo",
+  o_gaugeIndicator_needle: "Ponteiro",
+  o_gaugeIndicator_pointer: "Marcador na escala",
+  o_gaugeIndicator_bar: "Barra ao longo da escala",
 };

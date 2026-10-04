@@ -449,4 +449,16 @@ export default {
   tableSizeHint: "更改列宽和行高即可调整表格大小。",
   rowClearCellStyles: "所有单元格使用行样式",
   rowClearCellStylesHint: "清除此行单元格自身的样式（保留数字格式和对齐），使行样式应用到所有单元格。",
+  /* ---- gauges and overlays (batch 1) ---- */
+  gaugeShape: "仪表形状",
+  gaugeIndicator: "数值显示方式",
+  gaugePointerColor: "指针或标记颜色",
+  gaugeTicks: "刻度线和数值",
+  overlayInLegend: "在图例中显示",
+  o_gaugeShape_half: "半圆",
+  o_gaugeShape_threeQuarter: "四分之三圆",
+  o_gaugeShape_full: "整圆",
+  o_gaugeIndicator_needle: "指针",
+  o_gaugeIndicator_pointer: "刻度上的标记",
+  o_gaugeIndicator_bar: "沿刻度的条形",
 };
