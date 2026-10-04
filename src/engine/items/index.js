@@ -311,6 +311,10 @@ register('table', {
   props: [
     { key: 'dataSet', label: 'Data set', type: 'dataset', category: 'Data' },
     { key: 'repeatHeader', label: 'Repeat header on each page', type: 'bool', category: 'Layout' },
+    { key: 'printAtBottom', label: 'Footer at the bottom of the page', type: 'bool', category: 'Layout' },
+    { key: 'overflow', label: 'Wider than the page', type: 'select', options: [{ value: 'paginate', label: 'Continue on the next pages' }], category: 'Layout' },
+    { key: 'repeatColumns', label: 'Columns repeated on each page set', type: 'number', category: 'Layout', showIf: (it) => it.overflow === 'paginate' },
+    { key: 'pageOrder', label: 'Page order', type: 'select', options: [{ value: 'down', label: 'Down, then across' }, { value: 'across', label: 'Across, then down' }], category: 'Layout', showIf: (it) => it.overflow === 'paginate' },
     { key: 'noRowsText', label: 'Text when no rows', type: 'text', category: 'Data' },
     { key: 'pageBreakBefore', label: 'Page break before', type: 'bool', category: 'Layout' },
     { key: 'pageBreakAfter', label: 'Page break after', type: 'bool', category: 'Layout' },
@@ -647,9 +651,15 @@ register('table', {
     } else emit(0, rows, base, [tableScope], '');
 
     // a total of the first rows only would be wrong: no footer in a partial (first pages) render
+    const fStart = units.length;
     const footerUnits = lc.rowBudget?.cut ? [] : (item.footer || []).map(r => layRow(r, base, 'footer'));
     endBand();
     if (footerUnits.length) footerUnits[0].keepWithPrevious = true;
+    if (item.printAtBottom && footerUnits.length && !lc.fixed) {
+      // the footer sits at the bottom of the page the table ends on; what follows starts on the next page
+      for (let k = fStart; k < units.length; k++) { units[k].atBottom = true; if (k > fStart) units[k].keepWithPrevious = true; }
+      units[units.length - 1].breakAfter = true;
+    }
 
     if (!lc.fixed) lc.regions?.push(region);
     // wider than the page: the columns continue on the next page set (spec §3.3)
@@ -722,6 +732,9 @@ register('list', {
     { key: 'groupBy', label: 'Group by (one row per group)', type: 'expr', category: 'Data' },
     { key: 'keepTogether', label: 'Keep each row on one page', type: 'bool', category: 'Layout' },
     { key: 'pageBreakBetween', label: 'Page break between rows', type: 'bool', category: 'Layout' },
+    { key: 'columns', label: 'Records across (grid)', type: 'number', category: 'Layout' },
+    { key: 'columnGap', label: 'Gap between records across (pt)', type: 'number', category: 'Layout', showIf: (it) => Number(it.columns) > 1 },
+    { key: 'newSection', label: 'Each row starts a section (page numbers restart)', type: 'bool', category: 'Layout' },
     { key: 'pageBreakBefore', label: 'Page break before', type: 'bool', category: 'Layout' },
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
   ],
@@ -737,6 +750,9 @@ register('list', {
     const units = [], tables = [];
     let y = 0;
     const listScope = { rows, index: -1, run: [] };
+    const ncol = Math.max(1, Math.min(50, Math.floor(Number(item.columns)) || 1));
+    const gap = Number(item.columnGap ?? 6) || 0;
+    let cells = null;
     reps.forEach((rs, i) => {
       if (lc.rowBudget && lc.rowBudget.left-- <= 0) { lc.rowBudget.cut = true; return; }
       listScope.index = i;
@@ -752,14 +768,25 @@ register('list', {
         const kids = related(c.aggRows, c);
         return kids === c.aggRows ? c : { ...c, aggRows: kids, fields: kids[0] || null };
       } };
-      const res = lc.layoutItems(item.items, child, { dx: item.x });
-      const fr = frame({ ...item, name: `${item.name}[${i + 1}]` }, child, rctx, res, item.keepTogether !== false ? `l:${item.name}:${i}:${lc.nextId()}` : null);
-      fr.units.forEach((u, k) => units.push({ ...u, top: u.top + y, breakBefore: u.breakBefore || (k === 0 && i > 0 && !!item.pageBreakBetween) }));
+      const k = i % ncol;
+      const res = lc.layoutItems(item.items, child, { dx: item.x + k * (item.w + gap) });
+      const fr = frame({ ...item, x: item.x + k * (item.w + gap), name: `${item.name}[${i + 1}]` }, child, rctx, res, item.keepTogether !== false ? `l:${item.name}:${i}:${lc.nextId()}` : null);
+      if (ncol > 1) {
+        // a grid list: n records side by side, each row of the grid one unit
+        if (k === 0) { cells = { top: y, height: 0, items: [], x0: item.x, x1: item.x + ncol * item.w + (ncol - 1) * gap, block: undefined }; units.push(cells); }
+        for (const u of fr.units) for (const it of shiftLocal(u.items, u.top)) cells.items.push(it);
+        cells.height = Math.max(cells.height, fr.height);
+        if (k === ncol - 1 || i === reps.length - 1) y += cells.height;
+        if (k === 0 && i > 0 && (item.pageBreakBetween || item.newSection)) cells.breakBefore = true;
+        if (k === 0 && item.newSection) cells.sectionStart = true;
+        return;
+      }
+      fr.units.forEach((u, j) => units.push({ ...u, top: u.top + y, breakBefore: u.breakBefore || (j === 0 && i > 0 && !!(item.pageBreakBetween || item.newSection)), ...(j === 0 && item.newSection ? { sectionStart: true } : {}) }));
       for (const t of fr.tables || []) tables.push({ ...t, top: t.top + y, bottom: t.bottom + y });
       y += fr.height;
     });
     if (!reps.length) units.push({ top: 0, height: 0, items: [] });
-    return { height: y, units, tables, width: item.w };
+    return { height: y, units, tables, width: ncol > 1 ? ncol * item.w + (ncol - 1) * gap : item.w };
   },
 });
 

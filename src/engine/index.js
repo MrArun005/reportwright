@@ -201,6 +201,8 @@ export async function render(def, opts = {}) {
             // Only items under a continued table move down by its repeated header.
             let off = 0;
             for (const t of p.repeat) if (u.x0 < t.x1 - EPS && t.x0 < u.x1 - EPS) off = Math.max(off, t.headerHeight);
+            // a footer printed at the bottom of the page (it is the last thing on its page)
+            if (u.atBottom) off += Math.max(0, contentH - off - (p.bottom - p.top));
             // the text of a merged cell, again at the top of a page its rows continue on
             if (u.cont && u.top <= p.top + EPS) items.push(...shiftItems(u.cont, cx, bodyTop + off));
             items.push(...shiftItems(u.items, cx, bodyTop + off + (u.top - p.top)));

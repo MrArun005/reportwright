@@ -189,3 +189,31 @@ describe('regions inside cells', () => {
     expect(out.pages[0].items.filter(i => i.t === 'path').length).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe('grid lists, footers at the bottom, orphaned headers', () => {
+  it('a list with columns: 3 puts three records side by side', async () => {
+    const rows = Array.from({ length: 7 }, (_, i) => ({ n: `Card ${i + 1}` }));
+    const list = { type: 'list', name: 'L', x: 0, y: 0, w: 150, h: 40, dataSet: 'Rows', columns: 3, columnGap: 10, items: [{ type: 'textbox', name: 'tb', x: 0, y: 0, w: 150, h: 40, value: '=Fields.n' }] };
+    const pg = (await render(report([list], { data: { rows } }), { fontStore })).pages[0];
+    const at = (s) => { const t = textAt(pg, s)[0]; return [t.clip.x, t.clip.y]; };
+    expect(at('Card 1')).toEqual([36, 36]);
+    expect(at('Card 2')).toEqual([196, 36]);
+    expect(at('Card 3')).toEqual([356, 36]);
+    expect(at('Card 4')).toEqual([36, 76]);
+    expect(at('Card 7')).toEqual([36, 116]);
+  });
+  it('printAtBottom: the footer sits at the bottom of the page, what follows starts on the next', async () => {
+    const t = table({ printAtBottom: true, detail: [{ height: 16, cells: [{ value: '=Fields.name' }, null, null] }], footer: [{ height: 16, cells: [{ value: 'Signed' }, null, null] }] });
+    const after = { type: 'textbox', name: 'after', x: 0, y: 60, w: 200, h: 14, value: 'Next' };
+    const out = await render(report([t, after], { data }), { fontStore });
+    const signed = textAt(out.pages[0], 'Signed')[0];
+    expect(signed.clip.y + signed.clip.h).toBeCloseTo(841.89 - 36, 2); // A4 height less the bottom margin
+    expect(texts(out.pages[1])).toEqual(['Next']);
+  });
+  it('a group header never ends a page', async () => {
+    const rows = Array.from({ length: 200 }, (_, i) => ({ g: `G${Math.floor(i / 7)}`, name: `n${i}` }));
+    const t = table({ groups: [{ expr: '=Fields.g', header: [{ height: 16, cells: [{ value: '=Fields.g' }, null, null] }] }], detail: [{ height: 16, cells: [{ value: '=Fields.name' }, null, null] }] });
+    const out = await render(report([t], { data: { rows } }), { fontStore });
+    for (const p of out.pages) expect(texts(p).at(-1)).toMatch(/^n/);
+  });
+});
