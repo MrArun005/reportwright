@@ -1054,6 +1054,7 @@ register('barcode', {
     { key: 'quietZone', label: 'Quiet zone (pt of white around the code)', type: 'number', category: 'Barcode' },
     { key: 'rotate', label: 'Rotate', type: 'select', options: ['0', '90', '180', '270'], category: 'Barcode' },
     ...BARCODE_OPTIONS.map(o => ({ key: o.key, label: o.label, type: o.enum ? 'select' : o.bool ? 'bool' : o.size ? 'text' : 'number', options: o.enum, category: 'Barcode options', showIf: (it) => o.for.includes(it.symbology || 'code128') })),
+    { key: 'action', label: 'Action', type: 'action', category: 'Interactivity' },
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
   ],
   layout(item, lc) {
@@ -1085,6 +1086,7 @@ register('barcode', {
       items.push(...paintBox({ x: bx + q, y: above ? by + q : by + bh - q - th, w: bw - 2 * q, h: th, st: { ...st, padding: 0, verticalAlign: above ? 'top' : 'bottom', textAlign: st.textAlign === 'auto' ? 'center' : st.textAlign }, tl, m: lc.m }));
     }
     if (a) items = items.map(i => ({ ...i, rotate: { a, cx, cy } }));
+    addInteractivity(items, item, ctx, lc, { x: item.x, y: 0, w: item.w, h: item.h }); // after the turn: the hot spot is the item's box
     return { height: item.h, units: [{ top: 0, height: item.h, items }] };
   },
 });

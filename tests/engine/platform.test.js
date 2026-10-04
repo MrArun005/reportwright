@@ -213,6 +213,19 @@ describe('barcodes', () => {
       expect(s.w / s.h, type).toBeCloseTo(1, 1);
     }
   });
+  it('a barcode with an action is a link region in the model and the PDF', async () => {
+    const m = await render(report([
+      { type: 'barcode', name: 'Q', x: 0, y: 0, w: 100, h: 100, symbology: 'qrcode', value: 'https://example.com/q', action: { type: 'url', url: 'https://example.com/q' } },
+      { type: 'barcode', name: 'B', x: 0, y: 120, w: 160, h: 48, symbology: 'code128', value: 'ABC', rotate: '90', action: { type: 'bookmark', target: 'Here' } },
+    ]), { fontStore });
+    const links = m.pages[0].items.filter(i => i.t === 'link');
+    expect(links.map(l => l.action)).toEqual([{ type: 'url', href: 'https://example.com/q' }, { type: 'bookmark', target: 'Here' }]);
+    expect(links[0]).toMatchObject({ x: 36, y: 36, w: 100, h: 100 });
+    expect(links[1].rotate).toBeUndefined(); // the hot spot is the item's box, not turned with the bars
+    const doc = await PDFDocument.load(await exportPdf(m, fontStore));
+    const a = doc.context.lookup(doc.getPage(0).node.lookup(PDFName.of('Annots'), PDFArray).get(0));
+    expect(String(a.lookup(PDFName.of('A')).lookup(PDFName.of('URI')))).toContain('https://example.com/q');
+  });
 });
 
 // Security review of 8086120: crafted images must be rejected quickly, never decoded at a size the caps forbid.
