@@ -29,8 +29,8 @@ function special(cp) {
 const cjk = (cp) => (cp >= 0x2e80 && cp <= 0x9fff) || (cp >= 0xac00 && cp <= 0xd7af) || (cp >= 0xf900 && cp <= 0xfaff)
   || (cp >= 0xff00 && cp <= 0xffef) || (cp >= 0x20000 && cp <= 0x3ffff);
 // Kinsoku: never at the start of a line / never at the end of one.
-const NO_START = new Set('、。，．・：；？！ー）」』】〕〉》〗〙〟’”｝｠ぁぃぅぇぉっゃゅょゎゕゖァィゥェォッャュョヮヵヶ々〻‐゠–〜～…‥,.!?:;)]}%');
-const NO_END = new Set('（「『【〔〈《〖〘〝‘“｛｟([{');
+const NO_START = new Set('、。，．・：；？！ー）」』】〕〉》〗〙〟’”｝｠ぁぃぅぇぉっゃゅょゎゕゖァィゥェォッャュョヮヵヶ々〻‐゠–〜～…‥,.!?:;)]}%ゝゞヽヾ゛゜ㇰㇱㇲㇳㇴㇵㇶㇷㇸㇹㇺㇻㇼㇽㇾㇿ｡｣､･ｰ％］｠');
+const NO_END = new Set('（「『【〔〈《〖〘〝‘“｛｟([{［｢＄￥￡');
 /** Only text with a character from U+0590 up can need the complex path (a quick test before the per-character one). */
 const MAYBE = /[^\u0000-\u058f]/;
 const RTL_OR_CONTROLS = /[֐-ࣿיִ-﷿ﹰ-﻾‎‏‪-‮⁦-⁩]|[\uD802\uD803\uD83A]/;
@@ -54,9 +54,45 @@ function scriptOf(cp) {
   }
   return s;
 }
-const graphemes = typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function'
-  ? (/** @type {string} */ s) => [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(s)].map(x => x.segment)
-  : (/** @type {string} */ s) => [...s];
+const INTL = typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function';
+const GRAPHEMES = INTL ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
+const JOINS = /[\p{M}\u200c\u200d\ufe00-\ufe0f]/u;
+/**
+ * Grapheme clusters: where a too-long word may break. Intl.Segmenter when there is one; else code points with
+ * marks, joiners and variation selectors kept on the character before (and the character after a ZWJ).
+ * @param {string} s @param {boolean} [intl] false: the fallback (tests)
+ */
+export function clusters(s, intl = true) {
+  if (intl && GRAPHEMES) return [...GRAPHEMES.segment(s)].map(x => x.segment);
+  /** @type {string[]} */
+  const out = [];
+  for (const ch of s) {
+    if (out.length && (JOINS.test(ch) || out[out.length - 1].endsWith('\u200d'))) out[out.length - 1] += ch;
+    else out.push(ch);
+  }
+  return out;
+}
+const graphemes = (/** @type {string} */ s) => clusters(s);
+
+/** Scripts written without spaces between words (UAX #14 class SA): Thai, Lao, Myanmar, Khmer, Tai Tham, Tai Viet. */
+const SA = /[\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff\u19e0-\u19ff\u1a20-\u1aaf\ua9e0-\ua9ff\uaa60-\uaadf]/;
+const WORDS = INTL ? new Intl.Segmenter(undefined, { granularity: 'word' }) : null;
+/**
+ * Where a line may break inside text written without spaces: the word boundaries ICU's dictionaries find
+ * (Node and browsers ship them for Thai, Lao, Khmer and Myanmar), as UTF-16 indices next to an SA character.
+ * Without a segmenter there are none (UAX #14 then treats SA as letters), and a word too long for its line
+ * breaks between grapheme clusters, as any long word does.
+ * @param {string} text @param {Intl.Segmenter|null} [segmenter]
+ * @returns {Set<number>}
+ */
+export function saBreaks(text, segmenter = WORDS) {
+  const out = new Set();
+  if (!segmenter) return out;
+  for (const { index } of segmenter.segment(text)) {
+    if (index > 0 && (SA.test(text[index]) || SA.test(text[index - 1]))) out.add(index);
+  }
+  return out;
+}
 
 /**
  * @typedef {{ font: string, x: number, w: number, text: string, rtl?: boolean, shaped?: boolean, glyphs: number[] }} Run
@@ -257,15 +293,19 @@ export class TextMeasurer {
 
   /** @param {string} para @param {string} key @param {number} size @param {number} maxWidth @param {'ltr'|'rtl'} dir @param {number} sp @param {any[]} out */
   wrapComplex(para, key, size, maxWidth, dir, sp, out) {
-    // tokens: words between spaces (spaces collapse, as on the fast path), and single CJK characters
+    // tokens: words between spaces (spaces collapse, as on the fast path), single CJK characters, and the
+    // dictionary words of Thai, Lao, Khmer and Myanmar
     /** @type {{ text: string, space: boolean }[]} */
     const tokens = [];
-    let cur = '', space = false, prev = '';
+    const sa = SA.test(para) ? saBreaks(para) : null;
+    let cur = '', space = false, prev = '', at = 0;
     for (const ch of para) {
+      const i = at;
+      at += ch.length;
       if (ch === ' ') { if (cur) { tokens.push({ text: cur, space }); cur = ''; } space = tokens.length > 0; prev = ''; continue; }
       const cp = /** @type {number} */ (ch.codePointAt(0));
       const pcp = prev ? /** @type {number} */ (prev.codePointAt(0)) : 0;
-      if (cur && (cjk(cp) || cjk(pcp)) && !NO_START.has(ch) && !NO_END.has(prev) && !STICKY.test(ch)) { tokens.push({ text: cur, space }); cur = ''; space = false; }
+      if (cur && (sa?.has(i) || (cjk(cp) || cjk(pcp)) && !NO_START.has(ch) && !NO_END.has(prev) && !STICKY.test(ch))) { tokens.push({ text: cur, space }); cur = ''; space = false; }
       cur += ch; prev = ch;
     }
     if (cur) tokens.push({ text: cur, space });
