@@ -107,30 +107,41 @@ const loadReport = async (rid) => {
   return r.json();
 };
 export const fetchReport = loadReport;
-async function renderMain(def, params, state, reportId) {
+async function renderMain(def, params, state, reportId, exportData = false) {
   await customFonts();
-  return render(def, { parameters: params, state, reportId, fontStore: fontStore(), baseUrl: origin(), loadReport, fetch: reportFetch(origin()) }); // a report reads data, never calls our API as the viewer
+  return render(def, { parameters: params, state, reportId, ...(exportData ? {} : { exportData: false }), fontStore: fontStore(), baseUrl: origin(), loadReport, fetch: reportFetch(origin()) }); // a report reads data, never calls our API as the viewer
 }
 
 /**
  * @param {string} [reportId] the saved report: the server runs its SQL sources
- * @param {{ onPartial?: (model: any) => void }} [opt] onPartial: gets the first pages of a long report first
+ * @param {{ onPartial?: (model: any) => void, exportData?: boolean }} [opt] onPartial: gets the first pages of a long report first.
+ *   exportData: with the table data Excel, CSV, Word, PowerPoint, HTML and the accessible PDF need (a view goes without)
  * @returns {Promise<any>} page model
  */
-export async function renderReport(def, params = {}, state = {}, reportId = undefined, { onPartial } = {}) {
+export async function renderReport(def, params = {}, state = {}, reportId = undefined, { onPartial, exportData = false } = {}) {
   const w = getWorker();
-  if (!w) return renderMain(def, params, state, reportId);
+  if (!w) return renderMain(def, params, state, reportId, exportData);
   const fonts = await customFonts(); // the worker has its own copy of the font list
   return new Promise((resolve, reject) => {
     const id = ++seq;
-    waiting.set(id, { resolve, reject, onPartial, retry: () => renderMain(def, params, state, reportId).then(resolve, reject) });
-    w.postMessage({ id, def, params, state, reportId, fonts, firstPages: onPartial ? 2 : 0 });
+    waiting.set(id, { resolve, reject, onPartial, retry: () => renderMain(def, params, state, reportId, exportData).then(resolve, reject) });
+    w.postMessage({ id, def, params, state, reportId, fonts, firstPages: onPartial ? 2 : 0, exportData });
   });
 }
 
 export const usingWorker = () => !!worker && !workerBroken;
 
-export async function pdfBlob(model, title) {
+/** The sRGB profile a PDF/A file carries (public/icc). */
+async function iccProfile() {
+  const r = await fetch(`${origin()}/icc/sRGB-v2-magic.icc`);
+  if (!r.ok) throw new Error(`the PDF/A colour profile did not load (HTTP ${r.status})`);
+  return new Uint8Array(await r.arrayBuffer());
+}
+
+/**
+ * @param {{ tagged?: { lang?: string }, pdfa?: boolean }} [o] tagged: an accessible PDF (PDF/UA); pdfa: PDF/A (2a when tagged)
+ */
+export async function pdfBlob(model, title, o = {}) {
   const store = fontStore();
   await customFonts();
   await store.load(fontKeysOf(model));
@@ -138,6 +149,8 @@ export async function pdfBlob(model, title) {
   const bytes = await exportPdf(model, store, {
     title,
     subset: subsetter,
+    tagged: o.tagged,
+    pdfa: o.pdfa ? { icc: await iccProfile() } : undefined,
     // a report's image: a GET under the same rules as its data (no cookies to our other routes or to other sites)
     fetchImage: async (src) => { try { const r = await reportFetch(origin())(src); return r.ok ? new Uint8Array(await r.arrayBuffer()) : null; } catch { return null; } },
   });

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { renderReport, pdfBlob, usingWorker, origin, fetchReport, loadModelFonts, loadReportFonts } from './engineClient.js';
 import { reportFetch } from './dataFetch.js';
 import { ALL_FONT_KEYS } from '@/engine/text/fonts.js';
-import { exportBlob } from './exports.js';
+import { exportBlob, EXPORT_DEFAULTS, needsExportData } from './exports.js';
 import { pageToSvg } from '@/exporters/svg.js';
 import { parameterOptions } from '@/engine/index.js';
 import { safeUrl } from '@/engine/url.js';
@@ -49,7 +49,7 @@ const Frozen = ({ page, region, w, h, scale }) => {
 const MODES = ['single', 'continuous', 'galley'];
 
 /**
- * @typedef {{ page: number, pages: number, goTo: (n: number) => void, run: () => void, print: () => void, exportAs: (fmt: 'pdf'|'xlsx'|'docx'|'html'|'csv'|'json') => void }} ViewerApi
+ * @typedef {{ page: number, pages: number, goTo: (n: number) => void, run: () => void, print: () => void, exportAs: (fmt: 'pdf'|'xlsx'|'docx'|'pptx'|'html'|'csv'|'json') => void }} ViewerApi
  * @typedef {{ id: string, label: string, title?: string, after?: string, onClick?: (api: ViewerApi) => void }} ToolbarItem
  * @param {{ definition: any, reportId?: string, params?: Record<string,string>, title?: string, compact?: boolean, autoRun?: boolean, lang?: string,
  *   onDrill?: (report: string, params: object) => void, exportHtmlOptions?: object,
@@ -87,6 +87,10 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   const [canFullScreen, setCanFullScreen] = useState(false);
   const [narrow, setNarrow] = useState(false);
   const [menu, setMenu] = useState(false);
+  // Export options (accessible PDF, PDF/A, Excel formulas, kind of HTML file): kept in this browser
+  const [xopt, setXopt] = useState(() => { try { return { ...EXPORT_DEFAULTS, ...JSON.parse(localStorage.getItem('pw-export-options') || '{}') }; } catch { return { ...EXPORT_DEFAULTS }; } });
+  const [xmenu, setXmenu] = useState(false);
+  const setX = (k, v) => setXopt((o) => { const n = { ...o, [k]: v }; try { localStorage.setItem('pw-export-options', JSON.stringify(n)); } catch { /* private window */ } return n; });
   const [frozen, setFrozen] = useState(null); // { page, region }: the table header kept in view
   const root = useRef(null);
   const scroller = useRef(null);
@@ -314,15 +318,19 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
 
   // Galley view shows one long page; print and the exports are of the paged report. A report with layers (or a
   // master, which may bring layers) renders again for the print or export target: a screen-only layer stays on screen.
-  const pagedModel = (target) => (galley || definition.layers?.length || definition.master ? renderReport(definition, params, { ...state, target }, reportId) : model);
+  // A view renders without table data (render option exportData): Excel, CSV, Word, PowerPoint, HTML and the accessible PDF render again with it.
+  const pagedModel = (target, exportData = false) => (galley || definition.layers?.length || definition.master || (exportData && model?.regions == null) ? renderReport(definition, params, { ...state, target }, reportId, { exportData }) : model);
 
   const doExport = async (fmt) => {
     if (!model) return;
     setExporting(fmt);
     try {
-      const m = await pagedModel('export');
-      const blob = fmt === 'pdf' ? await pdfBlob(m, definition.name) : await exportBlob(fmt, m, definition, { params, state, lang, ...(exportHtmlOptions || {}), ...(level.id ? { reportId: level.id } : {}) });
-      const ext = { pdf: 'pdf', xlsx: 'xlsx', docx: 'docx', html: 'html', csv: 'csv', json: 'json' }[fmt];
+      const m = await pagedModel('export', needsExportData(fmt, xopt));
+      const strings = { pages: T('htmlPages'), tables: T('htmlTables'), all: T('htmlAll'), filter: T('htmlFilter'), toggle: T('htmlToggle'), sortAsc: T('htmlSortAsc'), sortDesc: T('htmlSortDesc') };
+      const blob = fmt === 'pdf'
+        ? await pdfBlob(m, definition.name, { tagged: xopt.pdfua ? { lang: definition.locale || lang } : undefined, pdfa: xopt.pdfa })
+        : await exportBlob(fmt, m, definition, { params, state, lang, options: xopt, strings, ...(exportHtmlOptions || {}), ...(level.id ? { reportId: level.id } : {}) });
+      const ext = { pdf: 'pdf', xlsx: 'xlsx', docx: 'docx', pptx: 'pptx', html: 'html', csv: 'csv', json: 'json' }[fmt];
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = `${(definition.name || 'report').replace(/[^\w-]+/g, '-')}.${ext}`;
@@ -422,9 +430,16 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     exportItem('pdf', 'pdf', 'PDF'),
     exportItem('excel', 'xlsx', 'Excel'),
     exportItem('word', 'docx', 'Word', { title: T('wordHint') }),
+    exportItem('powerpoint', 'pptx', 'PowerPoint', { title: T('pptxHint') }),
     exportItem('html', 'html', 'HTML'),
     exportItem('csv', 'csv', 'CSV'),
     exportItem('json', 'json', 'JSON', { title: T('jsonHint') }),
+    {
+      id: 'exportOptions', group: 'export',
+      node: <span className="vexp">
+        <button type="button" className="btn sm icon" aria-label={T('exportOptions')} title={T('exportOptions')} aria-expanded={xmenu} aria-haspopup="true" data-testid="export-options" onClick={() => setXmenu(v => !v)}>⚙</button>
+      </span>,
+    },
   ].filter(Boolean);
   const items = arrangeToolbar(builtIns, toolbar || {});
   const GROUPS = { paging: T('groupPaging'), zoom: T('groupZoom'), view: T('groupView'), export: T('groupExport') };
@@ -449,9 +464,13 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   // phone layout: the main items stay in the bar, the rest go into the "more" menu
   const inBar = narrow ? items.filter(i => i.primary) : items;
   const inMenu = narrow ? items.filter(i => !i.primary) : [];
-  const onRootPointerDown = (e) => { if (menu && !e.target.closest?.('.vmenu, .vmore')) setMenu(false); };
+  const onRootPointerDown = (e) => {
+    if (menu && !e.target.closest?.('.vmenu, .vmore')) setMenu(false);
+    if (xmenu && !e.target.closest?.('.vexp')) setXmenu(false);
+  };
   const onRootKeyDown = (e) => {
     if (e.key !== 'Escape') return;
+    if (xmenu) setXmenu(false);
     if (menu) setMenu(false);
     else if (narrow && side) setPanel(null);
   };
@@ -492,6 +511,22 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
           <span className="vmore-wrap">
             <button type="button" className="btn sm icon vmore" aria-label={T('more')} title={T('more')} aria-expanded={menu} onClick={() => setMenu(v => !v)}>⋯</button>
             {menu && <div className="vmenu" role="group" aria-label={T('more')}>{renderItems(inMenu)}</div>}
+          </span>
+        )}
+        {xmenu && (
+          <span className="vmore-wrap vexp">
+            <div className="vmenu" role="group" aria-label={T('exportOptions')} style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+              <label title={T('optPdfUaHint')}><input type="checkbox" checked={xopt.pdfua} onChange={e => setX('pdfua', e.target.checked)} data-testid="opt-pdfua" /> {T('optPdfUa')}</label>
+              <label><input type="checkbox" checked={xopt.pdfa} onChange={e => setX('pdfa', e.target.checked)} data-testid="opt-pdfa" /> {T('optPdfA')}</label>
+              <label><input type="checkbox" checked={xopt.formulas} onChange={e => setX('formulas', e.target.checked)} data-testid="opt-formulas" /> {T('optFormulas')}</label>
+              <label>{T('optHtml')}{' '}
+                <select className="select" value={xopt.html} onChange={e => setX('html', e.target.value)} data-testid="opt-html">
+                  <option value="interactive">{T('optHtmlInteractive')}</option>
+                  <option value="tables">{T('optHtmlTables')}</option>
+                  <option value="static">{T('optHtmlStatic')}</option>
+                </select>
+              </label>
+            </div>
           </span>
         )}
       </div>
