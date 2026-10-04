@@ -34,7 +34,7 @@ const rid = () => `b_${Date.now().toString(36)}${crypto.randomBytes(3).toString(
 const save = (job) => store().put('jobs', job.id, JSON.stringify(job, null, 2));
 
 export function publicJob(job) {
-  const { items, _def, _work, owner, ...rest } = job;
+  const { items, _def, _work, owner, ownerKey, ...rest } = job;
   return { ...rest, total: job.total, done: job.done, failed: job.failed };
 }
 
@@ -75,7 +75,7 @@ export async function createBatch(spec, req, principal = defaultPrincipal()) {
     id: rid(), status: 'queued', createdAt: new Date().toISOString(), template: typeof spec.template === 'string' ? spec.template : def.name,
     templateRef: typeof spec.template === 'string' ? spec.template : null,
     format, output: spec.output || { type: 'zip' }, webhook: spec.webhook || null, fileName: spec.fileName || null, schedule: spec.schedule || null, pdfa: !!spec.pdfa, sign: !!spec.sign,
-    total: items.length, done: 0, failed: 0, results: [], errors: [], failedItems: [], base, self, owner: principalId(principal), _work: { items, def },
+    total: items.length, done: 0, failed: 0, results: [], errors: [], failedItems: [], base, self, owner: principalId(principal), ownerKey: vet(principal).viaKey || null, _work: { items, def },
   };
   await save(job);
   poke();
@@ -174,7 +174,7 @@ async function run(job, owner, stopAfter) {
   // as the owner is now: the template must still be theirs to view; an inline definition needs a designer or a service.
   // Checked at the start (throws: the job fails, workOnce) and again before every item.
   const allowed = async () => {
-    const p = job.owner ? await principalFromId(job.owner) : defaultPrincipal(); // no owner: no one's
+    const p = job.owner ? await principalFromId(job.owner, job.ownerKey) : defaultPrincipal(); // no owner: no one's
     await loadTemplate(job.templateRef || def, p);
     return p;
   };

@@ -88,8 +88,23 @@ async function asNow(p) {
   return q.kind === 'user' && p.viaKey ? { ...q, viaKey: p.viaKey } : q;
 }
 
-/** The principal named by principalId, as it is now. @param {string} id @returns {Promise<Principal>} */
-export async function principalFromId(id) {
+/** The ids of the keys in PW_API_KEYS now that act as this user ("email|key"). @param {string} email */
+function userKeyIds(email) {
+  return new Set((process.env.PW_API_KEYS || '').split(',').map(x => x.trim()).filter(x => x.indexOf('|') > 0 && x.slice(0, x.indexOf('|')).trim().toLowerCase() === email)
+    .map(x => crypto.createHash('sha256').update(x.slice(x.indexOf('|') + 1).trim()).digest('hex').slice(0, 8)));
+}
+
+/**
+ * The principal named by principalId, as it is now. viaKey: the user's API key that made the record (a schedule or a
+ * batch): once that key is out of PW_API_KEYS, the record is no one's.
+ * @param {string} id @param {string} [viaKey] @returns {Promise<Principal>}
+ */
+export async function principalFromId(id, viaKey) {
+  if (viaKey && String(id).startsWith('user:')) {
+    if (!accountsOn()) return OPEN;
+    const p = await userPrincipal(String(id).slice(5));
+    return p.kind === 'user' && userKeyIds(p.email).has(String(viaKey)) ? { ...p, viaKey: String(viaKey) } : NOBODY;
+  }
   if (!accountsOn() && !String(id).startsWith('user:')) return OPEN;
   if (String(id).startsWith('service:')) return serviceKeyIds().has(String(id).slice(8)) ? { kind: 'service', key: String(id).slice(8) } : NOBODY; // a removed key's schedules stop
   if (id === 'service') return { kind: 'service' };

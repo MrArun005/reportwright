@@ -606,6 +606,27 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     } finally { await R.one.DELETE(req(`/api/reports/${id}`, { who: 'admin', method: 'DELETE' }), P(id)); }
   }, 60000);
 
+  it('review: taking a user\'s key out of PW_API_KEYS stops what was scheduled or queued with it', async () => {
+    const { runSchedule, getSchedule } = await import('../../src/server/schedules.js');
+    const { workOnce, getJob } = await import('../../src/server/jobs.js');
+    const keep = process.env.PW_API_KEYS;
+    const made = await json(await v1.schedules.POST(req('/api/v1/schedules', { key: 'carol-key', method: 'POST', body: { template: 'salary', cron: '0 7 * * *', items: [{ parameters: {} }], output: { type: 'none' }, ownerKey: 'forged' } })));
+    expect(made.status).toBe(201);
+    const queued = await json(await v1.batches.POST(req('/api/v1/batches', { key: 'carol-key', method: 'POST', body: { template: 'salary', items: [{ parameters: {} }], output: { type: 'none' }, format: 'csv' } })));
+    expect(queued.status).toBe(202);
+    process.env.PW_API_KEYS = keep.replace('carol@x.io|carol-key,', ''); // carol stays a user; her leaked key is revoked
+    try {
+      await expect(runSchedule(await getSchedule(made.body.id, { kind: 'service' }))).rejects.toMatchObject({ status: 404 });
+      await workOnce('test-runner');
+      expect(await getJob(queued.body.id, { kind: 'service' })).toMatchObject({ status: 'failed' });
+    } finally { process.env.PW_API_KEYS = keep; }
+    // the same key, still configured: it runs
+    const again = await json(await v1.schedules.POST(req('/api/v1/schedules', { key: 'carol-key', method: 'POST', body: { template: 'salary', cron: '0 7 * * *', items: [{ parameters: {} }], output: { type: 'none' } } })));
+    const run = await runSchedule(await getSchedule(again.body.id, { kind: 'service' }));
+    await workOnce('test-runner');
+    expect(await getJob(run.id, { kind: 'service' })).toMatchObject({ status: 'completed' });
+  });
+
   it('review: a queued inline batch fails when its owner is now a viewer', async () => {
     const { createBatch, workOnce, getJob } = await import('../../src/server/jobs.js');
     const job = await createBatch({ template: def('Inline'), items: [{ parameters: {} }], output: { type: 'none' }, format: 'csv' }, undefined, await perms.userPrincipal('bob@x.io'));

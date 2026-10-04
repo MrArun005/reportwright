@@ -33,7 +33,7 @@ const withNext = (s) => ({ ...s, nextRunAt: s.enabled === false ? null : nextRun
 /** @typedef {import('./perms.js').Principal} Principal */
 // a missing principal is the default (nobody with accounts on); a record with no owner is no one's
 const mine = (p, s) => { p = vet(p); return p.kind === 'open' || p.kind === 'service' || (p.kind === 'user' && !!s.owner && s.owner === principalId(p)); };
-const shown = ({ owner, ...s }) => withNext(s);
+const shown = ({ owner, ownerKey, ...s }) => withNext(s);
 /** A template a principal may render: an id it may view, or (designers, service keys) an inline definition. */
 async function checkTemplate(p, template) {
   if (typeof template === 'string') return void await checkReport(p, template);
@@ -49,7 +49,7 @@ export async function getSchedule(id, p = defaultPrincipal()) { const s = await 
 export async function createSchedule(body, p = defaultPrincipal()) {
   validateSchedule(body);
   await checkTemplate(p, body.template);
-  const s = { enabled: true, timezone: 'UTC', format: 'pdf', ...body, id: `s_${crypto.randomBytes(5).toString('hex')}`, createdAt: new Date().toISOString(), owner: principalId(p) };
+  const s = { enabled: true, timezone: 'UTC', format: 'pdf', ...body, id: `s_${crypto.randomBytes(5).toString('hex')}`, createdAt: new Date().toISOString(), owner: principalId(p), ownerKey: vet(p).viaKey || null };
   await withLock('schedules', () => save(s));
   return shown(s);
 }
@@ -58,8 +58,8 @@ export function updateSchedule(id, patch, p = defaultPrincipal()) { return withL
 async function updateNow(id, patch, p) {
   const cur = await readOne(id);
   if (!cur || !mine(p, cur)) return null;
-  const { owner: _ignored, ...rest } = patch || {};
-  const next = { ...cur, ...rest, id: cur.id, createdAt: cur.createdAt, owner: cur.owner, updatedAt: new Date().toISOString() };
+  const { owner: _ignored, ownerKey: _alsoIgnored, ...rest } = patch || {};
+  const next = { ...cur, ...rest, id: cur.id, createdAt: cur.createdAt, owner: cur.owner, ownerKey: cur.ownerKey || null, updatedAt: new Date().toISOString() };
   validateSchedule(next);
   if (next.template !== cur.template) await checkTemplate(p, next.template);
   await save(next);
@@ -77,7 +77,7 @@ export function deleteSchedule(id, p = defaultPrincipal()) {
 /** Run now, as the schedule's owner. @param {any} s a schedule (its owner is read from storage) */
 export async function runSchedule(s, reason = 'manual') {
   const rec = (await readOne(s.id)) || s;
-  const principal = rec.owner ? await principalFromId(rec.owner) : defaultPrincipal(); // no owner: no one's (fail closed)
+  const principal = rec.owner ? await principalFromId(rec.owner, rec.ownerKey) : defaultPrincipal(); // no owner: no one's (fail closed)
   const report = typeof s.template === 'string' ? s.template : null;
   let job;
   try {
