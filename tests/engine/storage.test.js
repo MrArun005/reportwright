@@ -157,6 +157,31 @@ describe.each(backends)('storage on %s', (kind, setup) => {
     await s.release('t:lease', 'A');
   });
 
+  it('a lock outlives its lease while the holder works: the lease is renewed, nobody else gets in', async () => {
+    const { withLock } = await import('../../src/server/storage/index.js');
+    let other = null;
+    await withLock('t-renew', async () => {
+      await new Promise(r => setTimeout(r, 900)); // three leases long
+      other = await store().lease('lock:t-renew', 'someone-else', 300);
+      await store().put('reports', 'fenced-ok', JSON.stringify({ name: 'ok' }));
+    }, { ttl: 300 });
+    expect(other).toBe(false);
+    expect(await store().get('reports', 'fenced-ok')).toBeTruthy();
+    await store().remove('reports', 'fenced-ok');
+  });
+
+  it('a holder whose lease ran out (a stalled process) cannot write: it is refused, nothing lands', async () => {
+    const { withLock } = await import('../../src/server/storage/index.js');
+    const stalled = withLock('t-expire', async () => {
+      const t0 = Date.now(); while (Date.now() - t0 < 500) { /* the event loop stalls: no renewal */ } // eslint-disable-line no-empty
+      expect(await store().lease('lock:t-expire', 'someone-else', 5000)).toBe(true); // the lease ran out: another holder
+      await store().put('reports', 'fenced-late', JSON.stringify({ name: 'late' }));
+    }, { ttl: 300 });
+    await expect(stalled).rejects.toMatchObject({ status: 503 });
+    expect(await store().get('reports', 'fenced-late')).toBe(null);
+    await store().release('lock:t-expire', 'someone-else');
+  });
+
   it('stores users', async () => {
     const s = store();
     await s.put('users', 'a@x.io', JSON.stringify({ email: 'a@x.io', role: 'viewer' }));
