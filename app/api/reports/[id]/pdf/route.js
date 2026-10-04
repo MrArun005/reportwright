@@ -2,7 +2,7 @@
 import { safeId } from '@/server/reports.js';
 import { baseUrl } from '@/server/renderer.js';
 import { principalOf, checkReport } from '@/server/perms.js';
-import { renderInPool } from '@/server/pool.js';
+import { renderInPool, admit } from '@/server/pool.js';
 import { busyHeaders } from '@/server/auth.js';
 import { audit } from '@/server/audit.js';
 
@@ -12,6 +12,7 @@ export async function GET(req, { params }) {
   try {
     const { id } = await params;
     const principal = await principalOf(req);
+    admit(principal); // 429/503 before anything is read
     const url = new URL(req.url);
     // ?pdfa=1 gives PDF/A-2b, ?ua=1 an accessible PDF (PDF/UA-1; with pdfa, PDF/A-2a). Signing is not offered here: this route has no API key (use /api/v1/render).
     const parameters = Object.fromEntries([...url.searchParams.entries()].filter(([k]) => k !== 'format' && k !== 'pdfa' && k !== 'ua'));

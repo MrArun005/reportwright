@@ -4,7 +4,7 @@
 // A user's API key ("email|key") renders only what that user may view (src/server/perms.js).
 import { apiPrincipal, fail } from '@/server/auth.js';
 import { baseUrl } from '@/server/renderer.js';
-import { renderInPool } from '@/server/pool.js';
+import { renderInPool, admit } from '@/server/pool.js';
 import { canDesign, checkReport } from '@/server/perms.js';
 import { pdfEncryptOptions } from '@/exporters/encrypt.js';
 import { audit } from '@/server/audit.js';
@@ -15,6 +15,7 @@ export async function POST(req) {
   const { principal, res } = await apiPrincipal(req);
   if (res) return res;
   try {
+    admit(principal); // a caller over the limit hears 429/503 before anything is read
     const body = await req.json().catch(() => { throw Object.assign(new Error('Send a JSON body'), { status: 400 }); });
     const encrypt = pdfEncryptOptions(body.pdf); // 400 on a bad shape, before loading anything
     // the cheap refusals here, before a render takes a place in the queue; the worker checks all of it again

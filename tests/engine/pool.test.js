@@ -2,7 +2,7 @@
 // control (429/503 + Retry-After), interactive work before background work, and fair turns between principals.
 import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import { report } from '../helpers.js';
-import { renderInPool, submit, poolStats, stopPool } from '../../src/server/pool.js';
+import { renderInPool, submit, poolStats, stopPool, admit } from '../../src/server/pool.js';
 import { OPEN } from '../../src/server/perms.js';
 
 const ENV = ['PW_RENDER_WORKERS', 'PW_RENDER_QUEUE', 'PW_RENDER_QUEUE_PER_PRINCIPAL', 'PW_RENDER_MAX_WAIT_MS', 'PW_RENDER_WORKER_MAX_RENDERS', 'PW_RENDER_TIMEOUT_MS', 'PW_RENDER_WORKER_HEAP_MB'];
@@ -60,6 +60,7 @@ describe('render pool', () => {
     const b = render(small()); // waits: the queue's one place
     const c = await render(small()).catch(e => e); // OPEN again: the queue is full
     expect(c).toMatchObject({ status: 503 });
+    expect(() => admit(OPEN)).toThrow(/busy/); // the routes' early check says the same, before reading anything
     expect(c.retryAfter).toBeGreaterThanOrEqual(1);
     // a principal with nothing queued or running is let in up to twice the queue (round robin serves it next)
     const d = render(small(), { principal: { kind: 'service' } });
@@ -74,7 +75,7 @@ describe('render pool', () => {
     expect(i).toMatchObject({ status: 429 });
     expect(i.retryAfter).toBeGreaterThanOrEqual(1);
     await Promise.all([f, h]);
-    expect(poolStats().totals.rejected - r0).toBe(3);
+    expect(poolStats().totals.rejected - r0).toBe(4);
   }, 60000);
 
   it('runs interactive work before background work, and gives each principal a fair turn', async () => {

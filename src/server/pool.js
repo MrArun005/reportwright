@@ -218,6 +218,22 @@ async function runInline(j) {
   } catch (e) { j.reject(e); }
 }
 
+/** Why an interactive render for this principal would be refused now (429/503 with retryAfter), or null. */
+function refusal(who) {
+  if (poolSize() < 1 || P.noWorker) return null;
+  const fresh = !P.waiting.get(who) && !P.running.get(who);
+  const queued = P.queue.filter(x => !x.cls).length;
+  if (queued >= (fresh ? 2 * queueMax() : queueMax())) return busy('The server is busy rendering other reports. Try again shortly.', 503, waitAhead(0) || 1000);
+  if ((P.waiting.get(who) || 0) >= perPrincipalMax()) return busy('Too many of your renders are waiting. Wait for them to finish, then try again.', 429, waitAhead(0) || 1000);
+  const wait = waitAhead(0);
+  if (!fresh && queued && wait > maxWaitMs()) return busy(`The server is busy: this render would wait about ${Math.round(wait / 1000)} s. Try again shortly.`, 503, wait);
+  return null;
+}
+
+/** For routes, before they read the request or the template: throws the 429/503 a render would get now. A cheap answer
+ *  to a caller who is over the limit (submit checks again). @param {any} principal */
+export function admit(principal) { const no = refusal(principalId(principal)); if (no) { P.stats.rejected++; throw no; } }
+
 /**
  * Queue one task for the pool. Rejects at once with 429 or 503 (and .retryAfter, seconds) when the server is full.
  * @param {any} msg { kind: 'render', ref|def, how?, opt } or { kind: 'thumb', def, principal, base }
@@ -235,13 +251,7 @@ export function submit(msg, { background = false, principal, key = '', signal } 
     if (poolSize() < 1 || P.noWorker) return void runInline(j);
     fill();
     const fresh = !P.waiting.get(who) && !P.running.get(who);
-    if (!cls) {
-      const queued = P.queue.filter(x => !x.cls).length;
-      if (queued >= (fresh ? 2 * queueMax() : queueMax())) { P.stats.rejected++; return reject(busy('The server is busy rendering other reports. Try again shortly.', 503, waitAhead(0) || 1000)); }
-      if ((P.waiting.get(who) || 0) >= perPrincipalMax()) { P.stats.rejected++; return reject(busy('Too many of your renders are waiting. Wait for them to finish, then try again.', 429, waitAhead(0) || 1000)); }
-      const wait = waitAhead(0);
-      if (!fresh && queued && wait > maxWaitMs()) { P.stats.rejected++; return reject(busy(`The server is busy: this render would wait about ${Math.round(wait / 1000)} s. Try again shortly.`, 503, wait)); }
-    }
+    if (!cls) { const no = refusal(who); if (no) { P.stats.rejected++; return reject(no); } }
     j.fresh = fresh; // its wait is one turn of round robin, however long the renders ahead of it are
     if (signal) {
       if (signal.aborted) return reject(Object.assign(new Error('The request was cancelled.'), { status: 499 }));
