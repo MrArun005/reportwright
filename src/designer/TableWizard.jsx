@@ -8,6 +8,7 @@ import { paintItemSvg } from './Canvas.jsx';
 import { tableFor, matrixFor, labelOf } from './tableGen.js';
 import { Dialog, Field, Select, Check } from './ui.jsx';
 import { t } from '@/i18n/index.js';
+import { ITEMS } from '@/engine/items/index.js';
 
 const LAYOUTS = [
   { id: 'list', label: 'List', when: 'Every row, with totals' },
@@ -55,7 +56,8 @@ export default function TableWizard() {
       const out = {};
       for (const l of LAYOUTS) {
         const it = itemFor(l.id, THUMB_W);
-        try { out[l.id] = it ? await paintItemSvg({ ...it, x: 0, y: 0 }, def, sample) : { note: 'Needs two text fields' }; } catch (e) { out[l.id] = { error: e.message }; }
+        // drawn as it will be inserted: with the item's defaults (padding, header style, widths) under it
+        try { out[l.id] = it ? await paintItemSvg({ ...ITEMS[it.type].defaults(), ...it, x: 0, y: 0 }, def, sample) : { note: 'Needs two text fields' }; } catch (e) { out[l.id] = { error: e.message }; }
       }
       if (alive) setThumbs(out);
     }, 120);

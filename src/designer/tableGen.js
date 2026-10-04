@@ -54,7 +54,8 @@ export function tableFor(ds, { layout = 'list', groupBy, width = 523, rows, fiel
   let fields = (ds.fields || []).filter(f => !pick || pick.includes(f.name));
   if (pick) fields.sort((a, b) => pick.indexOf(a.name) - pick.indexOf(b.name));
   const group = (layout === 'grouped' || layout === 'summary') && groupBy ? (ds.fields || []).find(f => f.name === groupBy) : null;
-  const nums = (list) => list.map(f => (additive(f) ? { value: `=Sum(Fields.${f.name})`, style: { ...cellStyle(f, rows), ...TOTAL } } : { value: '', style: TOTAL }));
+  // a total row's bold and rule are the row's style (one place to change or clear); cells keep only their number format
+  const nums = (list) => list.map(f => (additive(f) ? { value: `=Sum(Fields.${f.name})`, style: cellStyle(f, rows) } : { value: '' }));
 
   if (group && layout === 'summary') {
     // one row per group: the group, then the totals of the number fields
@@ -67,14 +68,14 @@ export function tableFor(ds, { layout = 'list', groupBy, width = 523, rows, fiel
       header: [{ height: ROW_H, style: HEAD, cells: cols.map(f => ({ value: labelOf(f.name), style: f.type === 'number' ? { textAlign: 'right' } : {} })) }],
       groups: [{ name: `By${group.name[0].toUpperCase()}${group.name.slice(1)}`, expr: `=Fields.${group.name}`, sort: 'asc', header: [{ height: ROW_H, cells: totals(`=Fields.${group.name}`) }] }],
       detail: [],
-      footer: [{ height: ROW_H, cells: [{ value: 'Total', style: TOTAL }, ...nums(cols.slice(1))] }],
+      footer: [{ height: ROW_H, style: TOTAL, cells: [{ value: 'Total' }, ...nums(cols.slice(1))] }],
     };
   }
 
   const cols = group ? fields.filter(f => f.name !== group.name) : fields;
   const w = widths(cols, width);
   const hasNums = cols.some(additive);
-  const footRow = (label) => ({ height: ROW_H, cells: cols.map((f, i) => (additive(f) ? nums([f])[0] : { value: i === 0 ? label : '', style: TOTAL })) });
+  const footRow = (label) => ({ height: ROW_H, style: TOTAL, cells: cols.map((f, i) => (additive(f) ? nums([f])[0] : { value: i === 0 ? label : '' })) });
   const item = {
     type: 'table', dataSet: ds.name, w: width, h: ROW_H * (2 + (hasNums ? 1 : 0) + (group ? 2 : 0)), repeatHeader: true,
     columns: w.map(x => ({ width: x })),
@@ -98,11 +99,12 @@ export function tableFor(ds, { layout = 'list', groupBy, width = 523, rows, fiel
  */
 export function matrixFor(ds, { rows, columns, value, agg = 'Sum', width = 523, sample }) {
   const vf = (ds.fields || []).find(f => f.name === value);
+  const name = (f) => f.replace(/\W/g, '').replace(/^./, c => c.toUpperCase()) || 'Group';
+  // the tablix form, as the pivot editor edits it: no conversion (and no changed settings) on its first edit
   return {
-    type: 'matrix', dataSet: ds.name, w: width, h: ROW_H * 3,
-    rowGroup: `=Fields.${rows}`, columnGroup: `=Fields.${columns}`,
-    value: agg === 'Count' ? '=CountRows()' : `=${agg}(Fields.${value})`,
-    valueFormat: agg === 'Count' ? 'N0' : (vf && formatFor(vf, sample)) || 'N2',
-    corner: labelOf(rows),
+    type: 'matrix', dataSet: ds.name, w: width, h: ROW_H * 3, corner: labelOf(rows),
+    rowGroups: [{ name: name(rows), expr: `=Fields.${rows}`, sort: 'asc', total: 'after' }],
+    columnGroups: [{ name: `${name(columns)}${name(columns) === name(rows) ? '2' : ''}`, expr: `=Fields.${columns}`, sort: 'asc', total: 'after' }],
+    values: [{ value: agg === 'Count' ? '=CountRows()' : `=${agg}(Fields.${value})`, format: agg === 'Count' ? 'N0' : (vf && formatFor(vf, sample)) || 'N2' }],
   };
 }

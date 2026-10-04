@@ -447,4 +447,6 @@ export default {
   jumpToBookmark: "跳转到书签",
   tableSize: "大小（由列和行决定）",
   tableSizeHint: "更改列宽和行高即可调整表格大小。",
+  rowClearCellStyles: "所有单元格使用行样式",
+  rowClearCellStylesHint: "清除此行单元格自身的样式（保留数字格式和对齐），使行样式应用到所有单元格。",
 };

@@ -447,4 +447,6 @@ export default {
   jumpToBookmark: "Aller au signet",
   tableSize: "Taille (d’après ses colonnes et lignes)",
   tableSizeHint: "Changez la largeur des colonnes et la hauteur des lignes pour redimensionner le tableau.",
+  rowClearCellStyles: "Appliquer le style de la ligne à toutes les cellules",
+  rowClearCellStylesHint: "Efface les styles propres des cellules de cette ligne (formats de nombre et alignement conservés) pour que le style de la ligne s’applique à toutes.",
 };

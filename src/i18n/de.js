@@ -447,4 +447,6 @@ export default {
   jumpToBookmark: "Zum Lesezeichen springen",
   tableSize: "Größe (aus Spalten und Zeilen)",
   tableSizeHint: "Ändern Sie Spaltenbreiten und Zeilenhöhen, um die Tabelle anzupassen.",
+  rowClearCellStyles: "Zeilenstil für alle Zellen verwenden",
+  rowClearCellStylesHint: "Entfernt die eigenen Stile der Zellen dieser Zeile (Zahlenformate und Ausrichtung bleiben), damit der Zeilenstil für alle gilt.",
 };

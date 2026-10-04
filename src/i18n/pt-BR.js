@@ -447,4 +447,6 @@ export default {
   jumpToBookmark: "Ir para o marcador",
   tableSize: "Tamanho (das colunas e linhas)",
   tableSizeHint: "Mude a largura das colunas e a altura das linhas para redimensionar a tabela.",
+  rowClearCellStyles: "Usar o estilo da linha em todas as células",
+  rowClearCellStylesHint: "Limpa os estilos próprios das células desta linha (mantendo formatos de número e alinhamento), para que o estilo da linha valha para todas.",
 };

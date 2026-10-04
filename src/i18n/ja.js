@@ -447,4 +447,6 @@ export default {
   jumpToBookmark: "ブックマークへ移動",
   tableSize: "サイズ（列と行から）",
   tableSizeHint: "表のサイズは列の幅と行の高さで変えます。",
+  rowClearCellStyles: "すべてのセルに行のスタイルを使う",
+  rowClearCellStylesHint: "この行のセル独自のスタイルを消去し（数値書式と配置は残します）、行のスタイルがすべてに適用されるようにします。",
 };

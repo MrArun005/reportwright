@@ -447,4 +447,6 @@ export default {
   jumpToBookmark: "Jump to bookmark",
   tableSize: "Size (from its columns and rows)",
   tableSizeHint: "Change column widths and row heights to resize the table.",
+  rowClearCellStyles: "Use the row style for every cell",
+  rowClearCellStylesHint: "Clears the cells' own styles in this row (keeping number formats and alignment), so the row style applies to all of them.",
 };

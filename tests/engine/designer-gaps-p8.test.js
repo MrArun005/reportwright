@@ -98,3 +98,26 @@ describe('a table’s stored height is its rows’ (#6)', () => {
     expect(findItem(useDesigner.getState().def, id).item).toMatchObject({ w: 40, h: 43 });
   });
 });
+
+import { matrixFor } from '../../src/designer/tableGen.js';
+import { isTablix } from '../../src/engine/items/pivot.js';
+describe('gallery defaults (#7)', () => {
+  const ds = { name: 'Rows', fields: [{ name: 'region', type: 'string' }, { name: 'product', type: 'string' }, { name: 'amount', type: 'number' }] };
+  it('a total row is styled once, on the row; its cells keep only their number format', () => {
+    const t = tableFor(ds, { layout: 'grouped', groupBy: 'region', rows: [{ amount: 1 }] });
+    for (const row of [t.footer[0], t.groups[0].footer[0]]) {
+      expect(row.style).toMatchObject({ fontWeight: 'bold' });
+      for (const c of row.cells) expect(c.style?.fontWeight, JSON.stringify(c)).toBeUndefined();
+    }
+    const s = tableFor(ds, { layout: 'summary', groupBy: 'region' });
+    expect(s.footer[0].style).toMatchObject({ fontWeight: 'bold' });
+    expect(s.footer[0].cells.every(c => !c.style?.borderTop)).toBe(true);
+  });
+  it('the matrix gallery inserts the tablix form, so the pivot editor never converts it (no overflow change)', async () => {
+    const m = matrixFor(ds, { rows: 'region', columns: 'product', value: 'amount' });
+    expect(isTablix(m)).toBe(true);
+    expect(m.overflow).toBeUndefined();
+    const r = await render(report([{ ...m, name: 'M', x: 0, y: 0 }], { data: { rows: [{ region: 'N', product: 'P', amount: 2 }, { region: 'S', product: 'P', amount: 3 }] } }), { fontStore });
+    expect(r.pages[0].items.filter(i => i.t === 'text').flatMap(i => i.lines.map(l => l.text))).toEqual(expect.arrayContaining(['N', 'S', 'P', 'Total', '5.00']));
+  });
+});

@@ -447,4 +447,6 @@ export default {
   jumpToBookmark: "Ir al marcador",
   tableSize: "Tamaño (de sus columnas y filas)",
   tableSizeHint: "Cambie el ancho de las columnas y el alto de las filas para redimensionar la tabla.",
+  rowClearCellStyles: "Usar el estilo de la fila en todas las celdas",
+  rowClearCellStylesHint: "Borra los estilos propios de las celdas de esta fila (conserva formatos numéricos y alineación), para que el estilo de la fila se aplique a todas.",
 };

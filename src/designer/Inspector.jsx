@@ -725,6 +725,8 @@ function CellProps({ table, sel, openExpr }) {
           </div>)}
         </div>
         <div className="hint">{T('rowStyleHint')}</div>
+        <div className="btnrow"><button type="button" className="btn sm" data-testid="row-clear-cell-styles" title={T('rowClearCellStylesHint')}
+          onClick={() => updateItem(table.id, t => { for (const c of rowsOf(t, sel.part)[sel.row].cells || []) if (c?.style) { const keep = Object.fromEntries(Object.entries(c.style).filter(([k]) => k === 'format' || k === 'textAlign')); if (Object.keys(keep).length) c.style = keep; else delete c.style; } })}>{T('rowClearCellStyles')}</button></div>
       </div>
       <div className="cat"><PropEditor p={{ key: 'styleName', label: 'Named style', type: 'stylename' }} value={cell.styleName} onChange={v => setCell('styleName', v)} openExpr={openExpr} /></div>
       <StyleCats props={TEXT_STYLE_PROPS} style={cell.style} onSet={setCellStyle} openExpr={openExpr} dataSet={table.dataSet} />

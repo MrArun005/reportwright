@@ -9,6 +9,7 @@ import { paintItemSvg } from './Canvas.jsx';
 import { tableFor, labelOf, formatFor } from './tableGen.js';
 import { Dialog, Field, Select, Check } from './ui.jsx';
 import { useT } from './Reuse.jsx';
+import { ITEMS } from '@/engine/items/index.js';
 
 const MIME_PF = 'application/x-pw-pivot-field';
 const AGGS = ['Sum', 'Avg', 'Count', 'Min', 'Max'];
@@ -30,7 +31,7 @@ export function pivotFor(ds, { rows = [], columns = [], values = [], width = 523
       ...(pct ? { show: v.show } : { format: agg === 'Count' ? 'N0' : (f && formatFor(f, sample)) || 'N2' }),
     };
   });
-  return { type: 'matrix', dataSet: ds.name, w: width, h: 54, ...(rows[0] ? { corner: labelOf(rows[0]) } : {}), rowGroups: rows.map(group), columnGroups: columns.map(group), values: vals, overflow: 'shrink', repeatHeader: true };
+  return { type: 'matrix', dataSet: ds.name, w: width, h: 54, ...(rows[0] ? { corner: labelOf(rows[0]) } : {}), rowGroups: rows.map(group), columnGroups: columns.map(group), values: vals, repeatHeader: true };
 }
 
 /** One live thumbnail of an item with the sample data. */
@@ -42,7 +43,7 @@ function Thumb({ item }) {
   useEffect(() => {
     if (!item || !sample?.dataSets) return undefined;
     let alive = true;
-    const t = setTimeout(() => { paintItemSvg({ ...item, x: 0, y: 0 }, def, sample).then(o => { if (alive) setSvg(o); }, e => { if (alive) setSvg({ error: e.message }); }); }, 120);
+    const t = setTimeout(() => { paintItemSvg({ ...ITEMS[item.type].defaults(), ...item, x: 0, y: 0 }, def, sample).then(o => { if (alive) setSvg(o); }, e => { if (alive) setSvg({ error: e.message }); }); }, 120);
     return () => { alive = false; clearTimeout(t); };
   }, [key, sample]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!svg) return <span className="hint">…</span>;
