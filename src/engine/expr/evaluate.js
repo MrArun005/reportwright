@@ -233,7 +233,7 @@ function prefixValues(base, n, ast, ctx) {
   return vals.length === n ? vals : vals.slice(0, n);
 }
 const ROW_LOCAL = new WeakMap();
-const SCOPED = new Set(['countrows', 'rownumber', 'runningvalue', 'distinctsum', 'aggregateif']);
+const SCOPED = new Set(['countrows', 'rownumber', 'runningvalue', 'distinctsum', 'aggregateif', 'previous', 'groupindex']);
 /** True when an expression reads only the current row (and parameters): no aggregate, RowNumber or RunningValue. */
 function rowLocal(ast) {
   let r = ROW_LOCAL.get(ast);
@@ -569,7 +569,7 @@ const CONSTANTS = { pi: Math.PI, e: Math.E };
 export const FUNCTION_NAMES = [
   'Sum', 'Avg', 'Count', 'CountDistinct', 'CountRows', 'Min', 'Max', 'First', 'Last', 'RunningValue', 'RowNumber',
   'Median', 'Mode', 'StDev', 'StDevP', 'Var', 'VarP', 'DistinctSum', 'AggregateIf',
-  'IIF', 'Switch', 'IsNull', 'Coalesce', 'Lookup', 'Join', 'Contains', 'InList',
+  'IIF', 'Switch', 'IsNull', 'Coalesce', 'Lookup', 'LookupSet', 'Previous', 'GroupIndex', 'Join', 'Contains', 'InList',
   ...['Format', 'Upper', 'Lower', 'Left', 'Right', 'Mid', 'Len', 'Trim', 'Replace', 'InStr', 'CStr', 'CDbl', 'CInt', 'CDate', 'CBool',
     'Round', 'Abs', 'Floor', 'Ceiling', 'Int', 'Pow', 'Sqrt', 'Now', 'Today', 'DateAdd', 'DateDiff', 'DateSerial', 'Year', 'Month', 'Day', 'MonthName'],
   'StartsWith', 'EndsWith', 'IndexOf', 'LastIndexOf', 'Substring', 'PadLeft', 'PadRight', 'Split', 'Chr', 'Asc', 'TrimStart', 'TrimEnd', 'StrReverse', 'Space', 'LCase', 'UCase',
@@ -579,6 +579,29 @@ export const FUNCTION_NAMES = [
   'IsNumeric', 'IsDate', 'IsArray', 'Choose',
   'ToString', 'ToInt16', 'ToInt32', 'ToInt64', 'ToDouble', 'ToSingle', 'ToDecimal', 'ToBoolean', 'ToDateTime',
 ];
+
+/**
+ * Previous(expr[, scope]).
+ * Detail row: the previous detail row of the region (across groups), or of the named group instance.
+ * Group header/footer or list row: expr over the previous group instance (or list row).
+ */
+function previous(n, ctx) {
+  const args = n.args;
+  if (!args.length) throw new ExprError('Previous needs an expression: Previous(Fields.amount)', n.p);
+  let sc;
+  if (args.length > 1) {
+    sc = ctx.scopes?.[evaluate(args[1], ctx)];
+    if (!sc) throw new ExprError('Previous: unknown scope', n.p);
+  }
+  let rows = null;
+  if (ctx.aggIndex != null) {
+    const run = (sc || ctx.region)?.run;
+    if (run) rows = run.length > 1 ? [run[run.length - 2]] : null;
+    else if (ctx.aggIndex > 0) rows = [ctx.aggRows[ctx.aggIndex - 1]];
+  } else rows = (sc || ctx.group || ctx.region)?.prevRows || null;
+  if (!rows) return null;
+  return evaluate(args[0], Object.assign({}, ctx, { fields: rows[0], aggRows: rows, aggIndex: undefined }));
+}
 
 function call(n, ctx) {
   const name = n.name.toLowerCase();
@@ -648,6 +671,24 @@ function call(n, ctx) {
       if (rowLocal(args[0])) return AGG[fn](prefixValues(base, rows.length, args[0], ctx));
     }
     return AGG[fn](mapRows(rows, args[0], ctx));
+  }
+  if (name === 'previous') return previous(n, ctx);
+  if (name === 'groupindex') {
+    const sc = args.length ? ctx.scopes?.[evaluate(args[0], ctx)] : ctx.group;
+    if (args.length && !sc) throw new ExprError('GroupIndex: unknown scope', n.p);
+    return sc?.number ?? null;
+  }
+  if (name === 'level') throw new ExprError('Level() needs a recursive group (Phase 4)', n.p);
+  if (name === 'lookupset') {
+    // LookupSet(sourceExpr, destExpr, resultExpr, "DataSet"): every matching row's result, as an array
+    if (args.length !== 4) throw new ExprError('LookupSet needs 4 arguments: LookupSet(source, destination, result, "DataSet")', n.p);
+    const key = evaluate(args[0], ctx);
+    const setName = evaluate(args[3], ctx);
+    const rows = ctx.dataSets[setName];
+    if (!rows) throw new ExprError(`LookupSet: the data set "${setName}" does not exist`, n.p);
+    const c = Object.assign({}, ctx), out = [];
+    for (const r of rows) { c.fields = r; if (cmpVal(evaluate(args[1], c), key) === 0) out.push(evaluate(args[2], c)); }
+    return out;
   }
   if (name === 'lookup') {
     // Lookup(sourceExpr, destExpr, resultExpr, "DataSet"): first matching row in another data set

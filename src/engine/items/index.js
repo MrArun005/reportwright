@@ -318,7 +318,8 @@ register('table', {
     // run: rows shown so far, in display order (groups reorder rows), for RunningValue over a scope
     const tableScope = { rows, index: -1, run: [] };
     const scopes = { ...(tctx.scopes || {}), [item.name]: tableScope };
-    const base = { ...tctx, aggRows: rows, aggIndex: undefined, fields: rows[0] || null, scopes };
+    // region: Previous() in a detail row reads its run; group: the innermost group instance (none at table level)
+    const base = { ...tctx, aggRows: rows, aggIndex: undefined, fields: rows[0] || null, scopes, region: tableScope, group: undefined };
     const units = [];
     let y = 0;
     let repeatH = 0; // header height that repeats above continued rows
@@ -452,9 +453,10 @@ register('table', {
       }
       buckets.forEach((bk, bi) => {
         if (lc.rowBudget?.cut) return;
-        const sc = { rows: bk.rows, index: -1, run: [] };
+        // number: GroupIndex(); prevRows: Previous() in a group header or footer
+        const sc = { rows: bk.rows, index: -1, run: [], number: bi + 1, prevRows: bi > 0 ? buckets[bi - 1].rows : null };
         const gname = g.name || `Group${level + 1}`;
-        const gctx = { ...ctx, fields: bk.rows[0], aggRows: bk.rows, aggIndex: undefined, scopes: { ...ctx.scopes, [gname]: sc }, groupKey: bk.key };
+        const gctx = { ...ctx, fields: bk.rows[0], aggRows: bk.rows, aggIndex: undefined, scopes: { ...ctx.scopes, [gname]: sc }, groupKey: bk.key, group: sc };
         const path = `${keyPath}/${bk.text}`;
         const tkey = `${item.name}|${level}|${path}`;
         const open = !g.collapsible ? true : (lc.state?.toggles?.[tkey] ?? !g.initiallyCollapsed);
@@ -578,8 +580,10 @@ register('list', {
     reps.forEach((rs, i) => {
       if (lc.rowBudget && lc.rowBudget.left-- <= 0) { lc.rowBudget.cut = true; return; }
       listScope.index = i;
+      listScope.prevRows = i > 0 ? reps[i - 1] : null;
+      if (item.groupBy) listScope.number = i + 1;
       for (const r of rs) listScope.run.push(r);
-      const rctx = { ...ctx, fields: rs[0], aggRows: rs, aggIndex: undefined, rowNumber: i + 1, parentFields: rs[0], scopes: { ...(ctx.scopes || {}), [item.name]: listScope } };
+      const rctx = { ...ctx, fields: rs[0], aggRows: rs, aggIndex: undefined, rowNumber: i + 1, parentFields: rs[0], scopes: { ...(ctx.scopes || {}), [item.name]: listScope }, region: listScope, group: item.groupBy ? listScope : undefined };
       const child = { ...lc, ctxFor: (it) => (it.dataSet && it.dataSet !== item.dataSet ? { ...lc.ctxFor(it), parentFields: rs[0], scopes: rctx.scopes } : rctx) };
       const res = lc.layoutItems(item.items, child, { dx: item.x });
       const fr = frame({ ...item, name: `${item.name}[${i + 1}]` }, child, rctx, res, item.keepTogether !== false ? `l:${item.name}:${i}:${lc.nextId()}` : null);
