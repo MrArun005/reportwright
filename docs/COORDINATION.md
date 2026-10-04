@@ -13,6 +13,7 @@ More than one AI agent is editing this repo at the same time. Read this file bef
 
 | Agent | Area | Files | Since |
 |---|---|---|---|
+| Claude Code (designer + charts, batch 1) | Designer UI, viewer UI, chart/gauge/map items, i18n | src/designer/*, src/viewer/* (UI), src/engine/items/chart*.js, map.js, src/i18n/*, tests/e2e/outline-charts.mjs, tests/engine/charts-b1.test.js; importers: gauge mapping lines only | 2026-10-05 |
 
 ## Design decisions (shared)
 
