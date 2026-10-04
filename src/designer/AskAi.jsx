@@ -2,7 +2,7 @@
 // Ask AI in the designer: describe a change, see what it does to the report, apply it as one undoable step.
 // The report and a trimmed copy of its loaded data go to /api/ai/report; nothing changes until Apply.
 import { useEffect, useState } from 'react';
-import { useDesigner, SECTIONS } from './store.js';
+import { useDesigner, sectionList, secOf } from './store.js';
 import { loadSample } from './DataPanel.jsx';
 import { Dialog } from './ui.jsx';
 import { render, resolveParameters } from '@/engine/index.js';
@@ -14,7 +14,7 @@ const trim = (v, n = 200) => (Array.isArray(v) ? v.slice(0, n).map(x => trim(x, 
 
 /** Items added, removed and changed, by name, across the sections. */
 function changes(before, after) {
-  const map = (def) => new Map(SECTIONS.flatMap(s => (def.sections?.[s.key]?.items || []).map(it => [it.name || it.id, JSON.stringify(it)])));
+  const map = (def) => new Map(sectionList(def).flatMap(s => (secOf(def, s.key)?.items || []).map(it => [it.name || it.id, JSON.stringify(it)])));
   const a = map(before), b = map(after);
   return {
     added: [...b.keys()].filter(k => !a.has(k)),

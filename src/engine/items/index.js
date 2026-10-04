@@ -1038,20 +1038,15 @@ register('matrix', {
   defaults: () => ({ type: 'matrix', w: 360, h: 54, dataSet: null, rowGroup: '', columnGroup: '', value: '=Count(Fields)', valueFormat: 'N0',
     corner: '', rowHeaderWidth: 110, columnWidth: 64, rowTotals: true, columnTotals: true, columnSort: 'asc', rowSort: 'asc',
     headerStyle: { fontWeight: 'bold', backgroundColor: '#f1f5f9', borderBottom: '1 solid #94a3b8' }, style: { padding: [3, 4, 3, 4] } }),
+  // rows, columns and values: the designer's pivot editor (rowGroups / columnGroups / values, or the old single-group keys)
   props: [
     { key: 'dataSet', label: 'Data set', type: 'dataset', category: 'Data' },
-    { key: 'rowGroup', label: 'Rows: group by', type: 'expr', category: 'Data' },
-    { key: 'columnGroup', label: 'Columns: group by', type: 'expr', category: 'Data' },
-    { key: 'value', label: 'Value (aggregate)', type: 'expr', category: 'Data' },
-    { key: 'valueFormat', label: 'Value format', type: 'text', category: 'Data' },
     { key: 'corner', label: 'Corner text', type: 'text', category: 'Data' },
-    { key: 'rowSort', label: 'Sort rows', type: 'select', options: ['asc', 'desc'], category: 'Data' },
-    { key: 'columnSort', label: 'Sort columns', type: 'select', options: ['asc', 'desc'], category: 'Data' },
-    { key: 'rowTotals', label: 'Total column at the right', type: 'bool', category: 'Layout' },
-    { key: 'columnTotals', label: 'Total row at the bottom', type: 'bool', category: 'Layout' },
     { key: 'rowHeaderWidth', label: 'Row header width', type: 'number', category: 'Layout' },
     { key: 'columnWidth', label: 'Column width', type: 'number', category: 'Layout' },
     { key: 'repeatHeader', label: 'Repeat header on each page', type: 'bool', category: 'Layout' },
+    { key: 'overflow', label: 'Wider than the page', type: 'select', options: [{ value: 'paginate', label: 'Continue on the next pages' }, { value: 'shrink', label: 'Narrow the columns' }], category: 'Layout' },
+    { key: 'pageOrder', label: 'Page order', type: 'select', options: [{ value: 'down', label: 'Down, then across' }, { value: 'across', label: 'Across, then down' }], category: 'Layout' },
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
   ],
   layout(item, lc) {

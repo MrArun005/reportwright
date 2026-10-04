@@ -11,12 +11,34 @@ export const SECTIONS = [
 ];
 export const NESTING = new Set(['container', 'list']);
 
+/**
+ * Body sections (spec §3.8): sections.body is one band or an array of bands, each with its own page.
+ * Keys: 'pageHeader', 'body' (the first body section), 'body:1', 'body:2' …, 'pageFooter'.
+ */
+export function secOf(d, key) {
+  const [k, i] = String(key).split(':');
+  const s = d?.sections?.[k];
+  return Array.isArray(s) ? s[Number(i || 0)] : s;
+}
+export const isBodyKey = (key) => String(key).split(':')[0] === 'body';
+/** Every band of the report, in page order. */
+export function sectionList(def) {
+  const b = def?.sections?.body;
+  const bodies = Array.isArray(b) ? b.map((x, i) => ({ key: i ? `body:${i}` : 'body', label: x?.name || `Section ${i + 1}`, index: i })) : [{ key: 'body', label: 'Body', index: 0 }];
+  return [SECTIONS[0], ...bodies, SECTIONS[2]];
+}
+/** The page of a band: the report's page, with a body section's own page settings on top. */
+export function pageOf(def, key = 'body') {
+  const sec = isBodyKey(key) && Array.isArray(def.sections?.body) ? secOf(def, key) : null;
+  return resolvePage({ ...(def.page || {}), ...(sec?.page || {}) });
+}
+
 const rid = () => Math.random().toString(36).slice(2, 10);
 
 /** Visit every item, nested ones included. fn(item, list, index, parent, section) */
 export function walk(def, fn) {
   const go = (list, parent, section) => list.forEach((it, i) => { fn(it, list, i, parent, section); if (Array.isArray(it.items)) go(it.items, it, section); });
-  for (const { key } of SECTIONS) go(def.sections?.[key]?.items || [], null, key);
+  for (const { key } of sectionList(def)) go(secOf(def, key)?.items || [], null, key);
 }
 const allNames = (d) => { const s = new Set(); walk(d, it => { if (it.name) s.add(it.name); }); return s; };
 
@@ -24,19 +46,19 @@ const allNames = (d) => { const s = new Set(); walk(d, it => { if (it.name) s.ad
 export function normalize(def) {
   return produce(def, (d) => {
     d.sections ||= {};
-    for (const { key } of SECTIONS) {
-      d.sections[key] ||= { height: key === 'body' ? 420 : 0, items: [] };
-      d.sections[key].items ||= [];
-    }
+    for (const { key } of SECTIONS) d.sections[key] ||= { height: key === 'body' ? 420 : 0, items: [] };
+    if (Array.isArray(d.sections.body) && !d.sections.body.length) d.sections.body = { height: 420, items: [] };
+    for (const { key } of sectionList(d)) secOf(d, key).items ||= [];
     const used = allNames(d);
     walk(d, (it) => {
       it.id ||= rid();
       if (!it.name) it.name = uniqueName(used, ITEMS[it.type]?.label.replace(/\s/g, '') || 'Item');
       if (NESTING.has(it.type)) it.items ||= [];
     });
-    const b = d.sections.body;
-    const bottom = Math.max(0, ...b.items.map(i => i.y + i.h));
-    if (!b.height || b.height < bottom + 24) b.height = Math.ceil(bottom + 60);
+    for (const b of Array.isArray(d.sections.body) ? d.sections.body : [d.sections.body]) {
+      const bottom = Math.max(0, ...b.items.map(i => i.y + i.h));
+      if (!b.height || b.height < bottom + 24) b.height = Math.ceil(bottom + 60);
+    }
   });
 }
 function uniqueName(used, base) {
@@ -141,9 +163,27 @@ export const useDesigner = create((set, get) => ({
 /* ------------------------------------------------------------ commands */
 const S = () => useDesigner.getState();
 
-export function bodyWidth(def) { return resolvePage(def.page).bodyWidth; }
+export function bodyWidth(def, key = 'body') { return pageOf(def, key).bodyWidth; }
 /** Width available to an item: the band width, or its parent's width. */
-function roomFor(d, f) { return f.parent ? f.parent.w : bodyWidth(d); }
+function roomFor(d, f) { return f.parent ? f.parent.w : bodyWidth(d, f.section); }
+
+/** Add a body section after the others (the body becomes a list of sections). */
+export function addBodySection() {
+  S().apply((d) => {
+    if (!Array.isArray(d.sections.body)) d.sections.body = [{ name: 'Section1', ...d.sections.body }];
+    d.sections.body.push({ name: `Section${d.sections.body.length + 1}`, height: 300, items: [] });
+  });
+  S().select({ kind: 'section', section: `body:${S().def.sections.body.length - 1}` });
+}
+/** Remove a body section and its items; one left: the body is a single band again (unless it has its own page). */
+export function removeBodySection(key) {
+  S().apply((d) => {
+    if (!Array.isArray(d.sections.body) || d.sections.body.length < 2) return;
+    d.sections.body.splice(Number(String(key).split(':')[1] || 0), 1);
+    if (d.sections.body.length === 1 && !d.sections.body[0].page) { const { name: _n, ...one } = d.sections.body[0]; d.sections.body = one; }
+  });
+  S().select({ kind: 'report' });
+}
 
 export function addItem(type, section, x, y, extra = {}, parentId = null) {
   const spec = ITEMS[type];
@@ -152,7 +192,7 @@ export function addItem(type, section, x, y, extra = {}, parentId = null) {
     const used = allNames(d);
     const it = { ...spec.defaults(), ...extra, id, name: uniqueName(used, spec.label.replace(/\s/g, '')) };
     const parent = parentId ? findItem(d, parentId)?.item : null;
-    const room = parent ? parent.w : bodyWidth(d);
+    const room = parent ? parent.w : bodyWidth(d, section);
     if (type === 'table') it.w = it.columns.reduce((s, c) => s + c.width, 0);
     else it.w = Math.min(it.w, room);
     it.x = clamp(x, 0, Math.max(0, room - it.w));
@@ -161,9 +201,9 @@ export function addItem(type, section, x, y, extra = {}, parentId = null) {
       parent.items.push(it);
       if (it.y + it.h > parent.h) parent.h = Math.ceil(it.y + it.h);
     } else {
-      d.sections[section].items.push(it);
-      const sec = d.sections[section];
-      if (it.y + it.h > sec.height) sec.height = Math.ceil(it.y + it.h + (section === 'body' ? 24 : 4));
+      const sec = secOf(d, section);
+      sec.items.push(it);
+      if (it.y + it.h > sec.height) sec.height = Math.ceil(it.y + it.h + (isBodyKey(section) ? 24 : 4));
     }
   });
   S().select({ kind: 'items', ids: [id] });
@@ -198,7 +238,7 @@ export function moveItems(ids, dx, dy) {
       f.item.x = round(clamp(f.item.x + dx, 0, Math.max(0, room - f.item.w)));
       f.item.y = round(Math.max(0, f.item.y + dy));
       if (f.parent) { if (f.item.y + f.item.h > f.parent.h) f.parent.h = Math.ceil(f.item.y + f.item.h); }
-      else { const sec = d.sections[f.section]; if (f.item.y + f.item.h > sec.height) sec.height = Math.ceil(f.item.y + f.item.h); }
+      else { const sec = secOf(d, f.section); if (f.item.y + f.item.h > sec.height) sec.height = Math.ceil(f.item.y + f.item.h); }
     }
   });
 }
@@ -262,8 +302,8 @@ export async function pasteItems(section = 'body') {
     for (const it of data.items) {
       const c = cloneWithIds(it, used);
       c.x += 12; c.y += 12;
-      if (c.type === 'table' && section !== 'body') continue;
-      d.sections[section].items.push(c);
+      if (c.type === 'table' && !isBodyKey(section)) continue;
+      secOf(d, section).items.push(c);
       ids.push(c.id);
     }
   });
@@ -355,6 +395,25 @@ export function tableSplit(id, part, row, col) {
     const span = c.colSpan || 1;
     for (let k = 1; k < span; k++) cells[col + k] = { value: '' };
     delete c.colSpan;
+  });
+}
+/** Merge a cell with the cell below it (rowSpan), within the same rows of the table (header, a group's rows, detail, footer). */
+export function tableMergeDown(id, part, row, col) {
+  updateItem(id, (t) => {
+    const rows = rowsOf(t, part);
+    const c = rows[row].cells[col];
+    const rs = c.rowSpan || 1;
+    if (row + rs >= rows.length) return;
+    for (let k = 0; k < (c.colSpan || 1); k++) rows[row + rs].cells[col + k] = null;
+    c.rowSpan = rs + 1;
+  });
+}
+export function tableSplitRows(id, part, row, col) {
+  updateItem(id, (t) => {
+    const rows = rowsOf(t, part);
+    const c = rows[row].cells[col];
+    for (let r = 1; r < (c.rowSpan || 1); r++) if (rows[row + r]) rows[row + r].cells[col] = { value: '' };
+    delete c.rowSpan;
   });
 }
 /** Add an innermost group. The header shows the group value; the footer sums number columns. */

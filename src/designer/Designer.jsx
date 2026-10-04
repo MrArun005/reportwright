@@ -2,7 +2,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Dialog } from './ui.jsx';
 import Link from 'next/link';
-import { useDesigner, insertItem, deleteSelection, duplicateSelection, moveItems, copySelection, pasteItems } from './store.js';
+import { secOf, useDesigner, insertItem, deleteSelection, duplicateSelection, moveItems, copySelection, pasteItems } from './store.js';
 import Canvas, { MIME_TOOL } from './Canvas.jsx';
 import Inspector from './Inspector.jsx';
 import DataPanel, { loadSample } from './DataPanel.jsx';
@@ -42,7 +42,7 @@ const TOOLS = [
 function Toolbox({ T, hide = [] }) {
   const add = (type) => {
     const def = useDesigner.getState().def;
-    const items = def.sections.body.items;
+    const items = secOf(def, 'body').items;
     const y = items.length ? Math.max(...items.map(i => i.y + i.h)) + 8 : 0;
     insertItem(type, 'body', 0, Math.ceil(y / 4) * 4);
   };
