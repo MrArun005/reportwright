@@ -58,7 +58,8 @@ function workerFile() {
   try { list.push(path.join(path.dirname(fileURLToPath(meta['url'])), 'render-worker.mjs')); } catch { /* not a file URL */ }
   list.push([proc['cwd'](), 'src', 'server', 'render-worker.mjs'].join(path.sep));
   list.push([proc['cwd'](), 'pw-worker', 'render-worker.mjs'].join(path.sep)); // scripts/build-worker.mjs
-  return list.find(f => fs.existsSync(f)) || null;
+  // the sources only where they are all there: a standalone build may trace the worker file alone
+  return list.find(f => fs.existsSync(f) && (f.endsWith(path.join('pw-worker', 'render-worker.mjs')) || fs.existsSync(path.join(path.dirname(f), 'renderer.js')))) || null;
 }
 
 /** Start the workers now (instrumentation.js), so the first renders do not wait for them. */
