@@ -40,7 +40,7 @@ describe('safeFetch', () => {
 
   it('refuses private and local addresses', async () => {
     for (const u of [`${origin}/`, 'http://localhost:9/', 'http://[::1]:9/', 'http://169.254.169.254/latest/meta-data', 'http://0x7f000001:9/']) {
-      await expect(safeFetch(u), u).rejects.toThrow(/private/);
+      await expect(safeFetch(u), u).rejects.toThrow(/private|not written plainly/); // 0x7f000001 is refused as written, before any lookup
     }
   });
   it('refuses other protocols', async () => {

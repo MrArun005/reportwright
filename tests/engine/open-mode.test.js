@@ -20,7 +20,8 @@ import { writeReport, readReport, listVersions } from '../../src/server/reports.
 import { principalOf, principalFromId, serverSources, stampDefinition, readRunnable, canDesign, OPEN, PUBLIC, NOBODY } from '../../src/server/perms.js';
 import { apiPrincipal } from '../../src/server/auth.js';
 import { baseUrl, renderTo, assertFixedHosts } from '../../src/server/renderer.js';
-import { serverFetch } from '../../src/server/safeFetch.js';
+import { serverFetch, safeFetch, strictUrl } from '../../src/server/safeFetch.js';
+import { GET as dataProxy } from '../../app/api/data/proxy/route.js';
 import { checkDelivery } from '../../src/server/jobs.js';
 import { reportFetch } from '../../src/viewer/dataFetch.js';
 import { POST as auditExport } from '../../app/api/audit/export/route.js';
@@ -432,4 +433,32 @@ describe('paths the proxy lets through', () => {
       expect((await proxy(rq('/api/reports/x%2f..%2fversions')))?.status).toBe(400);
     });
   });
+});
+
+describe('one parse for the check and the fetch (strictUrl)', () => {
+  // forms a URL parser rewrites: the host checked must be the host written
+  const BYPASS = [
+    'http://0x7f.1/', 'http://2130706433/', 'http://0177.0.0.1/', 'http://127.1/', 'http://0x7f000001/',
+    'http://[::ffff:127.0.0.1]/', 'http://[::ffff:7f00:1]:80/x'.replace('7f00:1', '127.0.0.1'),
+    'http://127.0.0.1./', 'http://LOCALHOST./x', 'http://hr.internal./x',
+    'http:\\\\127.0.0.1\\x', 'http:/127.0.0.1/x', 'http:127.0.0.1/x', 'http://evil.com\\@127.0.0.1/', 'http://evil.com\\.127.0.0.1/',
+    'http://user@127.0.0.1/', 'http://u:p@api.example.com/', 'http://127.0.0.1:80@evil.com/', 'http://@127.0.0.1/',
+    'http://%31%32%37.0.0.1/', 'http://127.0.0.1%2e/', 'http://exa%6dple.com/',
+    'http://127.0.0.1\t/', 'http://127.0.0.1\n.evil.com/', ' http://127.0.0.1/', 'http://ex ample.com/',
+    'file:///etc/passwd', 'gopher://127.0.0.1/', 'ftp://example.com/', '//example.com/x', '/relative',
+  ];
+  it.each(BYPASS)('refuses %j', (u) => {
+    expect(() => strictUrl(u)).toThrow();
+  });
+  it.each(['http://api.example.com/x?a=1#f', 'https://API.Example.COM:8443/x', 'http://127.0.0.1:3000/api/sample/x', 'http://[::1]:3000/', 'https://xn--bcher-kva.example/'])('accepts %j', (u) => {
+    expect(strictUrl(u)).toBeInstanceOf(URL);
+  });
+  it('safeFetch, serverFetch and the data proxy refuse them before any lookup or connection', () => withEnv({ PW_INTERNAL_HOSTS: '127.0.0.1', PW_PROXY_ALLOW: 'example.com' }, async () => {
+    for (const u of ['http://0x7f.1/', 'http://user@127.0.0.1/', 'http://[::ffff:127.0.0.1]/', 'http://127.0.0.1./']) {
+      await expect(safeFetch(u), u).rejects.toMatchObject({ status: 400 });
+      await expect(serverFetch('http://127.0.0.1:1')(u), u).rejects.toMatchObject({ status: 400 });
+    }
+    const r = await dataProxy(new Request(`http://pw.test/api/data/proxy?url=${encodeURIComponent('http://exa%6dple.com/x')}`));
+    expect(r.status).toBe(400);
+  }));
 });

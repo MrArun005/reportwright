@@ -34,6 +34,29 @@ export function isPrivate(ip) {
   return blocked.check(ip, 'ipv6');
 }
 
+/**
+ * The one parse of a URL the server fetches: the same URL object is checked (allow list, private address, "is this
+ * self") and fetched. Refused (400): anything but an absolute http(s) URL; a user name or password; and any host the
+ * parser would rewrite, so the host checked is the host written: numeric IPv4 forms (0x7f.1, 2130706433, 127.1),
+ * IPv4-mapped IPv6, percent-encoding, backslashes, a trailing dot, whitespace or control characters anywhere.
+ * Mixed case is fine (it only lower-cases). DNS is resolved once, in the socket's own lookup (safeFetch), and that
+ * address is the one connected to.
+ * @param {string|URL} input @returns {URL}
+ */
+export function strictUrl(input) {
+  const s = input instanceof URL ? input.href : String(input);
+  const bad = (why) => Object.assign(new Error(`Refused URL (${why}): ${s.slice(0, 200)}`), { status: 400 });
+  if (/[\x00-\x20\x7f\\]/.test(s)) throw bad('whitespace, a control character or a backslash');
+  const m = /^(https?):\/\/([^/?#]*)/i.exec(s);
+  if (!m) throw bad('only absolute http and https URLs');
+  let u;
+  try { u = new URL(s); } catch { throw bad('not a URL'); }
+  if (u.username || u.password || m[2].includes('@')) throw bad('a user name or password in the URL');
+  const host = m[2].replace(/:\d*$/, '').toLowerCase(); // as written, without the port
+  if (host !== u.hostname || host.endsWith('.') || host.includes('%')) throw bad(`the host "${m[2]}" is not written plainly`);
+  return u;
+}
+
 /** Hosts in PW_INTERNAL_HOSTS may resolve to private addresses (internal data APIs). */
 export const internalHosts = () => (process.env.PW_INTERNAL_HOSTS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
 
@@ -49,14 +72,14 @@ export const NO_BASE_URL = 'http://pw-base-url-not-set.invalid';
  * PW_BASIC_AUTH password. No other host ever gets either.
  * @param {string} selfOrigin @param {{ internal?: boolean }} [o]
  */
-export const serverFetch = (selfOrigin, { internal = true } = {}) => async (url, init = {}) => {
+export const serverFetch = (selfOrigin, { internal = true } = {}) => async (input, init = {}) => {
   const self = selfOrigin && safeOrigin(selfOrigin);
-  if (/^[a-z][a-z0-9+.-]*:\/\/[^/?#]*@/i.test(String(url))) throw Object.assign(new Error('A URL with a user name or password in it is refused: send credentials in a header.'), { status: 400 });
-  if (safeOrigin(String(url)) === NO_BASE_URL) throw Object.assign(new Error('A relative data URL needs PW_BASE_URL in production (this server\'s public URL): the server never takes its own address from a request.'), { status: 500 });
+  const url = strictUrl(input); // parsed once: checked and fetched as this object
+  if (url.origin === NO_BASE_URL) throw Object.assign(new Error('A relative data URL needs PW_BASE_URL in production (this server\'s public URL): the server never takes its own address from a request.'), { status: 500 });
   const headers = new Headers(init.headers || {});
   // the connection is ours to frame: a report cannot pick the virtual host (Host) or the body's framing
   for (const k of ['host', 'content-length', 'transfer-encoding', 'connection', 'te', 'upgrade', 'x-pagewright-proxy-secret']) headers.delete(k);
-  const toSelf = self && safeOrigin(String(url)) === self;
+  const toSelf = self && url.origin === self;
   // credentials only to the configured self: PW_BASE_URL's exact origin (scheme, host, port); without it, development only
   const credentials = toSelf && (process.env.PW_BASE_URL ? safeOrigin(process.env.PW_BASE_URL) === self : process.env.NODE_ENV !== 'production');
   if (toSelf) {
@@ -64,7 +87,7 @@ export const serverFetch = (selfOrigin, { internal = true } = {}) => async (url,
     for (const k of ['origin', 'referer', 'cookie', 'authorization', 'x-api-key']) headers.delete(k);
   }
   if (credentials) {
-    if (accountsOn()) headers.set('cookie', internalCookie(String(url)));
+    if (accountsOn()) headers.set('cookie', internalCookie(url.href));
     else if (basicOn()) headers.set('authorization', `Basic ${Buffer.from(String(process.env.PW_BASIC_AUTH)).toString('base64')}`);
     if (process.env.PW_AUTH === 'proxy' && process.env.PW_PROXY_SECRET) headers.set('x-pagewright-proxy-secret', process.env.PW_PROXY_SECRET);
   }
@@ -80,8 +103,7 @@ export const serverFetch = (selfOrigin, { internal = true } = {}) => async (url,
 export async function checkTarget(url, what, { relative = false, internal = true } = {}) {
   if (relative && typeof url === 'string' && url.startsWith('/') && !url.startsWith('//')) return;
   let u;
-  try { u = new URL(String(url)); } catch { throw Object.assign(new Error(`${what} must be an http(s) URL.`), { status: 400 }); }
-  if (!/^https?:$/.test(u.protocol)) throw Object.assign(new Error(`${what} must be an http(s) URL.`), { status: 400 });
+  try { u = strictUrl(url); } catch (e) { throw Object.assign(new Error(`${what} must be a plain http(s) URL. ${e.message}`), { status: 400 }); }
   const host = u.hostname.replace(/^\[|\]$/g, '').toLowerCase();
   if (internal && internalHosts().includes(host)) return;
   const ips = net.isIP(host) ? [host] : (await dns.promises.lookup(host, { all: true }).catch(() => [])).map(a => a.address);
@@ -98,7 +120,7 @@ const refuse = (host) => Object.assign(new Error(`"${host}" is a private or loca
  * @returns {Promise<Response>}
  */
 export async function safeFetch(input, init = {}, { allow = [], hops = 3, deadline = Date.now() + deadlineMs() } = {}) {
-  const url = new URL(input);
+  const url = strictUrl(input);
   const late = () => new Error(`${url.host} did not finish in ${Math.round(deadlineMs() / 1000)} s (the limit for one request)`);
   if (Date.now() >= deadline) throw late();
   if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error(`Only http and https URLs can be fetched, not ${url.protocol}`);
@@ -124,7 +146,8 @@ export async function safeFetch(input, init = {}, { allow = [], hops = 3, deadli
   if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
     res.resume();
     if (hops <= 0) throw new Error(`Too many redirects from ${url.host}`);
-    const next = new URL(res.headers.location, url);
+    const loc = String(res.headers.location);
+    const next = /^[a-z][a-z0-9+.-]*:/i.test(loc) || loc.startsWith('//') ? strictUrl(loc.startsWith('//') ? `${url.protocol}${loc}` : loc) : new URL(loc, url);
     const same = next.origin === url.origin;
     const keepBody = res.statusCode === 307 || res.statusCode === 308;
     // credentials never follow a redirect to another site

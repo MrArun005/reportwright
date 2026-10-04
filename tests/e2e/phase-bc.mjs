@@ -46,12 +46,16 @@ r = await fetch(`${BASE}/api/reports/${id}/pdf?pdfa=1`);
 assert.equal(r.status, 200);
 assert.match(Buffer.from(await r.arrayBuffer()).toString('latin1'), /pdfaid:part>2</);
 
-step('AI box explains when AI drafting is off');
-await p.goto(BASE);
-await p.getByRole('button', { name: 'Describe a report (AI)' }).click();
-await p.getByLabel('What should the report show?').fill('Sales by region');
-await p.getByRole('button', { name: 'Draft the report' }).click();
-await p.getByText(/AI drafting is off/).waitFor();
+// the server of scripts/restart.sh has AI on (against ai.mjs's mock); this step needs it off (no ANTHROPIC_API_KEY)
+const aiOff = (await fetch(`${BASE}/api/ai/report`, { method: 'POST', headers: { origin: BASE }, body: 'x' })).status === 501; // AI on: 400 (bad JSON) at once
+if (aiOff) {
+  step('AI box explains when AI drafting is off');
+  await p.goto(BASE);
+  await p.getByRole('button', { name: 'Describe a report (AI)' }).click();
+  await p.getByLabel('What should the report show?').fill('Sales by region');
+  await p.getByRole('button', { name: 'Draft the report' }).click();
+  await p.getByText(/AI drafting is off/).waitFor();
+} else step('(skipped: AI drafting is on here; ai.mjs covers it)');
 
 await b.close();
 for (const rid of created) await fetch(`${BASE}/api/reports/${rid}`, { method: 'DELETE', headers: { origin: BASE } });
