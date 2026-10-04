@@ -26,6 +26,8 @@ export function secOf(d, key) {
 export const isBodyKey = (key) => { const p = String(key).split(':'); return p[0] === 'body' && !p[2]; };
 /** The body section a band belongs to: itself, or the section whose own page header or footer it is. */
 export const bodyKeyOf = (key) => { const p = String(key).split(':'); return p[0] === 'body' ? (p[1] && p[1] !== '0' ? `body:${p[1]}` : 'body') : null; };
+/** A named placeholder's content in a content report ('content:0' → sections.content[0]); it lies in the master's body. */
+export const isContentKey = (key) => String(key).split(':')[0] === 'content';
 /** A body section's own page header or footer (an object, not hidden): it gets a band of its own. */
 export const ownBand = (b, k) => !!(b && b[k] && typeof b[k] === 'object' && !Array.isArray(b[k]) && !b[k].hidden);
 /** Every band of the report, in page order. */
@@ -45,7 +47,9 @@ export function sectionList(def) {
       ...(ownBand(x, 'pageFooter') ? [{ key: `body:${s.index}:pageFooter`, label: L('band_sectionFooter', '{section} · page footer').replace('{section}', s.label), index: s.index, own: 'pageFooter' }] : []),
     ];
   });
-  return [{ ...SECTIONS[0], label: L('band_pageHeader', SECTIONS[0].label) }, ...withOwn, { ...SECTIONS[2], label: L('band_pageFooter', SECTIONS[2].label) }];
+  // a content report's named placeholders (sections.content): the canvas draws them inside the master's body
+  const content = (Array.isArray(def?.sections?.content) ? def.sections.content : []).map((c, i) => ({ key: `content:${i}`, label: L('band_placeholder', 'Placeholder “{name}”').replace('{name}', String(c?.placeholder ?? i + 1)), index: i }));
+  return [{ ...SECTIONS[0], label: L('band_pageHeader', SECTIONS[0].label) }, ...withOwn, ...content, { ...SECTIONS[2], label: L('band_pageFooter', SECTIONS[2].label) }];
 }
 /** The page of a band: the report's page, with a body section's own page settings on top. */
 export function pageOf(def, key = 'body') {
@@ -69,7 +73,7 @@ export function normalize(def) {
     d.sections ||= {};
     for (const { key } of SECTIONS) d.sections[key] ||= { height: key === 'body' ? 420 : 0, items: [] };
     if (Array.isArray(d.sections.body) && !d.sections.body.length) d.sections.body = { height: 420, items: [] };
-    for (const { key } of sectionList(d)) secOf(d, key).items ||= [];
+    for (const { key } of sectionList(d)) { const x = secOf(d, key); if (x && typeof x === 'object') x.items ||= []; }
     const used = allNames(d);
     walk(d, (it) => {
       it.id ||= rid();

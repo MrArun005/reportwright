@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { useDesigner, sectionList, secOf, isBodyKey, bodyWidth, addItem, insertItem, moveItems, updateItem, findItem, tableSetColumnWidth, tableParts, rowsOf, round, NESTING } from './store.js';
+import { useDesigner, sectionList, secOf, isBodyKey, isContentKey, bodyWidth, addItem, insertItem, moveItems, updateItem, findItem, tableSetColumnWidth, tableParts, rowsOf, round, NESTING } from './store.js';
 import { tableFor, formatFor } from './tableGen.js';
 import { loadBarcodes } from '@/engine/items/barcode.js';
 const hasType = (items, t) => (items || []).some(i => i.type === t || hasType(i.items, t));
@@ -90,7 +90,8 @@ export default function Canvas() {
       onPointerDownCapture={blurField}>
       <Ruler width={bw} scale={scale} />
       <div className="paper" style={{ width: bw * scale }} data-testid="paper">
-        {bands.map(s => <Band key={s.key} section={s.key} label={s.label} scale={scale} bw={widths[s.key]} drag={drag} setDrag={setDrag} />)}
+        {/* a content report's named placeholders are drawn inside the master's body (Band), not as bands of their own */}
+        {bands.filter(s => !(def.master && isContentKey(s.key))).map(s => <Band key={s.key} section={s.key} label={s.label} scale={scale} bw={widths[s.key]} drag={drag} setDrag={setDrag} />)}
       </div>
     </div>
   );
@@ -132,13 +133,23 @@ function masterBand(m, section) {
   }
   const b = (Array.isArray(m.sections.body) ? m.sections.body[0] : m.sections.body) || {};
   const all = b.items || [];
-  const ph = all.find(i => i.type === 'placeholder');
-  const items = all.filter(i => i !== ph);
+  // the body goes in the first placeholder; the others are filled by name (sections.content), in the first section only
+  const phs = all.filter(i => i.type === 'placeholder');
+  const ph = phs[0];
+  const items = all.filter(i => i.type !== 'placeholder');
   const below = items.length ? Math.max(...items.map(i => i.y + i.h)) + 6 : 0;
-  return { items, height: Math.max(b.height || 0, below), off: ph ? { x: ph.x, y: ph.y, w: ph.w, h: ph.h } : { x: 0, y: below, w: null, h: 0 } };
+  const extras = section === 'body' ? phs.slice(1).filter(p => p.name).map(p => ({ name: p.name, x: p.x, y: p.y, w: p.w, h: p.h })) : [];
+  return { items, extras, height: Math.max(b.height || 0, below, ...phs.map(p => p.y + p.h)), off: ph ? { x: ph.x, y: ph.y, w: ph.w, h: ph.h } : { x: 0, y: below, w: null, h: 0 } };
 }
 
-function Band({ section, label, scale, bw: bandW, drag, setDrag }) {
+/** Fill a master's named placeholder: the content report gets an entry for it in sections.content. */
+function fillPlaceholder(p) {
+  const st = useDesigner.getState();
+  st.apply(d => { d.sections.content = [...(d.sections.content || []), { placeholder: p.name, height: Math.max(12, Math.round(p.h)), items: [] }]; });
+  st.select({ kind: 'section', section: `content:${useDesigner.getState().def.sections.content.length - 1}` });
+}
+
+function Band({ section, label, scale, bw: bandW, drag, setDrag, phBox = null }) {
   const T = useT();
   const sec = useDesigner(s => secOf(s.def, section));
   const sel = useDesigner(s => s.sel);
@@ -148,8 +159,10 @@ function Band({ section, label, scale, bw: bandW, drag, setDrag }) {
   const masterId = useDesigner(s => s.def.master);
   const readOnly = useDesigner(s => s.readOnly);
   const master = useReused(masterId);
-  const mb = masterId ? masterBand(master, section) : null;
-  const off = mb?.off || null; // the body of a content report: its items sit in the master's content placeholder
+  // phBox: a named placeholder's content, drawn inside the master's body at the placeholder's box
+  const mb = masterId && !phBox ? masterBand(master, section) : null;
+  const off = phBox || mb?.off || null; // the body of a content report: its items sit in the master's content placeholder
+  const contentList = useDesigner(s => s.def.sections?.content);
   const bw = off?.w || bandW;
   const ref = useRef(null);
   const [marquee, setMarquee] = useState(null);
@@ -209,14 +222,14 @@ function Band({ section, label, scale, bw: bandW, drag, setDrag }) {
     if (part) { insertPart(part.library, part.part, { section, x: snapV(p.x), y: snapV(p.y) }); return; }
     const tool = e.dataTransfer.getData(MIME_TOOL);
     if (tool) {
-      if ((tool === 'table' || tool === 'matrix' || tool === 'subreport') && !isBodyKey(section)) return alertOnce('Tables, matrices and subreports can only go in the body.');
+      if ((tool === 'table' || tool === 'matrix' || tool === 'subreport') && !isBodyKey(section) && !isContentKey(section)) return alertOnce('Tables, matrices and subreports can only go in the body.');
       insertItem(tool, section, snapV(p.x), snapV(p.y));
       return;
     }
     const dsDrop = JSON.parse(e.dataTransfer.getData(MIME_DATASET) || 'null');
     if (dsDrop) {
       // a data set dropped on the page: a table of its rows, with totals for the number fields
-      if (!isBodyKey(section)) return alertOnce('Tables can only go in the body.');
+      if (!isBodyKey(section) && !isContentKey(section)) return alertOnce('Tables can only go in the body.');
       const st = useDesigner.getState();
       const ds = (st.def.dataSets || []).find(d => d.name === dsDrop.dataSet);
       if (!ds?.fields?.length) return alertOnce('Detect the fields of this data set first (Edit → Detect fields).');
@@ -265,6 +278,7 @@ function Band({ section, label, scale, bw: bandW, drag, setDrag }) {
         <div className="band-resize" onPointerDown={onResizeDown} title="Drag to change the band height" />
       </div>
   );
+  if (phBox) return surface;
   return (
     <>
       <div className={`band-label${secSelected ? ' sel' : ''}`} onClick={() => useDesigner.getState().select({ kind: 'section', section })}>
@@ -275,6 +289,15 @@ function Band({ section, label, scale, bw: bandW, drag, setDrag }) {
           {/* the master's items below the placeholder move down as the content grows, as they will when rendered */}
           <div className="master-layer" aria-hidden="true">{mb.items.map((it, i) => <StaticItem key={it.id || i} item={off && it.y >= off.y + off.h ? { ...it, y: it.y + Math.max(0, h - off.h) } : it} scale={scale} />)}</div>
           {surface}
+          {(mb.extras || []).map((p) => {
+            const i = (contentList || []).findIndex(e => e?.placeholder === p.name);
+            if (i >= 0) return <Band key={p.name} section={`content:${i}`} scale={scale} bw={p.w} drag={drag} setDrag={setDrag} phBox={p} />;
+            return (
+              <div key={p.name} className="band master-content" style={{ position: 'absolute', left: p.x * scale, top: p.y * scale, width: p.w * scale, height: p.h * scale, display: 'flex', alignItems: 'center', justifyContent: 'center' }} data-placeholder={p.name}>
+                {!readOnly && <button className="btn sm" onClick={() => fillPlaceholder(p)} data-testid={`fill-placeholder-${p.name}`}>{T('fillPlaceholder', { name: p.name })}</button>}
+              </div>
+            );
+          })}
         </div>
       ) : surface}
     </>

@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { allNames, cloneWithIds } from './store.js';
+import { allNames, cloneWithIds, isContentKey } from './store.js';
 import { useDesigner, findItem, updateItem, deleteSelection, duplicateSelection, sectionList, secOf, isBodyKey, addBodySection, removeBodySection, walk, tableParts, rowsOf,
   tableInsertColumn, tableDeleteColumn, tableInsertRow, tableDeleteRow, tableSetColumnWidth, tableMergeRight, tableSplit, tableMergeDown, tableSplitRows, tableSync, tableAddGroup, tableRemoveGroup, round, growToFit } from './store.js';
 import { normalizeMatrix, isTablix } from '@/engine/items/pivot.js';
@@ -830,7 +830,8 @@ function SectionProps({ section }) {
           <Field label={T('i_columns')} hint={T('i_newspaperHint')}><NumberInput value={sec.columns?.count || 1} step={1} min={1} onChange={v => apply(x => { const n = Math.max(1, Math.min(6, Math.round(v))); if (n === 1) delete x.columns; else x.columns = { gap: x.columns?.gap ?? 18, count: n }; })} /></Field>
           {sec.columns?.count > 1 && <Field label={T('i_gapPt')}><NumberInput value={sec.columns.gap ?? 18} step={1} onChange={v => apply(x => { x.columns.gap = Math.max(0, v); }, 'colgap')} /></Field>}
         </div>}
-        {!isBody && <>
+        {isContentKey(section) && <div className="hint">{T('placeholderHint')}</div>}
+        {!isBody && !isContentKey(section) && <>
           <Check label={T('i_printFirst')} checked={sec.printOnFirstPage !== false} onChange={v => set('printOnFirstPage', v ? undefined : false)} />
           <Check label={T('i_printLast')} checked={sec.printOnLastPage !== false} onChange={v => set('printOnLastPage', v ? undefined : false)} />
         </>}
