@@ -10,7 +10,7 @@ const subset = createSubsetter(async () => fs.readFileSync(new URL('../public/ha
 const store = new FontStore(async k => fs.readFileSync(new URL(`../public/fonts/${fontFile(k)}`, import.meta.url)));
 const read = (f) => JSON.parse(fs.readFileSync(new URL(`../reports/${f}`, import.meta.url)));
 let total = 0;
-for (const [file, opts] of [['loan-statement.pw.json', { sources: { loans: sampleLoan('LN-2026-004417') } }], ['richtext-showcase.pw.json', {}], ['expressions-showcase.pw.json', {}]]) {
+for (const [file, opts] of [['loan-statement.pw.json', { sources: { loans: sampleLoan('LN-2026-004417') } }], ['richtext-showcase.pw.json', {}], ['expressions-showcase.pw.json', {}], ['tablix-showcase.pw.json', {}]]) {
   const model = await render(read(file), { fontStore: store, ...opts });
   const pdfBytes = await exportPdf(model, store, { subset });
   fs.writeFileSync('/tmp/check.pdf', pdfBytes);

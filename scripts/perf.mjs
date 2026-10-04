@@ -15,3 +15,14 @@ const def = {
 const t0 = Date.now();
 const out = await render(def, { fontStore });
 console.log(`${N} rows → ${out.pages.length} pages in ${Date.now() - t0} ms (engine stats ${out.stats.ms} ms)`);
+
+// A pivot over the same rows: 2 row levels × 2 column levels, 2 values, totals at every level.
+const prow = rows.map((r, i) => ({ ...r, branch: `B${i % 20}`, year: 2022 + (i % 4), q: 1 + (i % 3) }));
+const pdef = { ...def, dataSources: [{ name: 's', type: 'json', data: { rows: prow } }],
+  sections: { ...def.sections, body: { items: [{ type: 'matrix', name: 'P', x: 0, y: 0, w: 520, h: 60, dataSet: 'R', columnWidth: 34, rowHeaderWidth: 60,
+    rowGroups: [{ expr: '=Fields.city', total: 'after' }, { expr: '=Fields.branch', total: 'after' }],
+    columnGroups: [{ expr: '=Fields.year', total: 'after' }, { expr: '=Fields.q', total: 'after' }],
+    values: [{ value: '=Sum(Fields.amt)', format: 'N0' }, { value: '=Count(Fields)' }] }] } } };
+const t1 = Date.now();
+const pout = await render(pdef, { fontStore });
+console.log(`${N} rows → pivot of ${pout.regions[0].rows.length} rows × ${pout.regions[0].columns.length} columns, ${pout.pages.length} pages in ${Date.now() - t1} ms`);

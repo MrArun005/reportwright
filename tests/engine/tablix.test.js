@@ -178,3 +178,30 @@ describe('matrix layout from the pivot', () => {
     expect(t).toEqual(['Region', '2025', '2026', 'Total', 'North', '200', '230', '430', 'South', '260', '310', '570', 'Total', '460', '540', '1,000']);
   });
 });
+
+describe('reports/tablix-showcase.pw.json (numbers checked by hand)', async () => {
+  const fs = await import('node:fs');
+  const def = JSON.parse(fs.readFileSync(new URL('../../reports/tablix-showcase.pw.json', import.meta.url), 'utf8'));
+  const regionRows = (out, name) => out.regions.find(r => r.name === name).rows.map(r => r.cells.map(c => c.value));
+  it('the region × year pivot: sums, row shares and totals', async () => {
+    const out = await render(def, { fontStore });
+    expect(out.warnings).toEqual([]);
+    const rows = regionRows(out, 'SalesPivot');
+    // North / Delhi: 2025 = 100 + 30, 2026 = 170; share of the row 130 / 300 (P1 exports 3 decimals)
+    expect(rows[2]).toEqual(['North', 'Delhi', 130, 0.433, 170, 0.567, 300, 1]);
+    expect(rows[4]).toEqual(['Total', 200, 0.465, 230, 0.535, 430, 1]);
+    expect(rows[8]).toEqual(['All regions', 460, 0.46, 540, 0.54, 1000, 1]);
+  });
+  it('the recursive hierarchy: own cost and the cost of everything below', async () => {
+    const out = await render(def, { fontStore });
+    expect(regionRows(out, 'OrgTable').slice(1).map(r => [r[0], r[1], r[3]])).toEqual([
+      ['Chief executive', 0, 240], ['Finance', 1, 90], ['Accounts', 2, 25], ['Payables', 3, 5], ['Treasury', 2, 15], ['Operations', 1, 50], ['Branches', 2, 10]]);
+  });
+  it('the wide pivot continues on a second landscape page with the region column repeated', async () => {
+    const out = await render(def, { fontStore });
+    expect(out.pages.length).toBe(4);
+    expect(out.pages.slice(2).map(p => [p.width, p.height])).toEqual([[841.89, 595.28], [841.89, 595.28]]);
+    const p4 = texts(out.pages[3]);
+    expect(p4).toEqual(expect.arrayContaining(['Region', 'North', 'Total', '171', '342', '513', '1,026'])); // 1+…+18 = 171, ×2, ×3
+  });
+});

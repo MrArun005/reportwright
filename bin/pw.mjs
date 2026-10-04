@@ -39,9 +39,9 @@ function withData(def, data) {
   return { ...def, dataSources: def.dataSources.map(s => (s.name in data ? { name: s.name, type: 'json', data: data[s.name] } : s)) };
 }
 
-async function renderModel(def, { parameters = {}, data, base, now } = {}) {
+async function renderModel(def, { parameters = {}, data, base, now, state } = {}) {
   try {
-    return await render(withData(def, data), { fontStore, parameters, baseUrl: base, now: now ? new Date(now) : undefined });
+    return await render(withData(def, data), { fontStore, parameters, baseUrl: base, now: now ? new Date(now) : undefined, ...(state ? { state } : {}) });
   } catch (e) {
     const relative = /fetch|URL|Invalid URL/i.test(e.message) && !base;
     fail(`${e.message}${relative ? '\n    A data source needs a server: pass --base http://localhost:3000, or push the data with -d source=file.json.' : ''}`);
@@ -126,7 +126,7 @@ async function cmdTest(args) {
     const def = readJson(path.resolve(testsDir, spec.report));
     for (const c of spec.cases || [{ name: 'default' }]) {
       const data = Object.fromEntries(Object.entries(c.data || {}).map(([k, v]) => [k, typeof v === 'string' ? readJson(path.resolve(testsDir, v)) : v]));
-      const model = await renderModel(def, { parameters: c.parameters, data, now: c.now || '2026-01-01T09:00:00' });
+      const model = await renderModel(def, { parameters: c.parameters, data, now: c.now || '2026-01-01T09:00:00', state: c.state }); // state: drill-down toggles, e.g. {"toggles": {"Pivot|r0|/North": false}}
       const label = `${id} › ${c.name}`;
       const snapFile = path.join(testsDir, `${id}.${c.name}.snap.txt`);
       const text = snapshotText(label, model);
