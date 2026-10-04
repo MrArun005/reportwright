@@ -272,4 +272,11 @@ export default {
   labelField: "حقل التسمية",
   labelFieldHint: "ما يراه القارئ لكل خيار (فارغ: القيمة)",
   liveParams: "تطبيق المعلمات عند تغييرها (مباشر؛ عند الإيقاف: زر عرض التقرير)",
+  chartMaxCategories: "عرض N فئة على الأكثر (رقم أو =Parameters.top)",
+  sfTitle: "الفرز والتصفية (هذا العنصر فقط)",
+  sfFilterTitle: "التصفية (هذا العنصر فقط)",
+  sfSortBy: "الفرز حسب",
+  sfDirection: "الاتجاه",
+  sfOperator: "العامل",
+  sfHint: "يمكن أن تكون القيمة نصًا أو رقمًا أو =Parameters.x أو =Parent.x داخل قائمة. يحتفظ TopN بأعلى N قيم للتعبير (مع التعادلات). تُطبَّق عوامل التصفية بالترتيب.",
 };

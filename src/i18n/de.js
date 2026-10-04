@@ -272,4 +272,11 @@ export default {
   labelField: "Beschriftungsfeld",
   labelFieldHint: "Was der Leser für jede Auswahl sieht (leer: der Wert)",
   liveParams: "Parameter beim Ändern sofort anwenden (live; aus: Schaltfläche „Bericht anzeigen“)",
+  chartMaxCategories: "Höchstens N Kategorien zeigen (Zahl oder =Parameters.top)",
+  sfTitle: "Sortieren und filtern (nur dieses Element)",
+  sfFilterTitle: "Filtern (nur dieses Element)",
+  sfSortBy: "Sortieren nach",
+  sfDirection: "Richtung",
+  sfOperator: "Operator",
+  sfHint: "Der Wert kann Text, eine Zahl, =Parameters.x oder in einer Liste =Parent.x sein. TopN behält die N höchsten Werte des Ausdrucks (auch Gleichstände). Filter laufen der Reihe nach.",
 };

@@ -76,6 +76,31 @@ try {
   assert.equal(def.parameters[0].options, undefined);
   assert.equal(def.liveParameters, false);
 
+  step('Chart: filter, sort and "show at most N" from a parameter');
+  id = await create(base([
+    { type: 'chart', id: 'c1', name: 'Chart1', x: 0, y: 0, w: 320, h: 180, chartType: 'column', dataSet: 'Sales', category: '=Fields.region', series: [{ name: 'Amount', value: '=Sum(Fields.amount)' }] },
+    { type: 'matrix', id: 'm1', name: 'Matrix1', x: 0, y: 200, w: 320, h: 60, dataSet: 'Sales', rowGroups: [{ name: 'Region', expr: '=Fields.region' }], columnGroups: [], values: [{ label: 'Amount', value: '=Sum(Fields.amount)' }] },
+  ], { parameters: [{ name: 'top', type: 'number', default: 2 }] }));
+  await open(id);
+  await p.locator('[data-item=Chart1]').click();
+  const insp = p.getByTestId('inspector');
+  await field(insp, 'Show at most N categories \\(a number or =Parameters.top\\)').fill('=Parameters.top');
+  await insp.getByTestId('sort-filter').getByLabel('Sort by').selectOption('amount');
+  await insp.getByTestId('sort-filter').getByLabel('Direction').selectOption('desc');
+  await insp.getByTestId('add-filter').click();
+  await insp.getByTestId('sort-filter').getByLabel('Filter value').fill('80');
+  await insp.getByTestId('sort-filter').getByLabel('Operator').selectOption('>');
+  await p.locator('[data-item=Matrix1]').click();
+  await insp.getByTestId('sort-filter').getByLabel('Sort by').waitFor({ state: 'detached' }); // a matrix sorts by its groups
+  await insp.getByTestId('add-filter').click();
+  await save();
+  def = await read(id);
+  const ch = def.sections.body.items.find(i => i.name === 'Chart1');
+  assert.equal(ch.maxCategories, '=Parameters.top');
+  assert.deepEqual(ch.sort, [{ by: '=Fields.amount', dir: 'desc' }]);
+  assert.deepEqual(ch.filters, [{ expr: '=Fields.id', op: '>', value: '80' }]);
+  assert.equal(def.sections.body.items.find(i => i.name === 'Matrix1').filters.length, 1);
+
   assert.deepEqual(errs, []);
   console.log('PASS designer gaps');
 } finally {

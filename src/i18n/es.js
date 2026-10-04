@@ -272,4 +272,11 @@ export default {
   labelField: "Campo de etiqueta",
   labelFieldHint: "Lo que ve el lector en cada opción (vacío: el valor)",
   liveParams: "Aplicar los parámetros al cambiarlos (en vivo; desactivado: botón Ver informe)",
+  chartMaxCategories: "Mostrar como máximo N categorías (un número o =Parameters.top)",
+  sfTitle: "Ordenar y filtrar (solo este elemento)",
+  sfFilterTitle: "Filtrar (solo este elemento)",
+  sfSortBy: "Ordenar por",
+  sfDirection: "Dirección",
+  sfOperator: "Operador",
+  sfHint: "El valor puede ser texto, un número, =Parameters.x o =Parent.x dentro de una lista. TopN conserva los N valores más altos de la expresión (empates incluidos). Los filtros se aplican en orden.",
 };

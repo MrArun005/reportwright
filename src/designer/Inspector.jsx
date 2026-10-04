@@ -49,7 +49,9 @@ function Geo({ label, value, onChange }) {
   );
 }
 
-function PropEditor({ p, value, onChange, openExpr, dataSet, item }) {
+function PropEditor({ p: spec, value, onChange, openExpr, dataSet, item }) {
+  const T = useT();
+  const p = spec.labelKey ? { ...spec, label: T(spec.labelKey) } : spec; // newer props are translated
   const def = useDesigner(s => s.def);
   const families = useFontFamilies();
   switch (p.type) {
@@ -138,7 +140,8 @@ function ItemProps({ item, section, openExpr }) {
       ))}
       {item.type === 'table' && <TableProps table={item} openExpr={openExpr} />}
       {item.type === 'matrix' && <PivotEditor item={item} openExpr={openExpr} />}
-      {item.type === 'list' && <SortFilterEditor item={item} />}
+      {(item.type === 'list' || item.type === 'chart') && <SortFilterEditor item={item} />}
+      {item.type === 'matrix' && <SortFilterEditor item={item} noSort />}
       {(item.type === 'list' || item.type === 'container') && <div className="cat"><span className="hint">Drag tools and fields into the {item.type}. Items inside a list repeat for each record{item.groupBy ? ' (one row per group)' : ''}. A table inside a list can filter with =Parent.field.</span></div>}
       <StyleCats props={stylePropsFor(item.type)} style={item.style} onSet={setStyle} openExpr={openExpr} dataSet={dataSet} />
       <div className="cat"><div className="btnrow">
@@ -322,29 +325,30 @@ function GroupsEditor({ table, openExpr }) {
 }
 
 export const OPS = ['=', '<>', '>', '>=', '<', '<=', 'in', 'like', 'contains', 'Between', 'TopN', 'BottomN', 'TopPercent', 'BottomPercent'];
-function SortFilterEditor({ item }) {
+function SortFilterEditor({ item, noSort }) {
+  const T = useT();
   const def = useDesigner(s => s.def);
   const fields = fieldsOf(def, item.dataSet).map(f => f.name);
   const set = (fn) => updateItem(item.id, fn, `${item.id}.sf`);
   const sort = item.sort?.[0];
   return (
-    <div className="cat">
-      <h5>Sort and filter (this item only)</h5>
-      <div className="grid2">
-        <Field label="Sort by"><Select value={sort?.by?.replace(/^=Fields\./, '') || ''} options={fields} allowEmpty onChange={v => set(t => { if (v) t.sort = [{ by: `=Fields.${v}`, dir: sort?.dir || 'asc' }]; else delete t.sort; })} /></Field>
-        <Field label="Direction"><Select value={sort?.dir || 'asc'} options={['asc', 'desc']} onChange={v => set(t => { if (t.sort?.[0]) t.sort[0].dir = v; })} /></Field>
-      </div>
+    <div className="cat" data-testid="sort-filter">
+      <h5>{T(noSort ? 'sfFilterTitle' : 'sfTitle')}</h5>
+      {!noSort && <div className="grid2">
+        <Field label={T('sfSortBy')}><Select value={sort?.by?.replace(/^=Fields\./, '') || ''} options={fields} allowEmpty onChange={v => set(t => { if (v) t.sort = [{ by: `=Fields.${v}`, dir: sort?.dir || 'asc' }]; else delete t.sort; })} aria-label={T('sfSortBy')} /></Field>
+        <Field label={T('sfDirection')}><Select value={sort?.dir || 'asc'} options={[{ value: 'asc', label: T('dsAsc') }, { value: 'desc', label: T('dsDesc') }]} onChange={v => set(t => { if (t.sort?.[0]) t.sort[0].dir = v; })} aria-label={T('sfDirection')} /></Field>
+      </div>}
       {(item.filters || []).map((f, i) => (
         <div className="rowx" key={i}>
-          <TextInput mono value={f.expr} onChange={v => set(t => { t.filters[i].expr = v; })} aria-label="Filter expression" />
-          <Select value={f.op || '='} options={OPS} onChange={v => set(t => { t.filters[i].op = v; })} />
-          <TextInput mono value={f.value} onChange={v => set(t => { t.filters[i].value = v; })} aria-label="Filter value" placeholder={/^(top|bottom)/i.test(f.op || '') ? 'N' : undefined} />
-          {f.op === 'Between' && <TextInput mono value={f.value2} onChange={v => set(t => { t.filters[i].value2 = v; })} aria-label="Upper value" placeholder="and" />}
-          <button className="btn sm ghost danger" onClick={() => set(t => { t.filters.splice(i, 1); if (!t.filters.length) delete t.filters; })} aria-label="Remove filter">✕</button>
+          <TextInput mono value={f.expr} onChange={v => set(t => { t.filters[i].expr = v; })} aria-label={T('dsFilterField')} />
+          <Select value={f.op || '='} options={OPS} onChange={v => set(t => { t.filters[i].op = v; })} aria-label={T('sfOperator')} />
+          <TextInput mono value={f.value} onChange={v => set(t => { t.filters[i].value = v; })} aria-label={T('dsFilterValue')} placeholder={/^(top|bottom)/i.test(f.op || '') ? 'N' : undefined} />
+          {f.op === 'Between' && <TextInput mono value={f.value2} onChange={v => set(t => { t.filters[i].value2 = v; })} aria-label={T('dsUpperValue')} placeholder={T('dsAnd')} />}
+          <button className="btn sm ghost danger" onClick={() => set(t => { t.filters.splice(i, 1); if (!t.filters.length) delete t.filters; })} aria-label={T('dsRemoveFilter')}>✕</button>
         </div>
       ))}
-      <div><button className="btn sm" onClick={() => set(t => { t.filters ||= []; t.filters.push({ expr: fields[0] ? `=Fields.${fields[0]}` : '', op: '=', value: '' }); })}>Add filter</button></div>
-      <div className="hint">Value can be text, a number, =Parameters.x, or =Parent.x inside a list. TopN keeps the N highest values of the expression (ties too). Filters run in order.</div>
+      <div><button className="btn sm" onClick={() => set(t => { t.filters ||= []; t.filters.push({ expr: fields[0] ? `=Fields.${fields[0]}` : '', op: '=', value: '' }); })} data-testid="add-filter">{T('dsAddFilter')}</button></div>
+      <div className="hint">{T('sfHint')}</div>
     </div>
   );
 }

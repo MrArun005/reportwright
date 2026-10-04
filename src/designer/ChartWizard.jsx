@@ -41,7 +41,8 @@ export function chartFromConfig(c, size) {
   };
   if (c.split && !NO_SPLIT.has(c.chartType)) out.seriesGroup = `=Fields.${c.split}`;
   if (c.stacked && out.seriesGroup) out.stacked = true;
-  if (c.top > 0) out.maxCategories = Number(c.top);
+  if (typeof c.top === 'string' && c.top) out.maxCategories = c.top; // an expression set in the Inspector (=Parameters.top)
+  else if (c.top > 0) out.maxCategories = Number(c.top);
   if (PER_ROW.has(c.chartType)) { out.xValue = `=Fields.${c.category}`; out.series = [{ name: c.value, value: `=Sum(Fields.${c.value})` }]; }
   if (c.chartType === 'bubble') out.series[0].size = c.size ? `=Sum(Fields.${c.size})` : '=1';
   if (c.chartType === 'gauge') out.category = '';
@@ -186,7 +187,7 @@ export default function ChartWizard() {
             {c.split && <Check label="Stack the series" checked={c.stacked} onChange={v => set({ stacked: v })} />}
           </>}
           <div className="grid2">
-            <Field label="Show at most"><Select value={String(c.top || 0)} options={[{ value: '0', label: 'All categories' }, ...[5, 8, 10, 15, 20].map(n => ({ value: String(n), label: `First ${n}` }))]} onChange={v => set({ top: Number(v) || 0 })} /></Field>
+            <Field label="Show at most"><Select value={String(c.top || 0)} options={[{ value: '0', label: 'All categories' }, ...[5, 8, 10, 15, 20].map(n => ({ value: String(n), label: `First ${n}` })), ...(typeof c.top === 'string' && c.top ? [{ value: c.top, label: c.top }] : [])]} onChange={v => set({ top: /^=/.test(v || '') ? v : Number(v) || 0 })} /></Field>
             <Field label="Number format"><Select value={c.format} options={[{ value: 'N0', label: '1,234' }, { value: 'N2', label: '1,234.56' }, { value: 'C0', label: 'Currency' }, { value: 'P1', label: 'Percent' }]} onChange={v => set({ format: v })} /></Field>
           </div>
           <Field label="Title"><input className="input" value={c.title} onChange={e => set({ title: e.target.value })} placeholder="Optional" /></Field>

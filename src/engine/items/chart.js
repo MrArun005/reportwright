@@ -51,7 +51,9 @@ export function chartData(item, ctx, lc, pal = paletteOf(item.palette)) {
     const d = item.categorySort === 'desc' ? -1 : 1;
     cats.sort((a, b) => (a.key instanceof Date ? a.key.getTime() : a.key) > (b.key instanceof Date ? b.key.getTime() : b.key) ? d : -d);
   }
-  if (item.maxCategories > 0) cats = cats.slice(0, item.maxCategories);
+  // show at most N: a number, or an expression such as =Parameters.top (0 or empty: all)
+  const maxN = typeof item.maxCategories === 'string' ? numOrNull(safe(item.maxCategories, ctx, lc, who)) : item.maxCategories;
+  if (maxN > 0) cats = cats.slice(0, Math.floor(maxN));
   if (cats.length > CAPS.categories) { lc.warn(`${who}: ${cats.length} categories; only the first ${CAPS.categories} are drawn`); cats = cats.slice(0, CAPS.categories); }
   let defs = item.series?.length ? item.series : [{ name: 'Value', value: '=Count(Fields)' }];
   if (defs.length > CAPS.series) { lc.warn(`${who}: ${defs.length} series; only the first ${CAPS.series} are drawn`); defs = defs.slice(0, CAPS.series); }

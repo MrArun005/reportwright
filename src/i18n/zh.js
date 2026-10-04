@@ -272,4 +272,11 @@ export default {
   labelField: "标签字段",
   labelFieldHint: "每个选项向读者显示的内容（留空则显示值）",
   liveParams: "读者更改参数时立即应用（实时；关闭：使用“查看报表”按钮）",
+  chartMaxCategories: "最多显示 N 个类别（数字或 =Parameters.top）",
+  sfTitle: "排序和筛选（仅此项）",
+  sfFilterTitle: "筛选（仅此项）",
+  sfSortBy: "排序依据",
+  sfDirection: "方向",
+  sfOperator: "运算符",
+  sfHint: "值可以是文本、数字、=Parameters.x，或在列表内使用 =Parent.x。TopN 保留表达式最大的 N 个值（并列也保留）。筛选按顺序执行。",
 };

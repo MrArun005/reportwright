@@ -877,6 +877,7 @@ register('chart', {
     { key: 'category', label: 'Category (x axis / slices)', type: 'expr', category: 'Chart', showIf: (i) => !ROW_CHARTS.has(i.chartType) && i.chartType !== 'gauge' },
     { key: 'categorySort', label: 'Sort categories', type: 'select', options: ['asc', 'desc'], category: 'Chart', showIf: (i) => !ROW_CHARTS.has(i.chartType) && i.chartType !== 'gauge' },
     { key: 'categoryFormat', label: 'Category format', type: 'text', category: 'Chart', showIf: (i) => !ROW_CHARTS.has(i.chartType) && i.chartType !== 'gauge' },
+    { key: 'maxCategories', label: 'Show at most N categories (a number or =Parameters.top)', labelKey: 'chartMaxCategories', type: 'expr', category: 'Chart', showIf: (i) => !ROW_CHARTS.has(i.chartType) && i.chartType !== 'gauge' },
     { key: 'xValue', label: 'X value (scatter, bubble) or angle in degrees (polar)', type: 'expr', category: 'Chart', showIf: (i) => ROW_CHARTS.has(i.chartType) },
     { key: 'series', label: 'Series', type: 'series', category: 'Chart' },
     { key: 'seriesGroup', label: 'One series per value of', type: 'expr', category: 'Chart', showIf: (i) => !ROW_CHARTS.has(i.chartType) && !['pie', 'donut', 'gauge', 'funnel'].includes(i.chartType) },

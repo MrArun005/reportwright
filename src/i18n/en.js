@@ -272,4 +272,11 @@ export default {
   labelField: "Label field",
   labelFieldHint: "What the reader sees for each choice (empty: the value)",
   liveParams: "Apply parameters as the reader changes them (live; off: a View report button)",
+  chartMaxCategories: "Show at most N categories (a number or =Parameters.top)",
+  sfTitle: "Sort and filter (this item only)",
+  sfFilterTitle: "Filter (this item only)",
+  sfSortBy: "Sort by",
+  sfDirection: "Direction",
+  sfOperator: "Operator",
+  sfHint: "Value can be text, a number, =Parameters.x, or =Parent.x inside a list. TopN keeps the N highest values of the expression (ties too). Filters run in order.",
 };

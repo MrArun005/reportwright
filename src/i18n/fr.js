@@ -272,4 +272,11 @@ export default {
   labelField: "Champ du libellé",
   labelFieldHint: "Ce que le lecteur voit pour chaque choix (vide : la valeur)",
   liveParams: "Appliquer les paramètres dès qu’ils changent (en direct ; sinon : bouton Afficher le rapport)",
+  chartMaxCategories: "Afficher au plus N catégories (un nombre ou =Parameters.top)",
+  sfTitle: "Trier et filtrer (cet élément seulement)",
+  sfFilterTitle: "Filtrer (cet élément seulement)",
+  sfSortBy: "Trier par",
+  sfDirection: "Sens",
+  sfOperator: "Opérateur",
+  sfHint: "La valeur peut être du texte, un nombre, =Parameters.x ou =Parent.x dans une liste. TopN garde les N plus grandes valeurs de l’expression (ex æquo compris). Les filtres s’appliquent dans l’ordre.",
 };

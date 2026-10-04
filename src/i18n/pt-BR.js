@@ -272,4 +272,11 @@ export default {
   labelField: "Campo do rótulo",
   labelFieldHint: "O que o leitor vê em cada opção (vazio: o valor)",
   liveParams: "Aplicar os parâmetros ao mudar (ao vivo; desligado: botão Ver relatório)",
+  chartMaxCategories: "Mostrar no máximo N categorias (um número ou =Parameters.top)",
+  sfTitle: "Ordenar e filtrar (só este item)",
+  sfFilterTitle: "Filtrar (só este item)",
+  sfSortBy: "Ordenar por",
+  sfDirection: "Direção",
+  sfOperator: "Operador",
+  sfHint: "O valor pode ser texto, um número, =Parameters.x ou =Parent.x dentro de uma lista. TopN mantém os N maiores valores da expressão (empates também). Os filtros rodam em ordem.",
 };

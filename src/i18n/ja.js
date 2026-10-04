@@ -272,4 +272,11 @@ export default {
   labelField: "ラベルのフィールド",
   labelFieldHint: "各選択肢に表示する内容（空欄なら値）",
   liveParams: "パラメーターを変更するとすぐに適用（ライブ。オフ：レポート表示ボタン）",
+  chartMaxCategories: "表示するカテゴリーの最大数 N（数値または =Parameters.top）",
+  sfTitle: "並べ替えとフィルター（この項目のみ）",
+  sfFilterTitle: "フィルター（この項目のみ）",
+  sfSortBy: "並べ替えの基準",
+  sfDirection: "順序",
+  sfOperator: "演算子",
+  sfHint: "値はテキスト、数値、=Parameters.x、リスト内では =Parent.x を指定できます。TopN は式の上位 N 件（同値も含む）を残します。フィルターは順に適用されます。",
 };
