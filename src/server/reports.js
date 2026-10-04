@@ -62,7 +62,7 @@ export async function listVersions(id) {
 }
 
 /** A report and its version history (a new report with this id must not inherit old versions). */
-export async function deleteReport(id) { await store().remove('reports', safeId(id)); await store().removeVersions(id); }
+export async function deleteReport(id) { await store().removeVersions(safeId(id)); await store().remove('reports', id); } // history first: a half-done delete leaves no orphans
 
 export async function newId(name) {
   const base = (String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'report').slice(0, 48);

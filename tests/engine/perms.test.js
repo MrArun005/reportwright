@@ -346,6 +346,21 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     await R.one.DELETE(req('/api/reports/payroll', { who: 'admin', method: 'DELETE' }), P('payroll'));
   });
 
+  it('review: a new report never inherits history a failed delete left behind', async () => {
+    const { store } = await import('../../src/server/storage/index.js');
+    await store().addVersion('ghost', '20200101T000000000', JSON.stringify(def('Old secret')), 50); // a delete that died half-way
+    expect((await R.one.PUT(req('/api/reports/ghost', { who: 'admin', method: 'PUT', body: def('New') }), P('ghost'))).status).toBe(200);
+    expect((await json(await versions.GET(req('/api/reports/ghost/versions', { who: 'admin' }), P('ghost')))).body).toEqual([]);
+    const made = (await json(await R.list.POST(req('/api/reports', { who: 'admin', method: 'POST', body: { name: 'Ghost two' } })))).body.id;
+    await store().addVersion(made, '20200101T000000000', JSON.stringify(def('x')), 50);
+    await R.one.DELETE(req(`/api/reports/${made}`, { who: 'admin', method: 'DELETE' }), P(made));
+    await store().addVersion(made, '20200101T000000000', JSON.stringify(def('Old secret')), 50);
+    const again = (await json(await R.list.POST(req('/api/reports', { who: 'admin', method: 'POST', body: { name: 'Ghost two' } })))).body.id;
+    expect(again).toBe(made);
+    expect((await json(await versions.GET(req(`/api/reports/${again}/versions`, { who: 'admin' }), P(again)))).body).toEqual([]);
+    for (const id of ['ghost', again]) await R.one.DELETE(req(`/api/reports/${id}`, { who: 'admin', method: 'DELETE' }), P(id));
+  });
+
   it('review: PUT to a new id answers like a hidden report when the user may not create there', async () => {
     // the top is view-only for alice: a new id and bob's hidden report get the same answer
     expect((await R.one.PUT(req('/api/reports/no-such-report', { who: 'alice', method: 'PUT', body: def('x') }), P('no-such-report'))).status).toBe(404);

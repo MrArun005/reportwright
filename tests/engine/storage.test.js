@@ -136,6 +136,17 @@ describe.each(backends)('storage on %s', (kind, setup) => {
     expect(await store().get('schedules', s.id)).toBe(null);
   });
 
+  it('a new schedule waits for the schedules lock too', async () => {
+    await writeReport('loan-statement', def('Loan'));
+    expect(await store().lease('lock:schedules', 'elsewhere', 30000)).toBe(true);
+    let done = false;
+    const mk = createSchedule({ ...schedule, name: 'Later' }, { kind: 'service' }).then((r) => { done = true; return r; });
+    await new Promise(r => setTimeout(r, 300));
+    expect(done).toBe(false);
+    await store().release('lock:schedules', 'elsewhere');
+    await deleteSchedule((await mk).id, { kind: 'service' });
+  });
+
   it('stores job records', async () => {
     const s = store();
     await s.put('jobs', 'b_1aaa', JSON.stringify({ id: 'b_1aaa', status: 'completed' }));

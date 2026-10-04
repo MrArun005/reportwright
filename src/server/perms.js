@@ -373,6 +373,7 @@ export async function canCreateIn(p, folder) {
 }
 /** @param {Principal} p @param {string} id @param {string|null} folder */
 export async function recordNewReport(p, id, folder) {
+  await store().removeVersions(id); // a new report starts with no history, whatever an older one with this id left
   const grants = p.kind === 'user' ? [{ to: `user:${p.email}`, level: 'manage' }] : [];
   if (!folder && !grants.length) { await store().remove('reportacl', id); return; } // a stale record of an older report with this id
   await store().put('reportacl', id, JSON.stringify({ id, folder: folder || null, inherit: true, grants, rev: rev() }));

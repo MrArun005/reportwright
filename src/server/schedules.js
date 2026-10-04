@@ -50,7 +50,7 @@ export async function createSchedule(body, p = defaultPrincipal()) {
   validateSchedule(body);
   await checkTemplate(p, body.template);
   const s = { enabled: true, timezone: 'UTC', format: 'pdf', ...body, id: `s_${crypto.randomBytes(5).toString('hex')}`, createdAt: new Date().toISOString(), owner: principalId(p) };
-  await save(s);
+  await withLock('schedules', () => save(s));
   return shown(s);
 }
 /** @param {string} id @param {any} patch @param {Principal} [p] */
