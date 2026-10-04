@@ -1,12 +1,16 @@
 // @ts-check
 // Page model → Word (.docx), for people who edit the result. Text becomes paragraphs in reading order and
 // tables become Word tables (the engine tags table cell text with its table, row and column), with the header
-// row repeating on each Word page. Charts, images and shapes are left out: use PDF for an exact copy.
-// Written by hand with fflate (WordprocessingML is small), no Word library.
+// row repeating on each Word page. A text box's background and borders become the paragraph's shading and borders,
+// a cell's become the cell's. Charts, pictures, maps, barcodes, shapes and in-cell visuals (sparklines, data bars)
+// become pictures: an SVG with a PNG fallback (Word 2016+ draws the SVG, older Word and other readers the PNG), or the
+// picture's own PNG/JPEG. Written by hand with fflate (WordprocessingML is small), no Word library.
 import { zipSync, strToU8 } from 'fflate';
 import { visualLines, isJustified } from './regions.js';
+import { figures, figurePicture, boxOf, figureSvg, rasterize, cellVisuals, boxDecor, hexOrNull, altOf } from './figures.js';
 
 const TW = 20; // twips per point
+const EMU = 12700; // EMU per point
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const hex = (c) => { const m = /^#?([0-9a-f]{6})$/i.exec(String(c || '').trim()); return m ? m[1].toUpperCase() : '000000'; };
 
@@ -23,7 +27,7 @@ function rPr(it) {
 }
 
 /** Left, right or centre, from where the lines sit in their box. */
-function alignOf(it) {
+export function alignOf(it) {
   if (isJustified(it)) return 'both'; // Word's justify
   const c = it.clip;
   if (!c || !it.lines.length) return 'left';
@@ -33,8 +37,22 @@ function alignOf(it) {
   return right < left - 2 ? 'right' : 'left';
 }
 
+/** One border edge in WordprocessingML (w:top, w:left …). */
+const edge = (tag, o, space = 0) => {
+  const color = hexOrNull(o.stroke);
+  if (!color) return '';
+  const val = !o.dash ? 'single' : o.dash[0] <= 1.5 ? 'dotted' : 'dashed';
+  return `<w:${tag} w:val="${val}" w:sz="${Math.max(2, Math.min(96, Math.round((o.strokeWidth || 1) * 8)))}" w:space="${space}" w:color="${color}"/>`;
+};
+const pBorders = (d) => {
+  if (!d || !Object.keys(d.sides).length) return '';
+  const s = d.sides;
+  return `<w:pBdr>${s.top ? edge('top', s.top, 1) : ''}${s.left ? edge('left', s.left, 4) : ''}${s.bottom ? edge('bottom', s.bottom, 1) : ''}${s.right ? edge('right', s.right, 4) : ''}</w:pBdr>`;
+};
+const shading = (fill) => (fill ? `<w:shd w:val="clear" w:color="auto" w:fill="${fill}"/>` : '');
+
 const textOf = (it) => visualLines(it).join(' ');
-const para = (it, indentPt) => `<w:p><w:pPr><w:spacing w:before="0" w:after="${Math.round((it.size || 9) * 4)}"/>${indentPt > 0 ? `<w:ind w:left="${Math.round(indentPt * TW)}"/>` : ''}<w:jc w:val="${alignOf(it)}"/></w:pPr><w:r>${rPr(it)}<w:t xml:space="preserve">${esc(textOf(it))}</w:t></w:r></w:p>`;
+const para = (it, indentPt, decor) => `<w:p><w:pPr>${pBorders(decor)}${shading(decor?.fill)}<w:spacing w:before="0" w:after="${Math.round((it.size || 9) * 4)}"/>${indentPt > 0 ? `<w:ind w:left="${Math.round(indentPt * TW)}"/>` : ''}<w:jc w:val="${alignOf(it)}"/></w:pPr><w:r>${rPr(it)}<w:t xml:space="preserve">${esc(textOf(it))}</w:t></w:r></w:p>`;
 
 /** One paragraph of rich text: its fragments as runs, a <br> as a Word break, a wrapped line as a space. */
 function richPara(items, indentPt) {
@@ -53,16 +71,43 @@ function richPara(items, indentPt) {
   return `<w:p><w:pPr><w:spacing w:before="0" w:after="${Math.round((items[0].size || 9) * 4)}"/>${indentPt > 0 ? `<w:ind w:left="${Math.round(indentPt * TW)}"/>` : ''}<w:jc w:val="${jc}"/></w:pPr>${runs}</w:p>`;
 }
 
-const BORDER = '<w:tblBorders><w:top w:val="single" w:sz="4" w:color="CBD5E1"/><w:left w:val="single" w:sz="4" w:color="CBD5E1"/><w:bottom w:val="single" w:sz="4" w:color="CBD5E1"/><w:right w:val="single" w:sz="4" w:color="CBD5E1"/><w:insideH w:val="single" w:sz="4" w:color="CBD5E1"/><w:insideV w:val="single" w:sz="4" w:color="CBD5E1"/></w:tblBorders>';
+/** The border most cell sides of a table draw (the table-wide border), or null when most sides have none. */
+function commonEdge(decors) {
+  const count = new Map();
+  let sides = 0;
+  for (const d of decors) for (const s of ['top', 'right', 'bottom', 'left']) {
+    sides++;
+    const o = d?.sides[s];
+    if (!o) continue;
+    const k = edge('x', o);
+    const e = count.get(k) || { n: 0, o };
+    e.n++; count.set(k, e);
+  }
+  // a side drawn once between two cells counts for one of them: a full grid is about half the sides
+  const best = [...count.values()].sort((a, b) => b.n - a.n)[0];
+  return best && best.n * 2.5 >= sides ? best.o : null;
+}
 
-/** One Word table from the tagged cell text of one table on one page. */
-function table(cells, indentPt) {
+/**
+ * One Word table from the tagged cell text of one table on one page.
+ * @param {any[]} cells text items, each with cell and its decor
+ * @param {Map<string, string>} pics `${row}|${col}` → a picture run (in-cell visuals)
+ */
+function table(cells, indentPt, pics) {
   const cols = cells[0].cell.cols;
   const rows = new Map();
   for (const it of cells) {
-    const r = rows.get(it.cell.row) || rows.set(it.cell.row, { kind: it.cell.kind, y: it.lines[0].y, byCol: new Map() }).get(it.cell.row);
+    const r = rows.get(it.cell.row) || rows.set(it.cell.row, { id: it.cell.row, kind: it.cell.kind, y: it.lines[0]?.y ?? 0, byCol: new Map() }).get(it.cell.row);
     r.byCol.set(it.cell.col, it);
   }
+  const common = commonEdge(cells.map(c => c.decor));
+  const tblB = common ? ['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map(s => edge(s, common)).join('') : '<w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/>';
+  const cellB = (d) => {
+    if (!d) return '';
+    const s = d.sides;
+    const x = (s.top ? edge('top', s.top) : '') + (s.left ? edge('left', s.left) : '') + (s.bottom ? edge('bottom', s.bottom) : '') + (s.right ? edge('right', s.right) : '');
+    return x ? `<w:tcBorders>${x}</w:tcBorders>` : '';
+  };
   const grid = cols.map(w => `<w:gridCol w:w="${Math.round(w * TW)}"/>`).join('');
   const vm = new Map(); // col → { left, span }: a cell merged down (rowSpan) still covering rows below
   const out = [...rows.values()].sort((a, b) => a.y - b.y).map((r) => {
@@ -81,31 +126,57 @@ function table(cells, indentPt) {
       if (rs > 1) vm.set(c, { left: rs - 1, span: Math.max(1, it.cell.span || 1) });
       const span = Math.max(1, it?.cell.span || 1);
       const w = cols.slice(c, c + span).reduce((s, x) => s + x, 0);
-      const bg = it?.cell.bg && /^#?[0-9a-f]{6}$/i.test(it.cell.bg) ? hex(it.cell.bg) : r.kind === 'header' ? 'F1F5F9' : null;
-      const shade = bg ? `<w:shd w:val="clear" w:color="auto" w:fill="${bg}"/>` : '';
-      const p = it ? `<w:p><w:pPr><w:spacing w:before="0" w:after="0"/><w:jc w:val="${alignOf(it)}"/></w:pPr><w:r>${rPr(it)}<w:t xml:space="preserve">${esc(textOf(it))}</w:t></w:r></w:p>` : '<w:p/>';
-      tcs.push(`<w:tc><w:tcPr><w:tcW w:w="${Math.round(w * TW)}" w:type="dxa"/>${span > 1 ? `<w:gridSpan w:val="${span}"/>` : ''}${rs > 1 ? '<w:vMerge w:val="restart"/>' : ''}${shade}</w:tcPr>${p}</w:tc>`);
+      const bg = it?.cell.bg && /^#?[0-9a-f]{6}$/i.test(it.cell.bg) ? hex(it.cell.bg) : it?.decor?.fill || null;
+      const pic = pics.get(`${r.id}|${c}`) || '';
+      const text = it ? `<w:r>${rPr(it)}<w:t xml:space="preserve">${esc(textOf(it))}</w:t></w:r>` : '';
+      const p = it || pic ? `<w:p><w:pPr><w:spacing w:before="0" w:after="0"/><w:jc w:val="${it ? alignOf(it) : 'left'}"/></w:pPr>${pic}${text}</w:p>` : '<w:p/>';
+      tcs.push(`<w:tc><w:tcPr><w:tcW w:w="${Math.round(w * TW)}" w:type="dxa"/>${span > 1 ? `<w:gridSpan w:val="${span}"/>` : ''}${rs > 1 ? '<w:vMerge w:val="restart"/>' : ''}${cellB(it?.decor)}${shading(bg)}</w:tcPr>${p}</w:tc>`);
       c += span;
     }
     return `<w:tr>${r.kind === 'header' ? '<w:trPr><w:tblHeader/></w:trPr>' : ''}${tcs.join('')}</w:tr>`;
   }).join('');
-  return `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>${indentPt > 0 ? `<w:tblInd w:w="${Math.round(indentPt * TW)}" w:type="dxa"/>` : ''}${BORDER}<w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="60" w:type="dxa"/><w:right w:w="60" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${out}</w:tbl><w:p><w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr></w:p>`;
+  return `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>${indentPt > 0 ? `<w:tblInd w:w="${Math.round(indentPt * TW)}" w:type="dxa"/>` : ''}<w:tblBorders>${tblB}</w:tblBorders><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="60" w:type="dxa"/><w:right w:w="60" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${out}</w:tbl><w:p><w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr></w:p>`;
 }
 
 /**
  * @param {any} model render() output
- * @param {{ title?: string, author?: string }} [opt]
+ * @param {{ title?: string, author?: string, lang?: string, fontStore?: any, fetchImage?: (src: string) => Promise<Uint8Array|null>,
+ *   rasterize?: (svg: string, w: number, h: number, scale: number) => Promise<Uint8Array|null>, figures?: boolean }} [opt]
+ *   fontStore: text in pictures as outlines (else the reader's fallback font); fetchImage: pictures by URL;
+ *   rasterize: the PNG fallback of a picture (default: a canvas in a browser, sharp in Node); figures: false leaves them out.
  * @returns {Promise<Uint8Array>}
  */
 export async function exportDocx(model, opt = {}) {
-  const margin = 36;
-  const body = model.pages.map((pg) => {
-    const texts = pg.items.flatMap(i => (i.t === 'field' ? i.draw : [i])).filter(i => i.t === 'text' && i.lines?.length);
-    // blocks in reading order: a free text box, or a whole table (all its cells on this page)
+  // the left and right page margins of the Word document; content keeps its place (indents are from the report's x)
+  const margin = 18;
+  /** @type {{ name: string, bytes: Uint8Array, rid: string }[]} */
+  const media = [];
+  let docPr = 0;
+  const addMedia = (bytes, ext) => { const rid = `rIdm${media.length + 1}`; media.push({ name: `image${media.length + 1}.${ext}`, bytes, rid }); return rid; };
+  /** a picture as an inline drawing run */
+  const pictureRun = (pic, alt) => {
+    const main = pic.png ? addMedia(pic.png, 'png') : pic.jpeg ? addMedia(pic.jpeg, 'jpeg') : pic.svg ? addMedia(strToU8(pic.svg), 'svg') : null;
+    if (!main) return '';
+    const svg = pic.png && pic.svg ? addMedia(strToU8(pic.svg), 'svg') : null;
+    const id = ++docPr, cx = Math.max(1, Math.round(pic.w * EMU)), cy = Math.max(1, Math.round(pic.h * EMU));
+    const name = `Picture ${id}`, descr = alt ? ` descr="${esc(alt)}"` : '';
+    const ext = svg ? `<a:extLst><a:ext uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}"><asvg:svgBlip xmlns:asvg="http://schemas.microsoft.com/office/drawing/2016/SVG/main" r:embed="${svg}"/></a:ext></a:extLst>` : '';
+    return `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${id}" name="${name}"${descr}/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${id}" name="${name}"${descr}/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${main}">${ext}</a:blip><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+  };
+  const picOpt = { fontStore: opt.fontStore, fetchImage: opt.fetchImage, rasterize: opt.rasterize };
+
+  const body = [];
+  for (const pg of model.pages) {
+    const all = pg.items.flatMap(i => (i.t === 'field' ? i.draw : [i]));
+    const figs = opt.figures === false ? [] : figures(all);
+    const used = new Set();
+    for (const f of figs) for (let k = f.at; k <= f.last; k++) used.add(k);
+    // blocks in reading order: a free text box, a whole table (all its cells on this page), a row of pictures
     const blocks = [];
     const tables = new Map();
     const paras = new Map(); // rich text: one block per paragraph of one box
-    for (const it of texts) {
+    all.forEach((it, i) => {
+      if (used.has(i) || it.t !== 'text' || !it.lines?.length) return;
       if (it.rich) {
         const key = `${it.rich.id}\u0001${it.rich.p}`;
         let b = paras.get(key);
@@ -115,21 +186,51 @@ export async function exportDocx(model, opt = {}) {
         b.x = Math.min(b.x, it.lines[0].x);
       } else if (it.cell) {
         const key = it.cell.table;
-        if (!tables.has(key)) { const b = { kind: 'table', y: it.lines[0].y, x: it.clip?.x ?? it.lines[0].x, cells: [] }; tables.set(key, b); blocks.push(b); }
+        if (!tables.has(key)) { const b = { kind: 'table', key, y: it.lines[0].y, x: it.clip?.x ?? it.lines[0].x, cells: [] }; tables.set(key, b); blocks.push(b); }
         const b = tables.get(key);
-        b.cells.push(it);
+        b.cells.push({ ...it, decor: boxDecor(all, i) });
         b.y = Math.min(b.y, it.lines[0].y);
         b.x = Math.min(b.x, it.clip?.x ?? it.lines[0].x);
-      } else blocks.push({ kind: 'text', y: it.lines[0].y, x: it.lines[0].x, it });
-    }
+      } else blocks.push({ kind: 'text', y: it.lines[0].y, x: it.lines[0].x, it, decor: boxDecor(all, i) });
+    });
+    const visuals = opt.figures === false ? new Map() : cellVisuals(all, used, tables);
+    for (const f of figs) blocks.push({ kind: 'fig', y: f.box.y, x: f.box.x, fig: f });
     blocks.sort((a, b) => a.y - b.y || a.x - b.x);
-    return blocks.map(b => (b.kind === 'table' ? table(b.cells, b.x - margin) : b.kind === 'rich' ? richPara(b.items, b.x - margin) : para(b.it, (b.it.clip?.x ?? b.x) - margin))).join('');
-  });
+    let xml = '';
+    for (let bi = 0; bi < blocks.length; bi++) {
+      const b = blocks[bi];
+      if (b.kind === 'fig') {
+        // pictures side by side (a row of charts) share one paragraph; a stretched space keeps the gap between them
+        const row = [b];
+        while (blocks[bi + 1]?.kind === 'fig' && Math.abs(blocks[bi + 1].y - b.y) < 4) row.push(blocks[++bi]);
+        row.sort((p, q) => p.x - q.x);
+        let runs = '', right = null;
+        for (const r of row) {
+          const pic = await figurePicture(r.fig, picOpt);
+          if (right != null && pic.x > right) runs += `<w:r><w:rPr><w:spacing w:val="${Math.min(31680, Math.max(0, Math.round((pic.x - right - 3) * TW)))}"/></w:rPr><w:t xml:space="preserve"> </w:t></w:r>`;
+          runs += pictureRun(pic, altOf(r.fig.tag));
+          right = pic.x + pic.w;
+        }
+        const first = row[0];
+        xml += `<w:p><w:pPr><w:spacing w:before="0" w:after="80"/>${Math.abs(first.x - margin) > 0.5 ? `<w:ind w:left="${Math.round(Math.max(-margin, first.x - margin) * TW)}"/>` : ''}</w:pPr>${runs}</w:p>`; // into the margin when the report's is narrower
+      } else if (b.kind === 'table') {
+        const pics = new Map();
+        for (const [k, v] of visuals.get(b.key) || []) {
+          if (!v.box) continue;
+          const svg = figureSvg({ items: v.items, box: v.box }, opt.fontStore);
+          pics.set(k, pictureRun({ svg, png: await rasterize(svg, v.box.w, v.box.h, picOpt), w: v.box.w, h: v.box.h }, 'Chart in a table cell'));
+        }
+        xml += table(b.cells, b.x - margin, pics);
+      } else if (b.kind === 'rich') xml += richPara(b.items, b.x - margin);
+      else xml += para(b.it, (b.it.clip?.x ?? b.x) - margin, b.decor);
+    }
+    body.push(xml);
+  }
   // pages of one size share a Word section; a page of another size (a body section) starts a new one
-  const M = margin * TW;
+  const M = margin * TW, V = 36 * TW;
   const sectPr = (pg) => {
     const W = Math.round((pg.width ?? model.width) * TW), H = Math.round((pg.height ?? model.height) * TW);
-    return `<w:sectPr><w:pgSz w:w="${W}" w:h="${H}"${W > H ? ' w:orient="landscape"' : ''}/><w:pgMar w:top="${M}" w:right="${M}" w:bottom="${M}" w:left="${M}" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr>`;
+    return `<w:sectPr><w:pgSz w:w="${W}" w:h="${H}"${W > H ? ' w:orient="landscape"' : ''}/><w:pgMar w:top="${V}" w:right="${M}" w:bottom="${V}" w:left="${M}" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr>`;
   };
   const sizeOf = (pg) => `${pg.width ?? model.width}x${pg.height ?? model.height}`;
   let xml = '';
@@ -138,25 +239,30 @@ export async function exportDocx(model, opt = {}) {
     const next = model.pages[i + 1];
     if (!next) return;
     // the section break carries the size of the pages before it
-    xml += sizeOf(next) !== sizeOf(pg) ? `<w:p><w:pPr>${sectPr(pg)}</w:pPr></w:p>` : '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+    // a new page by "page break before" on a one-point paragraph: a page that already ends at the bottom gets no blank page after it
+    xml += sizeOf(next) !== sizeOf(pg) ? `<w:p><w:pPr>${sectPr(pg)}</w:pPr></w:p>` : '<w:p><w:pPr><w:pageBreakBefore/><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr></w:p>';
   });
   const last = model.pages[model.pages.length - 1] || {};
   const document = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>${xml}${sectPr(last)}</w:body></w:document>`;
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${xml}${sectPr(last)}</w:body></w:document>`;
+  const lang = opt.lang ? `<w:lang w:val="${esc(opt.lang)}"/>` : '';
   const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Inter" w:hAnsi="Inter" w:cs="Inter"/><w:sz w:val="18"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>`;
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Inter" w:hAnsi="Inter" w:cs="Inter"/><w:sz w:val="18"/>${lang}</w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>`;
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
   const core = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${esc(opt.title || model.name || 'Report')}</dc:title>${opt.author ? `<dc:creator>${esc(opt.author)}</dc:creator>` : ''}<dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created></cp:coreProperties>`;
-  return zipSync({
+  /** @type {Record<string, Uint8Array>} */
+  const files = {
     '[Content_Types].xml': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`),
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpeg" ContentType="image/jpeg"/><Default Extension="svg" ContentType="image/svg+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`),
     '_rels/.rels': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>`),
     'word/_rels/document.xml.rels': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`),
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>${media.map(m => `<Relationship Id="${m.rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${m.name}"/>`).join('')}</Relationships>`),
     'word/document.xml': strToU8(document),
     'word/styles.xml': strToU8(styles),
     'docProps/core.xml': strToU8(core),
-  }, { level: 6 });
+  };
+  for (const m of media) files[`word/media/${m.name}`] = m.bytes;
+  return zipSync(files, { level: 6 });
 }

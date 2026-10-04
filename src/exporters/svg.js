@@ -1,6 +1,7 @@
 // @ts-check
 import { cssColor } from './color.js';
 import { fontFile } from '../engine/text/fonts.js';
+import { textOutline } from './figures.js';
 
 /** Each font file gets its own CSS family, so local fonts can never replace it. */
 export const fontFamilyCss = (key) => `pw-${key}`;
@@ -20,8 +21,14 @@ const ANIM_CSS = '<style>@media (prefers-reduced-motion:no-preference){.pw-a{tra
 const ANIM_KINDS = new Set(['growY', 'growX', 'scale', 'fade']);
 const ANIM_ORIGIN = { bottom: 'center bottom', top: 'center top', left: 'left center', right: 'right center' };
 
-export function pageToSvg(page, w, h, { background = true, animate = false } = {}) {
-  const out = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n(w)} ${n(h)}" width="${n(w)}" height="${n(h)}" style="font-kerning:none;font-variant-ligatures:none;text-rendering:geometricPrecision">`];
+/**
+ * box: draw only this part of the page (viewBox), as Word and PowerPoint figures do. outline: text as glyph outlines,
+ * from fontkit fonts (figures.js), for readers without the report's fonts.
+ * @param {{ background?: boolean, animate?: boolean, box?: { x: number, y: number, w: number, h: number }, outline?: ((key: string) => any) | null }} [opt]
+ */
+export function pageToSvg(page, w, h, { background = true, animate = false, box = undefined, outline = null } = {}) {
+  const vb = box ? `${n(box.x)} ${n(box.y)} ${n(box.w)} ${n(box.h)}` : `0 0 ${n(w)} ${n(h)}`;
+  const out = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}" width="${n(w)}" height="${n(h)}" style="font-kerning:none;font-variant-ligatures:none;text-rendering:geometricPrecision">`];
   if (background) out.push(`<rect width="${n(w)}" height="${n(h)}" fill="#ffffff"/>`);
   // a form field is drawn from its `draw` items (the PDF makes a real widget instead)
   let animated = false;
@@ -49,6 +56,8 @@ export function pageToSvg(page, w, h, { background = true, animate = false } = {
         out.push(`<line x1="${n(it.x1)}" y1="${n(it.y1)}" x2="${n(it.x2)}" y2="${n(it.y2)}" stroke="${cssColor(it.stroke)}" stroke-width="${n(it.strokeWidth)}"${it.dash ? ` stroke-dasharray="${it.dash.join(' ')}"` : ''}/>`);
         break;
       case 'text': {
+        const d = outline ? textOutline(it, outline) : null;
+        if (d) { out.push(`<path d="${d}" fill="${cssColor(it.color)}"/>`); break; }
         const paint = `font-size="${n(it.size)}" fill="${cssColor(it.color)}"`;
         const attrs = `font-family="${fontFamilyCss(it.font)}" ${paint}`;
         for (const l of it.lines) {

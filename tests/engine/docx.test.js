@@ -23,7 +23,7 @@ describe('Word export', () => {
     expect(doc).toMatch(/<w:pgSz w:w="11906" w:h="16838"\/>/); // A4 in twips
     expect(doc).toContain('LOAN STATEMENT');
     expect(doc).toContain('Arjun Mehta');
-    expect((doc.match(/<w:br w:type="page"\/>/g) || []).length).toBe(m.pages.length - 1);
+    expect((doc.match(/<w:pageBreakBefore\/>/g) || []).length).toBe(m.pages.length - 1);
     expect(strFromU8(files['docProps/core.xml'])).toContain('Loan statement');
   });
 
