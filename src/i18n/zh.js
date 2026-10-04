@@ -443,4 +443,6 @@ export default {
   visListField: "来自列表字段的点",
   visListHint: "列表字段（数组，或 3,5,2 这样的文本）每个值一个点：在数据集中把字段类型设为列表。",
   cornerRadius: "圆角半径",
+  cellBookmark: "书签（此单元格）",
+  jumpToBookmark: "跳转到书签",
 };

@@ -443,4 +443,6 @@ export default {
   visListField: "Punkte aus einem Listenfeld",
   visListHint: "Ein Listenfeld (ein Array oder Text wie 3,5,2) ergibt einen Punkt pro Wert: Setzen Sie den Feldtyp im Datensatz auf Liste.",
   cornerRadius: "Eckenradius",
+  cellBookmark: "Lesezeichen (diese Zelle)",
+  jumpToBookmark: "Zum Lesezeichen springen",
 };

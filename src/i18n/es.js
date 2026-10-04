@@ -443,4 +443,6 @@ export default {
   visListField: "Puntos de un campo de lista",
   visListHint: "Un campo de lista (un array, o texto como 3,5,2) da un punto por valor: ponga el tipo del campo en lista en el conjunto de datos.",
   cornerRadius: "Radio de las esquinas",
+  cellBookmark: "Marcador (esta celda)",
+  jumpToBookmark: "Ir al marcador",
 };

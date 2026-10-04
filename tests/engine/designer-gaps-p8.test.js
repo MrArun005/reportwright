@@ -78,3 +78,12 @@ describe('corner radius on text boxes and containers (#4)', () => {
     expect(m.pages[0].items.filter(i => i.t === 'line').length).toBe(1);
   });
 });
+
+import fs from 'node:fs';
+import { STRINGS } from '../../src/i18n/index.js';
+describe('a cell has two different bookmark labels (#5)', () => {
+  it('"Bookmark (this cell)" and "Jump to bookmark", in every language', () => {
+    for (const [lang, s] of Object.entries(STRINGS)) expect(s.cellBookmark, lang).not.toBe(s.jumpToBookmark);
+    expect(fs.readFileSync(new URL('../../src/designer/Inspector.jsx', import.meta.url), 'utf8')).not.toMatch(/label="Bookmark"/);
+  });
+});

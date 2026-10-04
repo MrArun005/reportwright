@@ -443,4 +443,6 @@ export default {
   visListField: "Points d’un champ liste",
   visListHint: "Un champ liste (un tableau, ou un texte comme 3,5,2) donne un point par valeur : mettez le type du champ à liste dans le jeu de données.",
   cornerRadius: "Rayon des coins",
+  cellBookmark: "Signet (cette cellule)",
+  jumpToBookmark: "Aller au signet",
 };
