@@ -316,14 +316,18 @@ register('table', {
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
   ],
   layout(item, lc) {
-    const tctx = lc.ctxFor(item);
+    const tctx = item.__ctx || lc.ctxFor(item);
     if (hidden(item, tctx, lc)) return { height: 0, units: [] };
-    let rows = (item.dataSet && lc.dataSets[item.dataSet]) || [];
-    rows = related(rows, tctx); // a nested data set inside a list of its parent: that row's children
-    if (item.dataSet && !lc.dataSets[item.dataSet]) lc.warn(`${item.name || 'Table'}: the data set "${item.dataSet}" does not exist`);
-    if (item.filters?.length) rows = applyFilters(rows, item.filters, tctx);
-    const sort = lc.state?.sort?.[item.name] || item.sort;
-    if (sort?.length) rows = applySort(rows, sort, tctx);
+    let rows;
+    if (item.__body) rows = item.__rows || []; // a pivot: its rows are built, these are only its scope
+    else {
+      rows = (item.dataSet && lc.dataSets[item.dataSet]) || [];
+      rows = related(rows, tctx); // a nested data set inside a list of its parent: that row's children
+      if (item.dataSet && !lc.dataSets[item.dataSet]) lc.warn(`${item.name || 'Table'}: the data set "${item.dataSet}" does not exist`);
+      if (item.filters?.length) rows = applyFilters(rows, item.filters, tctx);
+      const sort = lc.state?.sort?.[item.name] || item.sort;
+      if (sort?.length) rows = applySort(rows, sort, tctx);
+    }
 
     const cols = item.columns || [];
     const colX = [];
@@ -949,44 +953,76 @@ register('matrix', {
     rows = related(rows, ctx); // a nested data set inside a list of its parent: that row's children
     if (item.filters?.length) rows = applyFilters(rows, item.filters, ctx);
     const who = item.name || 'Matrix';
-    const sortB = (bs, dir) => { if (dir === 'asc' || dir === 'desc') bs.sort((a, b) => cmpKey(a.key, b.key) * (dir === 'desc' ? -1 : 1)); return bs; };
-    const rowB = sortB(groupRows(rows, item.rowGroup || "=''", ctx, lc, who), item.rowSort);
-    const colB = sortB(groupRows(rows, item.columnGroup || "=''", ctx, lc, who), item.columnSort);
-    const agg = (rs) => { if (!rs.length) return null; const r = evalSafe(item.value || '=Count(Fields)', { ...ctx, fields: rs[0], aggRows: rs, aggIndex: undefined }, lc, who); return r.err ? null : r.v; };
-    // fit the page: shrink value columns if needed
-    const room = (lc.bodyWidth ?? 1e9) - item.x;
-    let cw = item.columnWidth || 64;
-    const nCols = colB.length + (item.rowTotals !== false ? 1 : 0);
+    const it = { ...item, name: who };
+    let p = buildPivot(it, rows, ctx, lc);
+    const { spec, R, V } = p;
     const rhw = item.rowHeaderWidth || 110;
-    if (rhw + cw * nCols > room) {
-      const fit = (room - rhw) / nCols;
-      if (fit < 28) lc.warn(`${who}: ${colB.length} columns do not fit the page; showing the first ${Math.max(1, Math.floor((room - rhw) / 28) - 1)}`);
+    const hw = spec.rowGroups.map(g => Number(g.width) || rhw);
+    const headW = hw.reduce((a, b) => a + b, 0);
+    let cw = item.columnWidth || 64;
+    const room = (lc.bodyWidth ?? 1e9) - item.x;
+    if (spec.overflow === 'shrink' && headW + cw * p.cols.length > room) {
+      // fit the page: narrow the value columns, then leave out the columns that still do not fit
+      const nTot = p.cols.filter(c => c.kind === 'total').length;
+      const nLeaf = (p.cols.length - nTot) / V;
+      const fit = (room - headW) / p.cols.length;
+      if (fit < 28) lc.warn(`${who}: ${nLeaf} columns do not fit the page; showing the first ${Math.max(1, Math.floor((room - headW) / 28) - nTot)}`);
       cw = Math.max(28, fit);
+      const keep = Math.max(1, Math.floor((room - headW) / cw) - nTot);
+      if (keep < p.cols.length - nTot) p = buildPivot(it, rows, ctx, { ...lc, colLimit: keep });
     }
-    const maxCols = Math.max(1, Math.floor((room - rhw) / cw) - (item.rowTotals !== false ? 1 : 0));
-    const cols = colB.slice(0, maxCols);
-    const fmt = { format: item.valueFormat || null };
-    const vstyle = { ...fmt, textAlign: 'right' };
-    const label = (k) => textOf(k, {}, ctx);
-    // a data key becomes cell text, never a template or an expression ("=1+1", "{x}")
-    const lit = (s) => `="${s.replace(/[\\"]/g, '\\$&')}"`;
-    const synthRows = rowB.map(rb => {
-      const o = { __label: label(rb.key) };
-      const set = new Set(rb.rows);
-      cols.forEach((cb, i) => { o[`c${i}`] = agg(cb.rows.filter(r => set.has(r))); });
-      o.__total = agg(rb.rows);
+    const fmtOf = (v) => v.format ?? (['percentOfTotal', 'percentOfRow', 'percentOfColumn'].includes(v.show) ? 'P1' : null);
+    const vstyles = spec.values.map(v => ({ format: fmtOf(v), textAlign: 'right', ...(v.style || {}) }));
+    const vbold = vstyles.map(s => ({ ...s, fontWeight: 'bold' }));
+    const right = { textAlign: 'right' };
+    const cellStyle = item.cellStyle || { borderBottom: '0.5 solid #e5e7eb' };
+    const totalStyle = item.totalStyle || { fontWeight: 'bold', borderTop: '1 solid #94a3b8' };
+    const N = R + p.cols.length;
+    const columns = [...hw.map(width => ({ width })), ...p.cols.map(c => ({ width: Number(spec.values[c.v].width) || cw }))];
+    // a key or label is data: it goes in as a raw value, never as an expression or template
+    const hcell = (c) => {
+      const o = c.role === 'corner' ? { value: c.text } : { raw: c.text };
+      if (c.rowSpan > 1) o.rowSpan = c.rowSpan;
+      if (c.colSpan > 1) o.colSpan = c.colSpan;
+      if (c.toggle) o.toggle = c.toggle;
+      if (c.role !== 'corner') o.style = spec.legacy || c.colSpan === 1 ? right : { textAlign: 'center' };
       return o;
+    };
+    const header = p.header.map(hr => {
+      const cells = new Array(N).fill(null);
+      for (const c of hr) cells[c.c] = hcell(c);
+      return { height: 18, style: item.headerStyle, cells };
+    });
+    const bodyRow = (br) => {
+      const cells = new Array(N).fill(null);
+      for (const c of br.cells) {
+        if (c.role === 'value') {
+          cells[c.c] = { raw: c.raw, ctx: c.ctx, style: c.colTotal && br.kind !== 'total' ? vbold[c.v] : vstyles[c.v] };
+          continue;
+        }
+        const o = { raw: c.text };
+        if (c.rowSpan > 1) o.rowSpan = c.rowSpan;
+        if (c.colSpan > 1) o.colSpan = c.colSpan;
+        if (c.toggle) o.toggle = c.toggle;
+        const gs = spec.rowGroups[c.level]?.style;
+        if (gs && c.role !== 'total') o.style = gs;
+        cells[c.c] = o;
+      }
+      const total = br.kind === 'total';
+      return { height: total && br.level === 0 ? 18 : 16, style: total ? totalStyle : cellStyle, cells };
+    };
+    const body = [], footer = [];
+    p.body.forEach((br, i) => {
+      // the grand total after the rows is the table footer: it stays with the last rows and is left out of a first-pages render
+      if (br.kind === 'total' && br.level === 0 && i === p.body.length - 1) { footer.push(bodyRow(br)); return; }
+      const kind = br.kind !== 'total' ? 'detail' : br.level === 0 ? 'footer' : spec.rowGroups[br.level].total === 'before' ? 'groupHeader' : 'groupFooter';
+      body.push({ row: bodyRow(br), kind, level: br.kind === 'total' ? br.level : Math.max(0, br.level) });
     });
     const table = {
-      type: 'table', name: who, x: item.x, y: item.y, w: 0, h: item.h, dataSet: '__matrix', repeatHeader: item.repeatHeader !== false, style: item.style,
-      columns: [{ width: rhw }, ...cols.map(() => ({ width: cw })), ...(item.rowTotals !== false ? [{ width: cw }] : [])],
-      header: [{ height: 18, style: item.headerStyle, cells: [{ value: item.corner || '' }, ...cols.map(cb => ({ value: lit(label(cb.key)), style: { textAlign: 'right' } })), ...(item.rowTotals !== false ? [{ value: 'Total', style: { textAlign: 'right' } }] : [])] }],
-      detail: [{ height: 16, style: item.cellStyle || { borderBottom: '0.5 solid #e5e7eb' }, cells: [{ value: '=Fields.__label' }, ...cols.map((_, i) => ({ value: `=Fields.c${i}`, style: vstyle })), ...(item.rowTotals !== false ? [{ value: '=Fields.__total', style: { ...vstyle, fontWeight: 'bold' } }] : [])] }],
-      footer: item.columnTotals !== false ? [{ height: 18, style: item.totalStyle || { fontWeight: 'bold', borderTop: '1 solid #94a3b8' }, cells: [{ value: 'Total' },
-        ...cols.map(cb => ({ value: agg(cb.rows), style: vstyle })), ...(item.rowTotals !== false ? [{ value: agg(rows), style: vstyle }] : [])] }] : [],
-      noRowsText: 'No data',
+      type: 'table', name: who, x: item.x, y: item.y, w: 0, h: item.h, dataSet: null, repeatHeader: item.repeatHeader !== false, style: item.style,
+      columns, header, footer, __body: rows.length ? body : [], __rows: rows, __ctx: ctx, noRowsText: 'No data',
     };
-    return ITEMS.table.layout(table, { ...lc, dataSets: { ...lc.dataSets, __matrix: synthRows } });
+    return ITEMS.table.layout(table, lc);
   },
 });
 

@@ -127,3 +127,54 @@ describe('pivot build', () => {
     expect(ms).toBeLessThan(3000);
   });
 });
+
+import { render } from '../../src/engine/index.js';
+import { fontStore, texts, report } from '../helpers.js';
+
+const matrix = (extra) => ({ type: 'matrix', name: 'P', x: 0, y: 0, w: 400, h: 60, dataSet: 'Rows', columnWidth: 60, rowHeaderWidth: 70, corner: 'Sales', ...two, ...extra });
+
+describe('matrix layout from the pivot', () => {
+  it('draws nested headers once, subtotals and the grand total', async () => {
+    const out = await render(report([matrix({ columnGroups: [{ ...two.columnGroups[0] }, { name: 'Q', expr: '=Fields.q', sort: 'asc', label: '="Q" & Fields.q' }] })], { data: { rows: DATA } }), { fontStore });
+    expect(out.warnings).toEqual([]);
+    const t = texts(out.pages[0]);
+    expect(t.slice(0, 11)).toEqual(['Sales', '2025', '2026', 'Total', 'Q1', 'Q2', 'Q3', 'Q1', 'Q2', 'Q3', 'North']);
+    expect(t.filter(x => x === 'North')).toHaveLength(1);
+    expect(t.join('|')).toContain('North|Delhi|100||30|·'.replace('||30|·', '')); // Delhi, 2025 Q1
+    const reg = out.regions[0];
+    expect(reg.rows.map(r => r.kind)).toEqual(['header', 'header', 'detail', 'detail', 'groupFooter', 'detail', 'detail', 'groupFooter', 'footer']);
+    expect(reg.rows[0].cells.map(c => [c.value, c.span, c.rowSpan ?? 1])).toEqual([['Sales', 2, 2], ['2025', 3, 1], ['2026', 3, 1], ['Total', 1, 2]]);
+    const northTotal = reg.rows[4].cells.map(c => c.value);
+    expect(northTotal).toEqual(['Total', 150, 20, 30, 60, 170, '', 430]);
+    const grand = reg.rows[8].cells.map(c => c.value);
+    expect(grand).toEqual(['Total', 230, 200, 30, 270, 210, 60, 1000]);
+  });
+
+  it('drill-down: a collapsed region is one row, and the toggle is in the model', async () => {
+    const def = report([matrix({ rowGroups: [{ ...two.rowGroups[0], collapsible: true }, two.rowGroups[1]] })], { data: { rows: DATA } });
+    const open = await render(def, { fontStore });
+    const links = open.pages[0].items.filter(i => i.t === 'link' && i.action?.type === 'toggle');
+    expect(links.map(l => l.action)).toEqual([{ type: 'toggle', key: 'P|r0|/North', open: true }, { type: 'toggle', key: 'P|r0|/South', open: true }]);
+    const shut = await render(def, { fontStore, state: { toggles: { 'P|r0|/North': false } } });
+    const t = texts(shut.pages[0]);
+    expect(t.slice(t.indexOf('▶ North'), t.indexOf('▶ North') + 4)).toEqual(['▶ North', '200', '230', '430']);
+    expect(t).not.toContain('Delhi');
+    expect(t).toContain('Kochi');
+  });
+
+  it('repeats every column header row on the next page, and the region label at the break', async () => {
+    const rows = Array.from({ length: 120 }, (_, i) => ({ region: i < 100 ? 'North' : 'South', city: `City ${String(i).padStart(3, '0')}`, year: 2025 + (i % 2), q: 1, amt: i }));
+    const def = report([matrix({ columnGroups: [two.columnGroups[0], { name: 'Q', expr: '=Fields.q' }] })], { data: { rows } });
+    const out = await render(def, { fontStore });
+    expect(out.pages.length).toBeGreaterThan(1);
+    const p2 = texts(out.pages[1]);
+    expect(p2.slice(0, 5)).toEqual(['Sales', '2025', '2026', 'Total', '1']);
+    expect(p2[6]).toBe('North'); // the merged region label again, on the first row of page 2
+  });
+
+  it('old-form matrices keep their exact layout', async () => {
+    const def = report([{ type: 'matrix', name: 'M', x: 0, y: 0, w: 300, h: 54, dataSet: 'Rows', rowGroup: '=Fields.region', columnGroup: '=Fields.year', value: '=Sum(Fields.amt)', valueFormat: 'N0', corner: 'Region' }], { data: { rows: DATA } });
+    const t = texts((await render(def, { fontStore })).pages[0]);
+    expect(t).toEqual(['Region', '2025', '2026', 'Total', 'North', '200', '230', '430', 'South', '260', '310', '570', 'Total', '460', '540', '1,000']);
+  });
+});

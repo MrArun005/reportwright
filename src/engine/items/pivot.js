@@ -180,6 +180,11 @@ export function buildPivot(item, rows, ctx, lc) {
 
   let rowsV = visible(rowRoot, rg);
   let colsV = visible(colRoot, cg);
+  if (lc.colLimit > 0) {
+    // shrink-to-fit: the first columns that fit, and every total
+    let n = 0;
+    colsV = colsV.filter(e => e.kind === 'total' || n++ < lc.colLimit);
+  }
   if (colsV.length * V > PIVOT_LIMITS.columns) {
     const keep = Math.max(1, Math.floor(PIVOT_LIMITS.columns / V));
     lc.warn(`${who}: ${colsV.length * V} value columns is more than ${PIVOT_LIMITS.columns}; showing the first ${keep * V}`);
