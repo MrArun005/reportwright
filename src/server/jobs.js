@@ -171,9 +171,15 @@ function itemName(job, item, i) {
 async function run(job, owner, stopAfter) {
   const { items, def } = job._work;
   // the owner as they are now: a user who lost access, or was disabled, gets no further items
-  const principal = job.owner ? await principalFromId(job.owner) : defaultPrincipal(); // no owner: no one's
-  // as the owner is now: the template must still be theirs to view; an inline definition needs a designer or a service
-  await loadTemplate(job.templateRef || def, principal); // throws: the job fails (workOnce)
+  // as the owner is now: the template must still be theirs to view; an inline definition needs a designer or a service.
+  // Checked at the start (throws: the job fails, workOnce) and again before every item.
+  const allowed = async () => {
+    const p = job.owner ? await principalFromId(job.owner) : defaultPrincipal(); // no owner: no one's
+    await loadTemplate(job.templateRef || def, p);
+    return p;
+  };
+  await allowed();
+  let ended = null; // why the owner may no longer run this batch
   job.status = 'running';
   job.startedAt ||= new Date().toISOString();
   job.failedItems ||= [];
@@ -195,6 +201,8 @@ async function run(job, owner, stopAfter) {
       const item = items[i];
       const name = `${itemName(job, item, i)}.${job.format === 'json' ? 'json' : job.format}`;
       try {
+        if (ended) throw ended;
+        const principal = await allowed().catch((e) => { throw (ended = new Error(`The owner may no longer run this report (${e.message}).`)); });
         const r = await renderTo(def, { parameters: item.parameters, data: item.data, format: job.format, baseUrl: job.base, self: job.self, pdfa: job.pdfa, sign: job.sign, principal });
         if (item.putUrl) {
           const res = await serverFetch(job.self)(item.putUrl, { method: 'PUT', body: r.bytes, headers: { 'content-type': r.contentType } });

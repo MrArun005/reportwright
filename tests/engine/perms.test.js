@@ -570,6 +570,27 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     expect(events[0].report).toBe('salary');
   });
 
+  it('review: a running batch stops at the next item when its owner loses access', async () => {
+    const { writeReport } = await import('../../src/server/reports.js');
+    const { createBatch, workOnce, getJob } = await import('../../src/server/jobs.js');
+    const id = `long-${kind}`;
+    const rows = Array.from({ length: 150 }, (_, i) => ({ id: i }));
+    await writeReport(id, { ...def('Long', [{ type: 'table', name: 'T', dataSet: 'Rows', x: 0, y: 0, w: 500, h: 40, columns: [{ width: 500 }], detail: [{ height: 14, cells: [{ value: '=Len(Replace(Space(200000), " ", "ab"))' }] }] }]),
+      dataSources: [{ name: 'src', type: 'json', data: { rows } }], dataSets: [{ name: 'Rows', source: 'src', path: '$.rows' }] });
+    await perms.setReportAccess({ kind: 'service' }, id, { inherit: false, grants: [{ to: 'user:bob@x.io', level: 'view' }] });
+    try {
+      const job = await createBatch({ template: id, items: Array.from({ length: 12 }, (_, n) => ({ name: `i${n}`, parameters: {} })), output: { type: 'none' }, format: 'csv' }, undefined, await perms.userPrincipal('bob@x.io'));
+      const working = workOnce('test-runner');
+      while (!((await getJob(job.id, { kind: 'service' }))?.done >= 1)) await new Promise(r => setTimeout(r, 20));
+      await perms.setReportAccess({ kind: 'service' }, id, { grants: [] }); // bob loses the report mid-run
+      await working;
+      const j = await getJob(job.id, { kind: 'service' });
+      expect(j.done).toBeLessThan(8); // what finished or was rendering when access ended (timing), not all 12
+      expect(j.failed).toBe(12 - j.done);
+      expect(j.errors.at(-1)).toMatch(/may no longer run/);
+    } finally { await R.one.DELETE(req(`/api/reports/${id}`, { who: 'admin', method: 'DELETE' }), P(id)); }
+  }, 60000);
+
   it('review: a queued inline batch fails when its owner is now a viewer', async () => {
     const { createBatch, workOnce, getJob } = await import('../../src/server/jobs.js');
     const job = await createBatch({ template: def('Inline'), items: [{ parameters: {} }], output: { type: 'none' }, format: 'csv' }, undefined, await perms.userPrincipal('bob@x.io'));
