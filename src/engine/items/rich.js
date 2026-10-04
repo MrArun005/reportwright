@@ -230,3 +230,76 @@ export function paintRich({ x, y, w, h, st, rl, m, id }) {
   }
   return [...box.slice(0, nb), ...bgs, ...texts, ...decos, ...box.slice(nb), ...links];
 }
+
+/* ---------------------------------------------------------------- vertical text */
+/** Characters set upright in vertical text: CJK ideographs, kana, Hangul, CJK punctuation and full-width forms. */
+const upright = (cp) => (cp >= 0x2e80 && cp <= 0xa4cf) || (cp >= 0xac00 && cp <= 0xd7af) || (cp >= 0xf900 && cp <= 0xfaff)
+  || (cp >= 0xfe30 && cp <= 0xfe4f) || (cp >= 0xff00 && cp <= 0xffef) || (cp >= 0x20000 && cp <= 0x3ffff);
+const MAX_VERTICAL = { tokens: 20000 };
+
+/**
+ * Vertical text (writing-mode tb-rl): columns from right to left, each read top to bottom. Upright characters
+ * (CJK) are stacked one em apart, one text item per column; runs of other text (Latin, digits) are text items
+ * turned 90° clockwise about their own centre, so every exporter draws them with Phase 1's rotation.
+ * The box keeps its designed size; text past the last column that fits is left out.
+ * @param {{ x: number, y: number, w: number, h: number, st: any, text: string, m: import('../text/measure.js').TextMeasurer }} o
+ */
+export function paintVertical({ x, y, w, h, st, text, m }) {
+  const box = paintBox({ x, y, w, h, st, tl: null, m });
+  const nb = (st.backgroundColor ? 1 : 0) + (st.backgroundImage ? 1 : 0);
+  const key = resolveFontKey(st.fontFamily, st.fontWeight, st.fontStyle);
+  const size = clamp(Number(st.fontSize) || 9, SIZE.min, SIZE.max);
+  const colW = size * clamp(Number(st.lineHeight) || 1.25, LINE_HEIGHT.min, LINE_HEIGHT.max);
+  const pad = padding(st);
+  const innerH = Math.max(1, h - pad[0] - pad[2]), innerW = Math.max(1, w - pad[1] - pad[3]);
+  const maxCols = Math.max(1, Math.floor((innerW + 0.01) / colW));
+  const { ascent, descent } = m.metrics(key, size);
+  /** @type {{ toks: { up: boolean, text: string, at: number, adv: number }[], len: number }[]} */
+  const cols = [];
+  let col = null, n = 0;
+  const newCol = () => { if (cols.length >= maxCols) return false; col = { toks: [], len: 0 }; cols.push(col); return true; };
+  const place = (up, t) => {
+    const adv = up ? size : m.width(t, key, size);
+    if (col.len + adv > innerH + 0.01 && col.toks.length && !newCol()) return false;
+    col.toks.push({ up, text: t, at: col.len, adv });
+    col.len += adv;
+    return ++n < MAX_VERTICAL.tokens;
+  };
+  out: for (const para of String(text).split(/\r?\n/)) {
+    if (!newCol()) break;
+    let run = '';
+    for (const ch of para) {
+      const up = upright(/** @type {number} */ (ch.codePointAt(0)));
+      // other text is placed a word at a time (with its space), so a column breaks between words
+      if (!up && ch !== ' ') { run += ch; continue; }
+      if (!up) { run += ch; if (!place(false, run)) break out; run = ''; continue; }
+      if (run && !place(false, run)) break out;
+      run = '';
+      if (!place(true, ch)) break out;
+    }
+    if (run && !place(false, run)) break;
+  }
+  const texts = [];
+  const clip = { x, y, w, h };
+  cols.forEach((c, ci) => {
+    const cx = x + w - pad[1] - (ci + 0.5) * colW;
+    let top = y + pad[0];
+    if (st.textAlign === 'center') top += (innerH - c.len) / 2;
+    else if (st.textAlign === 'right') top += innerH - c.len;
+    const ups = [];
+    for (const t of c.toks) {
+      if (t.up) {
+        const cw = m.width(t.text, key, size);
+        ups.push({ x: cx - cw / 2, y: top + t.at + size / 2 + (ascent - descent) / 2, text: t.text, w: cw });
+        continue;
+      }
+      const s = t.text.trimEnd();
+      if (!s) continue;
+      const sw = m.width(s, key, size), cy = top + t.at + sw / 2;
+      texts.push({ t: 'text', font: key, size, color: st.color || '#000', lines: [{ x: cx - sw / 2, y: cy + (ascent - descent) / 2, text: s, w: sw }],
+        clip: { x: cx - sw / 2, y: cy - colW / 2, w: sw, h: colW }, rotate: { a: 90, cx, cy } });
+    }
+    if (ups.length) texts.push({ t: 'text', font: key, size, color: st.color || '#000', lines: ups, clip });
+  });
+  return [...box.slice(0, nb), ...texts, ...box.slice(nb)];
+}

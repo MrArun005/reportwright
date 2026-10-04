@@ -9,7 +9,7 @@ import { paintVisual } from './visuals.js';
 import { paintBarcode, BARCODE_TYPES } from './barcode.js';
 import { paintMap } from './map.js';
 import { shiftItems } from './paint.js';
-import { richValue, layoutRich, paintRich } from './rich.js';
+import { richValue, layoutRich, paintRich, paintVertical } from './rich.js';
 import { parseRich } from '../text/rich.js';
 import { resolveFontKey } from '../text/fonts.js';
 
@@ -86,7 +86,7 @@ function paintTextbox(item, lc, ctx, forcedH) {
     if (item.canGrow !== false && !item.shrinkToFit && !rot && tl.needed > h + GROW_TOLERANCE) h = tl.needed;
     if (item.canShrink && !rot && tl.needed < h) h = tl.needed;
   } else h = forcedH;
-  return { st, tl, h, numeric: typeof r.v === 'number', rot };
+  return { st, tl, h, numeric: typeof r.v === 'number', rot, text };
 }
 
 register('textbox', {
@@ -112,7 +112,14 @@ register('textbox', {
   layout(item, lc) {
     const ctx = lc.ctxFor(item);
     if (hidden(item, ctx, lc)) return { height: 0, units: [] };
-    const { st, tl, h, numeric, rot } = paintTextbox(item, lc, ctx, lc.fixed ? item.h : null);
+    const { st, tl, h: h0, numeric, rot, text } = paintTextbox(item, lc, ctx, lc.fixed ? item.h : null);
+    // vertical text keeps the designed box (it does not grow or split), like a rotated box
+    if (st.writingMode === 'tb-rl') {
+      const items = paintVertical({ x: item.x, y: 0, w: item.w, h: item.h, st, text, m: lc.m });
+      addInteractivity(items, item, ctx, lc, { x: item.x, y: 0, w: item.w, h: item.h });
+      return { height: item.h, units: [{ top: 0, height: item.h, items }] };
+    }
+    const h = h0;
     // Taller than a page: split into chunks of whole lines.
     if (!rot && !lc.fixed && h > lc.maxUnitHeight && tl.lines.length > 1) {
       const per = Math.max(1, Math.floor((lc.maxUnitHeight - tl.pad[0] - tl.pad[2]) / tl.lh));
@@ -984,6 +991,7 @@ export const TEXT_STYLE_PROPS = [
   { key: 'lineHeight', label: 'Line height', type: 'number', category: 'Text' },
   { key: 'textDecoration', label: 'Decoration', type: 'select', options: ['none', 'underline', 'line-through', 'underline line-through'], category: 'Text' },
   { key: 'textDecorationColor', label: 'Decoration colour', type: 'color', category: 'Text' },
+  { key: 'writingMode', label: 'Writing mode (tb-rl = vertical)', type: 'select', options: ['lr-tb', 'tb-rl'], category: 'Text' },
   { key: 'backgroundColor', label: 'Background', type: 'color', category: 'Box' },
   { key: 'backgroundImage', label: 'Background image (URL or =expression)', type: 'text', category: 'Box' },
   { key: 'backgroundFit', label: 'Background fit', type: 'select', options: ['cover', 'contain', 'fill'], category: 'Box' },

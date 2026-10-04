@@ -52,6 +52,7 @@ export function textCss(layers, s, numeric = false) {
       lineHeight: st.lineHeight || 1.25, fontKerning: 'none',
       textDecoration: /underline|line-through/.test(String(st.textDecoration || '')) ? st.textDecoration : undefined,
       textDecorationColor: st.textDecorationColor || undefined,
+      writingMode: st.writingMode === 'tb-rl' ? 'vertical-rl' : undefined,
     },
   };
 }

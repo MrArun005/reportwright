@@ -349,3 +349,34 @@ describe('rich text: PDF, SVG and HTML', async () => {
     expect(html).not.toContain('evil');
   });
 });
+
+describe('vertical text', () => {
+  const vbox = (value, extra = {}) => report([{ type: 'textbox', name: 'V', x: 0, y: 0, w: 60, h: 100, value, style: { writingMode: 'tb-rl', fontSize: 10, padding: 0 }, ...extra }]);
+  it('stacks CJK upright top to bottom, columns right to left', async () => {
+    const items = (await out(vbox('日本語のテキストです'))).pages[0].items.filter(i => i.t === 'text');
+    const glyphs = items.flatMap(i => i.lines);
+    expect(glyphs.map(l => l.text).join('')).toBe('日本語のテキストです');
+    expect(items.every(i => !i.rotate)).toBe(true);
+    // first column: rightmost; y goes down
+    expect(glyphs[1].y).toBeGreaterThan(glyphs[0].y);
+    expect(glyphs[0].x).toBeGreaterThan(36 + 30);
+  });
+  it('wraps to a new column to the left when the column is full', async () => {
+    const glyphs = (await out(vbox('一二三四五六七八九十一二三四五'))).pages[0].items.filter(i => i.t === 'text').flatMap(i => i.lines);
+    const xs = [...new Set(glyphs.map(l => Math.round(l.x)))];
+    expect(xs.length).toBe(2);
+    expect(xs[1]).toBeLessThan(xs[0]);
+  });
+  it('turns Latin runs 90° clockwise', async () => {
+    const items = (await out(vbox('ABC 2026 年'))).pages[0].items.filter(i => i.t === 'text');
+    const latin = items.find(i => i.lines[0].text.includes('ABC'));
+    expect(latin.rotate.a).toBe(90);
+    const cjk = items.find(i => i.lines.some(l => l.text === '年'));
+    expect(cjk.lines.find(l => l.text === '年').y).toBeGreaterThan(latin.rotate.cy);
+  });
+  it('a new line starts a new column; the box does not grow', async () => {
+    const m = await out(vbox('上\n下'));
+    const g = m.pages[0].items.filter(i => i.t === 'text').flatMap(i => i.lines);
+    expect(g[1].x).toBeLessThan(g[0].x);
+  });
+});
