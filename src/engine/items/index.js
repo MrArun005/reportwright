@@ -375,8 +375,9 @@ register('table', {
           const cur = (lc.state?.sort?.[item.name] || [])[0];
           if (cur && cur.by === cell.sortBy) text += cur.dir === 'desc' ? ' ↓' : ' ↑';
         }
-        const tl = layoutTextLines(text, st, cw, lc.m);
-        const c = { x: colX[ci], w: cw, st, tl, numeric: typeof r.v === 'number', cell, ctx: cctx, raw: r.v, span, plain, toggle };
+        const nested = cell.item?.type && ITEMS[cell.item.type] ? layoutInCell(cell.item, colX[ci], cw, st, cctx, row) : null;
+        const tl = nested ? { ...layoutTextLines('', st, cw, lc.m), lines: [], needed: nested.height } : layoutTextLines(text, st, cw, lc.m);
+        const c = { x: colX[ci], w: cw, st, tl, numeric: typeof r.v === 'number', cell, ctx: cctx, raw: r.v, span, plain: nested ? '' : plain, toggle, nested };
         const rs = Math.floor(Number(cell.rowSpan)) || 1;
         if (rs > 1) { started.push({ ...c, ci, cols: span, left: rs, units: [], kind }); continue; }
         if (row.canGrow !== false && tl.needed > need + GROW_TOLERANCE) need = tl.needed;
@@ -397,6 +398,11 @@ register('table', {
           if (c.cell.visual?.type) {
             items.push(...paintBox({ x: c.x, y: 0, w: c.w, h, st: c.st, tl: null, m: lc.m }));
             if (first) items.push(...paintVisual(c.cell.visual, { x: c.x, y: 0, w: c.w, h }, c.ctx, lc, c.st, `${item.name} cell`));
+            return;
+          }
+          if (c.nested) {
+            items.push(...paintBox({ x: c.x, y: 0, w: c.w, h, st: c.st, tl: null, m: lc.m }));
+            if (first) items.push(...c.nested.items);
             return;
           }
           const box = paintBox({ x: c.x, y: 0, w: c.w, h, st: c.st, tl: lines ? { ...c.tl, lines: lines[k] } : c.tl, numeric: c.numeric, m: lc.m });
@@ -433,6 +439,28 @@ register('table', {
       for (const s of openSpans) { s.units.push(u); s.left--; }
       if (openSpans.some(s => s.left <= 0)) { for (const s of openSpans) if (s.left <= 0) paintSpan(s); openSpans = openSpans.filter(s => s.left > 0); }
       return u;
+    };
+    /**
+     * An item inside a cell (a table, list, chart…), laid out in the cell's inner box with the cell's scope:
+     * the table's own data set is the cell's rows, and a related data set gets that row's children.
+     */
+    const layoutInCell = (inner, x, cw, st, cctx, row) => {
+      const pd = padding(st);
+      const it = { ...inner, name: inner.name || `${item.name}_cell`, x: x + pd[3], y: 0, w: Math.max(1, cw - pd[1] - pd[3]), h: Number(inner.h) || Math.max(1, (row.height || 18) - pd[0] - pd[2]) };
+      const scopeRows = cctx.aggIndex != null ? [cctx.fields] : cctx.aggRows || [];
+      const current = item.dataSet ? { ...(cctx.current || {}), [item.dataSet]: scopeRows } : cctx.current;
+      const child = { ...lc, regions: null, rowBudget: null, maxUnitHeight: Infinity,
+        dataSets: item.dataSet ? { ...lc.dataSets, [item.dataSet]: scopeRows } : lc.dataSets,
+        ctxFor: (x) => {
+          if (!x.dataSet || x.dataSet === item.dataSet) return { ...cctx, fields: scopeRows[0] || null, aggRows: scopeRows, aggIndex: undefined, current };
+          const c = { ...lc.ctxFor(x), parentFields: cctx.fields, scopes: cctx.scopes, current };
+          const kids = related(c.aggRows, c);
+          return kids === c.aggRows ? c : { ...c, aggRows: kids, fields: kids[0] || null };
+        } };
+      const res = lc.layoutItems([it], child);
+      const items = [];
+      for (const u of res.units) for (const i of shiftLocal(u.items.filter(i => i.t !== 'bookmark'), u.top + pd[0])) items.push(i.cell ? { ...i, cell: undefined } : i); // its own cells are not the outer table's (Word)
+      return { items, height: res.height + pd[0] + pd[2] };
     };
     /** Links, bookmarks, sort and toggle hot spots of a cell, on the first piece of its row. */
     const cellLinks = (items, c, h, kind) => {

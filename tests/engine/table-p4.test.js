@@ -162,3 +162,30 @@ describe('recursive hierarchies', () => {
     expect(rowsOf(more).map(r => r[0])).toEqual(['CEO', 'Ana', 'Cy', 'Di', 'Bo', 'Gil']);
   });
 });
+
+describe('regions inside cells', () => {
+  const orders = { orders: [
+    { id: 1, cust: 'A', items: [{ sku: 'p', q: 2 }, { sku: 'q', q: 1 }] },
+    { id: 2, cust: 'B', items: [{ sku: 'r', q: 5 }] },
+  ] };
+  const sets = [
+    { name: 'Orders', source: 'src', path: '$.orders[*]', fields: [{ name: 'id', type: 'number' }, { name: 'cust', type: 'string' }] },
+    { name: 'Items', relation: { parent: 'Orders', path: '$.items[*]' }, fields: [{ name: 'sku', type: 'string' }, { name: 'q', type: 'number' }] },
+  ];
+  const inner = { type: 'table', dataSet: 'Items', columns: [{ width: 60 }, { width: 40 }], detail: [{ height: 14, cells: [{ value: '=Fields.sku' }, { value: '=Fields.q' }] }], footer: [{ height: 14, cells: [{ value: 'sum' }, { value: '=Sum(Fields.q)' }] }] };
+  it('a table in a cell lists that row\'s children, and the row grows to fit', async () => {
+    const t = table({ dataSet: 'Orders', columns: [{ width: 80 }, { width: 120 }], detail: [{ height: 16, cells: [{ value: '=Fields.cust' }, { value: '', item: inner }] }] });
+    const out = await render(report([t], { data: orders, def: { dataSets: sets } }), { fontStore });
+    expect(texts(out.pages[0])).toEqual(['A', 'p', '2', 'q', '1', 'sum', '3', 'B', 'r', '5', 'sum', '5']);
+    const a = textAt(out.pages[0], 'A')[0], b = textAt(out.pages[0], 'B')[0];
+    expect(b.clip.y - a.clip.y).toBeGreaterThanOrEqual(42); // 3 inner rows of 14
+    expect(out.regions.map(r => r.name)).toEqual(['T']); // the inner table stays out of the data export
+  });
+  it('a sparkline in a group header charts the group\'s rows', async () => {
+    const rows = [{ g: 'x', m: 1, v: 3 }, { g: 'x', m: 2, v: 5 }, { g: 'y', m: 1, v: 1 }];
+    const t = table({ groups: [{ expr: '=Fields.g', header: [{ height: 20, cells: [{ value: '=Fields.g' }, { value: '', item: { type: 'sparkline', value: '=Fields.v' } }, null] }] }] });
+    const out = await render(report([t], { data: { rows } }), { fontStore });
+    expect(out.warnings).toEqual([]);
+    expect(out.pages[0].items.filter(i => i.t === 'path').length).toBeGreaterThanOrEqual(1);
+  });
+});
