@@ -86,27 +86,42 @@ export async function applyMaster(def, get, warn, chain = []) {
   let m;
   try { m = await get(id); } catch (e) { warn(`The master report "${id}" did not load: ${e.message}`); return content; }
   m = await applyMaster(m, get, warn, [...chain, id]);
-  return mergeMaster(content, m);
+  return mergeMaster(content, m, warn);
 }
 
-/** ActiveReports-style: the master's page, header and footer; the content inside the master's content placeholder. */
-function mergeMaster(c, m) {
+/**
+ * ActiveReports-style: the master's page, header and footer; the content inside the master's content placeholders.
+ * The body goes in the first placeholder; sections.content ([{ placeholder: name, items }]) fills the others by name
+ * (in the first body section). A placeholder no content names stays empty.
+ */
+function mergeMaster(c, m, warn = (_m) => {}) {
   const ms = m.sections || {}, cs = c.sections || {};
   const mBody = (Array.isArray(ms.body) ? ms.body[0] : ms.body) || {};
   const mItems = Array.isArray(mBody.items) ? mBody.items : [];
-  const ph = mItems.find(i => i?.type === 'placeholder');
-  const others = mItems.filter(i => i && i !== ph);
+  const phs = mItems.filter(i => i?.type === 'placeholder');
+  const ph = phs[0];
+  const others = mItems.filter(i => i && i.type !== 'placeholder');
+  const named = (Array.isArray(cs.content) ? cs.content : []).filter(x => x && typeof x === 'object' && !Array.isArray(x));
+  const extra = phs.slice(1);
+  for (const e of named) if (!extra.some(p => p.name != null && p.name === e.placeholder)) warn(`The master has no other content placeholder "${String(e.placeholder ?? '').slice(0, 80)}"; its content is left out.`);
+  const blank = { border: 'none', backgroundColor: null, backgroundImage: null, padding: 0 };
+  const boxOf = (p) => ({ x: Number(p.x) || 0, y: Number(p.y) || 0, w: Number(p.w) || 0, h: Number(p.h) || 0 });
   const below = others.length ? Math.max(...others.map(i => (Number(i.y) || 0) + (Number(i.h) || 0))) + 6 : 0;
   const wrap = (b, k) => {
     const items = Array.isArray(b?.items) ? b.items : [];
     const box = ph
-      ? { x: Number(ph.x) || 0, y: Number(ph.y) || 0, w: Number(ph.w) || 0, h: Number(ph.h) || 0 }
+      ? boxOf(ph)
       : { x: 0, y: below, w: Math.max(0, ...items.map(i => (Number(i.x) || 0) + (Number(i.w) || 0))), h: Math.max(0, ...items.map(i => (Number(i.y) || 0) + (Number(i.h) || 0))) };
     // a container that does not keep together: the content still grows, splits across pages and pushes the master's items below it
-    const content = { type: 'container', name: k ? `MasterContent${k + 1}` : 'MasterContent', ...box, keepTogether: false, style: { border: 'none', backgroundColor: null, backgroundImage: null, padding: 0 }, items };
+    const content = { type: 'container', name: k ? `MasterContent${k + 1}` : 'MasterContent', ...box, keepTogether: false, style: blank, items };
     // every body section gets the master's items; copies after the first get their own names (names are unique)
     const mine = k ? others.map(i => (i.name ? { ...i, name: `${i.name}_${k + 1}` } : i)) : others;
-    return { ...(b || {}), items: [...mine, content] };
+    // the other placeholders, by name (the first body section only): each a container that grows like the main one
+    const more = k ? [] : extra.map((p, j) => {
+      const e = named.find(x => p.name != null && x.placeholder === p.name);
+      return { type: 'container', name: `MasterContent_${String(p.name ?? j + 2).replace(/\W/g, '_').slice(0, 64)}`, ...boxOf(p), keepTogether: false, style: blank, items: Array.isArray(e?.items) ? e.items : [] };
+    });
+    return { ...(b || {}), items: [...mine, content, ...more] };
   };
   const body = Array.isArray(cs.body) ? cs.body.map(wrap) : wrap(cs.body, 0);
   const st = (x) => x.styles || {};
@@ -126,7 +141,7 @@ function mergeMaster(c, m) {
     theme: c.theme ?? m.theme,
     themeDef: c.themeDef ?? m.themeDef,
     // the content's own page header and footer are replaced by the master's (its items are not in the report)
-    sections: { ...cs, pageHeader: ms.pageHeader || { height: 0, items: [] }, pageFooter: ms.pageFooter || { height: 0, items: [] }, body },
+    sections: { ...cs, content: undefined, pageHeader: ms.pageHeader || { height: 0, items: [] }, pageFooter: ms.pageFooter || { height: 0, items: [] }, body },
   };
 }
 

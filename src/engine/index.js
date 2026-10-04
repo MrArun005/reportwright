@@ -15,7 +15,7 @@ import { BASE_STYLE } from './style.js';
 import { resolveImageSrc } from './image.js';
 import { ITEMS } from './items/index.js';
 import { loadBarcodes } from './items/barcode.js';
-import { placeItems } from './items/paint.js';
+import { placeItems, shiftItems } from './items/paint.js';
 import { paginate } from './paginate/index.js';
 import { layoutItems } from './layout.js';
 import { validate } from './schema/validate.js';
@@ -29,6 +29,7 @@ export class ReportError extends Error {
 
 const EPS = 0.01;
 const MAX_SUBREPORTS = 2000; // per render, all nesting levels together
+export const BAND_ITEMS = 250000; // page header and footer items drawn per render, all pages and body sections together
 
 /**
  * @param {any} def report definition
@@ -254,6 +255,8 @@ export async function render(def0, opts = {}) {
         if (sl.length === 1) pageH = Math.max(first.minHeight, first.margins.top + parts[0].g.hH + sl[0].bottom - sl[0].top + parts[0].g.fH + first.margins.bottom);
         else warn(`This pageless report is taller than 200 inches, the largest PDF page, so it is split into ${sl.length} pages.`);
       }
+      const bandCache = new Map(); // band → { paged, units }: per pass (the measurer changes between passes)
+      const bandWork = { left: BAND_ITEMS };
       const bookmarks = [];
       const headings = []; // text boxes with headingLevel: for a table of contents only, not the PDF outline
       const pages = [];
@@ -271,9 +274,20 @@ export async function render(def0, opts = {}) {
           if (!section) return;
           if (isFirst && section.printOnFirstPage === false) return;
           if (isLast && section.printOnLastPage === false) return;
-          const r = layoutItems(section.items || [], plc);
-          for (const u of r.units) for (const d of u.items) d.art = 1; // page header and footer: an artifact in a tagged PDF
-          for (const u of r.units) placeItems(u.items, ml, y0 + u.top, items);
+          const capped = () => warn(`The page headers and footers would draw more than ${BAND_ITEMS.toLocaleString('en-US')} items in this report; they are left out of the later pages. Make them lighter, or the report shorter.`);
+          if (bandWork.left <= 0) { capped(); return; }
+          plc.tick?.(); // the time limit, per band per page
+          // a band that does not read Globals (page numbers) is laid out once and copied onto each page
+          let c = bandCache.get(section);
+          if (!c) bandCache.set(section, c = { paged: pagedBand(section, def.functions), units: null });
+          const r = c.units ? { units: c.units } : layoutItems(section.items || [], plc);
+          if (!c.units) for (const u of r.units) for (const d of u.items) d.art = 1; // page header and footer: an artifact in a tagged PDF
+          if (!c.paged) c.units = r.units;
+          let n = 0;
+          for (const u of r.units) n += u.items.length;
+          // one budget for the page header and footer items of the whole render: many pages × heavy bands are capped
+          if ((bandWork.left -= n) < 0) { capped(); return; }
+          for (const u of r.units) if (c.paged) placeItems(u.items, ml, y0 + u.top, items); else for (const it of shiftItems(u.items, ml, y0 + u.top)) items.push(it);
         };
         // a section's own band: first and last are the section's pages; the shared one: the report's
         band(g.hdr, mt, g.own.h ? k === 0 : n === 0, g.own.h ? last : n === total - 1);
@@ -398,6 +412,11 @@ export async function render(def0, opts = {}) {
 function sectionBand(own, shared) {
   if (!own || typeof own !== 'object' || Array.isArray(own)) return shared;
   return own.hidden || !(Number(own.height) > 0) ? null : own;
+}
+
+/** True when a band reads Globals (page numbers…) directly or through a report function: it is laid out on every page. */
+function pagedBand(section, functions) {
+  return /globals/i.test(JSON.stringify(section.items || [])) || (functions != null && /globals/i.test(JSON.stringify(functions)));
 }
 
 function hasType(items, type) {

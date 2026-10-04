@@ -1,7 +1,7 @@
 // Batch 4 layout: a page header and footer per body section, named content placeholders in a master,
 // recursive row groups in a matrix, and items in table cells that continue on the next page.
 import { describe, it, expect } from 'vitest';
-import { render } from '../../src/engine/index.js';
+import { render, BAND_ITEMS } from '../../src/engine/index.js';
 import { validate } from '../../src/engine/schema/validate.js';
 import { fontStore, texts, report } from '../helpers.js';
 
@@ -66,5 +66,91 @@ describe('a page header and footer per body section', () => {
   });
   it('the content left must still fit: a section header that eats the page is an error', async () => {
     await expect(render(def([{ pageHeader: band(900), items: [] }]), { fontStore })).rejects.toThrow(/Body section 1: the page header and footer leave no room/);
+  });
+});
+
+describe('section bands stay inside the render budgets (adversarial)', () => {
+  // 20 body sections × 100 pages each, every section with its own heavy header: 2,000 pages
+  const heavy = (n, value, k) => ({ height: 40, items: Array.from({ length: n }, (_, i) => ({ type: 'textbox', name: `h${k}_${i}`, x: (i % 20) * 25, y: Math.floor(i / 20) * 2, w: 24, h: 2, value, canGrow: false })) });
+  const def = (value, n = 200) => {
+    const d = report([], { data: { rows: Array.from({ length: 100 }, (_, i) => ({ n: i })) } });
+    d.sections.body = Array.from({ length: 20 }, (_, k) => ({
+      name: `S${k}`, pageHeader: heavy(n, value, k),
+      items: [{ type: 'list', name: `L${k}`, x: 0, y: 0, w: 200, h: 14, dataSet: 'Rows', pageBreakBetween: true, items: [{ type: 'textbox', name: `t${k}`, x: 0, y: 0, w: 100, h: 14, value: '=Fields.n' }] }],
+    }));
+    return d;
+  };
+  const bandItems = (out) => out.pages.reduce((a, p) => a + p.items.filter(i => i.art).length, 0);
+  it('page-numbered headers on thousands of pages are capped, with a warning, quickly', async () => {
+    const t0 = Date.now();
+    const out = await render(def('{Globals.PageNumber}'), { fontStore });
+    expect(out.pages.length).toBe(2000);
+    expect(bandItems(out)).toBeLessThanOrEqual(BAND_ITEMS);
+    expect(out.warnings.join()).toMatch(/page headers and footers would draw more than 250,000 items/);
+    expect(Date.now() - t0).toBeLessThan(20000);
+  }, 30000);
+  it('a header without page numbers is laid out once per section and copied: same cap, faster', async () => {
+    const t0 = Date.now();
+    const out = await render(def('S'), { fontStore });
+    expect(bandItems(out)).toBeLessThanOrEqual(BAND_ITEMS);
+    expect(texts(out.pages[0])).toContain('S');
+    // copies, not shared objects: moving one page's item does not move another's
+    const a = out.pages[0].items.find(i => i.art && i.t === 'text'), b = out.pages[1].items.find(i => i.art && i.t === 'text');
+    expect(a).not.toBe(b);
+    expect(a.lines[0]).not.toBe(b.lines[0]);
+    expect(Date.now() - t0).toBeLessThan(20000);
+  }, 30000);
+  it('the time limit stops heavy section headers', async () => {
+    await expect(render(def('{Globals.PageNumber}', 400), { fontStore, timeoutMs: 300 })).rejects.toThrow(/time limit/);
+  }, 30000);
+});
+
+describe('several content placeholders in a master, filled by name', () => {
+  const tb4 = (name, value, x, y) => ({ type: 'textbox', name, x, y, w: 160, h: 16, value });
+  const loader = (lib) => async (id) => { if (!(id in lib)) throw new Error(`Report "${id}" not found`); return structuredClone(lib[id]); };
+  const textItem = (m, s) => m.pages.flatMap(p => p.items).find(i => i.t === 'text' && i.lines.some(l => l.text === s));
+  const master = () => report([
+    tb4('MasterTop', 'MASTER TOP', 0, 0),
+    { type: 'placeholder', name: 'Main', x: 0, y: 30, w: 300, h: 40 },
+    { type: 'placeholder', name: 'Side', x: 320, y: 30, w: 180, h: 40 },
+    { type: 'placeholder', name: 'Notes', x: 0, y: 90, w: 500, h: 20 },
+    tb4('MasterBottom', 'MASTER BOTTOM', 0, 130),
+  ]);
+  const content = (extra) => ({ ...report([tb4('Body', 'BODY TEXT', 0, 0)]), master: 'm', ...extra });
+  it('the body fills the first placeholder; sections.content fills the others by name', async () => {
+    const def = content();
+    def.sections.content = [
+      { placeholder: 'Side', items: [tb4('S1', 'SIDE TEXT', 0, 0)] },
+      { placeholder: 'Notes', items: [tb4('N1', 'NOTES TEXT', 10, 0)] },
+    ];
+    const m = await render(def, { fontStore, loadReport: loader({ m: master() }) });
+    const body = textItem(m, 'BODY TEXT'), side = textItem(m, 'SIDE TEXT'), notes = textItem(m, 'NOTES TEXT');
+    const top = textItem(m, 'MASTER TOP');
+    expect(body.lines[0].x - top.lines[0].x).toBeCloseTo(0, 0);
+    expect(side.lines[0].x - top.lines[0].x).toBeCloseTo(320, 0);
+    expect(notes.lines[0].x - top.lines[0].x).toBeCloseTo(10, 0);
+    expect(side.lines[0].y).toBeCloseTo(body.lines[0].y, 1);
+    expect(notes.lines[0].y - body.lines[0].y).toBeCloseTo(60, 0);
+    expect(m.warnings).toEqual([]);
+  });
+  it('a placeholder no content names stays empty; content for a placeholder the master lacks is a warning', async () => {
+    const def = content();
+    def.sections.content = [{ placeholder: 'Nowhere', items: [tb4('X', 'LOST', 0, 0)] }];
+    const m = await render(def, { fontStore, loadReport: loader({ m: master() }) });
+    expect(m.pages.flatMap(texts)).not.toContain('LOST');
+    expect(m.warnings.join()).toMatch(/placeholder "Nowhere"/);
+  });
+  it('a long table in a named placeholder grows it and pushes the master items below it', async () => {
+    const rows = Array.from({ length: 40 }, (_, i) => ({ n: i + 1 }));
+    const tbl = { type: 'table', name: 'T', dataSet: 'Rows', x: 0, y: 0, w: 160, h: 18, columns: [{ width: 160 }], detail: [{ height: 18, cells: [{ value: '=Fields.n' }] }] };
+    const def = { ...content(), ...{} };
+    def.dataSources = [{ name: 'src', type: 'json', data: { rows } }];
+    def.sections.content = [{ placeholder: 'Side', items: [tbl] }];
+    const m = await render(def, { fontStore, loadReport: loader({ m: master() }) });
+    // Side grows by the table; Notes (below it, across) moves down, and MasterBottom below Notes with it
+    const pageOf = (s) => m.pages.findIndex(p => texts(p).includes(s));
+    const at = (s) => [pageOf(s), textItem(m, s).lines[0].y];
+    const [pl, yl] = at('40'), [pb, yb] = at('MASTER BOTTOM');
+    expect(pb > pl || (pb === pl && yb > yl)).toBe(true);
   });
 });
