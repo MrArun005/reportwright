@@ -109,6 +109,7 @@ const bad = (what) => { throw new Untranslatable(what, true); };
 const CONT = /[ \t]*\r?\n/y, NUM = /((?:\d+(?:\.\d+)?|\.\d+)(?:[eE][-+]?\d+)?)[DFRdfr@]?(?![A-Za-z0-9_])/y, NAME = /[A-Za-z_][A-Za-z0-9_]*/y;
 /** A sticky regex matched at i (no copy of the rest of the source, no backtracking over it). */
 const at = (re, src, i) => { re.lastIndex = i; return re.exec(src); };
+const MAX_RESULT = 100_000;
 const VB_OPS = ['<>', '<=', '>=', ':=', '&', '+', '-', '*', '/', '\\', '^', '=', '<', '>', '(', ')', ',', '.', '!'];
 function vbLex(src) {
   const toks = [];
@@ -273,6 +274,12 @@ const MATH = { round: 'Round', abs: 'Abs', floor: 'Floor', ceiling: 'Ceiling', s
  * @returns {{s: string, p: number}}
  */
 function em(n, o, res = false) {
+  const r = emit(n, o, res);
+  // a translation can repeat its operands (Choose, Math.Max, Xor, StartsWith): nested, that doubles per level
+  if (r.s.length > MAX_RESULT) no(`an expression whose translation is longer than ${MAX_RESULT} characters`);
+  return r;
+}
+function emit(n, o, res) {
   switch (n.k) {
     case 'num': return atom(String(n.v));
     case 'str': return atom(q(res && o.lit ? o.lit(n.v) : n.v));
@@ -576,6 +583,34 @@ const AGG_RE = /\b(Sum|Avg|Count|CountDistinct|CountRows|Min|Max|First|Last|Runn
 
 /* ================================================================ import context */
 
+/**
+ * The output budget. A small file must not become a huge report: cells laid out (rows × columns of every table,
+ * nested ones included) and the size of the finished definition are capped, and going over stops the import
+ * with an error instead of using the memory. Exported for the .rdl front end, which has budgets of its own.
+ */
+export class ImportBudgetError extends Error {}
+export const OUTPUT_LIMITS = { cells: 1_000_000, cellsPerTable: 250_000, chars: 16_000_000 };
+/** An empty row of n cells, charged to the budget. */
+function blankCells(cx, n) {
+  cx.cells += n;
+  if (cx.cells > OUTPUT_LIMITS.cells) throw new ImportBudgetError(`its tables have more than ${OUTPUT_LIMITS.cells.toLocaleString('en-US')} cells in all`);
+  return new Array(n).fill(null);
+}
+/** The size of a definition as JSON, counted until it passes the limit (so a shared object repeated a million times stops early). */
+export function outputTooLarge(def, limit = OUTPUT_LIMITS.chars) {
+  let size = 0;
+  const stack = [def];
+  while (stack.length) {
+    const v = stack.pop();
+    if (typeof v === 'string') size += v.length + 2;
+    else if (v && typeof v === 'object') {
+      if (Array.isArray(v)) { size += v.length + 2; for (const x of v) stack.push(x); } else for (const [k, x] of Object.entries(v)) { size += k.length + 4; stack.push(x); }
+    } else size += 6;
+    if (size > limit) return true;
+  }
+  return false;
+}
+
 function newContext() {
   const cx = {
     /** @type {string[]} */ warnings: [],
@@ -587,6 +622,8 @@ function newContext() {
     /** @type {Set<string>} */ reserved: new Set(),
     /** @type {Map<string, Set<string>>} data set → its field names (lower case) */ dsFields: new Map(),
     /** @type {Set<string>} parameter names (lower case) */ params: new Set(),
+    /** @type {Record<string, string>} embedded images: referenced as embedded:name, stored once */ imageData: {},
+    cells: 0,
     warn(msg) { if (!cx.warnings.includes(msg)) cx.warnings.push(msg); },
   };
   return cx;
@@ -782,6 +819,7 @@ const CONVERTERS = {
 /** One item. A converter that fails drops only its own item. */
 function convertItem(ar, cx, ctx) {
   if (!ar || typeof ar !== 'object' || Array.isArray(ar)) { cx.warn('An entry in a list of report items is not an item; it was skipped.'); return null; }
+  if (typeof ar.__drop === 'string') { const t = track(cx, ar); t.drop(ar.__drop); dropInside(ar, cx); return finish(cx, t, null); } // a front end left it out
   const type = String(ar.Type || '').toLowerCase();
   const conv = CONVERTERS[type];
   if (!conv) {
@@ -792,6 +830,7 @@ function convertItem(ar, cx, ctx) {
   }
   const snap = { ...cx.stats };
   try { return conv(ar, cx, ctx); } catch (e) {
+    if (e instanceof ImportBudgetError) throw e;
     Object.assign(cx.stats, snap);
     const t = track(cx, ar);
     t.drop(`it could not be converted (${e instanceof Error ? e.message : e}), so it was left out.`);
@@ -1271,7 +1310,7 @@ function firstIn(v, { key, group }) {
 
 /** Cells of one row, positioned by column (ActiveReports writes null for cells covered by a span). */
 function rowCells(src, N, cx, tt, ctx, kind, offset = 0) {
-  const cells = new Array(N).fill(null);
+  const cells = blankCells(cx, N);
   const list = Array.isArray(src) ? src : [];
   const positional = list.length + offset === N || list.some(c => c == null);
   let col = offset;
@@ -1356,6 +1395,9 @@ function tableAsBands(ar) {
 }
 
 function table(ar, cx, ctx) {
+  const rowCount = [ar.Header, ar.Details, ar.Footer, ...(Array.isArray(ar.TableGroups) ? ar.TableGroups.flatMap(g => [g?.Header, g?.Footer]) : [])]
+    .reduce((n, p) => n + (Array.isArray(p?.TableRows) ? p.TableRows.length : 0), 0);
+  if (Array.isArray(ar.TableColumns) && rowCount * ar.TableColumns.length > OUTPUT_LIMITS.cellsPerTable) return tooBig(ar, cx, rowCount, ar.TableColumns.length);
   const allCells = [ar.Header, ar.Details, ar.Footer, ...(Array.isArray(ar.TableGroups) ? ar.TableGroups.flatMap(g => [g?.Header, g?.Footer]) : [])]
     .flatMap(p => (Array.isArray(p?.TableRows) ? p.TableRows : [])).flatMap(r => r?.TableCells || r?.Cells || []);
   if (Array.isArray(ar.TableColumns) && ar.TableColumns.length && !allCells.every(c => TEXT_CELL(c?.Item))) return bandedlist(tableAsBands(ar), cx, ctx);
@@ -1422,8 +1464,21 @@ const isDyn = (m) => !!(m && m.Group && (m.Group.GroupExpressions || []).length)
 const anyDyn = (ms) => (Array.isArray(ms) ? ms : []).some(m => isDyn(m) || anyDyn(m?.Children));
 const members = (h) => (Array.isArray(h?.Members) ? h.Members.filter(Boolean) : []);
 
+/** Rows × columns of one table over the per-table cap: left out with a note. */
+function tooBig(ar, cx, rows, cols) {
+  const t = track(cx, ar);
+  t.drop(`it has ${rows} rows × ${cols} columns, more than the ${OUTPUT_LIMITS.cellsPerTable.toLocaleString('en-US')} cells a table may have, so it was left out.`);
+  dropInside(ar, cx);
+  return finish(cx, t, null);
+}
+
 function tablix(ar, cx, ctx) {
   const body = ar.Body;
+  const levels = (h) => (Array.isArray(h?.LevelSizes) ? h.LevelSizes.length : 0);
+  if (body && Array.isArray(body.Columns) && Array.isArray(body.Rows)) {
+    const rows = body.Rows.length + levels(ar.ColumnHierarchy), cols = body.Columns.length + levels(ar.RowHierarchy);
+    if (rows * cols > OUTPUT_LIMITS.cellsPerTable) return tooBig(ar, cx, rows, cols);
+  }
   if (!body || !Array.isArray(body.Columns) || !body.Columns.length) {
     const t = track(cx, ar);
     t.drop('the tablix has no body, so it was left out.');
@@ -1459,7 +1514,7 @@ function tablixTable(ar, cx, ctx) {
   // column header rows: the corner, then the headers of the (static) column members
   const colRows = [];
   if (C) {
-    const grid = Array.from({ length: C }, () => new Array(N).fill(null));
+    const grid = Array.from({ length: C }, () => blankCells(cx, N));
     (ar.Corner || []).forEach((crow, l) => (crow || []).forEach((c, k) => { if (c?.Item && l < C && k < R) grid[l][k] = cellOf(c, cx, t, rctx, 'header'); }));
     let leaf = 0;
     const walkCols = (ms, level) => {
@@ -1532,7 +1587,7 @@ function tablixTable(ar, cx, ctx) {
         const key = keyOf(groups[L.depth - 1]);
         L.row.cells[p.level] = cellOf({ Item: p.m.Header.Item, ColSpan: span }, cx, t, rctx, 'groupHeader', { firstIn: { key, group: groups[gi].name } });
       } else if (gi >= 0 && !(L.depth === gi + 1 && (L.kind === 'self' || L.place === 'before'))) {
-        const cells = new Array(N).fill(null);
+        const cells = blankCells(cx, N);
         cells[p.level] = cellOf({ Item: p.m.Header.Item, ColSpan: span }, cx, t, rctx, 'groupHeader');
         groups[gi].header.unshift({ height: L.row.height, cells });
         t.approx(`the header of the group "${groups[gi].name}" gets a row of its own above the group.`);
@@ -2472,7 +2527,11 @@ function collectScopes(ar, cx) {
 function convertReport(ar, cx, opts) {
   const name = String(opts.name || ar.Name || 'Imported report');
   for (const img of Array.isArray(ar.EmbeddedImages) ? ar.EmbeddedImages : []) {
-    if (img?.Name && img.ImageData) cx.images.set(img.Name, `data:${img.MIMEType || 'image/png'};base64,${String(img.ImageData).replace(/\s+/g, '')}`);
+    if (!img?.Name || !img.ImageData || cx.images.has(img.Name)) continue;
+    // stored once in "images" and referenced by name: a large image used by many items is not copied into each
+    const key = /^(__proto__|constructor|prototype)$/.test(String(img.Name)) ? `_${img.Name}` : String(img.Name);
+    cx.imageData[key] = `data:${img.MIMEType || 'image/png'};base64,${String(img.ImageData).replace(/\s+/g, '')}`;
+    cx.images.set(img.Name, `embedded:${key}`);
   }
   collectScopes(ar, cx);
   const lang = typeof ar.Language === 'string' && !isExpr(ar.Language) && /^[a-z]{2}(-[A-Za-z]{2,4})?$/i.test(ar.Language) ? ar.Language : 'en-US';
@@ -2536,6 +2595,7 @@ function convertReport(ar, cx, opts) {
     dataSources,
     dataSets,
     styles: { base: { fontFamily: 'Inter', fontSize: 10, color: '#000000', padding: 0 } },
+    ...(Object.keys(cx.imageData).length ? { images: cx.imageData } : {}),
     sections: { pageHeader: header, body: more.length ? [body, ...more] : body, pageFooter: footer },
   };
 }
@@ -2562,7 +2622,14 @@ export function importRdlx(input, opts = {}) {
     ar = {};
   }
   let definition;
-  try { definition = convertReport(ar, cx, opts); } catch (e) {
+  try {
+    definition = convertReport(ar, cx, opts);
+    if (outputTooLarge(definition)) throw new ImportBudgetError(`the converted report would be larger than ${OUTPUT_LIMITS.chars / 1e6} million characters`);
+  } catch (e) {
+    if (e instanceof ImportBudgetError) {
+      const error = `The report is too large to import: ${e.message}`;
+      return { definition: convertReport({}, newContext(), opts), warnings: [`${error}.`], stats: { items: 0, mapped: 0, approximated: 0, dropped: 0 }, error };
+    }
     cx.warn(`The import stopped early (${e instanceof Error ? e.message : e}), so parts of the report are missing.`);
     definition = convertReport({}, newContext(), opts);
   }

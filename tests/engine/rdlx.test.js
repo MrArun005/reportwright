@@ -170,7 +170,8 @@ describe('invoice (older layout: Body, PageHeader, PageFooter)', () => {
   });
   it('maps the image, line, rectangle, check box and barcode', () => {
     expect(byName(def, 'LogoImage')).toMatchObject({ type: 'image', x: 468, fit: 'contain' });
-    expect(byName(def, 'LogoImage').src).toMatch(/^data:image\/png;base64,iVBOR/);
+    expect(byName(def, 'LogoImage').src).toMatch(/^embedded:/); // stored once in images
+    expect(def.images[byName(def, 'LogoImage').src.slice(9)]).toMatch(/^data:image\/png;base64,iVBOR/);
     expect(byName(def, 'Rule')).toMatchObject({ type: 'line', x: 0, y: 28.8, w: 540, h: 0, style: { stroke: '#cccccc', strokeWidth: 0.5, strokeDash: 'dashed' } });
     const box = byName(def, 'StatusBox');
     expect(box).toMatchObject({ type: 'container', keepTogether: true, style: { backgroundColor: '#f5f5f5', border: '1 solid #dcdcdc' } });
@@ -472,7 +473,8 @@ describe('text styling (phase 1)', () => {
   });
   it('uses an embedded background image from the file', () => {
     const r = one({ Style: { BackgroundImage: { Source: 'Embedded', Value: 'Logo' } } }, { EmbeddedImages: [{ Name: 'Logo', MIMEType: 'image/png', ImageData: 'iVBORw0KGgo=' }] });
-    expect(r.definition.sections.body.items[0].style.backgroundImage).toBe('data:image/png;base64,iVBORw0KGgo=');
+    expect(r.definition.sections.body.items[0].style.backgroundImage).toBe('embedded:Logo');
+    expect(r.definition.images).toEqual({ Logo: 'data:image/png;base64,iVBORw0KGgo=' });
   });
   it('still warns about database or expression background images', () => {
     const r = one({ Style: { BackgroundImage: { Source: 'Database', Value: '=Fields!Logo.Value' } } });

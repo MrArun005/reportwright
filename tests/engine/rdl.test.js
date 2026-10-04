@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseXml, XmlError } from '../../src/importers/xml.js';
 import { importRdl } from '../../src/importers/rdl.js';
-import { importRdlx, translateExpression, toPt } from '../../src/importers/rdlx.js';
+import { importRdlx, translateExpression, toPt, outputTooLarge } from '../../src/importers/rdlx.js';
 import { validate } from '../../src/engine/schema/validate.js';
 import { checkValue } from '../../src/engine/expr/evaluate.js';
 import { render } from '../../src/engine/index.js';
@@ -171,12 +171,115 @@ describe('hostile .rdl files', () => {
     expect(ms(() => { out = q('@(a+)+$'); })).toBeLessThan(200);
     expect(out).toBe('select 1 where a = @a.b or b = @axb');
   });
-  it('refuses a tablix too large to lay out', () => {
+  it('refuses a table whose rows × columns pass the per-table cap, before converting its cells', () => {
     const cols = '<TablixColumn><Width>1in</Width></TablixColumn>'.repeat(600);
-    const r = importRdl(rdl(`<Tablix Name="Wide"><TablixBody><TablixColumns>${cols}</TablixColumns><TablixRows /></TablixBody></Tablix>`));
+    const rows = '<TablixRow><Height>1in</Height><TablixCells /></TablixRow>'.repeat(600);
+    const src = rdl(`<Tablix Name="Wide"><TablixBody><TablixColumns>${cols}</TablixColumns><TablixRows>${rows}</TablixRows></TablixBody></Tablix>`);
+    expect(src.length).toBeLessThan(100_000);
+    let r;
+    expect(ms(() => { r = importRdl(src); })).toBeLessThan(1000);
     expect(byName(r.definition, 'Wide')).toBeUndefined();
-    expect(r.warnings.join(' ')).toMatch(/600 columns/);
+    expect(r.warnings.join(' ')).toMatch(/Wide: it has 600 rows × 600 columns/);
     expect(r.stats.dropped).toBe(1);
+  });
+});
+
+/* ---------------------------------------------------------------- output budget: small files that would become huge reports */
+
+describe('expansion amplification', () => {
+  /** Run an import, with its time and heap growth. */
+  const measure = (fn) => {
+    const heap = process.memoryUsage().heapUsed;
+    let r;
+    const t = ms(() => { r = fn(); });
+    return { r, t, heap: process.memoryUsage().heapUsed - heap };
+  };
+  const tx = (name, value, style = '') => `<Textbox Name="${name}"><Paragraphs><Paragraph><TextRuns><TextRun><Value>${esc(value)}</Value><Style>${style}</Style></TextRun></TextRuns></Paragraph></Paragraphs></Textbox>`;
+
+  it('variables that each use the one before many times (exponential): the expression is left out, fast', () => {
+    const vars = ['<Variable Name="V0"><Value>="ab"</Value></Variable>',
+      ...Array.from({ length: 8 }, (_, k) => `<Variable Name="V${k + 1}"><Value>=${Array(30).fill(`Variables!V${k}.Value`).join(' &amp; ')}</Value></Variable>`)].join('');
+    const src = rdl(tx('T', '=Variables!V8.Value'), { extra: `<Variables>${vars}</Variables>` });
+    expect(src.length).toBeLessThan(100_000);
+    const { r, t, heap } = measure(() => importRdl(src));
+    expect(t).toBeLessThan(1000);
+    expect(heap).toBeLessThan(200 * 1024 * 1024);
+    expect(byName(r.definition, 'T').value).toBe('');
+    expect(r.warnings.join(' ')).toMatch(/longer than 20000 characters once its variables and item references are filled in/);
+  });
+  it('a variable used in every style of many items: refused once the expressions pass the output budget', () => {
+    const big = `<Variable Name="Big"><Value>=${Array(700).fill('Fields!abcdefghij.Value').join(' &amp; ')}</Value></Variable>`;
+    const style = ['Color', 'BackgroundColor', 'FontFamily', 'FontSize', 'FontWeight', 'FontStyle', 'Format', 'TextAlign', 'VerticalAlign',
+      'PaddingLeft', 'PaddingRight', 'PaddingTop', 'PaddingBottom', 'TextDecoration', 'WritingMode', 'LineHeight', 'Direction', 'Language'].map(k => `<${k}>=Variables!Big.Value</${k}>`).join('');
+    const src = rdl(Array.from({ length: 60 }, (_, i) => tx(`T${i}`, '=1', style)).join(''), { extra: `<Variables>${big}</Variables>` });
+    expect(src.length).toBeLessThan(100_000);
+    const { r, t, heap } = measure(() => importRdl(src));
+    expect(t).toBeLessThan(1000);
+    expect(heap).toBeLessThan(300 * 1024 * 1024);
+    expect(r.error).toMatch(/too large to import: its expressions grow past 16 million characters/);
+    expect(validate(r.definition).errors).toEqual([]);
+  });
+  it('one embedded image used by many items is stored once', () => {
+    const data = 'iVBORw0KGgo'.repeat(5000); // 55 KB
+    const imgs = Array.from({ length: 400 }, (_, i) => `<Image Name="I${i}"><Source>Embedded</Source><Value>Logo</Value></Image>`).join('');
+    const src = rdl(imgs, { extra: `<EmbeddedImages><EmbeddedImage Name="Logo"><MIMEType>image/png</MIMEType><ImageData>${data}</ImageData></EmbeddedImage></EmbeddedImages>` });
+    expect(src.length).toBeLessThan(100_000);
+    const { r, t } = measure(() => importRdl(src));
+    expect(t).toBeLessThan(1000);
+    expect(byName(r.definition, 'I399').src).toBe('embedded:Logo');
+    expect(JSON.stringify(r.definition).length).toBeLessThan(200_000); // 400 copies would be 22 MB
+  });
+  it('many tables under the per-table cap: refused once all their cells pass the budget (ActiveReports JSON too)', () => {
+    const tbl = (i) => ({ Type: 'tablix', Name: `T${i}`, Body: { Columns: Array(450).fill(1), Rows: Array(450).fill(0) }, RowHierarchy: { Members: Array(450).fill(0).map(() => ({})) }, ColumnHierarchy: { Members: [] } });
+    const src = JSON.stringify({ Body: { ReportItems: Array.from({ length: 20 }, (_, i) => tbl(i)) } });
+    expect(src.length).toBeLessThan(100_000);
+    const { r, t, heap } = measure(() => importRdlx(src));
+    expect(t).toBeLessThan(1000);
+    expect(heap).toBeLessThan(300 * 1024 * 1024);
+    expect(r.error).toMatch(/too large to import: its tables have more than 1,000,000 cells/);
+  });
+  it('a deeply nested tablix: data regions deeper than 8 are left out with a note', () => {
+    let inner = tx('Leaf', 'x');
+    for (let d = 15; d >= 1; d--) { // 15 tables, about 110 XML levels (the reader allows 128)
+      inner = `<Tablix Name="N${d}"><TablixBody><TablixColumns><TablixColumn><Width>1in</Width></TablixColumn><TablixColumn><Width>1in</Width></TablixColumn></TablixColumns><TablixRows><TablixRow><Height>0.25in</Height><TablixCells>`
+        + `<TablixCell><CellContents>${inner}</CellContents></TablixCell><TablixCell><CellContents>${tx(`S${d}`, '=1')}</CellContents></TablixCell></TablixCells></TablixRow></TablixRows></TablixBody>`
+        + '<TablixColumnHierarchy><TablixMembers><TablixMember /><TablixMember /></TablixMembers></TablixColumnHierarchy><TablixRowHierarchy><TablixMembers><TablixMember><Group Name="Details' + d + '" /></TablixMember></TablixMembers></TablixRowHierarchy></Tablix>';
+    }
+    const { r, t } = measure(() => importRdl(rdl(inner)));
+    expect(t).toBeLessThan(1000);
+    expect(validate(r.definition).errors).toEqual([]);
+    expect(byName(r.definition, 'N8')).toBeDefined();
+    expect(byName(r.definition, 'N9')).toBeUndefined();
+    expect(r.warnings.join(' ')).toMatch(/N9: it is nested more than 8 tables or charts deep/);
+  });
+  it('a many-cells matrix stays within the budget', () => {
+    const n = 300;
+    const cols = '<TablixColumn><Width>0.5in</Width></TablixColumn>'.repeat(n);
+    const cells = Array.from({ length: n }, () => '<TablixCell />').join('');
+    const src = rdl(`<Tablix Name="M"><TablixBody><TablixColumns>${cols}</TablixColumns><TablixRows><TablixRow><Height>0.25in</Height><TablixCells>${cells}</TablixCells></TablixRow></TablixRows></TablixBody>`
+      + `<TablixColumnHierarchy><TablixMembers>${'<TablixMember><Group Name="C"><GroupExpressions><GroupExpression>=Fields!c.Value</GroupExpression></GroupExpressions></Group></TablixMember>'.repeat(n)}</TablixMembers></TablixColumnHierarchy>`
+      + '<TablixRowHierarchy><TablixMembers><TablixMember><Group Name="R"><GroupExpressions><GroupExpression>=Fields!r.Value</GroupExpression></GroupExpressions></Group></TablixMember></TablixMembers></TablixRowHierarchy></Tablix>');
+    expect(src.length).toBeLessThan(100_000);
+    const { r, t } = measure(() => importRdl(src));
+    expect(t).toBeLessThan(1000);
+    expect(validate(r.definition).errors).toEqual([]);
+    expect(JSON.stringify(r.definition).length).toBeLessThan(500_000);
+  });
+  it('translations that repeat their operands (Choose, nested Math.Max) are capped', () => {
+    const choose = '=Choose(' + 'Fields!abcdefghij.Value + '.repeat(500) + '1, ' + Array(2000).fill('1').join(', ') + ')';
+    let max = 'Fields!x.Value';
+    for (let k = 0; k < 40; k++) max = `Math.Max(${max}, 1)`;
+    for (const src of [choose, '=' + max]) {
+      let r;
+      expect(ms(() => { r = translateExpression(src, { text: true }); })).toBeLessThan(1000);
+      expect(r.ok).toBe(false);
+      expect(r.notes.join(' ')).toMatch(/longer than 100000 characters/);
+    }
+  });
+  it('the definition size is counted without serialising it, and stops early', () => {
+    const shared = { value: 'x'.repeat(100) };
+    expect(ms(() => expect(outputTooLarge({ items: Array(1e6).fill(shared) })).toBe(true))).toBeLessThan(1000);
+    expect(outputTooLarge({ items: Array(10).fill(shared) })).toBe(false);
   });
   it('keeps custom code as text and never runs it', () => {
     const code = 'Public Function Boom() As String\n  System.IO.File.Delete("x")\n  Return "x"\nEnd Function';
@@ -271,7 +374,8 @@ describe('kitchen sink (RDL 2016)', () => {
     expect(h.height).toBe(43.2);
     expect(h.items[0]).toMatchObject({ type: 'shape', style: { fill: '#eef3f8' } }); // the header's background
     expect(byName(def, 'HeaderTitle')).toMatchObject({ value: 'Sales {Parameters.Year}', style: { fontSize: 16, fontWeight: 'bold' } });
-    expect(byName(def, 'HeaderLogo').src).toMatch(/^data:image\/png;base64,iVBOR/);
+    expect(byName(def, 'HeaderLogo').src).toBe('embedded:Logo');
+    expect(def.images.Logo).toMatch(/^data:image\/png;base64,iVBOR/);
     expect(byName(def, 'PageNo')).toMatchObject({ value: 'Page {Globals.PageNumber} of {Globals.TotalPages}', style: { textAlign: 'right' } });
     expect(f.height).toBe(28.8);
   });

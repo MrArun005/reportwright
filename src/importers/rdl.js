@@ -12,11 +12,11 @@
  * Pure JavaScript, no Node APIs and no DOM. It never throws: whatever it cannot map becomes a warning.
  */
 import { parseXml, XmlError } from './xml.js';
-import { importRdlx, toPt } from './rdlx.js';
+import { importRdlx, toPt, ImportBudgetError, OUTPUT_LIMITS } from './rdlx.js';
 
 const RDL_NS = /^http:\/\/schemas\.microsoft\.com\/sqlserver\/reporting\/(\d{4})\/\d{2}\/reportdefinition$/i;
 const MAX_EXPR = 20_000; // longer expressions are left out (the translation is linear, but its output feeds the engine)
-const MAX_COLUMNS = 512, MAX_ROWS = 10_000;
+const MAX_REGION_DEPTH = 8; // tables, charts and gauges inside table cells, inside each other
 
 const isExpr = (v) => typeof v === 'string' && v.trimStart().startsWith('=');
 /** A Pagewright-bound value as a VB operand: "=x" → (x), "text" → "text". */
@@ -49,10 +49,15 @@ export function importRdl(input, opts = {}) {
   const notes = [];
   let ar;
   try { ar = toRdlx(root, notes, m ? Number(m[1]) : 2016); } catch (e) {
+    if (e instanceof ImportBudgetError) {
+      const error = `The report is too large to import: ${e.message}`;
+      return { ...importRdlx({}, { name }), warnings: [`${error}.`], error };
+    }
     notes.push(`The import stopped early (${e instanceof Error ? e.message : e}), so parts of the report are missing.`);
     ar = {};
   }
   const r = importRdlx(ar, { name });
+  if (r.error) return r;
   const def = r.definition;
   for (const p of def.parameters || []) if (ar.__hidden?.has(p.name)) p.hidden = true;
   if (ar.__code) def.customCode = ar.__code;
@@ -94,12 +99,25 @@ function toRdlx(root, notes, year) {
   const info = (msg) => { if (itemInfo) { if (!itemInfo.includes(msg)) itemInfo.push(msg); } else if (!notes.includes(msg)) notes.push(msg); };
 
 
-  let depth = 0;
-  /** Resolve Variables!x, ReportItems!x and Me.Value in an expression. Linear: one scan, string literals skipped. */
+  let depth = 0, produced = 0;
+  /** Expansions of Variables!x and ReportItems!x, each worked out once: a chain of variables that each use the one before many times would otherwise take exponential time. */
+  const memo = new Map();
+  const TOO_LONG = Symbol('too long');
+  /** Resolve Variables!x, ReportItems!x and Me.Value in an expression. Linear in what it reads and writes. */
   function fix(v) {
     if (!isExpr(v)) return v;
     if (v.length > MAX_EXPR) { note(`an expression of ${v.length} characters is too long to import, so it is left out.`); return ''; }
-    if (depth > 4) return v;
+    let out;
+    try { out = expand(v); } catch (e) {
+      if (e !== TOO_LONG) throw e;
+      note(`an expression becomes longer than ${MAX_EXPR} characters once its variables and item references are filled in, so it is left out.`);
+      return '';
+    }
+    produced += out.length;
+    if (produced > OUTPUT_LIMITS.chars) throw new ImportBudgetError(`its expressions grow past ${OUTPUT_LIMITS.chars / 1e6} million characters once variables and item references are filled in`);
+    return out;
+  }
+  function expand(v) {
     const src = v, low = v.toLowerCase(), n = v.length;
     let out = '', last = 0, i = 0, fresh = false;
     while (i < n) {
@@ -120,23 +138,38 @@ function toRdlx(root, notes, year) {
       } else if ((w === 'microsoft' && low.startsWith('.visualbasic.', j)) || (w === 'system' && src[j] === '.')) {
         rep = ''; end = j + (w === 'system' ? 1 : 13); fresh = true; // Microsoft.VisualBasic.DateFormat.LongDate → DateFormat.LongDate
       } else if (w === 'me' && me != null && low.startsWith('.value', j) && !isId(src[j + 6] || '')) { rep = vb(me); end = j + 6; }
-      if (rep != null) { out += src.slice(last, i) + rep; last = end; }
+      if (rep != null) {
+        out += src.slice(last, i) + rep;
+        last = end;
+        if (out.length > MAX_EXPR) throw TOO_LONG;
+      }
       i = end;
     }
-    return out + src.slice(last);
+    out += src.slice(last);
+    if (out.length > MAX_EXPR) throw TOO_LONG;
+    return out;
   }
-  const nested = (v) => { depth++; try { return vb(fix(v)); } finally { depth--; } };
+  /** The expansion of one reference, worked out once (null: leave the reference as it is). */
+  function once(key, value) {
+    if (memo.has(key)) { const m = memo.get(key); if (m === TOO_LONG) throw TOO_LONG; return m; }
+    if (depth >= 4) return null;
+    memo.set(key, null); // a reference to itself, directly or not, is left as it is
+    depth++;
+    try { const r = vb(expand(value)); memo.set(key, r); return r; } catch (e) { if (e === TOO_LONG) memo.set(key, TOO_LONG); throw e; } finally { depth--; }
+  }
   function variable(name) {
     const v = variables.get(name.toLowerCase());
     if (v == null) return null;
-    info(`Variables!${name} is replaced by its expression.`);
-    return nested(v);
+    const r = once(`v:${name.toLowerCase()}`, v);
+    if (r != null) info(`Variables!${name} is replaced by its expression.`);
+    return r;
   }
   function reportItem(name) {
     const b = boxes.get(name.toLowerCase());
     if (!b || b.value == null || (b.region != null && b.region !== region)) return null; // another region's value depends on the page: left to the note
-    info(`ReportItems!${name} is replaced by the expression of ${name}, which gives the same value here.`);
-    return nested(b.value);
+    const r = once(`r:${name.toLowerCase()}:${region}`, b.value);
+    if (r != null) info(`ReportItems!${name} is replaced by the expression of ${name}, which gives the same value here.`);
+    return r;
   }
 
   /* ---------------------------------------------------------------- shared pieces */
@@ -186,8 +219,12 @@ function toRdlx(root, notes, year) {
   const items = (e) => kids(e).map(x => item(x, false)).filter(Boolean);
 
   /** One report item. inCell: it fills a tablix cell. */
+  let regions = 0; // data regions open around the item being converted
   function item(e, inCell) {
     const saved = itemNotes, savedInfo = itemInfo;
+    const isRegion = e.name === 'Tablix' || e.name === 'Chart' || e.name === 'GaugePanel';
+    if (isRegion && regions >= MAX_REGION_DEPTH) return { Type: e.name, Name: e.attrs.Name, __drop: `it is nested more than ${MAX_REGION_DEPTH} tables or charts deep, so it was left out.` };
+    if (isRegion) regions++;
     try {
       switch (e.name) {
         case 'Textbox': return textbox(e, inCell);
@@ -201,7 +238,7 @@ function toRdlx(root, notes, year) {
         case 'Map': return { Type: 'Map', Name: e.attrs.Name }; // dropped with a note: SSRS maps (spatial layers) have no equivalent
         default: return { Type: e.name, Name: e.attrs.Name }; // the ActiveReports importer drops it with a note
       }
-    } finally { itemNotes = saved; itemInfo = savedInfo; }
+    } finally { itemNotes = saved; itemInfo = savedInfo; if (isRegion) regions--; }
   }
 
   /* ---------------------------------------------------------------- text boxes */
@@ -386,10 +423,14 @@ function toRdlx(root, notes, year) {
       const body = kid(e, 'TablixBody');
       const cols = list(body, 'TablixColumns', 'TablixColumn').map(c => raw(c, 'Width'));
       const rowEls = list(body, 'TablixRows', 'TablixRow');
+      // checked before any cell is converted: the grid is rows × columns whatever the file spells out
+      if ((rowEls.length + 8) * (cols.length + 8) > OUTPUT_LIMITS.cellsPerTable) {
+        return { Type: 'Tablix', Name: e.attrs.Name, __drop: `it has ${rowEls.length} rows × ${cols.length} columns, more than the ${OUTPUT_LIMITS.cellsPerTable.toLocaleString('en-US')} cells a table may have, so it was left out.` };
+      }
       const base = { ...common(e, 'tablix'), DataSetName: raw(e, 'DataSetName'), Filters: filters(e), SortExpressions: sorts(e), NoRowsMessage: val(e, 'NoRowsMessage'),
         RepeatColumnHeaders: raw(e, 'RepeatColumnHeaders') };
       const notesOf = base.__notes;
-      if (cols.length > MAX_COLUMNS || rowEls.length > MAX_ROWS) return { Type: 'Tablix', Name: base.Name, __notes: [`a tablix with ${cols.length} columns and ${rowEls.length} rows is larger than the importer allows`], Body: {} };
+
       // a List: one cell holding a rectangle, repeated per row (or per group)
       const rowH = hierarchy(kid(e, 'TablixRowHierarchy'), true), colH = hierarchy(kid(e, 'TablixColumnHierarchy'), false);
       const cell0 = kids(kid(rowEls[0], 'TablixCells'), 'TablixCell')[0];
