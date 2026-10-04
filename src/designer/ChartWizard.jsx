@@ -7,29 +7,15 @@ import { loadSample } from './DataPanel.jsx';
 import { paintItemSvg } from './Canvas.jsx';
 import { Dialog, Field, Select, Check } from './ui.jsx';
 import { labelOf } from './tableGen.js';
+import { t } from '@/i18n/index.js';
 
-const TYPES = [
-  { type: 'column', label: 'Column', when: 'Compare a few categories' },
-  { type: 'bar', label: 'Bar', when: 'Rankings, long names' },
-  { type: 'line', label: 'Line', when: 'A trend over time' },
-  { type: 'area', label: 'Area', when: 'Volume over time' },
-  { type: 'pie', label: 'Pie', when: 'Share of a whole, ≤ 6 slices' },
-  { type: 'donut', label: 'Donut', when: 'Share, with the total' },
-  { type: 'scatter', label: 'Scatter', when: 'Two numbers per row' },
-  { type: 'bubble', label: 'Bubble', when: 'Three numbers per row' },
-  { type: 'radar', label: 'Radar', when: 'Several measures side by side' },
-  { type: 'funnel', label: 'Funnel', when: 'Stages that narrow' },
-  { type: 'gauge', label: 'Gauge', when: 'One number against a range' },
-  { type: 'treemap', label: 'Treemap', when: 'Share of a whole, many parts' },
-  { type: 'histogram', label: 'Histogram', when: 'How one number is spread' },
-  { type: 'boxplot', label: 'Box plot', when: 'Spread and outliers per category' },
-  { type: 'waterfall', label: 'Waterfall', when: 'How a total builds up' },
-  { type: 'gantt', label: 'Gantt', when: 'Tasks from a start to an end date' },
-];
+// labels and hints in the UI language: cw_t_<type> and cw_w_<type> in src/i18n
+const TYPES = ['column', 'bar', 'line', 'area', 'pie', 'donut', 'scatter', 'bubble', 'radar', 'funnel', 'gauge', 'treemap', 'histogram', 'boxplot', 'waterfall', 'gantt'];
 const PER_ROW = new Set(['scatter', 'bubble']);
 const NO_SPLIT = new Set(['pie', 'donut', 'scatter', 'bubble', 'funnel', 'gauge', 'treemap', 'histogram', 'boxplot', 'waterfall']);
 /** Charts of each row's own value (no aggregate): a histogram bins them, a box plot takes their quartiles. */
 const RAW = new Set(['histogram', 'boxplot']);
+// labels: in series names (report content, English) here; in the gallery, cw_agg_<value>
 const AGGS = [
   { value: 'Sum', label: 'Sum' }, { value: 'Avg', label: 'Average' }, { value: 'Count', label: 'Count of rows' },
   { value: 'CountDistinct', label: 'Count distinct' }, { value: 'Min', label: 'Minimum' }, { value: 'Max', label: 'Maximum' },
@@ -112,6 +98,8 @@ export default function ChartWizard() {
   const sample = useDesigner(s => s.sample);
   const editing = wizard?.mode === 'edit' ? findItem(def, wizard.id)?.item : null;
   const close = () => useDesigner.getState().setUi({ wizard: null });
+  const lang = useDesigner(s => s.lang);
+  const tr = (k, v) => t(lang, `cw_${k}`, v);
 
   const [c, setC] = useState(() => {
     if (editing) return configFromChart(editing);
@@ -151,8 +139,8 @@ export default function ChartWizard() {
     const t = setTimeout(async () => {
       const out = {};
       for (const ty of TYPES) {
-        try { out[ty.type] = await paintItemSvg(chartFromConfig({ ...c, dateCategory, chartType: ty.type, title: '' }, THUMB), def, sample); }
-        catch (e) { out[ty.type] = { error: e.message }; }
+        try { out[ty] = await paintItemSvg(chartFromConfig({ ...c, dateCategory, chartType: ty, title: '' }, THUMB), def, sample); }
+        catch (e) { out[ty] = { error: e.message }; }
       }
       let b = null;
       try { b = await paintItemSvg(chartFromConfig({ ...c, dateCategory }, BIG), def, sample); } catch (e) { b = { error: e.message }; }
@@ -180,82 +168,82 @@ export default function ChartWizard() {
   const shown = [...fields.filter(f => picked.includes(f.name)).sort((a, b) => picked.indexOf(a.name) - picked.indexOf(b.name)), ...fields.filter(f => !picked.includes(f.name))].slice(0, 8);
   const loading = sample?.loading;
   return (
-    <Dialog className="cw" title={editing ? `Chart gallery · ${editing.name}` : 'Insert a chart'} onClose={close}
+    <Dialog className="cw" title={editing ? tr('titleEdit', { name: editing.name }) : tr('titleInsert')} onClose={close}
       footer={<>
-        {!editing && <button className="btn ghost" style={{ marginRight: 'auto' }} onClick={plain}>Insert an empty chart</button>}
-        <button className="btn" onClick={close}>Cancel</button>
-        <button className="btn primary" onClick={apply} disabled={!c.dataSet || (!c.category && c.chartType !== 'gauge' && c.chartType !== 'histogram') || (c.chartType === 'gantt' && !(c.start && c.end))} data-testid="chart-wizard-apply">{editing ? 'Apply to the chart' : 'Insert chart'}</button>
+        {!editing && <button className="btn ghost" style={{ marginRight: 'auto' }} onClick={plain}>{tr('empty')}</button>}
+        <button className="btn" onClick={close}>{tr('cancel')}</button>
+        <button className="btn primary" onClick={apply} disabled={!c.dataSet || (!c.category && c.chartType !== 'gauge' && c.chartType !== 'histogram') || (c.chartType === 'gantt' && !(c.start && c.end))} data-testid="chart-wizard-apply">{editing ? tr('apply') : tr('insert')}</button>
       </>}>
       <div className="cw-body">
-        <section className="cw-side" aria-label="Data for the chart">
-          <Field label="Data set"><Select value={c.dataSet} options={(def.dataSets || []).map(d => d.name)} onChange={pickDataSet} /></Field>
+        <section className="cw-side" aria-label={tr('dataAria')}>
+          <Field label={tr('dataSet')}><Select value={c.dataSet} options={(def.dataSets || []).map(d => d.name)} onChange={pickDataSet} /></Field>
           <div className="cw-src">
-            {ds && <span className="hint">Source <b>{ds.source}</b> · path <code>{ds.path || '$'}</code></span>}
-            <button className="btn sm" onClick={loadSample} disabled={loading}>{loading ? 'Calling the API…' : 'Call the API again'}</button>
+            {ds && <span className="hint">{tr('source')} <b>{ds.source}</b> · {tr('path')} <code>{ds.path || '$'}</code></span>}
+            <button className="btn sm" onClick={loadSample} disabled={loading}>{loading ? tr('calling') : tr('callAgain')}</button>
             {sample?.error && <span className="err">{sample.error}</span>}
           </div>
-          {c.chartType !== 'histogram' && <Field label={PER_ROW.has(c.chartType) ? 'X axis (a number field)' : c.chartType === 'gantt' ? 'Task (one lane each)' : 'Category (x axis or slices)'}>
+          {c.chartType !== 'histogram' && <Field label={PER_ROW.has(c.chartType) ? tr('xNumber') : c.chartType === 'gantt' ? tr('task') : tr('category')}>
             <Select value={c.category} allowEmpty options={fields.map(f => ({ value: f.name, label: `${f.name} · ${f.type}` }))} onChange={v => set({ category: v || '' })} />
           </Field>}
           {c.chartType === 'gantt' ? <div className="grid2">
-            <Field label="Start"><Select value={c.start} allowEmpty options={fields.map(f => ({ value: f.name, label: `${f.name} · ${f.type}` }))} onChange={v => set({ start: v || '' })} data-testid="cw-gantt-start" /></Field>
-            <Field label="End"><Select value={c.end} allowEmpty options={fields.map(f => ({ value: f.name, label: `${f.name} · ${f.type}` }))} onChange={v => set({ end: v || '' })} data-testid="cw-gantt-end" /></Field>
-          </div> : RAW.has(c.chartType) ? <Field label="Value of each row"><Select value={c.value} allowEmpty options={(numFields.length ? numFields : fields).map(f => f.name)} onChange={v => set({ value: v || '' })} /></Field> : <div className="grid2">
-            <Field label="Value"><Select value={c.agg} options={AGGS} onChange={v => set({ agg: v })} /></Field>
-            {c.agg !== 'Count' && <Field label="of field"><Select value={c.value} allowEmpty options={(numFields.length ? numFields : fields).map(f => f.name)} onChange={v => set({ value: v || '' })} /></Field>}
+            <Field label={tr('start')}><Select value={c.start} allowEmpty options={fields.map(f => ({ value: f.name, label: `${f.name} · ${f.type}` }))} onChange={v => set({ start: v || '' })} data-testid="cw-gantt-start" /></Field>
+            <Field label={tr('end')}><Select value={c.end} allowEmpty options={fields.map(f => ({ value: f.name, label: `${f.name} · ${f.type}` }))} onChange={v => set({ end: v || '' })} data-testid="cw-gantt-end" /></Field>
+          </div> : RAW.has(c.chartType) ? <Field label={tr('rowValue')}><Select value={c.value} allowEmpty options={(numFields.length ? numFields : fields).map(f => f.name)} onChange={v => set({ value: v || '' })} /></Field> : <div className="grid2">
+            <Field label={tr('value')}><Select value={c.agg} options={AGGS.map(a => ({ value: a.value, label: tr(`agg_${a.value}`) }))} onChange={v => set({ agg: v })} /></Field>
+            {c.agg !== 'Count' && <Field label={tr('ofField')}><Select value={c.value} allowEmpty options={(numFields.length ? numFields : fields).map(f => f.name)} onChange={v => set({ value: v || '' })} /></Field>}
           </div>}
-          {c.chartType === 'bubble' && <Field label="Bubble size"><Select value={c.size} allowEmpty options={(numFields.length ? numFields : fields).map(f => f.name)} onChange={v => set({ size: v || '' })} /></Field>}
+          {c.chartType === 'bubble' && <Field label={tr('bubbleSize')}><Select value={c.size} allowEmpty options={(numFields.length ? numFields : fields).map(f => f.name)} onChange={v => set({ size: v || '' })} /></Field>}
           {!NO_SPLIT.has(c.chartType) && <>
-            <Field label="Split into series by (optional)"><Select value={c.split} allowEmpty options={fields.filter(f => f.type !== 'number').map(f => f.name)} onChange={v => set({ split: v || '' })} /></Field>
-            {c.split && <Check label="Stack the series" checked={c.stacked} onChange={v => set({ stacked: v })} />}
+            <Field label={tr('split')}><Select value={c.split} allowEmpty options={fields.filter(f => f.type !== 'number').map(f => f.name)} onChange={v => set({ split: v || '' })} /></Field>
+            {c.split && <Check label={tr('stack')} checked={c.stacked} onChange={v => set({ stacked: v })} />}
           </>}
           <div className="grid2">
-            <Field label="Show at most"><Select value={String(c.top || 0)} options={[{ value: '0', label: 'All categories' }, ...[5, 8, 10, 15, 20].map(n => ({ value: String(n), label: `First ${n}` })), ...(typeof c.top === 'string' && c.top ? [{ value: c.top, label: c.top }] : [])]} onChange={v => set({ top: /^=/.test(v || '') ? v : Number(v) || 0 })} /></Field>
-            <Field label="Number format"><Select value={c.format} options={[{ value: 'N0', label: '1,234' }, { value: 'N2', label: '1,234.56' }, { value: 'C0', label: 'Currency' }, { value: 'P1', label: 'Percent' }]} onChange={v => set({ format: v })} /></Field>
+            <Field label={tr('showAtMost')}><Select value={String(c.top || 0)} options={[{ value: '0', label: tr('allCats') }, ...[5, 8, 10, 15, 20].map(n => ({ value: String(n), label: tr('firstN', { n }) })), ...(typeof c.top === 'string' && c.top ? [{ value: c.top, label: c.top }] : [])]} onChange={v => set({ top: /^=/.test(v || '') ? v : Number(v) || 0 })} /></Field>
+            <Field label={tr('format')}><Select value={c.format} options={[{ value: 'N0', label: '1,234' }, { value: 'N2', label: '1,234.56' }, { value: 'C0', label: tr('currency') }, { value: 'P1', label: tr('percent') }]} onChange={v => set({ format: v })} /></Field>
           </div>
-          <Field label="Title"><input className="input" value={c.title} onChange={e => set({ title: e.target.value })} placeholder="Optional" /></Field>
-          {c.custom && <div className="hint">This chart uses a custom value expression. Applying here replaces it with the choice above.</div>}
+          <Field label={tr('title')}><input className="input" value={c.title} onChange={e => set({ title: e.target.value })} placeholder={tr('optional')} /></Field>
+          {c.custom && <div className="hint">{tr('custom')}</div>}
         </section>
 
-        <section className="cw-main" aria-label="Chart types">
-          <div className="cw-gallery" role="radiogroup" aria-label="Chart type">
-            {TYPES.map(t => {
-              const th = thumbs[t.type];
+        <section className="cw-main" aria-label={tr('typesAria')}>
+          <div className="cw-gallery" role="radiogroup" aria-label={tr('typeAria')}>
+            {TYPES.map(type => {
+              const th = thumbs[type];
               return (
-                <button key={t.type} type="button" role="radio" aria-checked={c.chartType === t.type} className={`cw-card${c.chartType === t.type ? ' sel' : ''}`}
-                  onClick={() => set({ chartType: t.type })} data-chart-type={t.type}>
+                <button key={type} type="button" role="radio" aria-checked={c.chartType === type} className={`cw-card${c.chartType === type ? ' sel' : ''}`}
+                  onClick={() => set({ chartType: type })} data-chart-type={type}>
                   <span className="cw-thumb">
-                    {!sample?.dataSets ? <span className="hint">{loading ? 'Calling the API…' : 'No data yet'}</span>
-                      : PER_ROW.has(t.type) && fields.find(f => f.name === c.category)?.type !== 'number' ? <span className="hint">Pick a number field for the X axis</span>
+                    {!sample?.dataSets ? <span className="hint">{loading ? tr('calling') : tr('noData')}</span>
+                      : PER_ROW.has(type) && fields.find(f => f.name === c.category)?.type !== 'number' ? <span className="hint">{tr('pickNumber')}</span>
                       : th?.error ? <span className="err">{th.error}</span>
-                        : th ? <span dangerouslySetInnerHTML={{ __html: th.html }} /> : <span className="hint">Drawing…</span>}
+                        : th ? <span dangerouslySetInnerHTML={{ __html: th.html }} /> : <span className="hint">{tr('drawing')}</span>}
                   </span>
-                  <span className="cw-name">{t.label}{good.includes(t.type) && <em>Suggested</em>}</span>
-                  <span className="hint">{t.when}</span>
+                  <span className="cw-name">{tr(`t_${type}`)}{good.includes(type) && <em>{tr('suggested')}</em>}</span>
+                  <span className="hint">{tr(`w_${type}`)}</span>
                 </button>
               );
             })}
           </div>
           <div className="cw-preview">
             <div className="cw-big">
-              <h5>Preview · {TYPES.find(t => t.type === c.chartType)?.label}</h5>
-              <div className="cw-paper">{big?.error ? <span className="err">{big.error}</span> : big ? <div dangerouslySetInnerHTML={{ __html: big.html }} /> : <span className="hint">Drawing…</span>}</div>
+              <h5>{tr('preview', { type: tr(`t_${c.chartType}`) })}</h5>
+              <div className="cw-paper">{big?.error ? <span className="err">{big.error}</span> : big ? <div dangerouslySetInnerHTML={{ __html: big.html }} /> : <span className="hint">{tr('drawing')}</span>}</div>
             </div>
             <div className="cw-data">
-              <h5>API data · {rows.length} rows{ds?.filters?.length ? ' (after the data set filters)' : ''}</h5>
+              <h5>{tr(ds?.filters?.length ? 'apiDataFiltered' : 'apiData', { n: rows.length })}</h5>
               <div className="cw-table">
                 <table>
                   <thead><tr>{shown.map(f => (
                     <th key={f.name} className={f.name === c.category ? 'cw-cat' : f.name === c.value ? 'cw-val' : f.name === c.split ? 'cw-spl' : ''}>
-                      <button type="button" className="linklike" title={f.type === 'number' ? `Use ${f.name} as the value` : `Use ${f.name} as the category`}
+                      <button type="button" className="linklike" title={tr(f.type === 'number' ? 'useValue' : 'useCategory', { name: f.name })}
                         onClick={() => (f.type === 'number' && !PER_ROW.has(c.chartType) ? set({ value: f.name, agg: c.agg === 'Count' ? 'Sum' : c.agg }) : set({ category: f.name }))}>{f.name}</button>
                     </th>))}</tr></thead>
                   <tbody>{rows.slice(0, 8).map((r, i) => <tr key={i}>{shown.map(f => <td key={f.name} className={f.name === c.category ? 'cw-cat' : f.name === c.value ? 'cw-val' : ''}>{fmt(r[f.name])}</td>)}</tr>)}</tbody>
                 </table>
               </div>
-              <span className="hint">Click a column name to chart it (numbers become the value, the rest the category). <span className="cw-key cw-cat">category</span> <span className="cw-key cw-val">value</span></span>
+              <span className="hint">{tr('clickHint')} <span className="cw-key cw-cat">{tr('keyCategory')}</span> <span className="cw-key cw-val">{tr('keyValue')}</span></span>
               {raw !== undefined && (
-                <details className="cw-raw"><summary>Raw API response</summary><pre>{rawText(raw)}</pre></details>
+                <details className="cw-raw"><summary>{tr('raw')}</summary><pre>{rawText(raw)}</pre></details>
               )}
             </div>
           </div>
