@@ -56,9 +56,11 @@ export function normalize(def) {
       if (!it.name) it.name = uniqueName(used, ITEMS[it.type]?.label.replace(/\s/g, '') || 'Item');
       if (NESTING.has(it.type)) it.items ||= [];
     });
+    // a body lower than its lowest item grows to it (no extra room added: opening a report never moves a band)
     for (const b of Array.isArray(d.sections.body) ? d.sections.body : [d.sections.body]) {
       const bottom = Math.max(0, ...b.items.map(i => i.y + i.h));
-      if (!b.height || b.height < bottom + 24) b.height = Math.ceil(bottom + 60);
+      if (!b.height) b.height = Math.ceil(bottom + 60);
+      else if (b.height < bottom) b.height = Math.ceil(bottom);
     }
   });
 }
@@ -249,10 +251,16 @@ export function moveItems(ids, dx, dy) {
       const room = roomFor(d, f);
       f.item.x = round(clamp(f.item.x + dx, 0, Math.max(0, room - f.item.w)));
       f.item.y = round(Math.max(0, f.item.y + dy));
-      if (f.parent) { if (f.item.y + f.item.h > f.parent.h) f.parent.h = Math.ceil(f.item.y + f.item.h); }
-      else { const sec = secOf(d, f.section); if (f.item.y + f.item.h > sec.height) sec.height = Math.ceil(f.item.y + f.item.h); }
+      growToFit(d, f);
     }
   });
+}
+
+/** An item placed below its band (or container) grows it to the item's bottom, visibly, never more. */
+export function growToFit(d, f) {
+  const bottom = Math.ceil(f.item.y + f.item.h);
+  if (f.parent) { if (bottom > f.parent.h) f.parent.h = bottom; }
+  else { const sec = secOf(d, f.section); if (sec && bottom > (sec.height || 0)) sec.height = bottom; }
 }
 
 /** Move an item one place earlier (by -1) or later (+1) among its siblings: later items are drawn on top. */

@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useDesigner, findItem, updateItem, deleteSelection, duplicateSelection, sectionList, secOf, isBodyKey, addBodySection, removeBodySection, walk, tableParts, rowsOf,
-  tableInsertColumn, tableDeleteColumn, tableInsertRow, tableDeleteRow, tableSetColumnWidth, tableMergeRight, tableSplit, tableMergeDown, tableSplitRows, tableSync, tableAddGroup, tableRemoveGroup, round } from './store.js';
+  tableInsertColumn, tableDeleteColumn, tableInsertRow, tableDeleteRow, tableSetColumnWidth, tableMergeRight, tableSplit, tableMergeDown, tableSplitRows, tableSync, tableAddGroup, tableRemoveGroup, round, growToFit } from './store.js';
 import { normalizeMatrix, isTablix } from '@/engine/items/pivot.js';
 import { t } from '@/i18n/index.js';
 import { ITEMS, stylePropsFor, TEXT_STYLE_PROPS } from '@/engine/items/index.js';
@@ -170,6 +170,8 @@ function ItemProps({ item, section, openExpr }) {
   const [nameErr, setNameErr] = useState(null);
   const set = (k, v) => updateItem(item.id, it => setOrDelete(it, k, v), `${item.id}.${k}`);
   const setStyle = (k, v) => updateItem(item.id, it => { it.style ||= {}; setOrDelete(it.style, k, v); }, `${item.id}.style.${k}`);
+  // position and size: an item placed below its band grows the band to fit, as dragging does
+  const setGeo = (k, v) => updateItem(item.id, (it, d, _s, f) => { it[k] = v; growToFit(d, f); }, `${item.id}.${k}`);
   const rename = (v) => {
     let taken = false; walk(def, (i) => { if (i.id !== item.id && i.name === v) taken = true; });
     setNameErr(!/^[A-Za-z_][\w]*$/.test(v) ? 'Use letters, digits and _' : taken ? 'This name is in use' : null);
@@ -195,10 +197,10 @@ function ItemProps({ item, section, openExpr }) {
       <div className="cat">
         <h5>Position</h5>
         <div className="grid2">
-          <Geo label="X" value={item.x} onChange={v => set('x', v)} />
-          <Geo label="Y" value={item.y} onChange={v => set('y', v)} />
-          {item.type !== 'table' && <Geo label="Width" value={item.w} onChange={v => set('w', Math.max(0, v))} />}
-          {item.type !== 'table' && <Geo label="Height" value={item.h} onChange={v => set('h', Math.max(0, v))} />}
+          <Geo label="X" value={item.x} onChange={v => setGeo('x', Math.max(0, v))} />
+          <Geo label="Y" value={item.y} onChange={v => setGeo('y', Math.max(0, v))} />
+          {item.type !== 'table' && <Geo label="Width" value={item.w} onChange={v => setGeo('w', Math.max(0, v))} />}
+          {item.type !== 'table' && <Geo label="Height" value={item.h} onChange={v => setGeo('h', Math.max(0, v))} />}
         </div>
         <div className="hint">In the {(sectionList(def).find(s => s.key === section)?.label || section).toLowerCase()}{findItem(def, item.id)?.parent ? `, inside ${findItem(def, item.id).parent.name}` : ''}.</div>
         <LayerField item={item} />

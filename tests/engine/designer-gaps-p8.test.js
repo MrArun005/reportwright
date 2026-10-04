@@ -38,3 +38,21 @@ describe('table gallery: ids are whole words (#2)', () => {
     expect(formatFor({ name: 'loanId', type: 'number' }, [])).toBe('0');
   });
 });
+
+import { useDesigner, moveItems, updateItem, growToFit, findItem } from '../../src/designer/store.js';
+describe('band height stays consistent (#3)', () => {
+  const load = (h, y) => useDesigner.getState().init('x', { $schema: 'pagewright/report@1', name: 'x', page: { size: 'A4' }, sections: { body: { height: h, items: [{ id: 'a', type: 'textbox', name: 'A', x: 0, y, w: 100, h: 20 }] } } });
+  const body = () => useDesigner.getState().def.sections.body;
+  it('opening a report keeps its band height (it only grows to the lowest item)', () => {
+    load(200, 170); expect(body().height).toBe(200);
+    load(100, 170); expect(body().height).toBe(190);
+  });
+  it('an item moved below the band grows it to the item, never more', () => {
+    load(200, 0);
+    moveItems(['a'], 0, 300);
+    expect(body().height).toBe(320);
+    updateItem('a', (it, d, s, f) => { it.y = 500; growToFit(d, f); });
+    expect(body().height).toBe(520);
+    expect(findItem(useDesigner.getState().def, 'a').item.y).toBe(500);
+  });
+});
