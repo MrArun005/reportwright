@@ -23,3 +23,18 @@ describe('list fields (#1)', () => {
     expect(m.pages[0].items.some(i => i.t === 'path' || i.t === 'polyline' || (i.t === 'line'))).toBe(true);
   });
 });
+
+import { formatFor, tableFor, isCode } from '../../src/designer/tableGen.js';
+describe('table gallery: ids are whole words (#2)', () => {
+  it('ids and codes, not money', () => {
+    for (const n of ['id', 'ID', 'loan_id', 'customerId', 'zipCode', 'pin', 'year', 'invoiceNo', 'code', 'accountNumber']) expect(isCode(n), n).toBe(true);
+    for (const n of ['paid', 'principalPaid', 'amountPaid', 'valid', 'void', 'totalAmount', 'grid', 'rapid', 'interestDue']) expect(isCode(n), n).toBe(false);
+  });
+  it('paid and principalPaid get totals and a money format', () => {
+    const ds = { name: 'L', fields: [{ name: 'loanId', type: 'number' }, { name: 'paid', type: 'number' }, { name: 'principalPaid', type: 'number' }] };
+    const t = tableFor(ds, { rows: [{ loanId: 7, paid: 10.5, principalPaid: 4.25 }] });
+    expect(t.footer[0].cells.map(c => c.value)).toEqual(['Total', '=Sum(Fields.paid)', '=Sum(Fields.principalPaid)']);
+    expect(formatFor({ name: 'paid', type: 'number' }, [{ paid: 1.5 }])).toBe('N2');
+    expect(formatFor({ name: 'loanId', type: 'number' }, [])).toBe('0');
+  });
+});

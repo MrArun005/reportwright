@@ -6,8 +6,8 @@ const HEAD = { fontWeight: 'bold', backgroundColor: '#f1f5f9', borderBottom: '0.
 const TOTAL = { fontWeight: 'bold', borderTop: '0.75 solid #94a3b8' };
 const ROW_H = 18;
 // a total of these means nothing: rates, prices, percentages, averages, ids, years
-const NOT_ADDITIVE = /rate|price|percent|pct|ratio|avg|average|^id$|_id$|Id$|^year$|^month$|^day$/i;
-const additive = (f) => f.type === 'number' && !NOT_ADDITIVE.test(f.name);
+const NOT_ADDITIVE = /rate|price|percent|pct|ratio|avg|average|^month$|^day$/i;
+const additive = (f) => f.type === 'number' && !NOT_ADDITIVE.test(f.name) && !isCode(f.name);
 
 /** "dueDate" → "Due date", "customer_name" → "Customer name"; all-caps names stay. */
 export function labelOf(name) {
@@ -17,7 +17,10 @@ export function labelOf(name) {
 }
 
 // ids, codes and years read as they are: 2785, not 2,785 or 2,785.00
-const CODE_LIKE = /^id$|_id$|[a-z]Id$|^year$|code$|^no$|number$|^pin$|zip/i;
+// whole words or a camelCase suffix only: "paid" and "principalPaid" are money, not ids. Money-like names never are.
+const MONEY_LIKE = /amount|paid|price|total|balance|principal|interest|emi|fee|cost|tax|salary|revenue|sales|value|due|outstanding/i;
+const CODE_LIKE = [/^(id|year|no|pin|code|number)$/i, /_(id|no|code|number)$/i, /[a-z](Id|ID|No|Code|Number)$/, /zip/i];
+export const isCode = (name) => !MONEY_LIKE.test(name) && CODE_LIKE.some(r => r.test(name));
 // counts are whole numbers even before sample data is there
 const WHOLE = /count|qty|quantity|units|^n$|days|items/i;
 /** Ids and years plain (0); N0 when every sample value is whole, else N2; dates as 12 Jan 2026.
@@ -25,7 +28,7 @@ const WHOLE = /count|qty|quantity|units|^n$|days|items/i;
 export function formatFor(f, rows) {
   if (f.type === 'date') return 'dd MMM yyyy';
   if (f.type !== 'number') return undefined;
-  if (CODE_LIKE.test(f.name)) return '0';
+  if (isCode(f.name)) return '0';
   const vals = (rows || []).map(r => r?.[f.name]).filter(v => typeof v === 'number');
   if (!vals.length) return WHOLE.test(f.name) ? 'N0' : 'N2';
   return vals.every(Number.isInteger) ? 'N0' : 'N2';
