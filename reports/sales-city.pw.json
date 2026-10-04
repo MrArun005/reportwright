@@ -1,0 +1,1241 @@
+{
+ "$schema": "pagewright/report@1",
+ "name": "City detail",
+ "locale": "en-IN",
+ "currency": "INR",
+ "page": {
+  "size": "A4",
+  "orientation": "landscape",
+  "margins": [
+   28,
+   28,
+   24,
+   28
+  ]
+ },
+ "parameters": [
+  {
+   "name": "city",
+   "type": "string",
+   "prompt": "City",
+   "required": true,
+   "default": "Pune",
+   "optionsFrom": {
+    "dataSet": "All",
+    "value": "=Fields.city",
+    "label": "=Fields.city & \" (\" & Fields.region & \")\""
+   }
+  },
+  {
+   "name": "year",
+   "type": "number",
+   "prompt": "Year",
+   "required": true,
+   "default": 2026,
+   "options": [
+    {
+     "value": 2025,
+     "label": "2025"
+    },
+    {
+     "value": 2026,
+     "label": "2026"
+    }
+   ]
+  },
+  {
+   "name": "product",
+   "type": "string",
+   "prompt": "Product",
+   "default": "",
+   "options": [
+    {
+     "value": "",
+     "label": "All products"
+    },
+    "Home loans",
+    "Personal loans",
+    "Gold loans"
+   ]
+  },
+  {
+   "name": "month",
+   "type": "string",
+   "prompt": "Month (or click a column)",
+   "default": "",
+   "options": [
+    {
+     "value": "",
+     "label": "All months"
+    },
+    {
+     "value": "1",
+     "label": "January"
+    },
+    {
+     "value": "2",
+     "label": "February"
+    },
+    {
+     "value": "3",
+     "label": "March"
+    },
+    {
+     "value": "4",
+     "label": "April"
+    },
+    {
+     "value": "5",
+     "label": "May"
+    },
+    {
+     "value": "6",
+     "label": "June"
+    },
+    {
+     "value": "7",
+     "label": "July"
+    },
+    {
+     "value": "8",
+     "label": "August"
+    },
+    {
+     "value": "9",
+     "label": "September"
+    },
+    {
+     "value": "10",
+     "label": "October"
+    },
+    {
+     "value": "11",
+     "label": "November"
+    },
+    {
+     "value": "12",
+     "label": "December"
+    }
+   ]
+  }
+ ],
+ "dataSources": [
+  {
+   "name": "sales",
+   "type": "rest",
+   "method": "GET",
+   "url": "/api/sample/sales/{Parameters.year}"
+  },
+  {
+   "name": "prev",
+   "type": "rest",
+   "method": "GET",
+   "url": "/api/sample/sales/{Parameters.year - 1}"
+  }
+ ],
+ "dataSets": [
+  {
+   "name": "All",
+   "source": "sales",
+   "path": "$.rows",
+   "fields": [
+    {
+     "name": "year",
+     "type": "number"
+    },
+    {
+     "name": "month",
+     "type": "number"
+    },
+    {
+     "name": "region",
+     "type": "string"
+    },
+    {
+     "name": "city",
+     "type": "string"
+    },
+    {
+     "name": "product",
+     "type": "string"
+    },
+    {
+     "name": "loans",
+     "type": "number"
+    },
+    {
+     "name": "disbursed",
+     "type": "number"
+    },
+    {
+     "name": "npa",
+     "type": "number"
+    },
+    {
+     "name": "crore",
+     "type": "number",
+     "expr": "=Fields.disbursed / 10000000"
+    },
+    {
+     "name": "lakh",
+     "type": "number",
+     "expr": "=Fields.disbursed / 100000"
+    },
+    {
+     "name": "monthName",
+     "type": "string",
+     "expr": "=MonthName(Fields.month, True)"
+    }
+   ]
+  },
+  {
+   "name": "City",
+   "source": "sales",
+   "path": "$.rows",
+   "fields": [
+    {
+     "name": "year",
+     "type": "number"
+    },
+    {
+     "name": "month",
+     "type": "number"
+    },
+    {
+     "name": "region",
+     "type": "string"
+    },
+    {
+     "name": "city",
+     "type": "string"
+    },
+    {
+     "name": "product",
+     "type": "string"
+    },
+    {
+     "name": "loans",
+     "type": "number"
+    },
+    {
+     "name": "disbursed",
+     "type": "number"
+    },
+    {
+     "name": "npa",
+     "type": "number"
+    },
+    {
+     "name": "crore",
+     "type": "number",
+     "expr": "=Fields.disbursed / 10000000"
+    },
+    {
+     "name": "lakh",
+     "type": "number",
+     "expr": "=Fields.disbursed / 100000"
+    },
+    {
+     "name": "monthName",
+     "type": "string",
+     "expr": "=MonthName(Fields.month, True)"
+    }
+   ],
+   "filters": [
+    {
+     "expr": "=Fields.city",
+     "op": "=",
+     "value": "=Parameters.city"
+    },
+    {
+     "expr": "=Fields.product",
+     "op": "in",
+     "value": "=Parameters.product"
+    }
+   ]
+  },
+  {
+   "name": "RegionRows",
+   "source": "sales",
+   "path": "$.rows",
+   "fields": [
+    {
+     "name": "year",
+     "type": "number"
+    },
+    {
+     "name": "month",
+     "type": "number"
+    },
+    {
+     "name": "region",
+     "type": "string"
+    },
+    {
+     "name": "city",
+     "type": "string"
+    },
+    {
+     "name": "product",
+     "type": "string"
+    },
+    {
+     "name": "loans",
+     "type": "number"
+    },
+    {
+     "name": "disbursed",
+     "type": "number"
+    },
+    {
+     "name": "npa",
+     "type": "number"
+    },
+    {
+     "name": "crore",
+     "type": "number",
+     "expr": "=Fields.disbursed / 10000000"
+    },
+    {
+     "name": "lakh",
+     "type": "number",
+     "expr": "=Fields.disbursed / 100000"
+    },
+    {
+     "name": "monthName",
+     "type": "string",
+     "expr": "=MonthName(Fields.month, True)"
+    }
+   ],
+   "filters": [
+    {
+     "expr": "=Fields.region",
+     "op": "=",
+     "value": "=Lookup(Parameters.city, Fields.city, Fields.region, \"All\")"
+    },
+    {
+     "expr": "=Fields.product",
+     "op": "in",
+     "value": "=Parameters.product"
+    }
+   ]
+  },
+  {
+   "name": "Prev",
+   "source": "prev",
+   "path": "$.rows",
+   "fields": [
+    {
+     "name": "year",
+     "type": "number"
+    },
+    {
+     "name": "month",
+     "type": "number"
+    },
+    {
+     "name": "region",
+     "type": "string"
+    },
+    {
+     "name": "city",
+     "type": "string"
+    },
+    {
+     "name": "product",
+     "type": "string"
+    },
+    {
+     "name": "loans",
+     "type": "number"
+    },
+    {
+     "name": "disbursed",
+     "type": "number"
+    },
+    {
+     "name": "npa",
+     "type": "number"
+    },
+    {
+     "name": "crore",
+     "type": "number",
+     "expr": "=Fields.disbursed / 10000000"
+    },
+    {
+     "name": "lakh",
+     "type": "number",
+     "expr": "=Fields.disbursed / 100000"
+    },
+    {
+     "name": "monthName",
+     "type": "string",
+     "expr": "=MonthName(Fields.month, True)"
+    }
+   ],
+   "filters": [
+    {
+     "expr": "=Fields.city",
+     "op": "=",
+     "value": "=Parameters.city"
+    },
+    {
+     "expr": "=Fields.product",
+     "op": "in",
+     "value": "=Parameters.product"
+    }
+   ]
+  },
+  {
+   "name": "Detail",
+   "source": "sales",
+   "path": "$.rows",
+   "fields": [
+    {
+     "name": "year",
+     "type": "number"
+    },
+    {
+     "name": "month",
+     "type": "number"
+    },
+    {
+     "name": "region",
+     "type": "string"
+    },
+    {
+     "name": "city",
+     "type": "string"
+    },
+    {
+     "name": "product",
+     "type": "string"
+    },
+    {
+     "name": "loans",
+     "type": "number"
+    },
+    {
+     "name": "disbursed",
+     "type": "number"
+    },
+    {
+     "name": "npa",
+     "type": "number"
+    },
+    {
+     "name": "crore",
+     "type": "number",
+     "expr": "=Fields.disbursed / 10000000"
+    },
+    {
+     "name": "lakh",
+     "type": "number",
+     "expr": "=Fields.disbursed / 100000"
+    },
+    {
+     "name": "monthName",
+     "type": "string",
+     "expr": "=MonthName(Fields.month, True)"
+    }
+   ],
+   "filters": [
+    {
+     "expr": "=Fields.city",
+     "op": "=",
+     "value": "=Parameters.city"
+    },
+    {
+     "expr": "=Fields.product",
+     "op": "in",
+     "value": "=Parameters.product"
+    },
+    {
+     "expr": "=Fields.month",
+     "op": "in",
+     "value": "=Parameters.month"
+    }
+   ]
+  }
+ ],
+ "styles": {
+  "base": {
+   "fontFamily": "Inter",
+   "fontSize": 8,
+   "color": "#111827"
+  }
+ },
+ "sections": {
+  "pageHeader": {
+   "height": 30,
+   "items": [
+    {
+     "type": "textbox",
+     "name": "Brand",
+     "x": 0,
+     "y": 0,
+     "w": 400,
+     "h": 16,
+     "value": "Pagewright Finance · City detail",
+     "canGrow": true,
+     "style": {
+      "fontSize": 10,
+      "fontWeight": "bold",
+      "color": "#1d4ed8"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Year",
+     "x": 525.89,
+     "y": 2,
+     "w": 260,
+     "h": 12,
+     "value": "Financial year {Parameters.year}",
+     "canGrow": true,
+     "style": {
+      "fontSize": 7.5,
+      "color": "#6b7280",
+      "textAlign": "right"
+     }
+    },
+    {
+     "type": "line",
+     "name": "Rule",
+     "x": 0,
+     "y": 21,
+     "w": 785.89,
+     "h": 0,
+     "style": {
+      "stroke": "#d1d5db",
+      "strokeWidth": 0.75
+     }
+    }
+   ]
+  },
+  "body": {
+   "height": 400,
+   "items": [
+    {
+     "type": "textbox",
+     "name": "Title",
+     "x": 0,
+     "y": 0,
+     "w": 520,
+     "h": 24,
+     "value": "{Parameters.city}",
+     "canGrow": true,
+     "style": {
+      "fontSize": 18,
+      "fontWeight": "bold"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Sub",
+     "x": 0,
+     "y": 25,
+     "w": 620,
+     "h": 13,
+     "value": "{First(Fields.region, \"City\")} region · {IIF(Len(Parameters.product) = 0, 'all products', Parameters.product)} · {IIF(Len(Parameters.month) = 0, 'all months', MonthName(CInt(Parameters.month)))} · ₹ lakh unless noted",
+     "canGrow": true,
+     "style": {
+      "fontSize": 8,
+      "color": "#6b7280"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Clear",
+     "x": 655.89,
+     "y": 4,
+     "w": 130,
+     "h": 18,
+     "value": "×  All months",
+     "canGrow": true,
+     "style": {
+      "fontSize": 8.5,
+      "fontWeight": "bold",
+      "color": "#b91c1c",
+      "textAlign": "right"
+     },
+     "hidden": "=Len(Parameters.month) = 0",
+     "action": {
+      "type": "params",
+      "params": {
+       "month": ""
+      },
+      "toggle": false
+     }
+    },
+    {
+     "type": "shape",
+     "shape": "rect",
+     "name": "Kpi1Box",
+     "x": 0,
+     "y": 46,
+     "w": 188.9725,
+     "h": 62,
+     "style": {
+      "fill": "#f8fafc",
+      "stroke": "#e2e8f0",
+      "strokeWidth": 0.75,
+      "radius": 6
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Kpi1Label",
+     "x": 10,
+     "y": 53,
+     "w": 168.9725,
+     "h": 12,
+     "value": "DISBURSED",
+     "canGrow": true,
+     "style": {
+      "fontSize": 7.5,
+      "color": "#6b7280",
+      "fontWeight": "bold"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Kpi1Value",
+     "x": 10,
+     "y": 66,
+     "w": 168.9725,
+     "h": 22,
+     "value": "=\"₹ \" & Format(Sum(Fields.crore, \"City\"), 'N2') & \" cr\"",
+     "canGrow": true,
+     "style": {
+      "fontSize": 17,
+      "fontWeight": "bold",
+      "color": "#0f172a"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Kpi1Delta",
+     "x": 10,
+     "y": 90,
+     "w": 168.9725,
+     "h": 12,
+     "value": "=IIF(Sum(Fields.disbursed, \"Prev\") = 0, '', IIF(Sum(Fields.disbursed, \"City\") >= Sum(Fields.disbursed, \"Prev\"), '▲ ', '▼ ') & Format(Abs(Sum(Fields.disbursed, \"City\") / Sum(Fields.disbursed, \"Prev\") - 1), 'P1') & ' vs ' & (Parameters.year - 1))",
+     "canGrow": true,
+     "style": {
+      "fontSize": 7.5,
+      "fontWeight": "bold",
+      "color": "=IIF((Sum(Fields.disbursed, \"City\") >= Sum(Fields.disbursed, \"Prev\")) = True, '#047857', '#b91c1c')"
+     }
+    },
+    {
+     "type": "shape",
+     "shape": "rect",
+     "name": "Kpi2Box",
+     "x": 198.9725,
+     "y": 46,
+     "w": 188.9725,
+     "h": 62,
+     "style": {
+      "fill": "#f8fafc",
+      "stroke": "#e2e8f0",
+      "strokeWidth": 0.75,
+      "radius": 6
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Kpi2Label",
+     "x": 208.9725,
+     "y": 53,
+     "w": 168.9725,
+     "h": 12,
+     "value": "SHARE OF REGION",
+     "canGrow": true,
+     "style": {
+      "fontSize": 7.5,
+      "color": "#6b7280",
+      "fontWeight": "bold"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Kpi2Value",
+     "x": 208.9725,
+     "y": 66,
+     "w": 168.9725,
+     "h": 22,
+     "value": "=Format(Sum(Fields.disbursed, \"City\") / Sum(Fields.disbursed, \"RegionRows\"), 'P1')",
+     "canGrow": true,
+     "style": {
+      "fontSize": 17,
+      "fontWeight": "bold",
+      "color": "#0f172a"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Kpi2Delta",
+     "x": 208.9725,
+     "y": 90,
+     "w": 168.9725,
+     "h": 12,
+     "value": "=\"of \" & First(Fields.region, \"City\") & \" (\" & CountDistinct(Fields.city, \"RegionRows\") & \" cities)\"",
+     "canGrow": true,
+     "style": {
+      "fontSize": 7.5,
+      "fontWeight": "bold",
+      "color": "#6b7280"
+     }
+    },
+    {
+     "type": "shape",
+     "shape": "rect",
+     "name": "Kpi3Box",
+     "x": 397.945,
+     "y": 46,
+     "w": 188.9725,
+     "h": 62,
+     "style": {
+      "fill": "#f8fafc",
+      "stroke": "#e2e8f0",
+      "strokeWidth": 0.75,
+      "radius": 6
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Kpi3Label",
+     "x": 407.945,
+     "y": 53,
+     "w": 168.9725,
+     "h": 12,
+     "value": "LOANS BOOKED",
+     "canGrow": true,
+     "style": {
+      "fontSize": 7.5,
+      "color": "#6b7280",
+      "fontWeight": "bold"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Kpi3Value",
+     "x": 407.945,
+     "y": 66,
+     "w": 168.9725,
+     "h": 22,
+     "value": "=Format(Sum(Fields.loans, \"City\"), 'N0')",
+     "canGrow": true,
+     "style": {
+      "fontSize": 17,
+      "fontWeight": "bold",
+      "color": "#0f172a"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Kpi3Delta",
+     "x": 407.945,
+     "y": 90,
+     "w": 168.9725,
+     "h": 12,
+     "value": "=IIF(Sum(Fields.loans, \"Prev\") = 0, '', IIF(Sum(Fields.loans, \"City\") >= Sum(Fields.loans, \"Prev\"), '▲ ', '▼ ') & Format(Abs(Sum(Fields.loans, \"City\") / Sum(Fields.loans, \"Prev\") - 1), 'P1') & ' vs ' & (Parameters.year - 1))",
+     "canGrow": true,
+     "style": {
+      "fontSize": 7.5,
+      "fontWeight": "bold",
+      "color": "=IIF((Sum(Fields.loans, \"City\") >= Sum(Fields.loans, \"Prev\")) = True, '#047857', '#b91c1c')"
+     }
+    },
+    {
+     "type": "shape",
+     "shape": "rect",
+     "name": "Kpi4Box",
+     "x": 596.9175,
+     "y": 46,
+     "w": 188.9725,
+     "h": 62,
+     "style": {
+      "fill": "#f8fafc",
+      "stroke": "#e2e8f0",
+      "strokeWidth": 0.75,
+      "radius": 6
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Kpi4Label",
+     "x": 606.9175,
+     "y": 53,
+     "w": 168.9725,
+     "h": 12,
+     "value": "WORST MONTH NPA",
+     "canGrow": true,
+     "style": {
+      "fontSize": 7.5,
+      "color": "#6b7280",
+      "fontWeight": "bold"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Kpi4Value",
+     "x": 606.9175,
+     "y": 66,
+     "w": 168.9725,
+     "h": 22,
+     "value": "=Format(Max(Fields.npa, \"City\"), 'N2') & '%'",
+     "canGrow": true,
+     "style": {
+      "fontSize": 17,
+      "fontWeight": "bold",
+      "color": "#0f172a"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Kpi4Delta",
+     "x": 606.9175,
+     "y": 90,
+     "w": 168.9725,
+     "h": 12,
+     "value": "=\"average \" & Format(Avg(Fields.npa, \"City\"), 'N2') & \"%\"",
+     "canGrow": true,
+     "style": {
+      "fontSize": 7.5,
+      "fontWeight": "bold",
+      "color": "=IIF(Max(Fields.npa, \"City\") > 2.5, '#b91c1c', '#047857')"
+     }
+    },
+    {
+     "type": "chart",
+     "name": "Months",
+     "x": 0,
+     "y": 122,
+     "w": 470,
+     "h": 200,
+     "chartType": "column",
+     "dataSet": "City",
+     "title": "Disbursed by month (₹ lakh) · click a month",
+     "category": "=Fields.monthName",
+     "series": [
+      {
+       "name": "₹ lakh",
+       "value": "=Sum(Fields.lakh)"
+      }
+     ],
+     "seriesGroup": "=Fields.product",
+     "stacked": true,
+     "valueFormat": "N0",
+     "pointAction": {
+      "type": "params",
+      "params": {
+       "month": "=Fields.month"
+      }
+     }
+    },
+    {
+     "type": "chart",
+     "name": "Npa",
+     "x": 482,
+     "y": 122,
+     "w": 303.89,
+     "h": 200,
+     "chartType": "line",
+     "dataSet": "City",
+     "title": "NPA % by month (cap 2.5%)",
+     "category": "=Fields.monthName",
+     "series": [
+      {
+       "name": "NPA %",
+       "value": "=Avg(Fields.npa)"
+      }
+     ],
+     "valueFormat": "N2"
+    },
+    {
+     "type": "textbox",
+     "name": "TableTitle",
+     "x": 0,
+     "y": 334,
+     "w": 700,
+     "h": 15,
+     "value": "Product › month  ·  click a month for how every city did that month",
+     "canGrow": true,
+     "style": {
+      "fontSize": 10,
+      "fontWeight": "bold"
+     }
+    },
+    {
+     "type": "table",
+     "name": "MonthTable",
+     "x": 0,
+     "y": 352,
+     "w": 785.89,
+     "h": 60,
+     "dataSet": "Detail",
+     "repeatHeader": true,
+     "style": {
+      "padding": [
+       3,
+       5,
+       3,
+       5
+      ]
+     },
+     "columns": [
+      {
+       "width": 150
+      },
+      {
+       "width": 70
+      },
+      {
+       "width": 90
+      },
+      {
+       "width": 80
+      },
+      {
+       "width": 110
+      },
+      {
+       "width": 100
+      },
+      {
+       "width": 85
+      },
+      {
+       "width": 100.88999999999999
+      }
+     ],
+     "header": [
+      {
+       "height": 20,
+       "style": {
+        "fontWeight": "bold",
+        "color": "#fff",
+        "backgroundColor": "#1d4ed8",
+        "verticalAlign": "middle"
+       },
+       "cells": [
+        {
+         "value": "Product / month",
+         "sortBy": "=Fields.month"
+        },
+        {
+         "value": "Loans",
+         "style": {
+          "textAlign": "right"
+         },
+         "sortBy": "=Sum(Fields.loans)"
+        },
+        {
+         "value": "₹ lakh",
+         "style": {
+          "textAlign": "right"
+         },
+         "sortBy": "=Sum(Fields.lakh)"
+        },
+        {
+         "value": "NPA %",
+         "style": {
+          "textAlign": "right"
+         },
+         "sortBy": "=Avg(Fields.npa)"
+        },
+        {
+         "value": "Running ₹ lakh",
+         "style": {
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "Last year ₹ lakh",
+         "style": {
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "Change",
+         "style": {
+          "textAlign": "right"
+         }
+        },
+        {
+         "value": "Ticket ₹ L",
+         "style": {
+          "textAlign": "right"
+         }
+        }
+       ]
+      }
+     ],
+     "groups": [
+      {
+       "name": "Product",
+       "expr": "=Fields.product",
+       "sort": "desc",
+       "sortBy": "=Sum(Fields.lakh)",
+       "collapsible": true,
+       "header": [
+        {
+         "height": 20,
+         "style": {
+          "fontWeight": "bold",
+          "backgroundColor": "#eff6ff",
+          "borderTop": "1 solid #1d4ed8",
+          "verticalAlign": "middle"
+         },
+         "cells": [
+          {
+           "value": "=Fields.product",
+           "bookmark": "=Fields.product"
+          },
+          {
+           "value": "=Sum(Fields.loans)",
+           "style": {
+            "textAlign": "right",
+            "format": "N0"
+           }
+          },
+          {
+           "value": "=Sum(Fields.lakh)",
+           "style": {
+            "textAlign": "right",
+            "format": "N1"
+           }
+          },
+          {
+           "value": "=Avg(Fields.npa)",
+           "style": {
+            "textAlign": "right",
+            "format": "N2"
+           }
+          },
+          {
+           "value": "",
+           "visual": {
+            "type": "sparkline",
+            "category": "=Fields.month",
+            "value": "=Sum(Fields.lakh)",
+            "color": "#1d4ed8"
+           }
+          },
+          {
+           "value": "=Sum(Lookup(Fields.product & \"|\" & Fields.month, Fields.product & \"|\" & Fields.month, Fields.disbursed, \"Prev\")) / 100000",
+           "style": {
+            "textAlign": "right",
+            "format": "N1"
+           }
+          },
+          {
+           "value": "=Sum(Fields.disbursed) / Sum(Lookup(Fields.product & \"|\" & Fields.month, Fields.product & \"|\" & Fields.month, Fields.disbursed, \"Prev\")) - 1",
+           "style": {
+            "textAlign": "right",
+            "format": "P1",
+            "color": "=IIF(Sum(Fields.disbursed) >= Sum(Lookup(Fields.product & \"|\" & Fields.month, Fields.product & \"|\" & Fields.month, Fields.disbursed, \"Prev\")), '#047857', '#b91c1c')"
+           }
+          },
+          {
+           "value": "=Sum(Fields.disbursed) / Sum(Fields.loans) / 100000",
+           "style": {
+            "textAlign": "right",
+            "format": "N2"
+           }
+          }
+         ]
+        }
+       ],
+       "footer": []
+      }
+     ],
+     "detail": [
+      {
+       "height": 16,
+       "style": {
+        "borderBottom": "0.5 solid #f1f5f9",
+        "verticalAlign": "middle"
+       },
+       "cells": [
+        {
+         "value": "=MonthName(Fields.month)",
+         "style": {
+          "color": "#1d4ed8",
+          "textDecoration": "underline",
+          "padding": [
+           3,
+           5,
+           3,
+           16
+          ]
+         },
+         "tooltip": "=\"How every city did in \" & MonthName(Fields.month)",
+         "action": {
+          "type": "report",
+          "report": "sales-month",
+          "params": {
+           "year": "=Parameters.year",
+           "month": "=Fields.month",
+           "product": "=Fields.product",
+           "city": "=Parameters.city"
+          }
+         }
+        },
+        {
+         "value": "=Fields.loans",
+         "style": {
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Fields.lakh",
+         "style": {
+          "textAlign": "right",
+          "format": "N1"
+         }
+        },
+        {
+         "value": "=Fields.npa",
+         "style": {
+          "textAlign": "right",
+          "format": "N2",
+          "color": "=IIF(Fields.npa > 2.5, '#b91c1c', '#111827')",
+          "fontWeight": "=IIF(Fields.npa > 2.5, 'bold', 'normal')"
+         }
+        },
+        {
+         "value": "=RunningValue(Fields.lakh, \"Sum\", \"Product\")",
+         "style": {
+          "textAlign": "right",
+          "format": "N1",
+          "color": "#6b7280"
+         }
+        },
+        {
+         "value": "=Lookup(Fields.product & \"|\" & Fields.month, Fields.product & \"|\" & Fields.month, Fields.disbursed, \"Prev\") / 100000",
+         "style": {
+          "textAlign": "right",
+          "format": "N1"
+         }
+        },
+        {
+         "value": "=Fields.disbursed / Lookup(Fields.product & \"|\" & Fields.month, Fields.product & \"|\" & Fields.month, Fields.disbursed, \"Prev\") - 1",
+         "style": {
+          "textAlign": "right",
+          "format": "P1",
+          "color": "=IIF(Fields.disbursed >= Lookup(Fields.product & \"|\" & Fields.month, Fields.product & \"|\" & Fields.month, Fields.disbursed, \"Prev\"), '#047857', '#b91c1c')"
+         }
+        },
+        {
+         "value": "=Fields.disbursed / Fields.loans / 100000",
+         "style": {
+          "textAlign": "right",
+          "format": "N2"
+         }
+        }
+       ]
+      }
+     ],
+     "footer": [
+      {
+       "height": 20,
+       "style": {
+        "fontWeight": "bold",
+        "borderTop": "1.5 solid #1d4ed8",
+        "verticalAlign": "middle"
+       },
+       "cells": [
+        {
+         "value": "Total"
+        },
+        {
+         "value": "=Sum(Fields.loans)",
+         "style": {
+          "textAlign": "right",
+          "format": "N0"
+         }
+        },
+        {
+         "value": "=Sum(Fields.lakh)",
+         "style": {
+          "textAlign": "right",
+          "format": "N1"
+         }
+        },
+        {
+         "value": "=Avg(Fields.npa)",
+         "style": {
+          "textAlign": "right",
+          "format": "N2"
+         }
+        },
+        {
+         "value": ""
+        },
+        {
+         "value": "=Sum(Lookup(Fields.product & \"|\" & Fields.month, Fields.product & \"|\" & Fields.month, Fields.disbursed, \"Prev\")) / 100000",
+         "style": {
+          "textAlign": "right",
+          "format": "N1"
+         }
+        },
+        {
+         "value": "=Sum(Fields.disbursed) / Sum(Lookup(Fields.product & \"|\" & Fields.month, Fields.product & \"|\" & Fields.month, Fields.disbursed, \"Prev\")) - 1",
+         "style": {
+          "textAlign": "right",
+          "format": "P1"
+         }
+        },
+        {
+         "value": "=Sum(Fields.disbursed) / Sum(Fields.loans) / 100000",
+         "style": {
+          "textAlign": "right",
+          "format": "N2"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "pageFooter": {
+   "height": 20,
+   "items": [
+    {
+     "type": "textbox",
+     "name": "Gen",
+     "x": 0,
+     "y": 6,
+     "w": 300,
+     "h": 12,
+     "value": "Generated {Format(Globals.ExecutionTime, 'dd MMM yyyy, hh:mm tt')} · click any blue text, bar or slice to drill",
+     "canGrow": true,
+     "style": {
+      "fontSize": 7,
+      "color": "#6b7280"
+     }
+    },
+    {
+     "type": "textbox",
+     "name": "Pg",
+     "x": 585.89,
+     "y": 6,
+     "w": 200,
+     "h": 12,
+     "value": "Page {Globals.PageNumber} of {Globals.TotalPages}",
+     "canGrow": true,
+     "style": {
+      "fontSize": 7,
+      "color": "#6b7280",
+      "textAlign": "right"
+     }
+    }
+   ]
+  }
+ }
+}

@@ -1,0 +1,95 @@
+# sales-month › march-pune · 1 pages
+--- page 1
+Pagewright Finance · Month ranking
+Financial year 2026
+March 2026: every city
+All products · ranked by disbursed · Pune highlighted · click a city to open it
+₹ lakh by city · click to open
+0
+100
+200
+300
+Delhi
+Jaipur
+Lucknow
+Bengaluru
+Chennai
+Hyderabad
+Kolkata
+Bhubaneswar
+Patna
+Mumbai
+Pune
+Ahmedabad
+City
+Region
+₹ lakh
+NPA %
+vs city average
+Jaipur
+North
+208.9
+2.47
+25%
+Hyderabad
+South
+187.6
+0.61
+12%
+Lucknow
+North
+184.2
+2.34
+10%
+Delhi
+North
+184.0
+2.34
+10%
+Chennai
+South
+182.6
+2.14
+9%
+Patna
+East
+178.1
+1.59
+7%
+Bhubaneswar
+East
+161.5
+3.14
+-3%
+Ahmedabad
+West
+161.3
+2.01
+-3%
+Pune
+West
+153.1
+3.13
+-8%
+Bengaluru
+South
+150.9
+1.20
+-10%
+Kolkata
+East
+143.0
+2.74
+-14%
+Mumbai
+West
+110.6
+3.13
+-34%
+All cities
+2,005.8
+2.24
+vs last year
+-9.4%
+Generated 04 Oct 2026, 10:00 AM · click any blue text, bar or slice to drill
+Page 1 of 1

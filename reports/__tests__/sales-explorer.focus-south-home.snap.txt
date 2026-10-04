@@ -1,0 +1,140 @@
+# sales-explorer › focus-south-home · 2 pages
+--- page 1
+Pagewright Finance · Sales explorer
+Financial year 2026
+Sales explorer
+× Clear focus
+Regions: all · focus: South · product: Home loans · ₹ crore unless noted
+DISBURSED
+LOANS BOOKED
+AVERAGE TICKET
+AVERAGE NPA
+₹ 38.3 cr
+697
+₹ 5.50 lakh
+1.63%
+▼ 7.7% vs 2025
+▼ 7.3% vs 2025
+▼ 0.4% vs 2025
+Within the 2.5% cap · -0.39 pp vs 2025
+By region · click to focus
+0
+10
+20
+30
+40
+50
+North
+South
+East
+West
+By product · click to focus
+Home loans
+Personal loans
+Gold loans
+58%
+27%
+16%
+67
+Monthly trend by product
+0.0
+1.0
+2.0
+3.0
+4.0
+5.0
+Jan
+Mar
+May
+Jul
+Sep
+Nov
+Region × month (₹ crore)
+Region
+Jan
+Feb
+Mar
+Apr
+May
+Jun
+Jul
+Aug
+Sep
+Oct
+Nov
+Dec
+Total
+South
+3.5
+2.3
+3.1
+2.7
+3.5
+2.6
+2.9
+3.0
+4.4
+2.7
+3.8
+4.0
+38.3
+Total
+3.5
+2.3
+3.1
+2.7
+3.5
+2.6
+2.9
+3.0
+4.4
+2.7
+3.8
+4.0
+38.3
+Region › city › product · ▶ expands, blue names drill through, headers sort
+Generated 04 Oct 2026, 10:00 AM · click any blue text, bar or slice to drill
+Page 1 of 2
+--- page 2
+Pagewright Finance · Sales explorer
+Financial year 2026
+Region / city / product
+Trend
+Loans
+NPA vs cap
+₹ crore
+Share
+Cum. share
+Ticket ₹ L
+▼ South
+697
+38.3
+100.0%
+100%
+5.50
+▶ Hyderabad ↗
+255
+14.2
+36.9%
+37%
+5.56
+▶ Bengaluru ↗
+226
+12.5
+32.6%
+70%
+5.52
+▶ Chennai ↗
+216
+11.7
+30.5%
+100%
+5.41
+Total · 3 cities
+697
+1.63%
+38.3
+100.0%
+5.50
+Generated 04 Oct 2026, 10:00 AM · click any blue text, bar or slice to drill
+Page 2 of 2

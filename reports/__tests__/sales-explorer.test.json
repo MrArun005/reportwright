@@ -1,0 +1,7 @@
+{
+  "report": "../sales-explorer.pw.json",
+  "cases": [
+    { "name": "default", "data": { "sales": "sales-2026.data.json", "prev": "sales-2025.data.json" }, "now": "2026-10-04T10:00:00" },
+    { "name": "focus-south-home", "parameters": { "region": "South", "product": "Home loans" }, "data": { "sales": "sales-2026.data.json", "prev": "sales-2025.data.json" }, "now": "2026-10-04T10:00:00" }
+  ]
+}

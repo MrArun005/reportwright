@@ -1,0 +1,7 @@
+{
+  "report": "../sales-city.pw.json",
+  "cases": [
+    { "name": "pune", "parameters": { "city": "Pune" }, "data": { "sales": "sales-2026.data.json", "prev": "sales-2025.data.json" }, "now": "2026-10-04T10:00:00" },
+    { "name": "pune-march-home", "parameters": { "city": "Pune", "product": "Home loans", "month": "3" }, "data": { "sales": "sales-2026.data.json", "prev": "sales-2025.data.json" }, "now": "2026-10-04T10:00:00" }
+  ]
+}

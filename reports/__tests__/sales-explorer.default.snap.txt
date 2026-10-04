@@ -1,0 +1,254 @@
+# sales-explorer › default · 2 pages
+--- page 1
+Pagewright Finance · Sales explorer
+Financial year 2026
+Sales explorer
+Regions: all · focus: none · product: all · ₹ crore unless noted
+DISBURSED
+LOANS BOOKED
+AVERAGE TICKET
+AVERAGE NPA
+₹ 273.0 cr
+5,529
+₹ 4.94 lakh
+1.98%
+▲ 0.2% vs 2025
+▲ 0.5% vs 2025
+▼ 0.3% vs 2025
+Within the 2.5% cap · -0.12 pp vs 2025
+By region · click to focus
+0
+20
+40
+60
+80
+North
+South
+East
+West
+By product · click to focus
+Home loans
+Personal loans
+Gold loans
+58%
+26%
+16%
+273
+Monthly trend by product
+Gold loans
+Home loans
+Personal loans
+0.0
+5.0
+10.0
+15.0
+20.0
+Jan
+Mar
+May
+Jul
+Sep
+Nov
+Region × month (₹ crore)
+Region
+Jan
+Feb
+Mar
+Apr
+May
+Jun
+Jul
+Aug
+Sep
+Oct
+Nov
+Dec
+Total
+North
+4.5
+5.5
+5.8
+6.0
+5.9
+5.5
+5.2
+5.9
+6.2
+7.2
+6.9
+7.4
+71.9
+South
+5.6
+4.6
+5.2
+4.9
+5.6
+5.2
+5.4
+5.1
+6.9
+5.1
+6.5
+6.4
+66.7
+East
+4.6
+5.9
+4.8
+5.4
+5.3
+5.2
+5.3
+6.4
+5.5
+6.3
+7.0
+6.3
+68.2
+West
+4.4
+4.6
+4.3
+4.9
+5.3
+5.8
+6.1
+6.0
+5.9
+5.5
+6.6
+7.1
+66.3
+Total
+19.1
+20.6
+20.1
+21.2
+22.1
+21.8
+21.9
+23.4
+24.4
+24.1
+27.1
+27.2
+273.0
+Region › city › product · ▶ expands, blue names drill through, headers sort
+Generated 04 Oct 2026, 10:00 AM · click any blue text, bar or slice to drill
+Page 1 of 2
+--- page 2
+Pagewright Finance · Sales explorer
+Financial year 2026
+Region / city / product
+Trend
+Loans
+NPA vs cap
+₹ crore
+Share
+Cum. share
+Ticket ₹ L
+▼ North
+1,411
+71.9
+26.3%
+26%
+5.09
+▶ Jaipur ↗
+486
+24.2
+33.7%
+34%
+4.98
+▶ Delhi ↗
+469
+24.1
+33.5%
+67%
+5.13
+▶ Lucknow ↗
+456
+23.6
+32.8%
+100%
+5.17
+▼ East
+1,402
+68.2
+25.0%
+51%
+4.86
+▶ Kolkata ↗
+478
+23.1
+33.8%
+34%
+4.83
+▶ Bhubaneswar ↗
+463
+23.0
+33.8%
+68%
+4.98
+▶ Patna ↗
+461
+22.1
+32.4%
+100%
+4.79
+▼ South
+1,346
+66.7
+24.4%
+76%
+4.95
+▶ Hyderabad ↗
+452
+23.3
+35.0%
+35%
+5.17
+▶ Bengaluru ↗
+442
+21.8
+32.7%
+68%
+4.93
+▶ Chennai ↗
+452
+21.5
+32.3%
+100%
+4.76
+▼ West
+1,370
+66.3
+24.3%
+100%
+4.84
+▶ Ahmedabad ↗
+477
+22.9
+34.6%
+35%
+4.81
+▶ Mumbai ↗
+448
+21.9
+33.0%
+68%
+4.89
+▶ Pune ↗
+445
+21.5
+32.4%
+100%
+4.83
+Total · 12 cities
+5,529
+1.98%
+273.0
+100.0%
+4.94
+Generated 04 Oct 2026, 10:00 AM · click any blue text, bar or slice to drill
+Page 2 of 2

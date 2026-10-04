@@ -1,0 +1,4 @@
+{
+  "report": "../sales-month.pw.json",
+  "cases": [{ "name": "march-pune", "parameters": { "month": 3, "city": "Pune" }, "data": { "sales": "sales-2026.data.json", "prev": "sales-2025.data.json" }, "now": "2026-10-04T10:00:00" }]
+}
