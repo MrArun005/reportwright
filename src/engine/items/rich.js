@@ -193,6 +193,8 @@ export function paintRich({ x, y, w, h, st, rl, m, id }) {
       if (L.bg) bgs.push({ t: 'rect', x: fx, y: by - mt.ascent, w: f.w, h: mt.ascent + mt.descent, fill: L.bg });
       const rich = { id, p: ln.p, l: li };
       if (ln.br && k === 0) rich.br = true;
+      if (ln.align !== 'left') rich.a = ln.align; // for Word
+      if (L.rise) { rich.s = L.rise > 0 ? 'sup' : 'sub'; rich.z = L.lineSize; }
       const t = { t: 'text', font: L.key, size: L.size, color: L.color, lines: [{ x: fx, y: by, text: f.text, w: f.w }], clip, rich };
       if (L.under || L.strike) {
         t.deco = [L.under ? 'underline' : '', L.strike ? 'line-through' : ''].filter(Boolean).join(' ');

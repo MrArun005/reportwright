@@ -228,3 +228,26 @@ describe('rich text: layout', () => {
     expect(m.warnings.join(' ')).toMatch(/blink/);
   });
 });
+
+import { exportCsv } from '../../src/exporters/csv.js';
+import { exportDocx } from '../../src/exporters/docx.js';
+import { unzipSync, strFromU8 } from 'fflate';
+
+describe('rich text: exports', () => {
+  const def = rich('<p>Plain <b>bold</b> <i>it</i><u>under</u> <s>gone</s> <span style="color:#ff0000;font-size:14pt">red</span></p><p>Second</p>');
+  it('CSV gets whole plain lines', async () => {
+    expect(exportCsv(await out(def)).split('\r\n')).toEqual(['Plain bold itunder gone red', 'Second']);
+  });
+  it('Word keeps one paragraph per rich paragraph with per-run bold, italic, underline, strike, colour and size', async () => {
+    const doc = strFromU8(unzipSync(await exportDocx(await out(def)))['word/document.xml']);
+    const run = (t) => doc.split('<w:r>').find(r => r.includes(`>${t}<`));
+    expect(run('bold')).toContain('<w:b/>');
+    expect(run('it')).toContain('<w:i/>');
+    expect(run('under')).toContain('<w:u w:val="single"/>');
+    expect(run('gone')).toContain('<w:strike/>');
+    expect(run('red')).toContain('<w:color w:val="FF0000"/>');
+    expect(run('red')).toContain('<w:sz w:val="28"/>');
+    expect(doc.split('<w:p>').filter(p => p.includes('Plain')).length).toBe(1);
+    expect(doc.split('<w:p>').find(p => p.includes('Plain'))).toContain('>bold<');
+  });
+});

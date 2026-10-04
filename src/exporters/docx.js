@@ -16,7 +16,10 @@ function rPr(it) {
   const family = /mono/i.test(f) ? 'JetBrains Mono' : f.split('-')[0] || 'Inter';
   const deco = String(it.deco || '');
   // element order follows the schema: rFonts, b, i, strike, color, sz, u
-  return `<w:rPr><w:rFonts w:ascii="${esc(family)}" w:hAnsi="${esc(family)}" w:cs="${esc(family)}"/>${/bold/i.test(f) ? '<w:b/>' : ''}${/italic/i.test(f) ? '<w:i/>' : ''}${deco.includes('line-through') ? '<w:strike/>' : ''}<w:color w:val="${hex(it.color)}"/><w:sz w:val="${Math.round((it.size || 9) * 2)}"/>${deco.includes('underline') ? '<w:u w:val="single"/>' : ''}</w:rPr>`;
+  // rich text superscript and subscript: Word shrinks them itself, so give it the size of the line
+  const script = it.rich?.s ? `<w:vertAlign w:val="${it.rich.s === 'sup' ? 'superscript' : 'subscript'}"/>` : '';
+  const size = it.rich?.s ? it.rich.z : it.size;
+  return `<w:rPr><w:rFonts w:ascii="${esc(family)}" w:hAnsi="${esc(family)}" w:cs="${esc(family)}"/>${/bold/i.test(f) ? '<w:b/>' : ''}${/italic/i.test(f) ? '<w:i/>' : ''}${deco.includes('line-through') ? '<w:strike/>' : ''}<w:color w:val="${hex(it.color)}"/><w:sz w:val="${Math.round((size || 9) * 2)}"/>${deco.includes('underline') ? '<w:u w:val="single"/>' : ''}${script}</w:rPr>`;
 }
 
 /** Left, right or centre, from where the lines sit in their box. */
@@ -32,6 +35,23 @@ function alignOf(it) {
 
 const textOf = (it) => visualLines(it).join(' ');
 const para = (it, indentPt) => `<w:p><w:pPr><w:spacing w:before="0" w:after="${Math.round((it.size || 9) * 4)}"/>${indentPt > 0 ? `<w:ind w:left="${Math.round(indentPt * TW)}"/>` : ''}<w:jc w:val="${alignOf(it)}"/></w:pPr><w:r>${rPr(it)}<w:t xml:space="preserve">${esc(textOf(it))}</w:t></w:r></w:p>`;
+
+/** One paragraph of rich text: its fragments as runs, a <br> as a Word break, a wrapped line as a space. */
+function richPara(items, indentPt) {
+  items.sort((a, b) => a.rich.l - b.rich.l || a.lines[0].x - b.lines[0].x);
+  let runs = '', line = items[0].rich.l, prev = '';
+  for (const it of items) {
+    if (it.rich.l !== line) {
+      if (it.rich.br) runs += '<w:r><w:br/></w:r>';
+      else if (prev && !prev.endsWith(' ')) runs += `<w:r>${rPr(it)}<w:t xml:space="preserve"> </w:t></w:r>`;
+      line = it.rich.l;
+    }
+    prev = it.lines[0].text;
+    runs += `<w:r>${rPr(it)}<w:t xml:space="preserve">${esc(prev)}</w:t></w:r>`;
+  }
+  const jc = { center: 'center', right: 'right' }[items[0].rich.a] || 'left';
+  return `<w:p><w:pPr><w:spacing w:before="0" w:after="${Math.round((items[0].size || 9) * 4)}"/>${indentPt > 0 ? `<w:ind w:left="${Math.round(indentPt * TW)}"/>` : ''}<w:jc w:val="${jc}"/></w:pPr>${runs}</w:p>`;
+}
 
 const BORDER = '<w:tblBorders><w:top w:val="single" w:sz="4" w:color="CBD5E1"/><w:left w:val="single" w:sz="4" w:color="CBD5E1"/><w:bottom w:val="single" w:sz="4" w:color="CBD5E1"/><w:right w:val="single" w:sz="4" w:color="CBD5E1"/><w:insideH w:val="single" w:sz="4" w:color="CBD5E1"/><w:insideV w:val="single" w:sz="4" w:color="CBD5E1"/></w:tblBorders>';
 
@@ -73,8 +93,16 @@ export async function exportDocx(model, opt = {}) {
     // blocks in reading order: a free text box, or a whole table (all its cells on this page)
     const blocks = [];
     const tables = new Map();
+    const paras = new Map(); // rich text: one block per paragraph of one box
     for (const it of texts) {
-      if (it.cell) {
+      if (it.rich) {
+        const key = `${it.rich.id}\u0001${it.rich.p}`;
+        let b = paras.get(key);
+        if (!b) { b = { kind: 'rich', y: it.lines[0].y, x: it.lines[0].x, items: [] }; paras.set(key, b); blocks.push(b); }
+        b.items.push(it);
+        b.y = Math.min(b.y, it.lines[0].y);
+        b.x = Math.min(b.x, it.lines[0].x);
+      } else if (it.cell) {
         const key = it.cell.table;
         if (!tables.has(key)) { const b = { kind: 'table', y: it.lines[0].y, x: it.clip?.x ?? it.lines[0].x, cells: [] }; tables.set(key, b); blocks.push(b); }
         const b = tables.get(key);
@@ -84,7 +112,7 @@ export async function exportDocx(model, opt = {}) {
       } else blocks.push({ kind: 'text', y: it.lines[0].y, x: it.lines[0].x, it });
     }
     blocks.sort((a, b) => a.y - b.y || a.x - b.x);
-    return blocks.map(b => (b.kind === 'table' ? table(b.cells, b.x - margin) : para(b.it, (b.it.clip?.x ?? b.x) - margin))).join('');
+    return blocks.map(b => (b.kind === 'table' ? table(b.cells, b.x - margin) : b.kind === 'rich' ? richPara(b.items, b.x - margin) : para(b.it, (b.it.clip?.x ?? b.x) - margin))).join('');
   }).join('<w:p><w:r><w:br w:type="page"/></w:r></w:p>');
 
   const W = Math.round(model.width * TW), H = Math.round(model.height * TW), M = margin * TW;

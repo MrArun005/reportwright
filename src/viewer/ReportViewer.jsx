@@ -39,17 +39,24 @@ function findText(model, q) {
   const needle = q.toLowerCase();
   const out = [];
   model.pages.forEach((pg, pi) => {
-    for (const it of pg.items) if (it.t === 'text') {
-      // one visual line at a time: a justified line is one run per word, so join runs on the same baseline
-      const rows = new Map();
-      for (const l of it.lines) { const r = rows.get(l.y); if (r) r.push(l); else rows.set(l.y, [l]); }
-      for (const [y, row] of rows) {
-        row.sort((a, b) => a.x - b.x);
-        if (!row.map(l => l.text).join(' ').toLowerCase().includes(needle)) continue;
-        const x0 = row[0].x, last = row[row.length - 1];
-        const x1 = last.x + (last.w || it.size * last.text.length * 0.5);
-        out.push({ page: pi, x: x0 - 1, y: y - it.size * 0.95, w: x1 - x0 + 2, h: it.size * 1.25 });
+    // one visual line at a time: a justified line is one run per word (joined with spaces), and rich text is
+    // one item per styled piece (joined with nothing: the pieces keep their spaces)
+    const rows = new Map();
+    pg.items.forEach((it, k) => {
+      if (it.t !== 'text') return;
+      for (const l of it.lines) {
+        const key = it.rich ? `r${it.rich.id}\u0001${it.rich.l}` : `${k}\u0001${l.y}`;
+        const r = rows.get(key);
+        if (r) r.lines.push(l); else rows.set(key, { rich: !!it.rich, size: it.size, lines: [l] });
       }
+    });
+    for (const { rich, size, lines: row } of rows.values()) {
+      row.sort((a, b) => a.x - b.x);
+      if (!row.map(l => l.text).join(rich ? '' : ' ').toLowerCase().includes(needle)) continue;
+      const x0 = row[0].x, last = row[row.length - 1];
+      const x1 = last.x + (last.w || size * last.text.length * 0.5);
+      const y = Math.max(...row.map(l => l.y));
+      out.push({ page: pi, x: x0 - 1, y: y - size * 0.95, w: x1 - x0 + 2, h: size * 1.25 });
     }
   });
   return out;
