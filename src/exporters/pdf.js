@@ -61,7 +61,7 @@ export async function exportPdf(model, fontStore, opt = {}) {
   /** right-to-left clusters whose glyphs' ToUnicode entries cannot spell them: they get an /ActualText span @type {WeakMap<any, Set<number>>} */
   const spans = new WeakMap();
   const chars = (key) => { let c = used.get(key); if (!c) { c = new Set([32]); used.set(key, c); } return c; };
-  for (const pg of model.pages) for (const it of pg.items) if (it.t === 'text') {
+  for (const pg of model.pages) for (const it of pg.items.flatMap(i => (i.t === 'field' ? i.draw.filter(d => d.t === 'text') : i.t === 'text' ? [i] : []))) {
     for (const l of it.lines) {
       if (!l.runs) { const c = chars(it.font); for (const ch of l.text) c.add(/** @type {number} */ (ch.codePointAt(0))); continue; }
       for (const r of l.runs) {
@@ -75,7 +75,7 @@ export async function exportPdf(model, fontStore, opt = {}) {
   }
   // A filled-in form field can hold any character: fonts that fields use embed in full.
   const fieldFonts = new Set();
-  for (const pg of model.pages) for (const it of pg.items) if (it.t === 'field') fieldFonts.add(it.font);
+  for (const pg of model.pages) for (const it of pg.items) if (it.t === 'field') fieldFonts.add(fieldFont(it));
   const fonts = new Map();
   const font = async (key) => {
     if (!fonts.has(key)) {
@@ -174,6 +174,7 @@ export async function exportPdf(model, fontStore, opt = {}) {
     p.node.normalize();
     p.node.set(PDFName.of('Resources'), resRef);
     const c = new Content(shared);
+    if (tags) c.tagged = true;
     // pdf-lib draws the rare shapes (SVG paths, rounded boxes, SVG images): its operators join this page's stream
     p.maybeEmbedGraphicsState = (o) => c.gsFor(o.opacity ?? 1, o.borderOpacity ?? 1);
     const viaPdfLib = (draw) => {
@@ -240,7 +241,13 @@ export async function exportPdf(model, fontStore, opt = {}) {
           const clipped = it.clip && !insideClip(it, vmetrics(it.font));
           if (clipped) { c.q(); c.s += `${n2(it.clip.x)} ${n2(H - it.clip.y - it.clip.h)} ${n2(it.clip.w)} ${n2(it.clip.h)} re W n\n`; }
           for (const l of it.lines) {
-            if (!l.runs) { c.text(f, it.size, color, l.x, H - l.y, /** @type {any} */ (f).embedder.literalOf(cleanText(l.text))); continue; }
+            if (!l.runs) {
+              // tagged: a character the font lacks is left out (PDF/UA forbids drawing .notdef), its space kept
+              const tj = tags && /** @type {any} */ (f).embedder.tjOf(cleanText(l.text));
+              if (tj) c.text(f, it.size, color, l.x, H - l.y, tj, true);
+              else c.text(f, it.size, color, l.x, H - l.y, /** @type {any} */ (f).embedder.literalOf(cleanText(l.text)));
+              continue;
+            }
             for (const r of l.runs) if (r.text.trim()) drawRun(c, r, l.x + r.x, H - l.y, it.size, await font(r.font), color, spans.get(r), shaped.get(r.font));
           }
           if (clipped) c.Q();
@@ -253,7 +260,7 @@ export async function exportPdf(model, fontStore, opt = {}) {
         }
         case 'field': {
           const form = doc.getForm();
-          const f = await font(it.font);
+          const f = await font(fieldFont(it));
           const name = uniqueName(it.name);
           const box = { x: it.x, y: H - it.y - it.h, width: it.w, height: it.h, borderColor: rgb(0.61, 0.64, 0.69), borderWidth: 0.75, backgroundColor: rgb(1, 1, 1) };
           let field;
@@ -275,6 +282,27 @@ export async function exportPdf(model, fontStore, opt = {}) {
             }
             field.setFontSize(it.size);
             field.updateAppearances(f); // in the report font; the default would be Helvetica
+            // pdf-lib draws one glyph per character: text that needs shaping (Arabic, Indic, Thai…) or a fallback
+            // font gets the engine's glyphs instead, as on the page. Typing into the field later is the viewer's job.
+            const lines = it.draw.filter(d => d.t === 'text').flatMap(d => d.lines.map(l => ({ d, l })));
+            if (lines.some(x => x.l.runs)) {
+              const a = new Content(shared);
+              const top = it.y + it.h; // page y (down) of the box's top: local y (up) = top - page y
+              a.s += '/Tx BMC\n';
+              a.paint({ rgb: '1 1 1', opacity: 1 }, { rgb: '0.61 0.64 0.69', opacity: 1 }, 0.75);
+              a.s += `0.375 0.375 ${n2(it.w - 0.75)} ${n2(it.h - 0.75)} re B\n`;
+              a.q();
+              a.s += `1 1 ${n2(it.w - 2)} ${n2(it.h - 2)} re W n\n`;
+              for (const { d, l } of lines) {
+                const color = col(d.color) || BLACK;
+                if (!l.runs) { const pf = await font(d.font); a.text(pf, d.size, color, l.x - it.x, top - l.y, /** @type {any} */ (pf).embedder.literalOf(cleanText(l.text))); continue; }
+                for (const r of l.runs) if (r.text.trim()) drawRun(a, r, l.x - it.x + r.x, top - l.y, d.size, await font(r.font), color, spans.get(r), shaped.get(r.font));
+              }
+              a.Q();
+              a.s += 'EMC\n';
+              const ap = ctx.register(ctx.flateStream(a.s, { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, it.w, it.h], Resources: resRef }));
+              for (const w of field.acroField.getWidgets()) w.setNormalAppearance(ap);
+            }
           }
           if (it.required) field.enableRequired();
           if (it.readOnly) field.enableReadOnly();
@@ -360,6 +388,15 @@ export async function exportPdf(model, fontStore, opt = {}) {
 }
 
 /**
+ * The font a form field names in its default appearance (DA): the report font, or the bundled script font its
+ * value is drawn in (Arabic in Inter would be blank boxes once a viewer redraws the field).
+ */
+function fieldFont(it) {
+  for (const d of it.draw) if (d.t === 'text') for (const l of d.lines) for (const r of l.runs || []) if (r.font !== it.font && r.text.trim()) return r.font;
+  return it.font;
+}
+
+/**
  * Draw one run of shaped glyphs by ID, where the engine placed them: a TJ array whose numbers move each
  * glyph from where the font's own advance (the W array) leaves it to the shaper's position; marks that sit
  * higher or lower use the text rise. /ActualText gives copy and search the characters: for a left-to-right
@@ -408,8 +445,11 @@ function drawRun(c, run, x, y, size, pf, color, spans, texts) {
     }
     if (gy !== rise) { flush(); c.s += `${n4(gy)} Ts\n`; rise = gy; }
     const adj = Math.round((pen - gx) * per * 1000) / 1000;
-    arr += (adj ? `${adj}` : '') + `<${hex4(id)}>`;
-    pen = gx + (adv(id) * size) / f.unitsPerEm;
+    if (id === 0 && c.tagged) pen = gx; // a tagged PDF draws no .notdef (PDF/UA 7.21.8): the glyph is left out, its place kept
+    else {
+      arr += (adj ? `${adj}` : '') + `<${hex4(id)}>`;
+      pen = gx + (adv(id) * size) / f.unitsPerEm;
+    }
     if (inSpan && (i + 4 >= g.length || (quietAt < 0 || i + 4 < quietAt) && g[i + 7] !== cl || i + 4 === quietAt)) { flush(); c.s += 'EMC\n'; inSpan = false; }
   }
   flush();
@@ -487,9 +527,25 @@ function plainEncoding(pf) {
     return hex;
   };
   e.encodeText = (text) => PDFHexString.of(e.hexOf(text)); // form field appearances
+  // and their widths the same way: fontkit's layout runs its own shaper (its Indic one needs a regenerator runtime that is not there)
+  e.widthOfTextAtSize = (text, size) => {
+    let w = 0;
+    for (const ch of text) w += f.glyphForCodePoint(/** @type {number} */ (ch.codePointAt(0))).advanceWidth || 0;
+    return (w * size) / f.unitsPerEm;
+  };
   const lit = new Map();
   const esc = (b) => (b === 0x28 || b === 0x29 || b === 0x5c ? '\\' + String.fromCharCode(b) : b === 0x0d ? '\\r' : String.fromCharCode(b));
   /** @param {string} text @returns {string} the glyph IDs as two bytes each (one char per byte), escaped for a literal string */
+  /** a TJ array body that skips the characters with no glyph (.notdef), moving on by their width; null when there are none */
+  e.tjOf = (text) => {
+    let out = '', cur = '', any = false;
+    for (const ch of text) {
+      const cp = /** @type {number} */ (ch.codePointAt(0));
+      if (f.glyphForCodePoint(cp).id === 0) { any = true; if (cur) out += `(${cur})`; cur = ''; out += `${-Math.round(f.getGlyph(0).advanceWidth * 1000 / f.unitsPerEm)}`; continue; }
+      cur += e.literalOf(ch);
+    }
+    return any ? out + (cur ? `(${cur})` : '') : null;
+  };
   e.literalOf = (text) => {
     let out = '';
     for (const ch of text) {
@@ -592,14 +648,14 @@ class Content {
   /**
    * A line of plain text at (x, y). Lines follow one another in one text object, each placed relative to the
    * last (in whole hundredths, so nothing drifts): most of a table page is these.
-   * @param {string} str the glyphs, as a literal string's escaped body
+   * @param {string} str the glyphs, as a literal string's escaped body (array: a TJ array's body)
    */
-  text(pf, size, color, x, y, str) {
+  text(pf, size, color, x, y, str, array = false) {
     this.paint(color, null);
     this.font(pf, size);
     const X = Math.round(x * 100), Y = Math.round(y * 100);
     if (!this.bt) { this.s += 'BT\n'; this.bt = true; this.tx = 0; this.ty = 0; }
-    this.s += `${(X - this.tx) / 100} ${(Y - this.ty) / 100} Td (${str}) Tj\n`;
+    this.s += array ? `${(X - this.tx) / 100} ${(Y - this.ty) / 100} Td [${str}] TJ\n` : `${(X - this.tx) / 100} ${(Y - this.ty) / 100} Td (${str}) Tj\n`;
     this.tx = X; this.ty = Y;
   }
   /** end the open text object, if any: anything but text needs that */

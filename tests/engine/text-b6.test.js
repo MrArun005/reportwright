@@ -114,3 +114,35 @@ describe.skipIf(!hasPdftotext)('text extraction from the PDF (pdftotext)', () =>
     for (const l of lines.slice(0, -1)) { at += l.length; expect(ok.has(at)).toBe(true); }
   });
 });
+
+describe('form fields with complex scripts', () => {
+  const fieldPdf = async (values) => {
+    const def = report(values.map((v, i) => ({ type: 'field', fieldName: `f${i}`, x: 0, y: i * 40, w: 250, h: 24, value: v, style: { fontSize: 12 } })));
+    return exportPdf(await render(def, { fontStore }), fontStore);
+  };
+  it('the appearance of a pre-filled field draws the shaped glyphs, and its DA names the script font', async () => {
+    const { PDFDocument, PDFName, decodePDFRawStream } = await import('pdf-lib');
+    const bytes = await fieldPdf(['مرحبا', 'नमस्ते', 'Hello']); // Devanagari used to stop the export (fontkit's Indic shaper)
+    const form = (await PDFDocument.load(bytes)).getForm();
+    const ap = (name) => {
+      const w = form.getTextField(name).acroField.getWidgets()[0];
+      const n = w.dict.context.lookup(w.dict.lookup(PDFName.of('AP')).get(PDFName.of('N')));
+      return new TextDecoder('latin1').decode(decodePDFRawStream(n).decode());
+    };
+    const da = (name) => form.getTextField(name).acroField.getDefaultAppearance();
+    expect(ap('f0')).toMatch(/\/Tx BMC/);
+    // joined Arabic: initial/medial/final glyphs, not the isolated letters pdf-lib would draw one by one
+    const f = fontStore.get('NotoSansArabic-Regular');
+    const isolated = [...'مرحبا'].map(ch => f.glyphForCodePoint(ch.codePointAt(0)).id.toString(16).padStart(4, '0'));
+    const drawn = [...ap('f0').matchAll(/<([0-9a-f]{4})>/g)].map(x => x[1]);
+    expect(drawn.length).toBeGreaterThan(3);
+    expect(drawn.filter(id => !isolated.includes(id)).length).toBeGreaterThan(0);
+    expect(da('f0')).not.toBe(da('f2')); // the Arabic field names its own font, the Latin one the report font
+    expect(ap('f2')).not.toMatch(/\/Span/); // plain Latin keeps pdf-lib's appearance
+  });
+  it.skipIf(!hasPdftotext)('pdftotext reads the field values', async () => {
+    const file = path.join(os.tmpdir(), `pw-b6f-${process.pid}.pdf`);
+    fs.writeFileSync(file, await fieldPdf(['مرحبا بالعالم', 'नमस्ते दुनिया', 'ภาษาไทย']));
+    try { expect(plain(execFileSync('pdftotext', ['-enc', 'UTF-8', file, '-']).toString())).toEqual(['مرحبا بالعالم', 'नमस्ते दुनिया', 'ภาษาไทย']); } finally { fs.rmSync(file, { force: true }); }
+  });
+});
