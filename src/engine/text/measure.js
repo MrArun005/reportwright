@@ -135,6 +135,19 @@ export class TextMeasurer {
     return { underlineY: -(up - ut / 2) * k, underlineWidth: ut * k, strikeY: -(sp - st / 2) * k, strikeWidth: st * k };
   }
 
+  /**
+   * Superscript and subscript from the font's OS/2 table, in em: the size of the small text and how far its
+   * baseline moves (rise up for superscript, drop down for subscript). Fonts without the values get the
+   * proportions most fonts use.
+   * @param {string} key
+   */
+  script(key) {
+    const f = this.store.get(this.usable(key));
+    const u = f.unitsPerEm, o = f['OS/2'] || {};
+    const frac = (v, d) => (v > 0 && v < u * 2 ? v / u : d);
+    return { supScale: frac(o.ySuperscriptYSize, 0.65), supRise: frac(o.ySuperscriptYOffset, 0.35), subScale: frac(o.ySubscriptYSize, 0.65), subDrop: frac(o.ySubscriptYOffset, 0.15) };
+  }
+
   /** @param {string} key @param {number} size */
   metrics(key, size) {
     const f = this.store.get(this.usable(key));

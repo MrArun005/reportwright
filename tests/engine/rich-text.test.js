@@ -78,3 +78,72 @@ describe('rich text: parser', () => {
     expect(Date.now() - t0).toBeLessThan(2000);
   });
 });
+
+describe('rich text: hostile input stays bounded', async () => {
+  const { TextMeasurer } = await import('../../src/engine/text/measure.js');
+  const { fontStore } = await import('../helpers.js');
+  const { layoutRich, paintRich, richValue } = await import('../../src/engine/items/rich.js');
+  const timed = (fn) => { const t0 = performance.now(); const r = fn(); return { r, ms: performance.now() - t0 }; };
+  const runs = (blocks) => blocks.reduce((s, b) => s + b.runs.length, 0);
+  const T = { timeout: 5000 };
+
+  it('200k nested <b>', T, () => {
+    const { r, ms } = timed(() => parse('<b>'.repeat(200000) + 'x'));
+    expect(ms).toBeLessThan(1000);
+    expect(r.blocks.length).toBeLessThanOrEqual(1);
+    expect(r.w.join(' ')).toMatch(/cut/);
+  });
+  it('200k </b> closers', T, () => {
+    const { r, ms } = timed(() => parse('<b>a' + '</b>'.repeat(200000) + 'z'));
+    expect(ms).toBeLessThan(1000);
+    expect(r.w.join(' ')).toMatch(/cut/);
+  });
+  it('one 1 MB tag with 50k attributes', T, () => {
+    const tag = '<span ' + Array.from({ length: 50000 }, (_, i) => `a${i}="${'v'.repeat(12)}"`).join(' ') + '>x</span>';
+    const { r, ms } = timed(() => parse(tag));
+    expect(ms).toBeLessThan(1000);
+    expect(r.w.length).toBeGreaterThan(0);
+  });
+  it('100k <br> make a bounded number of lines', T, async () => {
+    await fontStore.load();
+    const m = new TextMeasurer(fontStore);
+    const { r, ms } = timed(() => {
+      const p = parse('a' + '<br>'.repeat(100000) + 'b');
+      const rl = layoutRich(p.blocks, { fontSize: 9 }, 300, m);
+      const items = paintRich({ x: 0, y: 0, w: 300, h: rl.needed, st: {}, rl, m, id: 'R' });
+      return { p, rl, items };
+    });
+    expect(ms).toBeLessThan(1000);
+    expect(r.rl.lines.length).toBeLessThanOrEqual(5000);
+    expect(r.p.w.join(' ')).toMatch(/line breaks|cut/);
+  });
+  it('a style attribute with 50k declarations', T, () => {
+    const css = Array.from({ length: 50000 }, () => 'color:#123456').join(';');
+    const { r, ms } = timed(() => parse(`<span style="${css}">x</span>`));
+    expect(ms).toBeLessThan(1000);
+    expect(r.blocks).toHaveLength(0); // cut inside the attribute: nothing readable after it
+    expect(r.w.join(' ')).toMatch(/cut/);
+    const short = parse(`<span style="${css.slice(0, 30000)}">x</span>`);
+    expect(flat(short.blocks[0])).toBe('x');
+    expect(short.blocks[0].runs[0].st.color).toBe('#123456'); // only the first declarations are read
+  });
+  it('interpolating a 5 MB field', T, () => {
+    const big = '<b>&'.repeat(5 * 1024 * 1024 / 4);
+    const ctx = { fields: { x: big }, params: {}, globals: {}, dataSets: {} };
+    const { r, ms } = timed(() => parse(richValue('<i>{Fields.x}</i>', ctx)));
+    expect(ms).toBeLessThan(1000);
+    expect(flat(r.blocks[0]).length).toBeLessThanOrEqual(RICH_LIMITS.maxLength);
+    expect(r.w.join(' ')).toMatch(/cut/);
+  });
+  it('many short runs and blocks are capped', T, () => {
+    const { r, ms } = timed(() => parse('<p><b>a</b><i>b</i></p>'.repeat(30000)));
+    expect(ms).toBeLessThan(1000);
+    expect(r.blocks.length).toBeLessThanOrEqual(RICH_LIMITS.maxBlocks);
+    expect(runs(r.blocks)).toBeLessThanOrEqual(RICH_LIMITS.maxRuns);
+    expect(r.w.join(' ')).toMatch(/cut/);
+  });
+  it('ampersands without a semicolon do not rescan the input', T, () => {
+    const { ms } = timed(() => parse('&'.repeat(99000)));
+    expect(ms).toBeLessThan(50);
+  });
+});

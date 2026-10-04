@@ -8,7 +8,8 @@
  * A run's text has its white space collapsed as HTML does; "\n" is a <br>.
  */
 
-export const RICH_LIMITS = { maxLength: 100000, maxDepth: 32 };
+/** Work limits: the markup (after interpolation), nesting, runs, blocks, line breaks, attributes per tag, CSS declarations per style. */
+export const RICH_LIMITS = { maxLength: 100000, maxDepth: 32, maxRuns: 20000, maxBlocks: 5000, maxBreaks: 5000, maxAttrs: 64, maxDecls: 100 };
 
 /** @typedef {{ fontFamily?: string, fontSize?: number, fontWeight?: string, fontStyle?: string, color?: string,
  *   background?: string, underline?: boolean, strike?: boolean, script?: 'sup'|'sub', href?: string, align?: string }} RichStyle */
@@ -46,8 +47,10 @@ function decode(s) {
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
     if (c !== '&') { out += c; continue; }
-    const end = s.indexOf(';', i + 1);
-    if (end < 0 || end - i > 10) { out += c; continue; }
+    // look for the ';' only in the next 10 characters: a scan to the end for every '&' would be quadratic
+    let end = -1;
+    for (let k = i + 1; k < s.length && k <= i + 10; k++) if (s[k] === ';') { end = k; break; }
+    if (end < 0) { out += c; continue; }
     const name = s.slice(i + 1, end);
     let rep;
     if (name[0] === '#') {
@@ -77,7 +80,7 @@ function fontSize(v, parent) {
 
 /** Inline CSS onto a copy of the parent style. @param {string} css @param {RichStyle} st */
 function applyCss(css, st) {
-  for (const decl of css.split(';')) {
+  for (const decl of css.split(';', RICH_LIMITS.maxDecls)) {
     const c = decl.indexOf(':');
     if (c < 0) continue;
     const prop = decl.slice(0, c).trim().toLowerCase(), val = decl.slice(c + 1).trim();
@@ -113,7 +116,7 @@ function readTag(s, i) {
   while (j < s.length && /[a-zA-Z0-9]/.test(s[j])) name += s[j++];
   /** @type {Record<string, string>} */
   const attrs = {};
-  let self = false;
+  let self = false, count = 0;
   while (j < s.length) {
     const c = s[j];
     if (c === '>') return { end: j + 1, name: name.toLowerCase(), close, self, attrs };
@@ -134,7 +137,7 @@ function readTag(s, i) {
         av = s.slice(j + 1, e); j = e + 1;
       } else while (j < s.length && !' \t\n\r\f>'.includes(s[j])) av += s[j++];
     }
-    if (an && an.length < 40) attrs[an.toLowerCase()] = av;
+    if (an && an.length < 40 && ++count <= RICH_LIMITS.maxAttrs) attrs[an.toLowerCase()] = av;
     if (!an && j < s.length && s[j] !== '>') j++; // a stray character: move on
   }
   return null;
@@ -150,6 +153,8 @@ export function parseRich(html, opt = {}) {
   let s = String(html ?? '');
   if (s.length > RICH_LIMITS.maxLength) {
     s = s.slice(0, RICH_LIMITS.maxLength);
+    const lt = s.lastIndexOf('<');
+    if (lt >= 0 && s.indexOf('>', lt) < 0) s = s.slice(0, lt); // do not leave half a tag as text
     warn(`Rich text: the markup is longer than ${RICH_LIMITS.maxLength} characters and was cut.`);
   }
   const low = s.toLowerCase();
@@ -160,7 +165,8 @@ export function parseRich(html, opt = {}) {
   /** @type {{ ordered: boolean, n: number }[]} */
   const lists = [];
   const unknown = new Set();
-  let ignored = 0, deepWarned = false;
+  let ignored = 0, deepWarned = false, nRuns = 0, nBreaks = 0, full = false;
+  const cutAt = (what) => { if (!full) { full = true; warn(`Rich text: more than ${what}; the rest is cut.`); } };
   /** @type {RichBlock|null} */
   let cur = null;
   let marker = /** @type {string|undefined} */ (undefined);
@@ -175,7 +181,10 @@ export function parseRich(html, opt = {}) {
         r.text = r.text.slice(0, -1);
         if (!r.text) runs.pop();
       }
-      if (runs.length) blocks.push(cur);
+      if (runs.length) {
+        if (blocks.length >= RICH_LIMITS.maxBlocks) cutAt(`${RICH_LIMITS.maxBlocks} paragraphs`);
+        else blocks.push(cur);
+      }
     }
     cur = null; lastSpace = true;
   };
@@ -187,7 +196,9 @@ export function parseRich(html, opt = {}) {
       if (marker) { cur.marker = marker; marker = undefined; }
     }
     const last = cur.runs[cur.runs.length - 1];
-    if (last && last.st === st) last.text += text; else cur.runs.push({ text, st });
+    if (last && last.st === st) last.text += text;
+    else if (++nRuns > RICH_LIMITS.maxRuns) cutAt(`${RICH_LIMITS.maxRuns} styled pieces`);
+    else cur.runs.push({ text, st });
   };
   const text = (raw) => {
     let t = '';
@@ -199,7 +210,7 @@ export function parseRich(html, opt = {}) {
   };
 
   let i = 0;
-  while (i < s.length) {
+  while (i < s.length && !full) {
     const lt = s.indexOf('<', i);
     if (lt < 0) { text(s.slice(i)); break; }
     if (lt > i) text(s.slice(i, lt));
@@ -222,11 +233,12 @@ export function parseRich(html, opt = {}) {
     }
     if (name === 'br') {
       if (tag.close) continue;
+      if (++nBreaks > RICH_LIMITS.maxBreaks) { cutAt(`${RICH_LIMITS.maxBreaks} line breaks`); continue; }
       add('\n', top().st, true);
       lastSpace = true;
       continue;
     }
-    if (!BLOCK.has(name) && !INLINE.has(name)) { unknown.add(name.slice(0, 20)); continue; }
+    if (!BLOCK.has(name) && !INLINE.has(name)) { if (unknown.size < 20) unknown.add(name.slice(0, 20)); continue; }
     if (tag.close) {
       if (ignored > 0) { ignored--; continue; }
       let k = stack.length - 1;
@@ -266,7 +278,7 @@ export function parseRich(html, opt = {}) {
       default:
         if (name in HEADING) { st.fontSize = Math.round((st.fontSize || 9) * HEADING[name] * 100) / 100; st.fontWeight = 'bold'; }
     }
-    if (tag.attrs.style) applyCss(tag.attrs.style.slice(0, 2000), st);
+    if (tag.attrs.style) applyCss(tag.attrs.style, st);
     if (BLOCK.has(name)) {
       flush();
       if (name === 'ul' || name === 'ol') lists.push({ ordered: name === 'ol', n: 0 });
