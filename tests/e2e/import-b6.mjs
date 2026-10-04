@@ -14,6 +14,9 @@ const sel = 'input[type=file][accept*=".jrxml"]';
 const hydrated = () => p.waitForFunction((s) => { const i = document.querySelector(s); return i && Object.keys(i).some(k => k.startsWith('__reactProps')); }, sel);
 
 const ids = [];
+// imported reports are deleted even when a step fails (one left behind with required parameters breaks the home page's thumbnails)
+const cleanup = async () => { for (const id of ids.splice(0)) await p.request.delete(`${BASE}/api/reports/${id}`, { headers: { origin: BASE } }).catch(() => {}); };
+try {
 for (const [file, expect] of [
   [path.join(FIX, 'jrxml', 'corpus', 'jr6-csvdatasource-CsvDataSourceReport.jrxml'), /Street/],
   [path.join(FIX, 'birt', 'corpus', 'Accessibility-hello_world.rptdesign'), /Das ist die Überschrift/],
@@ -55,6 +58,8 @@ for (const id of ids) {
   const del = await p.request.delete(`${BASE}/api/reports/${id}`, { headers: { origin: BASE } });
   assert.ok(del.ok());
 }
+ids.length = 0;
+} finally { await cleanup(); }
 await b.close();
 assert.deepEqual(errs, []);
 console.log('PASS jrxml + birt import');
