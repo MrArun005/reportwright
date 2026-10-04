@@ -183,6 +183,58 @@ describe('report part libraries (#45)', () => {
   });
 });
 
+describe('resource caps (security review)', () => {
+  // a library whose part k is a container holding `fan` instances of part k+1
+  const fanLib = (levels, fan) => {
+    const items = [], parts = [];
+    for (let k = 0; k < levels; k++) {
+      const kids = k + 1 < levels ? Array.from({ length: fan }, (_, j) => ({ type: 'part', name: `L${k}_${j}`, library: 'fan', part: `P${k + 1}`, x: 0, y: j * 2, w: 10, h: 2 })) : [tb(`Leaf${k}`, 'leaf')];
+      items.push({ type: 'container', name: `C${k}`, x: 0, y: k * 30, w: 100, h: 20, items: kids });
+      parts.push({ name: `P${k}`, item: `C${k}` });
+    }
+    return report(items, { def: { parts } });
+  };
+  it('a fan-out (10 parts × 10 levels) is refused quickly with a clear warning', async () => {
+    const insts = Array.from({ length: 10 }, (_, i) => ({ type: 'part', name: `I${i}`, library: 'fan', part: 'P0', x: 0, y: i * 30, w: 100, h: 20 }));
+    const t0 = Date.now();
+    const m = await render(report(insts), { fontStore, loadReport: loader({ fan: fanLib(10, 10) }) });
+    expect(Date.now() - t0).toBeLessThan(3000);
+    expect(m.warnings.join(' ')).toMatch(new RegExp(`more than ${REUSE_LIMITS.items.toLocaleString("en-US")} items`));
+    expect(allTexts(m)).not.toContain('leaf');
+  });
+  it('a diamond within the budget renders', async () => {
+    const m = await render(report([{ type: 'part', name: 'I', library: 'fan', part: 'P0', x: 0, y: 0, w: 100, h: 20 }]), { fontStore, loadReport: loader({ fan: fanLib(3, 3) }) });
+    expect(allTexts(m).filter(x => x === 'leaf').length).toBe(9);
+  });
+  it('the item budget is shared with subreports', async () => {
+    const insts = Array.from({ length: 8 }, (_, i) => ({ type: 'part', name: `I${i}`, library: 'fan', part: 'P0', x: 0, y: i * 30, w: 100, h: 20 }));
+    const child = report(insts);
+    const subs = Array.from({ length: 6 }, (_, i) => ({ type: 'subreport', name: `S${i}`, report: 'child', x: 0, y: i * 40, w: 200, h: 30 }));
+    const m = await render(report(subs), { fontStore, loadReport: loader({ fan: fanLib(4, 10), child }) });
+    expect(m.warnings.join(' ')).toMatch(new RegExp(`more than ${REUSE_LIMITS.items.toLocaleString("en-US")} items`));
+  });
+  it('an indirect part cycle (A → B → A) warns and ends', async () => {
+    const lib = report([
+      { type: 'container', name: 'CA', x: 0, y: 0, w: 100, h: 20, items: [tb('a', 'in A'), { type: 'part', name: 'ToB', library: 'cyc', part: 'B', x: 0, y: 14, w: 10, h: 2 }] },
+      { type: 'container', name: 'CB', x: 0, y: 30, w: 100, h: 20, items: [tb('b', 'in B'), { type: 'part', name: 'ToA', library: 'cyc', part: 'A', x: 0, y: 14, w: 10, h: 2 }] },
+    ], { def: { parts: [{ name: 'A', item: 'CA' }, { name: 'B', item: 'CB' }] } });
+    const m = await render(report([{ type: 'part', name: 'I', library: 'cyc', part: 'A', x: 0, y: 0, w: 100, h: 20 }]), { fontStore, loadReport: loader({ cyc: lib }) });
+    expect(allTexts(m)).toEqual(expect.arrayContaining(['in A', 'in B']));
+    expect(m.warnings.join(' ')).toMatch(/itself/);
+  });
+  it('a huge library is refused', async () => {
+    const big = report(Array.from({ length: REUSE_LIMITS.reportItems + 1 }, (_, i) => tb(`T${i}`, 'x', 0, i)), { def: { parts: [{ name: 'p', item: 'T0' }] } });
+    const m = await render(report([{ type: 'part', name: 'I', library: 'big', part: 'p', x: 0, y: 0, w: 100, h: 20 }]), { fontStore, loadReport: loader({ big }) });
+    expect(m.warnings.join(' ')).toMatch(/more than [\d,]+ items/);
+  });
+  it('a master with too many layers keeps the first ones', async () => {
+    const layers = Array.from({ length: REUSE_LIMITS.layers + 50 }, (_, i) => ({ name: `L${i}`, visible: false }));
+    const m = await render(report([tb('A', 'on last layer', 0, 0, { layer: `L${REUSE_LIMITS.layers + 10}` })], { def: { layers } }), { fontStore });
+    expect(allTexts(m)).toContain('on last layer');
+    expect(m.warnings.join(' ')).toMatch(/layers/);
+  });
+});
+
 describe('layers (#46)', () => {
   const def = () => report([
     tb('Always', 'always'),

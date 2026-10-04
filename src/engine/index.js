@@ -57,7 +57,8 @@ export async function render(def0, opts = {}) {
   const getReport = makeLoader(opts.loadReport, opts.reportCache || (opts.reportCache = new Map()));
   let def = def0, parts = null;
   if (def0 && typeof def0 === 'object' && !Array.isArray(def0)) {
-    ({ def, parts } = await resolveReuse(def0, getReport, (m) => { if (!reuseWarnings.includes(m)) reuseWarnings.push(m); }, opts.reportId ? [opts.reportId] : []));
+    // one item budget for report parts across this render and its subreports (opts is passed on to them)
+    ({ def, parts } = await resolveReuse(def0, getReport, (m) => { if (!reuseWarnings.includes(m)) reuseWarnings.push(m); }, opts.reportId ? [opts.reportId] : [], opts.reuseBudget || (opts.reuseBudget = { items: 0 })));
   }
   const v = validate(def);
   if (v.errors.length) throw new ReportError(v.errors[0], { errors: v.errors });

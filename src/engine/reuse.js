@@ -8,7 +8,19 @@
  */
 import { evalValue } from './expr/evaluate.js';
 
-export const REUSE_LIMITS = { depth: 4, reports: 50, styleDepth: 10, repeats: 500 };
+/**
+ * depth: masters or parts inside parts; reports: distinct reports per render; items: items drawn through report parts per
+ * render, subreports included (a part of 10 parts of 10 parts… is refused, not expanded); reportItems: items in one loaded
+ * report; parts: parts one library lists; layers; styleDepth: named style parents; repeats: overflow continuation pages.
+ */
+export const REUSE_LIMITS = { depth: 4, reports: 50, items: 20000, reportItems: 20000, parts: 500, layers: 200, styleDepth: 10, repeats: 500 };
+const fmt = (n) => n.toLocaleString('en-US');
+/** Items in a definition (nested ones too), counting no further than `stop`. */
+function countItems(def, stop = Infinity) {
+  let n = 0;
+  eachItem(def, () => { n++; }, () => n > stop);
+  return n;
+}
 const ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const isId = (v) => typeof v === 'string' && ID.test(v);
 
@@ -26,6 +38,7 @@ export function makeLoader(load, cache = new Map()) {
       if (cache.size >= REUSE_LIMITS.reports) return Promise.reject(new Error(`the report uses more than ${REUSE_LIMITS.reports} reports`));
       p = Promise.resolve().then(() => load(id)).then((d) => {
         if (!d || typeof d !== 'object' || Array.isArray(d)) throw new Error('it is not a report');
+        if (countItems(d, REUSE_LIMITS.reportItems) > REUSE_LIMITS.reportItems) throw new Error(`it has more than ${fmt(REUSE_LIMITS.reportItems)} items`);
         return d;
       });
       cache.set(id, p);
@@ -44,11 +57,11 @@ export function reuseRefs(def) {
 }
 
 /** Every item of every band, nested items included (not table cells). */
-function eachItem(def, fn) {
-  const go = (list, depth) => { if (!Array.isArray(list) || depth > 64) return; for (const it of list) { if (!it || typeof it !== 'object') continue; fn(it); go(it.items, depth + 1); } };
+function eachItem(def, fn, stop = () => false) {
+  const go = (list, depth) => { if (!Array.isArray(list) || depth > 64) return; for (const it of list) { if (stop()) return; if (!it || typeof it !== 'object') continue; fn(it); go(it.items, depth + 1); } };
   for (const s of Object.values(def.sections || {})) for (const b of Array.isArray(s) ? s : [s]) go(b?.items, 0);
 }
-function findItemNamed(def, name) {
+export function findItemNamed(def, name) {
   let hit = null;
   eachItem(def, (it) => { if (!hit && it.name === name) hit = it; });
   return hit;
@@ -155,7 +168,7 @@ async function applySheet(def, get, warn) {
  * however many instances; a part that contains an instance of itself (directly or through other parts) gets
  * that inner instance marked `__cycle`, which draws a placeholder.
  */
-async function loadParts(def, get, warn) {
+async function loadParts(def, get, warn, budget) {
   /** @type {Map<string, any>} */
   const parts = new Map();
   const libs = new Map(); // library id → definition, for its data sets
@@ -166,17 +179,19 @@ async function loadParts(def, get, warn) {
     if (chain.length >= REUSE_LIMITS.depth) { parts.set(key, { error: `parts are nested more than ${REUSE_LIMITS.depth} levels` }); return; }
     let d;
     try { d = await get(lib); } catch (e) { parts.set(key, { error: `the library "${lib}" did not load: ${e.message}` }); return; }
-    const p = (Array.isArray(d.parts) ? d.parts : []).find(x => x?.name === name);
+    const p = (Array.isArray(d.parts) ? d.parts.slice(0, REUSE_LIMITS.parts) : []).find(x => x?.name === name);
     const src = p && findItemNamed(d, p.item);
     if (!p || !src) { parts.set(key, { error: `the library "${lib}" has no part "${name}"` }); return; }
     const item = structuredClone(src);
     const props = {};
     for (const q of Array.isArray(p.properties) ? p.properties : []) if (q?.name) props[q.name] = q.default ?? null;
-    parts.set(key, { item, props });
-    libs.set(lib, d);
     const inner = [];
-    const walk = (list) => { for (const x of list || []) { if (!x || typeof x !== 'object') continue; if (x.type === 'part') inner.push(x); walk(x.items); } };
+    let own = 0;
+    const walk = (list) => { for (const x of list || []) { if (!x || typeof x !== 'object') continue; own++; if (x.type === 'part') inner.push(x); walk(x.items); } };
     walk([item]);
+    // own: its items; inner: the instances inside it, each drawing its own part's items (counted once resolved)
+    parts.set(key, { item, props, own, inner: inner.filter(x => x !== item) });
+    libs.set(lib, d);
     for (const x of inner) {
       if (x === item) continue;
       const k2 = keyOf(x);
@@ -187,6 +202,26 @@ async function loadParts(def, get, warn) {
   const used = [];
   eachItem(def, (it) => { if (it.type === 'part') used.push(it); });
   for (const it of used) await resolve(String(it.library ?? ''), String(it.part ?? ''), []);
+  // What the instances would draw: each part's items plus, for each instance inside it, that part's total. Memoised per
+  // part (linear in parts), so a fan-out (a part of 10 parts of 10 parts…) is priced, not expanded, and refused here.
+  const size = new Map();
+  const sizeOf = (key) => {
+    if (size.has(key)) return size.get(key);
+    size.set(key, 1); // a cycle is marked __cycle and never drawn; this only stops the recursion
+    const e = parts.get(key);
+    let n = 1;
+    if (e && !e.error) { n = e.own; for (const x of e.inner) if (!x.__cycle) n += sizeOf(`${x.library}\u0000${x.part}`); }
+    size.set(key, n);
+    return n;
+  };
+  let total = 0;
+  for (const it of used) total += sizeOf(`${String(it.library ?? '')}\u0000${String(it.part ?? '')}`);
+  budget.items += total;
+  if (budget.items > REUSE_LIMITS.items) {
+    const msg = `the report parts would draw more than ${fmt(REUSE_LIMITS.items)} items (with subreports); they are left out`;
+    for (const k of parts.keys()) parts.set(k, { error: msg });
+    warn(`Report parts: ${msg}.`);
+  }
   return { parts, libs: [...libs.values()] };
 }
 
@@ -211,14 +246,18 @@ function mergeLibraries(def, libs) {
  * Masters, stylesheet and part libraries, before validation. Themes come later (they may depend on parameters).
  * @returns {Promise<{ def: any, parts: Map<string, any> | null }>}
  */
-export async function resolveReuse(def, get, warn, chain = []) {
+export async function resolveReuse(def, get, warn, chain = [], budget = { items: 0 }) {
   let d = await applyMaster(def, get, warn, chain);
   d = await applySheet(d, get, warn);
+  if (Array.isArray(d.layers) && d.layers.length > REUSE_LIMITS.layers) {
+    warn(`The report has more than ${REUSE_LIMITS.layers} layers; the others are ignored.`);
+    d = { ...d, layers: d.layers.slice(0, REUSE_LIMITS.layers) };
+  }
   let parts = null;
   let hasPart = false;
   eachItem(d, (it) => { if (it.type === 'part') hasPart = true; });
   if (hasPart) {
-    const r = await loadParts(d, get, warn);
+    const r = await loadParts(d, get, warn, budget);
     parts = r.parts;
     d = mergeLibraries(d, r.libs);
   }
