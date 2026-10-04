@@ -117,6 +117,7 @@ export function fileStore(root) {
     async getVersion(id, version) {
       try { return await fs.readFile(path.join(history, safe(id), `${safe(version)}.pw.json`), 'utf8'); } catch (e) { if (missing(e)) return null; throw e; }
     },
+    async removeVersions(id) { await fs.rm(path.join(history, safe(id)), { recursive: true, force: true }); },
     async addVersion(id, version, text, keep) {
       const dir = path.join(history, safe(id));
       await fs.mkdir(dir, { recursive: true });

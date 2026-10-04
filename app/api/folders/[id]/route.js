@@ -2,6 +2,7 @@
 // PATCH { name?, parent?, inherit?, grants? } — change it (manage). DELETE — an empty folder (manage).
 import { principalOf, updateFolder, deleteFolder, folderParam, snapshot, folderLevel, atLeast } from '@/server/perms.js';
 import { audit } from '@/server/audit.js';
+import { withLock } from '@/server/storage/index.js';
 
 export const runtime = 'nodejs';
 const fail = (e) => Response.json({ error: e.message }, { status: e.status || 500 });
@@ -33,7 +34,7 @@ export async function PATCH(req, { params }) {
     for (const k of ['name', 'inherit', 'grants']) if (k in body) patch[k] = body[k];
     if ('parent' in body) patch.parent = folderParam(body.parent);
     const p = await principalOf(req);
-    const { before, after } = await updateFolder(p, id, patch);
+    const { before, after } = await withLock('acl', () => updateFolder(p, id, patch));
     const pick = (f) => ({ name: f.name, parent: f.parent, inherit: f.inherit !== false, grants: f.grants });
     await audit(id === 'root' ? 'access.root' : 'access.folder', { req, principal: p, detail: { folder: id, before: pick(before), after: pick(after) } });
     return Response.json(after);
@@ -43,7 +44,8 @@ export async function PATCH(req, { params }) {
 export async function DELETE(req, { params }) {
   try {
     const p = await principalOf(req);
-    const f = await deleteFolder(p, await idOf(params));
+    const fid = await idOf(params);
+    const f = await withLock('acl', () => deleteFolder(p, fid));
     await audit('folder.delete', { req, principal: p, detail: { folder: f.id, name: f.name } });
     return Response.json({ ok: true });
   } catch (e) { return fail(e); }

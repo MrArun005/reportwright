@@ -3,6 +3,7 @@
 import { listReports } from '@/server/reports.js';
 import { principalOf, visibleReports, visibleFolders, createFolder, folderParam, snapshot, folderLevel } from '@/server/perms.js';
 import { audit } from '@/server/audit.js';
+import { withLock } from '@/server/storage/index.js';
 
 export const runtime = 'nodejs';
 const fail = (e) => Response.json({ error: e.message }, { status: e.status || 500 });
@@ -19,7 +20,7 @@ export async function POST(req) {
   try {
     const body = await req.json().catch(() => ({}));
     const p = await principalOf(req);
-    const f = await createFolder(p, { name: body.name, parent: folderParam(body.parent) });
+    const f = await withLock('acl', () => createFolder(p, { name: body.name, parent: folderParam(body.parent) }));
     await audit('folder.create', { req, principal: p, detail: { folder: f.id, name: f.name, parent: f.parent } });
     return Response.json(f, { status: 201 });
   } catch (e) { return fail(e); }

@@ -8,6 +8,7 @@
 // Values are text (JSON); the callers own the format. Batch output files always stay in data/.
 import { fileStore } from './file.js';
 import { sqlStore } from './sql.js';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 /** @typedef {'reports'|'schedules'|'jobs'|'users'|'fonts'|'folders'|'reportacl'|'tokens'} Kind */
 /**
@@ -20,6 +21,7 @@ import { sqlStore } from './sql.js';
  * @property {(id: string) => Promise<{ version: string, bytes: number }[]>} versions a report's saved versions, newest first
  * @property {(id: string, version: string) => Promise<string|null>} getVersion
  * @property {(id: string, version: string, text: string, keep: number) => Promise<void>} addVersion then drop all but the newest `keep`
+ * @property {(id: string) => Promise<void>} removeVersions a deleted report's history goes with it
  * @property {(name: string, owner: string, ttlMs: number) => Promise<boolean>} lease take or renew a named lease; false when
  *   another owner holds it and it has not expired (one job runner per batch, one scheduler for all servers)
  * @property {(name: string, owner: string) => Promise<void>} release
@@ -27,6 +29,26 @@ import { sqlStore } from './sql.js';
  * @property {(q: { from?: string, to?: string, type?: string, actor?: string, report?: string, before?: string, limit: number }) => Promise<any[]>} queryAudit newest first
  * @property {(before: string) => Promise<number>} pruneAudit remove events older than this ISO time (whole days on files)
  */
+
+/**
+ * Run fn holding the named lock, on every server (a storage lease): permission checks and the writes they allow,
+ * and permission changes, take the "acl" lock, so a revoke cannot land between a check and its write.
+ * Re-entrant: code already inside the lock (in the same async flow) runs at once.
+ * ponytail: one lock for all permissions; per-report locks if saves ever queue behind each other
+ * @template T @param {string} name @param {() => Promise<T>} fn @returns {Promise<T>}
+ */
+export async function withLock(name, fn, waitMs = 15000) {
+  const held = locks.getStore();
+  if (held?.has(name)) return fn();
+  const owner = `${process.pid}:${Math.random().toString(36).slice(2)}`;
+  const t0 = Date.now();
+  while (!(await store().lease(`lock:${name}`, owner, 30000))) {
+    if (Date.now() - t0 > waitMs) throw Object.assign(new Error('The server is busy with a permission change. Try again.'), { status: 503 });
+    await new Promise(r => setTimeout(r, 10 + Math.random() * 20));
+  }
+  try { return await locks.run(new Set([...(held || []), name]), fn); } finally { await store().release(`lock:${name}`, owner).catch(() => {}); }
+}
+const locks = new AsyncLocalStorage();
 
 /** @type {{ key: string, store: Store } | null} */
 let current = null;

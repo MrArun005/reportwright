@@ -4,6 +4,7 @@ import { readDefinition, writeReport, newId } from '@/server/reports.js';
 import { importRdlx } from '@/importers/rdlx.js';
 import { principalOf, canCreateIn, recordNewReport, folderParam } from '@/server/perms.js';
 import { audit } from '@/server/audit.js';
+import { withLock } from '@/server/storage/index.js';
 
 export const runtime = 'nodejs';
 
@@ -20,11 +21,14 @@ export async function POST(req) {
   try {
     const p = await principalOf(req);
     const folder = folderParam(sp.get('folder'));
-    await canCreateIn(p, folder);
     const { definition, warnings, stats } = importRdlx(body, { name });
-    const id = await newId(definition.name);
-    await recordNewReport(p, id, folder);
-    await writeReport(id, definition);
+    const id = await withLock('acl', async () => {
+      await canCreateIn(p, folder);
+      const nid = await newId(definition.name);
+      await recordNewReport(p, nid, folder);
+      await writeReport(nid, definition);
+      return nid;
+    });
     await audit('report.import', { req, principal: p, report: id, detail: { folder, warnings: warnings.length } });
     return Response.json({ id, warnings, stats }, { status: 201 });
   } catch (e) { return Response.json({ error: e.message }, { status: e.status || 500 }); }

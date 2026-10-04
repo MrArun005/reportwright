@@ -17,7 +17,9 @@ export async function GET(req, { params }) {
     const def = await readReportFor(principal, id, 'view');
     const key = `${id}|${principalId(principal)}`;
     const hash = crypto.createHash('sha256').update(JSON.stringify(def)).digest('hex');
-    let hit = cache.get(key);
+    // a subreport can show content whose access may change at any time: never cached (the check above runs every time)
+    const cacheable = !JSON.stringify(def).includes('"subreport"');
+    let hit = cacheable ? cache.get(key) : null;
     if (!hit || hit.hash !== hash) {
       const r = await renderTo(def, { format: 'json', baseUrl: baseUrl(req), principal });
       const pg = r.model.pages[0];
@@ -26,7 +28,7 @@ export async function GET(req, { params }) {
       const svg = pg ? pageToSvg(pg, r.model.width, r.model.height) : '';
       hit = { hash, svg: extra.length ? svg.replace(/^(<svg[^>]*>)/, `$1<style>${fontFaceCss(extra)}</style>`) : svg, pages: r.model.pages.length };
       if (cache.size > 2000) cache.clear();
-      cache.set(key, hit);
+      if (cacheable) cache.set(key, hit);
     }
     return new Response(hit.svg, { headers: { 'content-type': 'image/svg+xml', 'cache-control': 'private, no-cache', 'x-pagewright-pages': String(hit.pages) } });
   } catch (e) {

@@ -65,7 +65,7 @@ describe.each(backends)('storage on %s', (kind, setup) => {
     expect(await listReports()).toEqual([]);
   });
 
-  it('keeps a version when the content changes, and only then; history outlives a delete', async () => {
+  it('keeps a version when the content changes, and only then; a delete takes the history', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     try {
       vi.setSystemTime(new Date('2026-10-04T10:00:00.000Z'));
@@ -83,7 +83,7 @@ describe.each(backends)('storage on %s', (kind, setup) => {
       expect(await readReport('hist@20261004T100002500')).toEqual(def('Two'));
       expect(await readReport('hist@20261004T100009999')).toBe(null);
       await deleteReport('hist');
-      expect((await listVersions('hist')).length).toBe(2);
+      expect(await listVersions('hist')).toEqual([]); // the history goes with the report: a new one with this id starts clean
       // keeps the newest 50
       for (let i = 0; i < 52; i++) { vi.setSystemTime(new Date(Date.UTC(2026, 9, 5, 0, 0, i))); await writeReport('many', def(`v${i}`)); }
       const many = await listVersions('many');
@@ -104,6 +104,7 @@ describe.each(backends)('storage on %s', (kind, setup) => {
 
   it('stores schedules', async () => {
     expect(await listSchedules()).toEqual([]);
+    await writeReport('loan-statement', def('Loan')); // a schedule names a report that exists
     const a = await createSchedule({ ...schedule, name: 'A' });
     await new Promise(r => setTimeout(r, 5)); // listed oldest first (by createdAt)
     const b = await createSchedule({ ...schedule, name: 'B' });
@@ -179,6 +180,7 @@ describe('file storage keeps today\'s files', () => {
       expect(JSON.parse(fs.readFileSync('reports/r1.pw.json', 'utf8'))).toEqual(def('R2'));
       expect(fs.readFileSync('reports/r1.pw.json', 'utf8')).toBe(JSON.stringify(def('R2'), null, 2));
       expect(fs.readdirSync('reports/.history/r1').length).toBe(1);
+      await writeReport('loan-statement', def('Loan'));
       const s = await createSchedule(schedule);
       expect(JSON.parse(fs.readFileSync('data/schedules.json', 'utf8'))).toMatchObject([{ id: s.id }]);
       await store().put('jobs', 'b_x1', JSON.stringify({ id: 'b_x1' }));

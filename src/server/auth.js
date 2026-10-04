@@ -28,7 +28,8 @@ const denied = (error) => Response.json({ error }, { status: 401 });
 export async function apiPrincipal(req) {
   const list = keys();
   if (!list.length) {
-    if (process.env.NODE_ENV !== 'production' || process.env.PW_ALLOW_KEYLESS === '1') return { principal: accountsOn() ? { kind: 'service' } : OPEN };
+    // with accounts on there is no keyless API: it would let anyone render every report
+    if (!accountsOn() && (process.env.NODE_ENV !== 'production' || process.env.PW_ALLOW_KEYLESS === '1')) return { principal: OPEN };
     return { res: Response.json({ error: 'The API is off: set PW_API_KEYS on the server' }, { status: 401 }) };
   }
   const h = req.headers.get('authorization') || '';

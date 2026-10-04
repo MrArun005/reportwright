@@ -3,6 +3,7 @@
 import { safeId } from '@/server/reports.js';
 import { principalOf, reportAccessInfo, setReportAccess, folderParam } from '@/server/perms.js';
 import { audit } from '@/server/audit.js';
+import { withLock } from '@/server/storage/index.js';
 
 export const runtime = 'nodejs';
 const fail = (e) => Response.json({ error: e.message }, { status: e.status || 500 });
@@ -22,7 +23,7 @@ export async function PUT(req, { params }) {
     if ('folder' in body) patch.folder = folderParam(body.folder);
     if ('inherit' in body) patch.inherit = body.inherit;
     if ('grants' in body) patch.grants = body.grants;
-    const { before, after } = await setReportAccess(p, id, patch);
+    const { before, after } = await withLock('acl', () => setReportAccess(p, id, patch));
     await audit('access.report', { req, principal: p, report: id, detail: { before: { folder: before.folder, inherit: before.inherit !== false, grants: before.grants }, after: { folder: after.folder, inherit: after.inherit !== false, grants: after.grants } } });
     return Response.json(await reportAccessInfo(p, id));
   } catch (e) { return fail(e); }

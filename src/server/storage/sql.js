@@ -97,6 +97,7 @@ export function sqlStore(url) {
       return (await q(`SELECT stamp, ${bytes} AS bytes FROM pw_report_versions WHERE id = ? ORDER BY stamp DESC`, [id])).map(r => ({ version: String(r.stamp), bytes: Number(r.bytes) }));
     },
     async getVersion(id, version) { const [r] = await q('SELECT data FROM pw_report_versions WHERE id = ? AND stamp = ?', [id, version]); return r ? String(r.data) : null; },
+    async removeVersions(id) { await q('DELETE FROM pw_report_versions WHERE id = ?', [id]); },
     async addVersion(id, version, data, keep) {
       await q(upsert('pw_report_versions', ['id', 'stamp'], ['data']), [id, version, data]);
       const old = (await q('SELECT stamp FROM pw_report_versions WHERE id = ? ORDER BY stamp DESC', [id])).slice(keep);

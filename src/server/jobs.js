@@ -171,7 +171,8 @@ async function run(job, owner, stopAfter) {
   const { items, def } = job._work;
   // the owner as they are now: a user who lost access, or was disabled, gets no further items
   const principal = await principalFromId(job.owner || 'service');
-  if (job.templateRef) await loadTemplate(job.templateRef, principal); // throws: the job fails (workOnce)
+  // as the owner is now: the template must still be theirs to view; an inline definition needs a designer or a service
+  await loadTemplate(job.templateRef || def, principal); // throws: the job fails (workOnce)
   job.status = 'running';
   job.startedAt ||= new Date().toISOString();
   job.failedItems ||= [];

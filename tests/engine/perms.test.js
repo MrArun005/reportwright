@@ -214,7 +214,7 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     expect((await folderOne.PATCH(req(`/api/folders/${R.fin}`, { who: 'alice', method: 'PATCH', body: { name: 'Mine' } }), P(R.fin))).status).toBe(403);
     // alice may not create reports at the top (root is view for everyone) but may in Finance
     expect((await R.list.POST(req('/api/reports', { who: 'alice', method: 'POST', body: { name: 'Top' } }))).status).toBe(403);
-    expect((await R.one.PUT(req('/api/reports/brand-new', { who: 'alice', method: 'PUT', body: def('New') }), P('brand-new'))).status).toBe(403);
+    expect((await R.one.PUT(req('/api/reports/brand-new', { who: 'alice', method: 'PUT', body: def('New') }), P('brand-new'))).status).toBe(404); // like a hidden report: a new id does not leak
     const made = await json(await R.list.POST(req('/api/reports', { who: 'alice', method: 'POST', body: { name: 'Budget', folder: R.fin } })));
     expect(made.status).toBe(201);
     // the creator manages what they made
@@ -320,6 +320,128 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     expect((await folders.POST(req('/api/folders', { who: 'alice', method: 'POST', body: { name: 'Mine' } }))).status).toBe(403); // root is view for her
     expect((await folderOne.PATCH(req('/api/folders/../x', { who: 'admin', method: 'PATCH', body: {} }), P('../x'))).status).toBe(400);
     expect((await folderOne.PATCH(req(`/api/folders/${R.fin}`, { who: 'admin', method: 'PATCH', body: { grants: [{ to: 'user:nobody', level: 'view' }] } }), P(R.fin))).status).toBe(400);
+  });
+
+  it('review: a deleted report takes its history with it; absent ids are not found everywhere', async () => {
+    const { writeReport, listVersions } = await import('../../src/server/reports.js');
+    await writeReport('payroll', def('CEO salary 9,999,999'));
+    await writeReport('payroll', def('Payroll v2'));
+    await perms.setReportAccess({ kind: 'service' }, 'payroll', { folder: R.fin });
+    expect((await listVersions('payroll')).length).toBe(1);
+    expect((await R.one.DELETE(req('/api/reports/payroll', { who: 'admin', method: 'DELETE' }), P('payroll'))).status).toBe(200);
+    expect(await listVersions('payroll')).toEqual([]);
+    for (const [route, init] of [[versions.GET, {}], [versions.POST, { method: 'POST', body: { version: 'x' } }], [access.GET, {}], [access.PUT, { method: 'PUT', body: { grants: [] } }], [R.one.DELETE, { method: 'DELETE' }]]) {
+      expect((await route(req('/api/reports/payroll/x', { who: 'admin', ...init }), P('payroll'))).status).toBe(404);
+    }
+    // the same name again: a new report with no old versions
+    await writeReport('payroll', def('New payroll'));
+    expect(await listVersions('payroll')).toEqual([]);
+    await R.one.DELETE(req('/api/reports/payroll', { who: 'admin', method: 'DELETE' }), P('payroll'));
+  });
+
+  it('review: PUT to a new id answers like a hidden report when the user may not create there', async () => {
+    // the top is view-only for alice: a new id and bob's hidden report get the same answer
+    expect((await R.one.PUT(req('/api/reports/no-such-report', { who: 'alice', method: 'PUT', body: def('x') }), P('no-such-report'))).status).toBe(404);
+  });
+
+  it('review: moving needs manage on the folder it leaves and the folder it goes to', async () => {
+    const admin = { kind: 'user', email: 'admin@x.io', role: 'admin', groups: [] };
+    const a = await perms.createFolder(admin, { name: 'From' });
+    const b = await perms.createFolder(admin, { name: 'To' });
+    await perms.updateFolder(admin, a.id, { grants: [{ to: 'user:alice@x.io', level: 'edit' }] });
+    await perms.updateFolder(admin, b.id, { grants: [{ to: 'user:alice@x.io', level: 'manage' }] });
+    const { id } = await (await R.list.POST(req('/api/reports', { who: 'alice', method: 'POST', body: { name: 'Mover', folder: a.id } }))).json();
+    // alice manages her report but only edits the folder it is in: it stays
+    expect((await access.PUT(req(`/api/reports/${id}/access`, { who: 'alice', method: 'PUT', body: { folder: b.id } }), P(id))).status).toBe(403);
+    await perms.updateFolder(admin, a.id, { grants: [{ to: 'user:alice@x.io', level: 'manage' }] });
+    expect((await access.PUT(req(`/api/reports/${id}/access`, { who: 'alice', method: 'PUT', body: { folder: b.id } }), P(id))).status).toBe(200);
+    await R.one.DELETE(req(`/api/reports/${id}`, { who: 'admin', method: 'DELETE' }), P(id));
+  });
+
+  it('review: the check and the write are one step (a revoke in between wins)', async () => {
+    const { store } = await import('../../src/server/storage/index.js');
+    const { writeReport } = await import('../../src/server/reports.js');
+    await writeReport('race', def('Race'));
+    await perms.setReportAccess({ kind: 'service' }, 'race', { grants: [{ to: 'user:bob@x.io', level: 'edit' }] });
+    // someone holds the permissions lock (a revoke in progress) while bob saves
+    expect(await store().lease('lock:acl', 'revoker', 30000)).toBe(true);
+    let done = false;
+    const put = R.one.PUT(req('/api/reports/race', { who: 'bob', method: 'PUT', body: def('Bob was here') }), P('race')).then(r => { done = true; return r; });
+    await new Promise(r => setTimeout(r, 150));
+    expect(done).toBe(false); // waiting for the lock
+    await store().put('reportacl', 'race', JSON.stringify({ id: 'race', folder: null, inherit: false, grants: [] })); // the revoke
+    await store().release('lock:acl', 'revoker');
+    expect((await put).status).toBe(404);
+    expect((await json(await R.one.GET(req('/api/reports/race', { who: 'admin' }), P('race')))).body.sections.body.items[0].value).toBe('Race');
+    await R.one.DELETE(req('/api/reports/race', { who: 'admin', method: 'DELETE' }), P('race'));
+  });
+
+  it('review: the check inside the lock uses the user as they are now, not as the request began', async () => {
+    const { store } = await import('../../src/server/storage/index.js');
+    const { writeReport } = await import('../../src/server/reports.js');
+    await writeReport('race2', def('Race 2'));
+    await perms.setReportAccess({ kind: 'service' }, 'race2', { inherit: false, grants: [{ to: 'group:editors', level: 'edit' }] });
+    await users.updateUser('bob@x.io', { groups: ['Editors'] });
+    try {
+      expect(await store().lease('lock:acl', 'revoker', 30000)).toBe(true);
+      const put = R.one.PUT(req('/api/reports/race2', { who: 'bob', method: 'PUT', body: def('Bob was here') }), P('race2'));
+      await new Promise(r => setTimeout(r, 150));
+      // another server takes bob out of Editors while his save waits (straight to storage: this server's cache is stale)
+      const u = JSON.parse(await store().get('users', 'bob@x.io'));
+      await store().put('users', 'bob@x.io', JSON.stringify({ ...u, groups: [] }));
+      await store().release('lock:acl', 'revoker');
+      expect((await put).status).toBe(404);
+      expect((await json(await R.one.GET(req('/api/reports/race2', { who: 'admin' }), P('race2')))).body.sections.body.items[0].value).toBe('Race 2');
+    } finally {
+      await users.updateUser('bob@x.io', { groups: [] });
+      await R.one.DELETE(req('/api/reports/race2', { who: 'admin', method: 'DELETE' }), P('race2'));
+    }
+  });
+
+  it('review: a thumbnail never shows a subreport after access to it is gone', async () => {
+    await perms.setReportAccess({ kind: 'service' }, 'overview', { grants: [] });
+    const first = await (await thumb.GET(req('/api/reports/overview/thumb', { who: 'carol' }), P('overview'))).text();
+    expect(first).toContain('Salary');
+    await users.updateUser('carol@x.io', { groups: [] });
+    try {
+      const after = await (await thumb.GET(req('/api/reports/overview/thumb', { who: 'carol' }), P('overview'))).text();
+      expect(after).not.toContain('Salary');
+    } finally { await users.updateUser('carol@x.io', { groups: ['Finance'] }); }
+  });
+
+  it('review: a lost folder or a folder loop gives nothing, not the top-level grants', async () => {
+    const { store } = await import('../../src/server/storage/index.js');
+    const { writeReport } = await import('../../src/server/reports.js');
+    await writeReport('lost', def('Lost'));
+    await store().put('reportacl', 'lost', JSON.stringify({ id: 'lost', folder: 'f_gone000000', inherit: true, grants: [] }));
+    expect((await R.one.GET(req('/api/reports/lost', { who: 'bob' }), P('lost'))).status).toBe(404);
+    await store().put('folders', 'f_loopa00000', JSON.stringify({ id: 'f_loopa00000', name: 'A', parent: 'f_loopb00000', grants: [] }));
+    await store().put('folders', 'f_loopb00000', JSON.stringify({ id: 'f_loopb00000', name: 'B', parent: 'f_loopa00000', grants: [] }));
+    await store().put('reportacl', 'lost', JSON.stringify({ id: 'lost', folder: 'f_loopa00000', inherit: true, grants: [] }));
+    expect((await R.one.GET(req('/api/reports/lost', { who: 'bob' }), P('lost'))).status).toBe(404);
+    for (const id of ['f_loopa00000', 'f_loopb00000']) await store().remove('folders', id);
+    await R.one.DELETE(req('/api/reports/lost', { who: 'admin', method: 'DELETE' }), P('lost'));
+  });
+
+  it('review: /api/v1 without keys is closed when accounts are on; a removed service key\'s schedules stop', async () => {
+    const keep = process.env.PW_API_KEYS;
+    try {
+      delete process.env.PW_API_KEYS;
+      expect((await v1.render.POST(req('/api/v1/render', { method: 'POST', body: { template: 'salary', format: 'csv' } }))).status).toBe(401);
+    } finally { process.env.PW_API_KEYS = keep; }
+    const { createSchedule, runSchedule } = await import('../../src/server/schedules.js');
+    const s = await createSchedule({ template: 'salary', cron: '0 7 * * *', items: [{ parameters: {} }], output: { type: 'none' } }, { kind: 'service', key: 'deadbeef' });
+    await expect(runSchedule(s)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('review: a queued inline batch fails when its owner is now a viewer', async () => {
+    const { createBatch, workOnce, getJob } = await import('../../src/server/jobs.js');
+    const job = await createBatch({ template: def('Inline'), items: [{ parameters: {} }], output: { type: 'none' }, format: 'csv' }, undefined, await perms.userPrincipal('bob@x.io'));
+    await users.updateUser('bob@x.io', { role: 'viewer' });
+    try {
+      await workOnce('test-runner');
+      expect(await getJob(job.id)).toMatchObject({ status: 'failed' });
+    } finally { await users.updateUser('bob@x.io', { role: 'designer' }); }
   });
 
   it('a deleted report takes its permissions with it: a new report with the same id starts fresh', async () => {

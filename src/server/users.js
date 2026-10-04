@@ -6,7 +6,7 @@
 // Passwords: scrypt with a random 16-byte salt; the parameters are stored with the hash, so they can change later.
 // sessionVersion goes up on sign-out, a password change and disabling: every older session cookie stops working.
 import crypto from 'node:crypto';
-import { store } from './storage/index.js';
+import { store, withLock } from './storage/index.js';
 
 export const ROLES = /** @type {const} */ (['viewer', 'designer', 'admin']);
 const SCRYPT = { N: 32768, r: 8, p: 1 }; // ~50 ms, 32 MB
@@ -135,7 +135,8 @@ async function keepAnAdmin(before, after) {
  * sso (server code only, never from a request): the IdP identity this account is bound to.
  * @param {string} email @param {{ role?: string, password?: string, disabled?: boolean, groups?: string[], allowSso?: boolean, sso?: any }} patch
  */
-export async function updateUser(email, patch) {
+export function updateUser(email, patch) { return withLock('acl', () => updateUserNow(email, patch)); }
+async function updateUserNow(email, patch) {
   const u = await getUser(email);
   if (!u) throw fail('No such user.', 404);
   const next = { ...u, updatedAt: new Date().toISOString() };
@@ -152,7 +153,8 @@ export async function updateUser(email, patch) {
 }
 
 /** @returns {Promise<boolean>} false when there was no such user */
-export async function deleteUser(email) {
+export function deleteUser(email) { return withLock('acl', () => deleteUserNow(email)); }
+async function deleteUserNow(email) {
   const u = await getUser(email);
   if (!u) return false;
   await keepAnAdmin(u, null);

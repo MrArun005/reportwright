@@ -47,6 +47,12 @@ export async function principalOf(req) {
 /** For server pages: the principal of the request whose Cookie header this is. @param {string} cookie */
 export const principalFromCookie = (cookie) => principalOf(new Request('http://pagewright.local/', { headers: { cookie: cookie || '' } }));
 
+/** The ids (first 8 hex of the SHA-256) of the service keys in PW_API_KEYS now. */
+function serviceKeyIds() {
+  return new Set((process.env.PW_API_KEYS || '').split(',').map(x => x.trim()).filter(x => x && !(x.indexOf('|') > 0 && x.slice(0, x.indexOf('|')).includes('@')))
+    .map(k => crypto.createHash('sha256').update(k).digest('hex').slice(0, 8)));
+}
+
 /** A user principal by email, read from storage now (schedules and jobs run later as their owner). */
 export async function userPrincipal(email) {
   const u = await getUser(email);
@@ -54,10 +60,22 @@ export async function userPrincipal(email) {
   return /** @type {Principal} */ ({ kind: 'user', email: u.email, role: u.role, groups: u.groups || [] });
 }
 
+/**
+ * A user principal as the user is now in storage (role, groups, disabled), not as a cached session saw it: checks that
+ * guard a write run inside the "acl" lock, and a change made on another server while the request waited must count.
+ * @param {Principal} p @returns {Promise<Principal>}
+ */
+async function asNow(p) {
+  if (p.kind !== 'user') return p;
+  const q = await userPrincipal(p.email);
+  return q.kind === 'user' && p.viaKey ? { ...q, viaKey: p.viaKey } : q;
+}
+
 /** The principal named by principalId, as it is now. @param {string} id @returns {Promise<Principal>} */
 export async function principalFromId(id) {
   if (!accountsOn() && !String(id).startsWith('user:')) return OPEN;
-  if (String(id).startsWith('service')) return { kind: 'service' };
+  if (String(id).startsWith('service:')) return serviceKeyIds().has(String(id).slice(8)) ? { kind: 'service', key: String(id).slice(8) } : NOBODY; // a removed key's schedules stop
+  if (id === 'service') return { kind: 'service' };
   if (String(id).startsWith('user:')) return accountsOn() ? userPrincipal(String(id).slice(5)) : OPEN;
   return id === 'open' ? (accountsOn() ? NOBODY : OPEN) : NOBODY;
 }
@@ -105,7 +123,7 @@ function chain(s, folderId, names) {
   for (let f = folderId; ; ) {
     if (!f) return Math.max(n, best(s.root, names));
     const rec = s.folders.get(f);
-    if (!rec || seen.has(f) || seen.size > 64) return Math.max(n, best(s.root, names)); // a lost folder: as the top
+    if (!rec || seen.has(f) || seen.size > 64) return n; // a lost folder or a loop: nothing more (fail closed)
     seen.add(f);
     n = Math.max(n, best(rec.grants, names));
     if (rec.inherit === false) return n;
@@ -144,7 +162,9 @@ export const atLeast = (have, need) => RANK[have] >= RANK[need];
 export async function checkReport(p, ref, need = 'view') {
   const [id, version] = String(ref).split('@');
   if (version && need === 'view') need = 'edit';
+  if (!(await store().get('reports', id))) throw fail('Report not found', 404); // an absent report is not "at the top"
   if (p.kind === 'open') return 'manage';
+  p = await asNow(p);
   const lvl = reportLevel(await snapshot(), p, id);
   if (!atLeast(lvl, 'view')) throw fail('Report not found', 404);
   if (!atLeast(lvl, need)) throw fail(`You cannot ${need === 'edit' ? 'change' : 'manage'} this report.`, 403);
@@ -219,6 +239,7 @@ const cleanName = (n) => {
 
 /** @param {Principal} p @param {{ name: string, parent?: string|null }} body */
 export async function createFolder(p, { name, parent = null }) {
+  p = await asNow(p);
   const s = await snapshot();
   if (parent && !s.folders.has(parent)) throw fail('No such parent folder.', 404);
   if (s.folders.size >= 5000) throw fail('There are 5,000 folders already.', 400);
@@ -234,6 +255,7 @@ export async function createFolder(p, { name, parent = null }) {
  * @param {Principal} p @param {string} id @param {{ name?: string, parent?: string|null, inherit?: boolean, grants?: any[] }} patch
  */
 export async function updateFolder(p, id, patch) {
+  p = await asNow(p);
   const s = await snapshot();
   if (id === 'root') {
     if (!isAll(p) || p.kind === 'service') throw fail('Only an admin can change the top-level permissions.', 403);
@@ -252,7 +274,7 @@ export async function updateFolder(p, id, patch) {
     const to = patch.parent || null;
     if (to && !s.folders.has(to)) throw fail('No such parent folder.', 404);
     for (let x = to, i = 0; x && i < 64; i++, x = s.folders.get(x)?.parent || null) if (x === id) throw fail('A folder cannot go inside itself.', 400);
-    if (!atLeast(folderLevel(s, p, to), 'manage')) throw fail('You cannot move a folder there.', 403);
+    if (!atLeast(folderLevel(s, p, to), 'manage') || !atLeast(folderLevel(s, p, f.parent || null), 'manage')) throw fail('Moving a folder needs manage on the folder it is in and on the folder it goes to.', 403);
     next.parent = to;
   }
   await store().put('folders', id, JSON.stringify(next));
@@ -261,6 +283,7 @@ export async function updateFolder(p, id, patch) {
 
 /** Only an empty folder goes. @param {Principal} p @param {string} id */
 export async function deleteFolder(p, id) {
+  p = await asNow(p);
   const s = await snapshot();
   const f = s.folders.get(id);
   if (!f || !atLeast(folderLevel(s, p, id), 'view')) throw fail('No such folder.', 404);
@@ -280,10 +303,11 @@ export async function reportAccessInfo(p, id) {
 }
 
 /**
- * Move a report, change its inheritance or its grants. Moving needs manage on the report and edit in the folder it goes to.
+ * Move a report, change its inheritance or its grants: manage on the report; a move also manage on both folders.
  * @param {Principal} p @param {string} id @param {{ folder?: string|null, inherit?: boolean, grants?: any[] }} patch
  */
 export async function setReportAccess(p, id, patch) {
+  p = await asNow(p);
   await checkReport(p, id, 'manage');
   const s = await snapshot();
   const before = s.reports.get(id) || { id, folder: null, inherit: true, grants: [] };
@@ -291,7 +315,8 @@ export async function setReportAccess(p, id, patch) {
   if (patch.folder !== undefined && (patch.folder || null) !== (before.folder || null)) {
     const to = patch.folder || null;
     if (to && !s.folders.has(to)) throw fail('No such folder.', 404);
-    if (p.kind !== 'open' && !atLeast(folderLevel(s, p, to), 'edit')) throw fail('You cannot put reports in that folder.', 403);
+    // a move changes who inherits access on both sides: manage on the folder it leaves and the one it goes to
+    if (p.kind !== 'open' && (!atLeast(folderLevel(s, p, before.folder || null), 'manage') || !atLeast(folderLevel(s, p, to), 'manage'))) throw fail('Moving a report needs manage on the folder it is in and on the folder it goes to.', 403);
     next.folder = to;
   }
   if (patch.inherit !== undefined) next.inherit = !!patch.inherit;
@@ -306,6 +331,7 @@ export async function setReportAccess(p, id, patch) {
  */
 export async function canCreateIn(p, folder) {
   if (p.kind === 'open') return;
+  p = await asNow(p);
   const s = await snapshot();
   if (folder && !s.folders.has(folder)) throw fail('No such folder.', 404);
   if (!atLeast(folderLevel(s, p, folder || null), 'edit')) throw fail('You cannot add reports here.', 403);

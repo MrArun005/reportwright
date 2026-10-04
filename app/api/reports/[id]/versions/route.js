@@ -2,6 +2,7 @@
 import { listVersions, readReport, writeReport, safeId } from '@/server/reports.js';
 import { principalOf, checkReport } from '@/server/perms.js';
 import { audit } from '@/server/audit.js';
+import { withLock } from '@/server/storage/index.js';
 
 export const runtime = 'nodejs';
 
@@ -17,11 +18,14 @@ export async function POST(req, { params }) {
   try {
     const id = safeId((await params).id);
     const p = await principalOf(req);
-    await checkReport(p, id, 'edit');
     const { version } = await req.json();
-    const def = await readReport(`${id}@${version}`);
+    const def = await withLock('acl', async () => {
+      await checkReport(p, id, 'edit');
+      const d = await readReport(`${id}@${version}`);
+      if (d) await writeReport(id, d);
+      return d;
+    });
     if (!def) return Response.json({ error: 'Version not found' }, { status: 404 });
-    await writeReport(id, def);
     await audit('report.restore', { req, principal: p, report: id, detail: { version: String(version) } });
     return Response.json(def);
   } catch (e) { return Response.json({ error: e.message }, { status: e.status || 500 }); }
