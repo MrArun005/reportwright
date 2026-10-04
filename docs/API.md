@@ -173,7 +173,7 @@ With accounts on, each report has a level for each user: `view` (open, run, expo
 
 | Setting | |
 |---|---|
-| `PW_OIDC_ISSUER`, `PW_OIDC_CLIENT_ID`, `PW_OIDC_CLIENT_SECRET` | OpenID Connect (authorization code + PKCE). Register `https://<PW_BASE_URL>/api/auth/oidc/callback` as the redirect URI. `PW_OIDC_SCOPES` (default `openid email profile`), `PW_OIDC_GROUPS_CLAIM` (default `groups`), `PW_OIDC_NAME` (button label), `PW_OIDC_TRUST_EMAIL=1` to accept an email without `email_verified` |
+| `PW_OIDC_ISSUER`, `PW_OIDC_CLIENT_ID`, `PW_OIDC_CLIENT_SECRET` | OpenID Connect (authorization code + PKCE). Register `https://<PW_BASE_URL>/api/auth/oidc/callback` as the redirect URI. `PW_OIDC_SCOPES` (default `openid email profile`), `PW_OIDC_GROUPS_CLAIM` (default `groups`), `PW_OIDC_NAME` (button label). The ID token must carry `email_verified: true` |
 | `PW_SAML_ENTRY_POINT`, `PW_SAML_IDP_CERT` (PEM or base64, or `PW_SAML_IDP_CERT_FILE`), `PW_SAML_IDP_ISSUER` (all three required) | SAML 2.0 (HTTP-Redirect request, HTTP-POST response, signed assertions required). SP metadata: `/api/auth/saml/metadata`; ACS: `/api/auth/saml/acs`. `PW_SAML_ISSUER` (SP entity id), `PW_SAML_EMAIL_ATTR`, `PW_SAML_GROUPS_ATTR` (default `groups`), `PW_SAML_NAME` |
 | `PW_SSO_ROLE_MAP` | `idp-admins=admin,idp-designers=designer`: an IdP group or role value → Pagewright role (the highest wins) |
 | `PW_SSO_DEFAULT_ROLE` | Role without a mapped value: `viewer` (default), `designer`, `admin`, or `none` to refuse the sign-in |

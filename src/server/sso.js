@@ -16,8 +16,9 @@
 // cookie set when this browser began the sign-in. The request ids must match: a response captured or made for one
 // browser cannot sign in another (no login CSRF).
 //
-// Both: the account is the email (OIDC: email with email_verified, unless PW_OIDC_TRUST_EMAIL=1; SAML: the email
-// attribute or an email NameID). Role and groups come from a claim or attribute (PW_OIDC_GROUPS_CLAIM, default
+// Both: an account is bound to one IdP identity (OIDC iss + sub, SAML pinned issuer + NameID), never linked to another
+// account by email (upsertSsoUser). Its email: OIDC's email, which must have email_verified; SAML's email attribute or
+// an emailAddress-format NameID. Role and groups come from a claim or attribute (PW_OIDC_GROUPS_CLAIM, default
 // "groups"; PW_SAML_GROUPS_ATTR, default "groups"), mapped by PW_SSO_ROLE_MAP ("idp-admins=admin,idp-design=designer");
 // with no mapped value the role is PW_SSO_DEFAULT_ROLE (default viewer; "none" refuses the sign-in). IdP values that
 // are valid group names become the user's groups. Users are made on first sign-in and updated on every sign-in.
@@ -25,7 +26,7 @@
 import crypto from 'node:crypto';
 import { signSession, readToken, sessionSecret, safeNext } from './session.js';
 import { getUser, createUser, updateUser, normEmail, allUsers, ROLES, GROUP } from './users.js';
-import { store } from './storage/index.js';
+import { store, withLock } from './storage/index.js';
 
 const fail = (msg, status = 400, code = 'sso') => Object.assign(new Error(msg), { status, code });
 const b64u = (buf) => Buffer.from(buf).toString('base64url');
@@ -145,7 +146,8 @@ export function mapIdentity(email, values, who) {
  *  - no account: one is made, bound, with no password.
  * @param {{ email: string, role: string, groups: string[], issuer: string, subject: string }} id @param {'oidc'|'saml'} via
  */
-export async function upsertSsoUser(id, via) {
+export function upsertSsoUser(id, via) { return withLock('acl', () => upsertNow(id, via)); } // two first sign-ins at once: one wins
+async function upsertNow(id, via) {
   const sso = { via, issuer: id.issuer, subject: id.subject };
   const same = (u) => u.sso && typeof u.sso === 'object' && u.sso.via === via && u.sso.issuer === sso.issuer && u.sso.subject === sso.subject;
   const bound = (await allUsers()).find(same);
@@ -227,7 +229,7 @@ export async function oidcCallback(req) {
   if (!res.ok || typeof tok.id_token !== 'string') throw fail(`The identity provider did not give an ID token (HTTP ${res.status}).`, 401, 'token');
   const claims = await verifyIdToken(tok.id_token, d, st.nonce);
   if (typeof claims.email !== 'string') throw fail('The identity provider sent no email for this account.', 401, 'email');
-  if (claims.email_verified !== true && process.env.PW_OIDC_TRUST_EMAIL !== '1') throw fail('The identity provider has not verified this email address.', 401, 'email');
+  if (claims.email_verified !== true) throw fail('The identity provider has not verified this email address.', 401, 'email');
   const values = claims[process.env.PW_OIDC_GROUPS_CLAIM || 'groups'];
   return { identity: mapIdentity(claims.email, /** @type {any} */ (values), { issuer: d.issuer, subject: String(claims.sub) }), next: st.next || '/' };
 }

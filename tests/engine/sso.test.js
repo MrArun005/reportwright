@@ -327,6 +327,37 @@ describe('review fixes: identities, linking, binding', () => {
     expect(res.headers.get('location')).toBe(`${BASE}/login?sso_error=azp`);
   });
 
+  it('an unverified OIDC email is refused, whatever the settings', async () => {
+    process.env.PW_OIDC_TRUST_EMAIL = '1';
+    try {
+      const { res } = await oidcSignIn({ user: { sub: 'u1', email: 'unverified2@example.com', email_verified: false } });
+      expect(res.headers.get('location')).toBe(`${BASE}/login?sso_error=email`);
+      expect(await users.getUser('unverified2@example.com')).toBe(null);
+    } finally { delete process.env.PW_OIDC_TRUST_EMAIL; }
+  });
+
+  it('accounts are scoped per IdP: the same subject from another protocol or issuer is another identity', async () => {
+    const { upsertSsoUser } = await import('../../src/server/sso.js');
+    const id = (email, issuer = 'https://idp.one', subject = 'same-subject') => ({ email, role: 'viewer', groups: [], issuer, subject });
+    expect(await upsertSsoUser({ ...id('first@example.com'), role: 'admin' }, 'oidc')).toBe('first@example.com');
+    // a SAML NameID, or another OIDC issuer, that happens to equal that sub does not sign in as first@
+    expect(await upsertSsoUser(id('second@example.com'), 'saml')).toBe('second@example.com');
+    expect(await upsertSsoUser(id('third@example.com', 'https://idp.two'), 'oidc')).toBe('third@example.com');
+    // and asserting first@'s email from there is refused (an attacker IdP naming a victim)
+    await expect(upsertSsoUser(id('first@example.com', 'https://idp.two', 'attacker'), 'oidc')).rejects.toMatchObject({ code: 'linked' });
+    await expect(upsertSsoUser(id('first@example.com', 'https://idp.one', 'attacker'), 'saml')).rejects.toMatchObject({ code: 'linked' });
+    expect(await users.getUser('first@example.com')).toMatchObject({ role: 'admin', sso: { via: 'oidc', issuer: 'https://idp.one', subject: 'same-subject' } });
+  });
+
+  it('two first sign-ins for one email at the same moment: one account, bound to one identity', async () => {
+    const { upsertSsoUser } = await import('../../src/server/sso.js');
+    const id = (subject) => ({ email: 'twin@example.com', role: 'viewer', groups: [], issuer: 'https://idp.one', subject });
+    const out = await Promise.allSettled([upsertSsoUser(id('twin-a'), 'oidc'), upsertSsoUser(id('twin-b'), 'oidc')]);
+    expect(out.map(o => o.status).sort()).toEqual(['fulfilled', 'rejected']);
+    const won = out[0].status === 'fulfilled' ? 'twin-a' : 'twin-b';
+    expect((await users.getUser('twin@example.com')).sso.subject).toBe(won);
+  });
+
   it('starting SAML sign-ins is rate-limited per address', async () => {
     let last;
     for (let i = 0; i < 70; i++) last = await routes.samlLogin(new Request(`${BASE}/api/auth/saml/login`, { headers: { 'x-forwarded-for': '198.51.100.7' } }));
