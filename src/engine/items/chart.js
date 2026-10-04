@@ -439,7 +439,8 @@ function paintCartesian(type, g) {
     if (r.range) return `${head}${fmt(p.l)} – ${fmt(p.v)}`;
     return `${head}${fmt(p.v)}${p.pct != null ? ` (${Math.round(p.pct * 100)}%)` : ''}`;
   };
-  const growAnim = (cpos, ai, i) => (anim === 'grow' ? { k: horiz ? 'growX' : 'growY', ox: horiz ? vpos(ai, baseOf(ai)) : cpos, oy: horiz ? cpos : vpos(ai, baseOf(ai)), i } : anim ? { k: 'fade', i } : null);
+  /** Bars grow from the end that touches the baseline (the origin is a side of the bar's own box). */
+  const growAnim = (rect, p0, i) => (anim === 'grow' ? { k: horiz ? 'growX' : 'growY', o: horiz ? (p0 <= rect.x + 0.01 ? 'left' : 'right') : (p0 >= rect.y + rect.h - 0.01 ? 'bottom' : 'top'), i } : anim ? { k: 'fade', i } : null);
   const fadeAnim = (i) => (anim ? { k: 'fade', i } : null);
   const pos = item.labelPosition;
   const shares = new Map();
@@ -492,7 +493,7 @@ function paintCartesian(type, g) {
         const rect = horiz
           ? { t: 'rect', x: Math.min(p0, p1), y: off + bw * 0.08, w: Math.abs(p1 - p0), h: bw * 0.84, fill }
           : { t: 'rect', x: off + bw * 0.08, y: Math.min(p0, p1), w: bw * 0.84, h: Math.abs(p1 - p0), fill };
-        out.push(tag(rect, anim && growAnim(horiz ? rect.y + rect.h / 2 : rect.x + rect.w / 2, ai, ci)));
+        out.push(tag(rect, anim && growAnim(rect, p0, ci)));
         // the hit area spans the whole category band, so short bars are easy to click
         pointLink(ci, horiz ? { x: left, y: rect.y, w: right - left, h: rect.h } : { x: rect.x, y: plotTop, w: rect.w, h: plotBottom - plotTop }, tipOf(r, ci, p));
         if (!labelsOn) return;
@@ -643,7 +644,7 @@ function paintXY(type, g) {
     list.forEach((p, j) => {
       const r = type === 'bubble' ? Math.max(1.5, maxR * Math.sqrt(p.size / smax)) : 2.2;
       const e = type === 'bubble' ? { t: 'ellipse', cx: px(p.x), cy: py(p.y), rx: r, ry: r, fill: col + '99', stroke: col, strokeWidth: 0.75 } : { t: 'ellipse', cx: px(p.x), cy: py(p.y), rx: r, ry: r, fill: col + 'b3', stroke: null };
-      out.push(tag(e, anim && (anim === 'grow' ? { k: 'scale', ox: e.cx, oy: e.cy, i: j } : { k: 'fade', i: j })));
+      out.push(tag(e, anim && { k: anim === 'grow' ? 'scale' : 'fade', i: j }));
       if (item.tooltips !== false && (type === 'bubble' || multi)) g.links.push({ t: 'link', x: e.cx - r, y: e.cy - r, w: r * 2, h: r * 2, action: null, tip: `${multi ? `${s.name}: ` : ''}${fmtX(p.x)}, ${fmtY(p.y)}${type === 'bubble' ? ` (${toText(p.size, null, ctx)})` : ''}` });
       if (labelsOn) {
         const str = item.labelTemplate ? String(item.labelTemplate).slice(0, 500).replace(/\{(\w+)\}/g, (all, k) => ({ value: fmtY(p.y), x: fmtX(p.x), series: s.name, size: toText(p.size, null, ctx) })[k.toLowerCase()] ?? all) : fmtY(p.y);

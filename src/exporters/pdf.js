@@ -161,7 +161,7 @@ export async function exportPdf(model, fontStore, opt = {}) {
         }
         case 'path': {
           const fill = col(it.fill), stroke = col(it.stroke);
-          p.drawSvgPath(it.d, { x: it.x, y: H - it.y, color: fill?.color, opacity: fill?.opacity, borderColor: stroke?.color, borderWidth: stroke ? it.strokeWidth || 1 : 0, borderOpacity: stroke?.opacity, borderLineCap: it.lineCap === 'butt' ? 0 : 1 });
+          p.drawSvgPath(it.d, { x: it.x, y: H - it.y, color: fill?.color, opacity: fill?.opacity, borderColor: stroke?.color, borderWidth: stroke ? it.strokeWidth || 1 : 0, borderOpacity: stroke?.opacity, borderLineCap: it.lineCap === 'butt' ? 0 : 1, borderDashArray: it.dash || undefined });
           break;
         }
         case 'field': {

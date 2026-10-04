@@ -34,7 +34,7 @@ function paintPie(type, g) {
     const fill = pointFill(i, pal[i % pal.length]);
     if (v > 0) {
       const d = arc(cx, cy, r, ri, a0, Math.min(a1, a0 + Math.PI * 2 - 1e-4));
-      out.push(tag({ t: 'path', x: 0, y: 0, d, fill, stroke: '#ffffff', strokeWidth: 0.75 }, anim && (anim === 'grow' ? { k: 'scale', ox: cx, oy: cy, i } : { k: 'fade', i })));
+      out.push(tag({ t: 'path', x: 0, y: 0, d, fill, stroke: '#ffffff', strokeWidth: 0.75 }, anim && { k: anim === 'grow' ? 'scale' : 'fade', i }));
       pointLink(i, { x: cx - r, y: cy - r, w: r * 2, h: r * 2 }, `${data.categories[i]}: ${fmtV(v)} (${Math.round((v / total) * 100)}%)`, d);
     }
     const mid = (a0 + a1) / 2, frac = v / total;
@@ -84,7 +84,7 @@ function paintRadar(g) {
     const pts = s.values.map((v, i) => (v == null ? null : { ...at(i, rad(v)), v, i })).filter(Boolean);
     if (!pts.length) return;
     const d = pts.map((p, i) => `${i ? 'L' : 'M'} ${f(p.x)} ${f(p.y)}`).join(' ') + ' Z';
-    out.push(tag({ t: 'path', x: 0, y: 0, d, fill: s.color + (s.def.type === 'line' ? '00' : '2e'), stroke: s.color, strokeWidth: 1.4 }, anim && (anim === 'grow' ? { k: 'scale', ox: cx, oy: cy, i: si } : { k: 'fade', i: si })));
+    out.push(tag({ t: 'path', x: 0, y: 0, d, fill: s.color + (s.def.type === 'line' ? '00' : '2e'), stroke: s.color, strokeWidth: 1.4 }, anim && { k: anim === 'grow' ? 'scale' : 'fade', i: si }));
     if (n <= 40) for (const p of pts) out.push({ t: 'ellipse', cx: p.x, cy: p.y, rx: 1.8, ry: 1.8, fill: s.color, stroke: null });
     for (const p of pts) pointLink(p.i, { x: p.x - 4, y: p.y - 4, w: 8, h: 8 }, `${data.categories[p.i]}${data.series.length > 1 ? ` · ${s.name}` : ''}: ${fmtV(p.v)}`);
     if (labelsOn || item.labelTemplate) for (const p of pts) label(labelText(p.i, s, p.v), p.x, p.y - 3, { size: fs * 0.85 });
@@ -129,12 +129,12 @@ function paintGauge(g) {
   text(fmtV(hi), cx + R - th / 2, cy + fs * 1.3, { align: 'center', color: '#6b7280' });
   if (v == null) { text('No data', cx, cy - R / 3, { align: 'center', color: '#9ca3af' }); return; }
   // needle: a thin triangle from the hub to just inside the track
-  const a = ang(v), len = R - th * 0.4, bw = Math.max(1.5, R * 0.04);
+  const a = ang(v), len = R - th * 0.4, bw = Math.max(1.5, R * 0.03);
   const tip = { x: cx + Math.cos(a) * len, y: cy + Math.sin(a) * len };
   const n1 = { x: cx + Math.cos(a + Math.PI / 2) * bw, y: cy + Math.sin(a + Math.PI / 2) * bw }, n2 = { x: cx + Math.cos(a - Math.PI / 2) * bw, y: cy + Math.sin(a - Math.PI / 2) * bw };
   const d = `M ${f(n1.x)} ${f(n1.y)} L ${f(tip.x)} ${f(tip.y)} L ${f(n2.x)} ${f(n2.y)} Z`;
-  out.push(tag({ t: 'path', x: 0, y: 0, d, fill: '#1f2937', stroke: null }, g.anim && { k: 'rotate', ox: cx, oy: cy, a: frac(v) * 180, i: 0 }));
-  out.push({ t: 'ellipse', cx, cy, rx: bw * 1.6, ry: bw * 1.6, fill: '#1f2937', stroke: null });
+  out.push(tag({ t: 'path', x: 0, y: 0, d, fill: '#1f2937', stroke: null }, g.anim && { k: 'fade', i: 0 }));
+  out.push({ t: 'ellipse', cx, cy, rx: bw * 1.4, ry: bw * 1.4, fill: '#1f2937', stroke: null });
   text(item.labelTemplate ? g.labelText(0, data.series[0], v) : fmtV(v), cx, cy + fs * 2.6, { align: 'center', size: fs * 1.6, f: bold, color: '#111827' });
   pointLink(0, { x: cx - R, y: cy - R, w: R * 2, h: R }, `${data.series[0]?.name || 'Value'}: ${fmtV(v)}`);
 }
