@@ -5,6 +5,7 @@ import { ALL_FONT_KEYS } from '@/engine/text/fonts.js';
 import { exportBlob } from './exports.js';
 import { pageToSvg } from '@/exporters/svg.js';
 import { parameterOptions } from '@/engine/index.js';
+import { safeUrl } from '@/engine/url.js';
 import { t as tr } from './i18n.js';
 
 const PX = 96 / 72;
@@ -215,7 +216,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
       const st = { ...state, sort: { ...state.sort, [a.table]: [{ by: a.by, dir: a.dir }] } };
       setState(st); run(params, st, true);
     } else if (a.type === 'url') {
-      window.open(a.href, '_blank', 'noopener');
+      if (safeUrl(a.href)) window.open(a.href, '_blank', 'noopener');
     } else if (a.type === 'drill') {
       if (onDrill) onDrill(a.report, a.params);
       else drillTo(a.report, a.params, e.metaKey || e.ctrlKey);

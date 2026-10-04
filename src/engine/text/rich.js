@@ -9,6 +9,8 @@
  */
 
 /** Work limits: the markup (after interpolation), nesting, runs, blocks, line breaks, attributes per tag, CSS declarations per style. */
+import { safeUrl } from '../url.js';
+
 export const RICH_LIMITS = { maxLength: 100000, maxDepth: 32, maxRuns: 20000, maxBlocks: 5000, maxBreaks: 5000, maxAttrs: 64, maxDecls: 100 };
 
 /** @typedef {{ fontFamily?: string, fontSize?: number, fontWeight?: string, fontStyle?: string, color?: string,
@@ -25,11 +27,8 @@ const NAMED = { black: '#000000', white: '#ffffff', red: '#ff0000', green: '#008
   orange: '#ffa500', yellow: '#ffff00', purple: '#800080', navy: '#000080', maroon: '#800000', teal: '#008080', silver: '#c0c0c0' };
 const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
 
-/** A link target rich text may use: the same allow-list as url actions. @returns {string|null} */
-export function safeHref(v) {
-  const s = String(v ?? '');
-  return /^(https?:|mailto:|\/)/i.test(s) ? s : null;
-}
+/** A link target rich text may use: the same allow-list as url actions (src/engine/url.js). */
+export const safeHref = safeUrl;
 
 /** Only #hex, rgb()/rgba() and a few names; anything else is ignored. */
 function color(v) {
@@ -289,7 +288,7 @@ export function parseRich(html, opt = {}) {
       case 'sup': st.script = 'sup'; break;
       case 'sub': st.script = 'sub'; break;
       case 'a': {
-        const h = decode(tag.attrs.href ?? '').trim();
+        const h = decode(tag.attrs.href ?? ''); // checked as emitted: no trimming after the check
         const ok = safeHref(h);
         if (ok) st.href = ok;
         else if (h) warn(`Rich text: the link "${h.slice(0, 40)}" is not allowed (only http, https, mailto and / links); its text is kept.`);

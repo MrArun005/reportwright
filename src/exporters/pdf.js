@@ -4,6 +4,7 @@ import { PDFDocument, PDFName, PDFString, PDFHexString, PDFNumber, PDFArray, PDF
 import fontkitModule from '@pdf-lib/fontkit';
 import { parseColor } from './color.js';
 import { makePdfA } from './pdfa.js';
+import { safeUrl } from '../engine/url.js';
 
 const fontkit = /** @type {any} */ (fontkitModule).default || fontkitModule;
 
@@ -181,7 +182,7 @@ export async function exportPdf(model, fontStore, opt = {}) {
           break;
         }
         case 'link': {
-          if (it.action?.type === 'url') links.push({ page: p, rect: [it.x, H - it.y - it.h, it.x + it.w, H - it.y], href: it.action.href });
+          if (it.action?.type === 'url' && safeUrl(it.action.href)) links.push({ page: p, rect: [it.x, H - it.y - it.h, it.x + it.w, H - it.y], href: it.action.href });
           break;
         }
         case 'image': {

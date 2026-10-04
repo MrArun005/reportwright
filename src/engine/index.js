@@ -6,6 +6,7 @@
  */
 import { resolvePage } from './units.js';
 import { FontStore, ALL_FONT_KEYS } from './text/fonts.js';
+import { safeUrl } from './url.js';
 import { TextMeasurer, finishText } from './text/measure.js';
 import { loadSources, buildDataSets, coerce } from './data/index.js';
 import { evalValue, evaluate } from './expr/evaluate.js';
@@ -256,8 +257,8 @@ function linkAction(it, ctx, rect, warn) {
       return { t: 'link', ...rect, action: { type: 'params', params, toggle: a.toggle !== false } };
     }
     if (a.type === 'url') {
-      const href = String(evalValue(a.url ?? '', ctx) ?? '');
-      if (!/^(https?:|mailto:|\/)/i.test(href)) return null;
+      const href = safeUrl(String(evalValue(a.url ?? '', ctx) ?? ''));
+      if (!href) return null;
       return { t: 'link', ...rect, action: { type: 'url', href } };
     }
     if (a.type === 'report') {

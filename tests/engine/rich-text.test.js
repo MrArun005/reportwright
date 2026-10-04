@@ -259,9 +259,13 @@ describe('rich text: data is escaped unless the item trusts it', () => {
   const one = (value, x, extra = {}) => out(rich(value, { dataSet: 'Rows', ...extra }, { rows: [{ x }] }));
   const bold = (m) => m.pages[0].items.filter(i => i.t === 'text' && /Bold/.test(i.font));
   it('a quote in a field stays inside its href attribute', async () => {
-    const m = await one('<a href="/c?q={Fields.x}">go</a>', '" style="font-size:500px');
+    const m = await one('<a href="/c?q={Fields.x}">go</a>', '"style="font-size:500px');
     const link = m.pages[0].items.find(i => i.t === 'link');
-    expect(link.action.href).toBe('/c?q=" style="font-size:500px');
+    expect(link.action.href).toBe('/c?q="style="font-size:500px');
+    // with a space the whole href is refused (src/engine/url.js), still with no attribute added
+    const m2 = await one('<a href="/c?q={Fields.x}">go</a>', '" style="font-size:500px');
+    expect(m2.pages[0].items.some(i => i.t === 'link')).toBe(false);
+    expect(m2.pages[0].items.filter(i => i.t === 'text').every(i => i.size === 9)).toBe(true);
     expect(m.pages[0].items.filter(i => i.t === 'text').every(i => i.size === 9)).toBe(true);
   });
   it('a quote or semicolon in a field stays inside its style value', async () => {

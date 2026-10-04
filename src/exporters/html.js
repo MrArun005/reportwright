@@ -1,5 +1,6 @@
 // @ts-check
 import { pageToSvg, fontFamilyCss } from './svg.js';
+import { safeUrl } from '../engine/url.js';
 
 /**
  * One self-contained HTML file: every page as inline SVG, fonts embedded as
@@ -30,7 +31,7 @@ export async function exportHtml(model, fontStore, opt = {}) {
     faces.push(`@font-face{font-family:"${fontFamilyCss(key)}";src:url(data:font/ttf;base64,${b64(bytes)}) format("truetype")}`);
   }
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
-  const pages = model.pages.map((p, i) => `<section class="page" id="page-${i + 1}">${pageToSvg({ items: p.items.filter(it => it.t !== 'link' || it.action?.type === 'url') }, model.width, model.height)
+  const pages = model.pages.map((p, i) => `<section class="page" id="page-${i + 1}">${pageToSvg({ items: p.items.filter(it => it.t !== 'link' || (it.action?.type === 'url' && safeUrl(it.action.href))) }, model.width, model.height)
     .replace(/<rect class="pw-link"([^>]*?)data-action="([^"]*)"[^>]*><title>([^<]*)<\/title><\/rect>/g, (m, a, act, ttl) => `<a href="${ttl}" target="_blank" rel="noopener"><rect${a}/></a>`)}</section>`).join('\n');
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
