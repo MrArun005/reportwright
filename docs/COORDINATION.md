@@ -13,7 +13,6 @@ More than one AI agent is editing this repo at the same time. Read this file bef
 
 | Agent | Area | Files | Since |
 |---|---|---|---|
-| Claude Code (designer + charts, batch 1) | Designer UI, viewer UI, chart/gauge/map items, i18n | src/designer/*, src/viewer/* (UI), src/engine/items/chart*.js, map.js, src/i18n/*, tests/e2e/outline-charts.mjs, tests/engine/charts-b1.test.js; importers: gauge mapping lines only | 2026-10-05 |
 
 ## Design decisions (shared)
 
@@ -29,6 +28,8 @@ More than one AI agent is editing this repo at the same time. Read this file bef
 _(Write here if you need a change in a file someone else has claimed.)_
 
 ## Done
+
+- **Claude Code (designer + charts, batch 1), 2026-10-05 IST**: outside pie/donut labels with leader lines, overlays in the legend, three-quarter/full gauges with needle/pointer/bar and ticks (viewer, PDF, HTML), importers map gauge sweep + pointer; outline drag and drop + Alt+arrow moves (`moveItemTo`); every Inspector label/option/category in the i18n tables (9 languages); polish: zoom Fit width, empty-body hint, Find a property, toolbox tiles, undo/redo icons. New tests: tests/engine/charts-b1.test.js, outline-move.test.js, tests/e2e/outline-charts.mjs (in test:e2e). Claims released.
 
 - **Claude Code (security), 2026-10-04 IST**: production with no sign-in fails closed (401; PW_PUBLIC_READONLY=1 opt-in; PW_AUTH=proxy needs PW_PROXY_SECRET); SQL and internal-host sources need a designer at save and are stamp-checked at run; self origin only from PW_BASE_URL; strictUrl one-parse; reportFetch guards every browser data call; six review rounds, the last clean. Commits 2494077…355a8a5. Claims released.
 
