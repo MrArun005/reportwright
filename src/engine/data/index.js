@@ -220,8 +220,10 @@ export function buildDataSets(def, sources, baseCtx) {
       const c = { ...baseCtx, fields: null };
       for (const r of rows) { c.fields = r; for (const fd of calc) r[fd.name] = coerce(evalValue(fd.expr, c), fd.type); }
     }
-    rows = applyFilters(rows, ds.filters, baseCtx);
-    rows = applySort(rows, ds.sort, baseCtx);
+    // filters and sorts may Lookup into the data sets defined above this one
+    const setCtx = { ...baseCtx, dataSets: { ...baseCtx.dataSets, ...sets } };
+    rows = applyFilters(rows, ds.filters, setCtx);
+    rows = applySort(rows, ds.sort, setCtx);
     sets[ds.name] = rows;
   }
   return sets;

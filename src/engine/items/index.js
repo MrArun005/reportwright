@@ -1,7 +1,7 @@
 // @ts-check
 import { evalValue, toText, isDynamic, truthy } from '../expr/evaluate.js';
 import { isoDate, roundHalfAway } from '../expr/format.js';
-import { resolveStyle } from '../style.js';
+import { resolveStyle, padding } from '../style.js';
 import { layoutTextLines, paintBox } from './paint.js';
 import { applyFilters, applySort } from '../data/index.js';
 import { paintChart, CHART_TYPES } from './chart.js';
@@ -262,7 +262,12 @@ register('table', {
             items.push({ t: 'link', x: c.x, y: 0, w: c.w, h, action: { type: 'sort', table: item.name, by: c.cell.sortBy, dir } });
           }
         });
-        if (first && extra?.toggle) items.push({ t: 'link', x: colX[0], y: 0, w: cols[0]?.width || 20, h, action: { type: 'toggle', key: extra.toggle.key, open: extra.toggle.open } });
+        if (first && extra?.toggle) {
+          // the whole first cell toggles, unless that cell has its own action (a drill-through): then only the ▶ does
+          const c0 = cells[0];
+          const w = c0?.cell.action ? Math.min(c0.w, padding(c0.st)[3] + (Number(c0.st.fontSize) || 9) * 1.4) : cols[0]?.width || 20;
+          items.push({ t: 'link', x: colX[0], y: 0, w, h, action: { type: 'toggle', key: extra.toggle.key, open: extra.toggle.open } });
+        }
         return items;
       };
       // Taller than a page (less a repeated header): split into pieces of whole lines, like a text box, so it continues on the next pages.
@@ -316,8 +321,24 @@ register('table', {
       }
       const g = groups[level];
       const buckets = groupRows(grows, g.expr, ctx, lc, item.name);
-      if (g.sort === 'asc' || g.sort === 'desc') {
+      if (!g.sortBy && (g.sort === 'asc' || g.sort === 'desc')) {
         buckets.sort((a, b) => cmpKey(a.key, b.key) * (g.sort === 'desc' ? -1 : 1));
+      }
+      // a group's sortBy, or an interactive sort (which wins), orders the groups by an expression in each group's scope:
+      // =Sum(Fields.x) sorts by group totals
+      const us = lc.state?.sort?.[item.name] || (g.sortBy ? [{ by: g.sortBy, dir: g.sort === 'desc' ? 'desc' : 'asc' }] : null);
+      if (us?.length) {
+        const keys = new Map(buckets.map(bk => [bk, us.map(s => { const r = evalSafe(s.by, { ...ctx, fields: bk.rows[0], aggRows: bk.rows, aggIndex: undefined }, lc, item.name); return r.err ? null : r.v; })]));
+        buckets.sort((a, b) => {
+          for (let k = 0; k < us.length; k++) {
+            const x = keys.get(a)[k], y = keys.get(b)[k];
+            if (x === y) continue;
+            if (x == null) return 1;
+            if (y == null) return -1;
+            return cmpKey(x, y) * (us[k].dir === 'desc' ? -1 : 1);
+          }
+          return 0;
+        });
       }
       buckets.forEach((bk, bi) => {
         if (lc.rowBudget?.cut) return;
