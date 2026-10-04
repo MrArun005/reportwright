@@ -3,6 +3,11 @@ import { describe, it, expect } from 'vitest';
 import { render } from '../../src/engine/index.js';
 import { fontStore, report, texts } from '../helpers.js';
 import { tocNumbers, formatNumber } from '../../src/engine/items/toc.js';
+import { toDataUri, imageInfo, IMAGE_LIMITS } from '../../src/engine/image.js';
+import { parseSvg, parseTransform } from '../../src/exporters/svgimage.js';
+import { exportPdf } from '../../src/exporters/pdf.js';
+import { pageToSvg } from '../../src/exporters/svg.js';
+import { PDFDocument, PDFArray, PDFRawStream, decodePDFRawStream } from 'pdf-lib';
 
 const tb = (name, value, y, extra = {}) => ({ type: 'textbox', name, x: 0, y, w: 300, h: 18, value, ...extra });
 
@@ -46,5 +51,75 @@ describe('TOC numbering', () => {
     expect(t.filter(s => s === 'Marked').length).toBe(2); // TOC line + the text box
     const r = texts((await render(def({ numbering: ['roman'] }), { fontStore })).pages[0]);
     expect(r).toContain('I Marked');
+  });
+});
+
+const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAAC0lEQVR4nGNoAAMACocDAcTGH2YAAAAASUVORK5CYII='; // 2×1
+const PNG40 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAUCAIAAABwJOjsAAAAIklEQVR4nGNoGCDAMGrxqMWjFo9aPGrxqMWjFo9aPHIsBgA127A9GFEYHQAAAABJRU5ErkJggg=='; // 40×20
+const SVG = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20"><rect x="2" y="2" width="36" height="16" rx="3" fill="#ff0000"/><g transform="translate(5 5)" stroke="blue"><circle cx="5" cy="5" r="4" fill="none"/></g><text>hidden</text></svg>');
+async function pageOps(bytes) {
+  const doc = await PDFDocument.load(bytes);
+  const c = doc.getPage(0).node.Contents();
+  const streams = c instanceof PDFArray ? c.asArray().map(r => doc.context.lookup(r)) : [c];
+  return streams.map(s => Buffer.from(s instanceof PDFRawStream ? decodePDFRawStream(s).decode() : s.getContents()).toString('latin1')).join('\n');
+}
+const img = (extra) => ({ type: 'image', name: 'Img', x: 10, y: 0, w: 100, h: 100, ...extra });
+const imgsOf = async (def) => { const m = await render(def, { fontStore }); return { m, imgs: m.pages[0].items.filter(i => i.t === 'image') }; };
+
+describe('images', () => {
+  it('turns bare base64 and byte arrays into data URIs; leaves URLs and text alone', () => {
+    expect(toDataUri(PNG_B64)).toMatch(/^data:image\/png;base64,iVBOR/);
+    expect(toDataUri(Uint8Array.from(atob(PNG_B64), c => c.charCodeAt(0)))).toMatch(/^data:image\/png;base64,iVBOR/);
+    expect(toDataUri('https://x.test/a.png')).toBe('https://x.test/a.png');
+    expect(toDataUri('SGVsbG8gd29ybGQgdGhpcyBpcyB0ZXh0')).toBe('SGVsbG8gd29ybGQgdGhpcyBpcyB0ZXh0'); // base64, but not an image
+    expect(toDataUri(new Uint8Array([1, 2, 3]))).toBeNull();
+  });
+  it('reads the natural size without decoding (PNG, SVG viewBox, SVG width/height)', () => {
+    expect(imageInfo('data:image/png;base64,' + PNG_B64)).toMatchObject({ type: 'png', w: 2, h: 1 });
+    expect(imageInfo(SVG)).toMatchObject({ type: 'svg', w: 40, h: 20 });
+    expect(imageInfo('data:image/svg+xml,' + encodeURIComponent('<svg width="1in" viewBox="0 0 2 1"/>'))).toMatchObject({ w: 96, h: 48 });
+  });
+  it('embedded:name, a base64 field and autoSize: the box takes the image size at 96 dpi', async () => {
+    const def = report([img({ src: 'embedded:logo', autoSize: true }), img({ name: 'F', y: 120, src: '=Fields.pic' })],
+      { data: { rows: [{ pic: PNG_B64 }] }, def: { images: { logo: PNG40 } } });
+    def.sections.body.items[1].dataSet = 'Rows';
+    const { imgs } = await imgsOf(def);
+    expect(imgs[0]).toMatchObject({ src: PNG40, w: 30, h: 15 });
+    expect(imgs[1].src).toBe('data:image/png;base64,' + PNG_B64);
+  });
+  it('fit: clip draws at natural size from the top-left, cut to the box (model, SVG)', async () => {
+    const { m, imgs } = await imgsOf(report([img({ src: PNG40, fit: 'clip', w: 20, h: 10 })]));
+    expect(imgs[0]).toMatchObject({ fit: 'clip', w: 30, h: 15, cw: 20, ch: 10 });
+    expect(pageToSvg(m.pages[0], m.width, m.height)).toMatch(/<svg x="46" y="\d+(\.\d+)?" width="20" height="10" overflow="hidden"><image x="0" y="0" width="30" height="15"/);
+  });
+  it('an unknown embedded name and an image over 10 MB are left out with a warning', async () => {
+    const big = 'data:image/png;base64,' + PNG_B64.slice(0, 32) + 'A'.repeat(Math.ceil(IMAGE_LIMITS.bytes * 4 / 3) + 100);
+    const { m, imgs } = await imgsOf(report([img({ src: 'embedded:nope' }), img({ name: 'Big', src: 'embedded:big' })], { def: { images: { big } } }));
+    expect(imgs).toHaveLength(0);
+    expect(m.warnings.join('\n')).toMatch(/no embedded image named "nope"/);
+    expect(m.warnings.join('\n')).toMatch(/Big: the image is 10\.0 MB/);
+  });
+  it('a background image may be embedded', async () => {
+    const def = report([{ type: 'textbox', name: 'T', x: 0, y: 0, w: 100, h: 20, value: 'x', style: { backgroundImage: 'embedded:logo' } }], { def: { images: { logo: PNG40 } } });
+    const { imgs } = await imgsOf(def);
+    expect(imgs[0].src).toBe(PNG40);
+  });
+  it('parses SVG shapes, transforms and paint; skips text and junk', () => {
+    const s = parseSvg(decodeURIComponent(SVG.split(',')[1]));
+    expect(s.shapes).toHaveLength(2);
+    expect(s.shapes[0].fill).toMatchObject({ r: 1, g: 0, b: 0 });
+    expect(s.shapes[1].fill).toBeNull();
+    expect(s.shapes[1].stroke).toMatchObject({ b: 1 });
+    expect(s.shapes[1].m.slice(4)).toEqual([5, 5]);
+    expect(parseTransform('rotate(90)').map(v => Math.round(v))).toEqual([0, 1, -1, 0, 0, 0]);
+    for (const junk of ['', '<svg', '<html/>', '<svg viewBox="0 0 a b"><path d="M"/></svg>', 'x'.repeat(3e6)]) expect(() => parseSvg(junk)).not.toThrow();
+  });
+  it('the PDF draws an SVG image as vector paths; a garbage SVG draws nothing and does not throw', async () => {
+    const ops = await pageOps(await exportPdf(await render(report([img({ src: SVG })]), { fontStore }), fontStore));
+    expect(ops).toMatch(/\bc\b/);       // curves of the rounded rect and circle
+    expect(ops).toMatch(/1 0 0 rg/);    // red fill
+    expect(ops).not.toMatch(/\bDo\b/);  // not an image XObject
+    const bad = 'data:image/svg+xml,' + encodeURIComponent('<svg viewBox="0 0 1 1"><path d="M 0 0 L nonsense"/></svg>');
+    await expect(exportPdf(await render(report([img({ src: bad })]), { fontStore }), fontStore)).resolves.toBeInstanceOf(Uint8Array);
   });
 });

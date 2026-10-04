@@ -13,6 +13,7 @@ import { richValue, layoutRich, paintRich, paintVertical } from './rich.js';
 import { parseRich } from '../text/rich.js';
 import { resolveFontKey } from '../text/fonts.js';
 import { tocNumbers } from './toc.js';
+import { resolveImageSrc, imageInfo, PX } from '../image.js';
 
 /**
  * Item registry. Each item type has:
@@ -223,19 +224,28 @@ register('image', {
   label: 'Image',
   defaults: () => ({ type: 'image', w: 96, h: 64, src: '', fit: 'contain', style: {} }),
   props: [
-    { key: 'src', label: 'Source (URL or data URI)', type: 'expr', category: 'Data' },
-    { key: 'fit', label: 'Fit', type: 'select', options: ['contain', 'cover', 'fill'], category: 'Layout' },
+    { key: 'src', label: 'Source (URL, data URI, embedded:name, or a field with base64 or bytes)', type: 'expr', category: 'Data' },
+    { key: 'fit', label: 'Fit', type: 'select', options: ['contain', 'cover', 'fill', 'clip'], category: 'Layout' },
+    { key: 'autoSize', label: 'Size to the image (96 dpi)', type: 'bool', category: 'Layout' },
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
   ],
   layout(item, lc) {
     const ctx = lc.ctxFor(item);
     if (hidden(item, ctx, lc)) return { height: 0, units: [] };
     const st = resolveStyle([lc.base, lc.named?.[item.styleName], item.style], ctx);
-    const src = evalSafe(item.src ?? '', ctx, lc, item.name || 'Image').v;
-    const items = paintBox({ x: item.x, y: 0, w: item.w, h: item.h, st, tl: null, m: lc.m });
+    const who = item.name || 'Image';
+    const src = resolveImageSrc(evalSafe(item.src ?? '', ctx, lc, who).v, who, { images: lc.images, budget: lc.imageBudget, warn: lc.warn });
+    let w = item.w, h = item.h, fit = ['contain', 'cover', 'fill', 'clip'].includes(item.fit) ? item.fit : 'contain';
+    // natural size (autoSize, clip) is known for data images only; a URL loads later
+    const info = src && (item.autoSize || fit === 'clip') ? imageInfo(src) : null;
+    const nat = info && 'w' in info && info.w > 0 && info.h > 0 ? { w: info.w * PX, h: info.h * PX } : null;
+    if (src && (item.autoSize || fit === 'clip') && !nat) { lc.warn(`${who}: the image's size is not known before it loads, so it is fitted inside the box`); fit = 'contain'; }
+    if (item.autoSize && nat) { w = nat.w; h = nat.h; if (fit === 'clip') fit = 'fill'; }
+    const items = paintBox({ x: item.x, y: 0, w, h, st, tl: null, m: lc.m });
+    const img = fit === 'clip' && nat ? { t: 'image', x: item.x, y: 0, w: nat.w, h: nat.h, cw: w, ch: h, src, fit } : { t: 'image', x: item.x, y: 0, w, h, src, fit };
     // the picture goes above the box's background (colour and image) and below its borders
-    if (src && src !== '#Error') items.splice((st.backgroundColor ? 1 : 0) + (st.backgroundImage ? 1 : 0), 0, { t: 'image', x: item.x, y: 0, w: item.w, h: item.h, src: String(src), fit: item.fit || 'contain' });
-    return { height: item.h, units: [{ top: 0, height: item.h, items }] };
+    if (src) items.splice((st.backgroundColor ? 1 : 0) + (st.backgroundImage ? 1 : 0), 0, img);
+    return { height: h, units: [{ top: 0, height: h, items }] };
   },
 });
 

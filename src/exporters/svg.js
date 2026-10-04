@@ -65,8 +65,12 @@ export function pageToSvg(page, w, h, { background = true } = {}) {
         break;
       }
       case 'image': {
-        const par = it.fit === 'fill' ? 'none' : it.fit === 'cover' ? 'xMidYMid slice' : 'xMidYMid meet';
-        out.push(`<image x="${n(it.x)}" y="${n(it.y)}" width="${n(it.w)}" height="${n(it.h)}" href="${esc(it.src)}" preserveAspectRatio="${par}"/>`);
+        // clip: natural size (w, h) from the top-left, cut to the box (cw, ch); a nested svg clips its content
+        if (it.fit === 'clip') out.push(`<svg x="${n(it.x)}" y="${n(it.y)}" width="${n(it.cw)}" height="${n(it.ch)}" overflow="hidden"><image x="0" y="0" width="${n(it.w)}" height="${n(it.h)}" href="${esc(it.src)}" preserveAspectRatio="none"/></svg>`);
+        else {
+          const par = it.fit === 'fill' ? 'none' : it.fit === 'cover' ? 'xMidYMid slice' : 'xMidYMid meet';
+          out.push(`<image x="${n(it.x)}" y="${n(it.y)}" width="${n(it.w)}" height="${n(it.h)}" href="${esc(it.src)}" preserveAspectRatio="${par}"/>`);
+        }
         break;
       }
     }

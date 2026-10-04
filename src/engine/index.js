@@ -12,6 +12,7 @@ import { loadSources, buildDataSets, coerce } from './data/index.js';
 import { evalValue, evaluate } from './expr/evaluate.js';
 import { isoDate } from './expr/format.js';
 import { BASE_STYLE } from './style.js';
+import { resolveImageSrc } from './image.js';
 import { ITEMS } from './items/index.js';
 import { loadBarcodes } from './items/barcode.js';
 import { shiftItems } from './items/paint.js';
@@ -81,6 +82,7 @@ export async function render(def, opts = {}) {
   const base = { ...BASE_STYLE, ...(def.styles?.base || {}) };
   let idSeq = 0;
   const regions = [];
+  let imageBudget = { seen: new Set(), bytes: 0 }; // 50 MB of images per render, each distinct image once
   const makeLc = (globals, fixed) => {
     const lc = {
       m, base, dataSets, warn, fixed, maxUnitHeight: contentH, state: opts.state || {}, regions,
@@ -95,6 +97,7 @@ export async function render(def, opts = {}) {
       },
       subreports: null,
       bodyWidth: opts.bodyWidth ?? page.bodyWidth,
+      images: def.images || {}, imageBudget,
     };
     return lc;
   };
@@ -105,6 +108,7 @@ export async function render(def, opts = {}) {
   const layoutAll = async () => {
     warnings.length = kept;
     idSeq = 0;
+    imageBudget = { seen: new Set(), bytes: 0 };
     const lc = makeLc(baseCtx.globals, false);
     // opts.firstPages: lay out only enough rows for that many pages (a fast first look; the full render follows).
     // 8 pt is the smallest sensible row, so this budget always fills the pages asked for. Not with a table of contents.
@@ -237,6 +241,14 @@ export async function render(def, opts = {}) {
   if (opts.bodyOnly) return { units: result.body.units, tables: result.body.tables, height: result.body.height, regions, warnings };
   const { pages, bookmarks, height } = result;
   for (const pg of pages) finishText(pg.items, m);
+  // background images (a style, painted without the layout context) may name an embedded image
+  for (const pg of pages) {
+    pg.items = pg.items.filter(it => {
+      if (it.t !== 'image' || !String(it.src).startsWith('embedded:')) return true;
+      it.src = resolveImageSrc(it.src, 'Background image', { images: def.images || {}, budget: imageBudget, warn });
+      return !!it.src;
+    });
+  }
 
   return {
     width: page.width, height, pages, warnings, bookmarks, regions, name: def.name || '', partial: cutRows(),

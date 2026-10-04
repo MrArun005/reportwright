@@ -5,6 +5,8 @@ import fontkitModule from '@pdf-lib/fontkit';
 import { parseColor } from './color.js';
 import { makePdfA } from './pdfa.js';
 import { safeUrl } from '../engine/url.js';
+import { dataUriBytesOf, dataUriBytes, imageInfoOf, IMAGE_LIMITS } from '../engine/image.js';
+import { parseSvg, drawSvg } from './svgimage.js';
 
 const fontkit = /** @type {any} */ (fontkitModule).default || fontkitModule;
 
@@ -80,10 +82,16 @@ export async function exportPdf(model, fontStore, opt = {}) {
     let img = null;
     try {
       let bytes = null;
-      const m = /^data:image\/(png|jpe?g);base64,(.*)$/i.exec(src);
-      if (m) bytes = Uint8Array.from(atob(m[2]), c => c.charCodeAt(0));
+      if (/^data:/i.test(src)) bytes = dataUriBytes(src) <= IMAGE_LIMITS.bytes ? dataUriBytesOf(src) : null;
       else if (opt.fetchImage) bytes = await opt.fetchImage(src);
-      if (bytes) img = bytes[0] === 0x89 ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+      const info = bytes && bytes.length <= IMAGE_LIMITS.bytes ? imageInfoOf(bytes) : null;
+      if (info?.type === 'svg') {
+        const svg = parseSvg(new TextDecoder().decode(bytes));
+        if (svg) img = { svg, width: svg.w, height: svg.h };
+      } else if (info?.type === 'png') {
+        // a small PNG can inflate to gigabytes: refuse very large pixel counts before decoding
+        if ('w' in info && info.w * info.h <= IMAGE_LIMITS.pixels) img = await doc.embedPng(bytes);
+      } else if (info?.type === 'jpeg') img = await doc.embedJpg(bytes);
     } catch { img = null; }
     images.set(src, img);
     return img;
@@ -189,14 +197,17 @@ export async function exportPdf(model, fontStore, opt = {}) {
           const img = await image(it.src);
           if (!img) break;
           let w = it.w, h = it.h, x = it.x, y = it.y;
-          if (it.fit !== 'fill') {
+          // clip: the image at its natural size (w, h) from the box's top-left corner, cut to the box (cw, ch)
+          const clipBox = it.fit === 'clip' ? [it.x, H - it.y - it.ch, it.cw, it.ch] : it.fit === 'cover' ? [it.x, H - it.y - it.h, it.w, it.h] : null;
+          if (it.fit !== 'fill' && it.fit !== 'clip') {
             const s = it.fit === 'cover' ? Math.max(it.w / img.width, it.h / img.height) : Math.min(it.w / img.width, it.h / img.height);
             w = img.width * s; h = img.height * s; x = it.x + (it.w - w) / 2; y = it.y + (it.h - h) / 2;
           }
           // cover overflows its box by design: clip it, as SVG's preserveAspectRatio slice does
-          if (it.fit === 'cover') p.pushOperators(pushGraphicsState(), rectangle(it.x, H - it.y - it.h, it.w, it.h), clip(), endPath());
-          p.drawImage(img, { x, y: H - y - h, width: w, height: h });
-          if (it.fit === 'cover') p.pushOperators(popGraphicsState());
+          if (clipBox) p.pushOperators(pushGraphicsState(), rectangle(...clipBox), clip(), endPath());
+          if (img.svg) drawSvg(p, img.svg, { x, y: H - y - h, sx: w / img.width, sy: h / img.height });
+          else p.drawImage(img, { x, y: H - y - h, width: w, height: h });
+          if (clipBox) p.pushOperators(popGraphicsState());
           break;
         }
       }
