@@ -39,8 +39,8 @@ Fixed in this pass:
 
 Open: engine
 
-- **A syntax error in one cell blocks the whole report** at `validate()` ("A string has no closing quote"). Decide: keep failing fast (the designer shows the error) or render `#Error` in that cell with a warning, like unknown fields and functions already do. Leaning towards the second for the viewer and the first for the designer.
-- **An empty page appears** when an item with `pageBreakBefore` sits a little below the last item that fit on the previous page (page 2 of the stress test is blank). The gap before the forced break is paginated as its own page. Reproduce: a table that ends at y≈580 and a heading at y=600 with `pageBreakBefore: true`.
+- *(Fixed 2026-10-05, 91ee618: the cell shows `#Error` with a warning; `validate()` still lists it.)* **A syntax error in one cell blocks the whole report** at `validate()` ("A string has no closing quote"). Decide: keep failing fast (the designer shows the error) or render `#Error` in that cell with a warning, like unknown fields and functions already do. Leaning towards the second for the viewer and the first for the designer.
+- *(Fixed 2026-10-05, def930d.)* **An empty page appears** when an item with `pageBreakBefore` sits a little below the last item that fit on the previous page (page 2 of the stress test is blank). The gap before the forced break is paginated as its own page. Reproduce: a table that ends at y≈580 and a heading at y=600 with `pageBreakBefore: true`.
 - **The table of contents renders at the wrong place.** It is the last item in the body (y = 5,490) but appears on page 3, right after the Unicode table. The TOC item seems to be laid out out of order.
 - **`Parent.*` is not available in a calculated field after a `[*]` spread.** `$.portfolio.books[*].positions[*]` loses `book`; the calculated field `=Coalesce(Parent.book, 'book?')` gives `book?` for every row, so the group has one bucket. Needed: either carry ancestor objects through `jsonPath` spreads, or support `path` on a field that walks up (`$..book`).
 - **An image whose `src` expression returns `''` still draws a (broken) image box** in the SVG viewer. It should draw nothing.

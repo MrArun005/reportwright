@@ -70,3 +70,40 @@ section at the end.
 3. Fall back to today's `exportPdf` for fields, signing and encryption until each has its streaming version.
 4. Tests: byte-identical text positions (`scripts/check-pdf-matches-model.mjs`), veraPDF for PDF/A, qpdf/poppler
    `--check` on streamed files, and a memory budget test on a 10,000-page report.
+
+## Engine memory and streaming layout (2026-10-05)
+
+What changed in the engine (commits 0219a7a, 6d8562f): page assembly now moves a table row's freshly painted
+items into place instead of copying them, and `layoutItems` places units in place, so the page model exists once
+during a render instead of twice. One 50,000-row render (S1): peak RSS 582 MB → 417 MB; the model itself is
+~220 MB live (text items with their line, clip and Word cell tag ~180 MB, export regions ~40 MB).
+
+pw-bench (`--profile=fast`, pw-node, one process for first page + pagination + PDF; machine under load 13–18):
+peak RSS 829 MB (S1) and 927 MB (S2) against Jasper's 860 / 730 MB. Before (earlier runs, same profile): 770–1,106 MB (S1) and 858–1,378 MB (S2); one run each is too few to call it settled. What remains is
+mostly the previous run's model still waiting for a major GC when the next render starts, plus the export's
++200 MB (above).
+
+Streaming layout (release pages as they are exported) was **not built**, because it is not tractable through the
+current public API without a redesign:
+
+- `render()` lays out the whole body as one strip, then paginates it. Pages are cut from units that already exist,
+  so handing pages over as they are assembled frees nothing: the units hold the same items.
+- Real streaming needs layout itself to run in page-sized steps (lay out rows until the page is full, paginate,
+  emit, drop), with tables carrying their running state (groups, running values, merged cells, repeated
+  headers) across steps.
+- Page N of M: M is known only at the end. Either a second, measuring pass (layout without painting: cheap, the
+  painting is most of the memory) or placeholders filled at the end (the PDF writer would have to keep the page
+  streams with "of M" open, which is what Jasper does with its "Report" evaluation time).
+- Table of contents: its page numbers come from the pass that found the entries; the measuring pass above gives
+  them too, so the TOC pass becomes that pass.
+- Drill-down / toggles: unaffected (state is an input to the render).
+- `exportPdf` subsets fonts before writing pages, so it needs every character first: the measuring pass can
+  collect them (characters per font key), or fonts are written last (see "What streaming would mean").
+
+Plan, if wanted: (1) a measuring pass that returns page count, TOC entries and character sets without painting;
+(2) `render(def, { onPage })` that lays out and paints one page at a time from table state kept between pages;
+(3) `writePdf(pageIterator, sink)` as above. Option-gated; the default stays the whole model.
+
+Smaller model without streaming (changes the model's shape, so exporters and viewers change with it): build the
+export regions (xlsx/csv) and the Word cell tags only when that export asks for them (~90 MB of the 220 MB), and
+keep positions of text lines in typed arrays per page.
