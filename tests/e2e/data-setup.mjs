@@ -68,7 +68,26 @@ if (SQLITE) {
   await p.locator('.field-chip', { hasText: 'region' }).waitFor();
 } else console.log('  (SQL part skipped: set PW_DB_MAIN=sqlite:/abs/file.db for the server and this test)');
 
+step('Saving every data set unchanged keeps its nested relation and every sort key');
+const def = JSON.parse(fs.readFileSync(new URL('../../reports/expressions-showcase.pw.json', import.meta.url), 'utf8'));
+def.dataSets.find(x => x.name === 'Orders').sort = [{ by: '=Fields.customer', dir: 'desc' }, { by: '=Fields.date', dir: 'asc' }];
+const before = JSON.parse(JSON.stringify(def.dataSets));
+const { id: id2 } = await (await fetch(`${BASE}/api/reports`, { method: 'POST', headers: { 'content-type': 'application/json', origin: BASE, ...AUTH }, body: JSON.stringify({ name: 'e2e data set round trip', definition: def }) })).json();
+await p.goto(`${BASE}/designer/${id2}`);
+await p.waitForSelector('[data-testid=paper]');
+for (const { name } of before) {
+  await p.locator('.trow').filter({ has: p.locator('b', { hasText: new RegExp(`^${name}$`) }) }).getByRole('button', { name: 'Edit' }).click();
+  await p.getByRole('dialog').getByRole('button', { name: 'Save' }).click();
+}
+await p.keyboard.press('Control+s');
+await p.getByTestId('save-state').filter({ hasText: /^Saved$/ }).waitFor();
+const saved = await (await fetch(`${BASE}/api/reports/${id2}`, { headers: { origin: BASE, ...AUTH } })).json();
+// the dialog writes the default path "$" and drops an empty sort; anything else must come back as it was
+const norm = (sets) => sets.map(x => ({ ...x, ...(x.relation ? { relation: { ...x.relation, path: x.relation.path || '$' } } : { path: x.path || '$' }), sort: x.sort || [] }));
+assert.deepEqual(norm((saved.definition || saved).dataSets), norm(before));
+
 await b.close();
 await fetch(`${BASE}/api/reports/${id}`, { method: 'DELETE', headers: { origin: BASE, ...AUTH } });
+await fetch(`${BASE}/api/reports/${id2}`, { method: 'DELETE', headers: { origin: BASE, ...AUTH } });
 assert.deepEqual(errs, []);
 console.log('PASS data setup');

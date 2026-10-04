@@ -307,18 +307,41 @@ function SourceDialog({ index, onClose }) {
   );
 }
 
+const asList = (v) => (v == null ? [] : Array.isArray(v) ? v : [v]);
+
 function DataSetDialog({ index, onClose, onSaved }) {
   const def = useDesigner(s => s.def);
+  const lang = useDesigner(s => s.lang);
+  const T = (k, v) => t(lang, k, v);
   const orig = index != null ? def.dataSets[index] : null;
+  // every key of the data set is kept (relation and anything this dialog has no control for), not only the ones shown
   const [d, setD] = useState(() => ({ name: '', source: def.dataSources?.[0]?.name, path: '$', fields: [], sort: [], ...(orig ? JSON.parse(JSON.stringify(orig)) : {}) }));
   const [detect, setDetect] = useState({ state: 'idle' });
-  const err = !NAME.test(d.name) ? 'The name must start with a letter and hold only letters, digits and _' : !uniqueIn(def.dataSets, d.name, index) ? 'Another data set has this name' : !d.source ? 'Pick a source' : null;
+  const nested = !!d.relation;
+  const parents = (def.dataSets || []).filter((x, i) => i !== index && x.name !== d.name);
+  const err = !NAME.test(d.name) ? T('dsNameRule') : !uniqueIn(def.dataSets, d.name, index) ? T('dsNameTaken')
+    : nested ? (!d.relation.parent ? T('dsPickParent') : null) : !d.source ? T('dsPickSource') : null;
 
   const [explore, setExplore] = useState(null);
-  const loadRaw = async () => {
+  const loadSourceRaw = async (name) => {
     const params = resolveParameters(useDesigner.getState().def, {});
-    const src = useDesigner.getState().def.dataSources.find(s => s.name === d.source);
+    const src = useDesigner.getState().def.dataSources.find(s => s.name === name);
+    if (!src) throw new Error(T('dsNoSource', { name }));
     return (await loadSources({ dataSources: [src] }, { params, baseUrl: window.location.origin, sqlPreview: true }))[src.name];
+  };
+  /** The raw rows of a data set: its source at its path, or for a nested one each parent row's children. */
+  const rawRowsOf = async (ds, seen = new Set()) => {
+    if (!ds || seen.has(ds.name)) return [];
+    seen.add(ds.name);
+    if (!ds.relation) return asList(jsonPath(await loadSourceRaw(ds.source), ds.path || '$'));
+    const up = await rawRowsOf((useDesigner.getState().def.dataSets || []).find(x => x.name === ds.relation.parent), seen);
+    return up.flatMap(r => asList(jsonPath(r, ds.relation.path || '$')));
+  };
+  // what "Explore" and "Detect" look in: the source's response, or the first parent row for a nested set
+  const loadRaw = async () => {
+    if (!nested) return loadSourceRaw(d.source);
+    const rows = await rawRowsOf((def.dataSets || []).find(x => x.name === d.relation.parent));
+    return rows.find(r => r && typeof r === 'object') ?? null;
   };
   // Response explorer: every list in the response, with its path and fields; pick one to use it as the rows.
   const openExplorer = async () => {
@@ -329,24 +352,30 @@ function DataSetDialog({ index, onClose, onSaved }) {
       setExplore({ state: 'done', arrays, best: bestRows(raw)?.path, raw });
     } catch (e) { setExplore({ state: 'error', message: e.message }); }
   };
-  const pick = (path) => {
-    let list = jsonPath(explore.raw, path);
-    if (!Array.isArray(list)) list = [list];
-    const keep = new Map(d.fields.map(f => [f.name, f]));
-    setD({ ...d, path, fields: detectFields(list).map(f => keep.get(f.name) || f).concat(d.fields.filter(f => f.expr)) });
-    setDetect({ state: 'done', rows: list.length });
+  const keepFields = (list) => { const keep = new Map(d.fields.map(f => [f.name, f])); return detectFields(list).map(f => keep.get(f.name) || f).concat(d.fields.filter(f => f.expr)); };
+  const pick = async (path) => {
+    if (nested) {
+      const rows = await rawRowsOf({ ...d, relation: { ...d.relation, path } }).catch(() => []);
+      setD({ ...d, relation: { ...d.relation, path }, fields: keepFields(rows) });
+      setDetect({ state: 'done', rows: rows.length });
+    } else {
+      const list = asList(jsonPath(explore.raw, path));
+      setD({ ...d, path, fields: keepFields(list) });
+      setDetect({ state: 'done', rows: list.length });
+    }
     setExplore(null);
   };
   const run = async () => {
     setDetect({ state: 'loading' });
     try {
-      const raw = await loadRaw();
-      let list = jsonPath(raw, d.path || '$');
-      if (list == null) throw new Error(`Nothing at the path "${d.path}"`);
-      if (!Array.isArray(list)) list = [list];
-      const found = detectFields(list);
-      const keep = new Map(d.fields.map(f => [f.name, f]));
-      setD({ ...d, fields: found.map(f => keep.get(f.name) || f).concat(d.fields.filter(f => f.expr)) });
+      let list;
+      if (nested) list = await rawRowsOf(d);
+      else {
+        const found = jsonPath(await loadSourceRaw(d.source), d.path || '$');
+        if (found == null) throw new Error(T('dsNothingAt', { path: d.path }));
+        list = asList(found);
+      }
+      setD({ ...d, fields: keepFields(list) });
       setDetect({ state: 'done', rows: list.length });
     } catch (e) { setDetect({ state: 'error', message: e.message }); }
   };
@@ -354,14 +383,25 @@ function DataSetDialog({ index, onClose, onSaved }) {
   const save = () => {
     useDesigner.getState().apply(x => {
       x.dataSets ||= [];
-      const v = { name: d.name, source: d.source, path: d.path || '$', fields: d.fields.filter(f => f.name) };
-      if (d.filters?.length) v.filters = d.filters;
-      if (d.sort?.length) v.sort = d.sort.filter(s => s.by);
+      const v = JSON.parse(JSON.stringify(d));
+      v.fields = d.fields.filter(f => f.name);
+      if (nested) { delete v.source; delete v.path; v.relation = { ...d.relation, path: d.relation.path || '$' }; }
+      else { delete v.relation; v.path = d.path || '$'; }
+      if (!d.filters?.length) delete v.filters;
+      const sort = (d.sort || []).filter(s => s.by);
+      if (sort.length) v.sort = sort; else delete v.sort;
+      let at = index;
       if (index != null) {
         const old = x.dataSets[index].name;
         x.dataSets[index] = v;
-        if (old !== v.name) walk(x, (it) => { if (it.dataSet === old) it.dataSet = v.name; });
-      } else x.dataSets.push(v);
+        if (old !== v.name) {
+          walk(x, (it) => { if (it.dataSet === old) it.dataSet = v.name; });
+          for (const o of x.dataSets) if (o.relation?.parent === old) o.relation.parent = v.name;
+        }
+      } else { x.dataSets.push(v); at = x.dataSets.length - 1; }
+      // a nested data set comes after its parent (the engine builds them in order)
+      const pi = nested ? x.dataSets.findIndex(o => o.name === v.relation.parent) : -1;
+      if (pi > at) { const [moved] = x.dataSets.splice(at, 1); x.dataSets.splice(pi, 0, moved); }
     });
     onSaved?.(d.name);
     onClose();
@@ -375,70 +415,100 @@ function DataSetDialog({ index, onClose, onSaved }) {
     onClose();
   };
   const setField = (i, k, v) => setD({ ...d, fields: d.fields.map((f, j) => (j === i ? { ...f, [k]: v } : f)) });
-  const sortBy = d.sort?.[0]?.by?.replace(/^=Fields\./, '') || '';
+  const setFilter = (i, k, v) => setD({ ...d, filters: d.filters.map((x, j) => (j === i ? { ...x, [k]: v } : x)) });
+  const sorts = d.sort || [];
+  const setSort = (i, k, v) => setD({ ...d, sort: sorts.map((x, j) => (j === i ? { ...x, [k]: v } : x)) });
+  const moveSort = (i, by) => { const a = [...sorts]; const j = i + by; if (j < 0 || j >= a.length) return; [a[i], a[j]] = [a[j], a[i]]; setD({ ...d, sort: a }); };
+  const fieldOpts = d.fields.filter(f => f.name).map(f => ({ value: `=Fields.${f.name}`, label: f.name }));
+  const sortOpts = (by) => (by && !fieldOpts.some(o => o.value === by) ? [...fieldOpts, { value: by, label: by }] : fieldOpts);
+  const relPath = d.relation?.path ?? '$';
   return (
-    <Dialog wide title={orig ? `Data set ${orig.name}` : 'New data set'} onClose={onClose}
-      footer={<>{orig && <button className="btn danger" style={{ marginRight: 'auto' }} onClick={del}>Delete</button>}<button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!!err} onClick={save}>Save</button></>}>
+    <Dialog wide title={orig ? T('dsTitle', { name: orig.name }) : T('dsNew')} onClose={onClose}
+      footer={<>{orig && <button className="btn danger" style={{ marginInlineEnd: 'auto' }} onClick={del}>{T('delete')}</button>}<button className="btn" onClick={onClose}>{T('cancel')}</button><button className="btn primary" disabled={!!err} onClick={save}>{T('save')}</button></>}>
       <div className="grid2">
-        <Field label="Name"><TextInput value={d.name} onChange={v => setD({ ...d, name: v })} autoFocus /></Field>
-        <Field label="Source"><Select value={d.source} options={(def.dataSources || []).map(s => s.name)} onChange={v => setD({ ...d, source: v })} /></Field>
+        <Field label={T('name')}><TextInput value={d.name} onChange={v => setD({ ...d, name: v })} autoFocus /></Field>
+        <Field label={T('dsRowsFrom')}>
+          <Select value={nested ? 'nested' : 'source'} options={[{ value: 'source', label: T('dsFromSource') }, { value: 'nested', label: T('dsFromParent') }]} data-testid="ds-rows-from"
+            onChange={v => setD(v === 'nested' ? { ...d, relation: { parent: d.relation?.parent || parents[0]?.name, path: d.relation?.path || '$' } } : (({ relation: _r, ...rest }) => ({ ...rest, source: rest.source || def.dataSources?.[0]?.name }))(d))} />
+        </Field>
       </div>
-      <Field label="Path to the rows" hint="JSONPath subset: $, $.items, $.data[*].lines"><TextInput value={d.path} onChange={v => setD({ ...d, path: v })} mono /></Field>
+      {nested ? (
+        <div className="grid2">
+          <Field label={T('dsParent')} hint={T('dsParentHint')}><Select value={d.relation.parent} options={parents.map(x => x.name)} allowEmpty onChange={v => setD({ ...d, relation: { ...d.relation, parent: v } })} data-testid="ds-parent" /></Field>
+          <Field label={T('dsChildPath')} hint={T('dsChildPathHint')}><TextInput value={relPath} onChange={v => setD({ ...d, relation: { ...d.relation, path: v } })} mono data-testid="ds-child-path" /></Field>
+        </div>
+      ) : (
+        <>
+          <Field label={T('dsSource')}><Select value={d.source} options={(def.dataSources || []).map(s => s.name)} onChange={v => setD({ ...d, source: v })} /></Field>
+          <Field label={T('dsPath')} hint={T('dsPathHint')}><TextInput value={d.path} onChange={v => setD({ ...d, path: v })} mono /></Field>
+        </>
+      )}
       <div className="btnrow" style={{ alignItems: 'center' }}>
-        <button className="btn" onClick={run} disabled={!d.source || detect.state === 'loading'}>{detect.state === 'loading' ? 'Reading the source…' : 'Detect fields'}</button>
-        <button className="btn" onClick={openExplorer} disabled={!d.source || explore?.state === 'loading'}>{explore?.state === 'loading' ? 'Reading the source…' : 'Explore the response'}</button>
-        {detect.state === 'done' && <span className="hint">Found {detect.rows} rows.</span>}
+        <button className="btn" onClick={run} disabled={(nested ? !d.relation.parent : !d.source) || detect.state === 'loading'}>{detect.state === 'loading' ? T('dsReading') : T('dsDetect')}</button>
+        <button className="btn" onClick={openExplorer} disabled={(nested ? !d.relation.parent : !d.source) || explore?.state === 'loading'}>{explore?.state === 'loading' ? T('dsReading') : T('dsExplore')}</button>
+        {detect.state === 'done' && <span className="hint">{T('dsFound', { n: detect.rows })}</span>}
         {detect.state === 'error' && <span className="err">{detect.message}</span>}
       </div>
       {explore?.state === 'error' && <div className="err">{explore.message}</div>}
       {explore?.state === 'done' && (
-        <div className="explorer" role="list" aria-label="Lists in the response" style={{ display: 'grid', gap: 4, maxHeight: 260, overflow: 'auto', border: '1px solid var(--line)', borderRadius: 6, padding: 6 }}>
-          {!explore.arrays.length && <div className="hint">The response has no lists. Use the path $ for a single row.</div>}
+        <div className="explorer" role="list" aria-label={T('dsLists')} style={{ display: 'grid', gap: 4, maxHeight: 260, overflow: 'auto', border: '1px solid var(--line)', borderRadius: 6, padding: 6 }}>
+          {!explore.arrays.length && <div className="hint">{T('dsNoLists')}</div>}
           {explore.arrays.map(a => (
             <div key={a.path} role="listitem" style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center' }}>
               <div>
-                <code>{a.path}</code> <span className="hint">· {a.rows} {a.rows === 1 ? 'row' : 'rows'}{a.path === explore.best ? ' · suggested' : ''}</span>
-                {a.objects && <div className="hint" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.fields.join(', ') || 'no plain fields'}</div>}
+                <code>{a.path}</code> <span className="hint">· {T('dsRows', { n: a.rows })}{a.path === explore.best ? ` · ${T('dsSuggested')}` : ''}</span>
+                {a.objects && <div className="hint" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.fields.join(', ') || T('dsNoPlainFields')}</div>}
               </div>
-              <button className={`btn sm${a.path === explore.best ? ' primary' : ''}`} disabled={!a.objects} onClick={() => pick(a.path)} title={a.objects ? 'Use these rows' : 'A list of plain values cannot be rows with fields'}>Use</button>
+              <button className={`btn sm${a.path === explore.best ? ' primary' : ''}`} disabled={!a.objects} onClick={() => pick(a.path)} title={a.objects ? T('dsUseRows') : T('dsPlainList')}>{T('dsUse')}</button>
             </div>
           ))}
         </div>
       )}
       <div>
-        <div className="hint" style={{ marginBottom: 6 }}>Fields</div>
+        <div className="hint" style={{ marginBottom: 6 }}>{T('dsFields')}</div>
         <div style={{ display: 'grid', gap: 6 }}>
           {d.fields.map((f, i) => (
             <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 120px 1.4fr auto', gap: 6 }}>
-              <TextInput value={f.name} onChange={v => setField(i, 'name', v)} mono aria-label="Field name" />
+              <TextInput value={f.name} onChange={v => setField(i, 'name', v)} mono aria-label={T('dsFieldName')} />
               <Select value={f.type} options={['string', 'number', 'date', 'boolean']} onChange={v => setField(i, 'type', v)} />
-              <TextInput value={f.expr || ''} onChange={v => setField(i, 'expr', v || undefined)} mono placeholder="calculated: =Fields.a * 2" />
-              <button className="btn sm ghost danger" onClick={() => setD({ ...d, fields: d.fields.filter((_, j) => j !== i) })} aria-label="Remove field">✕</button>
+              <TextInput value={f.expr || ''} onChange={v => setField(i, 'expr', v || undefined)} mono placeholder={T('dsCalcPlaceholder')} />
+              <button className="btn sm ghost danger" onClick={() => setD({ ...d, fields: d.fields.filter((_, j) => j !== i) })} aria-label={T('dsRemoveField')}>✕</button>
             </div>
           ))}
-          <div><button className="btn sm" onClick={() => setD({ ...d, fields: [...d.fields, { name: '', type: 'string' }] })}>Add field</button></div>
+          <div><button className="btn sm" onClick={() => setD({ ...d, fields: [...d.fields, { name: '', type: 'string' }] })}>{T('dsAddField')}</button></div>
         </div>
       </div>
       <div>
-        <div className="hint" style={{ marginBottom: 6 }}>Filters (all must match)</div>
+        <div className="hint" style={{ marginBottom: 6 }}>{T('dsFilters')}</div>
         <div style={{ display: 'grid', gap: 6 }}>
           {(d.filters || []).map((f, i) => (
             <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 90px 1fr auto', gap: 6 }}>
-              <TextInput value={f.expr} onChange={v => setD({ ...d, filters: d.filters.map((x, j) => j === i ? { ...x, expr: v } : x) })} mono aria-label="Filter field" />
-              <Select value={f.op || '='} options={OPS} onChange={v => setD({ ...d, filters: d.filters.map((x, j) => j === i ? { ...x, op: v } : x) })} />
+              <TextInput value={f.expr} onChange={v => setFilter(i, 'expr', v)} mono aria-label={T('dsFilterField')} />
+              <Select value={f.op || '='} options={OPS} onChange={v => setFilter(i, 'op', v)} />
               <div style={{ display: 'flex', gap: 4 }}>
-                <TextInput value={f.value} onChange={v => setD({ ...d, filters: d.filters.map((x, j) => j === i ? { ...x, value: v } : x) })} mono placeholder="value or =Parameters.x" aria-label="Filter value" />
-                {f.op === 'Between' && <TextInput value={f.value2} onChange={v => setD({ ...d, filters: d.filters.map((x, j) => j === i ? { ...x, value2: v } : x) })} mono placeholder="and" aria-label="Upper value" />}
+                <TextInput value={f.value} onChange={v => setFilter(i, 'value', v)} mono placeholder={T('dsFilterValueHint')} aria-label={T('dsFilterValue')} />
+                {f.op === 'Between' && <TextInput value={f.value2} onChange={v => setFilter(i, 'value2', v)} mono placeholder={T('dsAnd')} aria-label={T('dsUpperValue')} />}
               </div>
-              <button className="btn sm ghost danger" onClick={() => setD({ ...d, filters: d.filters.filter((_, j) => j !== i) })} aria-label="Remove filter">✕</button>
+              <button className="btn sm ghost danger" onClick={() => setD({ ...d, filters: d.filters.filter((_, j) => j !== i) })} aria-label={T('dsRemoveFilter')}>✕</button>
             </div>
           ))}
-          <div><button className="btn sm" onClick={() => setD({ ...d, filters: [...(d.filters || []), { expr: d.fields[0] ? `=Fields.${d.fields[0].name}` : '', op: '=', value: '' }] })}>Add filter</button></div>
+          <div><button className="btn sm" onClick={() => setD({ ...d, filters: [...(d.filters || []), { expr: d.fields[0] ? `=Fields.${d.fields[0].name}` : '', op: '=', value: '' }] })}>{T('dsAddFilter')}</button></div>
         </div>
       </div>
-      <div className="grid2">
-        <Field label="Sort by"><Select value={sortBy} allowEmpty options={d.fields.map(f => f.name)} onChange={v => setD({ ...d, sort: v ? [{ by: `=Fields.${v}`, dir: d.sort?.[0]?.dir || 'asc' }] : [] })} /></Field>
-        <Field label="Direction"><Select value={d.sort?.[0]?.dir || 'asc'} options={['asc', 'desc']} onChange={v => setD({ ...d, sort: sortBy ? [{ by: `=Fields.${sortBy}`, dir: v }] : [] })} /></Field>
+      <div data-testid="ds-sort">
+        <div className="hint" style={{ marginBottom: 6 }}>{T('dsSortKeys')}</div>
+        <div style={{ display: 'grid', gap: 6 }}>
+          {sorts.map((s, i) => (
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 110px auto auto auto', gap: 6 }}>
+              <Select value={s.by} options={sortOpts(s.by)} allowEmpty onChange={v => setSort(i, 'by', v)} aria-label={T('dsSortBy', { n: i + 1 })} />
+              <Select value={s.dir || 'asc'} options={[{ value: 'asc', label: T('dsAsc') }, { value: 'desc', label: T('dsDesc') }]} onChange={v => setSort(i, 'dir', v)} aria-label={T('dsSortDir', { n: i + 1 })} />
+              <button className="btn sm ghost" disabled={i === 0} onClick={() => moveSort(i, -1)} aria-label={T('moveUp')} title={T('moveUp')}>↑</button>
+              <button className="btn sm ghost" disabled={i === sorts.length - 1} onClick={() => moveSort(i, 1)} aria-label={T('moveDown')} title={T('moveDown')}>↓</button>
+              <button className="btn sm ghost danger" onClick={() => setD({ ...d, sort: sorts.filter((_, j) => j !== i) })} aria-label={T('dsRemoveSort')}>✕</button>
+            </div>
+          ))}
+          <div><button className="btn sm" onClick={() => setD({ ...d, sort: [...sorts, { by: fieldOpts[0]?.value || '', dir: 'asc' }] })} data-testid="ds-add-sort">{T('dsAddSort')}</button></div>
+        </div>
       </div>
       {err && d.name && <div className="err">{err}</div>}
     </Dialog>
