@@ -14,6 +14,25 @@ const table = (extra = {}) => ({
 const footer = { height: 20, items: [{ type: 'textbox', name: 'P', x: 0, y: 0, w: 200, h: 14, value: 'Page {Globals.PageNumber} of {Globals.TotalPages}' }] };
 
 describe('paginator', () => {
+  it('a page break before an item that already starts a new page adds no blank page', async () => {
+    // A4, 36 pt margins, a 20 pt footer: 749.89 pt of body. The table (header + 36 rows of 20) ends at 740; the heading
+    // 15 pt below it does not fit page 1, so it starts page 2 anyway. Its page break must not add a page of the gap.
+    const heading = { type: 'textbox', name: 'Next', x: 0, y: 69, w: 200, h: 14, value: 'Next part', pageBreakBefore: true };
+    const out = await render(report([table({ footer: [] }), heading], { data: rows(36), footer }), { fontStore });
+    expect(out.pages.length).toBe(2);
+    expect(texts(out.pages[1])).toContain('Next part');
+    for (const pg of out.pages) expect(texts(pg).filter(t => !t.startsWith('Page ')).length).toBeGreaterThan(0);
+    // the break still works when the item would otherwise share the page
+    const near = await render(report([table({ footer: [] }), { ...heading, y: 60 }], { data: rows(10), footer }), { fontStore });
+    expect(near.pages.length).toBe(2);
+    expect(texts(near.pages[1])).toContain('Next part');
+    // the item starts its page, as after a forced break
+    const top = (m) => m.pages[1].items.find(i => i.t === 'text' && i.lines[0].text === 'Next part').clip.y;
+    expect(top(out)).toBeCloseTo(top(near), 5);
+    // a break before the first item of the report makes no blank first page either
+    const first = await render(report([{ ...heading, y: 10 }]), { fontStore });
+    expect(first.pages.length).toBe(1);
+  });
   it('breaks a long table between rows and repeats the header', async () => {
     const out = await render(report([table()], { data: rows(100), footer }), { fontStore });
     expect(out.pages.length).toBeGreaterThan(2);

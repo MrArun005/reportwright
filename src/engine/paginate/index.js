@@ -59,6 +59,15 @@ export function paginate(units, tables, pageH, warn) {
   let top = 0, guard = 0;
   while (top < end - EPS) {
     if (++guard > 100000) { warn('Pagination stopped: too many pages'); break; }
+    // A page that would begin with a gap and then an item with a page break before it: the break is already met
+    // (the item did not fit the page before). The page starts at the item, as a forced break would start it,
+    // instead of making a page of the gap alone.
+    if (pages.length) {
+      const f = firstAtOrAfter(top - EPS);
+      for (let i = f; i < units.length && units[i].top < units[f].top + EPS; i++) {
+        if (units[i].breakBefore && units[i].top > top + EPS) { top = units[i].top; break; }
+      }
+    }
     // tables that continue onto this page repeat their header
     let repeat = pages.length
       ? tables.filter(t => t.top < top - EPS && t.bottom > top + EPS)
@@ -68,10 +77,11 @@ export function paginate(units, tables, pageH, warn) {
     const offset = repeat.reduce((m, t) => Math.max(m, t.headerHeight), 0);
     let limit = top + Math.max(pageH - offset, 1);
 
-    // forced page breaks
+    // forced page breaks (one before the first thing on a page is met already: on the first page it is ignored)
+    const firstHere = units[firstAtOrAfter(top - EPS)];
     for (let i = firstAtOrAfter(top - maxH - 1); i < units.length && units[i].top < limit; i++) {
       const u = units[i];
-      if (u.breakBefore && u.top > top + EPS && u.top < limit) limit = u.top;
+      if (u.breakBefore && u.top > top + EPS && u.top < limit && firstHere.top < u.top - EPS) limit = u.top;
       const ub = u.top + u.height;
       if (u.breakAfter && ub > top + EPS && ub < limit && ub < end - EPS) limit = ub;
     }
