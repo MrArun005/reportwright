@@ -172,7 +172,7 @@ function paintHistogram(g) {
   if (b.capped) lc.warn(`${who}: more than ${MORE_CAPS.bins} bins; drawn with ${MORE_CAPS.bins}`);
   const peak = Math.max(...b.counts);
   const fmtX = (v) => toText(v, axes.x?.format || item.valueFormat || 'N0', ctx);
-  const f = frame(g, 0, peak, (v) => toText(v, axes.y?.format || 'N0', ctx));
+  const f = frame(g, 0, Math.max(peak, 4), (v) => toText(v, axes.y?.format || 'N0', ctx)); // counts: at least 0–4, so ticks are whole numbers
   const n = b.counts.length, bw = (f.right - f.left) / n;
   const color = s?.color || pal[0];
   b.counts.forEach((c, i) => {

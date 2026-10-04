@@ -32,7 +32,7 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 
 ## 1a. Reuse and authoring (Phase 8)
 
-- **Master reports:** a report picks a master (Report → Reuse). The master's page setup, page header and footer, styles, data sources, data sets, parameters, functions, images and layers wrap it; its body goes in the master's **content placeholder** (and grows, splits across pages and pushes the master's items below it down). Masters can have masters (4 levels). Changes to a master show on the next run. The designer draws the master's items locked and the content inside the placeholder.
+- **Master reports:** a report picks a master (Report → Reuse). The master's page setup, page header and footer, styles, data sources, data sets, parameters, functions, images and layers wrap it; its body goes in the master's **content placeholder** (and grows, splits across pages and pushes the master's items below it down). Masters can have masters (4 levels). Changes to a master show on the next run. The designer draws the master's items locked and the content inside the placeholder. A master can have **several named placeholders**: the body fills the first, and `sections.content` (`[{ placeholder, items }]`) fills the others by name; the designer draws each one inside the master's body with a Fill button.
 - **Report part libraries:** any item of a report can be published as a part (Inspector → Report part) with typed properties that its expressions read as `=PartProperties.Name`. Other reports add the library (Report parts panel) and insert parts **linked** (they follow the library) or as an **independent copy**; a linked part can be detached. A part brings the data sources, data sets, parameters and named styles it needs.
 - **Stylesheets and style inheritance:** a named style can be based on another (`parent`); a report can use another report's named styles as its stylesheet.
 - **Themes:** colours (Accent1–6, Dark/Light 1–2, Hyperlink), major and minor fonts, and constants, read as `=Theme.Colors.Accent1`, `=Theme.Fonts.MajorFont.Family`, `=Theme.Constants.Name`. A report has its own theme or uses a theme report, chosen by an expression at run time if wanted (e.g. from a parameter); a default (Office) theme otherwise.
@@ -63,14 +63,15 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 - Drill-down: collapsible groups whose state goes back to the engine, so pages and totals stay correct.
 - Interactive sort: click a header to sort.
 - Merged cells (`rowSpan`); the label repeats after a page break.
-- Items inside table cells (a table, list or chart per row, seeing only that row's data).
+- Items inside table cells (a table, list or chart per row, seeing only that row's data). A nested table or list taller than the page splits between its rows and continues on the next page, its header repeated.
 - Recursive hierarchies: `parent` grouping, `Level()`, indentation by level, `Recursive` aggregates, drill-down by level.
 - Footers printed at the bottom of the page; a group header never ends a page; a group header can repeat on each page its group continues on.
 - Row visibility: a hidden expression per row (per record in detail rows); a hidden row takes no space.
 - Grid lists (several records across), multi-column body (newspaper columns).
 - Wide tables continue sideways onto further pages (down-then-across or across-then-down) with repeated row headers.
 - Page numbers restart per group or list row (`newSection`); overall page number and total pages.
-- Several body sections, each with its own page size and orientation.
+- Several body sections, each with its own page size and orientation, and the report's page header and footer, its own, or none.
+- Page header and footer items are capped at 250,000 per render (all pages and sections); a band without page numbers is laid out once and copied.
 - Table of contents with final page numbers; decimal, roman and alpha numbering per level; headings as a TOC source.
 
 ## 5. Pivot tables (tablix)
@@ -79,13 +80,15 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 - Totals before or after any group; grand totals.
 - % of total, % of row, % of column.
 - Expand/collapse on row and column groups.
+- Recursive innermost row group (`parent`): nodes depth first, indented by level, each with its subtree's total, expand/collapse per node and `expandLevels`; at most 64 levels, cycles listed at the top level.
 - Repeated row and column headers across pages.
 - Older matrices render exactly as before.
 - 50k-row pivot (2 × 2 groups, 2 values) renders in about 170 ms.
 
 ## 6. Charts
 
-- Column, bar, line, area, pie, donut, scatter, bubble, radar, polar, candlestick, OHLC, gauge, funnel.
+- Column, bar, line, area, pie, donut, scatter, bubble, radar, polar, candlestick, OHLC, gauge, funnel, treemap (squarified), histogram (bin count or width), box plot (quartiles, 1.5 IQR whiskers, outliers), waterfall (increase/decrease/total colours, subtotals) and Gantt (start/end per row, lanes by task, date ticks, today line).
+- Caps on untrusted data: 10,000 points or bars, 1,000 categories, 50 series, 500 bins, 2,000 outlier dots.
 - Combo charts: each series picks its own type and value axis (second Y axis).
 - 100% stacked, range series (low/high), smooth lines (no overshoot), step lines.
 - Axes: min, max, log scale, title, format, grid lines, label angle, reversed.
@@ -93,6 +96,14 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 - Data labels: templates (`{value}`, `{category}`, `{series}`, `{percent}` or an expression), positions, collision avoidance, automatic contrast.
 - 12 palettes or custom colours; opt-in animations in the viewer (respects reduced motion).
 - Drawn by the engine, so the viewer, PDF and HTML show the same chart.
+
+## 6a. Maps
+
+- Shapes from GeoJSON (Polygon, MultiPolygon) coloured by a joined value, line layers (LineString, MultiLineString), points sized by a value.
+- Colour scale: continuous with a gradient (heat) legend, or 2–9 equal-width classes with a graduated legend.
+- A click on a region drills through, sets parameters or opens a URL (`regionAction`), in the region's scope; tooltips show the value.
+- Caps: 5,000 shapes, 200,000 coordinates, 10,000 points.
+- No tile or basemap layer, on purpose: tiles need the network at render time and cannot print to an offline PDF; the shapes and lines are the map.
 
 ## 7. Barcodes and images
 
@@ -199,10 +210,10 @@ Sample data APIs (stand-ins for customer data): `/api/sample/hard?rows=N` (nasty
 | SQL | No Oracle, Snowflake or BigQuery connector. |
 | Identity | No two-factor sign-in, no password reset by email; no SAML single logout. |
 | Governance | Permissions are not applied with accounts off (the shared `PW_BASIC_AUTH` password is all or nothing). The audit log takes the browser's word for exports made in the viewer; it has no tamper-evidence (hash chain) and is not shipped to a SIEM. |
-| Reuse | One content placeholder per master (ActiveReports allows several). The ActiveReports importer does not map master reports, report parts or layers yet. Themes use `Theme.Colors.Accent1`, not ActiveReports' `!` syntax. Word and Excel exports draw no rounded corners (no borders as lines there either). |
+| Reuse | Named placeholders other than the first are filled in the first body section only. The ActiveReports importer does not map master reports, report parts or layers yet. Themes use `Theme.Colors.Accent1`, not ActiveReports' `!` syntax. Word and Excel exports draw no rounded corners (no borders as lines there either). |
 | Tools | Phase 9 deferred: desktop designer, VS Code extension. |
 | Charts | Word export leaves charts out; no leader lines on outside pie labels; overlays not in the legend; half-circle gauges only. |
-| Tables | Recursive groups in tables only, not inside a pivot; body sections share one header and footer; an item inside a cell does not split across pages. |
+| Tables | A pivot's recursion is on its innermost row group only. A framed (bordered, keep-together) container inside a cell is still kept whole. |
 | Engine | A `pageBreakBefore` on an item already moved to a new page leaves a blank page. |
 | Scale | Batch output files go to one server's disk; the embed viewer has no Web Worker (100k rows block the page for about 5 s). |
 | Fonts | Thai, Khmer and other Indic scripts need an uploaded font; no dictionary line breaking. |
