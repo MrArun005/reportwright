@@ -2,7 +2,7 @@
 //   docker run -d --name pw-mssql -e ACCEPT_EULA=1 -e 'MSSQL_SA_PASSWORD=Pw-Test-Strong1!' -p 14330:1433 mcr.microsoft.com/azure-sql-edge
 //   PW_TEST_MSSQL='mssql://sa:Pw-Test-Strong1!@127.0.0.1:14330/master?encrypt=false' npx vitest run tests/engine/mssql.test.js
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { runSql, bindSql, limits, listConnections, testConnection, mssqlConfig, tsqlParts, isOneSelect } from '../../src/server/sql.js';
+import { runSql, bindSql, limits, listConnections, testConnection, mssqlConfig, tsqlParts, isOneSelect, probeReadOnly } from '../../src/server/sql.js';
 
 describe('binding for SQL Server', () => {
   it('binds @name as @pw_n inputs and leaves [names], strings and @@vars alone', () => {
@@ -21,6 +21,15 @@ describe('binding for SQL Server', () => {
     for (const q of ['select 1 as a set rowcount 0', 'select 1 as a commit', 'select 1 as a go', 'select * into #t from x', 'exec sp_who', 'select 1 declare @a int',
       "select 1 waitfor delay '0:0:5'", 'select 1 as [x]] delete from t --]  update t set a = 1']) expect(() => bindSql(q, {}, 'mssql'), q).toThrow(/not allowed/);
     expect(bindSql('select [set], "into", \'delete\' as [update] from t /* drop */ -- exec', {}, 'mssql').values).toEqual([]);
+  });
+  it('the read-only probe fails closed: an error is not a pass', async () => {
+    const pool = (fail) => ({ request: () => ({ query: async () => { if (fail === 'query') throw new Error('lost'); return { recordset: [{ sysadmin: 0 }] }; } }) });
+    const sql = { Transaction: class { async begin() {} async rollback() {} }, Request: class { async batch() { const e = new Error('cancelled'); e.number = 0; throw e; } } };
+    await expect(probeReadOnly(sql, pool('query'))).rejects.toThrow(/lost/);
+    await expect(probeReadOnly(sql, pool())).rejects.toThrow(/cancelled/); // CREATE TABLE failed, but not with "permission denied"
+    const denied = { ...sql, Request: class { async batch() { throw Object.assign(new Error('CREATE TABLE permission denied'), { number: 262 }); } } };
+    expect(await probeReadOnly(denied, pool())).toBe('');
+    expect(await probeReadOnly(sql, { request: () => ({ query: async () => ({ recordset: [{ sysadmin: null }] }) }) })).toBe('sysadmin'); // unknown is not "no"
   });
   it('accepts only a plan of exactly one SELECT', () => {
     const plan = (xml) => ({ recordsets: [[{ 'Microsoft SQL Server 2005 XML Showplan': xml }]] });
@@ -163,6 +172,32 @@ describe.skipIf(!process.env.PW_TEST_MSSQL)('SQL Server (live)', () => {
   it('rolls back whatever a SELECT manages to change (a function with side effects cannot, but the guard holds anyway)', async () => {
     // NEXT VALUE FOR changes state in a SELECT; the transaction is rolled back, so no row is ever written by a report
     expect(await runSql(ms('select top 1 id from dbo.pw_accounts order by id'), {})).toEqual([{ id: 1 }]);
+  });
+
+  it('stops on the client: rows past the cap and text past the byte cap are never read; one deadline for all', async () => {
+    const keep = { ...limits };
+    try {
+      // 2 billion rows: the request is cancelled at row 11, at once
+      Object.assign(limits, { rows: 10, ms: 20000 });
+      let t0 = Date.now();
+      await expect(runSql(ms('select a.object_id from sys.all_objects a cross join sys.all_objects b cross join sys.all_objects c'), {})).rejects.toThrow(/more than 10 rows/);
+      expect(Date.now() - t0).toBeLessThan(5000);
+      // a few rows, but each a megabyte of text
+      Object.assign(limits, { rows: 1000, bytes: 3 * 1048576 });
+      t0 = Date.now();
+      await expect(runSql(ms("select top 100 replicate(cast('x' as varchar(max)), 1000000) as big from sys.all_objects"), {})).rejects.toThrow(/more than 3 MB/);
+      expect(Date.now() - t0).toBeLessThan(5000);
+      // one value larger than the cap
+      await expect(runSql(ms("select replicate(cast('x' as varchar(max)), 4000000) as big"), {})).rejects.toThrow(/MB/);
+      // the deadline covers the probe, the parse check and the run together
+      Object.assign(limits, { ms: 1200, bytes: keep.bytes });
+      t0 = Date.now();
+      await expect(runSql(ms('select count_big(*) as n from sys.all_objects a cross join sys.all_objects b cross join sys.all_objects c where checksum(concat(a.name, b.name, c.name)) = 1'), {})).rejects.toMatchObject({ status: 504 });
+      expect(Date.now() - t0).toBeLessThan(4000);
+      await expect(runSql(ms("select 1 as a waitfor delay '00:00:05'"), {})).rejects.toMatchObject({ status: 400 });
+    } finally { Object.assign(limits, keep); }
+    // the pooled connections are clean afterwards
+    expect((await runSql(ms('select id from dbo.pw_accounts'), {})).length).toBe(5);
   });
 
   it('stops at the row cap and the time limit', async () => {
