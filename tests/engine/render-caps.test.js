@@ -36,4 +36,28 @@ describe('render caps', () => {
     expect(m.warnings.join('\n')).toMatch(/limited to 10 MB each/);
   });
 
+  it('one image from data used on every row is converted once, not once per row', async () => {
+    const rows = Array.from({ length: 120 }, (_, i) => ({ i }));
+    const def = { ...big(rows, pngBytes(1)), sections: report([{ type: 'list', name: 'L', dataSet: 'Rows', x: 0, y: 0, w: 200, h: 20, items: [
+      { type: 'image', name: 'I', dataSet: 'Big', x: 0, y: 0, w: 20, h: 10, src: '=First(Fields.b, "Big")' },
+    ] }]).sections };
+    const t = Date.now();
+    const { out, mb } = await retainedMb(() => render(def, { fontStore }));
+    expect(Date.now() - t).toBeLessThan(2000);
+    expect(out.pages.flatMap(p => p.items).filter(i => i.t === 'image')).toHaveLength(120);
+    expect(mb).toBeLessThan(40); // was ~160 MB: a fresh 1.3 MB base64 string per row
+  });
+
+  it('a background image from bytes becomes a data URI once, not String(bytes) per box', async () => {
+    const rows = Array.from({ length: 120 }, (_, i) => ({ i }));
+    const def = { ...big(rows, pngBytes(1)), sections: report([{ type: 'list', name: 'L', dataSet: 'Rows', x: 0, y: 0, w: 200, h: 20, items: [
+      { type: 'textbox', name: 'T', x: 0, y: 0, w: 20, h: 10, value: 'x', style: { backgroundImage: '=First(Fields.b, "Big")' } },
+    ] }]).sections };
+    const { out, mb } = await retainedMb(() => render(def, { fontStore }));
+    const imgs = out.pages.flatMap(p => p.items).filter(i => i.t === 'image');
+    expect(imgs).toHaveLength(120);
+    expect(imgs[0].src.startsWith('data:image/png;base64,')).toBe(true); // was "137,80,78,71,…", passed through as a URL
+    expect(mb).toBeLessThan(40); // was ~430 MB of "137,80,…" strings
+  });
+
 });

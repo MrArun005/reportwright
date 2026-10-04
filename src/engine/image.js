@@ -259,7 +259,7 @@ export function imageInfo(uri) {
  * Resolve an image source to what the page model carries: a data URI, a URL, or null (left out).
  * @param {unknown} v evaluated src
  * @param {string} who for warnings
- * @param {{ images?: Record<string, string>, budget?: { seen: Set<string>, bytes: number }, warn: (m: string) => void }} c
+ * @param {{ images?: Record<string, string>, budget?: { seen: Set<string>, bytes: number, memo?: Map<unknown, unknown> }, warn: (m: string) => void }} c
  * @returns {string | null}
  */
 export function resolveImageSrc(v, who, c) {
@@ -270,7 +270,11 @@ export function resolveImageSrc(v, who, c) {
     if (typeof img !== 'string' || !/^data:image\/[\w.+-]+[;,]/i.test(img)) { c.warn(`${who}: there is no embedded image named "${name}" (add it to the report's images as a data:image/… URI)`); return null; }
     v = img;
   }
-  const u = toDataUri(v);
+  // One conversion per source value per render: bytes or bare base64 used on every row (a logo from
+  // First(…), a background on every cell) would otherwise become a fresh copy per row before any cap applies.
+  const memo = c.budget ? (c.budget.memo ||= new Map()) : null;
+  let u = memo?.get(v);
+  if (u === undefined) { u = toDataUri(v); memo?.set(v, u); }
   if (u == null) { c.warn(`${who}: the image data is not a PNG, JPEG, GIF, WebP or SVG image, or is larger than 10 MB`); return null; }
   const s = String(u);
   if (s.startsWith('data:')) {
