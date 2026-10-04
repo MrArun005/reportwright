@@ -266,4 +266,7 @@ export default {
   dsDesc: "Descending",
   dsRemoveSort: "Remove sort key",
   dsAddSort: "Add sort key",
+  jsonHint: "The laid-out pages as JSON, the same as the API's json format",
+  downloadDef: "Download",
+  downloadDefHint: "Download the definition as a .pw.json file, unsaved changes included",
 };

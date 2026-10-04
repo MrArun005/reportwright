@@ -266,4 +266,7 @@ export default {
   dsDesc: "降順",
   dsRemoveSort: "並べ替えキーを削除",
   dsAddSort: "並べ替えキーを追加",
+  jsonHint: "レイアウト済みのページを JSON で（API の json 形式と同じ）",
+  downloadDef: "ダウンロード",
+  downloadDefHint: "定義を .pw.json ファイルとしてダウンロード（未保存の変更を含む）",
 };

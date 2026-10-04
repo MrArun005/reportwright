@@ -266,4 +266,7 @@ export default {
   dsDesc: "Absteigend",
   dsRemoveSort: "Sortierschlüssel entfernen",
   dsAddSort: "Sortierschlüssel hinzufügen",
+  jsonHint: "Die gesetzten Seiten als JSON, wie das json-Format der API",
+  downloadDef: "Herunterladen",
+  downloadDefHint: "Die Definition als .pw.json-Datei herunterladen, mit ungespeicherten Änderungen",
 };

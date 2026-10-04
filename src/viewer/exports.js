@@ -18,8 +18,10 @@ async function loadExcel() {
   return mod.default || mod;
 }
 
-/** Excel, HTML and CSV in the browser. ExcelJS loads only when needed. */
+/** Excel, Word, HTML, CSV and JSON in the browser. ExcelJS loads only when needed. */
 export async function exportBlob(fmt, model, def, opt = {}) {
+  // the laid-out pages, as the server's json format gives them
+  if (fmt === 'json') return new Blob([JSON.stringify(model)], { type: 'application/json' });
   if (fmt === 'csv') return new Blob([exportCsv(model, { locale: def.locale, currency: def.currency })], { type: 'text/csv;charset=utf-8' });
   if (fmt === 'html' && opt.interactive !== false) {
     // interactive by default: the downloaded file runs the viewer itself

@@ -48,7 +48,7 @@ const Frozen = ({ page, region, w, h, scale }) => {
 const MODES = ['single', 'continuous', 'galley'];
 
 /**
- * @typedef {{ page: number, pages: number, goTo: (n: number) => void, run: () => void, print: () => void, exportAs: (fmt: 'pdf'|'xlsx'|'docx'|'html'|'csv') => void }} ViewerApi
+ * @typedef {{ page: number, pages: number, goTo: (n: number) => void, run: () => void, print: () => void, exportAs: (fmt: 'pdf'|'xlsx'|'docx'|'html'|'csv'|'json') => void }} ViewerApi
  * @typedef {{ id: string, label: string, title?: string, after?: string, onClick?: (api: ViewerApi) => void }} ToolbarItem
  * @param {{ definition: any, reportId?: string, params?: Record<string,string>, title?: string, compact?: boolean, autoRun?: boolean, lang?: string,
  *   onDrill?: (report: string, params: object) => void, exportHtmlOptions?: object,
@@ -319,7 +319,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     try {
       const m = await pagedModel();
       const blob = fmt === 'pdf' ? await pdfBlob(m, definition.name) : await exportBlob(fmt, m, definition, { params, state, lang, ...(exportHtmlOptions || {}), ...(level.id ? { reportId: level.id } : {}) });
-      const ext = { pdf: 'pdf', xlsx: 'xlsx', docx: 'docx', html: 'html', csv: 'csv' }[fmt];
+      const ext = { pdf: 'pdf', xlsx: 'xlsx', docx: 'docx', html: 'html', csv: 'csv', json: 'json' }[fmt];
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = `${(definition.name || 'report').replace(/[^\w-]+/g, '-')}.${ext}`;
@@ -421,6 +421,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     exportItem('word', 'docx', 'Word', { title: T('wordHint') }),
     exportItem('html', 'html', 'HTML'),
     exportItem('csv', 'csv', 'CSV'),
+    exportItem('json', 'json', 'JSON', { title: T('jsonHint') }),
   ].filter(Boolean);
   const items = arrangeToolbar(builtIns, toolbar || {});
   const GROUPS = { paging: T('groupPaging'), zoom: T('groupZoom'), view: T('groupView'), export: T('groupExport') };

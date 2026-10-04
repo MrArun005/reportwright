@@ -266,4 +266,7 @@ export default {
   dsDesc: "تنازلي",
   dsRemoveSort: "إزالة مفتاح الترتيب",
   dsAddSort: "إضافة مفتاح ترتيب",
+  jsonHint: "الصفحات المنسّقة بصيغة JSON، مثل صيغة json في الواجهة البرمجية",
+  downloadDef: "تنزيل",
+  downloadDefHint: "تنزيل التعريف كملف .pw.json مع التغييرات غير المحفوظة",
 };

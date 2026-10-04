@@ -266,4 +266,7 @@ export default {
   dsDesc: "अवरोही",
   dsRemoveSort: "क्रम कुंजी हटाएँ",
   dsAddSort: "क्रम कुंजी जोड़ें",
+  jsonHint: "व्यवस्थित पृष्ठ JSON के रूप में, API के json फ़ॉर्मैट जैसे",
+  downloadDef: "डाउनलोड",
+  downloadDefHint: "परिभाषा .pw.json फ़ाइल के रूप में डाउनलोड करें, बिना सहेजे बदलावों सहित",
 };

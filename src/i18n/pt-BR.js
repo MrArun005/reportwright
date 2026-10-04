@@ -266,4 +266,7 @@ export default {
   dsDesc: "Decrescente",
   dsRemoveSort: "Remover chave de ordenação",
   dsAddSort: "Adicionar chave de ordenação",
+  jsonHint: "As páginas diagramadas em JSON, igual ao formato json da API",
+  downloadDef: "Baixar",
+  downloadDefHint: "Baixar a definição como arquivo .pw.json, com as alterações não salvas",
 };

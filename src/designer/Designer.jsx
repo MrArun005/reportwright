@@ -180,6 +180,15 @@ export default function Designer({ id, initial, lang: langIn, embed = null }) {
     if (!embed) window.addEventListener('beforeunload', onLeave); // the host page decides about leaving
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('beforeunload', onLeave); };
   }, [st, embed]);
+  // the definition as it is in the Designer now (unsaved changes too), as a file to keep, share or `pw render`
+  const download = () => {
+    const d = st().def;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = `${(d.name || id || 'report').replace(/[^\w-]+/g, '-')}.pw.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  };
   const open = async () => {
     const d = await embed.onOpen();
     if (d && typeof d === 'object') { st().init(id, d); loadSample(); }
@@ -204,6 +213,7 @@ export default function Designer({ id, initial, lang: langIn, embed = null }) {
         </div>
         {!embed && <button className="btn sm ghost" onClick={() => setDialog('ai')} title={T('askAiHint')}>{T('askAi')}</button>}
         {!embed && <button className="btn sm ghost" onClick={() => setDialog('history')} title={T('historyHint')}>{T('history')}</button>}
+        <button className="btn sm ghost" onClick={download} title={T('downloadDefHint')} data-testid="download-def">{T('downloadDef')}</button>
         <button className="btn sm ghost icon" onClick={() => setDialog('keys')} title={T('shortcutsHint')} aria-label={T('shortcutsHint')}>?</button>
         {!embed && <ThemeToggle />}
         {!embed && <a className="btn sm" href={`/viewer/${id}${q}`} target="_blank" rel="noreferrer" title={T('openViewerHint')}>{T('openViewer')}</a>}

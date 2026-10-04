@@ -266,4 +266,7 @@ export default {
   dsDesc: "降序",
   dsRemoveSort: "删除排序键",
   dsAddSort: "添加排序键",
+  jsonHint: "排版后的页面，JSON 格式（与 API 的 json 格式相同）",
+  downloadDef: "下载",
+  downloadDefHint: "将定义下载为 .pw.json 文件（包含未保存的更改）",
 };

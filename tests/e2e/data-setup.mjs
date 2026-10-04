@@ -86,6 +86,24 @@ const saved = await (await fetch(`${BASE}/api/reports/${id2}`, { headers: { orig
 const norm = (sets) => sets.map(x => ({ ...x, ...(x.relation ? { relation: { ...x.relation, path: x.relation.path || '$' } } : { path: x.path || '$' }), sort: x.sort || [] }));
 assert.deepEqual(norm((saved.definition || saved).dataSets), norm(before));
 
+step('Designer: Download gives the definition, unsaved changes included');
+await p.getByLabel('Report name').fill('Round trip, renamed');
+const [defDl] = await Promise.all([p.waitForEvent('download'), p.getByTestId('download-def').click()]);
+assert.equal(defDl.suggestedFilename(), 'Round-trip-renamed.pw.json');
+const downloaded = JSON.parse(fs.readFileSync(await defDl.path(), 'utf8'));
+assert.equal(downloaded.name, 'Round trip, renamed');
+assert.deepEqual(downloaded.dataSets, (saved.definition || saved).dataSets);
+await p.keyboard.press('Control+s'); // saved, so leaving the page does not ask
+await p.getByTestId('save-state').filter({ hasText: /^Saved$/ }).waitFor();
+
+step('Viewer: JSON export gives the laid-out pages');
+await p.goto(`${BASE}/viewer/${id2}`);
+await p.waitForSelector('.vpage');
+const [jsonDl] = await Promise.all([p.waitForEvent('download'), p.getByTestId('export-json').click()]);
+assert.match(jsonDl.suggestedFilename(), /\.json$/);
+const laid = JSON.parse(fs.readFileSync(await jsonDl.path(), 'utf8'));
+assert.ok(Array.isArray(laid.pages) && laid.pages.length > 0, 'pages in the JSON export');
+
 await b.close();
 await fetch(`${BASE}/api/reports/${id}`, { method: 'DELETE', headers: { origin: BASE, ...AUTH } });
 await fetch(`${BASE}/api/reports/${id2}`, { method: 'DELETE', headers: { origin: BASE, ...AUTH } });

@@ -266,4 +266,7 @@ export default {
   dsDesc: "Décroissant",
   dsRemoveSort: "Supprimer la clé de tri",
   dsAddSort: "Ajouter une clé de tri",
+  jsonHint: "Les pages mises en page en JSON, comme le format json de l’API",
+  downloadDef: "Télécharger",
+  downloadDefHint: "Télécharger la définition en fichier .pw.json, modifications non enregistrées comprises",
 };
