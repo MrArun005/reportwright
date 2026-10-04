@@ -254,7 +254,7 @@ describe('this server\'s own origin and credentials', () => {
     await expect(renderTo(def, { format: 'json', baseUrl: baseUrl(), principal: OPEN })).rejects.toThrow(/PW_BASE_URL/);
   }));
 
-  it('a data source cannot use the server\'s password or cookie: only GETs go to itself, with its own headers stripped', () => withEnv({ NODE_ENV: 'production', PW_BASIC_AUTH: 'u:secret', PW_INTERNAL_HOSTS: '127.0.0.1' }, async () => {
+  it('a data source cannot use the server\'s password or cookie: only GETs go to itself, with its own headers stripped', () => withEnv({ NODE_ENV: 'production', PW_BASIC_AUTH: 'u:secret', PW_INTERNAL_HOSTS: '127.0.0.1', PW_BASE_URL: at(self, '') }, async () => {
     const f = serverFetch(at(self, ''));
     // the review's attack: POST /api/data/sql to itself with a forged Origin, riding on the Basic password
     await expect(f(at(self, '/api/data/sql'), { method: 'POST', headers: { origin: at(self, ''), 'content-type': 'application/json' }, body: '{}' })).rejects.toMatchObject({ status: 403 });
@@ -267,13 +267,37 @@ describe('this server\'s own origin and credentials', () => {
     expect(seen[1].h.authorization).toBeUndefined();
   }));
 
+  it('credentials go only to the exact configured self origin: not another port or scheme, not through a redirect, never with userinfo', () => withEnv({ NODE_ENV: 'production', PW_BASIC_AUTH: 'u:secret', PW_INTERNAL_HOSTS: '127.0.0.1', PW_BASE_URL: at(self, '') }, async () => {
+    const basic = `Basic ${Buffer.from('u:secret').toString('base64')}`;
+    // a caller that says some other origin is "self" still sends no credentials there (PW_BASE_URL decides)
+    await serverFetch(at(other, ''))(at(other));
+    expect(seen[0].h.authorization).toBeUndefined();
+    // the configured self gets them
+    await serverFetch(at(self, ''))(at(self));
+    expect(seen[1].h.authorization).toBe(basic);
+    // self redirecting to another origin: the credentials stay behind
+    seen = [];
+    const hop = http.createServer((q, r) => { r.writeHead(302, { location: at(other, '/landed') }); r.end(); });
+    await new Promise(r => hop.listen(0, '127.0.0.1', r));
+    await withEnv({ PW_BASE_URL: `http://127.0.0.1:${hop.address().port}` }, () => serverFetch(`http://127.0.0.1:${hop.address().port}`)(`http://127.0.0.1:${hop.address().port}/go`));
+    hop.close();
+    expect(seen[0].url).toBe('/landed');
+    expect(seen[0].h.authorization).toBeUndefined();
+    // userinfo in a URL is refused outright
+    await expect(serverFetch(at(self, ''))(`http://u:secret@127.0.0.1:${self.address().port}/x`)).rejects.toMatchObject({ status: 400 });
+    await expect(serverFetch(at(self, ''))(`http://evil@127.0.0.1:${other.address().port}/x`)).rejects.toMatchObject({ status: 400 });
+    // https:// or another port of the same host is not self
+    await expect(serverFetch(at(self, ''))(`https://127.0.0.1:${self.address().port}/x`)).rejects.toBeTruthy();
+    expect(seen.filter(x => x.h.authorization)).toHaveLength(0);
+  }));
+
   it('a report cannot pick the Host header or the framing of a server-side request', () => withEnv({ PW_INTERNAL_HOSTS: '127.0.0.1' }, async () => {
     await serverFetch(at(self, ''))(at(other), { headers: { host: 'admin.internal', 'transfer-encoding': 'chunked', connection: 'upgrade' } });
     expect(seen[0].h.host).toBe(`127.0.0.1:${other.address().port}`);
     expect(seen[0].h['transfer-encoding']).toBeUndefined();
   }));
 
-  it('PW_AUTH=proxy: the server\'s calls to itself carry PW_PROXY_SECRET (and only those)', () => withEnv({ NODE_ENV: 'production', PW_AUTH: 'proxy', PW_PROXY_SECRET: SECRET, PW_INTERNAL_HOSTS: '127.0.0.1' }, async () => {
+  it('PW_AUTH=proxy: the server\'s calls to itself carry PW_PROXY_SECRET (and only those)', () => withEnv({ NODE_ENV: 'production', PW_AUTH: 'proxy', PW_PROXY_SECRET: SECRET, PW_INTERNAL_HOSTS: '127.0.0.1', PW_BASE_URL: at(self, '') }, async () => {
     const f = serverFetch(at(self, ''));
     await f(at(self), { headers: { 'x-pagewright-proxy-secret': 'forged' } });
     await f(at(other), { headers: { 'x-pagewright-proxy-secret': 'forged' } });
@@ -300,7 +324,7 @@ describe('a report\'s data sources in the browser (reportFetch)', () => {
     await f('https://pw.example.com/api/data/proxy?url=x');
     await f('/api/data/sql', { method: 'POST', body: '{}' });
     await f('/my-api/rows.json');
-    expect(calls.map(c => c[2])).toEqual(['same-origin', 'same-origin', 'same-origin', 'same-origin']);
+    expect(calls.map(c => c[2])).toEqual(['same-origin', 'same-origin', 'same-origin', 'omit']); // not ours: no cookie
   });
   it('may not call Pagewright\'s other APIs or pages with the viewer\'s cookie (an admin opening it would create users)', async () => {
     calls.length = 0;
@@ -309,6 +333,19 @@ describe('a report\'s data sources in the browser (reportFetch)', () => {
       await expect(f(url, { method }), `${method} ${url}`).rejects.toMatchObject({ status: 403 });
     }
     expect(calls).toHaveLength(0);
+  });
+  it('sends cookies only to its own data routes, and follows no same-origin redirect (into /api/users)', async () => {
+    const seen2 = [];
+    const g = reportFetch('https://pw.example.com', async (u, init) => { seen2.push(init); return new Response('[]'); });
+    await g('/api/sample/x');
+    await g('/my-api/rows.json');
+    expect(seen2.map(i => [i.credentials, i.redirect])).toEqual([['same-origin', 'error'], ['omit', 'error']]);
+  });
+  it('an embedded viewer sends the host page nothing: its server is the only "self"', async () => {
+    const seen2 = [];
+    const g = reportFetch('https://reports.example.com', async (u, init) => { seen2.push([u, init.credentials]); return new Response('[]'); });
+    await g('https://host-app.example.com/api/me');
+    expect(seen2).toEqual([['https://host-app.example.com/api/me', 'omit']]);
   });
   it('sends no cookies to other sites', async () => {
     calls.length = 0;

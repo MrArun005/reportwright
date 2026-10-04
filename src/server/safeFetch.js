@@ -51,14 +51,19 @@ export const NO_BASE_URL = 'http://pw-base-url-not-set.invalid';
  */
 export const serverFetch = (selfOrigin, { internal = true } = {}) => async (url, init = {}) => {
   const self = selfOrigin && safeOrigin(selfOrigin);
+  if (/^[a-z][a-z0-9+.-]*:\/\/[^/?#]*@/i.test(String(url))) throw Object.assign(new Error('A URL with a user name or password in it is refused: send credentials in a header.'), { status: 400 });
   if (safeOrigin(String(url)) === NO_BASE_URL) throw Object.assign(new Error('A relative data URL needs PW_BASE_URL in production (this server\'s public URL): the server never takes its own address from a request.'), { status: 500 });
   const headers = new Headers(init.headers || {});
   // the connection is ours to frame: a report cannot pick the virtual host (Host) or the body's framing
   for (const k of ['host', 'content-length', 'transfer-encoding', 'connection', 'te', 'upgrade', 'x-pagewright-proxy-secret']) headers.delete(k);
   const toSelf = self && safeOrigin(String(url)) === self;
+  // credentials only to the configured self: PW_BASE_URL's exact origin (scheme, host, port); without it, development only
+  const credentials = toSelf && (process.env.PW_BASE_URL ? safeOrigin(process.env.PW_BASE_URL) === self : process.env.NODE_ENV !== 'production');
   if (toSelf) {
     if (!['GET', 'HEAD'].includes((init.method || 'GET').toUpperCase())) throw Object.assign(new Error('A data source may only read (GET) from this server.'), { status: 403 });
     for (const k of ['origin', 'referer', 'cookie', 'authorization', 'x-api-key']) headers.delete(k);
+  }
+  if (credentials) {
     if (accountsOn()) headers.set('cookie', internalCookie(String(url)));
     else if (basicOn()) headers.set('authorization', `Basic ${Buffer.from(String(process.env.PW_BASIC_AUTH)).toString('base64')}`);
     if (process.env.PW_AUTH === 'proxy' && process.env.PW_PROXY_SECRET) headers.set('x-pagewright-proxy-secret', process.env.PW_PROXY_SECRET);
