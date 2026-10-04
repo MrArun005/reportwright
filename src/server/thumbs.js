@@ -75,10 +75,12 @@ function pump() {
 
 /** The worker script: next to this file in the sources (dev, `next start`, tests), else under the working directory. */
 function workerFile() {
-  const here = import.meta.url; // not new URL(…, import.meta.url): a bundler would copy the file without its imports
+  // Paths the bundler cannot work out (Turbopack follows process.cwd() and import.meta.url joins, then traces and tries
+  // to bundle the whole repository): the worker is plain Node, run from the sources.
+  const proc = globalThis['process'], meta = import.meta;
   const list = [];
-  try { list.push(path.join(path.dirname(fileURLToPath(here)), 'thumb-worker.mjs')); } catch { /* not a file URL */ }
-  list.push(path.join(process.cwd(), 'src', 'server', 'thumb-worker.mjs'));
+  try { list.push(path.join(path.dirname(fileURLToPath(meta['url'])), 'thumb-worker.mjs')); } catch { /* not a file URL */ }
+  list.push([proc['cwd'](), 'src', 'server', 'thumb-worker.mjs'].join(path.sep));
   return list.find(f => fs.existsSync(f)) || null;
 }
 
@@ -86,7 +88,8 @@ function worker() {
   if (g.worker || g.noWorker) return g.worker;
   const file = workerFile();
   if (!file) { g.noWorker = true; console.warn('[pagewright] thumbnails render on the main thread: src/server/thumb-worker.mjs is not here'); return null; }
-  const w = new Worker(file, { env: SHARE_ENV });
+  // eval: the bundler sees a string, not a module to trace; the bootstrap imports the worker from the sources
+  const w = new Worker('import(require("node:url").pathToFileURL(require("node:worker_threads").workerData.file).href)', { eval: true, env: SHARE_ENV, workerData: { file } });
   w.unref();
   w.on('error', (e) => { console.warn(`[pagewright] thumbnail worker: ${e.message}`); if (g.worker === w) g.worker = null; });
   w.on('exit', () => { if (g.worker === w) g.worker = null; });
