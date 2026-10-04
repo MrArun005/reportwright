@@ -9,7 +9,33 @@ const num = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? undefined
  * @param {{ p: any, value: string, options?: {value: any, label: string}[], onChange: (v: string) => void, invalid?: boolean,
  *   T: (key: string, vars?: object) => string, name: string }} props  name: unique per viewer, for radio groups
  */
-export default function ParamInput({ p, value: val, options: opts, onChange: set, invalid, T, name }) {
+export default function ParamInput(props) {
+  const { p, value, options, onChange, T } = props;
+  const control = <Control {...props} value={value ?? ''} />;
+  // nullable: a Null check box; while it is ticked the value is null and the control is off
+  if (p.nullable && !p.multi) {
+    return (
+      <div className="pnull">
+        <fieldset disabled={value === null} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>{control}</fieldset>
+        <label className="check"><input type="checkbox" checked={value === null} onChange={e => onChange(e.target.checked ? null : '')} />{T('nullValue')}</label>
+      </div>
+    );
+  }
+  // multi-value with choices: Select all (nothing ticked also means all in an "in" filter)
+  if (p.multi && options?.length && p.editor !== 'range' && p.editor !== 'dateRange' && p.selectAll !== false) {
+    const all = options.map(o => String(o.value));
+    const cur = new Set(String(value ?? '').split(',').filter(Boolean));
+    return (
+      <div className="pmulti">
+        <label className="check"><input type="checkbox" checked={all.every(v => cur.has(v))} onChange={e => onChange(e.target.checked ? all.join(',') : '')} />{T('selectAll')}</label>
+        {control}
+      </div>
+    );
+  }
+  return control;
+}
+
+function Control({ p, value: val, options: opts, onChange: set, invalid, T, name }) {
   const label = `${p.prompt || p.name}${p.required ? ' *' : ''}`;
   const min = num(p.min), max = num(p.max), step = num(p.step);
   switch (p.editor) {

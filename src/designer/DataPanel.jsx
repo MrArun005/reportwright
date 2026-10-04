@@ -147,6 +147,9 @@ function ParamDialog({ index, onClose }) {
         <Field label={T('defaultValue')} hint={T('defaultHint')}><TextInput value={p.default} onChange={v => setP({ ...p, default: v })} mono /></Field>
       </div>
       <Check label={T('required')} checked={p.required} onChange={v => setP({ ...p, required: v })} />
+      <Check label={T('paramNullable')} checked={p.nullable} onChange={v => setP({ ...p, nullable: v || undefined })} />
+      {p.type === 'string' && <Check label={T('paramAllowBlank')} checked={p.allowBlank} onChange={v => setP({ ...p, allowBlank: v || undefined })} />}
+      <Check label={T('paramHidden')} checked={p.hidden} onChange={v => setP({ ...p, hidden: v || undefined })} />
       <Check label={T('multiHint')} checked={p.multi} onChange={v => setP({ ...p, multi: v || undefined })} />
       <Field label={T('fixedChoices')}>
         <textarea className="textarea" rows={3} value={(p.options || []).map(o => (o.label != null && o.label !== String(o.value) ? `${o.value}=${o.label}` : String(o.value))).join('\n')}
