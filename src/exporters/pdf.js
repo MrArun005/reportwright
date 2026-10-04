@@ -58,6 +58,8 @@ export async function exportPdf(model, fontStore, opt = {}) {
   const used = new Map();
   /** @type {Map<string, Map<number, string>>} */
   const shaped = new Map();
+  /** right-to-left clusters whose glyphs' ToUnicode entries cannot spell them: they get an /ActualText span @type {WeakMap<any, Set<number>>} */
+  const spans = new WeakMap();
   const chars = (key) => { let c = used.get(key); if (!c) { c = new Set([32]); used.set(key, c); } return c; };
   for (const pg of model.pages) for (const it of pg.items) if (it.t === 'text') {
     for (const l of it.lines) {
@@ -67,7 +69,7 @@ export async function exportPdf(model, fontStore, opt = {}) {
         for (const ch of r.text) c.add(/** @type {number} */ (ch.codePointAt(0)));
         let g = shaped.get(r.font);
         if (!g) { g = new Map(); shaped.set(r.font, g); }
-        glyphText(r, fontStore.get(r.font), g);
+        glyphText(r, fontStore.get(r.font), g, spans);
       }
     }
   }
@@ -99,7 +101,7 @@ export async function exportPdf(model, fontStore, opt = {}) {
       // a subset's name starts with a tag (ABCDEF+), which tells readers (and pdffonts) it is one
       const pf = await doc.embedFont(bytes, { subset: false, customName: bytes === full ? undefined : `${subsetTag(bytes)}+${fontStore.get(key).postscriptName || 'Font'}` });
       plainEncoding(pf);
-      if (glyphs) addGlyphs(pf, glyphs);
+      if (glyphs) addGlyphs(pf, glyphs, !!opt.tagged);
       // the font file through our deflate (pdf-lib's is pako, on the main thread), with the Length1 TrueType wants
       const file = bytes, e = /** @type {any} */ (pf).embedder;
       if (!e.isCFF()) e.embedFontStream = async (c) => c.register(PDFRawStream.of(c.obj({ Filter: 'FlateDecode', Length1: file.length }), await deflate(file)));
@@ -239,7 +241,7 @@ export async function exportPdf(model, fontStore, opt = {}) {
           if (clipped) { c.q(); c.s += `${n2(it.clip.x)} ${n2(H - it.clip.y - it.clip.h)} ${n2(it.clip.w)} ${n2(it.clip.h)} re W n\n`; }
           for (const l of it.lines) {
             if (!l.runs) { c.text(f, it.size, color, l.x, H - l.y, /** @type {any} */ (f).embedder.literalOf(cleanText(l.text))); continue; }
-            for (const r of l.runs) if (r.text.trim()) drawRun(c, r, l.x + r.x, H - l.y, it.size, await font(r.font), color);
+            for (const r of l.runs) if (r.text.trim()) drawRun(c, r, l.x + r.x, H - l.y, it.size, await font(r.font), color, spans.get(r), shaped.get(r.font));
           }
           if (clipped) c.Q();
           break;
@@ -361,11 +363,13 @@ export async function exportPdf(model, fontStore, opt = {}) {
  * Draw one run of shaped glyphs by ID, where the engine placed them: a TJ array whose numbers move each
  * glyph from where the font's own advance (the W array) leaves it to the shaper's position; marks that sit
  * higher or lower use the text rise. /ActualText gives copy and search the characters: for a left-to-right
- * run the whole run in reading order; for a right-to-left run (drawn in visual order, which readers reorder
- * themselves) each cluster that is not one glyph for one character.
- * @param {Content} c
+ * run the whole run in reading order; a right-to-left run (drawn in visual order, which readers reorder
+ * themselves) reads through ToUnicode, glyph by glyph, and only a cluster ToUnicode cannot spell gets a span
+ * (`spans`, from glyphText); glyphs that stand for nothing (`texts`: '') go last. A span per joined letter, and
+ * the dots of joined letters drawn among the letters, made pdftotext split words ("الج ميل", "الت قن ية").
+ * @param {Content} c @param {Set<number>} [spans]
  */
-function drawRun(c, run, x, y, size, pf, color) {
+function drawRun(c, run, x, y, size, pf, color, spans, texts) {
   const f = pf.embedder.font;
   const per = 1000 / size;
   const span = (text) => `/Span <</ActualText ${PDFHexString.fromText(text).toString()}>> BDC\n`;
@@ -376,22 +380,37 @@ function drawRun(c, run, x, y, size, pf, color) {
   let arr = '';
   let pen = 0, rise = 0;
   const flush = () => { if (arr) c.s += `[${arr}] TJ\n`; arr = ''; };
-  const g = run.glyphs;
-  const starts = run.rtl ? [...new Set(g.filter((_, i) => i % 4 === 3))].sort((a, b) => a - b) : [];
+  const all = run.glyphs;
+  const adv = (id) => f.getGlyph(id).advanceWidth;
+  /** @type {number[]} */
+  let g = all, quietAt = -1;
+  if (run.rtl) {
+    // Glyphs that stand for nothing (the dots of a joined letter; the marks of a cluster in a span) go last, in
+    // one empty /ActualText: drawn among the letters they split a reader's words, and a span that starts or ends
+    // on a mark has the wrong box ("ف اتورة").
+    const hasBase = new Set();
+    for (let i = 0; i < all.length; i += 4) if (adv(all[i]) > 0) hasBase.add(all[i + 3]);
+    const quiet = (i) => (spans?.has(all[i + 3]) ? adv(all[i]) === 0 && hasBase.has(all[i + 3]) : texts?.get(all[i]) === '');
+    g = [];
+    for (const late of [false, true]) {
+      if (late) quietAt = g.length;
+      for (let i = 0; i < all.length; i += 4) if (quiet(i) === late) g.push(all[i], all[i + 1], all[i + 2], all[i + 3]);
+    }
+    if (quietAt === g.length) quietAt = -1;
+  }
+  const starts = run.rtl ? [...new Set(all.filter((_, i) => i % 4 === 3))].sort((a, b) => a - b) : [];
   let inSpan = false;
   for (let i = 0; i < g.length; i += 4) {
     const id = g[i], gx = g[i + 1], gy = g[i + 2], cl = g[i + 3];
-    if (run.rtl && (i === 0 || g[i - 1] !== cl)) { // the first glyph of a cluster
-      let n = 0;
-      for (let j = i; j < g.length && g[j + 3] === cl; j += 4) n++;
-      const text = run.text.slice(cl, starts[starts.indexOf(cl) + 1] ?? run.text.length);
-      if (n > 1 || [...text].length > 1) { flush(); c.s += span(text); inSpan = true; }
+    if (i === quietAt) { flush(); c.s += span(''); inSpan = true; }
+    else if (run.rtl && spans?.has(cl) && (quietAt < 0 || i < quietAt) && (i === 0 || g[i - 1] !== cl)) { // the first glyph of a cluster
+      flush(); c.s += span(run.text.slice(cl, starts[starts.indexOf(cl) + 1] ?? run.text.length)); inSpan = true;
     }
     if (gy !== rise) { flush(); c.s += `${n4(gy)} Ts\n`; rise = gy; }
     const adj = Math.round((pen - gx) * per * 1000) / 1000;
     arr += (adj ? `${adj}` : '') + `<${hex4(id)}>`;
-    pen = gx + (f.getGlyph(id).advanceWidth * size) / f.unitsPerEm;
-    if (inSpan && (i + 4 >= g.length || g[i + 7] !== cl)) { flush(); c.s += 'EMC\n'; inSpan = false; }
+    pen = gx + (adv(id) * size) / f.unitsPerEm;
+    if (inSpan && (i + 4 >= g.length || (quietAt < 0 || i + 4 < quietAt) && g[i + 7] !== cl || i + 4 === quietAt)) { flush(); c.s += 'EMC\n'; inSpan = false; }
   }
   flush();
   if (rise) c.s += '0 Ts\n'; // the rise outlives the text object
@@ -401,11 +420,15 @@ function drawRun(c, run, x, y, size, pf, color) {
 
 /**
  * The text each shaped glyph stands for, for the font's ToUnicode map: the character whose own (character-map)
- * glyph it is, else the characters of its cluster that have no glyph of their own there (a conjunct, a joined
- * Arabic form, a reph). A glyph used twice keeps its first text.
+ * glyph it is; the characters of its cluster that have no glyph of their own there (a conjunct, a joined
+ * Arabic form, a reph) go to ONE glyph, the first that is not a mark, and the cluster's other glyphs (dots,
+ * marks) stand for nothing, so a reader gets each character once. A glyph keeps its first text: a
+ * right-to-left cluster that would read differently with the texts already set goes into `spans` (drawRun
+ * gives it /ActualText). Left-to-right runs always get one span for the whole run.
  * @param {any} run @param {any} font fontkit font @param {Map<number, string>} out
+ * @param {WeakMap<any, Set<number>>} [spans]
  */
-function glyphText(run, font, out) {
+function glyphText(run, font, out, spans) {
   const g = run.glyphs;
   const starts = [...new Set(g.filter((_, i) => i % 4 === 3))].sort((a, b) => a - b);
   for (let k = 0; k < starts.length; k++) {
@@ -414,7 +437,23 @@ function glyphText(run, font, out) {
     for (let i = 0; i < g.length; i += 4) if (g[i + 3] === starts[k]) ids.push(g[i]);
     const own = new Map(chars.map(ch => [font.glyphForCodePoint(ch.codePointAt(0)).id, ch]));
     const rest = chars.filter(ch => !ids.includes(font.glyphForCodePoint(ch.codePointAt(0)).id)).join('');
-    for (const id of ids) if (!out.has(id)) out.set(id, own.get(id) ?? rest);
+    const carrier = rest ? (ids.find(id => !own.has(id) && font.getGlyph(id).advanceWidth > 0) ?? ids.find(id => !own.has(id))) : undefined;
+    let ok = !rest || carrier !== undefined;
+    const want = new Map();
+    for (const id of ids) {
+      const t = own.get(id) ?? (id === carrier ? rest : '');
+      if (want.has(id) && want.get(id) !== t) ok = false; // the same glyph twice in one cluster, standing for different text
+      want.set(id, t);
+    }
+    for (const [id, t] of want) {
+      if (!out.has(id)) out.set(id, t);
+      else if (out.get(id) !== t) ok = false;
+    }
+    if (!ok && run.rtl && spans) {
+      let s = spans.get(run);
+      if (!s) spans.set(run, s = new Set());
+      s.add(starts[k]);
+    }
   }
 }
 
@@ -463,11 +502,13 @@ function plainEncoding(pf) {
   };
 }
 
-function addGlyphs(pf, glyphs) {
+/** tagged: every glyph needs a ToUnicode entry (PDF/UA 7.21.7, PDF/A-2a); one that stands for no character of its own
+ *  (a half form of a conjunct) maps to U+200D ZERO WIDTH JOINER, and the run's ActualText gives the real text. */
+function addGlyphs(pf, glyphs, tagged = false) {
   const e = pf.embedder;
   const byId = new Map(e.glyphCache.access().map(g => [g.id, g]));
   // plain objects: fontkit caches its glyphs with the code points of their first use
-  for (const [id, text] of glyphs) byId.set(id, { id, advanceWidth: e.font.getGlyph(id).advanceWidth, codePoints: [...text].map(ch => ch.codePointAt(0)) });
+  for (const [id, text] of glyphs) byId.set(id, { id, advanceWidth: e.font.getGlyph(id).advanceWidth, codePoints: text || !tagged ? [...text].map(ch => ch.codePointAt(0)) : [0x200d] });
   const all = [...byId.values()].sort((a, b) => a.id - b.id);
   e.glyphCache = { access: () => all };
   const cmap = e.embedUnicodeCmap.bind(e);
