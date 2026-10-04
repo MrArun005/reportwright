@@ -149,6 +149,7 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 ## 13. Migration
 
 - ActiveReportsJS importer (`.rdlx-json`): both layouts, FixedPage, tablix (incl. nested), banded lists, charts (incl. the Phase 5 types), expressions, recursive groups, row spans, sections. 40 real files imported, validated and rendered with no item dropped; what changed is listed as notes.
+- SSRS / Report Builder importer (`.rdl`, `.rdlc`; RDL 2008, 2010, 2016): data sources and sets (SQL with @parameters, "Enter Data" rows), parameters (cascading, multi-value, hidden), text runs and rich text, tablix as table / matrix / list / banded list, charts (combos, secondary axis, data bars, sparklines), gauges and indicators (approximated), images, subreports, actions, document map, Variables / ReportItems / Me.Value, VB expressions. A safe XML reader (no DTDs, size and depth caps, linear). Maps and custom code are not converted (noted; code kept as text). 32 Microsoft sample reports imported, validated and rendered, no item dropped. See API.md, "SSRS import".
 
 ## 14. Report library (`reports/`)
 
@@ -177,7 +178,7 @@ Sample data APIs (stand-ins for customer data): `/api/sample/hard?rows=N` (nasty
 
 | Area | Gap |
 |---|---|
-| SSRS | No `.rdl` / `.rdlx` XML importer. |
+| SSRS | Maps, custom report items and RDL 2005 Table/Matrix/List are not imported; custom code is kept as text, not converted; gauges are approximated. |
 | SQL | No Oracle, Snowflake or BigQuery connector. |
 | Identity | No two-factor sign-in, no password reset by email; no SAML single logout. |
 | Governance | Permissions are not applied with accounts off (the shared `PW_BASIC_AUTH` password is all or nothing). The audit log takes the browser's word for exports made in the viewer; it has no tamper-evidence (hash chain) and is not shipped to a SIEM. |

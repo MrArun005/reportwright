@@ -40,8 +40,9 @@ export default function MoreWays({ name, lang, folder = null }) {
     if (!f) return;
     run('import', async () => {
       // the file name names the report, so drill-through links between imported reports find their target
-      const fileName = encodeURIComponent(f.name.replace(/\.(rdlx-json|rdlx|json)$/i, ''));
-      const { id, warnings: w } = await call(`/api/reports/import?name=${fileName}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: await f.text() });
+      const fileName = encodeURIComponent(f.name.replace(/\.(rdlx-json|rdlx|rdlc|rdl|json)$/i, ''));
+      const type = /\.rdlc?$/i.test(f.name) ? 'application/xml' : 'application/json'; // an SSRS report is XML
+      const { id, warnings: w } = await call(`/api/reports/import?name=${fileName}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}`, { method: 'POST', headers: { 'content-type': type }, body: await f.text() });
       if (w?.length) { setWarnings({ id, list: w }); setBusy(null); } else router.push(`/designer/${id}${q}`);
     });
   };
@@ -61,7 +62,7 @@ export default function MoreWays({ name, lang, folder = null }) {
     <div className="more-ways" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
       <button type="button" className="btn" onClick={dashboard} disabled={!!busy}>{busy === 'dashboard' ? T('creating') : T('newDashboard')}</button>
       <button type="button" className="btn" onClick={() => file.current?.click()} disabled={!!busy} title={T('importHint')}>{busy === 'import' ? T('importing') : T('importFile')}</button>
-      <input ref={file} type="file" accept=".rdlx-json,.json,application/json" hidden onChange={importFile}  aria-label={T('importFileLabel')} />
+      <input ref={file} type="file" accept=".rdlx-json,.json,.rdl,.rdlc,application/json" hidden onChange={importFile}  aria-label={T('importFileLabel')} />
       <button type="button" className="btn" aria-expanded={ai} onClick={() => setAi(v => !v)} disabled={!!busy && busy !== 'ai'}>{T('describeAi')}</button>
       {ai && (
         <div style={{ display: 'grid', gap: 6, width: '100%', maxWidth: 640 }}>
