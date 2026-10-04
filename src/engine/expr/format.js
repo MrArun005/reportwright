@@ -28,6 +28,7 @@ export function toDate(v) {
 /** Local calendar date as "yyyy-MM-dd" (toISOString would give the UTC day). */
 export const isoDate = (d) => formatDate(d, 'yyyy-MM-dd');
 
+const P10F = Array.from({ length: 23 }, (_, i) => 10 ** i);
 /** Shift a number's decimal point by e places through its decimal (exponent) form: no binary error (1.005 → 100.5). */
 export const shiftDec = (x, e) => { const [m, k = '0'] = String(x).split('e'); return Number(`${m}e${Number(k) + e}`); };
 
@@ -38,6 +39,9 @@ export const shiftDec = (x, e) => { const [m, k = '0'] = String(x).split('e'); r
  */
 export function roundHalfAway(v, digits = 0) {
   if (!Number.isFinite(v)) return v;
+  // already has no more decimals than asked for (8408.65 to 2): nothing to round. i / 10^d is the double nearest that
+  // decimal, so when it is v, v's shortest form has at most d decimals and the decimal shift below gives v back.
+  if (digits >= 0 && digits <= 22) { const i = Math.round(v * P10F[digits]); if (i / P10F[digits] === v) return v + 0; }
   return Math.sign(v) * shiftDec(Math.round(shiftDec(Math.abs(v), digits)), -digits) + 0; // + 0 turns -0 into 0
 }
 
@@ -60,7 +64,15 @@ export const REGION_CURRENCY = { US: 'USD', IN: 'INR', GB: 'GBP', DE: 'EUR', FR:
   RU: 'RUB', ID: 'IDR', MY: 'MYR', PH: 'PHP', TH: 'THB', VN: 'VND', PK: 'PKR', BD: 'BDT', LK: 'LKR', NP: 'NPR', SE: 'SEK', NO: 'NOK', DK: 'DKK', PL: 'PLN',
   TR: 'TRY', IL: 'ILS', EG: 'EGP', NG: 'NGN', KE: 'KES', HK: 'HKD', TW: 'TWD' };
 /** @param {string|undefined} locale */
-export const currencyOf = (locale) => { const m = /^[a-z]{2,3}-(?:[A-Za-z]{4}-)?([A-Za-z]{2})$/i.exec(locale || ''); return m ? REGION_CURRENCY[m[1].toUpperCase()] : undefined; };
+export const currencyOf = (locale) => {
+  const l = locale || '';
+  if (CURRENCY_OF.has(l)) return CURRENCY_OF.get(l);
+  const m = /^[a-z]{2,3}-(?:[A-Za-z]{4}-)?([A-Za-z]{2})$/i.exec(l);
+  const c = m ? REGION_CURRENCY[m[1].toUpperCase()] : undefined;
+  if (CURRENCY_OF.size < 1000) CURRENCY_OF.set(l, c);
+  return c;
+};
+const CURRENCY_OF = new Map();
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -70,48 +82,88 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
  * locale names a country ("en-IN" → ₹, as a .NET culture does), else none, and "C" then shows the number alone.
  * @param {any} value
  * @param {string|undefined|null} fmt
- * @param {{locale?: string, currency?: string}} [opt]
+ * @param {{locale?: string, currency?: string, fmtMemo?: Map<string, Map<any, string>>}} [opt] fmtMemo: a render's memo of formatted dates
  */
 export function formatValue(value, fmt, opt = {}) {
-  const locale = opt.locale || 'en-US';
-  const currency = opt.currency || currencyOf(opt.locale);
   if (value == null) return '';
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? '' : formatDate(value, fmt || 'dd MMM yyyy', locale);
+  const locale = opt.locale || 'en-US';
+  if (value instanceof Date) {
+    const t = value.getTime();
+    if (Number.isNaN(t)) return '';
+    if (!opt.fmtMemo) return formatDate(value, fmt || 'dd MMM yyyy', locale);
+    // a date column repeats its days: each instant formats once per format and locale in a render (opt.fmtMemo: the
+    // render's, so a time zone change between renders is seen)
+    const memo = memoFor(opt.fmtMemo, 'i', fmt || 'dd MMM yyyy', locale);
+    let out = memo.get(t);
+    if (out === undefined) { out = formatDate(value, fmt || 'dd MMM yyyy', locale); memo.set(t, out); }
+    return out;
+  }
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) return String(value);
-    // No format: plain digits, no grouping (a year stays 2026). Use N0/N2/C2 to group.
-    if (!fmt) return nf('en-US', { maximumFractionDigits: 10, useGrouping: false }).format(value);
-    const m = /^([CcNnFfPpDdEeXxGgRr])(\d{0,2})$/.exec(fmt);
-    if (m) {
-      const k = m[1].toUpperCase();
-      const d = m[2] === '' ? null : Number(m[2]);
-      // signDisplay 'negative': a value that rounds to zero shows 0.0, never -0.0
-      const fixed = { minimumFractionDigits: d ?? 2, maximumFractionDigits: d ?? 2, signDisplay: 'negative' };
-      switch (k) {
-        case 'C': return nf(locale, currency ? { style: 'currency', currency, ...fixed } : fixed).format(value);
-        case 'N': return nf(locale, fixed).format(value);
-        case 'F': return roundHalfAway(value, d ?? 2).toFixed(d ?? 2);
-        case 'P': return nf(locale, { style: 'percent', ...fixed }).format(value);
-        case 'D': { const t = Math.trunc(value); return (t < 0 ? '-' : '') + String(Math.abs(t)).padStart(d ?? 0, '0'); }
-        case 'E': return scientific(value, d ?? 6, m[1] === 'e' ? 'e' : 'E', 3);
-        case 'X': {
-          const t = Math.trunc(value);
-          const h = t >= 0 ? t.toString(16) : BigInt.asUintN(t >= -(2 ** 31) ? 32 : 64, BigInt(t)).toString(16); // two's complement, as Int32 / Int64
-          return (m[1] === 'X' ? h.toUpperCase() : h).padStart(d ?? 0, '0');
-        }
-        case 'G': return general(value, d || 15, m[1] === 'g' ? 'e' : 'E');
-        case 'R': return general(value, 17, 'E', String(value));
-      }
-    }
-    if (/[#0]/.test(fmt)) return customNumber(value, fmt, locale);
-    return String(value);
+    // No format: plain digits, no grouping (a year stays 2026). Use N0/N2/C2 to group. A safe integer reads the same.
+    if (!fmt) return Number.isSafeInteger(value) && !Object.is(value, -0) ? String(value) : PLAIN.format(value);
+    return numberFn(fmt, locale, opt.currency || currencyOf(opt.locale))(value);
   }
   if (typeof value === 'boolean') return value ? 'True' : 'False';
   if (typeof value === 'string' && fmt && /^\d{4}-\d{2}-\d{2}/.test(value)) {
-    const d = toDate(value);
-    if (d && /[yMd]/.test(fmt)) return formatDate(d, fmt, locale);
+    const memo = opt.fmtMemo ? memoFor(opt.fmtMemo, 's', fmt, locale) : null;
+    let out = memo?.get(value);
+    if (out === undefined) {
+      const d = toDate(value);
+      out = d && /[yMd]/.test(fmt) ? formatDate(d, fmt, locale) : value;
+      memo?.set(value, out);
+    }
+    return out;
   }
   return String(value);
+}
+const PLAIN = new Intl.NumberFormat('en-US', { maximumFractionDigits: 10, useGrouping: false });
+/** Formatted dates in one render: by text ('s') or instant ('i'), per format and locale. @param {Map<string, Map<any, string>>} all */
+function memoFor(all, kind, fmt, locale) {
+  const key = `${kind}\u0001${fmt}\u0001${locale}`;
+  let memo = all.get(key);
+  if (!memo) { if (all.size > 200) all.clear(); memo = new Map(); all.set(key, memo); }
+  else if (memo.size > 10000) memo.clear(); // ponytail: cleared when full, an LRU if a profile ever asks
+  return memo;
+}
+/** @type {Map<string, (v: number) => string>} a number format, compiled once per format, locale and currency */
+const numberFns = new Map();
+function numberFn(fmt, locale, currency) {
+  const key = `${fmt}\u0001${locale}\u0001${currency ?? ''}`;
+  let fn = numberFns.get(key);
+  if (!fn) {
+    fn = compileNumber(fmt, locale, currency);
+    if (numberFns.size > 2000) numberFns.clear();
+    numberFns.set(key, fn);
+  }
+  return fn;
+}
+/** @returns {(value: number) => string} for a finite number */
+function compileNumber(fmt, locale, currency) {
+  const m = /^([CcNnFfPpDdEeXxGgRr])(\d{0,2})$/.exec(fmt);
+  if (m) {
+    const k = m[1].toUpperCase();
+    const d = m[2] === '' ? null : Number(m[2]);
+    // signDisplay 'negative': a value that rounds to zero shows 0.0, never -0.0
+    const fixed = { minimumFractionDigits: d ?? 2, maximumFractionDigits: d ?? 2, signDisplay: 'negative' };
+    switch (k) {
+      case 'C': { const f = nf(locale, currency ? { style: 'currency', currency, ...fixed } : fixed); return (v) => f.format(v); }
+      case 'N': { const f = nf(locale, fixed); return (v) => f.format(v); }
+      case 'F': return (v) => roundHalfAway(v, d ?? 2).toFixed(d ?? 2);
+      case 'P': { const f = nf(locale, { style: 'percent', ...fixed }); return (v) => f.format(v); }
+      case 'D': return (value) => { const t = Math.trunc(value); return (t < 0 ? '-' : '') + String(Math.abs(t)).padStart(d ?? 0, '0'); };
+      case 'E': return (v) => scientific(v, d ?? 6, m[1] === 'e' ? 'e' : 'E', 3);
+      case 'X': return (value) => {
+        const t = Math.trunc(value);
+        const h = t >= 0 ? t.toString(16) : BigInt.asUintN(t >= -(2 ** 31) ? 32 : 64, BigInt(t)).toString(16); // two's complement, as Int32 / Int64
+        return (m[1] === 'X' ? h.toUpperCase() : h).padStart(d ?? 0, '0');
+      };
+      case 'G': return (v) => general(v, d || 15, m[1] === 'g' ? 'e' : 'E');
+      case 'R': return (v) => general(v, 17, 'E', String(v));
+    }
+  }
+  if (/[#0]/.test(fmt)) return (v) => customNumber(v, fmt, locale);
+  return (v) => String(v);
 }
 
 /** "E": d.ddddE+ddd. Mantissa digits round on the decimal value. */

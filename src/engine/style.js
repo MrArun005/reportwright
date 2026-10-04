@@ -101,6 +101,13 @@ export function borders(st) {
   return { top: side('borderTop'), right: side('borderRight'), bottom: side('borderBottom'), left: side('borderLeft') };
 }
 
-export const padding = (st) => normBox(st.padding ?? 0);
+/** [top, right, bottom, left]. A frozen (static, shared) style's is computed once: treat the array as read-only. */
+export const padding = (st) => {
+  if (!Object.isFrozen(st)) return normBox(st.padding ?? 0);
+  let p = PADS.get(st);
+  if (!p) { p = Object.freeze(normBox(st.padding ?? 0)); PADS.set(st, p); }
+  return p;
+};
+const PADS = new WeakMap();
 
 export const DASH = { solid: null, dashed: [4, 3], dotted: [1, 2] };

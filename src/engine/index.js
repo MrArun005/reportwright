@@ -15,7 +15,7 @@ import { BASE_STYLE } from './style.js';
 import { resolveImageSrc } from './image.js';
 import { ITEMS } from './items/index.js';
 import { loadBarcodes } from './items/barcode.js';
-import { shiftItems } from './items/paint.js';
+import { placeItems } from './items/paint.js';
 import { paginate } from './paginate/index.js';
 import { layoutItems } from './layout.js';
 import { validate } from './schema/validate.js';
@@ -89,6 +89,7 @@ export async function render(def0, opts = {}) {
     dataSets: {}, fields: null, locale: def.locale, currency: def.currency, // neither set: en-US numbers, no currency symbol (expr/format.js)
     functions: functionTable(def, fnCount), clock,
     aggCache: new WeakMap(), // aggregate results for this render (expr/evaluate.js)
+    fmtMemo: new Map(), // formatted dates for this render (expr/format.js)
   };
   // Theme.* in expressions: a theme report (maybe picked by a parameter), the report's own theme, or the default
   baseCtx.theme = await resolveTheme(def, baseCtx, getReport, warn);
@@ -263,7 +264,7 @@ export async function render(def0, opts = {}) {
           if (isFirst && section.printOnFirstPage === false) return;
           if (isLast && section.printOnLastPage === false) return;
           const r = layoutItems(section.items || [], plc);
-          for (const u of r.units) items.push(...shiftItems(u.items, ml, y0 + u.top));
+          for (const u of r.units) placeItems(u.items, ml, y0 + u.top, items);
         };
         band(header, mt, n === 0, n === total - 1);
         const frozen = []; // table headers on this page and where each table ends: viewers keep them in view while scrolling
@@ -271,7 +272,7 @@ export async function render(def0, opts = {}) {
           const p = slices[k * colCount + c];
           if (!p) break;
           const cx = ml + c * (colW + colGap);
-          for (const t of p.repeat) items.push(...shiftItems(t.headerItems, cx, bodyTop));
+          for (const t of p.repeat) placeItems(t.headerItems, cx, bodyTop, items);
           for (const t of body.tables) {
             if (!(t.top < p.bottom - EPS && t.bottom > p.top + EPS)) continue;
             const cont = p.repeat.includes(t);
@@ -287,8 +288,8 @@ export async function render(def0, opts = {}) {
             // a footer printed at the bottom of the page (it is the last thing on its page)
             if (u.atBottom) off += Math.max(0, cH - off - (p.bottom - p.top));
             // the text of a merged cell, again at the top of a page its rows continue on
-            if (u.cont && u.top <= p.top + EPS) items.push(...shiftItems(u.cont, cx, bodyTop + off));
-            items.push(...shiftItems(u.items, cx, bodyTop + off + (u.top - p.top)));
+            if (u.cont && u.top <= p.top + EPS) placeItems(u.cont, cx, bodyTop + off, items);
+            placeItems(u.items, cx, bodyTop + off + (u.top - p.top), items);
           }
         }
         band(footer, ph - pg.margins.bottom - footerH, n === 0, n === total - 1);

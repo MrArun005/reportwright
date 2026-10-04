@@ -8,7 +8,28 @@ import { borders, padding, DASH } from '../style.js';
  */
 
 /** Text layout for a box: lines, font key, needed height. */
-export function layoutTextLines(text, st, width, m, { wrap = true } = {}) {
+export function layoutTextLines(text, st, width, m, opt) {
+  const wrap = opt?.wrap ?? true;
+  // A frozen style is a static one shared by every cell that uses it (style.js): the same text at the same width lays
+  // out once per render. Tables repeat most cell texts (a region, a status, a date), so most cells hit this.
+  if (typeof text !== 'string' || !m.boxes || !Object.isFrozen(st)) return layoutText(text, st, width, m, wrap);
+  let byW = m.boxes.get(st);
+  if (!byW) { byW = new Map(); m.boxes.set(st, byW); }
+  const wk = wrap ? width : -1 - width;
+  let byText = byW.get(wk);
+  if (!byText) { byText = new Map(); byW.set(wk, byText); }
+  const tl = byText.get(text);
+  if (tl) return tl;
+  // ponytail: cleared when full; an LRU only if a profile shows thrashing
+  if (++m.boxCount > 200000) { m.boxes = new WeakMap(); m.boxCount = 0; }
+  // kept from the second time a text is seen: a column of unique values (ids, names) does not fill the cache
+  if (tl === undefined) { byText.set(text, 0); return layoutText(text, st, width, m, wrap); }
+  const out = layoutText(text, st, width, m, wrap);
+  Object.freeze(out.lines);
+  byText.set(text, Object.freeze(out));
+  return out;
+}
+function layoutText(text, st, width, m, wrap) {
   const key = resolveFontKey(st.fontFamily, st.fontWeight, st.fontStyle);
   const size = Number(st.fontSize) || 9;
   const pad = padding(st);
@@ -98,7 +119,7 @@ export function paintBox({ x, y, w, h, st, tl, numeric = false, m, ellipsis = tr
       }
     }
   }
-  const b = borders(st);
+  const b = bordersOf(st);
   const same = (p, q) => p && q && p.width === q.width && p.style === q.style && p.color === q.color;
   if (radius && same(b.top, b.right) && same(b.top, b.bottom) && same(b.top, b.left)) {
     items.push({ t: 'rect', x, y, w, h, fill: null, stroke: b.top.color, strokeWidth: b.top.width, dash: DASH[b.top.style] || null, radius });
@@ -111,8 +132,43 @@ export function paintBox({ x, y, w, h, st, tl, numeric = false, m, ellipsis = tr
   return items;
 }
 
+/** A frozen (static, shared) style's borders, parsed once. */
+const BORDERS = new WeakMap();
+function bordersOf(st) {
+  if (!Object.isFrozen(st)) return borders(st);
+  let b = BORDERS.get(st);
+  if (!b) { b = borders(st); BORDERS.set(st, b); }
+  return b;
+}
+
 function line(x1, y1, x2, y2, b) {
   return { t: 'line', x1, y1, x2, y2, stroke: b.color, strokeWidth: b.width, dash: DASH[b.style] || null };
+}
+
+/**
+ * Item arrays that layout made fresh for one unit and nothing else references (a table row's paint): page assembly
+ * moves their items into place instead of copying them, which halves the page model's peak memory. An array is
+ * moved at most once; any other array is copied (shiftItems), as before.
+ */
+export const OWNED = new WeakSet();
+
+/** Put items on the page at (dx, dy), appending them to `out`. */
+export function placeItems(items, dx, dy, out) {
+  if (!OWNED.delete(items)) { for (const it of shiftItems(items, dx, dy)) out.push(it); return; }
+  for (const it of items) { moveItem(it, dx, dy); out.push(it); }
+}
+function moveItem(it, dx, dy) {
+  switch (it.t) {
+    case 'text':
+      for (const l of it.lines) { l.x += dx; l.y += dy; }
+      if (it.clip) { it.clip.x += dx; it.clip.y += dy; } // an owned array's items have their own clip (paintBox, shiftLocal)
+      break;
+    case 'line': it.x1 += dx; it.y1 += dy; it.x2 += dx; it.y2 += dy; break;
+    case 'ellipse': it.cx += dx; it.cy += dy; break;
+    case 'field': it.x += dx; it.y += dy; it.draw = shiftItems(it.draw, dx, dy); break;
+    default: it.x += dx; it.y += dy;
+  }
+  if (it.rotate) it.rotate = { ...it.rotate, cx: it.rotate.cx + dx, cy: it.rotate.cy + dy };
 }
 
 /** Move page-model items by (dx, dy). Returns new objects. A rotated item's centre moves with it. */

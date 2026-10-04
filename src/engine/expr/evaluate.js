@@ -43,7 +43,7 @@ export function parseValue(v) {
   if (typeof v !== 'string') return { kind: 'lit', v };
   let p = tplCache.get(v);
   if (p) return p;
-  if (v.startsWith('=')) p = { kind: 'expr', ast: compile(v.slice(1)) };
+  if (v.startsWith('=')) { const ast = compile(v.slice(1)); p = { kind: 'expr', ast, fn: closureFor(ast) }; }
   else if (!v.includes('{')) p = { kind: 'lit', v };
   else {
     const parts = [];
@@ -90,7 +90,7 @@ export function isDynamic(v) {
 export function evalValue(v, ctx) {
   const p = parseValue(v);
   if (p.kind === 'lit') return p.v;
-  if (p.kind === 'expr') return evaluate(p.ast, ctx);
+  if (p.kind === 'expr') return p.fn ? p.fn(ctx) : evaluate(p.ast, ctx);
   let out = '';
   for (const part of p.parts) out += typeof part === 'string' ? part : toText(evaluate(part.ast, ctx), null, ctx);
   return out;
@@ -98,12 +98,33 @@ export function evalValue(v, ctx) {
 
 /** @param {any} v @param {string|null|undefined} fmt @param {EvalCtx} ctx */
 export function toText(v, fmt, ctx) {
-  return formatValue(v, fmt, { locale: ctx.locale, currency: ctx.currency });
+  return formatValue(v, fmt, ctx); // reads ctx.locale, ctx.currency and the render's ctx.fmtMemo
 }
 
 /** Check syntax only. Returns null or an error message. */
 export function checkValue(v) {
   try { parseValue(v); return null; } catch (e) { return e.message; }
+}
+
+/**
+ * The hottest expressions, compiled once to a closure built from our own AST (never eval or new Function):
+ * =Fields.x and =Parameters.x, a cell's usual value. They do what evaluate() does; anything unusual (a local of
+ * the same name inside a report function, a field that needs the case-insensitive lookup or its error) goes
+ * through evaluate(). Other expressions return null here and are walked by evaluate().
+ * @returns {((ctx: EvalCtx) => any) | null}
+ */
+function closureFor(ast) {
+  if (ast.type !== 'member' || ast.obj.type !== 'id') return null;
+  const root = ast.obj.name.toLowerCase(), prop = ast.prop;
+  if (root !== 'fields' && root !== 'parameters') return null;
+  const key = root === 'fields' ? 'fields' : 'params';
+  return (ctx) => {
+    const src = ctx[key];
+    if (ctx.locals || !src || typeof src !== 'object' || !Object.hasOwn(src, prop)) return evaluate(ast, ctx);
+    const clock = ctx.clock; // the time limit, as evaluate() checks it
+    if (clock && (clock.over || ((clock.n += 2) & 1022) === 0 && Date.now() > clock.until && (clock.over = true))) throw new ExprError(OVER_TIME, ast.p);
+    return src[prop];
+  };
 }
 
 /* ------------------------------------------------------------- evaluator */

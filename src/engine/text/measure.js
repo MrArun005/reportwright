@@ -68,8 +68,11 @@ export class TextMeasurer {
   /** @param {import('./fonts.js').FontStore} store */
   constructor(store) {
     this.store = store;
-    /** @type {Map<string, Map<number, number>>} advances in font units; -1 = not on the fast path */
-    this.adv = new Map();
+    /** @type {Map<string, any>} per loaded face: its metrics and advances (see face()) */
+    this.faces = new Map();
+    /** text layouts of boxes in a static (frozen) style: style → width → text → layout (items/paint.js) */
+    this.boxes = new WeakMap();
+    this.boxCount = 0;
     /** @type {Map<string, Map<number, boolean>>} */
     this.cover = new Map();
     /** @type {Map<string, any>} complex layouts at size 1 */
@@ -88,22 +91,45 @@ export class TextMeasurer {
     return resolveFontKey(DEFAULT_FAMILY, c.weight, c.style);
   }
 
+  /**
+   * A loaded face's numbers, read once: fontkit's getters (unitsPerEm, ascent…) decode tables on every read.
+   * adv: advances per code point (-1 = not on the fast path); words: fast-path units per string (a table repeats them).
+   * @param {string} key a loaded key
+   */
+  face(key) {
+    let f = this.faces.get(key);
+    if (!f) {
+      const font = this.store.get(key);
+      f = { font, upm: font.unitsPerEm, ascent: font.ascent, descent: font.descent, adv: new Map(), words: new Map(), met: new Map() };
+      this.faces.set(key, f);
+    }
+    return f;
+  }
+
   /** Font units of `text` on the fast path, or -1 when it needs the complex path. */
   fast(text, key) {
-    let m = this.adv.get(key);
-    if (!m) { m = new Map(); this.adv.set(key, m); }
-    const font = this.store.get(key);
+    const f = this.face(key);
+    const hit = f.words.get(text);
+    if (hit !== undefined) return hit;
+    const m = f.adv, font = f.font;
     let units = 0;
-    for (const ch of text) {
-      const cp = /** @type {number} */ (ch.codePointAt(0));
+    for (let i = 0; i < text.length; i++) {
+      let cp = text.charCodeAt(i);
+      if (cp >= 0xd800 && cp <= 0xdbff) { // a surrogate pair is one code point, as for…of reads it
+        const lo = text.charCodeAt(i + 1);
+        if (lo >= 0xdc00 && lo <= 0xdfff) { cp = (cp - 0xd800) * 0x400 + lo - 0xdc00 + 0x10000; i++; }
+      }
       let a = m.get(cp);
       if (a === undefined) {
         a = special(cp) || (cp >= 0x20 && !font.hasGlyphForCodePoint(cp)) ? -1 : font.glyphForCodePoint(cp).advanceWidth || 0;
         m.set(cp, a);
       }
-      if (a < 0) return -1;
+      if (a < 0) { units = -1; break; }
       units += a;
     }
+    // ponytail: bounded by clearing; an LRU only if a report with >50k distinct words per face shows up in a profile
+    if (f.words.size > 50000) f.words.clear();
+    f.words.set(text, units);
     return units;
   }
 
@@ -114,7 +140,7 @@ export class TextMeasurer {
   width(text, key, size, dir) {
     const k = this.store.has(key) ? key : this.usable(key);
     const u = this.fast(text, k);
-    if (u >= 0) return (u * size) / this.store.get(k).unitsPerEm;
+    if (u >= 0) return (u * size) / this.face(k).upm;
     return this.layout(text, k, dir).w * size;
   }
 
@@ -150,8 +176,10 @@ export class TextMeasurer {
 
   /** @param {string} key @param {number} size */
   metrics(key, size) {
-    const f = this.store.get(this.usable(key));
-    return { ascent: (f.ascent * size) / f.unitsPerEm, descent: (-f.descent * size) / f.unitsPerEm };
+    const f = this.face(this.usable(key));
+    let r = f.met.get(size);
+    if (!r) { r = Object.freeze({ ascent: (f.ascent * size) / f.upm, descent: (-f.descent * size) / f.upm }); f.met.set(size, r); }
+    return r;
   }
 
   /**

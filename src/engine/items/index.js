@@ -2,7 +2,7 @@
 import { evalValue, toText, isDynamic, truthy } from '../expr/evaluate.js';
 import { isoDate, roundHalfAway } from '../expr/format.js';
 import { resolveStyle, padding } from '../style.js';
-import { layoutTextLines, paintBox } from './paint.js';
+import { layoutTextLines, paintBox, OWNED } from './paint.js';
 import { applyFilters, applySort, related } from '../data/index.js';
 import { paintChart, CHART_TYPES } from './chart.js';
 import { PALETTES } from './chart-kit.js';
@@ -451,6 +451,7 @@ register('table', {
           const c0 = cells[0];
           items.push(toggleLink({ x: colX[0], toggle: extra.toggle, cell: c0?.cell || {}, st: c0?.st, w: c0?.w }, cols[0]?.width || 20, h));
         }
+        OWNED.add(items);
         return items;
       };
       // Taller than a page (less a repeated header): split into pieces of whole lines, like a text box, so it continues on the next pages.

@@ -46,14 +46,16 @@ export function layoutItems(items, lc, { dx = 0 } = {}) {
     const x0 = it.x, x1 = it.x + (L.res.width ?? it.w);
     const own = L.res.table ? { id: lc.nextId(), ...L.res.table } : null;
     const us = L.res.units;
-    us.forEach((u, k) => units.push({
-      ...u,
-      x0: u.x0 ?? x0, x1: u.x1 ?? x1,
-      top: top + u.top,
-      tableId: own ? own.id : u.tableId,
-      breakBefore: u.breakBefore || (k === 0 && !!it.pageBreakBefore),
-      breakAfter: u.breakAfter || (k === us.length - 1 && !!it.pageBreakAfter),
-    }));
+    // units are fresh from the item's layout and used once: placed in this set's coordinates in place, not copied
+    for (let k = 0; k < us.length; k++) {
+      const u = us[k];
+      u.x0 = u.x0 ?? x0; u.x1 = u.x1 ?? x1;
+      u.top = top + u.top;
+      u.tableId = own ? own.id : u.tableId;
+      u.breakBefore = u.breakBefore || (k === 0 && !!it.pageBreakBefore);
+      u.breakAfter = u.breakAfter || (k === us.length - 1 && !!it.pageBreakAfter);
+      units.push(u);
+    }
     if (own) tables.push({ ...own, top, bottom: top + L.res.height, x0, x1 });
     for (const t of L.res.tables || []) tables.push({ ...t, top: t.top + top, bottom: t.bottom + top });
     height = Math.max(height, top + (us.length ? L.res.height : 0), L.res.units.length ? 0 : 0);

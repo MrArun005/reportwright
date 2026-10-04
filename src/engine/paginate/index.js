@@ -82,7 +82,11 @@ export function paginate(units, tables, pageH, warn) {
     else if (forced && valid(limit)) bottom = limit;
     else {
       bottom = -1;
-      for (let i = cand.length - 1; i >= 0; i--) {
+      // the highest candidate at or below the limit: a binary search, not a scan from the end of the strip
+      let lo = 0, hi = cand.length;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (cand[mid] > limit + EPS) hi = mid; else lo = mid + 1; }
+      const last = lo - 1;
+      for (let i = last; i >= 0; i--) {
         const y = cand[i];
         if (y > limit + EPS) continue;
         if (y <= top + EPS) break;
@@ -90,7 +94,7 @@ export function paginate(units, tables, pageH, warn) {
       }
       if (bottom < 0) {
         // Nothing valid: drop keep-rules and try again, then cut.
-        for (let i = cand.length - 1; i >= 0; i--) {
+        for (let i = last; i >= 0; i--) {
           const y = cand[i];
           if (y > limit + EPS) continue;
           if (y <= top + EPS) break;
