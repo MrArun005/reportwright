@@ -80,6 +80,7 @@ export function deleteSchedule(id, p = defaultPrincipal()) {
 /** Run now, as the schedule's owner. @param {any} s a schedule (its owner is read from storage) */
 export async function runSchedule(s, reason = 'manual') {
   const rec = (await readOne(s.id)) || s;
+  s = rec; // what is stored now (an edit since the caller read it counts)
   const principal = rec.owner ? await principalFromId(rec.owner, rec.ownerKey) : defaultPrincipal(); // no owner: no one's (fail closed)
   const report = typeof s.template === 'string' ? s.template : null;
   let job;
@@ -120,11 +121,11 @@ export async function tickAs(owner, now = new Date()) {
       // claim the run first (under the lock): a slow item list or upload cannot make the next tick run it again
       const claimed = await withLock('schedules', async () => {
         const cur = await readOne(s.id);
-        if (!cur || !isDue(cur, now)) return false;
+        if (!cur || !isDue(cur, now)) return null;
         await save({ ...cur, lastRunAt: now.toISOString() });
-        return true;
+        return cur;
       });
-      if (claimed) await runSchedule(s, 'cron');
+      if (claimed) await runSchedule(claimed, 'cron'); // as it is now, not as the tick listed it
     }
     catch (e) { console.error(`[pagewright] schedule ${s.id}: ${e.message}`); }
   }

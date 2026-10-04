@@ -105,4 +105,41 @@ describe('review: a slow delivery target cannot hold the scheduler or the queue'
       expect((await jobs.listJobs()).filter(j => j.schedule?.id === s.id)).toHaveLength(1);
     } finally { delete process.env.PW_INTERNAL_HOSTS; srv.close(); }
   });
+
+  it('an empty answer (204, HEAD) leaves no deadline timer behind to throw later', async () => {
+    const http = await import('node:http');
+    const { safeFetch } = await import('../../src/server/safeFetch.js');
+    const srv = http.createServer((req, res) => { res.writeHead(204); res.end(); });
+    await new Promise(r => srv.listen(0, '127.0.0.1', r));
+    const errors = [];
+    const onErr = (e) => errors.push(e);
+    process.on('uncaughtException', onErr);
+    process.env.PW_FETCH_DEADLINE_MS = '200';
+    try {
+      const url = `http://127.0.0.1:${srv.address().port}/hook`;
+      expect((await safeFetch(url, { method: 'POST', body: 'x' }, { allow: ['127.0.0.1'] })).status).toBe(204);
+      expect((await safeFetch(url, { method: 'HEAD' }, { allow: ['127.0.0.1'] })).status).toBe(204);
+      await sleep(500);
+      expect(errors).toEqual([]);
+    } finally { process.off('uncaughtException', onErr); delete process.env.PW_FETCH_DEADLINE_MS; srv.close(); }
+  });
+
+  it('a tick runs each schedule as it is when claimed, not as it was when the tick began', async () => {
+    const http = await import('node:http');
+    const srv = http.createServer((req, res) => setTimeout(() => { res.writeHead(200, { 'content-type': 'application/json' }); res.end('[{"n":"a"}]'); }, 800));
+    await new Promise(r => srv.listen(0, '127.0.0.1', r));
+    process.env.PW_INTERNAL_HOSTS = '127.0.0.1';
+    try {
+      const slow = await schedules.createSchedule({ template: def, cron: '* * * * *', itemsFrom: { url: `http://127.0.0.1:${srv.address().port}/list`, map: { n: 'n' } }, format: 'json' });
+      await sleep(5);
+      const b = await schedules.createSchedule({ template: def, cron: '* * * * *', items: [{ name: 'OLD', parameters: { n: 'old' } }], format: 'json' });
+      const tick = schedules.tickAs('A', new Date(Date.now() + 3600000));
+      await sleep(200);
+      await schedules.updateSchedule(b.id, { items: [{ name: 'NEW', parameters: { n: 'new' } }] });
+      await tick;
+      const job = (await jobs.listJobs()).find(j => j.schedule?.id === b.id);
+      expect(JSON.parse(await store().get('jobs', job.id))._work.items.map(i => i.name)).toEqual(['NEW']);
+      for (const x of [slow.id, b.id]) await schedules.deleteSchedule(x);
+    } finally { delete process.env.PW_INTERNAL_HOSTS; srv.close(); }
+  });
 });

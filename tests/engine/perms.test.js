@@ -500,6 +500,23 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     } finally { await thumbsIdle(); await R.one.DELETE(req(`/api/reports/${id}`, { who: 'admin', method: 'DELETE' }), P(id)); }
   }, 60000);
 
+  it('review: a thumbnail worker that dies mid-drawing is not remembered as a broken thumbnail', async () => {
+    const { writeReport } = await import('../../src/server/reports.js');
+    const { thumbsIdle } = await import('../../src/server/thumbs.js');
+    const id = `crash-${kind}`;
+    const rows = Array.from({ length: 1500 }, (_, i) => ({ id: i }));
+    await writeReport(id, { ...def('Crash', [{ type: 'table', name: 'T', dataSet: 'Rows', x: 0, y: 0, w: 500, h: 40, columns: [{ width: 500 }], detail: [{ height: 14, cells: [{ value: '=Len(Replace(Space(200000), " ", "ab"))' }] }] }]),
+      dataSources: [{ name: 'src', type: 'json', data: { rows } }], dataSets: [{ name: 'Rows', source: 'src', path: '$.rows' }] });
+    try {
+      await thumbsIdle();
+      expect((await thumb.GET(req(`/api/reports/${id}/thumb`, { who: 'admin' }), P(id))).status).toBe(202);
+      await new Promise(r => setTimeout(r, 300));
+      await globalThis.__pwThumbJobs.worker?.terminate(); // the worker thread dies while drawing
+      await thumbsIdle();
+      expect((await thumb.GET(req(`/api/reports/${id}/thumb`, { who: 'admin' }), P(id))).status).toBe(202); // drawn again, not a cached 500
+    } finally { await thumbsIdle(); await R.one.DELETE(req(`/api/reports/${id}`, { who: 'admin', method: 'DELETE' }), P(id)); }
+  }, 60000);
+
   it('review: a heavy thumbnail is drawn off the event loop, under the time limit, once for many saves', async () => {
     const { writeReport } = await import('../../src/server/reports.js');
     const { thumbsIdle } = await import('../../src/server/thumbs.js');

@@ -68,6 +68,7 @@ function pump() {
   g.busy = run(job).then(async (r) => {
     // the drawing is kept only if no permission changed while it was queued or drawn (revs: an undo counts too)
     if (job.stamp && (await accessStamp(job.principal).catch(() => null)) !== job.stamp) return;
+    if (r.transient) return;
     if (g.cache.size > 2000) g.cache.clear();
     g.cache.set(slot, { hash: job.hash, ...r });
   }).finally(() => { g.running = null; g.busy = null; pump(); });
@@ -112,8 +113,9 @@ function run(job) {
         drawThumb(job).then(resolve);
       } else if (m?.n === n) done(m.result);
     };
-    const onErr = (e) => done({ error: `The thumbnail could not be drawn: ${e.message}`, status: 500 });
-    const onExit = () => done({ error: 'The thumbnail could not be drawn.', status: 500 });
+    // a dead worker says nothing about the report: not cached (transient), the next request draws it again
+    const onErr = (e) => done({ error: `The thumbnail could not be drawn: ${e.message}`, status: 500, transient: true });
+    const onExit = () => done({ error: 'The thumbnail could not be drawn.', status: 500, transient: true });
     const kill = setTimeout(() => { g.worker = null; w.terminate(); done({ error: `The report took longer than ${Math.round(renderTimeoutMs() / 1000)} s to draw.`, status: 504 }); }, renderTimeoutMs() + 10000);
     w.on('message', onMsg); w.on('error', onErr); w.on('exit', onExit);
     w.postMessage({ n, def: job.def, principal: job.principal, base: job.base });

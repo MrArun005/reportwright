@@ -115,21 +115,25 @@ export async function safeFetch(input, init = {}, { allow = [], hops = 3, deadli
     return safeFetch(next, keepBody ? { ...init, headers: h } : { headers: h }, { allow, hops: hops - 1, deadline });
   }
 
-  let size = 0;
-  const capped = res.pipe(new Transform({
-    transform(chunk, _enc, cb) {
-      size += chunk.length;
-      cb(size > MAX_BYTES ? new Error(`The response from ${url.host} is larger than ${MAX_BYTES / 1048576} MB`) : null, chunk);
-    },
-  }));
-  // the body within the same deadline
-  const bodyTimer = setTimeout(() => { capped.destroy(late()); res.destroy(); }, Math.max(0, deadline - Date.now()));
-  bodyTimer.unref?.();
-  capped.on('close', () => clearTimeout(bodyTimer));
   const empty = [204, 205, 304].includes(res.statusCode) || init.method === 'HEAD';
-  if (empty) res.resume();
+  let body = null;
+  if (empty) res.resume(); // nothing to read, and no deadline timer left behind
+  else {
+    let size = 0;
+    const capped = res.pipe(new Transform({
+      transform(chunk, _enc, cb) {
+        size += chunk.length;
+        cb(size > MAX_BYTES ? new Error(`The response from ${url.host} is larger than ${MAX_BYTES / 1048576} MB`) : null, chunk);
+      },
+    }));
+    // the body within the same deadline
+    const bodyTimer = setTimeout(() => { capped.destroy(late()); res.destroy(); }, Math.max(0, deadline - Date.now()));
+    bodyTimer.unref?.();
+    capped.on('close', () => clearTimeout(bodyTimer));
+    body = /** @type {any} */ (Readable.toWeb(capped));
+  }
   const outHeaders = Object.entries(res.headers).flatMap(([k, v]) => (Array.isArray(v) ? v.map(x => [k, x]) : [[k, String(v)]]));
-  return new Response(empty ? null : /** @type {any} */ (Readable.toWeb(capped)), { status: res.statusCode, statusText: res.statusMessage, headers: outHeaders });
+  return new Response(body, { status: res.statusCode, statusText: res.statusMessage, headers: outHeaders });
 }
 
 function safeOrigin(s) {
