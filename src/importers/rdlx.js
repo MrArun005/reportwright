@@ -22,7 +22,7 @@ const r2 = (n) => Math.round(n * 100) / 100;
 /** "1in", "2.5cm", "12mm", "10pt", "1pc", "96px" (or a number of points) → points. */
 export function toPt(v, fallback = 0) {
   if (typeof v === 'number') return Number.isFinite(v) ? r2(v) : fallback;
-  const m = /^\s*(-?\d*\.?\d+(?:e[-+]?\d+)?)\s*(in|cm|mm|pt|pc|px)?\s*$/i.exec(String(v ?? ''));
+  const m = /^(-?(?:\d+(?:\.\d+)?|\.\d+)(?:e[-+]?\d+)?)\s*(in|cm|mm|pt|pc|px)?$/i.exec(String(v ?? '').trim()); // linear: the input may be hostile
   return m ? r2(Number(m[1]) * UNIT[/** @type {keyof UNIT} */ ((m[2] || 'pt').toLowerCase())]) : fallback;
 }
 
@@ -106,16 +106,19 @@ const no = (what) => { throw new Untranslatable(what); };
 /** @returns {never} */
 const bad = (what) => { throw new Untranslatable(what, true); };
 
+const CONT = /[ \t]*\r?\n/y, NUM = /((?:\d+(?:\.\d+)?|\.\d+)(?:[eE][-+]?\d+)?)[DFRdfr@]?(?![A-Za-z0-9_])/y, NAME = /[A-Za-z_][A-Za-z0-9_]*/y;
+/** A sticky regex matched at i (no copy of the rest of the source, no backtracking over it). */
+const at = (re, src, i) => { re.lastIndex = i; return re.exec(src); };
 const VB_OPS = ['<>', '<=', '>=', ':=', '&', '+', '-', '*', '/', '\\', '^', '=', '<', '>', '(', ')', ',', '.', '!'];
 function vbLex(src) {
   const toks = [];
   let i = 0;
   while (i < src.length) {
     const c = src[i];
-    if (c === '_' && /^[ \t]*\r?\n/.test(src.slice(i + 1))) { i++; continue; } // line continuation
+    if (c === '_' && at(CONT, src, i + 1)) { i++; continue; } // line continuation
     if (/\s/.test(c)) { i++; continue; }
     if (/[0-9]/.test(c) || (c === '.' && /[0-9]/.test(src[i + 1] || ''))) {
-      const m = /^(\d*\.?\d+(?:[eE][-+]?\d+)?)[DFRdfr@]?(?![A-Za-z0-9_])/.exec(src.slice(i));
+      const m = at(NUM, src, i);
       if (!m) bad(`the number "${src.slice(i, i + 8)}"`);
       toks.push({ t: 'num', v: Number(m[1]) }); i += m[0].length; continue;
     }
@@ -140,7 +143,7 @@ function vbLex(src) {
       if (j < 0) bad('a name without its closing ]');
       toks.push({ t: 'id', v: src.slice(i + 1, j) }); i = j + 1; continue;
     }
-    if (/[A-Za-z_]/.test(c)) { const w = /^[A-Za-z_][A-Za-z0-9_]*/.exec(src.slice(i))[0]; toks.push({ t: 'id', v: w }); i += w.length; continue; }
+    if (/[A-Za-z_]/.test(c)) { const w = at(NAME, src, i)[0]; toks.push({ t: 'id', v: w }); i += w.length; continue; }
     const op = VB_OPS.find(o => src.startsWith(o, i));
     if (!op) bad(`the character "${c}"`);
     toks.push({ t: 'op', v: op }); i += op.length;
@@ -248,18 +251,21 @@ const cap = (s) => s[0].toUpperCase() + s.slice(1);
 
 const GLOBALS = { pagenumber: 'PageNumber', totalpages: 'TotalPages', executiontime: 'ExecutionTime', reportname: 'ReportName',
   pagenumberinsection: 'PageNumber', totalpagesinsection: 'TotalPages', overallpagenumber: 'PageNumber', overalltotalpages: 'TotalPages' };
-const INTERVAL = { year: 'yyyy', quarter: 'q', month: 'm', weekofyear: 'ww', day: 'd', dayofyear: 'd', hour: 'h', minute: 'n', second: 's' };
+const INTERVAL = { year: 'yyyy', quarter: 'q', month: 'm', weekofyear: 'ww', day: 'd', dayofyear: 'd', hour: 'h', minute: 'n', second: 's', weekday: 'w' };
 const DATEFORMAT = { generaldate: 0, longdate: 1, shortdate: 2, longtime: 3, shorttime: 4 };
-const AGG = { sum: 'Sum', avg: 'Avg', average: 'Avg', count: 'Count', countdistinct: 'CountDistinct', min: 'Min', max: 'Max', first: 'First', last: 'Last' };
+const AGG = { sum: 'Sum', avg: 'Avg', average: 'Avg', count: 'Count', countdistinct: 'CountDistinct', min: 'Min', max: 'Max', first: 'First', last: 'Last',
+  stdev: 'StDev', stdevp: 'StDevP', var: 'Var', varp: 'VarP' };
 const SAME = { format: 'Format', left: 'Left', right: 'Right', mid: 'Mid', len: 'Len', trim: 'Trim', replace: 'Replace', cstr: 'CStr', cdbl: 'CDbl',
   cint: 'CInt', cbool: 'CBool', cdate: 'CDate', round: 'Round', abs: 'Abs', floor: 'Floor', ceiling: 'Ceiling', int: 'Int', sqrt: 'Sqrt', now: 'Now',
   today: 'Today', dateadd: 'DateAdd', datediff: 'DateDiff', dateserial: 'DateSerial', year: 'Year', month: 'Month', day: 'Day', monthname: 'MonthName',
   ucase: 'Upper', lcase: 'Lower', upper: 'Upper', lower: 'Lower', val: 'Val', join: 'Join', lookup: 'Lookup', inlist: 'InList', coalesce: 'Coalesce',
   isnothing: 'IsNull', isnull: 'IsNull', isdbnull: 'IsNull', cdec: 'CDbl', csng: 'CDbl', clng: 'CInt', cshort: 'CInt', cbyte: 'CInt', fix: 'Int',
-  isempty: 'IsNull' };
+  isempty: 'IsNull', space: 'Space', weekday: 'Weekday', weekdayname: 'WeekdayName', hour: 'Hour', minute: 'Minute', second: 'Second', sign: 'Sign',
+  chr: 'Chr', chrw: 'Chr', asc: 'Asc', ascw: 'Asc', strreverse: 'StrReverse', isnumeric: 'IsNumeric', isdate: 'IsDate', datevalue: 'DateValue',
+  timeserial: 'TimeSerial', lookupset: 'LookupSet' };
 const CONVERT = { tostring: 'CStr', todecimal: 'CDbl', todouble: 'CDbl', tosingle: 'CDbl', toint16: 'CInt', toint32: 'CInt', toint64: 'CInt',
   todatetime: 'CDate', toboolean: 'CBool' };
-const MATH = { round: 'Round', abs: 'Abs', floor: 'Floor', ceiling: 'Ceiling', sqrt: 'Sqrt', pow: 'Pow', truncate: 'Int' };
+const MATH = { round: 'Round', abs: 'Abs', floor: 'Floor', ceiling: 'Ceiling', sqrt: 'Sqrt', pow: 'Pow', truncate: 'Int', sign: 'Sign', log: 'Log', log10: 'Log10', exp: 'Exp' };
 
 /**
  * @typedef {{ notes: string[], fields?: string, region?: string, scopes?: Map<string, string|null>, lit?: (s: string) => string }} EmitOpts
@@ -367,6 +373,7 @@ function emMember(n, o) {
   if (root === 'parameters') return atom(`Parameters.${safeName(n.name)}`);
   if (root === 'globals') return emGlobal(n.name);
   if (root === 'dateinterval') return INTERVAL[prop] ? atom(q(INTERVAL[prop])) : no(`DateInterval.${n.name}`);
+  if (root === 'firstdayofweek') { const d = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].indexOf(prop); return d >= 0 ? atom(String(d + 1)) : no(`FirstDayOfWeek.${n.name}`); }
   if (root === 'dateformat') return DATEFORMAT[prop] != null ? atom(String(DATEFORMAT[prop])) : no(`DateFormat.${n.name}`);
   if (root === 'datetime' && (prop === 'now' || prop === 'today')) return atom(prop === 'now' ? 'Now()' : 'Today()');
   if (root === 'environment' && prop === 'newline') return atom(q('\n'));
@@ -490,12 +497,16 @@ function emFunc(name, args, o, res) {
     }
     case 'datepart': {
       const iv = args[0]?.k === 'str' ? args[0].v.toLowerCase() : args[0] ? JSON.parse(em(args[0], o).s) : '';
-      const part = { yyyy: 'Year', m: 'Month', d: 'Day' }[iv] || no(`DatePart("${iv}")`);
+      const part = { yyyy: 'Year', m: 'Month', d: 'Day', h: 'Hour', n: 'Minute', s: 'Second', w: 'Weekday' }[iv] || no(`DatePart("${iv}")`);
       return fn(part, [em(args[1], o)]);
     }
     case 'instr':
       if (args.length === 3) return args[0].k === 'num' && args[0].v === 1 ? fn('InStr', [em(args[1], o), em(args[2], o)]) : no('InStr with a start position');
       return fn('InStr', all());
+    case 'instrrev': // VB: 1-based position of the last occurrence (0: none)
+      if (args.length !== 2) return no('InStrRev with a start position');
+      return { s: `LastIndexOf(${em(args[0], o).s}, ${em(args[1], o).s}) + 1`, p: 6 };
+    case 'previous': { const sc = args[1] ? scopeArg(args[1], o, name) : null; return fn('Previous', sc ? [em(args[0], o), sc] : [em(args[0], o)]); }
     case 'ltrim': case 'rtrim': o.notes.push(`${name} trims both ends in Pagewright`); return fn('Trim', all());
     case 'mid': if (args.length > 3) return no('Mid with extra arguments'); break;
   }
@@ -596,6 +607,8 @@ function track(cx, ar, label) {
     /** not in the report */
     drop(msg) { t.state = 'dropped'; cx.warn(`${name}: ${msg}`); },
   };
+  for (const n of Array.isArray(ar?.__notes) ? ar.__notes : []) t.approx(n); // notes from a front end (the .rdl importer)
+  for (const n of Array.isArray(ar?.__info) ? ar.__info : []) t.note(n); // information only: nothing is lost
   return t;
 }
 /** @typedef {ReturnType<typeof track>} T */
@@ -761,6 +774,8 @@ const CONVERTERS = {
   dvchart: (ar, cx, ctx) => chart(ar, cx, ctx, true),
   tableofcontents: (ar, cx, ctx) => toc(ar, cx, ctx),
   inputfield: (ar, cx, ctx) => inputField(ar, cx, ctx),
+  indicator: (ar, cx, ctx) => indicator(ar, cx, ctx),
+  visual: (ar, cx, ctx) => visual(ar, cx, ctx),
   overflowplaceholder: (ar, cx) => { const t = track(cx, ar); t.approx('the table it continues flows onto the next pages by itself, so this placeholder is not needed.'); return finish(cx, t, null); },
 };
 
@@ -814,8 +829,9 @@ function common(ar, cx, t, ctx, type) {
   return it;
 }
 
-const isTrue = (v) => v === true || (typeof v === 'string' && /^\s*=?\s*true\s*$/i.test(v));
-const isFalse = (v) => v == null || v === false || v === '' || (typeof v === 'string' && /^\s*=?\s*false\s*$/i.test(v));
+const bare = (v) => { const s = v.trim(); return (s[0] === '=' ? s.slice(1).trim() : s).toLowerCase(); }; // "= True" → "true", in linear time
+const isTrue = (v) => v === true || (typeof v === 'string' && v.length < 64 && bare(v) === 'true');
+const isFalse = (v) => v == null || v === false || v === '' || (typeof v === 'string' && v.length < 64 && bare(v) === 'false');
 
 function visibility(v, cx, t, ctx) {
   if (!v || typeof v !== 'object') return undefined;
@@ -916,7 +932,7 @@ function richtext(ar, cx, ctx) {
 }
 
 /** The words of some HTML (for places that hold plain text). */
-const stripHtml = (s) => s.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+const stripHtml = (s) => s.replace(/<br\s*\/?>/gi, '\n').replace(/<[^<>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
 
 function textbox(ar, cx, ctx) {
   const t = track(cx, ar);
@@ -1057,6 +1073,34 @@ function subreport(ar, cx, ctx) {
   return finish(cx, t, it);
 }
 
+/** A state indicator (from the .rdl importer): a Pagewright icon set with low and high thresholds. */
+function indicator(ar, cx, ctx) {
+  const t = track(cx, ar);
+  const it = common(ar, cx, t, ctx, 'iconset');
+  it.value = ex(cx, t, ar.Value ?? '', ctx, { what: 'its value' }) ?? '';
+  it.iconSet = ['trafficLights', 'arrows', 'symbols', 'flags', 'ratings'].includes(ar.IconSet) ? ar.IconSet : 'trafficLights';
+  for (const [k, src] of [['lower', ar.Lower], ['upper', ar.Upper]]) {
+    const v = src == null ? undefined : ex(cx, t, src, ctx, { what: `its ${k} threshold` });
+    if (v !== undefined) it[k] = typeof v === 'number' ? `=${v}` : v;
+  }
+  return finish(cx, t, it);
+}
+
+/** A data bar or sparkline (from the .rdl importer: SSRS draws them as small charts in cells). */
+function visual(ar, cx, ctx) {
+  const t = track(cx, ar);
+  const kind = ar.Kind === 'sparkline' ? 'sparkline' : 'databar';
+  const it = common(ar, cx, t, ctx, kind);
+  for (const [k, src] of [['value', ar.Value], ['category', ar.Category], ['max', ar.Max]]) {
+    const v = src == null ? undefined : ex(cx, t, src, ctx, { what: `its ${k}` });
+    if (v !== undefined) it[k] = v;
+  }
+  if (kind === 'sparkline' && ['line', 'column', 'area'].includes(ar.VisualStyle)) it.style = ar.VisualStyle;
+  const c = hexColor(ar.Color);
+  if (c) it.color = c;
+  return finish(cx, t, it);
+}
+
 function toc(ar, cx, ctx) {
   const t = track(cx, ar);
   const it = common(ar, cx, t, ctx, 'toc');
@@ -1149,7 +1193,11 @@ function cellOf(c, cx, tt, ctx, kind, opt = {}) {
   const span = Math.max(1, Math.floor(Number(c?.ColSpan) || 1));
   /** @type {Record<string, any>} */
   let cell = { value: '' };
-  if (ar && typeof ar === 'object') {
+  if (ar && typeof ar === 'object' && CELL_ITEMS.has(String(ar.Type || '').toLowerCase()) && !TEXT_CELL(ar)) {
+    // an image, chart, table, list or rectangle in a cell: Pagewright lays it out inside the cell, in the row's scope
+    const inner = convertItem({ ...ar, Left: '0pt', Top: '0pt' }, cx, { ...ctx, top: false });
+    if (inner) cell.item = inner;
+  } else if (ar && typeof ar === 'object') {
     const type = String(ar.Type || '').toLowerCase();
     const t = track(cx, ar);
     if (type === 'formattedtext' || type === 'richtext') {
@@ -1160,7 +1208,8 @@ function cellOf(c, cx, tt, ctx, kind, opt = {}) {
       const st = textStyle(ar.Style, cx, t, ctx);
       if (Object.keys(st).length) cell.style = st;
     } else if (type === 'textbox') {
-      cell.value = opt.firstOf ? firstOf(ex(cx, t, ar.Value ?? '', ctx, { what: 'its value' }), opt.firstOf) : ex(cx, t, ar.Value ?? '', ctx, { text: true });
+      cell.value = opt.firstOf ? firstOf(ex(cx, t, ar.Value ?? '', ctx, { what: 'its value' }), opt.firstOf)
+        : opt.firstIn ? firstIn(ex(cx, t, ar.Value ?? '', ctx, { what: 'its value' }), opt.firstIn) : ex(cx, t, ar.Value ?? '', ctx, { text: true });
       const st = textStyle(ar.Style, cx, t, ctx);
       if (Object.keys(st).length) cell.style = st;
       interactivity(ar, cell, cx, t, ctx);
@@ -1204,10 +1253,20 @@ function cellOf(c, cx, tt, ctx, kind, opt = {}) {
   return cell;
 }
 
+/** Report items a table cell can hold as a nested item (the cell lays them out in its box). */
+const CELL_ITEMS = new Set(['tablix', 'table', 'list', 'chart', 'dvchart', 'image', 'subreport', 'barcode', 'rectangle', 'container', 'bandedlist', 'indicator', 'visual', 'shape', 'line']);
+
 /** A row-header value shown only on the first row of its group (the merged cell in ActiveReports). */
 function firstOf(v, group) {
   if (v === undefined) return '';
   return `=IIF(RowNumber(${q(group)}) = 1, ${typeof v === 'string' && v.startsWith('=') ? v.slice(1) : inner(v)}, "")`;
+}
+
+/** An outer group's header in an inner group's header row: shown on the inner group's first instance only. */
+function firstIn(v, { key, group }) {
+  if (v === undefined) return '';
+  const k = inner(key);
+  return `=IIF(${k} = First(${k}, ${q(group)}), ${typeof v === 'string' && v.startsWith('=') ? v.slice(1) : inner(v)}, "")`;
 }
 
 /** Cells of one row, positioned by column (ActiveReports writes null for cells covered by a span). */
@@ -1435,8 +1494,14 @@ function tablixTable(ar, cx, ctx) {
         seen = true;
       } else if (m.Group) {
         detailVis = m.Visibility;
-        if (kids.length) problem = 'its detail rows have child members';
-        leaves.push({ bi: m.BodyIndex, path: p, depth, kind: 'detail' });
+        // several rows per record: static members under the details member (SSRS writes these)
+        const under = (ks, lvl, pp) => { for (const k of ks) {
+          const sp = k.Header ? Number(k.Header.LevelCount) || 1 : 0, kp = [...pp, { m: k, level: lvl, span: sp }];
+          if (k.Group) problem = 'its detail rows have groups under them';
+          const kk = members({ Members: k.Children });
+          if (kk.length) under(kk, lvl + sp, kp); else leaves.push({ bi: k.BodyIndex, path: kp, depth, kind: 'detail' });
+        } };
+        if (kids.length) under(kids, level + span, p); else leaves.push({ bi: m.BodyIndex, path: p, depth, kind: 'detail' });
         seen = true;
       } else if (kids.length) walkRows(kids, level + span, p, depth, seen ? 'after' : localDyn ? 'before' : hint);
       else leaves.push({ bi: m.BodyIndex, path: p, depth, kind: 'static', place: seen ? 'after' : localDyn ? 'before' : hint });
@@ -1447,11 +1512,12 @@ function tablixTable(ar, cx, ctx) {
   leaves.forEach((L, i) => { if (L.bi == null) L.bi = i; });
   for (const L of leaves) {
     const br = ar.Body.Rows?.[L.bi];
-    L.row = { height: toPt(br?.Height, 18), cells: rowCells(br?.Cells, N, cx, t, rctx, L.kind === 'detail' ? 'detail' : 'groupHeader', R) };
+    L.row = { height: toPt(br?.Height, 18), cells: rowCells(br?.Cells, N, cx, t, rctx, L.kind === 'detail' ? 'detail' : L.depth === 0 && L.place !== 'after' ? 'header' : 'groupHeader', R) };
     if (!(br?.Cells || []).some(c => isTrue(c?.Item?.CanGrow))) L.row.canGrow = false;
   }
   // a member's header sits in the first row under it (ActiveReports merges it down the rows)
   const placed = new Set();
+  const keyOf = (g) => { const ks = (g?.m.Group.GroupExpressions || []).map(e => translateExpression(e, { scopes: cx.scopes }).value).filter(k => typeof k === 'string'); return ks.length ? joinKeys(ks) : null; };
   for (const L of leaves) {
     for (const p of L.path) {
       if (placed.has(p.m)) continue;
@@ -1459,8 +1525,12 @@ function tablixTable(ar, cx, ctx) {
       if (!p.m.Header?.Item || p.level >= R) continue;
       const gi = groups.findIndex(g => g.m === p.m);
       const span = Math.min(p.span, R - p.level);
-      if (gi >= 0 && L.kind === 'detail' && L.depth === gi + 1) {
+      if (gi >= 0 && L.kind === 'detail' && L.depth >= gi + 1) { // the first detail row under the group (nested groups' headers share it)
         L.row.cells[p.level] = cellOf({ Item: p.m.Header.Item, ColSpan: span }, cx, t, rctx, 'detail', { firstOf: groups[gi].name });
+      } else if (gi >= 0 && L.depth > gi + 1 && (L.kind === 'self' || (L.kind === 'static' && L.place === 'before')) && keyOf(groups[L.depth - 1])) {
+        // the first header row of an inner group: shown on that group's first instance in this one (stair-step headers in one row)
+        const key = keyOf(groups[L.depth - 1]);
+        L.row.cells[p.level] = cellOf({ Item: p.m.Header.Item, ColSpan: span }, cx, t, rctx, 'groupHeader', { firstIn: { key, group: groups[gi].name } });
       } else if (gi >= 0 && !(L.depth === gi + 1 && (L.kind === 'self' || L.place === 'before'))) {
         const cells = new Array(N).fill(null);
         cells[p.level] = cellOf({ Item: p.m.Header.Item, ColSpan: span }, cx, t, rctx, 'groupHeader');
@@ -1920,7 +1990,7 @@ function chart(ar, cx, ctx, dv) {
     }
     const palName = String(ar.Palette || '').toLowerCase();
     const pal = Array.isArray(ar.CustomPalette) && /custom/i.test(String(ar.Palette || 'Custom')) ? ar.CustomPalette.map(hexColor).filter(Boolean) : [];
-    if (pal.length) { if (seriesGroup) it.palette = pal; else series.forEach((sr, i) => { if (pal[i]) sr.color = pal[i]; }); }
+    if (pal.length) { if (seriesGroup || type === 'pie' || type === 'donut' || type === 'funnel') it.palette = pal; /* slices take the palette */ else series.forEach((sr, i) => { if (pal[i]) sr.color = pal[i]; }); }
     else if (palName && palName !== 'custom') { if (PALETTES[palName]) it.palette = PALETTES[palName]; else t.approx(`its "${ar.Palette}" palette is drawn with the default colours.`); }
     if (p.Action) { const a = action(p.Action, cx, t, rctx); if (a) it.pointAction = a; }
     const ovs = plots.flatMap(pl => overlaysOf(pl, t));
@@ -2002,7 +2072,7 @@ function keyValues(str) {
   /** @type {[string, string][]} */
   const out = [];
   for (const p of parts) {
-    const m = /^\s*([A-Za-z]+(?:\$[^=]*)?)\s*=([\s\S]*)$/.exec(p);
+    const m = p.includes('=') ? /^\s*([A-Za-z]+(?:\$[^=]*)?)\s*=([\s\S]*)$/.exec(p) : null;
     if (m && CONN_KEYS.test(m[1])) out.push([m[1], m[2]]);
     else if (out.length) out[out.length - 1][1] += ';' + p;
   }
@@ -2227,7 +2297,7 @@ function sqlSource(d, src, name, cx) {
   for (const p of d.Query?.QueryParameters || []) {
     const pn = String(p?.Name || '').replace(/^@/, '');
     const m = /^=\s*Parameters!(\w+)\.Value\s*$/i.exec(String(p?.Value ?? ''));
-    if (m && pn) query = query.replace(new RegExp(`@${pn.replace(/[$]/g, '\\$&')}\\b`, 'g'), `@${safeName(m[1])}`);
+    if (m && pn) query = query.replace(new RegExp(`@${pn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g'), `@${safeName(m[1])}`);
     else if (pn) cx.warn(`Data set "${name}": the query parameter @${pn} is set by ${p?.Value}; Pagewright binds @name to the report parameter of that name, so add one.`);
   }
   if (/storedprocedure/i.test(String(d.Query?.CommandType || ''))) cx.warn(`Data set "${name}": it calls the stored procedure ${query}; write the call in SQL for your database (e.g. exec ${query} @param).`);

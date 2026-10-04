@@ -72,6 +72,12 @@ describe('expressions', () => {
     ['=ToDecimal(Fields!x.Value) * 2', '=CDbl(Fields.x) * 2'],
     ['=$"Total: {Fields!n.Value:N2} ({Fields!c.Value} items)"', 'Total: {Format(Fields.n, "N2")} ({Fields.c} items)'],
     ['=$"{{literal}} " & Fields!x.Value', '{{literal}} {Fields.x}'],
+    ['=StDev(Fields!x.Value, "Sales")', '=StDev(Fields.x, "Sales")'],
+    ['=Previous(Fields!x.Value)', '=Previous(Fields.x)'],
+    ['=WeekdayName(Weekday(Fields!d.Value))', '=WeekdayName(Weekday(Fields.d))'],
+    ['=InStrRev(Fields!s.Value, "/")', '=LastIndexOf(Fields.s, "/") + 1'],
+    ['=Hour(Fields!d.Value) & ":" & Space(1)', '{Hour(Fields.d)}:{Space(1)}'],
+    ['=Math.Log(Fields!x.Value)', '=Log(Fields.x)'],
   ];
   for (const [src, want] of cases) {
     it(`${src} → ${want}`, () => {
@@ -108,7 +114,7 @@ describe('expressions', () => {
   it('reads fields from the parent row when asked', () => {
     expect(translateExpression('=Fields!dept.Value', { fields: 'Parent' }).value).toBe('=Parent.dept');
   });
-  for (const src of ['=ReportItems!TextBox1.Value', '=Code.Greeting()', '=StDev(Fields!x.Value)', '=User!UserID', '=Previous(Fields!x.Value)', '=Fields!x.Value +', '=Weekday(Now())']) {
+  for (const src of ['=ReportItems!TextBox1.Value', '=Code.Greeting()', '=Aggregate(Fields!x.Value)', '=User!UserID', '=InScope("Group1")', '=Fields!x.Value +', '=Globals!RenderFormat.IsInteractive']) {
     it(`keeps ${src} visible as text and says why`, () => {
       const r = translateExpression(src, { text: true });
       expect(r.ok).toBe(false);
