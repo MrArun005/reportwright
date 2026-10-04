@@ -2,17 +2,40 @@
 //   docker run -d --name pw-mssql -e ACCEPT_EULA=1 -e 'MSSQL_SA_PASSWORD=Pw-Test-Strong1!' -p 14330:1433 mcr.microsoft.com/azure-sql-edge
 //   PW_TEST_MSSQL='mssql://sa:Pw-Test-Strong1!@127.0.0.1:14330/master?encrypt=false' npx vitest run tests/engine/mssql.test.js
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { runSql, bindSql, limits, listConnections, testConnection, mssqlConfig } from '../../src/server/sql.js';
+import { runSql, bindSql, limits, listConnections, testConnection, mssqlConfig, tsqlParts, isOneSelect } from '../../src/server/sql.js';
 
 describe('binding for SQL Server', () => {
   it('binds @name as @pw_n inputs and leaves [names], strings and @@vars alone', () => {
-    expect(bindSql("select [a@b], '@x', @@rowcount, @id, N'it''s @y' from t where r in (@r)", { id: 7, r: ['N', 'S'] }, 'mssql'))
-      .toEqual({ text: "select [a@b], '@x', @@rowcount, @pw_1, N'it''s @y' from t where r in (@pw_2, @pw_3)", values: [7, 'N', 'S'] });
+    expect(bindSql("select [a@b], '@x', @@rowcount, @id, N'it''s @y' from t where r in (@r) and c = a@b", { id: 7, r: ['N', 'S'] }, 'mssql'))
+      .toEqual({ text: "select [a@b], '@x', @@rowcount, @pw_1, N'it''s @y' from t where r in (@pw_2, @pw_3) and c = a@b", values: [7, 'N', 'S'] });
   });
-  it('the parse-only copy has typed stand-ins, never the values', () => {
-    const b = bindSql('select top (@n) * from t where a = @s and b = @f and c = @t and d = @z', { n: 5, s: "x'; drop table t --", f: 1.5, t: true, z: null }, 'mssql', { standIns: true });
-    expect(b.text).toBe("select top (CAST(0 AS BIGINT)) * from t where a = N'' and b = CAST(0 AS FLOAT) and c = CAST(0 AS BIT) and d = NULL");
-    expect(b.text).not.toContain('drop');
+  it('scans T-SQL as the server does: nested comments, ]] and "" escapes; unfinished ones are refused', () => {
+    const parts = (q) => tsqlParts(q).map(p => (p.code ? 'C' : 'x') + p.text);
+    expect(parts('select /* a /* b */ @x */ 1')).toEqual(['Cselect ', 'x/* a /* b */ @x */', 'C 1']);
+    expect(parts('select [a]]@b], "c""@d", N\'e\'\'@f\' -- @g\n,1')).toEqual(['Cselect ', 'x[a]]@b]', 'C, ', 'x"c""@d"', 'C, N', "x'e''@f'", 'C ', 'x-- @g', 'C\n,1']);
+    for (const q of ['select 1 /* /* */', "select 'x", 'select [a]] from t', 'select "a']) expect(() => tsqlParts(q), q).toThrow(/does not end/);
+  });
+  it('never binds inside comments or names, and refuses statement words in code', () => {
+    expect(bindSql('select /* /* */ @x */ @y as [a]]@z]', { y: 1 }, 'mssql')).toEqual({ text: 'select /* /* */ @x */ @pw_1 as [a]]@z]', values: [1] });
+    for (const q of ['select 1 as a set rowcount 0', 'select 1 as a commit', 'select 1 as a go', 'select * into #t from x', 'exec sp_who', 'select 1 declare @a int',
+      "select 1 waitfor delay '0:0:5'", 'select 1 as [x]] delete from t --]  update t set a = 1']) expect(() => bindSql(q, {}, 'mssql'), q).toThrow(/not allowed/);
+    expect(bindSql('select [set], "into", \'delete\' as [update] from t /* drop */ -- exec', {}, 'mssql').values).toEqual([]);
+  });
+  it('accepts only a plan of exactly one SELECT', () => {
+    const plan = (xml) => ({ recordsets: [[{ 'Microsoft SQL Server 2005 XML Showplan': xml }]] });
+    const one = (t, extra = '') => `<?xml version="1.0"?><ShowPlanXML xmlns="x"><BatchSequence><Batch><Statements><StmtSimple StatementText="s" StatementType="${t}"${extra}><QueryPlan/></StmtSimple>`;
+    expect(isOneSelect(plan(`${one('SELECT')}</Statements></Batch></BatchSequence></ShowPlanXML>`))).toBe(true);
+    expect(isOneSelect(plan(`${one('SELECT WITHOUT QUERY')}</Statements></Batch></BatchSequence></ShowPlanXML>`))).toBe(true);
+    for (const bad of [
+      plan(`${one('SELECT INTO')}</Statements></Batch></BatchSequence></ShowPlanXML>`),
+      plan(`${one('DELETE')}</Statements></Batch></BatchSequence></ShowPlanXML>`),
+      plan(`${one('SELECT')}</StmtSimple><StmtSimple StatementType="SELECT"/></Statements></Batch></BatchSequence></ShowPlanXML>`),
+      plan(`${one('SELECT')}</StmtSimple><StmtCond/></Statements></Batch></BatchSequence></ShowPlanXML>`),
+      plan(`${one('SELECT', ' StatementType="DELETE"')}</Statements></Batch></BatchSequence></ShowPlanXML>`),
+      plan('<ShowPlanXML><BatchSequence><Batch><Statements></Statements></Batch></BatchSequence></ShowPlanXML>'),
+      plan('<ShowPlanXML><BatchSequence><Batch/><Batch/></BatchSequence></ShowPlanXML>'),
+      plan('not a plan'), { recordsets: [] }, { recordsets: [[], []] }, { recordsets: [[{ a: 1 }]] }, null,
+    ]) expect(isOneSelect(bad)).toBe(false);
   });
   it('reads the connection URL without showing it', () => {
     expect(mssqlConfig('mssql://u%40x:p%3Aw@db.example:1444/sales?encrypt=false&trustServerCertificate=true&instance=SQL1'))
@@ -48,6 +71,9 @@ describe.skipIf(!process.env.PW_TEST_MSSQL)('SQL Server (live)', () => {
     expect(await runSql(ms('select opened, big from dbo.pw_accounts where id = 1'), {})).toEqual([{ opened: '2024-01-15', big: '9007199254740993' }]);
     expect(await runSql(ms('with t as (select id from dbo.pw_accounts) select top (@n) id from t order by id'), { n: 2 })).toEqual([{ id: 1 }, { id: 2 }]);
     expect(await count()).toBe(5);
+    // FOR XML / FOR JSON are reads too (the plan calls them XML SELECT, JSON SELECT)
+    expect(Object.values((await runSql(ms('select id from dbo.pw_accounts where id = 1 for json path'), {}))[0])[0]).toBe('[{"id":1}]');
+    expect(Object.values((await runSql(ms('select id from dbo.pw_accounts where id = 1 for xml path'), {}))[0])[0]).toBe('<row><id>1</id></row>');
   });
 
   it('runs exactly one SELECT: no second statement, no writes, no procedures', async () => {
@@ -62,6 +88,34 @@ describe.skipIf(!process.env.PW_TEST_MSSQL)('SQL Server (live)', () => {
     await expect(runSql(ms('update dbo.pw_accounts set name = name'), {})).rejects.toThrow(/SELECT/);
     expect(await count()).toBe(5);
     expect(await runSql(ms("select count(*) as n from sys.tables where name = 'pw_copy'"), {})).toEqual([{ n: 0 }]);
+  });
+
+  it('refuses every shape that tried to make the checked text differ from the run text', async () => {
+    const shapes = [
+      'select 1 as a /* /* */ delete from dbo.pw_accounts /* */ */ delete from dbo.pw_accounts',
+      'select 1 as [x]] delete from dbo.pw_accounts --] delete from dbo.pw_accounts',
+      'select 1 as a; set showplan_xml off; delete from dbo.pw_accounts',
+      'select 1 as a set rowcount 0',
+      'select 1 as a commit delete from dbo.pw_accounts',
+      'select 1 as a\ngo\ndelete from dbo.pw_accounts',
+      'select 1 as a /* unfinished',
+      "select N'x as a",
+      'declare @a int select @a as a',
+      "select 1 as a; exec('delete from dbo.pw_accounts')",
+    ];
+    for (const q of shapes) await expect(runSql(ms(q), {}), q).rejects.toMatchObject({ status: 400 });
+    // and what is legal stays legal, with the same meaning on both sides
+    expect(await runSql(ms('select 1 as [x]] delete from dbo.pw_accounts --]'), {})).toEqual([{ 'x] delete from dbo.pw_accounts --': 1 }]);
+    expect(await runSql(ms('select @n /* /* @z */ */ as [a@b] -- @q'), { n: 3 })).toEqual([{ 'a@b': 3 }]);
+    expect(await count()).toBe(5);
+  });
+
+  it('a statement the keyword scan does not know is still refused by the server parse', async () => {
+    // two SELECTs: no word in it is refused, the plan has two statements
+    await expect(runSql(ms('select 1 as a; with x as (select 2 as b) select b from x'), {})).rejects.toThrow(/one SELECT/);
+    await expect(runSql(ms('select 1 as a select 2 as b'), {})).rejects.toThrow(/one SELECT/);
+    // a statement the list does not name (RECEIVE) does not get through either
+    await expect(runSql(ms('select 1 as a receive top (1) * from dbo.q'), {})).rejects.toMatchObject({ status: 400 });
   });
 
   it('rolls back whatever a SELECT manages to change (a function with side effects cannot, but the guard holds anyway)', async () => {

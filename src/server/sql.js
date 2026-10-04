@@ -30,24 +30,19 @@ const SCALAR = new Set(['string', 'number', 'boolean']);
  * "@name" → driver placeholders ("?" or "$n"), with the values in order. A list expands to "?, ?, ?";
  * an empty list becomes NULL, so `x in (@list)` matches nothing (and so does `x not in (@list)`).
  * @ inside '…', "…", `…`, -- and /* *\/ is left alone; so is @@var (MySQL system variables).
- * SQL Server: "@pw_1", "@pw_2"… (request inputs); [bracketed names] are left alone too. opt.standIns: instead of
- * placeholders, typed stand-ins with no value in them (CAST(0 AS BIGINT), N'', …), for SQL Server's parse-only check.
+ * SQL Server: "@pw_1", "@pw_2"… (request inputs), found by a T-SQL scanner (tsqlParts).
  * @param {string} query @param {Record<string, any>} params @param {'sqlite'|'postgres'|'mysql'|'mssql'} dialect
- * @param {{ standIns?: boolean }} [opt]
  */
-export function bindSql(query, params, dialect, opt = {}) {
+export function bindSql(query, params, dialect) {
+  if (dialect === 'mssql') return bindTsql(query, params);
   // MySQL lets a backslash escape a quote inside a string; standard SQL does not
   const str = dialect === 'mysql' ? String.raw`'(?:[^'\\]|\\[\s\S]|'')*'|"(?:[^"\\]|\\[\s\S]|"")*"` : `'(?:[^']|'')*'|"(?:[^"]|"")*"`;
-  const brackets = dialect === 'mssql' ? String.raw`\[[^\]]*\]|` : '';
-  const re = new RegExp(String.raw`${str}|${brackets}\x60[^\x60]*\x60|--[^\n]*|/\*[\s\S]*?\*/|@@\w+|@([A-Za-z_]\w*)|(\?|(?<![\w$])\$\d+)|[^'"\x60@?$/\[-]+|[\s\S]`, 'g');
+  const re = new RegExp(String.raw`${str}|\x60[^\x60]*\x60|--[^\n]*|/\*[\s\S]*?\*/|@@\w+|@([A-Za-z_]\w*)|(\?|(?<![\w$])\$\d+)|[^'"\x60@?$/-]+|[\s\S]`, 'g');
   const values = [];
-  const ph = () => (dialect === 'postgres' ? `$${values.length}` : dialect === 'mssql' ? `@pw_${values.length}` : '?');
-  const standIn = (v) => (typeof v === 'number' ? (Number.isInteger(v) ? 'CAST(0 AS BIGINT)' : 'CAST(0 AS FLOAT)') : typeof v === 'boolean' ? 'CAST(0 AS BIT)' : typeof v === 'string' ? "N''" : 'NULL');
+  const ph = () => (dialect === 'postgres' ? `$${values.length}` : '?');
   const one = (v, name) => {
-    if (v instanceof Date) v = isoDate(v);
-    if (v != null && !SCALAR.has(typeof v)) throw fail(`The parameter "${name}" must be a value or a list of values.`, 400);
-    values.push(dialect === 'sqlite' && typeof v === 'boolean' ? Number(v) : v ?? null); // node:sqlite cannot bind booleans
-    return opt.standIns ? standIn(v) : ph();
+    values.push(bindValue(v, name, dialect));
+    return ph();
   };
   const text = query.replace(re, (tok, name, raw) => {
     if (raw && (raw !== '?' || dialect !== 'postgres')) throw fail(`Write parameters as @name in the query, not ${raw}.`, 400);
@@ -57,6 +52,81 @@ export function bindSql(query, params, dialect, opt = {}) {
     if (!Array.isArray(v)) return one(v, name);
     return v.length ? v.map(x => one(x, name)).join(', ') : 'NULL';
   });
+  return { text, values };
+}
+
+/** A value as the driver binds it. */
+function bindValue(v, name, dialect) {
+  if (v instanceof Date) v = isoDate(v);
+  if (v != null && !SCALAR.has(typeof v)) throw fail(`The parameter "${name}" must be a value or a list of values.`, 400);
+  return dialect === 'sqlite' && typeof v === 'boolean' ? Number(v) : v ?? null; // node:sqlite cannot bind booleans
+}
+
+/**
+ * T-SQL split into code and the rest, exactly as SQL Server reads it: -- comments; /* *\/ comments, which NEST;
+ * '…' and N'…' strings ('' inside); "…" identifiers ("" inside); […] identifiers (]] inside). Anything left open
+ * (a comment, string or name with no end) is refused, so this scanner and the server never disagree on where code is.
+ * @param {string} q @returns {{ code: boolean, text: string }[]}
+ */
+export function tsqlParts(q) {
+  const out = [];
+  let i = 0, start = 0;
+  const push = (code, end) => { if (end > start) out.push({ code, text: q.slice(start, end) }); start = end; };
+  const open = () => fail('The query has a comment, string or [name] that does not end.', 400);
+  while (i < q.length) {
+    const c = q[i], d = q[i + 1];
+    if (c === '-' && d === '-') {
+      push(true, i);
+      const e = q.indexOf('\n', i);
+      i = e < 0 ? q.length : e;
+      push(false, i);
+    } else if (c === '/' && d === '*') {
+      push(true, i);
+      let depth = 0;
+      while (i < q.length) {
+        if (q[i] === '/' && q[i + 1] === '*') { depth++; i += 2; } else if (q[i] === '*' && q[i + 1] === '/') { depth--; i += 2; if (!depth) break; } else i++;
+      }
+      if (depth) throw open();
+      push(false, i);
+    } else if (c === "'" || c === '"' || c === '[') {
+      push(true, i);
+      const end = c === '[' ? ']' : c;
+      i++;
+      for (;;) {
+        if (i >= q.length) throw open();
+        if (q[i] === end) { if (q[i + 1] === end) { i += 2; continue; } i++; break; }
+        i++;
+      }
+      push(false, i);
+    } else i++;
+  }
+  push(true, i);
+  return out;
+}
+
+// Words that never belong in a report's SELECT. A second check, beside the server's own parse (SHOWPLAN): both must pass.
+const TSQL_DENY = new Set(['SET', 'DECLARE', 'EXEC', 'EXECUTE', 'SP_EXECUTESQL', 'GO', 'USE', 'BEGIN', 'COMMIT', 'ROLLBACK', 'SAVE', 'TRAN', 'TRANSACTION',
+  'WAITFOR', 'INSERT', 'UPDATE', 'DELETE', 'MERGE', 'INTO', 'DROP', 'ALTER', 'CREATE', 'TRUNCATE', 'GRANT', 'REVOKE', 'DENY', 'BACKUP', 'RESTORE',
+  'KILL', 'SHUTDOWN', 'DBCC', 'RECONFIGURE', 'OPENROWSET', 'OPENQUERY', 'OPENDATASOURCE', 'OPENXML', 'BULK', 'PRINT', 'RAISERROR', 'THROW', 'GOTO',
+  'RETURN', 'IF', 'WHILE', 'CHECKPOINT', 'READTEXT', 'WRITETEXT', 'UPDATETEXT', 'SETUSER', 'REVERT']);
+// letters, digits, @ $ # _ make one word in T-SQL; a word after @ is a variable
+const TSQL_WORD = /(?<![\w@$#])(@@?)?([A-Za-z_][\w@$#]*)/g;
+
+/** @name → @pw_n in code only; a word from TSQL_DENY anywhere in code → refused. */
+function bindTsql(query, params) {
+  const values = [];
+  const text = tsqlParts(query).map(({ code, text: t }) => (!code ? t : t.replace(TSQL_WORD, (m, at, word) => {
+    if (at === '@@') return m;
+    if (!at) {
+      if (TSQL_DENY.has(word.toUpperCase())) throw fail(`A SQL source can only run one SELECT query: "${word}" is not allowed.`, 400);
+      return m;
+    }
+    if (!Object.hasOwn(params, word)) throw fail(`The query uses @${word}, but there is no parameter "${word}".`, 400);
+    const v = params[word];
+    const one = (x) => { values.push(bindValue(x, word, 'mssql')); return `@pw_${values.length}`; };
+    if (!Array.isArray(v)) return one(v);
+    return v.length ? v.map(one).join(', ') : 'NULL';
+  }))).join('');
   return { text, values };
 }
 
@@ -80,7 +150,7 @@ export async function runSql({ connection, query }, params = {}) {
   const { text, values } = bindSql(query, params, dialect);
   let rows;
   try {
-    rows = await DRIVERS[dialect](url, text, values, dialect === 'mssql' ? bindSql(query, params, dialect, { standIns: true }).text : '');
+    rows = await DRIVERS[dialect](url, text, values);
   } catch (e) {
     if (TIMEOUT_CODES.has(e.code)) throw fail(`The query ran longer than ${limits.ms / 1000} s.`, 504);
     throw e;
@@ -220,32 +290,45 @@ const DRIVERS = {
     }
   },
 
-  // SQL Server has no read-only transaction and needs no ";" between statements, so a text check cannot tell one
-  // statement from two. The server itself parses the query first (SHOWPLAN_XML: compiled, not run) and it must be
-  // exactly one SELECT. Then it runs inside a transaction that is always rolled back, with SET ROWCOUNT as the row cap
-  // and the pool's request timeout as the time limit.
-  async mssql(url, text, values, check) {
-    const key = `${url}|${limits.ms}`;
+  // SQL Server. Give the connection a login that can only read (db_datareader, no other rights): that is the guard
+  // that holds. What follows is a second one. SQL Server has no read-only transaction and needs no ";" between
+  // statements, so a report's text is checked twice: no statement keyword outside strings and comments (bindTsql),
+  // and the server compiles the EXACT text that will run, with the same @pw_n declared, under SHOWPLAN_XML (compiled,
+  // not run): the plan must list exactly one statement, a SELECT. Anything else, or a plan this code does not
+  // recognise, is refused. It then runs in a transaction that is always rolled back, under SET ROWCOUNT (the row
+  // cap) and the pool's request timeout (the time limit).
+  async mssql(url, text, values) {
+    const key = `mssql|${url}`;
     const sql = (await driver('mssql', 'SQL Server')).default;
-    if (!pools.has(key)) {
+    // the time limit is the pool's request timeout: when limits.ms changes, the old pool is closed, not kept
+    if (pools.get(key)?.ms !== limits.ms) {
+      pools.get(key)?.ready.then(p => p.close()).catch(() => {});
       const pool = new sql.ConnectionPool({ ...mssqlConfig(url), pool: { max: 5 }, connectionTimeout: 10000, requestTimeout: Number(limits.ms) });
       pool.on('error', () => {});
-      pools.set(key, pool.connect().catch((e) => { pools.delete(key); throw e; }));
+      const ready = pool.connect();
+      ready.catch(() => { if (pools.get(key)?.ready === ready) pools.delete(key); }); // handled at once: no unhandled rejection
+      pools.set(key, { ms: limits.ms, ready });
     }
-    const tx = new sql.Transaction(await pools.get(key));
+    const types = values.map(v => mssqlType(sql, v));
+    const tx = new sql.Transaction(await pools.get(key).ready);
     await tx.begin();
     const req = () => new sql.Request(tx);
     try {
       await req().batch('SET SHOWPLAN_XML ON');
       let plan;
-      try { plan = await req().batch(check); } finally { await req().batch('SET SHOWPLAN_XML OFF'); }
-      const types = (plan.recordsets || []).flatMap(rs => rs.flatMap(r => [...String(Object.values(r)[0]).matchAll(/<Stmt\w+ [^>]*?StatementType="([^"]+)"/g)].map(m => m[1])));
-      if (types.length !== 1 || !/^SELECT( WITHOUT QUERY)?$/.test(types[0])) throw fail('A SQL source can only run one SELECT query (one statement).', 400);
+      try {
+        const decl = types.length ? `DECLARE ${types.map((t, i) => `@pw_${i + 1} ${t.decl}`).join(', ')};\n` : '';
+        plan = await req().batch(decl + text);
+      } catch (e) {
+        throw e.status ? e : fail(`SQL Server cannot compile the query: ${String(e.message || e).slice(0, 300)}`, 400);
+      } finally { await req().batch('SET SHOWPLAN_XML OFF'); }
+      if (!isOneSelect(plan)) throw fail('A SQL source can only run one SELECT query (one statement).', 400);
       await req().batch(`SET ROWCOUNT ${Number(limits.rows) + 1}`);
       try {
         const r = req();
-        values.forEach((v, i) => r.input(`pw_${i + 1}`, mssqlType(sql, v), v));
+        values.forEach((v, i) => r.input(`pw_${i + 1}`, types[i].type, v));
         const out = await r.query(text);
+        if ((out.recordsets || []).length !== 1) throw fail('A SQL source can only run one SELECT query (one statement).', 400);
         const cols = Object.values(out.recordset?.columns || {});
         return (out.recordset || []).map(row => { for (const c of cols) row[c.name] = mssqlCell(sql, c.type, row[c.name]); return row; });
       } finally { await req().batch('SET ROWCOUNT 0').catch(() => {}); }
@@ -253,11 +336,34 @@ const DRIVERS = {
   },
 };
 
-/** The SQL Server type of a bound value. */
+/**
+ * True only for a SHOWPLAN_XML result of exactly one plan document holding exactly one statement element, a
+ * StmtSimple whose StatementType is a read: SELECT, SELECT WITHOUT QUERY (constants), XML SELECT or JSON SELECT
+ * (FOR XML / FOR JSON). Fails closed.
+ * @param {any} plan the batch result
+ */
+const SELECT_TYPES = new Set(['SELECT', 'SELECT WITHOUT QUERY', 'XML SELECT', 'JSON SELECT']);
+export function isOneSelect(plan) {
+  const sets = plan?.recordsets || [];
+  if (sets.length !== 1 || sets[0].length !== 1) return false;
+  const cells = Object.values(sets[0][0] || {});
+  if (cells.length !== 1 || typeof cells[0] !== 'string') return false;
+  const xml = cells[0];
+  if (!/^\s*(<\?xml[^>]*\?>\s*)?<ShowPlanXML[\s>]/.test(xml) || (xml.match(/<ShowPlanXML[\s>]/g) || []).length !== 1) return false;
+  if ((xml.match(/<Batch[\s>]/g) || []).length !== 1) return false;
+  const stmts = xml.match(/<Stmt[A-Za-z]*[\s>/]/g) || [];
+  if (stmts.length !== 1 || !stmts[0].startsWith('<StmtSimple')) return false;
+  const tag = xml.slice(xml.indexOf('<StmtSimple')).match(/^<StmtSimple(\s[^>]*)?>/);
+  if (!tag) return false;
+  const types = [...(tag[1] || '').matchAll(/\sStatementType="([^"]*)"/g)].map(m => m[1]);
+  return types.length === 1 && SELECT_TYPES.has(types[0]);
+}
+
+/** The SQL Server type of a bound value, for the request input and for the DECLARE in the parse-only check. */
 function mssqlType(sql, v) {
-  if (typeof v === 'number') return Number.isInteger(v) ? (Math.abs(v) <= 2147483647 ? sql.Int : sql.BigInt) : sql.Float;
-  if (typeof v === 'boolean') return sql.Bit;
-  return sql.NVarChar(sql.MAX);
+  if (typeof v === 'number') return Number.isInteger(v) ? (Math.abs(v) <= 2147483647 ? { type: sql.Int, decl: 'INT' } : { type: sql.BigInt, decl: 'BIGINT' }) : { type: sql.Float, decl: 'FLOAT' };
+  if (typeof v === 'boolean') return { type: sql.Bit, decl: 'BIT' };
+  return { type: sql.NVarChar(sql.MAX), decl: 'NVARCHAR(MAX)' };
 }
 const pad = (n, w = 2) => String(n).padStart(w, '0');
 /** Cells as the other drivers give them: BIGINT a number when exact; DATE as written; DATETIME without a zone. */
