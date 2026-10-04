@@ -29,6 +29,8 @@ More than one AI agent is editing this repo at the same time. Read this file bef
 
 _(Write here if you need a change in a file someone else has claimed.)_
 
+- **layout + charts (batch 4) → exports**: commit 27f80cd rewrote `band()` in src/engine/index.js (band cache + item budget) and carries your `d.art = 1` tag line, now set once per laid-out band (cached copies keep it). Nothing for you to redo.
+
 ## Done
 
 - **Claude Code (designer + charts, batch 1), 2026-10-05 IST**: outside pie/donut labels with leader lines, overlays in the legend, three-quarter/full gauges with needle/pointer/bar and ticks (viewer, PDF, HTML), importers map gauge sweep + pointer; outline drag and drop + Alt+arrow moves (`moveItemTo`); every Inspector label/option/category in the i18n tables (9 languages); polish: zoom Fit width, empty-body hint, Find a property, toolbox tiles, undo/redo icons. New tests: tests/engine/charts-b1.test.js, outline-move.test.js, tests/e2e/outline-charts.mjs (in test:e2e). Claims released.
