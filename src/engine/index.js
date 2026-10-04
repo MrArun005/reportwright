@@ -163,6 +163,7 @@ export async function render(def, opts = {}) {
       const ml = page.margins.left, mt = page.margins.top;
       const bodyTop = mt + headerH;
       const bookmarks = [];
+      const headings = []; // text boxes with headingLevel: for a table of contents only, not the PDF outline
       const pages = [];
       for (let k = 0; k < total; k++) {
         const items = [];
@@ -200,12 +201,12 @@ export async function render(def, opts = {}) {
         band(footer, pageH - page.margins.bottom - footerH, k === 0, k === total - 1);
         const kept = [];
         for (const it of items) {
-          if (it.t === 'bookmark') bookmarks.push({ label: it.label, page: k + 1, y: it.y, level: it.level || 0 });
+          if (it.t === 'bookmark') (it.heading ? headings : bookmarks).push({ label: it.label, page: k + 1, y: it.y, level: it.level || 0 });
           else kept.push(it);
         }
         pages.push(frozen.length ? { items: kept, frozen } : { items: kept });
       }
-      return { pages, bookmarks, height: pageH };
+      return { pages, bookmarks, headings, height: pageH };
   };
 
   let result = assemble([]);
@@ -213,9 +214,10 @@ export async function render(def, opts = {}) {
   if (hasType(sec.body?.items, 'toc')) {
     // The table of contents changes the page count, which changes its own numbers: repeat until stable.
     for (let pass = 0; pass < 3; pass++) {
-      const entries = result.bookmarks.map(b => ({ label: b.label, level: b.level, page: b.page }));
+      const entries = [...result.bookmarks.map(b => ({ label: b.label, level: b.level, page: b.page })), ...result.headings.map(b => ({ label: b.label, level: b.level, page: b.page, y: b.y, heading: true }))];
       const next = assemble(entries);
-      const same = JSON.stringify(next.bookmarks.map(b => b.page)) === JSON.stringify(result.bookmarks.map(b => b.page));
+      const at = (r) => JSON.stringify([r.bookmarks.map(b => b.page), r.headings.map(b => [b.page, b.y])]);
+      const same = at(next) === at(result);
       result = next;
       if (same && pass > 0) break;
     }

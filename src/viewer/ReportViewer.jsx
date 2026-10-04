@@ -300,7 +300,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
       const st = { toggles: {}, sort: state.sort };
       setParams(next); setState(st); run(next, st, true);
     } else if (a.type === 'bookmark') {
-      const b = model?.bookmarks?.find(x => x.label === a.target);
+      const b = a.page ? a : model?.bookmarks?.find(x => x.label === a.target); // TOC entries from headings carry their place
       if (b) scrollToPoint(b.page, b.y);
     }
   };

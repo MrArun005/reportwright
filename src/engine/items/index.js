@@ -12,6 +12,7 @@ import { shiftItems } from './paint.js';
 import { richValue, layoutRich, paintRich, paintVertical } from './rich.js';
 import { parseRich } from '../text/rich.js';
 import { resolveFontKey } from '../text/fonts.js';
+import { tocNumbers } from './toc.js';
 
 /**
  * Item registry. Each item type has:
@@ -102,6 +103,7 @@ register('textbox', {
     { key: 'minFontSize', label: 'Shrink no smaller than (pt, default 4)', type: 'number', category: 'Layout' },
     { key: 'shrinkStep', label: 'Shrink step (pt, default 0.5)', type: 'number', category: 'Layout' },
     { key: 'rotate', label: 'Rotate (degrees clockwise)', type: 'number', category: 'Layout' },
+    { key: 'headingLevel', label: 'Heading level (1–6, for a table of contents)', type: 'select', options: ['1', '2', '3', '4', '5', '6'], category: 'Interactivity' },
     { key: 'pageBreakBefore', label: 'Page break before', type: 'bool', category: 'Layout' },
     { key: 'pageBreakAfter', label: 'Page break after', type: 'bool', category: 'Layout' },
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
@@ -116,7 +118,7 @@ register('textbox', {
     // vertical text keeps the designed box (it does not grow or split), like a rotated box
     if (st.writingMode === 'tb-rl') {
       const items = paintVertical({ x: item.x, y: 0, w: item.w, h: item.h, st, text, m: lc.m });
-      addInteractivity(items, item, ctx, lc, { x: item.x, y: 0, w: item.w, h: item.h });
+      addInteractivity(items, item, ctx, lc, { x: item.x, y: 0, w: item.w, h: item.h }, text);
       return { height: item.h, units: [{ top: 0, height: item.h, items }] };
     }
     const h = h0;
@@ -140,7 +142,7 @@ register('textbox', {
       const bw = rot.swap ? h : item.w, bh = rot.swap ? item.w : h;
       items = paintBox({ x: cx - bw / 2, y: cy - bh / 2, w: bw, h: bh, st, tl, numeric, m: lc.m }).map(i => ({ ...i, rotate: { a: rot.a, cx, cy } }));
     } else items = paintBox({ x: item.x, y: 0, w: item.w, h, st, tl, numeric, m: lc.m });
-    addInteractivity(items, item, ctx, lc, { x: item.x, y: 0, w: item.w, h });
+    addInteractivity(items, item, ctx, lc, { x: item.x, y: 0, w: item.w, h }, text);
     return { height: h, units: [{ top: 0, height: h, items }] };
   },
 });
@@ -204,9 +206,12 @@ register('richtext', {
 });
 
 /** Link (hyperlink, drill-through, jump) and bookmark for any item. */
-function addInteractivity(items, item, ctx, lc, rect) {
+function addInteractivity(items, item, ctx, lc, rect, heading) {
   const link = lc.linkFor?.(item, ctx, rect);
   if (link) items.push(link);
+  // a text box marked as a heading feeds a table of contents with source: 'headings' (not the PDF outline)
+  const hl = Number(item.headingLevel);
+  if (heading && hl >= 1 && hl <= 6) items.push({ t: 'bookmark', heading: true, label: String(heading).replace(/\s+/g, ' ').trim(), x: rect.x, y: rect.y, level: hl - 1 });
   if (item.bookmark) {
     const b = evalSafe(item.bookmark, ctx, lc, `${item.name || item.type} bookmark`).v;
     if (b != null && b !== '' && b !== '#Error') items.push({ t: 'bookmark', label: String(b), x: rect.x, y: rect.y, level: item.bookmarkLevel || 0 });
@@ -934,6 +939,8 @@ register('toc', {
   props: [
     { key: 'title', label: 'Title', type: 'text', category: 'Data' },
     { key: 'levels', label: 'Levels to show', type: 'number', category: 'Data' },
+    { key: 'source', label: 'Entries from', type: 'select', options: ['bookmarks', 'headings'], category: 'Data' },
+    { key: 'numbering', label: 'Numbering (decimal, roman, alpha; one per level: roman,alpha)', type: 'text', category: 'Data' },
     { key: 'styleName', label: 'Named style', type: 'stylename', category: 'Text' },
     { key: 'pageBreakAfter', label: 'Page break after', type: 'bool', category: 'Layout' },
   ],
@@ -948,7 +955,10 @@ register('toc', {
       units.push({ top: 0, height: tl.needed, items: paintBox({ x: item.x, y: 0, w: item.w, h: tl.needed, st: tst, tl, m: lc.m }), keepWithNext: true });
       y += tl.needed;
     }
-    const entries = (lc.toc || []).filter(e => (e.level || 0) < (item.levels || 3));
+    const fromHeadings = item.source === 'headings';
+    const entries = (lc.toc || []).filter(e => !!e.heading === fromHeadings && (e.level || 0) < (item.levels || 3));
+    const kinds = (Array.isArray(item.numbering) ? item.numbering : String(item.numbering || '').split(',')).map(k => String(k).trim()).filter(k => ['decimal', 'roman', 'alpha'].includes(k));
+    const nums = kinds.length ? tocNumbers(entries, kinds) : null;
     if (!entries.length) {
       const tl = layoutTextLines('Entries appear here: add bookmarks to items or cells.', { ...st, fontStyle: 'italic', color: '#9ca3af' }, item.w, lc.m);
       units.push({ top: y, height: tl.needed, items: paintBox({ x: item.x, y: 0, w: item.w, h: tl.needed, st: { ...st, fontStyle: 'italic', color: '#9ca3af' }, tl, m: lc.m }) });
@@ -958,18 +968,18 @@ register('toc', {
     const size = Number(st.fontSize) || 9;
     const lh = size * 1.6;
     const { ascent } = lc.m.metrics(key, size);
-    for (const e of entries) {
+    for (const [ei, e] of entries.entries()) {
       const indent = (e.level || 0) * 12;
       const num = String(e.page);
       const nw = lc.m.width(num, key, size);
-      const label = lc.m.ellipsize(e.label, key, size, item.w - indent - nw - 24);
+      const label = lc.m.ellipsize(nums ? `${nums[ei]} ${e.label}` : e.label, key, size, item.w - indent - nw - 24);
       const lw = lc.m.width(label, key, size);
       const base = (lh - size) / 2 + ascent * 0.9;
       const items = [
         { t: 'text', font: key, size, color: st.color || '#111', lines: [{ x: item.x + indent, y: base, text: label, w: lw }] },
         { t: 'line', x1: item.x + indent + lw + 4, y1: base, x2: item.x + item.w - nw - 4, y2: base, stroke: '#9ca3af', strokeWidth: 0.6, dash: [0.6, 2.4] },
         { t: 'text', font: key, size, color: st.color || '#111', lines: [{ x: item.x + item.w - nw, y: base, text: num, w: nw }] },
-        { t: 'link', x: item.x, y: 0, w: item.w, h: lh, action: { type: 'bookmark', target: e.label } },
+        { t: 'link', x: item.x, y: 0, w: item.w, h: lh, action: e.heading ? { type: 'bookmark', target: e.label, page: e.page, y: e.y } : { type: 'bookmark', target: e.label } },
       ];
       units.push({ top: y, height: lh, items });
       y += lh;
