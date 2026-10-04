@@ -537,6 +537,28 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     try { await expect(runSchedule(s)).rejects.toMatchObject({ status: 404 }); } finally { process.env.PW_API_KEYS = keep; }
   });
 
+  it('review: a user key cannot overwrite shared batch output, and a viewer cannot push data', async () => {
+    const { createBatch, workOnce, getJob } = await import('../../src/server/jobs.js');
+    const svc = { kind: 'service' };
+    const run = async (p) => {
+      const job = await createBatch({ template: 'overview', items: [{ name: 'invoice-1001', parameters: {} }], output: { type: 'folder', folder: 'payroll-slips' }, format: 'csv' }, undefined, p);
+      await workOnce('test-runner');
+      return (await getJob(job.id, svc)).folder;
+    };
+    const shared = await run(svc);
+    const bobs = await run(await perms.userPrincipal('bob@x.io'));
+    expect(shared).toMatch(/outputs[\\/]payroll-slips$/);
+    expect(bobs).not.toBe(shared);
+    expect(bobs).toMatch(/outputs[\\/]users[\\/][0-9a-f]{16}[\\/]payroll-slips$/);
+    // pushed data replaces the report's data sources: not for viewers (a render of made-up rows under the report's name)
+    const render = (key, extra) => v1.render.POST(req('/api/v1/render', { key, method: 'POST', body: { template: 'overview', format: 'csv', ...extra } }));
+    expect((await render('carol-key', { data: { db: [{ n: 9 }] } })).status).toBe(403);
+    expect((await v1.batches.POST(req('/api/v1/batches', { key: 'carol-key', method: 'POST', body: { template: 'overview', items: [{ parameters: {}, data: { db: [{ n: 9 }] } }] } }))).status).toBe(403);
+    expect((await render('bob-key', { data: { db: [{ n: 9 }] } })).status).toBe(200);
+    for (const f of [shared, bobs]) fs.rmSync(path.resolve(f), { recursive: true, force: true });
+    fs.rmSync(path.resolve(path.dirname(path.dirname(bobs))), { recursive: true, force: true }); // outputs/users
+  });
+
   it('review: a queued inline batch fails when its owner is now a viewer', async () => {
     const { createBatch, workOnce, getJob } = await import('../../src/server/jobs.js');
     const job = await createBatch({ template: def('Inline'), items: [{ parameters: {} }], output: { type: 'none' }, format: 'csv' }, undefined, await perms.userPrincipal('bob@x.io'));

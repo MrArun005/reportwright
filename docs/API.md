@@ -100,7 +100,7 @@ CLI: `pw render report.pw.json --password 'to open it' --owner-password 'boss' -
 | `GET /api/v1/batches/<id>/download` | The zip or merged PDF |
 
 - One failed item does not stop the batch. Its error goes into `errors[]`.
-- `folder` output writes the files to `data/outputs/<folder>/` on the server.
+- `folder` output writes the files to `data/outputs/<folder>/` on the server for service keys; a user's key writes to `data/outputs/users/<id>/<folder>/` (its own folder), so one user can never overwrite files another batch delivers. Pushed `data` (render and batch items) needs a designer or a service key.
 - `putUrl` uploads each file with HTTP PUT (for example to a pre-signed S3 or Azure URL).
 - A batch can hold at most 10,000 items. `PW_BATCH_CONCURRENCY` sets how many render at the same time.
 
@@ -219,11 +219,11 @@ Every built-in item has a stable id. `toolbar.hide` removes items by id; `toolba
 | view | `viewMode`, `fullScreen` |
 | info | `stats` |
 | search | `search` (box, match case, whole word, previous/next, list of matches) |
-| export | `print`, `pdf`, `excel`, `word`, `html`, `csv` |
+| export | `print`, `pdf`, `excel`, `word`, `html`, `csv`, `json` |
 
 `parameters` and `documentMap` show only when the report has parameters or bookmarks; `fullScreen` only where the browser allows it. In the page each item is wrapped in an element with `data-toolbar-id="<id>"`.
 
-`onClick` gets `api`: `{ page, pages, goTo(n), run(), print(), exportAs('pdf' | 'xlsx' | 'docx' | 'html' | 'csv') }`.
+`onClick` gets `api`: `{ page, pages, goTo(n), run(), print(), exportAs('pdf' | 'xlsx' | 'docx' | 'html' | 'csv' | 'json') }`. `json` is the laid-out pages, the same as the API's `json` format.
 
 Narrower than 640 px (the viewer's own width, so an embed in a sidebar counts), the toolbar keeps `parameters`, `previousPage`, `pageNumber`, `nextPage` and `search` and puts the rest in a "More" menu (custom items too). Side panels open as bottom sheets, and a swipe left or right turns the page.
 

@@ -83,6 +83,8 @@ export async function renderTo(def, opt = {}) {
   const format = opt.format || 'pdf';
   if (!FORMATS[format]) throw Object.assign(new Error(`Unknown format "${format}". Use pdf, xlsx, docx, html, csv or json.`), { status: 400 });
   let d = def;
+  // pushed data replaces the report's own sources: a render of made-up rows under the report's name (and signature)
+  if (opt.data && opt.principal?.kind === 'user' && opt.principal.role === 'viewer') throw Object.assign(new Error('Only a designer can send data for a render. Render the report with its own data.'), { status: 403 });
   if (opt.data && typeof opt.data === 'object') {
     d = { ...def, dataSources: (def.dataSources || []).map(s => (s.name in opt.data ? { name: s.name, type: 'json', data: opt.data[s.name] } : s)) };
   }

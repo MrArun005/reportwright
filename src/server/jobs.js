@@ -68,6 +68,7 @@ export async function createBatch(spec, req, principal = defaultPrincipal()) {
   const def = await loadTemplate(spec.template, principal);
   const items = await expandItems(spec, base, serverFetch(self));
   if (!items.length) throw Object.assign(new Error('The batch has no items'), { status: 400 });
+  if (principal?.kind === 'user' && principal.role === 'viewer' && items.some(i => i?.data)) throw Object.assign(new Error('Only a designer can send data for a render. Render the report with its own data.'), { status: 403 });
   if (items.length > MAX_ITEMS) throw Object.assign(new Error(`A batch can hold at most ${MAX_ITEMS} items`), { status: 400 });
   const format = spec.format || 'pdf';
   const job = {
@@ -224,7 +225,9 @@ async function run(job, owner, stopAfter) {
       await fs.writeFile(path.join(dir, 'merged.pdf'), await merged.save());
       job.download = { file: 'merged.pdf', name: `${safeName(job.template)}.pdf`, type: 'application/pdf' };
     } else if (out.type === 'folder') {
-      const target = path.join(DATA, 'outputs', safeName(out.folder || job.template));
+      // a user's batches write under their own folder: only service keys (and accounts off) write the shared ones
+      const own = String(job.owner || '').startsWith('user:') ? ['users', crypto.createHash('sha256').update(job.owner).digest('hex').slice(0, 16)] : [];
+      const target = path.join(DATA, 'outputs', ...own, safeName(out.folder || job.template));
       await fs.mkdir(target, { recursive: true });
       for (const r of ok) await fs.writeFile(path.join(target, r.name), await bytesOf(r));
       job.folder = path.relative(process.cwd(), target);
