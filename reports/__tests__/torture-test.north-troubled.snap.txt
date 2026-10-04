@@ -180,6 +180,7 @@ Disbursed vs collected (₹ lakh), with collection efficiency on the right axis
 Disbursed
 Collected
 Collection efficiency
+Target 95%
 ₹ lakh
 Efficiency
 0

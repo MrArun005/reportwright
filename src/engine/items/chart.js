@@ -145,16 +145,20 @@ export function paintChart(item, ctx, lc, base) {
   const title = item.title ? String(safe(item.title, ctx, lc, who) ?? '') : '';
   if (title) { text(title, X + 4, top + fs * 1.4, { size: fs * 1.35, f: bold, color: '#111827', maxW: W - 8 }); top += fs * 2.1; }
 
-  // legend at the bottom
+  // legend at the bottom: the series (or a pie's slices), then the overlays that are in it
   const byCategory = type === 'pie' || type === 'donut' || type === 'funnel';
-  const legendItems = byCategory ? data.categories.map((c, i) => ({ name: c, color: pointFill(i, pal[i % pal.length]) })) : data.series.map(s => ({ name: s.name, color: s.color }));
-  if (item.legend !== 'none' && type !== 'gauge' && (byCategory || data.series.length > 1)) {
+  const ovLegend = legendOverlays(item, type, data);
+  const legendItems = byCategory ? data.categories.map((c, i) => ({ name: c, color: pointFill(i, pal[i % pal.length]) }))
+    : [...data.series.map(s => ({ name: s.name, color: s.color })), ...ovLegend];
+  const legendOn = item.legend !== 'none' && type !== 'gauge' && (byCategory || data.series.length > 1 || ovLegend.length > 0);
+  if (legendOn) {
     const rowsL = [];
     let line = [], lw = 0;
     for (const li of legendItems.slice(0, 200)) {
-      const w = 10 + m.width(String(li.name).slice(0, 200), font, fs) + 12;
+      const key = li.mark ? 14 : 10;
+      const w = key + m.width(String(li.name).slice(0, 200), font, fs) + 12;
       if (lw + w > W - 8 && line.length) { rowsL.push(line); line = []; lw = 0; }
-      line.push({ ...li, w }); lw += w;
+      line.push({ ...li, w, key }); lw += w;
     }
     if (line.length) rowsL.push(line);
     // a legend never takes more than half the chart
@@ -165,8 +169,10 @@ export function paintChart(item, ctx, lc, base) {
       let lx = X + (W - ln.reduce((s, l) => s + l.w, 0)) / 2;
       const ly = bottom + ri * lh + lh * 0.75;
       for (const l of ln) {
-        out.push({ t: 'rect', x: lx, y: ly - fs * 0.75, w: 7, h: 7, fill: l.color, radius: 1.5 });
-        text(l.name, lx + 10, ly, { maxW: l.w - 10 });
+        if (l.mark === 'line') out.push({ t: 'line', x1: lx, y1: ly - fs * 0.35, x2: lx + 11, y2: ly - fs * 0.35, stroke: l.color, strokeWidth: 1.4, ...(l.dash ? { dash: [3, 2] } : {}) });
+        else if (l.mark === 'band') out.push({ t: 'rect', x: lx, y: ly - fs * 0.75, w: 11, h: 7, fill: l.color + '40', stroke: l.color, strokeWidth: 0.5, radius: 1.5 });
+        else out.push({ t: 'rect', x: lx, y: ly - fs * 0.75, w: 7, h: 7, fill: l.color, radius: 1.5 });
+        text(l.name, lx + l.key, ly, { maxW: l.w - l.key });
         lx += l.w;
       }
     });
@@ -206,7 +212,9 @@ export function paintChart(item, ctx, lc, base) {
     const vars = { value: fmtV(v), category: data.categories[ci] ?? '', series: s?.name ?? '', percent: pct == null ? '' : `${Math.round(pct * 100)}%` };
     return String(tpl).slice(0, 500).replace(/\{(\w+)\}/g, (all, k) => (Object.hasOwn(vars, k.toLowerCase()) ? vars[k.toLowerCase()] : all));
   };
-  const g = { item, ctx, lc, data, out, links, X, W, H, top, bottom, fs, font, bold, ink, grid, text, measure, fmtV, pointFill, pointLink, pointCtx, pal, label, labelsOn, labelText, anim, who, axes, safe };
+  // an overlay named in the legend (trend, moving average, band) needs no label of its own on the plot
+  const inLegend = (o) => legendOn && o.legend !== false;
+  const g = { inLegend, item, ctx, lc, data, out, links, X, W, H, top, bottom, fs, font, bold, ink, grid, text, measure, fmtV, pointFill, pointLink, pointCtx, pal, label, labelsOn, labelText, anim, who, axes, safe };
 
   if (ROUND_TYPES.has(type)) paintRound(type, g);
   else if (PER_ROW.has(type)) paintXY(type, g);
@@ -255,6 +263,22 @@ function overlayValues(o, g) {
     if (v != null) vals.push(v);
   }
   return o.type === 'band' && vals.length !== 2 ? [] : vals;
+}
+/** Overlays the legend lists (each unless legend: false), with the key each draws: a line (dashed for trends) or a band. */
+export function legendOverlays(item, type, data) {
+  if (ROUND_TYPES.has(type) || type === 'polar') return [];
+  const list = (Array.isArray(item.overlays) ? item.overlays : []).slice(0, CAPS.overlays).filter(o => o && typeof o === 'object' && o.legend !== false);
+  const hex = (c, d) => (typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c) ? c : d);
+  const sname = (o) => data.series[Math.max(0, Math.min(data.series.length - 1, Math.floor(Number(o.series)) || 0))]?.name || '';
+  const out = [];
+  for (const o of list) {
+    const lab = o.label != null && String(o.label).trim() ? String(o.label) : null;
+    if (o.type === 'line') out.push({ name: lab || 'Reference line', color: hex(o.color, '#dc2626'), mark: 'line', dash: true });
+    else if (o.type === 'band') out.push({ name: lab || 'Band', color: hex(o.color, '#f59e0b'), mark: 'band' });
+    else if (o.type === 'trend') out.push({ name: lab || `Trend (${sname(o)})`, color: hex(o.color, '#475569'), mark: 'line', dash: true });
+    else if (o.type === 'movingAverage' && !PER_ROW.has(type)) out.push({ name: lab || `Moving average ${Math.max(1, Math.round(Number(o.period ?? 3)) || 1)} (${sname(o)})`, color: hex(o.color, '#475569'), mark: 'line' });
+  }
+  return out;
 }
 function overlaysOf(item, lc, who) {
   const list = (Array.isArray(item.overlays) ? item.overlays : []).filter(o => o && typeof o === 'object');
@@ -412,7 +436,7 @@ function paintCartesian(type, g) {
     const color = typeof o.color === 'string' && /^#[0-9a-f]{6}$/i.test(o.color) ? o.color : '#f59e0b';
     out.push(horiz ? { t: 'rect', x: Math.min(p0, p1), y: plotTop, w: Math.abs(p1 - p0), h: plotBottom - plotTop, fill: color + '26' }
       : { t: 'rect', x: left, y: Math.min(p0, p1), w: right - left, h: Math.abs(p1 - p0), fill: color + '26' });
-    if (o.label) text(String(o.label), horiz ? Math.max(p0, p1) - 2 : right - 2, horiz ? plotTop + fs : Math.min(p0, p1) + fs * 1.1, { align: 'right', color: '#92400e', size: fs * 0.9 });
+    if (o.label && !g.inLegend(o)) text(String(o.label), horiz ? Math.max(p0, p1) - 2 : right - 2, horiz ? plotTop + fs : Math.min(p0, p1) + fs * 1.1, { align: 'right', color: '#92400e', size: fs * 0.9 });
   }
 
   const zero = vpos(0, baseOf(0));
@@ -578,7 +602,7 @@ function paintCartesian(type, g) {
     }
     if (pts.length < 2) continue;
     out.push({ t: 'path', x: 0, y: 0, d: curvePath(pts, 'straight'), fill: null, stroke: color, strokeWidth: 1.2, ...(o.type === 'trend' ? { dash: [4, 3] } : {}) });
-    if (o.label) { const e = pts[pts.length - 1]; if (horiz) text(String(o.label), e.x + 3, e.y + fs * 0.35, { color, size: fs * 0.9 }); else text(String(o.label), Math.min(e.x, right) - 2, e.y - 4, { align: 'right', color, size: fs * 0.9 }); }
+    if (o.label && !g.inLegend(o)) { const e = pts[pts.length - 1]; if (horiz) text(String(o.label), e.x + 3, e.y + fs * 0.35, { color, size: fs * 0.9 }); else text(String(o.label), Math.min(e.x, right) - 2, e.y - 4, { align: 'right', color, size: fs * 0.9 }); }
   }
 }
 
@@ -679,7 +703,7 @@ function paintXY(type, g) {
       for (let i = 0; i <= steps; i++) { const x = axx.lo + (axx.hi - axx.lo) * i / steps; const y = fit.at(x); if (Number.isFinite(y) && y >= ay.lo && y <= ay.hi) pts.push({ x: px(x), y: py(y) }); }
       if (pts.length > 1) {
         out.push({ t: 'path', x: 0, y: 0, d: curvePath(pts, 'straight'), fill: null, stroke: color, strokeWidth: 1.2, dash: [4, 3] });
-        if (o.label) text(String(o.label), pts[pts.length - 1].x - 2, pts[pts.length - 1].y - 4, { align: 'right', color, size: fs * 0.9 });
+        if (o.label && !g.inLegend(o)) text(String(o.label), pts[pts.length - 1].x - 2, pts[pts.length - 1].y - 4, { align: 'right', color, size: fs * 0.9 });
       }
     }
   }

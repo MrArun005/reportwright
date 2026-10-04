@@ -5,6 +5,7 @@ Phase 5 of the ActiveReportsJS parity roadmap: every new chart feature, drawn by
 Combo: revenue and margin (right axis)
 Revenue
 Margin
+Average
 Revenue (₹ lakh)
 Margin
 0
@@ -67,6 +68,9 @@ Apr
 May
 Jun
 Step line, moving average, trend
+Units
+Avg 3
+Trend
 0
 20
 40
@@ -79,8 +83,6 @@ March
 April
 May
 June
-Avg 3
-Trend
 Log scale: revenue across four decades
 Revenue (₹ lakh, log)
 10
@@ -97,6 +99,8 @@ Global group
 2,400 ★
 31,000 ★
 Bubble: ad spend, sales and customers
+Campaigns
+Trend
 Ad spend
 Sales
 0
@@ -108,7 +112,6 @@ Sales
 40
 60
 80
-Trend
 Page 1 of 2
 --- page 2
 Radar: two teams, five skills
@@ -137,6 +140,10 @@ Polar: wind speed by direction
 15
 Gauge: customer score (target 80)
 0
+20
+40
+60
+80
 100
 72
 Candlestick with a 3-day moving average

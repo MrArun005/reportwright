@@ -236,14 +236,14 @@ describe('row 25: overlays', () => {
     const { items } = await draw({ overlays: [{ type: 'line', value: '=Avg(Fields.amt)', label: 'Average' }, { type: 'band', from: 20, to: 40, color: '#10b981' }] });
     expect(textsOf(items)).toContain('Average 30');
     const band = items.findIndex(i => i.t === 'rect' && i.fill === '#10b98126');
-    const firstBar = items.findIndex(i => i.t === 'rect' && i.fill === '#2563eb');
+    const firstBar = items.findIndex(i => i.t === 'rect' && i.fill === '#2563eb' && !i.radius); // radius: the legend key
     expect(band).toBeGreaterThan(-1);
     expect(band).toBeLessThan(firstBar);
   });
   it('caps overlays and periods; poly order is clamped', async () => {
     const { items, warnings } = await draw({ chartType: 'line', overlays: [...Array.from({ length: 25 }, () => ({ type: 'line', value: 1 })), { type: 'movingAverage', period: 1e9 }, { type: 'trend', kind: 'poly', order: 1e6 }] });
     expect(warnings.join()).toMatch(/27 overlays; only the first 20/);
-    expect(items.filter(i => i.t === 'line' && i.stroke === '#dc2626')).toHaveLength(20);
+    expect(items.filter(i => i.t === 'line' && i.stroke === '#dc2626' && i.x2 - i.x1 !== 11)).toHaveLength(20); // 11 wide: legend keys
   });
 });
 
