@@ -190,6 +190,29 @@ describe('barcodes', () => {
     const rot = await at({ rotate: '90' });
     expect(rot.filter(i => i.t !== 'link').every(i => i.rotate?.a === 90)).toBe(true);
   });
+  // bwip-js paths are absolute M/L pairs: the bounding box of everything drawn, in item coordinates
+  const bbox = (items) => {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const i of items.filter(i => i.t === 'path')) {
+      const n = i.d.match(/-?\d*\.?\d+/g).map(Number);
+      for (let k = 0; k < n.length; k += 2) { x0 = Math.min(x0, i.x + n[k]); x1 = Math.max(x1, i.x + n[k]); y0 = Math.min(y0, i.y + n[k + 1]); y1 = Math.max(y1, i.y + n[k + 1]); }
+    }
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  };
+  it('a 2D code keeps its aspect ratio, fitted and centred in the box (QR is square)', async () => {
+    await loadBarcodes();
+    const b = bbox(paintBarcode({ type: 'qrcode', text: 'https://mrarun005.github.io/pagewright-demo/', x: 0, y: 0, w: 130, h: 130 }).items);
+    expect(b.w).toBeCloseTo(130, 1);
+    expect(b.h).toBeCloseTo(130, 1);
+    const wide = bbox(paintBarcode({ type: 'qrcode', text: 'hello', x: 10, y: 0, w: 200, h: 100 }).items);
+    expect(wide.w).toBeCloseTo(100, 1);
+    expect(wide.h).toBeCloseTo(100, 1);
+    expect(wide.x).toBeCloseTo(60, 1); // centred: 10 + (200 - 100) / 2
+    for (const type of ['datamatrix', 'azteccode', 'hanxin']) {
+      const s = bbox(paintBarcode({ type, text: 'Pagewright 2D', x: 0, y: 0, w: 90, h: 90 }).items);
+      expect(s.w / s.h, type).toBeCloseTo(1, 1);
+    }
+  });
 });
 
 // Security review of 8086120: crafted images must be rejected quickly, never decoded at a size the caps forbid.

@@ -167,7 +167,8 @@ export function paintBarcode({ type = 'code128', text, x, y, w, h, color = '#000
   const twoD = isTwoD(type);
   let svg;
   try {
-    svg = bwip.toSVG({ ...options, bcid: type, text, scale: 1, height: 10, includetext: false, paddingwidth: 0, paddingheight: 0 });
+    // height sets a 1D code's bar height (stretched to the box anyway); a 2D code keeps its own module grid
+    svg = bwip.toSVG({ ...options, bcid: type, text, scale: 1, ...(twoD ? {} : { height: 10 }), includetext: false, paddingwidth: 0, paddingheight: 0 });
   } catch (e) {
     return { items: [], error: String(e.message || e).replace(/^bwipp\.\w+#\d+:\s*/, '') };
   }
