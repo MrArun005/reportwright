@@ -6,11 +6,12 @@ import { fontStore, report } from '../helpers.js';
 
 const N = 20000;
 const rows = Array.from({ length: N }, (_, i) => ({ id: i, region: ['N', 'S', 'E', 'W'][i % 4], amount: (i * 7) % 1000 }));
-// every row of a 20,000-row table sums all 20,000 rows of the data set: 400 million evaluations
+// every row of a 20,000-row table sums all 20,000 rows of the data set: 400 million evaluations. The sum reads Globals,
+// so the per-render aggregate cache (which makes a plain Sum(..., "Rows") linear) cannot skip it.
 const quadratic = () => ({
   ...report([{ type: 'table', name: 'T', dataSet: 'Rows', x: 0, y: 0, w: 500, h: 40,
     columns: [{ width: 250 }, { width: 250 }],
-    detail: [{ height: 14, cells: [{ value: '=Fields.id' }, { value: '=Fields.amount / Sum(Fields.amount, "Rows")' }] }] }], { data: { rows } }),
+    detail: [{ height: 14, cells: [{ value: '=Fields.id' }, { value: '=Fields.amount / Sum(Fields.amount + Globals.PageNumber * 0, "Rows")' }] }] }], { data: { rows } }),
 });
 
 describe('render time limit', () => {
