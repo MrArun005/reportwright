@@ -150,13 +150,13 @@ export async function render(def, opts = {}) {
     }
     /** One body section's page geometry. Multi-column body: the strip fills column slots left to right, then the next page. */
     const geometry = (b, bi) => {
-      const pg = bi === 0 ? page : resolvePage({ ...(def.page || {}), ...(b.page || {}) });
+      const pg = bi === 0 && !b.page ? page : resolvePage({ ...(def.page || {}), ...(b.page || {}) });
       const cH = pg.height - pg.margins.top - pg.margins.bottom - headerH - footerH;
       if (cH < 24) throw new ReportError(`Body section ${bi + 1}: the page header and footer leave no room for the body.`);
       const colCount = Math.max(1, Math.min(6, Number(b.columns?.count) || 1));
       const colGap = Number(b.columns?.gap ?? 18);
       const colW = (pg.bodyWidth - colGap * (colCount - 1)) / colCount;
-      return { pg, cH, colCount, colGap, colW, bodyWidth: colCount > 1 ? colW : (bi === 0 ? lc.bodyWidth : pg.bodyWidth) };
+      return { pg, cH, colCount, colGap, colW, bodyWidth: colCount > 1 ? colW : (bi === 0 && !b.page ? lc.bodyWidth : pg.bodyWidth) };
     };
     const geos = bodies.map(geometry);
     lc.bodyWidth = geos[0].bodyWidth;
@@ -169,7 +169,7 @@ export async function render(def, opts = {}) {
       const parts = [];
       for (let bi = 0; bi < bodies.length; bi++) {
         const g = geos[bi];
-        const blc = bi === 0 ? lc : { ...lc, bodyWidth: g.bodyWidth, maxUnitHeight: g.cH };
+        const blc = bi === 0 && !bodies[0].page ? lc : { ...lc, bodyWidth: g.bodyWidth, maxUnitHeight: g.cH };
         const body = layoutItems(bodies[bi].items || [], blc);
         if (opts.bodyOnly) return { body };
         // one page that grows: page breaks have nothing to break
@@ -257,7 +257,7 @@ export async function render(def, opts = {}) {
         if (pg.width !== first.width || ph !== pageH) { out.width = pg.width; out.height = ph; }
         pages.push(out);
       });
-      return { pages, bookmarks, headings, height: pageH };
+      return { pages, bookmarks, headings, height: pageH, width: first.width };
   };
 
   let result = assemble([]);
@@ -298,7 +298,7 @@ export async function render(def, opts = {}) {
   }
 
   return {
-    width: page.width, height, pages, warnings, bookmarks, regions, name: def.name || '', partial: cutRows(),
+    width: result.width ?? page.width, height, pages, warnings, bookmarks, regions, name: def.name || '', partial: cutRows(),
     stats: { ms: Date.now() - t0, pages: pages.length, rows: Object.fromEntries(Object.entries(dataSets).map(([k, r]) => [k, r.length])) },
   };
 }

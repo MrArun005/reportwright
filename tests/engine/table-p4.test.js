@@ -256,3 +256,35 @@ describe('caps on untrusted sizes (phase 4)', () => {
     expect(Date.now() - t0).toBeLessThan(20000);
   }, 60000);
 });
+
+describe('review fixes (phase 4)', () => {
+  it('a collapsed chain of 50,000 rows does not overflow the stack', async () => {
+    const rows = Array.from({ length: 50000 }, (_, i) => ({ id: i + 1, parent: i }));
+    const t = table({ columns: [{ width: 200 }], groups: [{ name: 'G', expr: '=Fields.id', parent: '=Fields.parent', collapsible: true, initiallyCollapsed: true, header: [{ height: 14, cells: [{ value: '=Fields.id' }] }] }] });
+    const out = await render(report([t], { data: { rows } }), { fontStore });
+    expect(texts(out.pages[0])).toEqual(['▶ 1']);
+  }, 60000);
+  it('a span that a band cuts short is exported with the rows it covered', async () => {
+    const t = table({ header: [{ height: 16, cells: [{ value: 'H', rowSpan: 5 }, { value: 'x' }, null] }], detail: [{ height: 16, cells: [{ value: '=Fields.name' }, null, null] }] });
+    const out = await render(report([t], { data }), { fontStore });
+    expect(out.regions[0].rows[0].cells[0].rowSpan).toBeUndefined();
+  });
+  it('paginating 2,000 columns stays near the cost of laying them out', async () => {
+    const n = 2000;
+    const t = table({ columns: Array.from({ length: n }, () => ({ width: 30 })), overflow: 'paginate', detail: [{ height: 14, cells: Array.from({ length: n }, (_, c) => ({ value: String(c) })) }] });
+    const t0 = Date.now();
+    const out = await render(report([t], { data }), { fontStore });
+    expect(Date.now() - t0).toBeLessThan(15000);
+    expect(out.pages.length).toBeGreaterThan(100);
+    expect(out.warnings.join()).not.toMatch(/cut/);
+  }, 60000);
+  it('newSection with sideways pages numbers each section once', async () => {
+    const rows = [{ g: 'A', name: 'a' }, { g: 'B', name: 'b' }];
+    const t = table({ columns: Array.from({ length: 12 }, () => ({ width: 80 })), overflow: 'paginate', header: [{ height: 16, cells: [{ value: 'Name' }] }],
+      groups: [{ expr: '=Fields.g', newSection: true, header: [{ height: 16, cells: [{ value: '=Fields.g' }] }] }], detail: [{ height: 16, cells: [{ value: '=Fields.name' }] }] });
+    const footer = { height: 20, items: [{ type: 'textbox', name: 'pn', x: 0, y: 4, w: 300, h: 12, value: 'Page {Globals.PageNumber} of {Globals.TotalPages}' }] };
+    const out = await render(report([t], { data: { rows }, footer }), { fontStore });
+    expect(out.pages.map(p => texts(p).find(x => x.startsWith('Page ')))).toEqual(['Page 1 of 2', 'Page 2 of 2', 'Page 1 of 2', 'Page 2 of 2']);
+    expect(out.pages.map(p => texts(p).slice(0, 2).join('|'))).toEqual(['Name|A', 'Page 1 of 2', 'Name|B', 'Page 1 of 2'].map((x, i) => (i % 2 ? texts(out.pages[i]).slice(0, 2).join('|') : x))); // A's sets, then B's
+  });
+});

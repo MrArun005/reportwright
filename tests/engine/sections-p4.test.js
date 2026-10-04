@@ -110,3 +110,21 @@ describe('exporters: page sizes per section, merged cells', () => {
     expect(ws.rowCount).toBe(4);
   });
 });
+
+describe('review fixes: sections and pivot shrink', () => {
+  it('the first body section can have its own page', async () => {
+    const d = report([], { data: { rows: [] } });
+    d.sections.body = [{ page: { orientation: 'landscape' }, items: [{ type: 'textbox', name: 'a', x: 0, y: 0, w: 200, h: 14, value: 'A' }] }, { items: [{ type: 'textbox', name: 'b', x: 0, y: 0, w: 200, h: 14, value: 'B' }] }];
+    const out = await render(d, { fontStore });
+    expect([out.width, out.height]).toEqual([841.89, 595.28]);
+    expect([out.pages[1].width, out.pages[1].height]).toEqual([595.28, 841.89]);
+  });
+  it('a pivot that shrinks to fit with several values stays on the page', async () => {
+    const rows = Array.from({ length: 30 }, (_, i) => ({ r: 'x', c: `C${String(i).padStart(2, '0')}`, v: i }));
+    const m = { type: 'matrix', name: 'P', x: 0, y: 0, w: 500, h: 40, dataSet: 'Rows', overflow: 'shrink', rowGroups: [{ expr: '=Fields.r', width: 60 }], columnGroups: [{ expr: '=Fields.c', sort: 'asc', total: 'after' }],
+      values: [{ value: '=Sum(Fields.v)' }, { value: '=Count(Fields)' }, { value: '=Max(Fields.v)' }] };
+    const out = await render(report([m], { data: { rows } }), { fontStore });
+    const right = Math.max(...out.pages[0].items.filter(i => i.t === 'text').map(i => i.clip.x + i.clip.w));
+    expect(right).toBeLessThanOrEqual(595.28 - 36 + 0.5);
+  });
+});

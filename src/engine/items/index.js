@@ -403,7 +403,9 @@ register('table', {
         const above = s.units.reduce((t, u) => t + u.height, 0);
         if (s.tl.needed - above > need + GROW_TOLERANCE) need = s.tl.needed - above;
       }
-      region.rows.push({ kind, level: extra?.level ?? 0, cells: (started ? [...cells, ...started].sort((a, b) => a.x - b.x) : cells).map(regionCell) });
+      const rcells = (started ? [...cells, ...started].sort((a, b) => a.x - b.x) : cells).map(regionCell);
+      if (started) for (const st of started) st.region = rcells.find(rc => rc.colIndex === colX.indexOf(st.x)); // its rowSpan is set to the rows it really covered when it closes
+      region.rows.push({ kind, level: extra?.level ?? 0, cells: rcells });
       // h: height of this piece; lines: per-cell lines when the row is split; first: links, visuals and toggles go on the first piece
       const paint = (h, lines, first, rowId) => {
         const items = [];
@@ -531,7 +533,11 @@ register('table', {
       }
     };
     /** Close merged cells at the end of a band of rows (a span never reaches into the next band). */
-    const closeSpan = (s) => { for (let k = s.ci; k < s.ci + s.cols; k++) cover[k] = null; if (s.units.length) paintSpan(s); };
+    const closeSpan = (s) => {
+      for (let k = s.ci; k < s.ci + s.cols; k++) cover[k] = null;
+      if (s.region) { if (s.units.length > 1) s.region.rowSpan = s.units.length; else delete s.region.rowSpan; } // a band ends the span early
+      if (s.units.length) paintSpan(s);
+    };
     const endBand = () => { for (const s of openSpans) closeSpan(s); openSpans = []; };
 
     // table header
@@ -650,7 +656,10 @@ register('table', {
         }
       };
       // a collapsed node hides its subtree: those nodes count as shown
-      const markShown = (b) => { if (shown.has(b)) return; shown.add(b); for (const c of kids?.get(b) || []) markShown(c); };
+      const markShown = (b) => { // a loop, not recursion: a chain of 50,000 rows must not overflow the stack
+        const st = [b];
+        while (st.length) { const x = st.pop(); if (shown.has(x)) continue; shown.add(x); for (const c of kids?.get(x) || []) st.push(c); }
+      };
       roots.forEach((bk, bi) => node(bk, bi, roots, 0, keyPath));
       if (kids) {
         // nodes in a cycle (A → B → A) or cut off by the depth limit: listed at the top level, once
@@ -1090,7 +1099,7 @@ register('matrix', {
       if (fit < 28) lc.warn(`${who}: ${nLeaf} columns do not fit the page; showing the first ${Math.max(1, Math.floor((room - headW) / 28) - nTot)}`);
       cw = Math.max(28, fit);
       const keep = Math.max(1, Math.floor((room - headW) / cw) - nTot);
-      if (keep < p.cols.length - nTot) p = buildPivot(it, rows, ctx, { ...lc, colLimit: keep });
+      if (keep < p.cols.length - nTot) p = buildPivot(it, rows, ctx, { ...lc, colLimit: Math.max(1, Math.floor(keep / V)) }); // colLimit counts column instances, each V columns wide
     }
     const fmtOf = (v) => v.format ?? (['percentOfTotal', 'percentOfRow', 'percentOfColumn'].includes(v.show) ? 'P1' : null);
     const vstyles = spec.values.map(v => ({ format: fmtOf(v), textAlign: 'right', ...(v.style || {}) }));

@@ -7,6 +7,7 @@
 import { shiftItems } from './paint.js';
 
 const EPS = 0.01;
+const MAX_SETS = 200; // page sets across for one table
 
 /** The left edge of a page-model item. */
 export function itemLeft(it) {
@@ -62,6 +63,7 @@ export function sliceColumns(o) {
     sets.push({ from: ci, to: ci + 1, w: o.widths[ci] });
   }
   if (sets.length < 2) return null;
+  if (sets.length > MAX_SETS) { o.warn(`${o.name}: its columns would fill more than ${MAX_SETS} pages across; the rest are left out`); sets.length = MAX_SETS; }
   const right = o.colX[n - 1] + o.widths[n - 1];
   for (const s of sets) {
     s.a = o.colX[s.from];
@@ -72,14 +74,34 @@ export function sliceColumns(o) {
   const repEnd = rep ? o.colX[rep] : o.x;
   const colAt = (x) => { let lo = 0, hi = n - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (o.colX[mid] <= x + EPS) lo = mid; else hi = mid - 1; } return lo; };
 
-  /** The items of one row (or its cont items) on one column set. */
-  const slice = (items, s) => {
-    const out = [];
+  const setOf = new Int32Array(n); // column → its set (-1: repeated)
+  setOf.fill(-1);
+  sets.forEach((s, k) => { for (let ci = s.from; ci < s.to; ci++) setOf[ci] = k; });
+  /**
+   * The items of a row sorted into column sets once (an item that spans a set edge goes into each set it reaches):
+   * rows × items, not rows × items × sets.
+   */
+  const bucketsOf = (items) => {
+    const rep0 = [], by = sets.map(() => []);
     for (const it of items) {
       const l = itemLeft(it);
-      if (l < repEnd - EPS) { out.push(it); continue; } // a repeated column
+      if (l < repEnd - EPS) { rep0.push(it); continue; } // a repeated column
       const r = Math.max(l, itemRight(it));
-      if (r <= s.a + EPS || l >= s.b - EPS) continue; // wholly in another set
+      const k0 = Math.max(0, setOf[colAt(l)]), k1 = Math.max(k0, setOf[colAt(Math.max(l, r - EPS * 2))]);
+      for (let k = k0; k <= k1; k++) by[k].push(it);
+    }
+    return { rep0, by };
+  };
+  const cache = new WeakMap();
+  /** The items of one row (or its cont items) on one column set. */
+  const slice = (items, s, k) => {
+    let b = cache.get(items);
+    if (!b) { b = bucketsOf(items); cache.set(items, b); }
+    const out = [...b.rep0];
+    for (const it of b.by[k]) {
+      const l = itemLeft(it);
+      const r = Math.max(l, itemRight(it));
+      if (r <= s.a + EPS || l >= s.b - EPS) continue; // only touches the edge
       let c = clipTo(it, s.a, s.b);
       if (c.t === 'text' && c.cell) {
         // the Word export rebuilds the table of this set: columns re-indexed, spans cut at the set edge
@@ -94,9 +116,12 @@ export function sliceColumns(o) {
   const out = [];
   let y = 0;
   const emit = (u, s, k, first) => {
-    const c = { ...u, top: y, items: slice(u.items, s), x0: o.x, x1: o.x + repW + s.w };
-    if (u.cont) c.cont = slice(u.cont, s);
+    const si = sets.indexOf(s);
+    const c = { ...u, top: y, items: slice(u.items, s, si), x0: o.x, x1: o.x + repW + s.w };
+    if (u.cont) c.cont = slice(u.cont, s, si);
     if (u.block) c.block = `${u.block}#${k}`;
+    // a numbering section starts once, on the first column set, not again on every set
+    if (si > 0 && c.sectionStart) delete c.sectionStart;
     if (first) c.breakBefore = true;
     out.push(c);
     y += u.height;
@@ -121,15 +146,21 @@ export function sliceColumns(o) {
       }
     }
   } else {
-    // down, then across: every row with the first set, then every row with the next
-    sets.forEach((s, k) => {
+    // down, then across: every row with the first set, then every row with the next. A numbering section
+    // (newSection) is done on all its sets before the next section starts, so its pages stay together.
+    const chunks = [[]];
+    rest.forEach((u, i) => { if (i > 0 && u.sectionStart) chunks.push([]); chunks[chunks.length - 1].push(u); });
+    chunks.forEach((chunk, ch) => sets.forEach((s, k) => {
       const top = y;
-      head.forEach((u, i) => emit(u, s, k, i === 0 && k > 0));
+      const brk = k > 0 || ch > 0;
+      // the header opens the page: it carries the section start, the first row no longer breaks
+      const opens = chunk[0]?.sectionStart && k === 0;
+      head.forEach((u, i) => emit(i === 0 && opens ? { ...u, sectionStart: true } : u, s, k, i === 0 && brk));
       const headerItems = [];
       for (const u of out.slice(out.length - head.length)) for (const it of o.shiftLocal(u.items.filter(i => i.t !== 'link' && i.t !== 'bookmark'), u.top - top)) headerItems.push(it);
-      rest.forEach((u, i) => emit(u, s, k, i === 0 && k > 0 && !head.length));
+      chunk.forEach((u, i) => emit(i === 0 && head.length ? { ...u, breakBefore: false, sectionStart: false } : u, s, k, i === 0 && brk && !head.length));
       if (o.repeatHeader && o.headerHeight) tables.push({ id: o.nextId(), headerHeight: o.headerHeight, headerItems, x: o.x, x0: o.x, x1: o.x + repW + s.w, top, bottom: y });
-    });
+    }));
   }
   return { height: y, units: out, tables, width: repW + Math.max(...sets.map(s => s.w)) };
 }
