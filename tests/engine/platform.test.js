@@ -7,6 +7,7 @@ import { toDataUri, imageInfo, IMAGE_LIMITS } from '../../src/engine/image.js';
 import { parseSvg, parseTransform } from '../../src/exporters/svgimage.js';
 import { exportPdf } from '../../src/exporters/pdf.js';
 import { pageToSvg } from '../../src/exporters/svg.js';
+import { SYMBOLOGIES, bwipOptions, paintBarcode, loadBarcodes } from '../../src/engine/items/barcode.js';
 import { PDFDocument, PDFArray, PDFRawStream, decodePDFRawStream } from 'pdf-lib';
 
 const tb = (name, value, y, extra = {}) => ({ type: 'textbox', name, x: 0, y, w: 300, h: 18, value, ...extra });
@@ -121,5 +122,52 @@ describe('images', () => {
     expect(ops).not.toMatch(/\bDo\b/);  // not an image XObject
     const bad = 'data:image/svg+xml,' + encodeURIComponent('<svg viewBox="0 0 1 1"><path d="M 0 0 L nonsense"/></svg>');
     await expect(exportPdf(await render(report([img({ src: bad })]), { fontStore }), fontStore)).resolves.toBeInstanceOf(Uint8Array);
+  });
+});
+
+describe('barcodes', () => {
+  it('30+ symbologies with friendly names; each draws its sample', async () => {
+    await loadBarcodes();
+    expect(SYMBOLOGIES.length).toBeGreaterThanOrEqual(30);
+    for (const s of SYMBOLOGIES) {
+      const r = paintBarcode({ type: s.id, text: s.sample, x: 0, y: 0, w: 200, h: 80 });
+      expect(r.error, s.id).toBeUndefined();
+      expect(r.items.length, s.id).toBeGreaterThan(0);
+      expect(s.name).toBeTruthy();
+    }
+  });
+  it('whitelists options per symbology, with enum and range checks', () => {
+    expect(bwipOptions({ symbology: 'qrcode', qrErrorLevel: 'H', qrVersion: 5 })).toEqual({ eclevel: 'H', version: '5' });
+    expect(bwipOptions({ symbology: 'qrcode', qrErrorLevel: 'Z', qrVersion: 41, evil: 1, eclevel: 'L' })).toEqual({});
+    expect(bwipOptions({ symbology: 'code128', qrErrorLevel: 'H' })).toEqual({}); // not a QR code
+    expect(bwipOptions({ symbology: 'datamatrix', dmSize: '24x24', dmShape: 'square' })).toEqual({ rows: 24, columns: 24, format: 'square' });
+    expect(bwipOptions({ symbology: 'pdf417', pdfColumns: 4, pdfErrorLevel: 9, pdfCompact: true })).toEqual({ columns: 4, compact: true });
+    expect(bwipOptions({ symbology: 'code39', checkDigit: true, barRatio: 2.5 })).toEqual({ includecheck: true, barratio: 2.5 });
+  });
+  it('the options change the drawing: QR error level H makes a bigger code', async () => {
+    await loadBarcodes();
+    const n = (o) => paintBarcode({ type: 'qrcode', text: 'hello world', x: 0, y: 0, w: 100, h: 100, options: o }).items.map(i => i.d).join('').length;
+    expect(n({ eclevel: 'H' })).not.toBe(n({ eclevel: 'L' }));
+  });
+  it('refuses a 10 MB value quickly, and an unknown symbology name', async () => {
+    await loadBarcodes();
+    const t0 = Date.now();
+    expect(paintBarcode({ type: 'qrcode', text: 'x'.repeat(10e6), x: 0, y: 0, w: 99, h: 99 }).error).toMatch(/too long/);
+    expect(Date.now() - t0).toBeLessThan(200);
+    expect(paintBarcode({ type: '../../x', text: '1', x: 0, y: 0, w: 99, h: 99 }).error).toMatch(/not a barcode/);
+  });
+  const bar = (extra) => report([{ type: 'barcode', name: 'B', x: 0, y: 0, w: 160, h: 48, symbology: 'code128', value: 'ABC-123', ...extra }]);
+  it('caption above or below; quiet zone insets the bars; rotation turns every piece', async () => {
+    const at = async (extra) => (await render(bar(extra), { fontStore })).pages[0].items;
+    const below = await at({});
+    const above = await at({ captionPosition: 'above' });
+    const ty = (items) => items.find(i => i.t === 'text').lines[0].y;
+    const py = (items) => Math.min(...items.filter(i => i.t === 'path').map(i => i.y));
+    expect(ty(above)).toBeLessThan(ty(below));
+    expect(py(above)).toBeGreaterThan(py(below));
+    const px = (items) => Math.min(...items.filter(i => i.t === 'path').map(i => i.x));
+    expect(px(await at({ quietZone: 10 })) - px(below)).toBeCloseTo(10, 3);
+    const rot = await at({ rotate: '90' });
+    expect(rot.filter(i => i.t !== 'link').every(i => i.rotate?.a === 90)).toBe(true);
   });
 });

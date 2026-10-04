@@ -6,7 +6,7 @@ import { layoutTextLines, paintBox } from './paint.js';
 import { applyFilters, applySort } from '../data/index.js';
 import { paintChart, CHART_TYPES } from './chart.js';
 import { paintVisual } from './visuals.js';
-import { paintBarcode, BARCODE_TYPES } from './barcode.js';
+import { paintBarcode, SYMBOLOGIES, BARCODE_OPTIONS, bwipOptions, isTwoD } from './barcode.js';
 import { paintMap } from './map.js';
 import { shiftItems } from './paint.js';
 import { richValue, layoutRich, paintRich, paintVertical } from './rich.js';
@@ -806,10 +806,14 @@ register('barcode', {
   label: 'Barcode',
   defaults: () => ({ type: 'barcode', w: 160, h: 48, symbology: 'code128', value: '', showText: true, style: { fontSize: 8, textAlign: 'center' } }),
   props: [
-    { key: 'symbology', label: 'Symbology', type: 'select', options: BARCODE_TYPES, category: 'Barcode' },
+    { key: 'symbology', label: 'Symbology', type: 'select', options: SYMBOLOGIES.map(s => ({ value: s.id, label: s.name })), category: 'Barcode' },
     { key: 'value', label: 'Value', type: 'expr', category: 'Barcode' },
     { key: 'dataSet', label: 'Data set', type: 'dataset', category: 'Barcode' },
-    { key: 'showText', label: 'Show text under the bars', type: 'bool', category: 'Barcode' },
+    { key: 'showText', label: 'Show the text', type: 'bool', category: 'Barcode', showIf: (it) => !isTwoD(it.symbology || 'code128') },
+    { key: 'captionPosition', label: 'Text position', type: 'select', options: ['below', 'above'], category: 'Barcode', showIf: (it) => !isTwoD(it.symbology || 'code128') && it.showText !== false },
+    { key: 'quietZone', label: 'Quiet zone (pt of white around the code)', type: 'number', category: 'Barcode' },
+    { key: 'rotate', label: 'Rotate', type: 'select', options: ['0', '90', '180', '270'], category: 'Barcode' },
+    ...BARCODE_OPTIONS.map(o => ({ key: o.key, label: o.label, type: o.enum ? 'select' : o.bool ? 'bool' : o.size ? 'text' : 'number', options: o.enum, category: 'Barcode options', showIf: (it) => o.for.includes(it.symbology || 'code128') })),
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
   ],
   layout(item, lc) {
@@ -819,17 +823,28 @@ register('barcode', {
     const r = evalSafe(item.value ?? '', ctx, lc, item.name || 'Barcode');
     const text = r.err ? '' : textOf(r.v, st, ctx);
     const size = Number(st.fontSize) || 8;
-    const th = item.showText !== false ? size * 1.4 : 0;
-    const bc = paintBarcode({ type: item.symbology || 'code128', text, x: item.x, y: 0, w: item.w, h: item.h, color: st.color || '#000', showText: item.showText !== false, textHeight: th });
-    const items = [...bc.items];
+    const show = item.showText !== false;
+    const th = show ? size * 1.4 : 0;
+    const above = item.captionPosition === 'above';
+    // a turned code is drawn in the box turned on its side, then rotated about the item's centre
+    const a = (((Math.round(Number(item.rotate) / 90) || 0) * 90) % 360 + 360) % 360;
+    const swap = a === 90 || a === 270;
+    const cx = item.x + item.w / 2, cy = item.h / 2;
+    const bw = swap ? item.h : item.w, bh = swap ? item.w : item.h;
+    const bx = cx - bw / 2, by = cy - bh / 2;
+    const q = Math.min(Math.max(0, Number(item.quietZone) || 0), bw / 3, bh / 3);
+    const bc = paintBarcode({ type: item.symbology || 'code128', text, x: bx + q, y: by + q, w: bw - 2 * q, h: bh - 2 * q, color: st.color || '#000', showText: show, textHeight: th, captionAbove: above, options: bwipOptions(item) });
+    let items = [...bc.items];
     if (bc.error) {
       lc.warn(`${item.name}: ${bc.error}`);
       const tl = layoutTextLines(`Barcode error: ${bc.error}`, { ...st, color: '#b91c1c' }, item.w, lc.m);
-      items.push(...paintBox({ x: item.x, y: 0, w: item.w, h: item.h, st: { ...st, color: '#b91c1c', border: '0.5 dashed #b91c1c' }, tl, m: lc.m }));
-    } else if (item.showText !== false && !bc.twoD && text) {
-      const tl = layoutTextLines(text, { ...st, padding: 0 }, item.w, lc.m, { wrap: false });
-      items.push(...paintBox({ x: item.x, y: item.h - th, w: item.w, h: th, st: { ...st, padding: 0, verticalAlign: 'bottom', textAlign: st.textAlign === 'auto' ? 'center' : st.textAlign }, tl, m: lc.m }));
+      return { height: item.h, units: [{ top: 0, height: item.h, items: paintBox({ x: item.x, y: 0, w: item.w, h: item.h, st: { ...st, color: '#b91c1c', border: '0.5 dashed #b91c1c' }, tl, m: lc.m }) }] };
     }
+    if (show && !bc.twoD && text) {
+      const tl = layoutTextLines(text, { ...st, padding: 0 }, bw - 2 * q, lc.m, { wrap: false });
+      items.push(...paintBox({ x: bx + q, y: above ? by + q : by + bh - q - th, w: bw - 2 * q, h: th, st: { ...st, padding: 0, verticalAlign: above ? 'top' : 'bottom', textAlign: st.textAlign === 'auto' ? 'center' : st.textAlign }, tl, m: lc.m }));
+    }
+    if (a) items = items.map(i => ({ ...i, rotate: { a, cx, cy } }));
     return { height: item.h, units: [{ top: 0, height: item.h, items }] };
   },
 });

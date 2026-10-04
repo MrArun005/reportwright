@@ -121,7 +121,7 @@ function ItemProps({ item, section, openExpr }) {
         </div>
         <div className="hint">In the {SECTIONS.find(s => s.key === section).label.toLowerCase()}{findItem(def, item.id)?.parent ? `, inside ${findItem(def, item.id).parent.name}` : ''}.</div>
       </div>
-      {groupBy(spec?.props || []).map(([cat, ps]) => (
+      {groupBy((spec?.props || []).filter(p => !p.showIf || p.showIf(item))).map(([cat, ps]) => (
         <div className="cat" key={cat}>
           <h5>{cat}</h5>
           {ps.map(p => <PropEditor key={p.key} p={p} value={item[p.key]} onChange={v => set(p.key, v)} openExpr={openExpr} dataSet={dataSet} />)}
