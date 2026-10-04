@@ -78,9 +78,26 @@ function fontSize(v, parent) {
   return undefined;
 }
 
+/** CSS declarations, split at ';' that are not the end of a character reference (&#59; is data). At most maxDecls. */
+function cssDecls(css) {
+  const out = [];
+  let start = 0, amp = -1;
+  for (let i = 0; i < css.length && out.length < RICH_LIMITS.maxDecls; i++) {
+    const c = css[i];
+    if (c === '&') amp = i;
+    else if (c === ';') {
+      if (amp >= 0 && i - amp <= 10) { amp = -1; continue; }
+      out.push(css.slice(start, i)); start = i + 1; amp = -1;
+    }
+  }
+  if (out.length < RICH_LIMITS.maxDecls && start < css.length) out.push(css.slice(start));
+  return out;
+}
+
 /** Inline CSS onto a copy of the parent style. @param {string} css @param {RichStyle} st */
 function applyCss(css, st) {
-  for (const decl of css.split(';', RICH_LIMITS.maxDecls)) {
+  for (const raw of cssDecls(css)) {
+    const decl = decode(raw); // after splitting: an escaped ';' or quote from data stays inside its value
     const c = decl.indexOf(':');
     if (c < 0) continue;
     const prop = decl.slice(0, c).trim().toLowerCase(), val = decl.slice(c + 1).trim();

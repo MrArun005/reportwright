@@ -15,22 +15,27 @@ import { RICH_LIMITS } from '../text/rich.js';
 /** Item defaults; a rich text item can set `listIndent` and `paragraphSpacing` (points). */
 export const RICH_DEFAULTS = { listIndent: 18, paragraphSpacing: 4, linkColor: '#0563c1', maxFragments: 20000 };
 
-const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+/** Data as text: quotes and ';' too, so a value inside an attribute or a CSS value cannot end it. */
+const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', ';': '&#59;' };
+const escapeHtml = (s) => String(s).replace(/[&<>"';]/g, (c) => ESC[c]);
 
 /**
- * The markup of a rich text value. Template parts ({Fields.x}) are escaped, so data never adds tags;
- * a value that is one =expression is the author's markup and is parsed as it is.
- * @param {any} v @param {any} ctx
+ * The markup of a rich text value. Only the literal markup the author typed is HTML. Everything that comes
+ * from evaluation (a {Fields.x} part of a template, or the result of a value that is one =expression) is
+ * escaped and shows as text, unless the item sets `htmlFromData: true` (HTML stored in trusted data); then
+ * it is parsed too, through the same allow-list.
+ * @param {any} v @param {any} ctx @param {boolean} [htmlFromData]
  */
-export function richValue(v, ctx) {
+export function richValue(v, ctx, htmlFromData = false) {
   const p = parseValue(v);
+  const data = (r) => { const s = String(toText(r, null, ctx)).slice(0, RICH_LIMITS.maxLength + 1); return htmlFromData ? s : escapeHtml(s); };
   if (p.kind === 'lit') return p.v == null ? '' : String(p.v);
-  if (p.kind === 'expr') { const r = evaluate(p.ast, ctx); return typeof r === 'string' ? r.slice(0, RICH_LIMITS.maxLength + 1) : escapeHtml(toText(r, null, ctx)); }
+  if (p.kind === 'expr') return data(evaluate(p.ast, ctx));
   // stop once the result is past the parser's limit: a field can hold megabytes (the parser cuts and warns)
   let out = '';
   for (const part of p.parts) {
     if (out.length > RICH_LIMITS.maxLength) break;
-    out += typeof part === 'string' ? part : escapeHtml(String(toText(evaluate(part.ast, ctx), null, ctx)).slice(0, RICH_LIMITS.maxLength + 1));
+    out += typeof part === 'string' ? part : data(evaluate(part.ast, ctx));
   }
   return out;
 }

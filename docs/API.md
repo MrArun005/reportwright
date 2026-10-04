@@ -12,6 +12,14 @@ Authorization: Bearer key1        (or)        x-api-key: key1
 
 In production the API refuses all requests when `PW_API_KEYS` is empty. In `next dev` it answers without a key.
 
+## Rich text and data
+
+A `richtext` item's `value` is an HTML subset (p, div, span, br, b/strong, i/em, u, s/strike/del, sup, sub, ul/ol/li, a[href], h1–h6, inline `style` with color, font-size, font-weight, font-style, text-decoration, background-color, text-align).
+
+- Only the markup the report author typed is HTML. Everything that comes from evaluation is escaped and shows as text: each `{Fields.x}` part of a template, and the result of a value that is one `=expression`. Mix markup with data with a template: `<b>Total</b> {Fields.total}`. A quote or `;` in a field cannot leave the attribute or CSS value it sits in.
+- `htmlFromData: true` on the item (designer: "Field values are HTML (trusted data only)") parses evaluated values as markup too. Set it only when the data is trusted. It still goes through the same allow-list: unknown tags are dropped, links must be `http:`, `https:`, `mailto:` or start with `/`, and the size limits apply.
+- Limits: 100,000 characters of markup after interpolation, 32 levels of nesting, 20,000 styled pieces, 5,000 paragraphs and 5,000 line breaks per item. Past a limit the rest is cut and the render warns.
+
 ## Templates
 
 `GET /api/v1/templates` gives the list of reports (`id`, `name`, parameters).

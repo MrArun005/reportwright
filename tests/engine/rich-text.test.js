@@ -186,12 +186,14 @@ describe('rich text: layout', () => {
     expect(m.pages.length).toBeGreaterThan(1);
     expect(textRows(m.pages[1].items).length).toBeGreaterThan(10);
   });
-  it('interpolates fields escaped; a whole =expression is markup', async () => {
+  it('interpolates fields escaped; a whole =expression is escaped too unless htmlFromData', async () => {
     const data = { rows: [{ name: '<b>Ann</b> & co' }] };
     const m1 = await out(rich('<i>{Fields.name}</i>', { dataSet: 'Rows' }, data));
     expect(textRows(m1.pages[0].items)).toEqual(['<b>Ann</b> & co']);
     const m2 = await out(rich('="<b>" & "Ann" & "</b>"'));
-    expect(m2.pages[0].items.find(i => i.t === 'text').font).toBe('Inter-Bold');
+    expect(textRows(m2.pages[0].items)).toEqual(['<b>Ann</b>']);
+    const m3 = await out(rich('="<b>" & "Ann" & "</b>"', { htmlFromData: true }));
+    expect(m3.pages[0].items.find(i => i.t === 'text').font).toBe('Inter-Bold');
   });
   it('decorations, span backgrounds, sup and sub', async () => {
     const items = (await out(rich('<u>u</u> <s>s</s> <span style="background-color:#ff0">bg</span> x<sup>2</sup> y<sub>3</sub>'))).pages[0].items;
@@ -249,5 +251,41 @@ describe('rich text: exports', () => {
     expect(run('red')).toContain('<w:sz w:val="28"/>');
     expect(doc.split('<w:p>').filter(p => p.includes('Plain')).length).toBe(1);
     expect(doc.split('<w:p>').find(p => p.includes('Plain'))).toContain('>bold<');
+  });
+});
+
+describe('rich text: data is escaped unless the item trusts it', () => {
+  const one = (value, x, extra = {}) => out(rich(value, { dataSet: 'Rows', ...extra }, { rows: [{ x }] }));
+  const bold = (m) => m.pages[0].items.filter(i => i.t === 'text' && /Bold/.test(i.font));
+  it('a quote in a field stays inside its href attribute', async () => {
+    const m = await one('<a href="/c?q={Fields.x}">go</a>', '" style="font-size:500px');
+    const link = m.pages[0].items.find(i => i.t === 'link');
+    expect(link.action.href).toBe('/c?q=" style="font-size:500px');
+    expect(m.pages[0].items.filter(i => i.t === 'text').every(i => i.size === 9)).toBe(true);
+  });
+  it('a quote or semicolon in a field stays inside its style value', async () => {
+    const m = await one('<span style="color:{Fields.x}">t</span>', 'red;font-size:500px" title="x');
+    const t = m.pages[0].items.find(i => i.t === 'text');
+    expect(t.size).toBe(9);
+    expect(t.color).not.toBe('#ff0000');
+  });
+  it('=Fields.x holding markup is shown as text by default', async () => {
+    const m = await one('=Fields.x', '<a href="https://evil">click</a><b>x</b>');
+    expect(m.pages[0].items.some(i => i.t === 'link')).toBe(false);
+    expect(bold(m)).toHaveLength(0);
+    expect(textRows(m.pages[0].items)).toEqual(['<a href="https://evil">click</a><b>x</b>']);
+  });
+  it('htmlFromData: true parses it, through the same allow-list', async () => {
+    const m = await one('=Fields.x', '<a href="https://evil">click</a><b>x</b><a href="javascript:alert(1)">j</a>', { htmlFromData: true });
+    const links = m.pages[0].items.filter(i => i.t === 'link');
+    expect(links.map(l => l.action.href)).toEqual(['https://evil']);
+    expect(bold(m).map(i => i.lines[0].text)).toEqual(['x']);
+    expect(JSON.stringify(m.pages)).not.toMatch(/javascript/);
+  });
+  it('a template keeps the markup in a field as text inside the author\'s tags', async () => {
+    const m = await one('<b>{Fields.x}</b>', '<i>not italic</i>');
+    expect(textRows(m.pages[0].items)).toEqual(['<i>not italic</i>']);
+    expect(bold(m)).toHaveLength(1);
+    expect(m.pages[0].items.some(i => i.t === 'text' && /Italic/.test(i.font))).toBe(false);
   });
 });

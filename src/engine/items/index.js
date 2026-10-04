@@ -144,6 +144,7 @@ register('richtext', {
   defaults: () => ({ type: 'richtext', w: 240, h: 48, value: '<p>Rich <b>text</b> with <i>styles</i> and {Globals.PageNumber}</p>', canGrow: true, style: {} }),
   props: [
     { key: 'value', label: 'HTML (p, b, i, u, s, sup, sub, br, ul/ol/li, a, h1–h6, span style; {Fields.x})', type: 'html', category: 'Data' },
+    { key: 'htmlFromData', label: 'Field values are HTML (trusted data only)', type: 'bool', category: 'Data' },
     { key: 'dataSet', label: 'Data set', type: 'dataset', category: 'Data' },
     { key: 'styleName', label: 'Named style', type: 'stylename', category: 'Text' },
     { key: 'canGrow', label: 'Can grow', type: 'bool', category: 'Layout' },
@@ -163,7 +164,7 @@ register('richtext', {
     const who = item.name || 'Rich text';
     const st = resolveStyle([lc.base, lc.named?.[item.styleName], item.style], ctx);
     let html;
-    try { html = richValue(item.value ?? '', ctx); } catch (e) { lc.warn(`${who}: ${e.message}`); html = '#Error'; }
+    try { html = richValue(item.value ?? '', ctx, item.htmlFromData === true); } catch (e) { lc.warn(`${who}: ${e.message}`); html = '#Error'; }
     const { blocks } = parseRich(html, { baseSize: Number(st.fontSize) || 9, warn: (msg) => lc.warn(`${who}: ${msg}`) });
     const rl = layoutRich(blocks, st, item.w, lc.m, { listIndent: item.listIndent, paragraphSpacing: item.paragraphSpacing });
     let h = item.h;
