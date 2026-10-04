@@ -74,6 +74,8 @@ export const useDesigner = create((set, get) => ({
   /** chart gallery dialog: {mode:'insert', section, x, y, extra, parentId} | {mode:'edit', id} */
   wizard: null,
   tableWizard: null,
+  /** interface language (?lang=), for the parts of the designer that are translated */
+  lang: 'en',
   lastKey: null,
   lastAt: 0,
 

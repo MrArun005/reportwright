@@ -31,7 +31,9 @@ function installSnapshot(snapshot) {
 /**
  * @param {string|HTMLElement} target
  * @param {{ server?: string, report?: string, definition?: object, params?: Record<string,string>, lang?: string, height?: string, onDrill?: Function,
- *   reports?: Record<string, object>, fonts?: Record<string, string>, customFonts?: object[], uiFontCss?: string, snapshot?: Record<string, any>, title?: string }} opts
+ *   reports?: Record<string, object>, fonts?: Record<string, string>, customFonts?: object[], uiFontCss?: string, snapshot?: Record<string, any>, title?: string,
+ *   toolbar?: { hide?: string[], add?: { id: string, label: string, title?: string, after?: string, onClick?: (api: object) => void }[] },
+ *   viewMode?: 'single' | 'continuous' | 'galley' }} opts
  */
 export function mountViewer(target, opts = {}) {
   const el = typeof target === 'string' ? document.querySelector(target) : target;
@@ -53,7 +55,7 @@ export function mountViewer(target, opts = {}) {
   const shadow = el.shadowRoot || el.attachShadow({ mode: 'open' });
   shadow.innerHTML = `<style>${CSS}</style><div class="pw-embed" style="height:${opts.height || '720px'}"></div>`;
   const root = createRoot(shadow.querySelector('.pw-embed'));
-  const show = (definition) => root.render(createElement(ReportViewer, { definition, reportId: opts.report, params: opts.params, lang: opts.lang, onDrill: opts.onDrill, title: opts.title }));
+  const show = (definition) => root.render(createElement(ReportViewer, { definition, reportId: opts.report, params: opts.params, lang: opts.lang, onDrill: opts.onDrill, title: opts.title, toolbar: opts.toolbar, viewMode: opts.viewMode }));
   if (opts.definition) show(opts.definition);
   else fetch(`${server}/api/reports/${encodeURIComponent(opts.report)}`)
     .then(r => (r.ok ? r.json() : r.json().then(j => Promise.reject(new Error(j.error || `HTTP ${r.status}`)))))

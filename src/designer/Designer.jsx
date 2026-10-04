@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Dialog } from './ui.jsx';
 import Link from 'next/link';
 import { useDesigner, insertItem, deleteSelection, duplicateSelection, moveItems, copySelection, pasteItems } from './store.js';
@@ -15,6 +15,7 @@ import ThemeToggle from '@/theme/ThemeToggle.jsx';
 import ChartWizard from './ChartWizard.jsx';
 import TableWizard from './TableWizard.jsx';
 import AskAi from './AskAi.jsx';
+import { t, dirOf, pickLang } from '@/i18n/index.js';
 
 const TOOLS = [
   { type: 'textbox', icon: <svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 3h10M7 3v9" stroke="currentColor" strokeWidth="1.6" fill="none" /></svg> },
@@ -38,7 +39,7 @@ const TOOLS = [
   { type: 'checkbox', icon: <svg width="14" height="14" viewBox="0 0 14 14"><rect x="2" y="2" width="10" height="10" rx="2" stroke="currentColor" fill="none" /><path d="M4.5 7.2l1.8 1.8 3.4-3.6" stroke="currentColor" fill="none" strokeWidth="1.4" /></svg> },
 ];
 
-function Toolbox() {
+function Toolbox({ T }) {
   const add = (type) => {
     const def = useDesigner.getState().def;
     const items = def.sections.body.items;
@@ -47,14 +48,14 @@ function Toolbox() {
   };
   return (
     <div className="pane">
-      <h4>Insert</h4>
+      <h4>{T('insert')}</h4>
       <div className="pane-body tools">
         {TOOLS.map(t => (
           <div key={t.type} className="tool" draggable role="button" tabIndex={0} data-tool={t.type}
-            title={`Drag onto the page, or click to add ${ITEMS[t.type].label.toLowerCase()} to the body`}
+            title={T('toolHint')}
             onDragStart={(e) => { e.dataTransfer.setData(MIME_TOOL, t.type); e.dataTransfer.effectAllowed = 'copy'; }}
             onClick={() => add(t.type)} onKeyDown={(e) => { if (e.key === 'Enter') add(t.type); }}>
-            {t.icon}{ITEMS[t.type].label}
+            {t.icon}{T(`item_${t.type}`) === `item_${t.type}` ? ITEMS[t.type].label : T(`item_${t.type}`)}
           </div>
         ))}
       </div>
@@ -68,13 +69,13 @@ function isTyping(e) {
 }
 
 const SHORTCUTS = [
-  ['⌘/Ctrl S', 'Save'], ['⌘/Ctrl Z', 'Undo'], ['⇧⌘/Ctrl Z or ⌘/Ctrl Y', 'Redo'], ['⌘/Ctrl C / V', 'Copy and paste items (works across reports)'],
-  ['⌘/Ctrl D', 'Duplicate'], ['Delete / Backspace', 'Delete the selection'], ['Arrows', 'Nudge 1 pt'], ['⇧ Arrows', 'Nudge 4 grid steps'],
-  ['⇧ Click', 'Add to or remove from the selection'], ['Drag on empty space', 'Select an area'], ['Alt while dragging', 'Ignore smart guides'],
-  ['Esc', 'Clear the selection'], ['?', 'Show this list'],
+  ['⌘/Ctrl S', 'sc_save'], ['⌘/Ctrl Z', 'sc_undo'], ['⇧⌘/Ctrl Z, ⌘/Ctrl Y', 'sc_redo'], ['⌘/Ctrl C / V', 'sc_copy'],
+  ['⌘/Ctrl D', 'sc_duplicate'], ['Delete / Backspace', 'sc_delete'], ['← ↑ → ↓', 'sc_nudge'], ['⇧ ← ↑ → ↓', 'sc_nudge4'],
+  ['⇧ Click', 'sc_toggle'], ['Drag', 'sc_marquee'], ['Alt + Drag', 'sc_guides'],
+  ['Esc', 'sc_clear'], ['?', 'sc_help'],
 ];
 
-function HistoryDialog({ id, onClose }) {
+function HistoryDialog({ id, onClose, T, lang }) {
   const [list, setList] = useState(null);
   const [err, setErr] = useState(null);
   useEffect(() => { fetch(`/api/reports/${id}/versions`).then(r => r.json()).then(setList).catch(e => setErr(e.message)); }, [id]);
@@ -86,16 +87,16 @@ function HistoryDialog({ id, onClose }) {
     onClose();
   };
   return (
-    <Dialog title="Version history" onClose={onClose} footer={<button className="btn" onClick={onClose}>Close</button>}>
-      <div className="hint">Each save keeps the previous version (the last 50). Restoring makes the current version a version too, so you can undo a restore.</div>
+    <Dialog title={T('versionHistory')} onClose={onClose} footer={<button className="btn" onClick={onClose}>{T('close')}</button>}>
+      <div className="hint">{T('versionHint')}</div>
       {err && <div className="err">{err}</div>}
-      {!list && !err && <div className="hint">Loading…</div>}
-      {list && !list.length && <div className="hint">No earlier versions yet. Save a change first.</div>}
+      {!list && !err && <div className="hint">{T('loading')}</div>}
+      {list && !list.length && <div className="hint">{T('noVersions')}</div>}
       {list?.map(v => (
         <div className="ver-row" key={v.version}>
-          <span>{new Date(v.savedAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'medium' })} <span className="hint">· {(v.bytes / 1024).toFixed(1)} KB</span></span>
+          <span>{new Date(v.savedAt).toLocaleString(lang === 'en' ? 'en-IN' : lang, { dateStyle: 'medium', timeStyle: 'medium' })} <span className="hint">· {(v.bytes / 1024).toFixed(1)} KB</span></span>
           <span className="btnrow">
-            <button className="btn sm" onClick={() => restore(v.version)}>Restore</button>
+            <button className="btn sm" onClick={() => restore(v.version)}>{T('restore')}</button>
           </span>
         </div>
       ))}
@@ -103,10 +104,13 @@ function HistoryDialog({ id, onClose }) {
   );
 }
 
-export default function Designer({ id, initial }) {
+export default function Designer({ id, initial, lang: langIn }) {
+  const lang = pickLang(langIn);
+  const T = (k, v) => t(lang, k, v);
+  const q = lang === 'en' ? '' : `?lang=${encodeURIComponent(lang)}`;
   const ready = useRef(false);
   // The store is module-global: never fill it on the server, where requests share it.
-  if (!ready.current && typeof window !== 'undefined') { useDesigner.getState().init(id, initial); ready.current = true; }
+  if (!ready.current && typeof window !== 'undefined') { useDesigner.getState().init(id, initial); useDesigner.getState().setUi({ lang }); ready.current = true; }
   const def = useDesigner(s => s.def);
   const tab = useDesigner(s => s.tab);
   const saved = useDesigner(s => s.saved);
@@ -158,58 +162,58 @@ export default function Designer({ id, initial }) {
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('beforeunload', onLeave); };
   }, [st]);
 
-  if (!def) return <div className="designer"><div className="dtop"><span className="brand"><i />Pagewright</span><span className="hint">Loading the designer…</span></div></div>;
+  if (!def) return <div className="designer" dir={dirOf(lang)} lang={lang}><div className="dtop"><span className="brand"><i />Pagewright</span><span className="hint">{T('loadingDesigner')}</span></div></div>;
 
   return (
-    <div className="designer" data-testid="designer">
+    <div className="designer" data-testid="designer" dir={dirOf(lang)} lang={lang}>
       <style>{fontCss}</style>
       <div className="dtop">
-        <Link href="/" className="brand"><i />Pagewright</Link>
-        <input className="name" value={def.name || ''} aria-label="Report name" onChange={e => st().apply(d => { d.name = e.target.value; }, 'name')} />
-        <span className={`saved${saved ? '' : ' dirty'}`} data-testid="save-state">{saving ? 'Saving…' : saved ? 'Saved' : 'Unsaved changes'}</span>
+        <Link href={`/${q}`} className="brand"><i />Pagewright</Link>
+        <input className="name" value={def.name || ''} aria-label={T('reportName')} onChange={e => st().apply(d => { d.name = e.target.value; }, 'name')} />
+        <span className={`saved${saved ? '' : ' dirty'}`} data-testid="save-state">{saving ? T('saving') : saved ? T('saved') : T('unsaved')}</span>
         {saveError && <span className="err">{saveError}</span>}
         <div className="spacer" />
-        <button className="btn sm icon" title="Undo (⌘Z)" disabled={!canUndo} onClick={() => st().undo()}>↶</button>
-        <button className="btn sm icon" title="Redo (⇧⌘Z)" disabled={!canRedo} onClick={() => st().redo()}>↷</button>
-        <div className="seg" role="group" aria-label="Mode">
-          <button aria-pressed={tab === 'design'} onClick={() => st().setUi({ tab: 'design' })}>Design</button>
-          <button aria-pressed={tab === 'preview'} onClick={() => st().setUi({ tab: 'preview' })} data-testid="tab-preview">Preview</button>
+        <button className="btn sm icon" title={T('undo')} aria-label={T('undo')} disabled={!canUndo} onClick={() => st().undo()}>↶</button>
+        <button className="btn sm icon" title={T('redo')} aria-label={T('redo')} disabled={!canRedo} onClick={() => st().redo()}>↷</button>
+        <div className="seg" role="group" aria-label={T('mode')}>
+          <button aria-pressed={tab === 'design'} onClick={() => st().setUi({ tab: 'design' })}>{T('design')}</button>
+          <button aria-pressed={tab === 'preview'} onClick={() => st().setUi({ tab: 'preview' })} data-testid="tab-preview">{T('preview')}</button>
         </div>
-        <button className="btn sm ghost" onClick={() => setDialog('ai')} title="Describe a change and let AI draft it">Ask AI</button>
-        <button className="btn sm ghost" onClick={() => setDialog('history')} title="Saved versions">History</button>
-        <button className="btn sm ghost icon" onClick={() => setDialog('keys')} title="Keyboard shortcuts (?)">?</button>
+        <button className="btn sm ghost" onClick={() => setDialog('ai')} title={T('askAiHint')}>{T('askAi')}</button>
+        <button className="btn sm ghost" onClick={() => setDialog('history')} title={T('historyHint')}>{T('history')}</button>
+        <button className="btn sm ghost icon" onClick={() => setDialog('keys')} title={T('shortcutsHint')} aria-label={T('shortcutsHint')}>?</button>
         <ThemeToggle />
-        <a className="btn sm" href={`/viewer/${id}`} target="_blank" rel="noreferrer" title="Opens the saved version">Open viewer</a>
-        <button className="btn sm primary" onClick={() => st().save()} disabled={saving || saved} data-testid="save">Save <span className="kbd" style={{ background: 'transparent', color: 'inherit', borderColor: 'currentColor', opacity: 0.7 }}>⌘S</span></button>
+        <a className="btn sm" href={`/viewer/${id}${q}`} target="_blank" rel="noreferrer" title={T('openViewerHint')}>{T('openViewer')}</a>
+        <button className="btn sm primary" onClick={() => st().save()} disabled={saving || saved} data-testid="save">{T('save')} <span className="kbd" style={{ background: 'transparent', color: 'inherit', borderColor: 'currentColor', opacity: 0.7 }}>⌘S</span></button>
       </div>
       {dialog === 'keys' && (
-        <Dialog title="Keyboard shortcuts" onClose={() => setDialog(null)} footer={<button className="btn" onClick={() => setDialog(null)}>Close</button>}>
-          <div className="kbd-grid">{SHORTCUTS.map(([k, d]) => <><span className="kbd" key={k}>{k}</span><span key={d}>{d}</span></>)}</div>
+        <Dialog title={T('shortcuts')} onClose={() => setDialog(null)} footer={<button className="btn" onClick={() => setDialog(null)}>{T('close')}</button>}>
+          <div className="kbd-grid">{SHORTCUTS.map(([k, d]) => <Fragment key={d}><span className="kbd">{k}</span><span>{T(d)}</span></Fragment>)}</div>
         </Dialog>
       )}
-      {dialog === 'history' && <HistoryDialog id={id} onClose={() => setDialog(null)} />}
+      {dialog === 'history' && <HistoryDialog id={id} onClose={() => setDialog(null)} T={T} lang={lang} />}
       {dialog === 'ai' && <AskAi onClose={() => setDialog(null)} />}
       {wizard && <ChartWizard />}
       {tableWizard && <TableWizard />}
       {tab === 'preview' ? (
-        <ReportViewer definition={def} reportId={id} compact />
+        <ReportViewer definition={def} reportId={id} compact lang={lang} />
       ) : (
         <div className="dmain">
-          <aside className="dleft"><Toolbox /><DataPanel /></aside>
+          <aside className="dleft"><Toolbox T={T} /><DataPanel /></aside>
           <section className="dcenter">
             <div className="cbar">
-              <label className="check">Zoom
+              <label className="check">{T('zoom')}
                 <select className="select" style={{ width: 80, height: 24 }} value={zoom} onChange={e => st().setUi({ zoom: Number(e.target.value) })}>
                   {[0.5, 0.75, 1, 1.25, 1.5, 2].map(z => <option key={z} value={z}>{Math.round(z * 100)}%</option>)}
                 </select>
               </label>
-              <label className="check"><input type="checkbox" checked={snap} onChange={e => st().setUi({ snap: e.target.checked })} />Snap to grid</label>
-              <label className="check">Units
+              <label className="check"><input type="checkbox" checked={snap} onChange={e => st().setUi({ snap: e.target.checked })} />{T('snapToGrid')}</label>
+              <label className="check">{T('units')}
                 <select className="select" style={{ width: 64, height: 24 }} value={unit} onChange={e => st().setUi({ unit: e.target.value })}>
                   {['pt', 'mm', 'cm', 'in'].map(u => <option key={u}>{u}</option>)}
                 </select>
               </label>
-              <span className="hint" style={{ marginLeft: 'auto' }}>Shift+click to add to the selection · drag on empty space to select an area · arrows nudge</span>
+              <span className="hint" style={{ marginInlineStart: 'auto' }}>{T('canvasHint')}</span>
             </div>
             <Canvas />
           </section>

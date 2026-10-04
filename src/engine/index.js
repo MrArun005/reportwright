@@ -176,11 +176,20 @@ export async function render(def, opts = {}) {
           for (const u of r.units) items.push(...shiftItems(u.items, ml, y0 + u.top));
         };
         band(header, mt, k === 0, k === total - 1);
+        const frozen = []; // table headers on this page and where each table ends: viewers keep them in view while scrolling
         for (let c = 0; c < colCount; c++) {
           const p = slices[k * colCount + c];
           if (!p) break;
           const cx = ml + c * (colW + colGap);
           for (const t of p.repeat) items.push(...shiftItems(t.headerItems, cx, bodyTop));
+          for (const t of body.tables) {
+            if (!(t.top < p.bottom - EPS && t.bottom > p.top + EPS)) continue;
+            const cont = p.repeat.includes(t);
+            let off = 0; // a table below a continued one moves down by that table's repeated header
+            if (!cont) for (const r of p.repeat) if (t.x0 < r.x1 - EPS && r.x0 < t.x1 - EPS) off = Math.max(off, r.headerHeight);
+            const y = cont ? bodyTop : bodyTop + off + t.top - p.top;
+            frozen.push({ x: cx + t.x0, y, w: t.x1 - t.x0, h: t.headerHeight, end: bodyTop + (cont ? t.headerHeight : off) + Math.min(t.bottom, p.bottom) - p.top });
+          }
           for (const u of p.units) {
             // Only items under a continued table move down by its repeated header.
             let off = 0;
@@ -194,7 +203,7 @@ export async function render(def, opts = {}) {
           if (it.t === 'bookmark') bookmarks.push({ label: it.label, page: k + 1, y: it.y, level: it.level || 0 });
           else kept.push(it);
         }
-        pages.push({ items: kept });
+        pages.push(frozen.length ? { items: kept, frozen } : { items: kept });
       }
       return { pages, bookmarks, height: pageH };
   };

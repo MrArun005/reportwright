@@ -140,3 +140,78 @@ Cron supports `*`, lists `1,15`, ranges `1-5` and steps `*/15`. Names such as `M
 | `GET /api/reports/<id>/thumb` | Page 1 as SVG with default parameters (home page cards); cached until the file changes |
 
 These routes have no API key check. Put them behind your own login when the server is public (see `STATUS.md`, gap 1).
+
+## Viewer (embedding)
+
+The viewer is one component: the `/viewer/<id>` page, the designer's Preview tab, `mountViewer()` on other sites and the interactive HTML export all use it.
+
+```html
+<script src="https://reports.example.com/embed/pagewright-viewer.js"></script>
+<script>
+  Pagewright.mountViewer('#report', {
+    server: 'https://reports.example.com',
+    report: 'loan-statement',
+    params: { accountId: 'LN-2025-001982' },
+    lang: 'hi',                 // UI language, see below
+    viewMode: 'continuous',     // 'single' | 'continuous' | 'galley'
+    toolbar: {
+      hide: ['excel', 'word'],
+      add: [{ id: 'email', label: 'Email', title: 'Email this statement', after: 'print', onClick: (api) => sendMail(api.page) }],
+    },
+  });
+</script>
+```
+
+In React: `<ReportViewer definition={def} reportId="loan-statement" lang="hi" viewMode="single" toolbar={{ hide: ['csv'] }} />` (`src/viewer/ReportViewer.jsx`).
+
+### Toolbar
+
+Every built-in item has a stable id. `toolbar.hide` removes items by id; `toolbar.add` adds buttons `{ id, label, title?, after?, onClick? }`. A new button goes right after the item named by `after` (in the same group), or at the end of the toolbar. An `add` id that is a built-in id is ignored: hide the built-in and add your own to replace it.
+
+| Group | Ids |
+|---|---|
+| panels | `parameters`, `documentMap`, `run` |
+| paging | `firstPage`, `previousPage`, `pageNumber`, `nextPage`, `lastPage` |
+| zoom | `zoomOut`, `zoomValue`, `zoomIn`, `fitWidth` |
+| view | `viewMode`, `fullScreen` |
+| info | `stats` |
+| search | `search` (box, match case, whole word, previous/next, list of matches) |
+| export | `print`, `pdf`, `excel`, `word`, `html`, `csv` |
+
+`parameters` and `documentMap` show only when the report has parameters or bookmarks; `fullScreen` only where the browser allows it. In the page each item is wrapped in an element with `data-toolbar-id="<id>"`.
+
+`onClick` gets `api`: `{ page, pages, goTo(n), run(), print(), exportAs('pdf' | 'xlsx' | 'docx' | 'html' | 'csv') }`.
+
+Narrower than 640 px (the viewer's own width, so an embed in a sidebar counts), the toolbar keeps `parameters`, `previousPage`, `pageNumber`, `nextPage` and `search` and puts the rest in a "More" menu (custom items too). Side panels open as bottom sheets, and a swipe left or right turns the page.
+
+### View modes, print, full screen
+
+- `single`: one page at a time. `continuous` (default): every page in one scroll. `galley`: the report laid out as one long page as wide as its paper (the engine's pageless layout); page breaks do not apply.
+- In continuous and galley view, the header row of a table whose header repeats on each page (`repeatHeader`, the default) stays at the top while that table scrolls.
+- **Print** makes the same PDF as the PDF button and prints it from a hidden frame; where the browser blocks that, the PDF opens in a new tab. Print and the exports are always of the paged report, also in galley view.
+- **Full screen** uses the browser's Fullscreen API on the viewer element.
+
+### Search
+
+Search ignores case unless **Match case** (`Aa`) is on; **Whole word** (`ab`) matches only whole words, in any script (Devanagari vowel signs count as part of a word). The list button shows every match with its page number; click one to go there. A justified line is matched as one line, not word by word.
+
+### Parameter editors
+
+A parameter's `editor` picks its control in the parameter panel. Without it, the control follows the type and the choices, as before.
+
+| `editor` | For | Options | Value |
+|---|---|---|---|
+| `slider` | number | `min` (0), `max` (100), `step` (1) | the number |
+| `range` | number, `multi: true` | `min`, `max`, `step` | two numbers, `Parameters.x[0]` and `Parameters.x[1]` |
+| `dateRange` | date, `multi: true` | `min`, `max` (yyyy-mm-dd) | two dates, `Parameters.x[0]` and `Parameters.x[1]` |
+| `radio` | any, with choices | | the picked value |
+| `list` | any, with choices | `multi` for more than one | the picked value(s) |
+| `toggle` | boolean | | `true` / `false` |
+
+A range with one bound filled takes the other from `min`/`max`. Filter with both bounds, for example `{ "expr": "=Fields.amount", "op": ">=", "value": "=Coalesce(Parameters.amount[0], 0)" }`. `reports/parameter-editors.pw.json` uses every editor.
+
+`"parameterLayout": { "columns": 3 }` on the report puts the parameter panel above the pages as a grid of 3 columns (on a phone it is still one column, in a sheet). The designer's parameter dialog sets both.
+
+### UI languages
+
+`?lang=` on any page (`/`, `/viewer/<id>`, `/designer/<id>`, `/admin/users`, `/login`) or the `lang` option: `en`, `hi`, `es`, `fr`, `de`, `ja`, `zh`, `pt-BR`, `ar`. Arabic turns the interface right-to-left; report pages are never mirrored. Links from the home page keep the language. Strings live in `src/i18n/<lang>.js`; a unit test checks that every language has every key. The translations other than English are machine quality and need a native speaker's review. The designer's property inspector, data dialogs and wizards are still English.

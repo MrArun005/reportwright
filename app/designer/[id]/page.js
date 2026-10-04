@@ -9,10 +9,11 @@ export async function generateMetadata({ params }) {
   return { title: `${id} · Designer · Pagewright` };
 }
 
-export default async function DesignerPage({ params }) {
+export default async function DesignerPage({ params, searchParams }) {
   const { id } = await params;
+  const { lang } = await searchParams;
   let def;
   try { def = await readReport(safeId(id)); } catch { notFound(); }
   if (!def) notFound();
-  return <Designer id={id} initial={def} />;
+  return <Designer id={id} initial={def} lang={lang} />;
 }

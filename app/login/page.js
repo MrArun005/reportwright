@@ -1,29 +1,34 @@
 import { accountsOn, safeNext } from '@/server/session.js';
 import { countUsers } from '@/server/users.js';
 import LoginForm from './LoginForm.jsx';
+import { t, tParts, dirOf, pickLang } from '@/i18n/index.js';
+
+/** A translated sentence with code elements where its {placeholders} are. */
+const withCode = (lang, key, code) => tParts(lang, key).map((s, i) => (i % 2 ? <code key={i}>{code[s]}</code> : s));
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Sign in · Pagewright' };
 
 export default async function LoginPage({ searchParams }) {
   const sp = await searchParams;
+  const lang = pickLang(sp.lang);
   const on = accountsOn();
   const noUsers = on && !(process.env.PW_ADMIN_EMAIL && process.env.PW_ADMIN_PASSWORD) && (await countUsers()) === 0;
   return (
-    <main className="home" style={{ maxWidth: 440 }}>
-      <h1>Sign in</h1>
-      <p className="lede">Pagewright reports</p>
-      {!on && <p className="vmsg">Accounts are off on this server. Set <code>PW_AUTH=users</code> to turn them on.</p>}
+    <main className="home" style={{ maxWidth: 440 }} dir={dirOf(lang)} lang={lang}>
+      <h1>{t(lang, 'signIn')}</h1>
+      <p className="lede">{t(lang, 'signInLede')}</p>
+      {!on && <p className="vmsg">{withCode(lang, 'accountsOff', { setting: 'PW_AUTH=users' })}</p>}
       {noUsers && (
         <div className="vmsg" role="note" style={{ margin: '0 0 18px' }}>
-          <p style={{ marginTop: 0 }}><b>There are no users yet.</b> Create the first admin in one of two ways:</p>
-          <ul style={{ paddingLeft: 18, marginBottom: 0 }}>
-            <li>set <code>PW_ADMIN_EMAIL</code> and <code>PW_ADMIN_PASSWORD</code> and restart the server, then sign in with them; or</li>
-            <li>run <code>node scripts/user.mjs add you@example.com admin</code> in the app folder.</li>
+          <p style={{ marginTop: 0 }}><b>{t(lang, 'noUsersYet')}</b> {t(lang, 'firstAdmin')}</p>
+          <ul style={{ paddingInlineStart: 18, marginBottom: 0 }}>
+            <li>{withCode(lang, 'firstAdminEnv', { email: 'PW_ADMIN_EMAIL', password: 'PW_ADMIN_PASSWORD' })}</li>
+            <li>{withCode(lang, 'firstAdminCli', { command: 'node scripts/user.mjs add you@example.com admin' })}</li>
           </ul>
         </div>
       )}
-      {on && <LoginForm next={safeNext(sp.next)} />}
+      {on && <LoginForm next={safeNext(sp.next)} lang={lang} />}
     </main>
   );
 }
