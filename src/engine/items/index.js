@@ -14,6 +14,7 @@ import { parseRich } from '../text/rich.js';
 import { resolveFontKey } from '../text/fonts.js';
 import { tocNumbers } from './toc.js';
 import { resolveImageSrc, imageInfo, PX } from '../image.js';
+import { groupRows, cmpKey, buildPivot, isTablix } from './pivot.js';
 
 /**
  * Item registry. Each item type has:
@@ -514,28 +515,6 @@ function roundFor(v, fmt) {
   if (!m) return Number.isInteger(v) ? v : roundHalfAway(v, 6);
   const d = (m[2] === '' ? 2 : Number(m[2])) + (m[1].toUpperCase() === 'P' ? 2 : 0);
   return roundHalfAway(v, d); // same rule as the Intl formatter that drew the cell
-}
-
-function groupRows(rows, expr, ctx, lc, who) {
-  const map = new Map();
-  const c = { ...ctx };
-  for (const r of rows) {
-    c.fields = r;
-    let key;
-    try { key = evalValue(expr, c); } catch (e) { lc.warn(`${who} group: ${e.message}`); key = '#Error'; }
-    const text = key instanceof Date ? String(key.getTime()) : String(key);
-    let b = map.get(text);
-    if (!b) { b = { key, text, rows: [] }; map.set(text, b); }
-    b.rows.push(r);
-  }
-  return [...map.values()];
-}
-function cmpKey(a, b) {
-  if (a instanceof Date) a = a.getTime();
-  if (b instanceof Date) b = b.getTime();
-  if (a == null) return 1;
-  if (b == null) return -1;
-  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 /* ---------------------------------------------------------------- container */
