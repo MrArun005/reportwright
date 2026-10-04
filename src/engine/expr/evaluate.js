@@ -1,6 +1,6 @@
 // @ts-check
 import { parse, ExprError } from './parser.js';
-import { formatValue, formatDate, english, toDate, roundHalfAway } from './format.js';
+import { formatValue, formatDate, english, toDate, roundHalfAway, roundHalfEven } from './format.js';
 
 /**
  * @typedef {object} EvalCtx
@@ -177,6 +177,50 @@ export function truthy(v) {
   return Boolean(v);
 }
 const num = (v) => (v == null || v === '' ? null : v instanceof Date ? v.getTime() : Number(v));
+
+/* ------------------------------------------------------------ decimal arithmetic
+ * Report numbers are mostly decimals (money, quantities), and SSRS reads SQL decimal and money columns as
+ * System.Decimal, where 0.1 + 0.2 is 0.3 and ten 0.1s sum to 1. A double holds the nearest binary value instead
+ * (0.30000000000000004, 0.9999999999999999), and a total compared with "= 1" or printed in full shows it.
+ * Decision: a number stands for its shortest decimal form (String(x)). +, -, * and Sum / Avg / RunningValue work on
+ * that form exactly, as scaled integers, and give the double nearest the exact decimal result, so its shortest form
+ * is the decimal answer. An operand with no short form (1/3, 1e-30) or a result past 2^53 scaled units falls back to
+ * plain double arithmetic, which is what VB does for Double values. Display rounding is separate (format.js: half away
+ * from zero on the decimal value, as .NET format strings do).
+ */
+const P10 = Array.from({ length: 23 }, (_, i) => 10 ** i);
+const DEC_MAX = 2 ** 49; // a scaled integer this small is read from x * 10^k without error (|error| < 1/8)
+/**
+ * x as [integer, scale] (x = integer / 10^scale) with the fewest decimals that give back x, i.e. its shortest decimal
+ * form (String(x), found without building the string); null when it has none within 15 decimals and 2^49.
+ */
+function dec(x) {
+  if (Number.isInteger(x)) return Math.abs(x) <= DEC_MAX ? [x, 0] : null;
+  if (!Number.isFinite(x)) return null;
+  for (let k = 1; k <= 15; k++) {
+    const i = Math.round(x * P10[k]);
+    if (Math.abs(i) > DEC_MAX) return null;
+    if (i / P10[k] === x) return [i, k];
+  }
+  return null;
+}
+/** a + b on the decimal values. */
+export function decAdd(a, b) {
+  if (Number.isInteger(a) && Number.isInteger(b)) return a + b;
+  const x = dec(a), y = dec(b);
+  if (!x || !y) return a + b;
+  const k = Math.max(x[1], y[1]);
+  const p = x[0] * P10[k - x[1]], q = y[0] * P10[k - y[1]], t = p + q;
+  return Number.isSafeInteger(p) && Number.isSafeInteger(q) && Number.isSafeInteger(t) ? t / P10[k] : a + b;
+}
+/** a * b on the decimal values. */
+export function decMul(a, b) {
+  if (Number.isInteger(a) && Number.isInteger(b)) return a * b;
+  const x = dec(a), y = dec(b);
+  if (!x || !y) return a * b;
+  const p = x[0] * y[0], k = x[1] + y[1];
+  return Number.isSafeInteger(p) && k <= 22 ? p / P10[k] : a * b;
+}
 export function cmpVal(a, b) {
   if (a instanceof Date) a = a.getTime();
   if (b instanceof Date) b = b.getTime();
@@ -195,11 +239,19 @@ function binary(n, ctx) {
   switch (op) {
     case '&': return toText(a, null, ctx) + toText(b, null, ctx);
     case '+':
-      if (typeof a === 'string' || typeof b === 'string') return (a ?? '') + '' + (b ?? '');
+      if (typeof a === 'string' || typeof b === 'string') {
+        // VB (Option Strict Off): a number plus numeric text adds; two texts, or text that is not a number, concatenate
+        if (typeof a === 'number' && numericText(b)) return decAdd(a, Number(b));
+        if (typeof b === 'number' && numericText(a)) return decAdd(Number(a), b);
+        return (a ?? '') + '' + (b ?? '');
+      }
       if (a == null || b == null) return null;
-      return Number(a) + Number(b);
-    case '-': return a == null || b == null ? null : num(a) - num(b);
-    case '*': return a == null || b == null ? null : num(a) * num(b);
+      if (a instanceof Date || b instanceof Date) return Number(a) + Number(b);
+      return decAdd(Number(a), Number(b));
+    case '-':
+      if (a == null || b == null) return null;
+      return a instanceof Date || b instanceof Date ? num(a) - num(b) : decAdd(num(a), -num(b));
+    case '*': return a == null || b == null ? null : decMul(num(a), num(b));
     case '/': {
       if (a == null || b == null) return null;
       const d = num(b);
@@ -253,6 +305,16 @@ function prefixValues(base, n, ast, ctx) {
   }
   return vals.length === n ? vals : vals.slice(0, n);
 }
+/** RunningValue(…, "Sum"): running totals over a cached prefix, extended as it grows (a fold of decAdd, as AGG.sum). */
+const RUN_SUMS = new WeakMap();
+function runningSum(base, n, ast, ctx) {
+  prefixValues(base, n, ast, ctx);
+  const vals = RUN_CACHE.get(base).get(ast);
+  let sums = RUN_SUMS.get(vals);
+  if (!sums) { sums = []; RUN_SUMS.set(vals, sums); }
+  for (let i = sums.length; i < n; i++) { const v = vals[i]; const prev = i ? sums[i - 1] : 0; sums.push(v != null && v !== '' ? decAdd(prev, Number(v)) : prev); }
+  return n ? sums[n - 1] : 0;
+}
 const ROW_LOCAL = new WeakMap();
 const SCOPED = new Set(['countrows', 'rownumber', 'runningvalue', 'distinctsum', 'aggregateif', 'previous', 'groupindex']);
 /** True when an expression reads only the current row (and parameters): no aggregate, RowNumber or RunningValue. */
@@ -293,8 +355,8 @@ function mapRows(rows, ast, ctx) {
   return out;
 }
 const AGG = {
-  sum: (vals) => { let s = 0, any = false; for (const v of vals) if (v != null && v !== '') { s += Number(v); any = true; } return any ? s : 0; },
-  avg: (vals) => { let s = 0, c = 0; for (const v of vals) if (v != null && v !== '') { s += Number(v); c++; } return c ? s / c : null; },
+  sum: (vals) => { let s = 0; for (const v of vals) if (v != null && v !== '') s = decAdd(s, Number(v)); return s; },
+  avg: (vals) => { let s = 0, c = 0; for (const v of vals) if (v != null && v !== '') { s = decAdd(s, Number(v)); c++; } return c ? s / c : null; },
   count: (vals) => vals.filter(v => v != null).length,
   countdistinct: (vals) => new Set(vals.filter(v => v != null).map(v => (v instanceof Date ? v.getTime() : v))).size,
   min: (vals) => { let m = null; for (const v of vals) if (v != null && (m == null || cmpVal(v, m) < 0)) m = v; return m; },
@@ -350,37 +412,72 @@ function aggValues(rows, ast, ctx) {
   return vals.some(Array.isArray) ? vals.flat() : vals;
 }
 
-/* --------------------------------------------------------------- dates */
-function dateAdd(interval, n, d) {
-  d = toDate(d); if (!d) return null;
-  const r = new Date(d.getTime());
-  n = Number(n);
-  switch (String(interval).toLowerCase()) {
-    case 'yyyy': case 'year': r.setFullYear(r.getFullYear() + n); break;
-    case 'q': case 'quarter': r.setMonth(r.getMonth() + 3 * n); break;
-    case 'm': case 'month': r.setMonth(r.getMonth() + n); break;
-    case 'ww': case 'week': r.setDate(r.getDate() + 7 * n); break;
-    case 'd': case 'day': r.setDate(r.getDate() + n); break;
-    case 'h': case 'hour': r.setHours(r.getHours() + n); break;
-    case 'n': case 'minute': r.setMinutes(r.getMinutes() + n); break;
-    case 's': case 'second': r.setSeconds(r.getSeconds() + n); break;
-    default: throw new ExprError(`DateAdd: unknown interval "${interval}"`);
-  }
+/* --------------------------------------------------------------- dates
+ * VB DateAdd / DateDiff semantics (Microsoft.VisualBasic.DateAndTime). A .NET DateTime has no time zone, so its
+ * arithmetic is on the wall clock: a day added across a DST change keeps the time of day, and a difference in hours
+ * counts clock hours. wall() turns a local date into that clock as a UTC timestamp; fromWall() turns it back.
+ */
+const DAY = 86400000;
+function wall(d) {
+  const t = new Date(0);
+  t.setUTCFullYear(d.getFullYear(), d.getMonth(), d.getDate());
+  t.setUTCHours(d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds());
+  return t.getTime();
+}
+function fromWall(ms) {
+  const u = new Date(ms), r = new Date(2000, 0, 1);
+  r.setFullYear(u.getUTCFullYear(), u.getUTCMonth(), u.getUTCDate());
+  r.setHours(u.getUTCHours(), u.getUTCMinutes(), u.getUTCSeconds(), u.getUTCMilliseconds());
   return r;
 }
-function dateDiff(interval, a, b) {
+/** .NET AddHours/AddMinutes/AddSeconds: the double is rounded to a whole millisecond, half away from zero. */
+const msOf = (n, unit) => Math.sign(n) * Math.round(Math.abs(n) * unit);
+/**
+ * DateAdd(interval, number, date). Years, quarters and months keep the day, clamped to the end of the target month
+ * (31 Jan + 1 month = 28 Feb, 29 Feb 2024 + 1 year = 28 Feb 2025). The fraction of number is ignored except for hours,
+ * minutes and seconds. "y" (day of year) and "w" (weekday) add days, as in VB.
+ */
+function dateAdd(interval, n, d) {
+  d = toDate(d); if (!d) return null;
+  n = Number(n);
+  if (!Number.isFinite(n)) return null;
+  const whole = Math.trunc(n);
+  switch (String(interval).toLowerCase()) {
+    case 'yyyy': case 'year': return addMonths(d, 12 * whole);
+    case 'q': case 'quarter': return addMonths(d, 3 * whole);
+    case 'm': case 'month': return addMonths(d, whole);
+    case 'd': case 'day': case 'y': case 'dayofyear': case 'w': case 'weekday': return fromWall(wall(d) + whole * DAY);
+    case 'ww': case 'week': case 'weekofyear': return fromWall(wall(d) + whole * 7 * DAY);
+    case 'h': case 'hour': return fromWall(wall(d) + msOf(n, 3600000));
+    case 'n': case 'minute': return fromWall(wall(d) + msOf(n, 60000));
+    case 's': case 'second': return fromWall(wall(d) + msOf(n, 1000));
+  }
+  throw new ExprError(`DateAdd: unknown interval "${interval}"`);
+}
+/**
+ * DateDiff(interval, date1, date2[, firstDayOfWeek]) as the .NET runtime computes it: years, quarters and months
+ * count calendar boundaries; days, hours, minutes and seconds are whole elapsed units truncated toward zero; "w" is
+ * whole weeks elapsed; "ww" counts first days of the week (Sunday by default) after date1 up to and including date2.
+ */
+function dateDiff(interval, a, b, first) {
   a = toDate(a); b = toDate(b); if (!a || !b) return null;
-  const ms = b.getTime() - a.getTime();
+  const ms = wall(b) - wall(a);
+  const fix = (x) => Math.trunc(x) + 0;
   switch (String(interval).toLowerCase()) {
     case 'yyyy': case 'year': return b.getFullYear() - a.getFullYear();
+    case 'q': case 'quarter': return (b.getFullYear() - a.getFullYear()) * 4 + Math.floor(b.getMonth() / 3) - Math.floor(a.getMonth() / 3);
     case 'm': case 'month': return (b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth();
-    case 'ww': case 'week': return Math.trunc(ms / 604800000);
-    case 'd': case 'day': return Math.round(ms / 86400000);
-    case 'h': case 'hour': return Math.trunc(ms / 3600000);
-    case 'n': case 'minute': return Math.trunc(ms / 60000);
-    case 's': case 'second': return Math.trunc(ms / 1000);
-    default: throw new ExprError(`DateDiff: unknown interval "${interval}"`);
+    case 'd': case 'day': case 'y': case 'dayofyear': return fix(ms / DAY);
+    case 'w': case 'weekday': return fix(ms / DAY / 7);
+    case 'ww': case 'week': case 'weekofyear': {
+      const start = (x) => wall(x) - (weekday(x, first) - 1) * DAY; // back to the first day of x's week
+      return fix((start(b) - start(a)) / DAY / 7);
+    }
+    case 'h': case 'hour': return fix(ms / 3600000);
+    case 'n': case 'minute': return fix(ms / 60000);
+    case 's': case 'second': return fix(ms / 1000);
   }
+  throw new ExprError(`DateDiff: unknown interval "${interval}"`);
 }
 
 /* ------------------------------------------------------------- functions */
@@ -395,30 +492,42 @@ export const FUNCTIONS = {
   mid: (ctx, s, start, len) => S(s).substr(Number(start) - 1, len == null ? undefined : Number(len)),
   len: (ctx, s) => S(s).length,
   trim: (ctx, s) => S(s).trim(),
-  replace: (ctx, s, a, b) => S(s).split(S(a)).join(S(b)),
+  replace: (ctx, s, a, b) => (S(a) === '' ? S(s) : S(s).split(S(a)).join(S(b))), // VB: an empty Find changes nothing
   instr: (ctx, s, sub) => S(s).indexOf(S(sub)) + 1,
   join: (ctx, arr, sep) => (Array.isArray(arr) ? arr.map(v => toText(v, null, ctx)).join(sep == null ? ', ' : S(sep)) : toText(arr, null, ctx)),
   contains: (ctx, hay, needle) => (Array.isArray(hay) ? hay.some(v => cmpVal(v, needle) === 0) : S(hay).toLowerCase().includes(S(needle).toLowerCase())),
   inlist: (ctx, v, ...list) => list.flat().some(x => cmpVal(v, x) === 0),
   cstr: (ctx, v) => toText(v, null, ctx),
-  cdbl: (ctx, v) => num(v), cnum: (ctx, v) => num(v), val: (ctx, v) => num(v),
-  cint: (ctx, v) => (v == null ? null : Math.round(Number(v))),
-  cbool: (ctx, v) => truthy(v),
+  // VB conversions: CInt rounds half to even and raises #Error for text that is not a number; a blank stays blank
+  cdbl: (ctx, v) => (v == null || v === '' ? null : v instanceof Date ? v.getTime() : toNumber('CDbl', v)),
+  cnum: (ctx, v) => num(v),
+  val: (ctx, v) => vbVal(v),
+  cint: (ctx, v) => (v === '' ? null : toInt('CInt', v, 32)),
+  cbool: (ctx, v) => vbBool(v),
   cdate: (ctx, v) => toDate(v),
   isnull: (ctx, v) => v == null, isnothing: (ctx, v) => v == null,
   coalesce: (ctx, ...vs) => { for (const v of vs) if (v != null && v !== '') return v; return null; },
-  round: (ctx, v, d) => (v == null ? null : roundHalfAway(Number(v), Number(d || 0))),
+  // Round is VB's Math.Round: half to even (2.5 → 2). RoundHalfAway is the Excel / format-string rule (2.5 → 3).
+  round: (ctx, v, d) => (v == null ? null : roundHalfEven(Number(v), Number(d || 0))),
+  roundhalfaway: (ctx, v, d) => (v == null ? null : roundHalfAway(Number(v), Number(d || 0))),
   abs: (ctx, v) => (v == null ? null : Math.abs(Number(v))),
   floor: (ctx, v) => (v == null ? null : Math.floor(Number(v))),
   ceiling: (ctx, v) => (v == null ? null : Math.ceil(Number(v))),
-  int: (ctx, v) => (v == null ? null : Math.trunc(Number(v))),
+  int: (ctx, v) => (v == null ? null : Math.floor(Number(v))), // VB Int rounds down (Int(-2.5) = -3); Fix truncates
   pow: (ctx, a, b) => Number(a) ** Number(b),
   sqrt: (ctx, v) => Math.sqrt(Number(v)),
   now: (ctx) => (ctx.globals.ExecutionTime instanceof Date ? new Date(ctx.globals.ExecutionTime.getTime()) : new Date()),
   today: (ctx) => { const d = FUNCTIONS.now(ctx); d.setHours(0, 0, 0, 0); return d; },
   dateadd: (ctx, i, n, d) => dateAdd(i, n, d),
-  datediff: (ctx, i, a, b) => dateDiff(i, a, b),
-  dateserial: (ctx, y, m, d) => new Date(Number(y), Number(m) - 1, Number(d)),
+  datediff: (ctx, i, a, b, first) => dateDiff(i, a, b, first),
+  dateserial: (ctx, y, m, d) => {
+    // out-of-range months and days roll over (JS Date does the same); VB reads a year 0–29 as 2000–2029, 30–99 as 1930–1999
+    let yr = Number(y);
+    if (yr >= 0 && yr < 100) yr += yr < 30 ? 2000 : 1900;
+    const r = new Date(2000, 0, 1);
+    r.setFullYear(yr, Number(m) - 1, Number(d));
+    return r;
+  },
   year: (ctx, d) => toDate(d)?.getFullYear() ?? null,
   month: (ctx, d) => (toDate(d) ? toDate(d).getMonth() + 1 : null),
   day: (ctx, d) => toDate(d)?.getDate() ?? null,
@@ -454,15 +563,11 @@ function addMonths(v, n) {
   r.setDate(Math.min(day, new Date(r.getFullYear(), r.getMonth() + 1, 0).getDate()));
   return r;
 }
-/** Add a number of milliseconds-per-unit; whole days move the calendar day (local wall clock). */
+/** Add a number of units (milliseconds each) on the wall clock. */
 function addUnits(v, n, ms) {
   const d = dt(v);
   if (!d || n == null || !Number.isFinite(Number(n))) return null;
-  const r = new Date(d.getTime());
-  n = Number(n);
-  if (ms === 86400000) { const whole = Math.trunc(n); r.setDate(r.getDate() + whole); n -= whole; }
-  r.setTime(r.getTime() + n * ms);
-  return r;
+  return fromWall(wall(d) + msOf(Number(n), ms)); // wall clock, as .NET DateTime.AddDays/AddHours
 }
 function datePart(interval, v, first) {
   const d = dt(v);
@@ -504,6 +609,27 @@ function toNumber(fname, v) {
   const n = typeof v === 'string' && v.trim() !== '' ? Number(v.replace(/,/g, '').trim()) : NaN;
   if (!Number.isFinite(n)) throw new ExprError(`${fname}: "${String(v).slice(0, 40)}" is not a number`);
   return n;
+}
+/** VB Val: the number at the start of the text, blanks skipped, 0 when there is none; &H / &O read hex / octal. */
+function vbVal(v) {
+  if (v == null) return 0;
+  if (typeof v === 'number') return v;
+  if (typeof v === 'boolean') return v ? -1 : 0;
+  const s = String(v).replace(/[ \t\r\n]/g, '');
+  const radix = /^&([HhOo])([0-9A-Fa-f]*)/.exec(s);
+  if (radix) { const n = parseInt(radix[2], radix[1].toLowerCase() === 'h' ? 16 : 8); return Number.isNaN(n) ? 0 : n; }
+  const m = /^[+-]?(\d+\.?\d*|\.\d+)([eEdD][+-]?\d+)?/.exec(s);
+  return m ? Number(m[0].replace(/[dD]/, 'e')) : 0;
+}
+/** VB CBool: True/False text, or a number (0 is False). Other text raises #Error; Nothing and a blank are False. */
+function vbBool(v) {
+  if (v == null || v === '') return false;
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'number') return v !== 0;
+  const t = String(v).trim().toLowerCase();
+  if (t === 'true' || t === 'false') return t === 'true';
+  if (numericText(v)) return Number(v) !== 0;
+  throw new ExprError(`CBool: "${String(v).slice(0, 40)}" is not True, False or a number`);
 }
 /** Round half to even, as .NET Convert.ToInt32 does, then check the range. */
 function toInt(fname, v, bits) {
@@ -611,7 +737,7 @@ export const FUNCTION_NAMES = [
   'Median', 'Mode', 'StDev', 'StDevP', 'Var', 'VarP', 'DistinctSum', 'AggregateIf',
   'IIF', 'Switch', 'IsNull', 'Coalesce', 'Lookup', 'LookupSet', 'Previous', 'GroupIndex', 'Level', 'Join', 'Contains', 'InList',
   ...['Format', 'Upper', 'Lower', 'Left', 'Right', 'Mid', 'Len', 'Trim', 'Replace', 'InStr', 'CStr', 'CDbl', 'CInt', 'CDate', 'CBool',
-    'Round', 'Abs', 'Floor', 'Ceiling', 'Int', 'Pow', 'Sqrt', 'Now', 'Today', 'DateAdd', 'DateDiff', 'DateSerial', 'Year', 'Month', 'Day', 'MonthName'],
+    'Round', 'RoundHalfAway', 'Abs', 'Floor', 'Ceiling', 'Int', 'Pow', 'Sqrt', 'Now', 'Today', 'DateAdd', 'DateDiff', 'DateSerial', 'Year', 'Month', 'Day', 'MonthName'],
   'StartsWith', 'EndsWith', 'IndexOf', 'LastIndexOf', 'Substring', 'PadLeft', 'PadRight', 'Split', 'Chr', 'Asc', 'TrimStart', 'TrimEnd', 'StrReverse', 'Space', 'LCase', 'UCase',
   'Sign', 'Log', 'Log10', 'Exp', 'Truncate', 'Fix', 'Sin', 'Cos', 'Tan', 'Asin', 'Acos', 'Atan', 'Atan2', 'PI', 'E',
   'DatePart', 'Weekday', 'WeekdayName', 'Quarter', 'QuarterName', 'Hour', 'Minute', 'Second',
@@ -723,7 +849,7 @@ function call(n, ctx) {
     // asked once per row over a growing prefix of the same rows: reuse the values already computed
     if (args.length > 2 || (!ctx.runningRows && ctx.aggRows && ctx.aggIndex != null)) {
       const base = args.length > 2 ? rows : ctx.aggRows;
-      if (rowLocal(args[0])) return AGG[fn](prefixValues(base, rows.length, args[0], ctx));
+      if (rowLocal(args[0])) return fn === 'sum' ? runningSum(base, rows.length, args[0], ctx) : AGG[fn](prefixValues(base, rows.length, args[0], ctx));
     }
     return AGG[fn](mapRows(rows, args[0], ctx));
   }

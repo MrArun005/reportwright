@@ -37,7 +37,8 @@ const CASES = {
 describe('existing chart geometry', () => {
   for (const [name, extra] of Object.entries(CASES)) {
     it(name, async () => {
-      const out = await render(report([{ ...base, ...extra }], { data: rows }), { fontStore });
+      // en-IN / INR: the locale these were drawn with (it was the default then); C0 labels are rupees
+      const out = await render(report([{ ...base, ...extra }], { data: rows, def: { locale: 'en-IN', currency: 'INR' } }), { fontStore });
       expect(out.warnings).toEqual([]);
       expect(digest(out.pages[0].items)).toMatchSnapshot();
     });

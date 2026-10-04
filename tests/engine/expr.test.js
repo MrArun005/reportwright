@@ -43,7 +43,7 @@ describe('functions', () => {
     expect(evalValue('=Upper(Left("pagewright", 4))', ctx())).toBe('PAGE');
     expect(evalValue('=Mid("abcdef", 2, 3)', ctx())).toBe('bcd');
     expect(evalValue('=DateDiff("d", CDate("2026-01-01"), CDate("2026-03-01"))', ctx())).toBe(59);
-    expect(evalValue('=Month(DateAdd("m", 1, CDate("2026-01-31")))', ctx())).toBe(3); // JS rolls 31 Feb into March
+    expect(evalValue('=Month(DateAdd("m", 1, CDate("2026-01-31")))', ctx())).toBe(2); // VB clamps to 28 Feb (JS setMonth rolled into March)
   });
   it('treats null safely', () => {
     expect(evalValue('=Fields.x + 1', ctx({ fields: { x: null } }))).toBeNull();
@@ -54,11 +54,18 @@ describe('functions', () => {
 
 describe('formats', () => {
   it('formats Indian currency and grouping', () => {
-    expect(formatValue(1200000, 'C0')).toBe('₹12,00,000');
-    expect(formatValue(1234567.891, 'N2')).toBe('12,34,567.89');
-    expect(formatValue(0.1234, 'P1')).toBe('12.3%');
-    expect(formatValue(7, 'D3')).toBe('007');
-    expect(formatValue(1234.5, '#,##0.00')).toBe('1,234.50');
+    const IN = { locale: 'en-IN' }; // the locale names the country, so "C" is in rupees
+    expect(formatValue(1200000, 'C0', IN)).toBe('₹12,00,000');
+    expect(formatValue(1234567.891, 'N2', IN)).toBe('12,34,567.89');
+    expect(formatValue(0.1234, 'P1', IN)).toBe('12.3%');
+    expect(formatValue(7, 'D3', IN)).toBe('007');
+    expect(formatValue(1234.5, '#,##0.00', IN)).toBe('1,234.50');
+  });
+  it('assumes no currency when nothing is set: en-US numbers, no symbol', () => {
+    expect(formatValue(1234.5, 'C2')).toBe('1,234.50');
+    expect(formatValue(1234567.891, 'N2')).toBe('1,234,567.89');
+    expect(formatValue(1234.5, 'C2', { locale: 'en' })).toBe('1,234.50');
+    expect(formatValue(1234.5, 'C2', { locale: 'de-DE' })).toMatch(/^1\.234,50\s€$/); // the culture's own currency
   });
   it('formats dates', () => {
     const d = new Date(2026, 9, 3, 14, 5);

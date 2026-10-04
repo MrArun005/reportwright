@@ -42,12 +42,18 @@ describe('dates are calendar dates in every time zone', () => {
 });
 
 describe('rounding: export and Round() match what the page shows', () => {
-  it('Round() rounds half away from zero on the decimal value', () => {
-    expect(ev('=Round(1.005, 2)')).toBe(1.01);
-    expect(ev('=Round(-2.5, 0)')).toBe(-3);
-    expect(ev('=Round(2.5, 0)')).toBe(3);
+  it('Round() is VB Math.Round: half to even on the decimal value', () => {
+    expect(ev('=Round(1.005, 2)')).toBe(1);
+    expect(ev('=Round(1.015, 2)')).toBe(1.02);
+    expect(ev('=Round(-2.5, 0)')).toBe(-2);
+    expect(ev('=Round(2.5, 0)')).toBe(2);
     expect(ev('=Round(1234.5678, -2)')).toBe(1200);
     expect(ev('=Round(-0.001, 2)')).toBe(0);
+  });
+  it('RoundHalfAway() rounds half away from zero, as the page shows numbers', () => {
+    expect(ev('=RoundHalfAway(1.005, 2)')).toBe(1.01);
+    expect(ev('=RoundHalfAway(-2.5, 0)')).toBe(-3);
+    expect(ev('=RoundHalfAway(2.5)')).toBe(3);
   });
   it('F format rounds like N', () => {
     expect(ev('=Format(1.005, "F2")')).toBe('1.01');

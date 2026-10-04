@@ -28,46 +28,79 @@ export function toDate(v) {
 /** Local calendar date as "yyyy-MM-dd" (toISOString would give the UTC day). */
 export const isoDate = (d) => formatDate(d, 'yyyy-MM-dd');
 
+/** Shift a number's decimal point by e places through its decimal (exponent) form: no binary error (1.005 → 100.5). */
+export const shiftDec = (x, e) => { const [m, k = '0'] = String(x).split('e'); return Number(`${m}e${Number(k) + e}`); };
+
 /**
- * Round half away from zero on the decimal value, like Intl and Excel: 1.005 → 1.01.
- * Shifting by exponent strings avoids the binary error in 1.005 * 100 = 100.49999…
+ * Round half away from zero on the decimal value, like Intl, Excel and .NET format strings ("N2", "F0"): 1.005 → 1.01,
+ * 2.5 → 3. This is how displayed numbers round. VB's Round() rounds half to even instead: see roundHalfEven.
  * @param {number} v @param {number} [digits] may be negative (1234 → 1200 with -2)
  */
 export function roundHalfAway(v, digits = 0) {
   if (!Number.isFinite(v)) return v;
-  const shift = (x, e) => { const [m, k = '0'] = String(x).split('e'); return Number(`${m}e${Number(k) + e}`); };
-  return Math.sign(v) * shift(Math.round(shift(Math.abs(v), digits)), -digits) + 0; // + 0 turns -0 into 0
+  return Math.sign(v) * shiftDec(Math.round(shiftDec(Math.abs(v), digits)), -digits) + 0; // + 0 turns -0 into 0
 }
+
+/**
+ * VB / .NET Math.Round(x, digits): round half to even (MidpointRounding.ToEven, "banker's rounding"), 2.5 → 2,
+ * 3.5 → 4, on the decimal value (2.675 is the decimal 2.675, as a Decimal money field is in SSRS).
+ * @param {number} v @param {number} [digits] may be negative
+ */
+export function roundHalfEven(v, digits = 0) {
+  if (!Number.isFinite(v)) return v;
+  const x = shiftDec(Math.abs(v), digits);
+  const f = Math.floor(x), diff = x - f;
+  const r = diff > 0.5 || (diff === 0.5 && f % 2 !== 0) ? f + 1 : f;
+  return Math.sign(v) * shiftDec(r, -digits) + 0;
+}
+
+/** Currency of a country, for a locale with a region ("de-DE" → EUR), as .NET's culture gives "C" its symbol. */
+export const REGION_CURRENCY = { US: 'USD', IN: 'INR', GB: 'GBP', DE: 'EUR', FR: 'EUR', ES: 'EUR', IT: 'EUR', NL: 'EUR', BE: 'EUR', AT: 'EUR', PT: 'EUR', IE: 'EUR', FI: 'EUR',
+  GR: 'EUR', JP: 'JPY', CN: 'CNY', CA: 'CAD', AU: 'AUD', NZ: 'NZD', CH: 'CHF', SG: 'SGD', AE: 'AED', SA: 'SAR', BR: 'BRL', MX: 'MXN', ZA: 'ZAR', KR: 'KRW',
+  RU: 'RUB', ID: 'IDR', MY: 'MYR', PH: 'PHP', TH: 'THB', VN: 'VND', PK: 'PKR', BD: 'BDT', LK: 'LKR', NP: 'NPR', SE: 'SEK', NO: 'NOK', DK: 'DKK', PL: 'PLN',
+  TR: 'TRY', IL: 'ILS', EG: 'EGP', NG: 'NGN', KE: 'KES', HK: 'HKD', TW: 'TWD' };
+/** @param {string|undefined} locale */
+export const currencyOf = (locale) => { const m = /^[a-z]{2,3}-(?:[A-Za-z]{4}-)?([A-Za-z]{2})$/i.exec(locale || ''); return m ? REGION_CURRENCY[m[1].toUpperCase()] : undefined; };
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 /**
+ * Format a value. Neutral defaults: no locale means en-US; no currency means the locale's own currency when the
+ * locale names a country ("en-IN" → ₹, as a .NET culture does), else none, and "C" then shows the number alone.
  * @param {any} value
  * @param {string|undefined|null} fmt
  * @param {{locale?: string, currency?: string}} [opt]
  */
 export function formatValue(value, fmt, opt = {}) {
-  const locale = opt.locale || 'en-IN';
-  const currency = opt.currency || 'INR';
+  const locale = opt.locale || 'en-US';
+  const currency = opt.currency || currencyOf(opt.locale);
   if (value == null) return '';
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? '' : formatDate(value, fmt || 'dd MMM yyyy', locale);
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) return String(value);
     // No format: plain digits, no grouping (a year stays 2026). Use N0/N2/C2 to group.
     if (!fmt) return nf('en-US', { maximumFractionDigits: 10, useGrouping: false }).format(value);
-    const m = /^([CcNnFfPpDdEe])(\d{0,2})$/.exec(fmt);
+    const m = /^([CcNnFfPpDdEeXxGgRr])(\d{0,2})$/.exec(fmt);
     if (m) {
       const k = m[1].toUpperCase();
       const d = m[2] === '' ? null : Number(m[2]);
+      // signDisplay 'negative': a value that rounds to zero shows 0.0, never -0.0
+      const fixed = { minimumFractionDigits: d ?? 2, maximumFractionDigits: d ?? 2, signDisplay: 'negative' };
       switch (k) {
-        // signDisplay 'negative': a value that rounds to zero shows 0.0, never -0.0
-        case 'C': return nf(locale, { style: 'currency', currency, minimumFractionDigits: d ?? 2, maximumFractionDigits: d ?? 2, signDisplay: 'negative' }).format(value);
-        case 'N': return nf(locale, { minimumFractionDigits: d ?? 2, maximumFractionDigits: d ?? 2, signDisplay: 'negative' }).format(value);
+        case 'C': return nf(locale, currency ? { style: 'currency', currency, ...fixed } : fixed).format(value);
+        case 'N': return nf(locale, fixed).format(value);
         case 'F': return roundHalfAway(value, d ?? 2).toFixed(d ?? 2);
-        case 'P': return nf(locale, { style: 'percent', minimumFractionDigits: d ?? 2, maximumFractionDigits: d ?? 2, signDisplay: 'negative' }).format(value);
-        case 'D': return String(Math.trunc(value)).padStart(d ?? 0, '0');
-        case 'E': return value.toExponential(d ?? 6);
+        case 'P': return nf(locale, { style: 'percent', ...fixed }).format(value);
+        case 'D': { const t = Math.trunc(value); return (t < 0 ? '-' : '') + String(Math.abs(t)).padStart(d ?? 0, '0'); }
+        case 'E': return scientific(value, d ?? 6, m[1] === 'e' ? 'e' : 'E', 3);
+        case 'X': {
+          const t = Math.trunc(value);
+          const h = t >= 0 ? t.toString(16) : BigInt.asUintN(t >= -(2 ** 31) ? 32 : 64, BigInt(t)).toString(16); // two's complement, as Int32 / Int64
+          return (m[1] === 'X' ? h.toUpperCase() : h).padStart(d ?? 0, '0');
+        }
+        case 'G': return general(value, d || 15, m[1] === 'g' ? 'e' : 'E');
+        case 'R': return general(value, 17, 'E', String(value));
       }
     }
     if (/[#0]/.test(fmt)) return customNumber(value, fmt, locale);
@@ -76,23 +109,126 @@ export function formatValue(value, fmt, opt = {}) {
   if (typeof value === 'boolean') return value ? 'True' : 'False';
   if (typeof value === 'string' && fmt && /^\d{4}-\d{2}-\d{2}/.test(value)) {
     const d = toDate(value);
-    if (d && /[yMd]/.test(fmt)) return formatDate(d, fmt);
+    if (d && /[yMd]/.test(fmt)) return formatDate(d, fmt, locale);
   }
   return String(value);
 }
 
+/** "E": d.ddddE+ddd. Mantissa digits round on the decimal value. */
+function scientific(v, digits, e, expDigits) {
+  const [mant, exp] = Math.abs(v).toExponential(digits).split('e');
+  const x = Number(exp);
+  return `${v < 0 ? '-' : ''}${mant}${e}${x < 0 ? '-' : '+'}${String(Math.abs(x)).padStart(expDigits, '0')}`;
+}
+/**
+ * "G" / "Gn": n significant digits (15 for a Double on .NET Framework, which SSRS runs), trailing zeros dropped; fixed
+ * notation while the exponent is above -5 and below n, else d.dddE+dd. `shortest` (for "R") is the digits to show.
+ */
+function general(v, p, e, shortest) {
+  if (v === 0) return '0';
+  const [mant, exp] = (shortest ? Number(shortest) : v).toExponential(shortest ? undefined : Math.min(p, 100) - 1).split('e');
+  const x = Number(exp), digits = mant.includes('.') ? mant.replace(/\.?0+$/, '') : mant;
+  if (x > -5 && x < p) return nf('en-US', { maximumFractionDigits: 20, maximumSignificantDigits: 21, useGrouping: false }).format(Number(`${digits}e${x}`));
+  return `${digits}${e}${x < 0 ? '-' : '+'}${String(Math.abs(x)).padStart(2, '0')}`;
+}
+
+/** A format string's parts: "a;b;c" sections, with 'quoted' and \escaped text kept whole. */
+function sections(fmt) {
+  const out = [''];
+  for (let i = 0; i < fmt.length; i++) {
+    const c = fmt[i];
+    if (c === '\\') { out[out.length - 1] += fmt.slice(i, i + 2); i++; continue; }
+    if (c === '"' || c === "'") { const j = fmt.indexOf(c, i + 1); const end = j < 0 ? fmt.length : j; out[out.length - 1] += fmt.slice(i, end + 1); i = end; continue; }
+    if (c === ';') { out.push(''); continue; }
+    out[out.length - 1] += c;
+  }
+  return out;
+}
+/** Tokens of one numeric section: digit placeholders 0 #, the point, commas, % and literal text. */
+function numTokens(sec) {
+  const toks = [];
+  for (let i = 0; i < sec.length; i++) {
+    const c = sec[i];
+    if (c === '\\') { toks.push({ k: 'lit', s: sec[i + 1] ?? '' }); i++; continue; }
+    if (c === '"' || c === "'") { const j = sec.indexOf(c, i + 1); const end = j < 0 ? sec.length : j; toks.push({ k: 'lit', s: sec.slice(i + 1, end) }); i = end; continue; }
+    toks.push('0#.,%'.includes(c) ? { k: c } : { k: 'lit', s: c });
+  }
+  return toks;
+}
+
+/**
+ * .NET custom numeric formats: 0 and # digit placeholders, "." , (grouping, or ÷1,000 right before the point or the
+ * end), % (×100), 'literal' and \c text, and up to three sections "positive;negative;zero". The negative section
+ * shows no minus sign of its own; digits fill literal positions right to left ("000-00-0000"). Halves round away
+ * from zero, as .NET format strings do.
+ */
 function customNumber(v, fmt, locale) {
-  const pct = fmt.includes('%');
-  if (pct) v *= 100;
-  const [, prefix = '', body, suffix = ''] = /^([^#0,.]*)([#0,.]+)(.*)$/.exec(fmt) || [null, '', fmt, ''];
-  const dot = body.indexOf('.');
-  const decimals = dot >= 0 ? body.length - dot - 1 : 0;
-  const minDec = dot >= 0 ? (body.slice(dot + 1).match(/0/g) || []).length : 0;
-  const grouping = body.includes(',');
-  const intPart = dot >= 0 ? body.slice(0, dot) : body;
-  const minInt = (intPart.match(/0/g) || []).length || 1;
-  const s = nf(locale, { useGrouping: grouping, minimumFractionDigits: minDec, maximumFractionDigits: decimals, minimumIntegerDigits: minInt, signDisplay: 'negative' }).format(v);
-  return prefix + s + suffix;
+  const secs = sections(fmt);
+  let sec = secs[0], minus = v < 0;
+  if (v < 0 && secs.length > 1 && secs[1] !== '') { sec = secs[1]; minus = false; }
+  const shape = numShape(numTokens(sec));
+  let x = Math.abs(v);
+  if (shape.pct) x = shiftDec(x, 2 * shape.pct);
+  if (shape.scale) x = shiftDec(x, -3 * shape.scale);
+  // a value that rounds to zero takes the zero section when there is one
+  if (secs.length > 2 && secs[2] !== '' && roundHalfAway(x, shape.decimals) === 0) return formatShape(numShape(numTokens(secs[2])), 0, false, locale);
+  return formatShape(shape, x, minus, locale);
+}
+function numShape(toks) {
+  const ph = (t) => t.k === '0' || t.k === '#';
+  const last = toks.findLastIndex(ph);
+  const first = toks.findIndex(t => ph(t) || t.k === '.'); // ".00" starts at its point
+  if (last < 0) return { toks, pre: toks, post: [], int: [], frac: [], decimals: 0, minDec: 0, minInt: 0, grouping: false, scale: 0, pct: 0, inner: false };
+  const span = toks.slice(first, last + 1);
+  let dot = span.findIndex(t => t.k === '.');
+  if (dot < 0) dot = span.length;
+  const int = span.slice(0, dot), frac = span.slice(dot + 1).filter(ph);
+  // commas right before the point (or the end of the digits) divide by 1,000 each; others group
+  let scale = 0;
+  for (let i = int.length - 1; i >= 0 && int[i].k === ','; i--) scale++;
+  const intCore = int.slice(0, int.length - scale);
+  if (dot === span.length) for (let j = last + 1; j < toks.length && toks[j].k === ','; j++) scale++;
+  const intPh = intCore.filter(ph);
+  const z = intPh.findIndex(t => t.k === '0');
+  const lastZero = frac.findLastIndex(t => t.k === '0');
+  return {
+    pre: toks.slice(0, first), post: toks.slice(last + 1).filter(t => t.k !== ','), int: intCore, frac,
+    decimals: frac.length, minDec: lastZero + 1, minInt: z < 0 ? 0 : intPh.length - z,
+    grouping: intCore.some(t => t.k === ','), inner: intCore.some(t => t.k === 'lit'), scale,
+    pct: toks.filter(t => t.k === '%').length,
+  };
+}
+const litText = (toks) => toks.map(t => (t.k === 'lit' ? t.s : t.k === '%' ? '%' : t.k === '.' ? '.' : t.k === ',' ? ',' : '')).join('');
+function formatShape(s, x, minus, locale) {
+  if (!s.int.length && !s.frac.length) return (minus ? '-' : '') + litText(s.pre);
+  let body;
+  if (s.inner) {
+    // digits fill the placeholders right to left; literals between them stay where they are
+    const r = roundHalfAway(x, s.decimals);
+    const [ip, fp = ''] = r.toFixed(s.decimals).split('.');
+    let digits = ip === '0' ? '' : ip;
+    const out = [];
+    const phs = s.int.filter(t => t.k === '0' || t.k === '#').length;
+    let k = 0;
+    for (let i = s.int.length - 1; i >= 0; i--) {
+      const t = s.int[i];
+      if (t.k === 'lit') { out.unshift(t.s); continue; }
+      if (t.k !== '0' && t.k !== '#') continue;
+      k++;
+      if (k === phs) { out.unshift(digits || (t.k === '0' ? '0' : '')); digits = ''; continue; } // the leftmost takes the rest
+      const dch = digits.slice(-1);
+      digits = digits.slice(0, -1);
+      out.unshift(dch || (t.k === '0' ? '0' : ''));
+    }
+    const frac = fp.slice(0, s.decimals).replace(new RegExp(`0{0,${s.decimals - s.minDec}}$`), '');
+    body = out.join('') + (frac ? '.' + frac : '');
+    minus = minus && r !== 0;
+  } else {
+    body = nf(locale, { useGrouping: s.grouping, minimumFractionDigits: s.minDec, maximumFractionDigits: s.decimals, minimumIntegerDigits: Math.max(1, s.minInt) }).format(x);
+    minus = minus && /[1-9]/.test(body);
+    if (s.minInt === 0) body = body.replace(/^0(?=\D|$)/, ''); // "#.##" shows .5, "#" shows nothing for 0
+  }
+  return (minus ? '-' : '') + litText(s.pre) + body + litText(s.post);
 }
 
 const dtfCache = new Map();
@@ -109,33 +245,56 @@ function localName(locale, kind, style, d) {
 /** English locales keep the fixed English names (so existing reports never shift). */
 export const english = (locale) => !locale || /^en\b/i.test(locale);
 
-/** @param {Date} d @param {string} fmt @param {string} [locale] month and day names follow it */
+/**
+ * .NET standard date formats (one letter). en-US (the default locale) has .NET's en-US patterns; other locales keep the
+ * day-first patterns Pagewright has always used. s, u and o are the same everywhere.
+ */
+const US_DATES = { d: 'M/d/yyyy', D: 'dddd, MMMM d, yyyy', t: 'h:mm tt', T: 'h:mm:ss tt', M: 'MMMM d', Y: 'MMMM yyyy' };
+const DAY_FIRST = { d: 'dd/MM/yyyy', D: 'dddd, dd MMMM yyyy', t: 'HH:mm', T: 'HH:mm:ss', M: 'dd MMMM', Y: 'MMMM yyyy' };
+const INVARIANT = { s: "yyyy-MM-dd'T'HH:mm:ss", u: "yyyy-MM-dd HH:mm:ss'Z'", o: "yyyy-MM-dd'T'HH:mm:ss.fffffff" };
+function standardDate(fmt, locale) {
+  const p = !locale || /^en-US$/i.test(locale) ? US_DATES : DAY_FIRST;
+  switch (fmt) {
+    case 'd': case 'D': case 't': case 'T': return p[fmt];
+    case 'f': return `${p.D} ${p.t}`;
+    case 'F': return `${p.D} ${p.T}`;
+    case 'g': return `${p.d} ${p.t}`;
+    case 'G': return `${p.d} ${p.T}`;
+    case 'M': case 'm': return p.M;
+    case 'Y': case 'y': return p.Y;
+    case 's': case 'u': case 'o': return INVARIANT[fmt];
+    case 'O': return INVARIANT.o;
+  }
+  return null;
+}
+
+/**
+ * .NET custom date format: runs of y M d H h m s f F t, 'quoted' and \escaped text; "%d" is the custom "d" alone.
+ * @param {Date} d @param {string} fmt @param {string} [locale] month and day names follow it
+ */
 export function formatDate(d, fmt, locale) {
-  if (fmt === 'd') return formatDate(d, 'dd/MM/yyyy', locale);
-  if (fmt === 'D') return formatDate(d, 'dddd, dd MMMM yyyy', locale);
-  if (fmt === 'g') return formatDate(d, 'dd/MM/yyyy HH:mm', locale);
+  if (fmt.length === 1) { const std = standardDate(fmt, locale); if (std) return formatDate(d, std, locale); }
+  if (fmt.length === 2 && fmt[0] === '%') fmt = fmt[1];
   const en = english(locale);
   const name = (kind, style, fallback) => (en ? fallback : localName(locale, kind, style, d) ?? fallback);
-  return fmt.replace(/yyyy|yy|MMMM|MMM|MM|M|dddd|ddd|dd|d|HH|H|hh|h|mm|ss|tt|'[^']*'/g, (tok) => {
-    switch (tok) {
-      case 'yyyy': return String(d.getFullYear());
-      case 'yy': return String(d.getFullYear()).slice(-2);
-      case 'MMMM': return name('month', 'long', MONTHS[d.getMonth()]);
-      case 'MMM': return name('month', 'short', MONTHS[d.getMonth()].slice(0, 3));
-      case 'MM': return String(d.getMonth() + 1).padStart(2, '0');
-      case 'M': return String(d.getMonth() + 1);
-      case 'dddd': return name('weekday', 'long', DAYS[d.getDay()]);
-      case 'ddd': return name('weekday', 'short', DAYS[d.getDay()].slice(0, 3));
-      case 'dd': return String(d.getDate()).padStart(2, '0');
-      case 'd': return String(d.getDate());
-      case 'HH': return String(d.getHours()).padStart(2, '0');
-      case 'H': return String(d.getHours());
-      case 'hh': return String(((d.getHours() + 11) % 12) + 1).padStart(2, '0');
-      case 'h': return String(((d.getHours() + 11) % 12) + 1);
-      case 'mm': return String(d.getMinutes()).padStart(2, '0');
-      case 'ss': return String(d.getSeconds()).padStart(2, '0');
-      case 'tt': return d.getHours() < 12 ? 'AM' : 'PM';
-      default: return tok.slice(1, -1);
+  const p2 = (n) => String(n).padStart(2, '0');
+  return fmt.replace(/(y+|M+|d+|H+|h+|m+|s+|f+|F+|t+)|'([^']*)'?|"([^"]*)"?|\\(.?)/g, (tok, run, q1, q2, esc) => {
+    if (!run) return q1 ?? q2 ?? esc ?? '';
+    const n = run.length;
+    switch (run[0]) {
+      case 'y': { const y = d.getFullYear(); return n === 1 ? String(y % 100) : n === 2 ? p2(y % 100) : String(y).padStart(n, '0'); }
+      case 'M': return n >= 4 ? name('month', 'long', MONTHS[d.getMonth()]) : n === 3 ? name('month', 'short', MONTHS[d.getMonth()].slice(0, 3)) : n === 2 ? p2(d.getMonth() + 1) : String(d.getMonth() + 1);
+      case 'd': return n >= 4 ? name('weekday', 'long', DAYS[d.getDay()]) : n === 3 ? name('weekday', 'short', DAYS[d.getDay()].slice(0, 3)) : n === 2 ? p2(d.getDate()) : String(d.getDate());
+      case 'H': return n >= 2 ? p2(d.getHours()) : String(d.getHours());
+      case 'h': { const h = ((d.getHours() + 11) % 12) + 1; return n >= 2 ? p2(h) : String(h); }
+      case 'm': return n >= 2 ? p2(d.getMinutes()) : String(d.getMinutes());
+      case 's': return n >= 2 ? p2(d.getSeconds()) : String(d.getSeconds());
+      case 'f': case 'F': { // fractions of a second; a Date holds milliseconds, so digits past the third are 0
+        const f = String(d.getMilliseconds()).padStart(3, '0').padEnd(7, '0').slice(0, Math.min(n, 7));
+        return run[0] === 'F' ? f.replace(/0+$/, '') : f;
+      }
+      case 't': { const s = d.getHours() < 12 ? 'AM' : 'PM'; return n === 1 ? s[0] : s; }
     }
+    return run;
   });
 }

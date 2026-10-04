@@ -86,7 +86,8 @@ export async function render(def0, opts = {}) {
   const fnCount = opts.fnCount || { n: 0 }; // report function calls, for this render and its subreports
   const baseCtx = {
     params, globals: { ExecutionTime: now, ReportName: def.name || '', PageNumber: 1, TotalPages: 1 },
-    dataSets: {}, fields: null, locale: def.locale || 'en-IN', currency: def.currency || 'INR', functions: functionTable(def, fnCount), clock,
+    dataSets: {}, fields: null, locale: def.locale, currency: def.currency, // neither set: en-US numbers, no currency symbol (expr/format.js)
+    functions: functionTable(def, fnCount), clock,
     aggCache: new WeakMap(), // aggregate results for this render (expr/evaluate.js)
   };
   // Theme.* in expressions: a theme report (maybe picked by a parameter), the report's own theme, or the default
