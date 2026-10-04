@@ -229,6 +229,16 @@ describe('caps on untrusted sizes (phase 4)', () => {
     expect(out.warnings.join()).toMatch(/more than 100000 rows of items inside cells/);
     expect(Date.now() - t0).toBeLessThan(30000);
   }, 60000);
+  it('a pivot over an unrelated data set in every row is charged by the rows it reads', async () => {
+    const rows = Array.from({ length: 4000 }, (_, i) => ({ id: i }));
+    const sets = [{ name: 'Rows', source: 'src', path: '$.rows' }, { name: 'Other', source: 'src', path: '$.rows' }];
+    const inner = { type: 'matrix', name: 'In', dataSet: 'Other', rowGroups: [{ expr: '=1' }], columnGroups: [], values: [{ value: '=Sum(Fields.id)' }] };
+    const t = table({ columns: [{ width: 200 }], detail: [{ height: 16, cells: [{ value: '', item: inner }] }] });
+    const t0 = Date.now();
+    const out = await render(report([t], { data: { rows }, def: { dataSets: sets } }), { fontStore });
+    expect(out.warnings.join()).toMatch(/rows of items inside cells/);
+    expect(Date.now() - t0).toBeLessThan(15000);
+  }, 60000);
   it('a pivot with thousands of values keeps the first 50', async () => {
     const { buildPivot } = await import('../../src/engine/items/pivot.js');
     const w = [];

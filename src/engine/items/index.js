@@ -471,10 +471,13 @@ register('table', {
           return kids === c.aggRows ? c : { ...c, aggRows: kids, fields: kids[0] || null };
         } };
       // items in cells multiply with the rows: one budget for the render (an unrelated data set in every row is rows × rows)
+      // charged by the data rows the item reads (a pivot over an unrelated data set reads every row) and the rows it draws
       const budget = lc.cellItems || (lc.cellItems = { left: CELL_ITEM_UNITS });
-      if (budget.left <= 0) { lc.warn(`${item.name}: more than ${CELL_ITEM_UNITS} rows of items inside cells; the rest are left empty`); return { items: [], height: 0 }; }
+      const reads = (it.dataSet && it.dataSet !== item.dataSet ? child.ctxFor(it).aggRows?.length : scopeRows.length) || 1;
+      if (budget.left < reads) { budget.left = 0; lc.warn(`${item.name}: more than ${CELL_ITEM_UNITS} rows of items inside cells; the rest are left empty`); return { items: [], height: 0 }; }
+      budget.left -= reads;
       const res = lc.layoutItems([it], child);
-      budget.left -= Math.max(1, res.units.length);
+      budget.left -= res.units.length;
       const items = [];
       for (const u of res.units) for (const i of shiftLocal(u.items.filter(i => i.t !== 'bookmark'), u.top + pd[0])) items.push(i.cell ? { ...i, cell: undefined } : i); // its own cells are not the outer table's (Word)
       return { items, height: res.height + pd[0] + pd[2] };
