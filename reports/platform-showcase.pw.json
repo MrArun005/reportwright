@@ -1,0 +1,447 @@
+{
+  "$schema": "pagewright/report@1",
+  "name": "Platform showcase",
+  "locale": "en-IN",
+  "currency": "INR",
+  "page": {
+    "size": "A4",
+    "orientation": "portrait",
+    "margins": [
+      36,
+      36,
+      36,
+      36
+    ]
+  },
+  "images": {
+    "logo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAUCAIAAABwJOjsAAAAIklEQVR4nGNoGCDAMGrxqMWjFo9aPGrxqMWjFo9aPHIsBgA127A9GFEYHQAAAABJRU5ErkJggg=="
+  },
+  "dataSources": [
+    {
+      "name": "assets",
+      "type": "json",
+      "data": {
+        "rows": [
+          {
+            "photo": "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAAC0lEQVR4nGNoAAMACocDAcTGH2YAAAAASUVORK5CYII="
+          }
+        ]
+      }
+    }
+  ],
+  "dataSets": [
+    {
+      "name": "Assets",
+      "source": "assets",
+      "path": "$.rows"
+    }
+  ],
+  "styles": {
+    "base": {
+      "fontFamily": "Inter",
+      "fontSize": 9,
+      "color": "#1f2937"
+    }
+  },
+  "sections": {
+    "pageHeader": {
+      "height": 0,
+      "items": []
+    },
+    "body": {
+      "items": [
+        {
+          "type": "textbox",
+          "name": "Title",
+          "x": 0,
+          "y": 0,
+          "w": 523,
+          "h": 26,
+          "value": "Developer platform and output",
+          "style": {
+            "fontSize": 18,
+            "fontWeight": "bold"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "Sub",
+          "x": 0,
+          "y": 28,
+          "w": 523,
+          "h": 14,
+          "value": "Phase 7 of the ActiveReportsJS parity roadmap: numbered contents, barcodes, images.",
+          "style": {
+            "color": "#6b7280"
+          }
+        },
+        {
+          "type": "toc",
+          "name": "Contents",
+          "x": 0,
+          "y": 52,
+          "w": 523,
+          "h": 20,
+          "title": "Contents",
+          "source": "headings",
+          "numbering": [
+            "decimal",
+            "alpha"
+          ],
+          "levels": 2
+        },
+        {
+          "type": "textbox",
+          "name": "H1",
+          "x": 0,
+          "y": 150,
+          "w": 523,
+          "h": 20,
+          "value": "Barcodes",
+          "headingLevel": 1,
+          "pageBreakBefore": false,
+          "style": {
+            "fontSize": 14,
+            "fontWeight": "bold"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "H11",
+          "x": 0,
+          "y": 174,
+          "w": 523,
+          "h": 16,
+          "value": "Two-dimensional",
+          "headingLevel": 2,
+          "style": {
+            "fontWeight": "bold"
+          }
+        },
+        {
+          "type": "barcode",
+          "name": "QR",
+          "x": 0,
+          "y": 194,
+          "w": 150,
+          "h": 70,
+          "symbology": "qrcode",
+          "value": "https://pagewright.dev/p7",
+          "qrErrorLevel": "H"
+        },
+        {
+          "type": "textbox",
+          "name": "QRc",
+          "x": 0,
+          "y": 268,
+          "w": 150,
+          "h": 12,
+          "value": "QR Code, error level H",
+          "style": {
+            "fontSize": 7,
+            "color": "#6b7280"
+          }
+        },
+        {
+          "type": "barcode",
+          "name": "DM",
+          "x": 170,
+          "y": 194,
+          "w": 150,
+          "h": 70,
+          "symbology": "datamatrix",
+          "value": "PAGEWRIGHT-P7",
+          "dmShape": "square"
+        },
+        {
+          "type": "textbox",
+          "name": "DMc",
+          "x": 170,
+          "y": 268,
+          "w": 150,
+          "h": 12,
+          "value": "Data Matrix",
+          "style": {
+            "fontSize": 7,
+            "color": "#6b7280"
+          }
+        },
+        {
+          "type": "barcode",
+          "name": "PDF",
+          "x": 340,
+          "y": 194,
+          "w": 180,
+          "h": 70,
+          "symbology": "pdf417",
+          "value": "Pagewright PDF417",
+          "pdfColumns": 3
+        },
+        {
+          "type": "textbox",
+          "name": "PDFc",
+          "x": 340,
+          "y": 268,
+          "w": 150,
+          "h": 12,
+          "value": "PDF417, 3 columns",
+          "style": {
+            "fontSize": 7,
+            "color": "#6b7280"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "H12",
+          "x": 0,
+          "y": 290,
+          "w": 523,
+          "h": 16,
+          "value": "Linear",
+          "headingLevel": 2,
+          "style": {
+            "fontWeight": "bold"
+          }
+        },
+        {
+          "type": "barcode",
+          "name": "C128",
+          "x": 0,
+          "y": 310,
+          "w": 150,
+          "h": 70,
+          "symbology": "code128",
+          "value": "PW-2026-0007",
+          "captionPosition": "above",
+          "style": {
+            "fontSize": 8,
+            "textAlign": "center"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "C128c",
+          "x": 0,
+          "y": 384,
+          "w": 150,
+          "h": 12,
+          "value": "Code 128, caption above",
+          "style": {
+            "fontSize": 7,
+            "color": "#6b7280"
+          }
+        },
+        {
+          "type": "barcode",
+          "name": "EAN",
+          "x": 170,
+          "y": 310,
+          "w": 150,
+          "h": 70,
+          "symbology": "ean13",
+          "value": "9520123456788",
+          "quietZone": 8,
+          "style": {
+            "fontSize": 8,
+            "textAlign": "center"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "EANc",
+          "x": 170,
+          "y": 384,
+          "w": 150,
+          "h": 12,
+          "value": "EAN-13, 8 pt quiet zone",
+          "style": {
+            "fontSize": 7,
+            "color": "#6b7280"
+          }
+        },
+        {
+          "type": "barcode",
+          "name": "C39",
+          "x": 340,
+          "y": 310,
+          "w": 70,
+          "h": 150,
+          "symbology": "code39",
+          "value": "CODE-39",
+          "rotate": "90",
+          "checkDigit": true,
+          "style": {
+            "fontSize": 8,
+            "textAlign": "center"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "C39c",
+          "x": 340,
+          "y": 464,
+          "w": 150,
+          "h": 12,
+          "value": "Code 39, turned 90°",
+          "style": {
+            "fontSize": 7,
+            "color": "#6b7280"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "H2",
+          "x": 0,
+          "y": 490,
+          "w": 523,
+          "h": 20,
+          "value": "Images",
+          "headingLevel": 1,
+          "style": {
+            "fontSize": 14,
+            "fontWeight": "bold"
+          },
+          "pageBreakBefore": true
+        },
+        {
+          "type": "textbox",
+          "name": "H21",
+          "x": 0,
+          "y": 514,
+          "w": 523,
+          "h": 16,
+          "value": "Embedded and SVG",
+          "headingLevel": 2,
+          "style": {
+            "fontWeight": "bold"
+          }
+        },
+        {
+          "type": "image",
+          "name": "Logo",
+          "x": 0,
+          "y": 534,
+          "w": 10,
+          "h": 10,
+          "src": "embedded:logo",
+          "autoSize": true
+        },
+        {
+          "type": "textbox",
+          "name": "Logoc",
+          "x": 0,
+          "y": 560,
+          "w": 150,
+          "h": 12,
+          "value": "embedded:logo, sized to the image (96 dpi)",
+          "style": {
+            "fontSize": 7,
+            "color": "#6b7280"
+          }
+        },
+        {
+          "type": "image",
+          "name": "Svg",
+          "x": 170,
+          "y": 534,
+          "w": 150,
+          "h": 75,
+          "src": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%20120%2060%22%3E%3Crect%20x%3D%222%22%20y%3D%222%22%20width%3D%22116%22%20height%3D%2256%22%20rx%3D%2210%22%20fill%3D%22%230f766e%22/%3E%3Ccircle%20cx%3D%2230%22%20cy%3D%2230%22%20r%3D%2216%22%20fill%3D%22%23fbbf24%22/%3E%3Cg%20transform%3D%22translate%2856%2018%29%22%20stroke%3D%22%23ffffff%22%20stroke-width%3D%224%22%20fill%3D%22none%22%3E%3Cpolyline%20points%3D%220%2C24%2014%2C8%2028%2C18%2044%2C0%22/%3E%3C/g%3E%3C/svg%3E",
+          "fit": "contain"
+        },
+        {
+          "type": "textbox",
+          "name": "Svgc",
+          "x": 170,
+          "y": 612,
+          "w": 150,
+          "h": 12,
+          "value": "SVG, vector paths in the PDF",
+          "style": {
+            "fontSize": 7,
+            "color": "#6b7280"
+          }
+        },
+        {
+          "type": "image",
+          "name": "Clip",
+          "x": 340,
+          "y": 534,
+          "w": 20,
+          "h": 10,
+          "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAUCAIAAABwJOjsAAAAIklEQVR4nGNoGCDAMGrxqMWjFo9aPGrxqMWjFo9aPHIsBgA127A9GFEYHQAAAABJRU5ErkJggg==",
+          "fit": "clip"
+        },
+        {
+          "type": "textbox",
+          "name": "Clipc",
+          "x": 340,
+          "y": 560,
+          "w": 150,
+          "h": 12,
+          "value": "fit: clip (natural size, cut to the box)",
+          "style": {
+            "fontSize": 7,
+            "color": "#6b7280"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "H22",
+          "x": 0,
+          "y": 630,
+          "w": 523,
+          "h": 16,
+          "value": "From data",
+          "headingLevel": 2,
+          "style": {
+            "fontWeight": "bold"
+          }
+        },
+        {
+          "type": "image",
+          "name": "Field",
+          "x": 0,
+          "y": 650,
+          "w": 60,
+          "h": 30,
+          "src": "=Fields.photo",
+          "fit": "fill",
+          "dataSet": "Assets"
+        },
+        {
+          "type": "textbox",
+          "name": "Fieldc",
+          "x": 0,
+          "y": 684,
+          "w": 150,
+          "h": 12,
+          "value": "bare base64 from a data field",
+          "style": {
+            "fontSize": 7,
+            "color": "#6b7280"
+          }
+        }
+      ]
+    },
+    "pageFooter": {
+      "height": 20,
+      "items": [
+        {
+          "type": "textbox",
+          "name": "PageNo",
+          "x": 323,
+          "y": 4,
+          "w": 200,
+          "h": 12,
+          "value": "Page {Globals.PageNumber} of {Globals.TotalPages}",
+          "style": {
+            "fontSize": 7.5,
+            "color": "#6b7280",
+            "textAlign": "right"
+          }
+        }
+      ]
+    }
+  }
+}

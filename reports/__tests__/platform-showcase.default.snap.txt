@@ -1,0 +1,39 @@
+# platform-showcase › default · 2 pages
+--- page 1
+Developer platform and output
+Phase 7 of the ActiveReportsJS parity roadmap: numbered contents, barcodes, images.
+Contents
+1 Barcodes
+1
+1.A Two-dimensional
+1
+1.B Linear
+1
+2 Images
+2
+2.A Embedded and SVG
+2
+2.B From data
+2
+Barcodes
+Two-dimensional
+QR Code, error level H
+Data Matrix
+PDF417, 3 columns
+Linear
+PW-2026-0007
+9520123456788
+CODE-39
+Code 128, caption above
+EAN-13, 8 pt quiet zone
+Code 39, turned 90°
+Page 1 of 2
+--- page 2
+Images
+Embedded and SVG
+fit: clip (natural size, cut to the box)
+embedded:logo, sized to the image (96 dpi)
+SVG, vector paths in the PDF
+From data
+bare base64 from a data field
+Page 2 of 2
