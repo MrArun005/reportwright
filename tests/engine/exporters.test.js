@@ -79,6 +79,42 @@ describe('exporters', () => {
   });
 });
 
+describe('PDF internal links', () => {
+  const tb = (name, value, y, extra = {}) => ({ type: 'textbox', name, x: 0, y, w: 300, h: 18, value, ...extra });
+  const def = () => report([
+    { type: 'toc', name: 'Toc', x: 0, y: 0, w: 400, h: 20, title: 'Contents', source: 'headings' },
+    tb('Jump', 'Go to the results', 60, { action: { type: 'bookmark', target: 'Results here' } }),
+    tb('Nowhere', 'Missing', 80, { action: { type: 'bookmark', target: 'No such bookmark' } }),
+    tb('H1', 'Intro', 100, { headingLevel: 1 }),
+    tb('H2', 'Results', 140, { headingLevel: 1, bookmark: 'Results here', pageBreakBefore: true }),
+  ]);
+  it('bookmark jumps and TOC entries are GoTo links to the target page and height', async () => {
+    const { PDFDocument, PDFName, PDFArray } = await import('pdf-lib');
+    const m = await render(def(), { fontStore });
+    expect(m.pages.length).toBe(2);
+    const results = m.bookmarks.find(b => b.label === 'Results here');
+    expect(results.page).toBe(2);
+    const doc = await PDFDocument.load(await exportPdf(m, fontStore));
+    const pages = doc.getPages();
+    const H = pages[0].getHeight();
+    const links = pages[0].node.lookup(PDFName.of('Annots'), PDFArray).asArray().map(r => doc.context.lookup(r)).map(a => {
+      expect(a.lookup(PDFName.of('Subtype')).toString()).toBe('/Link');
+      const d = a.lookup(PDFName.of('Dest'), PDFArray);
+      expect(d.get(1).toString()).toBe('/XYZ');
+      // which page it goes to, the height there, and the link's own top in model coordinates
+      return { page: pages.findIndex(p => p.ref === d.get(0)) + 1, top: d.lookup(3).asNumber(), at: H - a.lookup(PDFName.of('Rect'), PDFArray).lookup(3).asNumber() };
+    });
+    // two TOC lines (Intro p1, Results p2) and the jump; a link to a missing bookmark writes nothing
+    expect(links.length).toBe(3);
+    const toResults = links.filter(l => l.page === 2);
+    expect(toResults.length).toBe(2);
+    for (const l of toResults) expect(l.top).toBeCloseTo(H - results.y + 4, 3);
+    const jump = m.pages[0].items.find(i => i.t === 'link' && i.action.target === 'Results here' && !i.action.page);
+    expect(toResults.some(l => Math.abs(l.at - jump.y) < 0.01)).toBe(true);
+    expect(links.filter(l => l.page === 1).length).toBe(1); // Intro, a heading on page 1
+  });
+});
+
 describe('HTML export links', () => {
   const linked = (action, tooltip) => report([{ type: 'textbox', name: 'L', x: 0, y: 0, w: 200, h: 20, value: 'Open', action, ...(tooltip ? { tooltip } : {}) }]);
   const html = async (def) => exportHtml(await render(def, { fontStore }), fontStore);

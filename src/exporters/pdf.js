@@ -195,7 +195,13 @@ export async function exportPdf(model, fontStore, opt = {}) {
           break;
         }
         case 'link': {
-          if (it.action?.type === 'url' && safeUrl(it.action.href)) links.push({ page: p, rect: [it.x, H - it.y - it.h, it.x + it.w, H - it.y], href: it.action.href });
+          const rect = [it.x, H - it.y - it.h, it.x + it.w, H - it.y];
+          if (it.action?.type === 'url' && safeUrl(it.action.href)) links.push({ page: p, rect, href: it.action.href });
+          // a jump: TOC entries from headings carry their place; others go to the first bookmark of that name (as the viewer does)
+          else if (it.action?.type === 'bookmark') {
+            const to = it.action.page ? it.action : model.bookmarks?.find(b => b.label === it.action.target);
+            if (to) links.push({ page: p, rect, to });
+          }
           break;
         }
         case 'image': {
@@ -219,14 +225,20 @@ export async function exportPdf(model, fontStore, opt = {}) {
       if (it.rotate) p.pushOperators(popGraphicsState());
     }
   }
-  // URL links as PDF annotations
+  // a place in the document (page, y from the top), as an explicit destination: that page, scrolled to just above y
+  const pageH = (n) => model.pages[n - 1]?.height ?? model.height;
+  const pages = doc.getPages();
+  const dest = (b) => pages[b.page - 1] && [pages[b.page - 1].ref, PDFName.of('XYZ'), null, pageH(b.page) - b.y + 4, null];
+  // links as PDF annotations: URLs open, jumps go to their page
   for (const l of links) {
-    const annot = doc.context.obj({ Type: 'Annot', Subtype: 'Link', F: 4, Rect: l.rect, Border: [0, 0, 0], A: { Type: 'Action', S: 'URI', URI: pdfLiteral(l.href) } });
+    const to = l.href ? { A: { Type: 'Action', S: 'URI', URI: pdfLiteral(l.href) } } : { Dest: dest(l.to) };
+    if (!l.href && !to.Dest) continue;
+    const annot = doc.context.obj({ Type: 'Annot', Subtype: 'Link', F: 4, Rect: l.rect, Border: [0, 0, 0], ...to });
     const ref = doc.context.register(annot);
     const annots = l.page.node.lookup(PDFName.of('Annots'));
     if (annots) annots.push(ref); else l.page.node.set(PDFName.of('Annots'), doc.context.obj([ref]));
   }
-  if (model.bookmarks?.length) addOutline(doc, model.bookmarks, (n) => model.pages[n - 1]?.height ?? model.height);
+  if (model.bookmarks?.length) addOutline(doc, model.bookmarks, dest);
   if (opt.prepare) await opt.prepare(doc);
   if (opt.pdfa) makePdfA(doc, { ...opt.pdfa, title: opt.title || 'Report', author: opt.author });
   if (opt.encrypt) {
@@ -349,17 +361,15 @@ function addGlyphs(pf, glyphs) {
   };
 }
 
-/** PDF outline (the bookmarks panel) from the page model bookmarks. Flat list, levels as indentation. H(page): that page's height. */
-function addOutline(doc, bookmarks, H) {
+/** PDF outline (the bookmarks panel) from the page model bookmarks. Flat list, levels as indentation. dest(b): its destination. */
+function addOutline(doc, bookmarks, dest) {
   const ctx = doc.context;
-  const pages = doc.getPages();
   const outlineRef = ctx.nextRef();
   const refs = bookmarks.map(() => ctx.nextRef());
   bookmarks.forEach((b, i) => {
-    const page = pages[b.page - 1];
-    if (!page) return;
+    if (!dest(b)) return;
     const title = '  '.repeat(b.level || 0) + b.label;
-    const dict = { Title: PDFHexString.fromText(title), Parent: outlineRef, Dest: [page.ref, PDFName.of('XYZ'), null, H(b.page) - b.y + 4, null] };
+    const dict = { Title: PDFHexString.fromText(title), Parent: outlineRef, Dest: dest(b) };
     if (i > 0) dict.Prev = refs[i - 1];
     if (i < refs.length - 1) dict.Next = refs[i + 1];
     ctx.assign(refs[i], ctx.obj(dict));
