@@ -9,6 +9,8 @@ import { paintVisual } from './visuals.js';
 import { paintBarcode, BARCODE_TYPES } from './barcode.js';
 import { paintMap } from './map.js';
 import { shiftItems } from './paint.js';
+import { richValue, layoutRich, paintRich } from './rich.js';
+import { parseRich } from '../text/rich.js';
 import { resolveFontKey } from '../text/fonts.js';
 
 /**
@@ -131,6 +133,63 @@ register('textbox', {
       const bw = rot.swap ? h : item.w, bh = rot.swap ? item.w : h;
       items = paintBox({ x: cx - bw / 2, y: cy - bh / 2, w: bw, h: bh, st, tl, numeric, m: lc.m }).map(i => ({ ...i, rotate: { a: rot.a, cx, cy } }));
     } else items = paintBox({ x: item.x, y: 0, w: item.w, h, st, tl, numeric, m: lc.m });
+    addInteractivity(items, item, ctx, lc, { x: item.x, y: 0, w: item.w, h });
+    return { height: h, units: [{ top: 0, height: h, items }] };
+  },
+});
+
+/* ---------------------------------------------------------------- rich text */
+register('richtext', {
+  label: 'Rich text',
+  defaults: () => ({ type: 'richtext', w: 240, h: 48, value: '<p>Rich <b>text</b> with <i>styles</i> and {Globals.PageNumber}</p>', canGrow: true, style: {} }),
+  props: [
+    { key: 'value', label: 'HTML (p, b, i, u, s, sup, sub, br, ul/ol/li, a, h1–h6, span style; {Fields.x})', type: 'html', category: 'Data' },
+    { key: 'dataSet', label: 'Data set', type: 'dataset', category: 'Data' },
+    { key: 'styleName', label: 'Named style', type: 'stylename', category: 'Text' },
+    { key: 'canGrow', label: 'Can grow', type: 'bool', category: 'Layout' },
+    { key: 'canShrink', label: 'Can shrink', type: 'bool', category: 'Layout' },
+    { key: 'listIndent', label: 'List indent (pt, default 18)', type: 'number', category: 'Layout' },
+    { key: 'paragraphSpacing', label: 'Space after paragraphs (pt, default 4)', type: 'number', category: 'Layout' },
+    { key: 'pageBreakBefore', label: 'Page break before', type: 'bool', category: 'Layout' },
+    { key: 'pageBreakAfter', label: 'Page break after', type: 'bool', category: 'Layout' },
+    { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
+    { key: 'bookmark', label: 'Bookmark (document map)', type: 'expr', category: 'Interactivity' },
+    { key: 'action', label: 'Action', type: 'action', category: 'Interactivity' },
+    { key: 'tooltip', label: 'Tooltip (hover text)', type: 'expr', category: 'Interactivity' },
+  ],
+  layout(item, lc) {
+    const ctx = lc.ctxFor(item);
+    if (hidden(item, ctx, lc)) return { height: 0, units: [] };
+    const who = item.name || 'Rich text';
+    const st = resolveStyle([lc.base, lc.named?.[item.styleName], item.style], ctx);
+    let html;
+    try { html = richValue(item.value ?? '', ctx); } catch (e) { lc.warn(`${who}: ${e.message}`); html = '#Error'; }
+    const { blocks } = parseRich(html, { baseSize: Number(st.fontSize) || 9, warn: (msg) => lc.warn(`${who}: ${msg}`) });
+    const rl = layoutRich(blocks, st, item.w, lc.m, { listIndent: item.listIndent, paragraphSpacing: item.paragraphSpacing });
+    let h = item.h;
+    if (!lc.fixed) {
+      if (item.canGrow !== false && rl.needed > h + GROW_TOLERANCE) h = rl.needed;
+      if (item.canShrink && rl.needed < h) h = rl.needed;
+    }
+    const id = `${who}:${lc.nextId?.() ?? 0}`;
+    const pv = rl.pad[0] + rl.pad[2];
+    // Taller than a page: split into pieces of whole lines
+    if (!lc.fixed && h > lc.maxUnitHeight && rl.lines.length > 1) {
+      const units = [];
+      let top = 0, start = 0;
+      while (start < rl.lines.length) {
+        let end = start, ch = pv;
+        while (end < rl.lines.length && (end === start || ch + rl.lines[end].h <= lc.maxUnitHeight)) { ch += rl.lines[end].h + rl.lines[end].gap; end++; }
+        const lines = rl.lines.slice(start, end);
+        ch -= lines[lines.length - 1].gap;
+        const items = paintRich({ x: item.x, y: 0, w: item.w, h: ch, st, rl: { ...rl, lines }, m: lc.m, id: `${id}:${start}` });
+        if (!start) addInteractivity(items, item, ctx, lc, { x: item.x, y: 0, w: item.w, h: ch });
+        units.push({ top, height: ch, items });
+        top += ch; start = end;
+      }
+      return { height: top, units };
+    }
+    const items = paintRich({ x: item.x, y: 0, w: item.w, h, st, rl, m: lc.m, id });
     addInteractivity(items, item, ctx, lc, { x: item.x, y: 0, w: item.w, h });
     return { height: h, units: [{ top: 0, height: h, items }] };
   },

@@ -147,3 +147,84 @@ describe('rich text: hostile input stays bounded', async () => {
     expect(ms).toBeLessThan(50);
   });
 });
+
+import { render } from '../../src/engine/index.js';
+import { fontStore, report, texts } from '../helpers.js';
+import { textRows } from '../../src/exporters/regions.js';
+
+const rich = (value, extra = {}, data) => report([{ type: 'richtext', name: 'R', x: 0, y: 0, w: 300, h: 20, value, ...extra }], { data });
+const out = async (def) => render(def, { fontStore });
+
+describe('rich text: layout', () => {
+  it('mixed styles on one line share a baseline and sit side by side', async () => {
+    const m = await out(rich('Hello <b>bold</b> and <span style="font-size:18pt;color:#c00">big</span>'));
+    const t = m.pages[0].items.filter(i => i.t === 'text');
+    expect(t.map(i => i.lines[0].text)).toEqual(['Hello ', 'bold', ' and ', 'big']);
+    expect(new Set(t.map(i => i.lines[0].y)).size).toBe(1);
+    for (let k = 1; k < t.length; k++) expect(t[k].lines[0].x).toBeCloseTo(t[k - 1].lines[0].x + t[k - 1].lines[0].w, 3);
+    expect(t[1].font).toBe('Inter-Bold');
+    expect(t[3]).toMatchObject({ size: 18, color: '#c00' });
+    expect(textRows(m.pages[0].items)).toEqual(['Hello bold and big']);
+  });
+  it('wraps across styles, never wider than the box; a word split by styles stays whole', async () => {
+    const m = await out(rich('<p>' + 'alpha <i>beta</i> gam<b>ma</b> '.repeat(12) + '</p>', { w: 120 }));
+    const rows = textRows(m.pages[0].items);
+    expect(rows.length).toBeGreaterThan(3);
+    for (const r of rows) expect(r.endsWith(' gam')).toBe(false);
+    for (const i of m.pages[0].items.filter(i => i.t === 'text')) expect(i.lines[0].x + i.lines[0].w).toBeLessThanOrEqual(36 + 120 + 0.01); // page margin 36
+  });
+  it('grows to fit; canGrow false clips to the box', async () => {
+    const long = '<p>' + 'word '.repeat(200) + '</p>';
+    const a = await out(rich(long, { w: 100 }));
+    const b = await out(rich(long, { w: 100, canGrow: false }));
+    const bottom = (m) => Math.max(...m.pages[0].items.filter(i => i.t === 'text').map(i => i.lines[0].y));
+    expect(bottom(a)).toBeGreaterThan(200);
+    expect(bottom(b)).toBeLessThan(20 + 36 + 1);
+  });
+  it('splits across pages by whole lines', async () => {
+    const m = await out(rich('<p>' + 'line of text '.repeat(1500) + '</p>', { w: 200 }));
+    expect(m.pages.length).toBeGreaterThan(1);
+    expect(textRows(m.pages[1].items).length).toBeGreaterThan(10);
+  });
+  it('interpolates fields escaped; a whole =expression is markup', async () => {
+    const data = { rows: [{ name: '<b>Ann</b> & co' }] };
+    const m1 = await out(rich('<i>{Fields.name}</i>', { dataSet: 'Rows' }, data));
+    expect(textRows(m1.pages[0].items)).toEqual(['<b>Ann</b> & co']);
+    const m2 = await out(rich('="<b>" & "Ann" & "</b>"'));
+    expect(m2.pages[0].items.find(i => i.t === 'text').font).toBe('Inter-Bold');
+  });
+  it('decorations, span backgrounds, sup and sub', async () => {
+    const items = (await out(rich('<u>u</u> <s>s</s> <span style="background-color:#ff0">bg</span> x<sup>2</sup> y<sub>3</sub>'))).pages[0].items;
+    expect(items.filter(i => i.t === 'line')).toHaveLength(2);
+    expect(items.find(i => i.t === 'rect' && i.fill === '#ff0')).toBeTruthy();
+    const t = (s) => items.find(i => i.t === 'text' && i.lines[0].text.trim() === s);
+    expect(t('2').size).toBeLessThan(t('x').size);
+    expect(t('2').lines[0].y).toBeLessThan(t('x').lines[0].y);
+    expect(t('3').lines[0].y).toBeGreaterThan(t('y').lines[0].y);
+    expect(t('u').deco).toBe('underline');
+  });
+  it('lists indent and number', async () => {
+    const items = (await out(rich('<ol><li>one</li><li>two<ul><li>deep</li></ul></li></ol>'))).pages[0].items;
+    const x = (s) => items.find(i => i.t === 'text' && i.lines[0].text === s).lines[0].x;
+    expect(x('1.')).toBeLessThan(x('one'));
+    expect(x('deep')).toBeGreaterThan(x('two'));
+  });
+  it('text-align centre and right per block', async () => {
+    const items = (await out(rich('<p style="text-align:right">r</p><p style="text-align:center">c</p>'))).pages[0].items;
+    const r = items.find(i => i.lines?.[0].text === 'r').lines[0];
+    expect(r.x + r.w).toBeCloseTo(36 + 300 - 2, 1);
+  });
+  it('links become url link items; unsafe ones do not', async () => {
+    const items = (await out(rich('<a href="https://example.com">go</a> <a href="javascript:alert(1)">no</a>'))).pages[0].items;
+    const links = items.filter(i => i.t === 'link');
+    expect(links).toHaveLength(1);
+    expect(links[0].action).toEqual({ type: 'url', href: 'https://example.com' });
+    expect(JSON.stringify(items)).not.toMatch(/javascript/);
+  });
+  it('box action, bookmark and unknown-tag warning', async () => {
+    const m = await out(rich('<blink>x</blink>', { bookmark: 'Here', action: { type: 'url', url: 'https://a.b' } }));
+    expect(m.bookmarks.map(b => b.label)).toContain('Here');
+    expect(m.pages[0].items.some(i => i.t === 'link' && i.w === 300)).toBe(true);
+    expect(m.warnings.join(' ')).toMatch(/blink/);
+  });
+});
