@@ -1,0 +1,3451 @@
+{
+  "$schema": "pagewright/report@1",
+  "name": "Torture Test (Designer)",
+  "locale": "en-IN",
+  "currency": "INR",
+  "page": {
+    "size": "A4",
+    "orientation": "portrait",
+    "margins": [
+      36,
+      36,
+      36,
+      36
+    ]
+  },
+  "parameters": [
+    {
+      "name": "region",
+      "type": "string",
+      "prompt": "Regions",
+      "default": "Central,East,North,South,West",
+      "required": false,
+      "multi": true,
+      "options": [
+        "Central",
+        "East",
+        "North",
+        "South",
+        "West"
+      ]
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "prompt": "Statuses",
+      "default": "Current,Overdue,Closed,NPA",
+      "required": false,
+      "multi": true,
+      "options": [
+        "Current",
+        "Overdue",
+        "Closed",
+        "NPA"
+      ]
+    },
+    {
+      "name": "minOutstanding",
+      "type": "number",
+      "prompt": "Minimum outstanding (₹)",
+      "default": "0",
+      "required": true
+    }
+  ],
+  "dataSources": [
+    {
+      "name": "torture",
+      "type": "rest",
+      "url": "/api/sample/torture",
+      "method": "GET"
+    }
+  ],
+  "dataSets": [
+    {
+      "name": "Meta",
+      "source": "torture",
+      "path": "$.meta",
+      "fields": [
+        {
+          "name": "title",
+          "type": "string"
+        },
+        {
+          "name": "subtitle",
+          "type": "string"
+        },
+        {
+          "name": "author",
+          "type": "string"
+        },
+        {
+          "name": "demoUrl",
+          "type": "string"
+        },
+        {
+          "name": "repoUrl",
+          "type": "string"
+        },
+        {
+          "name": "seed",
+          "type": "number"
+        },
+        {
+          "name": "currency",
+          "type": "string"
+        },
+        {
+          "name": "watermark",
+          "type": "string"
+        },
+        {
+          "name": "periodEnd",
+          "type": "date"
+        },
+        {
+          "name": "overdueThresholdDays",
+          "type": "number"
+        },
+        {
+          "name": "drillThroughTopN",
+          "type": "number"
+        },
+        {
+          "name": "periodLabel",
+          "type": "string"
+        },
+        {
+          "name": "generated",
+          "type": "date"
+        },
+        {
+          "name": "note",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "AllLoans",
+      "source": "torture",
+      "path": "$.loans[*]",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string"
+        },
+        {
+          "name": "borrower",
+          "type": "string"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "product",
+          "type": "string"
+        },
+        {
+          "name": "principal",
+          "type": "number"
+        },
+        {
+          "name": "rate",
+          "type": "number"
+        },
+        {
+          "name": "tenure",
+          "type": "number"
+        },
+        {
+          "name": "emi",
+          "type": "number"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        },
+        {
+          "name": "dpd",
+          "type": "number"
+        },
+        {
+          "name": "outstanding",
+          "type": "number"
+        },
+        {
+          "name": "disbursed",
+          "type": "date"
+        },
+        {
+          "name": "bucket",
+          "type": "string"
+        },
+        {
+          "name": "overdue",
+          "type": "boolean"
+        },
+        {
+          "name": "collected",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "Loans",
+      "source": "torture",
+      "path": "$.loans[*]",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string"
+        },
+        {
+          "name": "borrower",
+          "type": "string"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "product",
+          "type": "string"
+        },
+        {
+          "name": "principal",
+          "type": "number"
+        },
+        {
+          "name": "rate",
+          "type": "number"
+        },
+        {
+          "name": "tenure",
+          "type": "number"
+        },
+        {
+          "name": "emi",
+          "type": "number"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        },
+        {
+          "name": "dpd",
+          "type": "number"
+        },
+        {
+          "name": "outstanding",
+          "type": "number"
+        },
+        {
+          "name": "disbursed",
+          "type": "date"
+        },
+        {
+          "name": "bucket",
+          "type": "string"
+        },
+        {
+          "name": "overdue",
+          "type": "boolean"
+        },
+        {
+          "name": "collected",
+          "type": "number"
+        },
+        {
+          "name": "history",
+          "type": "string"
+        }
+      ],
+      "filters": [
+        {
+          "expr": "=Fields.region",
+          "op": "in",
+          "value": "=Parameters.region"
+        },
+        {
+          "expr": "=Fields.status",
+          "op": "in",
+          "value": "=Parameters.status"
+        },
+        {
+          "expr": "=Fields.outstanding",
+          "op": ">=",
+          "value": "=Coalesce(Parameters.minOutstanding, 0)"
+        }
+      ]
+    },
+    {
+      "name": "Monthly",
+      "source": "torture",
+      "path": "$.monthly[*]",
+      "fields": [
+        {
+          "name": "month",
+          "type": "string"
+        },
+        {
+          "name": "ym",
+          "type": "string"
+        },
+        {
+          "name": "disbursed",
+          "type": "number"
+        },
+        {
+          "name": "collected",
+          "type": "number"
+        },
+        {
+          "name": "due",
+          "type": "number"
+        },
+        {
+          "name": "efficiency",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "TopLoans",
+      "source": "torture",
+      "path": "$.loans[*]",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string"
+        },
+        {
+          "name": "borrower",
+          "type": "string"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "product",
+          "type": "string"
+        },
+        {
+          "name": "principal",
+          "type": "number"
+        },
+        {
+          "name": "rate",
+          "type": "number"
+        },
+        {
+          "name": "tenure",
+          "type": "number"
+        },
+        {
+          "name": "emi",
+          "type": "number"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        },
+        {
+          "name": "dpd",
+          "type": "number"
+        },
+        {
+          "name": "outstanding",
+          "type": "number"
+        },
+        {
+          "name": "disbursed",
+          "type": "date"
+        },
+        {
+          "name": "bucket",
+          "type": "string"
+        },
+        {
+          "name": "overdue",
+          "type": "boolean"
+        },
+        {
+          "name": "collected",
+          "type": "number"
+        }
+      ],
+      "sort": [
+        {
+          "by": "=Fields.outstanding",
+          "dir": "desc"
+        }
+      ],
+      "filters": [
+        {
+          "expr": "=Fields.status",
+          "op": "in",
+          "value": "=Split(\"Overdue,NPA\", \",\")"
+        },
+        {
+          "expr": "=Fields.outstanding",
+          "op": "TopN",
+          "value": "=First(Fields.drillThroughTopN, \"Meta\")"
+        }
+      ]
+    },
+    {
+      "name": "Schedule",
+      "fields": [
+        {
+          "name": "month",
+          "type": "string"
+        },
+        {
+          "name": "ym",
+          "type": "string"
+        },
+        {
+          "name": "installment",
+          "type": "number"
+        },
+        {
+          "name": "due",
+          "type": "number"
+        },
+        {
+          "name": "paid",
+          "type": "number"
+        },
+        {
+          "name": "shortfall",
+          "type": "number"
+        },
+        {
+          "name": "opening",
+          "type": "number"
+        },
+        {
+          "name": "interest",
+          "type": "number"
+        },
+        {
+          "name": "principalPaid",
+          "type": "number"
+        },
+        {
+          "name": "closing",
+          "type": "number"
+        }
+      ],
+      "relation": {
+        "parent": "TopLoans",
+        "path": "$.schedule[*]"
+      }
+    }
+  ],
+  "styles": {
+    "base": {
+      "fontFamily": "Inter",
+      "fontSize": 8.5,
+      "color": "#1f2937"
+    }
+  },
+  "sections": {
+    "pageHeader": {
+      "height": 20,
+      "items": [
+        {
+          "type": "textbox",
+          "w": 480,
+          "h": 70,
+          "value": "=First(Fields.watermark, \"Meta\")",
+          "canGrow": true,
+          "canShrink": false,
+          "style": {
+            "fontSize": 64,
+            "fontWeight": "bold",
+            "color": "#eef1f5",
+            "textAlign": "center",
+            "verticalAlign": "middle"
+          },
+          "id": "pra0cj07",
+          "name": "Watermark",
+          "x": 20,
+          "y": 330,
+          "dataSet": "Meta",
+          "rotate": -32
+        },
+        {
+          "id": "h1",
+          "type": "textbox",
+          "name": "HdrName",
+          "x": 0,
+          "y": 2,
+          "w": 523,
+          "h": 12,
+          "value": "=Globals.ReportName & \"  ·  lending portfolio, period ending \" & Format(CDate(First(Fields.periodEnd, \"Meta\")), \"dd MMM yyyy\")",
+          "canGrow": true,
+          "style": {
+            "fontSize": 8,
+            "fontWeight": "600",
+            "color": "#1e3a5f"
+          },
+          "dataSet": "Meta"
+        }
+      ]
+    },
+    "body": [
+      {
+        "name": "Cover",
+        "height": 570,
+        "items": [
+          {
+            "type": "shape",
+            "shape": "rect",
+            "w": 523,
+            "h": 210,
+            "style": {
+              "fill": "#1e3a5f",
+              "stroke": "#1e3a5f",
+              "strokeWidth": 1,
+              "radius": 6
+            },
+            "id": "zjnh2dnt",
+            "name": "CoverBand",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "type": "textbox",
+            "w": 460,
+            "h": 14,
+            "value": "PAGEWRIGHT · REPORT ENGINE STRESS TEST",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 8,
+              "color": "#9fb3c8",
+              "fontWeight": "600"
+            },
+            "id": "fgk0clgr",
+            "name": "CoverKicker",
+            "x": 28,
+            "y": 28
+          },
+          {
+            "type": "textbox",
+            "w": 470,
+            "h": 40,
+            "value": "=First(Fields.title, \"Meta\")",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 30,
+              "fontWeight": "bold",
+              "color": "#ffffff"
+            },
+            "id": "rpsw6k40",
+            "name": "CoverTitle",
+            "x": 28,
+            "y": 48,
+            "dataSet": "Meta"
+          },
+          {
+            "type": "textbox",
+            "w": 470,
+            "h": 34,
+            "value": "=First(Fields.subtitle, \"Meta\")",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 13,
+              "color": "#dbe5ef"
+            },
+            "id": "ksl7a2t6",
+            "name": "CoverSub",
+            "x": 28,
+            "y": 92,
+            "dataSet": "Meta"
+          },
+          {
+            "type": "textbox",
+            "w": 470,
+            "h": 14,
+            "value": "=\"Lending portfolio · period ending \" & Format(CDate(First(Fields.periodEnd, \"Meta\")), \"dd MMM yyyy\") & \" · \" & First(Fields.periodLabel, \"Meta\")",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 9.5,
+              "color": "#ffffff"
+            },
+            "id": "2xmen585",
+            "name": "CoverPeriod",
+            "x": 28,
+            "y": 146,
+            "dataSet": "Meta"
+          },
+          {
+            "type": "textbox",
+            "w": 470,
+            "h": 14,
+            "value": "=First(Fields.author, \"Meta\")",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 9.5,
+              "color": "#9fb3c8"
+            },
+            "id": "kqdg7m2f",
+            "name": "CoverAuthor",
+            "x": 28,
+            "y": 166,
+            "dataSet": "Meta"
+          },
+          {
+            "type": "barcode",
+            "w": 130,
+            "h": 130,
+            "symbology": "qrcode",
+            "value": "=First(Fields.demoUrl, \"Meta\")",
+            "showText": true,
+            "style": {
+              "fontSize": 8,
+              "textAlign": "center"
+            },
+            "id": "yttnmy3e",
+            "name": "CoverQR",
+            "x": 393,
+            "y": 232,
+            "dataSet": "Meta",
+            "qrErrorLevel": "M",
+            "action": {
+              "type": "url",
+              "url": "=First(Fields.demoUrl, \"Meta\")"
+            }
+          },
+          {
+            "type": "textbox",
+            "w": 130,
+            "h": 12,
+            "value": "Scan for the live demo",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 7,
+              "color": "#6b7280",
+              "textAlign": "center"
+            },
+            "id": "flvqq5i6",
+            "name": "CoverQRc",
+            "x": 393,
+            "y": 366
+          },
+          {
+            "type": "textbox",
+            "w": 360,
+            "h": 14,
+            "value": "Links",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 10,
+              "fontWeight": "bold",
+              "color": "#1e3a5f"
+            },
+            "id": "ck2b581w",
+            "name": "CoverLinksH",
+            "x": 0,
+            "y": 232
+          },
+          {
+            "type": "textbox",
+            "w": 360,
+            "h": 13,
+            "value": "=\"Live demo: \" & First(Fields.demoUrl, \"Meta\")",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "color": "#1d4ed8",
+              "textDecoration": "underline"
+            },
+            "id": "fhhoyynw",
+            "name": "CoverDemo",
+            "x": 0,
+            "y": 250,
+            "dataSet": "Meta",
+            "action": {
+              "type": "url",
+              "url": "=First(Fields.demoUrl, \"Meta\")"
+            }
+          },
+          {
+            "type": "textbox",
+            "w": 360,
+            "h": 13,
+            "value": "=\"Source: \" & First(Fields.repoUrl, \"Meta\")",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "color": "#1d4ed8",
+              "textDecoration": "underline"
+            },
+            "id": "h6dmk8a8",
+            "name": "CoverRepo",
+            "x": 0,
+            "y": 266,
+            "dataSet": "Meta",
+            "action": {
+              "type": "url",
+              "url": "=First(Fields.repoUrl, \"Meta\")"
+            }
+          },
+          {
+            "type": "container",
+            "w": 370,
+            "h": 52,
+            "items": [
+              {
+                "type": "textbox",
+                "w": 354,
+                "h": 12,
+                "value": "Synthetic data",
+                "canGrow": true,
+                "canShrink": false,
+                "style": {
+                  "fontWeight": "bold",
+                  "color": "#b54708"
+                },
+                "id": "lb4xehzm",
+                "name": "CoverSynH",
+                "x": 8,
+                "y": 6
+              },
+              {
+                "type": "textbox",
+                "w": 354,
+                "h": 30,
+                "value": "=\"Every borrower, amount and date in this report is made up by a seeded generator (seed \" & First(Fields.seed, \"Meta\") & \", src/sample/torture.js). The same seed gives the same report every run. No real customer data.\"",
+                "canGrow": true,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 7.5,
+                  "color": "#7a2e0e"
+                },
+                "id": "ell7c1uw",
+                "name": "CoverSynT",
+                "x": 8,
+                "y": 19,
+                "dataSet": "Meta"
+              }
+            ],
+            "keepTogether": true,
+            "style": {
+              "border": "0.75 solid #fedf89",
+              "padding": 0,
+              "backgroundColor": "#fffaeb"
+            },
+            "id": "n929aotz",
+            "name": "CoverSynthetic",
+            "x": 0,
+            "y": 292
+          },
+          {
+            "type": "textbox",
+            "w": 523,
+            "h": 16,
+            "value": "What this report exercises",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 10,
+              "fontWeight": "bold",
+              "color": "#1e3a5f"
+            },
+            "id": "q6hxxnki",
+            "name": "CoverFeatH",
+            "x": 0,
+            "y": 400
+          },
+          {
+            "type": "checkbox",
+            "w": 255,
+            "h": 14,
+            "value": "=True",
+            "text": "Cover, links, QR code, watermark",
+            "style": {
+              "fontSize": 8.5
+            },
+            "id": "kkl3741i",
+            "name": "Feat0",
+            "x": 0,
+            "y": 422
+          },
+          {
+            "type": "checkbox",
+            "w": 255,
+            "h": 14,
+            "value": "=True",
+            "text": "Numbered contents + PDF outline",
+            "style": {
+              "fontSize": 8.5
+            },
+            "id": "0xsd0wms",
+            "name": "Feat1",
+            "x": 262,
+            "y": 422
+          },
+          {
+            "type": "checkbox",
+            "w": 255,
+            "h": 14,
+            "value": "=True",
+            "text": "KPI band: aggregates, conditional colour",
+            "style": {
+              "fontSize": 8.5
+            },
+            "id": "o2lbde9r",
+            "name": "Feat2",
+            "x": 0,
+            "y": 440
+          },
+          {
+            "type": "checkbox",
+            "w": 255,
+            "h": 14,
+            "value": "=True",
+            "text": "Pivot: region × product, % of total",
+            "style": {
+              "fontSize": 8.5
+            },
+            "id": "ek5yjmys",
+            "name": "Feat3",
+            "x": 262,
+            "y": 440
+          },
+          {
+            "type": "checkbox",
+            "w": 255,
+            "h": 14,
+            "value": "=True",
+            "text": "Combo chart, 2nd axis, target line",
+            "style": {
+              "fontSize": 8.5
+            },
+            "id": "vt635upc",
+            "name": "Feat4",
+            "x": 0,
+            "y": 458
+          },
+          {
+            "type": "checkbox",
+            "w": 255,
+            "h": 14,
+            "value": "=True",
+            "text": "Donut and DPD bucket bars",
+            "style": {
+              "fontSize": 8.5
+            },
+            "id": "ehx7op8z",
+            "name": "Feat5",
+            "x": 262,
+            "y": 458
+          },
+          {
+            "type": "checkbox",
+            "w": 255,
+            "h": 14,
+            "value": "=True",
+            "text": "Grouped register, subtotals, sorting",
+            "style": {
+              "fontSize": 8.5
+            },
+            "id": "1pq8qkkv",
+            "name": "Feat6",
+            "x": 0,
+            "y": 476
+          },
+          {
+            "type": "checkbox",
+            "w": 255,
+            "h": 14,
+            "value": "=True",
+            "text": "Sparklines and data bars per row",
+            "style": {
+              "fontSize": 8.5
+            },
+            "id": "ox186v0j",
+            "name": "Feat7",
+            "x": 262,
+            "y": 476
+          },
+          {
+            "type": "checkbox",
+            "w": 255,
+            "h": 14,
+            "value": "=True",
+            "text": "Repeated headers, keep-together",
+            "style": {
+              "fontSize": 8.5
+            },
+            "id": "m2kcv5mi",
+            "name": "Feat8",
+            "x": 0,
+            "y": 494
+          },
+          {
+            "type": "checkbox",
+            "w": 255,
+            "h": 14,
+            "value": "=True",
+            "text": "Drill-down (collapsible regions)",
+            "style": {
+              "fontSize": 8.5
+            },
+            "id": "z45r0vc2",
+            "name": "Feat9",
+            "x": 262,
+            "y": 494
+          },
+          {
+            "type": "checkbox",
+            "w": 255,
+            "h": 14,
+            "value": "=True",
+            "text": "Drill-through to loan detail pages",
+            "style": {
+              "fontSize": 8.5
+            },
+            "id": "0rrrvayt",
+            "name": "Feat10",
+            "x": 0,
+            "y": 512
+          },
+          {
+            "type": "checkbox",
+            "w": 255,
+            "h": 14,
+            "value": "=True",
+            "text": "Parameters, rich text, Code 128",
+            "style": {
+              "fontSize": 8.5
+            },
+            "id": "rqsp7qwr",
+            "name": "Feat11",
+            "x": 262,
+            "y": 512
+          },
+          {
+            "type": "textbox",
+            "w": 523,
+            "h": 24,
+            "value": "In the viewer: change the parameters (regions, statuses, minimum outstanding), click a register column header to sort, collapse a region, and click a watchlist loan to jump to its detail page. In the PDF: the outline (bookmarks panel) lists every section, and the cover links open in a browser.",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 8,
+              "color": "#6b7280"
+            },
+            "id": "lkxablzl",
+            "name": "CoverHowTo",
+            "x": 0,
+            "y": 540
+          }
+        ]
+      },
+      {
+        "name": "Contents",
+        "height": 380,
+        "items": [
+          {
+            "type": "toc",
+            "w": 523,
+            "h": 30,
+            "title": "Contents",
+            "levels": 2,
+            "style": {
+              "fontSize": 9
+            },
+            "id": "mcqv2m0s",
+            "name": "Contents",
+            "x": 0,
+            "y": 0,
+            "source": "headings",
+            "numbering": "decimal"
+          },
+          {
+            "type": "textbox",
+            "w": 523,
+            "h": 22,
+            "value": "Methodology and data",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 15,
+              "fontWeight": "bold",
+              "color": "#1e3a5f",
+              "borderBottom": "1 solid #1e3a5f"
+            },
+            "id": "zco0hoia",
+            "name": "HMethod",
+            "x": 0,
+            "y": 290,
+            "headingLevel": "1",
+            "bookmark": "Methodology and data"
+          },
+          {
+            "type": "richtext",
+            "w": 523,
+            "h": 60,
+            "value": "<h3>How the numbers are made</h3>\n<p>The portfolio has <b>{CountRows(\"AllLoans\")} loans</b> across five regions and five products. Each loan is simulated month by month from its disbursal: interest on the opening balance at <i>rate ÷ 1200</i>, then the payment. Before the 12-month window every installment is paid in full; inside it, <span style=\"color:#b54708\"><b>Overdue</b></span> and <span style=\"color:#b42318\"><b>NPA</b></span> loans pay several partial installments, and <b>Closed</b> loans pay a few partials and then settle the balance.</p>\n<ul><li><b>EMI</b>: the standard amortising installment, <i>P·i·(1+i)<sup>n</sup> ÷ ((1+i)<sup>n</sup> − 1)</i>, rounded to the paisa.</li>\n<li><b>Collection efficiency</b>: amount collected ÷ amount due in the month. Settlements of Closed loans count as collections, so a month can exceed 100%.</li>\n<li><b>Overdue</b>: days past due above {First(Fields.overdueThresholdDays, \"Meta\")}. <b>NPA</b>: over 180 days past due. Ratios are shares of outstanding.</li>\n<li><b>DPD buckets</b>: 0, 1–30, 31–60, 61–90, 90+.</li></ul>\n<p style=\"color:#6b7280\">Data is synthetic (seed {First(Fields.seed, \"Meta\")}). Parameters filter the KPIs, the pivot, the status and DPD charts and the register; the monthly series and the drill-through pages always show the whole book.</p>",
+            "canGrow": true,
+            "style": {
+              "fontSize": 8.5
+            },
+            "id": "vumjd17m",
+            "name": "Methodology",
+            "x": 0,
+            "y": 318,
+            "dataSet": "Meta"
+          }
+        ]
+      },
+      {
+        "name": "Summary",
+        "height": 870,
+        "items": [
+          {
+            "type": "textbox",
+            "w": 523,
+            "h": 22,
+            "value": "Portfolio at a glance",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 15,
+              "fontWeight": "bold",
+              "color": "#1e3a5f",
+              "borderBottom": "1 solid #1e3a5f"
+            },
+            "id": "jcbrjxhv",
+            "name": "HGlance",
+            "x": 0,
+            "y": 0,
+            "headingLevel": "1",
+            "bookmark": "Portfolio at a glance"
+          },
+          {
+            "type": "textbox",
+            "w": 523,
+            "h": 12,
+            "value": "=\"Filtered by the parameters: regions \" & Join(Parameters.region, \", \") & \" · statuses \" & Join(Parameters.status, \", \") & \" · outstanding ≥ \" & Format(Parameters.minOutstanding, \"C0\")",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 7.5,
+              "color": "#6b7280"
+            },
+            "id": "qa1w8h4d",
+            "name": "GlanceNote",
+            "x": 0,
+            "y": 26
+          },
+          {
+            "type": "container",
+            "w": 82.17,
+            "h": 62,
+            "items": [
+              {
+                "type": "textbox",
+                "w": 70.17,
+                "h": 11,
+                "value": "Loans",
+                "canGrow": false,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 6.5,
+                  "color": "#6b7280",
+                  "fontWeight": "600"
+                },
+                "id": "l2kz65tw",
+                "name": "KpiL0",
+                "x": 6,
+                "y": 5,
+                "dataSet": "Loans"
+              },
+              {
+                "type": "textbox",
+                "w": 70.17,
+                "h": 20,
+                "value": "=CountRows()",
+                "canGrow": true,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 14,
+                  "fontWeight": "bold",
+                  "textAlign": "left",
+                  "format": "N0",
+                  "color": "#1f2937"
+                },
+                "id": "ma7ei9y3",
+                "name": "KpiV0",
+                "x": 6,
+                "y": 18,
+                "dataSet": "Loans",
+                "shrinkToFit": true
+              },
+              {
+                "type": "textbox",
+                "w": 70.17,
+                "h": 18,
+                "value": "=\"of \" & CountRows(\"AllLoans\") & \" in the book\"",
+                "canGrow": false,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 6,
+                  "color": "#6b7280"
+                },
+                "id": "27oovrha",
+                "name": "KpiS0",
+                "x": 6,
+                "y": 40,
+                "dataSet": "Loans"
+              }
+            ],
+            "keepTogether": true,
+            "style": {
+              "border": "0.75 solid #e5e7eb",
+              "padding": 0,
+              "backgroundColor": "#fbfcfe"
+            },
+            "id": "jhcfbkg9",
+            "name": "Kpi0",
+            "x": 0,
+            "y": 44,
+            "dataSet": "Loans"
+          },
+          {
+            "type": "container",
+            "w": 82.17,
+            "h": 62,
+            "items": [
+              {
+                "type": "textbox",
+                "w": 70.17,
+                "h": 11,
+                "value": "Principal disbursed",
+                "canGrow": false,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 6.5,
+                  "color": "#6b7280",
+                  "fontWeight": "600"
+                },
+                "id": "9zorjepx",
+                "name": "KpiL1",
+                "x": 6,
+                "y": 5,
+                "dataSet": "Loans"
+              },
+              {
+                "type": "textbox",
+                "w": 70.17,
+                "h": 20,
+                "value": "=Sum(Fields.principal)",
+                "canGrow": true,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 14,
+                  "fontWeight": "bold",
+                  "textAlign": "left",
+                  "format": "C0",
+                  "color": "#1f2937"
+                },
+                "id": "sh2nec1c",
+                "name": "KpiV1",
+                "x": 6,
+                "y": 18,
+                "dataSet": "Loans",
+                "shrinkToFit": true
+              },
+              {
+                "type": "textbox",
+                "w": 70.17,
+                "h": 18,
+                "value": "=\"avg \" & Format(Avg(Fields.principal), \"C0\")",
+                "canGrow": false,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 6,
+                  "color": "#6b7280"
+                },
+                "id": "by5wjwkn",
+                "name": "KpiS1",
+                "x": 6,
+                "y": 40,
+                "dataSet": "Loans"
+              }
+            ],
+            "keepTogether": true,
+            "style": {
+              "border": "0.75 solid #e5e7eb",
+              "padding": 0,
+              "backgroundColor": "#fbfcfe"
+            },
+            "id": "kzjttatr",
+            "name": "Kpi1",
+            "x": 88.17,
+            "y": 44,
+            "dataSet": "Loans"
+          },
+          {
+            "type": "container",
+            "w": 82.17,
+            "h": 62,
+            "items": [
+              {
+                "type": "textbox",
+                "w": 70.17,
+                "h": 11,
+                "value": "Outstanding",
+                "canGrow": false,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 6.5,
+                  "color": "#6b7280",
+                  "fontWeight": "600"
+                },
+                "id": "okwxj4s7",
+                "name": "KpiL2",
+                "x": 6,
+                "y": 5,
+                "dataSet": "Loans"
+              },
+              {
+                "type": "textbox",
+                "w": 70.17,
+                "h": 20,
+                "value": "=Sum(Fields.outstanding)",
+                "canGrow": true,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 14,
+                  "fontWeight": "bold",
+                  "textAlign": "left",
+                  "format": "C0",
+                  "color": "#1f2937"
+                },
+                "id": "00whlzbe",
+                "name": "KpiV2",
+                "x": 6,
+                "y": 18,
+                "dataSet": "Loans",
+                "shrinkToFit": true
+              },
+              {
+                "type": "textbox",
+                "w": 70.17,
+                "h": 18,
+                "value": "=Format(Sum(Fields.outstanding) / Sum(Fields.principal), \"P1\") & \" of principal\"",
+                "canGrow": false,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 6,
+                  "color": "#6b7280"
+                },
+                "id": "f7cm8a74",
+                "name": "KpiS2",
+                "x": 6,
+                "y": 40,
+                "dataSet": "Loans"
+              }
+            ],
+            "keepTogether": true,
+            "style": {
+              "border": "0.75 solid #e5e7eb",
+              "padding": 0,
+              "backgroundColor": "#fbfcfe"
+            },
+            "id": "ux5ckpce",
+            "name": "Kpi2",
+            "x": 176.34,
+            "y": 44,
+            "dataSet": "Loans"
+          },
+          {
+            "type": "container",
+            "w": 82.17,
+            "h": 62,
+            "items": [
+              {
+                "type": "textbox",
+                "w": 70.17,
+                "h": 11,
+                "value": "Collection efficiency",
+                "canGrow": false,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 6.5,
+                  "color": "#6b7280",
+                  "fontWeight": "600"
+                },
+                "id": "sciwt64s",
+                "name": "KpiL3",
+                "x": 6,
+                "y": 5,
+                "dataSet": "Loans"
+              },
+              {
+                "type": "textbox",
+                "w": 70.17,
+                "h": 20,
+                "value": "=Sum(Fields.collected, \"Monthly\") / Sum(Fields.due, \"Monthly\")",
+                "canGrow": true,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 14,
+                  "fontWeight": "bold",
+                  "textAlign": "left",
+                  "format": "P1",
+                  "color": "=IIF(Sum(Fields.collected, \"Monthly\") / Sum(Fields.due, \"Monthly\") >= 0.95, \"#067647\", \"#b54708\")"
+                },
+                "id": "efif9sih",
+                "name": "KpiV3",
+                "x": 6,
+                "y": 18,
+                "dataSet": "Loans",
+                "shrinkToFit": true
+              },
+              {
+                "type": "textbox",
+                "w": 70.17,
+                "h": 18,
+                "value": "collected ÷ due, 12 months · target 95%",
+                "canGrow": false,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 6,
+                  "color": "#6b7280"
+                },
+                "id": "fcfb1p6x",
+                "name": "KpiS3",
+                "x": 6,
+                "y": 40,
+                "dataSet": "Loans"
+              }
+            ],
+            "keepTogether": true,
+            "style": {
+              "border": "0.75 solid #e5e7eb",
+              "padding": 0,
+              "backgroundColor": "#fbfcfe"
+            },
+            "id": "r147ytxj",
+            "name": "Kpi3",
+            "x": 264.51,
+            "y": 44,
+            "dataSet": "Loans"
+          },
+          {
+            "type": "container",
+            "w": 82.17,
+            "h": 62,
+            "items": [
+              {
+                "type": "textbox",
+                "w": 70.17,
+                "h": 11,
+                "value": "Overdue > 30 DPD",
+                "canGrow": false,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 6.5,
+                  "color": "#6b7280",
+                  "fontWeight": "600"
+                },
+                "id": "yole890n",
+                "name": "KpiL4",
+                "x": 6,
+                "y": 5,
+                "dataSet": "Loans"
+              },
+              {
+                "type": "textbox",
+                "w": 70.17,
+                "h": 20,
+                "value": "=IIF(Sum(Fields.outstanding) = 0, 0, Sum(IIF(Fields.overdue, Fields.outstanding, 0)) / Sum(Fields.outstanding))",
+                "canGrow": true,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 14,
+                  "fontWeight": "bold",
+                  "textAlign": "left",
+                  "format": "P1",
+                  "color": "=IIF(Sum(IIF(Fields.overdue, Fields.outstanding, 0)) / Sum(Fields.outstanding) > 0.10, \"#b42318\", \"#067647\")"
+                },
+                "id": "s7yub9nw",
+                "name": "KpiV4",
+                "x": 6,
+                "y": 18,
+                "dataSet": "Loans",
+                "shrinkToFit": true
+              },
+              {
+                "type": "textbox",
+                "w": 70.17,
+                "h": 18,
+                "value": "=Sum(IIF(Fields.overdue, 1, 0)) & \" loans · share of outstanding\"",
+                "canGrow": false,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 6,
+                  "color": "#6b7280"
+                },
+                "id": "8g8oipbt",
+                "name": "KpiS4",
+                "x": 6,
+                "y": 40,
+                "dataSet": "Loans"
+              }
+            ],
+            "keepTogether": true,
+            "style": {
+              "border": "0.75 solid #e5e7eb",
+              "padding": 0,
+              "backgroundColor": "#fbfcfe"
+            },
+            "id": "0vrj8q2n",
+            "name": "Kpi4",
+            "x": 352.68,
+            "y": 44,
+            "dataSet": "Loans"
+          },
+          {
+            "type": "container",
+            "w": 82.17,
+            "h": 62,
+            "items": [
+              {
+                "type": "textbox",
+                "w": 70.17,
+                "h": 11,
+                "value": "NPA",
+                "canGrow": false,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 6.5,
+                  "color": "#6b7280",
+                  "fontWeight": "600"
+                },
+                "id": "9egfs55x",
+                "name": "KpiL5",
+                "x": 6,
+                "y": 5,
+                "dataSet": "Loans"
+              },
+              {
+                "type": "textbox",
+                "w": 70.17,
+                "h": 20,
+                "value": "=IIF(Sum(Fields.outstanding) = 0, 0, Sum(IIF(Fields.status = \"NPA\", Fields.outstanding, 0)) / Sum(Fields.outstanding))",
+                "canGrow": true,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 14,
+                  "fontWeight": "bold",
+                  "textAlign": "left",
+                  "format": "P1",
+                  "color": "=IIF(Sum(IIF(Fields.status = \"NPA\", Fields.outstanding, 0)) / Sum(Fields.outstanding) > 0.02, \"#b42318\", \"#067647\")"
+                },
+                "id": "jywbf7go",
+                "name": "KpiV5",
+                "x": 6,
+                "y": 18,
+                "dataSet": "Loans",
+                "shrinkToFit": true
+              },
+              {
+                "type": "textbox",
+                "w": 70.17,
+                "h": 18,
+                "value": "=Sum(IIF(Fields.status = \"NPA\", 1, 0)) & \" loans · gross NPA ratio\"",
+                "canGrow": false,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 6,
+                  "color": "#6b7280"
+                },
+                "id": "3ptad7dz",
+                "name": "KpiS5",
+                "x": 6,
+                "y": 40,
+                "dataSet": "Loans"
+              }
+            ],
+            "keepTogether": true,
+            "style": {
+              "border": "0.75 solid #e5e7eb",
+              "padding": 0,
+              "backgroundColor": "#fbfcfe"
+            },
+            "id": "8ub81k9u",
+            "name": "Kpi5",
+            "x": 440.85,
+            "y": 44,
+            "dataSet": "Loans"
+          },
+          {
+            "type": "textbox",
+            "w": 523,
+            "h": 16,
+            "value": "Outstanding by region and product (₹ lakh)",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 10.5,
+              "fontWeight": "bold",
+              "color": "#1e3a5f"
+            },
+            "id": "4xv8qk20",
+            "name": "HPivot",
+            "x": 0,
+            "y": 120,
+            "headingLevel": "2"
+          },
+          {
+            "type": "matrix",
+            "w": 523,
+            "h": 60,
+            "dataSet": "Loans",
+            "rowHeaderWidth": 110,
+            "columnWidth": 37,
+            "headerStyle": {
+              "fontWeight": "bold",
+              "backgroundColor": "#f1f5f9",
+              "borderBottom": "1 solid #94a3b8",
+              "fontSize": 7
+            },
+            "style": {
+              "padding": [
+                3,
+                4,
+                3,
+                4
+              ]
+            },
+            "id": "3wo1g0sr",
+            "name": "RegionProduct",
+            "x": 0,
+            "y": 138,
+            "rowGroups": [
+              {
+                "expr": "=Fields.region",
+                "sort": "asc",
+                "total": "after",
+                "width": 60,
+                "name": "Region",
+                "header": "Region",
+                "totalLabel": "All regions"
+              }
+            ],
+            "columnGroups": [
+              {
+                "expr": "=Fields.product",
+                "sort": "asc",
+                "total": "after",
+                "name": "Product",
+                "totalLabel": "All products"
+              }
+            ],
+            "values": [
+              {
+                "value": "=Sum(Fields.outstanding) / 100000",
+                "format": "N2",
+                "label": "₹ lakh"
+              },
+              {
+                "label": "% total",
+                "value": "=Sum(Fields.outstanding)",
+                "format": "P1",
+                "show": "percentOfTotal"
+              }
+            ],
+            "cellStyle": {
+              "fontSize": 7
+            },
+            "totalStyle": {
+              "fontWeight": "bold",
+              "backgroundColor": "#f8fafc",
+              "fontSize": 7
+            }
+          },
+          {
+            "type": "textbox",
+            "w": 523,
+            "h": 16,
+            "value": "Status mix and delinquency",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 10.5,
+              "fontWeight": "bold",
+              "color": "#1e3a5f"
+            },
+            "id": "fr36dw8x",
+            "name": "HMix",
+            "x": 0,
+            "y": 214,
+            "headingLevel": "2"
+          },
+          {
+            "type": "chart",
+            "w": 255,
+            "h": 210,
+            "chartType": "donut",
+            "dataSet": "Loans",
+            "category": "=Fields.status",
+            "series": [
+              {
+                "name": "Loans",
+                "value": "=Count(Fields.id)"
+              }
+            ],
+            "legend": "bottom",
+            "valueFormat": "N0",
+            "title": "Loans by status",
+            "id": "imgbd9cv",
+            "name": "StatusDonut",
+            "x": 0,
+            "y": 234,
+            "labelTemplate": "{value} ({percent})",
+            "pointColor": "=Switch(Fields.status = \"Current\", \"#067647\", Fields.status = \"Overdue\", \"#d97706\", Fields.status = \"NPA\", \"#b42318\", True, \"#94a3b8\")",
+            "fontSize": 7,
+            "keepTogether": true
+          },
+          {
+            "type": "chart",
+            "w": 255,
+            "h": 210,
+            "chartType": "column",
+            "dataSet": "Loans",
+            "category": "=Fields.bucket",
+            "series": [
+              {
+                "name": "Outstanding",
+                "value": "=Sum(Fields.outstanding) / 100000"
+              }
+            ],
+            "legend": "none",
+            "valueFormat": "N1",
+            "title": "Outstanding by DPD bucket (₹ lakh)",
+            "id": "wz0s2ttc",
+            "name": "DpdBuckets",
+            "x": 268,
+            "y": 234,
+            "categorySort": "asc",
+            "showValues": true,
+            "fontSize": 7,
+            "keepTogether": true,
+            "pointColor": "=Switch(Fields.bucket = \"0\", \"#067647\", Fields.bucket = \"1–30\", \"#84cc16\", Fields.bucket = \"31–60\", \"#d97706\", Fields.bucket = \"61–90\", \"#ea580c\", True, \"#b42318\")",
+            "axes": {
+              "x": {
+                "title": "Days past due"
+              },
+              "y": {
+                "min": 0
+              }
+            }
+          },
+          {
+            "type": "textbox",
+            "w": 523,
+            "h": 16,
+            "value": "Monthly disbursement and collection, Oct 2025 – Sep 2026",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 10.5,
+              "fontWeight": "bold",
+              "color": "#1e3a5f"
+            },
+            "id": "sez5ubli",
+            "name": "HTrend",
+            "x": 0,
+            "y": 560,
+            "headingLevel": "2",
+            "pageBreakBefore": true
+          },
+          {
+            "type": "chart",
+            "w": 523,
+            "h": 230,
+            "chartType": "column",
+            "dataSet": "Monthly",
+            "category": "=Fields.month",
+            "series": [
+              {
+                "name": "Disbursed",
+                "value": "=Sum(Fields.disbursed) / 100000"
+              },
+              {
+                "name": "Collected",
+                "value": "=Sum(Fields.collected) / 100000"
+              },
+              {
+                "name": "Collection efficiency",
+                "value": "=Sum(Fields.collected) / Sum(Fields.due)",
+                "type": "line",
+                "axis": "secondary",
+                "line": "smooth"
+              }
+            ],
+            "legend": "bottom",
+            "valueFormat": "N0",
+            "title": "Disbursed vs collected (₹ lakh), with collection efficiency on the right axis",
+            "id": "puoxxsl6",
+            "name": "Collections",
+            "x": 0,
+            "y": 580,
+            "palette": [
+              "#1e3a5f",
+              "#0f766e",
+              "#d97706"
+            ],
+            "fontSize": 7,
+            "keepTogether": true,
+            "axes": {
+              "x": {
+                "labelAngle": -45
+              },
+              "y": {
+                "title": "₹ lakh",
+                "min": 0
+              },
+              "y2": {
+                "title": "Efficiency",
+                "format": "P0",
+                "min": 0.6,
+                "max": 1.4
+              }
+            },
+            "overlays": [
+              {
+                "type": "line",
+                "value": 0.95,
+                "axis": "secondary",
+                "color": "#b42318",
+                "label": "Target 95%",
+                "showValue": false
+              }
+            ]
+          },
+          {
+            "type": "table",
+            "w": 523,
+            "h": 40,
+            "dataSet": "Monthly",
+            "repeatHeader": true,
+            "noRowsText": "No rows",
+            "columns": [
+              {
+                "width": 103
+              },
+              {
+                "width": 105
+              },
+              {
+                "width": 105
+              },
+              {
+                "width": 105
+              },
+              {
+                "width": 105
+              }
+            ],
+            "header": [
+              {
+                "height": 14,
+                "style": {
+                  "fontWeight": "bold",
+                  "backgroundColor": "#f1f5f9"
+                },
+                "cells": [
+                  {
+                    "value": "Month",
+                    "style": {}
+                  },
+                  {
+                    "value": "Disbursed",
+                    "style": {
+                      "textAlign": "right"
+                    }
+                  },
+                  {
+                    "value": "Due",
+                    "style": {
+                      "textAlign": "right"
+                    }
+                  },
+                  {
+                    "value": "Collected",
+                    "style": {
+                      "textAlign": "right"
+                    }
+                  },
+                  {
+                    "value": "Efficiency",
+                    "style": {
+                      "textAlign": "right"
+                    }
+                  }
+                ]
+              }
+            ],
+            "groups": [],
+            "detail": [
+              {
+                "height": 12,
+                "style": {
+                  "borderBottom": "0.5 solid #f1f5f9"
+                },
+                "cells": [
+                  {
+                    "value": "=Fields.month",
+                    "style": {}
+                  },
+                  {
+                    "value": "=Fields.disbursed",
+                    "style": {
+                      "format": "C0",
+                      "textAlign": "right"
+                    }
+                  },
+                  {
+                    "value": "=Fields.due",
+                    "style": {
+                      "format": "C0",
+                      "textAlign": "right"
+                    }
+                  },
+                  {
+                    "value": "=Fields.collected",
+                    "style": {
+                      "format": "C0",
+                      "textAlign": "right"
+                    }
+                  },
+                  {
+                    "value": "=Fields.efficiency",
+                    "style": {
+                      "format": "P1",
+                      "textAlign": "right",
+                      "color": "=IIF(Fields.efficiency < 0.95, \"#b42318\", \"#067647\")",
+                      "fontWeight": "=IIF(Fields.efficiency < 0.95, \"bold\", \"normal\")"
+                    }
+                  }
+                ]
+              }
+            ],
+            "footer": [
+              {
+                "height": 14,
+                "cells": [
+                  {
+                    "value": "12 months",
+                    "style": {
+                      "fontWeight": "bold"
+                    }
+                  },
+                  {
+                    "value": "=Sum(Fields.disbursed)",
+                    "style": {
+                      "format": "C0",
+                      "textAlign": "right",
+                      "fontWeight": "bold"
+                    }
+                  },
+                  {
+                    "value": "=Sum(Fields.due)",
+                    "style": {
+                      "format": "C0",
+                      "textAlign": "right",
+                      "fontWeight": "bold"
+                    }
+                  },
+                  {
+                    "value": "=Sum(Fields.collected)",
+                    "style": {
+                      "format": "C0",
+                      "textAlign": "right",
+                      "fontWeight": "bold"
+                    }
+                  },
+                  {
+                    "value": "=Sum(Fields.collected) / Sum(Fields.due)",
+                    "style": {
+                      "format": "P1",
+                      "textAlign": "right",
+                      "fontWeight": "bold"
+                    }
+                  }
+                ],
+                "style": {
+                  "fontWeight": "bold",
+                  "borderTop": "1 solid #1e3a5f"
+                }
+              }
+            ],
+            "style": {
+              "padding": "2 4 2 4",
+              "fontSize": 7.5
+            },
+            "id": "ccc5c07b",
+            "name": "MonthlyTable",
+            "x": 0,
+            "y": 820
+          }
+        ]
+      },
+      {
+        "name": "Register",
+        "height": 209,
+        "items": [
+          {
+            "type": "textbox",
+            "w": 770,
+            "h": 22,
+            "value": "Loan register",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 15,
+              "fontWeight": "bold",
+              "color": "#1e3a5f",
+              "borderBottom": "1 solid #1e3a5f"
+            },
+            "id": "fnldbz7b",
+            "name": "HRegister",
+            "x": 0,
+            "y": 0,
+            "headingLevel": "1",
+            "bookmark": "Loan register"
+          },
+          {
+            "type": "textbox",
+            "w": 770,
+            "h": 12,
+            "value": "=\"Grouped by region, then product; sorted by outstanding (largest first). Rows: NPA in red, Overdue in amber. ★ marks the \" & First(Fields.drillThroughTopN, \"Meta\") & \" drill-through loans. In the viewer, click a column header to sort and the ▼ on a region to collapse it.\"",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 7.5,
+              "color": "#6b7280"
+            },
+            "id": "9r31osil",
+            "name": "RegisterNote",
+            "x": 0,
+            "y": 26,
+            "dataSet": "Meta"
+          },
+          {
+            "type": "textbox",
+            "w": 770,
+            "h": 16,
+            "value": "Drill-through watchlist: largest Overdue and NPA loans by outstanding",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 10.5,
+              "fontWeight": "bold",
+              "color": "#1e3a5f"
+            },
+            "id": "hcbl93h0",
+            "name": "HWatch",
+            "x": 0,
+            "y": 44,
+            "headingLevel": "2",
+            "bookmark": "watchlist"
+          },
+          {
+            "type": "table",
+            "w": 560,
+            "h": 27,
+            "dataSet": "TopLoans",
+            "repeatHeader": true,
+            "noRowsText": "No rows",
+            "columns": [
+              {
+                "width": 90
+              },
+              {
+                "width": 80
+              },
+              {
+                "width": 70
+              },
+              {
+                "width": 70
+              },
+              {
+                "width": 50
+              },
+              {
+                "width": 90
+              },
+              {
+                "width": 110
+              }
+            ],
+            "header": [
+              {
+                "height": 14,
+                "style": {
+                  "fontWeight": "bold",
+                  "backgroundColor": "#f1f5f9"
+                },
+                "cells": [
+                  {
+                    "value": "Loan (click for detail)",
+                    "style": {}
+                  },
+                  {
+                    "value": "Borrower",
+                    "style": {}
+                  },
+                  {
+                    "value": "Region",
+                    "style": {}
+                  },
+                  {
+                    "value": "Status",
+                    "style": {}
+                  },
+                  {
+                    "value": "DPD",
+                    "style": {
+                      "textAlign": "right"
+                    }
+                  },
+                  {
+                    "value": "Outstanding",
+                    "style": {
+                      "textAlign": "right"
+                    }
+                  },
+                  {
+                    "value": "Detail"
+                  }
+                ]
+              }
+            ],
+            "groups": [],
+            "detail": [
+              {
+                "height": 13,
+                "style": {
+                  "borderBottom": "0.5 solid #f1f5f9"
+                },
+                "cells": [
+                  {
+                    "value": "=Fields.id",
+                    "style": {
+                      "color": "#1d4ed8",
+                      "textDecoration": "underline",
+                      "fontFamily": "JetBrains Mono",
+                      "fontSize": 7
+                    },
+                    "action": {
+                      "type": "bookmark",
+                      "target": "=Fields.id & \" · \" & Fields.borrower"
+                    }
+                  },
+                  {
+                    "value": "=Fields.borrower",
+                    "style": {}
+                  },
+                  {
+                    "value": "=Fields.region",
+                    "style": {}
+                  },
+                  {
+                    "value": "=Fields.status",
+                    "style": {
+                      "fontWeight": "bold",
+                      "color": "=IIF(Fields.status = \"NPA\", \"#b42318\", \"#b54708\")"
+                    }
+                  },
+                  {
+                    "value": "=Fields.dpd",
+                    "style": {
+                      "textAlign": "right"
+                    }
+                  },
+                  {
+                    "value": "=Fields.outstanding",
+                    "style": {
+                      "format": "C2",
+                      "textAlign": "right"
+                    }
+                  },
+                  {
+                    "value": "=\"→ go to \" & Fields.id",
+                    "style": {
+                      "color": "#1d4ed8"
+                    },
+                    "action": {
+                      "type": "bookmark",
+                      "target": "=Fields.id & \" · \" & Fields.borrower"
+                    }
+                  }
+                ]
+              }
+            ],
+            "footer": [],
+            "style": {
+              "padding": "2 4 2 4",
+              "fontSize": 7.5
+            },
+            "id": "dn34b56y",
+            "name": "Watchlist",
+            "x": 0,
+            "y": 64
+          },
+          {
+            "type": "textbox",
+            "w": 770,
+            "h": 16,
+            "value": "All loans by region and product",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 10.5,
+              "fontWeight": "bold",
+              "color": "#1e3a5f"
+            },
+            "id": "gikwlom9",
+            "name": "HRegTable",
+            "x": 0,
+            "y": 99,
+            "headingLevel": "2"
+          },
+          {
+            "type": "table",
+            "w": 770,
+            "h": 90,
+            "dataSet": "Loans",
+            "repeatHeader": true,
+            "noRowsText": "No rows",
+            "columns": [
+              {
+                "width": 74
+              },
+              {
+                "width": 70
+              },
+              {
+                "width": 50
+              },
+              {
+                "width": 38
+              },
+              {
+                "width": 38
+              },
+              {
+                "width": 58
+              },
+              {
+                "width": 66
+              },
+              {
+                "width": 66
+              },
+              {
+                "width": 74
+              },
+              {
+                "width": 42
+              },
+              {
+                "width": 40
+              },
+              {
+                "width": 100
+              },
+              {
+                "width": 54
+              }
+            ],
+            "header": [
+              {
+                "height": 16,
+                "style": {
+                  "fontWeight": "bold",
+                  "backgroundColor": "#1e3a5f",
+                  "color": "#ffffff",
+                  "fontSize": 7
+                },
+                "cells": [
+                  {
+                    "value": "Loan",
+                    "style": {},
+                    "sortBy": "=Fields.id"
+                  },
+                  {
+                    "value": "Borrower",
+                    "style": {},
+                    "sortBy": "=Fields.borrower"
+                  },
+                  {
+                    "value": "Status",
+                    "style": {},
+                    "sortBy": "=Fields.status"
+                  },
+                  {
+                    "value": "Rate",
+                    "style": {
+                      "textAlign": "right"
+                    },
+                    "sortBy": "=Fields.rate"
+                  },
+                  {
+                    "value": "Tenure",
+                    "style": {
+                      "textAlign": "right"
+                    }
+                  },
+                  {
+                    "value": "EMI",
+                    "style": {
+                      "textAlign": "right"
+                    }
+                  },
+                  {
+                    "value": "Principal",
+                    "style": {
+                      "textAlign": "right"
+                    },
+                    "sortBy": "=Fields.principal"
+                  },
+                  {
+                    "value": "Outstanding",
+                    "style": {
+                      "textAlign": "right"
+                    },
+                    "sortBy": "=Fields.outstanding"
+                  },
+                  {
+                    "value": "Outstanding bar"
+                  },
+                  {
+                    "value": "DPD",
+                    "style": {
+                      "textAlign": "right"
+                    },
+                    "sortBy": "=Fields.dpd"
+                  },
+                  {
+                    "value": "Bucket",
+                    "style": {}
+                  },
+                  {
+                    "value": "Payments Oct–Sep"
+                  },
+                  {
+                    "value": "Disbursed",
+                    "style": {},
+                    "sortBy": "=Fields.disbursed"
+                  }
+                ]
+              }
+            ],
+            "groups": [
+              {
+                "name": "Region",
+                "expr": "=Fields.region",
+                "sort": "asc",
+                "header": [
+                  {
+                    "height": 17,
+                    "cells": [
+                      {
+                        "value": "=Fields.region & \" region\"",
+                        "style": {
+                          "fontWeight": "bold",
+                          "textAlign": "left"
+                        },
+                        "bookmark": "=\"Register: \" & Fields.region",
+                        "colSpan": 3
+                      },
+                      null,
+                      null,
+                      {
+                        "value": "=CountRows() & \" loans\"",
+                        "style": {
+                          "fontWeight": "normal",
+                          "color": "#6b7280"
+                        },
+                        "colSpan": 3
+                      },
+                      null,
+                      null,
+                      {
+                        "value": "=Sum(Fields.principal)",
+                        "style": {
+                          "textAlign": "right",
+                          "format": "C0"
+                        }
+                      },
+                      {
+                        "value": "=Sum(Fields.outstanding)",
+                        "style": {
+                          "textAlign": "right",
+                          "format": "C0"
+                        }
+                      },
+                      {
+                        "value": "=Format(Sum(Fields.outstanding) / Sum(Fields.outstanding, \"Loans\"), \"P1\") & \" of book\"",
+                        "style": {
+                          "fontWeight": "normal",
+                          "color": "#6b7280"
+                        },
+                        "colSpan": 2
+                      },
+                      null,
+                      {
+                        "value": "=Sum(IIF(Fields.overdue, 1, 0)) & \" overdue · \" & Sum(IIF(Fields.status = \"NPA\", 1, 0)) & \" NPA\"",
+                        "style": {
+                          "fontWeight": "normal",
+                          "color": "=IIF(Sum(IIF(Fields.status = \"NPA\", 1, 0)) > 0, \"#b42318\", \"#6b7280\")"
+                        },
+                        "colSpan": 3
+                      },
+                      null,
+                      null
+                    ],
+                    "style": {
+                      "fontWeight": "bold",
+                      "fontSize": 8.5,
+                      "backgroundColor": "#e8eef5",
+                      "borderTop": "1 solid #1e3a5f"
+                    }
+                  }
+                ],
+                "footer": [
+                  {
+                    "height": 14,
+                    "cells": [
+                      {
+                        "value": "=\"Subtotal \" & Fields.region",
+                        "style": {
+                          "fontWeight": "bold"
+                        },
+                        "colSpan": 5
+                      },
+                      null,
+                      null,
+                      null,
+                      null,
+                      {
+                        "value": "=Sum(Fields.emi)",
+                        "style": {
+                          "format": "N0",
+                          "textAlign": "right",
+                          "fontWeight": "bold"
+                        }
+                      },
+                      {
+                        "value": "=Sum(Fields.principal)",
+                        "style": {
+                          "format": "C0",
+                          "textAlign": "right",
+                          "fontWeight": "bold"
+                        }
+                      },
+                      {
+                        "value": "=Sum(Fields.outstanding)",
+                        "style": {
+                          "format": "C0",
+                          "textAlign": "right",
+                          "fontWeight": "bold"
+                        }
+                      },
+                      {
+                        "value": ""
+                      },
+                      {
+                        "value": "=Max(Fields.dpd)",
+                        "style": {
+                          "textAlign": "right",
+                          "fontWeight": "bold"
+                        }
+                      },
+                      {
+                        "value": "max",
+                        "style": {
+                          "fontWeight": "normal",
+                          "color": "#6b7280"
+                        }
+                      },
+                      {
+                        "value": "=\"collected \" & Format(Sum(Fields.collected), \"C0\")",
+                        "style": {
+                          "fontWeight": "normal",
+                          "color": "#6b7280"
+                        },
+                        "colSpan": 2
+                      },
+                      null
+                    ],
+                    "style": {
+                      "fontWeight": "bold",
+                      "fontSize": 7.5,
+                      "borderBottom": "1 solid #1e3a5f"
+                    }
+                  }
+                ],
+                "collapsible": true
+              },
+              {
+                "name": "Product",
+                "expr": "=Fields.product",
+                "sort": "asc",
+                "header": [
+                  {
+                    "height": 14,
+                    "cells": [
+                      {
+                        "value": "=Fields.product & \" · \" & CountRows() & \" loans\"",
+                        "style": {
+                          "padding": "2 3 2 12"
+                        },
+                        "colSpan": 6
+                      },
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      {
+                        "value": "=Sum(Fields.principal)",
+                        "style": {
+                          "textAlign": "right",
+                          "format": "C0"
+                        }
+                      },
+                      {
+                        "value": "=Sum(Fields.outstanding)",
+                        "style": {
+                          "textAlign": "right",
+                          "format": "C0"
+                        }
+                      },
+                      {
+                        "value": ""
+                      },
+                      {
+                        "value": "=\"max \" & Max(Fields.dpd)",
+                        "style": {
+                          "textAlign": "right",
+                          "fontWeight": "normal",
+                          "color": "#6b7280"
+                        }
+                      },
+                      {
+                        "value": ""
+                      },
+                      {
+                        "value": ""
+                      },
+                      {
+                        "value": ""
+                      }
+                    ],
+                    "style": {
+                      "fontWeight": "600",
+                      "backgroundColor": "#f8fafc",
+                      "fontSize": 7.5,
+                      "borderBottom": "0.5 solid #e5e7eb"
+                    }
+                  }
+                ],
+                "footer": [],
+                "keepTogether": true
+              }
+            ],
+            "detail": [
+              {
+                "height": 13,
+                "style": {
+                  "borderBottom": "0.5 solid #f1f5f9",
+                  "backgroundColor": "=Switch(Fields.status = \"NPA\", \"#fef3f2\", Fields.status = \"Overdue\", \"#fffaeb\", True, IIF(RowNumber(\"Product\") % 2 = 0, \"#f8fafc\", null))"
+                },
+                "cells": [
+                  {
+                    "value": "=Fields.id",
+                    "style": {
+                      "fontFamily": "JetBrains Mono",
+                      "fontSize": 6.5,
+                      "padding": "2 3 2 20"
+                    }
+                  },
+                  {
+                    "value": "=Fields.borrower & IIF(IsNothing(Lookup(Fields.id, Fields.id, Fields.id, \"TopLoans\")), \"\", \" ★\")",
+                    "style": {}
+                  },
+                  {
+                    "value": "=Fields.status",
+                    "style": {
+                      "fontWeight": "=IIF(Fields.status = \"NPA\" Or Fields.status = \"Overdue\", \"bold\", \"normal\")",
+                      "color": "=Switch(Fields.status = \"NPA\", \"#b42318\", Fields.status = \"Overdue\", \"#b54708\", Fields.status = \"Closed\", \"#6b7280\", True, \"#067647\")"
+                    }
+                  },
+                  {
+                    "value": "=Fields.rate / 100",
+                    "style": {
+                      "format": "P2",
+                      "textAlign": "right"
+                    }
+                  },
+                  {
+                    "value": "=Fields.tenure & \"m\"",
+                    "style": {
+                      "textAlign": "right"
+                    }
+                  },
+                  {
+                    "value": "=Fields.emi",
+                    "style": {
+                      "format": "N2",
+                      "textAlign": "right"
+                    }
+                  },
+                  {
+                    "value": "=Fields.principal",
+                    "style": {
+                      "format": "N0",
+                      "textAlign": "right"
+                    }
+                  },
+                  {
+                    "value": "=Fields.outstanding",
+                    "style": {
+                      "format": "N2",
+                      "textAlign": "right",
+                      "color": "=IIF(Fields.outstanding = 0, \"#9ca3af\", \"#1f2937\")"
+                    }
+                  },
+                  {
+                    "value": "",
+                    "visual": {
+                      "type": "databar",
+                      "value": "=Fields.outstanding",
+                      "max": "=Max(Fields.outstanding, \"Loans\")",
+                      "color": "=IIF(Fields.overdue, \"#d97706\", \"#0f766e\")",
+                      "showValue": false
+                    }
+                  },
+                  {
+                    "value": "=Fields.dpd",
+                    "style": {
+                      "format": "N0",
+                      "textAlign": "right",
+                      "fontWeight": "=IIF(Fields.dpd > 90, \"bold\", \"normal\")",
+                      "color": "=IIF(Fields.dpd > 90, \"#b42318\", IIF(Fields.dpd > 30, \"#b54708\", IIF(Fields.dpd > 0, \"#1f2937\", \"#9ca3af\")))"
+                    }
+                  },
+                  {
+                    "value": "=Fields.bucket",
+                    "style": {}
+                  },
+                  {
+                    "value": "",
+                    "visual": {
+                      "type": "sparkline",
+                      "values": "=Split(Fields.history, \",\")",
+                      "style": "column",
+                      "color": "=IIF(Fields.overdue, \"#b42318\", \"#1e3a5f\")"
+                    }
+                  },
+                  {
+                    "value": "=CDate(Fields.disbursed)",
+                    "style": {
+                      "format": "dd MMM yy"
+                    }
+                  }
+                ]
+              }
+            ],
+            "footer": [
+              {
+                "height": 16,
+                "cells": [
+                  {
+                    "value": "=\"Whole book · \" & CountRows() & \" loans\"",
+                    "style": {
+                      "fontWeight": "bold"
+                    },
+                    "colSpan": 5
+                  },
+                  null,
+                  null,
+                  null,
+                  null,
+                  {
+                    "value": "=Sum(Fields.emi)",
+                    "style": {
+                      "format": "N0",
+                      "textAlign": "right",
+                      "fontWeight": "bold"
+                    }
+                  },
+                  {
+                    "value": "=Sum(Fields.principal)",
+                    "style": {
+                      "format": "C0",
+                      "textAlign": "right",
+                      "fontWeight": "bold"
+                    }
+                  },
+                  {
+                    "value": "=Sum(Fields.outstanding)",
+                    "style": {
+                      "format": "C0",
+                      "textAlign": "right",
+                      "fontWeight": "bold"
+                    }
+                  },
+                  {
+                    "value": ""
+                  },
+                  {
+                    "value": "=Max(Fields.dpd)",
+                    "style": {
+                      "textAlign": "right",
+                      "fontWeight": "bold"
+                    }
+                  },
+                  {
+                    "value": "max",
+                    "style": {
+                      "fontWeight": "normal",
+                      "color": "#6b7280"
+                    }
+                  },
+                  {
+                    "value": "=\"collected \" & Format(Sum(Fields.collected), \"C0\")",
+                    "style": {
+                      "fontWeight": "normal"
+                    },
+                    "colSpan": 2
+                  },
+                  null
+                ],
+                "style": {
+                  "fontWeight": "bold",
+                  "fontSize": 8,
+                  "borderTop": "1.5 solid #1e3a5f"
+                }
+              }
+            ],
+            "style": {
+              "padding": "2 3 2 3",
+              "verticalAlign": "middle",
+              "fontSize": 7
+            },
+            "id": "iq2aet7u",
+            "name": "Register",
+            "x": 0,
+            "y": 119,
+            "sort": [
+              {
+                "by": "=Fields.outstanding",
+                "dir": "desc"
+              }
+            ]
+          }
+        ],
+        "page": {
+          "orientation": "landscape"
+        }
+      },
+      {
+        "name": "Loan details",
+        "height": 640,
+        "items": [
+          {
+            "type": "textbox",
+            "w": 523,
+            "h": 22,
+            "value": "Drill-through: loan details",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 15,
+              "fontWeight": "bold",
+              "color": "#1e3a5f",
+              "borderBottom": "1 solid #1e3a5f"
+            },
+            "id": "7b945ove",
+            "name": "HDetail",
+            "x": 0,
+            "y": 0,
+            "headingLevel": "1",
+            "bookmark": "Drill-through: loan details"
+          },
+          {
+            "type": "textbox",
+            "w": 523,
+            "h": 12,
+            "value": "=\"The \" & First(Fields.drillThroughTopN, \"Meta\") & \" Overdue and NPA loans with the largest outstanding balance, one per page: the last 12 months of the schedule as simulated (opening balance, interest, payment, closing balance). Shortfall months are shaded.\"",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 7.5,
+              "color": "#6b7280"
+            },
+            "id": "13ibhse8",
+            "name": "DetailNote",
+            "x": 0,
+            "y": 26,
+            "dataSet": "Meta"
+          },
+          {
+            "type": "list",
+            "w": 523,
+            "h": 560,
+            "dataSet": "TopLoans",
+            "groupBy": null,
+            "items": [
+              {
+                "type": "textbox",
+                "w": 523,
+                "h": 20,
+                "value": "=Fields.id & \" · \" & Fields.borrower",
+                "canGrow": true,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 13,
+                  "fontWeight": "bold",
+                  "color": "#1e3a5f"
+                },
+                "id": "khmm74fs",
+                "name": "LoanHeading",
+                "x": 0,
+                "y": 0,
+                "headingLevel": "2",
+                "bookmark": "=Fields.id & \" · \" & Fields.borrower"
+              },
+              {
+                "type": "textbox",
+                "w": 380,
+                "h": 14,
+                "value": "=Fields.region & \" region · \" & Fields.product & \" loan · disbursed \" & Format(CDate(Fields.disbursed), \"dd MMM yyyy\")",
+                "canGrow": false,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 8.5,
+                  "color": "#6b7280"
+                },
+                "id": "dr9ouw44",
+                "name": "LoanSub",
+                "x": 0,
+                "y": 22
+              },
+              {
+                "type": "textbox",
+                "w": 200,
+                "h": 18,
+                "value": "=Fields.status & \" · \" & Fields.dpd & \" days past due\"",
+                "canGrow": false,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 9,
+                  "fontWeight": "bold",
+                  "color": "#ffffff",
+                  "backgroundColor": "=IIF(Fields.status = \"NPA\", \"#b42318\", \"#b54708\")",
+                  "padding": "3 6 3 6"
+                },
+                "id": "6du6qfi0",
+                "name": "LoanStatus",
+                "x": 0,
+                "y": 38
+              },
+              {
+                "type": "barcode",
+                "w": 140,
+                "h": 50,
+                "symbology": "code128",
+                "value": "=Fields.id",
+                "showText": true,
+                "style": {
+                  "fontSize": 7,
+                  "textAlign": "center"
+                },
+                "id": "x19fphsb",
+                "name": "LoanBarcode",
+                "x": 383,
+                "y": 0
+              },
+              {
+                "type": "textbox",
+                "w": 125,
+                "h": 10,
+                "value": "Principal",
+                "canGrow": true,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 6.5,
+                  "color": "#6b7280"
+                },
+                "id": "nfqk6w21",
+                "name": "FactL0",
+                "x": 0,
+                "y": 66
+              },
+              {
+                "type": "textbox",
+                "w": 125,
+                "h": 14,
+                "value": "=Fields.principal",
+                "canGrow": false,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 10.5,
+                  "fontWeight": "bold",
+                  "textAlign": "left",
+                  "format": "C0",
+                  "color": "#1f2937"
+                },
+                "id": "kh4sntta",
+                "name": "FactV0",
+                "x": 0,
+                "y": 76
+              },
+              {
+                "type": "textbox",
+                "w": 125,
+                "h": 10,
+                "value": "Rate",
+                "canGrow": true,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 6.5,
+                  "color": "#6b7280"
+                },
+                "id": "g4y8g3ij",
+                "name": "FactL1",
+                "x": 131,
+                "y": 66
+              },
+              {
+                "type": "textbox",
+                "w": 125,
+                "h": 14,
+                "value": "=Fields.rate / 100",
+                "canGrow": false,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 10.5,
+                  "fontWeight": "bold",
+                  "textAlign": "left",
+                  "format": "P2",
+                  "color": "#1f2937"
+                },
+                "id": "5xdw2i63",
+                "name": "FactV1",
+                "x": 131,
+                "y": 76
+              },
+              {
+                "type": "textbox",
+                "w": 125,
+                "h": 10,
+                "value": "Tenure",
+                "canGrow": true,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 6.5,
+                  "color": "#6b7280"
+                },
+                "id": "vhcyrqeh",
+                "name": "FactL2",
+                "x": 262,
+                "y": 66
+              },
+              {
+                "type": "textbox",
+                "w": 125,
+                "h": 14,
+                "value": "=Fields.tenure & \" months\"",
+                "canGrow": false,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 10.5,
+                  "fontWeight": "bold",
+                  "textAlign": "left",
+                  "color": "#1f2937"
+                },
+                "id": "rtlcw7uk",
+                "name": "FactV2",
+                "x": 262,
+                "y": 76
+              },
+              {
+                "type": "textbox",
+                "w": 125,
+                "h": 10,
+                "value": "EMI",
+                "canGrow": true,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 6.5,
+                  "color": "#6b7280"
+                },
+                "id": "1jvyb0av",
+                "name": "FactL3",
+                "x": 393,
+                "y": 66
+              },
+              {
+                "type": "textbox",
+                "w": 125,
+                "h": 14,
+                "value": "=Fields.emi",
+                "canGrow": false,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 10.5,
+                  "fontWeight": "bold",
+                  "textAlign": "left",
+                  "format": "C2",
+                  "color": "#1f2937"
+                },
+                "id": "oq4x7p9y",
+                "name": "FactV3",
+                "x": 393,
+                "y": 76
+              },
+              {
+                "type": "textbox",
+                "w": 125,
+                "h": 10,
+                "value": "Outstanding",
+                "canGrow": true,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 6.5,
+                  "color": "#6b7280"
+                },
+                "id": "6c9w6lr3",
+                "name": "FactL4",
+                "x": 0,
+                "y": 96
+              },
+              {
+                "type": "textbox",
+                "w": 125,
+                "h": 14,
+                "value": "=Fields.outstanding",
+                "canGrow": false,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 10.5,
+                  "fontWeight": "bold",
+                  "textAlign": "left",
+                  "format": "C2",
+                  "color": "#b42318"
+                },
+                "id": "jsmlh8w1",
+                "name": "FactV4",
+                "x": 0,
+                "y": 106
+              },
+              {
+                "type": "textbox",
+                "w": 125,
+                "h": 10,
+                "value": "Collected, 12 months",
+                "canGrow": true,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 6.5,
+                  "color": "#6b7280"
+                },
+                "id": "1vp3ou1y",
+                "name": "FactL5",
+                "x": 131,
+                "y": 96
+              },
+              {
+                "type": "textbox",
+                "w": 125,
+                "h": 14,
+                "value": "=Fields.collected",
+                "canGrow": false,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 10.5,
+                  "fontWeight": "bold",
+                  "textAlign": "left",
+                  "format": "C2",
+                  "color": "#1f2937"
+                },
+                "id": "u2x072bt",
+                "name": "FactV5",
+                "x": 131,
+                "y": 106
+              },
+              {
+                "type": "textbox",
+                "w": 125,
+                "h": 10,
+                "value": "Shortfall, 12 months",
+                "canGrow": true,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 6.5,
+                  "color": "#6b7280"
+                },
+                "id": "fg235b3c",
+                "name": "FactL6",
+                "x": 262,
+                "y": 96
+              },
+              {
+                "type": "textbox",
+                "w": 125,
+                "h": 14,
+                "value": "=Sum(Fields.shortfall)",
+                "canGrow": false,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 10.5,
+                  "fontWeight": "bold",
+                  "textAlign": "left",
+                  "format": "C2",
+                  "color": "#b54708"
+                },
+                "id": "k1ta4ym2",
+                "name": "FactV6",
+                "x": 262,
+                "y": 106,
+                "dataSet": "Schedule"
+              },
+              {
+                "type": "textbox",
+                "w": 125,
+                "h": 10,
+                "value": "DPD bucket",
+                "canGrow": true,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 6.5,
+                  "color": "#6b7280"
+                },
+                "id": "shsa1w3s",
+                "name": "FactL7",
+                "x": 393,
+                "y": 96
+              },
+              {
+                "type": "textbox",
+                "w": 125,
+                "h": 14,
+                "value": "=Fields.bucket",
+                "canGrow": false,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 10.5,
+                  "fontWeight": "bold",
+                  "textAlign": "left",
+                  "color": "#1f2937"
+                },
+                "id": "w3lwwt38",
+                "name": "FactV7",
+                "x": 393,
+                "y": 106
+              },
+              {
+                "type": "chart",
+                "w": 523,
+                "h": 170,
+                "chartType": "column",
+                "dataSet": "Schedule",
+                "category": "=Fields.month",
+                "series": [
+                  {
+                    "name": "Due (EMI)",
+                    "value": "=Sum(Fields.due)"
+                  },
+                  {
+                    "name": "Paid",
+                    "value": "=Sum(Fields.paid)"
+                  },
+                  {
+                    "name": "Closing balance",
+                    "value": "=Sum(Fields.closing)",
+                    "type": "line",
+                    "axis": "secondary"
+                  }
+                ],
+                "legend": "bottom",
+                "valueFormat": "N0",
+                "title": "Due vs paid each month, with the closing balance (right axis)",
+                "id": "eirz7rlc",
+                "name": "LoanPayments",
+                "x": 0,
+                "y": 132,
+                "palette": [
+                  "#94a3b8",
+                  "#0f766e",
+                  "#b42318"
+                ],
+                "fontSize": 7,
+                "axes": {
+                  "x": {
+                    "labelAngle": -45
+                  },
+                  "y": {
+                    "min": 0,
+                    "format": "N0"
+                  },
+                  "y2": {
+                    "min": 0,
+                    "format": "N0"
+                  }
+                }
+              },
+              {
+                "type": "table",
+                "w": 496,
+                "h": 41,
+                "dataSet": "Schedule",
+                "repeatHeader": true,
+                "noRowsText": "No rows",
+                "columns": [
+                  {
+                    "width": 52
+                  },
+                  {
+                    "width": 30
+                  },
+                  {
+                    "width": 64
+                  },
+                  {
+                    "width": 58
+                  },
+                  {
+                    "width": 58
+                  },
+                  {
+                    "width": 58
+                  },
+                  {
+                    "width": 56
+                  },
+                  {
+                    "width": 56
+                  },
+                  {
+                    "width": 64
+                  }
+                ],
+                "header": [
+                  {
+                    "height": 14,
+                    "style": {
+                      "fontWeight": "bold",
+                      "backgroundColor": "#f1f5f9"
+                    },
+                    "cells": [
+                      {
+                        "value": "Month",
+                        "style": {}
+                      },
+                      {
+                        "value": "Inst.",
+                        "style": {
+                          "textAlign": "right"
+                        }
+                      },
+                      {
+                        "value": "Opening",
+                        "style": {
+                          "textAlign": "right"
+                        }
+                      },
+                      {
+                        "value": "Due (EMI)",
+                        "style": {
+                          "textAlign": "right"
+                        }
+                      },
+                      {
+                        "value": "Paid",
+                        "style": {
+                          "textAlign": "right"
+                        }
+                      },
+                      {
+                        "value": "Shortfall",
+                        "style": {
+                          "textAlign": "right"
+                        }
+                      },
+                      {
+                        "value": "Interest",
+                        "style": {
+                          "textAlign": "right"
+                        }
+                      },
+                      {
+                        "value": "Principal",
+                        "style": {
+                          "textAlign": "right"
+                        }
+                      },
+                      {
+                        "value": "Closing",
+                        "style": {
+                          "textAlign": "right"
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "groups": [],
+                "detail": [
+                  {
+                    "height": 13,
+                    "style": {
+                      "borderBottom": "0.5 solid #f1f5f9",
+                      "backgroundColor": "=IIF(Fields.shortfall > 0, \"#fef3f2\", null)"
+                    },
+                    "cells": [
+                      {
+                        "value": "=Fields.month",
+                        "style": {}
+                      },
+                      {
+                        "value": "=Coalesce(Fields.installment, \"—\")",
+                        "style": {
+                          "textAlign": "right"
+                        }
+                      },
+                      {
+                        "value": "=Fields.opening",
+                        "style": {
+                          "format": "N2",
+                          "textAlign": "right"
+                        }
+                      },
+                      {
+                        "value": "=Fields.due",
+                        "style": {
+                          "format": "N2",
+                          "textAlign": "right"
+                        }
+                      },
+                      {
+                        "value": "=Fields.paid",
+                        "style": {
+                          "format": "N2",
+                          "textAlign": "right",
+                          "color": "=IIF(Fields.paid < Fields.due, \"#b42318\", \"#1f2937\")"
+                        }
+                      },
+                      {
+                        "value": "=IIF(Fields.shortfall > 0, Fields.shortfall, \"\")",
+                        "style": {
+                          "format": "N2",
+                          "textAlign": "right",
+                          "color": "#b42318",
+                          "fontWeight": "bold"
+                        }
+                      },
+                      {
+                        "value": "=Fields.interest",
+                        "style": {
+                          "format": "N2",
+                          "textAlign": "right"
+                        }
+                      },
+                      {
+                        "value": "=Fields.principalPaid",
+                        "style": {
+                          "format": "N2",
+                          "textAlign": "right"
+                        }
+                      },
+                      {
+                        "value": "=Fields.closing",
+                        "style": {
+                          "format": "N2",
+                          "textAlign": "right"
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "footer": [
+                  {
+                    "height": 14,
+                    "cells": [
+                      {
+                        "value": "12 months",
+                        "style": {
+                          "fontWeight": "bold"
+                        },
+                        "colSpan": 3
+                      },
+                      null,
+                      null,
+                      {
+                        "value": "=Sum(Fields.due)",
+                        "style": {
+                          "format": "N2",
+                          "textAlign": "right",
+                          "fontWeight": "bold"
+                        }
+                      },
+                      {
+                        "value": "=Sum(Fields.paid)",
+                        "style": {
+                          "fontWeight": "bold",
+                          "format": "N2",
+                          "textAlign": "right"
+                        }
+                      },
+                      {
+                        "value": "=Sum(Fields.shortfall)",
+                        "style": {
+                          "format": "N2",
+                          "textAlign": "right",
+                          "fontWeight": "bold"
+                        }
+                      },
+                      {
+                        "value": "=Sum(Fields.interest)",
+                        "style": {
+                          "format": "N2",
+                          "textAlign": "right",
+                          "fontWeight": "bold"
+                        }
+                      },
+                      {
+                        "value": "=Sum(Fields.principalPaid)",
+                        "style": {
+                          "fontWeight": "bold",
+                          "format": "N2",
+                          "textAlign": "right"
+                        }
+                      },
+                      {
+                        "style": {
+                          "format": "N2",
+                          "textAlign": "right",
+                          "fontWeight": "bold"
+                        }
+                      }
+                    ],
+                    "style": {
+                      "fontWeight": "bold",
+                      "borderTop": "1 solid #1e3a5f"
+                    }
+                  }
+                ],
+                "style": {
+                  "padding": "2 4 2 4",
+                  "fontSize": 7.5
+                },
+                "id": "qc6a7u2k",
+                "name": "LoanSchedule",
+                "x": 0,
+                "y": 310
+              },
+              {
+                "type": "textbox",
+                "w": 200,
+                "h": 12,
+                "value": "← Back to the watchlist",
+                "canGrow": true,
+                "canShrink": false,
+                "style": {
+                  "fontSize": 8,
+                  "color": "#1d4ed8",
+                  "textDecoration": "underline"
+                },
+                "id": "s56x0zmt",
+                "name": "LoanBack",
+                "x": 0,
+                "y": 361,
+                "action": {
+                  "type": "bookmark",
+                  "target": "watchlist"
+                }
+              }
+            ],
+            "keepTogether": true,
+            "style": {},
+            "id": "hejavr37",
+            "name": "LoanDetails",
+            "x": 0,
+            "y": 60,
+            "pageBreakBetween": true,
+            "sort": [
+              {
+                "by": "=Fields.outstanding",
+                "dir": "desc"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "pageFooter": {
+      "height": 20,
+      "items": [
+        {
+          "id": "f1",
+          "type": "textbox",
+          "name": "FtrPage",
+          "x": 0,
+          "y": 6,
+          "w": 70,
+          "h": 11,
+          "value": "Page {Globals.PageNumber} of {Globals.TotalPages}",
+          "canGrow": false,
+          "style": {
+            "fontSize": 7,
+            "color": "#1f2937",
+            "textAlign": "auto",
+            "fontWeight": "600"
+          }
+        },
+        {
+          "type": "textbox",
+          "w": 450,
+          "h": 11,
+          "value": "=First(Fields.watermark, \"Meta\") & \" · synthetic data, seed \" & First(Fields.seed, \"Meta\") & \" · \" & First(Fields.repoUrl, \"Meta\")",
+          "canGrow": true,
+          "canShrink": false,
+          "style": {
+            "fontSize": 7,
+            "color": "#6b7280"
+          },
+          "id": "ikwor24b",
+          "name": "FtrNote",
+          "x": 72,
+          "y": 6,
+          "dataSet": "Meta"
+        }
+      ]
+    }
+  },
+  "parameterLayout": {
+    "columns": 3
+  }
+}
