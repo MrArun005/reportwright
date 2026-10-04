@@ -1,5 +1,5 @@
 // @ts-check
-import { checkValue } from '../expr/evaluate.js';
+import { checkValue, checkFunctions } from '../expr/evaluate.js';
 import { ITEMS } from '../items/index.js';
 
 export const SCHEMA_ID = 'pagewright/report@1';
@@ -13,6 +13,8 @@ export function validate(def) {
   if (!def || typeof def !== 'object') return { errors: ['The report definition is empty'], warnings };
   if (def.$schema && def.$schema !== SCHEMA_ID) warnings.push(`Unknown schema "${def.$schema}". Expected "${SCHEMA_ID}".`);
   if (!def.sections || !def.sections.body) errors.push('The report has no body section');
+
+  errors.push(...checkFunctions(def.functions));
 
   const srcNames = new Set();
   for (const s of def.dataSources || []) {

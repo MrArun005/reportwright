@@ -2236,8 +2236,9 @@ function convertReport(ar, cx, opts) {
   const parameters = parametersOf(ar.ReportParameters, cx);
   for (const p of parameters) cx.params.add(p.name.toLowerCase());
   const { dataSources, dataSets } = dataPart(ar, cx);
-  if (ar.Code) cx.warn('The report has custom code (Code); Pagewright does not run it, and expressions that call it are shown as text.');
-  if (Array.isArray(ar.CustomCodeBlocks) && ar.CustomCodeBlocks.length) cx.warn('The report has custom code; Pagewright does not run it.');
+  const fnHint = 'Rewrite reusable formulas as report functions ("functions", written in the expression language and called as Code.Name(…)).';
+  if (ar.Code) cx.warn(`The report has custom code (Code); Pagewright does not run JavaScript, and expressions that call it are shown as text. ${fnHint}`);
+  if (Array.isArray(ar.CustomCodeBlocks) && ar.CustomCodeBlocks.length) cx.warn(`The report has custom code; Pagewright does not run JavaScript. ${fnHint}`);
 
   let header, footer, bodyItems = [], bodyH = 0;
   const fixed = sec0?.FixedPage || (String(sec0?.Type || '').toLowerCase() === 'fixedpage' ? sec0 : null) || (!sec0 && ar.FixedPage);

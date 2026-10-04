@@ -111,6 +111,7 @@ export function evaluate(n, ctx) {
     case 'lit': return n.v;
     case 'id': {
       const lower = n.name.toLowerCase();
+      if (ctx.locals && Object.hasOwn(ctx.locals, lower)) return ctx.locals[lower];
       const r = ROOTS[lower];
       if (r) return { __root: r };
       if (lower in CONSTANTS) return CONSTANTS[lower];
@@ -238,8 +239,14 @@ const SCOPED = new Set(['countrows', 'rownumber', 'runningvalue', 'distinctsum',
 function rowLocal(ast) {
   let r = ROW_LOCAL.get(ast);
   if (r === undefined) {
-    const walk = (n) => !n || typeof n !== 'object' || (Array.isArray(n) ? n.every(walk)
-      : !(n.type === 'call' && (n.name.toLowerCase() in AGG || SCOPED.has(n.name.toLowerCase()))) && Object.values(n).every(walk));
+    // a report function or a local name (inside a function body) could read anything: not row-local
+    const local = (n) => {
+      if (n.type === 'id') return n.name.toLowerCase() in ROOTS || n.name.toLowerCase() in CONSTANTS;
+      if (n.type !== 'call') return true;
+      const k = n.name.toLowerCase();
+      return !n.obj && (k in FUNCTIONS || k === 'iif' || k === 'switch' || k === 'choose' || k === 'lookup' || k === 'lookupset');
+    };
+    const walk = (n) => !n || typeof n !== 'object' || (Array.isArray(n) ? n.every(walk) : local(n) && Object.values(n).every(walk));
     r = walk(ast);
     ROW_LOCAL.set(ast, r);
   }
@@ -606,6 +613,7 @@ function previous(n, ctx) {
 function call(n, ctx) {
   const name = n.name.toLowerCase();
   const args = n.args;
+  if (n.obj) return callCustom(n, name, ctx); // Code.Name(…)
   // lazy logic
   if (name === 'iif') {
     if (args.length !== 3) throw new ExprError('IIF needs 3 arguments: IIF(test, ifTrue, ifFalse)', n.p);
@@ -702,6 +710,75 @@ function call(n, ctx) {
     return null;
   }
   const f = FUNCTIONS[name];
-  if (!f) throw new ExprError(`Unknown function "${n.name}"`, n.p);
-  return f(ctx, ...args.map(a => evaluate(a, ctx)));
+  if (f) return f(ctx, ...args.map(a => evaluate(a, ctx)));
+  return callCustom(n, name, ctx);
+}
+
+/* ------------------------------------------------------- report functions */
+const MAX_FN_DEPTH = 32;
+const MAX_FN_CALLS = 1_000_000; // per function table, i.e. per render
+const MAX_FUNCTIONS = 200, MAX_FN_PARAMS = 32;
+const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const RESERVED = new Set(['iif', 'switch', 'choose', 'lookup', 'lookupset', 'previous', 'groupindex', 'level', 'countrows', 'rownumber',
+  'runningvalue', 'distinctsum', 'aggregateif', 'code', 'fields', 'parameters', 'globals', 'parent', 'and', 'or', 'not', 'true', 'false', 'null', 'nothing']);
+const builtin = (lower) => RESERVED.has(lower) || lower in FUNCTIONS || lower in AGG || lower in CONSTANTS;
+
+/**
+ * Compile-on-call table of the report's functions. One per render: it also counts calls.
+ * @param {any} def @param {{n: number}} [count] shared by a render and its subreports
+ * @returns {{byName: Map<string, any>, count: {n: number}}}
+ */
+export function functionTable(def, count = { n: 0 }) {
+  const byName = new Map();
+  for (const f of Array.isArray(def?.functions) ? def.functions.slice(0, MAX_FUNCTIONS) : []) {
+    if (f && typeof f.name === 'string') byName.set(f.name.toLowerCase(), f);
+  }
+  return { byName, count };
+}
+
+/** Errors in report functions: names, parameters, body syntax. */
+export function checkFunctions(list) {
+  const errors = [];
+  if (list == null) return errors;
+  if (!Array.isArray(list)) return ['"functions" must be a list'];
+  if (list.length > MAX_FUNCTIONS) errors.push(`A report can have at most ${MAX_FUNCTIONS} functions`);
+  const seen = new Set();
+  for (const f of list.slice(0, MAX_FUNCTIONS)) {
+    const name = String(f?.name ?? '');
+    const label = `Function "${name.slice(0, 40)}"`;
+    if (!IDENT.test(name)) { errors.push(`${label}: the name must start with a letter or _ and hold only letters, digits and _`); continue; }
+    const lower = name.toLowerCase();
+    if (builtin(lower)) errors.push(`${label}: a built-in function or name is called that`);
+    if (seen.has(lower)) errors.push(`${label}: two functions have this name`);
+    seen.add(lower);
+    const ps = f.params ?? [];
+    if (!Array.isArray(ps) || ps.length > MAX_FN_PARAMS) { errors.push(`${label}: "params" must be a list of at most ${MAX_FN_PARAMS} names`); continue; }
+    const pset = new Set();
+    for (const p of ps) {
+      const pl = String(p).toLowerCase();
+      if (!IDENT.test(String(p)) || RESERVED.has(pl) || pl in CONSTANTS) errors.push(`${label}: "${String(p).slice(0, 40)}" cannot be a parameter name`);
+      else if (pset.has(pl)) errors.push(`${label}: two parameters are called "${p}"`);
+      pset.add(pl);
+    }
+    if (typeof f.body !== 'string' || !f.body.replace(/^=/, '').trim()) { errors.push(`${label}: the body is empty`); continue; }
+    try { compile(f.body.replace(/^=/, '')); } catch (e) { errors.push(`${label}: ${e.message}`); }
+  }
+  return errors;
+}
+
+function callCustom(n, name, ctx) {
+  const viaCode = !!n.obj;
+  if (viaCode && !(n.obj.type === 'id' && n.obj.name.toLowerCase() === 'code')) throw new ExprError(`"${n.name}(…)" after "." is not supported; report functions are called as Code.${n.name}(…)`, n.p);
+  const table = ctx.functions;
+  const f = table?.byName.get(name);
+  if (!f || (!viaCode && builtin(name))) throw new ExprError(viaCode ? `The report has no function "${n.name}"` : `Unknown function "${n.name}"`, n.p);
+  const params = Array.isArray(f.params) ? f.params : [];
+  if (n.args.length !== params.length) throw new ExprError(`${f.name} needs ${params.length} argument${params.length === 1 ? '' : 's'}`, n.p);
+  const depth = (ctx.fnDepth || 0) + 1;
+  if (depth > MAX_FN_DEPTH) throw new ExprError(`${f.name}: functions call each other more than ${MAX_FN_DEPTH} deep`, n.p);
+  if (++table.count.n > MAX_FN_CALLS) throw new ExprError(`Report functions were called more than 1,000,000 times in this render`, n.p);
+  const locals = Object.create(null);
+  for (let i = 0; i < params.length; i++) locals[String(params[i]).toLowerCase()] = evaluate(n.args[i], ctx);
+  // the body sees its parameters and the caller's row and scope, not the caller's own parameters
+  return evaluate(compile(String(f.body).replace(/^=/, '')), Object.assign({}, ctx, { locals, fnDepth: depth }));
 }

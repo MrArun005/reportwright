@@ -1,5 +1,5 @@
 // @ts-check
-import { evalValue, evaluate, compile, parseValue, toText } from '../expr/evaluate.js';
+import { evalValue, evaluate, compile, parseValue, toText, functionTable } from '../expr/evaluate.js';
 import { toDate, isoDate } from '../expr/format.js';
 
 /**
@@ -97,7 +97,7 @@ export function parseCsv(text) {
  *   query: the browser sends the report id and source name, never SQL.
  */
 export async function loadSources(def, opt) {
-  const ctx = { params: opt.params, globals: {}, dataSets: {}, fields: null };
+  const ctx = { params: opt.params, globals: {}, dataSets: {}, fields: null, functions: functionTable(def) };
   const out = {};
   const f = opt.fetch || (typeof fetch !== 'undefined' ? fetch : null);
   await Promise.all((def.dataSources || []).map(async (src) => {
