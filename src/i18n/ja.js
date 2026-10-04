@@ -279,4 +279,10 @@ export default {
   sfDirection: "順序",
   sfOperator: "演算子",
   sfHint: "値はテキスト、数値、=Parameters.x、リスト内では =Parent.x を指定できます。TopN は式の上位 N 件（同値も含む）を残します。フィルターは順に適用されます。",
+  outline: "アウトライン",
+  outlineBackward: "先に描画（背面へ）",
+  outlineForward: "後に描画（前面へ）",
+  outlineMoveOut: "{name} の外へ移動",
+  outlineEmpty: "項目なし",
+  outlineHint: "名前をクリックすると選択できます（他の項目に隠れた項目も）。下にある項目ほど前面に描画されます。",
 };

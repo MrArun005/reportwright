@@ -6,6 +6,7 @@ import { secOf, useDesigner, insertItem, deleteSelection, duplicateSelection, mo
 import Canvas, { MIME_TOOL } from './Canvas.jsx';
 import Inspector from './Inspector.jsx';
 import DataPanel, { loadSample } from './DataPanel.jsx';
+import Outline from './Outline.jsx';
 import ReportViewer from '@/viewer/ReportViewer.jsx';
 import { ITEMS } from '@/engine/items/index.js';
 import { fontFaceCss } from '@/exporters/svg.js';
@@ -234,7 +235,7 @@ export default function Designer({ id, initial, lang: langIn, embed = null }) {
       ) : (
         <div className="dmain">
           {(!readOnly || embed?.panels?.data !== false) && (
-            <aside className="dleft">{!readOnly && <Toolbox T={T} hide={embed?.toolbox?.hide} />}{embed?.panels?.data !== false && <DataPanel />}</aside>
+            <aside className="dleft">{!readOnly && <Toolbox T={T} hide={embed?.toolbox?.hide} />}{embed?.panels?.data !== false && <DataPanel />}<Outline /></aside>
           )}
           <section className="dcenter">
             <div className="cbar">

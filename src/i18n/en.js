@@ -279,4 +279,10 @@ export default {
   sfDirection: "Direction",
   sfOperator: "Operator",
   sfHint: "Value can be text, a number, =Parameters.x, or =Parent.x inside a list. TopN keeps the N highest values of the expression (ties too). Filters run in order.",
+  outline: "Outline",
+  outlineBackward: "Draw earlier (behind)",
+  outlineForward: "Draw later (in front)",
+  outlineMoveOut: "Move out of {name}",
+  outlineEmpty: "No items",
+  outlineHint: "Click a name to select it, also an item hidden under another. Items lower in a list are drawn on top.",
 };

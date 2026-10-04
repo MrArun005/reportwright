@@ -279,4 +279,10 @@ export default {
   sfDirection: "Direção",
   sfOperator: "Operador",
   sfHint: "O valor pode ser texto, um número, =Parameters.x ou =Parent.x dentro de uma lista. TopN mantém os N maiores valores da expressão (empates também). Os filtros rodam em ordem.",
+  outline: "Estrutura",
+  outlineBackward: "Desenhar antes (atrás)",
+  outlineForward: "Desenhar depois (na frente)",
+  outlineMoveOut: "Tirar de {name}",
+  outlineEmpty: "Nenhum item",
+  outlineHint: "Clique num nome para selecioná-lo, mesmo um item escondido sob outro. Itens mais abaixo são desenhados por cima.",
 };

@@ -279,4 +279,10 @@ export default {
   sfDirection: "Sens",
   sfOperator: "Opérateur",
   sfHint: "La valeur peut être du texte, un nombre, =Parameters.x ou =Parent.x dans une liste. TopN garde les N plus grandes valeurs de l’expression (ex æquo compris). Les filtres s’appliquent dans l’ordre.",
+  outline: "Plan",
+  outlineBackward: "Dessiner avant (derrière)",
+  outlineForward: "Dessiner après (devant)",
+  outlineMoveOut: "Sortir de {name}",
+  outlineEmpty: "Aucun élément",
+  outlineHint: "Cliquez sur un nom pour le sélectionner, même un élément caché sous un autre. Les éléments plus bas sont dessinés par-dessus.",
 };

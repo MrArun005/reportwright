@@ -279,4 +279,10 @@ export default {
   sfDirection: "方向",
   sfOperator: "运算符",
   sfHint: "值可以是文本、数字、=Parameters.x，或在列表内使用 =Parent.x。TopN 保留表达式最大的 N 个值（并列也保留）。筛选按顺序执行。",
+  outline: "大纲",
+  outlineBackward: "先绘制（置于后面）",
+  outlineForward: "后绘制（置于前面）",
+  outlineMoveOut: "移出 {name}",
+  outlineEmpty: "没有项",
+  outlineHint: "点击名称即可选择，被遮住的项也可以。列表中靠下的项绘制在上层。",
 };

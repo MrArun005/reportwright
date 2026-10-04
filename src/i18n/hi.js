@@ -279,4 +279,10 @@ export default {
   sfDirection: "दिशा",
   sfOperator: "ऑपरेटर",
   sfHint: "मान पाठ, संख्या, =Parameters.x, या सूची के भीतर =Parent.x हो सकता है। TopN व्यंजक के N सबसे बड़े मान रखता है (बराबर वाले भी)। फ़िल्टर क्रम से चलते हैं।",
+  outline: "रूपरेखा",
+  outlineBackward: "पहले बनाएँ (पीछे)",
+  outlineForward: "बाद में बनाएँ (आगे)",
+  outlineMoveOut: "{name} से बाहर ले जाएँ",
+  outlineEmpty: "कोई आइटम नहीं",
+  outlineHint: "चुनने के लिए नाम पर क्लिक करें, दूसरे के नीचे छिपा आइटम भी। सूची में नीचे वाले आइटम ऊपर बनते हैं।",
 };

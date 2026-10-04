@@ -279,4 +279,10 @@ export default {
   sfDirection: "Richtung",
   sfOperator: "Operator",
   sfHint: "Der Wert kann Text, eine Zahl, =Parameters.x oder in einer Liste =Parent.x sein. TopN behält die N höchsten Werte des Ausdrucks (auch Gleichstände). Filter laufen der Reihe nach.",
+  outline: "Gliederung",
+  outlineBackward: "Früher zeichnen (dahinter)",
+  outlineForward: "Später zeichnen (davor)",
+  outlineMoveOut: "Aus {name} herausnehmen",
+  outlineEmpty: "Keine Elemente",
+  outlineHint: "Klicken Sie auf einen Namen, um ihn auszuwählen, auch ein verdecktes Element. Weiter unten stehende Elemente werden darüber gezeichnet.",
 };

@@ -212,6 +212,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .trow .ty { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--faint); }
 .trow .act { opacity: 0; }
 .trow:hover .act { opacity: 1; }
+.outline-row.sel { background: var(--accent-soft); }
+.outline-row .linklike.nm, .outline-band { text-decoration: none; color: var(--ink); text-align: start; }
+.outline-row.sel .linklike.nm, .outline-band.sel { color: var(--accent); }
+.outline-row.sel .act, .outline-row:focus-within .act { opacity: 1; }
 .field-chip { cursor: grab; }
 .field-chip .nm::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 2px; background: var(--accent); margin-right: 7px; vertical-align: 1px; }
 .subtle { color: var(--faint); font-size: var(--fs-xs); padding: 2px 6px; }

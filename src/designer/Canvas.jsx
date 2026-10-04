@@ -36,7 +36,7 @@ export function textCss(layers, s, numeric = false) {
   const key = resolveFontKey(st.fontFamily, st.fontWeight, st.fontStyle);
   return {
     box: {
-      background: st.backgroundColor || undefined,
+      backgroundColor: st.backgroundColor || undefined, // not the background shorthand: it clashes with backgroundImage
       // a background image by URL or data URI; an expression is only known in the preview
       backgroundImage: /^(https?:|data:image\/|\/)/i.test(String(st.backgroundImage || '')) ? `url("${encodeURI(String(st.backgroundImage)).replace(/"/g, '%22')}")` : undefined,
       backgroundSize: st.backgroundFit === 'fill' ? '100% 100%' : st.backgroundFit || 'cover',
@@ -70,13 +70,21 @@ export default function Canvas() {
   const [drag, setDrag] = useState(null); // {mode:'move', ids, dx, dy} | {mode:'resize', id, rect} | {mode:'band', section, h} | {mode:'col', id, col, w}
 
   return (
-    <div className="cscroll" onPointerDown={(e) => { if (e.target === e.currentTarget) useDesigner.getState().select({ kind: 'report' }); }}>
+    <div className="cscroll" onPointerDown={(e) => { if (e.target === e.currentTarget) useDesigner.getState().select({ kind: 'report' }); }}
+      onPointerDownCapture={blurField}>
       <Ruler width={bw} scale={scale} />
       <div className="paper" style={{ width: bw * scale }} data-testid="paper">
         {bands.map(s => <Band key={s.key} section={s.key} label={s.label} scale={scale} bw={widths[s.key]} drag={drag} setDrag={setDrag} />)}
       </div>
     </div>
   );
+}
+
+/** A click on the canvas takes the keyboard back from an Inspector field, so shortcuts (Delete, arrows, ⌘D) work again.
+ *  Item clicks preventDefault (for dragging), which would otherwise leave the focus in the field. */
+function blurField(e) {
+  const a = e.currentTarget.getRootNode().activeElement; // the shadow root when embedded
+  if (a && !e.currentTarget.contains(a) && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable)) a.blur();
 }
 
 const UNIT_STEP = { pt: [72, 12], mm: [72 / 25.4 * 10, 72 / 25.4 * 2], cm: [72 / 2.54, 72 / 2.54 / 5], in: [72, 72 / 8] };
@@ -106,6 +114,8 @@ function Band({ section, label, scale, bw, drag, setDrag }) {
   const [marquee, setMarquee] = useState(null);
   const [dropping, setDropping] = useState(false);
   const h = drag?.mode === 'band' && drag.section === section ? drag.h : sec.height || 0;
+  // while a tool or field is dragged over the band it shows room below its height; a drop there grows the band
+  const DROP_ROOM = 96;
 
   const toPt = (e) => { const r = ref.current.getBoundingClientRect(); return { x: (e.clientX - r.left) / scale, y: (e.clientY - r.top) / scale }; };
 
@@ -185,13 +195,13 @@ function Band({ section, label, scale, bw, drag, setDrag }) {
         className={`band${dropping ? ' drop' : ''}`}
         data-section={section}
         style={{
-          height: h * scale, width: bw * scale,
+          height: (h + (dropping ? DROP_ROOM : 0)) * scale, width: bw * scale,
           backgroundImage: gridPx >= 5 ? 'radial-gradient(circle, rgba(95,107,119,.28) 0.8px, transparent 1px)' : undefined,
           backgroundSize: `${gridPx * 2}px ${gridPx * 2}px`,
         }}
         onPointerDown={onBgDown}
         onDragOver={(e) => { if (accepts(e)) { e.preventDefault(); setDropping(true); } }}
-        onDragLeave={() => setDropping(false)}
+        onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDropping(false); }} // not when moving onto an item inside
         onDrop={onDrop}
       >
         {sec.items.map(it => <AnyItem key={it.id} item={it} scale={scale} drag={drag} setDrag={setDrag} bw={bw} section={section} />)}

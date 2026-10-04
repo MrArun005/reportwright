@@ -101,6 +101,54 @@ try {
   assert.deepEqual(ch.filters, [{ expr: '=Fields.id', op: '>', value: '80' }]);
   assert.equal(def.sections.body.items.find(i => i.name === 'Matrix1').filters.length, 1);
 
+  step('Outline: select a covered item, change the drawing order, move an item out of its container');
+  id = await create(base([
+    { type: 'textbox', id: 'under', name: 'Under', x: 20, y: 20, w: 120, h: 20, value: 'under', style: { backgroundColor: '#fef3c7', backgroundImage: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' } },
+    { type: 'shape', id: 'cover', name: 'Cover', x: 0, y: 0, w: 200, h: 60, shape: 'rect' },
+    { type: 'container', id: 'box', name: 'Box', x: 0, y: 100, w: 300, h: 80, items: [{ type: 'textbox', id: 'inner', name: 'Inner', x: 10, y: 12, w: 100, h: 16, value: 'inner' }] },
+  ]));
+  const oldH = 240; // the band's bottom stays in view for the drop below it
+  await fetch(`${BASE}/api/reports/${id}`, { method: 'PUT', headers: H, body: JSON.stringify((d => { d.sections.body.height = oldH; return d; })(await read(id))) });
+  await open(id);
+  const outline = p.getByTestId('outline');
+  await outline.getByRole('button', { name: 'Under', exact: true }).click();
+  assert.equal(await p.getByLabel('Item name').inputValue(), 'Under');
+  await outline.getByRole('button', { name: 'Draw later (in front): Under' }).click();
+  await outline.getByRole('button', { name: 'Move out of Box: Inner' }).click();
+
+  step('Shortcuts work again after typing in the Inspector (a canvas click takes the focus back)');
+  await p.getByLabel('Item name').click();
+  await p.locator('[data-item=Under]').click({ position: { x: 5, y: 5 } }); // now drawn on top of Cover
+  await p.keyboard.press('ArrowRight');
+  await p.keyboard.press('ArrowDown');
+
+  step('Canvas styles: a background colour with a background image raises no React style warning');
+  await field(p.getByTestId('inspector'), 'Background').fill('#dcfce7');
+
+  step('A tool dropped below the band\'s height lands there, and the band grows');
+  const band = p.locator('[data-section=body]');
+  const bb = await band.boundingBox();
+  await p.locator('[data-tool=textbox]').scrollIntoViewIfNeeded();
+  const tool = await p.locator('[data-tool=textbox]').boundingBox();
+  await p.mouse.move(tool.x + 10, tool.y + 8);
+  await p.mouse.down();
+  await p.mouse.move(bb.x + 60, bb.y + bb.height - 10, { steps: 8 });
+  await p.mouse.move(bb.x + 60, bb.y + bb.height + 60, { steps: 8 }); // the band shows room below while dragging
+  await p.mouse.up();
+  await save();
+  def = await read(id);
+  const items = def.sections.body.items;
+  assert.deepEqual(items.slice(0, 4).map(i => i.name), ['Cover', 'Under', 'Box', 'Inner'], 'Under drawn after Cover; Inner right after Box');
+  const under = items.find(i => i.name === 'Under');
+  assert.deepEqual([under.x, under.y], [21, 21], 'arrow keys moved the item');
+  assert.equal(under.style.backgroundColor, '#dcfce7');
+  const inner = items.find(i => i.name === 'Inner');
+  assert.deepEqual([inner.x, inner.y], [10, 112], 'same place on the page');
+  assert.equal(items.find(i => i.name === 'Box').items.length, 0);
+  const dropped = items.find(i => i.type === 'textbox' && !['Under', 'Inner'].includes(i.name));
+  assert.ok(dropped, `the dropped text box exists: ${JSON.stringify(items.map(i => [i.name, i.type, i.y]))} band ${def.sections.body.height}`);
+  assert.ok(dropped.y >= oldH && def.sections.body.height >= dropped.y + dropped.h, `dropped below the old height (y ${dropped.y}, band ${def.sections.body.height})`);
+
   assert.deepEqual(errs, []);
   console.log('PASS designer gaps');
 } finally {

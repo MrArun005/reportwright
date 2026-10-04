@@ -243,6 +243,34 @@ export function moveItems(ids, dx, dy) {
   });
 }
 
+/** Move an item one place earlier (by -1) or later (+1) among its siblings: later items are drawn on top. */
+export function reorderItem(id, by) {
+  S().apply((d) => {
+    const f = findItem(d, id);
+    if (!f) return;
+    const j = f.index + by;
+    if (j < 0 || j >= f.list.length) return;
+    [f.list[f.index], f.list[j]] = [f.list[j], f.list[f.index]];
+  });
+}
+/** Take an item out of its container or list: it goes right after the parent, at the same place on the page. */
+export function moveOutOfParent(id) {
+  S().apply((d) => {
+    const f = findItem(d, id);
+    if (!f?.parent) return;
+    const p = findItem(d, f.parent.id);
+    const it = f.item;
+    f.list.splice(f.index, 1);
+    it.x = round(p.item.x + it.x);
+    it.y = round(p.item.y + it.y);
+    const room = roomFor(d, p);
+    it.x = round(clamp(it.x, 0, Math.max(0, room - it.w)));
+    p.list.splice(p.index + 1, 0, it);
+    if (p.parent) { if (it.y + it.h > p.parent.h) p.parent.h = Math.ceil(it.y + it.h); }
+    else { const sec = secOf(d, p.section); if (it.y + it.h > sec.height) sec.height = Math.ceil(it.y + it.h); }
+  });
+}
+
 export function deleteSelection() {
   const { sel } = S();
   if (sel.kind !== 'items') return;
@@ -341,28 +369,67 @@ export function tableSync(t) {
   t.w = round(t.columns.reduce((s, c) => s + c.width, 0));
   t.h = round(allRows(t).reduce((a, r) => a + (r.height || 18), 0));
 }
+/** Which cell covers each column of each row of one part: g[row][col] = { r, c } of the merged (or plain) cell, or null. */
+function owners(rows, n) {
+  const g = rows.map(() => new Array(n).fill(null));
+  rows.forEach((row, r) => {
+    for (let c = 0; c < n; c++) {
+      const cell = row.cells?.[c];
+      if (!cell || g[r][c]) continue;
+      const cs = Math.max(1, Math.min(cell.colSpan || 1, n - c)), rs = Math.max(1, Math.min(cell.rowSpan || 1, rows.length - r));
+      for (let i = 0; i < rs; i++) for (let k = 0; k < cs; k++) g[r + i][c + k] ||= { r, c };
+    }
+  });
+  return g;
+}
+/** A row's cells as a full-width array: a merged cell's other columns hold null (a row may list only its merged cell). */
+const padded = (row, n) => Array.from({ length: n }, (_, c) => row.cells?.[c] ?? null);
+const setSpan = (cell, n) => { if (n > 1) cell.colSpan = n; else delete cell.colSpan; };
+
+/** Add a column before column `at`. Inside a merged cell the merge grows (on every row it covers); elsewhere an empty cell. */
 export function tableInsertColumn(id, at) {
   updateItem(id, (t) => {
+    const n = t.columns.length;
     t.columns.splice(at, 0, { width: 72 });
-    for (const r of allRows(t)) r.cells.splice(at, 0, { value: '' });
-    tableSync(t);
-  });
-}
-export function tableDeleteColumn(id, at) {
-  updateItem(id, (t) => {
-    if (t.columns.length <= 1) return;
-    t.columns.splice(at, 1);
-    for (const r of allRows(t)) {
-      r.cells.splice(at, 1);
-      for (let i = 0; i < r.cells.length; i++) { const c = r.cells[i]; if (c && c.colSpan > 1 && i + c.colSpan > r.cells.length) c.colSpan = r.cells.length - i; }
-      for (let i = 0; i < r.cells.length; i++) if (r.cells[i] === null && !coveredBySpan(r.cells, i)) r.cells[i] = { value: '' };
+    for (const { part } of tableParts(t)) {
+      const rows = rowsOf(t, part) || [];
+      const g = owners(rows, n);
+      rows.forEach((row, r) => {
+        const cells = padded(row, n);
+        const a = at > 0 ? g[r][at - 1] : null, b = at < n ? g[r][at] : null;
+        if (a && b && a.r === b.r && a.c === b.c) {
+          cells.splice(at, 0, null);
+          if (r === a.r) setSpan(cells[a.c], (cells[a.c].colSpan || 1) + 1);
+        } else cells.splice(at, 0, { value: '' });
+        row.cells = cells;
+      });
     }
     tableSync(t);
   });
 }
-function coveredBySpan(cells, i) {
-  for (let k = 0; k < i; k++) { const c = cells[k]; if (c && (c.colSpan || 1) > i - k) return true; }
-  return false;
+/** Remove column `at`. A merged cell over it shrinks (and moves right if it started there); nothing slides under a merge. */
+export function tableDeleteColumn(id, at) {
+  updateItem(id, (t) => {
+    const n = t.columns.length;
+    if (n <= 1) return;
+    t.columns.splice(at, 1);
+    for (const { part } of tableParts(t)) {
+      const rows = rowsOf(t, part) || [];
+      const g = owners(rows, n);
+      rows.forEach((row, r) => {
+        const cells = padded(row, n);
+        const o = g[r][at];
+        if (o && o.r === r && (cells[o.c].colSpan || 1) > 1) {
+          const cell = cells[o.c];
+          if (o.c === at) { const moved = { ...cell }; setSpan(moved, (cell.colSpan || 1) - 1); cells[at + 1] = moved; }
+          else setSpan(cell, cell.colSpan - 1);
+        }
+        cells.splice(at, 1);
+        row.cells = cells;
+      });
+    }
+    tableSync(t);
+  });
 }
 export function tableInsertRow(id, part, at) {
   updateItem(id, (t) => { rowsOf(t, part, true).splice(at, 0, blankRow(t.columns.length)); tableSync(t); });
