@@ -19,8 +19,8 @@ export async function PATCH(req, { params }) {
     const body = await req.json().catch(() => ({}));
     const patch = {};
     for (const k of ['role', 'password', 'disabled', 'groups', 'allowSso']) if (body[k] !== undefined) patch[k] = body[k];
-    const u = await updateUser(email, patch);
-    await audit('user.update', { req, actor: `user:${me.email}`, detail: { user: u.email, ...('role' in patch && { role: u.role }), ...('groups' in patch && { groups: u.groups }), ...('disabled' in patch && { disabled: u.disabled }), ...('password' in patch && { password: 'changed' }) } });
+    const u = await updateUser(email, patch, { by: me.email });
+    await audit('user.update', { req, actor: `user:${me.email}`, detail: { user: u.email, ...('role' in patch && { role: u.role }), ...('groups' in patch && { groups: u.groups }), ...('disabled' in patch && { disabled: u.disabled }), ...('password' in patch && { password: 'changed' }), ...('allowSso' in patch && { allowSso: u.allowSso }) } });
     // a new password ends the user's sessions; an admin who changed their own stays signed in
     const headers = u.email === me.email && patch.password !== undefined ? { 'set-cookie': sessionCookie(req, await getUser(u.email)) } : undefined;
     return Response.json(u, { headers });
@@ -32,7 +32,7 @@ export async function DELETE(req, { params }) {
   if (res) return res;
   try {
     const email = await target(params);
-    if (!(await deleteUser(email))) return Response.json({ error: 'No such user.' }, { status: 404 });
+    if (!(await deleteUser(email, { by: me.email }))) return Response.json({ error: 'No such user.' }, { status: 404 });
     await audit('user.delete', { req, actor: `user:${me.email}`, detail: { user: String(email).toLowerCase() } });
     return Response.json({ ok: true });
   } catch (e) { return fail(e); }

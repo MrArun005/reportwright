@@ -109,12 +109,18 @@ export async function countUsers() { return (await store().ids('users')).length;
  * A password account, or with `sso` an account made at single sign-on (no password).
  * @param {{ email: string, role: string, password?: string, groups?: string[], sso?: { via: 'oidc'|'saml', issuer: string, subject: string } }} u
  */
-export async function createUser({ email, role, password, groups = [], sso }) {
+export async function createUser({ email, role, password, groups = [], sso }, { by } = {}) {
   const e = normEmail(email);
   checkRole(role);
   const g = checkGroups(groups);
   const passwordHash = sso ? null : await hashPassword(/** @type {string} */ (password));
-  return withLock('acl', () => createNow(e, role, g, passwordHash, sso));
+  return withLock('acl', async () => { await stillAdmin(by); return createNow(e, role, g, passwordHash, sso); });
+}
+/** by (an admin's email, from a route): that admin as stored now, inside the lock, not a session cache. */
+async function stillAdmin(by) {
+  if (by === undefined) return;
+  const a = await getUser(by);
+  if (!a || a.disabled || a.role !== 'admin') throw fail('Only a signed-in admin can do this.', 403);
 }
 async function createNow(e, role, g, passwordHash, sso) {
   if (await getUser(e)) throw fail(`There is already a user ${e}.`, 409);
@@ -138,7 +144,7 @@ async function keepAnAdmin(before, after) {
  * sso (server code only, never from a request): the IdP identity this account is bound to.
  * @param {string} email @param {{ role?: string, password?: string, disabled?: boolean, groups?: string[], allowSso?: boolean, sso?: any }} patch
  */
-export function updateUser(email, patch) { return withLock('acl', () => updateUserNow(email, patch)); }
+export function updateUser(email, patch, { by } = {}) { return withLock('acl', async () => { await stillAdmin(by); return updateUserNow(email, patch); }); }
 async function updateUserNow(email, patch) {
   const u = await getUser(email);
   if (!u) throw fail('No such user.', 404);
@@ -156,7 +162,7 @@ async function updateUserNow(email, patch) {
 }
 
 /** @returns {Promise<boolean>} false when there was no such user */
-export function deleteUser(email) { return withLock('acl', () => deleteUserNow(email)); }
+export function deleteUser(email, { by } = {}) { return withLock('acl', async () => { await stillAdmin(by); return deleteUserNow(email); }); }
 async function deleteUserNow(email) {
   const u = await getUser(email);
   if (!u) return false;

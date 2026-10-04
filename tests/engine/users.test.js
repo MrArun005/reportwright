@@ -197,6 +197,29 @@ describe('review: every user write is ordered with the others', () => {
   });
 });
 
+describe('review: an admin action checks the admin as stored now, inside the lock', () => {
+  it('an admin disabled on another server cannot add, change or delete users from a stale session cache', async () => {
+    await createUser({ email: 'keeper@x.io', role: 'admin', password: PW }); // another admin, so M may be disabled
+    const c = await as('admin', 'mallory@x.io');
+    await createUser({ email: 'victim@x.io', role: 'viewer', password: PW });
+    expect((await me(rq('/api/auth/me', { cookie: c }))).status).toBe(200); // this server caches mallory as an admin
+    const u = JSON.parse(await store().get('users', 'mallory@x.io'));
+    await store().put('users', 'mallory@x.io', JSON.stringify({ ...u, disabled: true })); // disabled elsewhere; the session version is unchanged here
+    expect((await usersPost(rq('/api/users', { method: 'POST', cookie: c, body: { email: 'backdoor@x.io', role: 'admin', password: PW } }))).status).toBe(403);
+    expect(await getUser('backdoor@x.io')).toBe(null);
+    expect((await userPatch(rq('/api/users/victim@x.io', { method: 'PATCH', cookie: c, body: { role: 'admin' } }), params('victim@x.io'))).status).toBe(403);
+    expect((await userDelete(rq('/api/users/victim@x.io', { method: 'DELETE', cookie: c }), params('victim@x.io'))).status).toBe(403);
+    expect(await getUser('victim@x.io')).toMatchObject({ role: 'viewer' });
+  });
+  it('allowing single sign-on on an account is in the audit log', async () => {
+    const c = await as('admin', 'aud-admin@x.io');
+    await createUser({ email: 'sso-ok@x.io', role: 'viewer', password: PW });
+    expect((await userPatch(rq('/api/users/sso-ok@x.io', { method: 'PATCH', cookie: c, body: { allowSso: true } }), params('sso-ok@x.io'))).status).toBe(200);
+    const { queryAudit } = await import('../../src/server/audit.js');
+    expect((await queryAudit({ type: 'user.update', limit: 1 }))[0].detail).toMatchObject({ user: 'sso-ok@x.io', allowSso: true });
+  });
+});
+
 describe('sign-in rate limit', () => {
   it('allows 10 failures per address and email in 15 minutes, then answers 429 even to the right password', async () => {
     await createUser({ email: 'r@x.io', role: 'viewer', password: PW });
