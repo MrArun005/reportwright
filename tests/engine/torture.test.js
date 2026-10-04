@@ -82,10 +82,10 @@ describe('torture-test report', () => {
     const top = sampleTorture().loans.filter(l => l.status === 'Overdue' || l.status === 'NPA').sort((a, b) => b.outstanding - a.outstanding).slice(0, 6);
     for (const l of top) expect(labels).toContain(`${l.id} · ${l.borrower}`);
     // every drill-through link lands on a bookmark that exists
-    const targets = model.pages.flatMap(p => p.items.filter(i => i.t === 'link' && i.action?.type === 'bookmark').map(i => i.action.target));
-    const known = new Set([...labels, ...model.pages.flatMap(texts)]);
-    expect(targets.length).toBeGreaterThanOrEqual(12);
-    for (const t of targets) expect(known.has(t) || t === 'watchlist').toBe(true);
+    // (TOC entries from headings carry their own place instead)
+    const targets = model.pages.flatMap(p => p.items.filter(i => i.t === 'link' && i.action?.type === 'bookmark' && !i.action.page).map(i => i.action.target));
+    expect(targets.length).toBeGreaterThanOrEqual(18); // 12 watchlist jumps, 6 back links
+    for (const t of targets) expect(labels, t).toContain(t); // each one jumps to a bookmark, in the viewer and the PDF
     // the last six pages are the detail pages, one loan each, in outstanding order
     const detail = model.pages.slice(-6).map(p => texts(p).find(s => /^LN-2026-\d{4} · /.test(s)));
     expect(detail).toEqual(top.map(l => `${l.id} · ${l.borrower}`));
