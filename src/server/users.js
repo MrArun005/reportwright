@@ -99,7 +99,7 @@ export async function cachedUser(email) {
 
 async function save(u) {
   cache.delete(u.email);
-  await store().put('users', u.email, JSON.stringify(u));
+  await store().put('users', u.email, JSON.stringify({ ...u, rev: crypto.randomBytes(8).toString('hex') })); // a new rev on every change (perms.accessStamp)
 }
 
 export async function listUsers() { return (await all()).map(publicUser).sort((a, b) => a.email.localeCompare(b.email)); }

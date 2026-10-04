@@ -149,15 +149,18 @@ function chain(s, folderId, names) {
 }
 
 /**
- * A fingerprint of everything that decides what a principal may view now: every folder and report grant, and the
- * principal as stored now. Equal stamps, equal access (for caches of rendered output that pulls in other reports).
+ * A fingerprint of everything that decides what a principal may view now: every folder and report grant (with its
+ * rev), and the user record as stored now (its own rev). Equal stamps, equal access, and no change in between (for caches of rendered output that pulls in other reports).
  * @param {Principal} p
  */
 export async function accessStamp(p) {
-  const [fl, rl] = await Promise.all([store().list('folders'), store().list('reportacl')]);
+  p = vet(p);
+  const [fl, rl, u] = await Promise.all([store().list('folders'), store().list('reportacl'), p.kind === 'user' ? store().get('users', p.email) : null]);
   const all = [...fl.map(r => `f${r.id}\n${r.text}`), ...rl.map(r => `r${r.id}\n${r.text}`)].sort().join('\0');
-  return crypto.createHash('sha256').update(`${JSON.stringify(await asNow(p))}\0${all}`).digest('hex');
+  return crypto.createHash('sha256').update(`${JSON.stringify(p)}\0${u}\0${all}`).digest('hex');
 }
+/** Every permission write gets a new rev: a change and its undo never give back an earlier stamp. */
+const rev = () => crypto.randomBytes(8).toString('hex');
 
 /** A principal's level on a report, from a snapshot. @param {Snapshot} s @param {Principal} p @param {string} id @returns {Level} */
 export function reportLevel(s, p, id) {
@@ -278,7 +281,7 @@ export async function createFolder(p, { name, parent = null }) {
   if (!atLeast(folderLevel(s, p, parent), 'manage')) throw fail('You cannot add a folder here.', 403);
   const now = new Date().toISOString();
   const f = { id: `f_${crypto.randomBytes(6).toString('hex')}`, name: cleanName(name), parent: parent || null, inherit: true, grants: [], createdAt: now, updatedAt: now };
-  await store().put('folders', f.id, JSON.stringify(f));
+  await store().put('folders', f.id, JSON.stringify({ ...f, rev: rev() }));
   return f;
 }
 
@@ -292,7 +295,7 @@ export async function updateFolder(p, id, patch) {
   if (id === 'root') {
     if (!isAll(p) || p.kind === 'service') throw fail('Only an admin can change the top-level permissions.', 403);
     const rec = { id: 'root', grants: checkGrants(patch.grants ?? s.root), updatedAt: new Date().toISOString() };
-    await store().put('folders', 'root', JSON.stringify(rec));
+    await store().put('folders', 'root', JSON.stringify({ ...rec, rev: rev() }));
     return { before: { grants: s.root }, after: rec };
   }
   const f = s.folders.get(id);
@@ -309,7 +312,7 @@ export async function updateFolder(p, id, patch) {
     if (!atLeast(folderLevel(s, p, to), 'manage') || !atLeast(folderLevel(s, p, f.parent || null), 'manage')) throw fail('Moving a folder needs manage on the folder it is in and on the folder it goes to.', 403);
     next.parent = to;
   }
-  await store().put('folders', id, JSON.stringify(next));
+  await store().put('folders', id, JSON.stringify({ ...next, rev: rev() }));
   return { before: f, after: next };
 }
 
@@ -353,7 +356,7 @@ export async function setReportAccess(p, id, patch) {
   }
   if (patch.inherit !== undefined) next.inherit = !!patch.inherit;
   if (patch.grants !== undefined) next.grants = checkGrants(patch.grants);
-  await store().put('reportacl', id, JSON.stringify(next));
+  await store().put('reportacl', id, JSON.stringify({ ...next, rev: rev() }));
   return { before, after: next };
 }
 
@@ -372,7 +375,7 @@ export async function canCreateIn(p, folder) {
 export async function recordNewReport(p, id, folder) {
   const grants = p.kind === 'user' ? [{ to: `user:${p.email}`, level: 'manage' }] : [];
   if (!folder && !grants.length) { await store().remove('reportacl', id); return; } // a stale record of an older report with this id
-  await store().put('reportacl', id, JSON.stringify({ id, folder: folder || null, inherit: true, grants }));
+  await store().put('reportacl', id, JSON.stringify({ id, folder: folder || null, inherit: true, grants, rev: rev() }));
 }
 /** @param {string} id */
 export const forgetReport = (id) => store().remove('reportacl', id);

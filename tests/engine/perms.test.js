@@ -428,6 +428,53 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     await R.one.DELETE(req('/api/reports/pic', { who: 'admin', method: 'DELETE' }), P('pic'));
   });
 
+  it('review: thumbnails: a revoke between queue and serve, two users with different subreport access', async () => {
+    const { writeReport } = await import('../../src/server/reports.js');
+    const { thumbsIdle } = await import('../../src/server/thumbs.js');
+    const id = `two-${kind}`;
+    await writeReport(id, def('Two', [{ type: 'subreport', name: 'Sub', x: 0, y: 0, w: 300, h: 40, report: 'salary' }]));
+    await perms.setReportAccess({ kind: 'service' }, id, { inherit: false, grants: [{ to: 'user:carol@x.io', level: 'view' }, { to: 'user:dan@x.io', level: 'view' }] });
+    try {
+      // carol (Finance) sees the salary subreport, dan does not: the same report, two drawings
+      expect(await (await thumbOf('carol', id)).text()).toContain('Salary');
+      expect(await (await thumbOf('dan', id)).text()).not.toContain('Salary');
+      // queued while carol could see the subreport, drawn after she lost it: never served
+      await writeReport(id, def('Two b', [{ type: 'subreport', name: 'Sub', x: 0, y: 0, w: 300, h: 40, report: 'salary' }]));
+      expect((await thumb.GET(req(`/api/reports/${id}/thumb`, { who: 'carol' }), P(id))).status).toBe(202);
+      await users.updateUser('carol@x.io', { groups: [] });
+      await thumbsIdle();
+      expect(await (await thumbOf('carol', id)).text()).not.toContain('Salary');
+      // queued with view on the report, served after it was revoked: 404
+      await users.updateUser('carol@x.io', { groups: ['Finance'] });
+      expect((await thumb.GET(req(`/api/reports/${id}/thumb`, { who: 'carol' }), P(id))).status).toBe(202);
+      await perms.setReportAccess({ kind: 'service' }, id, { grants: [{ to: 'user:dan@x.io', level: 'view' }] });
+      await thumbsIdle();
+      expect((await thumb.GET(req(`/api/reports/${id}/thumb`, { who: 'carol' }), P(id))).status).toBe(404);
+    } finally {
+      await users.updateUser('carol@x.io', { groups: ['Finance'] });
+      await R.one.DELETE(req(`/api/reports/${id}`, { who: 'admin', method: 'DELETE' }), P(id));
+    }
+  });
+
+  it('review: thumbnails: a grant changed (and changed back) while one is drawn is not cached', async () => {
+    const { writeReport } = await import('../../src/server/reports.js');
+    const { thumbsIdle } = await import('../../src/server/thumbs.js');
+    const id = `mid-${kind}`;
+    const rows = Array.from({ length: 600 }, (_, i) => ({ id: i }));
+    await writeReport(id, { ...def('Mid', [
+      { type: 'subreport', name: 'Sub', x: 0, y: 0, w: 300, h: 40, report: 'salary' },
+      { type: 'table', name: 'T', dataSet: 'Rows', x: 0, y: 50, w: 500, h: 40, columns: [{ width: 500 }], detail: [{ height: 14, cells: [{ value: '=Len(Replace(Space(200000), " ", "ab"))' }] }] },
+    ]), dataSources: [{ name: 'src', type: 'json', data: { rows } }], dataSets: [{ name: 'Rows', source: 'src', path: '$.rows' }] });
+    try {
+      expect((await thumb.GET(req(`/api/reports/${id}/thumb`, { who: 'dan' }), P(id))).status).toBe(202);
+      await new Promise(r => setTimeout(r, 200)); // drawing now
+      await perms.setReportAccess({ kind: 'service' }, 'salary', { grants: [{ to: 'user:dan@x.io', level: 'view' }] });
+      await perms.setReportAccess({ kind: 'service' }, 'salary', { grants: [] }); // and back: the same grants as before
+      await thumbsIdle();
+      expect((await thumb.GET(req(`/api/reports/${id}/thumb`, { who: 'dan' }), P(id))).status).toBe(202); // drawn again, not served
+    } finally { await thumbsIdle(); await R.one.DELETE(req(`/api/reports/${id}`, { who: 'admin', method: 'DELETE' }), P(id)); }
+  }, 60000);
+
   it('review: a heavy thumbnail is drawn off the event loop, under the time limit, once for many saves', async () => {
     const { writeReport } = await import('../../src/server/reports.js');
     const { thumbsIdle } = await import('../../src/server/thumbs.js');
@@ -441,6 +488,7 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     process.env.PW_RENDER_TIMEOUT_MS = '1500';
     try {
       await writeReport(id, heavy(0));
+      await thumbsIdle();
       const g = globalThis.__pwThumbJobs;
       const before = g.seq;
       let gap = 0, last = Date.now();

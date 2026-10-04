@@ -5,9 +5,10 @@
 // queues one render; saves in quick succession replace the queued render, so only the newest version is drawn.
 //
 // The cache is per report and per viewer (a subreport may show for one user and not another), keyed by a hash of the
-// definition; with a subreport in it, also by the permissions now (every folder and report grant, and the viewer as
-// stored now), so a revoke is never answered from an older drawing. The route checks view access on every request
-// before it looks here.
+// definition; with a subreport in it, also by the permissions now (perms.accessStamp: every folder and report grant
+// and the viewer's record, each with a rev that every change renews), so a revoke is never answered from an older
+// drawing, and a drawing is not kept when any of that changed while it was queued or drawn. It is drawn as the viewer
+// who asked (never as the server). The route checks view access on every request before it looks here.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -43,13 +44,14 @@ export async function drawThumb({ def, principal, base }) {
  */
 export async function thumbnail(id, def, principal, base) {
   const json = JSON.stringify(def);
-  const hash = sha(json.includes('"subreport"') ? `${json}\0${await accessStamp(principal)}` : json);
+  const stamp = json.includes('"subreport"') ? await accessStamp(principal) : null;
+  const hash = sha(stamp ? `${json}\0${stamp}` : json);
   const slot = `${id}|${principalId(principal)}`;
   const hit = g.cache.get(slot);
   if (hit?.hash === hash) return hit;
   if (!(g.running?.slot === slot && g.running.hash === hash)) {
     g.queue.delete(slot); // a newer save replaces the render still waiting (and goes to the back)
-    g.queue.set(slot, { slot, hash, def, principal, base });
+    g.queue.set(slot, { slot, hash, stamp, def, principal, base });
     pump();
   }
   return { pending: true };
@@ -63,7 +65,9 @@ function pump() {
   const [slot, job] = g.queue.entries().next().value;
   g.queue.delete(slot);
   g.running = job;
-  g.busy = run(job).then((r) => {
+  g.busy = run(job).then(async (r) => {
+    // the drawing is kept only if no permission changed while it was queued or drawn (revs: an undo counts too)
+    if (job.stamp && (await accessStamp(job.principal).catch(() => null)) !== job.stamp) return;
     if (g.cache.size > 2000) g.cache.clear();
     g.cache.set(slot, { hash: job.hash, ...r });
   }).finally(() => { g.running = null; g.busy = null; pump(); });
