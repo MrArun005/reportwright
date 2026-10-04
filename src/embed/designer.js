@@ -14,10 +14,17 @@ const CSS = typeof __PW_CSS__ === 'string' ? __PW_CSS__ : '';
 const BLANK = { $schema: 'pagewright/report@1', name: 'New report', page: { size: 'A4', margins: [36, 36, 36, 36] }, dataSources: [], dataSets: [], sections: { body: { items: [] } } };
 
 /**
+ * @typedef {{ label?: string, source: { name: string, type: string, [key: string]: unknown } }} DataSourceTemplate
+ * @typedef {{ server?: string, report?: string, definition?: object, lang?: string, height?: string,
+ *   onSave?: (definition: object) => unknown, onOpen?: () => object | null | undefined | Promise<object | null | undefined>, readOnly?: boolean,
+ *   toolbox?: { hide?: string[] }, panels?: { data?: boolean, inspector?: boolean }, dataSourceTemplates?: DataSourceTemplate[] }} DesignerOptions
+ * @typedef {{ unmount: () => void, getDefinition: () => object, save: () => Promise<void> }} DesignerHandle
+ */
+/**
+ * Mount the Pagewright designer in an element. With onSave the host app saves; without it, the server named.
  * @param {string|HTMLElement} target
- * @param {{ server?: string, report?: string, definition?: object, lang?: string, height?: string,
- *   onSave?: (def: object) => any, onOpen?: () => any, readOnly?: boolean, toolbox?: { hide?: string[] },
- *   panels?: { data?: boolean, inspector?: boolean }, dataSourceTemplates?: object[] }} opts
+ * @param {DesignerOptions} opts
+ * @returns {DesignerHandle}
  */
 export function mountDesigner(target, opts = {}) {
   const el = typeof target === 'string' ? document.querySelector(target) : target;

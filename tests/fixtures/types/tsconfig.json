@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "strict": true, "noEmit": true, "target": "es2022", "module": "esnext", "moduleResolution": "bundler",
+    "lib": ["es2022", "dom"], "skipLibCheck": true, "types": [],
+    "paths": {
+      "@pagewright/engine": ["../../../packages/engine/index.d.ts"],
+      "@pagewright/viewer": ["../../../packages/viewer/dist/viewer.d.ts"],
+      "@pagewright/viewer/designer": ["../../../packages/viewer/dist/designer.d.ts"],
+      "@pagewright/react": ["../../../packages/react/index.d.ts"],
+      "@pagewright/svelte": ["../../../packages/svelte/index.d.ts"],
+      "@pagewright/angular": ["../../../packages/angular/index.d.ts"]
+    }
+  },
+  "files": ["consumer.ts"]
+}

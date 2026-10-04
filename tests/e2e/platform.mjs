@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { build } from 'esbuild';
 const BASE = process.env.BASE || 'http://localhost:3000';
 const KEY = process.env.KEY || 'test-key';
 const step = (s) => console.log('·', s);
@@ -19,8 +20,33 @@ const MODES = {
   ro: `{ readOnly: true }`,
   nodata: `{ panels: { data: false }, onSave: () => {} }`,
 };
+// the framework wrappers, as an app would load them: React bundled with the app, @pagewright/viewer from the server
+const reactApp = (await build({ stdin: { contents: `
+  import { createElement } from 'react'; import { createRoot } from 'react-dom/client';
+  import { PagewrightViewer } from './packages/react/dist/index.js';
+  createRoot(document.getElementById('react')).render(createElement(PagewrightViewer, { server: '${BASE}', report: 'loan-statement',
+    params: { accountId: 'LN-2025-001982' }, style: { height: '500px' }, onReady: () => { window.__reactReady = true; } }));`, resolveDir: process.cwd(), loader: 'jsx' },
+  bundle: true, format: 'esm', write: false, external: ['@pagewright/viewer', '@pagewright/viewer/designer'], define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'error' })).outputFiles[0].text;
+const WRAPPERS = `<script type="importmap">{ "imports": { "@pagewright/viewer": "${BASE}/embed/esm/viewer.js", "@pagewright/viewer/designer": "${BASE}/embed/esm/designer.js" } }</script>
+<div id="react"></div><div id="svelte" style="height:500px"></div>
+<pagewright-designer id="ng" server="${BASE}" height="500px"></pagewright-designer>
+<script type="module" src="/react.js"></script>
+<script type="module">
+  import { pagewrightViewer } from '/pkg/svelte/dist/index.js';
+  import { definePagewrightElements } from '/pkg/angular/dist/index.js';
+  pagewrightViewer(document.getElementById('svelte'), { server: '${BASE}', report: 'loan-statement', params: { accountId: 'LN-2025-001982' }, height: '480px', onReady: () => { window.__svelteReady = true; } });
+  const ng = document.getElementById('ng');
+  ng.addEventListener('pw-ready', (e) => { window.__ngHandle = e.detail; });
+  ng.addEventListener('pw-save', (e) => { window.__ngSaved = e.detail; });
+  ng.options = { definition: ${JSON.stringify(DEF)} };
+  definePagewrightElements();
+</script>`;
 const host = http.createServer((req, res) => {
-  const mode = new URL(req.url, 'http://x').searchParams.get('mode') || 'edit';
+  const url = new URL(req.url, 'http://x');
+  if (url.pathname === '/react.js') { res.setHeader('content-type', 'text/javascript'); return res.end(reactApp); }
+  if (url.pathname.startsWith('/pkg/')) { res.setHeader('content-type', 'text/javascript'); return res.end(fs.readFileSync(`packages/${url.pathname.slice(5).replace(/\.\./g, '')}`)); }
+  if (url.pathname === '/wrappers') { res.setHeader('content-type', 'text/html'); return res.end(`<!doctype html><meta charset="utf-8">${WRAPPERS}`); }
+  const mode = url.searchParams.get('mode') || 'edit';
   res.setHeader('content-type', 'text/html');
   res.end(`<!doctype html><meta charset="utf-8"><style>body{margin:0;font-family:Georgia,serif} .btn{background:red}</style>
 <input id="hostInput" placeholder="the host's own input"><div id="d"></div>
@@ -104,6 +130,21 @@ try {
     body: JSON.stringify({ template: 'loan-statement', format: 'pdf', pdfa: true, pdf: { userPassword: 'secret-pw' } }) });
   assert.equal(bad.status, 400);
   assert.ok(!(await bad.text()).includes('secret-pw'), 'no password in the error');
+
+  step('framework wrappers: React component, Svelte action, Angular custom element');
+  const wp = await (await b.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
+  wp.on('pageerror', e => errs.push(e.message));
+  wp.on('console', m => { if (m.type() === 'error') console.log('  console:', m.text()); });
+  await wp.goto('http://localhost:4000/wrappers');
+  await wp.waitForFunction(() => window.__reactReady && window.__svelteReady && window.__ngHandle, null, { timeout: 60000 })
+    .catch(async (e) => { console.log('  state:', await wp.evaluate(() => ({ react: !!window.__reactReady, svelte: !!window.__svelteReady, angular: !!window.__ngHandle }))); throw e; });
+  // the React component renders its own <div> (the viewer's host); the Svelte action uses the element it is on
+  await wp.waitForFunction(() => [document.getElementById('react').firstElementChild, document.getElementById('svelte')].every(el => el?.shadowRoot?.querySelector('.vpage svg')), null, { timeout: 60000 });
+  await wp.evaluate(() => window.__ngHandle.save());
+  await wp.waitForFunction(() => window.__ngSaved?.name === 'Embedded');
+  const box = await wp.evaluate(() => { const d = document.getElementById('react').firstElementChild; return [d.getBoundingClientRect().height, d.shadowRoot.querySelector('.pw-embed').getBoundingClientRect().height]; });
+  assert.deepEqual(box, [500, 500], 'the React viewer fills the height given to it');
+  await wp.screenshot({ path: '/tmp/shots/p7-wrappers.png', fullPage: true });
 
   assert.deepEqual(errs, [], 'no page errors');
   console.log('platform e2e: OK');

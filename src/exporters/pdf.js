@@ -19,7 +19,8 @@ const col = (c) => { const p = parseColor(c); return p ? { color: rgb(p.r, p.g, 
  * @param {import('../engine/text/fonts.js').FontStore} fontStore
  * @param {{ title?: string, author?: string, fetchImage?: (src: string) => Promise<Uint8Array|null>,
  *   subset?: (font: Uint8Array, codePoints: Iterable<number>) => Promise<Uint8Array>,
- *   pdfa?: { icc?: Uint8Array }, prepare?: (doc: PDFDocument) => any, save?: object }} [opt]
+ *   pdfa?: { icc?: Uint8Array }, prepare?: (doc: PDFDocument) => any, save?: object,
+ *   encrypt?: { userPassword?: string, ownerPassword?: string, permissions?: Partial<Record<keyof typeof import('./encrypt.js').PERMISSION_BITS, boolean>> } }} [opt]
  *   subset: a HarfBuzz subsetter (see subset.js). Without it, fonts embed in full.
  *   pdfa: make a PDF/A-2b file (needs an sRGB ICC profile). prepare: last change before saving
  *   (the server adds a signature placeholder there). save: extra pdf-lib save options.

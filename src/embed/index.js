@@ -29,11 +29,19 @@ function installSnapshot(snapshot) {
 }
 
 /**
- * @param {string|HTMLElement} target
- * @param {{ server?: string, report?: string, definition?: object, params?: Record<string,string>, lang?: string, height?: string, onDrill?: Function,
+ * @typedef {{ id: string, label: string, title?: string, after?: string, onClick?: (api: ViewerApi) => void }} ToolbarButton
+ * @typedef {{ page: number, pages: number, goTo: (page: number) => void }} ViewerApi
+ * @typedef {{ server?: string, report?: string, definition?: object, params?: Record<string, string>, lang?: string, height?: string,
+ *   onDrill?: (report: string, params: Record<string, unknown>) => void,
  *   reports?: Record<string, object>, fonts?: Record<string, string>, customFonts?: object[], uiFontCss?: string, snapshot?: Record<string, any>, title?: string,
- *   toolbar?: { hide?: string[], add?: { id: string, label: string, title?: string, after?: string, onClick?: (api: object) => void }[] },
- *   viewMode?: 'single' | 'continuous' | 'galley' }} opts
+ *   toolbar?: { hide?: string[], add?: ToolbarButton[] }, viewMode?: 'single' | 'continuous' | 'galley' }} ViewerOptions
+ * @typedef {{ unmount: () => void }} ViewerHandle
+ */
+/**
+ * Mount the Pagewright viewer in an element. Fonts and report definitions load from `server`.
+ * @param {string|HTMLElement} target
+ * @param {ViewerOptions} opts
+ * @returns {ViewerHandle}
  */
 export function mountViewer(target, opts = {}) {
   const el = typeof target === 'string' ? document.querySelector(target) : target;
