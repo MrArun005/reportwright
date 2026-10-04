@@ -5,9 +5,11 @@ import { useDesigner, SECTIONS } from './store.js';
 import { MIME_FIELD, MIME_DATASET } from './Canvas.jsx';
 import { loadSources, buildDataSets, detectFields, jsonPath } from '@/engine/data/index.js';
 import { resolveParameters } from '@/engine/index.js';
+import { functionTable } from '@/engine/expr/evaluate.js';
 import { Dialog, Field, TextInput, Select, Check } from './ui.jsx';
 import { t } from '@/i18n/index.js';
 import { origin } from '@/viewer/engineClient.js';
+import { OPS } from './Inspector.jsx';
 
 const NAME = /^[A-Za-z_][\w]*$/;
 
@@ -18,7 +20,7 @@ export async function loadSample() {
   try {
     const params = resolveParameters(def, {});
     const sources = await loadSources(def, { params, baseUrl: origin(), sqlPreview: true }); // the Pagewright server, also when embedded
-    const ctx = { params, globals: { ExecutionTime: new Date() }, dataSets: {}, fields: null, locale: def.locale, currency: def.currency };
+    const ctx = { params, globals: { ExecutionTime: new Date() }, dataSets: {}, fields: null, locale: def.locale, currency: def.currency, functions: functionTable(def) };
     const dataSets = buildDataSets(def, sources, ctx);
     useDesigner.setState({ sample: { dataSets, sources, at: Date.now() } });
   } catch (e) {
@@ -167,6 +169,9 @@ function ParamDialog({ index, onClose }) {
         <Field label={T('defaultValue')} hint={T('defaultHint')}><TextInput value={p.default} onChange={v => setP({ ...p, default: v })} mono /></Field>
       </div>
       <Check label={T('required')} checked={p.required} onChange={v => setP({ ...p, required: v })} />
+      <Check label={T('paramNullable')} checked={p.nullable} onChange={v => setP({ ...p, nullable: v || undefined })} />
+      {p.type === 'string' && <Check label={T('paramAllowBlank')} checked={p.allowBlank} onChange={v => setP({ ...p, allowBlank: v || undefined })} />}
+      <Check label={T('paramHidden')} checked={p.hidden} onChange={v => setP({ ...p, hidden: v || undefined })} />
       <Check label={T('multiHint')} checked={p.multi} onChange={v => setP({ ...p, multi: v || undefined })} />
       <Field label={T('fixedChoices')}>
         <textarea className="textarea" rows={3} value={(p.options || []).map(o => (o.label != null && o.label !== String(o.value) ? `${o.value}=${o.label}` : String(o.value))).join('\n')}
@@ -209,6 +214,7 @@ function SourceDialog({ index, onClose }) {
   let data;
   if (!err && s.type === 'json') { try { data = JSON.parse(s.dataText || 'null'); } catch (e) { err = `The JSON is not valid: ${e.message}`; } }
   if (!err && s.type === 'csv' && !s.url && !s.dataText.trim()) err = 'Give a URL or paste CSV text';
+  if (!err && s.type === 'csv' && ((s.separator && s.separator !== 'tab' && s.separator.length !== 1) || (s.quote && s.quote.length !== 1))) err = 'The separator and the quote are one character each';
   if (!err && (s.type === 'rest' || s.type === 'graphql') && !s.url) err = 'Give a URL';
   if (!err && s.type === 'graphql' && !s.query) err = 'Give a GraphQL query';
   if (!err && s.type === 'sql' && !s.connection) err = 'Pick a connection';
@@ -233,6 +239,12 @@ function SourceDialog({ index, onClose }) {
     if (s.type === 'graphql') { v.query = s.query || ''; if (s.variables) v.variables = s.variables; }
     if (s.type === 'json') v.data = data;
     if (s.type === 'csv' && !s.url) v.data = s.dataText;
+    if (s.type === 'csv') {
+      if (s.separator && s.separator !== ',') v.separator = s.separator;
+      if (s.quote && s.quote !== '"') v.quote = s.quote;
+      if (s.headerRow === false) v.headerRow = false;
+      if (Number(s.startRow) > 1) v.startRow = Number(s.startRow);
+    }
     if (s.type === 'sql') { v.connection = s.connection; v.query = s.query; }
     useDesigner.getState().apply(d => {
       d.dataSources ||= [];
@@ -281,6 +293,12 @@ function SourceDialog({ index, onClose }) {
           <textarea className="textarea" rows={6} value={s.query || ''} onChange={e => setS({ ...s, query: e.target.value })} placeholder="select region, month, sum(amount) as amount from sales where year = @year group by region, month" style={{ fontFamily: 'var(--mono)' }} />
         </Field>
       </>}
+      {s.type === 'csv' && <div className="grid2">
+        <Field label="Separator" hint='One character; "tab" for a tab'><TextInput value={s.separator ?? ','} onChange={v => setS({ ...s, separator: v })} mono /></Field>
+        <Field label="Quote"><TextInput value={s.quote ?? '"'} onChange={v => setS({ ...s, quote: v })} mono /></Field>
+        <Field label="Start row" hint="Rows above it are skipped"><TextInput value={s.startRow ?? 1} onChange={v => setS({ ...s, startRow: v })} mono /></Field>
+        <Check label="First row has the column names" checked={s.headerRow !== false} onChange={v => setS({ ...s, headerRow: v })} />
+      </div>}
       {(s.type === 'json' || (s.type === 'csv' && !s.url)) && (
         <Field label={s.type === 'json' ? 'JSON data' : 'CSV text (first row = headers)'}><textarea className="textarea" rows={10} value={s.dataText} onChange={e => setS({ ...s, dataText: e.target.value })} /></Field>
       )}
@@ -407,8 +425,11 @@ function DataSetDialog({ index, onClose, onSaved }) {
           {(d.filters || []).map((f, i) => (
             <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 90px 1fr auto', gap: 6 }}>
               <TextInput value={f.expr} onChange={v => setD({ ...d, filters: d.filters.map((x, j) => j === i ? { ...x, expr: v } : x) })} mono aria-label="Filter field" />
-              <Select value={f.op || '='} options={['=', '<>', '>', '>=', '<', '<=', 'in', 'like', 'contains']} onChange={v => setD({ ...d, filters: d.filters.map((x, j) => j === i ? { ...x, op: v } : x) })} />
-              <TextInput value={f.value} onChange={v => setD({ ...d, filters: d.filters.map((x, j) => j === i ? { ...x, value: v } : x) })} mono placeholder="value or =Parameters.x" aria-label="Filter value" />
+              <Select value={f.op || '='} options={OPS} onChange={v => setD({ ...d, filters: d.filters.map((x, j) => j === i ? { ...x, op: v } : x) })} />
+              <div style={{ display: 'flex', gap: 4 }}>
+                <TextInput value={f.value} onChange={v => setD({ ...d, filters: d.filters.map((x, j) => j === i ? { ...x, value: v } : x) })} mono placeholder="value or =Parameters.x" aria-label="Filter value" />
+                {f.op === 'Between' && <TextInput value={f.value2} onChange={v => setD({ ...d, filters: d.filters.map((x, j) => j === i ? { ...x, value2: v } : x) })} mono placeholder="and" aria-label="Upper value" />}
+              </div>
               <button className="btn sm ghost danger" onClick={() => setD({ ...d, filters: d.filters.filter((_, j) => j !== i) })} aria-label="Remove filter">✕</button>
             </div>
           ))}

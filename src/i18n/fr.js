@@ -6,6 +6,7 @@ export default {
   zoomIn: 'Zoom avant', zoomOut: 'Zoom arrière', fitWidth: 'Ajuster à la largeur', search: 'Rechercher', previousMatch: 'Résultat précédent', nextMatch: 'Résultat suivant',
   exporting: 'Exportation…', viewReport: 'Afficher le rapport', didNotRun: "Le rapport ne s'est pas exécuté.", true: 'Vrai', false: 'Faux',
   commaSeparated: 'Valeurs séparées par des virgules',
+  selectAll: 'Tout sélectionner', nullValue: 'Nul (aucune valeur)',
   pagesRows: '{pages} pages · {rows} lignes · {ms} ms', warnings: '{n} avertissement(s)',
   back: 'Retour', drillDepth: 'Niveau d’exploration {n}', liveHint: 'Les modifications s’appliquent dès que vous choisissez.',
   print: 'Imprimer', printing: 'Préparation…', fullScreen: 'Plein écran', exitFullScreen: 'Quitter le plein écran',
@@ -38,6 +39,7 @@ export default {
   /* ---- designer: parameter dialog ---- */
   paramNew: 'Nouveau paramètre', paramTitle: 'Paramètre {name}', name: 'Nom', paramType: 'Type', prompt: 'Libellé',
   defaultValue: 'Par défaut', defaultHint: 'Une valeur ou =expression, par ex. =Today()', required: 'Obligatoire',
+  paramHidden: 'Masqué (défini seulement par URL, API ou extraction)', paramNullable: 'Autoriser nul', paramAllowBlank: 'Autoriser un texte vide',
   multiHint: "Autoriser plusieurs valeurs (avec le filtre 'in' ou Join(Parameters.x))",
   fixedChoices: 'Choix fixes (un par ligne : valeur ou valeur=libellé)', choicesFrom: 'Ou des choix issus d’un jeu de données', valueField: 'Champ de valeur',
   cascadeHint: 'Le jeu de données peut filtrer sur d’autres paramètres (=Parameters.x). La visionneuse recharge alors les choix quand ils changent (en cascade).',

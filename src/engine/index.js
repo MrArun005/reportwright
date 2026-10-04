@@ -9,7 +9,7 @@ import { FontStore, ALL_FONT_KEYS } from './text/fonts.js';
 import { safeUrl } from './url.js';
 import { TextMeasurer, finishText } from './text/measure.js';
 import { loadSources, buildDataSets, coerce } from './data/index.js';
-import { evalValue, evaluate } from './expr/evaluate.js';
+import { evalValue, evaluate, functionTable } from './expr/evaluate.js';
 import { isoDate } from './expr/format.js';
 import { BASE_STYLE } from './style.js';
 import { resolveImageSrc } from './image.js';
@@ -61,9 +61,10 @@ export async function render(def, opts = {}) {
   let m = new TextMeasurer(store);
 
   const now = opts.now || new Date();
+  const fnCount = opts.fnCount || { n: 0 }; // report function calls, for this render and its subreports
   const baseCtx = {
     params, globals: { ExecutionTime: now, ReportName: def.name || '', PageNumber: 1, TotalPages: 1 },
-    dataSets: {}, fields: null, locale: def.locale || 'en-IN', currency: def.currency || 'INR',
+    dataSets: {}, fields: null, locale: def.locale || 'en-IN', currency: def.currency || 'INR', functions: functionTable(def, fnCount),
   };
   const sources = opts.sources || await loadSources(def, { params, fetch: opts.fetch, baseUrl: opts.baseUrl, sql: opts.sql, reportId: opts.reportId });
   const dataSets = buildDataSets(def, sources, baseCtx);
@@ -109,6 +110,7 @@ export async function render(def, opts = {}) {
     warnings.length = kept;
     idSeq = 0;
     imageBudget = { seen: new Set(), bytes: 0 };
+    if (!opts.fnCount) fnCount.n = 0; // each layout pass (fonts, TOC) gets the full budget
     const lc = makeLc(baseCtx.globals, false);
     // opts.firstPages: lay out only enough rows for that many pages (a fast first look; the full render follows).
     // 8 pt is the smallest sensible row, so this budget always fills the pages asked for. Not with a table of contents.
@@ -134,7 +136,7 @@ export async function render(def, opts = {}) {
             if ((opts.chain || []).includes(rq.report)) throw new Error('it includes itself');
             if (!defs.has(rq.report)) defs.set(rq.report, await opts.loadReport(rq.report));
             const child = defs.get(rq.report);
-            const r = await render(child, { ...opts, reportId: rq.report, budget, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, rq.report], bodyWidth: page.bodyWidth, state: {} });
+            const r = await render(child, { ...opts, reportId: rq.report, budget, fnCount, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, rq.report], bodyWidth: page.bodyWidth, state: {} });
             results.set(key, r);
             for (const w of r.warnings) warn(`Subreport ${rq.report}: ${w}`);
           } catch (e) { results.set(key, { error: e.message }); }
@@ -306,11 +308,13 @@ export async function parameterOptions(def, given = {}, opts = {}) {
   if (!dyn.length) return out;
   const params = resolveParameters(def, given, { lenient: true });
   const need = new Set(dyn.map(p => p.optionsFrom.dataSet));
+  // nested data sets need their parents (declared above them, so one backwards pass finds them all)
+  for (const d of [...(def.dataSets || [])].reverse()) if (need.has(d.name) && d.relation?.parent) need.add(d.relation.parent);
   const sets = (def.dataSets || []).filter(d => need.has(d.name));
   const srcNames = new Set(sets.map(d => d.source));
   const sub = { ...def, dataSources: (def.dataSources || []).filter(s => srcNames.has(s.name)), dataSets: sets };
   const sources = opts.sources || await loadSources(sub, { params, fetch: opts.fetch, baseUrl: opts.baseUrl, sql: opts.sql, reportId: opts.reportId });
-  const ctx = { params, globals: { ExecutionTime: new Date() }, dataSets: {}, fields: null };
+  const ctx = { params, globals: { ExecutionTime: new Date() }, dataSets: {}, fields: null, functions: functionTable(def) };
   const built = buildDataSets(sub, sources, ctx);
   for (const p of dyn) {
     const rows = built[p.optionsFrom.dataSet] || [];
@@ -332,10 +336,12 @@ export async function parameterOptions(def, given = {}, opts = {}) {
 /** Defaults, types and required checks for report parameters. */
 export function resolveParameters(def, given, { lenient = false } = {}) {
   const out = {}, missing = [];
-  const ctx = { params: {}, globals: { ExecutionTime: new Date() }, dataSets: {}, fields: null };
+  const ctx = { params: {}, globals: { ExecutionTime: new Date() }, dataSets: {}, fields: null, functions: functionTable(def) };
   for (const p of def.parameters || []) {
     let val = given[p.name];
-    if ((val == null || val === '') && p.default != null && p.default !== '') {
+    // nullable: an explicit null is a value, so the default does not replace it
+    const chosenNull = val === null && p.nullable && !p.multi && Object.hasOwn(given, p.name);
+    if (!chosenNull && (val == null || val === '') && p.default != null && p.default !== '') {
       try { val = evalValue(p.default, ctx); } catch { val = null; }
     }
     if (p.multi) {
@@ -343,8 +349,10 @@ export function resolveParameters(def, given, { lenient = false } = {}) {
       val = list.map(x => coerce(x, p.type || 'string'));
       if (p.required && !val.length) missing.push(p.name);
     } else {
-      val = val === '' && p.type !== 'string' ? null : coerce(val, p.type || 'string');
-      if (p.required && (val == null || val === '')) missing.push(p.name);
+      // a blank is a value only for allowBlank (text); a nullable parameter reads it as null
+      if (val === '' && (p.type !== 'string' || (p.nullable && !p.allowBlank))) val = null;
+      else val = coerce(val, p.type || 'string');
+      if (p.required && ((val == null && !p.nullable) || (val === '' && !p.allowBlank))) missing.push(p.name);
     }
     out[p.name] = val;
     ctx.params[p.name] = val;

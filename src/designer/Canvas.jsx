@@ -5,7 +5,7 @@ import { tableFor } from './tableGen.js';
 import { loadBarcodes } from '@/engine/items/barcode.js';
 const hasType = (items, t) => (items || []).some(i => i.type === t || hasType(i.items, t));
 import { BASE_STYLE, parseBorder } from '@/engine/style.js';
-import { isDynamic } from '@/engine/expr/evaluate.js';
+import { isDynamic, functionTable } from '@/engine/expr/evaluate.js';
 import { resolveFontKey, fallbackKeys } from '@/engine/text/fonts.js';
 import { normBox } from '@/engine/units.js';
 import { fontFamilyCss, pageToSvg } from '@/exporters/svg.js';
@@ -392,7 +392,7 @@ export async function paintItemSvg(shape, def, sample) {
   let params = {};
   try { params = resolveParameters(def, {}, { lenient: true }); } catch { /* defaults only */ }
   const base = { fontFamily: 'Inter', fontSize: 9, color: '#1f2937', padding: 2, lineHeight: 1.25, textAlign: 'auto', verticalAlign: 'top', ...(def.styles?.base || {}) };
-  const ctxBase = { params, globals: { PageNumber: 1, TotalPages: 1, ExecutionTime: new Date(), ReportName: def.name }, dataSets, fields: null, locale: def.locale, currency: def.currency };
+  const ctxBase = { params, globals: { PageNumber: 1, TotalPages: 1, ExecutionTime: new Date(), ReportName: def.name }, dataSets, fields: null, locale: def.locale, currency: def.currency, functions: functionTable(def) };
   let seq = 0;
   const lc = {
     m: measurer, base, dataSets, warn: () => {}, fixed: true, maxUnitHeight: 1e6, state: {}, regions: [], nextId: () => ++seq,

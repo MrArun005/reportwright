@@ -73,8 +73,8 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   const [status, setStatus] = useState({ state: 'idle' });
   const [zoom, setZoom] = useState('fit');
   const [current, setCurrent] = useState(1);
-  const hasParams = (definition.parameters || []).length > 0;
-  const [panel, setPanel] = useState((definition.parameters || []).some(p => p.required && !p.default) ? 'params' : null);
+  const hasParams = (definition.parameters || []).some(p => !p.hidden); // hidden: set by URL, API or drill-through only
+  const [panel, setPanel] = useState((definition.parameters || []).some(p => !p.hidden && p.required && !p.default && !p.nullable) ? 'params' : null);
   const [exporting, setExporting] = useState(null);
   const [options, setOptions] = useState({});
   const [query, setQuery] = useState('');
@@ -489,10 +489,10 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
           <form className={`vparams${paramsOnTop ? ' top' : ''}`} style={paramsOnTop ? { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` } : undefined}
             onSubmit={(e) => { e.preventDefault(); const st = { toggles: {}, sort: {} }; setState(st); run(params, st); if (narrow) setPanel(null); }}>
             <h3>{T('parameters')}</h3>
-            {(definition.parameters || []).map(p => (
+            {(definition.parameters || []).filter(p => !p.hidden).map(p => (
               <div className="field" key={p.name}>
                 <span>{p.prompt || p.name}{p.required ? ' *' : ''}</span>
-                <ParamInput p={p} value={params[p.name] ?? ''} options={options[p.name]} invalid={status.missing?.includes(p.name)} T={T} name={`${uid}-${p.name}`}
+                <ParamInput p={p} value={params[p.name]} options={options[p.name]} invalid={status.missing?.includes(p.name)} T={T} name={`${uid}-${p.name}`}
                   onChange={(v) => setParams(s => ({ ...s, [p.name]: v }))} />
               </div>
             ))}

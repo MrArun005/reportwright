@@ -3,7 +3,7 @@ import { useMemo, useRef, useState } from 'react';
 import ExprCode from './ExprCode.jsx';
 import { Dialog } from './ui.jsx';
 import { useDesigner } from './store.js';
-import { checkValue, evalValue, toText, FUNCTION_NAMES } from '@/engine/expr/evaluate.js';
+import { checkValue, evalValue, toText, FUNCTION_NAMES, functionTable } from '@/engine/expr/evaluate.js';
 
 const GLOBALS = ['PageNumber', 'TotalPages', 'ExecutionTime', 'ReportName'];
 const SNIPPETS = {
@@ -33,7 +33,7 @@ export default function ExpressionEditor({ value, dataSet, onSave, onClose, titl
     const rows = sample.dataSets[dsName] || [];
     const params = Object.fromEntries((def.parameters || []).map(p => [p.name, p.default ?? null]));
     try {
-      const v = evalValue(text, { fields: rows[0] || null, aggRows: rows, rowNumber: 1, params, dataSets: sample.dataSets, globals: { PageNumber: 1, TotalPages: 1, ExecutionTime: new Date(), ReportName: def.name }, locale: def.locale, currency: def.currency });
+      const v = evalValue(text, { fields: rows[0] || null, aggRows: rows, rowNumber: 1, params, dataSets: sample.dataSets, globals: { PageNumber: 1, TotalPages: 1, ExecutionTime: new Date(), ReportName: def.name }, locale: def.locale, currency: def.currency, functions: functionTable(def) });
       return { ok: true, text: typeof v === 'string' ? v : toText(v, null, { locale: def.locale, currency: def.currency }), type: v === null ? 'null' : v instanceof Date ? 'date' : typeof v };
     } catch (e) { return { ok: false, text: e.message }; }
   }, [text, err, sample, dsName, def]);

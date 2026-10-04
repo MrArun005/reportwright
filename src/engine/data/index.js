@@ -1,14 +1,12 @@
 // @ts-check
-import { evalValue, evaluate, compile, parseValue, toText } from '../expr/evaluate.js';
+import { evalValue, evaluate, compile, parseValue, toText, functionTable, cmpVal, ROW_PARENT } from '../expr/evaluate.js';
 import { toDate, isoDate } from '../expr/format.js';
 
 /**
  * Data layer: sources → raw JSON; data sets → typed, filtered, sorted rows.
  */
 
-/** Minimal JSONPath: $, $.a.b, $.a[0].b, $.a[*].b, $['a b'] */
-export function jsonPath(obj, path) {
-  if (!path || path === '$') return obj;
+function pathTokens(path) {
   const toks = [];
   const re = /\.([A-Za-z_$][\w$]*)|\[(\d+|\*)\]|\['([^']+)'\]|\["([^"]+)"\]/g;
   const p = path.startsWith('$') ? path.slice(1) : '.' + path;
@@ -19,17 +17,48 @@ export function jsonPath(obj, path) {
     last = re.lastIndex;
   }
   if (last !== p.length) throw new Error(`Bad data path "${path}"`);
+  return toks;
+}
+
+/** Minimal JSONPath: $, $.a.b, $.a[0].b, $.a[*].b, $['a b'] */
+export function jsonPath(obj, path) {
+  if (!path || path === '$') return obj;
   let cur = [obj], spread = false;
-  for (const t of toks) {
+  for (const t of pathTokens(path)) {
     const nxt = [];
     for (const c of cur) {
       if (c == null) continue;
-      if (t === '*') { if (Array.isArray(c)) nxt.push(...c); else nxt.push(...Object.values(c)); spread = true; }
+      if (t === '*') { if (typeof c === 'object') for (const k of Array.isArray(c) ? c : Object.values(c)) nxt.push(k); spread = true; }
       else nxt.push(c[t]);
     }
     cur = nxt;
   }
   return spread ? cur : cur[0];
+}
+
+/**
+ * jsonPath that also says, for each result of a [*] spread, which object held the spread collection
+ * (for $.books[*].positions[*], the book of each position): Parent.* in the data set's rows.
+ * @returns {{rows: any, parents: any[]|null}}
+ */
+export function jsonPathRows(obj, path) {
+  if (!path || path === '$') return { rows: obj, parents: null };
+  let cur = [obj], hold = [null], par = [null], spread = false;
+  for (const t of pathTokens(path)) {
+    const nv = [], nh = [], np = [];
+    for (let i = 0; i < cur.length; i++) {
+      const c = cur[i];
+      if (c == null) continue;
+      if (t === '*') {
+        if (typeof c !== 'object') continue;
+        const kids = Array.isArray(c) ? c : Object.values(c);
+        for (const k of kids) { nv.push(k); nh.push(c); np.push(hold[i]); }
+        spread = true;
+      } else { nv.push(c[t]); nh.push(c); np.push(par[i]); }
+    }
+    cur = nv; hold = nh; par = np;
+  }
+  return spread ? { rows: cur, parents: par } : { rows: cur[0], parents: null };
 }
 
 /** @param {any} v @param {string} type */
@@ -67,25 +96,71 @@ function guessType(v) {
   return 'string';
 }
 
-/** Parse CSV text (RFC 4180-ish) into objects using the first row as headers. */
-export function parseCsv(text) {
+const MAX_CSV_COLUMNS = 10000;
+const MAX_CSV_CELLS = 5_000_000; // rows × columns: a wide header over many short lines would multiply
+/** One-character CSV option: "tab" and "\\t" mean a tab. */
+function csvChar(v, dflt, what) {
+  if (v == null || v === '') return dflt;
+  const c = v === 'tab' || v === '\\t' ? '\t' : String(v);
+  if (c.length !== 1 || c === '\n' || c === '\r') throw new Error(`The CSV ${what} must be one character`);
+  return c;
+}
+
+/**
+ * Parse CSV text into objects. One forward scan, O(n): a quote opens a quoted field only at the start of
+ * a field; inside, a doubled quote is a quote, and separators and line breaks are data.
+ * @param {string} text
+ * @param {{separator?: string, quote?: string, headerRow?: boolean, startRow?: number}} [opts]
+ *   startRow: 1-based record where the header (or the data, without a header row) starts.
+ */
+export function parseCsv(text, opts = {}) {
+  const sep = csvChar(opts.separator, ',', 'separator');
+  const quote = csvChar(opts.quote, '"', 'quote');
+  if (sep === quote) throw new Error('The CSV separator and quote must differ');
+  text = String(text ?? '');
+  const n = text.length;
   const rows = [];
-  let row = [], cell = '', q = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (q) {
-      if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; }
-      else if (c === '"') q = false;
-      else cell += c;
-    } else if (c === '"') q = true;
-    else if (c === ',') { row.push(cell); cell = ''; }
-    else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
-    else cell += c;
+  let row = [], i = 0;
+  const endOfField = (k) => { while (k < n && text[k] !== sep && text[k] !== '\n' && text[k] !== '\r') k++; return k; };
+  for (;;) {
+    let cell;
+    if (text[i] === quote) {
+      let j = i + 1, buf = '';
+      for (;;) {
+        const k = text.indexOf(quote, j);
+        if (k < 0) { buf += text.slice(j); j = n; break; } // no closing quote: the rest is the field
+        buf += text.slice(j, k);
+        if (text[k + 1] === quote) { buf += quote; j = k + 2; continue; }
+        j = k + 1; break;
+      }
+      const e = endOfField(j); // text after the closing quote is kept
+      cell = buf + text.slice(j, e); i = e;
+    } else {
+      const e = endOfField(i);
+      cell = text.slice(i, e); i = e;
+    }
+    row.push(cell);
+    if (row.length > MAX_CSV_COLUMNS) throw new Error(`A CSV row has more than ${MAX_CSV_COLUMNS} columns`);
+    if (i >= n) { rows.push(row); break; }
+    if (text[i] === sep) { i++; continue; }
+    if (text[i] === '\r' && text[i + 1] === '\n') i++;
+    i++;
+    rows.push(row); row = [];
+    if (i >= n) break;
   }
-  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
-  const [head, ...body] = rows.filter(r => r.length > 1 || r[0] !== '');
+  const start = Math.max(1, Math.floor(Number(opts.startRow) || 1));
+  const kept = rows.slice(start - 1).filter(r => r.length > 1 || r[0] !== '');
+  let width = 0;
+  for (const r of kept) width = Math.max(width, r.length);
+  if (width * kept.length > MAX_CSV_CELLS) throw new Error(`The CSV has more than ${MAX_CSV_CELLS.toLocaleString('en')} cells (rows × columns)`);
+  if (opts.headerRow === false) {
+    const names = Array.from({ length: width }, (_, k) => `Column${k + 1}`);
+    return kept.map(r => Object.fromEntries(names.map((h, k) => [h, r[k] ?? ''])));
+  }
+  const [head, ...body] = kept;
   if (!head) return [];
-  return body.map(r => Object.fromEntries(head.map((h, i) => [h.trim(), r[i] ?? ''])));
+  const names = head.map(h => h.trim());
+  return body.map(r => Object.fromEntries(names.map((h, k) => [h, r[k] ?? ''])));
 }
 
 /**
@@ -97,14 +172,14 @@ export function parseCsv(text) {
  *   query: the browser sends the report id and source name, never SQL.
  */
 export async function loadSources(def, opt) {
-  const ctx = { params: opt.params, globals: {}, dataSets: {}, fields: null };
+  const ctx = { params: opt.params, globals: {}, dataSets: {}, fields: null, functions: functionTable(def) };
   const out = {};
   const f = opt.fetch || (typeof fetch !== 'undefined' ? fetch : null);
   await Promise.all((def.dataSources || []).map(async (src) => {
     try {
       if (src.type === 'json') out[src.name] = typeof src.data === 'string' ? JSON.parse(src.data) : src.data;
       else if (src.type === 'sql') out[src.name] = await loadSql(src, ctx.params, opt, f);
-      else if (src.type === 'csv' && src.data) out[src.name] = parseCsv(src.data);
+      else if (src.type === 'csv' && src.data) out[src.name] = parseCsv(src.data, src);
       else if (src.type === 'rest' || src.type === 'csv' || src.type === 'graphql') {
         if (!f) throw new Error('No fetch() available');
         let url = urlFrom(src.url || '', ctx);
@@ -120,7 +195,7 @@ export async function loadSources(def, opt) {
         } else if (src.body && init.method !== 'GET') init.body = String(evalValue(src.body, ctx));
         const res = await f(url, init);
         if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
-        if (src.type === 'csv') out[src.name] = parseCsv(await res.text());
+        if (src.type === 'csv') out[src.name] = parseCsv(await res.text(), src);
         else {
           const json = await res.json();
           if (src.type === 'graphql' && json.errors?.length) throw new Error(`GraphQL: ${json.errors[0].message}`);
@@ -202,18 +277,37 @@ function like(s, p) {
 export function buildDataSets(def, sources, baseCtx) {
   /** @type {Record<string, any[]>} */
   const sets = {};
+  // rows of a data set that others hang off (relation.parent) keep their raw object
+  const raws = new Set((def.dataSets || []).filter(d => d.relation).map(d => d.relation.parent));
   for (const ds of def.dataSets || []) {
-    const raw = sources[ds.source];
-    if (raw === undefined) throw new Error(`Data set "${ds.name}": the source "${ds.source}" does not exist`);
-    let list = jsonPath(raw, ds.path || '$');
-    if (list == null) list = [];
-    if (!Array.isArray(list)) list = [list];
+    let list, parents = null;
+    if (ds.relation) {
+      // nested data set: the children of every parent row, each knowing its parent row
+      const prows = sets[ds.relation.parent];
+      if (!prows) throw new Error(`Data set "${ds.name}": its parent "${ds.relation.parent}" must be a data set declared above it`);
+      list = []; parents = [];
+      for (const p of prows) {
+        let kids = jsonPath(RAW.get(p), ds.relation.path || '$');
+        if (kids == null) continue;
+        if (!Array.isArray(kids)) kids = [kids];
+        for (const k of kids) { list.push(k); parents.push(p); }
+      }
+    } else {
+      const raw = sources[ds.source];
+      if (raw === undefined) throw new Error(`Data set "${ds.name}": the source "${ds.source}" does not exist`);
+      ({ rows: list, parents } = jsonPathRows(raw, ds.path || '$'));
+      if (list == null) list = [];
+      if (!Array.isArray(list)) list = [list];
+    }
     const fields = ds.fields && ds.fields.length ? ds.fields : detectFields(list);
     const plain = fields.filter(fd => !fd.expr);
     const calc = fields.filter(fd => fd.expr);
-    let rows = list.map((r) => {
+    const keepRaw = raws.has(ds.name);
+    let rows = list.map((r, i) => {
       const o = {};
       for (const fd of plain) o[fd.name] = coerce(fd.path ? jsonPath(r, fd.path) : r?.[fd.name], fd.type);
+      if (parents && parents[i] != null) ROW_PARENT.set(o, parents[i]);
+      if (keepRaw) RAW.set(o, r);
       return o;
     });
     if (calc.length) {
@@ -224,38 +318,107 @@ export function buildDataSets(def, sources, baseCtx) {
     const setCtx = { ...baseCtx, dataSets: { ...baseCtx.dataSets, ...sets } };
     rows = applyFilters(rows, ds.filters, setCtx);
     rows = applySort(rows, ds.sort, setCtx);
+    if (ds.relation) {
+      const byParent = new Map();
+      for (const r of rows) {
+        const p = ROW_PARENT.get(r);
+        let a = byParent.get(p);
+        if (!a) byParent.set(p, a = []);
+        a.push(r);
+      }
+      RELATIONS.set(rows, { parent: ds.relation.parent, byParent });
+    }
     sets[ds.name] = rows;
   }
   return sets;
 }
 
-/** @param {any[]} rows @param {any[]|undefined} filters */
+/** Typed row → its raw source object (only for parents of nested data sets). */
+const RAW = new WeakMap();
+/** Rows array of a nested data set → {parent, byParent: Map(parent row → child rows)}. */
+const RELATIONS = new WeakMap();
+
+/**
+ * Rows a region bound to a data set should show: for a nested data set inside a list (or group) bound to its
+ * parent, only the current parent rows' children; anywhere else, all rows.
+ * @param {any[]} rows @param {any} ctx
+ */
+export function related(rows, ctx) {
+  const rel = RELATIONS.get(rows);
+  const cur = rel && ctx?.current?.[rel.parent];
+  if (!cur) return rows;
+  if (cur.length === 1) return rel.byParent.get(cur[0]) || [];
+  const out = [];
+  for (const p of cur) for (const r of rel.byParent.get(p) || []) out.push(r);
+  return out;
+}
+
+/**
+ * Filters run in the order listed. Row filters (=, <, in, like, Between …) test each row; set filters
+ * (TopN, BottomN, TopPercent, BottomPercent) rank all rows left by the filters before them.
+ * @param {any[]} rows @param {any[]|undefined} filters
+ */
 export function applyFilters(rows, filters, baseCtx) {
   if (!filters || !filters.length) return rows;
   const c = { ...baseCtx };
-  return rows.filter((r) => {
-    c.fields = r;
-    return filters.every((f) => {
-      const a = evalValue(f.expr, c);
-      const b = evalValue(f.value, c);
-      switch (f.op || '=') {
-        case '=': return looseEq(a, b);
-        case '<>': return !looseEq(a, b);
-        case '>': return a > b;
-        case '>=': return a >= b;
-        case '<': return a < b;
-        case '<=': return a <= b;
-        case 'in': {
-          // an empty list (nothing picked in a multi-value parameter) means "all"
-          const list = Array.isArray(b) ? b : b == null || b === '' ? [] : String(b).split(',').map(s => s.trim());
-          return list.length === 0 || list.some(x => looseEq(a, x));
-        }
-        case 'like': return like(String(a ?? ''), String(b ?? ''));
-        case 'contains': return String(a ?? '').toLowerCase().includes(String(b ?? '').toLowerCase());
-        default: throw new Error(`Unknown filter operator "${f.op}"`);
-      }
-    });
-  });
+  let i = 0;
+  while (i < filters.length) {
+    const f = filters[i];
+    if (SET_OPS.has(String(f.op || '').toLowerCase())) { rows = rankFilter(rows, f, c); i++; continue; }
+    let j = i; // a run of row filters: one pass
+    while (j < filters.length && !SET_OPS.has(String(filters[j].op || '').toLowerCase())) j++;
+    const run = filters.slice(i, j);
+    rows = rows.filter((r) => { c.fields = r; return run.every(f => rowFilter(f, c)); });
+    i = j;
+  }
+  return rows;
+}
+
+const SET_OPS = new Set(['topn', 'bottomn', 'toppercent', 'bottompercent']);
+
+function rowFilter(f, c) {
+  const a = evalValue(f.expr, c);
+  const b = evalValue(f.value, c);
+  switch (f.op || '=') {
+    case '=': return looseEq(a, b);
+    case '<>': return !looseEq(a, b);
+    case '>': return a > b;
+    case '>=': return a >= b;
+    case '<': return a < b;
+    case '<=': return a <= b;
+    case 'in': {
+      // an empty list (nothing picked in a multi-value parameter) means "all"
+      const list = Array.isArray(b) ? b : b == null || b === '' ? [] : String(b).split(',').map(s => s.trim());
+      return list.length === 0 || list.some(x => looseEq(a, x));
+    }
+    case 'like': return like(String(a ?? ''), String(b ?? ''));
+    case 'contains': return String(a ?? '').toLowerCase().includes(String(b ?? '').toLowerCase());
+    case 'between': case 'Between': {
+      // inclusive at both ends; value may be a [low, high] pair instead of value + value2
+      const [lo, hi] = Array.isArray(b) ? b : [b, evalValue(f.value2, c)];
+      return a != null && lo != null && hi != null && cmpVal(a, lo) >= 0 && cmpVal(a, hi) <= 0;
+    }
+    default: throw new Error(`Unknown filter operator "${f.op}"`);
+  }
+}
+
+/**
+ * TopN / BottomN / TopPercent / BottomPercent, ranked by the filter's expression. Ties with the last
+ * value kept are kept too (so more than N rows may pass, as in RDL); rows with no value drop out. Row order stays.
+ */
+function rankFilter(rows, f, c) {
+  const op = String(f.op).toLowerCase();
+  c.fields = rows[0] || null;
+  const n = Number(evalValue(f.value, c));
+  if (!Number.isFinite(n)) throw new Error(`The ${f.op} filter needs a number, not "${String(f.value).slice(0, 40)}"`);
+  const keys = rows.map((r) => { c.fields = r; return evalValue(f.expr, c); });
+  const ranked = keys.filter(k => k != null && k !== '');
+  const count = op.endsWith('percent') ? Math.ceil((ranked.length * Math.min(n, 100)) / 100) : Math.min(n, ranked.length);
+  if (count <= 0) return [];
+  const top = op.startsWith('top');
+  ranked.sort((x, y) => (top ? cmpVal(y, x) : cmpVal(x, y)));
+  const edge = ranked[Math.ceil(count) - 1];
+  return rows.filter((_, i) => keys[i] != null && keys[i] !== '' && (top ? cmpVal(keys[i], edge) >= 0 : cmpVal(keys[i], edge) <= 0));
 }
 function looseEq(a, b) {
   if (a instanceof Date) a = a.getTime();

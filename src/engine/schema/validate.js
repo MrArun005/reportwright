@@ -1,5 +1,5 @@
 // @ts-check
-import { checkValue } from '../expr/evaluate.js';
+import { checkValue, checkFunctions } from '../expr/evaluate.js';
 import { ITEMS } from '../items/index.js';
 
 export const SCHEMA_ID = 'pagewright/report@1';
@@ -14,6 +14,14 @@ export function validate(def) {
   if (def.$schema && def.$schema !== SCHEMA_ID) warnings.push(`Unknown schema "${def.$schema}". Expected "${SCHEMA_ID}".`);
   if (!def.sections || !def.sections.body) errors.push('The report has no body section');
 
+  errors.push(...checkFunctions(def.functions));
+
+  for (const p of def.parameters || []) {
+    if (p?.hidden && p.required && (p.default == null || p.default === '') && !p.nullable) {
+      warnings.push(`Parameter "${p.name}" is hidden and required but has no default: only a URL, the API or a drill-through can set it`);
+    }
+  }
+
   const srcNames = new Set();
   for (const s of def.dataSources || []) {
     if (!s.name) errors.push('A data source has no name');
@@ -24,8 +32,12 @@ export function validate(def) {
   for (const d of def.dataSets || []) {
     if (!d.name) errors.push('A data set has no name');
     if (dsNames.has(d.name)) errors.push(`Two data sets have the name "${d.name}"`);
+    if (d.relation) {
+      // a nested data set: rows come from each parent row, so the parent must be built first
+      if (!d.relation.parent || !dsNames.has(d.relation.parent)) errors.push(`Data set "${d.name}": its parent "${d.relation.parent}" must be a data set declared above it`);
+      if (d.relation.path != null && typeof d.relation.path !== 'string') errors.push(`Data set "${d.name}": the relation path must be text, e.g. $.items[*]`);
+    } else if (!srcNames.has(d.source)) errors.push(`Data set "${d.name}" uses the source "${d.source}", which does not exist`);
     dsNames.add(d.name);
-    if (!srcNames.has(d.source)) errors.push(`Data set "${d.name}" uses the source "${d.source}", which does not exist`);
   }
 
   const names = new Set();

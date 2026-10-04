@@ -6,6 +6,7 @@ export default {
   zoomIn: 'Ampliar', zoomOut: 'Reduzir', fitWidth: 'Ajustar à largura', search: 'Pesquisar', previousMatch: 'Ocorrência anterior', nextMatch: 'Próxima ocorrência',
   exporting: 'Exportando…', viewReport: 'Ver relatório', didNotRun: 'O relatório não foi executado.', true: 'Sim', false: 'Não',
   commaSeparated: 'Valores separados por vírgulas',
+  selectAll: 'Selecionar tudo', nullValue: 'Nulo (sem valor)',
   pagesRows: '{pages} páginas · {rows} linhas · {ms} ms', warnings: '{n} aviso(s)',
   back: 'Voltar', drillDepth: 'Nível de detalhamento {n}', liveHint: 'As alterações valem assim que você escolhe.',
   print: 'Imprimir', printing: 'Preparando…', fullScreen: 'Tela cheia', exitFullScreen: 'Sair da tela cheia',
@@ -38,6 +39,7 @@ export default {
   /* ---- designer: parameter dialog ---- */
   paramNew: 'Novo parâmetro', paramTitle: 'Parâmetro {name}', name: 'Nome', paramType: 'Tipo', prompt: 'Rótulo',
   defaultValue: 'Padrão', defaultHint: 'Um valor ou =expressão, por exemplo =Today()', required: 'Obrigatório',
+  paramHidden: 'Oculto (definido só por URL, API ou drill-through)', paramNullable: 'Permitir nulo', paramAllowBlank: 'Permitir texto vazio',
   multiHint: "Permitir vários valores (use com o filtro 'in' ou com Join(Parameters.x))",
   fixedChoices: 'Opções fixas (uma por linha: valor ou valor=rótulo)', choicesFrom: 'Ou opções de um conjunto de dados', valueField: 'Campo de valor',
   cascadeHint: 'O conjunto de dados pode filtrar por outros parâmetros (=Parameters.x). O visualizador recarrega as opções quando eles mudam (em cascata).',

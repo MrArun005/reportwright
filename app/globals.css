@@ -130,8 +130,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* ---------- home ---------- */
 .home-shell { min-height: 100%; }
 .home-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 48px; padding-inline: 20px; background: var(--panel); border-bottom: 1px solid var(--line); }
-.home { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 36px 56px; }
-.home-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 24px; flex-wrap: wrap; margin-bottom: 24px; }
+.home { padding-inline: clamp(16px, 2vw, 32px); padding-block: 24px 40px; } /* the whole width: no centred column */
+.home-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; margin-bottom: 18px; }
 .home h1 { font-size: var(--fs-xl); font-weight: var(--fw-strong); margin: 0 0 6px; letter-spacing: -.02em; line-height: 1.15; text-wrap: balance; }
 .home .lede { color: var(--muted); margin: 0; max-width: 56ch; }
 .newrep { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -139,10 +139,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .newrep .btn { height: 32px; padding: 0 14px; }
 .newrep .err { flex-basis: 100%; }
 /* report cards: a sheet of paper on the desk */
-.rgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; }
+.rgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
 .rcard { display: grid; grid-template-rows: auto 1fr auto; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; transition: border-color .15s, box-shadow .15s; }
 .rcard:hover { border-color: var(--line-strong); box-shadow: var(--shadow-card); }
-.rcard-thumb { display: block; padding: 18px 22px 0; background: var(--band); border-bottom: 1px solid var(--line-2); text-decoration: none; }
+.rcard-thumb { display: block; padding: 12px 14px 0; background: var(--band); border-bottom: 1px solid var(--line-2); text-decoration: none; }
 .thumb { position: relative; aspect-ratio: 4 / 3; overflow: hidden; }
 .thumb .sheet { background: var(--paper); color: var(--paper-ink); border-radius: 2px 2px 0 0; box-shadow: var(--shadow-sheet); transform-origin: top center; transition: transform .2s; }
 .rcard:hover .thumb .sheet { transform: translateY(-3px); }
@@ -179,7 +179,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .vpage svg { display: block; width: 100%; height: 100%; }
 .vmsg { margin: 40px auto; max-width: 520px; padding: 16px 18px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
 .vmsg.error { border-color: var(--danger-line); background: var(--danger-soft); color: var(--danger); }
-.warnings { max-width: 760px; width: 100%; padding: 10px 14px; border-radius: 8px; background: var(--warn-soft); border: 1px solid var(--warn-line); color: var(--warn); font-size: var(--fs-sm); }
+.warnings { width: 100%; padding: 10px 14px; border-radius: 8px; background: var(--warn-soft); border: 1px solid var(--warn-line); color: var(--warn); font-size: var(--fs-sm); }
 .warnings ul { margin: 4px 0 0; padding-left: 18px; }
 
 /* ---------- designer shell ---------- */

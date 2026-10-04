@@ -1,0 +1,740 @@
+{
+  "$schema": "pagewright/report@1",
+  "name": "Expressions showcase",
+  "locale": "en-IN",
+  "currency": "INR",
+  "page": {
+    "size": "A4",
+    "orientation": "portrait",
+    "margins": [
+      36,
+      36,
+      36,
+      36
+    ]
+  },
+  "parameters": [
+    {
+      "name": "minScore",
+      "type": "number",
+      "default": 0,
+      "hidden": true
+    },
+    {
+      "name": "note",
+      "type": "string",
+      "nullable": true,
+      "prompt": "Note (optional)"
+    }
+  ],
+  "functions": [
+    {
+      "name": "Tax",
+      "params": [
+        "amt"
+      ],
+      "body": "=amt * 0.18"
+    },
+    {
+      "name": "Gross",
+      "params": [
+        "amt"
+      ],
+      "body": "=amt + Code.Tax(amt)"
+    },
+    {
+      "name": "Grade",
+      "params": [
+        "score"
+      ],
+      "body": "=IIF(score >= 90, \"A\", IIF(score >= 75, \"B\", \"C\"))"
+    }
+  ],
+  "dataSources": [
+    {
+      "name": "src",
+      "type": "json",
+      "data": {
+        "orders": [
+          {
+            "id": "SO-101",
+            "customer": "Asha Rao & Sons",
+            "date": "2026-07-03",
+            "items": [
+              {
+                "sku": "PAPER-A4",
+                "qty": 40,
+                "price": 310
+              },
+              {
+                "sku": "TONER-K",
+                "qty": 2,
+                "price": 4200
+              },
+              {
+                "sku": "STAPLER",
+                "qty": 5,
+                "price": 180
+              }
+            ]
+          },
+          {
+            "id": "SO-102",
+            "customer": "Kiran Textiles",
+            "date": "2026-08-14",
+            "items": [
+              {
+                "sku": "PAPER-A3",
+                "qty": 10,
+                "price": 620
+              }
+            ]
+          },
+          {
+            "id": "SO-103",
+            "customer": "Meera Foods",
+            "date": "2026-09-30",
+            "items": [
+              {
+                "sku": "LABELS",
+                "qty": 12,
+                "price": 95
+              },
+              {
+                "sku": "PAPER-A4",
+                "qty": 25,
+                "price": 310
+              }
+            ]
+          }
+        ],
+        "desks": {
+          "teams": [
+            {
+              "team": "North",
+              "people": [
+                {
+                  "name": "Ravi",
+                  "score": 91
+                },
+                {
+                  "name": "Sana",
+                  "score": 78
+                },
+                {
+                  "name": "Ivan",
+                  "score": 66
+                }
+              ]
+            },
+            {
+              "team": "South",
+              "people": [
+                {
+                  "name": "Lata",
+                  "score": 95
+                },
+                {
+                  "name": "Omar",
+                  "score": 78
+                },
+                {
+                  "name": "Pia",
+                  "score": 52
+                },
+                {
+                  "name": "Raj",
+                  "score": null
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "rates",
+      "type": "csv",
+      "data": "Rates exported 2026-10-01\nregion;rate;note\nNorth;0.12;\"standard; reviewed\"\nSouth;0.18;\"said \"\"ok\"\"\"\nEast;0.05;\nWest;0.28;high\n",
+      "separator": ";",
+      "startRow": 2
+    }
+  ],
+  "dataSets": [
+    {
+      "name": "Orders",
+      "source": "src",
+      "path": "$.orders[*]",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string"
+        },
+        {
+          "name": "customer",
+          "type": "string"
+        },
+        {
+          "name": "date",
+          "type": "date"
+        }
+      ]
+    },
+    {
+      "name": "Items",
+      "relation": {
+        "parent": "Orders",
+        "path": "$.items[*]"
+      },
+      "fields": [
+        {
+          "name": "sku",
+          "type": "string"
+        },
+        {
+          "name": "qty",
+          "type": "number"
+        },
+        {
+          "name": "price",
+          "type": "number"
+        },
+        {
+          "name": "line",
+          "type": "number",
+          "expr": "=Fields.qty * Fields.price"
+        },
+        {
+          "name": "order",
+          "type": "string",
+          "expr": "=Parent.id"
+        }
+      ]
+    },
+    {
+      "name": "People",
+      "source": "src",
+      "path": "$.desks.teams[*].people[*]",
+      "fields": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "score",
+          "type": "number"
+        },
+        {
+          "name": "team",
+          "type": "string",
+          "expr": "=Parent.team"
+        }
+      ],
+      "filters": [
+        {
+          "expr": "=Fields.score",
+          "op": ">=",
+          "value": "=Parameters.minScore"
+        }
+      ]
+    },
+    {
+      "name": "Rates",
+      "source": "rates",
+      "fields": [
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "rate",
+          "type": "number"
+        },
+        {
+          "name": "note",
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "sections": {
+    "pageHeader": {
+      "height": 0,
+      "items": []
+    },
+    "body": {
+      "items": [
+        {
+          "type": "textbox",
+          "name": "Title",
+          "x": 0,
+          "y": 0,
+          "w": 523,
+          "h": 24,
+          "value": "Expressions, data and parameters",
+          "style": {
+            "fontSize": 16,
+            "fontWeight": "bold"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "Sub",
+          "x": 0,
+          "y": 24,
+          "w": 523,
+          "h": 14,
+          "value": "Phase 3 of the ActiveReportsJS parity roadmap: aggregates, functions, report functions, filters, CSV and nested data.",
+          "style": {
+            "color": "#4b5563"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "H1",
+          "x": 0,
+          "y": 42,
+          "w": 523,
+          "h": 16,
+          "value": "Orders and their items (nested data set; report functions Code.Gross and Gross)",
+          "style": {
+            "fontWeight": "bold",
+            "color": "#334155"
+          }
+        },
+        {
+          "type": "list",
+          "name": "OrderList",
+          "x": 0,
+          "y": 60,
+          "w": 523,
+          "h": 80,
+          "dataSet": "Orders",
+          "keepTogether": true,
+          "style": {
+            "borderBottom": "0.5 solid #d0d7de"
+          },
+          "items": [
+            {
+              "type": "textbox",
+              "name": "OrderHead",
+              "x": 0,
+              "y": 2,
+              "w": 523,
+              "h": 14,
+              "value": "=Fields.id & \" · \" & Fields.customer & \" · \" & Format(Fields.date, \"dd MMM yyyy\") & \" (\" & WeekdayName(Weekday(Fields.date)) & \", \" & QuarterName(Fields.date) & \")\"",
+              "style": {
+                "fontWeight": "bold"
+              }
+            },
+            {
+              "type": "table",
+              "name": "ItemsTable",
+              "x": 12,
+              "y": 18,
+              "w": 500,
+              "h": 54,
+              "dataSet": "Items",
+              "repeatHeader": true,
+              "columns": [
+                {
+                  "width": 150
+                },
+                {
+                  "width": 60
+                },
+                {
+                  "width": 90
+                },
+                {
+                  "width": 100
+                },
+                {
+                  "width": 100
+                }
+              ],
+              "header": [
+                {
+                  "height": 16,
+                  "style": {
+                    "fontWeight": "bold",
+                    "backgroundColor": "#eef2f7"
+                  },
+                  "cells": [
+                    {
+                      "value": "SKU"
+                    },
+                    {
+                      "value": "Qty",
+                      "style": {
+                        "textAlign": "right"
+                      }
+                    },
+                    {
+                      "value": "Price",
+                      "style": {
+                        "textAlign": "right"
+                      }
+                    },
+                    {
+                      "value": "Line",
+                      "style": {
+                        "textAlign": "right"
+                      }
+                    },
+                    {
+                      "value": "With tax",
+                      "style": {
+                        "textAlign": "right"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "detail": [
+                {
+                  "height": 15,
+                  "cells": [
+                    {
+                      "value": "=Fields.sku"
+                    },
+                    {
+                      "value": "=Fields.qty",
+                      "style": {
+                        "textAlign": "right"
+                      }
+                    },
+                    {
+                      "value": "=Format(Fields.price, \"N2\")",
+                      "style": {
+                        "textAlign": "right"
+                      }
+                    },
+                    {
+                      "value": "=Format(Fields.line, \"N2\")",
+                      "style": {
+                        "textAlign": "right"
+                      }
+                    },
+                    {
+                      "value": "=Format(Code.Gross(Fields.line), \"N2\")",
+                      "style": {
+                        "textAlign": "right"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "footer": [
+                {
+                  "height": 16,
+                  "style": {
+                    "fontWeight": "bold",
+                    "borderTop": "0.75 solid #94a3b8"
+                  },
+                  "cells": [
+                    {
+                      "value": "=CountRows() & \" lines for \" & Parent.customer"
+                    },
+                    {
+                      "value": "=Sum(Fields.qty)",
+                      "style": {
+                        "textAlign": "right"
+                      }
+                    },
+                    {
+                      "value": ""
+                    },
+                    {
+                      "value": "=Format(Sum(Fields.line), \"N2\")",
+                      "style": {
+                        "textAlign": "right"
+                      }
+                    },
+                    {
+                      "value": "=Format(Gross(Sum(Fields.line)), \"N2\")",
+                      "style": {
+                        "textAlign": "right"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "textbox",
+          "name": "H2",
+          "x": 0,
+          "y": 150,
+          "w": 523,
+          "h": 16,
+          "value": "Top 4 scores across teams (Parent.team after a [*] spread, TopN, Previous, Grade())",
+          "style": {
+            "fontWeight": "bold",
+            "color": "#334155"
+          }
+        },
+        {
+          "type": "table",
+          "name": "Scores",
+          "x": 0,
+          "y": 168,
+          "w": 523,
+          "h": 60,
+          "dataSet": "People",
+          "columns": [
+            {
+              "width": 90
+            },
+            {
+              "width": 90
+            },
+            {
+              "width": 70
+            },
+            {
+              "width": 70
+            },
+            {
+              "width": 203
+            }
+          ],
+          "filters": [
+            {
+              "expr": "=Fields.score",
+              "op": "TopN",
+              "value": 4
+            }
+          ],
+          "header": [
+            {
+              "height": 16,
+              "style": {
+                "fontWeight": "bold",
+                "backgroundColor": "#eef2f7"
+              },
+              "cells": [
+                {
+                  "value": "Team"
+                },
+                {
+                  "value": "Name"
+                },
+                {
+                  "value": "Score",
+                  "style": {
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "Grade"
+                },
+                {
+                  "value": "Previous row"
+                }
+              ]
+            }
+          ],
+          "detail": [
+            {
+              "height": 15,
+              "cells": [
+                {
+                  "value": "=Fields.team"
+                },
+                {
+                  "value": "=PadRight(Fields.name, 6, \".\")"
+                },
+                {
+                  "value": "=Fields.score",
+                  "style": {
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "=Grade(Fields.score)"
+                },
+                {
+                  "value": "=IIF(IsNothing(Previous(Fields.name)), \"(first)\", Previous(Fields.name) & \" \" & Previous(Fields.score))"
+                }
+              ]
+            }
+          ],
+          "footer": [
+            {
+              "height": 15,
+              "cells": [
+                {
+                  "value": "=\"Top 4, ties kept: median \" & Median(Fields.score) & \", mode \" & Mode(Fields.score) & \", stdev \" & Format(StDev(Fields.score), \"N2\") & \", varp \" & Format(VarP(Fields.score), \"N2\")",
+                  "colSpan": 5
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "textbox",
+          "name": "H3",
+          "x": 0,
+          "y": 250,
+          "w": 523,
+          "h": 16,
+          "value": "Rates between 10% and 20% (Between filter over a CSV source)",
+          "style": {
+            "fontWeight": "bold",
+            "color": "#334155"
+          }
+        },
+        {
+          "type": "table",
+          "name": "RatesTable",
+          "x": 0,
+          "y": 268,
+          "w": 523,
+          "h": 50,
+          "dataSet": "Rates",
+          "columns": [
+            {
+              "width": 100
+            },
+            {
+              "width": 80
+            },
+            {
+              "width": 343
+            }
+          ],
+          "filters": [
+            {
+              "expr": "=Fields.rate",
+              "op": "Between",
+              "value": 0.1,
+              "value2": 0.2
+            }
+          ],
+          "header": [
+            {
+              "height": 16,
+              "style": {
+                "fontWeight": "bold",
+                "backgroundColor": "#eef2f7"
+              },
+              "cells": [
+                {
+                  "value": "Region"
+                },
+                {
+                  "value": "Rate",
+                  "style": {
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "Note (CSV, ';' separator, quoted)"
+                }
+              ]
+            }
+          ],
+          "detail": [
+            {
+              "height": 15,
+              "cells": [
+                {
+                  "value": "=Fields.region"
+                },
+                {
+                  "value": "=Format(Fields.rate, \"P0\")",
+                  "style": {
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "=Fields.note"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "textbox",
+          "name": "H4",
+          "x": 0,
+          "y": 330,
+          "w": 523,
+          "h": 16,
+          "value": "Function samples",
+          "style": {
+            "fontWeight": "bold",
+            "color": "#334155"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "F1",
+          "x": 0,
+          "y": 348,
+          "w": 523,
+          "h": 14,
+          "value": "=\"Text: \" & StrReverse(\"thgirwegaP\") & \" · \" & PadLeft(\"42\", 6, \"0\") & \" · \" & Join(Split(\"a;b;c\", \";\"), \"+\") & \" · \" & Substring(\"Pagewright\", 4) & \" · \" & IndexOf(\"banana\", \"an\") & \" · \" & Chr(65) & Asc(\"B\")"
+        },
+        {
+          "type": "textbox",
+          "name": "F2",
+          "x": 0,
+          "y": 362,
+          "w": 523,
+          "h": 14,
+          "value": "=\"Math: \" & Sign(-3) & \" · \" & Round(Log10(1000), 2) & \" · \" & Round(Atan2(1, 1) * 4, 5) & \" · \" & Truncate(-2.7) & \" · \" & Round(PI, 4)"
+        },
+        {
+          "type": "textbox",
+          "name": "F3",
+          "x": 0,
+          "y": 376,
+          "w": 523,
+          "h": 14,
+          "value": "=\"Dates: \" & Format(AddMonths(CDate(\"2026-01-31\"), 1), \"dd MMM yyyy\") & \" · week \" & DatePart(\"ww\", CDate(\"2026-03-15\")) & \" · \" & WeekdayName(Weekday(Globals.ExecutionTime)) & \" · \" & Format(TimeSerial(13, 5, 0), \"HH:mm\") & \" · \" & DateString()"
+        },
+        {
+          "type": "textbox",
+          "name": "F4",
+          "x": 0,
+          "y": 390,
+          "w": 523,
+          "h": 14,
+          "value": "=\"Checks: \" & IsNumeric(\"12.5\") & \" \" & IsDate(\"2026-02-30\") & \" \" & IsArray(LookupSet(\"North\", Fields.region, Fields.rate, \"Rates\")) & \" · \" & Choose(2, \"one\", \"two\", \"three\") & \" · \" & ToInt32(\"2.5\") & \" \" & ToBoolean(\"true\")"
+        },
+        {
+          "type": "textbox",
+          "name": "F5",
+          "x": 0,
+          "y": 404,
+          "w": 523,
+          "h": 14,
+          "value": "=\"Aggregates: price per distinct SKU \" & Format(DistinctSum(Fields.sku, Fields.price, \"Items\"), \"N0\") & \" · lines over 2,000: \" & AggregateIf(Fields.line > 2000, \"Count\", Fields.line, \"Items\") & \" · items \" & Count(Fields.sku, \"Items\") & \" · last order \" & Last(Fields.order, \"Items\")"
+        }
+      ]
+    },
+    "pageFooter": {
+      "height": 18,
+      "items": [
+        {
+          "type": "textbox",
+          "name": "Pg",
+          "x": 0,
+          "y": 4,
+          "w": 523,
+          "h": 12,
+          "value": "=\"Page \" & Globals.PageNumber & \" of \" & Globals.TotalPages",
+          "style": {
+            "textAlign": "right",
+            "color": "#6b7280",
+            "fontSize": 8
+          }
+        }
+      ]
+    }
+  }
+}

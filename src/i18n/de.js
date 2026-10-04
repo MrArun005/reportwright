@@ -6,6 +6,7 @@ export default {
   zoomIn: 'Vergrößern', zoomOut: 'Verkleinern', fitWidth: 'An Breite anpassen', search: 'Suchen', previousMatch: 'Vorheriger Treffer', nextMatch: 'Nächster Treffer',
   exporting: 'Wird exportiert…', viewReport: 'Bericht anzeigen', didNotRun: 'Der Bericht wurde nicht ausgeführt.', true: 'Wahr', false: 'Falsch',
   commaSeparated: 'Werte, durch Kommas getrennt',
+  selectAll: 'Alle auswählen', nullValue: 'Null (kein Wert)',
   pagesRows: '{pages} Seiten · {rows} Zeilen · {ms} ms', warnings: '{n} Warnung(en)',
   back: 'Zurück', drillDepth: 'Drilldown-Ebene {n}', liveHint: 'Änderungen gelten sofort bei der Auswahl.',
   print: 'Drucken', printing: 'Wird vorbereitet…', fullScreen: 'Vollbild', exitFullScreen: 'Vollbild beenden',
@@ -38,6 +39,7 @@ export default {
   /* ---- designer: parameter dialog ---- */
   paramNew: 'Neuer Parameter', paramTitle: 'Parameter {name}', name: 'Name', paramType: 'Typ', prompt: 'Beschriftung',
   defaultValue: 'Standardwert', defaultHint: 'Ein Wert oder =Ausdruck, z. B. =Today()', required: 'Erforderlich',
+  paramHidden: 'Ausgeblendet (nur per URL, API oder Drillthrough gesetzt)', paramNullable: 'Null zulassen', paramAllowBlank: 'Leeren Text zulassen',
   multiHint: "Mehrere Werte zulassen (mit dem Filter 'in' oder Join(Parameters.x) verwenden)",
   fixedChoices: 'Feste Auswahl (eine pro Zeile: Wert oder Wert=Beschriftung)', choicesFrom: 'Oder Auswahl aus einem Dataset', valueField: 'Wertfeld',
   cascadeHint: 'Das Dataset kann nach anderen Parametern filtern (=Parameters.x). Der Viewer lädt die Auswahl dann neu, wenn sich diese ändern (kaskadierend).',

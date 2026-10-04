@@ -6,6 +6,7 @@ export default {
   zoomIn: 'ज़ूम इन', zoomOut: 'ज़ूम आउट', fitWidth: 'चौड़ाई में फ़िट', search: 'खोजें', previousMatch: 'पिछला मिलान', nextMatch: 'अगला मिलान',
   exporting: 'निर्यात हो रहा है…', viewReport: 'रिपोर्ट देखें', didNotRun: 'रिपोर्ट नहीं चली।', true: 'हाँ', false: 'नहीं',
   commaSeparated: 'मान, अल्पविराम से अलग',
+  selectAll: 'सभी चुनें', nullValue: 'Null (कोई मान नहीं)',
   pagesRows: '{pages} पृष्ठ · {rows} पंक्तियाँ · {ms} ms', warnings: '{n} चेतावनी',
   back: 'वापस', drillDepth: 'ड्रिल स्तर {n}', liveHint: 'बदलाव तुरंत लागू होते हैं।',
   print: 'प्रिंट करें', printing: 'तैयार हो रहा है…', fullScreen: 'पूर्ण स्क्रीन', exitFullScreen: 'पूर्ण स्क्रीन से बाहर निकलें',
@@ -38,6 +39,7 @@ export default {
   /* ---- designer: parameter dialog ---- */
   paramNew: 'नया पैरामीटर', paramTitle: 'पैरामीटर {name}', name: 'नाम', paramType: 'प्रकार', prompt: 'संकेत',
   defaultValue: 'डिफ़ॉल्ट', defaultHint: 'कोई मान या =व्यंजक, जैसे =Today()', required: 'आवश्यक',
+  paramHidden: 'छिपा हुआ (केवल URL, API या ड्रिल-थ्रू से सेट)', paramNullable: 'Null की अनुमति दें', paramAllowBlank: 'खाली टेक्स्ट की अनुमति दें',
   multiHint: "कई मान चुनने दें ('in' फ़िल्टर या Join(Parameters.x) के साथ इस्तेमाल करें)",
   fixedChoices: 'तय विकल्प (हर पंक्ति में एक: मान या मान=लेबल)', choicesFrom: 'या किसी डेटा सेट से विकल्प', valueField: 'मान फ़ील्ड',
   cascadeHint: 'डेटा सेट दूसरे पैरामीटरों (=Parameters.x) पर फ़िल्टर कर सकता है। उनके बदलने पर व्यूअर विकल्प फिर से लोड करता है (कैस्केडिंग)।',

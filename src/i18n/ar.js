@@ -6,6 +6,7 @@ export default {
   zoomIn: 'تكبير', zoomOut: 'تصغير', fitWidth: 'ملاءمة العرض', search: 'بحث', previousMatch: 'التطابق السابق', nextMatch: 'التطابق التالي',
   exporting: 'جارٍ التصدير…', viewReport: 'عرض التقرير', didNotRun: 'لم يعمل التقرير.', true: 'نعم', false: 'لا',
   commaSeparated: 'قيم مفصولة بفواصل',
+  selectAll: 'تحديد الكل', nullValue: 'Null (بلا قيمة)',
   pagesRows: '{pages} صفحة · {rows} صف · {ms} مللي ثانية', warnings: '{n} تحذير',
   back: 'رجوع', drillDepth: 'مستوى التعمق {n}', liveHint: 'تُطبَّق التغييرات فور اختيارها.',
   print: 'طباعة', printing: 'جارٍ التحضير…', fullScreen: 'ملء الشاشة', exitFullScreen: 'الخروج من ملء الشاشة',
@@ -38,6 +39,7 @@ export default {
   /* ---- designer: parameter dialog ---- */
   paramNew: 'معلمة جديدة', paramTitle: 'المعلمة {name}', name: 'الاسم', paramType: 'النوع', prompt: 'التسمية',
   defaultValue: 'الافتراضي', defaultHint: 'قيمة أو =تعبير، مثل =Today()', required: 'مطلوب',
+  paramHidden: 'مخفي (يُضبط فقط عبر URL أو API أو التنقل)', paramNullable: 'السماح بـ Null', paramAllowBlank: 'السماح بنص فارغ',
   multiHint: "السماح بعدة قيم (استخدمها مع عامل التصفية 'in' أو مع Join(Parameters.x))",
   fixedChoices: 'خيارات ثابتة (واحد في كل سطر: قيمة أو قيمة=تسمية)', choicesFrom: 'أو خيارات من مجموعة بيانات', valueField: 'حقل القيمة',
   cascadeHint: 'يمكن لمجموعة البيانات التصفية حسب معلمات أخرى (=Parameters.x). عندها يعيد العارض تحميل الخيارات عند تغيّرها (تتالي).',
