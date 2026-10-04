@@ -361,21 +361,34 @@ function addGlyphs(pf, glyphs) {
   };
 }
 
-/** PDF outline (the bookmarks panel) from the page model bookmarks. Flat list, levels as indentation. dest(b): its destination. */
+/**
+ * PDF outline (the bookmarks panel) from the page model bookmarks, nested by level: a bookmark is the child of
+ * the nearest one before it at a lower level (a skipped level still nests one deep). Every item is open.
+ * dest(b): its destination. Headings (headingLevel without a bookmark) stay out: they feed a TOC only.
+ */
 function addOutline(doc, bookmarks, dest) {
   const ctx = doc.context;
-  const outlineRef = ctx.nextRef();
-  const refs = bookmarks.map(() => ctx.nextRef());
-  bookmarks.forEach((b, i) => {
-    if (!dest(b)) return;
-    const title = '  '.repeat(b.level || 0) + b.label;
-    const dict = { Title: PDFHexString.fromText(title), Parent: outlineRef, Dest: dest(b) };
-    if (i > 0) dict.Prev = refs[i - 1];
-    if (i < refs.length - 1) dict.Next = refs[i + 1];
-    ctx.assign(refs[i], ctx.obj(dict));
+  const root = { ref: ctx.nextRef(), level: -1, kids: /** @type {any[]} */ ([]) };
+  const stack = [root];
+  for (const b of bookmarks) {
+    const Dest = dest(b);
+    if (!Dest) continue;
+    const level = Math.max(0, Math.min(9, Number(b.level) || 0)); // capped, so the tree is at most 10 deep
+    while (stack[stack.length - 1].level >= level) stack.pop();
+    const node = { ref: ctx.nextRef(), level, kids: [], Title: PDFHexString.fromText(b.label), Dest };
+    stack[stack.length - 1].kids.push(node);
+    stack.push(node);
+  }
+  if (!root.kids.length) return;
+  const count = (n) => n.kids.reduce((s, k) => s + 1 + count(k), 0);
+  const children = (n) => (n.kids.length ? { First: n.kids[0].ref, Last: n.kids[n.kids.length - 1].ref, Count: count(n) } : {});
+  const write = (n) => n.kids.forEach((k, i) => {
+    ctx.assign(k.ref, ctx.obj({ Title: k.Title, Parent: n.ref, Dest: k.Dest, ...(i > 0 ? { Prev: n.kids[i - 1].ref } : {}), ...(i < n.kids.length - 1 ? { Next: n.kids[i + 1].ref } : {}), ...children(k) }));
+    write(k);
   });
-  ctx.assign(outlineRef, ctx.obj({ Type: 'Outlines', First: refs[0], Last: refs[refs.length - 1], Count: refs.length }));
-  doc.catalog.set(PDFName.of('Outlines'), outlineRef);
+  write(root);
+  ctx.assign(root.ref, ctx.obj({ Type: 'Outlines', ...children(root) }));
+  doc.catalog.set(PDFName.of('Outlines'), root.ref);
   doc.catalog.set(PDFName.of('PageMode'), PDFName.of('UseOutlines'));
 }
 

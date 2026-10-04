@@ -221,7 +221,8 @@ function addInteractivity(items, item, ctx, lc, rect, heading) {
   if (heading && hl >= 1 && hl <= 6) items.push({ t: 'bookmark', heading: true, label: String(heading).replace(/\s+/g, ' ').trim(), x: rect.x, y: rect.y, level: hl - 1 });
   if (item.bookmark) {
     const b = evalSafe(item.bookmark, ctx, lc, `${item.name || item.type} bookmark`).v;
-    if (b != null && b !== '' && b !== '#Error') items.push({ t: 'bookmark', label: String(b), x: rect.x, y: rect.y, level: item.bookmarkLevel || 0 });
+    // a bookmarked heading sits at its heading level unless it says otherwise (as RDLX import maps it)
+    if (b != null && b !== '' && b !== '#Error') items.push({ t: 'bookmark', label: String(b), x: rect.x, y: rect.y, level: item.bookmarkLevel ?? (hl >= 1 && hl <= 6 ? hl - 1 : 0) });
   }
 }
 

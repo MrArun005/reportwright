@@ -115,6 +115,43 @@ describe('PDF internal links', () => {
   });
 });
 
+describe('PDF outline', () => {
+  it('nests bookmarks by level, with First/Last/Next/Prev/Parent/Count', async () => {
+    const { PDFDocument, PDFName, PDFNumber } = await import('pdf-lib');
+    const tb = (name, y, extra) => ({ type: 'textbox', name, x: 0, y, w: 300, h: 18, value: name, ...extra });
+    const m = await render(report([
+      tb('A', 0, { bookmark: 'A' }),
+      tb('A1', 20, { bookmark: 'A1', bookmarkLevel: 1 }),
+      tb('A2', 40, { bookmark: 'A2', headingLevel: 2 }), // a bookmarked heading: its level is the heading's
+      tb('A2x', 60, { bookmark: 'A2x', bookmarkLevel: 3 }), // a skipped level: still the child of A2
+      tb('B', 80, { bookmark: 'B' }),
+      tb('Hd', 100, { headingLevel: 1 }), // a heading without a bookmark stays out of the outline
+    ]), { fontStore });
+    expect(m.bookmarks.map(b => [b.label, b.level])).toEqual([['A', 0], ['A1', 1], ['A2', 1], ['A2x', 3], ['B', 0]]);
+    const doc = await PDFDocument.load(await exportPdf(m, fontStore));
+    const get = (d, k) => d.lookup(PDFName.of(k));
+    const ref = (d, k) => d.get(PDFName.of(k));
+    const title = (d) => d && get(d, 'Title').decodeText();
+    const kids = (d) => { const out = []; for (let k = get(d, 'First'); k; k = get(k, 'Next')) out.push(k); return out; };
+    const root = doc.catalog.lookup(PDFName.of('Outlines'));
+    const tree = (d) => kids(d).map(k => (kids(k).length ? { [title(k)]: tree(k) } : title(k)));
+    expect(tree(root)).toEqual([{ A: ['A1', { A2: ['A2x'] }] }, 'B']);
+    expect(get(root, 'Count')).toEqual(PDFNumber.of(5));
+    const [a, b] = kids(root);
+    expect(get(a, 'Count')).toEqual(PDFNumber.of(3)); // open: every descendant shows
+    expect(get(b, 'Count')).toBeUndefined();
+    expect(title(get(root, 'Last'))).toBe('B');
+    expect(ref(a, 'Parent')).toBe(doc.catalog.get(PDFName.of('Outlines')));
+    const [a1, a2] = kids(a);
+    expect(ref(a1, 'Parent')).toBe(ref(root, 'First'));
+    expect(ref(a2, 'Prev')).toBe(ref(a, 'First'));
+    expect(ref(a2, 'Next')).toBeUndefined();
+    expect(title(get(a, 'Last'))).toBe('A2');
+    expect(title(get(kids(a2)[0], 'Parent'))).toBe('A2');
+    expect(title(a1)).toBe('A1'); // no indentation spaces: the nesting shows the level
+  });
+});
+
 describe('HTML export links', () => {
   const linked = (action, tooltip) => report([{ type: 'textbox', name: 'L', x: 0, y: 0, w: 200, h: 20, value: 'Open', action, ...(tooltip ? { tooltip } : {}) }]);
   const html = async (def) => exportHtml(await render(def, { fontStore }), fontStore);
