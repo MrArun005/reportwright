@@ -170,7 +170,7 @@ function fitPoly(pts, order) {
   return { order, at: (x) => { const u = (x - mean) / sc; let v = 0; for (let i = k - 1; i >= 0; i--) v = v * u + coef[i]; return v; } };
 }
 
-/** Trailing moving average; null until the window is full, and a missing value restarts the window. */
+/** Trailing moving average: null until `period` values are in; a missing value starts the count again. */
 export function movingAverage(values, period) {
   const p = Math.max(1, Math.min(CAPS.period, Math.round(Number(period)) || 1));
   const out = new Array(values.length).fill(null);

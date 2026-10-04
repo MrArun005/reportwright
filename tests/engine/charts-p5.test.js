@@ -344,3 +344,59 @@ describe('row 27: animations (viewer only) and dashed paths', () => {
     expect(streams.some(s => /\[4 3\] 0 d/.test(s))).toBe(true);
   });
 });
+
+describe('row 28: sparklines, icon sets, range bars', () => {
+  const item = (type, extra, data = [{ v: 3 }, { v: -2 }, { v: 0 }, { v: 5 }]) => render(report([{ type, name: 'V', x: 0, y: 0, w: 100, h: 20, dataSet: 'Rows', ...extra }], { data: { rows: data } }), { fontStore }).then(o => ({ items: o.pages[0].items, warnings: o.warnings }));
+  it('sparkline area: a line plus one filled path', async () => {
+    const { items } = await item('sparkline', { value: '=Fields.v', style: 'area' });
+    expect(items.filter(i => i.t === 'path' && i.fill === '#2563eb33')).toHaveLength(1);
+    expect(items.filter(i => i.t === 'path' && i.stroke === '#2563eb')).toHaveLength(1);
+  });
+  it('win/loss: up bars for wins, down bars in red for losses, a stub for zero', async () => {
+    const { items } = await item('sparkline', { value: '=Fields.v', style: 'winloss' });
+    const r = items.filter(i => i.t === 'rect');
+    expect(r).toHaveLength(4);
+    const mid = 36 + 10; // page margin + the middle of the 20 pt item
+    expect(r[0].y + r[0].h).toBeCloseTo(mid, 5); expect(r[0].fill).toBe('#2563eb');
+    expect(r[1].y).toBeCloseTo(mid, 5); expect(r[1].fill).toBe('#dc2626');
+    expect(r[3].h).toBe(r[0].h); // win/loss: every bar the same height
+    expect(r[2].h).toBeLessThan(2);
+  });
+  it('a range band behind the sparkline', async () => {
+    const { items } = await item('sparkline', { value: '=Fields.v', bandLow: '=0', bandHigh: '=3', bandColor: '#dcfce7' });
+    const band = items.findIndex(i => i.t === 'rect' && i.fill === '#dcfce7');
+    expect(band).toBe(0);
+    // values -2..5 over 14 pt of height: 0..3 is 3/7 of it
+    expect(items[0].h).toBeCloseTo(14 * 3 / 7, 5);
+  });
+  it('icon sets pick the icon by thresholds', async () => {
+    const at = async (v, iconSet = 'trafficLights') => (await item('iconset', { value: `=${v}`, iconSet, lower: '=33', upper: '=67' }, [{}])).items;
+    expect((await at(10)).find(i => i.t === 'ellipse').fill).toBe('#dc2626');
+    expect((await at(50)).find(i => i.t === 'ellipse').fill).toBe('#f59e0b');
+    expect((await at(90)).find(i => i.t === 'ellipse').fill).toBe('#16a34a');
+    for (const set of ['arrows', 'symbols', 'flags', 'ratings']) {
+      const lo = await at(10, set), hi = await at(90, set);
+      expect(lo.length, set).toBeGreaterThan(0);
+      expect(JSON.stringify(lo), set).not.toBe(JSON.stringify(hi));
+    }
+  });
+  it('a range bar from low to high on min..max', async () => {
+    const { items } = await item('rangebar', { low: '=20', high: '=60', min: '=0', max: '=100' }, [{}]);
+    const [track, bar] = items.filter(i => i.t === 'rect');
+    expect(bar.x - track.x).toBeCloseTo(track.w * 0.2, 5);
+    expect(bar.w).toBeCloseTo(track.w * 0.4, 5);
+  });
+  it('icon sets and range bars work in table cells', async () => {
+    const def = report([{ type: 'table', name: 'T', x: 0, y: 0, w: 140, h: 16, dataSet: 'Rows', columns: [{ width: 60 }, { width: 80 }],
+      detail: [{ height: 16, cells: [{ value: '', visual: { type: 'iconset', value: '=Fields.v', iconSet: 'arrows' } }, { value: '', visual: { type: 'rangebar', low: '=0', high: '=Fields.v', max: '=10' } }] }] }], { data: { rows: [{ v: 5 }, { v: 80 }] } });
+    const out = await render(def, { fontStore });
+    expect(out.warnings).toEqual([]);
+    expect(out.pages[0].items.filter(i => i.t === 'path').length).toBe(2);
+  });
+  it('100,000 sparkline values: capped, no stack overflow', async () => {
+    const data = Array.from({ length: 100000 }, (_, i) => ({ v: i % 13 }));
+    const { items, warnings } = await item('sparkline', { value: '=Fields.v' }, data);
+    expect(items.some(i => i.t === 'path')).toBe(true);
+    expect(warnings.join()).toMatch(/only the first 5000/);
+  });
+});

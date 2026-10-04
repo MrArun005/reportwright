@@ -44,7 +44,7 @@ function Geo({ label, value, onChange }) {
   );
 }
 
-function PropEditor({ p, value, onChange, openExpr, dataSet }) {
+function PropEditor({ p, value, onChange, openExpr, dataSet, item }) {
   const def = useDesigner(s => s.def);
   const families = useFontFamilies();
   switch (p.type) {
@@ -58,7 +58,10 @@ function PropEditor({ p, value, onChange, openExpr, dataSet }) {
     case 'dataset': return <Field label={p.label}><Select value={value} onChange={onChange} options={(def.dataSets || []).map(d => d.name)} allowEmpty /></Field>;
     case 'action': return <ActionEditor value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet} />;
     case 'stylename': return <Field label={p.label}><Select value={value} onChange={onChange} options={Object.keys(def.styles?.named || {})} allowEmpty /></Field>;
-    case 'series': return <SeriesEditor value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet} />;
+    case 'series': return <SeriesEditor value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet} chartType={item?.chartType || 'column'} />;
+    case 'stacked': return <Field label={p.label}><Select value={value === 'percent' ? 'percent' : value ? 'stacked' : ''} options={[{ value: '', label: 'Side by side' }, { value: 'stacked', label: 'Stacked' }, { value: 'percent', label: 'Stacked to 100%' }]} onChange={v => onChange(v === 'percent' ? 'percent' : v ? true : undefined)} /></Field>;
+    case 'axes': return <AxesEditor value={value} onChange={onChange} chartType={item?.chartType || 'column'} hasSecondary={(item?.series || []).some(sr => sr.axis === 'secondary')} />;
+    case 'overlays': return <OverlaysEditor value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet} chartType={item?.chartType || 'column'} />;
     case 'params': return <ParamsEditor label={p.label} value={value} onChange={onChange} />;
     default: return <Field label={p.label}><TextInput value={value} onChange={v => onChange(v === '' ? undefined : v)} /></Field>;
   }
@@ -125,7 +128,7 @@ function ItemProps({ item, section, openExpr }) {
       {groupBy((spec?.props || []).filter(p => !p.showIf || p.showIf(item))).map(([cat, ps]) => (
         <div className="cat" key={cat}>
           <h5>{cat}</h5>
-          {ps.map(p => <PropEditor key={p.key} p={p} value={item[p.key]} onChange={v => set(p.key, v)} openExpr={openExpr} dataSet={dataSet} />)}
+          {ps.map(p => <PropEditor key={p.key} p={p} value={item[p.key]} onChange={v => set(p.key, v)} openExpr={openExpr} dataSet={dataSet} item={item} />)}
         </div>
       ))}
       {item.type === 'table' && <TableProps table={item} openExpr={openExpr} />}
@@ -235,23 +238,120 @@ function SortFilterEditor({ item }) {
   );
 }
 
-function SeriesEditor({ value, onChange, openExpr, dataSet }) {
+const FINANCIAL = new Set(['candlestick', 'ohlc']);
+const COMBO = new Set(['column', 'bar', 'line', 'area', 'candlestick', 'ohlc']);
+function SeriesEditor({ value, onChange, openExpr, dataSet, chartType }) {
   const list = value || [];
-  const set = (i, k, v) => onChange(list.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
+  const set = (i, k, v) => onChange(list.map((x, j) => { if (j !== i) return x; const n = { ...x, [k]: v }; if (v === undefined || v === '') delete n[k]; return n; }));
+  const expr = (sr, i, key, label, placeholder) => (
+    <Field label={label} key={key}><ExprInput value={sr[key]} onChange={v => set(i, key, v)} onOpen={() => openExpr({ value: sr[key], dataSet, onSave: v => set(i, key, v), title: `${sr.name || `Series ${i + 1}`}: ${label}` })} placeholder={placeholder} /></Field>
+  );
+  const fin = FINANCIAL.has(chartType);
   return (
     <div style={{ display: 'grid', gap: 6 }}>
-      <span className="hint">Series: one value per category, usually an aggregate such as =Sum(Fields.amount).</span>
-      {list.map((sr, i) => (
-        <div className="group-card" key={i}>
-          <div className="expr-row">
-            <TextInput value={sr.name} onChange={v => set(i, 'name', v)} aria-label="Series name" placeholder="Name" />
-            <input type="color" value={/^#[0-9a-f]{6}$/i.test(sr.color || '') ? sr.color : '#2563eb'} onChange={e => set(i, 'color', e.target.value)} aria-label="Series color" style={{ width: 26, height: 26, border: '1px solid var(--line)', borderRadius: 5, padding: 0 }} />
-            <button className="btn sm ghost danger" onClick={() => onChange(list.filter((_, j) => j !== i))} aria-label="Remove series">✕</button>
+      <span className="hint">Series: one value per category, usually an aggregate such as =Sum(Fields.amount).{fin ? ' A candlestick or OHLC series takes open, high, low and close.' : ''}</span>
+      {list.map((sr, i) => {
+        const range = sr.low != null && sr.high != null && !fin;
+        return (
+          <div className="group-card" key={i} data-testid={`series-${i}`}>
+            <div className="expr-row">
+              <TextInput value={sr.name} onChange={v => set(i, 'name', v)} aria-label="Series name" placeholder="Name" />
+              <input type="color" value={/^#[0-9a-f]{6}$/i.test(sr.color || '') ? sr.color : '#2563eb'} onChange={e => set(i, 'color', e.target.value)} aria-label="Series color" style={{ width: 26, height: 26, border: '1px solid var(--line)', borderRadius: 5, padding: 0 }} />
+              <button className="btn sm ghost danger" onClick={() => onChange(list.filter((_, j) => j !== i))} aria-label="Remove series">✕</button>
+            </div>
+            {fin ? <>{expr(sr, i, 'open', 'Open', '=Sum(Fields.open)')}{expr(sr, i, 'high', 'High', '=Max(Fields.high)')}{expr(sr, i, 'low', 'Low', '=Min(Fields.low)')}{expr(sr, i, 'close', 'Close', '=Sum(Fields.close)')}</>
+              : range ? <>{expr(sr, i, 'low', 'From (low)', '=Min(Fields.amount)')}{expr(sr, i, 'high', 'To (high)', '=Max(Fields.amount)')}</>
+                : <ExprInput value={sr.value} onChange={v => set(i, 'value', v)} onOpen={() => openExpr({ value: sr.value, dataSet, onSave: v => set(i, 'value', v), title: `Series ${sr.name || i + 1}` })} placeholder="=Sum(Fields.amount)" />}
+            {chartType === 'bubble' && expr(sr, i, 'size', 'Bubble size', '=Fields.population')}
+            {COMBO.has(chartType) && (
+              <div className="grid2">
+                <Field label="Draw as"><Select value={sr.type} allowEmpty options={chartType === 'bar' ? ['bar', 'line', 'area'] : ['column', 'line', 'area']} onChange={v => set(i, 'type', v)} aria-label="Series type" /></Field>
+                <Field label="Axis"><Select value={sr.axis || 'primary'} options={[{ value: 'primary', label: 'Primary' }, { value: 'secondary', label: 'Secondary' }]} onChange={v => set(i, 'axis', v === 'primary' ? undefined : v)} aria-label="Series axis" /></Field>
+              </div>
+            )}
+            {COMBO.has(chartType) && !fin && <Check label="Range (from – to)" checked={range} onChange={on => onChange(list.map((x, j) => {
+              if (j !== i) return x;
+              const n = { ...x };
+              if (on) { n.low = x.value || ''; n.high = x.value || ''; delete n.value; } else { n.value = x.low || ''; delete n.low; delete n.high; }
+              return n;
+            }))} />}
           </div>
-          <ExprInput value={sr.value} onChange={v => set(i, 'value', v)} onOpen={() => openExpr({ value: sr.value, dataSet, onSave: v => set(i, 'value', v), title: `Series ${sr.name || i + 1}` })} placeholder="=Sum(Fields.amount)" />
+        );
+      })}
+      <div><button className="btn sm" onClick={() => onChange([...list, { name: `Series ${list.length + 1}`, value: '' }])}>Add series</button></div>
+    </div>
+  );
+}
+
+const optNum = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? undefined : Number(v));
+function AxesEditor({ value, onChange, chartType, hasSecondary }) {
+  const axes = value || {};
+  const set = (ax, k, v) => {
+    const a = { ...(axes[ax] || {}) };
+    if (v === undefined || v === '') delete a[k]; else a[k] = v;
+    const n = { ...axes, [ax]: a };
+    if (!Object.keys(a).length) delete n[ax];
+    onChange(Object.keys(n).length ? n : undefined);
+  };
+  const round = ['radar', 'polar', 'gauge'].includes(chartType);
+  const list = round ? [['y', chartType === 'gauge' ? 'Scale' : 'Values']] : [['x', ['scatter', 'bubble'].includes(chartType) ? 'X axis' : 'Category axis (x)'], ['y', 'Value axis (y)'], ...(hasSecondary ? [['y2', 'Secondary value axis']] : [])];
+  return (
+    <div style={{ display: 'grid', gap: 6 }}>
+      {list.map(([ax, label]) => {
+        const a = axes[ax] || {};
+        const valueAxis = ax !== 'x' || ['scatter', 'bubble'].includes(chartType);
+        return (
+          <div className="group-card" key={ax} data-testid={`axis-${ax}`}>
+            <b style={{ fontSize: 11 }}>{label}</b>
+            {!round && <Field label="Title"><TextInput value={a.title} onChange={v => set(ax, 'title', v)} aria-label={`${label} title`} /></Field>}
+            {valueAxis && <>
+              <div className="grid2">
+                <Field label="Minimum"><TextInput value={a.min ?? ''} onChange={v => set(ax, 'min', optNum(v))} aria-label={`${label} minimum`} placeholder="auto" /></Field>
+                <Field label="Maximum"><TextInput value={a.max ?? ''} onChange={v => set(ax, 'max', optNum(v))} aria-label={`${label} maximum`} placeholder="auto" /></Field>
+              </div>
+              {chartType !== 'gauge' && <Field label="Number format"><TextInput value={a.format} onChange={v => set(ax, 'format', v)} placeholder="N0, C0, P0, 0.0" aria-label={`${label} format`} /></Field>}
+              {!round && <Check label="Logarithmic" checked={a.log} onChange={v => set(ax, 'log', v || undefined)} />}
+            </>}
+            {!valueAxis && <Field label="Label angle (degrees, e.g. -45)"><TextInput value={a.labelAngle ?? ''} onChange={v => set(ax, 'labelAngle', optNum(v))} aria-label="Label angle" /></Field>}
+            {chartType !== 'gauge' && <Check label="Grid lines" checked={a.gridlines ?? (ax === 'y')} onChange={v => set(ax, 'gridlines', v === (ax === 'y') ? undefined : v)} />}
+            {!round && <Check label="Reversed" checked={a.reversed} onChange={v => set(ax, 'reversed', v || undefined)} />}
+          </div>
+        );
+      })}
+      {!round && !hasSecondary && <span className="hint">Set a series' axis to Secondary to get a second value axis.</span>}
+    </div>
+  );
+}
+
+const OVERLAY_TYPES = [{ value: 'trend', label: 'Trend line' }, { value: 'movingAverage', label: 'Moving average' }, { value: 'line', label: 'Reference line' }, { value: 'band', label: 'Band' }];
+function OverlaysEditor({ value, onChange, openExpr, dataSet, chartType }) {
+  const list = value || [];
+  const set = (i, k, v) => onChange(list.map((x, j) => { if (j !== i) return x; const n = { ...x, [k]: v }; if (v === undefined || v === '') delete n[k]; return n; }));
+  const types = chartType === 'gauge' ? OVERLAY_TYPES.slice(2) : ['scatter', 'bubble'].includes(chartType) ? OVERLAY_TYPES.filter(t => t.value !== 'movingAverage') : OVERLAY_TYPES;
+  const numOrExpr = (o, i, k, label) => (
+    <Field label={label} key={k}><ExprInput value={o[k] == null ? '' : String(o[k])} onChange={v => set(i, k, optNum(v) ?? (v || undefined))} onOpen={() => openExpr({ value: String(o[k] ?? ''), dataSet, onSave: v => set(i, k, optNum(v) ?? v), title: label })} placeholder="=Avg(Fields.amount) or a number" /></Field>
+  );
+  return (
+    <div style={{ display: 'grid', gap: 6 }}>
+      {list.map((o, i) => (
+        <div className="group-card" key={i} data-testid={`overlay-${i}`}>
+          <div className="expr-row">
+            <Select value={o.type} options={types} onChange={v => set(i, 'type', v)} aria-label="Overlay type" />
+            <ColorInput value={o.color} onChange={v => set(i, 'color', v)} />
+            <button className="btn sm ghost danger" onClick={() => onChange(list.filter((_, j) => j !== i).length ? list.filter((_, j) => j !== i) : undefined)} aria-label="Remove overlay">✕</button>
+          </div>
+          {o.type === 'trend' && <div className="grid2">
+            <Field label="Fit"><Select value={o.kind || 'linear'} options={[{ value: 'linear', label: 'Linear' }, { value: 'exp', label: 'Exponential' }, { value: 'poly', label: 'Polynomial' }]} onChange={v => set(i, 'kind', v === 'linear' ? undefined : v)} /></Field>
+            {o.kind === 'poly' && <Field label="Order (2–6)"><NumberInput value={o.order ?? 2} step={1} min={2} onChange={v => set(i, 'order', v)} /></Field>}
+          </div>}
+          {o.type === 'movingAverage' && <Field label="Period"><NumberInput value={o.period ?? 3} step={1} min={1} onChange={v => set(i, 'period', v)} /></Field>}
+          {(o.type === 'trend' || o.type === 'movingAverage') && <Field label="Of series number"><NumberInput value={(o.series ?? 0) + 1} step={1} min={1} onChange={v => set(i, 'series', Math.max(0, v - 1) || undefined)} /></Field>}
+          {o.type === 'line' && numOrExpr(o, i, 'value', 'At')}
+          {o.type === 'band' && <div className="grid2">{numOrExpr(o, i, 'from', 'From')}{numOrExpr(o, i, 'to', 'To')}</div>}
+          <Field label="Label"><TextInput value={o.label} onChange={v => set(i, 'label', v)} aria-label="Overlay label" /></Field>
         </div>
       ))}
-      <div><button className="btn sm" onClick={() => onChange([...list, { name: `Series ${list.length + 1}`, value: '' }])}>Add series</button></div>
+      <div><button className="btn sm" onClick={() => onChange([...list, { type: chartType === 'gauge' ? 'band' : 'trend' }])} data-testid="add-overlay">Add overlay</button></div>
     </div>
   );
 }
@@ -268,14 +368,27 @@ function ParamsEditor({ label, value, onChange }) {
 function VisualEditor({ cell, setCell, openExpr, dataSet }) {
   const v = cell.visual || null;
   const set = (patch) => { const n = { ...(v || {}), ...patch }; setCell('visual', n.type ? n : undefined); };
+  const E = (key, label, placeholder) => <Field label={label}><ExprInput value={v[key]} onChange={x => set({ [key]: x || undefined })} onOpen={() => openExpr({ value: v[key], dataSet, onSave: x => set({ [key]: x }), title: label })} placeholder={placeholder} /></Field>;
+  const ty = v?.type;
   return (
     <div style={{ display: 'grid', gap: 6 }}>
-      <Field label="Cell shows"><Select value={v?.type || ''} options={[{ value: 'sparkline', label: 'Sparkline' }, { value: 'databar', label: 'Data bar' }, { value: 'bullet', label: 'Bullet' }]} allowEmpty onChange={t => (t ? set({ type: t }) : setCell('visual', undefined))} /></Field>
-      {v?.type === 'sparkline' && <Field label="One point per"><ExprInput value={v.category} onChange={x => set({ category: x || undefined })} onOpen={() => openExpr({ value: v.category, dataSet, onSave: x => set({ category: x }), title: 'Point per' })} placeholder="=Fields.month" /></Field>}
-      {v?.type && <Field label="Value"><ExprInput value={v.value} onChange={x => set({ value: x })} onOpen={() => openExpr({ value: v.value, dataSet, onSave: x => set({ value: x }), title: 'Value' })} placeholder="=Sum(Fields.amount)" /></Field>}
-      {(v?.type === 'databar' || v?.type === 'bullet') && <Field label="Maximum"><ExprInput value={v.max} onChange={x => set({ max: x })} onOpen={() => openExpr({ value: v.max, dataSet, onSave: x => set({ max: x }), title: 'Maximum' })} placeholder='=Max(Fields.amount, "Table1")' /></Field>}
-      {v?.type === 'bullet' && <Field label="Target"><ExprInput value={v.target} onChange={x => set({ target: x })} onOpen={() => {}} /></Field>}
-      {v?.type && <Field label="Color (or =expression)"><ColorInput value={v.color} onChange={x => set({ color: x })} /></Field>}
+      <Field label="Cell shows"><Select value={ty || ''} options={[{ value: 'sparkline', label: 'Sparkline' }, { value: 'databar', label: 'Data bar' }, { value: 'bullet', label: 'Bullet' }, { value: 'iconset', label: 'Icon set' }, { value: 'rangebar', label: 'Range bar' }]} allowEmpty onChange={t => (t ? set({ type: t }) : setCell('visual', undefined))} /></Field>
+      {ty === 'sparkline' && E('category', 'One point per', '=Fields.month')}
+      {ty && ty !== 'rangebar' && E('value', 'Value', '=Sum(Fields.amount)')}
+      {ty === 'sparkline' && <>
+        <Field label="Style"><Select value={v.style || 'line'} options={[{ value: 'line', label: 'Line' }, { value: 'column', label: 'Columns' }, { value: 'area', label: 'Area' }, { value: 'winloss', label: 'Win / loss' }]} onChange={x => set({ style: x })} /></Field>
+        {E('bandLow', 'Range band from', '=0')}
+        {E('bandHigh', 'Range band to', '=100')}
+      </>}
+      {ty === 'iconset' && <>
+        <Field label="Icons"><Select value={v.iconSet || 'trafficLights'} options={[{ value: 'trafficLights', label: 'Traffic lights' }, { value: 'arrows', label: 'Arrows' }, { value: 'symbols', label: 'Symbols' }, { value: 'flags', label: 'Flags' }, { value: 'ratings', label: 'Ratings' }]} onChange={x => set({ iconSet: x })} /></Field>
+        {E('lower', 'Low below', '=33')}
+        {E('upper', 'High from', '=67')}
+      </>}
+      {ty === 'rangebar' && <>{E('low', 'From', '=Fields.min')}{E('high', 'To', '=Fields.max')}{E('min', 'Scale minimum', '=0')}</>}
+      {(ty === 'databar' || ty === 'bullet' || ty === 'rangebar') && E('max', 'Maximum', '=Max(Fields.amount, "Table1")')}
+      {ty === 'bullet' && E('target', 'Target')}
+      {ty && ty !== 'iconset' && <Field label="Color (or =expression)"><ColorInput value={v.color} onChange={x => set({ color: x })} /></Field>}
     </div>
   );
 }
