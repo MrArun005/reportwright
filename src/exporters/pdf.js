@@ -2,11 +2,12 @@
 import { PDFDocument, PDFName, PDFString, PDFHexString, PDFRawStream, rgb } from 'pdf-lib';
 import fontkitModule from '@pdf-lib/fontkit';
 import { parseColor } from './color.js';
-import { makePdfA } from './pdfa.js';
+import { makePdfA, setUaMetadata } from './pdfa.js';
 import { safeUrl } from '../engine/url.js';
 import { dataUriBytesOf, dataUriBytes, imageInfoOf, IMAGE_LIMITS } from '../engine/image.js';
 import { parseSvg, drawSvg } from './svgimage.js';
 import { encryptPdf } from './encrypt.js';
+import { createTagger } from './pdfua.js';
 
 const fontkit = /** @type {any} */ (fontkitModule).default || fontkitModule;
 
@@ -35,11 +36,14 @@ const cleanText = (t) => t.replace(/\t|\u0085|\u2028|\u2029/g, '    ').replace(/
  * @param {{ title?: string, author?: string, fetchImage?: (src: string) => Promise<Uint8Array|null>,
  *   subset?: (font: Uint8Array, codePoints: Iterable<number>) => Promise<Uint8Array>,
  *   pdfa?: { icc?: Uint8Array }, prepare?: (doc: PDFDocument) => any, save?: object,
- *   encrypt?: { userPassword?: string, ownerPassword?: string, permissions?: Partial<Record<keyof typeof import('./encrypt.js').PERMISSION_BITS, boolean>> } }} [opt]
+ *   encrypt?: { userPassword?: string, ownerPassword?: string, permissions?: Partial<Record<keyof typeof import('./encrypt.js').PERMISSION_BITS, boolean>> },
+ *   tagged?: { lang?: string } }} [opt]
  *   subset: a HarfBuzz subsetter (see subset.js). Without it, fonts embed in full.
  *   pdfa: make a PDF/A-2b file (needs an sRGB ICC profile). prepare: last change before saving
  *   (the server adds a signature placeholder there). save: extra pdf-lib save options.
  *   encrypt: { userPassword, ownerPassword, permissions } — AES-256 (see encrypt.js); not with pdfa or prepare.
+ *   tagged: an accessible PDF (PDF/UA-1, see pdfua.js): structure tree, marked content, artifacts, language, title
+ *   shown; with pdfa it is PDF/A-2a. Off, the file is exactly what it was.
  */
 export async function exportPdf(model, fontStore, opt = {}) {
   const doc = await PDFDocument.create();
@@ -149,6 +153,8 @@ export async function exportPdf(model, fontStore, opt = {}) {
   const taken = new Set();
   const uniqueName = (n) => { let name = n, i = 1; while (taken.has(name)) name = `${n}_${++i}`; taken.add(name); return name; };
   const contents = [];
+  const tags = opt.tagged ? createTagger(model, doc) : null;
+  let pi = -1; // the page's index (the tagger's key)
   const vm = new Map();
   /** ascent and descent (below the baseline, positive) per em */
   const vmetrics = (key) => {
@@ -157,6 +163,7 @@ export async function exportPdf(model, fontStore, opt = {}) {
     return m;
   };
   for (const pg of model.pages) {
+    pi++;
     // a page of another body section may have its own size
     const H = pg.height ?? model.height;
     const p = doc.addPage([pg.width ?? model.width, H]);
@@ -173,7 +180,11 @@ export async function exportPdf(model, fontStore, opt = {}) {
       for (const op of ops) c.s += op.toString() + '\n';
       ops.length = 0;
     };
-    for (const it of pg.items) {
+    for (let ii = 0; ii < pg.items.length; ii++) {
+      const it = pg.items[ii];
+      // tagged: the item's marked content (a structure element's MCID, or an artifact)
+      const mark = tags && tags.open(pi, ii, it);
+      if (mark) { c.et(); c.s += mark; }
       if (it.t !== 'text' || it.rotate) c.et();
       if (it.rotate) {
         // screen rotation is clockwise with y down; PDF's y is up, so the angle flips
@@ -263,15 +274,22 @@ export async function exportPdf(model, fontStore, opt = {}) {
           }
           if (it.required) field.enableRequired();
           if (it.readOnly) field.enableReadOnly();
+          if (tags) {
+            // an accessible field: its name as the description a screen reader says, its widget in a Form element
+            field.acroField.dict.set(PDFName.of('TU'), PDFHexString.fromText(it.label || it.name || name));
+            const w = field.acroField.getWidgets()[0];
+            const ref = w && doc.context.getObjectRef(w.dict);
+            if (ref) tags.annot(pi, ii, ref, 'field');
+          }
           break;
         }
         case 'link': {
           const rect = [it.x, H - it.y - it.h, it.x + it.w, H - it.y];
-          if (it.action?.type === 'url' && safeUrl(it.action.href)) links.push({ page: p, rect, href: it.action.href });
+          if (it.action?.type === 'url' && safeUrl(it.action.href)) links.push({ page: p, rect, href: it.action.href, pi, ii, tip: it.tip });
           // a jump: TOC entries from headings carry their place; others go to the first bookmark of that name (as the viewer does)
           else if (it.action?.type === 'bookmark') {
             const to = it.action.page ? it.action : model.bookmarks?.find(b => b.label === it.action.target);
-            if (to) links.push({ page: p, rect, to });
+            if (to) links.push({ page: p, rect, to, pi, ii, tip: it.tip || `Go to ${it.action.target || `page ${to.page}`}` });
           }
           break;
         }
@@ -295,6 +313,7 @@ export async function exportPdf(model, fontStore, opt = {}) {
         }
       }
       if (it.rotate) c.Q();
+      if (mark) { c.et(); c.s += 'EMC\n'; }
     }
     c.et();
     // pdf-lib made a stream of its own for the shapes it drew: the page has just this one
@@ -314,13 +333,17 @@ export async function exportPdf(model, fontStore, opt = {}) {
     const to = l.href ? { A: { Type: 'Action', S: 'URI', URI: pdfLiteral(l.href) } } : { Dest: dest(l.to) };
     if (!l.href && !to.Dest) continue;
     const annot = doc.context.obj({ Type: 'Annot', Subtype: 'Link', F: 4, Rect: l.rect, Border: [0, 0, 0], ...to });
+    if (tags) annot.set(PDFName.of('Contents'), PDFHexString.fromText(String(l.tip || l.href || 'Link'))); // what the link does, for a screen reader
     const ref = doc.context.register(annot);
+    if (tags) tags.annot(l.pi, l.ii, ref, 'link');
     const annots = l.page.node.lookup(PDFName.of('Annots'));
     if (annots) annots.push(ref); else l.page.node.set(PDFName.of('Annots'), doc.context.obj([ref]));
   }
   if (model.bookmarks?.length) addOutline(doc, model.bookmarks, dest);
+  if (tags) tags.finish({ lang: opt.tagged?.lang, title: opt.title || 'Report' });
   if (opt.prepare) await opt.prepare(doc);
-  if (opt.pdfa) makePdfA(doc, { ...opt.pdfa, title: opt.title || 'Report', author: opt.author });
+  if (opt.pdfa) makePdfA(doc, { ...opt.pdfa, title: opt.title || 'Report', author: opt.author, ...(tags ? { conformance: 'A', ua: true } : {}) });
+  else if (tags) setUaMetadata(doc, { title: opt.title || 'Report', author: opt.author });
   if (opt.encrypt) {
     // PDF/A forbids encryption; a signature would need its /Contents left plain inside an encrypted file
     if (opt.pdfa) throw Object.assign(new Error('A PDF/A file cannot have a password. Turn off PDF/A or the password.'), { status: 400 });

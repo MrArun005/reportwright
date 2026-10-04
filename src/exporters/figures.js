@@ -315,7 +315,9 @@ export function cellVisuals(items, used, tables) {
       left = Math.min(left, c.x - it.cell.cols.slice(0, it.cell.col).reduce((s, w) => s + w, 0));
     }
     const cols = b.cells[0].cell.cols;
-    return { key, rows: [...rows.entries()], left, cols, right: left + cols.reduce((s, w) => s + w, 0) };
+    const edges = [left];
+    for (const w of cols) edges.push(edges[edges.length - 1] + w);
+    return { key, rows: [...rows.entries()], left, cols, edges, right: edges[edges.length - 1] };
   });
   const near = (a, b) => Math.abs(a - b) < 0.05;
   items.forEach((it, i) => {
@@ -328,7 +330,8 @@ export function cellVisuals(items, used, tables) {
       const row = g.rows.find(([, r]) => cy >= r.y && cy <= r.y + r.h);
       if (!row) continue;
       const [rid, r] = row;
-      if (it.t === 'rect' && near(it.y, r.y) && near(it.h, r.h)) return; // a cell's own background or border box
+      // a cell's own background or border box: from one column edge to another (a visual sits inside its padding)
+      if (it.t === 'rect' && g.edges.some(e => near(e, it.x)) && g.edges.some(e => near(e, it.x + it.w))) return;
       let col = 0, x = g.left;
       while (col < g.cols.length - 1 && cx > x + g.cols[col]) x += g.cols[col++];
       const m = out.get(g.key) || out.set(g.key, new Map()).get(g.key);

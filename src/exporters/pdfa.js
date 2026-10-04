@@ -7,10 +7,10 @@ const xml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 
 /**
  * @param {import('pdf-lib').PDFDocument} doc  call after all pages, fields and annotations are added
- * @param {{ icc?: Uint8Array, title?: string, author?: string, created?: Date }} opt
- *   icc: an RGB ICC profile (the sRGB one in public/icc)
+ * @param {{ icc?: Uint8Array, title?: string, author?: string, created?: Date, conformance?: 'A'|'B', ua?: boolean }} opt
+ *   icc: an RGB ICC profile (the sRGB one in public/icc). conformance A (PDF/A-2a) for a tagged file; ua: it is PDF/UA-1 too.
  */
-export function makePdfA(doc, { icc, title = 'Report', author, created = new Date() } = {}) {
+export function makePdfA(doc, { icc, title = 'Report', author, created = new Date(), conformance = 'B', ua = false } = {}) {
   if (!icc?.length) throw new Error('PDF/A needs an sRGB colour profile: pass pdfa.icc (public/icc/sRGB-v2-magic.icc)');
   // The Info dictionary and the XMP metadata must say the same thing, to the second.
   const when = new Date(Math.floor(created.getTime() / 1000) * 1000);
@@ -22,20 +22,8 @@ export function makePdfA(doc, { icc, title = 'Report', author, created = new Dat
   doc.setCreationDate(when);
   doc.setModificationDate(when);
 
-  const xmp = `<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
-<x:xmpmeta xmlns:x="adobe:ns:meta/">
-<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
-<rdf:Description rdf:about="" xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/"><pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance></rdf:Description>
-<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:format>application/pdf</dc:format><dc:title><rdf:Alt><rdf:li xml:lang="x-default">${xml(title)}</rdf:li></rdf:Alt></dc:title>${author ? `<dc:creator><rdf:Seq><rdf:li>${xml(author)}</rdf:li></rdf:Seq></dc:creator>` : ''}</rdf:Description>
-<rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/"><xmp:CreatorTool>Pagewright</xmp:CreatorTool><xmp:CreateDate>${stamp}</xmp:CreateDate><xmp:ModifyDate>${stamp}</xmp:ModifyDate><xmp:MetadataDate>${stamp}</xmp:MetadataDate></rdf:Description>
-<rdf:Description rdf:about="" xmlns:pdf="http://ns.adobe.com/pdf/1.3/"><pdf:Producer>Pagewright</pdf:Producer></rdf:Description>
-</rdf:RDF>
-</x:xmpmeta>
-<?xpacket end="w"?>`;
+  setMetadata(doc, xmpPacket({ title, author, stamp, pdfa: conformance, ua }));
   const ctx = doc.context;
-  const bytes = new TextEncoder().encode(xmp);
-  // the metadata stream must not be compressed
-  doc.catalog.set(PDFName.of('Metadata'), ctx.register(ctx.stream(bytes, { Type: 'Metadata', Subtype: 'XML', Length: bytes.length })));
 
   const profile = ctx.register(ctx.flateStream(icc, { N: 3 }));
   const intent = ctx.register(ctx.obj({ Type: 'OutputIntent', S: 'GTS_PDFA1', OutputConditionIdentifier: PDFString.of('sRGB'), Info: PDFString.of('sRGB IEC61966-2.1'), DestOutputProfile: profile }));
@@ -61,4 +49,43 @@ export function makePdfA(doc, { icc, title = 'Report', author, created = new Dat
   // a file identifier
   const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
   ctx.trailerInfo.ID = ctx.obj([PDFHexString.of(id), PDFHexString.of(id)]);
+}
+
+/**
+ * The XMP metadata packet: title, author, dates, and the PDF/A and PDF/UA identifiers when asked.
+ * @param {{ title: string, author?: string, stamp: string, pdfa?: string|null, ua?: boolean }} o
+ */
+function xmpPacket({ title, author, stamp, pdfa = null, ua = false }) {
+  return `<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+${pdfa ? `<rdf:Description rdf:about="" xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/"><pdfaid:part>2</pdfaid:part><pdfaid:conformance>${pdfa}</pdfaid:conformance></rdf:Description>\n` : ''}${ua ? `<rdf:Description rdf:about="" xmlns:pdfuaid="http://www.aiim.org/pdfua/ns/id/"><pdfuaid:part>1</pdfuaid:part></rdf:Description>\n` : ''}${ua && pdfa ? PDFUA_SCHEMA : ''}<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:format>application/pdf</dc:format><dc:title><rdf:Alt><rdf:li xml:lang="x-default">${xml(title)}</rdf:li></rdf:Alt></dc:title>${author ? `<dc:creator><rdf:Seq><rdf:li>${xml(author)}</rdf:li></rdf:Seq></dc:creator>` : ''}</rdf:Description>
+<rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/"><xmp:CreatorTool>Pagewright</xmp:CreatorTool><xmp:CreateDate>${stamp}</xmp:CreateDate><xmp:ModifyDate>${stamp}</xmp:ModifyDate><xmp:MetadataDate>${stamp}</xmp:MetadataDate></rdf:Description>
+<rdf:Description rdf:about="" xmlns:pdf="http://ns.adobe.com/pdf/1.3/"><pdf:Producer>Pagewright</pdf:Producer></rdf:Description>
+</rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>`;
+}
+
+/** PDF/A wants every schema it does not know described in the file (pdfuaid is not one of its predefined ones). */
+const PDFUA_SCHEMA = `<rdf:Description rdf:about="" xmlns:pdfaExtension="http://www.aiim.org/pdfa/ns/extension/" xmlns:pdfaSchema="http://www.aiim.org/pdfa/ns/schema#" xmlns:pdfaProperty="http://www.aiim.org/pdfa/ns/property#"><pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType="Resource"><pdfaSchema:schema>PDF/UA identification schema</pdfaSchema:schema><pdfaSchema:namespaceURI>http://www.aiim.org/pdfua/ns/id/</pdfaSchema:namespaceURI><pdfaSchema:prefix>pdfuaid</pdfaSchema:prefix><pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType="Resource"><pdfaProperty:name>part</pdfaProperty:name><pdfaProperty:valueType>Integer</pdfaProperty:valueType><pdfaProperty:category>internal</pdfaProperty:category><pdfaProperty:description>PDF/UA version identifier</pdfaProperty:description></rdf:li></rdf:Seq></pdfaSchema:property></rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>
+`;
+
+/** The catalog's Metadata stream (uncompressed, as PDF/A wants). */
+function setMetadata(doc, xmp) {
+  const ctx = doc.context;
+  const bytes = new TextEncoder().encode(xmp);
+  doc.catalog.set(PDFName.of('Metadata'), ctx.register(ctx.stream(bytes, { Type: 'Metadata', Subtype: 'XML', Length: bytes.length })));
+}
+
+/**
+ * PDF/UA-1 without PDF/A: XMP metadata with the title and the PDF/UA identifier (the Info dictionary says the same).
+ * @param {import('pdf-lib').PDFDocument} doc
+ */
+export function setUaMetadata(doc, { title = 'Report', author = undefined, created = new Date() } = {}) {
+  const when = new Date(Math.floor(created.getTime() / 1000) * 1000);
+  doc.setCreationDate(when);
+  doc.setModificationDate(when);
+  if (author) doc.setAuthor(author);
+  setMetadata(doc, xmpPacket({ title, author, stamp: when.toISOString().replace('.000Z', 'Z'), ua: true }));
 }
