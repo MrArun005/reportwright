@@ -83,7 +83,7 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 
 ## 8. Expressions, data and parameters
 
-- Expression language close to ActiveReportsJS, with its function names: text, math, dates, inspection, choice and conversion functions, plus report functions (`Globals`, `Parameters`, `Fields`, `ReportItems`-style lookups).
+- Expression language close to ActiveReportsJS, with its function names: text, math, dates, inspection, choice and conversion functions; `Globals`, `Parameters` and `Fields`.
 - Aggregates: Sum, Avg, Count, Min, Max, Median, Mode, StDev, StDevP, Var, VarP, DistinctSum, AggregateIf, with scopes.
 - `Previous`, `GroupIndex`, `Level`, `Lookup`, `LookupSet`.
 - Filters: equals, `in` (multi-value), TopN, BottomN, TopPercent, BottomPercent, Between; filters run in order.
