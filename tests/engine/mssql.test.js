@@ -266,6 +266,65 @@ describe.skipIf(!process.env.PW_TEST_MSSQL)('SQL Server (live)', () => {
     } finally { delete process.env.PW_DB_MSBAD2; }
   });
 
+  it('review: the deadline holds for requests started after it passed: a query waiting for a pooled connection stops on time', async () => {
+    const keep = { ...limits };
+    const slow = 'select count_big(*) as n from sys.all_objects a cross join sys.all_objects b cross join sys.all_objects c where checksum(concat(a.name, b.name, c.name)) = 1';
+    try {
+      await runSql(ms('select 1 as a'), {}); // the login probe is fresh
+      Object.assign(limits, { ms: 6000 });
+      const busy = Array.from({ length: 5 }, () => runSql(ms(slow), {}).catch(e => e)); // every pooled connection (max 5)
+      await new Promise(r => setTimeout(r, 300));
+      Object.assign(limits, { ms: 800 });
+      const t0 = Date.now();
+      await expect(runSql(ms('select 1 as a'), {})).rejects.toMatchObject({ status: 504 });
+      expect(Date.now() - t0).toBeLessThan(2000); // the time limit, not the wait for a connection
+      await Promise.all(busy);
+    } finally { Object.assign(limits, keep); }
+    // every connection is clean afterwards: no SHOWPLAN, row cap or text size left behind
+    for (let i = 0; i < 6; i++) expect(await runSql(ms('select id from dbo.pw_accounts'), {})).toHaveLength(5);
+  }, 30000);
+
+  it('review: one huge text value is cut by the server (TEXTSIZE) and refused, not buffered in full', async () => {
+    const keep = { ...limits };
+    Object.assign(limits, { bytes: 3 * 1048576 });
+    try {
+      global.gc?.();
+      const before = process.memoryUsage().rss;
+      const t0 = Date.now();
+      // 100 MB of text in one value (nvarchar), and 60 MB in one varchar value
+      await expect(runSql(ms("select replicate(cast(N'x' as nvarchar(max)), 50000000) as big"), {})).rejects.toThrow(/MB/);
+      await expect(runSql(ms("select replicate(cast('y' as varchar(max)), 60000000) as big"), {})).rejects.toThrow(/MB/);
+      await expect(runSql(ms("select cast(replicate(cast(0x41 as varbinary(max)), 60000000) as varbinary(max)) as big"), {})).rejects.toThrow(/MB/);
+      expect(process.memoryUsage().rss - before).toBeLessThan(80 * 1048576);
+      expect(Date.now() - t0).toBeLessThan(20000);
+      // a value just under the cap passes; xml and CLR (UDT) columns are refused (no size cap on the server for them)
+      expect((await runSql(ms("select replicate(cast('z' as varchar(max)), 1000000) as v"), {}))[0].v).toHaveLength(1000000);
+      await expect(runSql(ms("select cast('<a/>' as xml) as x"), {})).rejects.toThrow(/xml/i);
+      // (CLR types such as hierarchyid are refused the same way; Azure SQL Edge has no CLR to test them with)
+      // the cap is set again for every query: a larger cap later lets a larger value through
+      Object.assign(limits, { bytes: 12 * 1048576 });
+      expect((await runSql(ms("select replicate(cast('z' as varchar(max)), 5000000) as v"), {}))[0].v).toHaveLength(5000000);
+    } finally { Object.assign(limits, keep); }
+  }, 60000);
+
+  it('review: a login that can write in any other user database is refused', async () => {
+    const sql = (await import('mssql')).default;
+    const admin = await new sql.ConnectionPool(mssqlConfig(process.env.PW_TEST_MSSQL)).connect();
+    try {
+      await admin.request().batch(`USE master; IF DB_ID('pwother') IS NOT NULL BEGIN ALTER DATABASE pwother SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE pwother; END; CREATE DATABASE pwother`);
+      await admin.request().batch(`USE pwother; CREATE USER pw_reader FOR LOGIN pw_reader; ALTER ROLE db_datawriter ADD MEMBER pw_reader;`);
+      process.env.PW_DB_MSW3 = `${readerUrl()}&p=o1`;
+      await expect(runSql({ connection: 'msw3', query: 'select 1 as a' }, {})).rejects.toThrow(/in the database pwother: db_datawriter/);
+      await admin.request().batch(`USE pwother; ALTER ROLE db_datawriter DROP MEMBER pw_reader; ALTER ROLE db_datareader ADD MEMBER pw_reader;`);
+      process.env.PW_DB_MSW3 = `${readerUrl()}&p=o2`;
+      expect(await runSql({ connection: 'msw3', query: 'select 1 as a' }, {})).toEqual([{ a: 1 }]); // reading there is fine
+    } finally {
+      delete process.env.PW_DB_MSW3;
+      await admin.request().batch(`USE master; IF DB_ID('pwother') IS NOT NULL BEGIN ALTER DATABASE pwother SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE pwother; END`);
+      await admin.close();
+    }
+  }, 60000);
+
   it('tests a connection without showing its URL', async () => {
     expect(await testConnection('ms')).toMatchObject({ ok: true });
     process.env.PW_DB_MSBAD = readerUrl().replace(/:[^:@/]+@/, ':wrong-password-xyz@');
