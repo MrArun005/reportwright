@@ -118,6 +118,23 @@ export class TextMeasurer {
     return this.layout(text, k, dir).w * size;
   }
 
+  /**
+   * Where underline and strike-through go, from the font's own tables (post and OS/2), in points:
+   * y offsets of the stroke centre from the baseline (positive = down, as on the page) and thicknesses.
+   * A font without the tables falls back to proportions of its descent and x-height.
+   * @param {string} key @param {number} size
+   */
+  decoration(key, size) {
+    const f = this.store.get(this.usable(key));
+    const u = f.unitsPerEm, os2 = f['OS/2'] || {};
+    const ut = f.underlineThickness > 0 ? f.underlineThickness : u / 14;
+    const up = f.underlinePosition < 0 ? f.underlinePosition : f.descent / 2; // top of the stroke, y up
+    const st = os2.yStrikeoutSize > 0 ? os2.yStrikeoutSize : ut;
+    const sp = os2.yStrikeoutPosition > 0 ? os2.yStrikeoutPosition : (f.xHeight > 0 ? f.xHeight : f.ascent * 0.5) / 2 + st / 2;
+    const k = size / u;
+    return { underlineY: -(up - ut / 2) * k, underlineWidth: ut * k, strikeY: -(sp - st / 2) * k, strikeWidth: st * k };
+  }
+
   /** @param {string} key @param {number} size */
   metrics(key, size) {
     const f = this.store.get(this.usable(key));
@@ -183,6 +200,7 @@ export class TextMeasurer {
         }
       }
       push();
+      out[out.length - 1].end = true; // the last line of a paragraph: justify leaves it ragged
     }
     return out;
   }

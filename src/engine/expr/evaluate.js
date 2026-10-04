@@ -1,6 +1,6 @@
 // @ts-check
 import { parse, ExprError } from './parser.js';
-import { formatValue, toDate, roundHalfAway } from './format.js';
+import { formatValue, formatDate, english, toDate, roundHalfAway } from './format.js';
 
 /**
  * @typedef {object} EvalCtx
@@ -333,7 +333,11 @@ export const FUNCTIONS = {
   year: (ctx, d) => toDate(d)?.getFullYear() ?? null,
   month: (ctx, d) => (toDate(d) ? toDate(d).getMonth() + 1 : null),
   day: (ctx, d) => toDate(d)?.getDate() ?? null,
-  monthname: (ctx, m, abbr) => { const s = MONTH_NAMES[Number(m) - 1] ?? new Date(2000, Number(m) - 1, 1).toLocaleString('en', { month: 'long' }); return truthy(abbr) ? s.slice(0, 3) : s; },
+  monthname: (ctx, m, abbr) => {
+    // English (the default) keeps the fixed names; another report locale gets its own month names
+    if (!english(ctx.locale)) return formatDate(new Date(2000, Number(m) - 1, 1), truthy(abbr) ? 'MMM' : 'MMMM', ctx.locale);
+    const s = MONTH_NAMES[Number(m) - 1] ?? new Date(2000, Number(m) - 1, 1).toLocaleString('en', { month: 'long' }); return truthy(abbr) ? s.slice(0, 3) : s;
+  },
 };
 
 /** Names shown in the designer's expression helper. */

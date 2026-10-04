@@ -37,6 +37,10 @@ export function textCss(layers, s, numeric = false) {
   return {
     box: {
       background: st.backgroundColor || undefined,
+      // a background image by URL or data URI; an expression is only known in the preview
+      backgroundImage: /^(https?:|data:image\/|\/)/i.test(String(st.backgroundImage || '')) ? `url("${encodeURI(String(st.backgroundImage)).replace(/"/g, '%22')}")` : undefined,
+      backgroundSize: st.backgroundFit === 'fill' ? '100% 100%' : st.backgroundFit || 'cover',
+      backgroundPosition: 'center', backgroundRepeat: 'no-repeat',
       padding: pad.map(p => `${p * s}px`).join(' '),
       alignItems: st.verticalAlign === 'middle' ? 'center' : st.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start',
       borderTop: cssBorder(st.borderTop ?? st.border, s), borderRight: cssBorder(st.borderRight ?? st.border, s),
@@ -46,6 +50,8 @@ export function textCss(layers, s, numeric = false) {
       fontFamily: [key, ...fallbackKeys(key)].map(k => `"${fontFamilyCss(k)}"`).join(', '), // the bundled fallbacks, like the engine
       fontSize: `${(Number(st.fontSize) || 9) * s}px`, color: st.color, textAlign: align, unicodeBidi: 'plaintext',
       lineHeight: st.lineHeight || 1.25, fontKerning: 'none',
+      textDecoration: /underline|line-through/.test(String(st.textDecoration || '')) ? st.textDecoration : undefined,
+      textDecorationColor: st.textDecorationColor || undefined,
     },
   };
 }
@@ -436,7 +442,15 @@ function ItemBody({ item, scale }) {
   if (item.type === 'textbox') {
     const dyn = isDynamic(item.value);
     const c = textCss([base, item.style], scale, false);
-    return <div className="box" style={c.box}><div className={`tx${dyn ? ' dyn' : ''}`} style={c.text}>{shown(item.value)}</div></div>;
+    const a = ((Number(item.rotate) || 0) % 360 + 360) % 360;
+    let box = c.box;
+    if (a) {
+      // as the engine does: lay the text out in the box turned on its side (90°, 270°) or as drawn, then rotate about the centre
+      const swap = a === 90 || a === 270;
+      const bw = (swap ? item.h : item.w) * scale, bh = (swap ? item.w : item.h) * scale;
+      box = { ...c.box, inset: 'auto', left: (item.w * scale - bw) / 2, top: (item.h * scale - bh) / 2, width: bw, height: bh, transform: `rotate(${a}deg)` };
+    }
+    return <div className="box" style={box}><div className={`tx${dyn ? ' dyn' : ''}`} style={c.text}>{shown(item.value)}</div></div>;
   }
   if (item.type === 'shape') {
     const st = staticStyle([item.style]);

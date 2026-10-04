@@ -65,7 +65,7 @@ const weightOf = (w) => {
   if (!Number.isFinite(n)) return undefined;
   return n >= 650 ? 'bold' : n >= 550 ? '600' : 'normal';
 };
-const ALIGN = { left: 'left', center: 'center', centre: 'center', right: 'right', general: 'auto', justify: 'left' };
+const ALIGN = { left: 'left', center: 'center', centre: 'center', right: 'right', general: 'auto', justify: 'justify' };
 const VALIGN = { top: 'top', middle: 'middle', center: 'middle', bottom: 'bottom' };
 
 /** .NET format string → one Pagewright reads (it knows C N F P D E, custom number patterns and date patterns). */
@@ -694,12 +694,23 @@ function textStyle(st, cx, t, ctx, { box = false } = {}) {
     }
     if (/^(nowrap|none)$/i.test(String(st.WrapMode || ''))) out.wrap = false;
     const deco = String(st.TextDecoration || '').toLowerCase();
-    if (deco && deco !== 'none') t.approx(`its ${deco === 'linethrough' ? 'strike-through' : deco} is not drawn.`);
+    if (isExpr(st.TextDecoration)) t.approx('its text decoration is set by an expression; it is not drawn.');
+    else if (deco === 'underline' || deco === 'doubleunderline') set('textDecoration', 'underline');
+    else if (deco === 'linethrough') set('textDecoration', 'line-through');
+    else if (deco && deco !== 'none') t.approx(`its ${deco} is not drawn.`);
     if (/rtl/i.test(String(st.Direction || ''))) t.approx('right-to-left text is drawn left to right.');
     if (/^(tb|vertical)/i.test(String(st.WritingMode || ''))) t.approx('vertical text is drawn horizontally.');
   }
   set('backgroundColor', styleVal(st.BackgroundColor, cx, t, ctx, 'background', hexColor, 'color'));
-  if (st.BackgroundImage?.Value) t.approx('its background image is not drawn.');
+  const bg = st.BackgroundImage;
+  if (bg?.Value) {
+    // an external URL or an image embedded in the file works; one from a field or an expression does not yet
+    const src = String(bg.Source || 'External').toLowerCase();
+    if (isExpr(bg.Value)) t.approx('its background image is set by an expression; it is not drawn.');
+    else if (src === 'embedded' && cx.images.has(bg.Value)) set('backgroundImage', cx.images.get(bg.Value));
+    else if (src === 'external' && /^(https?:|data:)/i.test(String(bg.Value))) set('backgroundImage', String(bg.Value));
+    else t.approx('its background image is not drawn.');
+  }
   const pads = [st.PaddingTop, st.PaddingRight, st.PaddingBottom, st.PaddingLeft];
   if (pads.some(p => p != null && p !== '')) {
     if (pads.some(isExpr)) t.approx('padding set by an expression is not supported; it is 0.');
@@ -874,6 +885,14 @@ function textbox(ar, cx, ctx, html = false) {
   it.value = ex(cx, t, v, ctx, { text: true });
   it.canGrow = isTrue(ar.CanGrow);
   if (isTrue(ar.CanShrink)) it.canShrink = true;
+  // MinCondenseRate squeezes text sideways; shrinking the font is the closest Pagewright does
+  const condense = Number(ar.MinCondenseRate);
+  if (isTrue(ar.ShrinkToFit) || (condense > 0 && condense < 100)) it.shrinkToFit = true;
+  // ActiveReports turns text counter-clockwise; Pagewright's rotate is clockwise
+  const angle = Number(ar.Angle);
+  const cw = ((-angle % 360) + 360) % 360;
+  if (cw && !isExpr(ar.Angle)) it.rotate = cw;
+  else if (isExpr(ar.Angle)) t.approx('its angle is set by an expression; the text is drawn upright.');
   const st = textStyle(ar.Style, cx, t, ctx);
   if (Object.keys(st).length) it.style = st;
   interactivity(ar, it, cx, t, ctx);

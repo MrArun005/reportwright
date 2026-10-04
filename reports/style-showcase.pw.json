@@ -1,0 +1,351 @@
+{
+  "$schema": "pagewright/report@1",
+  "name": "Style showcase",
+  "locale": "hi-IN",
+  "currency": "INR",
+  "page": {
+    "size": "A4",
+    "orientation": "portrait",
+    "margins": [
+      36,
+      36,
+      36,
+      36
+    ]
+  },
+  "parameters": [],
+  "dataSources": [],
+  "dataSets": [],
+  "sections": {
+    "pageHeader": {
+      "height": 0,
+      "items": []
+    },
+    "body": {
+      "items": [
+        {
+          "type": "textbox",
+          "name": "Title",
+          "x": 0,
+          "y": 0,
+          "w": 523,
+          "h": 24,
+          "value": "Text and styling showcase",
+          "style": {
+            "fontSize": 16,
+            "fontWeight": "bold"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "Sub",
+          "x": 0,
+          "y": 24,
+          "w": 523,
+          "h": 14,
+          "value": "Phase 1 of the ActiveReportsJS parity roadmap: every feature on one page.",
+          "style": {
+            "color": "#4b5563"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "L1",
+          "x": 0,
+          "y": 52,
+          "w": 523,
+          "h": 12,
+          "value": "UNDERLINE (a link-style text box)",
+          "style": {
+            "fontSize": 7,
+            "color": "#6b7280",
+            "fontWeight": "600"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "Link",
+          "x": 0,
+          "y": 64,
+          "w": 200,
+          "h": 16,
+          "value": "Open the regional sales report",
+          "style": {
+            "textDecoration": "underline",
+            "color": "#1d4ed8"
+          },
+          "action": {
+            "type": "url",
+            "href": "https://example.com/sales"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "L2",
+          "x": 0,
+          "y": 90,
+          "w": 523,
+          "h": 12,
+          "value": "STRIKE-THROUGH",
+          "style": {
+            "fontSize": 7,
+            "color": "#6b7280",
+            "fontWeight": "600"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "Was",
+          "x": 0,
+          "y": 102,
+          "w": 80,
+          "h": 16,
+          "value": "Was ₹1,200",
+          "style": {
+            "textDecoration": "line-through",
+            "color": "#6b7280"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "Now",
+          "x": 84,
+          "y": 102,
+          "w": 80,
+          "h": 16,
+          "value": "Now ₹999",
+          "style": {
+            "fontWeight": "bold",
+            "color": "#047857"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "L3",
+          "x": 0,
+          "y": 128,
+          "w": 523,
+          "h": 12,
+          "value": "JUSTIFIED PARAGRAPH",
+          "style": {
+            "fontSize": 7,
+            "color": "#6b7280",
+            "fontWeight": "600"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "Justified",
+          "x": 0,
+          "y": 140,
+          "w": 260,
+          "h": 60,
+          "value": "Pagewright lays out every line itself, so a justified paragraph looks the same in the viewer, the PDF and the HTML export. Each line is stretched to both edges by widening the spaces between its words. The last line of each paragraph stays ragged, as in any book or newspaper.",
+          "style": {
+            "textAlign": "justify",
+            "lineHeight": 1.35
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "L4",
+          "x": 0,
+          "y": 212,
+          "w": 523,
+          "h": 12,
+          "value": "SHRINK TO FIT (120 × 14 box)",
+          "style": {
+            "fontSize": 7,
+            "color": "#6b7280",
+            "fontWeight": "600"
+          }
+        },
+        {
+          "type": "shape",
+          "name": "ShrinkFrame",
+          "shape": "rect",
+          "x": 0,
+          "y": 224,
+          "w": 120,
+          "h": 14,
+          "style": {
+            "fill": null,
+            "stroke": "#d1d5db",
+            "strokeWidth": 0.5
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "Shrunk",
+          "x": 0,
+          "y": 224,
+          "w": 120,
+          "h": 14,
+          "value": "Disbursements across four regions and twelve cities, all products",
+          "style": {
+            "fontSize": 9
+          },
+          "shrinkToFit": true
+        },
+        {
+          "type": "textbox",
+          "name": "L5",
+          "x": 0,
+          "y": 250,
+          "w": 523,
+          "h": 12,
+          "value": "ROTATED LABELS (270° and 90°, in 20 × 120 frames)",
+          "style": {
+            "fontSize": 7,
+            "color": "#6b7280",
+            "fontWeight": "600"
+          }
+        },
+        {
+          "type": "shape",
+          "name": "RotFrame",
+          "shape": "rect",
+          "x": 0,
+          "y": 262,
+          "w": 20,
+          "h": 120,
+          "style": {
+            "fill": "#f9fafb",
+            "stroke": "#9ca3af",
+            "strokeWidth": 0.75
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "Up",
+          "x": 0,
+          "y": 262,
+          "w": 20,
+          "h": 120,
+          "value": "Quarter one revenue",
+          "style": {
+            "textAlign": "center",
+            "verticalAlign": "middle",
+            "fontWeight": "600"
+          },
+          "rotate": 270
+        },
+        {
+          "type": "shape",
+          "name": "RotFrame2",
+          "shape": "rect",
+          "x": 30,
+          "y": 262,
+          "w": 20,
+          "h": 120,
+          "style": {
+            "fill": "#f9fafb",
+            "stroke": "#9ca3af",
+            "strokeWidth": 0.75
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "Down",
+          "x": 30,
+          "y": 262,
+          "w": 20,
+          "h": 120,
+          "value": "Reads top to bottom",
+          "style": {
+            "textAlign": "center",
+            "verticalAlign": "middle"
+          },
+          "rotate": 90
+        },
+        {
+          "type": "textbox",
+          "name": "Tilt",
+          "x": 80,
+          "y": 300,
+          "w": 90,
+          "h": 24,
+          "value": "Tilted 20°",
+          "style": {
+            "textAlign": "center",
+            "verticalAlign": "middle",
+            "border": "0.75 solid #dc2626",
+            "color": "#dc2626",
+            "fontWeight": "bold"
+          },
+          "rotate": 340
+        },
+        {
+          "type": "textbox",
+          "name": "L6",
+          "x": 0,
+          "y": 394,
+          "w": 523,
+          "h": 12,
+          "value": "BACKGROUND IMAGE (cover) WITH TEXT OVER IT",
+          "style": {
+            "fontSize": 7,
+            "color": "#6b7280",
+            "fontWeight": "600"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "Banner",
+          "x": 0,
+          "y": 406,
+          "w": 260,
+          "h": 40,
+          "value": "Quarterly results",
+          "style": {
+            "backgroundImage": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAAQCAIAAAAphe5+AAAAM0lEQVR42u3PQQ0AMAjAwA7QMU3InqzJICTto/87t19AwtIXxeoECBAgQIAAAQIECJjrA69tAk3TwSeIAAAAAElFTkSuQmCC",
+            "backgroundFit": "cover",
+            "color": "#ffffff",
+            "fontSize": 14,
+            "fontWeight": "bold",
+            "verticalAlign": "middle",
+            "padding": "0 10 0 10"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "L7",
+          "x": 0,
+          "y": 458,
+          "w": 523,
+          "h": 12,
+          "value": "DATE IN THE REPORT LOCALE (hi-IN)",
+          "style": {
+            "fontSize": 7,
+            "color": "#6b7280",
+            "fontWeight": "600"
+          }
+        },
+        {
+          "type": "textbox",
+          "name": "HindiDate",
+          "x": 0,
+          "y": 470,
+          "w": 260,
+          "h": 16,
+          "value": "=Format(DateSerial(2026,3,5), \"dddd dd MMMM yyyy\")",
+          "style": {}
+        },
+        {
+          "type": "textbox",
+          "name": "MonthName",
+          "x": 0,
+          "y": 488,
+          "w": 260,
+          "h": 16,
+          "value": "=MonthName(12)",
+          "style": {}
+        }
+      ]
+    },
+    "pageFooter": {
+      "height": 0,
+      "items": []
+    }
+  }
+}

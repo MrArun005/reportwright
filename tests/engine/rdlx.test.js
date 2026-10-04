@@ -441,3 +441,33 @@ describe('proof report', () => {
     expect(importRdlx(fs.readFileSync(path.join(FIX, 'regional-sales.rdlx-json'), 'utf8'), { name: 'Imported regional sales' }).definition).toEqual(stored);
   });
 });
+
+describe('text styling (phase 1)', () => {
+  const one = (Item, extra = {}) => importRdlx({ Body: { ReportItems: [{ Type: 'textbox', Name: 'T', Value: 'Hi', Width: '2in', Height: '0.25in', ...Item }] }, ...extra });
+  it('maps decoration, justify, background image and shrink-to-fit without warnings', () => {
+    const r = one({ Style: { TextDecoration: 'Underline', TextAlign: 'Justify', BackgroundImage: { Source: 'External', Value: 'https://example.com/bg.png' } }, ShrinkToFit: 'true' });
+    const t = r.definition.sections.body.items[0];
+    expect(t.style).toMatchObject({ textDecoration: 'underline', textAlign: 'justify', backgroundImage: 'https://example.com/bg.png' });
+    expect(t.shrinkToFit).toBe(true);
+    expect(r.warnings.join(' ')).not.toMatch(/underline|background image|justify/i);
+  });
+  it('turns ActiveReports angles (counter-clockwise) into Pagewright rotation (clockwise)', () => {
+    expect(one({ Angle: '90' }).definition.sections.body.items[0].rotate).toBe(270);
+    expect(one({ Angle: '-90' }).definition.sections.body.items[0].rotate).toBe(90);
+    expect(one({ Angle: '45' }).definition.sections.body.items[0].rotate).toBe(315);
+    expect(one({ Angle: '0' }).definition.sections.body.items[0].rotate).toBeUndefined();
+  });
+  it('maps LineThrough and MinCondenseRate', () => {
+    const t = one({ Style: { TextDecoration: 'LineThrough' }, MinCondenseRate: '80' }).definition.sections.body.items[0];
+    expect(t.style.textDecoration).toBe('line-through');
+    expect(t.shrinkToFit).toBe(true);
+  });
+  it('uses an embedded background image from the file', () => {
+    const r = one({ Style: { BackgroundImage: { Source: 'Embedded', Value: 'Logo' } } }, { EmbeddedImages: [{ Name: 'Logo', MIMEType: 'image/png', ImageData: 'iVBORw0KGgo=' }] });
+    expect(r.definition.sections.body.items[0].style.backgroundImage).toBe('data:image/png;base64,iVBORw0KGgo=');
+  });
+  it('still warns about database or expression background images', () => {
+    const r = one({ Style: { BackgroundImage: { Source: 'Database', Value: '=Fields!Logo.Value' } } });
+    expect(r.warnings.join(' ')).toMatch(/background image/);
+  });
+});

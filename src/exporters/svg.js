@@ -14,6 +14,7 @@ export function pageToSvg(page, w, h, { background = true } = {}) {
   if (background) out.push(`<rect width="${n(w)}" height="${n(h)}" fill="#ffffff"/>`);
   // a form field is drawn from its `draw` items (the PDF makes a real widget instead)
   for (const it of page.items.flatMap(i => (i.t === 'field' ? i.draw : [i]))) {
+    if (it.rotate) out.push(`<g transform="rotate(${n(it.rotate.a)} ${n(it.rotate.cx)} ${n(it.rotate.cy)})">`);
     switch (it.t) {
       case 'rect': {
         const r = it.radius ? ` rx="${n(it.radius)}"` : '';
@@ -69,6 +70,7 @@ export function pageToSvg(page, w, h, { background = true } = {}) {
         break;
       }
     }
+    if (it.rotate) out.push('</g>');
   }
   out.push('</svg>');
   return out.join('');

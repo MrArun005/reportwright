@@ -1,5 +1,5 @@
 // @ts-check
-import { mergedRegions } from './regions.js';
+import { mergedRegions, visualLines } from './regions.js';
 import { formatValue, isoDate } from '../engine/expr/format.js';
 
 const q = (v) => { const s = v == null ? '' : String(v); return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
@@ -14,7 +14,7 @@ export function exportCsv(model, { all = true, locale, currency } = {}) {
   const regions = mergedRegions(model);
   if (!regions.length) {
     // no tables: one text line per row of the page model
-    return model.pages.flatMap(p => p.items.filter(i => i.t === 'text').flatMap(i => i.lines.map(l => q(text(l.text))))).join('\r\n');
+    return model.pages.flatMap(p => p.items.filter(i => i.t === 'text').flatMap(i => visualLines(i).map(l => q(text(l))))).join('\r\n');
   }
   const out = [];
   for (const r of all ? regions : regions.slice(0, 1)) {
