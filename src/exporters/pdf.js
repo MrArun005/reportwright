@@ -67,6 +67,7 @@ export async function exportPdf(model, fontStore, opt = {}) {
         } catch { /* embed the full font */ }
       }
       const pf = await doc.embedFont(bytes, { subset: false });
+      plainEncoding(pf);
       if (glyphs) addGlyphs(pf, glyphs);
       fonts.set(key, pf);
     }
@@ -275,6 +276,24 @@ function glyphText(run, font, out) {
  * Shaped glyphs need entries too (a conjunct has no code point), and a joined Arabic form should read as its
  * letter, not as a presentation-form code point.
  */
+/**
+ * Plain (unshaped) lines: one glyph per character, without OpenType layout. The engine measured them that way
+ * (advance widths, no kerning or ligatures), so this draws what was measured, and it skips fontkit's layout, which
+ * was about 70% of export time. Shaped and right-to-left text never comes here: drawRun places its glyphs itself.
+ */
+function plainEncoding(pf) {
+  const e = pf.embedder, f = e.font, memo = new Map();
+  e.encodeText = (text) => {
+    let hex = memo.get(text);
+    if (hex === undefined) {
+      hex = '';
+      for (const ch of text) hex += f.glyphForCodePoint(/** @type {number} */ (ch.codePointAt(0))).id.toString(16).padStart(4, '0');
+      memo.set(text, hex);
+    }
+    return PDFHexString.of(hex);
+  };
+}
+
 function addGlyphs(pf, glyphs) {
   const e = pf.embedder;
   const byId = new Map(e.glyphCache.access().map(g => [g.id, g]));

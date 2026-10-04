@@ -200,6 +200,8 @@ function binary(n, ctx) {
   throw new ExprError(`Unknown operator "${op}"`);
 }
 
+const MONTH_NAMES = Array.from({ length: 12 }, (_, i) => new Date(2000, i, 1).toLocaleString('en', { month: 'long' }));
+
 /* ------------------------------------------------------------- aggregates */
 function scopeRows(args, idx, ctx, fname) {
   if (args.length > idx) {
@@ -211,6 +213,37 @@ function scopeRows(args, idx, ctx, fname) {
   if (ctx.aggRows) return ctx.aggRows;
   return ctx.fields ? [ctx.fields] : [];
 }
+/**
+ * RunningValue cache: each row's value of an expression, per row array, extended as the prefix grows. A group of n
+ * rows then costs n evaluations instead of n²/2. Only for expressions that read the row alone (no aggregates,
+ * whose result would depend on the prefix), over arrays that only grow (a scope's run) or never change.
+ */
+const RUN_CACHE = new WeakMap();
+function prefixValues(base, n, ast, ctx) {
+  let byAst = RUN_CACHE.get(base);
+  if (!byAst) { byAst = new Map(); RUN_CACHE.set(base, byAst); }
+  let vals = byAst.get(ast);
+  if (!vals) { vals = []; byAst.set(ast, vals); }
+  if (vals.length < n) {
+    const c = Object.assign({}, ctx, { aggRows: base }); // row-local: nothing reads aggRows
+    for (let i = vals.length; i < n; i++) { c.fields = base[i]; vals.push(evaluate(ast, c)); }
+  }
+  return vals.length === n ? vals : vals.slice(0, n);
+}
+const ROW_LOCAL = new WeakMap();
+const SCOPED = new Set(['countrows', 'rownumber', 'runningvalue']);
+/** True when an expression reads only the current row (and parameters): no aggregate, RowNumber or RunningValue. */
+function rowLocal(ast) {
+  let r = ROW_LOCAL.get(ast);
+  if (r === undefined) {
+    const walk = (n) => !n || typeof n !== 'object' || (Array.isArray(n) ? n.every(walk)
+      : !(n.type === 'call' && (n.name.toLowerCase() in AGG || SCOPED.has(n.name.toLowerCase()))) && Object.values(n).every(walk));
+    r = walk(ast);
+    ROW_LOCAL.set(ast, r);
+  }
+  return r;
+}
+
 function mapRows(rows, ast, ctx) {
   const c = Object.assign({}, ctx, { aggRows: rows });
   const out = new Array(rows.length);
@@ -300,7 +333,7 @@ export const FUNCTIONS = {
   year: (ctx, d) => toDate(d)?.getFullYear() ?? null,
   month: (ctx, d) => (toDate(d) ? toDate(d).getMonth() + 1 : null),
   day: (ctx, d) => toDate(d)?.getDate() ?? null,
-  monthname: (ctx, m, abbr) => { const s = new Date(2000, Number(m) - 1, 1).toLocaleString('en', { month: 'long' }); return truthy(abbr) ? s.slice(0, 3) : s; },
+  monthname: (ctx, m, abbr) => { const s = MONTH_NAMES[Number(m) - 1] ?? new Date(2000, Number(m) - 1, 1).toLocaleString('en', { month: 'long' }); return truthy(abbr) ? s.slice(0, 3) : s; },
 };
 
 /** Names shown in the designer's expression helper. */
@@ -346,6 +379,11 @@ function call(n, ctx) {
     } else if (ctx.runningRows) rows = ctx.runningRows;
     else if (ctx.aggRows && ctx.aggIndex != null) rows = ctx.aggRows.slice(0, ctx.aggIndex + 1);
     else rows = ctx.fields ? [ctx.fields] : [];
+    // asked once per row over a growing prefix of the same rows: reuse the values already computed
+    if (args.length > 2 || (!ctx.runningRows && ctx.aggRows && ctx.aggIndex != null)) {
+      const base = args.length > 2 ? rows : ctx.aggRows;
+      if (rowLocal(args[0])) return AGG[fn](prefixValues(base, rows.length, args[0], ctx));
+    }
     return AGG[fn](mapRows(rows, args[0], ctx));
   }
   if (name === 'lookup') {

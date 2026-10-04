@@ -122,16 +122,40 @@ export function fileStore(root) {
       for (const n of old.slice(0, Math.max(0, old.length - keep))) await fs.rm(path.join(dir, n), { force: true });
     },
 
-    // ponytail: leases in memory: file storage is for one server. Several servers use PW_STORAGE=sqlite|postgres|mysql.
+    // Leases are files, so two processes on one folder (a dev server and a test server, say) see each other's.
+    // ponytail: file storage is still one machine; servers on several machines use PW_STORAGE=sqlite|postgres|mysql.
     async lease(name, owner, ttl) {
-      const cur = leases.get(name);
-      if (cur && cur.owner !== owner && cur.expires > Date.now()) return false;
-      leases.set(name, { owner, expires: Date.now() + ttl });
-      return true;
+      const file = leaseFile(data, name);
+      return withFileLock(file, async () => {
+        const cur = await readLease(file);
+        if (cur && cur.owner !== owner && cur.expires > Date.now()) return false;
+        await writeAtomic(file, JSON.stringify({ owner, expires: Date.now() + ttl }));
+        return true;
+      });
     },
-    async release(name, owner) { if (leases.get(name)?.owner === owner) leases.delete(name); },
+    async release(name, owner) {
+      const file = leaseFile(data, name);
+      await withFileLock(file, async () => { if ((await readLease(file))?.owner === owner) await fs.rm(file, { force: true }); });
+    },
   };
 }
 
-/** @type {Map<string, { owner: string, expires: number }>} */
-const leases = (/** @type {any} */ (globalThis).__pwLeases ||= new Map());
+const leaseFile = (data, name) => path.join(data, 'leases', `${String(name).replace(/[^\w.-]/g, '_')}.json`);
+async function readLease(file) {
+  try { return JSON.parse(await fs.readFile(file, 'utf8')); } catch (e) { if (missing(e) || e instanceof SyntaxError) return null; throw e; }
+}
+/** Read-modify-write of one lease across processes: mkdir is atomic, so only one process holds `<file>.lock`. */
+async function withFileLock(file, fn) {
+  const lock = `${file}.lock`;
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  for (let tries = 0; ; tries++) {
+    try { await fs.mkdir(lock); break; } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      // a lock this old was left by a process that died between mkdir and rm
+      try { if (Date.now() - (await fs.stat(lock)).mtimeMs > 10000) { await fs.rm(lock, { recursive: true, force: true }); continue; } } catch { /* gone already */ }
+      if (tries > 400) throw new Error(`Lease lock ${path.basename(lock)} is stuck`);
+      await new Promise(r => setTimeout(r, 5));
+    }
+  }
+  try { return await fn(); } finally { await fs.rm(lock, { recursive: true, force: true }); }
+}
