@@ -1,5 +1,5 @@
 // @ts-check
-import { mergedRegions, textRows } from './regions.js';
+import { mergedRegions, textRows, needsTableData } from './regions.js';
 import { formatValue, isoDate } from '../engine/expr/format.js';
 
 const q = (v) => { const s = v == null ? '' : String(v); return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
@@ -11,6 +11,7 @@ const text = (s) => (/^[=+\-@\t\r]/.test(s) ? `'${s}` : s);
  * Numbers stay raw; dates use ISO form so spreadsheets read them.
  */
 export function exportCsv(model, { all = true, locale, currency } = {}) {
+  needsTableData(model, 'CSV');
   const regions = mergedRegions(model);
   if (!regions.length) {
     // no tables: one text line per row of the page model

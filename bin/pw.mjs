@@ -12,10 +12,12 @@ import { exportHtml } from '../src/exporters/html.js';
 import { exportCsv } from '../src/exporters/csv.js';
 import { exportXlsx } from '../src/exporters/xlsx.js';
 import { exportDocx } from '../src/exporters/docx.js';
+import { exportPptx } from '../src/exporters/pptx.js';
 import { textRows } from '../src/exporters/regions.js';
 
 const ROOT = path.join(import.meta.dirname, '..');
-const HELP = `pw render <report.pw.json> [-p name=value]… [-d source=data.json]… [-f pdf|xlsx|docx|html|csv|json|txt] [-o file|-] [--base URL] [--pdfa]
+const HELP = `pw render <report.pw.json> [-p name=value]… [-d source=data.json]… [-f pdf|xlsx|docx|pptx|html|csv|json|txt] [-o file|-] [--base URL] [--pdfa] [--ua]
+          [--values] [--static]
           [--password PW] [--owner-password PW] [--deny print|modify|copy|annotate|fillForms|accessibility|assemble|printHighQuality]…
 pw test [folder] [--update]        render every <folder>/__tests__/*.test.json case and compare it with its snapshot
 pw diff <old.pw.json> <new.pw.json> [-p name=value]… [-d source=data.json]… [--base URL]
@@ -24,6 +26,8 @@ pw diff <old.pw.json> <new.pw.json> [-p name=value]… [-d source=data.json]… 
   -f  output format (default pdf)   -o  output file, or - for stdout
   --base  where relative data URLs go (e.g. http://localhost:3000)
   --password, --owner-password, --deny  a password-protected PDF (AES-256); --deny takes away a permission
+  --ua  an accessible PDF (PDF/UA-1; with --pdfa, PDF/A-2a)   --values  Excel totals as values, not formulas
+  --static  an HTML file without its Tables view (sort, groups, filter)
 Exit codes: 0 ok, 1 a test failed or the pages differ, 2 bad usage.`;
 
 const fontStore = new FontStore((k) => fs.readFileSync(path.join(ROOT, 'public', 'fonts', `${k}.ttf`)));
@@ -48,9 +52,9 @@ const siblingLoader = (file) => async (id) => {
   try { return readJson(path.join(path.dirname(path.resolve(file)), `${id}.pw.json`)); } catch { throw new Error(`Report "${id}" not found`); }
 };
 
-async function renderModel(def, { parameters = {}, data, base, now, state, file } = {}) {
+async function renderModel(def, { parameters = {}, data, base, now, state, file, exportData = true } = {}) {
   try {
-    return await render(withData(def, data), { fontStore, parameters, baseUrl: base, now: now ? new Date(now) : undefined, ...(state ? { state } : {}), ...(file ? { loadReport: siblingLoader(file) } : {}) });
+    return await render(withData(def, data), { fontStore, parameters, ...(exportData ? {} : { exportData: false }), baseUrl: base, now: now ? new Date(now) : undefined, ...(state ? { state } : {}), ...(file ? { loadReport: siblingLoader(file) } : {}) });
   } catch (e) {
     const relative = /fetch|URL|Invalid URL/i.test(e.message) && !base;
     fail(`${e.message}${relative ? '\n    A data source needs a server: pass --base http://localhost:3000, or push the data with -d source=file.json.' : ''}`);
@@ -96,12 +100,13 @@ function compare(label, before, after) {
 }
 
 async function cmdRender(args) {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { p: { type: 'string', multiple: true }, d: { type: 'string', multiple: true }, f: { type: 'string', default: 'pdf' }, o: { type: 'string' }, base: { type: 'string' }, pdfa: { type: 'boolean' }, password: { type: 'string' }, 'owner-password': { type: 'string' }, deny: { type: 'string', multiple: true } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { p: { type: 'string', multiple: true }, d: { type: 'string', multiple: true }, f: { type: 'string', default: 'pdf' }, o: { type: 'string' }, base: { type: 'string' }, pdfa: { type: 'boolean' }, ua: { type: 'boolean' }, values: { type: 'boolean' }, static: { type: 'boolean' }, password: { type: 'string' }, 'owner-password': { type: 'string' }, deny: { type: 'string', multiple: true } } });
   if (positionals.length !== 1) usage('give one report file');
   const def = readJson(positionals[0]);
   const data = Object.fromEntries(Object.entries(pairs(values.d)).map(([k, f]) => [k, readJson(f)]));
-  const model = await renderModel(def, { parameters: pairs(values.p), data, base: values.base, file: positionals[0] });
   const fmt = values.f;
+  // a plain PDF needs no table data (Excel, Word, the accessible PDF do)
+  const model = await renderModel(def, { parameters: pairs(values.p), data, base: values.base, file: positionals[0], exportData: !(fmt === 'pdf' && !values.ua) });
   let bytes;
   let encrypt;
   try {
@@ -109,11 +114,13 @@ async function cmdRender(args) {
   } catch (e) { usage(e.message); }
   if (encrypt && fmt !== 'pdf') usage('--password, --owner-password and --deny apply to -f pdf only');
   if (encrypt && values.pdfa) usage('a PDF/A file cannot have a password');
-  if (fmt === 'pdf') bytes = await exportPdf(model, fontStore, { title: def.name, subset, encrypt, pdfa: values.pdfa ? { icc: fs.readFileSync(path.join(ROOT, 'public', 'icc', 'sRGB-v2-magic.icc')) } : undefined });
-  else if (fmt === 'html') bytes = await exportHtml(model, fontStore, { title: def.name });
+  if (values.ua && fmt !== 'pdf') usage('--ua applies to -f pdf only');
+  if (fmt === 'pdf') bytes = await exportPdf(model, fontStore, { title: def.name, subset, encrypt, pdfa: values.pdfa ? { icc: fs.readFileSync(path.join(ROOT, 'public', 'icc', 'sRGB-v2-magic.icc')) } : undefined, tagged: values.ua ? { lang: def.locale || 'en' } : undefined });
+  else if (fmt === 'html') bytes = await exportHtml(model, fontStore, { title: def.name, static: !!values.static, locale: def.locale, currency: def.currency });
   else if (fmt === 'csv') bytes = exportCsv(model, { locale: def.locale, currency: def.currency });
-  else if (fmt === 'xlsx') bytes = await exportXlsx(model, (await import('exceljs')).default, { currency: def.currency, title: def.name });
-  else if (fmt === 'docx') bytes = await exportDocx(model, { title: def.name });
+  else if (fmt === 'xlsx') bytes = await exportXlsx(model, (await import('exceljs')).default, { currency: def.currency, title: def.name, formulas: !values.values, fontStore });
+  else if (fmt === 'docx') bytes = await exportDocx(model, { title: def.name, lang: def.locale, fontStore });
+  else if (fmt === 'pptx') bytes = await exportPptx(model, { title: def.name, lang: def.locale, fontStore });
   else if (fmt === 'json') bytes = JSON.stringify(model);
   else if (fmt === 'txt') bytes = snapshotText(def.name || positionals[0], model);
   else usage(`unknown format "${fmt}"`);

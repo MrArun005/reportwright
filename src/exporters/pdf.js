@@ -8,6 +8,7 @@ import { dataUriBytesOf, dataUriBytes, imageInfoOf, IMAGE_LIMITS } from '../engi
 import { parseSvg, drawSvg } from './svgimage.js';
 import { encryptPdf } from './encrypt.js';
 import { createTagger } from './pdfua.js';
+import { needsTableData } from './regions.js';
 
 const fontkit = /** @type {any} */ (fontkitModule).default || fontkitModule;
 
@@ -153,6 +154,7 @@ export async function exportPdf(model, fontStore, opt = {}) {
   const taken = new Set();
   const uniqueName = (n) => { let name = n, i = 1; while (taken.has(name)) name = `${n}_${++i}`; taken.add(name); return name; };
   const contents = [];
+  if (opt.tagged) needsTableData(model, 'An accessible PDF');
   const tags = opt.tagged ? createTagger(model, doc) : null;
   let pi = -1; // the page's index (the tagger's key)
   const vm = new Map();

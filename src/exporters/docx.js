@@ -6,7 +6,7 @@
 // become pictures: an SVG with a PNG fallback (Word 2016+ draws the SVG, older Word and other readers the PNG), or the
 // picture's own PNG/JPEG. Written by hand with fflate (WordprocessingML is small), no Word library.
 import { zipSync, strToU8 } from 'fflate';
-import { visualLines, isJustified } from './regions.js';
+import { visualLines, isJustified, needsTableData } from './regions.js';
 import { figures, figurePicture, boxOf, figureSvg, rasterize, cellVisuals, boxDecor, hexOrNull, altOf } from './figures.js';
 
 const TW = 20; // twips per point
@@ -147,6 +147,7 @@ function table(cells, indentPt, pics) {
  * @returns {Promise<Uint8Array>}
  */
 export async function exportDocx(model, opt = {}) {
+  needsTableData(model, 'Word');
   // the left and right page margins of the Word document; content keeps its place (indents are from the report's x)
   const margin = 18;
   /** @type {{ name: string, bytes: Uint8Array, rid: string }[]} */

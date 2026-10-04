@@ -1,5 +1,5 @@
 // @ts-check
-import { mergedRegions, textRows } from './regions.js';
+import { mergedRegions, textRows, needsTableData } from './regions.js';
 import { figures, figurePicture, altOf, b64 } from './figures.js';
 
 /** .NET-style format → Excel number format. */
@@ -105,6 +105,7 @@ function totalFormula(rows, at, c, made) {
  * @returns {Promise<Uint8Array>}
  */
 export async function exportXlsx(model, ExcelJS, { currency, title, formulas = true, pictures = true, fontStore, fetchImage, rasterize } = {}) {
+  needsTableData(model, 'Excel');
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Pagewright';
   wb.created = new Date();

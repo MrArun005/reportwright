@@ -432,9 +432,11 @@ register('table', {
         const above = s.units.reduce((t, u) => t + u.height, 0);
         if (s.tl.needed - above > need + GROW_TOLERANCE) need = s.tl.needed - above;
       }
+      if (lc.regions) { // export data (Excel, CSV, Word, HTML): only when the render asks for it (render option exportData)
       const rcells = (started ? [...cells, ...started].sort((a, b) => a.x - b.x) : cells).map(regionCell);
       if (started) for (const st of started) st.region = rcells.find(rc => rc.colIndex === colX.indexOf(st.x)); // its rowSpan is set to the rows it really covered when it closes
       region.rows.push({ kind, level: extra?.level ?? 0, cells: rcells });
+      }
       // h: height of this piece; lines: per-cell lines when the row is split; first: links, visuals and toggles go on the first piece
       const paint = (h, lines, first, rowId, chunk) => {
         const items = [];
@@ -453,7 +455,7 @@ register('table', {
           const at = items.length;
           paintBoxAt(c.x, 0, c.w, h, c.st, lines ? { ...c.tl, lines: lines[k] } : c.tl, c.numeric, lc.m, true, items);
           // cell text knows its table, row and column, so the Word export can rebuild the table
-          for (let i = at; i < items.length; i++) if (items[i].t === 'text') items[i].cell = { table: item.name, row: rowId, col: colIdx[c.ci], span: c.span, kind, cols: colWidths, bg: c.st.backgroundColor || null };
+          if (lc.regions) for (let i = at; i < items.length; i++) if (items[i].t === 'text') items[i].cell = { table: item.name, row: rowId, col: colIdx[c.ci], span: c.span, kind, cols: colWidths, bg: c.st.backgroundColor || null };
           if (first) cellLinks(items, c, h, kind);
         });
         if (first) for (const c of cells) if (c.cell.toggle) items.push(toggleLink(c, c.w, h));
@@ -545,7 +547,7 @@ register('table', {
         const add = paintBox({ x: s.x, y: 0, w: s.w, h: u.height, st, tl: null, m: lc.m });
         if (k === 0) {
           const text = paintBox({ x: s.x, y: 0, w: s.w, h: H, st: { ...s.st, ...NO_BOX }, tl: s.tl, numeric: s.numeric, m: lc.m });
-          for (const b of text) if (b.t === 'text') b.cell = { table: item.name, row: u.rowId, col: colX.indexOf(s.x), span: s.cols, rowSpan: n, kind, cols: colWidths, bg: s.st.backgroundColor || null };
+          if (lc.regions) for (const b of text) if (b.t === 'text') b.cell = { table: item.name, row: u.rowId, col: colX.indexOf(s.x), span: s.cols, rowSpan: n, kind, cols: colWidths, bg: s.st.backgroundColor || null };
           add.splice(s.st.backgroundColor ? 1 : 0, 0, ...text);
           cellLinks(add, s, u.height, kind);
           if (s.toggle) add.push(toggleLink(s, s.w, u.height));

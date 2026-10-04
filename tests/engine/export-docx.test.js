@@ -89,6 +89,15 @@ describe('export tags (engine)', () => {
     const copy = JSON.parse(JSON.stringify(m));
     expect(figures(copy.pages[0].items).length).toBe(1);
   });
+  it('exportData: false (a view, a plain PDF) leaves out the table data and cell tags; the pages are the same', async () => {
+    const full = await model(), lean = await model({ exportData: false });
+    expect(lean.regions).toBeNull();
+    expect(lean.pages[0].items.some(i => i.cell)).toBe(false);
+    expect(full.pages[0].items.some(i => i.cell)).toBe(true);
+    const strip = (m) => JSON.stringify(m.pages, (k, v) => (k === 'cell' ? undefined : v));
+    expect(strip(lean)).toBe(strip(full));
+    await expect(exportDocx(lean)).rejects.toThrow(/table data/); // a file without its tables would be wrong
+  });
   it('pathBox: an arc is bounded by where it turns, not its radius in every direction', () => {
     expect(pathBox('M0 0 A10 10 0 0 1 20 0')).toEqual({ x0: 0, y0: -10, x1: 20, y1: expect.closeTo(0, 6) });
     expect(pathBox('M0 0 L10 5 l5 5 H2 V-3 Z')).toEqual({ x0: 0, y0: -3, x1: 15, y1: 10 });

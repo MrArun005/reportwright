@@ -22,7 +22,7 @@ export async function POST(req) {
     if (body.data && !canDesign(principal)) throw Object.assign(new Error('Only a designer can send data for a render. Render the report with its own data.'), { status: 403 });
     if (typeof body.template === 'string') await checkReport(principal, body.template).catch((e) => { throw e.status === 404 ? Object.assign(new Error(`Template "${body.template}" not found`), { status: 404 }) : e; });
     // the template is read, checked and rendered in a render worker (src/server/pool.js), as this principal
-    const r = await renderInPool({ ref: body.template, opt: { encrypt, parameters: body.parameters, data: body.data, format: body.format, baseUrl: baseUrl(req), state: body.state, pdfa: !!body.pdfa, sign: !!body.sign, principal } }, { signal: req.signal });
+    const r = await renderInPool({ ref: body.template, opt: { encrypt, parameters: body.parameters, data: body.data, format: body.format, baseUrl: baseUrl(req), state: body.state, pdfa: !!body.pdfa, ua: !!body.ua, formulas: body.formulas, static: !!body.static, sign: !!body.sign, principal } }, { signal: req.signal });
     await audit('report.render', { req, principal, report: typeof body.template === 'string' ? body.template : null, format: body.format || 'pdf', params: body.parameters, detail: { pages: r.pages, via: 'api', inline: typeof body.template !== 'string', pushedData: !!body.data, signed: !!body.sign, encrypted: !!encrypt } });
     const name = (body.fileName || r.name || 'report').replace(/[^\w.-]+/g, '-');
     return new Response(r.bytes, { // the worker's buffer, moved here without a copy

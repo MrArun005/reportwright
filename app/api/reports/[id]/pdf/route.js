@@ -13,12 +13,12 @@ export async function GET(req, { params }) {
     const { id } = await params;
     const principal = await principalOf(req);
     const url = new URL(req.url);
-    // ?pdfa=1 gives PDF/A-2b. Signing is not offered here: this route has no API key (use /api/v1/render).
-    const parameters = Object.fromEntries([...url.searchParams.entries()].filter(([k]) => k !== 'format' && k !== 'pdfa'));
+    // ?pdfa=1 gives PDF/A-2b, ?ua=1 an accessible PDF (PDF/UA-1; with pdfa, PDF/A-2a). Signing is not offered here: this route has no API key (use /api/v1/render).
+    const parameters = Object.fromEntries([...url.searchParams.entries()].filter(([k]) => k !== 'format' && k !== 'pdfa' && k !== 'ua'));
     const format = url.searchParams.get('format') || 'pdf';
     await checkReport(principal, safeId(id)); // view access, before the render takes a place in the queue
     // read (view access, saved server-side data as a designer stored it) and rendered in a render worker
-    const r = await renderInPool({ ref: safeId(id), how: 'runnable', opt: { parameters, format, baseUrl: baseUrl(req), pdfa: url.searchParams.get('pdfa') === '1', principal } }, { signal: req.signal });
+    const r = await renderInPool({ ref: safeId(id), how: 'runnable', opt: { parameters, format, baseUrl: baseUrl(req), pdfa: url.searchParams.get('pdfa') === '1', ua: url.searchParams.get('ua') === '1', principal } }, { signal: req.signal });
     await audit('report.render', { req, principal, report: id, format, params: parameters, detail: { pages: r.pages, via: 'server link' } });
     return new Response(r.bytes, {
       headers: {

@@ -8,6 +8,7 @@ import { exportHtml } from '@/exporters/html.js';
 import { exportCsv } from '@/exporters/csv.js';
 import { exportXlsx } from '@/exporters/xlsx.js';
 import { exportDocx } from '@/exporters/docx.js';
+import { exportPptx } from '@/exporters/pptx.js';
 import { createSubsetter } from '@/exporters/subset.js';
 import { readRunnable, defaultPrincipal, vet, canDesign, writtenHost } from './perms.js';
 import { serverFetch, NO_BASE_URL } from './safeFetch.js';
@@ -38,6 +39,7 @@ export const FORMATS = {
   pdf: { type: 'application/pdf', ext: 'pdf' },
   xlsx: { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ext: 'xlsx' },
   docx: { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', ext: 'docx' },
+  pptx: { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', ext: 'pptx' },
   html: { type: 'text/html; charset=utf-8', ext: 'html' },
   csv: { type: 'text/csv; charset=utf-8', ext: 'csv' },
   json: { type: 'application/json', ext: 'json' },
@@ -97,21 +99,22 @@ export async function loadTemplate(template, principal = defaultPrincipal()) {
  *   data: { sourceName: json } replaces those data sources (push data instead of pull)
  *   self: this server's origin, which data sources may call even though it is local. Defaults to baseUrl;
  *   pass it when baseUrl came from an API caller. Every other private address is refused (SSRF).
- *   pdfa: a PDF/A-2b file. sign: sign the PDF with PW_SIGN_P12 (only for routes behind an API key).
+ *   pdfa: a PDF/A-2b file (2a with ua). ua: an accessible PDF (PDF/UA-1). formulas: false keeps Excel totals as values.
+ *   static: an HTML file without its Tables view. sign: sign the PDF with PW_SIGN_P12 (only for routes behind an API key).
  *   encrypt: passwords and permissions (pdfEncryptOptions); not with pdfa or sign.
  *   principal: who the render runs for (perms.js): subreports it may not view are "not found". Default: nobody
  *   with accounts on, so a caller that forgets cannot show more than it should.
  */
 export async function renderTo(def, opt = {}) {
   const format = opt.format || 'pdf';
-  if (!FORMATS[format]) throw Object.assign(new Error(`Unknown format "${format}". Use pdf, xlsx, docx, html, csv or json.`), { status: 400 });
+  if (!FORMATS[format]) throw Object.assign(new Error(`Unknown format "${format}". Use pdf, xlsx, docx, pptx, html, csv or json.`), { status: 400 });
   let d = def;
   // pushed data replaces the report's own sources: a render of made-up rows under the report's name (and signature)
   if (opt.data && opt.principal && !canDesign(opt.principal)) throw Object.assign(new Error('Only a designer can send data for a render. Render the report with its own data.'), { status: 403 });
   if (opt.data && typeof opt.data === 'object') {
     d = { ...def, dataSources: (def.dataSources || []).map(s => (s.name in opt.data ? { name: s.name, type: 'json', data: opt.data[s.name] } : s)) };
   }
-  if ((opt.pdfa || opt.sign || opt.encrypt) && format !== 'pdf') throw Object.assign(new Error('PDF/A, signing and passwords apply to the pdf format only'), { status: 400 });
+  if ((opt.pdfa || opt.sign || opt.encrypt || opt.ua) && format !== 'pdf') throw Object.assign(new Error('PDF/A, signing and passwords apply to the pdf format only'), { status: 400 });
   if (opt.encrypt && opt.pdfa) throw Object.assign(new Error('A PDF/A file cannot have a password. Turn off PDF/A or the password.'), { status: 400 });
   if (opt.encrypt && opt.sign) throw Object.assign(new Error('A signed PDF cannot have a password. Turn off signing or the password.'), { status: 400 });
   if (opt.sign && opt.principal && vet(opt.principal).kind === 'public') throw Object.assign(new Error('Signing needs an API key (PW_API_KEYS).'), { status: 401 });
@@ -121,7 +124,9 @@ export async function renderTo(def, opt = {}) {
   const fetch = serverFetch(opt.self || base);
   await syncFonts();
   const model = await render(d, {
-    parameters: opt.parameters || {}, state: opt.state || {}, fontStore: fontStore(), baseUrl: base, fetch, timeoutMs: renderTimeoutMs(),
+    parameters: opt.parameters || {}, state: opt.state || {}, fontStore: fontStore(),
+    baseUrl: base, fetch, timeoutMs: renderTimeoutMs(),
+    ...(format === 'pdf' && !opt.ua ? { exportData: false } : {}), // a plain PDF needs no table data (exports batch 2)
     sql: runSql, // SQL sources query the database directly, not through /api/data/sql
     loadReport: async (id) => {
       let sub;
@@ -137,13 +142,14 @@ export async function renderTo(def, opt = {}) {
   const imageFetch = fixedHosts() ? serverFetch(opt.self || base, { internal: false }) : fetch;
   const fetchImage = async (src) => { try { const r = await imageFetch(new URL(src, base)); return r.ok ? new Uint8Array(await r.arrayBuffer()) : null; } catch { return null; } };
   if (format === 'pdf') {
-    bytes = await exportPdf(model, fontStore(), { title: def.name, subset, fetchImage, pdfa: opt.pdfa ? { icc: await iccProfile() } : undefined, prepare: signing?.prepare, save: signing?.save, encrypt: opt.encrypt });
+    bytes = await exportPdf(model, fontStore(), { title: def.name, subset, fetchImage, pdfa: opt.pdfa ? { icc: await iccProfile() } : undefined, tagged: opt.ua ? { lang: def.locale || 'en' } : undefined, prepare: signing?.prepare, save: signing?.save, encrypt: opt.encrypt });
     if (signing) bytes = await signing.sign(bytes);
   }
-  else if (format === 'html') bytes = Buffer.from(await exportHtml(model, fontStore(), { title: def.name, subset, drillBase: opt.self || base })); // drill-through opens this server's viewer (never a caller's baseUrl)
+  else if (format === 'html') bytes = Buffer.from(await exportHtml(model, fontStore(), { title: def.name, subset, drillBase: opt.self || base, static: !!opt.static, locale: def.locale, currency: def.currency })); // drill-through opens this server's viewer (never a caller's baseUrl)
   else if (format === 'csv') bytes = Buffer.from(exportCsv(model, { locale: def.locale, currency: def.currency }));
-  else if (format === 'docx') bytes = Buffer.from(await exportDocx(model, { title: def.name }));
-  else if (format === 'xlsx') { const ExcelJS = (await import('exceljs')).default; bytes = await exportXlsx(model, ExcelJS, { currency: def.currency, title: def.name }); }
+  else if (format === 'docx') bytes = Buffer.from(await exportDocx(model, { title: def.name, lang: def.locale, fontStore: fontStore(), fetchImage }));
+  else if (format === 'pptx') bytes = Buffer.from(await exportPptx(model, { title: def.name, lang: def.locale, fontStore: fontStore(), fetchImage }));
+  else if (format === 'xlsx') { const ExcelJS = (await import('exceljs')).default; bytes = await exportXlsx(model, ExcelJS, { currency: def.currency, title: def.name, formulas: opt.formulas !== false, fontStore: fontStore(), fetchImage }); }
   else bytes = Buffer.from(JSON.stringify(model));
   return { bytes, model, contentType: FORMATS[format].type, ext: FORMATS[format].ext };
 }

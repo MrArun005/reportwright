@@ -1,5 +1,5 @@
 // Pagination profile on the benchmark scenarios: render (JSON text → page model) time and peak RSS, as pw-bench measures it.
-// usage: node [--cpu-prof] scripts/perf-paginate.mjs [s1|s2|s3] [rows file] [runs]   (PW_BENCH: the pw-bench checkout, default ~/pw-bench)
+// usage: [LEAN=1] node [--cpu-prof] scripts/perf-paginate.mjs [s1|s2|s3] [rows file] [runs]   (PW_BENCH: the pw-bench checkout, default ~/pw-bench)
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -15,7 +15,7 @@ const fontStore = new FontStore(async (k) => fs.readFileSync(path.join(ROOT, 'pu
 const times = [], cpus = [];
 for (let r = 0; r < Number(runs); r++) {
   const t0 = performance.now(), c0 = process.threadCpuUsage?.() ?? process.cpuUsage();
-  const model = await render(defs.pagewright(scenario, JSON.parse(raw)), { fontStore });
+  const model = await render(defs.pagewright(scenario, JSON.parse(raw)), { fontStore, ...(process.env.LEAN ? { exportData: false } : {}) }); // LEAN=1: as a view or a plain PDF renders (no Excel/Word table data)
   times.push(performance.now() - t0);
   const c1 = process.threadCpuUsage?.(c0) ?? process.cpuUsage(c0);
   cpus.push((c1.user + c1.system) / 1000); // CPU time of this thread: steadier than wall time on a busy machine
