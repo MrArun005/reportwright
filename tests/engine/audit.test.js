@@ -172,6 +172,8 @@ describe('what the routes record', () => {
     await writeReport('exp-r', { $schema: 'pagewright/report@1', name: 'E', sections: { body: { items: [] } } });
     expect((await exp(rq('/api/audit/export', { method: 'POST', body: { report: 'exp-r', format: 'xlsx' }, headers: { cookie: annCookie } }))).status).toBe(200);
     expect(await last('report.export')).toMatchObject({ actor: 'user:ann@x.io', report: 'exp-r', format: 'xlsx', detail: { client: true } });
+    expect((await exp(rq('/api/audit/export', { method: 'POST', body: { report: 'exp-r', format: 'json' }, headers: { cookie: annCookie } }))).status).toBe(200); // the viewer's JSON export
+    expect(await last('report.export')).toMatchObject({ actor: 'user:ann@x.io', report: 'exp-r', format: 'json' });
     expect((await exp(rq('/api/audit/export', { method: 'POST', body: { report: 'exp-r', format: 'evil' }, headers: { cookie: annCookie } }))).status).toBe(400);
     expect((await exp(rq('/api/audit/export', { method: 'POST', body: { report: 'nope', format: 'pdf' }, headers: { cookie: annCookie } }))).status).toBe(404);
     expect((await exp(rq('/api/audit/export', { method: 'POST', body: { report: 'exp-r', format: 'pdf' } }))).status).toBe(401);

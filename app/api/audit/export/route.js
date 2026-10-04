@@ -6,7 +6,7 @@ import { audit } from '@/server/audit.js';
 import { accountsOn } from '@/server/session.js';
 
 export const runtime = 'nodejs';
-const FORMATS = new Set(['pdf', 'xlsx', 'docx', 'html', 'csv', 'svg', 'print']);
+const FORMATS = new Set(['pdf', 'xlsx', 'docx', 'html', 'csv', 'json', 'svg', 'print']);
 
 export async function POST(req) {
   try {
