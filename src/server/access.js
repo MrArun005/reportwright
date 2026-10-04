@@ -9,7 +9,7 @@ const OPEN_PREFIX = ['/_next/', '/fonts/', '/icc/', '/embed/', '/api/v1/', '/fav
 const OPEN_EXACT = ['/login', '/api/auth/login', '/api/auth/logout', '/harfbuzz-subset.wasm',
   '/api/auth/oidc/start', '/api/auth/oidc/callback', '/api/auth/saml/login', '/api/auth/saml/acs', '/api/auth/saml/finish', '/api/auth/saml/metadata'];
 /** Writes that come from another site by design: the SAML IdP posts the response (its signature protects it). */
-const CROSS_SITE_WRITES = ['/api/auth/saml/acs'];
+export const CROSS_SITE_WRITES = ['/api/auth/saml/acs'];
 
 /**
  * [method, path, least role]. The first row that matches wins; a path no row matches is for admins only.
@@ -72,7 +72,7 @@ export function decide(method, rawPath, role) {
 }
 
 const json = (error, status) => Response.json({ error }, { status });
-const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+export const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 /** null when the request may go on; otherwise the answer (redirect to /login, 401, 403, 400). @param {Request} req */
 export async function guard(req) {

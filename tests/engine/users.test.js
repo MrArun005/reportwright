@@ -222,6 +222,20 @@ describe('sign-in rate limit', () => {
 });
 
 describe('CSRF: unsafe methods must come from this site', () => {
+  it('with accounts off and PW_BASIC_AUTH, a cross-site write is refused even with the browser\'s cached password', async () => {
+    const keep = process.env.PW_AUTH;
+    delete process.env.PW_AUTH;
+    process.env.PW_BASIC_AUTH = 'admin:pw';
+    try {
+      const basic = { authorization: `Basic ${Buffer.from('admin:pw').toString('base64')}`, host: 'pw.test' };
+      const w = (h, p = '/api/reports') => proxy(new Request(`http://pw.test${p}`, { method: 'POST', headers: { ...basic, ...h }, body: '{}' }));
+      expect((await w({ origin: 'https://evil.example', 'content-type': 'text/plain' }))?.status).toBe(403);
+      expect((await w({}))?.status).toBe(403); // no Origin, no Referer
+      expect(await w({ origin: 'http://pw.test' })).toBe(undefined); // this site's own page
+      expect(await w({}, '/api/v1/render')).toBe(undefined); // API keys, not cookies
+    } finally { delete process.env.PW_BASIC_AUTH; process.env.PW_AUTH = keep; }
+  });
+
   it('checks Origin, then Referer, against the request host', () => {
     const r = (h) => new Request('http://pw.test/api/reports/x', { method: 'PUT', headers: { host: 'pw.test', ...h } });
     expect(sameOrigin(r({ origin: 'http://pw.test' }))).toBe(true);
