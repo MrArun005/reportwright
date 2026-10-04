@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pagewright · live demo</title>
+<meta name="description" content="Pagewright is an MIT-licensed report designer and viewer for the web. Every report on this page renders live in your browser.">
+<link rel="canonical" href="%SITE_URL%">
+<meta property="og:url" content="%SITE_URL%">
+<meta property="og:title" content="Pagewright: report designer and viewer for the web">
+<meta property="og:description" content="Banded report designer, embeddable viewer, PDF / Excel / Word export. Live demo, all in your browser.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="site.css">
+<script>try { const t = localStorage.getItem('pw-site-theme'); if (t) document.documentElement.dataset.theme = t; } catch {}</script>
+</head>
+<body>
+<header class="bar">
+  <a class="brand" href="#top" aria-label="Pagewright home">
+    <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><path d="M4 1v6M1 4h6M28 1v6M25 4h6M4 25v6M1 28h6M28 25v6M25 28h6" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="7" width="14" height="18" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 12h8M12 15.5h8M12 19h5" stroke="var(--accent)" stroke-width="1.6"/></svg>
+    <span>Pagewright</span>
+  </a>
+  <nav class="nav" aria-label="Sections">
+    <a href="#gallery">Gallery</a>
+    <a href="#scale">Scale</a>
+    <a href="#designer">Designer</a>
+    <a href="#embed">Embed</a>
+    <a href="#capabilities">Capabilities</a>
+  </nav>
+  <div class="bar-end">
+    <span class="licence">MIT licensed</span>
+    <button class="icon-btn" id="theme" type="button" aria-label="Switch light or dark theme" title="Light / dark">
+      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 3a7 7 0 0 1 0 14z" fill="currentColor"/></svg>
+    </button>
+    <a class="btn btn-solid" data-get-it href="#embed">Get it</a>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="hero-copy">
+      <p class="kicker"><span class="mark">●</span> Report designer · viewer · engine</p>
+      <h1>Pixel-exact business reports, <em>laid out in the browser.</em></h1>
+      <p class="lede">Pagewright is an MIT-licensed alternative to ActiveReportsJS: a banded report designer, a viewer you embed with one call, and an engine that lays out every line itself, so the screen, the PDF and the printout match. Every report on this page is rendered live, in this tab. There is no server behind this site.</p>
+      <div class="hero-actions">
+        <a class="btn btn-solid" href="#gallery">Open the live gallery</a>
+        <a class="btn" href="#designer">Try the designer</a>
+        <a class="btn btn-ghost" data-get-it href="#embed">Get it</a>
+      </div>
+    </div>
+    <dl class="spec">
+      <div><dt>Exports</dt><dd>PDF, Excel, Word, HTML, CSV, print</dd></div>
+      <div><dt>Scale</dt><dd>50,000 rows → 1,112 pages in 1.6 s <small>(Node, measured)</small></dd></div>
+      <div><dt>Scripts</dt><dd>HarfBuzz shaping + bidi: Hindi, Arabic, Hebrew</dd></div>
+      <div><dt>Items</dt><dd>Grouped tables, matrix, list, subreports, rich text, charts, sparklines, data bars, bullets, TOC</dd></div>
+      <div><dt>Barcodes</dt><dd>49 symbologies, drawn as vectors</dd></div>
+      <div><dt>Interaction</dt><dd>Parameters, drill-down, drill-through, interactive sort, search</dd></div>
+      <div><dt>Embedding</dt><dd>Script tag or ES module in a Shadow DOM; React, Vue, Svelte, Angular wrappers</dd></div>
+      <div><dt>Migration</dt><dd>Imports ActiveReportsJS <code>.rdlx-json</code></dd></div>
+    </dl>
+  </section>
+
+  <section class="sect" id="gallery" aria-labelledby="gallery-h">
+    <header class="sect-head">
+      <p class="num">01</p>
+      <h2 id="gallery-h">Live gallery</h2>
+      <p class="sect-note">Real report definitions from the repository, rendered by the embedded viewer. Page through them, change parameters, drill in, export.</p>
+    </header>
+    <div class="split">
+      <ol class="demo-list" id="demo-list" role="tablist" aria-label="Reports"></ol>
+      <div class="stage">
+        <div class="stage-head">
+          <div>
+            <h3 id="demo-title">&nbsp;</h3>
+            <p id="demo-what" class="stage-what"></p>
+          </div>
+          <p id="demo-try" class="stage-try"></p>
+        </div>
+        <div class="viewer-host" id="gallery-viewer" aria-live="polite"><p class="host-msg">The viewer loads when you get here.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect" id="scale" aria-labelledby="scale-h">
+    <header class="sect-head">
+      <p class="num">02</p>
+      <h2 id="scale-h">Render it on your machine</h2>
+      <p class="sect-note">The stress report: a grouped table with a sparkline and a data bar on every row. Pick a size; the rows are downloaded as JSON and laid out right here, on the page's main thread.</p>
+    </header>
+    <div class="split split-scale">
+      <div class="scale-panel">
+        <div class="seg" role="group" aria-label="Row count" id="scale-sizes"></div>
+        <div class="readout">
+          <div><span class="big" id="scale-wall">—</span><span class="lbl">click to first page, incl. download</span></div>
+          <div><span class="big" id="scale-engine">—</span><span class="lbl">render time the viewer reports (data + layout)</span></div>
+          <div><span class="big" id="scale-pages">—</span><span class="lbl">pages</span></div>
+        </div>
+        <table class="runs" aria-label="Runs in this tab"><thead><tr><th>Rows</th><th>Pages</th><th>Viewer</th><th>Wall</th><th>Rows / s</th></tr></thead><tbody id="scale-runs"><tr class="empty"><td colspan="5">Your runs appear here.</td></tr></tbody></table>
+        <p class="fine" id="scale-note">The 1.6 s figure in the spec sheet is the engine in Node on a laptop. Your browser number depends on your device; nothing here is cached or precomputed.</p>
+      </div>
+      <div class="viewer-host" id="scale-viewer"><p class="host-msg">Pick a row count to start.</p></div>
+    </div>
+  </section>
+
+  <section class="sect" id="designer" aria-labelledby="designer-h">
+    <header class="sect-head">
+      <p class="num">03</p>
+      <h2 id="designer-h">Designer playground</h2>
+      <p class="sect-note">The full designer, mounted with <code>mountDesigner()</code>. Drag items from the toolbox, edit expressions, switch to Preview. Save keeps your edits in this tab; nothing is uploaded.</p>
+    </header>
+    <div class="tools">
+      <label class="field">Open sample
+        <select id="designer-pick"></select>
+      </label>
+      <button class="btn" type="button" id="designer-download">Download .pw.json</button>
+      <span class="toast" id="designer-toast" role="status"></span>
+    </div>
+    <div class="viewer-host designer-host" id="designer-host"><p class="host-msg">The designer loads when you get here.</p></div>
+  </section>
+
+  <section class="sect" id="embed" aria-labelledby="embed-h">
+    <header class="sect-head">
+      <p class="num">04</p>
+      <h2 id="embed-h">Embed it</h2>
+      <p class="sect-note">The viewer and designer are one script or ES module. Thin wrappers for four frameworks (the framework is a peer dependency; nothing is bundled twice). The packages are built and packed in the repository but not yet published to npm.</p>
+    </header>
+    <div class="code-split">
+      <div class="tabs" role="tablist" aria-label="Framework" id="code-tabs"></div>
+      <pre class="code" id="code-body" tabindex="0"></pre>
+    </div>
+  </section>
+
+  <section class="sect" id="capabilities" aria-labelledby="cap-h">
+    <header class="sect-head">
+      <p class="num">05</p>
+      <h2 id="cap-h">What it does today</h2>
+      <p class="sect-note">From the project's status document. Everything listed runs and is covered by tests; the right-hand column is what it does not do yet.</p>
+    </header>
+    <div class="caps">
+      <article><h3>Layout engine</h3><p>Page bands, multi-column body, keep-together and keep-with-next, page breaks between groups, table of contents with final page numbers, galley (pageless) view. Pure JavaScript with no DOM, so the same code renders in the browser and in Node.</p></article>
+      <article><h3>Data</h3><p>JSON, CSV, REST, GraphQL, and SQL run on the server (SQLite, Postgres, MySQL). A response explorer finds the rows in an API response. Filters, sorts, lookups, nested data sets, report functions.</p></article>
+      <article><h3>Interactivity</h3><p>Parameters with sliders, ranges, date ranges, cascading lists and options from data. Collapsible groups whose totals and paging stay correct, click-to-sort headers, drill-through with a breadcrumb, document map, search.</p></article>
+      <article><h3>Visuals</h3><p>Column, bar, line, area, pie, donut and scatter charts; pivot matrix with totals; sparkline, data bar and bullet in table cells; 49 barcode symbologies as vectors; rich text with lists, links and mixed styles; rotated and vertical text.</p></article>
+      <article><h3>Output</h3><p>PDF with links and an outline, Excel, Word (real tables), HTML and CSV from the viewer. On the server: every format by URL, batches, schedules with time zones, signed webhooks, API keys, and a <code>pw</code> CLI that renders and diff-tests reports in CI.</p></article>
+      <article><h3>Designer</h3><p>Smart guides, rulers, align and distribute, groups, sort and filter editors, table and matrix gallery, drag a data set to get a table, themes and named styles, version history, an expression editor with completion.</p></article>
+      <article><h3>Languages</h3><p>Viewer UI in English, Hindi, Spanish, French, German, Japanese, Chinese, Portuguese (BR) and Arabic (right-to-left). Report text is shaped with HarfBuzz, with bundled Noto fallbacks for Devanagari, Arabic and Hebrew.</p></article>
+      <article class="gaps"><h3>Not yet</h3><ul>
+        <li>No SSO and no per-report permissions.</li>
+        <li>SSRS XML (<code>.rdl</code>) is not imported; only ActiveReportsJS JSON.</li>
+        <li>Indic scripts other than Devanagari, and Thai, need an uploaded font.</li>
+        <li>The embed's first load is 1.5 MB; the 400 KB target is not met.</li>
+        <li>The batch queue lives in the server process.</li>
+        <li>Non-English UI strings are machine translations.</li>
+      </ul></article>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <p><strong>Pagewright</strong> · MIT licensed. Interface fonts IBM Plex and report fonts Inter, JetBrains Mono, Noto: SIL Open Font Licence.</p>
+  <p>Loan, sales and stress data are fictional and generated by the repository's sample code. Product data is a snapshot of <a href="https://dummyjson.com" rel="noopener">dummyjson.com</a>. <a data-get-it href="#embed">Get it</a></p>
+</footer>
+<script type="module" src="site.js"></script>
+</body>
+</html>
