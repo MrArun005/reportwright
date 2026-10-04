@@ -235,15 +235,35 @@ async function loadSql(src, params, opt, f) {
 
 const plain = (x, ctx) => (x instanceof Date ? isoDate(x) : toText(x, null, ctx));
 
-/** URL from a template: typed-in values are encoded, so "A&B" stays one value. A leading {…} may hold a base URL. */
+/**
+ * URL from a template: typed-in values are encoded, so "A&B" stays one value. A leading {…} may hold a base URL.
+ * A value in the path is one segment ("/" is encoded) and may not make a "." or ".." segment, alone or with the
+ * text around it: /items/{Parameters.id} with id ".." would otherwise reach /items' parent.
+ */
 function urlFrom(v, ctx) {
   const p = parseValue(v);
   if (p.kind !== 'tpl') return String(evalValue(v, ctx) ?? '');
-  return p.parts.map((part, i) => {
-    if (typeof part === 'string') return part;
+  let url = '';
+  const filled = []; // [start, end) of each encoded value in url
+  p.parts.forEach((part, i) => {
+    if (typeof part === 'string') { url += part; return; }
     const s = plain(evaluate(part.ast, ctx), ctx);
-    return i === 0 ? s : encodeURIComponent(s);
-  }).join('');
+    if (i === 0) { url += s; return; }
+    filled.push([url.length, url.length + encodeURIComponent(s).length]);
+    url += encodeURIComponent(s);
+  });
+  // the path ends at the query or fragment; the URL parser reads %2e as a dot too
+  const q = url.search(/[?#]/), pathEnd = q < 0 ? url.length : q;
+  let start = 0;
+  for (let i = 0; i <= pathEnd; i++) {
+    if (i < pathEnd && url[i] !== '/') continue;
+    const seg = url.slice(start, i).toLowerCase().replaceAll('%2e', '.');
+    if ((seg === '.' || seg === '..') && filled.some(([a, b]) => a < i && b > start)) {
+      throw Object.assign(new Error(`a parameter makes the URL path segment "${url.slice(start, i)}"; "." and ".." are not allowed from parameters`), { status: 400 });
+    }
+    start = i + 1;
+  }
+  return url;
 }
 
 /** GraphQL variables: JSON whose strings may hold {Parameters.x}. A string that is just one {…} keeps the value's type. */
