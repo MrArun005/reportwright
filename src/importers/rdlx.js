@@ -1892,7 +1892,8 @@ function bandedlist(ar, cx, ctx) {
 
 const CHART_TYPES = { column: 'column', bar: 'bar', line: 'line', area: 'area', pie: 'pie', doughnut: 'donut', donut: 'donut', scatter: 'scatter',
   bubble: 'bubble', spline: 'line', stepline: 'line', splinearea: 'area', candlestick: 'candlestick', highlowopenclose: 'ohlc', highlowclose: 'ohlc',
-  funnel: 'funnel', pyramid: 'funnel', gauge: 'gauge', radar: 'radar', polar: 'polar', rangearea: 'area', rangebar: 'bar', rangecolumn: 'column' };
+  funnel: 'funnel', pyramid: 'funnel', gauge: 'gauge', radar: 'radar', polar: 'polar', rangearea: 'area', rangebar: 'bar', rangecolumn: 'column',
+  treemap: 'treemap', waterfall: 'waterfall', histogram: 'histogram', boxplot: 'boxplot', boxwhisker: 'boxplot' };
 // ActiveReports palette names → the nearest of Pagewright's 12 named palettes
 const PALETTES = { office: 'office', office2010: 'office', office2016: 'office', standard: 'default', light: 'pastel', dark: 'vivid', blue: 'ocean', cerulean: 'ocean',
   green: 'forest', orange: 'sunset', red: 'sunset', yellow: 'sunset', coral: 'sunset', pink: 'berry', purple: 'berry', violet: 'berry', grey: 'grayscale', gray: 'grayscale', grayscale: 'grayscale', cocoa: 'earth' };

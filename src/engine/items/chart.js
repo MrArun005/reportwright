@@ -10,10 +10,11 @@ import { resolveFontKey } from '../text/fonts.js';
 import { applyFilters, applySort, related } from '../data/index.js';
 import { CAPS, PALETTES, paletteOf, inkOn, niceScale, linearTicks, logTicks, curvePath, fitTrend, movingAverage, LabelPlacer } from './chart-kit.js';
 import { paintRound, ROUND_TYPES } from './chart-round.js';
+import { paintMore, moreLegend, MORE_TYPES } from './chart-more.js';
 
 export { niceScale };
 export const PALETTE = PALETTES.default;
-export const CHART_TYPES = ['column', 'bar', 'line', 'area', 'pie', 'donut', 'scatter', 'bubble', 'radar', 'polar', 'candlestick', 'ohlc', 'gauge', 'funnel'];
+export const CHART_TYPES = ['column', 'bar', 'line', 'area', 'pie', 'donut', 'scatter', 'bubble', 'radar', 'polar', 'candlestick', 'ohlc', 'gauge', 'funnel', 'treemap', 'histogram', 'boxplot', 'waterfall', 'gantt'];
 const PER_ROW = new Set(['scatter', 'bubble', 'polar']);
 const SERIES_FIELDS = ['value', 'low', 'high', 'open', 'close'];
 
@@ -46,7 +47,8 @@ export function chartData(item, ctx, lc, pal = paletteOf(item.palette)) {
     return [...m.values()];
   };
   // a gauge shows one value over all the rows
-  let cats = item.chartType === 'gauge' ? [{ key: '', rows }] : bucket(rows, item.category);
+  // a gauge shows one value over all the rows; a histogram bins every row's value
+  let cats = item.chartType === 'gauge' || item.chartType === 'histogram' ? [{ key: '', rows }] : bucket(rows, item.category);
   if (item.categorySort === 'asc' || item.categorySort === 'desc') {
     const d = item.categorySort === 'desc' ? -1 : 1;
     cats.sort((a, b) => (a.key instanceof Date ? a.key.getTime() : a.key) > (b.key instanceof Date ? b.key.getTime() : b.key) ? d : -d);
@@ -127,7 +129,8 @@ export function paintChart(item, ctx, lc, base) {
 
   const pal = paletteOf(item.palette);
   const type = CHART_TYPES.includes(item.chartType) ? item.chartType : 'column';
-  const data = chartData({ ...item, chartType: type }, ctx, lc, pal);
+  // Gantt colours its bars by seriesGroup itself (per row); the others here draw one series
+  const data = chartData({ ...item, chartType: type, ...(MORE_TYPES.has(type) ? { seriesGroup: undefined } : {}) }, ctx, lc, pal);
   // Interactivity per point: pointAction (any action, usually "params" to filter the report), pointColor and tooltips.
   // The point's scope is its category: Fields = first row, aggregates over the category's rows.
   const links = [];
@@ -148,9 +151,10 @@ export function paintChart(item, ctx, lc, base) {
   // legend at the bottom: the series (or a pie's slices), then the overlays that are in it
   const byCategory = type === 'pie' || type === 'donut' || type === 'funnel';
   const ovLegend = legendOverlays(item, type, data);
-  const legendItems = byCategory ? data.categories.map((c, i) => ({ name: c, color: pointFill(i, pal[i % pal.length]) }))
-    : [...data.series.map(s => ({ name: s.name, color: s.color })), ...ovLegend];
-  const legendOn = item.legend !== 'none' && type !== 'gauge' && (byCategory || data.series.length > 1 || ovLegend.length > 0);
+  const more = MORE_TYPES.has(type) ? moreLegend(type, item, { ...data, ctx }, pal) : null;
+  const legendItems = more || (byCategory ? data.categories.map((c, i) => ({ name: c, color: pointFill(i, pal[i % pal.length]) }))
+    : [...data.series.map(s => ({ name: s.name, color: s.color })), ...ovLegend]);
+  const legendOn = item.legend !== 'none' && type !== 'gauge' && (more ? more.length > 0 : byCategory || data.series.length > 1 || ovLegend.length > 0);
   if (legendOn) {
     const rowsL = [];
     let line = [], lw = 0;
@@ -214,9 +218,10 @@ export function paintChart(item, ctx, lc, base) {
   };
   // an overlay named in the legend (trend, moving average, band) needs no label of its own on the plot
   const inLegend = (o) => legendOn && o.legend !== false;
-  const g = { inLegend, item, ctx, lc, data, out, links, X, W, H, top, bottom, fs, font, bold, ink, grid, text, measure, fmtV, pointFill, pointLink, pointCtx, pal, label, labelsOn, labelText, anim, who, axes, safe };
+  const g = { inLegend, item, ctx, lc, data, out, links, X, W, H, top, bottom, fs, font, bold, ink, grid, text, measure, fmtV, pointFill, pointLink, pointCtx, pal, label, labelsOn, labelText, anim, who, axes, safe, valueAxis };
 
-  if (ROUND_TYPES.has(type)) paintRound(type, g);
+  if (MORE_TYPES.has(type)) paintMore(type, g);
+  else if (ROUND_TYPES.has(type)) paintRound(type, g);
   else if (PER_ROW.has(type)) paintXY(type, g);
   else paintCartesian(type, g);
   return out.concat(links);

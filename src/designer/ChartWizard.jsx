@@ -20,9 +20,16 @@ const TYPES = [
   { type: 'radar', label: 'Radar', when: 'Several measures side by side' },
   { type: 'funnel', label: 'Funnel', when: 'Stages that narrow' },
   { type: 'gauge', label: 'Gauge', when: 'One number against a range' },
+  { type: 'treemap', label: 'Treemap', when: 'Share of a whole, many parts' },
+  { type: 'histogram', label: 'Histogram', when: 'How one number is spread' },
+  { type: 'boxplot', label: 'Box plot', when: 'Spread and outliers per category' },
+  { type: 'waterfall', label: 'Waterfall', when: 'How a total builds up' },
+  { type: 'gantt', label: 'Gantt', when: 'Tasks from a start to an end date' },
 ];
 const PER_ROW = new Set(['scatter', 'bubble']);
-const NO_SPLIT = new Set(['pie', 'donut', 'scatter', 'bubble', 'funnel', 'gauge']);
+const NO_SPLIT = new Set(['pie', 'donut', 'scatter', 'bubble', 'funnel', 'gauge', 'treemap', 'histogram', 'boxplot', 'waterfall']);
+/** Charts of each row's own value (no aggregate): a histogram bins them, a box plot takes their quartiles. */
+const RAW = new Set(['histogram', 'boxplot']);
 const AGGS = [
   { value: 'Sum', label: 'Sum' }, { value: 'Avg', label: 'Average' }, { value: 'Count', label: 'Count of rows' },
   { value: 'CountDistinct', label: 'Count distinct' }, { value: 'Min', label: 'Minimum' }, { value: 'Max', label: 'Maximum' },
@@ -48,7 +55,14 @@ export function chartFromConfig(c, size) {
   else if (c.top > 0) out.maxCategories = Number(c.top);
   if (PER_ROW.has(c.chartType)) { out.xValue = `=Fields.${c.category}`; out.series = [{ name: c.value, value: `=Sum(Fields.${c.value})` }]; }
   if (c.chartType === 'bubble') out.series[0].size = c.size ? `=Sum(Fields.${c.size})` : '=1';
-  if (c.chartType === 'gauge') out.category = '';
+  if (c.chartType === 'gauge' || c.chartType === 'histogram') out.category = '';
+  if (RAW.has(c.chartType)) out.series = [{ name: labelOf(c.value || 'Value'), value: c.value ? `=Fields.${c.value}` : '=0' }];
+  if (c.chartType === 'gantt') {
+    out.ganttStart = c.start ? `=Fields.${c.start}` : '';
+    out.ganttEnd = c.end ? `=Fields.${c.end}` : '';
+    out.series = [];
+    out.legend = c.split ? 'bottom' : 'none';
+  }
   return out;
 }
 
@@ -56,8 +70,9 @@ export function chartFromConfig(c, size) {
 function configFromChart(item) {
   const field = (e) => (typeof e === 'string' && /^=Fields\.(\w+)$/.test(e) ? e.slice(8) : '');
   const v = item.series?.[0]?.value || '';
-  const m = /^=(\w+)\(Fields\.(\w+)\)$/.exec(v);
+  const m = /^=(\w+)\(Fields\.(\w+)\)$/.exec(v) || (RAW.has(item.chartType) && /^=Fields\.(\w+)$/.test(v) ? [v, 'Sum', v.slice(8)] : null);
   return {
+    start: field(item.ganttStart), end: field(item.ganttEnd),
     chartType: item.chartType || 'column', dataSet: item.dataSet, title: item.title ?? '',
     category: field(PER_ROW.has(item.chartType) ? item.xValue : item.category), size: field(item.series?.[0]?.size),
     agg: v === '=CountRows()' ? 'Count' : m?.[1] || 'Sum', value: m?.[2] || '', custom: !!v && v !== '=CountRows()' && !m,
@@ -76,7 +91,8 @@ function guess(ds, rows) {
   const cat = grouping || fields.find(f => f.type === 'date') || strs[0] || fields[0];
   const distinct = cat ? new Set(rows.map(r => r[cat.name])).size : 0;
   const chartType = cat?.type === 'date' ? 'line' : distinct > 0 && distinct <= 5 ? 'donut' : distinct > 12 ? 'bar' : 'column';
-  return { dataSet: ds?.name, category: cat?.name || '', value: num[0]?.name || '', agg: num[0] ? 'Sum' : 'Count', chartType, top: distinct > 15 ? 10 : 0 };
+  const dates = fields.filter(f => f.type === 'date');
+  return { dataSet: ds?.name, category: cat?.name || '', value: num[0]?.name || '', agg: num[0] ? 'Sum' : 'Count', chartType, top: distinct > 15 ? 10 : 0, start: dates[0]?.name || '', end: (dates[1] || dates[0])?.name || '' };
 }
 
 /** Which types fit the picked fields best (a hint, never a rule). */
@@ -168,7 +184,7 @@ export default function ChartWizard() {
       footer={<>
         {!editing && <button className="btn ghost" style={{ marginRight: 'auto' }} onClick={plain}>Insert an empty chart</button>}
         <button className="btn" onClick={close}>Cancel</button>
-        <button className="btn primary" onClick={apply} disabled={!c.dataSet || (!c.category && c.chartType !== 'gauge')} data-testid="chart-wizard-apply">{editing ? 'Apply to the chart' : 'Insert chart'}</button>
+        <button className="btn primary" onClick={apply} disabled={!c.dataSet || (!c.category && c.chartType !== 'gauge' && c.chartType !== 'histogram') || (c.chartType === 'gantt' && !(c.start && c.end))} data-testid="chart-wizard-apply">{editing ? 'Apply to the chart' : 'Insert chart'}</button>
       </>}>
       <div className="cw-body">
         <section className="cw-side" aria-label="Data for the chart">
@@ -178,13 +194,16 @@ export default function ChartWizard() {
             <button className="btn sm" onClick={loadSample} disabled={loading}>{loading ? 'Calling the API…' : 'Call the API again'}</button>
             {sample?.error && <span className="err">{sample.error}</span>}
           </div>
-          <Field label={PER_ROW.has(c.chartType) ? 'X axis (a number field)' : 'Category (x axis or slices)'}>
+          {c.chartType !== 'histogram' && <Field label={PER_ROW.has(c.chartType) ? 'X axis (a number field)' : c.chartType === 'gantt' ? 'Task (one lane each)' : 'Category (x axis or slices)'}>
             <Select value={c.category} allowEmpty options={fields.map(f => ({ value: f.name, label: `${f.name} · ${f.type}` }))} onChange={v => set({ category: v || '' })} />
-          </Field>
-          <div className="grid2">
+          </Field>}
+          {c.chartType === 'gantt' ? <div className="grid2">
+            <Field label="Start"><Select value={c.start} allowEmpty options={fields.map(f => ({ value: f.name, label: `${f.name} · ${f.type}` }))} onChange={v => set({ start: v || '' })} data-testid="cw-gantt-start" /></Field>
+            <Field label="End"><Select value={c.end} allowEmpty options={fields.map(f => ({ value: f.name, label: `${f.name} · ${f.type}` }))} onChange={v => set({ end: v || '' })} data-testid="cw-gantt-end" /></Field>
+          </div> : RAW.has(c.chartType) ? <Field label="Value of each row"><Select value={c.value} allowEmpty options={(numFields.length ? numFields : fields).map(f => f.name)} onChange={v => set({ value: v || '' })} /></Field> : <div className="grid2">
             <Field label="Value"><Select value={c.agg} options={AGGS} onChange={v => set({ agg: v })} /></Field>
             {c.agg !== 'Count' && <Field label="of field"><Select value={c.value} allowEmpty options={(numFields.length ? numFields : fields).map(f => f.name)} onChange={v => set({ value: v || '' })} /></Field>}
-          </div>
+          </div>}
           {c.chartType === 'bubble' && <Field label="Bubble size"><Select value={c.size} allowEmpty options={(numFields.length ? numFields : fields).map(f => f.name)} onChange={v => set({ size: v || '' })} /></Field>}
           {!NO_SPLIT.has(c.chartType) && <>
             <Field label="Split into series by (optional)"><Select value={c.split} allowEmpty options={fields.filter(f => f.type !== 'number').map(f => f.name)} onChange={v => set({ split: v || '' })} /></Field>

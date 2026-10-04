@@ -488,7 +488,7 @@ function toRdlx(root, notes, year) {
 
   const PALETTE = { default: 'Standard', earthtones: 'Cocoa', excel: 'Office', grayscale: 'GrayScale', light: 'Light', pastel: 'Light', brightpastel: 'Light',
     semitransparent: 'Standard', berry: 'Pink', chocolate: 'Cocoa', fire: 'Orange', seagreen: 'Green' };
-  const SHAPE = { pie: 'Pie', explodedpie: 'Pie', doughnut: 'Doughnut', explodeddoughnut: 'Doughnut', funnel: 'Funnel', pyramid: 'Pyramid', '3dpie': 'Pie' };
+  const SHAPE = { pie: 'Pie', explodedpie: 'Pie', doughnut: 'Doughnut', explodeddoughnut: 'Doughnut', funnel: 'Funnel', pyramid: 'Pyramid', '3dpie': 'Pie', treemap: 'Treemap' };
   const RANGE = { plain: 'RangeArea', smooth: 'RangeArea', column: 'RangeColumn', bar: 'RangeBar', stock: 'HighLowOpenClose', candlestick: 'Candlestick' };
 
   /** RDL Type + Subtype → an ActiveReports plot type, the subtype it keeps and the value names it reads. */

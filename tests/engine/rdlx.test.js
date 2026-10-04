@@ -576,6 +576,9 @@ describe('Phase 5 charts', () => {
     expect(pyr.warnings.join()).toMatch(/pyramid/i);
     expect(imp({ Plots: [plot('Gauge', { Values: [F('amt')] })] }).c.chartType).toBe('gauge');
   });
+  it('treemap, waterfall, histogram and box plot plots map to the engine\'s own (batch 4)', () => {
+    for (const [pt, ct] of [['Treemap', 'treemap'], ['Waterfall', 'waterfall'], ['Histogram', 'histogram'], ['BoxPlot', 'boxplot']]) expect(imp({ Plots: [plot(pt, { Values: [F('amt')] })] }).c.chartType, pt).toBe(ct);
+  });
   it('palettes, overlays and label positions', () => {
     const { c, warnings } = imp({ Palette: 'Office', Plots: [plot('Line', { Values: [F('amt')] }, { Config: {
       Text: { Template: '{value}', TextPosition: 'Inside' },
