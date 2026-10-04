@@ -1,8 +1,9 @@
-// Import an ActiveReportsJS report: POST the .rdlx-json file's JSON (at most 5 MB); ?name= sets the report name
+// Import a report: POST an ActiveReportsJS .rdlx-json file's JSON, or (as XML) an SSRS .rdl/.rdlc, JasperReports .jrxml or
+// BIRT .rptdesign file (at most 5 MB); ?name= sets the report name
 // (the home page sends the file name, so drill-through and subreport links between imported reports line up).
 import { readDefinition, writeReport, newId } from '@/server/reports.js';
 import { importRdlx } from '@/importers/rdlx.js';
-import { importRdl } from '@/importers/rdl.js';
+import { importXmlReport } from '@/importers/index.js';
 import { principalOf, canCreateIn, recordNewReport, folderParam } from '@/server/perms.js';
 import { audit } from '@/server/audit.js';
 import { withLock } from '@/server/storage/index.js';
@@ -21,7 +22,7 @@ async function readXml(req) {
 
 export async function POST(req) {
   let body;
-  // an SSRS report (.rdl / .rdlc) is XML: the home page sends it as application/xml
+  // SSRS, JasperReports and BIRT reports are XML: the home page sends them as application/xml
   const xml = /xml/i.test(req.headers.get('content-type') || '');
   try { body = xml ? await readXml(req) : await readDefinition(req); } catch (e) { return Response.json({ error: e.message }, { status: e.status || 400 }); }
   if (!xml && (!body || typeof body !== 'object' || Array.isArray(body) || !AR_KEYS.some(k => k in body))) {
@@ -32,7 +33,7 @@ export async function POST(req) {
   try {
     const p = await principalOf(req);
     const folder = folderParam(sp.get('folder'));
-    const { definition, warnings, stats, error } = xml ? importRdl(body, { name }) : importRdlx(body, { name });
+    const { definition, warnings, stats, error } = xml ? importXmlReport(body, { name }) : importRdlx(body, { name });
     if (error) return Response.json({ error }, { status: 400 });
     const id = await withLock('acl', async () => {
       await canCreateIn(p, folder, definition); // an imported SQL data set: designers only
