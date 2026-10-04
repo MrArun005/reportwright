@@ -1,0 +1,511 @@
+{
+  "$schema": "pagewright/report@1",
+  "name": "Account detail",
+  "locale": "en-IN",
+  "currency": "INR",
+  "page": {
+    "size": "A4",
+    "orientation": "portrait",
+    "margins": [
+      36,
+      36,
+      36,
+      36
+    ]
+  },
+  "parameters": [
+    {
+      "name": "accountId",
+      "type": "string",
+      "prompt": "Account",
+      "default": "LN-100000",
+      "required": true
+    }
+  ],
+  "dataSources": [
+    {
+      "name": "hard",
+      "type": "rest",
+      "url": "/api/sample/hard?rows=5000",
+      "method": "GET"
+    }
+  ],
+  "dataSets": [
+    {
+      "name": "FX",
+      "source": "hard",
+      "path": "$.fx",
+      "fields": [
+        {
+          "name": "currency",
+          "type": "string"
+        },
+        {
+          "name": "toInr",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "Account",
+      "source": "hard",
+      "path": "$.accounts",
+      "fields": [
+        {
+          "name": "accountId",
+          "type": "string"
+        },
+        {
+          "name": "branchId",
+          "type": "string"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "product",
+          "type": "string"
+        },
+        {
+          "name": "customer",
+          "type": "string"
+        },
+        {
+          "name": "city",
+          "type": "string"
+        },
+        {
+          "name": "principal",
+          "type": "number"
+        },
+        {
+          "name": "rate",
+          "type": "number"
+        },
+        {
+          "name": "months",
+          "type": "number"
+        },
+        {
+          "name": "emi",
+          "type": "number"
+        },
+        {
+          "name": "disbursed",
+          "type": "date"
+        },
+        {
+          "name": "lastPayment",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        },
+        {
+          "name": "dpd",
+          "type": "number"
+        },
+        {
+          "name": "outstanding",
+          "type": "number"
+        },
+        {
+          "name": "score",
+          "type": "string"
+        },
+        {
+          "name": "notes",
+          "type": "string"
+        },
+        {
+          "name": "tags",
+          "type": "string"
+        }
+      ],
+      "filters": [
+        {
+          "expr": "=Fields.accountId",
+          "op": "=",
+          "value": "=Parameters.accountId"
+        }
+      ]
+    },
+    {
+      "name": "Tx",
+      "source": "hard",
+      "path": "$.transactions",
+      "fields": [
+        {
+          "name": "id",
+          "type": "number"
+        },
+        {
+          "name": "accountId",
+          "type": "string"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "branchId",
+          "type": "string"
+        },
+        {
+          "name": "date",
+          "type": "date"
+        },
+        {
+          "name": "type",
+          "type": "string"
+        },
+        {
+          "name": "amount",
+          "type": "number"
+        },
+        {
+          "name": "currency",
+          "type": "string"
+        },
+        {
+          "name": "channel",
+          "type": "string"
+        },
+        {
+          "name": "reference",
+          "type": "string"
+        },
+        {
+          "name": "ok",
+          "type": "string"
+        },
+        {
+          "name": "amountInr",
+          "type": "number",
+          "expr": "=Fields.amount * Coalesce(Lookup(Fields.currency, Fields.currency, Fields.toInr, \"FX\"), 1)"
+        },
+        {
+          "name": "txDate",
+          "type": "date",
+          "expr": "=CDate(Fields.date)"
+        }
+      ],
+      "filters": [
+        {
+          "expr": "=Fields.accountId",
+          "op": "=",
+          "value": "=Parameters.accountId"
+        }
+      ],
+      "sort": [
+        {
+          "by": "=Fields.txDate",
+          "dir": "asc"
+        }
+      ]
+    }
+  ],
+  "styles": {
+    "base": {
+      "fontFamily": "Inter",
+      "fontSize": 9,
+      "color": "#1f2937"
+    }
+  },
+  "sections": {
+    "pageHeader": {
+      "height": 36,
+      "items": [
+        {
+          "id": "h1",
+          "type": "textbox",
+          "name": "ReportTitle",
+          "x": 0,
+          "y": 0,
+          "w": 320,
+          "h": 22,
+          "value": "=\"Account \" & Parameters.accountId",
+          "canGrow": true,
+          "style": {
+            "fontSize": 14,
+            "fontWeight": "bold"
+          }
+        }
+      ]
+    },
+    "body": {
+      "height": 420,
+      "items": [
+        {
+          "type": "textbox",
+          "w": 523,
+          "h": 34,
+          "value": "=\"Customer: \" & Coalesce(First(Fields.customer), \"(none)\") & \"   ·   Product: \" & First(Fields.product) & \"   ·   Branch: \" & First(Fields.branchId) & \" (\" & First(Fields.region) & \")\" & Chr(10) & \"Principal \" & Format(First(Fields.principal), \"N2\") & \" · outstanding \" & Format(First(Fields.outstanding), \"N2\") & \" · status [\" & First(Fields.status) & \"] · DPD \" & First(Fields.dpd)",
+          "canGrow": true,
+          "canShrink": false,
+          "style": {},
+          "id": "uutjq2hh",
+          "name": "Facts",
+          "x": 0,
+          "y": 0,
+          "dataSet": "Account"
+        },
+        {
+          "type": "chart",
+          "w": 523,
+          "h": 180,
+          "chartType": "column",
+          "dataSet": "Tx",
+          "category": "=Fields.txDate",
+          "series": [
+            {
+              "name": "Sum of amountInr",
+              "value": "=Sum(Fields.amountInr)"
+            }
+          ],
+          "legend": "bottom",
+          "valueFormat": "N0",
+          "title": "Transactions in INR",
+          "id": "9zd0ddn9",
+          "name": "TxChart",
+          "x": 0,
+          "y": 40,
+          "categoryFormat": "dd MMM yy"
+        },
+        {
+          "type": "table",
+          "w": 523,
+          "h": 54,
+          "dataSet": "Tx",
+          "repeatHeader": true,
+          "noRowsText": "No rows",
+          "columns": [
+            {
+              "width": 39.621212121212125
+            },
+            {
+              "width": 79.24242424242425
+            },
+            {
+              "width": 79.24242424242425
+            },
+            {
+              "width": 79.24242424242425
+            },
+            {
+              "width": 47.54545454545455
+            },
+            {
+              "width": 79.24242424242425
+            },
+            {
+              "width": 39.621212121212125
+            },
+            {
+              "width": 79.24242424242425
+            }
+          ],
+          "header": [
+            {
+              "height": 18,
+              "style": {
+                "fontWeight": "bold",
+                "backgroundColor": "#f1f5f9",
+                "borderBottom": "0.75 solid #94a3b8"
+              },
+              "cells": [
+                {
+                  "value": "Id",
+                  "style": {
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "Account id",
+                  "style": {}
+                },
+                {
+                  "value": "Region",
+                  "style": {}
+                },
+                {
+                  "value": "Branch id",
+                  "style": {}
+                },
+                {
+                  "value": "Date",
+                  "style": {}
+                },
+                {
+                  "value": "Type",
+                  "style": {}
+                },
+                {
+                  "value": "Amount",
+                  "style": {
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "Currency",
+                  "style": {}
+                }
+              ]
+            }
+          ],
+          "groups": [],
+          "detail": [
+            {
+              "height": 18,
+              "style": {
+                "borderBottom": "0.5 solid #e5e7eb"
+              },
+              "cells": [
+                {
+                  "value": "=Fields.id",
+                  "style": {
+                    "format": "N2",
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "=Fields.accountId",
+                  "style": {}
+                },
+                {
+                  "value": "=Fields.region",
+                  "style": {}
+                },
+                {
+                  "value": "=Fields.branchId",
+                  "style": {}
+                },
+                {
+                  "value": "=Fields.date",
+                  "style": {
+                    "format": "dd MMM yyyy"
+                  }
+                },
+                {
+                  "value": "=Fields.type",
+                  "style": {}
+                },
+                {
+                  "value": "=Fields.amount",
+                  "style": {
+                    "format": "N2",
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "=Fields.currency",
+                  "style": {}
+                }
+              ]
+            }
+          ],
+          "footer": [
+            {
+              "height": 18,
+              "cells": [
+                {
+                  "value": "Total",
+                  "style": {
+                    "fontWeight": "bold",
+                    "borderTop": "0.75 solid #94a3b8"
+                  }
+                },
+                {
+                  "value": "",
+                  "style": {
+                    "fontWeight": "bold",
+                    "borderTop": "0.75 solid #94a3b8"
+                  }
+                },
+                {
+                  "value": "",
+                  "style": {
+                    "fontWeight": "bold",
+                    "borderTop": "0.75 solid #94a3b8"
+                  }
+                },
+                {
+                  "value": "",
+                  "style": {
+                    "fontWeight": "bold",
+                    "borderTop": "0.75 solid #94a3b8"
+                  }
+                },
+                {
+                  "value": "",
+                  "style": {
+                    "fontWeight": "bold",
+                    "borderTop": "0.75 solid #94a3b8"
+                  }
+                },
+                {
+                  "value": "",
+                  "style": {
+                    "fontWeight": "bold",
+                    "borderTop": "0.75 solid #94a3b8"
+                  }
+                },
+                {
+                  "value": "=Sum(Fields.amount)",
+                  "style": {
+                    "format": "N2",
+                    "textAlign": "right",
+                    "fontWeight": "bold",
+                    "borderTop": "0.75 solid #94a3b8"
+                  }
+                },
+                {
+                  "value": "",
+                  "style": {
+                    "fontWeight": "bold",
+                    "borderTop": "0.75 solid #94a3b8"
+                  }
+                }
+              ]
+            }
+          ],
+          "style": {
+            "padding": [
+              3,
+              4,
+              3,
+              4
+            ]
+          },
+          "id": "eq1l66z7",
+          "name": "TxTable",
+          "x": 0,
+          "y": 230
+        }
+      ]
+    },
+    "pageFooter": {
+      "height": 24,
+      "items": [
+        {
+          "id": "f1",
+          "type": "textbox",
+          "name": "PageNumber",
+          "x": 323.28,
+          "y": 6,
+          "w": 200,
+          "h": 12,
+          "value": "Page {Globals.PageNumber} of {Globals.TotalPages}",
+          "canGrow": false,
+          "style": {
+            "fontSize": 7.5,
+            "color": "#6b7280",
+            "textAlign": "right"
+          }
+        }
+      ]
+    }
+  }
+}

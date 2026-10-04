@@ -1,0 +1,1597 @@
+{
+  "$schema": "pagewright/report@1",
+  "name": "Stress ledger",
+  "locale": "en-IN",
+  "currency": "INR",
+  "page": {
+    "size": "A4",
+    "orientation": "portrait",
+    "margins": [
+      36,
+      36,
+      36,
+      36
+    ]
+  },
+  "parameters": [
+    {
+      "name": "regions",
+      "type": "string",
+      "prompt": "Regions",
+      "required": false,
+      "multi": true,
+      "optionsFrom": {
+        "dataSet": "Regions",
+        "value": "=Fields.name"
+      },
+      "editor": "list"
+    },
+    {
+      "name": "branches",
+      "type": "string",
+      "prompt": "Branches (cascade from regions)",
+      "required": false,
+      "multi": true,
+      "optionsFrom": {
+        "dataSet": "Branches",
+        "value": "=Fields.id"
+      },
+      "editor": "list"
+    },
+    {
+      "name": "amountRange",
+      "type": "number",
+      "prompt": "Amount in INR (from, to)",
+      "default": "-20000000000,20000000000",
+      "required": false,
+      "editor": "range",
+      "multi": true,
+      "min": -20000000000,
+      "max": 20000000000,
+      "step": 1000000
+    },
+    {
+      "name": "dateRange",
+      "type": "date",
+      "prompt": "Trend chart dates",
+      "default": "2024-01-01,2026-12-31",
+      "required": false,
+      "editor": "dateRange",
+      "multi": true,
+      "min": "2024-01-01",
+      "max": "2026-12-31"
+    },
+    {
+      "name": "topN",
+      "type": "number",
+      "prompt": "Top N accounts",
+      "default": "10",
+      "required": false,
+      "editor": "slider",
+      "min": 3,
+      "max": 25,
+      "step": 1
+    },
+    {
+      "name": "highlight",
+      "type": "boolean",
+      "prompt": "Highlight large movements",
+      "default": "true",
+      "required": false,
+      "editor": "toggle"
+    },
+    {
+      "name": "focusType",
+      "type": "string",
+      "prompt": "Focus transaction type (chart click)",
+      "required": false
+    }
+  ],
+  "dataSources": [
+    {
+      "name": "hard",
+      "type": "rest",
+      "url": "/api/sample/hard?rows=5000",
+      "method": "GET"
+    }
+  ],
+  "dataSets": [
+    {
+      "name": "Regions",
+      "source": "hard",
+      "path": "$.regions",
+      "fields": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "branches",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "FX",
+      "source": "hard",
+      "path": "$.fx",
+      "fields": [
+        {
+          "name": "currency",
+          "type": "string"
+        },
+        {
+          "name": "toInr",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "Branches",
+      "source": "hard",
+      "path": "$.branches",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "city",
+          "type": "string"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "opened",
+          "type": "date"
+        },
+        {
+          "name": "target",
+          "type": "number"
+        },
+        {
+          "name": "manager",
+          "type": "string"
+        }
+      ],
+      "filters": [
+        {
+          "expr": "=Fields.region",
+          "op": "in",
+          "value": "=Parameters.regions"
+        }
+      ],
+      "sort": [
+        {
+          "by": "=Fields.id",
+          "dir": "asc"
+        }
+      ]
+    },
+    {
+      "name": "Transactions",
+      "source": "hard",
+      "path": "$.transactions",
+      "fields": [
+        {
+          "name": "id",
+          "type": "number"
+        },
+        {
+          "name": "accountId",
+          "type": "string"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "branchId",
+          "type": "string"
+        },
+        {
+          "name": "date",
+          "type": "date"
+        },
+        {
+          "name": "type",
+          "type": "string"
+        },
+        {
+          "name": "amount",
+          "type": "number"
+        },
+        {
+          "name": "currency",
+          "type": "string"
+        },
+        {
+          "name": "channel",
+          "type": "string"
+        },
+        {
+          "name": "reference",
+          "type": "string"
+        },
+        {
+          "name": "ok",
+          "type": "string"
+        },
+        {
+          "name": "amountInr",
+          "type": "number",
+          "expr": "=Fields.amount * Coalesce(Lookup(Fields.currency, Fields.currency, Fields.toInr, \"FX\"), 1)"
+        },
+        {
+          "name": "txDate",
+          "type": "date",
+          "expr": "=CDate(Fields.date)"
+        },
+        {
+          "name": "month",
+          "type": "string",
+          "expr": "=Format(CDate(Fields.date), \"yyyy-MM\")"
+        },
+        {
+          "name": "channelClean",
+          "type": "string",
+          "expr": "=IIF(Trim(Coalesce(Fields.channel, \"\")) = \"\", \"(none)\", Fields.channel)"
+        },
+        {
+          "name": "isCredit",
+          "type": "boolean",
+          "expr": "=Fields.amount < 0"
+        }
+      ],
+      "filters": [
+        {
+          "expr": "=Fields.region",
+          "op": "in",
+          "value": "=Parameters.regions"
+        },
+        {
+          "expr": "=Fields.branchId",
+          "op": "in",
+          "value": "=Parameters.branches"
+        },
+        {
+          "expr": "=Fields.amountInr",
+          "op": "Between",
+          "value": "=Parameters.amountRange[0]",
+          "value2": "=Parameters.amountRange[1]"
+        }
+      ],
+      "sort": [
+        {
+          "by": "=Fields.id",
+          "dir": "asc"
+        }
+      ]
+    },
+    {
+      "name": "TrendTx",
+      "source": "hard",
+      "path": "$.transactions",
+      "fields": [
+        {
+          "name": "id",
+          "type": "number"
+        },
+        {
+          "name": "accountId",
+          "type": "string"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "branchId",
+          "type": "string"
+        },
+        {
+          "name": "date",
+          "type": "date"
+        },
+        {
+          "name": "type",
+          "type": "string"
+        },
+        {
+          "name": "amount",
+          "type": "number"
+        },
+        {
+          "name": "currency",
+          "type": "string"
+        },
+        {
+          "name": "channel",
+          "type": "string"
+        },
+        {
+          "name": "reference",
+          "type": "string"
+        },
+        {
+          "name": "ok",
+          "type": "string"
+        },
+        {
+          "name": "amountInr",
+          "type": "number",
+          "expr": "=Fields.amount * Coalesce(Lookup(Fields.currency, Fields.currency, Fields.toInr, \"FX\"), 1)"
+        },
+        {
+          "name": "txDate",
+          "type": "date",
+          "expr": "=CDate(Fields.date)"
+        },
+        {
+          "name": "month",
+          "type": "string",
+          "expr": "=Format(CDate(Fields.date), \"yyyy-MM\")"
+        }
+      ],
+      "filters": [
+        {
+          "expr": "=Fields.region",
+          "op": "in",
+          "value": "=Parameters.regions"
+        },
+        {
+          "expr": "=Fields.txDate",
+          "op": "Between",
+          "value": "=Parameters.dateRange[0]",
+          "value2": "=Parameters.dateRange[1]"
+        }
+      ]
+    },
+    {
+      "name": "TopAccounts",
+      "source": "hard",
+      "path": "$.accounts",
+      "fields": [
+        {
+          "name": "accountId",
+          "type": "string"
+        },
+        {
+          "name": "branchId",
+          "type": "string"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "product",
+          "type": "string"
+        },
+        {
+          "name": "customer",
+          "type": "string"
+        },
+        {
+          "name": "city",
+          "type": "string"
+        },
+        {
+          "name": "principal",
+          "type": "number"
+        },
+        {
+          "name": "rate",
+          "type": "number"
+        },
+        {
+          "name": "months",
+          "type": "number"
+        },
+        {
+          "name": "emi",
+          "type": "number"
+        },
+        {
+          "name": "disbursed",
+          "type": "date"
+        },
+        {
+          "name": "lastPayment",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        },
+        {
+          "name": "dpd",
+          "type": "number"
+        },
+        {
+          "name": "outstanding",
+          "type": "number"
+        },
+        {
+          "name": "score",
+          "type": "string"
+        },
+        {
+          "name": "notes",
+          "type": "string"
+        },
+        {
+          "name": "tags",
+          "type": "string"
+        }
+      ],
+      "filters": [
+        {
+          "expr": "=Fields.region",
+          "op": "in",
+          "value": "=Parameters.regions"
+        },
+        {
+          "expr": "=Fields.branchId",
+          "op": "in",
+          "value": "=Parameters.branches"
+        },
+        {
+          "expr": "=Fields.outstanding",
+          "op": "TopN",
+          "value": "=Parameters.topN"
+        }
+      ],
+      "sort": [
+        {
+          "by": "=Fields.outstanding",
+          "dir": "desc"
+        }
+      ]
+    }
+  ],
+  "styles": {
+    "base": {
+      "fontFamily": "Inter",
+      "fontSize": 9,
+      "color": "#1f2937"
+    }
+  },
+  "sections": {
+    "pageHeader": {
+      "height": 36,
+      "items": [
+        {
+          "id": "h1",
+          "type": "textbox",
+          "name": "ReportTitle",
+          "x": 0,
+          "y": 0,
+          "w": 320,
+          "h": 22,
+          "value": "Stress ledger",
+          "canGrow": true,
+          "style": {
+            "fontSize": 14,
+            "fontWeight": "bold"
+          }
+        },
+        {
+          "type": "textbox",
+          "w": 193,
+          "h": 26,
+          "value": "=\"Regions: \" & IIF(Count(Parameters.regions) = 0, \"all\", Join(Parameters.regions, \", \")) & \" · branches: \" & IIF(Len(Join(Parameters.branches, \",\")) = 0, \"all\", Join(Parameters.branches, \", \"))",
+          "canGrow": true,
+          "canShrink": false,
+          "style": {
+            "fontSize": 7,
+            "textAlign": "right"
+          },
+          "id": "kg0sj2ca",
+          "name": "ParamSummary",
+          "x": 330,
+          "y": 4
+        }
+      ]
+    },
+    "body": [
+      {
+        "name": "Section1",
+        "height": 1204,
+        "items": [
+          {
+            "type": "textbox",
+            "w": 523,
+            "h": 22,
+            "value": "1 · Overview",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 14,
+              "fontWeight": "bold"
+            },
+            "id": "lli2f514",
+            "name": "H1Overview",
+            "x": 0,
+            "y": 0,
+            "headingLevel": "1",
+            "bookmark": "Overview"
+          },
+          {
+            "type": "toc",
+            "w": 250,
+            "h": 90,
+            "title": "Contents",
+            "levels": 2,
+            "style": {},
+            "id": "p95r3a1a",
+            "name": "Contents",
+            "x": 0,
+            "y": 26,
+            "source": "headings"
+          },
+          {
+            "type": "richtext",
+            "w": 263,
+            "h": 90,
+            "value": "<h3>What this run holds</h3><p><b>{Format(CountRows(), \"N0\")}</b> transactions on <b>{CountDistinct(Fields.accountId)}</b> accounts, net <span style=\"color:#b91c1c\"><b>{Format(Sum(Fields.amountInr), \"N0\")}</b></span> INR.</p><ul><li>Largest credit: <i>{Format(Min(Fields.amountInr), \"N0\")}</i></li><li>Largest debit: <i>{Format(Max(Fields.amountInr), \"N0\")}</i></li><li>Missing currency on <u>{CountRows() - Count(Fields.currency)}</u> rows</li></ul>",
+            "canGrow": true,
+            "style": {},
+            "id": "tz3bc76d",
+            "name": "SummaryText",
+            "x": 260,
+            "y": 26,
+            "dataSet": "Transactions"
+          },
+          {
+            "type": "textbox",
+            "w": 125,
+            "h": 34,
+            "value": "=\"Net INR\" & Chr(10) & Format(Sum(Fields.amountInr), \"N0\")",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 10,
+              "fontWeight": "bold",
+              "textAlign": "center",
+              "backgroundColor": "#f1f5f9",
+              "color": "=IIF(Sum(Fields.amountInr) < 0, \"#b91c1c\", \"#15803d\")",
+              "border": "0.5 solid #94a3b8"
+            },
+            "id": "l414chqv",
+            "name": "KpiNet",
+            "x": 0,
+            "y": 124,
+            "dataSet": "Transactions"
+          },
+          {
+            "type": "textbox",
+            "w": 125,
+            "h": 34,
+            "value": "=\"Transactions\" & Chr(10) & Format(CountRows(), \"N0\")",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 10,
+              "fontWeight": "bold",
+              "textAlign": "center",
+              "backgroundColor": "#f1f5f9",
+              "border": "0.5 solid #94a3b8"
+            },
+            "id": "7kz9wy9u",
+            "name": "KpiRows",
+            "x": 132,
+            "y": 124,
+            "dataSet": "Transactions"
+          },
+          {
+            "type": "textbox",
+            "w": 125,
+            "h": 34,
+            "value": "=\"Accounts\" & Chr(10) & Format(CountDistinct(Fields.accountId), \"N0\")",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 10,
+              "fontWeight": "bold",
+              "textAlign": "center",
+              "backgroundColor": "#f1f5f9",
+              "border": "0.5 solid #94a3b8"
+            },
+            "id": "tcxe13xd",
+            "name": "KpiAccounts",
+            "x": 264,
+            "y": 124,
+            "dataSet": "Transactions"
+          },
+          {
+            "type": "textbox",
+            "w": 125,
+            "h": 34,
+            "value": "=\"Average INR\" & Chr(10) & Format(Avg(Fields.amountInr), \"N2\")",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 10,
+              "fontWeight": "bold",
+              "textAlign": "center",
+              "backgroundColor": "#f1f5f9",
+              "color": "=IIF(Parameters.highlight And Abs(Avg(Fields.amountInr)) > 100000, \"#c2410c\", \"#334155\")",
+              "border": "0.5 solid #94a3b8"
+            },
+            "id": "w2ekmkuq",
+            "name": "KpiAvg",
+            "x": 396,
+            "y": 124,
+            "dataSet": "Transactions"
+          },
+          {
+            "type": "barcode",
+            "w": 70,
+            "h": 70,
+            "symbology": "qrcode",
+            "value": "=\"PW|\" & CountRows() & \"|\" & Round(Sum(Fields.amountInr), 0)",
+            "showText": true,
+            "style": {
+              "fontSize": 8,
+              "textAlign": "center"
+            },
+            "id": "raxxzl0a",
+            "name": "RunQR",
+            "x": 0,
+            "y": 166,
+            "dataSet": "Transactions"
+          },
+          {
+            "type": "barcode",
+            "w": 220,
+            "h": 50,
+            "symbology": "code128",
+            "value": "=\"LEDGER-\" & Format(Globals.ExecutionTime, \"yyyyMMdd\") & \"-\" & CountRows()",
+            "showText": true,
+            "style": {
+              "fontSize": 8,
+              "textAlign": "center"
+            },
+            "id": "1boqqqor",
+            "name": "RunCode128",
+            "x": 90,
+            "y": 176,
+            "dataSet": "Transactions"
+          },
+          {
+            "type": "chart",
+            "w": 523,
+            "h": 230,
+            "chartType": "column",
+            "dataSet": "TrendTx",
+            "category": "=Fields.month",
+            "series": [
+              {
+                "name": "Sum of amountInr",
+                "value": "=Sum(Fields.amountInr)"
+              },
+              {
+                "name": "Transactions",
+                "value": "=CountRows()",
+                "type": "line",
+                "axis": "secondary"
+              }
+            ],
+            "legend": "bottom",
+            "valueFormat": "N0",
+            "title": "Net INR (bars) and transactions (line) by month",
+            "id": "m7m71e9v",
+            "name": "MonthlyCombo",
+            "x": 0,
+            "y": 250,
+            "overlays": [
+              {
+                "type": "trend",
+                "label": "Trend"
+              },
+              {
+                "type": "line",
+                "color": "0",
+                "label": "Break-even"
+              }
+            ],
+            "axes": {
+              "x": {
+                "labelAngle": -45
+              },
+              "y": {
+                "format": "N0"
+              },
+              "y2": {
+                "format": "N0",
+                "title": "Rows"
+              }
+            },
+            "tooltips": true,
+            "categorySort": "asc"
+          },
+          {
+            "type": "chart",
+            "w": 255,
+            "h": 220,
+            "chartType": "donut",
+            "dataSet": "Transactions",
+            "category": "=Fields.type",
+            "series": [
+              {
+                "name": "Rows",
+                "value": "=CountRows()"
+              }
+            ],
+            "legend": "bottom",
+            "valueFormat": "N0",
+            "title": "Transactions by type (click a slice)",
+            "id": "l7kmmsbg",
+            "name": "TypeDonut",
+            "x": 0,
+            "y": 490,
+            "pointAction": {
+              "type": "params",
+              "params": {
+                "focusType": "=Fields.type"
+              }
+            },
+            "pointColor": "=IIF(Fields.type = Parameters.focusType, \"#dc2626\", \"#94a3b8\")",
+            "labelPosition": "outside",
+            "showValues": true
+          },
+          {
+            "type": "chart",
+            "w": 255,
+            "h": 220,
+            "chartType": "bar",
+            "dataSet": "TopAccounts",
+            "category": "=Fields.accountId",
+            "series": [
+              {
+                "name": "Sum of outstanding",
+                "value": "=Sum(Fields.outstanding)"
+              }
+            ],
+            "legend": "bottom",
+            "valueFormat": "N0",
+            "title": "Top N accounts by outstanding",
+            "id": "fynfh941",
+            "name": "TopAccountsBar",
+            "x": 268,
+            "y": 490,
+            "showValues": true,
+            "overlays": [
+              {
+                "type": "line",
+                "color": "=Avg(Fields.outstanding)",
+                "label": "Average"
+              }
+            ]
+          },
+          {
+            "type": "chart",
+            "w": 523,
+            "h": 230,
+            "chartType": "line",
+            "dataSet": "TrendTx",
+            "category": "=Fields.month",
+            "series": [
+              {
+                "name": "Sum of amountInr",
+                "value": "=Sum(Fields.amountInr)"
+              }
+            ],
+            "legend": "bottom",
+            "valueFormat": "N0",
+            "title": "Net INR by region and month",
+            "seriesGroup": "=Fields.region",
+            "id": "9iznvyjg",
+            "name": "RegionLines",
+            "x": 0,
+            "y": 720,
+            "line": "smooth",
+            "overlays": [
+              {
+                "type": "band",
+                "color": "-1000000000",
+                "from": 1000000000,
+                "label": "±1 bn"
+              },
+              {
+                "type": "movingAverage",
+                "label": "3-month MA"
+              }
+            ],
+            "categorySort": "asc"
+          },
+          {
+            "type": "chart",
+            "w": 523,
+            "h": 200,
+            "chartType": "scatter",
+            "dataSet": "TopAccounts",
+            "category": "=Fields.principal",
+            "series": [
+              {
+                "name": "Outstanding",
+                "value": "=Fields.outstanding"
+              }
+            ],
+            "legend": "bottom",
+            "valueFormat": "N0",
+            "title": "Principal vs outstanding (top N)",
+            "xValue": "=Fields.principal",
+            "id": "ett9cz9m",
+            "name": "RiskScatter",
+            "x": 0,
+            "y": 960
+          }
+        ]
+      },
+      {
+        "name": "Ledger",
+        "height": 300,
+        "items": [
+          {
+            "type": "table",
+            "w": 770,
+            "h": 162,
+            "dataSet": "Transactions",
+            "repeatHeader": true,
+            "noRowsText": "No transactions match the parameters.",
+            "columns": [
+              {
+                "width": 40
+              },
+              {
+                "width": 72
+              },
+              {
+                "width": 62
+              },
+              {
+                "width": 66
+              },
+              {
+                "width": 62
+              },
+              {
+                "width": 52
+              },
+              {
+                "width": 92
+              },
+              {
+                "width": 98
+              },
+              {
+                "width": 122
+              },
+              {
+                "width": 104
+              }
+            ],
+            "header": [
+              {
+                "height": 18,
+                "style": {
+                  "fontWeight": "bold",
+                  "backgroundColor": "#f1f5f9",
+                  "borderBottom": "0.75 solid #94a3b8"
+                },
+                "cells": [
+                  {
+                    "value": "Id",
+                    "style": {
+                      "textAlign": "right"
+                    },
+                    "sortBy": "=Fields.id"
+                  },
+                  {
+                    "value": "Account id",
+                    "style": {},
+                    "sortBy": "=Fields.accountId"
+                  },
+                  {
+                    "value": "Tx date",
+                    "style": {},
+                    "sortBy": "=Fields.txDate"
+                  },
+                  {
+                    "value": "Type",
+                    "style": {}
+                  },
+                  {
+                    "value": "Channel",
+                    "style": {}
+                  },
+                  {
+                    "value": "Currency",
+                    "style": {}
+                  },
+                  {
+                    "value": "Amount",
+                    "style": {
+                      "textAlign": "right"
+                    },
+                    "sortBy": "=Fields.amount"
+                  },
+                  {
+                    "value": "Amount INR",
+                    "style": {
+                      "textAlign": "right"
+                    },
+                    "sortBy": "=Fields.amountInr"
+                  },
+                  {
+                    "value": "Size"
+                  },
+                  {
+                    "value": "Running (branch)"
+                  }
+                ]
+              }
+            ],
+            "groups": [
+              {
+                "name": "Region",
+                "expr": "=Fields.region",
+                "sort": "asc",
+                "header": [
+                  {
+                    "height": 18,
+                    "cells": [
+                      {
+                        "value": "=Fields.region & \"  (\" & CountRows() & \" rows)\"",
+                        "style": {
+                          "fontWeight": "bold",
+                          "textAlign": "left"
+                        },
+                        "bookmark": "=Fields.region",
+                        "colSpan": 4
+                      },
+                      null,
+                      null,
+                      null,
+                      {
+                        "value": "",
+                        "colSpan": 4,
+                        "visual": {
+                          "type": "sparkline",
+                          "category": "=Fields.month",
+                          "value": "=Sum(Fields.amountInr)",
+                          "style": "column"
+                        }
+                      },
+                      null,
+                      null,
+                      null
+                    ]
+                  }
+                ],
+                "footer": [
+                  {
+                    "height": 18,
+                    "cells": [
+                      {
+                        "value": "=\"Region \" & Fields.region & \" total\"",
+                        "style": {
+                          "fontWeight": "bold",
+                          "borderTop": "0.75 solid #94a3b8"
+                        },
+                        "colSpan": 6
+                      },
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      {
+                        "value": "=Sum(Fields.amount)",
+                        "style": {
+                          "format": "N2",
+                          "textAlign": "right",
+                          "fontWeight": "bold",
+                          "borderTop": "0.75 solid #94a3b8"
+                        }
+                      },
+                      {
+                        "value": "=Sum(Fields.amountInr)",
+                        "style": {
+                          "format": "N2",
+                          "textAlign": "right",
+                          "fontWeight": "bold",
+                          "borderTop": "0.75 solid #94a3b8"
+                        }
+                      },
+                      {
+                        "value": "% of grand total →"
+                      },
+                      {
+                        "value": "=Sum(Fields.amountInr) / Sum(Fields.amountInr, \"Ledger\")",
+                        "style": {
+                          "format": "P1",
+                          "textAlign": "right"
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "pageBreak": "between",
+                "collapsible": true
+              },
+              {
+                "name": "Branch",
+                "expr": "=Fields.branchId",
+                "sort": "desc",
+                "header": [
+                  {
+                    "height": 18,
+                    "cells": [
+                      {
+                        "value": "=\"Branch \" & Fields.branchId & \" · \" & Coalesce(Lookup(Fields.branchId, Fields.id, Fields.name, \"Branches\"), \"?\")",
+                        "bookmark": "=Fields.branchId",
+                        "colSpan": 5
+                      },
+                      null,
+                      null,
+                      null,
+                      null,
+                      {
+                        "value": ""
+                      },
+                      {
+                        "value": ""
+                      },
+                      {
+                        "value": ""
+                      },
+                      {
+                        "value": ""
+                      },
+                      {
+                        "value": ""
+                      }
+                    ],
+                    "style": {
+                      "fontWeight": "bold",
+                      "backgroundColor": "#f8fafc"
+                    }
+                  }
+                ],
+                "footer": [
+                  {
+                    "height": 18,
+                    "cells": [
+                      {
+                        "value": "=\"Branch \" & Fields.branchId & \" total\"",
+                        "colSpan": 6
+                      },
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      {
+                        "value": "=Sum(Fields.amount)",
+                        "style": {
+                          "format": "N2"
+                        }
+                      },
+                      {
+                        "value": "=Sum(Fields.amountInr)",
+                        "style": {
+                          "format": "N2"
+                        }
+                      },
+                      {
+                        "value": "",
+                        "visual": {
+                          "type": "bullet",
+                          "value": "=Abs(Sum(Fields.amountInr))",
+                          "max": "=Abs(Sum(Fields.amountInr, \"Region\"))",
+                          "target": "=Abs(Sum(Fields.amountInr, \"Region\")) / CountDistinct(Fields.branchId, \"Region\")"
+                        }
+                      },
+                      {
+                        "value": ""
+                      }
+                    ],
+                    "style": {
+                      "fontWeight": "600",
+                      "borderTop": "0.5 solid #cbd5e1"
+                    }
+                  }
+                ],
+                "collapsible": true,
+                "sortBy": "=Sum(Fields.amountInr)"
+              },
+              {
+                "name": "TxType",
+                "expr": "=Fields.type",
+                "sort": "asc",
+                "header": [
+                  {
+                    "height": 18,
+                    "cells": [
+                      {
+                        "value": "=Fields.type & \" · \" & CountRows() & \" rows\"",
+                        "colSpan": 6
+                      },
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      {
+                        "value": ""
+                      },
+                      {
+                        "value": ""
+                      },
+                      {
+                        "value": ""
+                      },
+                      {
+                        "value": ""
+                      }
+                    ],
+                    "style": {
+                      "fontWeight": "bold",
+                      "backgroundColor": "#f8fafc"
+                    }
+                  }
+                ],
+                "footer": [
+                  {
+                    "height": 18,
+                    "cells": [
+                      {
+                        "value": "Subtotal {Fields.type}",
+                        "colSpan": 6
+                      },
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      {
+                        "value": "=Sum(Fields.amount)",
+                        "style": {
+                          "format": "N2"
+                        }
+                      },
+                      {
+                        "value": "=Sum(Fields.amountInr)",
+                        "style": {
+                          "format": "N2"
+                        }
+                      },
+                      {
+                        "value": "",
+                        "visual": {
+                          "type": "iconset",
+                          "value": "=Sum(Fields.amountInr)",
+                          "iconSet": "arrows",
+                          "lower": "=0",
+                          "upper": "=10000000"
+                        }
+                      },
+                      {
+                        "value": ""
+                      }
+                    ],
+                    "style": {
+                      "fontWeight": "600",
+                      "borderTop": "0.5 solid #cbd5e1"
+                    }
+                  }
+                ],
+                "keepTogether": true,
+                "collapsible": true
+              }
+            ],
+            "detail": [
+              {
+                "height": 18,
+                "style": {
+                  "borderBottom": "0.5 solid #e5e7eb",
+                  "backgroundColor": "=IIF(Parameters.highlight And Abs(Fields.amountInr) > 1000000000, \"#fef3c7\", IIF(RowNumber() % 2 = 0, \"#f8fafc\", Nothing))"
+                },
+                "cells": [
+                  {
+                    "value": "=Fields.id",
+                    "style": {
+                      "format": "N0",
+                      "textAlign": "right"
+                    }
+                  },
+                  {
+                    "value": "=Fields.accountId",
+                    "style": {
+                      "textDecoration": "underline",
+                      "color": "#1d4ed8"
+                    },
+                    "action": {
+                      "type": "report",
+                      "report": "account-detail",
+                      "params": {
+                        "accountId": "=Fields.accountId"
+                      }
+                    }
+                  },
+                  {
+                    "value": "=Fields.txDate",
+                    "style": {
+                      "format": "dd MMM yyyy"
+                    }
+                  },
+                  {
+                    "value": "=Fields.type",
+                    "style": {}
+                  },
+                  {
+                    "value": "=Fields.channelClean",
+                    "style": {}
+                  },
+                  {
+                    "value": "=Fields.currency",
+                    "style": {}
+                  },
+                  {
+                    "value": "=Fields.amount",
+                    "style": {
+                      "format": "N2",
+                      "textAlign": "right"
+                    }
+                  },
+                  {
+                    "value": "=Fields.amountInr",
+                    "style": {
+                      "format": "N2",
+                      "textAlign": "right",
+                      "color": "=IIF(Fields.amountInr < 0, \"#b91c1c\", \"#14532d\")",
+                      "fontWeight": "600"
+                    }
+                  },
+                  {
+                    "value": "",
+                    "visual": {
+                      "type": "databar",
+                      "value": "=Abs(Fields.amountInr)",
+                      "max": "=Max(Abs(Fields.amountInr), \"Ledger\")",
+                      "color": "=IIF(Fields.amountInr < 0, \"#ef4444\", \"#22c55e\")"
+                    }
+                  },
+                  {
+                    "value": "=RunningValue(Fields.amountInr, \"Sum\", \"Branch\")",
+                    "style": {
+                      "format": "N0",
+                      "textAlign": "right"
+                    }
+                  }
+                ]
+              }
+            ],
+            "footer": [
+              {
+                "height": 18,
+                "cells": [
+                  {
+                    "value": "Total",
+                    "style": {
+                      "fontWeight": "bold",
+                      "borderTop": "0.75 solid #94a3b8"
+                    }
+                  },
+                  {
+                    "value": "",
+                    "style": {
+                      "fontWeight": "bold",
+                      "borderTop": "0.75 solid #94a3b8"
+                    }
+                  },
+                  {
+                    "value": "",
+                    "style": {
+                      "fontWeight": "bold",
+                      "borderTop": "0.75 solid #94a3b8"
+                    }
+                  },
+                  {
+                    "value": "",
+                    "style": {
+                      "fontWeight": "bold",
+                      "borderTop": "0.75 solid #94a3b8"
+                    }
+                  },
+                  {
+                    "value": "",
+                    "style": {
+                      "fontWeight": "bold",
+                      "borderTop": "0.75 solid #94a3b8"
+                    }
+                  },
+                  {
+                    "value": "",
+                    "style": {
+                      "fontWeight": "bold",
+                      "borderTop": "0.75 solid #94a3b8"
+                    }
+                  },
+                  {
+                    "value": "=Sum(Fields.amount)",
+                    "style": {
+                      "format": "N2",
+                      "textAlign": "right",
+                      "fontWeight": "bold",
+                      "borderTop": "0.75 solid #94a3b8"
+                    }
+                  },
+                  {
+                    "value": "=Sum(Fields.amountInr)",
+                    "style": {
+                      "format": "N2",
+                      "textAlign": "right",
+                      "fontWeight": "bold",
+                      "borderTop": "0.75 solid #94a3b8"
+                    }
+                  },
+                  {
+                    "value": ""
+                  },
+                  {
+                    "value": "=CountDistinct(Fields.accountId) & \" accounts\""
+                  }
+                ]
+              }
+            ],
+            "style": {
+              "padding": [
+                3,
+                4,
+                3,
+                4
+              ]
+            },
+            "id": "0yv2706d",
+            "name": "Ledger",
+            "x": 0,
+            "y": 30,
+            "filters": [
+              {
+                "expr": "=Fields.type",
+                "op": "in",
+                "value": "=Parameters.focusType"
+              }
+            ]
+          },
+          {
+            "type": "textbox",
+            "w": 770,
+            "h": 22,
+            "value": "2 · Ledger by region, branch and type",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 14,
+              "fontWeight": "bold"
+            },
+            "id": "adlhq6mo",
+            "name": "H1Ledger",
+            "x": 0,
+            "y": 0,
+            "headingLevel": "1",
+            "bookmark": "Ledger"
+          }
+        ],
+        "page": {
+          "orientation": "landscape",
+          "size": "A4"
+        }
+      },
+      {
+        "name": "Pivot",
+        "height": 600,
+        "items": [
+          {
+            "type": "textbox",
+            "w": 770,
+            "h": 22,
+            "value": "3 · Pivot: region › branch × transaction type",
+            "canGrow": true,
+            "canShrink": false,
+            "style": {
+              "fontSize": 14,
+              "fontWeight": "bold"
+            },
+            "id": "55ynwt18",
+            "name": "H1Pivot",
+            "x": 0,
+            "y": 0,
+            "headingLevel": "1",
+            "bookmark": "Pivot",
+            "pageBreakBefore": true
+          },
+          {
+            "type": "matrix",
+            "w": 507,
+            "h": 54,
+            "dataSet": "Transactions",
+            "corner": "Region / branch",
+            "rowHeaderWidth": 90,
+            "columnWidth": 64,
+            "headerStyle": {
+              "fontWeight": "bold",
+              "backgroundColor": "#f1f5f9",
+              "borderBottom": "1 solid #94a3b8"
+            },
+            "style": {
+              "padding": [
+                3,
+                4,
+                3,
+                4
+              ],
+              "fontSize": 7
+            },
+            "id": "aj9im1ps",
+            "name": "Pivot",
+            "x": 0,
+            "y": 30,
+            "rowGroups": [
+              {
+                "expr": "=Fields.region",
+                "sort": "asc",
+                "total": "after",
+                "width": 110,
+                "collapsible": true,
+                "initiallyCollapsed": true,
+                "header": "Region"
+              },
+              {
+                "name": "BranchId",
+                "expr": "=Fields.branchId",
+                "sort": "asc",
+                "total": "after",
+                "header": "Branch",
+                "label": "=Fields.branchId & \" \" & Coalesce(Lookup(Fields.branchId, Fields.id, Fields.city, \"Branches\"), \"\")"
+              }
+            ],
+            "columnGroups": [
+              {
+                "expr": "=Fields.type",
+                "sort": "asc",
+                "total": "after"
+              }
+            ],
+            "values": [
+              {
+                "value": "=Sum(Fields.amountInr)",
+                "format": "N0",
+                "label": "INR"
+              },
+              {
+                "label": "% tot",
+                "value": "=Sum(Fields.amountInr)",
+                "format": "P1",
+                "show": "percentOfTotal"
+              }
+            ],
+            "overflow": "paginate",
+            "repeatHeader": true
+          },
+          {
+            "type": "list",
+            "w": 379,
+            "h": 70,
+            "dataSet": "Transactions",
+            "groupBy": "=Fields.region",
+            "items": [
+              {
+                "type": "textbox",
+                "w": 360,
+                "h": 16,
+                "value": "=Fields.region & \" · \" & Format(Sum(Fields.amountInr), \"N0\") & \" INR\"",
+                "canGrow": true,
+                "canShrink": false,
+                "style": {
+                  "fontWeight": "bold"
+                },
+                "id": "xbd2tuw6",
+                "name": "CardTitle",
+                "x": 4,
+                "y": 4
+              },
+              {
+                "type": "sparkline",
+                "w": 360,
+                "h": 40,
+                "color": "#2563eb",
+                "value": "=Sum(Fields.amountInr)",
+                "style": "area",
+                "id": "uj60vroq",
+                "name": "CardSpark",
+                "x": 4,
+                "y": 24,
+                "category": "=Fields.month"
+              }
+            ],
+            "keepTogether": true,
+            "style": {
+              "borderBottom": "0.5 solid #d0d7de",
+              "border": "0.5 solid #cbd5e1"
+            },
+            "id": "s4wd42ml",
+            "name": "RegionCards",
+            "x": 0,
+            "y": 240,
+            "columns": 2,
+            "columnGap": 12
+          },
+          {
+            "type": "subreport",
+            "w": 770,
+            "h": 200,
+            "report": "account-detail",
+            "params": {
+              "accountId": "LN-100558"
+            },
+            "id": "m3o7f0av",
+            "name": "SampleAccount",
+            "x": 0,
+            "y": 340
+          }
+        ],
+        "page": {
+          "orientation": "landscape",
+          "size": "A4"
+        }
+      }
+    ],
+    "pageFooter": {
+      "height": 30,
+      "items": [
+        {
+          "type": "textbox",
+          "w": 200,
+          "h": 14,
+          "value": "Page {Globals.PageNumber} of {Globals.TotalPages}",
+          "canGrow": true,
+          "canShrink": false,
+          "style": {},
+          "id": "bwx4nwzy",
+          "name": "PageNofM",
+          "x": 0,
+          "y": 4
+        },
+        {
+          "type": "textbox",
+          "w": 300,
+          "h": 14,
+          "value": "=\"Run \" & Format(Globals.ExecutionTime, \"dd MMM yyyy HH:mm\") & \" · \" & Globals.ReportName",
+          "canGrow": true,
+          "canShrink": false,
+          "style": {
+            "textAlign": "right"
+          },
+          "id": "l4p1qtph",
+          "name": "RunTime",
+          "x": 223,
+          "y": 4
+        }
+      ]
+    }
+  },
+  "parameterLayout": {
+    "columns": 3
+  }
+}
