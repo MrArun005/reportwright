@@ -1,0 +1,21 @@
+# richtext-showcase › default · 1 pages
+--- page 1
+Rich text and vertical text
+Phase 2 of the ActiveReportsJS parity roadmap.
+Quarterly
+statement
+2026
+Account
+LN-2026-004417
+Statement for Asha Rao & Sons
+Mixed styles on one line: bold, italic, underlined, struck, large red, highlighted, H2O and E = mc2. A
+long sentence wraps across lines inside the box and keeps every style where it was, including bold
+bold italic runs that change in the middle of a word.
+Right-aligned paragraph — with an example link.
+What is included
+• Principal and interest
+• Charges
+1. Late fee
+2. Processing fee
+• Insurance
+Notes from data (escaped): <i>not markup</i> & a "quote"

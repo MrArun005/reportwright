@@ -208,7 +208,7 @@ describe('rich text: layout', () => {
   });
   it('lists indent and number', async () => {
     const items = (await out(rich('<ol><li>one</li><li>two<ul><li>deep</li></ul></li></ol>'))).pages[0].items;
-    const x = (s) => items.find(i => i.t === 'text' && i.lines[0].text === s).lines[0].x;
+    const x = (s) => items.find(i => i.t === 'text' && i.lines[0].text.trim() === s).lines[0].x;
     expect(x('1.')).toBeLessThan(x('one'));
     expect(x('deep')).toBeGreaterThan(x('two'));
   });

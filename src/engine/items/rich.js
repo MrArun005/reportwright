@@ -140,7 +140,8 @@ export function layoutRich(blocks, st, width, m, opt = {}) {
       if (first && b.marker) {
         const ml = lookOf(b.runs[0]?.st || {});
         const mw = width1(b.marker, ml);
-        frags.splice(0, 0, { text: b.marker, look: { ...ml, under: false, strike: false, bg: undefined, href: undefined, rise: 0, size: ml.lineSize, id: 'marker' }, x: -Math.min(indent, mw + ml.lineSize * 0.4), w: mw });
+        // the marker carries a space, so text exports read "• item"
+        frags.splice(0, 0, { text: `${b.marker} `, look: { ...ml, under: false, strike: false, bg: undefined, href: undefined, rise: 0, size: ml.lineSize, id: 'marker' }, x: -Math.min(indent, mw + ml.lineSize * 0.4), w: mw + width1(' ', ml) });
       }
       fragCount += frags.length;
       lines.push({ frags, w: x, h, base: (h - above - below) / 2 + above, left, align, p: bi, br, gap: 0 });

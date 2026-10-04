@@ -25,7 +25,9 @@ const SKIP = new Set(['script', 'style']);
 const HEADING = { h1: 2, h2: 1.5, h3: 1.17, h4: 1, h5: 0.83, h6: 0.67 };
 const NAMED = { black: '#000000', white: '#ffffff', red: '#ff0000', green: '#008000', blue: '#0000ff', gray: '#808080', grey: '#808080',
   orange: '#ffa500', yellow: '#ffff00', purple: '#800080', navy: '#000080', maroon: '#800000', teal: '#008080', silver: '#c0c0c0' };
-const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0', mdash: '\u2014', ndash: '\u2013', hellip: '\u2026',
+  lsquo: '\u2018', rsquo: '\u2019', ldquo: '\u201c', rdquo: '\u201d', bull: '\u2022', middot: '\u00b7', copy: '\u00a9', reg: '\u00ae',
+  trade: '\u2122', euro: '\u20ac', pound: '\u00a3', yen: '\u00a5', times: '\u00d7', divide: '\u00f7', deg: '\u00b0', plusmn: '\u00b1', sect: '\u00a7', para: '\u00b6' };
 
 /** A link target rich text may use: the same allow-list as url actions (src/engine/url.js). */
 export const safeHref = safeUrl;
