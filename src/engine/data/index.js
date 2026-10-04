@@ -67,25 +67,71 @@ function guessType(v) {
   return 'string';
 }
 
-/** Parse CSV text (RFC 4180-ish) into objects using the first row as headers. */
-export function parseCsv(text) {
+const MAX_CSV_COLUMNS = 10000;
+const MAX_CSV_CELLS = 5_000_000; // rows × columns: a wide header over many short lines would multiply
+/** One-character CSV option: "tab" and "\\t" mean a tab. */
+function csvChar(v, dflt, what) {
+  if (v == null || v === '') return dflt;
+  const c = v === 'tab' || v === '\\t' ? '\t' : String(v);
+  if (c.length !== 1 || c === '\n' || c === '\r') throw new Error(`The CSV ${what} must be one character`);
+  return c;
+}
+
+/**
+ * Parse CSV text into objects. One forward scan, O(n): a quote opens a quoted field only at the start of
+ * a field; inside, a doubled quote is a quote, and separators and line breaks are data.
+ * @param {string} text
+ * @param {{separator?: string, quote?: string, headerRow?: boolean, startRow?: number}} [opts]
+ *   startRow: 1-based record where the header (or the data, without a header row) starts.
+ */
+export function parseCsv(text, opts = {}) {
+  const sep = csvChar(opts.separator, ',', 'separator');
+  const quote = csvChar(opts.quote, '"', 'quote');
+  if (sep === quote) throw new Error('The CSV separator and quote must differ');
+  text = String(text ?? '');
+  const n = text.length;
   const rows = [];
-  let row = [], cell = '', q = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (q) {
-      if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; }
-      else if (c === '"') q = false;
-      else cell += c;
-    } else if (c === '"') q = true;
-    else if (c === ',') { row.push(cell); cell = ''; }
-    else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
-    else cell += c;
+  let row = [], i = 0;
+  const endOfField = (k) => { while (k < n && text[k] !== sep && text[k] !== '\n' && text[k] !== '\r') k++; return k; };
+  for (;;) {
+    let cell;
+    if (text[i] === quote) {
+      let j = i + 1, buf = '';
+      for (;;) {
+        const k = text.indexOf(quote, j);
+        if (k < 0) { buf += text.slice(j); j = n; break; } // no closing quote: the rest is the field
+        buf += text.slice(j, k);
+        if (text[k + 1] === quote) { buf += quote; j = k + 2; continue; }
+        j = k + 1; break;
+      }
+      const e = endOfField(j); // text after the closing quote is kept
+      cell = buf + text.slice(j, e); i = e;
+    } else {
+      const e = endOfField(i);
+      cell = text.slice(i, e); i = e;
+    }
+    row.push(cell);
+    if (row.length > MAX_CSV_COLUMNS) throw new Error(`A CSV row has more than ${MAX_CSV_COLUMNS} columns`);
+    if (i >= n) { rows.push(row); break; }
+    if (text[i] === sep) { i++; continue; }
+    if (text[i] === '\r' && text[i + 1] === '\n') i++;
+    i++;
+    rows.push(row); row = [];
+    if (i >= n) break;
   }
-  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
-  const [head, ...body] = rows.filter(r => r.length > 1 || r[0] !== '');
+  const start = Math.max(1, Math.floor(Number(opts.startRow) || 1));
+  const kept = rows.slice(start - 1).filter(r => r.length > 1 || r[0] !== '');
+  let width = 0;
+  for (const r of kept) width = Math.max(width, r.length);
+  if (width * kept.length > MAX_CSV_CELLS) throw new Error(`The CSV has more than ${MAX_CSV_CELLS.toLocaleString('en')} cells (rows × columns)`);
+  if (opts.headerRow === false) {
+    const names = Array.from({ length: width }, (_, k) => `Column${k + 1}`);
+    return kept.map(r => Object.fromEntries(names.map((h, k) => [h, r[k] ?? ''])));
+  }
+  const [head, ...body] = kept;
   if (!head) return [];
-  return body.map(r => Object.fromEntries(head.map((h, i) => [h.trim(), r[i] ?? ''])));
+  const names = head.map(h => h.trim());
+  return body.map(r => Object.fromEntries(names.map((h, k) => [h, r[k] ?? ''])));
 }
 
 /**
@@ -104,7 +150,7 @@ export async function loadSources(def, opt) {
     try {
       if (src.type === 'json') out[src.name] = typeof src.data === 'string' ? JSON.parse(src.data) : src.data;
       else if (src.type === 'sql') out[src.name] = await loadSql(src, ctx.params, opt, f);
-      else if (src.type === 'csv' && src.data) out[src.name] = parseCsv(src.data);
+      else if (src.type === 'csv' && src.data) out[src.name] = parseCsv(src.data, src);
       else if (src.type === 'rest' || src.type === 'csv' || src.type === 'graphql') {
         if (!f) throw new Error('No fetch() available');
         let url = urlFrom(src.url || '', ctx);
@@ -120,7 +166,7 @@ export async function loadSources(def, opt) {
         } else if (src.body && init.method !== 'GET') init.body = String(evalValue(src.body, ctx));
         const res = await f(url, init);
         if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
-        if (src.type === 'csv') out[src.name] = parseCsv(await res.text());
+        if (src.type === 'csv') out[src.name] = parseCsv(await res.text(), src);
         else {
           const json = await res.json();
           if (src.type === 'graphql' && json.errors?.length) throw new Error(`GraphQL: ${json.errors[0].message}`);
