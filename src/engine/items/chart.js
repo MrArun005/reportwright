@@ -5,7 +5,7 @@
  */
 import { evalValue, toText } from '../expr/evaluate.js';
 import { resolveFontKey } from '../text/fonts.js';
-import { applyFilters, applySort } from '../data/index.js';
+import { applyFilters, applySort, related } from '../data/index.js';
 
 export const PALETTE = ['#2563eb', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#64748b', '#f97316'];
 export const CHART_TYPES = ['column', 'bar', 'line', 'area', 'pie', 'donut', 'scatter'];
@@ -32,7 +32,7 @@ const keyOf = (k) => (k instanceof Date ? `d${k.getTime()}` : `${typeof k}:${k}`
 
 /** Categories × series values from the data. */
 export function chartData(item, ctx, lc) {
-  let rows = item.dataSet ? lc.dataSets[item.dataSet] || [] : ctx.aggRows || [];
+  let rows = item.dataSet ? related(lc.dataSets[item.dataSet] || [], ctx) : ctx.aggRows || [];
   if (item.dataSet && !lc.dataSets[item.dataSet]) lc.warn(`${item.name}: the data set "${item.dataSet}" does not exist`);
   if (item.filters?.length) rows = applyFilters(rows, item.filters, ctx);
   if (item.sort?.length) rows = applySort(rows, item.sort, ctx);

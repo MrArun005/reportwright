@@ -84,6 +84,16 @@ export function parse(src) {
     return 0;
   };
 
+  /** Arguments after "(", up to and including ")". */
+  function callArgs() {
+    const args = [];
+    if (peek().v !== ')') {
+      do { args.push(expr(0)); } while (peek().v === ',' && next());
+    }
+    expect(')');
+    return args;
+  }
+
   function nud() {
     const t = next();
     if (t.t === 'num' || t.t === 'str') return { type: 'lit', v: t.v };
@@ -96,12 +106,7 @@ export function parse(src) {
     if (t.t === 'id') {
       if (peek().v === '(') {
         next();
-        const args = [];
-        if (peek().v !== ')') {
-          do { args.push(expr(0)); } while (peek().v === ',' && next());
-        }
-        expect(')');
-        return { type: 'call', name: t.v, args, p: t.p };
+        return { type: 'call', name: t.v, args: callArgs(), p: t.p };
       }
       return { type: 'id', name: t.v, p: t.p };
     }
@@ -119,6 +124,10 @@ export function parse(src) {
     if (t.v === '.') {
       const id = next();
       if (id.t !== 'id' && id.t !== 'kw') throw new ExprError('Expected a name after "."', id.p, src);
+      if (peek().v === '(') { // Code.Name(args): a report function
+        next();
+        return { type: 'call', name: id.v, args: callArgs(), p: id.p, obj: left };
+      }
       return { type: 'member', obj: left, prop: id.v };
     }
     if (t.v === '[') {

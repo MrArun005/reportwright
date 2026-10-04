@@ -6,6 +6,7 @@ export default {
   zoomIn: 'Zoom in', zoomOut: 'Zoom out', fitWidth: 'Fit width', search: 'Search', previousMatch: 'Previous match', nextMatch: 'Next match',
   exporting: 'Exporting…', viewReport: 'View report', didNotRun: 'The report did not run.', true: 'True', false: 'False',
   commaSeparated: 'Values, separated by commas',
+  selectAll: 'Select all', nullValue: 'Null (no value)',
   pagesRows: '{pages} pages · {rows} rows · {ms} ms', warnings: '{n} warning(s)',
   back: 'Back', drillDepth: 'Drill level {n}', liveHint: 'Changes apply as you pick them.',
   print: 'Print', printing: 'Preparing…', fullScreen: 'Full screen', exitFullScreen: 'Exit full screen',
@@ -38,6 +39,7 @@ export default {
   /* ---- designer: parameter dialog ---- */
   paramNew: 'New parameter', paramTitle: 'Parameter {name}', name: 'Name', paramType: 'Type', prompt: 'Prompt',
   defaultValue: 'Default', defaultHint: 'A value or =expression, e.g. =Today()', required: 'Required',
+  paramHidden: 'Hidden (set only by URL, API or drill-through)', paramNullable: 'Allow null', paramAllowBlank: 'Allow blank text',
   multiHint: "Allow several values (use with the 'in' filter, or Join(Parameters.x))",
   fixedChoices: 'Fixed choices (one per line: value or value=label)', choicesFrom: 'Or choices from a data set', valueField: 'Value field',
   cascadeHint: 'The data set can filter on other parameters (=Parameters.x). The viewer then reloads the choices when those change (cascading).',

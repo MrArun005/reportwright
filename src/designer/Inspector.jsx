@@ -7,6 +7,7 @@ import { useFontFamilies, FontsDialog } from './Fonts.jsx';
 import { PAGE_SIZES, fromPt, toPt } from '@/engine/units.js';
 import { TextInput, NumberInput, Select, ColorInput, ExprInput, Field, Check } from './ui.jsx';
 import ExpressionEditor from './ExpressionEditor.jsx';
+import { checkFunctions } from '@/engine/expr/evaluate.js';
 
 export default function Inspector() {
   const sel = useDesigner(s => s.sel);
@@ -206,7 +207,7 @@ function GroupsEditor({ table, openExpr }) {
   );
 }
 
-const OPS = ['=', '<>', '>', '>=', '<', '<=', 'in', 'like', 'contains'];
+export const OPS = ['=', '<>', '>', '>=', '<', '<=', 'in', 'like', 'contains', 'Between', 'TopN', 'BottomN', 'TopPercent', 'BottomPercent'];
 function SortFilterEditor({ item }) {
   const def = useDesigner(s => s.def);
   const fields = fieldsOf(def, item.dataSet).map(f => f.name);
@@ -223,12 +224,13 @@ function SortFilterEditor({ item }) {
         <div className="rowx" key={i}>
           <TextInput mono value={f.expr} onChange={v => set(t => { t.filters[i].expr = v; })} aria-label="Filter expression" />
           <Select value={f.op || '='} options={OPS} onChange={v => set(t => { t.filters[i].op = v; })} />
-          <TextInput mono value={f.value} onChange={v => set(t => { t.filters[i].value = v; })} aria-label="Filter value" />
+          <TextInput mono value={f.value} onChange={v => set(t => { t.filters[i].value = v; })} aria-label="Filter value" placeholder={/^(top|bottom)/i.test(f.op || '') ? 'N' : undefined} />
+          {f.op === 'Between' && <TextInput mono value={f.value2} onChange={v => set(t => { t.filters[i].value2 = v; })} aria-label="Upper value" placeholder="and" />}
           <button className="btn sm ghost danger" onClick={() => set(t => { t.filters.splice(i, 1); if (!t.filters.length) delete t.filters; })} aria-label="Remove filter">✕</button>
         </div>
       ))}
       <div><button className="btn sm" onClick={() => set(t => { t.filters ||= []; t.filters.push({ expr: fields[0] ? `=Fields.${fields[0]}` : '', op: '=', value: '' }); })}>Add filter</button></div>
-      <div className="hint">Value can be text, a number, =Parameters.x, or =Parent.x inside a list.</div>
+      <div className="hint">Value can be text, a number, =Parameters.x, or =Parent.x inside a list. TopN keeps the N highest values of the expression (ties too). Filters run in order.</div>
     </div>
   );
 }
@@ -468,9 +470,35 @@ function ReportProps() {
         <div className="btnrow"><button className="btn sm" onClick={() => setFontsOpen(true)}>Upload a font…</button></div>
         {fontsOpen && <FontsDialog onClose={() => setFontsOpen(false)} />}
       </div>
+      <ReportFunctions />
       <NamedStyles />
       <div className="cat"><span className="hint">Select an item, a cell or a band to edit it. Drag tools and fields from the left onto the page.</span></div>
     </>
+  );
+}
+
+/** Report functions: reusable formulas in the expression language, called as Code.Name(…) or Name(…). */
+function ReportFunctions() {
+  const fns = useDesigner(s => s.def.functions) || [];
+  const set = (fn, key) => useDesigner.getState().apply(d => { d.functions ||= []; fn(d.functions); if (!d.functions.length) delete d.functions; }, key);
+  const errors = checkFunctions(fns);
+  return (
+    <div className="cat">
+      <h5>Functions</h5>
+      {fns.map((f, i) => (
+        <div key={i} style={{ display: 'grid', gap: 4, marginBottom: 8 }}>
+          <div className="grid2">
+            <Field label="Name"><TextInput value={f.name} mono onChange={v => set(l => { l[i].name = v; }, `fn${i}.name`)} placeholder="Tax" /></Field>
+            <Field label="Parameters"><TextInput value={(f.params || []).join(', ')} mono onChange={v => set(l => { l[i].params = v.split(',').map(x => x.trim()).filter(Boolean); }, `fn${i}.params`)} placeholder="amount, rate" /></Field>
+          </div>
+          <Field label="Body"><TextInput value={f.body} mono onChange={v => set(l => { l[i].body = v; }, `fn${i}.body`)} placeholder="=amount * 0.18" /></Field>
+          <div className="btnrow"><button className="btn sm" type="button" onClick={() => set(l => { l.splice(i, 1); })}>Remove</button></div>
+        </div>
+      ))}
+      {errors.map((e, i) => <div key={i} className="err">{e}</div>)}
+      <div className="btnrow"><button className="btn sm" type="button" onClick={() => set(l => { l.push({ name: `Function${l.length + 1}`, params: ['x'], body: '=x' }); })}>Add a function</button></div>
+      <span className="hint">Call one as Code.Name(…) or Name(…) in any expression. Parameters are names inside the body.</span>
+    </div>
   );
 }
 

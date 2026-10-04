@@ -1,0 +1,109 @@
+# expressions-showcase › default · 1 pages
+--- page 1
+Expressions, data and parameters
+Phase 3 of the ActiveReportsJS parity roadmap: aggregates, functions, report functions, filters, CSV and nested data.
+Orders and their items (nested data set; report functions Code.Gross and Gross)
+SO-101 · Asha Rao & Sons · 03 Jul 2026 (Friday, Q3)
+SKU
+Qty
+Price
+Line
+With tax
+PAPER-A4
+40
+310.00
+12,400.00
+14,632.00
+TONER-K
+2
+4,200.00
+8,400.00
+9,912.00
+STAPLER
+5
+180.00
+900.00
+1,062.00
+3 lines for Asha Rao & Sons
+47
+21,700.00
+25,606.00
+SO-102 · Kiran Textiles · 14 Aug 2026 (Friday, Q3)
+SKU
+Qty
+Price
+Line
+With tax
+PAPER-A3
+10
+620.00
+6,200.00
+7,316.00
+1 lines for Kiran Textiles
+10
+6,200.00
+7,316.00
+SO-103 · Meera Foods · 30 Sep 2026 (Wednesday, Q3)
+SKU
+Qty
+Price
+Line
+With tax
+LABELS
+12
+95.00
+1,140.00
+1,345.20
+PAPER-A4
+25
+310.00
+7,750.00
+9,145.00
+2 lines for Meera Foods
+37
+8,890.00
+10,490.20
+Top 4 scores across teams (Parent.team after a [*] spread, TopN, Previous, Grade())
+Team
+Name
+Score
+Grade
+Previous row
+North
+Ravi..
+91
+A
+(first)
+North
+Sana..
+78
+B
+Ravi 91
+South
+Lata..
+95
+A
+Sana 78
+South
+Omar..
+78
+B
+Lata 95
+Top 4, ties kept: median 84.5, mode 78, stdev 8.81, varp 58.25
+Rates between 10% and 20% (Between filter over a CSV source)
+Region
+Rate
+Note (CSV, ';' separator, quoted)
+North
+12%
+standard; reviewed
+South
+18%
+said "ok"
+Function samples
+Text: Pagewright · 000042 · a+b+c · wright · 1 · A66
+Math: -1 · 3 · 3.14159 · -2 · 3.1416
+Dates: 28 Feb 2026 · week 12 · Sunday · 13:05 · 10-04-2026
+Checks: True False True · two · 2 True
+Aggregates: price per distinct SKU 5,405 · lines over 2,000: 4 · items 6 · last order SO-103
+Page 1 of 1

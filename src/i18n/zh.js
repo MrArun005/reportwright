@@ -6,6 +6,7 @@ export default {
   zoomIn: '放大', zoomOut: '缩小', fitWidth: '适合宽度', search: '搜索', previousMatch: '上一个匹配项', nextMatch: '下一个匹配项',
   exporting: '正在导出…', viewReport: '查看报表', didNotRun: '报表未能运行。', true: '是', false: '否',
   commaSeparated: '多个值用逗号分隔',
+  selectAll: '全选', nullValue: 'Null（无值）',
   pagesRows: '{pages} 页 · {rows} 行 · {ms} 毫秒', warnings: '{n} 条警告',
   back: '返回', drillDepth: '钻取层级 {n}', liveHint: '选择后立即生效。',
   print: '打印', printing: '正在准备…', fullScreen: '全屏', exitFullScreen: '退出全屏',
@@ -38,6 +39,7 @@ export default {
   /* ---- designer: parameter dialog ---- */
   paramNew: '新参数', paramTitle: '参数 {name}', name: '名称', paramType: '类型', prompt: '提示文字',
   defaultValue: '默认值', defaultHint: '一个值或 =表达式，例如 =Today()', required: '必填',
+  paramHidden: '隐藏（仅通过 URL、API 或钻取设置）', paramNullable: '允许 Null', paramAllowBlank: '允许空文本',
   multiHint: "允许多个值（与 'in' 筛选器或 Join(Parameters.x) 一起使用）",
   fixedChoices: '固定选项（每行一个：值 或 值=标签）', choicesFrom: '或来自数据集的选项', valueField: '值字段',
   cascadeHint: '数据集可以按其他参数 (=Parameters.x) 筛选。这些参数变化时，查看器会重新加载选项（级联）。',

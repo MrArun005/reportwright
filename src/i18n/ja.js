@@ -6,6 +6,7 @@ export default {
   zoomIn: '拡大', zoomOut: '縮小', fitWidth: '幅に合わせる', search: '検索', previousMatch: '前の一致', nextMatch: '次の一致',
   exporting: 'エクスポート中…', viewReport: 'レポートを表示', didNotRun: 'レポートを実行できませんでした。', true: 'はい', false: 'いいえ',
   commaSeparated: '値をカンマで区切って入力',
+  selectAll: 'すべて選択', nullValue: 'Null（値なし）',
   pagesRows: '{pages} ページ · {rows} 行 · {ms} ms', warnings: '警告 {n} 件',
   back: '戻る', drillDepth: 'ドリルレベル {n}', liveHint: '選択するとすぐに反映されます。',
   print: '印刷', printing: '準備中…', fullScreen: '全画面表示', exitFullScreen: '全画面表示を終了',
@@ -38,6 +39,7 @@ export default {
   /* ---- designer: parameter dialog ---- */
   paramNew: '新しいパラメーター', paramTitle: 'パラメーター {name}', name: '名前', paramType: '型', prompt: '表示名',
   defaultValue: '既定値', defaultHint: '値または =式（例: =Today()）', required: '必須',
+  paramHidden: '非表示（URL、API、ドリルスルーでのみ設定）', paramNullable: 'Null を許可', paramAllowBlank: '空のテキストを許可',
   multiHint: "複数の値を許可（'in' フィルターまたは Join(Parameters.x) と一緒に使用）",
   fixedChoices: '固定の選択肢（1 行に 1 つ: 値 または 値=ラベル）', choicesFrom: 'またはデータセットから選択肢を取得', valueField: '値フィールド',
   cascadeHint: 'データセットは他のパラメーター (=Parameters.x) で絞り込めます。それらが変わるとビューアーが選択肢を読み込み直します（連動）。',
