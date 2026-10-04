@@ -231,7 +231,7 @@ function prefixValues(base, n, ast, ctx) {
   return vals.length === n ? vals : vals.slice(0, n);
 }
 const ROW_LOCAL = new WeakMap();
-const SCOPED = new Set(['countrows', 'rownumber', 'runningvalue']);
+const SCOPED = new Set(['countrows', 'rownumber', 'runningvalue', 'distinctsum', 'aggregateif']);
 /** True when an expression reads only the current row (and parameters): no aggregate, RowNumber or RunningValue. */
 function rowLocal(ast) {
   let r = ROW_LOCAL.get(ast);
@@ -259,7 +259,54 @@ const AGG = {
   max: (vals) => { let m = null; for (const v of vals) if (v != null && (m == null || cmpVal(v, m) > 0)) m = v; return m; },
   first: (vals) => (vals.length ? vals[0] : null),
   last: (vals) => (vals.length ? vals[vals.length - 1] : null),
+  median: (vals) => {
+    const xs = nums(vals).sort((a, b) => a - b), n = xs.length;
+    return n ? (n % 2 ? xs[(n - 1) / 2] : (xs[n / 2 - 1] + xs[n / 2]) / 2) : null;
+  },
+  mode: (vals) => {
+    // the most frequent value; on a tie the one seen first
+    const counts = new Map();
+    let best = null, top = 0;
+    for (const v of vals) {
+      if (v == null || v === '') continue;
+      const k = v instanceof Date ? v.getTime() : v;
+      const c = (counts.get(k) || 0) + 1;
+      counts.set(k, c);
+      if (c > top) { top = c; best = v; }
+    }
+    return best;
+  },
+  var: (vals) => variance(vals, true),
+  varp: (vals) => variance(vals, false),
+  stdev: (vals) => { const v = variance(vals, true); return v == null ? null : Math.sqrt(v); },
+  stdevp: (vals) => { const v = variance(vals, false); return v == null ? null : Math.sqrt(v); },
 };
+/** Numbers among the values: nulls, blanks and text that is not a number are skipped. */
+function nums(vals) {
+  const out = [];
+  for (const v of vals) {
+    if (v == null || v === '' || typeof v === 'boolean') continue;
+    const n = num(v);
+    if (Number.isFinite(n)) out.push(n);
+  }
+  return out;
+}
+/** Two-pass variance: sample (n - 1) or population (n). */
+function variance(vals, sample) {
+  const xs = nums(vals);
+  if (xs.length < (sample ? 2 : 1)) return null;
+  let m = 0;
+  for (const x of xs) m += x;
+  m /= xs.length;
+  let s = 0;
+  for (const x of xs) s += (x - m) ** 2;
+  return s / (xs.length - (sample ? 1 : 0));
+}
+/** Values of an expression over rows, with arrays (a LookupSet) spread into their items. */
+function aggValues(rows, ast, ctx) {
+  const vals = mapRows(rows, ast, ctx);
+  return vals.some(Array.isArray) ? vals.flat() : vals;
+}
 
 /* --------------------------------------------------------------- dates */
 function dateAdd(interval, n, d) {
@@ -343,6 +390,7 @@ export const FUNCTIONS = {
 /** Names shown in the designer's expression helper. */
 export const FUNCTION_NAMES = [
   'Sum', 'Avg', 'Count', 'CountDistinct', 'CountRows', 'Min', 'Max', 'First', 'Last', 'RunningValue', 'RowNumber',
+  'Median', 'Mode', 'StDev', 'StDevP', 'Var', 'VarP', 'DistinctSum', 'AggregateIf',
   'IIF', 'Switch', 'IsNull', 'Coalesce', 'Lookup', 'Join', 'Contains', 'InList',
   ...['Format', 'Upper', 'Lower', 'Left', 'Right', 'Mid', 'Len', 'Trim', 'Replace', 'InStr', 'CStr', 'CDbl', 'CInt', 'CDate', 'CBool',
     'Round', 'Abs', 'Floor', 'Ceiling', 'Int', 'Pow', 'Sqrt', 'Now', 'Today', 'DateAdd', 'DateDiff', 'DateSerial', 'Year', 'Month', 'Day', 'MonthName'],
@@ -364,7 +412,28 @@ function call(n, ctx) {
   if (name in AGG) {
     if (!args.length) throw new ExprError(`${n.name} needs an expression, e.g. ${n.name}(Fields.amount)`, n.p);
     const rows = scopeRows(args, 1, ctx, n.name);
-    return AGG[name](mapRows(rows, args[0], ctx));
+    return AGG[name](aggValues(rows, args[0], ctx));
+  }
+  if (name === 'distinctsum') {
+    // DistinctSum(distinctExpr, valueExpr[, scope]): the value of the first row of each distinct key
+    if (args.length < 2) throw new ExprError('DistinctSum needs 2 arguments: DistinctSum(distinct, value)', n.p);
+    const rows = scopeRows(args, 2, ctx, n.name);
+    const keys = mapRows(rows, args[0], ctx);
+    const seen = new Set(), pick = [];
+    for (let i = 0; i < rows.length; i++) {
+      const k = keys[i] instanceof Date ? keys[i].getTime() : keys[i];
+      if (!seen.has(k)) { seen.add(k); pick.push(rows[i]); }
+    }
+    return AGG.sum(aggValues(pick, args[1], ctx));
+  }
+  if (name === 'aggregateif') {
+    // AggregateIf(condition, "Sum", expr[, scope])
+    if (args.length < 3) throw new ExprError('AggregateIf needs 3 arguments: AggregateIf(condition, "Sum", expr)', n.p);
+    const fn = String(evaluate(args[1], ctx)).toLowerCase();
+    if (!(fn in AGG)) throw new ExprError(`AggregateIf: unknown aggregate "${fn}"`, n.p);
+    const rows = scopeRows(args, 3, ctx, n.name);
+    const ok = mapRows(rows, args[0], ctx);
+    return AGG[fn](aggValues(rows.filter((_, i) => truthy(ok[i])), args[2], ctx));
   }
   if (name === 'countrows') return scopeRows(args, 0, ctx, n.name).length;
   if (name === 'rownumber') {
