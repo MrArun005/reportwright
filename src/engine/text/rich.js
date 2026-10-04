@@ -64,13 +64,16 @@ function decode(s) {
   return out;
 }
 
+/** Sizes stay between 1 and 400pt, however the CSS or nested headings compound. */
+const clampSize = (n) => Math.round(Math.min(400, Math.max(1, n)) * 100) / 100;
+
 /** Font size from CSS: pt, px, em, %. @param {string} v @param {number} parent */
 function fontSize(v, parent) {
   const s = v.trim().toLowerCase();
   let k = s.length;
   while (k > 0 && !(s[k - 1] >= '0' && s[k - 1] <= '9') && s[k - 1] !== '.') k--;
   const n = Number(s.slice(0, k)), unit = s.slice(k).trim();
-  if (!Number.isFinite(n) || n <= 0 || n > 1000) return undefined;
+  if (!Number.isFinite(n) || n <= 0) return undefined;
   if (unit === '' || unit === 'pt') return n;
   if (unit === 'px') return n * 0.75;
   if (unit === 'em' || unit === 'rem') return n * parent;
@@ -106,7 +109,7 @@ function applyCss(css, st) {
     switch (prop) {
       case 'color': { const x = color(val); if (x) st.color = x; break; }
       case 'background-color': case 'background': { const x = color(val); if (x) st.background = x; break; }
-      case 'font-size': { const x = fontSize(val, st.fontSize || 9); if (x) st.fontSize = Math.round(x * 100) / 100; break; }
+      case 'font-size': { const x = fontSize(val, st.fontSize || 9); if (x) st.fontSize = clampSize(x); break; }
       case 'font-weight': if (low === 'bold' || low === 'bolder') st.fontWeight = 'bold'; else if (low === 'normal' || low === 'lighter') st.fontWeight = 'normal'; else if (/^[1-9]00$/.test(low)) st.fontWeight = low; break;
       case 'font-style': if (low === 'italic' || low === 'oblique') st.fontStyle = 'italic'; else if (low === 'normal') st.fontStyle = 'normal'; break;
       case 'font-family': { const f = val.split(',')[0].trim().replace(/^['"]|['"]$/g, ''); if (f && f.length < 60) st.fontFamily = f; break; }
@@ -293,7 +296,7 @@ export function parseRich(html, opt = {}) {
         break;
       }
       default:
-        if (name in HEADING) { st.fontSize = Math.round((st.fontSize || 9) * HEADING[name] * 100) / 100; st.fontWeight = 'bold'; }
+        if (name in HEADING) { st.fontSize = clampSize((st.fontSize || 9) * HEADING[name]); st.fontWeight = 'bold'; }
     }
     if (tag.attrs.style) applyCss(tag.attrs.style, st);
     if (BLOCK.has(name)) {

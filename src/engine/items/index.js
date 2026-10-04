@@ -166,7 +166,7 @@ register('richtext', {
     let html;
     try { html = richValue(item.value ?? '', ctx, item.htmlFromData === true); } catch (e) { lc.warn(`${who}: ${e.message}`); html = '#Error'; }
     const { blocks } = parseRich(html, { baseSize: Number(st.fontSize) || 9, warn: (msg) => lc.warn(`${who}: ${msg}`) });
-    const rl = layoutRich(blocks, st, item.w, lc.m, { listIndent: item.listIndent, paragraphSpacing: item.paragraphSpacing });
+    const rl = layoutRich(blocks, st, item.w, lc.m, { listIndent: item.listIndent, paragraphSpacing: item.paragraphSpacing, maxLineHeight: lc.maxUnitHeight - padding(st)[0] - padding(st)[2], warn: (msg) => lc.warn(`${who}: ${msg}`) });
     let h = item.h;
     if (!lc.fixed) {
       if (item.canGrow !== false && rl.needed > h + GROW_TOLERANCE) h = rl.needed;

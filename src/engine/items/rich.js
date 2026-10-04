@@ -13,7 +13,10 @@ import { RICH_LIMITS } from '../text/rich.js';
  */
 
 /** Item defaults; a rich text item can set `listIndent` and `paragraphSpacing` (points). */
-export const RICH_DEFAULTS = { listIndent: 18, paragraphSpacing: 4, linkColor: '#0563c1', maxFragments: 20000 };
+export const RICH_DEFAULTS = { listIndent: 18, paragraphSpacing: 4, linkColor: '#0563c1', maxFragments: 20000, maxLines: 5000 };
+/** Geometry clamps: definitions are untrusted, so one span must not make a line taller than any page. */
+const SIZE = { min: 1, max: 400 }, LINE_HEIGHT = { min: 0.5, max: 5 }, MAX_LIST_LEVEL = 10;
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 /** Data as text: quotes and ';' too, so a value inside an attribute or a CSS value cannot end it. */
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', ';': '&#59;' };
@@ -52,23 +55,25 @@ export function richValue(v, ctx, htmlFromData = false) {
  * @param {any} st the item's resolved style
  * @param {number} width
  * @param {import('../text/measure.js').TextMeasurer} m
- * @param {{ listIndent?: number, paragraphSpacing?: number }} [opt]
+ * @param {{ listIndent?: number, paragraphSpacing?: number, maxLineHeight?: number, warn?: (msg: string) => void }} [opt]
  */
 export function layoutRich(blocks, st, width, m, opt = {}) {
   const pad = padding(st);
   const inner = Math.max(1, width - pad[1] - pad[3]);
-  const lhf = Number(st.lineHeight) || 1.25;
-  const baseSize = Number(st.fontSize) || 9;
+  const lhf = clamp(Number(st.lineHeight) || 1.25, LINE_HEIGHT.min, LINE_HEIGHT.max);
+  const baseSize = clamp(Number(st.fontSize) || 9, SIZE.min, SIZE.max);
+  const warn = opt.warn || (() => {});
+  const maxH = opt.maxLineHeight > 0 ? opt.maxLineHeight : Infinity;
   const baseAlign = st.textAlign === 'center' || st.textAlign === 'right' ? st.textAlign : 'left';
-  const indent = Number.isFinite(Number(opt.listIndent)) && opt.listIndent != null ? Math.max(0, Number(opt.listIndent)) : RICH_DEFAULTS.listIndent;
-  const spacing = Number.isFinite(Number(opt.paragraphSpacing)) && opt.paragraphSpacing != null ? Math.max(0, Number(opt.paragraphSpacing)) : RICH_DEFAULTS.paragraphSpacing;
+  const indent = Number.isFinite(Number(opt.listIndent)) && opt.listIndent != null ? clamp(Number(opt.listIndent), 0, 144) : RICH_DEFAULTS.listIndent;
+  const spacing = Number.isFinite(Number(opt.paragraphSpacing)) && opt.paragraphSpacing != null ? clamp(Number(opt.paragraphSpacing), 0, 144) : RICH_DEFAULTS.paragraphSpacing;
   /** @type {Map<any, Look>} */
   const looks = new Map();
   const lookOf = (rs) => {
     let l = looks.get(rs);
     if (l) return l;
     const key = resolveFontKey(rs.fontFamily || st.fontFamily, rs.fontWeight || st.fontWeight, rs.fontStyle || st.fontStyle);
-    const lineSize = rs.fontSize || baseSize;
+    const lineSize = clamp(rs.fontSize || baseSize, SIZE.min, SIZE.max);
     let size = lineSize, rise = 0;
     if (rs.script) {
       const sc = m.script(key);
@@ -84,9 +89,10 @@ export function layoutRich(blocks, st, width, m, opt = {}) {
   };
   /** @type {RichLine[]} */
   const lines = [];
-  let fragCount = 0;
+  let fragCount = 0, full = false;
   blocks.forEach((b, bi) => {
-    const left = Math.max(b.level, b.marker ? 1 : 0) * indent;
+    if (full) return;
+    const left = Math.min(MAX_LIST_LEVEL, Math.max(b.level, b.marker ? 1 : 0)) * indent;
     const avail = Math.max(1, inner - left);
     const align = b.align || baseAlign;
     // words: pieces of text between spaces (a word may change style midway); space = the look of the space after it
@@ -108,6 +114,12 @@ export function layoutRich(blocks, st, width, m, opt = {}) {
     let lw = 0, br = false, first = true, prevSpace = /** @type {Look|null} */ (null);
     const width1 = (t, l) => m.width(t, l.key, l.size);
     const endLine = (nextBr) => {
+      if (full) return;
+      if (lines.length >= RICH_DEFAULTS.maxLines || fragCount >= RICH_DEFAULTS.maxFragments) {
+        full = true;
+        warn(`Rich text: more than ${RICH_DEFAULTS.maxLines} lines or ${RICH_DEFAULTS.maxFragments} styled pieces; the rest is cut.`);
+        return;
+      }
       // merge neighbours of one look into fragments, measured once each
       /** @type {Frag[]} */
       const frags = [];
@@ -124,29 +136,31 @@ export function layoutRich(blocks, st, width, m, opt = {}) {
         ls = Math.max(ls, f.look.lineSize);
       }
       if (!frags.length) { const mt = m.metrics(resolveFontKey(st.fontFamily, st.fontWeight, st.fontStyle), baseSize); above = mt.ascent; below = mt.descent; ls = baseSize; }
-      const h = Math.max(ls * lhf, above + below);
+      const h = Math.min(maxH, Math.max(ls * lhf, above + below)); // never taller than a page
       if (first && b.marker) {
         const ml = lookOf(b.runs[0]?.st || {});
         const mw = width1(b.marker, ml);
-        frags.unshift({ text: b.marker, look: { ...ml, under: false, strike: false, bg: undefined, href: undefined, rise: 0, size: ml.lineSize, id: 'marker' }, x: -Math.min(indent, mw + ml.lineSize * 0.4), w: mw });
+        frags.splice(0, 0, { text: b.marker, look: { ...ml, under: false, strike: false, bg: undefined, href: undefined, rise: 0, size: ml.lineSize, id: 'marker' }, x: -Math.min(indent, mw + ml.lineSize * 0.4), w: mw });
       }
       fragCount += frags.length;
       lines.push({ frags, w: x, h, base: (h - above - below) / 2 + above, left, align, p: bi, br, gap: 0 });
       segs = []; lw = 0; br = nextBr; first = false; prevSpace = null;
     };
+    const pushParts = (parts) => { for (let k = 0; k < parts.length; k++) segs.push(parts[k]); };
     for (const wd of words) {
-      if (fragCount > RICH_DEFAULTS.maxFragments) break;
+      if (full) break;
       if (wd.br) { endLine(true); continue; }
       const ww = wd.parts.reduce((s, p) => s + width1(p.text, p.look), 0);
       const sp = prevSpace ? width1(' ', prevSpace) : 0;
       if (segs.length && lw + sp + ww <= avail) {
         segs.push({ text: ' ', look: /** @type {Look} */ (prevSpace) });
-        segs.push(...wd.parts); lw += sp + ww;
+        pushParts(wd.parts); lw += sp + ww;
       } else {
         if (segs.length) endLine(false);
-        if (ww <= avail) { segs.push(...wd.parts); lw = ww; } else {
-          // a word wider than the line breaks by character
+        if (ww <= avail) { pushParts(wd.parts); lw = ww; } else {
+          // a word wider than the line breaks by character (the line cap stops a long word in a narrow box)
           for (const p of wd.parts) for (const ch of p.text) {
+            if (full) break;
             const cw = width1(ch, p.look);
             if (lw + cw > avail && segs.length) endLine(false);
             const last = segs[segs.length - 1];

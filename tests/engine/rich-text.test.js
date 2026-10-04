@@ -151,6 +151,7 @@ describe('rich text: hostile input stays bounded', async () => {
 import { render } from '../../src/engine/index.js';
 import { fontStore, report, texts } from '../helpers.js';
 import { textRows } from '../../src/exporters/regions.js';
+import { RICH_DEFAULTS } from '../../src/engine/items/rich.js';
 
 const rich = (value, extra = {}, data) => report([{ type: 'richtext', name: 'R', x: 0, y: 0, w: 300, h: 20, value, ...extra }], { data });
 const out = async (def) => render(def, { fontStore });
@@ -287,5 +288,30 @@ describe('rich text: data is escaped unless the item trusts it', () => {
     expect(textRows(m.pages[0].items)).toEqual(['<i>not italic</i>']);
     expect(bold(m)).toHaveLength(1);
     expect(m.pages[0].items.some(i => i.t === 'text' && /Italic/.test(i.font))).toBe(false);
+  });
+});
+
+describe('rich text: hostile layout stays bounded', () => {
+  const T = { timeout: 5000 };
+  const run = async (value, extra) => { const t0 = performance.now(); const m = await out(rich(value, extra)); return { m, ms: performance.now() - t0 }; };
+  const count = (m) => m.pages.reduce((s, p) => s + p.items.filter(i => i.t === 'text').length, 0);
+  it('a 1 MB word in a 2pt-wide box', T, async () => {
+    const { m, ms } = await run('x'.repeat(1 << 20), { w: 2 });
+    expect(ms).toBeLessThan(1500);
+    expect(count(m)).toBeLessThanOrEqual(RICH_DEFAULTS.maxLines);
+    expect(m.warnings.join(' ')).toMatch(/lines.*cut|cut/);
+  });
+  it('200k characters that change style every character', T, async () => {
+    const { m, ms } = await run('<b>a</b><i>b</i>'.repeat(100000));
+    expect(ms).toBeLessThan(1500);
+    expect(count(m)).toBeLessThanOrEqual(RICH_DEFAULTS.maxFragments);
+    expect(m.warnings.join(' ')).toMatch(/cut/);
+  });
+  it('font-size: 1e9 is clamped', T, async () => {
+    const { m, ms } = await run('<span style="font-size:1e9pt">big</span><h1><h1><h1><h1><h1><h1><h1><h1><h1><h1>deep</h1></h1></h1></h1></h1></h1></h1></h1></h1></h1>', { style: { lineHeight: 1e6 } });
+    expect(ms).toBeLessThan(1000);
+    const t = m.pages.flatMap(p => p.items.filter(i => i.t === 'text'));
+    for (const i of t) expect(i.size).toBeLessThanOrEqual(400);
+    expect(m.pages.length).toBeLessThan(10);
   });
 });
