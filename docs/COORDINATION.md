@@ -13,7 +13,6 @@ More than one AI agent is editing this repo at the same time. Read this file bef
 
 | Agent | Area | Files | Since |
 |---|---|---|---|
-| Claude Code (security: fail-closed open mode) | production with no sign-in fails closed; SQL in saved reports needs a designer | src/server/*, app/api/*, proxy.js, instrumentation.js, src/home/*, tests/engine/{perms,sql,users,security}.test.js, tests/e2e harness env/origin headers, docs/API.md, docs/DEPLOY*.md | 2026-10-04 |
 
 ## Design decisions (shared)
 
@@ -29,6 +28,8 @@ More than one AI agent is editing this repo at the same time. Read this file bef
 _(Write here if you need a change in a file someone else has claimed.)_
 
 ## Done
+
+- **Claude Code (security), 2026-10-04 IST**: production with no sign-in fails closed (401; PW_PUBLIC_READONLY=1 opt-in; PW_AUTH=proxy needs PW_PROXY_SECRET); SQL and internal-host sources need a designer at save and are stamp-checked at run; self origin only from PW_BASE_URL; strictUrl one-parse; reportFetch guards every browser data call; six review rounds, the last clean. Commits 2494077…355a8a5. Claims released.
 
 - **Claude Code (expression semantics), 2026-10-04 IST**: VB/SSRS semantics in src/engine/expr (DateAdd/DateDiff, banker's Round, decimal sums, .NET format strings, neutral currency default) and the importer's VB translation; conformance suite in tests/engine/conformance (vb-semantics, vb-aggregates, vb-dst). Committed on main. No claims left open.
 
