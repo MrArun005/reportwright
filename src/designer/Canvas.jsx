@@ -68,15 +68,25 @@ const shown = (v) => (v == null ? '' : String(v));
 export default function Canvas() {
   const def = useDesigner(s => s.def);
   const zoom = useDesigner(s => s.zoom);
-  const scale = zoom * PX;
   const bands = sectionList(def);
   // a body section with its own page may be wider (landscape): each band has its own width
   const widths = Object.fromEntries(bands.map(s => [s.key, bodyWidth(def, isBodyKey(s.key) ? s.key : 'body')]));
   const bw = Math.max(...Object.values(widths));
+  // zoom "fit": the page fills the canvas width (it follows the window)
+  const scrollRef = useRef(null);
+  const [fitW, setFitW] = useState(0);
+  useEffect(() => {
+    if (zoom !== 'fit' || !scrollRef.current) return;
+    const el = scrollRef.current;
+    const ro = new ResizeObserver(() => setFitW(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [zoom]);
+  const scale = zoom === 'fit' ? Math.max(0.3, Math.min(3, ((fitW || 900) - 80) / bw)) : zoom * PX;
   const [drag, setDrag] = useState(null); // {mode:'move', ids, dx, dy} | {mode:'resize', id, rect} | {mode:'band', section, h} | {mode:'col', id, col, w}
 
   return (
-    <div className="cscroll" onPointerDown={(e) => { if (e.target === e.currentTarget) useDesigner.getState().select({ kind: 'report' }); }}
+    <div className="cscroll" ref={scrollRef} onPointerDown={(e) => { if (e.target === e.currentTarget) useDesigner.getState().select({ kind: 'report' }); }}
       onPointerDownCapture={blurField}>
       <Ruler width={bw} scale={scale} />
       <div className="paper" style={{ width: bw * scale }} data-testid="paper">
@@ -136,6 +146,7 @@ function Band({ section, label, scale, bw: bandW, drag, setDrag }) {
   const cells = useDesigner(s => s.cells);
   const cellSize = useDesigner(s => s.cellSize);
   const masterId = useDesigner(s => s.def.master);
+  const readOnly = useDesigner(s => s.readOnly);
   const master = useReused(masterId);
   const mb = masterId ? masterBand(master, section) : null;
   const off = mb?.off || null; // the body of a content report: its items sit in the master's content placeholder
@@ -240,6 +251,7 @@ function Band({ section, label, scale, bw: bandW, drag, setDrag }) {
         onDrop={onDrop}
       >
         {sec.items.map(it => <AnyItem key={it.id} item={it} scale={scale} drag={drag} setDrag={setDrag} bw={bw} section={section} />)}
+        {!sec.items.length && isBodyKey(section) && !readOnly && !dropping && h * scale >= 40 && <div className="band-empty" data-testid="band-empty">{T('emptyBodyHint')}</div>}
         {marquee && <div className="marquee" style={{ left: marquee.x * scale, top: marquee.y * scale, width: marquee.w * scale, height: marquee.h * scale }} />}
         {drag?.mode === 'move' && !drag.guideParent && sec.items.some(i => drag.ids.includes(i.id)) && (drag.guides || []).map((g, i) => (
           g.x != null

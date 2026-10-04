@@ -105,7 +105,7 @@ export default function Outline() {
   });
 
   const rows = (list, parent, depth, section) => list.map((it, i) => {
-    const mark = drop?.id === it.id ? ` drop-${drop.where}` : '';
+    const mark = drop && drop.id != null && drop.id === it.id ? ` drop-${drop.where}` : ''; // an item from Ask AI may have no id yet
     return (
       <li key={it.id}>
         <div className={`trow outline-row${chosen.has(it.id) ? ' sel' : ''}${mark}`} style={{ paddingInlineStart: depth * 14 }} data-outline={it.name} data-outline-id={it.id} {...dragProps(it, i, parent, section)}>

@@ -47,6 +47,7 @@ const TOOLS = [
 ];
 
 function Toolbox({ T, hide = [] }) {
+  const name = (type) => (T(`item_${type}`) === `item_${type}` ? ITEMS[type].label : T(`item_${type}`));
   const add = (type) => {
     const def = useDesigner.getState().def;
     const items = secOf(def, 'body').items;
@@ -59,16 +60,24 @@ function Toolbox({ T, hide = [] }) {
       <div className="pane-body tools">
         {TOOLS.filter(t => !hide.includes(t.type)).map(t => (
           <div key={t.type} className="tool" draggable role="button" tabIndex={0} data-tool={t.type}
-            title={T('toolHint')}
+            title={`${name(t.type)} · ${T('toolHint')}`}
             onDragStart={(e) => { e.dataTransfer.setData(MIME_TOOL, t.type); e.dataTransfer.effectAllowed = 'copy'; }}
-            onClick={() => add(t.type)} onKeyDown={(e) => { if (e.key === 'Enter') add(t.type); }}>
-            {t.icon}{T(`item_${t.type}`) === `item_${t.type}` ? ITEMS[t.type].label : T(`item_${t.type}`)}
+            onClick={() => add(t.type)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); add(t.type); } }}>
+            {t.icon}<span className="tool-nm">{name(t.type)}</span>
           </div>
         ))}
       </div>
     </div>
   );
 }
+
+// drawn, not the ↶ ↷ characters: the UI font has no such glyphs and the fallback looked like an empty box
+const UNDO_ICON = <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M4.5 3L1.8 5.7l2.7 2.7" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" /><path d="M2.2 5.7h6.3a3.3 3.3 0 0 1 0 6.6H6" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" /></svg>;
+const REDO_ICON = <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" style={{ transform: 'scaleX(-1)' }}><path d="M4.5 3L1.8 5.7l2.7 2.7" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" /><path d="M2.2 5.7h6.3a3.3 3.3 0 0 1 0 6.6H6" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" /></svg>;
+/** The zoom the user picked last (this browser only); "fit" fills the canvas width. */
+const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+function savedZoom() { try { const z = localStorage.getItem('pw.designer.zoom'); return z === 'fit' ? 'fit' : ZOOMS.includes(Number(z)) ? Number(z) : null; } catch { return null; } }
+function keepZoom(z) { try { localStorage.setItem('pw.designer.zoom', String(z)); } catch { /* private window */ } }
 
 function isTyping(e) {
   // inside a shadow root (the embed) e.target is the host element: the real target is the first in the path
@@ -146,6 +155,7 @@ export default function Designer({ id, initial, lang: langIn, embed = null }) {
     el.textContent = fontCss;
   }, [embed, fontCss]);
   useEffect(() => { customFonts().then(list => useDesigner.getState().setUi({ fonts: list })); }, []);
+  useEffect(() => { const z = savedZoom(); if (z != null) useDesigner.getState().setUi({ zoom: z }); }, []);
   const canUndo = useDesigner(s => s.past.length > 0);
   const canRedo = useDesigner(s => s.future.length > 0);
   const st = useDesigner.getState;
@@ -216,8 +226,8 @@ export default function Designer({ id, initial, lang: langIn, embed = null }) {
         {!readOnly && <span className={`saved${saved ? '' : ' dirty'}`} data-testid="save-state">{saving ? T('saving') : saved ? T('saved') : T('unsaved')}</span>}
         {saveError && <span className="err">{saveError}</span>}
         <div className="spacer" />
-        <button className="btn sm icon" title={T('undo')} aria-label={T('undo')} disabled={!canUndo} onClick={() => st().undo()}>↶</button>
-        <button className="btn sm icon" title={T('redo')} aria-label={T('redo')} disabled={!canRedo} onClick={() => st().redo()}>↷</button>
+        <button className="btn sm icon" title={T('undo')} aria-label={T('undo')} disabled={!canUndo} onClick={() => st().undo()}>{UNDO_ICON}</button>
+        <button className="btn sm icon" title={T('redo')} aria-label={T('redo')} disabled={!canRedo} onClick={() => st().redo()}>{REDO_ICON}</button>
         <div className="seg" role="group" aria-label={T('mode')}>
           <button aria-pressed={tab === 'design'} onClick={() => st().setUi({ tab: 'design' })}>{T('design')}</button>
           <button aria-pressed={tab === 'preview'} onClick={() => st().setUi({ tab: 'preview' })} data-testid="tab-preview">{T('preview')}</button>
@@ -252,8 +262,9 @@ export default function Designer({ id, initial, lang: langIn, embed = null }) {
           <section className="dcenter">
             <div className="cbar">
               <label className="check">{T('zoom')}
-                <select className="select" style={{ width: 80, height: 24 }} value={zoom} onChange={e => st().setUi({ zoom: Number(e.target.value) })}>
-                  {[0.5, 0.75, 1, 1.25, 1.5, 2].map(z => <option key={z} value={z}>{Math.round(z * 100)}%</option>)}
+                <select className="select" style={{ width: 'auto', minWidth: 80, height: 24 }} value={zoom} data-testid="zoom" onChange={e => { const z = e.target.value === 'fit' ? 'fit' : Number(e.target.value); st().setUi({ zoom: z }); keepZoom(z); }}>
+                  <option value="fit">{T('zoomFit')}</option>
+                  {ZOOMS.map(z => <option key={z} value={z}>{Math.round(z * 100)}%</option>)}
                 </select>
               </label>
               <label className="check"><input type="checkbox" checked={snap} onChange={e => st().setUi({ snap: e.target.checked })} />{T('snapToGrid')}</label>

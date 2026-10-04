@@ -25,8 +25,11 @@ export const isBodyKey = (key) => String(key).split(':')[0] === 'body';
 /** Every band of the report, in page order. */
 export function sectionList(def) {
   const b = def?.sections?.body;
-  const bodies = Array.isArray(b) ? b.map((x, i) => ({ key: i ? `body:${i}` : 'body', label: x?.name || `Section ${i + 1}`, index: i })) : [{ key: 'body', label: 'Body', index: 0 }];
-  return [SECTIONS[0], ...bodies, SECTIONS[2]];
+  // the built-in band names in the UI language (a body section's own name stays as written)
+  const lang = typeof useDesigner === 'function' ? useDesigner.getState().lang : 'en';
+  const L = (k, en) => { const s = t(lang, k); return s === k ? en : s; };
+  const bodies = Array.isArray(b) ? b.map((x, i) => ({ key: i ? `body:${i}` : 'body', label: x?.name || L('band_section', `Section ${i + 1}`).replace('{n}', i + 1), index: i })) : [{ key: 'body', label: L('band_body', 'Body'), index: 0 }];
+  return [{ ...SECTIONS[0], label: L('band_pageHeader', SECTIONS[0].label) }, ...bodies, { ...SECTIONS[2], label: L('band_pageFooter', SECTIONS[2].label) }];
 }
 /** The page of a band: the report's page, with a body section's own page settings on top. */
 export function pageOf(def, key = 'body') {

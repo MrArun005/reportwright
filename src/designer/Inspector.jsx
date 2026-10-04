@@ -21,6 +21,8 @@ function useTk() { const lang = useDesigner(s => s.lang); return (k, fb) => { co
  * A property's label in the UI language: its labelKey, else p_<itemType>_<key> (a label special to one item type),
  * else p_<key>, else the English label in the item spec. Style properties use the item type "style".
  */
+/** Shown when a property is not set: the value the engine uses then (so a select never reads "—" for the default). */
+const DEFAULT_SHOWN = { chart: { chartType: 'column', legend: 'bottom' } };
 const propLabel = (tk, spec, type) => (spec.labelKey ? tk(spec.labelKey, spec.label) : tk(`p_${type}_${spec.key}`, tk(`p_${spec.key}`, spec.label)));
 /** Select options in the UI language: o_<propKey>_<value>, else the option's own label (or its value). */
 const optLabels = (tk, key, options) => options.map(o => (typeof o === 'string' ? { value: o, label: tk(`o_${key}_${o}`, o) } : { ...o, label: tk(`o_${key}_${o.value}`, o.label) }));
@@ -84,7 +86,7 @@ function PropEditor({ p: spec, value, onChange, openExpr, dataSet, item }) {
     case 'stylename': return <Field label={p.label}><StyleNameSelect value={value} onChange={onChange} /></Field>;
     case 'overflowTarget': return <Field label={p.label}><OverflowTarget value={value} onChange={onChange} self={item?.name} /></Field>;
     case 'series': return <SeriesEditor value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet} chartType={item?.chartType || 'column'} />;
-    case 'stacked': return <Field label={p.label}><Select value={value === 'percent' ? 'percent' : value ? 'stacked' : ''} options={[{ value: '', label: 'Side by side' }, { value: 'stacked', label: 'Stacked' }, { value: 'percent', label: 'Stacked to 100%' }]} onChange={v => onChange(v === 'percent' ? 'percent' : v ? true : undefined)} /></Field>;
+    case 'stacked': return <Field label={p.label}><Select value={value === 'percent' ? 'percent' : value ? 'stacked' : ''} options={[{ value: '', label: T('i_sideBySide') }, { value: 'stacked', label: T('i_stacked') }, { value: 'percent', label: T('i_stacked100') }]} onChange={v => onChange(v === 'percent' ? 'percent' : v ? true : undefined)} /></Field>;
     case 'axes': return <AxesEditor value={value} onChange={onChange} chartType={item?.chartType || 'column'} hasSecondary={(item?.series || []).some(sr => sr.axis === 'secondary')} />;
     case 'overlays': return <OverlaysEditor value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet} chartType={item?.chartType || 'column'} />;
     case 'params': return <ParamsEditor label={p.label} value={value} onChange={onChange} />;
@@ -184,13 +186,19 @@ function ItemProps({ item, section, openExpr }) {
   const def = useDesigner(s => s.def);
   const spec = ITEMS[item.type];
   const [nameErr, setNameErr] = useState(null);
+  // "Find a property": only the properties whose label (in the UI language) or key has the text
+  const [find, setFind] = useState('');
+  const q = find.trim().toLowerCase();
+  const hit = (p, type) => !q || propLabel(tk, p, type).toLowerCase().includes(q) || p.key.toLowerCase().includes(q);
+  const props = (spec?.props || []).filter(p => (!p.showIf || p.showIf(item)) && hit(p, item.type));
+  const styleProps = stylePropsFor(item.type).filter(p => hit(p, 'style'));
   const set = (k, v) => updateItem(item.id, it => setOrDelete(it, k, v), `${item.id}.${k}`);
   const setStyle = (k, v) => updateItem(item.id, it => { it.style ||= {}; setOrDelete(it.style, k, v); }, `${item.id}.style.${k}`);
   // position and size: an item placed below its band grows the band to fit, as dragging does
   const setGeo = (k, v) => updateItem(item.id, (it, d, _s, f) => { it[k] = v; growToFit(d, f); }, `${item.id}.${k}`);
   const rename = (v) => {
     let taken = false; walk(def, (i) => { if (i.id !== item.id && i.name === v) taken = true; });
-    setNameErr(!/^[A-Za-z_][\w]*$/.test(v) ? 'Use letters, digits and _' : taken ? 'This name is in use' : null);
+    setNameErr(!/^[A-Za-z_][\w]*$/.test(v) ? T('i_nameChars') : taken ? T('i_nameTaken') : null);
     // a published report part follows its item's new name
     if (/^[A-Za-z_][\w]*$/.test(v) && !taken) useDesigner.getState().apply(d => { const f = findItem(d, item.id); if (!f) return; for (const p of d.parts || []) if (p.item === f.item.name) p.item = v; f.item.name = v; }, `${item.id}.name`);
   };
@@ -199,77 +207,82 @@ function ItemProps({ item, section, openExpr }) {
     <>
       <div className="insp-head">
         <div style={{ minWidth: 0 }}>
-          <TextInput value={item.name} onChange={rename} aria-label="Item name" />
+          <TextInput value={item.name} onChange={rename} aria-label={T('i_itemName')} />
           {nameErr && <div className="err">{nameErr}</div>}
         </div>
-        <span className="ty">{spec?.label || item.type}</span>
+        <span className="ty">{tk(`item_${item.type}`, spec?.label || item.type)}</span>
       </div>
-      {item.type === 'chart' && (
+      <div className="cat insp-find"><input type="search" className="input" value={find} onChange={e => setFind(e.target.value)} placeholder={T('i_findProperty')} aria-label={T('i_findProperty')} data-testid="find-property" /></div>
+      {q && !props.length && !styleProps.length && <div className="cat"><span className="hint">{T('i_noPropMatch')}</span></div>}
+      {!q && item.type === 'chart' && (
         <div className="cat">
-          <button className="btn sm" data-testid="open-chart-gallery" onClick={() => useDesigner.getState().setUi({ wizard: { mode: 'edit', id: item.id } })}>Chart gallery and data preview…</button>
-          <span className="hint">See every chart type drawn with your API data, then pick one.</span>
+          <button className="btn sm" data-testid="open-chart-gallery" onClick={() => useDesigner.getState().setUi({ wizard: { mode: 'edit', id: item.id } })}>{T('i_chartGallery')}</button>
+          <span className="hint">{T('i_chartGalleryHint')}</span>
         </div>
       )}
-      <div className="cat">
-        <h5>Position</h5>
+      {!q && <div className="cat">
+        <h5>{T('i_position')}</h5>
         <div className="grid2">
           <Geo label="X" value={item.x} onChange={v => setGeo('x', Math.max(0, v))} />
           <Geo label="Y" value={item.y} onChange={v => setGeo('y', Math.max(0, v))} />
-          {item.type !== 'table' && <Geo label="Width" value={item.w} onChange={v => setGeo('w', Math.max(0, v))} />}
-          {item.type !== 'table' && <Geo label="Height" value={item.h} onChange={v => setGeo('h', Math.max(0, v))} />}
+          {item.type !== 'table' && <Geo label={T('i_width')} value={item.w} onChange={v => setGeo('w', Math.max(0, v))} />}
+          {item.type !== 'table' && <Geo label={T('i_height')} value={item.h} onChange={v => setGeo('h', Math.max(0, v))} />}
           {item.type === 'table' && <Field label={T('tableSize')} hint={T('tableSizeHint')}><TextInput value={`${round(item.w)} × ${round(item.h)} pt`} readOnly data-testid="table-size" /></Field>}
         </div>
-        <div className="hint">In the {(sectionList(def).find(s => s.key === section)?.label || section).toLowerCase()}{findItem(def, item.id)?.parent ? `, inside ${findItem(def, item.id).parent.name}` : ''}.</div>
+        <div className="hint">{(() => { const band = sectionList(def).find(s => s.key === section)?.label || section, parent = findItem(def, item.id)?.parent; return parent ? T('i_whereParent', { band, parent: parent.name }) : T('i_where', { band }); })()}</div>
         <LayerField item={item} />
-      </div>
-      {item.type === 'part' && <PartInstance item={item} />}
-      {item.partProps && typeof item.partProps === 'object' && <PartValues item={item} />}
-      {groupBy((spec?.props || []).filter(p => !p.showIf || p.showIf(item))).map(([cat, ps]) => (
+      </div>}
+      {!q && item.type === 'part' && <PartInstance item={item} />}
+      {!q && item.partProps && typeof item.partProps === 'object' && <PartValues item={item} />}
+      {groupBy(props).map(([cat, ps]) => (
         <div className="cat" key={cat}>
           <h5>{catLabel(tk, cat)}</h5>
-          {ps.map(p => <PropEditor key={p.key} p={p} value={item[p.key]} onChange={v => set(p.key, v)} openExpr={openExpr} dataSet={dataSet} item={item} />)}
+          {ps.map(p => <PropEditor key={p.key} p={p} value={item[p.key] ?? DEFAULT_SHOWN[item.type]?.[p.key]} onChange={v => set(p.key, v)} openExpr={openExpr} dataSet={dataSet} item={item} />)}
         </div>
       ))}
+      {!q && <>
       {item.type === 'image' && <EmbeddedPicker item={item} onPick={v => set('src', v)} />}
       {item.type === 'table' && <TableProps table={item} openExpr={openExpr} />}
       {item.type === 'matrix' && <PivotEditor item={item} openExpr={openExpr} />}
       {(item.type === 'list' || item.type === 'chart') && <SortFilterEditor item={item} />}
       {item.type === 'matrix' && <SortFilterEditor item={item} noSort />}
-      {(item.type === 'list' || item.type === 'container') && <div className="cat"><span className="hint">Drag tools and fields into the {item.type}. Items inside a list repeat for each record{item.groupBy ? ' (one row per group)' : ''}. A table inside a list can filter with =Parent.field.</span></div>}
-      <StyleCats props={stylePropsFor(item.type)} style={item.style} onSet={setStyle} openExpr={openExpr} dataSet={dataSet} />
-      {item.type !== 'part' && item.type !== 'placeholder' && <PublishPart item={item} />}
+      </>}
+      {!q && (item.type === 'list' || item.type === 'container') && <div className="cat"><span className="hint">{T(item.groupBy ? 'i_nestHintGrouped' : 'i_nestHint', { type: tk(`item_${item.type}`, item.type).toLowerCase() })}</span></div>}
+      <StyleCats props={styleProps} style={item.style} onSet={setStyle} openExpr={openExpr} dataSet={dataSet} />
+      {!q && item.type !== 'part' && item.type !== 'placeholder' && <PublishPart item={item} />}
       <div className="cat"><div className="btnrow">
-        <button className="btn sm" onClick={duplicateSelection}>Duplicate <span className="kbd">⌘D</span></button>
-        <button className="btn sm danger" onClick={deleteSelection}>Delete <span className="kbd">Del</span></button>
+        <button className="btn sm" onClick={duplicateSelection}>{T('i_duplicate')} <span className="kbd">⌘D</span></button>
+        <button className="btn sm danger" onClick={deleteSelection}>{T('i_delete')} <span className="kbd">Del</span></button>
       </div></div>
     </>
   );
 }
 
 function TableProps({ table, openExpr }) {
+  const T = useT();
   return (
     <>
       <div className="cat">
-        <h5>Columns</h5>
+        <h5>{T('i_columns')}</h5>
         <div className="grid4">
           {table.columns.map((c, i) => (
             <Field key={i} label={`#${i + 1}`}><NumberInput value={c.width} step={1} onChange={v => tableSetColumnWidth(table.id, i, v, `${table.id}.col${i}`)} /></Field>
           ))}
         </div>
         <div className="btnrow">
-          <button className="btn sm" onClick={() => tableInsertColumn(table.id, table.columns.length)}>Add column</button>
+          <button className="btn sm" onClick={() => tableInsertColumn(table.id, table.columns.length)}>{T('i_addColumn')}</button>
         </div>
-        <div className="hint">Total width {round(table.columns.reduce((s, c) => s + c.width, 0))} pt. Drag a column edge on the canvas to resize.</div>
+        <div className="hint">{T('i_tableWidthHint', { w: round(table.columns.reduce((s, c) => s + c.width, 0)) })}</div>
       </div>
       <div className="cat">
-        <h5>Rows</h5>
+        <h5>{T('i_rows')}</h5>
         {tableParts(table).map(({ part, label }) => (
           <div key={part} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>{label} rows: <b>{(rowsOf(table, part) || []).length}</b></span>
-            <button className="btn sm" onClick={() => tableInsertRow(table.id, part, (rowsOf(table, part) || []).length)}>Add</button>
+            <span>{T('i_partRows', { part: label })} <b>{(rowsOf(table, part) || []).length}</b></span>
+            <button className="btn sm" onClick={() => tableInsertRow(table.id, part, (rowsOf(table, part) || []).length)}>{T('i_add')}</button>
           </div>
         ))}
-        <div className="hint">Click a cell to edit its value and style.</div>
+        <div className="hint">{T('i_clickCell')}</div>
       </div>
       <GroupsEditor table={table} openExpr={openExpr} />
       <SortFilterEditor item={table} />
@@ -337,13 +350,13 @@ function PivotEditor({ item, openExpr }) {
           <Field label={T('pivotGroupBy')}>{exprField(list, i, 'expr', g.expr, T('pivotGroupBy'))}</Field>
           <div className="grid2">
             <Field label={T('pivotName')}><TextInput value={g.name || ''} onChange={v => setK(list, i, 'name', v.replace(/\W/g, ''))} /></Field>
-            <Field label={T('pivotSort')}><Select value={g.sort || ''} options={['asc', 'desc']} allowEmpty onChange={v => setK(list, i, 'sort', v)} /></Field>
+            <Field label={T('pivotSort')}><Select value={g.sort || ''} options={[{ value: 'asc', label: T('dsAsc') }, { value: 'desc', label: T('dsDesc') }]} allowEmpty onChange={v => setK(list, i, 'sort', v)} /></Field>
             <Field label={T('pivotTotal')}><Select value={g.total || 'none'} options={totals} onChange={v => setK(list, i, 'total', v === 'none' ? undefined : v)} /></Field>
             {list === 'rowGroups' && <Field label={T('pivotWidth')}><NumberInput value={g.width ?? item.rowHeaderWidth ?? 110} step={1} onChange={v => setK(list, i, 'width', Math.max(12, v))} /></Field>}
           </div>
           <Field label={T('pivotLabel')}>{exprField(list, i, 'label', g.label, T('pivotLabel'))}</Field>
           {list === 'rowGroups' && <Field label={T('pivotHeader')}><TextInput value={g.header || ''} onChange={v => setK(list, i, 'header', v)} /></Field>}
-          {g.total && g.total !== 'none' && <Field label={T('pivotTotalLabel')}><TextInput value={g.totalLabel ?? ''} onChange={v => setK(list, i, 'totalLabel', v)} placeholder="Total" aria-label={`${T('pivotTotalLabel')} ${i + 1}`} /></Field>}
+          {g.total && g.total !== 'none' && <Field label={T('pivotTotalLabel')}><TextInput value={g.totalLabel ?? ''} onChange={v => setK(list, i, 'totalLabel', v)} placeholder={T('i_total')} aria-label={`${T('pivotTotalLabel')} ${i + 1}`} /></Field>}
           {i < spec[list].length - 1 && <Check label={T('pivotCollapsible')} checked={g.collapsible} onChange={v => setK(list, i, 'collapsible', v)} />}
           {g.collapsible && <Check label={T('pivotStartCollapsed')} checked={g.initiallyCollapsed} onChange={v => setK(list, i, 'initiallyCollapsed', v)} />}
         </div>
@@ -407,22 +420,22 @@ function GroupsEditor({ table, openExpr }) {
   const numericCols = () => (table.detail?.[0]?.cells || []).map((c, ci) => [ci, /^=Fields\.(\w+)$/.exec(c?.value || '')?.[1]]).filter(([, f]) => f && fields.find(x => x.name === f)?.type === 'number');
   return (
     <div className="cat">
-      <h5>Groups</h5>
+      <h5>{T('i_groups')}</h5>
       {(table.groups || []).map((g, i) => (
         <div className="group-card" key={i}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><b>{i + 1}. {g.name}</b>
-            <button className="btn sm ghost danger" onClick={() => tableRemoveGroup(table.id, i)}>Remove</button></div>
+            <button className="btn sm ghost danger" onClick={() => tableRemoveGroup(table.id, i)}>{T('i_remove')}</button></div>
           <div className="grid2">
-            <Field label="Name (scope)"><TextInput value={g.name} onChange={v => setG(i, 'name', v.replace(/\W/g, ''))} /></Field>
-            <Field label="Sort groups"><Select value={g.sort || ''} options={['asc', 'desc']} allowEmpty onChange={v => setG(i, 'sort', v)} /></Field>
+            <Field label={T('i_groupName')}><TextInput value={g.name} onChange={v => setG(i, 'name', v.replace(/\W/g, ''))} /></Field>
+            <Field label={T('i_sortGroups')}><Select value={g.sort || ''} options={[{ value: 'asc', label: T('dsAsc') }, { value: 'desc', label: T('dsDesc') }]} allowEmpty onChange={v => setG(i, 'sort', v)} /></Field>
           </div>
-          <Field label="Group by"><ExprInput value={g.expr} onChange={v => setG(i, 'expr', v)} onOpen={() => openExpr({ value: g.expr, dataSet: table.dataSet, onSave: v => setG(i, 'expr', v), title: 'Group by' })} /></Field>
-          <Field label="Sort groups by (empty: the group value)"><ExprInput value={g.sortBy || ''} onChange={v => setG(i, 'sortBy', v)} onOpen={() => openExpr({ value: g.sortBy || '', dataSet: table.dataSet, onSave: v => setG(i, 'sortBy', v), title: 'Sort groups by, e.g. =Sum(Fields.amount)' })} /></Field>
-          <Field label="Page break"><Select value={g.pageBreak || ''} options={[{ value: 'between', label: 'Between groups' }, { value: 'after', label: 'After each group' }]} allowEmpty onChange={v => setG(i, 'pageBreak', v)} /></Field>
-          <Check label="Keep the group on one page" checked={g.keepTogether} onChange={v => setG(i, 'keepTogether', v)} />
+          <Field label={T('i_groupBy')}><ExprInput value={g.expr} onChange={v => setG(i, 'expr', v)} onOpen={() => openExpr({ value: g.expr, dataSet: table.dataSet, onSave: v => setG(i, 'expr', v), title: T('i_groupBy') })} /></Field>
+          <Field label={T('i_sortGroupsBy')}><ExprInput value={g.sortBy || ''} onChange={v => setG(i, 'sortBy', v)} onOpen={() => openExpr({ value: g.sortBy || '', dataSet: table.dataSet, onSave: v => setG(i, 'sortBy', v), title: T('i_sortGroupsByTitle') })} /></Field>
+          <Field label={T('i_pageBreak')}><Select value={g.pageBreak || ''} options={[{ value: 'between', label: T('i_pbBetween') }, { value: 'after', label: T('i_pbAfter') }]} allowEmpty onChange={v => setG(i, 'pageBreak', v)} /></Field>
+          <Check label={T('i_keepGroup')} checked={g.keepTogether} onChange={v => setG(i, 'keepTogether', v)} />
           <Check label={T('groupRepeatHeader')} checked={g.repeatHeader} onChange={v => setG(i, 'repeatHeader', v)} />
-          <Check label="Drill-down: show a toggle" checked={g.collapsible} onChange={v => setG(i, 'collapsible', v)} />
-          {g.collapsible && <Check label="Start collapsed" checked={g.initiallyCollapsed} onChange={v => setG(i, 'initiallyCollapsed', v)} />}
+          <Check label={T('i_drillToggle')} checked={g.collapsible} onChange={v => setG(i, 'collapsible', v)} />
+          {g.collapsible && <Check label={T('i_startCollapsed')} checked={g.initiallyCollapsed} onChange={v => setG(i, 'initiallyCollapsed', v)} />}
           <Field label={T('groupParent')} hint={T('groupParentHint')}><ExprInput value={g.parent || ''} onChange={v => setG(i, 'parent', v)} onOpen={() => openExpr({ value: g.parent || '', dataSet: table.dataSet, onSave: v => setG(i, 'parent', v), title: T('groupParent') })} placeholder="=Fields.managerId" /></Field>
           {g.parent && <div className="grid2">
             <Field label={T('groupIndent')}><NumberInput value={g.indent || 0} step={1} onChange={v => setG(i, 'indent', Math.max(0, v) || undefined)} /></Field>
@@ -432,10 +445,10 @@ function GroupsEditor({ table, openExpr }) {
         </div>
       ))}
       <div className="expr-row">
-        <Select value={pick} options={fields.map(f => f.name)} allowEmpty onChange={v => setPick(v || '')} aria-label="Field to group by" />
-        <button className="btn sm" disabled={!pick} onClick={() => { tableAddGroup(table.id, pick, numericCols()); setPick(''); }}>Add group</button>
+        <Select value={pick} options={fields.map(f => f.name)} allowEmpty onChange={v => setPick(v || '')} aria-label={T('i_fieldToGroupBy')} />
+        <button className="btn sm" disabled={!pick} onClick={() => { tableAddGroup(table.id, pick, numericCols()); setPick(''); }}>{T('i_addGroup')}</button>
       </div>
-      <div className="hint">Use the group name as a scope: Sum(Fields.amount, "{(table.groups || [])[0]?.name || 'Region'}").</div>
+      <div className="hint">{T('i_groupScopeHint', { name: (table.groups || [])[0]?.name || 'Region' })}</div>
     </div>
   );
 }
@@ -481,28 +494,28 @@ function SeriesEditor({ value, onChange, openExpr, dataSet, chartType }) {
   const fin = FINANCIAL.has(chartType);
   return (
     <div style={{ display: 'grid', gap: 6 }}>
-      <span className="hint">Series: one value per category, usually an aggregate such as =Sum(Fields.amount).{fin ? ' A candlestick or OHLC series takes open, high, low and close.' : ''}</span>
+      <span className="hint">{T('i_seriesHint')}{fin ? ` ${T('i_seriesHintFin')}` : ''}</span>
       {list.map((sr, i) => {
         const range = sr.low != null && sr.high != null && !fin;
         return (
           <div className="group-card" key={i} data-testid={`series-${i}`}>
             <div className="expr-row">
-              <TextInput value={sr.name} onChange={v => set(i, 'name', v)} aria-label="Series name" placeholder="Name" />
-              <input type="color" value={/^#[0-9a-f]{6}$/i.test(sr.color || '') ? sr.color : '#2563eb'} onChange={e => set(i, 'color', e.target.value)} aria-label="Series color" style={{ width: 26, height: 26, border: '1px solid var(--line)', borderRadius: 5, padding: 0 }} />
-              <button className="btn sm ghost danger" onClick={() => onChange(list.filter((_, j) => j !== i))} aria-label="Remove series">✕</button>
+              <TextInput value={sr.name} onChange={v => set(i, 'name', v)} aria-label={T('i_seriesName')} placeholder={T('i_name')} />
+              <input type="color" value={/^#[0-9a-f]{6}$/i.test(sr.color || '') ? sr.color : '#2563eb'} onChange={e => set(i, 'color', e.target.value)} aria-label={T('i_seriesColor')} style={{ width: 26, height: 26, border: '1px solid var(--line)', borderRadius: 5, padding: 0 }} />
+              <button className="btn sm ghost danger" onClick={() => onChange(list.filter((_, j) => j !== i))} aria-label={T('i_removeSeries')}>✕</button>
             </div>
-            {fin ? <>{expr(sr, i, 'open', 'Open', '=Sum(Fields.open)')}{expr(sr, i, 'high', 'High', '=Max(Fields.high)')}{expr(sr, i, 'low', 'Low', '=Min(Fields.low)')}{expr(sr, i, 'close', 'Close', '=Sum(Fields.close)')}</>
-              : range ? <>{expr(sr, i, 'low', 'From (low)', '=Min(Fields.amount)')}{expr(sr, i, 'high', 'To (high)', '=Max(Fields.amount)')}</>
+            {fin ? <>{expr(sr, i, 'open', T('i_open'), '=Sum(Fields.open)')}{expr(sr, i, 'high', T('i_high'), '=Max(Fields.high)')}{expr(sr, i, 'low', T('i_low'), '=Min(Fields.low)')}{expr(sr, i, 'close', T('i_close'), '=Sum(Fields.close)')}</>
+              : range ? <>{expr(sr, i, 'low', T('i_fromLow'), '=Min(Fields.amount)')}{expr(sr, i, 'high', T('i_toHigh'), '=Max(Fields.amount)')}</>
                 : <ExprInput value={sr.value} onChange={v => set(i, 'value', v)} onOpen={() => openExpr({ value: sr.value, dataSet, onSave: v => set(i, 'value', v), title: `Series ${sr.name || i + 1}` })} placeholder="=Sum(Fields.amount)" />}
-            {chartType === 'bubble' && expr(sr, i, 'size', 'Bubble size', '=Fields.population')}
+            {chartType === 'bubble' && expr(sr, i, 'size', T('i_bubbleSize'), '=Fields.population')}
             {COMBO.has(chartType) && (
               <div className="grid2">
-                <Field label="Draw as"><Select value={sr.type} allowEmpty options={chartType === 'bar' ? ['bar', 'line', 'area'] : ['column', 'line', 'area']} onChange={v => set(i, 'type', v)} aria-label="Series type" /></Field>
-                <Field label="Axis"><Select value={sr.axis || 'primary'} options={[{ value: 'primary', label: 'Primary' }, { value: 'secondary', label: 'Secondary' }]} onChange={v => set(i, 'axis', v === 'primary' ? undefined : v)} aria-label="Series axis" /></Field>
+                <Field label={T('i_drawAs')}><Select value={sr.type} allowEmpty options={(chartType === 'bar' ? ['bar', 'line', 'area'] : ['column', 'line', 'area']).map(v => ({ value: v, label: T(`o_chartType_${v}`) }))} onChange={v => set(i, 'type', v)} aria-label={T('i_seriesType')} /></Field>
+                <Field label={T('i_axis')}><Select value={sr.axis || 'primary'} options={[{ value: 'primary', label: T('axisPrimary') }, { value: 'secondary', label: T('axisSecondary') }]} onChange={v => set(i, 'axis', v === 'primary' ? undefined : v)} aria-label={T('i_seriesAxis')} /></Field>
                 {['line', 'area'].includes(sr.type || chartType) && <Field label={T('seriesLine')}><Select value={sr.line} allowEmpty options={[{ value: 'straight', label: T('lineStraight') }, { value: 'smooth', label: T('lineSmooth') }, { value: 'step', label: T('lineStep') }]} onChange={v => set(i, 'line', v)} aria-label={`${T('seriesLine')} ${i + 1}`} /></Field>}
               </div>
             )}
-            {COMBO.has(chartType) && !fin && <Check label="Range (from – to)" checked={range} onChange={on => onChange(list.map((x, j) => {
+            {COMBO.has(chartType) && !fin && <Check label={T('i_range')} checked={range} onChange={on => onChange(list.map((x, j) => {
               if (j !== i) return x;
               const n = { ...x };
               if (on) { n.low = x.value || ''; n.high = x.value || ''; delete n.value; } else { n.value = x.low || ''; delete n.low; delete n.high; }
@@ -511,13 +524,14 @@ function SeriesEditor({ value, onChange, openExpr, dataSet, chartType }) {
           </div>
         );
       })}
-      <div><button className="btn sm" onClick={() => onChange([...list, { name: `Series ${list.length + 1}`, value: '' }])}>Add series</button></div>
+      <div><button className="btn sm" onClick={() => onChange([...list, { name: `Series ${list.length + 1}`, value: '' }])}>{T('i_addSeries')}</button></div>
     </div>
   );
 }
 
 const optNum = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? undefined : Number(v));
 function AxesEditor({ value, onChange, chartType, hasSecondary }) {
+  const T = useT();
   const axes = value || {};
   const set = (ax, k, v) => {
     const a = { ...(axes[ax] || {}) };
@@ -527,7 +541,7 @@ function AxesEditor({ value, onChange, chartType, hasSecondary }) {
     onChange(Object.keys(n).length ? n : undefined);
   };
   const round = ['radar', 'polar', 'gauge'].includes(chartType);
-  const list = round ? [['y', chartType === 'gauge' ? 'Scale' : 'Values']] : [['x', ['scatter', 'bubble'].includes(chartType) ? 'X axis' : 'Category axis (x)'], ['y', 'Value axis (y)'], ...(hasSecondary ? [['y2', 'Secondary value axis']] : [])];
+  const list = round ? [['y', T(chartType === 'gauge' ? 'i_axScale' : 'i_axValues')]] : [['x', T(['scatter', 'bubble'].includes(chartType) ? 'i_axX' : 'i_axCategory')], ['y', T('i_axValue')], ...(hasSecondary ? [['y2', T('i_axSecondary')]] : [])];
   return (
     <div style={{ display: 'grid', gap: 6 }}>
       {list.map(([ax, label]) => {
@@ -536,66 +550,69 @@ function AxesEditor({ value, onChange, chartType, hasSecondary }) {
         return (
           <div className="group-card" key={ax} data-testid={`axis-${ax}`}>
             <b style={{ fontSize: 11 }}>{label}</b>
-            {!round && <Field label="Title"><TextInput value={a.title} onChange={v => set(ax, 'title', v)} aria-label={`${label} title`} /></Field>}
+            {!round && <Field label={T('i_title')}><TextInput value={a.title} onChange={v => set(ax, 'title', v)} aria-label={T('i_axisTitleAria', { axis: label })} /></Field>}
             {valueAxis && <>
               <div className="grid2">
-                <Field label="Minimum"><TextInput value={a.min ?? ''} onChange={v => set(ax, 'min', optNum(v))} aria-label={`${label} minimum`} placeholder="auto" /></Field>
-                <Field label="Maximum"><TextInput value={a.max ?? ''} onChange={v => set(ax, 'max', optNum(v))} aria-label={`${label} maximum`} placeholder="auto" /></Field>
+                <Field label={T('i_minimum')}><TextInput value={a.min ?? ''} onChange={v => set(ax, 'min', optNum(v))} aria-label={T('i_axisMinAria', { axis: label })} placeholder={T('i_auto')} /></Field>
+                <Field label={T('i_maximum')}><TextInput value={a.max ?? ''} onChange={v => set(ax, 'max', optNum(v))} aria-label={T('i_axisMaxAria', { axis: label })} placeholder={T('i_auto')} /></Field>
               </div>
-              {chartType !== 'gauge' && <Field label="Number format"><TextInput value={a.format} onChange={v => set(ax, 'format', v)} placeholder="N0, C0, P0, 0.0" aria-label={`${label} format`} /></Field>}
-              {!round && <Check label="Logarithmic" checked={a.log} onChange={v => set(ax, 'log', v || undefined)} />}
+              {chartType !== 'gauge' && <Field label={T('i_numberFormat')}><TextInput value={a.format} onChange={v => set(ax, 'format', v)} placeholder="N0, C0, P0, 0.0" aria-label={T('i_axisFormatAria', { axis: label })} /></Field>}
+              {!round && <Check label={T('i_log')} checked={a.log} onChange={v => set(ax, 'log', v || undefined)} />}
             </>}
-            {!valueAxis && <Field label="Label angle (degrees, e.g. -45)"><TextInput value={a.labelAngle ?? ''} onChange={v => set(ax, 'labelAngle', optNum(v))} aria-label="Label angle" /></Field>}
-            {chartType !== 'gauge' && <Check label="Grid lines" checked={a.gridlines ?? (ax === 'y')} onChange={v => set(ax, 'gridlines', v === (ax === 'y') ? undefined : v)} />}
-            {!round && <Check label="Reversed" checked={a.reversed} onChange={v => set(ax, 'reversed', v || undefined)} />}
+            {!valueAxis && <Field label={T('i_labelAngle')}><TextInput value={a.labelAngle ?? ''} onChange={v => set(ax, 'labelAngle', optNum(v))} aria-label={T('i_labelAngleAria')} /></Field>}
+            {chartType !== 'gauge' && <Check label={T('i_gridLines')} checked={a.gridlines ?? (ax === 'y')} onChange={v => set(ax, 'gridlines', v === (ax === 'y') ? undefined : v)} />}
+            {!round && <Check label={T('i_reversed')} checked={a.reversed} onChange={v => set(ax, 'reversed', v || undefined)} />}
           </div>
         );
       })}
-      {!round && !hasSecondary && <span className="hint">Set a series' axis to Secondary to get a second value axis.</span>}
+      {!round && !hasSecondary && <span className="hint">{T('i_secondaryHint')}</span>}
     </div>
   );
 }
 
-const OVERLAY_TYPES = [{ value: 'trend', label: 'Trend line' }, { value: 'movingAverage', label: 'Moving average' }, { value: 'line', label: 'Reference line' }, { value: 'band', label: 'Band' }];
+const OVERLAY_TYPES = ['trend', 'movingAverage', 'line', 'band'];
 function OverlaysEditor({ value, onChange, openExpr, dataSet, chartType }) {
   const T = useT();
   const list = value || [];
   const set = (i, k, v) => onChange(list.map((x, j) => { if (j !== i) return x; const n = { ...x, [k]: v }; if (v === undefined || v === '') delete n[k]; return n; }));
-  const types = chartType === 'gauge' ? OVERLAY_TYPES.slice(2) : ['scatter', 'bubble'].includes(chartType) ? OVERLAY_TYPES.filter(t => t.value !== 'movingAverage') : OVERLAY_TYPES;
+  // on a gauge a band is one of its ranges
+  const types = (chartType === 'gauge' ? OVERLAY_TYPES.slice(2) : ['scatter', 'bubble'].includes(chartType) ? OVERLAY_TYPES.filter(t => t !== 'movingAverage') : OVERLAY_TYPES)
+    .map(v => ({ value: v, label: T(chartType === 'gauge' && v === 'band' ? 'i_ov_range' : `i_ov_${v}`) }));
   const numOrExpr = (o, i, k, label) => (
-    <Field label={label} key={k}><ExprInput value={o[k] == null ? '' : String(o[k])} onChange={v => set(i, k, optNum(v) ?? (v || undefined))} onOpen={() => openExpr({ value: String(o[k] ?? ''), dataSet, onSave: v => set(i, k, optNum(v) ?? v), title: label })} placeholder="=Avg(Fields.amount) or a number" /></Field>
+    <Field label={label} key={k}><ExprInput value={o[k] == null ? '' : String(o[k])} onChange={v => set(i, k, optNum(v) ?? (v || undefined))} onOpen={() => openExpr({ value: String(o[k] ?? ''), dataSet, onSave: v => set(i, k, optNum(v) ?? v), title: label })} placeholder={T('i_ovValuePh')} /></Field>
   );
   return (
     <div style={{ display: 'grid', gap: 6 }}>
       {list.map((o, i) => (
         <div className="group-card" key={i} data-testid={`overlay-${i}`}>
           <div className="expr-row">
-            <Select value={o.type} options={types} onChange={v => set(i, 'type', v)} aria-label="Overlay type" />
+            <Select value={o.type} options={types} onChange={v => set(i, 'type', v)} aria-label={T('i_overlayType')} />
             <ColorInput value={o.color} onChange={v => set(i, 'color', v)} />
-            <button className="btn sm ghost danger" onClick={() => onChange(list.filter((_, j) => j !== i).length ? list.filter((_, j) => j !== i) : undefined)} aria-label="Remove overlay">✕</button>
+            <button className="btn sm ghost danger" onClick={() => onChange(list.filter((_, j) => j !== i).length ? list.filter((_, j) => j !== i) : undefined)} aria-label={T('i_removeOverlay')}>✕</button>
           </div>
           {o.type === 'trend' && <div className="grid2">
-            <Field label="Fit"><Select value={o.kind || 'linear'} options={[{ value: 'linear', label: 'Linear' }, { value: 'exp', label: 'Exponential' }, { value: 'poly', label: 'Polynomial' }]} onChange={v => set(i, 'kind', v === 'linear' ? undefined : v)} /></Field>
-            {o.kind === 'poly' && <Field label="Order (2–6)"><NumberInput value={o.order ?? 2} step={1} min={2} onChange={v => set(i, 'order', v)} /></Field>}
+            <Field label={T('i_fit')}><Select value={o.kind || 'linear'} options={[{ value: 'linear', label: T('i_fitLinear') }, { value: 'exp', label: T('i_fitExp') }, { value: 'poly', label: T('i_fitPoly') }]} onChange={v => set(i, 'kind', v === 'linear' ? undefined : v)} /></Field>
+            {o.kind === 'poly' && <Field label={T('i_order')}><NumberInput value={o.order ?? 2} step={1} min={2} onChange={v => set(i, 'order', v)} /></Field>}
           </div>}
-          {o.type === 'movingAverage' && <Field label="Period"><NumberInput value={o.period ?? 3} step={1} min={1} onChange={v => set(i, 'period', v)} /></Field>}
-          {(o.type === 'trend' || o.type === 'movingAverage') && <Field label="Of series number"><NumberInput value={(o.series ?? 0) + 1} step={1} min={1} onChange={v => set(i, 'series', Math.max(0, v - 1) || undefined)} /></Field>}
-          {o.type === 'line' && numOrExpr(o, i, 'value', 'At')}
-          {o.type === 'band' && <div className="grid2">{numOrExpr(o, i, 'from', 'From')}{numOrExpr(o, i, 'to', 'To')}</div>}
+          {o.type === 'movingAverage' && <Field label={T('i_period')}><NumberInput value={o.period ?? 3} step={1} min={1} onChange={v => set(i, 'period', v)} /></Field>}
+          {(o.type === 'trend' || o.type === 'movingAverage') && <Field label={T('i_ofSeries')}><NumberInput value={(o.series ?? 0) + 1} step={1} min={1} onChange={v => set(i, 'series', Math.max(0, v - 1) || undefined)} /></Field>}
+          {o.type === 'line' && numOrExpr(o, i, 'value', T('i_at'))}
+          {o.type === 'band' && <div className="grid2">{numOrExpr(o, i, 'from', T('i_from'))}{numOrExpr(o, i, 'to', T('i_to'))}</div>}
           {(o.type === 'line' || o.type === 'band') && chartType !== 'gauge' && <Field label={T('overlayAxis')}><Select value={o.axis || 'primary'} options={[{ value: 'primary', label: T('axisPrimary') }, { value: 'secondary', label: T('axisSecondary') }]} onChange={v => set(i, 'axis', v === 'primary' ? undefined : v)} aria-label={`${T('overlayAxis')} ${i + 1}`} /></Field>}
           {o.type === 'line' && <Check label={T('overlayShowValue')} checked={o.showValue !== false} onChange={v => set(i, 'showValue', v ? undefined : false)} />}
           {chartType !== 'gauge' && <Check label={T('overlayInLegend')} checked={o.legend !== false} onChange={v => set(i, 'legend', v ? undefined : false)} />}
-          <Field label="Label"><TextInput value={o.label} onChange={v => set(i, 'label', v)} aria-label="Overlay label" /></Field>
+          <Field label={T('i_label')}><TextInput value={o.label} onChange={v => set(i, 'label', v)} aria-label={T('i_overlayLabel')} /></Field>
         </div>
       ))}
-      <div><button className="btn sm" onClick={() => onChange([...list, { type: chartType === 'gauge' ? 'band' : 'trend' }])} data-testid="add-overlay">Add overlay</button></div>
+      <div><button className="btn sm" onClick={() => onChange([...list, { type: chartType === 'gauge' ? 'band' : 'trend' }])} data-testid="add-overlay">{T('i_addOverlay')}</button></div>
     </div>
   );
 }
 
 function ParamsEditor({ label, value, onChange }) {
+  const T = useT();
   return (
-    <Field label={`${label} (name=expression, one per line)`}>
+    <Field label={T('i_paramsOf', { label })}>
       <textarea className="textarea" rows={3} value={Object.entries(value || {}).map(([k, v]) => `${k}=${v}`).join('\n')}
         onChange={e => onChange(Object.fromEntries(e.target.value.split('\n').map(l => l.split('=')).filter(x => x[0] && x.length > 1).map(([k, ...v]) => [k.trim(), v.join('=').trim()])))} />
     </Field>
@@ -620,15 +637,15 @@ function VisualEditor({ cell, setCell, openExpr, dataSet }) {
   const ty = v?.type;
   return (
     <div style={{ display: 'grid', gap: 6 }}>
-      <Field label="Cell shows"><Select value={ty || ''} options={[{ value: 'sparkline', label: 'Sparkline' }, { value: 'databar', label: 'Data bar' }, { value: 'bullet', label: 'Bullet' }, { value: 'iconset', label: 'Icon set' }, { value: 'rangebar', label: 'Range bar' }]} allowEmpty onChange={t => (t ? set({ type: t }) : setCell('visual', undefined))} /></Field>
-      {ty === 'sparkline' && E('category', 'One point per', '=Fields.month')}
-      {ty && ty !== 'rangebar' && E('value', 'Value', '=Sum(Fields.amount)')}
+      <Field label={T('i_cellShows')}><Select value={ty || ''} options={['sparkline', 'databar', 'bullet', 'iconset', 'rangebar'].map(v => ({ value: v, label: T(`item_${v}`) }))} allowEmpty onChange={t => (t ? set({ type: t }) : setCell('visual', undefined))} /></Field>
+      {ty === 'sparkline' && E('category', T('i_onePointPer'), '=Fields.month')}
+      {ty && ty !== 'rangebar' && E('value', T('i_value'), '=Sum(Fields.amount)')}
       {ty === 'sparkline' && E('values', T('visValues'), '=Fields.history')}
       {ty === 'sparkline' && <ListFieldPick dataSet={dataSet} value={v.values} onPick={x => set({ values: x })} />}
       {ty === 'sparkline' && <>
-        <Field label="Style"><Select value={v.style || 'line'} options={[{ value: 'line', label: 'Line' }, { value: 'column', label: 'Columns' }, { value: 'area', label: 'Area' }, { value: 'winloss', label: 'Win / loss' }]} onChange={x => set({ style: x })} /></Field>
-        {E('bandLow', 'Range band from', '=0')}
-        {E('bandHigh', 'Range band to', '=100')}
+        <Field label={T('i_style')}><Select value={v.style || 'line'} options={[{ value: 'line', label: T('i_slLine') }, { value: 'column', label: T('i_slColumns') }, { value: 'area', label: T('i_slArea') }, { value: 'winloss', label: T('i_slWinLoss') }]} onChange={x => set({ style: x })} /></Field>
+        {E('bandLow', T('i_bandFrom'), '=0')}
+        {E('bandHigh', T('i_bandTo'), '=100')}
         {(v.bandLow || v.bandHigh) && <Field label={T('visBandColor')}><ColorInput value={v.bandColor} onChange={x => set({ bandColor: x })} /></Field>}
         {v.style === 'winloss' && <Field label={T('visNegColor')}><ColorInput value={v.negColor} onChange={x => set({ negColor: x })} /></Field>}
       </>}
@@ -637,14 +654,14 @@ function VisualEditor({ cell, setCell, openExpr, dataSet }) {
         {v.showValue !== false && <Field label={T('visFormat')}><TextInput value={v.format} onChange={x => set({ format: x || undefined })} placeholder="N0" mono aria-label={T('visFormat')} /></Field>}
       </>}
       {ty === 'iconset' && <>
-        <Field label="Icons"><Select value={v.iconSet || 'trafficLights'} options={[{ value: 'trafficLights', label: 'Traffic lights' }, { value: 'arrows', label: 'Arrows' }, { value: 'symbols', label: 'Symbols' }, { value: 'flags', label: 'Flags' }, { value: 'ratings', label: 'Ratings' }]} onChange={x => set({ iconSet: x })} /></Field>
-        {E('lower', 'Low below', '=33')}
-        {E('upper', 'High from', '=67')}
+        <Field label={T('i_icons')}><Select value={v.iconSet || 'trafficLights'} options={['trafficLights', 'arrows', 'symbols', 'flags', 'ratings'].map(x => ({ value: x, label: T(`o_iconSet_${x}`) }))} onChange={x => set({ iconSet: x })} /></Field>
+        {E('lower', T('i_lowBelow'), '=33')}
+        {E('upper', T('i_highFrom'), '=67')}
       </>}
-      {ty === 'rangebar' && <>{E('low', 'From', '=Fields.min')}{E('high', 'To', '=Fields.max')}{E('min', 'Scale minimum', '=0')}</>}
-      {(ty === 'databar' || ty === 'bullet' || ty === 'rangebar') && E('max', 'Maximum', '=Max(Fields.amount, "Table1")')}
-      {ty === 'bullet' && E('target', 'Target')}
-      {ty && ty !== 'iconset' && <Field label="Color (or =expression)"><ColorInput value={v.color} onChange={x => set({ color: x })} /></Field>}
+      {ty === 'rangebar' && <>{E('low', T('i_from'), '=Fields.min')}{E('high', T('i_to'), '=Fields.max')}{E('min', T('i_scaleMin'), '=0')}</>}
+      {(ty === 'databar' || ty === 'bullet' || ty === 'rangebar') && E('max', T('i_maximum'), '=Max(Fields.amount, "Table1")')}
+      {ty === 'bullet' && E('target', T('i_target'))}
+      {ty && ty !== 'iconset' && <Field label={T('i_colorOrExpr')}><ColorInput value={v.color} onChange={x => set({ color: x })} /></Field>}
     </div>
   );
 }
@@ -657,20 +674,20 @@ function ActionEditor({ value, onChange, openExpr, dataSet }) {
   const set = (patch) => { const n = { ...a, ...patch }; onChange(n.type === 'none' ? undefined : n); };
   return (
     <div style={{ display: 'grid', gap: 6 }}>
-      <Field label="Action on click"><Select value={a.type} options={[{ value: 'none', label: 'None' }, { value: 'url', label: 'Open a URL' }, { value: 'report', label: 'Open another report (drill-through)' }, { value: 'params', label: 'Filter this report (set parameters)' }, { value: 'bookmark', label: 'Jump to a bookmark' }, { value: 'toggleItem', label: T('actionToggleItem') }]} onChange={v => set({ type: v || 'none' })} /></Field>
+      <Field label={T('i_actionOnClick')}><Select value={a.type} options={[{ value: 'none', label: T('i_actNone') }, { value: 'url', label: T('i_actUrl') }, { value: 'report', label: T('i_actReport') }, { value: 'params', label: T('i_actParams') }, { value: 'bookmark', label: T('i_actBookmark') }, { value: 'toggleItem', label: T('actionToggleItem') }]} onChange={v => set({ type: v || 'none' })} /></Field>
       {a.type === 'toggleItem' && <Field label={T('actionToggleTarget')} hint={T('actionToggleHint')}><Select value={a.target} allowEmpty options={itemNames} onChange={v => set({ target: v })} data-testid="toggle-target" /></Field>}
-      {a.type === 'url' && <Field label="URL"><ExprInput value={a.url} onChange={v => set({ url: v })} onOpen={() => openExpr({ value: a.url, dataSet, onSave: v => set({ url: v }), title: 'URL' })} /></Field>}
+      {a.type === 'url' && <Field label={T('i_url')}><ExprInput value={a.url} onChange={v => set({ url: v })} onOpen={() => openExpr({ value: a.url, dataSet, onSave: v => set({ url: v }), title: T('i_url') })} /></Field>}
       {a.type === 'bookmark' && <Field label={T('jumpToBookmark')}><ExprInput value={a.target} onChange={v => set({ target: v })} onOpen={() => openExpr({ value: a.target, dataSet, onSave: v => set({ target: v }), title: T('jumpToBookmark') })} /></Field>}
       {a.type === 'params' && <>
-        <Field label="Set parameters (name=expression, one per line)" hint="Example: categories==Fields.category (after the first =, an expression starts with =). The report runs again with the new values.">
+        <Field label={T('i_setParams')} hint={T('i_setParamsHint')}>
           <textarea className="textarea" rows={3} value={Object.entries(a.params || {}).map(([k, v]) => `${k}=${v}`).join('\n')}
             onChange={e => set({ params: Object.fromEntries(e.target.value.split('\n').map(l => l.split('=')).filter(x => x[0] && x.length > 1).map(([k, ...v]) => [k.trim(), v.join('=').trim()])) })} />
         </Field>
-        <Check label="A second click on the same value clears the filter" checked={a.toggle !== false} onChange={v => set({ toggle: v ? undefined : false })} />
+        <Check label={T('i_toggleClears')} checked={a.toggle !== false} onChange={v => set({ toggle: v ? undefined : false })} />
       </>}
       {a.type === 'report' && <>
         <Field label={T('drillReport')}><ReportPicker value={a.report} onChange={v => set({ report: v })} /></Field>
-        <Field label="Parameters (name=expression, one per line)">
+        <Field label={T('i_paramsLines')}>
           <textarea className="textarea" rows={3} value={Object.entries(a.params || {}).map(([k, v]) => `${k}=${v}`).join('\n')}
             onChange={e => set({ params: Object.fromEntries(e.target.value.split('\n').map(l => l.split('=')).filter(x => x[0] && x.length > 1).map(([k, ...v]) => [k.trim(), v.join('=').trim()])) })} />
         </Field>
@@ -684,7 +701,7 @@ function CellProps({ table, sel, openExpr }) {
   const T = useT();
   const row = rowsOf(table, sel.part)?.[sel.row];
   const cell = row?.cells?.[sel.col];
-  if (!row || !cell) return <div className="cat"><span className="hint">This cell no longer exists.</span></div>;
+  if (!row || !cell) return <div className="cat"><span className="hint">{T('i_cellGone')}</span></div>;
   const key = `${table.id}.${sel.part}.${sel.row}.${sel.col}`;
   const setCell = (k, v) => updateItem(table.id, t => setOrDelete(rowsOf(t, sel.part)[sel.row].cells[sel.col], k, v), `${key}.${k}`);
   const setCellStyle = (k, v) => updateItem(table.id, t => { const c = rowsOf(t, sel.part)[sel.row].cells[sel.col]; c.style ||= {}; setOrDelete(c.style, k, v); }, `${key}.s.${k}`);
@@ -693,37 +710,37 @@ function CellProps({ table, sel, openExpr }) {
   const partLabel = tableParts(table).find(p => p.part === sel.part)?.label || sel.part;
   return (
     <>
-      <div className="insp-head"><b>{table.name} · cell</b><span className="ty">{partLabel} row {sel.row + 1}, col {sel.col + 1}</span></div>
+      <div className="insp-head"><b>{T('i_cellOf', { name: table.name })}</b><span className="ty">{T('i_cellPos', { part: partLabel, row: sel.row + 1, col: sel.col + 1 })}</span></div>
       <div className="cat">
-        <h5>Data</h5>
-        <Field label="Value"><ExprInput value={cell.value} onChange={v => setCell('value', v)} onOpen={() => openExpr({ value: cell.value, dataSet: table.dataSet, onSave: v => setCell('value', v), title: `${table.name} · ${partLabel} cell` })} /></Field>
-        <div className="hint">{sel.part === 'detail' ? 'Detail rows repeat once for each record. Fields.x is the current record.' : /^g/.test(sel.part) ? 'Group rows repeat once for each group. Sum(Fields.x) adds up the group.' : 'Aggregates such as Sum(Fields.x) use all the records of the table.'}</div>
+        <h5>{T('i_data')}</h5>
+        <Field label={T('i_value')}><ExprInput value={cell.value} onChange={v => setCell('value', v)} onOpen={() => openExpr({ value: cell.value, dataSet: table.dataSet, onSave: v => setCell('value', v), title: T('i_cellTitle', { name: table.name, part: partLabel }) })} /></Field>
+        <div className="hint">{T(sel.part === 'detail' ? 'i_cellHintDetail' : /^g/.test(sel.part) ? 'i_cellHintGroup' : 'i_cellHintAll')}</div>
       </div>
       <div className="cat">
-        <h5>Visual</h5>
+        <h5>{T('i_visual')}</h5>
         <VisualEditor cell={cell} setCell={setCell} openExpr={openExpr} dataSet={table.dataSet} />
       </div>
       <div className="cat">
-        <h5>Interactivity</h5>
-        {sel.part === 'header' && <Field label="Interactive sort: sort by" hint="Readers click the header to sort."><ExprInput value={cell.sortBy} onChange={v => setCell('sortBy', v || undefined)} onOpen={() => openExpr({ value: cell.sortBy, dataSet: table.dataSet, onSave: v => setCell('sortBy', v || undefined), title: 'Sort by' })} placeholder="=Fields.amount" /></Field>}
+        <h5>{T('i_interactivity')}</h5>
+        {sel.part === 'header' && <Field label={T('i_interactiveSort')} hint={T('i_interactiveSortHint')}><ExprInput value={cell.sortBy} onChange={v => setCell('sortBy', v || undefined)} onOpen={() => openExpr({ value: cell.sortBy, dataSet: table.dataSet, onSave: v => setCell('sortBy', v || undefined), title: T('sfSortBy') })} placeholder="=Fields.amount" /></Field>}
         <Field label={T('cellBookmark')}><ExprInput value={cell.bookmark} onChange={v => setCell('bookmark', v || undefined)} onOpen={() => openExpr({ value: cell.bookmark, dataSet: table.dataSet, onSave: v => setCell('bookmark', v || undefined), title: T('cellBookmark') })} /></Field>
         <ActionEditor value={cell.action} onChange={v => setCell('action', v)} openExpr={openExpr} dataSet={table.dataSet} />
       </div>
       <div className="cat">
-        <h5>Structure</h5>
+        <h5>{T('i_structure')}</h5>
         <div className="btnrow">
-          <button className="btn sm" onClick={() => tableInsertColumn(table.id, sel.col)}>Column left</button>
-          <button className="btn sm" onClick={() => tableInsertColumn(table.id, sel.col + (cell.colSpan || 1))}>Column right</button>
-          <button className="btn sm danger" onClick={() => { tableDeleteColumn(table.id, sel.col); useDesigner.getState().select({ kind: 'items', ids: [table.id] }); }}>Delete column</button>
+          <button className="btn sm" onClick={() => tableInsertColumn(table.id, sel.col)}>{T('i_colLeft')}</button>
+          <button className="btn sm" onClick={() => tableInsertColumn(table.id, sel.col + (cell.colSpan || 1))}>{T('i_colRight')}</button>
+          <button className="btn sm danger" onClick={() => { tableDeleteColumn(table.id, sel.col); useDesigner.getState().select({ kind: 'items', ids: [table.id] }); }}>{T('i_delColumn')}</button>
         </div>
         <div className="btnrow">
-          <button className="btn sm" onClick={() => tableInsertRow(table.id, sel.part, sel.row)}>Row above</button>
-          <button className="btn sm" onClick={() => tableInsertRow(table.id, sel.part, sel.row + 1)}>Row below</button>
-          <button className="btn sm danger" onClick={() => { tableDeleteRow(table.id, sel.part, sel.row); useDesigner.getState().select({ kind: 'items', ids: [table.id] }); }}>Delete row</button>
+          <button className="btn sm" onClick={() => tableInsertRow(table.id, sel.part, sel.row)}>{T('i_rowAbove')}</button>
+          <button className="btn sm" onClick={() => tableInsertRow(table.id, sel.part, sel.row + 1)}>{T('i_rowBelow')}</button>
+          <button className="btn sm danger" onClick={() => { tableDeleteRow(table.id, sel.part, sel.row); useDesigner.getState().select({ kind: 'items', ids: [table.id] }); }}>{T('i_delRow')}</button>
         </div>
         <div className="btnrow">
-          <button className="btn sm" onClick={() => tableMergeRight(table.id, sel.part, sel.row, sel.col)}>Merge right</button>
-          <button className="btn sm" disabled={!(cell.colSpan > 1)} onClick={() => tableSplit(table.id, sel.part, sel.row, sel.col)}>Split</button>
+          <button className="btn sm" onClick={() => tableMergeRight(table.id, sel.part, sel.row, sel.col)}>{T('i_mergeRight')}</button>
+          <button className="btn sm" disabled={!(cell.colSpan > 1)} onClick={() => tableSplit(table.id, sel.part, sel.row, sel.col)}>{T('i_split')}</button>
           <button className="btn sm" disabled={sel.row + (cell.rowSpan || 1) >= (rowsOf(table, sel.part) || []).length} onClick={() => tableMergeDown(table.id, sel.part, sel.row, sel.col)}>{T('mergeDown')}</button>
           <button className="btn sm" disabled={!(cell.rowSpan > 1)} onClick={() => tableSplitRows(table.id, sel.part, sel.row, sel.col)}>{T('splitRows')}</button>
         </div>
@@ -731,7 +748,7 @@ function CellProps({ table, sel, openExpr }) {
       <div className="cat" data-testid="row-props">
         <h5>{T('rowTitle')}</h5>
         <div className="grid2">
-          <Field label="Height (pt)"><NumberInput value={row.height || 18} step={1} onChange={v => setRow('height', Math.max(6, v))} /></Field>
+          <Field label={T('i_heightPt')}><NumberInput value={row.height || 18} step={1} onChange={v => setRow('height', Math.max(6, v))} /></Field>
           <Check label={T('rowCanGrow')} checked={row.canGrow !== false} onChange={v => setRow('canGrow', v ? undefined : false)} />
         </div>
         <Field label={T('rowHidden')} hint={T('rowHiddenHint')}><ExprInput value={row.hidden} onChange={v => setRow('hidden', v || undefined)} onOpen={() => openExpr({ value: row.hidden, dataSet: table.dataSet, onSave: v => setRow('hidden', v || undefined), title: T('rowHidden') })} placeholder="=Fields.amount = 0" /></Field>
@@ -752,34 +769,35 @@ function CellProps({ table, sel, openExpr }) {
 
 /* ---------------------------------------------------------------- multi */
 function Multi({ ids }) {
+  const T = useT();
   const def = useDesigner(s => s.def);
   const items = ids.map(id => findItem(def, id)?.item).filter(Boolean);
   const align = (fn) => useDesigner.getState().apply(d => { const its = ids.map(id => findItem(d, id)?.item).filter(Boolean); fn(its); });
   return (
     <>
-      <div className="insp-head"><b>{items.length} items</b></div>
+      <div className="insp-head"><b>{T('i_nItems', { n: items.length })}</b></div>
       <div className="cat">
-        <h5>Align</h5>
+        <h5>{T('i_align')}</h5>
         <div className="btnrow">
-          <button className="btn sm" onClick={() => align(its => { const v = Math.min(...its.map(i => i.x)); its.forEach(i => { i.x = v; }); })}>Left</button>
-          <button className="btn sm" onClick={() => align(its => { const v = Math.max(...its.map(i => i.x + i.w)); its.forEach(i => { i.x = round(v - i.w); }); })}>Right</button>
-          <button className="btn sm" onClick={() => align(its => { const v = Math.min(...its.map(i => i.y)); its.forEach(i => { i.y = v; }); })}>Top</button>
-          <button className="btn sm" onClick={() => align(its => { const v = Math.max(...its.map(i => i.y + i.h)); its.forEach(i => { i.y = round(v - i.h); }); })}>Bottom</button>
-          <button className="btn sm" onClick={() => align(its => { const l = Math.min(...its.map(i => i.x)), r = Math.max(...its.map(i => i.x + i.w)); its.forEach(i => { i.x = round((l + r) / 2 - i.w / 2); }); })}>Centre</button>
-          <button className="btn sm" onClick={() => align(its => { const w = Math.max(...its.map(i => i.w)); its.forEach(i => { if (i.type !== 'table') i.w = w; }); })}>Same width</button>
-          <button className="btn sm" onClick={() => align(its => { const h = Math.max(...its.map(i => i.h)); its.forEach(i => { if (i.type !== 'table') i.h = h; }); })}>Same height</button>
+          <button className="btn sm" onClick={() => align(its => { const v = Math.min(...its.map(i => i.x)); its.forEach(i => { i.x = v; }); })}>{T('i_left')}</button>
+          <button className="btn sm" onClick={() => align(its => { const v = Math.max(...its.map(i => i.x + i.w)); its.forEach(i => { i.x = round(v - i.w); }); })}>{T('i_right')}</button>
+          <button className="btn sm" onClick={() => align(its => { const v = Math.min(...its.map(i => i.y)); its.forEach(i => { i.y = v; }); })}>{T('i_top')}</button>
+          <button className="btn sm" onClick={() => align(its => { const v = Math.max(...its.map(i => i.y + i.h)); its.forEach(i => { i.y = round(v - i.h); }); })}>{T('i_bottom')}</button>
+          <button className="btn sm" onClick={() => align(its => { const l = Math.min(...its.map(i => i.x)), r = Math.max(...its.map(i => i.x + i.w)); its.forEach(i => { i.x = round((l + r) / 2 - i.w / 2); }); })}>{T('i_centre')}</button>
+          <button className="btn sm" onClick={() => align(its => { const w = Math.max(...its.map(i => i.w)); its.forEach(i => { if (i.type !== 'table') i.w = w; }); })}>{T('i_sameWidth')}</button>
+          <button className="btn sm" onClick={() => align(its => { const h = Math.max(...its.map(i => i.h)); its.forEach(i => { if (i.type !== 'table') i.h = h; }); })}>{T('i_sameHeight')}</button>
         </div>
       </div>
       <div className="cat">
-        <h5>Distribute</h5>
+        <h5>{T('i_distribute')}</h5>
         <div className="btnrow">
-          <button className="btn sm" disabled={items.length < 3} onClick={() => align(its => { const s2 = [...its].sort((a, b) => a.x - b.x); const total = s2[s2.length - 1].x + s2[s2.length - 1].w - s2[0].x; const gap = (total - s2.reduce((a, i) => a + i.w, 0)) / (s2.length - 1); let x = s2[0].x; s2.forEach(i => { i.x = round(x); x += i.w + gap; }); })}>Horizontally</button>
-          <button className="btn sm" disabled={items.length < 3} onClick={() => align(its => { const s2 = [...its].sort((a, b) => a.y - b.y); const total = s2[s2.length - 1].y + s2[s2.length - 1].h - s2[0].y; const gap = (total - s2.reduce((a, i) => a + i.h, 0)) / (s2.length - 1); let y = s2[0].y; s2.forEach(i => { i.y = round(y); y += i.h + gap; }); })}>Vertically</button>
+          <button className="btn sm" disabled={items.length < 3} onClick={() => align(its => { const s2 = [...its].sort((a, b) => a.x - b.x); const total = s2[s2.length - 1].x + s2[s2.length - 1].w - s2[0].x; const gap = (total - s2.reduce((a, i) => a + i.w, 0)) / (s2.length - 1); let x = s2[0].x; s2.forEach(i => { i.x = round(x); x += i.w + gap; }); })}>{T('i_horizontally')}</button>
+          <button className="btn sm" disabled={items.length < 3} onClick={() => align(its => { const s2 = [...its].sort((a, b) => a.y - b.y); const total = s2[s2.length - 1].y + s2[s2.length - 1].h - s2[0].y; const gap = (total - s2.reduce((a, i) => a + i.h, 0)) / (s2.length - 1); let y = s2[0].y; s2.forEach(i => { i.y = round(y); y += i.h + gap; }); })}>{T('i_vertically')}</button>
         </div>
       </div>
       <div className="cat"><div className="btnrow">
-        <button className="btn sm" onClick={duplicateSelection}>Duplicate</button>
-        <button className="btn sm danger" onClick={deleteSelection}>Delete</button>
+        <button className="btn sm" onClick={duplicateSelection}>{T('i_duplicate')}</button>
+        <button className="btn sm danger" onClick={deleteSelection}>{T('i_delete')}</button>
       </div></div>
     </>
   );
@@ -800,19 +818,19 @@ function SectionProps({ section }) {
   const setPage = (k, v) => apply(x => { x.page ||= {}; if (v === undefined || v === '') delete x.page[k]; else x.page[k] = v; if (!Object.keys(x.page).length) delete x.page; }, `sec.${section}.page.${k}`);
   return (
     <>
-      <div className="insp-head"><b>{label}</b><span className="ty">section</span></div>
+      <div className="insp-head"><b>{label}</b><span className="ty">{T('i_section')}</span></div>
       <div className="cat">
         {isBody && multi && <Field label={T('sectionName')}><TextInput value={sec.name || ''} onChange={v => set('name', v || undefined)} /></Field>}
-        <Field label="Height (pt)" hint={isBody ? 'Design height only. The body grows with its data at run time.' : 'Fixed on every page. Use 0 to remove the band.'}>
+        <Field label={T('i_heightPt')} hint={T(isBody ? 'i_bodyHeightHint' : 'i_bandHeightHint')}>
           <NumberInput value={sec.height || 0} step={1} onChange={v => set('height', Math.max(minH, v))} />
         </Field>
         {isBody && <div className="grid2">
-          <Field label="Columns" hint="Newspaper columns: the body fills each column, then the next."><NumberInput value={sec.columns?.count || 1} step={1} min={1} onChange={v => apply(x => { const n = Math.max(1, Math.min(6, Math.round(v))); if (n === 1) delete x.columns; else x.columns = { gap: x.columns?.gap ?? 18, count: n }; })} /></Field>
-          {sec.columns?.count > 1 && <Field label="Gap (pt)"><NumberInput value={sec.columns.gap ?? 18} step={1} onChange={v => apply(x => { x.columns.gap = Math.max(0, v); }, 'colgap')} /></Field>}
+          <Field label={T('i_columns')} hint={T('i_newspaperHint')}><NumberInput value={sec.columns?.count || 1} step={1} min={1} onChange={v => apply(x => { const n = Math.max(1, Math.min(6, Math.round(v))); if (n === 1) delete x.columns; else x.columns = { gap: x.columns?.gap ?? 18, count: n }; })} /></Field>
+          {sec.columns?.count > 1 && <Field label={T('i_gapPt')}><NumberInput value={sec.columns.gap ?? 18} step={1} onChange={v => apply(x => { x.columns.gap = Math.max(0, v); }, 'colgap')} /></Field>}
         </div>}
         {!isBody && <>
-          <Check label="Print on the first page" checked={sec.printOnFirstPage !== false} onChange={v => set('printOnFirstPage', v ? undefined : false)} />
-          <Check label="Print on the last page" checked={sec.printOnLastPage !== false} onChange={v => set('printOnLastPage', v ? undefined : false)} />
+          <Check label={T('i_printFirst')} checked={sec.printOnFirstPage !== false} onChange={v => set('printOnFirstPage', v ? undefined : false)} />
+          <Check label={T('i_printLast')} checked={sec.printOnLastPage !== false} onChange={v => set('printOnLastPage', v ? undefined : false)} />
         </>}
       </div>
       {isBody && <div className="cat" data-testid="body-sections">
@@ -820,7 +838,7 @@ function SectionProps({ section }) {
         {multi && <>
           <div className="grid2">
             <Field label={T('sectionPageSize')}><Select value={pg.size || ''} options={Object.keys(PAGE_SIZES)} allowEmpty onChange={v => setPage('size', v || undefined)} /></Field>
-            <Field label={T('sectionOrientation')}><Select value={pg.orientation || ''} options={['portrait', 'landscape']} allowEmpty onChange={v => setPage('orientation', v || undefined)} /></Field>
+            <Field label={T('sectionOrientation')}><Select value={pg.orientation || ''} options={[{ value: 'portrait', label: T('i_portrait') }, { value: 'landscape', label: T('i_landscape') }]} allowEmpty onChange={v => setPage('orientation', v || undefined)} /></Field>
           </div>
           <div className="hint">{T('sectionPageHint')}</div>
         </>}
@@ -836,6 +854,7 @@ function SectionProps({ section }) {
 
 /* ---------------------------------------------------------------- report */
 function ReportProps() {
+  const T = useT();
   const def = useDesigner(s => s.def);
   const families = useFontFamilies();
   const [fontsOpen, setFontsOpen] = useState(false);
@@ -844,46 +863,46 @@ function ReportProps() {
   const base = def.styles?.base || {};
   return (
     <>
-      <div className="insp-head"><b>Report</b><span className="ty">{def.$schema}</span></div>
+      <div className="insp-head"><b>{T('i_report')}</b><span className="ty">{def.$schema}</span></div>
       <div className="cat">
-        <h5>Page</h5>
+        <h5>{T('i_page')}</h5>
         <div className="grid2">
-          <Field label="Size"><Select value={def.page?.size || 'A4'} options={[...Object.keys(PAGE_SIZES), 'Pageless']} onChange={v => set(d => { d.page.size = v; })} /></Field>
+          <Field label={T('i_size')}><Select value={def.page?.size || 'A4'} options={[...Object.keys(PAGE_SIZES), { value: 'Pageless', label: T('i_pageless') }]} onChange={v => set(d => { d.page.size = v; })} /></Field>
           {def.page?.size === 'Pageless'
-            ? <Field label="Width"><NumberInput value={def.page?.width || 960} step={8} onChange={v => set(d => { d.page.width = Math.max(144, v); }, 'pageWidth')} /></Field>
-            : <Field label="Orientation"><Select value={def.page?.orientation || 'portrait'} options={['portrait', 'landscape']} onChange={v => set(d => { d.page.orientation = v; })} /></Field>}
+            ? <Field label={T('i_width')}><NumberInput value={def.page?.width || 960} step={8} onChange={v => set(d => { d.page.width = Math.max(144, v); }, 'pageWidth')} /></Field>
+            : <Field label={T('i_orientation')}><Select value={def.page?.orientation || 'portrait'} options={[{ value: 'portrait', label: T('i_portrait') }, { value: 'landscape', label: T('i_landscape') }]} onChange={v => set(d => { d.page.orientation = v; })} /></Field>}
         </div>
-        {def.page?.size === 'Pageless' && <div className="hint">One page that grows to fit the content (up to 200 inches). Good for dashboards and screen reports.</div>}
+        {def.page?.size === 'Pageless' && <div className="hint">{T('i_pagelessHint')}</div>}
         <div className="grid4">
-          {['Top', 'Right', 'Bottom', 'Left'].map((l, i) => (
-            <Field key={l} label={l}><NumberInput value={m[i]} step={1} onChange={v => set(d => { const mm = Array.isArray(d.page.margins) ? d.page.margins : [36, 36, 36, 36]; mm[i] = Math.max(0, v); d.page.margins = mm; }, `margin${i}`)} /></Field>
+          {['i_top', 'i_right', 'i_bottom', 'i_left'].map((l, i) => (
+            <Field key={l} label={T(l)}><NumberInput value={m[i]} step={1} onChange={v => set(d => { const mm = Array.isArray(d.page.margins) ? d.page.margins : [36, 36, 36, 36]; mm[i] = Math.max(0, v); d.page.margins = mm; }, `margin${i}`)} /></Field>
           ))}
         </div>
-        <div className="hint">Margins in points. Changing the page width does not move items.</div>
+        <div className="hint">{T('i_marginsHint')}</div>
       </div>
       <ReuseSection />
       <div className="cat">
-        <h5>Regional</h5>
+        <h5>{T('i_regional')}</h5>
         <div className="grid2">
-          <Field label="Locale"><TextInput value={def.locale} onChange={v => set(d => { d.locale = v || undefined; }, 'locale')} placeholder="en-US" /></Field>
-          <Field label="Currency"><TextInput value={def.currency} onChange={v => set(d => { d.currency = v.toUpperCase() || undefined; }, 'currency')} placeholder="USD" /></Field>
+          <Field label={T('i_locale')}><TextInput value={def.locale} onChange={v => set(d => { d.locale = v || undefined; }, 'locale')} placeholder="en-US" /></Field>
+          <Field label={T('i_currency')}><TextInput value={def.currency} onChange={v => set(d => { d.currency = v.toUpperCase() || undefined; }, 'currency')} placeholder="USD" /></Field>
         </div>
       </div>
       <div className="cat">
-        <h5>Default text</h5>
+        <h5>{T('i_defaultText')}</h5>
         <div className="grid2">
-          <Field label="Font"><Select value={base.fontFamily} options={families} onChange={v => set(d => { d.styles ||= {}; d.styles.base ||= {}; d.styles.base.fontFamily = v; })} /></Field>
-          <Field label="Size"><NumberInput value={base.fontSize ?? 9} onChange={v => set(d => { d.styles ||= {}; d.styles.base ||= {}; d.styles.base.fontSize = v; }, 'basesize')} /></Field>
-          <div style={{ gridColumn: '1 / -1' }}><Field label="Color"><ColorInput value={base.color} onChange={v => set(d => { d.styles ||= {}; d.styles.base ||= {}; setOrDelete(d.styles.base, 'color', v); }, 'basecolor')} /></Field></div>
+          <Field label={T('i_font')}><Select value={base.fontFamily} options={families} onChange={v => set(d => { d.styles ||= {}; d.styles.base ||= {}; d.styles.base.fontFamily = v; })} /></Field>
+          <Field label={T('i_size')}><NumberInput value={base.fontSize ?? 9} onChange={v => set(d => { d.styles ||= {}; d.styles.base ||= {}; d.styles.base.fontSize = v; }, 'basesize')} /></Field>
+          <div style={{ gridColumn: '1 / -1' }}><Field label={T('i_color')}><ColorInput value={base.color} onChange={v => set(d => { d.styles ||= {}; d.styles.base ||= {}; setOrDelete(d.styles.base, 'color', v); }, 'basecolor')} /></Field></div>
         </div>
-        <div className="btnrow"><button className="btn sm" onClick={() => setFontsOpen(true)}>Upload a font…</button></div>
+        <div className="btnrow"><button className="btn sm" onClick={() => setFontsOpen(true)}>{T('i_uploadFont')}</button></div>
         {fontsOpen && <FontsDialog onClose={() => setFontsOpen(false)} />}
       </div>
       <ReportImages />
       <ReportFunctions />
       <ThemeSection />
       <NamedStyles />
-      <div className="cat"><span className="hint">Select an item, a cell or a band to edit it. Drag tools and fields from the left onto the page.</span></div>
+      <div className="cat"><span className="hint">{T('i_reportHint')}</span></div>
     </>
   );
 }
@@ -940,25 +959,26 @@ function EmbeddedPicker({ item, onPick }) {
 
 /** Report functions: reusable formulas in the expression language, called as Code.Name(…) or Name(…). */
 function ReportFunctions() {
+  const T = useT();
   const fns = useDesigner(s => s.def.functions) || [];
   const set = (fn, key) => useDesigner.getState().apply(d => { d.functions ||= []; fn(d.functions); if (!d.functions.length) delete d.functions; }, key);
   const errors = checkFunctions(fns);
   return (
     <div className="cat">
-      <h5>Functions</h5>
+      <h5>{T('i_functions')}</h5>
       {fns.map((f, i) => (
         <div key={i} style={{ display: 'grid', gap: 4, marginBottom: 8 }}>
           <div className="grid2">
-            <Field label="Name"><TextInput value={f.name} mono onChange={v => set(l => { l[i].name = v; }, `fn${i}.name`)} placeholder="Tax" /></Field>
-            <Field label="Parameters"><TextInput value={(f.params || []).join(', ')} mono onChange={v => set(l => { l[i].params = v.split(',').map(x => x.trim()).filter(Boolean); }, `fn${i}.params`)} placeholder="amount, rate" /></Field>
+            <Field label={T('i_name')}><TextInput value={f.name} mono onChange={v => set(l => { l[i].name = v; }, `fn${i}.name`)} placeholder="Tax" /></Field>
+            <Field label={T('i_parameters')}><TextInput value={(f.params || []).join(', ')} mono onChange={v => set(l => { l[i].params = v.split(',').map(x => x.trim()).filter(Boolean); }, `fn${i}.params`)} placeholder="amount, rate" /></Field>
           </div>
-          <Field label="Body"><TextInput value={f.body} mono onChange={v => set(l => { l[i].body = v; }, `fn${i}.body`)} placeholder="=amount * 0.18" /></Field>
-          <div className="btnrow"><button className="btn sm" type="button" onClick={() => set(l => { l.splice(i, 1); })}>Remove</button></div>
+          <Field label={T('i_body')}><TextInput value={f.body} mono onChange={v => set(l => { l[i].body = v; }, `fn${i}.body`)} placeholder="=amount * 0.18" /></Field>
+          <div className="btnrow"><button className="btn sm" type="button" onClick={() => set(l => { l.splice(i, 1); })}>{T('i_remove')}</button></div>
         </div>
       ))}
       {errors.map((e, i) => <div key={i} className="err">{e}</div>)}
-      <div className="btnrow"><button className="btn sm" type="button" onClick={() => set(l => { l.push({ name: `Function${l.length + 1}`, params: ['x'], body: '=x' }); })}>Add a function</button></div>
-      <span className="hint">Call one as Code.Name(…) or Name(…) in any expression. Parameters are names inside the body.</span>
+      <div className="btnrow"><button className="btn sm" type="button" onClick={() => set(l => { l.push({ name: `Function${l.length + 1}`, params: ['x'], body: '=x' }); })}>{T('i_addFunction')}</button></div>
+      <span className="hint">{T('i_functionsHint')}</span>
     </div>
   );
 }
@@ -994,24 +1014,24 @@ function NamedStyles() {
   const setS = (name, k, v) => useDesigner.getState().apply(d => { d.styles ||= {}; d.styles.named ||= {}; d.styles.named[name] ||= {}; if (v === undefined || v === '') delete d.styles.named[name][k]; else d.styles.named[name][k] = v; }, `ns.${name}.${k}`);
   return (
     <div className="cat">
-      <h5>Named styles and themes</h5>
-      <Field label="Apply a theme (replaces the default text and named styles)">
+      <h5>{T('i_namedStyles')}</h5>
+      <Field label={T('i_applyTheme')}>
         <Select value="" allowEmpty options={Object.keys(THEMES)} onChange={v => { if (v) useDesigner.getState().apply(d => { d.styles = themeStyles(THEMES[v]); }); }} />
       </Field>
       {Object.entries(named).map(([name, st]) => (
         <div className="style-card" key={name}>
           <b style={{ fontSize: 'var(--fs-sm)' }}>{name}</b>
-          <NumberInput value={st.fontSize} step={0.5} onChange={v => setS(name, 'fontSize', v)} aria-label={`${name} size`} />
-          <Select value={st.fontWeight} options={['normal', '600', 'bold']} allowEmpty onChange={v => setS(name, 'fontWeight', v)} />
-          <input type="color" value={/^#[0-9a-f]{6}$/i.test(st.color || '') ? st.color : '#000000'} onChange={e => setS(name, 'color', e.target.value)} aria-label={`${name} colour`} style={{ width: 26, height: 26, border: '1px solid var(--line)', borderRadius: 5, padding: 0 }} />
+          <NumberInput value={st.fontSize} step={0.5} onChange={v => setS(name, 'fontSize', v)} aria-label={T('i_styleSizeOf', { name })} />
+          <Select value={st.fontWeight} options={['normal', '600', 'bold'].map(v => ({ value: v, label: T(`o_fontWeight_${v}`) }))} allowEmpty onChange={v => setS(name, 'fontWeight', v)} />
+          <input type="color" value={/^#[0-9a-f]{6}$/i.test(st.color || '') ? st.color : '#000000'} onChange={e => setS(name, 'color', e.target.value)} aria-label={T('i_styleColourOf', { name })} style={{ width: 26, height: 26, border: '1px solid var(--line)', borderRadius: 5, padding: 0 }} />
           <Select value={st.parent} allowEmpty options={styleNames.filter(n => n !== name)} onChange={v => setS(name, 'parent', v)} aria-label={T('styleParentOf', { name })} title={T('styleParent')} data-testid={`style-parent-${name}`} />
         </div>
       ))}
       <div className="expr-row">
-        <TextInput value={newName} onChange={v => setNewName(v.replace(/\W/g, ''))} placeholder="New style name" aria-label="New style name" />
-        <button className="btn sm" disabled={!newName || named[newName]} onClick={() => { setS(newName, 'fontSize', 9); setNewName(''); }}>Add</button>
+        <TextInput value={newName} onChange={v => setNewName(v.replace(/\W/g, ''))} placeholder={T('i_newStyleName')} aria-label={T('i_newStyleName')} />
+        <button className="btn sm" disabled={!newName || named[newName]} onClick={() => { setS(newName, 'fontSize', 9); setNewName(''); }}>{T('i_add')}</button>
       </div>
-      <div className="hint">Items and cells pick a named style in their Text section. Their own style still wins.</div>
+      <div className="hint">{T('i_namedStylesHint')}</div>
     </div>
   );
 }

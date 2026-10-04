@@ -1,6 +1,11 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { checkValue } from '@/engine/expr/evaluate.js';
+import { t } from '@/i18n/index.js';
+import { useDesigner } from './store.js';
+
+/** The designer's UI language as a translate function. */
+function useT() { const lang = useDesigner(s => s.lang); return (k, v) => t(lang, k, v); }
 
 /** Text input that keeps its own draft and commits on every change. */
 export function TextInput({ value, onChange, mono, invalid, ...rest }) {
@@ -27,22 +32,24 @@ export function Select({ value, onChange, options, allowEmpty, ...rest }) {
 }
 
 export function ColorInput({ value, onChange }) {
+  const T = useT();
   const hex = typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : '#000000';
   return (
     <div className="colorrow">
-      <input type="color" value={hex} onChange={e => onChange(e.target.value)} aria-label="Pick a color" style={{ opacity: value ? 1 : 0.3 }} title={value ? value : 'Not set (inherited)'} />
-      <TextInput value={value} onChange={v => onChange(v === '' ? undefined : v)} mono placeholder="none or =expression" />
+      <input type="color" value={hex} onChange={e => onChange(e.target.value)} aria-label={T('i_pickColor')} style={{ opacity: value ? 1 : 0.3 }} title={value ? value : T('i_notSet')} />
+      <TextInput value={value} onChange={v => onChange(v === '' ? undefined : v)} mono placeholder={T('i_colorPh')} />
     </div>
   );
 }
 
 export function ExprInput({ value, onChange, onOpen, placeholder }) {
+  const T = useT();
   const err = value ? checkValue(value) : null;
   return (
     <div>
       <div className="expr-row">
-        <TextInput value={value} onChange={onChange} mono invalid={!!err} placeholder={placeholder || 'Text, =expression or {expression}'} />
-        <button className="fx" title="Open the expression editor" onClick={onOpen} type="button">fx</button>
+        <TextInput value={value} onChange={onChange} mono invalid={!!err} placeholder={placeholder || T('i_exprPh')} />
+        <button className="fx" title={T('i_openExprEditor')} aria-label={T('i_openExprEditor')} onClick={onOpen} type="button">fx</button>
       </div>
       {err && <div className="err">{err}</div>}
     </div>
