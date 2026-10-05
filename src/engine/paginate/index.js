@@ -6,6 +6,11 @@
  * never cut it. The paginator picks, for each page, the lowest break line
  * that fits the page and does not cut any unit.
  *
+ * Side by side regions whose rows never line up leave no line that cuts no unit (or only one far up the page). Then
+ * the page ends at its limit and each unit that crosses it moves whole to the next page ("ragged" break: each column
+ * continues where its own rows stopped, as SSRS paginates regions on their own). A unit is never drawn past the
+ * page bottom and never twice.
+ *
  * Unit: { top, height, items, breakBefore?, keepWithNext?, keepWithPrevious?, tableId? }
  * Table: { id, top, bottom, headerHeight, headerItems, owner?, depth? }  (strip coordinates; a repeating group header is
  *        one more entry of its table, owner the same, depth its level + 1)
@@ -42,11 +47,14 @@ export function paginate(units, tables, pageH, warn) {
   // Units are sorted by top. Only units that start within maxH above y can cut y.
   const maxH = units.reduce((m, u) => Math.max(m, u.height), 0);
   const firstAtOrAfter = (v) => { let lo = 0, hi = units.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (units[mid].top < v) lo = mid + 1; else hi = mid; } return lo; };
+  /** units already drawn on an earlier page (a ragged break draws units below the next page's top) */
+  const placed = new Set();
   const valid = (y) => {
     const from = firstAtOrAfter(y - maxH - 1);
     const to = firstAtOrAfter(y + EPS * 2);
     for (let i = from; i < to + 1 && i < units.length; i++) {
       const u = units[i];
+      if (placed.has(u)) continue;
       const b = u.top + u.height;
       if (u.top < y - EPS && b > y + EPS) return false;                 // cuts a unit
       if (u.keepWithNext && Math.abs(b - y) < EPS && b < end - EPS) return false;
@@ -59,7 +67,25 @@ export function paginate(units, tables, pageH, warn) {
   // A page with nothing on it, made so that what starts at y moves to the next page, helps only when that fits
   // a page there. Tall items (or tall items that overlap) that fit no page are cut where this page ends instead:
   // moving them past a gap made a blank page 1.
-  const emptyFor = (top, y) => { const f = firstAtOrAfter(top - EPS); return f >= units.length || units[f].top >= y - EPS; };
+  const emptyFor = (top, y) => { let f = firstAtOrAfter(top - EPS); while (f < units.length && placed.has(units[f])) f++; return f >= units.length || units[f].top >= y - EPS; };
+  /**
+   * A ragged break at y: the units that cross y, which then move whole to the next page. Null when that does not work:
+   * a crossing unit starts at the page top (no progress) or is taller than a page, a keep-together block or a
+   * keep-with rule would be split.
+   */
+  const ragged = (top, y, room) => {
+    const moved = [];
+    for (let i = firstAtOrAfter(y - maxH - 1); i < units.length && units[i].top < y - EPS; i++) {
+      const u = units[i];
+      if (placed.has(u) || u.top + u.height <= y + EPS) continue;
+      if (u.top <= top + EPS || u.height > room + EPS || u.keepWithPrevious || u.block) return null;
+      moved.push(u);
+    }
+    if (!moved.length) return null;
+    for (const u of units) if (u.keepWithNext && !placed.has(u) && u.top + u.height <= y + EPS && moved.some(m => Math.abs(m.top - (u.top + u.height)) < EPS)) return null;
+    for (const bl of blocks) if (bl.top < y - EPS && bl.bottom > y + EPS) return null;
+    return new Set(moved);
+  };
   const fitsFrom = (y) => {
     if (y + pageH >= end - EPS) return true;
     for (const c of cand) if (c > y + EPS && c <= y + pageH + EPS && valid(c)) return true;
@@ -72,7 +98,8 @@ export function paginate(units, tables, pageH, warn) {
     if (++guard > 100000) { warn('Pagination stopped: too many pages'); break; }
     if (cut) { // the cut part of an item is not drawn: the next page starts at the next unit, and there is none after the last
       cut = false;
-      const f = firstAtOrAfter(top - EPS);
+      let f = firstAtOrAfter(top - EPS);
+      while (f < units.length && placed.has(units[f])) f++;
       if (f >= units.length) break;
       top = Math.max(top, units[f].top);
     }
@@ -98,13 +125,14 @@ export function paginate(units, tables, pageH, warn) {
     const firstHere = units[firstAtOrAfter(top - EPS)];
     for (let i = firstAtOrAfter(top - maxH - 1); i < units.length && units[i].top < limit; i++) {
       const u = units[i];
+      if (placed.has(u)) continue;
       if (u.breakBefore && u.top > top + EPS && u.top < limit && firstHere.top < u.top - EPS) limit = u.top;
       const ub = u.top + u.height;
       if (u.breakAfter && ub > top + EPS && ub < limit && ub < end - EPS) limit = ub;
     }
     const forced = limit < top + Math.max(pageH - offset, 1) - EPS;
 
-    let bottom;
+    let bottom, moved = null;
     if (limit >= end - EPS) bottom = end;
     else if (forced && valid(limit)) bottom = limit;
     else {
@@ -119,13 +147,23 @@ export function paginate(units, tables, pageH, warn) {
         if (y <= top + EPS) break;
         if (valid(y) && !useless(top, y)) { bottom = y; break; }
       }
+      // the best clean line leaves a quarter of the page or more empty (side by side rows that rarely line up):
+      // a ragged break at the limit fills the page instead
+      if (!forced && bottom >= 0 && bottom < limit - pageH / 4) {
+        const mv = ragged(top, limit, pageH - offset);
+        if (mv) { bottom = limit; moved = mv; }
+      }
+      if (bottom < 0) {
+        const mv = ragged(top, limit, pageH - offset);
+        if (mv) { bottom = limit; moved = mv; }
+      }
       if (bottom < 0) {
         // Nothing valid: drop keep-rules and try again, then cut.
         for (let i = last; i >= 0; i--) {
           const y = cand[i];
           if (y > limit + EPS) continue;
           if (y <= top + EPS) break;
-          if (!units.some(u => u.top < y - EPS && u.top + u.height > y + EPS) && !useless(top, y)) { bottom = y; break; }
+          if (!units.some(u => !placed.has(u) && u.top < y - EPS && u.top + u.height > y + EPS) && !useless(top, y)) { bottom = y; break; }
         }
         if (bottom < 0) {
           bottom = limit;
@@ -135,9 +173,15 @@ export function paginate(units, tables, pageH, warn) {
       }
     }
     const onPage = [];
-    for (let i = firstAtOrAfter(top - EPS); i < units.length && units[i].top < bottom - EPS; i++) onPage.push(units[i]);
+    for (let i = firstAtOrAfter(top - EPS); i < units.length && units[i].top < bottom - EPS; i++) {
+      const u = units[i];
+      if (placed.has(u) || moved?.has(u)) continue;
+      onPage.push(u);
+      if (moved || placed.size) placed.add(u);
+    }
     pages.push({ top, bottom, offset, repeat, units: onPage });
-    top = bottom;
+    // after a ragged break the next page starts at the highest unit that moved
+    top = moved ? Math.min(...[...moved].map(u => u.top)) : bottom;
   }
   return pages;
 }

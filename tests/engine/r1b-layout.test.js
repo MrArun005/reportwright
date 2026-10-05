@@ -38,3 +38,28 @@ describe('a table wider than the page', () => {
     expect(r.warnings.join('\n')).not.toMatch(/wider than the page/);
   });
 });
+
+describe('side-by-side tables', () => {
+  const N = 200;
+  const tbl = (name, x, h, ds) => ({
+    type: 'table', name, x, y: 0, w: 180, h: h * 2, dataSet: ds, columns: [{ width: 180 }],
+    header: [{ height: 14, cells: [{ value: `${name} head` }] }],
+    detail: [{ height: h, cells: [{ value: `=Fields.v` }] }],
+  });
+  const def = (footerH) => report([tbl('A', 0, 17.3, 'Rows'), tbl('B', 200, 19.7, 'Rows')], {
+    data: { rows: Array.from({ length: N }, (_, i) => ({ v: `r${i}` })) },
+    footer: footerH ? { height: footerH, items: [{ type: 'textbox', name: 'F', x: 0, y: 0, w: 200, h: footerH, value: 'FOOTER' }] } : undefined,
+  });
+  for (const footerH of [30, 0]) {
+    it(`never draw a row over the ${footerH ? 'page footer' : 'bottom margin'}, fill page 1, and show every row once (footer ${footerH})`, async () => {
+      const r = await render(def(footerH), { fontStore });
+      const pageH = 842, limit = pageH - 36 - footerH;
+      for (const p of r.pages) for (const it of p.items) if (it.t === 'text' && /^r\d+$/.test(it.lines[0].text)) expect(it.clip.y + 17).toBeLessThanOrEqual(limit + 0.01);
+      const rowsOf = (x) => r.pages.flatMap(p => p.items.filter(i => i.t === 'text' && /^r\d+$/.test(i.lines[0].text) && Math.abs(i.clip.x - x) < 50)).map(i => i.lines[0].text);
+      expect(rowsOf(36)).toEqual(Array.from({ length: N }, (_, i) => `r${i}`));
+      expect(rowsOf(236)).toEqual(Array.from({ length: N }, (_, i) => `r${i}`));
+      expect(texts(r.pages[0]).filter(t => /^r\d+$/.test(t)).length).toBeGreaterThan(40);
+      expect(r.warnings.join('\n')).not.toMatch(/taller than the page/);
+    });
+  }
+});
