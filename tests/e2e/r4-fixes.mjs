@@ -62,8 +62,12 @@ try {
     await p.waitForTimeout(500);
     const pages = await p.locator('.vpage').count();
     assert.ok(pages > 1, `the wide pivot is on ${pages} page(s)`);
-    const text = await p.locator('.vpages').textContent();
-    assert.ok(text.includes('K29') && text.includes('K00'), 'every column key is shown');
+    // the laid-out pages, as the viewer has them (its JSON export)
+    const [jd] = await Promise.all([p.waitForEvent('download'), p.getByTestId('export-json').click()]);
+    const model = JSON.parse(fs.readFileSync(await jd.path(), 'utf8'));
+    const all = model.pages.flatMap(pg => pg.items.filter(i => i.t === 'text').flatMap(i => i.lines.map(l => l.text)));
+    assert.ok(all.includes('K29') && all.includes('K00'), 'every column key is shown');
+    assert.deepEqual(model.clipped, []);
     if (process.env.FIX_SHOTS) { await p.locator('.vpage').nth(1).scrollIntoViewIfNeeded(); await p.screenshot({ path: `${process.env.FIX_SHOTS}/fix-wide-pivot.png` }); }
   }
   if (want('html')) {
