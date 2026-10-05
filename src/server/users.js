@@ -5,6 +5,8 @@
 // single sign-on; they have no password (passwordHash null), so password sign-in can never open them.
 // Passwords: scrypt with a random 16-byte salt; the parameters are stored with the hash, so they can change later.
 // sessionVersion goes up on sign-out, a password change and disabling: every older session cookie stops working.
+// deviceEpoch (device cookies) moves on a password change or reset, disabling, a two-factor reset, forgetDevices and
+// sign-out everywhere; not on a plain sign-out.
 // Two-factor sign-in (src/server/totp.js): totp { secret (sealed), enabledAt }, recovery [hashes], totpPending while
 // enrolling. Enabling, turning off and an admin's reset each end every session of the user.
 import crypto from 'node:crypto';
@@ -161,7 +163,10 @@ async function updateUserNow(email, patch) {
   if (patch.password !== undefined) { next.passwordHash = await hashPassword(patch.password); delete next.reset; }
   if (patch.resetTwoFactor) { delete next.totp; delete next.totpPending; delete next.recovery; }
   if (patch.clearEnrolCode) delete next.enrolCode;
-  if (patch.password !== undefined || patch.resetTwoFactor || (next.disabled && !u.disabled)) next.sessionVersion = (u.sessionVersion || 0) + 1;
+  if (patch.password !== undefined || patch.resetTwoFactor || patch.forgetDevices || (next.disabled && !u.disabled)) {
+    next.sessionVersion = (u.sessionVersion || 0) + 1;
+    next.deviceEpoch = newEpoch(u); // and every known device (session.knownDevice) is forgotten
+  }
   await keepAnAdmin(u, next);
   await save(next);
   return publicUser(next);
@@ -177,10 +182,24 @@ async function deleteUserNow(email) {
   return store().remove('users', u.email);
 }
 
-/** Sign-out: every session cookie this user holds stops working. */
-export function endSessions(email) {
+/** A device epoch other than the user's current one (device cookies carry it: session.deviceCookie). */
+const newEpoch = (u) => { let e; do e = crypto.randomInt(1, 2 ** 40); while (e === u.deviceEpoch); return e; };
+
+/**
+ * Sign-out: every session cookie this user holds stops working. Known devices stay known (the sign-in limits of
+ * limits.checkCredential keep exempting them), unless `everywhere`: then every device cookie is forgotten too, as on a
+ * password change. A sign-out that forgot devices would let anyone lock out a user who signs out (REVIEW-SECURITY-2 M1).
+ * @param {string} email @param {{ everywhere?: boolean }} [o] @returns {Promise<any>} the user record after it
+ */
+export function endSessions(email, { everywhere = false } = {}) {
   // under the lock and re-read there: a sign-out must never write back a record an admin just changed
-  return withLock('users', async () => { const u = await getUser(email); if (u) await save({ ...u, sessionVersion: (u.sessionVersion || 0) + 1 }); });
+  return withLock('users', async () => {
+    const u = await getUser(email);
+    if (!u) return null;
+    const next = { ...u, sessionVersion: (u.sessionVersion || 0) + 1, ...(everywhere ? { deviceEpoch: newEpoch(u) } : {}) };
+    await save(next);
+    return next;
+  });
 }
 
 /* ---------------- two-factor sign-in ---------------- */
@@ -328,7 +347,7 @@ export async function useReset(token, password) {
     const u = await getUser(email);
     const r = u?.reset;
     if (!u || u.disabled || !r || typeof r.hash !== 'string' || !(r.expires > Date.now()) || !crypto.timingSafeEqual(Buffer.from(sha(secret)), Buffer.from(r.hash.padEnd(64).slice(0, 64)))) throw bad();
-    const next = { ...u, passwordHash, sessionVersion: (u.sessionVersion || 0) + 1, updatedAt: new Date().toISOString() };
+    const next = { ...u, passwordHash, sessionVersion: (u.sessionVersion || 0) + 1, deviceEpoch: newEpoch(u), updatedAt: new Date().toISOString() };
     delete next.reset;
     await save(next);
     return u.email;

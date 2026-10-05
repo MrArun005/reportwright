@@ -1,4 +1,4 @@
-// PATCH /api/users/<email> { role?, password?, disabled?, groups?, allowSso?, resetTwoFactor?, unlockSignIn? } — change a
+// PATCH /api/users/<email> { role?, password?, disabled?, groups?, allowSso?, resetTwoFactor?, forgetDevices?, unlockSignIn? } — change a
 // user. DELETE — remove one. Admins only. resetTwoFactor: true turns their two-factor sign-in off (a lost phone) and ends
 // their sessions. unlockSignIn: true forgets every failed sign-in counted for the account (src/server/limits.js).
 // The last admin cannot be demoted, disabled or deleted (409).
@@ -25,9 +25,10 @@ export async function PATCH(req, { params }) {
     const patch = {};
     for (const k of ['role', 'password', 'disabled', 'groups', 'allowSso']) if (body[k] !== undefined) patch[k] = body[k];
     if (body.resetTwoFactor === true) patch.resetTwoFactor = true;
+    if (body.forgetDevices === true) patch.forgetDevices = true; // every browser of theirs is a stranger again (and signed out)
     const u = await updateUser(email, patch, { by: me.email });
     if (body.unlockSignIn === true) await unlockLogin(u.email);
-    await audit('user.update', { req, actor: `user:${me.email}`, detail: { user: u.email, ...('role' in patch && { role: u.role }), ...('groups' in patch && { groups: u.groups }), ...('disabled' in patch && { disabled: u.disabled }), ...('password' in patch && { password: 'changed' }), ...('allowSso' in patch && { allowSso: u.allowSso }), ...(patch.resetTwoFactor && { twoFactor: 'reset' }), ...(body.unlockSignIn === true && { signIn: 'unlocked' }) } });
+    await audit('user.update', { req, actor: `user:${me.email}`, detail: { user: u.email, ...('role' in patch && { role: u.role }), ...('groups' in patch && { groups: u.groups }), ...('disabled' in patch && { disabled: u.disabled }), ...('password' in patch && { password: 'changed' }), ...('allowSso' in patch && { allowSso: u.allowSso }), ...(patch.resetTwoFactor && { twoFactor: 'reset' }), ...(patch.forgetDevices && { devices: 'forgotten' }), ...(body.unlockSignIn === true && { signIn: 'unlocked' }) } });
     if (patch.resetTwoFactor) notifyAccount(u.email, `An admin (${me.email}) turned off two-factor sign-in for your account.`);
     if (patch.password !== undefined) notifyAccount(u.email, `An admin (${me.email}) set a new password for your account.`);
     // a new password ends the user's sessions; an admin who changed their own stays signed in

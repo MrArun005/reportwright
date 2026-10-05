@@ -109,7 +109,7 @@ describe('checkCredential: caps and device cookies (OWASP)', () => {
     expect((await as('admin@x.test', PW, '192.0.2.1', forged)).status).toBe(429);
     const other = device(await (async () => { await users.createUser({ email: 'pal@x.test', role: 'viewer', password: PW }); return as('pal@x.test', PW, '192.0.2.9'); })());
     expect((await as('admin@x.test', PW, '192.0.2.1', other)).status).toBe(429); // another account's cookie
-    await users.endSessions('admin@x.test'); // sign-out everywhere (or a password change) revokes it
+    await users.endSessions('admin@x.test', { everywhere: true }); // sign-out everywhere (or a password change) revokes it
     expect((await as('admin@x.test', PW, '192.0.2.1', dev2)).status).toBe(429);
   }, 120000);
 
