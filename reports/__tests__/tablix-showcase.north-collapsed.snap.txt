@@ -275,3 +275,5 @@ Total
 108
 1,026
 Page 4 of 4
+--- warnings
+WidePivot: its columns are 1058pt wide, wider than the page (770pt), so they continue on the next pages

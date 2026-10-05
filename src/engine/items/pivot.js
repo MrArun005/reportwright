@@ -55,6 +55,9 @@ export const cmpKey = (a, b, ctx) => sortCompare(a, b, ctx);
 /** True when the matrix uses the array form (rowGroups / columnGroups / values). */
 export const isTablix = (item) => Array.isArray(item.rowGroups) || Array.isArray(item.columnGroups) || Array.isArray(item.values);
 
+/** Wider than the page: "paginate" (the default: the columns continue on the next pages), "shrink" or "clip". */
+const OVERFLOWS = ['paginate', 'shrink', 'clip'];
+
 /**
  * The array form of a matrix. The old single-group keys map onto one row group, one column group and one value.
  * @returns {{ rowGroups: any[], columnGroups: any[], values: any[], legacy: boolean, overflow: string, pageOrder: string }}
@@ -66,7 +69,7 @@ export function normalizeMatrix(item) {
       columnGroups: (item.columnGroups || []).filter(g => g && typeof g === 'object'),
       values: (Array.isArray(item.values) && item.values.length ? item.values : [{ value: '=Count(Fields)' }]).filter(v => v && typeof v === 'object'),
       legacy: false,
-      overflow: item.overflow === 'shrink' ? 'shrink' : 'paginate',
+      overflow: OVERFLOWS.includes(item.overflow) ? item.overflow : 'paginate',
       pageOrder: item.pageOrder === 'across' ? 'across' : 'down',
     };
   }
@@ -75,7 +78,7 @@ export function normalizeMatrix(item) {
     columnGroups: [{ expr: item.columnGroup || "=''", sort: item.columnSort, total: item.rowTotals !== false ? 'after' : 'none' }],
     values: [{ value: item.value || '=Count(Fields)', format: item.valueFormat || null }],
     legacy: true,
-    overflow: item.overflow === 'paginate' ? 'paginate' : 'shrink',
+    overflow: OVERFLOWS.includes(item.overflow) ? item.overflow : 'paginate', // too wide: the next pages, as SSRS (not narrowed)
     pageOrder: item.pageOrder === 'across' ? 'across' : 'down',
   };
 }

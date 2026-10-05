@@ -22,7 +22,7 @@ const EPS = 0.01;
  * @param {any[]} units  sorted by top
  * @param {any[]} tables
  * @param {number} pageH  content height available for the body
- * @param {(msg: string) => void} warn
+ * @param {(msg: string, clip?: boolean) => void} warn
  * @returns {{ top: number, bottom: number, offset: number, repeat: any[], units: any[] }[]}
  */
 export function paginate(units, tables, pageH, warn) {
@@ -186,7 +186,7 @@ export function paginate(units, tables, pageH, warn) {
         if (bottom < 0) {
           bottom = limit;
           cut = true;
-          warn(`An item is taller than the page (page ${pages.length + 1}). Its lower part is cut.`);
+          warn(`An item is taller than the page (page ${pages.length + 1}). Its lower part is cut.`, true);
         }
       }
     }

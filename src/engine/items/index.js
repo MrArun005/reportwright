@@ -319,6 +319,9 @@ register('shape', {
   },
 });
 
+/** A table or matrix wider than the page: the default continues on the next pages (as SSRS); the others are opt-outs. */
+const OVERFLOW_OPTIONS = [{ value: 'paginate', label: 'Continue on the next pages' }, { value: 'shrink', label: 'Narrow the columns' }, { value: 'clip', label: 'Cut at the page edge' }];
+
 /* ---------------------------------------------------------------- table */
 register('table', {
   label: 'Table',
@@ -336,9 +339,9 @@ register('table', {
     { key: 'repeatHeader', label: 'Repeat header on each page', type: 'bool', category: 'Layout' },
     { key: 'printAtBottom', label: 'Footer at the bottom of the page', type: 'bool', category: 'Layout' },
     { key: 'overflowTo', label: 'Fixed frame: continue rows in', labelKey: 'overflowTo', type: 'overflowTarget', category: 'Layout' },
-    { key: 'overflow', label: 'Wider than the page', type: 'select', options: [{ value: 'paginate', label: 'Continue on the next pages' }], category: 'Layout' },
-    { key: 'repeatColumns', label: 'Columns repeated on each page set', type: 'number', category: 'Layout', showIf: (it) => it.overflow === 'paginate' },
-    { key: 'pageOrder', label: 'Page order', type: 'select', options: [{ value: 'down', label: 'Down, then across' }, { value: 'across', label: 'Across, then down' }], category: 'Layout', showIf: (it) => it.overflow === 'paginate' },
+    { key: 'overflow', label: 'Wider than the page', type: 'select', options: OVERFLOW_OPTIONS, category: 'Layout' },
+    { key: 'repeatColumns', label: 'Columns repeated on each page set', type: 'number', category: 'Layout', showIf: (it) => (it.overflow || 'paginate') === 'paginate' },
+    { key: 'pageOrder', label: 'Page order', type: 'select', options: [{ value: 'down', label: 'Down, then across' }, { value: 'across', label: 'Across, then down' }], category: 'Layout', showIf: (it) => (it.overflow || 'paginate') === 'paginate' },
     { key: 'noRowsText', label: 'Text when no rows', type: 'text', category: 'Data' },
     { key: 'bookmark', label: 'Bookmark (document map)', type: 'expr', category: 'Interactivity' },
     { key: 'pageBreakBefore', label: 'Page break before', type: 'bool', category: 'Layout' },
@@ -371,7 +374,7 @@ register('table', {
       cols = cols.map(c => ({ ...c, width: (Number(c.width) || 0) * k }));
       lc.warn(`${item.name || 'Table'}: its columns are ${Math.round(designedW)}pt wide, wider than the page (${Math.round(room)}pt), so they are narrowed to fit`);
     } else if (overflow === 'clip' || (overflow === 'paginate' && lc.fixed)) {
-      lc.warn(`${item.name || 'Table'}: its columns are ${Math.round(designedW)}pt wide, wider than the page (${Math.round(room)}pt), so the columns past the page edge are cut`);
+      lc.warn(`${item.name || 'Table'}: its columns are ${Math.round(designedW)}pt wide, wider than the page (${Math.round(room)}pt), so the columns past the page edge are cut`, true);
     } else if (overflow === 'paginate' && item.overflow !== 'paginate') {
       lc.warn(`${item.name || 'Table'}: its columns are ${Math.round(designedW)}pt wide, wider than the page (${Math.round(room)}pt), so they continue on the next pages`);
     }
@@ -1280,7 +1283,7 @@ register('matrix', {
     { key: 'rowHeaderWidth', label: 'Row header width', type: 'number', category: 'Layout' },
     { key: 'columnWidth', label: 'Column width', type: 'number', category: 'Layout' },
     { key: 'repeatHeader', label: 'Repeat header on each page', type: 'bool', category: 'Layout' },
-    { key: 'overflow', label: 'Wider than the page', type: 'select', options: [{ value: 'paginate', label: 'Continue on the next pages' }, { value: 'shrink', label: 'Narrow the columns' }], category: 'Layout' },
+    { key: 'overflow', label: 'Wider than the page', type: 'select', options: OVERFLOW_OPTIONS, category: 'Layout' },
     { key: 'pageOrder', label: 'Page order', type: 'select', options: [{ value: 'down', label: 'Down, then across' }, { value: 'across', label: 'Across, then down' }], category: 'Layout' },
     { key: 'hidden', label: 'Hidden', type: 'expr', category: 'Visibility' },
   ],
@@ -1306,7 +1309,7 @@ register('matrix', {
       const nTot = p.cols.filter(c => c.kind === 'total').length;
       const nLeaf = (p.cols.length - nTot) / V;
       const fit = (room - headW) / p.cols.length;
-      if (fit < 28) lc.warn(`${who}: ${nLeaf} columns do not fit the page; showing the first ${Math.max(1, Math.floor((room - headW) / 28) - nTot)}`);
+      if (fit < 28) lc.warn(`${who}: ${nLeaf} columns do not fit the page; showing the first ${Math.max(1, Math.floor((room - headW) / 28) - nTot)}`, true);
       else lc.warn(`${who}: its columns are wider than the page, so they are narrowed to fit`);
       cw = Math.max(28, fit);
       const keep = Math.max(1, Math.floor((room - headW) / cw) - nTot);
@@ -1365,7 +1368,9 @@ register('matrix', {
     const table = {
       type: 'table', name: who, x: item.x, y: item.y, w: 0, h: item.h, dataSet: null, repeatHeader: item.repeatHeader !== false, style: item.style,
       columns, header, footer, __body: rows.length ? body : [], __rows: rows, __ctx: ctx, noRowsText: 'No data',
-      overflow: spec.overflow, repeatColumns: R, pageOrder: spec.pageOrder, // too wide: continues on the next pages unless "shrink" (table layout)
+      // too wide: continues on the next pages (the table warns when the author did not ask for it), "clip" cuts at the edge;
+      // "shrink" was done above
+      overflow: spec.overflow === 'paginate' ? item.overflow : spec.overflow, repeatColumns: R, pageOrder: spec.pageOrder,
     };
     return ITEMS.table.layout(table, lc);
   },

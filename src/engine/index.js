@@ -72,7 +72,11 @@ export async function render(def0, opts = {}) {
   if (fatal.length) throw new ReportError(fatal[0], { errors: v.errors });
   /** @type {string[]} */
   const warnings = [...v.warnings, ...[...cellErrors].slice(0, 100), ...reuseWarnings].slice(0, 200); // warn() keeps it at 200
-  const warn = (msg) => { if (warnings.length < 200 && !warnings.includes(msg)) warnings.push(msg); };
+  // clip: the warning says content is cut off (past the page edge, under the page bottom): the viewer shows those
+  const clips = new Set();
+  /** @type {(msg: string, clip?: boolean) => void} */
+  const warn = (msg, clip) => { if (warnings.length < 200 && !warnings.includes(msg)) warnings.push(msg); if (clip) clips.add(msg); };
+  const clipped = () => warnings.filter(w => clips.has(w)); // only the warnings of the last layout pass
 
   const page = resolvePage(def.page);
   if (['pageHeader', 'body', 'pageFooter'].some(k => hasType(k === 'body' && Array.isArray(def.sections?.body) ? def.sections.body.flatMap(b => [...(b?.items || []), ...(b?.pageHeader?.items || []), ...(b?.pageFooter?.items || [])]) : def.sections?.[k]?.items, 'barcode'))) await loadBarcodes();
@@ -200,7 +204,7 @@ export async function render(def0, opts = {}) {
             const child = defs.get(rq.report);
             const r = await render(child, { ...opts, target, onSources: undefined, deadline: deadline ?? undefined, reportId: rq.report, budget, fnCount, imageBudget, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, rq.report], bodyWidth: page.bodyWidth, state: {} });
             results.set(key, r);
-            for (const w of r.warnings) warn(`Subreport ${rq.report}: ${w}`);
+            for (const w of r.warnings) warn(`Subreport ${rq.report}: ${w}`, r.clipped?.includes(w));
           } catch (e) { if (e.timeout) throw e; results.set(key, { error: e.message }); }
         }
         lc.subreports = { mode: 'use', results };
@@ -227,7 +231,7 @@ export async function render(def0, opts = {}) {
       for (const it of items) {
         if (!it || typeof it !== 'object') continue;
         const right = dx + (Number(it.x) || 0) + (Number(it.w) || 0);
-        if (it.type !== 'table' && it.type !== 'matrix' && right > W + 1) warn(`${it.name || it.type}: it reaches ${Math.round(right)}pt, past the ${Math.round(W)}pt the page has for the body, so the part past the edge is not printed`);
+        if (it.type !== 'table' && it.type !== 'matrix' && right > W + 1) warn(`${it.name || it.type}: it reaches ${Math.round(right)}pt, past the ${Math.round(W)}pt the page has for the body, so the part past the edge is not printed`, true);
         else edge(it.items, dx + (Number(it.x) || 0), W, depth + 1);
       }
     };
@@ -415,7 +419,7 @@ export async function render(def0, opts = {}) {
     const cjk = [...m.noGlyph].some(c => /[\u1100-\u11ff\u2600-\u27bf\u2b00-\u2bff\u3000-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]|[\u{1f000}-\u{1faff}]/u.test(c));
     warn(`No font has these characters, so they show as boxes: ${[...m.noGlyph].slice(0, 20).join(' ')}. ${cjk ? 'Add the optional Chinese, Japanese, Korean and emoji fonts (npm run fonts:cjk, or the @pagewright/fonts-cjk files in /fonts/cjk), or upload' : 'Upload'} a font that has them and use it for this text.`);
   }
-  if (opts.bodyOnly) return { units: result.body.units, tables: result.body.tables, height: result.body.height, regions, warnings };
+  if (opts.bodyOnly) return { units: result.body.units, tables: result.body.tables, height: result.body.height, regions, warnings, clipped: clipped() };
   const { pages, bookmarks, height } = result;
   for (const pg of pages) finishText(pg.items, m);
   // Every image on every page passes the caps here, whatever drew it: background images (a style, painted
@@ -435,7 +439,7 @@ export async function render(def0, opts = {}) {
   }
 
   return {
-    width: result.width ?? page.width, height, pages, warnings, bookmarks, regions: opts.exportData ? regions : null, name: def.name || '', partial: cutRows(),
+    width: result.width ?? page.width, height, pages, warnings, clipped: clipped(), bookmarks, regions: opts.exportData ? regions : null, name: def.name || '', partial: cutRows(),
     timeZone: timeZone || null, // the zone dates were shown in (exports write their dates on that clock)
     locale: def.locale || null, // exports format numbers the report's way (Excel: Indian lakh grouping)
     currency: def.currency || null, // Excel's currency symbol (else the locale's, as the page)

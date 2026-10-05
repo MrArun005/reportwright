@@ -473,7 +473,7 @@ A `matrix` with `rowGroups`, `columnGroups` and `values` arrays is a pivot table
 | group `collapsible`, `initiallyCollapsed` | a ▼/▶ toggle on each instance; a collapsed instance is one row (or column) with the instance's values |
 | row group `width`, `header` | the header column's width and the title over it |
 | value `show` | `value`, `percentOfTotal`, `percentOfRow`, `percentOfColumn` (format `P1` unless given) |
-| `overflow` | `paginate` (default for the array form): columns that do not fit continue on the next pages, the row headers repeated; `shrink`: the older narrow-then-cut rule |
+| `overflow` | `paginate` (the default, both forms): columns that do not fit continue on the next pages, the row headers repeated; `shrink`: the older narrow-then-cut rule; `clip`: cut at the page edge. Anything cut is listed in the model's `clipped` warnings, which the viewer opens by itself |
 | `pageOrder` | `down` (all rows for the first columns, then the next columns) or `across` (each block of rows on every column set first; starts on a new page) |
 
 A group's `name` is a scope in value expressions: `Sum(Fields.x, "Region")` is the region instance across all columns. Limits: 8 levels of groups per axis, 50 values, 1,000 value columns, 250,000 cells (more is cut with a warning). Keys and labels are data: they are never evaluated as expressions.

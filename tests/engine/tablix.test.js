@@ -112,7 +112,7 @@ describe('pivot build', () => {
 
   it('normalizes the old single-group form', () => {
     expect(normalizeMatrix({ rowGroup: '=Fields.a', columnGroup: '=Fields.b', value: '=Sum(Fields.x)', valueFormat: 'N0', columnTotals: false, rowSort: 'desc' })).toMatchObject({
-      legacy: true, overflow: 'shrink',
+      legacy: true, overflow: 'paginate', // R4: too wide continues on the next pages, as SSRS (was: narrowed)
       rowGroups: [{ expr: '=Fields.a', sort: 'desc', total: 'none' }], columnGroups: [{ expr: '=Fields.b', total: 'after' }], values: [{ value: '=Sum(Fields.x)', format: 'N0' }],
     });
     expect(normalizeMatrix({ rowGroups: [] }).overflow).toBe('paginate');
@@ -185,7 +185,8 @@ describe('reports/tablix-showcase.pw.json (numbers checked by hand)', async () =
   const regionRows = (out, name) => out.regions.find(r => r.name === name).rows.map(r => r.cells.map(c => c.value));
   it('the region × year pivot: sums, row shares and totals', async () => {
     const out = await render(def, { exportData: true, fontStore });
-    expect(out.warnings).toEqual([]);
+    // the wide pivot continues on the next pages, and the author is told (R4); nothing else to warn about
+    expect(out.warnings).toEqual([expect.stringMatching(/^WidePivot: .* so they continue on the next pages$/)]);
     const rows = regionRows(out, 'SalesPivot');
     // North / Delhi: 2025 = 100 + 30, 2026 = 170; share of the row 130 / 300 (exports keep the full value; P1 shows it)
     const q = (a, b) => Number((a / b).toPrecision(15));

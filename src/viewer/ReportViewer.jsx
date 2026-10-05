@@ -654,7 +654,8 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
           {status.state === 'error' && <div className="vmsg error" role="alert"><b>{T('didNotRun')}</b><br />{status.message}</div>}
           {!model && status.state === 'running' && <div className="vmsg">{T('runningReport')}</div>}
           {model?.warnings?.length > 0 && (
-            <details className="warnings" open={hasErrorCells || undefined} data-testid="viewer-warnings"><summary>{T('warnings', { n: model.warnings.length })}</summary>
+            // content cut off (past the page edge or bottom): the warnings open by themselves and the summary says so
+            <details className="warnings" open={hasErrorCells || model.clipped?.length > 0 || undefined} data-testid="viewer-warnings"><summary>{T('warnings', { n: model.warnings.length })}{model.clipped?.length > 0 && <b data-testid="viewer-clipped"> · {T('r4_clipped', { n: model.clipped.length })}</b>}</summary>
               <ul>{model.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul></details>
           )}
           {model && !single && (

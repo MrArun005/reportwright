@@ -45,7 +45,7 @@ function clipTo(it, a, b) {
 /**
  * @param {{ units: any[], height: number, headerCount: number, headerHeight: number, repeatHeader: boolean,
  *   colX: number[], widths: number[], x: number, repeat: number, room: number, order: 'down' | 'across', pageH: number,
- *   name: string, nextId: () => number, warn: (m: string) => void, shiftLocal: (items: any[], dy: number) => any[] }} o
+ *   name: string, nextId: () => number, warn: (m: string, clip?: boolean) => void, shiftLocal: (items: any[], dy: number) => any[] }} o
  * @returns {{ height: number, units: any[], tables: any[], width: number } | null}  null when the columns fit
  */
 export function sliceColumns(o) {
@@ -59,11 +59,11 @@ export function sliceColumns(o) {
   for (let ci = rep; ci < n; ci++) {
     const last = sets[sets.length - 1];
     if (last && last.w + o.widths[ci] <= avail + EPS) { last.to = ci + 1; last.w += o.widths[ci]; continue; }
-    if (o.widths[ci] > avail + EPS) o.warn(`${o.name}: column ${ci + 1} is wider than the page, so it is cut`);
+    if (o.widths[ci] > avail + EPS) o.warn(`${o.name}: column ${ci + 1} is wider than the page, so it is cut`, true);
     sets.push({ from: ci, to: ci + 1, w: o.widths[ci] });
   }
   if (sets.length < 2) return null;
-  if (sets.length > MAX_SETS) { o.warn(`${o.name}: its columns would fill more than ${MAX_SETS} pages across; the rest are left out`); sets.length = MAX_SETS; }
+  if (sets.length > MAX_SETS) { o.warn(`${o.name}: its columns would fill more than ${MAX_SETS} pages across; the rest are left out`, true); sets.length = MAX_SETS; }
   const right = o.colX[n - 1] + o.widths[n - 1];
   for (const s of sets) {
     s.a = o.colX[s.from];

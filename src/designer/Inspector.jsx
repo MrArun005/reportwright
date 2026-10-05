@@ -333,7 +333,6 @@ function PivotEditor({ item, openExpr }) {
     if (!isTablix(it)) {
       const n = normalizeMatrix(it);
       Object.assign(it, { rowGroups: n.rowGroups, columnGroups: n.columnGroups, values: n.values });
-      if (it.overflow == null) it.overflow = 'shrink'; // the old fit-to-page look
       for (const k of LEGACY_MATRIX) delete it[k];
     }
     fn(it);
