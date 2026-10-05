@@ -109,7 +109,7 @@ const loadReport = async (rid) => {
 export const fetchReport = loadReport;
 async function renderMain(def, params, state, reportId, exportData = false) {
   await customFonts();
-  return render(def, { parameters: params, state, reportId, ...(exportData ? {} : { exportData: false }), fontStore: fontStore(), baseUrl: origin(), loadReport, fetch: reportFetch(origin()) }); // a report reads data, never calls our API as the viewer
+  return render(def, { parameters: params, state, reportId, exportData, fontStore: fontStore(), baseUrl: origin(), loadReport, fetch: reportFetch(origin()) }); // a report reads data, never calls our API as the viewer
 }
 
 /**

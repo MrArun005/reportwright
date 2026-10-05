@@ -10,7 +10,7 @@ import { fontStore, report } from '../helpers.js';
 
 const O = 36; // page margin
 const chart = (extra, rows) => report([{ type: 'chart', name: 'C', x: 0, y: 0, w: 400, h: 240, dataSet: 'Rows', legend: 'none', ...extra }], { data: { rows } });
-const draw = async (extra, rows, opts = {}) => { const out = await render(chart(extra, rows), { fontStore, ...opts }); return { items: out.pages[0].items, warnings: out.warnings, model: out }; };
+const draw = async (extra, rows, opts = {}) => { const out = await render(chart(extra, rows), { exportData: true, fontStore, ...opts }); return { items: out.pages[0].items, warnings: out.warnings, model: out }; };
 const textsOf = (items) => items.filter(i => i.t === 'text').map(i => i.lines[0].text);
 const inChart = (r) => r.x >= O - 0.5 && r.x + r.w <= O + 400.5 && r.y >= O - 0.5 && r.y + r.h <= O + 240.5;
 
@@ -128,7 +128,7 @@ describe('the new charts in the PDF and HTML', () => {
   it('every type exports', async () => {
     const rows = Array.from({ length: 30 }, (_, i) => ({ c: `C${i % 5}`, v: (i * 7) % 23 + 1, s: `2026-01-${String(1 + (i % 20)).padStart(2, '0')}`, e: `2026-02-${String(1 + (i % 20)).padStart(2, '0')}` }));
     for (const chartType of ['treemap', 'histogram', 'boxplot', 'waterfall', 'gantt']) {
-      const out = await render(chart({ chartType, category: '=Fields.c', series: [{ name: 'V', value: chartType === 'histogram' || chartType === 'boxplot' ? '=Fields.v' : '=Sum(Fields.v)' }], ganttStart: '=Fields.s', ganttEnd: '=Fields.e' }, rows), { fontStore });
+      const out = await render(chart({ chartType, category: '=Fields.c', series: [{ name: 'V', value: chartType === 'histogram' || chartType === 'boxplot' ? '=Fields.v' : '=Sum(Fields.v)' }], ganttStart: '=Fields.s', ganttEnd: '=Fields.e' }, rows), { exportData: true, fontStore });
       expect(out.warnings, chartType).toEqual([]);
       const pdf = await exportPdf(out, fontStore);
       expect(pdf.byteLength, chartType).toBeGreaterThan(1000);
@@ -183,7 +183,7 @@ describe('map: region drill, colour legends, line layers', () => {
   const rows = [{ region: 'West', amount: 10 }, { region: 'East', amount: 55 }, { region: 'North', amount: 100 }];
   const mapItem = (extra = {}) => ({ type: 'map', name: 'M', x: 0, y: 0, w: 300, h: 200, geojson: JSON.stringify(GEO), shapeKey: '=Fields.name',
     valueDataSet: 'Rows', valueKey: '=Fields.region', value: '=Sum(Fields.amount)', colorLow: '#ffffff', colorHigh: '#000000', legend: 'bottom', valueFormat: 'N0', ...extra });
-  const drawMap = async (extra) => { const out = await render(report([mapItem(extra)], { data: { rows } }), { fontStore }); return { items: out.pages[0].items, warnings: out.warnings }; };
+  const drawMap = async (extra) => { const out = await render(report([mapItem(extra)], { data: { rows } }), { exportData: true, fontStore }); return { items: out.pages[0].items, warnings: out.warnings }; };
 
   it('a click on a region sets parameters (or drills through), in the region\'s scope; hover shows its value', async () => {
     const { items } = await drawMap({ regionAction: { type: 'params', params: { region: '=Fields.region' } } });
@@ -218,7 +218,7 @@ describe('map: region drill, colour legends, line layers', () => {
     const huge = { type: 'Feature', properties: { name: 'Huge' }, geometry: { type: 'Polygon', coordinates: [Array.from({ length: 300000 }, (_, i) => [Math.cos(i) * 10, Math.sin(i) * 10])] } };
     const many = Array.from({ length: 6000 }, (_, i) => square(`S${i}`, i % 100));
     const t0 = Date.now();
-    const one = (features) => render(report([mapItem({ geojson: JSON.stringify({ type: 'FeatureCollection', features }), valueDataSet: null, legend: 'none' })], { data: { rows } }), { fontStore });
+    const one = (features) => render(report([mapItem({ geojson: JSON.stringify({ type: 'FeatureCollection', features }), valueDataSet: null, legend: 'none' })], { data: { rows } }), { exportData: true, fontStore });
     const a = await one([square('Small', 0), huge]);
     expect(a.warnings.join()).toMatch(/more than 200,000 coordinates/);
     expect(a.pages[0].items.filter(i => i.t === 'path')).toHaveLength(1);

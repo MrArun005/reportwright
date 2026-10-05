@@ -154,7 +154,7 @@ import { textRows } from '../../src/exporters/regions.js';
 import { RICH_DEFAULTS } from '../../src/engine/items/rich.js';
 
 const rich = (value, extra = {}, data) => report([{ type: 'richtext', name: 'R', x: 0, y: 0, w: 300, h: 20, value, ...extra }], { data });
-const out = async (def) => render(def, { fontStore });
+const out = async (def) => render(def, { exportData: true, fontStore });
 
 describe('rich text: layout', () => {
   it('mixed styles on one line share a baseline and sit side by side', async () => {

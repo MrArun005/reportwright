@@ -16,7 +16,7 @@ const sorted = () => {
 
 describe('HTML export: Tables view', () => {
   it('embeds the tables, their sortable columns and formatted values', async () => {
-    const m = await render(sorted(), { fontStore });
+    const m = await render(sorted(), { exportData: true, fontStore });
     const data = tablesData(m, { locale: 'en-IN' });
     expect(data[0].name).toBe('Sales');
     expect(data[0].sort).toEqual([1]);
@@ -24,7 +24,7 @@ describe('HTML export: Tables view', () => {
     expect(delhi.c.find(c => c[0] === 1).slice(1, 3)).toEqual(['130.00', 130]);
   });
   it('the script runs under the file\'s own CSP (its hash), data cannot close the script tag, no inline handlers', async () => {
-    const m = await render(sorted(), { fontStore });
+    const m = await render(sorted(), { exportData: true, fontStore });
     m.regions[0].rows[1].cells[0].value = '</script><script>alert(1)</script>';
     const html = await exportHtml(m, fontStore, { title: 'T' });
     const hash = crypto.createHash('sha256').update(DATA_SCRIPT).digest('base64');
@@ -35,7 +35,7 @@ describe('HTML export: Tables view', () => {
     expect(html).toContain('\\u003c/script>');
   });
   it('static: true leaves the view out', async () => {
-    const m = await render(sorted(), { fontStore });
+    const m = await render(sorted(), { exportData: true, fontStore });
     const html = await exportHtml(m, fontStore, { title: 'T', static: true });
     expect(html).not.toContain('<script');
     expect(html).not.toContain('Content-Security-Policy');

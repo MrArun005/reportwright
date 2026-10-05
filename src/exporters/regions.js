@@ -1,11 +1,13 @@
 // @ts-check
 /**
- * A page model rendered with exportData: false (a view, a plain PDF) has no table data and no cell tags: the
- * exports that rebuild tables refuse it rather than write a file without its tables.
+ * A page model rendered without exportData (the default: a view, a plain PDF) has no table data and no cell tags:
+ * the exports that rebuild tables refuse it rather than write a file without its tables.
  */
 export function needsTableData(model, what) {
-  if (model && model.regions === null) throw Object.assign(new Error(`${what} needs the report's table data: render it with exportData (the default), not exportData: false`), { code: 'NO_EXPORT_DATA' });
+  if (model && model.regions === null) throw Object.assign(new Error(`${what} needs the report's table data: render it with { exportData: true }`), { code: 'NO_EXPORT_DATA' });
 }
+/** True when an export of this format needs the table data: render(def, { exportData: needsExportData(format, options) }). */
+export const needsExportData = (fmt, o = {}) => ['xlsx', 'csv', 'docx', 'pptx', 'html', 'json'].includes(fmt) || (fmt === 'pdf' && !!(o.pdfua || o.ua || o.tagged));
 /** Merge table regions that share a name (a table repeated inside a list). */
 export function mergedRegions(model) {
   const map = new Map();

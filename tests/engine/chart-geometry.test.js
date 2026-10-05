@@ -38,7 +38,7 @@ describe('existing chart geometry', () => {
   for (const [name, extra] of Object.entries(CASES)) {
     it(name, async () => {
       // en-IN / INR: the locale these were drawn with (it was the default then); C0 labels are rupees
-      const out = await render(report([{ ...base, ...extra }], { data: rows, def: { locale: 'en-IN', currency: 'INR' } }), { fontStore });
+      const out = await render(report([{ ...base, ...extra }], { data: rows, def: { locale: 'en-IN', currency: 'INR' } }), { exportData: true, fontStore });
       expect(out.warnings).toEqual([]);
       expect(digest(out.pages[0].items)).toMatchSnapshot();
     });
@@ -51,7 +51,7 @@ describe('existing chart geometry', () => {
       const def = read(file);
       const data = Object.fromEntries(Object.entries(c.data).map(([k, v]) => [k, read(`reports/__tests__/${v}`)]));
       def.dataSources = def.dataSources.map(s => (s.name in data ? { name: s.name, type: 'json', data: data[s.name] } : s));
-      const out = await render(def, { fontStore, parameters: c.parameters, now: new Date(c.now) });
+      const out = await render(def, { exportData: true, fontStore, parameters: c.parameters, now: new Date(c.now) });
       expect(out.pages.map(p => digest(p.items))).toMatchSnapshot();
     });
   }

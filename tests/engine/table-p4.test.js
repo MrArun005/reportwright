@@ -12,7 +12,7 @@ describe('merged cells across rows (rowSpan)', () => {
       { height: 20, cells: [{ value: 'Name', rowSpan: 2, style: { backgroundColor: '#eeeeee', border: '1 solid #000000' } }, { value: 'Amounts', colSpan: 2 }, null] },
       { height: 20, cells: [null, { value: 'Paid' }, { value: 'Due' }] },
     ] })], { data });
-    const out = await render(def, { fontStore });
+    const out = await render(def, { exportData: true, fontStore });
     const pg = out.pages[0];
     expect(texts(pg).filter(t => t === 'Name')).toHaveLength(1);
     const x0 = 36; // left margin
@@ -30,13 +30,13 @@ describe('merged cells across rows (rowSpan)', () => {
       { height: 16, cells: [{ value: '=Fields.name', rowSpan: 2 }, { value: '="#" & Fields.id' }, { value: '=Fields.amt' }] },
       { height: 16, cells: [null, { value: 'note' }, { value: '=Fields.amt * 2' }] },
     ] })], { data });
-    const t = texts((await render(def, { fontStore })).pages[0]);
+    const t = texts((await render(def, { exportData: true, fontStore })).pages[0]);
     expect(t).toEqual(['Asha', '#1', '10', 'note', '20', 'Ravi', '#2', '20', 'note', '40', 'Meera', '#3', '30', 'note', '60']);
   });
 
   it('a span never reaches into the next band', async () => {
     const def = report([table({ header: [{ height: 16, cells: [{ value: 'H', rowSpan: 5 }, { value: 'x' }, null] }], detail: [{ height: 16, cells: [{ value: '=Fields.name' }, null, null] }] })], { data });
-    const t = texts((await render(def, { fontStore })).pages[0]);
+    const t = texts((await render(def, { exportData: true, fontStore })).pages[0]);
     expect(t).toEqual(['H', 'x', 'Asha', 'Ravi', 'Meera']);
   });
 
@@ -44,7 +44,7 @@ describe('merged cells across rows (rowSpan)', () => {
     const long = 'A long label that wraps onto several lines in a narrow merged cell';
     const def = report([table({ columns: [{ width: 60 }, { width: 100 }], header: [
       { height: 14, cells: [{ value: long, rowSpan: 2 }, { value: 'a' }] }, { height: 14, cells: [null, { value: 'b' }] }] })], { data });
-    const pg = (await render(def, { fontStore })).pages[0];
+    const pg = (await render(def, { exportData: true, fontStore })).pages[0];
     const label = pg.items.find(i => i.t === 'text' && i.lines[0].text.startsWith('A long'));
     const b = textAt(pg, 'b')[0];
     const bottom = label.lines[label.lines.length - 1].y;
@@ -54,7 +54,7 @@ describe('merged cells across rows (rowSpan)', () => {
   it('draws the merged text again at the top of the page its rows continue on', async () => {
     const body = Array.from({ length: 80 }, (_, i) => ({ row: { height: 16, cells: i === 0 ? [{ raw: 'Region North', rowSpan: 80 }, { raw: `r${i}` }] : [null, { raw: `r${i}` }] }, kind: 'detail' }));
     const def = report([{ ...table({ columns: [{ width: 120 }, { width: 120 }] }), dataSet: null, __body: body }]);
-    const out = await render(def, { fontStore });
+    const out = await render(def, { exportData: true, fontStore });
     expect(out.pages.length).toBe(2);
     const p2 = out.pages[1];
     const again = textAt(p2, 'Region North');
@@ -68,7 +68,7 @@ describe('merged cells across rows (rowSpan)', () => {
 describe('cells', () => {
   it('a toggle on any cell, and raw values that are never evaluated', async () => {
     const def = report([table({ dataSet: null, __body: [{ row: { height: 16, cells: [{ raw: '=1+1' }, { raw: '{Fields.x}', toggle: { key: 'k1', open: false } }, { raw: 5 }] }, kind: 'detail' }] })]);
-    const pg = (await render(def, { fontStore })).pages[0];
+    const pg = (await render(def, { exportData: true, fontStore })).pages[0];
     expect(texts(pg)).toEqual(['=1+1', '▶ {Fields.x}', '5']);
     const link = pg.items.find(i => i.t === 'link');
     expect(link).toMatchObject({ x: 136, w: 100, action: { type: 'toggle', key: 'k1', open: false } });
@@ -86,7 +86,7 @@ describe('wide tables paginate sideways (horizontal pagination)', () => {
   };
   it('down, then across: every row with the first column set, then the next set, row headers repeated', async () => {
     const { def } = wide(20);
-    const out = await render(def, { fontStore });
+    const out = await render(def, { exportData: true, fontStore });
     // body 523 pt: 80 for Name leaves 443 → 8 columns of 50 per set: C0–C7, C8–C15, C16–C19
     expect(out.pages.length).toBe(3);
     const p = out.pages.map(texts);
@@ -102,7 +102,7 @@ describe('wide tables paginate sideways (horizontal pagination)', () => {
     const rows = Array.from({ length: 100 }, (_, i) => ({ name: `Row ${i + 1}`, ...Object.fromEntries(Array.from({ length: 12 }, (_, c) => [`c${c}`, c])) }));
     const { def } = wide(12, { pageOrder: 'across' });
     def.dataSources[0].data = { rows };
-    const out = await render(def, { fontStore });
+    const out = await render(def, { exportData: true, fontStore });
     const firstRow = out.pages.map(p => texts(p)[texts(p).findIndex(t => t.startsWith('Row '))]);
     const firstCol = out.pages.map(p => texts(p)[1]);
     expect(firstCol.slice(0, 4)).toEqual(['C0', 'C8', 'C0', 'C8']);
@@ -114,7 +114,7 @@ describe('wide tables paginate sideways (horizontal pagination)', () => {
   it('a pivot paginates sideways with its row headers repeated', async () => {
     const rows = Array.from({ length: 40 }, (_, i) => ({ r: i % 2 ? 'B' : 'A', m: `M${String(i).padStart(2, '0')}`, v: i }));
     const def = report([{ type: 'matrix', name: 'P', x: 0, y: 0, w: 500, h: 40, dataSet: 'Rows', rowGroups: [{ expr: '=Fields.r', width: 60, total: 'after' }], columnGroups: [{ expr: '=Fields.m', sort: 'asc', total: 'after' }], values: [{ value: '=Sum(Fields.v)' }], columnWidth: 40 }], { data: { rows } });
-    const out = await render(def, { fontStore });
+    const out = await render(def, { exportData: true, fontStore });
     expect(out.pages.length).toBe(4); // 41 value columns, 11 per set
     for (const p of out.pages) expect(texts(p)).toEqual(expect.arrayContaining(['A', 'B', 'Total']));
     expect(texts(out.pages[3])).toContain('380'); // the total column, last set: 0+2+…+38
@@ -134,31 +134,31 @@ describe('recursive hierarchies', () => {
   const rowsOf = (out) => out.regions[0].rows.map(r => r.cells.map(c => c.value));
 
   it('lists the tree depth first with Level(), own and Recursive totals', async () => {
-    const out = await render(report([orgTable()], { data: org }), { fontStore });
+    const out = await render(report([orgTable()], { data: org }), { exportData: true, fontStore });
     expect(rowsOf(out)).toEqual([
       ['CEO', 0, 100, 240], ['Ana', 1, 50, 90], ['Cy', 2, 20, 25], ['Ed', 3, 5, 5], ['Di', 2, 15, 15], ['Bo', 1, 40, 50], ['Fay', 2, 10, 10], ['Gil', 0, 1, 1],
     ]);
     expect(out.warnings).toEqual([]);
   });
   it('indents the first cell by level', async () => {
-    const pg = (await render(report([orgTable()], { data: org }), { fontStore })).pages[0];
+    const pg = (await render(report([orgTable()], { data: org }), { exportData: true, fontStore })).pages[0];
     const x = (s) => textAt(pg, s)[0].lines[0].x;
     expect(x('Ana') - x('CEO')).toBeCloseTo(12, 5);
     expect(x('Ed') - x('CEO')).toBeCloseTo(36, 5);
   });
   it('breaks cycles and lists each node once', async () => {
     const rows = [{ id: 1, boss: 2, name: 'A', cost: 1 }, { id: 2, boss: 1, name: 'B', cost: 2 }, { id: 3, boss: null, name: 'C', cost: 3 }];
-    const out = await render(report([orgTable()], { data: { rows } }), { fontStore });
+    const out = await render(report([orgTable()], { data: { rows } }), { exportData: true, fontStore });
     expect(rowsOf(out).map(r => r[0])).toEqual(['C', 'A', 'B']);
     expect(out.warnings.join()).toMatch(/no root/);
   });
   it('drill-down by level: expandLevels opens the first levels, toggles open the rest', async () => {
     const def = report([orgTable({ collapsible: true, expandLevels: 1 })], { data: org });
-    const out = await render(def, { fontStore });
+    const out = await render(def, { exportData: true, fontStore });
     expect(rowsOf(out).map(r => r[0])).toEqual(['▼ CEO', '▶ Ana', '▶ Bo', '▼ Gil'].map(s => s.slice(2)));
     expect(texts(out.pages[0]).filter(t => /^[▼▶]/.test(t))).toEqual(['▼ CEO', '▶ Ana', '▶ Bo', '▼ Gil']);
     const key = out.pages[0].items.find(i => i.t === 'link' && i.action.key.endsWith('/1/2')).action.key;
-    const more = await render(def, { fontStore, state: { toggles: { [key]: true } } });
+    const more = await render(def, { exportData: true, fontStore, state: { toggles: { [key]: true } } });
     expect(rowsOf(more).map(r => r[0])).toEqual(['CEO', 'Ana', 'Cy', 'Di', 'Bo', 'Gil']);
   });
 });
@@ -175,7 +175,7 @@ describe('regions inside cells', () => {
   const inner = { type: 'table', dataSet: 'Items', columns: [{ width: 60 }, { width: 40 }], detail: [{ height: 14, cells: [{ value: '=Fields.sku' }, { value: '=Fields.q' }] }], footer: [{ height: 14, cells: [{ value: 'sum' }, { value: '=Sum(Fields.q)' }] }] };
   it('a table in a cell lists that row\'s children, and the row grows to fit', async () => {
     const t = table({ dataSet: 'Orders', columns: [{ width: 80 }, { width: 120 }], detail: [{ height: 16, cells: [{ value: '=Fields.cust' }, { value: '', item: inner }] }] });
-    const out = await render(report([t], { data: orders, def: { dataSets: sets } }), { fontStore });
+    const out = await render(report([t], { data: orders, def: { dataSets: sets } }), { exportData: true, fontStore });
     expect(texts(out.pages[0])).toEqual(['A', 'p', '2', 'q', '1', 'sum', '3', 'B', 'r', '5', 'sum', '5']);
     const a = textAt(out.pages[0], 'A')[0], b = textAt(out.pages[0], 'B')[0];
     expect(b.clip.y - a.clip.y).toBeGreaterThanOrEqual(42); // 3 inner rows of 14
@@ -184,7 +184,7 @@ describe('regions inside cells', () => {
   it('a sparkline in a group header charts the group\'s rows', async () => {
     const rows = [{ g: 'x', m: 1, v: 3 }, { g: 'x', m: 2, v: 5 }, { g: 'y', m: 1, v: 1 }];
     const t = table({ groups: [{ expr: '=Fields.g', header: [{ height: 20, cells: [{ value: '=Fields.g' }, { value: '', item: { type: 'sparkline', value: '=Fields.v' } }, null] }] }] });
-    const out = await render(report([t], { data: { rows } }), { fontStore });
+    const out = await render(report([t], { data: { rows } }), { exportData: true, fontStore });
     expect(out.warnings).toEqual([]);
     expect(out.pages[0].items.filter(i => i.t === 'path').length).toBeGreaterThanOrEqual(1);
   });
@@ -194,7 +194,7 @@ describe('grid lists, footers at the bottom, orphaned headers', () => {
   it('a list with columns: 3 puts three records side by side', async () => {
     const rows = Array.from({ length: 7 }, (_, i) => ({ n: `Card ${i + 1}` }));
     const list = { type: 'list', name: 'L', x: 0, y: 0, w: 150, h: 40, dataSet: 'Rows', columns: 3, columnGap: 10, items: [{ type: 'textbox', name: 'tb', x: 0, y: 0, w: 150, h: 40, value: '=Fields.n' }] };
-    const pg = (await render(report([list], { data: { rows } }), { fontStore })).pages[0];
+    const pg = (await render(report([list], { data: { rows } }), { exportData: true, fontStore })).pages[0];
     const at = (s) => { const t = textAt(pg, s)[0]; return [t.clip.x, t.clip.y]; };
     expect(at('Card 1')).toEqual([36, 36]);
     expect(at('Card 2')).toEqual([196, 36]);
@@ -205,7 +205,7 @@ describe('grid lists, footers at the bottom, orphaned headers', () => {
   it('printAtBottom: the footer sits at the bottom of the page, what follows starts on the next', async () => {
     const t = table({ printAtBottom: true, detail: [{ height: 16, cells: [{ value: '=Fields.name' }, null, null] }], footer: [{ height: 16, cells: [{ value: 'Signed' }, null, null] }] });
     const after = { type: 'textbox', name: 'after', x: 0, y: 60, w: 200, h: 14, value: 'Next' };
-    const out = await render(report([t, after], { data }), { fontStore });
+    const out = await render(report([t, after], { data }), { exportData: true, fontStore });
     const signed = textAt(out.pages[0], 'Signed')[0];
     expect(signed.clip.y + signed.clip.h).toBeCloseTo(841.89 - 36, 2); // A4 height less the bottom margin
     expect(texts(out.pages[1])).toEqual(['Next']);
@@ -213,7 +213,7 @@ describe('grid lists, footers at the bottom, orphaned headers', () => {
   it('a group header never ends a page', async () => {
     const rows = Array.from({ length: 200 }, (_, i) => ({ g: `G${Math.floor(i / 7)}`, name: `n${i}` }));
     const t = table({ groups: [{ expr: '=Fields.g', header: [{ height: 16, cells: [{ value: '=Fields.g' }, null, null] }] }], detail: [{ height: 16, cells: [{ value: '=Fields.name' }, null, null] }] });
-    const out = await render(report([t], { data: { rows } }), { fontStore });
+    const out = await render(report([t], { data: { rows } }), { exportData: true, fontStore });
     for (const p of out.pages) expect(texts(p).at(-1)).toMatch(/^n/);
   });
 });
@@ -225,7 +225,7 @@ describe('caps on untrusted sizes (phase 4)', () => {
     const sets = [{ name: 'Rows', source: 'src', path: '$.rows' }, { name: 'Other', source: 'src', path: '$.other' }];
     const t = table({ columns: [{ width: 100 }, { width: 100 }], detail: [{ height: 14, cells: [{ value: '=Fields.id' }, { value: '', item: { type: 'table', dataSet: 'Other', columns: [{ width: 90 }], detail: [{ height: 12, cells: [{ value: '=Fields.k' }] }] } }] }] });
     const t0 = Date.now();
-    const out = await render(report([t], { data: { rows: outer, other: inner }, def: { dataSets: sets } }), { fontStore });
+    const out = await render(report([t], { data: { rows: outer, other: inner }, def: { dataSets: sets } }), { exportData: true, fontStore });
     expect(out.warnings.join()).toMatch(/more than 100000 rows of items inside cells/);
     expect(Date.now() - t0).toBeLessThan(30000);
   }, 60000);
@@ -235,7 +235,7 @@ describe('caps on untrusted sizes (phase 4)', () => {
     const inner = { type: 'matrix', name: 'In', dataSet: 'Other', rowGroups: [{ expr: '=1' }], columnGroups: [], values: [{ value: '=Sum(Fields.id)' }] };
     const t = table({ columns: [{ width: 200 }], detail: [{ height: 16, cells: [{ value: '', item: inner }] }] });
     const t0 = Date.now();
-    const out = await render(report([t], { data: { rows }, def: { dataSets: sets } }), { fontStore });
+    const out = await render(report([t], { data: { rows }, def: { dataSets: sets } }), { exportData: true, fontStore });
     expect(out.warnings.join()).toMatch(/rows of items inside cells/);
     expect(Date.now() - t0).toBeLessThan(15000);
   }, 60000);
@@ -252,7 +252,7 @@ describe('caps on untrusted sizes (phase 4)', () => {
       { height: 10, cells: Array.from({ length: n }, () => ({ value: 'x', rowSpan: 2 })) }, { height: 10, cells: Array.from({ length: n }, () => null) }] });
     const rows = Array.from({ length: 300 }, (_, i) => ({ i }));
     const t0 = Date.now();
-    await render(report([t], { data: { rows } }), { fontStore });
+    await render(report([t], { data: { rows } }), { exportData: true, fontStore });
     expect(Date.now() - t0).toBeLessThan(20000);
   }, 60000);
 });
@@ -261,19 +261,19 @@ describe('review fixes (phase 4)', () => {
   it('a collapsed chain of 50,000 rows does not overflow the stack', async () => {
     const rows = Array.from({ length: 50000 }, (_, i) => ({ id: i + 1, parent: i }));
     const t = table({ columns: [{ width: 200 }], groups: [{ name: 'G', expr: '=Fields.id', parent: '=Fields.parent', collapsible: true, initiallyCollapsed: true, header: [{ height: 14, cells: [{ value: '=Fields.id' }] }] }] });
-    const out = await render(report([t], { data: { rows } }), { fontStore });
+    const out = await render(report([t], { data: { rows } }), { exportData: true, fontStore });
     expect(texts(out.pages[0])).toEqual(['▶ 1']);
   }, 60000);
   it('a span that a band cuts short is exported with the rows it covered', async () => {
     const t = table({ header: [{ height: 16, cells: [{ value: 'H', rowSpan: 5 }, { value: 'x' }, null] }], detail: [{ height: 16, cells: [{ value: '=Fields.name' }, null, null] }] });
-    const out = await render(report([t], { data }), { fontStore });
+    const out = await render(report([t], { data }), { exportData: true, fontStore });
     expect(out.regions[0].rows[0].cells[0].rowSpan).toBeUndefined();
   });
   it('paginating 2,000 columns stays near the cost of laying them out', async () => {
     const n = 2000;
     const t = table({ columns: Array.from({ length: n }, () => ({ width: 30 })), overflow: 'paginate', detail: [{ height: 14, cells: Array.from({ length: n }, (_, c) => ({ value: String(c) })) }] });
     const t0 = Date.now();
-    const out = await render(report([t], { data }), { fontStore });
+    const out = await render(report([t], { data }), { exportData: true, fontStore });
     expect(Date.now() - t0).toBeLessThan(15000);
     expect(out.pages.length).toBeGreaterThan(100);
     expect(out.warnings.join()).not.toMatch(/cut/);
@@ -283,7 +283,7 @@ describe('review fixes (phase 4)', () => {
     const t = table({ columns: Array.from({ length: 12 }, () => ({ width: 80 })), overflow: 'paginate', header: [{ height: 16, cells: [{ value: 'Name' }] }],
       groups: [{ expr: '=Fields.g', newSection: true, header: [{ height: 16, cells: [{ value: '=Fields.g' }] }] }], detail: [{ height: 16, cells: [{ value: '=Fields.name' }] }] });
     const footer = { height: 20, items: [{ type: 'textbox', name: 'pn', x: 0, y: 4, w: 300, h: 12, value: 'Page {Globals.PageNumber} of {Globals.TotalPages}' }] };
-    const out = await render(report([t], { data: { rows }, footer }), { fontStore });
+    const out = await render(report([t], { data: { rows }, footer }), { exportData: true, fontStore });
     expect(out.pages.map(p => texts(p).find(x => x.startsWith('Page ')))).toEqual(['Page 1 of 2', 'Page 2 of 2', 'Page 1 of 2', 'Page 2 of 2']);
     expect(out.pages.map(p => texts(p).slice(0, 2).join('|'))).toEqual(['Name|A', 'Page 1 of 2', 'Name|B', 'Page 1 of 2'].map((x, i) => (i % 2 ? texts(out.pages[i]).slice(0, 2).join('|') : x))); // A's sets, then B's
   });

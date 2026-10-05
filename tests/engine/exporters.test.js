@@ -27,7 +27,7 @@ const def = () => {
 
 describe('exporters', () => {
   it('writes CSV with raw numbers, ISO dates and quoting', async () => {
-    const out = await render(def(), { fontStore });
+    const out = await render(def(), { exportData: true, fontStore });
     const csv = exportCsv(out);
     expect(csv.charCodeAt(0)).toBe(0xfeff);
     expect(csv).toContain('"Delhi, NCR",2026-02-01,50');
@@ -36,7 +36,7 @@ describe('exporters', () => {
   });
 
   it('writes an Excel sheet with types, formats, merges and outline levels', async () => {
-    const out = await render(def(), { fontStore });
+    const out = await render(def(), { exportData: true, fontStore });
     const bytes = await exportXlsx(out, ExcelJS, { currency: 'INR' });
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(bytes);
@@ -57,7 +57,7 @@ describe('exporters', () => {
   });
 
   it('writes self-contained HTML with subset-free fallback fonts and live URL links', async () => {
-    const out = await render(def(), { fontStore });
+    const out = await render(def(), { exportData: true, fontStore });
     const html = await exportHtml(out, fontStore, { title: 'T' });
     expect(html).toMatch(/^<!doctype html>/);
     expect(html).toContain('@font-face');
@@ -67,7 +67,7 @@ describe('exporters', () => {
   });
 
   it('adds URL annotations and an outline to the PDF', async () => {
-    const out = await render(def(), { fontStore });
+    const out = await render(def(), { exportData: true, fontStore });
     expect(out.bookmarks.map(b => b.label)).toEqual(['Sales', 'Footer link']); // the table's own bookmark counts too
     const bytes = await exportPdf(out, fontStore);
     const { PDFDocument, PDFName } = await import('pdf-lib');
@@ -90,7 +90,7 @@ describe('PDF internal links', () => {
   ]);
   it('bookmark jumps and TOC entries are GoTo links to the target page and height', async () => {
     const { PDFDocument, PDFName, PDFArray } = await import('pdf-lib');
-    const m = await render(def(), { fontStore });
+    const m = await render(def(), { exportData: true, fontStore });
     expect(m.pages.length).toBe(2);
     const results = m.bookmarks.find(b => b.label === 'Results here');
     expect(results.page).toBe(2);
@@ -154,7 +154,7 @@ describe('PDF outline', () => {
 
 describe('HTML export links', () => {
   const linked = (action, tooltip) => report([{ type: 'textbox', name: 'L', x: 0, y: 0, w: 200, h: 20, value: 'Open', action, ...(tooltip ? { tooltip } : {}) }]);
-  const html = async (def) => exportHtml(await render(def, { fontStore }), fontStore);
+  const html = async (def) => exportHtml(await render(def, { exportData: true, fontStore }), fontStore);
   it('the href is the action URL, never the tooltip', async () => {
     const out = await html(linked({ type: 'url', url: 'https://ok.example/a?b=1&c=2' }, 'javascript:alert(1)'));
     expect(out).toContain('href="https://ok.example/a?b=1&amp;c=2"');
@@ -178,7 +178,7 @@ describe('PDF strings cannot break out of their objects', () => {
     const { PDFDocument, PDFDict, PDFName } = await import('pdf-lib');
     const def = report([{ type: 'textbox', name: 'B', x: 0, y: 0, w: 300, h: 20, value: 'Region', bookmark: `="${evil}"`, action: { type: 'url', url: `https://ok.example/a${encodeURIComponent(')')})/x)>>/S/JavaScript/JS(app.alert(2))` } },
       { type: 'textbox', name: 'H', x: 0, y: 30, w: 300, h: 20, value: 'हिंदी', bookmark: '=\"दक्षिण क्षेत्र\"' }]);
-    const doc = await PDFDocument.load(await exportPdf(await render(def, { fontStore }), fontStore));
+    const doc = await PDFDocument.load(await exportPdf(await render(def, { exportData: true, fontStore }), fontStore));
     const dicts = doc.context.enumerateIndirectObjects().map(([, o]) => o).filter(o => o instanceof PDFDict);
     for (const d of dicts) {
       expect(d.get(PDFName.of('S'))?.toString()).not.toBe('/JavaScript');

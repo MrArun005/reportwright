@@ -11,7 +11,7 @@ import { sampleLoan } from '../../src/sample/loans.js';
 import { fontStore } from '../helpers.js';
 
 const def = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'reports', 'loan-statement.pw.json'), 'utf8'));
-const model = () => render(def, { fontStore, sources: { loans: sampleLoan('LN-2025-001982') }, now: new Date('2026-10-03T10:30:00') });
+const model = () => render(def, { exportData: true, fontStore, sources: { loans: sampleLoan('LN-2025-001982') }, now: new Date('2026-10-03T10:30:00') });
 const has = (cmd) => { try { execFileSync('which', [cmd], { stdio: 'ignore' }); return true; } catch { return false; } };
 
 describe('Word export', () => {
@@ -65,7 +65,7 @@ describe('text styling in Word, Excel and CSV (phase 1)', () => {
       { type: 'textbox', name: 'U', x: 0, y: 0, w: 200, h: 20, value: 'Underlined', style: { textDecoration: 'underline' } },
       { type: 'textbox', name: 'S', x: 0, y: 30, w: 200, h: 20, value: 'Struck', style: { textDecoration: 'line-through' } },
       { type: 'textbox', name: 'J', x: 0, y: 60, w: 140, h: 120, value: 'The quick brown fox jumps over the lazy dog while the cat watches.', style: { textAlign: 'justify' } },
-    ]), { fontStore });
+    ]), { exportData: true, fontStore });
   };
   it('Word keeps underline, strike-through and justify, and a justified box stays one paragraph', async () => {
     const doc = strFromU8(unzipSync(await exportDocx(await styled()))['word/document.xml']);

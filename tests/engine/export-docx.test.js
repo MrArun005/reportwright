@@ -67,7 +67,7 @@ describe('Word export: figures', () => {
       { type: 'shape', name: `S${x}`, x, y: 0, w: 120, h: 40, shape: 'rect', style: { fill: '#f1f5f9', stroke: 'none' } },
       { type: 'textbox', name: `T${x}`, x: x + 6, y: 6, w: 108, h: 16, value: label },
     ];
-    const m = await render(report([...tile(0, 'Products'), ...tile(130, 'Brands')]), { fontStore });
+    const m = await render(report([...tile(0, 'Products'), ...tile(130, 'Brands')]), { exportData: true, fontStore });
     const files = unzipSync(await exportDocx(m, { fontStore }));
     const doc = strFromU8(files['word/document.xml']);
     const row = doc.split('<w:tr>').find(r => r.includes('>Products<'));
@@ -94,7 +94,7 @@ describe('Word export: figures', () => {
 describe('export tags (engine)', () => {
   it('one shared tag per figure, alt text capped, header and footer items are artifacts', async () => {
     const long = 'x'.repeat(50000);
-    const m = await render(report([{ ...items[2], alt: long }], { data: { rows: [{ city: 'A', amt: 1 }] }, header: { height: 20, items: [{ type: 'textbox', name: 'H', x: 0, y: 0, w: 100, h: 14, value: 'Head' }] } }), { fontStore });
+    const m = await render(report([{ ...items[2], alt: long }], { data: { rows: [{ city: 'A', amt: 1 }] }, header: { height: 20, items: [{ type: 'textbox', name: 'H', x: 0, y: 0, w: 100, h: 14, value: 'Head' }] } }), { exportData: true, fontStore });
     const tagged = m.pages[0].items.filter(i => i.tag);
     expect(new Set(tagged.map(i => i.tag)).size).toBe(1); // one object, not one per item
     expect(tagged[0].tag.alt.length).toBe(2000);

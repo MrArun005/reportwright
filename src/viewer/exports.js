@@ -22,7 +22,7 @@ async function loadExcel() {
 /** Export options the viewer offers (its Export options menu) and their defaults. */
 export const EXPORT_DEFAULTS = { pdfua: false, pdfa: false, formulas: true, html: 'interactive' };
 /** Formats that need the table data a view renders without (render option exportData). */
-export const needsExportData = (fmt, o = {}) => ['xlsx', 'csv', 'docx', 'pptx', 'html', 'json'].includes(fmt) || (fmt === 'pdf' && !!o.pdfua);
+export { needsExportData } from '@/exporters/regions.js';
 
 /** The report's fonts, loaded: Word, PowerPoint and Excel draw the text of charts as outlines from them. */
 async function loadedFonts(model) {

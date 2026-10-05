@@ -135,7 +135,7 @@ const matrix = (extra) => ({ type: 'matrix', name: 'P', x: 0, y: 0, w: 400, h: 6
 
 describe('matrix layout from the pivot', () => {
   it('draws nested headers once, subtotals and the grand total', async () => {
-    const out = await render(report([matrix({ columnWidth: 50, columnGroups: [{ ...two.columnGroups[0] }, { name: 'Q', expr: '=Fields.q', sort: 'asc', label: '="Q" & Fields.q' }] })], { data: { rows: DATA } }), { fontStore });
+    const out = await render(report([matrix({ columnWidth: 50, columnGroups: [{ ...two.columnGroups[0] }, { name: 'Q', expr: '=Fields.q', sort: 'asc', label: '="Q" & Fields.q' }] })], { data: { rows: DATA } }), { exportData: true, fontStore });
     expect(out.warnings).toEqual([]);
     const t = texts(out.pages[0]);
     expect(t.slice(0, 11)).toEqual(['Sales', '2025', '2026', 'Total', 'Q1', 'Q2', 'Q3', 'Q1', 'Q2', 'Q3', 'North']);
@@ -152,10 +152,10 @@ describe('matrix layout from the pivot', () => {
 
   it('drill-down: a collapsed region is one row, and the toggle is in the model', async () => {
     const def = report([matrix({ rowGroups: [{ ...two.rowGroups[0], collapsible: true }, two.rowGroups[1]] })], { data: { rows: DATA } });
-    const open = await render(def, { fontStore });
+    const open = await render(def, { exportData: true, fontStore });
     const links = open.pages[0].items.filter(i => i.t === 'link' && i.action?.type === 'toggle');
     expect(links.map(l => l.action)).toEqual([{ type: 'toggle', key: 'P|r0|/North', open: true }, { type: 'toggle', key: 'P|r0|/South', open: true }]);
-    const shut = await render(def, { fontStore, state: { toggles: { 'P|r0|/North': false } } });
+    const shut = await render(def, { exportData: true, fontStore, state: { toggles: { 'P|r0|/North': false } } });
     const t = texts(shut.pages[0]);
     expect(t.slice(t.indexOf('▶ North'), t.indexOf('▶ North') + 4)).toEqual(['▶ North', '200', '230', '430']);
     expect(t).not.toContain('Delhi');
@@ -165,7 +165,7 @@ describe('matrix layout from the pivot', () => {
   it('repeats every column header row on the next page, and the region label at the break', async () => {
     const rows = Array.from({ length: 120 }, (_, i) => ({ region: i < 100 ? 'North' : 'South', city: `City ${String(i).padStart(3, '0')}`, year: 2025 + (i % 2), q: 1, amt: i }));
     const def = report([matrix({ columnGroups: [two.columnGroups[0], { name: 'Q', expr: '=Fields.q' }] })], { data: { rows } });
-    const out = await render(def, { fontStore });
+    const out = await render(def, { exportData: true, fontStore });
     expect(out.pages.length).toBeGreaterThan(1);
     const p2 = texts(out.pages[1]);
     expect(p2.slice(0, 5)).toEqual(['Sales', '2025', '2026', 'Total', '1']);
@@ -174,7 +174,7 @@ describe('matrix layout from the pivot', () => {
 
   it('old-form matrices keep their exact layout', async () => {
     const def = report([{ type: 'matrix', name: 'M', x: 0, y: 0, w: 300, h: 54, dataSet: 'Rows', rowGroup: '=Fields.region', columnGroup: '=Fields.year', value: '=Sum(Fields.amt)', valueFormat: 'N0', corner: 'Region' }], { data: { rows: DATA } });
-    const t = texts((await render(def, { fontStore })).pages[0]);
+    const t = texts((await render(def, { exportData: true, fontStore })).pages[0]);
     expect(t).toEqual(['Region', '2025', '2026', 'Total', 'North', '200', '230', '430', 'South', '260', '310', '570', 'Total', '460', '540', '1,000']);
   });
 });
@@ -184,7 +184,7 @@ describe('reports/tablix-showcase.pw.json (numbers checked by hand)', async () =
   const def = JSON.parse(fs.readFileSync(new URL('../../reports/tablix-showcase.pw.json', import.meta.url), 'utf8'));
   const regionRows = (out, name) => out.regions.find(r => r.name === name).rows.map(r => r.cells.map(c => c.value));
   it('the region × year pivot: sums, row shares and totals', async () => {
-    const out = await render(def, { fontStore });
+    const out = await render(def, { exportData: true, fontStore });
     expect(out.warnings).toEqual([]);
     const rows = regionRows(out, 'SalesPivot');
     // North / Delhi: 2025 = 100 + 30, 2026 = 170; share of the row 130 / 300 (P1 exports 3 decimals)
@@ -193,12 +193,12 @@ describe('reports/tablix-showcase.pw.json (numbers checked by hand)', async () =
     expect(rows[8]).toEqual(['All regions', 460, 0.46, 540, 0.54, 1000, 1]);
   });
   it('the recursive hierarchy: own cost and the cost of everything below', async () => {
-    const out = await render(def, { fontStore });
+    const out = await render(def, { exportData: true, fontStore });
     expect(regionRows(out, 'OrgTable').slice(1).map(r => [r[0], r[1], r[3]])).toEqual([
       ['Chief executive', 0, 240], ['Finance', 1, 90], ['Accounts', 2, 25], ['Payables', 3, 5], ['Treasury', 2, 15], ['Operations', 1, 50], ['Branches', 2, 10]]);
   });
   it('the wide pivot continues on a second landscape page with the region column repeated', async () => {
-    const out = await render(def, { fontStore });
+    const out = await render(def, { exportData: true, fontStore });
     expect(out.pages.length).toBe(4);
     expect(out.pages.slice(2).map(p => [p.width, p.height])).toEqual([[841.89, 595.28], [841.89, 595.28]]);
     const p4 = texts(out.pages[3]);

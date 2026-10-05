@@ -77,7 +77,7 @@ describe('accessible PDF (PDF/UA-1)', () => {
       { type: 'textbox', name: 'T', x: 0, y: 0, w: 300, h: 18, value: 'Our site', action: { type: 'url', url: 'https://example.com/' } },
       { type: 'field', name: 'Note', kind: 'text', fieldName: 'note', value: 'hi', x: 0, y: 30, w: 200, h: 18 },
     ]);
-    const bytes = await exportPdf(await render(def, { fontStore }), fontStore, { title: 'Form', tagged: {} });
+    const bytes = await exportPdf(await render(def, { exportData: true, fontStore }), fontStore, { title: 'Form', tagged: {} });
     const doc = await PDFDocument.load(bytes);
     const t = tree(doc);
     expect(find(t, 'Link').length).toBe(1);
@@ -109,7 +109,7 @@ describe('accessible PDF (PDF/UA-1)', () => {
     // characters the font does not have (CJK, emoji, a zero-width space in Inter) are left out, not drawn as .notdef
     const nd = path.join(tmp, 'notdef.pdf');
     const d = report([{ type: 'textbox', name: 'T', x: 0, y: 0, w: 300, h: 18, value: 'ok 中文 \u200b✅ ok' }, { type: 'textbox', name: 'M', x: 0, y: 20, w: 300, h: 18, value: '\u200b=Trim(x) 中', style: { fontFamily: 'JetBrains Mono' } }]);
-    fs.writeFileSync(nd, await exportPdf(await render(d, { fontStore }), fontStore, { title: 'N', tagged: {} }));
+    fs.writeFileSync(nd, await exportPdf(await render(d, { exportData: true, fontStore }), fontStore, { title: 'N', tagged: {} }));
     expect(run('ua1', nd)).toMatch(/^PASS /m);
   }, 120000);
 });

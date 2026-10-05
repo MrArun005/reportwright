@@ -52,7 +52,7 @@ describe('Devanagari', () => {
   });
 
   it('falls back from Inter to the bundled Devanagari font and draws the shaped glyphs', async () => {
-    const model = await render(report([box('मासिक किस्त क्षत्रिय')]), { fontStore });
+    const model = await render(report([box('मासिक किस्त क्षत्रिय')]), { exportData: true, fontStore });
     const [l] = lines(model);
     expect(l.runs.map(r => r.font)).toContain('NotoSansDevanagari-Regular');
     const run = l.runs.find(r => r.text === 'क्षत्रिय');
@@ -61,7 +61,7 @@ describe('Devanagari', () => {
   });
 
   it('keeps each run as wide as its glyph advances, and the line as wide as its runs', async () => {
-    const model = await render(report([box('ऋण विवरण: EMI ₹12,345 प्रति माह')]), { fontStore });
+    const model = await render(report([box('ऋण विवरण: EMI ₹12,345 प्रति माह')]), { exportData: true, fontStore });
     const [l] = lines(model);
     let x = 0;
     for (const r of l.runs) {
@@ -74,7 +74,7 @@ describe('Devanagari', () => {
   });
 
   it('never breaks a line inside a conjunct', async () => {
-    const model = await render(report([box('क्षत्रियक्षत्रियक्षत्रियक्षत्रिय', { w: 60, h: 80 })]), { fontStore });
+    const model = await render(report([box('क्षत्रियक्षत्रियक्षत्रियक्षत्रिय', { w: 60, h: 80 })]), { exportData: true, fontStore });
     const segs = [...new Intl.Segmenter('hi', { granularity: 'grapheme' }).segment('क्षत्रियक्षत्रियक्षत्रियक्षत्रिय')].map(s => s.segment);
     const ls = lines(model).map(l => l.text);
     expect(ls.length).toBeGreaterThan(1);
@@ -83,7 +83,7 @@ describe('Devanagari', () => {
   });
 
   it('puts the shaped glyph IDs in the PDF, and the text reads back', async () => {
-    const model = await render(report([box('क्षत्रिय राष्ट्रीय')]), { fontStore });
+    const model = await render(report([box('क्षत्रिय राष्ट्रीय')]), { exportData: true, fontStore });
     const bytes = await exportPdf(model, fontStore, { subset });
     const content = pageContent(await PDFDocument.load(bytes));
     const want = ref(DEVA, 'क्षत्रिय').glyphs.map(g => g.id.toString(16).padStart(4, '0')).join('');
@@ -92,7 +92,7 @@ describe('Devanagari', () => {
   });
 
   it('subsets the fallback font to the glyphs it draws', async () => {
-    const model = await render(report([box('क्षत्रिय')]), { fontStore });
+    const model = await render(report([box('क्षत्रिय')]), { exportData: true, fontStore });
     const doc = await PDFDocument.load(await exportPdf(model, fontStore, { subset }));
     const sizes = fontFiles(doc).map(b => b.length);
     expect(sizes.length).toBe(1); // Noto Sans Devanagari (the default font has nothing to draw)
@@ -102,7 +102,7 @@ describe('Devanagari', () => {
 
 describe('Arabic and Hebrew', () => {
   it('joins Arabic letters (initial, medial, final forms), as HarfBuzz does', async () => {
-    const model = await render(report([box('كشف حساب')]), { fontStore });
+    const model = await render(report([box('كشف حساب')]), { exportData: true, fontStore });
     const [l] = lines(model);
     const run = l.runs.find(r => r.text === 'حساب');
     expect(run.rtl).toBe(true);
@@ -113,7 +113,7 @@ describe('Arabic and Hebrew', () => {
   });
 
   it('orders a Hebrew + English line right to left, and aligns it right', async () => {
-    const model = await render(report([box('שלום world 2026')]), { fontStore });
+    const model = await render(report([box('שלום world 2026')]), { exportData: true, fontStore });
     const [l] = lines(model);
     expect(l.dir).toBe('rtl');
     const visual = [...l.runs].sort((a, b) => a.x - b.x).map(r => r.text).filter(t => t.trim());
@@ -122,7 +122,7 @@ describe('Arabic and Hebrew', () => {
   });
 
   it('keeps an English paragraph left to right around a Hebrew phrase', async () => {
-    const model = await render(report([box('Total שלום עולם due')]), { fontStore });
+    const model = await render(report([box('Total שלום עולם due')]), { exportData: true, fontStore });
     const [l] = lines(model);
     expect(l.dir).toBe('ltr');
     const visual = [...l.runs].sort((a, b) => a.x - b.x).map(r => r.text).filter(t => t.trim());
@@ -131,7 +131,7 @@ describe('Arabic and Hebrew', () => {
   });
 
   it('draws RTL runs in the SVG as visually ordered, positioned runs', async () => {
-    const model = await render(report([box('שלום world')]), { fontStore });
+    const model = await render(report([box('שלום world')]), { exportData: true, fontStore });
     const svg = pageToSvg(model.pages[0], model.width, model.height);
     expect(svg).toMatch(/font-family="pw-NotoSansHebrew-Regular"[^>]*direction:rtl[^>]*>שלום<\/text>/);
     expect(svg).toMatch(/font-family="pw-Inter-Regular"[^>]*>world<\/text>/);
@@ -156,7 +156,7 @@ describe('CJK', () => {
 
 describe('HTML export', () => {
   it('embeds the fallback font with its layout tables, so the browser shapes as the engine did', async () => {
-    const model = await render(report([box('क्षत्रिय')]), { fontStore });
+    const model = await render(report([box('क्षत्रिय')]), { exportData: true, fontStore });
     const html = await exportHtml(model, fontStore, { subset });
     const m = /font-family:"pw-NotoSansDevanagari-Regular";src:url\(data:font\/ttf;base64,([^)]+)\)/.exec(html);
     const font = Buffer.from(m[1], 'base64');
@@ -166,7 +166,7 @@ describe('HTML export', () => {
   });
 
   it('leaves Latin text as it was: no runs, the same SVG', async () => {
-    const model = await render(report([box('Statement of account, ₹12,00,000 — 05 Jan 2024')]), { fontStore });
+    const model = await render(report([box('Statement of account, ₹12,00,000 — 05 Jan 2024')]), { exportData: true, fontStore });
     const [l] = lines(model);
     expect(l.runs).toBeUndefined();
     expect(l.dir).toBeUndefined();
@@ -176,7 +176,7 @@ describe('HTML export', () => {
 
 describe('fonts that are missing', () => {
   it('warns once when no font has a character', async () => {
-    const model = await render(report([box('日本')]), { fontStore });
+    const model = await render(report([box('日本')]), { exportData: true, fontStore });
     expect(model.warnings.join(' ')).toMatch(/No font.*日/);
   });
 });

@@ -6,6 +6,7 @@ export { exportPdf } from '../../src/exporters/pdf.js';
 export { createSubsetter } from '../../src/exporters/subset.js';
 export { exportHtml } from '../../src/exporters/html.js';
 export { exportCsv } from '../../src/exporters/csv.js';
+export { needsExportData } from '../../src/exporters/regions.js';
 export { exportXlsx } from '../../src/exporters/xlsx.js';
 export { exportDocx } from '../../src/exporters/docx.js';
 export { pageToSvg } from '../../src/exporters/svg.js';

@@ -61,7 +61,7 @@ const siblingLoader = (file) => async (id) => {
 
 async function renderModel(def, { parameters = {}, data, base, now, state, file, exportData = true } = {}) {
   try {
-    return await render(withData(def, data), { fontStore, parameters, ...(exportData ? {} : { exportData: false }), baseUrl: base, now: now ? new Date(now) : undefined, ...(state ? { state } : {}), ...(file ? { loadReport: siblingLoader(file) } : {}) });
+    return await render(withData(def, data), { fontStore, parameters, exportData, baseUrl: base, now: now ? new Date(now) : undefined, ...(state ? { state } : {}), ...(file ? { loadReport: siblingLoader(file) } : {}) });
   } catch (e) {
     const relative = /fetch|URL|Invalid URL/i.test(e.message) && !base;
     fail(`${e.message}${relative ? '\n    A data source needs a server: pass --base http://localhost:3000, or push the data with -d source=file.json.' : ''}`);

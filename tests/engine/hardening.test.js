@@ -33,7 +33,7 @@ describe('dates are calendar dates in every time zone', () => {
         columns: [{ width: 200 }],
         detail: [{ height: 20, cells: [{ value: '=DateSerial(2026, 3, 1)', action: { type: 'report', report: 'x', params: { d: '=DateSerial(2026, 3, 1)' } } }] }],
       };
-      const out = await render(report([table], { data: { rows: [{ a: 1 }] } }), { fontStore });
+      const out = await render(report([table], { data: { rows: [{ a: 1 }] } }), { exportData: true, fontStore });
       expect(exportCsv(out)).toContain('2026-03-01');
       const link = out.pages[0].items.find(i => i.t === 'link');
       expect(link.action.params.d).toBe('2026-03-01');
@@ -64,7 +64,7 @@ describe('rounding: export and Round() match what the page shows', () => {
       columns: [{ width: 200 }],
       detail: [{ height: 20, cells: [{ value: '=Fields.v', style: { format: 'N2' } }] }],
     };
-    const out = await render(report([table], { data: { rows: [{ v: 1.005 }, { v: -0.125 }, { v: -1.005 }] } }), { fontStore });
+    const out = await render(report([table], { data: { rows: [{ v: 1.005 }, { v: -0.125 }, { v: -1.005 }] } }), { exportData: true, fontStore });
     expect(texts(out.pages[0])).toEqual(['1.01', '-0.13', '-1.01']);
     expect(exportCsv(out).replace('﻿', '').split('\r\n').filter(Boolean)).toEqual(['1.01', '-0.13', '-1.01']);
   });
@@ -86,7 +86,7 @@ describe('tables', () => {
       groups: [{ name: 'G', expr: '=Fields.k' }],
       detail: [{ height: 20, cells: [{ value: '=Fields.k' }, { value: '=RunningValue(Fields.v, "Sum", "T")' }] }],
     };
-    const out = await render(report([table], { data: { rows: [{ k: 'A', v: 1 }, { k: 'B', v: 10 }, { k: 'A', v: 100 }] } }), { fontStore });
+    const out = await render(report([table], { data: { rows: [{ k: 'A', v: 1 }, { k: 'B', v: 10 }, { k: 'A', v: 100 }] } }), { exportData: true, fontStore });
     expect(texts(out.pages[0])).toEqual(['A', '1', 'A', '101', 'B', '111']);
   });
 
@@ -97,7 +97,7 @@ describe('tables', () => {
       columns: [{ width: 60 }, { width: 240 }],
       detail: [{ height: 20, cells: [{ value: '=Fields.n' }, { value: '=Fields.s' }] }],
     };
-    const out = await render(report([table], { data: { rows: [{ n: 1, s: long }, { n: 2, s: 'after' }] } }), { fontStore });
+    const out = await render(report([table], { data: { rows: [{ n: 1, s: long }, { n: 2, s: 'after' }] } }), { exportData: true, fontStore });
     const bottom = 841.89 - 36;
     expect(out.pages.length).toBeGreaterThan(1);
     for (const pg of out.pages) {
@@ -111,13 +111,13 @@ describe('tables', () => {
 
   it('a hidden expression that returns the text "False" keeps the item visible', async () => {
     const box = { type: 'textbox', name: 'B', x: 0, y: 0, w: 100, h: 18, value: 'shown', hidden: '=IIF(1 = 2, "True", "False")' };
-    const out = await render(report([box]), { fontStore });
+    const out = await render(report([box]), { exportData: true, fontStore });
     expect(texts(out.pages[0])).toContain('shown');
   });
 
   it('matrix headers show data keys as text, never as expressions', async () => {
     const matrix = { type: 'matrix', name: 'M', x: 0, y: 0, w: 400, h: 60, dataSet: 'Rows', rowGroup: '=Fields.r', columnGroup: '=Fields.c', value: '=Sum(Fields.v)' };
-    const out = await render(report([matrix], { data: { rows: [{ r: 'x', c: 'Widget {Pro}', v: 1 }, { r: 'x', c: '=1+1', v: 2 }] } }), { fontStore });
+    const out = await render(report([matrix], { data: { rows: [{ r: 'x', c: 'Widget {Pro}', v: 1 }, { r: 'x', c: '=1+1', v: 2 }] } }), { exportData: true, fontStore });
     const t = texts(out.pages[0]);
     expect(t).toContain('Widget {Pro}');
     expect(t).toContain('=1+1');
@@ -131,7 +131,7 @@ describe('CSV export', () => {
       columns: [{ width: 200 }],
       detail: [{ height: 20, cells: [{ value: '=Fields.s' }] }],
     };
-    const out = await render(report([table], { data: { rows: [{ s: '=HYPERLINK("http://x","c")' }, { s: '@SUM(A1)' }, { s: '+1' }, { s: '-1' }, { s: 'ok' }] } }), { fontStore });
+    const out = await render(report([table], { data: { rows: [{ s: '=HYPERLINK("http://x","c")' }, { s: '@SUM(A1)' }, { s: '+1' }, { s: '-1' }, { s: 'ok' }] } }), { exportData: true, fontStore });
     const lines = exportCsv(out).replace('﻿', '').split('\r\n').filter(Boolean);
     expect(lines).toEqual([`"'=HYPERLINK(""http://x"",""c"")"`, "'@SUM(A1)", "'+1", "'-1", 'ok']);
   });

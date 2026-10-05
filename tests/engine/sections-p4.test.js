@@ -13,7 +13,7 @@ describe('page numbers per section (newSection)', () => {
     groups: [{ name: 'Inv', expr: '=Fields.inv', header: [{ height: 16, cells: [{ value: '="Invoice " & Fields.inv' }] }], ...g }],
     detail: [{ height: 14, cells: [{ value: '=Fields.n' }] }] });
   it('a table group restarts PageNumber and TotalPages; Overall* count the report', async () => {
-    const out = await render(report([tbl({ newSection: true })], { data: { rows: lines }, footer }), { fontStore });
+    const out = await render(report([tbl({ newSection: true })], { data: { rows: lines }, footer }), { exportData: true, fontStore });
     expect(pageLines(out)).toEqual(['Page 1 of 2 · 1/6', 'Page 2 of 2 · 2/6', 'Page 1 of 1 · 3/6', 'Page 1 of 3 · 4/6', 'Page 2 of 3 · 5/6', 'Page 3 of 3 · 6/6']);
     expect(texts(out.pages[2])[0]).toBe('Invoice B');
   });
@@ -23,7 +23,7 @@ describe('page numbers per section (newSection)', () => {
     const inner = { type: 'table', name: 'Lines', x: 0, y: 20, w: 200, h: 16, dataSet: 'Nums', columns: [{ width: 200 }], detail: [{ height: 14, cells: [{ value: '=Fields.k' }] }], filters: [{ expr: '=Fields.k', op: '<', value: '=Parent.n' }] };
     const list = { type: 'list', name: 'L', x: 0, y: 0, w: 300, h: 40, dataSet: 'Rows', newSection: true, keepTogether: false, items: [{ type: 'textbox', name: 'h', x: 0, y: 0, w: 200, h: 14, value: '="Invoice " & Fields.id' }, inner] };
     const def = report([list], { data: { ...invs, nums: Array.from({ length: 70 }, (_, k) => ({ k })) }, footer, def: { dataSets: [...sets, { name: 'Nums', source: 'src', path: '$.nums' }] } });
-    const out = await render(def, { fontStore });
+    const out = await render(def, { exportData: true, fontStore });
     expect(pageLines(out)).toEqual(['Page 1 of 1 · 1/3', 'Page 1 of 2 · 2/3', 'Page 2 of 2 · 3/3']);
   });
 });
@@ -38,7 +38,7 @@ describe('multi-section reports', () => {
     return d;
   };
   it('each body section has its own page size; numbering continues', async () => {
-    const out = await render(def(), { fontStore });
+    const out = await render(def(), { exportData: true, fontStore });
     expect(out.pages.length).toBe(3);
     expect([out.width, out.height]).toEqual([595.28, 841.89]);
     expect(out.pages[0].width).toBeUndefined();
@@ -71,7 +71,7 @@ describe('exporters: page sizes per section, merged cells', () => {
     const d = report([], { data: { rows: [{ n: 1 }] } });
     d.sections.body = [{ items: [{ type: 'textbox', name: 'a', x: 0, y: 0, w: 200, h: 14, value: 'Portrait' }] },
       { page: { orientation: 'landscape' }, items: [{ type: 'textbox', name: 'b', x: 0, y: 0, w: 200, h: 14, value: 'Landscape' }] }];
-    return render(d, { fontStore });
+    return render(d, { exportData: true, fontStore });
   };
   it('PDF: each page has its section\'s size', async () => {
     const { PDFDocument } = await import('pdf-lib');
@@ -92,7 +92,7 @@ describe('exporters: page sizes per section, merged cells', () => {
     const t = { type: 'table', name: 'T', x: 0, y: 0, w: 300, h: 40, dataSet: 'Rows', columns: [{ width: 100 }, { width: 100 }, { width: 100 }],
       header: [{ height: 18, cells: [{ value: 'Name', rowSpan: 2 }, { value: 'Amounts', colSpan: 2 }, null] }, { height: 18, cells: [null, { value: 'Paid' }, { value: 'Due' }] }],
       detail: [{ height: 16, cells: [{ value: '=Fields.n' }, { value: '=Fields.n * 2' }, { value: '=Fields.n * 3' }] }] };
-    return render(report([t], { data: { rows: [{ n: 1 }, { n: 2 }] } }), { fontStore });
+    return render(report([t], { data: { rows: [{ n: 1 }, { n: 2 }] } }), { exportData: true, fontStore });
   };
   it('Word: a cell merged down becomes vMerge restart + continue', async () => {
     const doc = strFromU8(unzipSync(await exportDocx(await spanned()))['word/document.xml']);
@@ -115,7 +115,7 @@ describe('review fixes: sections and pivot shrink', () => {
   it('the first body section can have its own page', async () => {
     const d = report([], { data: { rows: [] } });
     d.sections.body = [{ page: { orientation: 'landscape' }, items: [{ type: 'textbox', name: 'a', x: 0, y: 0, w: 200, h: 14, value: 'A' }] }, { items: [{ type: 'textbox', name: 'b', x: 0, y: 0, w: 200, h: 14, value: 'B' }] }];
-    const out = await render(d, { fontStore });
+    const out = await render(d, { exportData: true, fontStore });
     expect([out.width, out.height]).toEqual([841.89, 595.28]);
     expect([out.pages[1].width, out.pages[1].height]).toEqual([595.28, 841.89]);
   });
@@ -123,7 +123,7 @@ describe('review fixes: sections and pivot shrink', () => {
     const rows = Array.from({ length: 30 }, (_, i) => ({ r: 'x', c: `C${String(i).padStart(2, '0')}`, v: i }));
     const m = { type: 'matrix', name: 'P', x: 0, y: 0, w: 500, h: 40, dataSet: 'Rows', overflow: 'shrink', rowGroups: [{ expr: '=Fields.r', width: 60 }], columnGroups: [{ expr: '=Fields.c', sort: 'asc', total: 'after' }],
       values: [{ value: '=Sum(Fields.v)' }, { value: '=Count(Fields)' }, { value: '=Max(Fields.v)' }] };
-    const out = await render(report([m], { data: { rows } }), { fontStore });
+    const out = await render(report([m], { data: { rows } }), { exportData: true, fontStore });
     const right = Math.max(...out.pages[0].items.filter(i => i.t === 'text').map(i => i.clip.x + i.clip.w));
     expect(right).toBeLessThanOrEqual(595.28 - 36 + 0.5);
   });

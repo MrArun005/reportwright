@@ -46,10 +46,14 @@ export const BAND_ITEMS = 250000; // page header and footer items drawn per rend
  *   timeoutMs?: number,
  *   onSources?: (sources: Record<string, any>) => void,
  *   deadline?: number,
+ *   exportData?: boolean,
  * }} opts
  *   reportId: the saved report, whose SQL sources the server runs for a browser render.
  *   sql: runs SQL sources directly (server renders).
  *   timeoutMs: stop with a ReportError (status 504) when the render runs longer; subreports share the deadline.
+ *   exportData: keep the table data (model.regions) and cell tags that Excel, CSV, Word, interactive HTML and the
+ *   accessible PDF rebuild tables from (needsExportData in exporters/regions.js says which). Off by default: a view
+ *   or a plain PDF needs neither, and they are a third of a big table's model.
  */
 export async function render(def0, opts = {}) {
   const t0 = Date.now();
@@ -128,7 +132,7 @@ export async function render(def0, opts = {}) {
   const imageBudget = opts.imageBudget || { seen: new Set(), bytes: 0 };
   const makeLc = (globals, fixed) => {
     const lc = {
-      m, base, dataSets, warn, fixed, maxUnitHeight: contentH, state: opts.state || {}, regions: opts.exportData === false ? null : regions, // exportData: false: no table data or cell tags (a view or a plain PDF)
+      m, base, dataSets, warn, fixed, maxUnitHeight: contentH, state: opts.state || {}, regions: opts.exportData ? regions : null, // exportData: true: table data and cell tags (Excel, CSV, Word, HTML, accessible PDF)
       named, parts, layerOff,
       nextId: () => ++idSeq,
       // the time limit, read every 256 rows of tables and lists (expr/evaluate.js counts evaluations the same way)
@@ -403,7 +407,7 @@ export async function render(def0, opts = {}) {
   }
 
   return {
-    width: result.width ?? page.width, height, pages, warnings, bookmarks, regions: opts.exportData === false ? null : regions, name: def.name || '', partial: cutRows(),
+    width: result.width ?? page.width, height, pages, warnings, bookmarks, regions: opts.exportData ? regions : null, name: def.name || '', partial: cutRows(),
     stats: { ms: Date.now() - t0, pages: pages.length, rows: Object.fromEntries(Object.entries(dataSets).map(([k, r]) => [k, r.length])) },
   };
 }

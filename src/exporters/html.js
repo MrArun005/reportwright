@@ -2,6 +2,7 @@
 import { pageToSvg, fontFamilyCss } from './svg.js';
 import { safeUrl } from '../engine/url.js';
 import { tablesData, DATA_SCRIPT, DATA_CSS, DATA_STRINGS, cspHash } from './htmldata.js';
+import { needsTableData } from './regions.js';
 
 /**
  * One self-contained HTML file: every page as inline SVG, fonts embedded as
@@ -75,6 +76,7 @@ export async function exportHtml(model, fontStore, opt = {}) {
     const marks = [...anchors.values()].filter(x => x.page === i + 1).map(x => `<a class="pw-at" id="${x.id}" style="top:${((Math.min(x.y, H) / H) * 100).toFixed(3)}%"></a>`).join('');
     return `<section class="page${p.width ? ' wide' : ''}" id="page-${i + 1}"${p.width ? ` style="width:min(100%,${Math.round(p.width * 96 / 72)}px)"` : ''}>${marks}${svgs[i]}</section>`;
   }).join('\n');
+  if (!opt.static) needsTableData(model, 'Interactive HTML (or pass static: true)');
   const data = opt.static ? null : tablesData(model, { locale: opt.locale, currency: opt.currency });
   const S = { ...DATA_STRINGS, ...(opt.strings || {}) };
   const csp = data ? `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-${await cspHash(DATA_SCRIPT)}'; style-src 'unsafe-inline'; font-src data:; img-src data: https: http:; base-uri 'none'; form-action 'none'">\n` : '';

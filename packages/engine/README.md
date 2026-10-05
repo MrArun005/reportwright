@@ -11,6 +11,8 @@ const fonts = new FontStore((key) => fs.readFileSync(new URL(`fonts/${key}.ttf`,
 const subset = createSubsetter(() => fs.promises.readFile(new URL('harfbuzz-subset.wasm', pub)));
 const model = await render(JSON.parse(fs.readFileSync('statement.pw.json', 'utf8')), { fontStore: fonts, parameters: { accountId: 'LN-1' } });
 fs.writeFileSync('statement.pdf', await exportPdf(model, fonts, { title: 'Statement', subset }));
+// Excel, CSV, Word, interactive HTML and the accessible PDF rebuild tables from the table data, which render() keeps
+// only when asked: render(def, { exportData: true }) (needsExportData(format) says which formats need it)
 ```
 
 ```bash

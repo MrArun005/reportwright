@@ -126,7 +126,7 @@ export async function renderTo(def, opt = {}) {
   const model = await render(d, {
     parameters: opt.parameters || {}, state: opt.state || {}, fontStore: fontStore(),
     baseUrl: base, fetch, timeoutMs: renderTimeoutMs(),
-    ...(format === 'pdf' && !opt.ua ? { exportData: false } : {}), // a plain PDF needs no table data (exports batch 2)
+    exportData: format !== 'pdf' || !!opt.ua, // a plain PDF needs no table data
     sql: runSql, // SQL sources query the database directly, not through /api/data/sql
     loadReport: async (id) => {
       let sub;

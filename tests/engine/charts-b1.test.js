@@ -9,7 +9,7 @@ const rows = [
   { m: 1, amt: 10 }, { m: 2, amt: 30 }, { m: 3, amt: 50 }, { m: 4, amt: 20 },
 ];
 const chart = (extra, data = rows) => report([{ type: 'chart', name: 'C', x: 0, y: 0, w: 400, h: 240, dataSet: 'Rows', category: '=Fields.m', series: [{ name: 'Amount', value: '=Sum(Fields.amt)' }], ...extra }], { data: { rows: data } });
-const draw = async (extra, data) => { const out = await render(chart(extra, data), { fontStore }); return { items: out.pages[0].items, warnings: out.warnings, model: out }; };
+const draw = async (extra, data) => { const out = await render(chart(extra, data), { exportData: true, fontStore }); return { items: out.pages[0].items, warnings: out.warnings, model: out }; };
 const texts = (items) => items.filter(i => i.t === 'text');
 const textsOf = (items) => texts(items).map(i => i.lines[0].text);
 const O = 36; // the page margin: items are placed on the page
@@ -133,7 +133,7 @@ describe('the new chart options draw the same in PDF and HTML', () => {
       { type: 'chart', name: 'L', x: 270, y: 0, w: 260, h: 200, dataSet: 'Rows', category: '=Fields.m', chartType: 'column', overlays: [{ type: 'trend', label: 'Trend line' }], series: [{ name: 'Amount', value: '=Sum(Fields.amt)' }] },
       { type: 'chart', name: 'G', x: 0, y: 210, w: 200, h: 200, dataSet: 'Rows', chartType: 'gauge', gaugeShape: 'full', gaugeIndicator: 'pointer', series: [{ name: 'Total', value: '=Sum(Fields.amt)' }] },
     ], { data: { rows } });
-    const model = await render(def, { fontStore });
+    const model = await render(def, { exportData: true, fontStore });
     const h = await exportHtml(model, fontStore, { title: 'T' }); const html = typeof h === 'string' ? h : new TextDecoder().decode(h);
     expect(html).toContain('1: 9%');
     expect(html).toContain('Trend line');

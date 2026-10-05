@@ -34,5 +34,5 @@ export const items = [
   table,
 ];
 export const def = () => report(items, { data: { rows }, header: { height: 20, items: [{ type: 'textbox', name: 'Hdr', x: 0, y: 0, w: 300, h: 14, value: 'ACME quarterly' }] }, def: { locale: 'en-IN', currency: 'INR' } });
-export const model = (opts = {}) => render(def(), { fontStore, ...opts });
+export const model = (opts = {}) => render(def(), { fontStore, exportData: true, ...opts });
 export { fontStore };

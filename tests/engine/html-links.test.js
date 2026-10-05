@@ -20,7 +20,7 @@ const anchors = (html) => Object.fromEntries([...html.matchAll(/<a class="pw-at"
 
 describe('static HTML export links', () => {
   it('a bookmark jump and the TOC entries go to anchors on the target page', async () => {
-    const m = await render(def(), { fontStore });
+    const m = await render(def(), { exportData: true, fontStore });
     const html = await exportHtml(m, fontStore, { drillBase: 'https://reports.example.com/' });
     const hrefs = links(html);
     const jump = hrefs.find(h => h.startsWith('#at-2-'));
@@ -37,12 +37,12 @@ describe('static HTML export links', () => {
     expect(html).not.toContain('No such bookmark');
   });
   it('drill-through opens the report in the viewer, parameters in the query', async () => {
-    const html = await exportHtml(await render(def(), { fontStore }), fontStore, { drillBase: 'https://reports.example.com/' });
+    const html = await exportHtml(await render(def(), { exportData: true, fontStore }), fontStore, { drillBase: 'https://reports.example.com/' });
     expect(links(html)).toContain('https://reports.example.com/viewer/loan-statement?loan=LN+1&amp;year=2026');
     expect(html).toMatch(/<a href="https:\/\/reports\.example\.com\/viewer\/loan-statement[^"]*" target="_blank" rel="noopener">/);
   });
   it('without a server, drill-through is shown disabled; actions that need a re-run are not links', async () => {
-    const html = await exportHtml(await render(def(), { fontStore }), fontStore);
+    const html = await exportHtml(await render(def(), { exportData: true, fontStore }), fontStore);
     expect(links(html).some(h => h.includes('/viewer/'))).toBe(false);
     expect(html).toContain('<g class="pw-off">');
     expect(html).toContain('Opens the report &quot;loan-statement&quot; in the Pagewright viewer'.replace(/&quot;/g, '"'));
