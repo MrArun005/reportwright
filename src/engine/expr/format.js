@@ -588,7 +588,7 @@ function localePatterns(locale) {
   }
   return p;
 }
-function standardDate(fmt, locale) {
+export function standardDate(fmt, locale) {
   const p = !locale || /^en-US$/i.test(locale) ? US_DATES : localePatterns(locale);
   switch (fmt) {
     case 'd': case 'D': case 't': case 'T': return p[fmt];

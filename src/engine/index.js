@@ -421,6 +421,7 @@ export async function render(def0, opts = {}) {
     width: result.width ?? page.width, height, pages, warnings, bookmarks, regions: opts.exportData ? regions : null, name: def.name || '', partial: cutRows(),
     timeZone: timeZone || null, // the zone dates were shown in (exports write their dates on that clock)
     locale: def.locale || null, // exports format numbers the report's way (Excel: Indian lakh grouping)
+    currency: def.currency || null, // Excel's currency symbol (else the locale's, as the page)
     stats: { ms: Date.now() - t0, pages: pages.length, rows: Object.fromEntries(Object.entries(dataSets).map(([k, r]) => [k, r.length])) },
   };
 }

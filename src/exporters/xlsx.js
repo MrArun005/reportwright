@@ -1,29 +1,65 @@
 // @ts-check
 import { mergedRegions, textRows, needsTableData } from './regions.js';
 import { figures, figurePicture, altOf, b64 } from './figures.js';
-import { toWall } from '../engine/expr/format.js';
+import { toWall, standardDate, currencyOf } from '../engine/expr/format.js';
 import { chartTable, addCharts } from './xlsxchart.js';
 
-/** .NET-style format → Excel number format. */
-export function excelFormat(fmt, currencySymbol = '', locale) {
+/** A .NET date pattern → an Excel date format (months m, minutes after an hour, tt → AM/PM, 24-hour H). */
+const excelDate = (f) => f.replace(/'([^']*)'/g, (_, t) => (/^[\s./:,-]*$/.test(t) ? t : `"${t}"`)).replace(/M/g, 'm').replace(/tt?/g, 'AM/PM').replace(/HH?/g, 'hh').replace(/f+/g, (x) => `.${'0'.repeat(Math.min(3, x.length))}`).replace(/\s*zzz?/g, '');
+/** A Java/ICU date pattern ("java:dd/MM/yyyy") → Excel's. */
+const javaDateToExcel = (f) => f.replace(/'([^']*)'/g, '"$1"').replace(/E{4,}/g, 'dddd').replace(/E{1,3}/g, 'ddd').replace(/a+/g, 'AM/PM').replace(/H+/g, 'hh').replace(/M/g, 'm').replace(/[kKuDwWFGzZXL]+/g, '');
+
+/**
+ * Report format → Excel number format. value: the cell's value, so a date gets a date format (N6: "d" is a date,
+ * not two decimals) and an en-IN number its own lakh grouping (N22: Excel's conditions cannot cover negatives).
+ * @param {string|null|undefined} fmt @param {string} [currencySymbol] @param {string} [locale] @param {any} [value]
+ */
+export function excelFormat(fmt, currencySymbol = '', locale, value) {
   if (!fmt) return null;
+  if (fmt.startsWith('java:') || fmt.startsWith('icu:')) {
+    const p = fmt.slice(fmt.indexOf(':') + 1).replace(/\{RoundingMode=\w+\}/, '');
+    if (!p || p.startsWith('@')) return value instanceof Date ? (p.includes('time') && !p.includes('date') ? 'h:mm AM/PM' : 'm/d/yyyy') : null;
+    if (value instanceof Date) return javaDateToExcel(p) || null;
+    if (/[‰\u2030]|E0/.test(p)) return null; // no per-mille or engineering E in Excel: General
+    return p.replace(/¤+/g, `"${currencySymbol}"`).replace(/'([^']*)'/g, '"$1"');
+  }
+  if (value instanceof Date && fmt.length === 1) {
+    const US = { d: 'm/d/yyyy', D: 'dddd, mmmm d, yyyy', t: 'h:mm AM/PM', T: 'h:mm:ss AM/PM', g: 'm/d/yyyy h:mm AM/PM', G: 'm/d/yyyy h:mm:ss AM/PM', M: 'mmmm d', m: 'mmmm d', Y: 'mmmm yyyy', y: 'mmmm yyyy', f: 'dddd, mmmm d, yyyy h:mm AM/PM', F: 'dddd, mmmm d, yyyy h:mm:ss AM/PM', s: 'yyyy-mm-ddThh:mm:ss' };
+    if (!locale || /^en-US$/i.test(locale)) return US[fmt] || null;
+    const g = (k) => { const p = standardDate(k, locale); return p ? excelDate(p) : null; };
+    const both = (a, b) => { const x = g(a), y = g(b); return x && y ? `${x} ${y}` : null; };
+    return ({ g: () => both('d', 't'), G: () => both('d', 'T'), f: () => both('D', 't'), F: () => both('D', 'T') })[fmt]?.() ?? g(fmt) ?? US[fmt] ?? null;
+  }
   const m = /^([CcNnFfPpDd])(\d{0,2})$/.exec(fmt);
   if (m) {
     const d = m[2] === '' ? 2 : Number(m[2]);
     const dec = d ? '.' + '0'.repeat(d) : '';
-    // en-IN groups lakhs and crores (12,34,56,789): Excel has no such grouping, so conditions pick the commas
-    const g = /-IN$/i.test(locale || '') ? (s) => `[>=10000000]${s}##\\,##\\,##\\,##0${dec};[>=100000]${s}##\\,##\\,##0${dec};${s}##,##0${dec}` : null;
+    // en-IN groups lakhs and crores (12,34,56,789); Excel has no such grouping, so conditions pick the commas. They
+    // cannot also cover negatives (two conditions at most), so a negative cell gets the commas its own value needs (N22)
+    const lakh = /-IN$/i.test(locale || '') ? (s) => {
+      if (typeof value === 'number' && value < 0) {
+        const a = Math.abs(value);
+        return a >= 1e7 ? `${s}##\\,##\\,##\\,##0${dec}` : a >= 1e5 ? `${s}##\\,##\\,##0${dec}` : `${s}##,##0${dec}`;
+      }
+      return `[>=10000000]${s}##\\,##\\,##\\,##0${dec};[>=100000]${s}##\\,##\\,##0${dec};${s}##,##0${dec}`;
+    } : null;
     switch (m[1].toUpperCase()) {
-      case 'C': return g ? g(`"${currencySymbol}"`) : `"${currencySymbol}"#,##0${dec}`;
-      case 'N': return g ? g('') : `#,##0${dec}`;
+      case 'C': return lakh ? lakh(`"${currencySymbol}"`) : `"${currencySymbol}"#,##0${dec}`;
+      case 'N': return lakh ? lakh('') : `#,##0${dec}`;
       case 'F': return `0${dec}`;
       case 'P': return `0${dec}%`;
       case 'D': return '0'.repeat(Math.max(1, d));
     }
   }
-  if (/[yMd]/.test(fmt) && !/[#0]/.test(fmt)) return fmt.replace(/M/g, 'm').replace(/mmmm/g, 'mmmm').replace(/tt/g, 'AM/PM').replace(/HH/g, 'hh');
+  if (/[yMd]/.test(fmt) && !/[#0]/.test(fmt)) return excelDate(fmt);
   if (/[#0]/.test(fmt)) return fmt;
   return null;
+}
+
+/** The currency symbol for a code in the report locale ("INR" → ₹), else the code. */
+export function currencySymbol(iso, locale) {
+  if (!iso) return '';
+  try { return new Intl.NumberFormat(locale || 'en-US', { style: 'currency', currency: iso }).formatToParts(1).find(p => p.type === 'currency')?.value || iso; } catch { return SYMBOL[iso] || iso; }
 }
 
 const SYMBOL = { INR: '₹', USD: '$', EUR: '€', GBP: '£', JPY: '¥' };
@@ -113,6 +149,8 @@ export async function exportXlsx(model, ExcelJS, { currency, title, formulas = t
   // Excel dates have no zone: ExcelJS writes a Date's UTC parts, so a date goes in as its wall clock in the zone the
   // report showed it in (a local midnight east of UTC was a day early)
   const tz = timeZone ?? model.timeZone ?? undefined;
+  // the page's currency when none is passed: the report's, else the locale's own (en-IN ₹), as C2 shows it (N7)
+  const sym = currencySymbol(currency || model.currency || currencyOf(model.locale), model.locale);
   const cellValue = (v) => (v === '' ? null : v instanceof Date ? new Date(toWall(v, tz)) : v);
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Pagewright';
@@ -152,7 +190,7 @@ export async function exportXlsx(model, ExcelJS, { currency, title, formulas = t
       for (const c of row.cells) {
         if (c.colIndex < 0) continue;
         const cell = xr.getCell(c.colIndex + 1);
-        const nf = excelFormat(c.format, SYMBOL[currency] || currency || '', model.locale);
+        const nf = excelFormat(c.format, sym, model.locale, c.value);
         if (nf && (typeof c.value === 'number' || c.value instanceof Date)) cell.numFmt = nf;
         else if (c.value instanceof Date) cell.numFmt = 'dd mmm yyyy';
         if (c.bold || row.kind !== 'detail') cell.font = { bold: c.bold || row.kind === 'header' };

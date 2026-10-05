@@ -1,4 +1,5 @@
 // @ts-check
+import { excelFormat } from './xlsx.js';
 /**
  * Native, editable Excel charts (DrawingML c:chart) for the xlsx export. ExcelJS writes no charts, so the workbook it
  * wrote is opened again (fflate) and each chart sheet gets a drawing with one chart bound to the data on that sheet:
@@ -51,7 +52,7 @@ const title = (t) => (t ? `<c:title><c:tx><c:rich><a:bodyPr/><a:p><a:r><a:t>${es
  */
 export function chartXml(spec, sheet) {
   const t = spec.type;
-  const fmt = spec.format && /[#0]/.test(spec.format) ? spec.format : 'General';
+  const fmt = excelFormat(spec.format, '', spec.locale) || 'General'; // P0, N0, C2 are .NET codes, not Excel's (N21)
   let plot = '', axes = '';
   const AX = { cat: 500001, val: 500002, cat2: 500003, val2: 500004 };
   const axIds = (two) => `<c:axId val="${two ? AX.cat2 : AX.cat}"/><c:axId val="${two ? AX.val2 : AX.val}"/>`;
