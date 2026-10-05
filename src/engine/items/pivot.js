@@ -389,7 +389,9 @@ export function buildPivot(item, rows, ctx, lc) {
       }
       // an empty cell (no rows at the intersection): its action reads the group values of its row and column (SSRS
       // takes them from the group scope), or it has none: a drill with null parameters would open the wrong report
-      let fields = cr[0] || null, click = clickOf(v);
+      /** @type {any} */
+      let click = clickOf(v);
+      let fields = cr[0] || null;
       if (!fields && click?.action) {
         fields = emptyCellFields(re.chain, rg, ce.entry.chain, cg);
         if (!fields) click = click.bookmark ? { bookmark: click.bookmark } : null;
