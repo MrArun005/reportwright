@@ -26,6 +26,8 @@ export const RULES = [
   ['POST', /^\/api\/data\/sql$/, 'viewer'],                               // saved queries; the route allows ad-hoc SQL to designers only
   ['GET', /^\/api\/data\/sql\/connections$/, 'designer'],                 // names and kinds, for the data panel
   ['POST', /^\/api\/data\/sql\/test$/, 'designer'],
+  ['GET', /^\/api\/data\/sql\/schema$/, 'designer'],                      // the visual SQL builder: tables and keys
+  ['POST', /^\/api\/data\/sql\/build$/, 'designer'],                      // and the SQL it writes
   ['GET', /^\/api\/data\/proxy$/, 'viewer'],
   ['GET', /^\/api\/sample\/.+$/, 'viewer'],
   ['GET', /^\/api\/auth\/me$/, 'viewer'],

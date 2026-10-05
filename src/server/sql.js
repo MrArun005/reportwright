@@ -151,7 +151,7 @@ const plainRow = (r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k,
  * @param {Record<string, any>} [params] report parameters (lists are arrays)
  * @returns {Promise<object[]>}
  */
-export async function runSql({ connection, query, procedure, args }, params = {}) {
+export async function runSql({ connection, query, procedure, args }, params = {}, { catalog = false } = {}) {
   const { url, key } = connectionUrl(connection);
   const dialect = kindOf(url);
   if (dialect === 'unknown') throw fail(`${key} must start with sqlite:, postgres://, mysql://, mssql://, oracle://, snowflake:// or bigquery://.`, 500);
@@ -165,8 +165,9 @@ export async function runSql({ connection, query, procedure, args }, params = {}
     if (!/^[\s(]*(select|with)\b/i.test(query.replace(/^(\s*(--[^\n]*|\/\*[\s\S]*?\*\/))+/, ''))) throw fail('A SQL source can only run a SELECT query.', 400);
     ({ text, values } = bindSql(query, params, dialect));
     // every dialect: one statement, no write or session words, only built-in functions (a second guard beside each
-    // database's own: the read-only login, the server's parse, the read-only transaction, the dry run)
-    code = assertOneRead(text, dialect);
+    // database's own: the read-only login, the server's parse, the read-only transaction, the dry run). catalog: the
+    // server's own catalog reads (sql/schema.js, never a caller's text) may call catalog functions (pragma_table_info)
+    code = catalog ? text : assertOneRead(text, dialect);
   }
   let rows;
   try {
@@ -275,6 +276,9 @@ export function mssqlConfig(url) {
 }
 
 /** The connections set up on this server: names and kinds only (the URLs hold passwords). */
+/** The dialect of a named connection (400 for an unknown name). @param {string} name */
+export const connectionKind = (name) => kindOf(connectionUrl(name).url);
+
 export function listConnections() {
   return Object.entries(process.env)
     .filter(([k, v]) => /^PW_DB_\w+$/.test(k) && !/_PROCS$/.test(k) && v)
