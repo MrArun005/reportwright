@@ -4,7 +4,7 @@
 // Instant visuals: tick fields, get a suggested chart, table and pivot drawn live, insert one.
 import { useEffect, useState } from 'react';
 import { useDesigner, addItem, bodyWidth, secOf } from './store.js';
-import { loadSample } from './DataPanel.jsx';
+import { loadSample, noSourceKey } from './DataPanel.jsx';
 import { paintItemSvg } from './Canvas.jsx';
 import { tableFor, labelOf, formatFor } from './tableGen.js';
 import { Dialog, Field, Select, Check } from './ui.jsx';
@@ -36,6 +36,7 @@ export function pivotFor(ds, { rows = [], columns = [], values = [], width = 523
 
 /** One live thumbnail of an item with the sample data. */
 function Thumb({ item }) {
+  const T = useT();
   const def = useDesigner(s => s.def);
   const sample = useDesigner(s => s.sample);
   const [svg, setSvg] = useState(null);
@@ -46,7 +47,8 @@ function Thumb({ item }) {
     const t = setTimeout(() => { paintItemSvg({ ...ITEMS[item.type].defaults(), ...item, x: 0, y: 0 }, def, sample).then(o => { if (alive) setSvg(o); }, e => { if (alive) setSvg({ error: e.message }); }); }, 120);
     return () => { alive = false; clearTimeout(t); };
   }, [key, sample]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (!svg) return <span className="hint">…</span>;
+  // no data source or a failed load: say so, not an endless "…"
+  if (!svg) return <span className="hint">{(noSourceKey(def) && T(noSourceKey(def))) || sample?.error || '…'}</span>;
   if (svg.error) return <span className="err">{svg.error}</span>;
   return <span dangerouslySetInnerHTML={{ __html: svg.html }} />;
 }
@@ -115,6 +117,7 @@ export default function PivotWizard() {
       footer={<><button className="btn" onClick={close}>{T('cancel')}</button><button className="btn primary" disabled={!item} onClick={insert} data-testid="pivot-wizard-insert">{T('pivotInsert')}</button></>}>
       <div className="cw-body">
         <section className="cw-side" aria-label={T('pivotFields')}>
+          {noSourceKey(def) && <div className="hint" role="status" data-testid="no-source">{T(noSourceKey(def))}</div>}
           <Field label={T('dataSet')}><Select value={dsName} options={(def.dataSets || []).map(d => d.name)} onChange={v => { setDs(v); setLay({ rows: [], columns: [], values: [] }); }} /></Field>
           <ul className="tree" data-testid="pivot-fields">
             {fields.map(f => (
@@ -173,6 +176,7 @@ export function InstantVisuals() {
     <Dialog className="cw" title={T('instantVisuals')} onClose={close} footer={<button className="btn" onClick={close}>{T('close')}</button>}>
       <div className="cw-body">
         <section className="cw-side" aria-label={T('pivotFields')}>
+          {noSourceKey(def) && <div className="hint" role="status" data-testid="no-source">{T(noSourceKey(def))}</div>}
           <div className="hint">{T('instantHint')}</div>
           {fields.map(f => <Check key={f.name} label={`${labelOf(f.name)} · ${f.type}`} checked={picked.includes(f.name)} onChange={v => setPicked(p => (v ? [...p, f.name] : p.filter(n => n !== f.name)))} />)}
         </section>

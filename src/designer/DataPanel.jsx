@@ -20,6 +20,9 @@ import { nestedFields } from './fieldCheck.js';
 
 const NAME = /^[A-Za-z_][\w]*$/;
 
+/** The i18n key saying why sample data cannot load (the report has no data source), else null. */
+export const noSourceKey = (def) => ((def?.dataSources || []).length ? null : 'r4_noDataSource');
+
 /** Load every source and build data sets with parameter defaults. Used for previews and field detection. */
 export async function loadSample() {
   const { def } = useDesigner.getState();
@@ -129,8 +132,9 @@ export default function DataPanel() {
             {!(def.dataSets || []).length && <li className="subtle">None</li>}
           </ul>
           <div className="btnrow" style={{ marginTop: 8 }}>
-            <button className="btn sm" onClick={loadSample} disabled={sample?.loading}>{sample?.loading ? 'Loading…' : 'Load sample data'}</button>
+            <button className="btn sm" onClick={loadSample} disabled={sample?.loading || !!noSourceKey(def)} title={noSourceKey(def) ? T(noSourceKey(def)) : undefined} data-testid="load-sample">{sample?.loading ? 'Loading…' : 'Load sample data'}</button>
           </div>
+          {noSourceKey(def) && <div className="hint" role="status" style={{ marginTop: 6 }} data-testid="no-source">{T(noSourceKey(def))}</div>}
           {sample?.error && <div className="err" style={{ marginTop: 6 }}>{sample.error}</div>}
         </div>
       </div>

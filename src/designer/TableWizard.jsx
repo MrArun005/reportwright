@@ -3,7 +3,7 @@
 // with the report's own rows. Pick a data set, the fields and a layout, then insert. Same look as the chart gallery.
 import { useEffect, useState } from 'react';
 import { useDesigner, addItem, bodyWidth, findItem } from './store.js';
-import { loadSample } from './DataPanel.jsx';
+import { loadSample, noSourceKey } from './DataPanel.jsx';
 import { paintItemSvg } from './Canvas.jsx';
 import { tableFor, matrixFor, labelOf } from './tableGen.js';
 import { Dialog, Field, Select, Check } from './ui.jsx';
@@ -85,6 +85,7 @@ export default function TableWizard() {
         <section className="cw-side" aria-label="Data for the table">
           <Field label="Data set"><Select value={c.dataSet} options={(def.dataSets || []).map(d => d.name)} onChange={v => set({ dataSet: v, fields: null, groupBy: '', mRows: '', mCols: '', mValue: '' })} /></Field>
           {sample?.loading && <span className="hint">Calling the API…</span>}
+          {noSourceKey(def) && <span className="hint" role="status" data-testid="no-source">{t(useDesigner.getState().lang, noSourceKey(def))}</span>}
           {sample?.error && <span className="err">{sample.error}</span>}
           {c.layout !== 'matrix' && <>
             {c.layout !== 'list' && <Field label="Group by"><Select value={groupBy} options={text.map(f => f.name)} onChange={v => set({ groupBy: v })} /></Field>}

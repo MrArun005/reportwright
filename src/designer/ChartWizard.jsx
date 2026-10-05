@@ -3,7 +3,7 @@
 // next to a preview of the rows and the raw response. Pick a data set, the fields and a type, then insert.
 import { useEffect, useMemo, useState } from 'react';
 import { useDesigner, addItem, updateItem, findItem } from './store.js';
-import { loadSample } from './DataPanel.jsx';
+import { loadSample, noSourceKey } from './DataPanel.jsx';
 import { paintItemSvg } from './Canvas.jsx';
 import { Dialog, Field, Select, Check } from './ui.jsx';
 import { labelOf, isCode, compactFormat } from './tableGen.js';
@@ -200,7 +200,8 @@ export default function ChartWizard() {
           <Field label={tr('dataSet')}><Select value={c.dataSet} options={(def.dataSets || []).map(d => d.name)} onChange={pickDataSet} /></Field>
           <div className="cw-src">
             {ds && <span className="hint">{tr('source')} <b>{ds.source}</b> · {tr('path')} <code>{ds.path || '$'}</code></span>}
-            <button className="btn sm" onClick={loadSample} disabled={loading}>{loading ? tr('calling') : tr('callAgain')}</button>
+            <button className="btn sm" onClick={loadSample} disabled={loading || !!noSourceKey(def)} title={noSourceKey(def) ? t(lang, noSourceKey(def)) : undefined}>{loading ? tr('calling') : tr('callAgain')}</button>
+            {noSourceKey(def) && <span className="hint" role="status" data-testid="no-source">{t(lang, noSourceKey(def))}</span>}
             {sample?.error && <span className="err">{sample.error}</span>}
           </div>
           {c.chartType !== 'histogram' && <Field label={PER_ROW.has(c.chartType) ? tr('xNumber') : c.chartType === 'gantt' ? tr('task') : tr('category')}>
