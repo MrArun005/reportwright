@@ -199,3 +199,26 @@ describe('saving warns about drill-through reports that do not exist', () => {
     } finally { delete process.env.PW_STORAGE; fs.rmSync(tmp, { recursive: true, force: true }); }
   });
 });
+
+describe('render speed: no layout pass for nothing', () => {
+  // a report function counts how often the table's cells are laid out, across every pass of one render
+  const counted = (rows, extra = []) => ({ ...report([
+    { type: 'table', name: 'Big', x: 0, y: 0, w: 300, h: 28, dataSet: 'Rows', columns: [{ width: 300 }], detail: [{ height: 14, cells: [{ value: '=Code.Tick(Fields.v)' }] }] },
+    ...extra], { data: { rows } }), functions: [{ name: 'Tick', params: ['x'], body: '=x' }] });
+  const passes = async (def, opts = {}) => { const fnCount = { n: 0 }; const { FontStore } = await import('../../src/engine/index.js'); const { fontFile } = await import('../../src/engine/text/fonts.js');
+    const store = opts.fresh ? new FontStore(async (k) => fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'public', 'fonts', fontFile(k)))) : fontStore;
+    await render(def, { fontStore: store, fnCount, loadReport: async () => ({ $schema: 'pagewright/report@1', sections: { body: { items: [] } } }) }); return fnCount.n / def.dataSources[0].data.rows.length; };
+  it('data in Hindi and Arabic: the fallback fonts and the shaper load before the layout, not after a first pass', async () => {
+    const rows = Array.from({ length: 50 }, (_, i) => ({ v: i % 2 ? `राधिका ${i}` : `محمد ${i}` }));
+    expect(await passes(counted(rows), { fresh: true })).toBe(1);
+  });
+  it('a subreport elsewhere: the pass that collects subreport requests does not lay out the table', async () => {
+    const rows = Array.from({ length: 50 }, (_, i) => ({ v: `r${i}` }));
+    expect(await passes(counted(rows, [{ type: 'subreport', name: 'S', x: 0, y: 40, w: 200, h: 40, report: 'child' }]))).toBe(1);
+  });
+  it('fontsFor: one face per script (regular, bold) and the shaper for complex scripts only', async () => {
+    const { fontsFor } = await import('../../src/engine/text/fonts.js');
+    expect(fontsFor(['plain Latin, Zoë, Łukasiewicz'])).toEqual([]);
+    expect(fontsFor(['राधिका'])).toEqual(['NotoSansDevanagari-Regular', 'NotoSansDevanagari-Bold', 'harfbuzz']);
+  });
+});

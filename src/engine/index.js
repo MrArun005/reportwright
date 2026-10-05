@@ -5,7 +5,7 @@
  * No React, no DOM. Runs in a Web Worker and in Node.
  */
 import { resolvePage } from './units.js';
-import { FontStore, ALL_FONT_KEYS } from './text/fonts.js';
+import { FontStore, ALL_FONT_KEYS, fontsFor } from './text/fonts.js';
 import { safeUrl } from './url.js';
 import { TextMeasurer, finishText } from './text/measure.js';
 import { loadSources, buildDataSets, coerce } from './data/index.js';
@@ -55,6 +55,24 @@ export const BAND_ITEMS = 250000; // page header and footer items drawn per rend
  *   accessible PDF rebuild tables from (needsExportData in exporters/regions.js says which). Off by default: a view
  *   or a plain PDF needs neither, and they are a third of a big table's model.
  */
+/**
+ * The text a render may draw: the definition's own and the string values of the data rows (and one level of nested
+ * objects). ponytail: the first 50,000 rows of each data set; text further down in a script not seen before still
+ * gets its font, by the layout's second pass.
+ * @param {any} def @param {Record<string, any[]>} dataSets
+ */
+function* textsOf(def, dataSets) {
+  yield JSON.stringify(def);
+  for (const rows of Object.values(dataSets)) {
+    const n = Math.min(rows.length, 50000);
+    for (let i = 0; i < n; i++) {
+      const r = rows[i];
+      if (!r || typeof r !== 'object') { yield r; continue; }
+      for (const k in r) { const v = r[k]; if (typeof v === 'string') yield v; else if (v && typeof v === 'object') for (const x of Object.values(v)) yield x; }
+    }
+  }
+}
+
 export async function render(def0, opts = {}) {
   const t0 = Date.now();
   // masters, stylesheets and part libraries: other saved reports, each loaded once for this render and its subreports
@@ -127,6 +145,9 @@ export async function render(def0, opts = {}) {
   baseCtx.dataSets = dataSets;
   overTime();
   const defaultDs = def.dataSets?.[0]?.name;
+  // the fonts the report's text and data need (a fallback face per script, the shaper), before the layout: one found
+  // missing during the layout lays everything out again (below), a whole extra pass for data in Hindi or Arabic
+  await store.load(fontsFor(textsOf(def, dataSets)));
   const kept = warnings.length; // a second layout pass starts from here
 
   const sec = def.sections || {};

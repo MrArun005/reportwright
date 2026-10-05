@@ -136,6 +136,36 @@ export function fallbackKey(cp, key) {
   return null;
 }
 
+const SIMPLE_FALLBACK = new Set(['Noto Sans JP', 'Noto Sans KR', 'Noto Emoji']); // scripts drawn without the shaper
+const BEYOND_LATIN = /[^\u0000-\u024f\u1e00-\u1eff\u2000-\u20cf\u2100-\u218f]/;
+/**
+ * The fallback faces (regular and bold, one per script) and the shaper that text in these strings will need. render()
+ * loads them before the layout: a face found missing during the layout means laying everything out again.
+ * ponytail: regular and bold only (italic text in a fallback script uses them too, see resolveFontKey).
+ * @param {Iterable<any>} texts
+ * @returns {string[]}
+ */
+export function fontsFor(texts) {
+  const keys = new Set(), seen = new Set();
+  let shaper = false;
+  for (const t of texts) {
+    if (typeof t !== 'string' || !BEYOND_LATIN.test(t)) continue;
+    for (const ch of t) {
+      const cp = /** @type {number} */ (ch.codePointAt(0));
+      if (cp < 0x0250 || seen.has(cp)) continue;
+      seen.add(cp);
+      for (const [a, b, family] of FALLBACK) {
+        if (cp < /** @type {number} */ (a) || cp > /** @type {number} */ (b)) continue;
+        keys.add(resolveFontKey(String(family), 400, 'normal')).add(resolveFontKey(String(family), 700, 'normal'));
+        if (!SIMPLE_FALLBACK.has(String(family))) shaper = true;
+        break;
+      }
+    }
+  }
+  if (shaper) keys.add(SHAPER);
+  return [...keys];
+}
+
 /**
  * Loads font files once and keeps the parsed fontkit objects; SHAPER loads the HarfBuzz shaper.
  * The loader returns the bytes of fontFile(key) under /fonts.

@@ -158,6 +158,10 @@ export function symbologyError(sym) {
   return `"${s.slice(0, 40)}" is not a barcode symbology${near ? ` (did you mean "${near}"?)` : ''}`;
 }
 
+/** bwip-js output by symbology, text and options (an error as { error }), for this process or worker. */
+const SVGS = new Map();
+const SVG_CACHE = 2000;
+
 /** @param {string} id */
 export const isTwoD = (id) => BY_ID.get(id)?.twoD ?? false;
 
@@ -204,13 +208,21 @@ export function paintBarcode({ type = 'code128', text, x, y, w, h, color = '#000
   if (text.length > max) return { items: [], error: `The value is too long for ${BY_ID.get(type)?.name || type} (${text.length} characters; at most ${max})` };
   if (!bwip) return { items: [], error: 'The barcode library is not loaded (call loadBarcodes() before layout)' };
   const twoD = isTwoD(type);
-  let svg;
-  try {
-    // height sets a 1D code's bar height (stretched to the box anyway); a 2D code keeps its own module grid
-    svg = bwip.toSVG({ ...options, bcid: type, text, scale: 1, ...(twoD ? {} : { height: 10 }), includetext: false, paddingwidth: 0, paddingheight: 0 });
-  } catch (e) {
-    return { items: [], error: String(e.message || e).replace(/^bwipp\.\w+#\d+:\s*/, '') };
+  // the same code again (another layout pass, the full render after the first pages, a repeated value): from the
+  // cache. bwip-js takes milliseconds per QR code, which was a third of a cold render with a few dozen of them.
+  const key = JSON.stringify([type, text, options]);
+  let svg = SVGS.get(key);
+  if (svg === undefined) {
+    try {
+      // height sets a 1D code's bar height (stretched to the box anyway); a 2D code keeps its own module grid
+      svg = bwip.toSVG({ ...options, bcid: type, text, scale: 1, ...(twoD ? {} : { height: 10 }), includetext: false, paddingwidth: 0, paddingheight: 0 });
+    } catch (e) {
+      svg = { error: String(e.message || e).replace(/^bwipp\.\w+#\d+:\s*/, '') };
+    }
+    if (SVGS.size >= SVG_CACHE) SVGS.clear(); // ponytail: clear when full, an LRU if reports with thousands of distinct codes repeat
+    SVGS.set(key, svg);
   }
+  if (typeof svg !== 'string') return { items: [], error: svg.error };
   const vb = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg);
   if (!vb) return { items: [], error: 'No barcode output' };
   const vw = Number(vb[1]), vh = Number(vb[2]);

@@ -5,6 +5,19 @@ const EPS = 0.01;
 const FIGURES = new Set(['image', 'chart', 'map', 'barcode', 'shape', 'line', 'sparkline', 'databar', 'bullet', 'iconset', 'rangebar']);
 let tagSeq = 0; // tells two figures apart in a page model that went through JSON
 
+const HOLDS = new WeakMap();
+/** Is there a subreport in this item (its items, cells, groups…)? Remembered per item object. @param {any} it */
+function holdsSubreport(it) {
+  let h = HOLDS.get(it);
+  if (h === undefined) {
+    /** @param {any} n @param {number} d @returns {boolean} */
+    const find = (n, d) => !!n && typeof n === 'object' && d < 64 && (n.type === 'subreport' || Object.values(n).some(v => v && typeof v === 'object' && find(v, d + 1)));
+    h = find(it, 0);
+    HOLDS.set(it, h);
+  }
+  return h;
+}
+
 /**
  * Lay out a set of free-positioned items (a band body, a container, one list row).
  * Applies the RDL push rule: when an item grows by Δ, every item below it that
@@ -24,6 +37,8 @@ export function layoutItems(items, lc, { dx = 0 } = {}) {
     const it = dx ? { ...it0, x: it0.x + dx } : it0;
     const spec = ITEMS[it.type];
     if (!spec) { lc.warn(`Unknown item type "${it.type}"`); return { it, res: { height: 0, units: [] } }; }
+    // the pass that only collects subreport requests skips what holds none (a 5,000-row table was laid out for nothing)
+    if (lc.subreports?.mode === 'collect' && !holdsSubreport(it0)) return { it, res: { height: it.h, units: [] } };
     // a copy of a report part: its expressions read PartProperties
     return { it, res: spec.layout(it, it.partProps && typeof it.partProps === 'object' ? withPartProps(lc, it.partProps) : lc) };
   });
