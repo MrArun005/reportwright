@@ -10,6 +10,7 @@ import { readRunnable, defaultPrincipal } from './perms.js';
 import { resolveParameters } from '@/engine/index.js';
 import { isoDate } from '@/engine/expr/format.js';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import { codeOnly, assertCalls, visibleName } from './sql/check.js';
 import { oracle } from './sql/oracle.js';
 import { snowflake } from './sql/snowflake.js';
@@ -31,7 +32,29 @@ function connectionUrl(name) {
   const key = `PW_DB_${name.toUpperCase()}`;
   const url = process.env[key];
   if (!url) throw fail(`The connection "${name}" is not set up on the server. Set ${key}.`, 400);
+  if (isStorage(name, url)) throw fail(`The connection "${name}" is the server's own storage database, which reports cannot read. Point ${key} at a data database.`, 400);
   return { url, key };
+}
+
+/** A SQLite URL's file as the OS sees it: dev:inode when it exists (symlinks, hard links), else the absolute path. */
+const fileId = (url) => {
+  const f = url.replace(/^sqlite:(\/\/)?/, '');
+  try { const st = fs.statSync(f); return `${st.dev}:${st.ino}`; } catch { return f; } // not there yet: by path
+};
+/**
+ * True when a data connection is the storage database (PW_STORAGE): the name sql:<name> uses, the same URL, or
+ * for SQLite the same file by inode. Storage holds password hashes, every report and the audit log: never a source.
+ * @param {string} name @param {string} url
+ */
+function isStorage(name, url) {
+  const spec = process.env.PW_STORAGE || 'file';
+  if (spec === 'file') return false;
+  const m = /^sql:(\w+)$/.exec(spec);
+  if (m && m[1].toLowerCase() === name.toLowerCase()) return true;
+  const st = m ? process.env[`PW_DB_${m[1].toUpperCase()}`] || '' : spec;
+  if (!st) return false;
+  if (st.trim() === url.trim()) return true;
+  return /^sqlite:/.test(st) && /^sqlite:/.test(url) && fileId(st) === fileId(url);
 }
 
 const SCALAR = new Set(['string', 'number', 'boolean']);
@@ -214,6 +237,9 @@ export function assertOneRead(text, dialect) {
   const word = READ_DENY.exec(code);
   if (word) throw fail(`A SQL source can only run one SELECT query: "${word[1]}" is not allowed.`, 400);
   if ((dialect === 'oracle' || dialect === 'snowflake') && code.includes('@')) throw fail('A SQL source cannot use a database link or a stage (@).', 400);
+  // SQLite's eponymous virtual tables read the server's files and pages without "(" (pragma_database_list names
+  // every open file, dbstat and sqlite_dbpage read raw pages): refused as names, bare or quoted
+  if (dialect === 'sqlite' && /(?:\b|qn_)(pragma_\w+|sqlite_dbpage|dbstat|attach|detach)\b/i.test(code)) throw fail('A SQL source cannot read SQLite pragmas, pages or attached databases.', 400);
   assertCalls(code, dialect);
   return code;
 }
@@ -283,6 +309,7 @@ export const connectionKind = (name) => kindOf(connectionUrl(name).url);
 export function listConnections() {
   return Object.entries(process.env)
     .filter(([k, v]) => /^PW_DB_\w+$/.test(k) && !/_PROCS$/.test(k) && v)
+    .filter(([k, v]) => !isStorage(k.slice(6), v))
     .map(([k, v]) => ({ name: k.slice(6).toLowerCase(), kind: kindOf(v), procs: procsOf(k.slice(6)) }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
