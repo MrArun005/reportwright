@@ -32,11 +32,15 @@ The design is OWASP's device cookie:
 2. **Per account** (passwords and second factors): 10 failures in 15 minutes from browsers the account does not know,
    then 429 for such browsers. A distributed brute force is capped.
 3. **Device cookies.** A complete sign-in (password and any second factor) sets `pw_device`: HMAC-signed, HttpOnly,
-   SameSite=Strict, for `/api/auth`, holding the account, a random device id, the account's device epoch and 90
-   days. A new one on every sign-in and every sign-out (rotated: a plain **Sign out** keeps the browser known, so a
-   sign-in flood cannot lock out someone who signed out). Sign-out everywhere (`POST /api/auth/logout
-   { everywhere: true }`), a password change or reset, a two-factor reset, disabling the account or an admin's
-   `PATCH /api/users/<email> { forgetDevices: true }` moves the epoch and ends every device cookie. A try
+   SameSite=Strict, for `/api/auth`, naming a **registered device** of the account (the user record keeps a list of
+   up to 20: id, created, last sign-in, browser; the Account page lists them, each with Remove) and the account's
+   credential version, for 90 days. Only a complete sign-in (password and any second factor) or a password reset
+   issues one. A plain **Sign out** re-signs a valid device cookie of the signed-in user (same device) and never
+   creates one, so a sign-in flood cannot lock out someone who signed out. Sign-out everywhere (`POST
+   /api/auth/logout { everywhere: true }`, also on the Account page), a password change or reset, a two-factor
+   reset, disabling, a role demotion or an admin's `PATCH /api/users/<email> { forgetDevices: true }` moves the
+   credential version and empties the list: every device cookie stops counting on every server (checked against the
+   stored record, cached at most 10 s). A try
    carrying a valid one for the account is not under cap 2; it has its own 10 failures per 15 minutes. An attack
    cannot lock out a browser that signed in before.
 4. **A new browser on a capped account** gets in by a password reset email or an admin unlock (Users page,

@@ -103,6 +103,12 @@ export default {
     passwordToConfirm: "Your password, to confirm it is you",
     enrolEmailed: "We emailed a code to your address: enter it to set up your authenticator.",
     emailCode: "Code from the email",
+    devicesTitle: "Known browsers",
+    devicesHint: "Browsers you signed in from. Sign-in limits never lock them out. Remove one you do not recognise.",
+    devicesNone: "No known browsers.",
+    deviceLastUsed: "last sign-in {at}",
+    deviceRemove: "Remove",
+    signOutEverywhere: "Sign out everywhere and forget every browser",
   },
   hi: {
     stateOn: 'चालू', stateOff: 'बंद',

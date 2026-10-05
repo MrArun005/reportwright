@@ -155,23 +155,51 @@ export function sessionCookie(req, user, how = {}) {
 export const DEVICE_COOKIE = 'pw_device';
 const DEVICE_AGE = 90 * 86400;
 /**
- * Set-Cookie for this browser as a known device of this account, after a complete sign-in (password and any second
- * factor): HMAC-signed { e: email, d: a random device id, v: the account's deviceEpoch, iat, exp }. A new one on
- * every sign-in and sign-out (rotating). It ends when deviceEpoch moves (a password change or reset, sign-out
- * everywhere, disabling, a two-factor reset: users.js), not on a plain sign-out, or after 90 days. It never signs anyone in; it only exempts tries from this browser from the
- * cap on untrusted tries for the account (limits.checkCredential), within its own small budget.
- * @param {Request} req @param {{ email: string, deviceEpoch?: number }} user
+ * A device cookie names a registered device: HMAC-signed { e: email, d: device id, v: the account's credential version
+ * (deviceEpoch), iat, exp }. The device list lives on the user record (users.js touchDevice, listed and removable on
+ * the Account page). It never signs anyone in; it only exempts tries from this browser from the cap on untrusted tries
+ * for the account (limits.checkCredential), within its own small budget. Issued only after a complete sign-in
+ * (password and any second factor) or a password reset (issueDevice); a sign-out only re-signs a valid one
+ * (rotateDevice). It stops counting when its device is removed or deviceEpoch moves (password change or reset,
+ * two-factor reset, disabling, demotion, sign-out everywhere), or after 90 days.
+ * @param {Request} req @param {{ email: string, deviceEpoch?: number }} user @param {string} id
  */
-export function deviceCookie(req, user) {
+function deviceCookie(req, user, id) {
   const now = Math.floor(Date.now() / 1000);
-  const token = signSession({ dev: 1, e: user.email, d: crypto.randomBytes(12).toString('base64url'), v: user.deviceEpoch || 0, iat: now, exp: now + DEVICE_AGE }, DEVICE_COOKIE);
+  const token = signSession({ dev: 1, e: user.email, d: id, v: user.deviceEpoch || 0, n: crypto.randomBytes(6).toString('base64url'), iat: now, exp: now + DEVICE_AGE }, DEVICE_COOKIE);
   return `${DEVICE_COOKIE}=${token}; Path=/api/auth; HttpOnly; SameSite=Strict; Max-Age=${DEVICE_AGE}${isHttps(req) ? '; Secure' : ''}`;
 }
-/** The device id of a valid device cookie for this account as it is now, or null. @param {Request} req @param {{ email: string, deviceEpoch?: number } | null} user */
+/**
+ * The device id of a valid device cookie for this account as it is now (signature, expiry, the account's current
+ * credential version, a registered device), or null. Read against the stored record on every check.
+ * @param {Request} req @param {{ email: string, deviceEpoch?: number, devices?: { id: string }[] } | null} user
+ */
 export function knownDevice(req, user) {
   if (!user || !req?.headers) return null;
   const p = readToken(cookie(req, DEVICE_COOKIE) || '', DEVICE_COOKIE); // signature and expiry
-  return p?.dev === 1 && p.e === user.email && p.v === (user.deviceEpoch || 0) && typeof p.d === 'string' ? p.d : null;
+  const ok = p?.dev === 1 && p.e === user.email && p.v === (user.deviceEpoch || 0) && typeof p.d === 'string' && (user.devices || []).some(d => d.id === p.d);
+  return ok ? p.d : null;
+}
+/**
+ * Set-Cookie after a complete sign-in or a password reset: this browser's registered device (the same id when it
+ * already holds a valid cookie for this account, else a new one, registered now).
+ * @param {Request} req @param {{ email: string }} user
+ */
+export async function issueDevice(req, user) {
+  const { touchDevice, getUser } = await import('./users.js');
+  const now = await getUser(user.email);
+  const id = knownDevice(req, now) || crypto.randomBytes(12).toString('base64url');
+  const after = await touchDevice(user.email, id, req.headers.get('user-agent') || '');
+  return after ? deviceCookie(req, after, id) : null;
+}
+/**
+ * Set-Cookie at sign-out: a valid device cookie of this (signed-in) account re-signed, same device id, new expiry.
+ * Nothing for a browser without one, or with another account's: a sign-out never makes a device known.
+ * @param {Request} req @param {{ email: string, deviceEpoch?: number, devices?: { id: string }[] }} user the stored record
+ */
+export function rotateDevice(req, user) {
+  const id = knownDevice(req, user);
+  return id ? deviceCookie(req, user, id) : null;
 }
 
 /* ---------------- the step between the password and the second factor ---------------- */

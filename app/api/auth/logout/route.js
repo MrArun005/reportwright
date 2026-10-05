@@ -1,10 +1,11 @@
-// POST /api/auth/logout — sign out: clears the cookie and ends every session of this user. This browser stays a known
-// device (a new device cookie: limits.checkCredential), so sign-in floods cannot lock out someone who signed out.
+// POST /api/auth/logout — sign out: clears the cookie and ends every session of this user. A browser that holds a valid
+// device cookie of this user keeps it (re-signed: session.rotateDevice), so sign-in floods cannot lock out someone who
+// signed out; a sign-out never makes a new device known.
 // { everywhere: true } also forgets every device of the account (as a password change does). After a single sign-on
 // session the answer also says where the browser goes next ({ redirect }): the SAML IdP's single logout (a signed
 // LogoutRequest), or the OIDC provider's end_session_endpoint (src/server/sso.js).
 import { endSessions, getUser } from '@/server/users.js';
-import { currentUser, clearCookie, sessionClaims, deviceCookie } from '@/server/session.js';
+import { currentUser, clearCookie, sessionClaims, rotateDevice } from '@/server/session.js';
 import { sloOn, samlLogoutStart, oidcLogoutUrl, clearLogoutCookies } from '@/server/sso.js';
 import { audit } from '@/server/audit.js';
 
@@ -19,7 +20,8 @@ export async function POST(req) {
     const body = await req.json().catch(() => null);
     const everywhere = body?.everywhere === true;
     const after = await endSessions(user.email, { everywhere });
-    if (after && !everywhere) h.append('set-cookie', deviceCookie(req, after)); // this browser just proved the session
+    const kept = after && !everywhere ? rotateDevice(req, after) : null;
+    if (kept) h.append('set-cookie', kept);
     const via = sessionClaims(req)?.s;
     try {
       if (via === 'saml' && sloOn()) {

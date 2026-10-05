@@ -2,7 +2,7 @@
 // /api/auth/login). When the role requires two-factor sign-in and the user is enrolling (after /api/auth/mfa/setup), the
 // code confirms the new authenticator and the answer carries the recovery codes, shown once.
 // Codes go through limits.checkCredential (caps per network and account, 429; a known device has its own budget).
-import { accountsOn, readMfa, clearMfa, sessionCookie, deviceCookie } from '@/server/session.js';
+import { accountsOn, readMfa, clearMfa, sessionCookie, issueDevice } from '@/server/session.js';
 import { getUser, checkSecondFactor, enableTwoFactor, secondFactor } from '@/server/users.js';
 import { getSettings } from '@/server/settings.js';
 import { checkCredential } from '@/server/limits.js';
@@ -39,7 +39,7 @@ export async function POST(req) {
     const h = new Headers({ 'cache-control': 'no-store' });
     h.append('set-cookie', sessionCookie(req, user, via === 'none' ? {} : { m: 1 }));
     h.append('set-cookie', clearMfa(req));
-    h.append('set-cookie', deviceCookie(req, user)); // password and second factor done: a known device of this account
+    const dev = await issueDevice(req, user); if (dev) h.append('set-cookie', dev); // password and second factor done: a known device of this account
     return Response.json({ email: user.email, role: user.role, ...(codes ? { recoveryCodes: codes } : {}) }, { headers: h });
   } catch (e) { return errorResponse(e); }
 }

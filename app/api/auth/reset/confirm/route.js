@@ -1,6 +1,6 @@
 // POST /api/auth/reset/confirm { token, password } — set a new password with a reset link's token: single use, 30
 // minutes, every session of the account ends. The token goes through limits.checkCredential.
-import { accountsOn, deviceCookie } from '@/server/session.js';
+import { accountsOn, issueDevice } from '@/server/session.js';
 import { useReset, getUser } from '@/server/users.js';
 import { checkCredential } from '@/server/limits.js';
 import { audit } from '@/server/audit.js';
@@ -18,7 +18,7 @@ export async function POST(req) {
     notifyAccount(email, 'Your password was reset with a link from a reset email, and every session was signed out.');
     // the mailbox is proven: this browser becomes a known device, so a sign-in cap others filled does not keep it out
     const u = await getUser(email);
-    return Response.json({ ok: true }, { headers: { 'cache-control': 'no-store', ...(u && { 'set-cookie': deviceCookie(req, u) }) } });
+    return Response.json({ ok: true }, { headers: { 'cache-control': 'no-store', ...(u && { 'set-cookie': await issueDevice(req, u) }) } });
   } catch (e) {
     if (e.status === 400 && /link/.test(e.message)) await audit('auth.reset_failed', { req, status: 'failed', detail: { reason: 'bad or spent token' } });
     return errorResponse(e);

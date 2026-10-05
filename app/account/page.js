@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import Link from 'next/link';
 import TwoFactorSettings from '@/home/TwoFactor.jsx';
+import Devices from '@/home/Devices.jsx';
 import ThemeToggle from '@/theme/ThemeToggle.jsx';
 import { accountsOn, currentUser } from '@/server/session.js';
 import { t, dirOf, pickLang } from '@/i18n/index.js';
@@ -25,6 +26,7 @@ export default async function AccountPage({ searchParams }) {
       <main className="home">
         <h1>{t(lang, 'accountTitle')}</h1>
         <TwoFactorSettings lang={lang} />
+        <Devices lang={lang} />
       </main>
     </div>
   );

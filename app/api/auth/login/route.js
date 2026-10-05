@@ -3,7 +3,7 @@
 // The password goes through limits.checkCredential: caps per network and per account (429), and a device cookie set
 // on a complete sign-in so an attack cannot lock out a browser that signed in before (docs/GOVERNANCE.md).
 import { authenticate, ensureAdmin, normEmail, secondFactor } from '@/server/users.js';
-import { accountsOn, sessionSecret, sessionCookie, mfaCookie, deviceCookie } from '@/server/session.js';
+import { accountsOn, sessionSecret, sessionCookie, mfaCookie, issueDevice } from '@/server/session.js';
 import { checkCredential } from '@/server/limits.js';
 import { readBody } from '@/server/reports.js';
 import { getSettings } from '@/server/settings.js';
@@ -51,7 +51,7 @@ export async function POST(req) {
     await audit('auth.login', { req, actor: `user:${user.email}`, detail: { method: 'password' } });
     const h = new Headers();
     h.append('set-cookie', sessionCookie(req, user));
-    h.append('set-cookie', deviceCookie(req, user)); // a known device of this account from now on (limits.checkCredential)
+    const dev = await issueDevice(req, user); if (dev) h.append('set-cookie', dev); // a known device of this account from now on (limits.checkCredential)
     return Response.json({ email: user.email, role: user.role }, { headers: h });
   } catch (e) {
     return errorResponse(e);

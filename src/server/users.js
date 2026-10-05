@@ -5,8 +5,8 @@
 // single sign-on; they have no password (passwordHash null), so password sign-in can never open them.
 // Passwords: scrypt with a random 16-byte salt; the parameters are stored with the hash, so they can change later.
 // sessionVersion goes up on sign-out, a password change and disabling: every older session cookie stops working.
-// deviceEpoch (device cookies) moves on a password change or reset, disabling, a two-factor reset, forgetDevices and
-// sign-out everywhere; not on a plain sign-out.
+// devices + deviceEpoch (the known devices; device cookies carry the epoch) are reset on a password change or reset,
+// disabling, a two-factor reset, a role demotion, forgetDevices and sign-out everywhere; not on a plain sign-out.
 // Two-factor sign-in (src/server/totp.js): totp { secret (sealed), enabledAt }, recovery [hashes], totpPending while
 // enrolling. Enabling, turning off and an admin's reset each end every session of the user.
 import crypto from 'node:crypto';
@@ -163,10 +163,12 @@ async function updateUserNow(email, patch) {
   if (patch.password !== undefined) { next.passwordHash = await hashPassword(patch.password); delete next.reset; }
   if (patch.resetTwoFactor) { delete next.totp; delete next.totpPending; delete next.recovery; }
   if (patch.clearEnrolCode) delete next.enrolCode;
-  if (patch.password !== undefined || patch.resetTwoFactor || patch.forgetDevices || (next.disabled && !u.disabled)) {
-    next.sessionVersion = (u.sessionVersion || 0) + 1;
-    next.deviceEpoch = newEpoch(u); // and every known device (session.knownDevice) is forgotten
-  }
+  const demoted = patch.role !== undefined && ROLES.indexOf(next.role) < ROLES.indexOf(u.role);
+  const ends = patch.password !== undefined || patch.resetTwoFactor || patch.forgetDevices || (next.disabled && !u.disabled);
+  if (ends) next.sessionVersion = (u.sessionVersion || 0) + 1;
+  // every known device (session.knownDevice) is forgotten too; a demotion forgets them without ending the session
+  // (its role is read afresh on every request)
+  if (ends || demoted) Object.assign(next, forgetDevices(u));
   await keepAnAdmin(u, next);
   await save(next);
   return publicUser(next);
@@ -182,8 +184,43 @@ async function deleteUserNow(email) {
   return store().remove('users', u.email);
 }
 
-/** A device epoch other than the user's current one (device cookies carry it: session.deviceCookie). */
-const newEpoch = (u) => { let e; do e = crypto.randomInt(1, 2 ** 40); while (e === u.deviceEpoch); return e; };
+/* ---------------- known devices (the sign-in limits' device cookies: session.js) ---------------- */
+
+const MAX_DEVICES = 20;
+/**
+ * The record fields that revoke every device: a new credential version (deviceEpoch; every device cookie carries the
+ * one it was issued under) and an empty device list. Stored, so every server sees it (within the user cache, 10 s).
+ */
+const forgetDevices = (u) => { let e; do e = crypto.randomInt(1, 2 ** 40); while (e === u.deviceEpoch); return { deviceEpoch: e, devices: [] }; };
+
+/**
+ * Register a device of this user, or note that a registered one was used again (a sign-in from it). The list keeps
+ * the 20 most recently used. Only a complete sign-in and a password reset call this (session.issueDevice).
+ * @param {string} email @param {string} id @param {string} [ua] @returns {Promise<any>} the record after it
+ */
+export function touchDevice(email, id, ua = '') {
+  return withLock('users', async () => {
+    const u = await getUser(email);
+    if (!u) return null;
+    const now = new Date().toISOString();
+    const old = (u.devices || []).find(d => d.id === id);
+    const devices = [{ id, created: old?.created || now, lastUsed: now, ua: String(ua).slice(0, 200) }, ...(u.devices || []).filter(d => d.id !== id)].slice(0, MAX_DEVICES);
+    const next = { ...u, devices };
+    await save(next);
+    return next;
+  });
+}
+/** Remove one known device (Account page). @param {string} email @param {string} id @returns {Promise<boolean>} */
+export function removeDevice(email, id) {
+  return withLock('users', async () => {
+    const u = await getUser(email);
+    if (!u || !(u.devices || []).some(d => d.id === id)) return false;
+    await save({ ...u, devices: u.devices.filter(d => d.id !== id) });
+    return true;
+  });
+}
+/** The user's known devices, newest use first (no secrets in them). @param {string} email */
+export async function listDevices(email) { return ((await getUser(email))?.devices || []).map(d => ({ ...d })); }
 
 /**
  * Sign-out: every session cookie this user holds stops working. Known devices stay known (the sign-in limits of
@@ -196,7 +233,7 @@ export function endSessions(email, { everywhere = false } = {}) {
   return withLock('users', async () => {
     const u = await getUser(email);
     if (!u) return null;
-    const next = { ...u, sessionVersion: (u.sessionVersion || 0) + 1, ...(everywhere ? { deviceEpoch: newEpoch(u) } : {}) };
+    const next = { ...u, sessionVersion: (u.sessionVersion || 0) + 1, ...(everywhere ? forgetDevices(u) : {}) };
     await save(next);
     return next;
   });
@@ -347,7 +384,7 @@ export async function useReset(token, password) {
     const u = await getUser(email);
     const r = u?.reset;
     if (!u || u.disabled || !r || typeof r.hash !== 'string' || !(r.expires > Date.now()) || !crypto.timingSafeEqual(Buffer.from(sha(secret)), Buffer.from(r.hash.padEnd(64).slice(0, 64)))) throw bad();
-    const next = { ...u, passwordHash, sessionVersion: (u.sessionVersion || 0) + 1, deviceEpoch: newEpoch(u), updatedAt: new Date().toISOString() };
+    const next = { ...u, passwordHash, sessionVersion: (u.sessionVersion || 0) + 1, ...forgetDevices(u), updatedAt: new Date().toISOString() };
     delete next.reset;
     await save(next);
     return u.email;
