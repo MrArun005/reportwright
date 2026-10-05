@@ -327,6 +327,97 @@ try {
     await field(insp(), 'Value').fill('=Sum(Fields.amount)');
     await insp().getByTestId('field-warning').waitFor({ state: 'detached' });
   }
+  if (want('u8')) {
+    step('U-8: Detect fields on an object with a list takes the list; Add group can start collapsed');
+    const inv = { no: 'INV-8', lines: [{ item: 'Pen', amount: 10 }, { item: 'Ink', amount: 15 }, { item: 'Pad', amount: 5 }] };
+    let id = await create({ ...base('ux r1c u8', [{ type: 'textbox', name: 'A', x: 0, y: 0, w: 120, h: 20, value: 'A' }, { type: 'textbox', name: 'B', x: 60, y: 10, w: 120, h: 20, value: 'B' }]),
+      dataSources: [...base('x').dataSources, { name: 'inv', type: 'json', data: inv }] });
+    await open(id);
+    assert.equal(await p.getByTestId('zoom').inputValue(), 'fit'); // the page fits the canvas
+    await p.getByTestId('issues').filter({ hasText: '1 to check' }).waitFor(); // A and B overlap
+    await p.getByTestId('issues').click();
+    await p.getByTestId('issues-list').getByText('B overlaps A.').waitFor();
+    assert.equal(await p.locator('[data-item=B].issue').count(), 1);
+    step('U-8: the align toolbar aligns the selection');
+    const outline = p.getByTestId('outline');
+    await outline.getByRole('button', { name: 'A', exact: true }).click();
+    await outline.getByRole('button', { name: 'B', exact: true }).click({ modifiers: ['Shift'] });
+    await p.getByTestId('align-bar').getByRole('button', { name: 'Align top edges' }).click();
+    await p.getByTestId('align-bar').getByRole('button', { name: 'Align left edges' }).click();
+    await save();
+    let def = await read(id);
+    assert.deepEqual(def.sections.body.items.map(i => [i.x, i.y]), [[0, 0], [0, 0]]);
+    await p.getByTestId('issues-none').waitFor(); // B is now inside A's box? no: same box, layered on purpose
+    // a new data set over the object: Detect takes $.lines
+    await p.getByRole('button', { name: '+ Add' }).nth(2).click();
+    let dlg = p.getByRole('dialog');
+    await dlg.getByLabel('Name').fill('Lines');
+    await field(dlg, 'Source').selectOption('inv');
+    await dlg.getByRole('button', { name: 'Detect fields' }).click();
+    await dlg.getByText(/Found 3 rows\. Rows from \$\.lines/).waitFor();
+    assert.equal(await dlg.getByTestId('ds-path').inputValue(), '$.lines');
+    await dlg.getByRole('button', { name: 'Save' }).click();
+    // a table and a drill-down group
+    await p.evaluate(() => 0);
+    id = await create(base('ux r1c u8 group', [{ type: 'table', name: 'Tbl', x: 0, y: 40, w: 360, h: 36, dataSet: 'Sales', columns: [{ width: 180 }, { width: 180 }],
+      header: [{ height: 18, cells: [{ value: 'Region' }, { value: 'Amount' }] }], detail: [{ height: 18, cells: [{ value: '=Fields.region' }, { value: '=Fields.amount', style: { format: 'N2' } }] }] },
+      { type: 'image', name: 'Logo', x: 0, y: 0, w: 80, h: 30 }]));
+    await open(id);
+    await p.locator('.tbl .grip').click();
+    const ga = insp().getByTestId('group-add');
+    await ga.getByLabel('Field to group by').selectOption('region');
+    await ga.getByLabel(/Drill-down: the group starts collapsed/).check();
+    await ga.getByRole('button', { name: 'Add group' }).click();
+    step('U-8: the image item uploads its own image and the canvas shows it');
+    await p.locator('[data-item=Logo]').click();
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    await insp().getByTestId('item-image-upload').setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: png });
+    await p.locator('[data-item=Logo] img[src^="data:image/png"]').waitFor();
+    await save();
+    def = await read(id);
+    const tb = def.sections.body.items.find(i => i.name === 'Tbl');
+    assert.equal(tb.groups[0].collapsible, true);
+    assert.equal(tb.groups[0].initiallyCollapsed, true);
+    assert.equal(tb.detail[0].cells[0].value, ''); // the group header shows the region; the detail does not repeat it
+    assert.equal(def.sections.body.items.find(i => i.name === 'Logo').src, 'embedded:logo');
+    step('U-8: the preview opens at whole page; the parameter panel says what its button does');
+    await p.getByTestId('tab-preview').click();
+    await p.getByTestId('fit-page').and(p.locator('[aria-pressed=true]')).waitFor();
+
+    step('U-8: drill-through levels are in the address: browser Back and Forward walk them');
+    const dash = await create(base('ux r1c u8 dash', [{ type: 'textbox', name: 'W', x: 0, y: 0, w: 300, h: 20, value: '="Region: " & Parameters.region' }], { parameters: [{ name: 'region', type: 'string' }] }));
+    const src = await create(base('ux r1c u8 src', [{ type: 'textbox', name: 'Go', x: 0, y: 0, w: 200, h: 20, value: 'Open North', action: { type: 'report', report: dash, params: { region: '="North"' } } }]));
+    await p.goto(`${BASE}/viewer/${src}`);
+    await p.locator('.vpage svg').first().waitFor();
+    await p.getByRole('link', { name: /Open North: open the report/ }).focus();
+    await p.keyboard.press('Enter');
+    await p.getByTestId('drill-back').waitFor();
+    assert.match(decodeURIComponent(p.url()), new RegExp(`_drill=\\[\\{"id":"${dash}"`));
+    await p.goBack();
+    await p.getByTestId('drill-back').waitFor({ state: 'detached' });
+    await p.goForward();
+    await p.locator('.vpage svg text', { hasText: 'Region: North' }).waitFor();
+    await p.reload(); // a drilled address opens drilled
+    await p.locator('.vpage svg text', { hasText: 'Region: North' }).waitFor();
+    await p.getByTestId('drill-back').click();
+    await p.getByTestId('drill-back').waitFor({ state: 'detached' });
+    assert.ok(!p.url().includes('_drill'));
+
+    step('U-8: "New report" asks for a name instead of making untitled-report');
+    await p.goto(BASE);
+    await p.getByRole('button', { name: 'New report', exact: true }).click();
+    await p.getByText('Give the report a name first.').waitFor();
+    assert.ok(!p.url().includes('/designer/'));
+
+    step('U-8: at 390 px the designer has no sideways scroll and says designing needs a wider screen');
+    const m = await (await b.newContext({ viewport: { width: 390, height: 844 } })).newPage();
+    await m.goto(`${BASE}/designer/${id}`);
+    await m.waitForSelector('[data-testid=paper]', { timeout: process.env.SLOW ? 180000 : 30000 });
+    await m.getByText(/Designing needs a wider screen/).waitFor();
+    assert.ok(await m.evaluate(() => document.documentElement.scrollWidth <= 390), 'no sideways scroll');
+    await m.screenshot({ path: '/tmp/shots/r1c-u8-mobile.png' });
+    await m.close();
+  }
   assert.deepEqual(errs, [], `page errors: ${errs.join(' | ')}`);
   console.log('ux-r1c: all passed');
 } finally {

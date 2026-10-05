@@ -2,8 +2,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Dialog } from './ui.jsx';
 import Link from 'next/link';
-import { secOf, useDesigner, insertItem, deleteSelection, duplicateSelection, moveItems, copySelection, pasteItems } from './store.js';
-import Canvas, { MIME_TOOL } from './Canvas.jsx';
+import { secOf, useDesigner, insertItem, deleteSelection, duplicateSelection, moveItems, copySelection, pasteItems, alignItems } from './store.js';
+import Canvas, { MIME_TOOL, useDesignIssues, issueLine } from './Canvas.jsx';
 import Inspector from './Inspector.jsx';
 import DataPanel, { loadSample } from './DataPanel.jsx';
 import Outline from './Outline.jsx';
@@ -119,6 +119,52 @@ function useAutosave(id, T, lang) {
       <button className="btn sm primary" data-testid="draft-restore" onClick={() => { const d = mergeDraft(offer.def, useDesigner.getState().def); useDesigner.getState().apply(() => JSON.parse(JSON.stringify(d))); useDesigner.getState().fixSelection(); setOffer(null); }}>{T('ux_draftRestore')}</button>
       <button className="btn sm" data-testid="draft-discard" onClick={() => { try { clearDraft(window.localStorage, user, id); } catch { /* no storage */ } setOffer(null); }}>{T('ux_draftDiscard')}</button>
     </div>
+  );
+}
+
+const AL = (d) => <svg width="16" height="14" viewBox="0 0 16 14" aria-hidden="true">{d}</svg>;
+const ALIGN = [
+  ['left', 'ux_alignLeft', AL(<><path d="M1.5 1v12" stroke="currentColor" /><rect x="3" y="3" width="9" height="3" fill="currentColor" /><rect x="3" y="8" width="5" height="3" fill="currentColor" /></>)],
+  ['hcenter', 'ux_alignHCenter', AL(<><path d="M8 1v12" stroke="currentColor" /><rect x="3" y="3" width="10" height="3" fill="currentColor" opacity=".8" /><rect x="5" y="8" width="6" height="3" fill="currentColor" opacity=".8" /></>)],
+  ['right', 'ux_alignRight', AL(<><path d="M14.5 1v12" stroke="currentColor" /><rect x="4" y="3" width="9" height="3" fill="currentColor" /><rect x="8" y="8" width="5" height="3" fill="currentColor" /></>)],
+  ['top', 'ux_alignTop', AL(<><path d="M1 1.5h14" stroke="currentColor" /><rect x="3" y="3" width="3" height="9" fill="currentColor" /><rect x="9" y="3" width="3" height="5" fill="currentColor" /></>)],
+  ['vmiddle', 'ux_alignVMiddle', AL(<><path d="M1 7h14" stroke="currentColor" /><rect x="3" y="2" width="3" height="10" fill="currentColor" opacity=".8" /><rect x="9" y="4" width="3" height="6" fill="currentColor" opacity=".8" /></>)],
+  ['bottom', 'ux_alignBottom', AL(<><path d="M1 12.5h14" stroke="currentColor" /><rect x="3" y="2" width="3" height="9" fill="currentColor" /><rect x="9" y="6" width="3" height="5" fill="currentColor" /></>)],
+  ['hdist', 'ux_distH', AL(<><rect x="1" y="4" width="3" height="6" fill="currentColor" /><rect x="6.5" y="4" width="3" height="6" fill="currentColor" /><rect x="12" y="4" width="3" height="6" fill="currentColor" /></>)],
+  ['vdist', 'ux_distV', AL(<><rect x="4" y="0.5" width="8" height="3" fill="currentColor" /><rect x="4" y="5.5" width="8" height="3" fill="currentColor" /><rect x="4" y="10.5" width="8" height="3" fill="currentColor" /></>)],
+  ['width', 'ux_sameWidth', AL(<><path d="M1 7h14M1 5v4M15 5v4" stroke="currentColor" /></>)],
+  ['height', 'ux_sameHeight', AL(<><path d="M8 1v12M6 1h4M6 13h4" stroke="currentColor" /></>)],
+];
+/** Align, distribute and size the selected items (to each other, or to the page), from the canvas bar. */
+function AlignBar({ T }) {
+  const sel = useDesigner(s => s.sel);
+  const [toPage, setToPage] = useState(false);
+  if (sel.kind !== 'items' || !sel.ids.length) return null;
+  const n = sel.ids.length;
+  return (
+    <span className="align-bar" role="toolbar" aria-label={T('ux_alignBar')} data-testid="align-bar">
+      {ALIGN.map(([how, key, icon]) => {
+        const off = (how === 'hdist' || how === 'vdist') ? n < 3 : (how === 'width' || how === 'height') ? n < 2 : false;
+        return <button key={how} type="button" className="btn sm icon" disabled={off} title={T(key)} aria-label={T(key)} onClick={() => alignItems(sel.ids, how, toPage)} data-align={how}>{icon}</button>;
+      })}
+      {n > 1 && <label className="check" title={T('ux_toPageHint')}><input type="checkbox" checked={toPage} onChange={e => setToPage(e.target.checked)} data-testid="align-to-page" />{T('ux_toPage')}</label>}
+    </span>
+  );
+}
+
+/** The design problems of the report (overlaps, wider than the page, unknown fields): a count, and a list to jump from. */
+function IssuesButton({ T }) {
+  const issues = useDesignIssues();
+  const [open, setOpen] = useState(false);
+  useEffect(() => { if (!issues.length) setOpen(false); }, [issues.length]);
+  if (!issues.length) return <span className="hint" data-testid="issues-none">{T('ux_noIssues')}</span>;
+  return (
+    <span className="issues-wrap">
+      <button type="button" className="btn sm issues-btn" aria-expanded={open} onClick={() => setOpen(v => !v)} data-testid="issues">{T('ux_issues', { n: issues.length })}</button>
+      {open && <ul className="issues-list" data-testid="issues-list">
+        {issues.map((i, k) => <li key={k}><button type="button" className="linklike" onClick={() => useDesigner.getState().select({ kind: 'items', ids: [i.id] })}>{issueLine(T, i)}</button></li>)}
+      </ul>}
+    </span>
   );
 }
 
@@ -295,6 +341,7 @@ export default function Designer({ id, initial, lang: langIn, embed = null }) {
         {!readOnly && <button className="btn sm primary" onClick={() => st().save()} disabled={saving || saved} data-testid="save">{T('save')} <span className="kbd" style={{ background: 'transparent', color: 'inherit', borderColor: 'currentColor', opacity: 0.7 }}>⌘S</span></button>}
       </div>
       {draftBar}
+      <div className="narrow-note" role="note">{T('ux_narrowDesigner')}</div>
       {dialog === 'keys' && (
         <Dialog title={T('shortcuts')} onClose={() => setDialog(null)} footer={<button className="btn" onClick={() => setDialog(null)}>{T('close')}</button>}>
           <div className="kbd-grid">{SHORTCUTS.map(([k, d]) => <Fragment key={d}><span className="kbd">{k}</span><span>{T(d)}</span></Fragment>)}</div>
@@ -311,7 +358,7 @@ export default function Designer({ id, initial, lang: langIn, embed = null }) {
       ) : (
         <div className="dmain">
           {(!readOnly || embed?.panels?.data !== false) && (
-            <aside className="dleft">{!readOnly && <Toolbox T={T} hide={embed?.toolbox?.hide} />}<PartsPanel />{embed?.panels?.data !== false && <DataPanel />}<LayersPanel /><Outline /></aside>
+            <aside className="dleft">{!readOnly && <Toolbox T={T} hide={embed?.toolbox?.hide} />}{embed?.panels?.data !== false && <DataPanel />}<PartsPanel /><LayersPanel /><Outline /></aside>
           )}
           <section className="dcenter">
             <div className="cbar">
@@ -333,6 +380,8 @@ export default function Designer({ id, initial, lang: langIn, embed = null }) {
                   {['pt', 'mm', 'cm', 'in'].map(u => <option key={u}>{u}</option>)}
                 </select>
               </label>
+              <AlignBar T={T} />
+              <IssuesButton T={T} />
               <span className="hint" style={{ marginInlineStart: 'auto' }}>{T('canvasHint')}</span>
             </div>
             <Canvas />

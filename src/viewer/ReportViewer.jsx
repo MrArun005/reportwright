@@ -94,7 +94,12 @@ const MODES = ['single', 'continuous', 'galley'];
  *   onDrill?: (report: string, params: object) => void, exportHtmlOptions?: object,
  *   toolbar?: { hide?: string[], add?: ToolbarItem[] }, viewMode?: 'single' | 'continuous' | 'galley' }} props
  */
-export default function ReportViewer({ definition: rootDef, reportId: rootReportId, params: rootParams, title, compact = false, autoRun = true, lang: langIn = 'en', onDrill, exportHtmlOptions, toolbar, viewMode = 'continuous', onExported }) {
+/** Drill-through levels in the address (?_drill=[{id, params}…]), so browser Back and Forward walk them and a drilled view can be shared. */
+const DRILL_KEY = '_drill';
+const drillOfUrl = () => { try { const v = new URL(window.location.href).searchParams.get(DRILL_KEY); const a = v ? JSON.parse(v) : []; return Array.isArray(a) ? a.filter(x => x && typeof x.id === 'string').slice(0, 50) : []; } catch { return []; } };
+const urlWithDrill = (list) => { const u = new URL(window.location.href); if (list.length) u.searchParams.set(DRILL_KEY, JSON.stringify(list)); else u.searchParams.delete(DRILL_KEY); return u.toString(); };
+
+export default function ReportViewer({ definition: rootDef, reportId: rootReportId, params: rootParams, title, compact = false, autoRun = true, lang: langIn = 'en', onDrill, exportHtmlOptions, toolbar, viewMode = 'continuous', onExported, urlState = false }) {
   const lang = pickLang(langIn);
   const dir = dirOf(lang);
   const T = (k, v) => tr(lang, k, v);
@@ -111,7 +116,8 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   const [state, setState] = useState({ toggles: {}, sort: {} });
   const [model, setModel] = useState(null);
   const [status, setStatus] = useState({ state: 'idle' });
-  const [zoom, setZoom] = useState('fit');
+  // a paged report opens showing whole pages; a pageless one (a dashboard) fills the width
+  const [zoom, setZoom] = useState(() => (rootDef?.page?.size === 'Pageless' ? 'fit' : 'page'));
   const [current, setCurrent] = useState(1);
   const hasParams = (definition.parameters || []).some(p => !p.hidden); // hidden: set by URL, API or drill-through only
   const [panel, setPanel] = useState((definition.parameters || []).some(p => !p.hidden && p.required && !p.default && !p.nullable) ? 'params' : null);
@@ -134,6 +140,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   const root = useRef(null);
   const scroller = useRef(null);
   const [fitW, setFitW] = useState(800);
+  const [fitH, setFitH] = useState(700);
   const runId = useRef(0);
   const pendingY = useRef(null);
   const single = mode === 'single';
@@ -204,9 +211,41 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
       const def = await fetchReport(report);
       const strParams = Object.fromEntries(Object.entries(p || {}).map(([k, v]) => [k, v == null ? '' : String(v)]));
       setLevels(ls => [...ls.slice(0, -1), { ...ls[ls.length - 1], saved: params, state }, { def, params: strParams, id: report }]);
+      if (urlState) pushed.current++;
+      if (urlState) window.history.pushState({ pwDrill: levels.length }, '', urlWithDrill([...levels.slice(1).map(l => ({ id: l.id, params: l.params || {} })), { id: report, params: strParams }]));
     } catch (e) { setStatus({ state: 'error', message: e.message }); }
   };
-  const back = (to = levels.length - 2) => { if (to >= 0) setLevels(ls => ls.slice(0, to + 1)); };
+  const back = (to = levels.length - 2) => {
+    if (to < 0) return;
+    const steps = levels.length - 1 - to;
+    // drills made here are history entries: go back over them (popstate sets the levels); a drilled link opened as it is: replace
+    if (urlState && pushed.current >= steps) { pushed.current -= steps; window.history.go(-steps); return; }
+    if (urlState) window.history.replaceState(window.history.state, '', urlWithDrill(levels.slice(1, to + 1).map(l => ({ id: l.id, params: l.params || {} }))));
+    setLevels(ls => ls.slice(0, to + 1));
+  };
+  const pushed = useRef(0);
+  // the address holds the drill levels: a drill pushes an entry; Back, Forward and an opened link restore them
+  const levelsRef = useRef(levels);
+  levelsRef.current = levels;
+  useEffect(() => {
+    if (!urlState) return undefined;
+    let alive = true;
+    const restore = async () => {
+      const want = drillOfUrl();
+      pushed.current = Math.min(pushed.current, want.length);
+      const cur = levelsRef.current;
+      const same = (lv, w) => lv && lv.id === w.id && JSON.stringify(lv.params || {}) === JSON.stringify(w.params || {});
+      const next = [cur[0]];
+      for (let i = 0; i < want.length; i++) {
+        if (same(cur[i + 1], want[i]) && next.length === i + 1) { next.push(cur[i + 1]); continue; }
+        try { next.push({ def: await fetchReport(want[i].id), params: want[i].params || {}, id: want[i].id }); } catch { break; }
+      }
+      if (alive && (next.length !== cur.length || next.some((x, i) => x !== cur[i]))) setLevels(next);
+    };
+    if (drillOfUrl().length) restore();
+    window.addEventListener('popstate', restore);
+    return () => { alive = false; window.removeEventListener('popstate', restore); };
+  }, [urlState]); // eslint-disable-line react-hooks/exhaustive-deps
   const crumb = (lv) => {
     const first = (lv.def.parameters || []).find(pp => lv.params?.[pp.name] != null && lv.params[pp.name] !== '');
     return first && lv !== levels[0] ? `${lv.def.name || lv.id} · ${lv.params[first.name]}` : (lv.def.name || lv.id || 'Report');
@@ -227,7 +266,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   useEffect(() => {
     const el = scroller.current, rt = root.current;
     if (!el || !rt) return;
-    const ro = new ResizeObserver(() => { setFitW(el.clientWidth - 40); setNarrow(rt.clientWidth < COMPACT); });
+    const ro = new ResizeObserver(() => { setFitW(el.clientWidth - 40); setFitH(el.clientHeight - 48); setNarrow(rt.clientWidth < COMPACT); });
     ro.observe(el);
     ro.observe(rt);
     return () => ro.disconnect();
@@ -248,7 +287,10 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
 
   // body sections may have pages of other sizes (page.width / page.height): fit the widest
   const maxW = model ? model.pages.reduce((m, p) => Math.max(m, p.width || 0), model.width) : 0;
-  const scale = model ? (zoom === 'fit' ? Math.min(2.5, Math.max(0.3, fitW / (maxW * PX))) * PX : zoom * PX) : PX;
+  const maxH = model ? model.pages.reduce((m, p) => Math.max(m, p.height || 0), model.height || 0) : 0;
+  const fitWidth = Math.min(2.5, Math.max(0.3, fitW / (maxW * PX)));
+  // whole page: the page fits the view both ways (on a phone, fit width: a whole page there is too small to read)
+  const scale = model ? (zoom === 'fit' || (zoom === 'page' && narrow) ? fitWidth * PX : zoom === 'page' ? Math.min(fitWidth, Math.max(0.2, fitH / ((maxH || 1) * PX))) * PX : zoom * PX) : PX;
   const total = model?.pages.length || 0;
 
   const hits = useMemo(() => findText(model, query, { matchCase, wholeWord }), [model, query, matchCase, wholeWord]);
@@ -308,7 +350,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     setHitIdx(k);
     scrollToPoint(hits[k].page + 1, hits[k].y);
   };
-  const zoomBy = (f) => setZoom(z => Math.min(3, Math.max(0.25, Math.round(((z === 'fit' ? scale / PX : z) * f) * 100) / 100)));
+  const zoomBy = (f) => setZoom(z => Math.min(3, Math.max(0.25, Math.round(((typeof z === 'string' ? scale / PX : z) * f) * 100) / 100)));
 
   // swipe left or right: next or previous page (mirrored right-to-left)
   const touch = useRef(null);
@@ -440,6 +482,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     { id: 'zoomOut', group: 'zoom', node: <button className="btn sm icon" title={T('zoomOut')} aria-label={T('zoomOut')} onClick={() => zoomBy(1 / 1.2)}>−</button> },
     { id: 'zoomValue', group: 'zoom', node: <span className="stat zoomval">{Math.round((scale / PX) * 100)}%</span> },
     { id: 'zoomIn', group: 'zoom', node: <button className="btn sm icon" title={T('zoomIn')} aria-label={T('zoomIn')} onClick={() => zoomBy(1.2)}>+</button> },
+    { id: 'fitPage', group: 'zoom', node: <button className="btn sm" aria-pressed={zoom === 'page'} onClick={() => setZoom('page')} data-testid="fit-page">{T('ux_wholePage')}</button> },
     { id: 'fitWidth', group: 'zoom', node: <button className="btn sm" aria-pressed={zoom === 'fit'} onClick={() => setZoom('fit')}>{T('fitWidth')}</button> },
     {
       id: 'viewMode', group: 'view',
@@ -586,7 +629,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
             ))}
             <div className="vparams-go">
               <button className="btn primary" type="submit">{T('viewReport')}</button>
-              {live && <span className="hint">{T('liveHint')}</span>}
+              {live && <span className="hint">{T('ux_liveHint')}</span>}
             </div>
           </form>
         ))}

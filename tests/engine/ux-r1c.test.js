@@ -213,3 +213,22 @@ describe('field references are checked at design time; nested objects become dot
     expect(out.pages[0].items.filter(i => i.t === 'text').flatMap(i => i.lines.map(l => l.text)).join(' ')).toContain('Bill to Acme, Pune');
   });
 });
+
+import { designIssues } from '../../src/designer/issues.js';
+describe('design-time layout issues (U-8)', () => {
+  const def = { dataSets: [{ name: 'S', fields: [{ name: 'amount', type: 'number' }] }] };
+  it('partial overlaps, wider than the page (drawn width), unknown fields; layering inside a box is fine', () => {
+    const items = [
+      { id: 'a', name: 'A', type: 'textbox', x: 0, y: 0, w: 100, h: 20, value: 'x' },
+      { id: 'b', name: 'B', type: 'textbox', x: 50, y: 10, w: 100, h: 20, value: '=Fields.amont' },
+      { id: 't', name: 'Tile', type: 'shape', x: 200, y: 0, w: 100, h: 60 },
+      { id: 'k', name: 'Kpi', type: 'textbox', x: 210, y: 10, w: 50, h: 20, value: 'k' },
+      { id: 'm', name: 'M', type: 'matrix', x: 0, y: 100, w: 300, h: 40 },
+      { id: 'l', name: 'Rule', type: 'line', x: 0, y: 15, w: 500, h: 0 },
+    ];
+    const is = designIssues(def, [{ key: 'body', items, width: 500 }], { m: { w: 640 } });
+    expect(is.map(i => [i.kind, i.name])).toEqual([['field', 'B'], ['wide', 'M'], ['overlap', 'B']]);
+    expect(is[1]).toMatchObject({ width: 640, room: 500 });
+    expect(is[0]).toMatchObject({ field: 'amont', suggest: 'amount' });
+  });
+});

@@ -115,7 +115,7 @@ export const useDesigner = create((set, get) => ({
   /** selection: {kind:'report'} | {kind:'section', section} | {kind:'items', ids} | {kind:'cell', id, part, row, col} */
   sel: { kind: 'report' },
   tab: 'design',
-  zoom: 1.25,
+  zoom: 'fit', // the page fits the canvas width; the zoom picked last (this browser) wins
   grid: 4,
   snap: true,
   /** cell-based design (Phase 8): items snap to whole cells of cellSize pt and may not overlap */
@@ -599,7 +599,7 @@ export function tableSplitRows(id, part, row, col) {
   });
 }
 /** Add an innermost group. The header shows the group value; the footer sums number columns. */
-export function tableAddGroup(id, field, numericCols = []) {
+export function tableAddGroup(id, field, numericCols = [], { drill = false } = {}) {
   updateItem(id, (t) => {
     t.groups ||= [];
     const n = t.columns.length;
@@ -614,12 +614,70 @@ export function tableAddGroup(id, field, numericCols = []) {
     footer.cells[0].value = field ? `Subtotal {Fields.${field}}` : 'Subtotal';
     // a subtotal has its column's format (a count stays 440, not 440.00)
     for (const [ci, f] of numericCols) if (ci > 0 && ci < n) footer.cells[ci] = { value: `=Sum(Fields.${f})`, style: { format: t.detail?.[0]?.cells?.[ci]?.style?.format || 'N2' } };
-    t.groups.push({ name, expr: field ? `=Fields.${field}` : '', sort: 'asc', header: [header], footer: [footer] });
+    // the group header shows the value: a detail cell that shows the same field would print it twice, so it is emptied
+    if (field) for (const r of t.detail || []) for (const c of r.cells || []) if (c && c.value === `=Fields.${field}`) c.value = '';
+    // drill-down: the groups start collapsed behind a ▶ toggle
+    t.groups.push({ name, expr: field ? `=Fields.${field}` : '', sort: 'asc', ...(drill ? { collapsible: true, initiallyCollapsed: true } : {}), header: [header], footer: [footer] });
     tableSync(t);
   });
 }
 export function tableRemoveGroup(id, level) {
   updateItem(id, (t) => { t.groups.splice(level, 1); tableSync(t); });
+}
+
+const IMAGE_MAX = 10 * 1024 * 1024; // the engine's limit per image
+/**
+ * Put image files in the report (images: { name: data URI }). Returns the names given and the first problem, if any.
+ * Used by Report → Images, the Image item's Upload button and a file dropped on the page.
+ */
+export async function uploadImages(files, T) {
+  const names = [];
+  let err = null;
+  for (const f of files) {
+    if (!/^image\/(png|jpeg|gif|webp|svg\+xml)$/.test(f.type)) { err = T('imageType', { name: f.name }); continue; }
+    if (f.size > IMAGE_MAX) { err = T('imageTooBig', { name: f.name }); continue; }
+    const uri = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(f); });
+    const base = f.name.replace(/\.[^.]+$/, '').replace(/\W+/g, '_').replace(/^_+|_+$/g, '') || 'image';
+    S().apply(d => { d.images ||= {}; let n = base, k = 2; while (d.images[n]) n = `${base}${k++}`; d.images[n] = uri; names.push(n); });
+  }
+  return { names, err };
+}
+
+/**
+ * Align, distribute or size items: to each other, or (toPage, or a single item) to their band or container.
+ * how: left | hcenter | right | top | vmiddle | bottom | hdist | vdist | width | height
+ */
+export function alignItems(ids, how, toPage = false) {
+  S().apply((d) => {
+    const fs = ids.map(id => findItem(d, id)).filter(Boolean);
+    if (!fs.length) return;
+    const its = fs.map(f => f.item);
+    const page = toPage || its.length === 1;
+    const room = roomFor(d, fs[0]);
+    const bandH = fs[0].parent ? fs[0].parent.h : secOf(d, fs[0].section)?.height || 0;
+    const L = page ? 0 : Math.min(...its.map(i => i.x)), R = page ? room : Math.max(...its.map(i => i.x + i.w));
+    const Tp = page ? 0 : Math.min(...its.map(i => i.y)), B = page ? bandH : Math.max(...its.map(i => i.y + i.h));
+    const dist = (k, s) => {
+      if (its.length < 3) return;
+      const o = [...its].sort((a, b) => a[k] - b[k]);
+      const gap = (o[o.length - 1][k] + o[o.length - 1][s] - o[0][k] - o.reduce((a, i) => a + i[s], 0)) / (o.length - 1);
+      let at = o[0][k];
+      for (const i of o) { i[k] = round(at); at += i[s] + gap; }
+    };
+    for (const i of its) {
+      if (how === 'left') i.x = round(L);
+      else if (how === 'right') i.x = round(R - i.w);
+      else if (how === 'hcenter') i.x = round((L + R) / 2 - i.w / 2);
+      else if (how === 'top') i.y = round(Tp);
+      else if (how === 'bottom') i.y = round(B - i.h);
+      else if (how === 'vmiddle') i.y = round((Tp + B) / 2 - i.h / 2);
+      else if (how === 'width' && i.type !== 'table') i.w = Math.max(...its.map(x => x.w));
+      else if (how === 'height' && i.type !== 'table') i.h = Math.max(...its.map(x => x.h));
+    }
+    if (how === 'hdist') dist('x', 'w');
+    if (how === 'vdist') dist('y', 'h');
+    for (const i of its) { i.x = round(clamp(i.x, 0, Math.max(0, room - i.w))); i.y = Math.max(0, i.y); }
+  });
 }
 
 export const round = (v) => Math.round(v * 100) / 100;

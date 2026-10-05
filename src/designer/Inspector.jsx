@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { allNames, cloneWithIds, isContentKey } from './store.js';
 import { useDesigner, findItem, updateItem, deleteSelection, duplicateSelection, sectionList, secOf, isBodyKey, addBodySection, removeBodySection, walk, tableParts, rowsOf, selCells,
-  tableInsertColumn, tableDeleteColumn, tableInsertRow, tableDeleteRow, tableSetColumnWidth, tableMergeRight, tableSplit, tableMergeDown, tableSplitRows, tableSync, tableAddGroup, tableRemoveGroup, round, growToFit } from './store.js';
+  tableInsertColumn, tableDeleteColumn, tableInsertRow, tableDeleteRow, tableSetColumnWidth, tableMergeRight, tableSplit, tableMergeDown, tableSplitRows, tableSync, tableAddGroup, tableRemoveGroup, round, growToFit, uploadImages } from './store.js';
 import { normalizeMatrix, isTablix } from '@/engine/items/pivot.js';
 import { formatFor } from './tableGen.js';
 import { t } from '@/i18n/index.js';
@@ -245,6 +245,7 @@ function ItemProps({ item, section, openExpr }) {
       </div>}
       {!q && item.type === 'part' && <PartInstance item={item} />}
       {!q && item.partProps && typeof item.partProps === 'object' && <PartValues item={item} />}
+      {!q && item.type === 'image' && <EmbeddedPicker item={item} onPick={v => set('src', v)} />}
       {groupBy(props).map(([cat, ps]) => (
         <div className="cat" key={cat}>
           <h5>{catLabel(tk, cat)}</h5>
@@ -252,7 +253,6 @@ function ItemProps({ item, section, openExpr }) {
         </div>
       ))}
       {!q && <>
-      {item.type === 'image' && <EmbeddedPicker item={item} onPick={v => set('src', v)} />}
       {item.type === 'table' && <TableProps table={item} openExpr={openExpr} />}
       {item.type === 'matrix' && <PivotEditor item={item} openExpr={openExpr} />}
       {(item.type === 'list' || item.type === 'chart') && <SortFilterEditor item={item} />}
@@ -440,6 +440,7 @@ function GroupsEditor({ table, openExpr }) {
   const def = useDesigner(s => s.def);
   const fields = fieldsOf(def, table.dataSet);
   const [pick, setPick] = useState('');
+  const [drill, setDrill] = useState(false);
   const setG = (i, k, v) => updateItem(table.id, t => { if (v === undefined || v === '' || v === false) delete t.groups[i][k]; else t.groups[i][k] = v; }, `${table.id}.g${i}.${k}`);
   const numericCols = () => (table.detail?.[0]?.cells || []).map((c, ci) => [ci, /^=Fields\.(\w+)$/.exec(c?.value || '')?.[1]]).filter(([, f]) => f && fields.find(x => x.name === f)?.type === 'number');
   return (
@@ -458,7 +459,7 @@ function GroupsEditor({ table, openExpr }) {
           <Field label={T('i_pageBreak')}><Select value={g.pageBreak || ''} options={[{ value: 'between', label: T('i_pbBetween') }, { value: 'after', label: T('i_pbAfter') }]} allowEmpty onChange={v => setG(i, 'pageBreak', v)} /></Field>
           <Check label={T('i_keepGroup')} checked={g.keepTogether} onChange={v => setG(i, 'keepTogether', v)} />
           <Check label={T('groupRepeatHeader')} checked={g.repeatHeader} onChange={v => setG(i, 'repeatHeader', v)} />
-          <Check label={T('i_drillToggle')} checked={g.collapsible} onChange={v => setG(i, 'collapsible', v)} />
+          <Check label={T('i_drillToggle')} checked={g.collapsible} onChange={v => updateItem(table.id, t => { const x = t.groups[i]; if (v) { x.collapsible = true; x.initiallyCollapsed = true; } else { delete x.collapsible; delete x.initiallyCollapsed; } }, `${table.id}.g${i}.collapsible`)} />
           {g.collapsible && <Check label={T('i_startCollapsed')} checked={g.initiallyCollapsed} onChange={v => setG(i, 'initiallyCollapsed', v)} />}
           <Field label={T('groupParent')} hint={T('groupParentHint')}><ExprInput value={g.parent || ''} onChange={v => setG(i, 'parent', v)} onOpen={() => openExpr({ value: g.parent || '', dataSet: table.dataSet, onSave: v => setG(i, 'parent', v), title: T('groupParent') })} placeholder="=Fields.managerId" /></Field>
           {g.parent && <div className="grid2">
@@ -468,9 +469,14 @@ function GroupsEditor({ table, openExpr }) {
           <Check label={T('groupNewSection')} checked={g.newSection} onChange={v => setG(i, 'newSection', v)} />
         </div>
       ))}
-      <div className="expr-row">
-        <Select value={pick} options={fields.map(f => f.name)} allowEmpty onChange={v => setPick(v || '')} aria-label={T('i_fieldToGroupBy')} />
-        <button className="btn sm" disabled={!pick} onClick={() => { tableAddGroup(table.id, pick, numericCols()); setPick(''); }}>{T('i_addGroup')}</button>
+      <div className="group-add" data-testid="group-add">
+        <Field label={T('i_fieldToGroupBy')}>
+          <div className="expr-row">
+            <Select value={pick} options={fields.map(f => f.name)} allowEmpty onChange={v => setPick(v || '')} aria-label={T('i_fieldToGroupBy')} />
+            <button className="btn sm" disabled={!pick} onClick={() => { tableAddGroup(table.id, pick, numericCols(), { drill }); setPick(''); }}>{T('i_addGroup')}</button>
+          </div>
+        </Field>
+        <Check label={T('ux_addGroupDrill')} checked={drill} onChange={setDrill} />
       </div>
       <div className="hint">{T('i_groupScopeHint', { name: (table.groups || [])[0]?.name || 'Region' })}</div>
     </div>
@@ -1040,23 +1046,13 @@ function ReportProps() {
   );
 }
 
-const IMAGE_MAX = 10 * 1024 * 1024; // the engine's limit per image
 /** Images kept in the report (images: { name: data URI }), used as embedded:name by images and backgrounds. */
 function ReportImages() {
   const T = useT();
   const images = useDesigner(s => s.def.images) || {};
   const [err, setErr] = useState(null);
   const set = (fn) => useDesigner.getState().apply(d => { d.images ||= {}; fn(d.images); if (!Object.keys(d.images).length) delete d.images; });
-  const upload = async (files) => {
-    setErr(null);
-    for (const f of files) {
-      if (!/^image\/(png|jpeg|gif|webp|svg\+xml)$/.test(f.type)) { setErr(T('imageType', { name: f.name })); continue; }
-      if (f.size > IMAGE_MAX) { setErr(T('imageTooBig', { name: f.name })); continue; }
-      const uri = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(f); });
-      const base = f.name.replace(/\.[^.]+$/, '').replace(/\W+/g, '_').replace(/^_+|_+$/g, '') || 'image';
-      set(m => { let n = base, k = 2; while (m[n]) n = `${base}${k++}`; m[n] = uri; });
-    }
-  };
+  const upload = async (files) => { setErr(null); const r = await uploadImages(files, T); if (r.err) setErr(r.err); };
   return (
     <div className="cat" data-testid="report-images">
       <h5>{T('images')}</h5>
@@ -1077,13 +1073,27 @@ function ReportImages() {
 }
 
 /** Pick one of the report's images for an image item (src embedded:name). */
+/** The image of an image item: upload a file here, or pick one of the report's images (thumbnails). */
 function EmbeddedPicker({ item, onPick }) {
   const T = useT();
-  const names = Object.keys(useDesigner(s => s.def.images) || {});
+  const images = useDesigner(s => s.def.images) || {};
+  const names = Object.keys(images);
   const cur = /^embedded:(.+)$/.exec(String(item.src || ''))?.[1];
+  const [err, setErr] = useState(null);
+  const upload = async (files) => { setErr(null); const r = await uploadImages(files, T); if (r.err) setErr(r.err); if (r.names[0]) onPick(`embedded:${r.names[0]}`); };
   return (
-    <div className="cat">
-      <Field label={T('embeddedImage')} hint={names.length ? undefined : T('embeddedNone')}>
+    <div className="cat" data-testid="image-source">
+      <h5>{T('ux_imageCat')}</h5>
+      <label className="btn sm primary" style={{ justifySelf: 'start' }}>{T('ux_imageUploadHere')}
+        <input type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" hidden onChange={e => { upload([...e.target.files]); e.target.value = ''; }} data-testid="item-image-upload" />
+      </label>
+      {err && <div className="err">{err}</div>}
+      {names.length > 0 && <div className="img-picks" role="radiogroup" aria-label={T('embeddedImage')}>
+        {names.map(n => <button type="button" key={n} role="radio" aria-checked={cur === n} className={`img-pick${cur === n ? ' sel' : ''}`} onClick={() => onPick(`embedded:${n}`)} title={n}>
+          <img src={typeof images[n] === 'string' && images[n].startsWith('data:image/') ? images[n] : undefined} alt="" /><span>{n}</span>
+        </button>)}
+      </div>}
+      <Field label={T('embeddedImage')} hint={T('ux_imageHint')}>
         <Select value={cur} allowEmpty options={names} onChange={v => onPick(v ? `embedded:${v}` : undefined)} data-testid="embedded-picker" />
       </Field>
     </div>

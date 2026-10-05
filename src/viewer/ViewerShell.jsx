@@ -11,7 +11,7 @@ const exported = (format, report, parameters) => {
 };
 
 export default function ViewerShell({ id, def, params, canEdit = true }) {
-  const { lang: langIn, ...rest } = params || {};
+  const { lang: langIn, _drill: _d, ...rest } = params || {}; // _drill: the drill-through levels (ReportViewer urlState)
   const lang = pickLang(langIn);
   const q = lang === 'en' ? '' : `?lang=${encodeURIComponent(lang)}`;
   return (
@@ -23,7 +23,7 @@ export default function ViewerShell({ id, def, params, canEdit = true }) {
         <ThemeToggle />
         {canEdit && <Link className="btn sm" href={`/designer/${id}${q}`}>{t(lang, 'editInDesigner')}</Link>}
       </div>
-      <ReportViewer definition={def} reportId={id} params={rest} lang={lang} exportHtmlOptions={{ reportId: id }} onExported={exported} />
+      <ReportViewer definition={def} reportId={id} params={rest} lang={lang} exportHtmlOptions={{ reportId: id }} onExported={exported} urlState />
     </div>
   );
 }

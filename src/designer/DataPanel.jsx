@@ -447,6 +447,8 @@ function DataSetDialog({ index, onClose, onSaved }) {
   // every key of the data set is kept (relation and anything this dialog has no control for), not only the ones shown
   const [d, setD] = useState(() => ({ name: '', source: def.dataSources?.[0]?.name, path: '$', fields: [], sort: [], ...(orig ? JSON.parse(JSON.stringify(orig)) : {}) }));
   const [detect, setDetect] = useState({ state: 'idle' });
+  // a new data set's path is a guess until the author types one: Detect then takes the obvious list ($.lines), not the root
+  const [pathTyped, setPathTyped] = useState(!!orig);
   const nested = !!d.relation;
   const parents = (def.dataSets || []).filter((x, i) => i !== index && x.name !== d.name);
   const err = !NAME.test(d.name) ? T('dsNameRule') : !uniqueIn(def.dataSets, d.name, index) ? T('dsNameTaken')
@@ -503,9 +505,18 @@ function DataSetDialog({ index, onClose, onSaved }) {
       if (nested) list = await rawRowsOf(d);
       else {
         const raw = await loadSourceRaw(d.source);
-        if (!isXmlDoc(raw) && jsonPath(raw, d.path || '$') == null) throw new Error(T('dsNothingAt', { path: d.path }));
-        list = sourceRows(raw, d.path || '$');
-        if (!list.length && isXmlDoc(raw)) throw new Error(T('dsNothingAt', { path: d.path }));
+        let path = d.path || '$';
+        // the root is an object that holds lists: the suggested list is the rows (the explorer shows the others)
+        if (!pathTyped && path === '$' && raw && typeof raw === 'object' && !Array.isArray(raw) && !isXmlDoc(raw)) {
+          const best = bestRows(raw);
+          if (best && best.path !== '$') { path = best.path; setExplore({ state: 'done', arrays: rowArrays(raw), best: path, raw, auto: true }); }
+        }
+        if (!isXmlDoc(raw) && jsonPath(raw, path) == null) throw new Error(T('dsNothingAt', { path }));
+        list = sourceRows(raw, path);
+        if (!list.length && isXmlDoc(raw)) throw new Error(T('dsNothingAt', { path }));
+        setD({ ...d, path, fields: keepFields(list) });
+        setDetect({ state: 'done', rows: list.length, path: path !== (d.path || '$') ? path : null });
+        return;
       }
       setD({ ...d, fields: keepFields(list) });
       setDetect({ state: 'done', rows: list.length });
@@ -573,13 +584,13 @@ function DataSetDialog({ index, onClose, onSaved }) {
       ) : (
         <>
           <Field label={T('dsSource')}><Select value={d.source} options={(def.dataSources || []).map(s => s.name)} onChange={v => setD({ ...d, source: v })} /></Field>
-          <Field label={T('dsPath')} hint={['xml', 'soap'].includes(def.dataSources?.find(x => x.name === d.source)?.type) ? T('dsXPathHint') : T('dsPathHint')}><TextInput value={d.path} onChange={v => setD({ ...d, path: v })} mono /></Field>
+          <Field label={T('dsPath')} hint={['xml', 'soap'].includes(def.dataSources?.find(x => x.name === d.source)?.type) ? T('dsXPathHint') : T('dsPathHint')}><TextInput value={d.path} onChange={v => { setPathTyped(true); setD({ ...d, path: v }); }} mono data-testid="ds-path" /></Field>
         </>
       )}
       <div className="btnrow" style={{ alignItems: 'center' }}>
         <button className="btn" onClick={run} disabled={(nested ? !d.relation.parent : !d.source) || detect.state === 'loading'}>{detect.state === 'loading' ? T('dsReading') : T('dsDetect')}</button>
         <button className="btn" onClick={openExplorer} disabled={(nested ? !d.relation.parent : !d.source) || explore?.state === 'loading'}>{explore?.state === 'loading' ? T('dsReading') : T('dsExplore')}</button>
-        {detect.state === 'done' && <span className="hint">{T('dsFound', { n: detect.rows })}</span>}
+        {detect.state === 'done' && <span className="hint">{T('dsFound', { n: detect.rows })}{detect.path ? ` ${T('ux_dsPickedPath', { path: detect.path })}` : ''}</span>}
         {detect.state === 'error' && <span className="err">{detect.message}</span>}
       </div>
       {explore?.state === 'error' && <div className="err">{explore.message}</div>}

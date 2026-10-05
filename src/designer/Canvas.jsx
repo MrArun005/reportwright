@@ -1,7 +1,7 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useDesigner, sectionList, secOf, isBodyKey, isContentKey, bodyWidth, addItem, insertItem, moveItems, updateItem, findItem, tableSetColumnWidth, tableParts, rowsOf, round, NESTING,
-  selCells, selectCells, cellRange, columnCells, rowCells, tableInsertRow, tableDeleteRow, tableInsertColumn, tableDeleteColumn, tableMergeRight, tableAddGroup } from './store.js';
+  selCells, selectCells, uploadImages, cellRange, columnCells, rowCells, tableInsertRow, tableDeleteRow, tableInsertColumn, tableDeleteColumn, tableMergeRight, tableAddGroup } from './store.js';
 import { tableFor, formatFor } from './tableGen.js';
 import { loadBarcodes } from '@/engine/items/barcode.js';
 const hasType = (items, t) => (items || []).some(i => i.type === t || hasType(i.items, t));
@@ -21,8 +21,26 @@ import { t } from '@/i18n/index.js';
 import { themeContext, findItemNamed } from '@/engine/reuse.js';
 import { MIME_PART, insertPart, useReused, useLayerOf, useT } from './Reuse.jsx';
 import { wouldOverlap } from './store.js';
+import { designIssues } from './issues.js';
 
 export const PX = 96 / 72;
+
+/** The report's design problems (issues.js): overlaps, wider than the page, unknown fields. Live items report their drawn width. */
+export function useDesignIssues() {
+  const def = useDesigner(s => s.def);
+  const extents = useDesigner(s => s.extents);
+  return useMemo(() => {
+    const bands = sectionList(def).map(s => ({ key: s.key, items: secOf(def, s.key)?.items || [], width: bodyWidth(def, s.key) }));
+    return designIssues(def, bands, extents || {});
+  }, [def, extents]);
+}
+const IssueMap = createContext(new Map());
+/** One line about an issue, in the UI language. */
+export function issueLine(T, i) {
+  if (i.kind === 'overlap') return T('ux_issueOverlap', { name: i.name, other: i.other });
+  if (i.kind === 'wide') return T('ux_issueWide', { name: i.name, width: i.width, room: i.room });
+  return i.suggest ? T('ux_issueFieldSuggest', { name: i.name, field: i.field, suggest: i.suggest }) : T('ux_issueField', { name: i.name, field: i.field });
+}
 export const MIME_TOOL = 'application/x-pw-tool';
 export const MIME_FIELD = 'application/x-pw-field';
 export const MIME_DATASET = 'application/x-pw-dataset';
@@ -85,8 +103,12 @@ export default function Canvas() {
   }, [zoom]);
   const scale = zoom === 'fit' ? Math.max(0.3, Math.min(3, ((fitW || 900) - 80) / bw)) : zoom * PX;
   const [drag, setDrag] = useState(null); // {mode:'move', ids, dx, dy} | {mode:'resize', id, rect} | {mode:'band', section, h} | {mode:'col', id, col, w}
+  const T = useT();
+  const issues = useDesignIssues();
+  const byId = useMemo(() => { const m = new Map(); for (const i of issues) m.set(i.id, [...(m.get(i.id) || []), issueLine(T, i)]); return m; }, [issues]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
+    <IssueMap.Provider value={byId}>
     <div className="cscroll" ref={scrollRef} onPointerDown={(e) => { if (e.target === e.currentTarget) useDesigner.getState().select({ kind: 'report' }); }}
       onPointerDownCapture={blurField}>
       <Ruler width={bw} scale={scale} />
@@ -95,6 +117,7 @@ export default function Canvas() {
         {bands.filter(s => !(def.master && isContentKey(s.key))).map(s => <Band key={s.key} section={s.key} label={s.label} scale={scale} bw={widths[s.key]} drag={drag} setDrag={setDrag} />)}
       </div>
     </div>
+    </IssueMap.Provider>
   );
 }
 
@@ -212,13 +235,22 @@ function Band({ section, label, scale, bw: bandW, drag, setDrag, phBox = null })
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
   };
 
-  const accepts = (e) => e.dataTransfer.types.includes(MIME_TOOL) || e.dataTransfer.types.includes(MIME_FIELD) || e.dataTransfer.types.includes(MIME_DATASET) || e.dataTransfer.types.includes(MIME_PART);
+  const accepts = (e) => e.dataTransfer.types.includes(MIME_TOOL) || e.dataTransfer.types.includes(MIME_FIELD) || e.dataTransfer.types.includes(MIME_DATASET) || e.dataTransfer.types.includes(MIME_PART) || e.dataTransfer.types.includes('Files');
   const onDrop = (e) => {
     setDropping(false);
     if (!accepts(e)) return;
     e.preventDefault();
     if (mb && !off) return alertOnce(T('masterBandLocked'));
     const p = toPt(e);
+    // an image file from the desktop: into the report's images, and an image item where it was dropped
+    const files = [...(e.dataTransfer.files || [])].filter(f => /^image\//.test(f.type));
+    if (files.length) {
+      uploadImages(files.slice(0, 1), T).then(({ names, err }) => {
+        if (err) alertOnce(err);
+        if (names[0]) addItem('image', section, snapV(p.x), snapV(p.y), { src: `embedded:${names[0]}`, w: 120, h: 60 });
+      });
+      return;
+    }
     const part = JSON.parse(e.dataTransfer.getData(MIME_PART) || 'null');
     if (part) { insertPart(part.library, part.part, { section, x: snapV(p.x), y: snapV(p.y) }); return; }
     const tool = e.dataTransfer.getData(MIME_TOOL);
@@ -428,6 +460,7 @@ function ItemView({ item, scale, drag, setDrag, bw, nest, section }) {
   const single = useDesigner(s => s.sel.kind === 'items' && s.sel.ids.length === 1);
   const onDown = useItemDrag(item, scale, setDrag);
   const r = rectOf(item, drag);
+  const problems = useContext(IssueMap).get(item.id);
 
   const onHandle = (dir) => (e) => {
     e.preventDefault(); e.stopPropagation();
@@ -467,7 +500,7 @@ function ItemView({ item, scale, drag, setDrag, bw, nest, section }) {
   const showBadge = drag && ((drag.mode === 'move' && drag.ids[0] === item.id) || (drag.mode === 'resize' && drag.id === item.id));
 
   return (
-    <div className={`it${selected ? ' sel' : ''}`} data-item={item.name}
+    <div className={`it${selected ? ' sel' : ''}${problems ? ' issue' : ''}`} data-item={item.name} title={problems?.join('\n')}
       style={{ left: r.x * scale, top: r.y * scale, width: Math.max(r.w * scale, 2), height: Math.max(r.h * scale, 2) }}
       onPointerDown={onDown}>
       {nest ? <NestBox item={{ ...item, ...r }} scale={scale} /> : <ItemBody item={{ ...item, ...r }} scale={scale} />}
@@ -521,7 +554,9 @@ export async function paintItemSvg(shape, def, sample) {
   finishText(items, measurer);
   const h = Math.max(shape.h, res.height || 0);
   await loadModelFonts({ pages: [{ items }] });
-  return { html: pageToSvg({ items }, shape.w, h, { background: false }), h };
+  // the drawn width: a matrix grows with its data past its box (the issues pane compares it with the page)
+  const w = Math.max(shape.w, ...items.map(i => (Number(i.x) || 0) + (Number(i.w) || 0)).filter(Number.isFinite));
+  return { html: pageToSvg({ items }, shape.w, h, { background: false }), h, w };
 }
 
 /** Draw chart-like items with the real engine and the sample data, so the design looks like the output. */
@@ -536,7 +571,11 @@ function LivePreview({ item, scale }) {
     const t = setTimeout(async () => {
       try {
         const out = await paintItemSvg(shape, def, sample);
-        if (alive) setSvg(out);
+        if (alive) {
+          setSvg(out);
+          const ex = useDesigner.getState().extents || {};
+          if (Math.round(ex[item.id]?.w || 0) !== Math.round(out.w)) useDesigner.setState({ extents: { ...ex, [item.id]: { w: out.w } } });
+        }
       } catch (e) { if (alive) setSvg({ error: e.message }); }
     }, 120);
     return () => { alive = false; clearTimeout(t); };
@@ -570,6 +609,7 @@ function PartPreview({ item, scale }) {
 
 function ItemBody({ item, scale }) {
   const base = useDesigner(s => s.def.styles?.base);
+  const images = useDesigner(s => s.def.images);
   if (LIVE.has(item.type)) return <LivePreview item={item} scale={scale} />;
   if (item.type === 'part') return <PartPreview item={item} scale={scale} />;
   if (item.type === 'placeholder' || item.type === 'overflow') {
@@ -619,7 +659,10 @@ function ItemBody({ item, scale }) {
     );
   }
   if (item.type === 'image') {
-    const src = typeof item.src === 'string' && !isDynamic(item.src) && /^(data:image|https?:|\/)/.test(item.src) ? item.src : null;
+    // an embedded image (embedded:logo) is drawn from the report's images, as in the output
+    const emb = typeof item.src === 'string' && /^embedded:(.+)$/.exec(item.src)?.[1];
+    const src = emb ? (typeof images?.[emb] === 'string' && images[emb].startsWith('data:image/') ? images[emb] : null)
+      : typeof item.src === 'string' && !isDynamic(item.src) && /^(data:image|https?:|\/)/.test(item.src) ? item.src : null;
     return (
       <div className="box" style={{ background: '#f5f7f9', alignItems: 'center', justifyContent: 'center' }}>
         {src ? <img src={src} alt="" style={{ width: '100%', height: '100%', objectFit: item.fit === 'fill' ? 'fill' : item.fit || 'contain' }} />
@@ -655,6 +698,7 @@ function TableView({ item, scale, drag, setDrag }) {
   const widths = item.columns.map((c, i) => (drag?.mode === 'col' && drag.id === item.id && drag.col === i ? drag.w : c.width));
   const [dropCell, setDropCell] = useState(null);
   const [menu, setMenu] = useState(null); // { x, y, part, row, col }: the cell's right-click menu
+  const problems = useContext(IssueMap).get(item.id);
   const tblRef = useRef(null);
   const chosen = sel.kind === 'cell' && sel.id === item.id ? selCells(sel) : [];
   useEffect(() => {
@@ -732,7 +776,8 @@ function TableView({ item, scale, drag, setDrag }) {
 
   let first = true;
   return (
-    <div ref={tblRef} className={`tbl${tableSelected ? ' sel' : ''}`} data-item={item.name} style={{ left: r.x * scale, top: r.y * scale }}>
+    <div ref={tblRef} className={`tbl${tableSelected ? ' sel' : ''}${problems ? ' issue' : ''}`} data-item={item.name} style={{ left: r.x * scale, top: r.y * scale }}>
+      {problems && <div className="issue-tag" title={problems.join('\n')} aria-label={problems.join('. ')}>!</div>}
       <div className="grip" title="Select or move the table" onPointerDown={onGrip}>⠿</div>
       <div className="col-handles" aria-label={T('ux_columns')} role="group">
         {widths.map((w, ci) => <button type="button" key={ci} className="col-handle" style={{ width: w * scale }} data-col-handle={ci} title={T('ux_selectColumn', { n: ci + 1 })} aria-label={T('ux_selectColumn', { n: ci + 1 })}

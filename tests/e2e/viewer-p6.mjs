@@ -37,6 +37,7 @@ await p.screenshot({ path: '/tmp/shots/p6-desktop.png' });
 
 step('frozen header: scrolling down page 1 pins the repeated table header');
 assert.equal(await p.getByTestId('frozen-header').count(), 0, 'nothing pinned at the top of the report');
+await p.getByRole('button', { name: 'Fit width' }).click(); // a paged report opens at whole page (R1-C); pinning is for a page taller than the view
 await p.locator('.vpages').evaluate(el => el.scrollBy(0, 1500));
 await p.getByTestId('frozen-header').waitFor();
 const pinned = await p.getByTestId('frozen-header').evaluate(el => [...el.querySelectorAll('text')].map(t => t.textContent));
