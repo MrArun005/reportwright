@@ -13,6 +13,16 @@ export class ExprError extends Error {
   }
 }
 
+/** The longest string a function or a format may build, checked before it is built (capText). */
+export const MAX_TEXT = 1_000_000;
+/** @param {string} fname @param {number} n the length the result would have */
+export const capText = (fname, n) => { if (n > MAX_TEXT) throw new ExprError(`${fname}: the result would be longer than 1,000,000 characters`); };
+/** Format patterns: at most 1,000 characters; widths, precisions and digit counts at most 340 (a double has 309
+ *  integer digits and 340 decimals at most, as Java and .NET cap them). */
+export const MAX_PATTERN = 1000, MAX_DIGITS = 340;
+export const capPattern = (fname, pat) => { if (pat.length > MAX_PATTERN) throw new ExprError(`${fname}: a format longer than ${MAX_PATTERN} characters`); };
+export const capDigits = (fname, n) => { if (n > MAX_DIGITS) throw new ExprError(`${fname}: ${n} digits is more than ${MAX_DIGITS}`); };
+
 const OPS = ['<>', '<=', '>=', '==', '!=', '&&', '||', '+', '-', '*', '/', '%', '&', '=', '<', '>', '(', ')', ',', '.', '!', '[', ']', '?', ':'];
 const KEYWORDS = new Set(['and', 'or', 'not', 'true', 'false', 'null', 'nothing']);
 

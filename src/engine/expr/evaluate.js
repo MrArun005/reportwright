@@ -1,5 +1,5 @@
 // @ts-check
-import { parse, ExprError } from './parser.js';
+import { parse, ExprError, capText } from './parser.js';
 import { formatValue, formatDate, english, toDate as readDate, roundHalfAway, roundHalfEven, toWall, fromWall as zoneFromWall, parseNumber } from './format.js';
 import { javaString, jsString, javaFormatString } from './javafmt.js';
 
@@ -607,7 +607,7 @@ export const FUNCTIONS = {
   // Double.toString ("2.0"); JavaStr(x, "int") for an integral value. JavaFormat is java.util.Formatter (String.format).
   javastr: (ctx, v, kind) => javaString(v, kind, ctx.timeZone),
   jsstr: (ctx, v, digits) => (digits != null && typeof v === 'number' ? v.toFixed(Math.max(0, Math.min(100, Number(digits) || 0))) : jsString(v)), // JsStr(x, n): x.toFixed(n)
-  javaformat: (ctx, f, ...args) => { const s = javaFormatString(S(f), args, ctx.locale, ctx.timeZone); capText('JavaFormat', s.length); return s; },
+  javaformat: (ctx, f, ...args) => javaFormatString(S(f), args, ctx.locale, ctx.timeZone), // capped inside, before it builds
   // VB conversions: CInt rounds half to even and raises #Error for text that is not a number; a blank stays blank
   // VB: Nothing converts to the type default (0) unless the report keeps SQL nulls; True is -1
   cdbl: (ctx, v) => (v == null ? (ctx.nullPropagation === true ? null : 0) : v === '' ? null : v instanceof Date ? v.getTime() : typeof v === 'boolean' ? vbNum(v) : toNumber('CDbl', v)),
@@ -652,8 +652,7 @@ export const FUNCTIONS = {
 };
 
 /* ------------------------------------------------- Phase 3 function library */
-const MAX_TEXT = 1_000_000; // longest string a function may build
-const capText = (fname, n) => { if (n > MAX_TEXT) throw new ExprError(`${fname}: the result would be longer than 1,000,000 characters`); };
+// capText (expr/parser.js): the longest string a function may build, shared with the formats
 /** A finite number or null: Log(0), Asin(2) and friends give null, like 1 / 0. */
 const fin = (x) => (Number.isFinite(x) ? x : null);
 /** Run f on a number argument; null in, null out. */
@@ -797,6 +796,8 @@ Object.assign(FUNCTIONS, {
   trimend: (ctx, s) => S(s).trimEnd(),
   strreverse: (ctx, s) => { s = S(s); capText('StrReverse', s.length); return [...s].reverse().join(''); },
   space: (ctx, n) => { n = Math.max(0, Number(n) || 0); capText('Space', n); return ' '.repeat(n); },
+  // VB StrDup(count, character): the first character of the text, count times (checked before it is built)
+  strdup: (ctx, n, c) => { n = Math.max(0, Math.trunc(Number(n)) || 0); capText('StrDup', n); return c == null || c === '' ? '' : [...S(c)][0].repeat(n); },
   // math
   sign: math1(Math.sign),
   log: (ctx, v, base) => (v == null || v === '' ? null : fin(base == null ? Math.log(num(v)) : Math.log(num(v)) / Math.log(num(base)))),
@@ -869,7 +870,7 @@ export const FUNCTION_NAMES = [
   'IIF', 'Switch', 'IsNull', 'Coalesce', 'Lookup', 'LookupSet', 'Previous', 'GroupIndex', 'Level', 'Join', 'Contains', 'InList',
   ...['Format', 'Upper', 'Lower', 'Left', 'Right', 'Mid', 'Len', 'Trim', 'Replace', 'InStr', 'CStr', 'CDbl', 'CInt', 'CDate', 'CBool',
     'Round', 'RoundHalfAway', 'Abs', 'Floor', 'Ceiling', 'Int', 'Pow', 'Sqrt', 'Now', 'Today', 'DateAdd', 'DateDiff', 'DateSerial', 'Year', 'Month', 'Day', 'MonthName'],
-  'StartsWith', 'EndsWith', 'IndexOf', 'LastIndexOf', 'Substring', 'PadLeft', 'PadRight', 'Split', 'Chr', 'Asc', 'TrimStart', 'TrimEnd', 'StrReverse', 'Space', 'LCase', 'UCase',
+  'StartsWith', 'EndsWith', 'IndexOf', 'LastIndexOf', 'Substring', 'PadLeft', 'PadRight', 'Split', 'Chr', 'Asc', 'TrimStart', 'TrimEnd', 'StrReverse', 'Space', 'StrDup', 'LCase', 'UCase',
   'Sign', 'Log', 'Log10', 'Exp', 'Truncate', 'Fix', 'Sin', 'Cos', 'Tan', 'Asin', 'Acos', 'Atan', 'Atan2', 'PI', 'E',
   'DatePart', 'Weekday', 'WeekdayName', 'Quarter', 'QuarterName', 'Hour', 'Minute', 'Second',
   'AddYears', 'AddMonths', 'AddDays', 'AddHours', 'AddMinutes', 'AddSeconds', 'DateValue', 'TimeSerial', 'DateString',

@@ -6,6 +6,7 @@
  */
 
 import { isJavaFormat, formatJava } from './javafmt.js';
+import { capPattern, capDigits } from './parser.js';
 
 const nfCache = new Map();
 function nf(locale, opts) {
@@ -248,6 +249,7 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
  */
 export function formatValue(value, fmt, opt = {}) {
   if (value == null) return '';
+  if (typeof fmt === 'string') capPattern('Format', fmt); // a format from data or an expression can be any length
   if (isJavaFormat(fmt)) { // an imported JasperReports or BIRT pattern, formatted as that engine does (javafmt.js)
     if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) { const d = toDate(value, opt); if (d) value = d; }
     return formatJava(value, /** @type {string} */ (fmt), opt);
@@ -453,6 +455,7 @@ function numShape(toks) {
   const intPh = intCore.filter(ph);
   const z = intPh.findIndex(t => t.k === '0');
   const lastZero = frac.findLastIndex(t => t.k === '0');
+  capDigits('Format', frac.length); capDigits('Format', intPh.length);
   return {
     pre: toks.slice(0, first), post: toks.slice(last + 1).filter(t => t.k !== ','), int: intCore, frac,
     decimals: frac.length, minDec: lastZero + 1, minInt: z < 0 ? 0 : intPh.length - z,

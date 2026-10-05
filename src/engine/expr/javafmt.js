@@ -18,6 +18,7 @@
  * time zone. A pattern letter neither knows is dropped (ICU) or kept as text.
  */
 import { toWall, currencyOf } from './format.js';
+import { capText, capPattern, capDigits, ExprError } from './parser.js';
 
 const cache = new Map();
 const memo = (key, make) => { let v = cache.get(key); if (v === undefined) { v = make(); if (cache.size >= 500) cache.clear(); cache.set(key, v); } return v; };
@@ -161,6 +162,7 @@ function numberPattern(pat) {
     const all = [...pa, ...sa];
     const mult = all.some(x => typeof x === 'object' && x.t === 'pct') ? 2 : all.some(x => typeof x === 'object' && x.t === 'mille') ? 3 : 0;
     const neg = negText != null ? split(negText) : null;
+    for (const n of [intDigits, maxFrac, (expPart?.match(/0/g) || []).length]) capDigits('Format', n);
     return {
       mode, minInt: zeros, maxInt: expPart != null ? intDigits : Infinity, minFrac, maxFrac, grouping, secondary,
       exp: expPart != null ? { plus: expPart.startsWith('+'), min: (expPart.match(/0/g) || []).length || 1 } : null,
@@ -318,6 +320,7 @@ function formatDatePattern(d, pat, locale, tz, icu) {
     let n = 1;
     while (pat[i + n] === c) n++;
     i += n;
+    capDigits('Format', n);
     out += field(c, n);
   }
   return out;
@@ -404,6 +407,7 @@ export const isJavaFormat = (fmt) => typeof fmt === 'string' && (fmt.startsWith(
  */
 export function formatJava(value, fmt, opt = {}) {
   if (value == null) return '';
+  capPattern('Format', fmt);
   const icu = fmt.startsWith('icu:');
   const pat = fmt.slice(icu ? 4 : 5);
   const locale = opt.locale || 'en-US';
@@ -462,16 +466,20 @@ export function jsString(v) {
 export function javaFormatString(f, args, locale = 'en-US', tz) {
   const sy = symbols(locale);
   let next = 0, out = '';
-  const re = /%(?:(\d+)\$)?([-#+ 0,(]*)(\d+)?(?:\.(\d+))?([a-zA-Z%])/g;
+  // bounded quantifiers: no backtracking blow-up on a long run of flags or digits
+  const re = /%(?:(\d{1,4})\$)?([-#+ 0,(]{0,7})(\d{1,9})?(?:\.(\d{1,9}))?([a-zA-Z%])/g;
+  capText('JavaFormat', f.length);
   let last = 0, m;
+  const lit = (a, b) => { const t = f.slice(a, b); if (t.includes('%')) throw new ExprError(`JavaFormat: "${t.slice(t.indexOf('%'), t.indexOf('%') + 12)}…" is not a format specifier`); return t; };
   while ((m = re.exec(f))) {
-    out += f.slice(last, m.index);
+    out += lit(last, m.index);
     last = re.lastIndex;
     const [, idx, flags, width, prec, conv] = m;
     if (conv === '%') { out += '%'; continue; }
     if (conv === 'n') { out += '\n'; continue; }
     const v = idx ? args[Number(idx) - 1] : args[next++];
     const w = width ? Number(width) : 0, p = prec != null ? Number(prec) : null;
+    capDigits('JavaFormat', w); if (p != null && /[fFeE]/.test(conv)) capDigits('JavaFormat', p);
     let s;
     const lc = conv.toLowerCase();
     if (lc === 's') s = javaString(v, undefined, tz);
@@ -511,7 +519,8 @@ export function javaFormatString(f, args, locale = 'en-US', tz) {
     if (p != null && (lc === 's' || lc === 'b' || lc === 'c')) s = s.slice(0, p);
     if (conv === 'S' || conv === 'B' || conv === 'X' || conv === 'E') s = s.toUpperCase();
     if (s.length < w) s = flags.includes('-') ? s.padEnd(w) : s.padStart(w);
+    capText('JavaFormat', out.length + s.length + (f.length - last)); // before the result grows
     out += s;
   }
-  return out + f.slice(last);
+  return out + lit(last, f.length);
 }

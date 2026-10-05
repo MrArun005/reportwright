@@ -61,6 +61,7 @@ function capture(engine) {
   console.log(`${engine}: pdftotext of the engine's PDF reads the same text as its exact strings in ${pdfOk}/${all} cases (the rest: glyphs the PDF font lacks)`);
   fs.mkdirSync(TRUTH_DIR, { recursive: true });
   fs.writeFileSync(path.join(TRUTH_DIR, `${engine}.json`), JSON.stringify(truth, null, 0).replace(/\},"/g, '},\n"'));
+  fs.rmSync(dir, { recursive: true, force: true }); // the PDFs are read: free the disk
 }
 
 async function diff(engine) {
@@ -87,6 +88,7 @@ async function diff(engine) {
         fs.writeFileSync(file, await exportPdf(r.model, store, {}));
         const viaPdf = pdfPages(file);
         if (JSON.stringify(viaPdf) !== JSON.stringify(got)) pdfDisagree++;
+        fs.rmSync(file, { force: true });
         got = viaPdf;
       }
     } catch (e) { got = [[`@ERROR ${e.message}`]]; }

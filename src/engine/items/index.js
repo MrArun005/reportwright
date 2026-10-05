@@ -1,5 +1,6 @@
 // @ts-check
 import { evalValue, toText, isDynamic, truthy } from '../expr/evaluate.js';
+import { ExprError } from '../expr/parser.js';
 import { isoDate } from '../expr/format.js';
 import { resolveStyle, padding } from '../style.js';
 import { layoutTextLines, paintBox, paintBoxAt, OWNED } from './paint.js';
@@ -43,10 +44,15 @@ function evalSafe(v, ctx, lc, who) {
     return { v: '#Error', err: true };
   }
 }
-function textOf(raw, st, ctx) {
+function textOf(raw, st, ctx, lc) {
   if (typeof raw === 'string') return raw;
   if (raw == null && st.nullText != null) return String(st.nullText); // what a null shows (JasperReports prints "null")
-  return toText(raw, st.format, ctx);
+  try { return toText(raw, st.format, ctx); } catch (e) {
+    // a format over the caps (a 5,000-character pattern, 999 decimals) stops only this cell
+    if (!(e instanceof ExprError)) throw e;
+    lc?.warn(e.message);
+    return '#Error';
+  }
 }
 function hidden(item, ctx, lc) {
   let h = false;
@@ -68,7 +74,7 @@ function rotationOf(item) {
 function paintTextbox(item, lc, ctx, forcedH) {
   let st = resolveStyle([lc.base, lc.named?.[item.styleName], item.style], ctx);
   const r = evalSafe(item.value ?? '', ctx, lc, item.name || 'TextBox');
-  const text = textOf(r.v, st, ctx);
+  const text = textOf(r.v, st, ctx, lc);
   const rot = rotationOf(item);
   // a box turned on its side lays its text out along its height
   const layoutW = rot?.swap ? item.h : item.w, layoutH = rot?.swap ? item.w : item.h;
@@ -422,7 +428,7 @@ register('table', {
         let v; // evalSafe without its result object: this runs for every cell
         if ('raw' in cell) v = cell.raw;
         else try { v = evalValue(cell.value ?? '', cctx); } catch (e) { lc.warn(`${item.name || 'Table'} cell: ${e.message}`); v = '#Error'; }
-        let text = textOf(v, st, cctx);
+        let text = textOf(v, st, cctx, lc);
         const plain = text;
         const toggle = cell.toggle || (extra?.toggle && ci === 0 ? extra.toggle : null);
         if (toggle) text = `${toggle.open ? '▼' : '▶'} ${text}`;
@@ -967,7 +973,7 @@ register('checkbox', {
     const color = st.color || '#1f2328';
     const items = [{ t: 'rect', x: item.x, y: by, w: size, h: size, fill: '#ffffff', stroke: color, strokeWidth: 0.75, radius: 1.5 }];
     if (on) items.push({ t: 'path', x: item.x, y: by, d: `M ${size * 0.2} ${size * 0.52} L ${size * 0.42} ${size * 0.74} L ${size * 0.8} ${size * 0.26}`, stroke: color, strokeWidth: Math.max(1, size * 0.12), fill: null });
-    const label = item.text != null ? textOf(evalSafe(item.text, ctx, lc, item.name).v, st, ctx) : '';
+    const label = item.text != null ? textOf(evalSafe(item.text, ctx, lc, item.name).v, st, ctx, lc) : '';
     if (label) {
       const tst = { ...st, padding: 0, verticalAlign: 'middle' };
       const tl = layoutTextLines(label, tst, item.w - size - 4, lc.m, { wrap: false });
@@ -1083,7 +1089,7 @@ register('field', {
       const o = evalSafe(item.options ?? '', ctx, lc, who).v;
       options = (Array.isArray(o) ? o : String(o ?? '').split(',')).map(s => String(s).trim()).filter(Boolean);
     }
-    const value = kind === 'checkbox' ? truthy(raw) : raw == null ? '' : textOf(raw, st, ctx);
+    const value = kind === 'checkbox' ? truthy(raw) : raw == null ? '' : textOf(raw, st, ctx, lc);
     const draw = [];
     if (kind === 'checkbox') {
       const size = Math.min(item.w, item.h);
@@ -1213,7 +1219,7 @@ register('barcode', {
     if (hidden(item, ctx, lc)) return { height: 0, units: [] };
     const st = resolveStyle([lc.base, lc.named?.[item.styleName], item.style], ctx);
     const r = evalSafe(item.value ?? '', ctx, lc, item.name || 'Barcode');
-    const text = r.err ? '' : textOf(r.v, st, ctx);
+    const text = r.err ? '' : textOf(r.v, st, ctx, lc);
     const size = Number(st.fontSize) || 8;
     const show = item.showText !== false;
     const th = show ? size * 1.4 : 0;
