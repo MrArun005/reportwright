@@ -1,5 +1,5 @@
 'use client';
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Dialog } from './ui.jsx';
 import Link from 'next/link';
 import { secOf, useDesigner, insertItem, deleteSelection, duplicateSelection, moveItems, copySelection, pasteItems, alignItems } from './store.js';
@@ -165,11 +165,26 @@ function IssuesButton({ T }) {
   const issues = useDesignIssues();
   const [open, setOpen] = useState(false);
   useEffect(() => { if (!issues.length) setOpen(false); }, [issues.length]);
+  // the list opens under its button: moved left or right as far as it takes to stay inside the window (8 px margin)
+  const listRef = useRef(null);
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (!el) return undefined;
+    const place = () => {
+      el.style.translate = '0px';
+      const r = el.getBoundingClientRect(), vw = document.documentElement.clientWidth;
+      const dx = r.right > vw - 8 ? vw - 8 - r.right : r.left < 8 ? 8 - r.left : 0;
+      el.style.translate = `${Math.round(dx)}px`;
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [open, issues.length]);
   if (!issues.length) return <span className="hint" data-testid="issues-none">{T('ux_noIssues')}</span>;
   return (
     <span className="issues-wrap">
       <button type="button" className="btn sm issues-btn" aria-expanded={open} onClick={() => setOpen(v => !v)} data-testid="issues">{T('ux_issues', { n: issues.length })}</button>
-      {open && <ul className="issues-list" data-testid="issues-list">
+      {open && <ul className="issues-list" data-testid="issues-list" ref={listRef}>
         {issues.map((i, k) => <li key={k}><button type="button" className="linklike" onClick={() => { if (i.id) useDesigner.getState().select({ kind: 'items', ids: [i.id] }); }}>{issueLine(T, i)}</button></li>)}
       </ul>}
     </span>

@@ -84,6 +84,34 @@ try {
     await p.locator('.vpage').first().waitFor();
     assert.equal(await p.getByTestId('viewer-retry').count(), 0);
   }
+  if (want('shell')) {
+    step('the designer and the viewer fill the window and never scroll as a whole; the "to check" list stays inside it');
+    await p.setViewportSize({ width: 1440, height: 922 });
+    for (const url of ['/designer/stress-test', '/viewer/stress-test']) {
+      await p.goto(`${BASE}${url}`);
+      await p.waitForSelector(url.startsWith('/designer') ? '[data-testid=paper]' : '.vpage');
+      await p.waitForTimeout(500);
+      const { sh, ih } = await p.evaluate(() => ({ sh: document.scrollingElement.scrollHeight, ih: window.innerHeight }));
+      assert.ok(sh <= ih, `${url}: the page is ${sh}px tall in a ${ih}px window`);
+      if (process.env.FIX_SHOTS) await p.screenshot({ path: `${process.env.FIX_SHOTS}/fix-shell-${url.split('/')[1]}.png` });
+    }
+    const id = await create(base('r4 issues', [{ type: 'textbox', name: 'Bad', x: 0, y: 0, w: 200, h: 20, value: '=Frobnicate(1)' },
+      { type: 'barcode', name: 'QR', x: 220, y: 0, w: 60, h: 60, symbology: 'qr', value: 'x' }]));
+    for (const width of [1440, 1000]) {
+      await p.setViewportSize({ width, height: 922 });
+      await open(id);
+      await p.getByTestId('issues').click();
+      const list = p.getByTestId('issues-list');
+      await list.waitFor();
+      const text = await list.textContent();
+      assert.match(text, /Unknown function "Frobnicate"/);
+      assert.match(text, /"qr" is not a barcode symbology \(did you mean "qrcode"\?\)/);
+      const box = await list.boundingBox();
+      assert.ok(box.x >= 0 && box.x + box.width <= width, `the list is at ${box.x}..${box.x + box.width} in a ${width}px window`);
+      if (process.env.FIX_SHOTS) await p.screenshot({ path: `${process.env.FIX_SHOTS}/fix-popup-${width}.png` });
+    }
+    await p.setViewportSize({ width: 1440, height: 900 });
+  }
   assert.deepEqual(errs.filter(e => !/ResizeObserver/.test(e)), [], 'no page errors');
   console.log('r4-fixes: all passed');
 } finally {
