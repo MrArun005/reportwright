@@ -75,7 +75,8 @@ function fitSize(text, key, size, inner, m, atom = false) {
   const longest = num ? m.width(s.trim(), key, size) : Math.max(0, ...s.split(/\s+/).map(w => (w ? m.width(w, key, size) : 0)));
   if (longest <= inner) return size;
   const floor = num ? Math.min(size, MIN_NUMBER_FONT) : Math.max(MIN_FONT, size * 0.75);
-  return Math.max(floor, Math.min(size, size * (inner / longest) - 0.01));
+  // in half points: cells shrunk alike share one size (fewer font changes, a smaller PDF)
+  return Math.max(floor, Math.min(size, Math.floor((size * (inner / longest) - 0.01) * 2) / 2));
 }
 function layoutText(text, st, width, m, wrap, atom = false) {
   const look = lookOf(st, m);

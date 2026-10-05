@@ -190,7 +190,7 @@ export async function exportPdf(model, fontStore, opt = {}) {
       // tagged: the item's marked content (a structure element's MCID, or an artifact)
       const mark = tags && tags.open(pi, ii, it);
       if (mark) { c.et(); c.s += mark; }
-      if (it.t !== 'text' || it.rotate) c.et();
+      if ((it.t !== 'text' && it.t !== 'line') || it.rotate) c.et(); // a line waits (Content.line): text goes on in its text object
       if (it.rotate) {
         // screen rotation is clockwise with y down; PDF's y is up, so the angle flips
         const t = -it.rotate.a * Math.PI / 180, cs = Math.cos(t), sn = Math.sin(t);
@@ -231,8 +231,7 @@ export async function exportPdf(model, fontStore, opt = {}) {
         case 'line': {
           const s = col(it.stroke);
           if (!s) break;
-          c.paint(null, s, it.strokeWidth || 1, it.dash);
-          c.s += `${n2(it.x1)} ${n2(H - it.y1)} m ${n2(it.x2)} ${n2(H - it.y2)} l S\n`;
+          c.line(s, it.strokeWidth || 1, it.dash, it.x1, H - it.y1, it.x2, H - it.y2);
           break;
         }
         case 'text': {
@@ -641,47 +640,94 @@ function insideClip(it, m) {
 class Content {
   constructor(shared) {
     this.shared = shared;
-    this.s = '';
+    this._s = '';
     this.bt = false; this.tx = 0; this.ty = 0;
     this.st = { fill: '0 0 0', stroke: '0 0 0', lw: 1, dash: '[] 0', ca: 1, CA: 1, font: '', size: 0 };
     /** @type {any[]} */ this.saved = [];
+    /** straight lines waiting to be drawn after the text around them: { key, stroke, w, dash, segs: [x1, y1, x2, y2][] } */
+    this.lines = null;
+    this.tagged = false;
   }
-  q() { this.et(); this.s += 'q\n'; this.saved.push({ ...this.st }); }
-  Q() { this.et(); this.s += 'Q\n'; this.st = this.saved.pop(); }
+  /**
+   * The operators so far. Any other drawing reads or appends to it, so the lines waiting are drawn first: the text
+   * of a table's cells stays in one text object (relative moves, which compress to little) instead of one per cell.
+   */
+  get s() { this.flushLines(); return this._s; }
+  set s(v) { this._s = v; }
+  /**
+   * A straight line. Untagged, it waits until something other than text is drawn (table borders between cell
+   * texts); collinear segments that touch, in the same stroke, become one (a row's border is one line).
+   * ponytail: lines move after the text drawn just after them; both are thin and do not cover each other.
+   */
+  line(stroke, w, dash, x1, y1, x2, y2) {
+    if (this.tagged) { this.paint(null, stroke, w, dash); this._s += `${n2(x1)} ${n2(y1)} m ${n2(x2)} ${n2(y2)} l S\n`; return; }
+    const key = `${stroke.rgb}|${stroke.opacity}|${w}|${(dash || []).join(' ')}`;
+    if (this.lines && this.lines.key !== key) this.flushLines();
+    this.lines ||= { key, stroke, w, dash, segs: [] };
+    const segs = this.lines.segs, last = segs[segs.length - 1];
+    const eq = (a, b) => Math.abs(a - b) < 0.005;
+    if (last && eq(last[1], y1) && eq(last[3], y2) && eq(y1, y2) && eq(last[2], x1)) last[2] = x2; // horizontal, end to end
+    else if (last && eq(last[0], x1) && eq(last[2], x2) && eq(x1, x2) && eq(last[3], y1)) last[3] = y2; // vertical
+    else segs.push([x1, y1, x2, y2]);
+  }
+  flushLines() {
+    const L = this.lines;
+    if (!L) return;
+    this.lines = null;
+    this.et();
+    this.paint(null, L.stroke, L.w, L.dash);
+    const g = L.segs;
+    // a table's row borders: the same line a row height apart. Drawn once and moved down (cm) for each row, so the
+    // operators repeat exactly and compress to almost nothing
+    const dy = g.length > 2 ? Math.round((g[1][1] - g[0][1]) * 100) : 0;
+    if (dy && g.every((q, i) => q[1] === q[3] && n2(q[0]) === n2(g[0][0]) && n2(q[2]) === n2(g[0][2]) && Math.abs(q[1] - (g[0][1] + i * dy / 100)) < 0.01)) {
+      const one = `${n2(g[0][0])} ${n2(g[0][1])} m ${n2(g[0][2])} ${n2(g[0][1])} l S\n`;
+      this._s += `q\n${one}${`1 0 0 1 0 ${dy / 100} cm ${one}`.repeat(g.length - 1)}Q\n`;
+      return;
+    }
+    this._s += g.map(([a, b, c, d]) => `${n2(a)} ${n2(b)} m ${n2(c)} ${n2(d)} l`).join(' ') + ' S\n';
+  }
+  q() { this.et(); this._s += 'q\n'; this.saved.push({ ...this.st }); }
+  Q() { this.et(); this._s += 'Q\n'; this.st = this.saved.pop(); }
   /**
    * A line of plain text at (x, y). Lines follow one another in one text object, each placed relative to the
    * last (in whole hundredths, so nothing drifts): most of a table page is these.
    * @param {string} str the glyphs, as a literal string's escaped body (array: a TJ array's body)
    */
   text(pf, size, color, x, y, str, array = false) {
-    this.paint(color, null);
-    this.font(pf, size);
-    const X = Math.round(x * 100), Y = Math.round(y * 100);
-    if (!this.bt) { this.s += 'BT\n'; this.bt = true; this.tx = 0; this.ty = 0; }
-    this.s += array ? `${(X - this.tx) / 100} ${(Y - this.ty) / 100} Td [${str}] TJ\n` : `${(X - this.tx) / 100} ${(Y - this.ty) / 100} Td (${str}) Tj\n`;
+    this.setPaint(color, null);
+    this.setFont(pf, size);
+    // in tenths of a point (0.035 mm): table rows repeat the same moves, which compress to little
+    const X = Math.round(x * 10) * 10, Y = Math.round(y * 10) * 10;
+    if (!this.bt) { this._s += 'BT\n'; this.bt = true; this.tx = 0; this.ty = 0; }
+    this._s += array ? `${(X - this.tx) / 100} ${(Y - this.ty) / 100} Td [${str}] TJ\n` : `${(X - this.tx) / 100} ${(Y - this.ty) / 100} Td (${str}) Tj\n`;
     this.tx = X; this.ty = Y;
   }
-  /** end the open text object, if any: anything but text needs that */
-  et() { if (this.bt) { this.s += 'ET\n'; this.bt = false; } }
-  lineWidth(w) { if (this.st.lw !== w) { this.s += `${n3(w)} w\n`; this.st.lw = w; } }
+  /** end the open text object, if any: anything but text needs that (and draws the lines waiting) */
+  et() { if (this.bt) { this._s += 'ET\n'; this.bt = false; } if (this.lines) this.flushLines(); }
+  lineWidth(w) { if (this.lines) this.flushLines(); this.setLineWidth(w); }
+  setLineWidth(w) { if (this.st.lw !== w) { this._s += `${n3(w)} w\n`; this.st.lw = w; } }
   /** the graphics state that sets these opacities, or undefined when they are set already */
   gsFor(ca, CA) { return ca === this.st.ca && CA === this.st.CA ? undefined : this.shared.gs(ca, CA); }
-  alpha(ca, CA) { const g = this.gsFor(ca, CA); if (g) { this.s += `/${g} gs\n`; this.st.ca = ca; this.st.CA = CA; } }
-  /** set up to fill with fill and/or stroke with stroke (width w, dash) */
-  paint(fill, stroke, w = 1, dash = null) {
+  alpha(ca, CA) { if (this.lines) this.flushLines(); this.setAlpha(ca, CA); }
+  setAlpha(ca, CA) { const g = this.gsFor(ca, CA); if (g) { this._s += `/${g} gs\n`; this.st.ca = ca; this.st.CA = CA; } }
+  /** set up to fill with fill and/or stroke with stroke (width w, dash); the lines waiting are drawn first */
+  paint(fill, stroke, w = 1, dash = null) { if (this.lines) this.flushLines(); this.setPaint(fill, stroke, w, dash); }
+  setPaint(fill, stroke, w = 1, dash = null) {
     const st = this.st;
-    if (fill && fill.rgb !== st.fill) { this.s += `${fill.rgb} rg\n`; st.fill = fill.rgb; }
+    if (fill && fill.rgb !== st.fill) { this._s += `${fill.rgb} rg\n`; st.fill = fill.rgb; }
     if (stroke) {
-      if (stroke.rgb !== st.stroke) { this.s += `${stroke.rgb} RG\n`; st.stroke = stroke.rgb; }
-      this.lineWidth(w);
+      if (stroke.rgb !== st.stroke) { this._s += `${stroke.rgb} RG\n`; st.stroke = stroke.rgb; }
+      this.setLineWidth(w);
       const d = `[${(dash || []).map(n3).join(' ')}] 0`;
-      if (d !== st.dash) { this.s += `${d} d\n`; st.dash = d; }
+      if (d !== st.dash) { this._s += `${d} d\n`; st.dash = d; }
     }
-    this.alpha(fill ? fill.opacity : st.ca, stroke ? stroke.opacity : st.CA);
+    this.setAlpha(fill ? fill.opacity : st.ca, stroke ? stroke.opacity : st.CA);
   }
-  font(pf, size) {
+  font(pf, size) { if (this.lines) this.flushLines(); this.setFont(pf, size); }
+  setFont(pf, size) {
     const name = this.shared.font(pf);
-    if (name !== this.st.font || size !== this.st.size) { this.s += `/${name} ${n3(size)} Tf\n`; this.st.font = name; this.st.size = size; }
+    if (name !== this.st.font || size !== this.st.size) { this._s += `/${name} ${n3(size)} Tf\n`; this.st.font = name; this.st.size = size; }
   }
 }
 
@@ -707,7 +753,7 @@ const zslots = { free: 4, wait: /** @type {(() => void)[]} */ ([]) }; // ponytai
 const NODE_ZLIB = /** @type {any} */ (globalThis).process?.getBuiltinModule?.('node:zlib');
 async function deflateNow(bytes) {
   const zlib = NODE_ZLIB;
-  if (zlib) return new Promise((ok, fail) => zlib.deflate(bytes, (e, z) => (e ? fail(e) : ok(z))));
+  if (zlib) return new Promise((ok, fail) => zlib.deflate(bytes, { level: 9 }, (e, z) => (e ? fail(e) : ok(z))));
   if (typeof CompressionStream === 'undefined') return (await import('fflate')).zlibSync(bytes);
   return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
 }
