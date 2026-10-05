@@ -193,7 +193,7 @@ export { codeOnly, assertCalls };
 const READ_DENY = /\b(insert|update|delete|merge|upsert|create|drop|alter|truncate|rename|grant|revoke|call|exec|execute|begin|commit|rollback|savepoint|copy|put|remove|unload|use|set|unset|declare|lock|undrop|into|export|load|procedure|function|transaction|outfile|dumpfile|infile)\b/i;
 
 /** T-SQL code from tsqlParts (nested comments, [names]): strings blanked, names kept as their text. */
-const tsqlCode = (q) => tsqlParts(q).map(p => (p.code ? p.text : /^[[\x22]/.test(p.text) ? ` ${visibleName(p.text.slice(1, -1))} ` : /^(--|\/\*)/.test(p.text) ? ' ' : ' x ')).join('');
+const tsqlCode = (q) => tsqlParts(q).map(p => (p.code ? p.text : /^\/\*/.test(p.text) && p.text.slice(2, -2).includes('/*') ? (() => { throw fail('A SQL source cannot use nested comments.', 400); })() : /^[[\x22]/.test(p.text) ? ` ${visibleName(p.text.slice(1, -1))} ` : /^(--|\/\*)/.test(p.text) ? ' ' : ' x ')).join('');
 
 /**
  * One statement (a trailing ";" at most), no statement word from READ_DENY in code, every call an allowed built-in,
@@ -202,6 +202,8 @@ const tsqlCode = (q) => tsqlParts(q).map(p => (p.code ? p.text : /^[[\x22]/.test
  */
 export function assertOneRead(text, dialect) {
   const code = dialect === 'mssql' ? tsqlCode(text) : codeOnly(text, dialect);
+  // fail closed: braces ({fn …}) and anything outside printable ASCII in code (lookalikes, Unicode spaces, controls)
+  if (/[{}]|[^\x09\x0a\x0d\x20-\x7e]/.test(code)) throw fail('A SQL source cannot use { } or characters outside plain ASCII except inside strings.', 400);
   if (code.replace(/[;\s]+$/, '').includes(';')) throw fail('A SQL source can only run one SELECT query (one statement).', 400);
   const word = READ_DENY.exec(code);
   if (word) throw fail(`A SQL source can only run one SELECT query: "${word[1]}" is not allowed.`, 400);
@@ -634,6 +636,8 @@ async function mssqlRun(sql, entry, text, values, clk, proc = null, allowed = []
   const tx = new sql.Transaction(pool);
   // a pooled connection, within the time left; one that comes later is given back at once
   await clk.inTime(tx.begin(), () => tx.rollback().catch(() => {}));
+  const conn = tx._acquiredConnection; // ponytail: mssql internals; a failed query's connection is closed, not pooled
+  let ok = false;
   const req = () => clk.track(new sql.Request(tx));
   // session resets and cleanup are not cancelled by the deadline (they must run after it), so each has a short timer of
   // its own; the session is reset first too (a cleanup that failed last time must not leave SHOWPLAN, a row cap or a
@@ -654,6 +658,7 @@ async function mssqlRun(sql, entry, text, values, clk, proc = null, allowed = []
         values.forEach((v, i) => r.input(proc.names[i], mssqlType(sql, v).type, v));
         const { rows, cols } = await streamRows(r, (x) => x.execute(text), { sql, overdue: clk.overdue, odd: true, first: true });
         for (const row of rows) for (const c of cols) row[c.name] = mssqlCell(sql, c.type, row[c.name]);
+        ok = true;
         return rows;
       } finally { await quiet('SET ROWCOUNT 0; SET TEXTSIZE 2147483647'); }
     }
@@ -697,9 +702,15 @@ async function mssqlRun(sql, entry, text, values, clk, proc = null, allowed = []
         try { const v = JSON.parse(rows.map(r => Object.values(r)[0] ?? '').join('') || '[]'); n = Array.isArray(v) ? v.length : 1; } catch { n = limits.rows + 1; }
         if (n > limits.rows) throw fail(`The query returned more than ${limits.rows} rows. Filter or group it in SQL.`, 400);
       }
+      ok = true;
       return rows;
     } finally { await quiet('SET ROWCOUNT 0; SET TEXTSIZE 2147483647'); }
-  } finally { await tx.rollback().catch(() => {}); }
+  } finally {
+    await tx.rollback().catch(() => {});
+    // a cap, the deadline or any error: the connection may be mid-stream or left in a state; close it so the pool's
+    // validation drops it (it was given back to the pool by the rollback)
+    if (!ok) { try { conn?.close(); } catch { /* gone */ } }
+  }
 }
 
 /**

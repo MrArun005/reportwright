@@ -29,9 +29,15 @@ export async function probeOracle(conn, oracledb) {
   const q = async (sql) => (await conn.execute(sql, [], { outFormat: oracledb.OUT_FORMAT_OBJECT, maxRows: 50 })).rows || [];
   const privs = (await q('SELECT privilege AS p FROM session_privs')).map(r => r.P).filter(p => p !== 'CREATE SESSION');
   if (privs.length) return `privileges ${privs.slice(0, 5).join(', ')}`;
-  const grants = await q(`SELECT privilege || ' ON ' || table_schema || '.' || table_name AS p FROM all_tab_privs
-    WHERE grantee IN (SELECT role FROM session_roles UNION ALL SELECT USER FROM dual) AND privilege NOT IN ('SELECT', 'READ')`);
-  if (grants.length) return `granted ${grants.slice(0, 5).map(r => r.P).join(', ')}`;
+  // a positive list: SELECT or READ on tables and views, nothing else, granted to the user, its roles or PUBLIC; PUBLIC's
+  // EXECUTE on Oracle's own packages is the install default (the risky ones are checked next; the statement check lets
+  // no package be called at all); READ on a DIRECTORY is a file read (BFILENAME), so it counts
+  const grants = await q(`SELECT privilege || ' ON ' || table_schema || '.' || table_name || ' TO ' || grantee AS p FROM all_tab_privs
+    WHERE grantee IN (SELECT role FROM session_roles UNION ALL SELECT USER FROM dual UNION ALL SELECT 'PUBLIC' FROM dual)
+      AND NOT (privilege IN ('SELECT', 'READ') AND NVL(type, 'TABLE') <> 'DIRECTORY')
+      AND NOT (grantee = 'PUBLIC' AND table_schema IN (SELECT username FROM all_users WHERE oracle_maintained = 'Y'))
+      AND ROWNUM <= 5`);
+  if (grants.length) return `granted ${grants.map(r => r.P).join(', ')}`;
   const risky = await q(`SELECT table_name AS p FROM all_tab_privs WHERE grantee = 'PUBLIC' AND privilege = 'EXECUTE' AND table_name IN (${RISKY.map(x => `'${x}'`).join(', ')})`);
   if (risky.length) return `PUBLIC may run ${risky.map(r => r.P).join(', ')} (REVOKE EXECUTE ON … FROM PUBLIC, or grant it to the users who need it)`;
   const own = await q('SELECT object_type || \' \' || object_name AS p FROM user_objects WHERE ROWNUM <= 5');

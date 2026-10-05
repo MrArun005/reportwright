@@ -240,7 +240,8 @@ describe.skipIf(!process.env.PW_TEST_MSSQL)('SQL Server (live)', () => {
     for (const q of shapes) await expect(runSql(ms(q), {}), q).rejects.toMatchObject({ status: 400 });
     // and what is legal stays legal, with the same meaning on both sides
     expect(await runSql(ms('select 1 as [x]] delete from dbo.pw_accounts --]'), {})).toEqual([{ 'x] delete from dbo.pw_accounts --': 1 }]);
-    expect(await runSql(ms('select @n /* /* @z */ */ as [a@b] -- @q'), { n: 3 })).toEqual([{ 'a@b': 3 }]);
+    expect(await runSql(ms('select @n /* @z */ as [a@b] -- @q'), { n: 3 })).toEqual([{ 'a@b': 3 }]);
+    await expect(runSql(ms('select @n /* /* @z */ */ as [a@b]'), { n: 3 })).rejects.toThrow(/nested comments/); // fail closed (3b)
     expect(await count()).toBe(5);
   });
 
@@ -539,6 +540,26 @@ describe.skipIf(!process.env.PW_TEST_MSSQL)('SQL Server (live)', () => {
       await admin.close();
     }
   }, 60000);
+
+  it('batch 3b lifecycle: 1,000 queries stopped at a cap leave no connection behind', async () => {
+    const keep = { ...limits };
+    process.env.PW_DB_MSLEAK = `${readerUrl()}&p=leak`;
+    const sql = (await import('mssql')).default;
+    const admin = await new sql.ConnectionPool(mssqlConfig(process.env.PW_TEST_MSSQL)).connect();
+    try {
+      const count = async () => (await admin.request().query("select count(*) as n from sys.dm_exec_sessions where login_name = 'pw_reader'")).recordset[0].n;
+      const before = await count(); // other tests' pools hold sessions of this login too
+      await runSql({ connection: 'msleak', query: 'select 1 as a' }, {}); // the probe is fresh
+      Object.assign(limits, { rows: 2 });
+      await Promise.all(Array.from({ length: 10 }, async () => {
+        for (let i = 0; i < 100; i++) await expect(runSql({ connection: 'msleak', query: 'select id from dbo.pw_accounts' }, {})).rejects.toThrow(/more than 2 rows/);
+      }));
+      Object.assign(limits, keep);
+      await new Promise(r => setTimeout(r, 1000));
+      expect(await count() - before).toBeLessThanOrEqual(5); // this pool's size at most: every stopped connection was closed
+      expect(await runSql({ connection: 'msleak', query: 'select count(*) as n from dbo.pw_accounts' }, {})).toEqual([{ n: 5 }]);
+    } finally { Object.assign(limits, keep); delete process.env.PW_DB_MSLEAK; await admin.close(); }
+  }, 300000);
 
   it('tests a connection without showing its URL', async () => {
     expect(await testConnection('ms')).toMatchObject({ ok: true });

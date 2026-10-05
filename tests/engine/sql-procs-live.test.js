@@ -72,3 +72,34 @@ describe.each([['pg', 'PW_TEST_PG', "select repeat('x', @n) as v", 'select count
     } finally { Object.assign(limits, keep); delete process.env[`PW_DB_CAP${k.toUpperCase()}`]; }
   }, 60000);
 });
+
+// review 3b lifecycle: 1,000 queries stopped at a cap leave no connection behind, and a stopped connection is never reused
+describe.each([['pg', 'PW_TEST_PG'], ['my', 'PW_TEST_MYSQL']])('%s: 1,000 aborted queries', (k, envName) => {
+  it.skipIf(!process.env[envName])('no leak, no reuse', async () => {
+    const { limits } = await import('../../src/server/sql.js');
+    const keep = { ...limits };
+    const url = k === 'pg' ? await pgReader(process.env[envName]) : await mysqlReader(process.env[envName]);
+    process.env[`PW_DB_LEAK${k.toUpperCase()}`] = `${url}${url.includes('?') ? '&' : '?'}leak=1`;
+    const q = k === 'pg' ? 'select g from generate_series(1, 100) g' : 'select a.table_name as g from information_schema.columns a';
+    const sessions = async () => {
+      if (k === 'pg') {
+        const { default: P } = await import('pg');
+        const c = new P.Client({ connectionString: process.env[envName] }); await c.connect();
+        try { return (await c.query("select count(*)::int as n from pg_stat_activity where usename = 'pw_reader'")).rows[0].n; } finally { await c.end(); }
+      }
+      const { default: M } = await import('mysql2/promise');
+      const c = await M.createConnection({ uri: process.env[envName] });
+      try { return (await c.query("select count(*) as n from information_schema.processlist where user = 'pw_reader'"))[0][0].n; } finally { await c.end(); }
+    };
+    try {
+      Object.assign(limits, { rows: 3 });
+      await Promise.all(Array.from({ length: 10 }, async (_, w) => {
+        for (let i = 0; i < 100; i++) await expect(runSql({ connection: `leak${k}`, query: q }, {}), `${w}/${i}`).rejects.toThrow(/more than 3 rows/);
+      }));
+      Object.assign(limits, keep);
+      await new Promise(r => setTimeout(r, 1000)); // terminations and kills land
+      expect(await sessions()).toBeLessThanOrEqual(1); // every stopped connection was closed, none kept for reuse
+      expect(await runSql({ connection: `leak${k}`, query: 'select 1 as a' }, {})).toEqual([{ a: 1 }]);
+    } finally { Object.assign(limits, keep); delete process.env[`PW_DB_LEAK${k.toUpperCase()}`]; }
+  }, 240000);
+});

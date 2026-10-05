@@ -65,9 +65,21 @@ describe('statement check (Oracle, Snowflake, BigQuery)', () => {
   it('Oracle: one plain SELECT; no PL/SQL, locks, links or network/file packages, quoted or not', () => {
     for (const q of ['select "UTL_HTTP".request(\'http://x\') from dual', "select utl_http.request('http://x') as a from dual", 'select sys.dbms_xmlgen.getxml(\'select 1 from dual\') from dual',
       'select a from t@remote', 'select a from "T"@"REMOTE"', 'with function f return number is begin return 1; end; select f() from dual', 'with procedure p is begin null; end; select 1 from dual',
-      'select a from t for update', 'begin null; end;', 'call p()', 'select httpuritype(\'http://x\').getclob() from dual', 'select a from t for update of "A"', 'select "UPDATE" from t'])
+      'select a from t for update', 'begin null; end;', 'call p()', 'select httpuritype(\'http://x\').getclob() from dual', 'select a from t for update of "A"'])
       expect(() => assertOneRead(q, 'oracle'), q).toThrow();
     expect(() => assertOneRead('with x as (select a, "B" from t) select a, "B" from x where c = :1', 'oracle')).not.toThrow();
+  });
+  it('fails closed on what it does not fully classify (review 3b)', () => {
+    const refused = [
+      ['postgres', 'select "in"(1)'], ['postgres', 'select pg_catalog."upper"(a) from t'], ['postgres', 'select "lo_import"(\'/x\')'], ['mssql', 'select [upper](a) as b'],
+      ['mysql', 'select `upper`(a) from t'], ['postgres', "select 'a\\' as x"], ['mysql', "select 'a\\' ; delete from t -- ' as x"],
+      ['postgres', 'select a from t /* a /* b */ c */'], ['mysql', 'select /*+ BKA(t) */ a from t'], ['oracle', 'select /*+ full(t) */ a from t'],
+      ['mssql', 'select {fn user()} as u'], ['postgres', 'select {fn now()}'], ['postgres', 'select ａ from t'], ['mssql', 'select 1 as a\u00a0from t'],
+      ['postgres', 'select $tag$x$tag$'], ['postgres', "select E'x'"], ['postgres', "select U&'x'"], ['mysql', "select _latin1'x'"], ['sqlite', 'select a\u2028from t'],
+      ['mssql', 'select x /* /* */ from t'],
+    ];
+    for (const [d, q] of refused) expect(() => assertOneRead(q.replace(/\\u([0-9a-f]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16))), d), `${d}: ${q}`).toThrow();
+    expect(() => assertOneRead("select 'ünïcode ✓' as s, n'x' from t", 'mssql')).not.toThrow(); // inside strings it is fine
   });
   it('reads strings and comments as each database does, and refuses quoting it does not model', () => {
     // Oracle: no backslash escape, so \' ends the string and what follows is code
@@ -104,7 +116,8 @@ function oracleMock({ type = 1, rows = [], meta = [{ name: 'A', dbType: { name: 
     callTimeout: 0,
     async getStatementInfo(t) { log.push(['info', t]); return { statementType: type }; },
     async execute(t, v, o) {
-      const asked = Object.keys(answers).find(k => new RegExp(`from ${k}\\b|grantee = '${k}'`, 'i').test(t));
+      if (o?.maxRows) log.push(['probe', t]);
+      const asked = Object.keys(answers).find(k => new RegExp(k === 'PUBLIC' ? "grantee = 'PUBLIC' AND privilege = 'EXECUTE'" : `from ${k}\\b`, 'i').test(t));
       if (o?.maxRows) return { rows: asked ? answers[asked] : [] }; // the login probe
       log.push(['execute', t, v]);
       if (!o?.resultSet) return {};
@@ -122,9 +135,12 @@ describe('Oracle (mocked oracledb, not live-tested)', () => {
   it('the server parse must say SELECT; it runs READ ONLY and is rolled back', async () => {
     let log = oracleMock({ rows: [{ A: 1 }, { A: 2 }] });
     expect(await runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select a from t where b = @b' }, { b: 3 })).toEqual([{ A: 1 }, { A: 2 }]);
-    expect(log.map(x => x[0])).toEqual(['info', 'execute', 'execute', 'close', 'rollback', 'release']);
-    expect(log[1][1]).toBe('SET TRANSACTION READ ONLY');
-    expect(log[2].slice(1)).toEqual(['select a from t where b = :1', [3]]);
+    expect(log.filter(x => x[0] !== 'probe').map(x => x[0])).toEqual(['info', 'execute', 'execute', 'close', 'rollback', 'release']);
+    // the grant check is a positive list over the user, its roles and PUBLIC; READ on a DIRECTORY counts
+    expect(log.find(x => x[0] === 'probe' && /all_tab_privs/.test(x[1]) && /'PUBLIC' FROM dual/.test(x[1]))?.[1]).toMatch(/DIRECTORY/);
+    const main = log.filter(x => x[0] !== 'probe');
+    expect(main[1][1]).toBe('SET TRANSACTION READ ONLY');
+    expect(main[2].slice(1)).toEqual(['select a from t where b = :1', [3]]);
     log = oracleMock({ type: 3 }); // not a SELECT (the server says so, whatever the text looks like)
     await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select a from t' }, {})).rejects.toThrow(/one SELECT/);
     expect(log.some(x => x[0] === 'execute')).toBe(false);
@@ -141,6 +157,7 @@ describe('Oracle (mocked oracledb, not live-tested)', () => {
       const log = oracleMock({ rows: [{ A: 1 }], probe });
       await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select a from t' }, {}), JSON.stringify(probe)).rejects.toThrow(why);
       expect(log.some(x => x[0] === 'execute'), 'nothing ran').toBe(false);
+      void 0;
     }
     mocks.oracle = { createPool: async () => ({ getConnection: async () => ({ async execute() { throw new Error('ORA-00942: table or view does not exist'); }, async break() {}, async rollback() {}, async close() {} }) }) };
     await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select a from t' }, {})).rejects.toThrow(/ORA-00942/); // fails closed
@@ -189,12 +206,13 @@ describe('Oracle (mocked oracledb, not live-tested)', () => {
 });
 
 /** A snowflake-sdk pool whose statements stream the given rows. */
-function snowflakeMock(rows, { fail } = {}) {
-  const log = { cancelled: 0 };
+function snowflakeMock(rows, { fail, grants = { R: [{ privilege: 'USAGE', granted_on: 'WAREHOUSE', name: 'WH' }, { privilege: 'SELECT', granted_on: 'TABLE', name: 'DB.S.T' }] } } = {}) {
+  const log = { cancelled: 0, shows: [] };
   mocks.snowflake = {
     createPool: (cfg) => ({
       use: async (fn) => fn({
         execute(o) {
+          if (!o.streamResult) { log.shows.push([o.sqlText, ...(o.binds || [])]); setTimeout(() => o.complete(null, {}, /^SHOW/.test(o.sqlText) ? (grants[o.binds[0]] || []) : []), 1); return {}; }
           log.opts = o;
           const st = { cancel: (cb) => { log.cancelled++; cb?.(); }, streamRows: () => Readable.from(rows, { objectMode: true }) };
           setTimeout(() => (fail ? o.complete(new Error(fail)) : o.complete(null, st)), 1);
@@ -216,6 +234,22 @@ describe('Snowflake (mocked snowflake-sdk, not live-tested)', () => {
     expect(log.opts).toMatchObject({ sqlText: 'select a from t where b = ?', binds: ['x'], streamResult: true, parameters: { MULTI_STATEMENT_COUNT: 1 } });
     await expect(runSql({ connection: env('sf', 'snowflake://u:p@acct/DB?role=R'), query: 'select 1 as a; drop table t' }, {})).rejects.toThrow(/one statement/);
   });
+  it('the role is checked first: its grants, its granted roles and PUBLIC must be USAGE and SELECT only', async () => {
+    const R = [{ privilege: 'USAGE', granted_on: 'DATABASE', name: 'DB' }, { privilege: 'USAGE', granted_on: 'ROLE', name: 'INNER' }];
+    for (const [grants, why] of [
+      [{ R, INNER: [{ privilege: 'USAGE', granted_on: 'INTEGRATION', name: 'EXT_API' }] }, /INNER has USAGE on INTEGRATION/],
+      [{ R: [{ privilege: 'OWNERSHIP', granted_on: 'TABLE', name: 'T' }] }, /OWNERSHIP/],
+      [{ R: [], PUBLIC: [{ privilege: 'USAGE', granted_on: 'FUNCTION', name: 'EXT_FN' }] }, /PUBLIC has USAGE on FUNCTION/],
+      [{ R: [{ privilege: 'SELECT', granted_on: 'EXTERNAL TABLE', name: 'X' }] }, /EXTERNAL_TABLE/],
+    ]) {
+      const log = snowflakeMock([{ A: 1 }], { grants });
+      await expect(runSql({ connection: env('sf', 'snowflake://u:p@acct/DB?role=R'), query: 'select a from t' }, {})).rejects.toThrow(why);
+      expect(log.opts).toBeUndefined(); // the query never ran
+    }
+    const log = snowflakeMock([{ A: 1 }], { grants: { R, INNER: [{ privilege: 'SELECT', granted_on: 'VIEW', name: 'V' }] } });
+    expect(await runSql({ connection: env('sf', 'snowflake://u:p@acct/DB?role=R'), query: 'select a from t' }, {})).toEqual([{ A: 1 }]);
+    expect(log.shows.map(x => x[0])).toEqual(['USE SECONDARY ROLES NONE', 'SHOW GRANTS TO ROLE IDENTIFIER(?)', 'SHOW GRANTS TO ROLE IDENTIFIER(?)', 'SHOW GRANTS TO ROLE IDENTIFIER(?)']);
+  });
   it('cancels the statement at the row cap', async () => {
     const log = snowflakeMock(Array.from({ length: 100 }, (_, i) => ({ A: i })));
     limits.rows = 5;
@@ -224,7 +258,7 @@ describe('Snowflake (mocked snowflake-sdk, not live-tested)', () => {
   });
   it('a statement that never answers: 504 on time, and it is cancelled', async () => {
     let cancelled = 0;
-    mocks.snowflake = { createPool: () => ({ use: async (fn) => fn({ execute: () => ({ cancel: (cb) => { cancelled++; cb?.(); } }) }) }) };
+    mocks.snowflake = { createPool: () => ({ use: async (fn) => fn({ execute: (o) => { if (!o.streamResult) { setTimeout(() => o.complete(null, {}, []), 1); return {}; } return { cancel: (cb) => { cancelled++; cb?.(); } }; } }) }) };
     limits.ms = 150;
     const t0 = Date.now();
     await expect(runSql({ connection: env('sf', 'snowflake://u:p@acct/DB?role=R'), query: 'select a from t' }, {})).rejects.toMatchObject({ status: 504 });

@@ -21,6 +21,34 @@ export function snowflakeConfig(url) {
   };
 }
 
+// The grants a reading role may hold (SHOW GRANTS TO ROLE, followed into every granted role and PUBLIC): anything else
+// (OWNERSHIP, CREATE …, USAGE on an integration, function, procedure or stage, SELECT on an external table, …) refuses it.
+const ALLOWED = new Set(['USAGE WAREHOUSE', 'USAGE DATABASE', 'USAGE SCHEMA', 'SELECT TABLE', 'SELECT VIEW', 'SELECT MATERIALIZED_VIEW', 'SELECT DYNAMIC_TABLE']);
+const PROBE_MS = 60000; // SHOW GRANTS is metadata (no warehouse); once a minute per pool
+
+/** Run one statement on a connection and collect its rows (small: SHOW output). */
+const all = (conn, sqlText, binds = []) => new Promise((resolve, reject) => conn.execute({ sqlText, binds, complete: (e, _st, rows) => (e ? reject(e) : resolve(rows || [])) }));
+
+/**
+ * What the role can do beyond reading, or ''. Follows granted roles (and PUBLIC, which every role has) to the end.
+ * @param {any} conn @param {string} role
+ */
+export async function probeSnowflake(conn, role) {
+  const seen = new Set(), todo = [role.toUpperCase(), 'PUBLIC'];
+  while (todo.length) {
+    const r = todo.shift();
+    if (seen.has(r)) continue;
+    seen.add(r);
+    if (seen.size > 50) return 'more than 50 roles in its hierarchy';
+    for (const g of await all(conn, 'SHOW GRANTS TO ROLE IDENTIFIER(?)', [r])) {
+      const priv = String(g.privilege || '').toUpperCase(), on = String(g.granted_on || '').toUpperCase().replace(/ /g, '_');
+      if (on === 'ROLE' && priv === 'USAGE') { todo.push(String(g.name || '').replace(/^"|"$/g, '').toUpperCase()); continue; }
+      if (!ALLOWED.has(`${priv} ${on}`)) return `${r} has ${priv} on ${on} ${String(g.name || '').slice(0, 100)}`;
+    }
+  }
+  return '';
+}
+
 /**
  * @param {string} url @param {string} text @param {any[]} values
  * @param {import('../sql.js').DriverContext} ctx
@@ -34,11 +62,25 @@ export async function snowflake(url, text, values, ctx) {
   const sf = mod.default || mod;
   if (!pools.has(key)) {
     sf.configure?.({ logLevel: 'OFF' });
-    pools.set(key, sf.createPool(cfg, { max: 5, min: 0, acquireTimeoutMillis: 60000 }));
+    // VARIANT, OBJECT and ARRAY stay text: a parsed JSON value takes many times its size
+    pools.set(key, { pool: sf.createPool({ ...cfg, jsonColumnVariantParser: (raw) => raw }, { max: 5, min: 0, acquireTimeoutMillis: 60000 }), checked: 0 });
   }
+  const entry = pools.get(key);
   const clk = clock(Number(limits.ms));
   try {
-    return await clk.inTime(pools.get(key).use((conn) => new Promise((resolve, reject) => {
+    return await clk.inTime(entry.pool.use(async (conn) => {
+      if (Date.now() - entry.checked > PROBE_MS) {
+        await all(conn, 'USE SECONDARY ROLES NONE'); // only the named role's grants apply
+        const why = await probeSnowflake(conn, cfg.role);
+        if (why) throw fail(`This Snowflake role can do more than read (${why}). Give report connections a role with USAGE and SELECT grants only (see docs/DATA-SQL.md).`, 500);
+        entry.checked = Date.now();
+      }
+      return run(conn);
+    }));
+  } finally { clk.stop(); }
+
+  function run(conn) {
+    return new Promise((resolve, reject) => {
       const seconds = Math.max(1, Math.ceil(clk.left() / 1000));
       let stmt;
       try { clk.overdue(); } catch (e) { reject(e); return; }
@@ -59,6 +101,6 @@ export async function snowflake(url, text, values, ctx) {
         },
       });
       clk.track({ cancel: () => { try { stmt?.cancel(() => {}); } catch { /* finished */ } } });
-    })));
-  } finally { clk.stop(); }
+    });
+  }
 }

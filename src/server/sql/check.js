@@ -8,8 +8,12 @@
 
 /** @typedef {'sqlite'|'postgres'|'mysql'|'mssql'|'oracle'|'snowflake'|'bigquery'} Dialect */
 
-/** A quoted name as the checks see it: itself when it is one plain word ("lo_import"( is still a call), else a blank. */
-export const visibleName = (n) => (/^[\w$#.]+$/.test(n) ? n : 'x');
+/**
+ * A quoted name as the checks see it: a marked word ("qn_" and the name's word characters), so it is never a keyword,
+ * a type or an allowed function: a quoted or bracketed name before "(" is always refused ("lo_import"(, [upper](,
+ * "in"( — which would resolve to a function of that name, not the keyword).
+ */
+export const visibleName = (n) => `qn_${String(n).replace(/[^\w]/g, '_')}`;
 
 const err = (msg) => Object.assign(new Error(msg), { status: 400 });
 
@@ -26,7 +30,7 @@ export function codeOnly(q, dialect) {
   // [quote, closing, is a name, backslash escapes]
   const quotes = {
     bigquery: [["'", "'", false, true], ['"', '"', false, true], ['`', '`', true, true]],
-    mysql: [["'", "'", false, true], ['"', '"', false, true], ['`', '`', true, false]],
+    mysql: [["'", "'", false, false], ['"', '"', false, false], ['`', '`', true, false]], // \ refused below (NO_BACKSLASH_ESCAPES)
     snowflake: [["'", "'", false, true], ['"', '"', true, false]],
     mssql: [["'", "'", false, false], ['"', '"', true, false], ['[', ']', true, false]],
     sqlite: [["'", "'", false, false], ['"', '"', true, false], ['`', '`', true, false], ['[', ']', true, false]],
@@ -62,6 +66,7 @@ export function codeOnly(q, dialect) {
       let j = i + 1;
       for (;;) {
         if (j >= q.length) throw open();
+        if (q[j] === '\\' && (dialect === 'mysql' || dialect === 'postgres') && !name) throw err('A SQL source cannot use a backslash in a string here: the server reads it by its settings.');
         if (bs && q[j] === '\\') { j += 2; continue; }
         if (q[j] === close) { if (q[j + 1] === close) { j += 2; continue; } break; }
         j++;
@@ -70,6 +75,9 @@ export function codeOnly(q, dialect) {
       i = j + 1;
       continue;
     }
+    // fail closed: braces ({fn …} ODBC escapes, object literals) and anything outside printable ASCII in code
+    if (c === '{' || c === '}') throw err('A SQL source cannot use { } (ODBC escapes or literals) in code.');
+    if (!/[\x09\x0a\x0d\x20-\x7e]/.test(c)) throw err('A SQL source cannot use characters outside plain ASCII except inside strings.');
     out += c;
     i++;
   }
