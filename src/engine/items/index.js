@@ -904,6 +904,8 @@ register('list', {
   props: [
     { key: 'dataSet', label: 'Data set', type: 'dataset', category: 'Data' },
     { key: 'groupBy', label: 'Group by (one row per group)', type: 'expr', category: 'Data' },
+    { key: 'groupAdjacent', label: 'A new group at every change (not sorted)', type: 'bool', category: 'Data' },
+    { key: 'inheritRows', label: 'Rows of the enclosing list row', type: 'bool', category: 'Data' },
     { key: 'keepTogether', label: 'Keep each row on one page', type: 'bool', category: 'Layout' },
     { key: 'pageBreakBetween', label: 'Page break between rows', type: 'bool', category: 'Layout' },
     { key: 'columns', label: 'Records across (grid)', type: 'number', category: 'Layout' },
@@ -916,11 +918,13 @@ register('list', {
     const ctx = lc.ctxFor(item);
     if (hidden(item, ctx, lc)) return { height: 0, units: [] };
     let rows = (item.dataSet && lc.dataSets[item.dataSet]) || [];
-    rows = related(rows, ctx); // a nested data set inside a list of its parent: that row's children
+    // inheritRows: a list inside a row of a list over the same data set takes that row's rows (a banded group)
+    if (item.inheritRows && item.dataSet && ctx.current?.[item.dataSet]) rows = ctx.current[item.dataSet];
+    else rows = related(rows, ctx); // a nested data set inside a list of its parent: that row's children
     if (item.dataSet && !lc.dataSets[item.dataSet]) lc.warn(`${item.name}: the data set "${item.dataSet}" does not exist`);
     if (item.filters?.length) rows = applyFilters(rows, item.filters, ctx);
     if (item.sort?.length) rows = applySort(rows, item.sort, ctx);
-    const reps = item.groupBy ? groupRows(rows, item.groupBy, ctx, lc, item.name).map(b => b.rows) : rows.map(r => [r]);
+    const reps = item.groupBy ? groupRows(rows, item.groupBy, ctx, lc, item.name, item.groupAdjacent === true).map(b => b.rows) : rows.map(r => [r]);
     const units = [], tables = [];
     let y = 0;
     const listScope = { rows, index: -1, run: [] };
@@ -1281,7 +1285,9 @@ register('matrix', {
     const ctx = lc.ctxFor(item);
     if (hidden(item, ctx, lc)) return { height: 0, units: [] };
     let rows = (item.dataSet && lc.dataSets[item.dataSet]) || [];
-    rows = related(rows, ctx); // a nested data set inside a list of its parent: that row's children
+    // inheritRows: a list inside a row of a list over the same data set takes that row's rows (a banded group)
+    if (item.inheritRows && item.dataSet && ctx.current?.[item.dataSet]) rows = ctx.current[item.dataSet];
+    else rows = related(rows, ctx); // a nested data set inside a list of its parent: that row's children
     if (item.filters?.length) rows = applyFilters(rows, item.filters, ctx);
     const who = item.name || 'Matrix';
     const it = { ...item, name: who };

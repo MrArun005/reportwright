@@ -12,19 +12,27 @@ export const PIVOT_LIMITS = { depth: 8, values: 50, columns: 1000, cells: 250000
  * Rows → buckets by an expression's value, in first-seen order. Text keys that differ only in case share a bucket
  * (SSRS on a case-insensitive collation); the bucket keeps the first row's key and text (toggle state keys).
  */
-export function groupRows(rows, expr, ctx, lc, who) {
+export function groupRows(rows, expr, ctx, lc, who, adjacent = false) {
   const map = new Map();
+  const out = [];
   const c = { ...ctx };
+  let prev = null;
   for (const r of rows) {
     c.fields = r;
     let key;
     try { key = evalValue(expr, c); } catch (e) { lc.warn(`${who} group: ${e.message}`); key = '#Error'; }
     const k = groupKeyText(key, ctx);
+    // adjacent: a new group at every change of the key, as JasperReports reads its rows (A, B, A is three groups)
+    if (adjacent) {
+      if (!prev || prev.k !== k) { prev = { k, b: { key, text: key instanceof Date ? String(key.getTime()) : String(key), rows: [] } }; out.push(prev.b); }
+      prev.b.rows.push(r);
+      continue;
+    }
     let b = map.get(k);
     if (!b) { b = { key, text: key instanceof Date ? String(key.getTime()) : String(key), rows: [] }; map.set(k, b); }
     b.rows.push(r);
   }
-  return [...map.values()];
+  return adjacent ? out : [...map.values()];
 }
 
 /** Group order: the report's locale, case-insensitive, natural ("9" before "10"); nulls last. */

@@ -58,6 +58,10 @@ export function importJrxml(input, opts = {}) {
   }
   const r = importRdlx(ar, { name });
   if (r.error) return r;
+  // groups break on every change of the key, in the data's order (Jasper does not sort them): inner bands take the
+  // rows of their group, not every row with the same key
+  const banded = (items, depth) => { for (const i of items || []) { if (i.type === 'list' && i.dataSet === MAIN && (depth > 0 || i.name === DETAILS)) { if (i.groupBy) i.groupAdjacent = true; if (depth > 0) i.inheritRows = true; banded(i.items, depth + 1); } else banded(i.items, depth); } };
+  banded(r.definition.sections?.body?.items, 0);
   r.definition.collation = 'java'; // text sorts as the source engine compares it (ground truth: tests/diff)
   r.definition.nullOrder = 'low'; // a null sorts first ascending, as Java comparators and BIRT do
   r.definition.arithmetic = 'double'; // Java computes with IEEE doubles: 1.005 * 100 is 100.49999999999999
