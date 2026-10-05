@@ -36,7 +36,7 @@ export async function exportHtml(model, fontStore, opt = {}) {
     if (opt.subset) { try { bytes = await opt.subset(bytes, cps, layout.has(key) ? { layout: true } : undefined); } catch { /* full font */ } }
     faces.push(`@font-face{font-family:"${fontFamilyCss(key)}";src:url(data:font/ttf;base64,${b64(bytes)}) format("truetype")}`);
   }
-  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); // text content only (attributes use attr())
   // Links: URLs open; bookmark jumps and table-of-contents entries go to an anchor at the target's page and height
   // (as in the PDF); drill-through opens the report in the Pagewright viewer at opt.drillBase, or is shown disabled.
   const anchors = new Map(); // `${page}:${y}` → { id, page, y }
@@ -62,11 +62,11 @@ export async function exportHtml(model, fontStore, opt = {}) {
     if (a?.type === 'drill') { const h = drillHref(a); return h ? { href: h, external: true } : { off: `Opens the report "${a.report}" in the Pagewright viewer` }; }
     return null; // sorting, open/close, filters: they run the report again, which a file cannot
   };
-  const svgs = model.pages.map((p) => pageToSvg({ items: p.items.filter(it => it.t !== 'link' || target(it.action)) }, p.width ?? model.width, p.height ?? model.height)
+  const svgs = model.pages.map((p) => pageToSvg({ items: p.items.filter(it => it.t !== 'link' || target(it.action)) }, p.width ?? model.width, p.height ?? model.height, { proxyBase: opt.drillBase || '' }) // images by URL: through the server's data proxy
     .replace(/<rect class="pw-link"([^>]*?)data-action="([^"]*)"[^>]*>(<title>[^<]*<\/title>)?<\/rect>/g, (m, a, act, ttl = '') => {
       // the href comes from the action, never from the hover text (a tooltip can come from data)
       let t = null;
-      try { t = target(JSON.parse(act.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'))); } catch { /* not a link */ }
+      try { t = target(JSON.parse(act.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&amp;/g, '&'))); } catch { /* not a link */ }
       if (t && 'href' in t) return `<a href="${attr(t.href)}"${t.external ? ' target="_blank" rel="noopener"' : ''}><rect${a}/>${ttl}</a>`;
       if (t && 'off' in t) return `<g class="pw-off"><rect${a}/><title>${esc(t.off)}</title></g>`;
       return `<rect${a}/>`;
@@ -99,7 +99,7 @@ ${data ? `<div id="pw-tables" hidden></div>
 ` : ''}</body></html>`;
 }
 
-const attr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+const attr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/'/g, '&#39;');
 function b64(u8) {
   if (typeof Buffer !== 'undefined') return Buffer.from(u8).toString('base64');
   let s = '';

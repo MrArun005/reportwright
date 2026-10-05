@@ -5,6 +5,7 @@
 import { authenticate, ensureAdmin, normEmail, secondFactor } from '@/server/users.js';
 import { accountsOn, sessionSecret, sessionCookie, mfaCookie, deviceCookie } from '@/server/session.js';
 import { checkCredential } from '@/server/limits.js';
+import { readBody } from '@/server/reports.js';
 import { getSettings } from '@/server/settings.js';
 import { issueEnrolCode, updateUser } from '@/server/users.js';
 import { mailOn, sendMail } from '@/server/mail.js';
@@ -22,9 +23,8 @@ export async function POST(req) {
   if (!passwordLoginOn()) return Response.json({ error: 'Password sign-in is off on this server. Use single sign-on.' }, { status: 403 });
   try {
     sessionSecret(); // refuse to sign anyone in without a usable secret
-    const text = await req.text();
     let body;
-    try { body = text.length <= 10000 ? JSON.parse(text) : null; } catch { body = null; }
+    try { body = JSON.parse(new TextDecoder().decode(await readBody(req, 10000))); } catch { body = null; } // at most 10 kB read
     if (!body || typeof body.email !== 'string' || typeof body.password !== 'string') return Response.json({ error: 'Send { email, password }.' }, { status: 400 });
     let email;
     try { email = normEmail(body.email); } catch { await audit('auth.login_failed', { req, detail: { reason: 'bad email' } }); return Response.json({ error: WRONG }, { status: 401 }); }

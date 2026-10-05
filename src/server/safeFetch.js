@@ -200,6 +200,7 @@ export function proxiedType(t) {
   if (m === 'application/json' || /^application\/[\w.+-]+\+json$/.test(m)) return 'application/json';
   if (m === 'text/csv') return 'text/csv; charset=utf-8';
   if (m === 'text/plain') return 'text/plain; charset=utf-8';
+  if (/^image\/(png|jpeg|gif|webp|bmp)$/.test(m)) return m; // images for the viewer (exporters/svg.js imageHref); never SVG
   return 'application/octet-stream';
 }
 

@@ -68,7 +68,10 @@ async function send(batch) {
     const body = JSON.stringify(batch);
     const headers = { 'content-type': 'application/json', 'user-agent': 'Pagewright' };
     if (process.env.PW_AUDIT_SIEM_SECRET) headers['x-pagewright-signature'] = `sha256=${crypto.createHmac('sha256', process.env.PW_AUDIT_SIEM_SECRET).update(body).digest('hex')}`;
-    const res = await fetch(t.url, { method: 'POST', headers, body, redirect: 'error', signal: AbortSignal.timeout(15000) });
+    // through the SSRF guard (the address the operator set is trusted; no redirects anywhere else)
+    const { safeFetch } = await import('./safeFetch.js');
+    const res = await safeFetch(t.url, { method: 'POST', headers, body }, { allow: [new URL(t.url).origin], hops: 0, deadline: Date.now() + 15000 });
+    res.body?.cancel?.();
     if (!res.ok) throw new Error(`the SIEM answered HTTP ${res.status}`);
     return;
   }

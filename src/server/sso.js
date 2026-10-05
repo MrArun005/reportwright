@@ -192,8 +192,13 @@ g.__pwOidc ||= { disco: null, jwks: new Map() };
 /** fetch with a time limit, for URLs the admin set (the IdP may be on the internal network). */
 async function idpFetch(url, init = {}) {
   if (!/^https:\/\//.test(url) && process.env.PW_OIDC_ALLOW_HTTP !== '1') throw fail(`The identity provider must use https (${new URL(url).origin}).`, 500);
-  const res = await fetch(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(10000) });
-  return res;
+  // through the SSRF guard: the issuer the operator named may be on a private network; any other host the discovery
+  // document names (jwks_uri, the token endpoint) must be public; no redirects
+  const { safeFetch } = await import('./safeFetch.js');
+  const issuer = String(process.env.PW_OIDC_ISSUER || '').replace(/\/$/, '');
+  const body = init.body instanceof URLSearchParams ? init.body.toString() : init.body; // node's request takes text
+  const headers = { ...Object.fromEntries(new Headers(init.headers || {})), ...(init.body instanceof URLSearchParams && { 'content-type': 'application/x-www-form-urlencoded' }) };
+  return safeFetch(url, { ...init, body, headers }, { allow: issuer ? [new URL(issuer).origin] : [], hops: 0, deadline: Date.now() + 10000 });
 }
 
 /** The issuer's discovery document (cached for an hour), checked against PW_OIDC_ISSUER. */
@@ -327,12 +332,14 @@ export async function samlAcs(req, samlResponse) {
   if (typeof samlResponse !== 'string' || !samlResponse || samlResponse.length > 512 * 1024) throw fail('Send a SAMLResponse.', 400, 'response');
   const saml = await samlFor(req);
   let profile;
+  if (/<!DOCTYPE|<!ENTITY/i.test(Buffer.from(String(samlResponse), 'base64').toString('utf8'))) throw fail('The SAML response has a DOCTYPE.', 400, 'response'); // before any parser sees it
   try {
     ({ profile } = await saml.validatePostResponseAsync({ SAMLResponse: samlResponse }));
   } catch (e) { throw fail(`The SAML response is not valid: ${/** @type {Error} */ (e).message}`, 401, 'response'); }
   if (!profile) throw fail('The SAML response holds no sign-in.', 401, 'response');
   // Destination of the Response, when given, must be our ACS (node-saml does not check it)
   const xml = Buffer.from(samlResponse, 'base64').toString('utf8');
+  if (/<!DOCTYPE|<!ENTITY/i.test(xml)) throw fail('The SAML response has a DOCTYPE.', 400, 'response'); // as parseMessage
   const { parseStringPromise } = await import('xml2js');
   const doc = await parseStringPromise(xml);
   const resp = kids(doc, 'Response')[0];

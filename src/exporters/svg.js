@@ -6,7 +6,22 @@ import { textOutline } from './figures.js';
 /** Each font file gets its own CSS family, so local fonts can never replace it. */
 export const fontFamilyCss = (key) => `pw-${key}`;
 
-const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+/**
+ * The address a browser may load an image from, by the policy of the data fetches: a data:image URI or this server's
+ * own path as it is; an absolute http(s) URL only through this server's data proxy (/api/data/proxy: PW_PROXY_ALLOW
+ * hosts, never a private address); anything else (another scheme, //host) not at all. So a stored report cannot make
+ * its viewers' browsers call hosts of its choosing. @param {any} src @param {string} [proxyBase] the server's origin,
+ * for a file opened elsewhere (the HTML export)
+ */
+export function imageHref(src, proxyBase = '') {
+  const s = String(src ?? '').trim();
+  if (/^data:image\/(png|jpe?g|gif|webp|bmp|svg\+xml)[;,]/i.test(s)) return s;
+  if (/^https?:\/\//i.test(s)) return `${proxyBase}/api/data/proxy?url=${encodeURIComponent(s)}`;
+  if (s && !/^[a-z][a-z0-9+.-]*:/i.test(s) && !s.startsWith('//') && !s.includes('\\')) return s; // a path on this server
+  return '';
+}
 const n = (v) => Math.round(v * 100) / 100;
 
 /** @param {any} page @param {number} w @param {number} h */
@@ -26,7 +41,7 @@ const ANIM_ORIGIN = { bottom: 'center bottom', top: 'center top', left: 'left ce
  * from fontkit fonts (figures.js), for readers without the report's fonts.
  * @param {{ background?: boolean, animate?: boolean, box?: { x: number, y: number, w: number, h: number }, outline?: ((key: string) => any) | null }} [opt]
  */
-export function pageToSvg(page, w, h, { background = true, animate = false, box = undefined, outline = null } = {}) {
+export function pageToSvg(page, w, h, { background = true, animate = false, box = undefined, outline = null, proxyBase = '' } = {}) {
   const vb = box ? `${n(box.x)} ${n(box.y)} ${n(box.w)} ${n(box.h)}` : `0 0 ${n(w)} ${n(h)}`;
   const out = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}" width="${n(w)}" height="${n(h)}" style="font-kerning:none;font-variant-ligatures:none;text-rendering:geometricPrecision">`];
   if (background) out.push(`<rect width="${n(w)}" height="${n(h)}" fill="#ffffff"/>`);
@@ -93,10 +108,10 @@ export function pageToSvg(page, w, h, { background = true, animate = false, box 
       }
       case 'image': {
         // clip: natural size (w, h) from the top-left, cut to the box (cw, ch); a nested svg clips its content
-        if (it.fit === 'clip') out.push(`<svg x="${n(it.x)}" y="${n(it.y)}" width="${n(it.cw)}" height="${n(it.ch)}" overflow="hidden"><image x="0" y="0" width="${n(it.w)}" height="${n(it.h)}" href="${esc(it.src)}" preserveAspectRatio="none"/></svg>`);
+        if (it.fit === 'clip') out.push(`<svg x="${n(it.x)}" y="${n(it.y)}" width="${n(it.cw)}" height="${n(it.ch)}" overflow="hidden"><image x="0" y="0" width="${n(it.w)}" height="${n(it.h)}" href="${esc(imageHref(it.src, proxyBase))}" preserveAspectRatio="none"/></svg>`);
         else {
           const par = it.fit === 'fill' ? 'none' : it.fit === 'cover' ? 'xMidYMid slice' : 'xMidYMid meet';
-          out.push(`<image x="${n(it.x)}" y="${n(it.y)}" width="${n(it.w)}" height="${n(it.h)}" href="${esc(it.src)}" preserveAspectRatio="${par}"/>`);
+          out.push(`<image x="${n(it.x)}" y="${n(it.y)}" width="${n(it.w)}" height="${n(it.h)}" href="${esc(imageHref(it.src, proxyBase))}" preserveAspectRatio="${par}"/>`);
         }
         break;
       }
