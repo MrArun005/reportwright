@@ -352,10 +352,16 @@ const COERCION = table('Type coercion and Nothing', [
   ok('="10" > 9', true),
   ok('=10 = "10"', true),
   ok('=Nothing = Nothing', true),
-  dev('=Nothing + 1', null, 1, 'Pagewright keeps Nothing as null through arithmetic (a blank stays blank); VB treats Nothing as 0'),
-  dev('=Fields!n.Value * 5', null, 0, 'as above: null propagates'),
-  dev('=Fields!n.Value = 0', false, true, 'Pagewright compares null to a value as false (SQL-like); VB converts Nothing to 0 first'),
-  dev('=CInt(Nothing)', null, 0, 'conversions of Nothing stay null in Pagewright; VB gives the type default (0)'),
+  // Nothing widens to the other operand's type default (VB semantics, the default; a report with nullPropagation: true
+  // keeps SQL nulls instead, see tests/engine/r1b-null.test.js)
+  ok('=Nothing + 1', 1),
+  ok('=Fields!n.Value * 5', 0),
+  ok('=Fields!n.Value = 0', true),
+  ok('="" = Nothing', true),
+  ok('=Fields!n.Value & "x"', 'x'),
+  ok('=CInt(Nothing)', 0),
+  ok('=CInt(True)', -1),
+  ok('=True + 1', 0),
   dev('="abc" > 9', false, ERR, 'VB raises InvalidCastException converting "abc" to Double; Pagewright compares as text'),
 ]);
 
@@ -404,7 +410,7 @@ const OPERATORS = table('Operators and precedence', [
   dev('=IIf(True, 1, CInt("x"))', 1, ERR, 'Pagewright evaluates only the chosen IIf branch; VB evaluates both, so an error in the unused one shows #Error'),
   dev('=False And CInt("x") = 1', false, ERR, 'Pagewright And/Or short-circuit like AndAlso/OrElse; VB And evaluates both sides'),
   dev('=5 And 3', true, 1, 'VB And/Or/Xor on integers are bitwise; Pagewright treats them as logical'),
-  dev('=1 / 0', null, Infinity, 'Pagewright gives null (a blank) for division by zero; VB Double division gives Infinity (Decimal raises #Error)'),
+  ok('=1 / 0', Infinity),
 ]);
 
 /* ------------------------------------------------------------------------------------------------- rounding

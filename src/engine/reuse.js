@@ -130,6 +130,7 @@ function mergeMaster(c, m, warn = (_m) => {}) {
     $schema: c.$schema ?? m.$schema,
     locale: c.locale ?? m.locale,
     currency: c.currency ?? m.currency,
+    nullPropagation: c.nullPropagation ?? m.nullPropagation,
     page: m.page || c.page,
     parameters: byName(m.parameters, c.parameters),
     dataSources: byName(m.dataSources, c.dataSources),

@@ -46,9 +46,12 @@ describe('functions', () => {
     expect(evalValue('=Month(DateAdd("m", 1, CDate("2026-01-31")))', ctx())).toBe(2); // VB clamps to 28 Feb (JS setMonth rolled into March)
   });
   it('treats null safely', () => {
-    expect(evalValue('=Fields.x + 1', ctx({ fields: { x: null } }))).toBeNull();
+    // VB semantics by default: Nothing is 0 in arithmetic, x / 0 is Infinity; nullPropagation: true keeps SQL nulls
+    expect(evalValue('=Fields.x + 1', ctx({ fields: { x: null } }))).toBe(1);
+    expect(evalValue('=Fields.x + 1', ctx({ fields: { x: null }, nullPropagation: true }))).toBeNull();
     expect(evalValue('="a" & Fields.x & "b"', ctx({ fields: { x: null } }))).toBe('ab');
-    expect(evalValue('=1 / 0', ctx())).toBeNull();
+    expect(evalValue('=1 / 0', ctx())).toBe(Infinity);
+    expect(evalValue('=1 / 0', ctx({ nullPropagation: true }))).toBeNull();
   });
 });
 

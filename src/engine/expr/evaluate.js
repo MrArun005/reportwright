@@ -174,7 +174,7 @@ export function evaluate(n, ctx) {
     }
     case 'unary': {
       const v = evaluate(n.arg, ctx);
-      if (n.op === 'neg') return v == null ? null : -Number(v);
+      if (n.op === 'neg') return v == null ? (ctx.nullPropagation === true ? null : 0) : typeof v === 'boolean' ? -vbNum(v) : -Number(v);
       return !truthy(v);
     }
     case 'cond': return truthy(evaluate(n.test, ctx)) ? evaluate(n.a, ctx) : evaluate(n.b, ctx);
@@ -269,13 +269,37 @@ export function cmpVal(a, b) {
   return 0;
 }
 
+/**
+ * Nothing (null) in operators. By default VB / SSRS semantics, which imported reports were written for: Nothing widens
+ * to the other operand's type default, so it is 0 in arithmetic ("Nothing + 1" is 1, a row with one null field still
+ * counts in Sum(a + b)), "" next to text, the earliest date next to a date, and in comparisons ("Nothing = 0" and
+ * "Nothing = """ are True). Division by zero gives Infinity or NaN, as VB Double division does.
+ * A report with nullPropagation: true keeps the SQL-like rule instead: arithmetic with a null gives null (a blank stays
+ * blank), a comparison with null is False except null = null, and x / 0 is null.
+ */
+const vbNum = (v) => (v == null || v === '' ? 0 : typeof v === 'boolean' ? (v ? -1 : 0) : v instanceof Date ? v.getTime() : Number(v));
+/** Nothing as the type default of the other operand (VB widening). */
+function widen(other) {
+  if (typeof other === 'string') return '';
+  if (other instanceof Date) return new Date(-62135596800000); // DateTime.MinValue, 1 Jan 0001
+  if (typeof other === 'boolean') return false;
+  return 0;
+}
 function binary(n, ctx) {
   const op = n.op;
   if (op === 'and' || op === '&&') return truthy(evaluate(n.a, ctx)) && truthy(evaluate(n.b, ctx));
   if (op === 'or' || op === '||') return truthy(evaluate(n.a, ctx)) || truthy(evaluate(n.b, ctx));
-  const a = evaluate(n.a, ctx), b = evaluate(n.b, ctx);
+  let a = evaluate(n.a, ctx), b = evaluate(n.b, ctx);
+  if (op === '&') return toText(a, null, ctx) + toText(b, null, ctx);
+  const sql = ctx.nullPropagation === true;
+  if (!sql && (a == null || b == null)) {
+    // VB: Nothing takes the other side's type default; Nothing with Nothing is 0 (and equal)
+    if (a == null && b == null) { a = 0; b = 0; } else if (a == null) a = widen(b); else b = widen(a);
+  }
+  if (!sql && (typeof a === 'boolean' || typeof b === 'boolean') && '+-*/%'.includes(op) && typeof a !== 'string' && typeof b !== 'string') {
+    a = vbNum(a); b = vbNum(b); // VB True is -1 in arithmetic (True + 1 = 0)
+  }
   switch (op) {
-    case '&': return toText(a, null, ctx) + toText(b, null, ctx);
     case '+':
       if (typeof a === 'string' || typeof b === 'string') {
         // VB (Option Strict Off): a number plus numeric text adds; two texts, or text that is not a number, concatenate
@@ -284,6 +308,8 @@ function binary(n, ctx) {
         return (a ?? '') + '' + (b ?? '');
       }
       if (a == null || b == null) return null;
+      if (a instanceof Date && b === 0) return a;
+      if (b instanceof Date && a === 0) return b;
       if (a instanceof Date || b instanceof Date) return Number(a) + Number(b);
       return decAdd(Number(a), Number(b));
     case '-':
@@ -293,7 +319,7 @@ function binary(n, ctx) {
     case '/': {
       if (a == null || b == null) return null;
       const d = num(b);
-      return d === 0 ? null : num(a) / d;
+      return d === 0 && sql ? null : num(a) / d; // VB Double: 5 / 0 is Infinity, 0 / 0 is NaN
     }
     case '%': return a == null || b == null ? null : num(a) % num(b);
     case '=': case '==':
@@ -537,10 +563,11 @@ export const FUNCTIONS = {
   inlist: (ctx, v, ...list) => list.flat().some(x => cmpVal(v, x) === 0),
   cstr: (ctx, v) => toText(v, null, ctx),
   // VB conversions: CInt rounds half to even and raises #Error for text that is not a number; a blank stays blank
-  cdbl: (ctx, v) => (v == null || v === '' ? null : v instanceof Date ? v.getTime() : toNumber('CDbl', v)),
+  // VB: Nothing converts to the type default (0) unless the report keeps SQL nulls; True is -1
+  cdbl: (ctx, v) => (v == null ? (ctx.nullPropagation === true ? null : 0) : v === '' ? null : v instanceof Date ? v.getTime() : typeof v === 'boolean' ? vbNum(v) : toNumber('CDbl', v)),
   cnum: (ctx, v) => num(v),
   val: (ctx, v) => vbVal(v),
-  cint: (ctx, v) => (v === '' ? null : toInt('CInt', v, 32)),
+  cint: (ctx, v) => (v == null ? (ctx.nullPropagation === true ? null : 0) : v === '' ? null : toInt('CInt', typeof v === 'boolean' ? vbNum(v) : v, 32)),
   cbool: (ctx, v) => vbBool(v),
   cdate: (ctx, v) => toDate(v),
   isnull: (ctx, v) => v == null, isnothing: (ctx, v) => v == null,

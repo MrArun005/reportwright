@@ -95,6 +95,7 @@ export async function render(def0, opts = {}) {
   const baseCtx = {
     params, globals: { ExecutionTime: now, ReportName: def.name || '', PageNumber: 1, TotalPages: 1 },
     dataSets: {}, fields: null, locale: def.locale, currency: def.currency, // neither set: en-US numbers, no currency symbol (expr/format.js)
+    nullPropagation: def.nullPropagation === true, // Nothing: VB semantics unless the report asks for SQL nulls (expr/evaluate.js)
     functions: functionTable(def, fnCount), clock,
     aggCache: new WeakMap(), // aggregate results for this render (expr/evaluate.js)
     fmtMemo: new Map(), // formatted dates for this render (expr/format.js)
