@@ -758,10 +758,13 @@ const aclNow = async () => `${await store().get('settings', 'aclgen')}|${localAc
  * @template T @param {() => Promise<T>} fn @returns {Promise<T>}
  */
 export async function stableCheck(fn) {
-  for (let i = 0; i < 5; i++) {
+  // a burst of permission writes (50 new reports at once each record their access) moves the stamp under concurrent
+  // checks: retry with a growing, jittered wait instead of five tries back to back (they gave 503 under load)
+  for (let i = 0; i < 8; i++) {
     const before = await aclNow();
     const r = await fn();
     if ((await aclNow()) === before) return r;
+    await new Promise(res => setTimeout(res, Math.random() * 10 * 2 ** Math.min(i, 5)));
   }
   throw fail('The permissions are changing right now. Try again.', 503);
 }
