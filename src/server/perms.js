@@ -321,6 +321,26 @@ function chain(s, folderId, names) {
  * rev), and the user record as stored now (its own rev). Equal stamps, equal access, and no change in between (for caches of rendered output that pulls in other reports).
  * @param {Principal} p
  */
+/**
+ * What decides what a viewer can see, as a stamp that viewers with the same access share (thumbnails are drawn once
+ * per class, not once per viewer): kind, role and own groups as they are in storage now, and the grants' stamp. A
+ * user named in any grant has access of their own: their stamp is accessStamp's (per user). Disabled: per user too.
+ * @param {Principal} p @returns {Promise<string>}
+ */
+export async function accessClass(p) {
+  const v = vet(p);
+  if (v.kind !== 'user') return accessStamp(v);
+  const now = await userPrincipal(v.email);
+  if (now.kind !== 'user') return accessStamp(v);
+  const s = await snapshot();
+  const me = `user:${now.email}`;
+  const named = (list) => (list || []).some(g => g?.to === me);
+  if (named(s.root) || [...s.folders.values()].some(f => named(f.grants)) || [...s.reports.values()].some(r => named(r.grants))) return accessStamp(v);
+  const gen = await store().get('settings', 'aclgen');
+  const own = now.groups.map(g => g.toLowerCase()).filter(g => !BUILTIN_GROUPS.includes(g)).sort();
+  return `c:${crypto.createHash('sha256').update(JSON.stringify(['user', now.role, own, gen, localAclGen()])).digest('hex')}`;
+}
+
 export async function accessStamp(p) {
   p = vet(p);
   // the grants: the shared stamp every folder or report-access write renews (and this thread's own count of them)

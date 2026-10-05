@@ -4,21 +4,23 @@
 // then). A request that finds no thumbnail for this exact version gets a placeholder (202) and queues one render;
 // saves in quick succession replace the queued render, so only the newest version is drawn.
 //
-// The cache is per report and per viewer (a subreport may show for one user and not another), keyed by a hash of the
-// definition and by the permissions now (perms.accessStamp: every folder and report grant
-// and the viewer's record, each with a rev that every change renews), so a revoke is never answered from an older
-// drawing, and a drawing is not kept when any of that changed while it was queued or drawn. It is drawn as the viewer
-// who asked (never as the server). The route checks view access on every request before it looks here.
+// The cache is per report and per access class (perms.accessClass: viewers with the same role, groups and no grant of
+// their own see the same thumbnail; a user named in a grant gets their own), keyed by a hash of the definition and that
+// stamp, so a revoke is never answered from an older drawing, and a drawing is not kept when the stamp changed while
+// it was queued or drawn. It is drawn as a viewer of that class (never as the server). Up to half the render workers
+// draw thumbnails at once. The route checks view access on every request before it looks here.
 import crypto from 'node:crypto';
 import { publicError } from './errors.js';
 import { renderTo, renderTimeoutMs } from './renderer.js';
-import { submit } from './pool.js';
+import { submit, poolSize } from './pool.js';
 import { pageToSvg, fontFaceCss, fontKeysOf } from '../exporters/svg.js';
 import { ALL_FONT_KEYS } from '../engine/text/fonts.js';
-import { principalId, accessStamp } from './perms.js';
+import { accessClass } from './perms.js';
 
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
-const g = /** @type {any} */ (globalThis).__pwThumbJobs ||= { cache: new Map(), queue: new Map(), running: null, busy: null, seq: 0 };
+const g = /** @type {any} */ (globalThis).__pwThumbJobs ||= { cache: new Map(), queue: new Map(), running: new Map(), seq: 0 };
+if (!(g.running instanceof Map)) Object.assign(g, { running: new Map(), busy: undefined }); // a store from before (hot reload)
+const concurrency = () => Math.max(1, Math.floor(poolSize() / 2));
 
 /** Page 1 of a definition as SVG, with the fonts it needs beyond the defaults. Runs in the worker (or here as a fallback). */
 export async function drawThumb({ def, principal, base }) {
@@ -45,12 +47,12 @@ export async function drawThumb({ def, principal, base }) {
 export async function thumbnail(id, def, principal, base) {
   const json = JSON.stringify(def);
   // always: a report can draw others (subreports, a master, part libraries, stylesheets, themes, by expression too)
-  const stamp = await accessStamp(principal);
+  const stamp = await accessClass(principal);
   const hash = sha(`${json}\0${stamp}`);
-  const slot = `${id}|${principalId(principal)}`;
+  const slot = `${id}|${stamp}`;
   const hit = g.cache.get(slot);
   if (hit?.hash === hash) return hit;
-  if (!(g.running?.slot === slot && g.running.hash === hash)) {
+  if (g.running.get(slot)?.hash !== hash) {
     g.queue.delete(slot); // a newer save replaces the render still waiting (and goes to the back)
     g.queue.set(slot, { slot, hash, stamp, def, principal, base });
     pump();
@@ -59,20 +61,23 @@ export async function thumbnail(id, def, principal, base) {
 }
 
 /** Resolves when no thumbnail is queued or rendering (tests). */
-export async function thumbsIdle() { while (g.busy) await g.busy; }
+export async function thumbsIdle() {
+  for (;;) { if (!g.running.size) pump(); if (!g.running.size) return; await Promise.race([...g.running.values()].map(j => j.done)); }
+}
 
 function pump() {
-  if (g.busy || !g.queue.size) return;
-  const [slot, job] = g.queue.entries().next().value;
-  g.queue.delete(slot);
-  g.running = job;
-  g.busy = run(job).then(async (r) => {
-    // the drawing is kept only if no permission changed while it was queued or drawn (revs: an undo counts too)
-    if (job.stamp && (await accessStamp(job.principal).catch(() => null)) !== job.stamp) return;
-    if (r.transient) return;
-    if (g.cache.size > 2000) g.cache.clear();
-    g.cache.set(slot, { hash: job.hash, ...r });
-  }).finally(() => { g.running = null; g.busy = null; pump(); });
+  while (g.running.size < concurrency() && g.queue.size) {
+    const [slot, job] = g.queue.entries().next().value;
+    g.queue.delete(slot);
+    g.running.set(slot, job);
+    job.done = run(job).then(async (r) => {
+      // the drawing is kept only if no permission changed while it was queued or drawn (revs: an undo counts too)
+      if ((await accessClass(job.principal).catch(() => null)) !== job.stamp) return;
+      if (r.transient) return;
+      if (g.cache.size > 2000) g.cache.delete(g.cache.keys().next().value); // the oldest goes
+      g.cache.set(slot, { hash: job.hash, ...r });
+    }).finally(() => { if (g.running.get(slot) === job) g.running.delete(slot); pump(); });
+  }
 }
 
 /** One render in the render pool (background class, under the render time limit). */

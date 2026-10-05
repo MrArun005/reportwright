@@ -33,3 +33,25 @@ describe('data source classification', () => {
     expect(() => assertMayStore(viewer, { dataSources: [{ name: 's', type: 'REST', url: 'http://x' }] })).toThrow(/designer/);
   });
 });
+
+describe('thumbnail access classes (synthetic-user run: 10,983 placeholders for 202 drawings)', () => {
+  it('viewers with the same role and groups share a class; one named in a grant, or another role, does not', async () => {
+    const fs = await import('node:fs'), os = await import('node:os'), path = await import('node:path');
+    const keepEnv = { ...process.env };
+    try {
+      Object.assign(process.env, { PW_AUTH: 'users', PW_SESSION_SECRET: 'r3b-class-'.padEnd(48, 'x'), PW_STORAGE: `sqlite:${path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'pw-r3b-class-')), 's.db')}` });
+      const users = await import('../../src/server/users.js'), perms = await import('../../src/server/perms.js');
+      for (const [e, role, groups] of [['a@x.io', 'viewer', ['sales']], ['b@x.io', 'viewer', ['sales']], ['c@x.io', 'viewer', ['ops']], ['d@x.io', 'designer', ['sales']], ['e@x.io', 'viewer', ['sales']]])
+        await users.createUser({ email: e, role, groups, password: 'a long password 1' });
+      const P = async (e) => perms.userPrincipal(e);
+      const k = async (e) => perms.accessClass(await P(e));
+      expect(await k('a@x.io')).toBe(await k('b@x.io'));
+      expect(await k('a@x.io')).not.toBe(await k('c@x.io'));
+      expect(await k('a@x.io')).not.toBe(await k('d@x.io'));
+      const before = await k('a@x.io');
+      await perms.createFolder({ kind: 'service' }, { name: 'F' }).then(f => perms.updateFolder({ kind: 'service' }, f.id, { grants: [{ to: 'user:e@x.io', level: 'view' }] }));
+      expect(await k('e@x.io')).not.toBe(await k('a@x.io')); // named in a grant: a class of its own
+      expect(await k('a@x.io')).not.toBe(before); // any grant change renews every class
+    } finally { for (const x of Object.keys(process.env)) if (!(x in keepEnv)) delete process.env[x]; Object.assign(process.env, keepEnv); }
+  });
+});
