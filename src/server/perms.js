@@ -212,6 +212,8 @@ export async function migratePermissions() {
   const { getRecord } = await import('./settings.js');
   const rootNow = async () => { const t = await store().get('folders', 'root'); if (!t) return null; let r; try { r = JSON.parse(t); } catch { return null; } /* unreadable: as missing (the safe default) */ return { grants: r.grants || [], create: Array.isArray(r.create) ? r.create : [] }; };
   if (gp.__pwPermsMigrated === store()) { const r = await rootNow(); if (r) return r; }
+  // a new instance (a serverless cold start) of a storage already moved: two reads, no lock
+  if (await getRecord(MIGRATION).catch(() => null)) { const r = await rootNow(); if (r) { gp.__pwPermsMigrated = store(); return r; } }
   return withLock('acl', async () => {
     let root = await rootNow();
     if (!(await getRecord(MIGRATION).catch(() => null))) {
