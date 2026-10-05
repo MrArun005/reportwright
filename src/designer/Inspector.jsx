@@ -715,6 +715,7 @@ function VisualEditor({ cell, setCell, openExpr, dataSet }) {
         <Field label={T('i_icons')}><Select value={v.iconSet || 'trafficLights'} options={['trafficLights', 'arrows', 'symbols', 'flags', 'ratings'].map(x => ({ value: x, label: T(`o_iconSet_${x}`) }))} onChange={x => set({ iconSet: x })} /></Field>
         {E('lower', T('i_lowBelow'), '=33')}
         {E('upper', T('i_highFrom'), '=67')}
+        <Check label={T('r4_iconReverse')} checked={v.reverse === true} onChange={x => set({ reverse: x ? true : undefined })} />
       </>}
       {ty === 'rangebar' && <>{E('low', T('i_from'), '=Fields.min')}{E('high', T('i_to'), '=Fields.max')}{E('min', T('i_scaleMin'), '=0')}</>}
       {(ty === 'databar' || ty === 'bullet' || ty === 'rangebar') && E('max', T('i_maximum'), '=Max(Fields.amount, "Table1")')}

@@ -312,3 +312,17 @@ describe('Instant visuals starts with fields worth a picture', () => {
     expect(instantPicks(fields, [])).toEqual(['borrower', 'region', 'outstanding']);
   });
 });
+
+describe('icon sets', () => {
+  it('"reverse": a high value gets the first (worst) icon: red for many days overdue', async () => {
+    const colours = async (reverse) => {
+      const d = report([{ type: 'iconset', name: 'I', x: 0, y: 0, w: 18, h: 18, iconSet: 'trafficLights', value: '=90', lower: '=33', upper: '=67', ...(reverse ? { reverse: true } : {}) }]);
+      const m = await render(d, { fontStore });
+      return m.pages[0].items.filter(i => i.fill && i.fill !== 'none').map(i => i.fill).join(',');
+    };
+    const normal = await colours(false), rev = await colours(true);
+    expect(rev).not.toBe(normal);
+    const low = await (async () => { const d = report([{ type: 'iconset', name: 'I', x: 0, y: 0, w: 18, h: 18, iconSet: 'trafficLights', value: '=10', lower: '=33', upper: '=67' }]); const m = await render(d, { fontStore }); return m.pages[0].items.filter(i => i.fill && i.fill !== 'none').map(i => i.fill).join(','); })();
+    expect(rev).toBe(low);
+  });
+});

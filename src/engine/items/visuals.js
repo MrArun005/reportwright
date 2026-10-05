@@ -135,7 +135,8 @@ export function paintVisual(v, box, ctx, lc, base, who = 'Visual', opt = {}) {
     const val = num(v.value, ctx, lc, who);
     if (val == null) return out;
     const lower = num(v.lower, ctx, lc, who) ?? 33, upper = num(v.upper, ctx, lc, who) ?? 67;
-    const state = val < lower ? 0 : val < upper ? 1 : 2;
+    const level = val < lower ? 0 : val < upper ? 1 : 2;
+    const state = v.reverse === true ? 2 - level : level; // reverse: higher is worse (overdue days red, not green)
     const sz = Math.max(4, Math.min(w, line ? line.lh : h)), ix = x + (w - sz) / 2, iy = line ? line.top + (line.lh - sz) / 2 : y + (h - sz) / 2;
     out.push(...icon(ICON_SETS.includes(v.iconSet) ? v.iconSet : 'trafficLights', state, ix, iy, sz));
     return out;

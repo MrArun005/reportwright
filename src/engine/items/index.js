@@ -1215,6 +1215,7 @@ for (const [type, label, defaults] of [
         { key: 'iconSet', label: 'Icons', type: 'select', options: ICON_SETS, category: 'Data' },
         { key: 'lower', label: 'Low below', type: 'expr', category: 'Data' },
         { key: 'upper', label: 'High from', type: 'expr', category: 'Data' },
+        { key: 'reverse', label: 'Reverse order (higher is worse)', type: 'bool', category: 'Data' },
       ] : []),
       ...(type === 'rangebar' ? [
         { key: 'low', label: 'From', type: 'expr', category: 'Data' },

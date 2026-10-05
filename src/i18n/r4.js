@@ -2,6 +2,7 @@
 // Merged into each language by index.js. Same keys and placeholders in every language.
 export default {
   en: {
+    r4_iconReverse: 'Reverse order (higher is worse)',
     r4_aiOff: 'Ask AI is off: the server has no ANTHROPIC_API_KEY. An admin sets it to turn AI drafting on.',
     r4_busyRetry: 'Server busy — retrying ({n}/{max})…',
     r4_retry: 'Retry',
@@ -9,6 +10,7 @@ export default {
     r4_noDataSource: 'This report has no data source — add one in Data sources.',
   },
   hi: {
+    r4_iconReverse: 'उल्टा क्रम (अधिक मान बुरा है)',
     r4_aiOff: 'Ask AI बंद है: सर्वर पर ANTHROPIC_API_KEY नहीं है। AI ड्राफ़्टिंग चालू करने के लिए कोई एडमिन इसे सेट करे।',
     r4_busyRetry: 'सर्वर व्यस्त है — फिर से कोशिश ({n}/{max})…',
     r4_retry: 'फिर से चलाएँ',
@@ -16,6 +18,7 @@ export default {
     r4_noDataSource: 'इस रिपोर्ट में कोई डेटा स्रोत नहीं है — Data sources में एक जोड़ें।',
   },
   es: {
+    r4_iconReverse: 'Orden inverso (más alto es peor)',
     r4_aiOff: 'Ask AI está desactivado: el servidor no tiene ANTHROPIC_API_KEY. Un administrador debe configurarla para activar la IA.',
     r4_busyRetry: 'Servidor ocupado: reintentando ({n}/{max})…',
     r4_retry: 'Reintentar',
@@ -23,6 +26,7 @@ export default {
     r4_noDataSource: 'Este informe no tiene origen de datos: agregue uno en Data sources.',
   },
   fr: {
+    r4_iconReverse: 'Ordre inversé (plus haut est pire)',
     r4_aiOff: 'Ask AI est désactivé : le serveur n’a pas de ANTHROPIC_API_KEY. Un administrateur doit la définir pour activer l’IA.',
     r4_busyRetry: 'Serveur occupé — nouvel essai ({n}/{max})…',
     r4_retry: 'Réessayer',
@@ -30,6 +34,7 @@ export default {
     r4_noDataSource: 'Ce rapport n’a pas de source de données : ajoutez-en une dans Data sources.',
   },
   de: {
+    r4_iconReverse: 'Umgekehrte Reihenfolge (höher ist schlechter)',
     r4_aiOff: 'Ask AI ist aus: Der Server hat keinen ANTHROPIC_API_KEY. Ein Admin setzt ihn, um KI-Entwürfe einzuschalten.',
     r4_busyRetry: 'Server ausgelastet – neuer Versuch ({n}/{max})…',
     r4_retry: 'Erneut versuchen',
@@ -37,6 +42,7 @@ export default {
     r4_noDataSource: 'Dieser Bericht hat keine Datenquelle – fügen Sie eine unter Data sources hinzu.',
   },
   ja: {
+    r4_iconReverse: '逆順（高いほど悪い）',
     r4_aiOff: 'Ask AI はオフです：サーバーに ANTHROPIC_API_KEY がありません。管理者が設定すると AI 下書きが使えます。',
     r4_busyRetry: 'サーバーが混雑しています — 再試行中 ({n}/{max})…',
     r4_retry: '再試行',
@@ -44,6 +50,7 @@ export default {
     r4_noDataSource: 'このレポートにはデータソースがありません。Data sources で追加してください。',
   },
   zh: {
+    r4_iconReverse: '反向顺序（越高越差）',
     r4_aiOff: 'Ask AI 已关闭：服务器没有 ANTHROPIC_API_KEY。管理员设置后即可开启 AI 草拟。',
     r4_busyRetry: '服务器繁忙 — 正在重试 ({n}/{max})…',
     r4_retry: '重试',
@@ -51,6 +58,7 @@ export default {
     r4_noDataSource: '此报表没有数据源 — 请在 Data sources 中添加一个。',
   },
   'pt-BR': {
+    r4_iconReverse: 'Ordem inversa (mais alto é pior)',
     r4_aiOff: 'Ask AI está desligado: o servidor não tem ANTHROPIC_API_KEY. Um administrador a define para ligar a IA.',
     r4_busyRetry: 'Servidor ocupado — tentando de novo ({n}/{max})…',
     r4_retry: 'Tentar de novo',
@@ -58,6 +66,7 @@ export default {
     r4_noDataSource: 'Este relatório não tem fonte de dados — adicione uma em Data sources.',
   },
   ar: {
+    r4_iconReverse: 'ترتيب معكوس (الأعلى أسوأ)',
     r4_aiOff: 'Ask AI معطّل: لا يحتوي الخادم على ANTHROPIC_API_KEY. يضبطه المسؤول لتشغيل الصياغة بالذكاء الاصطناعي.',
     r4_busyRetry: 'الخادم مشغول — إعادة المحاولة ({n}/{max})…',
     r4_retry: 'إعادة المحاولة',
