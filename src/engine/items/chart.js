@@ -153,7 +153,21 @@ export function paintChart(item, ctx, lc, base) {
   };
   let top = 4, bottom = H - 4;
   const title = item.title ? String(safe(item.title, ctx, lc, who) ?? '') : '';
-  if (title) { text(title, X + 4, top + fs * 1.4, { size: fs * 1.35, f: bold, color: '#111827', maxW: W - 8 }); top += fs * 2.1; }
+  if (title) {
+    // a long title shrinks (down to the label size), then wraps onto a second line; only a third line's worth is cut
+    const tw = W - 8, full = fs * 1.35, s = String(title).slice(0, 200);
+    const fit = m.width(s, bold, full) <= tw ? full : Math.max(fs, Math.floor(full * tw / m.width(s, bold, full) * 10) / 10);
+    if (m.width(s, bold, fit) <= tw) { text(s, X + 4, top + fs * 1.4, { size: fit, f: bold, color: '#111827', maxW: tw }); top += fs * 2.1; }
+    else {
+      const words = s.split(/\s+/);
+      let first = '';
+      while (words.length && m.width(first ? `${first} ${words[0]}` : words[0], bold, fs) <= tw) first = first ? `${first} ${words.shift()}` : words.shift();
+      if (!first) first = words.shift() || ''; // one long word: cut on its line
+      text(first, X + 4, top + fs * 1.4, { size: fs, f: bold, color: '#111827', maxW: tw });
+      if (words.length) text(words.join(' '), X + 4, top + fs * 2.6, { size: fs, f: bold, color: '#111827', maxW: tw });
+      top += fs * (words.length ? 3.3 : 2.1);
+    }
+  }
 
   // legend at the bottom: the series (or a pie's slices), then the overlays that are in it
   const byCategory = type === 'pie' || type === 'donut' || type === 'funnel';
