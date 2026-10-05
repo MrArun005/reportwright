@@ -82,6 +82,8 @@ jobs:
           for i in $(seq 1 90); do curl -sf http://localhost:3000/api/v1/livez && break; sleep 1; done
       - name: Browser suites
         run: npm run test:e2e
+      - name: Firefox and WebKit smoke (viewer, PDF export, designer)
+        run: npx playwright install --with-deps firefox webkit && node tests/e2e/browsers.mjs
       # suites that start their own servers (accounts, SSO, two replicas): each needs a build, which the step above made
       - name: Suites with their own servers (sso, replicas)
         run: node tests/e2e/sso.mjs && node tests/e2e/replicas.mjs
