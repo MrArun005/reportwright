@@ -123,3 +123,19 @@ describe('N24, N29, N30', () => {
     expect(m.pages[0].items.flatMap(i => i.lines || []).map(l => l.text)).toEqual(['1']);
   });
 });
+
+describe('N23: column sets of a too-wide table break at the same rows', () => {
+  it('every set\'s pages hold the same rows', async () => {
+    const cols = Array.from({ length: 10 }, (_, i) => ({ width: 90 }));
+    const d = { $schema: 'pagewright/report@1', page: { size: 'A4' }, dataSources: [{ name: 'S', type: 'json', data: Array.from({ length: 60 }, (_, i) => ({ r: `r${i}` })) }], dataSets: [{ name: 'D', source: 'S', path: '$' }],
+      sections: { body: { height: 200, items: [{ type: 'textbox', name: 'Top', x: 0, y: 0, w: 200, h: 20, value: 'above' },
+        { type: 'table', name: 'T', x: 0, y: 20, w: 900, h: 40, dataSet: 'D', columns: cols, header: [{ height: 14, cells: cols.map((_, i) => ({ value: `C${i}` })) }],
+          detail: [{ height: 14, cells: cols.map((_, i) => ({ value: i === 0 || i === 6 ? '=Fields.r' : 'x' })) }] }] } } };
+    const m = await render(d, { fontStore });
+    const rowsOf = (p) => p.items.flatMap(i => i.lines || []).map(l => l.text).filter(t => /^r\d+$/.test(t));
+    const pages = m.pages.map(rowsOf).filter(r => r.length);
+    expect(pages.length % 2).toBe(0);
+    const half = pages.length / 2;
+    for (let i = 0; i < half; i++) expect(pages[half + i]).toEqual(pages[i]);
+  });
+});

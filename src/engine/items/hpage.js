@@ -149,6 +149,7 @@ export function sliceColumns(o) {
     // down, then across: every row with the first set, then every row with the next. A numbering section
     // (newSection) is done on all its sets before the next section starts, so its pages stay together.
     const chunks = [[]];
+    const gridId = o.nextId();
     rest.forEach((u, i) => { if (i > 0 && u.sectionStart) chunks.push([]); chunks[chunks.length - 1].push(u); });
     chunks.forEach((chunk, ch) => sets.forEach((s, k) => {
       const top = y;
@@ -158,7 +159,10 @@ export function sliceColumns(o) {
       head.forEach((u, i) => emit(i === 0 && opens ? { ...u, sectionStart: true } : u, s, k, i === 0 && brk));
       const headerItems = [];
       for (const u of out.slice(out.length - head.length)) for (const it of o.shiftLocal(u.items.filter(i => i.t !== 'link' && i.t !== 'bookmark'), u.top - top)) headerItems.push(it);
-      chunk.forEach((u, i) => emit(i === 0 && head.length ? { ...u, breakBefore: false, sectionStart: false } : u, s, k, i === 0 && brk && !head.length));
+      // hgrid: the pages of every column set break at the same rows as the first set's (N23: a set that starts on a
+      // page top would fit more rows than the first, which starts under the items above the table)
+      const gid = `${gridId}|${ch}`;
+      chunk.forEach((u, i) => emit({ ...(i === 0 && head.length ? { ...u, breakBefore: false, sectionStart: false } : u), hgrid: { id: gid, row: i, set: k } }, s, k, i === 0 && brk && !head.length));
       if (o.repeatHeader && o.headerHeight) tables.push({ id: o.nextId(), headerHeight: o.headerHeight, headerItems, x: o.x, x0: o.x, x1: o.x + repW + s.w, top, bottom: y });
     }));
   }

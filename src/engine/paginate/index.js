@@ -94,6 +94,10 @@ export function paginate(units, tables, pageH, warn) {
   };
   const useless = (top, y) => emptyFor(top, y) && !fitsFrom(y);
 
+  // a table too wide for the page (items/hpage.js): the rows that start a page in its first column set start one in
+  // every other set too, so pages printed side by side line up
+  const gridBreaks = new Map();
+  const mirror = (u) => !!(u.hgrid && u.hgrid.set > 0 && u.hgrid.row > 0 && gridBreaks.get(u.hgrid.id)?.has(u.hgrid.row));
   let top = 0, guard = 0, cut = false;
   while (top < end - EPS) {
     if (++guard > 100000) { warn('Pagination stopped: too many pages'); break; }
@@ -110,7 +114,7 @@ export function paginate(units, tables, pageH, warn) {
     if (pages.length) {
       const f = firstAtOrAfter(top - EPS);
       for (let i = f; i < units.length && units[i].top < units[f].top + EPS; i++) {
-        if (units[i].breakBefore && units[i].top > top + EPS) { top = units[i].top; break; }
+        if ((units[i].breakBefore || mirror(units[i])) && units[i].top > top + EPS) { top = units[i].top; break; }
       }
     }
     // tables that continue onto this page repeat their header
@@ -127,7 +131,7 @@ export function paginate(units, tables, pageH, warn) {
     for (let i = firstAtOrAfter(top - maxH - 1); i < units.length && units[i].top < limit; i++) {
       const u = units[i];
       if (placed.has(u)) continue;
-      if (u.breakBefore && u.top > top + EPS && u.top < limit && firstHere.top < u.top - EPS) limit = u.top;
+      if ((u.breakBefore || mirror(u)) && u.top > top + EPS && u.top < limit && firstHere.top < u.top - EPS) limit = u.top;
       const ub = u.top + u.height;
       if (u.breakAfter && ub > top + EPS && ub < limit && ub < end - EPS) limit = ub;
     }
@@ -180,6 +184,8 @@ export function paginate(units, tables, pageH, warn) {
       onPage.push(u);
       if (moved || placed.size) placed.add(u);
     }
+    const g0 = onPage.find(u => u.hgrid && u.hgrid.set === 0);
+    if (g0 && g0.hgrid.row > 0) { let set = gridBreaks.get(g0.hgrid.id); if (!set) gridBreaks.set(g0.hgrid.id, set = new Set()); set.add(g0.hgrid.row); }
     pages.push({ top, bottom, offset, repeat, units: onPage });
     // after a ragged break the next page starts at the highest unit that moved
     top = moved ? Math.min(...[...moved].map(u => u.top)) : bottom;
