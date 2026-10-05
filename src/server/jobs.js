@@ -363,7 +363,7 @@ async function run(job, owner, stopAfter, fence = { lost: false, hold: async () 
         if (ended) throw ended;
         const principal = await allowed().catch((e) => { throw (ended = new Error(`The owner may no longer run this report (${e.message}).`)); });
         // in the render pool, behind interactive renders (allowed() checked the template as the owner is now)
-        const opt = { parameters: item.parameters, data: item.data, format: job.format, timeZone: job.timeZone || undefined, baseUrl: job.base, self: job.self, pdfa: job.pdfa, sign: job.sign, principal };
+        const opt = { batch: job.id, parameters: item.parameters, data: item.data, format: job.format, timeZone: job.timeZone || undefined, baseUrl: job.base, self: job.self, pdfa: job.pdfa, sign: job.sign, principal };
         const render = () => renderInPool({ def, opt }, { background: true });
         // fromSnapshot (schedules): a fresh snapshot of the same report, parameters and access, within the TTL setting
         const r = job.fromSnapshot ? await throughSnapshot({ def, opt, principal }, render) : await render();

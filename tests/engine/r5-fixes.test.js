@@ -99,3 +99,29 @@ describe('R5 #6: CSV is the data by default, the printed layout on request', () 
     expect(lines).toContain('Summary');
   });
 });
+
+describe('R5 #4: a batch fetches each data request once, per principal', () => {
+  it('items of one batch share the fetched data; another principal or batch fetches again', async () => {
+    const http = await import('node:http');
+    const { renderTo } = await import('../../src/server/renderer.js');
+    let hits = 0;
+    const srv = http.createServer((q, r) => { hits++; r.setHeader('content-type', 'application/json'); r.end(JSON.stringify([{ a: 1 }, { a: 2 }])); });
+    await new Promise(ok => srv.listen(0, '127.0.0.1', ok));
+    const self = `http://127.0.0.1:${srv.address().port}`;
+    const def = { $schema: 'pagewright/report@1', name: 'B', parameters: [{ name: 'who', type: 'string' }],
+      dataSources: [{ name: 's', type: 'rest', url: '/rows' }], dataSets: [{ name: 'd', source: 's', fields: [{ name: 'a', type: 'number' }] }],
+      sections: { body: { items: [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 200, h: 16, value: '=Parameters.who & Sum(Fields.a, "d")' }] } } };
+    const alice = { kind: 'user', email: 'alice@x.test', role: 'viewer' }, bob = { kind: 'user', email: 'bob@x.test', role: 'viewer' };
+    const run = (who, principal, batch) => renderTo(def, { format: 'json', parameters: { who }, baseUrl: self, self, principal, ...(batch && { batch }) });
+    try {
+      for (const who of ['x', 'y', 'z']) expect(JSON.stringify((await run(who, alice, 'job1')).model.pages)).toContain(`${who}3`);
+      expect(hits).toBe(1);
+      await run('x', bob, 'job1'); // never shared across principals
+      expect(hits).toBe(2);
+      await run('x', alice, 'job2');
+      expect(hits).toBe(3);
+      await run('x', alice); await run('x', alice); // not a batch: every render fetches
+      expect(hits).toBe(5);
+    } finally { srv.close(); }
+  });
+});

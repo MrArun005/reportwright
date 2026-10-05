@@ -12,7 +12,7 @@ import { exportXlsx } from '@/exporters/xlsx.js';
 import { exportDocx } from '@/exporters/docx.js';
 import { exportPptx } from '@/exporters/pptx.js';
 import { createSubsetter } from '@/exporters/subset.js';
-import { readRunnable, defaultPrincipal, vet, canDesign, writtenHost, normalizeSource } from './perms.js';
+import { readRunnable, defaultPrincipal, vet, canDesign, writtenHost, normalizeSource, principalId } from './perms.js';
 import { serverFetch, NO_BASE_URL } from './safeFetch.js';
 import { pdfSigner } from './sign.js';
 import { runSql } from './sql.js';
@@ -123,6 +123,35 @@ export async function loadTemplate(template, principal = defaultPrincipal()) {
  *   timeZone: the viewer's zone (checkTimeZone), so a server file shows dates as the browser does; the report's wins.
  *   firstPages: lay out only that many pages (thumbnails). modelOnly: the page model, no file (bytes null).
  */
+/**
+ * Responses fetched for the items of one batch (opt.batch): a statement run of 180 items fetches its data once, not
+ * 180 times. The key is the batch, the principal (never shared across principals: each item's checks stand), and the
+ * whole request (URL, method, headers, body). Only OK answers are kept, for BATCH_FETCH_TTL_MS, within
+ * BATCH_FETCH_MAX_BYTES (oldest out first). Each render thread has its own.
+ * ponytail: per-thread, so a pool of N threads fetches up to N times; a shared cache only if that matters.
+ */
+const batchFetches = new Map(); // key → { at, status, headers, bytes }
+const BATCH_FETCH_TTL_MS = 10 * 60000, BATCH_FETCH_MAX_BYTES = 256 * 1048576;
+let batchFetchBytes = 0;
+/** @param {(input: any, init?: any) => Promise<Response>} fetch @param {string} scope */
+function batchFetch(fetch, scope) {
+  return async (input, init = {}) => {
+    const key = JSON.stringify([scope, String(input), init.method || 'GET', init.headers || null, typeof init.body === 'string' ? init.body : init.body == null ? null : NaN]);
+    const now = Date.now();
+    for (const [k, v] of batchFetches) { if (now - v.at < BATCH_FETCH_TTL_MS && batchFetchBytes <= BATCH_FETCH_MAX_BYTES) break; batchFetches.delete(k); batchFetchBytes -= v.bytes.length; }
+    if (typeof init.body !== 'string' && init.body != null) return fetch(input, init); // a stream body: not cached
+    let hit = batchFetches.get(key);
+    if (!hit) {
+      const res = await fetch(input, init);
+      if (!res.ok) return res;
+      hit = { at: now, status: res.status, headers: [...res.headers], bytes: new Uint8Array(await res.arrayBuffer()) };
+      batchFetches.set(key, hit);
+      batchFetchBytes += hit.bytes.length;
+    }
+    return new Response(hit.bytes.slice(), { status: hit.status, headers: hit.headers });
+  };
+}
+
 export async function renderTo(def, opt = {}) {
   const format = opt.format || 'pdf';
   if (!FORMATS[format]) throw Object.assign(new Error(`Unknown format "${format}". Use pdf, xlsx, docx, pptx, html, csv or json.`), { status: 400 });
@@ -142,7 +171,8 @@ export async function renderTo(def, opt = {}) {
   if (Array.isArray(d?.dataSources)) d = { ...d, dataSources: d.dataSources.map(normalizeSource) };
   const base = opt.baseUrl || baseUrl();
   // a render for someone not signed in (public embed) passes that on, so its own data calls keep the anonymous caps
-  const fetch = serverFetch(opt.self || base, { anon: !['user', 'service'].includes(opt.principal ? vet(opt.principal).kind : '') });
+  const anon = !['user', 'service'].includes(opt.principal ? vet(opt.principal).kind : '');
+  const fetch = opt.batch ? batchFetch(serverFetch(opt.self || base, { anon }), `${opt.batch}|${principalId(opt.principal)}|${anon}|${opt.self || base}`) : serverFetch(opt.self || base, { anon });
   await syncFonts();
   const model = await render(d, /** @type {any} */ ({
     parameters: opt.parameters || {}, state: opt.state || {}, fontStore: fontStore(), timeZone: checkTimeZone(opt.timeZone),
