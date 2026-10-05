@@ -121,7 +121,8 @@ export async function exportXlsx(model, ExcelJS, { currency, title, formulas = t
   const regions = mergedRegions(model);
   const used = new Set();
   const sheetName = (n) => {
-    let s = String(n || 'Sheet').replace(/[\\/?*[\]:]/g, ' ').slice(0, 28) || 'Sheet';
+    // Excel's rules: no \\ / ? * [ ] :, no control characters, not starting or ending with ', at most 31 characters
+    let s = String(n || 'Sheet').replace(/[\\/?*[\]:\u0000-\u001f\u007f\uFFFE\uFFFF]|[\uD800-\uDFFF]/g, ' ').replace(/^['\s]+|['\s]+$/g, '').slice(0, 28).trim() || 'Sheet';
     let k = s, i = 2;
     while (used.has(k.toLowerCase())) k = `${s} ${i++}`;
     used.add(k.toLowerCase());

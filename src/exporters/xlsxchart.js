@@ -8,12 +8,19 @@
  */
 import { unzipSync, zipSync, strToU8, strFromU8 } from 'fflate';
 
-const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+/**
+ * The one way report text gets into these parts, as a text node or an attribute value: characters XML 1.0 does not
+ * allow (control characters, lone surrogates, U+FFFE/FFFF) are dropped, and & < > " ' are escaped.
+ * @param {any} s
+ */
+export const esc = (s) => String(s ?? '')
+  .replace(/[^\t\n\r\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/gu, '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 const NS = 'xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
-/** A sheet reference: 'Name'!$A$1:$A$5 */
-const ref = (sheet, c1, r1, c2, r2) => `'${String(sheet).replace(/'/g, "''")}'!$${col(c1)}$${r1}:$${col(c2)}$${r2}`;
+/** A sheet reference, ready for a <c:f> text node: 'Name'!$A$1:$A$5, the name quoted with ' doubled, then escaped. */
+const ref = (sheet, c1, r1, c2, r2) => esc(`'${String(sheet).replace(/'/g, "''")}'!$${col(c1)}$${r1}:$${col(c2)}$${r2}`);
 const col = (c) => { let s = ''; for (let n = c; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s; return s; };
-const hex = (c) => (/^#[0-9a-f]{6}/i.test(String(c || '')) ? String(c).slice(1, 7).toUpperCase() : null);
+const hex = (c) => (/^#[0-9a-f]{6}/i.test(String(c || '')) ? String(c).slice(1, 7).toUpperCase() : null); // only 6 hex digits reach the XML
 
 /**
  * The cells a chart's data takes on its sheet, from row 1: a header row, then one row per category (or point).
@@ -34,7 +41,7 @@ export function chartTable(spec) {
 }
 
 const strCache = (vals) => `<c:strCache><c:ptCount val="${vals.length}"/>${vals.map((v, i) => `<c:pt idx="${i}"><c:v>${esc(v)}</c:v></c:pt>`).join('')}</c:strCache>`;
-const numCache = (vals, fmt = 'General') => `<c:numCache><c:formatCode>${esc(fmt)}</c:formatCode><c:ptCount val="${vals.length}"/>${vals.map((v, i) => (v == null ? '' : `<c:pt idx="${i}"><c:v>${v}</c:v></c:pt>`)).join('')}</c:numCache>`;
+const numCache = (vals, fmt = 'General') => `<c:numCache><c:formatCode>${esc(fmt)}</c:formatCode><c:ptCount val="${vals.length}"/>${vals.map((v, i) => (typeof v !== 'number' || !Number.isFinite(v) ? '' : `<c:pt idx="${i}"><c:v>${v}</c:v></c:pt>`)).join('')}</c:numCache>`;
 const fill = (c, line) => { const h = hex(c); if (!h) return ''; return line ? `<c:spPr><a:ln w="22225"><a:solidFill><a:srgbClr val="${h}"/></a:solidFill></a:ln></c:spPr>` : `<c:spPr><a:solidFill><a:srgbClr val="${h}"/></a:solidFill></c:spPr>`; };
 const title = (t) => (t ? `<c:title><c:tx><c:rich><a:bodyPr/><a:p><a:r><a:t>${esc(t)}</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title>` : '');
 
