@@ -121,7 +121,7 @@ describe('what the routes record', () => {
     const h = { cookie };
     const { id } = await (await list.POST(rq('/api/reports', { method: 'POST', body: { name: 'Audited' }, headers: h }))).json();
     expect(await last('report.create')).toMatchObject({ actor: 'user:boss@x.io', report: id });
-    await one.PUT(rq(`/api/reports/${id}`, { method: 'PUT', body: { $schema: 'pagewright/report@1', name: 'Audited 2', sections: { body: { items: [] } } }, headers: h }), P(id));
+    await one.PUT(rq(`/api/reports/${id}`, { method: 'PUT', body: { $schema: 'pagewright/report@1', name: 'Audited 2', sections: { body: { items: [] } } }, headers: { ...h, 'if-match': '*' } }), P(id));
     expect(await last('report.update')).toMatchObject({ report: id });
     await access.PUT(rq(`/api/reports/${id}/access`, { method: 'PUT', body: { grants: [{ to: 'user:ann@x.io', level: 'edit' }] }, headers: h }), P(id));
     const share = await last('access.report');

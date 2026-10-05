@@ -109,6 +109,8 @@ export const useDesigner = create((set, get) => ({
   def: null,
   saved: true,
   saving: false,
+  rev: null, // the server revision this designer edits from (If-Match on save)
+  conflict: null, // { rev, error }: a save met someone else's newer save (ConflictBar)
   saveError: null,
   past: [],
   future: [],
@@ -178,8 +180,14 @@ export const useDesigner = create((set, get) => ({
   select(sel) { set({ sel, lastKey: null }); },
   setUi(patch) { set(patch); },
 
-  async save() {
-    const { id, def, embed, readOnly } = get();
+  /**
+   * Save to the server, as the revision this designer opened (If-Match: rev). Someone else's save since then is a
+   * 409: nothing is overwritten, and `conflict` { rev } asks the user to choose (Designer.jsx ConflictBar): overwrite
+   * on purpose (save({ overwrite: true }): If-Match is their revision) or take theirs (reload).
+   * @param {{ overwrite?: boolean }} [o]
+   */
+  async save({ overwrite = false } = {}) {
+    const { id, def, embed, readOnly, rev, conflict } = get();
     if (readOnly) return;
     set({ saving: true, saveError: null });
     try {
@@ -187,13 +195,27 @@ export const useDesigner = create((set, get) => ({
       if (embed?.onSave) await embed.onSave(JSON.parse(JSON.stringify(def)));
       else {
         if (!id) throw new Error('This report has no id to save to');
-        const res = await fetch(`${embed?.server || ''}/api/reports/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(def) });
-        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+        // no revision known (a new report, an embed without one): a new id needs none, an existing one is a 428
+        const match = overwrite && conflict?.rev ? conflict.rev : rev;
+        const res = await fetch(`${embed?.server || ''}/api/reports/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'content-type': 'application/json', ...(match ? { 'if-match': `"${match}"` } : {}) }, body: JSON.stringify(def) });
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 409 || res.status === 428) { set({ conflict: { rev: body.rev || null, error: body.error || '' } }); return; }
+        if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+        set({ rev: body.rev || null, conflict: null });
       }
       if (get().def === def) set({ saved: true });
     } catch (e) {
       set({ saveError: e.message });
     } finally { set({ saving: false }); }
+  },
+  /** Take the other save: load the report as it is on the server now (my unsaved changes are dropped). */
+  async takeTheirs() {
+    const { id, embed } = get();
+    const res = await fetch(`${embed?.server || ''}/api/reports/${encodeURIComponent(id)}`, { cache: 'no-store' });
+    if (!res.ok) { set({ saveError: `HTTP ${res.status}` }); return; }
+    const def = await res.json();
+    get().init(id, def);
+    set({ rev: (res.headers.get('etag') || '').replace(/^W\/|"/g, '') || null, conflict: null });
   },
 }));
 

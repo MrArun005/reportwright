@@ -19,7 +19,7 @@ import AskAi from './AskAi.jsx';
 import { PartsPanel, LayersPanel } from './Reuse.jsx';
 import PivotWizard, { InstantVisuals } from './PivotWizard.jsx';
 import { t, dirOf, pickLang } from '@/i18n/index.js';
-import { readDraft, writeDraft, clearDraft, clearDrafts, mergeDraft } from './draft.js';
+import { readDraft, writeDraft, clearDraft, clearDrafts, mergeDraft, staleDraft } from './draft.js';
 
 const TOOLS = [
   { type: 'textbox', icon: <svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 3h10M7 3v9" stroke="currentColor" strokeWidth="1.6" fill="none" /></svg> },
@@ -96,7 +96,7 @@ function useAutosave(id, T, lang, user) {
     clearDrafts(store, user); // another user's drafts in this browser go (and expired ones)
     const d = readDraft(store, user, id);
     if (d && plain(mergeDraft(d.def, useDesigner.getState().def)) !== plain(useDesigner.getState().def)) setOffer(d); else if (d) clearDraft(store, user, id);
-    const keep = () => { const s = useDesigner.getState(); if (!s.saved && !s.readOnly) writeDraft(store, user, id, s.def); };
+    const keep = () => { const s = useDesigner.getState(); if (!s.saved && !s.readOnly) writeDraft(store, user, id, s.def, Date.now(), s.rev || null); };
     const t = setInterval(keep, AUTOSAVE_MS);
     const hide = () => { if (document.visibilityState === 'hidden') keep(); };
     window.addEventListener('pagehide', keep);
@@ -106,11 +106,26 @@ function useAutosave(id, T, lang, user) {
   }, [id, user]);
   if (!offer) return null;
   const when = new Date(offer.at).toLocaleString(lang === 'en' ? 'en-IN' : lang, { dateStyle: 'medium', timeStyle: 'short' });
+  // made on an older revision: the report was saved again after these changes; restoring and saving would replace it
+  const stale = staleDraft(offer, useDesigner.getState().rev);
   return (
-    <div className="draft-bar" role="alert" data-testid="draft-offer">
-      <span>{T('ux_draftFound', { when })}</span>
-      <button className="btn sm primary" data-testid="draft-restore" onClick={() => { const d = mergeDraft(offer.def, useDesigner.getState().def); useDesigner.getState().apply(() => JSON.parse(JSON.stringify(d))); useDesigner.getState().fixSelection(); setOffer(null); }}>{T('ux_draftRestore')}</button>
+    <div className="draft-bar" role="alert" data-testid="draft-offer" data-stale={stale || undefined}>
+      <span>{T(stale ? 'ux_draftStale' : 'ux_draftFound', { when })}</span>
+      <button className={`btn sm${stale ? '' : ' primary'}`} data-testid="draft-restore" onClick={() => { const d = mergeDraft(offer.def, useDesigner.getState().def); useDesigner.getState().apply(() => JSON.parse(JSON.stringify(d))); useDesigner.getState().fixSelection(); setOffer(null); }}>{T(stale ? 'ux_draftRestoreAnyway' : 'ux_draftRestore')}</button>
       <button className="btn sm" data-testid="draft-discard" onClick={() => { try { clearDraft(window.localStorage, user, id); } catch { /* no storage */ } setOffer(null); }}>{T('ux_draftDiscard')}</button>
+    </div>
+  );
+}
+
+/** A save that met someone else's newer save (409): nothing was overwritten; the user chooses. */
+function ConflictBar({ T }) {
+  const conflict = useDesigner(s => s.conflict);
+  if (!conflict) return null;
+  return (
+    <div className="draft-bar" role="alert" data-testid="save-conflict">
+      <span>{T('ux_conflict')}</span>
+      <button className="btn sm" data-testid="conflict-mine" onClick={() => useDesigner.getState().save({ overwrite: true })}>{T('ux_conflictMine')}</button>
+      <button className="btn sm" data-testid="conflict-theirs" onClick={() => useDesigner.getState().takeTheirs()}>{T('ux_conflictTheirs')}</button>
     </div>
   );
 }
@@ -204,17 +219,17 @@ function HistoryDialog({ id, onClose, T, lang }) {
 }
 
 /**
- * @param {{ id?: string, initial: object, lang?: string, embed?: { onSave?: (def: object) => any, onOpen?: () => any, readOnly?: boolean,
+ * @param {{ id?: string, initial: object, rev?: string|null, lang?: string, embed?: { onSave?: (def: object) => any, onOpen?: () => any, readOnly?: boolean,
  *   toolbox?: { hide?: string[] }, panels?: { data?: boolean, inspector?: boolean }, dataSourceTemplates?: object[], server?: string } }} props
  *   embed: set by mountDesigner (another site); none on Pagewright's own pages
  */
-export default function Designer({ id, initial, lang: langIn, embed = null, user = null }) {
+export default function Designer({ id, initial, rev = null, lang: langIn, embed = null, user = null }) {
   const lang = pickLang(langIn);
   const T = (k, v) => t(lang, k, v);
   const q = lang === 'en' ? '' : `?lang=${encodeURIComponent(lang)}`;
   const ready = useRef(false);
   // The store is module-global: never fill it on the server, where requests share it.
-  if (!ready.current && typeof window !== 'undefined') { useDesigner.getState().init(id, initial); useDesigner.getState().setUi({ lang, embed, readOnly: !!embed?.readOnly }); ready.current = true; }
+  if (!ready.current && typeof window !== 'undefined') { useDesigner.getState().init(id, initial); useDesigner.getState().setUi({ lang, embed, readOnly: !!embed?.readOnly, rev, conflict: null }); ready.current = true; }
   const readOnly = !!embed?.readOnly;
   const rootRef = useRef(null);
   const def = useDesigner(s => s.def);
@@ -334,6 +349,7 @@ export default function Designer({ id, initial, lang: langIn, embed = null, user
         {!readOnly && <button className="btn sm primary" onClick={() => st().save()} disabled={saving || saved} data-testid="save">{T('save')} <span className="kbd" style={{ background: 'transparent', color: 'inherit', borderColor: 'currentColor', opacity: 0.7 }}>⌘S</span></button>}
       </div>
       {draftBar}
+      <ConflictBar T={T} />
       <div className="narrow-note" role="note">{T('ux_narrowDesigner')}</div>
       {dialog === 'keys' && (
         <Dialog title={T('shortcuts')} onClose={() => setDialog(null)} footer={<button className="btn" onClick={() => setDialog(null)}>{T('close')}</button>}>

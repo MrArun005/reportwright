@@ -17,7 +17,7 @@ beforeAll(async () => {
 afterAll(() => { process.chdir(cwd); for (const k of Object.keys(process.env)) if (!(k in keep)) delete process.env[k]; Object.assign(process.env, keep); fs.rmSync(dir, { recursive: true, force: true }); });
 
 const def = (name) => ({ $schema: 'pagewright/report@1', name, sections: { body: { items: [] } } });
-const save = (id, name) => PUT(new Request(`http://127.0.0.1/api/reports/${id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(def(name)) }), { params: Promise.resolve({ id }) });
+const save = (id, name) => PUT(new Request(`http://127.0.0.1/api/reports/${id}`, { method: 'PUT', headers: { 'content-type': 'application/json', 'if-match': '*' }, body: JSON.stringify(def(name)) }), { params: Promise.resolve({ id }) });
 
 it('50 concurrent saves of different reports and 20 of one report: all 200, on file storage', async () => {
   const t0 = Date.now();

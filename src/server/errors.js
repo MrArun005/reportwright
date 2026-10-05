@@ -26,7 +26,8 @@ export function publicError(e, status = e?.status || 500) {
  */
 export function errorResponse(e, { status, headers, extra } = {}) {
   const p = publicError(e, status ?? (e?.status || 500));
-  return Response.json({ error: p.message, ...(p.id && { requestId: p.id }), ...extra }, { status: p.status, headers: { ...(e?.retryAfter && { 'retry-after': String(e.retryAfter) }), ...headers, ...(p.id && { 'x-request-id': p.id }) } });
+  // e.body: fields a 4xx carries for its caller (a 409's current revision)
+  return Response.json({ error: p.message, ...(p.id && { requestId: p.id }), ...(p.status < 500 && e?.body && typeof e.body === 'object' ? e.body : {}), ...extra }, { status: p.status, headers: { ...(e?.retryAfter && { 'retry-after': String(e.retryAfter) }), ...headers, ...(p.id && { 'x-request-id': p.id }) } });
 }
 
 const warned = new Map();

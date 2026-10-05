@@ -108,7 +108,7 @@ try {
     { type: 'container', id: 'box', name: 'Box', x: 0, y: 100, w: 300, h: 80, items: [{ type: 'textbox', id: 'inner', name: 'Inner', x: 10, y: 12, w: 100, h: 16, value: 'inner' }] },
   ]));
   const oldH = 240; // the band's bottom stays in view for the drop below it
-  await fetch(`${BASE}/api/reports/${id}`, { method: 'PUT', headers: H, body: JSON.stringify((d => { d.sections.body.height = oldH; return d; })(await read(id))) });
+  await fetch(`${BASE}/api/reports/${id}`, { method: 'PUT', headers: { ...H, 'if-match': '*' }, body: JSON.stringify((d => { d.sections.body.height = oldH; return d; })(await read(id))) });
   await open(id);
   const outline = p.getByTestId('outline');
   await outline.getByRole('button', { name: 'Under', exact: true }).click();

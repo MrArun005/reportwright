@@ -165,7 +165,7 @@ Cron supports `*`, lists `1,15`, ranges `1-5` and steps `*/15`. Names such as `M
 | Route | What it does |
 |---|---|
 | `GET / POST /api/reports` | List, create |
-| `GET / PUT / DELETE /api/reports/<id>` | Read, save (keeps a version), remove |
+| `GET / PUT / DELETE /api/reports/<id>` | Read (the `ETag` is the report's revision), save (keeps a version), remove. Saving an existing report needs `If-Match: "<rev>"` (the ETag it was edited from) or `If-Match: *` to overwrite on purpose: a stale revision is **409** `{ error, rev }` with the current revision, none is **428**; nothing is overwritten. A 200 answers the new `rev` and is in the next read on every server. |
 | `GET /api/reports/<id>/versions` | Saved versions |
 | `POST /api/reports/<id>/versions` | `{ version }`: restore that version |
 | `GET /api/reports/<id>/pdf?format=…&param=value` | Render on the server |

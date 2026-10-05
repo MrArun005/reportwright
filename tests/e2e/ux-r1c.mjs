@@ -464,7 +464,7 @@ try {
     const html = await p.locator('.vpage').first().innerHTML();
     assert.ok(/rgba\(220,\s*38,\s*38/.test(html), `a point coloured by its rule (${ch.pointColor})`); // the SVG writes colours as rgba()
     step('CF: reopening shows the rules; a hand-written expression shows as custom');
-    await fetch(`${BASE}/api/reports/${id}`, { method: 'PUT', headers: H, body: JSON.stringify((d => { d.sections.body.items[0].detail[0].cells[1].style.backgroundColor = '=IIf(Fields.qty > 5, "#eee", Nothing)'; return d; })(def)) });
+    await fetch(`${BASE}/api/reports/${id}`, { method: 'PUT', headers: { ...H, 'if-match': '*' }, body: JSON.stringify((d => { d.sections.body.items[0].detail[0].cells[1].style.backgroundColor = '=IIf(Fields.qty > 5, "#eee", Nothing)'; return d; })(def)) });
     await open(id);
     await p.locator('[data-cell="detail-0-1"]').click();
     await insp().getByTestId('cell-cf').getByTestId('cf-open').click();

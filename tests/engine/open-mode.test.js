@@ -208,7 +208,7 @@ describe('SQL in a stored definition runs only as a designer stored it', () => {
     await expect(readRunnable(OPEN, id)).rejects.toMatchObject({ status: 403 });
     expect((await runSaved(id)).status).toBe(403);
     // a designer opens and saves it: it runs
-    expect((await saveReport(rq(`/api/reports/${id}`, { method: 'PUT', body: evil }), P(id))).status).toBe(200);
+    expect((await saveReport(rq(`/api/reports/${id}`, { method: 'PUT', body: evil, headers: { 'if-match': '*' } }), P(id))).status).toBe(200);
     expect((await runSaved(id)).status).toBe(200);
     // the first version (stamped when it was saved) comes back by restore and runs
     const first = (await listVersions(id)).at(-1); // the oldest: as it was created

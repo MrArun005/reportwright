@@ -1,4 +1,5 @@
 // Server-only helpers for reports, with version history. Where they live: src/server/storage (PW_STORAGE).
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { store } from './storage/index.js';
 import { upgrade } from '../engine/schema/upgrade.js';
@@ -90,6 +91,15 @@ export function parseReport(text) {
 }
 const safeVersion = (v) => { if (!/^\d{8}T\d{6}\d{3}Z?$/.test(v)) throw Object.assign(new Error('Bad version'), { status: 400 }); return v; };
 
+/**
+ * A saved report's revision: the first 16 hex of the SHA-256 of its stored text. GET answers it as the ETag; a save
+ * of an existing report must send it back as If-Match (PUT /api/reports/<id>), so two editors never overwrite each
+ * other silently. Derived from the text, so it needs no field of its own and changes with every save.
+ * @param {string|null} text
+ */
+export const revOf = (text) => (text == null ? null : crypto.createHash('sha256').update(String(text).trim()).digest('hex').slice(0, 16));
+
+/** @returns {Promise<string>} the new revision */
 export async function writeReport(id, def) {
   const next = JSON.stringify(def, null, 2);
   // keep the previous version
@@ -101,6 +111,7 @@ export async function writeReport(id, def) {
   await store().put('reports', id, next);
   await store().put('reportmeta', id, JSON.stringify(metaOf(id, def, new Date().toISOString())));
   await (await import('./snapshots.js')).bumpGeneration(); // a saved report (maybe another's subreport): snapshots so far are stale
+  return /** @type {string} */ (revOf(next));
 }
 
 export async function listVersions(id) {

@@ -4,6 +4,7 @@
 // credential-like URL query values are left out; restoring takes them from the saved report. Drafts are per user
 // (a hash of the signed-in email), expire after DRAFT_TTL, are cleared at sign-out and when another user opens the
 // designer, and are not written when the designer is embedded or framed by another page.
+// Each draft keeps the revision it was made on: restoring over a newer save warns first (Designer.jsx useAutosave).
 // ponytail: browser storage; a server-side draft in the report's version history is the upgrade (needs an API route).
 
 export const DRAFT_PREFIX = 'pw.draft.';
@@ -56,10 +57,16 @@ export function mergeDraft(draft, saved) {
   };
 }
 
-/** @param {Storage} store */
-export function writeDraft(store, user, id, def, now = Date.now()) {
-  try { store.setItem(draftKey(user, id), JSON.stringify({ at: now, def: sanitizeDraft(def) })); return true; } catch { return false; } // full or blocked storage: no draft
+/**
+ * rev: the report revision the changes were made on (the server's ETag), so a restore can tell when the report was
+ * saved again since (staleDraft).
+ * @param {Storage} store
+ */
+export function writeDraft(store, user, id, def, now = Date.now(), rev = null) {
+  try { store.setItem(draftKey(user, id), JSON.stringify({ at: now, rev, def: sanitizeDraft(def) })); return true; } catch { return false; } // full or blocked storage: no draft
 }
+/** True when the draft was made on an older revision than the report has now (someone saved after it). */
+export const staleDraft = (draft, rev) => !!(draft?.rev && rev && draft.rev !== rev);
 /** @param {Storage} store */
 export function readDraft(store, user, id, now = Date.now()) {
   try {
