@@ -295,8 +295,16 @@ function widen(other) {
  */
 const collators = new Map();
 export function collator(ctx) {
-  const key = `${ctx?.locale || 'en-US'}|${ctx?.caseSensitive === true}|${ctx?.naturalSort === true}`;
+  const key = `${ctx?.locale || 'en-US'}|${ctx?.caseSensitive === true}|${ctx?.naturalSort === true}|${ctx?.collation || ''}`;
   let c = collators.get(key);
+  if (!c && ctx?.collation === 'ordinal') { // BIRT: String.compareTo, by UTF-16 code unit ("B" before "a")
+    c = { compare: (x, y) => (x < y ? -1 : x > y ? 1 : 0) };
+    collators.set(key, c);
+  }
+  if (!c && ctx?.collation === 'java') { // JasperReports: java.text.Collator (spaces and punctuation ignored, case after letters)
+    try { c = new Intl.Collator(ctx?.locale || 'en-US', { ignorePunctuation: true, sensitivity: 'variant', caseFirst: 'lower' }); } catch { c = new Intl.Collator('en-US', { ignorePunctuation: true }); }
+    collators.set(key, c);
+  }
   if (!c) {
     // text compares as text ("10" before "9", as SSRS's CompareInfo does); naturalSort: true reads digit runs as numbers (N18)
     const numeric = ctx?.naturalSort === true;
@@ -311,8 +319,8 @@ export function sortCompare(a, b, ctx) {
   if (a instanceof Date) a = a.getTime();
   if (b instanceof Date) b = b.getTime();
   if (a === b) return 0;
-  if (a == null) return 1;
-  if (b == null) return -1;
+  if (a == null) return ctx?.nullOrder === 'low' ? -1 : 1;
+  if (b == null) return ctx?.nullOrder === 'low' ? 1 : -1;
   const sa = typeof a === 'string', sb = typeof b === 'string';
   if (sa && sb) return collator(ctx).compare(a, b);
   if (sa !== sb) return sa ? 1 : -1;

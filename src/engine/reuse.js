@@ -133,7 +133,7 @@ function mergeMaster(c, m, warn = (_m) => {}) {
     nullPropagation: c.nullPropagation ?? m.nullPropagation,
     timeZone: c.timeZone ?? m.timeZone,
     caseSensitive: c.caseSensitive ?? m.caseSensitive,
-    naturalSort: c.naturalSort ?? m.naturalSort, arithmetic: c.arithmetic ?? m.arithmetic, bandRows: c.bandRows ?? m.bandRows,
+    naturalSort: c.naturalSort ?? m.naturalSort, nullOrder: c.nullOrder ?? m.nullOrder, collation: c.collation ?? m.collation, arithmetic: c.arithmetic ?? m.arithmetic, bandRows: c.bandRows ?? m.bandRows,
     page: m.page || c.page,
     parameters: byName(m.parameters, c.parameters),
     dataSources: byName(m.dataSources, c.dataSources),

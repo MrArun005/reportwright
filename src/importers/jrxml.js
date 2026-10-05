@@ -58,6 +58,8 @@ export function importJrxml(input, opts = {}) {
   }
   const r = importRdlx(ar, { name });
   if (r.error) return r;
+  r.definition.collation = 'java'; // text sorts as the source engine compares it (ground truth: tests/diff)
+  r.definition.nullOrder = 'low'; // a null sorts first ascending, as Java comparators and BIRT do
   r.definition.arithmetic = 'double'; // Java computes with IEEE doubles: 1.005 * 100 is 100.49999999999999
   placeCharts(r.definition, charts);
   const warnings = [...notes, ...r.warnings].map(w => w.replace(/ActiveReports/g, 'JasperReports'));

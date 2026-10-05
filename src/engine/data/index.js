@@ -572,8 +572,10 @@ export function applySort(rows, sort, baseCtx) {
     for (let k = 0; k < sort.length; k++) {
       const a = keys[i][k], b = keys[j][k];
       if (a === b) continue;
-      if (a == null) return 1;
-      if (b == null) return -1;
+      // nulls last either way (default), or lowest (nullOrder "low": JasperReports and BIRT put them first ascending)
+      const low = baseCtx?.nullOrder === 'low', desc = sort[k].dir === 'desc';
+      if (a == null) return low ? (desc ? 1 : -1) : 1;
+      if (b == null) return low ? (desc ? -1 : 1) : -1;
       const r = sortCompare(a, b, baseCtx); // the report's locale, case-insensitive, natural (SSRS collation)
       if (r === 0) continue;
       return sort[k].dir === 'desc' ? -r : r;

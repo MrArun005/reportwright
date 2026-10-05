@@ -53,6 +53,8 @@ export function importBirt(input, opts = {}) {
   const r = importRdlx(ar, { name });
   if (r.error) return r;
   const warnings = [...notes, ...r.warnings].map(w => w.replace(/ActiveReports/g, 'BIRT'));
+  r.definition.collation = 'ordinal'; // text sorts as the source engine compares it (ground truth: tests/diff)
+  r.definition.nullOrder = 'low'; // a null sorts first ascending, as Java comparators and BIRT do
   r.definition.arithmetic = 'double'; // JavaScript and Java compute with IEEE doubles
   r.definition.bandRows = 'first-last'; // headers are evaluated on their first row, footers on their last
   return { definition: r.definition, warnings: [...new Set(warnings)], stats: r.stats };
