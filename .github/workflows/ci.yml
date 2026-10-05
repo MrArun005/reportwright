@@ -8,6 +8,7 @@ jobs:
       # the SQL storage, replica, permission and audit suites run against real databases (they skip without these)
       PW_TEST_PG: postgres://postgres:pw-test@127.0.0.1:5432/postgres
       PW_TEST_MYSQL: mysql://root:pw-test@127.0.0.1:3306/pwtest
+      PW_TEST_MSSQL: mssql://sa:Pw-test-1234@127.0.0.1:1433/master?encrypt=false
     services:
       postgres:
         image: postgres:16
@@ -21,6 +22,12 @@ jobs:
         ports: ['3306:3306']
         options: >-
           --health-cmd "mysqladmin ping -h 127.0.0.1 -ppw-test" --health-interval 5s --health-timeout 5s --health-retries 30
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env: { ACCEPT_EULA: 'Y', MSSQL_SA_PASSWORD: Pw-test-1234 }
+        ports: ['1433:1433']
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P Pw-test-1234 -Q 'SELECT 1' || exit 1" --health-interval 10s --health-timeout 5s --health-retries 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,6 +35,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
+      - run: sudo apt-get install -y poppler-utils # pdftotext: the PDF text, password and script tests read the PDFs they make
       - name: Type check (the server has no errors; the engine's may only go down)
         run: npm run typecheck
       - run: npx vitest run
@@ -50,12 +58,24 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
       - run: sudo apt-get install -y poppler-utils # pdftotext, pdftoppm: the suites read the PDFs they get
-      - name: Build and start the server as the suites expect (scripts/restart.sh: PW_AUTH=proxy behind scripts/e2e-proxy.mjs, test keys)
+      - name: 'Build and start the server as the suites expect (scripts/restart.sh, PW_AUTH=proxy behind scripts/e2e-proxy.mjs, test keys)'
         run: |
           ./scripts/restart.sh
           for i in $(seq 1 90); do curl -sf http://localhost:3000/api/v1/livez && break; sleep 1; done
       - name: Browser suites
         run: npm run test:e2e
+      # suites that start their own servers (accounts, SSO, two replicas): each needs a build, which the step above made
+      - name: Suites with their own servers (sso, replicas)
+        run: node tests/e2e/sso.mjs && node tests/e2e/replicas.mjs
+      - name: Accounts and permissions (a server with PW_AUTH=users, as tests/e2e/users.mjs says)
+        run: |
+          PW_AUTH=users PW_SESSION_SECRET=$(openssl rand -hex 32) PW_DATA_KEY=$(openssl rand -hex 32) PW_ADMIN_EMAIL=admin@e2e.test PW_ADMIN_PASSWORD='e2e admin password' \
+            PW_STORAGE=sqlite:/tmp/pw-e2e-users.db PW_API_KEYS="test-key,viewer@e2e.test|scoped-key" PW_INTERNAL_HOSTS=127.0.0.1 PW_BASE_URL=http://localhost:3602 \
+            nohup npx next start -p 3602 > /tmp/next-users.log 2>&1 &
+          for i in $(seq 1 90); do curl -sf http://localhost:3602/api/v1/livez && break; sleep 1; done
+          BASE=http://localhost:3602 node tests/e2e/users.mjs && BASE=http://localhost:3602 node tests/e2e/permissions.mjs
+      # not run here: drilldown, fonts, viewer-p6 and platform need the sample reports and the embed host page of a
+      # developer machine (see each file's header); they are in the manual gate (docs/COORDINATION.md)
       - name: Server log
         if: failure()
-        run: tail -200 /tmp/next.log /tmp/e2e-proxy.log
+        run: tail -200 /tmp/next.log /tmp/e2e-proxy.log /tmp/next-users.log 2>/dev/null || true
