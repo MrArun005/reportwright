@@ -133,10 +133,12 @@ function mergeMaster(c, m, warn = (_m) => {}) {
     nullPropagation: c.nullPropagation ?? m.nullPropagation,
     timeZone: c.timeZone ?? m.timeZone,
     caseSensitive: c.caseSensitive ?? m.caseSensitive,
+    naturalSort: c.naturalSort ?? m.naturalSort, arithmetic: c.arithmetic ?? m.arithmetic, bandRows: c.bandRows ?? m.bandRows,
     page: m.page || c.page,
     parameters: byName(m.parameters, c.parameters),
     dataSources: byName(m.dataSources, c.dataSources),
-    dataSets: byName(m.dataSets, c.dataSets),
+    // the content's data sets first: its unscoped aggregates and items use the first data set, not the master's (N3)
+    dataSets: [...(Array.isArray(c.dataSets) ? c.dataSets : []), ...byName(m.dataSets, []).filter(x => !(c.dataSets || []).some(y => y?.name === x?.name))],
     functions: byName(m.functions, c.functions),
     layers: byName(m.layers, c.layers),
     images: { ...(m.images || {}), ...(c.images || {}) },

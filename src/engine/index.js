@@ -103,6 +103,7 @@ export async function render(def0, opts = {}) {
     bandRows: def.bandRows, // "first-last": table headers read the first data row, footers the last (imported BIRT reports; items/index.js)
     // dates on the wall clock of the report's time zone, else the render's (the server passes the viewer's), else the host's
     timeZone: timeZone || undefined, caseSensitive: def.caseSensitive === true, // text order and grouping (expr/evaluate.js sortCompare)
+    naturalSort: def.naturalSort === true, // "9" before "10" in text (default: text order, as SSRS)
     functions: functionTable(def, fnCount), clock,
     aggCache: new WeakMap(), // aggregate results for this render (expr/evaluate.js)
     fmtMemo: new Map(), // formatted dates for this render (expr/format.js)

@@ -74,10 +74,11 @@ describe('reading dates and numbers', () => {
 });
 
 describe('sorting and grouping as SSRS', () => {
-  it('culture order, case-insensitive, numbers before text, digit runs as numbers', () => {
+  it('culture order, case-insensitive, numbers before text; digit runs as text (SSRS) unless naturalSort (R3-A N18)', () => {
     const rows = ['apple', 'Banana', 'cherry', 'Émile', 'zed', 10, 9, 'item 10', 'item 9'].map(v => ({ v }));
     const sorted = applySort(rows, [{ by: '=Fields.v' }], ctx({ locale: 'en-US' })).map(r => r.v);
-    expect(sorted).toEqual([9, 10, 'apple', 'Banana', 'cherry', 'Émile', 'item 9', 'item 10', 'zed']);
+    expect(sorted).toEqual([9, 10, 'apple', 'Banana', 'cherry', 'Émile', 'item 10', 'item 9', 'zed']);
+    expect(applySort(rows, [{ by: '=Fields.v' }], ctx({ locale: 'en-US', naturalSort: true })).map(r => r.v)).toEqual([9, 10, 'apple', 'Banana', 'cherry', 'Émile', 'item 9', 'item 10', 'zed']);
   });
   it('groups ABC with abc (unless caseSensitive)', async () => {
     const t = { type: 'table', name: 'T', x: 0, y: 0, w: 200, h: 20, dataSet: 'Rows', columns: [{ width: 200 }],

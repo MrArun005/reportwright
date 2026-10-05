@@ -174,12 +174,16 @@ export function parseNumber(text, locale) {
   if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1).trim(); }
   let pct = false;
   if (s.endsWith('%')) { pct = true; s = s.slice(0, -1).trim(); }
-  s = s.replace(/^[^\d.,+-]+|[^\d.,+-]+$/g, '').trim(); // currency symbols and codes ("$", "€", "Rs.", "USD")
+  s = s.replace(/^[\p{L}\p{Sc}]+\.?\s*|\s*[\p{L}\p{Sc}]+\.?$/gu, '').replace(/^[^\d.,+-]+|[^\d.,+-]+$/g, '').trim(); // currency symbols and codes ("$", "€", "Rs.", "USD")
   if (/^[+-]/.test(s)) { neg = neg !== (s[0] === '-'); s = s.slice(1).trim(); } else if (/[+-]$/.test(s)) { neg = neg !== s.endsWith('-'); s = s.slice(0, -1).trim(); }
+  s = s.replace(/^[^\d.,]+|[^\d.,]+$/g, '').trim(); // a symbol after the sign: "-$5", "- € 5" (N25)
   const { dec, grp } = separators(locale);
   const g = grp === '\u00a0' || grp === '\u202f' || grp === ' ' ? '[ \u00a0\u202f]' : grp === '.' ? '\\.' : grp === "'" || grp === '\u2019' ? "['\u2019]" : grp;
   const d = dec === '.' ? '\\.' : dec;
-  const re = new RegExp(`^(\\d{1,3}(?:${g}\\d{2,3})+|\\d+)(?:${d}(\\d+))?$`);
+  // groups of three; the Indian shape (12,34,567: twos before the last three) only in -IN locales, so en-US "1,23" is
+  // not 123 (N25)
+  const india = /-IN$/i.test(locale || '');
+  const re = new RegExp(`^(\\d{1,3}(?:${g}\\d{3})+${india ? `|\\d{1,2}(?:${g}\\d{2})+${g}\\d{3}` : ''}|\\d+)(?:${d}(\\d+))?$`);
   const m = re.exec(s);
   if (!m) return NaN;
   // grouping: threes (and the Indian twos before the last three)

@@ -295,10 +295,12 @@ function widen(other) {
  */
 const collators = new Map();
 export function collator(ctx) {
-  const key = `${ctx?.locale || 'en-US'}|${ctx?.caseSensitive === true}`;
+  const key = `${ctx?.locale || 'en-US'}|${ctx?.caseSensitive === true}|${ctx?.naturalSort === true}`;
   let c = collators.get(key);
   if (!c) {
-    try { c = new Intl.Collator(ctx?.locale || 'en-US', { numeric: true, sensitivity: ctx?.caseSensitive === true ? 'variant' : 'accent' }); } catch { c = new Intl.Collator('en-US', { numeric: true, sensitivity: 'accent' }); }
+    // text compares as text ("10" before "9", as SSRS's CompareInfo does); naturalSort: true reads digit runs as numbers (N18)
+    const numeric = ctx?.naturalSort === true;
+    try { c = new Intl.Collator(ctx?.locale || 'en-US', { numeric, sensitivity: ctx?.caseSensitive === true ? 'variant' : 'accent' }); } catch { c = new Intl.Collator('en-US', { numeric, sensitivity: 'accent' }); }
     if (collators.size >= 100) collators.clear();
     collators.set(key, c);
   }
@@ -605,7 +607,8 @@ export const FUNCTIONS = {
     capText('Join', parts.reduce((n, p) => n + p.length, 0) + j.length * Math.max(0, parts.length - 1));
     return parts.join(j);
   },
-  contains: (ctx, hay, needle) => (Array.isArray(hay) ? hay.some(v => cmpVal(v, needle) === 0) : S(hay).toLowerCase().includes(S(needle).toLowerCase())),
+  // .NET String.Contains and VB Like are ordinal: "Hello".Contains("ELL") is False (N12)
+  contains: (ctx, hay, needle) => (Array.isArray(hay) ? hay.some(v => cmpVal(v, needle) === 0) : S(hay).includes(S(needle))),
   inlist: (ctx, v, ...list) => list.flat().some(x => cmpVal(v, x) === 0),
   cstr: (ctx, v) => toText(v, null, ctx),
   // String.valueOf in Java (imported JasperReports expressions) and String() in JavaScript (BIRT): "null", true/false,
@@ -615,10 +618,10 @@ export const FUNCTIONS = {
   javaformat: (ctx, f, ...args) => javaFormatString(S(f), args, ctx.locale, ctx.timeZone), // capped inside, before it builds
   // VB conversions: CInt rounds half to even and raises #Error for text that is not a number; a blank stays blank
   // VB: Nothing converts to the type default (0) unless the report keeps SQL nulls; True is -1
-  cdbl: (ctx, v) => (v == null ? (ctx.nullPropagation === true ? null : 0) : v === '' ? null : v instanceof Date ? v.getTime() : typeof v === 'boolean' ? vbNum(v) : toNumber('CDbl', v)),
+  cdbl: (ctx, v) => (v == null ? (ctx.nullPropagation === true ? null : 0) : v === '' ? null : v instanceof Date ? v.getTime() : typeof v === 'boolean' ? vbNum(v) : toNumber('CDbl', v, ctx.locale)),
   cnum: (ctx, v) => num(v),
   val: (ctx, v) => vbVal(v),
-  cint: (ctx, v) => (v == null ? (ctx.nullPropagation === true ? null : 0) : v === '' ? null : toInt('CInt', typeof v === 'boolean' ? vbNum(v) : v, 32)),
+  cint: (ctx, v) => (v == null ? (ctx.nullPropagation === true ? null : 0) : v === '' ? null : toInt('CInt', typeof v === 'boolean' ? vbNum(v) : v, 32, ctx.locale)),
   cbool: (ctx, v) => vbBool(v),
   // VB CDate: text that is not a date (or a day that does not exist, 30 February) raises #Error
   cdate: (ctx, v) => { if (v == null) return null; const d = toDate(v, ctx); if (!d) throw new ExprError(`CDate: "${String(v).slice(0, 40)}" is not a date`); return d; },
@@ -712,11 +715,13 @@ function isDate(v, z) {
   return toDate(v, z) != null; // a day that rolls over (30 February) is not a date
 }
 /** Convert.ToXxx: null stays null, anything that does not convert is an error (the cell shows #Error). */
-function toNumber(fname, v) {
+function toNumber(fname, v, locale) {
   if (v == null) return null;
   if (typeof v === 'boolean') return v ? 1 : 0;
   if (typeof v === 'number') return v;
-  const n = typeof v === 'string' && v.trim() !== '' ? Number(v.replace(/,/g, '').trim()) : NaN;
+  // the report locale's way (de-DE "1.234,5" is 1234.5, en-US "-$5" is -5), as VB's CDbl reads the culture (N4)
+  const t = typeof v === 'string' ? v.trim() : '';
+  const n = t === '' ? NaN : Number.isFinite(Number(t)) ? Number(t) : parseNumber(t, locale);
   if (!Number.isFinite(n)) throw new ExprError(`${fname}: "${String(v).slice(0, 40)}" is not a number`);
   return n;
 }
@@ -742,8 +747,8 @@ function vbBool(v) {
   throw new ExprError(`CBool: "${String(v).slice(0, 40)}" is not True, False or a number`);
 }
 /** Round half to even, as .NET Convert.ToInt32 does, then check the range. */
-function toInt(fname, v, bits) {
-  const n = toNumber(fname, v);
+function toInt(fname, v, bits, locale) {
+  const n = toNumber(fname, v, locale);
   if (n == null) return null;
   const f = Math.floor(n), diff = n - f;
   const r = diff > 0.5 || (diff === 0.5 && f % 2 !== 0) ? f + 1 : f;
@@ -844,12 +849,12 @@ Object.assign(FUNCTIONS, {
   isarray: (ctx, v) => Array.isArray(v),
   // conversion
   tostring: (ctx, v, f) => toText(v, f, ctx),
-  toint16: (ctx, v) => toInt('ToInt16', v, 16),
-  toint32: (ctx, v) => toInt('ToInt32', v, 32),
-  toint64: (ctx, v) => toInt('ToInt64', v, 64),
-  todouble: (ctx, v) => toNumber('ToDouble', v),
-  tosingle: (ctx, v) => toNumber('ToSingle', v),
-  todecimal: (ctx, v) => toNumber('ToDecimal', v),
+  toint16: (ctx, v) => toInt('ToInt16', v, 16, ctx.locale),
+  toint32: (ctx, v) => toInt('ToInt32', v, 32, ctx.locale),
+  toint64: (ctx, v) => toInt('ToInt64', v, 64, ctx.locale),
+  todouble: (ctx, v) => toNumber('ToDouble', v, ctx.locale),
+  tosingle: (ctx, v) => toNumber('ToSingle', v, ctx.locale),
+  todecimal: (ctx, v) => toNumber('ToDecimal', v, ctx.locale),
   toboolean: (ctx, v) => {
     if (v == null) return null;
     if (typeof v === 'boolean') return v;

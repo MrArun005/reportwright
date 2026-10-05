@@ -253,7 +253,7 @@ const ROOT = (n) => (n.k === 'id' ? n.name.toLowerCase() : null);
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
 
 const GLOBALS = { pagenumber: 'PageNumber', totalpages: 'TotalPages', executiontime: 'ExecutionTime', reportname: 'ReportName',
-  pagenumberinsection: 'PageNumber', totalpagesinsection: 'TotalPages', overallpagenumber: 'PageNumber', overalltotalpages: 'TotalPages' };
+  pagenumberinsection: 'PageNumber', totalpagesinsection: 'TotalPages', overallpagenumber: 'OverallPageNumber', overalltotalpages: 'OverallTotalPages' }; // overall: across section restarts (N19)
 const INTERVAL = { year: 'yyyy', quarter: 'q', month: 'm', weekofyear: 'ww', day: 'd', dayofyear: 'd', hour: 'h', minute: 'n', second: 's', weekday: 'w' };
 const DATEFORMAT = { generaldate: 0, longdate: 1, shortdate: 2, longtime: 3, shorttime: 4 };
 const AGG = { sum: 'Sum', avg: 'Avg', average: 'Avg', count: 'Count', countdistinct: 'CountDistinct', min: 'Min', max: 'Max', first: 'First', last: 'Last',
@@ -523,7 +523,8 @@ function emFunc(name, args, o, res) {
     }
     case 'formatdatetime': {
       const k = args[1] == null ? 0 : Number(em(args[1], o).s);
-      const f = ['g', 'D', 'd', 'HH:mm:ss', 'HH:mm'][k] ?? no('FormatDateTime with that format');
+      // VB: GeneralDate is G (3/5/2026 2:30:00 PM), LongTime T (2:30:00 PM), ShortTime HH:mm (N20)
+      const f = ['G', 'D', 'd', 'T', 'HH:mm'][k] ?? no('FormatDateTime with that format');
       return fn('Format', [em(args[0], o), atom(q(f))]);
     }
     case 'datepart': // DatePart(interval, date[, firstDayOfWeek]); FirstWeekOfYear other than Jan1 is not supported
