@@ -28,7 +28,8 @@ export async function listReports() {
       const def = JSON.parse(text);
       let items = 0;
       const count = (list) => (list || []).forEach(i => { items++; count(i.items); });
-      for (const s of Object.values(def.sections || {})) for (const b of Array.isArray(s) ? s : [s]) count(b?.items); // body may be a list of sections
+      // body may be a list of sections, each with its own page header and footer
+      for (const s of Object.values(def.sections || {})) for (const b of Array.isArray(s) ? s : [s]) { count(b?.items); count(b?.pageHeader?.items); count(b?.pageFooter?.items); }
       out.push({ id, name: def.name || id, updatedAt, items, parameters: (def.parameters || []).map(p => ({ name: p.name, type: p.type || 'string', required: !!p.required })) });
     } catch { /* skip unreadable reports */ }
   }
