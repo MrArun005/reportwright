@@ -53,7 +53,7 @@ const pdf = await res.arrayBuffer();
 
 Response headers: `x-pagewright-pages`, `x-pagewright-ms`, `x-pagewright-warnings`.
 
-Export options in the body (see [EXPORTS.md](EXPORTS.md)): `ua: true` an accessible PDF (PDF/UA-1; with `pdfa: true` it is PDF/A-2a), `formulas: false` Excel totals as values instead of live `SUBTOTAL` formulas, `static: true` an HTML file without its Tables view. The server link `GET /api/reports/:id/pdf` takes `?ua=1` (and `?pdfa=1`, `?format=`).
+Export options in the body (see [EXPORTS.md](EXPORTS.md)): `ua: true` an accessible PDF (PDF/UA-1; with `pdfa: true` it is PDF/A-2a), `formulas: false` Excel totals as values instead of live `SUBTOTAL` formulas, `static: true` an HTML file without its Tables view. The server link `GET /api/reports/:id/pdf` takes `?ua=1` (and `?pdfa=1`, `?format=`, `?formulas=0` for Excel totals as values; formulas are on by default).
 
 Errors are JSON `{ error, missingParameters? }`: 400 for a bad request or missing parameters, 401 for a bad key, 404 for an unknown template.
 

@@ -52,3 +52,23 @@ describe('R5 #2: a fetched data source over the size cap', () => {
     expect(fetchMaxBytes()).toBeGreaterThanOrEqual(64 * 1048576);
   });
 });
+
+describe('R5 #5: the Excel formulas option reaches the exporter', () => {
+  const def = { $schema: 'pagewright/report@1', name: 'F', dataSources: [{ name: 's', type: 'json', data: [{ a: 1 }, { a: 2 }, { a: 4 }] }], dataSets: [{ name: 'd', source: 's', fields: [{ name: 'a', type: 'number' }] }],
+    sections: { body: { items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 200, h: 54, dataSet: 'd', columns: [{ width: 200 }], header: [{ height: 18, cells: [{ value: 'A' }] }], detail: [{ height: 18, cells: [{ value: '=Fields.a' }] }], footer: [{ height: 18, cells: [{ value: '=Sum(Fields.a)' }] }] }] } } };
+  const sheet = async (formulas) => {
+    const { renderTo } = await import('../../src/server/renderer.js');
+    const JSZip = (await import('jszip')).default;
+    const { bytes } = await renderTo(def, { format: 'xlsx', ...(formulas !== undefined && { formulas }) });
+    return (await JSZip.loadAsync(bytes)).file('xl/worksheets/sheet1.xml').async('string');
+  };
+  it('on by default and with 1/true; off with 0, "0", "false", false (a query string or a JSON body)', async () => {
+    for (const v of [undefined, 1, '1', true, 'true']) expect(await sheet(v), String(v)).toContain('<f>SUBTOTAL(9,');
+    for (const v of [0, '0', 'false', false, 'off']) expect(await sheet(v), String(v)).not.toContain('<f>');
+  });
+  it('the server link reads ?formulas= and does not pass it on as a report parameter', () => {
+    const src = fs.readFileSync('app/api/reports/[id]/pdf/route.js', 'utf8');
+    expect(src).toMatch(/searchParams\.get\('formulas'\)/);
+    expect(src).toMatch(/k !== 'formulas'/);
+  });
+});

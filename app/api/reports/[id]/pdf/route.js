@@ -19,12 +19,12 @@ export async function GET(req, { params }) {
     admit(principal); // 429/503 before anything is read
     const url = new URL(req.url);
     // ?pdfa=1 gives PDF/A-2b, ?ua=1 an accessible PDF (PDF/UA-1; with pdfa, PDF/A-2a). Signing is not offered here: this route has no API key (use /api/v1/render).
-    const parameters = Object.fromEntries([...url.searchParams.entries()].filter(([k]) => k !== 'format' && k !== 'pdfa' && k !== 'ua' && k !== 'timeZone'));
+    const parameters = Object.fromEntries([...url.searchParams.entries()].filter(([k]) => k !== 'format' && k !== 'formulas' && k !== 'pdfa' && k !== 'ua' && k !== 'timeZone'));
     const format = url.searchParams.get('format') || 'pdf';
     // read once (view access, saved server-side data as a designer stored it), then rendered in a render worker
     const def = await readRunnable(principal, safeId(id));
     checkParameterValues(def, parameters, principal); // fixed lists and hidden parameters hold on the server too
-    const opt = { parameters, format, baseUrl: baseUrl(req), pdfa: url.searchParams.get('pdfa') === '1', ua: url.searchParams.get('ua') === '1', timeZone: checkTimeZone(url.searchParams.get('timeZone')), principal }; // ?timeZone=: the viewer's zone
+    const opt = { parameters, format, baseUrl: baseUrl(req), pdfa: url.searchParams.get('pdfa') === '1', ua: url.searchParams.get('ua') === '1', formulas: url.searchParams.get('formulas') ?? undefined, timeZone: checkTimeZone(url.searchParams.get('timeZone')), principal }; // ?timeZone=: the viewer's zone
     const r = await throughSnapshot({ def, opt, principal }, () => renderInPool({ ref: safeId(id), def, opt }, { signal: req.signal }));
     await audit('report.render', { req, principal, report: id, format, params: parameters, detail: { pages: r.pages, via: 'server link', ...(r.snapshot !== 'off' ? { snapshot: r.snapshot } : {}) } });
     return new Response(r.bytes, {

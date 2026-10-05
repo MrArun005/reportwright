@@ -17,7 +17,7 @@ import { serverFetch, NO_BASE_URL } from './safeFetch.js';
 import { pdfSigner } from './sign.js';
 import { runSql } from './sql.js';
 import { listFonts, readFont } from './fonts.js';
-import { devMode, num as cnum } from './config.js';
+import { devMode, num as cnum, formulasOn } from './config.js';
 
 const ROOT = process.cwd();
 let store;
@@ -173,7 +173,7 @@ export async function renderTo(def, opt = {}) {
   else if (format === 'csv') bytes = Buffer.from(exportCsv(model, /** @type {any} */ ({ locale: def.locale, currency: def.currency })));
   else if (format === 'docx') bytes = Buffer.from(await exportDocx(model, { title: def.name, lang: def.locale, fontStore: fontStore(), fetchImage }));
   else if (format === 'pptx') bytes = Buffer.from(await exportPptx(model, { title: def.name, lang: def.locale, fontStore: fontStore(), fetchImage }));
-  else if (format === 'xlsx') { const ExcelJS = (await import('exceljs')).default; bytes = await exportXlsx(model, ExcelJS, { currency: def.currency, title: def.name, formulas: opt.formulas !== false, fontStore: fontStore(), fetchImage }); }
+  else if (format === 'xlsx') { const ExcelJS = (await import('exceljs')).default; bytes = await exportXlsx(model, ExcelJS, { currency: def.currency, title: def.name, formulas: formulasOn(opt.formulas), fontStore: fontStore(), fetchImage }); }
   else bytes = Buffer.from(JSON.stringify(model));
   return { bytes, model, contentType: FORMATS[format].type, ext: FORMATS[format].ext };
 }

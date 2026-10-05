@@ -16,6 +16,7 @@ import { getSettings, getRecord, putRecord } from './settings.js';
 import { accessStamp, principalId } from './perms.js';
 import { canonical } from './audit.js';
 import { logWarn } from './errors.js';
+import { formulasOn } from './config.js';
 
 const PREFIX = 'snap/';
 const g = /** @type {any} */ (globalThis);
@@ -35,7 +36,7 @@ export async function snapshotKey({ def, opt, principal }) {
   const parts = {
     def: crypto.createHash('sha256').update(JSON.stringify(def)).digest('hex'),
     params: opt.parameters || {}, format: opt.format || 'pdf',
-    opts: { tz: opt.timeZone || null, pdfa: !!opt.pdfa, ua: !!opt.ua, formulas: opt.formulas !== false, static: !!opt.static, state: opt.state || null, base: opt.baseUrl || null, self: opt.self || null },
+    opts: { tz: opt.timeZone || null, pdfa: !!opt.pdfa, ua: !!opt.ua, formulas: formulasOn(opt.formulas), static: !!opt.static, state: opt.state || null, base: opt.baseUrl || null, self: opt.self || null },
     who: principalId(principal), access: await accessStamp(principal), gen: await generation(),
   };
   return crypto.createHash('sha256').update(canonical(parts)).digest('hex');

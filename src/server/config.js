@@ -177,3 +177,6 @@ export function reportConfig() {
   if ((errors.length && !devMode()) || fatal.length) throw new Error(`Pagewright will not start: ${(devMode() ? fatal : errors).join(' ')}`);
   return { errors, warnings };
 }
+
+/** The Excel formulas option from a query string or a JSON body: on unless 0, false or off. @param {any} v */
+export const formulasOn = (v) => !(v === false || v === 0 || /^(0|false|off|no)$/i.test(String(v ?? '').trim()));
