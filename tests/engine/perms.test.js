@@ -121,7 +121,8 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
   let R, cookie, users, perms, sqlRoute, v1, folders, folderOne, access, thumb, pdf, versions;
   const BASE = 'http://pw.test';
   const req = (p, { method = 'GET', who, body, key, headers = {} } = {}) => new Request(BASE + p, {
-    method, headers: { ...(who && { cookie: cookie[who] }), ...(key && { authorization: `Bearer ${key}` }), ...(body !== undefined && { 'content-type': 'application/json' }), origin: BASE, ...headers },
+    // a save of a report here overwrites on purpose (If-Match: *); the revision check has its own tests (r3b-conflict)
+    method, headers: { ...(who && { cookie: cookie[who] }), ...(key && { authorization: `Bearer ${key}` }), ...(body !== undefined && { 'content-type': 'application/json' }), ...(method === 'PUT' && /^\/api\/reports\/[^/]+$/.test(p) && { 'if-match': '*' }), origin: BASE, ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const json = async (res) => ({ status: res.status, body: await res.json().catch(() => null) });
