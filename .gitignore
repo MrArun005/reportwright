@@ -8,6 +8,7 @@ public/embed/
 reports/.history/e2e-*
 packages/*/dist
 packages/engine/public
+packages/fonts/public
 packages/*/LICENSE
 *.tgz
 packages/*/package.json

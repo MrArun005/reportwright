@@ -4,6 +4,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 
 const root = path.join(import.meta.dirname, '..', '..');
 const node = (...args) => execFileSync(process.execPath, args, { cwd: root, encoding: 'utf8', stdio: 'pipe' });
@@ -32,22 +33,44 @@ describe('npm packages', () => {
     expect(json('packages/engine/package.json').files).toEqual(expect.arrayContaining(['index.d.ts', 'report.d.ts']));
   });
 
-  it('the engine subsets fonts by default (finds its own harfbuzz-subset.wasm); subset: false embeds them whole', async () => {
+  it('the engine subsets fonts (harfbuzz-subset.wasm from @pagewrightjs/fonts); subset: false embeds them whole', async () => {
     const m = await import(path.join(root, 'packages/engine/dist/index.js'));
-    const fonts = new m.FontStore((key) => fs.readFileSync(path.join(root, 'packages/engine/public/fonts', m.fontFile(key))));
+    const fonts = new m.FontStore((key) => fs.readFileSync(path.join(root, 'packages/fonts/public/fonts', m.fontFile(key))));
     const model = await m.render(m.blankReport(), { fontStore: fonts });
-    const small = await m.exportPdf(model, fonts, {});
+    const small = await m.exportPdf(model, fonts, { subset: m.createSubsetter(() => fs.promises.readFile(path.join(root, 'packages/fonts/public/harfbuzz-subset.wasm'))) });
     const full = await m.exportPdf(model, fonts, { subset: false });
     expect(small.length * 4).toBeLessThan(full.length);
   }, 60000);
 
   it('the engine exports PowerPoint (exportPptx) with its types', async () => {
     const m = await import(path.join(root, 'packages/engine/dist/index.js'));
-    const fonts = new m.FontStore((key) => fs.readFileSync(path.join(root, 'packages/engine/public/fonts', m.fontFile(key))));
+    const fonts = new m.FontStore((key) => fs.readFileSync(path.join(root, 'packages/fonts/public/fonts', m.fontFile(key))));
     const pptx = await m.exportPptx(await m.render(m.blankReport(), { fontStore: fonts }));
     expect(String.fromCharCode(pptx[0], pptx[1])).toBe('PK');
     expect(fs.readFileSync(path.join(root, 'packages/engine/dist/types/packages/engine/entry.d.ts'), 'utf8')).toMatch(/exportPptx/);
   }, 60000);
+
+  it('the engine packs under 2 MB unpacked (fonts and the CLI are their own packages); a clean install runs the README quick start', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-pack-'));
+    const pack = (p) => JSON.parse(execFileSync('npm', ['pack', path.join(root, p), '--json', '--pack-destination', tmp], { encoding: 'utf8' }))[0];
+    const eng = pack('packages/engine'), fonts = pack('packages/fonts'), cli = pack('packages/cli');
+    expect(eng.unpackedSize).toBeLessThan(2 * 1024 * 1024);
+    expect(eng.files.some(f => /\.(ttf|wasm)$/.test(f.path))).toBe(false);
+    expect(fonts.files.some(f => f.path === 'public/harfbuzz-subset.wasm')).toBe(true);
+    fs.writeFileSync(path.join(tmp, 'package.json'), '{"type":"module","private":true}');
+    execFileSync('npm', ['i', '--prefer-offline', '--no-audit', '--no-fund', ...[eng, fonts, cli].map(p => './' + p.filename)], { cwd: tmp, stdio: 'pipe' });
+    fs.copyFileSync(path.join(root, 'reports/charts-showcase.pw.json'), path.join(tmp, 'statement.pw.json'));
+    const readme = fs.readFileSync(path.join(root, 'packages/engine/README.md'), 'utf8');
+    const js = readme.match(/```js\n([\s\S]*?)```/)[1].replace("{ accountId: 'LN-1' }", '{}');
+    fs.writeFileSync(path.join(tmp, 'quick.mjs'), js);
+    execFileSync(process.execPath, ['quick.mjs'], { cwd: tmp, stdio: 'pipe' });
+    const pdf = fs.readFileSync(path.join(tmp, 'statement.pdf'));
+    expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
+    expect(pdf.length).toBeLessThan(400000); // subset: harfbuzz-subset.wasm came from @pagewrightjs/fonts
+    execFileSync(path.join(tmp, 'node_modules/.bin/pw'), ['render', 'statement.pw.json', '-f', 'pdf', '-o', 'cli.pdf'], { cwd: tmp, stdio: 'pipe' });
+    expect(fs.readFileSync(path.join(tmp, 'cli.pdf')).subarray(0, 5).toString()).toBe('%PDF-');
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }, 240000);
 
   it('a TypeScript consumer type-checks, and every wrong case fails', () => {
     let out = '';

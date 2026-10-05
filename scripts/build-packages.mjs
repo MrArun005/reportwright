@@ -1,4 +1,4 @@
-// Builds the npm packages in packages/*: @pagewrightjs/engine (engine, exporters, pw CLI, fonts),
+// Builds the npm packages in packages/*: @pagewrightjs/engine (engine, exporters), /fonts, /cli (pw),
 // @pagewrightjs/viewer (the embeddable viewer and designer as ES modules) and the framework wrappers
 // @pagewrightjs/react, /vue, /svelte and /angular. Pack them with `npm pack packages/<name>`.
 // Types: the engine's and the viewer's are generated from their JSDoc (tsc, no type check); the report
@@ -20,27 +20,53 @@ const write = (f, s) => fs.writeFileSync(path.join(root, f), typeof s === 'strin
 const E = 'packages/engine';
 const external = ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate', 'harfbuzzjs', 'exceljs'];
 fs.rmSync(path.join(root, E, 'dist'), { recursive: true, force: true });
-fs.rmSync(path.join(root, E, 'public'), { recursive: true, force: true });
+fs.rmSync(path.join(root, E, 'public'), { recursive: true, force: true }); // fonts moved to @pagewrightjs/fonts
 await build({ entryPoints: [path.join(root, E, 'entry.js')], bundle: true, format: 'esm', platform: 'neutral', target: 'es2022', outfile: path.join(root, E, 'dist/index.js'), external, logLevel: 'warning', mainFields: ['module', 'main'] });
-await build({ entryPoints: [path.join(root, 'bin/pw.mjs')], bundle: true, format: 'esm', platform: 'node', target: 'node22', outfile: path.join(root, E, 'dist/pw.mjs'), external, logLevel: 'warning' }); // esbuild keeps bin/pw.mjs's #! line
-fs.chmodSync(path.join(root, E, 'dist/pw.mjs'), 0o755);
-// the CLI finds fonts and the colour profile at ../public, as in the repo
-copy('public/fonts', `${E}/public/fonts`);
-copy('public/icc', `${E}/public/icc`);
-fs.copyFileSync(path.join(root, 'public/harfbuzz-subset.wasm'), path.join(root, E, 'public/harfbuzz-subset.wasm'));
-fs.rmSync(path.join(root, E, 'public/fonts/ui'), { recursive: true, force: true }); // UI fonts are for the app only
 write(`${E}/package.json`, {
   name: '@pagewrightjs/engine', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT',
-  description: 'Pagewright report engine: JSON report definitions to pages, PDF (incl. PDF/A), Word, Excel, PowerPoint, HTML and CSV. Node and browsers. Includes the pw CLI.',
+  description: 'Pagewright report engine: JSON report definitions to pages, PDF (incl. PDF/A), Word, Excel, PowerPoint, HTML and CSV. Node and browsers. Fonts: @pagewrightjs/fonts; CLI: @pagewrightjs/cli.',
   exports: { '.': { types: './index.d.ts', default: './dist/index.js' }, './report': { types: './report.d.ts' }, './package.json': './package.json' },
   types: './index.d.ts',
-  bin: { pw: 'dist/pw.mjs' },
-  files: ['dist', 'public', 'index.d.ts', 'report.d.ts', 'README.md', 'LICENSE'],
+  files: ['dist', 'index.d.ts', 'report.d.ts', 'README.md', 'LICENSE'],
   engines: { node: '>=20.9' },
   dependencies: deps(['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate', 'harfbuzzjs']),
   optionalDependencies: deps(['exceljs']),
+  peerDependencies: { '@pagewrightjs/fonts': pkg.version },
+  peerDependenciesMeta: { '@pagewrightjs/fonts': { optional: true } },
 });
 fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, E, 'LICENSE'));
+
+/* fonts: the bundled fonts, the shaper, harfbuzz-subset.wasm and the PDF/A colour profile (the engine resolves them) */
+const F = 'packages/fonts';
+fs.rmSync(path.join(root, F, 'public'), { recursive: true, force: true });
+copy('public/fonts', `${F}/public/fonts`);
+copy('public/icc', `${F}/public/icc`);
+fs.copyFileSync(path.join(root, 'public/harfbuzz-subset.wasm'), path.join(root, F, 'public/harfbuzz-subset.wasm'));
+fs.rmSync(path.join(root, F, 'public/fonts/ui'), { recursive: true, force: true }); // UI fonts are for the app only
+fs.rmSync(path.join(root, F, 'public/fonts/cjk'), { recursive: true, force: true }); // @pagewrightjs/fonts-cjk
+write(`${F}/package.json`, {
+  name: '@pagewrightjs/fonts', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'OFL-1.1 AND MIT',
+  description: 'Fonts (Inter, JetBrains Mono, Noto), the HarfBuzz shaper and subsetter for @pagewrightjs/engine.',
+  exports: { './public/*': './public/*', './package.json': './package.json' },
+  files: ['public', 'README.md'],
+});
+
+/* cli: the pw command (bundled engine), fonts from @pagewrightjs/fonts */
+const C = 'packages/cli';
+fs.rmSync(path.join(root, C, 'dist'), { recursive: true, force: true });
+await build({ entryPoints: [path.join(root, 'bin/pw.mjs')], bundle: true, format: 'esm', platform: 'node', target: 'node22', outfile: path.join(root, C, 'dist/pw.mjs'), external: [...external, '@pagewrightjs/fonts'], logLevel: 'warning' }); // esbuild keeps bin/pw.mjs's #! line
+fs.chmodSync(path.join(root, C, 'dist/pw.mjs'), 0o755);
+write(`${C}/package.json`, {
+  name: '@pagewrightjs/cli', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT',
+  description: 'pw: render, test and diff Pagewright reports from the command line.',
+  bin: { pw: 'dist/pw.mjs' },
+  files: ['dist', 'README.md', 'LICENSE'],
+  engines: { node: '>=20.9' },
+  dependencies: { ...deps(['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate', 'harfbuzzjs']), '@pagewrightjs/fonts': pkg.version },
+  optionalDependencies: deps(['exceljs']),
+});
+fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, C, 'LICENSE'));
+
 // the API's types, from the JSDoc of everything entry.js exports (index.d.ts re-exports them with report.d.ts)
 tsc([`${E}/entry.js`, '--rootDir', '.', '--outDir', `${E}/dist/types`]);
 
@@ -87,4 +113,4 @@ for (const [name, w] of Object.entries(WRAPPERS)) {
   });
   fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, P, 'LICENSE'));
 }
-console.log(`packages: @pagewrightjs/engine, /viewer, ${Object.keys(WRAPPERS).map(n => '/' + n).join(', ')} built (npm pack packages/<name>)`);
+console.log(`packages: @pagewrightjs/engine, /fonts, /cli, /viewer, ${Object.keys(WRAPPERS).map(n => '/' + n).join(', ')} built (npm pack packages/<name>)`);

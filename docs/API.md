@@ -407,7 +407,9 @@ Keyboard shortcuts work only for keys typed in the designer, never in the host p
 | `@pagewrightjs/vue` | `<PagewrightViewer :options="{ server, report }" />`, `<PagewrightDesigner :options="…" @ready="…" />` |
 | `@pagewrightjs/svelte` | `<div use:pagewrightViewer={{ server, report }}>`, `use:pagewrightDesigner` (actions: no compiler step) |
 | `@pagewrightjs/angular` | `definePagewrightElements()`, then `<pagewright-viewer [options]="…">` and `<pagewright-designer (pw-save)="…">` with `CUSTOM_ELEMENTS_SCHEMA` |
-| `@pagewrightjs/engine` | `render`, the exporters, the `pw` CLI |
+| `@pagewrightjs/engine` | `render`, the exporters, `defaultFontStore()` |
+| `@pagewrightjs/fonts` | the fonts, shaper and subsetter the engine loads (install next to it) |
+| `@pagewrightjs/cli` | the `pw` command line |
 
 The wrappers are thin: the framework and `@pagewrightjs/viewer` are peer dependencies, nothing is bundled, and the viewer loads on mount, so server rendering (Next.js, Nuxt, SvelteKit, Angular SSR) never touches `window`. A viewer remounts when what it shows changes; a designer only for another `report` or a new `definition` object, so it keeps its edits. In React, a `style.height` on the component makes the viewer fill it.
 

@@ -3,6 +3,7 @@
 // The same engine and exporters as the app; fonts come from public/fonts.
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { parseArgs } from 'node:util';
 import { render, FontStore } from '../src/engine/index.js';
 import { fontFile } from '../src/engine/text/fonts.js';
@@ -17,6 +18,9 @@ import { exportPptx } from '../src/exporters/pptx.js';
 import { textRows } from '../src/exporters/regions.js';
 
 const ROOT = path.join(import.meta.dirname, '..');
+// fonts, harfbuzz-subset.wasm and the colour profile: the repo's public/, or the @pagewrightjs/fonts package (the npm CLI)
+const PUB = fs.existsSync(path.join(ROOT, 'public', 'fonts')) ? path.join(ROOT, 'public')
+  : path.join(path.dirname(createRequire(import.meta.url).resolve('@pagewrightjs/fonts/package.json')), 'public');
 const HELP = `pw render <report.pw.json> [-p name=value]… [-d source=data.json]… [-f pdf|xlsx|docx|pptx|html|csv|json|txt] [-o file|-] [--base URL] [--pdfa] [--ua]
           [--values] [--static] [--layout]
           [--password PW] [--owner-password PW] [--deny print|modify|copy|annotate|fillForms|accessibility|assemble|printHighQuality]…
@@ -44,9 +48,9 @@ pw migrate-storage --to <url> [--from file|<url>]
 Exit codes: 0 ok, 1 a test failed, the pages differ or the audit log does not check, 2 bad usage.`;
 
 // fontFile(k), not `${k}.ttf`: the shaper key is "harfbuzz" → harfbuzz.wasm (without it Arabic and Indic text is not shaped)
-const fontStore = new FontStore((k) => fs.readFileSync(path.join(ROOT, 'public', 'fonts', fontFile(k))));
+const fontStore = new FontStore((k) => fs.readFileSync(path.join(PUB, 'fonts', fontFile(k))));
 // PDFs embed only the glyphs they use, as the server's do
-const subset = createSubsetter(() => fs.promises.readFile(path.join(ROOT, 'public', 'harfbuzz-subset.wasm')));
+const subset = createSubsetter(() => fs.promises.readFile(path.join(PUB, 'harfbuzz-subset.wasm')));
 const readJson = (f) => JSON.parse(fs.readFileSync(f, 'utf8').replace(/^﻿/, ''));
 const pairs = (list = []) => Object.fromEntries(list.map((s) => { const i = s.indexOf('='); if (i < 1) usage(`"${s}" should be name=value`); return [s.slice(0, i), s.slice(i + 1)]; }));
 function usage(msg) { if (msg) console.error(`pw: ${msg}\n`); console.error(HELP); process.exit(2); }
@@ -132,7 +136,7 @@ async function cmdRender(args) {
   if (encrypt && fmt !== 'pdf') usage('--password, --owner-password and --deny apply to -f pdf only');
   if (encrypt && values.pdfa) usage('a PDF/A file cannot have a password');
   if (values.ua && fmt !== 'pdf') usage('--ua applies to -f pdf only');
-  if (fmt === 'pdf') bytes = await exportPdf(model, fontStore, { title: def.name, subset, encrypt, pdfa: values.pdfa ? { icc: fs.readFileSync(path.join(ROOT, 'public', 'icc', 'sRGB-v2-magic.icc')) } : undefined, tagged: values.ua ? { lang: def.locale || 'en' } : undefined });
+  if (fmt === 'pdf') bytes = await exportPdf(model, fontStore, { title: def.name, subset, encrypt, pdfa: values.pdfa ? { icc: fs.readFileSync(path.join(PUB, 'icc', 'sRGB-v2-magic.icc')) } : undefined, tagged: values.ua ? { lang: def.locale || 'en' } : undefined });
   else if (fmt === 'html') bytes = await exportHtml(model, fontStore, { title: def.name, subset, static: !!values.static, locale: def.locale, currency: def.currency });
   else if (fmt === 'csv') bytes = exportCsv(model, { locale: def.locale, currency: def.currency, layout: !!values.layout });
   else if (fmt === 'xlsx') bytes = await exportXlsx(model, (await import('exceljs')).default, { currency: def.currency, title: def.name, formulas: !values.values, fontStore });
