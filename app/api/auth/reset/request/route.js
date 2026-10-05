@@ -41,15 +41,18 @@ export async function POST(req) {
   const body = await req.json().catch(() => ({}));
   let email;
   try { email = normEmail(body?.email); } catch (e) { return Response.json({ error: e.message }, { status: 400 }); }
-  // per network, per (email, network) and per email: the owner's own network keeps its 3 an hour however many others
-  // asked for this email, and the mailbox gets at most 20 an hour (the escape hatch for a capped account)
-  const net = netKey(clientAddress(req));
-  const byAddress = await attempt(['reset-ip', net], 20, HOUR);
-  const byEmailNet = byAddress.ok ? await attempt(['reset-email-net', normAccount(email), net], 3, HOUR) : null;
-  const byEmail = byEmailNet?.ok ? await attempt(['reset-email', normAccount(email)], 20, HOUR) : null;
-  if (!byAddress.ok || !byEmailNet?.ok || !byEmail?.ok) {
-    await audit('auth.reset_request', { req, status: 'denied', detail: { email, reason: 'rate limited' } });
+  // per network: 20 an hour, then 429 (a flood from one place). Per account: at most 5 mails an hour; past that the
+  // request is dropped with the same 202, so nobody can use up the account's resets with refusals the owner would see.
+  // The sign-in caps never apply here: a reset is the way in for an account they have capped.
+  const byAddress = await attempt(['reset-ip', netKey(clientAddress(req))], 20, HOUR);
+  if (!byAddress.ok) {
+    await audit('auth.reset_request', { req, status: 'denied', detail: { email, reason: 'rate limited (network)' } });
     return Response.json({ error: 'Too many reset requests. Try again later.' }, { status: 429, headers: { 'retry-after': String(HOUR / 1000) } });
+  }
+  const byEmail = await attempt(['reset-email', normAccount(email)], 5, HOUR);
+  if (!byEmail.ok) {
+    await audit('auth.reset_request', { req, status: 'denied', detail: { email, reason: 'mail budget used (dropped)' } });
+    return Response.json({ ok: true }, { status: 202, headers: { 'cache-control': 'no-store' } });
   }
   const job = work(req, email, linkBase(req)).finally(() => g.__pwResets.delete(job));
   g.__pwResets.add(job);

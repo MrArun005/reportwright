@@ -137,4 +137,44 @@ describe('checkCredential: caps and device cookies (OWASP)', () => {
     await limits.unlockLogin('own@x.test');
     expect((await as('own@x.test', PW, '192.0.2.41')).status).toBe(200);
   });
+
+  it('a signed-in session is never under the account cap others fill (re-checking the password on the Account page)', async () => {
+    await users.createUser({ email: 'sess@x.test', role: 'viewer', password: PW });
+    const res = await as('sess@x.test', PW, '192.0.2.50');
+    const sessionCookie = res.headers.getSetCookie().find(c => c.startsWith('pw_session=')).split(';')[0];
+    for (let i = 0; i < 10; i++) await as('sess@x.test', 'wrong', `198.21.${i}.1`);
+    expect((await as('sess@x.test', PW, '192.0.2.51')).status).toBe(429); // capped for new browsers
+    const { POST: twofa } = await import('../../app/api/account/2fa/route.js');
+    const r = await twofa(new Request(`${BASE}/api/account/2fa`, { method: 'POST', headers: { origin: BASE, 'content-type': 'application/json', 'x-pw-peer': '192.0.2.50', cookie: sessionCookie }, body: JSON.stringify({ action: 'setup', password: PW }) }));
+    expect(r.status).toBe(200);
+  });
+
+  it('when the storage cannot answer, the same caps hold in this process (never all refused, never skipped)', async () => {
+    const { store } = await import('../../src/server/storage/index.js');
+    const s = store(), lease = s.lease;
+    s.lease = async () => { throw new Error('database is down'); };
+    const err = console.error; console.error = () => {};
+    try {
+      const st = [];
+      for (let i = 0; i < 22; i++) st.push(await limits.checkCredential({ kind: 'apikey', address: '198.22.0.1' }, () => false).then(() => 'wrong', e => e.status));
+      expect(st.slice(0, 20).every(x => x === 'wrong')).toBe(true);
+      expect(st.slice(20)).toEqual([429, 429]);
+      expect(await limits.checkCredential({ kind: 'apikey', address: '198.22.0.2' }, () => 'right')).toBe('right');
+    } finally { s.lease = lease; console.error = err; }
+  });
+
+  it('a capped account: a password reset still mails, and its link makes this browser a known device', async () => {
+    await users.createUser({ email: 'rst@x.test', role: 'viewer', password: PW });
+    for (let i = 0; i < 10; i++) await as('rst@x.test', 'wrong', `198.23.${i}.1`);
+    expect((await as('rst@x.test', PW, '192.0.2.60')).status).toBe(429);
+    const { issueReset } = users;
+    const token = await issueReset('rst@x.test'); // what the mailed link holds
+    const { POST: confirm } = await import('../../app/api/auth/reset/confirm/route.js');
+    const c = await confirm(new Request(`${BASE}/api/auth/reset/confirm`, { method: 'POST', headers: { origin: BASE, 'content-type': 'application/json', 'x-pw-peer': '192.0.2.60' }, body: JSON.stringify({ token, password: 'a brand new password 1' }) }));
+    expect(c.status).toBe(200);
+    const dev = device(c);
+    expect(dev).toBeTruthy();
+    expect((await as('rst@x.test', 'a brand new password 1', '192.0.2.60', dev)).status).toBe(200);
+  });
 });
+

@@ -32,13 +32,30 @@ export async function attempt(key, limit, windowMs) {
   if (full && full > Date.now()) return { ok: false, retryAfter: Math.ceil(windowMs / 1000), release: async () => {} };
   const owner = crypto.randomBytes(8).toString('hex');
   const start = crypto.randomInt(limit);
-  for (let k = 0; k < limit; k++) {
-    const slot = `${name}:${(start + k) % limit}`;
-    if (await store().lease(slot, owner, windowMs)) return { ok: true, retryAfter: 0, release: async () => { fullKeys.delete(name); await store().release(slot, owner); } };
+  try {
+    for (let k = 0; k < limit; k++) {
+      const slot = `${name}:${(start + k) % limit}`;
+      if (await store().lease(slot, owner, windowMs)) return { ok: true, retryAfter: 0, release: async () => { fullKeys.delete(name); await store().release(slot, owner).catch(() => {}); } };
+    }
+  } catch (e) {
+    // the storage is down or erroring: the same limit in this process (fail safe: never refuse everyone, never skip)
+    return localAttempt(name, limit, windowMs, e);
   }
   if (fullKeys.size > 10000) fullKeys.clear();
   fullKeys.set(name, Date.now() + 5000);
   return { ok: false, retryAfter: Math.ceil(windowMs / 1000), release: async () => {} };
+}
+const local = (/** @type {any} */ (globalThis).__pwLocalLimits ||= new Map());
+/** attempt() in memory, while the storage cannot answer. @param {string} name @param {number} limit @param {number} windowMs @param {any} why */
+function localAttempt(name, limit, windowMs, why) {
+  const now = Date.now();
+  if (now - (g.__pwLimitWarned || 0) > 60000) { g.__pwLimitWarned = now; console.error(`[pagewright] LIMITS: the storage did not answer (${String(why?.message || why).slice(0, 200)}); counting tries in this process until it does.`); }
+  if (local.size > 50000) local.clear();
+  const list = (local.get(name) || []).filter(t => t.until > now);
+  if (list.length >= limit) { local.set(name, list); return { ok: false, retryAfter: Math.ceil((Math.min(...list.map(t => t.until)) - now) / 1000), release: async () => {} }; }
+  const mine = { until: now + windowMs };
+  list.push(mine); local.set(name, list);
+  return { ok: true, retryAfter: 0, release: async () => { const l = local.get(name); if (l) local.set(name, l.filter(t => t !== mine)); } };
 }
 /** @type {Map<string, number>} */
 const fullKeys = (/** @type {any} */ (globalThis).__pwFullKeys ||= new Map());
@@ -198,11 +215,16 @@ export async function checkCredential(who, verify) {
   };
   await take(['cred-src', who.kind, net], CAPS.source, 'Too many failed tries from this network. Try again later.');
   if (PER_ACCOUNT.has(who.kind) && acct !== '-') {
-    const era = await epoch(acct);
+    const era = await epoch(acct).catch(() => 0);
     const { getUser } = await import('./users.js');
-    const { knownDevice } = await import('./session.js');
-    const device = knownDevice(who.req, await getUser(acct).catch(() => null));
-    if (device) await take(['cred-dev', who.kind, acct, era, device], CAPS.device, 'Too many failed tries from this browser. Try again later.');
+    const { knownDevice, sessionClaims } = await import('./session.js');
+    const user = await getUser(acct).catch(() => null);
+    const device = knownDevice(who.req, user);
+    // a signed-in session of this account (re-checking a password or a code on the Account page) is never under the
+    // account's cap that others' failures fill: it has its own budget, like a known device
+    const s = who.req ? sessionClaims(who.req) : null;
+    const session = s && user && s.e === user.email && s.v === (user.sessionVersion || 0) ? `s${s.iat}` : null;
+    if (device || session) await take(['cred-dev', who.kind, acct, era, device || session], CAPS.device, 'Too many failed tries from this browser. Try again later.');
     else await take(['cred-acct', who.kind, acct, era], CAPS.account, 'Too many failed sign-ins for this account. Try again later, sign in from a browser you used before, or reset your password.');
   }
   let ok = null, err = null;

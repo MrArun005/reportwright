@@ -78,11 +78,15 @@ describe('password reset by email', () => {
     await store().put('users', u.email, JSON.stringify({ ...(await users.getUser('pat@x.test')), reset: { ...u.reset, expires: Date.now() - 1 } }));
     expect((await post(R.confirm, { token: second, password: 'new password 13' })).status).toBe(400);
   });
-  it('3 requests an hour per email from one network (any email, also one with no account); others still may ask', async () => {
-    for (let i = 0; i < 3; i++) expect((await post(R.request, { email: 'ghost@x.test' }, '10.0.0.5')).status).toBe(202);
-    expect((await post(R.request, { email: 'ghost@x.test' }, '10.0.0.5')).status).toBe(429);
-    // the owner's own network is not used up by someone else's requests (the escape hatch of a capped account)
-    expect((await post(R.request, { email: 'ghost@x.test' }, '10.0.0.6')).status).toBe(202);
+  it('per account at most 5 mails an hour, the rest dropped with the same 202; per network 20, then 429', async () => {
+    const before = smtp.messages.length;
+    for (let i = 0; i < 7; i++) expect((await post(R.request, { email: 'pat@x.test' }, `10.1.${i}.1`)).status).toBe(202);
+    await settle();
+    expect(smtp.messages.length - before).toBeLessThanOrEqual(5);
+    const st = [];
+    for (let i = 0; i < 21; i++) st.push((await post(R.request, { email: `g${i}@x.test` }, '10.0.0.5')).status);
+    expect(st.slice(0, 20).every(c => c === 202)).toBe(true);
+    expect(st[20]).toBe(429);
     await settle();
   });
   it('without mail set up, the form is off and admins reset passwords', async () => {

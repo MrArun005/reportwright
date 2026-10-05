@@ -36,8 +36,18 @@ The design is OWASP's device cookie:
    days. A new one on every sign-in. Sign-out everywhere, a password change or disabling the account ends it. A try
    carrying a valid one for the account is not under cap 2; it has its own 10 failures per 15 minutes. An attack
    cannot lock out a browser that signed in before.
-4. **A new browser on a capped account** gets in by a password reset email (its own limits, per network) or an admin
-   unlock (Users page, `PATCH /api/users/<email> { unlockSignIn: true }`), or waits out the 15 minutes.
+4. **A new browser on a capped account** gets in by a password reset email or an admin unlock (Users page,
+   `PATCH /api/users/<email> { unlockSignIn: true }`), or waits out the 15 minutes. The sign-in caps never apply to
+   reset requests: they have their own budget (5 mails an hour per account, the rest dropped with the same 202 answer;
+   20 requests an hour per network, then 429), and a reset link that works makes its browser a known device.
+5. **A signed-in session** re-checking its password or a code (the Account page) has its own budget, like a known
+   device: others' failures never touch it. Session cookies are checked by their signature only, never counted.
+6. **When the storage cannot answer**, the same caps are counted in each server process (the log says so, once a
+   minute): sign-ins are neither all refused nor left unlimited.
+
+**Residual risk, plainly:** an attacker can delay sign-ins from new devices for a targeted account while the attack
+lasts; existing devices, password reset and admin unlock still work. This is the standard trade-off (OWASP device
+cookies).
 
 A right secret does not count. Counts are storage leases (atomic, shared by every server). Residual: secrets without
 an account (API keys, the basic-auth password, the proxy secret, link signatures, reset tokens) have the per-network
