@@ -328,7 +328,7 @@ function binary(n, ctx) {
   if (op === 'and' || op === '&&') return truthy(evaluate(n.a, ctx)) && truthy(evaluate(n.b, ctx));
   if (op === 'or' || op === '||') return truthy(evaluate(n.a, ctx)) || truthy(evaluate(n.b, ctx));
   let a = evaluate(n.a, ctx), b = evaluate(n.b, ctx);
-  if (op === '&') return toText(a, null, ctx) + toText(b, null, ctx);
+  if (op === '&') { const x = toText(a, null, ctx), y = toText(b, null, ctx); capText('&', x.length + y.length); return x + y; }
   const sql = ctx.nullPropagation === true;
   if (!sql && (a == null || b == null)) {
     // VB: Nothing takes the other side's type default; Nothing with Nothing is 0 (and equal)
@@ -345,7 +345,7 @@ function binary(n, ctx) {
         if (typeof b === 'number' && numericText(a)) return add(Number(a), b, ctx);
         // VB: a number plus text that is not a number converts the text to Double and fails ("a" + 5 is #Error)
         if (!sql && (typeof a === 'number' || typeof b === 'number')) throw new ExprError(`"${String(typeof a === 'string' ? a : b).slice(0, 40)}" + a number: the text is not a number (join text with &)`);
-        return (a ?? '') + '' + (b ?? '');
+        { const x = String(a ?? ''), y = String(b ?? ''); capText('+', x.length + y.length); return x + y; }
       }
       if (a == null || b == null) return null;
       if (a instanceof Date && b === 0) return a;
@@ -599,7 +599,12 @@ export const FUNCTIONS = {
   trim: (ctx, s) => S(s).trim(),
   replace: (ctx, s, a, b, start, count) => replaceText(S(s), S(a), S(b), start, count),
   instr: (ctx, s, sub) => S(s).indexOf(S(sub)) + 1,
-  join: (ctx, arr, sep) => (Array.isArray(arr) ? arr.map(v => toText(v, null, ctx)).join(sep == null ? ', ' : S(sep)) : toText(arr, null, ctx)),
+  join: (ctx, arr, sep) => {
+    if (!Array.isArray(arr)) return toText(arr, null, ctx);
+    const parts = arr.map(v => toText(v, null, ctx)), j = sep == null ? ', ' : S(sep);
+    capText('Join', parts.reduce((n, p) => n + p.length, 0) + j.length * Math.max(0, parts.length - 1));
+    return parts.join(j);
+  },
   contains: (ctx, hay, needle) => (Array.isArray(hay) ? hay.some(v => cmpVal(v, needle) === 0) : S(hay).toLowerCase().includes(S(needle).toLowerCase())),
   inlist: (ctx, v, ...list) => list.flat().some(x => cmpVal(v, x) === 0),
   cstr: (ctx, v) => toText(v, null, ctx),
