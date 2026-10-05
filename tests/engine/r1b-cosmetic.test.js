@@ -33,3 +33,14 @@ describe('display details', () => {
     expect(javaPattern('u', 'date')).toBe('ddd');
   });
 });
+
+describe('long URLs and paths', () => {
+  it('break after a slash, not between any two letters', async () => {
+    const { TextMeasurer } = await import('../../src/engine/index.js');
+    await fontStore.load(['Inter-Regular']);
+    const m = new TextMeasurer(fontStore);
+    const lines = m.wrap('https://example.com/very/long/path/to/a/report/page.html', 'Inter-Regular', 9, 90).map(l => l.text);
+    expect(lines.join('')).toBe('https://example.com/very/long/path/to/a/report/page.html');
+    for (const l of lines.slice(0, -1)) expect(l.endsWith('/')).toBe(true);
+  });
+});

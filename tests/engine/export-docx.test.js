@@ -108,7 +108,7 @@ describe('export tags (engine)', () => {
     expect(lean.regions).toBeNull();
     expect(lean.pages[0].items.some(i => i.cell)).toBe(false);
     expect(full.pages[0].items.some(i => i.cell)).toBe(true);
-    const strip = (m) => JSON.stringify(m.pages, (k, v) => (k === 'cell' || k === 'tag' ? undefined : v)); // tag ids count up per process
+    const strip = (m) => JSON.stringify(m.pages, (k, v) => (k === 'cell' || k === 'tag' || k === 'xchart' ? undefined : v)); // tag ids count up per process; xchart: a chart's data for Excel
     expect(strip(lean)).toBe(strip(full));
     await expect(exportDocx(lean)).rejects.toThrow(/table data/); // a file without its tables would be wrong
   });

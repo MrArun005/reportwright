@@ -279,11 +279,22 @@ export class TextMeasurer {
           push();
           if (ww <= maxWidth) { line = w; lw = ww; continue; }
         }
-        // break a long word by characters
+        // break a long word by characters, after a "/" or "-" when the line has one (UAX #14: a URL or a path breaks
+        // after its slashes, https://example.com/ | very/long/path, not between any two letters)
+        let after = -1; // where the line may break: just past its last / or -
         for (const ch of w) {
           const cw = this.width(ch, k, size);
-          if (lw + cw > maxWidth && line !== '') push();
+          if (lw + cw > maxWidth && line !== '') {
+            if (after > 0 && after < line.length) {
+              const rest = line.slice(after);
+              line = line.slice(0, after); lw = this.width(line, k, size);
+              push();
+              line = rest; lw = this.width(rest, k, size);
+            } else push();
+            after = -1;
+          }
           line += ch; lw += cw;
+          if ((ch === '/' || ch === '-') && line.length > 1) after = line.length;
         }
       }
       push();
