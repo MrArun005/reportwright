@@ -12,6 +12,24 @@ async function call(url, method = 'GET', body) {
   return data;
 }
 
+/** What the server has configured by environment (read-only: set in the environment, see docs/GOVERNANCE.md). */
+function StatusBox({ status: s, T }) {
+  const row = (label, value) => (<><dt style={{ color: 'var(--muted)' }}>{label}</dt><dd style={{ margin: 0, overflowWrap: 'anywhere' }}>{value}</dd></>);
+  const onOff = (v) => (v ? T('stateOn') : T('stateOff'));
+  return (
+    <section style={box} aria-labelledby="st-h">
+      <h2 id="st-h" style={{ margin: 0, fontSize: 'var(--fs-lg)' }}>{T('statusTitle')}</h2>
+      <dl data-testid="server-status" style={{ display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '6px 14px', margin: 0 }}>
+        {row(T('statusMail'), s.mail?.on ? `${s.mail.from} · ${s.mail.allowedDomains.length ? s.mail.allowedDomains.join(', ') : T('statusNoDomains')}` : T('notSet'))}
+        {row(T('statusSlo'), `SAML ${onOff(s.sso?.samlLogout)} · OIDC ${onOff(s.sso?.oidcLogout)}`)}
+        {row(T('statusSiem'), s.siem?.on ? `${s.siem.kind} ${s.siem.host} · ${T('siemQueue', { queued: s.siem.queued, sent: s.siem.sent, dropped: s.siem.dropped })}${s.siem.lastError ? ` · ${s.siem.lastError}` : ''}` : s.siem?.configured ? T('siemBad') : T('notSet'))}
+        {row(T('statusAuditKey'), s.auditKey ? `${s.auditKey.fingerprint} (${s.auditKey.source})` : T('notSet'))}
+      </dl>
+      <p className="hint" style={{ margin: 0 }}>{T('statusHint')}</p>
+    </section>
+  );
+}
+
 /** Server settings for admins: who must use two-factor sign-in, and what the server has configured. */
 export default function SettingsAdmin({ lang }) {
   const T = (k, v) => t(lang, k, v);
@@ -58,6 +76,7 @@ export default function SettingsAdmin({ lang }) {
             <p className="hint" style={{ margin: 0 }}>{T('require2faHint')}</p>
             <div><button className="btn primary">{T('saveSettings')}</button></div>
           </form>
+          {data?.status && <StatusBox status={data.status} T={T} />}
         </div>
       )}
       {data?.settings?.updatedAt && <p className="hint" style={{ marginTop: 16 }}>{T('settingsChanged', { when: new Date(data.settings.updatedAt).toLocaleString(lang === 'en' ? 'en-IN' : lang), who: data.settings.updatedBy || '-' })}</p>}

@@ -21,6 +21,10 @@ const HELP = `pw render <report.pw.json> [-p name=value]… [-d source=data.json
           [--password PW] [--owner-password PW] [--deny print|modify|copy|annotate|fillForms|accessibility|assemble|printHighQuality]…
 pw test [folder] [--update]        render every <folder>/__tests__/*.test.json case and compare it with its snapshot
 pw diff <old.pw.json> <new.pw.json> [-p name=value]… [-d source=data.json]… [--base URL]
+pw audit verify [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--json] [--public-key file.pem]
+                                   check the server's audit log (hash chain, signed checkpoints); run it in the app
+                                   folder with the server's PW_STORAGE and PW_AUDIT_KEY / PW_SESSION_SECRET
+pw audit checkpoint                write a signed checkpoint now
 
   -p  a report parameter            -d  replace a data source with a JSON file
   -f  output format (default pdf)   -o  output file, or - for stdout
@@ -28,7 +32,7 @@ pw diff <old.pw.json> <new.pw.json> [-p name=value]… [-d source=data.json]… 
   --password, --owner-password, --deny  a password-protected PDF (AES-256); --deny takes away a permission
   --ua  an accessible PDF (PDF/UA-1; with --pdfa, PDF/A-2a)   --values  Excel totals as values, not formulas
   --static  an HTML file without its Tables view (sort, groups, filter)
-Exit codes: 0 ok, 1 a test failed or the pages differ, 2 bad usage.`;
+Exit codes: 0 ok, 1 a test failed, the pages differ or the audit log does not check, 2 bad usage.`;
 
 const fontStore = new FontStore((k) => fs.readFileSync(path.join(ROOT, 'public', 'fonts', `${k}.ttf`)));
 // PDFs embed only the glyphs they use, as the server's do
@@ -168,7 +172,29 @@ async function cmdDiff(args) {
   process.exit(1);
 }
 
+async function cmdAudit(args) {
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { from: { type: 'string' }, to: { type: 'string' }, json: { type: 'boolean' }, 'public-key': { type: 'string' } } });
+  const audit = await import('../src/server/audit.js');
+  if (positionals[0] === 'checkpoint') {
+    const e = await audit.checkpoint({ actor: 'cli' });
+    console.log(e ? `checkpoint ${e.id}: ${Object.keys(e.detail.heads).length} stream(s)` : 'nothing to checkpoint yet');
+    return;
+  }
+  if (positionals[0] !== 'verify') usage('pw audit verify | pw audit checkpoint');
+  for (const k of ['from', 'to']) if (values[k] && !/^\d{4}-\d{2}-\d{2}$/.test(values[k])) usage(`--${k} is a date, YYYY-MM-DD`);
+  if (values['public-key']) process.env.PW_AUDIT_PUBLIC_KEY = fs.readFileSync(values['public-key'], 'utf8');
+  const r = await audit.verifyAudit({ from: values.from, to: values.to, onProgress: values.json ? undefined : (n) => process.stderr.write(`\r${n} events checked`) });
+  if (values.json) console.log(JSON.stringify(r, null, 2));
+  else {
+    process.stderr.write('\n');
+    console.log(`${r.events} events (${r.unchained} from before the chain), ${r.streams} streams, ${r.checkpoints} checkpoints${r.lastCheckpoint ? `, the last at ${r.lastCheckpoint}` : ''}; key ${r.key.fingerprint} (${r.key.source})`);
+    for (const p of r.problems) console.log(`  ${p.kind}: ${p.detail}${p.id ? ` [${p.id}]` : ''}${p.stream ? ` stream ${p.stream}` : ''}`);
+    console.log(r.ok ? 'The audit log checks: no event was changed, removed or added.' : `The audit log does NOT check: ${r.problems.length} problem(s).`);
+  }
+  if (!r.ok) process.exit(1);
+}
+
 const [cmd, ...rest] = process.argv.slice(2);
-const commands = { render: cmdRender, test: cmdTest, diff: cmdDiff };
+const commands = { render: cmdRender, test: cmdTest, diff: cmdDiff, audit: cmdAudit };
 if (!commands[cmd]) usage(cmd && cmd !== 'help' && cmd !== '--help' ? `unknown command "${cmd}"` : '');
 try { await commands[cmd](rest); } catch (e) { fail(e.message); }
