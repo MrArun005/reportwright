@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { rowArrays, bestRows } from './explore.js';
 import { useDesigner, walk } from './store.js';
 import { MIME_FIELD, MIME_DATASET } from './Canvas.jsx';
-import { loadSources, buildDataSets, detectFields, jsonPath, sourceRows, isXmlDoc } from '@/engine/data/index.js';
+import { loadSources, buildDataSets, detectFields, jsonPath, sourceRows, isXmlDoc, FETCHED_TYPES } from '@/engine/data/index.js';
 import { xmlRowPaths, bestXmlRows } from '@/engine/data/xml.js';
 import { parseXml } from '@/importers/xml.js';
 import ODataEditor from './ODataEditor.jsx';
@@ -267,7 +267,7 @@ function SourceDialog({ index, onClose }) {
   const [s, setS] = useState(() => ({ name: '', type: 'rest', method: 'GET', url: '', useProxy: false, ...(orig || {}), headersText: orig?.headers ? JSON.stringify(orig.headers, null, 2) : '', dataText: orig?.data != null ? (typeof orig.data === 'string' ? orig.data : JSON.stringify(orig.data, null, 2)) : '',
     nsText: Object.entries(orig?.namespaces || {}).map(([k, v]) => `${k}=${v}`).join('\n'), argsText: (orig?.args || []).map(x => `${x.name} = ${x.param}`).join('\n') }));
   const xmlish = s.type === 'xml' || s.type === 'soap';
-  const fetched = ['rest', 'csv', 'graphql', 'xml', 'soap', 'odata'].includes(s.type);
+  const fetched = FETCHED_TYPES.includes(s.type);
   let err = !NAME.test(s.name) ? 'The name must start with a letter and hold only letters, digits and _' : !uniqueIn(def.dataSources, s.name, index) ? 'Another source has this name' : null;
   let headers;
   if (!err && s.headersText.trim()) { try { headers = JSON.parse(s.headersText); } catch { err = 'Headers must be a JSON object'; } }
