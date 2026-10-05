@@ -268,7 +268,7 @@ const SAME = { format: 'Format', left: 'Left', right: 'Right', mid: 'Mid', len: 
   timeserial: 'TimeSerial', lookupset: 'LookupSet',
   // the JasperReports and BIRT front ends' Java and JavaScript string conversions (expr/javafmt.js)
   hex: 'Hex', oct: 'Oct', lset: 'LSet', rset: 'RSet', strdup: 'StrDup', split: 'Split',
-  javastr: 'JavaStr', jsstr: 'JsStr', javaformat: 'JavaFormat', jaspervalue: 'JasperValue' };
+  javastr: 'JavaStr', jsstr: 'JsStr', javaformat: 'JavaFormat', jaspervalue: 'JasperValue', aggregateif: 'AggregateIf' };
 const CONVERT = { tostring: 'CStr', todecimal: 'CDbl', todouble: 'CDbl', tosingle: 'CDbl', toint16: 'ToInt16', toint32: 'ToInt32', toint64: 'ToInt64',
   todatetime: 'CDate', toboolean: 'CBool' };
 const MATH = { abs: 'Abs', floor: 'Floor', ceiling: 'Ceiling', sqrt: 'Sqrt', pow: 'Pow', truncate: 'Fix', sign: 'Sign', log: 'Log', log10: 'Log10', exp: 'Exp' };

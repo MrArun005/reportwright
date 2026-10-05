@@ -405,7 +405,7 @@ function scopeRows(args, idx, ctx, fname) {
     const sc = ctx.scopes?.[s];
     // Sum(x, "Group", "Recursive"): a recursive group's node and every node below it
     if (sc?.recRows && args.length > idx + 1 && String(evaluate(args[idx + 1], ctx)).toLowerCase() === 'recursive') return sc.recRows;
-    const rows = sc?.rows || ctx.dataSets[s];
+    const rows = sc?.rows || ctx.dataSets[s] || groupInstanceRows(s, ctx);
     if (!rows) throw new ExprError(`${fname}: the scope "${s}" does not exist`);
     return rows;
   }
@@ -413,6 +413,16 @@ function scopeRows(args, idx, ctx, fname) {
   if (ctx.aggIndex != null && ctx.fields) return [ctx.fields];
   if (ctx.aggRows) return ctx.aggRows;
   return ctx.fields ? [ctx.fields] : [];
+}
+/** A table group named outside its own bands: the rows of the instance the current row belongs to, or null. */
+function groupInstanceRows(name, ctx) {
+  const g = ctx.groupChains?.[name];
+  if (!g || !ctx.fields) return null;
+  const keys = g.keys.map(k => compile(String(k).replace(/^=/, '')));
+  const c = Object.assign({}, ctx, { aggRows: undefined, aggIndex: undefined });
+  const keyOf = (r) => { c.fields = r; return keys.map(k => { const v = evaluate(k, c); return v instanceof Date ? v.getTime() : v; }).join('\u0001'); };
+  const want = keyOf(ctx.fields);
+  return g.rows.filter(r => keyOf(r) === want);
 }
 /**
  * RunningValue cache: each row's value of an expression, per row array, extended as the prefix grows. A group of n
@@ -1150,8 +1160,14 @@ function call(n, ctx) {
     if (!(fn in AGG)) throw new ExprError(`RunningValue: unknown function "${fn}"`, n.p);
     let rows;
     if (args.length > 2) {
-      const sc = ctx.scopes?.[evaluate(args[2], ctx)];
-      if (!sc) throw new ExprError('RunningValue: unknown scope', n.p);
+      const sn = evaluate(args[2], ctx);
+      const sc = ctx.scopes?.[sn];
+      if (!sc) {
+        // a group outside its own bands: running over the group instance the current row is in, up to that row
+        const gr = groupInstanceRows(sn, ctx);
+        if (!gr) throw new ExprError('RunningValue: unknown scope', n.p);
+        return AGG[fn](mapRows(gr.slice(0, gr.indexOf(ctx.fields) + 1), args[0], ctx), ctx);
+      }
       rows = sc.run || sc.rows.slice(0, sc.index + 1);
       const pend = ctx.pendingRows;
       if (pend?.length && sc.run) {

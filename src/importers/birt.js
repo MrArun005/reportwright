@@ -42,6 +42,7 @@ export function importBirt(input, opts = {}) {
   /** @type {string[]} */
   const notes = [];
   let ar;
+  PAGE_BREAKS.clear();
   try { ar = toRdlx(root, notes, name); } catch (e) {
     if (e instanceof ImportBudgetError) {
       const error = `The report is too large to import: ${e.message}`;
@@ -53,6 +54,9 @@ export function importBirt(input, opts = {}) {
   const r = importRdlx(ar, { name });
   if (r.error) return r;
   const warnings = [...notes, ...r.warnings].map(w => w.replace(/ActiveReports/g, 'BIRT'));
+  const walk = (items) => { for (const i of items || []) { if (i.type === 'table' && PAGE_BREAKS.get(i.name) > 0) i.pageBreakEvery = PAGE_BREAKS.get(i.name); walk(i.items); } };
+  for (const sec of [r.definition.sections?.body].flat()) walk(sec?.items);
+  PAGE_BREAKS.clear();
   r.definition.collation = 'ordinal'; // text sorts as the source engine compares it (ground truth: tests/diff)
   r.definition.nullOrder = 'low'; // a null sorts first ascending, as Java comparators and BIRT do
   r.definition.arithmetic = 'double'; // JavaScript and Java compute with IEEE doubles
@@ -78,6 +82,8 @@ const PAGE_TYPES = { 'us-letter': [612, 792], 'us-legal': [612, 1008], a4: [595.
 /* ================================================================ the design → RDLX-JSON */
 
 /** @param {import('./xml.js').XmlElement} root @param {string[]} notes @param {string} reportName */
+/** table name → BIRT pageBreakInterval, for the definition (rdlx.js has no such setting) */
+const PAGE_BREAKS = new Map();
 function toRdlx(root, notes, reportName) {
   const kid = (e, n) => e?.children.find(c => c.name === n);
   const kids = (e, n) => (e ? e.children.filter(c => n == null || c.name === n) : []);
@@ -243,6 +249,8 @@ function toRdlx(root, notes, reportName) {
       // aggregateOn "All" (or none, BIRT's default) is the whole table or list, wherever the cell is: a grand total
       const all = gc.group ?? c.region;
       const scope = all ? `, "${String(all).replace(/"/g, '""')}"` : '';
+      // BIRT's FIRST and LAST skip nulls (the last value there is)
+      if (fn === 'first' || fn === 'last') return `AggregateIf(Not IsNothing(${inner}), "${AGG[fn]}", ${inner}${scope})`;
       if (AGG[fn]) return `${AGG[fn]}(${inner}${scope})`;
       if (RUNNING[fn]) return `RunningValue(${inner}, ${RUNNING[fn]}${scope})`;
       throw new Untranslatable(`the aggregate ${fn.toUpperCase()}`);
@@ -385,7 +393,7 @@ function toRdlx(root, notes, reportName) {
   const nameFor = (e, kind) => (e.attrs.name && NAME_OK.test(e.attrs.name) ? e.attrs.name : `${kind}${++seq}`);
   const ITEM_KINDS = new Set(['label', 'data', 'text', 'text-data', 'auto-text', 'image', 'grid', 'table', 'list', 'extended-item', 'line', 'free-form', 'template-report-item', 'multi-line-data']);
   /** the estimated height of a text in points: its lines at its font size */
-  const textH = (text, st) => { const fs = fontPt(st.fontSize) || 10; return Math.max(1, String(text || '').split('\n').length) * fs * 1.35 + 4; };
+  const textH = (text, st) => { const fs = fontPt(st.fontSize) || 10; return Math.max(1, String(text || '').split('\n').length) * fs * 1.25 + 2; }; // BIRT: an 8pt line fits a 12pt row
   /** strip HTML to text (BIRT text items are often HTML); <value-of> parts are expressions */
   function htmlParts(html) {
     /** @type {{ t?: string, e?: string }[]} */
@@ -687,6 +695,9 @@ function toRdlx(root, notes, reportName) {
       return G;
     });
     it.Details = { TableRows: rows(det, 'table-detail', cc) };
+    // pageBreakInterval: a new page every N detail rows; unset is BIRT's default of 40 (ground truth), 0 is none
+    const pbi = prop(e, 'pageBreakInterval');
+    PAGE_BREAKS.set(it.Name, pbi == null ? 40 : Math.max(0, Math.trunc(Number(pbi)) || 0));
     it.Footer = { TableRows: rows(foot, 'table-footer', cc) };
     const sorts = sortsOf(e, it, cc);
     if (sorts.length) it.SortExpressions = sorts;

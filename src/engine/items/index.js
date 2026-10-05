@@ -381,8 +381,12 @@ register('table', {
     // run: rows shown so far, in display order (groups reorder rows), for RunningValue over a scope
     const tableScope = { rows, index: -1, run: [] };
     const scopes = { ...(tctx.scopes || {}), [item.name]: tableScope };
+    // each group's key chain: an aggregate scoped to a group outside that group's band (a table footer's Sum over
+    // the inner group) reads the instance the current row is in (BIRT: the last group in a footer, the first in a header)
+    const groupChains = {};
+    (item.groups || []).forEach((g, i) => { if (g.name) groupChains[g.name] = { rows, keys: item.groups.slice(0, i + 1).map(x => x.expr) }; });
     // region: Previous() in a detail row reads its run; group: the innermost group instance (none at table level)
-    const base = { ...tctx, aggRows: rows, aggIndex: undefined, fields: rows[0] || null, scopes, region: tableScope, group: undefined };
+    const base = { ...tctx, aggRows: rows, aggIndex: undefined, fields: rows[0] || null, scopes, region: tableScope, group: undefined, groupChains: { ...(tctx.groupChains || {}), ...groupChains } };
     const units = [];
     let y = 0;
     let repeatH = 0; // header height that repeats above continued rows
@@ -633,7 +637,11 @@ register('table', {
           rowNo++;
           for (const s of chain) { s.index++; s.run.push(grows[i]); }
           const dctx = { ...ctx, fields: grows[i], aggRows: grows, aggIndex: i, rowNumber: rowNo };
+          const u0 = units.length;
           for (const r of item.detail || []) layRow(r, dctx, 'detail', { level: groups.length });
+          // pageBreakEvery: a new page after every N detail rows (BIRT's pageBreakInterval)
+          const every = Math.trunc(Number(item.pageBreakEvery)) || 0;
+          if (every > 0 && rowNo > 1 && (rowNo - 1) % every === 0 && units[u0]) units[u0].breakBefore = true;
           endBand();
         }
         return;
