@@ -12,13 +12,19 @@ const S = (o = {}) => ({ folders: new Map(Object.entries(o.folders || {})), repo
 const user = (email, role = 'designer', groups = []) => ({ kind: 'user', email, role, groups });
 
 describe('the resolver', () => {
-  it('defaults to what accounts did before: everyone manages within their role', () => {
+  it('defaults: designers view every report, viewers see only what a grant gives them, admins manage all', () => {
     const s = S();
-    expect(reportLevel(s, user('d@x.io'), 'r')).toBe('manage');
-    expect(reportLevel(s, user('v@x.io', 'viewer'), 'r')).toBe('view'); // the role is a ceiling
+    expect(reportLevel(s, user('d@x.io'), 'r')).toBe('view');
+    expect(reportLevel(s, user('v@x.io', 'viewer'), 'r')).toBe('none');
+    expect(reportLevel(s, user('a@x.io', 'admin'), 'r')).toBe('manage');
+    expect(reportLevel(s, user('v@x.io', 'viewer', ['designers']), 'r')).toBe('none'); // a stored group cannot pose as a built-in one
     expect(reportLevel(s, { kind: 'nobody' }, 'r')).toBe('none');
     expect(reportLevel(s, { kind: 'anon' }, 'r')).toBe('none');
-    expect(folderLevel(s, user('d@x.io'), null)).toBe('manage');
+    expect(folderLevel(s, user('d@x.io'), null)).toBe('view');
+    // the creator's grant (recordNewReport) makes them manage it
+    const own = S({ reports: { r: { id: 'r', folder: null, inherit: true, grants: [{ to: 'user:d@x.io', level: 'manage' }] } } });
+    expect(reportLevel(own, user('d@x.io'), 'r')).toBe('manage');
+    expect(reportLevel(own, user('e@x.io'), 'r')).toBe('view');
   });
   it('inherits from the folder chain, stops where inheritance is off, and takes the highest grant', () => {
     const s = S({
@@ -164,7 +170,7 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     }
     // the admin locks the top to view, and makes Finance (not inherited): finance group view, alice edit
     const admin = { kind: 'user', email: 'admin@x.io', role: 'admin', groups: [] };
-    await perms.updateFolder(admin, 'root', { grants: [{ to: 'group:everyone', level: 'view' }] });
+    await perms.updateFolder(admin, 'root', { grants: [{ to: 'group:everyone', level: 'view' }], create: [] }); // nobody adds at the top but admins
     const fin = await perms.createFolder(admin, { name: 'Finance' });
     await perms.updateFolder(admin, fin.id, { inherit: false, grants: [{ to: 'group:finance', level: 'view' }, { to: 'user:alice@x.io', level: 'edit' }] });
     R.fin = fin.id;

@@ -63,7 +63,7 @@ export function checkGroups(groups) {
   const out = [...new Set(groups.map(g => String(g ?? '').trim()))].filter(Boolean);
   for (const g of out) {
     if (!GROUP.test(g)) throw fail(`"${g.slice(0, 70)}" is not a group name (letters, digits, space . @ - _, at most 64).`, 400);
-    if (['everyone', 'public'].includes(g.toLowerCase())) throw fail(`"${g}" is a built-in group.`, 400);
+    if (['everyone', 'designers', 'public'].includes(g.toLowerCase())) throw fail(`"${g}" is a built-in group.`, 400);
   }
   return out.sort();
 }

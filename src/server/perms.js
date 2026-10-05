@@ -5,11 +5,17 @@
 // top (no name, no parent). Report placement and grants ('reportacl' kind): { id, folder, inherit, grants }, kept
 // apart from the definition, so saving a definition can never change who may see it.
 // A grant: { to: 'user:<email>' | 'group:<name>', level: 'view' | 'edit' | 'manage' }. Built-in groups: "everyone"
-// (every signed-in user) and "public" (also anonymous embed readers, PW_EMBED_ORIGINS).
+// (every signed-in user), "designers" (users whose role is designer or admin) and "public" (also anonymous embed
+// readers, PW_EMBED_ORIGINS).
 //
 // A principal's level on a report: the highest grant on the report, then on its folder, its parent and so on while
-// "inherit" holds, ending at the root grants (default: everyone manage, i.e. what every signed-in user could do
-// before permissions existed). The role is a ceiling: a viewer views at most; admins manage everything.
+// "inherit" holds, ending at the root grants. The role is a ceiling: a viewer views at most; admins manage everything.
+// Defaults (no root record yet): the creator of a report or folder manages it; designers view every report and may
+// create reports and folders at the top (the root record's "create": who may add at the top besides those with edit
+// there); viewers see only what a grant gives them. An install from before these
+// defaults (reports stored, no root record) gets the root record "everyone: view" once (migrateRoot), so nobody loses
+// sight of a report; managing an older report then takes its creator's grant (recordNewReport has written one for every
+// report made by a signed-in user) or an admin.
 // view: open, render, export, run its saved SQL. edit: save, restore, version history. manage: delete, move, share.
 import crypto from 'node:crypto';
 import { store } from './storage/index.js';
@@ -34,7 +40,11 @@ const RANK = { none: 0, view: 1, edit: 2, manage: 3 };
 export const OPEN = Object.freeze({ kind: 'open' });
 export const PUBLIC = Object.freeze({ kind: 'public' });
 export const NOBODY = Object.freeze({ kind: 'nobody' });
-export const DEFAULT_ROOT = Object.freeze([{ to: 'group:everyone', level: 'manage' }]);
+export const DEFAULT_ROOT = Object.freeze([{ to: 'group:designers', level: 'view' }]);
+/** The root an install from before the defaults above gets once (it had everyone managing everything): view only. */
+export const LEGACY_ROOT = Object.freeze([{ to: 'group:everyone', level: 'view' }]);
+/** Built-in group names: never a user's own group (users.js checkGroups refuses them). */
+export const BUILTIN_GROUPS = ['everyone', 'designers', 'public'];
 const fail = (msg, status) => Object.assign(new Error(msg), { status });
 
 /** A stable name for a principal (job and schedule owners, cache keys, the audit log). @param {Principal} p */
@@ -143,23 +153,52 @@ export async function principalFromId(id, viaKey, { session = false, since = nul
 /** @typedef {{ to: string, level: 'view'|'edit'|'manage' }} Grant */
 /** @typedef {{ id: string, name?: string, parent?: string|null, inherit?: boolean, grants: Grant[], createdAt?: string, updatedAt?: string }} FolderRec */
 /** @typedef {{ id: string, folder: string|null, inherit: boolean, grants: Grant[] }} ReportRec */
-/** @typedef {{ folders: Map<string, FolderRec>, reports: Map<string, ReportRec>, root: Grant[] }} Snapshot */
+/** @typedef {{ folders: Map<string, FolderRec>, reports: Map<string, ReportRec>, root: Grant[], rootCreate?: string[] }} Snapshot */
+/** Who may add reports and folders at the top in a new or migrated root record (a root record without "create": nobody but edit grants). */
+export const DEFAULT_CREATE = Object.freeze(['group:designers']);
 
 /** Every folder and report record, read once for a request. @returns {Promise<Snapshot>} */
 export async function snapshot() {
   const [fl, rl] = await Promise.all([store().list('folders'), store().list('reportacl')]);
   const folders = new Map(), reports = new Map();
-  let root = DEFAULT_ROOT;
-  for (const r of fl) { try { const f = JSON.parse(r.text); if (f.id === 'root') root = f.grants || []; else folders.set(f.id, f); } catch { /* skip */ } }
+  let root = null, rootCreate = [];
+  for (const r of fl) { try { const f = JSON.parse(r.text); if (f.id === 'root') { root = f.grants || []; rootCreate = Array.isArray(f.create) ? f.create : []; } else folders.set(f.id, f); } catch { /* skip */ } }
+  if (!root) ({ grants: root, create: rootCreate } = await migrateRoot());
   for (const r of rl) { try { const x = JSON.parse(r.text); reports.set(x.id, x); } catch { /* skip */ } }
-  return { folders, reports, root: /** @type {Grant[]} */ (root) };
+  return { folders, reports, root: /** @type {Grant[]} */ (root), rootCreate };
+}
+
+/**
+ * The root record, written once when there is none: LEGACY_ROOT when reports are already stored (an install from before
+ * the defaults: nobody loses sight of a report), else DEFAULT_ROOT. Under the "acl" lock, so two servers agree.
+ * @returns {Promise<{ grants: Grant[], create: string[] }>}
+ */
+async function migrateRoot() {
+  const { withLock } = await import('./storage/index.js');
+  return withLock('acl', async () => {
+    const text = await store().get('folders', 'root');
+    if (text) { const r = JSON.parse(text); return { grants: r.grants || [], create: Array.isArray(r.create) ? r.create : [] }; }
+    const legacy = (await store().ids('reports')).length > 0;
+    const grants = [...(legacy ? LEGACY_ROOT : DEFAULT_ROOT)], create = [...DEFAULT_CREATE];
+    await store().put('folders', 'root', JSON.stringify({ id: 'root', grants, create, updatedAt: new Date().toISOString(), migrated: legacy ? 'legacy' : 'default', rev: rev() }));
+    if (legacy) console.warn('[pagewright] permissions: reports from before per-report defaults: everyone keeps view at the top; each report is managed by its creator or an admin. Change it on the Folders page.');
+    return { grants, create };
+  });
+}
+
+/** Whether a principal may add a report or a folder at the top: edit there, or a designer named in the root's "create". */
+function mayAddAtTop(s, p) {
+  if (atLeast(folderLevel(s, p, null), 'edit')) return true;
+  const names = namesOf(vet(p));
+  return canDesign(p) && (s.rootCreate || []).some(n => names.has(String(n).toLowerCase()));
 }
 
 /** Grant names that apply to a principal. @param {Principal} p */
 function namesOf(p) {
   if (p.kind === 'anon') return new Set(['group:public']);
   if (p.kind !== 'user') return new Set();
-  return new Set([`user:${p.email}`, 'group:everyone', 'group:public', ...p.groups.map(g => `group:${g.toLowerCase()}`)]);
+  const own = p.groups.map(g => g.toLowerCase()).filter(g => !BUILTIN_GROUPS.includes(g)); // a stored group cannot pose as a built-in one
+  return new Set([`user:${p.email}`, 'group:everyone', 'group:public', ...(p.role !== 'viewer' ? ['group:designers'] : []), ...own.map(g => `group:${g}`)]);
 }
 /** @param {Grant[]} grants @param {Set<string>} names @returns {number} */
 const best = (grants, names) => Math.max(0, ...(grants || []).filter(g => names.has(String(g.to).toLowerCase())).map(g => RANK[g.level] || 0));
@@ -414,9 +453,11 @@ export async function createFolder(p, { name, parent = null }) {
   const s = await snapshot();
   if (parent && !s.folders.has(parent)) throw fail('No such parent folder.', 404);
   if (s.folders.size >= 5000) throw fail('There are 5,000 folders already.', 400);
-  if (!atLeast(folderLevel(s, p, parent), 'manage')) throw fail('You cannot add a folder here.', 403);
+  // manage on the parent; at the top, a designer may add one too (and manages what they made)
+  if (!atLeast(folderLevel(s, p, parent), 'manage') && !(!parent && mayAddAtTop(s, p))) throw fail('You cannot add a folder here.', 403);
   const now = new Date().toISOString();
-  const f = { id: `f_${crypto.randomBytes(6).toString('hex')}`, name: cleanName(name), parent: parent || null, inherit: true, grants: [], createdAt: now, updatedAt: now };
+  const grants = p.kind === 'user' ? [{ to: `user:${p.email}`, level: /** @type {'manage'} */ ('manage') }] : [];
+  const f = { id: `f_${crypto.randomBytes(6).toString('hex')}`, name: cleanName(name), parent: parent || null, inherit: true, grants, createdAt: now, updatedAt: now };
   await store().put('folders', f.id, JSON.stringify({ ...f, rev: rev() }));
   return f;
 }
@@ -430,9 +471,10 @@ export async function updateFolder(p, id, patch) {
   const s = await snapshot();
   if (id === 'root') {
     if (!isAll(p) || p.kind === 'service') throw fail('Only an admin can change the top-level permissions.', 403);
-    const rec = { id: 'root', grants: checkGrants(patch.grants ?? s.root), updatedAt: new Date().toISOString() };
+    const create = patch.create === undefined ? s.rootCreate || [] : checkGrants((Array.isArray(patch.create) ? patch.create : [null]).map(to => ({ to, level: 'view' }))).map(g => g.to);
+    const rec = { id: 'root', grants: checkGrants(patch.grants ?? s.root), create, updatedAt: new Date().toISOString() };
     await store().put('folders', 'root', JSON.stringify({ ...rec, rev: rev() }));
-    return { before: { grants: s.root }, after: rec };
+    return { before: { grants: s.root, create: s.rootCreate || [] }, after: rec };
   }
   const f = s.folders.get(id);
   if (!f || !atLeast(folderLevel(s, p, id), 'view')) throw fail('No such folder.', 404);
@@ -508,7 +550,8 @@ export async function canCreateIn(p, folder, def) {
   if (p.kind === 'open') return;
   const s = await snapshot();
   if (folder && !s.folders.has(folder)) throw fail('No such folder.', 404);
-  if (!atLeast(folderLevel(s, p, folder || null), 'edit')) throw fail('You cannot add reports here.', 403);
+  // edit on the folder; at the top, any designer (the creator manages the new report: recordNewReport)
+  if (!(folder ? atLeast(folderLevel(s, p, folder), 'edit') : mayAddAtTop(s, p))) throw fail('You cannot add reports here.', 403);
 }
 /** Its access record (and the stamp of its server-side data, stampDefinition). @param {Principal} p @param {string} id @param {string|null} folder @param {any} [def] */
 export async function recordNewReport(p, id, folder, def) {

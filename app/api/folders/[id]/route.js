@@ -15,7 +15,7 @@ export async function GET(req, { params }) {
     const s = await snapshot();
     if (id === 'root') {
       if (!(p.kind === 'open' || (p.kind === 'user' && p.role === 'admin'))) return Response.json({ error: 'Only an admin can see the top-level permissions.' }, { status: 403 });
-      return Response.json({ id: 'root', grants: s.root, access: 'manage' });
+      return Response.json({ id: 'root', grants: s.root, create: s.rootCreate || [], access: 'manage' });
     }
     const f = s.folders.get(id);
     const lvl = f ? folderLevel(s, p, id) : 'none';
@@ -29,13 +29,13 @@ export async function PATCH(req, { params }) {
   try {
     const id = await idOf(params);
     const body = await req.json().catch(() => null);
-    if (!body || typeof body !== 'object') return Response.json({ error: 'Send { name?, parent?, inherit?, grants? }' }, { status: 400 });
+    if (!body || typeof body !== 'object') return Response.json({ error: 'Send { name?, parent?, inherit?, grants?, create? } (create: the top only)' }, { status: 400 });
     const patch = {};
-    for (const k of ['name', 'inherit', 'grants']) if (k in body) patch[k] = body[k];
+    for (const k of ['name', 'inherit', 'grants', 'create']) if (k in body) patch[k] = body[k];
     if ('parent' in body) patch.parent = folderParam(body.parent);
     const p = await principalOf(req);
     const { before, after } = await withLock('acl', () => updateFolder(p, id, patch));
-    const pick = (f) => ({ name: f.name, parent: f.parent, inherit: f.inherit !== false, grants: f.grants });
+    const pick = (f) => ({ name: f.name, parent: f.parent, inherit: f.inherit !== false, grants: f.grants, ...(f.create && { create: f.create }) });
     await audit(id === 'root' ? 'access.root' : 'access.folder', { req, principal: p, detail: { folder: id, before: pick(before), after: pick(after) } });
     return Response.json(after);
   } catch (e) { return fail(e); }
