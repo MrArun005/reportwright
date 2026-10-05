@@ -3,6 +3,7 @@
 // checks every resolved address, so DNS rebinding cannot get past it. The answer is data, never a page on our origin:
 // JSON, CSV or plain text as such, anything else as application/octet-stream, with nosniff and a sandboxing CSP.
 import { safeFetch, strictUrl, proxiedType } from '@/server/safeFetch.js';
+import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
 
@@ -22,6 +23,6 @@ export async function GET(req) {
     if (buf.byteLength > MAX_BYTES) return err('The response is larger than 5 MB', 413);
     return new Response(buf, { status: res.status, headers: { 'content-type': proxiedType(res.headers.get('content-type')), ...SAFE } });
   } catch (e) {
-    return err(e.message, e.status || 502);
+    return errorResponse(e, { status: e.status || 502 });
   }
 }

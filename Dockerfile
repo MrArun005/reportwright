@@ -24,5 +24,6 @@ RUN mkdir -p data && chown node:node data
 USER node
 EXPOSE 3000
 VOLUME ["/app/data", "/app/reports"]
-HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://127.0.0.1:3000/api/v1/templates').then(r=>process.exit(r.status<500?0:1),()=>process.exit(1))"
+# readyz: no key needed; 200 only when the storage answers and a render worker is ready
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/v1/readyz').then(r=>process.exit(r.status===200?0:1),()=>process.exit(1))"
 CMD ["node", "server.js"]

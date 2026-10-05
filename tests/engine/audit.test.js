@@ -172,6 +172,8 @@ describe('what the routes record', () => {
     const exp = (await import('../../app/api/audit/export/route.js')).POST;
     const { writeReport } = await import('../../src/server/reports.js');
     await writeReport('exp-r', { $schema: 'pagewright/report@1', name: 'E', sections: { body: { items: [] } } });
+    const { store: st } = await import('../../src/server/storage/index.js');
+    await st().put('reportacl', 'exp-r', JSON.stringify({ id: 'exp-r', folder: null, inherit: true, grants: [{ to: 'user:ann@x.io', level: 'view' }] })); // viewers see what a grant gives them
     expect((await exp(rq('/api/audit/export', { method: 'POST', body: { report: 'exp-r', format: 'xlsx' }, headers: { cookie: annCookie } }))).status).toBe(200);
     expect(await last('report.export')).toMatchObject({ actor: 'user:ann@x.io', report: 'exp-r', format: 'xlsx', detail: { client: true } });
     expect((await exp(rq('/api/audit/export', { method: 'POST', body: { report: 'exp-r', format: 'json' }, headers: { cookie: annCookie } }))).status).toBe(200); // the viewer's JSON export

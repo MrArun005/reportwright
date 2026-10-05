@@ -10,6 +10,7 @@ import { safeId } from '@/server/reports.js';
 import { audit, queryAudit } from '@/server/audit.js';
 import { principalId } from '@/server/perms.js';
 import { accountsOn } from '@/server/session.js';
+import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
 const FORMATS = new Set(['pdf', 'xlsx', 'docx', 'html', 'csv', 'json', 'svg', 'print']);
@@ -25,5 +26,5 @@ export async function POST(req) {
     const seen = (await queryAudit({ type: 'report.view', actor: principalId(p), report: body.report, from: new Date(Date.now() - 12 * 3600 * 1000).toISOString(), limit: 1 }).catch(() => []))[0];
     await audit('report.export', { req, principal: p, report: body.report, format: body.format, params: body.parameters && typeof body.parameters === 'object' ? body.parameters : null, detail: { client: true, serverView: seen ? seen.id : 'none' } });
     return Response.json({ ok: true });
-  } catch (e) { return Response.json({ error: e.message }, { status: e.status || 500 }); }
+  } catch (e) { return errorResponse(e); }
 }

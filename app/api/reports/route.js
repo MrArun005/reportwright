@@ -5,9 +5,10 @@ import { blankReport, blankDashboard } from '@/engine/schema/template.js';
 import { principalOf, visibleReports, canCreateIn, recordNewReport, folderParam } from '@/server/perms.js';
 import { audit } from '@/server/audit.js';
 import { withLock } from '@/server/storage/index.js';
+import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
-const fail = (e) => Response.json({ error: e.message }, { status: e.status || 500 });
+const fail = (e) => errorResponse(e);
 
 export async function GET(req) {
   try {

@@ -2,6 +2,7 @@
 // The audit log, newest first. Admins only (proxy.js, and again here).
 import { requireRole } from '@/server/access.js';
 import { queryAudit, auditCsv } from '@/server/audit.js';
+import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
 
@@ -16,5 +17,5 @@ export async function GET(req) {
       return new Response(auditCsv(events), { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="pagewright-audit-${new Date().toISOString().slice(0, 10)}.csv"` } });
     }
     return Response.json(await queryAudit(q));
-  } catch (e) { return Response.json({ error: e.message }, { status: e.status || 500 }); }
+  } catch (e) { return errorResponse(e); }
 }

@@ -7,6 +7,7 @@ import { busyHeaders } from '@/server/auth.js';
 import { audit } from '@/server/audit.js';
 import { throughSnapshot } from '@/server/snapshots.js';
 import { readReport } from '@/server/reports.js';
+import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
 
@@ -35,6 +36,6 @@ export async function GET(req, { params }) {
       },
     });
   } catch (e) {
-    return Response.json({ error: e.message, missingParameters: e.missingParameters }, { status: e.status || (e.missingParameters ? 400 : 500), headers: busyHeaders(e) });
+    return errorResponse(e, { status: e.status || (e.missingParameters ? 400 : 500), headers: busyHeaders(e), extra: { missingParameters: e.missingParameters } });
   }
 }

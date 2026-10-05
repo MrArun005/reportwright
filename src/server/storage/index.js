@@ -11,6 +11,7 @@
 import { fileStore } from './file.js';
 import { sqlStore } from './sql.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { logWarn } from '../errors.js';
 
 /** @typedef {'reports'|'schedules'|'jobs'|'users'|'fonts'|'folders'|'reportacl'|'tokens'|'settings'|'blobs'} Kind */
 /**
@@ -63,7 +64,7 @@ export async function withLock(name, fn, { waitMs = 15000, ttl = 30000 } = {}) {
   }, Math.max(10, Math.floor(ttl / 3)));
   renew.unref?.();
   try { return await locks.run(new Map([...(held || []), [name, h]]), fn); }
-  finally { clearInterval(renew); if (!h.lost) await store().release(`lock:${name}`, owner).catch(() => {}); }
+  finally { clearInterval(renew); if (!h.lost) await store().release(`lock:${name}`, owner).catch(logWarn(`lock release ${name}`)); } // a lease not released expires on its own (ttl)
 }
 const locks = new AsyncLocalStorage();
 

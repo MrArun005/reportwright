@@ -98,6 +98,11 @@ const P = g.__pwRenderPool ||= { startFails: 0, dying: new Set(), slots: [], que
   stats: { done: 0, failed: 0, rejected: 0, timedOut: 0, crashed: 0, recycled: 0, dropped: 0, heldForMemory: 0, restarts: 0 } };
 P.stats.heldForMemory ??= 0; P.stats.restarts ??= 0;
 
+// render durations (seconds) for /api/v1/metrics: a Prometheus histogram
+export const BUCKETS = [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60];
+P.hist ||= { counts: BUCKETS.map(() => 0), sum: 0, n: 0 };
+const observe = (ms) => { const sec = ms / 1000; P.hist.n++; P.hist.sum += sec; BUCKETS.forEach((b, i) => { if (sec <= b) P.hist.counts[i]++; }); };
+
 const busy = (msg, status, retryMs) => Object.assign(new Error(msg), { status, retryAfter: Math.max(1, Math.ceil(retryMs / 1000)) });
 const bump = (m, k, d) => { const n = (m.get(k) || 0) + d; if (n > 0) m.set(k, n); else m.delete(k); };
 
@@ -145,6 +150,7 @@ function spawn() {
     if (!job || m?.id !== job.id) return;
     const took = finish(s);
     s.renders++;
+    observe(took);
     if (!m.err) { P.est.set(job.key, Math.round(0.7 * (P.est.get(job.key) ?? took) + 0.3 * took)); if (P.est.size > 5000) P.est.clear(); } // successes only: a made-up ref teaches nothing
     if (m.err) { P.stats.failed++; job.reject(Object.assign(new Error(m.err.message), m.err)); }
     else { P.stats.done++; job.resolve(m.ok); }
@@ -340,6 +346,7 @@ export function poolStats() {
     queue: { interactive: q(0), background: q(1), max: queueMax(), perPrincipalMax: perPrincipalMax(), estimatedWaitMs: Math.round(waitAhead(1)) },
     principals: { running: P.running.size, waiting: P.waiting.size },
     totals: { ...P.stats },
+    durations: { buckets: BUCKETS, counts: [...P.hist.counts], sum: P.hist.sum, count: P.hist.n },
   };
 }
 

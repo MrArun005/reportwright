@@ -5,6 +5,7 @@ import { useReset } from '@/server/users.js';
 import { attempt, clientAddress } from '@/server/limits.js';
 import { audit } from '@/server/audit.js';
 import { notifyAccount } from '@/server/mail.js';
+import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
 
@@ -21,6 +22,6 @@ export async function POST(req) {
     return Response.json({ ok: true }, { headers: { 'cache-control': 'no-store' } });
   } catch (e) {
     if (e.status === 400 && /link/.test(e.message)) await audit('auth.reset_failed', { req, status: 'failed', detail: { reason: 'bad or spent token' } });
-    return Response.json({ error: e.message }, { status: e.status || 500 });
+    return errorResponse(e);
   }
 }

@@ -7,6 +7,7 @@
 // PW_BASIC_AUTH, PW_AUTH=proxy), never in production with no sign-in. Every POST here is same-origin (proxy.js).
 import { runSql, runSavedSql } from '@/server/sql.js';
 import { principalOf, canDesign } from '@/server/perms.js';
+import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
 
@@ -27,6 +28,6 @@ export async function POST(req) {
     if (!canDesign(await principalOf(req))) return bad('Only designers can run SQL from the request (in production that needs a sign-in: PW_AUTH=users or PW_BASIC_AUTH). Save the report: its saved query runs instead.', 403);
     return Response.json({ rows: await runSql({ connection: body.connection, query: body.query, procedure: body.procedure, args: body.args }, params) });
   } catch (e) {
-    return Response.json({ error: e.message }, { status: e.status || 500 });
+    return errorResponse(e);
   }
 }

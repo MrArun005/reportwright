@@ -4,9 +4,10 @@ import { safeId } from '@/server/reports.js';
 import { principalOf, reportAccessInfo, setReportAccess, folderParam } from '@/server/perms.js';
 import { audit } from '@/server/audit.js';
 import { withLock } from '@/server/storage/index.js';
+import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
-const fail = (e) => Response.json({ error: e.message }, { status: e.status || 500 });
+const fail = (e) => errorResponse(e);
 
 export async function GET(req, { params }) {
   try { return Response.json(await reportAccessInfo(await principalOf(req), safeId((await params).id))); }

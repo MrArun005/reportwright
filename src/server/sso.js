@@ -39,6 +39,7 @@ import { signSession, readToken, sessionSecret, safeNext } from './session.js';
 import { getUser, createUser, updateUser, normEmail, allUsers, ROLES, GROUP } from './users.js';
 import { store, withLock } from './storage/index.js';
 import { clientAddress } from './limits.js';
+import { logWarn } from './errors.js';
 
 const fail = (msg, status = 400, code = 'sso') => Object.assign(new Error(msg), { status, code });
 const b64u = (buf) => Buffer.from(buf).toString('base64url');
@@ -364,7 +365,7 @@ export async function samlAcs(req, samlResponse) {
     || (/:nameid-format:emailAddress$/.test(profile.nameIDFormat || '') ? profile.nameID : null); // a NameID is an email only when it says so
   if (!email) throw fail('The SAML response has no email for this account.', 401, 'email');
   const identity = mapIdentity(String(email), attr(process.env.PW_SAML_GROUPS_ATTR || 'groups'), { issuer, subject: `${profile.nameIDFormat || ''}|${profile.nameID}` });
-  await sweep().catch(() => {});
+  await sweep().catch(logWarn('sso token sweep'));
   const handle = rand(24);
   await store().put('tokens', `samlh:${handle}`, JSON.stringify({ id: `samlh:${handle}`, rid, identity, expires: Date.now() + 120000 }));
   return `${publicBase(req)}/api/auth/saml/finish?h=${encodeURIComponent(handle)}`;

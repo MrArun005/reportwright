@@ -6,6 +6,7 @@ import { baseUrl } from '@/server/renderer.js';
 import { principalOf, readRunnable } from '@/server/perms.js';
 import { thumbnail } from '@/server/thumbs.js';
 import { audit } from '@/server/audit.js';
+import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
 const PLACEHOLDER = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 595 842"><rect width="595" height="842" fill="#fff"/></svg>';
@@ -21,6 +22,6 @@ export async function GET(req, { params }) {
     await audit('report.view', { req, principal, report: id, detail: { via: 'thumbnail' } }); // page 1 with live data
     return new Response(t.svg, { headers: { 'content-type': 'image/svg+xml', 'cache-control': 'private, no-cache', 'x-pagewright-pages': String(t.pages) } });
   } catch (e) {
-    return Response.json({ error: e.message }, { status: e.status || (e.missingParameters ? 422 : 500) });
+    return errorResponse(e, { status: e.status || (e.missingParameters ? 422 : 500) });
   }
 }

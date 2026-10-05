@@ -12,6 +12,7 @@ import { notifyAccount } from '@/server/mail.js';
 import { getSettings } from '@/server/settings.js';
 import { attempt } from '@/server/limits.js';
 import { audit } from '@/server/audit.js';
+import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
 const fail = (msg, status) => Object.assign(new Error(msg), { status });
@@ -66,5 +67,5 @@ export async function POST(req) {
     await audit('auth.mfa_disabled', { req, actor: `user:${me.email}` });
     notifyAccount(me.email, 'Two-factor sign-in was turned off for your account.');
     return Response.json({ ok: true }, { headers: { ...noStore, 'set-cookie': sessionCookie(req, await getUser(me.email), { exp: sessionClaims(req)?.exp }) } });
-  } catch (e) { return Response.json({ error: e.message }, { status: e.status || 500 }); }
+  } catch (e) { return errorResponse(e); }
 }

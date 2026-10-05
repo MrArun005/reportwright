@@ -6,6 +6,7 @@ import { store, withLock } from './storage/index.js';
 import { principalId, principalFromId, checkReport, vet, defaultPrincipal, canDesign } from './perms.js';
 import { audit } from './audit.js';
 import { getUser } from './users.js';
+import { logWarn } from './errors.js';
 
 const g = globalThis;
 g.__pwSched ||= { timer: null };
@@ -140,6 +141,6 @@ export async function tickAs(owner, now = new Date()) {
 export function startScheduler() {
   if (g.__pwSched.timer || process.env.PW_SCHEDULER === 'off') return;
   // one tick at a time: a tick still running (a slow schedule) is not joined by the next
-  g.__pwSched.timer = setInterval(() => { if (g.__pwSched.busy) return; g.__pwSched.busy = tickAs(ME).catch(() => {}).finally(() => { g.__pwSched.busy = null; }); }, tickMs());
+  g.__pwSched.timer = setInterval(() => { if (g.__pwSched.busy) return; g.__pwSched.busy = tickAs(ME).catch(logWarn('scheduler tick')).finally(() => { g.__pwSched.busy = null; }); }, tickMs());
   g.__pwSched.timer.unref?.();
 }

@@ -7,6 +7,7 @@ import { getUser, startTwoFactor, enrolCodeOk } from '@/server/users.js';
 import { mailOn } from '@/server/mail.js';
 import { attempt } from '@/server/limits.js';
 import { audit } from '@/server/audit.js';
+import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
 
@@ -26,5 +27,5 @@ export async function POST(req) {
     const out = await startTwoFactor(u.email);
     await audit('auth.mfa_setup', { req, actor: `user:${u.email}`, detail: { at: 'sign-in', emailCode: mailOn() } });
     return Response.json(out, { headers: { 'cache-control': 'no-store' } });
-  } catch (e) { return Response.json({ error: e.message }, { status: e.status || 500 }); }
+  } catch (e) { return errorResponse(e); }
 }

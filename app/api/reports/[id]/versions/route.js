@@ -3,6 +3,7 @@ import { listVersions, readReport, writeReport, safeId } from '@/server/reports.
 import { principalOf, checkReport, stampDefinition } from '@/server/perms.js';
 import { audit } from '@/server/audit.js';
 import { withLock } from '@/server/storage/index.js';
+import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
 
@@ -11,7 +12,7 @@ export async function GET(req, { params }) {
     const id = safeId((await params).id);
     await checkReport(await principalOf(req), id, 'edit');
     return Response.json(await listVersions(id));
-  } catch (e) { return Response.json({ error: e.message }, { status: e.status || 500 }); }
+  } catch (e) { return errorResponse(e); }
 }
 
 export async function POST(req, { params }) {
@@ -28,5 +29,5 @@ export async function POST(req, { params }) {
     if (!def) return Response.json({ error: 'Version not found' }, { status: 404 });
     await audit('report.restore', { req, principal: p, report: id, detail: { version: String(version) } });
     return Response.json(def);
-  } catch (e) { return Response.json({ error: e.message }, { status: e.status || 500 }); }
+  } catch (e) { return errorResponse(e); }
 }

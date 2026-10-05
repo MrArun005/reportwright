@@ -5,6 +5,7 @@
 // read-only (render a saved template, list them): no definitions or data in the request, no signing, no batches or
 // schedules. A keyless write from a browser must come from this site's pages (a no-key request carries no secret).
 // (A Host-header check is not safe: any client can send "Host: localhost".)
+import { errorResponse } from './errors.js';
 import crypto from 'node:crypto';
 import { accountsOn, sameOrigin } from './session.js';
 import { userPrincipal, OPEN, PUBLIC } from './perms.js';
@@ -74,5 +75,5 @@ export async function authorize(req) { return (await apiPrincipal(req)).res || n
 export const busyHeaders = (e) => (e?.retryAfter ? { 'retry-after': String(e.retryAfter) } : undefined);
 
 export function fail(e) {
-  return Response.json({ error: e.message, missingParameters: e.missingParameters }, { status: e.status || (e.missingParameters ? 400 : 500), headers: busyHeaders(e) });
+  return errorResponse(e, { status: e.status || (e.missingParameters ? 400 : 500), headers: busyHeaders(e), extra: { missingParameters: e.missingParameters } });
 }

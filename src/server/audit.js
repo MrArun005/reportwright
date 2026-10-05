@@ -22,6 +22,7 @@ import os from 'node:os';
 import { store } from './storage/index.js';
 import { clientAddress } from './limits.js';
 import { principalId } from './perms.js';
+import { logWarn } from './errors.js';
 
 /** @typedef {import('./perms.js').Principal} Principal */
 
@@ -116,12 +117,24 @@ async function drain() {
 /** The checkpoint signing key, or null when none is configured: never a key anyone could know. */
 function signingKey() {
   if (process.env.PW_AUDIT_SIGNING_KEY) return crypto.createPrivateKey(String(process.env.PW_AUDIT_SIGNING_KEY).replace(/\\n/g, '\n'));
-  const secret = process.env.PW_AUDIT_KEY || process.env.PW_SESSION_SECRET;
-  if (!secret || secret.length < 32) {
+  const bad = auditKeyProblem();
+  if (bad) {
+    // never silently unsigned: production refuses (instrumentation.js stops the start, and this throws if it did not);
+    // development says so loudly and signs with PW_SESSION_SECRET when that is long enough
+    if (process.env.NODE_ENV === 'production') throw Object.assign(new Error(bad), { status: 500 });
+    if (!g.__pwAudit.warnedShort) { g.__pwAudit.warnedShort = true; console.error(`[pagewright] audit log: ${bad}`); }
+  }
+  const secret = [process.env.PW_AUDIT_KEY, process.env.PW_SESSION_SECRET].find(x => x && x.length >= 32);
+  if (!secret) {
     if (!g.__pwAudit.warnedKey) { g.__pwAudit.warnedKey = true; console.error('[pagewright] audit log: no PW_AUDIT_KEY (32+ characters), PW_AUDIT_SIGNING_KEY or PW_SESSION_SECRET, so checkpoints are written UNSIGNED and the chain proves only consistency. Set PW_AUDIT_KEY.'); }
     return null;
   }
   return keyFromSecret(secret);
+}
+/** Why PW_AUDIT_KEY cannot be used, or '' (unset is fine: the session secret or no signing). */
+export function auditKeyProblem() {
+  const k = process.env.PW_AUDIT_KEY;
+  return k && k.length < 32 ? `PW_AUDIT_KEY is set but has ${k.length} characters; it needs 32 or more, or checkpoints could not be signed with it. Use a longer key (openssl rand -hex 32).` : '';
 }
 /** The Ed25519 key a secret stands for (the same secret gives the same key on every server). @param {string} secret */
 export function keyFromSecret(secret) {
@@ -210,7 +223,7 @@ async function write(entry, _type) {
   if (!(await enqueue(entry))) return false;
   const c = chain();
   // publish this stream's head every 30 s, so the next checkpoint (any server's) anchors it even if this process dies
-  if (Date.now() - (c.headAt || 0) > 30000 && process.env.PW_AUDIT_CHECKPOINTS !== 'off') { c.headAt = Date.now(); publishHead().catch(() => {}); }
+  if (Date.now() - (c.headAt || 0) > 30000 && process.env.PW_AUDIT_CHECKPOINTS !== 'off') { c.headAt = Date.now(); publishHead().catch(logWarn('audit head')); }
   if (Date.now() - g.__pwAudit.pruned > HOUR) {
     g.__pwAudit.pruned = Date.now();
     await prune().catch((e) => console.error(`[pagewright] audit retention: ${e.message}`));
@@ -232,7 +245,7 @@ function startCheckpoints() {
   g.__pwAudit.timer = setInterval(() => { checkpoint().catch(e => console.error(`[pagewright] audit checkpoint: ${e.message}`)); }, checkpointMs());
   g.__pwAudit.timer.unref?.();
   // and one soon after start: it anchors the heads a stopped process left
-  setTimeout(() => { checkpoint().catch(() => {}); }, 10000).unref?.();
+  setTimeout(() => { checkpoint().catch(logWarn('audit checkpoint')); }, 10000).unref?.();
 }
 async function publishHead() {
   const head = writtenHead();

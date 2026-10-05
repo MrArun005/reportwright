@@ -3,10 +3,11 @@
 // Empty names are read from the font. TTF, OTF, WOFF and WOFF2 up to 20 MB.
 import { listFonts, saveFont, MAX_FONT_BYTES } from '@/server/fonts.js';
 import { principalOf, canDesign } from '@/server/perms.js';
+import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
 
-const fail = (e) => Response.json({ error: e.message }, { status: e.status || 500 });
+const fail = (e) => errorResponse(e);
 
 export async function GET() {
   try { return Response.json(await listFonts()); } catch (e) { return fail(e); }

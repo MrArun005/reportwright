@@ -5,10 +5,11 @@ import { validate } from '@/engine/schema/validate.js';
 import { principalOf, readReportFor, checkReport, canCreateIn, recordNewReport, forgetReport, stampDefinition } from '@/server/perms.js';
 import { audit } from '@/server/audit.js';
 import { withLock } from '@/server/storage/index.js';
+import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
 
-const fail = (e) => Response.json({ error: e.message }, { status: e.status || 500 });
+const fail = (e) => errorResponse(e);
 
 export async function GET(req, { params }) {
   try {

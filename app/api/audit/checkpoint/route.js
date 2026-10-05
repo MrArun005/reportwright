@@ -2,6 +2,7 @@
 // Admins only.
 import { requireRole } from '@/server/access.js';
 import { checkpoint } from '@/server/audit.js';
+import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
 
@@ -11,5 +12,5 @@ export async function POST(req) {
   try {
     const e = await checkpoint({ actor: `user:${me.email}` });
     return Response.json(e ? { id: e.id, at: e.at, streams: Object.keys(e.detail.heads).length } : { id: null });
-  } catch (e) { return Response.json({ error: e.message }, { status: e.status || 500 }); }
+  } catch (e) { return errorResponse(e); }
 }

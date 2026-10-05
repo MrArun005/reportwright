@@ -10,6 +10,8 @@ import { issueEnrolCode, updateUser } from '@/server/users.js';
 import { mailOn, sendMail } from '@/server/mail.js';
 import { audit } from '@/server/audit.js';
 import { passwordLoginOn } from '@/server/sso.js';
+import { errorResponse } from '@/server/errors.js';
+import { logWarn } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
 
@@ -46,7 +48,7 @@ export async function POST(req) {
         } catch (e) {
           console.error(`[pagewright] enrolment code mail: ${e.message}`);
           await audit('auth.mfa_failed', { req, actor: `user:${user.email}`, status: 'failed', detail: { reason: 'enrol mail failed' } });
-          await updateUser(user.email, { clearEnrolCode: true }).catch(() => {});
+          await updateUser(user.email, { clearEnrolCode: true }).catch(logWarn('clear enrolment code'));
           return Response.json({ error: 'The enrolment code could not be mailed. Try again later, or ask an admin.' }, { status: 503 });
         }
       }
@@ -56,6 +58,6 @@ export async function POST(req) {
     await audit('auth.login', { req, actor: `user:${user.email}`, detail: { method: 'password' } });
     return Response.json({ email: user.email, role: user.role }, { headers: { 'set-cookie': sessionCookie(req, user) } });
   } catch (e) {
-    return Response.json({ error: e.message }, { status: e.status || 500 });
+    return errorResponse(e);
   }
 }

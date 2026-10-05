@@ -8,10 +8,11 @@ import { sessionCookie, sessionClaims } from '@/server/session.js';
 import { audit } from '@/server/audit.js';
 import { notifyAccount } from '@/server/mail.js';
 import { unlockLogin } from '@/server/limits.js';
+import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
 
-const fail = (e) => Response.json({ error: e.message }, { status: e.status || 500 });
+const fail = (e) => errorResponse(e);
 // an email always has "@": without one the segment is still percent-encoded (a%40b.c)
 const target = async (params) => { const e = String((await params).email); try { return e.includes('@') ? e : decodeURIComponent(e); } catch { return e; } };
 

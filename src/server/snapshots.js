@@ -15,6 +15,7 @@ import { blobs, removePrefix } from './blobs.js';
 import { getSettings, getRecord, putRecord } from './settings.js';
 import { accessStamp, principalId } from './perms.js';
 import { canonical } from './audit.js';
+import { logWarn } from './errors.js';
 
 const PREFIX = 'snap/';
 const g = /** @type {any} */ (globalThis);
@@ -64,7 +65,7 @@ export async function throughSnapshot(r, render) {
   const hit = await blobs().get(name).then(b => (b ? unpack(b) : null), () => null);
   if (hit && Date.now() - Date.parse(hit.meta.at) < ttl * 1000) {
     g.__pwSnap.hits++;
-    blobs().touch(name).catch(() => {});
+    blobs().touch(name).catch(logWarn('snapshot touch'));
     return /** @type {any} */ ({ ...hit.meta, bytes: new Uint8Array(hit.bytes), snapshot: 'hit' });
   }
   g.__pwSnap.misses++;
@@ -80,7 +81,7 @@ export async function throughSnapshot(r, render) {
 /** Keep the cache under its bound: drop the least recently used (expired first). */
 function evictSoon(maxMb) {
   if (g.__pwSnap.evicting || Date.now() - g.__pwSnap.lastEvict < 5000) return;
-  g.__pwSnap.evicting = evict(maxMb).catch(() => {}).finally(() => { g.__pwSnap.evicting = null; g.__pwSnap.lastEvict = Date.now(); });
+  g.__pwSnap.evicting = evict(maxMb).catch(logWarn('snapshot evict')).finally(() => { g.__pwSnap.evicting = null; g.__pwSnap.lastEvict = Date.now(); });
 }
 /** @param {number} maxMb */
 export async function evict(maxMb) {

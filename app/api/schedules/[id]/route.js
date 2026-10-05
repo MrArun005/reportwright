@@ -2,6 +2,7 @@
 import { updateSchedule, deleteSchedule, getSchedule } from '@/server/schedules.js';
 import { audit } from '@/server/audit.js';
 import { designer, specOf } from '@/server/schedulePage.js';
+import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
 
@@ -19,7 +20,7 @@ export async function PATCH(req, { params }) {
     if (!s) return Response.json({ error: 'No such schedule.' }, { status: 404 });
     await audit('schedule.update', { req, principal: p, report: s.template, detail: { schedule: s.id, enabled: s.enabled, via: 'page' } });
     return Response.json(s);
-  } catch (e) { return Response.json({ error: e.message }, { status: e.status || 500 }); }
+  } catch (e) { return errorResponse(e); }
 }
 
 export async function DELETE(req, { params }) {

@@ -8,6 +8,7 @@ import { getSettings } from '@/server/settings.js';
 import { attempt } from '@/server/limits.js';
 import { audit } from '@/server/audit.js';
 import { notifyAccount } from '@/server/mail.js';
+import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
 const WINDOW = 15 * 60 * 1000;
@@ -44,5 +45,5 @@ export async function POST(req) {
     h.append('set-cookie', sessionCookie(req, user, via === 'none' ? {} : { m: 1 }));
     h.append('set-cookie', clearMfa(req));
     return Response.json({ email: user.email, role: user.role, ...(codes ? { recoveryCodes: codes } : {}) }, { headers: h });
-  } catch (e) { return Response.json({ error: e.message }, { status: e.status || 500 }); }
+  } catch (e) { return errorResponse(e); }
 }

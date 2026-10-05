@@ -2,6 +2,7 @@
 import { requireRole } from '@/server/access.js';
 import { snapshotStats, clearSnapshots } from '@/server/snapshots.js';
 import { audit } from '@/server/audit.js';
+import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
 
@@ -17,5 +18,5 @@ export async function DELETE(req) {
     await audit('snapshot.clear', { req, actor: `user:${me.email}`, detail: { entries: before.entries } });
     await clearSnapshots();
     return Response.json(await snapshotStats());
-  } catch (e) { return Response.json({ error: e.message }, { status: e.status || 500 }); }
+  } catch (e) { return errorResponse(e); }
 }

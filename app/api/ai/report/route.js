@@ -6,6 +6,7 @@ import { draftReport } from '@/server/ai.js';
 import { fontStore } from '@/server/renderer.js';
 import { safeId } from '@/server/reports.js';
 import { principalOf, readReportFor, canDesign } from '@/server/perms.js';
+import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; // a draft with retries can take minutes
@@ -30,6 +31,6 @@ export async function POST(req) {
     client ||= new Anthropic(); // reads ANTHROPIC_API_KEY
     return Response.json(await draftReport({ prompt: body.prompt, sample: body.sample, url: body.url, base, sources: body.sources }, { client, fontStore: fontStore() }));
   } catch (e) {
-    return err(e.message, e.status || 500);
+    return errorResponse(e);
   }
 }

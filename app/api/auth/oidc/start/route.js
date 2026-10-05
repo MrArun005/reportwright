@@ -1,6 +1,7 @@
 // GET /api/auth/oidc/start?next=/path — off to the OpenID Connect provider (src/server/sso.js).
 import { accountsOn } from '@/server/session.js';
 import { oidcOn, oidcStart, tooManyStarts } from '@/server/sso.js';
+import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
 
@@ -10,5 +11,5 @@ export async function GET(req) {
   try {
     const { url, cookie } = await oidcStart(req, new URL(req.url).searchParams.get('next') || '/');
     return new Response(null, { status: 302, headers: { location: url, 'set-cookie': cookie, 'cache-control': 'no-store' } });
-  } catch (e) { return Response.json({ error: e.message }, { status: e.status || 502 }); }
+  } catch (e) { return errorResponse(e, { status: e.status || 502 }); }
 }

@@ -7,6 +7,7 @@ import { importXmlReport } from '@/importers/index.js';
 import { principalOf, canCreateIn, recordNewReport, folderParam } from '@/server/perms.js';
 import { audit } from '@/server/audit.js';
 import { withLock } from '@/server/storage/index.js';
+import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
 
@@ -44,5 +45,5 @@ export async function POST(req) {
     });
     await audit('report.import', { req, principal: p, report: id, detail: { folder, warnings: warnings.length } });
     return Response.json({ id, warnings, stats }, { status: 201 });
-  } catch (e) { return Response.json({ error: e.message }, { status: e.status || 500 }); }
+  } catch (e) { return errorResponse(e); }
 }

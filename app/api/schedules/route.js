@@ -10,6 +10,7 @@ import { getJob } from '@/server/jobs.js';
 import { listReports } from '@/server/reports.js';
 import { mailOn, allowedDomains } from '@/server/mail.js';
 import { audit } from '@/server/audit.js';
+import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
 const json = (o, status = 200) => Response.json(o, { status, headers: { 'cache-control': 'no-store' } });
@@ -33,5 +34,5 @@ export async function POST(req) {
     const s = await createSchedule(specOf(await req.json()), p, { session: true });
     await audit('schedule.create', { req, principal: p, report: s.template, detail: { schedule: s.id, cron: s.cron, timezone: s.timezone, email: s.email ? s.email.to.length : 0, via: 'page' } });
     return json(s, 201);
-  } catch (e) { return json({ error: e.message }, e.status || 500); }
+  } catch (e) { return errorResponse(e); }
 }
