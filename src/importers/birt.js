@@ -107,7 +107,7 @@ function toRdlx(root, notes, reportName) {
   /* ---------------------------------------------------------------- expressions: BIRT JavaScript → VB */
 
   /**
-   * @typedef {{ bindings?: Map<string, any>, outer?: any, group?: string, dataSet?: string, inSet?: boolean }} Ctx
+   * @typedef {{ bindings?: Map<string, any>, outer?: any, group?: string, dataSet?: string, inSet?: boolean, region?: string }} Ctx
    *   bindings: the bound columns of the table or list the item is in (row["X"] reads them); inSet: a data set's own
    *   expression (computed columns, filters), where row["X"] is the field
    */
@@ -229,7 +229,9 @@ function toRdlx(root, notes, reportName) {
       const arg = listProp(b, 'arguments').map(x => prop(x, 'value')).find(x => x != null);
       const inner = arg != null ? vb(arg, { ...c, inSet: false }, depth) : '1';
       if (prop(b, 'filterExpr')) throw new Untranslatable(`the bound column "${prop(b, 'name')}", an aggregate with a filter`);
-      const scope = gc.group ? `, "${gc.group}"` : '';
+      // aggregateOn "All" (or none, BIRT's default) is the whole table or list, wherever the cell is: a grand total
+      const all = gc.group ?? c.region;
+      const scope = all ? `, "${String(all).replace(/"/g, '""')}"` : '';
       if (AGG[fn]) return `${AGG[fn]}(${inner}${scope})`;
       if (RUNNING[fn]) return `RunningValue(${inner}, ${RUNNING[fn]}${scope})`;
       throw new Untranslatable(`the aggregate ${fn.toUpperCase()}`);
@@ -599,7 +601,7 @@ function toRdlx(root, notes, reportName) {
     const ds = prop(e, 'dataSet') || c.dataSet;
     if (!prop(e, 'dataSet') && !c.dataSet) (it.__notes ||= []).push('it has no data set in BIRT.');
     if (ds) it.DataSetName = ds;
-    const cc = { bindings: bindingsOf(e), outer: c.bindings ? c : undefined, dataSet: ds };
+    const cc = { bindings: bindingsOf(e), outer: c.bindings ? c : undefined, dataSet: ds, region: it.Name };
     const cw = columns(e, W);
     it.TableColumns = cw.map(w => ({ Width: pt(w) }));
     let total = 0;
@@ -663,7 +665,7 @@ function toRdlx(root, notes, reportName) {
     it.Type = 'bandedlist';
     const ds = prop(e, 'dataSet') || c.dataSet;
     if (ds) it.DataSetName = ds;
-    const cc = { bindings: bindingsOf(e), outer: c.bindings ? c : undefined, dataSet: ds };
+    const cc = { bindings: bindingsOf(e), outer: c.bindings ? c : undefined, dataSet: ds, region: it.Name };
     const slot = (s, sel, gc) => { const f = flow(s?.children || [], W, { ...inherit(st), ...named(sel) }, gc, depth + 1); return { Height: pt(f.h), ReportItems: f.items, h: f.h }; };
     const head = slot(kid(e, 'header'), 'list-header', cc), det = slot(kid(e, 'detail'), 'list-detail', cc), foot = slot(kid(e, 'footer'), 'list-footer', cc);
     let total = head.h + det.h + foot.h;

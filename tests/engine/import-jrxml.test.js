@@ -28,7 +28,7 @@ describe('Java and Groovy expressions → VB', () => {
     expect(J('$F{a} == null ? "-" : $F{a}')).toBe('IIF(IsNothing(Fields!a.Value), "-", Fields!a.Value)');
     expect(J('$F{a} != null && !$F{a}.isEmpty()')).toBe('Not IsNothing(Fields!a.Value) AndAlso Not Len(Fields!a.Value) = 0');
     expect(J('(String) $P{x}')).toBe('CStr(Parameters!x.Value)');
-    expect(J('((Integer) $F{n}).intValue()')).toBe('CInt((CInt(Fields!n.Value)))');
+    expect(J('((Integer) $F{n}).intValue()')).toBe('Fix((Fix(Fields!n.Value)))'); // Java truncates (REVIEW-ENGINE A8)
     expect(J('new Double($F{n}.doubleValue() / 2)')).toBe('CDbl(CDbl(Fields!n.Value) / 2)');
     expect(J('Boolean.TRUE')).toBe('True');
     expect(J('$F{a} ?: "none"')).toBe('IIF(IsNothing(Fields!a.Value), "none", Fields!a.Value)');
@@ -37,10 +37,10 @@ describe('Java and Groovy expressions → VB', () => {
     expect(J('$F{a}.substring(0, 1).toUpperCase()')).toBe('UCase(Fields!a.Value.Substring(0, 1 - 0))');
     expect(J('$F{a}.trim().length()')).toBe('Len(Trim(Fields!a.Value))');
     expect(J('$F{a}.equalsIgnoreCase("x")')).toBe('UCase(Fields!a.Value) = UCase("x")');
-    expect(J('java.lang.Math.round($F{n})')).toBe('Math.Round(Fields!n.Value, 0, MidpointRounding.AwayFromZero)');
+    expect(J('java.lang.Math.round($F{n})')).toBe('Math.Floor(Fields!n.Value + 0.5)'); // Java: halves toward +infinity
     expect(J('String.valueOf($F{n})')).toBe('CStr(Fields!n.Value)');
     expect(J('new java.util.Date()')).toBe('Now');
-    expect(J('msg("{0} orders, {1,number,0.00} in total", $V{c}, $F{n})')).toBe('V_c & " orders, " & Format(Fields!n.Value, "0.00") & " in total"');
+    expect(J('msg("{0} orders, {1,number,0.00} in total", $V{c}, $F{n})')).toBe('V_c & " orders, " & Format(Round(Fields!n.Value, 2), "0.00") & " in total"'); // DecimalFormat: half to even
     expect(J('UPPER(CONCATENATE($F{a}, "-", $F{b}))')).toBe('UCase(Fields!a.Value & "-" & Fields!b.Value)');
     expect(J('IF($F{n} > 5, "big", "small")')).toBe('IIF(Fields!n.Value > 5, "big", "small")');
     expect(J('DATEFORMAT($F{d}, "dd/MM/yyyy")')).toBe('Format(Fields!d.Value, "dd/MM/yyyy")');

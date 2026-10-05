@@ -17,7 +17,7 @@
  */
 import { parseXml, XmlError } from './xml.js';
 import { importRdlx, translateExpression, ImportBudgetError, OUTPUT_LIMITS, reportId, safeName } from './rdlx.js';
-import { javaToVb, javaPattern, kindOf, Untranslatable } from './java.js';
+import { javaToVb, javaPattern, halfEvenDigits, kindOf, integral, Untranslatable } from './java.js';
 
 const MAX_EXPR = 20_000;
 const MAX_DEPTH = 32; // frames in frames
@@ -98,11 +98,12 @@ function toRdlx(root, notes, charts, reportName) {
   if (A.scriptletClass || kids(root, 'scriptlet').length) note('The report uses scriptlets (Java code that runs while it fills); Pagewright does not run them, so values they set are missing.');
   if (A.resourceBundle) note(`Texts come from the resource bundle "${A.resourceBundle}"; Pagewright shows the keys instead (put the texts in the report or in parameters).`);
 
-  const fieldKinds = new Map(), paramKinds = new Map();
+  const fieldKinds = new Map(), paramKinds = new Map(), ints = new Set(); // ints: 'F:name' / 'P:name' of an integral class
   const fields = kids(root, 'field');
-  for (const f of fields) fieldKinds.set(f.attrs.name, kindOf(f.attrs.class));
+  for (const f of fields) { fieldKinds.set(f.attrs.name, kindOf(f.attrs.class)); if (integral(f.attrs.class)) ints.add(`F:${f.attrs.name}`); }
   const params = kids(root, 'parameter');
-  for (const p of params) paramKinds.set(p.attrs.name, kindOf(p.attrs.class));
+  for (const p of params) { paramKinds.set(p.attrs.name, kindOf(p.attrs.class)); if (integral(p.attrs.class)) ints.add(`P:${p.attrs.name}`); }
+  const intDivision = lang === 'java'; // Groovy divides integers exactly (7 / 2 is 3.5)
   const vars = new Map(kids(root, 'variable').map(v => [v.attrs.name, v]));
   const groups = kids(root, 'group');
   const groupNames = new Set(groups.map(g => g.attrs.name));
@@ -118,7 +119,7 @@ function toRdlx(root, notes, charts, reportName) {
   function vb(src, c = {}) {
     if (src.length > MAX_EXPR) throw new Untranslatable(`an expression of ${src.length} characters`);
     const env = {
-      notes: [],
+      notes: [], intDivision,
       field: (n) => { if (c.page) throw new Untranslatable(`$F{${n}} in a page header or footer (Pagewright page bands show no row values)`); return fieldRef(n, fieldKinds.get(n)); },
       param: (n) => paramRef(n),
       variable: (n) => varRef(n, c, 0),
@@ -128,10 +129,10 @@ function toRdlx(root, notes, charts, reportName) {
     if (v.s.length > MAX_EXPR) throw new Untranslatable('an expression that grows too long once its variables are filled in');
     return budget(v.s);
   }
-  const fieldRef = (n, k) => ({ s: /^[A-Za-z_]\w*$/.test(n) ? `Fields!${n}.Value` : `Fields("${n.replace(/"/g, '""')}").Value`, t: k || 'any', p: 9 });
+  const fieldRef = (n, k) => ({ s: /^[A-Za-z_]\w*$/.test(n) ? `Fields!${n}.Value` : `Fields("${n.replace(/"/g, '""')}").Value`, t: k || 'any', p: 9, i: ints.has(`F:${n}`) });
   function paramRef(n) {
     if (n === 'REPORT_LOCALE' || n === 'REPORT_TIME_ZONE' || n === 'REPORT_CONNECTION' || n === 'REPORT_DATA_SOURCE' || n === 'REPORT_PARAMETERS_MAP' || n === 'REPORT_SCRIPTLET' || n === 'REPORT_RESOURCE_BUNDLE' || n === 'JASPER_REPORT' || n === 'REPORT_CONTEXT') throw new Untranslatable(`the built-in parameter ${n}`);
-    return { s: /^[A-Za-z_]\w*$/.test(n) ? `Parameters!${n}.Value` : `Parameters("${n.replace(/"/g, '""')}").Value`, t: paramKinds.get(n) || 'any', p: 9 };
+    return { s: /^[A-Za-z_]\w*$/.test(n) ? `Parameters!${n}.Value` : `Parameters("${n.replace(/"/g, '""')}").Value`, t: paramKinds.get(n) || 'any', p: 9, i: ints.has(`P:${n}`) };
   }
   const CALC = { Sum: 'Sum', Count: 'Count', DistinctCount: 'CountDistinct', Average: 'Avg', Lowest: 'Min', Highest: 'Max', StandardDeviation: 'StDev', Variance: 'Var', First: 'First' };
   const scopeOf = (v) => {
@@ -143,15 +144,19 @@ function toRdlx(root, notes, charts, reportName) {
   /** $V{name} as VB: built-ins, then the report's variables (inlined) */
   function varRef(n, c, depth) {
     if (depth > 16) throw new Untranslatable('variables that use each other more than 16 deep');
-    if (n === 'PAGE_NUMBER' || n === 'MASTER_CURRENT_PAGE') return { s: c.evalLater ? 'Globals!TotalPages' : 'Globals!PageNumber', t: 'num', p: 9 };
-    if (n === 'MASTER_TOTAL_PAGES') return { s: 'Globals!TotalPages', t: 'num', p: 9 };
+    // evaluated at report end, PAGE_NUMBER is the last page (the total); at Page, Column or Auto it is the current page
+    if (n === 'PAGE_NUMBER' || n === 'MASTER_CURRENT_PAGE') {
+      if (c.evalTime === 'Group') note('A page number evaluated at the end of a group ($V{PAGE_NUMBER}, evaluationTime="Group") shows the page it is printed on.');
+      return { s: c.evalTime === 'Report' ? 'Globals!TotalPages' : 'Globals!PageNumber', t: 'num', p: 9, i: true };
+    }
+    if (n === 'MASTER_TOTAL_PAGES') return { s: 'Globals!TotalPages', t: 'num', p: 9, i: true };
     if (n === 'REPORT_COUNT') {
-      if (!(c.inDetail && !c.evalLater)) return { s: `CountRows("${DETAILS}")`, t: 'num', p: 9 };
+      if (!(c.inDetail && !c.evalLater)) return { s: `CountRows("${DETAILS}")`, t: 'num', p: 9, i: true };
       if (groups.length) note('Row numbers and running totals over the whole report restart at each group here (REPORT_COUNT, report-wide sums in the detail band).');
-      return { s: `RowNumber("${DETAILS}")`, t: 'num', p: 9 };
+      return { s: `RowNumber("${DETAILS}")`, t: 'num', p: 9, i: true };
     }
     const gc = /^(.+)_COUNT$/.exec(n);
-    if (gc && groupNames.has(gc[1]) && !vars.has(n)) return { s: c.inDetail && !c.evalLater ? `RowNumber("${gc[1]}")` : `CountRows("${gc[1]}")`, t: 'num', p: 9 };
+    if (gc && groupNames.has(gc[1]) && !vars.has(n)) return { s: c.inDetail && !c.evalLater ? `RowNumber("${gc[1]}")` : `CountRows("${gc[1]}")`, t: 'num', p: 9, i: true };
     if (n === 'PAGE_COUNT' || n === 'COLUMN_COUNT' || n === 'COLUMN_NUMBER') throw new Untranslatable(`the built-in variable ${n}`);
     const v = vars.get(n);
     if (!v) throw new Untranslatable(`the variable ${n}, which is not in the report`);
@@ -182,7 +187,7 @@ function toRdlx(root, notes, charts, reportName) {
   }
   function sub(src, c, depth) {
     const env = {
-      notes: [],
+      notes: [], intDivision,
       field: (n) => fieldRef(n, fieldKinds.get(n)),
       param: (n) => paramRef(n),
       variable: (n) => varRef(n, c, depth + 1),
@@ -369,7 +374,7 @@ function toRdlx(root, notes, charts, reportName) {
     const st = { ...(defStyle ? styleAttrs(defStyle.attrs.name) : {}), ...(a.style ? styleAttrs(a.style) : {}), ...stripUndef(normAttrs(re.attrs === e.attrs ? e.attrs : { ...re.attrs, ...e.attrs, ...(n.te?.attrs || {}), ...(kid(n.te, 'font')?.attrs || {}) })), ...boxAttrs(kid(e, 'box')) };
     if (a.style && !styles.has(a.style)) (it.__notes ||= []).push(`its style "${a.style}" is not in the file (a style template?), so it has the default style.`);
     const evalLater = /^(Report|Group|Page|Column|Auto)$/.test(a.evaluationTime || '');
-    const ctx = { ...c, evalLater };
+    const ctx = { ...c, evalLater, evalTime: a.evaluationTime || 'Now' };
     const pw = exprOf(re, 'printWhenExpression') ?? exprOf(e, 'printWhenExpression');
     if (pw) { const v = setting(pw, it, 'the condition that prints it', ctx); if (v) it.Visibility = { Hidden: `=Not (${v.slice(1)})` }; }
     if (a.positionType === 'FixRelativeToBottom') (it.__notes ||= []).push('it stays at the bottom of a band that grows in JasperReports; here it keeps its place.');
@@ -391,7 +396,13 @@ function toRdlx(root, notes, charts, reportName) {
         it.CanGrow = a.isStretchWithOverflow === 'true' || /StretchHeight/.test(a.textAdjust || '') || a.stretchWithOverflow === 'true';
         const style = rdlxStyle(st, 'text', it, ctx);
         const pat = exprOf(e, 'patternExpression');
-        if (st.pattern) style.Format = javaPattern(st.pattern, kindOfExpr(src));
+        if (st.pattern) {
+          const kind = kindOfExpr(src);
+          style.Format = javaPattern(st.pattern, kind);
+          // DecimalFormat rounds half to even: round the number that way first (the format would round halves up)
+          const d = kind === 'num' && typeof it.Value === 'string' && it.Value.startsWith('=') ? halfEvenDigits(st.pattern) : null;
+          if (d != null) it.Value = `=Round(${it.Value.slice(1)}, ${d})`;
+        }
         if (pat) (it.__notes ||= []).push('its format is set by an expression (patternExpression); it is left out.');
         it.Style = style;
         if (st.markup && st.markup !== 'none') (it.__notes ||= []).push(`its text is ${st.markup} markup; Pagewright shows it as plain text.`);
