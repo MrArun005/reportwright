@@ -28,7 +28,8 @@ const EPS = 0.01;
 export function paginate(units, tables, pageH, warn) {
   const end = units.reduce((m, u) => Math.max(m, u.top + u.height), 0);
   const pages = [];
-  if (!units.length) return [{ top: 0, bottom: 0, offset: 0, repeat: [], units: [] }];
+  // nothing with any height (an empty list): still one page, so the page header and footer print
+  if (!units.length || end <= EPS) return [{ top: 0, bottom: 0, offset: 0, repeat: [], units }];
 
   // Candidate break lines: unit tops and bottoms.
   const cand = [...new Set(units.flatMap(u => [u.top, u.top + u.height]).map(v => Math.round(v * 100) / 100))].sort((a, b) => a - b);

@@ -63,3 +63,39 @@ describe('side-by-side tables', () => {
     });
   }
 });
+
+describe('page numbers', () => {
+  it('a table of contents prints the page number the page shows when sections restart numbering', async () => {
+    const rows = Array.from({ length: 6 }, (_, g) => Array.from({ length: 70 }, (_, n) => ({ g: `S${g}`, n }))).flat();
+    const t = { type: 'table', name: 'T', x: 0, y: 30, w: 200, h: 40, dataSet: 'Rows', columns: [{ width: 200 }],
+      groups: [{ name: 'G', expr: '=Fields.g', newSection: true, pageBreak: 'between', header: [{ height: 16, cells: [{ value: '=Fields.g', bookmark: '=Fields.g' }] }] }],
+      detail: [{ height: 14, cells: [{ value: '=Fields.n' }] }] };
+    const footer = { height: 20, items: [{ type: 'textbox', name: 'F', x: 0, y: 0, w: 200, h: 14, value: '="PAGE " & Globals.PageNumber' }] };
+    const r = await render(report([{ type: 'toc', name: 'Toc', x: 0, y: 0, w: 300, h: 20, title: 'Contents' }, t], { data: { rows }, footer }), { fontStore });
+    const pageOf = (label) => r.pages.findIndex((p, i) => i > 0 && texts(p).includes(label)); // page 0 holds the TOC
+    const toc = texts(r.pages[0]);
+    for (const s of ['S2', 'S5']) {
+      const shown = texts(r.pages[pageOf(s)]).find(x => /^PAGE \d+$/.test(x));
+      expect(pageOf(s) + 1).not.toBe(Number(shown.slice(5))); // the section restarted the numbering
+      expect(toc[toc.indexOf(s) + 1]).toBe(shown.slice(5));
+    }
+  });
+  it('PageNumber in a body cell, a group header or an item inside a list warns', async () => {
+    const list = { type: 'list', name: 'L', x: 0, y: 0, w: 200, h: 20, dataSet: 'Rows', items: [{ type: 'textbox', name: 'inner', x: 0, y: 0, w: 100, h: 14, value: '=Globals!PageNumber' }] };
+    const t = { type: 'table', name: 'T', x: 0, y: 30, w: 200, h: 20, dataSet: 'Rows', columns: [{ width: 200 }],
+      groups: [{ expr: '=Fields.g', header: [{ height: 14, cells: [{ value: 'p {Globals.TotalPages}' }] }] }], detail: [] };
+    const r = await render(report([list, t], { data: { rows: [{ g: 1 }] } }), { fontStore });
+    expect(r.warnings.filter(w => /PageNumber and TotalPages work only/.test(w)).length).toBe(2);
+  });
+});
+
+describe('an empty report body', () => {
+  it('a body that is only an empty list still prints one page with its header and footer', async () => {
+    const list = { type: 'list', name: 'L', x: 0, y: 0, w: 200, h: 20, dataSet: 'Rows', items: [{ type: 'textbox', name: 't', x: 0, y: 0, w: 100, h: 14, value: '=Fields.v' }] };
+    const header = { height: 20, items: [{ type: 'textbox', name: 'H', x: 0, y: 0, w: 200, h: 14, value: 'TITLE' }] };
+    const footer = { height: 20, items: [{ type: 'textbox', name: 'F', x: 0, y: 0, w: 200, h: 14, value: '="Page " & Globals.PageNumber & " of " & Globals.TotalPages' }] };
+    const r = await render(report([list], { data: { rows: [] }, header, footer }), { fontStore });
+    expect(r.pages.length).toBe(1);
+    expect(texts(r.pages[0])).toEqual(['TITLE', 'Page 1 of 1']);
+  });
+});

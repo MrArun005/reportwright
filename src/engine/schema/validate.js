@@ -53,8 +53,18 @@ export function validate(def) {
     if (v == null) return;
     const err = checkValue(v);
     if (err) { errors.push(`${label}: ${err}`); exprErrors.push(`${label}: ${err}`); }
-    else if (where === 'body' && typeof v === 'string' && /Globals\s*\.\s*(PageNumber|TotalPages)/i.test(v)) {
-      warnings.push(`${label}: PageNumber and TotalPages work only in the page header and footer`);
+  };
+  // PageNumber and TotalPages anywhere in the body (a cell, a group header, an item inside a list or a cell): the body
+  // is laid out before it is paginated, so they show 1 there. SSRS refuses them; Pagewright warns once per item.
+  const PAGE_GLOBALS = /Globals\s*[.!]\s*(PageNumber|TotalPages)/i;
+  const paged = new Set();
+  const scan = (n, label, depth) => {
+    if (depth > 64 || n == null) return;
+    if (typeof n === 'string') { if (PAGE_GLOBALS.test(n) && !paged.has(label)) { paged.add(label); warnings.push(`${label}: PageNumber and TotalPages work only in the page header and footer`); } return; }
+    if (Array.isArray(n)) { for (const x of n) scan(x, label, depth + 1); return; }
+    if (typeof n === 'object') {
+      const own = n.type && n.name ? n.name : label;
+      for (const [k, v] of Object.entries(n)) scan(v, k === 'cells' && own === label ? `${label} cell` : own, depth + 1);
     }
   };
   const lists = [];
@@ -66,6 +76,7 @@ export function validate(def) {
   // a body section's own page header and footer are checked as the shared ones are
   if (Array.isArray(body)) for (const b of body) for (const k of ['pageHeader', 'pageFooter']) if (b?.[k] && typeof b[k] === 'object') lists.push([k, b[k].items]);
   for (const [where, items] of lists) {
+    if (where === 'body') for (const it of Array.isArray(items) ? items : []) scan(it, it?.name || it?.type, 0);
     for (const it of Array.isArray(items) ? items : []) {
       const label = it.name || it.type;
       if (!ITEMS[it.type]) { warnings.push(`Unknown item type "${it.type}"`); continue; }

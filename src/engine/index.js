@@ -329,7 +329,7 @@ export async function render(def0, opts = {}) {
         let j = 0; // bookmarks leave the page's items (compacted in place: a page holds hundreds of items)
         for (let i = 0; i < items.length; i++) {
           const it = items[i];
-          if (it.t === 'bookmark') (it.heading ? headings : bookmarks).push({ label: it.label, page: n + 1, y: it.y, level: it.level || 0 });
+          if (it.t === 'bookmark') (it.heading ? headings : bookmarks).push({ label: it.label, page: n + 1, y: it.y, level: it.level || 0, ...(secStart[n] ? { shown: n - secStart[n] + 1 } : {}) });
           else items[j++] = it;
         }
         items.length = j;
@@ -346,7 +346,8 @@ export async function render(def0, opts = {}) {
           const shift = new Map();
           for (const it of pg.items) {
             if (it.tocPage == null) continue;
-            const f = found[it.tocPage], ln = it.lines[0], num = String(f.page);
+            // the number printed on that page: a section that restarts its numbering (newSection) restarts the TOC's too
+            const f = found[it.tocPage], ln = it.lines[0], num = String(f.shown ?? f.page);
             const nw = m.width(num, it.font, it.size);
             shift.set(it.tocPage, ln.w - nw);
             ln.x += ln.w - nw; ln.w = nw; ln.text = num;
