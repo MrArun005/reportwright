@@ -58,27 +58,14 @@ _(Write here if you need a change in a file someone else has claimed.)_
 - **text + import (batch 6) → exports**: commit d10bfda (your tagged-PDF ToUnicode fix) also carried my RTL extraction change in src/exporters/pdf.js (`glyphText` → one carrier glyph per cluster + `spans`; `drawRun` → text-less glyphs last in an empty /ActualText, spans only for clusters ToUnicode cannot spell). It is intended and tested (tests/engine/text-b6.test.js, pdftotext clean for Arabic/Hebrew/Persian/Urdu). Nothing for you to redo; please keep the `spans`/`texts` args when you touch drawRun.
 - **text + import (batch 6) → exports**: one line in src/exporters/svg.js `fontFaceCss`: fallback faces get a `unicode-range` (from `unicodeRange()` in fonts.js), so a browser fetches the Thai face only for Thai text, not every fallback in the list.
 
-- **R3-A resume state (engine correctness + ground-truth diff), 2026-10-05:** DONE, committed with tests: differential
-  testing against the real JasperReports 7.0.8 / BIRT 4.25 (tests/diff/{gen,harness}.mjs, tests/diff/jvm/*.java,
-  scripts/diff-engines.mjs `--capture`; replay tests/diff/diff.test.js; `npm run test:diff`); CLI/README font loader
-  (fontFile, shaper warning); "java:"/"icu:" pattern formatter (src/engine/expr/javafmt.js) + JavaStr/JsStr/JavaFormat,
-  nullText style, arithmetic:'double', bandRows:'first-last'; BIRT N1 Total scopes, N27 parseInt, BirtMath; N28 per-mille;
-  format/string caps (capText/capPattern/capDigits in expr/parser.js; Replace start/count, StrDup, & + Join capped).
-  **Mismatch rate (cases / cells):** before Jasper 251/280 (2410/8447 = 28.5%), BIRT 238/265 (2216/8085 = 27.4%);
-  now Jasper 112/280 (1100 = 13.0%), BIRT 86/265 (363 = 4.5%).
-  NEXT: JRXML variable semantics (N2: header Now = value before the group, footer/evaluationTime Group/Auto, report-wide
-  running totals across nested lists in src/importers/jrxml.js varRef + list run scopes in src/engine/items/index.js);
-  BIRT aggregateOn an inner group used in an outer band ("scope G2 does not exist"); sort (N18 + Jasper/BIRT nulls first);
-  jr-groups (break on change); page family (PAGE_NUMBER Auto = total, column-footer running sums); then N3, N5–N24
-  engine items, VB functions (Mod/^/Is Nothing/Split()(i)/String.Format/Hex/Oct…), silent-blank warnings + validate()
-  unknown keys, CJK/emoji fonts, SSRS doc-based property tests, full gate.
-
-## R3-B resume state (server/security/ops/CI; 2026-10-05 16:45 IST)
-
-- **Done (committed, each with tests/engine/r3b-*.test.js):** 1 SQL storage isolation (423b689) + SQLite EXPLAIN plan check, query_only, trusted_schema off (680c019); storage first boot under one writer, busy_timeout before WAL, file 0600 (1a3f62b; cluster first-boot bug); 3 fresh-install secure default (b4695b7); 2 sign-out keeps device, then device registry + Account page devices (5c9f36b, 571179e); revocation: writes read storage, in-lock session re-check, usergen stamp, stale-cache 401 fix (c004bec; sim's 401-after-re-sign-in); 4 audit: identical anon repeats counted, never sampled, every render path audits + ratchet (e26a01d, dc58c3d); 7 If-Match/409/428 on report saves + designer conflict bar + stale-draft warning (4efaf64, e2e tests/e2e/r3b-conflict.mjs in test:e2e); 5 security headers + sandboxed output (2e1258f); 6: JWKS via SSRF guard (e691d34), PW_DATA_KEY versioned/no fallback + PW_MODE=dev refused on public prod build (5c9ca7c), parameter option lists on the server (ffcf173).
-- **NOTE for other agents:** saving an existing report now needs `If-Match` (ETag of GET) or `If-Match: *`; a missing one is 428. ~/pw-sim's editSave sends none: it needs `if-match` from its GET's ETag (else every edit is a 428, not a silent loss). The sim's "293/293 lost" looks like a harness artefact too (final check with a possibly signed-out admin jar: a 401 body reads as "no edits"); its conflict pairs were real last-write-wins.
-- **Not done yet (next, in order):** 6 rest: anonymous embed sample cost cap (/api/sample/*), batch mail/webhook idempotency after lease loss (jobs.js deliver), unify per-module env parsers on config.num (pool.js, sql.js, sql/sqlite.js, mail.js, storage/sql.js, renderer.js); sim: cluster process must exit when storage prepare fails, data source 404/5xx -> 502, thumbnails concurrency + shared cache by access stamp + snapshot blob cap/evict; 8 pool sizing (no SQLite reserve without a sqlite: source, smaller start heap, >=3-4 workers on 8 cores/8 GB, interactive priority) + before/after throughput; 9 batch outputs streaming/size caps/pagination/Postgres LIKE index; 10 CI (poppler, pdftotext guards, MSSQL/PG/MySQL services, all e2e suites or reasons, typecheck of the 11 server files + app/, deterministic timing tests, gh workflow enable); 11 request log + metrics + empty catches; reviewer round on 1–8; gate.
-- **Incident:** a `git stash pop` of mine (15:54) briefly applied an old stash (pre-main-consolidation WIP) to 19 files; I restored them to HEAD at once (none had local edits) and removed the 5 untracked files it created. The stashes are intact. No one's work was lost.
+- **R3-A resume state (engine correctness + ground-truth diff), 2026-10-05 (2nd checkpoint):** DONE, committed with
+  tests: diff harness (tests/diff, scripts/diff-engines.mjs, npm run test:diff); CLI font loader; java:/icu: formats;
+  JavaStr/JsStr/JavaFormat/JasperValue; nullText, arithmetic, bandRows, nullOrder, collation, naturalSort settings;
+  list groupAdjacent/inheritRows; table pageBreakEvery; caps (capText/capPattern/capDigits); N1–N7, N9, N11–N22, N25,
+  N27, N28; VB Mod ^ \ Is/IsNot Xor Split()(i) String.Format .PadLeft Hex Oct InStrRev FormatX LSet/RSet StrDup;
+  silent-blank warnings + validate() unknown keys. **Mismatch rate (cases / cells):** before Jasper 251/280
+  (2410/8447 = 28.5%), BIRT 238/265 (2216/8085 = 27.4%); now Jasper 23/280 (50 = 0.6%), BIRT 13/265 (29 = 0.4%).
+  NEXT: matrix empty-cell drill; N8, N10, N23, N24, N29, N30; CJK/emoji fonts; SSRS doc-based property tests; gate.
 
 ## Done
 
