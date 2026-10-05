@@ -22,7 +22,7 @@ const IDP = 'https://idp.e2e.test';
 const saml = await startSamlIdp({ issuer: IDP, acs: `${BASE}/api/auth/saml/acs`, audience: `${BASE}/api/auth/saml/metadata`, cert: idpCert.cert, key: idpCert.key });
 
 const env = {
-  ...process.env, PW_AUTH: 'users', PW_SESSION_SECRET: 'e2e-sso-secret-0123456789abcdef0123456789', PW_STORAGE: `sqlite:${DB}`, PW_BASE_URL: BASE,
+  ...process.env, PW_AUTH: 'users', PW_SESSION_SECRET: 'e2e-sso-secret-0123456789abcdef0123456789', PW_DATA_KEY: 'e2e-sso-data-key-0123456789abcdef01234567', PW_STORAGE: `sqlite:${DB}`, PW_BASE_URL: BASE,
   PW_ADMIN_EMAIL: 'admin@e2e.test', PW_ADMIN_PASSWORD: 'e2e admin password',
   PW_OIDC_ISSUER: oidc.issuer, PW_OIDC_CLIENT_ID: oidc.clientId, PW_OIDC_CLIENT_SECRET: oidc.clientSecret, PW_OIDC_ALLOW_HTTP: '1', PW_OIDC_NAME: 'Test SSO',
   PW_SAML_ENTRY_POINT: saml.url, PW_SAML_IDP_CERT: idpCert.cert, PW_SAML_IDP_ISSUER: IDP, PW_SAML_NAME: 'Test SAML',

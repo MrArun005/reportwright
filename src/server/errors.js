@@ -20,7 +20,8 @@ export function publicError(e, status = e?.status || 500) {
   // carry a value in its path, and the caller may be any viewer or an anonymous embed reader
   const ds = !e?.status && /HTTP (\d{3}) from \S+/.exec(String(e?.message ?? ''));
   if (ds) {
-    const id = logError(e, 'data source');
+    // logged without query strings: a source URL may carry a key (?api_key=)
+    const id = logError(Object.assign(new Error(String(e.message).replace(/\?[^\s"']*/g, '?…')), { stack: e.stack?.replace(/\?[^\s"']*/g, '?…') }), 'data source');
     return { message: `A data source of this report answered HTTP ${ds[1]}. Reference: ${id}.`, status: 502, id };
   }
   if (status < 500) return { message: String(e?.message ?? e), status, id: null };

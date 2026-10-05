@@ -185,3 +185,13 @@ describe('a batch past PW_BATCH_MAX_OUTPUT_MB builds no zip (it would be built i
     expect(done.download).toBeFalsy();
   }, 60000);
 });
+
+describe('the data-source error log carries no query string', () => {
+  it('?api_key= is not written to the log', async () => {
+    const { errorResponse } = await import('../../src/server/errors.js');
+    const lines = []; const err = console.error; console.error = (l) => lines.push(String(l));
+    try { errorResponse(new Error('Data source "s": HTTP 404 from http://h.example/x?api_key=TOPSECRET')); } finally { console.error = err; }
+    expect(lines.join('\n')).not.toMatch(/TOPSECRET/);
+    expect(lines.join('\n')).toMatch(/h\.example\/x\?…/);
+  });
+});
