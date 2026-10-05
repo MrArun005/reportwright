@@ -417,9 +417,13 @@ export async function render(def0, opts = {}) {
   if (opts.bodyOnly || opts.dataOnly) return result;
   if (hasToc) {
     // first pages: the entries are known now, their page numbers when the full render ends ("…" until then)
+    // a report that fits in those pages gets the full passes below: its first look is the final one (the worker
+    // sends a render that cut nothing as the result), so it must carry the page numbers and the entries' pages
     if (firstPages > 0) {
       lc.rowBudget = budget();
-      return assemble(tocOf(result, true));
+      const part = assemble(tocOf(result, true));
+      if (lc.rowBudget.cut) return part;
+      lc.rowBudget = null;
     }
     // The table of contents moves what follows it; its numbers are filled in by the pass that lays it out (above).
     // Another pass only when that pass found different entries.
