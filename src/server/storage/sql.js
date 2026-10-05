@@ -6,10 +6,13 @@
 const TABLES = { reports: 'pw_reports', schedules: 'pw_schedules', jobs: 'pw_jobs', users: 'pw_users', fonts: 'pw_fonts', folders: 'pw_folders', reportacl: 'pw_report_acl', reportmeta: 'pw_report_meta', tokens: 'pw_tokens', settings: 'pw_settings', blobs: 'pw_blobs' };
 const table = (k) => { if (!TABLES[k]) throw new Error(`Unknown storage kind "${k}"`); return TABLES[k]; };
 
-/** @typedef {(text: string, values?: any[]) => Promise<any[]>} Query rows for a SELECT, [] otherwise */
+/** @typedef {((text: string, values?: any[]) => Promise<any[]>) & { setup?: (fn: (run: any) => Promise<void>) => Promise<void> }} Query rows for a SELECT, [] otherwise; setup: run fn as the only writer (SQLite) */
 
 /** @type {Map<string, Promise<Query>>} one connection (pool) per URL, shared across bundles and hot reloads */
 const conns = (/** @type {any} */ (globalThis).__pwStoreConns ||= new Map());
+
+/** Block this thread for ms (only while a SQLite file is first opened, before any request is served). @param {number} ms */
+const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
 /** pg and mysql2 are optional: load them only when used (as in sql.js). */
 async function load(pkg) {
@@ -37,9 +40,22 @@ async function connect(url, dialect) {
   }
   if (dialect === 'sqlite') {
     const { DatabaseSync } = /** @type {typeof import('node:sqlite')} */ (process.getBuiltinModule('node:sqlite'));
-    const db = new DatabaseSync(url.slice('sqlite:'.length));
-    db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;'); // other processes (the user CLI) may write too
-    return async (text, values = []) => db.prepare(text).all(...values);
+    const file = url.slice('sqlite:'.length);
+    const fs = /** @type {typeof import('node:fs')} */ (process.getBuiltinModule('node:fs'));
+    // users, sessions and audit live here: readable by this user only, from the first byte (umask 022 makes 0644)
+    try { fs.closeSync(fs.openSync(file, fs.constants.O_CREAT | fs.constants.O_RDWR, 0o600)); fs.chmodSync(file, 0o600); } catch { /* opened below anyway */ }
+    const db = new DatabaseSync(file);
+    // busy_timeout FIRST: switching to WAL needs a moment of the file to itself, and several processes (cluster.mjs,
+    // the user CLI) open it at once on a first boot; without a busy handler that is "database is locked" at once
+    db.exec('PRAGMA busy_timeout = 10000;');
+    for (let i = 0; ; i++) {
+      try { db.exec('PRAGMA journal_mode = WAL;'); break; } catch (e) { if (i >= 20 || !/locked|busy/i.test(String(/** @type {any} */ (e)?.message))) throw e; sleepMs(25 * (i + 1)); }
+    }
+    for (const f of [`${file}-wal`, `${file}-shm`]) { try { fs.chmodSync(f, 0o600); } catch { /* not made yet */ } }
+    const run = async (text, values = []) => db.prepare(text).all(...values);
+    // one writer at a time for the schema: BEGIN IMMEDIATE takes the write lock (waiting busy_timeout for it), so
+    // a second process booting at the same moment waits here, then finds the tables and pw_meta already done
+    return Object.assign(run, { setup: async (fn) => { db.exec('BEGIN IMMEDIATE'); try { await fn(run); db.exec('COMMIT'); } catch (e) { db.exec('ROLLBACK'); throw e; } } });
   }
   if (dialect === 'postgres') {
     const pg = (await load('pg')).default;
@@ -98,12 +114,18 @@ export function sqlStore(url) {
   const q = async (sql, values) => {
     if (!conns.has(url)) {
       const ready = connect(url, dialect).then(async (run) => {
-        for (const t of Object.values(TABLES)) await run(create(t, `id VARCHAR(255) PRIMARY KEY, data ${text} NOT NULL, updated_at VARCHAR(32) NOT NULL`));
-        await run(create('pw_report_versions', `id VARCHAR(255) NOT NULL, stamp VARCHAR(32) NOT NULL, data ${text} NOT NULL, PRIMARY KEY (id, stamp)`));
-        await run(create('pw_leases', 'name VARCHAR(255) PRIMARY KEY, owner VARCHAR(255) NOT NULL, expires_at BIGINT NOT NULL'));
-        // the audit log: only ever inserted into (and old rows deleted by retention); id sorts by time
-        await run(create('pw_audit', `id VARCHAR(64) PRIMARY KEY, at VARCHAR(32) NOT NULL, type VARCHAR(64) NOT NULL, actor VARCHAR(400) NOT NULL, report VARCHAR(255), data ${text} NOT NULL`));
-        await migrate(run, dialect, create);
+        const schema = async (run) => {
+          for (const t of Object.values(TABLES)) await run(create(t, `id VARCHAR(255) PRIMARY KEY, data ${text} NOT NULL, updated_at VARCHAR(32) NOT NULL`));
+          await run(create('pw_report_versions', `id VARCHAR(255) NOT NULL, stamp VARCHAR(32) NOT NULL, data ${text} NOT NULL, PRIMARY KEY (id, stamp)`));
+          await run(create('pw_leases', 'name VARCHAR(255) PRIMARY KEY, owner VARCHAR(255) NOT NULL, expires_at BIGINT NOT NULL'));
+          // the audit log: only ever inserted into (and old rows deleted by retention); id sorts by time
+          await run(create('pw_audit', `id VARCHAR(64) PRIMARY KEY, at VARCHAR(32) NOT NULL, type VARCHAR(64) NOT NULL, actor VARCHAR(400) NOT NULL, report VARCHAR(255), data ${text} NOT NULL`));
+          await migrate(run, dialect, create);
+        };
+        // SQLite: under one write transaction (see connect). Databases with their own locking: a setup that lost a race
+        // with another server's (a CREATE at the same moment) is retried a few times with backoff, then fails
+        if (run.setup) await run.setup(schema);
+        else for (let i = 0; ; i++) { try { await schema(run); break; } catch (e) { if (i >= 4) throw e; await new Promise(r => setTimeout(r, 100 * 2 ** i + Math.random() * 100)); } }
         return run;
       });
       conns.set(url, ready);
