@@ -90,7 +90,7 @@ function PropEditor({ p: spec, value, onChange, openExpr, dataSet, item }) {
     case 'stacked': return <Field label={p.label}><Select value={value === 'percent' ? 'percent' : value ? 'stacked' : ''} options={[{ value: '', label: T('i_sideBySide') }, { value: 'stacked', label: T('i_stacked') }, { value: 'percent', label: T('i_stacked100') }]} onChange={v => onChange(v === 'percent' ? 'percent' : v ? true : undefined)} /></Field>;
     case 'axes': return <AxesEditor value={value} onChange={onChange} chartType={item?.chartType || 'column'} hasSecondary={(item?.series || []).some(sr => sr.axis === 'secondary')} />;
     case 'overlays': return <OverlaysEditor value={value} onChange={onChange} openExpr={openExpr} dataSet={dataSet} chartType={item?.chartType || 'column'} />;
-    case 'params': return <ParamsEditor label={p.label} value={value} onChange={onChange} />;
+    case 'params': return <ParamsEditor label={p.label} value={value} onChange={onChange} report={item?.report} openExpr={openExpr} dataSet={dataSet} />;
     default: return <Field label={p.label}><TextInput value={value} onChange={v => onChange(v === '' ? undefined : v)} /></Field>;
   }
 }
@@ -192,6 +192,10 @@ function ItemProps({ item, section, openExpr }) {
   const q = find.trim().toLowerCase();
   const hit = (p, type) => !q || propLabel(tk, p, type).toLowerCase().includes(q) || p.key.toLowerCase().includes(q);
   const props = (spec?.props || []).filter(p => (!p.showIf || p.showIf(item)) && hit(p, item.type));
+  // the pivot and group editors are not in the property list: their interactivity is found by these words too
+  const words = (...ks) => !!q && ks.some(k => k.toLowerCase().includes(q));
+  const pivotHit = item.type === 'matrix' && words(T('i_actionOnClick'), T('ux_headerAction'), T('ux_cellAction'), T('i_interactivity'), T('pivotCollapsible'), 'action', 'drill', 'click', 'link', 'bookmark');
+  const groupHit = item.type === 'table' && words(T('i_groups'), T('i_drillToggle'), T('i_startCollapsed'), T('i_addGroup'), 'drill', 'group', 'collapse', 'toggle');
   const styleProps = stylePropsFor(item.type).filter(p => hit(p, 'style'));
   const set = (k, v) => updateItem(item.id, it => setOrDelete(it, k, v), `${item.id}.${k}`);
   const setStyle = (k, v) => updateItem(item.id, it => { it.style ||= {}; setOrDelete(it.style, k, v); }, `${item.id}.style.${k}`);
@@ -214,7 +218,9 @@ function ItemProps({ item, section, openExpr }) {
         <span className="ty">{tk(`item_${item.type}`, spec?.label || item.type)}</span>
       </div>
       <div className="cat insp-find"><input type="search" className="input" value={find} onChange={e => setFind(e.target.value)} placeholder={T('i_findProperty')} aria-label={T('i_findProperty')} data-testid="find-property" /></div>
-      {q && !props.length && !styleProps.length && <div className="cat"><span className="hint">{T('i_noPropMatch')}</span></div>}
+      {q && !props.length && !styleProps.length && !pivotHit && !groupHit && <div className="cat"><span className="hint">{T('i_noPropMatch')}</span></div>}
+      {pivotHit && <PivotEditor item={item} openExpr={openExpr} />}
+      {groupHit && <GroupsEditor table={item} openExpr={openExpr} />}
       {!q && item.type === 'chart' && (
         <div className="cat">
           <button className="btn sm" data-testid="open-chart-gallery" onClick={() => useDesigner.getState().setUi({ wizard: { mode: 'edit', id: item.id } })}>{T('i_chartGallery')}</button>
@@ -368,6 +374,8 @@ function PivotEditor({ item, openExpr }) {
           </>}
           {(i < spec[list].length - 1 || (list === 'rowGroups' && g.parent)) && <Check label={T('pivotCollapsible')} checked={g.collapsible} onChange={v => setK(list, i, 'collapsible', v)} />}
           {g.collapsible && <Check label={T('pivotStartCollapsed')} checked={g.initiallyCollapsed} onChange={v => setK(list, i, 'initiallyCollapsed', v)} />}
+          <div data-testid={`pivot-${list}${i}-action`}><ActionEditor label={T('ux_headerAction')} value={g.action} onChange={v => setK(list, i, 'action', v)} openExpr={openExpr} dataSet={item.dataSet} /></div>
+          {g.total && g.total !== 'none' && <div data-testid={`pivot-${list}${i}-total-action`}><ActionEditor label={T('ux_totalAction')} value={g.totalAction} onChange={v => setK(list, i, 'totalAction', v)} openExpr={openExpr} dataSet={item.dataSet} /></div>}
         </div>
       ))}
       {adder(list)}
@@ -389,10 +397,13 @@ function PivotEditor({ item, openExpr }) {
               <Field label={T('pivotFormat')}><TextInput value={v.format || ''} onChange={x => setK('values', i, 'format', x)} placeholder="N0" /></Field>
               <Field label={T('pivotShow')}><Select value={v.show || 'value'} options={shows} onChange={x => setK('values', i, 'show', x === 'value' ? undefined : x)} /></Field>
             </div>
+            <div data-testid={`pivot-values${i}-action`}><ActionEditor label={T('ux_cellAction')} value={v.action} onChange={x => setK('values', i, 'action', x)} openExpr={openExpr} dataSet={item.dataSet} /></div>
+            <Field label={T('cellBookmark')}>{exprField('values', i, 'bookmark', v.bookmark, T('cellBookmark'))}</Field>
           </div>
         ))}
         {adder('values')}
         <div className="hint">{T('pivotHint')}</div>
+        <div className="hint">{T('ux_pivotActionHint')}</div>
       </div>
       <div className="cat" data-testid="pivot-styles">
         <h5>{T('pivotStyles')}</h5>
@@ -618,14 +629,10 @@ function OverlaysEditor({ value, onChange, openExpr, dataSet, chartType }) {
   );
 }
 
-function ParamsEditor({ label, value, onChange }) {
-  const T = useT();
-  return (
-    <Field label={T('i_paramsOf', { label })}>
-      <textarea className="textarea" rows={3} value={Object.entries(value || {}).map(([k, v]) => `${k}=${v}`).join('\n')}
-        onChange={e => onChange(Object.fromEntries(e.target.value.split('\n').map(l => l.split('=')).filter(x => x[0] && x.length > 1).map(([k, ...v]) => [k.trim(), v.join('=').trim()])))} />
-    </Field>
-  );
+/** A subreport's parameters: the same structured map as a drill-through, from the subreport's own parameters. */
+function ParamsEditor({ label, value, onChange, report, openExpr, dataSet }) {
+  const known = useReportParams(report);
+  return <Field label={label}><ParamMap value={value} onChange={v => onChange(v || {})} known={known} openExpr={openExpr} dataSet={dataSet} testid="pmap-subreport" /></Field>;
 }
 
 /** A sparkline's points from a list field of the data set (one point per value). */
@@ -675,31 +682,83 @@ function VisualEditor({ cell, setCell, openExpr, dataSet }) {
   );
 }
 
-function ActionEditor({ value, onChange, openExpr, dataSet }) {
+/** A report's parameters, for the drill-through mapping: { name, required, prompt }[] (null while loading or unknown). */
+const reportParams = new Map();
+function useReportParams(id) {
+  const [list, setList] = useState(() => reportParams.get(id) ?? null);
+  useEffect(() => {
+    if (!id || isDynamic(id)) { setList(null); return; }
+    if (reportParams.has(id)) { setList(reportParams.get(id)); return; }
+    let alive = true;
+    const server = useDesigner.getState().embed?.server || '';
+    fetch(`${server}/api/reports/${encodeURIComponent(id)}`).then(r => (r.ok ? r.json() : null)).then(r => {
+      const d = r?.definition || r;
+      const ps = d && typeof d === 'object' ? (d.parameters || []).map(p => ({ name: p.name, required: !!p.required && p.default == null, prompt: p.prompt })) : null;
+      if (ps) reportParams.set(id, ps);
+      if (alive) setList(ps);
+    }).catch(() => { if (alive) setList(null); });
+    return () => { alive = false; };
+  }, [id]);
+  return list;
+}
+
+/**
+ * Parameters to pass (a drill-through, or "Filter this report"): one row per parameter of the target report, each mapped
+ * to an expression. A name the target does not have is flagged; a required one left unmapped too. Free names still work
+ * when the target's parameters are unknown (an =expression report, or one that did not load).
+ */
+function ParamMap({ value, onChange, known, openExpr, dataSet, testid }) {
+  const T = useT();
+  const map = value || {};
+  const [extra, setExtra] = useState('');
+  const knownNames = new Set((known || []).map(p => p.name));
+  const names = [...(known || []).map(p => p.name), ...Object.keys(map).filter(k => !knownNames.has(k))];
+  const set = (k, v, keep) => { const n = { ...map }; if (v === undefined || (v === '' && !keep)) delete n[k]; else n[k] = v; onChange(Object.keys(n).length ? n : undefined); };
+  return (
+    <div className="pmap" data-testid={testid}>
+      {!names.length && <span className="hint">{T(known ? 'ux_pmapNoParams' : 'ux_pmapUnknown')}</span>}
+      {names.map(k => {
+        const kp = (known || []).find(p => p.name === k);
+        const v = map[k] ?? '';
+        const bad = known && !kp ? T('ux_pmapNotAParam') : kp?.required && v === '' ? T('ux_pmapRequired') : null;
+        return (
+          <div className="pmap-row" key={k} data-param={k}>
+            <span className={`pmap-name${bad ? ' bad' : ''}`} title={kp?.prompt || k}>{k}{kp?.required ? ' *' : ''}</span>
+            <ExprInput value={v} onChange={x => set(k, x, !kp)} onOpen={() => openExpr({ value: v, dataSet, onSave: x => set(k, x, !kp), title: k })} placeholder={T('ux_pmapNotPassed')} />
+            {!kp && <button type="button" className="btn sm ghost danger" onClick={() => set(k, undefined)} aria-label={T('ux_pmapRemove', { name: k })}>✕</button>}
+            {bad && <span className="err pmap-err">{bad}</span>}
+          </div>
+        );
+      })}
+      <div className="expr-row">
+        <TextInput value={extra} onChange={v => setExtra(v.replace(/\W/g, ''))} placeholder={T('ux_pmapOther')} aria-label={T('ux_pmapOther')} />
+        <button type="button" className="btn sm" disabled={!extra || names.includes(extra)} onClick={() => { set(extra, '', true); setExtra(''); }}>{T('i_add')}</button>
+      </div>
+    </div>
+  );
+}
+
+function ActionEditor({ value, onChange, openExpr, dataSet, label }) {
   const T = useT();
   const def = useDesigner(s => s.def);
   const itemNames = []; walk(def, (it) => { if (it.name) itemNames.push(it.name); });
   const a = value || { type: 'none' };
   const set = (patch) => { const n = { ...a, ...patch }; onChange(n.type === 'none' ? undefined : n); };
+  const target = useReportParams(a.type === 'report' ? a.report : null);
+  const own = (def.parameters || []).map(p => ({ name: p.name, prompt: p.prompt }));
   return (
     <div style={{ display: 'grid', gap: 6 }}>
-      <Field label={T('i_actionOnClick')}><Select value={a.type} options={[{ value: 'none', label: T('i_actNone') }, { value: 'url', label: T('i_actUrl') }, { value: 'report', label: T('i_actReport') }, { value: 'params', label: T('i_actParams') }, { value: 'bookmark', label: T('i_actBookmark') }, { value: 'toggleItem', label: T('actionToggleItem') }]} onChange={v => set({ type: v || 'none' })} /></Field>
+      <Field label={label || T('i_actionOnClick')}><Select value={a.type} options={[{ value: 'none', label: T('i_actNone') }, { value: 'url', label: T('i_actUrl') }, { value: 'report', label: T('i_actReport') }, { value: 'params', label: T('i_actParams') }, { value: 'bookmark', label: T('i_actBookmark') }, { value: 'toggleItem', label: T('actionToggleItem') }]} onChange={v => set({ type: v || 'none' })} /></Field>
       {a.type === 'toggleItem' && <Field label={T('actionToggleTarget')} hint={T('actionToggleHint')}><Select value={a.target} allowEmpty options={itemNames} onChange={v => set({ target: v })} data-testid="toggle-target" /></Field>}
       {a.type === 'url' && <Field label={T('i_url')}><ExprInput value={a.url} onChange={v => set({ url: v })} onOpen={() => openExpr({ value: a.url, dataSet, onSave: v => set({ url: v }), title: T('i_url') })} /></Field>}
       {a.type === 'bookmark' && <Field label={T('jumpToBookmark')}><ExprInput value={a.target} onChange={v => set({ target: v })} onOpen={() => openExpr({ value: a.target, dataSet, onSave: v => set({ target: v }), title: T('jumpToBookmark') })} /></Field>}
       {a.type === 'params' && <>
-        <Field label={T('i_setParams')} hint={T('i_setParamsHint')}>
-          <textarea className="textarea" rows={3} value={Object.entries(a.params || {}).map(([k, v]) => `${k}=${v}`).join('\n')}
-            onChange={e => set({ params: Object.fromEntries(e.target.value.split('\n').map(l => l.split('=')).filter(x => x[0] && x.length > 1).map(([k, ...v]) => [k.trim(), v.join('=').trim()])) })} />
-        </Field>
+        <Field label={T('ux_setParams')}><ParamMap value={a.params} onChange={v => set({ params: v })} known={own} openExpr={openExpr} dataSet={dataSet} testid="pmap-params" /></Field>
         <Check label={T('i_toggleClears')} checked={a.toggle !== false} onChange={v => set({ toggle: v ? undefined : false })} />
       </>}
       {a.type === 'report' && <>
         <Field label={T('drillReport')}><ReportPicker value={a.report} onChange={v => set({ report: v })} /></Field>
-        <Field label={T('i_paramsLines')}>
-          <textarea className="textarea" rows={3} value={Object.entries(a.params || {}).map(([k, v]) => `${k}=${v}`).join('\n')}
-            onChange={e => set({ params: Object.fromEntries(e.target.value.split('\n').map(l => l.split('=')).filter(x => x[0] && x.length > 1).map(([k, ...v]) => [k.trim(), v.join('=').trim()])) })} />
-        </Field>
+        <Field label={T('ux_pmapTitle')}><ParamMap value={a.params} onChange={v => set({ params: v })} known={target} openExpr={openExpr} dataSet={dataSet} testid="pmap-report" /></Field>
       </>}
     </div>
   );

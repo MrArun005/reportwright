@@ -1294,6 +1294,8 @@ register('matrix', {
     const totalStyle = item.totalStyle || { fontWeight: 'bold', borderTop: '1 solid #94a3b8' };
     const N = R + p.cols.length;
     const columns = [...hw.map(width => ({ width })), ...p.cols.map(c => ({ width: Number(spec.values[c.v].width) || cw }))];
+    // a cell's click action and bookmark (pivot.js), evaluated by the table in the cell's own scope (ctx)
+    const click = (o, c) => { if (c.action) o.action = c.action; if (c.bookmark) o.bookmark = c.bookmark; if (c.ctx) o.ctx = c.ctx; return o; };
     // a key or label is data: it goes in as a raw value, never as an expression or template
     const hcell = (c) => {
       const o = c.role === 'corner' ? { value: c.text } : { raw: c.text };
@@ -1301,7 +1303,7 @@ register('matrix', {
       if (c.colSpan > 1) o.colSpan = c.colSpan;
       if (c.toggle) o.toggle = c.toggle;
       if (c.role !== 'corner') o.style = spec.legacy || c.colSpan === 1 ? right : { textAlign: 'center' };
-      return o;
+      return click(o, c);
     };
     const header = p.header.map(hr => {
       const cells = new Array(N).fill(null);
@@ -1312,7 +1314,7 @@ register('matrix', {
       const cells = new Array(N).fill(null);
       for (const c of br.cells) {
         if (c.role === 'value') {
-          cells[c.c] = { raw: c.raw, ctx: c.ctx, style: c.colTotal && br.kind !== 'total' ? vbold[c.v] : vstyles[c.v] };
+          cells[c.c] = click({ raw: c.raw, style: c.colTotal && br.kind !== 'total' ? vbold[c.v] : vstyles[c.v] }, c);
           continue;
         }
         const o = { raw: c.text };
@@ -1322,7 +1324,7 @@ register('matrix', {
         if (c.indent) o.indent = c.indent;
         const gs = spec.rowGroups[c.level]?.style;
         if (gs && c.role !== 'total') o.style = gs;
-        cells[c.c] = o;
+        cells[c.c] = click(o, c);
       }
       const total = br.kind === 'total';
       return { height: total && br.level === 0 ? 18 : 16, style: total ? totalStyle : cellStyle, cells };

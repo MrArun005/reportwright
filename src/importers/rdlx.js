@@ -1780,6 +1780,9 @@ function tablixMatrix(ar, cx, ctx) {
     const hv = m.Header?.Item?.Value;
     if (m.Header?.Item) used.add(m.Header.Item);
     if (isExpr(hv)) { const label = ex(cx, t, hv, rctx, { what: 'a group header' }); if (typeof label === 'string' && label !== g.expr) g.label = label; }
+    const clickOf = (x) => x && action(x.Action ?? x.ActionInfo, cx, t, rctx); // a header cell's drill-through, link, bookmark jump
+    const ha = clickOf(m.Header?.Item);
+    if (ha) g.action = ha;
     const s = sortList(m.SortExpressions, cx, t, rctx, it.dataSet)[0];
     if (s) { g.sort = s.dir; if (s.by !== g.expr) g.sortBy = s.by; }
     if (L.total !== 'none') {
@@ -1787,6 +1790,8 @@ function tablixMatrix(ar, cx, ctx) {
       if (L.tm.Header?.Item) used.add(L.tm.Header.Item);
       const tv = L.tm.Header?.Item?.Value;
       if (tv != null && !isExpr(tv) && String(tv).trim() !== 'Total') g.totalLabel = String(tv);
+      const ta = clickOf(L.tm.Header?.Item);
+      if (ta) g.totalAction = ta;
     }
     if (which === 'row') { const w = ar.RowHierarchy?.LevelSizes?.[l]; if (w != null) g.width = toPt(w, 110); }
     if (Array.isArray(m.Group.Filters) && m.Group.Filters.length) t.approx(`the group "${m.Group.Name}" has filters, which Pagewright groups do not support, so all its rows show.`);
@@ -1811,7 +1816,7 @@ function tablixMatrix(ar, cx, ctx) {
     const vi = cellAt(ri, ci);
     /** @type {Record<string, any>} */
     const v = { value: vi ? ex(cx, t, vi.Value ?? '', rctx, { what: 'its cell value' }) ?? '=Count(Fields)' : '=Count(Fields)' };
-    if (vi) { used.add(vi); const f = formatOf(vi.Style?.Format); if (f) v.format = f; }
+    if (vi) { used.add(vi); const f = formatOf(vi.Style?.Format); if (f) v.format = f; const va = action(vi.Action ?? vi.ActionInfo, cx, t, rctx); if (va) v.action = va; }
     if (cLeaves.length > 1 && cm.Header?.Item) { used.add(cm.Header.Item); v.label = ex(cx, t, cm.Header.Item.Value ?? '', rctx, { text: true }); }
     return v;
   });

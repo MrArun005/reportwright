@@ -215,8 +215,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .trow:hover { background: var(--panel-2); }
 .trow .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
 .trow .ty { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--faint); }
-.trow .act { opacity: 0; }
-.trow:hover .act { opacity: 1; }
+.trow .act { opacity: .75; } /* always visible (and for the keyboard): hover only brightens it */
+.trow:hover .act, .trow:focus-within .act { opacity: 1; }
 .outline-row.sel { background: var(--accent-soft); }
 .outline-row .linklike.nm, .outline-band { text-decoration: none; color: var(--ink); text-align: start; }
 .outline-row.sel .linklike.nm, .outline-band.sel { color: var(--accent); }
@@ -468,3 +468,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .pv-preview > span:not(.hint):not(.err) { width: auto !important; height: auto !important; }
 .pv-preview svg { width: auto !important; height: auto !important; max-width: 100%; }
 @media (max-width: 900px) { .pv-zones { grid-template-columns: 1fr; } }
+
+/* ---------- R1-C: designer and viewer UX ---------- */
+.warn-dot { flex: none; display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: var(--warn-soft); border: 1px solid var(--warn-line); color: var(--warn); font: var(--fw-strong) var(--fs-2xs)/1 var(--ui); }
+/* structured parameter mapping (drill-through, filter this report, subreport) */
+.pmap { display: grid; gap: 6px; }
+.pmap-row { display: grid; grid-template-columns: minmax(64px, 34%) 1fr auto; gap: 4px; align-items: start; }
+.pmap-row > div { min-width: 0; }
+.pmap-name { font-family: var(--mono); font-size: var(--fs-sm); padding-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pmap-name.bad { color: var(--danger); }
+.pmap-err { grid-column: 1 / -1; }

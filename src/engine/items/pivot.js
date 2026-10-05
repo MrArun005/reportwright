@@ -217,8 +217,8 @@ function spans(entries) {
  * @param {any} lc layout context (warn, state)
  * @returns {{ R: number, C: number, V: number, spec: ReturnType<typeof normalizeMatrix>, cols: any[], header: any[][], body: any[] }}
  *   cols: one entry per value column (after the R row-header columns): { kind, level, node, v }
- *   header: header rows, each a list of cells { c, text, rowSpan, colSpan, role, toggle? }
- *   body: rows { kind, level, node, cells: [{ c, text?, raw?, rowSpan, colSpan, role, toggle?, ctx? }] }
+ *   header: header rows, each a list of cells { c, text, rowSpan, colSpan, role, toggle?, action?, bookmark?, ctx? }
+ *   body: rows { kind, level, node, cells: [{ c, text?, raw?, rowSpan, colSpan, role, toggle?, ctx?, action?, bookmark? }] }
  */
 export function buildPivot(item, rows, ctx, lc) {
   const who = item.name || 'Matrix';
@@ -271,6 +271,24 @@ export function buildPivot(item, rows, ctx, lc) {
     ce.chain.forEach((n, l) => { s[scopeName(cg[l], l, 'c')] = { rows: n.rows, index: -1 }; });
     return s;
   };
+  /**
+   * Click actions on matrix cells (as on table cells): a group's `action` / `bookmark` on its header cells, `totalAction`
+   * on its total label, a value's `action` / `bookmark` on its cells. Evaluated in the cell's scope: a header's rows are
+   * its group instance's (so =Fields.region is that region), a value cell's are its row × column intersection.
+   * Only cells that have one carry `action`, `bookmark` and the scope `ctx` (no extra work for a matrix without actions).
+   */
+  const clickOf = (o, akey = 'action') => {
+    const c = {};
+    if (o?.[akey]) c.action = o[akey];
+    if (akey === 'action' && o?.bookmark) c.bookmark = o.bookmark;
+    return c.action || c.bookmark ? c : null;
+  };
+  const headCtx = (n, chain, groups, axis) => {
+    const s = { ...baseScopes };
+    chain.forEach((m, k) => { s[scopeName(groups[k], k, axis)] = { rows: m.rows, index: -1 }; });
+    return { ...ctx, fields: n.rows[0] || null, aggRows: n.rows, aggIndex: undefined, scopes: s };
+  };
+  const withClick = (cell, click, n, chain, groups, axis) => (click ? Object.assign(cell, click, { ctx: headCtx(n, chain, groups, axis) }) : cell);
   const isPct = (v) => v.show === 'percentOfTotal' || v.show === 'percentOfRow' || v.show === 'percentOfColumn';
   const denCache = new Map(); // `${v}|kind|node` → value
   const den = (vi, kind, node, scopes) => {
@@ -301,9 +319,9 @@ export function buildPivot(item, rows, ctx, lc) {
     e.chain.forEach((n, l) => {
       if (cs.first.get(n) !== j) return;
       const last = e.kind === 'collapsed' && l === e.level;
-      header[l].push({ c: c0, text: n.label, rowSpan: last ? C - l : 1, colSpan: cs.count.get(n) * V, role: 'group', level: l, toggle: n.toggle || undefined });
+      header[l].push(withClick({ c: c0, text: n.label, rowSpan: last ? C - l : 1, colSpan: cs.count.get(n) * V, role: 'group', level: l, toggle: n.toggle || undefined }, clickOf(cg[l]), n, e.chain.slice(0, l + 1), cg, 'c'));
     });
-    if (e.kind === 'total') header[e.level].push({ c: c0, text: cg[e.level].totalLabel ?? 'Total', rowSpan: C - e.level, colSpan: V, role: 'total', level: e.level });
+    if (e.kind === 'total') header[e.level].push(withClick({ c: c0, text: cg[e.level].totalLabel ?? 'Total', rowSpan: C - e.level, colSpan: V, role: 'total', level: e.level }, clickOf(cg[e.level], 'totalAction'), e.node, e.chain, cg, 'c'));
     if (valueRow) vals.forEach((v, vi) => header[H - 1].push({ c: c0 + vi, text: v.label ?? v.name ?? (C === 0 ? 'Value' : ''), rowSpan: 1, colSpan: 1, role: 'value' }));
   });
 
@@ -331,9 +349,9 @@ export function buildPivot(item, rows, ctx, lc) {
     re.chain.forEach((n, l) => {
       if (rs.first.get(n) !== i) return;
       const last = re.kind === 'collapsed' && l === re.level;
-      cells.push({ c: l, text: n.label, rowSpan: last ? 1 : rs.count.get(n), colSpan: last ? R - l : 1, role: 'rowHeader', level: l, toggle: n.toggle || undefined, ...(n.depth ? { indent: n.depth * (Number(rg[l].indent) || 12) } : {}) });
+      cells.push(withClick({ c: l, text: n.label, rowSpan: last ? 1 : rs.count.get(n), colSpan: last ? R - l : 1, role: 'rowHeader', level: l, toggle: n.toggle || undefined, ...(n.depth ? { indent: n.depth * (Number(rg[l].indent) || 12) } : {}) }, clickOf(rg[l]), n, re.chain.slice(0, l + 1), rg, 'r'));
     });
-    if (re.kind === 'total') cells.push({ c: re.level, text: rg[re.level].totalLabel ?? 'Total', rowSpan: 1, colSpan: R - re.level, role: 'total', level: re.level });
+    if (re.kind === 'total') cells.push(withClick({ c: re.level, text: rg[re.level].totalLabel ?? 'Total', rowSpan: 1, colSpan: R - re.level, role: 'total', level: re.level }, clickOf(rg[re.level], 'totalAction'), re.node, re.chain, rg, 'r'));
     const rn = re.node;
     cols.forEach((ce, j) => {
       const v = vals[ce.v];
@@ -344,7 +362,7 @@ export function buildPivot(item, rows, ctx, lc) {
         const d = v.show === 'percentOfTotal' ? den(ce.v, 't', rowRoot, scopes) : v.show === 'percentOfRow' ? den(ce.v, 'r', rn, scopes) : den(ce.v, 'c', ce.node, scopes);
         val = typeof val === 'number' && typeof d === 'number' && d !== 0 ? val / d : null;
       }
-      cells.push({ c: R + j, raw: val, rowSpan: 1, colSpan: 1, role: 'value', v: ce.v, colTotal: ce.kind === 'total', ctx: { ...ctx, fields: cr[0] || null, aggRows: cr, aggIndex: undefined, scopes } });
+      cells.push({ c: R + j, raw: val, rowSpan: 1, colSpan: 1, role: 'value', v: ce.v, colTotal: ce.kind === 'total', ctx: { ...ctx, fields: cr[0] || null, aggRows: cr, aggIndex: undefined, scopes }, ...clickOf(v) });
     });
     body.push({ kind: re.kind, level: re.level, node: rn, cells });
   });
