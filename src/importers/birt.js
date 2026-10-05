@@ -53,6 +53,7 @@ export function importBirt(input, opts = {}) {
   const r = importRdlx(ar, { name });
   if (r.error) return r;
   const warnings = [...notes, ...r.warnings].map(w => w.replace(/ActiveReports/g, 'BIRT'));
+  r.definition.arithmetic = 'double'; // JavaScript and Java compute with IEEE doubles
   return { definition: r.definition, warnings: [...new Set(warnings)], stats: r.stats };
 }
 
@@ -126,7 +127,7 @@ function toRdlx(root, notes, reportName) {
     if (depth > 12) throw new Untranslatable('bound columns that use each other more than 12 deep');
     /** @type {any} */
     const env = {
-      notes: [],
+      notes: [], js: true, // JavaScript: "a" + 5 is "a5", "a" + null "anull"
       field: (n) => fieldRef(n), param: (n) => paramRef(n), variable: (n) => { throw new Untranslatable(`$V{${n}}`); },
       ident: (n) => (n === 'pageNumber' ? { s: 'Globals!PageNumber', t: 'num', p: 9 } : n === 'totalPage' ? { s: 'Globals!TotalPages', t: 'num', p: 9 } : undefined),
       index: (n, E) => {
@@ -195,8 +196,10 @@ function toRdlx(root, notes, reportName) {
           const ops = { add: '+', subtract: '-', multiply: '*', divide: '/' };
           if (ops[n.name]) return { s: `(${x[0].s}) ${ops[n.name]} (${x[1].s})`, t: 'num', p: 7 };
           if (n.name === 'safeDivide') return { s: `IIF((${x[1].s}) = 0, ${x[2]?.s ?? '0'}, (${x[0].s}) / IIF((${x[1].s}) = 0, 1, ${x[1].s}))`, t: 'num', p: 9 };
-          if (n.name === 'round') return { s: `Math.Round(${x[0].s}, ${x[1]?.s ?? '0'}, MidpointRounding.AwayFromZero)`, t: 'num', p: 9 };
-          if (n.name === 'mod') return { s: `(${x[0].s}) Mod (${x[1].s})`, t: 'num', p: 7 };
+          // BirtMath.round is JavaScript's Math.round at a decimal: halves go up, toward +infinity (-3.25 → -3.2)
+          if (n.name === 'round') { const k = `(10 ^ (${x[1]?.s ?? '0'}))`; return { s: `Floor((${x[0].s}) * ${k} + 0.5) / ${k}`, t: 'num', p: 7 }; }
+          // BirtMath.mod has the divisor's sign (-1 mod 3 is 2), not the dividend's
+          if (n.name === 'mod') return { s: `(${x[0].s}) - (${x[1].s}) * Floor((${x[0].s}) / (${x[1].s}))`, t: 'num', p: 6 };
           throw new Untranslatable(`BirtMath.${n.name}()`);
         }
         if (cls === 'BirtComp') {
@@ -206,12 +209,16 @@ function toRdlx(root, notes, reportName) {
           if (n.name === 'between') return { s: `(${x[0].s}) >= (${x[1].s}) AndAlso (${x[0].s}) <= (${x[2].s})`, t: 'bool', p: 2 };
           throw new Untranslatable(`BirtComp.${n.name}()`);
         }
-        if (cls === 'Formatter' && n.name === 'format' && n.args[1]?.k === 'str') return { s: `Format(${E(n.args[0]).s}, "${String(javaPattern(n.args[1].v) || '').replace(/"/g, '""')}")`, t: 'str', p: 9 };
-        if (!n.obj && n.name === 'parseInt') return f('CInt', a(), 'num');
+        if (cls === 'Formatter' && n.name === 'format' && n.args[1]?.k === 'str') return { s: `Format(${E(n.args[0]).s}, "${`icu:${n.args[1].v}`.replace(/"/g, '""')}")`, t: 'str', p: 9 };
+        // parseInt reads the leading integer and truncates: "2.7" is 2, "12abc" is 12 (CInt would round, and refuse the text)
+        if (!n.obj && n.name === 'parseInt') { const x = a(); if (x.length > 1) throw new Untranslatable('parseInt with a radix'); return { s: `Fix(Val(JsStr(${x[0].s})))`, t: 'num', p: 9, i: true }; }
         if (!n.obj && n.name === 'parseFloat') return f('CDbl', a(), 'num');
-        if (!n.obj && n.name === 'String') return f('CStr', a(), 'str');
+        if (!n.obj && n.name === 'String') { const x = a(); return { s: `JsStr(${x[0]?.s ?? '""'})`, t: 'str', p: 9, nn: true }; }
         if (!n.obj && n.name === 'Number') return f('CDbl', a(), 'num');
-        if (n.obj && n.name === 'toFixed') { const x = a(); if (n.args[0]?.k === 'num') return { s: `Format(${E(n.obj).s}, "F${n.args[0].v}")`, t: 'str', p: 9 }; throw new Untranslatable('.toFixed() with computed digits'); }
+        // toFixed: JavaScript's rounding of the binary value (3.015 is 3.01), always "." and Latin digits
+        if (n.obj && n.name === 'toFixed') return { s: `JsStr(${E(n.obj).s}, ${n.args[0] ? E(n.args[0]).s : '0'})`, t: 'str', p: 9, nn: true };
+        // String.replace with a text pattern changes the first match only
+        if (n.obj && n.name === 'replace' && n.args.length === 2 && n.args[0].k === 'str') { const o = E(n.obj), x = a(); return { s: `Replace(${o.s}, ${x[0].s}, ${x[1].s}, 1, 1)`, t: 'str', p: 9 }; }
         if (n.obj && /^(getFullYear|getMonth|getDate)$/.test(n.name)) { const v = E(n.obj); return n.name === 'getMonth' ? { s: `Month(${v.s}) - 1`, t: 'num', p: 6 } : f(n.name === 'getFullYear' ? 'Year' : 'Day', [v], 'num'); }
         return undefined;
       },
@@ -287,6 +294,27 @@ function toRdlx(root, notes, reportName) {
     const s = String(f).split(',')[0].trim().replace(/^["']|["']$/g, '');
     return /^(sans-serif|serif|cursive|fantasy)$/i.test(s) ? 'Inter' : /^monospace$/i.test(s) ? 'JetBrains Mono' : s;
   };
+  /** A BIRT numberFormat / dateTimeFormat as a Pagewright format: "icu:<pattern>" or an ICU style; undefined: none. */
+  function icuFormat0(f, kind) {
+    if (!f || (!f.category && !f.pattern)) return undefined;
+    const cat = f.category || 'Custom', p = f.pattern || '';
+    if (kind === 'num') {
+      if (cat === 'Unformatted' || p === 'Unformatted') return 'icu:';
+      if (cat === 'General Number' || p === 'General Number') return 'icu:0.################'; // ICU's general number: no grouping, the shortest digits
+      if (cat === 'Percent' && (!p || p === 'Percent')) return 'icu:0.00%';
+      if (cat === 'Currency' && (!p || p === 'Currency')) return 'icu:¤#,##0.00';
+      if (cat === 'Fixed' && (!p || p === 'Fixed')) return 'icu:#,##0.00';
+      if (cat === 'Scientific' && (!p || p === 'Scientific')) return 'icu:0.00E00';
+      return p ? `icu:${p}` : undefined;
+    }
+    const STYLE = { 'Short Date': '@date=short', 'Medium Date': '@date=medium', 'Long Date': '@date=long', 'General Date': '@date=long;time=long',
+      'Medium Time': '@time=medium', 'Long Time': '@time=long', 'Short Time': 'kk:mm', Unformatted: '', D: '@date=long', u: 'yyyy.MM.dd HH:mm:ss Z' };
+    const key = p && STYLE[p] !== undefined ? p : !p && STYLE[cat] !== undefined ? cat : null;
+    if (key != null) return `icu:${STYLE[key]}`;
+    return p ? `icu:${p}` : undefined;
+  }
+  /** a style value is a template: a pattern's braces ({RoundingMode=HALF_UP}) are doubled to stay text */
+  const icuFormat = (f, kind) => { const v = icuFormat0(f, kind); return v && v.replace(/[{}]/g, '$&$&'); };
   /** an RDLX Style */
   function rdlxStyle(st, item, c, opt = {}) {
     /** @type {Record<string, any>} */
@@ -307,10 +335,10 @@ function toRdlx(root, notes, reportName) {
       const bs = st[`border${s}Style`];
       if (bs && bs !== 'none') o[`${s}Border`] = { Style: { solid: 'Solid', dashed: 'Dashed', dotted: 'Dotted', double: 'Double' }[bs] || 'Solid', Width: pt(BORDER_W[st[`border${s}Width`]] ?? (len(st[`border${s}Width`], 0) || 0.75)), Color: st[`border${s}Color`] || '#000000' };
     }
-    const f = st.numFmt?.pattern ? st.numFmt : st.dateFmt?.pattern ? st.dateFmt : null;
-    if (f) o.Format = javaPattern(f.pattern, f === st.numFmt ? 'num' : 'date');
-    else if (st.numFmt?.category) o.Format = { Currency: 'C2', Percent: 'P0', Fixed: 'N2', 'Standard': 'N2', Scientific: 'E2' }[st.numFmt.category] || undefined;
-    else if (st.dateFmt?.category) o.Format = { 'Short Date': 'd', 'Medium Date': 'MMM d, yyyy', 'Long Date': 'D', 'General Date': 'G', 'Short Time': 't', 'Long Time': 'T' }[st.dateFmt.category] || undefined;
+    // BIRT formats with ICU4J: the pattern goes to the engine as "icu:…" (expr/javafmt.js); named styles as ICU's
+    const fmt = icuFormat(st.numFmt, 'num') ?? icuFormat(st.dateFmt, 'date');
+    if (fmt != null) o.Format = fmt;
+    else if (opt.kind) o.Format = 'icu:'; // unformatted: BIRT prints 0.6666666666666666, true, "Mar 5, 2026 2:30 PM"
     if (!o.Format) delete o.Format;
     // highlight rules: colours and bold as IIF(test, …, …)
     for (const h of st.__hl || []) {
@@ -418,8 +446,9 @@ function toRdlx(root, notes, reportName) {
       } else if (type === 'bookmark-link') { const t = prop(act, 'targetBookmark'); if (t) it.Action = { BookmarkLink: value(t, it, c) }; }
     };
     if (bm) it.Bookmark = value(bm, it, c);
+    let kindHint = null; // a data item's value type, for BIRT's unformatted display
     const textItem = (v, h) => {
-      it.Type = 'textbox'; it.Value = v; it.CanGrow = true; it.Height = pt(h); it.Style = rdlxStyle(st, it, c);
+      it.Type = 'textbox'; it.Value = v; it.CanGrow = true; it.Height = pt(h); it.Style = rdlxStyle(st, it, c, { kind: kindHint });
       link();
       return { it, h };
     };
@@ -433,6 +462,10 @@ function toRdlx(root, notes, reportName) {
         const col = prop(e, 'resultSetColumn');
         const ve = prop(e, 'valueExpr');
         let v;
+        const b0 = col != null ? c.bindings?.get(col) : null;
+        const dt = String((b0 && prop(b0, 'dataType')) || '').toLowerCase();
+        // BIRT prints an unformatted float as its shortest digits (0.6666666666666666), a boolean as true/false
+        if (/^(float|decimal|double|boolean|date-time|date|time)$/.test(dt) || (b0 && prop(b0, 'aggregateFunction') && !/count/i.test(prop(b0, 'aggregateFunction')))) kindHint = dt || 'float';
         if (col != null) {
           const b = c.bindings?.get(col);
           if (b) {
@@ -721,7 +754,7 @@ function toRdlx(root, notes, reportName) {
       DataSources.push({ Name: s.attrs.name, ConnectionProperties: { DataProvider: 'JSON', ConnectString: 'jsondata=[]' } });
     }
   }
-  const TYPES = { integer: 'Integer', float: 'Float', decimal: 'Float', 'date-time': 'Date', date: 'Date', time: 'Date', boolean: 'Boolean' };
+  const TYPES = { integer: 'Integer', float: 'Float', decimal: 'Float', 'date-time': 'Date', date: 'Date', time: 'Date', boolean: 'Boolean', string: 'String' }; // string: "" stays "" (an untyped field reads it as null)
   for (const d of kid(root, 'data-sets')?.children || []) {
     const name = d.attrs.name;
     if (!name) continue;

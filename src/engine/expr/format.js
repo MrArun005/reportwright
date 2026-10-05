@@ -5,6 +5,8 @@
  * Dates: yyyy yy MMMM MMM MM M dddd ddd dd d HH H hh h mm ss tt.
  */
 
+import { isJavaFormat, formatJava } from './javafmt.js';
+
 const nfCache = new Map();
 function nf(locale, opts) {
   const key = locale + JSON.stringify(opts);
@@ -246,6 +248,10 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
  */
 export function formatValue(value, fmt, opt = {}) {
   if (value == null) return '';
+  if (isJavaFormat(fmt)) { // an imported JasperReports or BIRT pattern, formatted as that engine does (javafmt.js)
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) { const d = toDate(value, opt); if (d) value = d; }
+    return formatJava(value, /** @type {string} */ (fmt), opt);
+  }
   const locale = opt.locale || 'en-US';
   if (value instanceof Date) {
     const t = value.getTime();

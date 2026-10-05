@@ -1,6 +1,7 @@
 // @ts-check
 import { parse, ExprError } from './parser.js';
 import { formatValue, formatDate, english, toDate as readDate, roundHalfAway, roundHalfEven, toWall, fromWall as zoneFromWall, parseNumber } from './format.js';
+import { javaString, jsString, javaFormatString } from './javafmt.js';
 
 /**
  * @typedef {object} EvalCtx
@@ -259,6 +260,8 @@ export function decMul(a, b) {
   const p = x[0] * y[0], k = x[1] + y[1];
   return Number.isSafeInteger(p) && k <= 22 ? p / P10[k] : a * b;
 }
+/** a + b: on decimal values (decAdd), or as IEEE doubles when the report computes as Java and JavaScript do (ctx.doubles) */
+const add = (a, b, ctx) => (ctx?.doubles ? a + b : decAdd(a, b));
 export function cmpVal(a, b) {
   if (a instanceof Date) a = a.getTime();
   if (b instanceof Date) b = b.getTime();
@@ -338,8 +341,8 @@ function binary(n, ctx) {
     case '+':
       if (typeof a === 'string' || typeof b === 'string') {
         // VB (Option Strict Off): a number plus numeric text adds; two texts, or text that is not a number, concatenate
-        if (typeof a === 'number' && numericText(b)) return decAdd(a, Number(b));
-        if (typeof b === 'number' && numericText(a)) return decAdd(Number(a), b);
+        if (typeof a === 'number' && numericText(b)) return add(a, Number(b), ctx);
+        if (typeof b === 'number' && numericText(a)) return add(Number(a), b, ctx);
         // VB: a number plus text that is not a number converts the text to Double and fails ("a" + 5 is #Error)
         if (!sql && (typeof a === 'number' || typeof b === 'number')) throw new ExprError(`"${String(typeof a === 'string' ? a : b).slice(0, 40)}" + a number: the text is not a number (join text with &)`);
         return (a ?? '') + '' + (b ?? '');
@@ -348,11 +351,11 @@ function binary(n, ctx) {
       if (a instanceof Date && b === 0) return a;
       if (b instanceof Date && a === 0) return b;
       if (a instanceof Date || b instanceof Date) return Number(a) + Number(b);
-      return decAdd(Number(a), Number(b));
+      return add(Number(a), Number(b), ctx);
     case '-':
       if (a == null || b == null) return null;
-      return a instanceof Date || b instanceof Date ? num(a) - num(b) : decAdd(num(a), -num(b));
-    case '*': return a == null || b == null ? null : decMul(num(a), num(b));
+      return a instanceof Date || b instanceof Date ? num(a) - num(b) : add(num(a), -num(b), ctx);
+    case '*': return a == null || b == null ? null : ctx.doubles ? num(a) * num(b) : decMul(num(a), num(b));
     case '/': {
       if (a == null || b == null) return null;
       const d = num(b);
@@ -415,7 +418,7 @@ function runningSum(base, n, ast, ctx) {
   const vals = RUN_CACHE.get(base).get(ast);
   let sums = RUN_SUMS.get(vals);
   if (!sums) { sums = []; RUN_SUMS.set(vals, sums); }
-  for (let i = sums.length; i < n; i++) { const v = vals[i]; const prev = i ? sums[i - 1] : 0; sums.push(v != null && v !== '' ? decAdd(prev, Number(v)) : prev); }
+  for (let i = sums.length; i < n; i++) { const v = vals[i]; const prev = i ? sums[i - 1] : 0; sums.push(v != null && v !== '' ? add(prev, Number(v), ctx) : prev); }
   return n ? sums[n - 1] : 0;
 }
 const ROW_LOCAL = new WeakMap();
@@ -458,8 +461,8 @@ function mapRows(rows, ast, ctx) {
   return out;
 }
 const AGG = {
-  sum: (vals) => { let s = 0; for (const v of vals) if (v != null && v !== '') s = decAdd(s, Number(v)); return s; },
-  avg: (vals) => { let s = 0, c = 0; for (const v of vals) if (v != null && v !== '') { s = decAdd(s, Number(v)); c++; } return c ? s / c : null; },
+  sum: (vals, ctx) => { let s = 0; for (const v of vals) if (v != null && v !== '') s = add(s, Number(v), ctx); return s; },
+  avg: (vals, ctx) => { let s = 0, c = 0; for (const v of vals) if (v != null && v !== '') { s = add(s, Number(v), ctx); c++; } return c ? s / c : null; },
   count: (vals) => vals.filter(v => v != null).length,
   countdistinct: (vals) => new Set(vals.filter(v => v != null).map(v => (v instanceof Date ? v.getTime() : v))).size,
   min: (vals) => { let m = null; for (const v of vals) if (v != null && (m == null || cmpVal(v, m) < 0)) m = v; return m; },
@@ -594,12 +597,17 @@ export const FUNCTIONS = {
   mid: (ctx, s, start, len) => S(s).substr(Number(start) - 1, len == null ? undefined : Number(len)),
   len: (ctx, s) => S(s).length,
   trim: (ctx, s) => S(s).trim(),
-  replace: (ctx, s, a, b) => (S(a) === '' ? S(s) : S(s).split(S(a)).join(S(b))), // VB: an empty Find changes nothing
+  replace: (ctx, s, a, b, start, count) => replaceText(S(s), S(a), S(b), start, count),
   instr: (ctx, s, sub) => S(s).indexOf(S(sub)) + 1,
   join: (ctx, arr, sep) => (Array.isArray(arr) ? arr.map(v => toText(v, null, ctx)).join(sep == null ? ', ' : S(sep)) : toText(arr, null, ctx)),
   contains: (ctx, hay, needle) => (Array.isArray(hay) ? hay.some(v => cmpVal(v, needle) === 0) : S(hay).toLowerCase().includes(S(needle).toLowerCase())),
   inlist: (ctx, v, ...list) => list.flat().some(x => cmpVal(v, x) === 0),
   cstr: (ctx, v) => toText(v, null, ctx),
+  // String.valueOf in Java (imported JasperReports expressions) and String() in JavaScript (BIRT): "null", true/false,
+  // Double.toString ("2.0"); JavaStr(x, "int") for an integral value. JavaFormat is java.util.Formatter (String.format).
+  javastr: (ctx, v, kind) => javaString(v, kind, ctx.timeZone),
+  jsstr: (ctx, v, digits) => (digits != null && typeof v === 'number' ? v.toFixed(Math.max(0, Math.min(100, Number(digits) || 0))) : jsString(v)), // JsStr(x, n): x.toFixed(n)
+  javaformat: (ctx, f, ...args) => { const s = javaFormatString(S(f), args, ctx.locale, ctx.timeZone); capText('JavaFormat', s.length); return s; },
   // VB conversions: CInt rounds half to even and raises #Error for text that is not a number; a blank stays blank
   // VB: Nothing converts to the type default (0) unless the report keeps SQL nulls; True is -1
   cdbl: (ctx, v) => (v == null ? (ctx.nullPropagation === true ? null : 0) : v === '' ? null : v instanceof Date ? v.getTime() : typeof v === 'boolean' ? vbNum(v) : toNumber('CDbl', v)),
@@ -738,6 +746,30 @@ function toInt(fname, v, bits) {
   const lim = 2 ** (bits - 1);
   if (r < -lim || r >= lim) throw new ExprError(`${fname}: ${n} is outside the Int${bits} range`);
   return r + 0;
+}
+/**
+ * VB Replace(text, find, with[, start[, count]]): from the 1-based start (the text before it is dropped, as VB does),
+ * at most count changes (-1: all). An empty find changes nothing. The result is capped at 1,000,000 characters before
+ * it is built (a short text with many matches can otherwise grow without bound).
+ */
+function replaceText(s, a, b, start, count) {
+  const st = start == null ? 1 : Math.trunc(Number(start));
+  if (!(st >= 1)) throw new ExprError('Replace: the start must be 1 or more');
+  if (st > 1) s = s.slice(st - 1);
+  if (a === '') return s;
+  let n = count == null ? -1 : Math.trunc(Number(count));
+  if (n === 0) return s;
+  let out = '', i = 0, len = 0;
+  for (;;) {
+    const j = s.indexOf(a, i);
+    if (j < 0 || n === 0) break;
+    len += j - i + b.length;
+    capText('Replace', len + (s.length - j - a.length));
+    out += s.slice(i, j) + b;
+    i = j + a.length;
+    if (n > 0) n--;
+  }
+  return out + s.slice(i);
 }
 const firstChar = (c) => (c == null || c === '' ? ' ' : [...String(c)][0]);
 function pad(fname, s, width, c, left) {
@@ -935,11 +967,11 @@ function call(n, ctx) {
       // a scope's run grows as rows are shown: a result counts only for the length it was computed at
       const hit = m.get(n);
       if (hit && hit.len === rows.length) return hit.v;
-      const v = AGG[name](aggValues(rows, args[0], ctx));
+      const v = AGG[name](aggValues(rows, args[0], ctx), ctx);
       m.set(n, { len: rows.length, v });
       return v;
     }
-    return AGG[name](aggValues(rows, args[0], ctx));
+    return AGG[name](aggValues(rows, args[0], ctx), ctx);
   }
   if (name === 'distinctsum') {
     // DistinctSum(distinctExpr, valueExpr[, scope]): the value of the first row of each distinct key
@@ -951,7 +983,7 @@ function call(n, ctx) {
       const k = keys[i] instanceof Date ? keys[i].getTime() : keys[i];
       if (!seen.has(k)) { seen.add(k); pick.push(rows[i]); }
     }
-    return AGG.sum(aggValues(pick, args[1], ctx));
+    return AGG.sum(aggValues(pick, args[1], ctx), ctx);
   }
   if (name === 'aggregateif') {
     // AggregateIf(condition, "Sum", expr[, scope])
@@ -960,7 +992,7 @@ function call(n, ctx) {
     if (!(fn in AGG)) throw new ExprError(`AggregateIf: unknown aggregate "${fn}"`, n.p);
     const rows = scopeRows(args, 3, ctx, n.name);
     const ok = mapRows(rows, args[0], ctx);
-    return AGG[fn](aggValues(rows.filter((_, i) => truthy(ok[i])), args[2], ctx));
+    return AGG[fn](aggValues(rows.filter((_, i) => truthy(ok[i])), args[2], ctx), ctx);
   }
   if (name === 'countrows') return scopeRows(args, 0, ctx, n.name).length;
   if (name === 'rownumber') {
@@ -980,8 +1012,8 @@ function call(n, ctx) {
       const pend = ctx.pendingRows;
       if (pend?.length && sc.run) {
         // a group header: the rows shown so far and the group's own rows, which come after it
-        if (fn === 'sum' && rowLocal(args[0])) return decAdd(runningSum(rows, rows.length, args[0], ctx), AGG.sum(mapRows(pend, args[0], ctx)));
-        return AGG[fn](rowLocal(args[0]) ? prefixValues(rows, rows.length, args[0], ctx).concat(mapRows(pend, args[0], ctx)) : mapRows(rows.concat(pend), args[0], ctx));
+        if (fn === 'sum' && rowLocal(args[0])) return add(runningSum(rows, rows.length, args[0], ctx), AGG.sum(mapRows(pend, args[0], ctx), ctx), ctx);
+        return AGG[fn](rowLocal(args[0]) ? prefixValues(rows, rows.length, args[0], ctx).concat(mapRows(pend, args[0], ctx)) : mapRows(rows.concat(pend), args[0], ctx), ctx);
       }
     } else if (ctx.runningRows) rows = ctx.runningRows;
     else if (ctx.aggRows && ctx.aggIndex != null) rows = ctx.aggRows.slice(0, ctx.aggIndex + 1);
@@ -989,9 +1021,9 @@ function call(n, ctx) {
     // asked once per row over a growing prefix of the same rows: reuse the values already computed
     if (args.length > 2 || (!ctx.runningRows && ctx.aggRows && ctx.aggIndex != null)) {
       const base = args.length > 2 ? rows : ctx.aggRows;
-      if (rowLocal(args[0])) return fn === 'sum' ? runningSum(base, rows.length, args[0], ctx) : AGG[fn](prefixValues(base, rows.length, args[0], ctx));
+      if (rowLocal(args[0])) return fn === 'sum' ? runningSum(base, rows.length, args[0], ctx) : AGG[fn](prefixValues(base, rows.length, args[0], ctx), ctx);
     }
-    return AGG[fn](mapRows(rows, args[0], ctx));
+    return AGG[fn](mapRows(rows, args[0], ctx), ctx);
   }
   if (name === 'rank') return rank(n, ctx);
   if (name === 'previous') return previous(n, ctx);

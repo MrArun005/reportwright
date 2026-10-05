@@ -240,6 +240,11 @@ const A = (s, t = 'any') => ({ s, t, p: 9 });
 const wrap = (v, p) => (v.p < p ? `(${v.s})` : v.s);
 const fn = (name, args, t = 'any') => A(`${name}(${args.map(a => a.s).join(', ')})`, t);
 const isNull = (n) => n.k === 'null' || (n.k === 'paren' && isNull(n.e));
+/** String.valueOf(v) in Java: "null", true/false, Double.toString ("2.0"); an integral value prints as an integer. A
+ *  string literal or a concatenation is never null and stays as it is. */
+const jstr = (v) => (v.nn ? v : { s: `JavaStr(${v.s}${v.i ? ', "int"' : ''})`, t: 'str', p: 9, nn: true });
+/** The same in JavaScript (BIRT expressions): String(v), so 5 is "5" and null "null". */
+const toStr = (v, env) => (env?.js ? (v.nn ? v : { s: `JsStr(${v.s})`, t: 'str', p: 9, nn: true }) : jstr(v));
 
 /** Java DecimalFormat / SimpleDateFormat pattern → a .NET format string (what rdlx.js and Pagewright read). */
 export function javaPattern(pat, kind = 'any') {
@@ -276,11 +281,8 @@ export function halfEvenDigits(pat) {
   const m = /\.([#0]*)/.exec(pos);
   return (m ? m[1].length : 0) + (pos.includes('%') ? 2 : pos.includes('‰') ? 3 : 0);
 }
-/** Format(v, pattern) for a DecimalFormat pattern: rounded half to even first, as Java does. */
-const javaNumFormat = (v, pat) => {
-  const d = halfEvenDigits(pat);
-  return `Format(${d == null ? v.s : `Round(${v.s}, ${d})`}, ${vbStr(javaPattern(pat, 'num') || '')})`;
-};
+/** Format(v, pattern) for a DecimalFormat pattern: the engine formats "java:" patterns as Java does (expr/javafmt.js). */
+const javaNumFormat = (v, pat) => `Format(${v.s}, ${vbStr(`java:${pat}`)})`;
 
 /** msg("…{0,number,0.00}…", a, b) → concatenation with Format calls. */
 function message(pattern, args) {
@@ -303,13 +305,13 @@ function message(pattern, args) {
       const a = args[Number(idx)];
       if (!a || !/^\d+$/.test(idx)) throw new Untranslatable(`msg() argument {${idx}}`);
       flush();
-      const fmt = type === 'number' ? (style === 'integer' ? '#,##0' : style === 'percent' ? 'P0' : style === 'currency' ? 'C2' : style ? javaPattern(style, 'num') : '#,##0.###')
-        : type === 'date' || type === 'time' ? ({ short: type === 'date' ? 'd' : 't', medium: type === 'date' ? 'MMM d, yyyy' : 'T', long: type === 'date' ? 'MMMM d, yyyy' : 'T', full: 'D' }[style] ?? (style ? javaPattern(style, 'date') : type === 'date' ? 'MMM d, yyyy' : 'T'))
+      // MessageFormat's number and date styles as Java patterns ("java:…", expr/javafmt.js)
+      const fmt = type === 'number' ? `java:${({ integer: '#,##0', percent: '#,##0%', currency: '¤#,##0.00' })[style] ?? (style || '#,##0.###')}`
+        : type === 'date' || type === 'time' ? `java:${/^(short|medium|long|full)$/.test(style || 'medium') ? `@${type}=${style || 'medium'}` : style}`
           : null;
       if (type && fmt == null && type !== 'choice') throw new Untranslatable(`msg() format "${type}"`);
       if (type === 'choice') throw new Untranslatable('msg() choice formats');
-      const javaNum = type === 'number' && !/^(integer|percent|currency)$/.test(style);
-      parts.push(javaNum ? javaNumFormat(a, style || '#,##0.###') : fmt ? `Format(${type === 'number' && style === 'integer' ? `Round(${a.s}, 0)` : a.s}, ${vbStr(fmt)})` : wrap(a, 6));
+      parts.push(fmt ? `Format(${a.s}, ${vbStr(fmt)})` : wrap(jstr(a), 6));
       i = e + 1; continue;
     }
     lit += c; i++;
@@ -347,7 +349,7 @@ function em(n, env, d) {
   const E = (x) => em(x, env, d + 1);
   switch (n.k) {
     case 'num': return { ...A(n.v, 'num'), i: !!n.int };
-    case 'str': return { s: vbStr(n.v), t: 'str', p: n.v.includes('\n') || n.v.includes('\t') ? 5 : 9 };
+    case 'str': return { s: vbStr(n.v), t: 'str', p: n.v.includes('\n') || n.v.includes('\t') ? 5 : 9, nn: true };
     case 'bool': return A(n.v ? 'True' : 'False', 'bool');
     case 'null': return A('Nothing');
     case 'paren': { const v = E(n.e); return { ...v, p: 9, s: `(${v.s})` }; } // keeps i (an integer value)
@@ -360,7 +362,7 @@ function em(n, env, d) {
     case 'cast': {
       const v = E(n.e);
       const k = kindOf(n.type.replace(/\[\]$/, ''));
-      if (k === 'str') return fn('CStr', [v], 'str');
+      if (k === 'str') return jstr(v);
       // (int) and (long) truncate toward zero (Java), where CInt would round half to even: (int)2.675 is 2
       if (k === 'num') return /Integer|Long|Short|Byte|int|long|short|byte/.test(n.type) ? { ...fn('Fix', [v], 'num'), i: true } : fn('CDbl', [v], 'num');
       if (k === 'bool') return fn('CBool', [v], 'bool');
@@ -374,7 +376,7 @@ function em(n, env, d) {
       throw new Untranslatable('the operator ~');
     }
     case 'elvis': { const a = E(n.a), b = E(n.b); return fn('IIF', [A(`IsNothing(${a.s})`, 'bool'), b, a], a.t); }
-    case 'cond': { const a = E(n.a), b = E(n.b); return fn('IIF', [E(n.c), a, b], a.t === b.t ? a.t : 'any'); }
+    case 'cond': { const a = E(n.a), b = E(n.b); return { ...fn('IIF', [E(n.c), a, b], a.t === b.t ? a.t : 'any'), i: !!(a.i && b.i) }; }
     case 'bin': return emBin(n, env, d);
     case 'id': return env.ident?.(n.name) ?? emId(n.name);
     case 'index': { const v = env.index?.(n, E); if (v) return v; throw new Untranslatable('an index [ ]'); }
@@ -417,7 +419,8 @@ function combine(n, l, env, d) {
   const r = E(n.r);
   if (op === '+') {
     // Java: + is concatenation as soon as one side is a String
-    if (l.t === 'str' || r.t === 'str') return { s: `${wrap(l, 5)} & ${wrap(r, 6)}`, t: 'str', p: 5 };
+    // each side as String.valueOf gives it: null is "null", a Double "2.0", a boolean "true"
+    if (l.t === 'str' || r.t === 'str') { const a = toStr(l, env), b = toStr(r, env); return { s: `${wrap(a, 5)} & ${wrap(b, 6)}`, t: 'str', p: 5, nn: true }; }
     return { s: `${wrap(l, 6)} + ${wrap(r, 7)}`, t: l.t === 'date' ? 'date' : 'num', p: 6, i: !!(l.i && r.i) };
   }
   const i = !!(l.i && r.i); // int op int stays an int in Java
@@ -448,6 +451,7 @@ function emMember(n, env, d) {
     if (short === 'BigDecimal.ZERO' || short === 'BigInteger.ZERO') return A('0', 'num');
     if (short === 'BigDecimal.ONE' || short === 'BigInteger.ONE') return A('1', 'num');
     if (/^(Integer|Long|Double|Float)\.(MAX_VALUE|MIN_VALUE)$/.test(short)) throw new Untranslatable(short);
+    if (/^(RoundingMode|BigDecimal)\.[A-Z_]+$/.test(short)) return A(vbStr(short.split('.')[1]), 'str'); // read by setScale
   }
   if (n.name === 'length' && n.obj) throw new Untranslatable('an array length');
   throw new Untranslatable(`the field ${path || `.${n.name}`}`);
@@ -477,8 +481,7 @@ function emCall(n, env, d) {
     if (n.name === 'DATEFORMAT' || n.name === 'TEXT') {
       const [v] = args();
       if (n.args[1]?.k !== 'str') throw new Untranslatable(`${n.name}() with a pattern that is not a literal`);
-      if (n.name === 'TEXT') return A(javaNumFormat(v, n.args[1].v), 'str');
-      return A(`Format(${v.s}, ${vbStr(javaPattern(n.args[1].v, 'date') || '')})`, 'str');
+      return A(`Format(${v.s}, ${vbStr(`java:${n.args[1].v}`)})`, 'str'); // the Java pattern, as Jasper formats it (expr/javafmt.js)
     }
     throw new Untranslatable(`the function ${n.name}()`);
   }
@@ -487,8 +490,13 @@ function emCall(n, env, d) {
     const cls = path.replace(/^java\.(lang|math|util|sql)\./, '');
     const a = args();
     const m = n.name;
-    if (cls === 'String' && m === 'valueOf') return fn('CStr', a, 'str');
-    if (cls === 'String' && m === 'format') throw new Untranslatable('String.format(…)');
+    if (cls === 'String' && m === 'valueOf' && a.length === 1) return jstr(a[0]);
+    if (cls === 'String' && m === 'format') {
+      if (n.args[0]?.k !== 'str') throw new Untranslatable('String.format(…) with a format that is not a literal');
+      return { ...fn('JavaFormat', a, 'str'), nn: true }; // java.util.Formatter (expr/javafmt.js)
+    }
+    if (/^(Integer|Long|Short|Byte)$/.test(cls) && m === 'toString' && a.length === 1) return jstr({ ...a[0], i: true });
+    if (/^(Double|Float)$/.test(cls) && m === 'toString' && a.length === 1) return jstr({ ...a[0], i: false });
     if (/^(Integer|Long|Short|Byte)$/.test(cls) && /^(valueOf|parse\w+)$/.test(m) && a.length === 1) return { ...fn('CInt', a, 'num'), i: true };
     if (/^(Double|Float|BigDecimal)$/.test(cls) && /^(valueOf|parse\w+)$/.test(m) && a.length === 1) return fn('CDbl', a, 'num');
     if (cls === 'Boolean' && /^(valueOf|parseBoolean)$/.test(m)) return fn('CBool', a, 'bool');
@@ -496,7 +504,8 @@ function emCall(n, env, d) {
       const M = { abs: 'Math.Abs', floor: 'Math.Floor', ceil: 'Math.Ceiling', sqrt: 'Math.Sqrt', pow: 'Math.Pow', log: 'Math.Log', log10: 'Math.Log10', exp: 'Math.Exp', signum: 'Math.Sign', max: 'Math.Max', min: 'Math.Min' };
       // Java Math.round is floor(x + 0.5): halves go up, toward +infinity (Math.round(-2.5) is -2)
       if (m === 'round') return { ...A(`Math.Floor(${wrap(a[0], 6)} + 0.5)`, 'num'), i: true };
-      if (M[m]) return fn(M[m], a, 'num');
+      // abs, max and min of integers stay integers in Java (they print without ".0"); floor, ceil, sqrt… are doubles
+      if (M[m]) return { ...fn(M[m], a, 'num'), i: /^(abs|max|min)$/.test(m) && a.every(x => x.i) };
     }
     if (cls === 'System' && m === 'currentTimeMillis') throw new Untranslatable('System.currentTimeMillis()');
     if (BOXED.test(cls) || /^(Math|String|System|Calendar|Arrays|Objects)$/.test(cls)) throw new Untranslatable(`${cls}.${m}()`);
@@ -507,15 +516,15 @@ function emCall(n, env, d) {
     case 'toUpperCase': return fn('UCase', [o], 'str');
     case 'toLowerCase': return fn('LCase', [o], 'str');
     case 'trim': case 'strip': return fn('Trim', [o], 'str');
-    case 'length': return fn('Len', [o], 'num');
+    case 'length': return { ...fn('Len', [o], 'num'), i: true };
     case 'isEmpty': return { s: `Len(${o.s}) = 0`, t: 'bool', p: 4 };
-    case 'toString': return fn('CStr', [o], 'str');
+    case 'toString': return jstr(o);
     case 'concat': return { s: `${wrap(o, 5)} & ${wrap(a[0], 6)}`, t: 'str', p: 5 };
     case 'substring':
       if (a.length === 1) return A(`${wrap(o, 9)}.Substring(${a[0].s})`, 'str');
       return A(`${wrap(o, 9)}.Substring(${a[0].s}, ${wrap(a[1], 6)} - ${wrap(a[0], 7)})`, 'str');
     case 'charAt': return A(`${wrap(o, 9)}.Substring(${a[0].s}, 1)`, 'str');
-    case 'indexOf': return A(`${wrap(o, 9)}.IndexOf(${a[0].s})`, 'num');
+    case 'indexOf': return { ...A(`${wrap(o, 9)}.IndexOf(${a[0].s})`, 'num'), i: true };
     case 'startsWith': return A(`${wrap(o, 9)}.StartsWith(${a[0].s})`, 'bool');
     case 'endsWith': return A(`${wrap(o, 9)}.EndsWith(${a[0].s})`, 'bool');
     case 'contains': return A(`${wrap(o, 9)}.Contains(${a[0].s})`, 'bool');
@@ -526,6 +535,21 @@ function emCall(n, env, d) {
     case 'intValue': case 'longValue': case 'shortValue': case 'byteValue': return { ...fn('Fix', [o], 'num'), i: true }; // truncates, as Java
     case 'doubleValue': case 'floatValue': return fn('CDbl', [o], 'num');
     case 'booleanValue': return o;
+    case 'setScale': { // BigDecimal: the value rounded to n decimals (RoundingMode.HALF_UP and the others)
+      if (o.t !== 'num' || !a.length) break;
+      const rm = n.args[1] && dotted(n.args[1]);
+      const mode = (rm ? rm.replace(/^(java\.math\.)?(RoundingMode|BigDecimal)\./, '') : 'UNNECESSARY').replace(/^ROUND_/, '');
+      const R = { HALF_UP: 'RoundHalfAway', HALF_EVEN: 'Round', UNNECESSARY: null }[mode];
+      if (R === null) return o;
+      if (R) return fn(R, [o, a[0]], 'num');
+      if (mode === 'DOWN' || mode === 'FLOOR' || mode === 'UP' || mode === 'CEILING') {
+        const f = { DOWN: 'Fix', FLOOR: 'Floor', CEILING: 'Ceiling' }[mode];
+        const k = `(10 ^ ${wrap(a[0], 9)})`;
+        if (f) return A(`${f}(${wrap(o, 7)} * ${k}) / ${k}`, 'num');
+        return A(`Sign(${o.s}) * Ceiling(Math.Abs(${o.s}) * ${k}) / ${k}`, 'num');
+      }
+      throw new Untranslatable(`setScale with RoundingMode.${mode}`);
+    }
     case 'add': if (o.t === 'num') return { s: `${wrap(o, 6)} + ${wrap(a[0], 7)}`, t: 'num', p: 6 }; break;
     case 'subtract': if (o.t === 'num') return { s: `${wrap(o, 6)} - ${wrap(a[0], 7)}`, t: 'num', p: 6 }; break;
     case 'multiply': if (o.t === 'num') return { s: `${wrap(o, 7)} * ${wrap(a[0], 8)}`, t: 'num', p: 7 }; break;

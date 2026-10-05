@@ -265,7 +265,9 @@ const SAME = { format: 'Format', left: 'Left', right: 'Right', mid: 'Mid', len: 
   isnothing: 'IsNull', isnull: 'IsNull', isdbnull: 'IsNull', cdec: 'CDbl', csng: 'CDbl', clng: 'ToInt64', cshort: 'ToInt16', cbyte: 'CInt', fix: 'Fix',
   isempty: 'IsNull', space: 'Space', weekday: 'Weekday', weekdayname: 'WeekdayName', hour: 'Hour', minute: 'Minute', second: 'Second', sign: 'Sign',
   chr: 'Chr', chrw: 'Chr', asc: 'Asc', ascw: 'Asc', strreverse: 'StrReverse', isnumeric: 'IsNumeric', isdate: 'IsDate', datevalue: 'DateValue',
-  timeserial: 'TimeSerial', lookupset: 'LookupSet' };
+  timeserial: 'TimeSerial', lookupset: 'LookupSet',
+  // the JasperReports and BIRT front ends' Java and JavaScript string conversions (expr/javafmt.js)
+  javastr: 'JavaStr', jsstr: 'JsStr', javaformat: 'JavaFormat' };
 const CONVERT = { tostring: 'CStr', todecimal: 'CDbl', todouble: 'CDbl', tosingle: 'CDbl', toint16: 'ToInt16', toint32: 'ToInt32', toint64: 'ToInt64',
   todatetime: 'CDate', toboolean: 'CBool' };
 const MATH = { abs: 'Abs', floor: 'Floor', ceiling: 'Ceiling', sqrt: 'Sqrt', pow: 'Pow', truncate: 'Fix', sign: 'Sign', log: 'Log', log10: 'Log10', exp: 'Exp' };
@@ -770,6 +772,7 @@ function textStyle(st, cx, t, ctx, { box = false } = {}) {
     set('textAlign', styleVal(st.TextAlign, cx, t, ctx, 'alignment', (v) => ALIGN[String(v).toLowerCase()], 'align'));
     set('verticalAlign', styleVal(st.VerticalAlign, cx, t, ctx, 'vertical alignment', (v) => VALIGN[String(v).toLowerCase()]));
     set('format', styleVal(st.Format, cx, t, ctx, 'format', formatOf, 'format'));
+    if (typeof st.NullText === 'string') set('nullText', st.NullText); // the JasperReports front end's "null"
     if (st.LineHeight && !isExpr(st.LineHeight)) {
       const size = out.fontSize || 10, lh = toPt(st.LineHeight, 0);
       if (lh > 0) out.lineHeight = r2(lh / size);

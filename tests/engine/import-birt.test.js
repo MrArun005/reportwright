@@ -77,7 +77,7 @@ describe('a BIRT design', () => {
     expect(d.dataSets[0].fields).toEqual(expect.arrayContaining([{ name: 'DOUBLE', expr: '=Fields.AMOUNT * 2' }]));
     const t = walk(d.sections.body.items).find(i => i.type === 'table');
     expect(t.groups[0]).toMatchObject({ name: 'RegionGroup', expr: '=Fields.REGION', sort: 'asc' });
-    expect(t.groups[0].footer[0].cells[1]).toMatchObject({ value: '=Sum(Fields.AMOUNT, "RegionGroup")', style: { format: '#,##0.00' } });
+    expect(t.groups[0].footer[0].cells[1]).toMatchObject({ value: '=Sum(Fields.AMOUNT, "RegionGroup")', style: { format: 'icu:#,##0.00' } });
     expect(t.detail[0].cells[1].style.color).toMatch(/IIF\(\(?Fields\.AMOUNT\)? > \(?15\)?, "#ff0000"/i);
     const out = await render(d, { fontStore, sources: { 'Sales DB': rows }, parameters: { MinAmount: 0, Region: null } });
     const all = out.pages.flatMap(texts);

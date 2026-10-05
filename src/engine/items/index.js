@@ -45,6 +45,7 @@ function evalSafe(v, ctx, lc, who) {
 }
 function textOf(raw, st, ctx) {
   if (typeof raw === 'string') return raw;
+  if (raw == null && st.nullText != null) return String(st.nullText); // what a null shows (JasperReports prints "null")
   return toText(raw, st.format, ctx);
 }
 function hidden(item, ctx, lc) {
@@ -1539,6 +1540,7 @@ export const TEXT_STYLE_PROPS = [
   { key: 'textAlign', label: 'Align', type: 'select', options: ['auto', 'left', 'center', 'right', 'justify'], category: 'Text' },
   { key: 'verticalAlign', label: 'Vertical align', type: 'select', options: ['top', 'middle', 'bottom'], category: 'Text' },
   { key: 'format', label: 'Format (C2, N0, dd MMM yyyy)', type: 'text', category: 'Text' },
+  { key: 'nullText', label: 'Text for a null value', type: 'text', category: 'Text' },
   { key: 'lineHeight', label: 'Line height', type: 'number', category: 'Text' },
   { key: 'textDecoration', label: 'Decoration', type: 'select', options: ['none', 'underline', 'line-through', 'underline line-through'], category: 'Text' },
   { key: 'textDecorationColor', label: 'Decoration colour', type: 'color', category: 'Text' },

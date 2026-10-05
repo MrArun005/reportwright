@@ -27,7 +27,8 @@ describe('JRXML import', () => {
     ].join('');
     const r = importJrxml(jr(body, { fields }));
     const out = await render(r.definition, { fontStore, sources: { JasperDataSource: [{ q: 7, amt: 2.675, neg: -2.5 }, { q: 8, amt: 10.125, neg: 2.5 }] } });
-    expect(texts(out.pages[0])).toEqual(['q/2=3', 'int=2', 'iv=2', 'round=-2', '2.68', 'q/2=4', 'int=10', 'iv=10', 'round=3', '10.12']);
+    // 2.675 is 2.67499999999999982… in binary: JDK 23's DecimalFormat (half even on the exact value) prints 2.67
+    expect(texts(out.pages[0])).toEqual(['q/2=3', 'int=2', 'iv=2', 'round=-2', '2.67', 'q/2=4', 'int=10', 'iv=10', 'round=3', '10.12']);
   });
   it('DecimalFormat #,##0 on 2.5 shows 2; Groovy divides integers exactly', async () => {
     const fields = '<field name="q" class="java.lang.Integer"/><field name="x" class="java.lang.Double"/>';

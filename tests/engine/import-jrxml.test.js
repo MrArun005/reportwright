@@ -16,10 +16,11 @@ const J = (s) => javaToVb(s, env).s;
 
 describe('Java and Groovy expressions → VB', () => {
   it('fields, parameters, concatenation and arithmetic by type', () => {
-    expect(J('$F{a} + ", " + $F{b}')).toBe('Fields!a.Value & ", " & Fields!b.Value');
+    // String.valueOf on each side: a null field prints "null" in Java (ground truth: tests/diff)
+    expect(J('$F{a} + ", " + $F{b}')).toBe('JavaStr(Fields!a.Value) & ", " & JavaStr(Fields!b.Value)');
     expect(J('$F{n} + 1')).toBe('Fields!n.Value + 1');
-    expect(J('1 + 2 + "x"')).toBe('1 + 2 & "x"');
-    expect(J('"Total: " + ($F{n} * 2d)')).toBe('"Total: " & (Fields!n.Value * 2)');
+    expect(J('1 + 2 + "x"')).toBe('JavaStr(1 + 2, "int") & "x"');
+    expect(J('"Total: " + ($F{n} * 2d)')).toBe('"Total: " & JavaStr((Fields!n.Value * 2))'); // a double: "Total: 4.0"
     expect(J('$F{n} % 10 == 0')).toBe('Fields!n.Value Mod 10 = 0');
     expect(J('"a\\nb"')).toBe('"a" & vbCrLf & "b"');
     expect(J('"say \\"hi\\""')).toBe('"say ""hi"""');
@@ -27,7 +28,7 @@ describe('Java and Groovy expressions → VB', () => {
   it('the ternary, null tests, logic and casts', () => {
     expect(J('$F{a} == null ? "-" : $F{a}')).toBe('IIF(IsNothing(Fields!a.Value), "-", Fields!a.Value)');
     expect(J('$F{a} != null && !$F{a}.isEmpty()')).toBe('Not IsNothing(Fields!a.Value) AndAlso Not Len(Fields!a.Value) = 0');
-    expect(J('(String) $P{x}')).toBe('CStr(Parameters!x.Value)');
+    expect(J('(String) $P{x}')).toBe('JavaStr(Parameters!x.Value)');
     expect(J('((Integer) $F{n}).intValue()')).toBe('Fix((Fix(Fields!n.Value)))'); // Java truncates (REVIEW-ENGINE A8)
     expect(J('new Double($F{n}.doubleValue() / 2)')).toBe('CDbl(CDbl(Fields!n.Value) / 2)');
     expect(J('Boolean.TRUE')).toBe('True');
@@ -38,12 +39,12 @@ describe('Java and Groovy expressions → VB', () => {
     expect(J('$F{a}.trim().length()')).toBe('Len(Trim(Fields!a.Value))');
     expect(J('$F{a}.equalsIgnoreCase("x")')).toBe('UCase(Fields!a.Value) = UCase("x")');
     expect(J('java.lang.Math.round($F{n})')).toBe('Math.Floor(Fields!n.Value + 0.5)'); // Java: halves toward +infinity
-    expect(J('String.valueOf($F{n})')).toBe('CStr(Fields!n.Value)');
+    expect(J('String.valueOf($F{n})')).toBe('JavaStr(Fields!n.Value)');
     expect(J('new java.util.Date()')).toBe('Now');
-    expect(J('msg("{0} orders, {1,number,0.00} in total", $V{c}, $F{n})')).toBe('V_c & " orders, " & Format(Round(Fields!n.Value, 2), "0.00") & " in total"'); // DecimalFormat: half to even
+    expect(J('msg("{0} orders, {1,number,0.00} in total", $V{c}, $F{n})')).toBe('JavaStr(V_c) & " orders, " & Format(Fields!n.Value, "java:0.00") & " in total"'); // DecimalFormat as Java formats it (expr/javafmt.js)
     expect(J('UPPER(CONCATENATE($F{a}, "-", $F{b}))')).toBe('UCase(Fields!a.Value & "-" & Fields!b.Value)');
     expect(J('IF($F{n} > 5, "big", "small")')).toBe('IIF(Fields!n.Value > 5, "big", "small")');
-    expect(J('DATEFORMAT($F{d}, "dd/MM/yyyy")')).toBe('Format(Fields!d.Value, "dd/MM/yyyy")');
+    expect(J('DATEFORMAT($F{d}, "dd/MM/yyyy")')).toBe('Format(Fields!d.Value, "java:dd/MM/yyyy")');
   });
   it('says what it cannot translate', () => {
     for (const [src, re] of [['new java.text.SimpleDateFormat("yyyy").format($F{d})', /new java\.text\.SimpleDateFormat/], ['$F{a} instanceof String', /instanceof/],

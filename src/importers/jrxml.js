@@ -58,6 +58,7 @@ export function importJrxml(input, opts = {}) {
   }
   const r = importRdlx(ar, { name });
   if (r.error) return r;
+  r.definition.arithmetic = 'double'; // Java computes with IEEE doubles: 1.005 * 100 is 100.49999999999999
   placeCharts(r.definition, charts);
   const warnings = [...notes, ...r.warnings].map(w => w.replace(/ActiveReports/g, 'JasperReports'));
   return { definition: r.definition, warnings: [...new Set(warnings)], stats: r.stats };
@@ -116,7 +117,9 @@ function toRdlx(root, notes, charts, reportName) {
    * report or a group (totals, TotalPages).
    * @param {string} src @param {{ inDetail?: boolean, evalLater?: boolean, chart?: boolean, page?: boolean }} c
    */
-  function vb(src, c = {}) {
+  function vb(src, c = {}) { return vbT(src, c).s; }
+  /** vb(), with the value's kind: { s, t: 'num'|'str'|'bool'|'date'|'any', i: an integral number } */
+  function vbT(src, c = {}) {
     if (src.length > MAX_EXPR) throw new Untranslatable(`an expression of ${src.length} characters`);
     const env = {
       notes: [], intDivision,
@@ -127,7 +130,8 @@ function toRdlx(root, notes, charts, reportName) {
     };
     const v = javaToVb(src, env);
     if (v.s.length > MAX_EXPR) throw new Untranslatable('an expression that grows too long once its variables are filled in');
-    return budget(v.s);
+    budget(v.s);
+    return v;
   }
   const fieldRef = (n, k) => ({ s: /^[A-Za-z_]\w*$/.test(n) ? `Fields!${n}.Value` : `Fields("${n.replace(/"/g, '""')}").Value`, t: k || 'any', p: 9, i: ints.has(`F:${n}`) });
   function paramRef(n) {
@@ -175,15 +179,17 @@ function toRdlx(root, notes, charts, reportName) {
     const inner = sub(e, { ...c, inDetail: false }, depth);
     if (/\b(Sum|Count|CountDistinct|Avg|Min|Max|StDev|Var|First|RunningValue|RowNumber|CountRows)\(/.test(inner.s)) throw new Untranslatable(`the variable ${n}, a total of other totals`);
     if (v.attrs.incrementType && v.attrs.incrementType !== 'None') note(`Variables that add up only at a group or page end (${n}) add up every row in Pagewright.`);
+    // Count and DistinctCount are Longs; a Sum, Highest… has the variable's class (Integer: no ".0" when printed)
+    const ik = agg === 'Count' || agg === 'CountDistinct' || integral(v.attrs.class);
     if (c.chart) return { s: `${agg}(${inner.s})`, t: 'num', p: 9 };
     const scope = scopeOf(v);
     const sc = scope ? `, "${scope}"` : '';
     if (c.inDetail && !c.evalLater) {
       // the detail rows of a group are their own region in Pagewright: a report-wide running total restarts per group
       if (scope === DETAILS && groups.length) note('Row numbers and running totals over the whole report restart at each group here (REPORT_COUNT, report-wide sums in the detail band).');
-      return { s: `RunningValue(${inner.s}, ${agg}${sc || `, "${DETAILS}"`})`, t: 'num', p: 9 };
+      return { s: `RunningValue(${inner.s}, ${agg}${sc || `, "${DETAILS}"`})`, t: 'num', p: 9, i: ik };
     }
-    return { s: `${agg}(${inner.s}${sc})`, t: agg === 'First' ? inner.t : 'num', p: 9 };
+    return { s: `${agg}(${inner.s}${sc})`, t: agg === 'First' ? inner.t : 'num', p: 9, i: ik };
   }
   function sub(src, c, depth) {
     const env = {
@@ -202,7 +208,7 @@ function toRdlx(root, notes, charts, reportName) {
     const s = String(src).trim();
     const lit = /^"((?:[^"\\]|\\.)*)"$/.exec(s);
     if (lit && !/\\u|\$\{/.test(lit[1])) { const t = lit[1].replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\(.)/g, '$1'); return t.startsWith('=') ? `="${t.replace(/"/g, '""')}"` : t; }
-    try { return '=' + vb(s, c); } catch (e) {
+    try { const v = vbT(s, c); item.__kind = v; return '=' + v.s; } catch (e) {
       if (!(e instanceof Untranslatable)) throw e;
       (item.__notes ||= []).push(`${e.message} has no Pagewright equivalent, so the expression ${s.length > 200 ? s.slice(0, 200) + '…' : s} is shown as text.`);
       return s.startsWith('=') ? `="${s.replace(/"/g, '""')}"` : s;
@@ -396,13 +402,13 @@ function toRdlx(root, notes, charts, reportName) {
         it.CanGrow = a.isStretchWithOverflow === 'true' || /StretchHeight/.test(a.textAdjust || '') || a.stretchWithOverflow === 'true';
         const style = rdlxStyle(st, 'text', it, ctx);
         const pat = exprOf(e, 'patternExpression');
-        if (st.pattern) {
-          const kind = kindOfExpr(src);
-          style.Format = javaPattern(st.pattern, kind);
-          // DecimalFormat rounds half to even: round the number that way first (the format would round halves up)
-          const d = kind === 'num' && typeof it.Value === 'string' && it.Value.startsWith('=') ? halfEvenDigits(st.pattern) : null;
-          if (d != null) it.Value = `=Round(${it.Value.slice(1)}, ${d})`;
-        }
+        const k = it.__kind;
+        delete it.__kind;
+        // the pattern as Jasper formats it (DecimalFormat / SimpleDateFormat, expr/javafmt.js); no pattern: String.valueOf,
+        // so a Double prints 2.0 and a Boolean true (an integral value prints the same either way)
+        if (st.pattern) style.Format = `java:${st.pattern}`.replace(/[{}]/g, '$&$&'); // a style value is a template: braces stay text
+        else if (k && (k.t === 'bool' || k.t === 'date' || (k.t === 'num' && !k.i))) style.Format = 'java:';
+        if (!st.blankWhenNull) style.NullText = 'null'; // Jasper prints a null value as "null" unless blankWhenNull
         if (pat) (it.__notes ||= []).push('its format is set by an expression (patternExpression); it is left out.');
         it.Style = style;
         if (st.markup && st.markup !== 'none') (it.__notes ||= []).push(`its text is ${st.markup} markup; Pagewright shows it as plain text.`);
@@ -754,7 +760,8 @@ function toRdlx(root, notes, charts, reportName) {
     const set = { Name: name, Fields: kids(ds, 'field').map(f => {
       const desc = txt(f, 'fieldDescription') ?? txt(f, 'description');
       const k = kindOf(f.attrs.class);
-      const t = { num: /Integer|Long|Short|Byte/.test(f.attrs.class || '') ? 'Integer' : 'Float', date: 'Date', bool: 'Boolean' }[k];
+      // str too: an untyped field reads "" as null, and Java tests $F{s} == null strictly
+      const t = { num: /Integer|Long|Short|Byte/.test(f.attrs.class || '') ? 'Integer' : 'Float', date: 'Date', bool: 'Boolean', str: 'String' }[k];
       return { Name: f.attrs.name, DataField: (!sql && desc ? desc.trim() : f.attrs.name) + (t ? `[${t}]` : '') };
     }), Query: { DataSourceName: srcName, CommandText: '' } };
     if (sql) {
