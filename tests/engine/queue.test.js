@@ -54,7 +54,7 @@ describe('a batch survives the replica that ran it', () => {
     expect(done).toMatchObject({ status: 'completed', done: 4, failed: 0 });
     expect(done.results.map(r => r.index).sort()).toEqual([0, 1, 2, 3]);
     expect(done.results.filter(r => r.by === 'A')).toHaveLength(2); // A's two were kept, not rendered again
-    const zip = unzipSync(fs.readFileSync((await jobs.jobFile(job.id)).path));
+    const zip = unzipSync((await jobs.jobFile(job.id)).bytes);
     expect(Object.keys(zip).sort()).toEqual(['1.json', '2.json', '3.json', '4.json']);
     expect(done).not.toHaveProperty('_work'); // the job's inputs are not shown to API callers
   });

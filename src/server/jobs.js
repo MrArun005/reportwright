@@ -1,8 +1,9 @@
 // Batch jobs: render one template for many parameter sets, then deliver.
 // The queue is the job records in storage (src/server/storage): any server can run a queued job. A server takes a job
 // with a lease (renewed while it works); if it dies, the lease runs out and another server goes on from the last
-// finished item, because every rendered item is written to data/jobs/<id>/items/ as it is made. Output files
-// (items, zip, merged PDF, folders) go to data/, so several servers need a shared volume for data/.
+// finished item, because every rendered item is written as it is made. Items and the output (zip, merged PDF) are
+// blobs (src/server/blobs.js): in the configured storage or S3, so every server reads what any server wrote. Only the
+// "folder" output writes into a local folder (data/outputs/), by design: it is for a server with a shared volume.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -15,6 +16,7 @@ import { serverFetch, checkTarget } from './safeFetch.js';
 import { jsonPath } from '@/engine/data/index.js';
 import { evalValue } from '@/engine/expr/evaluate.js';
 import { store } from './storage/index.js';
+import { blobs, removePrefix } from './blobs.js';
 import { principalId, principalFromId, defaultPrincipal, vet, canDesign } from './perms.js';
 
 const DATA = path.join(process.cwd(), 'data');
@@ -120,11 +122,39 @@ export async function listJobs(p = defaultPrincipal()) {
   return out;
 }
 
-/** @param {string} id @param {import('./perms.js').Principal} [p] */
+/* ---------------- download links (for email) ---------------- */
+
+/** The secret that signs download links: PW_LINK_SECRET, else PW_SESSION_SECRET (32+ characters), else none. */
+const linkSecret = () => [process.env.PW_LINK_SECRET, process.env.PW_SESSION_SECRET].find(s => s && s.length >= 32) || null;
+const linkSig = (id, exp) => crypto.createHmac('sha256', String(linkSecret())).update(`pw-batch-download.${id}.${exp}`).digest('base64url');
+export const linkDays = () => (Number(process.env.PW_MAIL_LINK_DAYS) > 0 ? Math.min(90, Number(process.env.PW_MAIL_LINK_DAYS)) : 7);
+/**
+ * A link that downloads a finished batch's output without an API key, until it expires (PW_MAIL_LINK_DAYS, default 7):
+ * whoever holds it can download, as with an attachment. null without a signing secret or PW_BASE_URL.
+ * @param {any} job
+ */
+export function downloadLink(job) {
+  if (!linkSecret() || !process.env.PW_BASE_URL) return null;
+  const exp = Math.floor(Date.now() / 1000) + linkDays() * 86400;
+  return `${process.env.PW_BASE_URL.replace(/\/$/, '')}/api/v1/batches/${job.id}/download?exp=${exp}&sig=${linkSig(job.id, exp)}`;
+}
+/** True for a link downloadLink made for this job that has not expired. @param {string} id @param {string|null} exp @param {string|null} sig */
+export function linkOk(id, exp, sig) {
+  if (!linkSecret() || !/^\d{1,12}$/.test(String(exp)) || typeof sig !== 'string' || Number(exp) < Date.now() / 1000) return false;
+  const want = Buffer.from(linkSig(id, exp)), got = Buffer.from(sig);
+  return want.length === got.length && crypto.timingSafeEqual(want, got);
+}
+
+/**
+ * The finished output of a job the principal may see: { bytes, name, type }, or null.
+ * @param {string} id @param {import('./perms.js').Principal} [p]
+ */
 export async function jobFile(id, p) {
   const j = await getJob(id, p);
   if (!j?.download) return null;
-  return { path: path.join(JOBS, id, j.download.file), name: j.download.name, type: j.download.type };
+  // jobs from before blobs kept their output under data/jobs/<id>/
+  const bytes = j.download.blob ? await blobs().get(j.download.blob) : await fs.readFile(path.join(JOBS, id, j.download.file)).catch(() => null);
+  return bytes ? { bytes, name: j.download.name, type: j.download.type } : null;
 }
 
 /**
@@ -199,9 +229,7 @@ async function run(job, owner, stopAfter) {
   job.startedAt ||= new Date().toISOString();
   job.failedItems ||= [];
   await save(job);
-  const dir = path.join(JOBS, job.id);
-  const itemDir = path.join(dir, 'items');
-  await fs.mkdir(itemDir, { recursive: true }); // output files stay on disk whatever PW_STORAGE says
+  const itemKey = (i) => `jobs/${job.id}/items/${i}`; // blobs: any server can go on from another's items
   // go on where the last server stopped: items with a result (or a failure) are done
   const finished = new Set([...job.results.map(r => r.index), ...job.failedItems]);
   const todo = items.map((_, i) => i).filter(i => !finished.has(i));
@@ -224,7 +252,7 @@ async function run(job, owner, stopAfter) {
           const res = await serverFetch(job.self, { internal: canDesign(principal) })(item.putUrl, { method: 'PUT', body: r.bytes, headers: { 'content-type': r.contentType } });
           if (!res.ok) throw new Error(`upload: HTTP ${res.status}`);
         }
-        await fs.writeFile(path.join(itemDir, `${i}`), r.bytes);
+        await blobs().put(itemKey(i), r.bytes);
         job.results.push({ index: i, name, pages: r.pages, bytes: r.bytes.length, by: owner });
         job.done++;
       } catch (e) {
@@ -240,14 +268,14 @@ async function run(job, owner, stopAfter) {
   if (todo.length) return true; // stopped early (tests): the lease is kept, the job stays running
 
   const ok = [...job.results].sort((a, b) => a.index - b.index);
-  const bytesOf = (r) => fs.readFile(path.join(itemDir, String(r.index)));
+  const bytesOf = async (r) => { const b = await blobs().get(itemKey(r.index)); if (!b) throw new Error(`item ${r.index} of the batch is gone from storage`); return b; };
   const out = job.output || { type: 'zip' };
   if (ok.length) {
     if (out.type === 'merged' && job.format === 'pdf') {
       const merged = await PDFDocument.create();
       for (const r of ok) { const d = await PDFDocument.load(await bytesOf(r)); (await merged.copyPages(d, d.getPageIndices())).forEach(p => merged.addPage(p)); }
-      await fs.writeFile(path.join(dir, 'merged.pdf'), await merged.save());
-      job.download = { file: 'merged.pdf', name: `${safeName(job.template)}.pdf`, type: 'application/pdf' };
+      await blobs().put(`jobs/${job.id}/merged.pdf`, await merged.save());
+      job.download = { blob: `jobs/${job.id}/merged.pdf`, name: `${safeName(job.template)}.pdf`, type: 'application/pdf' };
     } else if (out.type === 'folder') {
       // a user's batches write under their own folder: only service keys (and accounts off) write the shared ones
       const own = String(job.owner || '').startsWith('user:') ? ['users', crypto.createHash('sha256').update(job.owner).digest('hex').slice(0, 16)] : [];
@@ -258,11 +286,12 @@ async function run(job, owner, stopAfter) {
     } else if (out.type !== 'none') {
       const files = {};
       for (const r of ok) files[r.name] = new Uint8Array(await bytesOf(r));
-      await fs.writeFile(path.join(dir, 'output.zip'), zipSync(files, { level: 6 }));
-      job.download = { file: 'output.zip', name: `${safeName(job.template)}.zip`, type: 'application/zip' };
+      await blobs().put(`jobs/${job.id}/output.zip`, zipSync(files, { level: 6 }));
+      job.download = { blob: `jobs/${job.id}/output.zip`, name: `${safeName(job.template)}.zip`, type: 'application/zip' };
     }
   }
-  await fs.rm(itemDir, { recursive: true, force: true });
+  job.outputs = ok.length; // for delivery (mail): the items stay until then
+  await removePrefix(`jobs/${job.id}/items/`);
   job.status = job.failed && !job.done ? 'failed' : job.failed ? 'completed_with_errors' : 'completed';
   job.finishedAt = new Date().toISOString();
   delete job._work;
