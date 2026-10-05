@@ -1,4 +1,5 @@
 // @ts-check
+import crypto from 'node:crypto';
 // Outgoing mail over SMTP (nodemailer): password-reset links and scheduled reports.
 //   PW_SMTP_URL   smtp://user:pass@host:587 (STARTTLS) or smtps://user:pass@host:465
 //   PW_MAIL_FROM  the sender: "reports@example.com" or "Pagewright <reports@example.com>"
@@ -74,7 +75,9 @@ export async function sendMail(m) {
   const att = (m.attachments || []).map(a => ({ filename: oneLine(a.filename, 120).replace(/[\\/"]/g, '-'), content: Buffer.from(a.content), contentType: oneLine(a.contentType, 100) }));
   const info = await (await transport()).sendMail({
     from, to, subject: oneLine(m.subject), text: String(m.text ?? ''), attachments: att,
-    envelope: { from: from.address, to }, headers: { 'auto-submitted': 'auto-generated' },
+    envelope: { from: from.address, to }, headers: { 'auto-submitted': 'auto-generated', ...(m.idempotencyKey ? { 'x-pagewright-idempotency-key': oneLine(m.idempotencyKey, 120) } : {}) },
+    // one Message-ID per logical mail: a repeat (should one ever happen) is the same message to the receiving servers
+    ...(m.idempotencyKey ? { messageId: `<${crypto.createHash('sha256').update(String(m.idempotencyKey)).digest('hex').slice(0, 32)}@pagewright>` } : {}),
   });
   return { messageId: info.messageId, accepted: info.accepted?.length ?? to.length };
 }

@@ -351,7 +351,7 @@ async function run(job, owner, stopAfter, fence = { lost: false, hold: async () 
         // fromSnapshot (schedules): a fresh snapshot of the same report, parameters and access, within the TTL setting
         const r = job.fromSnapshot ? await throughSnapshot({ def, opt, principal }, render) : await render();
         if (item.putUrl) {
-          const res = await serverFetch(job.self, { internal: canDesign(principal) })(item.putUrl, { method: 'PUT', body: r.bytes, headers: { 'content-type': r.contentType } });
+          const res = await serverFetch(job.self, { internal: canDesign(principal) })(item.putUrl, { method: 'PUT', body: r.bytes, headers: { 'content-type': r.contentType, 'idempotency-key': `${job.id}:item:${i}` } });
           if (!res.ok) throw new Error(`upload: HTTP ${res.status}`);
         }
         await blobs().put(itemKey(i), r.bytes);
@@ -400,7 +400,9 @@ async function run(job, owner, stopAfter, fence = { lost: false, hold: async () 
     }
   }
   await fence.hold(); // the output and the mail: once, by the server that holds the job
-  if (job.email && ok.length) job.mail = await deliver(job, ok, bytesOf);
+  // exactly once even when the lease was lost between the hold and the send: the first runner to claim the mail sends
+  // it; a runner that took the job over afterwards finds the claim and does not send again (at most once per batch)
+  if (job.email && ok.length) job.mail = (await claimOnce(`mail:${job.id}`, owner)) ? await deliver(job, ok, bytesOf) : (job.mail || { status: 'sent by an earlier run', at: new Date().toISOString() });
   // by key, not by listing (a listing on SQL storage reads every blob's manifest), with a turn of the event loop now and then
   for (let i = 0; i < items.length; i++) {
     await blobs().remove(itemKey(i)); await blobs().remove(resultKey(job.id, i));
@@ -412,7 +414,7 @@ async function run(job, owner, stopAfter, fence = { lost: false, hold: async () 
   delete job._work;
   await save(job);
   await markOpen(job.id, false);
-  if (job.webhook) await notify(job);
+  if (job.webhook && (await claimOnce(`webhook:${job.id}`, owner))) await notify(job);
   return false;
 }
 
@@ -501,7 +503,7 @@ async function deliver(job, ok, bytesOf) {
     const lines = [e.body || `${job.template}: ${ok.length} file${ok.length === 1 ? '' : 's'}, made ${when} UTC.`];
     if (link) lines.push('', `${e.attach ? 'The file is too large to attach. ' : ''}Download it here (the link works until ${new Date(Date.now() + linkDays() * 86400000).toISOString().slice(0, 10)}):`, link);
     if (job.failed) lines.push('', `${job.failed} item(s) failed. See the batch ${job.id}.`);
-    const r = await sendMail({ to: e.to, subject: e.subject || `${job.template} (${new Date().toISOString().slice(0, 10)})`, text: lines.join('\n'), attachments: e.attach && fits ? [file] : [] });
+    const r = await sendMail({ idempotencyKey: `${job.id}:mail`, to: e.to, subject: e.subject || `${job.template} (${new Date().toISOString().slice(0, 10)})`, text: lines.join('\n'), attachments: e.attach && fits ? [file] : [] });
     await audit('mail.sent', { actor: job.owner || 'nobody', report: job.templateRef, detail: { batch: job.id, recipients: e.to.length, domains: [...new Set(e.to.map(a => a.split('@')[1]))], how: e.attach && fits ? 'attached' : 'link', schedule: job.schedule?.id } });
     return { status: 'sent', at, how: e.attach && fits ? 'attached' : 'link', recipients: e.to.length, accepted: r.accepted };
   } catch (err) {
@@ -511,10 +513,22 @@ async function deliver(job, ok, bytesOf) {
 }
 const FORMAT_TYPES = { pdf: 'application/pdf', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', html: 'text/html', csv: 'text/csv', json: 'application/json' };
 
-/** POST the job summary to the webhook, signed with HMAC-SHA256 of the body (PW_WEBHOOK_SECRET). */
+/**
+ * Claim a side effect that must happen once per batch (its mail, its webhook): true for the first runner that asks,
+ * false for any other (a server that took over the job after a lost lease). A storage lease kept for 40 days (longer
+ * than finished batches are kept), so every server sees the claim. @param {string} name @param {string} owner
+ */
+export async function claimOnce(name, owner) {
+  return store().lease(`once:${name}`, String(owner), 40 * 86400000);
+}
+
+/**
+ * POST the job summary to the webhook, signed with HMAC-SHA256 of the body (PW_WEBHOOK_SECRET). Idempotency-Key names
+ * the event, so a receiver can drop a repeat (claimOnce already keeps it to one send).
+ */
 async function notify(job) {
   const body = JSON.stringify({ event: 'batch.finished', job: publicJob(job), downloadUrl: job.download ? `${job.base}/api/v1/batches/${job.id}/download` : null });
-  const headers = { 'content-type': 'application/json', 'user-agent': 'Pagewright' };
+  const headers = { 'content-type': 'application/json', 'user-agent': 'Pagewright', 'idempotency-key': `${job.id}:batch.finished` };
   if (process.env.PW_WEBHOOK_SECRET) headers['x-pagewright-signature'] = 'sha256=' + crypto.createHmac('sha256', process.env.PW_WEBHOOK_SECRET).update(body).digest('hex');
   try {
     const owner = job.owner ? await principalFromId(job.owner, job.ownerKey, { session: !!job.ownerSession, since: job.ownerSince || null, madeAt: job.createdAt }) : defaultPrincipal(); // as the owner is now

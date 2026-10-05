@@ -103,3 +103,19 @@ describe('the anonymous sample cost is capped (REVIEW-SECURITY-2 L8, PoC p5)', (
     expect((await at(20000, c)).status).toBe(200);
   });
 });
+
+describe('a batch mails and calls its webhook once, even after a lost lease (REVIEW-SECURITY-2 L9)', () => {
+  it('the first runner claims the side effect; one that took the job over does not repeat it', async () => {
+    const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+    process.env.PW_STORAGE = `sqlite:${path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'pw-r3b-once-')), 's.db')}`;
+    const { claimOnce } = await import('../../src/server/jobs.js');
+    expect(await claimOnce('mail:j_1', 'runner-a')).toBe(true);
+    expect(await claimOnce('mail:j_1', 'runner-b')).toBe(false); // the new owner after a lost lease
+    expect(await claimOnce('mail:j_1', 'runner-a')).toBe(true);  // the same runner asking again (a retry inside one run)
+    expect(await claimOnce('webhook:j_1', 'runner-b')).toBe(true); // each side effect on its own
+    const src = fs.readFileSync('src/server/jobs.js', 'utf8');
+    expect(src).toMatch(/claimOnce\(`mail:\$\{job\.id\}`, owner\)/);
+    expect(src).toMatch(/claimOnce\(`webhook:\$\{job\.id\}`, owner\)/);
+    expect(src).toMatch(/'idempotency-key': `\$\{job\.id\}:batch\.finished`/);
+  });
+});
