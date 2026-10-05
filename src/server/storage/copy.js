@@ -42,7 +42,10 @@ export async function copyStorage(from, to, say = () => {}) {
     if (page.length < 1000) break;
     before = page.at(-1).id;
   }
-  for (const e of all.reverse()) { await b.appendAudit(e); n.audit++; }
+  for (const e of all.reverse()) {
+    // an event the target already has (a restore over the storage it was taken from) is the same event: kept once
+    try { await b.appendAudit(e); n.audit++; } catch (err) { if (!/unique|duplicate|primary key/i.test(String(/** @type {any} */ (err)?.message))) throw err; }
+  }
   say(`audit: ${n.audit}`);
   return n;
 }
