@@ -17,6 +17,8 @@ import { jsonPath } from '@/engine/data/index.js';
 import { evalValue } from '@/engine/expr/evaluate.js';
 import { store } from './storage/index.js';
 import { blobs, removePrefix } from './blobs.js';
+import { mailOn, checkRecipients, oneLine, sendMail, maxAttachmentBytes } from './mail.js';
+import { audit } from './audit.js';
 import { principalId, principalFromId, defaultPrincipal, vet, canDesign } from './perms.js';
 
 const DATA = path.join(process.cwd(), 'data');
@@ -49,6 +51,7 @@ export function publicJob(job) {
 export async function checkDelivery(spec, p = defaultPrincipal()) {
   const internal = canDesign(p);
   if (spec.webhook != null) await checkTarget(spec.webhook, '"webhook"', { internal });
+  if (spec.email != null) checkEmail(spec.email);
   if (spec.itemsFrom?.url != null) await checkTarget(spec.itemsFrom.url, '"itemsFrom.url"', { relative: true, internal });
   for (const it of Array.isArray(spec.items) ? spec.items : []) if (it?.putUrl != null) await checkTarget(it.putUrl, '"putUrl"', { internal });
 }
@@ -76,7 +79,7 @@ async function expandItems(spec, base, fetch) {
  * @param {import('./perms.js').Principal} [principal] who asks: the template and its subreports are checked for them,
  *   now and again when the items render (a schedule's owner may have lost access since)
  */
-export async function createBatch(spec, req, principal = defaultPrincipal()) {
+export async function createBatch(spec, req, principal = defaultPrincipal(), { session = false } = {}) {
   // self: this server, the one local address batch fetches may reach; baseUrl may come from the caller
   const self = defaultBase(req);
   const designer = canDesign(principal);
@@ -92,7 +95,7 @@ export async function createBatch(spec, req, principal = defaultPrincipal()) {
     id: rid(), status: 'queued', createdAt: new Date().toISOString(), template: typeof spec.template === 'string' ? spec.template : def.name,
     templateRef: typeof spec.template === 'string' ? spec.template : null,
     format, output: spec.output || { type: 'zip' }, webhook: spec.webhook || null, fileName: spec.fileName || null, schedule: spec.schedule || null, pdfa: !!spec.pdfa, sign: !!spec.sign,
-    total: items.length, done: 0, failed: 0, results: [], errors: [], failedItems: [], base, self, owner: principalId(principal), ownerKey: vet(principal).viaKey || null, _work: { items, def },
+    total: items.length, done: 0, failed: 0, results: [], errors: [], failedItems: [], base, self, owner: principalId(principal), ownerKey: vet(principal).viaKey || null, ownerSession: !!session, email: spec.email ? checkEmail(spec.email) : null, _work: { items, def },
   };
   await save(job);
   poke();
@@ -219,7 +222,7 @@ async function run(job, owner, stopAfter) {
   // as the owner is now: the template must still be theirs to view; an inline definition needs a designer or a service.
   // Checked at the start (throws: the job fails, workOnce) and again before every item.
   const allowed = async () => {
-    const p = job.owner ? await principalFromId(job.owner, job.ownerKey) : defaultPrincipal(); // no owner: no one's
+    const p = job.owner ? await principalFromId(job.owner, job.ownerKey, { session: !!job.ownerSession }) : defaultPrincipal(); // no owner: no one's
     await loadTemplate(job.templateRef || def, p);
     return p;
   };
@@ -290,7 +293,7 @@ async function run(job, owner, stopAfter) {
       job.download = { blob: `jobs/${job.id}/output.zip`, name: `${safeName(job.template)}.zip`, type: 'application/zip' };
     }
   }
-  job.outputs = ok.length; // for delivery (mail): the items stay until then
+  if (job.email && ok.length) job.mail = await deliver(job, ok, bytesOf);
   await removePrefix(`jobs/${job.id}/items/`);
   job.status = job.failed && !job.done ? 'failed' : job.failed ? 'completed_with_errors' : 'completed';
   job.finishedAt = new Date().toISOString();
@@ -300,13 +303,59 @@ async function run(job, owner, stopAfter) {
   return false;
 }
 
+/* ---------------- email delivery ---------------- */
+
+/**
+ * A delivery spec, checked: { to: [addresses in PW_MAIL_ALLOWED_DOMAINS], subject?, body?, attach (default true) }.
+ * @param {any} e
+ */
+export function checkEmail(e) {
+  if (!e || typeof e !== 'object' || Array.isArray(e)) throw Object.assign(new Error('"email" is { to, subject?, body?, attach? }'), { status: 400 });
+  if (!mailOn()) throw Object.assign(new Error('Email is not set up on this server (PW_SMTP_URL, PW_MAIL_FROM).'), { status: 400 });
+  return {
+    to: checkRecipients(e.to),
+    subject: e.subject == null ? null : oneLine(e.subject, 200),
+    body: e.body == null ? null : String(e.body).replace(/\r\n?/g, '\n').slice(0, 10000),
+    attach: e.attach !== false,
+  };
+}
+
+/**
+ * Mail the finished output: attached (one item: that file; several: the zip or merged PDF) when it fits under
+ * PW_MAIL_MAX_ATTACHMENT_MB, else (or with attach: false) a signed, expiring download link. Never throws: the outcome
+ * goes on the job and in the audit log. @param {any} job @param {any[]} ok @param {(r: any) => Promise<Buffer>} bytesOf
+ */
+async function deliver(job, ok, bytesOf) {
+  const e = job.email;
+  const at = new Date().toISOString();
+  try {
+    let file = null;
+    if (ok.length === 1) file = { filename: ok[0].name, content: await bytesOf(ok[0]), contentType: FORMAT_TYPES[job.format] || 'application/octet-stream' };
+    else if (job.download?.blob) file = { filename: job.download.name, content: await blobs().get(job.download.blob), contentType: job.download.type };
+    const fits = !!file?.content && file.content.length <= maxAttachmentBytes();
+    const link = !e.attach || !fits ? (job.download ? downloadLink(job) : null) : null;
+    if (!(e.attach && fits) && !link) throw new Error(job.download ? 'the output is too large to attach and no download link can be made (set PW_BASE_URL and PW_LINK_SECRET or PW_SESSION_SECRET)' : 'the output is too large to attach');
+    const when = new Date().toLocaleString('en-GB', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' });
+    const lines = [e.body || `${job.template}: ${ok.length} file${ok.length === 1 ? '' : 's'}, made ${when} UTC.`];
+    if (link) lines.push('', `${e.attach ? 'The file is too large to attach. ' : ''}Download it here (the link works until ${new Date(Date.now() + linkDays() * 86400000).toISOString().slice(0, 10)}):`, link);
+    if (job.failed) lines.push('', `${job.failed} item(s) failed. See the batch ${job.id}.`);
+    const r = await sendMail({ to: e.to, subject: e.subject || `${job.template} (${new Date().toISOString().slice(0, 10)})`, text: lines.join('\n'), attachments: e.attach && fits ? [file] : [] });
+    await audit('mail.sent', { actor: job.owner || 'nobody', report: job.templateRef, detail: { batch: job.id, recipients: e.to.length, domains: [...new Set(e.to.map(a => a.split('@')[1]))], how: e.attach && fits ? 'attached' : 'link', schedule: job.schedule?.id } });
+    return { status: 'sent', at, how: e.attach && fits ? 'attached' : 'link', recipients: e.to.length, accepted: r.accepted };
+  } catch (err) {
+    await audit('mail.failed', { actor: job.owner || 'nobody', report: job.templateRef, status: 'failed', detail: { batch: job.id, error: String(err.message).slice(0, 200), schedule: job.schedule?.id } });
+    return { status: 'failed', at, error: String(err.message).slice(0, 300) };
+  }
+}
+const FORMAT_TYPES = { pdf: 'application/pdf', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', html: 'text/html', csv: 'text/csv', json: 'application/json' };
+
 /** POST the job summary to the webhook, signed with HMAC-SHA256 of the body (PW_WEBHOOK_SECRET). */
 async function notify(job) {
   const body = JSON.stringify({ event: 'batch.finished', job: publicJob(job), downloadUrl: job.download ? `${job.base}/api/v1/batches/${job.id}/download` : null });
   const headers = { 'content-type': 'application/json', 'user-agent': 'Pagewright' };
   if (process.env.PW_WEBHOOK_SECRET) headers['x-pagewright-signature'] = 'sha256=' + crypto.createHmac('sha256', process.env.PW_WEBHOOK_SECRET).update(body).digest('hex');
   try {
-    const owner = job.owner ? await principalFromId(job.owner, job.ownerKey) : defaultPrincipal(); // as the owner is now
+    const owner = job.owner ? await principalFromId(job.owner, job.ownerKey, { session: !!job.ownerSession }) : defaultPrincipal(); // as the owner is now
     const res = await serverFetch(job.self, { internal: canDesign(owner) })(job.webhook, { method: 'POST', headers, body });
     job.webhookStatus = res.status;
   } catch (e) { job.webhookStatus = `error: ${e.message}`; }

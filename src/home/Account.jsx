@@ -16,6 +16,7 @@ export default function Account({ email, role, lang }) {
       {role === 'admin' && <a className="btn sm" href={`/admin/users${q}`}>{t(lang, 'users')}</a>}
       {role === 'admin' && <a className="btn sm" href={`/admin/audit${q}`}>{t(lang, 'auditLog')}</a>}
       {role === 'admin' && <a className="btn sm" href={`/admin/settings${q}`}>{t(lang, 'serverSettings')}</a>}
+      {role !== 'viewer' && <a className="btn sm" href={`/schedules${q}`}>{t(lang, 'schedules')}</a>}
       <button type="button" className="btn sm" onClick={signOutAndGo}>{t(lang, 'signOut')}</button>
     </div>
   );

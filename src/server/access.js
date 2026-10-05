@@ -35,6 +35,8 @@ export const RULES = [
   ['GET', /^\/api\/folders$/, 'viewer'],                                 // folders the user may see
   ['POST', /^\/api\/audit\/export$/, 'viewer'],                          // the viewer says it exported (the log itself: admins)
   ['GET', /^\/designer\/[^/]+$/, 'designer'],
+  ['GET', /^\/schedules$/, 'designer'],                                   // the Schedules page and its API (own schedules)
+  ['*', /^\/api\/schedules(\/.*)?$/, 'designer'],
   ['*', /^\/api\/folders(\/[^/]+)?$/, 'designer'],                        // create, rename, move, share (perms.js checks each folder)
   ['*', /^\/api\/reports(\/.*)?$/, 'designer'],                           // save, create, delete, restore, import
   ['*', /^\/api\/fonts(\/[^/]+)?$/, 'designer'],                           // upload, delete

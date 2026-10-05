@@ -1,7 +1,7 @@
 // Schedules: run a batch on a cron expression. Stored by src/server/storage (data/schedules.json by default); checked every 30 s.
 import crypto from 'node:crypto';
 import { parseCron, nextRun } from './cron.js';
-import { createBatch, ME, checkDelivery } from './jobs.js';
+import { createBatch, ME, checkDelivery, checkEmail } from './jobs.js';
 import { store, withLock } from './storage/index.js';
 import { principalId, principalFromId, checkReport, vet, defaultPrincipal, canDesign } from './perms.js';
 import { audit } from './audit.js';
@@ -34,7 +34,7 @@ const withNext = (s) => ({ ...s, nextRunAt: s.enabled === false ? null : nextRun
 // a missing principal is the default (nobody with accounts on); a record with no owner is no one's
 // a user's schedules belong to the key that made them: another key of the same user cannot see or retarget them
 const mine = (p, s) => { p = vet(p); return p.kind === 'open' || p.kind === 'service' || (p.kind === 'user' && !!s.owner && s.owner === principalId(p) && (s.ownerKey || null) === (p.viaKey || null)); };
-const shown = ({ owner, ownerKey, ...s }) => withNext(s);
+const shown = ({ owner, ownerKey, ownerSession, ...s }) => withNext(s);
 /** A template a principal may render: an id it may view, or (designers, service keys) an inline definition. */
 async function checkTemplate(p, template) {
   if (typeof template === 'string') return void await checkReport(p, template);
@@ -46,12 +46,16 @@ export async function listSchedules(p = defaultPrincipal()) { return (await read
 /** @param {string} id @param {Principal} [p] */
 export async function getSchedule(id, p = defaultPrincipal()) { const s = await readOne(id); return s && mine(p, s) ? shown(s) : null; }
 
-/** @param {any} body @param {Principal} [p] */
-export async function createSchedule(body, p = defaultPrincipal()) {
+/**
+ * @param {any} body @param {Principal} [p] @param {{ session?: boolean }} [o] session: made on the Schedules page by a
+ *   signed-in user (or the trusted open server), not by an API key: it runs as that user as they are now
+ */
+export async function createSchedule(body, p = defaultPrincipal(), { session = false } = {}) {
   validateSchedule(body);
   await checkTemplate(p, body.template);
   await checkDelivery(body, p);
-  const s = { enabled: true, timezone: 'UTC', format: 'pdf', ...body, id: `s_${crypto.randomBytes(5).toString('hex')}`, createdAt: new Date().toISOString(), owner: principalId(p), ownerKey: vet(p).viaKey || null };
+  const { ownerSession: _x, ...rest } = body;
+  const s = { enabled: true, timezone: 'UTC', format: 'pdf', ...rest, ...(rest.email ? { email: checkEmail(rest.email) } : {}), id: `s_${crypto.randomBytes(5).toString('hex')}`, createdAt: new Date().toISOString(), owner: principalId(p), ownerKey: vet(p).viaKey || null, ownerSession: !!session && !vet(p).viaKey };
   await withLock('schedules', () => save(s));
   return shown(s);
 }
@@ -60,8 +64,9 @@ export function updateSchedule(id, patch, p = defaultPrincipal()) { return withL
 async function updateNow(id, patch, p) {
   const cur = await readOne(id);
   if (!cur || !mine(p, cur)) return null;
-  const { owner: _ignored, ownerKey: _alsoIgnored, ...rest } = patch || {};
-  const next = { ...cur, ...rest, id: cur.id, createdAt: cur.createdAt, owner: cur.owner, ownerKey: cur.ownerKey || null, updatedAt: new Date().toISOString() };
+  const { owner: _ignored, ownerKey: _alsoIgnored, ownerSession: _too, ...rest } = patch || {};
+  const next = { ...cur, ...rest, id: cur.id, createdAt: cur.createdAt, owner: cur.owner, ownerKey: cur.ownerKey || null, ownerSession: !!cur.ownerSession, updatedAt: new Date().toISOString() };
+  if (next.email) next.email = checkEmail(next.email);
   validateSchedule(next);
   if (next.template !== cur.template) await checkTemplate(p, next.template);
   await checkDelivery(next, p);
@@ -81,11 +86,11 @@ export function deleteSchedule(id, p = defaultPrincipal()) {
 export async function runSchedule(s, reason = 'manual') {
   const rec = (await readOne(s.id)) || s;
   s = rec; // what is stored now (an edit since the caller read it counts)
-  const principal = rec.owner ? await principalFromId(rec.owner, rec.ownerKey) : defaultPrincipal(); // no owner: no one's (fail closed)
+  const principal = rec.owner ? await principalFromId(rec.owner, rec.ownerKey, { session: !!rec.ownerSession }) : defaultPrincipal(); // no owner: no one's (fail closed)
   const report = typeof s.template === 'string' ? s.template : null;
   let job;
   try {
-    job = await createBatch({ template: s.template, items: s.items, itemsFrom: s.itemsFrom, format: s.format, output: s.output, webhook: s.webhook, fileName: s.fileName, pdfa: s.pdfa, sign: s.sign, schedule: { id: s.id, reason } }, undefined, principal);
+    job = await createBatch({ template: s.template, items: s.items, itemsFrom: s.itemsFrom, format: s.format, output: s.output, webhook: s.webhook, email: s.email, fileName: s.fileName, pdfa: s.pdfa, sign: s.sign, fromSnapshot: s.fromSnapshot, schedule: { id: s.id, reason } }, undefined, principal, { session: !!rec.ownerSession });
   } catch (e) {
     await audit('schedule.run', { actor: rec.owner || 'nobody', report, status: 'failed', detail: { schedule: s.id, reason, error: e.message } });
     throw e;
