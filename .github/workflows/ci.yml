@@ -49,13 +49,12 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
-      - run: npm run build
-      - name: Start the server (development mode on the built app: open, keyless API, localhost only)
+      - name: Build and start the server as the suites expect (scripts/restart.sh: PW_AUTH=proxy behind scripts/e2e-proxy.mjs, test keys)
         run: |
-          PW_MODE=dev npx next start -p 3000 > server.log 2>&1 &
+          ./scripts/restart.sh
           for i in $(seq 1 90); do curl -sf http://localhost:3000/api/v1/livez && break; sleep 1; done
       - name: Browser suites
         run: npm run test:e2e
       - name: Server log
         if: failure()
-        run: tail -200 server.log
+        run: tail -200 /tmp/next.log /tmp/e2e-proxy.log
