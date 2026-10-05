@@ -187,11 +187,13 @@ async function cmdAudit(args) {
   if (values.json) console.log(JSON.stringify(r, null, 2));
   else {
     process.stderr.write('\n');
-    console.log(`${r.events} events (${r.unchained} from before the chain), ${r.streams} streams, ${r.checkpoints} checkpoints${r.lastCheckpoint ? `, the last at ${r.lastCheckpoint}` : ''}; key ${r.key.fingerprint} (${r.key.source})`);
+    console.log(`${r.events} events (${r.unchained} from before the chain), ${r.streams} streams, ${r.checkpoints} checkpoints${r.lastCheckpoint ? `, the last signed at ${r.lastCheckpoint}` : ''}; key ${r.key.fingerprint} (${r.key.source})`);
     for (const p of r.problems) console.log(`  ${p.kind}: ${p.detail}${p.id ? ` [${p.id}]` : ''}${p.stream ? ` stream ${p.stream}` : ''}`);
-    console.log(r.ok ? 'The audit log checks: no event was changed, removed or added.' : `The audit log does NOT check: ${r.problems.length} problem(s).`);
+    const say = { ok: 'OK: every checkpointed event is proven unchanged; none removed or added.', unverified: 'UNVERIFIED: nothing shows a change, but the log is not proven (see above).', tampered: 'TAMPERED: the audit log was changed (see above).', error: 'ERROR: the check could not finish (see above).' };
+    console.log(say[r.status] || `UNKNOWN verdict "${r.status}"`);
+    if (r.status === 'ok' && r.pending) console.log(`${r.pending} newer event(s) are not yet checkpointed.`);
   }
-  if (!r.ok) process.exit(1);
+  if (r.status !== 'ok') process.exit(1); // anything but an explicit ok is a failure
 }
 
 const [cmd, ...rest] = process.argv.slice(2);

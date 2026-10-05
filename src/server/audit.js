@@ -236,8 +236,11 @@ export async function checkpoint({ actor = 'system' } = {}) {
  * Check the log (or a window of it): every chained event's hash, the links in every stream, the checkpoint signatures
  * and the stream heads they name. Events written before the chain existed are counted, not judged.
  * @param {{ from?: string, to?: string, onProgress?: (n: number) => void }} [q]
- * @returns {Promise<{ ok: boolean, events: number, unchained: number, streams: number, checkpoints: number, lastCheckpoint: string|null,
- *   problems: { kind: string, id?: string, stream?: string, detail: string }[], key: { fingerprint: string, source: string } }>}
+ * Fails closed: status is 'ok' only when proven (see verdict); ok mirrors status === 'ok'. pending counts the newest
+ * events that no signed checkpoint covers yet.
+ * @returns {Promise<{ status: 'ok'|'unverified'|'tampered'|'error', ok: boolean, events: number, unchained: number, streams: number,
+ *   checkpoints: number, pending: number, lastCheckpoint: string|null, problems: { kind: string, id?: string, stream?: string, detail: string }[],
+ *   key: { fingerprint: string, source: string } }>}
  */
 export async function verifyAudit(q = {}) {
   const problems = [];
@@ -245,8 +248,28 @@ export async function verifyAudit(q = {}) {
   const empty = { events: 0, unchained: 0, streams: 0, checkpoints: 0, lastCheckpoint: null };
   let info = { fingerprint: 'none', source: keySource() };
   try { info = { fingerprint: publicKeyInfo().fingerprint, source: keySource() }; } catch (e) { bad({ kind: 'key', detail: `The audit public key does not load: ${/** @type {Error} */ (e).message}` }); }
-  try { return { ...(await verifyNow(q, bad, problems)), key: info }; }
-  catch (e) { bad({ kind: 'unreadable', detail: `The log could not be read to the end: ${/** @type {Error} */ (e).message}` }); return { ok: false, ...empty, problems, key: info }; } // fail closed
+  try {
+    const r = await verifyNow(q, bad, problems);
+    const status = verdict(problems, r);
+    return { status, ...r, ok: status === 'ok', key: info };
+  } catch (e) { // fail closed: an error is never a pass
+    bad({ kind: 'error', detail: `The check stopped: ${/** @type {Error} */ (e).message}` });
+    return { status: 'error', ...empty, pending: 0, ok: false, problems, key: info };
+  }
+}
+
+/** Problems that mean the log was changed (with where), as opposed to what only leaves it unproven. */
+const TAMPER = new Set(['altered', 'missing', 'broken', 'duplicate', 'unreadable', 'unchained', 'backwards', 'signature']);
+/**
+ * 'ok' only when everything is proven: at least one checkpoint signed by the configured key, no problem at all.
+ * 'tampered' for any sign of a change; 'unverified' when nothing is wrong but nothing proves it either (no key, no
+ * signed checkpoint, an empty log, a stale or missing anchor). @param {any[]} problems @param {any} r
+ * @returns {'ok'|'unverified'|'tampered'}
+ */
+function verdict(problems, r) {
+  if (problems.some(p => TAMPER.has(p.kind))) return 'tampered';
+  if (problems.length || !r.events || !r.signedCheckpoints) return 'unverified';
+  return 'ok';
 }
 
 /** @param {any} q @param {(p: any) => void} bad @param {any[]} problems */
@@ -255,14 +278,14 @@ async function verifyNow(q, bad, problems) {
   const iso = (v, end) => (v ? (v.length === 10 ? (end ? new Date(Date.parse(v) + 24 * HOUR).toISOString() : `${v}T00:00:00.000Z`) : new Date(v).toISOString()) : undefined);
   const from = iso(q.from, false), to = iso(q.to, true);
   const pub = publicKey();
-  if (!pub) bad({ kind: 'key', detail: 'No audit key is configured (PW_AUDIT_KEY, PW_AUDIT_SIGNING_KEY or PW_AUDIT_PUBLIC_KEY): no checkpoint can be trusted.' });
+  if (!pub) bad({ kind: 'unverified', detail: 'No audit key is configured (PW_AUDIT_KEY, PW_AUDIT_SIGNING_KEY or PW_AUDIT_PUBLIC_KEY): no checkpoint can be trusted.' });
   /** @type {Map<string, Map<number, { hash: string, prev: string, id: string, at: string }>>} */
   const streams = new Map();
   const refs = [];
   /** the newest signed head of each stream: events at or before it are anchored */
   const anchored = new Map();
   const loose = []; // events without a chain, judged once the first chained event is known
-  let events = 0, unchained = 0, checkpoints = 0, lastCheckpoint = null, firstChained = null, before;
+  let events = 0, unchained = 0, checkpoints = 0, signedCheckpoints = 0, lastCheckpoint = null, firstChained = null, before;
   for (;;) {
     const page = await store().queryAudit({ from, to, before, limit: 10000, raw: true });
     for (const e of page) {
@@ -282,7 +305,8 @@ async function verifyNow(q, bad, problems) {
         checkpoints++;
         let ok = false;
         try { ok = !!pub && typeof e.sig === 'string' && crypto.verify(null, Buffer.from(e.hash, 'hex'), pub, Buffer.from(e.sig, 'base64')); } catch { ok = false; }
-        if (!ok) { bad({ kind: 'signature', id: e.id, stream: s, detail: typeof e.sig === 'string' ? 'The checkpoint signature does not check with the audit public key.' : 'The checkpoint is not signed (no audit key was set when it was written).' }); continue; }
+        if (!ok) { bad(typeof e.sig === 'string' && pub ? { kind: 'signature', id: e.id, stream: s, detail: 'The checkpoint signature does not check with the configured audit key (another key signed it, or it was changed).' } : { kind: 'unverified', id: e.id, stream: s, detail: typeof e.sig === 'string' ? 'No audit key is configured to check this checkpoint.' : 'The checkpoint is not signed (no audit key was set when it was written).' }); continue; }
+        signedCheckpoints++;
         if (!lastCheckpoint || e.at > lastCheckpoint) lastCheckpoint = e.at;
         const heads = e.detail?.heads;
         if (!heads || typeof heads !== 'object') { bad({ kind: 'unreadable', id: e.id, detail: 'A checkpoint without heads.' }); continue; }
@@ -304,6 +328,7 @@ async function verifyNow(q, bad, problems) {
   // retention (pruneAudit, hourly) removes events before the start of the day PW_AUDIT_RETENTION_DAYS ago: only events
   // older than that edge (plus a day and an hour of slack) may be missing at the start of a stream, or behind a head
   const edge = new Date(Date.now() - retentionDays() * 24 * HOUR).setUTCHours(0, 0, 0, 0) + 25 * HOUR;
+  let pending = 0; // events after their stream's newest signed head: not yet checkpointed (counted, never "proven")
   const grace = 2 * checkpointMs() + Math.min(5 * 60000, checkpointMs()); // events newer than this may not be in a checkpoint yet
   for (const [s, m] of streams) {
     const ns = [...m.keys()].sort((a, b) => a - b);
@@ -313,11 +338,13 @@ async function verifyNow(q, bad, problems) {
       const cur = m.get(ns[i]);
       if (ns[i] !== ns[i - 1] + 1) bad({ kind: 'missing', stream: s, id: cur.id, detail: `Events ${ns[i - 1] + 1} to ${ns[i] - 1} of this stream are gone.` });
       else if (cur.prev !== m.get(ns[i - 1]).hash) bad({ kind: 'broken', stream: s, id: cur.id, detail: 'The event does not link to the one before it.' });
+      if (Date.parse(cur.at) < Date.parse(m.get(ns[i - 1]).at) - 2000) bad({ kind: 'backwards', stream: s, id: cur.id, detail: `Event ${ns[i]} is dated before event ${ns[i - 1]} of its stream.` });
     }
+    pending += ns.filter(n => n > (anchored.get(s) ?? -1)).length;
     // a chain only proves something up to a signed head: older events beyond the newest head are unanchored
     const upTo = anchored.get(s) ?? -1;
     const old = ns.find(n => n > upTo && Date.now() - Date.parse(m.get(n).at) > grace && !(to && m.get(n).at >= to));
-    if (old !== undefined && pub) bad({ kind: 'unanchored', stream: s, id: m.get(old).id, detail: `Event ${old} and later are in no signed checkpoint although checkpoints run every ${Math.round(checkpointMs() / 60000)} minutes: the stream may have been rewritten or made up.` });
+    if (old !== undefined && pub) bad({ kind: 'unverified', stream: s, id: m.get(old).id, detail: `Event ${old} and later are in no signed checkpoint although checkpoints run every ${Math.round(checkpointMs() / 60000)} minutes: the stream may have been rewritten or made up.` });
   }
   for (const r of refs) {
     const m = streams.get(r.s);
@@ -332,9 +359,11 @@ async function verifyNow(q, bad, problems) {
   // the log (with its checkpoints) was cut away
   if (!to && pub && streams.size && (!lastCheckpoint || Date.now() - Date.parse(lastCheckpoint) > grace)) {
     const newest = [...streams.values()].flatMap(m => [...m.values()]).reduce((a, x) => (x.at > a ? x.at : a), '');
-    if (Date.now() - Date.parse(newest) > grace || lastCheckpoint) bad({ kind: 'stale', detail: lastCheckpoint ? `The newest signed checkpoint is from ${lastCheckpoint}, older than the checkpoint interval allows: the end of the log may be cut off (or no server ran since).` : 'There is no signed checkpoint: nothing anchors the chain.' });
+    if (Date.now() - Date.parse(newest) > grace || lastCheckpoint) bad({ kind: 'unverified', detail: lastCheckpoint ? `The newest signed checkpoint is from ${lastCheckpoint}, older than the checkpoint interval allows: the end of the log may be cut off (or no server ran since).` : 'There is no signed checkpoint: nothing anchors the chain.' });
   }
-  return { ok: !problems.length, events, unchained, streams: streams.size, checkpoints, lastCheckpoint, problems };
+  if (!events) bad({ kind: 'unverified', detail: 'The log is empty (in this window): there is nothing to prove.' });
+  else if (!signedCheckpoints && pub) bad({ kind: 'unverified', detail: 'No signed checkpoint: nothing anchors the chain.' });
+  return { events, unchained, streams: streams.size, checkpoints, signedCheckpoints, pending, lastCheckpoint, problems };
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}/;

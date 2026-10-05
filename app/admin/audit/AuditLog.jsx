@@ -37,10 +37,13 @@ function Integrity({ lang, from, to }) {
         {msg && <p role="status" style={{ margin: 0 }}>{msg}</p>}
         {r && (
           <div data-testid="verify-result" style={{ display: 'grid', gap: 6 }}>
-            <p role="status" style={{ margin: 0, fontWeight: 'var(--fw-strong)', color: r.ok ? 'inherit' : 'var(--danger)' }}>{r.ok ? T('chainOk') : T('chainBroken', { n: r.problems.length })}</p>
+            <p role="status" data-status={r.status} style={{ margin: 0, fontWeight: 'var(--fw-strong)', color: r.status === 'ok' ? 'inherit' : 'var(--danger)' }}>
+              {r.status === 'ok' ? T('chainOk') : r.status === 'tampered' ? T('chainBroken', { n: r.problems.length }) : r.status === 'unverified' ? T('chainUnverified') : T('chainError')}
+            </p>
+            {r.status === 'ok' && r.pending > 0 && <p className="hint" style={{ margin: 0 }}>{T('chainPending', { n: r.pending })}</p>}
             <p className="hint" style={{ margin: 0 }}>{T('chainStats', { events: r.events, unchained: r.unchained, streams: r.streams, checkpoints: r.checkpoints })}{r.lastCheckpoint ? ` · ${T('lastCheckpoint', { when: new Date(r.lastCheckpoint).toLocaleString(lang === 'en' ? 'en-IN' : lang) })}` : ''}</p>
             {!!r.problems.length && <ul style={{ margin: 0, paddingInlineStart: 18 }}>{r.problems.map((p, i) => <li key={i}><code>{p.kind}</code> {p.detail} {p.id && <code style={{ fontSize: 12 }}>{p.id}</code>}</li>)}</ul>}
-            <details><summary>{T('auditPublicKey', { fp: r.key.fingerprint })}</summary><pre style={{ fontFamily: 'var(--mono)', fontSize: 12, whiteSpace: 'pre-wrap', margin: '6px 0 0' }}>{r.publicKey}</pre><p className="hint" style={{ margin: 0 }}>{T('auditKeySource', { source: r.key.source })}</p></details>
+            <details><summary>{T('auditPublicKey', { fp: r.key.fingerprint })}</summary><pre style={{ fontFamily: 'var(--mono)', fontSize: 12, whiteSpace: 'pre-wrap', margin: '6px 0 0' }}>{r.publicKey || '-'}</pre><p className="hint" style={{ margin: 0 }}>{T('auditKeySource', { source: r.key.source })}</p></details>
           </div>
         )}
       </div>

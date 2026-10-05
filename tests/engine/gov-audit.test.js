@@ -38,6 +38,8 @@ const dayFile = () => path.join(dir, 'data', 'audit', `${new Date().toISOString(
 const lines = () => fs.readFileSync(dayFile(), 'utf8').split('\n').filter(Boolean);
 const edit = (fn) => { const before = fs.readFileSync(dayFile(), 'utf8'); fs.writeFileSync(dayFile(), fn(lines()).map(l => `${l}\n`).join('')); return () => fs.writeFileSync(dayFile(), before); };
 const kinds = (r) => r.problems.map(p => p.kind).sort();
+/** The problems that mean a change; asserts the verdict that goes with them (tampered, or the given one when none). */
+const tk = (r, otherwise) => { const k = kinds(r).filter(x => x !== 'unverified'); expect(r.status).toBe(k.length ? 'tampered' : otherwise); expect(r.ok).toBe(false); return k; };
 
 describe('the hash chain', () => {
   it('chains every event and checks clean', async () => {
@@ -48,37 +50,38 @@ describe('the hash chain', () => {
     for (let i = 1; i < 5; i++) expect(ev[i].chain.prev).toBe(ev[i - 1].hash);
     expect(A.hashEntry(ev[2])).toBe(ev[2].hash);
     const r = await A.verifyAudit();
-    expect(r).toMatchObject({ ok: true, events: 5, unchained: 0, streams: 1 });
+    expect(r).toMatchObject({ status: 'unverified', ok: false, events: 5, unchained: 0, streams: 1, pending: 5 }); // consistent, but no signed checkpoint proves it yet
+    expect(kinds(r)).toEqual(['unverified']);
   });
   it('finds a changed event, a removed one and one put in', async () => {
     let undo = edit(ls => ls.map((l, i) => (i === 2 ? l.replace('u2@x.test', 'u9@x.test') : l)));
-    expect(kinds(await A.verifyAudit())).toEqual(['altered']);
+    expect(tk(await A.verifyAudit())).toEqual(['altered']);
     undo();
     undo = edit(ls => ls.filter((_, i) => i !== 2));
-    expect(kinds(await A.verifyAudit())).toEqual(['missing']);
+    expect(tk(await A.verifyAudit())).toEqual(['missing']);
     undo();
     // an inserted event with a recomputed hash still breaks the next link (or claims a number twice)
     undo = edit(ls => { const e = JSON.parse(ls[2]); e.actor = 'user:mallory@x.test'; e.id = `${e.id}x`; e.hash = A.hashEntry(e); return [...ls.slice(0, 3), JSON.stringify(e), ...ls.slice(3)]; });
-    expect(kinds(await A.verifyAudit())).toContain('duplicate');
+    expect(tk(await A.verifyAudit())).toContain('duplicate');
     undo();
     // re-hashing a changed event breaks the link to it
     undo = edit(ls => ls.map((l, i) => { if (i !== 2) return l; const e = JSON.parse(l); e.actor = 'user:mallory@x.test'; e.hash = A.hashEntry(e); return JSON.stringify(e); }));
-    expect(kinds(await A.verifyAudit())).toEqual(['broken']);
+    expect(tk(await A.verifyAudit())).toEqual(['broken']);
     undo();
-    expect((await A.verifyAudit()).ok).toBe(true);
+    expect(tk(await A.verifyAudit(), 'unverified')).toEqual([]);
   });
   it('events from before the chain are counted, not judged; one put in later without a chain is refused', async () => {
     const old = (at) => JSON.stringify({ id: `${at}-000001-aaaaaa`, at, type: 'auth.login', actor: 'user:old@x.test', ip: '-', status: 'ok' });
     let undo = edit(ls => [old('2000-01-01T00:00:00.000Z'), ...ls]);
-    expect(await A.verifyAudit()).toMatchObject({ ok: true, unchained: 1 });
+    const r1 = await A.verifyAudit(); expect(r1.unchained).toBe(1); expect(tk(r1, 'unverified')).toEqual([]);
     undo();
     undo = edit(ls => [...ls, old(new Date().toISOString())]);
-    expect(kinds(await A.verifyAudit())).toEqual(['unchained']);
+    expect(tk(await A.verifyAudit())).toEqual(['unchained']);
     undo();
   });
   it('a line that is not an event fails the check (it is not skipped)', async () => {
     const undo = edit(ls => [...ls.slice(0, 2), '{"id": broken', ...ls.slice(2)]);
-    expect(kinds(await A.verifyAudit())).toEqual(['unreadable']);
+    expect(tk(await A.verifyAudit())).toEqual(['unreadable']);
     undo();
   });
 });
@@ -93,15 +96,15 @@ describe('signed checkpoints', () => {
     expect(crypto.verify(null, Buffer.from(cp.hash, 'hex'), A.publicKey(), Buffer.from(cp.sig, 'base64'))).toBe(true);
     expect(A.publicKeyInfo().fingerprint).toMatch(/^[0-9a-f]{16}$/);
     const r = await A.verifyAudit();
-    expect(r).toMatchObject({ ok: true, checkpoints: 1 });
+    expect(r).toMatchObject({ status: 'ok', ok: true, checkpoints: 1, pending: 0 });
   });
   it('another key, or a changed signature, does not check', async () => {
     const undo = edit(ls => ls.map(l => { const e = JSON.parse(l); if (e.type !== 'audit.checkpoint') return l; e.sig = Buffer.alloc(64, 1).toString('base64'); return JSON.stringify(e); }));
-    expect(kinds(await A.verifyAudit())).toEqual(['signature']);
+    expect(tk(await A.verifyAudit())).toEqual(['signature']);
     undo();
     const { publicKey } = crypto.generateKeyPairSync('ed25519');
     process.env.PW_AUDIT_PUBLIC_KEY = publicKey.export({ type: 'spki', format: 'pem' });
-    try { expect(kinds(await A.verifyAudit())).toEqual(['signature']); } finally { delete process.env.PW_AUDIT_PUBLIC_KEY; }
+    try { expect(tk(await A.verifyAudit())).toEqual(['signature']); } finally { delete process.env.PW_AUDIT_PUBLIC_KEY; }
   });
   it('a whole stream removed, or a stream cut before its checkpointed head, shows', async () => {
     g.__pwAudit.chain = null; // another process: a second stream
@@ -109,7 +112,7 @@ describe('signed checkpoints', () => {
     const second = g.__pwAudit.chain.s;
     const cp = await A.checkpoint(); // names both heads
     expect(Object.keys(cp.detail.heads).sort()).toEqual([first, second].sort());
-    expect((await A.verifyAudit()).ok).toBe(true);
+    expect((await A.verifyAudit()).status).toBe('ok');
     let undo = edit(ls => ls.filter(l => JSON.parse(l).chain?.s !== first));
     let r = await A.verifyAudit();
     expect(r.ok).toBe(false);
@@ -120,22 +123,42 @@ describe('signed checkpoints', () => {
     r = await A.verifyAudit();
     expect(r.problems.some(p => p.kind === 'missing' && /ends at 3/.test(p.detail))).toBe(true);
     undo();
-    expect((await A.verifyAudit()).ok).toBe(true);
+    expect((await A.verifyAudit()).status).toBe('ok');
   });
   it('pw audit verify checks the same from the command line (exit 1 when it does not)', () => {
     const run = () => { try { return { code: 0, out: execFileSync(process.execPath, [path.join(home, 'bin/pw.mjs'), 'audit', 'verify'], { cwd: dir, env: { ...process.env, PW_STORAGE: '' }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) }; } catch (e) { return { code: e.status, out: String(e.stdout) }; } };
     let r = run();
     expect(r.code).toBe(0);
-    expect(r.out).toMatch(/The audit log checks/);
+    expect(r.out).toMatch(/^OK: every checkpointed event is proven/m);
     const undo = edit(ls => ls.map((l, i) => (i === 1 ? l.replace('u1@x.test', 'u7@x.test') : l)));
     r = run();
     expect(r.code).toBe(1);
-    expect(r.out).toMatch(/altered/);
+    expect(r.out).toMatch(/altered[\s\S]*TAMPERED/);
     undo();
   });
 });
 
 describe('fail closed', () => {
+  it('an empty log or window is unverified; an error is "error"; never ok', async () => {
+    const r = await A.verifyAudit({ from: '2001-01-01', to: '2001-01-02' });
+    expect(r.status).toBe('unverified');
+    process.env.PW_STORAGE = 'bogus:';
+    try { const e = await A.verifyAudit(); expect(e.status).toBe('error'); expect(e.ok).toBe(false); } finally { delete process.env.PW_STORAGE; }
+  });
+  it('time going backwards inside a stream is tampering, with where', async () => {
+    const undo = edit(ls => ls.map((l, i) => { if (i !== 3) return l; const e = JSON.parse(l); e.at = '2001-01-01T00:00:00.000Z'; e.hash = A.hashEntry(e); return JSON.stringify(e); }));
+    const r = await A.verifyAudit();
+    expect(r.status).toBe('tampered');
+    expect(r.problems.find(p => p.kind === 'backwards')?.id).toBeTruthy();
+    undo();
+  });
+  it('events after the newest checkpoint are reported as not yet checkpointed', async () => {
+    await A.checkpoint();
+    await A.audit('report.view', { actor: 'user:new@x.test', report: 'r' });
+    const r = await A.verifyAudit();
+    expect(r.status).toBe('ok');
+    expect(r.pending).toBe(1);
+  });
   it('a stream rewritten from some event on, hashes and links recomputed, differs from the signed head', async () => {
     const undo = edit(ls => {
       const evs = ls.map(l => JSON.parse(l));
@@ -159,11 +182,11 @@ describe('fail closed', () => {
       await A.checkpoint();
       await A.audit('report.view', { actor: 'user:late@x.test', report: 'r9' });
       await new Promise(r => setTimeout(r, 450));
-      expect(kinds(await A.verifyAudit())).toEqual(['stale', 'unanchored']);
+      const st = await A.verifyAudit(); expect(st.status).toBe('unverified'); expect(st.problems.map(p => p.detail).join(' ')).toMatch(/older than the checkpoint interval[\s\S]*no signed checkpoint|no signed checkpoint[\s\S]*older than the checkpoint interval/);
       await A.checkpoint();
-      expect((await A.verifyAudit()).ok).toBe(true);
+      expect((await A.verifyAudit()).status).toBe('ok');
       await new Promise(r => setTimeout(r, 450));
-      expect(kinds(await A.verifyAudit())).toEqual(['stale']); // no newer checkpoint: the end may be cut off
+      const st2 = await A.verifyAudit(); expect(st2.status).toBe('unverified'); expect(kinds(st2)).toEqual(['unverified']); // no newer checkpoint: the end may be cut off
     } finally { delete process.env.PW_AUDIT_CHECKPOINT_MINUTES; }
   });
   it('no key configured: checkpoints are written unsigned, never with a known key, and verification fails', async () => {
@@ -179,14 +202,14 @@ describe('fail closed', () => {
           expect(A.publicKey()).toBe(null);
           const r = await A.verifyAudit();
           expect(r.ok).toBe(false);
-          expect(kinds(r)).toContain('key');
+          expect(r.status).toBe('unverified');
         } finally { process.env.NODE_ENV = was; }
       }
       process.env.PW_AUDIT_KEY = 'short';
       expect(A.keySource()).toBe('none'); // a short key is not a key
     } finally { process.env.PW_SESSION_SECRET = keep; delete process.env.PW_AUDIT_KEY; }
-    // those unsigned checkpoints now fail the check with the real key
-    expect(kinds(await A.verifyAudit())).toContain('signature');
+    // with the real key back, those unsigned checkpoints leave the log unverified
+    expect(tk(await A.verifyAudit(), 'unverified')).toEqual([]); // unsigned checkpoints prove nothing: never ok
   });
 });
 
@@ -196,13 +219,13 @@ describe('the chain on SQLite', () => {
     try {
       g.__pwAudit.chain = null;
       for (let i = 0; i < 3; i++) await A.audit('report.view', { actor: `user:s${i}@x.test`, report: 'r' });
-      expect((await A.verifyAudit()).ok).toBe(true);
+      expect(tk(await A.verifyAudit(), 'unverified')).toEqual([]);
       const { DatabaseSync } = await import('node:sqlite');
       const db = new DatabaseSync(path.join(tmp, 'chain.db'));
       const row = db.prepare("SELECT id, data FROM pw_audit WHERE actor = 'user:s1@x.test'").get();
       db.prepare('UPDATE pw_audit SET data = ? WHERE id = ?').run(row.data.replace('s1@x.test', 's8@x.test'), row.id);
       db.close();
-      expect(kinds(await A.verifyAudit())).toEqual(['altered']);
+      expect(tk(await A.verifyAudit())).toEqual(['altered']);
     } finally { delete process.env.PW_STORAGE; }
   });
 });
