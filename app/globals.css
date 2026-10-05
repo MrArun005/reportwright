@@ -334,7 +334,7 @@ a.cell-name:hover { color: var(--accent); }
 /* ---------- designer shell ---------- */
 /* the app shell is the window's height and never scrolls as a whole: its panes scroll inside (a top bar, banners and
    the main area in a column; the main area takes what is left) */
-.designer { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
+.designer { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
 .designer > .dmain, .designer > .viewer { flex: 1 1 0; min-height: 0; }
 .dtop { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .brand { font-weight: var(--fw-strong); letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; text-decoration: none; color: var(--ink); }
@@ -345,7 +345,7 @@ a.cell-name:hover { color: var(--accent); }
 .dtop .saved { color: var(--faint); font-size: var(--fs-sm); }
 .dtop .saved.dirty { color: var(--warn); }
 .dmain { display: grid; grid-template-columns: 236px 1fr 280px; grid-template-rows: minmax(0, 1fr); min-height: 0; }
-.dleft, .dright { background: var(--panel); min-height: 0; overflow: auto; }
+.dleft, .dright { position: relative; background: var(--panel); min-height: 0; overflow: auto; } /* relative: their visually hidden (absolute) helpers scroll with them, not with the page */
 .dleft { border-right: 1px solid var(--line); }
 .dright { border-left: 1px solid var(--line); }
 .pane { border-bottom: 1px solid var(--line); }
