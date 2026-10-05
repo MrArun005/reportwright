@@ -164,12 +164,15 @@ export function paintVisual(v, box, ctx, lc, base, who = 'Visual', opt = {}) {
       : { t: 'rect', x, y: y + h * 0.18, w: w * frac, h: h * 0.64, fill: color + 'cc', radius: 1 });
     if (v.showValue !== false) {
       const key = resolveFontKey(base.fontFamily, 'normal', 'normal');
-      const size = line ? line.size : Math.min(h * 0.75, Number(base.fontSize) || 8);
+      let size = line ? line.size : Math.min(h * 0.75, Number(base.fontSize) || 8);
       // the label: the visual's format, else the cell's own (0.5 printed as 1 under N0)
       const s = toText(val, v.format || base.format || 'N0', ctx);
-      const tw = lc.m.width(s, key, size);
+      let tw = lc.m.width(s, key, size);
+      if (tw > w) { size *= w / tw; tw = w; } // wider than the box: smaller, never past its edge
       const inside = w * frac > tw + 6;
-      out.push({ t: 'text', font: key, size, color: inside ? '#ffffff' : '#374151', lines: [{ x: inside ? x + w * frac - tw - 3 : x + w * frac + 3, y: line ? line.baseline : y + h / 2 + size * 0.35, text: s, w: tw }] });
+      // after the bar when there is room, else against the box's end: a label never runs past the cell (or the page)
+      const lx = inside ? x + w * frac - tw - 3 : Math.min(x + w * frac + 3, x + w - tw);
+      out.push({ t: 'text', font: key, size, color: inside ? '#ffffff' : '#374151', lines: [{ x: lx, y: line ? line.baseline : y + h / 2 + size * 0.35, text: s, w: tw }] });
     }
     return out;
   }

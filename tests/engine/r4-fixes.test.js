@@ -270,3 +270,15 @@ describe('narrow columns: numbers never break, words only between words', () => 
     expect(b.lines.length).toBeGreaterThan(1);
   });
 });
+
+describe('data bar labels', () => {
+  it('stay inside their cell, so inside the page, whatever the bar length', async () => {
+    const rows = [{ v: 4966681.45 }, { v: 4900000 }, { v: 10 }, { v: 4950000 }];
+    const d = report([{ type: 'table', name: 'T', x: 440, y: 0, w: 83, h: 14, dataSet: 'Rows', columns: [{ width: 83 }],
+      detail: [{ height: 14, cells: [{ value: '=Fields.v', visual: { type: 'databar', value: '=Fields.v', max: '=10000000', format: 'N2' } }] }] }], { data: { rows } });
+    const m = await render(d, { fontStore });
+    const labels = m.pages[0].items.filter(i => i.t === 'text' && /\d,\d/.test(i.lines[0].text));
+    expect(labels.length).toBeGreaterThan(0);
+    for (const t of labels) for (const l of t.lines) expect(l.x + l.w).toBeLessThanOrEqual(36 + 440 + 83 + 0.01);
+  });
+});
