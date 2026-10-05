@@ -12,10 +12,11 @@ import tls from 'node:tls';
 import fs from 'node:fs';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import { num as cnum } from './config.js';
 
 const g = /** @type {any} */ (globalThis);
 const S = g.__pwSiem ||= { queue: [], busy: false, backoff: 0, timer: null, sock: null, dropped: 0, sent: 0, lastError: null, lastOkAt: null };
-const max = () => Number(process.env.PW_AUDIT_SIEM_QUEUE) > 0 ? Number(process.env.PW_AUDIT_SIEM_QUEUE) : 10000;
+const max = () => cnum('PW_AUDIT_SIEM_QUEUE', 10000, { min: 1 });
 const BATCH = 200;
 
 /** What PW_AUDIT_SIEM names: { kind: 'syslog'|'webhook', url } or null (also for anything unusable). */

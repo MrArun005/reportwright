@@ -1,5 +1,6 @@
 // @ts-check
 import crypto from 'node:crypto';
+import { num as cnum } from './config.js';
 // Outgoing mail over SMTP (nodemailer): password-reset links and scheduled reports.
 //   PW_SMTP_URL   smtp://user:pass@host:587 (STARTTLS) or smtps://user:pass@host:465
 //   PW_MAIL_FROM  the sender: "reports@example.com" or "Pagewright <reports@example.com>"
@@ -30,7 +31,7 @@ export function sender() {
 
 /** PW_MAIL_ALLOWED_DOMAINS: "*" or a list; unset means scheduled mail goes nowhere (fail closed). */
 export const allowedDomains = () => (process.env.PW_MAIL_ALLOWED_DOMAINS || '').split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
-const num = (k, d) => { const n = Number(process.env[k]); return Number.isFinite(n) && n > 0 ? n : d; };
+const num = (k, d) => cnum(k, d, { min: 1e-9 }); // any positive number (fractions of a MB too)
 export const maxRecipients = () => num('PW_MAIL_MAX_RECIPIENTS', 20);
 export const maxAttachmentBytes = () => num('PW_MAIL_MAX_ATTACHMENT_MB', 10) * 1024 * 1024;
 

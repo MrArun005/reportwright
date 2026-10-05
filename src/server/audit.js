@@ -23,7 +23,7 @@ import { store } from './storage/index.js';
 import { clientAddress } from './limits.js';
 import { principalId } from './perms.js';
 import { logWarn } from './errors.js';
-import { devMode, num } from './config.js';
+import { devMode, num, num as cnum } from './config.js';
 
 /** @typedef {import('./perms.js').Principal} Principal */
 
@@ -294,7 +294,7 @@ function ship(entry) {
 
 /* ---------------- checkpoints ---------------- */
 
-const checkpointMs = () => { const n = Number(process.env.PW_AUDIT_CHECKPOINT_MINUTES); return (Number.isFinite(n) && n > 0 ? n : 15) * 60000; };
+const checkpointMs = () => cnum('PW_AUDIT_CHECKPOINT_MINUTES', 15, { min: 0.001 }) * 60000;
 function startCheckpoints() {
   if (g.__pwAudit.timer || process.env.PW_AUDIT_CHECKPOINTS === 'off') return;
   g.__pwAudit.timer = setInterval(() => { checkpoint().catch(e => console.error(`[pagewright] audit checkpoint: ${e.message}`)); }, checkpointMs());

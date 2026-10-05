@@ -10,13 +10,13 @@ import net from 'node:net';
 import { domainToASCII } from 'node:url';
 import { Readable, Transform } from 'node:stream';
 import { accountsOn, internalCookie, basicOn } from './session.js';
-import { devMode } from './config.js';
+import { devMode, num as cnum } from './config.js';
 
 const MAX_BYTES = 20 * 1024 * 1024;
 const TIMEOUT_MS = 30000;
 /** One deadline for a whole fetch (every redirect, the headers and the body): a server that drips bytes cannot hold a
  *  request open (a socket timeout only counts silence). PW_FETCH_DEADLINE_MS, default 60 s. */
-const deadlineMs = () => Number(process.env.PW_FETCH_DEADLINE_MS) || 60000;
+const deadlineMs = () => cnum('PW_FETCH_DEADLINE_MS', 60000, { min: 1 });
 
 const blocked = new net.BlockList(); // also matches IPv4-mapped IPv6 (::ffff:127.0.0.1)
 for (const [a, p] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12],

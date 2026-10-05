@@ -16,7 +16,7 @@ import { serverFetch, NO_BASE_URL } from './safeFetch.js';
 import { pdfSigner } from './sign.js';
 import { runSql } from './sql.js';
 import { listFonts, readFont } from './fonts.js';
-import { devMode } from './config.js';
+import { devMode, num as cnum } from './config.js';
 
 const ROOT = process.cwd();
 let store;
@@ -49,7 +49,7 @@ export const FORMATS = {
 
 /** The server's render time limit: PW_RENDER_TIMEOUT_MS, default 60 s. Every server render (routes, batches,
  *  schedules, thumbnails) stops there with a 504, so one slow report cannot hold the server. */
-export const renderTimeoutMs = () => { const n = Number(process.env.PW_RENDER_TIMEOUT_MS); return Number.isFinite(n) && n > 0 ? n : 60000; };
+export const renderTimeoutMs = () => cnum('PW_RENDER_TIMEOUT_MS', 60000, { min: 1 });
 
 /**
  * This server's own URL, for relative data URLs and its calls to itself: PW_BASE_URL. Never a request header: outside

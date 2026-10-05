@@ -7,6 +7,7 @@ import { principalId, principalFromId, checkReport, vet, defaultPrincipal, canDe
 import { audit } from './audit.js';
 import { getUser } from './users.js';
 import { logWarn } from './errors.js';
+import { num as cnum } from './config.js';
 
 const g = globalThis;
 g.__pwSched ||= { timer: null };
@@ -117,8 +118,8 @@ export function isDue(s, now = new Date()) {
 }
 
 // the tick runs every 30 s and a stopped leader is replaced within 90 s (both can be shorter for tests)
-const tickMs = () => Number(process.env.PW_SCHEDULER_TICK_MS) || 30000;
-const leaderMs = () => Number(process.env.PW_SCHEDULER_LEASE_MS) || 3 * tickMs();
+const tickMs = () => cnum('PW_SCHEDULER_TICK_MS', 30000, { min: 1 });
+const leaderMs = () => cnum('PW_SCHEDULER_LEASE_MS', 3 * tickMs(), { min: 1 });
 
 /** One scheduler tick as `owner`: nothing unless this server holds (or takes) the scheduler lease. */
 export async function tickAs(owner, now = new Date()) {

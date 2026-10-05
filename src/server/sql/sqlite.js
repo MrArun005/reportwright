@@ -16,8 +16,9 @@
 // The process gets an empty environment (no secrets) and is reused for the next query; idle ones exit after 30 s.
 import { spawn, execFile } from 'node:child_process';
 import fs from 'node:fs';
+import { num as cnum } from '../config.js';
 
-const num = (k, d, min = 1) => { const n = Number(process.env[k]); return Number.isFinite(n) && n >= min ? n : d; };
+const num = (k, d, min = 1) => cnum(k, d, { min });
 const memMB = () => num('PW_SQLITE_MEMORY_MB', 1024, 64);
 const maxProcs = () => Math.floor(num('PW_SQLITE_PROCESSES', 2));
 const IDLE_MS = 30000, WATCH_MS = 200;

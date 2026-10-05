@@ -28,15 +28,16 @@ import { audit } from './audit.js';
 import { throughSnapshot } from './snapshots.js';
 import { principalId, principalFromId, defaultPrincipal, vet, canDesign, checkParameterValues } from './perms.js';
 import { logWarn } from './errors.js';
+import { num as cnum } from './config.js';
 
 const DATA = path.join(process.cwd(), 'data');
 const JOBS = path.join(DATA, 'jobs');
 const MAX_ITEMS = 10000;
-const CONCURRENCY = Math.max(1, Number(process.env.PW_BATCH_CONCURRENCY) || 2);
+const CONCURRENCY = Math.max(1, cnum('PW_BATCH_CONCURRENCY', 2, { min: 1 }));
 
 /** This server, as a lease owner. */
 export const ME = `${os.hostname()}:${process.pid}:${crypto.randomBytes(3).toString('hex')}`;
-const leaseMs = () => Number(process.env.PW_JOB_LEASE_MS) || 60000;
+const leaseMs = () => cnum('PW_JOB_LEASE_MS', 60000, { min: 1 });
 
 const g = globalThis;
 g.__pwQueue ||= { started: false, busy: false, timer: null };
@@ -186,7 +187,7 @@ export async function listJobs(p = defaultPrincipal()) {
 /** The secret that signs download links: PW_LINK_SECRET, else PW_SESSION_SECRET (32+ characters), else none. */
 const linkSecret = () => [process.env.PW_LINK_SECRET, process.env.PW_SESSION_SECRET].find(s => s && s.length >= 32) || null;
 const linkSig = (id, exp) => crypto.createHmac('sha256', String(linkSecret())).update(`pw-batch-download.${id}.${exp}`).digest('base64url');
-export const linkDays = () => (Number(process.env.PW_MAIL_LINK_DAYS) > 0 ? Math.min(90, Number(process.env.PW_MAIL_LINK_DAYS)) : 7);
+export const linkDays = () => Math.min(90, cnum('PW_MAIL_LINK_DAYS', 7, { min: 0.001 }));
 /**
  * A link that downloads a finished batch's output without an API key, until it expires (PW_MAIL_LINK_DAYS, default 7):
  * whoever holds it can download, as with an attachment. null without a signing secret or PW_BASE_URL.
@@ -279,7 +280,7 @@ function poke() {
 export function startWorker() {
   if (Q.started) return;
   Q.started = true;
-  Q.timer = setInterval(poke, Number(process.env.PW_QUEUE_POLL_MS) || 2000);
+  Q.timer = setInterval(poke, cnum('PW_QUEUE_POLL_MS', 2000, { min: 1 }));
   Q.timer.unref?.();
   Q.sweep = setInterval(() => { sweepJobs().catch(logWarn('jobs sweep')); }, 3600000);
   Q.sweep.unref?.();
@@ -437,13 +438,13 @@ export async function packOutput({ type, key, items }) {
   }
   return { key };
 }
-const packTimeoutMs = () => Number(process.env.PW_PACK_TIMEOUT_MS) || 600000;
+const packTimeoutMs = () => cnum('PW_PACK_TIMEOUT_MS', 600000, { min: 1 });
 /** @param {any} spec @param {any} job */
 const packInPool = (spec, job) => submit({ kind: 'pack', spec, timeoutMs: packTimeoutMs() }, { background: true, key: `pack:${job.templateRef || ''}` });
 
 /* ---------------- retention ---------------- */
 
-const retentionDays = () => { const n = Number(process.env.PW_JOB_RETENTION_DAYS); return Number.isFinite(n) && n >= 0 && process.env.PW_JOB_RETENTION_DAYS !== '' && process.env.PW_JOB_RETENTION_DAYS !== undefined ? n : 30; };
+const retentionDays = () => cnum('PW_JOB_RETENTION_DAYS', 30, { min: 0 });
 /**
  * Remove finished jobs older than PW_JOB_RETENTION_DAYS with their blobs (output, items, inputs); the number removed.
  * One server at a time (a lease). @param {number} [now]

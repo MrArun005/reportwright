@@ -37,9 +37,9 @@ import { Worker, SHARE_ENV } from 'node:worker_threads';
 import { renderTimeoutMs } from './renderer.js';
 import { principalId } from './perms.js';
 import { accountsOn, sessionSecret } from './session.js';
-import { devMode } from './config.js';
+import { devMode, num as cnum } from './config.js';
 
-const num = (k, d, min = 0) => { const n = Number(process.env[k]); return process.env[k] !== undefined && process.env[k] !== '' && Number.isFinite(n) && n >= min ? n : d; };
+const num = (k, d, min = 0) => cnum(k, d, { min }); // the one parser (config.num)
 
 /** A cgroup file's text (v2 under /sys/fs/cgroup, v1 under its controller folders), or null. PW_CGROUP_DIR: tests.
  *  Read at most every 30 s (it was a synchronous read on every admission: REVIEW-ARCH-2 2.6). */

@@ -16,8 +16,9 @@ import { oracle } from './sql/oracle.js';
 import { snowflake } from './sql/snowflake.js';
 import { bigquery } from './sql/bigquery.js';
 import { sqlite } from './sql/sqlite.js';
+import { num as cnum } from './config.js';
 
-const envNum = (k, d) => { const n = Number(process.env[k]); return process.env[k] && Number.isFinite(n) && n > 0 ? n : d; };
+const envNum = (k, d) => cnum(k, d, { min: 1e-9 });
 /** The caps on one query: PW_SQL_MAX_ROWS (100000), PW_SQL_MAX_MB (64), PW_SQL_TIMEOUT_MS (30000). Mutable so tests can lower them. */
 export const limits = { rows: envNum('PW_SQL_MAX_ROWS', 100000), ms: envNum('PW_SQL_TIMEOUT_MS', 30000), bytes: envNum('PW_SQL_MAX_MB', 64) * 1024 * 1024 };
 /** Connections per pool (one pool per connection URL per server thread): PW_DB_POOL_MAX, default 5. */
