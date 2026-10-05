@@ -122,6 +122,9 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   const hasParams = (definition.parameters || []).some(p => !p.hidden); // hidden: set by URL, API or drill-through only
   const [panel, setPanel] = useState((definition.parameters || []).some(p => !p.hidden && p.required && !p.default && !p.nullable) ? 'params' : null);
   const [exporting, setExporting] = useState(null);
+  // an export asked for while another runs waits its turn (a click is never dropped); its button says "Queued"
+  const [queued, setQueued] = useState([]);
+  const exportQueue = useRef([]);
   const [options, setOptions] = useState({});
   const [query, setQuery] = useState('');
   const [matchCase, setMatchCase] = useState(false);
@@ -409,6 +412,11 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
 
   const doExport = async (fmt) => {
     if (!model) return;
+    if (exportQueue.current.busy) {
+      if (fmt !== exportQueue.current.busy && !exportQueue.current.includes(fmt)) { exportQueue.current.push(fmt); setQueued([...exportQueue.current]); }
+      return;
+    }
+    exportQueue.current.busy = fmt;
     setExporting(fmt);
     try {
       const m = await pagedModel('export', needsExportData(fmt, xopt));
@@ -425,7 +433,13 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
       onExported?.(fmt, level.id, params); // the app's own pages tell the server, for the audit log
     } catch (e) {
       setStatus({ state: 'error', message: T('exportFailed', { fmt: fmt.toUpperCase(), message: e.message }) });
-    } finally { setExporting(null); }
+    } finally {
+      exportQueue.current.busy = null;
+      setExporting(null);
+      const next = exportQueue.current.shift();
+      setQueued([...exportQueue.current]);
+      if (next) doExport(next);
+    }
   };
 
   // Print the PDF from a hidden frame on the host page (outside the embed's shadow root). If the browser
@@ -464,7 +478,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   const api = { page: current, pages: total, goTo: go, run: () => run(), print, exportAs: doExport };
   const exportItem = (id, fmt, label, extra = {}) => ({
     id, group: 'export',
-    node: <button className={`btn sm${fmt === 'pdf' ? ' primary' : ''}`} onClick={() => doExport(fmt)} disabled={!model || !!exporting} data-testid={`export-${fmt}`} {...extra}>{exporting === fmt ? T('exporting') : label}</button>,
+    node: <button className={`btn sm${fmt === 'pdf' ? ' primary' : ''}`} onClick={() => doExport(fmt)} disabled={!model || exporting === 'print'} data-testid={`export-${fmt}`} {...extra}>{exporting === fmt ? T('exporting') : queued.includes(fmt) ? T('r4_queued') : label}</button>,
   });
   const builtIns = [
     hasParams && { id: 'parameters', group: 'panels', primary: true, node: <button className="btn sm" aria-pressed={side === 'params'} onClick={() => setPanel(s => (s === 'params' ? null : 'params'))}>{T('parameters')}</button> },
