@@ -4,6 +4,7 @@
 export default {
   en: {
     ux_choose: "— choose —",
+    ux_designersGroup: "Designers (everyone who can design)",
     ux_edit: "Edit",
     ux_paramPickValueField: "Pick the value field for the choices from the data set.",
     ux_paramNoValueField: "The choices from a data set have no value field: the reader sees an empty list.",
@@ -159,6 +160,7 @@ export default {
   },
   hi: {
     ux_choose: "— चुनें —",
+    ux_designersGroup: "डिज़ाइनर (डिज़ाइन कर सकने वाले सभी)",
     ux_edit: "संपादित करें",
     ux_paramPickValueField: "डेटा सेट से विकल्पों के लिए मान फ़ील्ड चुनें।",
     ux_paramNoValueField: "डेटा सेट के विकल्पों में कोई मान फ़ील्ड नहीं है: पाठक को खाली सूची दिखेगी।",
@@ -314,6 +316,7 @@ export default {
   },
   es: {
     ux_choose: "— elegir —",
+    ux_designersGroup: "Diseñadores (todos los que pueden diseñar)",
     ux_edit: "Editar",
     ux_paramPickValueField: "Elija el campo de valor para las opciones del conjunto de datos.",
     ux_paramNoValueField: "Las opciones del conjunto de datos no tienen campo de valor: el lector ve una lista vacía.",
@@ -469,6 +472,7 @@ export default {
   },
   fr: {
     ux_choose: "— choisir —",
+    ux_designersGroup: "Concepteurs (tous ceux qui peuvent concevoir)",
     ux_edit: "Modifier",
     ux_paramPickValueField: "Choisissez le champ de valeur des choix du jeu de données.",
     ux_paramNoValueField: "Les choix du jeu de données n'ont pas de champ de valeur : le lecteur voit une liste vide.",
@@ -624,6 +628,7 @@ export default {
   },
   de: {
     ux_choose: "— auswählen —",
+    ux_designersGroup: "Designer (alle, die entwerfen dürfen)",
     ux_edit: "Bearbeiten",
     ux_paramPickValueField: "Wählen Sie das Wertfeld für die Auswahl aus dem Datensatz.",
     ux_paramNoValueField: "Die Auswahl aus dem Datensatz hat kein Wertfeld: der Leser sieht eine leere Liste.",
@@ -779,6 +784,7 @@ export default {
   },
   ja: {
     ux_choose: "— 選択 —",
+    ux_designersGroup: "デザイナー（デザインできる全員）",
     ux_edit: "編集",
     ux_paramPickValueField: "データセットの選択肢に使う値フィールドを選んでください。",
     ux_paramNoValueField: "データセットの選択肢に値フィールドがありません。閲覧者には空の一覧が表示されます。",
@@ -934,6 +940,7 @@ export default {
   },
   zh: {
     ux_choose: "— 选择 —",
+    ux_designersGroup: "设计者（所有可设计的用户）",
     ux_edit: "编辑",
     ux_paramPickValueField: "请为数据集中的选项选择值字段。",
     ux_paramNoValueField: "数据集中的选项没有值字段：读者将看到空列表。",
@@ -1089,6 +1096,7 @@ export default {
   },
   "pt-BR": {
     ux_choose: "— escolher —",
+    ux_designersGroup: "Designers (todos que podem criar relatórios)",
     ux_edit: "Editar",
     ux_paramPickValueField: "Escolha o campo de valor para as opções do conjunto de dados.",
     ux_paramNoValueField: "As opções do conjunto de dados não têm campo de valor: o leitor vê uma lista vazia.",
@@ -1244,6 +1252,7 @@ export default {
   },
   ar: {
     ux_choose: "— اختر —",
+    ux_designersGroup: "المصممون (كل من يمكنه التصميم)",
     ux_edit: "تحرير",
     ux_paramPickValueField: "اختر حقل القيمة للخيارات من مجموعة البيانات.",
     ux_paramNoValueField: "خيارات مجموعة البيانات بلا حقل قيمة: سيرى القارئ قائمة فارغة.",

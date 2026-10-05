@@ -61,7 +61,7 @@ export default function Share({ kind, id, name, folders, accounts, canDelete = f
       window.location.reload();
     } catch (ex) { setErr(ex.message); setBusy(false); }
   };
-  const label = (to) => (to === 'group:everyone' ? T('everyoneGroup') : to === 'group:public' ? T('publicGroup') : to.replace(/^user:/, '').replace(/^group:/, `${T('grantGroup')}: `));
+  const label = (to) => (to === 'group:everyone' ? T('everyoneGroup') : to === 'group:public' ? T('publicGroup') : to === 'group:designers' ? T('ux_designersGroup') : to.replace(/^user:/, '').replace(/^group:/, `${T('grantGroup')}: `));
 
   return (
     <div className="scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -117,7 +117,7 @@ export default function Share({ kind, id, name, folders, accounts, canDelete = f
                 <label className="field" style={{ flex: 1, minWidth: 200 }}>
                   <span>{who.type === 'user' ? T('email') : T('groupName')}</span>
                   <input className="input" value={who.name} onChange={e => setWho({ ...who, name: e.target.value })} placeholder={who.type === 'user' ? 'name@example.com' : 'finance'} list={who.type === 'group' ? 'pw-groups' : undefined} />
-                  <datalist id="pw-groups"><option value="everyone" /><option value="public" /></datalist>
+                  <datalist id="pw-groups"><option value="everyone" /><option value="designers" /><option value="public" /></datalist>
                 </label>
                 <label className="field">
                   <span>{T('accessLevel')}</span>
