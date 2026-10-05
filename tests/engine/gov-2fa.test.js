@@ -3,7 +3,9 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
+
 import path from 'node:path';
+globalThis.__pwPeers = true; // the socket address comes in x-pw-peer, as instrumentation.js stamps it (limits.js trackPeers)
 
 const BASE = 'http://pw.test';
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-2fa-'));
@@ -180,7 +182,7 @@ describe('enrolling and signing in', () => {
 describe('password sign-in limits hold across servers', () => {
   it('10 failures per address and email, then 429 even for the right password', async () => {
     await users.createUser({ email: 'lim@x.test', role: 'viewer', password: 'limit password 1' });
-    const tryPw = (pw, ip = '10.9.9.9') => R.login(new Request(`${BASE}/api/auth/login`, { method: 'POST', headers: { ...H(), 'x-forwarded-for': ip }, body: JSON.stringify({ email: 'lim@x.test', password: pw }) }));
+    const tryPw = (pw, ip = '10.9.9.9') => R.login(new Request(`${BASE}/api/auth/login`, { method: 'POST', headers: { ...H(), 'x-pw-peer': ip }, body: JSON.stringify({ email: 'lim@x.test', password: pw }) }));
     for (let i = 0; i < 10; i++) expect((await tryPw('wrong password x')).status).toBe(401);
     expect((await tryPw('limit password 1')).status).toBe(429);
     expect((await tryPw('limit password 1', '10.9.9.10')).status).toBe(200); // another address

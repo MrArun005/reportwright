@@ -181,15 +181,14 @@ for (const next of ['https://evil.test/', '//evil.test/', '/\\evil.test/', '/%09
   await p.context().close();
 }
 
-step('sign-in rate limit: 10 failures per address, 50 per email from anywhere, then 429');
+step('sign-in rate limit: 10 failures per source and email, then 429 for that source; X-Forwarded-For is not believed');
 const victim = `victim-${run}@e2e.test`;
 for (let i = 0; i < 10; i++) assert.equal((await signIn(victim, `wrong password ${i}`)).status, 401);
 r = await req('/api/auth/login', { method: 'POST', headers: H, body: { email: victim, password: 'x'.repeat(12) } });
 assert.equal(r.status, 429);
 assert.ok(Number(r.headers.get('retry-after')) > 0);
-// Next passes a client's X-Forwarded-For on, so a made-up address gets a fresh 10, but only up to 50 per email
-for (let i = 0; i < 40; i++) assert.equal((await signIn(victim, 'wrong password', { ...H, 'x-forwarded-for': `203.0.113.${i}` })).status, 401);
-assert.equal((await signIn(victim, 'wrong password', { ...H, 'x-forwarded-for': '198.51.100.1' })).status, 429);
+// a made-up X-Forwarded-For is the same source (the socket's address, unless PW_TRUSTED_PROXIES lists it)
+for (let i = 0; i < 5; i++) assert.equal((await signIn(victim, 'wrong password', { ...H, 'x-forwarded-for': `203.0.113.${i}` })).status, 429);
 
 step('clean up');
 await req(`/api/users/${encodeURIComponent(VIEWER)}`, { method: 'DELETE', cookie: admin.cookie, headers: H });

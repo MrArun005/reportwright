@@ -20,6 +20,7 @@
 import crypto from 'node:crypto';
 import os from 'node:os';
 import { store } from './storage/index.js';
+import { clientAddress } from './limits.js';
 import { principalId } from './perms.js';
 
 /** @typedef {import('./perms.js').Principal} Principal */
@@ -144,8 +145,8 @@ export function publicKeyInfo() {
   return { pem: String(k.export({ type: 'spki', format: 'pem' })), fingerprint: crypto.createHash('sha256').update(der).digest('hex').slice(0, 16) };
 }
 
-/** The client address: the last X-Forwarded-For hop (our own proxy's), else what Next put there. @param {Request} [req] */
-export const clientIp = (req) => (req?.headers.get('x-forwarded-for') || '').split(',').pop()?.trim().slice(0, 64) || '-';
+/** The client address (limits.js clientAddress: X-Forwarded-For only from PW_TRUSTED_PROXIES). @param {Request} [req] */
+export const clientIp = (req) => clientAddress(req);
 
 /** A keyed hash of parameter values (sorted keys), 16 hex; null for none. @param {Record<string, any>|null|undefined} params */
 export function paramsHash(params) {

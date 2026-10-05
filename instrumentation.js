@@ -1,6 +1,8 @@
 // Starts the report scheduler and the batch worker when the Node server boots, and checks the account settings.
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
+    // every request carries its socket address (x-pw-peer), so limits never believe a made-up X-Forwarded-For
+    (await import('./src/server/limits.js')).trackPeers();
     if (process.env.PW_AUTH && !['users', 'proxy'].includes(process.env.PW_AUTH)) throw new Error('PW_AUTH must be "users" or "proxy" (or not set at all).');
     const { openTrusted, accountsOn, publicReadonly, basicOn, NO_AUTH_HELP } = await import('./src/server/session.js');
     if (process.env.PW_BASIC_AUTH && !basicOn()) console.warn('[pagewright] PW_BASIC_AUTH must be "user:password" (both parts set): it is ignored, so nobody signs in.');

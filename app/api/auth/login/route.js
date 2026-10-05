@@ -1,7 +1,7 @@
 // POST /api/auth/login { email, password } — sign in (PW_AUTH=users). Sets the pw_session cookie, or, when the account
 // needs a second factor, answers { mfa: 'totp' | 'enrol' } and sets pw_mfa: POST /api/auth/mfa finishes the sign-in.
-// 10 failed tries in 15 minutes for one address and email, or 50 for one email → 429, even for the right password, on
-// every server (src/server/limits.js loginAttempt).
+// Limits across servers (src/server/limits.js loginAttempt): too many failures from one source → 429 for that source;
+// failures for one account from everywhere only slow its tries down, so nobody can lock its owner out.
 import { authenticate, ensureAdmin, normEmail, secondFactor } from '@/server/users.js';
 import { accountsOn, sessionSecret, sessionCookie, mfaCookie } from '@/server/session.js';
 import { loginAttempt, clientAddress } from '@/server/limits.js';
@@ -32,6 +32,7 @@ export async function POST(req) {
       await audit('auth.login_failed', { req, detail: { email, reason: 'rate limited' } });
       return Response.json({ error: 'Too many failed sign-ins. Try again later.' }, { status: 429, headers: { 'retry-after': String(slot.retryAfter) } });
     }
+    if (slot.delayMs) await new Promise(r => setTimeout(r, slot.delayMs));
     const user = await authenticate(email, body.password);
     if (!user) { await audit('auth.login_failed', { req, detail: { email, reason: 'wrong email or password' } }); return Response.json({ error: WRONG }, { status: 401 }); }
     await slot.release(); // a right password does not count

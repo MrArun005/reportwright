@@ -4,7 +4,9 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+
 import { audit, queryAudit, auditCsv, paramsHash } from '../../src/server/audit.js';
+globalThis.__pwPeers = true; // the socket address comes in x-pw-peer, as instrumentation.js stamps it (limits.js trackPeers)
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-audit-'));
 const home = process.cwd();
@@ -91,7 +93,7 @@ describe('what the routes record', () => {
     await users.createUser({ email: 'ann@x.io', role: 'designer', password: 'ann password 123' });
     cookie = session.sessionCookie(new Request(BASE), await users.getUser('boss@x.io')).split(';')[0];
   });
-  const rq = (p, { method = 'GET', body, headers = {} } = {}) => new Request(BASE + p, { method, headers: { origin: BASE, 'x-forwarded-for': '203.0.113.9', ...(body !== undefined && { 'content-type': 'application/json' }), ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const rq = (p, { method = 'GET', body, headers = {} } = {}) => new Request(BASE + p, { method, headers: { origin: BASE, 'x-pw-peer': '203.0.113.9', ...(body !== undefined && { 'content-type': 'application/json' }), ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
   const last = async (type) => (await queryAudit({ type, limit: 1 }))[0];
 
   it('sign-in, failures and sign-out, never the password', async () => {

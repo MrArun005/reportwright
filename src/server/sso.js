@@ -38,6 +38,7 @@ import zlib from 'node:zlib';
 import { signSession, readToken, sessionSecret, safeNext } from './session.js';
 import { getUser, createUser, updateUser, normEmail, allUsers, ROLES, GROUP } from './users.js';
 import { store, withLock } from './storage/index.js';
+import { clientAddress } from './limits.js';
 
 const fail = (msg, status = 400, code = 'sso') => Object.assign(new Error(msg), { status, code });
 const b64u = (buf) => Buffer.from(buf).toString('base64url');
@@ -107,7 +108,7 @@ export async function finishSignIn(req, step, via) {
 const starts = (/** @type {any} */ (globalThis).__pwSsoStarts ||= new Map());
 /** True when this address started more than 60 sign-ins in the last minute. @param {Request} req */
 export function tooManyStarts(req) {
-  const ip = (req.headers.get('x-forwarded-for') || '').split(',').pop()?.trim() || '-';
+  const ip = clientAddress(req);
   const now = Date.now();
   const list = (starts.get(ip) || []).filter(t => t > now - 60000);
   list.push(now);

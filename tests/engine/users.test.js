@@ -221,26 +221,33 @@ describe('review: an admin action checks the admin as stored now, inside the loc
 });
 
 describe('sign-in rate limit', () => {
-  it('allows 10 failures per address and email in 15 minutes, then answers 429 even to the right password', async () => {
+  // the socket address, as instrumentation.js stamps it (limits.js trackPeers); X-Forwarded-For is not believed
+  const peer = (a, xff) => ({ headers: { 'x-pw-peer': a, ...(xff && { 'x-forwarded-for': xff }) } });
+  beforeAll(() => { globalThis.__pwPeers = true; });
+  afterAll(() => { delete globalThis.__pwPeers; });
+  it('allows 10 failures per source and email in 15 minutes, then answers 429 to that source only', async () => {
     await createUser({ email: 'r@x.io', role: 'viewer', password: PW });
     await createUser({ email: 's@x.io', role: 'viewer', password: PW });
     vi.useFakeTimers({ toFake: ['Date'] });
     try {
-      const ip = (a) => ({ headers: { 'x-forwarded-for': `${a}, 10.0.0.7` } }); // the last hop is the one our server saw
-      for (let i = 0; i < 10; i++) expect((await signIn('r@x.io', 'wrong password!', ip(`1.1.1.${i}`))).status).toBe(401);
-      const blocked = await signIn('R@x.io', PW, ip('9.9.9.9'));
+      // a made-up X-Forwarded-For per try buys nothing: the source is the socket's address
+      for (let i = 0; i < 10; i++) expect((await signIn('r@x.io', 'wrong password!', peer('10.0.0.7', `1.1.1.${i}`))).status).toBe(401);
+      const blocked = await signIn('R@x.io', PW, peer('10.0.0.7', '9.9.9.9'));
       expect(blocked.status).toBe(429);
       expect(blocked.headers.get('retry-after')).toBeTruthy();
-      expect((await signIn('s@x.io', PW, ip('1.1.1.1'))).status).toBe(200); // another email is not blocked
-      expect((await signIn('r@x.io', PW, { headers: { 'x-forwarded-for': '10.0.0.8' } })).status).toBe(200); // another address is not
+      expect((await signIn('s@x.io', PW, peer('10.0.0.7'))).status).toBe(200); // another email is not blocked
+      expect((await signIn('r@x.io', PW, peer('10.0.0.8'))).status).toBe(200); // another source is not
       vi.setSystemTime(Date.now() + 15 * 60 * 1000 + 1000);
-      expect((await signIn('r@x.io', PW, ip('1.1.1.1'))).status).toBe(200);
+      expect((await signIn('r@x.io', PW, peer('10.0.0.7'))).status).toBe(200);
     } finally { vi.useRealTimers(); }
   });
-  it('caps one email at 50 failures from all addresses, so a made-up X-Forwarded-For buys little', async () => {
+  it('50 failures for one email from all sources never lock its owner out', async () => {
     await createUser({ email: 'q@x.io', role: 'viewer', password: PW });
-    for (let i = 0; i < 50; i++) expect((await signIn('q@x.io', 'wrong password!', { headers: { 'x-forwarded-for': `5.5.${i}.1` } })).status).toBe(401);
-    expect((await signIn('q@x.io', PW, { headers: { 'x-forwarded-for': '6.6.6.6' } })).status).toBe(429);
+    process.env.PW_LOGIN_SLOW_MS = '50';
+    try {
+      for (let i = 0; i < 55; i++) expect((await signIn('q@x.io', 'wrong password!', peer(`5.5.${i}.1`))).status).toBe(401);
+      expect((await signIn('q@x.io', PW, peer('6.6.6.6'))).status).toBe(200);
+    } finally { delete process.env.PW_LOGIN_SLOW_MS; }
   });
 });
 

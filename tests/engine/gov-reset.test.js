@@ -4,7 +4,9 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+
 import { startSmtp } from '../fixtures/mock-smtp.js';
+globalThis.__pwPeers = true; // the socket address comes in x-pw-peer, as instrumentation.js stamps it (limits.js trackPeers)
 
 const BASE = 'http://pw.test';
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-reset-'));
@@ -29,7 +31,7 @@ afterAll(async () => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-const post = (fn, body, ip = '10.0.0.1') => fn(new Request(`${BASE}/x`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': ip }, body: JSON.stringify(body) }));
+const post = (fn, body, ip = '10.0.0.1') => fn(new Request(`${BASE}/x`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-pw-peer': ip }, body: JSON.stringify(body) }));
 const settle = () => Promise.all([...(g.__pwResets || [])]);
 const qp = (s) => s.replace(/=\r\n/g, '').replace(/=([0-9A-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
 const tokenOf = (msg) => decodeURIComponent(/token=([^\s]+)/.exec(qp(msg.data))[1]);

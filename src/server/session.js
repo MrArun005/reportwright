@@ -202,32 +202,3 @@ export function sameOrigin(req) {
 /** "next" after sign-in: a path on this site only (no //host, no /\host, no control characters). */
 export const safeNext = (n) => (typeof n === 'string' && /^\/(?![/\\])[^\x00-\x20\\]*$/.test(n) ? n : '/');
 
-// Sign-in rate limit, in memory: 10 failures in 15 minutes per client address and email, and 50 per email from
-// all addresses together. Next passes on an X-Forwarded-For the client sent (it only adds one when there is
-// none), so without a reverse proxy the address can be made up: the per-email cap bounds what that buys.
-// ponytail: per process; several servers each count on their own (a shared store such as Redis if that matters)
-const WINDOW = 15 * 60 * 1000, PER_ADDRESS = 10, PER_EMAIL = 50;
-/** @type {Map<string, number[]>} */
-const failures = (/** @type {any} */ (globalThis).__pwLoginFails ||= new Map());
-
-/**
- * Keys for one sign-in: [address+email, email]. The address is the last X-Forwarded-For hop (the one our own
- * reverse proxy appends, e.g. nginx proxy_add_x_forwarded_for), else the socket address Next puts there.
- * @param {Request} req @param {string} email
- */
-export const loginKey = (req, email) => [`${(req.headers.get('x-forwarded-for') || '').split(',').pop()?.trim() || '-'}|${email}`, `*|${email}`];
-const recent = (key) => (failures.get(key) || []).filter(t => t > Date.now() - WINDOW);
-
-/** Seconds until another try is allowed, or 0. @param {string[]} keys from loginKey */
-export function loginBlocked([one, all]) {
-  const wait = (r, limit) => (r.length >= limit ? Math.ceil((r[r.length - limit] + WINDOW - Date.now()) / 1000) : 0);
-  return Math.max(wait(recent(one), PER_ADDRESS), wait(recent(all), PER_EMAIL));
-}
-/** @param {string[]} keys */
-export function loginFailed(keys) {
-  if (failures.size > 10000) for (const k of failures.keys()) if (!recent(k).length) failures.delete(k);
-  if (failures.size > 100000) failures.clear(); // bounded memory under a spray of made-up emails
-  for (const k of keys) failures.set(k, [...recent(k), Date.now()].slice(-PER_EMAIL));
-}
-/** A good sign-in clears its address's count, not the per-email one (that would let an attacker reset it). @param {string[]} keys */
-export function loginSucceeded([one]) { failures.delete(one); }

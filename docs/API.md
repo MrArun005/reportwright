@@ -294,7 +294,7 @@ Details and settings: [GOVERNANCE.md](GOVERNANCE.md).
 - Admin changes (users, access, settings) are stored before their audit event; if that event cannot be written the
   request answers 503, but the change stays.
 - The SIEM queue is in memory: events waiting when a process stops are not shipped (they are in the log).
-- Password sign-in's rate limit is per process (two-factor codes and reset requests are limited across servers).
+- Password sign-in, two-factor codes and reset requests are limited across servers (storage leases). The client address is the socket's; `X-Forwarded-For` counts only from `PW_TRUSTED_PROXIES`. Failures for an account never lock it (see README, Sign-in limit); `PATCH /api/users/<email> { unlockSignIn: true }` (admin) clears its counts.
 - Uploaded fonts do not start a new snapshot generation: clear the snapshot cache after changing fonts.
 
 ## Viewer (embedding)

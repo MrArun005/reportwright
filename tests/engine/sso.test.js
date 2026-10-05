@@ -5,7 +5,9 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+
 import { startOidc, testCert, assertionXml, signAssertion, responseXml, b64 } from '../fixtures/mock-idp.js';
+globalThis.__pwPeers = true; // the socket address comes in x-pw-peer, as instrumentation.js stamps it (limits.js trackPeers)
 
 const BASE = 'http://pw.test';
 const ACS = `${BASE}/api/auth/saml/acs`;
@@ -369,7 +371,7 @@ describe('review fixes: identities, linking, binding', () => {
   it('starting a SAML sign-in stores nothing on the server (the request is in the signed browser cookie)', async () => {
     const { store } = await import('../../src/server/storage/index.js');
     const before = (await store().ids('tokens')).length;
-    for (let i = 0; i < 20; i++) await routes.samlLogin(new Request(`${BASE}/api/auth/saml/login`, { headers: { 'x-forwarded-for': `203.0.113.${i}` } }));
+    for (let i = 0; i < 20; i++) await routes.samlLogin(new Request(`${BASE}/api/auth/saml/login`, { headers: { 'x-pw-peer': `203.0.113.${i}` } }));
     expect((await store().ids('tokens')).length).toBe(before);
     // and the binding still holds: a response for a request this browser did not start never signs in
     const { cookie } = await samlBegin();
@@ -379,9 +381,9 @@ describe('review fixes: identities, linking, binding', () => {
 
   it('starting SAML sign-ins is rate-limited per address', async () => {
     let last;
-    for (let i = 0; i < 70; i++) last = await routes.samlLogin(new Request(`${BASE}/api/auth/saml/login`, { headers: { 'x-forwarded-for': '198.51.100.7' } }));
+    for (let i = 0; i < 70; i++) last = await routes.samlLogin(new Request(`${BASE}/api/auth/saml/login`, { headers: { 'x-pw-peer': '198.51.100.7' } }));
     expect(last.status).toBe(429);
-    expect((await routes.samlLogin(new Request(`${BASE}/api/auth/saml/login`, { headers: { 'x-forwarded-for': '198.51.100.8' } }))).status).toBe(302);
+    expect((await routes.samlLogin(new Request(`${BASE}/api/auth/saml/login`, { headers: { 'x-pw-peer': '198.51.100.8' } }))).status).toBe(302);
   });
 });
 
