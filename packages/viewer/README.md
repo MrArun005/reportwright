@@ -1,6 +1,6 @@
 # @pagewrightjs/viewer
 
-The Pagewright report viewer in any web app (React is bundled inside, in a shadow root, so your styles do not leak in):
+The Pagewright report viewer in any web app (React is bundled inside, in a shadow root, so your styles do not leak in). A React app imports `@pagewrightjs/viewer/react-peer` (and `/react-peer/designer`) instead, the same viewer using the app's own React, so the page loads React once; `@pagewrightjs/react` does this for you:
 
 ```js
 import { mountViewer } from '@pagewrightjs/viewer';

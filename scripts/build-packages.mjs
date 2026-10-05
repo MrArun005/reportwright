@@ -75,6 +75,7 @@ const V = 'packages/viewer';
 fs.rmSync(path.join(root, V, 'dist'), { recursive: true, force: true });
 if (!fs.existsSync(path.join(root, 'public/embed/esm/viewer.js'))) throw new Error('Run npm run build:embed first');
 copy('public/embed/esm', `${V}/dist`);
+copy('public/embed/esm-peer', `${V}/dist/peer`);
 // types from the JSDoc of the two entries; their signatures use only their own typedefs, so no imports are followed
 const T = path.join(root, V, 'dist/.types');
 tsc(['src/embed/index.js', 'src/embed/designer.js', '--noResolve', '--outDir', path.relative(root, T)]);
@@ -84,16 +85,22 @@ fs.rmSync(T, { recursive: true, force: true });
 write(`${V}/package.json`, {
   name: '@pagewrightjs/viewer', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT',
   description: 'The Pagewright report viewer for any web app: parameters, paging, search, drill-down, exports. React is bundled inside.',
-  exports: { '.': { types: './dist/viewer.d.ts', default: './dist/viewer.js' }, './designer': { types: './dist/designer.d.ts', default: './dist/designer.js' } },
+  exports: {
+    '.': { types: './dist/viewer.d.ts', default: './dist/viewer.js' }, './designer': { types: './dist/designer.d.ts', default: './dist/designer.js' },
+    // the same, with React from the host app (one React in the page): what @pagewrightjs/react imports
+    './react-peer': { types: './dist/viewer.d.ts', default: './dist/peer/viewer.js' }, './react-peer/designer': { types: './dist/designer.d.ts', default: './dist/peer/designer.js' },
+  },
   types: './dist/viewer.d.ts',
   files: ['dist', 'README.md', 'LICENSE'],
+  peerDependencies: { react: '>=18', 'react-dom': '>=18' },
+  peerDependenciesMeta: { react: { optional: true }, 'react-dom': { optional: true } },
   sideEffects: true,
 });
 fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, V, 'LICENSE'));
 
 /* framework wrappers: plain JavaScript, the framework and the viewer as peer dependencies (nothing bundled) */
 const WRAPPERS = {
-  react: { peers: { react: '>=18' }, description: 'The Pagewright report viewer and designer as React components.' },
+  react: { peers: { react: '>=18', 'react-dom': '>=18' }, description: 'The Pagewright report viewer and designer as React components.' },
   vue: { peers: { vue: '>=3.3' }, description: 'The Pagewright report viewer and designer as Vue 3 components.' },
   svelte: { peers: { svelte: '>=3' }, optional: ['svelte'], description: 'Svelte actions for the Pagewright report viewer and designer.' },
   angular: { peers: { '@angular/core': '>=14' }, optional: ['@angular/core'], description: 'Pagewright viewer and designer custom elements for Angular (CUSTOM_ELEMENTS_SCHEMA).' },

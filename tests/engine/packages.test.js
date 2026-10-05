@@ -16,7 +16,7 @@ describe('npm packages', () => {
   it.each([['react', ['react']], ['vue', ['vue']], ['svelte', []], ['angular', []]])('@pagewrightjs/%s imports the framework and the viewer, bundles neither', (name, frameworks) => {
     const src = fs.readFileSync(path.join(root, `packages/${name}/dist/index.js`), 'utf8');
     expect(src.length).toBeLessThan(8000); // a thin wrapper, not a bundle
-    expect(src).toMatch(/import\('@pagewrightjs\/viewer'\)/);
+    expect(src).toMatch(/import\('@pagewrightjs\/viewer(\/react-peer)?'\)/);
     for (const f of frameworks) expect(src).toMatch(new RegExp(`from '${f}'`));
     const pkg = json(`packages/${name}/package.json`);
     expect(pkg.dependencies).toBeUndefined();
@@ -71,6 +71,27 @@ describe('npm packages', () => {
     expect(fs.readFileSync(path.join(tmp, 'cli.pdf')).subarray(0, 5).toString()).toBe('%PDF-');
     fs.rmSync(tmp, { recursive: true, force: true });
   }, 240000);
+
+  it('@pagewrightjs/react uses the viewer build that takes React as a peer: an app bundle has one React (the host app\'s)', async () => {
+    const { build } = await import('esbuild');
+    const nm = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'pw-nm-')), 'node_modules');
+    fs.mkdirSync(path.join(nm, '@pagewrightjs'), { recursive: true });
+    fs.symlinkSync(path.join(root, 'packages/viewer'), path.join(nm, '@pagewrightjs/viewer')); // resolved through its package.json exports
+    const out = await build({
+      stdin: { contents: "import { PagewrightViewer, PagewrightDesigner } from '@pagewrightjs/react'; console.log(PagewrightViewer, PagewrightDesigner);", resolveDir: root },
+      bundle: true, format: 'esm', write: false, splitting: true, outdir: '/out', logLevel: 'silent',
+      alias: { '@pagewrightjs/react': path.join(root, 'packages/react/dist/index.js') },
+      nodePaths: [nm],
+      external: ['react', 'react-dom', 'react/*', 'react-dom/*', 'scheduler', 'exceljs', 'sharp'],
+    });
+    const js = out.outputFiles.map(f => f.text).join('\n');
+    expect(js.length).toBeGreaterThan(500000); // the viewer is in the bundle…
+    expect(js).not.toMatch(/react\.transitional\.element|__CLIENT_INTERNALS_DO_NOT_USE|__DOM_INTERNALS_DO_NOT_USE/); // …React is not
+    expect(js).toMatch(/from ["']react-dom\/client["']/);
+    // the default entry stays self-contained for plain JS pages
+    expect(fs.readdirSync(path.join(root, 'packages/viewer/dist')).filter(f => f.endsWith('.js')).map(f => fs.readFileSync(path.join(root, 'packages/viewer/dist', f), 'utf8')).join('')).toMatch(/react\.transitional\.element/);
+    expect(json('packages/viewer/package.json').exports['./react-peer'].default).toBe('./dist/peer/viewer.js');
+  }, 120000);
 
   it('a TypeScript consumer type-checks, and every wrong case fails', () => {
     let out = '';
