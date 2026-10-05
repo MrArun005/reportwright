@@ -2,7 +2,7 @@
 // { report, source, params } runs the query saved in that report. The browser never sends SQL in this
 // mode: a "query" or "connection" next to "report" is ignored.
 //   Its SQL runs only as a designer saved it (readRunnable in perms.js).
-// { connection, query, params } runs SQL from the request (a preview of unsaved work): designers and admins with
+// { connection, query | procedure + args, params } runs SQL from the request (a preview of unsaved work): designers and admins with
 // accounts on (PW_AUTH=users); with accounts off, only where the server trusts whoever reaches it (next dev,
 // PW_BASIC_AUTH, PW_AUTH=proxy), never in production with no sign-in. Every POST here is same-origin (proxy.js).
 import { runSql, runSavedSql } from '@/server/sql.js';
@@ -22,10 +22,10 @@ export async function POST(req) {
       if (typeof body.report !== 'string' || typeof body.source !== 'string') return bad('Give the report id and the source name');
       return Response.json({ rows: await runSavedSql(body.report, body.source, params, await principalOf(req)) });
     }
-    if (body.query == null) return bad('Give the report id and the source name');
+    if (body.query == null && body.procedure == null) return bad('Give the report id and the source name');
     // the same rule as saving a report with SQL (assertMayStore): whoever may do one may do the other
     if (!canDesign(await principalOf(req))) return bad('Only designers can run SQL from the request (in production that needs a sign-in: PW_AUTH=users or PW_BASIC_AUTH). Save the report: its saved query runs instead.', 403);
-    return Response.json({ rows: await runSql({ connection: body.connection, query: body.query }, params) });
+    return Response.json({ rows: await runSql({ connection: body.connection, query: body.query, procedure: body.procedure, args: body.args }, params) });
   } catch (e) {
     return Response.json({ error: e.message }, { status: e.status || 500 });
   }

@@ -227,3 +227,10 @@ describe('stored procedures (opt-in per connection)', () => {
     }
   });
 });
+
+describe('Designer: stored procedure arguments', () => {
+  it('reads "argument = parameter" lines', async () => {
+    const { procArgs } = await import('../../src/designer/DataPanel.jsx');
+    expect(procArgs('region = region\n @year=@y \n\nbad line\nx = y z')).toEqual([{ name: 'region', param: 'region' }, { name: 'year', param: 'y' }]);
+  });
+});

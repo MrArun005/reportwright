@@ -298,7 +298,7 @@ async function loadSql(src, params, opt, f) {
   // sqlPreview: the designer's unsaved query (the server allows it for designers only)
   if (!opt.reportId && !opt.sqlPreview) throw new Error('Save the report first: SQL runs on the server, from the saved report.');
   const url = `${(opt.baseUrl || '').replace(/\/$/, '')}/api/data/sql`;
-  const body = opt.sqlPreview ? { connection: src.connection, query: src.query, params: p } : { report: opt.reportId, source: src.name, params: p };
+  const body = opt.sqlPreview ? { connection: src.connection, query: src.query, procedure: src.procedure, args: src.args, params: p } : { report: opt.reportId, source: src.name, params: p };
   const res = await f(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(json.error || `HTTP ${res.status} from ${url}`), { status: res.status });

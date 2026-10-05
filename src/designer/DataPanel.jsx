@@ -239,7 +239,7 @@ function SourceDialog({ index, onClose }) {
   const T = (k, v) => t(lang, k, v);
   const orig = index != null ? def.dataSources[index] : null;
   const [s, setS] = useState(() => ({ name: '', type: 'rest', method: 'GET', url: '', useProxy: false, ...(orig || {}), headersText: orig?.headers ? JSON.stringify(orig.headers, null, 2) : '', dataText: orig?.data != null ? (typeof orig.data === 'string' ? orig.data : JSON.stringify(orig.data, null, 2)) : '',
-    nsText: Object.entries(orig?.namespaces || {}).map(([k, v]) => `${k}=${v}`).join('\n') }));
+    nsText: Object.entries(orig?.namespaces || {}).map(([k, v]) => `${k}=${v}`).join('\n'), argsText: (orig?.args || []).map(x => `${x.name} = ${x.param}`).join('\n') }));
   const xmlish = s.type === 'xml' || s.type === 'soap';
   const fetched = ['rest', 'csv', 'graphql', 'xml', 'soap', 'odata'].includes(s.type);
   let err = !NAME.test(s.name) ? 'The name must start with a letter and hold only letters, digits and _' : !uniqueIn(def.dataSources, s.name, index) ? 'Another source has this name' : null;
@@ -269,8 +269,10 @@ function SourceDialog({ index, onClose }) {
     else { try { parseXml(s.envelope.replace(/\{\{|\}\}/g, '').replace(/\{[^}]*\}/g, 'x')); } catch (e) { err = T('srcBadEnvelope', { message: e.message }); } }
   }
   if (!err && s.type === 'sql' && !s.connection) err = 'Pick a connection';
-  if (!err && s.type === 'sql' && !/^\s*(select|with)\b/i.test(s.query || '')) err = 'Write a SELECT query';
+  if (!err && s.type === 'sql' && s.procedure != null && !s.procedure) err = 'Pick a stored procedure';
+  if (!err && s.type === 'sql' && s.procedure == null && !/^\s*(select|with)\b/i.test(s.query || '')) err = 'Write a SELECT query';
   const [conns, setConns] = useState(null);
+  const procs = (conns || []).find(c => c.name === s.connection)?.procs || [];
   const [probe, setProbe] = useState(null);
   useEffect(() => {
     if (s.type !== 'sql' || conns) return;
@@ -310,7 +312,10 @@ function SourceDialog({ index, onClose }) {
       if (s.headerRow === false) v.headerRow = false;
       if (Number(s.startRow) > 1) v.startRow = Number(s.startRow);
     }
-    if (s.type === 'sql') { v.connection = s.connection; v.query = s.query; }
+    if (s.type === 'sql') {
+      v.connection = s.connection;
+      if (s.procedure != null) { v.procedure = s.procedure; const a = procArgs(s.argsText); if (a.length) v.args = a; } else v.query = s.query;
+    }
     useDesigner.getState().apply(d => {
       d.dataSources ||= [];
       if (index != null) {
@@ -363,16 +368,24 @@ function SourceDialog({ index, onClose }) {
       </Field>}
       {s.type === 'sql' && <>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'end' }}>
-          <Field label="Connection" hint="Set up on the server as PW_DB_<NAME> (SQLite, Postgres or MySQL).">
+          <Field label="Connection" hint="Set up on the server as PW_DB_<NAME> (SQLite, PostgreSQL, MySQL, SQL Server, Oracle, Snowflake or BigQuery).">
             <Select value={s.connection || ''} allowEmpty options={(conns || []).map(c => ({ value: c.name, label: `${c.name} (${c.kind})` }))} onChange={v => { setS({ ...s, connection: v }); setProbe(null); }} />
           </Field>
           <button className="btn" onClick={testConn} disabled={!s.connection || probe?.state === 'testing'}>{probe?.state === 'testing' ? 'Testing…' : 'Test'}</button>
         </div>
         {conns && !conns.length && <div className="hint">No connections on this server yet. Set PW_DB_MAIN=sqlite:/path/file.db (or a postgres:// / mysql:// / mssql:// URL) and restart.</div>}
         {probe && probe.state !== 'testing' && <div className={probe.state === 'ok' ? 'hint' : 'err'} role="status">{probe.text}</div>}
-        <Field label="Query" hint="SELECT only. @name uses the report parameter name (bound, never pasted into the SQL). Lists work with in (@name).">
+        {(procs.length > 0 || s.procedure != null) && <Field label="Mode" hint="Stored procedures are only those the admin allows on this connection (PW_DB_<NAME>_PROCS).">
+          <Select value={s.procedure != null ? 'proc' : 'query'} options={[{ value: 'query', label: 'Query' }, { value: 'proc', label: 'Stored procedure' }]} onChange={v => setS({ ...s, procedure: v === 'proc' ? (s.procedure ?? procs[0] ?? '') : undefined })} />
+        </Field>}
+        {s.procedure != null ? <>
+          <Field label="Stored procedure"><Select value={s.procedure} allowEmpty options={procs.map(p => ({ value: p, label: p }))} onChange={v => setS({ ...s, procedure: v })} /></Field>
+          <Field label="Arguments" hint="One per line: procedure argument = report parameter (bound, never pasted into SQL). The first result set is the data.">
+            <textarea className="textarea" rows={3} value={s.argsText ?? ''} onChange={e => setS({ ...s, argsText: e.target.value })} placeholder={'region = region\nyear = year'} style={{ fontFamily: 'var(--mono)' }} />
+          </Field>
+        </> : <Field label="Query" hint="SELECT only. @name uses the report parameter name (bound, never pasted into the SQL). Lists work with in (@name).">
           <textarea className="textarea" rows={6} value={s.query || ''} onChange={e => setS({ ...s, query: e.target.value })} placeholder="select region, month, sum(amount) as amount from sales where year = @year group by region, month" style={{ fontFamily: 'var(--mono)' }} />
-        </Field>
+        </Field>}
       </>}
       {s.type === 'csv' && <div className="grid2">
         <Field label="Separator" hint='One character; "tab" for a tab'><TextInput value={s.separator ?? ','} onChange={v => setS({ ...s, separator: v })} mono /></Field>
@@ -398,6 +411,9 @@ const envelopeTemplate = (version) => `<soap:Envelope xmlns:soap="${version === 
 </soap:Envelope>`;
 
 const asList = (v) => (v == null ? [] : Array.isArray(v) ? v : [v]);
+
+/** "region = region" lines → [{ name, param }] (the stored procedure's arguments); blank and malformed lines are left out. */
+export const procArgs = (text) => String(text || '').split(/\r?\n/).map(l => /^\s*@?(\w+)\s*=\s*@?(\w+)\s*$/.exec(l)).filter(Boolean).map(m => ({ name: m[1], param: m[2] }));
 
 function DataSetDialog({ index, onClose, onSaved }) {
   const def = useDesigner(s => s.def);
