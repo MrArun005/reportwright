@@ -186,7 +186,8 @@ export async function listJobPage(p = defaultPrincipal(), { before = null, limit
   // ponytail: a scoped principal reads up to 10 pages of records to find its page; an owner index if that gets slow
   let i = 0;
   for (; i < ids.length && i < n * 10 && out.length < n; i++) { const j = await getJob(ids[i], p); if (j) out.push(j); }
-  return { jobs: out, next: i < ids.length && out.length ? ids[i - 1] : null };
+  // the cursor is the last batch this principal was shown, never an id it may not see (another owner's batch)
+  return { jobs: out, next: i < ids.length && out.length ? out[out.length - 1].id : null };
 }
 /** The newest 50 (the list as before). */
 export async function listJobs(p = defaultPrincipal()) { return (await listJobPage(p)).jobs; }

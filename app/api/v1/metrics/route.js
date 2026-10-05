@@ -5,7 +5,7 @@ import { apiPrincipal } from '@/server/auth.js';
 import { vet } from '@/server/perms.js';
 import { poolStats } from '@/server/pool.js';
 import { sqliteStats } from '@/server/sql/sqlite.js';
-import { httpStats } from '@/server/limits.js';
+import { httpStats, promLabel as esc } from '@/server/limits.js';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -33,7 +33,7 @@ function metricsText() {
   metric('pagewright_memory_bytes', 'gauge', 'Resident memory and the limit the pool plans for.', [['{kind="rss"}', process.memoryUsage.rss()], ['{kind="limit"}', s.memory.memMB * 1048576]]);
   metric('pagewright_sqlite_queries_total', 'counter', 'SQLite queries run in child processes, and those killed (deadline, memory) or crashed.', [['{outcome="all"}', q.queries], ['{outcome="killed"}', q.killed], ['{outcome="crashed"}', q.crashed]]);
   const h = httpStats();
-  metric('pagewright_http_requests_total', 'counter', 'HTTP answers by method, route family and status class.', h.counts.map(([k, v]) => { const [m, r, c] = k.split('|'); return [`{method="${m}",route="${r.replace(/["\\\n]/g, '')}",status="${c}"}`, v]; }));
+  metric('pagewright_http_requests_total', 'counter', 'HTTP answers by method, route family and status class.', h.counts.map(([k, v]) => { const [m, r, c] = k.split('|'); return [`{method="${esc(m)}",route="${esc(r)}",status="${esc(c)}"}`, v]; }));
   out.push('# HELP pagewright_http_request_duration_seconds Time to answer a request.', '# TYPE pagewright_http_request_duration_seconds histogram');
   h.buckets.forEach((b, i) => out.push(`pagewright_http_request_duration_seconds_bucket{le="${b}"} ${h.hist[i]}`));
   out.push(`pagewright_http_request_duration_seconds_bucket{le="+Inf"} ${h.n}`, `pagewright_http_request_duration_seconds_sum ${h.sum}`, `pagewright_http_request_duration_seconds_count ${h.n}`);

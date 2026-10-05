@@ -76,14 +76,30 @@ const PEER = 'x-pw-peer';
 const HTTP_BUCKETS = [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30];
 /** @type {{ counts: Map<string, number>, hist: number[], sum: number, n: number }} */
 const H = (g.__pwHttp ||= { counts: new Map(), hist: HTTP_BUCKETS.map(() => 0), sum: 0, n: 0 });
-/** A route's family for labels (bounded: no ids): /api/reports/x/pdf → /api/reports, /viewer/x → /viewer. @param {string} p */
-export const routeFamily = (p) => { const s = String(p || '/').split('?')[0].split('/').filter(Boolean); return s[0] === 'api' ? `/${s.slice(0, s[1] === 'v1' ? 3 : 2).join('/')}` : s[0] === '_next' ? '/_next' : `/${s[0] || ''}`; };
+// Labels come from a fixed list, never from the request as such: a made-up method or path cannot add a series
+// (cardinality) or put text into the metrics output
+const PAGES = new Set(['account', 'admin', 'designer', 'login', 'schedules', 'viewer', 'fonts', 'embed', '_next', 'favicon.ico']);
+const APIS = new Set(['account', 'admin', 'ai', 'audit', 'auth', 'data', 'folders', 'fonts', 'reports', 'sample', 'schedules', 'users']);
+const V1 = new Set(['batches', 'health', 'livez', 'metrics', 'readyz', 'render', 'schedules', 'templates']);
+const METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']);
+/** A route's family for labels: /api/reports/x/pdf → /api/reports, /viewer/x → /viewer, anything else → other. @param {string} p */
+export const routeFamily = (p) => {
+  const s = String(p || '/').split('?')[0].split('/').filter(Boolean);
+  if (!s.length) return '/';
+  if (s[0] === 'api') return s[1] === 'v1' ? (V1.has(s[2]) ? `/api/v1/${s[2]}` : '/api/v1/other') : APIS.has(s[1]) ? `/api/${s[1]}` : '/api/other';
+  return PAGES.has(s[0]) ? `/${s[0]}` : 'other';
+};
+/** The path as logged: no query string, and a segment that holds an email address (/api/users/<email>) or is long
+ *  (a token) is replaced, so the log carries no account names or secrets. @param {string} p */
+export const loggedPath = (p) => String(p || '/').split('?')[0].slice(0, 300).split('/').map(x => (/@|%40/i.test(x) ? ':email' : x.length > 64 ? ':long' : x)).join('/');
+/** A label value as the Prometheus text format escapes it (backslash, double quote, line feed). @param {any} v */
+export const promLabel = (v) => String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
 /** HTTP counts and durations for /api/v1/metrics. */
 export const httpStats = () => ({ counts: [...H.counts], buckets: HTTP_BUCKETS, hist: [...H.hist], sum: H.sum, n: H.n });
 /**
  * When the answer is sent: count it (method, route family, status class) and, unless PW_REQUEST_LOG=0, write one JSON
- * line: time, method, path (no query string: it may hold a link signature), status, ms, the request id when an error
- * gave one, and the client address. Static files are counted, not logged.
+ * line: time, method, path (no query string: it may hold a link signature; no email or long token segment), status,
+ * ms and the request id when an error gave one. Static files are counted, not logged.
  * @param {any} req @param {any} res
  */
 function observeRequest(req, res) {
@@ -91,14 +107,16 @@ function observeRequest(req, res) {
   const t0 = process.hrtime.bigint();
   res.once('finish', () => {
     const ms = Number(process.hrtime.bigint() - t0) / 1e6;
-    const path = String(req.url || '/').split('?')[0].slice(0, 300);
+    const path = loggedPath(req.url);
     const fam = routeFamily(path);
-    const key = `${req.method}|${fam}|${String(res.statusCode)[0]}xx`;
-    if (H.counts.size < 2000 || H.counts.has(key)) H.counts.set(key, (H.counts.get(key) || 0) + 1);
+    const method = METHODS.has(String(req.method)) ? String(req.method) : 'OTHER';
+    const key = `${method}|${fam}|${String(res.statusCode)[0]}xx`;
+    if (H.counts.size < 500 || H.counts.has(key)) H.counts.set(key, (H.counts.get(key) || 0) + 1);
     H.n++; H.sum += ms / 1000; HTTP_BUCKETS.forEach((b, i) => { if (ms / 1000 <= b) H.hist[i]++; });
-    if (process.env.PW_REQUEST_LOG === '0' || fam === '/_next' || fam === '/fonts' || fam === '/favicon.ico') return;
+    if (process.env.PW_REQUEST_LOG === '0' || fam === '/_next' || fam === '/fonts' || fam === '/favicon.ico' || fam === '/embed') return;
     const id = res.getHeader?.('x-request-id');
-    process.stdout.write(`${JSON.stringify({ level: 'info', time: new Date().toISOString(), msg: 'request', method: req.method, path, status: res.statusCode, ms: Math.round(ms), ...(id ? { requestId: String(id) } : {}), ip: req.socket?.remoteAddress || undefined })}\n`);
+    // no client address and no account: the audit log is where who did what is kept (with its retention)
+    process.stdout.write(`${JSON.stringify({ level: 'info', time: new Date().toISOString(), msg: 'request', method, path, status: res.statusCode, ms: Math.round(ms), ...(id ? { requestId: String(id).slice(0, 40) } : {}) })}\n`);
   });
 }
 

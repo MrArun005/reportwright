@@ -57,10 +57,13 @@ function fileBlobs(root) {
     },
     async get(k) { try { return await fs.readFile(file(k)); } catch (e) { if (missing(e)) return null; throw e; } },
     async open(k) {
-      let h;
-      try { h = await fs.open(file(k)); } catch (e) { if (missing(e)) return null; throw e; }
-      const { size } = await h.stat();
-      return { size, stream: /** @type {ReadableStream} */ (h.readableWebStream(/** @type {any} */ ({ type: 'bytes' }))) }; // closes the file at the end
+      // a read stream closes its file at the end, on an error and when the client goes away (cancel destroys it); a
+      // FileHandle's web stream did not, so aborted downloads leaked file descriptors
+      let size;
+      try { ({ size } = await fs.stat(file(k))); } catch (e) { if (missing(e)) return null; throw e; }
+      const { createReadStream } = /** @type {typeof import('node:fs')} */ (process.getBuiltinModule('node:fs'));
+      const { Readable } = /** @type {typeof import('node:stream')} */ (process.getBuiltinModule('node:stream'));
+      return { size, stream: /** @type {ReadableStream} */ (Readable.toWeb(createReadStream(file(k)))) };
     },
     async remove(k) { await fs.rm(file(k), { force: true }); },
     async list(prefix) {
