@@ -251,6 +251,8 @@ export function formatValue(value, fmt, opt = {}) {
     const t = value.getTime();
     if (Number.isNaN(t)) return '';
     const tz = opt.timeZone;
+    // no format: the date, and its time of day when it has one (SSRS shows the time too)
+    if (!fmt && toWall(value, tz) % DAY_MS !== 0) fmt = `dd MMM yyyy ${standardDate('t', locale)}`;
     if (!opt.fmtMemo) return formatDate(value, fmt || 'dd MMM yyyy', locale, tz);
     // a date column repeats its days: each instant formats once per format and locale in a render (opt.fmtMemo: the
     // render's, so a time zone change between renders is seen)
@@ -577,7 +579,7 @@ export function formatDate(d, fmt, locale, tz) {
   const en = english(locale);
   const name = (kind, style, fallback) => (en ? fallback : localName(locale, kind, style, w) ?? fallback);
   const p2 = (n) => String(n).padStart(2, '0');
-  return fmt.replace(/(y+|M+|d+|H+|h+|m+|s+|f+|F+|t+)|'([^']*)'?|"([^"]*)"?|\\(.?)/g, (tok, run, q1, q2, esc) => {
+  return fmt.replace(/(y+|M+|d+|H+|h+|m+|s+|f+|F+|t+|z+)|'([^']*)'?|"([^"]*)"?|\\(.?)/g, (tok, run, q1, q2, esc) => {
     if (!run) return q1 ?? q2 ?? esc ?? '';
     const n = run.length;
     switch (run[0]) {
@@ -593,6 +595,10 @@ export function formatDate(d, fmt, locale, tz) {
         return run[0] === 'F' ? f.replace(/0+$/, '') : f;
       }
       case 't': { const s = w.getUTCHours() < 12 ? 'AM' : 'PM'; return n === 1 ? s[0] : s; }
+      case 'z': { // the zone's offset from UTC: z +5, zz +05, zzz +05:30
+        const o = Math.round((w.getTime() - d.getTime()) / 60000), a = Math.abs(o), sg = o < 0 ? '-' : '+';
+        return n === 1 ? `${sg}${Math.floor(a / 60)}` : n === 2 ? `${sg}${p2(Math.floor(a / 60))}` : `${sg}${p2(Math.floor(a / 60))}:${p2(a % 60)}`;
+      }
     }
     return run;
   });

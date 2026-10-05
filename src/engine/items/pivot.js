@@ -259,7 +259,8 @@ export function buildPivot(item, rows, ctx, lc) {
   /* ---- values ---- */
   const scopeName = (g, l, axis) => g.name || `${axis === 'r' ? 'Row' : 'Column'}Group${l + 1}`;
   const evalAgg = (expr, cellRows, scopes) => {
-    if (!cellRows.length) return null;
+    // an empty intersection: a count is 0 (SSRS); any other aggregate is blank
+    if (!cellRows.length) return /^=\s*(Count|CountDistinct|CountRows)\s*\(/i.test(String(expr)) ? 0 : null;
     try { return evalValue(expr, { ...ctx, fields: cellRows[0], aggRows: cellRows, aggIndex: undefined, scopes }); } catch (e) { lc.warn(`${who}: ${e.message}`); return null; }
   };
   const baseScopes = { ...(ctx.scopes || {}), [who]: { rows, index: -1 } };

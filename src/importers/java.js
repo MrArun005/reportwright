@@ -247,13 +247,15 @@ export function javaPattern(pat, kind = 'any') {
   if (!s) return undefined;
   const dateLike = kind === 'date' || (kind !== 'num' && /[yMdHhmsEaSk]/.test(s.replace(/'[^']*'/g, '')) && !/[#0]/.test(s.replace(/'[^']*'/g, '')));
   if (dateLike) {
-    return s.replace(/'([^']*)'|E{4,}|E{1,3}|a+|S{1,3}|u|Z+|X+|z+/g, (m, lit) => {
+    return s.replace(/'([^']*)'|E{4,}|E{1,3}|a+|S{1,3}|u|k+|K+|Z+|X+|z+/g, (m, lit) => {
       if (lit !== undefined) return lit ? `"${lit}"` : "\\'";
+      if (/^k/.test(m)) return m.length > 1 ? 'HH' : 'H'; // hour 1–24: 24 shows as 0
+      if (/^K/.test(m)) return m.length > 1 ? 'hh' : 'h'; // hour 0–11: 0 shows as 12
       if (/^E{4,}/.test(m)) return 'dddd';
       if (/^E/.test(m)) return 'ddd';
       if (/^a/.test(m)) return 'tt';
       if (/^S/.test(m)) return 'f'.repeat(m.length);
-      if (m === 'u') return 'd';
+      if (m === 'u') return 'ddd'; // the day of the week (Java: its number, 1 = Monday): .NET has only its name
       return 'zzz';
     });
   }

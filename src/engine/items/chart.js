@@ -5,7 +5,7 @@
  * This file: the data step and the cartesian charts (column, bar, line, area, combos, ranges, scatter, bubble, polar,
  * candlestick, OHLC) with their axes, overlays and labels. Round charts are in chart-round.js, maths in chart-kit.js.
  */
-import { evalValue, toText } from '../expr/evaluate.js';
+import { evalValue, toText, sortCompare } from '../expr/evaluate.js';
 import { resolveFontKey } from '../text/fonts.js';
 import { applyFilters, applySort, related } from '../data/index.js';
 import { CAPS, PALETTES, paletteOf, inkOn, niceScale, linearTicks, logTicks, curvePath, fitTrend, movingAverage, LabelPlacer } from './chart-kit.js';
@@ -80,7 +80,7 @@ export function chartData(item, ctx, lc, pal = paletteOf(item.palette)) {
   };
   const series = [];
   if (item.seriesGroup) {
-    let groups = bucket(rows, item.seriesGroup).sort((a, b) => String(a.key).localeCompare(String(b.key)));
+    let groups = bucket(rows, item.seriesGroup).sort((a, b) => sortCompare(a.key, b.key, ctx)); // 1, 2, 10 (numbers, natural text)
     const max = Math.max(1, Math.floor(CAPS.series / defs.length));
     if (groups.length > max) { lc.warn(`${who}: ${groups.length} series groups; only the first ${max} are drawn`); groups = groups.slice(0, max); }
     // one pass: which group each row is in, then each category's rows split by group (was groups × rows)
