@@ -54,6 +54,7 @@ Every setting Pagewright reads, from `src/server/config.js` (the table there is 
 | `PW_INTERNAL_HOSTS` | list | (none) | Private hosts server-side fetches may reach (designers only). |
 | `PW_PROXY_ALLOW` | list | (none) | Public hosts the browser data proxy may fetch. |
 | `PW_FETCH_DEADLINE_MS` | ms | 60000 | A server fetch, start to last byte. |
+| `PW_FETCH_MAX_MB` | int | 64 | Largest response a server fetch reads (data sources, images); past it the render fails with 413. |
 | `PW_STORAGE` | text | file | file, sqlite:/path, postgres://, mysql://, mssql:// or sql:<name>. |
 | `PW_STORAGE_POOL_MAX` | int | 5 | Storage connections per server thread. |
 | `PW_BLOBS` | url | (PW_STORAGE) | s3://bucket[/prefix]?region=… for blobs. |

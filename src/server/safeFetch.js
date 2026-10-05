@@ -13,7 +13,8 @@ import { Readable, Transform } from 'node:stream';
 import { accountsOn, internalCookie, basicOn } from './session.js';
 import { devMode, num as cnum } from './config.js';
 
-const MAX_BYTES = 20 * 1024 * 1024;
+/** Largest response body a fetch reads: PW_FETCH_MAX_MB, default 64 (the 100k-row hard sample is ~22 MB). */
+export const fetchMaxBytes = () => cnum('PW_FETCH_MAX_MB', 64, { min: 1 }) * 1048576;
 const TIMEOUT_MS = 30000;
 /** One deadline for a whole fetch (every redirect, the headers and the body): a server that drips bytes cannot hold a
  *  request open (a socket timeout only counts silence). PW_FETCH_DEADLINE_MS, default 60 s. */
@@ -179,10 +180,11 @@ export async function safeFetch(input, init = {}, { allow = [], hops = 3, deadli
   if (empty) res.resume(); // nothing to read, and no deadline timer left behind
   else {
     let size = 0;
+    const max = fetchMaxBytes();
     const capped = res.pipe(new Transform({
       transform(chunk, _enc, cb) {
         size += chunk.length;
-        cb(size > MAX_BYTES ? new Error(`The response from ${url.host} is larger than ${MAX_BYTES / 1048576} MB`) : null, chunk);
+        cb(size > max ? Object.assign(new Error(`The response from ${url.host} is larger than ${max / 1048576} MB (raise PW_FETCH_MAX_MB)`), { status: 413 }) : null, chunk);
       },
     }));
     // the body within the same deadline

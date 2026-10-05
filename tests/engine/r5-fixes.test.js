@@ -27,3 +27,28 @@ describe('R5 #3: no array spread into a call on data-sized arrays', () => {
   });
 });
 const CEILING = 81;
+
+describe('R5 #2: a fetched data source over the size cap', () => {
+  it('fails with 413 naming the cap and PW_FETCH_MAX_MB, and the setting raises it', async () => {
+    const http = await import('node:http');
+    const { safeFetch } = await import('../../src/server/safeFetch.js');
+    const big = Buffer.alloc(1.5 * 1048576, 32);
+    const srv = http.createServer((_q, r) => { r.end(big); });
+    await new Promise(ok => srv.listen(0, '127.0.0.1', ok));
+    const url = `http://127.0.0.1:${srv.address().port}/x`;
+    const prev = process.env.PW_FETCH_MAX_MB;
+    try {
+      process.env.PW_FETCH_MAX_MB = '1';
+      const res = await safeFetch(url, {}, { allow: [new URL(url).origin] });
+      const e = await res.text().then(() => null, x => x);
+      expect(e?.status).toBe(413);
+      expect(e.message).toMatch(/1 MB.*PW_FETCH_MAX_MB/);
+      process.env.PW_FETCH_MAX_MB = '2';
+      expect((await (await safeFetch(url, {}, { allow: [new URL(url).origin] })).text()).length).toBe(big.length);
+    } finally { if (prev == null) delete process.env.PW_FETCH_MAX_MB; else process.env.PW_FETCH_MAX_MB = prev; srv.close(); }
+  });
+  it('the default cap holds the 100k-row hard sample (~22 MB)', async () => {
+    const { fetchMaxBytes } = await import('../../src/server/safeFetch.js');
+    expect(fetchMaxBytes()).toBeGreaterThanOrEqual(64 * 1048576);
+  });
+});
