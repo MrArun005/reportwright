@@ -222,3 +222,26 @@ describe('render speed: no layout pass for nothing', () => {
     expect(fontsFor(['राधिका'])).toEqual(['NotoSansDevanagari-Regular', 'NotoSansDevanagari-Bold', 'harfbuzz']);
   });
 });
+
+describe('a busy server: data reads are tried again', () => {
+  const res = (status, h = {}) => ({ status, ok: status < 400, headers: { get: (k) => h[k.toLowerCase()] ?? null } });
+  it('503 twice, then 200: two retries reported (1/3, 2/3), Retry-After honoured', async () => {
+    const { reportFetch } = await import('../../src/viewer/dataFetch.js');
+    const answers = [res(503, { 'retry-after': '2' }), res(503), res(200)];
+    const seen = [], waits = [];
+    const f = reportFetch('http://pw.test', async () => answers.shift(), { onRetry: (r) => seen.push(r), wait: async (ms) => { waits.push(ms); } });
+    expect((await f('http://pw.test/api/sample/hard?rows=3000')).status).toBe(200);
+    expect(seen).toEqual([{ attempt: 1, max: 3, status: 503 }, { attempt: 2, max: 3, status: 503 }]);
+    expect(waits[0]).toBe(2000);
+  });
+  it('gives up after 3 retries with the last answer; never retries a write', async () => {
+    const { withRetry } = await import('../../src/viewer/dataFetch.js');
+    let n = 0;
+    const f = withRetry(async () => { n++; return res(503); }, { wait: async () => {} });
+    expect((await f('http://x/a')).status).toBe(503);
+    expect(n).toBe(4);
+    n = 0;
+    expect((await f('http://x/a', { method: 'POST', body: '{}' })).status).toBe(503);
+    expect(n).toBe(1);
+  });
+});

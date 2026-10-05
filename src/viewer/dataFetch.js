@@ -22,13 +22,38 @@ function sqlCall(body, sqlPreview) {
 const DATA = [/^\/api\/sample\//, /^\/api\/data\/proxy$/];
 const OURS = /^\/(?:$|api(?:\/|$)|admin(?:\/|$)|designer(?:\/|$)|viewer(?:\/|$)|login(?:\/|$)|embed(?:\/|$)|_next(?:\/|$))/i;
 
+/** Answers a busy server gives (and a gateway in front of it): try again after a while. */
+const BUSY = new Set([429, 502, 503, 504]);
+/**
+ * fetch that tries a read again when the server is busy: up to `retries` more times, after Retry-After (at most 10 s)
+ * or a growing, jittered wait. onRetry({ attempt, max, status }) before each wait, so the viewer can say so. Only
+ * reads: GET, HEAD and the engine's POST /api/data/sql (a query, no change).
+ * @param {typeof fetch} f @param {{ onRetry?: (r: { attempt: number, max: number, status: number }) => void, retries?: number, wait?: (ms: number) => Promise<void> }} o
+ * @returns {typeof fetch}
+ */
+export function withRetry(f, { onRetry, retries = 3, wait = (ms) => new Promise(r => setTimeout(r, ms)) } = {}) {
+  return /** @type {any} */ (async (url, init = {}) => {
+    const method = String(init.method || 'GET').toUpperCase();
+    const read = method === 'GET' || method === 'HEAD' || (method === 'POST' && /\/api\/data\/sql$/.test(new URL(String(url), 'http://x').pathname));
+    for (let attempt = 1; ; attempt++) {
+      const res = await f(url, init);
+      if (!read || !BUSY.has(res.status) || attempt > retries) return res;
+      const after = Number(res.headers?.get?.('retry-after'));
+      const ms = Number.isFinite(after) && after >= 0 ? Math.min(10000, after * 1000) : Math.round((400 * 2 ** (attempt - 1)) * (0.75 + Math.random() * 0.5));
+      onRetry?.({ attempt, max: retries, status: res.status });
+      await wait(ms);
+    }
+  });
+}
+
 /**
  * @param {string} base the Pagewright server's origin (the page's, or the embed's server)
  * @param {typeof fetch} [f]
  * @returns {typeof fetch}
  */
-export function reportFetch(base, f = (...a) => fetch(...a), { sqlPreview = false } = {}) {
+export function reportFetch(base, f0 = (...a) => fetch(...a), { sqlPreview = false, onRetry, retries = 3, wait } = {}) {
   const self = new URL(base).origin;
+  const f = withRetry(f0, { onRetry, retries, wait });
   return /** @type {any} */ (async (input, init = {}) => {
     const u = new URL(String(input instanceof Request ? input.url : input), base);
     const method = String(init.method || 'GET').toUpperCase();

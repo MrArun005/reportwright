@@ -80,6 +80,7 @@ function getWorker() {
       const w = waiting.get(e.data.id);
       if (!w) return;
       if (e.data.partial) { w.onPartial?.(e.data.model); return; } // the full model follows
+      if (e.data.retry) { w.onRetry?.(e.data.retry); return; } // the server was busy: a data source is tried again
       waiting.delete(e.data.id);
       if (e.data.ok) w.resolve(e.data.model);
       else w.reject(Object.assign(new Error(e.data.error.message), e.data.error));
@@ -107,24 +108,25 @@ const loadReport = async (rid) => {
   return r.json();
 };
 export const fetchReport = loadReport;
-async function renderMain(def, params, state, reportId, exportData = false) {
+async function renderMain(def, params, state, reportId, exportData = false, onRetry = undefined) {
   await customFonts();
-  return render(def, { parameters: params, state, reportId, exportData, fontStore: fontStore(), baseUrl: origin(), loadReport, fetch: reportFetch(origin()) }); // a report reads data, never calls our API as the viewer
+  return render(def, { parameters: params, state, reportId, exportData, fontStore: fontStore(), baseUrl: origin(), loadReport, fetch: reportFetch(origin(), undefined, { onRetry }) }); // a report reads data, never calls our API as the viewer
 }
 
 /**
  * @param {string} [reportId] the saved report: the server runs its SQL sources
- * @param {{ onPartial?: (model: any) => void, exportData?: boolean }} [opt] onPartial: gets the first pages of a long report first.
+ * @param {{ onPartial?: (model: any) => void, exportData?: boolean, onRetry?: (r: { attempt: number, max: number, status: number }) => void }} [opt]
+ *   onPartial: gets the first pages of a long report first. onRetry: a data source met a busy server and is tried again.
  *   exportData: with the table data Excel, CSV, Word, PowerPoint, HTML and the accessible PDF need (a view goes without)
  * @returns {Promise<any>} page model
  */
-export async function renderReport(def, params = {}, state = {}, reportId = undefined, { onPartial, exportData = false } = {}) {
+export async function renderReport(def, params = {}, state = {}, reportId = undefined, { onPartial, exportData = false, onRetry } = {}) {
   const w = getWorker();
-  if (!w) return renderMain(def, params, state, reportId, exportData);
+  if (!w) return renderMain(def, params, state, reportId, exportData, onRetry);
   const fonts = await customFonts(); // the worker has its own copy of the font list
   return new Promise((resolve, reject) => {
     const id = ++seq;
-    waiting.set(id, { resolve, reject, onPartial, retry: () => renderMain(def, params, state, reportId, exportData).then(resolve, reject) });
+    waiting.set(id, { resolve, reject, onPartial, onRetry, retry: () => renderMain(def, params, state, reportId, exportData, onRetry).then(resolve, reject) });
     w.postMessage({ id, def, params, state, reportId, fonts, firstPages: onPartial ? 2 : 0, exportData });
   });
 }

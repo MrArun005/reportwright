@@ -13,7 +13,7 @@ self.onmessage = async (e) => {
   const { id, def, params, state, reportId, fonts, firstPages, exportData } = e.data;
   try {
     setCustomFonts(fonts || []);
-    const opts = { parameters: params, state, reportId, exportData: !!exportData, fontStore: store, baseUrl: self.location.origin, fetch: reportFetch(self.location.origin), loadReport: async (rid) => { const r = await fetch(`/api/reports/${encodeURIComponent(rid)}`, { redirect: 'error' }); if (!r.ok) throw new Error(`Report "${rid}" not found`); return r.json(); } };
+    const opts = { parameters: params, state, reportId, exportData: !!exportData, fontStore: store, baseUrl: self.location.origin, fetch: reportFetch(self.location.origin, undefined, { onRetry: (retry) => self.postMessage({ id, retry }) }), loadReport: async (rid) => { const r = await fetch(`/api/reports/${encodeURIComponent(rid)}`, { redirect: 'error' }); if (!r.ok) throw new Error(`Report "${rid}" not found`); return r.json(); } };
     // the first pages first, so a long report shows at once; then the whole report
     let sources;
     if (firstPages) {

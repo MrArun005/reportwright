@@ -158,7 +158,9 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
       // a fresh run shows the first pages of a long report while the rest renders
       const onPartial = keepScroll ? undefined : (pm) => { if (id === runId.current) { loadModelFonts(pm).then(() => { if (id === runId.current) { setModel(pm); setCurrent(1); } }); } };
       // target: layers meant for the screen show here; print and export render again for theirs (pagedModel)
-      const [m] = await Promise.all([renderReport(renderDef, p, { ...st, target: 'screen' }, reportId, { onPartial }), loadReportFonts(ALL_FONT_KEYS)]);
+      // a busy server (503, 429): the data source is tried again, and the status says so
+      const onRetry = (r) => { if (id === runId.current) setStatus({ state: 'running', retry: r }); };
+      const [m] = await Promise.all([renderReport(renderDef, p, { ...st, target: 'screen' }, reportId, { onPartial, onRetry }), loadReportFonts(ALL_FONT_KEYS)]);
       await loadModelFonts(m); // and the fallback or uploaded fonts this model draws with
       if (id !== runId.current) return;
       setModel(m);
@@ -467,7 +469,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   const builtIns = [
     hasParams && { id: 'parameters', group: 'panels', primary: true, node: <button className="btn sm" aria-pressed={side === 'params'} onClick={() => setPanel(s => (s === 'params' ? null : 'params'))}>{T('parameters')}</button> },
     bookmarks.length > 0 && { id: 'documentMap', group: 'panels', node: <button className="btn sm" aria-pressed={side === 'map'} onClick={() => setPanel(s => (s === 'map' ? null : 'map'))}>{T('documentMap')}</button> },
-    { id: 'run', group: 'panels', node: <button className="btn sm" onClick={() => run()} disabled={status.state === 'running'}>{status.state === 'running' ? T('running') : T('run')}</button> },
+    { id: 'run', group: 'panels', node: <button className="btn sm" onClick={() => run()} disabled={status.state === 'running'}>{status.state === 'running' ? (status.retry ? T('r4_busyRetry', { n: status.retry.attempt, max: status.retry.max }) : T('running')) : T('run')}</button> },
     { id: 'firstPage', group: 'paging', node: <button className="btn sm icon" title={T('firstPage')} onClick={() => go(1)} disabled={!total || current === 1}><span className="flip" aria-hidden="true">⏮</span></button> },
     { id: 'previousPage', group: 'paging', primary: true, node: <button className="btn sm icon" title={T('previousPage')} onClick={() => go(current - 1)} disabled={!total || current === 1}><span className="flip" aria-hidden="true">◀</span></button> },
     {
@@ -651,8 +653,10 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
           </nav>
         ))}
         <div className="vpages" ref={scroller} role="document" aria-label={definition.name || T('ux_a11yReport')} onScroll={onScroll} onClick={onClick} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-          {status.state === 'error' && <div className="vmsg error" role="alert"><b>{T('didNotRun')}</b><br />{status.message}</div>}
-          {!model && status.state === 'running' && <div className="vmsg">{T('runningReport')}</div>}
+          {status.state === 'error' && <div className="vmsg error" role="alert"><b>{T('didNotRun')}</b><br />{status.message}
+            <div style={{ marginTop: 10 }}><button type="button" className="btn sm" onClick={() => run()} data-testid="viewer-retry">{T('r4_retry')}</button></div></div>}
+          {status.state === 'running' && status.retry && <div className="vmsg" role="status" data-testid="viewer-busy">{T('r4_busyRetry', { n: status.retry.attempt, max: status.retry.max })}</div>}
+          {!model && status.state === 'running' && !status.retry && <div className="vmsg">{T('runningReport')}</div>}
           {model?.warnings?.length > 0 && (
             // content cut off (past the page edge or bottom): the warnings open by themselves and the summary says so
             <details className="warnings" open={hasErrorCells || model.clipped?.length > 0 || undefined} data-testid="viewer-warnings"><summary>{T('warnings', { n: model.warnings.length })}{model.clipped?.length > 0 && <b data-testid="viewer-clipped"> · {T('r4_clipped', { n: model.clipped.length })}</b>}</summary>

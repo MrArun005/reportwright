@@ -65,6 +65,25 @@ try {
     console.log(`  HTML export: ${(size / 1024).toFixed(0)} KB`);
     assert.ok(size < 300 * 1024, `one page of HTML is ${size} bytes`);
   }
+  if (want('busy')) {
+    step('a busy server: the viewer says it retries (1/3…), and after the last try offers Retry');
+    const id = await create({ ...base('r4 busy', [{ type: 'textbox', name: 'N', x: 0, y: 0, w: 300, h: 20, value: '="Accounts: " & CountRows("A")' }]),
+      dataSources: [{ name: 'hard', type: 'rest', url: '/api/sample/hard?rows=20' }], dataSets: [{ name: 'A', source: 'hard', path: '$.accounts[*]' }] });
+    let fails = 2;
+    const busy = (route) => (fails-- > 0 ? route.fulfill({ status: 503, headers: { 'retry-after': '1' }, body: '{"error":"busy"}' }) : route.continue());
+    await ctx.route('**/api/sample/hard*', busy);
+    await p.goto(`${BASE}/viewer/${id}`);
+    await p.getByTestId('viewer-busy').filter({ hasText: /Server busy — retrying \(1\/3\)/ }).waitFor();
+    await p.locator('.vpage').first().waitFor();
+    fails = 100;
+    await p.reload();
+    await p.getByTestId('viewer-retry').waitFor({ timeout: 30000 });
+    if (process.env.FIX_SHOTS) await p.screenshot({ path: `${process.env.FIX_SHOTS}/fix-busy-retry.png` });
+    await ctx.unroute('**/api/sample/hard*', busy);
+    await p.getByTestId('viewer-retry').click();
+    await p.locator('.vpage').first().waitFor();
+    assert.equal(await p.getByTestId('viewer-retry').count(), 0);
+  }
   assert.deepEqual(errs.filter(e => !/ResizeObserver/.test(e)), [], 'no page errors');
   console.log('r4-fixes: all passed');
 } finally {
