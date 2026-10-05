@@ -63,7 +63,14 @@ export function chartData(item, ctx, lc, pal = paletteOf(item.palette)) {
     if (!rs.length || expr == null || expr === '') return null;
     return numOrNull(safe(expr, { ...ctx, fields: rs[0], aggRows: rs, aggIndex: undefined }, lc, who));
   };
-  const labelOf = (k) => toText(k, item.categoryFormat || (k instanceof Date ? 'MMM yyyy' : null), ctx);
+  // date categories with no format: labelled by how far apart they are (days: d MMM; times within a day: HH:mm)
+  const dateFmt = (() => {
+    const ts = cats.filter(c2 => c2.key instanceof Date).map(c2 => c2.key.getTime()).sort((a, b) => a - b);
+    let gap = Infinity;
+    for (let i = 1; i < ts.length; i++) if (ts[i] > ts[i - 1]) gap = Math.min(gap, ts[i] - ts[i - 1]);
+    return gap < 86400000 ? (ts[ts.length - 1] - ts[0] < 86400000 ? 'HH:mm' : 'd MMM HH:mm') : gap < 28 * 86400000 ? 'd MMM' : 'MMM yyyy';
+  })();
+  const labelOf = (k) => toText(k, item.categoryFormat || (k instanceof Date ? dateFmt : null), ctx);
   const perRow = PER_ROW.has(item.chartType);
   const make = (sd, name, color, rowsOf) => {
     const s = { name, color, def: sd, values: [] };
@@ -233,7 +240,10 @@ export function paintChart(item, ctx, lc, base) {
  * A value axis from the data range and the author's axis settings.
  * @returns {{lo:number, hi:number, ticks:number[], frac:(v:number)=>number|null, fmt:(v:number)=>string, log:boolean}}
  */
-function valueAxis(spec, lo, hi, minPos, { includeZero = true, len = 100, fs = 7.5, fmt, percent = false, lc, who, name }) {
+/** Decimals a tick step needs to tell its ticks apart (0.2 → 1, 0.25 → 2, 5 → 0). */
+const stepDecimals = (step) => { const t = String(Number(step.toPrecision(6))); const m = /\.(\d+)$/.exec(t); return t.includes('e-') ? Math.min(6, Number(t.split('e-')[1])) : m ? Math.min(6, m[1].length) : 0; };
+/** autoFmt: no format was given: labels get the decimals the tick step needs (ticks 0, 0.2 … 0.8, not 0, 0, 0, 1, 1). */
+function valueAxis(spec, lo, hi, minPos, { includeZero = true, len = 100, fs = 7.5, fmt, percent = false, lc, who, name, autoFmt }) {
   spec = spec && typeof spec === 'object' ? spec : {};
   const smin = numOrNull(spec.min), smax = numOrNull(spec.max);
   if (spec.log) {
@@ -255,6 +265,7 @@ function valueAxis(spec, lo, hi, minPos, { includeZero = true, len = 100, fs = 7
     const s2 = niceScale(a, b, want);
     ticks = linearTicks(Math.ceil(a / s2.step - 1e-9) * s2.step, b, s2.step);
   } else ticks = linearTicks(a, b, sc.step);
+  if (autoFmt && ticks.length > 1) { const d = stepDecimals(ticks[1] - ticks[0]); if (d > 0) fmt = autoFmt(d); }
   return { lo: a, hi: b, ticks, log: false, fmt, frac: (v) => (v - a) / (b - a) };
 }
 
@@ -365,6 +376,7 @@ function paintCartesian(type, g) {
   const fmtFor = (spec, fallback) => (v) => toText(v, stackMode === 'percent' && !spec.format ? 'P0' : spec.format || fallback, g.ctx);
   const fmt1 = fmtFor(ySpec, item.valueFormat || 'N0');
   const fmt2 = fmtFor(y2Spec, ySpec.format || item.valueFormat || 'N0');
+  const auto = (spec, ...given) => (stackMode === 'percent' || spec.format || given.some(Boolean) ? undefined : (d) => (v) => toText(v, `N${d}`, g.ctx));
 
   // layout
   const catW = Math.max(10, ...data.categories.map(c => measure(c).w));
@@ -377,8 +389,8 @@ function paintCartesian(type, g) {
   const plotBottom = bottom - (horiz ? fs * 1.6 : catBand) - (bottomTitle ? fs * 1.6 : 0);
   const opt = { len: horiz ? W * 0.6 : plotBottom - plotTop, fs, lc, who, percent: stackMode === 'percent' };
   const ax = [
-    valueAxis(ySpec, rng[0].lo, rng[0].hi, rng[0].minPos, { ...opt, includeZero: !rng[0].allFin || !rng[0].any, fmt: fmt1, name: 'y' }),
-    valueAxis(y2Spec, rng[1].lo, rng[1].hi, rng[1].minPos, { ...opt, includeZero: !rng[1].allFin, fmt: fmt2, name: 'secondary y' }),
+    valueAxis(ySpec, rng[0].lo, rng[0].hi, rng[0].minPos, { ...opt, includeZero: !rng[0].allFin || !rng[0].any, fmt: fmt1, name: 'y', autoFmt: auto(ySpec, item.valueFormat) }),
+    valueAxis(y2Spec, rng[1].lo, rng[1].hi, rng[1].minPos, { ...opt, includeZero: !rng[1].allFin, fmt: fmt2, name: 'secondary y', autoFmt: auto(y2Spec, ySpec.format, item.valueFormat) }),
   ];
   for (const r of S) if (ax[r.axis].log && r.pts.some(p => p && !r.fin && p.b <= 0)) { lc.warn(`${who}: values of 0 or less cannot be drawn on a logarithmic axis`); break; }
   const valW = Math.max(10, ...ax[0].ticks.map(t => m.width(ax[0].fmt(t), font, fs)));
