@@ -120,5 +120,7 @@ Every setting Pagewright reads, from `src/server/config.js` (the table there is 
 | `PW_CGROUP_DIR` | internal |  | Tests: where cgroup files are read. |
 | `PW_NEW_PASSWORD` | internal |  | scripts/user.mjs: the new password. |
 | `PW_BENCH` | internal |  | scripts/perf-pdf.mjs: the bench checkout. |
+| `PW_MONITOR_KEY` | internal |  | scripts/uptime-check.mjs: the service key that reads /api/v1/metrics (docs/OPS.md). |
+| `PW_MAX_5XX` | internal | 0.05 | scripts/uptime-check.mjs: the largest share of 5xx answers before it fails. |
 | `PW_SITE_BASE` | internal |  | scripts/build-site.mjs. |
 | `PW_SITE_ORIGIN` | internal |  | scripts/build-site.mjs. |

@@ -88,7 +88,7 @@ export const SETTINGS = [
   ['PW_CLUSTER_PROCESSES', 'int', '(cores / 4, ≥ 2)', 'scripts/cluster.mjs processes (a database for storage when > 1).'],
   ['PW_CLUSTER', 'internal', '', 'Set by cluster.mjs in its processes.'], ['PW_STANDALONE', 'internal', '', 'Build the Docker standalone server.'],
   ['PW_CGROUP_DIR', 'internal', '', 'Tests: where cgroup files are read.'], ['PW_NEW_PASSWORD', 'internal', '', 'scripts/user.mjs: the new password.'],
-  ['PW_BENCH', 'internal', '', 'scripts/perf-pdf.mjs: the bench checkout.'], ['PW_SITE_BASE', 'internal', '', 'scripts/build-site.mjs.'], ['PW_SITE_ORIGIN', 'internal', '', 'scripts/build-site.mjs.'],
+  ['PW_BENCH', 'internal', '', 'scripts/perf-pdf.mjs: the bench checkout.'], ['PW_MONITOR_KEY', 'internal', '', 'scripts/uptime-check.mjs: the service key that reads /api/v1/metrics (docs/OPS.md).'], ['PW_MAX_5XX', 'internal', '0.05', 'scripts/uptime-check.mjs: the largest share of 5xx answers before it fails.'], ['PW_SITE_BASE', 'internal', '', 'scripts/build-site.mjs.'], ['PW_SITE_ORIGIN', 'internal', '', 'scripts/build-site.mjs.'],
 ];
 
 const NAMES = new Set(SETTINGS.map(s => s[0]));
