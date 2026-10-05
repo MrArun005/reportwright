@@ -2,7 +2,7 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Dialog } from './ui.jsx';
 import Link from 'next/link';
-import { secOf, useDesigner, insertItem, deleteSelection, duplicateSelection, moveItems, copySelection, pasteItems, alignItems } from './store.js';
+import { useDesigner, insertItem, insertSpot, deleteSelection, duplicateSelection, moveItems, copySelection, pasteItems, alignItems } from './store.js';
 import Canvas, { MIME_TOOL, useDesignIssues, issueLine } from './Canvas.jsx';
 import Inspector from './Inspector.jsx';
 import DataPanel, { loadSample } from './DataPanel.jsx';
@@ -49,11 +49,11 @@ const TOOLS = [
 
 function Toolbox({ T, hide = [] }) {
   const name = (type) => (T(`item_${type}`) === `item_${type}` ? ITEMS[type].label : T(`item_${type}`));
+  // a selected list or container takes the new item; otherwise it goes below the body's items
   const add = (type) => {
-    const def = useDesigner.getState().def;
-    const items = secOf(def, 'body').items;
-    const y = items.length ? Math.max(...items.map(i => i.y + i.h)) + 8 : 0;
-    insertItem(type, 'body', 0, Math.ceil(y / 4) * 4);
+    const s = useDesigner.getState();
+    const at = insertSpot(s.def, s.sel);
+    insertItem(type, at.section, 0, at.y, {}, at.parentId);
   };
   return (
     <div className="pane">

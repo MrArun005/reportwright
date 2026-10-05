@@ -273,6 +273,17 @@ export function addItem(type, section, x, y, extra = {}, parentId = null) {
   return id;
 }
 
+/**
+ * Where the toolbox's Insert puts a new item: inside the selected list or container (below its items), else the body
+ * below everything. @returns {{ section: string, parentId: string|null, y: number }}
+ */
+export function insertSpot(def, sel) {
+  const below = (items) => (items.length ? Math.ceil((Math.max(...items.map(i => i.y + i.h)) + 8) / 4) * 4 : 0);
+  const f = sel?.kind === 'items' && sel.ids?.length === 1 ? findItem(def, sel.ids[0]) : null;
+  if (f && Array.isArray(f.item.items)) return { section: f.section, parentId: f.item.id, y: f.item.items.length ? below(f.item.items) : 0 };
+  return { section: 'body', parentId: null, y: below(secOf(def, 'body').items) };
+}
+
 /** Insert from the toolbox or a drop. Charts open the chart gallery first (when the report has data), other items go straight in. */
 export function insertItem(type, section, x, y, extra = {}, parentId = null) {
   if (type === 'chart' && (S().def.dataSets || []).length) {
