@@ -162,7 +162,7 @@ export function paintMap(item, ctx, lc, base) {
   }
 
   /* points: area grows with the value */
-  const maxSize = Math.max(0, ...points.map(p => p.size || 0));
+  const maxSize = points.reduce((m, p) => Math.max(m, p.size || 0), 0);
   const maxR = Number(item.pointMaxRadius) || 8;
   for (const p of points) {
     const [cx, cy] = toXY(p.lon, p.lat);

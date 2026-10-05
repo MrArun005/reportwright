@@ -108,8 +108,8 @@ function totalFormula(rows, at, c, made) {
   // average, minimum, maximum: only when the values differ (a column of equal ratios matches all three by chance)
   else if (nums.length > 1 && nums.some(v => v !== nums[0])) {
     if (same(sum / nums.length)) fn = 1;
-    else if (same(Math.min(...nums))) fn = 5;
-    else if (same(Math.max(...nums))) fn = 4;
+    else if (same(nums.reduce((m, v) => Math.min(m, v), Infinity))) fn = 5;
+    else if (same(nums.reduce((m, v) => Math.max(m, v), -Infinity))) fn = 4;
   }
   if (!fn) return null;
   const col = colName(c.colIndex + 1);
@@ -205,7 +205,7 @@ export async function exportXlsx(model, ExcelJS, { currency, title, formulas = t
     const last = ws.rowCount;
     for (const [r1, c1, r2, c2] of merges) { try { ws.mergeCells(r1, c1, Math.min(r2, last), c2); } catch { /* overlaps a merge already made */ } }
     if (headerRows) ws.views = [{ state: 'frozen', ySplit: headerRows }];
-    ws.properties.outlineLevelRow = Math.max(0, ...r.rows.map(x => (x.kind === 'detail' ? x.level : 0)));
+    ws.properties.outlineLevelRow = r.rows.reduce((m, x) => Math.max(m, x.kind === 'detail' ? x.level || 0 : 0), 0);
   }
   // charts Excel can draw: a sheet each, with the chart's data at A1 and an editable chart bound to it (xlsxchart.js)
   const native = [];

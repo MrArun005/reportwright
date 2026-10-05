@@ -136,7 +136,7 @@ export default function ChartWizard() {
     if (!c.value || c.agg === 'Count' || c.format === 'P1') return null;
     const per = new Map();
     for (const r of rows) { const v = Number(r[c.value]); if (!Number.isFinite(v)) continue; const k = c.category ? String(r[c.category]) : ''; per.set(k, c.agg === 'Sum' ? (per.get(k) || 0) + v : Math.max(per.get(k) ?? -Infinity, v)); }
-    return compactFormat(Math.max(0, ...[...per.values()].map(Math.abs)));
+    return compactFormat([...per.values()].reduce((m, v) => Math.max(m, Math.abs(v)), 0));
   }, [rows, c.value, c.agg, c.category, c.format]);
   const extra = { dateCategory, monthNames: monthish && c.monthNames !== false, compact };
 

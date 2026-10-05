@@ -549,7 +549,7 @@ async function verifyNow(q, bad, problems) {
     if (pr && pr[0] >= r.n) continue; // a signed prune record removed it
     if (!m) { bad({ kind: 'missing', stream: r.s, id: r.by, detail: `A checkpoint names stream ${r.s}, which is gone from the log.` }); continue; }
     const ns = [...m.keys()];
-    const max = Math.max(...ns), min = Math.min(...ns);
+    let max = -Infinity, min = Infinity; for (const n of ns) { if (n > max) max = n; if (n < min) min = n; }
     if (r.n > max && !(to && r.at >= to)) bad({ kind: 'missing', stream: r.s, id: r.by, detail: `A checkpoint names event ${r.n} of the stream, but it ends at ${max}: its newest events are gone.` });
     else if (r.n >= min && r.n <= max && m.get(r.n)?.hash !== r.hash) bad({ kind: 'altered', stream: r.s, id: r.by, detail: `Event ${r.n} of the stream differs from what a checkpoint recorded.` });
   }

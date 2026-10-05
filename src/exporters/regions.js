@@ -14,7 +14,7 @@ export function mergedRegions(model) {
   for (const r of model.regions || []) {
     const m = map.get(r.name);
     if (!m) map.set(r.name, { ...r, rows: [...r.rows] });
-    else m.rows.push(...r.rows.filter(row => row.kind !== 'header' || !m.rows.some(x => x.kind === 'header')));
+    else { const hasHeader = m.rows.some(x => x.kind === 'header'); for (const row of r.rows) if (row.kind !== 'header' || !hasHeader) m.rows.push(row); }
   }
   return [...map.values()];
 }
@@ -55,12 +55,12 @@ export function textRows(items) {
   };
   for (const it of items) {
     if (it.t !== 'text' || !it.lines?.length) continue;
-    if (!it.rich) { if (groupId !== null) flushGroup(); out.push(...visualLines(it)); continue; }
+    if (!it.rich) { if (groupId !== null) flushGroup(); for (const l of visualLines(it)) out.push(l); continue; }
     if (it.rich.id !== groupId) { if (groupId !== null) flushGroup(); groupId = it.rich.id; }
     const k = String(it.rich.l);
     let r = group.get(k);
     if (!r) { r = { y: it.rich.l, frags: [] }; group.set(k, r); }
-    r.frags.push(...it.lines);
+    for (const l of it.lines) r.frags.push(l);
   }
   if (groupId !== null) flushGroup();
   return out;

@@ -1,7 +1,7 @@
 // Small inline-SVG charts for the Overview (server components: no chart library, no client JS).
 // Every chart takes real values; with no data it draws nothing and the caller shows an empty state.
 
-const max = (a) => Math.max(1, ...a);
+const max = (a) => a.reduce((m, v) => Math.max(m, v), 1);
 /** A nice axis top (1, 2, 5 × 10^n) at or above v. */
 const niceTop = (v) => { const e = 10 ** Math.floor(Math.log10(v)); return [1, 2, 5, 10].map(m => m * e).find(n => n >= v) || v; };
 

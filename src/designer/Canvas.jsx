@@ -559,7 +559,7 @@ export async function paintItemSvg(shape, def, sample) {
   const h = Math.max(shape.h, res.height || 0);
   await loadModelFonts({ pages: [{ items }] });
   // the drawn width: a matrix grows with its data past its box (the issues pane compares it with the page)
-  const w = Math.max(shape.w, ...items.map(i => (Number(i.x) || 0) + (Number(i.w) || 0)).filter(Number.isFinite));
+  const w = items.reduce((m, i) => { const r = (Number(i.x) || 0) + (Number(i.w) || 0); return Number.isFinite(r) && r > m ? r : m; }, shape.w); // no spread: a 100k-row table has millions of items
   return { html: pageToSvg({ items }, shape.w, h, { background: false }), h, w };
 }
 

@@ -120,7 +120,7 @@ function view(t) {
         if (body[i].k !== 'detail') { rows.push(body[i++]); continue; }
         const run = [];
         while (i < body.length && body[i].k === 'detail') run.push(body[i++]);
-        rows.push(...run.sort(cmp));
+        for (const x of run.sort(cmp)) rows.push(x);
       }
     }
     const keep = (r) => { for (const [c, v] of active) { const x = r.c.find(y => y[0] === c); if (!x || x[1] !== v) return false; } return true; };

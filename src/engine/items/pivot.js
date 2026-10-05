@@ -179,7 +179,7 @@ function buildTree(groups, rows, ctx, lc, who, axis, state) {
         if (l === groups.length - 1) recurse(n, g, l);
         else if (!warnedRec) { warnedRec = true; lc.warn(`${who}: only the innermost row group can be recursive; "parent" on an outer group is left out`); }
       }
-      next.push(...n.children);
+      for (const k of n.children) next.push(k);
     }
     frontier = next;
   });

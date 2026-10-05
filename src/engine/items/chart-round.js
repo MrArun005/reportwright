@@ -103,7 +103,7 @@ export function placeOutside(sides, { cx, cy, r, lw, lh, lo, hi, out, text, text
 function paintRadar(g) {
   const { item, data, out, X, W, top, bottom, fs, text, measure, fmtV, pointLink, label, labelsOn, labelText, grid, anim, axes } = g;
   const n = data.categories.length;
-  const catW = Math.min(W * 0.25, Math.max(10, ...data.categories.map(c => measure(c).w)));
+  const catW = Math.min(W * 0.25, data.categories.reduce((m, c) => Math.max(m, measure(c).w), 10));
   const cx = X + W / 2, cy = (top + bottom) / 2 + fs * 0.3;
   const R = Math.max(6, Math.min(W / 2 - catW - 8, (bottom - top) / 2 - fs * 1.6));
   let lo = 0, hi = 0;

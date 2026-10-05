@@ -217,7 +217,7 @@ function paintBoxPlot(g) {
   if (!stats.some(Boolean)) return noData(g);
   let lo = Infinity, hi = -Infinity;
   for (const st of stats) if (st) { lo = Math.min(lo, st.min); hi = Math.max(hi, st.max); }
-  const catW = Math.max(10, ...data.categories.map(c => g.measure(c).w));
+  const catW = data.categories.reduce((m, c) => Math.max(m, g.measure(c).w), 10);
   const f = frame(g, lo, hi, (v) => toText(v, g.axes.y?.format || item.valueFormat || 'N0', ctx), { cats: data.categories, catW });
   let dots = 0, cut = false;
   stats.forEach((st, i) => {
@@ -267,7 +267,7 @@ function paintWaterfall(g) {
   let lo = 0, hi = 0;
   for (const b of bars) { lo = Math.min(lo, b.a, b.b); hi = Math.max(hi, b.a, b.b); }
   const cats = bars.map(b => b.label);
-  const catW = Math.max(10, ...cats.map(c => g.measure(c).w));
+  const catW = cats.reduce((m, c) => Math.max(m, g.measure(c).w), 10);
   const f = frame(g, lo, hi, (v) => toText(v, g.axes.y?.format || item.valueFormat || 'N0', ctx), { cats, catW });
   const bw = f.band * 0.62;
   bars.forEach((b, k) => {
@@ -355,7 +355,7 @@ function paintGantt(g) {
   let ticks;
   if (dates) ticks = dateTicks(lo, hi, Math.max(2, Math.floor(W / 70))).ticks;
   else { const sc = niceScale(lo, hi, 5); lo = Math.min(lo, sc.lo); hi = Math.max(hi, sc.hi); ticks = linearTicks(sc.lo, sc.hi, sc.step); }
-  const catW = Math.min(Math.max(10, ...cats.map(s => g.measure(s).w)), W * 0.32);
+  const catW = Math.min(cats.reduce((m, s) => Math.max(m, g.measure(s).w), 10), W * 0.32);
   const plotLeft = X + 4 + catW + 6, plotRight = X + W - 6;
   const plotTop = top + fs * 0.6, plotBottom = bottom - fs * 1.8 - (xs.title ? fs * 1.6 : 0);
   const px = (t) => plotLeft + ((t - lo) / (hi - lo)) * (plotRight - plotLeft);

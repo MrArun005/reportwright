@@ -396,7 +396,7 @@ function paintCartesian(type, g) {
   const auto = (spec, ...given) => (stackMode === 'percent' || spec.format || given.some(Boolean) ? undefined : (d) => (v) => toText(v, `N${d}`, g.ctx));
 
   // layout
-  const catW = Math.max(10, ...data.categories.map(c => measure(c).w));
+  const catW = data.categories.reduce((m, c) => Math.max(m, measure(c).w), 10);
   const leftTitle = horiz ? xSpec.title : ySpec.title;
   const bottomTitle = horiz ? (ySpec.title || item.xTitle) : (xSpec.title || item.xTitle);
   const angle = !horiz ? Math.max(-90, Math.min(90, Number(xSpec.labelAngle) || 0)) : 0;
