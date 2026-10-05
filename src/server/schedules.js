@@ -103,7 +103,7 @@ export async function runSchedule(s, reason = 'manual') {
   }
   await audit('schedule.run', { actor: rec.owner || 'nobody', report, format: job.format, detail: { schedule: s.id, reason, batch: job.id, items: job.total } });
   // re-read under the lock: bookkeeping never writes back a schedule changed or deleted meanwhile
-  await withLock('schedules', async () => { const cur = await readOne(s.id); if (cur) { cur.lastRunAt = new Date().toISOString(); cur.lastJobId = job.id; await save(cur); } });
+  await withLock('schedules', async () => { const cur = await readOne(s.id); if (cur) { cur.lastRunAt = new Date(Math.max(Date.now(), Date.parse(cur.lastRunAt || '') || 0)).toISOString(); cur.lastJobId = job.id; await save(cur); } }); // never back before a slot run ahead
   return job;
 }
 
@@ -112,12 +112,29 @@ export async function runSchedule(s, reason = 'manual') {
  * restart does not fire twice, and after downtime a missed run happens once, late. With several servers,
  * only the one holding the "scheduler" lease runs schedules (tickAs).
  */
-export function isDue(s, now = new Date()) {
-  if (s.enabled === false) return false;
+export function isDue(s, now = new Date()) { return !!dueAt(s, now); }
+
+/**
+ * The run time due (the first one since the last run or edit), or null. horizonMs: an outside cron that calls rarely
+ * (PW_CRON=daily) also runs what falls due before its next call, but never past the end of today (UTC), so repeated
+ * calls cannot run ahead day by day.
+ * @param {any} s @param {Date} [now] @param {number} [horizonMs]
+ * @returns {Date|null}
+ */
+export function dueAt(s, now = new Date(), horizonMs = 0) {
+  if (s.enabled === false) return null;
   const stamps = [s.lastRunAt, s.updatedAt, s.createdAt].map(t => Date.parse(t || '')).filter(Number.isFinite);
   const since = stamps.length ? Math.max(...stamps) : now.getTime() - 60000;
   const at = nextRun(s.cron, s.timezone || 'UTC', new Date(since));
-  return !!at && at <= now;
+  const endOfDay = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+  const limit = horizonMs > 0 ? Math.max(now.getTime(), Math.min(now.getTime() + horizonMs, endOfDay)) : now.getTime();
+  return at && at.getTime() <= limit ? at : null;
+}
+
+/** How far ahead an outside cron's tick runs schedules: PW_CRON daily → a day, hourly → an hour, else none. */
+export function cronHorizonMs() {
+  const c = String(process.env.PW_CRON || '').trim().toLowerCase();
+  return c === 'daily' ? 86400000 : c === 'hourly' ? 3600000 : 0;
 }
 
 // the tick runs every 30 s and a stopped leader is replaced within 90 s (both can be shorter for tests)
@@ -125,21 +142,25 @@ const tickMs = () => cnum('PW_SCHEDULER_TICK_MS', 30000, { min: 1 });
 const leaderMs = () => cnum('PW_SCHEDULER_LEASE_MS', 3 * tickMs(), { min: 1 });
 
 /** One scheduler tick as `owner`: nothing unless this server holds (or takes) the scheduler lease. */
-export async function tickAs(owner, now = new Date()) {
-  if (!(await store().lease('scheduler', owner, leaderMs()))) return;
+export async function tickAs(owner, now = new Date(), { horizonMs = 0 } = {}) {
+  if (!(await store().lease('scheduler', owner, leaderMs()))) return [];
+  const ran = [];
   for (const s of await readSchedules()) {
     try {
-      // claim the run first (under the lock): a slow item list or upload cannot make the next tick run it again
+      // claim the run first (under the lock): a slow item list or upload cannot make the next tick run it again.
+      // A run ahead of its time (horizonMs) is stamped with that time, so the same slot never runs twice.
       const claimed = await withLock('schedules', async () => {
         const cur = await readOne(s.id);
-        if (!cur || !isDue(cur, now)) return null;
-        await save({ ...cur, lastRunAt: now.toISOString() });
+        const at = cur && dueAt(cur, now, horizonMs);
+        if (!at) return null;
+        await save({ ...cur, lastRunAt: new Date(Math.max(now.getTime(), at.getTime())).toISOString() });
         return cur;
       });
-      if (claimed) await runSchedule(claimed, 'cron'); // as it is now, not as the tick listed it
+      if (claimed) ran.push((await runSchedule(claimed, 'cron')).id); // as it is now, not as the tick listed it
     }
     catch (e) { console.error(`[pagewright] schedule ${s.id}: ${e.message}`); }
   }
+  return ran;
 }
 
 export function startScheduler() {
