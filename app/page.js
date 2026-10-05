@@ -7,6 +7,7 @@ import { accountsOn, currentUser, ROLE_RANK } from '@/server/session.js';
 import { principalFromCookie, visibleReports, visibleFolders, snapshot, folderLevel, atLeast } from '@/server/perms.js';
 import { ShareButton, NewFolder } from '@/home/FolderActions.jsx';
 import Thumb, { ReportFonts } from '@/home/Thumb.jsx';
+import ServerPdf from '@/home/ServerPdf.jsx';
 import ThemeToggle from '@/theme/ThemeToggle.jsx';
 import { t, dirOf, pickLang } from '@/i18n/index.js';
 
@@ -104,7 +105,7 @@ export default async function Home({ searchParams }) {
                 {designer && atLeast(r.access, 'edit') && <Link className="btn sm primary" href={`/designer/${r.id}${q}`}>{T('design')}</Link>}
                 <Link className={designer && atLeast(r.access, 'edit') ? 'btn sm' : 'btn sm primary'} href={`/viewer/${r.id}${q}`}>{T('view')}</Link>
                 {designer && r.access === 'manage' && <ShareButton {...shareProps} kind="report" id={r.id} name={r.name} canDelete label={accountsOn() ? T('share') : T('move')} />}
-                <a className="btn sm ghost" href={`/api/reports/${r.id}/pdf`} target="_blank" rel="noreferrer" title={T('serverPdfHint')}>{T('serverPdf')}</a>
+                <ServerPdf id={r.id} title={T('serverPdfHint')}>{T('serverPdf')}</ServerPdf>
               </div>
             </article>
           ))}

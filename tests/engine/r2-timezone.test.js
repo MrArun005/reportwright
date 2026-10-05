@@ -19,3 +19,13 @@ it('the viewer\'s zone is used; the report\'s own zone wins; an unknown zone is 
   expect(checkTimeZone(undefined)).toBe(undefined);
   await expect(renderTo(def(), { format: 'json', timeZone: 'Nope/Nope' })).rejects.toMatchObject({ status: 400 });
 });
+
+it('the viewer sends its zone with server render links', async () => {
+  const { withTimeZone, viewerTimeZone } = await import('../../src/viewer/timeZone.js');
+  expect(viewerTimeZone()).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  expect(withTimeZone('/api/reports/a/pdf', 'Asia/Kolkata')).toBe('/api/reports/a/pdf?timeZone=Asia%2FKolkata');
+  expect(withTimeZone('/api/reports/a/pdf?format=xlsx', 'Europe/Paris')).toBe('/api/reports/a/pdf?format=xlsx&timeZone=Europe%2FParis');
+  expect(withTimeZone('/x?timeZone=UTC', 'Europe/Paris')).toBe('/x?timeZone=UTC');
+  expect(withTimeZone('/x', '')).toBe('/x');
+  expect(checkTimeZone(new URL(withTimeZone('http://h/x', 'America/New_York')).searchParams.get('timeZone'))).toBe('America/New_York');
+});

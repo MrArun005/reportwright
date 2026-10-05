@@ -472,6 +472,20 @@ try {
     assert.equal(await dlg.getByTestId('cf-rule-1').getByLabel('Value').inputValue(), 'So');
     await dlg.getByTestId('cf-custom').filter({ hasText: 'Background' }).waitFor();
     await dlg.getByRole('button', { name: 'Cancel' }).click();
+
+  }
+  if (want('tz')) {
+    step('Time zone: the home card\'s "Server PDF" link asks the server to render in the reader\'s zone');
+    const id = await create(base('ux r1c tz', [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 300, h: 20, value: '="Now"' }]));
+    const tc = await b.newContext({ timezoneId: 'Asia/Tokyo' });
+    const tp = await tc.newPage();
+    await tp.goto(BASE);
+    const sel = `[data-report="${id}"] a[href*="/pdf"]`;
+    await tp.waitForFunction((s) => /[?&]timeZone=Asia%2FTokyo$/.test(document.querySelector(s)?.getAttribute('href') || ''), sel);
+    const res = await fetch(`${BASE}${await tp.locator(sel).getAttribute('href')}`, { headers: H });
+    assert.equal(res.status, 200, 'the server takes the zone');
+    assert.equal(res.headers.get('content-type'), 'application/pdf');
+    await tc.close();
   }
   if (want('sql')) {
     const SQLITE = /^sqlite:(.+)$/.exec(process.env.PW_DB_MAIN || '')?.[1];
