@@ -100,7 +100,7 @@ export default {
   matchCase: 'Diferenciar maiúsculas', wholeWord: 'Palavra inteira', allMatches: 'Lista de ocorrências', matches: 'Ocorrências', matchCount: '{n} ocorrências',
   noMatches: 'Nada encontrado.', pageShort: 'pág. {n}', more: 'Mais', close: 'Fechar', from: 'de', to: 'até',
   groupPaging: 'Paginação', groupZoom: 'Ampliação', groupView: 'Exibição', groupExport: 'Exportar',
-  stillRendering: 'O restante do relatório ainda está sendo gerado', exportFailed: 'Falha em {fmt}: {message}', serverPdfNote: 'Um relatório grande: o servidor gera este PDF (muito mais rápido que o navegador). Ele abre em uma nova aba.',
+  stillRendering: 'O restante do relatório ainda está sendo gerado', exportFailed: 'Falha em {fmt}: {message}', accessSlow: "O servidor está ocupado e não respondeu a tempo. Tente novamente.", accessUnreadable: "A resposta do servidor não tinha lista de acesso.", serverPdfNote: 'Um relatório grande: o servidor gera este PDF (muito mais rápido que o navegador). Ele abre em uma nova aba.',
   drillPath: 'Caminho de detalhamento', wordHint: 'Texto e tabelas, para editar no Word',
   editInDesigner: 'Editar no designer',
 

@@ -6,8 +6,11 @@ import { t } from '@/i18n/index.js';
 
 const LEVELS = ['view', 'edit', 'manage'];
 
+/** Past this a read gives up with an error and a Retry (a busy server held it: never "Loading…" for good). */
+const READ_TIMEOUT_MS = 15000;
 async function call(url, method = 'GET', body) {
-  const res = await fetch(url, { method, headers: body ? { 'content-type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
+  const res = await fetch(url, { method, headers: body ? { 'content-type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined,
+    signal: method === 'GET' ? AbortSignal.timeout(READ_TIMEOUT_MS) : undefined, cache: 'no-store' });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
@@ -25,7 +28,14 @@ export default function Share({ kind, id, name, folders, accounts, canDelete = f
   const [busy, setBusy] = useState(false);
   const [who, setWho] = useState({ type: 'user', name: '', level: 'view' });
 
-  useEffect(() => { call(url).then(setRec, e => setErr(e.message)); }, [url]);
+  const [tries, setTries] = useState(0);
+  useEffect(() => {
+    let live = true;
+    setErr(null);
+    call(url).then(r => { if (!live) return; if (Array.isArray(r?.grants)) setRec(r); else setErr(T('accessUnreadable')); },
+      e => live && setErr(e.name === 'TimeoutError' || e.name === 'AbortError' ? T('accessSlow') : e.message));
+    return () => { live = false; };
+  }, [url, tries]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { const k = (e) => { if (e.key === 'Escape') onClose(); }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, [onClose]);
 
   // where it may go: folders the user can add to (edit), never a folder into itself or below itself
@@ -130,7 +140,7 @@ export default function Share({ kind, id, name, folders, accounts, canDelete = f
               <p className="hint" style={{ margin: 0 }}>{T('levelsHint')}</p>
             </>
           )}
-          {err && <p className="err" role="alert" style={{ margin: 0 }}>{err}</p>}
+          {err && <p className="err" role="alert" style={{ margin: 0 }}>{err}{!rec && <> <button type="button" className="btn sm" onClick={() => setTries(n => n + 1)}>{T('r4_retry')}</button></>}</p>}
         </div>
         <footer>
           {canDelete && <button type="button" className="btn danger" style={{ marginInlineEnd: 'auto' }} onClick={remove} disabled={busy}>{kind === 'report' ? T('deleteReport') : T('deleteFolder')}</button>}

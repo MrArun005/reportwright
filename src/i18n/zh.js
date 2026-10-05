@@ -100,7 +100,7 @@ export default {
   matchCase: '区分大小写', wholeWord: '全字匹配', allMatches: '匹配项列表', matches: '匹配项', matchCount: '{n} 个匹配项',
   noMatches: '未找到任何内容。', pageShort: '第 {n} 页', more: '更多', close: '关闭', from: '从', to: '至',
   groupPaging: '翻页', groupZoom: '缩放', groupView: '视图', groupExport: '导出',
-  stillRendering: '报表的其余部分仍在生成', exportFailed: '{fmt} 失败：{message}', serverPdfNote: '大型报表：此 PDF 由服务器生成（比浏览器快得多），将在新标签页中打开。',
+  stillRendering: '报表的其余部分仍在生成', exportFailed: '{fmt} 失败：{message}', accessSlow: "服务器繁忙，未及时响应。请重试。", accessUnreadable: "服务器的响应中没有访问列表。", serverPdfNote: '大型报表：此 PDF 由服务器生成（比浏览器快得多），将在新标签页中打开。',
   drillPath: '钻取路径', wordHint: '文本和表格，可在 Word 中编辑',
   editInDesigner: '在设计器中编辑',
 

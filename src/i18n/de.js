@@ -100,7 +100,7 @@ export default {
   matchCase: 'Groß-/Kleinschreibung beachten', wholeWord: 'Ganzes Wort', allMatches: 'Trefferliste', matches: 'Treffer', matchCount: '{n} Treffer',
   noMatches: 'Nichts gefunden.', pageShort: 'S. {n}', more: 'Mehr', close: 'Schließen', from: 'von', to: 'bis',
   groupPaging: 'Blättern', groupZoom: 'Vergrößerung', groupView: 'Ansicht', groupExport: 'Exportieren',
-  stillRendering: 'Der Rest des Berichts wird noch erstellt', exportFailed: '{fmt} fehlgeschlagen: {message}', serverPdfNote: 'Ein großer Bericht: Der Server erstellt dieses PDF (viel schneller als der Browser). Es öffnet sich in einem neuen Tab.',
+  stillRendering: 'Der Rest des Berichts wird noch erstellt', exportFailed: '{fmt} fehlgeschlagen: {message}', accessSlow: "Der Server ist ausgelastet und hat nicht rechtzeitig geantwortet. Versuchen Sie es erneut.", accessUnreadable: "Die Antwort des Servers enthielt keine Zugriffsliste.", serverPdfNote: 'Ein großer Bericht: Der Server erstellt dieses PDF (viel schneller als der Browser). Es öffnet sich in einem neuen Tab.',
   drillPath: 'Drillthrough-Pfad', wordHint: 'Text und Tabellen, zum Bearbeiten in Word',
   editInDesigner: 'Im Designer bearbeiten',
 

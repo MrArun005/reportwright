@@ -100,7 +100,7 @@ export default {
   matchCase: 'مطابقة حالة الأحرف', wholeWord: 'الكلمة كاملة', allMatches: 'قائمة التطابقات', matches: 'التطابقات', matchCount: '{n} تطابق',
   noMatches: 'لم يُعثر على شيء.', pageShort: 'ص {n}', more: 'المزيد', close: 'إغلاق', from: 'من', to: 'إلى',
   groupPaging: 'التنقل بين الصفحات', groupZoom: 'التكبير', groupView: 'العرض', groupExport: 'التصدير',
-  stillRendering: 'ما زال باقي التقرير قيد الإنشاء', exportFailed: 'فشل {fmt}: {message}', serverPdfNote: 'تقرير كبير: يُنشئ الخادم ملف PDF هذا (أسرع بكثير من المتصفح). سيفتح في علامة تبويب جديدة.',
+  stillRendering: 'ما زال باقي التقرير قيد الإنشاء', exportFailed: 'فشل {fmt}: {message}', accessSlow: "الخادم مشغول ولم يرد في الوقت المناسب. حاول مرة أخرى.", accessUnreadable: "لم يتضمن رد الخادم قائمة الوصول.", serverPdfNote: 'تقرير كبير: يُنشئ الخادم ملف PDF هذا (أسرع بكثير من المتصفح). سيفتح في علامة تبويب جديدة.',
   drillPath: 'مسار التعمق', wordHint: 'نصوص وجداول للتحرير في Word',
   editInDesigner: 'تحرير في المصمم',
 
