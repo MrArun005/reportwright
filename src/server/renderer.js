@@ -190,7 +190,7 @@ export async function renderTo(def, opt = {}) {
   const run = (only) => render(d, /** @type {any} */ ({ ...renderOpts, ...(only ? { dataOnly: true, onSources: (s) => { sources = s; } } : sources ? { sources } : {}) }));
   const renderOpts = {
     parameters: opt.parameters || {}, state: opt.state || {}, fontStore: fontStore(), timeZone: checkTimeZone(opt.timeZone),
-    baseUrl: base, fetch, timeoutMs: renderTimeoutMs(),
+    baseUrl: base, fetch, timeoutMs: renderTimeoutMs(), deadline: Date.now() + renderTimeoutMs(), // one deadline for both CSV passes (dataOnly, then the full fallback)
     exportData: !opt.modelOnly && (format !== 'pdf' || !!opt.ua), // a plain PDF needs no table data
     ...(opt.firstPages ? { firstPages: opt.firstPages } : {}),
     sql: runSql, // SQL sources query the database directly, not through /api/data/sql
