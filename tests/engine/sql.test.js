@@ -72,7 +72,7 @@ describe('read-only, limits, connections', () => {
     await expect(runSql(main("insert into accounts (name) values ('Eve')"), {})).rejects.toMatchObject({ status: 400 });
     await expect(runSql(main('vacuum into @f'), { f: path.join(dir, 'copy.db') })).rejects.toThrow(/SELECT/);
     // the keyword check is not the only guard: the database itself is opened read-only
-    await expect(runSql(main("with x as (select 1) update accounts set name = 'hacked'"), {})).rejects.toThrow(/readonly|read-only/i);
+    await expect(runSql(main("with x as (select 1) update accounts set name = 'hacked'"), {})).rejects.toThrow(/readonly|read-only|not allowed/i); // the statement check, else the read-only file
     expect(count()).toBe(5);
     expect(fs.existsSync(path.join(dir, 'copy.db'))).toBe(false);
   });
@@ -208,7 +208,7 @@ describe.skipIf(!process.env.PW_TEST_PG)('postgres', () => {
   });
   it('runs read-only, one statement only', async () => {
     await expect(runSql(pg('select 1; commit; create table pw_hack (a int)'), {})).rejects.toThrow(); // COMMIT would end the read-only transaction
-    await expect(runSql(pg('with t as (delete from pg_catalog.pg_class where false returning 1) select * from t'), {})).rejects.toThrow(/read-only|data-modifying/);
+    await expect(runSql(pg('with t as (delete from pg_catalog.pg_class where false returning 1) select * from t'), {})).rejects.toThrow(/read-only|data-modifying|not allowed/);
     expect(await runSql(pg("select count(*)::int as n from pg_tables where tablename = 'pw_hack'"), {})).toEqual([{ n: 0 }]);
   });
   it('stops at the row cap and the time limit', async () => {
@@ -216,7 +216,7 @@ describe.skipIf(!process.env.PW_TEST_PG)('postgres', () => {
     Object.assign(limits, { rows: 3, ms: 300 });
     try {
       await expect(runSql(pg('select g from generate_series(1, 10) g'), {})).rejects.toThrow(/more than 3 rows/);
-      await expect(runSql(pg('select pg_sleep(2)'), {})).rejects.toMatchObject({ status: 504 });
+      await expect(runSql(pg('select count(*) as n from generate_series(1, 400000000)'), {})).rejects.toMatchObject({ status: 504 });
     } finally { Object.assign(limits, keep); }
   });
 });

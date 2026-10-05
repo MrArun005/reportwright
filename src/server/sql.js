@@ -10,6 +10,7 @@ import { readRunnable, defaultPrincipal } from './perms.js';
 import { resolveParameters } from '@/engine/index.js';
 import { isoDate } from '@/engine/expr/format.js';
 import crypto from 'node:crypto';
+import { codeOnly, assertCalls, visibleName } from './sql/check.js';
 import { oracle } from './sql/oracle.js';
 import { snowflake } from './sql/snowflake.js';
 import { bigquery } from './sql/bigquery.js';
@@ -159,9 +160,9 @@ export async function runSql({ connection, query, procedure, args }, params = {}
     // first guard: a report reads data. (WITH … UPDATE passes this; the read-only transaction stops it.)
     if (!/^[\s(]*(select|with)\b/i.test(query.replace(/^(\s*(--[^\n]*|\/\*[\s\S]*?\*\/))+/, ''))) throw fail('A SQL source can only run a SELECT query.', 400);
     ({ text, values } = bindSql(query, params, dialect));
-    // Oracle, Snowflake, BigQuery: one statement, no write or session words outside strings and comments (a second
-    // guard beside each driver's own: the server's parse, the read-only transaction or role, the dry run)
-    if (CHECKED.has(dialect)) code = assertOneRead(text, dialect);
+    // every dialect: one statement, no write or session words, only built-in functions (a second guard beside each
+    // database's own: the read-only login, the server's parse, the read-only transaction, the dry run)
+    code = assertOneRead(text, dialect);
   }
   let rows;
   try {
@@ -182,67 +183,30 @@ export async function runSql({ connection, query, procedure, args }, params = {}
 }
 
 /** @typedef {'sqlite'|'postgres'|'mysql'|'mssql'|'oracle'|'snowflake'|'bigquery'} Dialect */
-const CHECKED = new Set(['oracle', 'snowflake', 'bigquery']);
 
-/* ---------------- statement check (Oracle, Snowflake, BigQuery) ---------------- */
+/* ---------------- statement check (every dialect; see ./sql/check.js) ---------------- */
+
+export { codeOnly, assertCalls };
+
+// statement words that never belong in a report's SELECT (outside strings and comments): the grammar, not a list of
+// bad functions (calls are checked against an allow-list in assertCalls)
+const READ_DENY = /\b(insert|update|delete|merge|upsert|create|drop|alter|truncate|rename|grant|revoke|call|exec|execute|begin|commit|rollback|savepoint|copy|put|remove|unload|use|set|unset|declare|lock|undrop|into|export|load|procedure|function|transaction|outfile|dumpfile|infile)\b/i;
+
+/** T-SQL code from tsqlParts (nested comments, [names]): strings blanked, names kept as their text. */
+const tsqlCode = (q) => tsqlParts(q).map(p => (p.code ? p.text : /^[[\x22]/.test(p.text) ? ` ${visibleName(p.text.slice(1, -1))} ` : /^(--|\/\*)/.test(p.text) ? ' ' : ' x ')).join('');
 
 /**
- * The code of a query with strings, quoted names and comments blanked, read as each database reads it. Quoting this
- * scanner does not model (Oracle q'…', Snowflake $$…$$, BigQuery raw, bytes and triple-quoted strings) is refused, so
- * the scanner and the server never disagree on where code is. Fails closed.
- * @param {string} q @param {'oracle'|'snowflake'|'bigquery'} dialect
+ * One statement (a trailing ";" at most), no statement word from READ_DENY in code, every call an allowed built-in,
+ * and no @name left (Oracle database links, Snowflake stages). @returns {string} the code
+ * @param {string} text the bound text @param {Dialect} dialect
  */
-export function codeOnly(q, dialect) {
-  const open = () => fail('The query has a comment, string or quoted name that does not end.', 400);
-  const refuse = (what) => fail(`A SQL source cannot use ${what} here: write a plain '…' string.`, 400);
-  const line = dialect === 'bigquery' ? ['--', '#'] : dialect === 'snowflake' ? ['--', '//'] : ['--'];
-  const quotes = dialect === 'bigquery' ? "'\"`" : `'"`;
-  let out = '', i = 0;
-  while (i < q.length) {
-    const c = q[i], prev = q[i - 1] || ' ';
-    if (line.some(m => q.startsWith(m, i))) { const e = q.slice(i).search(/[\r\n]/); i = e < 0 ? q.length : i + e; out += ' '; continue; }
-    if (q.startsWith('/*', i)) { const e = q.indexOf('*/', i + 2); if (e < 0) throw open(); i = e + 2; out += ' '; continue; }
-    if (!/[\w$#]/.test(prev)) {
-      if (dialect === 'oracle' && /^n?q'/i.test(q.slice(i, i + 3))) throw refuse("q'…' quoting");
-      if (dialect === 'bigquery' && /^(r|b|rb|br)['"]/i.test(q.slice(i, i + 3))) throw refuse('raw or bytes strings');
-    }
-    if (dialect === 'snowflake' && q.startsWith('$$', i)) throw refuse('$$ strings');
-    if (dialect === 'bigquery' && (q.startsWith("'''", i) || q.startsWith('"""', i))) throw refuse('triple-quoted strings');
-    if (quotes.includes(c)) {
-      // a backslash escapes in BigQuery strings and names, and in Snowflake '…' strings; Oracle has no escape but ''
-      const bs = dialect === 'bigquery' || (dialect === 'snowflake' && c === "'");
-      let j = i + 1;
-      for (;;) {
-        if (j >= q.length) throw open();
-        if (bs && q[j] === '\\') { j += 2; continue; }
-        if (q[j] === c) { if (q[j + 1] === c) { j += 2; continue; } break; }
-        j++;
-      }
-      // a quoted name stays visible to the checks (Oracle and Snowflake "…", BigQuery `…`): "UTL_HTTP" is still UTL_HTTP
-      const name = c === '`' || (c === '"' && dialect !== 'bigquery');
-      out += name ? ` ${q.slice(i + 1, j).replace(/[;@]/g, ' ')} ` : ' x ';
-      i = j + 1;
-      continue;
-    }
-    out += c;
-    i++;
-  }
-  return out;
-}
-
-// words that never belong in a report's SELECT on these databases (outside strings and comments)
-const READ_DENY = /\b(insert|update|delete|merge|upsert|create|drop|alter|truncate|rename|grant|revoke|call|exec|execute|begin|commit|rollback|savepoint|copy|put|remove|unload|use|set|unset|declare|lock|undrop|into|export|load|procedure|function|transaction)\b/i;
-
-// Oracle packages and types that reach the network, files, jobs, dynamic SQL or the web from inside a SELECT
-const ORACLE_DENY = /\b(utl_\w*|dbms_\w*|owa_\w*|htp|htf|httpuritype|dburitype|xdburitype|ctx_\w*|ordsys)\b/i;
-
-/** One statement (a trailing ";" at most) and no word from READ_DENY in code. @returns {string} the code */
 export function assertOneRead(text, dialect) {
-  const code = codeOnly(text, dialect);
+  const code = dialect === 'mssql' ? tsqlCode(text) : codeOnly(text, dialect);
   if (code.replace(/[;\s]+$/, '').includes(';')) throw fail('A SQL source can only run one SELECT query (one statement).', 400);
-  const word = READ_DENY.exec(code) || (dialect === 'oracle' && ORACLE_DENY.exec(code));
+  const word = READ_DENY.exec(code);
   if (word) throw fail(`A SQL source can only run one SELECT query: "${word[1]}" is not allowed.`, 400);
-  if (dialect === 'oracle' && code.includes('@')) throw fail('A SQL source cannot use a database link (@).', 400);
+  if ((dialect === 'oracle' || dialect === 'snowflake') && code.includes('@')) throw fail('A SQL source cannot use a database link or a stage (@).', 400);
+  assertCalls(code, dialect);
   return code;
 }
 

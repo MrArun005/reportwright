@@ -46,7 +46,7 @@ describe.skipIf(!process.env.PW_TEST_MYSQL)('MySQL: CALL in a read-only transact
 });
 
 // review: every driver bounds rows, bytes and time on the client, whatever the server sends
-describe.each([['pg', 'PW_TEST_PG', "select repeat('x', @n) as v", 'select pg_sleep(5) as s'], ['my', 'PW_TEST_MYSQL', "select repeat('x', @n) as v", 'select sleep(5) as s']])('%s: caps on the client', (k, envName, huge, slow) => {
+describe.each([['pg', 'PW_TEST_PG', "select repeat('x', @n) as v", 'select count(*) as s from generate_series(1, 400000000)'], ['my', 'PW_TEST_MYSQL', "select repeat('x', @n) as v", 'select count(*) as s from information_schema.columns a cross join information_schema.columns b cross join information_schema.columns c']])('%s: caps on the client', (k, envName, huge, slow) => {
   const on = Boolean(process.env[envName]);
   it.skipIf(!on)('one huge value, many rows, a slow query', async () => {
     const { limits } = await import('../../src/server/sql.js');
