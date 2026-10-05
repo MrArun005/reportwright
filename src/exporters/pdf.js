@@ -354,6 +354,8 @@ export async function exportPdf(model, fontStore, opt = {}) {
     const ref = ctx.nextRef();
     p.node.set(PDFName.of('Contents'), ref);
     contents.push(deflate(latin1(c.s)).then(z => ctx.assign(ref, PDFRawStream.of(ctx.obj({ Filter: 'FlateDecode' }), z))));
+    // pages compress while the next ones are drawn: a few pages' text waits for its turn, not the whole report's
+    if (contents.length > 8) await contents[contents.length - 9];
   }
   await Promise.all(contents);
   // a place in the document (page, y from the top), as an explicit destination: that page, scrolled to just above y
