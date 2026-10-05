@@ -49,6 +49,7 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
+      - run: sudo apt-get install -y poppler-utils # pdftotext, pdftoppm: the suites read the PDFs they get
       - name: Build and start the server as the suites expect (scripts/restart.sh: PW_AUTH=proxy behind scripts/e2e-proxy.mjs, test keys)
         run: |
           ./scripts/restart.sh
