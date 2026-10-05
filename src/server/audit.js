@@ -51,31 +51,62 @@ export function canonical(v) {
 /** An event's hash: SHA-256 of its canonical JSON without hash and sig. @param {any} e */
 export const hashEntry = (e) => { const { hash: _h, sig: _s, ...rest } = e; return crypto.createHash('sha256').update(canonical(rest)).digest('hex'); };
 
-/** This process's (or thread's) stream: { s, n, prev, pending: Set<n>, recent: Map<n, hash> }. */
+/**
+ * This process's (or thread's) stream: { s, n, prev, at, q }. A stream has exactly one writer by construction (its id
+ * holds the host, pid, thread and random bytes; nothing else ever appends to it), so no lock across servers is needed
+ * and nothing on disk can move its head: n, prev and at advance only after an event is durably written, one event at a
+ * time, in the order audit() was called. A new process starts a new stream (nothing stale is reloaded).
+ */
 function chain() {
   if (!g.__pwAudit.chain) {
     let tid = 0;
     try { tid = /** @type {any} */ (process.getBuiltinModule?.('node:worker_threads'))?.threadId || 0; } catch { /* none */ }
-    g.__pwAudit.chain = { s: `${os.hostname().slice(0, 40)}:${process.pid}${tid ? `.${tid}` : ''}:${crypto.randomBytes(4).toString('hex')}`, n: 0, prev: ZERO, pending: new Set(), recent: new Map() };
+    g.__pwAudit.chain = { s: `${os.hostname().slice(0, 40)}:${process.pid}${tid ? `.${tid}` : ''}:${crypto.randomBytes(4).toString('hex')}`, n: 0, prev: ZERO, at: null, q: [], busy: false };
   }
   return g.__pwAudit.chain;
 }
-/** Link an event into this stream (synchronously: the order of calls is the order of the chain). @param {any} entry */
-function link(entry) {
-  const c = chain();
-  entry.chain = { s: c.s, n: c.n, prev: c.prev };
-  entry.hash = hashEntry(entry);
-  c.pending.add(c.n);
-  c.recent.set(c.n, { hash: entry.hash, at: entry.at });
-  if (c.recent.size > 5000) c.recent.delete(c.recent.keys().next().value);
-  c.prev = entry.hash; c.n++;
-  return entry;
-}
-/** The newest event of this stream that is surely written (every event before it is written too), or null. */
+/** The newest durably written event of this stream, or null. */
 function writtenHead() {
   const c = chain();
-  const n = (c.pending.size ? Math.min(...c.pending) : c.n) - 1;
-  return n >= 0 && c.recent.has(n) ? { n, ...c.recent.get(n) } : null;
+  return c.n > 0 ? { n: c.n - 1, hash: c.prev, at: c.at } : null;
+}
+const QUEUE_MAX = 20000;
+/**
+ * Queue an event; it is linked to the stream's written head when its turn comes, appended, and only then does the head
+ * move. A failed write is retried (3 tries, 0.2 / 0.4 s apart) and then dropped with an error: a dropped event never got
+ * a number, so it leaves no gap that would read as tampering. sign: a checkpoint (signed over its hash).
+ * @param {any} entry @param {{ sign?: boolean }} [o] @returns {Promise<boolean>} written
+ */
+function enqueue(entry, o = {}) {
+  const c = chain();
+  return new Promise((resolve) => {
+    if (c.q.length >= QUEUE_MAX) { console.error(`[pagewright] audit log: the write queue is full; dropped ${entry.type}`); return resolve(false); }
+    c.q.push({ entry, sign: !!o.sign, resolve });
+    drain();
+  });
+}
+async function drain() {
+  const c = chain();
+  if (c.busy) return;
+  c.busy = true;
+  try {
+    while (c.q.length) {
+      const job = c.q.shift();
+      const e = job.entry;
+      let ok = false, last = null;
+      for (let t = 0; t < 3 && !ok; t++) {
+        if (t) await new Promise(r => setTimeout(r, 200 * t));
+        e.chain = { s: c.s, n: c.n, prev: c.prev };
+        delete e.sig;
+        e.hash = hashEntry(e);
+        if (job.sign) { const key = signingKey(); if (key) e.sig = crypto.sign(null, Buffer.from(e.hash, 'hex'), key).toString('base64'); }
+        try { await store().appendAudit(e); ok = true; } catch (err) { last = err; }
+      }
+      if (ok) { c.n++; c.prev = e.hash; c.at = e.at; ship(e); }
+      else console.error(`[pagewright] audit log: could not record ${e.type}: ${/** @type {Error} */ (last)?.message}`);
+      job.resolve(ok);
+    }
+  } finally { c.busy = false; }
 }
 
 /* ---------------- checkpoint signatures (Ed25519) ---------------- */
@@ -158,23 +189,15 @@ export async function audit(type, o = {}) {
   await write(entry, type);
 }
 
-/** Link and append one event; never throws. @param {any} entry @param {string} type */
-async function write(entry, type) {
-  link(entry);
+/** Append one event (through the stream's queue); never throws. @param {any} entry @param {string} _type */
+async function write(entry, _type) {
+  if (!(await enqueue(entry))) return;
   const c = chain();
-  try {
-    await store().appendAudit(entry);
-    c.pending.delete(entry.chain.n);
-    ship(entry);
-    // publish this stream's head every 30 s, so the next checkpoint (any server's) anchors it even if this process dies
-    if (Date.now() - (c.headAt || 0) > 30000 && process.env.PW_AUDIT_CHECKPOINTS !== 'off') { c.headAt = Date.now(); publishHead().catch(() => {}); }
-    if (Date.now() - g.__pwAudit.pruned > HOUR) {
-      g.__pwAudit.pruned = Date.now();
-      await store().pruneAudit(new Date(Date.now() - retentionDays() * 24 * HOUR).toISOString());
-    }
-  } catch (e) {
-    c.pending.delete(entry.chain.n); // a gap in the stream now: verification shows it, as it should
-    console.error(`[pagewright] audit log: could not record ${type}: ${/** @type {Error} */ (e).message}`);
+  // publish this stream's head every 30 s, so the next checkpoint (any server's) anchors it even if this process dies
+  if (Date.now() - (c.headAt || 0) > 30000 && process.env.PW_AUDIT_CHECKPOINTS !== 'off') { c.headAt = Date.now(); publishHead().catch(() => {}); }
+  if (Date.now() - g.__pwAudit.pruned > HOUR) {
+    g.__pwAudit.pruned = Date.now();
+    await store().pruneAudit(new Date(Date.now() - retentionDays() * 24 * HOUR).toISOString()).catch((e) => console.error(`[pagewright] audit retention: ${e.message}`));
   }
 }
 
@@ -208,7 +231,6 @@ async function publishHead() {
  */
 export async function checkpoint({ actor = 'system' } = {}) {
   await publishHead();
-  const c = chain();
   const cut = Date.now() - retentionDays() * 24 * HOUR;
   const heads = {};
   for (const r of await store().list('settings')) {
@@ -222,11 +244,7 @@ export async function checkpoint({ actor = 'system' } = {}) {
   if (!Object.keys(heads).length) return null;
   const entry = { id: '', at: new Date().toISOString(), type: 'audit.checkpoint', actor, ip: '-', status: 'ok', detail: { heads, key: publicKeyInfo().fingerprint } };
   entry.id = `${entry.at}-${String((g.__pwAudit.seq = ((g.__pwAudit.seq || 0) + 1) % 1e6)).padStart(6, '0')}-${crypto.randomBytes(3).toString('hex')}`;
-  link(entry);
-  const key = signingKey();
-  if (key) entry.sig = crypto.sign(null, Buffer.from(entry.hash, 'hex'), key).toString('base64'); // without a key: unsigned, and verification says so
-  try { await store().appendAudit(entry); c.pending.delete(entry.chain.n); ship(entry); }
-  catch (e) { c.pending.delete(entry.chain.n); throw e; }
+  if (!(await enqueue(entry, { sign: true }))) throw new Error('The checkpoint could not be written to the audit log.');
   return entry;
 }
 
@@ -259,6 +277,8 @@ export async function verifyAudit(q = {}) {
 }
 
 /** Problems that mean the log was changed (with where), as opposed to what only leaves it unproven. */
+/** The one pass test for a verification result: only an explicit status "ok" passes. @param {any} r */
+export const auditProven = (r) => !!r && r.status === 'ok';
 const TAMPER = new Set(['altered', 'missing', 'broken', 'duplicate', 'unreadable', 'unchained', 'backwards', 'signature']);
 /**
  * 'ok' only when everything is proven: at least one checkpoint signed by the configured key, no problem at all.

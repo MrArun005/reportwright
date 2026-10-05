@@ -213,6 +213,44 @@ describe('fail closed', () => {
   });
 });
 
+describe('the head moves only after a durable write', () => {
+  it('failed writes are retried, then dropped without a number: the stream stays whole', async () => {
+    const { store } = await import('../../src/server/storage/index.js');
+    const st = store();
+    const orig = st.appendAudit;
+    let fails = 5; // the first event fails all 3 tries (dropped), the second fails twice then lands
+    st.appendAudit = async (e) => { if (fails-- > 0) throw new Error('disk full'); return orig(e); };
+    const before = g.__pwAudit.chain.n;
+    try {
+      const a = A.audit('report.view', { actor: 'user:lost@x.test', report: 'r' });
+      const b = A.audit('report.view', { actor: 'user:kept@x.test', report: 'r' });
+      await Promise.all([a, b]);
+    } finally { st.appendAudit = orig; }
+    expect(g.__pwAudit.chain.n).toBe(before + 1);
+    const ev = lines().map(l => JSON.parse(l));
+    expect(ev.some(e => e.actor === 'user:lost@x.test')).toBe(false);
+    const kept = ev.find(e => e.actor === 'user:kept@x.test');
+    expect(kept.chain.n).toBe(before);
+    expect(tk(await A.verifyAudit(), 'unverified').filter(k => k !== 'unverified')).toEqual([]);
+  });
+  it('the API and the one pass test: only status "ok" passes', async () => {
+    expect(A.auditProven({ status: 'ok' })).toBe(true);
+    for (const r of [{ status: 'unverified', ok: true }, { status: 'tampered' }, { status: 'error' }, {}, null, { ok: true }]) expect(A.auditProven(r)).toBe(false);
+    process.env.PW_AUTH = 'users';
+    try {
+      const users = await import('../../src/server/users.js');
+      const session = await import('../../src/server/session.js');
+      await users.createUser({ email: 'adm@x.test', role: 'admin', password: 'admin pass 123' });
+      const cookie = session.sessionCookie(new Request('http://pw.test'), await users.getUser('adm@x.test')).split(';')[0];
+      const route = (await import('../../app/api/audit/verify/route.js')).GET;
+      const r = await (await route(new Request('http://pw.test/api/audit/verify', { headers: { cookie } }))).json();
+      expect(['ok', 'unverified', 'tampered', 'error']).toContain(r.status);
+      expect(r.ok).toBe(r.status === 'ok');
+      expect((await route(new Request('http://pw.test/api/audit/verify?from=bad', { headers: { cookie } }))).status).toBe(400);
+    } finally { delete process.env.PW_AUTH; }
+  });
+});
+
 describe('the chain on SQLite', () => {
   it('a changed row is found', async () => {
     process.env.PW_STORAGE = `sqlite:${path.join(tmp, 'chain.db')}`;

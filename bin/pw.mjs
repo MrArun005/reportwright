@@ -193,7 +193,7 @@ async function cmdAudit(args) {
     console.log(say[r.status] || `UNKNOWN verdict "${r.status}"`);
     if (r.status === 'ok' && r.pending) console.log(`${r.pending} newer event(s) are not yet checkpointed.`);
   }
-  if (r.status !== 'ok') process.exit(1); // anything but an explicit ok is a failure
+  if (!audit.auditProven(r)) process.exit(1); // anything but an explicit status "ok" is a failure
 }
 
 const [cmd, ...rest] = process.argv.slice(2);
