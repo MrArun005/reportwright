@@ -78,11 +78,11 @@ describe('password reset by email', () => {
     await store().put('users', u.email, JSON.stringify({ ...(await users.getUser('pat@x.test')), reset: { ...u.reset, expires: Date.now() - 1 } }));
     expect((await post(R.confirm, { token: second, password: 'new password 13' })).status).toBe(400);
   });
-  it('3 requests an hour per email, then 429 for any email (also one with no account)', async () => {
-    // pat asked 3 times this hour already (above)
-    expect((await post(R.request, { email: 'pat@x.test' }, '10.0.0.4')).status).toBe(429);
+  it('3 requests an hour per email from one network (any email, also one with no account); others still may ask', async () => {
     for (let i = 0; i < 3; i++) expect((await post(R.request, { email: 'ghost@x.test' }, '10.0.0.5')).status).toBe(202);
-    expect((await post(R.request, { email: 'ghost@x.test' }, '10.0.0.6')).status).toBe(429);
+    expect((await post(R.request, { email: 'ghost@x.test' }, '10.0.0.5')).status).toBe(429);
+    // the owner's own network is not used up by someone else's requests (the escape hatch of a capped account)
+    expect((await post(R.request, { email: 'ghost@x.test' }, '10.0.0.6')).status).toBe(202);
     await settle();
   });
   it('without mail set up, the form is off and admins reset passwords', async () => {

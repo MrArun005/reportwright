@@ -18,6 +18,11 @@ export async function basicAuth(req) {
   const h = req.headers.get('authorization') || '';
   const given = h.startsWith('Basic ') ? Buffer.from(h.slice(6), 'base64').toString() : '';
   // a request with no password is asked for one (not counted); one with a password goes through the credential check
-  if (given && await (await import('./limits.js')).checkCredential({ kind: 'basic', req }, () => crypto.timingSafeEqual(digest(given), digest(want)))) return null;
+  try {
+    if (given && await (await import('./limits.js')).checkCredential({ kind: 'basic', req }, () => crypto.timingSafeEqual(digest(given), digest(want)))) return null;
+  } catch (e) {
+    if (/** @type {any} */ (e).status !== 429) throw e;
+    return new Response(/** @type {any} */ (e).message, { status: 429, headers: { 'retry-after': String(/** @type {any} */ (e).retryAfter) } });
+  }
   return new Response('Sign in to Pagewright', { status: 401, headers: { 'www-authenticate': 'Basic realm="Pagewright", charset="UTF-8"' } });
 }

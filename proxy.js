@@ -43,5 +43,5 @@ export async function proxy(request) {
 async function proxySecretChecked(request) {
   if (!process.env.PW_PROXY_SECRET || process.env.PW_AUTH !== 'proxy') return proxySecretOk(request);
   if (!request.headers.get('x-pagewright-proxy-secret')) return false; // nothing presented: nothing to count
-  return (await import('./src/server/limits.js')).checkCredential({ kind: 'proxy', req: request }, () => proxySecretOk(request));
+  return (await import('./src/server/limits.js')).checkCredential({ kind: 'proxy', req: request }, () => proxySecretOk(request)).catch((e) => { if (e.status === 429) return false; throw e; });
 }

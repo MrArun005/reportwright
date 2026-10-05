@@ -48,7 +48,9 @@ export async function apiPrincipal(req) {
   const given = h.startsWith('Bearer ') ? h.slice(7).trim() : req.headers.get('x-api-key') || '';
   // every key compared (no early exit), through the one credential check (limits.checkCredential)
   const find = () => { let h = null; for (const k of list) if (eq(k.key, given) && !h) h = k; return h; };
-  const hit = given ? await (await import('./limits.js')).checkCredential({ kind: 'apikey', req }, find) : null;
+  let hit = null;
+  try { hit = given ? await (await import('./limits.js')).checkCredential({ kind: 'apikey', req }, find) : null; }
+  catch (e) { if (/** @type {any} */ (e).status === 429) return { res: Response.json({ error: /** @type {any} */ (e).message }, { status: 429, headers: { 'retry-after': String(/** @type {any} */ (e).retryAfter) } }) }; throw e; }
   const where = { method: req.method, path: new URL(req.url).pathname };
   if (!hit) {
     await audit('api.call', { req, status: 'denied', detail: { ...where, reason: given ? 'unknown key' : 'no key' } });

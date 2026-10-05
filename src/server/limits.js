@@ -143,52 +143,45 @@ function sweepSoon() {
 
 /* ---------------- every credential check ---------------- */
 
-const WINDOW = 15 * 60 * 1000;
 const emailKey = (email) => limitHash(['account', normAccount(email)]);
-/** Delay (ms) for the nth failure in a row from one source on one account: none for 3, then 0.5 s doubling to 8 s. */
-export const sourceDelay = (n) => (n < 3 ? 0 : Math.min(8000, 500 * 2 ** (n - 3)));
-/** Extra delay for every try on an account that has 50+ failures from all sources in the window: never more. */
-export const HOT_DELAY_MS = 1500, HOT_AFTER = 50;
-const ms = (k, d) => { const n = Number(process.env[k]); return process.env[k] !== undefined && process.env[k] !== '' && Number.isFinite(n) && n >= 0 ? n : d; };
+/** The caps (docs/GOVERNANCE.md, "Sign-in limits"). */
+export const CAPS = Object.freeze({
+  source: { n: 20, ms: 10 * 60 * 1000 }, // failures from one network across every account: a spray
+  account: { n: 10, ms: 15 * 60 * 1000 }, // failures on one account from browsers it does not know
+  device: { n: 10, ms: 15 * 60 * 1000 }, // failures from one known device (its own budget)
+});
+/** Kinds whose secret belongs to an account (the per-account cap and device cookies apply). */
+const PER_ACCOUNT = new Set(['password', 'mfa']);
 
 /** The account's unlock epoch: an admin unlock starts every count for it afresh. @param {string} email */
 async function epoch(email) {
   const { getRecord } = await import('./settings.js');
   return (await getRecord(`login-unlock:${emailKey(email)}`).catch(() => null))?.at || 0;
 }
-/** Admin unlock: forget every sign-in failure counted for this account (all sources). @param {string} email */
+/** Admin unlock: forget every failure counted for this account (all sources). @param {string} email */
 export async function unlockLogin(email) {
   const { putRecord } = await import('./settings.js');
   await putRecord(`login-unlock:${emailKey(email)}`, { at: Date.now() });
 }
 
-// failure counts are storage leases (atomic on every storage, so parallel tries cannot undercount), as attempt():
-// per (account, network) up to SLOTS failures in a row, scanned from the first, so the first free slot's index is the
-// count; per account, HOT_AFTER slots taken in any order (attempt), all held = a hot account.
-const SLOTS = 8;
-/** The failures in a row so far, and a slot taken for this try (given back when it succeeds). */
-async function takeSlot(name) {
-  const owner = crypto.randomBytes(8).toString('hex');
-  for (let k = 0; k < SLOTS; k++) {
-    const slot = `${name}:${k}`;
-    if (await store().lease(slot, owner, WINDOW)) return { n: k, release: () => store().release(slot, owner) };
-  }
-  return { n: SLOTS, release: async () => {} };
-}
+const tooMany = (retryAfter, msg) => Object.assign(new Error(msg), { status: 429, retryAfter });
 
 /**
  * Every check of a secret someone presents goes through here: a password, an API key, PW_BASIC_AUTH, the proxy
- * secret, a TOTP or recovery code, an emailed enrolment code, a reset token, a download link's signature (the ratchet
- * test tests/engine/r1a-credential.test.js fails when one does not). Nothing is ever refused here, nobody is locked
- * out; a try only waits, before `verify` runs (so a client cannot learn the answer early and move on):
- *   - per (kind, account, source network): failures from that network on that account in 15 minutes, sourceDelay(n),
- *     up to 8 s. Other networks' failures never touch this count, so an attacker cannot slow the owner's own network;
- *   - per (kind, account), all networks: past 50 failures in 15 minutes, every try waits HOT_DELAY_MS (1.5 s) more.
- *     That is all that a flood from rotating sources can add to the owner's sign-in.
- * A success gives its own try back (it does not count). Counts are storage leases: atomic, across servers. The network is the client address (trusted proxies only, see
- * clientAddress), IPv6 by /64. Names are tuple hashes (limitHash); accounts are normalised (normAccount).
- * Residual: a distributed guesser is slowed (each try waits, ≥ 1.5 s on a hot account) but not capped; strong
- * passwords, second factors and high-entropy keys are what stop it.
+ * secret, a TOTP or recovery code, an emailed enrolment code, the pending 2FA step, a reset token, a download link's
+ * signature (tests/engine/r1a-credential.test.js fails when one does not). The OWASP device-cookie design:
+ *   1. per network (the client address from trusted proxies only, IPv6 by /64): 20 failures in 10 minutes across all
+ *      accounts, then 429 with Retry-After for that network: a spray is capped;
+ *   2. per account (password, second factor): 10 failures in 15 minutes from browsers the account does not know, then
+ *      429 for such browsers: a distributed brute force is capped;
+ *   3. a browser with a valid device cookie for the account (session.knownDevice: set after a complete sign-in,
+ *      rotating, ended by a password change or sign-out everywhere) is not under cap 2; it has its own 10 per 15
+ *      minutes. So an attack cannot lock out an owner who has signed in from that browser before;
+ *   4. a new browser on a capped account gets in by a password reset (mailed; its own limits) or an admin unlock.
+ * A right secret gives its tries back (they do not count). Counts are storage leases: atomic, on every server.
+ * Throws 429 (with retryAfter, seconds) when a cap is reached; otherwise returns what `verify` returned.
+ * Residual: a credential without an account (API keys, basic auth, the proxy secret, links, reset tokens) has the
+ * per-network cap only: those are long random values (basic auth: choose a long password).
  * @template T @param {{ kind: string, account?: string, req?: Request, address?: string }} who
  * @param {() => Promise<T> | T} verify returns a truthy value for a right secret @returns {Promise<T>}
  */
@@ -196,16 +189,26 @@ export async function checkCredential(who, verify) {
   sweepSoon();
   if (who.req) unknownProxy(who.req); // says once in the log when a proxy in front is not in PW_TRUSTED_PROXIES
   const acct = normAccount(who.account ?? '-');
-  const era = who.kind === 'password' || who.kind === 'mfa' ? await epoch(acct) : 0;
   const net = netKey(who.address ?? clientAddress(who.req));
-  const [mine, all] = await Promise.all([takeSlot(`cf:${limitHash(['cred', who.kind, acct, era, net])}`), attempt(['cred-all', who.kind, acct, era], HOT_AFTER, WINDOW)]);
-  const wait = Math.min(ms('PW_CRED_MAX_DELAY_MS', 8000), sourceDelay(mine.n)) + (all.ok ? 0 : ms('PW_CRED_HOT_DELAY_MS', HOT_DELAY_MS));
-  if (wait) await new Promise(r => setTimeout(r, wait));
+  const taken = [];
+  const take = async (key, cap, msg) => {
+    const t = await attempt(key, cap.n, cap.ms);
+    if (!t.ok) { await Promise.all(taken.map(x => x.release())); throw tooMany(t.retryAfter, msg); }
+    taken.push(t);
+  };
+  await take(['cred-src', who.kind, net], CAPS.source, 'Too many failed tries from this network. Try again later.');
+  if (PER_ACCOUNT.has(who.kind) && acct !== '-') {
+    const era = await epoch(acct);
+    const { getUser } = await import('./users.js');
+    const { knownDevice } = await import('./session.js');
+    const device = knownDevice(who.req, await getUser(acct).catch(() => null));
+    if (device) await take(['cred-dev', who.kind, acct, era, device], CAPS.device, 'Too many failed tries from this browser. Try again later.');
+    else await take(['cred-acct', who.kind, acct, era], CAPS.account, 'Too many failed sign-ins for this account. Try again later, sign in from a browser you used before, or reset your password.');
+  }
   let ok = null, err = null;
   try { ok = await verify(); } catch (e) { err = e; }
   const wrong = !ok && (!err || [400, 401, 403].includes(/** @type {any} */ (err).status)); // a refused secret, not a server error
-  // a right secret (or a server error) gives this try's slots back; a wrong one keeps them for the window
-  if (!wrong) await Promise.all([mine.release(), all.release()]);
+  if (!wrong) await Promise.all(taken.map(x => x.release())); // a right secret (or a server error) does not count
   if (err) throw err;
   return ok;
 }

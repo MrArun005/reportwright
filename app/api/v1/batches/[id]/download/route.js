@@ -14,7 +14,7 @@ export async function GET(req, { params }) {
   const sp = new URL(req.url).searchParams;
   let principal, via = 'api';
   if (sp.has('sig')) {
-    if (!/^b_[a-z0-9]+$/.test(id) || !(await checkCredential({ kind: 'link', req }, () => linkOk(id, sp.get('exp'), sp.get('sig')))) || !(await linkJob(id))) {
+    if (!/^b_[a-z0-9]+$/.test(id) || !(await checkCredential({ kind: 'link', req }, () => linkOk(id, sp.get('exp'), sp.get('sig'))).catch((e) => { if (e.status === 429) return false; throw e; })) || !(await linkJob(id))) {
       await audit('batch.download', { req, status: 'denied', detail: { batch: String(id).slice(0, 40), via: 'link', reason: 'bad or expired link, or the owner may no longer run the report' } });
       return Response.json({ error: 'This download link is not valid or has expired.' }, { status: 403 });
     }

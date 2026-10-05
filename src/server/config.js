@@ -24,8 +24,6 @@ export const SETTINGS = [
   ['PW_PASSWORD_LOGIN', 'onoff', 'on', 'off: password sign-in off while SSO is set up.'],
   ['PW_DEV_HOSTS', 'list', '(localhost)', 'More host names the dev server answers on (DNS rebinding guard).'],
   ['PW_TRUSTED_PROXIES', 'list', '(none)', 'Proxy IPs or CIDRs whose X-Forwarded-For is believed.'],
-  ['PW_CRED_MAX_DELAY_MS', 'ms', '8000', 'The longest wait after failed secrets from one network on one account.'],
-  ['PW_CRED_HOT_DELAY_MS', 'ms', '1500', 'The extra wait on an account with 50+ failures from everywhere.'],
   ['PW_TOTP_ISSUER', 'text', 'Pagewright', 'The issuer name authenticator apps show.'],
   ['PW_DATA_KEY', 'secret', '(PW_SESSION_SECRET)', 'Seals TOTP secrets at rest (32+ characters).'],
   ['PW_LINK_SECRET', 'secret', '(PW_SESSION_SECRET)', 'Signs emailed download links.'],

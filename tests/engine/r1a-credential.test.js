@@ -14,7 +14,6 @@ let limits, login;
 const signIn = (email, password, peer) => login(new Request(`${BASE}/api/auth/login`, { method: 'POST', headers: { origin: BASE, 'content-type': 'application/json', 'x-pw-peer': peer }, body: JSON.stringify({ email, password }) }));
 beforeAll(async () => {
   Object.assign(process.env, { PW_AUTH: 'users', PW_SESSION_SECRET: 'pw-cred-'.padEnd(48, 'x'), PW_STORAGE: `sqlite:${path.join(tmp, 's.db')}` });
-  for (const k of ['PW_CRED_MAX_DELAY_MS', 'PW_CRED_HOT_DELAY_MS']) delete process.env[k];
   globalThis.__pwPeers = true;
   limits = await import('../../src/server/limits.js');
   ({ POST: login } = await import('../../app/api/auth/login/route.js'));
@@ -70,29 +69,72 @@ describe('the credential ratchet', () => {
   });
 });
 
-describe('checkCredential', () => {
-  it('never refuses; failures from one network make that network wait, growing to a cap', async () => {
-    expect([0, 1, 2, 3, 4, 5, 6, 7, 20].map(limits.sourceDelay)).toEqual([0, 0, 0, 500, 1000, 2000, 4000, 8000, 8000]);
-    process.env.PW_CRED_MAX_DELAY_MS = '300';
-    try {
-      const who = { kind: 'apikey', address: '198.51.100.20' };
-      for (let i = 0; i < 4; i++) expect(await limits.checkCredential(who, () => false)).toBe(false);
-      let t0 = Date.now();
-      expect(await limits.checkCredential(who, () => 'right')).toBe('right'); // waited, then let through
-      expect(Date.now() - t0).toBeGreaterThanOrEqual(280);
-      t0 = Date.now();
-      await limits.checkCredential({ kind: 'apikey', address: '198.51.100.21' }, () => false); // another network: no wait
-      expect(Date.now() - t0).toBeLessThan(200);
-    } finally { delete process.env.PW_CRED_MAX_DELAY_MS; }
+describe('checkCredential: caps and device cookies (OWASP)', () => {
+  const device = (res) => res.headers.getSetCookie().find(c => c.startsWith('pw_device='))?.split(';')[0];
+  const as = (email, password, peer, cookie) => login(new Request(`${BASE}/api/auth/login`, { method: 'POST', headers: { origin: BASE, 'content-type': 'application/json', 'x-pw-peer': peer, ...(cookie && { cookie }) }, body: JSON.stringify({ email, password }) }));
+  let users;
+  beforeAll(async () => { users = await import('../../src/server/users.js'); });
+
+  it('a distributed brute force on one account is capped (10 from untrusted browsers, from any networks)', async () => {
+    await users.createUser({ email: 'dist@x.test', role: 'viewer', password: PW });
+    const st = [];
+    for (let i = 0; i < 12; i++) st.push((await as('dist@x.test', 'wrong', `198.18.${i}.1`)).status);
+    expect(st.slice(0, 10).every(c => c === 401)).toBe(true);
+    expect(st.slice(10)).toEqual([429, 429]);
+    const r = await as('dist@x.test', PW, '198.18.99.1'); // a new browser, even with the right password
+    expect(r.status).toBe(429);
+    expect(r.headers.get('retry-after')).toBeTruthy();
   });
 
-  it('a flood of wrong passwords from rotating sources adds at most about 2 s to the real admin', async () => {
-    for (let b = 0; b < 6; b++) await Promise.all(Array.from({ length: 50 }, (_, i) => signIn('admin@x.test', 'wrong', `203.0.${b}.${i}`)));
-    const t0 = Date.now();
-    const ok = await signIn('admin@x.test', PW, '192.0.2.1');
-    const took = Date.now() - t0;
-    expect(ok.status).toBe(200);
-    expect(took).toBeGreaterThanOrEqual(limits.HOT_DELAY_MS - 50); // the hot-account wait applies
-    expect(took).toBeLessThan(limits.HOT_DELAY_MS + 1500); // and that is all (plus the password hash)
-  }, 300000);
+  it('a spray from one network across many accounts is capped (20)', async () => {
+    const st = [];
+    for (let i = 0; i < 22; i++) st.push((await as(`nobody${i}@x.test`, 'wrong', '203.0.113.200')).status);
+    expect(st.slice(0, 20).every(c => c === 401)).toBe(true);
+    expect(st.slice(20)).toEqual([429, 429]);
+    expect((await as('nobody99@x.test', 'wrong', '203.0.113.201')).status).toBe(401); // another network is not
+  });
+
+  it('the real admin with a device cookie signs in during an attack; a forged or revoked cookie gets no bypass', async () => {
+    const first = await as('admin@x.test', PW, '192.0.2.1');
+    expect(first.status).toBe(200);
+    const dev = device(first);
+    expect(dev).toBeTruthy();
+    for (let b = 0; b < 3; b++) await Promise.all(Array.from({ length: 40 }, (_, i) => as('admin@x.test', 'wrong', `100.70.${b}.${i}`)));
+    expect((await as('admin@x.test', PW, '192.0.2.2')).status).toBe(429); // untrusted browsers are capped
+    const ok = await as('admin@x.test', PW, '192.0.2.1', dev);
+    expect(ok.status).toBe(200); // the known browser is not
+    const dev2 = device(ok); // rotated
+    expect(dev2).not.toBe(dev);
+    const forged = dev2.slice(0, -3) + (dev2.endsWith('A') ? 'BBB' : 'AAA');
+    expect((await as('admin@x.test', PW, '192.0.2.1', forged)).status).toBe(429);
+    const other = device(await (async () => { await users.createUser({ email: 'pal@x.test', role: 'viewer', password: PW }); return as('pal@x.test', PW, '192.0.2.9'); })());
+    expect((await as('admin@x.test', PW, '192.0.2.1', other)).status).toBe(429); // another account's cookie
+    await users.endSessions('admin@x.test'); // sign-out everywhere (or a password change) revokes it
+    expect((await as('admin@x.test', PW, '192.0.2.1', dev2)).status).toBe(429);
+  }, 120000);
+
+  it('an expired device cookie gets no bypass', async () => {
+    const { vi } = await import('vitest');
+    await users.createUser({ email: 'exp@x.test', role: 'viewer', password: PW });
+    const dev = device(await as('exp@x.test', PW, '192.0.2.30'));
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(Date.now() + 91 * 86400000);
+      for (let i = 0; i < 10; i++) await as('exp@x.test', 'wrong', `198.19.${i}.1`);
+      expect((await as('exp@x.test', PW, '192.0.2.30', dev)).status).toBe(429);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('a known device has its own small budget, and an admin unlock opens a capped account', async () => {
+    await users.createUser({ email: 'own@x.test', role: 'viewer', password: PW });
+    const dev = device(await as('own@x.test', PW, '192.0.2.40'));
+    const st = [];
+    for (let i = 0; i < 11; i++) st.push((await as('own@x.test', 'wrong', '192.0.2.40', dev)).status);
+    expect(st.slice(0, 10).every(c => c === 401)).toBe(true);
+    expect(st[10]).toBe(429);
+    for (let i = 0; i < 10; i++) await as('own@x.test', 'wrong', `198.20.${i}.1`);
+    expect((await as('own@x.test', PW, '192.0.2.41')).status).toBe(429);
+    await limits.unlockLogin('own@x.test');
+    expect((await as('own@x.test', PW, '192.0.2.41')).status).toBe(200);
+  });
 });

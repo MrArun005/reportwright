@@ -10,8 +10,8 @@ is an environment variable unless it says "Settings page" (`/admin/settings`, ad
 - Users turn it on at **Account** (`/account`): scan the QR code with an authenticator app (RFC 6238: SHA-1, 6 digits,
   30 s), confirm a code, and keep the 10 recovery codes (shown once; each works once).
 - Sign-in asks for the code after the password. Between the two the browser holds `pw_mfa` (5 minutes, its own MAC
-  purpose, never a session). A code's time step is good once per user on every server; 5 wrong codes in 15 minutes
-  lock the second step for that user, on every server (storage leases, `src/server/limits.js`).
+  purpose, never a session). A code's time step is good once per user on every server; wrong codes count under the
+  sign-in limits below (the second factor has its own counts).
 - **Settings page → Require two-factor sign-in** per role: password accounts with that role enrol at their next
   sign-in, and their sessions without the factor end. Single sign-on accounts are not asked (the IdP owns the factors).
 - Admins **Reset two-factor** on the Users page for a lost phone (`PATCH /api/users/<email> { resetTwoFactor: true }`);
@@ -20,13 +20,38 @@ is an environment variable unless it says "Settings page" (`/admin/settings`, ad
   secret makes enrolled authenticators unreadable: reset the users and they enrol again.
 - `PW_TOTP_ISSUER` names the account in the app (default Pagewright).
 
+## Sign-in limits
+
+One function checks every secret someone presents: `checkCredential()` in `src/server/limits.js` (passwords, TOTP,
+recovery and emailed enrolment codes, the pending two-factor step, reset tokens, API keys, `PW_BASIC_AUTH`, the proxy
+secret, download-link signatures). `tests/engine/r1a-credential.test.js` fails when a verifier is called outside it.
+The design is OWASP's device cookie:
+
+1. **Per network** (the client address, believed from `PW_TRUSTED_PROXIES` only; IPv6 by /64): 20 failures in
+   10 minutes across all accounts, then 429 with Retry-After for that network. A spray is capped.
+2. **Per account** (passwords and second factors): 10 failures in 15 minutes from browsers the account does not know,
+   then 429 for such browsers. A distributed brute force is capped.
+3. **Device cookies.** A complete sign-in (password and any second factor) sets `pw_device`: HMAC-signed, HttpOnly,
+   SameSite=Strict, for `/api/auth`, holding the account, a random device id, the account's session version and 90
+   days. A new one on every sign-in. Sign-out everywhere, a password change or disabling the account ends it. A try
+   carrying a valid one for the account is not under cap 2; it has its own 10 failures per 15 minutes. An attack
+   cannot lock out a browser that signed in before.
+4. **A new browser on a capped account** gets in by a password reset email (its own limits, per network) or an admin
+   unlock (Users page, `PATCH /api/users/<email> { unlockSignIn: true }`), or waits out the 15 minutes.
+
+A right secret does not count. Counts are storage leases (atomic, shared by every server). Residual: secrets without
+an account (API keys, the basic-auth password, the proxy secret, link signatures, reset tokens) have the per-network
+cap only, so they must be long and random; behind a proxy `PW_TRUSTED_PROXIES` does not name, every client shares one
+network count (the log says so once).
+
 ## Password reset by email
 
 Needs mail (below) and `PW_BASE_URL` (the link's address; in production never taken from a request). **Forgot your
 password?** on the sign-in page asks for an email; the answer is the same whether or not an account exists and comes
 before any lookup. The link holds a one-time token (only its SHA-256 is stored), works for 30 minutes, and a newer one
 replaces it. Using it sets the password and ends every session; two-factor sign-in still applies. Limits: 3 requests an
-hour per email and 20 per client address; 20 confirm attempts an hour per address. Without mail, the sign-in page says to
+hour per email from one network, 20 per email in all and 20 per network; a reset token counts under the sign-in limits
+(per network). A reset is the way in for a new browser on an account the limits have capped. Without mail, the sign-in page says to
 ask an admin, who sets a new password on the Users page.
 
 ## Mail (SMTP)

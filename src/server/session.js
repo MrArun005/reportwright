@@ -150,6 +150,30 @@ export function sessionCookie(req, user, how = {}) {
   return `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${exp - now}${isHttps(req) ? '; Secure' : ''}`;
 }
 
+/* ---------------- device cookies (OWASP): a browser that completed a sign-in for an account ---------------- */
+
+export const DEVICE_COOKIE = 'pw_device';
+const DEVICE_AGE = 90 * 86400;
+/**
+ * Set-Cookie for this browser as a known device of this account, after a complete sign-in (password and any second
+ * factor): HMAC-signed { e: email, d: a random device id, v: the account's sessionVersion, iat, exp }. A new one on
+ * every sign-in (rotating). It ends with the account's sessions (a password change, sign-out everywhere, disabling:
+ * sessionVersion moves) or after 90 days. It never signs anyone in; it only exempts tries from this browser from the
+ * cap on untrusted tries for the account (limits.checkCredential), within its own small budget.
+ * @param {Request} req @param {{ email: string, sessionVersion?: number }} user
+ */
+export function deviceCookie(req, user) {
+  const now = Math.floor(Date.now() / 1000);
+  const token = signSession({ dev: 1, e: user.email, d: crypto.randomBytes(12).toString('base64url'), v: user.sessionVersion || 0, iat: now, exp: now + DEVICE_AGE }, DEVICE_COOKIE);
+  return `${DEVICE_COOKIE}=${token}; Path=/api/auth; HttpOnly; SameSite=Strict; Max-Age=${DEVICE_AGE}${isHttps(req) ? '; Secure' : ''}`;
+}
+/** The device id of a valid device cookie for this account as it is now, or null. @param {Request} req @param {{ email: string, sessionVersion?: number } | null} user */
+export function knownDevice(req, user) {
+  if (!user || !req?.headers) return null;
+  const p = readToken(cookie(req, DEVICE_COOKIE) || '', DEVICE_COOKIE); // signature and expiry
+  return p?.dev === 1 && p.e === user.email && p.v === (user.sessionVersion || 0) && typeof p.d === 'string' ? p.d : null;
+}
+
 /* ---------------- the step between the password and the second factor ---------------- */
 
 export const MFA_COOKIE = 'pw_mfa';

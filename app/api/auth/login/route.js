@@ -1,9 +1,9 @@
 // POST /api/auth/login { email, password } — sign in (PW_AUTH=users). Sets the pw_session cookie, or, when the account
 // needs a second factor, answers { mfa: 'totp' | 'enrol' } and sets pw_mfa: POST /api/auth/mfa finishes the sign-in.
-// The password goes through limits.checkCredential: failures only make later tries wait (per account and network, and
-// a little for a much-attacked account); nothing is refused, nobody is locked out.
+// The password goes through limits.checkCredential: caps per network and per account (429), and a device cookie set
+// on a complete sign-in so an attack cannot lock out a browser that signed in before (docs/GOVERNANCE.md).
 import { authenticate, ensureAdmin, normEmail, secondFactor } from '@/server/users.js';
-import { accountsOn, sessionSecret, sessionCookie, mfaCookie } from '@/server/session.js';
+import { accountsOn, sessionSecret, sessionCookie, mfaCookie, deviceCookie } from '@/server/session.js';
 import { checkCredential } from '@/server/limits.js';
 import { getSettings } from '@/server/settings.js';
 import { issueEnrolCode, updateUser } from '@/server/users.js';
@@ -49,7 +49,10 @@ export async function POST(req) {
     }
     if (need) return Response.json({ mfa: need }, { headers: { 'set-cookie': mfaCookie(req, user, need === 'enrol'), 'cache-control': 'no-store' } });
     await audit('auth.login', { req, actor: `user:${user.email}`, detail: { method: 'password' } });
-    return Response.json({ email: user.email, role: user.role }, { headers: { 'set-cookie': sessionCookie(req, user) } });
+    const h = new Headers();
+    h.append('set-cookie', sessionCookie(req, user));
+    h.append('set-cookie', deviceCookie(req, user)); // a known device of this account from now on (limits.checkCredential)
+    return Response.json({ email: user.email, role: user.role }, { headers: h });
   } catch (e) {
     return errorResponse(e);
   }

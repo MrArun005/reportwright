@@ -41,9 +41,13 @@ export async function POST(req) {
   const body = await req.json().catch(() => ({}));
   let email;
   try { email = normEmail(body?.email); } catch (e) { return Response.json({ error: e.message }, { status: 400 }); }
-  const byAddress = await attempt(['reset-ip', netKey(clientAddress(req))], 20, HOUR);
-  const byEmail = byAddress.ok ? await attempt(['reset-email', normAccount(email)], 3, HOUR) : null;
-  if (!byAddress.ok || !byEmail?.ok) {
+  // per network, per (email, network) and per email: the owner's own network keeps its 3 an hour however many others
+  // asked for this email, and the mailbox gets at most 20 an hour (the escape hatch for a capped account)
+  const net = netKey(clientAddress(req));
+  const byAddress = await attempt(['reset-ip', net], 20, HOUR);
+  const byEmailNet = byAddress.ok ? await attempt(['reset-email-net', normAccount(email), net], 3, HOUR) : null;
+  const byEmail = byEmailNet?.ok ? await attempt(['reset-email', normAccount(email)], 20, HOUR) : null;
+  if (!byAddress.ok || !byEmailNet?.ok || !byEmail?.ok) {
     await audit('auth.reset_request', { req, status: 'denied', detail: { email, reason: 'rate limited' } });
     return Response.json({ error: 'Too many reset requests. Try again later.' }, { status: 429, headers: { 'retry-after': String(HOUR / 1000) } });
   }
