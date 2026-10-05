@@ -207,10 +207,11 @@ describe('Oracle (mocked oracledb, not live-tested)', () => {
 
 /** A snowflake-sdk pool whose statements stream the given rows. */
 function snowflakeMock(rows, { fail, grants = { R: [{ privilege: 'USAGE', granted_on: 'WAREHOUSE', name: 'WH' }, { privilege: 'SELECT', granted_on: 'TABLE', name: 'DB.S.T' }] } } = {}) {
-  const log = { cancelled: 0, shows: [] };
+  const log = { cancelled: 0, shows: [], released: 0, destroyed: 0 };
   mocks.snowflake = {
     createPool: (cfg) => ({
-      use: async (fn) => fn({
+      release: () => { log.released++; }, destroy: () => { log.destroyed++; },
+      acquire: async () => ({
         execute(o) {
           if (!o.streamResult) { log.shows.push([o.sqlText, ...(o.binds || [])]); setTimeout(() => o.complete(null, {}, /^SHOW/.test(o.sqlText) ? (grants[o.binds[0]] || []) : []), 1); return {}; }
           log.opts = o;
@@ -248,17 +249,28 @@ describe('Snowflake (mocked snowflake-sdk, not live-tested)', () => {
     }
     const log = snowflakeMock([{ A: 1 }], { grants: { R, INNER: [{ privilege: 'SELECT', granted_on: 'VIEW', name: 'V' }] } });
     expect(await runSql({ connection: env('sf', 'snowflake://u:p@acct/DB?role=R'), query: 'select a from t' }, {})).toEqual([{ A: 1 }]);
-    expect(log.shows.map(x => x[0])).toEqual(['USE SECONDARY ROLES NONE', 'SHOW GRANTS TO ROLE IDENTIFIER(?)', 'SHOW GRANTS TO ROLE IDENTIFIER(?)', 'SHOW GRANTS TO ROLE IDENTIFIER(?)']);
+    expect(log.shows.map(x => x[0])).toEqual(['USE SECONDARY ROLES NONE', 'SHOW GRANTS TO USER IDENTIFIER(?)', 'SHOW GRANTS TO ROLE IDENTIFIER(?)', 'SHOW GRANTS TO ROLE IDENTIFIER(?)', 'SHOW GRANTS TO ROLE IDENTIFIER(?)']);
+    expect(log.released).toBe(1);
+    // the user may hold no other role (default secondary roles would switch it on); USE SECONDARY ROLES NONE on every query
+    const two = snowflakeMock([{ A: 1 }], { grants: { R, INNER: [], u: [{ role: 'R' }, { role: 'SYSADMIN' }] } });
+    await expect(runSql({ connection: env('sf', 'snowflake://u:p@acct/DB?role=R'), query: 'select a from t' }, {})).rejects.toThrow(/SYSADMIN/);
+    expect(two.opts).toBeUndefined();
+    const name = env('sf', 'snowflake://u:p@acct/DB?role=R');
+    const again = snowflakeMock([{ A: 1 }], { grants: { R: [] } });
+    await runSql({ connection: name, query: 'select a from t' }, {});
+    await runSql({ connection: name, query: 'select a from t' }, {});
+    expect(again.shows.filter(x => x[0] === 'USE SECONDARY ROLES NONE')).toHaveLength(2);
   });
   it('cancels the statement at the row cap', async () => {
     const log = snowflakeMock(Array.from({ length: 100 }, (_, i) => ({ A: i })));
     limits.rows = 5;
     await expect(runSql({ connection: env('sf', 'snowflake://u:p@acct/DB?role=R'), query: 'select a from t' }, {})).rejects.toThrow(/more than 5 rows/);
     expect(log.cancelled).toBe(1);
+    expect(log.destroyed).toBe(1); // a cancelled statement's connection is not pooled
   });
   it('a statement that never answers: 504 on time, and it is cancelled', async () => {
     let cancelled = 0;
-    mocks.snowflake = { createPool: () => ({ use: async (fn) => fn({ execute: (o) => { if (!o.streamResult) { setTimeout(() => o.complete(null, {}, []), 1); return {}; } return { cancel: (cb) => { cancelled++; cb?.(); } }; } }) }) };
+    mocks.snowflake = { createPool: () => ({ release() {}, destroy() {}, acquire: async () => ({ execute: (o) => { if (!o.streamResult) { setTimeout(() => o.complete(null, {}, []), 1); return {}; } return { cancel: (cb) => { cancelled++; cb?.(); } }; } }) }) };
     limits.ms = 150;
     const t0 = Date.now();
     await expect(runSql({ connection: env('sf', 'snowflake://u:p@acct/DB?role=R'), query: 'select a from t' }, {})).rejects.toMatchObject({ status: 504 });

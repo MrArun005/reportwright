@@ -33,7 +33,14 @@ const all = (conn, sqlText, binds = []) => new Promise((resolve, reject) => conn
  * What the role can do beyond reading, or ''. Follows granted roles (and PUBLIC, which every role has) to the end.
  * @param {any} conn @param {string} role
  */
-export async function probeSnowflake(conn, role) {
+export async function probeSnowflake(conn, role, user) {
+  // the user's own roles: only the named role (and PUBLIC); any other could be switched on
+  if (user) {
+    for (const g of await all(conn, 'SHOW GRANTS TO USER IDENTIFIER(?)', [user])) {
+      const r = String(g.role || g.name || '').replace(/^"|"$/g, '').toUpperCase();
+      if (r && r !== role.toUpperCase() && r !== 'PUBLIC') return `the user also has the role ${r.slice(0, 100)}`;
+    }
+  }
   const seen = new Set(), todo = [role.toUpperCase(), 'PUBLIC'];
   while (todo.length) {
     const r = todo.shift();
@@ -68,15 +75,24 @@ export async function snowflake(url, text, values, ctx) {
   const entry = pools.get(key);
   const clk = clock(Number(limits.ms));
   try {
-    return await clk.inTime(entry.pool.use(async (conn) => {
-      if (Date.now() - entry.checked > PROBE_MS) {
-        await all(conn, 'USE SECONDARY ROLES NONE'); // only the named role's grants apply
-        const why = await probeSnowflake(conn, cfg.role);
-        if (why) throw fail(`This Snowflake role can do more than read (${why}). Give report connections a role with USAGE and SELECT grants only (see docs/DATA-SQL.md).`, 500);
-        entry.checked = Date.now();
+    return await clk.inTime((async () => {
+      const conn = await entry.pool.acquire();
+      let ok = false;
+      try {
+        await all(conn, 'USE SECONDARY ROLES NONE'); // on every query: only the named role's grants apply
+        if (Date.now() - entry.checked > PROBE_MS) {
+          const why = await probeSnowflake(conn, cfg.role, cfg.username);
+          if (why) throw fail(`This Snowflake role can do more than read (${why}). Give report connections a role with USAGE and SELECT grants only (see docs/DATA-SQL.md).`, 500);
+          entry.checked = Date.now();
+        }
+        const rows = await run(conn);
+        ok = true;
+        return rows;
+      } finally {
+        // a cancelled, capped or failed statement: the connection is destroyed, not pooled
+        if (ok) entry.pool.release(conn); else entry.pool.destroy(conn);
       }
-      return run(conn);
-    }));
+    })());
   } finally { clk.stop(); }
 
   function run(conn) {
@@ -100,7 +116,10 @@ export async function snowflake(url, text, values, ctx) {
           stream.on('end', () => { if (!done) { done = true; resolve(rows); } });
         },
       });
-      clk.track({ cancel: () => { try { stmt?.cancel(() => {}); } catch { /* finished */ } } });
+      try { clk.track({ cancel: () => { try { stmt?.cancel(() => {}); } catch { /* finished */ } } }); } catch (e) {
+        try { stmt?.cancel(() => {}); } catch { /* finished */ } // the deadline passed while it was sent: cancel it now
+        reject(e);
+      }
     });
   }
 }

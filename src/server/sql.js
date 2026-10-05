@@ -380,7 +380,9 @@ function killMysql(mysql, url, thread) {
   if (!thread) return;
   mysql.createConnection({ uri: url, connectTimeout: KILL_MS }).then(async (k) => {
     k.connection.on?.('error', () => {});
+    const t = setTimeout(() => k.destroy(), KILL_MS);
     await k.query(`KILL ${Number(thread)}`).catch(() => {});
+    clearTimeout(t);
     k.destroy();
   }, () => {});
 }
@@ -392,11 +394,13 @@ const PG_PROBE = `SELECT r.rolsuper, r.rolcreaterole, r.rolcreatedb, r.rolreplic
   (SELECT string_agg(nspname, ', ') FROM pg_namespace WHERE has_schema_privilege(oid, 'CREATE')) AS create_in,
   has_database_privilege(current_database(), 'CREATE') AS create_db,
   (SELECT string_agg(n, ', ') FROM (SELECT relname AS n FROM pg_class WHERE relowner = r.oid UNION ALL SELECT proname FROM pg_proc WHERE proowner = r.oid
-     UNION ALL SELECT nspname FROM pg_namespace WHERE nspowner = r.oid LIMIT 5) o) AS owns,
+     UNION ALL SELECT nspname FROM pg_namespace WHERE nspowner = r.oid UNION ALL SELECT 'large object ' || oid::text FROM pg_largeobject_metadata WHERE lomowner = r.oid OR lomacl IS NOT NULL LIMIT 5) o) AS owns,
   (SELECT string_agg(n, ', ') FROM (SELECT c.relname AS n FROM pg_class c JOIN pg_namespace s ON s.oid = c.relnamespace
-     WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f') AND s.nspname NOT IN ('pg_catalog', 'information_schema')
-       AND (has_table_privilege(c.oid, 'INSERT') OR has_table_privilege(c.oid, 'UPDATE') OR has_table_privilege(c.oid, 'DELETE')
-         OR has_table_privilege(c.oid, 'TRUNCATE') OR has_table_privilege(c.oid, 'TRIGGER') OR has_table_privilege(c.oid, 'REFERENCES')) LIMIT 5) w) AS writes
+     WHERE s.nspname NOT IN ('pg_catalog', 'information_schema') AND (
+       (c.relkind IN ('r', 'p', 'v', 'm', 'f') AND (has_table_privilege(c.oid, 'INSERT') OR has_table_privilege(c.oid, 'UPDATE') OR has_table_privilege(c.oid, 'DELETE')
+         OR has_table_privilege(c.oid, 'TRUNCATE') OR has_table_privilege(c.oid, 'TRIGGER') OR has_table_privilege(c.oid, 'REFERENCES')
+         OR has_any_column_privilege(c.oid, 'INSERT') OR has_any_column_privilege(c.oid, 'UPDATE') OR has_any_column_privilege(c.oid, 'REFERENCES')))
+       OR (c.relkind = 'S' AND (has_sequence_privilege(c.oid, 'UPDATE') OR has_sequence_privilege(c.oid, 'USAGE')))) LIMIT 5) w) AS writes
   FROM pg_roles r WHERE r.rolname = current_user`;
 /** @returns {string} what this login could do beyond reading, or '' */
 function whyNotPostgres(r) {
@@ -418,14 +422,15 @@ const procsOfUrl = (url) => { const k = Object.entries(process.env).find(([key, 
  * procedure. Anything else (a role, FILE, PROCESS, a write right, WITH GRANT OPTION) refuses the login.
  * @param {string[]} lines @param {string[]} procs @returns {string}
  */
-export function whyNotMysql(lines, procs = []) {
-  const ok = new Set(procs.map(p => p.toLowerCase().split('.').pop()));
+export function whyNotMysql(lines, procs = [], db = '') {
+  // a listed "name" is in the connection's database; "db.name" names its own
+  const ok = new Set(procs.map(p => (p.includes('.') ? p : `${db}.${p}`).toLowerCase()));
   for (const l of lines) {
     if (/WITH GRANT OPTION/i.test(l)) return 'it may grant rights';
     if (/^GRANT USAGE ON \*\.\* TO /i.test(l)) continue;
     if (/^GRANT (SELECT|SHOW VIEW)(, (SELECT|SHOW VIEW))* ON (`[^`]+`|\w+)\.(`[^`]+`|\*|\w+) TO /i.test(l)) continue;
-    const m = /^GRANT EXECUTE ON PROCEDURE (?:`[^`]+`|\w+)\.`?([^`\s]+)`? TO /i.exec(l);
-    if (m && ok.has(m[1].toLowerCase())) continue;
+    const m = /^GRANT EXECUTE ON PROCEDURE `?([^`.\s]+)`?\.`?([^`\s]+)`? TO /i.exec(l);
+    if (m && ok.has(`${m[1]}.${m[2]}`.toLowerCase())) continue;
     return `granted: ${l.replace(/ TO .*$/, '').slice(0, 200)}`;
   }
   return '';
@@ -479,7 +484,12 @@ const DRIVERS = {
       try {
         const rows = await onWire(c.connection.stream, clk, async () => {
           if (Date.now() - entry.checked > PROBE_MS) {
-            const why = whyNotPostgres((await c.query(PG_PROBE)).rows[0] || {});
+            let why = whyNotPostgres((await c.query(PG_PROBE)).rows[0] || {});
+            // PostgreSQL 15+: a right to change a server setting (ALTER SYSTEM ON PARAMETER archive_command runs a shell command)
+            if (!why && (await c.query("SELECT to_regclass('pg_catalog.pg_parameter_acl') IS NOT NULL AS has")).rows[0]?.has) {
+              const acl = (await c.query('SELECT string_agg(parname, \', \') AS p FROM pg_parameter_acl')).rows[0]?.p;
+              if (acl) why = `rights on the server settings ${String(acl).slice(0, 200)}`;
+            }
             if (why) throw fail(`This PostgreSQL login can do more than read (${why}). Give report connections a role with CONNECT and SELECT only (see docs/DATA-SQL.md).`, 500);
             entry.checked = Date.now();
           }
@@ -527,7 +537,7 @@ const DRIVERS = {
         const rows = await onWire(c.connection.stream, clk, async () => {
           if (Date.now() - entry.checked > PROBE_MS) {
             const [grants] = await c.query('SHOW GRANTS');
-            const why = whyNotMysql(grants.map(g => String(Object.values(g)[0])), procsOfUrl(url));
+            const why = whyNotMysql(grants.map(g => String(Object.values(g)[0])), procsOfUrl(url), decodeURIComponent(new URL(url).pathname.slice(1)));
             if (why) throw fail(`This MySQL login can do more than read (${why}). Give report connections a user with SELECT grants only (see docs/DATA-SQL.md).`, 500);
             entry.checked = Date.now();
           }
@@ -637,6 +647,9 @@ async function mssqlRun(sql, entry, text, values, clk, proc = null, allowed = []
   // a pooled connection, within the time left; one that comes later is given back at once
   await clk.inTime(tx.begin(), () => tx.rollback().catch(() => {}));
   const conn = tx._acquiredConnection; // ponytail: mssql internals; a failed query's connection is closed, not pooled
+  // the server rolled the transaction back (an error in the query): mssql gives the connection back on the next tick, so
+  // close it now, before another request can get it
+  tx.once('rollback', (aborted) => { if (aborted) { try { conn?.close(); } catch { /* gone */ } } });
   let ok = false;
   const req = () => clk.track(new sql.Request(tx));
   // session resets and cleanup are not cancelled by the deadline (they must run after it), so each has a short timer of
@@ -856,7 +869,7 @@ const PROBE_SQL = `
       (SELECT STRING_AGG(CONCAT(p.permission_name, ' (', p.class_desc, CASE WHEN p.class = 1 THEN CONCAT(' ', QUOTENAME(OBJECT_SCHEMA_NAME(p.major_id)), '.', QUOTENAME(OBJECT_NAME(p.major_id))) WHEN p.class = 3 THEN CONCAT(' ', QUOTENAME(SCHEMA_NAME(p.major_id))) ELSE '' END, ')'), ', ')
         FROM sys.database_permissions p
         WHERE p.grantee_principal_id IN (SELECT DISTINCT id FROM roles) AND p.state IN ('G', 'W')
-          AND NOT (p.class = 1 AND ISNULL(OBJECTPROPERTY(p.major_id, 'IsMSShipped'), 1) = 1)
+          AND NOT (p.class = 1 AND p.grantee_principal_id = 0 AND ISNULL(OBJECTPROPERTY(p.major_id, 'IsMSShipped'), 1) = 1) -- public's defaults on system objects
           AND (p.state = 'W' -- WITH GRANT OPTION: it may hand rights out, so it can change permissions
             OR p.permission_name NOT IN (${sqlList(READ_DB)}))) AS granted,
       -- every schema's effective rights (guest, INFORMATION_SCHEMA, sys and the fixed-role schemas, ids 16384+, are

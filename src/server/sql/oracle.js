@@ -29,13 +29,23 @@ export async function probeOracle(conn, oracledb) {
   const q = async (sql) => (await conn.execute(sql, [], { outFormat: oracledb.OUT_FORMAT_OBJECT, maxRows: 50 })).rows || [];
   const privs = (await q('SELECT privilege AS p FROM session_privs')).map(r => r.P).filter(p => p !== 'CREATE SESSION');
   if (privs.length) return `privileges ${privs.slice(0, 5).join(', ')}`;
+  // every granted role, switched on or not (session_roles shows only the enabled ones); CONNECT is CREATE SESSION
+  const roles = (await q("SELECT granted_role AS p FROM user_role_privs WHERE granted_role <> 'CONNECT'")).map(r => r.P);
+  if (roles.length) return `roles ${roles.slice(0, 5).join(', ')}`;
+  const aces = await q('SELECT host AS p FROM user_host_aces WHERE ROWNUM <= 5');
+  if (aces.length) return `network access to ${aces.map(r => r.P).join(', ')}`;
   // a positive list: SELECT or READ on tables and views, nothing else, granted to the user, its roles or PUBLIC; PUBLIC's
   // EXECUTE on Oracle's own packages is the install default (the risky ones are checked next; the statement check lets
   // no package be called at all); READ on a DIRECTORY is a file read (BFILENAME), so it counts
   const grants = await q(`SELECT privilege || ' ON ' || table_schema || '.' || table_name || ' TO ' || grantee AS p FROM all_tab_privs
     WHERE grantee IN (SELECT role FROM session_roles UNION ALL SELECT USER FROM dual UNION ALL SELECT 'PUBLIC' FROM dual)
-      AND NOT (privilege IN ('SELECT', 'READ') AND NVL(type, 'TABLE') <> 'DIRECTORY')
-      AND NOT (grantee = 'PUBLIC' AND table_schema IN (SELECT username FROM all_users WHERE oracle_maintained = 'Y'))
+      AND (grantable = 'YES' OR NOT (
+        (privilege IN ('SELECT', 'READ') AND NVL(type, 'TABLE') <> 'DIRECTORY')
+        -- PUBLIC's EXECUTE (and SELECT/READ) on Oracle's own objects is the install default; nothing else of PUBLIC's is
+        OR (grantee = 'PUBLIC' AND privilege IN ('EXECUTE', 'SELECT', 'READ') AND NVL(type, 'PACKAGE') <> 'DIRECTORY'
+          AND table_schema IN (SELECT username FROM all_users WHERE oracle_maintained = 'Y'))
+        -- 12c+ grants INHERIT PRIVILEGES on each new user to PUBLIC: it lets others' invoker-rights code use this user's rights
+        OR (privilege = 'INHERIT PRIVILEGES' AND table_name = USER)))
       AND ROWNUM <= 5`);
   if (grants.length) return `granted ${grants.map(r => r.P).join(', ')}`;
   const risky = await q(`SELECT table_name AS p FROM all_tab_privs WHERE grantee = 'PUBLIC' AND privilege = 'EXECUTE' AND table_name IN (${RISKY.map(x => `'${x}'`).join(', ')})`);
@@ -72,6 +82,7 @@ export async function oracle(url, text, values, ctx) {
       const entry = pools.get(key);
       const pool = await entry.ready;
       const conn = await clk.inTime(pool.getConnection(), (c) => c.close().catch(() => {}));
+      let ok = false;
       try {
         // break() stops the call in flight; callTimeout bounds each round trip to the time left
         clk.track({ cancel: () => { conn.break().catch(() => {}); } });
@@ -117,11 +128,12 @@ export async function oracle(url, text, values, ctx) {
               rows.push(row);
             }
           }
+          ok = true;
           return rows;
         } finally { await rs.close().catch(() => {}); }
       } finally {
         await conn.rollback().catch(() => {});
-        await conn.close().catch(() => {});
+        await conn.close(ok ? undefined : { drop: true }).catch(() => {}); // a broken, capped or failed call: not pooled
       }
     })());
   } finally { clk.stop(); }

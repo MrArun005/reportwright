@@ -103,3 +103,31 @@ describe.each([['pg', 'PW_TEST_PG'], ['my', 'PW_TEST_MYSQL']])('%s: 1,000 aborte
     } finally { Object.assign(limits, keep); delete process.env[`PW_DB_LEAK${k.toUpperCase()}`]; }
   }, 240000);
 });
+
+// final review 3b: the Postgres probe sees column grants, sequences, large objects and server-setting rights
+describe.skipIf(!process.env.PW_TEST_PG)('pg: least-privilege probe', () => {
+  it('refuses a reader given any of them', async () => {
+    const { default: P } = await import('pg');
+    const admin = new P.Client({ connectionString: process.env.PW_TEST_PG });
+    await admin.connect();
+    const url = await pgReader(process.env.PW_TEST_PG);
+    await admin.query('DROP TABLE IF EXISTS pw_g; CREATE TABLE pw_g (a int); GRANT SELECT ON pw_g TO pw_reader; DROP SEQUENCE IF EXISTS pw_s; CREATE SEQUENCE pw_s');
+    let n = 0;
+    try {
+      for (const [grant, revoke, why] of [
+        ['GRANT UPDATE (a) ON pw_g TO pw_reader', 'REVOKE UPDATE (a) ON pw_g FROM pw_reader', /write rights on pw_g/],
+        ['GRANT USAGE ON SEQUENCE pw_s TO pw_reader', 'REVOKE USAGE ON SEQUENCE pw_s FROM pw_reader', /write rights on pw_s/],
+        ['GRANT ALTER SYSTEM ON PARAMETER archive_command TO pw_reader', 'REVOKE ALTER SYSTEM ON PARAMETER archive_command FROM pw_reader', /server settings archive_command/],
+        ["SELECT lo_from_bytea(424242, 'x'); ALTER LARGE OBJECT 424242 OWNER TO pw_reader", 'SELECT lo_unlink(424242)', /large object/],
+      ]) {
+        await admin.query(grant);
+        try {
+          process.env.PW_DB_PGPROBE = `${url}?p=${++n}`;
+          await expect(runSql({ connection: 'pgprobe', query: 'select 1 as a' }, {}), grant).rejects.toThrow(why);
+        } finally { await admin.query(revoke); }
+      }
+      process.env.PW_DB_PGPROBE = `${url}?p=clean`;
+      expect(await runSql({ connection: 'pgprobe', query: 'select 1 as a' }, {})).toEqual([{ a: 1 }]);
+    } finally { delete process.env.PW_DB_PGPROBE; await admin.query('DROP TABLE pw_g; DROP SEQUENCE pw_s'); await admin.end(); }
+  }, 60000);
+});
