@@ -49,7 +49,7 @@ export function canonical(v) {
   return JSON.stringify(v);
 }
 /** An event's hash: SHA-256 of its canonical JSON without hash and sig. @param {any} e */
-export const hashEntry = (e) => { const { hash: _h, sig: _s, ...rest } = e; return crypto.createHash('sha256').update(canonical(rest)).digest('hex'); };
+export const hashEntry = (e) => { const { hash: _h, sig: _s, oldSig: _o, ...rest } = e; return crypto.createHash('sha256').update(canonical(rest)).digest('hex'); };
 
 /**
  * This process's (or thread's) stream: { s, n, prev, at, q }. A stream has exactly one writer by construction (its id
@@ -75,13 +75,13 @@ const QUEUE_MAX = 20000;
  * Queue an event; it is linked to the stream's written head when its turn comes, appended, and only then does the head
  * move. A failed write is retried (3 tries, 0.2 / 0.4 s apart) and then dropped with an error: a dropped event never got
  * a number, so it leaves no gap that would read as tampering. sign: a checkpoint (signed over its hash).
- * @param {any} entry @param {{ sign?: boolean }} [o] @returns {Promise<boolean>} written
+ * @param {any} entry @param {{ sign?: boolean, oldKey?: crypto.KeyObject }} [o] @returns {Promise<boolean>} written
  */
 function enqueue(entry, o = {}) {
   const c = chain();
   return new Promise((resolve) => {
     if (c.q.length >= QUEUE_MAX) { console.error(`[pagewright] audit log: the write queue is full; dropped ${entry.type}`); return resolve(false); }
-    c.q.push({ entry, sign: !!o.sign, resolve });
+    c.q.push({ entry, sign: !!o.sign, oldKey: o.oldKey || null, resolve });
     drain();
   });
 }
@@ -97,9 +97,10 @@ async function drain() {
       for (let t = 0; t < 3 && !ok; t++) {
         if (t) await new Promise(r => setTimeout(r, 200 * t));
         e.chain = { s: c.s, n: c.n, prev: c.prev };
-        delete e.sig;
+        delete e.sig; delete e.oldSig;
         e.hash = hashEntry(e);
         if (job.sign) { const key = signingKey(); if (key) e.sig = crypto.sign(null, Buffer.from(e.hash, 'hex'), key).toString('base64'); }
+        if (job.oldKey) e.oldSig = crypto.sign(null, Buffer.from(e.hash, 'hex'), job.oldKey).toString('base64');
         try { await store().appendAudit(e); ok = true; } catch (err) { last = err; }
       }
       if (ok) { c.n++; c.prev = e.hash; c.at = e.at; ship(e); }
@@ -119,9 +120,14 @@ function signingKey() {
     if (!g.__pwAudit.warnedKey) { g.__pwAudit.warnedKey = true; console.error('[pagewright] audit log: no PW_AUDIT_KEY (32+ characters), PW_AUDIT_SIGNING_KEY or PW_SESSION_SECRET, so checkpoints are written UNSIGNED and the chain proves only consistency. Set PW_AUDIT_KEY.'); }
     return null;
   }
+  return keyFromSecret(secret);
+}
+/** The Ed25519 key a secret stands for (the same secret gives the same key on every server). @param {string} secret */
+export function keyFromSecret(secret) {
   const seed = crypto.createHmac('sha256', secret).update('pagewright-audit-checkpoint-v1').digest();
   return crypto.createPrivateKey({ key: Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), seed]), format: 'der', type: 'pkcs8' });
 }
+const fingerprintOf = (pub) => crypto.createHash('sha256').update(pub.export({ type: 'spki', format: 'der' })).digest('hex').slice(0, 16);
 /** Where the signing key comes from (the audit page says how much a signature proves). */
 export const keySource = () => (process.env.PW_AUDIT_SIGNING_KEY ? 'PW_AUDIT_SIGNING_KEY' : (process.env.PW_AUDIT_KEY || '').length >= 32 ? 'PW_AUDIT_KEY' : (process.env.PW_SESSION_SECRET || '').length >= 32 ? 'PW_SESSION_SECRET' : 'none');
 /** The public key that checks the checkpoints: PW_AUDIT_PUBLIC_KEY when given (PEM), else this server's; null without one. */
@@ -166,8 +172,15 @@ function clean(detail) {
   return out;
 }
 
+/** Events whose loss would hide something that matters: if one cannot be written, the request fails (fail closed). */
+const SECURITY = /^(auth|user|access|settings|folder|schedule|audit|mail)\.|^report\.(export|delete|restore|import)$/;
+export const isSecurityEvent = (type) => SECURITY.test(String(type));
+
 /**
- * Record one event. Never throws: a failure to record is logged to the console (the request goes on).
+ * Record one event. A security event (isSecurityEvent: sign-ins, accounts, permissions, settings, schedules, exports
+ * and deletes) that cannot be written throws (status 503), so the request that caused it fails instead of going on
+ * unlogged; sign-in routes write their event before they hand out a session. Other events (api.call, report.view,
+ * report.render) never throw: their loss is logged to the console.
  * @param {typeof AUDIT_TYPES[number]} type
  * @param {{ req?: Request, principal?: Principal, actor?: string, report?: string|null, format?: string|null,
  *   params?: Record<string, any>|null, status?: 'ok'|'failed'|'denied', detail?: Record<string, any> }} [o]
@@ -186,19 +199,22 @@ export async function audit(type, o = {}) {
     status: o.status || 'ok',
     ...(o.detail ? { detail: clean(o.detail) } : {}),
   };
-  await write(entry, type);
+  const ok = await write(entry, type);
+  if (!ok && isSecurityEvent(type)) throw Object.assign(new Error('The audit log could not record this, so it was refused. Try again, or ask an admin to check the server\'s storage.'), { status: 503 });
 }
 
-/** Append one event (through the stream's queue); never throws. @param {any} entry @param {string} _type */
+/** Append one event (through the stream's queue); never throws. @param {any} entry @param {string} _type @returns {Promise<boolean>} written */
 async function write(entry, _type) {
-  if (!(await enqueue(entry))) return;
+  if (!g.__pwAudit.exitHook) { g.__pwAudit.exitHook = true; process.once?.('beforeExit', () => { drain(); }); } // flush what waits before a quiet exit
+  if (!(await enqueue(entry))) return false;
   const c = chain();
   // publish this stream's head every 30 s, so the next checkpoint (any server's) anchors it even if this process dies
   if (Date.now() - (c.headAt || 0) > 30000 && process.env.PW_AUDIT_CHECKPOINTS !== 'off') { c.headAt = Date.now(); publishHead().catch(() => {}); }
   if (Date.now() - g.__pwAudit.pruned > HOUR) {
     g.__pwAudit.pruned = Date.now();
-    await store().pruneAudit(new Date(Date.now() - retentionDays() * 24 * HOUR).toISOString()).catch((e) => console.error(`[pagewright] audit retention: ${e.message}`));
+    await prune().catch((e) => console.error(`[pagewright] audit retention: ${e.message}`));
   }
+  return true;
 }
 
 /** Hand a written event to the SIEM shipper when one is set (loaded lazily). @param {any} entry */
@@ -248,6 +264,50 @@ export async function checkpoint({ actor = 'system' } = {}) {
   return entry;
 }
 
+/* ---------------- retention and re-keying, as signed records ---------------- */
+
+/**
+ * Retention: before events older than the start of the day PW_AUDIT_RETENTION_DAYS ago are removed, a signed
+ * audit.prune record names, for every stream with events in what goes, its last removed event (number and hash). The
+ * verifier accepts a stream that starts after event 0 only when such a record names exactly the event before its first.
+ * If the record cannot be written, nothing is removed. Returns the number of events removed (whole days on files).
+ */
+export async function prune() {
+  const cut = new Date(new Date(Date.now() - retentionDays() * 24 * HOUR).setUTCHours(0, 0, 0, 0)).toISOString();
+  if (!(await store().queryAudit({ to: cut, limit: 1 })).length) return 0;
+  const last = {};
+  for (let before; ;) {
+    const page = await store().queryAudit({ to: cut, before, limit: 10000 });
+    for (const e of page) if (e.chain && typeof e.hash === 'string' && !(e.chain.s in last)) last[e.chain.s] = [e.chain.n, e.hash];
+    if (page.length < 10000) break;
+    before = page.at(-1).id;
+  }
+  const entry = newEntry('audit.prune', 'system', { before: cut, last });
+  if (!(await enqueue(entry, { sign: true }))) throw new Error('the prune record could not be written, so nothing was removed');
+  return store().pruneAudit(cut);
+}
+
+/**
+ * Change the signing key without losing what the old one proves: a signed audit.rekey record carries the old public key
+ * and is signed by both keys, so checkpoints the old key signed before it still check. Run with the new key configured
+ * and the old one given (pw audit rekey --old-secret or --old-key). @param {crypto.KeyObject} oldKey the old private key
+ */
+export async function rekey(oldKey) {
+  const cur = signingKey();
+  if (!cur) throw new Error('Configure the new key first (PW_AUDIT_KEY or PW_AUDIT_SIGNING_KEY).');
+  const oldPub = crypto.createPublicKey(oldKey);
+  if (fingerprintOf(oldPub) === fingerprintOf(crypto.createPublicKey(cur))) throw new Error('The old key is the key configured now.');
+  const entry = newEntry('audit.rekey', 'cli', { oldKey: String(oldPub.export({ type: 'spki', format: 'pem' })), oldFingerprint: fingerprintOf(oldPub), newFingerprint: fingerprintOf(crypto.createPublicKey(cur)) });
+  if (!(await enqueue(entry, { sign: true, oldKey }))) throw new Error('The re-key record could not be written.');
+  return entry;
+}
+
+/** A bare event of this process (for system records). */
+function newEntry(type, actor, detail) {
+  const at = new Date().toISOString();
+  return { id: `${at}-${String((g.__pwAudit.seq = ((g.__pwAudit.seq || 0) + 1) % 1e6)).padStart(6, '0')}-${crypto.randomBytes(3).toString('hex')}`, at, type, actor, ip: '-', status: 'ok', detail };
+}
+
 /* ---------------- verification ---------------- */
 
 /**
@@ -279,6 +339,7 @@ export async function verifyAudit(q = {}) {
 /** Problems that mean the log was changed (with where), as opposed to what only leaves it unproven. */
 /** The one pass test for a verification result: only an explicit status "ok" passes. @param {any} r */
 export const auditProven = (r) => !!r && r.status === 'ok';
+const SIGNED_TYPES = ['audit.checkpoint', 'audit.prune', 'audit.rekey'];
 const TAMPER = new Set(['altered', 'missing', 'broken', 'duplicate', 'unreadable', 'unchained', 'backwards', 'signature']);
 /**
  * 'ok' only when everything is proven: at least one checkpoint signed by the configured key, no problem at all.
@@ -306,6 +367,7 @@ async function verifyNow(q, bad, problems) {
   const anchored = new Map();
   const loose = []; // events without a chain, judged once the first chained event is known
   let events = 0, unchained = 0, checkpoints = 0, signedCheckpoints = 0, lastCheckpoint = null, firstChained = null, before;
+  const signedRecs = [];
   for (;;) {
     const page = await store().queryAudit({ from, to, before, limit: 10000, raw: true });
     for (const e of page) {
@@ -321,39 +383,62 @@ async function verifyNow(q, bad, problems) {
       streams.set(s, m);
       if (m.has(n)) bad({ kind: 'duplicate', id: e.id, stream: s, detail: `Two events claim number ${n} in this stream.` });
       m.set(n, { hash: e.hash, prev: e.chain.prev, id: e.id, at: e.at });
-      if (e.type === 'audit.checkpoint') {
-        checkpoints++;
-        let ok = false;
-        try { ok = !!pub && typeof e.sig === 'string' && crypto.verify(null, Buffer.from(e.hash, 'hex'), pub, Buffer.from(e.sig, 'base64')); } catch { ok = false; }
-        if (!ok) { bad(typeof e.sig === 'string' && pub ? { kind: 'signature', id: e.id, stream: s, detail: 'The checkpoint signature does not check with the configured audit key (another key signed it, or it was changed).' } : { kind: 'unverified', id: e.id, stream: s, detail: typeof e.sig === 'string' ? 'No audit key is configured to check this checkpoint.' : 'The checkpoint is not signed (no audit key was set when it was written).' }); continue; }
-        signedCheckpoints++;
-        if (!lastCheckpoint || e.at > lastCheckpoint) lastCheckpoint = e.at;
-        const heads = e.detail?.heads;
-        if (!heads || typeof heads !== 'object') { bad({ kind: 'unreadable', id: e.id, detail: 'A checkpoint without heads.' }); continue; }
-        for (const [hs, h] of Object.entries(heads)) {
-          if (!Array.isArray(h) || !Number.isInteger(h[0])) { bad({ kind: 'unreadable', id: e.id, detail: 'A checkpoint with a broken head.' }); continue; }
-          refs.push({ s: hs, n: h[0], hash: String(h[1]), at: String(h[2] || e.at), by: e.id });
-          anchored.set(hs, Math.max(anchored.get(hs) ?? -1, h[0]));
-        }
-        anchored.set(s, Math.max(anchored.get(s) ?? -1, n)); // a signed checkpoint anchors its own stream up to itself
-      }
+      if (SIGNED_TYPES.includes(e.type)) { if (e.type === 'audit.checkpoint') checkpoints++; signedRecs.push({ e, s, n }); }
     }
     q.onProgress?.(events);
     if (page.length < 10000) break;
     before = page.at(-1).id;
     if (!before) break;
   }
+  // the keys a signature may be from: the configured one, then old keys handed over by a re-key record that a trusted key
+  // signed (and the old key too); an old key counts only for records written before its hand-over
+  const keys = pub ? [{ k: pub, until: '\uffff' }] : [];
+  const sigOk = (e, sig, k) => { try { return typeof sig === 'string' && crypto.verify(null, Buffer.from(e.hash, 'hex'), k, Buffer.from(sig, 'base64')); } catch { return false; } };
+  const trusted = (e) => keys.some(x => e.at <= x.until && sigOk(e, e.sig, x.k));
+  for (const { e } of signedRecs.filter(r => r.e.type === 'audit.rekey').sort((x, y) => y.e.at.localeCompare(x.e.at))) {
+    if (!trusted(e)) continue;
+    let old = null;
+    try { old = crypto.createPublicKey(String(e.detail?.oldKey)); } catch { old = null; }
+    if (old && sigOk(e, e.oldSig, old)) keys.push({ k: old, until: e.at });
+    else bad({ kind: 'signature', id: e.id, detail: 'A re-key record is not signed by the old key it names.' });
+  }
+  const prunes = [];
+  for (const { e, s, n } of signedRecs) {
+    if (!trusted(e)) {
+      bad(typeof e.sig === 'string' && pub ? { kind: 'signature', id: e.id, stream: s, detail: `The ${e.type} signature does not check with the configured audit key or a key it handed over (another key signed it, or it was changed).` } : { kind: 'unverified', id: e.id, stream: s, detail: typeof e.sig === 'string' ? 'No audit key is configured to check this record.' : `The ${e.type} record is not signed (no audit key was set when it was written).` });
+      continue;
+    }
+    anchored.set(s, Math.max(anchored.get(s) ?? -1, n)); // a signed record anchors its own stream up to itself
+    if (e.type === 'audit.prune') {
+      if (typeof e.detail?.before !== 'string' || !e.detail.last || typeof e.detail.last !== 'object') { bad({ kind: 'unreadable', id: e.id, detail: 'A prune record without its boundary.' }); continue; }
+      prunes.push({ before: e.detail.before, last: e.detail.last });
+      continue;
+    }
+    if (e.type !== 'audit.checkpoint') continue;
+    signedCheckpoints++;
+    if (!lastCheckpoint || e.at > lastCheckpoint) lastCheckpoint = e.at;
+    const heads = e.detail?.heads;
+    if (!heads || typeof heads !== 'object') { bad({ kind: 'unreadable', id: e.id, detail: 'A checkpoint without heads.' }); continue; }
+    for (const [hs, h] of Object.entries(heads)) {
+      if (!Array.isArray(h) || !Number.isInteger(h[0])) { bad({ kind: 'unreadable', id: e.id, detail: 'A checkpoint with a broken head.' }); continue; }
+      refs.push({ s: hs, n: h[0], hash: String(h[1]), at: String(h[2] || e.at), by: e.id });
+      anchored.set(hs, Math.max(anchored.get(hs) ?? -1, h[0]));
+    }
+  }
+  /** a signed prune record removed this stream up to and including event n (with this hash) */
+  const prunedTo = (st) => prunes.reduce((m, p) => (Array.isArray(p.last[st]) && Number.isInteger(p.last[st][0]) && (!m || p.last[st][0] > m[0]) ? p.last[st] : m), null);
   // events with no chain are history from before the chain; one written after chaining began was put in by hand
   for (const e of loose) { unchained++; if (firstChained && e.at >= firstChained) bad({ kind: 'unchained', id: e.id, detail: 'An event without a chain, written after the chain began: it was added outside Pagewright.' }); }
-  // retention (pruneAudit, hourly) removes events before the start of the day PW_AUDIT_RETENTION_DAYS ago: only events
-  // older than that edge (plus a day and an hour of slack) may be missing at the start of a stream, or behind a head
-  const edge = new Date(Date.now() - retentionDays() * 24 * HOUR).setUTCHours(0, 0, 0, 0) + 25 * HOUR;
   let pending = 0; // events after their stream's newest signed head: not yet checkpointed (counted, never "proven")
   const grace = 2 * checkpointMs() + Math.min(5 * 60000, checkpointMs()); // events newer than this may not be in a checkpoint yet
   for (const [s, m] of streams) {
     const ns = [...m.keys()].sort((a, b) => a - b);
     const first = m.get(ns[0]);
-    if (ns[0] !== 0 && !windowed && Date.parse(first.at) > edge) bad({ kind: 'missing', stream: s, id: first.id, detail: `The stream starts at event ${ns[0]}: the ones before it are gone.` });
+    if (ns[0] !== 0 && !windowed) {
+      // only retention may remove a stream's beginning, and it signs what it removed: the event just before this one
+      const pr = prunedTo(s);
+      if (!pr || pr[0] !== ns[0] - 1 || pr[1] !== first.prev) bad({ kind: 'missing', stream: s, id: first.id, detail: `The stream starts at event ${ns[0]}: the ones before it are gone, and no signed prune record removed them.` });
+    }
     for (let i = 1; i < ns.length; i++) {
       const cur = m.get(ns[i]);
       if (ns[i] !== ns[i - 1] + 1) bad({ kind: 'missing', stream: s, id: cur.id, detail: `Events ${ns[i - 1] + 1} to ${ns[i] - 1} of this stream are gone.` });
@@ -368,7 +453,9 @@ async function verifyNow(q, bad, problems) {
   }
   for (const r of refs) {
     const m = streams.get(r.s);
-    if ((from && r.at < from) || Date.parse(r.at) < edge) continue; // outside the window, or retention may have taken it
+    if (from && r.at < from) continue; // outside the window
+    const pr = prunedTo(r.s);
+    if (pr && pr[0] >= r.n) continue; // a signed prune record removed it
     if (!m) { bad({ kind: 'missing', stream: r.s, id: r.by, detail: `A checkpoint names stream ${r.s}, which is gone from the log.` }); continue; }
     const ns = [...m.keys()];
     const max = Math.max(...ns), min = Math.min(...ns);

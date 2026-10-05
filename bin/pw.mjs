@@ -25,6 +25,9 @@ pw audit verify [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--json] [--public-key fil
                                    check the server's audit log (hash chain, signed checkpoints); run it in the app
                                    folder with the server's PW_STORAGE and PW_AUDIT_KEY / PW_SESSION_SECRET
 pw audit checkpoint                write a signed checkpoint now
+pw audit rekey --old-secret S | --old-key file.pem
+                                   after changing PW_AUDIT_KEY / PW_AUDIT_SIGNING_KEY: hand the old key over, so the
+                                   checkpoints it signed still check (a record signed by both keys)
 
   -p  a report parameter            -d  replace a data source with a JSON file
   -f  output format (default pdf)   -o  output file, or - for stdout
@@ -173,14 +176,21 @@ async function cmdDiff(args) {
 }
 
 async function cmdAudit(args) {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { from: { type: 'string' }, to: { type: 'string' }, json: { type: 'boolean' }, 'public-key': { type: 'string' } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { from: { type: 'string' }, to: { type: 'string' }, json: { type: 'boolean' }, 'public-key': { type: 'string' }, 'old-secret': { type: 'string' }, 'old-key': { type: 'string' } } });
   const audit = await import('../src/server/audit.js');
+  if (positionals[0] === 'rekey') {
+    const { createPrivateKey } = await import('node:crypto');
+    const old = values['old-key'] ? createPrivateKey(fs.readFileSync(values['old-key'], 'utf8')) : values['old-secret'] ? audit.keyFromSecret(values['old-secret']) : usage('give --old-secret or --old-key');
+    const e = await audit.rekey(old);
+    console.log(`re-keyed: ${e.detail.oldFingerprint} -> ${e.detail.newFingerprint} (${e.id})`);
+    return;
+  }
   if (positionals[0] === 'checkpoint') {
     const e = await audit.checkpoint({ actor: 'cli' });
     console.log(e ? `checkpoint ${e.id}: ${Object.keys(e.detail.heads).length} stream(s)` : 'nothing to checkpoint yet');
     return;
   }
-  if (positionals[0] !== 'verify') usage('pw audit verify | pw audit checkpoint');
+  if (positionals[0] !== 'verify') usage('pw audit verify | pw audit checkpoint | pw audit rekey');
   for (const k of ['from', 'to']) if (values[k] && !/^\d{4}-\d{2}-\d{2}$/.test(values[k])) usage(`--${k} is a date, YYYY-MM-DD`);
   if (values['public-key']) process.env.PW_AUDIT_PUBLIC_KEY = fs.readFileSync(values['public-key'], 'utf8');
   const r = await audit.verifyAudit({ from: values.from, to: values.to, onProgress: values.json ? undefined : (n) => process.stderr.write(`\r${n} events checked`) });

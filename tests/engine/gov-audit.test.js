@@ -1,7 +1,7 @@
 // Batch 5, item 4: a tamper-evident audit log. Hash chains per stream, signed checkpoints naming every stream head,
 // verification (library and CLI) that finds changed, removed and inserted events; shipping to a SIEM (an HTTPS webhook
 // with HMAC, syslog RFC 5424 over TLS) with retry; client exports name the server's own record.
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -248,6 +248,70 @@ describe('the head moves only after a durable write', () => {
       expect(r.ok).toBe(r.status === 'ok');
       expect((await route(new Request('http://pw.test/api/audit/verify?from=bad', { headers: { cookie } }))).status).toBe(400);
     } finally { delete process.env.PW_AUTH; }
+  });
+});
+
+describe('nothing is lost quietly', () => {
+  it('a security event that cannot be written fails the request; a low-value one does not', async () => {
+    const { store } = await import('../../src/server/storage/index.js');
+    const st = store();
+    const orig = st.appendAudit;
+    st.appendAudit = async () => { throw new Error('disk full'); };
+    try {
+      await expect(A.audit('auth.login', { actor: 'user:x@x.test' })).rejects.toMatchObject({ status: 503 });
+      await expect(A.audit('user.update', { actor: 'user:x@x.test' })).rejects.toMatchObject({ status: 503 });
+      await expect(A.audit('report.view', { actor: 'user:x@x.test' })).resolves.toBeUndefined();
+    } finally { st.appendAudit = orig; }
+    expect(A.isSecurityEvent('report.export')).toBe(true);
+    expect(A.isSecurityEvent('api.call')).toBe(false);
+  });
+  it('a re-key hands the old key over (signed by both), so what it signed still checks; another key does not', async () => {
+    await A.checkpoint(); // signed with the PW_SESSION_SECRET key
+    const oldSecret = process.env.PW_SESSION_SECRET;
+    process.env.PW_AUDIT_KEY = 'n'.repeat(40); // the new key
+    try {
+      expect(tk(await A.verifyAudit())).toContain('signature');
+      const e = await A.rekey(A.keyFromSecret(oldSecret));
+      expect(typeof e.oldSig).toBe('string');
+      await A.checkpoint();
+      let r = await A.verifyAudit();
+      expect(kinds(r).filter(k => k !== 'unverified')).toEqual([]);
+      // a re-key record that a stranger signed hands nothing over
+      const undo = edit(ls => ls.map(l => { const x = JSON.parse(l); if (x.type !== 'audit.rekey') return l; x.oldSig = Buffer.alloc(64, 2).toString('base64'); return JSON.stringify(x); }));
+      r = await A.verifyAudit();
+      expect(r.status).toBe('tampered');
+      undo();
+      await expect(A.rekey(A.keyFromSecret('n'.repeat(40)))).rejects.toThrow(/configured now/);
+    } finally { delete process.env.PW_AUDIT_KEY; }
+  });
+});
+
+describe('retention leaves a signed record', () => {
+  it('pruning writes audit.prune first; a stream may then start late only where the record says', async () => {
+    const d2 = path.join(tmp, 'retention');
+    fs.mkdirSync(d2, { recursive: true });
+    process.chdir(d2);
+    g.__pwAudit.chain = null;
+    try {
+      for (let i = 0; i < 3; i++) await A.audit('report.view', { actor: `user:r${i}@x.test` });
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date(Date.now() + 400 * 86400000)); // a year and more later
+      const removed = await A.prune();
+      expect(removed).toBeGreaterThan(0);
+      for (let i = 0; i < 2; i++) await A.audit('report.view', { actor: `user:n${i}@x.test` });
+      vi.useRealTimers();
+      const all = () => fs.readdirSync(path.join(d2, 'data/audit')).flatMap(f => fs.readFileSync(path.join(d2, 'data/audit', f), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)));
+      const pr = all().find(e => e.type === 'audit.prune');
+      expect(Object.values(pr.detail.last)[0][0]).toBe(2);
+      expect(all().some(e => e.actor === 'user:r0@x.test')).toBe(false);
+      expect(tk(await A.verifyAudit(), 'unverified')).toEqual([]); // starts at 3, as the signed record says
+      // without the prune record, the missing start is tampering
+      const files = fs.readdirSync(path.join(d2, 'data/audit')).map(f => path.join(d2, 'data/audit', f));
+      const keep = files.map(f => fs.readFileSync(f, 'utf8'));
+      for (const f of files) fs.writeFileSync(f, fs.readFileSync(f, 'utf8').split('\n').filter(l => !l.includes('"audit.prune"')).join('\n'));
+      expect(tk(await A.verifyAudit())).toContain('missing');
+      files.forEach((f, i) => fs.writeFileSync(f, keep[i]));
+    } finally { vi.useRealTimers(); process.chdir(dir); }
   });
 });
 
