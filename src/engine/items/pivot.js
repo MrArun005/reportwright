@@ -4,11 +4,14 @@
  * instances), and every cell's value. Pure: no layout, no styles. The matrix item turns the result
  * into table rows. Design: docs/superpowers/specs/2026-10-04-tablix-design.md.
  */
-import { evalValue, toText } from '../expr/evaluate.js';
+import { evalValue, toText, sortCompare, groupKeyText } from '../expr/evaluate.js';
 
 export const PIVOT_LIMITS = { depth: 8, values: 50, columns: 1000, cells: 250000, tree: 64 };
 
-/** Rows → buckets by an expression's value, in first-seen order. */
+/**
+ * Rows → buckets by an expression's value, in first-seen order. Text keys that differ only in case share a bucket
+ * (SSRS on a case-insensitive collation); the bucket keeps the first row's key and text (toggle state keys).
+ */
 export function groupRows(rows, expr, ctx, lc, who) {
   const map = new Map();
   const c = { ...ctx };
@@ -16,21 +19,16 @@ export function groupRows(rows, expr, ctx, lc, who) {
     c.fields = r;
     let key;
     try { key = evalValue(expr, c); } catch (e) { lc.warn(`${who} group: ${e.message}`); key = '#Error'; }
-    const text = key instanceof Date ? String(key.getTime()) : String(key);
-    let b = map.get(text);
-    if (!b) { b = { key, text, rows: [] }; map.set(text, b); }
+    const k = groupKeyText(key, ctx);
+    let b = map.get(k);
+    if (!b) { b = { key, text: key instanceof Date ? String(key.getTime()) : String(key), rows: [] }; map.set(k, b); }
     b.rows.push(r);
   }
   return [...map.values()];
 }
 
-export function cmpKey(a, b) {
-  if (a instanceof Date) a = a.getTime();
-  if (b instanceof Date) b = b.getTime();
-  if (a == null) return 1;
-  if (b == null) return -1;
-  return a < b ? -1 : a > b ? 1 : 0;
-}
+/** Group order: the report's locale, case-insensitive, natural ("9" before "10"); nulls last. */
+export const cmpKey = (a, b, ctx) => sortCompare(a, b, ctx);
 
 /** True when the matrix uses the array form (rowGroups / columnGroups / values). */
 export const isTablix = (item) => Array.isArray(item.rowGroups) || Array.isArray(item.columnGroups) || Array.isArray(item.values);
@@ -70,9 +68,9 @@ function sortBuckets(bs, g, ctx, lc, who) {
     bs.sort((a, b) => {
       const x = keys.get(a), y = keys.get(b);
       if (x == null || y == null) return x == null && y == null ? 0 : x == null ? 1 : -1;
-      return cmpKey(x, y) * dir;
+      return cmpKey(x, y, ctx) * dir;
     });
-  } else if (g.sort === 'asc' || g.sort === 'desc') bs.sort((a, b) => cmpKey(a.key, b.key) * dir);
+  } else if (g.sort === 'asc' || g.sort === 'desc') bs.sort((a, b) => cmpKey(a.key, b.key, ctx) * dir);
   return bs;
 }
 

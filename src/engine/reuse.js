@@ -131,6 +131,8 @@ function mergeMaster(c, m, warn = (_m) => {}) {
     locale: c.locale ?? m.locale,
     currency: c.currency ?? m.currency,
     nullPropagation: c.nullPropagation ?? m.nullPropagation,
+    timeZone: c.timeZone ?? m.timeZone,
+    caseSensitive: c.caseSensitive ?? m.caseSensitive,
     page: m.page || c.page,
     parameters: byName(m.parameters, c.parameters),
     dataSources: byName(m.dataSources, c.dataSources),

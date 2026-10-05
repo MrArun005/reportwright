@@ -1,6 +1,6 @@
 // @ts-check
 import { parse, ExprError } from './parser.js';
-import { formatValue, formatDate, english, toDate, roundHalfAway, roundHalfEven } from './format.js';
+import { formatValue, formatDate, english, toDate as readDate, roundHalfAway, roundHalfEven, toWall, fromWall as zoneFromWall, parseNumber } from './format.js';
 
 /**
  * @typedef {object} EvalCtx
@@ -285,6 +285,41 @@ function widen(other) {
   if (typeof other === 'boolean') return false;
   return 0;
 }
+/**
+ * Sort and group order, as SSRS on a case-insensitive, accent-sensitive collation: text compares by the report's
+ * locale, ignoring case, with digit runs read as numbers ("9" before "10"); numbers and dates by value, before text;
+ * nulls last. A report with caseSensitive: true compares upper and lower case apart.
+ */
+const collators = new Map();
+export function collator(ctx) {
+  const key = `${ctx?.locale || 'en-US'}|${ctx?.caseSensitive === true}`;
+  let c = collators.get(key);
+  if (!c) {
+    try { c = new Intl.Collator(ctx?.locale || 'en-US', { numeric: true, sensitivity: ctx?.caseSensitive === true ? 'variant' : 'accent' }); } catch { c = new Intl.Collator('en-US', { numeric: true, sensitivity: 'accent' }); }
+    if (collators.size >= 100) collators.clear();
+    collators.set(key, c);
+  }
+  return c;
+}
+/** @returns {number} for two keys (dates as their time), nulls last */
+export function sortCompare(a, b, ctx) {
+  if (a instanceof Date) a = a.getTime();
+  if (b instanceof Date) b = b.getTime();
+  if (a === b) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  const sa = typeof a === 'string', sb = typeof b === 'string';
+  if (sa && sb) return collator(ctx).compare(a, b);
+  if (sa !== sb) return sa ? 1 : -1;
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+/** A group key that merges values the sort calls equal ("ABC" and "abc" unless caseSensitive). */
+export function groupKeyText(key, ctx) {
+  if (key instanceof Date) return String(key.getTime());
+  if (typeof key === 'string' && ctx?.caseSensitive !== true) return key.toLocaleLowerCase(ctx?.locale || 'en-US');
+  return String(key);
+}
+
 function binary(n, ctx) {
   const op = n.op;
   if (op === 'and' || op === '&&') return truthy(evaluate(n.a, ctx)) && truthy(evaluate(n.b, ctx));
@@ -305,6 +340,8 @@ function binary(n, ctx) {
         // VB (Option Strict Off): a number plus numeric text adds; two texts, or text that is not a number, concatenate
         if (typeof a === 'number' && numericText(b)) return decAdd(a, Number(b));
         if (typeof b === 'number' && numericText(a)) return decAdd(Number(a), b);
+        // VB: a number plus text that is not a number converts the text to Double and fails ("a" + 5 is #Error)
+        if (!sql && (typeof a === 'number' || typeof b === 'number')) throw new ExprError(`"${String(typeof a === 'string' ? a : b).slice(0, 40)}" + a number: the text is not a number (join text with &)`);
         return (a ?? '') + '' + (b ?? '');
       }
       if (a == null || b == null) return null;
@@ -481,21 +518,17 @@ function aggValues(rows, ast, ctx) {
 /* --------------------------------------------------------------- dates
  * VB DateAdd / DateDiff semantics (Microsoft.VisualBasic.DateAndTime). A .NET DateTime has no time zone, so its
  * arithmetic is on the wall clock: a day added across a DST change keeps the time of day, and a difference in hours
- * counts clock hours. wall() turns a local date into that clock as a UTC timestamp; fromWall() turns it back.
+ * counts clock hours. The wall clock is the report's time zone (ctx.timeZone; the host's when none is set):
+ * wall() turns a date into that clock as a UTC timestamp (its getUTC* parts are the parts there); fromWall() turns it
+ * back. W() is that clock as a Date, read with getUTC*.
  */
 const DAY = 86400000;
-function wall(d) {
-  const t = new Date(0);
-  t.setUTCFullYear(d.getFullYear(), d.getMonth(), d.getDate());
-  t.setUTCHours(d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds());
-  return t.getTime();
-}
-function fromWall(ms) {
-  const u = new Date(ms), r = new Date(2000, 0, 1);
-  r.setFullYear(u.getUTCFullYear(), u.getUTCMonth(), u.getUTCDate());
-  r.setHours(u.getUTCHours(), u.getUTCMinutes(), u.getUTCSeconds(), u.getUTCMilliseconds());
-  return r;
-}
+/** @param {Date} d @param {any} z the evaluation context (its timeZone) */
+const wall = (d, z) => toWall(d, z?.timeZone);
+const fromWall = (ms, z) => zoneFromWall(ms, z?.timeZone);
+const W = (d, z) => new Date(wall(d, z));
+/** A value as a date in the context's locale and zone, or null. */
+const toDate = (v, z) => readDate(v, z);
 /** .NET AddHours/AddMinutes/AddSeconds: the double is rounded to a whole millisecond, half away from zero. */
 const msOf = (n, unit) => Math.sign(n) * Math.round(Math.abs(n) * unit);
 /**
@@ -503,20 +536,20 @@ const msOf = (n, unit) => Math.sign(n) * Math.round(Math.abs(n) * unit);
  * (31 Jan + 1 month = 28 Feb, 29 Feb 2024 + 1 year = 28 Feb 2025). The fraction of number is ignored except for hours,
  * minutes and seconds. "y" (day of year) and "w" (weekday) add days, as in VB.
  */
-function dateAdd(interval, n, d) {
-  d = toDate(d); if (!d) return null;
+function dateAdd(interval, n, d, z) {
+  d = toDate(d, z); if (!d) return null;
   n = Number(n);
   if (!Number.isFinite(n)) return null;
   const whole = Math.trunc(n);
   switch (String(interval).toLowerCase()) {
-    case 'yyyy': case 'year': return addMonths(d, 12 * whole);
-    case 'q': case 'quarter': return addMonths(d, 3 * whole);
-    case 'm': case 'month': return addMonths(d, whole);
-    case 'd': case 'day': case 'y': case 'dayofyear': case 'w': case 'weekday': return fromWall(wall(d) + whole * DAY);
-    case 'ww': case 'week': case 'weekofyear': return fromWall(wall(d) + whole * 7 * DAY);
-    case 'h': case 'hour': return fromWall(wall(d) + msOf(n, 3600000));
-    case 'n': case 'minute': return fromWall(wall(d) + msOf(n, 60000));
-    case 's': case 'second': return fromWall(wall(d) + msOf(n, 1000));
+    case 'yyyy': case 'year': return addMonths(d, 12 * whole, z);
+    case 'q': case 'quarter': return addMonths(d, 3 * whole, z);
+    case 'm': case 'month': return addMonths(d, whole, z);
+    case 'd': case 'day': case 'y': case 'dayofyear': case 'w': case 'weekday': return fromWall(wall(d, z) + whole * DAY, z);
+    case 'ww': case 'week': case 'weekofyear': return fromWall(wall(d, z) + whole * 7 * DAY, z);
+    case 'h': case 'hour': return fromWall(wall(d, z) + msOf(n, 3600000), z);
+    case 'n': case 'minute': return fromWall(wall(d, z) + msOf(n, 60000), z);
+    case 's': case 'second': return fromWall(wall(d, z) + msOf(n, 1000), z);
   }
   throw new ExprError(`DateAdd: unknown interval "${interval}"`);
 }
@@ -525,18 +558,19 @@ function dateAdd(interval, n, d) {
  * count calendar boundaries; days, hours, minutes and seconds are whole elapsed units truncated toward zero; "w" is
  * whole weeks elapsed; "ww" counts first days of the week (Sunday by default) after date1 up to and including date2.
  */
-function dateDiff(interval, a, b, first) {
-  a = toDate(a); b = toDate(b); if (!a || !b) return null;
-  const ms = wall(b) - wall(a);
+function dateDiff(interval, a0, b0, first, z) {
+  const a1 = toDate(a0, z), b1 = toDate(b0, z); if (!a1 || !b1) return null;
+  const a = W(a1, z), b = W(b1, z); // wall clock: getUTC* parts
+  const ms = b.getTime() - a.getTime();
   const fix = (x) => Math.trunc(x) + 0;
   switch (String(interval).toLowerCase()) {
-    case 'yyyy': case 'year': return b.getFullYear() - a.getFullYear();
-    case 'q': case 'quarter': return (b.getFullYear() - a.getFullYear()) * 4 + Math.floor(b.getMonth() / 3) - Math.floor(a.getMonth() / 3);
-    case 'm': case 'month': return (b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth();
+    case 'yyyy': case 'year': return b.getUTCFullYear() - a.getUTCFullYear();
+    case 'q': case 'quarter': return (b.getUTCFullYear() - a.getUTCFullYear()) * 4 + Math.floor(b.getUTCMonth() / 3) - Math.floor(a.getUTCMonth() / 3);
+    case 'm': case 'month': return (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + b.getUTCMonth() - a.getUTCMonth();
     case 'd': case 'day': case 'y': case 'dayofyear': return fix(ms / DAY);
     case 'w': case 'weekday': return fix(ms / DAY / 7);
     case 'ww': case 'week': case 'weekofyear': {
-      const start = (x) => wall(x) - (weekday(x, first) - 1) * DAY; // back to the first day of x's week
+      const start = (x) => x.getTime() - (weekdayW(x, first) - 1) * DAY; // back to the first day of x's week
       return fix((start(b) - start(a)) / DAY / 7);
     }
     case 'h': case 'hour': return fix(ms / 3600000);
@@ -548,10 +582,12 @@ function dateDiff(interval, a, b, first) {
 
 /* ------------------------------------------------------------- functions */
 const S = (v) => (v == null ? '' : String(v));
+/** .NET ToUpper: one character for one (ß stays ß, as do ligatures that would expand: JS gives STRASSE). */
+const vbUpper = (s) => { const u = s.toUpperCase(); return u.length === s.length ? u : [...s].map(c => { const x = c.toUpperCase(); return x.length === c.length ? x : c; }).join(''); };
 /** Eager functions: get evaluated args. */
 export const FUNCTIONS = {
   format: (ctx, v, f) => toText(v, f, ctx),
-  upper: (ctx, s) => S(s).toUpperCase(), ucase: (ctx, s) => S(s).toUpperCase(),
+  upper: (ctx, s) => vbUpper(S(s)), ucase: (ctx, s) => vbUpper(S(s)),
   lower: (ctx, s) => S(s).toLowerCase(), lcase: (ctx, s) => S(s).toLowerCase(),
   left: (ctx, s, n) => S(s).slice(0, Number(n)),
   right: (ctx, s, n) => (Number(n) <= 0 ? '' : S(s).slice(-Number(n))),
@@ -571,7 +607,8 @@ export const FUNCTIONS = {
   val: (ctx, v) => vbVal(v),
   cint: (ctx, v) => (v == null ? (ctx.nullPropagation === true ? null : 0) : v === '' ? null : toInt('CInt', typeof v === 'boolean' ? vbNum(v) : v, 32)),
   cbool: (ctx, v) => vbBool(v),
-  cdate: (ctx, v) => toDate(v),
+  // VB CDate: text that is not a date (or a day that does not exist, 30 February) raises #Error
+  cdate: (ctx, v) => { if (v == null) return null; const d = toDate(v, ctx); if (!d) throw new ExprError(`CDate: "${String(v).slice(0, 40)}" is not a date`); return d; },
   isnull: (ctx, v) => v == null, isnothing: (ctx, v) => v == null,
   coalesce: (ctx, ...vs) => { for (const v of vs) if (v != null && v !== '') return v; return null; },
   // Round is VB's Math.Round: half to even (2.5 → 2). RoundHalfAway is the Excel / format-string rule (2.5 → 3).
@@ -584,23 +621,24 @@ export const FUNCTIONS = {
   pow: (ctx, a, b) => Number(a) ** Number(b),
   sqrt: (ctx, v) => Math.sqrt(Number(v)),
   now: (ctx) => (ctx.globals.ExecutionTime instanceof Date ? new Date(ctx.globals.ExecutionTime.getTime()) : new Date()),
-  today: (ctx) => { const d = FUNCTIONS.now(ctx); d.setHours(0, 0, 0, 0); return d; },
-  dateadd: (ctx, i, n, d) => dateAdd(i, n, d),
-  datediff: (ctx, i, a, b, first) => dateDiff(i, a, b, first),
+  // midnight on the report's clock
+  today: (ctx) => fromWall(Math.floor(wall(FUNCTIONS.now(ctx), ctx) / DAY) * DAY, ctx),
+  dateadd: (ctx, i, n, d) => dateAdd(i, n, d, ctx),
+  datediff: (ctx, i, a, b, first) => dateDiff(i, a, b, first, ctx),
   dateserial: (ctx, y, m, d) => {
-    // out-of-range months and days roll over (JS Date does the same); VB reads a year 0–29 as 2000–2029, 30–99 as 1930–1999
+    // out-of-range months and days roll over (as .NET's DateSerial); VB reads a year 0–29 as 2000–2029, 30–99 as 1930–1999
     let yr = Number(y);
     if (yr >= 0 && yr < 100) yr += yr < 30 ? 2000 : 1900;
-    const r = new Date(2000, 0, 1);
-    r.setFullYear(yr, Number(m) - 1, Number(d));
-    return r;
+    const w = new Date(0);
+    w.setUTCFullYear(yr, Number(m) - 1, Number(d));
+    return fromWall(w.getTime(), ctx);
   },
-  year: (ctx, d) => toDate(d)?.getFullYear() ?? null,
-  month: (ctx, d) => (toDate(d) ? toDate(d).getMonth() + 1 : null),
-  day: (ctx, d) => toDate(d)?.getDate() ?? null,
+  year: (ctx, d) => { const x = toDate(d, ctx); return x ? W(x, ctx).getUTCFullYear() : null; },
+  month: (ctx, d) => { const x = toDate(d, ctx); return x ? W(x, ctx).getUTCMonth() + 1 : null; },
+  day: (ctx, d) => { const x = toDate(d, ctx); return x ? W(x, ctx).getUTCDate() : null; },
   monthname: (ctx, m, abbr) => {
     // English (the default) keeps the fixed names; another report locale gets its own month names
-    if (!english(ctx.locale)) return formatDate(new Date(2000, Number(m) - 1, 1), truthy(abbr) ? 'MMM' : 'MMMM', ctx.locale);
+    if (!english(ctx.locale)) return formatDate(new Date(Date.UTC(2000, Number(m) - 1, 1)), truthy(abbr) ? 'MMM' : 'MMMM', ctx.locale, 'UTC');
     const s = MONTH_NAMES[Number(m) - 1] ?? new Date(2000, Number(m) - 1, 1).toLocaleString('en', { month: 'long' }); return truthy(abbr) ? s.slice(0, 3) : s;
   },
 };
@@ -612,61 +650,54 @@ const capText = (fname, n) => { if (n > MAX_TEXT) throw new ExprError(`${fname}:
 const fin = (x) => (Number.isFinite(x) ? x : null);
 /** Run f on a number argument; null in, null out. */
 const math1 = (f) => (ctx, v) => (v == null || v === '' ? null : fin(f(num(v))));
-/** A date argument, or null when it is not a date. */
-const dt = (v) => toDate(v);
-/** Days since Sunday (0..6) shifted so firstDay (1 = Sunday … 7 = Saturday) is 1. */
-const weekday = (d, first) => ((d.getDay() - ((Number(first) || 1) - 1) + 7) % 7) + 1;
-function dayOfYear(d) {
-  return Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - new Date(d.getFullYear(), 0, 1).getTime()) / 86400000) + 1;
-}
+/** A date argument on the report's wall clock (read with getUTC*), or null when it is not a date. */
+const dt = (v, z) => { const d = toDate(v, z); return d ? W(d, z) : null; };
+/** Days since Sunday (0..6) of a wall date, shifted so firstDay (1 = Sunday … 7 = Saturday) is 1. */
+const weekdayW = (w, first) => ((w.getUTCDay() - ((Number(first) || 1) - 1) + 7) % 7) + 1;
+const dayOfYear = (w) => Math.round((Date.UTC(w.getUTCFullYear(), w.getUTCMonth(), w.getUTCDate()) - Date.UTC(w.getUTCFullYear(), 0, 1)) / DAY) + 1;
 /** .NET AddMonths: keeps the day, clamped to the end of the target month (31 Jan + 1 month = 28 Feb). */
-function addMonths(v, n) {
-  const d = dt(v);
+function addMonths(v, n, z) {
+  const d = dt(v, z);
   if (!d || n == null || !Number.isFinite(Number(n))) return null;
-  const r = new Date(d.getTime());
-  const day = r.getDate();
-  r.setDate(1);
-  r.setMonth(r.getMonth() + Math.trunc(Number(n)));
-  r.setDate(Math.min(day, new Date(r.getFullYear(), r.getMonth() + 1, 0).getDate()));
-  return r;
+  const day = d.getUTCDate();
+  d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() + Math.trunc(Number(n)));
+  d.setUTCDate(Math.min(day, new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate()));
+  return fromWall(d.getTime(), z);
 }
 /** Add a number of units (milliseconds each) on the wall clock. */
-function addUnits(v, n, ms) {
-  const d = dt(v);
+function addUnits(v, n, ms, z) {
+  const d = toDate(v, z);
   if (!d || n == null || !Number.isFinite(Number(n))) return null;
-  return fromWall(wall(d) + msOf(Number(n), ms)); // wall clock, as .NET DateTime.AddDays/AddHours
+  return fromWall(wall(d, z) + msOf(Number(n), ms), z); // wall clock, as .NET DateTime.AddDays/AddHours
 }
-function datePart(interval, v, first) {
-  const d = dt(v);
+function datePart(interval, v, first, z) {
+  const d = dt(v, z);
   if (!d) return null;
   switch (String(interval).toLowerCase()) {
-    case 'yyyy': case 'year': return d.getFullYear();
-    case 'q': case 'quarter': return Math.floor(d.getMonth() / 3) + 1;
-    case 'm': case 'month': return d.getMonth() + 1;
+    case 'yyyy': case 'year': return d.getUTCFullYear();
+    case 'q': case 'quarter': return Math.floor(d.getUTCMonth() / 3) + 1;
+    case 'm': case 'month': return d.getUTCMonth() + 1;
     case 'y': case 'dayofyear': return dayOfYear(d);
-    case 'd': case 'day': return d.getDate();
-    case 'w': case 'weekday': return weekday(d, first);
+    case 'd': case 'day': return d.getUTCDate();
+    case 'w': case 'weekday': return weekdayW(d, first);
     case 'ww': case 'weekofyear': {
       // week 1 holds 1 January; weeks start on firstDay (Sunday by default), as VB's DatePart
-      const jan1 = weekday(new Date(d.getFullYear(), 0, 1), first) - 1;
+      const jan1 = weekdayW(new Date(Date.UTC(d.getUTCFullYear(), 0, 1)), first) - 1;
       return Math.floor((dayOfYear(d) - 1 + jan1) / 7) + 1;
     }
-    case 'h': case 'hour': return d.getHours();
-    case 'n': case 'minute': return d.getMinutes();
-    case 's': case 'second': return d.getSeconds();
+    case 'h': case 'hour': return d.getUTCHours();
+    case 'n': case 'minute': return d.getUTCMinutes();
+    case 's': case 'second': return d.getUTCSeconds();
     default: throw new ExprError(`DatePart: unknown interval "${interval}"`);
   }
 }
 /** Text that reads as a number ("12.5", " 7 ", "1e3"); "" and text with letters do not. */
 const numericText = (v) => typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v.trim()));
-function isDate(v) {
+function isDate(v, z) {
   if (v instanceof Date) return !Number.isNaN(v.getTime());
   if (typeof v !== 'string') return false;
-  const s = v.trim();
-  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
-  if (iso) { const d = toDate(s.slice(0, 10)); if (!d || d.getMonth() + 1 !== Number(iso[2]) || d.getDate() !== Number(iso[3])) return false; }
-  // a date needs separated parts or a month name: new Date("1") would read a bare number as a year
-  return /\d{1,4}[-/.]\d{1,2}|[A-Za-z]{3}/.test(s) && toDate(s) != null;
+  return toDate(v, z) != null; // a day that rolls over (30 February) is not a date
 }
 /** Convert.ToXxx: null stays null, anything that does not convert is an error (the cell shows #Error). */
 function toNumber(fname, v) {
@@ -746,31 +777,32 @@ Object.assign(FUNCTIONS, {
   pi: () => Math.PI,
   e: () => Math.E,
   // dates
-  datepart: (ctx, i, d, first) => datePart(i, d, first),
-  weekday: (ctx, d, first) => (dt(d) ? weekday(dt(d), first) : null),
+  datepart: (ctx, i, d, first) => datePart(i, d, first, ctx),
+  weekday: (ctx, d, first) => { const w = dt(d, ctx); return w ? weekdayW(w, first) : null; },
   weekdayname: (ctx, n, abbr, first) => {
     n = Number(n);
     if (!Number.isInteger(n) || n < 1 || n > 7) return null;
-    const d = new Date(2000, 0, 2 + n - 1 + ((Number(first) || 1) - 1)); // 2 Jan 2000 was a Sunday
-    return formatDate(d, truthy(abbr) ? 'ddd' : 'dddd', ctx.locale);
+    const d = new Date(Date.UTC(2000, 0, 2 + n - 1 + ((Number(first) || 1) - 1))); // 2 Jan 2000 was a Sunday
+    return formatDate(d, truthy(abbr) ? 'ddd' : 'dddd', ctx.locale, 'UTC');
   },
-  quarter: (ctx, d) => (dt(d) ? Math.floor(dt(d).getMonth() / 3) + 1 : null),
-  quartername: (ctx, d) => (dt(d) ? `Q${Math.floor(dt(d).getMonth() / 3) + 1}` : null),
-  hour: (ctx, d) => dt(d)?.getHours() ?? null,
-  minute: (ctx, d) => dt(d)?.getMinutes() ?? null,
-  second: (ctx, d) => dt(d)?.getSeconds() ?? null,
-  addyears: (ctx, d, n) => addMonths(d, n == null ? null : 12 * Math.trunc(Number(n))),
-  addmonths: (ctx, d, n) => addMonths(d, n),
-  adddays: (ctx, d, n) => addUnits(d, n, 86400000),
-  addhours: (ctx, d, n) => addUnits(d, n, 3600000),
-  addminutes: (ctx, d, n) => addUnits(d, n, 60000),
-  addseconds: (ctx, d, n) => addUnits(d, n, 1000),
-  datevalue: (ctx, v) => { const d = dt(v); if (!d) return null; const r = new Date(d.getTime()); r.setHours(0, 0, 0, 0); return r; },
-  timeserial: (ctx, h, m, s) => { const d = new Date(2000, 0, 1); d.setFullYear(1, 0, 1); d.setHours(Number(h) || 0, Number(m) || 0, Number(s) || 0, 0); return d; },
-  datestring: (ctx) => formatDate(FUNCTIONS.now(ctx), 'MM-dd-yyyy'),
+  quarter: (ctx, d) => { const w = dt(d, ctx); return w ? Math.floor(w.getUTCMonth() / 3) + 1 : null; },
+  quartername: (ctx, d) => { const w = dt(d, ctx); return w ? `Q${Math.floor(w.getUTCMonth() / 3) + 1}` : null; },
+  hour: (ctx, d) => dt(d, ctx)?.getUTCHours() ?? null,
+  minute: (ctx, d) => dt(d, ctx)?.getUTCMinutes() ?? null,
+  second: (ctx, d) => dt(d, ctx)?.getUTCSeconds() ?? null,
+  addyears: (ctx, d, n) => addMonths(d, n == null ? null : 12 * Math.trunc(Number(n)), ctx),
+  addmonths: (ctx, d, n) => addMonths(d, n, ctx),
+  adddays: (ctx, d, n) => addUnits(d, n, 86400000, ctx),
+  addhours: (ctx, d, n) => addUnits(d, n, 3600000, ctx),
+  addminutes: (ctx, d, n) => addUnits(d, n, 60000, ctx),
+  addseconds: (ctx, d, n) => addUnits(d, n, 1000, ctx),
+  datevalue: (ctx, v) => { const d = toDate(v, ctx); return d ? fromWall(Math.floor(wall(d, ctx) / DAY) * DAY, ctx) : null; },
+  timeserial: (ctx, h, m, s) => { const w = new Date(0); w.setUTCFullYear(1, 0, 1); w.setUTCHours(Number(h) || 0, Number(m) || 0, Number(s) || 0, 0); return fromWall(w.getTime(), ctx); },
+  datestring: (ctx) => formatDate(FUNCTIONS.now(ctx), 'MM-dd-yyyy', undefined, ctx.timeZone),
   // inspection
-  isnumeric: (ctx, v) => (typeof v === 'number' ? Number.isFinite(v) : numericText(v)),
-  isdate: (ctx, v) => isDate(v),
+  // VB IsNumeric reads the culture's grouping, currency symbol and parentheses: "1,000" and "$5" are numbers
+  isnumeric: (ctx, v) => (typeof v === 'number' ? Number.isFinite(v) : typeof v === 'string' && (numericText(v) || Number.isFinite(parseNumber(v, ctx.locale)))),
+  isdate: (ctx, v) => isDate(v, ctx),
   isarray: (ctx, v) => Array.isArray(v),
   // conversion
   tostring: (ctx, v, f) => toText(v, f, ctx),
@@ -790,7 +822,7 @@ Object.assign(FUNCTIONS, {
   },
   todatetime: (ctx, v) => {
     if (v == null) return null;
-    const d = dt(v);
+    const d = toDate(v, ctx);
     if (!d) throw new ExprError(`ToDateTime: "${String(v).slice(0, 40)}" is not a date`);
     return d;
   },

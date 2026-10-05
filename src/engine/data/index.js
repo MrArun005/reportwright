@@ -1,6 +1,6 @@
 // @ts-check
-import { evalValue, evaluate, compile, parseValue, toText, functionTable, cmpVal, ROW_PARENT } from '../expr/evaluate.js';
-import { toDate, isoDate } from '../expr/format.js';
+import { evalValue, evaluate, compile, parseValue, toText, functionTable, cmpVal, sortCompare, ROW_PARENT } from '../expr/evaluate.js';
+import { toDate, isoDate, parseNumber } from '../expr/format.js';
 import { xmlDocument, soapBody, xmlEscape, isXmlDoc, xmlRows, xmlValue } from './xml.js';
 import { odataUrl, odataPage, odataClean, ODATA_MAX_PAGES, ODATA_DEFAULT_PAGES } from './odata.js';
 
@@ -63,12 +63,21 @@ export function jsonPathRows(obj, path) {
   return spread ? { rows: cur, parents: par } : { rows: cur[0], parents: null };
 }
 
-/** @param {any} v @param {string} type */
-export function coerce(v, type) {
+/**
+ * A raw value as the field's type. Numbers in text are read the locale's way ("12,5" and "1.234,56" in de-DE, "1,234.5"
+ * and "(1,234)" in en-US); dates without a zone are the wall clock of the report's zone. A value that does not read
+ * is null, and opt.bad hears of it (the data set warns once).
+ * @param {any} v @param {string} type @param {{ locale?: string, timeZone?: string, bad?: (v: any) => void }} [opt]
+ */
+export function coerce(v, type, opt) {
   if (v == null || v === '') return v === '' && type === 'string' ? '' : null;
   switch (type) {
-    case 'number': { const n = typeof v === 'number' ? v : Number(String(v).replace(/,/g, '')); return Number.isNaN(n) ? null : n; }
-    case 'date': return toDate(v);
+    case 'number': {
+      const n = typeof v === 'number' ? v : typeof v === 'boolean' ? (v ? 1 : 0) : parseNumber(String(v), opt?.locale);
+      if (Number.isNaN(n)) { opt?.bad?.(v); return null; }
+      return n;
+    }
+    case 'date': { const d = toDate(v, opt); if (!d) opt?.bad?.(v); return d; }
     case 'boolean': return typeof v === 'boolean' ? v : ['true', '1', 'yes', 'y'].includes(String(v).toLowerCase());
     case 'string': return typeof v === 'string' ? v : String(v);
     // a list of values (a sparkline's points): an array as it is, or text split at commas or semicolons
@@ -411,9 +420,13 @@ export function buildDataSets(def, sources, baseCtx) {
     const plain = fields.filter(fd => !fd.expr);
     const calc = fields.filter(fd => fd.expr);
     const keepRaw = raws.has(ds.name);
+    // values that do not read as their field's type: one warning per field, with the first one
+    const bad = new Map();
+    const optFor = (fd) => ({ locale: ds.locale || baseCtx.locale, timeZone: baseCtx.timeZone, bad: (v) => { const b = bad.get(fd.name); if (b) b.n++; else bad.set(fd.name, { n: 1, v, type: fd.type }); } });
+    const opts = new Map(fields.map(fd => [fd, optFor(fd)]));
     let rows = list.map((r, i) => {
       const o = {};
-      for (const fd of plain) o[fd.name] = coerce(fd.path ? (xels ? xmlValue(xdoc, xels[i], fd.path) : jsonPath(r, fd.path)) : r?.[fd.name], fd.type);
+      for (const fd of plain) o[fd.name] = coerce(fd.path ? (xels ? xmlValue(xdoc, xels[i], fd.path) : jsonPath(r, fd.path)) : r?.[fd.name], fd.type, opts.get(fd));
       if (parents && parents[i] != null) ROW_PARENT.set(o, parents[i]);
       if (keepRaw) RAW.set(o, r);
       return o;
@@ -427,13 +440,14 @@ export function buildDataSets(def, sources, baseCtx) {
         c.fields = r;
         for (const fd of calc) {
           if (failed.has(fd.name)) { r[fd.name] = null; continue; }
-          try { r[fd.name] = coerce(evalValue(fd.expr, c), fd.type); }
+          try { r[fd.name] = coerce(evalValue(fd.expr, c), fd.type, opts.get(fd)); }
           catch (e) { failed.add(fd.name); r[fd.name] = null; baseCtx.warn?.(`Data set "${ds.name}", field "${fd.name}": ${e.message}`); }
         }
       }
     }
+    for (const [f, b] of bad) baseCtx.warn?.(`Data set "${ds.name}", field "${f}": ${b.n} value${b.n > 1 ? 's do' : ' does'} not read as ${b.type === 'date' ? 'a date' : 'a number'} (for example "${String(b.v).slice(0, 40)}"), so ${b.n > 1 ? 'they are' : 'it is'} blank.`);
     // filters and sorts may Lookup into the data sets defined above this one
-    const setCtx = { ...baseCtx, dataSets: { ...baseCtx.dataSets, ...sets } };
+    const setCtx = { ...baseCtx, dataSets: { ...baseCtx.dataSets, ...sets }, ...(ds.caseSensitive != null ? { caseSensitive: ds.caseSensitive === true } : {}) };
     rows = applyFilters(rows, ds.filters, setCtx);
     rows = applySort(rows, ds.sort, setCtx);
     if (ds.relation) {
@@ -493,6 +507,7 @@ export function applyFilters(rows, filters, baseCtx) {
 }
 
 const SET_OPS = new Set(['topn', 'bottomn', 'toppercent', 'bottompercent']);
+const PARAM_ONLY = /^=\s*Parameters\s*[.!]\s*\w+(\.Value)?\s*$/i;
 
 function rowFilter(f, c) {
   const a = evalValue(f.expr, c);
@@ -505,9 +520,11 @@ function rowFilter(f, c) {
     case '<': return a < b;
     case '<=': return a <= b;
     case 'in': {
-      // an empty list (nothing picked in a multi-value parameter) means "all"
+      // an empty list matches nothing (an empty LookupSet, a blank value), except nothing picked in a parameter the
+      // filter reads directly (=Parameters.Region): that means "all", so a report opens unfiltered
       const list = Array.isArray(b) ? b : b == null || b === '' ? [] : String(b).split(',').map(s => s.trim());
-      return list.length === 0 || list.some(x => looseEq(a, x));
+      if (!list.length) return PARAM_ONLY.test(String(f.value ?? ''));
+      return list.some(x => looseEq(a, x));
     }
     case 'like': return like(String(a ?? ''), String(b ?? ''));
     case 'contains': return String(a ?? '').toLowerCase().includes(String(b ?? '').toLowerCase());
@@ -557,7 +574,8 @@ export function applySort(rows, sort, baseCtx) {
       if (a === b) continue;
       if (a == null) return 1;
       if (b == null) return -1;
-      const r = a < b ? -1 : 1;
+      const r = sortCompare(a, b, baseCtx); // the report's locale, case-insensitive, natural (SSRS collation)
+      if (r === 0) continue;
       return sort[k].dir === 'desc' ? -r : r;
     }
     return i - j;

@@ -49,7 +49,7 @@ const FOOTERS = [
   ['=Sum(Fields!amt.Value, "Rows")', ['3', '3']],
   ['=Count(Fields!amt.Value, "T")', ['2', '2']],
   ['=Format(Sum(Fields!amt.Value) / Sum(Fields!amt.Value, "Rows"), "P0")', ['100%', '0%']],
-  ['=StDev(Fields!amt.Value)', ['0.7071067812', '']],
+  ['=StDev(Fields!amt.Value)', ['0.707106781186548', '']],
   ['=Var(Fields!amt.Value)', ['0.5', '']],
 ];
 

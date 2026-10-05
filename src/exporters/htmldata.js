@@ -32,7 +32,7 @@ export function tablesData(model, o = {}) {
       if (h) (sortable.get(h.cell.table) || sortable.set(h.cell.table, new Set()).get(h.cell.table)).add(h.cell.col);
     }
   }
-  const show = (c) => (c.value instanceof Date ? isoDate(c.value) : typeof c.value === 'boolean' ? String(c.value) : formatValue(c.value, c.format, { locale: o.locale, currency: o.currency }));
+  const show = (c) => (c.value instanceof Date ? isoDate(c.value, model.timeZone || undefined) : typeof c.value === 'boolean' ? String(c.value) : formatValue(c.value, c.format, { locale: o.locale, currency: o.currency }));
   return regions.map(r => ({
     name: String(r.name || 'Table'),
     cols: r.columns.length,

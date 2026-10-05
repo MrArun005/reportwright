@@ -13,20 +13,180 @@ function nf(locale, opts) {
   return f;
 }
 
-/**
- * Read a value as a Date. A date-only string ("2026-03-01") is local midnight, the same as
- * DateSerial and the date formatter; new Date() would read it as UTC midnight and shift the day.
+/* ------------------------------------------------------------------ time zones
+ * A report shows dates on the wall clock of one time zone: the report's `timeZone` (or the render's, which the server
+ * takes from the viewer), else the host's own zone. Every date part (Year, Day, Hour, a format's dd or HH) is read on
+ * that clock, and every date built from parts (a date-only text, DateSerial, Today) is midnight there, so a server
+ * PDF and the browser viewer agree. A "wall" value is the wall clock as a UTC timestamp: its getUTC* parts are the
+ * parts in the zone.
  */
-export function toDate(v) {
+const DAY_MS = 86400000;
+const zoneFmt = new Map();
+/** The zone's offset from UTC in minutes at instant t (host zone: undefined; 'UTC'; or an IANA name). */
+function offsetAt(t, tz) {
+  if (!tz) return -new Date(t).getTimezoneOffset();
+  if (tz === 'UTC' || tz === 'Etc/UTC') return 0;
+  let z = zoneFmt.get(tz);
+  if (!z) {
+    let f = null;
+    try { f = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' }); } catch { /* unknown zone: the host's */ }
+    z = { f, cache: new Map() };
+    if (zoneFmt.size >= 100) zoneFmt.clear();
+    zoneFmt.set(tz, z);
+  }
+  if (!z.f) return -new Date(t).getTimezoneOffset();
+  // offsets change on quarter hours: one Intl call per 15 minutes of instants (ponytail: cleared when full)
+  const key = Math.floor(t / 900000);
+  let o = z.cache.get(key);
+  if (o === undefined) {
+    const p = {};
+    for (const x of z.f.formatToParts(new Date(key * 900000))) p[x.type] = Number(x.value);
+    o = Math.round((Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - key * 900000) / 60000);
+    if (z.cache.size >= 20000) z.cache.clear();
+    z.cache.set(key, o);
+  }
+  return o;
+}
+/** True for a time zone Intl knows ("UTC", "Europe/Berlin"); the host's zone is used for any other. */
+export const validTimeZone = (tz) => { try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return true; } catch { return false; } };
+/** An instant → its wall clock in the zone, as a UTC timestamp (getUTC* parts are the zone's parts). */
+export const toWall = (d, tz) => { const t = d instanceof Date ? d.getTime() : d; return t + offsetAt(t, tz) * 60000; };
+/** A wall clock in the zone (as a UTC timestamp) → the instant; a time skipped by DST moves forward as Date does. */
+export function fromWall(w, tz) {
+  const a = w - offsetAt(w, tz) * 60000;
+  const b = w - offsetAt(a, tz) * 60000;
+  return new Date(toWall(b, tz) === w ? b : a);
+}
+/** Midnight in the zone on the given calendar day (months and days roll over as Date.UTC does). */
+export const zoneDate = (y, m, d, tz, h = 0, mi = 0, sec = 0, ms = 0) => {
+  const w = new Date(0);
+  w.setUTCFullYear(y, m, d);
+  w.setUTCHours(h, mi, sec, ms);
+  return fromWall(w.getTime(), tz);
+};
+/** The wall-clock parts of a date in the zone, as a Date read with getUTC*. */
+export const wallDate = (d, tz) => new Date(toWall(d, tz));
+export { DAY_MS };
+
+/* ------------------------------------------------------------------ reading dates
+ * Text dates as .NET CDate reads them: ISO (yyyy-MM-dd, with a time and a zone or not), or numeric dates with "/", "."
+ * or "-" in the locale's field order (en-US M/d/yyyy; de-DE, en-GB d.M.yyyy / d/M/yyyy; ja-JP yyyy/M/d), with an
+ * optional time. A part that rolls over (30 February, month 13, 25:00) is not a date. Other text goes to the JS
+ * parser ("March 5, 2026", RFC 2822) only when it names a month.
+ */
+const ISO = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?\s*(Z|[+-]\d{2}:?\d{2})?)?$/i;
+const NUMERIC = /^(\d{1,4})([./-])(\d{1,2})\2(\d{1,4})(?:[ T,]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp][Mm])?)?$/;
+const orderCache = new Map();
+/** 'mdy' | 'dmy' | 'ymd': the locale's numeric date order (from Intl). */
+export function dateOrder(locale) {
+  const l = locale || 'en-US';
+  let o = orderCache.get(l);
+  if (!o) {
+    try {
+      o = new Intl.DateTimeFormat(l, { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'UTC' }).formatToParts(new Date(Date.UTC(2026, 2, 5)))
+        .filter(p => p.type === 'year' || p.type === 'month' || p.type === 'day').map(p => p.type[0]).join('');
+    } catch { o = 'mdy'; }
+    if (!/^(mdy|dmy|ymd)$/.test(o)) o = 'mdy';
+    if (orderCache.size >= 200) orderCache.clear();
+    orderCache.set(l, o);
+  }
+  return o;
+}
+const year2 = (y) => (y < 100 ? y + (y < 30 ? 2000 : 1900) : y); // VB: 00–29 → 2000s, 30–99 → 1900s
+const validParts = (y, mo, d, h = 0, mi = 0, s = 0) => mo >= 1 && mo <= 12 && d >= 1 && d <= new Date(Date.UTC(y, mo, 0)).getUTCDate() && h <= 23 && mi <= 59 && s <= 59;
+/**
+ * Read a value as a Date, or null. A date without a zone ("2026-03-01", "05/03/2026 14:30") is that wall clock in the
+ * report's zone; one with a zone ("…T02:00:00Z") is that instant.
+ * @param {any} v @param {{ locale?: string, timeZone?: string }} [opt]
+ */
+export function toDate(v, opt) {
   if (v == null || v === '') return null;
-  if (v instanceof Date) return v;
-  const m = typeof v === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(v.trim()) : null;
-  const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(v);
-  return Number.isNaN(d.getTime()) ? null : d;
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v;
+  if (typeof v === 'number') { const d = new Date(v); return Number.isNaN(d.getTime()) ? null : d; }
+  const s = String(v).trim();
+  const tz = opt?.timeZone;
+  let m = ISO.exec(s);
+  if (m) {
+    const [y, mo, d, h = 0, mi = 0, sec = 0] = [m[1], m[2], m[3], m[4], m[5], m[6]].map(x => (x == null ? undefined : Number(x)));
+    if (!validParts(y, mo, d, h, mi, sec)) return null;
+    const ms = m[7] ? Math.round(Number(`0.${m[7]}`) * 1000) : 0;
+    if (!m[8]) return zoneDate(y, mo - 1, d, tz, h, mi, sec, ms);
+    const off = m[8].toUpperCase() === 'Z' ? 0 : (m[8][0] === '-' ? -1 : 1) * (Number(m[8].slice(1, 3)) * 60 + Number(m[8].slice(-2)));
+    return new Date(Date.UTC(y, mo - 1, d, h, mi, sec, ms) - off * 60000);
+  }
+  m = NUMERIC.exec(s);
+  if (m) {
+    const a = Number(m[1]), b = Number(m[3]), c = Number(m[4]);
+    const ord = m[1].length === 4 ? 'ymd' : dateOrder(opt?.locale);
+    let [y, mo, d] = ord === 'ymd' ? [a, b, c] : ord === 'dmy' ? [c, b, a] : [c, a, b];
+    y = year2(y);
+    let h = m[5] ? Number(m[5]) : 0;
+    const mi = m[6] ? Number(m[6]) : 0, sec = m[7] ? Number(m[7]) : 0;
+    if (m[8]) { if (h < 1 || h > 12) return null; h = (h % 12) + (/p/i.test(m[8]) ? 12 : 0); }
+    if (!validParts(y, mo, d, h, mi, sec)) return null;
+    return zoneDate(y, mo - 1, d, tz, h, mi, sec);
+  }
+  // other text: only with a month name (new Date("1") would read a bare number as a year)
+  if (!/[A-Za-z]{3}/.test(s)) return null;
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return null;
+  // the JS parser reads a text without a zone on the host clock: move it to the report's
+  return /(Z|GMT|UTC|[+-]\d{2}:?\d{2})\s*$/i.test(s) || !tz ? d : zoneDate(d.getFullYear(), d.getMonth(), d.getDate(), tz, d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds());
 }
 
-/** Local calendar date as "yyyy-MM-dd" (toISOString would give the UTC day). */
-export const isoDate = (d) => formatDate(d, 'yyyy-MM-dd');
+/** A calendar date as "yyyy-MM-dd" in the zone (toISOString would give the UTC day). */
+export const isoDate = (d, tz) => formatDate(d, 'yyyy-MM-dd', undefined, tz);
+
+/* ------------------------------------------------------------------ reading numbers */
+const sepCache = new Map();
+/** The locale's decimal and grouping separators (en-US: "." and ","; de-DE: "," and "."). */
+export function separators(locale) {
+  const l = locale || 'en-US';
+  let r = sepCache.get(l);
+  if (!r) {
+    let dec = '.', grp = ',';
+    try { for (const p of new Intl.NumberFormat(l).formatToParts(12345.6)) { if (p.type === 'decimal') dec = p.value; else if (p.type === 'group') grp = p.value; } } catch { /* en-US */ }
+    r = { dec, grp };
+    if (sepCache.size >= 200) sepCache.clear();
+    sepCache.set(l, r);
+  }
+  return r;
+}
+/**
+ * Text as a number the way the locale writes it: "1,234.5" (en-US), "1.234,56" / "12,5" (de-DE), with grouping
+ * (also a space or a narrow no-break space), a currency symbol, a leading or trailing sign, accounting parentheses
+ * "(1,234)" and a trailing %. NaN when it is not a number. A plain JS number text ("1e3", "-0.5") always reads.
+ * @param {string} text @param {string} [locale]
+ */
+export function parseNumber(text, locale) {
+  let s = String(text).trim();
+  if (s === '') return NaN;
+  if (/^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(s)) {
+    // plain digits: a comma-decimal locale reads "1.234" as 1234 only with grouping in threes, never "12.5"
+    const { dec, grp } = separators(locale);
+    if (dec === ',' && grp === '.' && /^[+-]?\d{1,3}(\.\d{3})+$/.test(s)) return Number(s.replace(/\./g, ''));
+    return Number(s);
+  }
+  let neg = false;
+  if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1).trim(); }
+  let pct = false;
+  if (s.endsWith('%')) { pct = true; s = s.slice(0, -1).trim(); }
+  s = s.replace(/^[^\d.,+-]+|[^\d.,+-]+$/g, '').trim(); // currency symbols and codes ("$", "€", "Rs.", "USD")
+  if (/^[+-]/.test(s)) { neg = neg !== (s[0] === '-'); s = s.slice(1).trim(); } else if (/[+-]$/.test(s)) { neg = neg !== s.endsWith('-'); s = s.slice(0, -1).trim(); }
+  const { dec, grp } = separators(locale);
+  const g = grp === '\u00a0' || grp === '\u202f' || grp === ' ' ? '[ \u00a0\u202f]' : grp === '.' ? '\\.' : grp === "'" || grp === '\u2019' ? "['\u2019]" : grp;
+  const d = dec === '.' ? '\\.' : dec;
+  const re = new RegExp(`^(\\d{1,3}(?:${g}\\d{2,3})+|\\d+)(?:${d}(\\d+))?$`);
+  const m = re.exec(s);
+  if (!m) return NaN;
+  // grouping: threes (and the Indian twos before the last three)
+  const int = m[1].replace(new RegExp(g, 'g'), '');
+  const n = Number(`${int}${m[2] ? `.${m[2]}` : ''}`);
+  if (!Number.isFinite(n)) return NaN;
+  const r = pct ? shiftDecSafe(n, -2) : n;
+  return neg ? -r : r;
+}
+const shiftDecSafe = (x, e) => Number(`${x}e${e}`);
 
 const P10F = Array.from({ length: 23 }, (_, i) => 10 ** i);
 /** Shift a number's decimal point by e places through its decimal (exponent) form: no binary error (1.005 → 100.5). */
@@ -82,7 +242,7 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
  * locale names a country ("en-IN" → ₹, as a .NET culture does), else none, and "C" then shows the number alone.
  * @param {any} value
  * @param {string|undefined|null} fmt
- * @param {{locale?: string, currency?: string, fmtMemo?: Map<string, Map<any, string>>}} [opt] fmtMemo: a render's memo of formatted dates
+ * @param {{locale?: string, currency?: string, timeZone?: string, fmtMemo?: Map<string, Map<any, string>>}} [opt] fmtMemo: a render's memo of formatted dates
  */
 export function formatValue(value, fmt, opt = {}) {
   if (value == null) return '';
@@ -90,18 +250,20 @@ export function formatValue(value, fmt, opt = {}) {
   if (value instanceof Date) {
     const t = value.getTime();
     if (Number.isNaN(t)) return '';
-    if (!opt.fmtMemo) return formatDate(value, fmt || 'dd MMM yyyy', locale);
+    const tz = opt.timeZone;
+    if (!opt.fmtMemo) return formatDate(value, fmt || 'dd MMM yyyy', locale, tz);
     // a date column repeats its days: each instant formats once per format and locale in a render (opt.fmtMemo: the
     // render's, so a time zone change between renders is seen)
     const memo = memoFor(opt.fmtMemo, 'i', fmt || 'dd MMM yyyy', locale);
     let out = memo.get(t);
-    if (out === undefined) { out = formatDate(value, fmt || 'dd MMM yyyy', locale); memo.set(t, out); }
+    if (out === undefined) { out = formatDate(value, fmt || 'dd MMM yyyy', locale, tz); memo.set(t, out); }
     return out;
   }
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) return String(value);
-    // No format: plain digits, no grouping (a year stays 2026). Use N0/N2/C2 to group. A safe integer reads the same.
-    if (!fmt) return Number.isSafeInteger(value) && !Object.is(value, -0) ? String(value) : PLAIN.format(value);
+    // No format: as VB CStr, up to 15 significant digits with the locale's decimal sign and no grouping (a year stays
+    // 2026). Use N0/N2/C2 to group. A safe integer reads the same.
+    if (!fmt) return Number.isSafeInteger(value) && !Object.is(value, -0) ? String(value) : general(value, 15, 'E', undefined, locale);
     return numberFn(fmt, locale, opt.currency || currencyOf(opt.locale))(value);
   }
   if (typeof value === 'boolean') return value ? 'True' : 'False';
@@ -109,15 +271,14 @@ export function formatValue(value, fmt, opt = {}) {
     const memo = opt.fmtMemo && value.length <= 40 ? memoFor(opt.fmtMemo, 's', fmt, locale) : null;
     let out = memo?.get(value);
     if (out === undefined) {
-      const d = toDate(value);
-      out = d && /[yMd]/.test(fmt) ? formatDate(d, fmt, locale) : value;
+      const d = toDate(value, opt);
+      out = d && /[yMd]/.test(fmt) ? formatDate(d, fmt, locale, opt.timeZone) : value;
       memo?.set(value, out);
     }
     return out;
   }
   return String(value);
 }
-const PLAIN = new Intl.NumberFormat('en-US', { maximumFractionDigits: 10, useGrouping: false });
 /** Formatted dates in one render: by text ('s') or instant ('i'), per format and locale. @param {Map<string, Map<any, string>>} all */
 function memoFor(all, kind, fmt, locale) {
   const key = `${kind}\u0001${fmt}\u0001${locale}`;
@@ -152,17 +313,17 @@ function compileNumber(fmt, locale, currency) {
     switch (k) {
       case 'C': { const f = nf(locale, currency ? { style: 'currency', currency, ...fixed } : fixed); return (v) => f.format(v); }
       case 'N': { const f = nf(locale, fixed); return (v) => f.format(v); }
-      case 'F': return (v) => roundHalfAway(v, d ?? 2).toFixed(d ?? 2);
+      case 'F': { const f = nf(locale, { ...fixed, useGrouping: false }); return (v) => f.format(v); } // the locale's decimal sign, no grouping
       case 'P': { const f = nf(locale, { style: 'percent', ...fixed }); return (v) => f.format(v); }
       case 'D': return (value) => { const t = Math.trunc(value); return (t < 0 ? '-' : '') + String(Math.abs(t)).padStart(d ?? 0, '0'); };
-      case 'E': return (v) => scientific(v, d ?? 6, m[1] === 'e' ? 'e' : 'E', 3);
+      case 'E': { const dec = separators(locale).dec; return (v) => scientific(v, d ?? 6, m[1] === 'e' ? 'e' : 'E', 3).replace('.', dec); }
       case 'X': return (value) => {
         const t = Math.trunc(value);
         const h = t >= 0 ? t.toString(16) : BigInt.asUintN(t >= -(2 ** 31) ? 32 : 64, BigInt(t)).toString(16); // two's complement, as Int32 / Int64
         return (m[1] === 'X' ? h.toUpperCase() : h).padStart(d ?? 0, '0');
       };
-      case 'G': return (v) => general(v, d || 15, m[1] === 'g' ? 'e' : 'E');
-      case 'R': return (v) => general(v, 17, 'E', String(v));
+      case 'G': return (v) => general(v, d || 15, m[1] === 'g' ? 'e' : 'E', undefined, locale);
+      case 'R': return (v) => general(v, 17, 'E', String(v), locale);
     }
   }
   if (/[#0]/.test(fmt)) return (v) => customNumber(v, fmt, locale);
@@ -179,12 +340,13 @@ function scientific(v, digits, e, expDigits) {
  * "G" / "Gn": n significant digits (15 for a Double on .NET Framework, which SSRS runs), trailing zeros dropped; fixed
  * notation while the exponent is above -5 and below n, else d.dddE+dd. `shortest` (for "R") is the digits to show.
  */
-function general(v, p, e, shortest) {
+function general(v, p, e, shortest, locale) {
   if (v === 0) return '0';
   const [mant, exp] = (shortest ? Number(shortest) : v).toExponential(shortest ? undefined : Math.min(p, 100) - 1).split('e');
   const x = Number(exp), digits = mant.includes('.') ? mant.replace(/\.?0+$/, '') : mant;
-  if (x > -5 && x < p) return nf('en-US', { maximumFractionDigits: 20, maximumSignificantDigits: 21, useGrouping: false }).format(Number(`${digits}e${x}`));
-  return `${digits}${e}${x < 0 ? '-' : '+'}${String(Math.abs(x)).padStart(2, '0')}`;
+  const dec = locale ? separators(locale).dec : '.';
+  if (x > -5 && x < p) return nf('en-US', { maximumFractionDigits: 20, maximumSignificantDigits: 21, useGrouping: false }).format(Number(`${digits}e${x}`)).replace('.', dec);
+  return `${digits.replace('.', dec)}${e}${x < 0 ? '-' : '+'}${String(Math.abs(x)).padStart(2, '0')}`;
 }
 
 /** A format string's parts: "a;b;c" sections, with 'quoted' and \escaped text kept whole. */
@@ -221,6 +383,8 @@ function customNumber(v, fmt, locale) {
   const secs = sections(fmt);
   let sec = secs[0], minus = v < 0;
   if (v < 0 && secs.length > 1 && secs[1] !== '') { sec = secs[1]; minus = false; }
+  const sci = exponentOf(sec);
+  if (sci) return (minus ? '-' : '') + scientificCustom(Math.abs(v), sci, locale);
   const shape = numShape(numTokens(sec));
   let x = Math.abs(v);
   if (shape.pct) x = shiftDec(x, 2 * shape.pct);
@@ -228,6 +392,40 @@ function customNumber(v, fmt, locale) {
   // a value that rounds to zero takes the zero section when there is one
   if (secs.length > 2 && secs[2] !== '' && roundHalfAway(x, shape.decimals) === 0) return formatShape(numShape(numTokens(secs[2])), 0, false, locale);
   return formatShape(shape, x, minus, locale);
+}
+/**
+ * A section's exponent ("0.00E+00", "#.##e-0"): E or e, then + (always signed) or - / nothing (signed when negative),
+ * then the exponent's minimum digits. Null when the section has none (outside quotes).
+ */
+function exponentOf(sec) {
+  let q = null;
+  for (let i = 0; i < sec.length; i++) {
+    const c = sec[i];
+    if (q) { if (c === q) q = null; continue; }
+    if (c === '"' || c === "'") { q = c; continue; }
+    if (c === '\\') { i++; continue; }
+    if (c === 'E' || c === 'e') {
+      const m = /^([+-]?)(0+)/.exec(sec.slice(i + 1));
+      if (m && /[0#]/.test(sec.slice(0, i))) return { mant: sec.slice(0, i), e: c, plus: m[1] === '+', digits: m[2].length, rest: sec.slice(i + 1 + m[0].length) };
+    }
+  }
+  return null;
+}
+/** .NET custom scientific: the mantissa keeps as many integer digits as its pattern has (0.00E+00 → 1.23E-05). */
+function scientificCustom(x, sci, locale) {
+  const intPh = (sci.mant.split('.')[0].match(/[0#]/g) || []).length || 1;
+  const decimals = ((sci.mant.split('.')[1] || '').match(/[0#]/g) || []).length;
+  let exp = 0, m = x;
+  if (x !== 0) {
+    exp = Math.floor(Math.log10(x)) - (intPh - 1);
+    m = shiftDec(x, -exp);
+    if (roundHalfAway(m, decimals) >= 10 ** intPh) { exp++; m = shiftDec(x, -exp); } // 9.999 → 10.00: one more power
+    else if (m < 10 ** (intPh - 1)) { exp--; m = shiftDec(x, -exp); } // log10 rounding just below a power of ten
+  }
+  const sign = exp < 0 ? '-' : sci.plus ? '+' : '';
+  const mant = formatShape(numShape(numTokens(sci.mant)), roundHalfAway(m, decimals), false, locale);
+  const rest = litText(numTokens(sci.rest));
+  return `${mant}${sci.e}${sign}${String(Math.abs(exp)).padStart(sci.digits, '0')}${rest}`;
 }
 function numShape(toks) {
   const ph = (t) => t.k === '0' || t.k === '#';
@@ -276,7 +474,7 @@ function formatShape(s, x, minus, locale) {
       out.unshift(dch || (t.k === '0' ? '0' : ''));
     }
     const frac = fp.slice(0, s.decimals).replace(new RegExp(`0{0,${s.decimals - s.minDec}}$`), '');
-    body = out.join('') + (frac ? '.' + frac : '');
+    body = out.join('') + (frac ? separators(locale).dec + frac : '');
     minus = minus && r !== 0;
   } else {
     body = nf(locale, { useGrouping: s.grouping, minimumFractionDigits: s.minDec, maximumFractionDigits: s.decimals, minimumIntegerDigits: Math.max(1, s.minInt) }).format(x);
@@ -287,29 +485,71 @@ function formatShape(s, x, minus, locale) {
 }
 
 const dtfCache = new Map();
-/** Month or weekday name in a non-English locale. English keeps the fixed tables, so its output never shifts. */
-function localName(locale, kind, style, d) {
+/** Month or weekday name in a non-English locale, of a wall date (read in UTC). English keeps the fixed tables. */
+function localName(locale, kind, style, w) {
   const key = `${locale}|${kind}|${style}`;
   let f = dtfCache.get(key);
   if (f === undefined) {
-    try { f = new Intl.DateTimeFormat(locale, { [kind]: style }); } catch { f = null; } // an unknown locale: English
+    try { f = new Intl.DateTimeFormat(locale, { [kind]: style, timeZone: 'UTC' }); } catch { f = null; } // an unknown locale: English
     if (dtfCache.size >= 500) dtfCache.clear();
     dtfCache.set(key, f);
   }
-  return f ? f.format(d) : null;
+  return f ? f.format(w) : null;
 }
 /** English locales keep the fixed English names (so existing reports never shift). */
 export const english = (locale) => !locale || /^en\b/i.test(locale);
 
 /**
- * .NET standard date formats (one letter). en-US (the default locale) has .NET's en-US patterns; other locales keep the
- * day-first patterns Pagewright has always used. s, u and o are the same everywhere.
+ * .NET standard date formats (one letter). en-US (the default locale) has .NET's en-US patterns; another locale has
+ * its own, read from Intl (CLDR): de-DE d is dd.MM.yyyy, ja-JP yyyy/MM/dd, fr-FR dd/MM/yyyy, with 4-digit years as
+ * .NET writes them. s, u and o are the same everywhere.
  */
 const US_DATES = { d: 'M/d/yyyy', D: 'dddd, MMMM d, yyyy', t: 'h:mm tt', T: 'h:mm:ss tt', M: 'MMMM d', Y: 'MMMM yyyy' };
 const DAY_FIRST = { d: 'dd/MM/yyyy', D: 'dddd, dd MMMM yyyy', t: 'HH:mm', T: 'HH:mm:ss', M: 'dd MMMM', Y: 'MMMM yyyy' };
+/** Where .NET's culture data (which SSRS uses) differs from CLDR in the short date. */
+const NET_SHORT = { 'en-IN': 'dd-MM-yyyy' };
 const INVARIANT = { s: "yyyy-MM-dd'T'HH:mm:ss", u: "yyyy-MM-dd HH:mm:ss'Z'", o: "yyyy-MM-dd'T'HH:mm:ss.fffffff" };
+const patCache = new Map();
+/** A .NET custom pattern from Intl's parts for the locale (5 March 2026 09:04:07 shows whether parts are padded). */
+function intlPattern(locale, opts) {
+  const parts = new Intl.DateTimeFormat(locale, { ...opts, timeZone: 'UTC' }).formatToParts(new Date(Date.UTC(2026, 2, 5, 9, 4, 7)));
+  const h12 = parts.some(p => p.type === 'dayPeriod');
+  return parts.map(p => {
+    const v = p.value;
+    switch (p.type) {
+      case 'year': return 'yyyy';
+      case 'month': return /^\d+$/.test(v) ? (v.length > 1 ? 'MM' : 'M') : v.length > 4 || opts.month === 'long' ? 'MMMM' : 'MMM';
+      case 'day': return v.length > 1 ? 'dd' : 'd';
+      case 'weekday': return opts.weekday === 'long' ? 'dddd' : 'ddd';
+      case 'hour': return h12 ? (v.length > 1 ? 'hh' : 'h') : v.length > 1 ? 'HH' : 'H';
+      case 'minute': return 'mm';
+      case 'second': return 'ss';
+      case 'dayPeriod': return 'tt';
+      default: return !v ? '' : v.includes("'") ? [...v].map(c => `\\${c}`).join('') : `'${v}'`; // literal text
+    }
+  }).join('');
+}
+/** The locale's d, D, t, T, M, Y patterns. */
+function localePatterns(locale) {
+  let p = patCache.get(locale);
+  if (!p) {
+    try {
+      p = {
+        d: NET_SHORT[locale] || intlPattern(locale, { dateStyle: 'short' }),
+        D: intlPattern(locale, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
+        t: intlPattern(locale, { hour: 'numeric', minute: '2-digit' }),
+        T: intlPattern(locale, { hour: 'numeric', minute: '2-digit', second: '2-digit' }),
+        M: intlPattern(locale, { month: 'long', day: 'numeric' }),
+        Y: intlPattern(locale, { year: 'numeric', month: 'long' }),
+      };
+    } catch { p = DAY_FIRST; } // an unknown locale
+    if (patCache.size >= 200) patCache.clear();
+    patCache.set(locale, p);
+  }
+  return p;
+}
 function standardDate(fmt, locale) {
-  const p = !locale || /^en-US$/i.test(locale) ? US_DATES : DAY_FIRST;
+  const p = !locale || /^en-US$/i.test(locale) ? US_DATES : localePatterns(locale);
   switch (fmt) {
     case 'd': case 'D': case 't': case 'T': return p[fmt];
     case 'f': return `${p.D} ${p.t}`;
@@ -326,30 +566,32 @@ function standardDate(fmt, locale) {
 
 /**
  * .NET custom date format: runs of y M d H h m s f F t, 'quoted' and \escaped text; "%d" is the custom "d" alone.
- * @param {Date} d @param {string} fmt @param {string} [locale] month and day names follow it
+ * The parts are read on the wall clock of the time zone (tz; the host's when none is given).
+ * @param {Date} d @param {string} fmt @param {string} [locale] month and day names follow it @param {string} [tz]
  */
-export function formatDate(d, fmt, locale) {
-  if (fmt.length === 1) { const std = standardDate(fmt, locale); if (std) return formatDate(d, std, locale); }
+export function formatDate(d, fmt, locale, tz) {
+  if (fmt.length === 1) { const std = standardDate(fmt, locale); if (std) return formatDate(d, std, locale, tz); }
   if (fmt.length === 2 && fmt[0] === '%') fmt = fmt[1];
+  const w = wallDate(d, tz);
   const en = english(locale);
-  const name = (kind, style, fallback) => (en ? fallback : localName(locale, kind, style, d) ?? fallback);
+  const name = (kind, style, fallback) => (en ? fallback : localName(locale, kind, style, w) ?? fallback);
   const p2 = (n) => String(n).padStart(2, '0');
   return fmt.replace(/(y+|M+|d+|H+|h+|m+|s+|f+|F+|t+)|'([^']*)'?|"([^"]*)"?|\\(.?)/g, (tok, run, q1, q2, esc) => {
     if (!run) return q1 ?? q2 ?? esc ?? '';
     const n = run.length;
     switch (run[0]) {
-      case 'y': { const y = d.getFullYear(); return n === 1 ? String(y % 100) : n === 2 ? p2(y % 100) : String(y).padStart(n, '0'); }
-      case 'M': return n >= 4 ? name('month', 'long', MONTHS[d.getMonth()]) : n === 3 ? name('month', 'short', MONTHS[d.getMonth()].slice(0, 3)) : n === 2 ? p2(d.getMonth() + 1) : String(d.getMonth() + 1);
-      case 'd': return n >= 4 ? name('weekday', 'long', DAYS[d.getDay()]) : n === 3 ? name('weekday', 'short', DAYS[d.getDay()].slice(0, 3)) : n === 2 ? p2(d.getDate()) : String(d.getDate());
-      case 'H': return n >= 2 ? p2(d.getHours()) : String(d.getHours());
-      case 'h': { const h = ((d.getHours() + 11) % 12) + 1; return n >= 2 ? p2(h) : String(h); }
-      case 'm': return n >= 2 ? p2(d.getMinutes()) : String(d.getMinutes());
-      case 's': return n >= 2 ? p2(d.getSeconds()) : String(d.getSeconds());
+      case 'y': { const y = w.getUTCFullYear(); return n === 1 ? String(y % 100) : n === 2 ? p2(y % 100) : String(y).padStart(n, '0'); }
+      case 'M': return n >= 4 ? name('month', 'long', MONTHS[w.getUTCMonth()]) : n === 3 ? name('month', 'short', MONTHS[w.getUTCMonth()].slice(0, 3)) : n === 2 ? p2(w.getUTCMonth() + 1) : String(w.getUTCMonth() + 1);
+      case 'd': return n >= 4 ? name('weekday', 'long', DAYS[w.getUTCDay()]) : n === 3 ? name('weekday', 'short', DAYS[w.getUTCDay()].slice(0, 3)) : n === 2 ? p2(w.getUTCDate()) : String(w.getUTCDate());
+      case 'H': return n >= 2 ? p2(w.getUTCHours()) : String(w.getUTCHours());
+      case 'h': { const h = ((w.getUTCHours() + 11) % 12) + 1; return n >= 2 ? p2(h) : String(h); }
+      case 'm': return n >= 2 ? p2(w.getUTCMinutes()) : String(w.getUTCMinutes());
+      case 's': return n >= 2 ? p2(w.getUTCSeconds()) : String(w.getUTCSeconds());
       case 'f': case 'F': { // fractions of a second; a Date holds milliseconds, so digits past the third are 0
-        const f = String(d.getMilliseconds()).padStart(3, '0').padEnd(7, '0').slice(0, Math.min(n, 7));
+        const f = String(w.getUTCMilliseconds()).padStart(3, '0').padEnd(7, '0').slice(0, Math.min(n, 7));
         return run[0] === 'F' ? f.replace(/0+$/, '') : f;
       }
-      case 't': { const s = d.getHours() < 12 ? 'AM' : 'PM'; return n === 1 ? s[0] : s; }
+      case 't': { const s = w.getUTCHours() < 12 ? 'AM' : 'PM'; return n === 1 ? s[0] : s; }
     }
     return run;
   });

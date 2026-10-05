@@ -23,7 +23,7 @@ export function exportCsv(model, { all = true, locale, currency } = {}) {
     for (const row of r.rows) {
       const line = new Array(r.columns.length).fill('');
       for (const c of row.cells) {
-        const v = c.value instanceof Date ? isoDate(c.value) : typeof c.value === 'number' ? c.value : c.value === true || c.value === false ? String(c.value) : text(formatValue(c.value, null, { locale, currency }));
+        const v = c.value instanceof Date ? isoDate(c.value, model.timeZone || undefined) : typeof c.value === 'number' ? c.value : c.value === true || c.value === false ? String(c.value) : text(formatValue(c.value, null, { locale, currency }));
         if (c.colIndex >= 0) line[c.colIndex] = q(v);
       }
       out.push(line.join(','));

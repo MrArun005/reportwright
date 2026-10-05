@@ -631,7 +631,7 @@ register('table', {
       const g = groups[level];
       const buckets = groupRows(grows, g.expr, ctx, lc, item.name);
       if (!g.sortBy && (g.sort === 'asc' || g.sort === 'desc')) {
-        buckets.sort((a, b) => cmpKey(a.key, b.key) * (g.sort === 'desc' ? -1 : 1));
+        buckets.sort((a, b) => cmpKey(a.key, b.key, ctx) * (g.sort === 'desc' ? -1 : 1));
       }
       // a group's sortBy, or an interactive sort (which wins), orders the groups by an expression in each group's scope:
       // =Sum(Fields.x) sorts by group totals
@@ -644,7 +644,7 @@ register('table', {
             if (x === y) continue;
             if (x == null) return 1;
             if (y == null) return -1;
-            return cmpKey(x, y) * (us[k].dir === 'desc' ? -1 : 1);
+            return cmpKey(x, y, ctx) * (us[k].dir === 'desc' ? -1 : 1);
           }
           return 0;
         });
@@ -1363,7 +1363,7 @@ register('subreport', {
     const params = {};
     for (const [k, v] of Object.entries(item.params || {})) {
       const r = evalSafe(v, ctx, lc, `${item.name} parameter ${k}`);
-      params[k] = r.v instanceof Date ? isoDate(r.v) : r.v;
+      params[k] = r.v instanceof Date ? isoDate(r.v, ctx.timeZone) : r.v;
     }
     const key = `${item.report}|${JSON.stringify(params)}`;
     const sub = lc.subreports;

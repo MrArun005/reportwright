@@ -10,7 +10,7 @@ import { safeUrl } from './url.js';
 import { TextMeasurer, finishText } from './text/measure.js';
 import { loadSources, buildDataSets, coerce } from './data/index.js';
 import { evalValue, evaluate, functionTable } from './expr/evaluate.js';
-import { isoDate } from './expr/format.js';
+import { isoDate, validTimeZone } from './expr/format.js';
 import { BASE_STYLE } from './style.js';
 import { resolveImageSrc } from './image.js';
 import { ITEMS } from './items/index.js';
@@ -76,7 +76,9 @@ export async function render(def0, opts = {}) {
 
   const page = resolvePage(def.page);
   if (['pageHeader', 'body', 'pageFooter'].some(k => hasType(k === 'body' && Array.isArray(def.sections?.body) ? def.sections.body.flatMap(b => [...(b?.items || []), ...(b?.pageHeader?.items || []), ...(b?.pageFooter?.items || [])]) : def.sections?.[k]?.items, 'barcode'))) await loadBarcodes();
-  const params = resolveParameters(def, opts.parameters || {});
+  let timeZone = def.timeZone || opts.timeZone;
+  if (timeZone && !validTimeZone(timeZone)) { warn(`The time zone "${String(timeZone).slice(0, 60)}" is not known, so dates show in the server's zone.`); timeZone = undefined; }
+  const params = resolveParameters(def, opts.parameters || {}, { now: opts.now, timeZone, locale: def.locale });
 
   const store = opts.fontStore || new FontStore(/** @type {any} */ (opts.loadFont));
   await store.load(ALL_FONT_KEYS);
@@ -96,6 +98,8 @@ export async function render(def0, opts = {}) {
     params, globals: { ExecutionTime: now, ReportName: def.name || '', PageNumber: 1, TotalPages: 1 },
     dataSets: {}, fields: null, locale: def.locale, currency: def.currency, // neither set: en-US numbers, no currency symbol (expr/format.js)
     nullPropagation: def.nullPropagation === true, // Nothing: VB semantics unless the report asks for SQL nulls (expr/evaluate.js)
+    // dates on the wall clock of the report's time zone, else the render's (the server passes the viewer's), else the host's
+    timeZone: timeZone || undefined, caseSensitive: def.caseSensitive === true, // text order and grouping (expr/evaluate.js sortCompare)
     functions: functionTable(def, fnCount), clock,
     aggCache: new WeakMap(), // aggregate results for this render (expr/evaluate.js)
     fmtMemo: new Map(), // formatted dates for this render (expr/format.js)
@@ -409,6 +413,7 @@ export async function render(def0, opts = {}) {
 
   return {
     width: result.width ?? page.width, height, pages, warnings, bookmarks, regions: opts.exportData ? regions : null, name: def.name || '', partial: cutRows(),
+    timeZone: timeZone || null, // the zone dates were shown in (exports write their dates on that clock)
     stats: { ms: Date.now() - t0, pages: pages.length, rows: Object.fromEntries(Object.entries(dataSets).map(([k, r]) => [k, r.length])) },
   };
 }
@@ -449,7 +454,7 @@ function linkAction(it, ctx, rect, warn, state) {
     if (a.type === 'params') {
       // Set report parameters and run the report again (cross-filtering). toggle: a second click on the same value clears it.
       const params = {};
-      for (const [k, v] of Object.entries(a.params || {})) { const x = evalValue(v, ctx); params[k] = x instanceof Date ? isoDate(x) : x == null ? '' : x; }
+      for (const [k, v] of Object.entries(a.params || {})) { const x = evalValue(v, ctx); params[k] = x instanceof Date ? isoDate(x, ctx.timeZone) : x == null ? '' : x; }
       return { t: 'link', ...rect, action: { type: 'params', params, toggle: a.toggle !== false } };
     }
     if (a.type === 'url') {
@@ -459,7 +464,7 @@ function linkAction(it, ctx, rect, warn, state) {
     }
     if (a.type === 'report') {
       const params = {};
-      for (const [k, v] of Object.entries(a.params || {})) { const x = evalValue(v, ctx); params[k] = x instanceof Date ? isoDate(x) : x; }
+      for (const [k, v] of Object.entries(a.params || {})) { const x = evalValue(v, ctx); params[k] = x instanceof Date ? isoDate(x, ctx.timeZone) : x; }
       return { t: 'link', ...rect, action: { type: 'drill', report: String(evalValue(a.report, ctx)), params } };
     }
     if (a.type === 'bookmark') return { t: 'link', ...rect, action: { type: 'bookmark', target: String(evalValue(a.target, ctx)) } };
@@ -505,9 +510,11 @@ export async function parameterOptions(def, given = {}, opts = {}) {
 }
 
 /** Defaults, types and required checks for report parameters. */
-export function resolveParameters(def, given, { lenient = false } = {}) {
+export function resolveParameters(def, given, { lenient = false, now, timeZone, locale } = {}) {
   const out = {}, missing = [];
-  const ctx = { params: {}, globals: { ExecutionTime: new Date() }, dataSets: {}, fields: null, functions: functionTable(def) };
+  // defaults such as =Today() read the render's clock (opts.now) and zone
+  const ctx = { params: {}, globals: { ExecutionTime: now || new Date() }, dataSets: {}, fields: null, functions: functionTable(def), timeZone, locale };
+  const copt = { timeZone }; // parameter values arrive in the invariant form (1234.5, 2026-03-05), whatever the locale
   for (const p of def.parameters || []) {
     let val = given[p.name];
     // nullable: an explicit null is a value, so the default does not replace it
@@ -517,12 +524,12 @@ export function resolveParameters(def, given, { lenient = false } = {}) {
     }
     if (p.multi) {
       let list = Array.isArray(val) ? val : val == null || val === '' ? [] : String(val).split(',').map(x => x.trim()).filter(Boolean);
-      val = list.map(x => coerce(x, p.type || 'string'));
+      val = list.map(x => coerce(x, p.type || 'string', copt));
       if (p.required && !val.length) missing.push(p.name);
     } else {
       // a blank is a value only for allowBlank (text); a nullable parameter reads it as null
       if (val === '' && (p.type !== 'string' || (p.nullable && !p.allowBlank))) val = null;
-      else val = coerce(val, p.type || 'string');
+      else val = coerce(val, p.type || 'string', copt);
       if (p.required && ((val == null && !p.nullable) || (val === '' && !p.allowBlank))) missing.push(p.name);
     }
     out[p.name] = val;
