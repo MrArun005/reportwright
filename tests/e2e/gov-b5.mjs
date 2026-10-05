@@ -65,6 +65,7 @@ try {
   const secret = (await pu.getByTestId('totp-secret').textContent()).replace(/\s/g, '');
   await pu.getByLabel('Code from your authenticator app').fill(totp(secret));
   await pu.getByRole('button', { name: 'Confirm' }).click();
+  await pu.getByTestId('recovery-codes').locator('li').first().waitFor();
   const codes = (await pu.getByTestId('recovery-codes').locator('li').allTextContents());
   assert.equal(codes.length, 10);
   await pu.getByTestId('tf-status').filter({ hasText: 'On' }).waitFor();
