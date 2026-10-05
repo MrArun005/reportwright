@@ -330,7 +330,7 @@ async function run(job, owner, stopAfter, fence = { lost: false, hold: async () 
     await loadTemplate(job.templateRef || def, p);
     return p;
   };
-  await allowed();
+  let current = await allowed(); // the owner as last checked: items render as them while the next check runs
   let ended = null; // why the owner may no longer run this batch
   job.status = 'running';
   job.startedAt ||= new Date().toISOString();
@@ -361,12 +361,23 @@ async function run(job, owner, stopAfter, fence = { lost: false, hold: async () 
       const name = `${itemName(job, item, i)}.${job.format === 'json' ? 'json' : job.format}`;
       try {
         if (ended) throw ended;
-        const principal = await allowed().catch((e) => { throw (ended = new Error(`The owner may no longer run this report (${e.message}).`)); });
-        // in the render pool, behind interactive renders (allowed() checked the template as the owner is now)
-        const opt = { batch: job.id, parameters: item.parameters, data: item.data, format: job.format, timeZone: job.timeZone || undefined, baseUrl: job.base, self: job.self, pdfa: job.pdfa, sign: job.sign, principal };
-        const render = () => renderInPool({ def, opt }, { background: true });
-        // fromSnapshot (schedules): a fresh snapshot of the same report, parameters and access, within the TTL setting
-        const r = job.fromSnapshot ? await throughSnapshot({ def, opt, principal }, render) : await render();
+        // the owner's access is checked for every item, at the same time as the item renders (on a remote store the
+        // check's reads were most of an item's time); nothing of the item is kept unless the check passes, and a
+        // changed owner (another role) renders the item again as they are now
+        const check = allowed();
+        check.catch(() => {});
+        const renderAs = (principal) => {
+          // in the render pool, behind interactive renders
+          const opt = { batch: job.id, parameters: item.parameters, data: item.data, format: job.format, timeZone: job.timeZone || undefined, baseUrl: job.base, self: job.self, pdfa: job.pdfa, sign: job.sign, principal };
+          const render = () => renderInPool({ def, opt }, { background: true });
+          // fromSnapshot (schedules): a fresh snapshot of the same report, parameters and access, within the TTL setting
+          return job.fromSnapshot ? throughSnapshot({ def, opt, principal }, render) : render();
+        };
+        const before = current;
+        let r = await renderAs(before).catch(e => ({ error: e }));
+        const principal = await check.catch((e) => { throw (ended = new Error(`The owner may no longer run this report (${e.message}).`)); });
+        if (JSON.stringify(principal) !== JSON.stringify(before)) { current = principal; r = await renderAs(principal).catch(e => ({ error: e })); }
+        if (r.error) throw r.error;
         if (item.putUrl) {
           const res = await serverFetch(job.self, { internal: canDesign(principal) })(item.putUrl, { method: 'PUT', body: r.bytes, headers: { 'content-type': r.contentType, 'idempotency-key': `${job.id}:item:${i}` } });
           if (!res.ok) throw new Error(`upload: HTTP ${res.status}`);

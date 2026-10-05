@@ -34,11 +34,13 @@ export const fontStore = () => (store ||= new FontStore(async (k) => {
 // upload shows in renders within that time
 const FONT_SYNC_MS = 2000;
 let fontsSyncedAt = 0, fontsSyncedGen = -1;
+let fontsSyncing = null; // one read at a time: concurrent batch items share it
 export async function syncFonts() {
   if (Date.now() - fontsSyncedAt < FONT_SYNC_MS && fontsSyncedGen === fontsGen.n) return;
+  if (fontsSyncing) return fontsSyncing;
   const gen = fontsGen.n;
-  setCustomFonts(await listFonts());
-  fontsSyncedAt = Date.now(); fontsSyncedGen = gen;
+  fontsSyncing = listFonts().then(list => { setCustomFonts(list); fontsSyncedAt = Date.now(); fontsSyncedGen = gen; }).finally(() => { fontsSyncing = null; });
+  await fontsSyncing;
   for (const k of fontStore().failed) if (k.startsWith('u-')) fontStore().failed.delete(k);
 }
 const subset = createSubsetter(() => fs.readFile(path.join(ROOT, 'public', 'harfbuzz-subset.wasm')));
