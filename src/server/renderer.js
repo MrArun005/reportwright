@@ -116,7 +116,7 @@ export async function loadTemplate(template, principal = defaultPrincipal()) {
  *   self: this server's origin, which data sources may call even though it is local. Defaults to baseUrl;
  *   pass it when baseUrl came from an API caller. Every other private address is refused (SSRF).
  *   pdfa: a PDF/A-2b file (2a with ua). ua: an accessible PDF (PDF/UA-1). formulas: false keeps Excel totals as values.
- *   static: an HTML file without its Tables view. sign: sign the PDF with PW_SIGN_P12 (only for routes behind an API key).
+ *   csv: "layout" gives the printed layout as CSV (default: the data). static: an HTML file without its Tables view. sign: sign the PDF with PW_SIGN_P12 (only for routes behind an API key).
  *   encrypt: passwords and permissions (pdfEncryptOptions); not with pdfa or sign.
  *   principal: who the render runs for (perms.js): subreports it may not view are "not found". Default: nobody
  *   with accounts on, so a caller that forgets cannot show more than it should.
@@ -170,7 +170,7 @@ export async function renderTo(def, opt = {}) {
     if (signing) bytes = await signing.sign(bytes);
   }
   else if (format === 'html') bytes = Buffer.from(await exportHtml(model, fontStore(), { title: def.name, subset, drillBase: opt.self || base, static: !!opt.static, locale: def.locale, currency: def.currency })); // drill-through opens this server's viewer (never a caller's baseUrl)
-  else if (format === 'csv') bytes = Buffer.from(exportCsv(model, /** @type {any} */ ({ locale: def.locale, currency: def.currency })));
+  else if (format === 'csv') bytes = Buffer.from(exportCsv(model, /** @type {any} */ ({ locale: def.locale, currency: def.currency, layout: opt.csv === 'layout' })));
   else if (format === 'docx') bytes = Buffer.from(await exportDocx(model, { title: def.name, lang: def.locale, fontStore: fontStore(), fetchImage }));
   else if (format === 'pptx') bytes = Buffer.from(await exportPptx(model, { title: def.name, lang: def.locale, fontStore: fontStore(), fetchImage }));
   else if (format === 'xlsx') { const ExcelJS = (await import('exceljs')).default; bytes = await exportXlsx(model, ExcelJS, { currency: def.currency, title: def.name, formulas: formulasOn(opt.formulas), fontStore: fontStore(), fetchImage }); }

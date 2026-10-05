@@ -2,7 +2,7 @@
 
 Every format is written from the laid-out page model (`render()`), in the browser (viewer toolbar) and on the server
 (`/api/v1/render`, `pw render`). The viewer's ⚙ **Export options** menu holds the choices below; they are kept in the
-browser. CSV and JSON are unchanged.
+browser. JSON is unchanged.
 
 | Format | What you get | Options |
 |---|---|---|
@@ -10,6 +10,7 @@ browser. CSV and JSON are unchanged.
 | Word (.docx) | Text and tables as editable Word content; charts, pictures, maps, barcodes, shapes and in-cell visuals as pictures | — |
 | PowerPoint (.pptx) | One slide per page: text boxes, shapes and lines native and editable; charts, pictures and barcodes as pictures | — |
 | Excel (.xlsx) | One sheet per table, typed cells (full-precision values, dates on the report's clock), number formats, outline, frozen header, **live totals**; **native, editable charts** (a sheet each, bound to their data); a Charts sheet of pictures for the rest | **Live formulas for totals** (on) |
+| CSV | The data: one header row and the detail rows of the main table (the one with the most rows), numbers without symbols, ISO dates; no group lines, totals or other tables | The printed layout instead (every table, group lines, totals): `?csv=layout` on the server link, `csv: 'layout'` in `/api/v1/render`, `pw render --layout` |
 | HTML | Interactive viewer (default in the viewer), **pages and sortable tables**, or static pages | **HTML file** |
 
 ## Pictures in Word, PowerPoint and Excel

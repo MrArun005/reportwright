@@ -72,3 +72,30 @@ describe('R5 #5: the Excel formulas option reaches the exporter', () => {
     expect(src).toMatch(/k !== 'formulas'/);
   });
 });
+
+describe('R5 #6: CSV is the data by default, the printed layout on request', () => {
+  const model = {
+    pages: [], timeZone: null, regions: [
+      { name: 'Summary', columns: [50, 50], rows: [{ kind: 'header', cells: [{ colIndex: 0, value: 'Region' }, { colIndex: 1, value: 'Total' }] }, { kind: 'detail', level: 0, cells: [{ colIndex: 0, value: 'East' }, { colIndex: 1, value: '₹1,234.00' }] }] },
+      { name: 'Ledger', columns: [50, 50, 50], rows: [
+        { kind: 'header', cells: [{ colIndex: 0, value: 'Who', span: 2 }, { colIndex: 2, value: 'Money' }] },
+        { kind: 'header', cells: [{ colIndex: 0, value: 'Id' }, { colIndex: 1, value: 'Name' }, { colIndex: 2, value: 'Amount' }] },
+        { kind: 'groupHeader', level: 0, cells: [{ colIndex: 0, value: 'East (2 rows)', span: 3 }] },
+        { kind: 'detail', level: 1, cells: [{ colIndex: 0, value: 1 }, { colIndex: 1, value: 'A, Ltd' }, { colIndex: 2, value: 1234.5, format: 'C2' }] },
+        { kind: 'detail', level: 1, cells: [{ colIndex: 0, value: 2 }, { colIndex: 1, value: 'B' }, { colIndex: 2, value: -7, format: 'C2' }] },
+        { kind: 'groupFooter', level: 0, cells: [{ colIndex: 0, value: 'Subtotal' }, { colIndex: 2, value: 1227.5, format: 'C2' }] },
+        { kind: 'footer', cells: [{ colIndex: 0, value: 'Total' }, { colIndex: 2, value: 1227.5 }] },
+      ] },
+    ],
+  };
+  it('one header row and the detail rows of the main table, raw numbers', async () => {
+    const { exportCsv } = await import('../../src/exporters/csv.js');
+    expect(exportCsv(model, { currency: 'INR' }).replace('﻿', '').split('\r\n')).toEqual(['Who Id,Who Name,Money Amount', '1,"A, Ltd",1234.5', '2,B,-7']);
+  });
+  it('layout: true keeps every table and row as printed', async () => {
+    const { exportCsv } = await import('../../src/exporters/csv.js');
+    const lines = exportCsv(model, { layout: true }).replace('\uFEFF', '').split('\r\n');
+    expect(lines).toContain('Subtotal,,1227.5');
+    expect(lines).toContain('Summary');
+  });
+});

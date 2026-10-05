@@ -66,7 +66,7 @@ describe('rounding: export and Round() match what the page shows', () => {
     };
     const out = await render(report([table], { data: { rows: [{ v: 1.005 }, { v: -0.125 }, { v: -1.005 }] } }), { exportData: true, fontStore });
     expect(texts(out.pages[0])).toEqual(['1.01', '-0.13', '-1.01']);
-    expect(exportCsv(out).replace('﻿', '').split('\r\n').filter(Boolean)).toEqual(['1.01', '-0.13', '-1.01']);
+    expect(exportCsv(out).replace('﻿', '').split('\r\n').filter(Boolean).slice(1)).toEqual(['1.01', '-0.13', '-1.01']);
   });
 });
 
@@ -132,7 +132,7 @@ describe('CSV export', () => {
       detail: [{ height: 20, cells: [{ value: '=Fields.s' }] }],
     };
     const out = await render(report([table], { data: { rows: [{ s: '=HYPERLINK("http://x","c")' }, { s: '@SUM(A1)' }, { s: '+1' }, { s: '-1' }, { s: 'ok' }] } }), { exportData: true, fontStore });
-    const lines = exportCsv(out).replace('﻿', '').split('\r\n').filter(Boolean);
+    const lines = exportCsv(out).replace('﻿', '').split('\r\n').filter(Boolean).slice(1);
     expect(lines).toEqual([`"'=HYPERLINK(""http://x"",""c"")"`, "'@SUM(A1)", "'+1", "'-1", 'ok']);
   });
 });

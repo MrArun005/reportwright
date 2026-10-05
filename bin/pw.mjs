@@ -18,7 +18,7 @@ import { textRows } from '../src/exporters/regions.js';
 
 const ROOT = path.join(import.meta.dirname, '..');
 const HELP = `pw render <report.pw.json> [-p name=value]… [-d source=data.json]… [-f pdf|xlsx|docx|pptx|html|csv|json|txt] [-o file|-] [--base URL] [--pdfa] [--ua]
-          [--values] [--static]
+          [--values] [--static] [--layout]
           [--password PW] [--owner-password PW] [--deny print|modify|copy|annotate|fillForms|accessibility|assemble|printHighQuality]…
 pw test [folder] [--update]        render every <folder>/__tests__/*.test.json case and compare it with its snapshot
 pw diff <old.pw.json> <new.pw.json> [-p name=value]… [-d source=data.json]… [--base URL]
@@ -35,6 +35,7 @@ pw audit rekey --old-secret S | --old-key file.pem
   --base  where relative data URLs go (e.g. http://localhost:3000)
   --password, --owner-password, --deny  a password-protected PDF (AES-256); --deny takes away a permission
   --ua  an accessible PDF (PDF/UA-1; with --pdfa, PDF/A-2a)   --values  Excel totals as values, not formulas
+  --layout  CSV of the printed layout (every table, group lines, totals), not just the data
   --static  an HTML file without its Tables view (sort, groups, filter)
 pw migrate-storage --to <url> [--from file|<url>]
                                    copy everything (reports and their versions, users, grants, folders, schedules,
@@ -113,7 +114,7 @@ function compare(label, before, after) {
 }
 
 async function cmdRender(args) {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { p: { type: 'string', multiple: true }, d: { type: 'string', multiple: true }, f: { type: 'string', default: 'pdf' }, o: { type: 'string' }, base: { type: 'string' }, pdfa: { type: 'boolean' }, ua: { type: 'boolean' }, values: { type: 'boolean' }, static: { type: 'boolean' }, password: { type: 'string' }, 'owner-password': { type: 'string' }, deny: { type: 'string', multiple: true } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { p: { type: 'string', multiple: true }, d: { type: 'string', multiple: true }, f: { type: 'string', default: 'pdf' }, o: { type: 'string' }, base: { type: 'string' }, pdfa: { type: 'boolean' }, ua: { type: 'boolean' }, values: { type: 'boolean' }, layout: { type: 'boolean' }, static: { type: 'boolean' }, password: { type: 'string' }, 'owner-password': { type: 'string' }, deny: { type: 'string', multiple: true } } });
   if (positionals.length !== 1) usage('give one report file');
   const def = readJson(positionals[0]);
   const data = Object.fromEntries(Object.entries(pairs(values.d)).map(([k, f]) => [k, readJson(f)]));
@@ -130,7 +131,7 @@ async function cmdRender(args) {
   if (values.ua && fmt !== 'pdf') usage('--ua applies to -f pdf only');
   if (fmt === 'pdf') bytes = await exportPdf(model, fontStore, { title: def.name, subset, encrypt, pdfa: values.pdfa ? { icc: fs.readFileSync(path.join(ROOT, 'public', 'icc', 'sRGB-v2-magic.icc')) } : undefined, tagged: values.ua ? { lang: def.locale || 'en' } : undefined });
   else if (fmt === 'html') bytes = await exportHtml(model, fontStore, { title: def.name, subset, static: !!values.static, locale: def.locale, currency: def.currency });
-  else if (fmt === 'csv') bytes = exportCsv(model, { locale: def.locale, currency: def.currency });
+  else if (fmt === 'csv') bytes = exportCsv(model, { locale: def.locale, currency: def.currency, layout: !!values.layout });
   else if (fmt === 'xlsx') bytes = await exportXlsx(model, (await import('exceljs')).default, { currency: def.currency, title: def.name, formulas: !values.values, fontStore });
   else if (fmt === 'docx') bytes = await exportDocx(model, { title: def.name, lang: def.locale, fontStore });
   else if (fmt === 'pptx') bytes = await exportPptx(model, { title: def.name, lang: def.locale, fontStore });

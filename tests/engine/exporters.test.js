@@ -32,7 +32,9 @@ describe('exporters', () => {
     expect(csv.charCodeAt(0)).toBe(0xfeff);
     expect(csv).toContain('"Delhi, NCR",2026-02-01,50');
     expect(csv).toContain('Bengaluru,2026-01-05,1234.5');
-    expect(csv).toContain('Total,,1484.5');
+    expect(csv.split('\r\n')[0]).toBe('\uFEFFCity,On,Amount');
+    expect(csv).not.toContain('Total');
+    expect(exportCsv(out, { layout: true })).toContain('Total,,1484.5');
   });
 
   it('writes an Excel sheet with types, formats, merges and outline levels', async () => {
