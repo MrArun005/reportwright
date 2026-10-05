@@ -18,23 +18,38 @@ export function labelOf(name) {
 
 // ids, codes and years read as they are: 2785, not 2,785 or 2,785.00
 // whole words or a camelCase suffix only: "paid" and "principalPaid" are money, not ids. Money-like names never are.
-const MONEY_LIKE = /amount|paid|price|total|balance|principal|interest|emi|fee|cost|tax|salary|revenue|sales|value|due|outstanding/i;
+const MONEY_LIKE = /amount|paid|price|total|balance|principal|interest|emi|fee|cost|tax|salary|revenue|sales|value|due|outstanding|disburs|rate|income|expense|budget|spend|profit|margin/i;
 const CODE_LIKE = [/^(id|year|no|pin|code|number)$/i, /_(id|no|code|number)$/i, /[a-z](Id|ID|No|Code|Number)$/, /zip/i];
-export const isCode = (name) => !MONEY_LIKE.test(name) && CODE_LIKE.some(r => r.test(name));
+// parts of a date as numbers: no grouping, no decimals (month 3, not 3.00)
+const DATE_PART = /^(year|month|quarter|week|day|hour|fy|fiscalyear)$|(Year|Month|Quarter)$/;
+export const isCode = (name) => !MONEY_LIKE.test(name) && (CODE_LIKE.some(r => r.test(name)) || DATE_PART.test(name));
 // counts are whole numbers even before sample data is there
-const WHOLE = /count|qty|quantity|units|^n$|days|items/i;
-/** Ids and years plain (0); N0 when every sample value is whole, else N2; dates as 12 Jan 2026.
- *  Without sample rows (the data has not loaded yet) the name decides, never a guess of N2 for an id. */
-export function formatFor(f, rows) {
+const WHOLE = /count|qty|quantity|units|^n$|days|items|loans|orders|customers|visits|^num/i;
+/**
+ * One format per field, the same in detail rows, subtotals, totals and charts:
+ * ids, years and month numbers plain (0); counts N0; money N2 (C2 when the report has a currency); dates 12 Jan 2026;
+ * other numbers N0 when every sample value is whole, else N2. Without sample rows the name decides.
+ * @param {{ name: string, type?: string }} f @param {any[]} [rows] @param {{ currency?: string }} [opt]
+ */
+export function formatFor(f, rows, { currency } = {}) {
   if (f.type === 'date') return 'dd MMM yyyy';
   if (f.type !== 'number') return undefined;
   if (isCode(f.name)) return '0';
+  if (WHOLE.test(f.name)) return 'N0';
+  if (MONEY_LIKE.test(f.name)) return currency ? 'C2' : 'N2';
   const vals = (rows || []).map(r => r?.[f.name]).filter(v => typeof v === 'number');
-  if (!vals.length) return WHOLE.test(f.name) ? 'N0' : 'N2';
+  if (!vals.length) return 'N2';
   return vals.every(Number.isInteger) ? 'N0' : 'N2';
 }
+/** A compact axis format for values up to `max`: 300M, 2,730M, 50K (none below 20 of the unit: 15,000 stays as it is). */
+export function compactFormat(max) {
+  const m = Math.abs(Number(max) || 0);
+  for (const [u, f] of [[1e9, '#,##0,,,"B"'], [1e6, '#,##0,,"M"'], [1e3, '#,##0,"K"']]) if (m / u >= 20) return f;
+  return null;
+}
+let CUR = null; // the report's currency while tableFor / matrixFor run
 const cellStyle = (f, rows) => {
-  const format = formatFor(f, rows);
+  const format = formatFor(f, rows, { currency: CUR });
   return f.type === 'number' ? { format, textAlign: 'right' } : format ? { format } : {};
 };
 
@@ -50,7 +65,11 @@ function widths(fields, width) {
  * @param {{ layout?: 'list'|'grouped'|'summary', groupBy?: string, width?: number, rows?: any[], fields?: string[] }} opt
  *   fields: which fields, in order (default all); rows: sample rows, to pick number formats
  */
-export function tableFor(ds, { layout = 'list', groupBy, width = 523, rows, fields: pick } = {}) {
+export function tableFor(ds, opt = {}) {
+  CUR = opt.currency || null;
+  try { return tableOf(ds, opt); } finally { CUR = null; }
+}
+function tableOf(ds, { layout = 'list', groupBy, width = 523, rows, fields: pick } = {}) {
   let fields = (ds.fields || []).filter(f => !pick || pick.includes(f.name));
   if (pick) fields.sort((a, b) => pick.indexOf(a.name) - pick.indexOf(b.name));
   const group = (layout === 'grouped' || layout === 'summary') && groupBy ? (ds.fields || []).find(f => f.name === groupBy) : null;
@@ -97,7 +116,7 @@ export function tableFor(ds, { layout = 'list', groupBy, width = 523, rows, fiel
  * @param {{ name: string, fields?: { name: string, type?: string }[] }} ds
  * @param {{ rows: string, columns: string, value: string, agg?: string, width?: number, sample?: any[] }} opt
  */
-export function matrixFor(ds, { rows, columns, value, agg = 'Sum', width = 523, sample }) {
+export function matrixFor(ds, { rows, columns, value, agg = 'Sum', width = 523, sample, currency }) {
   const vf = (ds.fields || []).find(f => f.name === value);
   const name = (f) => f.replace(/\W/g, '').replace(/^./, c => c.toUpperCase()) || 'Group';
   // the tablix form, as the pivot editor edits it: no conversion (and no changed settings) on its first edit
@@ -105,6 +124,6 @@ export function matrixFor(ds, { rows, columns, value, agg = 'Sum', width = 523, 
     type: 'matrix', dataSet: ds.name, w: width, h: ROW_H * 3, corner: labelOf(rows),
     rowGroups: [{ name: name(rows), expr: `=Fields.${rows}`, sort: 'asc', total: 'after' }],
     columnGroups: [{ name: `${name(columns)}${name(columns) === name(rows) ? '2' : ''}`, expr: `=Fields.${columns}`, sort: 'asc', total: 'after' }],
-    values: [{ value: agg === 'Count' ? '=CountRows()' : `=${agg}(Fields.${value})`, format: agg === 'Count' ? 'N0' : (vf && formatFor(vf, sample)) || 'N2' }],
+    values: [{ value: agg === 'Count' ? '=CountRows()' : `=${agg}(Fields.${value})`, format: agg === 'Count' ? 'N0' : (vf && formatFor(vf, sample, { currency })) || 'N2' }],
   };
 }

@@ -4,6 +4,7 @@ import { allNames, cloneWithIds, isContentKey } from './store.js';
 import { useDesigner, findItem, updateItem, deleteSelection, duplicateSelection, sectionList, secOf, isBodyKey, addBodySection, removeBodySection, walk, tableParts, rowsOf, selCells,
   tableInsertColumn, tableDeleteColumn, tableInsertRow, tableDeleteRow, tableSetColumnWidth, tableMergeRight, tableSplit, tableMergeDown, tableSplitRows, tableSync, tableAddGroup, tableRemoveGroup, round, growToFit } from './store.js';
 import { normalizeMatrix, isTablix } from '@/engine/items/pivot.js';
+import { formatFor } from './tableGen.js';
 import { t } from '@/i18n/index.js';
 import { ITEMS, stylePropsFor, TEXT_STYLE_PROPS } from '@/engine/items/index.js';
 import { useFontFamilies, FontsDialog } from './Fonts.jsx';
@@ -776,12 +777,22 @@ function CellProps({ table, sel, openExpr }) {
   const setRow = (k, v) => updateItem(table.id, t => { setOrDelete(rowsOf(t, sel.part)[sel.row], k, v); tableSync(t); }, `${key}.r.${k}`);
   const setRowStyle = (k, v) => updateItem(table.id, t => { const r = rowsOf(t, sel.part)[sel.row]; r.style ||= {}; setOrDelete(r.style, k, v); }, `${key}.rs.${k}`);
   const partLabel = tableParts(table).find(p => p.part === sel.part)?.label || sel.part;
+  // a total typed by hand (=Sum(Fields.x) in a header, group or footer row) takes its column's number format, as the
+  // wizards' totals do: the detail cell's, else the field's own (tableGen formatFor)
+  const def = useDesigner(s => s.def);
+  const setValue = (v) => {
+    const f = sel.part !== 'detail' && !cell.style?.format && /^=(Sum|Avg|Min|Max|RunningValue)\(Fields\.(\w+)/.exec(v || '')?.[2];
+    if (!f) { setCell('value', v); return; }
+    const fd = fieldsOf(def, table.dataSet).find(x => x.name === f);
+    const fmt = table.detail?.[0]?.cells?.[sel.col]?.style?.format || (fd && formatFor(fd, useDesigner.getState().sample?.dataSets?.[table.dataSet], { currency: def.currency }));
+    updateItem(table.id, t => { const c = rowsOf(t, sel.part)[sel.row].cells[sel.col]; c.value = v; if (fmt) c.style = { ...(c.style || {}), format: fmt, textAlign: c.style?.textAlign || 'right' }; }, `${key}.value`);
+  };
   return (
     <>
       <div className="insp-head"><b>{T('i_cellOf', { name: table.name })}</b><span className="ty">{T('i_cellPos', { part: partLabel, row: sel.row + 1, col: sel.col + 1 })}</span></div>
       <div className="cat">
         <h5>{T('i_data')}</h5>
-        <Field label={T('i_value')}><ExprInput value={cell.value} onChange={v => setCell('value', v)} onOpen={() => openExpr({ value: cell.value, dataSet: table.dataSet, onSave: v => setCell('value', v), title: T('i_cellTitle', { name: table.name, part: partLabel }) })} /></Field>
+        <Field label={T('i_value')}><ExprInput value={cell.value} onChange={setValue} onOpen={() => openExpr({ value: cell.value, dataSet: table.dataSet, onSave: setValue, title: T('i_cellTitle', { name: table.name, part: partLabel }) })} /></Field>
         <div className="hint">{T(sel.part === 'detail' ? 'i_cellHintDetail' : /^g/.test(sel.part) ? 'i_cellHintGroup' : 'i_cellHintAll')}</div>
       </div>
       <div className="cat">

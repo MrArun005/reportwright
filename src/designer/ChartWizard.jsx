@@ -6,7 +6,7 @@ import { useDesigner, addItem, updateItem, findItem } from './store.js';
 import { loadSample } from './DataPanel.jsx';
 import { paintItemSvg } from './Canvas.jsx';
 import { Dialog, Field, Select, Check } from './ui.jsx';
-import { labelOf } from './tableGen.js';
+import { labelOf, isCode, compactFormat } from './tableGen.js';
 import { t } from '@/i18n/index.js';
 
 // labels and hints in the UI language: cw_t_<type> and cw_w_<type> in src/i18n
@@ -35,6 +35,13 @@ export function chartFromConfig(c, size) {
     series: [{ name, value: valueExpr }], valueFormat: c.format || 'N0', legend: 'bottom',
   };
   if (c.dateCategory && !PER_ROW.has(c.chartType) && c.chartType !== 'gauge') out.categorySort = 'asc'; // months in order, not as the rows come
+  // month numbers (1–12) as names, in calendar order: the key is a date, shown as "Jan"
+  if (c.monthNames && c.category && !PER_ROW.has(c.chartType)) { out.category = `=DateSerial(2000, Fields.${c.category}, 1)`; out.categoryFormat = 'MMM'; out.categorySort = 'asc'; }
+  // big values: a compact value axis (300M, 50K); a pie or donut shows its values (and centre total) the same way
+  if (c.compact && !['gauge', 'gantt', 'funnel', 'treemap'].includes(c.chartType)) {
+    if (c.chartType === 'pie' || c.chartType === 'donut') out.valueFormat = c.compact;
+    else out.axes = { y: { format: c.compact } };
+  }
   if (c.split && !NO_SPLIT.has(c.chartType)) out.seriesGroup = `=Fields.${c.split}`;
   if (c.stacked && out.seriesGroup) out.stacked = true;
   if (typeof c.top === 'string' && c.top) out.maxCategories = c.top; // an expression set in the Inspector (=Parameters.top)
@@ -54,7 +61,8 @@ export function chartFromConfig(c, size) {
 
 /** Read a configuration back from a chart made here (or close to it). */
 function configFromChart(item) {
-  const field = (e) => (typeof e === 'string' && /^=Fields\.(\w+)$/.test(e) ? e.slice(8) : '');
+  const month = /^=DateSerial\(2000, Fields\.(\w+), 1\)$/.exec(item.category || '')?.[1];
+  const field = (e) => (typeof e === 'string' && /^=Fields\.(\w+)$/.test(e) ? e.slice(8) : e === item.category && month ? month : '');
   const v = item.series?.[0]?.value || '';
   const m = /^=(\w+)\(Fields\.(\w+)\)$/.exec(v) || (RAW.has(item.chartType) && /^=Fields\.(\w+)$/.test(v) ? [v, 'Sum', v.slice(8)] : null);
   return {
@@ -62,7 +70,8 @@ function configFromChart(item) {
     chartType: item.chartType || 'column', dataSet: item.dataSet, title: item.title ?? '',
     category: field(PER_ROW.has(item.chartType) ? item.xValue : item.category), size: field(item.series?.[0]?.size),
     agg: v === '=CountRows()' ? 'Count' : m?.[1] || 'Sum', value: m?.[2] || '', custom: !!v && v !== '=CountRows()' && !m,
-    split: field(item.seriesGroup), stacked: !!item.stacked, top: item.maxCategories || 0, format: item.valueFormat || 'N0',
+    split: field(item.seriesGroup), stacked: !!item.stacked, top: item.maxCategories || 0, format: /,"[KMB]"$/.test(item.valueFormat || '') ? 'N0' : item.valueFormat || 'N0',
+    monthNames: !!month,
   };
 }
 
@@ -86,6 +95,7 @@ function suggested(c, rows, fields) {
   const cat = fields.find(f => f.name === c.category);
   const distinct = c.category ? new Set(rows.map(r => r[c.category])).size : 0;
   if (cat?.type === 'date') return ['line', 'area'];
+  if (cat?.type === 'number' && isCode(cat.name) && /year|month|quarter|week|day/i.test(cat.name)) return ['column', 'line']; // a month or year number is a category
   if (cat?.type === 'number' && c.value) return ['scatter'];
   if (distinct && distinct <= 5) return ['donut', 'column'];
   if (distinct > 12) return ['bar'];
@@ -120,6 +130,15 @@ export default function ChartWizard() {
   const numFields = fields.filter(f => f.type === 'number');
   const good = suggested(c, rows, fields);
   const dateCategory = fields.find(f => f.name === c.category)?.type === 'date';
+  // a category of month numbers (1–12) can show as month names; values in the millions get a compact axis
+  const monthish = fields.find(f => f.name === c.category)?.type === 'number' && /month/i.test(c.category) && rows.length > 0 && rows.every(r => r[c.category] == null || (Number.isInteger(r[c.category]) && r[c.category] >= 1 && r[c.category] <= 12));
+  const compact = useMemo(() => {
+    if (!c.value || c.agg === 'Count' || c.format === 'P1') return null;
+    const per = new Map();
+    for (const r of rows) { const v = Number(r[c.value]); if (!Number.isFinite(v)) continue; const k = c.category ? String(r[c.category]) : ''; per.set(k, c.agg === 'Sum' ? (per.get(k) || 0) + v : Math.max(per.get(k) ?? -Infinity, v)); }
+    return compactFormat(Math.max(0, ...[...per.values()].map(Math.abs)));
+  }, [rows, c.value, c.agg, c.category, c.format]);
+  const extra = { dateCategory, monthNames: monthish && c.monthNames !== false, compact };
 
   // a new data set: start from its best guess
   const pickDataSet = (name) => { const d = def.dataSets.find(x => x.name === name); setC(x => ({ ...x, split: '', ...guess(d, sample?.dataSets?.[name] || []) })); };
@@ -139,21 +158,23 @@ export default function ChartWizard() {
     const t = setTimeout(async () => {
       const out = {};
       for (const ty of TYPES) {
-        try { out[ty] = await paintItemSvg(chartFromConfig({ ...c, dateCategory, chartType: ty, title: '' }, THUMB), def, sample); }
+        try { out[ty] = await paintItemSvg(chartFromConfig({ ...c, ...extra, chartType: ty, title: '' }, THUMB), def, sample); }
         catch (e) { out[ty] = { error: e.message }; }
       }
       let b = null;
-      try { b = await paintItemSvg(chartFromConfig({ ...c, dateCategory }, BIG), def, sample); } catch (e) { b = { error: e.message }; }
+      try { b = await paintItemSvg(chartFromConfig({ ...c, ...extra }, BIG), def, sample); } catch (e) { b = { error: e.message }; }
       if (alive) { setThumbs(out); setBig(b); }
     }, 150);
     return () => { alive = false; clearTimeout(t); };
   }, [cfgKey, sample, def]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const apply = () => {
-    const { x, y, w, h, type, ...props } = chartFromConfig({ ...c, dateCategory }, { w: editing?.w || 360, h: editing?.h || 220 });
+    const { x, y, w, h, type, ...props } = chartFromConfig({ ...c, ...extra }, { w: editing?.w || 360, h: editing?.h || 220 });
     if (editing) {
       updateItem(editing.id, it => {
-        for (const k of ['seriesGroup', 'stacked', 'maxCategories', 'xValue', 'category']) delete it[k];
+        for (const k of ['seriesGroup', 'stacked', 'maxCategories', 'xValue', 'category', 'categoryFormat', 'categorySort']) delete it[k];
+        if (props.axes?.y?.format) it.axes = { ...(it.axes || {}), y: { ...(it.axes?.y || {}), format: props.axes.y.format } };
+        delete props.axes;
         Object.assign(it, props);
       });
     } else {
@@ -201,6 +222,8 @@ export default function ChartWizard() {
             <Field label={tr('showAtMost')}><Select value={String(c.top || 0)} options={[{ value: '0', label: tr('allCats') }, ...[5, 8, 10, 15, 20].map(n => ({ value: String(n), label: tr('firstN', { n }) })), ...(typeof c.top === 'string' && c.top ? [{ value: c.top, label: c.top }] : [])]} onChange={v => set({ top: /^=/.test(v || '') ? v : Number(v) || 0 })} /></Field>
             <Field label={tr('format')}><Select value={c.format} options={[{ value: 'N0', label: '1,234' }, { value: 'N2', label: '1,234.56' }, { value: 'C0', label: tr('currency') }, { value: 'P1', label: tr('percent') }]} onChange={v => set({ format: v })} /></Field>
           </div>
+          {monthish && <Check label={t(lang, 'ux_monthNames')} checked={c.monthNames !== false} onChange={v => set({ monthNames: v })} />}
+          {compact && <div className="hint" data-testid="cw-compact">{t(lang, 'ux_compactAxis')}</div>}
           <Field label={tr('title')}><input className="input" value={c.title} onChange={e => set({ title: e.target.value })} placeholder={tr('optional')} /></Field>
           {c.custom && <div className="hint">{tr('custom')}</div>}
         </section>
@@ -238,7 +261,7 @@ export default function ChartWizard() {
                       <button type="button" className="linklike" title={tr(f.type === 'number' ? 'useValue' : 'useCategory', { name: f.name })}
                         onClick={() => (f.type === 'number' && !PER_ROW.has(c.chartType) ? set({ value: f.name, agg: c.agg === 'Count' ? 'Sum' : c.agg }) : set({ category: f.name }))}>{f.name}</button>
                     </th>))}</tr></thead>
-                  <tbody>{rows.slice(0, 8).map((r, i) => <tr key={i}>{shown.map(f => <td key={f.name} className={f.name === c.category ? 'cw-cat' : f.name === c.value ? 'cw-val' : ''}>{fmt(r[f.name])}</td>)}</tr>)}</tbody>
+                  <tbody>{rows.slice(0, 8).map((r, i) => <tr key={i}>{shown.map(f => <td key={f.name} className={f.name === c.category ? 'cw-cat' : f.name === c.value ? 'cw-val' : ''}>{fmt(r[f.name], f.name)}</td>)}</tr>)}</tbody>
                 </table>
               </div>
               <span className="hint">{tr('clickHint')} <span className="cw-key cw-cat">{tr('keyCategory')}</span> <span className="cw-key cw-val">{tr('keyValue')}</span></span>
@@ -253,9 +276,10 @@ export default function ChartWizard() {
   );
 }
 
-function fmt(v) {
+function fmt(v, name = '') {
   if (v == null) return '—';
   if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (typeof v === 'number' && isCode(name)) return String(v); // a year is 2026, an id 2785
   if (typeof v === 'number') return Number.isInteger(v) ? v.toLocaleString() : v.toLocaleString(undefined, { maximumFractionDigits: 2 });
   const s = String(v);
   return s.length > 40 ? `${s.slice(0, 39)}…` : s;

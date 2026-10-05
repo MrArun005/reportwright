@@ -9,10 +9,12 @@ describe('gallery number formats', () => {
       expect(formatFor({ name, type: 'number' }, [{ [name]: 2785 }]), name).toBe('0');
     }
   });
-  it('without sample rows, counts are whole and amounts have decimals; with rows, the values decide', () => {
+  it('one format per field: counts whole, money with decimals whatever the sample holds; other numbers by their values', () => {
     expect(formatFor({ name: 'qty', type: 'number' }, undefined)).toBe('N0');
     expect(formatFor({ name: 'amount', type: 'number' }, [])).toBe('N2');
-    expect(formatFor({ name: 'amount', type: 'number' }, [{ amount: 12 }, { amount: 30 }])).toBe('N0');
+    // R1-C (U-6): money is N2 even when the sample happens to be whole, so Rate 4,200.00 and Amount 8,400.00 match
+    expect(formatFor({ name: 'amount', type: 'number' }, [{ amount: 12 }, { amount: 30 }])).toBe('N2');
+    expect(formatFor({ name: 'score', type: 'number' }, [{ score: 12 }, { score: 30 }])).toBe('N0');
     expect(formatFor({ name: 'date', type: 'date' }, [])).toBe('dd MMM yyyy');
   });
   it('a table made before the data loads shows an id as 2785, not 2,785.00', () => {

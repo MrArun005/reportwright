@@ -43,6 +43,8 @@ export default {
     ux_formatCells: "Number format…",
     ux_nCells: "{n} cells of {name}",
     ux_cellsHint: "A change applies to every selected cell. A blank field: the cells differ. Shift-click for a range, Cmd/Ctrl-click to add or remove a cell, the bar above a column or the tag beside a row to select it all.",
+    ux_monthNames: "Show month numbers as names (Jan, Feb…)",
+    ux_compactAxis: "Large values: the value axis is compact (300M, 50K). Change it under Axes in the Inspector.",
   },
   hi: {
     ux_choose: "— चुनें —",
@@ -85,6 +87,8 @@ export default {
     ux_formatCells: "संख्या प्रारूप…",
     ux_nCells: "{name} के {n} सेल",
     ux_cellsHint: "बदलाव हर चुने सेल पर लागू होता है। खाली फ़ील्ड: सेल अलग-अलग हैं। श्रेणी के लिए Shift-क्लिक, सेल जोड़ने/हटाने के लिए Cmd/Ctrl-क्लिक, पूरा कॉलम या पंक्ति चुनने के लिए उसके ऊपर की पट्टी या बगल का टैग।",
+    ux_monthNames: "महीने की संख्याएँ नाम के रूप में दिखाएँ (Jan, Feb…)",
+    ux_compactAxis: "बड़े मान: मान अक्ष संक्षिप्त है (300M, 50K)। इंस्पेक्टर में Axes के अंतर्गत बदलें।",
   },
   es: {
     ux_choose: "— elegir —",
@@ -127,6 +131,8 @@ export default {
     ux_formatCells: "Formato de número…",
     ux_nCells: "{n} celdas de {name}",
     ux_cellsHint: "Un cambio se aplica a todas las celdas seleccionadas. Un campo vacío: las celdas difieren. Mayús+clic para un rango, Cmd/Ctrl+clic para añadir o quitar una celda, la barra sobre una columna o la etiqueta junto a una fila para seleccionarla entera.",
+    ux_monthNames: "Mostrar los números de mes como nombres (ene, feb…)",
+    ux_compactAxis: "Valores grandes: el eje de valores es compacto (300M, 50K). Cámbielo en Ejes en el Inspector.",
   },
   fr: {
     ux_choose: "— choisir —",
@@ -169,6 +175,8 @@ export default {
     ux_formatCells: "Format de nombre…",
     ux_nCells: "{n} cellules de {name}",
     ux_cellsHint: "Une modification s'applique à chaque cellule sélectionnée. Un champ vide : les cellules diffèrent. Maj+clic pour une plage, Cmd/Ctrl+clic pour ajouter ou retirer une cellule, la barre au-dessus d'une colonne ou l'étiquette à côté d'une ligne pour la sélectionner entière.",
+    ux_monthNames: "Afficher les numéros de mois en noms (janv., févr.…)",
+    ux_compactAxis: "Grandes valeurs : l'axe des valeurs est compact (300M, 50K). Modifiez-le sous Axes dans l'inspecteur.",
   },
   de: {
     ux_choose: "— auswählen —",
@@ -211,6 +219,8 @@ export default {
     ux_formatCells: "Zahlenformat…",
     ux_nCells: "{n} Zellen von {name}",
     ux_cellsHint: "Eine Änderung gilt für jede ausgewählte Zelle. Ein leeres Feld: die Zellen unterscheiden sich. Umschalt+Klick für einen Bereich, Cmd/Strg+Klick zum Hinzufügen oder Entfernen, die Leiste über einer Spalte oder das Kennzeichen neben einer Zeile wählt sie ganz aus.",
+    ux_monthNames: "Monatszahlen als Namen zeigen (Jan, Feb…)",
+    ux_compactAxis: "Große Werte: die Werteachse ist kompakt (300M, 50K). Unter Achsen im Inspektor änderbar.",
   },
   ja: {
     ux_choose: "— 選択 —",
@@ -253,6 +263,8 @@ export default {
     ux_formatCells: "数値の書式…",
     ux_nCells: "{name} の {n} 個のセル",
     ux_cellsHint: "変更は選択したすべてのセルに適用されます。空欄はセルごとに値が異なることを示します。Shift+クリックで範囲、Cmd/Ctrl+クリックで追加・削除、列の上のバーや行の横のタグで列・行全体を選択します。",
+    ux_monthNames: "月番号を月名で表示 (1月、2月…)",
+    ux_compactAxis: "大きな値: 値軸はコンパクト表示です (300M, 50K)。インスペクターの「軸」で変更できます。",
   },
   zh: {
     ux_choose: "— 选择 —",
@@ -295,6 +307,8 @@ export default {
     ux_formatCells: "数字格式…",
     ux_nCells: "{name} 的 {n} 个单元格",
     ux_cellsHint: "更改将应用于每个选中的单元格。空白字段表示各单元格不同。Shift+单击选择范围，Cmd/Ctrl+单击添加或移除单元格，单击列上方的条或行旁的标签可选中整列或整行。",
+    ux_monthNames: "将月份数字显示为名称（1月、2月…）",
+    ux_compactAxis: "数值较大：数值轴使用紧凑格式（300M、50K）。可在检查器的“坐标轴”中更改。",
   },
   "pt-BR": {
     ux_choose: "— escolher —",
@@ -337,6 +351,8 @@ export default {
     ux_formatCells: "Formato de número…",
     ux_nCells: "{n} células de {name}",
     ux_cellsHint: "Uma alteração vale para todas as células selecionadas. Um campo vazio: as células diferem. Shift+clique para um intervalo, Cmd/Ctrl+clique para adicionar ou remover uma célula, a barra acima de uma coluna ou a etiqueta ao lado de uma linha para selecioná-la inteira.",
+    ux_monthNames: "Mostrar números do mês como nomes (jan, fev…)",
+    ux_compactAxis: "Valores grandes: o eixo de valores é compacto (300M, 50K). Altere em Eixos no Inspetor.",
   },
   ar: {
     ux_choose: "— اختر —",
@@ -379,5 +395,7 @@ export default {
     ux_formatCells: "تنسيق الأرقام…",
     ux_nCells: "{n} خلايا من {name}",
     ux_cellsHint: "ينطبق التغيير على كل خلية محددة. الحقل الفارغ: الخلايا مختلفة. Shift+نقر لنطاق، وCmd/Ctrl+نقر لإضافة خلية أو إزالتها، والشريط فوق العمود أو الوسم بجانب الصف لتحديده كاملًا.",
+    ux_monthNames: "عرض أرقام الأشهر كأسماء (يناير، فبراير…)",
+    ux_compactAxis: "قيم كبيرة: محور القيم مختصر (300M, 50K). غيّره من المحاور في المفتش.",
   },
 };

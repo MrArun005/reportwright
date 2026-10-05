@@ -235,7 +235,7 @@ function Band({ section, label, scale, bw: bandW, drag, setDrag, phBox = null })
       const ds = (st.def.dataSets || []).find(d => d.name === dsDrop.dataSet);
       if (!ds?.fields?.length) return alertOnce('Detect the fields of this data set first (Edit → Detect fields).');
       const x = snapV(p.x);
-      const { type, x: _x, y: _y, ...props } = tableFor(ds, { layout: 'list', width: Math.max(120, bodyWidth(st.def, section) - x), rows: st.sample?.dataSets?.[ds.name], fields: ds.fields.slice(0, 8).map(f => f.name) });
+      const { type, x: _x, y: _y, ...props } = tableFor(ds, { layout: 'list', width: Math.max(120, bodyWidth(st.def, section) - x), rows: st.sample?.dataSets?.[ds.name], currency: st.def.currency, fields: ds.fields.slice(0, 8).map(f => f.name) });
       addItem('table', section, x, snapV(p.y), props);
       return;
     }
@@ -318,9 +318,10 @@ function StaticItem({ item, scale }) {
 
 let alerted = 0;
 function alertOnce(msg) { if (Date.now() - alerted > 3000) { alerted = Date.now(); useDesigner.setState({ saveError: msg }); setTimeout(() => useDesigner.setState({ saveError: null }), 3000); } }
-/** Default format for a dropped field. Whole numbers in the sample data get N0, other numbers N2. */
+/** Default format for a dropped field: the field's one format (tableGen formatFor), the same in every row and total. */
 export function fieldStyle(f) {
-  const format = formatFor({ name: f.field, type: f.type }, (useDesigner.getState().sample?.dataSets?.[f.dataSet] || []).slice(0, 200));
+  const st = useDesigner.getState();
+  const format = formatFor({ name: f.field, type: f.type }, (st.sample?.dataSets?.[f.dataSet] || []).slice(0, 200), { currency: st.def?.currency });
   return format ? { format } : {};
 }
 

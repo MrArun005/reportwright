@@ -144,3 +144,35 @@ describe('autosave drafts keep no secrets and stay with their user (U-4)', () =>
     expect(readDraft(s, 'a@x.test', 'r1')).toBe(null);
   });
 });
+
+import { formatFor, compactFormat, tableFor } from '../../src/designer/tableGen.js';
+import { chartFromConfig } from '../../src/designer/ChartWizard.jsx';
+import { formatValue } from '../../src/engine/expr/format.js';
+describe('wizard number formats are per field and consistent (U-6)', () => {
+  it('ids, years and month numbers plain; counts N0; money N2 or C2 with a report currency', () => {
+    for (const name of ['id', 'year', 'month', 'fiscalYear', 'quarter']) expect(formatFor({ name, type: 'number' }, [{ [name]: 3 }]), name).toBe('0');
+    for (const name of ['loans', 'count', 'qty', 'orders']) expect(formatFor({ name, type: 'number' }, [{ [name]: 440.5 }]), name).toBe('N0');
+    for (const name of ['amount', 'rate', 'disbursed', 'tax']) {
+      expect(formatFor({ name, type: 'number' }, [{ [name]: 8400 }]), name).toBe('N2');
+      expect(formatFor({ name, type: 'number' }, [{ [name]: 8400 }], { currency: 'INR' }), name).toBe('C2');
+    }
+  });
+  it('a table: detail, subtotal and total of a column share its format', () => {
+    const ds = { name: 'S', fields: [{ name: 'category', type: 'string' }, { name: 'rate', type: 'number' }, { name: 'amount', type: 'number' }, { name: 'loans', type: 'number' }] };
+    const t = tableFor(ds, { layout: 'grouped', groupBy: 'category', rows: [{ rate: 4200, amount: 8400, loans: 2 }] });
+    const fmts = (row) => row.cells.map(c => c.style?.format);
+    expect(fmts(t.detail[0])).toEqual(['N2', 'N2', 'N0']);
+    expect(fmts(t.groups[0].footer[0])).toEqual([undefined, 'N2', 'N0']); // rate is not summed
+    expect(fmts(t.footer[0])).toEqual([undefined, 'N2', 'N0']);
+  });
+  it('compact axes for big values; month numbers as names in calendar order', () => {
+    expect(compactFormat(15000)).toBe(null);
+    expect(formatValue(300000000, compactFormat(300000000))).toBe('300M');
+    expect(formatValue(2730135125, compactFormat(2730135125))).toBe('2,730M');
+    expect(formatValue(50000, compactFormat(50000))).toBe('50K');
+    const c = { chartType: 'column', dataSet: 'S', category: 'month', value: 'amount', agg: 'Sum', monthNames: true, compact: '#,##0,,"M"' };
+    const ch = chartFromConfig(c, { w: 300, h: 200 });
+    expect(ch).toMatchObject({ category: '=DateSerial(2000, Fields.month, 1)', categoryFormat: 'MMM', categorySort: 'asc', axes: { y: { format: '#,##0,,"M"' } } });
+    expect(chartFromConfig({ ...c, chartType: 'donut' }, { w: 300, h: 200 }).valueFormat).toBe('#,##0,,"M"');
+  });
+});

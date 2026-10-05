@@ -44,8 +44,8 @@ export default function TableWizard() {
   const mRows = c.mRows || groupBy, mCols = c.mCols || text.find(f => f.name !== mRows)?.name || '', mValue = c.mValue || nums[0]?.name || '';
 
   const itemFor = (layout, w) => (layout === 'matrix'
-    ? (mRows && mCols ? matrixFor(ds, { rows: mRows, columns: mCols, value: mValue, agg: mValue ? 'Sum' : 'Count', width: w, sample: rows }) : null)
-    : tableFor(ds, { layout, groupBy, width: w, rows, fields: chosen }));
+    ? (mRows && mCols ? matrixFor(ds, { rows: mRows, columns: mCols, value: mValue, agg: mValue ? 'Sum' : 'Count', width: w, sample: rows, currency: def.currency }) : null)
+    : tableFor(ds, { layout, groupBy, width: w, rows, fields: chosen, currency: def.currency }));
 
   const [thumbs, setThumbs] = useState({});
   const key = JSON.stringify([c, groupBy, mRows, mCols, mValue, chosen]);

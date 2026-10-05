@@ -255,6 +255,41 @@ try {
     t = (await read(id)).sections.body.items[0];
     assert.equal(t.detail.length, 2);
   }
+  if (want('u6')) {
+    step('U-6: the table gallery gives each field one format; a count subtotal stays whole; ids and years are plain');
+    const id = await create(base('ux r1c formats', []));
+    await open(id);
+    await p.dragAndDrop('[data-tool=table]', '[data-section=body]', { targetPosition: { x: 0, y: 10 } });
+    let dlg = p.getByRole('dialog');
+    await dlg.locator('[data-layout=grouped]').click();
+    await dlg.getByLabel('Group by').selectOption('region');
+    await dlg.getByTestId('table-wizard-apply').click();
+    await save();
+    const t = (await read(id)).sections.body.items.find(i => i.type === 'table');
+    const fmtOf = (row, name) => row.cells.find(c => new RegExp(`Fields\\.${name}\\b`).test(c?.value || ''))?.style?.format;
+    for (const [n, f] of [['id', '0'], ['year', '0'], ['month', '0'], ['amount', 'N2'], ['qty', 'N0']]) assert.equal(fmtOf(t.detail[0], n), f, n);
+    assert.equal(fmtOf(t.groups[0].footer[0], 'amount'), 'N2');
+    assert.equal(fmtOf(t.groups[0].footer[0], 'qty'), 'N0');
+    step('U-6: the chart gallery: years plain in its grid, month numbers as names, a compact axis for big values');
+    await p.dragAndDrop('[data-tool=chart]', '[data-section=body]', { targetPosition: { x: 0, y: 220 } });
+    dlg = p.getByRole('dialog');
+    await dlg.locator('.cw-table td', { hasText: /^2026$/ }).first().waitFor();
+    assert.equal(await dlg.locator('.cw-table td', { hasText: '2,026' }).count(), 0);
+    await field(dlg, 'Category \\(x axis or slices\\)').selectOption('month');
+    await dlg.locator('[data-chart-type=column]').click();
+    await dlg.getByLabel(/Show month numbers as names/).waitFor();
+    await dlg.getByTestId('cw-compact').waitFor();
+    await shot(p, 'u6-chart-gallery');
+    await dlg.getByTestId('chart-wizard-apply').click();
+    await save();
+    const ch = (await read(id)).sections.body.items.find(i => i.type === 'chart');
+    assert.equal(ch.category, '=DateSerial(2000, Fields.month, 1)');
+    assert.equal(ch.categoryFormat, 'MMM');
+    assert.match(ch.axes.y.format, /"[KMB]"$/);
+    await p.getByTestId('tab-preview').click();
+    await p.locator('.vpage svg text', { hasText: /^Feb$/ }).first().waitFor();
+    await p.locator('.vpage svg text', { hasText: /^\d[\d,]*[KM]$/ }).first().waitFor();
+  }
   assert.deepEqual(errs, [], `page errors: ${errs.join(' | ')}`);
   console.log('ux-r1c: all passed');
 } finally {

@@ -17,7 +17,7 @@ const SHOWS = ['value', 'percentOfTotal', 'percentOfRow', 'percentOfColumn'];
 const ident = (f) => f.replace(/\W/g, '').replace(/^./, c => c.toUpperCase()) || 'Group';
 
 /** The tablix matrix for a pivot layout. rows/columns: field names; values: [{ field, agg, show }]. */
-export function pivotFor(ds, { rows = [], columns = [], values = [], width = 523, sample = [], totals = true }) {
+export function pivotFor(ds, { rows = [], columns = [], values = [], width = 523, sample = [], totals = true, currency }) {
   const fields = ds.fields || [];
   const used = new Set();
   const group = (f) => { let n = ident(f), k = 2; while (used.has(n)) n = `${ident(f)}${k++}`; used.add(n); return { name: n, expr: `=Fields.${f}`, sort: 'asc', ...(totals ? { total: 'after' } : {}) }; }; // a group's `label` is an expression per instance: not set
@@ -28,7 +28,7 @@ export function pivotFor(ds, { rows = [], columns = [], values = [], width = 523
     return {
       label: v.field ? `${agg} of ${labelOf(v.field)}` : 'Count',
       value: agg === 'Count' ? (v.field ? `=Count(Fields.${v.field})` : '=CountRows()') : `=${agg}(Fields.${v.field})`,
-      ...(pct ? { show: v.show } : { format: agg === 'Count' ? 'N0' : (f && formatFor(f, sample)) || 'N2' }),
+      ...(pct ? { show: v.show } : { format: agg === 'Count' ? 'N0' : (f && formatFor(f, sample, { currency })) || 'N2' }),
     };
   });
   return { type: 'matrix', dataSet: ds.name, w: width, h: 54, ...(rows[0] ? { corner: labelOf(rows[0]) } : {}), rowGroups: rows.map(group), columnGroups: columns.map(group), values: vals, repeatHeader: true };
@@ -83,9 +83,9 @@ export default function PivotWizard() {
   });
   const remove = (zone, i) => setLay(l => ({ ...l, [zone]: l[zone].filter((_, k) => k !== i) }));
   const setV = (i, k, v) => setLay(l => ({ ...l, values: l.values.map((x, j) => (j === i ? { ...x, [k]: v } : x)) }));
-  const item = ds && (lay.rows.length || lay.columns.length) ? pivotFor(ds, { ...lay, width, sample: rows, totals }) : null;
+  const item = ds && (lay.rows.length || lay.columns.length) ? pivotFor(ds, { ...lay, width, sample: rows, totals, currency: def.currency }) : null;
   const insert = () => {
-    const { type, ...props } = pivotFor(ds, { ...lay, width, sample: rows, totals });
+    const { type, ...props } = pivotFor(ds, { ...lay, width, sample: rows, totals, currency: def.currency });
     const at = placeOf(w, def);
     addItem(type, at.section, at.x, at.y, props, at.parentId);
     close();
@@ -142,15 +142,15 @@ export default function PivotWizard() {
 }
 
 /** Suggestions for the ticked fields: a chart, a table and a pivot. */
-export function suggestions(ds, picked, width, rows) {
+export function suggestions(ds, picked, width, rows, currency) {
   const fields = (ds.fields || []).filter(f => picked.includes(f.name));
   const text = fields.filter(f => f.type !== 'number'), nums = fields.filter(f => f.type === 'number');
   const out = [];
   if (text.length && nums.length) {
     out.push({ kind: 'chart', item: { type: 'chart', dataSet: ds.name, w: Math.min(width, 420), h: 200, chartType: text.length > 1 ? 'column' : nums.length > 1 ? 'line' : 'column', category: `=Fields.${text[0].name}`, ...(text[1] ? { seriesGroup: `=Fields.${text[1].name}` } : {}), series: nums.slice(0, 3).map(n => ({ name: labelOf(n.name), value: `=Sum(Fields.${n.name})` })), legend: 'bottom', valueFormat: 'N0', title: `${nums.map(n => labelOf(n.name)).join(', ')} by ${labelOf(text[0].name)}` } });
   }
-  if (fields.length) out.push({ kind: 'table', item: tableFor(ds, { layout: text.length && nums.length ? 'summary' : 'list', groupBy: text[0]?.name, width, rows, fields: fields.map(f => f.name) }) });
-  if (text.length) out.push({ kind: 'pivot', item: pivotFor(ds, { rows: [text[0].name], columns: text[1] ? [text[1].name] : [], values: nums.slice(0, 2).map(n => ({ field: n.name, agg: 'Sum' })), width, sample: rows }) });
+  if (fields.length) out.push({ kind: 'table', item: tableFor(ds, { layout: text.length && nums.length ? 'summary' : 'list', groupBy: text[0]?.name, width, rows, currency, fields: fields.map(f => f.name) }) });
+  if (text.length) out.push({ kind: 'pivot', item: pivotFor(ds, { rows: [text[0].name], columns: text[1] ? [text[1].name] : [], values: nums.slice(0, 2).map(n => ({ field: n.name, agg: 'Sum' })), width, sample: rows, currency }) });
   return out;
 }
 
@@ -161,7 +161,7 @@ export function InstantVisuals() {
   const [picked, setPicked] = useState(() => (ds?.fields || []).slice(0, 2).map(f => f.name));
   const close = () => useDesigner.getState().setUi({ instantVisuals: null });
   const width = Math.round(bodyWidth(def, 'body'));
-  const list = ds ? suggestions(ds, picked, width, rows) : [];
+  const list = ds ? suggestions(ds, picked, width, rows, def.currency) : [];
   const insert = (s) => {
     const { type, x: _x, y: _y, ...props } = s.item;
     const at = placeOf(w, def);

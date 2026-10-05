@@ -612,7 +612,8 @@ export function tableAddGroup(id, field, numericCols = []) {
     const footer = blankRow(n);
     footer.style = { fontWeight: '600', borderTop: '0.5 solid #cbd5e1' };
     footer.cells[0].value = field ? `Subtotal {Fields.${field}}` : 'Subtotal';
-    for (const [ci, f] of numericCols) if (ci > 0 && ci < n) footer.cells[ci] = { value: `=Sum(Fields.${f})`, style: { format: 'N2' } };
+    // a subtotal has its column's format (a count stays 440, not 440.00)
+    for (const [ci, f] of numericCols) if (ci > 0 && ci < n) footer.cells[ci] = { value: `=Sum(Fields.${f})`, style: { format: t.detail?.[0]?.cells?.[ci]?.style?.format || 'N2' } };
     t.groups.push({ name, expr: field ? `=Fields.${field}` : '', sort: 'asc', header: [header], footer: [footer] });
     tableSync(t);
   });
