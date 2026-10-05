@@ -172,6 +172,7 @@ export const useDesigner = create((set, get) => ({
     } else if (sel.kind === 'cell') {
       const f = findItem(def, sel.id);
       if (!f || !rowsOf(f.item, sel.part)?.[sel.row]) set({ sel: f ? { kind: 'items', ids: [sel.id] } : { kind: 'report' } });
+      else if (sel.cells) { const cells = sel.cells.filter(c => rowsOf(f.item, c.part)?.[c.row]?.cells?.[c.col]); set({ sel: { ...sel, cells: cells.length > 1 ? cells : undefined } }); }
     }
   },
   select(sel) { set({ sel, lastKey: null }); },
@@ -447,6 +448,37 @@ export function tableParts(t) {
 }
 const allRows = (t) => tableParts(t).flatMap(p => rowsOf(t, p.part) || []);
 const blankRow = (n, height = 18) => ({ height, cells: Array.from({ length: n }, () => ({ value: '' })) });
+
+/* ---- several cells selected (sel.cells): Shift for a range, Cmd/Ctrl to add or remove one, a column or row handle ---- */
+/** Every row of a table in display order: [{ part, row }]. */
+export const tableRowList = (t) => tableParts(t).flatMap(({ part }) => (rowsOf(t, part) || []).map((_, row) => ({ part, row })));
+/** The cells that start in the rectangle from cell a to cell b (rows in display order; merged-over places are left out). */
+export function cellRange(t, a, b) {
+  const list = tableRowList(t);
+  const ia = list.findIndex(r => r.part === a.part && r.row === a.row), ib = list.findIndex(r => r.part === b.part && r.row === b.row);
+  if (ia < 0 || ib < 0) return [{ part: b.part, row: b.row, col: b.col }];
+  const [r0, r1] = [Math.min(ia, ib), Math.max(ia, ib)], [c0, c1] = [Math.min(a.col, b.col), Math.max(a.col, b.col)];
+  const out = [];
+  for (let i = r0; i <= r1; i++) {
+    const { part, row } = list[i];
+    const cells = rowsOf(t, part)?.[row]?.cells || [];
+    for (let c = c0; c <= c1; c++) if (cells[c]) out.push({ part, row, col: c });
+  }
+  return out;
+}
+/** All cells of a column (every part) or of one row. */
+export const columnCells = (t, col) => tableRowList(t).filter(({ part, row }) => rowsOf(t, part)?.[row]?.cells?.[col]).map(r => ({ ...r, col }));
+export const rowCells = (t, part, row) => (rowsOf(t, part)?.[row]?.cells || []).map((c, col) => (c ? { part, row, col } : null)).filter(Boolean);
+/** The selected cells of a cell selection: its list, or the one cell. */
+export const selCells = (sel) => (sel?.kind !== 'cell' ? [] : sel.cells?.length ? sel.cells : [{ part: sel.part, row: sel.row, col: sel.col }]);
+/** Select cells of a table: the first is the one the Inspector edits alone; an anchor keeps Shift ranges from it. */
+export function selectCells(id, list, anchor) {
+  const seen = new Set();
+  const cells = list.filter(c => { const k = `${c.part}|${c.row}|${c.col}`; if (seen.has(k)) return false; seen.add(k); return true; });
+  if (!cells.length) return;
+  const [f] = cells;
+  S().select({ kind: 'cell', id, part: f.part, row: f.row, col: f.col, ...(cells.length > 1 ? { cells } : {}), anchor: anchor || f });
+}
 
 export function tableSync(t) {
   t.w = round(t.columns.reduce((s, c) => s + c.width, 0));

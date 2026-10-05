@@ -484,3 +484,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .vlink:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; background: rgba(14, 116, 144, .10); }
 /* designer: an unsaved draft found when the report opens */
 .draft-bar { position: fixed; top: 52px; left: 50%; transform: translateX(-50%); z-index: 90; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; max-width: calc(100vw - 32px); padding: 8px 12px; background: var(--warn-soft); border: 1px solid var(--warn-line); color: var(--ink); border-radius: 8px; box-shadow: var(--shadow-card); font-size: var(--fs-sm); }
+/* designer table: several cells selected, column and row handles, the cell menu */
+.tbl { user-select: none; -webkit-user-select: none; }
+.tbl .row-tag { cursor: pointer; border-radius: 2px; }
+.tbl .row-tag:hover { background: var(--accent-soft); color: var(--accent); }
+.col-handles { position: absolute; left: 0; top: -12px; height: 10px; display: flex; }
+.col-handle { flex: none; height: 8px; margin: 0; padding: 0; border: 0; border-top: 2px solid var(--line); background: transparent; cursor: s-resize; }
+.col-handle:hover, .col-handle:focus-visible { border-top-color: var(--accent); background: var(--accent-soft); }
+.tbl .cell.sel { background-color: rgba(14, 116, 144, .08); }
+.cell-menu { position: absolute; z-index: 30; min-width: 200px; display: grid; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow-dialog); font-size: var(--fs-sm); color: var(--ink); }
+.cell-menu button { text-align: start; border: 0; background: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+.cell-menu button:hover, .cell-menu button:focus-visible { background: var(--accent-soft); color: var(--accent); }
+.cell-menu button.danger:hover { color: var(--danger); background: var(--danger-soft); }
+.cell-menu hr { border: 0; border-top: 1px solid var(--line-2); margin: 3px 0; }

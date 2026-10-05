@@ -207,6 +207,48 @@ try {
     await p.getByTestId('save-state').filter({ hasText: /^Saved$/ }).waitFor();
     assert.ok((await read(id)).parameters?.some(x => x.name === 'fromDialog'));
   }
+  if (want('u5')) {
+    step('U-5: Shift/Cmd-click, drag, column and row handles select several table cells; one format sets them all');
+    const id = await create(base('ux r1c cells', [{ type: 'table', name: 'Tbl', x: 0, y: 0, w: 360, h: 54, dataSet: 'Sales', columns: [{ width: 120 }, { width: 120 }, { width: 120 }],
+      header: [{ height: 18, cells: [{ value: 'Region' }, { value: 'Amount' }, { value: 'Qty' }] }],
+      detail: [{ height: 18, cells: [{ value: '=Fields.region' }, { value: '=Fields.amount' }, { value: '=Fields.qty' }] }],
+      footer: [{ height: 18, cells: [{ value: 'Total' }, { value: '=Sum(Fields.amount)' }, { value: '=Sum(Fields.qty)' }] }] }]));
+    await open(id);
+    const cell = (part, r, c) => p.locator(`[data-cell="${part}-${r}-${c}"]`);
+    await cell('detail', 0, 1).click();
+    await cell('footer', 0, 1).click({ modifiers: ['Shift'] });
+    await cell('header', 0, 1).click({ modifiers: ['ControlOrMeta'] });
+    await insp().getByText('3 cells of Tbl').waitFor();
+    assert.equal(await p.evaluate(() => getSelection().toString()), ''); // no text selection across the cells
+    await field(insp(), 'Format \\(C2, N0, dd MMM yyyy\\)').fill('N2');
+    await shot(p, 'u5-cells');
+    await save();
+    let t = (await read(id)).sections.body.items[0];
+    assert.deepEqual([t.header[0].cells[1], t.detail[0].cells[1], t.footer[0].cells[1]].map(c => c.style?.format), ['N2', 'N2', 'N2']);
+    assert.equal(t.detail[0].cells[2].style?.format, undefined);
+    // the column handle selects the whole column; a blank field shows where the cells differ
+    await p.locator('[data-col-handle="2"]').click();
+    await insp().getByText('3 cells of Tbl').waitFor();
+    assert.equal(await field(insp(), 'Format \\(C2, N0, dd MMM yyyy\\)').inputValue(), '');
+    // the row tag selects the row; a drag selects the rectangle
+    await p.locator('[data-row-handle="detail-0"]').click();
+    await insp().getByText('3 cells of Tbl').waitFor();
+    const a = await cell('header', 0, 0).boundingBox(), z = await cell('detail', 0, 1).boundingBox();
+    await p.mouse.move(a.x + 5, a.y + 5); await p.mouse.down();
+    await p.mouse.move(z.x + 10, z.y + 8, { steps: 6 }); await p.mouse.up();
+    await insp().getByText('4 cells of Tbl').waitFor();
+    step('U-5: the right-click menu inserts rows and columns, groups by a field, and goes to the format');
+    await cell('detail', 0, 0).click({ button: 'right' });
+    await p.getByTestId('cell-menu').getByRole('menuitem', { name: 'Group by region' }).waitFor();
+    await p.getByTestId('cell-menu').getByRole('menuitem', { name: 'Row below' }).click();
+    await cell('detail', 1, 0).waitFor();
+    await cell('detail', 0, 1).click({ button: 'right' });
+    await p.getByTestId('cell-menu').getByRole('menuitem', { name: 'Number format…' }).click();
+    await p.waitForFunction(() => document.activeElement?.closest('[data-prop=format]'));
+    await save();
+    t = (await read(id)).sections.body.items[0];
+    assert.equal(t.detail.length, 2);
+  }
   assert.deepEqual(errs, [], `page errors: ${errs.join(' | ')}`);
   console.log('ux-r1c: all passed');
 } finally {

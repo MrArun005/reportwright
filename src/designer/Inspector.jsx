@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { allNames, cloneWithIds, isContentKey } from './store.js';
-import { useDesigner, findItem, updateItem, deleteSelection, duplicateSelection, sectionList, secOf, isBodyKey, addBodySection, removeBodySection, walk, tableParts, rowsOf,
+import { useDesigner, findItem, updateItem, deleteSelection, duplicateSelection, sectionList, secOf, isBodyKey, addBodySection, removeBodySection, walk, tableParts, rowsOf, selCells,
   tableInsertColumn, tableDeleteColumn, tableInsertRow, tableDeleteRow, tableSetColumnWidth, tableMergeRight, tableSplit, tableMergeDown, tableSplitRows, tableSync, tableAddGroup, tableRemoveGroup, round, growToFit } from './store.js';
 import { normalizeMatrix, isTablix } from '@/engine/items/pivot.js';
 import { t } from '@/i18n/index.js';
@@ -43,7 +43,7 @@ export default function Inspector() {
     body = f ? <ItemProps item={f.item} section={f.section} openExpr={openExpr} /> : null;
   } else if (sel.kind === 'cell') {
     const f = findItem(def, sel.id);
-    body = f ? <CellProps table={f.item} sel={sel} openExpr={openExpr} /> : null;
+    body = !f ? null : sel.cells?.length > 1 ? <CellsProps table={f.item} sel={sel} openExpr={openExpr} /> : <CellProps table={f.item} sel={sel} openExpr={openExpr} />;
   } else if (sel.kind === 'section') body = <SectionProps section={sel.section} />;
   else body = <ReportProps />;
 
@@ -172,7 +172,7 @@ function StyleCats({ props, style, onSet, openExpr, dataSet, skipBox }) {
     <div className="cat" key={cat}>
       <h5>{catLabel(tk, cat)}</h5>
       <div className="grid2">
-        {ps.map(p => <div key={p.key} style={p.type === 'color' || p.type === 'text' ? { gridColumn: '1 / -1' } : undefined}>
+        {ps.map(p => <div key={p.key} data-prop={p.key} style={p.type === 'color' || p.type === 'text' ? { gridColumn: '1 / -1' } : undefined}>
           <PropEditor p={p} value={style?.[p.key]} onChange={v => onSet(p.key, v)} openExpr={openExpr} dataSet={dataSet} />
         </div>)}
       </div>
@@ -831,6 +831,29 @@ function CellProps({ table, sel, openExpr }) {
       </div>
       <div className="cat"><PropEditor p={{ key: 'styleName', label: 'Named style', type: 'stylename' }} value={cell.styleName} onChange={v => setCell('styleName', v)} openExpr={openExpr} /></div>
       <StyleCats props={TEXT_STYLE_PROPS} style={cell.style} onSet={setCellStyle} openExpr={openExpr} dataSet={table.dataSet} />
+    </>
+  );
+}
+
+/** Several table cells: the style properties they share (a blank field: the cells differ), set for all of them at once. */
+function CellsProps({ table, sel, openExpr }) {
+  const T = useT();
+  const list = selCells(sel);
+  const cells = list.map(c => rowsOf(table, c.part)?.[c.row]?.cells?.[c.col]).filter(Boolean);
+  const common = {};
+  for (const p of TEXT_STYLE_PROPS) { const vs = cells.map(c => c.style?.[p.key]); if (vs.every(v => v === vs[0]) && vs[0] !== undefined) common[p.key] = vs[0]; }
+  const forAll = (fn, key) => updateItem(table.id, t => { for (const c of list) { const x = rowsOf(t, c.part)?.[c.row]?.cells?.[c.col]; if (x) fn(x); } }, key);
+  const setStyle = (k, v) => forAll(x => { x.style ||= {}; setOrDelete(x.style, k, v); if (!Object.keys(x.style).length) delete x.style; }, `${table.id}.cells.${k}`);
+  return (
+    <>
+      <div className="insp-head"><b>{T('ux_nCells', { n: cells.length, name: table.name })}</b></div>
+      <div className="cat"><span className="hint">{T('ux_cellsHint')}</span>
+        <div className="btnrow">
+          <button className="btn sm" onClick={() => forAll(x => { x.value = ''; })}>{T('ux_clearCells')}</button>
+          <button className="btn sm" onClick={() => forAll(x => { delete x.style; })}>{T('ux_clearCellStyles')}</button>
+        </div>
+      </div>
+      <StyleCats props={TEXT_STYLE_PROPS} style={common} onSet={setStyle} openExpr={openExpr} dataSet={table.dataSet} />
     </>
   );
 }

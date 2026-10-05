@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { useDesigner, sectionList, secOf, isBodyKey, isContentKey, bodyWidth, addItem, insertItem, moveItems, updateItem, findItem, tableSetColumnWidth, tableParts, rowsOf, round, NESTING } from './store.js';
+import { useDesigner, sectionList, secOf, isBodyKey, isContentKey, bodyWidth, addItem, insertItem, moveItems, updateItem, findItem, tableSetColumnWidth, tableParts, rowsOf, round, NESTING,
+  selCells, selectCells, cellRange, columnCells, rowCells, tableInsertRow, tableDeleteRow, tableInsertColumn, tableDeleteColumn, tableMergeRight, tableAddGroup } from './store.js';
 import { tableFor, formatFor } from './tableGen.js';
 import { loadBarcodes } from '@/engine/items/barcode.js';
 const hasType = (items, t) => (items || []).some(i => i.type === t || hasType(i.items, t));
@@ -639,14 +640,60 @@ function ItemBody({ item, scale }) {
 }
 
 /* ---------------------------------------------------------------- table */
+const cellOf = (el) => { const m = /^(.+)-(\d+)-(\d+)$/.exec(el?.closest?.('[data-cell]')?.getAttribute('data-cell') || ''); return m ? { part: m[1], row: Number(m[2]), col: Number(m[3]) } : null; };
+const same = (a, b) => a.part === b.part && a.row === b.row && a.col === b.col;
+
 function TableView({ item, scale, drag, setDrag }) {
+  const T = useT();
   const sel = useDesigner(s => s.sel);
   const base = useDesigner(s => s.def.styles?.base);
+  const readOnly = useDesigner(s => s.readOnly);
   const tableSelected = sel.kind === 'items' && sel.ids.includes(item.id);
   const onGrip = useItemDrag(item, scale, setDrag);
   const r = rectOf(item, drag);
   const widths = item.columns.map((c, i) => (drag?.mode === 'col' && drag.id === item.id && drag.col === i ? drag.w : c.width));
   const [dropCell, setDropCell] = useState(null);
+  const [menu, setMenu] = useState(null); // { x, y, part, row, col }: the cell's right-click menu
+  const tblRef = useRef(null);
+  const chosen = sel.kind === 'cell' && sel.id === item.id ? selCells(sel) : [];
+  useEffect(() => {
+    if (!menu) return undefined;
+    const close = (e) => { if (e.type === 'keydown' ? e.key === 'Escape' : !e.target.closest?.('.cell-menu')) setMenu(null); };
+    window.addEventListener('pointerdown', close, true); window.addEventListener('keydown', close);
+    return () => { window.removeEventListener('pointerdown', close, true); window.removeEventListener('keydown', close); };
+  }, [menu]);
+
+  /** A cell click: one cell; Shift: the range from the anchor; Cmd/Ctrl: add or remove it; a drag: the rectangle it covers. */
+  const cellDown = (part, ri, ci) => (e) => {
+    e.stopPropagation();
+    if (e.button !== 0) return;
+    e.preventDefault(); // no text selection across cells
+    const st = useDesigner.getState();
+    const here = { part, row: ri, col: ci };
+    const cur = st.sel.kind === 'cell' && st.sel.id === item.id ? st.sel : null;
+    if (e.shiftKey && cur) { const a = cur.anchor || cur; selectCells(item.id, cellRange(item, a, here), a); return; }
+    if ((e.metaKey || e.ctrlKey) && cur) {
+      const list = selCells(cur);
+      const next = list.some(c => same(c, here)) ? list.filter(c => !same(c, here)) : [...list, here];
+      if (next.length) selectCells(item.id, next, cur.anchor);
+      return;
+    }
+    selectCells(item.id, [here], here);
+    const root = e.currentTarget.getRootNode();
+    const move = (ev) => { const c = cellOf(root.elementFromPoint?.(ev.clientX, ev.clientY)); if (c && !same(c, here)) selectCells(item.id, cellRange(item, here, c), here); };
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+  };
+  const onMenu = (part, ri, ci) => (e) => {
+    e.preventDefault(); e.stopPropagation();
+    if (readOnly) return;
+    const here = { part, row: ri, col: ci };
+    if (!chosen.some(c => same(c, here))) selectCells(item.id, [here], here);
+    const b = tblRef.current.getBoundingClientRect();
+    setMenu({ x: e.clientX - b.left, y: e.clientY - b.top, ...here });
+  };
+  const menuDo = (fn) => () => { setMenu(null); fn(); };
+  const fieldOfCol = (ci) => /^=Fields\.(\w+)$/.exec(item.detail?.[0]?.cells?.[ci]?.value || '')?.[1];
 
   const colDown = (ci) => (e) => {
     e.preventDefault(); e.stopPropagation();
@@ -684,8 +731,26 @@ function TableView({ item, scale, drag, setDrag }) {
 
   let first = true;
   return (
-    <div className={`tbl${tableSelected ? ' sel' : ''}`} data-item={item.name} style={{ left: r.x * scale, top: r.y * scale }}>
+    <div ref={tblRef} className={`tbl${tableSelected ? ' sel' : ''}`} data-item={item.name} style={{ left: r.x * scale, top: r.y * scale }}>
       <div className="grip" title="Select or move the table" onPointerDown={onGrip}>⠿</div>
+      <div className="col-handles" aria-label={T('ux_columns')} role="group">
+        {widths.map((w, ci) => <button type="button" key={ci} className="col-handle" style={{ width: w * scale }} data-col-handle={ci} title={T('ux_selectColumn', { n: ci + 1 })} aria-label={T('ux_selectColumn', { n: ci + 1 })}
+          onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); const cur = useDesigner.getState().sel; const add = (e.shiftKey || e.metaKey || e.ctrlKey) && cur.kind === 'cell' && cur.id === item.id; selectCells(item.id, [...(add ? selCells(cur) : []), ...columnCells(item, ci)]); }} />)}
+      </div>
+      {menu && <div className="cell-menu" role="menu" style={{ left: menu.x, top: menu.y }} data-testid="cell-menu">
+        <button role="menuitem" onClick={menuDo(() => tableInsertRow(item.id, menu.part, menu.row))}>{T('i_rowAbove')}</button>
+        <button role="menuitem" onClick={menuDo(() => tableInsertRow(item.id, menu.part, menu.row + 1))}>{T('i_rowBelow')}</button>
+        <button role="menuitem" onClick={menuDo(() => tableInsertColumn(item.id, menu.col))}>{T('i_colLeft')}</button>
+        <button role="menuitem" onClick={menuDo(() => tableInsertColumn(item.id, menu.col + 1))}>{T('i_colRight')}</button>
+        <hr />
+        {fieldOfCol(menu.col) && <button role="menuitem" onClick={menuDo(() => tableAddGroup(item.id, fieldOfCol(menu.col)))}>{T('ux_groupByField', { field: fieldOfCol(menu.col) })}</button>}
+        <button role="menuitem" onClick={menuDo(() => tableMergeRight(item.id, menu.part, menu.row, menu.col))}>{T('i_mergeRight')}</button>
+        <button role="menuitem" onClick={menuDo(() => updateItem(item.id, t => { for (const c of selCells(useDesigner.getState().sel)) { const x = rowsOf(t, c.part)?.[c.row]?.cells?.[c.col]; if (x) x.value = ''; } }))}>{T('ux_clearCells')}</button>
+        <button role="menuitem" onClick={menuDo(() => requestAnimationFrame(() => { const el = tblRef.current?.getRootNode().querySelector('[data-testid=inspector] [data-prop=format] input'); el?.scrollIntoView({ block: 'center' }); el?.focus(); }))}>{T('ux_formatCells')}</button>
+        <hr />
+        <button role="menuitem" className="danger" onClick={menuDo(() => { tableDeleteRow(item.id, menu.part, menu.row); useDesigner.getState().select({ kind: 'items', ids: [item.id] }); })}>{T('i_delRow')}</button>
+        <button role="menuitem" className="danger" onClick={menuDo(() => { tableDeleteColumn(item.id, menu.col); useDesigner.getState().select({ kind: 'items', ids: [item.id] }); })}>{T('i_delColumn')}</button>
+      </div>}
       {tableParts(item).map(({ part, tag }) => { const prows = rowsOf(item, part) || []; const down = {}; return prows.map((row, ri) => {
         const rowStyle = row.style;
         const isFirst = first; first = false;
@@ -706,12 +771,12 @@ function TableView({ item, scale, drag, setDrag }) {
           if (rs > 1) down[ci] = { left: rs - 1, span };
           const tall = rs > 1 ? { height: prows.slice(ri, ri + rs).reduce((a, r) => a + (r.height || 18), 0) * scale, alignSelf: 'flex-start', position: 'relative', zIndex: 1 } : null;
           const c = textCss([base, item.style, rowStyle, cell?.style], scale, false);
-          const isSel = sel.kind === 'cell' && sel.id === item.id && sel.part === part && sel.row === ri && sel.col === ci;
+          const isSel = chosen.some(c => c.part === part && c.row === ri && c.col === ci);
           const col = ci;
           cells.push(
             <div key={ci} className={`cell${isSel ? ' sel' : ''}${dropCell === `${part}${ri}${col}` ? ' drop' : ''}`}
               style={{ width: w * scale, ...c.box, ...tall }} data-cell={`${part}-${ri}-${col}`}
-              onPointerDown={(e) => { e.stopPropagation(); useDesigner.getState().select({ kind: 'cell', id: item.id, part, row: ri, col }); }}
+              onPointerDown={cellDown(part, ri, col)} onContextMenu={onMenu(part, ri, col)}
               onDragOver={(e) => { if (e.dataTransfer.types.includes(MIME_FIELD)) { e.preventDefault(); e.stopPropagation(); setDropCell(`${part}${ri}${col}`); } }}
               onDragLeave={() => setDropCell(null)}
               onDrop={cellDrop(part, ri, col)}>
@@ -723,7 +788,8 @@ function TableView({ item, scale, drag, setDrag }) {
         }
         return (
           <div className="row" key={`${part}${ri}`} style={{ height: (row.height || 18) * scale }}>
-            <div className="row-tag" title={part}>{tag}</div>
+            <div className="row-tag" title={T('ux_selectRow')} data-row-handle={`${part}-${ri}`}
+              onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); const cur = useDesigner.getState().sel; const add = (e.shiftKey || e.metaKey || e.ctrlKey) && cur.kind === 'cell' && cur.id === item.id; selectCells(item.id, [...(add ? selCells(cur) : []), ...rowCells(item, part, ri)]); }}>{tag}</div>
             {cells}
           </div>
         );
