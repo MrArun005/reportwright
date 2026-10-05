@@ -46,6 +46,7 @@ export const SETTINGS = [
   ['PW_INTERNAL_HOSTS', 'list', '(none)', 'Private hosts server-side fetches may reach (designers only).'],
   ['PW_PROXY_ALLOW', 'list', '(none)', 'Public hosts the browser data proxy may fetch.'],
   ['PW_FETCH_DEADLINE_MS', 'ms', '60000', 'A server fetch, start to last byte.'],
+  ['PW_FETCH_MAX_MB', 'int', '64', 'Largest response a server fetch reads (data sources, images); past it the render fails with 413.'],
   // storage
   ['PW_STORAGE', 'text', 'file', 'file, sqlite:/path, postgres://, mysql://, mssql:// or sql:<name>.'],
   ['PW_STORAGE_POOL_MAX', 'int', '5', 'Storage connections per server thread.'],
@@ -67,7 +68,7 @@ export const SETTINGS = [
   ['PW_SIGN_P12', 'text', '(off)', 'A PKCS#12 file that signs PDFs (API renders with sign: true).'], ['PW_SIGN_PASSWORD', 'secret', '', 'Its password.'],
   ['PW_AI_MODEL', 'text', '(default)', 'Model for AI drafting.'],
   // batches, schedules, mail
-  ['PW_WORKER', 'onoff', 'on', 'off: this server runs no queued batches.'], ['PW_SCHEDULER', 'onoff', 'on', 'off: this server runs no schedules.'],
+  ['PW_WORKER', 'onoff', 'on', 'off: this server runs no queued batches.'], ['PW_SCHEDULER', 'onoff', 'on', 'off: this server runs no schedules.'], ['PW_CRON', 'text', '', 'How often an outside cron calls /api/v1/cron when PW_SCHEDULER/PW_WORKER are off (e.g. daily): shown on the dashboard; the schedule editor warns about faster cadences.'],
   ['PW_SCHEDULER_TICK_MS', 'ms', '30000', 'Scheduler tick.'], ['PW_SCHEDULER_LEASE_MS', 'ms', '(3 ticks)', 'Scheduler leader lease.'],
   ['PW_BATCH_CONCURRENCY', 'int', '2', 'Items of one batch at once.'], ['PW_BATCH_MAX_OUTPUT_MB', 'int', '1024', 'Largest zip or merged PDF a batch builds; past it, no packed output (use a folder output).'], ['PW_JOB_LEASE_MS', 'ms', '60000', 'A batch lease.'], ['PW_QUEUE_POLL_MS', 'ms', '2000', 'Queue poll.'],
   ['PW_JOB_RETENTION_DAYS', 'int', '30', 'Finished batches kept (0: forever).'], ['PW_PACK_TIMEOUT_MS', 'ms', '600000', 'Making a batch zip or merged PDF.'],

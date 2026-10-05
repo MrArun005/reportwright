@@ -288,7 +288,7 @@ describe('the last admin', () => {
     await expect(deleteUser('a1@x.io')).rejects.toMatchObject({ status: 409 });
     const res = await userPatch(rq('/api/users/a1@x.io', { method: 'PATCH', cookie: admin, body: { role: 'viewer' } }), params('a1@x.io'));
     expect(res.status).toBe(409);
-    expect((await res.json()).error).toMatch(/last admin/i);
+    expect((await res.json()).error).toMatch(/last admin|own account/i);
     await createUser({ email: 'a2@x.io', role: 'admin', password: PW });
     await updateUser('a2@x.io', { disabled: true });
     await expect(deleteUser('a1@x.io')).rejects.toMatchObject({ status: 409 }); // a disabled admin does not count

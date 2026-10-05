@@ -84,6 +84,7 @@ Every setting Pagewright reads, from `src/server/config.js` (the table there is 
 | `PW_AI_MODEL` | text | (default) | Model for AI drafting. |
 | `PW_WORKER` | onoff | on | off: this server runs no queued batches. |
 | `PW_SCHEDULER` | onoff | on | off: this server runs no schedules. |
+| `PW_CRON` | text | (none) | How often an outside cron calls /api/v1/cron when PW_SCHEDULER/PW_WORKER are off (e.g. daily): shown on the dashboard; the schedule editor warns about faster cadences. |
 | `PW_SCHEDULER_TICK_MS` | ms | 30000 | Scheduler tick. |
 | `PW_SCHEDULER_LEASE_MS` | ms | (3 ticks) | Scheduler leader lease. |
 | `PW_BATCH_CONCURRENCY` | int | 2 | Items of one batch at once. |
