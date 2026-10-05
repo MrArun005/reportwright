@@ -4,6 +4,27 @@ A report designer, report engine, report viewer and report automation server for
 
 The plan is in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). All four phases are done. Status and gaps: [`docs/STATUS.md`](docs/STATUS.md). Automation API: [`docs/API.md`](docs/API.md).
 
+## Status (5 Oct 2026)
+
+**Measured against other engines** (same reports, same data, same Apple M2 laptop; harness in `~/pw-bench`, numbers indicative, not a published benchmark):
+
+| 50,000-row report | Pagewright (Node) | JasperReports | BIRT |
+|---|---|---|---|
+| PDF end to end | ~1.0–1.2 s | ~2.2–2.4 s | ~2.3–2.9 s |
+| Pagination only | ~0.45–0.56 s | ~0.51–0.60 s | – |
+| PDF size (962 pages) | 2.28 MB | 3.70 MB | 3.47 MB |
+| Peak memory (after the memory work) | ~0.76–0.83 GB | ~0.8–0.95 GB | ~0.57–0.69 GB |
+
+ActiveReportsJS did not finish the 50,000-row reports within 10 minutes; Pagewright renders its charts report ~60× faster and invoices ~25× faster. Telerik, DevExpress, Bold Reports and Stimulsoft were not tested: their licences forbid benchmarking by a competitor.
+
+**Independent code-only review (5 Oct):** 6.7 / 10 on features, 6.3 overall (no outside users yet). Strong: speed, PDF output, embedding, deny-by-default security. The ranked fix list from five specialist reviews (security, engine correctness, architecture, UX) is being worked through.
+
+**In progress on `main`:** server stability (SQLite isolation, login throttling, safe default report permissions, memory-aware render pool, logging and health checks), 21 silent wrong-result fixes against SSRS semantics, Designer and viewer accessibility and usability, a conditional formatting wizard, a visual SQL query builder and native Excel charts.
+
+**Not released:** SQL Server, PostgreSQL, Oracle, Snowflake and BigQuery data sources and stored procedures (see `docs/DATA-SQL.md`); the audit log's hash chain is beta. **Deferred:** running SSRS custom VB `Code`, and page-at-a-time streaming layout for millions of rows.
+
+**Breaking change:** `render()` keeps table data for Excel, CSV, Word, interactive HTML and accessible PDF only with `render(def, { exportData: true })`; the built-in server, CLI and viewer pass it. After upgrading, re-save SQL reports once in the Designer.
+
 ## Run it
 
 ```bash
