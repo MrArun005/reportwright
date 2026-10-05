@@ -196,3 +196,12 @@ describe('R5 #9: health with inline renders and a cron-driven scheduler', () => 
     expect(fasterThanDaily('30 7 * * 1')).toBe(false);
   });
 });
+
+describe('R5 #11: small fixes', () => {
+  it('the dashboard shows a schedule\'s next run in the viewer\'s zone, like the Schedules page', () => {
+    const src = fs.readFileSync('src/home/Overview.jsx', 'utf8');
+    expect(src).not.toMatch(/new Date\(s\.nextRunAt\)\.toLocaleString/);
+    expect(src).toMatch(/<LocalTime iso=\{s\.nextRunAt\}/);
+    expect(fs.readFileSync('src/home/ScheduleToggle.jsx', 'utf8')).toMatch(/^'use client'/);
+  });
+});

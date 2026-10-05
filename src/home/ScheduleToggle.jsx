@@ -15,3 +15,8 @@ export default function ScheduleToggle({ id, on, label }) {
   };
   return <button type="button" role="switch" aria-checked={on} aria-label={label} className="switch" disabled={busy} onClick={flip}><i /></button>;
 }
+
+/** A time in the viewer's own zone (the server renders in its zone, often UTC; the browser fixes it on hydration). */
+export function LocalTime({ iso, loc, template = '{when}' }) {
+  return <time dateTime={iso} suppressHydrationWarning>{template.replace('{when}', new Date(iso).toLocaleString(loc, { dateStyle: 'medium', timeStyle: 'short' }))}</time>;
+}

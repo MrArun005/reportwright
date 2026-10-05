@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { activity, renderStats, health, RANGES } from './overview.js';
 import { Spark, MiniBars, TimeChart } from './Charts.jsx';
-import ScheduleToggle from './ScheduleToggle.jsx';
+import ScheduleToggle, { LocalTime } from './ScheduleToggle.jsx';
 import { listSchedules } from '@/server/schedules.js';
 import { canDesign, atLeast } from '@/server/perms.js';
 import { t } from '@/i18n/index.js';
@@ -182,7 +182,7 @@ export default async function Overview({ lang, sp, p, isAdmin, designer, canCrea
                       <span className="sched-icon" aria-hidden="true">{ic('M8 14.5A6.5 6.5 0 1 0 8 1.5a6.5 6.5 0 0 0 0 13zM8 4.5V8l2.5 1.5')}</span>
                       <span className="sched-main">
                         <b>{name}</b>
-                        <span className="hint">{PRESETS[s.cron] ? T(PRESETS[s.cron]) : <code>{s.cron}</code>} · {s.timezone || 'UTC'}{on && s.nextRunAt ? ` · ${T('hm_nextAt', { when: new Date(s.nextRunAt).toLocaleString(loc, { dateStyle: 'medium', timeStyle: 'short' }) })}` : ''}</span>
+                        <span className="hint">{PRESETS[s.cron] ? T(PRESETS[s.cron]) : <code>{s.cron}</code>} · {s.timezone || 'UTC'}{on && s.nextRunAt ? <> · <LocalTime iso={s.nextRunAt} loc={loc} template={T('hm_nextAt', { when: '{when}' })} /></> : ''}</span>
                       </span>
                       <ScheduleToggle id={s.id} on={on} label={T('hm_toggle', { name })} />
                       <span className={`pill ${on ? 'ok' : 'off'}`}>{on ? T('active') : T('hm_paused')}</span>
