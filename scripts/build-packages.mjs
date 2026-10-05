@@ -31,7 +31,7 @@ fs.copyFileSync(path.join(root, 'public/harfbuzz-subset.wasm'), path.join(root, 
 fs.rmSync(path.join(root, E, 'public/fonts/ui'), { recursive: true, force: true }); // UI fonts are for the app only
 write(`${E}/package.json`, {
   name: '@pagewrightjs/engine', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT',
-  description: 'Pagewright report engine: JSON report definitions to pages, PDF (incl. PDF/A), Word, Excel, HTML and CSV. Node and browsers. Includes the pw CLI.',
+  description: 'Pagewright report engine: JSON report definitions to pages, PDF (incl. PDF/A), Word, Excel, PowerPoint, HTML and CSV. Node and browsers. Includes the pw CLI.',
   exports: { '.': { types: './index.d.ts', default: './dist/index.js' }, './report': { types: './report.d.ts' }, './package.json': './package.json' },
   types: './index.d.ts',
   bin: { pw: 'dist/pw.mjs' },

@@ -31,5 +31,6 @@ export { exportCsv } from '../../src/exporters/csv.js';
 export { needsExportData } from '../../src/exporters/regions.js';
 export { exportXlsx } from '../../src/exporters/xlsx.js';
 export { exportDocx } from '../../src/exporters/docx.js';
+export { exportPptx } from '../../src/exporters/pptx.js';
 export { pageToSvg } from '../../src/exporters/svg.js';
 export { tableFor, matrixFor } from '../../src/designer/tableGen.js';

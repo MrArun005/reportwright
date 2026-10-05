@@ -41,6 +41,14 @@ describe('npm packages', () => {
     expect(small.length * 4).toBeLessThan(full.length);
   }, 60000);
 
+  it('the engine exports PowerPoint (exportPptx) with its types', async () => {
+    const m = await import(path.join(root, 'packages/engine/dist/index.js'));
+    const fonts = new m.FontStore((key) => fs.readFileSync(path.join(root, 'packages/engine/public/fonts', m.fontFile(key))));
+    const pptx = await m.exportPptx(await m.render(m.blankReport(), { fontStore: fonts }));
+    expect(String.fromCharCode(pptx[0], pptx[1])).toBe('PK');
+    expect(fs.readFileSync(path.join(root, 'packages/engine/dist/types/packages/engine/entry.d.ts'), 'utf8')).toMatch(/exportPptx/);
+  }, 60000);
+
   it('a TypeScript consumer type-checks, and every wrong case fails', () => {
     let out = '';
     try { node('node_modules/typescript/bin/tsc', '-p', 'tests/fixtures/types'); } catch (e) { out = String(e.stdout) + String(e.stderr); }

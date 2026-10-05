@@ -1,6 +1,6 @@
 # @pagewrightjs/engine
 
-The Pagewright report engine for Node and browsers: a JSON report definition and data in, pages out, then PDF (also PDF/A-2b), Word, Excel, HTML or CSV. Includes the `pw` command line.
+The Pagewright report engine for Node and browsers: a JSON report definition and data in, pages out, then PDF (also PDF/A-2b), Word, Excel, PowerPoint (exportPptx), HTML or CSV. Includes the `pw` command line.
 
 ```js
 import { render, FontStore, fontFile, exportPdf } from '@pagewrightjs/engine';
