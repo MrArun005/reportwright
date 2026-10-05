@@ -405,6 +405,7 @@ try {
 
     step('U-8: "New report" asks for a name instead of making untitled-report');
     await p.goto(BASE);
+    await p.waitForFunction(() => Object.keys(document.querySelector('form.newrep') || {}).some(k => k.startsWith('__react'))); // hydrated
     await p.getByRole('button', { name: 'New report', exact: true }).click();
     await p.getByText('Give the report a name first.').waitFor();
     assert.ok(!p.url().includes('/designer/'));
