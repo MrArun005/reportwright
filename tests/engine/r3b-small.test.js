@@ -85,6 +85,14 @@ describe('a parameter\'s fixed list of values holds on the server (REVIEW-SECURI
     expect(() => checkParameterValues(def, { regions: 'North,East' }, viewer)).toThrow(/regions/);
     expect(() => checkParameterValues(def, { year: 1999 }, viewer)).toThrow(/year/);
     expect(() => checkParameterValues(def, { region: 'East' }, designer)).not.toThrow();
+    // review: an array on a single-value parameter is bound as "North,South" by the engine: refused
+    expect(() => checkParameterValues(def, { region: ['North', 'South'] }, viewer)).toThrow(/region/);
+    expect(() => checkParameterValues(def, { year: [2025, 2026] }, viewer)).toThrow(/year/);
+    // multi values are split as the engine splits them (an option holding a comma, an escaped comma)
+    const commas = { parameters: [{ name: 'c', type: 'string', multi: true, options: [{ value: 'Pune, MH' }, { value: 'Delhi' }] }] };
+    expect(() => checkParameterValues(commas, { c: 'Pune, MH,Delhi' }, viewer)).not.toThrow();
+    // hidden parameters are set by drill-through: not checked
+    expect(() => checkParameterValues({ parameters: [{ name: 'h', hidden: true, options: [{ value: 'a' }] }] }, { h: 'zzz' }, viewer)).not.toThrow();
     try { checkParameterValues(def, { region: 'East' }, viewer); } catch (e) { expect(e.status).toBe(400); }
   });
 });
@@ -121,15 +129,17 @@ describe('a batch mails and calls its webhook once, even after a lost lease (REV
 });
 
 describe('a data source that answers 404/5xx is a 502 with a clear message (synthetic-user run)', () => {
-  it('not a generic 500, and no query string (tokens) in the message', async () => {
+  it('not a generic 500, and no URL in the message', async () => {
     const { errorResponse } = await import('../../src/server/errors.js');
     const err = console.error; console.error = () => {};
     try {
       const r = errorResponse(new Error('HTTP 404 from https://api.example.com/v1/orders?token=SECRET123'));
       expect(r.status).toBe(502);
       const body = await r.json();
-      expect(body.error).toMatch(/data source.*HTTP 404.*https:\/\/api\.example\.com\/v1\/orders/);
-      expect(body.error).not.toMatch(/SECRET123/);
+      expect(body.error).toMatch(/data source.*HTTP 404/);
+      expect(body.error).not.toMatch(/SECRET123|api\.example\.com/); // the URL is in the log only (review finding)
+      expect(body.requestId).toBeTruthy();
+      expect(errorResponse(new Error('Data source "orders": HTTP 500 from https://api.example.com/x')).status).toBe(502); // as the engine wraps it
       expect(errorResponse(Object.assign(new Error('HTTP 503 from x'), { status: 400 })).status).toBe(400); // a status the code chose stands
     } finally { console.error = err; }
   });

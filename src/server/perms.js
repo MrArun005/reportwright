@@ -23,6 +23,7 @@ import { accountsOn, currentUser, openTrusted, publicReadonly, NO_AUTH_HELP } fr
 import { internalHosts } from './safeFetch.js';
 import { normEmail, GROUP, getUser } from './users.js';
 import { readReport, parseReport, safeId, revOf } from './reports.js';
+import { resolveParameters } from '../engine/index.js';
 import { FETCHED_TYPES } from '../engine/data/index.js';
 import { devMode } from './config.js';
 
@@ -262,15 +263,19 @@ export async function migratePermissions() {
  */
 export function checkParameterValues(def, given, p) {
   if (!given || typeof given !== 'object' || canDesign(p)) return;
-  for (const prm of def?.parameters || []) {
-    if (!Object.hasOwn(given, prm.name)) continue;
-    const v = given[prm.name];
-    const blank = v == null || v === '' || (Array.isArray(v) && !v.length);
-    if (!Array.isArray(prm.options) || prm.optionsFrom || blank) continue;
-    const ok = new Set(prm.options.map(o => String(o && typeof o === 'object' ? o.value : o)));
-    const values = Array.isArray(v) ? v : prm.multi && typeof v === 'string' ? v.split(',').map(x => x.trim()) : [v];
-    const bad = values.find(x => !ok.has(String(x instanceof Date ? x.toISOString().slice(0, 10) : x)));
-    if (bad !== undefined) throw fail(`"${String(bad).slice(0, 60)}" is not one of the values the parameter "${prm.name}" offers.`, 400);
+  // the values as the engine will bind them (its own parsing: multi lists, escapes, a stray array on a single value)
+  const listed = (def?.parameters || []).filter(prm => prm && !prm.hidden && Array.isArray(prm.options) && !prm.optionsFrom && Object.hasOwn(given, prm.name));
+  if (!listed.length) return;
+  const bound = resolveParameters({ parameters: listed }, given, { lenient: true });
+  const key = (x) => (x instanceof Date ? x.toISOString().slice(0, 10) : String(x));
+  for (const prm of listed) {
+    if (!prm.multi && Array.isArray(given[prm.name]) && given[prm.name].length > 1) throw fail(`The parameter "${prm.name}" takes one value.`, 400);
+    const v = bound[prm.name];
+    const values = Array.isArray(v) ? v : [v];
+    if (values.every(x => x == null || x === '')) continue;
+    const ok = new Set(prm.options.map(o => key(o && typeof o === 'object' ? o.value : o)));
+    const bad = values.find(x => x != null && x !== '' && !ok.has(key(x)));
+    if (bad !== undefined) throw fail(`"${String(key(bad)).slice(0, 60)}" is not one of the values the parameter "${prm.name}" offers.`, 400);
   }
 }
 
