@@ -117,7 +117,7 @@ export async function createUser({ email, role, password, groups = [], sso }, { 
   checkRole(role);
   const g = checkGroups(groups);
   const passwordHash = sso ? null : await hashPassword(/** @type {string} */ (password));
-  return withLock('acl', async () => { await stillAdmin(by); return createNow(e, role, g, passwordHash, sso); });
+  return withLock('users', async () => { await stillAdmin(by); return createNow(e, role, g, passwordHash, sso); });
 }
 /** by (an admin's email, from a route): that admin as stored now, inside the lock, not a session cache. */
 async function stillAdmin(by) {
@@ -148,7 +148,7 @@ async function keepAnAdmin(before, after) {
  * sso (server code only, never from a request): the IdP identity this account is bound to.
  * @param {string} email @param {{ role?: string, password?: string, disabled?: boolean, groups?: string[], allowSso?: boolean, sso?: any, resetTwoFactor?: boolean }} patch
  */
-export function updateUser(email, patch, { by } = {}) { return withLock('acl', async () => { await stillAdmin(by); return updateUserNow(email, patch); }); }
+export function updateUser(email, patch, { by } = {}) { return withLock('users', async () => { await stillAdmin(by); return updateUserNow(email, patch); }); }
 async function updateUserNow(email, patch) {
   const u = await getUser(email);
   if (!u) throw fail('No such user.', 404);
@@ -168,7 +168,7 @@ async function updateUserNow(email, patch) {
 }
 
 /** @returns {Promise<boolean>} false when there was no such user */
-export function deleteUser(email, { by } = {}) { return withLock('acl', async () => { await stillAdmin(by); return deleteUserNow(email); }); }
+export function deleteUser(email, { by } = {}) { return withLock('users', async () => { await stillAdmin(by); return deleteUserNow(email); }); }
 async function deleteUserNow(email) {
   const u = await getUser(email);
   if (!u) return false;
@@ -180,7 +180,7 @@ async function deleteUserNow(email) {
 /** Sign-out: every session cookie this user holds stops working. */
 export function endSessions(email) {
   // under the lock and re-read there: a sign-out must never write back a record an admin just changed
-  return withLock('acl', async () => { const u = await getUser(email); if (u) await save({ ...u, sessionVersion: (u.sessionVersion || 0) + 1 }); });
+  return withLock('users', async () => { const u = await getUser(email); if (u) await save({ ...u, sessionVersion: (u.sessionVersion || 0) + 1 }); });
 }
 
 /* ---------------- two-factor sign-in ---------------- */
@@ -205,7 +205,7 @@ const ENROL_MS = 15 * 60 * 1000;
  * @param {string} email
  */
 export function issueEnrolCode(email) {
-  return withLock('acl', async () => {
+  return withLock('users', async () => {
     const u = await getUser(email);
     if (!u) throw fail('No such user.', 404);
     if (u.enrolCode?.expires > Date.now()) return null; // the code mailed earlier still stands (a new sign-in must not void it)
@@ -224,7 +224,7 @@ export function enrolCodeOk(u, code) {
 
 /** Start enrolling: a new secret, kept pending until a code from it is confirmed. { secret, uri, qr (SVG) } @param {string} email */
 export function startTwoFactor(email) {
-  return withLock('acl', async () => {
+  return withLock('users', async () => {
     const u = await getUser(email);
     if (!u || u.disabled) throw fail('No such user.', 404);
     if (!u.passwordHash) throw fail('This account signs in with single sign-on: its identity provider owns the second factor.', 409);
@@ -242,7 +242,7 @@ export function startTwoFactor(email) {
  * @param {string} email @param {string} code
  */
 export function enableTwoFactor(email, code) {
-  return withLock('acl', async () => {
+  return withLock('users', async () => {
     const u = await getUser(email);
     if (!u || u.disabled) throw fail('No such user.', 404);
     if (u.totp) throw fail('Two-factor sign-in is on already.', 409);
@@ -270,7 +270,7 @@ export async function checkSecondFactor(email, { code, recoveryCode } = {}) {
   }
   if (typeof recoveryCode !== 'string' || !recoveryCode.trim() || recoveryCode.length > 64) return null;
   const h = hashRecovery(recoveryCode);
-  return withLock('acl', async () => {
+  return withLock('users', async () => {
     const cur = await getUser(email); // read again under the lock: a code is good once, on every server
     const list = Array.isArray(cur?.recovery) ? cur.recovery : [];
     const i = list.findIndex(x => typeof x === 'string' && x.length === h.length && crypto.timingSafeEqual(Buffer.from(x), Buffer.from(h)));
@@ -282,7 +282,7 @@ export async function checkSecondFactor(email, { code, recoveryCode } = {}) {
 
 /** New recovery codes (the old ones stop working). @param {string} email */
 export function newRecovery(email) {
-  return withLock('acl', async () => {
+  return withLock('users', async () => {
     const u = await getUser(email);
     if (!u?.totp) throw fail('Two-factor sign-in is off.', 409);
     const { codes, hashes } = newRecoveryCodes();
@@ -304,7 +304,7 @@ const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
  * token replaces the one before. @param {string} email
  */
 export function issueReset(email) {
-  return withLock('acl', async () => {
+  return withLock('users', async () => {
     const u = await getUser(email);
     if (!u || u.disabled || !u.passwordHash) return null;
     const secret = crypto.randomBytes(32).toString('base64url');
@@ -324,7 +324,7 @@ export async function useReset(token, password) {
   let email;
   try { email = normEmail(Buffer.from(e, 'base64url').toString()); } catch { throw bad(); }
   const passwordHash = await hashPassword(password); // a bad password is a 400 before the token is spent
-  return withLock('acl', async () => {
+  return withLock('users', async () => {
     const u = await getUser(email);
     const r = u?.reset;
     if (!u || u.disabled || !r || typeof r.hash !== 'string' || !(r.expires > Date.now()) || !crypto.timingSafeEqual(Buffer.from(sha(secret)), Buffer.from(r.hash.padEnd(64).slice(0, 64)))) throw bad();

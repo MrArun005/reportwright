@@ -1,10 +1,9 @@
 // GET /api/reports[?q=text&folder=id] — the reports the caller may view, each with its access level and folder.
 // POST { name, definition? | template?, folder? } — a new report in that folder (edit there needed); its creator manages it.
-import { listReports, writeReport, newId, readDefinition } from '@/server/reports.js';
+import { listReports, readDefinition } from '@/server/reports.js';
 import { blankReport, blankDashboard } from '@/engine/schema/template.js';
-import { principalOf, visibleReports, canCreateIn, recordNewReport, folderParam } from '@/server/perms.js';
+import { principalOf, visibleReports, createReport, folderParam } from '@/server/perms.js';
 import { audit } from '@/server/audit.js';
-import { withLock } from '@/server/storage/index.js';
 import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
@@ -29,13 +28,7 @@ export async function POST(req) {
     const folder = folderParam(body.folder);
     const name = String(body.name || 'Untitled report').slice(0, 120);
     const def = body.definition || (body.template === 'dashboard' ? blankDashboard(name) : blankReport(name));
-    const id = await withLock('acl', async () => {
-      await canCreateIn(p, folder, def); // SQL or internal data in it: designers only
-      const nid = await newId(name);
-      await recordNewReport(p, nid, folder, def);
-      await writeReport(nid, def);
-      return nid;
-    });
+    const id = await createReport(p, name, folder, def); // its own id, under its own lock
     await audit('report.create', { req, principal: p, report: id, detail: { folder, template: body.definition ? 'definition' : body.template || 'blank' } });
     return Response.json({ id }, { status: 201 });
   } catch (e) { return fail(e); }

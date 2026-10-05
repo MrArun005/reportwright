@@ -408,14 +408,14 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     const { writeReport } = await import('../../src/server/reports.js');
     await designerSaves('race', def('Race'));
     await perms.setReportAccess({ kind: 'service' }, 'race', { grants: [{ to: 'user:bob@x.io', level: 'edit' }] });
-    // someone holds the permissions lock (a revoke in progress) while bob saves
-    expect(await store().lease('lock:acl', 'revoker', 30000)).toBe(true);
+    // someone holds the report's lock (a revoke in progress) while bob saves
+    expect(await store().lease('lock:report:race', 'revoker', 30000)).toBe(true);
     let done = false;
     const put = R.one.PUT(req('/api/reports/race', { who: 'bob', method: 'PUT', body: def('Bob was here') }), P('race')).then(r => { done = true; return r; });
     await new Promise(r => setTimeout(r, 150));
     expect(done).toBe(false); // waiting for the lock
     await store().put('reportacl', 'race', JSON.stringify({ id: 'race', folder: null, inherit: false, grants: [] })); // the revoke
-    await store().release('lock:acl', 'revoker');
+    await store().release('lock:report:race', 'revoker');
     expect((await put).status).toBe(404);
     expect((await json(await R.one.GET(req('/api/reports/race', { who: 'admin' }), P('race')))).body.sections.body.items[0].value).toBe('Race');
     await R.one.DELETE(req('/api/reports/race', { who: 'admin', method: 'DELETE' }), P('race'));
@@ -428,13 +428,13 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     await perms.setReportAccess({ kind: 'service' }, 'race2', { inherit: false, grants: [{ to: 'group:editors', level: 'edit' }] });
     await users.updateUser('bob@x.io', { groups: ['Editors'] });
     try {
-      expect(await store().lease('lock:acl', 'revoker', 30000)).toBe(true);
+      expect(await store().lease('lock:report:race2', 'revoker', 30000)).toBe(true);
       const put = R.one.PUT(req('/api/reports/race2', { who: 'bob', method: 'PUT', body: def('Bob was here') }), P('race2'));
       await new Promise(r => setTimeout(r, 150));
       // another server takes bob out of Editors while his save waits (straight to storage: this server's cache is stale)
       const u = JSON.parse(await store().get('users', 'bob@x.io'));
       await store().put('users', 'bob@x.io', JSON.stringify({ ...u, groups: [] }));
-      await store().release('lock:acl', 'revoker');
+      await store().release('lock:report:race2', 'revoker');
       expect((await put).status).toBe(404);
       expect((await json(await R.one.GET(req('/api/reports/race2', { who: 'admin' }), P('race2')))).body.sections.body.items[0].value).toBe('Race 2');
     } finally {

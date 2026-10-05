@@ -163,7 +163,7 @@ export function mapIdentity(email, values, who) {
  *  - no account: one is made, bound, with no password.
  * @param {{ email: string, role: string, groups: string[], issuer: string, subject: string }} id @param {'oidc'|'saml'} via
  */
-export function upsertSsoUser(id, via) { return withLock('acl', () => upsertNow(id, via)); } // two first sign-ins at once: one wins
+export function upsertSsoUser(id, via) { return withLock('users', () => upsertNow(id, via)); } // two first sign-ins at once: one wins
 async function upsertNow(id, via) {
   const sso = { via, issuer: id.issuer, subject: id.subject };
   const same = (u) => u.sso && typeof u.sso === 'object' && u.sso.via === via && u.sso.issuer === sso.issuer && u.sso.subject === sso.subject;

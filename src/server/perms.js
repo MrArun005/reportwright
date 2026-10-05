@@ -18,7 +18,7 @@
 // report made by a signed-in user) or an admin.
 // view: open, render, export, run its saved SQL. edit: save, restore, version history. manage: delete, move, share.
 import crypto from 'node:crypto';
-import { store, localAclGen } from './storage/index.js';
+import { store, localAclGen, withLock } from './storage/index.js';
 import { accountsOn, currentUser, openTrusted, publicReadonly, NO_AUTH_HELP } from './session.js';
 import { internalHosts } from './safeFetch.js';
 import { normEmail, GROUP, getUser } from './users.js';
@@ -213,14 +213,19 @@ export async function migratePermissions() {
         for (const r of await store().list(kind)) {
           let rec; try { rec = JSON.parse(r.text); } catch { continue; }
           const grants = rename(rec.grants);
-          if (touched(grants, rec.grants || [])) await store().put(kind, r.id, JSON.stringify({ ...rec, grants, rev: rev() }));
+          if (!touched(grants, rec.grants || [])) continue;
+          const write = async () => { // read again under the record's lock: a save may have stamped it meanwhile
+            const now = await store().get(kind, r.id); const cur = now ? JSON.parse(now) : rec;
+            await store().put(kind, r.id, JSON.stringify({ ...cur, grants: rename(cur.grants), rev: rev() }));
+          };
+          await (kind === 'reportacl' ? withReport(r.id, write) : write());
         }
       }
-      for (const r of await store().list('users')) {
+      await withLock('users', async () => { for (const r of await store().list('users')) {
         let u; try { u = JSON.parse(r.text); } catch { continue; }
         if (!(u.groups || []).some(x => String(x).toLowerCase() === 'designers')) continue;
         await store().put('users', r.id, JSON.stringify({ ...u, groups: [...new Set(u.groups.map(x => (String(x).toLowerCase() === 'designers' ? RENAMED_GROUP : x)))].sort(), rev: rev() }));
-      }
+      } });
       root = await rootNow(); // a renamed grant at the top
       if (!root) {
         const legacy = (await store().ids('reports')).length > 0;
@@ -427,8 +432,7 @@ export async function stampDefinition(p, id, def) {
   assertMayStore(p, def);
   const src = serverSources(def);
   if (!src.length) return;
-  const { withLock } = await import('./storage/index.js');
-  return withLock('acl', () => stampNow(id, src)); // a read-modify-write of the access record, as every other one
+  return withReport(id, () => stampNow(id, src)); // a read-modify-write of the access record: under its report's lock
 }
 /** @param {string} id @param {any[]} src */
 async function stampNow(id, src) {
@@ -629,6 +633,52 @@ export async function recordNewReport(p, id, folder, def) {
 }
 /** @param {string} id */
 export const forgetReport = (id) => store().remove('reportacl', id);
+
+/* ---------------- concurrency: one lock per report, permission changes checked optimistically ---------------- */
+
+/**
+ * Run fn holding this report's lock (saves, restores, deletes, its access record). Two saves of different reports
+ * never wait for each other. Order, where both are taken: "acl" first, then the report's.
+ * @template T @param {string} id @param {() => Promise<T>} fn @returns {Promise<T>}
+ */
+export function withReport(id, fn) { return withLock(`report:${String(id).split('@')[0]}`, fn); }
+
+const aclNow = async () => `${await store().get('settings', 'aclgen')}|${localAclGen()}`;
+/**
+ * A permission check that no permission change overtook: fn runs again while the permission stamp moved under it
+ * (a grant, folder or access change on any server: the "aclgen" record). Saves no longer take the global lock, so
+ * this is what keeps a revoke from landing between their check and their write; what is left is one storage
+ * round trip, as for any request already in flight.
+ * @template T @param {() => Promise<T>} fn @returns {Promise<T>}
+ */
+export async function stableCheck(fn) {
+  for (let i = 0; i < 5; i++) {
+    const before = await aclNow();
+    const r = await fn();
+    if ((await aclNow()) === before) return r;
+  }
+  throw fail('The permissions are changing right now. Try again.', 503);
+}
+
+/**
+ * Create a report under a fresh id from its name: { id }. The id is taken under its own lock (two creates of
+ * "Untitled report" at once get two ids). @param {Principal} p @param {string} name @param {string|null} folder @param {any} def
+ */
+export async function createReport(p, name, folder, def) {
+  const { newId, writeReport } = await import('./reports.js');
+  for (let i = 0; i < 8; i++) {
+    const nid = await newId(name);
+    const made = await withReport(nid, async () => {
+      if (await store().get('reports', nid)) return null; // taken meanwhile: the next id
+      await stableCheck(() => canCreateIn(p, folder, def)); // SQL or internal data in it: designers only
+      await recordNewReport(p, nid, folder, def);
+      await writeReport(nid, def);
+      return nid;
+    });
+    if (made) return made;
+  }
+  throw fail('Too many reports are being created with this name at once. Try again.', 503);
+}
 
 /**
  * A folder id from a request, or null for the top. Unknown ids are refused by the callers above.

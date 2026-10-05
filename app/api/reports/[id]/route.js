@@ -1,10 +1,10 @@
 // GET: the definition (view). PUT: save (edit; a new id is a new report, as POST /api/reports). DELETE: manage.
 // A report the caller may not view is "not found" whatever the method.
-import { readReport, writeReport, deleteReport, safeId, readDefinition } from '@/server/reports.js';
+import { writeReport, deleteReport, safeId, readDefinition } from '@/server/reports.js';
 import { validate } from '@/engine/schema/validate.js';
-import { principalOf, readReportFor, checkReport, canCreateIn, recordNewReport, forgetReport, stampDefinition } from '@/server/perms.js';
+import { principalOf, readReportFor, checkReport, canCreateIn, recordNewReport, forgetReport, stampDefinition, withReport, stableCheck } from '@/server/perms.js';
 import { audit } from '@/server/audit.js';
-import { withLock } from '@/server/storage/index.js';
+import { store } from '@/server/storage/index.js';
 import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
@@ -28,11 +28,11 @@ export async function PUT(req, { params }) {
     const def = await readDefinition(req);
     const v = validate(def);
     // the check and the write under one lock: a revoke cannot land between them
-    const isNew = await withLock('acl', async () => {
-      const fresh = !(await readReport(id));
+    // this report's lock (not every report's), and a check no permission change overtook (perms.stableCheck)
+    const isNew = await withReport(id, async () => {
+      const fresh = !(await store().get('reports', id));
       // a new id where the user may not create answers as a hidden report does (the id does not leak)
-      if (fresh) await canCreateIn(p, null).catch((e) => { throw e.status === 403 ? Object.assign(new Error('Report not found'), { status: 404 }) : e; });
-      else await checkReport(p, id, 'edit');
+      await stableCheck(() => (fresh ? canCreateIn(p, null).catch((e) => { throw e.status === 403 ? Object.assign(new Error('Report not found'), { status: 404 }) : e; }) : checkReport(p, id, 'edit')));
       // SQL or internal data in it: designers only, and recorded so that it runs (readRunnable)
       if (fresh) await recordNewReport(p, id, null, def); else await stampDefinition(p, id, def);
       // Save even with errors: the designer may hold work in progress.
@@ -48,8 +48,8 @@ export async function DELETE(req, { params }) {
   try {
     const id = safeId((await params).id);
     const p = await principalOf(req);
-    await withLock('acl', async () => {
-      await checkReport(p, id, 'manage');
+    await withReport(id, async () => {
+      await stableCheck(() => checkReport(p, id, 'manage'));
       await deleteReport(id);
       await forgetReport(id);
     });

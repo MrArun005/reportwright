@@ -1,12 +1,11 @@
 // Import a report: POST an ActiveReportsJS .rdlx-json file's JSON, or (as XML) an SSRS .rdl/.rdlc, JasperReports .jrxml or
 // BIRT .rptdesign file (at most 5 MB); ?name= sets the report name
 // (the home page sends the file name, so drill-through and subreport links between imported reports line up).
-import { readDefinition, writeReport, newId } from '@/server/reports.js';
+import { readDefinition } from '@/server/reports.js';
 import { importRdlx } from '@/importers/rdlx.js';
 import { importXmlReport } from '@/importers/index.js';
-import { principalOf, canCreateIn, recordNewReport, folderParam } from '@/server/perms.js';
+import { principalOf, createReport, folderParam } from '@/server/perms.js';
 import { audit } from '@/server/audit.js';
-import { withLock } from '@/server/storage/index.js';
 import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
@@ -36,13 +35,7 @@ export async function POST(req) {
     const folder = folderParam(sp.get('folder'));
     const { definition, warnings, stats, error } = xml ? importXmlReport(body, { name }) : importRdlx(body, { name });
     if (error) return Response.json({ error }, { status: 400 });
-    const id = await withLock('acl', async () => {
-      await canCreateIn(p, folder, definition); // an imported SQL data set: designers only
-      const nid = await newId(definition.name);
-      await recordNewReport(p, nid, folder, definition);
-      await writeReport(nid, definition);
-      return nid;
-    });
+    const id = await createReport(p, definition.name, folder, definition); // its own id, under its own lock
     await audit('report.import', { req, principal: p, report: id, detail: { folder, warnings: warnings.length } });
     return Response.json({ id, warnings, stats }, { status: 201 });
   } catch (e) { return errorResponse(e); }
