@@ -258,16 +258,35 @@ export async function oidcCallback(req) {
   return { identity: mapIdentity(claims.email, /** @type {any} */ (values), { issuer: d.issuer, subject: String(claims.sub) }), next: st.next || '/', idToken: tok.id_token };
 }
 
+/**
+ * The IdP's signing keys, fetched through the SSRF guard (idpFetch: the issuer's own origin may be private; any other
+ * host must be public; no redirects; 10 s), cached for an hour. fresh: fetch again unless fetched in the last 30 s.
+ * @param {string} uri @param {boolean} fresh
+ */
+async function jwksOf(uri, fresh) {
+  const { createLocalJWKSet } = await import('jose');
+  const c = g.__pwOidc.jwks.get(uri);
+  if (c && (Date.now() - c.at < (fresh ? 30000 : 3600000))) return c.set;
+  const res = await idpFetch(uri);
+  if (!res.ok) throw fail(`The identity provider's keys could not be read (HTTP ${res.status}).`, 502);
+  const text = await res.text();
+  if (text.length > 1024 * 1024) throw fail("The identity provider's key set is larger than 1 MB.", 502);
+  let doc; try { doc = JSON.parse(text); } catch { throw fail("The identity provider's key set is not JSON.", 502); }
+  const set = createLocalJWKSet(doc);
+  g.__pwOidc.jwks.set(uri, { at: Date.now(), set });
+  return set;
+}
+
 /** @param {string} idToken @param {any} d discovery @param {string} nonce */
 export async function verifyIdToken(idToken, d, nonce) {
-  const { jwtVerify, createRemoteJWKSet } = await import('jose');
-  let jwks = g.__pwOidc.jwks.get(d.jwks_uri);
-  if (!/^https:\/\//.test(d.jwks_uri) && process.env.PW_OIDC_ALLOW_HTTP !== '1') throw fail('The identity provider must use https (jwks_uri).', 500);
-  if (!jwks) { jwks = createRemoteJWKSet(new URL(d.jwks_uri), { timeoutDuration: 10000, cooldownDuration: 30000, cacheMaxAge: 3600000 }); g.__pwOidc.jwks.set(d.jwks_uri, jwks); }
+  const { jwtVerify } = await import('jose');
+  if (typeof d.jwks_uri !== 'string' || (!/^https:\/\//.test(d.jwks_uri) && process.env.PW_OIDC_ALLOW_HTTP !== '1')) throw fail('The identity provider must use https (jwks_uri).', 500);
   const algs = (Array.isArray(d.id_token_signing_alg_values_supported) ? d.id_token_signing_alg_values_supported : ['RS256']).filter(a => ASYMMETRIC.includes(a));
+  const verify = async (fresh) => jwtVerify(idToken, await jwksOf(d.jwks_uri, fresh), { issuer: d.issuer, audience: String(process.env.PW_OIDC_CLIENT_ID), algorithms: algs.length ? algs : ['RS256'], clockTolerance: 60, requiredClaims: ['exp', 'iat', 'sub'] });
   let payload;
   try {
-    ({ payload } = await jwtVerify(idToken, jwks, { issuer: d.issuer, audience: String(process.env.PW_OIDC_CLIENT_ID), algorithms: algs.length ? algs : ['RS256'], clockTolerance: 60, requiredClaims: ['exp', 'iat', 'sub'] }));
+    // a key the cached set does not have (the IdP rotated keys): fetch the set again once (at most every 30 s)
+    try { ({ payload } = await verify(false)); } catch (e) { if (/** @type {any} */ (e)?.code !== 'ERR_JWKS_NO_MATCHING_KEY') throw e; ({ payload } = await verify(true)); }
   } catch (e) { throw fail(`The ID token is not valid: ${/** @type {Error} */ (e).message}`, 401, 'id_token'); }
   if (!same(String(payload.nonce || ''), nonce)) throw fail('The ID token is not for this sign-in (nonce).', 401, 'nonce');
   if ((payload.azp !== undefined || (Array.isArray(payload.aud) && payload.aud.length > 1)) && payload.azp !== process.env.PW_OIDC_CLIENT_ID) throw fail('The ID token was issued to another client (azp).', 401, 'azp');
