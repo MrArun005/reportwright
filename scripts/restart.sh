@@ -19,7 +19,11 @@ PW_EMBED_ORIGINS=${PW_EMBED_ORIGINS:-http://localhost:4000} npm run build > /tmp
 # The api e2e test receives webhooks on 127.0.0.1, which the SSRF guard blocks unless listed. ai.mjs mocks the
 # Anthropic API on 127.0.0.1:4199.
 SECRET=${PW_PROXY_SECRET:-$(openssl rand -hex 24)}
-PW_AUTH=${PW_AUTH:-proxy} PW_PROXY_SECRET=$SECRET PW_BASE_URL=${PW_BASE_URL:-http://localhost:$PORT} PW_API_KEYS=${PW_API_KEYS:-test-key} \
+# two-factor secrets are sealed with PW_DATA_KEY (production never falls back to the session secret); kept per checkout
+# so enrolments survive a restart
+DATA_KEY_FILE=data/.e2e-data-key
+[ -s "$DATA_KEY_FILE" ] || { mkdir -p data && openssl rand -hex 32 > "$DATA_KEY_FILE" && chmod 600 "$DATA_KEY_FILE"; }
+PW_AUTH=${PW_AUTH:-proxy} PW_PROXY_SECRET=$SECRET PW_DATA_KEY=${PW_DATA_KEY:-$(cat "$DATA_KEY_FILE")} PW_BASE_URL=${PW_BASE_URL:-http://localhost:$PORT} PW_API_KEYS=${PW_API_KEYS:-test-key} \
   ANTHROPIC_API_KEY=${E2E_ANTHROPIC_API_KEY:-test} ANTHROPIC_BASE_URL=${E2E_ANTHROPIC_BASE_URL:-http://127.0.0.1:4199} PW_WEBHOOK_SECRET=${PW_WEBHOOK_SECRET:-testsecret} PW_INTERNAL_HOSTS=${PW_INTERNAL_HOSTS:-localhost,127.0.0.1} PW_EMBED_ORIGINS=${PW_EMBED_ORIGINS:-http://localhost:4000} \
   nohup npx next start -p "$INNER" > /tmp/next.log 2>&1 < /dev/null &
 PORT=$PORT INNER=$INNER PW_PROXY_SECRET=$SECRET nohup node scripts/e2e-proxy.mjs > /tmp/e2e-proxy.log 2>&1 < /dev/null &
