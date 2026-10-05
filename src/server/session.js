@@ -7,7 +7,7 @@
 // identity provider owns the factors) or the account has no password.
 // Between the password and the code, the browser holds pw_mfa (5 minutes, its own MAC purpose: never a session).
 import crypto from 'node:crypto';
-import { cachedUser } from './users.js';
+import { cachedUser, getUser } from './users.js';
 import { getSettings } from './settings.js';
 import { devMode } from './config.js';
 
@@ -116,7 +116,8 @@ export function cookie(req, name) {
 /**
  * The signed-in user, read again from storage: { email, role, groups }, or null. Null also when accounts are off.
  * A server-to-itself pass (internalCookie) gives { role: 'viewer', internal: true } for its one GET only.
- * @param {Request} req @returns {Promise<{ email: string, role: 'viewer'|'designer'|'admin', groups: string[], internal?: boolean } | null>}
+ * sv: the session's version, so a write can check, just before it commits, that this session still stands (perms.asNow).
+ * @param {Request} req @returns {Promise<{ email: string, role: 'viewer'|'designer'|'admin', groups: string[], sv?: number, internal?: boolean } | null>}
  */
 export async function currentUser(req) {
   if (!accountsOn()) return null;
@@ -126,11 +127,16 @@ export async function currentUser(req) {
     const u = new URL(req.url);
     return (req.method === 'GET' || req.method === 'HEAD') && p.path === u.pathname + u.search ? { email: '', role: 'viewer', groups: [], internal: true } : null;
   }
-  const user = typeof p.e === 'string' ? await cachedUser(p.e) : null;
+  // a request that changes something reads the user from storage (never the cache): a revoke on any server counts
+  // at once. Reads use the cache (at most 5 s, ~1 s after a revoke elsewhere: users.js); a cached record older than
+  // the cookie (a sign-out and a new sign-in on another server) is read again rather than refused
+  const write = !['GET', 'HEAD', 'OPTIONS'].includes(String(req.method || 'GET').toUpperCase());
+  let user = typeof p.e !== 'string' ? null : write ? await getUser(p.e) : await cachedUser(p.e);
+  if (user && !write && (user.sessionVersion || 0) !== p.v) user = await getUser(p.e);
   if (!user || user.disabled || (user.sessionVersion || 0) !== p.v || !(user.role in ROLE_RANK)) return null;
   // a role an admin made require two-factor sign-in: a password session without it ends (sign in again, enrol)
   if (!p.m && !p.s && user.passwordHash && (await getSettings()).require2fa.includes(user.role)) return null;
-  return { email: user.email, role: user.role, groups: user.groups || [] };
+  return { email: user.email, role: user.role, groups: user.groups || [], sv: p.v };
 }
 
 /** The pw_session payload of a request (signature and expiry checked; the user is not read), or null. @param {Request} req */

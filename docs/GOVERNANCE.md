@@ -20,6 +20,21 @@ is an environment variable unless it says "Settings page" (`/admin/settings`, ad
   secret makes enrolled authenticators unreadable: reset the users and they enrol again.
 - `PW_TOTP_ISSUER` names the account in the app (default Pagewright).
 
+## Revocation: how fast a signed-out or changed account stops working
+
+- **Writes** (every request that is not GET/HEAD: saves, deletes, grants, users, settings, schedules, batches, devices)
+  read the user from storage, never from a cache. Report, folder and grant writes check again inside the write's own
+  lock, just before the write (`perms.asNow`: the session's version must still be current), and user and settings
+  changes check the acting admin inside the users or settings lock (`users.stillAdmin`). A sign-out everywhere,
+  password change or disabling that lands while a write is in flight refuses that write.
+- **Reads** use a per-process cache of user records for at most 5 s. A revoke (a new session or device version,
+  disabling, a role or group change, a delete) also writes the shared `usergen` stamp, which every server checks at
+  most once a second, so on other servers reads stop within about **1 s** (at most 5 s if the stamp read fails).
+  Known residual: a GET already past its check when a revoke lands finishes (it returns what the user could see a
+  moment before).
+- A cached record older than the cookie (a sign-out and a new sign-in that happened on another server) is read again
+  rather than refused, so a fresh session is never bounced with a 401 by a stale cache.
+
 ## Sign-in limits
 
 One function checks every secret someone presents: `checkCredential()` in `src/server/limits.js` (passwords, TOTP,

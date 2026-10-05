@@ -31,7 +31,7 @@ const RANK = { none: 0, view: 1, edit: 2, manage: 3 };
 /** @typedef {'none'|'view'|'edit'|'manage'} Level */
 /**
  * @typedef {{ kind: 'open' } | { kind: 'service', key?: string } | { kind: 'nobody' } | { kind: 'anon' } | { kind: 'public' } |
- *   { kind: 'user', email: string, role: 'viewer'|'designer'|'admin', groups: string[], viaKey?: string }} Principal
+ *   { kind: 'user', email: string, role: 'viewer'|'designer'|'admin', groups: string[], viaKey?: string, sv?: number }} Principal
  * open: accounts are off and the server trusts whoever reaches it (openTrusted: next dev, PW_BASIC_AUTH, PW_AUTH=proxy);
  * nothing is enforced. Never in production without one of those: there it is nobody (vet).
  * public: accounts are off, production, nobody signs in, PW_PUBLIC_READONLY=1: views every report, changes nothing.
@@ -58,7 +58,7 @@ export async function principalOf(req) {
   const u = await currentUser(req);
   if (!u) return { kind: 'anon' };
   if (u.internal) return NOBODY; // a report must never read another report's definition through a data source URL
-  return { kind: 'user', email: u.email, role: u.role, groups: u.groups || [] };
+  return { kind: 'user', email: u.email, role: u.role, groups: u.groups || [], sv: u.sv };
 }
 
 /** For server pages: the principal of the request whose Cookie header this is. @param {string} cookie */
@@ -104,6 +104,12 @@ export function vet(p) {
 async function asNow(p) {
   p = vet(p);
   if (p.kind !== 'user') return p;
+  // a session's principal (sv: its version) must still be that session: a sign-out everywhere, password change or
+  // disabling that landed while this request was in flight refuses its write here, inside the write's lock
+  if (/** @type {any} */ (p).sv !== undefined) {
+    const u = await getUser(p.email);
+    if (!u || u.disabled || (u.sessionVersion || 0) !== /** @type {any} */ (p).sv) return NOBODY;
+  }
   const q = await userPrincipal(p.email);
   return q.kind === 'user' && p.viaKey ? { ...q, viaKey: p.viaKey } : q;
 }

@@ -56,12 +56,14 @@ function check(patch) {
   return out;
 }
 
-/** Change settings (an admin, from the Settings page). @param {any} patch @param {{ by?: string }} [o] */
+/** Change settings (an admin, from the Settings page). @param {any} patch @param {{ by?: string | { email: string, sv?: number } }} [o] */
 export async function updateSettings(patch, { by } = {}) {
   const changes = check(patch || {});
   return withLock('settings', async () => {
+    if (by && typeof by === 'object') await (await import('./users.js')).stillAdmin(by); // still that admin's session, now
     const cur = await getSettings({ fresh: true });
-    const next = { ...cur, ...changes, updatedAt: new Date().toISOString(), ...(by ? { updatedBy: by } : {}) };
+    const who = typeof by === 'object' ? by?.email : by;
+    const next = { ...cur, ...changes, updatedAt: new Date().toISOString(), ...(who ? { updatedBy: who } : {}) };
     await store().put('settings', 'server', JSON.stringify({ ...next, id: 'server' }));
     g.__pwSettings = { at: Date.now(), value: next };
     return next;

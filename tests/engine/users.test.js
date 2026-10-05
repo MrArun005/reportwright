@@ -122,7 +122,7 @@ describe('sign-in and the session cookie', () => {
   });
   it('reads the user back from the cookie: me and currentUser', async () => {
     const c = await as('designer');
-    expect(await currentUser(rq('/', { cookie: c }))).toEqual({ email: 'designer@x.io', role: 'designer', groups: [] });
+    expect(await currentUser(rq('/', { cookie: c }))).toMatchObject({ email: 'designer@x.io', role: 'designer', groups: [] });
     expect(await (await me(rq('/api/auth/me', { cookie: c }))).json()).toEqual({ email: 'designer@x.io', role: 'designer' });
     expect((await me(rq('/api/auth/me'))).status).toBe(401);
   });
@@ -146,7 +146,7 @@ describe('sign-in and the session cookie', () => {
     const admin = await as('admin');
     const c = await as('designer', 'd@x.io');
     await updateUser('d@x.io', { role: 'viewer' });
-    expect(await currentUser(rq('/', { cookie: c }))).toEqual({ email: 'd@x.io', role: 'viewer', groups: [] });
+    expect(await currentUser(rq('/', { cookie: c }))).toMatchObject({ email: 'd@x.io', role: 'viewer', groups: [] });
     expect((await guard(rq('/designer/sales', { cookie: c }))).status).toBe(403);
 
     await updateUser('d@x.io', { disabled: true });
@@ -332,7 +332,7 @@ describe('/api/users', () => {
     const res = await userPatch(rq('/api/users/admin@x.io', { method: 'PATCH', cookie: a, body: { password: 'my new admin password' } }), params('admin@x.io'));
     expect(res.status).toBe(200);
     expect(await currentUser(rq('/', { cookie: a }))).toBe(null);
-    expect(await currentUser(rq('/', { cookie: cookieOf(res) }))).toEqual({ email: 'admin@x.io', role: 'admin', groups: [] });
+    expect(await currentUser(rq('/', { cookie: cookieOf(res) }))).toMatchObject({ email: 'admin@x.io', role: 'admin', groups: [] });
   });
 });
 

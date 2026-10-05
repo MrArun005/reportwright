@@ -87,13 +87,31 @@ export async function getUser(email) {
   return t ? JSON.parse(t) : null;
 }
 
-// Sessions re-read the user on every request; a short cache keeps that cheap. Writes here clear it, so in
-// this process a change counts at once; other servers see it within CACHE_MS.
-const CACHE_MS = 10000;
+// Sessions re-read the user on every request; a short cache keeps reads cheap (writes read storage: session.js).
+// Writes here clear it, so in this process a change counts at once. A revoke (a new session or device version,
+// disabling, a role or group change, a delete) also writes the shared "usergen" stamp, which every server checks at
+// most once a second: other servers drop their cached users within about 1 s; the cache never serves past CACHE_MS.
+const CACHE_MS = 5000, GEN_MS = 1000;
 /** @type {Map<string, { at: number, user: any }>} */
 const cache = (/** @type {any} */ (globalThis).__pwUserCache ||= new Map());
+const gen = (/** @type {any} */ (globalThis).__pwUserGen ||= { at: 0, val: null });
+/** Drop the cached users when another server revoked something (the usergen stamp moved). */
+async function checkGen() {
+  if (Date.now() - gen.at < GEN_MS) return;
+  gen.at = Date.now();
+  const v = await store().get('settings', 'usergen').catch(() => gen.val);
+  if (v !== gen.val) { gen.val = v; cache.clear(); }
+}
+/** Tell every server that cached users are stale (after a revoke). */
+async function bumpGen() {
+  const v = JSON.stringify({ id: 'usergen', gen: `${Date.now()}-${crypto.randomBytes(6).toString('hex')}` });
+  await store().put('settings', 'usergen', v);
+  gen.val = v; gen.at = Date.now();
+  cache.clear();
+}
 /** @param {string} email */
 export async function cachedUser(email) {
+  await checkGen();
   const hit = cache.get(email);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.user;
   const user = await getUser(email);
@@ -103,8 +121,11 @@ export async function cachedUser(email) {
 }
 
 async function save(u) {
+  const prev = await getUser(u.email);
   cache.delete(u.email);
   await store().put('users', u.email, JSON.stringify({ ...u, rev: crypto.randomBytes(8).toString('hex') })); // a new rev on every change (perms.accessStamp)
+  const key = (x) => x && JSON.stringify([x.sessionVersion || 0, x.deviceEpoch || 0, !!x.disabled, x.role, x.groups || []]);
+  if (prev && key(prev) !== key(u)) await bumpGen(); // a revoke: every server's cache drops it
 }
 
 export async function listUsers() { return (await all()).map(publicUser).sort((a, b) => a.email.localeCompare(b.email)); }
@@ -122,10 +143,16 @@ export async function createUser({ email, role, password, groups = [], sso }, { 
   return withLock('users', async () => { await stillAdmin(by); return createNow(e, role, g, passwordHash, sso); });
 }
 /** by (an admin's email, from a route): that admin as stored now, inside the lock, not a session cache. */
-async function stillAdmin(by) {
+/**
+ * The acting admin, re-read from storage inside the users lock, just before the change: still an admin, not
+ * disabled, and (given the session's version, sv) still signed in with that session.
+ * @param {string | { email: string, sv?: number } | undefined} by
+ */
+export async function stillAdmin(by) {
   if (by === undefined) return;
-  const a = await getUser(by);
-  if (!a || a.disabled || a.role !== 'admin') throw fail('Only a signed-in admin can do this.', 403);
+  const email = typeof by === 'string' ? by : by.email;
+  const a = await getUser(email);
+  if (!a || a.disabled || a.role !== 'admin' || (typeof by === 'object' && by.sv !== undefined && (a.sessionVersion || 0) !== by.sv)) throw fail('Only a signed-in admin can do this.', 403);
 }
 async function createNow(e, role, g, passwordHash, sso) {
   if (await getUser(e)) throw fail(`There is already a user ${e}.`, 409);
@@ -181,7 +208,9 @@ async function deleteUserNow(email) {
   if (!u) return false;
   await keepAnAdmin(u, null);
   cache.delete(u.email);
-  return store().remove('users', u.email);
+  const gone = await store().remove('users', u.email);
+  await bumpGen();
+  return gone;
 }
 
 /* ---------------- known devices (the sign-in limits' device cookies: session.js) ---------------- */

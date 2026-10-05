@@ -16,7 +16,7 @@ export async function POST(req) {
   if (res) return res;
   try {
     const body = await req.json().catch(() => ({}));
-    const u = await createUser({ email: body.email, role: body.role, password: body.password, groups: body.groups ?? [] }, { by: me.email });
+    const u = await createUser({ email: body.email, role: body.role, password: body.password, groups: body.groups ?? [] }, { by: me });
     await audit('user.create', { req, actor: `user:${me.email}`, detail: { user: u.email, role: u.role, groups: u.groups } });
     return Response.json(u, { status: 201 });
   } catch (e) { return errorResponse(e); }

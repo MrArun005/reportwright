@@ -20,7 +20,7 @@ export async function PATCH(req) {
   try {
     const body = await req.json().catch(() => ({}));
     const before = await getSettings({ fresh: true });
-    const after = await updateSettings(body, { by: me.email });
+    const after = await updateSettings(body, { by: me });
     const changed = Object.fromEntries(['require2fa', 'snapshotTtl', 'snapshotMaxMb'].filter(k => JSON.stringify(before[k]) !== JSON.stringify(after[k])).map(k => [k, after[k]]));
     await audit('settings.update', { req, actor: `user:${me.email}`, detail: changed });
     return Response.json({ settings: after, status: await serverStatus() });
