@@ -195,7 +195,7 @@ export async function runSql({ connection, query, procedure, args }, params = {}
   }
   let rows;
   try {
-    rows = await DRIVERS[dialect](url, text, values, { ...driverContext, code, allowed: procsOf(connection), procedure: procedure ? { name: text, names } : null });
+    rows = await DRIVERS[dialect](url, text, values, { ...driverContext, code, catalog, allowed: procsOf(connection), procedure: procedure ? { name: text, names } : null });
   } catch (e) {
     if (TIMEOUT_CODES.has(e.code)) throw fail(`The query ran longer than ${limits.ms / 1000} s.`, 504);
     // the report author sees this message: never the connection URL or a part of it (the password)
@@ -368,7 +368,7 @@ function count() {
 /**
  * What a driver in ./sql/ gets besides the text: the shared pools, the caps, and the helpers that enforce them.
  * @typedef {{ pools: Map<string, any>, limits: typeof limits, fail: typeof fail, clock: typeof clock, count: typeof count,
- *   driver: typeof driver, poolMax: typeof poolMax, code: string, allowed: string[], procedure: null | { name: string, names: string[] } }} DriverContext
+ *   driver: typeof driver, poolMax: typeof poolMax, code: string, catalog?: boolean, allowed: string[], procedure: null | { name: string, names: string[] } }} DriverContext
  */
 
 /** @type {Map<string, any>} one pool per connection URL, kept across hot reloads */

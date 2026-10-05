@@ -83,3 +83,41 @@ describe('a query cannot list or attach database files', () => {
     expect(String(e.message)).not.toContain(dir);
   });
 });
+
+// The text check above is defence in depth; SQLite's own parser decides (EXPLAIN in the child process). These go to
+// the driver directly, past the text check, so every spelling the text check might miss is still refused.
+describe("SQLite's own plan decides (the driver, past the text check)", () => {
+  const ctx = async () => { const sql = await import('../../src/server/sql.js'); return { limits: sql.limits, fail: (m, s) => Object.assign(new Error(m), { status: s }) }; };
+  const drive = async (q, values = []) => { const { sqlite } = await import('../../src/server/sql/sqlite.js'); return sqlite(`sqlite:${dataFile}`, q, values, /** @type {any} */ (await ctx())); };
+  it('every spelling of pragma_database_list, dbstat and friends is refused; attach is refused', async () => {
+    for (const q of [
+      'select file from pragma_database_list',
+      'select file from "pragma_database_list"',
+      'select file from [pragma_database_list]',
+      'select file from `PRAGMA_DATABASE_LIST`',
+      'select file from main.pragma_database_list',
+      'select file from pragma_database_list/**/',
+      'select * from (select * from pragma_database_list) x',
+      "select * from pragma_table_info('t')",
+      'select name from pragma_function_list',
+      'select * from pragma_compile_options',
+      "attach database '/tmp/r3b.db' as x",
+      'select sqlite_attach(1, 2, 3)',
+      "select load_extension('x')",
+    ]) {
+      const r = await drive(q).then(rows => ({ rows }), e => e);
+      expect(r.rows, q).toBeUndefined();
+      expect(String(r.message), q).not.toContain(dir);
+    }
+  });
+  it('writes are refused by the plan as well as by the read-only open', async () => {
+    for (const q of ['insert into t values (2)', 'delete from t', 'create table x (a)', 'vacuum', "pragma journal_mode = delete", 'pragma query_only = off'])
+      expect((await drive(q).then(() => null, e => e))?.status, q).toBe(400);
+  });
+  it('plain reads, joins, CTEs, json_each and json_tree still work', async () => {
+    expect((await drive('select n from t where n = ?', [1])).length).toBe(1);
+    expect((await drive("with recursive c(x) as (select 1 union all select x + 1 from c where x < 3) select x from c join t on 1 = 1")).length).toBe(3);
+    expect((await drive("select value from json_each('[1,2,3]')")).length).toBe(3);
+    expect((await drive("select key from json_tree('{\"a\":1}')")).length).toBe(2);
+  });
+});

@@ -6,7 +6,10 @@
 //   - the deadline (limits.ms) kills the process: the query stops, nothing else waited for it;
 //   - a crash (V8's fatal error, the heap limit) kills only that process: the query fails with a 400;
 //   - its memory is watched while it runs (PW_SQLITE_MEMORY_MB, default 1024, also its V8 heap limit): past it, killed;
-//   - rows and bytes are counted as they are read (limits.rows, limits.bytes), so the read stops at either cap.
+//   - rows and bytes are counted as they are read (limits.rows, limits.bytes), so the read stops at either cap;
+//   - the file opens read-only with query_only on and trusted_schema off, and SQLite's own plan (EXPLAIN) is checked
+//     first: it may only read the main database (no attach, no pragma or page tables, no writes). Node 22's
+//     node:sqlite has no authorizer callback (setAuthorizer); the plan check is the same decision made by the parser.
 // Node 22's node:sqlite has no sqlite3_limit(): SQL_LENGTH is bounded before the query is sent (MAX_QUERY, 100k
 // characters), VARIABLE_NUMBER by SQLite's own 32766, LENGTH and the rest by the process boundary above.
 // PW_SQLITE_PROCESSES (default 2) queries run at once per server thread; more wait their turn within their own deadline.
@@ -24,10 +27,41 @@ const CHILD = `
 const { DatabaseSync } = require('node:sqlite');
 const ppid = process.ppid;
 const size = (v) => typeof v === 'string' ? Math.max(Buffer.byteLength(v), v.length * 2) : v instanceof Uint8Array ? v.length : 8;
+// SQLite's own parser decides what the statement does (as SHOWPLAN does for SQL Server): its program (EXPLAIN) may
+// only read the main database. Refused: any write or schema opcode, a write transaction, an attached database,
+// attach/detach/load_extension calls, and every virtual table but json_each/json_tree (pragma_* tables such as
+// pragma_database_list, dbstat, sqlite_dbpage, FTS: they read files, pages or server state). A virtual table is known
+// by its per-connection object, learnt here from json_each('[]') itself, whatever the query calls it.
+// (Insert/NewRowid/Delete also fill the query's own temporary tables: a real table needs OpenWrite first)
+const WRITE_OPS = new Set(['OpenWrite', 'VUpdate', 'VCreate', 'VDestroy',
+  'VBegin', 'Vacuum', 'IncrVacuum', 'ParseSchema', 'SqlExec', 'Destroy', 'Clear', 'CreateBtree', 'JournalMode', 'DropTable',
+  'DropIndex', 'DropTrigger', 'LoadAnalysis', 'Expire', 'Pagecount', 'MaxPgcnt', 'SetCookie', 'ReadCookie', 'VRename', 'FkCheck', 'IntegrityCk']);
+const FN_DENY = /^(sqlite_attach|sqlite_detach|load_extension|readfile|writefile|edit|fts3_tokenizer|sqlite_dbpage)\\b/i;
+// catalog: the server's own schema reads (sql/schema.js, never a caller's text) also read pragma_table_info and
+// pragma_foreign_key_list.
+function refused(db, text, values, catalog) {
+  const plan = (q, v = []) => db.prepare('EXPLAIN ' + q).all(...v);
+  const vt = ['json_each', 'json_tree', ...(catalog ? ['pragma_table_info', 'pragma_foreign_key_list'] : [])];
+  const okVtab = new Set(vt.map(f => (plan("SELECT * FROM " + f + "('[]')").find(r => r.opcode === 'VOpen') || {}).p4));
+  for (const r of plan(text, values)) {
+    const op = r.opcode, p4 = r.p4 == null ? '' : String(r.p4);
+    if (WRITE_OPS.has(op)) return 'A SQL source can only read: the query would change or inspect the database file (' + op + ').';
+    if (op === 'Transaction' && (r.p2 !== 0 || r.p1 > 1)) return "A SQL source can only read the connection's own database.";
+    if ((op === 'OpenRead' || op === 'ReopenIdx') && r.p3 > 1) return "A SQL source can only read the connection's own database.";
+    if (op === 'VOpen' && !okVtab.has(p4)) return 'A SQL source cannot read SQLite pragmas, pages, attached databases or other virtual tables.';
+    if ((op === 'Function' || op === 'PureFunc' || op === 'AggStep' || op === 'AggFinal') && FN_DENY.test(p4)) return 'A SQL source cannot attach databases or load files.';
+  }
+  return '';
+}
 process.on('message', (m) => {
   let db;
   try {
     db = new DatabaseSync(m.file, { readOnly: true });
+    // query_only: no write even through a path readOnly misses; trusted_schema off: a view or trigger in the file
+    // cannot call functions with side effects
+    db.exec('PRAGMA query_only = ON; PRAGMA trusted_schema = OFF;');
+    const bad = refused(db, m.text, m.values, m.catalog);
+    if (bad) return process.send({ err: bad });
     const st = db.prepare(m.text);
     st.setReadBigInts(true);
     const rows = [];
@@ -137,7 +171,7 @@ export async function sqlite(url, text, values, ctx) {
     cp.on('message', onMsg);
     cp.once('exit', onExit);
     try {
-      cp.send({ file: url.slice('sqlite:'.length), text, values, rows: Number(limits.rows), bytes: Number(limits.bytes), until: deadline + 1000 });
+      cp.send({ file: url.slice('sqlite:'.length), text, values, catalog: !!ctx.catalog, rows: Number(limits.rows), bytes: Number(limits.bytes), until: deadline + 1000 });
     } catch { onExit(); }
   });
 }
