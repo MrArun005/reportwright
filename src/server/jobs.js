@@ -26,7 +26,7 @@ import { blobs, removePrefix } from './blobs.js';
 import { mailOn, checkRecipients, oneLine, sendMail, maxAttachmentBytes } from './mail.js';
 import { audit } from './audit.js';
 import { throughSnapshot } from './snapshots.js';
-import { principalId, principalFromId, defaultPrincipal, vet, canDesign } from './perms.js';
+import { principalId, principalFromId, defaultPrincipal, vet, canDesign, checkParameterValues } from './perms.js';
 import { logWarn } from './errors.js';
 
 const DATA = path.join(process.cwd(), 'data');
@@ -142,6 +142,7 @@ export async function createBatch(spec, req, principal = defaultPrincipal(), { s
   if (!items.length) throw Object.assign(new Error('The batch has no items'), { status: 400 });
   if (!canDesign(principal) && items.some(i => i?.data)) throw Object.assign(new Error('Only a designer can send data for a render. Render the report with its own data.'), { status: 403 });
   if (items.length > MAX_ITEMS) throw Object.assign(new Error(`A batch can hold at most ${MAX_ITEMS} items`), { status: 400 });
+  for (const it of items) checkParameterValues(def, it?.parameters, principal); // fixed lists and hidden parameters
   const format = spec.format || 'pdf';
   const job = {
     id: rid(), status: 'queued', createdAt: new Date().toISOString(), template: typeof spec.template === 'string' ? spec.template : def.name,

@@ -67,3 +67,24 @@ describe('PW_MODE=dev on a production build (REVIEW-SECURITY-2 L3, PoC p6)', () 
     expect(() => reportConfig()).toThrow(/will not start.*PW_MODE=dev/);
   });
 });
+
+describe('a parameter\'s fixed list of values holds on the server (REVIEW-SECURITY-2 L7)', () => {
+  it('a viewer cannot send a value off the list; a designer can; lists from data and blanks pass', async () => {
+    const { checkParameterValues } = await import('../../src/server/perms.js');
+    const def = { parameters: [
+      { name: 'region', type: 'string', options: [{ value: '', label: 'All' }, { value: 'North' }, { value: 'South' }] },
+      { name: 'regions', type: 'string', multi: true, options: [{ value: 'North' }, { value: 'South' }] },
+      { name: 'year', type: 'number', options: [{ value: 2025 }, { value: 2026 }] },
+      { name: 'city', type: 'string', options: [{ value: 'Pune' }], optionsFrom: { dataSet: 'Cities' } },
+    ] };
+    const viewer = { kind: 'user', email: 'v@x.io', role: 'viewer', groups: [] }, designer = { ...viewer, role: 'designer' };
+    expect(() => checkParameterValues(def, { region: 'North', regions: ['South'], year: '2026', city: 'Anywhere' }, viewer)).not.toThrow();
+    expect(() => checkParameterValues(def, { region: '' }, viewer)).not.toThrow();
+    expect(() => checkParameterValues(def, { region: 'East' }, viewer)).toThrow(/"East" is not one of the values the parameter "region"/);
+    expect(() => checkParameterValues(def, { regions: ['North', 'East'] }, viewer)).toThrow(/regions/);
+    expect(() => checkParameterValues(def, { regions: 'North,East' }, viewer)).toThrow(/regions/);
+    expect(() => checkParameterValues(def, { year: 1999 }, viewer)).toThrow(/year/);
+    expect(() => checkParameterValues(def, { region: 'East' }, designer)).not.toThrow();
+    try { checkParameterValues(def, { region: 'East' }, viewer); } catch (e) { expect(e.status).toBe(400); }
+  });
+});

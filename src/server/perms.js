@@ -253,6 +253,27 @@ export async function migratePermissions() {
   });
 }
 
+/**
+ * Parameter values a caller may send, checked on the server (REVIEW-SECURITY-2 L7): for whoever cannot design, a
+ * parameter with a fixed list of options (`options`, no `optionsFrom`) takes only values on that list. Designers and
+ * admins may send anything (they could edit the report). Hidden parameters are not checked: drill-through sets them.
+ * Not a row-level control: a report that must keep a viewer to "their" rows filters on who they are (docs/API.md).
+ * Throws 400 naming the parameter. @param {any} def @param {Record<string, any>|null|undefined} given @param {Principal} p
+ */
+export function checkParameterValues(def, given, p) {
+  if (!given || typeof given !== 'object' || canDesign(p)) return;
+  for (const prm of def?.parameters || []) {
+    if (!Object.hasOwn(given, prm.name)) continue;
+    const v = given[prm.name];
+    const blank = v == null || v === '' || (Array.isArray(v) && !v.length);
+    if (!Array.isArray(prm.options) || prm.optionsFrom || blank) continue;
+    const ok = new Set(prm.options.map(o => String(o && typeof o === 'object' ? o.value : o)));
+    const values = Array.isArray(v) ? v : prm.multi && typeof v === 'string' ? v.split(',').map(x => x.trim()) : [v];
+    const bad = values.find(x => !ok.has(String(x instanceof Date ? x.toISOString().slice(0, 10) : x)));
+    if (bad !== undefined) throw fail(`"${String(bad).slice(0, 60)}" is not one of the values the parameter "${prm.name}" offers.`, 400);
+  }
+}
+
 /** Whether a principal may add a report or a folder at the top: edit there, or a designer named in the root's "create". */
 function mayAddAtTop(s, p) {
   if (atLeast(folderLevel(s, p, null), 'edit')) return true;

@@ -1,7 +1,7 @@
 // GET /api/reports/<id>/pdf?param=value[&format=xlsx|html|csv] — server-side render for links and quick checks (view access).
 import { safeId } from '@/server/reports.js';
 import { baseUrl, checkTimeZone } from '@/server/renderer.js';
-import { principalOf, readRunnable } from '@/server/perms.js';
+import { principalOf, readRunnable, checkParameterValues } from '@/server/perms.js';
 import { renderInPool, admit } from '@/server/pool.js';
 import { busyHeaders } from '@/server/auth.js';
 import { audit } from '@/server/audit.js';
@@ -23,6 +23,7 @@ export async function GET(req, { params }) {
     const format = url.searchParams.get('format') || 'pdf';
     // read once (view access, saved server-side data as a designer stored it), then rendered in a render worker
     const def = await readRunnable(principal, safeId(id));
+    checkParameterValues(def, parameters, principal); // fixed lists and hidden parameters hold on the server too
     const opt = { parameters, format, baseUrl: baseUrl(req), pdfa: url.searchParams.get('pdfa') === '1', ua: url.searchParams.get('ua') === '1', timeZone: checkTimeZone(url.searchParams.get('timeZone')), principal }; // ?timeZone=: the viewer's zone
     const r = await throughSnapshot({ def, opt, principal }, () => renderInPool({ ref: safeId(id), def, opt }, { signal: req.signal }));
     await audit('report.render', { req, principal, report: id, format, params: parameters, detail: { pages: r.pages, via: 'server link', ...(r.snapshot !== 'off' ? { snapshot: r.snapshot } : {}) } });

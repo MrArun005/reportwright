@@ -5,7 +5,7 @@
 import { apiPrincipal, fail } from '@/server/auth.js';
 import { baseUrl, loadTemplate, checkTimeZone } from '@/server/renderer.js';
 import { renderInPool, admit } from '@/server/pool.js';
-import { canDesign } from '@/server/perms.js';
+import { canDesign, checkParameterValues } from '@/server/perms.js';
 import { pdfEncryptOptions } from '@/exporters/encrypt.js';
 import { audit } from '@/server/audit.js';
 import { throughSnapshot } from '@/server/snapshots.js';
@@ -30,6 +30,7 @@ export async function POST(req) {
     // read and checked once, here, as this principal (view access; server-side data as a designer stored it); the
     // worker renders it (src/server/pool.js) and loads its subreports as this principal
     const def = await loadTemplate(body.template, principal);
+    checkParameterValues(def, body.parameters, principal); // fixed lists and hidden parameters hold on the server too
     const opt = { encrypt, timeZone: checkTimeZone(body.timeZone), parameters: body.parameters, data: body.data, format: body.format, baseUrl: baseUrl(req), state: body.state, pdfa: !!body.pdfa, ua: !!body.ua, formulas: body.formulas, static: !!body.static, sign: !!body.sign, principal };
     // a saved template may come from the snapshot cache (src/server/snapshots.js: off unless an admin sets a TTL)
     const r = await throughSnapshot({ def: typeof body.template === 'string' ? def : null, opt, principal }, () => renderInPool({ ref: typeof body.template === 'string' ? body.template : undefined, def, opt }, { signal: req.signal }));

@@ -6,7 +6,7 @@
 // "@name" in the query binds the report parameter "name" through the driver; values never become SQL text.
 // Every query runs read-only, as one statement, for at most limits.ms and limits.rows rows.
 // Use a database user that can only read: the read-only transaction is a second guard, not the first.
-import { readRunnable, defaultPrincipal } from './perms.js';
+import { readRunnable, defaultPrincipal, checkParameterValues } from './perms.js';
 import { resolveParameters } from '@/engine/index.js';
 import { isoDate } from '@/engine/expr/format.js';
 import crypto from 'node:crypto';
@@ -342,6 +342,7 @@ export async function testConnection(name) {
 export async function runSavedSql(reportId, sourceName, given = {}, principal = defaultPrincipal()) {
   let def;
   try { def = await readRunnable(principal, reportId); } catch (e) { throw e.status === 404 ? fail(`Report "${reportId}" not found.`, 404) : e; }
+  checkParameterValues(def, given, principal);
   const src = (def.dataSources || []).find(s => s.name === sourceName && s.type === 'sql');
   if (!src) throw fail(`The report "${reportId}" has no SQL source "${sourceName}".`, 404);
   return runSql(src, resolveParameters(def, given, { lenient: true }));
