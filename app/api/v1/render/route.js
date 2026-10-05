@@ -10,6 +10,8 @@ import { pdfEncryptOptions } from '@/exporters/encrypt.js';
 import { audit } from '@/server/audit.js';
 import { throughSnapshot } from '@/server/snapshots.js';
 
+import { outputHeaders } from '@/server/headers.js';
+
 export const runtime = 'nodejs';
 
 /** Only the flags that are on: a render's audit event stays small (it is written for every render). */
@@ -36,6 +38,7 @@ export async function POST(req) {
     return new Response(r.bytes, { // the worker's buffer, moved here without a copy
       headers: {
         'content-type': r.contentType,
+        ...outputHeaders(r.contentType),
         'content-length': String(r.bytes.byteLength),
         'content-disposition': `${body.format === 'json' ? 'inline' : 'attachment'}; filename="${name}.${r.ext}"`,
         'x-pagewright-pages': String(r.pages),

@@ -7,6 +7,8 @@ import { jobFile, linkOk, linkJob } from '@/server/jobs.js';
 import { audit } from '@/server/audit.js';
 import { checkCredential } from '@/server/limits.js';
 
+import { outputHeaders } from '@/server/headers.js';
+
 export const runtime = 'nodejs';
 
 export async function GET(req, { params }) {
@@ -27,5 +29,5 @@ export async function GET(req, { params }) {
   const f = await jobFile(id, principal);
   if (!f) return Response.json({ error: 'Nothing to download yet' }, { status: 404 });
   await audit('batch.download', { req, ...(via === 'api' ? { principal } : { actor: 'link' }), detail: { batch: id, via, bytes: f.bytes.length } });
-  return new Response(f.bytes, { headers: { 'content-type': f.type, 'content-length': String(f.bytes.length), 'content-disposition': `attachment; filename="${f.name}"`, 'cache-control': 'no-store' } });
+  return new Response(f.bytes, { headers: { 'content-type': f.type, 'content-length': String(f.bytes.length), 'content-disposition': `attachment; filename="${f.name}"`, 'cache-control': 'no-store', ...outputHeaders(f.type) } });
 }

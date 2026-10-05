@@ -1,3 +1,5 @@
+import { pageHeaders } from './src/server/headers.js';
+
 /** @type {import('next').NextConfig} */
 const embedOrigin = process.env.PW_EMBED_ORIGINS || '';
 const cors = (value) => [{ key: 'Access-Control-Allow-Origin', value }, { key: 'Access-Control-Allow-Methods', value: 'GET' }];
@@ -11,6 +13,8 @@ const nextConfig = {
   outputFileTracingIncludes: { '/api/**': ['./reports/**', './public/fonts/**', './public/harfbuzz-subset.wasm', './public/icc/**', './pw-worker/**'] },
   async headers() {
     return [
+      // security headers on every page and answer (src/server/headers.js); routes serving report output add their own
+      ...pageHeaders(embedOrigin),
       // static assets the embeddable viewer needs on other sites
       { source: '/fonts/:path*', headers: cors('*') },
       { source: '/harfbuzz-subset.wasm', headers: cors('*') },

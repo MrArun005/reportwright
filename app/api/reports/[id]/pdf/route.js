@@ -8,6 +8,8 @@ import { audit } from '@/server/audit.js';
 import { throughSnapshot } from '@/server/snapshots.js';
 import { errorResponse } from '@/server/errors.js';
 
+import { outputHeaders } from '@/server/headers.js';
+
 export const runtime = 'nodejs';
 
 export async function GET(req, { params }) {
@@ -32,6 +34,7 @@ export async function GET(req, { params }) {
         'x-pagewright-pages': String(r.pages),
         'x-pagewright-ms': String(r.ms),
         'x-pagewright-snapshot': r.snapshot,
+        ...outputHeaders(r.contentType), // report output on this origin: never a page of the app
       },
     });
   } catch (e) {
