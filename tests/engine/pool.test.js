@@ -46,8 +46,8 @@ describe('render pool', () => {
     expect(late.status).toBe(504);
     expect(Date.now() - t0).toBeLessThan(15000); // the limit, not the minute the render would take
     expect(fine.pages).toBe(1);
-    expect((await render(small())).pages).toBe(1); // a fresh worker took its place
-    expect(poolStats().workers.alive).toBe(2);
+    expect((await render(small())).pages).toBe(1); // a fresh worker takes its place once the old one has exited
+    while (poolStats().workers.alive < 2) await new Promise(r => setTimeout(r, 20));
   });
 
   it('answers 503 with Retry-After when the queue is full, and 429 when one principal fills its share', async () => {
@@ -55,7 +55,7 @@ describe('render pool', () => {
     process.env.PW_RENDER_QUEUE = '1';
     process.env.PW_RENDER_QUEUE_PER_PRINCIPAL = '1';
     const r0 = poolStats().totals.rejected;
-    const a = render(slow(3000)); // runs
+    const a = render(slow(6000)); // runs
     await running();
     const b = render(small()); // waits: the queue's one place
     const c = await render(small()).catch(e => e); // OPEN again: the queue is full
@@ -68,7 +68,7 @@ describe('render pool', () => {
     expect(e).toMatchObject({ status: 503 });
     await Promise.all([a, b, d]);
     process.env.PW_RENDER_QUEUE = '10';
-    const f = render(slow(3000));
+    const f = render(slow(6000));
     await running();
     const h = render(small());
     const i = await render(small()).catch(x => x); // OPEN's one place is taken
