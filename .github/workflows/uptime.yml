@@ -1,0 +1,30 @@
+# Uptime and error-rate check (docs/OPS.md). Set the repository variable PW_MONITOR_URL (e.g. https://reports.example.com)
+# and, for the error rate, the secret PW_MONITOR_KEY (a service API key). A failure opens one issue labelled "uptime"
+# (or comments on the open one); close it when fixed.
+name: uptime
+on:
+  schedule: [{ cron: '*/30 * * * *' }]
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  check:
+    if: vars.PW_MONITOR_URL != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - id: check
+        run: node scripts/uptime-check.mjs > result.txt || echo "failed=1" >> "$GITHUB_OUTPUT"; cat result.txt
+        env:
+          BASE: ${{ vars.PW_MONITOR_URL }}
+          PW_MONITOR_KEY: ${{ secrets.PW_MONITOR_KEY }}
+      - if: steps.check.outputs.failed == '1'
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          n=$(gh issue list --label uptime --state open --json number --jq '.[0].number')
+          if [ -n "$n" ]; then gh issue comment "$n" --body-file result.txt
+          else gh label create uptime --color B60205 2>/dev/null || true; gh issue create --title "Pagewright is down or failing" --label uptime --body-file result.txt; fi
+          exit 1
