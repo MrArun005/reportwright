@@ -153,6 +153,11 @@ A schedule runs a batch on a cron expression in a time zone.
 | `GET / PUT / DELETE /api/v1/schedules/<id>` | Read, change, remove |
 | `POST /api/v1/schedules/<id>/run` | Run now; gives the batch job |
 
+A batch or schedule may carry `email: { to: ['a@example.com'], subject?, body?, attach?: true }` (needs `PW_SMTP_URL`,
+`PW_MAIL_FROM` and `PW_MAIL_ALLOWED_DOMAINS`), and `fromSnapshot: true` to reuse a fresh snapshot (see
+[GOVERNANCE.md](GOVERNANCE.md)). `GET /api/v1/batches/<id>/download?exp=…&sig=…` is the signed link a scheduled email
+carries. Batch output is stored where every server reads it (`data/blobs`, the database, or `PW_BLOBS=s3://…`).
+
 Cron supports `*`, lists `1,15`, ranges `1-5` and steps `*/15`. Names such as `MON` are not supported; use numbers. The scheduler checks every 30 seconds in the server process. Schedules are in `data/schedules.json`. Set `PW_SCHEDULER=off` on all servers but one when you run more than one.
 
 ## Report storage (used by the designer)
@@ -258,6 +263,39 @@ Tested on 29 BIRT sample reports (`tests/fixtures/birt/corpus`, EPL-2.0): all im
 
 An account made by single sign-on is bound to the IdP identity (OIDC issuer and `sub`; SAML issuer and NameID), not to the email: the same identity is the same account even if its email changes, and another identity with the same email is refused. SSO never takes over an existing password account by itself: an admin first presses **Allow SSO** on the user (`PATCH /api/users/<email> { allowSso: true }`), and the next single sign-on with that email binds it (the password stays). Emails must be ASCII. Accounts are made on first sign-in and their role and groups follow the IdP at every sign-in. Every valid group name the IdP sends becomes a group for permissions.
 
+
+## Governance routes
+
+Details and settings: [GOVERNANCE.md](GOVERNANCE.md).
+
+| Route | What it does |
+|---|---|
+| `POST /api/auth/login` | `{ email, password }` → a session, or `{ mfa: 'totp' \| 'enrol' }` and the `pw_mfa` cookie |
+| `POST /api/auth/mfa` | `{ code }` or `{ recoveryCode }`: the second step (enrolling: the answer has `recoveryCodes`) |
+| `POST /api/auth/mfa/setup` | while enrolling at sign-in: `{ secret, uri, qr }` |
+| `GET /api/account`, `POST /api/account/2fa` | one's own account; `{ action: 'setup' \| 'enable' \| 'recovery' \| 'disable', code? }` |
+| `POST /api/auth/reset/request`, `POST /api/auth/reset/confirm` | `{ email }` (always 202); `{ token, password }` |
+| `POST /api/auth/logout` | `{ ok, redirect? }`: after an SSO session, the IdP's logout address |
+| `GET\|POST /api/auth/saml/slo` | SAML single logout (signed messages only) |
+| `GET\|PATCH /api/admin/settings` | `{ require2fa, snapshotTtl, snapshotMaxMb }` and what the environment sets up (admins) |
+| `GET\|DELETE /api/admin/snapshots` | snapshot cache size; clear it (admins) |
+| `GET /api/audit/verify?from&to`, `POST /api/audit/checkpoint` | `{ status: 'ok' \| 'unverified' \| 'tampered' \| 'error', … }`; only `ok` passes (admins) |
+| `GET\|POST /api/schedules`, `PATCH\|DELETE /api/schedules/<id>`, `POST /api/schedules/<id>/run` | the Schedules page (designers, own schedules) |
+
+### Known limits
+
+- **Audit hash chain (beta).** It shows changed, removed or inserted events, removed streams, a cut tail before the
+  newest signed checkpoint, and unsigned or foreign-signed records. It cannot show: the newest events (after the last
+  signed checkpoint, up to two checkpoint intervals) removed together with everything after them; a made-up stream
+  younger than two intervals (counted as pending, never as proven); anything done by someone holding both write access
+  to the storage and the signing key (keep `PW_AUDIT_SIGNING_KEY` on the server only, verify with the public key kept
+  elsewhere, and ship to a SIEM for a copy out of reach). A key derived from `PW_SESSION_SECRET` is held by every server.
+  An automated review reported an "audit-integrity" finding that was not resolved in detail; treat the chain as beta.
+- Admin changes (users, access, settings) are stored before their audit event; if that event cannot be written the
+  request answers 503, but the change stays.
+- The SIEM queue is in memory: events waiting when a process stops are not shipped (they are in the log).
+- Password sign-in's rate limit is per process (two-factor codes and reset requests are limited across servers).
+- Uploaded fonts do not start a new snapshot generation: clear the snapshot cache after changing fonts.
 
 ## Viewer (embedding)
 
