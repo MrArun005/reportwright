@@ -88,3 +88,18 @@ describe('a parameter\'s fixed list of values holds on the server (REVIEW-SECURI
     try { checkParameterValues(def, { region: 'East' }, viewer); } catch (e) { expect(e.status).toBe(400); }
   });
 });
+
+describe('the anonymous sample cost is capped (REVIEW-SECURITY-2 L8, PoC p5)', () => {
+  it('a reader who is not signed in gets at most 5,000 stress rows; a signed-in user the full cap', async () => {
+    const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+    Object.assign(process.env, { PW_AUTH: 'users', PW_SESSION_SECRET: 'r3b-sample-'.padEnd(48, 'x'), PW_STORAGE: `sqlite:${path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'pw-r3b-sample-')), 's.db')}` });
+    const { GET } = await import('../../app/api/sample/stress/[rows]/route.js');
+    const at = (rows, cookie = '') => GET(new Request(`http://pw.test/api/sample/stress/${rows}`, { headers: { cookie } }), { params: Promise.resolve({ rows: String(rows) }) });
+    expect((await at(200000)).status).toBe(400);
+    expect((await at(5000)).status).toBe(200);
+    const users = await import('../../src/server/users.js'), session = await import('../../src/server/session.js');
+    await users.createUser({ email: 'v@x.io', role: 'viewer', password: 'a long password 1' });
+    const c = session.sessionCookie(new Request('http://pw.test'), await users.getUser('v@x.io')).split(';')[0];
+    expect((await at(20000, c)).status).toBe(200);
+  });
+});
