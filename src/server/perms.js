@@ -430,21 +430,41 @@ export function writtenHost(url) {
   if (!m || m[1].includes('{')) return null;
   try { return new URL(`http://${m[1]}`).hostname.toLowerCase().replace(/^\[|\]$/g, ''); } catch { return null; }
 }
+/** Every data source type the engine runs (engine/data loadSources); any other name is unknown. */
+const KNOWN_TYPES = new Set(['json', 'sql', ...FETCHED]);
 /**
- * The data sources of a definition that the server runs with its own reach: SQL on a server connection, and fetches
- * that may reach a host in PW_INTERNAL_HOSTS (an absolute URL to one, or a URL built by an expression: it could be
- * anything). A relative URL is this server (its own checks apply); useProxy goes through /api/data/proxy, which
- * reaches public PW_PROXY_ALLOW hosts only. Inline json and csv data are not server data.
+ * A data source as the server classifies it AND as the engine then runs it (renderer.js hands the engine these same
+ * normalised objects): the flags the engine reads by truthiness become booleans, so a value such as "false" or 0
+ * means one thing to both. type is kept exactly (the engine matches it exactly: "REST" or "rest " is unknown).
+ * @param {any} s @returns {any}
+ */
+export function normalizeSource(s) {
+  if (!s || typeof s !== 'object') return s;
+  return { ...s, useProxy: !!s.useProxy };
+}
+/**
+ * The data sources of a definition that the server runs with its own reach: SQL on a server connection, a source of a
+ * type the engine does not know (ambiguous: treated as privileged), and fetches that may reach a host in
+ * PW_INTERNAL_HOSTS (an absolute URL to one, or a URL built by an expression: it could be anything). A relative URL is
+ * this server (its own checks apply); useProxy goes through /api/data/proxy, which reaches public PW_PROXY_ALLOW
+ * hosts only. Inline json data, and csv/xml with inline data, are not server data. Classified on normalizeSource's
+ * object, which is what the engine runs; the originals are returned (their hash is the designer's stamp).
  * @param {any} def @returns {any[]}
  */
 export function serverSources(def) {
   const internal = internalHosts();
   const reaches = (src) => {
-    if (!internal.length || src.useProxy || ((src.type === 'csv' || src.type === 'xml') && src.data)) return false;
+    if (src.useProxy || ((src.type === 'csv' || src.type === 'xml') && src.data)) return false;
     const h = writtenHost(src.url);
-    return h === null || (h !== '' && internal.includes(h)); // '': a path on this server (GET only, serverFetch)
+    return h === null ? !!internal.length : h !== '' && internal.includes(h); // '': a path on this server (GET only, serverFetch)
   };
-  return (Array.isArray(def?.dataSources) ? def.dataSources : []).filter(s => s && typeof s === 'object' && (s.type === 'sql' || (FETCHED.includes(s.type) && reaches(s))));
+  const privileged = (raw) => {
+    const s = normalizeSource(raw);
+    if (!s || typeof s !== 'object') return false;
+    if (s.type === 'sql' || !KNOWN_TYPES.has(s.type)) return true;
+    return FETCHED.includes(s.type) && reaches(s);
+  };
+  return (Array.isArray(def?.dataSources) ? def.dataSources : []).filter(s => s && typeof s === 'object' && privileged(s));
 }
 const sourcesHash = (list) => crypto.createHash('sha256').update(JSON.stringify(list)).digest('hex');
 const KEEP_STAMPS = 60; // a little over the versions a report keeps (reports.js): an old version keeps running

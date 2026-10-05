@@ -11,7 +11,7 @@ import { exportXlsx } from '@/exporters/xlsx.js';
 import { exportDocx } from '@/exporters/docx.js';
 import { exportPptx } from '@/exporters/pptx.js';
 import { createSubsetter } from '@/exporters/subset.js';
-import { readRunnable, defaultPrincipal, vet, canDesign, writtenHost } from './perms.js';
+import { readRunnable, defaultPrincipal, vet, canDesign, writtenHost, normalizeSource } from './perms.js';
 import { serverFetch, NO_BASE_URL } from './safeFetch.js';
 import { pdfSigner } from './sign.js';
 import { runSql } from './sql.js';
@@ -137,6 +137,8 @@ export async function renderTo(def, opt = {}) {
   if (opt.sign && opt.principal && vet(opt.principal).kind === 'public') throw Object.assign(new Error('Signing needs an API key (PW_API_KEYS).'), { status: 401 });
   const signing = opt.sign ? await pdfSigner({ name: def.name || 'Pagewright' }) : null; // fail before rendering
   assertFixedHosts(d);
+  // the engine runs exactly the objects the permission checks classified (perms.normalizeSource)
+  if (Array.isArray(d?.dataSources)) d = { ...d, dataSources: d.dataSources.map(normalizeSource) };
   const base = opt.baseUrl || baseUrl();
   const fetch = serverFetch(opt.self || base);
   await syncFonts();
@@ -151,7 +153,7 @@ export async function renderTo(def, opt = {}) {
       try { sub = await readRunnable(opt.principal || defaultPrincipal(), id); }
       catch (e) { throw e.status === 403 && /no designer saved/.test(e.message) ? e : new Error(`Report "${id}" not found`); } // the same words whether it is missing or not allowed
       assertFixedHosts(sub);
-      return sub;
+      return Array.isArray(sub?.dataSources) ? { ...sub, dataSources: sub.dataSources.map(normalizeSource) } : sub;
     },
   });
   let bytes = null;
