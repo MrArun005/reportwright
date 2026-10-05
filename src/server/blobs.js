@@ -5,7 +5,7 @@
 //   PW_BLOBS=s3://bucket[/prefix]?region=eu-west-1[&endpoint=https://minio.local:9000]   S3 or S3-compatible object
 //       storage (SigV4; PW_S3_ACCESS_KEY_ID, PW_S3_SECRET_ACCESS_KEY, optional PW_S3_SESSION_TOKEN; with endpoint,
 //       path-style addressing as MinIO and most compatible stores want)
-//   otherwise the configured storage (PW_STORAGE): data/blobs/ on files; in a database, the pw_blobs table in 1 MB
+//   otherwise the configured storage (PW_STORAGE): data/blobs/ on files (and beside a sqlite: database); in a server database, the pw_blobs table in 1 MB
 //       base64 parts behind a small manifest record, so several servers share them with nothing else to run.
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -187,6 +187,27 @@ function s3Blobs(spec) {
   };
 }
 
+/**
+ * On SQLite storage, blobs are files beside the database (<its folder>/data/blobs): node:sqlite is synchronous, so a
+ * multi-MB snapshot or batch output read from the table stalled the event loop, and they made up 95% of the database
+ * (synthetic-user run). SQLite storage is one host, so its processes share the folder. Blobs written to the table
+ * before still read and are removed from there.
+ * @param {string} dbFile @returns {Blobs}
+ */
+function sqliteBlobs(dbFile) {
+  const files = fileBlobs(path.dirname(path.resolve(dbFile))), old = storeBlobs();
+  return {
+    put: (k, bytes) => files.put(k, bytes),
+    async get(k) { return (await files.get(k)) ?? old.get(k).catch(() => null); },
+    async remove(k) { await files.remove(k); await old.remove(k).catch(() => {}); },
+    async list(prefix) {
+      const a = await files.list(prefix), seen = new Set(a.map(b => b.key));
+      return [...a, ...(await old.list(prefix).catch(() => [])).filter(b => !seen.has(b.key))];
+    },
+    async touch(k) { await files.touch(k).catch(() => {}); },
+  };
+}
+
 /** @type {{ key: string, b: Blobs } | null} */
 let current = null;
 /** The blob store PW_BLOBS (or PW_STORAGE) names. @returns {Blobs} */
@@ -198,6 +219,7 @@ export function blobs() {
   if (spec.startsWith('s3://')) b = s3Blobs(spec);
   else if (spec) throw new Error('PW_BLOBS must be s3://bucket[/prefix]?region=…[&endpoint=…], or unset (blobs go to PW_STORAGE).');
   else if (!process.env.PW_STORAGE || process.env.PW_STORAGE === 'file') b = fileBlobs(process.cwd());
+  else if (/^sqlite:/.test(process.env.PW_STORAGE)) b = sqliteBlobs(process.env.PW_STORAGE.slice(7));
   else b = storeBlobs();
   current = { key, b };
   return b;

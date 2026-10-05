@@ -60,3 +60,20 @@ describe('a cluster process whose storage cannot open exits (the primary replace
     expect((await run({})).out).toBe('threw');
   }, 30000);
 });
+
+describe('blobs on SQLite storage are files beside the database (no synchronous multi-MB reads)', () => {
+  it('writes go to <db folder>/data/blobs; blobs written to the table before still read and remove', async () => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-r3b-blobs-'));
+    const keep = process.env.PW_STORAGE, keepB = process.env.PW_BLOBS;
+    try {
+      process.env.PW_STORAGE = `sqlite:${path.join(d, 'pw.db')}`; delete process.env.PW_BLOBS;
+      const { blobs } = await import('../../src/server/blobs.js');
+      await blobs().put('snapshots/x', Buffer.from('new'));
+      expect(fs.readFileSync(path.join(d, 'data/blobs/snapshots/x'), 'utf8')).toBe('new');
+      expect(String(await blobs().get('snapshots/x'))).toBe('new');
+      expect((await blobs().list('snapshots/')).map(b => b.key)).toEqual(['snapshots/x']);
+      await blobs().remove('snapshots/x');
+      expect(await blobs().get('snapshots/x')).toBe(null);
+    } finally { if (keep === undefined) delete process.env.PW_STORAGE; else process.env.PW_STORAGE = keep; if (keepB !== undefined) process.env.PW_BLOBS = keepB; }
+  });
+});
