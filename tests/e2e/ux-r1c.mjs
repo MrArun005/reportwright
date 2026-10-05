@@ -92,6 +92,63 @@ try {
     await p.locator('.vpage svg text', { hasText: /Region: (East|North|South)/ }).first().waitFor();
   }
 
+  if (want('u2')) {
+    step('U-2: the viewer\'s interactive spots are focusable, named controls; pages are labelled regions with a text alternative');
+    const target = await create(base('ux r1c target', [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 200, h: 20, value: 'Target report' }]));
+    const id = await create(base('ux r1c a11y', [
+      { type: 'table', name: 'Tbl', x: 0, y: 0, w: 400, h: 60, dataSet: 'Sales', columns: [{ width: 200 }, { width: 200 }],
+        header: [{ height: 18, cells: [{ value: 'Region' }, { value: 'Amount', sortBy: '=Fields.amount' }] }],
+        groups: [{ name: 'G', expr: '=Fields.region', sort: 'asc', collapsible: true, initiallyCollapsed: true, header: [{ height: 18, cells: [{ value: '=Fields.region' }, { value: '=Sum(Fields.amount)', style: { format: 'N0' } }] }] }],
+        detail: [{ height: 18, cells: [{ value: '=Fields.city', action: { type: 'report', report: target, params: { city: '=Fields.city' } } }, { value: '=Fields.amount' }] }] },
+      { type: 'chart', name: 'C', x: 0, y: 150, w: 300, h: 160, dataSet: 'Sales', chartType: 'column', category: '=Fields.region', series: [{ name: 'Amount', value: '=Sum(Fields.amount)' }], pointAction: { type: 'params', params: { region: '=Fields.region' } } },
+    ], { parameters: [{ name: 'region', type: 'string', nullable: true }] }));
+    await p.goto(`${BASE}/viewer/${id}`);
+    await p.locator('.vpage svg').first().waitFor();
+    // toolbar buttons have real names (not the triangle characters)
+    for (const n of ['First page', 'Previous page', 'Next page', 'Last page']) await p.getByRole('button', { name: n, exact: true }).waitFor();
+    const page1 = p.getByRole('region', { name: 'Page 1 of 1' });
+    await page1.waitFor();
+    assert.match(await page1.locator('.sr-only').innerText(), /Region Amount/);
+    const aria = await page1.ariaSnapshot();
+    await page1.getByRole('button', { name: 'East', exact: true, expanded: false }).waitFor();
+    assert.match(aria, /button "East"/);
+    assert.match(aria, /button "Sort by Amount, ascending"/);
+    assert.match(aria, /button "Filter by North/);
+    // keyboard only: Tab from the page number box reaches the controls on the page
+    await p.getByRole('textbox', { name: 'Page' }).focus();
+    const names = [];
+    for (let k = 0; k < 40 && names.length < 3; k++) {
+      await p.keyboard.press('Tab');
+      const n = await p.evaluate(() => (document.activeElement?.classList.contains('vlink') ? document.activeElement.textContent : null));
+      if (n) names.push(n);
+    }
+    assert.deepEqual(names.slice(0, 2), ['Sort by Amount, ascending', 'East']);
+    const outline = await p.evaluate(() => getComputedStyle(document.activeElement).outlineStyle);
+    assert.equal(outline, 'solid'); // a visible focus
+    await shot(p, 'u2-focus');
+    step('U-2: Enter expands a group and the focus stays on it; Space sorts');
+    const east = page1.getByRole('button', { name: 'East', exact: true });
+    await east.focus();
+    await p.keyboard.press('Enter');
+    await page1.getByRole('button', { name: 'East', expanded: true }).waitFor();
+    assert.equal(await p.evaluate(() => document.activeElement?.textContent), 'East');
+    await page1.getByRole('link', { name: /Patna: open the report/ }).waitFor(); // the drill-through in the expanded rows
+    await page1.getByRole('button', { name: 'Sort by Amount, ascending' }).focus();
+    await p.keyboard.press(' ');
+    await page1.getByRole('button', { name: 'Sort by Amount, descending' }).waitFor();
+    step('U-2: a drill-through link opens by keyboard');
+    await page1.getByRole('link', { name: /Patna: open the report/ }).focus();
+    await p.keyboard.press('Enter');
+    await p.getByTestId('drill-back').waitFor();
+    await p.getByTestId('drill-back').click();
+    await page1.getByRole('button', { name: /^Filter by South/ }).waitFor();
+    step('U-2: a chart point by keyboard filters the report (the parameter panel follows)');
+    await page1.getByRole('button', { name: /^Filter by South/ }).focus();
+    await p.keyboard.press('Enter');
+    await p.getByRole('button', { name: 'Parameters' }).click();
+    await p.waitForFunction(() => [...document.querySelectorAll('.vparams input')].some(i => i.value === 'South'));
+  }
+
   if (want('u3')) {
     step('U-3: choosing a data set for a parameter\'s choices stores the value field it shows');
     const id = await create(base('ux r1c params', [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 200, h: 20, value: '=Join(Parameters.region, ", ")' }], {

@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { render } from '../../src/engine/index.js';
 import { importRdlx } from '../../src/importers/rdlx.js';
 import { fontStore, report } from '../helpers.js';
+import { pathBox, pageLinks, readingText } from '../../src/viewer/logic.js';
 
 const rows = [
   { region: 'North', city: 'Pune', year: 2025, amt: 50 }, { region: 'North', city: 'Delhi', year: 2026, amt: 70 },
@@ -76,5 +77,30 @@ describe('importers map tablix cell actions onto the matrix (U-1)', () => {
     expect(m.rowGroups[0].totalAction).toEqual({ type: 'url', url: 'https://example.com' });
     expect(m.columnGroups[0].action).toEqual({ type: 'bookmark', target: 'top' });
     expect(m.values[0].action).toEqual({ type: 'report', report: 'detail', params: { region: '=Fields.region' } });
+  });
+});
+
+describe('viewer accessible layer (U-2)', () => {
+  it('a path box from absolute commands, arcs by their end point', () => {
+    expect(pathBox('M 10 10 L 30 10 A 5 5 0 0 1 30 40 Z')).toEqual({ x: 10, y: 10, w: 20, h: 30 });
+    expect(pathBox('M0,0H20V5')).toEqual({ x: 0, y: 0, w: 20, h: 5 });
+    expect(pathBox('')).toBe(null);
+  });
+  it('links in reading order, named by the text under them; the text in reading order', async () => {
+    const def = report([
+      { type: 'table', name: 'T', x: 0, y: 0, w: 300, h: 60, dataSet: 'Rows', columns: [{ width: 150 }, { width: 150 }],
+        header: [{ height: 18, cells: [{ value: 'Region' }, { value: 'Amount', sortBy: '=Fields.amt' }] }],
+        groups: [{ name: 'G', expr: '=Fields.region', sort: 'asc', collapsible: true, initiallyCollapsed: true, header: [{ height: 18, cells: [{ value: '=Fields.region' }, { value: '=Sum(Fields.amt)' }] }] }],
+        detail: [{ height: 18, cells: [{ value: '=Fields.city' }, { value: '=Fields.amt' }] }] },
+    ], { data: { rows } });
+    const out = await render(def, { fontStore });
+    const ls = pageLinks(out.pages[0]);
+    expect(ls[0]).toMatchObject({ action: { type: 'sort' }, text: 'Amount' });
+    const toggles = ls.filter(l => l.action.type === 'toggle');
+    expect(toggles.map(l => l.text)).toEqual(['North', 'South']); // the toggle is the group's first cell
+    expect(toggles[0].action.open).toBe(false);
+    const lines = readingText(out.pages[0]);
+    expect(lines[0]).toBe('Region Amount');
+    expect(lines).toContain('▶ North 120');
   });
 });

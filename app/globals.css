@@ -478,3 +478,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .pmap-name { font-family: var(--mono); font-size: var(--fs-sm); padding-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pmap-name.bad { color: var(--danger); }
 .pmap-err { grid-column: 1 / -1; }
+/* viewer: the accessible layer over a page (real buttons and links on the drawing's hot spots) */
+.vlinks { position: absolute; inset: 0; pointer-events: none; }
+.vlink { position: absolute; display: block; margin: 0; padding: 0; border: 0; border-radius: 2px; background: transparent; color: transparent; font-size: 0; overflow: hidden; white-space: nowrap; pointer-events: none; text-decoration: none; }
+.vlink:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; background: rgba(14, 116, 144, .10); }

@@ -8,7 +8,7 @@ import { pageToSvg } from '@/exporters/svg.js';
 import { parameterOptions } from '@/engine/index.js';
 import { safeUrl } from '@/engine/url.js';
 import { t as tr, dirOf, pickLang } from './i18n.js';
-import { arrangeToolbar, findText, frozenAt, galleyDefinition } from './logic.js';
+import { arrangeToolbar, findText, frozenAt, galleyDefinition, pageLinks, readingText } from './logic.js';
 import ParamInput from './ParamInput.jsx';
 
 const PX = 96 / 72;
@@ -29,12 +29,51 @@ function initialParams(def, given) {
 // 1,000-page report shows its first page at once and scrolls without building every SVG.
 const WINDOW = 3;
 
-const Page = ({ page, w, h, scale, index, hits, near }) => {
+/**
+ * The accessible layer of a page: a real button or link over every interactive spot of the drawing (drill-down toggles,
+ * sort headers, drill-through, links, chart points), in reading order, focusable and named, plus the page's text in
+ * reading order for screen readers. The mouse still clicks the drawing (pointer-events: none); a key press on a control
+ * fires the same click, which the viewer's click handler reads from data-action.
+ */
+const A11yLayer = ({ page, scale, T }) => {
+  const links = useMemo(() => pageLinks(page), [page]);
+  const lines = useMemo(() => readingText(page), [page]);
+  const seen = new Map();
+  return (
+    <>
+      <div className="sr-only">{lines.map((l, i) => <p key={i}>{l}</p>)}</div>
+      <div className="vlinks">
+        {links.map((l, i) => {
+          const a = l.action;
+          const txt = l.text || l.tip;
+          // a stable key: the same toggle or sort header keeps its element (and the focus) when the report runs again
+          let key = a.type === 'toggle' ? `t:${a.key}` : a.type === 'sort' ? `s:${a.table}:${a.by}` : `${a.type}:${txt}`;
+          const n = (seen.get(key) || 0) + 1; seen.set(key, n); if (n > 1) key += `#${n}`;
+          const style = { left: l.x * scale, top: l.y * scale, width: l.w * scale, height: l.h * scale };
+          const common = { className: 'vlink pw-link', style, 'data-action': JSON.stringify(a) };
+          if (a.type === 'url') return <a key={key} {...common} href={a.href} target="_blank" rel="noopener noreferrer">{txt || a.href}</a>;
+          if (a.type === 'drill') {
+            const qs = new URLSearchParams(Object.entries(a.params || {}).map(([k, v]) => [k, v == null ? '' : String(v)]));
+            return <a key={key} {...common} href={`${origin()}/viewer/${encodeURIComponent(a.report)}?${qs}`}>{T('ux_a11yOpenReport', { text: txt || a.report, report: a.report })}</a>;
+          }
+          const label = a.type === 'toggle' ? (txt || T('ux_a11yDetails'))
+            : a.type === 'sort' ? T(a.dir === 'desc' ? 'ux_a11ySortDesc' : 'ux_a11ySortAsc', { text: txt })
+              : a.type === 'params' ? T('ux_a11yFilterBy', { text: txt })
+                : a.type === 'bookmark' ? T('ux_a11yGoTo', { text: txt || a.target }) : txt;
+          return <button key={key} type="button" {...common} aria-expanded={a.type === 'toggle' ? !!a.open : undefined}>{label}</button>;
+        })}
+      </div>
+    </>
+  );
+};
+
+const Page = ({ page, w, h, scale, index, total, hits, near, T }) => {
   const html = useMemo(() => (near ? pageToSvg(page, w, h, { animate: true }) : ''), [page, w, h, near]); // charts with `animation` play it once
   return (
-    <div className="vpage" data-page={index + 1} style={{ width: w * scale, height: h * scale }}>
-      {near && <div style={{ width: '100%', height: '100%' }} dangerouslySetInnerHTML={{ __html: html }} />}
+    <div className="vpage" data-page={index + 1} style={{ width: w * scale, height: h * scale }} {...(near ? { role: 'region', 'aria-label': T('ux_a11yPage', { n: index + 1, total }) } : {})}>
+      {near && <div style={{ width: '100%', height: '100%' }} aria-hidden="true" dangerouslySetInnerHTML={{ __html: html }} />}
       {near && hits?.map((r, i) => <div key={i} className={`hl${r.cur ? ' cur' : ''}`} style={{ left: r.x * scale, top: r.y * scale, width: r.w * scale, height: r.h * scale }} />)}
+      {near && <A11yLayer page={page} scale={scale} T={T} />}
     </div>
   );
 };
@@ -286,6 +325,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   const onClick = (e) => {
     const el = e.target.closest?.('.pw-link');
     if (!el) return;
+    if (el.tagName === 'A') e.preventDefault(); // the accessible layer's links: the viewer opens them as the drawing's would
     let a;
     try { a = JSON.parse(el.getAttribute('data-action')); } catch { return; }
     if (a.type === 'toggle') {
@@ -384,8 +424,8 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     hasParams && { id: 'parameters', group: 'panels', primary: true, node: <button className="btn sm" aria-pressed={side === 'params'} onClick={() => setPanel(s => (s === 'params' ? null : 'params'))}>{T('parameters')}</button> },
     bookmarks.length > 0 && { id: 'documentMap', group: 'panels', node: <button className="btn sm" aria-pressed={side === 'map'} onClick={() => setPanel(s => (s === 'map' ? null : 'map'))}>{T('documentMap')}</button> },
     { id: 'run', group: 'panels', node: <button className="btn sm" onClick={() => run()} disabled={status.state === 'running'}>{status.state === 'running' ? T('running') : T('run')}</button> },
-    { id: 'firstPage', group: 'paging', node: <button className="btn sm icon" title={T('firstPage')} onClick={() => go(1)} disabled={!total || current === 1}><span className="flip">⏮</span></button> },
-    { id: 'previousPage', group: 'paging', primary: true, node: <button className="btn sm icon" title={T('previousPage')} onClick={() => go(current - 1)} disabled={!total || current === 1}><span className="flip">◀</span></button> },
+    { id: 'firstPage', group: 'paging', node: <button className="btn sm icon" title={T('firstPage')} aria-label={T('firstPage')} onClick={() => go(1)} disabled={!total || current === 1}><span className="flip" aria-hidden="true">⏮</span></button> },
+    { id: 'previousPage', group: 'paging', primary: true, node: <button className="btn sm icon" title={T('previousPage')} aria-label={T('previousPage')} onClick={() => go(current - 1)} disabled={!total || current === 1}><span className="flip" aria-hidden="true">◀</span></button> },
     {
       id: 'pageNumber', group: 'paging', primary: true,
       node: <>
@@ -393,8 +433,8 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
         <span className="stat" title={model?.partial ? T('stillRendering') : undefined}>/ {total ? (model?.partial ? `${total}+` : total) : '–'}</span>
       </>,
     },
-    { id: 'nextPage', group: 'paging', primary: true, node: <button className="btn sm icon" title={T('nextPage')} onClick={() => go(current + 1)} disabled={!total || current === total}><span className="flip">▶</span></button> },
-    { id: 'lastPage', group: 'paging', node: <button className="btn sm icon" title={T('lastPage')} onClick={() => go(total)} disabled={!total || current === total}><span className="flip">⏭</span></button> },
+    { id: 'nextPage', group: 'paging', primary: true, node: <button className="btn sm icon" title={T('nextPage')} aria-label={T('nextPage')} onClick={() => go(current + 1)} disabled={!total || current === total}><span className="flip" aria-hidden="true">▶</span></button> },
+    { id: 'lastPage', group: 'paging', node: <button className="btn sm icon" title={T('lastPage')} aria-label={T('lastPage')} onClick={() => go(total)} disabled={!total || current === total}><span className="flip" aria-hidden="true">⏭</span></button> },
     { id: 'zoomOut', group: 'zoom', node: <button className="btn sm icon" title={T('zoomOut')} aria-label={T('zoomOut')} onClick={() => zoomBy(1 / 1.2)}>−</button> },
     { id: 'zoomValue', group: 'zoom', node: <span className="stat zoomval">{Math.round((scale / PX) * 100)}%</span> },
     { id: 'zoomIn', group: 'zoom', node: <button className="btn sm icon" title={T('zoomIn')} aria-label={T('zoomIn')} onClick={() => zoomBy(1.2)}>+</button> },
@@ -480,7 +520,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     <div className="vsheet-wrap">
       <div className="vscrim" onClick={() => setPanel(null)} />
       <div className="vsheet" role="dialog" aria-modal="true" aria-label={name}>
-        <button type="button" className="btn sm icon vsheet-close" aria-label={T('close')} onClick={() => setPanel(null)}>✕</button>
+        <button type="button" className="btn sm icon vsheet-close" aria-label={T('close')} onClick={() => setPanel(null)}><span aria-hidden="true">✕</span></button>
         {content}
       </div>
     </div>
@@ -509,7 +549,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
         {renderItems(inBar)}
         {inMenu.length > 0 && (
           <span className="vmore-wrap">
-            <button type="button" className="btn sm icon vmore" aria-label={T('more')} title={T('more')} aria-expanded={menu} onClick={() => setMenu(v => !v)}>⋯</button>
+            <button type="button" className="btn sm icon vmore" aria-label={T('more')} title={T('more')} aria-expanded={menu} onClick={() => setMenu(v => !v)}><span aria-hidden="true">⋯</span></button>
             {menu && <div className="vmenu" role="group" aria-label={T('more')}>{renderItems(inMenu)}</div>}
           </span>
         )}
@@ -565,7 +605,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
             ))}
           </nav>
         ))}
-        <div className="vpages" ref={scroller} onScroll={onScroll} onClick={onClick} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+        <div className="vpages" ref={scroller} role="document" aria-label={definition.name || T('ux_a11yReport')} onScroll={onScroll} onClick={onClick} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
           {status.state === 'error' && <div className="vmsg error" role="alert"><b>{T('didNotRun')}</b><br />{status.message}</div>}
           {!model && status.state === 'running' && <div className="vmsg">{T('runningReport')}</div>}
           {model?.warnings?.length > 0 && (
@@ -577,7 +617,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
               {frozen && model.pages[frozen.page] && <Frozen page={model.pages[frozen.page]} region={frozen.region} w={model.pages[frozen.page].width ?? model.width} h={model.pages[frozen.page].height ?? model.height} scale={scale} />}
             </div>
           )}
-          {shown.map(i => <Page key={i} index={i} page={model.pages[i]} w={model.pages[i].width ?? model.width} h={model.pages[i].height ?? model.height} scale={scale} hits={hitsByPage.get(i)} near={single || Math.abs(i - (current - 1)) <= WINDOW} />)}
+          {shown.map(i => <Page key={i} index={i} total={total} T={T} page={model.pages[i]} w={model.pages[i].width ?? model.width} h={model.pages[i].height ?? model.height} scale={scale} hits={hitsByPage.get(i)} near={single || Math.abs(i - (current - 1)) <= WINDOW} />)}
         </div>
       </div>
     </div>
