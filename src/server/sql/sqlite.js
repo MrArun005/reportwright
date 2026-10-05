@@ -22,6 +22,7 @@ const IDLE_MS = 30000, WATCH_MS = 200;
 // The child: plain CommonJS for `node -e`, so no bundler touches it. Answers { rows } or { over } or { err }.
 const CHILD = `
 const { DatabaseSync } = require('node:sqlite');
+const ppid = process.ppid;
 const size = (v) => typeof v === 'string' ? Math.max(Buffer.byteLength(v), v.length * 2) : v instanceof Uint8Array ? v.length : 8;
 process.on('message', (m) => {
   let db;
@@ -31,7 +32,11 @@ process.on('message', (m) => {
     st.setReadBigInts(true);
     const rows = [];
     let bytes = 0;
+    let n = 0;
     for (const r of st.iterate(...m.values)) {
+      // the parent's timers cannot reach a query that never yields; between rows this process checks for itself that
+      // the server is still there and the deadline has not passed (a parent killed outright leaves no one to kill it)
+      if (++n % 256 === 0 && (process.ppid !== ppid || Date.now() > m.until)) process.exit(0);
       if (rows.length >= m.rows) return process.send({ over: 'rows' });
       for (const k in r) bytes += size(r[k]);
       if (bytes > m.bytes) return process.send({ over: 'bytes' });
@@ -59,11 +64,11 @@ function start() {
   return { cp, idle: null };
 }
 
-/** Resident memory of a process in MB: /proc on Linux, ps elsewhere; null when unknown. @param {number} pid */
+/** Resident memory of a process in MB: /proc on Linux (VmRSS, whatever the page size), ps elsewhere; null when unknown. @param {number} pid */
 function rssMB(pid) {
   try {
-    const pages = Number(fs.readFileSync(`/proc/${pid}/statm`, 'utf8').split(' ')[1]);
-    return Promise.resolve(pages * 4096 / 1048576);
+    const kb = Number(/VmRSS:\s+(\d+)/.exec(fs.readFileSync(`/proc/${pid}/status`, 'utf8'))?.[1]);
+    if (kb) return Promise.resolve(kb / 1024);
   } catch { /* not Linux */ }
   return new Promise((resolve) => execFile('ps', ['-o', 'rss=', '-p', String(pid)], (e, out) => resolve(e ? null : Number(out) / 1024)));
 }
@@ -132,7 +137,7 @@ export async function sqlite(url, text, values, ctx) {
     cp.on('message', onMsg);
     cp.once('exit', onExit);
     try {
-      cp.send({ file: url.slice('sqlite:'.length), text, values, rows: Number(limits.rows), bytes: Number(limits.bytes) });
+      cp.send({ file: url.slice('sqlite:'.length), text, values, rows: Number(limits.rows), bytes: Number(limits.bytes), until: deadline + 1000 });
     } catch { onExit(); }
   });
 }

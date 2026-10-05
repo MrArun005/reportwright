@@ -28,7 +28,9 @@ if (cluster.isPrimary) {
   const cores = os.availableParallelism?.() || os.cpus().length;
   const n = Math.max(1, Number(process.env.PW_CLUSTER_PROCESSES) || Math.max(2, Math.round(cores / 4)));
   let memMB = Number(process.env.PW_MEMORY_LIMIT_MB) || os.totalmem() / 1048576;
-  try { const v = fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim(); if (v !== 'max') memMB = Math.min(memMB, Number(v) / 1048576); } catch { /* no cgroup v2 */ }
+  for (const f of ['/sys/fs/cgroup/memory.max', '/sys/fs/cgroup/memory/memory.limit_in_bytes']) { // cgroup v2, v1
+    try { const n = Number(fs.readFileSync(f, 'utf8').trim()); if (n > 0 && n < 2 ** 60) { memMB = Math.min(memMB, n / 1048576); break; } } catch { /* not there */ }
+  }
   if (process.env.PW_AUTH === 'users' && !process.env.PW_SESSION_SECRET && process.env.NODE_ENV !== 'production') process.env.PW_SESSION_SECRET = crypto.randomBytes(32).toString('hex');
   const env = { PW_CPUS: String(Math.max(2, Math.floor(cores / n))), PW_MEMORY_LIMIT_MB: String(Math.floor(memMB / n)), PW_CLUSTER: '1' };
   console.log(`[pagewright] cluster: ${n} processes, each with ${env.PW_CPUS} cores and ${env.PW_MEMORY_LIMIT_MB} MB for its render threads${process.env.PW_RENDER_WORKERS ? ` (${process.env.PW_RENDER_WORKERS} each)` : ''}, port ${port}`);

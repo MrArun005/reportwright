@@ -76,6 +76,31 @@ function trusted() {
 }
 const isTrusted = (a) => { const net = /** @type {typeof import('node:net')} */ (process.getBuiltinModule('node:net')); const t = net.isIPv6(a) ? 'ipv6' : net.isIPv4(a) ? 'ipv4' : null; return !!t && trusted().check(a, t); };
 
+const PRIVATE = /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|::1$|f[cd][0-9a-f]{2}:)/i;
+/**
+ * True when the request came through a proxy this server was not told about: the peer is a private or loopback address,
+ * not in PW_TRUSTED_PROXIES, and the request carries X-Forwarded-For. Every client then looks like the proxy, so limits
+ * per source would let one person lock everyone out: loginAttempt skips them (the per-account turn still holds).
+ * Says so in the log once. @param {Request} [req]
+ */
+export function unknownProxy(req) {
+  if (!req?.headers || !g.__pwPeers) return false;
+  const peer = norm(req.headers.get(PEER));
+  const yes = !!peer && PRIVATE.test(peer) && !isTrusted(peer) && !!req.headers.get('x-forwarded-for');
+  if (yes && !g.__pwWarnedProxy) { g.__pwWarnedProxy = true; console.error(`[pagewright] requests come through a proxy at ${peer} that PW_TRUSTED_PROXIES does not name: every client looks like it, so sign-in limits per address are off. Set PW_TRUSTED_PROXIES.`); }
+  return yes;
+}
+
+/** An address as limits count it: an IPv6 address by its /64 (one host gets a whole /64). @param {string} a */
+export function limitKey(a) {
+  const net = /** @type {typeof import('node:net')} */ (process.getBuiltinModule('node:net'));
+  if (!net.isIPv6(a)) return a;
+  const [head, tail = ''] = a.split('::');
+  const h = head ? head.split(':') : [], t = tail ? tail.split(':') : [];
+  const full = a.includes('::') ? [...h, ...Array(8 - h.length - t.length).fill('0'), ...t] : h;
+  return `${full.slice(0, 4).map(x => x.toLowerCase().replace(/^0+(?=.)/, '')).join(':')}::/64`;
+}
+
 /**
  * The client address for limits and the audit log: the socket's address, or, when that is a trusted proxy, the last
  * X-Forwarded-For hop that is not one. '-' when this process does not stamp peers (a custom server without
@@ -120,21 +145,34 @@ export async function unlockLogin(email) {
  * Password sign-in limits, across servers. Take them before checking the password; give them back when it was right.
  * - Per source (the client address, see clientAddress): 10 failures in 15 minutes for one email → 429 for that source
  *   only; 100 for all emails (a spray from one source) → 429; after 5 for one email each try waits 1 s first (backoff).
- * - Per account (all sources): never refused. Past 50 failures in 15 minutes each try waits PW_LOGIN_SLOW_MS (2 s)
- *   before the password is checked; the right password then still signs in (and a second factor is still asked for),
- *   so failures from other people can slow the account's owner down but never lock them out.
+ * - Per account (all sources): past 50 failures in 15 minutes, one try per PW_LOGIN_SLOW_MS (2 s) across every source
+ *   and server; others at the same moment get 429 with Retry-After. The right password still signs in on its turn
+ *   (and a second factor is still asked for), so others' failures slow the owner down but never lock them out.
+ * - IPv6 sources count by /64. Behind a proxy PW_TRUSTED_PROXIES does not name (unknownProxy), the per-source limits
+ *   are off (every client would share them); the per-account turn is not.
  * - An admin can start an account's counts afresh (unlockLogin, PATCH /api/users/<email> { unlockSignIn: true }).
  * @param {string} address @param {string} email
  * @returns {Promise<{ ok: boolean, retryAfter: number, delayMs: number, release: () => Promise<void> }>}
  */
-export async function loginAttempt(address, email) {
+export async function loginAttempt(address, email, { perSource = true } = {}) {
   const tag = `${email}@${await epoch(email)}`;
-  const one = await attempt(`login:${address}|${tag}`, 10, WINDOW);
+  const none = { ok: true, retryAfter: 0, release: async () => {} };
+  address = limitKey(address);
+  const one = perSource ? await attempt(`login:${address}|${tag}`, 10, WINDOW) : none;
   if (!one.ok) return { ...one, delayMs: 0 };
-  const src = await attempt(`login-src:${address}`, 100, WINDOW);
+  const src = perSource ? await attempt(`login-src:${address}`, 100, WINDOW) : none;
   if (!src.ok) { await one.release(); return { ...src, delayMs: 0 }; }
-  const soft = await attempt(`login-soft:${address}|${tag}`, 5, WINDOW);
+  const soft = perSource ? await attempt(`login-soft:${address}|${tag}`, 5, WINDOW) : none;
   const all = await attempt(`login:*|${tag}`, 50, WINDOW);
-  const delayMs = (soft.ok ? 0 : 1000) + (all.ok ? 0 : hotDelay());
-  return { ok: true, retryAfter: 0, delayMs, release: async () => { await Promise.all([one.release(), src.release(), soft.release(), all.release()]); } };
+  const release = async () => { await Promise.all([one.release(), src.release(), soft.release(), all.release()]); };
+  if (!all.ok && hotDelay()) {
+    // a hot account: one try at a time across all sources and servers, one per PW_LOGIN_SLOW_MS (a lease that is left
+    // to run out). Parallel tries get 429 and wait their turn: the owner's right password still gets in, a spray does not.
+    const ms = hotDelay();
+    if (!(await store().lease(`login-turn:${emailKey(tag)}`, crypto.randomBytes(6).toString('hex'), ms))) {
+      await release();
+      return { ok: false, retryAfter: Math.max(1, Math.ceil(ms / 1000)), delayMs: 0, release: async () => {} };
+    }
+  }
+  return { ok: true, retryAfter: 0, delayMs: soft.ok ? 0 : 1000, release };
 }

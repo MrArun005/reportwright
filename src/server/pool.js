@@ -72,7 +72,13 @@ export function memoryPlan({ cores, memMB, heapMB: heap = null, workers = null }
   const w = workers ?? Math.max(1, Math.min(8, cores - 1, byMem));
   return { cores, memMB: Math.round(memMB), heapMB: h, workers: Math.floor(w) };
 }
-const memLimitMB = () => num('PW_MEMORY_LIMIT_MB', Math.min(os.totalmem(), cgroupMemory() ?? Infinity) / 1048576, 64);
+// PW_MEMORY_LIMIT_MB narrows the machine's or container's memory, never widens it; the SQLite query processes' own
+// budget (sql/sqlite.js, outside these threads) comes off the top
+const memLimitMB = () => {
+  const box = Math.min(os.totalmem(), cgroupMemory() ?? Infinity) / 1048576;
+  const sqlite = num('PW_SQLITE_PROCESSES', 2, 0) * num('PW_SQLITE_MEMORY_MB', 1024, 64);
+  return Math.max(64, Math.min(num('PW_MEMORY_LIMIT_MB', Infinity, 64), box - Math.min(sqlite, box / 4)));
+};
 const plan = () => memoryPlan({
   cores: num('PW_CPUS', Math.min(os.availableParallelism?.() || os.cpus().length, cgroupCpus() ?? Infinity), 1),
   memMB: memLimitMB(),
@@ -225,7 +231,13 @@ function unwait(j) { bump(P.waiting, j.who, -1); if (j.signal && j.onAbort) j.si
 function pump() {
   for (const s of P.slots) {
     // memory first: past 85% of the limit a new render waits for a running one to end (never all of them: one runs)
-    if (s.ready && !s.job && P.queue.length && P.slots.some(x => x.job) && memoryFull()) { P.stats.heldForMemory++; return; }
+    if (s.ready && !s.job && P.queue.length && P.slots.some(x => x.job) && memoryFull()) {
+      P.stats.heldForMemory++;
+      // resident memory rarely shrinks by itself: an idle worker that has rendered gives its heap back by exiting
+      // (a fresh one takes its place), at most every 10 s, so the hold cannot outlast the memory it is about
+      if (s.renders > 0 && Date.now() - (P.lastFree || 0) > 10000) { P.lastFree = Date.now(); P.stats.recycled++; retire(s); }
+      return;
+    }
     while (s.ready && !s.job && P.queue.length) dispatch(s);
   }
 }

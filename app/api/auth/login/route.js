@@ -4,7 +4,7 @@
 // failures for one account from everywhere only slow its tries down, so nobody can lock its owner out.
 import { authenticate, ensureAdmin, normEmail, secondFactor } from '@/server/users.js';
 import { accountsOn, sessionSecret, sessionCookie, mfaCookie } from '@/server/session.js';
-import { loginAttempt, clientAddress } from '@/server/limits.js';
+import { loginAttempt, clientAddress, unknownProxy } from '@/server/limits.js';
 import { getSettings } from '@/server/settings.js';
 import { issueEnrolCode, updateUser } from '@/server/users.js';
 import { mailOn, sendMail } from '@/server/mail.js';
@@ -29,7 +29,7 @@ export async function POST(req) {
     let email;
     try { email = normEmail(body.email); } catch { await audit('auth.login_failed', { req, detail: { reason: 'bad email' } }); return Response.json({ error: WRONG }, { status: 401 }); }
     await ensureAdmin();
-    const slot = await loginAttempt(clientAddress(req), email);
+    const slot = await loginAttempt(clientAddress(req), email, { perSource: !unknownProxy(req) });
     if (!slot.ok) {
       await audit('auth.login_failed', { req, detail: { email, reason: 'rate limited' } });
       return Response.json({ error: 'Too many failed sign-ins. Try again later.' }, { status: 429, headers: { 'retry-after': String(slot.retryAfter) } });

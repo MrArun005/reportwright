@@ -40,6 +40,7 @@ import { getUser, createUser, updateUser, normEmail, allUsers, ROLES, GROUP } fr
 import { store, withLock } from './storage/index.js';
 import { clientAddress } from './limits.js';
 import { logWarn } from './errors.js';
+import { BUILTIN_GROUPS, RENAMED_GROUP } from './perms.js';
 
 const fail = (msg, status = 400, code = 'sso') => Object.assign(new Error(msg), { status, code });
 const b64u = (buf) => Buffer.from(buf).toString('base64url');
@@ -149,7 +150,8 @@ export function mapIdentity(email, values, who) {
   const fallback = process.env.PW_SSO_DEFAULT_ROLE || 'viewer';
   if (!role) role = fallback === 'none' ? null : ROLES.includes(/** @type {any} */ (fallback)) ? fallback : 'viewer';
   if (!role) throw fail('Your account has no role in Pagewright. Ask an admin to add you to a group that has one.', 403, 'no_role');
-  const groups = [...new Set(vals.map(v => v.trim()).filter(v => GROUP.test(v) && !['everyone', 'public'].includes(v.toLowerCase())))].slice(0, 50).sort();
+  // built-in names never come from the IdP; its "designers" group is the custom group the upgrade renamed (perms.js)
+  const groups = [...new Set(vals.map(v => v.trim()).map(v => (v.toLowerCase() === 'designers' ? RENAMED_GROUP : v)).filter(v => GROUP.test(v) && !BUILTIN_GROUPS.includes(v.toLowerCase())))].slice(0, 50).sort();
   return { email: e, role, groups, issuer: String(who.issuer), subject: String(who.subject) };
 }
 

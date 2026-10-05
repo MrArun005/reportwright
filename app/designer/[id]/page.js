@@ -23,6 +23,6 @@ export default async function DesignerPage({ params, searchParams }) {
   let def;
   try { def = await readReportFor(p, id, 'edit'); } catch { notFound(); }
   const h = await headers();
-  await audit('report.view', { req: new Request('http://pagewright.local/', { headers: { 'x-forwarded-for': h.get('x-forwarded-for') || '' } }), principal: p, report: id, detail: { via: 'designer' } });
+  await audit('report.view', { req: new Request('http://pagewright.local/', { headers: { 'x-forwarded-for': h.get('x-forwarded-for') || '', 'x-pw-peer': h.get('x-pw-peer') || '' } }), principal: p, report: id, detail: { via: 'designer' } });
   return <Designer id={id} initial={def} lang={lang} />;
 }

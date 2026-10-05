@@ -202,7 +202,7 @@ const gp = /** @type {any} */ (globalThis);
 export async function migratePermissions() {
   const { withLock } = await import('./storage/index.js');
   const { getRecord } = await import('./settings.js');
-  const rootNow = async () => { const t = await store().get('folders', 'root'); if (!t) return null; const r = JSON.parse(t); return { grants: r.grants || [], create: Array.isArray(r.create) ? r.create : [] }; };
+  const rootNow = async () => { const t = await store().get('folders', 'root'); if (!t) return null; let r; try { r = JSON.parse(t); } catch { return null; } /* unreadable: as missing (the safe default) */ return { grants: r.grants || [], create: Array.isArray(r.create) ? r.create : [] }; };
   if (gp.__pwPermsMigrated === store()) { const r = await rootNow(); if (r) return r; }
   return withLock('acl', async () => {
     let root = await rootNow();
@@ -427,6 +427,11 @@ export async function stampDefinition(p, id, def) {
   assertMayStore(p, def);
   const src = serverSources(def);
   if (!src.length) return;
+  const { withLock } = await import('./storage/index.js');
+  return withLock('acl', () => stampNow(id, src)); // a read-modify-write of the access record, as every other one
+}
+/** @param {string} id @param {any[]} src */
+async function stampNow(id, src) {
   const text = await store().get('reportacl', id);
   const rec = text ? JSON.parse(text) : { id, folder: null, inherit: true, grants: [] };
   const h = sourcesHash(src);
