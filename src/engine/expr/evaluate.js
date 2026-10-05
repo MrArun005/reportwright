@@ -491,7 +491,8 @@ function mapRows(rows, ast, ctx) {
   return out;
 }
 const AGG = {
-  sum: (vals, ctx) => { let s = 0; for (const v of vals) if (v != null && v !== '') s = add(s, Number(v), ctx); return s; },
+  // text that is not a number is #Error, as in SSRS (it printed NaN)
+  sum: (vals, ctx) => { let s = 0; for (const v of vals) if (v != null && v !== '') { const x = Number(v); if (Number.isNaN(x) && typeof v === 'string') throw new ExprError(`Sum: "${v.slice(0, 40)}" is not a number`); s = add(s, x, ctx); } return s; },
   avg: (vals, ctx) => { let s = 0, c = 0; for (const v of vals) if (v != null && v !== '') { s = add(s, Number(v), ctx); c++; } return c ? s / c : null; },
   count: (vals) => vals.filter(v => v != null).length,
   countdistinct: (vals) => new Set(vals.filter(v => v != null).map(v => (v instanceof Date ? v.getTime() : v))).size,
@@ -624,7 +625,8 @@ export const FUNCTIONS = {
   lower: (ctx, s) => S(s).toLowerCase(), lcase: (ctx, s) => S(s).toLowerCase(),
   left: (ctx, s, n) => S(s).slice(0, Number(n)),
   right: (ctx, s, n) => (Number(n) <= 0 ? '' : S(s).slice(-Number(n))),
-  mid: (ctx, s, start, len) => S(s).substr(Number(start) - 1, len == null ? undefined : Number(len)),
+  // VB Mid: the start is 1 or more (0 raises an error, as VB does: it printed the last character)
+  mid: (ctx, s, start, len) => { const st = Number(start); if (!(st >= 1)) throw new ExprError('Mid: the start must be 1 or more'); if (len != null && Number(len) < 0) throw new ExprError('Mid: the length must be 0 or more'); return S(s).substr(st - 1, len == null ? undefined : Number(len)); },
   len: (ctx, s) => S(s).length,
   trim: (ctx, s) => S(s).trim(),
   replace: (ctx, s, a, b, start, count) => replaceText(S(s), S(a), S(b), start, count),
@@ -1080,11 +1082,11 @@ function rank(n, ctx) {
     const c = Object.assign({}, ctx, { aggIndex: 0 });
     const vals = [];
     for (const r of rows) { c.fields = r; c.aggRows = [r]; const v = evaluate(args[0], c); if (v != null && v !== '') vals.push(v); }
-    hit = { len: rows.length, vals: vals.sort(cmpVal) };
+    hit = { len: rows.length, vals: vals.sort((p, q) => sortCompare(p, q, ctx)) }; // the sort's order: a total order over mixed types (N29)
     if (pureRows(args[0])) byCall.set(n, hit);
   }
   const vals = hit.vals;
-  const bound = (strict) => { let lo = 0, hi = vals.length; while (lo < hi) { const m = (lo + hi) >> 1; const c = cmpVal(vals[m], x); if (c < 0 || (!strict && c === 0)) lo = m + 1; else hi = m; } return lo; };
+  const bound = (strict) => { let lo = 0, hi = vals.length; while (lo < hi) { const m = (lo + hi) >> 1; const c = sortCompare(vals[m], x, ctx); if (c < 0 || (!strict && c === 0)) lo = m + 1; else hi = m; } return lo; };
   return desc ? vals.length - bound(false) + 1 : bound(true) + 1; // 1 + how many are larger (smaller)
 }
 

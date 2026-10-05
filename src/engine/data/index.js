@@ -541,7 +541,8 @@ function rowFilter(f, c) {
     case 'in': {
       // an empty list matches nothing (an empty LookupSet, a blank value), except nothing picked in a parameter the
       // filter reads directly (=Parameters.Region): that means "all", so a report opens unfiltered
-      const list = Array.isArray(b) ? b : b == null || b === '' ? [] : String(b).split(',').map(s => s.trim());
+      // a single value is a one-item list: "Smith, John" is one name, not two (N24); a multi-value parameter is a list
+      const list = Array.isArray(b) ? b : b == null || b === '' ? [] : [b];
       if (!list.length) return PARAM_ONLY.test(String(f.value ?? ''));
       return list.some(x => looseEq(a, x));
     }

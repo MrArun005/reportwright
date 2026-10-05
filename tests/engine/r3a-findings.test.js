@@ -102,3 +102,24 @@ describe('§3.3: empty matrix cells drill with their group values, not nulls', (
     expect(ls.length).toBe(2);
   });
 });
+
+describe('N24, N29, N30', () => {
+  const ev2 = (src, extra = {}) => ev(src, extra);
+  it('N30: Mid start 0 is an error; Sum over text is #Error', () => {
+    expect(() => ev2('Mid("abc", 0)')).toThrow(/start must be 1/);
+    expect(ev2('Mid("abc", 2)')).toBe('bc');
+  });
+  it('N29: Rank orders mixed values as the sort does', async () => {
+    const m = await render({ $schema: 'pagewright/report@1', page: { size: 'A4' }, dataSources: [{ name: 'S', type: 'json', data: [{ v: 1 }, { v: 2 }, { v: 10 }, { v: 4 }, { v: 'x' }] }], dataSets: [{ name: 'D', source: 'S', path: '$' }],
+      sections: { body: { height: 100, items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 100, h: 20, dataSet: 'D', columns: [{ width: 100 }], detail: [{ height: 12, cells: [{ value: '=Rank(Fields.v, "T")' }] }] }] } } }, { fontStore });
+    // the column mixes text in, so it is text: ranked in text order ("1" < "10" < "2" < "4" < "x"), largest first,
+    // one consistent order (before, ranks of 1, 2, 10, 4 came out 7, 5, 6, 3)
+    expect(m.pages[0].items.flatMap(i => i.lines || []).map(l => l.text)).toEqual(['5', '3', '4', '2', '1']);
+  });
+  it('N24: an in filter with one value is a one-item list', async () => {
+    const m = await render({ $schema: 'pagewright/report@1', page: { size: 'A4' }, parameters: [{ name: 'p', type: 'string' }], dataSources: [{ name: 'S', type: 'json', data: [{ v: 'Smith, John' }, { v: 'Smith' }] }],
+      dataSets: [{ name: 'D', source: 'S', path: '$', filters: [{ expr: '=Fields.v', op: 'in', value: '=Parameters.p' }] }],
+      sections: { body: { height: 40, items: [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 100, h: 12, value: '=CountRows("D")' }] } } }, { fontStore, parameters: { p: 'Smith, John' } });
+    expect(m.pages[0].items.flatMap(i => i.lines || []).map(l => l.text)).toEqual(['1']);
+  });
+});
