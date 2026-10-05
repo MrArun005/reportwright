@@ -550,9 +550,10 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
     const { writeReport } = await import('../../src/server/reports.js');
     const { thumbsIdle } = await import('../../src/server/thumbs.js');
     const rows = Array.from({ length: 3000 }, (_, i) => ({ id: i }));
-    // every row builds a 400 kB string: many seconds of work on one thread, stopped by the render time limit
+    // every row builds ten 900 kB strings: seconds of work on one thread even for page 1 alone (thumbnails lay out the
+    // first page only), stopped by the render time limit
     const heavy = (n) => ({ ...def(`Heavy ${n}`, [{ type: 'table', name: 'T', dataSet: 'Rows', x: 0, y: 0, w: 500, h: 40, columns: [{ width: 250 }, { width: 250 }],
-      detail: [{ height: 14, cells: [{ value: '=Fields.id' }, { value: '=Len(Replace(Space(200000), " ", "ab"))' }] }] }]),
+      detail: [{ height: 14, cells: [{ value: '=Fields.id' }, { value: '=' + Array(10).fill('Len(Replace(Space(450000), " ", "ab"))').join(' + ') }] }] }]),
       dataSources: [{ name: 'src', type: 'json', data: { rows } }], dataSets: [{ name: 'Rows', source: 'src', path: '$.rows' }] });
     const id = `heavy-${kind}`; // the thumbnail cache is per process: one id per backend
     const keep = process.env.PW_RENDER_TIMEOUT_MS;

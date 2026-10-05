@@ -10,6 +10,7 @@
 // drawing, and a drawing is not kept when any of that changed while it was queued or drawn. It is drawn as the viewer
 // who asked (never as the server). The route checks view access on every request before it looks here.
 import crypto from 'node:crypto';
+import { publicError } from './errors.js';
 import { renderTo, renderTimeoutMs } from './renderer.js';
 import { submit } from './pool.js';
 import { pageToSvg, fontFaceCss, fontKeysOf } from '../exporters/svg.js';
@@ -22,15 +23,17 @@ const g = /** @type {any} */ (globalThis).__pwThumbJobs ||= { cache: new Map(), 
 /** Page 1 of a definition as SVG, with the fonts it needs beyond the defaults. Runs in the worker (or here as a fallback). */
 export async function drawThumb({ def, principal, base }) {
   try {
-    const r = await renderTo(def, { format: 'json', baseUrl: base, principal });
+    // page 1 only: no full render, no JSON of the whole model (a 100k-row report drew everything to show one page)
+    const r = await renderTo(def, { format: 'json', modelOnly: true, firstPages: 1, baseUrl: base, principal });
     const pg = r.model.pages[0];
     // the home page declares the default fonts; a thumbnail declares the others it uses (fallbacks, uploads)
     const extra = pg ? fontKeysOf({ pages: [pg] }).filter(k => !ALL_FONT_KEYS.includes(k)) : [];
     const svg = pg ? pageToSvg(pg, r.model.width, r.model.height) : '';
-    return { svg: extra.length ? svg.replace(/^(<svg[^>]*>)/, `$1<style>${fontFaceCss(extra)}</style>`) : svg, pages: r.model.pages.length };
+    return { svg: extra.length ? svg.replace(/^(<svg[^>]*>)/, `$1<style>${fontFaceCss(extra)}</style>`) : svg, pages: r.model.partial ? 0 : r.model.pages.length }; // cut short: the count is not known (0: not shown)
   } catch (e) {
     const err = /** @type {any} */ (e);
-    return { error: String(err.message), status: err.status || (err.missingParameters ? 422 : 500) };
+    const status = err.status || (err.missingParameters ? 422 : 500);
+    return { error: publicError(err, status).message, status };
   }
 }
 

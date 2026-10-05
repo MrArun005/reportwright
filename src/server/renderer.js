@@ -2,6 +2,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { render, FontStore } from '@/engine/index.js';
+import { FETCHED_TYPES } from '@/engine/data/index.js';
 import { fontFile, setCustomFonts } from '@/engine/text/fonts.js';
 import { exportPdf } from '@/exporters/pdf.js';
 import { exportHtml } from '@/exporters/html.js';
@@ -72,7 +73,7 @@ const fixedHosts = () => (process.env.PW_FIXED_FETCH_HOSTS ? process.env.PW_FIXE
 export function assertFixedHosts(def) {
   if (!fixedHosts()) return;
   for (const s of Array.isArray(def?.dataSources) ? def.dataSources : []) {
-    if (!s || !['rest', 'csv', 'graphql', 'xml', 'soap', 'odata'].includes(s.type) || ((s.type === 'csv' || s.type === 'xml') && s.data)) continue;
+    if (!s || !FETCHED_TYPES.includes(s.type) || ((s.type === 'csv' || s.type === 'xml') && s.data)) continue;
     if (writtenHost(s.url) === null) throw Object.assign(new Error(`Data source "${s.name}": its host is made by an expression or a parameter. Write the host out (only the path and the query may vary), or set PW_FIXED_FETCH_HOSTS=0.`), { status: 403 });
   }
 }
@@ -104,6 +105,7 @@ export async function loadTemplate(template, principal = defaultPrincipal()) {
  *   encrypt: passwords and permissions (pdfEncryptOptions); not with pdfa or sign.
  *   principal: who the render runs for (perms.js): subreports it may not view are "not found". Default: nobody
  *   with accounts on, so a caller that forgets cannot show more than it should.
+ *   firstPages: lay out only that many pages (thumbnails). modelOnly: the page model, no file (bytes null).
  */
 export async function renderTo(def, opt = {}) {
   const format = opt.format || 'pdf';
@@ -126,7 +128,8 @@ export async function renderTo(def, opt = {}) {
   const model = await render(d, {
     parameters: opt.parameters || {}, state: opt.state || {}, fontStore: fontStore(),
     baseUrl: base, fetch, timeoutMs: renderTimeoutMs(),
-    exportData: format !== 'pdf' || !!opt.ua, // a plain PDF needs no table data
+    exportData: !opt.modelOnly && (format !== 'pdf' || !!opt.ua), // a plain PDF needs no table data
+    ...(opt.firstPages ? { firstPages: opt.firstPages } : {}),
     sql: runSql, // SQL sources query the database directly, not through /api/data/sql
     loadReport: async (id) => {
       let sub;
@@ -136,7 +139,8 @@ export async function renderTo(def, opt = {}) {
       return sub;
     },
   });
-  let bytes;
+  let bytes = null;
+  if (opt.modelOnly) return { bytes, model, contentType: FORMATS[format].type, ext: FORMATS[format].ext };
   // images by URL (a logo) go through the same guard; one that fails to load is left out, as in the viewer
   // with fixed hosts an image URL (often made by an expression) does not reach PW_INTERNAL_HOSTS either
   const imageFetch = fixedHosts() ? serverFetch(opt.self || base, { internal: false }) : fetch;

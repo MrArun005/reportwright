@@ -23,6 +23,7 @@ import { accountsOn, currentUser, openTrusted, publicReadonly, NO_AUTH_HELP } fr
 import { internalHosts } from './safeFetch.js';
 import { normEmail, GROUP, getUser } from './users.js';
 import { readReport } from './reports.js';
+import { FETCHED_TYPES } from '../engine/data/index.js';
 
 export const LEVELS = /** @type {const} */ (['view', 'edit', 'manage']);
 const RANK = { none: 0, view: 1, edit: 2, manage: 3 };
@@ -353,7 +354,7 @@ export function canDesign(p) {
 
 /* ---------------- server-side data in stored definitions ---------------- */
 
-const FETCHED = ['rest', 'csv', 'graphql', 'xml', 'soap', 'odata']; // engine/data FETCHED_TYPES
+const FETCHED = FETCHED_TYPES; // one list: a source type the engine fetches always gets the server's checks
 /**
  * The host of a data source URL as it is written: '' for a path on this server, null when an expression or a parameter
  * builds it (it could be any host), else the host name (lower case, no brackets).
