@@ -153,6 +153,7 @@ export async function renderTo(def, opt = {}) {
       try { sub = await readRunnable(opt.principal || defaultPrincipal(), id); }
       catch (e) { throw e.status === 403 && /no designer saved/.test(e.message) ? e : new Error(`Report "${id}" not found`); } // the same words whether it is missing or not allowed
       assertFixedHosts(sub);
+      opt.onLoadReport?.(id, sub); // thumbs.js: what else this render drew, for its principal-independence check
       return Array.isArray(sub?.dataSources) ? { ...sub, dataSources: sub.dataSources.map(normalizeSource) } : sub;
     },
   });

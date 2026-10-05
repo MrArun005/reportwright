@@ -281,7 +281,28 @@ function mayAddAtTop(s, p) {
   return canDesign(p) && (s.rootCreate || []).some(n => names.has(String(n).toLowerCase()));
 }
 
-/** Grant names that apply to a principal. @param {Principal} p */
+/**
+ * Everything a permission decision reads about the principal and the mode, and nothing else: reportLevel, folderLevel
+ * and every cache key of a decision (accessStamp, accessClass, so the thumbnail cache) are made from this one object,
+ * so a key cannot miss an input the decision has. kind already reflects the mode (vet: accounts on/off, open, public
+ * read-only, service keys still in PW_API_KEYS); embed is PW_EMBED_ORIGINS (an anonymous reader's ceiling).
+ * @param {any} p @returns {{ kind: string, email: string|null, role: string|null, groups: string[], key: string|null, embed: boolean }}
+ */
+export function decisionContext(p) {
+  const v = /** @type {any} */ (vet(p));
+  return Object.freeze({
+    kind: v.kind,
+    email: v.kind === 'user' ? v.email : null,
+    role: v.kind === 'user' ? v.role : null,
+    groups: v.kind === 'user' ? [...new Set(v.groups.map(g => g.toLowerCase()).filter(g => !BUILTIN_GROUPS.includes(g)))].sort() : [],
+    key: v.kind === 'service' ? (v.key ?? null) : null,
+    embed: !!process.env.PW_EMBED_ORIGINS,
+  });
+}
+/** The cache key of a decision context and the grants' stamps (gen: the shared aclgen record). @param {ReturnType<typeof decisionContext>} c @param {any} gen @param {string} [extra] */
+const decisionKey = (c, gen, extra = '') => crypto.createHash('sha256').update(JSON.stringify([c.kind, c.email, c.role, c.groups, c.key, c.embed, gen ?? null, localAclGen(), extra])).digest('hex');
+
+/** Grant names that apply to a principal (or its decision context). @param {any} p */
 function namesOf(p) {
   if (p.kind === 'anon') return new Set(['group:public']);
   if (p.kind !== 'user') return new Set();
@@ -291,11 +312,11 @@ function namesOf(p) {
 /** @param {Grant[]} grants @param {Set<string>} names @returns {number} */
 const best = (grants, names) => Math.max(0, ...(grants || []).filter(g => names.has(String(g.to).toLowerCase())).map(g => RANK[g.level] || 0));
 
-/** The ceiling a principal's role allows. @param {Principal} p */
-function ceiling(p) {
-  if (p.kind === 'open' || p.kind === 'service') return RANK.manage;
-  if (p.kind === 'user') return p.role === 'viewer' ? RANK.view : RANK.manage;
-  if (p.kind === 'anon') return process.env.PW_EMBED_ORIGINS ? RANK.view : 0;
+/** The ceiling a principal's role allows. @param {ReturnType<typeof decisionContext>} c */
+function ceiling(c) {
+  if (c.kind === 'open' || c.kind === 'service') return RANK.manage;
+  if (c.kind === 'user') return c.role === 'viewer' ? RANK.view : RANK.manage;
+  if (c.kind === 'anon') return c.embed ? RANK.view : 0;
   return 0;
 }
 const isAll = (p) => p.kind === 'open' || p.kind === 'service' || (p.kind === 'user' && p.role === 'admin');
@@ -333,26 +354,26 @@ export async function accessClass(p) {
   const now = await userPrincipal(v.email);
   if (now.kind !== 'user') return accessStamp(v);
   const s = await snapshot();
-  const me = `user:${now.email}`;
-  const named = (list) => (list || []).some(g => g?.to === me);
+  const c = decisionContext(now);
+  const me = `user:${c.email}`;
+  const named = (list) => (list || []).some(g => String(g?.to).toLowerCase() === me);
   if (named(s.root) || [...s.folders.values()].some(f => named(f.grants)) || [...s.reports.values()].some(r => named(r.grants))) return accessStamp(v);
-  const gen = await store().get('settings', 'aclgen');
-  const own = now.groups.map(g => g.toLowerCase()).filter(g => !BUILTIN_GROUPS.includes(g)).sort();
-  return `c:${crypto.createHash('sha256').update(JSON.stringify(['user', now.role, own, gen, localAclGen()])).digest('hex')}`;
+  return `c:${decisionKey({ ...c, email: null }, await store().get('settings', 'aclgen'))}`; // no grant names them: the email decides nothing
 }
 
+/** A stamp of one principal's access now: its decision context, its stored record (role, groups, disabled, rev) and the
+ *  grants. @param {Principal} p */
 export async function accessStamp(p) {
-  p = vet(p);
-  // the grants: the shared stamp every folder or report-access write renews (and this thread's own count of them)
-  const [gen, u] = await Promise.all([store().get('settings', 'aclgen'), p.kind === 'user' ? store().get('users', p.email) : null]);
-  return crypto.createHash('sha256').update(`${JSON.stringify(p)}\0${u}\0${gen}\0${localAclGen()}`).digest('hex');
+  const c = decisionContext(p);
+  const [gen, u] = await Promise.all([store().get('settings', 'aclgen'), c.kind === 'user' ? store().get('users', /** @type {string} */ (c.email)) : null]);
+  return decisionKey(c, gen, `${u}\0${/** @type {any} */ (p)?.sv ?? ''}\0${/** @type {any} */ (p)?.viaKey ?? ''}`);
 }
 /** Every permission write gets a new rev: a change and its undo never give back an earlier stamp. */
 const rev = () => crypto.randomBytes(8).toString('hex');
 
 /** A principal's level on a report, from a snapshot. @param {Snapshot} s @param {Principal} p @param {string} id @returns {Level} */
 export function reportLevel(s, p, id) {
-  p = vet(p);
+  p = decisionContext(p);
   if (isAll(p)) return 'manage';
   if (p.kind === 'public') return 'view';
   const names = namesOf(p);
@@ -364,7 +385,7 @@ export function reportLevel(s, p, id) {
 
 /** A principal's level on a folder ("root" or null is the top). @param {Snapshot} s @param {Principal} p @param {string|null} id @returns {Level} */
 export function folderLevel(s, p, id) {
-  p = vet(p);
+  p = decisionContext(p);
   if (isAll(p)) return 'manage';
   if (p.kind === 'public') return 'view';
   const names = namesOf(p);
