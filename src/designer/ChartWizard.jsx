@@ -262,7 +262,7 @@ export default function ChartWizard() {
                       <button type="button" className="linklike" title={tr(f.type === 'number' ? 'useValue' : 'useCategory', { name: f.name })}
                         onClick={() => (f.type === 'number' && !PER_ROW.has(c.chartType) ? set({ value: f.name, agg: c.agg === 'Count' ? 'Sum' : c.agg }) : set({ category: f.name }))}>{f.name}</button>
                     </th>))}</tr></thead>
-                  <tbody>{rows.slice(0, 8).map((r, i) => <tr key={i}>{shown.map(f => <td key={f.name} className={f.name === c.category ? 'cw-cat' : f.name === c.value ? 'cw-val' : ''}>{fmt(r[f.name], f.name)}</td>)}</tr>)}</tbody>
+                  <tbody>{rows.slice(0, 8).map((r, i) => <tr key={i}>{shown.map(f => <td key={f.name} className={f.name === c.category ? 'cw-cat' : f.name === c.value ? 'cw-val' : ''}>{fmt(r[f.name], f.name, def.locale)}</td>)}</tr>)}</tbody>
                 </table>
               </div>
               <span className="hint">{tr('clickHint')} <span className="cw-key cw-cat">{tr('keyCategory')}</span> <span className="cw-key cw-val">{tr('keyValue')}</span></span>
@@ -277,11 +277,12 @@ export default function ChartWizard() {
   );
 }
 
-function fmt(v, name = '') {
+/** A sample value as the report shows numbers: its locale's grouping (en-IN: 12,34,567), not the browser's. */
+function fmt(v, name = '', locale = undefined) {
   if (v == null) return '—';
   if (v instanceof Date) return v.toISOString().slice(0, 10);
   if (typeof v === 'number' && isCode(name)) return String(v); // a year is 2026, an id 2785
-  if (typeof v === 'number') return Number.isInteger(v) ? v.toLocaleString() : v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  if (typeof v === 'number') { try { return v.toLocaleString(locale || undefined, { maximumFractionDigits: 2 }); } catch { return v.toLocaleString(undefined, { maximumFractionDigits: 2 }); } }
   const s = String(v);
   return s.length > 40 ? `${s.slice(0, 39)}…` : s;
 }
