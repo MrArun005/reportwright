@@ -176,6 +176,37 @@ try {
     await p.getByRole('button', { name: 'Parameters' }).click();
     await p.locator('.vparams').getByText('South', { exact: true }).waitFor();
   }
+  if (want('u4')) {
+    step('U-4: unsaved changes are kept as a draft and offered back when the report opens again');
+    const id = await create(base('ux r1c autosave', [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 200, h: 20, value: 'Hello' }]));
+    await open(id);
+    await p.getByLabel('Report name').fill('ux r1c autosave edited');
+    await p.getByTestId('save-state').filter({ hasText: 'Unsaved changes' }).waitFor();
+    await p.waitForTimeout(11000); // the autosave interval
+    assert.ok(await p.evaluate((k) => !!localStorage.getItem(k), `pw.draft.${id}`));
+    await open(id); // as after a crash, an expired session or a closed laptop
+    await p.getByTestId('draft-offer').waitFor();
+    await shot(p, 'u4-draft');
+    await p.getByTestId('draft-restore').click();
+    assert.equal(await p.getByLabel('Report name').inputValue(), 'ux r1c autosave edited');
+    await save();
+    assert.equal((await read(id)).name, 'ux r1c autosave edited');
+    assert.equal(await p.evaluate((k) => localStorage.getItem(k), `pw.draft.${id}`), null); // saved: no draft left
+    await open(id);
+    await p.waitForTimeout(500);
+    assert.equal(await p.getByTestId('draft-offer').count(), 0);
+
+    step('U-4: Cmd/Ctrl+S with a dialog open saves the dialog first');
+    await p.getByRole('button', { name: '+ Add' }).first().click();
+    let dlg = p.getByRole('dialog');
+    await p.keyboard.press('Control+s'); // no name yet: nothing is saved, and the reason shows
+    await p.getByText('Not saved: the open dialog has an error.').waitFor();
+    await dlg.getByLabel('Name').fill('fromDialog');
+    await p.keyboard.press('Control+s');
+    await dlg.waitFor({ state: 'detached' });
+    await p.getByTestId('save-state').filter({ hasText: /^Saved$/ }).waitFor();
+    assert.ok((await read(id)).parameters?.some(x => x.name === 'fromDialog'));
+  }
   assert.deepEqual(errs, [], `page errors: ${errs.join(' | ')}`);
   console.log('ux-r1c: all passed');
 } finally {

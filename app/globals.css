@@ -482,3 +482,5 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .vlinks { position: absolute; inset: 0; pointer-events: none; }
 .vlink { position: absolute; display: block; margin: 0; padding: 0; border: 0; border-radius: 2px; background: transparent; color: transparent; font-size: 0; overflow: hidden; white-space: nowrap; pointer-events: none; text-decoration: none; }
 .vlink:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; background: rgba(14, 116, 144, .10); }
+/* designer: an unsaved draft found when the report opens */
+.draft-bar { position: fixed; top: 52px; left: 50%; transform: translateX(-50%); z-index: 90; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; max-width: calc(100vw - 32px); padding: 8px 12px; background: var(--warn-soft); border: 1px solid var(--warn-line); color: var(--ink); border-radius: 8px; box-shadow: var(--shadow-card); font-size: var(--fs-sm); }

@@ -79,6 +79,45 @@ const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 function savedZoom() { try { const z = localStorage.getItem('pw.designer.zoom'); return z === 'fit' ? 'fit' : ZOOMS.includes(Number(z)) ? Number(z) : null; } catch { return null; } }
 function keepZoom(z) { try { localStorage.setItem('pw.designer.zoom', String(z)); } catch { /* private window */ } }
 
+/* ---- autosave: a draft of unsaved changes in this browser, offered back when the report opens again ---- */
+const AUTOSAVE_MS = 10000;
+const draftKey = (id) => `pw.draft.${id}`;
+function readDraft(id) { try { const d = JSON.parse(localStorage.getItem(draftKey(id)) || 'null'); return d && d.def && typeof d.def === 'object' ? d : null; } catch { return null; } }
+function writeDraft(id, def) { try { localStorage.setItem(draftKey(id), JSON.stringify({ at: Date.now(), def })); return true; } catch { return false; } } // full or private storage: no draft
+export function clearDraft(id) { try { localStorage.removeItem(draftKey(id)); } catch { /* private window */ } }
+/** The definition without the designer's own ids, to compare a draft with what the server has. */
+const plain = (d) => JSON.stringify(d, (k, v) => (k === 'id' ? undefined : v));
+
+/** Unsaved changes are kept as a draft every few seconds (and when the page goes away); "Restore" brings them back. */
+function useAutosave(id, T, lang) {
+  const [offer, setOffer] = useState(null); // { at, def }: a draft newer than the saved report
+  useEffect(() => {
+    if (!id) return;
+    const d = readDraft(id);
+    if (d && plain(d.def) !== plain(useDesigner.getState().def)) setOffer(d); else if (d) clearDraft(id);
+  }, [id]);
+  useEffect(() => {
+    if (!id) return;
+    const keep = () => { const s = useDesigner.getState(); if (!s.saved && !s.readOnly) writeDraft(id, s.def); };
+    const t = setInterval(keep, AUTOSAVE_MS);
+    const hide = () => { if (document.visibilityState === 'hidden') keep(); };
+    window.addEventListener('pagehide', keep);
+    document.addEventListener('visibilitychange', hide);
+    // a saved report needs no draft
+    const unsub = useDesigner.subscribe((s, prev) => { if (s.saved && !prev.saved) clearDraft(id); });
+    return () => { clearInterval(t); window.removeEventListener('pagehide', keep); document.removeEventListener('visibilitychange', hide); unsub(); };
+  }, [id]);
+  if (!offer) return null;
+  const when = new Date(offer.at).toLocaleString(lang === 'en' ? 'en-IN' : lang, { dateStyle: 'medium', timeStyle: 'short' });
+  return (
+    <div className="draft-bar" role="alert" data-testid="draft-offer">
+      <span>{T('ux_draftFound', { when })}</span>
+      <button className="btn sm primary" data-testid="draft-restore" onClick={() => { const d = offer.def; useDesigner.getState().apply(() => JSON.parse(JSON.stringify(d))); useDesigner.getState().fixSelection(); setOffer(null); }}>{T('ux_draftRestore')}</button>
+      <button className="btn sm" data-testid="draft-discard" onClick={() => { clearDraft(id); setOffer(null); }}>{T('ux_draftDiscard')}</button>
+    </div>
+  );
+}
+
 function isTyping(e) {
   // inside a shadow root (the embed) e.target is the host element: the real target is the first in the path
   const t = e.composedPath?.()[0] || e.target;
@@ -176,7 +215,16 @@ export default function Designer({ id, initial, lang: langIn, embed = null }) {
       // embedded: only keys typed inside the designer, never the host page's
       if (embed && !(e.composedPath?.() || []).includes(rootRef.current)) return;
       const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); st().save(); return; }
+      if (mod && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        // a dialog open (a parameter, data set…): its own Save first, so the report is saved with what it holds
+        const dlg = rootRef.current?.querySelector('.dialog');
+        const ok = dlg?.querySelector('footer .btn.primary');
+        if (dlg && ok?.disabled) { st().setUi({ saveError: t(lang, 'ux_saveDialogInvalid') }); setTimeout(() => st().setUi({ saveError: null }), 4000); return; }
+        if (ok) { ok.click(); setTimeout(() => st().save(), 0); return; }
+        st().save();
+        return;
+      }
       if (isTyping(e) || st().tab !== 'design') return;
       if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? st().redo() : st().undo(); return; }
       if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); st().redo(); return; }
@@ -215,6 +263,7 @@ export default function Designer({ id, initial, lang: langIn, embed = null }) {
     if (d && typeof d === 'object') { st().init(id, d); loadSample(); }
   };
 
+  const draftBar = useAutosave(embed ? null : id, T, lang);
   if (!def) return <div className="designer" dir={dirOf(lang)} lang={lang}><div className="dtop"><span className="brand"><i />Pagewright</span><span className="hint">{T('loadingDesigner')}</span></div></div>;
 
   return (
@@ -241,6 +290,7 @@ export default function Designer({ id, initial, lang: langIn, embed = null }) {
         {embed?.onOpen && <button className="btn sm" onClick={open} data-testid="open">Open…</button>}
         {!readOnly && <button className="btn sm primary" onClick={() => st().save()} disabled={saving || saved} data-testid="save">{T('save')} <span className="kbd" style={{ background: 'transparent', color: 'inherit', borderColor: 'currentColor', opacity: 0.7 }}>⌘S</span></button>}
       </div>
+      {draftBar}
       {dialog === 'keys' && (
         <Dialog title={T('shortcuts')} onClose={() => setDialog(null)} footer={<button className="btn" onClick={() => setDialog(null)}>{T('close')}</button>}>
           <div className="kbd-grid">{SHORTCUTS.map(([k, d]) => <Fragment key={d}><span className="kbd">{k}</span><span>{T(d)}</span></Fragment>)}</div>
