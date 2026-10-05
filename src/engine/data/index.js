@@ -393,13 +393,16 @@ export function buildDataSets(def, sources, baseCtx) {
         for (const k of kids) { list.push(k); parents.push(p); }
       }
     } else {
-      const raw = sources[ds.source];
+      let raw = sources[ds.source];
       if (raw === undefined) throw new Error(`Data set "${ds.name}": the source "${ds.source}" does not exist`);
+      // data pushed for an XML or SOAP source (render API): XML text is read as XML; JSON rows are the rows (the XPath is not a JSONPath)
+      const xmlSrc = (def.dataSources || []).find(s => s.name === ds.source && (s.type === 'xml' || s.type === 'soap'));
+      if (xmlSrc && typeof raw === 'string') raw = xmlDocument(raw, xmlSrc);
       if (isXmlDoc(raw)) { // XPath rows; field paths are XPaths relative to the row element
         xdoc = raw;
         ({ rows: list, els: xels } = xmlRows(raw, ds.path));
       } else {
-        ({ rows: list, parents } = jsonPathRows(raw, ds.path || '$'));
+        ({ rows: list, parents } = jsonPathRows(raw, xmlSrc ? '$' : ds.path || '$'));
         if (list == null) list = [];
         if (!Array.isArray(list)) list = [list];
       }

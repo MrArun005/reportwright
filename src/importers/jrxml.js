@@ -737,6 +737,7 @@ function toRdlx(root, notes, charts, reportName) {
     const q = queryOf(ds);
     const ql = String(q?.attrs.language || 'sql').toLowerCase();
     const sql = q && q.text.trim() && (ql === 'sql' || ql === 'hql' || ql === 'plsql');
+    const xpath = ql === 'xpath' || ql === 'xpath2'; // an XML data source: the query picks the rows, fieldDescription the fields
     const srcName = name === MAIN ? 'JasperDataSource' : `${name}Source`;
     /** @type {Record<string, any>} */
     const set = { Name: name, Fields: kids(ds, 'field').map(f => {
@@ -752,6 +753,11 @@ function toRdlx(root, notes, charts, reportName) {
       text = text.replace(/\$P\{([^}]+)\}/g, (_, p) => `@${safeName(p)}`);
       set.Query.CommandText = text;
       DataSources.push({ Name: srcName, ConnectionProperties: { DataProvider: 'SQL', ConnectString: '' } });
+    } else if (xpath) {
+      set.Query.CommandText = q?.text.trim() || '';
+      const at = String(root.children.find(c => c.name === 'property' && c.attrs.name === 'net.sf.jasperreports.xml.source')?.attrs.value || '').trim();
+      if (!at) note(`Data set "${name}": JasperReports gets its XML from Java code; set the XML source's URL in Pagewright.`);
+      DataSources.push({ Name: srcName, ConnectionProperties: { DataProvider: 'XML', ConnectString: at ? `XmlDoc=${at}` : '' } });
     } else {
       if (q && q.text.trim()) note(`Data set "${name}": its ${q.attrs.language || 'query'} query is not converted; point the data source at the data (JSON or CSV) and set its path.`);
       else note(`Data set "${name}": JasperReports gets its rows from Java code (a data source); point the Pagewright data source at the data.`);

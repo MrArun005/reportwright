@@ -2208,7 +2208,7 @@ function chart(ar, cx, ctx, dv) {
 /* ================================================================ data */
 
 const SQL_PROVIDERS = /^(SQL|SQLSERVER|MSSQL|OLEDB|ODBC|ORACLE|MYSQL|POSTGRES|POSTGRESQL|NPGSQL|SQLITE|DB2|SNOWFLAKE|SYBASE)/;
-const CONN_KEYS = /^(endpoint|jsondata|jsondoc|path|url|uri|jpath|method|body|header\$.+|query\$.+|data|locale|textqualifier|columnsseparator|rowsseparator|hasheaders|startingrow|delimiter|separator)$/i;
+const CONN_KEYS = /^(endpoint|jsondata|jsondoc|xmldoc|xmldata|path|url|uri|jpath|method|body|header\$.+|query\$.+|data|locale|textqualifier|columnsseparator|rowsseparator|hasheaders|startingrow|delimiter|separator)$/i;
 
 /** Split "a=1;b=2" at top-level semicolons (not inside {…} parts of a template), keeping unknown pieces with the previous value. */
 function keyValues(str) {
@@ -2281,7 +2281,8 @@ function dataPart(ar, cx) {
   dsList.forEach((d, i) => {
     const name = uniqIn(setNames, String(d.Name || `DataSet${i + 1}`));
     const srcRef = String(d.Query?.DataSourceName ?? '');
-    const fields = fieldsOf(d, name, cx);
+    const xml = info.get(srcRef)?.provider === 'XML'; // its field paths are XPaths
+    const fields = fieldsOf(d, name, cx, xml);
     cx.dsFields.set(name, new Set(fields.map(fd => fd.name.toLowerCase())));
     /** @type {Record<string, any>} */
     const out = { name, source: '', path: '$', fields };
@@ -2302,6 +2303,21 @@ function dataPart(ar, cx) {
     } else if (SQL_PROVIDERS.test(src.provider)) {
       const sql = sqlSource(d, src, name, cx);
       out.source = addSource(sql);
+    } else if (src.provider === 'XML') {
+      // ActiveReports: CommandText is the XPath, XmlDoc= the file or URL, XmlData= the XML. SSRS and JasperReports readers
+      // pass what they read as Query.Xml ({ path, url, inline, soap })
+      const x = d.Query?.Xml || {};
+      const cmd = String(d.Query?.CommandText ?? '').trim();
+      if (cmd.startsWith('=')) cx.warn(`Data set "${name}": its XPath is built by an expression; Pagewright needs a fixed path, so it reads the likeliest rows.`);
+      out.path = x.path ?? (cmd && !cmd.startsWith('=') ? cmd : '$');
+      const kvXml = getKey(src.kv, 'xmldata');
+      const inline = x.inline ?? (kvXml == null ? null : unescapeTpl(kvXml));
+      const url = unescapeTpl(x.url ?? getKey(src.kv, 'xmldoc') ?? getKey(src.kv, 'url') ?? getKey(src.kv, 'path') ?? '').trim();
+      if (url && !/^(https?:)?\/\/|^\//i.test(url)) cx.warn(`Data source "${src.name}" reads the file "${url}"; Pagewright reads XML from a URL, so set one.`);
+      if (!url && inline == null) cx.warn(`Data source "${src.name}" has no XML address or data, so data set "${name}" has no rows until you set one.`);
+      const web = /^(https?:)?\/\/|^\//i.test(url) ? url : '';
+      if (x.soap) out.source = addSource({ name: src.used > 1 ? `${src.name}_${name}` : src.name, type: 'soap', url: web, soapAction: x.soap.action || '', envelope: x.soap.envelope });
+      else out.source = src.inlineName ||= addSource(inline != null ? { name: src.name, type: 'xml', data: String(inline) } : { name: src.name, type: 'xml', url: web });
     } else if (/^(JSON|JSONEMBED|JSONDATA|CSV|)$/.test(src.provider)) {
       const cmdT = translateExpression(d.Query?.CommandText ?? '', { text: true });
       if (!cmdT.ok) cx.warn(`Data set "${name}": its query ${cmdT.notes.join('; ')}; it reads the whole response.`);
@@ -2412,7 +2428,7 @@ function dataTracker(cx, name) {
   return { name, state: 'mapped', approx: (m) => cx.warn(`Data set "${name}": ${m}`), note: (m) => cx.warn(`Data set "${name}": ${m}`), drop: (m) => cx.warn(`Data set "${name}": ${m}`) };
 }
 
-function fieldsOf(d, dsName, cx) {
+function fieldsOf(d, dsName, cx, xml = false) {
   const out = [];
   const seen = new Set();
   const t = dataTracker(cx, dsName);
@@ -2430,8 +2446,9 @@ function fieldsOf(d, dsName, cx) {
     /** @type {Record<string, any>} */
     const fd = { name };
     const hint = /^(.*?)\[(\w+)(?:\|[^\]]*)?\]$/.exec(df);
-    if (hint) { df = hint[1]; if (TYPE_HINT[hint[2].toLowerCase()]) fd.type = TYPE_HINT[hint[2].toLowerCase()]; }
-    if (df !== name) {
+    if (hint && (!xml || TYPE_HINT[hint[2].toLowerCase()])) { df = hint[1]; if (TYPE_HINT[hint[2].toLowerCase()]) fd.type = TYPE_HINT[hint[2].toLowerCase()]; } // an XPath [1] is not a type
+    if (xml) { if (df !== name) fd.path = df; } // an XPath relative to the row element
+    else if (df !== name) {
       const p = convertPath(df.startsWith('$') ? df : df.split('.').length > 1 || /^[A-Za-z_$][\w$]*$/.test(df) ? df : `$['${df.replace(/'/g, '')}']`);
       if (p) fd.path = p;
       else t.approx(`the field path "${df}" is not supported, so the field "${name}" is empty.`);

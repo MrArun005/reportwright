@@ -281,3 +281,11 @@ describe('the server checks cover XML, SOAP and OData sources', async () => {
     expect(() => assertFixedHosts(one('xml', undefined, { data: '<r/>' }))).not.toThrow();
   }));
 });
+
+describe('data pushed for an XML source (render API)', () => {
+  const def = { dataSources: [{ name: 'x', type: 'xml', url: 'https://x.test/a.xml' }], dataSets: [{ name: 'R', source: 'x', path: '//row' }] };
+  it('XML text is read as XML; JSON rows are the rows', () => {
+    expect(buildDataSets(def, { x: '<r><row a="1"/><row a="2"/></r>' }, ctx()).R).toEqual([{ a: '1' }, { a: '2' }]);
+    expect(buildDataSets(def, { x: [{ a: 3 }] }, ctx()).R).toEqual([{ a: 3 }]);
+  });
+});

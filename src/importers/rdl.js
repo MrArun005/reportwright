@@ -697,15 +697,70 @@ function toRdlx(root, notes, year) {
       DataSources.push({ Name: name, ConnectionProperties: { DataProvider: 'JSON', ConnectString: `jsondata=${JSON.stringify(rows)}` } });
       source = name;
     }
+    const xmlQ = providers.get(source) === 'XML' ? ssrsXmlQuery(raw(q, 'CommandText') ?? '', Fields, d.attrs.Name, DataSources.find(x => x.Name === source)) : null;
     return {
       Name: d.attrs.Name,
       Fields,
-      Query: { DataSourceName: source, CommandText: providers.get(raw(q, 'DataSourceName') ?? '') === 'ENTERDATA' ? '' : raw(q, 'CommandText') ?? '', CommandType: raw(q, 'CommandType'),
+      Query: { DataSourceName: source, CommandText: xmlQ ? '' : providers.get(raw(q, 'DataSourceName') ?? '') === 'ENTERDATA' ? '' : raw(q, 'CommandText') ?? '', CommandType: raw(q, 'CommandType'),
+        ...(xmlQ ? { Xml: xmlQ } : {}),
         QueryParameters: list(q, 'QueryParameters', 'QueryParameter').map(p => ({ Name: String(p.attrs.Name || '').replace(/[^@\w]/g, ''), Value: val(p, 'Value') })) },
       Filters: filters(d),
     };
   });
   for (const d of DataSources.filter(x => String(x.ConnectionProperties.DataProvider).toUpperCase() === 'ENTERDATA')) DataSources.splice(DataSources.indexOf(d), 1);
+  /**
+   * The SSRS XML data provider's query: an ElementPath ("Customers {}/Customer {Name, @ID(Integer)}/Orders/Order"), alone
+   * or in <Query> with <ElementPath>, <XmlData> (the XML itself) or <Method>/<SoapAction> (a SOAP call). The rows are the
+   * last element; fields listed on an element above it read from there (../Name). Prefixes are dropped: an unprefixed
+   * name matches any namespace, as IgnoreNamespaces. Sets the fields' DataField to their relative XPath.
+   */
+  function ssrsXmlQuery(cmd, fields, set, source) {
+    const out = {};
+    let ep = String(cmd || '').trim();
+    if (ep.startsWith('=')) { notes.push(`Data set "${set}": its XML query is an expression; set the XPath to the rows.`); return out; }
+    if (ep.startsWith('<')) {
+      let doc;
+      try { doc = parseXml(ep); } catch (e) { notes.push(`Data set "${set}": its XML query could not be read (${e instanceof Error ? e.message : e}).`); return out; }
+      const data = /<XmlData[^>]*>([\s\S]*)<\/XmlData>/.exec(ep)?.[1];
+      if (data != null) out.inline = data.trim().replace(/^<!\[CDATA\[([\s\S]*)\]\]>$/, '$1');
+      const method = doc.children.find(c => c.name === 'Method');
+      if (method && /^[A-Za-z_][\w.-]*$/.test(method.attrs.Name || '')) {
+        const ns = method.attrs.Namespace || '';
+        const sub = (e, n) => e?.children.find(c => c.name === n); // the query's own elements (no RDL namespace)
+        const params = ((sub(method, 'Parameters') || sub(doc, 'Parameters'))?.children || []).filter(c => c.name === 'Parameter' && /^[A-Za-z_][\w.-]*$/.test(c.attrs.Name || ''));
+        const body = params.map(p => `<${p.attrs.Name}>{Parameters.${p.attrs.Name}}</${p.attrs.Name}>`).join('');
+        out.soap = { action: sub(doc, 'SoapAction')?.text.trim() || (ns ? `${ns.replace(/\/$/, '')}/${method.attrs.Name}` : method.attrs.Name),
+          envelope: `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><${method.attrs.Name}${ns ? ` xmlns="${ns.replace(/[<>"&]/g, '')}"` : ''}>${body}</${method.attrs.Name}></soap:Body></soap:Envelope>` };
+        if (params.length) notes.push(`Data set "${set}": its SOAP parameters are sent from the report parameters of the same name; check the envelope.`);
+      }
+      ep = (doc.children.find(c => c.name === 'ElementPath')?.text || '').trim();
+    }
+    if (source && !out.inline) out.url = String(source.ConnectionProperties.ConnectString || '').trim();
+    if (!ep) return out; // no path: the likeliest repeating element
+    const items = [];
+    let depth = 0, cur = '';
+    for (const c of ep) { if (c === '{') depth++; if (c === '}') depth--; if (c === '/' && !depth) { items.push(cur); cur = ''; } else cur += c; }
+    items.push(cur);
+    const byName = new Map();
+    const names = items.map((it, i) => {
+      const m = /^\s*([^{\s]+)\s*(?:\{([^}]*)\})?\s*$/.exec(it);
+      if (!m) return null;
+      const up = '../'.repeat(items.length - 1 - i);
+      for (const f of (m[2] || '').split(',').map(x => x.trim()).filter(Boolean)) {
+        const fm = /^(@?)([\w.-]+)\s*(?:\(\s*\w+\s*\))?$/.exec(f);
+        if (fm) byName.set(fm[2], `${up}${fm[1]}${fm[2]}`);
+      }
+      return m[1].replace(/^[^:]*:/, '');
+    });
+    if (names.some(n => !n)) { notes.push(`Data set "${set}": its element path "${ep}" could not be read; set the XPath to the rows.`); return out; }
+    out.path = '/' + names.join('/');
+    for (const f of fields) {
+      const df = String(f.DataField ?? '').replace(/\[\w+\]$/, '');
+      const pth = byName.get(df) ?? byName.get(df.replace(/^@/, ''));
+      if (pth && pth !== df) f.DataField = pth + (/\[(\w+)\]$/.exec(String(f.DataField))?.[0] || '');
+    }
+    return out;
+  }
   /** Rows of an "Enter Data" query (<Query><XmlData><Data><Row><Col>v</Col>…), typed by the fields. */
   function enteredRows(xml, types, set) {
     let doc;
