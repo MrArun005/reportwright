@@ -1,12 +1,11 @@
 // GET /api/reports/<id>/pdf?param=value[&format=xlsx|html|csv] — server-side render for links and quick checks (view access).
 import { safeId } from '@/server/reports.js';
 import { baseUrl } from '@/server/renderer.js';
-import { principalOf, checkReport } from '@/server/perms.js';
+import { principalOf, readRunnable } from '@/server/perms.js';
 import { renderInPool, admit } from '@/server/pool.js';
 import { busyHeaders } from '@/server/auth.js';
 import { audit } from '@/server/audit.js';
 import { throughSnapshot } from '@/server/snapshots.js';
-import { readReport } from '@/server/reports.js';
 import { errorResponse } from '@/server/errors.js';
 
 export const runtime = 'nodejs';
@@ -20,10 +19,10 @@ export async function GET(req, { params }) {
     // ?pdfa=1 gives PDF/A-2b, ?ua=1 an accessible PDF (PDF/UA-1; with pdfa, PDF/A-2a). Signing is not offered here: this route has no API key (use /api/v1/render).
     const parameters = Object.fromEntries([...url.searchParams.entries()].filter(([k]) => k !== 'format' && k !== 'pdfa' && k !== 'ua'));
     const format = url.searchParams.get('format') || 'pdf';
-    await checkReport(principal, safeId(id)); // view access, before the render takes a place in the queue
-    // read (view access, saved server-side data as a designer stored it) and rendered in a render worker
+    // read once (view access, saved server-side data as a designer stored it), then rendered in a render worker
+    const def = await readRunnable(principal, safeId(id));
     const opt = { parameters, format, baseUrl: baseUrl(req), pdfa: url.searchParams.get('pdfa') === '1', ua: url.searchParams.get('ua') === '1', principal };
-    const r = await throughSnapshot({ def: await readReport(safeId(id)), opt, principal }, () => renderInPool({ ref: safeId(id), how: 'runnable', opt }, { signal: req.signal }));
+    const r = await throughSnapshot({ def, opt, principal }, () => renderInPool({ ref: safeId(id), def, opt }, { signal: req.signal }));
     await audit('report.render', { req, principal, report: id, format, params: parameters, detail: { pages: r.pages, via: 'server link', ...(r.snapshot !== 'off' ? { snapshot: r.snapshot } : {}) } });
     return new Response(r.bytes, {
       headers: {

@@ -21,19 +21,33 @@ export function safeId(id) {
   if (!ID.test(String(id))) throw Object.assign(new Error('Bad report id'), { status: 400 });
   return id;
 }
+/** What the report list shows of a definition. @param {string} id @param {any} def @param {string} updatedAt */
+function metaOf(id, def, updatedAt) {
+  let items = 0;
+  const count = (list) => (list || []).forEach(i => { items++; count(i.items); });
+  // body may be a list of sections, each with its own page header and footer
+  for (const s of Object.values(def.sections || {})) for (const b of Array.isArray(s) ? s : [s]) { count(b?.items); count(b?.pageHeader?.items); count(b?.pageFooter?.items); }
+  return { id, name: def.name || id, updatedAt, items, parameters: (def.parameters || []).map(p => ({ name: p.name, type: p.type || 'string', required: !!p.required })) };
+}
+
+/**
+ * Every report: { id, name, updatedAt, items, parameters }, newest first. From the "reportmeta" index that writeReport
+ * keeps, not from every definition; a report the index lacks (an older install, a file copied in) is read once and
+ * added. ponytail: a definition changed outside Pagewright keeps its old name here until it is saved.
+ */
 export async function listReports() {
-  const out = [];
-  for (const { id, text, updatedAt } of await store().list('reports')) {
-    try {
-      const def = JSON.parse(text);
-      let items = 0;
-      const count = (list) => (list || []).forEach(i => { items++; count(i.items); });
-      // body may be a list of sections, each with its own page header and footer
-      for (const s of Object.values(def.sections || {})) for (const b of Array.isArray(s) ? s : [s]) { count(b?.items); count(b?.pageHeader?.items); count(b?.pageFooter?.items); }
-      out.push({ id, name: def.name || id, updatedAt, items, parameters: (def.parameters || []).map(p => ({ name: p.name, type: p.type || 'string', required: !!p.required })) });
-    } catch { /* skip unreadable reports */ }
+  const [ids, metas] = await Promise.all([store().ids('reports'), store().list('reportmeta')]);
+  const byId = new Map();
+  for (const r of metas) { try { byId.set(r.id, JSON.parse(r.text)); } catch { /* rebuilt below */ } }
+  const missing = ids.filter(id => !byId.has(id));
+  if (missing.length) {
+    const want = new Set(missing);
+    for (const { id, text, updatedAt } of await store().list('reports')) {
+      if (!want.has(id)) continue;
+      try { const m = metaOf(id, JSON.parse(text), updatedAt); byId.set(id, m); await store().put('reportmeta', id, JSON.stringify(m)); } catch { /* skip unreadable reports */ }
+    }
   }
-  return out.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return ids.map(id => byId.get(id)).filter(Boolean).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 /** Read a report. "id@version" reads a saved version from the history. */
@@ -53,6 +67,7 @@ export async function writeReport(id, def) {
     await store().addVersion(id, stamp, prev, KEEP_VERSIONS);
   }
   await store().put('reports', id, next);
+  await store().put('reportmeta', id, JSON.stringify(metaOf(id, def, new Date().toISOString())));
   await (await import('./snapshots.js')).bumpGeneration(); // a saved report (maybe another's subreport): snapshots so far are stale
 }
 
@@ -66,12 +81,13 @@ export async function listVersions(id) {
 /** A report and its version history (a new report with this id must not inherit old versions). */
 export async function deleteReport(id) {
   await store().removeVersions(safeId(id)); await store().remove('reports', id); // history first: a half-done delete leaves no orphans
+  await store().remove('reportmeta', id);
   await (await import('./snapshots.js')).bumpGeneration();
 }
 
 export async function newId(name) {
   const base = (String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'report').slice(0, 48);
-  const existing = new Set((await listReports()).map(r => r.id));
+  const existing = new Set(await store().ids('reports'));
   let id = base, i = 2;
   while (existing.has(id)) id = `${base}-${i++}`;
   return id;

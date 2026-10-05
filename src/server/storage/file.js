@@ -67,6 +67,7 @@ export function fileStore(root) {
     reports: { file: (id) => path.join(reports, `${safe(id)}.pw.json`), ids: async () => (await fs.readdir(reports)).filter(n => n.endsWith('.pw.json')).map(n => n.slice(0, -8)) },
     jobs: { file: (id) => path.join(data, 'jobs', safe(id), 'job.json'), ids: () => fs.readdir(path.join(data, 'jobs')) },
     fonts: { file: (id) => path.join(data, 'fonts', `${safe(id)}.json`), ids: async () => (await fs.readdir(path.join(data, 'fonts'))).filter(n => n.endsWith('.json')).map(n => n.slice(0, -5)) },
+    reportmeta: { file: (id) => path.join(data, 'report-meta', `${safe(id)}.json`), ids: async () => (await fs.readdir(path.join(data, 'report-meta'))).filter(n => n.endsWith('.json')).map(n => n.slice(0, -5)) },
   };
   /** One JSON array for the whole kind; `key` is the id field of each record. Users are owner-only (password hashes). */
   const arrays = {

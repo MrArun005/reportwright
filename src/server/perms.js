@@ -18,7 +18,7 @@
 // report made by a signed-in user) or an admin.
 // view: open, render, export, run its saved SQL. edit: save, restore, version history. manage: delete, move, share.
 import crypto from 'node:crypto';
-import { store } from './storage/index.js';
+import { store, localAclGen } from './storage/index.js';
 import { accountsOn, currentUser, openTrusted, publicReadonly, NO_AUTH_HELP } from './session.js';
 import { internalHosts } from './safeFetch.js';
 import { normEmail, GROUP, getUser } from './users.js';
@@ -161,6 +161,18 @@ export const DEFAULT_CREATE = Object.freeze(['group:designers']);
 /** Every folder and report record, read once for a request. @returns {Promise<Snapshot>} */
 export async function snapshot() {
   if (gp.__pwPermsMigrated !== store()) await migratePermissions();
+  // cached per thread until a permission write here (localAclGen) or on any server (the "aclgen" record, written
+  // after every folder or report-access write). Both are read before the records, so a snapshot is never newer
+  // than its stamp says. Callers must not change it.
+  const local = localAclGen(), shared = await store().get('settings', 'aclgen');
+  const c = gp.__pwAclCache;
+  if (c && c.store === store() && c.local === local && c.shared === shared) return c.snap;
+  const snap = await readSnapshot();
+  gp.__pwAclCache = { store: store(), local, shared, snap };
+  return snap;
+}
+/** @returns {Promise<Snapshot>} */
+async function readSnapshot() {
   const [fl, rl] = await Promise.all([store().list('folders'), store().list('reportacl')]);
   const folders = new Map(), reports = new Map();
   let root = null, rootCreate = [];
@@ -274,9 +286,9 @@ function chain(s, folderId, names) {
  */
 export async function accessStamp(p) {
   p = vet(p);
-  const [fl, rl, u] = await Promise.all([store().list('folders'), store().list('reportacl'), p.kind === 'user' ? store().get('users', p.email) : null]);
-  const all = [...fl.map(r => `f${r.id}\n${r.text}`), ...rl.map(r => `r${r.id}\n${r.text}`)].sort().join('\0');
-  return crypto.createHash('sha256').update(`${JSON.stringify(p)}\0${u}\0${all}`).digest('hex');
+  // the grants: the shared stamp every folder or report-access write renews (and this thread's own count of them)
+  const [gen, u] = await Promise.all([store().get('settings', 'aclgen'), p.kind === 'user' ? store().get('users', p.email) : null]);
+  return crypto.createHash('sha256').update(`${JSON.stringify(p)}\0${u}\0${gen}\0${localAclGen()}`).digest('hex');
 }
 /** Every permission write gets a new rev: a change and its undo never give back an earlier stamp. */
 const rev = () => crypto.randomBytes(8).toString('hex');
@@ -314,9 +326,14 @@ export const atLeast = (have, need) => RANK[have] >= RANK[need];
  * @returns {Promise<Level>}
  */
 export async function checkReport(p, ref, need = 'view') {
+  const [id] = String(ref).split('@');
+  if (!(await store().get('reports', id))) throw fail('Report not found', 404); // an absent report is not "at the top"
+  return levelOn(p, ref, need);
+}
+/** checkReport, once the report is known to exist. @param {Principal} p @param {string} ref @param {'view'|'edit'|'manage'} need */
+async function levelOn(p, ref, need) {
   const [id, version] = String(ref).split('@');
   if (version && need === 'view') need = 'edit';
-  if (!(await store().get('reports', id))) throw fail('Report not found', 404); // an absent report is not "at the top"
   p = await asNow(p);
   if (isAll(p)) return 'manage'; // open, service keys and admins: reportLevel's answer, without reading every grant
   const lvl = reportLevel(await snapshot(), p, id);
@@ -331,9 +348,15 @@ export async function checkReport(p, ref, need = 'view') {
  * @param {Principal} p @param {string} ref @param {'view'|'edit'|'manage'} [need]
  */
 export async function readReportFor(p, ref, need = 'view') {
-  await checkReport(p, ref, need);
-  const def = await readReport(ref);
+  if (String(ref).includes('@')) { // a version: the report must exist, then edit, then the version
+    await checkReport(p, ref, need);
+    const v = await readReport(ref);
+    if (!v) throw fail('Report not found', 404);
+    return v;
+  }
+  const def = await readReport(ref); // one read: it is also the proof the report exists
   if (!def) throw fail('Report not found', 404);
+  await levelOn(p, ref, need);
   return def;
 }
 
@@ -424,8 +447,7 @@ export async function readRunnable(p, ref) {
   const src = serverSources(def);
   if (!src.length) return def;
   const [id] = String(ref).split('@');
-  const text = await store().get('reportacl', id);
-  const data = text ? JSON.parse(text).data : null;
+  const data = (await snapshot()).reports.get(id)?.data ?? null; // the access record, from the (cached) snapshot
   if (!Array.isArray(data) || !data.includes(sourcesHash(src))) {
     throw fail(`The report "${id}" has SQL or internal data sources that no designer saved on this server. A designer must open it and save it again.`, 403);
   }

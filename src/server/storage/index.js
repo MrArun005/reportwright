@@ -13,7 +13,7 @@ import { sqlStore } from './sql.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { logWarn } from '../errors.js';
 
-/** @typedef {'reports'|'schedules'|'jobs'|'users'|'fonts'|'folders'|'reportacl'|'tokens'|'settings'|'blobs'} Kind */
+/** @typedef {'reports'|'schedules'|'jobs'|'users'|'fonts'|'folders'|'reportacl'|'reportmeta'|'tokens'|'settings'|'blobs'} Kind */
 /**
  * @typedef {object} Store
  * @property {(kind: Kind, id: string) => Promise<string|null>} get
@@ -75,8 +75,27 @@ function fence() {
   }
 }
 const WRITES = ['put', 'remove', 'addVersion', 'removeVersions', 'pruneAudit'];
-/** The store with every write fenced by the locks of the caller. @param {Store} s @returns {Store} */
-const fenced = (s) => ({ ...s, ...Object.fromEntries(WRITES.filter(k => typeof s[k] === 'function').map(k => [k, (...a) => { fence(); return s[k](...a); }])) });
+const ACL_KINDS = new Set(['folders', 'reportacl']);
+const gs = /** @type {any} */ (globalThis);
+gs.__pwAclGen ||= 0;
+/** This thread's count of permission writes (perms.js caches its snapshot on it and on the shared "aclgen" record). */
+export const localAclGen = () => gs.__pwAclGen;
+/**
+ * The store with every write fenced by the locks of the caller. A write to a folder or report-access record then
+ * writes a new "aclgen" settings record, after the record itself: every server's permission cache sees the change.
+ * @param {Store} s @returns {Store}
+ */
+const fenced = (s) => {
+  const out = { ...s, ...Object.fromEntries(WRITES.filter(k => typeof s[k] === 'function').map(k => [k, (...a) => { fence(); return s[k](...a); }])) };
+  for (const k of ['put', 'remove']) {
+    const w = out[k];
+    out[k] = async (kind, ...a) => {
+      try { return await w(kind, ...a); }
+      finally { if (ACL_KINDS.has(kind)) { gs.__pwAclGen++; await s.put('settings', 'aclgen', JSON.stringify({ id: 'aclgen', gen: `${Date.now()}-${Math.random().toString(36).slice(2)}` })); } }
+    };
+  }
+  return out;
+};
 
 /** @type {{ key: string, store: Store } | null} */
 let current = null;
