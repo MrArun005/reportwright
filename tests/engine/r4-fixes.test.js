@@ -301,3 +301,14 @@ describe('a list row taller than a page', () => {
     for (const p of m.pages.slice(1)) expect(p.items.some(i => i.t === 'line' && i.x1 === i.x2 && Math.abs(i.x1 - 36) < 1)).toBe(true);
   });
 });
+
+describe('Instant visuals starts with fields worth a picture', () => {
+  it('low-cardinality text fields and an amount, never Id or a name', async () => {
+    const { instantPicks } = await import('../../src/designer/tableGen.js');
+    const fields = [{ name: 'id', type: 'number' }, { name: 'borrower', type: 'string' }, { name: 'borrowerName', type: 'string' }, { name: 'region', type: 'string' },
+      { name: 'status', type: 'string' }, { name: 'rate', type: 'number' }, { name: 'outstanding', type: 'number' }];
+    const rows = Array.from({ length: 180 }, (_, i) => ({ id: i, borrower: `B${i}`, borrowerName: `Name ${i}`, region: ['N', 'S', 'E', 'W'][i % 4], status: ['Active', 'Closed', 'Overdue'][i % 3], rate: 9.5, outstanding: i * 100 }));
+    expect(instantPicks(fields, rows)).toEqual(['status', 'region', 'outstanding']);
+    expect(instantPicks(fields, [])).toEqual(['borrower', 'region', 'outstanding']);
+  });
+});

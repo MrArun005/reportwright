@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { useDesigner, addItem, bodyWidth, secOf } from './store.js';
 import { loadSample, noSourceKey } from './DataPanel.jsx';
 import { paintItemSvg } from './Canvas.jsx';
-import { tableFor, labelOf, formatFor } from './tableGen.js';
+import { tableFor, labelOf, formatFor, instantPicks } from './tableGen.js';
 import { Dialog, Field, Select, Check } from './ui.jsx';
 import { useT } from './Reuse.jsx';
 import { ITEMS } from '@/engine/items/index.js';
@@ -161,7 +161,11 @@ export function InstantVisuals() {
   const T = useT();
   const w = useDesigner(s => s.instantVisuals);
   const { def, ds, fields, rows } = useData(w?.dataSet);
-  const [picked, setPicked] = useState(() => (ds?.fields || []).slice(0, 2).map(f => f.name));
+  // low-cardinality dimensions and an amount, chosen again once the sample rows arrive (until the user ticks a box)
+  const [picked, setPickedRaw] = useState(() => instantPicks(ds?.fields || [], rows));
+  const [touched, setTouched] = useState(false);
+  const setPicked = (fn) => { setTouched(true); setPickedRaw(fn); };
+  useEffect(() => { if (!touched) setPickedRaw(instantPicks(ds?.fields || [], rows)); }, [rows.length, ds]); // eslint-disable-line react-hooks/exhaustive-deps
   const close = () => useDesigner.getState().setUi({ instantVisuals: null });
   const width = Math.round(bodyWidth(def, 'body'));
   const list = ds ? suggestions(ds, picked, width, rows, def.currency) : [];

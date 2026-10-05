@@ -127,3 +127,21 @@ export function matrixFor(ds, { rows, columns, value, agg = 'Sum', width = 523, 
     values: [{ value: agg === 'Count' ? '=CountRows()' : `=${agg}(Fields.${value})`, format: agg === 'Count' ? 'N0' : (vf && formatFor(vf, sample, { currency })) || 'N2' }],
   };
 }
+
+/**
+ * The fields Instant visuals starts with: the text field with the fewest distinct values (2 to 24; never an id, a
+ * code or a field unique on almost every row), a second such field when there is one, and the first additive number
+ * (an amount, not an id or a rate). No rows yet: by name and type only. A 180 × 180 pivot of Id by Borrower helps nobody.
+ * @param {{ name: string, type?: string }[]} fields @param {any[]} rows
+ * @returns {string[]}
+ */
+export function instantPicks(fields, rows = []) {
+  const sample = rows.slice(0, 2000);
+  const card = (f) => new Set(sample.map(r => r?.[f.name])).size;
+  const dims = fields.filter(f => f.type !== 'number' && f.type !== 'object' && !isCode(f.name) && !/name$|^(email|phone|address|description|notes?|comment)$/i.test(f.name))
+    .map(f => ({ f, n: sample.length ? card(f) : 0 }))
+    .filter(x => !sample.length || (x.n >= 2 && x.n <= 24 && x.n < sample.length * 0.5))
+    .sort((a, b) => a.n - b.n).map(x => x.f.name);
+  const nums = fields.filter(additive).map(f => f.name);
+  return [...dims.slice(0, 2), ...nums.slice(0, 1)];
+}
