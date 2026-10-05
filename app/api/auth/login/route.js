@@ -1,10 +1,10 @@
 // POST /api/auth/login { email, password } — sign in (PW_AUTH=users). Sets the pw_session cookie, or, when the account
 // needs a second factor, answers { mfa: 'totp' | 'enrol' } and sets pw_mfa: POST /api/auth/mfa finishes the sign-in.
-// Limits across servers (src/server/limits.js loginAttempt): too many failures from one source → 429 for that source;
-// failures for one account from everywhere only slow its tries down, so nobody can lock its owner out.
+// The password goes through limits.checkCredential: failures only make later tries wait (per account and network, and
+// a little for a much-attacked account); nothing is refused, nobody is locked out.
 import { authenticate, ensureAdmin, normEmail, secondFactor } from '@/server/users.js';
-import { accountsOn, sessionSecret, sessionCookie, mfaCookie, deviceCookie, knownDevice } from '@/server/session.js';
-import { loginAttempt, clientAddress, unknownProxy } from '@/server/limits.js';
+import { accountsOn, sessionSecret, sessionCookie, mfaCookie } from '@/server/session.js';
+import { checkCredential } from '@/server/limits.js';
 import { getSettings } from '@/server/settings.js';
 import { issueEnrolCode, updateUser } from '@/server/users.js';
 import { mailOn, sendMail } from '@/server/mail.js';
@@ -29,15 +29,8 @@ export async function POST(req) {
     let email;
     try { email = normEmail(body.email); } catch { await audit('auth.login_failed', { req, detail: { reason: 'bad email' } }); return Response.json({ error: WRONG }, { status: 401 }); }
     await ensureAdmin();
-    const slot = await loginAttempt(clientAddress(req), email, { perSource: !unknownProxy(req), knownDevice: knownDevice(req, email) });
-    if (!slot.ok) {
-      await audit('auth.login_failed', { req, detail: { email, reason: 'rate limited' } });
-      return Response.json({ error: 'Too many failed sign-ins. Try again later.' }, { status: 429, headers: { 'retry-after': String(slot.retryAfter) } });
-    }
-    if (slot.delayMs) await new Promise(r => setTimeout(r, slot.delayMs));
-    const user = await authenticate(email, body.password);
+    const user = await checkCredential({ kind: 'password', account: email, req }, () => authenticate(email, body.password));
     if (!user) { await audit('auth.login_failed', { req, detail: { email, reason: 'wrong email or password' } }); return Response.json({ error: WRONG }, { status: 401 }); }
-    await slot.release(); // a right password does not count
     const need = secondFactor(user, await getSettings({ fresh: true }));
     if (need === 'enrol' && mailOn()) {
       // a first enrolment needs the password and the mailbox: a code goes to the account's address
@@ -56,10 +49,7 @@ export async function POST(req) {
     }
     if (need) return Response.json({ mfa: need }, { headers: { 'set-cookie': mfaCookie(req, user, need === 'enrol'), 'cache-control': 'no-store' } });
     await audit('auth.login', { req, actor: `user:${user.email}`, detail: { method: 'password' } });
-    const h = new Headers();
-    h.append('set-cookie', sessionCookie(req, user));
-    h.append('set-cookie', deviceCookie(req, user)); // this browser skips the per-account throttle next time
-    return Response.json({ email: user.email, role: user.role }, { headers: h });
+    return Response.json({ email: user.email, role: user.role }, { headers: { 'set-cookie': sessionCookie(req, user) } });
   } catch (e) {
     return errorResponse(e);
   }

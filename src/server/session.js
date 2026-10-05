@@ -149,27 +149,6 @@ export function sessionCookie(req, user, how = {}) {
   return `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${exp - now}${isHttps(req) ? '; Secure' : ''}`;
 }
 
-/* ---------------- a device that signed in before ---------------- */
-
-export const DEVICE_COOKIE = 'pw_device';
-const DEVICE_AGE = 90 * 86400;
-/**
- * Set-Cookie marking this browser as one that completed a sign-in (password and any second factor) for this account.
- * It proves nothing about who is signing in now; it only lets this browser skip the per-account throttle that other
- * people's failures can raise (limits.loginAttempt), so a flood from elsewhere cannot keep the owner out.
- * @param {Request} req @param {{ email: string }} user
- */
-export function deviceCookie(req, user) {
-  const now = Math.floor(Date.now() / 1000);
-  const token = signSession({ dev: 1, e: user.email, iat: now, exp: now + DEVICE_AGE }, DEVICE_COOKIE);
-  return `${DEVICE_COOKIE}=${token}; Path=/api/auth; HttpOnly; SameSite=Strict; Max-Age=${DEVICE_AGE}${isHttps(req) ? '; Secure' : ''}`;
-}
-/** True when the request carries a device cookie for this account. @param {Request} req @param {string} email */
-export function knownDevice(req, email) {
-  const p = readToken(cookie(req, DEVICE_COOKIE) || '', DEVICE_COOKIE);
-  return p?.dev === 1 && p.e === email;
-}
-
 /* ---------------- the step between the password and the second factor ---------------- */
 
 export const MFA_COOKIE = 'pw_mfa';

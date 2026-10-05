@@ -91,27 +91,31 @@ const isTrusted = (a) => { const net = /** @type {typeof import('node:net')} */ 
 const PRIVATE = /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|::1$|f[cd][0-9a-f]{2}:)/i;
 /**
  * True when the request came through a proxy this server was not told about: the peer is a private or loopback address,
- * not in PW_TRUSTED_PROXIES, and the request carries X-Forwarded-For. Every client then looks like the proxy, so the
- * cap per source for all emails would let one person lock everyone out: loginAttempt skips that one (the caps per source
- * and email, and the per-account turn, still hold; a LAN client's made-up header gains nothing more).
- * Says so in the log once. @param {Request} [req]
+ * not in PW_TRUSTED_PROXIES, and the request carries X-Forwarded-For. Every client then looks like the proxy, so they
+ * share one count in checkCredential. Says so in the log once. @param {Request} [req]
  */
 export function unknownProxy(req) {
   if (!req?.headers || !g.__pwPeers) return false;
   const peer = norm(req.headers.get(PEER));
   const yes = !!peer && PRIVATE.test(peer) && !isTrusted(peer) && !!req.headers.get('x-forwarded-for');
-  if (yes && !g.__pwWarnedProxy) { g.__pwWarnedProxy = true; console.error(`[pagewright] requests come through a proxy at ${peer} that PW_TRUSTED_PROXIES does not name: every client looks like it, so the sign-in cap per address for all accounts is off. Set PW_TRUSTED_PROXIES.`); }
+  if (yes && !g.__pwWarnedProxy) { g.__pwWarnedProxy = true; console.error(`[pagewright] requests come through a proxy at ${peer} that PW_TRUSTED_PROXIES does not name: every client looks like it, so every client shares one sign-in count. Set PW_TRUSTED_PROXIES.`); }
   return yes;
 }
 
 /** An address as limits count it: an IPv6 address by its /64 (one host gets a whole /64), IPv4 as it is. @param {string} a */
 export function netKey(a) {
   const net = /** @type {typeof import('node:net')} */ (process.getBuiltinModule('node:net'));
+  a = String(a || '').trim().replace(/^\[([^\]]+)\](:\d+)?$/, '$1').replace(/^(\d+\.\d+\.\d+\.\d+):\d+$/, '$1'); // a port, as some proxies write it
   if (!net.isIPv6(a)) return a;
-  const [head, tail = ''] = a.split('::');
+  const v4tail = /(\d+\.\d+\.\d+\.\d+)$/.exec(a);
+  let s = a.toLowerCase();
+  if (v4tail) { const p = v4tail[1].split('.').map(Number); s = s.slice(0, -v4tail[1].length) + `${((p[0] << 8) | p[1]).toString(16)}:${((p[2] << 8) | p[3]).toString(16)}`; }
+  const [head, tail = ''] = s.split('::');
   const h = head ? head.split(':') : [], t = tail ? tail.split(':') : [];
-  const full = a.includes('::') ? [...h, ...Array(8 - h.length - t.length).fill('0'), ...t] : h;
-  return `${full.slice(0, 4).map(x => x.toLowerCase().replace(/^0+(?=.)/, '')).join(':')}::/64`;
+  const full = (s.includes('::') ? [...h, ...Array(8 - h.length - t.length).fill('0'), ...t] : h).map(x => parseInt(x, 16) || 0);
+  // IPv4-mapped (::ffff:0:0/96) in any spelling: the IPv4 address, counted as one
+  if (full.slice(0, 5).every(x => x === 0) && full[5] === 0xffff) return [full[6] >> 8, full[6] & 255, full[7] >> 8, full[7] & 255].join('.');
+  return `${full.slice(0, 4).map(x => x.toString(16)).join(':')}::/64`;
 }
 
 /**
@@ -137,11 +141,15 @@ function sweepSoon() {
   store().sweepLeases?.(Date.now() - 60000).catch((e) => console.error(`[pagewright] lease sweep: ${e.message}`));
 }
 
-/* ---------------- password sign-in ---------------- */
+/* ---------------- every credential check ---------------- */
 
 const WINDOW = 15 * 60 * 1000;
-const hotDelay = () => { const n = Number(process.env.PW_LOGIN_SLOW_MS); return Number.isFinite(n) && n >= 0 && process.env.PW_LOGIN_SLOW_MS !== '' && process.env.PW_LOGIN_SLOW_MS !== undefined ? n : 2000; };
 const emailKey = (email) => limitHash(['account', normAccount(email)]);
+/** Delay (ms) for the nth failure in a row from one source on one account: none for 3, then 0.5 s doubling to 8 s. */
+export const sourceDelay = (n) => (n < 3 ? 0 : Math.min(8000, 500 * 2 ** (n - 3)));
+/** Extra delay for every try on an account that has 50+ failures from all sources in the window: never more. */
+export const HOT_DELAY_MS = 1500, HOT_AFTER = 50;
+const ms = (k, d) => { const n = Number(process.env[k]); return process.env[k] !== undefined && process.env[k] !== '' && Number.isFinite(n) && n >= 0 ? n : d; };
 
 /** The account's unlock epoch: an admin unlock starts every count for it afresh. @param {string} email */
 async function epoch(email) {
@@ -154,42 +162,50 @@ export async function unlockLogin(email) {
   await putRecord(`login-unlock:${emailKey(email)}`, { at: Date.now() });
 }
 
-/**
- * Password sign-in limits, across servers. Take them before checking the password; give them back when it was right.
- * - Per source (the client address, see clientAddress): 10 failures in 15 minutes for one email → 429 for that source
- *   only; 100 for all emails (a spray from one source) → 429; after 5 for one email each try waits 1 s first (backoff).
- * - Per account (all sources): past 50 failures in 15 minutes, one try per PW_LOGIN_SLOW_MS (2 s) across every source
- *   and server; others at the same moment get 429 with Retry-After. The right password still signs in on its turn
- *   (and a second factor is still asked for), so others' failures slow the owner down but never lock them out.
- * - Names are hashes of [kind, account, network] tuples (limitHash), the account normalised (normAccount).
- * - IPv6 sources count by /64. Behind a proxy PW_TRUSTED_PROXIES does not name (unknownProxy), the cap per source for
- *   all emails is off (every client would share it). Set PW_TRUSTED_PROXIES: until then one person can still slow
- *   a named account behind that proxy (10 tries per source and email).
- * - An admin can start an account's counts afresh (unlockLogin, PATCH /api/users/<email> { unlockSignIn: true }).
- * @param {string} address @param {string} email
- * @returns {Promise<{ ok: boolean, retryAfter: number, delayMs: number, release: () => Promise<void> }>}
- */
-export async function loginAttempt(address, email, { perSource = true, knownDevice = false } = {}) {
-  const acct = normAccount(`${email}`);
-  const era = await epoch(acct);
-  const net = netKey(address);
-  const one = await attempt(['login', acct, era, net], 10, WINDOW);
-  if (!one.ok) return { ...one, delayMs: 0 };
-  const none = { ok: true, retryAfter: 0, release: async () => {} };
-  const src = perSource ? await attempt(['login-src', net], 100, WINDOW) : none;
-  if (!src.ok) { await one.release(); return { ...src, delayMs: 0 }; }
-  const soft = await attempt(['login-soft', acct, era, net], 5, WINDOW);
-  const all = await attempt(['login-all', acct, era], 50, WINDOW);
-  const release = async () => { await Promise.all([one.release(), src.release(), soft.release(), all.release()]); };
-  if (!all.ok && hotDelay() && !knownDevice) {
-    // a hot account: one try at a time across all sources and servers, one per PW_LOGIN_SLOW_MS (a lease left to run
-    // out). Parallel tries get 429 and wait their turn. A browser that signed in to this account before (its device
-    // cookie) skips this: however many tries others make, the owner's right password and second factor get in.
-    const ms = hotDelay();
-    if (!(await store().lease(`login-turn:${limitHash(['turn', acct, era])}`, crypto.randomBytes(6).toString('hex'), ms))) {
-      await release();
-      return { ok: false, retryAfter: Math.max(1, Math.ceil(ms / 1000)), delayMs: 0, release: async () => {} };
-    }
+// failure counts are storage leases (atomic on every storage, so parallel tries cannot undercount), as attempt():
+// per (account, network) up to SLOTS failures in a row, scanned from the first, so the first free slot's index is the
+// count; per account, HOT_AFTER slots taken in any order (attempt), all held = a hot account.
+const SLOTS = 8;
+/** The failures in a row so far, and a slot taken for this try (given back when it succeeds). */
+async function takeSlot(name) {
+  const owner = crypto.randomBytes(8).toString('hex');
+  for (let k = 0; k < SLOTS; k++) {
+    const slot = `${name}:${k}`;
+    if (await store().lease(slot, owner, WINDOW)) return { n: k, release: () => store().release(slot, owner) };
   }
-  return { ok: true, retryAfter: 0, delayMs: soft.ok ? 0 : 1000, release };
+  return { n: SLOTS, release: async () => {} };
+}
+
+/**
+ * Every check of a secret someone presents goes through here: a password, an API key, PW_BASIC_AUTH, the proxy
+ * secret, a TOTP or recovery code, an emailed enrolment code, a reset token, a download link's signature (the ratchet
+ * test tests/engine/r1a-credential.test.js fails when one does not). Nothing is ever refused here, nobody is locked
+ * out; a try only waits, before `verify` runs (so a client cannot learn the answer early and move on):
+ *   - per (kind, account, source network): failures from that network on that account in 15 minutes, sourceDelay(n),
+ *     up to 8 s. Other networks' failures never touch this count, so an attacker cannot slow the owner's own network;
+ *   - per (kind, account), all networks: past 50 failures in 15 minutes, every try waits HOT_DELAY_MS (1.5 s) more.
+ *     That is all that a flood from rotating sources can add to the owner's sign-in.
+ * A success gives its own try back (it does not count). Counts are storage leases: atomic, across servers. The network is the client address (trusted proxies only, see
+ * clientAddress), IPv6 by /64. Names are tuple hashes (limitHash); accounts are normalised (normAccount).
+ * Residual: a distributed guesser is slowed (each try waits, ≥ 1.5 s on a hot account) but not capped; strong
+ * passwords, second factors and high-entropy keys are what stop it.
+ * @template T @param {{ kind: string, account?: string, req?: Request, address?: string }} who
+ * @param {() => Promise<T> | T} verify returns a truthy value for a right secret @returns {Promise<T>}
+ */
+export async function checkCredential(who, verify) {
+  sweepSoon();
+  if (who.req) unknownProxy(who.req); // says once in the log when a proxy in front is not in PW_TRUSTED_PROXIES
+  const acct = normAccount(who.account ?? '-');
+  const era = who.kind === 'password' || who.kind === 'mfa' ? await epoch(acct) : 0;
+  const net = netKey(who.address ?? clientAddress(who.req));
+  const [mine, all] = await Promise.all([takeSlot(`cf:${limitHash(['cred', who.kind, acct, era, net])}`), attempt(['cred-all', who.kind, acct, era], HOT_AFTER, WINDOW)]);
+  const wait = Math.min(ms('PW_CRED_MAX_DELAY_MS', 8000), sourceDelay(mine.n)) + (all.ok ? 0 : ms('PW_CRED_HOT_DELAY_MS', HOT_DELAY_MS));
+  if (wait) await new Promise(r => setTimeout(r, wait));
+  let ok = null, err = null;
+  try { ok = await verify(); } catch (e) { err = e; }
+  const wrong = !ok && (!err || [400, 401, 403].includes(/** @type {any} */ (err).status)); // a refused secret, not a server error
+  // a right secret (or a server error) gives this try's slots back; a wrong one keeps them for the window
+  if (!wrong) await Promise.all([mine.release(), all.release()]);
+  if (err) throw err;
+  return ok;
 }

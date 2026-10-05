@@ -24,7 +24,7 @@ export async function proxy(request) {
     return Response.json({ error: 'This request did not come from a Pagewright page (Origin check).' }, { status: 403 });
   }
   // around the proxy only static files and /api/v1 (its own keys): not the embed's reads of definitions either
-  if (!proxySecretOk(request) && !/^\/(_next|fonts|icc|embed)\/|^\/api\/v1\/|^\/favicon|^\/harfbuzz-subset\.wasm$/.test(pathname)) {
+  if (!(await proxySecretChecked(request)) && !/^\/(_next|fonts|icc|embed)\/|^\/api\/v1\/|^\/favicon|^\/harfbuzz-subset\.wasm$/.test(pathname)) {
     return Response.json({ error: 'This request did not come through the signing-in reverse proxy (PW_PROXY_SECRET).' }, { status: 401 });
   }
   if (!openTrusted()) {
@@ -36,5 +36,12 @@ export async function proxy(request) {
           { status: 401, headers: { 'content-type': 'text/html; charset=utf-8' } });
     }
   }
-  return basicAuth(request) ?? undefined;
+  return (await basicAuth(request)) ?? undefined;
+}
+
+/** The proxy secret, when one is configured and presented, through the one credential check (limits.checkCredential). */
+async function proxySecretChecked(request) {
+  if (!process.env.PW_PROXY_SECRET || process.env.PW_AUTH !== 'proxy') return proxySecretOk(request);
+  if (!request.headers.get('x-pagewright-proxy-secret')) return false; // nothing presented: nothing to count
+  return (await import('./src/server/limits.js')).checkCredential({ kind: 'proxy', req: request }, () => proxySecretOk(request));
 }

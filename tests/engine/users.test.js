@@ -225,29 +225,29 @@ describe('sign-in rate limit', () => {
   const peer = (a, xff) => ({ headers: { 'x-pw-peer': a, ...(xff && { 'x-forwarded-for': xff }) } });
   beforeAll(() => { globalThis.__pwPeers = true; });
   afterAll(() => { delete globalThis.__pwPeers; });
-  it('allows 10 failures per source and email in 15 minutes, then answers 429 to that source only', async () => {
+  it('failures make that source wait on that email, never 429; other emails and sources are not slowed', async () => {
     await createUser({ email: 'r@x.io', role: 'viewer', password: PW });
     await createUser({ email: 's@x.io', role: 'viewer', password: PW });
-    vi.useFakeTimers({ toFake: ['Date'] });
+    process.env.PW_CRED_MAX_DELAY_MS = '200';
     try {
       // a made-up X-Forwarded-For per try buys nothing: the source is the socket's address
-      for (let i = 0; i < 10; i++) expect((await signIn('r@x.io', 'wrong password!', peer('10.0.0.7', `1.1.1.${i}`))).status).toBe(401);
-      const blocked = await signIn('R@x.io', PW, peer('10.0.0.7', '9.9.9.9'));
-      expect(blocked.status).toBe(429);
-      expect(blocked.headers.get('retry-after')).toBeTruthy();
-      expect((await signIn('s@x.io', PW, peer('10.0.0.7'))).status).toBe(200); // another email is not blocked
-      expect((await signIn('r@x.io', PW, peer('10.0.0.8'))).status).toBe(200); // another source is not
-      vi.setSystemTime(Date.now() + 15 * 60 * 1000 + 1000);
-      expect((await signIn('r@x.io', PW, peer('10.0.0.7'))).status).toBe(200);
-    } finally { vi.useRealTimers(); }
+      for (let i = 0; i < 5; i++) expect((await signIn('r@x.io', 'wrong password!', peer('10.0.0.7', `1.1.1.${i}`))).status).toBe(401);
+      let t0 = Date.now();
+      expect((await signIn('R@x.io', PW, peer('10.0.0.7', '9.9.9.9'))).status).toBe(200);
+      expect(Date.now() - t0).toBeGreaterThanOrEqual(180);
+      t0 = Date.now();
+      expect((await signIn('s@x.io', PW, peer('10.0.0.7'))).status).toBe(200); // another email
+      expect((await signIn('r@x.io', PW, peer('10.0.0.8'))).status).toBe(200); // another source
+      expect(Date.now() - t0).toBeLessThan(1500);
+    } finally { delete process.env.PW_CRED_MAX_DELAY_MS; }
   });
   it('50 failures for one email from all sources never lock its owner out', async () => {
     await createUser({ email: 'q@x.io', role: 'viewer', password: PW });
-    process.env.PW_LOGIN_SLOW_MS = '50';
+    process.env.PW_CRED_HOT_DELAY_MS = '50';
     try {
       for (let i = 0; i < 55; i++) expect((await signIn('q@x.io', 'wrong password!', peer(`5.5.${i}.1`))).status).toBe(401);
       expect((await signIn('q@x.io', PW, peer('6.6.6.6'))).status).toBe(200);
-    } finally { delete process.env.PW_LOGIN_SLOW_MS; }
+    } finally { delete process.env.PW_CRED_HOT_DELAY_MS; }
   });
 });
 

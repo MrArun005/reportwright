@@ -167,25 +167,35 @@ describe('enrolling and signing in', () => {
     expect((await post(R.mfa, '/api/auth/mfa', { code: totp.totp(secret) }, l.mfa)).status).toBe(401);
     await users.updateUser('dee@x.test', { password: 'designer password 1' });
   });
-  it('5 wrong codes in 15 minutes lock the second step, even for the right code', async () => {
-    const l = await login('dee@x.test', 'designer password 1');
-    // the three wrong codes and two wrong setup passwords above count too: the window is per user, not per sign-in
-    const statuses = [];
-    for (let i = 0; i < 4; i++) statuses.push((await post(R.mfa, '/api/auth/mfa', { code: '000001' }, l.mfa)).status);
-    expect(statuses).toEqual([429, 429, 429, 429]);
-    const r = await post(R.mfa, '/api/auth/mfa', { code: totp.totp(secret, Date.now() - 30000) }, l.mfa);
-    expect(r.status).toBe(429);
-    expect(r.headers.get('retry-after')).toBe('900');
+  it('wrong codes make later tries wait, never lock: the right code still signs in (limits.checkCredential)', async () => {
+    process.env.PW_CRED_MAX_DELAY_MS = '200';
+    try {
+      const l = await login('dee@x.test', 'designer password 1');
+      // the wrong codes and setup passwords above count too: per account and network
+      for (let i = 0; i < 4; i++) expect((await post(R.mfa, '/api/auth/mfa', { code: '000001' }, l.mfa)).status).toBe(401);
+      const t0 = Date.now();
+      const r = await post(R.mfa, '/api/auth/mfa', { code: totp.totp(secret, Date.now() - 30000) }, l.mfa);
+      expect(Date.now() - t0).toBeGreaterThanOrEqual(180); // it waited
+      expect(r.status).not.toBe(429);
+    } finally { delete process.env.PW_CRED_MAX_DELAY_MS; }
   });
 });
 
 describe('password sign-in limits hold across servers', () => {
-  it('10 failures per address and email, then 429 even for the right password', async () => {
+  it('failures from one address make that address wait (counted across servers); the right password still signs in', async () => {
     await users.createUser({ email: 'lim@x.test', role: 'viewer', password: 'limit password 1' });
     const tryPw = (pw, ip = '10.9.9.9') => R.login(new Request(`${BASE}/api/auth/login`, { method: 'POST', headers: { ...H(), 'x-pw-peer': ip }, body: JSON.stringify({ email: 'lim@x.test', password: pw }) }));
-    for (let i = 0; i < 10; i++) expect((await tryPw('wrong password x')).status).toBe(401);
-    expect((await tryPw('limit password 1')).status).toBe(429);
-    expect((await tryPw('limit password 1', '10.9.9.10')).status).toBe(200); // another address
+    process.env.PW_CRED_MAX_DELAY_MS = '200';
+    try {
+      for (let i = 0; i < 5; i++) expect((await tryPw('wrong password x')).status).toBe(401);
+      let t0 = Date.now();
+      expect((await tryPw('limit password 1')).status).toBe(200);
+      expect(Date.now() - t0).toBeGreaterThanOrEqual(180);
+      for (let i = 0; i < 5; i++) await tryPw('wrong password x');
+      t0 = Date.now();
+      expect((await tryPw('limit password 1', '10.9.9.10')).status).toBe(200); // another address: no wait
+      expect(Date.now() - t0).toBeLessThan(180);
+    } finally { delete process.env.PW_CRED_MAX_DELAY_MS; }
   });
 });
 

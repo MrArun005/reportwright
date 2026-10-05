@@ -100,25 +100,25 @@ describe('basic auth (PW_BASIC_AUTH)', () => {
   const req = (url, init = {}) => new Request(`http://x${url}`, init);
   const basic = (s) => ({ authorization: `Basic ${Buffer.from(s).toString('base64')}` });
 
-  it('is off until PW_BASIC_AUTH is set', () => withEnv({ PW_BASIC_AUTH: '' }, () => {
-    expect(basicAuth(req('/designer/a'))).toBe(null);
+  it('is off until PW_BASIC_AUTH is set', () => withEnv({ PW_BASIC_AUTH: '' }, async () => {
+    expect(await basicAuth(req('/designer/a'))).toBe(null);
   }));
-  it('asks for the password on pages and report routes', () => withEnv({ PW_BASIC_AUTH: 'admin:s3cret' }, () => {
-    const r = basicAuth(req('/designer/a'));
+  it('asks for the password on pages and report routes', () => withEnv({ PW_BASIC_AUTH: 'admin:s3cret' }, async () => {
+    const r = await basicAuth(req('/designer/a'));
     expect(r.status).toBe(401);
     expect(r.headers.get('www-authenticate')).toMatch(/^Basic /);
-    expect(basicAuth(req('/api/reports/a', { method: 'PUT', headers: basic('admin:wrong') })).status).toBe(401);
-    expect(basicAuth(req('/api/reports/a', { method: 'PUT', headers: basic('admin:s3cret') }))).toBe(null);
+    expect((await basicAuth(req('/api/reports/a', { method: 'PUT', headers: basic('admin:wrong') }))).status).toBe(401);
+    expect(await basicAuth(req('/api/reports/a', { method: 'PUT', headers: basic('admin:s3cret') }))).toBe(null);
   }));
-  it('leaves /api/v1 (API keys) and the embed script alone', () => withEnv({ PW_BASIC_AUTH: 'admin:s3cret' }, () => {
-    expect(basicAuth(req('/api/v1/render', { method: 'POST' }))).toBe(null);
-    expect(basicAuth(req('/embed/pagewright-viewer.js'))).toBe(null);
+  it('leaves /api/v1 (API keys) and the embed script alone', () => withEnv({ PW_BASIC_AUTH: 'admin:s3cret' }, async () => {
+    expect(await basicAuth(req('/api/v1/render', { method: 'POST' }))).toBe(null);
+    expect(await basicAuth(req('/embed/pagewright-viewer.js'))).toBe(null);
   }));
-  it('with PW_EMBED_ORIGINS, embeds can read reports and sample data but not change them', () => withEnv({ PW_BASIC_AUTH: 'admin:s3cret', PW_EMBED_ORIGINS: 'https://host.example' }, () => {
-    expect(basicAuth(req('/api/reports/loan-statement'))).toBe(null);
-    expect(basicAuth(req('/api/sample/loans'))).toBe(null);
-    expect(basicAuth(req('/api/reports/loan-statement', { method: 'PUT' })).status).toBe(401);
-    expect(basicAuth(req('/api/reports/loan-statement/pdf')).status).toBe(401);
+  it('with PW_EMBED_ORIGINS, embeds can read reports and sample data but not change them', () => withEnv({ PW_BASIC_AUTH: 'admin:s3cret', PW_EMBED_ORIGINS: 'https://host.example' }, async () => {
+    expect(await basicAuth(req('/api/reports/loan-statement'))).toBe(null);
+    expect(await basicAuth(req('/api/sample/loans'))).toBe(null);
+    expect((await basicAuth(req('/api/reports/loan-statement', { method: 'PUT' }))).status).toBe(401);
+    expect((await basicAuth(req('/api/reports/loan-statement/pdf'))).status).toBe(401);
   }));
 });
 

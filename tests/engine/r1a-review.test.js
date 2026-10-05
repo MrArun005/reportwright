@@ -8,7 +8,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-r1a-rev-'));
 const keep = { ...process.env };
 let limits, store;
 beforeAll(async () => {
-  Object.assign(process.env, { PW_AUTH: 'users', PW_SESSION_SECRET: 'r1a-rev-'.padEnd(48, 'x'), PW_STORAGE: `sqlite:${path.join(tmp, 's.db')}`, PW_LOGIN_SLOW_MS: '5000' });
+  Object.assign(process.env, { PW_AUTH: 'users', PW_SESSION_SECRET: 'r1a-rev-'.padEnd(48, 'x'), PW_STORAGE: `sqlite:${path.join(tmp, 's.db')}` });
   globalThis.__pwPeers = true;
   limits = await import('../../src/server/limits.js');
   ({ store } = await import('../../src/server/storage/index.js'));
@@ -22,7 +22,7 @@ describe('R1-A review fixes', () => {
     expect(id.groups).toEqual(['designers-custom', 'finance']);
   });
 
-  it('#2 behind a proxy nobody configured, the all-accounts cap per address is off (and it says so)', () => {
+  it('#2 behind a proxy nobody configured, it says so (every client shares one count then)', () => {
     const r = (peer, xff) => new Request('http://pw.test/', { headers: { 'x-pw-peer': peer, ...(xff && { 'x-forwarded-for': xff }) } });
     const err = console.error; console.error = () => {};
     try {
@@ -34,15 +34,14 @@ describe('R1-A review fixes', () => {
     } finally { console.error = err; delete process.env.PW_TRUSTED_PROXIES; }
   });
 
-  it('#3 IPv6 counts by /64; a hot account takes one try at a time across all sources', async () => {
+  it('#3 IPv6 counts by /64 (ports and IPv4-mapped forms folded)', () => {
     expect(limits.netKey('2001:db8:1:2:aaaa::1')).toBe('2001:db8:1:2::/64');
     expect(limits.netKey('2001:db8:1:2:ffff:1:2:3')).toBe('2001:db8:1:2::/64');
     expect(limits.netKey('203.0.113.5')).toBe('203.0.113.5');
-    const email = 'hot@x.test';
-    for (let i = 0; i < 50; i++) await limits.loginAttempt(`203.0.113.${i}`, email); // 50 failures (never released)
-    const tries = await Promise.all(Array.from({ length: 20 }, (_, i) => limits.loginAttempt(`198.51.100.${i}`, email)));
-    expect(tries.filter(t => t.ok)).toHaveLength(1); // one turn per PW_LOGIN_SLOW_MS, not 20 parallel guesses
-    expect(tries.find(t => !t.ok).retryAfter).toBe(5);
+    expect(limits.netKey('203.0.113.5:5555')).toBe('203.0.113.5');
+    expect(limits.netKey('[2001:db8:1:2::9]:443')).toBe('2001:db8:1:2::/64');
+    expect(limits.netKey('0:0:0:0:0:ffff:1.2.3.4')).toBe('1.2.3.4');
+    expect(limits.netKey('::ffff:102:304')).toBe('1.2.3.4');
   });
 
   it('#10 an unreadable root record is treated as missing, not as a crash of every check', async () => {

@@ -45,17 +45,12 @@ export async function apiPrincipal(req) {
   }
   const h = req.headers.get('authorization') || '';
   const given = h.startsWith('Bearer ') ? h.slice(7).trim() : req.headers.get('x-api-key') || '';
-  let hit = null;
-  for (const k of list) if (given && eq(k.key, given) && !hit) hit = k;
+  // every key compared (no early exit), through the one credential check (limits.checkCredential)
+  const find = () => { let h = null; for (const k of list) if (eq(k.key, given) && !h) h = k; return h; };
+  const hit = given ? await (await import('./limits.js')).checkCredential({ kind: 'apikey', req }, find) : null;
   const where = { method: req.method, path: new URL(req.url).pathname };
   if (!hit) {
     await audit('api.call', { req, status: 'denied', detail: { ...where, reason: given ? 'unknown key' : 'no key' } });
-    // wrong keys count per network (the same limiter as passwords); a right key is never slowed by them
-    if (given) {
-      const { attempt, clientAddress, netKey } = await import('./limits.js');
-      const t = await attempt(['apikey', netKey(clientAddress(req))], 100, 15 * 60 * 1000);
-      if (!t.ok) return { res: Response.json({ error: 'Too many wrong API keys from this address. Try again later.' }, { status: 429, headers: { 'retry-after': String(t.retryAfter) } }) };
-    }
     return { res: denied('Give a valid API key: Authorization: Bearer <key>') };
   }
   const key = keyId(hit.key);
