@@ -16,6 +16,7 @@ import { javaString, jsString, javaFormatString } from './javafmt.js';
  * @property {{ until: number, n: number, over: boolean }} [clock] the render's time limit (see evaluate)
  * @property {string} [locale]
  * @property {string} [currency]
+ * @property {string} [nonFinite]    how Infinity and NaN print: undefined (as SSRS), "blank" or "error"
  */
 
 const ROOTS = { fields: 'Fields', parameters: 'Parameters', globals: 'Globals', parent: 'Parent', theme: 'Theme', partproperties: 'PartProperties' };

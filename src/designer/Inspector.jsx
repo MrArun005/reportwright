@@ -1067,6 +1067,7 @@ function ReportProps() {
         <div className="grid2">
           <Field label={T('i_locale')}><TextInput value={def.locale} onChange={v => set(d => { d.locale = v || undefined; }, 'locale')} placeholder="en-US" /></Field>
           <Field label={T('i_currency')}><TextInput value={def.currency} onChange={v => set(d => { d.currency = v.toUpperCase() || undefined; }, 'currency')} placeholder="USD" /></Field>
+          <Field label={T('i_nonFinite')}><Select value={def.nonFinite || ''} options={[{ value: '', label: T('i_nonFiniteSsrs') }, { value: 'blank', label: T('i_nonFiniteBlank') }, { value: 'error', label: '#Error' }]} onChange={v => set(d => { d.nonFinite = v || undefined; }, 'nonFinite')} /></Field>
         </div>
       </div>
       <div className="cat">

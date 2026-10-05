@@ -17,7 +17,7 @@ const ITEM_KEYS = new Set(('id type name x y w h style styleName items hidden la
 /** Report-level properties. */
 const DEF_KEYS = new Set(('$schema name description locale currency timeZone page parameters dataSources dataSets styles sections functions layers '
   + 'images theme themeDef master nullPropagation caseSensitive naturalSort nullOrder collation arithmetic bandRows version id tags author folder '
-  + 'stylesheet parts partProperties dashboard comment notes customCode libraries liveParameters parameterLayout drafts history').split(' '));
+  + 'stylesheet parts partProperties dashboard comment notes customCode libraries liveParameters parameterLayout drafts history nonFinite').split(' '));
 const lev = (a, b) => {
   if (Math.abs(a.length - b.length) > 2) return 3;
   const d = Array.from({ length: b.length + 1 }, (_, i) => i);

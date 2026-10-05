@@ -250,7 +250,7 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
  * locale names a country ("en-IN" → ₹, as a .NET culture does), else none, and "C" then shows the number alone.
  * @param {any} value
  * @param {string|undefined|null} fmt
- * @param {{locale?: string, currency?: string, timeZone?: string, fmtMemo?: Map<string, Map<any, string>>}} [opt] fmtMemo: a render's memo of formatted dates
+ * @param {{locale?: string, currency?: string, timeZone?: string, nonFinite?: string, fmtMemo?: Map<string, Map<any, string>>}} [opt] fmtMemo: a render's memo of formatted dates
  */
 export function formatValue(value, fmt, opt = {}) {
   if (value == null) return '';
@@ -275,7 +275,8 @@ export function formatValue(value, fmt, opt = {}) {
     return out;
   }
   if (typeof value === 'number') {
-    if (!Number.isFinite(value)) return String(value);
+    // Infinity / NaN as SSRS prints them, unless the report says otherwise (def.nonFinite: 'blank' | 'error')
+    if (!Number.isFinite(value)) return opt.nonFinite === 'blank' ? '' : opt.nonFinite === 'error' ? '#Error' : String(value);
     // No format: as VB CStr, up to 15 significant digits with the locale's decimal sign and no grouping (a year stays
     // 2026). Use N0/N2/C2 to group. A safe integer reads the same.
     if (!fmt) return Number.isSafeInteger(value) && !Object.is(value, -0) ? String(value) : general(value, 15, 'E', undefined, locale);

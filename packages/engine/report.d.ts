@@ -249,6 +249,8 @@ export interface Report {
   description?: string;
   locale?: string;
   currency?: string;
+  /** how Infinity and NaN (1/0, 0/0) print: as SSRS (default), blank, or #Error */
+  nonFinite?: 'blank' | 'error';
   page?: {
     size?: 'A4' | 'A3' | 'A5' | 'Letter' | 'Legal' | string | [number, number];
     orientation?: 'portrait' | 'landscape';
