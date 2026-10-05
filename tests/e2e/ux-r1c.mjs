@@ -473,6 +473,68 @@ try {
     await dlg.getByTestId('cf-custom').filter({ hasText: 'Background' }).waitFor();
     await dlg.getByRole('button', { name: 'Cancel' }).click();
   }
+  if (want('sql')) {
+    const SQLITE = /^sqlite:(.+)$/.exec(process.env.PW_DB_MAIN || '')?.[1];
+    if (!SQLITE) console.log('  (SQL query builder skipped: set PW_DB_MAIN=sqlite:/abs/file.db for the server and this test)');
+    else {
+      step('SQL builder: tables from the connection, ticked columns, a suggested join, a parameter filter, live SQL, preview');
+      const { DatabaseSync } = process.getBuiltinModule('node:sqlite');
+      const db = new DatabaseSync(SQLITE);
+      db.exec(`DROP TABLE IF EXISTS qb_orders; DROP TABLE IF EXISTS qb_customers;
+        CREATE TABLE qb_customers (id INTEGER PRIMARY KEY, name TEXT, city TEXT);
+        CREATE TABLE qb_orders (id INTEGER PRIMARY KEY, customer_id INTEGER REFERENCES qb_customers(id), amount REAL, region TEXT);
+        INSERT INTO qb_customers VALUES (1, 'Acme', 'Pune'), (2, 'Bolt', 'Delhi');
+        INSERT INTO qb_orders VALUES (1, 1, 100, 'West'), (2, 1, 250, 'West'), (3, 2, 75, 'North');`);
+      // the schema, as GET /api/data/sql/schema returns it (mocked only while the server route is not there)
+      const schema = { tables: db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'qb_%' ORDER BY name").all().map(({ name }) => ({
+        name, columns: db.prepare(`PRAGMA table_info(${name})`).all().map(c => ({ name: c.name, type: c.type, ...(c.pk ? { pk: true } : {}) })),
+        foreignKeys: db.prepare(`PRAGMA foreign_key_list(${name})`).all().map(f => ({ columns: [f.from], refTable: f.table, refColumns: [f.to] })),
+      })) };
+      db.close();
+      const live = (await fetch(`${BASE}/api/data/sql/schema?connection=main`, { headers: H })).status !== 404;
+      if (!live) await p.route('**/api/data/sql/schema?*', r => r.fulfill({ json: schema }));
+      console.log(`  (schema from ${live ? 'the server' : 'a mock of the planned route'})`);
+      const id = await create(base('ux r1c sql', [], { parameters: [{ name: 'region', type: 'string', default: 'West' }] }));
+      await open(id);
+      await p.getByRole('button', { name: '+ Add' }).nth(1).click();
+      const dlg = p.getByRole('dialog');
+      await dlg.getByLabel('Name').fill('orders');
+      await field(dlg, 'Type').selectOption('sql');
+      await field(dlg, 'Connection').selectOption('main');
+      await dlg.getByTestId('qb-mode-build').click();
+      await dlg.locator('[data-qb-add=qb_orders]').click();
+      await dlg.locator('[data-qb-add=qb_customers]').click();
+      const qb = dlg.getByTestId('query-builder');
+      await qb.locator('[data-qb-col="qo.amount"] input').check();
+      await qb.locator('[data-qb-col="qc.name"] input').check();
+      await qb.getByTestId('qb-joins').getByText('qo.customer_id = qc.id').waitFor(); // the foreign key, taken
+      await qb.getByTestId('qb-add-filter').click();
+      await qb.getByTestId('qb-filters').getByLabel('Column').selectOption('qo.region');
+      await qb.getByTestId('qb-filters').getByLabel('Compare with').selectOption('p:region');
+      await qb.getByTestId('qb-sort').getByRole('button', { name: 'Add sort key' }).click();
+      await qb.getByTestId('qb-sort').getByLabel('Column').selectOption('qo.amount');
+      await qb.getByTestId('qb-sort').getByLabel('Direction').selectOption('desc');
+      await qb.getByTestId('qb-limit').fill('10');
+      const sql = await qb.getByTestId('qb-sql').innerText();
+      assert.match(sql, /SELECT qo\."amount", qc\."name"\nFROM "qb_orders" qo\nJOIN "qb_customers" qc ON qo\."customer_id" = qc\."id"\nWHERE qo\."region" = @region/);
+      assert.match(sql, /ORDER BY qo\."amount" DESC\nLIMIT 10$/);
+      await qb.getByTestId('qb-preview').click();
+      await qb.getByTestId('qb-rows').getByText('2 rows (the first 20 shown)').waitFor();
+      await qb.getByTestId('qb-rows').getByText('Acme').first().waitFor();
+      await shot(p, 'sql-builder');
+      await dlg.getByRole('button', { name: 'Save' }).click();
+      await save();
+      const src = (await read(id)).dataSources.find(x => x.name === 'orders');
+      assert.equal(src.query, sql);
+      assert.equal(src.builder.tables.length, 2);
+      step('SQL builder: the source reopens as the builder; "Edit as SQL" switches to text');
+      await p.locator('.trow').filter({ has: p.locator('.nm', { hasText: /^orders$/ }) }).getByRole('button', { name: 'Edit' }).click();
+      await p.getByRole('dialog').getByTestId('qb-sql').filter({ hasText: 'qb_customers' }).waitFor();
+      await p.getByRole('dialog').getByTestId('qb-edit-sql').click();
+      assert.equal(await field(p.getByRole('dialog'), 'Query').inputValue(), sql);
+      await p.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click();
+    }
+  }
   assert.deepEqual(errs, [], `page errors: ${errs.join(' | ')}`);
   console.log('ux-r1c: all passed');
 } finally {

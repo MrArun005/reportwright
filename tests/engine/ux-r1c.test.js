@@ -290,3 +290,37 @@ describe('a chart point above the average of the points (CF wizard)', () => {
     expect(out.pages[0].items.filter(i => i.fill === '#dc2626').length).toBe(1); // only S (120 > 135/3)
   });
 });
+
+import { buildSql, suggestJoins, aliasFor, quoteId } from '../../src/designer/sqlBuild.js';
+import { assertOneRead } from '../../src/server/sql.js';
+describe('visual SQL query builder: the SELECT it writes', () => {
+  const b = {
+    tables: [{ name: 'orders', alias: 'o' }, { name: 'customers', alias: 'c' }],
+    columns: [{ t: 'o', c: 'id' }, { t: 'c', c: 'name' }, { t: 'c', c: 'id' }, { t: 'o', c: 'amount' }],
+    joins: [{ type: 'left', from: { t: 'o', c: 'customer_id' }, to: { t: 'c', c: 'id' } }],
+    filters: [{ t: 'o', c: 'region', op: '=', param: 'region' }, { t: 'o', c: 'amount', op: '>', value: '100' }, { t: 'c', c: 'name', op: 'like', value: "O'B%" }],
+    sort: [{ t: 'o', c: 'amount', dir: 'desc' }], limit: 50,
+  };
+  it('joins, bound parameters, quoted literals, sort and limit per dialect', () => {
+    expect(buildSql(b, 'sqlite')).toBe([
+      'SELECT o."id" AS "o_id", c."name", c."id" AS "c_id", o."amount"',
+      'FROM "orders" o',
+      'LEFT JOIN "customers" c ON o."customer_id" = c."id"',
+      'WHERE o."region" = @region',
+      '  AND o."amount" > 100',
+      '  AND c."name" LIKE \'O\'\'B%\'',
+      'ORDER BY o."amount" DESC',
+      'LIMIT 50'].join('\n'));
+    expect(buildSql(b, 'mssql')).toMatch(/^SELECT TOP 50 o\.\[id\]/);
+    expect(buildSql(b, 'mysql')).toContain('FROM `orders` o');
+    expect(buildSql(b, 'oracle')).toMatch(/FETCH FIRST 50 ROWS ONLY$/);
+    expect(buildSql({ tables: [] })).toBe('');
+    for (const d of ['sqlite', 'postgres', 'mysql', 'mssql', 'oracle']) expect(() => assertOneRead(buildSql(b, d).replace(/@\w+/g, '1'), d), d).not.toThrow();
+    expect(quoteId('dbo.Sales', 'mssql')).toBe('[dbo].[Sales]');
+    expect(aliasFor('order_items', new Set(['oi']))).toBe('oi2');
+  });
+  it('foreign keys suggest the join of a table being added', () => {
+    const schema = [{ name: 'orders', foreignKeys: [{ columns: ['customer_id'], refTable: 'customers', refColumns: ['id'] }] }, { name: 'customers' }];
+    expect(suggestJoins({ tables: b.tables }, schema, 'c')).toEqual([{ type: 'inner', from: { t: 'o', c: 'customer_id' }, to: { t: 'c', c: 'id' } }]);
+  });
+});

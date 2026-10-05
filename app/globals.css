@@ -544,3 +544,22 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .cf-fmt { display: flex; flex-wrap: wrap; align-items: end; gap: 6px 12px; }
 .cf-fmt .field { min-width: 150px; }
 @media (max-width: 640px) { .cf-cond { grid-template-columns: 1fr 1fr; } }
+/* visual SQL query builder */
+.qb { display: grid; grid-template-columns: minmax(160px, 220px) minmax(0, 1fr); gap: 12px; min-height: 0; }
+.qb-tables { display: grid; gap: 6px; align-content: start; max-height: 520px; overflow: auto; border-inline-end: 1px solid var(--line-2); padding-inline-end: 10px; }
+.qb-tables ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-family: var(--mono); font-size: var(--fs-sm); }
+.qb-main { display: grid; gap: 10px; min-width: 0; }
+.qb-canvas { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; min-height: 60px; padding: 8px; background: var(--panel-2); border: 1px dashed var(--line); border-radius: 8px; }
+.qb-table { min-width: 170px; background: var(--panel); border: 1px solid var(--line-strong); border-radius: 6px; font-size: var(--fs-sm); }
+.qb-table header { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-bottom: 1px solid var(--line-2); }
+.qb-table header .btn { margin-inline-start: auto; }
+.qb-table ul { list-style: none; margin: 0; padding: 4px 6px; max-height: 220px; overflow: auto; display: grid; gap: 2px; }
+.qb-table li { display: flex; justify-content: space-between; gap: 8px; cursor: grab; }
+.qb-table li .ty { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--faint); }
+.qb-sec { display: grid; gap: 6px; }
+.qb-sec > h5 { margin: 0; font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: var(--track-caps); color: var(--faint); }
+.qb-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.qb-row .select, .qb-row .input { width: auto; min-width: 120px; }
+.qb-sql { margin: 0; padding: 8px 10px; font: var(--fs-sm)/1.45 var(--mono); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 760px) { .qb { grid-template-columns: 1fr; } .qb-tables { border: 0; max-height: 180px; } }
+.dialog.qb-wide { width: min(1440px, 100%); }

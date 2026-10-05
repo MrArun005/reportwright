@@ -7,6 +7,8 @@ import { loadSources, buildDataSets, detectFields, jsonPath, sourceRows, isXmlDo
 import { xmlRowPaths, bestXmlRows } from '@/engine/data/xml.js';
 import { parseXml } from '@/importers/xml.js';
 import ODataEditor from './ODataEditor.jsx';
+import SqlBuilder from './SqlBuilder.jsx';
+import { buildSql } from './sqlBuild.js';
 import { resolveParameters } from '@/engine/index.js';
 import { functionTable } from '@/engine/expr/evaluate.js';
 import { Dialog, Field, TextInput, Select, Check } from './ui.jsx';
@@ -297,6 +299,7 @@ function SourceDialog({ index, onClose }) {
   if (!err && s.type === 'sql' && s.procedure == null && !/^\s*(select|with)\b/i.test(s.query || '')) err = 'Write a SELECT query';
   const [conns, setConns] = useState(null);
   const procs = (conns || []).find(c => c.name === s.connection)?.procs || [];
+  const sqlKind = (conns || []).find(c => c.name === s.connection)?.kind || 'sqlite';
   const [probe, setProbe] = useState(null);
   useEffect(() => {
     if (s.type !== 'sql' || conns) return;
@@ -338,7 +341,9 @@ function SourceDialog({ index, onClose }) {
     }
     if (s.type === 'sql') {
       v.connection = s.connection;
-      if (s.procedure != null) { v.procedure = s.procedure; const a = procArgs(s.argsText); if (a.length) v.args = a; } else v.query = s.query;
+      if (s.procedure != null) { v.procedure = s.procedure; const a = procArgs(s.argsText); if (a.length) v.args = a; }
+      else if (s.builder) { v.query = buildSql(s.builder, sqlKind); v.builder = s.builder; } // the visual builder's query, and its model to reopen
+      else v.query = s.query;
     }
     useDesigner.getState().apply(d => {
       d.dataSources ||= [];
@@ -356,7 +361,7 @@ function SourceDialog({ index, onClose }) {
     useDesigner.getState().apply(d => { d.dataSources.splice(index, 1); }); onClose(); loadSample();
   };
   return (
-    <Dialog wide title={orig ? `Data source ${orig.name}` : 'New data source'} onClose={onClose}
+    <Dialog wide className={s.type === 'sql' && s.builder ? 'qb-wide' : ''} title={orig ? `Data source ${orig.name}` : 'New data source'} onClose={onClose}
       footer={<>{orig && <button className="btn danger" style={{ marginRight: 'auto' }} onClick={del}>Delete</button>}<button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!!err} onClick={save}>Save</button></>}>
       <div className="grid2">
         <Field label="Name"><TextInput value={s.name} onChange={v => setS({ ...s, name: v })} autoFocus /></Field>
@@ -407,9 +412,16 @@ function SourceDialog({ index, onClose }) {
           <Field label="Arguments" hint="One per line: procedure argument = report parameter (bound, never pasted into SQL). The first result set is the data.">
             <textarea className="textarea" rows={3} value={s.argsText ?? ''} onChange={e => setS({ ...s, argsText: e.target.value })} placeholder={'region = region\nyear = year'} style={{ fontFamily: 'var(--mono)' }} />
           </Field>
-        </> : <Field label="Query" hint="SELECT only. @name uses the report parameter name (bound, never pasted into the SQL). Lists work with in (@name).">
-          <textarea className="textarea" rows={6} value={s.query || ''} onChange={e => setS({ ...s, query: e.target.value })} placeholder="select region, month, sum(amount) as amount from sales where year = @year group by region, month" style={{ fontFamily: 'var(--mono)' }} />
-        </Field>}
+        </> : <>
+          <div className="seg" role="group" aria-label={T('qb_mode')}>
+            <button type="button" aria-pressed={!!s.builder} onClick={() => { if (!s.builder && s.query?.trim() && !window.confirm(T('qb_replaceSql'))) return; setS({ ...s, builder: s.builder || { tables: [], columns: [], joins: [], filters: [], sort: [] } }); }} data-testid="qb-mode-build">{T('qb_build')}</button>
+            <button type="button" aria-pressed={!s.builder} onClick={() => { const { builder: _b, ...rest } = s; setS(rest); }} data-testid="qb-mode-sql">{T('qb_sql')}</button>
+          </div>
+          {s.builder ? <SqlBuilder s={s} setS={setS} T={T} kind={sqlKind} onManual={() => { const { builder: _b, ...rest } = s; setS({ ...rest, query: s.builder ? buildSql(s.builder, sqlKind) : s.query }); }} />
+            : <Field label="Query" hint="SELECT only. @name uses the report parameter name (bound, never pasted into the SQL). Lists work with in (@name).">
+              <textarea className="textarea" rows={6} value={s.query || ''} onChange={e => setS({ ...s, query: e.target.value })} placeholder="select region, month, sum(amount) as amount from sales where year = @year group by region, month" style={{ fontFamily: 'var(--mono)' }} />
+            </Field>}
+        </>}
       </>}
       {s.type === 'csv' && <div className="grid2">
         <Field label="Separator" hint='One character; "tab" for a tab'><TextInput value={s.separator ?? ','} onChange={v => setS({ ...s, separator: v })} mono /></Field>
