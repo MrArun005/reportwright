@@ -1,15 +1,55 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { t } from '@/i18n/index.js';
+import { QrCode, RecoveryCodes, CodeField, postJson } from '@/home/TwoFactor.jsx';
+
+/** The second step of a password sign-in: a code (or a recovery code), or enrolling when the role requires it. */
+function SecondFactor({ mode, lang, next, onRestart }) {
+  const T = (k, v) => t(lang, k, v);
+  const [code, setCode] = useState('');
+  const [recovery, setRecovery] = useState(false);
+  const [setup, setSetup] = useState(null);
+  const [codes, setCodes] = useState(null);
+  const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (mode === 'enrol') postJson('/api/auth/mfa/setup').then(setSetup, (e) => setErr(e.message));
+  }, [mode]);
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true); setErr(null);
+    try {
+      const d = await postJson('/api/auth/mfa', recovery ? { recoveryCode: code } : { code });
+      if (d.recoveryCodes) { setCodes(d.recoveryCodes); setBusy(false); return; }
+      window.location.assign(next);
+    } catch (ex) { setErr(ex.message); setBusy(false); if (ex.status === 401 && /again/.test(ex.message)) onRestart(); }
+  };
+  if (codes) return (<div style={{ display: 'grid', gap: 12 }}><RecoveryCodes codes={codes} lang={lang} /><div><a className="btn primary" href={next}>{T('continue')}</a></div></div>);
+  return (
+    <form onSubmit={submit} style={{ display: 'grid', gap: 12 }} aria-label={T('twoFactor')} aria-describedby={err ? 'mfa-error' : undefined}>
+      <p style={{ margin: 0 }}>{mode === 'enrol' ? T('mustEnrol') : recovery ? T('enterRecovery') : T('enterCode')}</p>
+      {mode === 'enrol' && setup && <QrCode setup={setup} lang={lang} />}
+      {recovery
+        ? <label className="field"><span>{T('recoveryCode')}</span><input className="input" required autoFocus autoComplete="off" value={code} onChange={e => setCode(e.target.value)} style={{ height: 32, fontFamily: 'var(--mono)' }} /></label>
+        : <CodeField value={code} onChange={setCode} lang={lang} />}
+      {err && <p id="mfa-error" className="err" role="alert" style={{ margin: 0, fontSize: 13 }}>{err}</p>}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button className="btn primary" disabled={busy || (mode === 'enrol' && !setup)}>{busy ? T('verifying') : T('verify')}</button>
+        {mode === 'totp' && <button type="button" className="btn" onClick={() => { setRecovery(!recovery); setCode(''); setErr(null); }}>{recovery ? T('useAuthCode') : T('useRecoveryCode')}</button>}
+      </div>
+    </form>
+  );
+}
 
 /** Sign-in form. `next` is already checked on the server: a path on this site. */
-export default function LoginForm({ next, lang, sso = {}, password: passwordOn = true, ssoError = null }) {
+export default function LoginForm({ next, lang, sso = {}, password: passwordOn = true, ssoError = null, resetByMail = false }) {
   const T = (k, v) => t(lang, k, v);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
   const [me, setMe] = useState(null);
+  const [mfa, setMfa] = useState(null); // 'totp' | 'enrol' after a right password
 
   useEffect(() => { fetch('/api/auth/me').then(r => (r.ok ? r.json() : null)).then(setMe, () => {}); }, []);
 
@@ -20,11 +60,13 @@ export default function LoginForm({ next, lang, sso = {}, password: passwordOn =
       const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }) });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || T('signInFailed', { status: res.status }));
+      if (body.mfa) { setMfa(body.mfa); setBusy(false); return; }
       window.location.assign(next);
     } catch (ex) { setErr(ex.message); setBusy(false); }
   };
   const signOut = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
+    const r = await fetch('/api/auth/logout', { method: 'POST' }).then(x => x.json()).catch(() => ({}));
+    if (r.redirect) { window.location.assign(r.redirect); return; } // single logout at the identity provider
     setMe(null);
   };
 
@@ -49,6 +91,7 @@ export default function LoginForm({ next, lang, sso = {}, password: passwordOn =
     </div>
   );
   if (!passwordOn) return ssoButtons || <p className="vmsg">{T('noSignInMethod')}</p>;
+  if (mfa) return <SecondFactor mode={mfa} lang={lang} next={next} onRestart={() => { setMfa(null); setPassword(''); }} />;
   return (
     <>{ssoButtons}
     <form onSubmit={submit} style={{ display: 'grid', gap: 12 }} aria-describedby={err ? 'login-error' : undefined}>
@@ -62,6 +105,8 @@ export default function LoginForm({ next, lang, sso = {}, password: passwordOn =
       </label>
       {err && <p id="login-error" className="err" role="alert" style={{ margin: 0, fontSize: 13 }}>{err}</p>}
       <div><button className={sso.oidc || sso.saml ? 'btn' : 'btn primary'} disabled={busy}>{busy ? T('signingIn') : T('signIn')}</button></div>
+      {resetByMail ? <p style={{ margin: 0 }}><a href={`/login/reset${lang && lang !== 'en' ? `?lang=${encodeURIComponent(lang)}` : ''}`}>{T('forgotPassword')}</a></p>
+        : <p className="hint" style={{ margin: 0 }}>{T('noMailReset')}</p>}
     </form>
     </>
   );

@@ -1,14 +1,22 @@
 'use client';
 import { t } from '@/i18n/index.js';
-/** Who is signed in, a link to user admin for admins, and sign-out. Shown only when accounts are on. */
+
+/** Sign out; after a single sign-on session the identity provider's logout page comes next (single logout). */
+export async function signOutAndGo() {
+  const r = await fetch('/api/auth/logout', { method: 'POST' }).then(x => x.json()).catch(() => ({}));
+  window.location.assign(r.redirect || '/login');
+}
+
+/** Who is signed in, their account page, admin pages for admins, and sign-out. Shown only when accounts are on. */
 export default function Account({ email, role, lang }) {
-  const signOut = async () => { await fetch('/api/auth/logout', { method: 'POST' }); window.location.assign('/login'); };
+  const q = lang && lang !== 'en' ? `?lang=${encodeURIComponent(lang)}` : '';
   return (
-    <div className="account" style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>
-      <span className="hint">{email} · {role}</span>
-      {role === 'admin' && <a className="btn sm" href={`/admin/users${lang && lang !== 'en' ? `?lang=${encodeURIComponent(lang)}` : ''}`}>{t(lang, 'users')}</a>}
-      {role === 'admin' && <a className="btn sm" href={`/admin/audit${lang && lang !== 'en' ? `?lang=${encodeURIComponent(lang)}` : ''}`}>{t(lang, 'auditLog')}</a>}
-      <button type="button" className="btn sm" onClick={signOut}>{t(lang, 'signOut')}</button>
+    <div className="account" style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+      <a className="hint" href={`/account${q}`} title={t(lang, 'accountTitle')}>{email} · {role}</a>
+      {role === 'admin' && <a className="btn sm" href={`/admin/users${q}`}>{t(lang, 'users')}</a>}
+      {role === 'admin' && <a className="btn sm" href={`/admin/audit${q}`}>{t(lang, 'auditLog')}</a>}
+      {role === 'admin' && <a className="btn sm" href={`/admin/settings${q}`}>{t(lang, 'serverSettings')}</a>}
+      <button type="button" className="btn sm" onClick={signOutAndGo}>{t(lang, 'signOut')}</button>
     </div>
   );
 }

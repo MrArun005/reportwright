@@ -1,9 +1,14 @@
 // @ts-check
-// Sessions for user accounts (PW_AUTH=users). The cookie pw_session holds { e, r, iat, exp, v } and an
+// Sessions for user accounts (PW_AUTH=users). The cookie pw_session holds { e, r, iat, exp, v, m?, s? } and an
 // HMAC-SHA256 over it with PW_SESSION_SECRET. Every request reads the user again (role, disabled,
 // sessionVersion), so a demoted, disabled or deleted user loses access at once.
+// m: the session was opened with a second factor (src/server/totp.js); s: by single sign-on ('oidc' | 'saml'). A role
+// that must use two-factor sign-in (Settings, require2fa) has no session without m, unless it came from SSO (the
+// identity provider owns the factors) or the account has no password.
+// Between the password and the code, the browser holds pw_mfa (5 minutes, its own MAC purpose: never a session).
 import crypto from 'node:crypto';
 import { cachedUser } from './users.js';
+import { getSettings } from './settings.js';
 
 export const ROLE_RANK = Object.freeze({ viewer: 1, designer: 2, admin: 3 });
 export const COOKIE = 'pw_session';
@@ -73,21 +78,25 @@ export function sessionSecret() {
   return g.__pwDevSecret;
 }
 
-const mac = (body) => crypto.createHmac('sha256', sessionSecret()).update(`pw_session.${body}`).digest();
+// purpose: a token made for one use (a session, the pending second factor) never reads as another
+const mac = (body, purpose = 'pw_session') => crypto.createHmac('sha256', sessionSecret()).update(`${purpose}.${body}`).digest();
 
-/** A signed token "<payload>.<mac>" (base64url). iat and exp are added when missing. @param {Record<string, any>} payload */
-export function signSession(payload) {
+/**
+ * A signed token "<payload>.<mac>" (base64url). iat and exp are added when missing.
+ * @param {Record<string, any>} payload @param {string} [purpose]
+ */
+export function signSession(payload, purpose) {
   const now = Math.floor(Date.now() / 1000);
   const body = Buffer.from(JSON.stringify({ iat: now, exp: now + MAX_AGE, ...payload })).toString('base64url');
-  return `${body}.${mac(body).toString('base64url')}`;
+  return `${body}.${mac(body, purpose).toString('base64url')}`;
 }
 
-/** The payload of a token with a good signature that has not expired, else null. @param {string} token */
-export function readToken(token) {
+/** The payload of a token with a good signature that has not expired, else null. @param {string} token @param {string} [purpose] */
+export function readToken(token, purpose) {
   const [body, sig, extra] = String(token || '').split('.');
   if (!body || !sig || extra !== undefined) return null;
   const given = Buffer.from(sig, 'base64url');
-  const want = mac(body);
+  const want = mac(body, purpose);
   if (given.length !== want.length || !crypto.timingSafeEqual(given, want)) return null;
   let p;
   try { p = JSON.parse(Buffer.from(body, 'base64url').toString()); } catch { return null; }
@@ -95,7 +104,7 @@ export function readToken(token) {
 }
 
 /** @param {Request} req @param {string} name */
-function cookie(req, name) {
+export function cookie(req, name) {
   for (const part of (req.headers.get('cookie') || '').split(';')) {
     const i = part.indexOf('=');
     if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
@@ -118,16 +127,46 @@ export async function currentUser(req) {
   }
   const user = typeof p.e === 'string' ? await cachedUser(p.e) : null;
   if (!user || user.disabled || (user.sessionVersion || 0) !== p.v || !(user.role in ROLE_RANK)) return null;
+  // a role an admin made require two-factor sign-in: a password session without it ends (sign in again, enrol)
+  if (!p.m && !p.s && user.passwordHash && (await getSettings()).require2fa.includes(user.role)) return null;
   return { email: user.email, role: user.role, groups: user.groups || [] };
 }
 
+/** The pw_session payload of a request (signature and expiry checked; the user is not read), or null. @param {Request} req */
+export const sessionClaims = (req) => readToken(cookie(req, COOKIE) || '');
+
 const isHttps = (req) => new URL(req.url).protocol === 'https:' || (req.headers.get('x-forwarded-proto') || '').split(',')[0].trim() === 'https' || /^https:/.test(process.env.PW_BASE_URL || '');
 
-/** Set-Cookie for a new session of this user. @param {Request} req @param {{ email: string, role: string, sessionVersion?: number }} user */
-export function sessionCookie(req, user) {
-  const token = signSession({ e: user.email, r: user.role, v: user.sessionVersion || 0 });
+/**
+ * Set-Cookie for a new session of this user. how: { m: 1 } after a second factor, { s: 'oidc'|'saml' } from SSO.
+ * @param {Request} req @param {{ email: string, role: string, sessionVersion?: number }} user @param {{ m?: 1, s?: 'oidc'|'saml' }} [how]
+ */
+export function sessionCookie(req, user, how = {}) {
+  const token = signSession({ e: user.email, r: user.role, v: user.sessionVersion || 0, ...(how.m ? { m: 1 } : {}), ...(how.s ? { s: how.s } : {}) });
   return `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${MAX_AGE}${isHttps(req) ? '; Secure' : ''}`;
 }
+
+/* ---------------- the step between the password and the second factor ---------------- */
+
+export const MFA_COOKIE = 'pw_mfa';
+const MFA_AGE = 300;
+/**
+ * Set-Cookie for a sign-in whose password was right and that still needs a code (enrol: the role requires two-factor
+ * sign-in and the user has none yet). SameSite=Strict: only this site's pages send it.
+ * @param {Request} req @param {{ email: string, sessionVersion?: number }} user @param {boolean} enrol
+ */
+export function mfaCookie(req, user, enrol) {
+  const now = Math.floor(Date.now() / 1000);
+  const token = signSession({ mfa: 1, e: user.email, v: user.sessionVersion || 0, enrol: !!enrol, iat: now, exp: now + MFA_AGE }, MFA_COOKIE);
+  return `${MFA_COOKIE}=${token}; Path=/api/auth; HttpOnly; SameSite=Strict; Max-Age=${MFA_AGE}${isHttps(req) ? '; Secure' : ''}`;
+}
+/** @param {Request} req @returns {{ e: string, v: number, enrol: boolean } | null} */
+export function readMfa(req) {
+  const p = readToken(cookie(req, MFA_COOKIE) || '', MFA_COOKIE);
+  return p?.mfa === 1 && typeof p.e === 'string' ? { e: p.e, v: p.v, enrol: !!p.enrol } : null;
+}
+/** @param {Request} req */
+export const clearMfa = (req) => `${MFA_COOKIE}=; Path=/api/auth; HttpOnly; SameSite=Strict; Max-Age=0${isHttps(req) ? '; Secure' : ''}`;
 /** @param {Request} req */
 export const clearCookie = (req) => `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${isHttps(req) ? '; Secure' : ''}`;
 

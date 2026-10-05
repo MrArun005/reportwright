@@ -75,6 +75,7 @@ export function fileStore(root) {
     folders: { file: path.join(data, 'folders.json'), key: 'id', mode: 0o644 },
     reportacl: { file: path.join(data, 'report-access.json'), key: 'id', mode: 0o644 },
     tokens: { file: path.join(data, 'tokens.json'), key: 'id', mode: 0o600 }, // short-lived sign-in state (SAML request ids)
+    settings: { file: path.join(data, 'settings.json'), key: 'id', mode: 0o600 }, // server settings (src/server/settings.js)
   };
   const readArray = async (a) => {
     try { return JSON.parse(await fs.readFile(a.file, 'utf8')); } catch (e) { if (missing(e)) return []; throw e; }

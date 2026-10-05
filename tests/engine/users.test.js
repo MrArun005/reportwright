@@ -79,7 +79,7 @@ describe('passwords', () => {
   });
   it('never returns a hash', async () => {
     const u = await createUser({ email: 'Ann@X.io', role: 'designer', password: PW });
-    expect(u).toEqual({ email: 'ann@x.io', role: 'designer', disabled: false, groups: [], sso: null, allowSso: false, createdAt: expect.any(String), updatedAt: expect.any(String) });
+    expect(u).toEqual({ email: 'ann@x.io', role: 'designer', disabled: false, groups: [], sso: null, allowSso: false, twoFactor: false, password: true, createdAt: expect.any(String), updatedAt: expect.any(String) });
     expect(JSON.stringify(await listUsers())).not.toMatch(/scrypt|passwordHash/);
     const admin = await as('admin');
     const res = await usersGet(rq('/api/users', { cookie: admin }));

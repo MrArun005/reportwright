@@ -7,7 +7,9 @@ import { accountsOn, currentUser, sameOrigin, sessionSecret, ROLE_RANK } from '.
 /** Open to everyone: sign-in, static files, the embed script, and /api/v1 (it has its own API keys). */
 const OPEN_PREFIX = ['/_next/', '/fonts/', '/icc/', '/embed/', '/api/v1/', '/favicon'];
 const OPEN_EXACT = ['/login', '/api/auth/login', '/api/auth/logout', '/harfbuzz-subset.wasm',
-  '/api/auth/oidc/start', '/api/auth/oidc/callback', '/api/auth/saml/login', '/api/auth/saml/acs', '/api/auth/saml/finish', '/api/auth/saml/metadata'];
+  '/api/auth/oidc/start', '/api/auth/oidc/callback', '/api/auth/saml/login', '/api/auth/saml/acs', '/api/auth/saml/finish', '/api/auth/saml/metadata',
+  // the second factor (pw_mfa cookie), password reset by email (a one-time token), SAML single logout (signed messages)
+  '/api/auth/mfa', '/api/auth/mfa/setup', '/login/reset', '/api/auth/reset/request', '/api/auth/reset/confirm', '/api/auth/saml/slo'];
 /** Writes that come from another site by design: the SAML IdP posts the response (its signature protects it). */
 export const CROSS_SITE_WRITES = ['/api/auth/saml/acs'];
 
@@ -27,6 +29,8 @@ export const RULES = [
   ['GET', /^\/api\/data\/proxy$/, 'viewer'],
   ['GET', /^\/api\/sample\/.+$/, 'viewer'],
   ['GET', /^\/api\/auth\/me$/, 'viewer'],
+  ['GET', /^\/account$/, 'viewer'],                                       // one's own account: two-factor sign-in
+  ['*', /^\/api\/account(\/.*)?$/, 'viewer'],
   ['GET', /^\/api\/fonts$/, 'viewer'],                                  // the uploaded fonts (the files are under /fonts/, open)
   ['GET', /^\/api\/folders$/, 'viewer'],                                 // folders the user may see
   ['POST', /^\/api\/audit\/export$/, 'viewer'],                          // the viewer says it exported (the log itself: admins)

@@ -5,8 +5,11 @@
 // single sign-on; they have no password (passwordHash null), so password sign-in can never open them.
 // Passwords: scrypt with a random 16-byte salt; the parameters are stored with the hash, so they can change later.
 // sessionVersion goes up on sign-out, a password change and disabling: every older session cookie stops working.
+// Two-factor sign-in (src/server/totp.js): totp { secret (sealed), enabledAt }, recovery [hashes], totpPending while
+// enrolling. Enabling, turning off and an admin's reset each end every session of the user.
 import crypto from 'node:crypto';
 import { store, withLock } from './storage/index.js';
+import { newSecret, seal, unseal, useCode, otpauthUri, qrSvg, newRecoveryCodes, hashRecovery } from './totp.js';
 
 export const ROLES = /** @type {const} */ (['viewer', 'designer', 'admin']);
 const SCRYPT = { N: 32768, r: 8, p: 1 }; // ~50 ms, 32 MB
@@ -66,7 +69,7 @@ export function checkGroups(groups) {
 }
 
 /** What the API shows: never the hash. */
-const publicUser = (u) => ({ email: u.email, role: u.role, disabled: !!u.disabled, groups: u.groups || [], sso: u.sso?.via || null, allowSso: !!u.allowSso, createdAt: u.createdAt, updatedAt: u.updatedAt });
+const publicUser = (u) => ({ email: u.email, role: u.role, disabled: !!u.disabled, groups: u.groups || [], sso: u.sso?.via || null, allowSso: !!u.allowSso, twoFactor: !!u.totp, password: !!u.passwordHash, createdAt: u.createdAt, updatedAt: u.updatedAt });
 
 /** @returns {Promise<any[]>} full records */
 async function all() { return (await store().list('users')).map(r => JSON.parse(r.text)); }
@@ -140,9 +143,10 @@ async function keepAnAdmin(before, after) {
 
 /**
  * Change the role, the password, the groups or disabled. A new password or disabling ends the user's sessions.
+ * resetTwoFactor (admins): two-factor sign-in off, the authenticator and recovery codes forgotten, sessions ended.
  * allowSso (admins): the next single sign-on with this email may bind to this password account.
  * sso (server code only, never from a request): the IdP identity this account is bound to.
- * @param {string} email @param {{ role?: string, password?: string, disabled?: boolean, groups?: string[], allowSso?: boolean, sso?: any }} patch
+ * @param {string} email @param {{ role?: string, password?: string, disabled?: boolean, groups?: string[], allowSso?: boolean, sso?: any, resetTwoFactor?: boolean }} patch
  */
 export function updateUser(email, patch, { by } = {}) { return withLock('acl', async () => { await stillAdmin(by); return updateUserNow(email, patch); }); }
 async function updateUserNow(email, patch) {
@@ -154,8 +158,9 @@ async function updateUserNow(email, patch) {
   if (patch.groups !== undefined) next.groups = checkGroups(patch.groups);
   if (patch.allowSso !== undefined) next.allowSso = !!patch.allowSso;
   if (patch.sso !== undefined) { next.sso = patch.sso; delete next.allowSso; }
-  if (patch.password !== undefined) next.passwordHash = await hashPassword(patch.password);
-  if (patch.password !== undefined || (next.disabled && !u.disabled)) next.sessionVersion = (u.sessionVersion || 0) + 1;
+  if (patch.password !== undefined) { next.passwordHash = await hashPassword(patch.password); delete next.reset; }
+  if (patch.resetTwoFactor) { delete next.totp; delete next.totpPending; delete next.recovery; }
+  if (patch.password !== undefined || patch.resetTwoFactor || (next.disabled && !u.disabled)) next.sessionVersion = (u.sessionVersion || 0) + 1;
   await keepAnAdmin(u, next);
   await save(next);
   return publicUser(next);
@@ -176,6 +181,92 @@ export function endSessions(email) {
   // under the lock and re-read there: a sign-out must never write back a record an admin just changed
   return withLock('acl', async () => { const u = await getUser(email); if (u) await save({ ...u, sessionVersion: (u.sessionVersion || 0) + 1 }); });
 }
+
+/* ---------------- two-factor sign-in ---------------- */
+
+const PENDING_MS = 15 * 60 * 1000;
+/**
+ * What a password sign-in still needs: 'totp' (the user has an authenticator), 'enrol' (their role requires one and they
+ * have none yet) or null. Accounts without a password (single sign-on) never: the identity provider owns the factors.
+ * @param {any} u the stored user @param {{ require2fa: string[] }} settings
+ */
+export function secondFactor(u, settings) {
+  if (!u?.passwordHash) return null;
+  if (u.totp) return 'totp';
+  return settings.require2fa.includes(u.role) ? 'enrol' : null;
+}
+
+/** Start enrolling: a new secret, kept pending until a code from it is confirmed. { secret, uri, qr (SVG) } @param {string} email */
+export function startTwoFactor(email) {
+  return withLock('acl', async () => {
+    const u = await getUser(email);
+    if (!u || u.disabled) throw fail('No such user.', 404);
+    if (!u.passwordHash) throw fail('This account signs in with single sign-on: its identity provider owns the second factor.', 409);
+    if (u.totp) throw fail('Two-factor sign-in is on already. Turn it off first to enrol a new authenticator.', 409);
+    const secret = newSecret();
+    await save({ ...u, totpPending: { secret: seal(secret), at: Date.now() } });
+    const uri = otpauthUri(u.email, secret);
+    return { secret, uri, qr: await qrSvg(uri) };
+  });
+}
+
+/**
+ * Finish enrolling with a code from the new authenticator: two-factor sign-in is on, every other session ends.
+ * Returns the recovery codes (shown once) and the user as stored now.
+ * @param {string} email @param {string} code
+ */
+export function enableTwoFactor(email, code) {
+  return withLock('acl', async () => {
+    const u = await getUser(email);
+    if (!u || u.disabled) throw fail('No such user.', 404);
+    if (u.totp) throw fail('Two-factor sign-in is on already.', 409);
+    const secret = u.totpPending && Date.now() - u.totpPending.at < PENDING_MS ? unseal(u.totpPending.secret) : null;
+    if (!secret) throw fail('Start again: scan a new QR code.', 409);
+    if (!(await useCode(u.email, secret, code))) throw fail('That code is not right. Check the time on your phone and try the next code.', 400);
+    const { codes, hashes } = newRecoveryCodes();
+    const next = { ...u, totp: { secret: u.totpPending.secret, enabledAt: new Date().toISOString() }, recovery: hashes, sessionVersion: (u.sessionVersion || 0) + 1, updatedAt: new Date().toISOString() };
+    delete next.totpPending;
+    await save(next);
+    return { codes, user: next };
+  });
+}
+
+/**
+ * Check a second factor: a code from the authenticator (each time step once), or a recovery code (each once, removed).
+ * @param {string} email @param {{ code?: string, recoveryCode?: string }} given @returns {Promise<'totp'|'recovery'|null>}
+ */
+export async function checkSecondFactor(email, { code, recoveryCode } = {}) {
+  const u = await getUser(email);
+  if (!u?.totp || u.disabled) return null;
+  if (typeof code === 'string' && code.trim()) {
+    const secret = unseal(u.totp.secret);
+    return secret && (await useCode(u.email, secret, code)) ? 'totp' : null;
+  }
+  if (typeof recoveryCode !== 'string' || !recoveryCode.trim() || recoveryCode.length > 64) return null;
+  const h = hashRecovery(recoveryCode);
+  return withLock('acl', async () => {
+    const cur = await getUser(email); // read again under the lock: a code is good once, on every server
+    const list = Array.isArray(cur?.recovery) ? cur.recovery : [];
+    const i = list.findIndex(x => typeof x === 'string' && x.length === h.length && crypto.timingSafeEqual(Buffer.from(x), Buffer.from(h)));
+    if (!cur?.totp || i < 0) return null;
+    await save({ ...cur, recovery: list.filter((_, k) => k !== i) });
+    return 'recovery';
+  });
+}
+
+/** New recovery codes (the old ones stop working). @param {string} email */
+export function newRecovery(email) {
+  return withLock('acl', async () => {
+    const u = await getUser(email);
+    if (!u?.totp) throw fail('Two-factor sign-in is off.', 409);
+    const { codes, hashes } = newRecoveryCodes();
+    await save({ ...u, recovery: hashes });
+    return codes;
+  });
+}
+
+/** Turn two-factor sign-in off (the user, after a code; an admin uses resetTwoFactor). Every session ends. @param {string} email */
+export function disableTwoFactor(email) { return updateUser(email, { resetTwoFactor: true }); }
 
 let dummy;
 /** The user when the password is right and the account is on; null otherwise (in about the same time). */

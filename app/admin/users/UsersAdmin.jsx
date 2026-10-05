@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { t } from '@/i18n/index.js';
+import { signOutAndGo } from '@/home/Account.jsx';
 
 const ROLES = ['viewer', 'designer', 'admin'];
 
@@ -47,7 +48,6 @@ export default function UsersAdmin({ lang }) {
   const remove = (u) => {
     if (window.confirm(T('confirmDelete', { email: u.email }))) act(() => call(one(u.email), 'DELETE'), T('deleted', { email: u.email }));
   };
-  const signOut = async () => { await fetch('/api/auth/logout', { method: 'POST' }); window.location.assign('/login'); };
 
   return (
     <>
@@ -55,8 +55,9 @@ export default function UsersAdmin({ lang }) {
         <h1 style={{ flex: 1 }}>{T('users')}</h1>
         {me && <span className="hint" style={{ fontSize: 13 }}>{T('signedInAs', { email: me.email, role: me.role })}</span>}
         <a className="btn" href={`/admin/audit${q}`}>{T('auditLog')}</a>
+        <a className="btn" href={`/admin/settings${q}`}>{T('serverSettings')}</a>
         <a className="btn" href={`/${q}`}>{T('reports')}</a>
-        <button type="button" className="btn" onClick={signOut}>{T('signOut')}</button>
+        <button type="button" className="btn" onClick={signOutAndGo}>{T('signOut')}</button>
       </div>
       <p className="lede">{T('rolesLede')}</p>
 
@@ -86,7 +87,7 @@ export default function UsersAdmin({ lang }) {
       <div className="rlist">
         <table style={{ width: '100%', borderCollapse: 'collapse' }} aria-label={T('users')}>
           <thead>
-            <tr>{[T('email'), T('role'), T('groups'), T('status'), T('actions')].map(h => <th key={h} scope="col" style={{ ...cell, borderTop: 0, fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>{h}</th>)}</tr>
+            <tr>{[T('email'), T('role'), T('groups'), T('status'), T('twoFactorCol'), T('actions')].map(h => <th key={h} scope="col" style={{ ...cell, borderTop: 0, fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>{h}</th>)}</tr>
           </thead>
           <tbody>
             {(users || []).map(u => (
@@ -109,6 +110,7 @@ export default function UsersAdmin({ lang }) {
                   </form>
                 </td>
                 <td style={cell}>{u.disabled ? T('disabled') : T('active')}{u.sso && <span className="hint"> · {u.sso.toUpperCase()}</span>}</td>
+                <td style={cell} data-testid={`tf-${u.email}`}>{u.password ? (u.twoFactor ? T('stateOn') : T('stateOff')) : <span className="hint">SSO</span>}</td>
                 <td style={cell}>
                   {reset.email === u.email ? (
                     <form onSubmit={savePassword} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -125,6 +127,7 @@ export default function UsersAdmin({ lang }) {
                       <button type="button" className="btn sm" onClick={() => act(() => call(one(u.email), 'PATCH', { disabled: !u.disabled }), T(u.disabled ? 'isEnabled' : 'isDisabled', { email: u.email }))}>
                         {u.disabled ? T('enable') : T('disable')}
                       </button>
+                      {u.twoFactor && <button type="button" className="btn sm" onClick={() => { if (window.confirm(T('confirmReset2fa', { email: u.email }))) act(() => call(one(u.email), 'PATCH', { resetTwoFactor: true }), T('twoFactorReset', { email: u.email })); }}>{T('reset2fa')}</button>}
                       {!u.sso && <button type="button" className="btn sm" title={T('allowSsoHint')} onClick={() => act(() => call(one(u.email), 'PATCH', { allowSso: !u.allowSso }), T(u.allowSso ? 'ssoNotAllowed' : 'ssoAllowed', { email: u.email }))}>{u.allowSso ? T('stopSso') : T('allowSso')}</button>}
                       <button type="button" className="btn sm danger" onClick={() => remove(u)} aria-label={T('deleteUser', { email: u.email })}>{T('delete')}</button>
                     </div>
@@ -132,8 +135,8 @@ export default function UsersAdmin({ lang }) {
                 </td>
               </tr>
             ))}
-            {users && !users.length && <tr><td style={cell} colSpan={5}><span className="hint">{T('noUsers')}</span></td></tr>}
-            {!users && !err && <tr><td style={cell} colSpan={5}><span className="hint">{T('loading')}</span></td></tr>}
+            {users && !users.length && <tr><td style={cell} colSpan={6}><span className="hint">{T('noUsers')}</span></td></tr>}
+            {!users && !err && <tr><td style={cell} colSpan={6}><span className="hint">{T('loading')}</span></td></tr>}
           </tbody>
         </table>
       </div>
