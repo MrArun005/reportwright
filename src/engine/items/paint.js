@@ -9,6 +9,22 @@ import { borders, padding, DASH } from '../style.js';
 
 const MAX_CACHED_TEXT = 256;
 
+/**
+ * V8 stores a number field that has once held a fraction as a boxed double (16 bytes more) in every object of that
+ * shape, whole numbers too. A field that has also held null keeps whole numbers inline instead. Page coordinates are
+ * mostly whole (cell edges, left-aligned text, sizes), so the page model's shapes start out that way: a 50,000-row
+ * table's model is 117 MB instead of 133 MB. Kept alive on a used function (V8 forgets a shape no object uses, and a
+ * bundler drops an unused constant). Other engines store numbers their own way and are not affected.
+ * ponytail: relies on V8 sharing object-literal shapes by property names; if that changes this is a no-op, nothing breaks.
+ */
+paintBoxAt.shapes = [
+  { x: null, y: null, w: null, h: null }, // a text's clip
+  { x: null, y: null, text: null, w: null }, // a text line
+  { t: null, font: null, size: null, color: null, lines: null, clip: null }, // a text
+  { t: null, x: null, y: null, w: null, h: null, fill: null }, // a rect
+  { t: null, x1: null, y1: null, x2: null, y2: null, stroke: null, strokeWidth: null, dash: null }, // a line
+];
+
 /** Text layout for a box: lines, font key, needed height. */
 export function layoutTextLines(text, st, width, m, opt) {
   const wrap = opt?.wrap ?? true;
