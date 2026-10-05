@@ -63,7 +63,7 @@ processes (render threads per process: the default, 3 and 1). Server CPU counts 
 |---|---:|---:|---:|---:|---:|
 | invoice | 1 | 140 | 203 | 157 | 120 |
 | invoice | 10 | 372 | 478 | 473 | 252 |
-| invoice | 50 | 282 (earlier run) | 393 | 465 | 301 |
+| invoice | 50 | 411 | 393 | 465 | 301 |
 | invoice | 200 | 301 (65% × 429) | 314 (1% neterr) | 428 (30% × 429) | 235 (82% × 429) |
 | grouped 2,000 rows | 1 | 20.5 | 19.0 | 20.3 | 19.6 |
 | grouped 2,000 rows | 10 | 36.2 | 44.0 | 49.7 | 44.6 |
@@ -74,8 +74,10 @@ p50 at 50 VUs, invoice: 123 ms (1 process), 98 ms (cluster 2). Server CPU in tho
 6.5 for cluster 2 (of 8, with the load generator on the same machine).
 
 Reading it:
-- **Two processes** give the invoice 18% more at 50 users and 36% more at 200, with lower latency; the grouped report is
-  unchanged (it is render-bound, and the render threads were already busy). That is the default for 8 cores.
+- **Two processes** give the invoice 13 to 18% more at 50 users (465 against 411 before and 393 with one process) and 36
+  to 42% more at 200, with lower latency; the grouped report is unchanged (it is render-bound, and the render threads
+  were already busy). That is the default for 8 cores. The noise on this machine is about ±15% between runs, so read
+  these as direction, not as exact gains.
 - **Four processes are worse here:** one render thread each, and the machine had no idle cores left (the load generator,
   the other processes and the noise above use them). On a dedicated server with more cores, raise
   `PW_CLUSTER_PROCESSES` and keep processes + render threads ≈ cores.
