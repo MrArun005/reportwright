@@ -50,6 +50,7 @@ function scriptOf(cp) {
     const ch = String.fromCodePoint(cp);
     s = 'Common';
     for (const [name, re] of SCRIPTS) if (re.test(ch)) { s = name; break; }
+    if (scriptCache.size >= 20000) scriptCache.clear(); // bounded: text can hold any of a million code points
     scriptCache.set(cp, s);
   }
   return s;

@@ -9,7 +9,7 @@ const nfCache = new Map();
 function nf(locale, opts) {
   const key = locale + JSON.stringify(opts);
   let f = nfCache.get(key);
-  if (!f) { f = new Intl.NumberFormat(locale, opts); nfCache.set(key, f); }
+  if (!f) { f = new Intl.NumberFormat(locale, opts); if (nfCache.size >= 500) nfCache.clear(); nfCache.set(key, f); } // bounded: a server renders many reports
   return f;
 }
 
@@ -293,6 +293,7 @@ function localName(locale, kind, style, d) {
   let f = dtfCache.get(key);
   if (f === undefined) {
     try { f = new Intl.DateTimeFormat(locale, { [kind]: style }); } catch { f = null; } // an unknown locale: English
+    if (dtfCache.size >= 500) dtfCache.clear();
     dtfCache.set(key, f);
   }
   return f ? f.format(d) : null;
