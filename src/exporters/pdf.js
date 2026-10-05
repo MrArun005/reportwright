@@ -354,8 +354,9 @@ export async function exportPdf(model, fontStore, opt = {}) {
     const ref = ctx.nextRef();
     p.node.set(PDFName.of('Contents'), ref);
     contents.push(deflate(latin1(c.s)).then(z => ctx.assign(ref, PDFRawStream.of(ctx.obj({ Filter: 'FlateDecode' }), z))));
-    // pages compress while the next ones are drawn: a few pages' text waits for its turn, not the whole report's
-    if (contents.length > 8) await contents[contents.length - 9];
+    // Node: pages compress on zlib's threads while the next ones are drawn, so a few pages' text waits for its turn,
+    // not the whole report's. (A browser compresses on this thread: waiting would only add turns of the event loop.)
+    if (NODE_ZLIB && contents.length > 8) await contents[contents.length - 9];
   }
   await Promise.all(contents);
   // a place in the document (page, y from the top), as an explicit destination: that page, scrolled to just above y
@@ -703,8 +704,9 @@ async function deflate(bytes) {
   try { return await deflateNow(bytes); } finally { const next = zslots.wait.shift(); if (next) next(); else zslots.free++; }
 }
 const zslots = { free: 4, wait: /** @type {(() => void)[]} */ ([]) }; // ponytail: 4 = libuv's default thread pool
+const NODE_ZLIB = /** @type {any} */ (globalThis).process?.getBuiltinModule?.('node:zlib');
 async function deflateNow(bytes) {
-  const zlib = /** @type {any} */ (globalThis).process?.getBuiltinModule?.('node:zlib');
+  const zlib = NODE_ZLIB;
   if (zlib) return new Promise((ok, fail) => zlib.deflate(bytes, (e, z) => (e ? fail(e) : ok(z))));
   if (typeof CompressionStream === 'undefined') return (await import('fflate')).zlibSync(bytes);
   return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
