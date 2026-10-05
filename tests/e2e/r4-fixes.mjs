@@ -52,6 +52,20 @@ try {
     await shot(p, 'no-source');
     if (process.env.FIX_SHOTS) await p.screenshot({ path: `${process.env.FIX_SHOTS}/fix-no-data-source.png` });
   }
+  if (want('wide')) {
+    step('a pivot wider than the page continues on the next pages in the viewer, row headers repeated');
+    const wideRows = Array.from({ length: 60 }, (_, i) => ({ r: `R${i % 4}`, c: `K${String(i % 30).padStart(2, '0')}`, v: i }));
+    const id = await create({ ...base('r4 wide pivot', [{ type: 'matrix', name: 'Wide', x: 0, y: 0, w: 500, h: 54, dataSet: 'W', rowGroup: '=Fields.r', columnGroup: '=Fields.c', value: '=Sum(Fields.v)' }]),
+      dataSources: [{ name: 'w', type: 'json', data: { rows: wideRows } }], dataSets: [{ name: 'W', source: 'w', path: '$.rows[*]' }] });
+    await p.goto(`${BASE}/viewer/${id}`);
+    await p.waitForSelector('.vpage');
+    await p.waitForTimeout(500);
+    const pages = await p.locator('.vpage').count();
+    assert.ok(pages > 1, `the wide pivot is on ${pages} page(s)`);
+    const text = await p.locator('.vpages').textContent();
+    assert.ok(text.includes('K29') && text.includes('K00'), 'every column key is shown');
+    if (process.env.FIX_SHOTS) { await p.locator('.vpage').nth(1).scrollIntoViewIfNeeded(); await p.screenshot({ path: `${process.env.FIX_SHOTS}/fix-wide-pivot.png` }); }
+  }
   if (want('html')) {
     step('HTML export of a one-page report: the pages and tables, not the viewer and the data (was 9.7 MB)');
     const id = await create(base('r4 html size', [
