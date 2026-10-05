@@ -123,3 +123,23 @@ describe('every path that renders, exports or reads data writes an audit event (
   });
 });
 
+
+describe('review: a varied anonymous flood cannot write one entry per request', () => {
+  it('random paths and rotating IPv6 addresses in one /64 are counted, in a bounded number of entries', async () => {
+    await wipe();
+    for (let i = 0; i < 400; i++) await A.audit('api.call', { req: new Request(BASE, { headers: { 'x-pw-peer': `2001:db8:1:2::${(i % 4000).toString(16)}` } }), status: 'denied', detail: { path: `/api/v1/batches/b_${i}x`, reason: 'no key' } });
+    await A.flushFlood();
+    const all = await rows('api.call');
+    expect(total(all)).toBe(400);
+    expect(all.length).toBeLessThanOrEqual(25); // 20 in full from the source, then one counted entry
+  });
+  it('past 1,000 distinct aggregates the rest go to one overflow entry per type, still counted', async () => {
+    await wipe();
+    for (let i = 0; i < 1300; i++) await A.audit('auth.login_failed', { req: new Request(BASE, { headers: { 'x-pw-peer': `10.${i >> 8}.${i & 255}.1` } }), detail: { email: `u${i}@x.io` } });
+    await A.flushFlood();
+    const all = await rows('auth.login_failed');
+    expect(total(all)).toBe(1300);
+    expect(all.length).toBeLessThanOrEqual(100 + 1000 + 1);
+    expect(all.some(e => e.detail?.overflow)).toBe(true);
+  }, 60000);
+});

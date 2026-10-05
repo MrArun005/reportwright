@@ -20,7 +20,7 @@
 import crypto from 'node:crypto';
 import os from 'node:os';
 import { store } from './storage/index.js';
-import { clientAddress } from './limits.js';
+import { clientAddress, routeFamily } from './limits.js';
 import { principalId } from './perms.js';
 import { logWarn } from './errors.js';
 import { devMode, num, num as cnum } from './config.js';
@@ -227,6 +227,19 @@ export async function audit(type, o = {}) {
 const FLOOD_MS = 10000, MAX_BUCKETS = 1000;
 /** What makes two events the same event: everything but the time and the id (detail too, as a digest). */
 const sameKey = (e) => [e.type, e.actor, e.ip, e.status, e.report || '', e.format || '', e.params || '', crypto.createHash('sha256').update(canonical(e.detail || {})).digest('hex').slice(0, 16)].join('|');
+/** The source bucket of an address: IPv4 /24, IPv6 /64 (one attacker rotating addresses in its own range is one source). */
+export const sourceBucket = (ip) => {
+  const a = String(ip || '');
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(a)) return `${a.split('.').slice(0, 3).join('.')}.0/24`;
+  if (a.includes(':')) { const full = a.split('::')[0].split(':'); return `${full.slice(0, 4).join(':')}::/64`; }
+  return a;
+};
+/**
+ * The key an over-the-cap anonymous event is counted under: as sameKey, but from its source bucket, and with a path in
+ * its detail reduced to the route family (/api/v1/batches/<random> varied per request made every event its own entry).
+ * The address, the type, the outcome, the report and every other detail field still separate entries.
+ */
+const floodKey = (e) => sameKey({ ...e, ip: sourceBucket(e.ip), detail: e.detail && typeof e.detail.path === 'string' ? { ...e.detail, path: routeFamily(e.detail.path) } : e.detail });
 /**
  * Whether an event is written now. Two kinds go through here:
  *  - events without a signed-in actor (keyless API calls, malformed sign-ins, garbage SAML posts), which anyone can
@@ -236,8 +249,9 @@ const sameKey = (e) => [e.type, e.actor, e.ip, e.status, e.report || '', e.forma
  * an event that is IDENTICAL to one already seen in this 10 s window (same type, actor, address, outcome, report,
  * format, parameter hash and detail) is counted into one aggregate entry, written when the window ends:
  * { ...the event, detail: { ...its detail, repeated: n, from, to } }. A different event is never folded into another:
- * it gets its own entry (and count), so a real action cannot hide among repeats. Nothing is dropped. More than 1,000
- * distinct aggregates in a window are written at once. Per process; an unclean exit loses at most one window's counts.
+ * it gets its own entry (and count), so a real action cannot hide among repeats. Nothing is dropped. Over the cap,
+ * addresses count by source bucket (IPv4 /24, IPv6 /64) and a request path in the detail by its route family; past
+ * 1,000 distinct aggregates in a window the rest are counted per type and outcome into one overflow entry. Per process; an unclean exit loses at most one window's counts.
  * Events of signed-in users and API keys are never aggregated (except repeat ones) and never sampled.
  * @param {any} entry @param {boolean} repeat @returns {boolean} true: write it now
  */
@@ -245,17 +259,25 @@ function floodGate(entry, repeat) {
   const f = (g.__pwAudit.flood ||= newWindow());
   if (Date.now() - f.start >= FLOOD_MS) flushFlood();
   const w = g.__pwAudit.flood;
-  const key = sameKey(entry);
+  let key = repeat ? sameKey(entry) : floodKey(entry);
   if (repeat) { if (!w.seen.has(key)) { w.seen.add(key); return true; } }
   else {
-    const n = (w.per.get(entry.ip) || 0) + 1;
-    w.per.set(entry.ip, n);
+    const src = sourceBucket(entry.ip);
+    const n = (w.per.get(src) || 0) + 1;
+    w.per.set(src, n);
     if (n <= num('PW_AUDIT_ANON_PER_SOURCE', 20) && w.total < num('PW_AUDIT_ANON_PER_MINUTE', 600) / 6) { w.total++; return true; }
   }
-  const a = w.agg.get(key);
+  let a = w.agg.get(key);
+  // past MAX_BUCKETS distinct entries in a window, the rest of a type are counted into one overflow entry per type and
+  // outcome (with the number of distinct events and a few of their sources): bounded writes, nothing uncounted
+  if (!a && w.agg.size >= MAX_BUCKETS) {
+    key = `${entry.type}|${entry.status}|overflow`;
+    a = w.agg.get(key);
+    if (!a) { a = { entry: { ...entry, ip: 'many', detail: { overflow: true } }, n: 0, from: entry.at, to: entry.at, sources: new Set(), distinct: 0 }; w.agg.set(key, a); }
+    a.distinct++; if (a.sources.size < 10) a.sources.add(sourceBucket(entry.ip));
+  }
   if (a) { a.n++; a.to = entry.at; } else w.agg.set(key, { entry, n: 1, from: entry.at, to: entry.at });
-  if (w.agg.size >= MAX_BUCKETS) flushFlood();
-  else if (!w.timer) { w.timer = setTimeout(() => { w.timer = null; flushFlood(); }, Math.max(0, FLOOD_MS - (Date.now() - w.start))); w.timer.unref?.(); }
+  if (!w.timer) { w.timer = setTimeout(() => { w.timer = null; flushFlood(); }, Math.max(0, FLOOD_MS - (Date.now() - w.start))); w.timer.unref?.(); }
   return false;
 }
 const newWindow = () => ({ start: Date.now(), per: new Map(), total: 0, agg: new Map(), seen: new Set(), timer: null });
@@ -265,9 +287,9 @@ export async function flushFlood() {
   if (!f) return;
   g.__pwAudit.flood = newWindow();
   if (f.timer) clearTimeout(f.timer);
-  await Promise.all([...f.agg.values()].map(({ entry, n, from, to }) => {
+  await Promise.all([...f.agg.values()].map(({ entry, n, from, to, sources, distinct }) => {
     const at = new Date().toISOString();
-    const e = { ...entry, id: `${at}-${String((g.__pwAudit.seq = ((g.__pwAudit.seq || 0) + 1) % 1e6)).padStart(6, '0')}-${crypto.randomBytes(3).toString('hex')}`, at, detail: { ...(entry.detail || {}), repeated: n, from, to } };
+    const e = { ...entry, id: `${at}-${String((g.__pwAudit.seq = ((g.__pwAudit.seq || 0) + 1) % 1e6)).padStart(6, '0')}-${crypto.randomBytes(3).toString('hex')}`, at, detail: { ...(entry.detail || {}), repeated: n, from, to, ...(sources ? { distinct, sources: [...sources] } : {}) } };
     return write(e, e.type).then(ok => { if (!ok) console.error(`[pagewright] audit log: could not record ${n} × ${e.type} from ${e.ip}`); });
   }));
 }
