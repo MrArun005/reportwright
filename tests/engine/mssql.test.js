@@ -256,7 +256,7 @@ describe.skipIf(!process.env.PW_TEST_MSSQL)('SQL Server (live)', () => {
       // a few rows, but each a megabyte of text
       Object.assign(limits, { rows: 1000, bytes: 3 * 1048576 });
       t0 = Date.now();
-      await expect(runSql(ms("select top 100 replicate(cast('x' as varchar(max)), 1000000) as big from sys.all_objects"), {})).rejects.toThrow(/more than 3 MB/);
+      await expect(runSql(ms("select top 100 replicate(cast('x' as varchar(max)), 300000) as big from sys.all_objects"), {})).rejects.toThrow(/more than 3 MB/);
       expect(Date.now() - t0).toBeLessThan(5000);
       // one value larger than the cap
       await expect(runSql(ms("select replicate(cast('x' as varchar(max)), 4000000) as big"), {})).rejects.toThrow(/MB/);
@@ -368,13 +368,15 @@ describe.skipIf(!process.env.PW_TEST_MSSQL)('SQL Server (live)', () => {
       await expect(runSql(ms("select cast(replicate(cast(0x41 as varbinary(max)), 60000000) as varbinary(max)) as big"), {})).rejects.toThrow(/MB/);
       expect(process.memoryUsage().rss - before).toBeLessThan(80 * 1048576);
       expect(Date.now() - t0).toBeLessThan(20000);
-      // a value just under the cap passes; xml and CLR (UDT) columns are refused (no size cap on the server for them)
-      expect((await runSql(ms("select replicate(cast('z' as varchar(max)), 1000000) as v"), {}))[0].v).toHaveLength(1000000);
+      // a value within its share passes (a quarter of the cap: the driver holds a value up to four times over);
+      // xml and CLR (UDT) columns are refused (no size cap on the server for them)
+      expect((await runSql(ms("select replicate(cast('z' as varchar(max)), 300000) as v"), {}))[0].v).toHaveLength(300000);
+      await expect(runSql(ms("select replicate(cast('z' as varchar(max)), 1000000) as v"), {})).rejects.toThrow(/MB/);
       await expect(runSql(ms("select cast('<a/>' as xml) as x"), {})).rejects.toThrow(/xml/i);
       // (CLR types such as hierarchyid are refused the same way; Azure SQL Edge has no CLR to test them with)
       // the cap is set again for every query: a larger cap later lets a larger value through
       Object.assign(limits, { bytes: 12 * 1048576 });
-      expect((await runSql(ms("select replicate(cast('z' as varchar(max)), 5000000) as v"), {}))[0].v).toHaveLength(5000000);
+      expect((await runSql(ms("select replicate(cast('z' as varchar(max)), 1200000) as v"), {}))[0].v).toHaveLength(1200000);
     } finally { Object.assign(limits, keep); }
   }, 60000);
 
@@ -426,6 +428,14 @@ describe.skipIf(!process.env.PW_TEST_MSSQL)('SQL Server (live)', () => {
       await admin.request().batch(`USE pwother; ALTER ROLE db_datawriter DROP MEMBER pw_reader; ALTER ROLE db_datareader ADD MEMBER pw_reader;`);
       process.env.PW_DB_MSW3 = `${readerUrl()}&p=o2`;
       expect(await runSql({ connection: 'msw3', query: 'select 1 as a' }, {})).toEqual([{ a: 1 }]); // reading there is fine
+      // master and msdb are user-reachable too (review 3b: they were skipped): a writer there is refused
+      for (const db of ['msdb', 'master']) {
+        await admin.request().batch(`USE ${db}; IF USER_ID('pw_reader') IS NULL CREATE USER pw_reader FOR LOGIN pw_reader; ALTER ROLE db_datawriter ADD MEMBER pw_reader;`);
+        try {
+          process.env.PW_DB_MSW3 = `${readerUrl()}&p=s${db.length}`; // not the name: errors scrub every part of the URL
+          expect((await runSql({ connection: 'msw3', query: 'select 1 as a' }, {}).catch(e => e)).message).toMatch(new RegExp(`in the database ${db}: `));
+        } finally { await admin.request().batch(`USE ${db}; ALTER ROLE db_datawriter DROP MEMBER pw_reader; DROP USER pw_reader;`); }
+      }
     } finally {
       delete process.env.PW_DB_MSW3;
       await admin.request().batch(`USE master; IF DB_ID('pwother') IS NOT NULL BEGIN ALTER DATABASE pwother SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE pwother; END`);
@@ -437,13 +447,13 @@ describe.skipIf(!process.env.PW_TEST_MSSQL)('SQL Server (live)', () => {
     const keep = { ...limits };
     try {
       Object.assign(limits, { bytes: 3 * 1048576 });
-      // 20 rows × two 200 kB values under one name: 8 MB, once counted as two numbers
-      await expect(runSql(ms("with x as (select top 20 replicate(cast('a' as varchar(max)), 200000) as v from sys.all_objects) select v as a, v as a from x"), {})).rejects.toThrow(/more than 3 MB/);
+      // 20 rows × two 200 kB values (100,000 characters) under one name: 8 MB, once counted as two numbers
+      await expect(runSql(ms("with x as (select top 20 replicate(cast('a' as varchar(max)), 100000) as v from sys.all_objects) select v as a, v as a from x"), {})).rejects.toThrow(/more than 3 MB/);
       // 3,000 statements in one text: refused at the second plan, not buffered (each plan would be read in full before)
       global.gc?.();
       const before = process.memoryUsage().rss;
       const t0 = Date.now();
-      await expect(runSql(ms(Array.from({ length: 3000 }, () => 'select a.name as n from sys.all_objects a cross join sys.all_objects b').join(' ')), {})).rejects.toMatchObject({ status: 400 });
+      await expect(runSql(ms(Array.from({ length: 3000 }, (_, i) => `select ${i} as n`).join(' ')), {})).rejects.toMatchObject({ status: 400 });
       expect(Date.now() - t0).toBeLessThan(10000);
       expect(process.memoryUsage().rss - before).toBeLessThan(80 * 1048576);
       // sql_variant has a fixed size (8016 bytes) and is read like any value

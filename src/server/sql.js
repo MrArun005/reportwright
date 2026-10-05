@@ -144,6 +144,8 @@ const plainRow = (r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k,
 export async function runSql({ connection, query }, params = {}) {
   const { url, key } = connectionUrl(connection);
   if (typeof query !== 'string' || !query.trim()) throw fail('The SQL source has no query.', 400);
+  // a huge text costs the database server time to compile, and a cancel does not always stop a compile
+  if (query.length > MAX_QUERY) throw fail(`The query is longer than ${MAX_QUERY / 1000}k characters.`, 400);
   // first guard: a report reads data. (WITH … UPDATE passes this; the read-only transaction stops it.)
   if (!/^[\s(]*(select|with)\b/i.test(query.replace(/^(\s*(--[^\n]*|\/\*[\s\S]*?\*\/))+/, ''))) throw fail('A SQL source can only run a SELECT query.', 400);
   const dialect = kindOf(url);
@@ -167,7 +169,7 @@ export async function runSql({ connection, query }, params = {}) {
   return rows.map(plainRow);
 }
 
-const MAX_ERROR = 1000;
+const MAX_ERROR = 1000, MAX_QUERY = 100000;
 // Postgres query_canceled, MySQL max_execution_time, MariaDB max_statement_time, SQL Server request timeout
 const TIMEOUT_CODES = new Set(['57014', 'ER_QUERY_TIMEOUT', 'ER_STATEMENT_TIMEOUT', 'ETIMEOUT']);
 
@@ -365,15 +367,21 @@ async function mssqlRun(sql, entry, text, values, clk) {
   // the login is asked again before every query (a 5-second cache covers the queries of one render), on a fresh
   // connection from the pool; any error in the probe refuses the query (fail closed). The probe has a clock of its own
   // with the same time limit (it is shared by the queries that wait for it); this query waits for it until its deadline.
-  if (!entry.probe || Date.now() - entry.probe.at > PROBE_MS) {
-    const at = Date.now();
-    const pc = clock(Number(limits.ms));
-    const result = probeReadOnly(sql, pool, pc).finally(pc.stop);
-    entry.probe = { at, result };
-    result.catch(() => { if (entry.probe?.at === at) entry.probe = null; });
-  }
+  const probe = () => {
+    if (!entry.probe || entry.probe.pc.fired || Date.now() - entry.probe.at > PROBE_MS) { // a probe out of time is no answer
+      const at = Date.now();
+      const pc = clock(Number(limits.ms));
+      const result = probeReadOnly(sql, pool, pc).catch((e) => { throw pc.fired ? pc.late() : e; }).finally(pc.stop);
+      entry.probe = { at, result, pc };
+      result.catch(() => { if (entry.probe?.at === at) entry.probe = null; });
+    }
+    return clk.inTime(entry.probe.result);
+  };
   let why;
-  try { why = await clk.inTime(entry.probe.result); } catch (e) { clk.overdue(); throw fail(`Could not check what this SQL Server login may do, so the query did not run: ${String(e.message || e).slice(0, 200)}`, 500); }
+  try {
+    // a shared probe begun by an earlier query with a shorter time left can run out first: then once more, on our time
+    why = await probe().catch((e) => { clk.overdue(); if (e.status === 504) return probe(); throw e; });
+  } catch (e) { clk.overdue(); if (e.status === 504) throw e; throw fail(`Could not check what this SQL Server login may do, so the query did not run: ${String(e.message || e).slice(0, 200)}`, 500); }
   if (why) { entry.probe = null; throw fail(`This SQL Server login can write (${why}). Give report connections a login that can only read: a database user in db_datareader, with GRANT SHOWPLAN, and nothing else.`, 500); }
   clk.overdue();
   const types = values.map(v => mssqlType(sql, v));
@@ -414,8 +422,8 @@ async function mssqlRun(sql, entry, text, values, clk) {
     const lobSize = rowBudget((await describe.query('EXEC sp_describe_first_result_set @tsql = @t, @params = @p')).recordset || []);
     clk.overdue();
     // the server's own caps: rows (the client counts too) and the size of any one (MAX) value: TEXTSIZE is the
-    // smallest even number above the byte cap (an nvarchar is cut at whole characters), so a value the server
-    // cut is always over the cap on the client and is refused, and no more than that crosses the wire
+    // value's share of the byte cap, an even number (an nvarchar is cut at whole characters), so a value the server
+    // cut is always at or over its share on the client and is refused, and no more than that crosses the wire
     await req().batch(`SET ROWCOUNT ${Number(limits.rows) + 1}; SET TEXTSIZE ${lobSize}`);
     try {
       const r = req();
@@ -461,8 +469,12 @@ export function isOneSelect(plan) {
   return types.length === 1 && SELECT_TYPES.has(types[0]) ? types[0] : false;
 }
 
-/** The TEXTSIZE for a query: the smallest even number above limits.bytes. */
-const textSize = () => Number(limits.bytes) + 2 - (Number(limits.bytes) % 2);
+/**
+ * The TEXTSIZE for a query: an even number just above a quarter of limits.bytes. The driver holds a value up to four
+ * times over before the client can measure it (the packet chunks, the joined buffer, then a string at 2 bytes a
+ * character), so a quarter keeps even a cut value's peak within the cap.
+ */
+const textSize = () => Math.floor(Number(limits.bytes) / 8) * 2 + 2;
 /**
  * The bytes a value can have been on the server, at most: max(UTF-8, 2 × length) for text, the length for binary, the
  * sum for a list (mssql gives a list for columns with the same name), the JSON text of anything else, 8 for a scalar.
@@ -494,7 +506,7 @@ export function rowBudget(desc) {
   const cap = Number(limits.bytes);
   if (fixed >= cap) throw fail(`One row of this query can be ${Math.ceil(fixed / 1048576)} MB, more than the ${Math.round(cap / 1048576)} MB a SQL source may read. Select fewer or narrower columns.`, 400);
   if (!lobs) return textSize();
-  const share = Math.floor((cap - fixed) / lobs / 2) * 2;
+  const share = Math.floor((cap - fixed) / lobs / 8) * 2; // a quarter: see textSize
   if (share < MIN_LOB) throw fail(`The query has too many large columns (${lobs} of (MAX) size) for the ${Math.round(cap / 1048576)} MB a SQL source may read.`, 400);
   return Math.min(share, textSize());
 }
@@ -649,7 +661,7 @@ export async function probeReadOnly(sql, pool, clk) {
   const SMALL = 'SET TEXTSIZE 65536;\n';
   const here = whyNot((await track(pool.request()).query(SMALL + PROBE_SQL)).recordset[0] || {});
   if (here) return here;
-  const others = ((await track(pool.request()).query("SELECT QUOTENAME(name) AS q, name FROM sys.databases WHERE database_id > 4 AND state = 0 AND HAS_DBACCESS(name) = 1 AND name <> DB_NAME()")).recordset || [])
+  const others = ((await track(pool.request()).query("SELECT QUOTENAME(name) AS q, name FROM sys.databases WHERE database_id NOT IN (2, 3) AND state = 0 AND HAS_DBACCESS(name) = 1 AND name <> DB_NAME()")).recordset || [])
     .filter(r => typeof r.q === 'string' && typeof r.name === 'string');
   for (const db of others) {
     const why = whyNot((await track(pool.request()).query(`${SMALL}EXEC ${db.q}.sys.sp_executesql N'${PROBE_SQL.replace(/'/g, "''")}'`)).recordset[0] || {});
