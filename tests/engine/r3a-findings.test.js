@@ -4,6 +4,7 @@ import { render } from '../../src/engine/index.js';
 import { evaluate, compile } from '../../src/engine/expr/evaluate.js';
 import { translateExpression } from '../../src/importers/rdlx.js';
 import { fontStore } from '../helpers.js';
+import { formatValue } from '../../src/engine/expr/format.js';
 
 const ev = (src, extra = {}) => evaluate(compile(src), { params: {}, globals: {}, dataSets: {}, fields: null, locale: 'en-US', ...extra });
 
@@ -53,4 +54,19 @@ describe('N3 a master report does not take the content report\'s default data se
     expect(text).toContain('Total 3');
     expect(text).toContain('ACME');
   });
+});
+
+describe('.NET formats in other cultures (N5, N13–N17, N28)', () => {
+  const f = (v, fmt, locale) => formatValue(v, fmt, { locale, timeZone: 'UTC' });
+  const d = new Date('2026-03-05T14:30:00Z');
+  it.each([
+    [-5, '0', 'ar-SA', '-5'], [-1234.5, '#,##0.00', 'ar-SA', '-1,234.50'], [-5, '0.00', 'fa-IR', '-5.00'], [-1234.5, 'N2', 'ar-SA', '-1,234.50'],
+    [1234.5, 'N2', 'es-ES', '1.234,50'], [1234.5, 'N2', 'pl-PL', '1 234,50'], [1234.5, 'N2', 'pt-PT', '1 234,50'], [-1234.5, 'C2', 'es-ES', '-1.234,50 €'],
+    [0.1234, '0.0‰', 'en-US', '123.4‰'], [0.5, '#,##0‰', 'de-DE', '500‰'],
+  ])('%s %s %s → %s', (v, fmt, l, want) => expect(f(v, fmt, l).replace(/[  ]/g, ' ')).toBe(want));
+  it.each([
+    ['D', 'ru-RU', /5 марта 2026/], ['d MMMM', 'pl-PL', /^5 marca$/], ['dd MMMM', 'cs-CZ', /^05 března$/], ['MMMM', 'ru-RU', /^март$/],
+    ['t', 'ko-KR', /^오후 2:30$/], ['hh:mm tt', 'ja-JP', /^02:30 午後$/], ['dd/MM/yyyy', 'de-DE', /^05\.03\.2026$/], ['dd/MM/yyyy', 'nl-NL', /^05-03-2026$/],
+    ['dd\\/MM', 'de-DE', /^05\/03$/], ["dd'/'MM", 'de-DE', /^05\/03$/], ['d', 'fa-IR', /^2026\/3\/5$/], ['dd/MM/yyyy hh:mm tt', 'en-US', /^05\/03\/2026 02:30 PM$/],
+  ])('%s in %s', (fmt, l, re) => expect(f(d, fmt, l)).toMatch(re));
 });
