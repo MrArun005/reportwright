@@ -78,6 +78,19 @@ export function assertFixedHosts(def) {
   }
 }
 
+let zones = null;
+/**
+ * The viewer's time zone for a server render (Intl's resolvedOptions().timeZone, sent by the viewer), checked against
+ * the zones this runtime knows; a bad one is a 400. A report's own timeZone setting still wins (engine render()).
+ * @param {any} tz @returns {string|undefined}
+ */
+export function checkTimeZone(tz) {
+  if (tz == null || tz === '') return undefined;
+  zones ||= new Set([...Intl.supportedValuesOf('timeZone'), 'UTC', 'Etc/UTC']);
+  if (typeof tz !== 'string' || !zones.has(tz)) throw Object.assign(new Error(`Unknown time zone "${String(tz).slice(0, 60)}". Send an IANA name such as Europe/Paris.`), { status: 400 });
+  return tz;
+}
+
 /**
  * Resolve a template reference: "id", "id@version", or an inline definition object, as `principal` may.
  * An inline definition can name any SQL connection and any subreport, so it needs a designer (or a service key). A saved
@@ -105,6 +118,7 @@ export async function loadTemplate(template, principal = defaultPrincipal()) {
  *   encrypt: passwords and permissions (pdfEncryptOptions); not with pdfa or sign.
  *   principal: who the render runs for (perms.js): subreports it may not view are "not found". Default: nobody
  *   with accounts on, so a caller that forgets cannot show more than it should.
+ *   timeZone: the viewer's zone (checkTimeZone), so a server file shows dates as the browser does; the report's wins.
  *   firstPages: lay out only that many pages (thumbnails). modelOnly: the page model, no file (bytes null).
  */
 export async function renderTo(def, opt = {}) {
@@ -126,7 +140,7 @@ export async function renderTo(def, opt = {}) {
   const fetch = serverFetch(opt.self || base);
   await syncFonts();
   const model = await render(d, {
-    parameters: opt.parameters || {}, state: opt.state || {}, fontStore: fontStore(),
+    parameters: opt.parameters || {}, state: opt.state || {}, fontStore: fontStore(), timeZone: checkTimeZone(opt.timeZone),
     baseUrl: base, fetch, timeoutMs: renderTimeoutMs(),
     exportData: !opt.modelOnly && (format !== 'pdf' || !!opt.ua), // a plain PDF needs no table data
     ...(opt.firstPages ? { firstPages: opt.firstPages } : {}),

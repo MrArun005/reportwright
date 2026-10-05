@@ -16,7 +16,7 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 import { zipSync } from 'fflate';
 import { PDFDocument } from 'pdf-lib';
-import { loadTemplate, baseUrl as defaultBase } from './renderer.js';
+import { loadTemplate, baseUrl as defaultBase, checkTimeZone } from './renderer.js';
 import { renderInPool, submit } from './pool.js';
 import { serverFetch, checkTarget } from './safeFetch.js';
 import { jsonPath } from '@/engine/data/index.js';
@@ -146,7 +146,7 @@ export async function createBatch(spec, req, principal = defaultPrincipal(), { s
   const job = {
     id: rid(), status: 'queued', createdAt: new Date().toISOString(), template: typeof spec.template === 'string' ? spec.template : def.name,
     templateRef: typeof spec.template === 'string' ? spec.template : null,
-    format, fromSnapshot: !!spec.fromSnapshot, output: spec.output || { type: 'zip' }, webhook: spec.webhook || null, fileName: spec.fileName || null, schedule: spec.schedule || null, pdfa: !!spec.pdfa, sign: !!spec.sign,
+    format, timeZone: checkTimeZone(spec.timeZone) || null, fromSnapshot: !!spec.fromSnapshot, output: spec.output || { type: 'zip' }, webhook: spec.webhook || null, fileName: spec.fileName || null, schedule: spec.schedule || null, pdfa: !!spec.pdfa, sign: !!spec.sign,
     total: items.length, done: 0, failed: 0, results: [], errors: [], failedItems: [], base, self, owner: principalId(principal), ownerKey: vet(principal).viaKey || null, ownerSession: !!session, ownerSince: since, email: spec.email ? checkEmail(spec.email) : null,
   };
   job._work = { blob: workKey(job.id) };
@@ -345,7 +345,7 @@ async function run(job, owner, stopAfter, fence = { lost: false, hold: async () 
         if (ended) throw ended;
         const principal = await allowed().catch((e) => { throw (ended = new Error(`The owner may no longer run this report (${e.message}).`)); });
         // in the render pool, behind interactive renders (allowed() checked the template as the owner is now)
-        const opt = { parameters: item.parameters, data: item.data, format: job.format, baseUrl: job.base, self: job.self, pdfa: job.pdfa, sign: job.sign, principal };
+        const opt = { parameters: item.parameters, data: item.data, format: job.format, timeZone: job.timeZone || undefined, baseUrl: job.base, self: job.self, pdfa: job.pdfa, sign: job.sign, principal };
         const render = () => renderInPool({ def, opt }, { background: true });
         // fromSnapshot (schedules): a fresh snapshot of the same report, parameters and access, within the TTL setting
         const r = job.fromSnapshot ? await throughSnapshot({ def, opt, principal }, render) : await render();

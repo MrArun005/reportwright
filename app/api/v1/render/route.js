@@ -3,7 +3,7 @@
 //         pdf: { userPassword, ownerPassword, permissions: { print, copy, … } } }
 // A user's API key ("email|key") renders only what that user may view (src/server/perms.js).
 import { apiPrincipal, fail } from '@/server/auth.js';
-import { baseUrl, loadTemplate } from '@/server/renderer.js';
+import { baseUrl, loadTemplate, checkTimeZone } from '@/server/renderer.js';
 import { renderInPool, admit } from '@/server/pool.js';
 import { canDesign } from '@/server/perms.js';
 import { pdfEncryptOptions } from '@/exporters/encrypt.js';
@@ -25,7 +25,7 @@ export async function POST(req) {
     // read and checked once, here, as this principal (view access; server-side data as a designer stored it); the
     // worker renders it (src/server/pool.js) and loads its subreports as this principal
     const def = await loadTemplate(body.template, principal);
-    const opt = { encrypt, parameters: body.parameters, data: body.data, format: body.format, baseUrl: baseUrl(req), state: body.state, pdfa: !!body.pdfa, ua: !!body.ua, formulas: body.formulas, static: !!body.static, sign: !!body.sign, principal };
+    const opt = { encrypt, timeZone: checkTimeZone(body.timeZone), parameters: body.parameters, data: body.data, format: body.format, baseUrl: baseUrl(req), state: body.state, pdfa: !!body.pdfa, ua: !!body.ua, formulas: body.formulas, static: !!body.static, sign: !!body.sign, principal };
     // a saved template may come from the snapshot cache (src/server/snapshots.js: off unless an admin sets a TTL)
     const r = await throughSnapshot({ def: typeof body.template === 'string' ? def : null, opt, principal }, () => renderInPool({ ref: typeof body.template === 'string' ? body.template : undefined, def, opt }, { signal: req.signal }));
     await audit('report.render', { req, principal, report: typeof body.template === 'string' ? body.template : null, format: body.format || 'pdf', params: body.parameters, detail: { pages: r.pages, via: 'api', ...(r.snapshot !== 'off' ? { snapshot: r.snapshot } : {}), inline: typeof body.template !== 'string', pushedData: !!body.data, signed: !!body.sign, encrypted: !!encrypt } });
