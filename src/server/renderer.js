@@ -30,8 +30,14 @@ export const fontStore = () => (store ||= new FontStore(async (k) => {
 }));
 
 /** Tell the engine which fonts are uploaded (by family) before a render. A font that failed may load now. */
+// ponytail: the list is read at most every FONT_SYNC_MS (a batch of 180 items reads it once, not 180 times); an
+// upload shows in renders within that time
+const FONT_SYNC_MS = 2000;
+let fontsSyncedAt = 0;
 export async function syncFonts() {
+  if (Date.now() - fontsSyncedAt < FONT_SYNC_MS) return;
   setCustomFonts(await listFonts());
+  fontsSyncedAt = Date.now();
   for (const k of fontStore().failed) if (k.startsWith('u-')) fontStore().failed.delete(k);
 }
 const subset = createSubsetter(() => fs.readFile(path.join(ROOT, 'public', 'harfbuzz-subset.wasm')));
@@ -148,7 +154,11 @@ function batchFetch(fetch, scope) {
       batchFetches.set(key, hit);
       batchFetchBytes += hit.bytes.length;
     }
-    return new Response(hit.bytes.slice(), { status: hit.status, headers: hit.headers });
+    const res = new Response(hit.bytes.slice(), { status: hit.status, headers: hit.headers });
+    // parsed once per batch, not once per item (the engine builds its own rows and never changes the source)
+    const h = hit;
+    res.json = async () => (h.parsed ??= JSON.parse(new TextDecoder().decode(h.bytes)));
+    return res;
   };
 }
 

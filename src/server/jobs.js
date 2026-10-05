@@ -371,9 +371,10 @@ async function run(job, owner, stopAfter, fence = { lost: false, hold: async () 
           const res = await serverFetch(job.self, { internal: canDesign(principal) })(item.putUrl, { method: 'PUT', body: r.bytes, headers: { 'content-type': r.contentType, 'idempotency-key': `${job.id}:item:${i}` } });
           if (!res.ok) throw new Error(`upload: HTTP ${res.status}`);
         }
-        await blobs().put(itemKey(i), r.bytes);
+        // the item's bytes and its audit row at once (one round trip on a remote database, not two); the result
+        // blob, which says the item is done, only after both
         // every item is a render of the report as its owner: audited (compact: the batch, the item, a parameter hash)
-        await audit('report.render', { actor: job.owner || 'nobody', report: job.templateRef, format: job.format, params: item.parameters, detail: { batch: job.id, item: i, pages: r.pages, via: job.schedule ? 'schedule' : 'batch' } });
+        await Promise.all([blobs().put(itemKey(i), r.bytes), audit('report.render', { actor: job.owner || 'nobody', report: job.templateRef, format: job.format, params: item.parameters, detail: { batch: job.id, item: i, pages: r.pages, via: job.schedule ? 'schedule' : 'batch' } })]);
         const res = { index: i, name, pages: r.pages, bytes: r.bytes.length, by: owner };
         if (fence.lost) return;
         await blobs().put(resultKey(job.id, i), Buffer.from(JSON.stringify(res)));
@@ -426,9 +427,9 @@ async function run(job, owner, stopAfter, fence = { lost: false, hold: async () 
   // it; a runner that took the job over afterwards finds the claim and does not send again (at most once per batch)
   if (job.email && ok.length) job.mail = (await claimOnce(`mail:${job.id}`, runId)) ? await deliver(job, ok, bytesOf) : (job.mail || { status: 'sent by an earlier run', at: new Date().toISOString() });
   // by key, not by listing (a listing on SQL storage reads every blob's manifest), with a turn of the event loop now and then
-  for (let i = 0; i < items.length; i++) {
-    await blobs().remove(itemKey(i)); await blobs().remove(resultKey(job.id, i));
-    if (i % 100 === 99) await new Promise(r => setImmediate(r));
+  for (let i = 0; i < items.length; i += 16) { // 16 items' blobs at a time
+    await Promise.all(Array.from({ length: Math.min(16, items.length - i) }, (_, k) => [blobs().remove(itemKey(i + k)), blobs().remove(resultKey(job.id, i + k))]).flat());
+    if (i % 112 === 96) await new Promise(r => setImmediate(r));
   }
   await blobs().remove(workKey(job.id));
   job.status = job.failed && !job.done ? 'failed' : job.failed ? 'completed_with_errors' : 'completed';
@@ -454,7 +455,10 @@ export async function packOutput({ type, key, items }) {
     await blobs().put(key, await merged.save());
   } else {
     const files = {};
-    for (const it of items) files[it.name] = new Uint8Array(await get(it.key));
+    for (let i = 0; i < items.length; i += 16) { // 16 reads at a time: a remote store's round trips overlap
+      const part = items.slice(i, i + 16);
+      (await Promise.all(part.map(it => get(it.key)))).forEach((b, k) => { files[part[k].name] = new Uint8Array(b); });
+    }
     await blobs().put(key, zipSync(/** @type {any} */ (files), { level: 6 }));
   }
   return { key };
