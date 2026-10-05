@@ -3,14 +3,16 @@
 // request thread per process instead of one in all. Build first (npm run build), then:
 //   node scripts/cluster.mjs [-p 3000] [-H 0.0.0.0]
 // PW_CLUSTER_PROCESSES   processes (default: a quarter of the cores, at least 2)
-// PW_RENDER_WORKERS      render threads per process; default: the cores left after the request threads, shared out, so
-//                        processes + render threads ≈ cores (src/server/pool.js)
+// PW_RENDER_WORKERS      render threads per process; default: each process gets its share of the cores (PW_CPUS) and
+//                        of the memory (PW_MEMORY_LIMIT_MB: the cgroup limit or the RAM), and src/server/pool.js sizes
+//                        its workers from those, so processes + render threads ≈ cores and their heaps fit the memory
 // Everything else is the same environment as `next start`. The processes share the storage (PW_STORAGE: files on this
 // machine, or a database) and so the queue, the scheduler (one leader), locks, sessions and the audit log (one chained
 // stream each). The primary only forks and restarts processes; the kernel spreads connections across them.
 // PW_AUTH=users needs one PW_SESSION_SECRET for all of them: outside production a random one is made here and shared.
 import cluster from 'node:cluster';
 import os from 'node:os';
+import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -25,10 +27,11 @@ process.env.NODE_ENV ||= 'production';
 if (cluster.isPrimary) {
   const cores = os.availableParallelism?.() || os.cpus().length;
   const n = Math.max(1, Number(process.env.PW_CLUSTER_PROCESSES) || Math.max(2, Math.round(cores / 4)));
-  const workers = process.env.PW_RENDER_WORKERS ?? String(Math.max(1, Math.floor((cores - n) / n)));
+  let memMB = Number(process.env.PW_MEMORY_LIMIT_MB) || os.totalmem() / 1048576;
+  try { const v = fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim(); if (v !== 'max') memMB = Math.min(memMB, Number(v) / 1048576); } catch { /* no cgroup v2 */ }
   if (process.env.PW_AUTH === 'users' && !process.env.PW_SESSION_SECRET && process.env.NODE_ENV !== 'production') process.env.PW_SESSION_SECRET = crypto.randomBytes(32).toString('hex');
-  const env = { PW_RENDER_WORKERS: workers, PW_CLUSTER: '1' };
-  console.log(`[pagewright] cluster: ${n} processes × ${workers} render threads on ${cores} cores, port ${port}`);
+  const env = { PW_CPUS: String(Math.max(2, Math.floor(cores / n))), PW_MEMORY_LIMIT_MB: String(Math.floor(memMB / n)), PW_CLUSTER: '1' };
+  console.log(`[pagewright] cluster: ${n} processes, each with ${env.PW_CPUS} cores and ${env.PW_MEMORY_LIMIT_MB} MB for its render threads${process.env.PW_RENDER_WORKERS ? ` (${process.env.PW_RENDER_WORKERS} each)` : ''}, port ${port}`);
   let stopping = false;
   const starts = [];
   const fork = () => { starts.push(Date.now()); cluster.fork(env); };

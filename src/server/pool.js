@@ -2,14 +2,23 @@
 // The render pool: every server render and export (API v1, report links, batches, schedules, thumbnails) runs in a
 // worker thread (render-worker.mjs), never on the request thread. The request thread parses, authorises, queues and
 // sends the bytes back. Settings:
-//   PW_RENDER_WORKERS              threads (default: cores - 1, at most 8; 0 = render on the request thread, as before)
+//   PW_RENDER_WORKERS              threads (default: min(cores - 1, 8, what memory allows: see memoryPlan); 0 = render
+//                                  on the request thread, as before)
 //   PW_RENDER_QUEUE                interactive renders that may wait (default 1000); more: 503 + Retry-After
 //   PW_RENDER_QUEUE_PER_PRINCIPAL  of those, per user or key (default 8 per worker, at least 16); more: 429 + Retry-After
 //   PW_RENDER_MAX_WAIT_MS          refuse (503) a render whose estimated wait is longer (default 30 s); a render that
 //                                  waited longer anyway is dropped with a 503 when its turn comes
 //   PW_RENDER_WORKER_MAX_RENDERS   recycle a worker after this many renders (default 500)
 //   PW_RENDER_WORKER_RECYCLE_MB    recycle a worker whose heap is above this after a render (default 512)
-//   PW_RENDER_WORKER_HEAP_MB       a worker's hard heap limit: past it the worker dies, its render fails (default 2048)
+//   PW_RENDER_WORKER_HEAP_MB       a worker's hard heap limit: past it the worker dies, its render fails (default 2048,
+//                                  less when memory is short: at most half the memory limit)
+//   PW_MEMORY_LIMIT_MB             the memory this server may use (default: the container's cgroup limit, else the
+//                                  machine's RAM). Cores likewise come from the cgroup CPU quota when there is one,
+//   PW_CPUS                        or from this (scripts/cluster.mjs gives each process its share of both).
+// Memory: workers are sized so that all their heaps fit in 70% of the limit beside the request thread (512 MB), so
+// several big renders at once end in a worker's own out-of-memory error (that render fails) instead of the kernel
+// killing the whole server. Admission: while the process's resident memory is above 85% of the limit, no further
+// render starts (they wait their turn) unless none is running.
 // The render time limit (renderer.renderTimeoutMs) covers the whole render (template read, data fetch, layout,
 // export): the worker is terminated when it runs out, and replaced. A worker that crashes is replaced too; the
 // other workers and their renders go on.
@@ -30,13 +39,55 @@ import { principalId } from './perms.js';
 import { accountsOn, sessionSecret } from './session.js';
 
 const num = (k, d, min = 0) => { const n = Number(process.env[k]); return process.env[k] !== undefined && process.env[k] !== '' && Number.isFinite(n) && n >= min ? n : d; };
-export const poolSize = () => Math.floor(num('PW_RENDER_WORKERS', Math.max(1, Math.min(8, (os.availableParallelism?.() || os.cpus().length) - 1))));
+
+/** A cgroup file's text (v2 under /sys/fs/cgroup, v1 under its controller folders), or null. PW_CGROUP_DIR: tests. */
+function cgroup(...names) {
+  const dir = process.env.PW_CGROUP_DIR || '/sys/fs/cgroup';
+  for (const n of names) { try { return fs.readFileSync(path.join(dir, n), 'utf8').trim(); } catch { /* not there */ } }
+  return null;
+}
+/** The container's memory limit in bytes, or null (none, or not Linux). */
+export function cgroupMemory() {
+  const v = cgroup('memory.max', 'memory/memory.limit_in_bytes');
+  const n = v && v !== 'max' ? Number(v) : NaN;
+  return Number.isFinite(n) && n > 0 && n < 2 ** 60 ? n : null; // v1 says "no limit" with a huge number
+}
+/** The container's CPU quota in cores (rounded up), or null. */
+export function cgroupCpus() {
+  const v2 = cgroup('cpu.max');
+  let quota = NaN, period = NaN;
+  if (v2) [quota, period] = v2.split(/\s+/).map(Number);
+  else { quota = Number(cgroup('cpu/cpu.cfs_quota_us')); period = Number(cgroup('cpu/cpu.cfs_period_us')); }
+  return quota > 0 && period > 0 ? Math.max(1, Math.ceil(quota / period)) : null;
+}
+
+const RESERVE_MB = 512, WORKER_EXTRA_MB = 96; // the request thread and its caches; a worker's own code, fonts, buffers
+/**
+ * Worker count and heap for a machine: { cores, memMB, heapMB, workers }. Pure (tests pass their own numbers).
+ * @param {{ cores: number, memMB: number, heapMB?: number|null, workers?: number|null }} m
+ */
+export function memoryPlan({ cores, memMB, heapMB: heap = null, workers = null }) {
+  const h = Math.floor(heap ?? Math.max(256, Math.min(2048, memMB / 2)));
+  const byMem = Math.floor((memMB * 0.7 - RESERVE_MB) / (h + WORKER_EXTRA_MB));
+  const w = workers ?? Math.max(1, Math.min(8, cores - 1, byMem));
+  return { cores, memMB: Math.round(memMB), heapMB: h, workers: Math.floor(w) };
+}
+const memLimitMB = () => num('PW_MEMORY_LIMIT_MB', Math.min(os.totalmem(), cgroupMemory() ?? Infinity) / 1048576, 64);
+const plan = () => memoryPlan({
+  cores: num('PW_CPUS', Math.min(os.availableParallelism?.() || os.cpus().length, cgroupCpus() ?? Infinity), 1),
+  memMB: memLimitMB(),
+  heapMB: num('PW_RENDER_WORKER_HEAP_MB', null, 64),
+  workers: num('PW_RENDER_WORKERS', null),
+});
+export const poolSize = () => plan().workers;
 const queueMax = () => num('PW_RENDER_QUEUE', 1000, 1);
 const perPrincipalMax = () => num('PW_RENDER_QUEUE_PER_PRINCIPAL', Math.max(16, 8 * poolSize()), 1);
 const maxWaitMs = () => num('PW_RENDER_MAX_WAIT_MS', 30000, 1);
 const maxRenders = () => num('PW_RENDER_WORKER_MAX_RENDERS', 500, 1);
 const recycleMB = () => num('PW_RENDER_WORKER_RECYCLE_MB', 512, 1);
-const heapMB = () => num('PW_RENDER_WORKER_HEAP_MB', 2048, 64);
+const heapMB = () => plan().heapMB;
+/** Resident memory is too high to start one more render now (85% of the limit). */
+const memoryFull = () => process.memoryUsage.rss() / 1048576 > memLimitMB() * 0.85;
 
 /** @typedef {{ id: number, fresh?: boolean, msg: any, transfer?: any[], cls: 0|1, who: string, est: number, at: number, key: string, resolve: (v: any) => void, reject: (e: any) => void, signal?: AbortSignal, onAbort?: () => void }} Job */
 /** @typedef {{ w: Worker, ready: boolean, job: Job|null, renders: number, timer: any }} Slot */
@@ -44,7 +95,8 @@ const heapMB = () => num('PW_RENDER_WORKER_HEAP_MB', 2048, 64);
 const g = /** @type {any} */ (globalThis);
 /** @type {{ startFails: number, dying: Set<Worker>, slots: Slot[], queue: Job[], running: Map<string, number>, waiting: Map<string, number>, served: Map<string, number>, est: Map<string, number>, seq: number, noWorker: string|null, stats: Record<string, number> }} */
 const P = g.__pwRenderPool ||= { startFails: 0, dying: new Set(), slots: [], queue: [], running: new Map(), waiting: new Map(), served: new Map(), est: new Map(), seq: 0, noWorker: null,
-  stats: { done: 0, failed: 0, rejected: 0, timedOut: 0, crashed: 0, recycled: 0, dropped: 0 } };
+  stats: { done: 0, failed: 0, rejected: 0, timedOut: 0, crashed: 0, recycled: 0, dropped: 0, heldForMemory: 0, restarts: 0 } };
+P.stats.heldForMemory ??= 0; P.stats.restarts ??= 0;
 
 const busy = (msg, status, retryMs) => Object.assign(new Error(msg), { status, retryAfter: Math.max(1, Math.ceil(retryMs / 1000)) });
 const bump = (m, k, d) => { const n = (m.get(k) || 0) + d; if (n > 0) m.set(k, n); else m.delete(k); };
@@ -100,7 +152,7 @@ function spawn() {
     pump();
   });
   w.on('error', (e) => died(s, e));
-  w.on('exit', () => died(s, null));
+  w.on('exit', () => died(s, null, true));
   return true;
 }
 
@@ -122,17 +174,19 @@ function finish(s) {
   return Date.now() - j.at;
 }
 
-function retire(s) {
+function retire(s, exited = false) {
   const i = P.slots.indexOf(s);
   if (i >= 0) P.slots.splice(i, 1);
   s.w.removeAllListeners();
   s.w.on('error', () => {}); // a late error from a terminated worker is not news
+  // a worker that has already exited sends no second 'exit': counting it as dying would keep its place forever
+  if (exited) { P.stats.restarts++; fill(); pump(); return; }
   P.dying.add(s.w);
-  s.w.once('exit', () => { P.dying.delete(s.w); fill(); pump(); });
+  s.w.once('exit', () => { P.dying.delete(s.w); P.stats.restarts++; fill(); pump(); });
   s.w.terminate();
 }
 
-function died(s, e) {
+function died(s, e, exited = false) {
   if (!P.slots.includes(s)) return;
   const j = s.job;
   const why = e ? String(e.message || e) : 'it exited';
@@ -144,7 +198,7 @@ function died(s, e) {
     giveUp(why);
     return;
   }
-  retire(s);
+  retire(s, exited);
   pump();
 }
 
@@ -164,6 +218,8 @@ function unwait(j) { bump(P.waiting, j.who, -1); if (j.signal && j.onAbort) j.si
 
 function pump() {
   for (const s of P.slots) {
+    // memory first: past 85% of the limit a new render waits for a running one to end (never all of them: one runs)
+    if (s.ready && !s.job && P.queue.length && P.slots.some(x => x.job) && memoryFull()) { P.stats.heldForMemory++; return; }
     while (s.ready && !s.job && P.queue.length) dispatch(s);
   }
 }
@@ -279,6 +335,7 @@ export function renderInPool({ ref, def, how = 'template', opt = {} }, { backgro
 export function poolStats() {
   const q = (c) => P.queue.filter(j => j.cls === c).length;
   return {
+    memory: { ...plan(), rssMB: Math.round(process.memoryUsage.rss() / 1048576) },
     workers: { size: poolSize(), alive: P.slots.length, ready: P.slots.filter(s => s.ready).length, busy: P.slots.filter(s => s.job).length, inline: P.noWorker },
     queue: { interactive: q(0), background: q(1), max: queueMax(), perPrincipalMax: perPrincipalMax(), estimatedWaitMs: Math.round(waitAhead(1)) },
     principals: { running: P.running.size, waiting: P.waiting.size },
