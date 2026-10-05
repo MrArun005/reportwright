@@ -177,7 +177,15 @@ async function keepAnAdmin(before, after) {
  * sso (server code only, never from a request): the IdP identity this account is bound to.
  * @param {string} email @param {{ role?: string, password?: string, disabled?: boolean, groups?: string[], allowSso?: boolean, sso?: any, resetTwoFactor?: boolean }} patch
  */
-export function updateUser(email, patch, { by } = /** @type {{ by?: any }} */ ({})) { return withLock('users', async () => { await stillAdmin(by); return updateUserNow(email, patch); }); }
+export function updateUser(email, patch, { by } = /** @type {{ by?: any }} */ ({})) {
+  return withLock('users', async () => {
+    await stillAdmin(by);
+    if (self(by, email) && (patch.disabled === true || (patch.role !== undefined && patch.role !== 'admin'))) throw fail('You cannot disable or demote your own account. Ask another admin.', 409);
+    return updateUserNow(email, patch);
+  });
+}
+/** True when an admin acts on their own account. @param {any} by @param {string} email */
+const self = (by, email) => !!by && String(typeof by === 'string' ? by : by.email).toLowerCase() === String(email).toLowerCase();
 async function updateUserNow(email, patch) {
   const u = await getUser(email);
   if (!u) throw fail('No such user.', 404);
@@ -202,7 +210,13 @@ async function updateUserNow(email, patch) {
 }
 
 /** @returns {Promise<boolean>} false when there was no such user */
-export function deleteUser(email, { by } = /** @type {{ by?: any }} */ ({})) { return withLock('users', async () => { await stillAdmin(by); return deleteUserNow(email); }); }
+export function deleteUser(email, { by } = /** @type {{ by?: any }} */ ({})) {
+  return withLock('users', async () => {
+    await stillAdmin(by);
+    if (self(by, email)) throw fail('You cannot delete your own account. Ask another admin.', 409);
+    return deleteUserNow(email);
+  });
+}
 async function deleteUserNow(email) {
   const u = await getUser(email);
   if (!u) return false;
