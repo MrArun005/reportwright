@@ -175,7 +175,8 @@ Rules:
 | REST | GET/POST, headers, query values from parameters | 1 |
 | CSV | Inline or by URL | 2 |
 | GraphQL | REST POST with a query body | 3 |
-| OData | REST with `$filter`, `$select` | 3 |
+| XML / SOAP | XPath rows and fields (src/engine/data/xml.js); SOAP envelope template, Body unwrapped | 3a |
+| OData | Query editor from `$metadata`; `$select`, `$filter`, `$orderby`, `$top`, `$skip`, `$expand`, next links (src/engine/data/odata.js) | 3a |
 | Database | Server route with an adapter (Postgres, MySQL). Credentials never reach the browser. | 4 |
 
 - A data set has a path (a small JSONPath subset), a typed field list, calculated fields (expressions), filters and sort.
@@ -411,7 +412,7 @@ Updated 4 Oct 2026 after Phases B and C (`docs/PLAN-PHASE-BC.md`).
 | Parameters (multi-value, cascading) | Yes | Phases 2–3 |
 | Drill-down, drill-through, interactive sort | Yes | Phase 3 |
 | REST, JSON, CSV, GraphQL | Yes | Phases 1–3 |
-| OData | As a REST source | — |
+| OData, XML, SOAP | Yes | 3a |
 | Databases | Yes, on the server: SQLite, Postgres, MySQL; read-only, bound parameters, saved queries only from the browser | C1 |
 | PDF, HTML, Excel, CSV export | Yes | Phases 1–3 |
 | PDF/A, digital signatures | Yes: PDF/A-2b (veraPDF passes), detached PKCS#7 signatures | C4 |
