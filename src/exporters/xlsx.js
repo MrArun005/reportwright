@@ -5,15 +5,17 @@ import { toWall } from '../engine/expr/format.js';
 import { chartTable, addCharts } from './xlsxchart.js';
 
 /** .NET-style format → Excel number format. */
-export function excelFormat(fmt, currencySymbol = '') {
+export function excelFormat(fmt, currencySymbol = '', locale) {
   if (!fmt) return null;
   const m = /^([CcNnFfPpDd])(\d{0,2})$/.exec(fmt);
   if (m) {
     const d = m[2] === '' ? 2 : Number(m[2]);
     const dec = d ? '.' + '0'.repeat(d) : '';
+    // en-IN groups lakhs and crores (12,34,56,789): Excel has no such grouping, so conditions pick the commas
+    const g = /-IN$/i.test(locale || '') ? (s) => `[>=10000000]${s}##\\,##\\,##\\,##0${dec};[>=100000]${s}##\\,##\\,##0${dec};${s}##,##0${dec}` : null;
     switch (m[1].toUpperCase()) {
-      case 'C': return `"${currencySymbol}"#,##0${dec}`;
-      case 'N': return `#,##0${dec}`;
+      case 'C': return g ? g(`"${currencySymbol}"`) : `"${currencySymbol}"#,##0${dec}`;
+      case 'N': return g ? g('') : `#,##0${dec}`;
       case 'F': return `0${dec}`;
       case 'P': return `0${dec}%`;
       case 'D': return '0'.repeat(Math.max(1, d));
@@ -149,7 +151,7 @@ export async function exportXlsx(model, ExcelJS, { currency, title, formulas = t
       for (const c of row.cells) {
         if (c.colIndex < 0) continue;
         const cell = xr.getCell(c.colIndex + 1);
-        const nf = excelFormat(c.format, SYMBOL[currency] || currency || '');
+        const nf = excelFormat(c.format, SYMBOL[currency] || currency || '', model.locale);
         if (nf && (typeof c.value === 'number' || c.value instanceof Date)) cell.numFmt = nf;
         else if (c.value instanceof Date) cell.numFmt = 'dd mmm yyyy';
         if (c.bold || row.kind !== 'detail') cell.font = { bold: c.bold || row.kind === 'header' };

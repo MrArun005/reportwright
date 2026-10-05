@@ -24,7 +24,7 @@ describe('Excel export: live totals', () => {
     const total = byLabel('Total');
     expect(total.getCell(2).value).toEqual({ formula: 'SUBTOTAL(9,B3:B4,B7:B8)', result: 460.5 });
     expect(total.getCell(3).value).toEqual({ formula: 'SUBTOTAL(1,C3:C4,C7:C8)', result: 2.75 }); // an average
-    expect(total.getCell(2).numFmt).toBe('#,##0.00');
+    expect(total.getCell(2).numFmt).toBe('[>=10000000]##,##,##,##0.00;[>=100000]##,##,##0.00;##,##0.00'); // en-IN: lakh grouping (the file has \\, ; ExcelJS reads it back unescaped)
     expect(ws.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 });
   });
   it('formulas: false keeps the values', async () => {

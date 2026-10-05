@@ -36,3 +36,13 @@ describe('Excel export', () => {
     expect(ws.getRow(1).getCell(2).value.toISOString()).toBe('2024-01-31T00:00:00.000Z');
   });
 });
+
+describe('Excel number formats', () => {
+  it('en-IN keeps lakh and crore grouping', async () => {
+    const { excelFormat } = await import('../../src/exporters/xlsx.js');
+    expect(excelFormat('N0', '', 'en-IN')).toBe('[>=10000000]##\\,##\\,##\\,##0;[>=100000]##\\,##\\,##0;##,##0');
+    expect(excelFormat('N2', '', 'en-US')).toBe('#,##0.00');
+    const ws = await sheet(def({ locale: 'en-IN' }));
+    expect(ws.getRow(1).getCell(1).numFmt).toMatch(/^\[>=10000000\]/);
+  });
+});
