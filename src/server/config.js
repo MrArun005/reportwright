@@ -27,6 +27,7 @@ export const SETTINGS = [
   ['PW_TOTP_ISSUER', 'text', 'Pagewright', 'The issuer name authenticator apps show.'],
   ['PW_DATA_KEY', 'secret', '(required for two-factor in prod)', 'Seals TOTP secrets at rest (32+ characters). Never falls back to PW_SESSION_SECRET in prod.'],
   ['PW_DATA_KEY_OLD', 'list', '', 'Previous PW_DATA_KEY values (comma-separated) during a rotation: old seals still open.'],
+  ['PW_REQUEST_LOG', 'flag', '1', '0: no JSON line per request on stdout (HTTP metrics are kept either way).'],
   ['PW_DEV_ALLOW_PROD', 'flag', '0', '1: allow PW_MODE=dev under a production build on a non-local address without sign-in (never do this).'],
   ['PW_LINK_SECRET', 'secret', '(PW_SESSION_SECRET)', 'Signs emailed download links.'],
   // SSO
