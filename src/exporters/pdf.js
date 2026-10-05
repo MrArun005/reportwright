@@ -696,6 +696,12 @@ function latin1(s) {
  * the platform's CompressionStream (browsers; in Node it is the same zlib behind web streams, slower), else fflate.
  */
 async function deflate(bytes) {
+  // a few at a time: each zlib job holds ~260 KB of state, so a thousand pages started at once held ~250 MB
+  if (zslots.free > 0) zslots.free--; else await new Promise((ok) => zslots.wait.push(ok));
+  try { return await deflateNow(bytes); } finally { const next = zslots.wait.shift(); if (next) next(); else zslots.free++; }
+}
+const zslots = { free: 4, wait: /** @type {(() => void)[]} */ ([]) }; // ponytail: 4 = libuv's default thread pool
+async function deflateNow(bytes) {
   const zlib = /** @type {any} */ (globalThis).process?.getBuiltinModule?.('node:zlib');
   if (zlib) return new Promise((ok, fail) => zlib.deflate(bytes, (e, z) => (e ? fail(e) : ok(z))));
   if (typeof CompressionStream === 'undefined') return (await import('fflate')).zlibSync(bytes);
