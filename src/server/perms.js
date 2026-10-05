@@ -13,7 +13,7 @@
 // Defaults (no root record yet): the creator of a report or folder manages it; designers view every report and may
 // create reports and folders at the top (the root record's "create": who may add at the top besides those with edit
 // there); viewers see only what a grant gives them. An install from before these
-// defaults (reports stored, no root record) gets the root record "everyone: view" once (migrateRoot), so nobody loses
+// defaults (reports stored, no root record) gets the root record "everyone: view" once (migratePermissions), so nobody loses
 // sight of a report; managing an older report then takes its creator's grant (recordNewReport has written one for every
 // report made by a signed-in user) or an admin.
 // view: open, render, export, run its saved SQL. edit: save, restore, version history. manage: delete, move, share.
@@ -159,30 +159,68 @@ export const DEFAULT_CREATE = Object.freeze(['group:designers']);
 
 /** Every folder and report record, read once for a request. @returns {Promise<Snapshot>} */
 export async function snapshot() {
+  if (gp.__pwPermsMigrated !== store()) await migratePermissions();
   const [fl, rl] = await Promise.all([store().list('folders'), store().list('reportacl')]);
   const folders = new Map(), reports = new Map();
   let root = null, rootCreate = [];
   for (const r of fl) { try { const f = JSON.parse(r.text); if (f.id === 'root') { root = f.grants || []; rootCreate = Array.isArray(f.create) ? f.create : []; } else folders.set(f.id, f); } catch { /* skip */ } }
-  if (!root) ({ grants: root, create: rootCreate } = await migrateRoot());
+  if (!root) ({ grants: root, create: rootCreate } = await migratePermissions()); // removed since: the safe default
   for (const r of rl) { try { const x = JSON.parse(r.text); reports.set(x.id, x); } catch { /* skip */ } }
   return { folders, reports, root: /** @type {Grant[]} */ (root), rootCreate };
 }
 
+const MIGRATION = 'perms-defaults-v2';
+/** A custom group that had the name the built-in group now has keeps its members under this name. */
+export const RENAMED_GROUP = 'designers-custom';
+const gp = /** @type {any} */ (globalThis);
+
 /**
- * The root record, written once when there is none: LEGACY_ROOT when reports are already stored (an install from before
- * the defaults: nobody loses sight of a report), else DEFAULT_ROOT. Under the "acl" lock, so two servers agree.
- * @returns {Promise<{ grants: Grant[], create: string[] }>}
+ * The one-time move to the defaults above, run at boot (instrumentation.js, before requests are served) and, should a
+ * server have skipped it, before the first permission check. Under the "acl" lock with a marker record, so it runs once
+ * across replicas and a second run changes nothing. It never reads a definition and never looks at who asks:
+ *  - no root record: LEGACY_ROOT when reports are already stored (they had "everyone manage": now everyone keeps view,
+ *    nothing wider), else DEFAULT_ROOT; both with "create": designers;
+ *  - owners: only the grants the server wrote when a report was created (recordNewReport, a user:<creator> manage
+ *    grant in the access record) stay owners; a report without one is managed by admins only. No grant is added;
+ *  - a custom group that was called "designers" is renamed "designers-custom" in every grant and user, so the new
+ *    built-in group cannot widen an existing grant to every designer. Every other grant is kept exactly.
+ * @returns {Promise<{ grants: Grant[], create: string[] }>} the root after it
  */
-async function migrateRoot() {
+export async function migratePermissions() {
   const { withLock } = await import('./storage/index.js');
+  const { getRecord } = await import('./settings.js');
+  const rootNow = async () => { const t = await store().get('folders', 'root'); if (!t) return null; const r = JSON.parse(t); return { grants: r.grants || [], create: Array.isArray(r.create) ? r.create : [] }; };
+  if (gp.__pwPermsMigrated === store()) { const r = await rootNow(); if (r) return r; }
   return withLock('acl', async () => {
-    const text = await store().get('folders', 'root');
-    if (text) { const r = JSON.parse(text); return { grants: r.grants || [], create: Array.isArray(r.create) ? r.create : [] }; }
-    const legacy = (await store().ids('reports')).length > 0;
-    const grants = [...(legacy ? LEGACY_ROOT : DEFAULT_ROOT)], create = [...DEFAULT_CREATE];
-    await store().put('folders', 'root', JSON.stringify({ id: 'root', grants, create, updatedAt: new Date().toISOString(), migrated: legacy ? 'legacy' : 'default', rev: rev() }));
-    if (legacy) console.warn('[pagewright] permissions: reports from before per-report defaults: everyone keeps view at the top; each report is managed by its creator or an admin. Change it on the Folders page.');
-    return { grants, create };
+    let root = await rootNow();
+    if (!(await getRecord(MIGRATION).catch(() => null))) {
+      const rename = (grants) => (grants || []).map(g => (String(g.to).toLowerCase() === 'group:designers' ? { ...g, to: `group:${RENAMED_GROUP}` } : g));
+      const touched = (a, b) => JSON.stringify(a) !== JSON.stringify(b);
+      for (const kind of /** @type {const} */ (['folders', 'reportacl'])) {
+        for (const r of await store().list(kind)) {
+          let rec; try { rec = JSON.parse(r.text); } catch { continue; }
+          const grants = rename(rec.grants);
+          if (touched(grants, rec.grants || [])) await store().put(kind, r.id, JSON.stringify({ ...rec, grants, rev: rev() }));
+        }
+      }
+      for (const r of await store().list('users')) {
+        let u; try { u = JSON.parse(r.text); } catch { continue; }
+        if (!(u.groups || []).some(x => String(x).toLowerCase() === 'designers')) continue;
+        await store().put('users', r.id, JSON.stringify({ ...u, groups: [...new Set(u.groups.map(x => (String(x).toLowerCase() === 'designers' ? RENAMED_GROUP : x)))].sort(), rev: rev() }));
+      }
+      root = await rootNow(); // a renamed grant at the top
+      if (!root) {
+        const legacy = (await store().ids('reports')).length > 0;
+        root = { grants: [...(legacy ? LEGACY_ROOT : DEFAULT_ROOT)], create: [...DEFAULT_CREATE] };
+        await store().put('folders', 'root', JSON.stringify({ id: 'root', ...root, updatedAt: new Date().toISOString(), migrated: legacy ? 'legacy' : 'default', rev: rev() }));
+        if (legacy) console.warn('[pagewright] permissions: reports from before per-report defaults: everyone keeps view at the top; each report is managed by its creator or an admin. Change it on the Folders page.');
+      }
+      await store().put('settings', MIGRATION, JSON.stringify({ id: MIGRATION, at: new Date().toISOString() }));
+    }
+    // a root removed by hand after the migration: the safe default, not the legacy one
+    if (!root) { root = { grants: [...DEFAULT_ROOT], create: [...DEFAULT_CREATE] }; await store().put('folders', 'root', JSON.stringify({ id: 'root', ...root, updatedAt: new Date().toISOString(), rev: rev() })); }
+    gp.__pwPermsMigrated = store();
+    return root;
   });
 }
 

@@ -78,4 +78,47 @@ describe('S-3: secure permission defaults', () => {
     await expect(perms.updateFolder(admin, 'root', { create: ['nonsense'] })).rejects.toMatchObject({ status: 400 });
     expect(() => users.checkGroups(['designers'])).toThrow(/built-in/);
   });
+
+  it('review: a designer cannot become the owner of a legacy report by saving it first', async () => {
+    await store().put('reports', 'legacy', JSON.stringify({ name: 'legacy' }));
+    const { PUT } = await import('../../app/api/reports/[id]/route.js');
+    const session = await import('../../src/server/session.js');
+    const cookie = session.sessionCookie(new Request('http://pw.test'), await users.getUser('bob@x.test')).split(';')[0];
+    const put = (id, body) => PUT(new Request(`http://pw.test/api/reports/${id}`, { method: 'PUT', headers: { origin: 'http://pw.test', cookie, 'content-type': 'application/json' }, body: JSON.stringify(body) }), { params: Promise.resolve({ id }) });
+    expect((await put('legacy', { name: 'mine now', owner: 'bob@x.test', createdBy: 'user:bob@x.test' })).status).toBe(403);
+    expect(await level(bob, 'legacy')).toBe('view');
+    expect(await store().get('reportacl', 'legacy')).toBe(null); // no grant written for anyone
+    expect(await level(admin, 'legacy')).toBe('manage');
+  });
+
+  it('review: a forged owner or createdBy in a definition is ignored', async () => {
+    await perms.canCreateIn(alice, null);
+    await store().put('reports', 'forged', JSON.stringify({ name: 'f', owner: 'bob@x.test', createdBy: 'user:bob@x.test', grants: [{ to: 'user:bob@x.test', level: 'manage' }] }));
+    await perms.recordNewReport(alice, 'forged', null, { owner: 'bob@x.test', createdBy: 'user:bob@x.test' });
+    expect(await level(alice, 'forged')).toBe('manage');
+    expect(await level(bob, 'forged')).toBe('view');
+    await expect(perms.checkReport(bob, 'forged', 'manage')).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('review: the migration keeps explicit grants exactly, never widens one, and runs once (idempotent)', async () => {
+    // before: a custom group called "designers" (one member: vic) had edit on a report
+    await store().put('reports', 'r1', JSON.stringify({ name: 'r1' }));
+    await store().put('reportacl', 'r1', JSON.stringify({ id: 'r1', folder: null, inherit: false, grants: [{ to: 'group:designers', level: 'edit' }, { to: 'user:alice@x.test', level: 'manage' }] }));
+    const u = JSON.parse(await store().get('users', 'vic@x.test'));
+    await store().put('users', 'vic@x.test', JSON.stringify({ ...u, groups: ['designers'] }));
+    delete globalThis.__pwPermsMigrated;
+    const first = await perms.migratePermissions();
+    expect(await level(bob, 'r1')).toBe(404); // the new built-in group did not take over the old grant (inherit off)
+    expect(await level(alice, 'r1')).toBe('manage');
+    const vicNow = { ...vic, groups: JSON.parse(await store().get('users', 'vic@x.test')).groups };
+    expect(vicNow.groups).toEqual(['designers-custom']);
+    expect(await level(vicNow, 'r1')).toBe('view'); // still a member (a viewer: view at most, as before)
+    const acl = JSON.parse(await store().get('reportacl', 'r1'));
+    expect(acl.grants).toEqual([{ to: 'group:designers-custom', level: 'edit' }, { to: 'user:alice@x.test', level: 'manage' }]);
+    const rootText = await store().get('folders', 'root');
+    delete globalThis.__pwPermsMigrated;
+    expect(await perms.migratePermissions()).toEqual(first);
+    expect(await store().get('folders', 'root')).toBe(rootText); // nothing rewritten the second time
+    expect(await store().get('reportacl', 'r1')).toBe(JSON.stringify(acl));
+  });
 });

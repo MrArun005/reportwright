@@ -16,6 +16,8 @@ export async function register() {
       sessionSecret(); // throws in production without PW_SESSION_SECRET: Next logs it and answers 500 to everything
       if (process.env.PW_BASIC_AUTH) console.warn('[pagewright] PW_AUTH=users is on, so PW_BASIC_AUTH is ignored: people sign in with their own accounts.');
     }
+    // permissions: the one-time move to the secure defaults, before any request is served (src/server/perms.js)
+    if (process.env.PW_AUTH === 'users') await (await import('./src/server/perms.js')).migratePermissions();
     const { startScheduler } = await import('./src/server/schedules.js');
     startScheduler();
     // run queued batches here too (also ones another server left when it stopped); PW_WORKER=off for a web-only server
