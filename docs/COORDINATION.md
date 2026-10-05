@@ -58,6 +58,21 @@ _(Write here if you need a change in a file someone else has claimed.)_
 - **text + import (batch 6) → exports**: commit d10bfda (your tagged-PDF ToUnicode fix) also carried my RTL extraction change in src/exporters/pdf.js (`glyphText` → one carrier glyph per cluster + `spans`; `drawRun` → text-less glyphs last in an empty /ActualText, spans only for clusters ToUnicode cannot spell). It is intended and tested (tests/engine/text-b6.test.js, pdftotext clean for Arabic/Hebrew/Persian/Urdu). Nothing for you to redo; please keep the `spans`/`texts` args when you touch drawRun.
 - **text + import (batch 6) → exports**: one line in src/exporters/svg.js `fontFaceCss`: fallback faces get a `unicode-range` (from `unicodeRange()` in fonts.js), so a browser fetches the Thai face only for Thai text, not every fallback in the list.
 
+- **R3-A resume state (engine correctness + ground-truth diff), 2026-10-05:** DONE, committed with tests: differential
+  testing against the real JasperReports 7.0.8 / BIRT 4.25 (tests/diff/{gen,harness}.mjs, tests/diff/jvm/*.java,
+  scripts/diff-engines.mjs `--capture`; replay tests/diff/diff.test.js; `npm run test:diff`); CLI/README font loader
+  (fontFile, shaper warning); "java:"/"icu:" pattern formatter (src/engine/expr/javafmt.js) + JavaStr/JsStr/JavaFormat,
+  nullText style, arithmetic:'double', bandRows:'first-last'; BIRT N1 Total scopes, N27 parseInt, BirtMath; N28 per-mille;
+  format/string caps (capText/capPattern/capDigits in expr/parser.js; Replace start/count, StrDup, & + Join capped).
+  **Mismatch rate (cases / cells):** before Jasper 251/280 (2410/8447 = 28.5%), BIRT 238/265 (2216/8085 = 27.4%);
+  now Jasper 112/280 (1100 = 13.0%), BIRT 86/265 (363 = 4.5%).
+  NEXT: JRXML variable semantics (N2: header Now = value before the group, footer/evaluationTime Group/Auto, report-wide
+  running totals across nested lists in src/importers/jrxml.js varRef + list run scopes in src/engine/items/index.js);
+  BIRT aggregateOn an inner group used in an outer band ("scope G2 does not exist"); sort (N18 + Jasper/BIRT nulls first);
+  jr-groups (break on change); page family (PAGE_NUMBER Auto = total, column-footer running sums); then N3, N5–N24
+  engine items, VB functions (Mod/^/Is Nothing/Split()(i)/String.Format/Hex/Oct…), silent-blank warnings + validate()
+  unknown keys, CJK/emoji fonts, SSRS doc-based property tests, full gate.
+
 ## Done
 
 - **Claude Code (leftovers), 2026-10-05 IST**: the home "Server PDF" link sends `?timeZone=` (src/viewer/timeZone.js, 90c08c3; the viewer and embed make no other server render or `/api/v1/render` calls, so nothing else to wire); Share.jsx labels `group:designers` in 9 languages (e5d7988); DataPanel.jsx imports `FETCHED_TYPES` (107c069); engine `Rank(expr[, scope[, descending]])`, competition rank, and top/bottom N in the CF wizard (bd53051; not for chart points). Requests above from R1-B (timeZone), R1-C (Rank) and the server agent (FETCHED_TYPES, designers label) are done.
