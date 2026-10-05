@@ -1,6 +1,8 @@
 // @ts-check
 import { evalValue, evaluate, compile, parseValue, toText, functionTable, cmpVal, ROW_PARENT } from '../expr/evaluate.js';
 import { toDate, isoDate } from '../expr/format.js';
+import { xmlDocument, soapBody, xmlEscape, isXmlDoc, xmlRows, xmlValue } from './xml.js';
+import { odataUrl, odataPage, odataClean, ODATA_MAX_PAGES, ODATA_DEFAULT_PAGES } from './odata.js';
 
 /**
  * Data layer: sources → raw JSON; data sets → typed, filtered, sorted rows.
@@ -188,33 +190,103 @@ export async function loadSources(def, opt) {
       if (src.type === 'json') out[src.name] = typeof src.data === 'string' ? JSON.parse(src.data) : src.data;
       else if (src.type === 'sql') out[src.name] = await loadSql(src, ctx.params, opt, f);
       else if (src.type === 'csv' && src.data) out[src.name] = parseCsv(src.data, src);
-      else if (src.type === 'rest' || src.type === 'csv' || src.type === 'graphql') {
+      else if (src.type === 'xml' && src.data) out[src.name] = xmlDocument(src.data, src);
+      else if (FETCHED_TYPES.includes(src.type)) {
         if (!f) throw new Error('No fetch() available');
-        let url = urlFrom(src.url || '', ctx);
-        if (src.useProxy) url = `/api/data/proxy?url=${encodeURIComponent(url)}`;
-        if (opt.baseUrl && url.startsWith('/')) url = opt.baseUrl.replace(/\/$/, '') + url;
-        const headers = {};
-        for (const [k, v] of Object.entries(src.headers || {})) headers[k] = String(evalValue(v, ctx));
-        const init = { method: src.type === 'graphql' ? 'POST' : src.method || 'GET', headers };
-        if (src.type === 'graphql') {
-          headers['content-type'] ||= 'application/json';
-          const vars = src.variables ? variablesFrom(src.variables, ctx) : {};
-          init.body = JSON.stringify({ query: src.query, variables: vars });
-        } else if (src.body && init.method !== 'GET') init.body = String(evalValue(src.body, ctx));
-        const res = await f(url, init);
-        if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
-        if (src.type === 'csv') out[src.name] = parseCsv(await res.text(), src);
-        else {
-          const json = await res.json();
-          if (src.type === 'graphql' && json.errors?.length) throw new Error(`GraphQL: ${json.errors[0].message}`);
-          out[src.name] = src.type === 'graphql' ? json.data : json;
-        }
+        out[src.name] = await loadFetched(src, ctx, opt, f);
       } else throw new Error(`Unknown data source type "${src.type}"`);
     } catch (e) {
       throw Object.assign(new Error(`Data source "${src.name}": ${e.message}`), { status: e.status }); // keep 403 for a refused address
     }
   }));
   return out;
+}
+
+/** Source types whose data is fetched (an xml or csv source with inline data is not). */
+export const FETCHED_TYPES = ['rest', 'csv', 'graphql', 'xml', 'soap', 'odata'];
+
+/**
+ * A fetched source, every request through the caller's fetch (the guarded one: reportFetch in the browser, serverFetch
+ * on the server), from one URL template.
+ */
+async function loadFetched(src, ctx, opt, f) {
+  const target = urlFrom(src.url || '', ctx);
+  const headers = {};
+  for (const [k, v] of Object.entries(src.headers || {})) headers[k] = String(evalValue(v, ctx));
+  /** @param {string} url the target (before the proxy) @param {RequestInit} init */
+  const call = async (url, init) => {
+    let u = url;
+    if (src.useProxy) u = `/api/data/proxy?url=${encodeURIComponent(u)}`;
+    if (opt.baseUrl && u.startsWith('/')) u = opt.baseUrl.replace(/\/$/, '') + u;
+    const res = await f(u, init);
+    return { res, u };
+  };
+  if (src.type === 'odata') return loadOData(src, ctx, target, headers, call);
+  if (src.type === 'soap') {
+    if (src.useProxy) throw new Error('The data proxy only reads (GET); a SOAP call cannot go through it');
+    const version = String(src.soapVersion || '1.1');
+    const action = String(src.soapAction || '');
+    if (/["\r\n]/.test(action)) throw new Error('The SOAP action may not hold quotes or line breaks');
+    const h = { ...headers };
+    if (version === '1.2') h['content-type'] = `application/soap+xml; charset=utf-8${action ? `; action="${action}"` : ''}`;
+    else { h['content-type'] = 'text/xml; charset=utf-8'; h.SOAPAction = `"${action}"`; }
+    const { res, u } = await call(target, { method: 'POST', headers: h, body: soapEnvelope(src.envelope, ctx) });
+    const text = await res.text();
+    if (!res.ok) { // a SOAP fault comes with HTTP 500: its message says more than the status
+      let fault = null;
+      try { soapBody(text, src); } catch (e) { fault = /^SOAP fault/.test(e.message) ? e.message : null; }
+      throw new Error(fault || `HTTP ${res.status} from ${u}`);
+    }
+    return soapBody(text, src);
+  }
+  const init = { method: src.type === 'graphql' ? 'POST' : src.method || 'GET', headers };
+  if (src.type === 'graphql') {
+    headers['content-type'] ||= 'application/json';
+    const vars = src.variables ? variablesFrom(src.variables, ctx) : {};
+    init.body = JSON.stringify({ query: src.query, variables: vars });
+  } else if (src.body && init.method !== 'GET') init.body = src.type === 'xml' ? soapEnvelope(src.body, ctx) : String(evalValue(src.body, ctx));
+  const { res, u } = await call(target, init);
+  if (!res.ok) throw new Error(`HTTP ${res.status} from ${u}`);
+  if (src.type === 'csv') return parseCsv(await res.text(), src);
+  if (src.type === 'xml') return xmlDocument(await res.text(), src);
+  const json = await res.json();
+  if (src.type === 'graphql' && json.errors?.length) throw new Error(`GraphQL: ${json.errors[0].message}`);
+  return src.type === 'graphql' ? json.data : json;
+}
+
+/**
+ * A SOAP envelope (or an XML request body) from its template: {…} values are XML-escaped, so a parameter is text,
+ * never markup. An "=expression" envelope is refused: its result could not be escaped.
+ */
+function soapEnvelope(tpl, ctx) {
+  const p = parseValue(String(tpl ?? ''));
+  if (p.kind === 'expr') throw new Error('Write the envelope as XML with {Parameters.x} for values, not as an =expression');
+  if (p.kind !== 'tpl') return String(p.v ?? '');
+  return p.parts.map(part => (typeof part === 'string' ? part : xmlEscape(plain(evaluate(part.ast, ctx), ctx)))).join('');
+}
+
+/** Every page of an OData entity set, up to maxPages; a next link must stay on the first request's origin. */
+async function loadOData(src, ctx, root, headers, call) {
+  const pages = Math.min(ODATA_MAX_PAGES, Math.max(1, Math.floor(Number(src.maxPages) || ODATA_DEFAULT_PAGES)));
+  let url = odataUrl(root, src, (v) => evalValue(v, ctx));
+  const DUMMY = 'http://pagewright.invalid';
+  const first = new URL(url, DUMMY);
+  const rows = [];
+  const h = { accept: 'application/json', ...headers };
+  for (let n = 0; n < pages && url; n++) {
+    const { res, u } = await call(url, { method: 'GET', headers: h });
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${u}`);
+    const page = odataPage(await res.json());
+    for (const r of page.rows) rows.push(r);
+    const here = new URL(url, DUMMY);
+    url = null;
+    if (page.next) {
+      const next = new URL(page.next, here);
+      if (next.origin !== first.origin) throw new Error(`OData: the next page link goes to another site (${next.origin}); it is not followed`);
+      url = first.origin === DUMMY ? next.pathname + next.search : next.href;
+    }
+  }
+  return odataClean(rows, src.types || {});
 }
 
 /** A SQL source: run it here (server) or ask the server to run the saved report's query (browser). */
@@ -308,7 +380,7 @@ export function buildDataSets(def, sources, baseCtx) {
   // rows of a data set that others hang off (relation.parent) keep their raw object
   const raws = new Set((def.dataSets || []).filter(d => d.relation).map(d => d.relation.parent));
   for (const ds of def.dataSets || []) {
-    let list, parents = null;
+    let list, parents = null, xdoc = null, xels = null;
     if (ds.relation) {
       // nested data set: the children of every parent row, each knowing its parent row
       const prows = sets[ds.relation.parent];
@@ -323,9 +395,14 @@ export function buildDataSets(def, sources, baseCtx) {
     } else {
       const raw = sources[ds.source];
       if (raw === undefined) throw new Error(`Data set "${ds.name}": the source "${ds.source}" does not exist`);
-      ({ rows: list, parents } = jsonPathRows(raw, ds.path || '$'));
-      if (list == null) list = [];
-      if (!Array.isArray(list)) list = [list];
+      if (isXmlDoc(raw)) { // XPath rows; field paths are XPaths relative to the row element
+        xdoc = raw;
+        ({ rows: list, els: xels } = xmlRows(raw, ds.path));
+      } else {
+        ({ rows: list, parents } = jsonPathRows(raw, ds.path || '$'));
+        if (list == null) list = [];
+        if (!Array.isArray(list)) list = [list];
+      }
     }
     const fields = ds.fields && ds.fields.length ? ds.fields : detectFields(list);
     const plain = fields.filter(fd => !fd.expr);
@@ -333,7 +410,7 @@ export function buildDataSets(def, sources, baseCtx) {
     const keepRaw = raws.has(ds.name);
     let rows = list.map((r, i) => {
       const o = {};
-      for (const fd of plain) o[fd.name] = coerce(fd.path ? jsonPath(r, fd.path) : r?.[fd.name], fd.type);
+      for (const fd of plain) o[fd.name] = coerce(fd.path ? (xels ? xmlValue(xdoc, xels[i], fd.path) : jsonPath(r, fd.path)) : r?.[fd.name], fd.type);
       if (parents && parents[i] != null) ROW_PARENT.set(o, parents[i]);
       if (keepRaw) RAW.set(o, r);
       return o;
@@ -486,3 +563,14 @@ export function applySort(rows, sort, baseCtx) {
 }
 
 export { evaluate, compile };
+
+/**
+ * The raw rows of a source at a data set path: XPath for an XML source, JSONPath otherwise (the designer's Detect and Use).
+ * @param {any} raw @param {string} [path]
+ */
+export function sourceRows(raw, path) {
+  if (isXmlDoc(raw)) return xmlRows(raw, path).rows;
+  const v = jsonPath(raw, path || '$');
+  return v == null ? [] : Array.isArray(v) ? v : [v];
+}
+export { isXmlDoc };

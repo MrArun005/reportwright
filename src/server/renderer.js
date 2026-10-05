@@ -72,7 +72,7 @@ const fixedHosts = () => (process.env.PW_FIXED_FETCH_HOSTS ? process.env.PW_FIXE
 export function assertFixedHosts(def) {
   if (!fixedHosts()) return;
   for (const s of Array.isArray(def?.dataSources) ? def.dataSources : []) {
-    if (!s || !['rest', 'csv', 'graphql'].includes(s.type) || (s.type === 'csv' && s.data)) continue;
+    if (!s || !['rest', 'csv', 'graphql', 'xml', 'soap', 'odata'].includes(s.type) || ((s.type === 'csv' || s.type === 'xml') && s.data)) continue;
     if (writtenHost(s.url) === null) throw Object.assign(new Error(`Data source "${s.name}": its host is made by an expression or a parameter. Write the host out (only the path and the query may vary), or set PW_FIXED_FETCH_HOSTS=0.`), { status: 403 });
   }
 }

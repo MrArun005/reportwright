@@ -262,7 +262,7 @@ export function canDesign(p) {
 
 /* ---------------- server-side data in stored definitions ---------------- */
 
-const FETCHED = ['rest', 'csv', 'graphql'];
+const FETCHED = ['rest', 'csv', 'graphql', 'xml', 'soap', 'odata']; // engine/data FETCHED_TYPES
 /**
  * The host of a data source URL as it is written: '' for a path on this server, null when an expression or a parameter
  * builds it (it could be any host), else the host name (lower case, no brackets).
@@ -286,7 +286,7 @@ export function writtenHost(url) {
 export function serverSources(def) {
   const internal = internalHosts();
   const reaches = (src) => {
-    if (!internal.length || src.useProxy || (src.type === 'csv' && src.data)) return false;
+    if (!internal.length || src.useProxy || ((src.type === 'csv' || src.type === 'xml') && src.data)) return false;
     const h = writtenHost(src.url);
     return h === null || (h !== '' && internal.includes(h)); // '': a path on this server (GET only, serverFetch)
   };
