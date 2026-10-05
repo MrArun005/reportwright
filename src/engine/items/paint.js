@@ -61,11 +61,12 @@ function lookOf(st, m) {
 }
 /** A number as formatted (sign, currency, digits with separators, percent, exponent): it never breaks across lines. */
 const NUMBER = /^[\s(+\-\u2212]*[\p{Sc}]?\s?[\p{Sc}A-Z]{0,3}\.?\s?[\d][\d.,'\u00a0\u202f\s]*(?:[eE][+-]?\d+)?\s?%?\)?\s?[\p{Sc}A-Z]{0,3}$/u;
-const MIN_FONT = 5; // pt: smaller than this is not shrunk to; the line is cut (a number) or broken (a word) instead
+const MIN_FONT = 5; // pt: a word is not shrunk below this; it breaks instead
+const MIN_NUMBER_FONT = 3; // pt: a number shrinks until it fits, down to this (cut digits would read as another number)
 /**
  * The font size a wrapped text needs so that it breaks only between words: a number on one line, a word as wide as
- * the box. At most 25% smaller for a word, 40% for a number; past that a word breaks inside (the last resort) and a
- * number stays on its line (cut with an ellipsis).
+ * the box. At most 25% smaller for a word, past that it breaks inside (the last resort); a number shrinks until it
+ * fits (a matrix grand total in a narrow column), never below MIN_NUMBER_FONT.
  */
 function fitSize(text, key, size, inner, m, atom = false) {
   const s = String(text);
@@ -73,7 +74,7 @@ function fitSize(text, key, size, inner, m, atom = false) {
   const num = atom || NUMBER.test(s.trim());
   const longest = num ? m.width(s.trim(), key, size) : Math.max(0, ...s.split(/\s+/).map(w => (w ? m.width(w, key, size) : 0)));
   if (longest <= inner) return size;
-  const floor = Math.max(MIN_FONT, size * (num ? 0.6 : 0.75));
+  const floor = num ? Math.min(size, MIN_NUMBER_FONT) : Math.max(MIN_FONT, size * 0.75);
   return Math.max(floor, Math.min(size, size * (inner / longest) - 0.01));
 }
 function layoutText(text, st, width, m, wrap, atom = false) {
