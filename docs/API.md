@@ -332,7 +332,7 @@ Every built-in item has a stable id. `toolbar.hide` removes items by id; `toolba
 | view | `viewMode`, `fullScreen` |
 | info | `stats` |
 | search | `search` (box, match case, whole word, previous/next, list of matches) |
-| export | `print`, `pdf`, `excel`, `word`, `html`, `csv`, `json` |
+| export | `print`, `pdf`, `excel`, `word`, `powerpoint`, `html`, `csv`, `json`, `exportOptions` |
 
 `parameters` and `documentMap` show only when the report has parameters or bookmarks; `fullScreen` only where the browser allows it. In the page each item is wrapped in an element with `data-toolbar-id="<id>"`.
 
