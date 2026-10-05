@@ -165,13 +165,15 @@ describe('recursive row groups in a matrix', () => {
   const warnings = [];
   const lc = (state = {}) => ({ warn: (m) => warnings.push(m), state });
   const ctx = { params: {}, globals: {}, dataSets: {}, fields: null };
-  const org = { rowGroups: [{ name: 'Person', expr: '=Fields.id', label: '=Fields.name', parent: '=Fields.boss', indent: 10, collapsible: true, expandLevels: 2, total: 'after' }], values: [{ value: '=Sum(Fields.sales)' }] };
+  const org = { rowGroups: [{ name: 'Person', expr: '=Fields.id', label: '=Fields.name', parent: '=Fields.boss', indent: 10, collapsible: true, expandLevels: 2, total: 'after' }], values: [{ value: '=Sum(Fields.sales, "Person", "Recursive")' }] };
   const grid = (p) => p.body.map(r => r.cells.map(c => (c.role === 'value' ? c.raw : c.text)));
   const pv = (extra, state, rows = people) => buildPivot({ type: 'matrix', name: 'Org', ...org, ...extra }, rows, ctx, lc(state));
 
-  it('nodes depth first, each with the total of its subtree; expandLevels opens the first levels', () => {
+  it('nodes depth first, each with the total of its subtree (Recursive); expandLevels opens the first levels', () => {
     const p = pv();
     expect(grid(p)).toEqual([['CEO', 75], ['VP A', 28], ['M1', 8], ['VP B', 37], ['M2', 7], ['Total', 75]]);
+    // plain Sum is the node's own rows, as RDL (REVIEW-ENGINE A9)
+    expect(grid(pv({ values: [{ value: '=Sum(Fields.sales)' }] }))).toEqual([['CEO', 10], ['VP A', 20], ['M1', 5], ['VP B', 30], ['M2', 7], ['Total', 75]]);
     expect(p.body.map(r => r.cells[0].indent || 0)).toEqual([0, 10, 20, 10, 20, 0]);
     // M1 has reports and is collapsed (depth 2): it has a toggle; M2 has none (no reports)
     expect(p.body[2].cells[0].toggle).toEqual({ key: 'Org|r0|/ceo/va/m1', open: false });
@@ -181,9 +183,14 @@ describe('recursive row groups in a matrix', () => {
     expect(grid(pv({}, { toggles: { 'Org|r0|/ceo/va/m1': true } })).map(r => r[0])).toEqual(['CEO', 'VP A', 'M1', 'E1', 'E2', 'VP B', 'M2', 'Total']);
     expect(grid(pv({}, { toggles: { 'Org|r0|/ceo': false } }))).toEqual([['CEO', 75], ['Total', 75]]);
   });
-  it('with column groups, every cell is its node\'s subtree in that column', () => {
+  it('with column groups, a cell is its node\'s own rows in that column; Recursive over the group is the whole subtree', () => {
+    const own = pv({ columnGroups: [{ expr: '=Fields.region', sort: 'asc' }], values: [{ value: '=Sum(Fields.sales)' }] });
+    expect(grid(own)[0]).toEqual(['CEO', 10, null]);
+    expect(grid(own)[3]).toEqual(['VP B', null, 30]);
+    // Sum(x, "Person", Recursive) names the row group: its instance across every column (as Sum(x, "RowGroup") in SSRS),
+    // in the cells that have rows
     const p = pv({ columnGroups: [{ expr: '=Fields.region', sort: 'asc' }] });
-    expect(grid(p)[0]).toEqual(['CEO', 38, 37]);
+    expect(grid(p)[0]).toEqual(['CEO', 75, null]);
     expect(grid(p)[3]).toEqual(['VP B', null, 37]);
   });
   it('draws: the label cell is indented by level', async () => {

@@ -84,8 +84,8 @@ function buildTree(groups, rows, ctx, lc, who, axis, state) {
   let warnedRec = false;
   /**
    * A recursive group (parent: the parent's key): the instances under n form a tree. n.children keeps the roots; each node
-   * gets rec (its child nodes), depth, a path through its ancestors, and rows = its own rows and its descendants' (a node
-   * shows its subtree's total). Linear: each node once, depth capped (deeper nodes and cycles are listed at the top level).
+   * gets rec (its child nodes), depth, a path through its ancestors; rows stay its own rows (Sum shows the node's own rows,
+   * as RDL) and recRows holds its rows and its descendants' (Sum(x, "Group", "Recursive")). Linear: each node once, depth capped (deeper nodes and cycles are listed at the top level).
    */
   const recurse = (n, g, l) => {
     const nodes = n.children;
@@ -111,7 +111,7 @@ function buildTree(groups, rows, ctx, lc, who, axis, state) {
         all = all.concat(visit(c, d + 1, x.path));
       }
       x.rec = kids;
-      x.rows = all;
+      x.recRows = all;
       // open: a toggle's state, else the first expandLevels levels (or all unless initiallyCollapsed)
       const coll = g.collapsible || g.expandLevels != null;
       if (coll && kids.length) {
@@ -267,8 +267,12 @@ export function buildPivot(item, rows, ctx, lc) {
   const baseScopes = { ...(ctx.scopes || {}), [who]: { rows, index: -1 } };
   const scopesFor = (re, ce) => {
     const s = { ...baseScopes };
-    re.chain.forEach((n, l) => { s[scopeName(rg[l], l, 'r')] = { rows: n.rows, index: -1 }; });
+    re.chain.forEach((n, l) => { s[scopeName(rg[l], l, 'r')] = { rows: n.rows, index: -1, ...(n.recRows ? { recRows: n.recRows } : {}) }; });
     ce.chain.forEach((n, l) => { s[scopeName(cg[l], l, 'c')] = { rows: n.rows, index: -1 }; });
+    // a total (or collapsed) row or column shares the value expression of the group cells: the groups it totals name
+    // its own rows there, so Sum(x, "Group", "Recursive") in the value gives the total instead of an error
+    for (let l = re.chain.length; l < R; l++) s[scopeName(rg[l], l, 'r')] ??= { rows: re.node.rows, index: -1, recRows: re.node.rows };
+    for (let l = ce.chain.length; l < C; l++) s[scopeName(cg[l], l, 'c')] ??= { rows: ce.node.rows, index: -1 };
     return s;
   };
   /**
@@ -285,7 +289,7 @@ export function buildPivot(item, rows, ctx, lc) {
   };
   const headCtx = (n, chain, groups, axis) => {
     const s = { ...baseScopes };
-    chain.forEach((m, k) => { s[scopeName(groups[k], k, axis)] = { rows: m.rows, index: -1 }; });
+    chain.forEach((m, k) => { s[scopeName(groups[k], k, axis)] = { rows: m.rows, index: -1, ...(m.recRows ? { recRows: m.recRows } : {}) }; });
     return { ...ctx, fields: n.rows[0] || null, aggRows: n.rows, aggIndex: undefined, scopes: s };
   };
   const withClick = (cell, click, n, chain, groups, axis) => (click ? Object.assign(cell, click, { ctx: headCtx(n, chain, groups, axis) }) : cell);

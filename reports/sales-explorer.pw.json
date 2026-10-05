@@ -1036,7 +1036,7 @@
            }
           },
           {
-           "value": "=(RunningValue(Fields.disbursed, \"Sum\", \"Breakdown\") + Sum(Fields.disbursed)) / Sum(Fields.disbursed, \"Breakdown\")",
+           "value": "=RunningValue(Fields.disbursed, \"Sum\", \"Breakdown\") / Sum(Fields.disbursed, \"Breakdown\")",
            "style": {
             "textAlign": "right",
             "format": "P0",
@@ -1141,7 +1141,7 @@
            }
           },
           {
-           "value": "=(RunningValue(Fields.disbursed, \"Sum\", \"Region\") + Sum(Fields.disbursed)) / Sum(Fields.disbursed, \"Region\")",
+           "value": "=RunningValue(Fields.disbursed, \"Sum\", \"Region\") / Sum(Fields.disbursed, \"Region\")",
            "style": {
             "textAlign": "right",
             "format": "P0",
@@ -1243,7 +1243,7 @@
            }
           },
           {
-           "value": "=(RunningValue(Fields.disbursed, \"Sum\", \"City\") + Sum(Fields.disbursed)) / Sum(Fields.disbursed, \"City\")",
+           "value": "=RunningValue(Fields.disbursed, \"Sum\", \"City\") / Sum(Fields.disbursed, \"City\")",
            "style": {
             "textAlign": "right",
             "format": "P0",

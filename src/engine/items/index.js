@@ -687,7 +687,9 @@ register('table', {
         const dflt = kids && g.expandLevels != null ? depth < Number(g.expandLevels) : !g.initiallyCollapsed;
         const open = !g.collapsible ? true : (lc.state?.toggles?.[tkey] ?? dflt);
         const start = units.length;
-        const hu = (g.header || []).map((r, ri) => layRow(r, gctx, 'groupHeader', { level, ...(ri === 0 && g.collapsible ? { toggle: { key: tkey, open } } : {}) })).filter(Boolean);
+        // a group header comes before its rows: RunningValue and RowNumber over a scope count them too (RDL)
+        const hctx = g.header?.length ? { ...gctx, pendingRows: recOf.get(bk) || bk.rows } : gctx;
+        const hu = (g.header || []).map((r, ri) => layRow(r, hctx, 'groupHeader', { level, ...(ri === 0 && g.collapsible ? { toggle: { key: tkey, open } } : {}) })).filter(Boolean);
         endBand();
         const before = units.length;
         // a group header that repeats on each page its group continues on, under the table's (and outer groups') headers

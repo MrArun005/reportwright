@@ -349,6 +349,8 @@ function scopeRows(args, idx, ctx, fname) {
     if (!rows) throw new ExprError(`${fname}: the scope "${s}" does not exist`);
     return rows;
   }
+  // a detail row is its own scope (RDL): Sum(Fields.x) there is the row's value, not the group's or the table's total
+  if (ctx.aggIndex != null && ctx.fields) return [ctx.fields];
   if (ctx.aggRows) return ctx.aggRows;
   return ctx.fields ? [ctx.fields] : [];
 }
@@ -364,7 +366,7 @@ function prefixValues(base, n, ast, ctx) {
   let vals = byAst.get(ast);
   if (!vals) { vals = []; byAst.set(ast, vals); }
   if (vals.length < n) {
-    const c = Object.assign({}, ctx, { aggRows: base }); // row-local: nothing reads aggRows
+    const c = Object.assign({}, ctx, { aggRows: base, aggIndex: undefined }); // row-local: nothing reads aggRows
     for (let i = vals.length; i < n; i++) { c.fields = base[i]; vals.push(evaluate(ast, c)); }
   }
   return vals.length === n ? vals : vals.slice(0, n);
@@ -413,7 +415,7 @@ function pureRows(ast) {
 }
 
 function mapRows(rows, ast, ctx) {
-  const c = Object.assign({}, ctx, { aggRows: rows });
+  const c = Object.assign({}, ctx, { aggRows: rows, aggIndex: undefined }); // an aggregate inside runs over these rows
   const out = new Array(rows.length);
   for (let i = 0; i < rows.length; i++) { c.fields = rows[i]; out[i] = evaluate(ast, c); }
   return out;
@@ -896,7 +898,8 @@ function call(n, ctx) {
   }
   if (name === 'countrows') return scopeRows(args, 0, ctx, n.name).length;
   if (name === 'rownumber') {
-    if (args.length) { const sc = ctx.scopes?.[evaluate(args[0], ctx)]; if (!sc) throw new ExprError('RowNumber: unknown scope', n.p); return sc.index + 1; }
+    // a group header comes before its rows: it counts them too (ctx.pendingRows), as RDL evaluates a group's running values
+    if (args.length) { const sc = ctx.scopes?.[evaluate(args[0], ctx)]; if (!sc) throw new ExprError('RowNumber: unknown scope', n.p); return sc.index + 1 + (ctx.pendingRows?.length || 0); }
     return ctx.rowNumber ?? 1;
   }
   if (name === 'runningvalue') {
@@ -908,6 +911,12 @@ function call(n, ctx) {
       const sc = ctx.scopes?.[evaluate(args[2], ctx)];
       if (!sc) throw new ExprError('RunningValue: unknown scope', n.p);
       rows = sc.run || sc.rows.slice(0, sc.index + 1);
+      const pend = ctx.pendingRows;
+      if (pend?.length && sc.run) {
+        // a group header: the rows shown so far and the group's own rows, which come after it
+        if (fn === 'sum' && rowLocal(args[0])) return decAdd(runningSum(rows, rows.length, args[0], ctx), AGG.sum(mapRows(pend, args[0], ctx)));
+        return AGG[fn](rowLocal(args[0]) ? prefixValues(rows, rows.length, args[0], ctx).concat(mapRows(pend, args[0], ctx)) : mapRows(rows.concat(pend), args[0], ctx));
+      }
     } else if (ctx.runningRows) rows = ctx.runningRows;
     else if (ctx.aggRows && ctx.aggIndex != null) rows = ctx.aggRows.slice(0, ctx.aggIndex + 1);
     else rows = ctx.fields ? [ctx.fields] : [];

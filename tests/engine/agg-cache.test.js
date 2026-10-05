@@ -23,7 +23,7 @@ describe('aggregate cache', () => {
 
   it('group totals in detail rows are each group\'s own, also after sort and drill state changes', async () => {
     const group = [{ name: 'G', expr: '=Fields.g', collapsible: true, header: [{ height: 16, cells: [{ value: '=Fields.g' }, { value: '=Sum(Fields.amt)' }, null, null] }] }];
-    const def = report([table([{ value: '=Fields.n' }, { value: '=Sum(Fields.amt, "G")' }, { value: '=Count(Fields.n)' }, { value: '=RunningValue(Fields.amt, "Sum", "G")' }], group)], { data: rows(40) });
+    const def = report([table([{ value: '=Fields.n' }, { value: '=Sum(Fields.amt, "G")' }, { value: '=Count(Fields.n, "G")' }, { value: '=RunningValue(Fields.amt, "Sum", "G")' }], group)], { data: rows(40) });
     const sums = {};
     for (const r of rows(40).rows) sums[r.g] = (sums[r.g] || 0) + r.amt;
     const at = (t, g) => t.findIndex(s => s.endsWith(` ${g}`)); // the header shows "▼ G1"
