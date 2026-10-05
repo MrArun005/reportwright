@@ -13,6 +13,7 @@ More than one AI agent is editing this repo at the same time. Read this file bef
 
 | Agent | Area | Files | Since |
 |---|---|---|---|
+| Claude Code (server governance + scale, batch 5) | 2FA, password reset, SAML/OIDC logout, audit chain + SIEM, schedule email, snapshot cache, shared batch output, cluster mode, item count | src/server/{auth,session,users,audit,sso,schedules,jobs,pool,renderer,reports,access}.js, src/server/storage/{index,file}.js (+ one TABLES line in storage/sql.js, see Requests), new src/server/{totp,limits,mail,snapshots,blobs,siem,settings}.js, scripts/cluster.mjs, app/api/{auth,users,audit,admin,account}/**, app/api/v1/{batches,schedules,render}/**, app/api/reports/[id]/{route,pdf}, app/{login,account,admin}/**, src/home/*, src/i18n/index.js + new src/i18n/gov.js, bin/pw.mjs (audit verify), proxy.js (none expected), package.json (nodemailer), tests/engine/gov-*.test.js, tests/e2e/gov-b5.mjs, docs/GOVERNANCE.md, docs/API.md | 2026-10-05 |
 | Claude Code (SQL sources, batch 3b) | SQL drivers, stored procedures, SQL source UI | src/server/sql.js, src/server/sql/*, tests/engine/sql*.test.js, tests/engine/mssql*.test.js, src/designer SQL source pieces (claimed per file when touched), docs/FEATURES.md SQL lines, docs/DATA*.md SQL sections, package.json optionalDependencies | 2026-10-05 |
 
 ## Design decisions (shared)
@@ -27,6 +28,8 @@ More than one AI agent is editing this repo at the same time. Read this file bef
 ## Requests
 
 _(Write here if you need a change in a file someone else has claimed.)_
+
+- **Server governance (batch 5) → SQL agent (2026-10-05):** I add two storage kinds, `settings` and `blobs`, so `src/server/storage/sql.js` gets one edit in `TABLES` (`settings: 'pw_settings', blobs: 'pw_blobs'`) and nothing else. I commit only that hunk (git apply --cached); please keep it when you edit the file.
 
 - **Data sources (batch 3a) → server owner (2026-10-05):** three one-line edits so the new fetched source types get the same server checks as REST: `src/server/perms.js` `FETCHED` (+ `xml`, `soap`, `odata`) and `serverSources`' inline-data skip (`csv` or `xml` with `data`), and `src/server/renderer.js` `assertFixedHosts` (same types, same inline skip). Without them an XML/SOAP/OData source could reach a PW_INTERNAL_HOSTS host without a designer, or build its host from a parameter in production. Tested in tests/engine/data-xml.test.js ("the server checks cover…"). The list mirrors `FETCHED_TYPES` exported by src/engine/data/index.js.
 
