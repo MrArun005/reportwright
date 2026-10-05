@@ -36,6 +36,7 @@ export async function activity({ p, all, days, by }) {
   const series = { generated: blank(), pages: blank() }, daily = { generated: {}, pages: {}, scheduled: {} };
   const cur = { generated: 0, pages: 0, scheduled: 0, failed: 0 }, prev = { generated: 0, pages: 0, scheduled: 0 };
   const recent = [];
+  let timedSum = 0, timed = 0; // render durations from the audit (durable: every serverless instance writes there)
   for (const e of [...renders, ...exports]) {
     const d = e.at.slice(0, 10), now = d >= start;
     const pages = e.type === 'report.render' && e.format === 'pdf' ? Number(e.detail?.pages) || 0 : 0;
@@ -44,6 +45,8 @@ export async function activity({ p, all, days, by }) {
     t.generated++; t.pages += pages; if (sched) t.scheduled++;
     if (!now) continue;
     if (e.status && e.status !== 'ok') cur.failed++;
+    const ms = Number(e.detail?.ms);
+    if (e.type === 'report.render' && Number.isFinite(ms) && ms >= 0) { timedSum += ms; timed++; }
     series.generated[keyOf(d)]++; series.pages[keyOf(d)] += pages;
     for (const [k, v] of [['generated', 1], ['pages', pages], ['scheduled', sched ? 1 : 0]]) daily[k][d] = (daily[k][d] || 0) + v;
     recent.push(e);
@@ -51,7 +54,7 @@ export async function activity({ p, all, days, by }) {
   recent.sort((a, b) => (a.at < b.at ? 1 : -1));
   const spark = (k) => dayKeys.map(d => daily[k][d] || 0);
   return {
-    start, end: iso(today), keys, truncated, cur, prev,
+    start, end: iso(today), keys, truncated, cur, prev, avgMs: timed ? timedSum / timed : null, timed,
     series: { generated: keys.map(k => series.generated[k]), pages: keys.map(k => series.pages[k]) },
     spark: { generated: spark('generated'), pages: spark('pages'), scheduled: spark('scheduled') },
     recent: recent.slice(0, 8),

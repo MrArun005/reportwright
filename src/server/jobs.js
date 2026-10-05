@@ -374,7 +374,7 @@ async function run(job, owner, stopAfter, fence = { lost: false, hold: async () 
         // the item's bytes and its audit row at once (one round trip on a remote database, not two); the result
         // blob, which says the item is done, only after both
         // every item is a render of the report as its owner: audited (compact: the batch, the item, a parameter hash)
-        await Promise.all([blobs().put(itemKey(i), r.bytes), audit('report.render', { actor: job.owner || 'nobody', report: job.templateRef, format: job.format, params: item.parameters, detail: { batch: job.id, item: i, pages: r.pages, via: job.schedule ? 'schedule' : 'batch' } })]);
+        await Promise.all([blobs().put(itemKey(i), r.bytes), audit('report.render', { actor: job.owner || 'nobody', report: job.templateRef, format: job.format, params: item.parameters, detail: { batch: job.id, item: i, pages: r.pages, ms: r.ms ?? undefined, via: job.schedule ? 'schedule' : 'batch' } })]);
         const res = { index: i, name, pages: r.pages, bytes: r.bytes.length, by: owner };
         if (fence.lost) return;
         await blobs().put(resultKey(job.id, i), Buffer.from(JSON.stringify(res)));

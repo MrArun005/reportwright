@@ -226,7 +226,8 @@ export async function audit(type, o = {}) {
 
 const FLOOD_MS = 10000, MAX_BUCKETS = 1000;
 /** What makes two events the same event: everything but the time and the id (detail too, as a digest). */
-const sameKey = (e) => [e.type, e.actor, e.ip, e.status, e.report || '', e.format || '', e.params || '', crypto.createHash('sha256').update(canonical(e.detail || {})).digest('hex').slice(0, 16)].join('|');
+// a render's duration (detail.ms) does not make it another event
+const sameKey = (e) => [e.type, e.actor, e.ip, e.status, e.report || '', e.format || '', e.params || '', crypto.createHash('sha256').update(canonical((({ ms, ...d }) => d)(e.detail || {}))).digest('hex').slice(0, 16)].join('|');
 /** The source bucket of an address: IPv4 /24, IPv6 /64 (one attacker rotating addresses in its own range is one source). */
 export const sourceBucket = (ip) => {
   const a = String(ip || '');

@@ -26,7 +26,7 @@ export async function GET(req, { params }) {
     checkParameterValues(def, parameters, principal); // fixed lists and hidden parameters hold on the server too
     const opt = { parameters, format, baseUrl: baseUrl(req), pdfa: url.searchParams.get('pdfa') === '1', ua: url.searchParams.get('ua') === '1', formulas: url.searchParams.get('formulas') ?? undefined, csv: url.searchParams.get('csv') ?? undefined, timeZone: checkTimeZone(url.searchParams.get('timeZone')), principal }; // ?timeZone=: the viewer's zone
     const r = await throughSnapshot({ def, opt, principal }, () => renderInPool({ ref: safeId(id), def, opt }, { signal: req.signal }));
-    await audit('report.render', { req, principal, report: id, format, params: parameters, detail: { pages: r.pages, via: 'server link', ...(r.snapshot !== 'off' ? { snapshot: r.snapshot } : {}) } });
+    await audit('report.render', { req, principal, report: id, format, params: parameters, detail: { pages: r.pages, ms: r.ms ?? undefined, via: 'server link', ...(r.snapshot !== 'off' ? { snapshot: r.snapshot } : {}) } });
     return new Response(r.bytes, {
       headers: {
         'content-type': r.contentType,

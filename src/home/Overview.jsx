@@ -50,7 +50,9 @@ export default async function Overview({ lang, sp, p, isAdmin, designer, canCrea
 
   const scheds = designer && canDesign(p) ? await listSchedules(p) : null;
   const [a, h] = await Promise.all([activity({ p, all: isAdmin, days, by }), isAdmin ? health() : null]);
-  const rs = isAdmin ? renderStats() : null;
+  const pool = isAdmin ? renderStats() : null;
+  // the average from the audit (all instances, the selected range); this process's pool counters only as a fallback
+  const rs = pool && (a.timed ? { ...pool, avgMs: a.avgMs, timed: a.timed } : pool);
   // a non-admin sees only events on reports they may still see (or inline definitions they sent)
   const recent = isAdmin ? a.recent : a.recent.filter(e => !e.report || reports.has(String(e.report).split('@')[0]));
   const labels = a.keys.map(k => dayLabel(k));
