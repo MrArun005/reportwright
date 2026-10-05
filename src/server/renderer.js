@@ -2,6 +2,7 @@
 // Server-side rendering to every format. The same engine as the browser, in Node.
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { localAclGen } from './storage/index.js';
 import { render, FontStore } from '@/engine/index.js';
 import { FETCHED_TYPES } from '@/engine/data/index.js';
 import { fontFile, setCustomFonts } from '@/engine/text/fonts.js';
@@ -185,7 +186,7 @@ export async function renderTo(def, opt = {}) {
   const base = opt.baseUrl || baseUrl();
   // a render for someone not signed in (public embed) passes that on, so its own data calls keep the anonymous caps
   const anon = !['user', 'service'].includes(opt.principal ? vet(opt.principal).kind : '');
-  const fetch = opt.batch ? batchFetch(serverFetch(opt.self || base, { anon }), `${opt.batch}|${principalId(opt.principal)}|${anon}|${opt.self || base}`) : serverFetch(opt.self || base, { anon });
+  const fetch = opt.batch ? batchFetch(serverFetch(opt.self || base, { anon }), `${opt.batch}|${principalId(opt.principal)}|${anon}|${opt.self || base}|${localAclGen()}`) : serverFetch(opt.self || base, { anon });
   await syncFonts();
   // the data CSV needs the tables' data only: no text layout, no pages (a report without a table falls back to its page text)
   const dataOnly = format === 'csv' && opt.csv !== 'layout' && !opt.modelOnly && !opt.firstPages;
