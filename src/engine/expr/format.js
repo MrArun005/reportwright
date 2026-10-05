@@ -463,11 +463,15 @@ function numShape(toks) {
   const intPh = intCore.filter(ph);
   const z = intPh.findIndex(t => t.k === '0');
   const lastZero = frac.findLastIndex(t => t.k === '0');
+  // explicit group sizes, right to left: "#,##,##0" is [3, 2] (Indian lakh grouping in any locale); null = the locale's
+  const sizes = [];
+  for (let i = intCore.length - 1, n = 0; i >= 0; i--) { if (intCore[i].k === ',') { sizes.push(n); n = 0; } else if (ph(intCore[i])) n++; }
+  const groups = sizes.length > 1 && sizes.some(n => n !== sizes[0]) && sizes.every(n => n > 0) ? sizes : null;
   capDigits('Format', frac.length); capDigits('Format', intPh.length);
   return {
     pre: toks.slice(0, first), post: toks.slice(last + 1).filter(t => t.k !== ','), int: intCore, frac,
     decimals: frac.length, minDec: lastZero + 1, minInt: z < 0 ? 0 : intPh.length - z,
-    grouping: intCore.some(t => t.k === ','), inner: intCore.some(t => t.k === 'lit'), scale,
+    grouping: intCore.some(t => t.k === ','), groups, inner: intCore.some(t => t.k === 'lit'), scale,
     pct: toks.filter(t => t.k === '%').length, mille: toks.filter(t => t.k === 'lit' && t.s === '‰').length,
   };
 }
@@ -497,8 +501,13 @@ function formatShape(s, x, minus, locale) {
     body = out.join('') + (frac ? separators(locale).dec + frac : '');
     minus = minus && r !== 0;
   } else {
-    body = nf(locale, { useGrouping: s.grouping, minimumFractionDigits: s.minDec, maximumFractionDigits: s.decimals, minimumIntegerDigits: Math.max(1, s.minInt) }).format(x);
+    body = nf(locale, { useGrouping: s.grouping && !s.groups, minimumFractionDigits: s.minDec, maximumFractionDigits: s.decimals, minimumIntegerDigits: Math.max(1, s.minInt) }).format(x);
     minus = minus && /[1-9]/.test(body);
+    if (s.groups) body = body.replace(/^\d+/, (d) => { // the last size repeats
+      const out = []; let k = 0;
+      while (d.length > s.groups[Math.min(k, s.groups.length - 1)]) { const n = s.groups[Math.min(k++, s.groups.length - 1)]; out.unshift(d.slice(-n)); d = d.slice(0, -n); }
+      return [d, ...out].join(separators(locale).grp);
+    });
     if (s.minInt === 0) body = body.replace(/^0(?=\D|$)/, ''); // "#.##" shows .5, "#" shows nothing for 0
   }
   return (minus ? '-' : '') + litText(s.pre) + body + litText(s.post);
