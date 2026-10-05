@@ -5,6 +5,8 @@ import { principalOf, checkReport } from '@/server/perms.js';
 import { renderInPool, admit } from '@/server/pool.js';
 import { busyHeaders } from '@/server/auth.js';
 import { audit } from '@/server/audit.js';
+import { throughSnapshot } from '@/server/snapshots.js';
+import { readReport } from '@/server/reports.js';
 
 export const runtime = 'nodejs';
 
@@ -19,8 +21,9 @@ export async function GET(req, { params }) {
     const format = url.searchParams.get('format') || 'pdf';
     await checkReport(principal, safeId(id)); // view access, before the render takes a place in the queue
     // read (view access, saved server-side data as a designer stored it) and rendered in a render worker
-    const r = await renderInPool({ ref: safeId(id), how: 'runnable', opt: { parameters, format, baseUrl: baseUrl(req), pdfa: url.searchParams.get('pdfa') === '1', ua: url.searchParams.get('ua') === '1', principal } }, { signal: req.signal });
-    await audit('report.render', { req, principal, report: id, format, params: parameters, detail: { pages: r.pages, via: 'server link' } });
+    const opt = { parameters, format, baseUrl: baseUrl(req), pdfa: url.searchParams.get('pdfa') === '1', ua: url.searchParams.get('ua') === '1', principal };
+    const r = await throughSnapshot({ def: await readReport(safeId(id)), opt, principal }, () => renderInPool({ ref: safeId(id), how: 'runnable', opt }, { signal: req.signal }));
+    await audit('report.render', { req, principal, report: id, format, params: parameters, detail: { pages: r.pages, via: 'server link', ...(r.snapshot !== 'off' ? { snapshot: r.snapshot } : {}) } });
     return new Response(r.bytes, {
       headers: {
         'content-type': r.contentType,
@@ -28,6 +31,7 @@ export async function GET(req, { params }) {
         'content-disposition': `inline; filename="${id}.${r.ext}"`,
         'x-pagewright-pages': String(r.pages),
         'x-pagewright-ms': String(r.ms),
+        'x-pagewright-snapshot': r.snapshot,
       },
     });
   } catch (e) {

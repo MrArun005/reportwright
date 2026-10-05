@@ -38,9 +38,10 @@ export default function SettingsAdmin({ lang }) {
   const [form, setForm] = useState(null);
   const [err, setErr] = useState(null);
   const [msg, setMsg] = useState(null);
+  const [snap, setSnap] = useState(null);
 
   const load = useCallback(async () => {
-    try { const d = await call('/api/admin/settings'); setData(d); setForm(d.settings); } catch (e) { setErr(e.message); }
+    try { const d = await call('/api/admin/settings'); setData(d); setForm(d.settings); setSnap(await call('/api/admin/snapshots')); } catch (e) { setErr(e.message); }
   }, []);
   useEffect(() => { load(); }, [load]);
   const save = async (patch) => {
@@ -75,6 +76,17 @@ export default function SettingsAdmin({ lang }) {
             </fieldset>
             <p className="hint" style={{ margin: 0 }}>{T('require2faHint')}</p>
             <div><button className="btn primary">{T('saveSettings')}</button></div>
+          </form>
+          <form style={box} aria-label={T('snapshotTitle')} onSubmit={(e) => { e.preventDefault(); save({ snapshotTtl: Number(form.snapshotTtl), snapshotMaxMb: Number(form.snapshotMaxMb) }); }}>
+            <h2 style={{ margin: 0, fontSize: 'var(--fs-lg)' }}>{T('snapshotTitle')}</h2>
+            <label className="field"><span>{T('snapshotTtl')}</span><input className="input" type="number" min={0} max={604800} required value={form.snapshotTtl} onChange={e => setForm({ ...form, snapshotTtl: e.target.value })} /></label>
+            <label className="field"><span>{T('snapshotMax')}</span><input className="input" type="number" min={1} required value={form.snapshotMaxMb} onChange={e => setForm({ ...form, snapshotMaxMb: e.target.value })} /></label>
+            <p className="hint" style={{ margin: 0 }}>{T('snapshotHint')}</p>
+            {snap && <p data-testid="snapshot-stats" style={{ margin: 0 }}>{T('snapshotStats', { n: snap.entries, mb: (snap.bytes / 1048576).toFixed(1) })}</p>}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn primary">{T('saveSettings')}</button>
+              <button type="button" className="btn" onClick={async () => { setErr(null); try { setSnap(await call('/api/admin/snapshots', 'DELETE')); setMsg(T('snapshotsCleared')); } catch (e) { setErr(e.message); } }}>{T('clearSnapshots')}</button>
+            </div>
           </form>
           {data?.status && <StatusBox status={data.status} T={T} />}
         </div>

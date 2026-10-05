@@ -19,6 +19,7 @@ import { store } from './storage/index.js';
 import { blobs, removePrefix } from './blobs.js';
 import { mailOn, checkRecipients, oneLine, sendMail, maxAttachmentBytes } from './mail.js';
 import { audit } from './audit.js';
+import { throughSnapshot } from './snapshots.js';
 import { principalId, principalFromId, defaultPrincipal, vet, canDesign } from './perms.js';
 
 const DATA = path.join(process.cwd(), 'data');
@@ -94,7 +95,7 @@ export async function createBatch(spec, req, principal = defaultPrincipal(), { s
   const job = {
     id: rid(), status: 'queued', createdAt: new Date().toISOString(), template: typeof spec.template === 'string' ? spec.template : def.name,
     templateRef: typeof spec.template === 'string' ? spec.template : null,
-    format, output: spec.output || { type: 'zip' }, webhook: spec.webhook || null, fileName: spec.fileName || null, schedule: spec.schedule || null, pdfa: !!spec.pdfa, sign: !!spec.sign,
+    format, fromSnapshot: !!spec.fromSnapshot, output: spec.output || { type: 'zip' }, webhook: spec.webhook || null, fileName: spec.fileName || null, schedule: spec.schedule || null, pdfa: !!spec.pdfa, sign: !!spec.sign,
     total: items.length, done: 0, failed: 0, results: [], errors: [], failedItems: [], base, self, owner: principalId(principal), ownerKey: vet(principal).viaKey || null, ownerSession: !!session, email: spec.email ? checkEmail(spec.email) : null, _work: { items, def },
   };
   await save(job);
@@ -250,7 +251,10 @@ async function run(job, owner, stopAfter) {
         if (ended) throw ended;
         const principal = await allowed().catch((e) => { throw (ended = new Error(`The owner may no longer run this report (${e.message}).`)); });
         // in the render pool, behind interactive renders (allowed() checked the template as the owner is now)
-        const r = await renderInPool({ def, opt: { parameters: item.parameters, data: item.data, format: job.format, baseUrl: job.base, self: job.self, pdfa: job.pdfa, sign: job.sign, principal } }, { background: true });
+        const opt = { parameters: item.parameters, data: item.data, format: job.format, baseUrl: job.base, self: job.self, pdfa: job.pdfa, sign: job.sign, principal };
+        const render = () => renderInPool({ def, opt }, { background: true });
+        // fromSnapshot (schedules): a fresh snapshot of the same report, parameters and access, within the TTL setting
+        const r = job.fromSnapshot ? await throughSnapshot({ def, opt, principal }, render) : await render();
         if (item.putUrl) {
           const res = await serverFetch(job.self, { internal: canDesign(principal) })(item.putUrl, { method: 'PUT', body: r.bytes, headers: { 'content-type': r.contentType } });
           if (!res.ok) throw new Error(`upload: HTTP ${res.status}`);
