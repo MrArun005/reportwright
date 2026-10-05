@@ -1,5 +1,6 @@
 // C1: SQL data sources. Real SQLite (node:sqlite) in a temp folder; Postgres only when PW_TEST_PG is set.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { pgReader } from './sql-readers.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -198,7 +199,7 @@ describe('size cap', () => {
 });
 
 describe.skipIf(!process.env.PW_TEST_PG)('postgres', () => {
-  beforeAll(() => { process.env.PW_DB_PG = process.env.PW_TEST_PG; });
+  beforeAll(async () => { process.env.PW_DB_PG = await pgReader(process.env.PW_TEST_PG); }); // a reading role: the probe refuses an admin
   afterAll(() => { delete process.env.PW_DB_PG; });
   const pg = (query) => ({ connection: 'pg', query });
 

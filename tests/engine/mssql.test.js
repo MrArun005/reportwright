@@ -322,6 +322,10 @@ describe.skipIf(!process.env.PW_TEST_MSSQL)('SQL Server (live)', () => {
       ['GRANT SELECT ON dbo.pw_accounts TO pw_reader WITH GRANT OPTION', 'REVOKE SELECT ON dbo.pw_accounts TO pw_reader CASCADE; GRANT SELECT ON dbo.pw_accounts TO pw_reader; REVOKE SELECT ON dbo.pw_accounts TO pw_reader', /granted SELECT/],
       ["USE master; IF SUSER_ID('pw_srv_role') IS NULL CREATE SERVER ROLE pw_srv_role; GRANT IMPERSONATE ON LOGIN::sa TO pw_srv_role; ALTER SERVER ROLE pw_srv_role ADD MEMBER pw_reader", 'USE master; ALTER SERVER ROLE pw_srv_role DROP MEMBER pw_reader; DROP SERVER ROLE pw_srv_role', /IMPERSONATE/],
       ['USE master; GRANT IMPERSONATE ON LOGIN::sa TO public', 'USE master; REVOKE IMPERSONATE ON LOGIN::sa TO public', /IMPERSONATE/],
+      // positive lists (3b): a VIEW right the old filter let through, and a schema right
+      ['USE master; GRANT VIEW SERVER STATE TO pw_reader', 'USE master; REVOKE VIEW SERVER STATE TO pw_reader', /VIEW SERVER STATE/],
+      ['GRANT VIEW DATABASE STATE TO pw_reader', 'REVOKE VIEW DATABASE STATE TO pw_reader', /VIEW DATABASE STATE/],
+      ['GRANT VIEW DEFINITION ON SCHEMA::dbo TO pw_reader', 'REVOKE VIEW DEFINITION ON SCHEMA::dbo TO pw_reader', /VIEW DEFINITION/],
       ["IF DATABASE_PRINCIPAL_ID('pw_writers') IS NULL CREATE ROLE pw_writers; GRANT DELETE ON SCHEMA::dbo TO pw_writers; ALTER ROLE pw_writers ADD MEMBER pw_reader", 'ALTER ROLE pw_writers DROP MEMBER pw_reader; DROP ROLE pw_writers', /DELETE/],
     ];
     let n = 0;

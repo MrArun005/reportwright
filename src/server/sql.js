@@ -350,18 +350,83 @@ async function driver(pkg, kind) {
  * Run `work` while counting the bytes the connection's socket receives: past half of limits.bytes (text arrives as
  * UTF-8 and is held as 2 bytes a character, so half on the wire is the most a result within the cap can need), or at
  * the deadline, the socket is destroyed, so the driver never buffers more, and the work fails with the cap's error
- * (marked `wire`: the connection is gone and must not go back to the pool).
+ * (marked `wire`: the connection is gone and must not go back to the pool). `onCut` stops the query on the server.
  * @param {import('node:net').Socket} socket @param {ReturnType<typeof clock>} clk @param {() => Promise<any>} work
  */
-export async function onWire(socket, clk, work) {
+export async function onWire(socket, clk, work, onCut = () => {}) {
   let n = 0, why = null;
-  const cut = (e) => { if (!why) { why = Object.assign(e, { wire: true }); socket.destroy(); } };
+  const cut = (e) => { if (!why) { why = Object.assign(e, { wire: true }); onCut(); socket.destroy(); } };
   const data = (b) => { n += b.length; if (n > Number(limits.bytes) / 2 + 65536) cut(fail(`The query returned more than ${Math.round(limits.bytes / 1048576)} MB. Filter or group it in SQL.`, 400)); };
   socket.on('data', data);
   try {
     clk.track({ cancel: () => cut(clk.late()) });
     return await work();
   } catch (e) { throw why || e; } finally { socket.off('data', data); }
+}
+
+const KILL_MS = 5000;
+/** Stop a PostgreSQL backend from a connection of its own (a role may end its own backends). Best effort, bounded. */
+function killPostgres(pg, url, pid) {
+  if (!pid) return;
+  const k = new pg.Client({ connectionString: url, connectionTimeoutMillis: KILL_MS });
+  k.on('error', () => {});
+  const t = setTimeout(() => k.end().catch(() => {}), KILL_MS);
+  k.connect().then(() => k.query('SELECT pg_terminate_backend($1)', [pid])).catch(() => {}).finally(() => { clearTimeout(t); k.end().catch(() => {}); });
+}
+/** KILL a MySQL thread from a connection of its own (a user may kill its own threads). Best effort, bounded. */
+function killMysql(mysql, url, thread) {
+  if (!thread) return;
+  mysql.createConnection({ uri: url, connectTimeout: KILL_MS }).then(async (k) => {
+    k.connection.on?.('error', () => {});
+    await k.query(`KILL ${Number(thread)}`).catch(() => {});
+    k.destroy();
+  }, () => {});
+}
+
+/** Every right the PostgreSQL login holds, as one row (see whyNotPostgres). */
+const PG_PROBE = `SELECT r.rolsuper, r.rolcreaterole, r.rolcreatedb, r.rolreplication, r.rolbypassrls,
+  (SELECT string_agg(b.rolname, ', ') FROM pg_roles b WHERE b.rolname <> current_user AND b.rolname <> 'pg_read_all_data' AND pg_has_role(current_user, b.oid, 'MEMBER')) AS roles,
+  (SELECT string_agg(extname, ', ') FROM pg_extension WHERE extname <> 'plpgsql') AS extensions,
+  (SELECT string_agg(nspname, ', ') FROM pg_namespace WHERE has_schema_privilege(oid, 'CREATE')) AS create_in,
+  has_database_privilege(current_database(), 'CREATE') AS create_db,
+  (SELECT string_agg(n, ', ') FROM (SELECT relname AS n FROM pg_class WHERE relowner = r.oid UNION ALL SELECT proname FROM pg_proc WHERE proowner = r.oid
+     UNION ALL SELECT nspname FROM pg_namespace WHERE nspowner = r.oid LIMIT 5) o) AS owns,
+  (SELECT string_agg(n, ', ') FROM (SELECT c.relname AS n FROM pg_class c JOIN pg_namespace s ON s.oid = c.relnamespace
+     WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f') AND s.nspname NOT IN ('pg_catalog', 'information_schema')
+       AND (has_table_privilege(c.oid, 'INSERT') OR has_table_privilege(c.oid, 'UPDATE') OR has_table_privilege(c.oid, 'DELETE')
+         OR has_table_privilege(c.oid, 'TRUNCATE') OR has_table_privilege(c.oid, 'TRIGGER') OR has_table_privilege(c.oid, 'REFERENCES')) LIMIT 5) w) AS writes
+  FROM pg_roles r WHERE r.rolname = current_user`;
+/** @returns {string} what this login could do beyond reading, or '' */
+function whyNotPostgres(r) {
+  for (const k of ['rolsuper', 'rolcreaterole', 'rolcreatedb', 'rolreplication', 'rolbypassrls']) if (r[k] !== false) return k.slice(3);
+  if (r.roles) return `member of ${String(r.roles).slice(0, 200)}`;
+  if (r.extensions) return `the database has the extensions ${String(r.extensions).slice(0, 200)}`;
+  if (r.create_in) return `CREATE in the schemas ${String(r.create_in).slice(0, 200)}`;
+  if (r.create_db !== false) return 'CREATE in the database';
+  if (r.owns) return `owner of ${String(r.owns).slice(0, 200)}`;
+  if (r.writes) return `write rights on ${String(r.writes).slice(0, 200)}`;
+  return '';
+}
+
+/** The procedures listed for the connection whose URL this is (the MySQL probe allows EXECUTE on them). */
+const procsOfUrl = (url) => { const k = Object.entries(process.env).find(([key, v]) => v === url && /^PW_DB_\w+$/.test(key) && !/_PROCS$/.test(key))?.[0]; return k ? procsOf(k.slice(6)) : []; };
+
+/**
+ * A positive list of SHOW GRANTS lines: USAGE on *.*, SELECT and SHOW VIEW on a database or table, EXECUTE on a listed
+ * procedure. Anything else (a role, FILE, PROCESS, a write right, WITH GRANT OPTION) refuses the login.
+ * @param {string[]} lines @param {string[]} procs @returns {string}
+ */
+export function whyNotMysql(lines, procs = []) {
+  const ok = new Set(procs.map(p => p.toLowerCase().split('.').pop()));
+  for (const l of lines) {
+    if (/WITH GRANT OPTION/i.test(l)) return 'it may grant rights';
+    if (/^GRANT USAGE ON \*\.\* TO /i.test(l)) continue;
+    if (/^GRANT (SELECT|SHOW VIEW)(, (SELECT|SHOW VIEW))* ON (`[^`]+`|\w+)\.(`[^`]+`|\*|\w+) TO /i.test(l)) continue;
+    const m = /^GRANT EXECUTE ON PROCEDURE (?:`[^`]+`|\w+)\.`?([^`\s]+)`? TO /i.exec(l);
+    if (m && ok.has(m[1].toLowerCase())) continue;
+    return `granted: ${l.replace(/ TO .*$/, '').slice(0, 200)}`;
+  }
+  return '';
 }
 
 /** @type {Omit<DriverContext, 'code' | 'procedure' | 'allowed'>} */
@@ -388,69 +453,98 @@ const DRIVERS = {
 
   // The client side bounds both: the socket's bytes are counted as they arrive (onWire), and at the cap or the
   // deadline it is destroyed, so no value or batch is ever buffered past the cap, whatever the server sends.
+  // PostgreSQL. The login is checked first (probePostgres, every 5 s at most): no superuser or role-making rights, no
+  // role but pg_read_all_data, no extension but plpgsql, nothing it owns, no CREATE anywhere, no write right on any
+  // table. Then a READ ONLY transaction, one statement (extended protocol), a cursor read in counted batches; the
+  // socket's bytes are counted as they arrive, and at a cap or the deadline the backend is terminated from another
+  // connection (a dropped socket alone does not stop a running query, and the query can turn statement_timeout off),
+  // the socket is cut and the connection thrown away. Only plain scalar types are parsed: json, arrays and the rest
+  // stay text (a parsed JSON value takes many times its size).
   async postgres(url, text, values) {
     if (!pools.has(url)) {
       const pg = (await driver('pg', 'postgres')).default;
-      // DATE and TIMESTAMP (no zone) stay as written: a JS Date would move them to the server's time zone
-      const raw = new Set([1082, 1114]);
-      const pool = new pg.Pool({ connectionString: url, max: 5, connectionTimeoutMillis: 10000, types: { getTypeParser: (oid, fmt) => (raw.has(oid) ? (v) => v : pg.types.getTypeParser(oid, fmt)) } });
+      const parsed = new Set([16, 20, 21, 23, 26, 700, 701, 1700, 1184]); // bool, integers, oid, floats, numeric (text), timestamptz
+      const pool = new pg.Pool({ connectionString: url, max: 5, connectionTimeoutMillis: 10000, types: { getTypeParser: (oid, fmt) => (parsed.has(oid) ? pg.types.getTypeParser(oid, fmt) : (v) => v) } });
       pool.on('error', () => {}); // an idle client that drops must not crash the server
-      pools.set(url, pool);
+      pools.set(url, { pool, pg, checked: 0 });
     }
+    const entry = pools.get(url);
     const clk = clock(Number(limits.ms));
-    let broken = false;
     try {
-      const c = await clk.inTime(pools.get(url).connect(), (x) => x.release());
+      const c = await clk.inTime(entry.pool.connect(), (x) => x.release());
       if (!c.pwQuiet) { c.pwQuiet = true; c.on('error', () => {}); } // a socket we cut must not crash the server
+      let ok = false;
       try {
-        return await onWire(c.connection.stream, clk, async () => {
+        const rows = await onWire(c.connection.stream, clk, async () => {
+          if (Date.now() - entry.checked > PROBE_MS) {
+            const why = whyNotPostgres((await c.query(PG_PROBE)).rows[0] || {});
+            if (why) throw fail(`This PostgreSQL login can do more than read (${why}). Give report connections a role with CONNECT and SELECT only (see docs/DATA-SQL.md).`, 500);
+            entry.checked = Date.now();
+          }
           await c.query('BEGIN READ ONLY');
-          await c.query(`SET LOCAL statement_timeout = ${Number(limits.ms)}`);
-          // extended protocol: one statement only, so "…; COMMIT; DELETE …" cannot end the read-only transaction.
-          // A cursor, read in batches, each counted.
+          // extended protocol: one statement only, so "…; COMMIT; DELETE …" cannot end the read-only transaction
           await c.query({ text: `DECLARE pw_rows NO SCROLL CURSOR FOR ${text}`, values, queryMode: 'extended' });
-          const rows = [];
+          const out = [];
           const take = count();
           for (;;) {
             clk.overdue();
+            await c.query(`SET LOCAL statement_timeout = ${Math.max(1, clk.left())}`); // again: the query may have changed it
             const got = (await c.query('FETCH 500 FROM pw_rows')).rows;
-            for (const r of got) { take(r); rows.push(r); }
-            if (got.length < 500) return rows;
+            for (const r of got) { take(r); out.push(r); }
+            if (got.length < 500) return out;
           }
-        });
-      } catch (e) { broken = Boolean(e.wire); throw e; } finally {
-        if (!broken) await c.query('ROLLBACK').catch(() => { broken = true; });
-        c.release(broken || undefined); // a cut connection is thrown away, not pooled
+        }, () => killPostgres(entry.pg, url, c.processID));
+        ok = true;
+        return rows;
+      } finally {
+        if (ok) await c.query('ROLLBACK').then(() => c.release(), () => c.release(true));
+        else { killPostgres(entry.pg, url, c.processID); c.release(true); } // any failure: the connection is not reused
       }
     } finally { clk.stop(); }
   },
 
+  // MySQL. The login is checked first (SHOW GRANTS, every 5 s at most): only USAGE, SELECT and SHOW VIEW grants
+  // (EXECUTE on the connection's listed procedures). Then a read-only session and transaction, a server-side prepared
+  // statement (one statement), sql_select_limit and max_execution_time; the socket's bytes are counted as they arrive,
+  // and at a cap or the deadline the query is killed from another connection (KILL; an optimizer hint or a CALL is not
+  // bound by max_execution_time) and the connection thrown away. JSON and geometry stay text and bytes.
   async mysql(url, text, values) {
     if (!pools.has(url)) {
       const mysql = (await driver('mysql2/promise', 'mysql')).default;
-      pools.set(url, mysql.createPool({ uri: url, connectionLimit: 5, connectTimeout: 10000, dateStrings: true, supportBigNumbers: true }));
+      const typeCast = (field, next) => (field.type === 'JSON' ? field.string() : field.type === 'GEOMETRY' ? field.buffer() : next());
+      pools.set(url, { pool: mysql.createPool({ uri: url, connectionLimit: 5, connectTimeout: 10000, dateStrings: true, supportBigNumbers: true, typeCast }), mysql, checked: 0 });
     }
+    const entry = pools.get(url);
     const clk = clock(Number(limits.ms));
     try {
-      const c = await clk.inTime(pools.get(url).getConnection(), (x) => x.release());
+      const c = await clk.inTime(entry.pool.getConnection(), (x) => x.release());
       if (!c.connection.pwQuiet) { c.connection.pwQuiet = true; c.connection.on('error', () => {}); } // a socket we cut must not crash the server
-      let broken = false;
+      const thread = c.connection.threadId;
+      let ok = false;
       try {
-        return await onWire(c.connection.stream, clk, async () => {
+        const rows = await onWire(c.connection.stream, clk, async () => {
+          if (Date.now() - entry.checked > PROBE_MS) {
+            const [grants] = await c.query('SHOW GRANTS');
+            const why = whyNotMysql(grants.map(g => String(Object.values(g)[0])), procsOfUrl(url));
+            if (why) throw fail(`This MySQL login can do more than read (${why}). Give report connections a user with SELECT grants only (see docs/DATA-SQL.md).`, 500);
+            entry.checked = Date.now();
+          }
           // session-wide too: DDL commits the transaction it runs in, and a read-only session still refuses it
           await c.query('SET SESSION TRANSACTION READ ONLY');
           await c.query(`SET SESSION sql_select_limit = ${Number(limits.rows) + 1}`);
           await c.query(`SET SESSION max_execution_time = ${Number(limits.ms)}`).catch(() => c.query(`SET SESSION max_statement_time = ${Number(limits.ms) / 1000}`)); // MySQL, else MariaDB
           await c.query('START TRANSACTION READ ONLY');
           const [res] = await c.execute(text, values); // a server-side prepared statement: one statement, values bound
-          const rows = Array.isArray(res[0]) ? res[0] : res; // CALL: the procedure's first result set
+          const out = Array.isArray(res[0]) ? res[0] : res; // CALL: the procedure's first result set
           const take = count();
-          for (const r of rows) take(r);
-          return rows;
-        });
-      } catch (e) { broken = Boolean(e.wire); throw e; } finally {
-        if (broken) c.connection.destroy();
-        else { await c.query('ROLLBACK').catch(() => {}); c.release(); }
+          for (const r of out) take(r);
+          return out;
+        }, () => killMysql(entry.mysql, url, thread));
+        ok = true;
+        return rows;
+      } finally {
+        if (ok) await c.query('ROLLBACK').then(() => c.release(), () => c.connection.destroy());
+        else { killMysql(entry.mysql, url, thread); c.connection.destroy(); } // any failure: the connection is not reused
       }
     } finally { clk.stop(); }
   },
@@ -731,8 +825,11 @@ export function streamRows(r, start, { sql, overdue, lobSize = textSize(), odd =
 
 const PROBE_MS = 5000; // the probe runs before every query; this only spares the queries of one render
 // database rights a reading login may hold; anything else (and any VIEW … right is fine) counts as a right to change
-const READ_DB = new Set(['CONNECT', 'SELECT', 'SHOWPLAN', 'REFERENCES']);
-const READ_SERVER = new Set(['CONNECT SQL', 'CONNECT ANY DATABASE', 'SELECT ALL USER SECURABLES']);
+// The exact rights a reading login may hold (a positive list: anything else refuses it). The two VIEW ANY COLUMN … KEY
+// DEFINITION rights and VIEW ANY DATABASE are what public holds by default; SHOWPLAN is needed for the parse check.
+const READ_DB = new Set(['CONNECT', 'SELECT', 'SHOWPLAN', 'VIEW ANY COLUMN ENCRYPTION KEY DEFINITION', 'VIEW ANY COLUMN MASTER KEY DEFINITION']);
+const READ_SERVER = new Set(['CONNECT SQL', 'VIEW ANY DATABASE', 'CONNECT ANY DATABASE', 'SELECT ALL USER SECURABLES']);
+const sqlList = (set) => [...set].map(x => `'${x}'`).join(', ');
 
 /** Every right this login holds in the current database (and on the server), as one row; see whyNot. */
 const PROBE_SQL = `
@@ -750,8 +847,11 @@ const PROBE_SQL = `
         WHERE p.grantee_principal_id IN (SELECT DISTINCT id FROM roles) AND p.state IN ('G', 'W')
           AND NOT (p.class = 1 AND ISNULL(OBJECTPROPERTY(p.major_id, 'IsMSShipped'), 1) = 1)
           AND (p.state = 'W' -- WITH GRANT OPTION: it may hand rights out, so it can change permissions
-            OR (p.permission_name NOT IN ('CONNECT', 'SELECT', 'SHOWPLAN', 'REFERENCES', 'VIEW DEFINITION', 'VIEW CHANGE TRACKING')
-              AND p.permission_name NOT LIKE 'VIEW %'))) AS granted,
+            OR p.permission_name NOT IN (${sqlList(READ_DB)}))) AS granted,
+      -- every schema's effective rights (guest, INFORMATION_SCHEMA, sys and the fixed-role schemas, ids 16384+, are
+      -- owned by system principals and empty; making anything in them needs a database right, checked above)
+      (SELECT STRING_AGG(CAST(CONCAT(QUOTENAME(s.name), ' ', p.permission_name) AS NVARCHAR(400)) COLLATE DATABASE_DEFAULT, ', ') FROM sys.schemas s
+        CROSS APPLY fn_my_permissions(QUOTENAME(s.name), 'SCHEMA') p WHERE s.schema_id NOT IN (2, 3, 4) AND s.schema_id < 16384 AND p.permission_name <> 'SELECT') AS schemas,
       -- other things it or its roles own: database principals (roles), types, keys, certificates, assemblies, …
       (SELECT STRING_AGG(CAST(n AS NVARCHAR(400)) COLLATE DATABASE_DEFAULT, ', ') FROM (
         SELECT CONCAT('role ', QUOTENAME(name)) AS n FROM sys.database_principals WHERE is_fixed_role = 0 AND owning_principal_id IN (SELECT DISTINCT id FROM roles) AND principal_id <> USER_ID()
@@ -784,7 +884,7 @@ const PROBE_SQL = `
       (SELECT STRING_AGG(CONCAT(sp.permission_name, ' (', sp.class_desc, ')'), ', ') FROM sys.server_permissions sp
         WHERE sp.grantee_principal_id IN (SELECT principal_id FROM srv) AND sp.state IN ('G', 'W')
           AND NOT (sp.class = 105 AND sp.permission_name = 'CONNECT')
-          AND (sp.state = 'W' OR (sp.permission_name NOT IN ('CONNECT SQL', 'CONNECT ANY DATABASE', 'SELECT ALL USER SECURABLES') AND sp.permission_name NOT LIKE 'VIEW %'))) AS srvgranted,
+          AND (sp.state = 'W' OR sp.permission_name NOT IN (${sqlList(READ_SERVER)}))) AS srvgranted,
       (SELECT STRING_AGG(CAST(CONCAT(p.p, ' ', x.n) AS NVARCHAR(MAX)), '; ') FROM sys.objects o
         CROSS APPLY (SELECT QUOTENAME(SCHEMA_NAME(o.schema_id)) + '.' + QUOTENAME(o.name) AS n) x
         CROSS JOIN (VALUES ('INSERT'), ('UPDATE'), ('DELETE'), ('ALTER'), ('CONTROL'), ('EXECUTE'), ('TAKE OWNERSHIP'), ('IMPERSONATE')) p(p)
@@ -808,9 +908,10 @@ function whyNot(r, allow = []) {
   if (r.ownsOther) return `owner of ${String(r.ownsOther).slice(0, 200)}`;
   if (r.granted) return `granted ${String(r.granted).slice(0, 200)}`;
   if (r.srvgranted) return `granted ${String(r.srvgranted).slice(0, 200)}`;
-  const db = String(r.db || '').split(',').filter(x => x && !READ_DB.has(x) && !x.startsWith('VIEW '));
+  const db = String(r.db || '').split(',').filter(x => x && !READ_DB.has(x));
   if (db.length) return `database rights: ${db.slice(0, 5).join(', ')}`;
-  const srv = String(r.srv || '').split(',').filter(x => x && !READ_SERVER.has(x) && !x.startsWith('VIEW '));
+  const srv = String(r.srv || '').split(',').filter(x => x && !READ_SERVER.has(x));
+  if (r.schemas) return `schema rights: ${String(r.schemas).slice(0, 200)}`;
   if (srv.length) return `server rights: ${srv.slice(0, 5).join(', ')}`;
   if (r.obj) return `rights to change ${r.obj}`;
   return '';
