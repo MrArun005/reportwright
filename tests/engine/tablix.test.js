@@ -187,9 +187,10 @@ describe('reports/tablix-showcase.pw.json (numbers checked by hand)', async () =
     const out = await render(def, { exportData: true, fontStore });
     expect(out.warnings).toEqual([]);
     const rows = regionRows(out, 'SalesPivot');
-    // North / Delhi: 2025 = 100 + 30, 2026 = 170; share of the row 130 / 300 (P1 exports 3 decimals)
-    expect(rows[2]).toEqual(['North', 'Delhi', 130, 0.433, 170, 0.567, 300, 1]);
-    expect(rows[4]).toEqual(['Total', 200, 0.465, 230, 0.535, 430, 1]);
+    // North / Delhi: 2025 = 100 + 30, 2026 = 170; share of the row 130 / 300 (exports keep the full value; P1 shows it)
+    const q = (a, b) => Number((a / b).toPrecision(15));
+    expect(rows[2]).toEqual(['North', 'Delhi', 130, q(130, 300), 170, q(170, 300), 300, 1]);
+    expect(rows[4]).toEqual(['Total', 200, q(200, 430), 230, q(230, 430), 430, 1]);
     expect(rows[8]).toEqual(['All regions', 460, 0.46, 540, 0.54, 1000, 1]);
   });
   it('the recursive hierarchy: own cost and the cost of everything below', async () => {

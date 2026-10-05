@@ -1,6 +1,7 @@
 // @ts-check
 import { mergedRegions, textRows, needsTableData } from './regions.js';
 import { figures, figurePicture, altOf, b64 } from './figures.js';
+import { toWall } from '../engine/expr/format.js';
 
 /** .NET-style format → Excel number format. */
 export function excelFormat(fmt, currencySymbol = '') {
@@ -104,8 +105,12 @@ function totalFormula(rows, at, c, made) {
  *   fetchImage?: (src: string) => Promise<Uint8Array|null>, rasterize?: any }} [opt]
  * @returns {Promise<Uint8Array>}
  */
-export async function exportXlsx(model, ExcelJS, { currency, title, formulas = true, pictures = true, fontStore, fetchImage, rasterize } = {}) {
+export async function exportXlsx(model, ExcelJS, { currency, title, formulas = true, pictures = true, fontStore, fetchImage, rasterize, timeZone } = {}) {
   needsTableData(model, 'Excel');
+  // Excel dates have no zone: ExcelJS writes a Date's UTC parts, so a date goes in as its wall clock in the zone the
+  // report showed it in (a local midnight east of UTC was a day early)
+  const tz = timeZone ?? model.timeZone ?? undefined;
+  const cellValue = (v) => (v === '' ? null : v instanceof Date ? new Date(toWall(v, tz)) : v);
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Pagewright';
   wb.created = new Date();
@@ -135,7 +140,7 @@ export async function exportXlsx(model, ExcelJS, { currency, title, formulas = t
     const made = new Map();
     rows.forEach((row, ri) => {
       const values = new Array(r.columns.length).fill(null);
-      for (const c of row.cells) if (c.colIndex >= 0) values[c.colIndex] = c.value === '' ? null : c.value;
+      for (const c of row.cells) if (c.colIndex >= 0) values[c.colIndex] = cellValue(c.value);
       const xr = ws.addRow(values);
       row.n = xr.number;
       if (row.kind === 'header') headerRows++;

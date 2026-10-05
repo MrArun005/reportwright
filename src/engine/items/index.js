@@ -1,6 +1,6 @@
 // @ts-check
 import { evalValue, toText, isDynamic, truthy } from '../expr/evaluate.js';
-import { isoDate, roundHalfAway } from '../expr/format.js';
+import { isoDate } from '../expr/format.js';
 import { resolveStyle, padding } from '../style.js';
 import { layoutTextLines, paintBox, paintBoxAt, OWNED } from './paint.js';
 import { applyFilters, applySort, related } from '../data/index.js';
@@ -836,18 +836,14 @@ function splitNested(nested, room) {
 const MAX_TREE_DEPTH = 64;
 const CELL_ITEM_UNITS = 100000;
 
-/** Round a number for data export to the precision its format shows (percent keeps 2 more places). */
-function roundFor(v, fmt) {
-  let d = ROUND_DIGITS.get(fmt);
-  if (d === undefined) {
-    const m = /^([CcNnFfPp])(\d{0,2})$/.exec(fmt || '');
-    d = m ? (m[2] === '' ? 2 : Number(m[2])) + (m[1].toUpperCase() === 'P' ? 2 : 0) : -1;
-    if (ROUND_DIGITS.size < 1000 && (fmt == null || fmt.length <= 64)) ROUND_DIGITS.set(fmt, d);
-  }
-  if (d < 0) return Number.isInteger(v) ? v : roundHalfAway(v, 6);
-  return roundHalfAway(v, d); // same rule as the Intl formatter that drew the cell
+/**
+ * A number for data export: the full value, as SSRS exports it (Excel's number format does the display rounding, so a
+ * column of 0.333, 0.333, 0.334 shown as N2 still sums to 1). Only binary noise past 15 significant digits goes
+ * (0.30000000000000004 is 0.3), which Excel would not show either. fmt is unused (kept for the call sites).
+ */
+function roundFor(v, fmt) { // eslint-disable-line no-unused-vars
+  return Number.isInteger(v) || !Number.isFinite(v) ? v : Number(v.toPrecision(15));
 }
-const ROUND_DIGITS = new Map(); // a format's decimals for roundFor (-1: not a fixed-decimals format)
 
 /* ---------------------------------------------------------------- container */
 register('container', {
