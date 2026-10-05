@@ -510,6 +510,26 @@ export async function parameterOptions(def, given = {}, opts = {}) {
   return out;
 }
 
+/**
+ * A multi-value parameter given as one text ("North,South" in a URL): split at commas, but a comma inside one of the
+ * parameter's own values stays ("Smith, John" when that is an option), and "\\," is a comma in a value.
+ * @param {string} s @param {any[]} [options]
+ */
+function splitMulti(s, options) {
+  const known = new Set((Array.isArray(options) ? options : []).map(o => String(typeof o === 'object' && o ? o.value : o)));
+  if (known.has(s.trim())) return [s.trim()];
+  const parts = s.split(/(?<!\\),/).map(x => x.replace(/\\,/g, ','));
+  const out = [];
+  for (let i = 0; i < parts.length; i++) {
+    // the longest run of parts that is an option, else the part alone
+    let j = parts.length;
+    for (; j > i + 1; j--) if (known.has(parts.slice(i, j).join(',').trim())) break;
+    out.push(parts.slice(i, j).join(',').trim());
+    i = j - 1;
+  }
+  return out.filter(Boolean);
+}
+
 /** Defaults, types and required checks for report parameters. */
 export function resolveParameters(def, given, { lenient = false, now, timeZone, locale } = {}) {
   const out = {}, missing = [];
@@ -524,7 +544,7 @@ export function resolveParameters(def, given, { lenient = false, now, timeZone, 
       try { val = evalValue(p.default, ctx); } catch { val = null; }
     }
     if (p.multi) {
-      let list = Array.isArray(val) ? val : val == null || val === '' ? [] : String(val).split(',').map(x => x.trim()).filter(Boolean);
+      let list = Array.isArray(val) ? val : val == null || val === '' ? [] : splitMulti(String(val), p.options);
       val = list.map(x => coerce(x, p.type || 'string', copt));
       if (p.required && !val.length) missing.push(p.name);
     } else {

@@ -130,3 +130,14 @@ describe('smaller VB divergences', () => {
     expect(ev('="a" + 5', { nullPropagation: true })).toBe('a5');
   });
 });
+
+describe('multi-value parameters given as text', () => {
+  it('a comma inside an option value stays; "\\," is a comma', async () => {
+    const { resolveParameters } = await import('../../src/engine/index.js');
+    const def = { parameters: [{ name: 'who', multi: true, options: ['Smith, John', 'Doe, Jane', 'Lee'] }, { name: 'free', multi: true }] };
+    const p = resolveParameters(def, { who: 'Smith, John,Lee', free: 'a\\,b,c' });
+    expect(p.who).toEqual(['Smith, John', 'Lee']);
+    expect(p.free).toEqual(['a,b', 'c']);
+    expect(resolveParameters(def, { who: 'Smith, John' }).who).toEqual(['Smith, John']);
+  });
+});

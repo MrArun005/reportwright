@@ -311,7 +311,8 @@ function compileNumber(fmt, locale, currency) {
     // signDisplay 'negative': a value that rounds to zero shows 0.0, never -0.0
     const fixed = { minimumFractionDigits: d ?? 2, maximumFractionDigits: d ?? 2, signDisplay: 'negative' };
     switch (k) {
-      case 'C': { const f = nf(locale, currency ? { style: 'currency', currency, ...fixed } : fixed); return (v) => f.format(v); }
+      // ja-JP JPY comes out as the full-width ￥ (U+FFE5), which the bundled fonts lack; .NET ja-JP writes ¥ (U+00A5)
+      case 'C': { const f = nf(locale, currency ? { style: 'currency', currency, ...fixed } : fixed); return (v) => f.format(v).replace(/\uFFE5/g, '\u00A5'); }
       case 'N': { const f = nf(locale, fixed); return (v) => f.format(v); }
       case 'F': { const f = nf(locale, { ...fixed, useGrouping: false }); return (v) => f.format(v); } // the locale's decimal sign, no grouping
       case 'P': { const f = nf(locale, { style: 'percent', ...fixed }); return (v) => f.format(v); }
