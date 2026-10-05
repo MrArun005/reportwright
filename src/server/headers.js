@@ -11,6 +11,9 @@ const BASE = [
   { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()' },
 ];
 
+/** Routes that serve report output on this origin (path-to-regexp source fragments, without the leading slash). */
+const OUTPUT = ['api/reports/[^/]+/(?:thumb|pdf)', 'api/v1/render', 'api/v1/batches/[^/]+/download'];
+
 /**
  * The header rules for next.config.mjs: frame-ancestors 'none' everywhere, except the viewer pages, which the sites
  * in PW_EMBED_ORIGINS (and this origin) may frame. X-Frame-Options for browsers without frame-ancestors.
@@ -20,8 +23,11 @@ export function pageHeaders(embedOrigins = '') {
   const origins = embedOrigins.split(',').map(s => s.trim()).filter(s => /^https?:\/\/[^\s;,']+$/.test(s));
   const csp = (ancestors) => `frame-ancestors ${ancestors}; base-uri 'self'; object-src 'none'; form-action 'self'`;
   return [
-    // everything but the viewer: never framed (API answers too: JSON is not a page, but a framed error page is)
-    { source: '/((?!viewer/).*)', headers: [...BASE, { key: 'X-Frame-Options', value: 'DENY' }, { key: 'Content-Security-Policy', value: csp("'none'") }] },
+    // everything but the viewer and the routes that serve report output: never framed (API answers too). A config
+    // header replaces a route's own header of the same name, so the output routes are left out here and set their
+    // CSP by content type (outputHeaders); they get the rest below
+    { source: `/((?!viewer/|${OUTPUT.map(o => `${o}$`).join('|')}).*)`, headers: [...BASE, { key: 'X-Frame-Options', value: 'DENY' }, { key: 'Content-Security-Policy', value: csp("'none'") }] },
+    { source: `/(${OUTPUT.join('|')})`, headers: [...BASE, { key: 'X-Frame-Options', value: 'SAMEORIGIN' }] },
     // the viewer: this origin and the embedding sites (X-Frame-Options cannot list sites: only without any)
     { source: '/viewer/:path*', headers: [...BASE, ...(origins.length ? [] : [{ key: 'X-Frame-Options', value: 'SAMEORIGIN' }]), { key: 'Content-Security-Policy', value: csp(["'self'", ...origins].join(' ')) }] },
   ];

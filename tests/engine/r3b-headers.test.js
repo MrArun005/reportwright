@@ -5,7 +5,8 @@ import { describe, it, expect } from 'vitest';
 import { pageHeaders, outputHeaders } from '../../src/server/headers.js';
 import config from '../../next.config.mjs';
 
-const find = (rules, source) => Object.fromEntries(rules.find(r => r.source === source).headers.map(h => [h.key, h.value]));
+const find = (rules, source) => Object.fromEntries(rules.find(r => (source === ALL ? r.source.startsWith('/((?!viewer/') : r.source === source)).headers.map(h => [h.key, h.value]));
+const ALL = '/((?!viewer/).*)';
 
 describe('security headers', () => {
   it('pages and API answers: never framed; the viewer only by this origin and the embed origins', () => {
@@ -23,7 +24,12 @@ describe('security headers', () => {
   });
   it('next.config.mjs serves them', async () => {
     const rules = await config.headers();
-    expect(rules.some(r => r.source === '/((?!viewer/).*)' && r.headers.some(h => h.key === 'X-Frame-Options'))).toBe(true);
+    expect(rules.some(r => r.source.startsWith('/((?!viewer/') && r.headers.some(h => h.key === 'X-Frame-Options'))).toBe(true);
+    // which rule sets a CSP on which path, as Next matches them: the output routes keep their own
+    const { getPathMatch } = await import('next/dist/shared/lib/router/utils/path-match.js');
+    const csp = (p) => rules.filter(r => getPathMatch(r.source, { strict: true, removeUnnamedParams: true })(p)).some(r => r.headers.some(h => h.key === 'Content-Security-Policy'));
+    for (const p of ['/', '/designer/x', '/api/reports/x', '/viewer/x']) expect(csp(p), p).toBe(true);
+    for (const p of ['/api/reports/x/thumb', '/api/reports/x/pdf', '/api/v1/render', '/api/v1/batches/b_1/download']) expect(csp(p), p).toBe(false);
   });
   it('report output on this origin: SVG runs nothing, HTML is sandboxed, files are files', () => {
     expect(outputHeaders('image/svg+xml')['content-security-policy']).toMatch(/default-src 'none'.*sandbox/);
