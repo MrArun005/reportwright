@@ -112,6 +112,8 @@ describe('the anonymous sample cost is capped (REVIEW-SECURITY-2 L8, PoC p5)', (
     // a server render's own one-GET pass gets the signed-in cap too (else every server PDF over 5,000 rows failed)
     const u = 'http://pw.test/api/sample/stress/20000';
     expect((await at(20000, session.internalCookie(u))).status).toBe(200);
+    // ...but not when that render was for someone not signed in (a public embed): the anonymous cap holds
+    expect((await at(20000, session.internalCookie(u, { anon: true }))).status).toBe(400);
   });
 });
 

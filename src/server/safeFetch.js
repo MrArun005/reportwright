@@ -88,7 +88,7 @@ export const NO_BASE_URL = 'http://pw-base-url-not-set.invalid';
  * PW_BASIC_AUTH password. No other host ever gets either.
  * @param {string} selfOrigin @param {{ internal?: boolean }} [o]
  */
-export const serverFetch = (selfOrigin, { internal = true } = {}) => async (input, init = {}) => {
+export const serverFetch = (selfOrigin, { internal = true, anon = false } = {}) => async (input, init = {}) => {
   const self = selfOrigin && safeOrigin(selfOrigin);
   const url = strictUrl(input); // parsed once: checked and fetched as this object
   if (url.origin === NO_BASE_URL) throw Object.assign(new Error('A relative data URL needs PW_BASE_URL in production (this server\'s public URL): the server never takes its own address from a request.'), { status: 500 });
@@ -103,7 +103,7 @@ export const serverFetch = (selfOrigin, { internal = true } = {}) => async (inpu
     for (const k of ['origin', 'referer', 'cookie', 'authorization', 'x-api-key']) headers.delete(k);
   }
   if (credentials) {
-    if (accountsOn()) headers.set('cookie', internalCookie(url.href));
+    if (accountsOn()) headers.set('cookie', internalCookie(url.href, { anon })); // anon: the render's caller was not signed in
     else if (basicOn()) headers.set('authorization', `Basic ${Buffer.from(String(process.env.PW_BASIC_AUTH)).toString('base64')}`);
     if (process.env.PW_AUTH === 'proxy' && process.env.PW_PROXY_SECRET) headers.set('x-pagewright-proxy-secret', process.env.PW_PROXY_SECRET);
   }

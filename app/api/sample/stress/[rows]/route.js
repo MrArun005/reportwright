@@ -12,7 +12,8 @@ export async function GET(req, { params }) {
   const n = Number(rows);
   const p = await principalOf(req).catch(() => ({ kind: 'anon' }));
   // the server's own call (a server render's one-GET pass) was already authorised by the render that sent it
-  const internal = accountsOn() && !!(await currentUser(req).catch(() => null))?.internal;
+  const me = accountsOn() ? await currentUser(req).catch(() => null) : null;
+  const internal = !!me?.internal && !me.anon; // an anonymous embed's render stays capped
   const max = !internal && ['anon', 'public', 'nobody'].includes(p.kind) ? Math.min(ANON_MAX_ROWS, STRESS_MAX_ROWS) : STRESS_MAX_ROWS;
   if (!Number.isInteger(n) || n < 1 || n > max) return Response.json({ error: `Give a row count from 1 to ${max}${max < STRESS_MAX_ROWS ? ' (sign in for more)' : ''}` }, { status: 400 });
   return Response.json(sampleStress(n));

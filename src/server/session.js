@@ -125,7 +125,7 @@ export async function currentUser(req) {
   if (!p) return null;
   if (p.srv) {
     const u = new URL(req.url);
-    return (req.method === 'GET' || req.method === 'HEAD') && p.path === u.pathname + u.search ? { email: '', role: 'viewer', groups: [], internal: true } : null;
+    return (req.method === 'GET' || req.method === 'HEAD') && p.path === u.pathname + u.search ? { email: '', role: 'viewer', groups: [], internal: true, anon: !!p.an } : null;
   }
   // a request that changes something reads the user from storage (never the cache): a revoke on any server counts
   // at once. Reads use the cache (at most 5 s, ~1 s after a revoke elsewhere: users.js); a cached record older than
@@ -237,10 +237,10 @@ export const clearCookie = (req) => `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax;
  * that is good for 2 minutes and for this one GET only. If it leaks it opens nothing the render did not show.
  * @param {string} url the URL being fetched
  */
-export function internalCookie(url) {
+export function internalCookie(url, { anon = false } = {}) {
   const u = new URL(url);
   const now = Math.floor(Date.now() / 1000);
-  return `${COOKIE}=${signSession({ srv: 1, path: u.pathname + u.search, iat: now, exp: now + INTERNAL_AGE })}`;
+  return `${COOKIE}=${signSession({ srv: 1, ...(anon ? { an: 1 } : {}), path: u.pathname + u.search, iat: now, exp: now + INTERNAL_AGE })}`;
 }
 
 /**

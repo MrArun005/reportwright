@@ -141,7 +141,8 @@ export async function renderTo(def, opt = {}) {
   // the engine runs exactly the objects the permission checks classified (perms.normalizeSource)
   if (Array.isArray(d?.dataSources)) d = { ...d, dataSources: d.dataSources.map(normalizeSource) };
   const base = opt.baseUrl || baseUrl();
-  const fetch = serverFetch(opt.self || base);
+  // a render for someone not signed in (public embed) passes that on, so its own data calls keep the anonymous caps
+  const fetch = serverFetch(opt.self || base, { anon: !['user', 'service'].includes(opt.principal ? vet(opt.principal).kind : '') });
   await syncFonts();
   const model = await render(d, /** @type {any} */ ({
     parameters: opt.parameters || {}, state: opt.state || {}, fontStore: fontStore(), timeZone: checkTimeZone(opt.timeZone),
