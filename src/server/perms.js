@@ -108,14 +108,15 @@ function userKeyIds(email) {
  * session: the record was made by a signed-in user on the Schedules page (no key): it runs as that user as they are now,
  * only while they may still design (the page that manages it is a designer's) and only for the same account: since is
  * the account's createdAt when the record was made, so a deleted and re-made account with the email is someone else.
- * @param {string} id @param {string} [viaKey] @param {{ session?: boolean, since?: string|null }} [o] @returns {Promise<Principal>}
+ * @param {string} id @param {string} [viaKey] @param {{ session?: boolean, since?: string|null, madeAt?: string|null }} [o] @returns {Promise<Principal>}
  */
-export async function principalFromId(id, viaKey, { session = false, since = null } = {}) {
+export async function principalFromId(id, viaKey, { session = false, since = null, madeAt = null } = {}) {
   id = String(id);
   if (session && !viaKey) {
     if (id.startsWith('user:') && accountsOn()) {
       const u = await getUser(id.slice(5));
-      if (!u || !since || u.createdAt !== since) return NOBODY;
+      // records from before ownerSince was kept: the account must be older than the record
+      if (!u || (since ? u.createdAt !== since : !(madeAt && u.createdAt && u.createdAt <= madeAt))) return NOBODY;
       const p = await userPrincipal(u.email); // disabled: nobody
       return p.kind === 'user' && p.role !== 'viewer' ? p : NOBODY;
     }

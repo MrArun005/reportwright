@@ -92,7 +92,7 @@ describe('batch output is shared', () => {
         const route = (await import('../../app/api/v1/batches/[id]/download/route.js')).GET;
         const get = (id, q) => route(new Request(`https://pw.example/api/v1/batches/${id}/download?${q}`), { params: Promise.resolve({ id }) });
         expect((await get(job.id, link.search.slice(1))).status).toBe(200);
-        expect((await get(job.id, link.search.slice(1).replace(/sig=./, 'sig=A'))).status).toBe(403);
+        expect((await get(job.id, link.search.slice(1).replace(/sig=(.)/, (_, c) => `sig=${c === 'A' ? 'B' : 'A'}`))).status).toBe(403);
         expect((await get('b_other', link.search.slice(1))).status).toBe(403);
         expect((await get(job.id, `exp=${Math.floor(Date.now() / 1000) - 1}&sig=${link.searchParams.get('sig')}`)).status).toBe(403);
         expect(jobs.linkOk(job.id, link.searchParams.get('exp'), link.searchParams.get('sig'))).toBe(true);

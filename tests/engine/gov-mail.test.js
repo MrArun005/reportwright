@@ -89,6 +89,8 @@ describe('schedules made on the Schedules page', () => {
       const as = () => perms.principalFromId('user:dee@corp.test', null, { session: true, since });
       expect((await as()).email).toBe('dee@corp.test');
       expect(await perms.principalFromId('user:dee@corp.test', null, { session: true })).toEqual(perms.NOBODY); // no account stamp
+      expect((await perms.principalFromId('user:dee@corp.test', null, { session: true, madeAt: new Date(Date.now() + 1000).toISOString() })).email).toBe('dee@corp.test'); // an older record, made after the account
+      expect(await perms.principalFromId('user:dee@corp.test', null, { session: true, madeAt: '2000-01-01T00:00:00.000Z' })).toEqual(perms.NOBODY); // made before this account existed
       await users.updateUser('dee@corp.test', { role: 'viewer' });
       expect(await as()).toEqual(perms.NOBODY); // no longer a designer: the schedule stops
       await users.updateUser('dee@corp.test', { role: 'designer', disabled: true });

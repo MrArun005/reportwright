@@ -243,8 +243,11 @@ describe('a first enrolment at sign-in needs the mailbox too (with mail set up)'
       const mailed = /code to set up two-factor sign-in: (\d{8})/.exec(smtp.messages.at(-1).data)[1];
       expect((await post(R.mfaSetup, '/api/auth/mfa/setup', {}, l.mfa)).status).toBe(401); // the password alone
       expect((await post(R.mfaSetup, '/api/auth/mfa/setup', { emailCode: '00000000' }, l.mfa)).status).toBe(401);
-      const s = await (await post(R.mfaSetup, '/api/auth/mfa/setup', { emailCode: mailed }, l.mfa)).json();
-      const r = await post(R.mfa, '/api/auth/mfa', { code: totp.totp(s.secret) }, l.mfa);
+      const again = await login('enr@x.test', 'enrol password 1'); // a second sign-in does not void the code already mailed
+      expect(again.body).toEqual({ mfa: 'enrol', emailed: true });
+      expect(smtp.messages.filter(m => /enrolment code/.test(m.data))).toHaveLength(1);
+      const s = await (await post(R.mfaSetup, '/api/auth/mfa/setup', { emailCode: mailed }, again.mfa)).json();
+      const r = await post(R.mfa, '/api/auth/mfa', { code: totp.totp(s.secret) }, again.mfa);
       expect(r.status).toBe(200);
       for (let i = 0; i < 50 && !smtp.messages.some(m => /sign-in changed/.test(m.data)); i++) await new Promise(x => setTimeout(x, 20));
       expect(smtp.messages.at(-1).data).toMatch(/Two-factor sign-in was turned on/);

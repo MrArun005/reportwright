@@ -4,6 +4,7 @@ import { accountsOn } from '@/server/session.js';
 import { useReset } from '@/server/users.js';
 import { attempt, clientAddress } from '@/server/limits.js';
 import { audit } from '@/server/audit.js';
+import { notifyAccount } from '@/server/mail.js';
 
 export const runtime = 'nodejs';
 
@@ -16,6 +17,7 @@ export async function POST(req) {
     const email = await useReset(body?.token, body?.password);
     await slot.release();
     await audit('auth.reset', { req, actor: `user:${email}`, detail: { sessions: 'ended' } });
+    notifyAccount(email, 'Your password was reset with a link from a reset email, and every session was signed out.');
     return Response.json({ ok: true }, { headers: { 'cache-control': 'no-store' } });
   } catch (e) {
     if (e.status === 400 && /link/.test(e.message)) await audit('auth.reset_failed', { req, status: 'failed', detail: { reason: 'bad or spent token' } });

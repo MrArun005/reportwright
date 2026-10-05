@@ -5,6 +5,7 @@ import { updateUser, deleteUser, getUser } from '@/server/users.js';
 import { requireRole } from '@/server/access.js';
 import { sessionCookie, sessionClaims } from '@/server/session.js';
 import { audit } from '@/server/audit.js';
+import { notifyAccount } from '@/server/mail.js';
 
 export const runtime = 'nodejs';
 
@@ -23,6 +24,8 @@ export async function PATCH(req, { params }) {
     if (body.resetTwoFactor === true) patch.resetTwoFactor = true;
     const u = await updateUser(email, patch, { by: me.email });
     await audit('user.update', { req, actor: `user:${me.email}`, detail: { user: u.email, ...('role' in patch && { role: u.role }), ...('groups' in patch && { groups: u.groups }), ...('disabled' in patch && { disabled: u.disabled }), ...('password' in patch && { password: 'changed' }), ...('allowSso' in patch && { allowSso: u.allowSso }), ...(patch.resetTwoFactor && { twoFactor: 'reset' }) } });
+    if (patch.resetTwoFactor) notifyAccount(u.email, `An admin (${me.email}) turned off two-factor sign-in for your account.`);
+    if (patch.password !== undefined) notifyAccount(u.email, `An admin (${me.email}) set a new password for your account.`);
     // a new password ends the user's sessions; an admin who changed their own stays signed in
     const headers = u.email === me.email && (patch.password !== undefined || patch.resetTwoFactor) ? { 'set-cookie': sessionCookie(req, await getUser(u.email), { m: sessionClaims(req)?.m && !patch.resetTwoFactor ? 1 : undefined, s: sessionClaims(req)?.s }) } : undefined;
     return Response.json(u, { headers });

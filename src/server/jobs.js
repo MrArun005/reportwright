@@ -152,7 +152,7 @@ export async function linkJob(id) {
   const job = t ? JSON.parse(t) : null;
   if (!job?.download) return null;
   try {
-    const p = job.owner ? await principalFromId(job.owner, job.ownerKey, { session: !!job.ownerSession, since: job.ownerSince || null }) : defaultPrincipal();
+    const p = job.owner ? await principalFromId(job.owner, job.ownerKey, { session: !!job.ownerSession, since: job.ownerSince || null, madeAt: job.createdAt }) : defaultPrincipal();
     if (job.templateRef) await loadTemplate(job.templateRef, p); else if (!canDesign(p)) return null;
   } catch { return null; }
   return job;
@@ -238,7 +238,7 @@ async function run(job, owner, stopAfter) {
   // as the owner is now: the template must still be theirs to view; an inline definition needs a designer or a service.
   // Checked at the start (throws: the job fails, workOnce) and again before every item.
   const allowed = async () => {
-    const p = job.owner ? await principalFromId(job.owner, job.ownerKey, { session: !!job.ownerSession, since: job.ownerSince || null }) : defaultPrincipal(); // no owner: no one's
+    const p = job.owner ? await principalFromId(job.owner, job.ownerKey, { session: !!job.ownerSession, since: job.ownerSince || null, madeAt: job.createdAt }) : defaultPrincipal(); // no owner: no one's
     await loadTemplate(job.templateRef || def, p);
     return p;
   };
@@ -374,7 +374,7 @@ async function notify(job) {
   const headers = { 'content-type': 'application/json', 'user-agent': 'Pagewright' };
   if (process.env.PW_WEBHOOK_SECRET) headers['x-pagewright-signature'] = 'sha256=' + crypto.createHmac('sha256', process.env.PW_WEBHOOK_SECRET).update(body).digest('hex');
   try {
-    const owner = job.owner ? await principalFromId(job.owner, job.ownerKey, { session: !!job.ownerSession, since: job.ownerSince || null }) : defaultPrincipal(); // as the owner is now
+    const owner = job.owner ? await principalFromId(job.owner, job.ownerKey, { session: !!job.ownerSession, since: job.ownerSince || null, madeAt: job.createdAt }) : defaultPrincipal(); // as the owner is now
     const res = await serverFetch(job.self, { internal: canDesign(owner) })(job.webhook, { method: 'POST', headers, body });
     job.webhookStatus = res.status;
   } catch (e) { job.webhookStatus = `error: ${e.message}`; }

@@ -6,7 +6,7 @@ import { authenticate, ensureAdmin, normEmail, secondFactor } from '@/server/use
 import { accountsOn, sessionSecret, sessionCookie, mfaCookie } from '@/server/session.js';
 import { loginAttempt, clientAddress } from '@/server/limits.js';
 import { getSettings } from '@/server/settings.js';
-import { issueEnrolCode } from '@/server/users.js';
+import { issueEnrolCode, updateUser } from '@/server/users.js';
 import { mailOn, sendMail } from '@/server/mail.js';
 import { audit } from '@/server/audit.js';
 import { passwordLoginOn } from '@/server/sso.js';
@@ -39,7 +39,16 @@ export async function POST(req) {
     if (need === 'enrol' && mailOn()) {
       // a first enrolment needs the password and the mailbox: a code goes to the account's address
       const code = await issueEnrolCode(user.email);
-      await sendMail({ to: [user.email], subject: 'Your Pagewright enrolment code', text: `Your code to set up two-factor sign-in: ${code}\n\nIt works for 15 minutes. If you did not just sign in, tell an admin: someone has your password.\n` });
+      if (code) {
+        try {
+          await sendMail({ to: [user.email], subject: 'Your Pagewright enrolment code', text: `Your code to set up two-factor sign-in: ${code}\n\nIt works for 15 minutes. If you did not just sign in, tell an admin: someone has your password.\n` });
+        } catch (e) {
+          console.error(`[pagewright] enrolment code mail: ${e.message}`);
+          await audit('auth.mfa_failed', { req, actor: `user:${user.email}`, status: 'failed', detail: { reason: 'enrol mail failed' } });
+          await updateUser(user.email, { clearEnrolCode: true }).catch(() => {});
+          return Response.json({ error: 'The enrolment code could not be mailed. Try again later, or ask an admin.' }, { status: 503 });
+        }
+      }
       return Response.json({ mfa: need, emailed: true }, { headers: { 'set-cookie': mfaCookie(req, user, true), 'cache-control': 'no-store' } });
     }
     if (need) return Response.json({ mfa: need }, { headers: { 'set-cookie': mfaCookie(req, user, need === 'enrol'), 'cache-control': 'no-store' } });

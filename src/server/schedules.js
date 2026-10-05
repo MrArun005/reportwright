@@ -87,11 +87,11 @@ export function deleteSchedule(id, p = defaultPrincipal()) {
 export async function runSchedule(s, reason = 'manual') {
   const rec = (await readOne(s.id)) || s;
   s = rec; // what is stored now (an edit since the caller read it counts)
-  const principal = rec.owner ? await principalFromId(rec.owner, rec.ownerKey, { session: !!rec.ownerSession, since: rec.ownerSince }) : defaultPrincipal(); // no owner: no one's (fail closed)
+  const principal = rec.owner ? await principalFromId(rec.owner, rec.ownerKey, { session: !!rec.ownerSession, since: rec.ownerSince, madeAt: rec.createdAt }) : defaultPrincipal(); // no owner: no one's (fail closed)
   const report = typeof s.template === 'string' ? s.template : null;
   let job;
   try {
-    job = await createBatch({ template: s.template, items: s.items, itemsFrom: s.itemsFrom, format: s.format, output: s.output, webhook: s.webhook, email: s.email, fileName: s.fileName, pdfa: s.pdfa, sign: s.sign, fromSnapshot: s.fromSnapshot, schedule: { id: s.id, reason } }, undefined, principal, { session: !!rec.ownerSession, since: rec.ownerSince });
+    job = await createBatch({ template: s.template, items: s.items, itemsFrom: s.itemsFrom, format: s.format, output: s.output, webhook: s.webhook, email: s.email, fileName: s.fileName, pdfa: s.pdfa, sign: s.sign, fromSnapshot: s.fromSnapshot, schedule: { id: s.id, reason } }, undefined, principal, { session: !!rec.ownerSession, since: rec.ownerSince || (principal.kind === 'user' ? (await getUser(principal.email))?.createdAt : null) || null });
   } catch (e) {
     await audit('schedule.run', { actor: rec.owner || 'nobody', report, status: 'failed', detail: { schedule: s.id, reason, error: e.message } });
     throw e;

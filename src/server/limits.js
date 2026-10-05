@@ -15,14 +15,21 @@ import { store } from './storage/index.js';
 export async function attempt(key, limit, windowMs) {
   sweepSoon();
   const name = `rl:${crypto.createHash('sha256').update(key).digest('hex').slice(0, 24)}`;
+  // a key found full is refused from memory for 5 s: a flood of refused tries does not each cost `limit` lease reads
+  const full = fullKeys.get(name);
+  if (full && full > Date.now()) return { ok: false, retryAfter: Math.ceil(windowMs / 1000), release: async () => {} };
   const owner = crypto.randomBytes(8).toString('hex');
   const start = crypto.randomInt(limit);
   for (let k = 0; k < limit; k++) {
     const slot = `${name}:${(start + k) % limit}`;
-    if (await store().lease(slot, owner, windowMs)) return { ok: true, retryAfter: 0, release: () => store().release(slot, owner) };
+    if (await store().lease(slot, owner, windowMs)) return { ok: true, retryAfter: 0, release: async () => { fullKeys.delete(name); await store().release(slot, owner); } };
   }
+  if (fullKeys.size > 10000) fullKeys.clear();
+  fullKeys.set(name, Date.now() + 5000);
   return { ok: false, retryAfter: Math.ceil(windowMs / 1000), release: async () => {} };
 }
+/** @type {Map<string, number>} */
+const fullKeys = (/** @type {any} */ (globalThis).__pwFullKeys ||= new Map());
 
 /** The client address for limits: the last X-Forwarded-For hop (our own reverse proxy's), as the audit log. @param {Request} req */
 export const clientAddress = (req) => (req.headers.get('x-forwarded-for') || '').split(',').pop()?.trim().slice(0, 64) || '-';

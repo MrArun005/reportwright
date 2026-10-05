@@ -160,6 +160,7 @@ async function updateUserNow(email, patch) {
   if (patch.sso !== undefined) { next.sso = patch.sso; delete next.allowSso; }
   if (patch.password !== undefined) { next.passwordHash = await hashPassword(patch.password); delete next.reset; }
   if (patch.resetTwoFactor) { delete next.totp; delete next.totpPending; delete next.recovery; }
+  if (patch.clearEnrolCode) delete next.enrolCode;
   if (patch.password !== undefined || patch.resetTwoFactor || (next.disabled && !u.disabled)) next.sessionVersion = (u.sessionVersion || 0) + 1;
   await keepAnAdmin(u, next);
   await save(next);
@@ -199,13 +200,15 @@ export function secondFactor(u, settings) {
 const ENROL_MS = 15 * 60 * 1000;
 /**
  * A one-time code mailed to the account before a first enrolment at sign-in (the password alone must not be enough to
- * bind an authenticator: whoever has it could enrol first). Returns the code (to mail), stores only its hash.
+ * bind an authenticator: whoever has it could enrol first). Returns the code (to mail), stores only its hash; null while
+ * an earlier code is still good (nothing new to mail).
  * @param {string} email
  */
 export function issueEnrolCode(email) {
   return withLock('acl', async () => {
     const u = await getUser(email);
     if (!u) throw fail('No such user.', 404);
+    if (u.enrolCode?.expires > Date.now()) return null; // the code mailed earlier still stands (a new sign-in must not void it)
     const code = String(crypto.randomInt(0, 1e8)).padStart(8, '0');
     await save({ ...u, enrolCode: { hash: crypto.createHash('sha256').update(`${u.email}.${code}`).digest('hex'), expires: Date.now() + ENROL_MS } });
     return code;
