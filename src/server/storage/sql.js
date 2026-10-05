@@ -118,6 +118,9 @@ export function sqlStore(url) {
     if (!conns.has(url)) {
       const ready = connect(url, dialect).then(async (run) => {
         const schema = async (run) => {
+          // a database already at the latest schema (every start after the first, e.g. a serverless cold start): one
+          // read instead of a dozen CREATE ... IF NOT EXISTS round trips
+          try { const [row] = await run("SELECT v FROM pw_meta WHERE k = 'schema'"); if (row && Number(row.v) >= MIGRATIONS[MIGRATIONS.length - 1].v) return; } catch { /* no pw_meta yet: a new database */ }
           for (const t of Object.values(TABLES)) await run(create(t, `id VARCHAR(255) PRIMARY KEY, data ${text} NOT NULL, updated_at VARCHAR(32) NOT NULL`));
           await run(create('pw_report_versions', `id VARCHAR(255) NOT NULL, stamp VARCHAR(32) NOT NULL, data ${text} NOT NULL, PRIMARY KEY (id, stamp)`));
           await run(create('pw_leases', 'name VARCHAR(255) PRIMARY KEY, owner VARCHAR(255) NOT NULL, expires_at BIGINT NOT NULL'));
