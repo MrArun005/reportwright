@@ -44,6 +44,9 @@ function evalSafe(v, ctx, lc, who) {
     return { v: '#Error', err: true };
   }
 }
+/** The row arrays of a group's sibling instances, once per sibling list (data bar maxima, ranks over groups). */
+const SIBS = new WeakMap();
+const sibRows = (sibs) => { let r = SIBS.get(sibs); if (!r) SIBS.set(sibs, r = sibs.map(b => b.rows)); return r; };
 function textOf(raw, st, ctx, lc) {
   if (typeof raw === 'string') return raw;
   if (raw == null && st.nullText != null) return String(st.nullText); // what a null shows (JasperReports prints "null")
@@ -697,7 +700,7 @@ register('table', {
         if (lc.rowBudget?.cut || shown.has(bk)) return;
         shown.add(bk);
         // number: GroupIndex(); prevRows: Previous() in a group header or footer
-        const sc = { rows: bk.rows, index: -1, run: [], number: bi + 1, prevRows: bi > 0 ? sibs[bi - 1].rows : null, ...(kids ? { level: depth, recRows: recOf.get(bk) } : {}) };
+        const sc = { rows: bk.rows, index: -1, run: [], number: bi + 1, prevRows: bi > 0 ? sibs[bi - 1].rows : null, siblings: sibRows(sibs), ...(kids ? { level: depth, recRows: recOf.get(bk) } : {}) };
         const gctx = { ...ctx, fields: bk.rows[0], aggRows: bk.rows, aggIndex: undefined, scopes: { ...ctx.scopes, [gname]: sc }, groupKey: bk.key, group: sc };
         if (kids) { gctx.level = depth; if (g.indent) gctx.indent = (ctx.indent || 0) + depth * Number(g.indent); }
         const path = `${parentPath}/${bk.text}`;

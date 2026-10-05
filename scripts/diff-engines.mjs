@@ -41,7 +41,8 @@ function capture(engine) {
   const cp = j.cp.map(p => path.join(o.bench, p)).join(':');
   execFileSync(path.join(JAVA_HOME, 'bin/javac'), ['-nowarn', '-cp', cp, '-d', cls, path.join(ROOT, 'tests/diff/jvm', `${j.main}.java`)], { stdio: 'inherit' });
   const t0 = Date.now();
-  const out = execFileSync(path.join(JAVA_HOME, 'bin/java'), ['-Xmx768m', '-Djava.awt.headless=true', '-cp', `${cls}:${cp}`, j.main, dir], { encoding: 'utf8', maxBuffer: 256 << 20, stdio: ['ignore', 'pipe', 'pipe'] });
+  // java.io.tmpdir inside the work folder: the PDF libraries leave font copies (+~JF….tmp) there, deleted with it
+  const out = execFileSync(path.join(JAVA_HOME, 'bin/java'), ['-Xmx768m', '-Djava.awt.headless=true', `-Djava.io.tmpdir=${dir}`, '-cp', `${cls}:${cp}`, j.main, dir], { encoding: 'utf8', maxBuffer: 256 << 20, stdio: ['ignore', 'pipe', 'pipe'] });
   console.log(`${engine}: ${out.trim().split('\n').pop()} in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   const prev = readTruth(engine)?.cases || {};
   const truth = { engine, tool: engine === 'jrxml' ? 'JasperReports 7.0.8' : 'BIRT 4.25.0', captured: new Date().toISOString().slice(0, 10), cases: o.only ? prev : {} };

@@ -9,6 +9,26 @@ export const ICON_SETS = ['trafficLights', 'arrows', 'symbols', 'flags', 'rating
 const STATE = ['#dc2626', '#f59e0b', '#16a34a']; // low, middle, high
 
 const f = (v) => Math.round(v * 100) / 100;
+/** The largest |value| over the rows of the data region a cell is in (a detail row), or over the sibling instances of
+ *  the group a group cell is in (computed per instance), or null outside a region. Cached per row array. */
+const COLMAX = new WeakMap();
+function columnMax(expr, ctx, lc, who) {
+  if (expr == null || !ctx?.region?.rows) return null;
+  const detail = ctx.aggIndex != null;
+  const sets = detail ? ctx.region.rows.map(r => [r]) : ctx.group?.siblings;
+  if (!sets?.length) return null;
+  let byExpr = COLMAX.get(sets);
+  if (!byExpr) COLMAX.set(sets, byExpr = new Map());
+  if (byExpr.has(expr)) return byExpr.get(expr);
+  let m = null;
+  for (const rs of sets) {
+    const v = num(expr, { ...ctx, fields: rs[0], aggRows: rs, aggIndex: detail ? 0 : undefined }, lc, who);
+    if (v != null && Number.isFinite(v) && (m == null || Math.abs(v) > m)) m = Math.abs(v);
+  }
+  const out = m && m > 0 ? m : null;
+  byExpr.set(expr, out);
+  return out;
+}
 function num(expr, ctx, lc, who) {
   if (expr == null || expr === '') return null;
   try { const v = evalValue(expr, ctx); return v == null || v === '' ? null : Number(v); } catch (e) { lc.warn(`${who}: ${e.message}`); return null; }
@@ -134,7 +154,9 @@ export function paintVisual(v, box, ctx, lc, base, who = 'Visual', opt = {}) {
     return out;
   }
   const val = num(v.value, ctx, lc, who) ?? 0;
-  const max = num(v.max, ctx, lc, who) ?? Math.max(val, 1);
+  // no max: the largest value in the cell's column (the region's rows; a group cell, its sibling groups'), so the
+  // bars compare (N10: every bar was full); a value alone has nothing to compare with
+  const max = num(v.max, ctx, lc, who) ?? columnMax(v.value, ctx, lc, who) ?? Math.max(val, 1);
   const frac = Math.max(0, Math.min(1, max ? val / max : 0));
   if (v.type === 'databar') {
     // in a cell: the bar spans the text line and the value sits on its neighbours' baseline
@@ -143,7 +165,8 @@ export function paintVisual(v, box, ctx, lc, base, who = 'Visual', opt = {}) {
     if (v.showValue !== false) {
       const key = resolveFontKey(base.fontFamily, 'normal', 'normal');
       const size = line ? line.size : Math.min(h * 0.75, Number(base.fontSize) || 8);
-      const s = toText(val, v.format || 'N0', ctx);
+      // the label: the visual's format, else the cell's own (0.5 printed as 1 under N0)
+      const s = toText(val, v.format || base.format || 'N0', ctx);
       const tw = lc.m.width(s, key, size);
       const inside = w * frac > tw + 6;
       out.push({ t: 'text', font: key, size, color: inside ? '#ffffff' : '#374151', lines: [{ x: inside ? x + w * frac - tw - 3 : x + w * frac + 3, y: line ? line.baseline : y + h / 2 + size * 0.35, text: s, w: tw }] });

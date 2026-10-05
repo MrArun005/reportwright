@@ -155,3 +155,18 @@ describe('N8: side-by-side regions with keep-together groups', () => {
     for (const p of m.pages) for (const it of p.items) for (const l of it.lines || []) if (/^\d+$/.test(l.text)) expect(l.y).toBeLessThan(footerTop);
   });
 });
+
+describe('N10: data bars compare across the column', () => {
+  it('detail rows and group cells', async () => {
+    const d = { $schema: 'pagewright/report@1', page: { size: 'A4' }, dataSources: [{ name: 'S', type: 'json', data: [{ g: 'A', v: 5 }, { g: 'B', v: 10 }, { g: 'B', v: 10 }, { g: 'C', v: 20 }] }], dataSets: [{ name: 'D', source: 'S', path: '$' }],
+      sections: { body: { height: 100, items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 200, h: 40, dataSet: 'D', columns: [{ width: 200 }],
+        groups: [{ name: 'G', expr: '=Fields.g', footer: [{ height: 14, cells: [{ value: '=Sum(Fields.v)', visual: { type: 'databar', value: '=Sum(Fields.v)' } }] }] }],
+        detail: [{ height: 14, cells: [{ value: '=Fields.v', visual: { type: 'databar', value: '=Fields.v' } }] }] }] } } };
+    const m = await render(d, { fontStore });
+    const bars = m.pages[0].items.filter(i => i.t === 'rect' && /cc$/.test(i.fill || '')).map(r => Math.round(r.w));
+    // detail 5, 10, 10, 20 of max 20; group sums 5, 20, 20 of max 20
+    const full = Math.max(...bars);
+    // in page order: A's row (5) and footer (5 of 20), B's two rows (10, 10) and footer (20), C's row (20) and footer
+    expect(bars.map(b => Math.round((b / full) * 4))).toEqual([1, 1, 2, 2, 4, 4, 4]);
+  });
+});
