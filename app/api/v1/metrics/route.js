@@ -1,10 +1,11 @@
 // GET /api/v1/metrics — Prometheus text: renders by outcome, render durations (a histogram, seconds), queue depth,
-// workers (alive, ready, busy, restarts), memory, SQLite query processes. Needs a service key (or an admin's key with
+// workers (alive, ready, busy, restarts), memory, SQLite query processes, HTTP answers and their durations. Needs a service key (or an admin's key with
 // accounts on), as /api/v1/health.
 import { apiPrincipal } from '@/server/auth.js';
 import { vet } from '@/server/perms.js';
 import { poolStats } from '@/server/pool.js';
 import { sqliteStats } from '@/server/sql/sqlite.js';
+import { httpStats } from '@/server/limits.js';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,6 +32,11 @@ function metricsText() {
   metric('pagewright_render_held_for_memory_total', 'counter', 'Times a render waited because memory was near the limit.', [['', s.totals.heldForMemory]]);
   metric('pagewright_memory_bytes', 'gauge', 'Resident memory and the limit the pool plans for.', [['{kind="rss"}', process.memoryUsage.rss()], ['{kind="limit"}', s.memory.memMB * 1048576]]);
   metric('pagewright_sqlite_queries_total', 'counter', 'SQLite queries run in child processes, and those killed (deadline, memory) or crashed.', [['{outcome="all"}', q.queries], ['{outcome="killed"}', q.killed], ['{outcome="crashed"}', q.crashed]]);
+  const h = httpStats();
+  metric('pagewright_http_requests_total', 'counter', 'HTTP answers by method, route family and status class.', h.counts.map(([k, v]) => { const [m, r, c] = k.split('|'); return [`{method="${m}",route="${r.replace(/["\\\n]/g, '')}",status="${c}"}`, v]; }));
+  out.push('# HELP pagewright_http_request_duration_seconds Time to answer a request.', '# TYPE pagewright_http_request_duration_seconds histogram');
+  h.buckets.forEach((b, i) => out.push(`pagewright_http_request_duration_seconds_bucket{le="${b}"} ${h.hist[i]}`));
+  out.push(`pagewright_http_request_duration_seconds_bucket{le="+Inf"} ${h.n}`, `pagewright_http_request_duration_seconds_sum ${h.sum}`, `pagewright_http_request_duration_seconds_count ${h.n}`);
   metric('pagewright_uptime_seconds', 'gauge', 'Process uptime.', [['', Math.round(process.uptime())]]);
   return out.join('\n') + '\n';
 }

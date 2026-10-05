@@ -71,6 +71,37 @@ const g = /** @type {any} */ (globalThis);
 const PEER = 'x-pw-peer';
 
 /** Stamp each request with its socket address (once per process). */
+/* ---------------- request log and HTTP metrics ---------------- */
+
+const HTTP_BUCKETS = [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30];
+/** @type {{ counts: Map<string, number>, hist: number[], sum: number, n: number }} */
+const H = (g.__pwHttp ||= { counts: new Map(), hist: HTTP_BUCKETS.map(() => 0), sum: 0, n: 0 });
+/** A route's family for labels (bounded: no ids): /api/reports/x/pdf → /api/reports, /viewer/x → /viewer. @param {string} p */
+export const routeFamily = (p) => { const s = String(p || '/').split('?')[0].split('/').filter(Boolean); return s[0] === 'api' ? `/${s.slice(0, s[1] === 'v1' ? 3 : 2).join('/')}` : s[0] === '_next' ? '/_next' : `/${s[0] || ''}`; };
+/** HTTP counts and durations for /api/v1/metrics. */
+export const httpStats = () => ({ counts: [...H.counts], buckets: HTTP_BUCKETS, hist: [...H.hist], sum: H.sum, n: H.n });
+/**
+ * When the answer is sent: count it (method, route family, status class) and, unless PW_REQUEST_LOG=0, write one JSON
+ * line: time, method, path (no query string: it may hold a link signature), status, ms, the request id when an error
+ * gave one, and the client address. Static files are counted, not logged.
+ * @param {any} req @param {any} res
+ */
+function observeRequest(req, res) {
+  if (!res?.once) return;
+  const t0 = process.hrtime.bigint();
+  res.once('finish', () => {
+    const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+    const path = String(req.url || '/').split('?')[0].slice(0, 300);
+    const fam = routeFamily(path);
+    const key = `${req.method}|${fam}|${String(res.statusCode)[0]}xx`;
+    if (H.counts.size < 2000 || H.counts.has(key)) H.counts.set(key, (H.counts.get(key) || 0) + 1);
+    H.n++; H.sum += ms / 1000; HTTP_BUCKETS.forEach((b, i) => { if (ms / 1000 <= b) H.hist[i]++; });
+    if (process.env.PW_REQUEST_LOG === '0' || fam === '/_next' || fam === '/fonts' || fam === '/favicon.ico') return;
+    const id = res.getHeader?.('x-request-id');
+    process.stdout.write(`${JSON.stringify({ level: 'info', time: new Date().toISOString(), msg: 'request', method: req.method, path, status: res.statusCode, ms: Math.round(ms), ...(id ? { requestId: String(id) } : {}), ip: req.socket?.remoteAddress || undefined })}\n`);
+  });
+}
+
 export function trackPeers() {
   if (g.__pwPeers) return;
   g.__pwPeers = true;
@@ -79,7 +110,7 @@ export function trackPeers() {
   for (const S of [http.Server, https.Server]) {
     const emit = S.prototype.emit;
     S.prototype.emit = function (ev, req, ...rest) {
-      if (ev === 'request' && req?.headers) req.headers[PEER] = req.socket?.remoteAddress || '';
+      if (ev === 'request' && req?.headers) { req.headers[PEER] = req.socket?.remoteAddress || ''; observeRequest(req, rest[0]); }
       return emit.call(this, ev, req, ...rest);
     };
   }

@@ -14,9 +14,11 @@ g.__pwSched ||= { timer: null };
 
 /** Every schedule, oldest first. */
 export async function readSchedules() {
-  try {
-    return (await store().list('schedules')).map(r => JSON.parse(r.text)).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
-  } catch { return []; }
+  // a storage error is an error (it was "no schedules": the scheduler then ran nothing, silently); an unreadable
+  // record is skipped and said once
+  const out = [];
+  for (const r of await store().list('schedules')) { try { out.push(JSON.parse(r.text)); } catch { logWarn(`schedule ${r.id}`)(new Error('unreadable record, skipped')); } }
+  return out.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
 }
 const readOne = async (id) => { const t = await store().get('schedules', String(id)); return t ? JSON.parse(t) : null; };
 const save = (s) => store().put('schedules', s.id, JSON.stringify(s));

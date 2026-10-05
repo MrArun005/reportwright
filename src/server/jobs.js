@@ -165,11 +165,10 @@ const mine = (p, job) => { p = vet(p); return p.kind === 'open' || p.kind === 's
 /** @param {string} id @param {import('./perms.js').Principal} [p] */
 export async function getJob(id, p = defaultPrincipal()) {
   if (!/^b_[a-z0-9]+$/.test(id)) return null;
-  try {
-    const t = await store().get('jobs', id);
-    const j = t ? JSON.parse(t) : null;
-    return j && mine(p, j) ? publicJob(j) : null;
-  } catch { return null; }
+  const t = await store().get('jobs', id); // a storage error is a 500, not "no such batch"
+  let j = null;
+  try { j = t ? JSON.parse(t) : null; } catch { logWarn(`job ${id}`)(new Error('unreadable record')); return null; }
+  return j && mine(p, j) ? publicJob(j) : null;
 }
 
 /** @param {import('./perms.js').Principal} [p] */
@@ -179,8 +178,7 @@ export async function getJob(id, p = defaultPrincipal()) {
  * @param {any} [p] @param {{ before?: string|null, limit?: number }} [o]
  */
 export async function listJobPage(p = defaultPrincipal(), { before = null, limit = 50 } = {}) {
-  let names = [];
-  try { names = await store().ids('jobs'); } catch { return { jobs: [], next: null }; }
+  const names = await store().ids('jobs'); // a storage error is a 500, not an empty list
   const n = Math.max(1, Math.min(200, Math.floor(limit) || 50));
   const out = [];
   const ids = names.sort().reverse().filter(x => !before || x < before);

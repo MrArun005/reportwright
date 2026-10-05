@@ -482,7 +482,7 @@ export async function samlLogoutStart(req, user) {
 export async function oidcLogoutUrl(req) {
   if (!oidcOn() || process.env.PW_OIDC_LOGOUT === 'off') return null;
   let d;
-  try { d = await discovery(); } catch { return null; }
+  try { d = await discovery(); } catch (e) { logWarn('oidc logout discovery')(e); return null; } // sign-out here still happens
   const end = d.end_session_endpoint;
   if (typeof end !== 'string' || (!/^https:\/\//.test(end) && process.env.PW_OIDC_ALLOW_HTTP !== '1')) return null;
   const u = new URL(end);
