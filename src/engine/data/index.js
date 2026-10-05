@@ -574,3 +574,6 @@ export function sourceRows(raw, path) {
   return v == null ? [] : Array.isArray(v) ? v : [v];
 }
 export { isXmlDoc };
+
+/** A source URL template filled with parameter values, as a fetch would use it (the designer's $metadata call). */
+export const sourceUrl = (url, params) => urlFrom(url || '', { params: params || {}, globals: {}, dataSets: {}, fields: null });

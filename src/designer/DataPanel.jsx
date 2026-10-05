@@ -3,7 +3,10 @@ import { useEffect, useState } from 'react';
 import { rowArrays, bestRows } from './explore.js';
 import { useDesigner, walk } from './store.js';
 import { MIME_FIELD, MIME_DATASET } from './Canvas.jsx';
-import { loadSources, buildDataSets, detectFields, jsonPath } from '@/engine/data/index.js';
+import { loadSources, buildDataSets, detectFields, jsonPath, sourceRows, isXmlDoc } from '@/engine/data/index.js';
+import { xmlRowPaths, bestXmlRows } from '@/engine/data/xml.js';
+import { parseXml } from '@/importers/xml.js';
+import ODataEditor from './ODataEditor.jsx';
 import { resolveParameters } from '@/engine/index.js';
 import { functionTable } from '@/engine/expr/evaluate.js';
 import { Dialog, Field, TextInput, Select, Check } from './ui.jsx';
@@ -232,8 +235,13 @@ function ParamDialog({ index, onClose }) {
 
 function SourceDialog({ index, onClose }) {
   const def = useDesigner(s => s.def);
+  const lang = useDesigner(s => s.lang);
+  const T = (k, v) => t(lang, k, v);
   const orig = index != null ? def.dataSources[index] : null;
-  const [s, setS] = useState(() => ({ name: '', type: 'rest', method: 'GET', url: '', useProxy: false, ...(orig || {}), headersText: orig?.headers ? JSON.stringify(orig.headers, null, 2) : '', dataText: orig?.data != null ? (typeof orig.data === 'string' ? orig.data : JSON.stringify(orig.data, null, 2)) : '' }));
+  const [s, setS] = useState(() => ({ name: '', type: 'rest', method: 'GET', url: '', useProxy: false, ...(orig || {}), headersText: orig?.headers ? JSON.stringify(orig.headers, null, 2) : '', dataText: orig?.data != null ? (typeof orig.data === 'string' ? orig.data : JSON.stringify(orig.data, null, 2)) : '',
+    nsText: Object.entries(orig?.namespaces || {}).map(([k, v]) => `${k}=${v}`).join('\n') }));
+  const xmlish = s.type === 'xml' || s.type === 'soap';
+  const fetched = ['rest', 'csv', 'graphql', 'xml', 'soap', 'odata'].includes(s.type);
   let err = !NAME.test(s.name) ? 'The name must start with a letter and hold only letters, digits and _' : !uniqueIn(def.dataSources, s.name, index) ? 'Another source has this name' : null;
   let headers;
   if (!err && s.headersText.trim()) { try { headers = JSON.parse(s.headersText); } catch { err = 'Headers must be a JSON object'; } }
@@ -243,6 +251,23 @@ function SourceDialog({ index, onClose }) {
   if (!err && s.type === 'csv' && ((s.separator && s.separator !== 'tab' && s.separator.length !== 1) || (s.quote && s.quote.length !== 1))) err = 'The separator and the quote are one character each';
   if (!err && (s.type === 'rest' || s.type === 'graphql') && !s.url) err = 'Give a URL';
   if (!err && s.type === 'graphql' && !s.query) err = 'Give a GraphQL query';
+  if (!err && s.type === 'xml' && !s.url && !s.dataText.trim()) err = T('srcGiveUrlOrXml');
+  if (!err && (s.type === 'soap' || s.type === 'odata') && !s.url) err = 'Give a URL';
+  if (!err && s.type === 'odata' && !s.entitySet) err = T('odPickSet');
+  let namespaces;
+  if (!err && xmlish && s.nsText.trim()) {
+    namespaces = {};
+    for (const l of s.nsText.split('\n').map(x => x.trim()).filter(Boolean)) {
+      const m = /^([A-Za-z_][\w.-]*)\s*=\s*(\S+)$/.exec(l);
+      if (!m) { err = T('srcBadNamespaces'); break; }
+      namespaces[m[1]] = m[2];
+    }
+  }
+  if (!err && s.type === 'soap') {
+    if (!(s.envelope || '').trim()) err = T('srcGiveEnvelope');
+    else if (/["\r\n]/.test(s.soapAction || '')) err = T('srcBadAction');
+    else { try { parseXml(s.envelope.replace(/\{\{|\}\}/g, '').replace(/\{[^}]*\}/g, 'x')); } catch (e) { err = T('srcBadEnvelope', { message: e.message }); } }
+  }
   if (!err && s.type === 'sql' && !s.connection) err = 'Pick a connection';
   if (!err && s.type === 'sql' && !/^\s*(select|with)\b/i.test(s.query || '')) err = 'Write a SELECT query';
   const [conns, setConns] = useState(null);
@@ -261,7 +286,21 @@ function SourceDialog({ index, onClose }) {
 
   const save = () => {
     const v = { name: s.name, type: s.type };
-    if (s.type === 'rest' || s.type === 'graphql' || (s.type === 'csv' && s.url)) { v.url = s.url; v.method = s.type === 'graphql' ? 'POST' : s.method; if (headers) v.headers = headers; if (s.useProxy) v.useProxy = true; if (s.body && s.method !== 'GET') v.body = s.body; }
+    if (s.type === 'rest' || s.type === 'graphql' || ((s.type === 'csv' || s.type === 'xml') && s.url)) { v.url = s.url; v.method = s.type === 'graphql' ? 'POST' : s.method; if (headers) v.headers = headers; if (s.useProxy) v.useProxy = true; if (s.body && s.method !== 'GET') v.body = s.body; }
+    if (s.type === 'xml' && !s.url) v.data = s.dataText;
+    if (xmlish && namespaces) v.namespaces = namespaces;
+    if (s.type === 'soap') { v.url = s.url; if (headers) v.headers = headers; v.soapAction = s.soapAction || ''; if (s.soapVersion === '1.2') v.soapVersion = '1.2'; v.envelope = s.envelope; }
+    if (s.type === 'odata') {
+      v.url = s.url; if (headers) v.headers = headers; if (s.useProxy) v.useProxy = true;
+      v.entitySet = s.entitySet;
+      for (const k of ['select', 'expand']) if (s[k]?.length) v[k] = s[k];
+      const fl = (s.filters || []).filter(f => f.field);
+      if (fl.length) v.filters = fl.map(f => ({ field: f.field, op: f.op || 'eq', value: f.value ?? '', ...(f.type ? { type: f.type } : {}) }));
+      const ob = (s.orderby || []).filter(o => o.field);
+      if (ob.length) v.orderby = ob;
+      for (const k of ['top', 'skip', 'maxPages']) if (s[k] != null && String(s[k]).trim() !== '') v[k] = /^\d+$/.test(String(s[k]).trim()) ? Number(s[k]) : s[k];
+      if (s.types && Object.keys(s.types).length) v.types = s.types;
+    }
     if (s.type === 'graphql') { v.query = s.query || ''; if (s.variables) v.variables = s.variables; }
     if (s.type === 'json') v.data = data;
     if (s.type === 'csv' && !s.url) v.data = s.dataText;
@@ -292,21 +331,36 @@ function SourceDialog({ index, onClose }) {
       footer={<>{orig && <button className="btn danger" style={{ marginRight: 'auto' }} onClick={del}>Delete</button>}<button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!!err} onClick={save}>Save</button></>}>
       <div className="grid2">
         <Field label="Name"><TextInput value={s.name} onChange={v => setS({ ...s, name: v })} autoFocus /></Field>
-        <Field label="Type"><Select value={s.type} options={[{ value: 'rest', label: 'REST API (JSON)' }, { value: 'json', label: 'Inline JSON' }, { value: 'csv', label: 'CSV' }, { value: 'graphql', label: 'GraphQL' }, { value: 'sql', label: 'SQL database (on the server)' }]} onChange={v => setS({ ...s, type: v })} /></Field>
+        <Field label="Type"><Select value={s.type} options={[{ value: 'rest', label: 'REST API (JSON)' }, { value: 'json', label: 'Inline JSON' }, { value: 'csv', label: 'CSV' }, { value: 'xml', label: T('srcTypeXml') }, { value: 'soap', label: T('srcTypeSoap') }, { value: 'odata', label: T('srcTypeOData') }, { value: 'graphql', label: 'GraphQL' }, { value: 'sql', label: 'SQL database (on the server)' }]} onChange={v => setS({ ...s, type: v })} /></Field>
       </div>
-      {(s.type === 'rest' || s.type === 'csv' || s.type === 'graphql') && <>
-        <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: 8 }}>
-          <Field label="Method"><Select value={s.method} options={['GET', 'POST']} onChange={v => setS({ ...s, method: v })} /></Field>
-          <Field label="URL" hint="Use {Parameters.x} for values. A relative URL calls this app."><TextInput value={s.url} onChange={v => setS({ ...s, url: v })} mono placeholder="/api/... or https://..." /></Field>
+      {fetched && <>
+        <div style={{ display: 'grid', gridTemplateColumns: s.type === 'soap' || s.type === 'odata' ? '1fr' : '110px 1fr', gap: 8 }}>
+          {s.type !== 'soap' && s.type !== 'odata' && <Field label="Method"><Select value={s.method} options={['GET', 'POST']} onChange={v => setS({ ...s, method: v })} /></Field>}
+          <Field label="URL" hint={s.type === 'odata' ? T('odServiceHint') : s.type === 'xml' ? T('srcXmlUrlHint') : 'Use {Parameters.x} for values. A relative URL calls this app.'}><TextInput value={s.url} onChange={v => setS({ ...s, url: v })} mono placeholder="/api/... or https://..." /></Field>
         </div>
+        {s.type === 'soap' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 8 }}>
+          <Field label={T('srcSoapAction')}><TextInput value={s.soapAction || ''} onChange={v => setS({ ...s, soapAction: v })} mono placeholder="http://tempuri.org/GetOrders" /></Field>
+          <Field label={T('srcSoapVersion')}><Select value={s.soapVersion || '1.1'} options={['1.1', '1.2']} onChange={v => setS({ ...s, soapVersion: v })} /></Field>
+        </div>}
+        {s.type === 'soap' && <Field label={T('srcEnvelope')} hint={T('srcEnvelopeHint')}>
+          <textarea className="textarea" rows={9} value={s.envelope || ''} onChange={e => setS({ ...s, envelope: e.target.value })} style={{ fontFamily: 'var(--mono)' }} spellCheck={false} />
+        </Field>}
+        {s.type === 'soap' && <div><button type="button" className="btn sm" onClick={() => setS({ ...s, envelope: envelopeTemplate(s.soapVersion) })}>{T('srcEnvelopeTemplate')}</button></div>}
         <Field label="Headers (JSON)"><textarea className="textarea" rows={3} value={s.headersText} onChange={e => setS({ ...s, headersText: e.target.value })} placeholder='{"Authorization": "Bearer {Parameters.token}"}' /></Field>
-        {s.method === 'POST' && s.type !== 'graphql' && <Field label="Body"><textarea className="textarea" rows={3} value={s.body || ''} onChange={e => setS({ ...s, body: e.target.value })} /></Field>}
+        {s.method === 'POST' && !['graphql', 'soap', 'odata'].includes(s.type) && <Field label="Body"><textarea className="textarea" rows={3} value={s.body || ''} onChange={e => setS({ ...s, body: e.target.value })} /></Field>}
         {s.type === 'graphql' && <>
           <Field label="GraphQL query"><textarea className="textarea" rows={5} value={s.query || ''} onChange={e => setS({ ...s, query: e.target.value })} placeholder="query ($id: ID!) { account(id: $id) { name payments { due amount } } }" /></Field>
           <Field label="Variables (JSON, {Parameters.x} allowed)"><textarea className="textarea" rows={2} value={s.variables || ''} onChange={e => setS({ ...s, variables: e.target.value })} placeholder='{"id": "{Parameters.accountId}"}' /></Field>
         </>}
-        <Check label="Call through the server proxy (for CORS; the host must be in PW_PROXY_ALLOW)" checked={s.useProxy} onChange={v => setS({ ...s, useProxy: v })} />
+        {s.type !== 'soap' && <Check label="Call through the server proxy (for CORS; the host must be in PW_PROXY_ALLOW)" checked={s.useProxy} onChange={v => setS({ ...s, useProxy: v })} />}
+        {s.type === 'odata' && <ODataEditor s={s} setS={setS} T={T} />}
       </>}
+      {xmlish && <Field label={T('srcNamespaces')} hint={T('srcNamespacesHint')}>
+        <textarea className="textarea" rows={2} value={s.nsText} onChange={e => setS({ ...s, nsText: e.target.value })} placeholder="o=urn:example:orders" style={{ fontFamily: 'var(--mono)' }} spellCheck={false} />
+      </Field>}
+      {s.type === 'xml' && !s.url && <Field label={T('srcXmlData')}>
+        <textarea className="textarea" rows={10} value={s.dataText} onChange={e => setS({ ...s, dataText: e.target.value })} style={{ fontFamily: 'var(--mono)' }} spellCheck={false} />
+      </Field>}
       {s.type === 'sql' && <>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'end' }}>
           <Field label="Connection" hint="Set up on the server as PW_DB_<NAME> (SQLite, Postgres or MySQL).">
@@ -334,6 +388,15 @@ function SourceDialog({ index, onClose }) {
   );
 }
 
+/** A starting SOAP envelope: replace the method, its namespace and the parameters. */
+const envelopeTemplate = (version) => `<soap:Envelope xmlns:soap="${version === '1.2' ? 'http://www.w3.org/2003/05/soap-envelope' : 'http://schemas.xmlsoap.org/soap/envelope/'}">
+  <soap:Body>
+    <GetOrders xmlns="http://tempuri.org/">
+      <customerId>{Parameters.customer}</customerId>
+    </GetOrders>
+  </soap:Body>
+</soap:Envelope>`;
+
 const asList = (v) => (v == null ? [] : Array.isArray(v) ? v : [v]);
 
 function DataSetDialog({ index, onClose, onSaved }) {
@@ -360,7 +423,7 @@ function DataSetDialog({ index, onClose, onSaved }) {
   const rawRowsOf = async (ds, seen = new Set()) => {
     if (!ds || seen.has(ds.name)) return [];
     seen.add(ds.name);
-    if (!ds.relation) return asList(jsonPath(await loadSourceRaw(ds.source), ds.path || '$'));
+    if (!ds.relation) return sourceRows(await loadSourceRaw(ds.source), ds.path || '$');
     const up = await rawRowsOf((useDesigner.getState().def.dataSets || []).find(x => x.name === ds.relation.parent), seen);
     return up.flatMap(r => asList(jsonPath(r, ds.relation.path || '$')));
   };
@@ -375,8 +438,8 @@ function DataSetDialog({ index, onClose, onSaved }) {
     setExplore({ state: 'loading' });
     try {
       const raw = await loadRaw();
-      const arrays = rowArrays(raw);
-      setExplore({ state: 'done', arrays, best: bestRows(raw)?.path, raw });
+      const xml = isXmlDoc(raw); // XML: repeating elements, by XPath
+      setExplore({ state: 'done', arrays: xml ? xmlRowPaths(raw) : rowArrays(raw), best: (xml ? bestXmlRows(raw) : bestRows(raw))?.path, raw });
     } catch (e) { setExplore({ state: 'error', message: e.message }); }
   };
   const keepFields = (list) => { const keep = new Map(d.fields.map(f => [f.name, f])); return detectFields(list).map(f => keep.get(f.name) || f).concat(d.fields.filter(f => f.expr)); };
@@ -386,7 +449,7 @@ function DataSetDialog({ index, onClose, onSaved }) {
       setD({ ...d, relation: { ...d.relation, path }, fields: keepFields(rows) });
       setDetect({ state: 'done', rows: rows.length });
     } else {
-      const list = asList(jsonPath(explore.raw, path));
+      const list = sourceRows(explore.raw, path);
       setD({ ...d, path, fields: keepFields(list) });
       setDetect({ state: 'done', rows: list.length });
     }
@@ -398,9 +461,10 @@ function DataSetDialog({ index, onClose, onSaved }) {
       let list;
       if (nested) list = await rawRowsOf(d);
       else {
-        const found = jsonPath(await loadSourceRaw(d.source), d.path || '$');
-        if (found == null) throw new Error(T('dsNothingAt', { path: d.path }));
-        list = asList(found);
+        const raw = await loadSourceRaw(d.source);
+        if (!isXmlDoc(raw) && jsonPath(raw, d.path || '$') == null) throw new Error(T('dsNothingAt', { path: d.path }));
+        list = sourceRows(raw, d.path || '$');
+        if (!list.length && isXmlDoc(raw)) throw new Error(T('dsNothingAt', { path: d.path }));
       }
       setD({ ...d, fields: keepFields(list) });
       setDetect({ state: 'done', rows: list.length });
@@ -468,7 +532,7 @@ function DataSetDialog({ index, onClose, onSaved }) {
       ) : (
         <>
           <Field label={T('dsSource')}><Select value={d.source} options={(def.dataSources || []).map(s => s.name)} onChange={v => setD({ ...d, source: v })} /></Field>
-          <Field label={T('dsPath')} hint={T('dsPathHint')}><TextInput value={d.path} onChange={v => setD({ ...d, path: v })} mono /></Field>
+          <Field label={T('dsPath')} hint={['xml', 'soap'].includes(def.dataSources?.find(x => x.name === d.source)?.type) ? T('dsXPathHint') : T('dsPathHint')}><TextInput value={d.path} onChange={v => setD({ ...d, path: v })} mono /></Field>
         </>
       )}
       <div className="btnrow" style={{ alignItems: 'center' }}>
