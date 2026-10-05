@@ -324,3 +324,14 @@ describe('visual SQL query builder: the SELECT it writes', () => {
     expect(suggestJoins({ tables: b.tables }, schema, 'c')).toEqual([{ type: 'inner', from: { t: 'o', c: 'customer_id' }, to: { t: 'c', c: 'id' } }]);
   });
 });
+
+import { normalizeSchema } from '../../src/designer/SqlBuilder.jsx';
+describe('the SQL builder reads the server schema payload', () => {
+  it('relations become per-table foreign keys; key marks the primary key', () => {
+    const t = normalizeSchema({ dialect: 'sqlite', tables: [{ name: 'orders', columns: [{ name: 'id', type: 'integer', key: true }, { name: 'customer_id', type: 'integer', key: false }] }, { name: 'customers', columns: [{ name: 'id', type: 'integer', key: true }] }],
+      relations: [{ from: { table: 'orders', column: 'customer_id' }, to: { table: 'customers', column: 'id' } }] });
+    expect(t[0].foreignKeys).toEqual([{ columns: ['customer_id'], refTable: 'customers', refColumns: ['id'] }]);
+    expect(t[0].columns[0].pk).toBe(true);
+    expect(suggestJoins({ tables: [{ name: 'orders', alias: 'o' }, { name: 'customers', alias: 'c' }] }, t, 'c')).toHaveLength(1);
+  });
+});

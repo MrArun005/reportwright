@@ -11,7 +11,17 @@ import { resolveParameters } from '@/engine/index.js';
 const MIME_COL = 'application/x-pw-sql-column';
 const schemas = new Map(); // connection → schema (this page)
 
-/** GET /api/data/sql/schema?connection= → { tables: [{ name, columns: [{ name, type, pk? }], foreignKeys? }] } */
+/**
+ * The schema route's answer as the builder reads it. The server sends { tables: [{ name, columns: [{ name, type, key }] }],
+ * relations: [{ from: { table, column }, to: { table, column } }] }; foreign keys per table (and pk) are accepted too.
+ */
+export function normalizeSchema(body) {
+  const tables = (Array.isArray(body?.tables) ? body.tables : []).map(t => ({ ...t, columns: (t.columns || []).map(c => ({ ...c, pk: c.pk ?? c.key ?? false })), foreignKeys: [...(t.foreignKeys || [])] }));
+  const by = new Map(tables.map(t => [t.name, t]));
+  for (const r of Array.isArray(body?.relations) ? body.relations : []) by.get(r.from?.table)?.foreignKeys.push({ columns: [r.from.column], refTable: r.to?.table, refColumns: [r.to?.column] });
+  return tables;
+}
+
 function useSchema(connection) {
   const [st, setSt] = useState(() => (schemas.has(connection) ? { tables: schemas.get(connection) } : { loading: !!connection }));
   useEffect(() => {
@@ -22,7 +32,7 @@ function useSchema(connection) {
     fetch(`/api/data/sql/schema?connection=${encodeURIComponent(connection)}`).then(async r => {
       const body = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
-      const tables = Array.isArray(body.tables) ? body.tables : [];
+      const tables = normalizeSchema(body);
       schemas.set(connection, tables);
       if (alive) setSt({ tables });
     }).catch(e => { if (alive) setSt({ error: e.message }); });
