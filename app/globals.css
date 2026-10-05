@@ -320,7 +320,7 @@ a.cell-name:hover { color: var(--accent); }
 .vbar .stat { color: var(--faint); font-size: var(--fs-sm); white-space: nowrap; }
 .vbar .vstats { font-size: var(--fs-xs); }
 @media (max-width: 1400px) { .vbar .vstats { display: none; } }
-.vbody { display: grid; grid-template-columns: auto 1fr; min-height: 0; }
+.vbody { display: grid; grid-template-columns: auto 1fr; grid-template-rows: minmax(0, 1fr); min-height: 0; }
 .vparams { width: 240px; padding: 14px; border-inline-end: 1px solid var(--line); background: var(--panel); display: grid; gap: 12px; align-content: start; overflow: auto; }
 .vparams h3 { margin: 0; font-size: var(--fs-sm); text-transform: uppercase; font-weight: var(--fw-strong); letter-spacing: var(--track-caps); color: var(--muted); }
 .vpages { overflow: auto; padding: 24px 16px 48px; display: flex; flex-direction: column; align-items: center; gap: 18px; min-width: 0; }
@@ -332,7 +332,10 @@ a.cell-name:hover { color: var(--accent); }
 .warnings ul { margin: 4px 0 0; padding-left: 18px; }
 
 /* ---------- designer shell ---------- */
-.designer { display: grid; grid-template-rows: auto 1fr; height: 100%; min-height: 0; }
+/* the app shell is the window's height and never scrolls as a whole: its panes scroll inside (a top bar, banners and
+   the main area in a column; the main area takes what is left) */
+.designer { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
+.designer > .dmain, .designer > .viewer { flex: 1 1 0; min-height: 0; }
 .dtop { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .brand { font-weight: var(--fw-strong); letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; text-decoration: none; color: var(--ink); }
 .brand i { width: 14px; height: 18px; background: var(--accent); border-radius: 2px; display: inline-block; }
@@ -341,7 +344,7 @@ a.cell-name:hover { color: var(--accent); }
 .dtop .spacer { flex: 1; }
 .dtop .saved { color: var(--faint); font-size: var(--fs-sm); }
 .dtop .saved.dirty { color: var(--warn); }
-.dmain { display: grid; grid-template-columns: 236px 1fr 280px; min-height: 0; }
+.dmain { display: grid; grid-template-columns: 236px 1fr 280px; grid-template-rows: minmax(0, 1fr); min-height: 0; }
 .dleft, .dright { background: var(--panel); min-height: 0; overflow: auto; }
 .dleft { border-right: 1px solid var(--line); }
 .dright { border-left: 1px solid var(--line); }
@@ -676,7 +679,6 @@ a.cell-name:hover { color: var(--accent); }
 /* a phone: the page to look at, read-only in spirit; designing needs a wider screen */
 .narrow-note { display: none; }
 @media (max-width: 900px) {
-  .designer { grid-template-rows: auto auto 1fr; }
   .narrow-note { display: block; padding: 8px 12px; background: var(--warn-soft); border-bottom: 1px solid var(--warn-line); color: var(--ink); font-size: var(--fs-sm); }
   .dmain { grid-template-columns: minmax(0, 1fr); }
   .dleft, .dright { display: none; }
