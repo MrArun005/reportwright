@@ -23,11 +23,18 @@ afterEach(() => { Object.assign(limits, keep); for (const k of Object.keys(proce
 describe('statement check (Oracle, Snowflake, BigQuery)', () => {
   it('one statement, no write or session words outside strings and comments', () => {
     for (const d of ['oracle', 'snowflake', 'bigquery']) {
-      expect(() => assertOneRead("select 'delete; drop' as a, \"update\" from t -- insert\n", d), d).not.toThrow();
+      expect(() => assertOneRead("select 'delete; drop' as a, \"region\" from t -- insert\n", d), d).not.toThrow();
       expect(() => assertOneRead('select 1 as a from t;', d)).not.toThrow();
       for (const q of ['select 1 from t; delete from t', 'select 1 from t; select 2 from t', 'select * from t for update', 'select 1 into x from t',
         'select 1 from t /* x */ ; commit', 'with x as (select 1 a from t) delete from t', "select 1 /* unended", "select 'unended"]) expect(() => assertOneRead(q, d), `${d}: ${q}`).toThrow();
     }
+  });
+  it('Oracle: one plain SELECT; no PL/SQL, locks, links or network/file packages, quoted or not', () => {
+    for (const q of ['select "UTL_HTTP".request(\'http://x\') from dual', "select utl_http.request('http://x') as a from dual", 'select sys.dbms_xmlgen.getxml(\'select 1 from dual\') from dual',
+      'select a from t@remote', 'select a from "T"@"REMOTE"', 'with function f return number is begin return 1; end; select f() from dual', 'with procedure p is begin null; end; select 1 from dual',
+      'select a from t for update', 'begin null; end;', 'call p()', 'select httpuritype(\'http://x\').getclob() from dual', 'select a from t for update of "A"', 'select "UPDATE" from t'])
+      expect(() => assertOneRead(q, 'oracle'), q).toThrow();
+    expect(() => assertOneRead('with x as (select a, "B" from t) select a, "B" from x where c = :1', 'oracle')).not.toThrow();
   });
   it('reads strings and comments as each database does, and refuses quoting it does not model', () => {
     // Oracle: no backslash escape, so \' ends the string and what follows is code
@@ -57,12 +64,15 @@ describe('statement check (Oracle, Snowflake, BigQuery)', () => {
 });
 
 /** An oracledb pool whose connection records what it is asked. */
-function oracleMock({ type = 1, rows = [], meta = [{ name: 'A', dbType: { name: 'DB_TYPE_NUMBER' } }], hang = false } = {}) {
+function oracleMock({ type = 1, rows = [], meta = [{ name: 'A', dbType: { name: 'DB_TYPE_NUMBER' } }], hang = false, probe = {} } = {}) {
   const log = [];
+  const answers = { session_privs: [{ P: 'CREATE SESSION' }], ...probe };
   const conn = {
     callTimeout: 0,
     async getStatementInfo(t) { log.push(['info', t]); return { statementType: type }; },
     async execute(t, v, o) {
+      const asked = Object.keys(answers).find(k => new RegExp(`from ${k}\\b|grantee = '${k}'`, 'i').test(t));
+      if (o?.maxRows) return { rows: asked ? answers[asked] : [] }; // the login probe
       log.push(['execute', t, v]);
       if (!o?.resultSet) return {};
       if (hang) await new Promise((_, rej) => { conn.break = async () => { log.push(['break']); rej(Object.assign(new Error('cancelled'), { code: 'NJS-123' })); }; });
@@ -86,6 +96,22 @@ describe('Oracle (mocked oracledb, not live-tested)', () => {
     await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select a from t' }, {})).rejects.toThrow(/one SELECT/);
     expect(log.some(x => x[0] === 'execute')).toBe(false);
   });
+  it('refuses a login that can do more than read (checked before the query)', async () => {
+    for (const [probe, why] of [
+      [{ session_privs: [{ P: 'CREATE SESSION' }, { P: 'CREATE TABLE' }] }, /CREATE TABLE/],
+      [{ session_privs: [{ P: 'CREATE SESSION' }, { P: 'SELECT ANY TABLE' }] }, /ANY/],
+      [{ all_tab_privs: [{ P: 'EXECUTE ON APP.WRITER_FN' }] }, /EXECUTE ON APP.WRITER_FN/],
+      [{ PUBLIC: [{ P: 'UTL_HTTP' }] }, /PUBLIC may run UTL_HTTP/],
+      [{ user_objects: [{ P: 'FUNCTION F' }] }, /owner of FUNCTION F/],
+      [{ all_db_links: [{ P: 'REMOTE' }] }, /database links REMOTE/],
+    ]) {
+      const log = oracleMock({ rows: [{ A: 1 }], probe });
+      await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select a from t' }, {}), JSON.stringify(probe)).rejects.toThrow(why);
+      expect(log.some(x => x[0] === 'execute'), 'nothing ran').toBe(false);
+    }
+    mocks.oracle = { createPool: async () => ({ getConnection: async () => ({ async execute() { throw new Error('ORA-00942: table or view does not exist'); }, async break() {}, async rollback() {}, async close() {} }) }) };
+    await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select a from t' }, {})).rejects.toThrow(/ORA-00942/); // fails closed
+  });
   it('caps rows and bytes, measures a LOB before reading it, refuses LONG and XMLType', async () => {
     oracleMock({ rows: Array.from({ length: 50 }, (_, i) => ({ A: i })) });
     limits.rows = 10;
@@ -101,6 +127,16 @@ describe('Oracle (mocked oracledb, not live-tested)', () => {
       oracleMock({ rows: [{ L: 'x' }], meta: [{ name: 'L', dbType: { name: t }, dbTypeName: t }] });
       await expect(runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select l from t' }, {}), t).rejects.toThrow(/cannot read/);
     }
+  });
+  it('wide rows come in small batches: a batch is never far past the cap', async () => {
+    const asked = [];
+    const log = oracleMock({ rows: Array.from({ length: 300 }, () => ({ W: 'w'.repeat(10) })), meta: [{ name: 'W', dbType: { name: 'DB_TYPE_VARCHAR' }, byteSize: 32767 }] });
+    const orig = mocks.oracle.createPool;
+    mocks.oracle.createPool = async (...a) => { const p = await orig(...a); const c = await p.getConnection(); const ex = c.execute.bind(c); c.execute = async (...x) => { const r = await ex(...x); if (r.resultSet) { const g = r.resultSet.getRows; r.resultSet.getRows = (k) => { asked.push(k); return g(k); }; } return r; }; return { getConnection: async () => c }; };
+    limits.bytes = 1048576;
+    expect(await runSql({ connection: env('ora', 'oracle://u:p@h/S'), query: 'select w from t' }, {})).toHaveLength(300);
+    expect(Math.max(...asked)).toBeLessThanOrEqual(4); // 1 MB / 4 / ~64 kB a row
+    void log;
   });
   it('the deadline breaks the call in flight: 504 on time', async () => {
     const log = oracleMock({ hang: true });
@@ -153,6 +189,15 @@ describe('Snowflake (mocked snowflake-sdk, not live-tested)', () => {
     await expect(runSql({ connection: env('sf', 'snowflake://u:p@acct/DB?role=R'), query: 'select a from t' }, {})).rejects.toThrow(/more than 5 rows/);
     expect(log.cancelled).toBe(1);
   });
+  it('a statement that never answers: 504 on time, and it is cancelled', async () => {
+    let cancelled = 0;
+    mocks.snowflake = { createPool: () => ({ use: async (fn) => fn({ execute: () => ({ cancel: (cb) => { cancelled++; cb?.(); } }) }) }) };
+    limits.ms = 150;
+    const t0 = Date.now();
+    await expect(runSql({ connection: env('sf', 'snowflake://u:p@acct/DB?role=R'), query: 'select a from t' }, {})).rejects.toMatchObject({ status: 504 });
+    expect(Date.now() - t0).toBeLessThan(1000);
+    expect(cancelled).toBe(1);
+  });
   it('never shows the password in an error', async () => {
     snowflakeMock([], { fail: 'Incorrect username or password was specified: Sf-Secret-77' });
     const e = await runSql({ connection: env('sf', 'snowflake://u:Sf-Secret-77@acct/DB?role=R'), query: 'select 1 as a' }, {}).catch(x => x);
@@ -194,6 +239,16 @@ describe('BigQuery (mocked @google-cloud/bigquery, not live-tested)', () => {
     log = bigqueryMock({ bytes: 20e9 });
     await expect(runSql({ connection: env('bq', 'bigquery://proj'), query: 'select 1 as a' }, {})).rejects.toThrow(/would read 20 GB/);
     expect(log.jobs).toHaveLength(1);
+  });
+  it('a slow first page: 504 on time, and the job is cancelled', async () => {
+    const log = bigqueryMock();
+    const make = mocks.bigquery.make;
+    mocks.bigquery.make = (cfg) => { const c = make(cfg); const cj = c.createQueryJob; c.createQueryJob = async (o) => { const [j] = await cj(o); if (!o.dryRun) j.getQueryResults = () => new Promise(() => {}); return [j]; }; return c; };
+    limits.ms = 150;
+    const t0 = Date.now();
+    await expect(runSql({ connection: env('bq', 'bigquery://proj'), query: 'select a from t' }, {})).rejects.toMatchObject({ status: 504 });
+    expect(Date.now() - t0).toBeLessThan(1000);
+    expect(log.cancelled).toBeGreaterThanOrEqual(1);
   });
   it('reads page by page and cancels the job at the row cap', async () => {
     const log = bigqueryMock({ rows: Array.from({ length: 5000 }, (_, i) => ({ a: i })) });

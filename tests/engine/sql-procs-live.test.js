@@ -44,3 +44,30 @@ describe.skipIf(!process.env.PW_TEST_MYSQL)('MySQL: CALL in a read-only transact
     expect(n).toBe(3);
   });
 });
+
+// review: every driver bounds rows, bytes and time on the client, whatever the server sends
+describe.each([['pg', 'PW_TEST_PG', "select repeat('x', @n) as v", 'select pg_sleep(5) as s'], ['my', 'PW_TEST_MYSQL', "select repeat('x', @n) as v", 'select sleep(5) as s']])('%s: caps on the client', (k, envName, huge, slow) => {
+  const on = Boolean(process.env[envName]);
+  it.skipIf(!on)('one huge value, many rows, a slow query', async () => {
+    const { limits } = await import('../../src/server/sql.js');
+    const keep = { ...limits };
+    process.env[`PW_DB_CAP${k.toUpperCase()}`] = process.env[envName];
+    try {
+      Object.assign(limits, { bytes: 1048576 });
+      global.gc?.();
+      const before = process.memoryUsage().rss;
+      // 50 MB in one value (MySQL caps repeat() at max_allowed_packet): the socket is cut at the cap, the value is never buffered
+      await expect(runSql({ connection: `cap${k}`, query: huge }, { n: 50_000_000 })).rejects.toThrow(/MB/);
+      expect(process.memoryUsage().rss - before).toBeLessThan(80 * 1048576);
+      Object.assign(limits, keep, { rows: 100 });
+      const many = k === 'pg' ? 'select g from generate_series(1, 1000000) g' : 'select a.table_name as g from information_schema.columns a cross join information_schema.columns b';
+      await expect(runSql({ connection: `cap${k}`, query: many }, {})).rejects.toThrow(/more than 100 rows/);
+      Object.assign(limits, keep, { ms: 500 });
+      const t0 = Date.now();
+      await expect(runSql({ connection: `cap${k}`, query: slow }, {})).rejects.toMatchObject({ status: 504 });
+      expect(Date.now() - t0).toBeLessThan(2000);
+      Object.assign(limits, keep);
+      expect(await runSql({ connection: `cap${k}`, query: 'select 1 as a' }, {})).toEqual([{ a: 1 }]); // the pool is fine afterwards
+    } finally { Object.assign(limits, keep); delete process.env[`PW_DB_CAP${k.toUpperCase()}`]; }
+  }, 60000);
+});

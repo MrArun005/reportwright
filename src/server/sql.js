@@ -218,8 +218,10 @@ export function codeOnly(q, dialect) {
         if (q[j] === c) { if (q[j + 1] === c) { j += 2; continue; } break; }
         j++;
       }
+      // a quoted name stays visible to the checks (Oracle and Snowflake "…", BigQuery `…`): "UTL_HTTP" is still UTL_HTTP
+      const name = c === '`' || (c === '"' && dialect !== 'bigquery');
+      out += name ? ` ${q.slice(i + 1, j).replace(/[;@]/g, ' ')} ` : ' x ';
       i = j + 1;
-      out += ' x ';
       continue;
     }
     out += c;
@@ -231,12 +233,16 @@ export function codeOnly(q, dialect) {
 // words that never belong in a report's SELECT on these databases (outside strings and comments)
 const READ_DENY = /\b(insert|update|delete|merge|upsert|create|drop|alter|truncate|rename|grant|revoke|call|exec|execute|begin|commit|rollback|savepoint|copy|put|remove|unload|use|set|unset|declare|lock|undrop|into|export|load|procedure|function|transaction)\b/i;
 
+// Oracle packages and types that reach the network, files, jobs, dynamic SQL or the web from inside a SELECT
+const ORACLE_DENY = /\b(utl_\w*|dbms_\w*|owa_\w*|htp|htf|httpuritype|dburitype|xdburitype|ctx_\w*|ordsys)\b/i;
+
 /** One statement (a trailing ";" at most) and no word from READ_DENY in code. @returns {string} the code */
 export function assertOneRead(text, dialect) {
   const code = codeOnly(text, dialect);
   if (code.replace(/[;\s]+$/, '').includes(';')) throw fail('A SQL source can only run one SELECT query (one statement).', 400);
-  const word = READ_DENY.exec(code);
+  const word = READ_DENY.exec(code) || (dialect === 'oracle' && ORACLE_DENY.exec(code));
   if (word) throw fail(`A SQL source can only run one SELECT query: "${word[1]}" is not allowed.`, 400);
+  if (dialect === 'oracle' && code.includes('@')) throw fail('A SQL source cannot use a database link (@).', 400);
   return code;
 }
 
@@ -376,13 +382,33 @@ async function driver(pkg, kind) {
   }
 }
 
+/**
+ * Run `work` while counting the bytes the connection's socket receives: past half of limits.bytes (text arrives as
+ * UTF-8 and is held as 2 bytes a character, so half on the wire is the most a result within the cap can need), or at
+ * the deadline, the socket is destroyed, so the driver never buffers more, and the work fails with the cap's error
+ * (marked `wire`: the connection is gone and must not go back to the pool).
+ * @param {import('node:net').Socket} socket @param {ReturnType<typeof clock>} clk @param {() => Promise<any>} work
+ */
+export async function onWire(socket, clk, work) {
+  let n = 0, why = null;
+  const cut = (e) => { if (!why) { why = Object.assign(e, { wire: true }); socket.destroy(); } };
+  const data = (b) => { n += b.length; if (n > Number(limits.bytes) / 2 + 65536) cut(fail(`The query returned more than ${Math.round(limits.bytes / 1048576)} MB. Filter or group it in SQL.`, 400)); };
+  socket.on('data', data);
+  try {
+    clk.track({ cancel: () => cut(clk.late()) });
+    return await work();
+  } catch (e) { throw why || e; } finally { socket.off('data', data); }
+}
+
 /** @type {Omit<DriverContext, 'code' | 'procedure' | 'allowed'>} */
 const driverContext = { pools, limits, fail, clock: (ms) => clock(ms), count, driver };
 
 const DRIVERS = {
   oracle, snowflake, bigquery,
   // ponytail: node:sqlite is synchronous, so a slow query holds the server's event loop and the time limit
-  // cannot stop it. Fine for a local file; move it to a worker thread if big SQLite files appear.
+  // cannot stop it, and SQLite builds each value in full (up to its own 1 GB limit) before it is counted. Fine for a
+  // local file the admin chose; move it to a worker thread if big SQLite files appear. Rows and bytes are counted as
+  // they are read, and the read stops at either cap.
   async sqlite(url, text, values) {
     const { DatabaseSync } = /** @type {typeof import('node:sqlite')} */ (process.getBuiltinModule('node:sqlite'));
     const db = new DatabaseSync(url.slice('sqlite:'.length), { readOnly: true });
@@ -390,11 +416,14 @@ const DRIVERS = {
       const st = db.prepare(text);
       st.setReadBigInts(true);
       const rows = [];
-      for (const r of st.iterate(...values)) if (rows.push(r) > limits.rows) break;
+      const take = count();
+      for (const r of st.iterate(...values)) { take(r); rows.push(r); }
       return rows;
     } finally { db.close(); }
   },
 
+  // The client side bounds both: the socket's bytes are counted as they arrive (onWire), and at the cap or the
+  // deadline it is destroyed, so no value or batch is ever buffered past the cap, whatever the server sends.
   async postgres(url, text, values) {
     if (!pools.has(url)) {
       const pg = (await driver('pg', 'postgres')).default;
@@ -404,39 +433,62 @@ const DRIVERS = {
       pool.on('error', () => {}); // an idle client that drops must not crash the server
       pools.set(url, pool);
     }
-    const c = await pools.get(url).connect();
+    const clk = clock(Number(limits.ms));
+    let broken = false;
     try {
-      await c.query('BEGIN READ ONLY');
-      await c.query(`SET LOCAL statement_timeout = ${Number(limits.ms)}`);
-      // extended protocol: one statement only, so "…; COMMIT; DELETE …" cannot end the read-only transaction.
-      // A cursor fetches at most limits.rows + 1 rows, however many the query would return.
-      await c.query({ text: `DECLARE pw_rows NO SCROLL CURSOR FOR ${text}`, values, queryMode: 'extended' });
-      return (await c.query(`FETCH ${Number(limits.rows) + 1} FROM pw_rows`)).rows;
-    } finally {
-      await c.query('ROLLBACK').catch(() => {});
-      c.release();
-    }
+      const c = await clk.inTime(pools.get(url).connect(), (x) => x.release());
+      if (!c.pwQuiet) { c.pwQuiet = true; c.on('error', () => {}); } // a socket we cut must not crash the server
+      try {
+        return await onWire(c.connection.stream, clk, async () => {
+          await c.query('BEGIN READ ONLY');
+          await c.query(`SET LOCAL statement_timeout = ${Number(limits.ms)}`);
+          // extended protocol: one statement only, so "…; COMMIT; DELETE …" cannot end the read-only transaction.
+          // A cursor, read in batches, each counted.
+          await c.query({ text: `DECLARE pw_rows NO SCROLL CURSOR FOR ${text}`, values, queryMode: 'extended' });
+          const rows = [];
+          const take = count();
+          for (;;) {
+            clk.overdue();
+            const got = (await c.query('FETCH 500 FROM pw_rows')).rows;
+            for (const r of got) { take(r); rows.push(r); }
+            if (got.length < 500) return rows;
+          }
+        });
+      } catch (e) { broken = Boolean(e.wire); throw e; } finally {
+        if (!broken) await c.query('ROLLBACK').catch(() => { broken = true; });
+        c.release(broken || undefined); // a cut connection is thrown away, not pooled
+      }
+    } finally { clk.stop(); }
   },
 
-  // Not tested against a live MySQL server yet (none was available); the SQLite and Postgres paths are.
   async mysql(url, text, values) {
     if (!pools.has(url)) {
       const mysql = (await driver('mysql2/promise', 'mysql')).default;
       pools.set(url, mysql.createPool({ uri: url, connectionLimit: 5, connectTimeout: 10000, dateStrings: true, supportBigNumbers: true }));
     }
-    const c = await pools.get(url).getConnection();
+    const clk = clock(Number(limits.ms));
     try {
-      // session-wide too: DDL commits the transaction it runs in, and a read-only session still refuses it
-      await c.query('SET SESSION TRANSACTION READ ONLY');
-      await c.query(`SET SESSION sql_select_limit = ${Number(limits.rows) + 1}`);
-      await c.query(`SET SESSION max_execution_time = ${Number(limits.ms)}`).catch(() => c.query(`SET SESSION max_statement_time = ${Number(limits.ms) / 1000}`)); // MySQL, else MariaDB
-      await c.query('START TRANSACTION READ ONLY');
-      const [rows] = await c.execute(text, values); // a server-side prepared statement: one statement, values bound
-      return Array.isArray(rows[0]) ? rows[0] : rows; // CALL: the procedure's first result set
-    } finally {
-      await c.query('ROLLBACK').catch(() => {});
-      c.release();
-    }
+      const c = await clk.inTime(pools.get(url).getConnection(), (x) => x.release());
+      if (!c.connection.pwQuiet) { c.connection.pwQuiet = true; c.connection.on('error', () => {}); } // a socket we cut must not crash the server
+      let broken = false;
+      try {
+        return await onWire(c.connection.stream, clk, async () => {
+          // session-wide too: DDL commits the transaction it runs in, and a read-only session still refuses it
+          await c.query('SET SESSION TRANSACTION READ ONLY');
+          await c.query(`SET SESSION sql_select_limit = ${Number(limits.rows) + 1}`);
+          await c.query(`SET SESSION max_execution_time = ${Number(limits.ms)}`).catch(() => c.query(`SET SESSION max_statement_time = ${Number(limits.ms) / 1000}`)); // MySQL, else MariaDB
+          await c.query('START TRANSACTION READ ONLY');
+          const [res] = await c.execute(text, values); // a server-side prepared statement: one statement, values bound
+          const rows = Array.isArray(res[0]) ? res[0] : res; // CALL: the procedure's first result set
+          const take = count();
+          for (const r of rows) take(r);
+          return rows;
+        });
+      } catch (e) { broken = Boolean(e.wire); throw e; } finally {
+        if (broken) c.connection.destroy();
+        else { await c.query('ROLLBACK').catch(() => {}); c.release(); }
+      }
+    } finally { clk.stop(); }
   },
 
   // SQL Server. The guard that holds is the login: before a connection runs any report query, the server is asked
