@@ -30,8 +30,8 @@ assert.ok(t.includes('Total sales') && t.includes('Sales by month'), 'dashboard 
 step('map and form field from the toolbox');
 await p.getByRole('group', { name: 'Mode' }).getByRole('button', { name: 'Design' }).click();
 await p.waitForSelector('[data-section=body]');
-await p.dragAndDrop('[data-tool=map]', '[data-section=body]', { targetPosition: { x: 40, y: 500 } });
-await p.dragAndDrop('[data-tool=field]', '[data-section=body]', { targetPosition: { x: 420, y: 500 } });
+await p.dragAndDrop('[data-tool=map]', '[data-section=body]', { targetPosition: { x: 40, y: 400 } });
+await p.dragAndDrop('[data-tool=field]', '[data-section=body]', { targetPosition: { x: 420, y: 400 } });
 await p.getByTestId('tab-preview').click();
 await p.waitForSelector('.vpage svg');
 t = await p.$$eval('.vpage text', ns => ns.map(n => n.textContent));

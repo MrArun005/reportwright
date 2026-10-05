@@ -19,6 +19,9 @@ import AskAi from './AskAi.jsx';
 import { PartsPanel, LayersPanel } from './Reuse.jsx';
 import PivotWizard, { InstantVisuals } from './PivotWizard.jsx';
 import { t, dirOf, pickLang } from '@/i18n/index.js';
+import { Icon } from '@/viewer/icons.jsx';
+import { sectionList, findItem, bodyWidth } from './store.js';
+import { resolvePage } from '@/engine/units.js';
 import { readDraft, writeDraft, clearDraft, clearDrafts, mergeDraft, staleDraft } from './draft.js';
 
 const TOOLS = [
@@ -75,6 +78,83 @@ function Toolbox({ T, hide = [] }) {
 // drawn, not the ↶ ↷ characters: the UI font has no such glyphs and the fallback looked like an empty box
 const UNDO_ICON = <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M4.5 3L1.8 5.7l2.7 2.7" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" /><path d="M2.2 5.7h6.3a3.3 3.3 0 0 1 0 6.6H6" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" /></svg>;
 const REDO_ICON = <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" style={{ transform: 'scaleX(-1)' }}><path d="M4.5 3L1.8 5.7l2.7 2.7" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" /><path d="M2.2 5.7h6.3a3.3 3.3 0 0 1 0 6.6H6" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" /></svg>;
+/** A labelled group of the top bar: its buttons, and the group's name under them (File, Insert, Arrange, View, Preview). */
+const TbGroup = ({ label, children }) => (
+  <div className="tb-group" role="group" aria-label={label}>
+    <div className="tb-items">{children}</div>
+    <span className="tb-cap" aria-hidden="true">{label}</span>
+  </div>
+);
+const QUICK = [['textbox', 'text'], ['table', 'table'], ['chart', 'chart'], ['image', 'image']];
+
+/** The left rail: Toolbox, Data and Outline. A tab shows its section at the top; scrolling marks the section in view. */
+function LeftRail({ T, readOnly, embed }) {
+  const body = useRef(null);
+  const [at, setAt] = useState('tools');
+  const tabs = [!readOnly && ['tools', 'b2_toolbox', 'tools'], embed?.panels?.data !== false && ['data', 'b2_data', 'data'], ['outline', 'b2_outline', 'outline']].filter(Boolean);
+  const go = (id) => { const el = body.current?.querySelector(`[data-rail="${id}"]`); if (el) body.current.scrollTo({ top: el.offsetTop - body.current.offsetTop, behavior: 'smooth' }); setAt(id); };
+  const spy = () => {
+    const b = body.current;
+    if (!b) return;
+    let cur = tabs[0]?.[0];
+    for (const [id] of tabs) { const el = b.querySelector(`[data-rail="${id}"]`); if (el && el.offsetTop - b.offsetTop <= b.scrollTop + 24) cur = id; }
+    if (b.scrollTop + b.clientHeight >= b.scrollHeight - 2) cur = tabs[tabs.length - 1][0];
+    setAt(cur);
+  };
+  return (
+    <>
+      <nav className="rail" aria-label={T('b2_panels')}>
+        {tabs.map(([id, key, icon]) => (
+          <button key={id} type="button" className="rail-tab" aria-current={at === id ? 'true' : undefined} onClick={() => go(id)} title={T(key)} data-testid={`rail-${id}`}>
+            <Icon name={icon} size={18} /><span>{T(key)}</span>
+          </button>
+        ))}
+      </nav>
+      <div className="rail-body" ref={body} onScroll={spy}>
+        {!readOnly && <section data-rail="tools"><Toolbox T={T} hide={embed?.toolbox?.hide} /><PartsPanel /></section>}
+        {embed?.panels?.data !== false && <section data-rail="data"><DataPanel /></section>}
+        {readOnly && <PartsPanel />}
+        <section data-rail="outline"><LayersPanel /><Outline /></section>
+      </div>
+    </>
+  );
+}
+
+/** The status bar under the canvas: zoom, what is selected, the page. */
+function StatusBar({ T, zoom, setZoom }) {
+  const sel = useDesigner(s => s.sel);
+  const def = useDesigner(s => s.def);
+  const unit = useDesigner(s => s.unit);
+  let what;
+  if (sel.kind === 'items' && sel.ids.length > 1) what = T('b2_selItems', { n: sel.ids.length });
+  else if (sel.kind === 'items') { const it = findItem(def, sel.ids[0])?.item; what = it ? `${it.name} · ${T(`item_${it.type}`) === `item_${it.type}` ? (ITEMS[it.type]?.label || it.type) : T(`item_${it.type}`)} · ${Math.round(it.x)}, ${Math.round(it.y)} · ${Math.round(it.w)} × ${Math.round(it.h)} pt` : ''; }
+  else if (sel.kind === 'cell') what = T('b2_selCell', { name: findItem(def, sel.id)?.item?.name || '' });
+  else if (sel.kind === 'section') what = T('b2_selBand', { band: sectionList(def).find(x => x.key === sel.section)?.label || sel.section });
+  else what = T('b2_selReport');
+  let page = '';
+  try {
+    const pg = resolvePage(def.page);
+    const k = { pt: 1, mm: 25.4 / 72, cm: 2.54 / 72, in: 1 / 72 }[unit] || 1;
+    const r = (v) => Math.round(v * k * (unit === 'pt' ? 1 : 10)) / (unit === 'pt' ? 1 : 10);
+    page = pg.pageless ? `${def.page?.size || 'Pageless'} · ${r(bodyWidth(def, 'body'))} ${unit}` : T('b2_pageInfo', { size: def.page?.size || '', w: r(pg.width), h: r(pg.height), unit });
+  } catch { /* an unknown size: the Inspector says so */ }
+  const step = (dir) => { const z = zoom === 'fit' ? 1 : zoom; const next = dir > 0 ? ZOOMS.find(x => x > z) : [...ZOOMS].reverse().find(x => x < z); if (next) setZoom(next); };
+  return (
+    <div className="dstatus" aria-label={T('b2_status')}>
+      <span className="dstatus-zoom">
+        <button type="button" className="btn sm icon ghost" title={T('zoomOut')} aria-label={T('zoomOut')} onClick={() => step(-1)} disabled={zoom !== 'fit' && zoom <= ZOOMS[0]}><Icon name="zoomOut" /></button>
+        <select className="select" aria-label={T('zoom')} value={zoom} data-testid="zoom" onChange={e => setZoom(e.target.value === 'fit' ? 'fit' : Number(e.target.value))}>
+          <option value="fit">{T('zoomFit')}</option>
+          {ZOOMS.map(z => <option key={z} value={z}>{Math.round(z * 100)}%</option>)}
+        </select>
+        <button type="button" className="btn sm icon ghost" title={T('zoomIn')} aria-label={T('zoomIn')} onClick={() => step(1)} disabled={zoom !== 'fit' && zoom >= ZOOMS[ZOOMS.length - 1]}><Icon name="zoomIn" /></button>
+      </span>
+      <span className="dstatus-sel" data-testid="status-selection"><i aria-hidden="true" />{what}</span>
+      <span className="dstatus-page">{page}</span>
+    </div>
+  );
+}
+
 /** The zoom the user picked last (this browser only); "fit" fills the canvas width. */
 const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 function savedZoom() { try { const z = localStorage.getItem('pw.designer.zoom'); return z === 'fit' ? 'fit' : ZOOMS.includes(Number(z)) ? Number(z) : null; } catch { return null; } }
@@ -272,6 +352,9 @@ export default function Designer({ id, initial, rev = null, lang: langIn, embed 
   const canRedo = useDesigner(s => s.future.length > 0);
   const st = useDesigner.getState;
   const [dialog, setDialog] = useState(null);
+  const [showLeft, setShowLeft] = useState(true);
+  const [showRight, setShowRight] = useState(true);
+  const selKind = useDesigner(s => s.sel.kind);
   const wizard = useDesigner(s => s.wizard);
   const tableWizard = useDesigner(s => s.tableWizard);
   const pivotWizard = useDesigner(s => s.pivotWizard);
@@ -337,32 +420,62 @@ export default function Designer({ id, initial, rev = null, lang: langIn, embed 
   };
 
   const draftBar = useAutosave(embed ? null : id, T, lang, user);
+  const hasLeft = !readOnly || embed?.panels?.data !== false;
+  const hasRight = embed?.panels?.inspector !== false;
   if (!def) return <div className="designer" dir={dirOf(lang)} lang={lang}><div className="dtop"><span className="brand"><i />Pagewright</span><span className="hint">{T('loadingDesigner')}</span></div></div>;
 
   return (
     <div className="designer" data-testid="designer" dir={dirOf(lang)} lang={lang} ref={rootRef} data-readonly={readOnly || undefined}>
       {!embed && <style>{fontCss}</style>}
-      <div className="dtop">
+      <header className="dtop dbar">
         {embed ? <span className="brand"><i />Pagewright</span> : <Link href={`/${q}`} className="brand"><i />Pagewright</Link>}
-        <input className="name" value={def.name || ''} aria-label={T('reportName')} readOnly={readOnly} onChange={e => st().apply(d => { d.name = e.target.value; }, 'name')} />
-        {!readOnly && <span className={`saved${saved ? '' : ' dirty'}`} data-testid="save-state">{saving ? T('saving') : saved ? T('saved') : T('unsaved')}</span>}
+        <span className="dtop-sep" aria-hidden="true" />
+        <div className="dname">
+          <input className="name" value={def.name || ''} aria-label={T('reportName')} readOnly={readOnly} onChange={e => st().apply(d => { d.name = e.target.value; }, 'name')} />
+          {!readOnly && <span className={`saved${saved ? '' : ' dirty'}`} data-testid="save-state"><i aria-hidden="true" />{saving ? T('saving') : saved ? T('saved') : T('unsaved')}</span>}
+        </div>
         {saveError && <span className="err">{saveError}</span>}
         <div className="spacer" />
-        <button className="btn sm icon" title={T('undo')} aria-label={T('undo')} disabled={!canUndo} onClick={() => st().undo()}>{UNDO_ICON}</button>
-        <button className="btn sm icon" title={T('redo')} aria-label={T('redo')} disabled={!canRedo} onClick={() => st().redo()}>{REDO_ICON}</button>
-        <div className="seg" role="group" aria-label={T('mode')}>
-          <button aria-pressed={tab === 'design'} onClick={() => st().setUi({ tab: 'design' })}>{T('design')}</button>
-          <button aria-pressed={tab === 'preview'} onClick={() => st().setUi({ tab: 'preview' })} data-testid="tab-preview">{T('preview')}</button>
-        </div>
-        {!embed && <button className="btn sm ghost" onClick={() => setDialog('ai')} disabled={!ai} title={ai ? T('askAiHint') : T('r4_aiOff')} data-testid="ask-ai">{T('askAi')}</button>}
-        {!embed && <button className="btn sm ghost" onClick={() => setDialog('history')} title={T('historyHint')}>{T('history')}</button>}
-        <button className="btn sm ghost" onClick={download} title={T('downloadDefHint')} data-testid="download-def">{T('downloadDef')}</button>
-        <button className="btn sm ghost icon" onClick={() => setDialog('keys')} title={T('shortcutsHint')} aria-label={T('shortcutsHint')}>?</button>
-        {!embed && <ThemeToggle />}
-        {!embed && <a className="btn sm" href={`/viewer/${id}${q}`} target="_blank" rel="noreferrer" title={T('openViewerHint')}>{T('openViewer')}</a>}
-        {embed?.onOpen && <button className="btn sm" onClick={open} data-testid="open">Open…</button>}
-        {!readOnly && <button className="btn sm primary" onClick={() => st().save()} disabled={saving || saved} data-testid="save">{T('save')} <span className="kbd" style={{ background: 'transparent', color: 'inherit', borderColor: 'currentColor', opacity: 0.7 }}>⌘S</span></button>}
-      </div>
+        <TbGroup label={T('b2_file')}>
+          {!embed && <button className="tb-btn" onClick={() => setDialog('history')} title={T('historyHint')} aria-label={T('history')}><Icon name="history" /></button>}
+          <button className="tb-btn" onClick={download} title={T('downloadDefHint')} aria-label={T('downloadDef')} data-testid="download-def"><Icon name="download" /></button>
+          {embed?.onOpen && <button className="tb-btn" onClick={open} data-testid="open" title="Open…" aria-label="Open…"><Icon name="open" /></button>}
+          {!embed && <a className="tb-btn" href={`/viewer/${id}${q}`} target="_blank" rel="noreferrer" title={T('openViewerHint')} aria-label={T('openViewer')}><Icon name="viewer" /></a>}
+        </TbGroup>
+        {!readOnly && tab === 'design' && (
+          <TbGroup label={T('b2_insert')}>
+            {QUICK.filter(([type]) => !(embed?.toolbox?.hide || []).includes(type)).map(([type, icon]) => {
+              const nm = T(`item_${type}`) === `item_${type}` ? ITEMS[type].label : T(`item_${type}`);
+              return <button key={type} className="tb-btn" title={`${T('b2_insertItem', { item: nm })} · ${T('b2_insertHint')}`} aria-label={T('b2_insertItem', { item: nm })} data-testid={`quick-${type}`}
+                onClick={() => { const s0 = st(); const at = insertSpot(s0.def, s0.sel); insertItem(type, at.section, 0, at.y, {}, at.parentId); }}><Icon name={icon} /></button>;
+            })}
+          </TbGroup>
+        )}
+        <TbGroup label={T('b2_arrange')}>
+          <button className="tb-btn" title={T('undo')} aria-label={T('undo')} disabled={!canUndo} onClick={() => st().undo()}>{UNDO_ICON}</button>
+          <button className="tb-btn" title={T('redo')} aria-label={T('redo')} disabled={!canRedo} onClick={() => st().redo()}>{REDO_ICON}</button>
+          {!readOnly && tab === 'design' && <>
+            <button className="tb-btn" title={`${T('i_duplicate')} (⌘D)`} aria-label={T('i_duplicate')} disabled={selKind !== 'items'} onClick={duplicateSelection}><Icon name="duplicate" /></button>
+            <button className="tb-btn danger" title={`${T('i_delete')} (Del)`} aria-label={T('i_delete')} disabled={selKind !== 'items'} onClick={deleteSelection}><Icon name="trash" /></button>
+          </>}
+        </TbGroup>
+        <TbGroup label={T('b2_view')}>
+          {tab === 'design' && <>
+            <button className="tb-btn" aria-pressed={showLeft} title={T('b2_leftPanel')} aria-label={T('b2_leftPanel')} onClick={() => setShowLeft(v => !v)}><Icon name="panelLeft" /></button>
+            <button className="tb-btn" aria-pressed={showRight} title={T('b2_rightPanel')} aria-label={T('b2_rightPanel')} onClick={() => setShowRight(v => !v)}><Icon name="panelRight" /></button>
+          </>}
+          <button className="tb-btn" onClick={() => setDialog('keys')} title={T('shortcutsHint')} aria-label={T('shortcutsHint')}><Icon name="keys" /></button>
+          {!embed && <ThemeToggle className="tb-btn" />}
+        </TbGroup>
+        <TbGroup label={T('b2_previewGroup')}>
+          <div className="seg" role="group" aria-label={T('mode')}>
+            <button aria-pressed={tab === 'design'} onClick={() => st().setUi({ tab: 'design' })}><Icon name="pencil" />{T('design')}</button>
+            <button aria-pressed={tab === 'preview'} onClick={() => st().setUi({ tab: 'preview' })} data-testid="tab-preview"><Icon name="viewer" />{T('preview')}</button>
+          </div>
+        </TbGroup>
+        {!embed && <button className="btn ai-btn" onClick={() => setDialog('ai')} disabled={!ai} title={ai ? T('askAiHint') : T('r4_aiOff')} data-testid="ask-ai"><Icon name="ai" />{T('askAi')}</button>}
+        {!readOnly && <button className="btn primary save-btn" onClick={() => st().save()} disabled={saving || saved} data-testid="save"><Icon name="save" />{T('save')} <span className="kbd" style={{ background: 'transparent', color: 'inherit', borderColor: 'currentColor', opacity: 0.7 }}>⌘S</span></button>}
+      </header>
       {draftBar}
       <ConflictBar T={T} />
       <div className="narrow-note" role="note">{T('ux_narrowDesigner')}</div>
@@ -378,39 +491,33 @@ export default function Designer({ id, initial, rev = null, lang: langIn, embed 
       {pivotWizard && <PivotWizard />}
       {instantVisuals && <InstantVisuals />}
       {tab === 'preview' ? (
-        <ReportViewer definition={def} reportId={id} compact lang={lang} />
+        <main className="dpreview"><ReportViewer definition={def} reportId={id} compact lang={lang} /></main>
       ) : (
-        <div className="dmain">
-          {(!readOnly || embed?.panels?.data !== false) && (
-            <aside className="dleft">{!readOnly && <Toolbox T={T} hide={embed?.toolbox?.hide} />}{embed?.panels?.data !== false && <DataPanel />}<PartsPanel /><LayersPanel /><Outline /></aside>
-          )}
-          <section className="dcenter">
+        <div className="dmain" data-left={hasLeft && showLeft ? 'open' : 'closed'} data-right={hasRight && showRight ? 'open' : 'closed'}
+          style={{ gridTemplateColumns: `${hasLeft && showLeft ? 'var(--left-w)' : '0px'} minmax(0, 1fr) ${hasRight && showRight ? 'var(--right-w)' : '0px'}` }}>
+          {hasLeft ? <aside className="dleft" aria-label={T('b2_panels')} inert={!showLeft || undefined}><LeftRail T={T} readOnly={readOnly} embed={embed} /></aside> : <span />}
+          <main className="dcenter">
             <div className="cbar">
-              <label className="check">{T('zoom')}
-                <select className="select" style={{ width: 'auto', minWidth: 80, height: 24 }} value={zoom} data-testid="zoom" onChange={e => { const z = e.target.value === 'fit' ? 'fit' : Number(e.target.value); st().setUi({ zoom: z }); keepZoom(z); }}>
-                  <option value="fit">{T('zoomFit')}</option>
-                  {ZOOMS.map(z => <option key={z} value={z}>{Math.round(z * 100)}%</option>)}
-                </select>
-              </label>
               <label className="check"><input type="checkbox" checked={snap} onChange={e => st().setUi({ snap: e.target.checked })} />{T('snapToGrid')}</label>
               <label className="check" title={T('cellModeHint')}><input type="checkbox" checked={cells} onChange={e => st().setUi({ cells: e.target.checked })} data-testid="cell-mode" />{T('cellMode')}</label>
               {cells && <label className="check">{T('cellSize')}
-                <select className="select" style={{ width: 64, height: 24 }} value={cellSize} onChange={e => st().setUi({ cellSize: Number(e.target.value) })} data-testid="cell-size">
+                <select className="select" style={{ width: 72 }} value={cellSize} onChange={e => st().setUi({ cellSize: Number(e.target.value) })} data-testid="cell-size">
                   {[6, 8, 12, 16, 18, 24, 36].map(c => <option key={c} value={c}>{c} pt</option>)}
                 </select>
               </label>}
               <label className="check">{T('units')}
-                <select className="select" style={{ width: 64, height: 24 }} value={unit} onChange={e => st().setUi({ unit: e.target.value })}>
+                <select className="select" style={{ width: 72 }} value={unit} onChange={e => st().setUi({ unit: e.target.value })}>
                   {['pt', 'mm', 'cm', 'in'].map(u => <option key={u}>{u}</option>)}
                 </select>
               </label>
               <AlignBar T={T} />
               <IssuesButton T={T} />
-              <span className="hint" style={{ marginInlineStart: 'auto' }}>{T('canvasHint')}</span>
+              <span className="hint cbar-hint">{T('canvasHint')}</span>
             </div>
             <Canvas />
-          </section>
-          {embed?.panels?.inspector !== false && <aside className="dright"><Inspector /></aside>}
+            <StatusBar T={T} zoom={zoom} setZoom={(z) => { st().setUi({ zoom: z }); keepZoom(z); }} />
+          </main>
+          {hasRight ? <aside className="dright" aria-label={T('b2_inspector')} inert={!showRight || undefined}><Inspector /></aside> : <span />}
         </div>
       )}
     </div>

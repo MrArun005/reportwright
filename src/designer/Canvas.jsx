@@ -133,15 +133,23 @@ function blurField(e) {
 }
 
 const UNIT_STEP = { pt: [72, 12], mm: [72 / 25.4 * 10, 72 / 25.4 * 2], cm: [72 / 2.54, 72 / 2.54 / 5], in: [72, 72 / 8] };
-function Ruler({ width, scale }) {
+function Ruler({ width, scale, vertical = false }) {
   const unit = useDesigner(s => s.unit);
   const [major, minor] = UNIT_STEP[unit] || UNIT_STEP.pt;
   const ticks = [];
   for (let x = 0, i = 0; x <= width + 0.01; x += minor, i++) {
     const isMajor = Math.abs((x / major) - Math.round(x / major)) < 1e-6;
-    ticks.push(<line key={i} x1={x * scale} x2={x * scale} y1={isMajor ? 4 : 11} y2={16} stroke="var(--ruler-tick)" strokeWidth={isMajor ? 1 : 0.6} />);
-    if (isMajor && x > 0) ticks.push(<text key={`t${i}`} x={x * scale + 2} y={10} fontSize="9" fill="var(--ruler-text)" fontFamily="var(--mono)">{Math.round(x / major) * (unit === 'mm' ? 10 : unit === 'pt' ? 72 : 1)}</text>);
+    const v = x * scale, a = isMajor ? 4 : 11;
+    ticks.push(vertical
+      ? <line key={i} y1={v} y2={v} x1={a} x2={16} stroke="var(--ruler-tick)" strokeWidth={isMajor ? 1 : 0.6} />
+      : <line key={i} x1={v} x2={v} y1={a} y2={16} stroke="var(--ruler-tick)" strokeWidth={isMajor ? 1 : 0.6} />);
+    const label = Math.round(x / major) * (unit === 'mm' ? 10 : unit === 'pt' ? 72 : 1);
+    if (isMajor && x > 0) ticks.push(vertical
+      ? <text key={`t${i}`} x={2} y={v - 2} fontSize="8" fill="var(--ruler-text)" fontFamily="var(--mono)">{label}</text>
+      : <text key={`t${i}`} x={v + 2} y={10} fontSize="9" fill="var(--ruler-text)" fontFamily="var(--mono)">{label}</text>);
   }
+  // the vertical ruler sits beside each band (its own 0 at the band's top), outside the page
+  if (vertical) return <svg className="ruler v" width={16} height={width * scale} aria-hidden="true">{ticks}</svg>;
   return <svg className="ruler" width={width * scale} height={16} style={{ display: 'block', margin: '0 auto 2px' }} aria-hidden="true">{ticks}</svg>;
 }
 
@@ -313,6 +321,7 @@ function Band({ section, label, scale, bw: bandW, drag, setDrag, phBox = null })
           return <div key={`c${i}`} className="col-guide" style={{ left: ((i + 1) * cw + i * (sec.columns.gap ?? 18)) * scale, width: (sec.columns.gap ?? 18) * scale }} />;
         })}
         <div className="band-resize" onPointerDown={onResizeDown} title="Drag to change the band height" />
+        {!off && !phBox && <Ruler width={h} scale={scale} vertical />}
       </div>
   );
   if (phBox) return surface;
