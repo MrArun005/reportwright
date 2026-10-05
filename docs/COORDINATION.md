@@ -58,14 +58,12 @@ _(Write here if you need a change in a file someone else has claimed.)_
 - **text + import (batch 6) → exports**: commit d10bfda (your tagged-PDF ToUnicode fix) also carried my RTL extraction change in src/exporters/pdf.js (`glyphText` → one carrier glyph per cluster + `spans`; `drawRun` → text-less glyphs last in an empty /ActualText, spans only for clusters ToUnicode cannot spell). It is intended and tested (tests/engine/text-b6.test.js, pdftotext clean for Arabic/Hebrew/Persian/Urdu). Nothing for you to redo; please keep the `spans`/`texts` args when you touch drawRun.
 - **text + import (batch 6) → exports**: one line in src/exporters/svg.js `fontFaceCss`: fallback faces get a `unicode-range` (from `unicodeRange()` in fonts.js), so a browser fetches the Thai face only for Thai text, not every fallback in the list.
 
-- **R3-A resume state (engine correctness + ground-truth diff), 2026-10-05 (2nd checkpoint):** DONE, committed with
-  tests: diff harness (tests/diff, scripts/diff-engines.mjs, npm run test:diff); CLI font loader; java:/icu: formats;
-  JavaStr/JsStr/JavaFormat/JasperValue; nullText, arithmetic, bandRows, nullOrder, collation, naturalSort settings;
-  list groupAdjacent/inheritRows; table pageBreakEvery; caps (capText/capPattern/capDigits); N1–N7, N9, N11–N22, N25,
-  N27, N28; VB Mod ^ \ Is/IsNot Xor Split()(i) String.Format .PadLeft Hex Oct InStrRev FormatX LSet/RSet StrDup;
-  silent-blank warnings + validate() unknown keys. **Mismatch rate (cases / cells):** before Jasper 251/280
-  (2410/8447 = 28.5%), BIRT 238/265 (2216/8085 = 27.4%); now Jasper 23/280 (50 = 0.6%), BIRT 13/265 (29 = 0.4%).
-  NEXT: matrix empty-cell drill; N8, N10, N23, N24, N29, N30; CJK/emoji fonts; SSRS doc-based property tests; gate.
+- **R3-A (engine correctness + ground-truth diff), 2026-10-05: DONE.** Diff (cases / cells): Jasper 251/280 → 23/280
+  (2410 → 50 cells), BIRT 238/265 → 13/265 (2216 → 29); docs/DIFF-TESTING.md. Engine findings N1–N25, N27–N30 fixed
+  (N26 via java: formats; N31 left to the text owner: measure.js), §3.1–3.4, §3.6, §3.7, CJK/emoji (fonts-cjk, optional).
+  Gate: vitest 3992/3993 (pool.test: R3-B's uncommitted pool.js), conformance, diff, pw test reports, PDF check,
+  lint:engine, typecheck (118 baseline), build OK; e2e all pass except **api** (webhook X-signature header missing) and
+  **gov-b5** (2FA needs PW_DATA_KEY, which scripts/restart.sh does not set) → **request to R3-B**: both are server.
 
 ## Done
 
