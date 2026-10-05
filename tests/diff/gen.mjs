@@ -277,9 +277,11 @@ function bExpr(r, id) {
 
 const BNUM = [['Custom', '#,##0.00'], ['Custom', '0.0'], ['Custom', '#,##0'], ['Custom', '0.00%'], ['Custom', '¤#,##0.00'], ['Custom', '#,##0.00;(#,##0.00)'],
   ['Custom', '0.0‰'], ['Custom', '00000'], ['Custom', '#.##'], ['Custom', '0.###E0'], ['Currency', '¤#,##0.00'], ['Percent', '0.00%'], ['Fixed', '#,##0.00'],
-  ['Scientific', '0.00E00'], ['General Number', ''], ['Unformatted', '']];
+  ['Scientific', '0.00E00'], ['General Number', 'General Number'], ['Unformatted', ''], ['Currency', '$#,##0.00;$(#,##0.00)'], ['Percent', 'Percent'],
+  ['Fixed', '#,##0.00{RoundingMode=HALF_UP}'], ['Currency', '$#,##0']];
 const BDATE = [['Custom', 'dd/MM/yyyy'], ['Custom', 'MMMM d, yyyy'], ['Custom', 'EEE, d MMM yyyy'], ['Custom', 'HH:mm:ss'], ['Custom', 'h:mm a'], ['Custom', 'EEEE'],
-  ['Custom', 'D'], ['Custom', 'u'], ['Custom', 'd MMMM'], ['Short Date', ''], ['Medium Date', ''], ['Long Date', ''], ['General Date', ''], ['Short Time', ''], ['Long Time', '']];
+  ['Custom', 'D'], ['Custom', 'u'], ['Custom', 'd MMMM'], ['Short Date', 'Short Date'], ['Medium Date', 'Medium Date'], ['Long Date', 'Long Date'],
+  ['General Date', 'General Date'], ['Short Time', 'Short Time'], ['Long Time', 'Long Time'], ['Unformatted', '']];
 const bNumFmt = ([c, p]) => `<structure name="numberFormat">${bp('category', c)}${p ? bp('pattern', p) : ''}</structure>`;
 const bDateFmt = ([c, p]) => `<structure name="dateTimeFormat">${bp('category', c)}${p ? bp('pattern', p) : ''}</structure>`;
 function bFormat(r, id) {

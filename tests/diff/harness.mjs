@@ -81,11 +81,15 @@ export function htmlLines(html) {
 export function withExactValues(pages, exact) {
   const byLabel = new Map();
   for (const l of exact) { const [lab, v] = cell(l); if (!byLabel.has(lab)) byLabel.set(lab, []); byLabel.get(lab).push(v); }
+  const inPdf = new Map();
+  for (const lines of pages) for (const l of lines) { const [lab, v] = cell(l); if (v !== null) inPdf.set(lab, (inPdf.get(lab) || 0) + 1); }
   const seen = new Map();
   return pages.map(lines => lines.map((l) => {
     const [lab, v] = cell(l);
     if (v === null) return l;
     const k = seen.get(lab) || 0; seen.set(lab, k + 1);
+    // only labels the HTML has as often as the PDF: a page header or footer shows once in the unpaginated HTML
+    if (byLabel.get(lab)?.length !== inPdf.get(lab)) return l;
     const e = byLabel.get(lab)?.[k];
     return e === undefined ? l : normalise([`${lab} ${e}`])[0];
   }));
