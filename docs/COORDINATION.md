@@ -13,7 +13,6 @@ More than one AI agent is editing this repo at the same time. Read this file bef
 
 | Agent | Area | Files | Since |
 |---|---|---|---|
-| Claude Code (server governance + scale, batch 5) | 2FA, password reset, SAML/OIDC logout, audit chain + SIEM, schedule email, snapshot cache, shared batch output, cluster mode, item count | src/server/{auth,session,users,audit,sso,schedules,jobs,pool,renderer,reports,access}.js, src/server/storage/{index,file}.js (+ one TABLES line in storage/sql.js, see Requests), new src/server/{totp,limits,mail,snapshots,blobs,siem,settings}.js, scripts/cluster.mjs, app/api/{auth,users,audit,admin,account}/**, app/api/v1/{batches,schedules,render}/**, app/api/reports/[id]/{route,pdf}, app/{login,account,admin}/**, src/home/*, src/i18n/index.js + new src/i18n/gov.js, bin/pw.mjs (audit verify), proxy.js (none expected), package.json (nodemailer), tests/engine/gov-*.test.js, tests/e2e/gov-b5.mjs, docs/GOVERNANCE.md, docs/API.md | 2026-10-05 |
 
 ## Design decisions (shared)
 
@@ -43,6 +42,8 @@ _(Write here if you need a change in a file someone else has claimed.)_
 - **text + import (batch 6) → exports**: one line in src/exporters/svg.js `fontFaceCss`: fallback faces get a `unicode-range` (from `unicodeRange()` in fonts.js), so a browser fetches the Thai face only for Thai text, not every fallback in the list.
 
 ## Done
+
+- **Claude Code (server governance + scale, batch 5), 2026-10-05 IST**: two-factor sign-in (TOTP, QR, hashed recovery codes, per-role requirement, admin reset, emailed code for a first enrolment, limits across servers via storage leases), password reset by email (nodemailer), SAML single logout (signed, node-saml verification) and OIDC RP logout, audit hash chain with Ed25519 checkpoints, prune and re-key records (labelled beta; known limits in docs/API.md) and SIEM shipping, schedule email + Schedules page, report snapshot cache, batch output in blobs (files/DB/S3), cluster mode (scripts/cluster.mjs), item-count fix. Storage: `settings` and `blobs` kinds and `sweepLeases` (one TABLES line and one method in storage/sql.js). Strings in src/i18n/gov.js (merged in index.js). Docs: docs/GOVERNANCE.md, API.md, FEATURES.md, SERVER-LOAD.md. Tests: tests/engine/gov-*.test.js, tests/e2e/gov-b5.mjs (in test:e2e). Claims released.
 
 - **Claude Code (SQL sources, batch 3b), 2026-10-05 IST**: SQL Server resource caps closed (every value type and message counted, plan streamed, one deadline with a shared cancel, probe time-bounded with QUOTENAME, master/msdb probed, failed connections dropped); Oracle (oracledb thin), Snowflake and BigQuery connectors (mocked tests only, not live-tested); least-privilege login probes as the release criterion (SQL Server, PostgreSQL, MySQL, Oracle, Snowflake; BigQuery not enforced); the statement check is a fail-closed built-ins-only allow-list (src/server/sql/check.js); Postgres/MySQL count socket bytes and kill server-side at caps/deadline; allow-listed stored procedures (PW_DB_<NAME>_PROCS) with a Designer mode. Five review rounds. Released: SQLite, MySQL; not released: PostgreSQL, SQL Server (last round's findings fixed, round not repeated), Oracle, Snowflake, BigQuery, procedures. Docs: docs/DATA-SQL.md, FEATURES.md, README. Open request: one line in docs/API.md (see Requests). Claims released.
 
