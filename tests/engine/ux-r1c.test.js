@@ -104,3 +104,43 @@ describe('viewer accessible layer (U-2)', () => {
     expect(lines).toContain('▶ North 120');
   });
 });
+
+import { sanitizeDraft, mergeDraft, writeDraft, readDraft, clearDrafts, draftKey, DRAFT_TTL } from '../../src/designer/draft.js';
+describe('autosave drafts keep no secrets and stay with their user (U-4)', () => {
+  const mem = () => { const m = new Map(); return { get length() { return m.size; }, key: (i) => [...m.keys()][i] ?? null, getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k), m }; };
+  const def = {
+    name: 'R',
+    dataSources: [
+      { name: 'api', type: 'rest', url: 'https://api.example.com/v1/sales?region=North&api_key=SECRETKEY1&token=TOK2', headers: { Authorization: 'Bearer HEADERTOKEN3' }, body: '{"pw":"BODY4"}' },
+      { name: 'db', type: 'sql', connection: 'main', query: 'select * from salaries where ssn = 5' },
+      { name: 'inline', type: 'json', data: { rows: [{ salary: 'ROW5' }] } },
+    ],
+    parameters: [{ name: 'apiToken', type: 'string', default: 'PARAM6' }, { name: 'year', type: 'number', default: 2026 }],
+    sections: { body: { items: [{ type: 'image', name: 'Logo', src: 'https://cdn.example.com/logo.png?sig=SIG7&w=200', authorization: 'X8' }, { type: 'textbox', name: 'T', value: 'Hello' }] } },
+  };
+  it('a draft holds the layout, never a header value, token, key, body, SQL, inline row or parameter default', () => {
+    const s = mem();
+    writeDraft(s, 'a@x.test', 'r1', def);
+    const raw = [...s.m.values()].join('');
+    for (const secret of ['SECRETKEY1', 'TOK2', 'HEADERTOKEN3', 'BODY4', 'salaries', 'ROW5', 'PARAM6', 'SIG7', 'X8']) expect(raw).not.toContain(secret);
+    expect(raw).toContain('Hello');
+    expect(raw).toContain('logo.png?sig=&w=200');
+    const back = mergeDraft(readDraft(s, 'a@x.test', 'r1').def, def);
+    expect(back.dataSources).toEqual(def.dataSources); // restored from the saved report
+    expect(back.parameters.map(p => p.default)).toEqual(['PARAM6', 2026]);
+    expect(sanitizeDraft(def).dataSources).toEqual([{ name: 'api', type: 'rest' }, { name: 'db', type: 'sql' }, { name: 'inline', type: 'json' }]);
+  });
+  it('another user cannot see it; their designer removes it; sign-out removes all; old drafts expire', () => {
+    const s = mem();
+    writeDraft(s, 'a@x.test', 'r1', def);
+    expect(readDraft(s, 'b@x.test', 'r1')).toBe(null);
+    expect(draftKey('a@x.test', 'r1')).not.toContain('a@x.test');
+    clearDrafts(s, 'b@x.test'); // b opens the designer in the same browser
+    expect(readDraft(s, 'a@x.test', 'r1')).toBe(null);
+    writeDraft(s, 'a@x.test', 'r1', def); writeDraft(s, 'a@x.test', 'r2', def);
+    clearDrafts(s); // sign-out
+    expect(s.length).toBe(0);
+    writeDraft(s, 'a@x.test', 'r1', def, Date.now() - DRAFT_TTL - 1);
+    expect(readDraft(s, 'a@x.test', 'r1')).toBe(null);
+  });
+});

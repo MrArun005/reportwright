@@ -178,12 +178,17 @@ try {
   }
   if (want('u4')) {
     step('U-4: unsaved changes are kept as a draft and offered back when the report opens again');
-    const id = await create(base('ux r1c autosave', [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 200, h: 20, value: 'Hello' }]));
+    const secretSrc = { name: 'secret', type: 'rest', url: '/api/sample/none?api_key=E2ESECRETKEY', headers: { Authorization: 'Bearer E2EHEADERTOKEN' } };
+    const id = await create(base('ux r1c autosave', [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 200, h: 20, value: 'Hello' }], { dataSources: [...base('x').dataSources, secretSrc] }));
+    const drafts = () => p.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('pw.draft.')).map(k => localStorage.getItem(k)));
     await open(id);
     await p.getByLabel('Report name').fill('ux r1c autosave edited');
     await p.getByTestId('save-state').filter({ hasText: 'Unsaved changes' }).waitFor();
     await p.waitForTimeout(11000); // the autosave interval
-    assert.ok(await p.evaluate((k) => !!localStorage.getItem(k), `pw.draft.${id}`));
+    const kept = await drafts();
+    assert.equal(kept.length, 1);
+    assert.ok(kept[0].includes('ux r1c autosave edited'));
+    for (const secret of ['E2ESECRETKEY', 'E2EHEADERTOKEN', '"rows"']) assert.ok(!kept[0].includes(secret), `the draft holds ${secret}`);
     await open(id); // as after a crash, an expired session or a closed laptop
     await p.getByTestId('draft-offer').waitFor();
     await shot(p, 'u4-draft');
@@ -191,7 +196,8 @@ try {
     assert.equal(await p.getByLabel('Report name').inputValue(), 'ux r1c autosave edited');
     await save();
     assert.equal((await read(id)).name, 'ux r1c autosave edited');
-    assert.equal(await p.evaluate((k) => localStorage.getItem(k), `pw.draft.${id}`), null); // saved: no draft left
+    assert.deepEqual(await drafts(), []); // saved: no draft left
+    assert.deepEqual((await read(id)).dataSources.find(x => x.name === 'secret'), secretSrc); // restored sources come from the saved report
     await open(id);
     await p.waitForTimeout(500);
     assert.equal(await p.getByTestId('draft-offer').count(), 0);

@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { clearAllDrafts } from '@/designer/draft.js';
 import { t } from '@/i18n/index.js';
 import { QrCode, RecoveryCodes, CodeField, postJson } from '@/home/TwoFactor.jsx';
 
@@ -75,6 +76,7 @@ export default function LoginForm({ next, lang, sso = {}, password: passwordOn =
     } catch (ex) { setErr(ex.message); setBusy(false); }
   };
   const signOut = async () => {
+    clearAllDrafts(); // designer drafts never outlive the session
     const r = await fetch('/api/auth/logout', { method: 'POST' }).then(x => x.json()).catch(() => ({}));
     if (r.redirect) { window.location.assign(r.redirect); return; } // single logout at the identity provider
     setMe(null);

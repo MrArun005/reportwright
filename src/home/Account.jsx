@@ -1,8 +1,10 @@
 'use client';
 import { t } from '@/i18n/index.js';
+import { clearAllDrafts } from '@/designer/draft.js';
 
 /** Sign out; after a single sign-on session the identity provider's logout page comes next (single logout). */
 export async function signOutAndGo() {
+  clearAllDrafts(); // no designer draft stays behind for the next person at this browser
   const r = await fetch('/api/auth/logout', { method: 'POST' }).then(x => x.json()).catch(() => ({}));
   window.location.assign(r.redirect || '/login');
 }

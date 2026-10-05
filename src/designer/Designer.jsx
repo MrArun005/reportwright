@@ -19,6 +19,7 @@ import AskAi from './AskAi.jsx';
 import { PartsPanel, LayersPanel } from './Reuse.jsx';
 import PivotWizard, { InstantVisuals } from './PivotWizard.jsx';
 import { t, dirOf, pickLang } from '@/i18n/index.js';
+import { readDraft, writeDraft, clearDraft, clearDrafts, mergeDraft } from './draft.js';
 
 const TOOLS = [
   { type: 'textbox', icon: <svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 3h10M7 3v9" stroke="currentColor" strokeWidth="1.6" fill="none" /></svg> },
@@ -79,41 +80,44 @@ const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 function savedZoom() { try { const z = localStorage.getItem('pw.designer.zoom'); return z === 'fit' ? 'fit' : ZOOMS.includes(Number(z)) ? Number(z) : null; } catch { return null; } }
 function keepZoom(z) { try { localStorage.setItem('pw.designer.zoom', String(z)); } catch { /* private window */ } }
 
-/* ---- autosave: a draft of unsaved changes in this browser, offered back when the report opens again ---- */
+/* ---- autosave: a draft of unsaved changes in this browser (no secrets, per user: draft.js), offered back on the next open ---- */
 const AUTOSAVE_MS = 10000;
-const draftKey = (id) => `pw.draft.${id}`;
-function readDraft(id) { try { const d = JSON.parse(localStorage.getItem(draftKey(id)) || 'null'); return d && d.def && typeof d.def === 'object' ? d : null; } catch { return null; } }
-function writeDraft(id, def) { try { localStorage.setItem(draftKey(id), JSON.stringify({ at: Date.now(), def })); return true; } catch { return false; } } // full or private storage: no draft
-export function clearDraft(id) { try { localStorage.removeItem(draftKey(id)); } catch { /* private window */ } }
 /** The definition without the designer's own ids, to compare a draft with what the server has. */
 const plain = (d) => JSON.stringify(d, (k, v) => (k === 'id' ? undefined : v));
+const framed = () => { try { return window.self !== window.top; } catch { return true; } };
 
 /** Unsaved changes are kept as a draft every few seconds (and when the page goes away); "Restore" brings them back. */
 function useAutosave(id, T, lang) {
   const [offer, setOffer] = useState(null); // { at, def }: a draft newer than the saved report
+  const [user, setUser] = useState(null); // the signed-in email ('' without accounts); null until known
   useEffect(() => {
-    if (!id) return;
-    const d = readDraft(id);
-    if (d && plain(d.def) !== plain(useDesigner.getState().def)) setOffer(d); else if (d) clearDraft(id);
+    if (!id || framed()) return undefined; // never inside another site's page
+    let alive = true;
+    fetch('/api/auth/me').then(r => (r.ok ? r.json() : {})).catch(() => ({})).then(me => { if (alive) setUser(String(me?.email || '')); });
+    return () => { alive = false; };
   }, [id]);
   useEffect(() => {
-    if (!id) return;
-    const keep = () => { const s = useDesigner.getState(); if (!s.saved && !s.readOnly) writeDraft(id, s.def); };
+    if (!id || user == null) return undefined;
+    let store;
+    try { store = window.localStorage; } catch { return undefined; }
+    clearDrafts(store, user); // another user's drafts in this browser go (and expired ones)
+    const d = readDraft(store, user, id);
+    if (d && plain(mergeDraft(d.def, useDesigner.getState().def)) !== plain(useDesigner.getState().def)) setOffer(d); else if (d) clearDraft(store, user, id);
+    const keep = () => { const s = useDesigner.getState(); if (!s.saved && !s.readOnly) writeDraft(store, user, id, s.def); };
     const t = setInterval(keep, AUTOSAVE_MS);
     const hide = () => { if (document.visibilityState === 'hidden') keep(); };
     window.addEventListener('pagehide', keep);
     document.addEventListener('visibilitychange', hide);
-    // a saved report needs no draft
-    const unsub = useDesigner.subscribe((s, prev) => { if (s.saved && !prev.saved) clearDraft(id); });
+    const unsub = useDesigner.subscribe((s, prev) => { if (s.saved && !prev.saved) clearDraft(store, user, id); }); // saved: no draft needed
     return () => { clearInterval(t); window.removeEventListener('pagehide', keep); document.removeEventListener('visibilitychange', hide); unsub(); };
-  }, [id]);
+  }, [id, user]);
   if (!offer) return null;
   const when = new Date(offer.at).toLocaleString(lang === 'en' ? 'en-IN' : lang, { dateStyle: 'medium', timeStyle: 'short' });
   return (
     <div className="draft-bar" role="alert" data-testid="draft-offer">
       <span>{T('ux_draftFound', { when })}</span>
-      <button className="btn sm primary" data-testid="draft-restore" onClick={() => { const d = offer.def; useDesigner.getState().apply(() => JSON.parse(JSON.stringify(d))); useDesigner.getState().fixSelection(); setOffer(null); }}>{T('ux_draftRestore')}</button>
-      <button className="btn sm" data-testid="draft-discard" onClick={() => { clearDraft(id); setOffer(null); }}>{T('ux_draftDiscard')}</button>
+      <button className="btn sm primary" data-testid="draft-restore" onClick={() => { const d = mergeDraft(offer.def, useDesigner.getState().def); useDesigner.getState().apply(() => JSON.parse(JSON.stringify(d))); useDesigner.getState().fixSelection(); setOffer(null); }}>{T('ux_draftRestore')}</button>
+      <button className="btn sm" data-testid="draft-discard" onClick={() => { try { clearDraft(window.localStorage, user, id); } catch { /* no storage */ } setOffer(null); }}>{T('ux_draftDiscard')}</button>
     </div>
   );
 }
