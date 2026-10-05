@@ -67,10 +67,18 @@ describe('the hash chain', () => {
     undo();
     expect((await A.verifyAudit()).ok).toBe(true);
   });
-  it('events from before the chain are counted, not judged', async () => {
-    const undo = edit(ls => [JSON.stringify({ id: '2000-01-01T00:00:00.000Z-000001-aaaaaa', at: new Date().toISOString(), type: 'auth.login', actor: 'user:old@x.test', ip: '-', status: 'ok' }), ...ls]);
-    const r = await A.verifyAudit();
-    expect(r).toMatchObject({ ok: true, unchained: 1 });
+  it('events from before the chain are counted, not judged; one put in later without a chain is refused', async () => {
+    const old = (at) => JSON.stringify({ id: `${at}-000001-aaaaaa`, at, type: 'auth.login', actor: 'user:old@x.test', ip: '-', status: 'ok' });
+    let undo = edit(ls => [old('2000-01-01T00:00:00.000Z'), ...ls]);
+    expect(await A.verifyAudit()).toMatchObject({ ok: true, unchained: 1 });
+    undo();
+    undo = edit(ls => [...ls, old(new Date().toISOString())]);
+    expect(kinds(await A.verifyAudit())).toEqual(['unchained']);
+    undo();
+  });
+  it('a line that is not an event fails the check (it is not skipped)', async () => {
+    const undo = edit(ls => [...ls.slice(0, 2), '{"id": broken', ...ls.slice(2)]);
+    expect(kinds(await A.verifyAudit())).toEqual(['unreadable']);
     undo();
   });
 });
@@ -124,6 +132,61 @@ describe('signed checkpoints', () => {
     expect(r.code).toBe(1);
     expect(r.out).toMatch(/altered/);
     undo();
+  });
+});
+
+describe('fail closed', () => {
+  it('a stream rewritten from some event on, hashes and links recomputed, differs from the signed head', async () => {
+    const undo = edit(ls => {
+      const evs = ls.map(l => JSON.parse(l));
+      const s0 = evs.find(e => e.chain?.n === 0).chain.s;
+      let prev = null;
+      return evs.map(e => {
+        if (e.chain?.s !== s0) return JSON.stringify(e);
+        if (e.chain.n >= 1) { if (e.actor) e.actor = e.actor.replace('u1@', 'u6@'); e.chain.prev = prev; e.hash = A.hashEntry(e); }
+        prev = e.hash;
+        return JSON.stringify(e);
+      });
+    });
+    const r = await A.verifyAudit();
+    expect(r.ok).toBe(false);
+    expect(kinds(r)).toContain('altered'); // the checkpoint's head hash, and its own signature over the rewritten hash
+    undo();
+  });
+  it('the end of the log cut off with its checkpoints, and events no checkpoint anchors, are found once the interval has passed', async () => {
+    process.env.PW_AUDIT_CHECKPOINT_MINUTES = '0.002'; // 120 ms: the check allows two intervals and one more
+    try {
+      await A.checkpoint();
+      await A.audit('report.view', { actor: 'user:late@x.test', report: 'r9' });
+      await new Promise(r => setTimeout(r, 450));
+      expect(kinds(await A.verifyAudit())).toEqual(['stale', 'unanchored']);
+      await A.checkpoint();
+      expect((await A.verifyAudit()).ok).toBe(true);
+      await new Promise(r => setTimeout(r, 450));
+      expect(kinds(await A.verifyAudit())).toEqual(['stale']); // no newer checkpoint: the end may be cut off
+    } finally { delete process.env.PW_AUDIT_CHECKPOINT_MINUTES; }
+  });
+  it('no key configured: checkpoints are written unsigned, never with a known key, and verification fails', async () => {
+    const keep = process.env.PW_SESSION_SECRET;
+    delete process.env.PW_SESSION_SECRET;
+    try {
+      for (const env of ['production', 'development']) {
+        const was = process.env.NODE_ENV; process.env.NODE_ENV = env;
+        try {
+          const cp = await A.checkpoint();
+          expect(cp.sig).toBeUndefined();
+          expect(A.keySource()).toBe('none');
+          expect(A.publicKey()).toBe(null);
+          const r = await A.verifyAudit();
+          expect(r.ok).toBe(false);
+          expect(kinds(r)).toContain('key');
+        } finally { process.env.NODE_ENV = was; }
+      }
+      process.env.PW_AUDIT_KEY = 'short';
+      expect(A.keySource()).toBe('none'); // a short key is not a key
+    } finally { process.env.PW_SESSION_SECRET = keep; delete process.env.PW_AUDIT_KEY; }
+    // those unsigned checkpoints now fail the check with the real key
+    expect(kinds(await A.verifyAudit())).toContain('signature');
   });
 });
 

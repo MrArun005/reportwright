@@ -80,22 +80,29 @@ function writtenHead() {
 
 /* ---------------- checkpoint signatures (Ed25519) ---------------- */
 
+/** The checkpoint signing key, or null when none is configured: never a key anyone could know. */
 function signingKey() {
   if (process.env.PW_AUDIT_SIGNING_KEY) return crypto.createPrivateKey(String(process.env.PW_AUDIT_SIGNING_KEY).replace(/\\n/g, '\n'));
-  const secret = process.env.PW_AUDIT_KEY || process.env.PW_SESSION_SECRET || 'pagewright-audit';
+  const secret = process.env.PW_AUDIT_KEY || process.env.PW_SESSION_SECRET;
+  if (!secret || secret.length < 32) {
+    if (!g.__pwAudit.warnedKey) { g.__pwAudit.warnedKey = true; console.error('[pagewright] audit log: no PW_AUDIT_KEY (32+ characters), PW_AUDIT_SIGNING_KEY or PW_SESSION_SECRET, so checkpoints are written UNSIGNED and the chain proves only consistency. Set PW_AUDIT_KEY.'); }
+    return null;
+  }
   const seed = crypto.createHmac('sha256', secret).update('pagewright-audit-checkpoint-v1').digest();
   return crypto.createPrivateKey({ key: Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), seed]), format: 'der', type: 'pkcs8' });
 }
 /** Where the signing key comes from (the audit page says how much a signature proves). */
-export const keySource = () => (process.env.PW_AUDIT_SIGNING_KEY ? 'PW_AUDIT_SIGNING_KEY' : process.env.PW_AUDIT_KEY ? 'PW_AUDIT_KEY' : process.env.PW_SESSION_SECRET ? 'PW_SESSION_SECRET' : 'none');
-/** The public key that checks the checkpoints: PW_AUDIT_PUBLIC_KEY when given (PEM), else this server's. */
+export const keySource = () => (process.env.PW_AUDIT_SIGNING_KEY ? 'PW_AUDIT_SIGNING_KEY' : (process.env.PW_AUDIT_KEY || '').length >= 32 ? 'PW_AUDIT_KEY' : (process.env.PW_SESSION_SECRET || '').length >= 32 ? 'PW_SESSION_SECRET' : 'none');
+/** The public key that checks the checkpoints: PW_AUDIT_PUBLIC_KEY when given (PEM), else this server's; null without one. */
 export function publicKey() {
   if (process.env.PW_AUDIT_PUBLIC_KEY) return crypto.createPublicKey(String(process.env.PW_AUDIT_PUBLIC_KEY).replace(/\\n/g, '\n'));
-  return crypto.createPublicKey(signingKey());
+  const k = signingKey();
+  return k ? crypto.createPublicKey(k) : null;
 }
-/** { pem, fingerprint } of the public key. */
+/** { pem, fingerprint } of the public key ({ pem: '', fingerprint: 'none' } without one). */
 export function publicKeyInfo() {
   const k = publicKey();
+  if (!k) return { pem: '', fingerprint: 'none' };
   const der = k.export({ type: 'spki', format: 'der' });
   return { pem: String(k.export({ type: 'spki', format: 'pem' })), fingerprint: crypto.createHash('sha256').update(der).digest('hex').slice(0, 16) };
 }
@@ -107,7 +114,8 @@ export const clientIp = (req) => (req?.headers.get('x-forwarded-for') || '').spl
 export function paramsHash(params) {
   if (!params || typeof params !== 'object' || !Object.keys(params).length) return null;
   const sorted = (v) => (Array.isArray(v) ? v.map(sorted) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map(k => [k, sorted(v[k])])) : v);
-  const key = process.env.PW_AUDIT_KEY || process.env.PW_SESSION_SECRET || 'pagewright-audit';
+  // no secret configured: a random key for this process (hashes then match within one process only, never a known key)
+  const key = process.env.PW_AUDIT_KEY || process.env.PW_SESSION_SECRET || (g.__pwAudit.paramKey ||= crypto.randomBytes(32).toString('hex'));
   return crypto.createHmac('sha256', key).update(JSON.stringify(sorted(params))).digest('hex').slice(0, 16);
 }
 
@@ -158,6 +166,8 @@ async function write(entry, type) {
     await store().appendAudit(entry);
     c.pending.delete(entry.chain.n);
     ship(entry);
+    // publish this stream's head every 30 s, so the next checkpoint (any server's) anchors it even if this process dies
+    if (Date.now() - (c.headAt || 0) > 30000 && process.env.PW_AUDIT_CHECKPOINTS !== 'off') { c.headAt = Date.now(); publishHead().catch(() => {}); }
     if (Date.now() - g.__pwAudit.pruned > HOUR) {
       g.__pwAudit.pruned = Date.now();
       await store().pruneAudit(new Date(Date.now() - retentionDays() * 24 * HOUR).toISOString());
@@ -181,6 +191,14 @@ function startCheckpoints() {
   if (g.__pwAudit.timer || process.env.PW_AUDIT_CHECKPOINTS === 'off') return;
   g.__pwAudit.timer = setInterval(() => { checkpoint().catch(e => console.error(`[pagewright] audit checkpoint: ${e.message}`)); }, checkpointMs());
   g.__pwAudit.timer.unref?.();
+  // and one soon after start: it anchors the heads a stopped process left
+  setTimeout(() => { checkpoint().catch(() => {}); }, 10000).unref?.();
+}
+async function publishHead() {
+  const head = writtenHead();
+  if (!head) return;
+  const { putRecord } = await import('./settings.js');
+  await putRecord(`audit-head:${chain().s}`, { s: chain().s, n: head.n, hash: head.hash, at: head.at });
 }
 
 /**
@@ -189,10 +207,8 @@ function startCheckpoints() {
  * @param {{ actor?: string }} [o]
  */
 export async function checkpoint({ actor = 'system' } = {}) {
-  const { getRecord: _g, putRecord } = await import('./settings.js');
-  const head = writtenHead();
+  await publishHead();
   const c = chain();
-  if (head) await putRecord(`audit-head:${c.s}`, { s: c.s, n: head.n, hash: head.hash, at: head.at });
   const cut = Date.now() - retentionDays() * 24 * HOUR;
   const heads = {};
   for (const r of await store().list('settings')) {
@@ -207,7 +223,8 @@ export async function checkpoint({ actor = 'system' } = {}) {
   const entry = { id: '', at: new Date().toISOString(), type: 'audit.checkpoint', actor, ip: '-', status: 'ok', detail: { heads, key: publicKeyInfo().fingerprint } };
   entry.id = `${entry.at}-${String((g.__pwAudit.seq = ((g.__pwAudit.seq || 0) + 1) % 1e6)).padStart(6, '0')}-${crypto.randomBytes(3).toString('hex')}`;
   link(entry);
-  entry.sig = crypto.sign(null, Buffer.from(entry.hash, 'hex'), signingKey()).toString('base64');
+  const key = signingKey();
+  if (key) entry.sig = crypto.sign(null, Buffer.from(entry.hash, 'hex'), key).toString('base64'); // without a key: unsigned, and verification says so
   try { await store().appendAudit(entry); c.pending.delete(entry.chain.n); ship(entry); }
   catch (e) { c.pending.delete(entry.chain.n); throw e; }
   return entry;
@@ -223,43 +240,71 @@ export async function checkpoint({ actor = 'system' } = {}) {
  *   problems: { kind: string, id?: string, stream?: string, detail: string }[], key: { fingerprint: string, source: string } }>}
  */
 export async function verifyAudit(q = {}) {
+  const problems = [];
+  const bad = (p) => { if (problems.length < 200) problems.push(p); };
+  const empty = { events: 0, unchained: 0, streams: 0, checkpoints: 0, lastCheckpoint: null };
+  let info = { fingerprint: 'none', source: keySource() };
+  try { info = { fingerprint: publicKeyInfo().fingerprint, source: keySource() }; } catch (e) { bad({ kind: 'key', detail: `The audit public key does not load: ${/** @type {Error} */ (e).message}` }); }
+  try { return { ...(await verifyNow(q, bad, problems)), key: info }; }
+  catch (e) { bad({ kind: 'unreadable', detail: `The log could not be read to the end: ${/** @type {Error} */ (e).message}` }); return { ok: false, ...empty, problems, key: info }; } // fail closed
+}
+
+/** @param {any} q @param {(p: any) => void} bad @param {any[]} problems */
+async function verifyNow(q, bad, problems) {
   const windowed = !!(q.from || q.to);
   const iso = (v, end) => (v ? (v.length === 10 ? (end ? new Date(Date.parse(v) + 24 * HOUR).toISOString() : `${v}T00:00:00.000Z`) : new Date(v).toISOString()) : undefined);
   const from = iso(q.from, false), to = iso(q.to, true);
   const pub = publicKey();
+  if (!pub) bad({ kind: 'key', detail: 'No audit key is configured (PW_AUDIT_KEY, PW_AUDIT_SIGNING_KEY or PW_AUDIT_PUBLIC_KEY): no checkpoint can be trusted.' });
   /** @type {Map<string, Map<number, { hash: string, prev: string, id: string, at: string }>>} */
   const streams = new Map();
-  const problems = [];
-  const bad = (p) => { if (problems.length < 200) problems.push(p); };
   const refs = [];
-  let events = 0, unchained = 0, checkpoints = 0, lastCheckpoint = null, oldest = null, before;
+  /** the newest signed head of each stream: events at or before it are anchored */
+  const anchored = new Map();
+  const loose = []; // events without a chain, judged once the first chained event is known
+  let events = 0, unchained = 0, checkpoints = 0, lastCheckpoint = null, firstChained = null, before;
   for (;;) {
-    const page = await store().queryAudit({ from, to, before, limit: 10000 });
+    const page = await store().queryAudit({ from, to, before, limit: 10000, raw: true });
     for (const e of page) {
+      if (e.__unreadable !== undefined) { bad({ kind: 'unreadable', detail: `A line of ${e.__file} is not an event: ${e.__unreadable.slice(0, 60)}` }); continue; }
       events++;
-      if (!oldest || e.at < oldest) oldest = e.at;
-      if (!e.chain || typeof e.hash !== 'string') { unchained++; continue; }
-      if (hashEntry(e) !== e.hash) bad({ kind: 'altered', id: e.id, stream: e.chain.s, detail: 'The event does not match its hash: it was changed after it was written.' });
-      const m = streams.get(e.chain.s) || new Map();
-      streams.set(e.chain.s, m);
-      if (m.has(e.chain.n)) bad({ kind: 'duplicate', id: e.id, stream: e.chain.s, detail: `Two events claim number ${e.chain.n} in this stream.` });
-      m.set(Number(e.chain.n), { hash: e.hash, prev: e.chain.prev, id: e.id, at: e.at });
+      if (!e || typeof e !== 'object' || typeof e.at !== 'string') { bad({ kind: 'unreadable', id: e?.id, detail: 'An event without a time.' }); continue; }
+      if (!e.chain || typeof e.hash !== 'string') { loose.push(e); continue; }
+      const { s, n } = e.chain;
+      if (typeof s !== 'string' || !Number.isInteger(n) || n < 0 || typeof e.chain.prev !== 'string') { bad({ kind: 'unreadable', id: e.id, detail: 'An event with a broken chain field.' }); continue; }
+      if (!firstChained || e.at < firstChained) firstChained = e.at;
+      if (hashEntry(e) !== e.hash) bad({ kind: 'altered', id: e.id, stream: s, detail: 'The event does not match its hash: it was changed after it was written.' });
+      const m = streams.get(s) || new Map();
+      streams.set(s, m);
+      if (m.has(n)) bad({ kind: 'duplicate', id: e.id, stream: s, detail: `Two events claim number ${n} in this stream.` });
+      m.set(n, { hash: e.hash, prev: e.chain.prev, id: e.id, at: e.at });
       if (e.type === 'audit.checkpoint') {
         checkpoints++;
-        if (!lastCheckpoint || e.at > lastCheckpoint) lastCheckpoint = e.at;
         let ok = false;
-        try { ok = typeof e.sig === 'string' && crypto.verify(null, Buffer.from(e.hash, 'hex'), pub, Buffer.from(e.sig, 'base64')); } catch { ok = false; }
-        if (!ok) bad({ kind: 'signature', id: e.id, stream: e.chain.s, detail: 'The checkpoint signature does not check with the audit public key.' });
-        for (const [s, h] of Object.entries(e.detail?.heads || {})) if (Array.isArray(h)) refs.push({ s, n: Number(h[0]), hash: String(h[1]), at: String(h[2] || e.at), by: e.id });
+        try { ok = !!pub && typeof e.sig === 'string' && crypto.verify(null, Buffer.from(e.hash, 'hex'), pub, Buffer.from(e.sig, 'base64')); } catch { ok = false; }
+        if (!ok) { bad({ kind: 'signature', id: e.id, stream: s, detail: typeof e.sig === 'string' ? 'The checkpoint signature does not check with the audit public key.' : 'The checkpoint is not signed (no audit key was set when it was written).' }); continue; }
+        if (!lastCheckpoint || e.at > lastCheckpoint) lastCheckpoint = e.at;
+        const heads = e.detail?.heads;
+        if (!heads || typeof heads !== 'object') { bad({ kind: 'unreadable', id: e.id, detail: 'A checkpoint without heads.' }); continue; }
+        for (const [hs, h] of Object.entries(heads)) {
+          if (!Array.isArray(h) || !Number.isInteger(h[0])) { bad({ kind: 'unreadable', id: e.id, detail: 'A checkpoint with a broken head.' }); continue; }
+          refs.push({ s: hs, n: h[0], hash: String(h[1]), at: String(h[2] || e.at), by: e.id });
+          anchored.set(hs, Math.max(anchored.get(hs) ?? -1, h[0]));
+        }
+        anchored.set(s, Math.max(anchored.get(s) ?? -1, n)); // a signed checkpoint anchors its own stream up to itself
       }
     }
     q.onProgress?.(events);
     if (page.length < 10000) break;
     before = page.at(-1).id;
+    if (!before) break;
   }
+  // events with no chain are history from before the chain; one written after chaining began was put in by hand
+  for (const e of loose) { unchained++; if (firstChained && e.at >= firstChained) bad({ kind: 'unchained', id: e.id, detail: 'An event without a chain, written after the chain began: it was added outside Pagewright.' }); }
   // retention (pruneAudit, hourly) removes events before the start of the day PW_AUDIT_RETENTION_DAYS ago: only events
   // older than that edge (plus a day and an hour of slack) may be missing at the start of a stream, or behind a head
   const edge = new Date(Date.now() - retentionDays() * 24 * HOUR).setUTCHours(0, 0, 0, 0) + 25 * HOUR;
+  const grace = 2 * checkpointMs() + Math.min(5 * 60000, checkpointMs()); // events newer than this may not be in a checkpoint yet
   for (const [s, m] of streams) {
     const ns = [...m.keys()].sort((a, b) => a - b);
     const first = m.get(ns[0]);
@@ -269,6 +314,10 @@ export async function verifyAudit(q = {}) {
       if (ns[i] !== ns[i - 1] + 1) bad({ kind: 'missing', stream: s, id: cur.id, detail: `Events ${ns[i - 1] + 1} to ${ns[i] - 1} of this stream are gone.` });
       else if (cur.prev !== m.get(ns[i - 1]).hash) bad({ kind: 'broken', stream: s, id: cur.id, detail: 'The event does not link to the one before it.' });
     }
+    // a chain only proves something up to a signed head: older events beyond the newest head are unanchored
+    const upTo = anchored.get(s) ?? -1;
+    const old = ns.find(n => n > upTo && Date.now() - Date.parse(m.get(n).at) > grace && !(to && m.get(n).at >= to));
+    if (old !== undefined && pub) bad({ kind: 'unanchored', stream: s, id: m.get(old).id, detail: `Event ${old} and later are in no signed checkpoint although checkpoints run every ${Math.round(checkpointMs() / 60000)} minutes: the stream may have been rewritten or made up.` });
   }
   for (const r of refs) {
     const m = streams.get(r.s);
@@ -279,7 +328,13 @@ export async function verifyAudit(q = {}) {
     if (r.n > max && !(to && r.at >= to)) bad({ kind: 'missing', stream: r.s, id: r.by, detail: `A checkpoint names event ${r.n} of the stream, but it ends at ${max}: its newest events are gone.` });
     else if (r.n >= min && r.n <= max && m.get(r.n)?.hash !== r.hash) bad({ kind: 'altered', stream: r.s, id: r.by, detail: `Event ${r.n} of the stream differs from what a checkpoint recorded.` });
   }
-  return { ok: !problems.length, events, unchained, streams: streams.size, checkpoints, lastCheckpoint, problems, key: { fingerprint: publicKeyInfo().fingerprint, source: keySource() } };
+  // the tail: checkpoints run every interval while a server runs, so the newest signed one is recent unless the end of
+  // the log (with its checkpoints) was cut away
+  if (!to && pub && streams.size && (!lastCheckpoint || Date.now() - Date.parse(lastCheckpoint) > grace)) {
+    const newest = [...streams.values()].flatMap(m => [...m.values()]).reduce((a, x) => (x.at > a ? x.at : a), '');
+    if (Date.now() - Date.parse(newest) > grace || lastCheckpoint) bad({ kind: 'stale', detail: lastCheckpoint ? `The newest signed checkpoint is from ${lastCheckpoint}, older than the checkpoint interval allows: the end of the log may be cut off (or no server ran since).` : 'There is no signed checkpoint: nothing anchors the chain.' });
+  }
+  return { ok: !problems.length, events, unchained, streams: streams.size, checkpoints, lastCheckpoint, problems };
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}/;

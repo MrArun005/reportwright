@@ -172,7 +172,7 @@ export function fileStore(root) {
         const lines = (await fs.readFile(path.join(dir, d), 'utf8')).split('\n').filter(Boolean).reverse();
         for (const l of lines) {
           let e;
-          try { e = JSON.parse(l); } catch { continue; }
+          try { e = JSON.parse(l); } catch { if (q.raw) { out.push({ __unreadable: l.slice(0, 200), __file: d }); if (out.length >= q.limit) return out; } continue; } // raw: the verifier sees broken lines
           if (auditMatch(e, q)) { out.push(e); if (out.length >= q.limit) return out; }
         }
       }
