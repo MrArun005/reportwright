@@ -87,27 +87,74 @@ export async function qrSvg(text) {
 
 /* ---------------- secrets at rest ---------------- */
 
-function dataKey() {
-  const k = process.env.PW_DATA_KEY;
-  if (k && k.length < 32) throw new Error('PW_DATA_KEY is too short: use at least 32 random characters.');
-  return Buffer.from(crypto.hkdfSync('sha256', k || sessionSecret(), 'pagewright', 'totp-secret-v1', 32));
+// The key that seals TOTP secrets at rest is PW_DATA_KEY (32+ characters), with PW_DATA_KEY_OLD (comma-separated) for a
+// rotation: a seal names its key ("v2:<key id>:…"), so old seals still open while new ones use the new key. It never
+// silently falls back to PW_SESSION_SECRET: rotating that (the usual answer to a leak) would make every enrolment
+// unreadable. In development, without PW_DATA_KEY, the session secret seals (said once in the log). Seals from before
+// key ids ("v1:") are opened with PW_DATA_KEY or the session secret, as they were made. checkDataKey() at boot refuses a
+// changed key that would strand the stored seals.
+const kdf = (material) => Buffer.from(crypto.hkdfSync('sha256', material, 'pagewright', 'totp-secret-v1', 32));
+const kidOf = (material) => crypto.createHash('sha256').update(`pw-data-key:${material}`).digest('hex').slice(0, 8);
+const g = /** @type {any} */ (globalThis);
+/** The keys that open seals, the current one first: [{ kid, key }]. */
+function dataKeys() {
+  const list = [];
+  const cur = process.env.PW_DATA_KEY;
+  if (cur && cur.length < 32) throw Object.assign(new Error('PW_DATA_KEY is too short: use at least 32 random characters.'), { status: 500 });
+  if (cur) list.push(cur);
+  else {
+    const dev = (/** @type {any} */ (process.env).PW_MODE === 'dev') || (!process.env.PW_MODE && ['development', 'test'].includes(String(process.env.NODE_ENV)));
+    if (!dev) throw Object.assign(new Error('Two-factor sign-in needs PW_DATA_KEY on the server (32+ random characters, kept apart from PW_SESSION_SECRET): it seals the authenticator secrets.'), { status: 500 });
+    if (!g.__pwDataKeyWarned) { g.__pwDataKeyWarned = true; console.warn('[pagewright] PW_DATA_KEY is not set: development seals two-factor secrets with PW_SESSION_SECRET. Production refuses this.'); }
+    list.push(sessionSecret());
+  }
+  for (const o of (process.env.PW_DATA_KEY_OLD || '').split(',').map(x => x.trim()).filter(x => x.length >= 32)) list.push(o);
+  return list.map(m => ({ kid: kidOf(m), key: kdf(m) }));
 }
-/** "v1:" + base64(iv | tag | ciphertext). @param {string} text */
+/** "v2:<key id>:" + base64(iv | tag | ciphertext). @param {string} text */
 export function seal(text) {
+  const [{ kid, key }] = dataKeys();
   const iv = crypto.randomBytes(12);
-  const c = crypto.createCipheriv('aes-256-gcm', dataKey(), iv);
+  const c = crypto.createCipheriv('aes-256-gcm', key, iv);
   const ct = Buffer.concat([c.update(text, 'utf8'), c.final()]);
-  return `v1:${Buffer.concat([iv, c.getAuthTag(), ct]).toString('base64')}`;
+  rememberKid(kid);
+  return `v2:${kid}:${Buffer.concat([iv, c.getAuthTag(), ct]).toString('base64')}`;
 }
-/** The text, or null when the seal is broken or the key changed. @param {string} sealed */
+const open = (key, b) => { const d = crypto.createDecipheriv('aes-256-gcm', key, b.subarray(0, 12)); d.setAuthTag(b.subarray(12, 28)); return Buffer.concat([d.update(b.subarray(28)), d.final()]).toString('utf8'); };
+/** The text, or null when the seal is broken or no configured key opens it. @param {string} sealed */
 export function unseal(sealed) {
   try {
-    if (!String(sealed).startsWith('v1:')) return null;
-    const b = Buffer.from(String(sealed).slice(3), 'base64');
-    const d = crypto.createDecipheriv('aes-256-gcm', dataKey(), b.subarray(0, 12));
-    d.setAuthTag(b.subarray(12, 28));
-    return Buffer.concat([d.update(b.subarray(28)), d.final()]).toString('utf8');
+    const t = String(sealed);
+    const m = /^v2:([0-9a-f]{8}):(.+)$/.exec(t);
+    if (m) { const k = dataKeys().find(x => x.kid === m[1]); return k ? open(k.key, Buffer.from(m[2], 'base64')) : null; }
+    if (!t.startsWith('v1:')) return null;
+    const b = Buffer.from(t.slice(3), 'base64');
+    // v1 was sealed with PW_DATA_KEY, or the session secret when there was none
+    for (const material of [process.env.PW_DATA_KEY, ...(process.env.PW_DATA_KEY_OLD || '').split(','), process.env.PW_SESSION_SECRET].map(x => (x || '').trim()).filter(Boolean)) {
+      try { return open(kdf(material), b); } catch { /* the next key */ }
+    }
+    return null;
   } catch { return null; }
+}
+
+/** The key id that sealed the stored secrets, kept in settings ("datakey") so a changed key is noticed at boot. */
+function rememberKid(kid) {
+  if (g.__pwDataKid === kid) return;
+  g.__pwDataKid = kid;
+  store().put('settings', 'datakey', JSON.stringify({ id: 'datakey', kid, at: new Date().toISOString() })).catch(() => { g.__pwDataKid = null; });
+}
+/**
+ * At boot: when secrets were sealed with a key that is no longer configured (PW_DATA_KEY changed without its old value
+ * in PW_DATA_KEY_OLD, or the session secret rotated in development), say so: production refuses to start rather than
+ * leave every enrolled user unable to sign in. Returns the problem, or ''.
+ */
+export async function checkDataKey() {
+  const t = await store().get('settings', 'datakey').catch(() => null);
+  if (!t) return '';
+  let kid; try { kid = JSON.parse(t).kid; } catch { return ''; }
+  let kids;
+  try { kids = dataKeys().map(k => k.kid); } catch (e) { return /** @type {Error} */ (e).message; }
+  return kids.includes(kid) ? '' : `The two-factor secrets were sealed with a key that is no longer configured (key id ${kid}). Put the previous PW_DATA_KEY in PW_DATA_KEY_OLD (comma-separated), or every enrolled user loses two-factor sign-in.`;
 }
 
 /* ---------------- recovery codes ---------------- */

@@ -20,7 +20,9 @@ Every setting Pagewright reads, from `src/server/config.js` (the table there is 
 | `PW_DEV_HOSTS` | list | (localhost) | More host names the dev server answers on (DNS rebinding guard). |
 | `PW_TRUSTED_PROXIES` | list | (none) | Proxy IPs or CIDRs whose X-Forwarded-For is believed. |
 | `PW_TOTP_ISSUER` | text | Pagewright | The issuer name authenticator apps show. |
-| `PW_DATA_KEY` | secret | (PW_SESSION_SECRET) | Seals TOTP secrets at rest (32+ characters). |
+| `PW_DATA_KEY` | secret | (required for two-factor in prod) | Seals TOTP secrets at rest (32+ characters). Never falls back to PW_SESSION_SECRET in prod. |
+| `PW_DATA_KEY_OLD` | list |  | Previous PW_DATA_KEY values (comma-separated) during a rotation: old seals still open. |
+| `PW_DEV_ALLOW_PROD` | flag | 0 | 1: allow PW_MODE=dev under a production build on a non-local address without sign-in (never do this). |
 | `PW_LINK_SECRET` | secret | (PW_SESSION_SECRET) | Signs emailed download links. |
 | `PW_OIDC_ISSUER` | url | (off) | OpenID Connect issuer. |
 | `PW_OIDC_CLIENT_ID` | text |  | OIDC client id. |

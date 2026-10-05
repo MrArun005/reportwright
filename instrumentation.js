@@ -22,6 +22,11 @@ export async function register() {
       sessionSecret(); // throws in production without PW_SESSION_SECRET: Next logs it and answers 500 to everything
       if (process.env.PW_BASIC_AUTH) console.warn('[pagewright] PW_AUTH=users is on, so PW_BASIC_AUTH is ignored: people sign in with their own accounts.');
     }
+    // two-factor secrets sealed with a key that is no longer configured: refuse a production start (src/server/totp.js)
+    if (process.env.PW_AUTH === 'users') {
+      const problem = await (await import('./src/server/totp.js')).checkDataKey();
+      if (problem) { if (!devMode()) throw new Error(problem); console.error(`[pagewright] WARNING: ${problem}`); }
+    }
     // permissions: the one-time move to the secure defaults, before any request is served (src/server/perms.js)
     if (process.env.PW_AUTH === 'users') await (await import('./src/server/perms.js')).migratePermissions();
     const { startScheduler } = await import('./src/server/schedules.js');

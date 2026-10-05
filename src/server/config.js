@@ -25,7 +25,9 @@ export const SETTINGS = [
   ['PW_DEV_HOSTS', 'list', '(localhost)', 'More host names the dev server answers on (DNS rebinding guard).'],
   ['PW_TRUSTED_PROXIES', 'list', '(none)', 'Proxy IPs or CIDRs whose X-Forwarded-For is believed.'],
   ['PW_TOTP_ISSUER', 'text', 'Pagewright', 'The issuer name authenticator apps show.'],
-  ['PW_DATA_KEY', 'secret', '(PW_SESSION_SECRET)', 'Seals TOTP secrets at rest (32+ characters).'],
+  ['PW_DATA_KEY', 'secret', '(required for two-factor in prod)', 'Seals TOTP secrets at rest (32+ characters). Never falls back to PW_SESSION_SECRET in prod.'],
+  ['PW_DATA_KEY_OLD', 'list', '', 'Previous PW_DATA_KEY values (comma-separated) during a rotation: old seals still open.'],
+  ['PW_DEV_ALLOW_PROD', 'flag', '0', '1: allow PW_MODE=dev under a production build on a non-local address without sign-in (never do this).'],
   ['PW_LINK_SECRET', 'secret', '(PW_SESSION_SECRET)', 'Signs emailed download links.'],
   // SSO
   ['PW_OIDC_ISSUER', 'url', '(off)', 'OpenID Connect issuer.'], ['PW_OIDC_CLIENT_ID', 'text', '', 'OIDC client id.'], ['PW_OIDC_CLIENT_SECRET', 'secret', '', 'OIDC client secret.'],
@@ -124,7 +126,7 @@ export function devMode() {
  * @param {Record<string, string|undefined>} [env]
  */
 export function checkConfig(env = process.env) {
-  const errors = [], warnings = [];
+  const errors = [], warnings = [], fatal = new Set();
   const prod = env === process.env ? !devMode() : !(env.PW_MODE === 'dev' || (!env.PW_MODE && (env.NODE_ENV === 'development' || env.NODE_ENV === 'test')));
   for (const [k, v] of Object.entries(env)) {
     if (!k.startsWith('PW_') || v === undefined) continue;
@@ -136,6 +138,15 @@ export function checkConfig(env = process.env) {
     if (kind === 'onoff' && v !== '' && v !== 'on' && v !== 'off') warnings.push(`${k}="${v.slice(0, 40)}": use on or off.`);
   }
   const short = (k, n) => env[k] && env[k].length < n;
+  // PW_MODE=dev under a production build (next start, the image) opens the server to whoever reaches it: refused on a
+  // non-local address without any sign-in, loud everywhere else (REVIEW-SECURITY-2 L3)
+  if (env.PW_MODE === 'dev' && env.NODE_ENV === 'production') {
+    const host = String(env.HOSTNAME || env.HOST || '0.0.0.0');
+    const local = /^(localhost|127\.\d+\.\d+\.\d+|::1|\[::1\])$/.test(host);
+    const msg = `PW_MODE=dev on a production build: development behaviour (an open server, keyless API, fetch hosts by expression) on ${host}.`;
+    if (!local && !env.PW_AUTH && !env.PW_BASIC_AUTH && env.PW_DEV_ALLOW_PROD !== '1') { errors.push(`${msg} Set PW_MODE=prod, bind to localhost (HOSTNAME=127.0.0.1), or set up sign-in.`); fatal.add(errors[errors.length - 1]); }
+    else warnings.push(`${msg} Use PW_MODE=prod for anything but a local test.`);
+  }
   if (prod) {
     if (!env.PW_AUTH && !env.PW_BASIC_AUTH && env.PW_PUBLIC_READONLY !== '1') warnings.push('No sign-in is set up (PW_AUTH, PW_BASIC_AUTH): only static files and /api/v1 answer.');
     if (env.PW_PUBLIC_READONLY === '1') warnings.push('PW_PUBLIC_READONLY=1: anyone who reaches the server may open and render the saved reports.');
@@ -148,16 +159,20 @@ export function checkConfig(env = process.env) {
     if (env.PW_AUTH === 'users' && short('PW_SESSION_SECRET', 32)) errors.push('PW_SESSION_SECRET is shorter than 32 characters.');
     if (short('PW_AUDIT_KEY', 32)) errors.push('PW_AUDIT_KEY is shorter than 32 characters.');
     if (env.PW_AUTH === 'proxy' && short('PW_PROXY_SECRET', 16)) errors.push('PW_PROXY_SECRET is shorter than 16 characters.');
+    if (env.PW_AUTH === 'users' && !env.PW_DATA_KEY) warnings.push('PW_DATA_KEY is not set: two-factor enrolment is refused until it is (it seals the authenticator secrets; never the session secret in production).');
+    if (!env.PW_WEBHOOK_SECRET) warnings.push('PW_WEBHOOK_SECRET is not set: batch webhooks are sent unsigned.');
   }
-  for (const k of ['PW_LINK_SECRET', 'PW_DATA_KEY']) if (short(k, 32)) warnings.push(`${k} is shorter than 32 characters and is not used.`);
-  return { errors, warnings };
+  if (short('PW_LINK_SECRET', 32)) warnings.push('PW_LINK_SECRET is shorter than 32 characters and is not used.');
+  if (short('PW_DATA_KEY', 32)) errors.push('PW_DATA_KEY is shorter than 32 characters: two-factor secrets cannot be sealed or read.');
+  return { errors, warnings, fatal: [...fatal] };
 }
 
 /** At boot: log the report; in production, errors stop the start. */
 export function reportConfig() {
-  const { errors, warnings } = checkConfig();
+  const { errors, warnings, fatal } = checkConfig();
   for (const w of warnings) console.warn(`[pagewright] config: ${w}`);
   for (const e of errors) console.error(`[pagewright] config: ${e}`);
-  if (errors.length && !devMode()) throw new Error(`Pagewright will not start: ${errors.join(' ')}`);
+  // errors stop a production start; a fatal one (an open dev-mode server on a public address) stops any start
+  if ((errors.length && !devMode()) || fatal.length) throw new Error(`Pagewright will not start: ${(devMode() ? fatal : errors).join(' ')}`);
   return { errors, warnings };
 }

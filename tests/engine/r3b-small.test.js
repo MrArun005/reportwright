@@ -1,5 +1,7 @@
 // R3-B item 6: the smaller findings, one test each.
 import { describe, it, expect, afterEach } from 'vitest';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
 
 const keep = { ...process.env };
 afterEach(() => { for (const k of Object.keys(process.env)) if (!(k in keep)) delete process.env[k]; Object.assign(process.env, keep); });
@@ -14,5 +16,54 @@ describe('OIDC jwks_uri goes through the SSRF guard (REVIEW-SECURITY-2 L2)', () 
       expect(e?.status, uri).toBe(401);
       expect(String(e.message), uri).toMatch(/private|local/i);
     }
+  });
+});
+
+describe('PW_DATA_KEY: no silent fallback, versioned seals, a changed key is refused (REVIEW-ARCH-2 2.8)', () => {
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+  const K1 = 'k1-'.padEnd(40, 'a'), K2 = 'k2-'.padEnd(40, 'b');
+  const fresh = () => { process.env.PW_STORAGE = `sqlite:${path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'pw-r3b-dk-')), 's.db')}`; delete globalThis.__pwDataKid; };
+  it('production without PW_DATA_KEY refuses to seal (it never uses the session secret there)', async () => {
+    fresh();
+    Object.assign(process.env, { PW_MODE: 'prod', PW_SESSION_SECRET: 's'.repeat(40) });
+    delete process.env.PW_DATA_KEY;
+    const { seal } = await import('../../src/server/totp.js');
+    expect(() => seal('JBSWY3DPEHPK3PXP')).toThrow(/needs PW_DATA_KEY/);
+  });
+  it('a rotation with PW_DATA_KEY_OLD keeps old seals readable; a change without it is caught at boot', async () => {
+    fresh();
+    Object.assign(process.env, { PW_MODE: 'prod', PW_SESSION_SECRET: 's'.repeat(40), PW_DATA_KEY: K1 });
+    const t = await import('../../src/server/totp.js');
+    const sealed = t.seal('JBSWY3DPEHPK3PXP');
+    expect(sealed).toMatch(/^v2:[0-9a-f]{8}:/);
+    await new Promise(r => setTimeout(r, 50)); // the key id is recorded in settings
+    expect(await t.checkDataKey()).toBe('');
+    process.env.PW_SESSION_SECRET = 'rotated'.padEnd(40, 'z'); // the usual answer to a leaked session secret
+    expect(t.unseal(sealed)).toBe('JBSWY3DPEHPK3PXP');      // changes nothing for the seals
+    process.env.PW_DATA_KEY = K2;
+    expect(t.unseal(sealed)).toBe(null);
+    expect(await t.checkDataKey()).toMatch(/no longer configured.*PW_DATA_KEY_OLD/);
+    process.env.PW_DATA_KEY_OLD = K1;
+    expect(t.unseal(sealed)).toBe('JBSWY3DPEHPK3PXP');
+    expect(await t.checkDataKey()).toBe('');
+    expect(t.seal('X').split(':')[1]).not.toBe(sealed.split(':')[1]); // new seals use the new key
+  });
+});
+
+describe('PW_MODE=dev on a production build (REVIEW-SECURITY-2 L3, PoC p6)', () => {
+  it('refused on a public address without sign-in; loud on localhost or with sign-in', async () => {
+    const { checkConfig } = await import('../../src/server/config.js');
+    const open = checkConfig({ NODE_ENV: 'production', PW_MODE: 'dev' });
+    expect(open.fatal.join(' ')).toMatch(/PW_MODE=dev on a production build/);
+    expect(checkConfig({ NODE_ENV: 'production', PW_MODE: 'dev', HOSTNAME: '127.0.0.1' }).fatal).toEqual([]);
+    expect(checkConfig({ NODE_ENV: 'production', PW_MODE: 'dev', HOSTNAME: '127.0.0.1' }).warnings.join(' ')).toMatch(/PW_MODE=dev on a production build/);
+    expect(checkConfig({ NODE_ENV: 'production', PW_MODE: 'dev', PW_BASIC_AUTH: 'a:b' }).fatal).toEqual([]);
+    expect(checkConfig({ NODE_ENV: 'development', PW_MODE: 'dev' }).warnings.join(' ')).not.toMatch(/production build/);
+  });
+  it('reportConfig stops that start even in dev mode', async () => {
+    Object.assign(process.env, { NODE_ENV: 'production', PW_MODE: 'dev' });
+    delete process.env.PW_AUTH; delete process.env.PW_BASIC_AUTH; delete process.env.HOSTNAME;
+    const { reportConfig } = await import('../../src/server/config.js');
+    expect(() => reportConfig()).toThrow(/will not start.*PW_MODE=dev/);
   });
 });
