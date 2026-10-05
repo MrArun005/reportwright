@@ -1074,6 +1074,21 @@ function rank(n, ctx) {
   const desc = typeof d === 'string' ? !/^asc/i.test(d.trim()) : d == null || truthy(d);
   const x = evaluate(args[0], ctx);
   if (x == null || x === '') return null;
+  // in a group header or footer: rank the group among its sibling groups, the expression computed per group (N10:
+  // Rank(Sum(x), "Rows") ranked a group's total against the rows)
+  if (ctx.aggIndex == null && ctx.group?.siblings && ctx.group.siblings.length > 1) {
+    let byCall = RANKS.get(ctx.group.siblings);
+    if (!byCall) RANKS.set(ctx.group.siblings, byCall = new Map());
+    let gv = byCall.get(n);
+    if (!gv) {
+      gv = [];
+      for (const rs of ctx.group.siblings) { const v = evaluate(args[0], Object.assign({}, ctx, { fields: rs[0], aggRows: rs, aggIndex: undefined })); if (v != null && v !== '') gv.push(v); }
+      gv.sort((p, q) => sortCompare(p, q, ctx));
+      byCall.set(n, gv);
+    }
+    const lt = gv.filter(v => sortCompare(v, x, ctx) < 0).length, gt = gv.filter(v => sortCompare(v, x, ctx) > 0).length;
+    return desc ? gt + 1 : lt + 1;
+  }
   // the scope's values, sorted once per (row array, call, length): each row's rank is then two binary searches
   let byCall = RANKS.get(rows);
   if (!byCall) RANKS.set(rows, byCall = new Map());

@@ -170,3 +170,13 @@ describe('N10: data bars compare across the column', () => {
     expect(bars.map(b => Math.round((b / full) * 4))).toEqual([1, 1, 2, 2, 4, 4, 4]);
   });
 });
+
+describe('N10: Rank of a group total ranks the groups', () => {
+  it('Rank(Sum(Fields.v), "T") in a group footer', async () => {
+    const d = { $schema: 'pagewright/report@1', page: { size: 'A4' }, dataSources: [{ name: 'S', type: 'json', data: [{ g: 'A', v: 1 }, { g: 'A', v: 2 }, { g: 'B', v: 10 }, { g: 'C', v: 4 }, { g: 'C', v: 4 }, { g: 'D', v: null }] }], dataSets: [{ name: 'D', source: 'S', path: '$' }],
+      sections: { body: { height: 100, items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 200, h: 40, dataSet: 'D', columns: [{ width: 200 }],
+        groups: [{ name: 'G', expr: '=Fields.g', footer: [{ height: 14, cells: [{ value: '=Fields.g & " " & Rank(Sum(Fields.v), "T")' }] }] }], detail: [] }] } } };
+    const m = await render(d, { fontStore });
+    expect(m.pages[0].items.flatMap(i => i.lines || []).map(l => l.text)).toEqual(['A 3', 'B 1', 'C 2', 'D 4']);
+  });
+});
