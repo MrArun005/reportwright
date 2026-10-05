@@ -9,7 +9,7 @@ import { t } from '@/i18n/index.js';
 import { ITEMS, stylePropsFor, TEXT_STYLE_PROPS } from '@/engine/items/index.js';
 import { useFontFamilies, FontsDialog } from './Fonts.jsx';
 import { PAGE_SIZES, fromPt, toPt } from '@/engine/units.js';
-import { TextInput, NumberInput, Select, ColorInput, ExprInput, Field, Check } from './ui.jsx';
+import { TextInput, NumberInput, Select, ColorInput, ExprInput, Field, Check, FieldScope } from './ui.jsx';
 import ExpressionEditor from './ExpressionEditor.jsx';
 import { checkFunctions, isDynamic } from '@/engine/expr/evaluate.js';
 import { PALETTES } from '@/engine/items/chart-kit.js';
@@ -48,9 +48,12 @@ export default function Inspector() {
   } else if (sel.kind === 'section') body = <SectionProps section={sel.section} />;
   else body = <ReportProps />;
 
+  // the data set Fields.x reads in the selection: the item's (else the report's first), a cell's table's
+  const one = sel.kind === 'items' && sel.ids.length === 1 ? findItem(def, sel.ids[0])?.item : sel.kind === 'cell' ? findItem(def, sel.id)?.item : null;
+  const scope = one ? one.dataSet || def.dataSets?.[0]?.name || null : undefined;
   return (
     <div data-testid="inspector">
-      {body}
+      <FieldScope.Provider value={scope}>{body}</FieldScope.Provider>
       {expr && <ExpressionEditor {...expr} onClose={() => setExpr(null)} />}
     </div>
   );

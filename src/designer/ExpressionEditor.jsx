@@ -3,6 +3,9 @@ import { useMemo, useRef, useState } from 'react';
 import ExprCode from './ExprCode.jsx';
 import { Dialog } from './ui.jsx';
 import { useDesigner } from './store.js';
+import { fieldIssues, fieldNames } from './fieldCheck.js';
+import { issueText } from './ui.jsx';
+import { t } from '@/i18n/index.js';
 import { checkValue, evalValue, toText, FUNCTION_NAMES, functionTable } from '@/engine/expr/evaluate.js';
 
 const GLOBALS = ['PageNumber', 'TotalPages', 'ExecutionTime', 'ReportName'];
@@ -23,11 +26,15 @@ export default function ExpressionEditor({ value, dataSet, onSave, onClose, titl
   const ta = useRef(null);
   const dsName = dataSet || def.dataSets?.[0]?.name;
   const ds = def.dataSets?.find(d => d.name === dsName);
-  const fields = (ds?.fields || []).map(f => f.name);
+  const fields = fieldNames(ds).filter(n => !(ds?.fields || []).some(f => f.name === n && f.type === 'object')); // nested objects as their dotted fields
+  const lang = useDesigner(s => s.lang);
+  const T = (k, v) => t(lang, k, v);
+  const check = (v) => fieldIssues(v, def.dataSets, dsName);
 
   const insert = (s) => ta.current?.insert(s);
 
   const err = checkValue(text);
+  const issues = err ? [] : check(text);
   const preview = useMemo(() => {
     if (err || !sample?.dataSets) return null;
     const rows = sample.dataSets[dsName] || [];
@@ -53,7 +60,8 @@ export default function ExpressionEditor({ value, dataSet, onSave, onClose, titl
           {FUNCTION_NAMES.map(f => <button key={f} onClick={() => insert(SNIPPETS[f] || `${f}()`)}>{f}</button>)}
         </div>
         <div style={{ display: 'grid', gap: 10, alignContent: 'start', minWidth: 0 }}>
-          <ExprCode ref={ta} value={text} onChange={setText} fields={fields} parameters={(def.parameters || []).map(p => p.name)} invalid={!!err} />
+          <ExprCode ref={ta} value={text} onChange={setText} fields={fields} parameters={(def.parameters || []).map(p => p.name)} invalid={!!err} check={check} />
+          {issues.length > 0 && <ul className="warn expr-issues" data-testid="expr-issues">{issues.map((i, k) => <li key={k}>{issueText(T, i)}</li>)}</ul>}
           {err ? <div className="err">{err}</div> : <div className="hint">Start with = for one expression, or write text with {'{expression}'} parts. Ctrl+Space shows suggestions. Example: <code>Page {'{Globals.PageNumber}'} of {'{Globals.TotalPages}'}</code></div>}
           <div>
             <div className="hint" style={{ marginBottom: 4 }}>Preview with the first row of {dsName || 'the data'}</div>

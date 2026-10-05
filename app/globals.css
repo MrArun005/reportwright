@@ -497,3 +497,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .cell-menu button:hover, .cell-menu button:focus-visible { background: var(--accent-soft); color: var(--accent); }
 .cell-menu button.danger:hover { color: var(--danger); background: var(--danger-soft); }
 .cell-menu hr { border: 0; border-top: 1px solid var(--line-2); margin: 3px 0; }
+/* an expression that reads a field the data set does not have */
+.warn { color: var(--warn); font-size: var(--fs-xs); }
+.input.squiggle { text-decoration: underline wavy var(--warn); text-decoration-skip-ink: none; text-underline-offset: 3px; border-color: var(--warn); }
+.field-chip.nested { padding-inline-start: 14px; }
+.cm-unknown-field { text-decoration: underline wavy var(--warn); text-decoration-skip-ink: none; text-underline-offset: 3px; }
+.expr-issues { margin: 0; padding-inline-start: 18px; }

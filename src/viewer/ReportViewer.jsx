@@ -252,6 +252,8 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   const total = model?.pages.length || 0;
 
   const hits = useMemo(() => findText(model, query, { matchCase, wholeWord }), [model, query, matchCase, wholeWord]);
+  // a cell showing #Error: the warnings that explain it open by themselves
+  const hasErrorCells = useMemo(() => !!model?.warnings?.length && findText(model, '#Error').length > 0, [model]);
   const hitsByPage = useMemo(() => {
     const m = new Map();
     hits.forEach((h, i) => { if (!m.has(h.page)) m.set(h.page, []); m.get(h.page).push({ ...h, cur: i === hitIdx }); });
@@ -609,7 +611,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
           {status.state === 'error' && <div className="vmsg error" role="alert"><b>{T('didNotRun')}</b><br />{status.message}</div>}
           {!model && status.state === 'running' && <div className="vmsg">{T('runningReport')}</div>}
           {model?.warnings?.length > 0 && (
-            <details className="warnings"><summary>{T('warnings', { n: model.warnings.length })}</summary>
+            <details className="warnings" open={hasErrorCells || undefined} data-testid="viewer-warnings"><summary>{T('warnings', { n: model.warnings.length })}</summary>
               <ul>{model.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul></details>
           )}
           {model && !single && (

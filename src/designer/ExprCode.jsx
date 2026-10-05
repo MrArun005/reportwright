@@ -1,7 +1,7 @@
 'use client';
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { EditorState } from '@codemirror/state';
-import { EditorView, keymap, placeholder as cmPlaceholder } from '@codemirror/view';
+import { EditorView, keymap, placeholder as cmPlaceholder, Decoration, ViewPlugin } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete';
 import { StreamLanguage, syntaxHighlighting, HighlightStyle, bracketMatching } from '@codemirror/language';
@@ -47,11 +47,12 @@ const theme = EditorView.theme({
 /**
  * @param {{ value: string, onChange: (v: string) => void, fields: string[], parameters: string[], invalid?: boolean }} props
  */
-const ExprCode = forwardRef(function ExprCode({ value, onChange, fields, parameters, invalid }, ref) {
+const UNKNOWN = Decoration.mark({ class: 'cm-unknown-field' });
+const ExprCode = forwardRef(function ExprCode({ value, onChange, fields, parameters, invalid, check }, ref) {
   const host = useRef(null);
   const view = useRef(null);
-  const latest = useRef({ onChange, fields, parameters });
-  latest.current = { onChange, fields, parameters };
+  const latest = useRef({ onChange, fields, parameters, check });
+  latest.current = { onChange, fields, parameters, check };
 
   useImperativeHandle(ref, () => ({
     insert(text) {
@@ -84,12 +85,19 @@ const ExprCode = forwardRef(function ExprCode({ value, onChange, fields, paramet
         ],
       };
     };
+    // check(text) → [{ from, to }]: unknown field references, underlined as you type
+    const marks = (view) => {
+      const n = view.state.doc.length;
+      const list = (latest.current.check?.(view.state.doc.toString()) || []).filter(i => i.from >= 0 && i.to > i.from && i.to <= n).sort((a, b) => a.from - b.from);
+      return Decoration.set(list.map(i => UNKNOWN.range(i.from, i.to)));
+    };
+    const squiggles = ViewPlugin.fromClass(class { constructor(view) { this.decorations = marks(view); } update(u) { if (u.docChanged) this.decorations = marks(u.view); } }, { decorations: (p) => p.decorations });
     const v = new EditorView({
       parent: host.current,
       state: EditorState.create({
         doc: value ?? '',
         extensions: [
-          history(), closeBrackets(), bracketMatching(), lang, syntaxHighlighting(hl), theme, EditorView.lineWrapping,
+          history(), closeBrackets(), bracketMatching(), lang, syntaxHighlighting(hl), theme, EditorView.lineWrapping, squiggles,
           autocompletion({ override: [complete], activateOnTyping: true }),
           keymap.of([...closeBracketsKeymap, ...completionKeymap, ...historyKeymap, ...defaultKeymap]),
           cmPlaceholder('=Sum(Fields.amount)   or   Page {Globals.PageNumber}'),

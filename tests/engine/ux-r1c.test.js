@@ -176,3 +176,40 @@ describe('wizard number formats are per field and consistent (U-6)', () => {
     expect(chartFromConfig({ ...c, chartType: 'donut' }, { w: 300, h: 200 }).valueFormat).toBe('#,##0,,"M"');
   });
 });
+
+import { fieldIssues, nestedFields, exprParts } from '../../src/designer/fieldCheck.js';
+describe('field references are checked at design time; nested objects become dotted fields (U-7)', () => {
+  const sets = [
+    { name: 'Lines', fields: [{ name: 'amount', type: 'number' }, { name: 'category', type: 'string' }, { name: 'customer', type: 'object', fields: [{ name: 'name', type: 'string' }, { name: 'address.city', type: 'string' }] }] },
+    { name: 'Regions', fields: [{ name: 'region', type: 'string' }] },
+    { name: 'Empty', fields: [] },
+  ];
+  it('flags a misspelt or unknown field with a suggestion, at its place in the text', () => {
+    const v = '=Sum(Fields.amont) + Fields.Amount';
+    const is = fieldIssues(v, sets, 'Lines');
+    expect(is).toEqual([{ from: 12, to: 17, name: 'amont', suggest: 'amount' }]);
+    expect(v.slice(is[0].from, is[0].to)).toBe('amont');
+    expect(fieldIssues('Bill to {Fields.custmer.name} and {Fields.category}', sets, 'Lines')).toMatchObject([{ name: 'custmer', suggest: 'customer' }]);
+  });
+  it('dotted members of a nested object; strings, other data sets and undetected fields are not flagged', () => {
+    expect(fieldIssues('=Fields.customer.name & Fields.customer.address.city', sets, 'Lines')).toEqual([]);
+    expect(fieldIssues('=Fields.customer.nmae', sets, 'Lines')).toMatchObject([{ name: 'customer.nmae', suggest: 'customer.name' }]);
+    expect(fieldIssues('="Fields.nope"', sets, 'Lines')).toEqual([]);
+    expect(fieldIssues('=Max(Fields.region, "Regions")', sets, 'Lines')).toEqual([]);
+    expect(fieldIssues('=Fields.anything', sets, 'Empty')).toEqual([]);
+    expect(fieldIssues('Plain Fields.x text', sets, 'Lines')).toEqual([]);
+    expect(exprParts('a {x} b {y}')).toEqual([{ text: 'x', at: 3 }, { text: 'y', at: 9 }]);
+  });
+  it('nested objects in rows: object fields with dotted children', () => {
+    const rows = [{ no: 1, customer: { name: 'Acme', address: { city: 'Pune', pin: 411001 } }, lines: [{ a: 1 }] }];
+    expect(nestedFields(rows)).toEqual([{ name: 'customer', type: 'object', fields: [{ name: 'name', type: 'string' }, { name: 'address.city', type: 'string' }, { name: 'address.pin', type: 'number' }] }]);
+  });
+  it('an object field reads Fields.customer.name in a render', async () => {
+    const def = report([{ type: 'textbox', name: 'T', x: 0, y: 0, w: 300, h: 20, dataSet: 'Rows', value: '="Bill to " & First(Fields.customer.name) & ", " & First(Fields.customer.address.city)' }],
+      { data: { rows: [{ customer: { name: 'Acme', address: { city: 'Pune' } } }] } });
+    def.dataSets[0].fields = [{ name: 'customer', type: 'object', fields: [{ name: 'name', type: 'string' }, { name: 'address.city', type: 'string' }] }];
+    const out = await render(def, { fontStore });
+    expect(out.warnings).toEqual([]);
+    expect(out.pages[0].items.filter(i => i.t === 'text').flatMap(i => i.lines.map(l => l.text)).join(' ')).toContain('Bill to Acme, Pune');
+  });
+});

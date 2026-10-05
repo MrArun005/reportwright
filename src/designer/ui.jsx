@@ -1,5 +1,6 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
+import { fieldIssues } from './fieldCheck.js';
 import { checkValue } from '@/engine/expr/evaluate.js';
 import { t } from '@/i18n/index.js';
 import { useDesigner } from './store.js';
@@ -8,8 +9,8 @@ import { useDesigner } from './store.js';
 function useT() { const lang = useDesigner(s => s.lang); return (k, v) => t(lang, k, v); }
 
 /** Text input that keeps its own draft and commits on every change. */
-export function TextInput({ value, onChange, mono, invalid, ...rest }) {
-  return <input className={`input${mono ? ' mono' : ''}${invalid ? ' invalid' : ''}`} value={value ?? ''} onChange={e => onChange(e.target.value)} {...rest} />;
+export function TextInput({ value, onChange, mono, invalid, className, ...rest }) {
+  return <input className={`input${mono ? ' mono' : ''}${invalid ? ' invalid' : ''}${className ? ` ${className}` : ''}`} value={value ?? ''} onChange={e => onChange(e.target.value)} {...rest} />;
 }
 
 export function NumberInput({ value, onChange, step = 0.5, min, ...rest }) {
@@ -42,16 +43,25 @@ export function ColorInput({ value, onChange }) {
   );
 }
 
+/** The data set the Inspector's expressions read (the selected item's or table's): unknown Fields.x are flagged against it. */
+export const FieldScope = createContext(undefined);
+/** A field-reference warning in the UI language: unknown, with a suggestion when one is close. */
+export const issueText = (T, i) => (i.suggest ? T('ux_unknownFieldSuggest', { name: i.name, suggest: i.suggest }) : T('ux_unknownField', { name: i.name }));
+
 export function ExprInput({ value, onChange, onOpen, placeholder }) {
   const T = useT();
+  const scope = useContext(FieldScope);
+  const dataSets = useDesigner(s => s.def?.dataSets);
   const err = value ? checkValue(value) : null;
+  const issues = !err && value && scope !== undefined ? fieldIssues(value, dataSets, scope) : [];
   return (
     <div>
       <div className="expr-row">
-        <TextInput value={value} onChange={onChange} mono invalid={!!err} placeholder={placeholder || T('i_exprPh')} />
+        <TextInput value={value} onChange={onChange} mono invalid={!!err} className={issues.length ? 'squiggle' : undefined} aria-invalid={err || issues.length ? true : undefined} placeholder={placeholder || T('i_exprPh')} />
         <button className="fx" title={T('i_openExprEditor')} aria-label={T('i_openExprEditor')} onClick={onOpen} type="button">fx</button>
       </div>
       {err && <div className="err">{err}</div>}
+      {issues.map((i, k) => <div key={k} className="warn" data-testid="field-warning">{issueText(T, i)}</div>)}
     </div>
   );
 }

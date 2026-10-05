@@ -14,6 +14,7 @@ import { t } from '@/i18n/index.js';
 import { origin } from '@/viewer/engineClient.js';
 import { reportFetch } from '@/viewer/dataFetch.js';
 import { OPS } from './Inspector.jsx';
+import { nestedFields } from './fieldCheck.js';
 
 const NAME = /^[A-Za-z_][\w]*$/;
 
@@ -112,8 +113,8 @@ export default function DataPanel() {
                 </div>}
                 {open.has(d.name) && (
                   <ul className="tree" style={{ paddingLeft: 18 }}>
-                    {(d.fields || []).map(f => (
-                      <li key={f.name} className="trow field-chip" draggable title="Drag onto the page or a table cell"
+                    {(d.fields || []).flatMap(f => (f.type === 'object' ? (f.fields || []).map(c => ({ name: `${f.name}.${c.name}`, type: c.type, nested: true })) : [f])).map(f => (
+                      <li key={f.name} className={`trow field-chip${f.nested ? ' nested' : ''}`} draggable title="Drag onto the page or a table cell" data-field={f.name}
                         onDragStart={(e) => { e.dataTransfer.setData(MIME_FIELD, JSON.stringify({ dataSet: d.name, field: f.name, type: f.type })); e.dataTransfer.effectAllowed = 'copy'; }}>
                         <span className="nm">{f.name}</span><span className="ty">{f.type}</span>
                       </li>
@@ -481,7 +482,8 @@ function DataSetDialog({ index, onClose, onSaved }) {
       setExplore({ state: 'done', arrays: xml ? xmlRowPaths(raw) : rowArrays(raw), best: (xml ? bestXmlRows(raw) : bestRows(raw))?.path, raw });
     } catch (e) { setExplore({ state: 'error', message: e.message }); }
   };
-  const keepFields = (list) => { const keep = new Map(d.fields.map(f => [f.name, f])); return detectFields(list).map(f => keep.get(f.name) || f).concat(d.fields.filter(f => f.expr)); };
+  // nested objects (customer: { name, address }) come as object fields with dotted children: Fields.customer.name
+  const keepFields = (list) => { const keep = new Map(d.fields.map(f => [f.name, f])); return [...detectFields(list), ...nestedFields(list)].map(f => (keep.has(f.name) && f.type !== 'object' ? keep.get(f.name) : f)).concat(d.fields.filter(f => f.expr)); };
   const pick = async (path) => {
     if (nested) {
       const rows = await rawRowsOf({ ...d, relation: { ...d.relation, path } }).catch(() => []);
@@ -601,8 +603,9 @@ function DataSetDialog({ index, onClose, onSaved }) {
           {d.fields.map((f, i) => (
             <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 120px 1.4fr auto', gap: 6 }}>
               <TextInput value={f.name} onChange={v => setField(i, 'name', v)} mono aria-label={T('dsFieldName')} />
-              <Select value={f.type} options={['string', 'number', 'date', 'boolean', { value: 'list', label: T('fieldTypeList') }]} onChange={v => setField(i, 'type', v)} aria-label={T('fieldType')} />
-              <TextInput value={f.expr || ''} onChange={v => setField(i, 'expr', v || undefined)} mono placeholder={T('dsCalcPlaceholder')} />
+              <Select value={f.type} options={['string', 'number', 'date', 'boolean', { value: 'list', label: T('fieldTypeList') }, ...(f.type === 'object' ? [{ value: 'object', label: T('ux_fieldTypeObject') }] : [])]} onChange={v => setField(i, 'type', v)} aria-label={T('fieldType')} />
+              {f.type === 'object' ? <span className="hint" style={{ alignSelf: 'center' }} data-testid={`ds-object-${f.name}`}>{(f.fields || []).map(c => `${f.name}.${c.name}`).join(', ')}</span>
+                : <TextInput value={f.expr || ''} onChange={v => setField(i, 'expr', v || undefined)} mono placeholder={T('dsCalcPlaceholder')} />}
               <button className="btn sm ghost danger" onClick={() => setD({ ...d, fields: d.fields.filter((_, j) => j !== i) })} aria-label={T('dsRemoveField')}>✕</button>
             </div>
           ))}

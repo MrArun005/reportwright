@@ -290,6 +290,43 @@ try {
     await p.locator('.vpage svg text', { hasText: /^Feb$/ }).first().waitFor();
     await p.locator('.vpage svg text', { hasText: /^\d[\d,]*[KM]$/ }).first().waitFor();
   }
+  if (want('u7')) {
+    step('U-7: a nested JSON object becomes dotted fields, and Fields.customer.name renders');
+    const invoice = { no: 'INV-7', customer: { name: 'Acme Traders', address: { city: 'Pune' } }, lines: [{ item: 'Pen', amount: 10 }, { item: 'Ink', amount: 15 }] };
+    const id = await create({ ...base('ux r1c nested', []), dataSources: [{ name: 'inv', type: 'json', data: invoice }],
+      dataSets: [{ name: 'Head', source: 'inv', path: '$', fields: [] }, { name: 'Lines', source: 'inv', path: '$.lines[*]', fields: [{ name: 'item', type: 'string' }, { name: 'amount', type: 'number' }] }] });
+    await open(id);
+    await p.locator('.trow').filter({ has: p.locator('b', { hasText: /^Head$/ }) }).getByRole('button', { name: 'Edit' }).click();
+    const dlg = p.getByRole('dialog');
+    await dlg.getByRole('button', { name: 'Detect fields' }).click();
+    await dlg.getByTestId('ds-object-customer').filter({ hasText: 'customer.name, customer.address.city' }).waitFor();
+    await dlg.getByRole('button', { name: 'Save' }).click();
+    const chip = p.locator('[data-field="customer.name"]');
+    await chip.waitFor();
+    await chip.dragTo(p.locator('[data-section=body]'), { targetPosition: { x: 20, y: 20 } });
+    await save();
+    let def = await read(id);
+    assert.equal(def.sections.body.items[0].value, '=Fields.customer.name');
+    await p.getByTestId('tab-preview').click();
+    await p.locator('.vpage svg text', { hasText: 'Acme Traders' }).first().waitFor();
+    await p.getByRole('group', { name: 'Mode' }).getByRole('button', { name: 'Design' }).click();
+
+    step('U-7: an unknown field is flagged in the Inspector and the expression editor, with a suggestion');
+    await p.locator('[data-tool=textbox]').click();
+    await field(insp(), 'Data set').selectOption('Lines');
+    await field(insp(), 'Value').fill('=Sum(Fields.amont)');
+    await insp().getByTestId('field-warning').filter({ hasText: 'The data set has no field "amont". Did you mean "amount"?' }).waitFor();
+    assert.match(await field(insp(), 'Value').getAttribute('class'), /squiggle/);
+    await insp().locator('[data-prop], label.field').filter({ has: p.locator(':scope > span', { hasText: /^Value$/ }) }).getByRole('button', { name: /expression editor/i }).first().click();
+    const ed = p.getByRole('dialog');
+    await ed.getByTestId('expr-issues').filter({ hasText: 'Did you mean "amount"?' }).waitFor();
+    await ed.locator('.cm-unknown-field', { hasText: 'amont' }).waitFor();
+    await ed.getByRole('button', { name: 'amount' }).waitFor(); // the field list
+    await shot(p, 'u7-expr-editor');
+    await ed.getByRole('button', { name: 'Cancel' }).click();
+    await field(insp(), 'Value').fill('=Sum(Fields.amount)');
+    await insp().getByTestId('field-warning').waitFor({ state: 'detached' });
+  }
   assert.deepEqual(errs, [], `page errors: ${errs.join(' | ')}`);
   console.log('ux-r1c: all passed');
 } finally {
