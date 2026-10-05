@@ -44,6 +44,24 @@ jobs:
         run: node bin/pw.mjs test reports
       - run: npm run build
 
+  verapdf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: veraPDF (the CLI image) as a command
+        run: |
+          docker pull verapdf/cli:latest
+          printf '#!/bin/sh\nexec docker run --rm -v /tmp:/tmp verapdf/cli:latest "$@"\n' | sudo tee /usr/local/bin/verapdf && sudo chmod +x /usr/local/bin/verapdf
+      - name: PDF/A-2b and PDF/UA-1 of the showcase reports
+        run: node scripts/verapdf.mjs
+        env:
+          TMPDIR: /tmp
+
   e2e:
     runs-on: ubuntu-latest
     needs: test
