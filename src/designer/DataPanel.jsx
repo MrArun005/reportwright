@@ -651,6 +651,7 @@ function DataSetDialog({ index, onClose, onSaved }) {
                 {f.op === 'Between' && <TextInput value={f.value2} onChange={v => setFilter(i, 'value2', v)} mono placeholder={T('dsAnd')} aria-label={T('dsUpperValue')} />}
               </div>
               <button className="btn sm ghost danger" onClick={() => setD({ ...d, filters: d.filters.filter((_, j) => j !== i) })} aria-label={T('dsRemoveFilter')}>✕</button>
+              <label className="check" style={{ gridColumn: '1 / -1' }}><input type="checkbox" checked={!!f.skipBlank} onChange={e => setFilter(i, 'skipBlank', e.target.checked || undefined)} data-testid="filter-skip-blank" />{T('b2_skipBlank')}</label>
             </div>
           ))}
           <div><button className="btn sm" onClick={() => setD({ ...d, filters: [...(d.filters || []), { expr: d.fields[0] ? `=Fields.${d.fields[0].name}` : '', op: '=', value: '' }] })}>{T('dsAddFilter')}</button></div>

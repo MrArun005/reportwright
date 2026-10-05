@@ -528,9 +528,13 @@ export function applyFilters(rows, filters, baseCtx) {
 const SET_OPS = new Set(['topn', 'bottomn', 'toppercent', 'bottompercent']);
 const PARAM_ONLY = /^=\s*Parameters\s*[.!]\s*\w+(\.Value)?\s*$/i;
 
+const blank = (v) => v == null || v === '' || (Array.isArray(v) && !v.length);
+
 function rowFilter(f, c) {
-  const a = evalValue(f.expr, c);
   const b = evalValue(f.value, c);
+  // skipBlank: a blank value (an optional parameter left empty) turns the filter off; Between: either bound blank
+  if (f.skipBlank && (blank(b) || ((f.op === 'between' || f.op === 'Between') && !Array.isArray(b) && blank(evalValue(f.value2, c))))) return true;
+  const a = evalValue(f.expr, c);
   switch (f.op || '=') {
     case '=': return looseEq(a, b);
     case '<>': return !looseEq(a, b);
