@@ -647,9 +647,10 @@ async function mssqlRun(sql, entry, text, values, clk, proc = null, allowed = []
   // a pooled connection, within the time left; one that comes later is given back at once
   await clk.inTime(tx.begin(), () => tx.rollback().catch(() => {}));
   const conn = tx._acquiredConnection; // ponytail: mssql internals; a failed query's connection is closed, not pooled
-  // the server rolled the transaction back (an error in the query): mssql gives the connection back on the next tick, so
-  // close it now, before another request can get it
-  tx.once('rollback', (aborted) => { if (aborted) { try { conn?.close(); } catch { /* gone */ } } });
+  // the server rolled the transaction back (an error in the query): mssql gives the connection back on the next tick;
+  // marked as failed, the pool's check drops it instead of handing it out (closing it here, mid-message, would crash
+  // tedious)
+  tx.once('rollback', (aborted) => { if (aborted && conn) conn.hasError = true; });
   let ok = false;
   const req = () => clk.track(new sql.Request(tx));
   // session resets and cleanup are not cancelled by the deadline (they must run after it), so each has a short timer of
@@ -719,10 +720,10 @@ async function mssqlRun(sql, entry, text, values, clk, proc = null, allowed = []
       return rows;
     } finally { await quiet('SET ROWCOUNT 0; SET TEXTSIZE 2147483647'); }
   } finally {
+    // a cap, the deadline or any error: the connection may be mid-stream or left in a state; marked as failed before
+    // the rollback gives it back, the pool's check closes it instead of handing it out again
+    if (!ok && conn) conn.hasError = true;
     await tx.rollback().catch(() => {});
-    // a cap, the deadline or any error: the connection may be mid-stream or left in a state; close it so the pool's
-    // validation drops it (it was given back to the pool by the rollback)
-    if (!ok) { try { conn?.close(); } catch { /* gone */ } }
   }
 }
 

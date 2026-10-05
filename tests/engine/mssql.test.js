@@ -562,6 +562,18 @@ describe.skipIf(!process.env.PW_TEST_MSSQL)('SQL Server (live)', () => {
     } finally { Object.assign(limits, keep); delete process.env.PW_DB_MSLEAK; await admin.close(); }
   }, 300000);
 
+  it('final review 3b: queries the server rolls back never hand a closing connection to another query', async () => {
+    process.env.PW_DB_MSABORT = `${readerUrl()}&p=abort`;
+    try {
+      for (let round = 0; round < 10; round++) {
+        const results = await Promise.all(Array.from({ length: 12 }, (_, i) => (i % 2
+          ? runSql({ connection: 'msabort', query: 'select cast(@s as int) as i' }, { s: 'x' }).then(() => 'no', (e) => (/conver/i.test(e.message) ? 'refused' : e.message))
+          : runSql({ connection: 'msabort', query: 'select count(*) as n from dbo.pw_accounts' }, {}).then(r => r[0].n, (e) => e.message))));
+        expect(results).toEqual(Array.from({ length: 12 }, (_, i) => (i % 2 ? 'refused' : 5)));
+      }
+    } finally { delete process.env.PW_DB_MSABORT; }
+  }, 120000);
+
   it('tests a connection without showing its URL', async () => {
     expect(await testConnection('ms')).toMatchObject({ ok: true });
     process.env.PW_DB_MSBAD = readerUrl().replace(/:[^:@/]+@/, ':wrong-password-xyz@');
