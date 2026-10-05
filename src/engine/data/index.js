@@ -416,6 +416,25 @@ export function buildDataSets(def, sources, baseCtx) {
         if (!Array.isArray(list)) list = [list];
       }
     }
+    // silent blanks: a path that matches nothing, or declared fields that no row has (a renamed column, a CSV read with
+    // the wrong separator) render an empty report with no other sign of what went wrong
+    if (!ds.relation && !xdoc) {
+      const rawSrc = sources[ds.source];
+      if (!list.length && ds.path && ds.path !== '$' && rawSrc != null && typeof rawSrc === 'object' && !(Array.isArray(rawSrc) && !rawSrc.length) && jsonPath(rawSrc, ds.path) == null) baseCtx.warn?.(`Data set "${ds.name}": the path ${ds.path} matches nothing in the source "${ds.source}", so it has no rows`);
+      const keys = new Set();
+      for (const r of list.slice(0, 200)) if (r && typeof r === 'object' && !Array.isArray(r)) for (const k of Object.keys(r)) keys.add(k);
+      if (keys.size) {
+        const declared = (ds.fields || []).filter(fd => !fd.expr && !fd.path);
+        const missing = declared.filter(fd => !keys.has(fd.name) && ![...keys].some(k => k.toLowerCase() === String(fd.name).toLowerCase()));
+        if (missing.length) baseCtx.warn?.(`Data set "${ds.name}": no row has the field${missing.length > 1 ? 's' : ''} ${missing.slice(0, 8).map(f => `"${f.name}"`).join(', ')}${missing.length > 8 ? '…' : ''}, so ${missing.length > 1 ? 'they are' : 'it is'} blank (the rows have ${[...keys].slice(0, 8).map(k => `"${k}"`).join(', ')})`);
+        const src = (def.dataSources || []).find(x => x.name === ds.source);
+        if (src?.type === 'csv' && keys.size === 1 && declared.length > 1) {
+          const only = [...keys][0];
+          const guess = [';', '\t', '|', ','].find(c => only.includes(c === '\t' ? '\t' : c) && c !== (src.separator || ','));
+          baseCtx.warn?.(`Data source "${src.name}": every line reads as one column ("${only.slice(0, 40)}")${guess ? `; is the separator "${guess}"? Set separator on the source` : ''}`);
+        }
+      }
+    }
     const fields = ds.fields && ds.fields.length ? ds.fields : detectFields(list);
     const plain = fields.filter(fd => !fd.expr);
     const calc = fields.filter(fd => fd.expr);

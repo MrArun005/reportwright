@@ -221,6 +221,17 @@ export async function render(def0, opts = {}) {
     };
     const geos = bodies.map(geometry);
     lc.bodyWidth = geos[0].bodyWidth;
+    // N9: an item past the body's right edge is cut off by the page (a table continues on pages of its own instead)
+    const edge = (items, dx, W, depth) => {
+      if (!Array.isArray(items) || depth > 32) return;
+      for (const it of items) {
+        if (!it || typeof it !== 'object') continue;
+        const right = dx + (Number(it.x) || 0) + (Number(it.w) || 0);
+        if (it.type !== 'table' && it.type !== 'matrix' && right > W + 1) warn(`${it.name || it.type}: it reaches ${Math.round(right)}pt, past the ${Math.round(W)}pt the page has for the body, so the part past the edge is not printed`);
+        else edge(it.items, dx + (Number(it.x) || 0), W, depth + 1);
+      }
+    };
+    if (!page.pageless) bodies.forEach((b, i) => edge(b.items, 0, geos[i].bodyWidth, 0));
 
     /** Lay out the body and assemble pages. A table of contents needs a second pass. */
     const assemble = (tocEntries) => {

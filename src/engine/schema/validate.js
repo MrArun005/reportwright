@@ -4,6 +4,44 @@ import { ITEMS } from '../items/index.js';
 
 export const SCHEMA_ID = 'pagewright/report@1';
 
+/** Properties the engine reads on any item, beyond each type's own (its inspector props and defaults). ponytail: a
+ *  list; a new item property is added here (or to the type's props) or validate() calls it unknown. */
+const ITEM_KEYS = new Set(('id type name x y w h style styleName items hidden layer locked label alt value dataSet canGrow canShrink action bookmark tooltip '
+  + 'keepTogether pageBreakBefore pageBreakAfter pageBreakBetween newSection filters sort groups groupBy groupAdjacent inheritRows columns header detail '
+  + 'footer repeatHeader noRowsText pageBreakEvery cells rows rowGroup rowGroups columnGroup columnGroups values value valueFormat rowSort columnSort '
+  + 'rowTotals columnTotals cellStyle headerStyle totalStyle corner partProps library part properties overflow overflowTo src fit headingLevel '
+  + 'rotate shrinkToFit minFontSize shrinkStep tocDots tocLink tocPage format chartType series seriesGroup category title legend palette stacked '
+  + 'valueAxis xTitle maxCategories categorySort categoryFormat showValues labelPosition symbology quietZone report params text toggle '
+  + 'initiallyCollapsed collapsible expandLevels repeatColumns columnGap rowHeaderWidth anim animation visual comment notes description').split(' '));
+/** Report-level properties. */
+const DEF_KEYS = new Set(('$schema name description locale currency timeZone page parameters dataSources dataSets styles sections functions layers '
+  + 'images theme themeDef master nullPropagation caseSensitive naturalSort nullOrder collation arithmetic bandRows version id tags author folder '
+  + 'stylesheet parts partProperties dashboard comment notes customCode libraries liveParameters parameterLayout drafts history').split(' '));
+const lev = (a, b) => {
+  if (Math.abs(a.length - b.length) > 2) return 3;
+  const d = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = d[0]; d[0] = i;
+    for (let j = 1; j <= b.length; j++) { const t = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1].toLowerCase() === b[j - 1].toLowerCase() ? 0 : 1)); prev = t; }
+  }
+  return d[b.length];
+};
+/** The nearest known name: a typo (2 edits) or the start of a longer one (noRows → noRowsText). */
+export function didYouMean(k, known) {
+  let best = null, bd = 3;
+  for (const c of known) {
+    const dd = c.toLowerCase().startsWith(k.toLowerCase()) && k.length >= 3 ? 1 : lev(k, c);
+    if (dd < bd) { bd = dd; best = c; }
+  }
+  return best;
+}
+const ownKeys = (type) => {
+  const spec = ITEMS[type];
+  let dflt = {};
+  try { dflt = spec?.defaults?.() || {}; } catch { /* none */ }
+  return [...(spec?.props || []).map(p => p.key), ...Object.keys(dflt)];
+};
+
 /**
  * Structural checks. Errors stop the render; warnings do not. exprErrors: the errors that are an item's expression
  * that does not parse. They are in `errors` too (the designer shows them), but render() goes on and draws #Error in
@@ -14,6 +52,7 @@ export function validate(def) {
   const errors = [], warnings = [], exprErrors = [];
   if (!def || typeof def !== 'object') return { errors: ['The report definition is empty'], warnings, exprErrors };
   if (def.$schema && def.$schema !== SCHEMA_ID) warnings.push(`Unknown schema "${def.$schema}". Expected "${SCHEMA_ID}".`);
+  for (const k of Object.keys(def)) if (!DEF_KEYS.has(k) && !k.startsWith('_')) { const g = didYouMean(k, DEF_KEYS); warnings.push(`Unknown report property "${k}"${g ? ` (did you mean "${g}"?)` : ''}; it is ignored`); }
   const body = def.sections?.body;
   if (!body || (Array.isArray(body) && !body.length)) errors.push('The report has no body section');
   if (Array.isArray(body)) body.forEach((b, i) => {
@@ -85,6 +124,13 @@ export function validate(def) {
         names.add(it.name);
       }
       for (const k of ['x', 'y', 'w', 'h']) if (typeof it[k] !== 'number' || Number.isNaN(it[k])) errors.push(`${label}: "${k}" must be a number`);
+      // a mistyped property is ignored silently otherwise ("vale" for value: a blank box)
+      const own = ownKeys(it.type);
+      for (const k of Object.keys(it)) {
+        if (k.startsWith('_') || k.startsWith('$') || ITEM_KEYS.has(k) || own.includes(k)) continue;
+        const g = didYouMean(k, [...own, 'value', 'style', 'hidden', 'name', 'dataSet']);
+        warnings.push(`${label}: unknown property "${k}"${g ? ` (did you mean "${g}"?)` : ''}; it is ignored`);
+      }
       check(where, it.value, label);
       check(where, it.src, label);
       check(where, it.hidden, label);
