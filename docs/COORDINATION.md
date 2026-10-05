@@ -13,7 +13,6 @@ More than one AI agent is editing this repo at the same time. Read this file bef
 
 | Agent | Area | Files | Since |
 |---|---|---|---|
-| Claude Code (data sources, batch 3a) | XML, SOAP, OData sources | src/engine/data/*, src/designer/DataPanel.jsx, src/designer/ODataEditor.jsx, src/designer/explore.js, src/importers/{rdl,rdlx,jrxml}.js (data lines), src/i18n/*, tests/engine/data-xml.test.js, tests/e2e/data-xml.mjs, docs | 2026-10-05 |
 
 ## Design decisions (shared)
 
@@ -40,6 +39,7 @@ _(Write here if you need a change in a file someone else has claimed.)_
 
 ## Done
 
+- **Claude Code (data sources, batch 3a), 2026-10-05 IST**: XML (inline or fetched; XPath subset rows and fields; namespaces), SOAP (escaped envelope template, SOAPAction 1.1/1.2, Body unwrapped, faults) and OData (query editor from $metadata, $select/$filter builder/$orderby/$top/$skip/$expand, same-origin next links up to a page cap, Edm types) in src/engine/data/{xml,odata,index}.js; Designer source dialog + src/designer/ODataEditor.jsx, XPath rows and repeating-element explorer in the data set dialog, strings in 9 languages; importers map SSRS XML provider (ElementPath, XmlData, SOAP Method), ActiveReports XML and Jasper xPath. Server: 3 one-line type-list edits (see Requests). Tests: data-xml, import-xml-data; e2e data-xml (in test:e2e). Claims released.
 - **Claude Code (text + import, batch 6), 2026-10-05 IST**: Thai/Lao/Khmer/Myanmar word breaks (Intl.Segmenter) and CJK kinsoku in src/engine/text/measure.js; Noto fallbacks for Thai, Lao, Khmer, Myanmar, Tamil, Bengali, Telugu, Kannada, Gujarati (lazy, `unicodeRange()` in @font-face); pdftotext-clean RTL extraction (glyphText/drawRun) and shaped form-field appearances in src/exporters/pdf.js; paginator: tall overlapping items no longer leave page 1 blank; JasperReports (.jrxml, JR 3–7) and BIRT (.rptdesign) importers with corpora (49 + 29 files) behind `importXmlReport` (route + home Import); ActiveReports masters/parts/layers; chart gallery in 9 languages. Tests: text-b6, paginate-b6, import-jrxml, import-birt, import-arparts, chart-gallery-i18n; e2e import-b6 (in test:e2e). Docs: API.md (JasperReports/BIRT/ActiveReports reuse import), FEATURES.md. Claims released.
 
 - **Claude Code (exports, batch 2), 2026-10-05 IST**: Word pictures (charts, images, barcodes, shapes, in-cell visuals as SVG+PNG; box shading/borders; layout rows), Excel live SUBTOTAL totals + Charts sheet, accessible PDF (PDF/UA-1, also PDF/A-2a; veraPDF ua1/2a pass on all 30 samples), PowerPoint export, HTML Tables view (sort/groups/filter, CSP hash), viewer Export options menu (9 languages), `alt` property, render option `exportData` (lean views/PDFs, ~35% less RSS at 50k rows). Engine touches: export tags in layout.js (`tag`, ids), `art` in index.js band, exportData guards in items/index.js. Docs: docs/EXPORTS.md. Claims released.
