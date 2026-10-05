@@ -112,7 +112,7 @@ export async function countUsers() { return (await store().ids('users')).length;
  * A password account, or with `sso` an account made at single sign-on (no password).
  * @param {{ email: string, role: string, password?: string, groups?: string[], sso?: { via: 'oidc'|'saml', issuer: string, subject: string } }} u
  */
-export async function createUser({ email, role, password, groups = [], sso }, { by } = {}) {
+export async function createUser({ email, role, password, groups = [], sso }, { by } = /** @type {{ by?: any }} */ ({})) {
   const e = normEmail(email);
   checkRole(role);
   const g = checkGroups(groups);
@@ -148,7 +148,7 @@ async function keepAnAdmin(before, after) {
  * sso (server code only, never from a request): the IdP identity this account is bound to.
  * @param {string} email @param {{ role?: string, password?: string, disabled?: boolean, groups?: string[], allowSso?: boolean, sso?: any, resetTwoFactor?: boolean }} patch
  */
-export function updateUser(email, patch, { by } = {}) { return withLock('users', async () => { await stillAdmin(by); return updateUserNow(email, patch); }); }
+export function updateUser(email, patch, { by } = /** @type {{ by?: any }} */ ({})) { return withLock('users', async () => { await stillAdmin(by); return updateUserNow(email, patch); }); }
 async function updateUserNow(email, patch) {
   const u = await getUser(email);
   if (!u) throw fail('No such user.', 404);
@@ -168,7 +168,7 @@ async function updateUserNow(email, patch) {
 }
 
 /** @returns {Promise<boolean>} false when there was no such user */
-export function deleteUser(email, { by } = {}) { return withLock('users', async () => { await stillAdmin(by); return deleteUserNow(email); }); }
+export function deleteUser(email, { by } = /** @type {{ by?: any }} */ ({})) { return withLock('users', async () => { await stillAdmin(by); return deleteUserNow(email); }); }
 async function deleteUserNow(email) {
   const u = await getUser(email);
   if (!u) return false;
@@ -276,7 +276,7 @@ export async function checkSecondFactor(email, { code, recoveryCode } = {}) {
     const i = list.findIndex(x => typeof x === 'string' && x.length === h.length && crypto.timingSafeEqual(Buffer.from(x), Buffer.from(h)));
     if (!cur?.totp || i < 0) return null;
     await save({ ...cur, recovery: list.filter((_, k) => k !== i) });
-    return 'recovery';
+    return /** @type {'recovery'} */ ('recovery');
   });
 }
 

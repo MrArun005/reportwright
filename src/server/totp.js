@@ -80,7 +80,8 @@ export function otpauthUri(email, secret) {
 
 /** A QR code of the URI as SVG (black on white, with a quiet zone), drawn by bwip-js. @param {string} text */
 export async function qrSvg(text) {
-  const bwip = await import('bwip-js');
+  // @ts-ignore: bwip-js has no type declarations
+  const bwip = /** @type {any} */ (await import('bwip-js'));
   return bwip.toSVG({ bcid: 'qrcode', text, scale: 4, eclevel: 'M', backgroundcolor: 'FFFFFF', paddingwidth: 4, paddingheight: 4 });
 }
 

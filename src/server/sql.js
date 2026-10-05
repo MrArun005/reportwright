@@ -39,7 +39,8 @@ const SCALAR = new Set(['string', 'number', 'boolean']);
 /**
  * "@name" → driver placeholders ("?" or "$n"), with the values in order. A list expands to "?, ?, ?";
  * an empty list becomes NULL, so `x in (@list)` matches nothing (and so does `x not in (@list)`).
- * @ inside '…', "…", `…`, -- and /* *\/ is left alone; so is @@var (MySQL system variables).
+ * At-signs inside quotes, backticks, line comments and block comments are left alone; so are MySQL system variables
+ * (two at-signs).
  * SQL Server: "@pw_1", "@pw_2"… (request inputs), found by a T-SQL scanner (tsqlParts).
  * Oracle: ":1", ":2"…; Snowflake and BigQuery: "?".
  * @param {string} query @param {Record<string, any>} params @param {Dialect} dialect
@@ -256,8 +257,8 @@ const MAX_ERROR = 1000, MAX_QUERY = 100000;
 // Postgres query_canceled, MySQL max_execution_time, MariaDB max_statement_time, SQL Server request timeout
 const TIMEOUT_CODES = new Set(['57014', 'ER_QUERY_TIMEOUT', 'ER_STATEMENT_TIMEOUT', 'ETIMEOUT']);
 
-/** @returns {Dialect|'unknown'} */
-const kindOf = (v) => (/^sqlite:/.test(v) ? 'sqlite' : /^postgres(ql)?:\/\//.test(v) ? 'postgres' : /^(mysql|mssql|oracle|snowflake|bigquery):\/\//.exec(v)?.[1] ?? 'unknown');
+/** @param {string} v @returns {Dialect|'unknown'} */
+const kindOf = (v) => /** @type {any} */ (/^sqlite:/.test(v) ? 'sqlite' : /^postgres(ql)?:\/\//.test(v) ? 'postgres' : /^(mysql|mssql|oracle|snowflake|bigquery):\/\//.exec(v)?.[1] ?? 'unknown');
 
 /**
  * mssql://user:password@host[:port]/database[?encrypt=false&trustServerCertificate=true&instance=NAME] → a config
@@ -795,7 +796,7 @@ const MAX_MESSAGES = 1000; // info and error messages one request may send (each
  * cancelled at once and the rest never crosses the wire. `first`: a second result set ends the read (a procedure's
  * first result set is the data), it is not an error.
  * @param {any} r a request @param {(r: any) => any} start runs it (query or batch)
- * @param {{ sql: any, overdue: () => void, lobSize?: number, odd?: boolean, one?: string }} o
+ * @param {{ sql: any, overdue: () => void, lobSize?: number, odd?: boolean, one?: string, first?: boolean }} o
  * @returns {Promise<{ rows: any[], cols: any[] }>}
  */
 export function streamRows(r, start, { sql, overdue, lobSize = textSize(), odd = false, first = false, one = 'A SQL source can only run one SELECT query (one statement).' }) {

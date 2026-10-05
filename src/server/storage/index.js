@@ -30,7 +30,8 @@ import { logWarn } from '../errors.js';
  * @property {(name: string, owner: string) => Promise<void>} release
  * @property {(before: number) => Promise<number>} sweepLeases remove leases that ran out before this time (ms)
  * @property {(entry: any) => Promise<void>} appendAudit add one audit event (never changed afterwards)
- * @property {(q: { from?: string, to?: string, type?: string, actor?: string, report?: string, before?: string, limit: number }) => Promise<any[]>} queryAudit newest first
+ * @property {(q: { from?: string, to?: string, type?: string, actor?: string, report?: string, before?: string, limit: number, raw?: boolean }) => Promise<any[]>} queryAudit newest first
+ * @property {(kind: Kind, prefix: string) => Promise<string[]>} [idsFrom] ids that start with prefix (SQL: an index range)
  * @property {(before: string) => Promise<number>} pruneAudit remove events older than this ISO time (whole days on files)
  */
 

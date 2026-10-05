@@ -5,6 +5,22 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TZ: Asia/Kolkata
+      # the SQL storage, replica, permission and audit suites run against real databases (they skip without these)
+      PW_TEST_PG: postgres://postgres:pw-test@127.0.0.1:5432/postgres
+      PW_TEST_MYSQL: mysql://root:pw-test@127.0.0.1:3306/pwtest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: pw-test }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+      mysql:
+        image: mysql:8.4
+        env: { MYSQL_ROOT_PASSWORD: pw-test, MYSQL_DATABASE: pwtest }
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -ppw-test" --health-interval 5s --health-timeout 5s --health-retries 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -12,8 +28,34 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
+      - name: Type check (the server has no errors; the engine's may only go down)
+        run: npm run typecheck
       - run: npx vitest run
       - run: node scripts/check-engine-boundary.mjs
       - name: Report snapshots (fails when a page or a total changes)
         run: node bin/pw.mjs test reports
       - run: npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: test
+    env:
+      TZ: Asia/Kolkata
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - name: Start the server (development mode on the built app: open, keyless API, localhost only)
+        run: |
+          PW_MODE=dev npx next start -p 3000 > server.log 2>&1 &
+          for i in $(seq 1 90); do curl -sf http://localhost:3000/api/v1/livez && break; sleep 1; done
+      - name: Browser suites
+        run: npm run test:e2e
+      - name: Server log
+        if: failure()
+        run: tail -200 server.log

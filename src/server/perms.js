@@ -154,7 +154,7 @@ export async function principalFromId(id, viaKey, { session = false, since = nul
 
 /** @typedef {{ to: string, level: 'view'|'edit'|'manage' }} Grant */
 /** @typedef {{ id: string, name?: string, parent?: string|null, inherit?: boolean, grants: Grant[], createdAt?: string, updatedAt?: string }} FolderRec */
-/** @typedef {{ id: string, folder: string|null, inherit: boolean, grants: Grant[] }} ReportRec */
+/** @typedef {{ id: string, folder: string|null, inherit: boolean, grants: Grant[], data?: string[] }} ReportRec */
 /** @typedef {{ folders: Map<string, FolderRec>, reports: Map<string, ReportRec>, root: Grant[], rootCreate?: string[] }} Snapshot */
 /** Who may add reports and folders at the top in a new or migrated root record (a root record without "create": nobody but edit grants). */
 export const DEFAULT_CREATE = Object.freeze(['group:designers']);
@@ -537,7 +537,7 @@ export async function createFolder(p, { name, parent = null }) {
 
 /**
  * Rename, move, change inheritance or grants. "root" takes grants only (admins: the root decides for everything).
- * @param {Principal} p @param {string} id @param {{ name?: string, parent?: string|null, inherit?: boolean, grants?: any[] }} patch
+ * @param {Principal} p @param {string} id @param {{ name?: string, parent?: string|null, inherit?: boolean, grants?: any[], create?: any[] }} patch
  */
 export async function updateFolder(p, id, patch) {
   p = await asNow(p);

@@ -1,0 +1,23 @@
+{
+  "src/engine/data/index.js": 2,
+  "src/engine/data/xml.js": 1,
+  "src/engine/expr/evaluate.js": 5,
+  "src/engine/index.js": 35,
+  "src/engine/items/barcode.js": 1,
+  "src/engine/items/chart-more.js": 2,
+  "src/engine/items/chart.js": 8,
+  "src/engine/items/hpage.js": 5,
+  "src/engine/items/index.js": 11,
+  "src/engine/items/pivot.js": 1,
+  "src/engine/text/shaper.js": 1,
+  "src/engine/units.js": 1,
+  "src/exporters/csv.js": 2,
+  "src/exporters/docx.js": 13,
+  "src/exporters/encrypt.js": 2,
+  "src/exporters/figures.js": 5,
+  "src/exporters/pdf.js": 11,
+  "src/exporters/subset.js": 1,
+  "src/exporters/svg.js": 1,
+  "src/exporters/svgimage.js": 8,
+  "src/exporters/xlsx.js": 2
+}

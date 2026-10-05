@@ -85,6 +85,7 @@ export { clearState as clearSsoCookie };
  * A failure goes back to /login with a short code (the details are in the audit log, not the URL).
  * @param {Request} req @param {() => Promise<{ identity: any, next: string }>} step @param {'oidc'|'saml'} via
  */
+/** @param {Request} req @param {() => Promise<{ identity: any, next: string, idToken?: string }>} step @param {'oidc'|'saml'} via */
 export async function finishSignIn(req, step, via) {
   const { sessionCookie } = await import('./session.js');
   const { audit } = await import('./audit.js');
@@ -233,7 +234,7 @@ export async function oidcStart(req, next) {
 
 /**
  * Finish an OIDC sign-in: check state, swap the code (with the PKCE verifier) for tokens, verify the ID token.
- * @param {Request} req @returns {Promise<{ identity: { email: string, role: string, groups: string[] }, next: string }>}
+ * @param {Request} req @returns {Promise<{ identity: { email: string, role: string, groups: string[] }, next: string, idToken?: string }>}
  */
 export async function oidcCallback(req) {
   const sp = new URL(req.url).searchParams;

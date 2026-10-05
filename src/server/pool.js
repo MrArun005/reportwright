@@ -100,7 +100,7 @@ const memoryFull = () => process.memoryUsage.rss() / 1048576 > memLimitMB() * 0.
 /** @typedef {{ w: Worker, ready: boolean, job: Job|null, renders: number, timer: any }} Slot */
 
 const g = /** @type {any} */ (globalThis);
-/** @type {{ startFails: number, dying: Set<Worker>, slots: Slot[], queue: Job[], running: Map<string, number>, waiting: Map<string, number>, served: Map<string, number>, est: Map<string, number>, seq: number, noWorker: string|null, stats: Record<string, number> }} */
+/** @type {{ startFails: number, dying: Set<Worker>, slots: Slot[], queue: Job[], running: Map<string, number>, waiting: Map<string, number>, served: Map<string, number>, est: Map<string, number>, seq: number, noWorker: string|null, stats: Record<string, number>, hist?: { counts: number[], sum: number, n: number }, lastFree?: number }} */
 const P = g.__pwRenderPool ||= { startFails: 0, dying: new Set(), slots: [], queue: [], running: new Map(), waiting: new Map(), served: new Map(), est: new Map(), seq: 0, noWorker: null,
   stats: { done: 0, failed: 0, rejected: 0, timedOut: 0, crashed: 0, recycled: 0, dropped: 0, heldForMemory: 0, restarts: 0 } };
 P.stats.heldForMemory ??= 0; P.stats.restarts ??= 0;
@@ -108,7 +108,7 @@ P.stats.heldForMemory ??= 0; P.stats.restarts ??= 0;
 // render durations (seconds) for /api/v1/metrics: a Prometheus histogram
 export const BUCKETS = [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60];
 P.hist ||= { counts: BUCKETS.map(() => 0), sum: 0, n: 0 };
-const observe = (ms) => { const sec = ms / 1000; P.hist.n++; P.hist.sum += sec; BUCKETS.forEach((b, i) => { if (sec <= b) P.hist.counts[i]++; }); };
+const observe = (ms) => { const sec = ms / 1000; const h = P.hist; if (!h) return; h.n++; h.sum += sec; BUCKETS.forEach((b, i) => { if (sec <= b) h.counts[i]++; }); };
 
 const busy = (msg, status, retryMs) => Object.assign(new Error(msg), { status, retryAfter: Math.max(1, Math.ceil(retryMs / 1000)) });
 const bump = (m, k, d) => { const n = (m.get(k) || 0) + d; if (n > 0) m.set(k, n); else m.delete(k); };
@@ -346,6 +346,7 @@ export function submit(msg, { background = false, principal, key = '', signal } 
  * def: a definition the caller has already read and checked (batches).
  * @returns {Promise<{ bytes: Uint8Array, contentType: string, ext: string, name: string|null, pages: number, ms: number|null, warnings: number }>}
  */
+/** @param {{ ref?: any, def?: any, how?: string, opt?: any }} r @param {{ background?: boolean, signal?: AbortSignal }} [o] */
 export function renderInPool({ ref, def, how = 'template', opt = {} }, { background = false, signal } = {}) {
   const key = typeof ref === 'string' ? ref : def?.name ? `def:${def.name}` : 'inline';
   return submit({ kind: 'render', ref, def, how, opt }, { background, principal: opt.principal, key, signal });
@@ -360,7 +361,7 @@ export function poolStats() {
     queue: { interactive: q(0), background: q(1), max: queueMax(), perPrincipalMax: perPrincipalMax(), estimatedWaitMs: Math.round(waitAhead(1)) },
     principals: { running: P.running.size, waiting: P.waiting.size },
     totals: { ...P.stats },
-    durations: { buckets: BUCKETS, counts: [...P.hist.counts], sum: P.hist.sum, count: P.hist.n },
+    durations: { buckets: BUCKETS, counts: [...(P.hist?.counts || [])], sum: P.hist?.sum || 0, count: P.hist?.n || 0 },
   };
 }
 

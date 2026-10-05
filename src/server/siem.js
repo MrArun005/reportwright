@@ -82,11 +82,11 @@ async function send(batch) {
 
 /** A TLS connection to the syslog receiver, kept open and made again when it drops. @param {URL} u */
 function syslogSocket(u) {
-  if (S.sock && !S.sock.destroyed && S.sock.pw === u.href) return Promise.resolve(S.sock);
+  if (S.sock && !S.sock.destroyed && /** @type {any} */ (S.sock).pw === u.href) return Promise.resolve(S.sock);
   return new Promise((resolve, reject) => {
     const ca = process.env.PW_AUDIT_SIEM_CA ? fs.readFileSync(process.env.PW_AUDIT_SIEM_CA) : undefined;
     const sock = tls.connect({ host: u.hostname, port: Number(u.port) || 6514, servername: u.hostname, ca, rejectUnauthorized: true, timeout: 15000 }, () => { S.sock = sock; resolve(sock); });
-    sock.pw = u.href;
+    /** @type {any} */ (sock).pw = u.href;
     sock.setKeepAlive(true);
     sock.on('error', (e) => { if (S.sock === sock) S.sock = null; reject(e); });
     sock.on('close', () => { if (S.sock === sock) S.sock = null; });

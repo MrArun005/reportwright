@@ -131,7 +131,7 @@ const refuse = (host) => Object.assign(new Error(`"${host}" is a private or loca
  * fetch() with the SSRF guard. Returns a standard Response.
  * @param {string|URL} input
  * @param {{ method?: string, headers?: any, body?: string|Uint8Array }} [init]
- * @param {{ allow?: string[], hops?: number }} [opt] allow: origins ("http://host:port") or host names
+ * @param {{ allow?: string[], hops?: number, deadline?: number, hostsOnly?: string[]|null }} [opt] allow: origins ("http://host:port") or host names
  * @returns {Promise<Response>}
  */
 export async function safeFetch(input, init = {}, { allow = [], hops = 3, deadline = Date.now() + deadlineMs(), hostsOnly = null } = {}) {

@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "allowJs": true, "checkJs": false, "noEmit": true, "skipLibCheck": true,
+    "target": "es2023", "lib": ["es2023", "dom", "dom.iterable"], "module": "esnext", "moduleResolution": "bundler",
+    "jsx": "preserve", "baseUrl": ".", "paths": { "@/*": ["src/*"] }, "types": ["node"], "resolveJsonModule": true
+  },
+  "include": ["src/server/**/*.js", "src/server/**/*.mjs", "src/engine/**/*.js", "src/exporters/**/*.js", "proxy.js", "instrumentation.js"]
+}

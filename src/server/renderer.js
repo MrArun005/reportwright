@@ -110,7 +110,7 @@ export async function loadTemplate(template, principal = defaultPrincipal()) {
 
 /**
  * @param {any} def
- * @param {{ parameters?: object, data?: object, format?: string, baseUrl?: string, self?: string, state?: object }} opt
+ * @param {{ parameters?: object, data?: object, format?: string, baseUrl?: string, self?: string, state?: object, [k: string]: any }} opt
  *   data: { sourceName: json } replaces those data sources (push data instead of pull)
  *   self: this server's origin, which data sources may call even though it is local. Defaults to baseUrl;
  *   pass it when baseUrl came from an API caller. Every other private address is refused (SSRF).

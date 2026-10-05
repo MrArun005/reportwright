@@ -55,10 +55,10 @@ async function transport() {
   const nodemailer = (await import('nodemailer')).default;
   const host = (() => { try { return new URL(url).hostname; } catch { throw fail('PW_SMTP_URL is not a URL.', 500); } })();
   const local = ['localhost', '127.0.0.1', '::1'].includes(host);
-  const t = nodemailer.createTransport(url, {
+  const t = nodemailer.createTransport(/** @type {any} */ (url), /** @type {any} */ ({
     requireTLS: !url.startsWith('smtps:') && process.env.PW_SMTP_REQUIRE_TLS !== '0' && !local,
     disableFileAccess: true, disableUrlAccess: true, connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 60000,
-  });
+  }));
   g.__pwMail = { url, t };
   return t;
 }

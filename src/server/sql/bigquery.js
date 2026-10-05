@@ -70,7 +70,7 @@ export async function bigquery(url, text, values, ctx) {
       return rows;
     })());
   } catch (e) {
-    if (job && e.status) job.cancel().catch(() => {}); // a cap: the rest is never read
+    if (job && e.status) /** @type {any} */ (job).cancel().catch(() => {}); // a cap: the rest is never read
     throw e;
   } finally { clk.stop(); }
 }

@@ -93,8 +93,8 @@ export async function evict(maxMb) {
 }
 /** { entries, bytes, hits, misses } of this cache (hits and misses: this process). */
 export async function snapshotStats() {
-  const list = await blobs().list(PREFIX).catch(() => []);
-  return { entries: list.length, bytes: list.reduce((n, b) => n + b.size, 0), hits: g.__pwSnap.hits, misses: g.__pwSnap.misses };
+  const list = /** @type {{ size: number }[]} */ (await blobs().list(PREFIX).catch(() => []));
+  return { entries: list.length, bytes: list.reduce((n, b) => n + Number(b.size || 0), /** @type {number} */ (0)), hits: g.__pwSnap.hits, misses: g.__pwSnap.misses };
 }
 /** Drop every snapshot. */
 export async function clearSnapshots() { await bumpGeneration(); await removePrefix(PREFIX); }

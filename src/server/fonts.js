@@ -228,6 +228,7 @@ function rebuildGlyf(t) {
       const ends = [];
       let total = 0;
       for (let c = 0; c < nc; c++) { total += nPoints.u255(); ends.push(total - 1); }
+      /** @type {[number, number, boolean][]} */
       const pts = [];
       let x = 0, y = 0;
       for (let k = 0; k < total; k++) {
