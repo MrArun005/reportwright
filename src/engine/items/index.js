@@ -349,7 +349,22 @@ register('table', {
       if (sort?.length) rows = applySort(rows, sort, tctx);
     }
 
-    const cols = item.columns || [];
+    let cols = item.columns || [];
+    // wider than the page: columns are never dropped silently. Unless the author chose otherwise they continue on the
+    // next page set ("paginate", as SSRS); "shrink" narrows every column in proportion; "clip" cuts at the page edge
+    const room = (lc.bodyWidth ?? Infinity) - item.x;
+    const designedW = cols.reduce((s, c) => s + (Number(c.width) || 0), 0);
+    const overflow = designedW > room + 1 ? ( // under 1pt over: a hairline, kept as it was
+      ['shrink', 'clip', 'paginate'].includes(item.overflow) ? item.overflow : 'paginate') : null;
+    if (overflow === 'shrink' && room > 0) {
+      const k = room / designedW;
+      cols = cols.map(c => ({ ...c, width: (Number(c.width) || 0) * k }));
+      lc.warn(`${item.name || 'Table'}: its columns are ${Math.round(designedW)}pt wide, wider than the page (${Math.round(room)}pt), so they are narrowed to fit`);
+    } else if (overflow === 'clip' || (overflow === 'paginate' && lc.fixed)) {
+      lc.warn(`${item.name || 'Table'}: its columns are ${Math.round(designedW)}pt wide, wider than the page (${Math.round(room)}pt), so the columns past the page edge are cut`);
+    } else if (overflow === 'paginate' && item.overflow !== 'paginate') {
+      lc.warn(`${item.name || 'Table'}: its columns are ${Math.round(designedW)}pt wide, wider than the page (${Math.round(room)}pt), so they continue on the next pages`);
+    }
     const colX = [];
     let acc = item.x;
     for (const c of cols) { colX.push(acc); acc += c.width; }
@@ -750,8 +765,7 @@ register('table', {
     }
     if (!lc.fixed) lc.regions?.push(region);
     // wider than the page: the columns continue on the next page set (spec §3.3)
-    const room = (lc.bodyWidth ?? Infinity) - item.x;
-    if (item.overflow === 'paginate' && !lc.fixed && width > room + 0.01) {
+    if (overflow === 'paginate' && !lc.fixed && width > room + 0.01) {
       const hc = units.findIndex(u => u.kind !== 'header');
       const sliced = sliceColumns({
         units, height: y, headerCount: hc < 0 ? units.length : hc, headerHeight, repeatHeader: item.repeatHeader !== false,
@@ -1267,6 +1281,7 @@ register('matrix', {
       const nLeaf = (p.cols.length - nTot) / V;
       const fit = (room - headW) / p.cols.length;
       if (fit < 28) lc.warn(`${who}: ${nLeaf} columns do not fit the page; showing the first ${Math.max(1, Math.floor((room - headW) / 28) - nTot)}`);
+      else lc.warn(`${who}: its columns are wider than the page, so they are narrowed to fit`);
       cw = Math.max(28, fit);
       const keep = Math.max(1, Math.floor((room - headW) / cw) - nTot);
       if (keep < p.cols.length - nTot) p = buildPivot(it, rows, ctx, { ...lc, colLimit: Math.max(1, Math.floor(keep / V)) }); // colLimit counts column instances, each V columns wide
@@ -1322,7 +1337,7 @@ register('matrix', {
     const table = {
       type: 'table', name: who, x: item.x, y: item.y, w: 0, h: item.h, dataSet: null, repeatHeader: item.repeatHeader !== false, style: item.style,
       columns, header, footer, __body: rows.length ? body : [], __rows: rows, __ctx: ctx, noRowsText: 'No data',
-      ...(spec.overflow === 'paginate' ? { overflow: 'paginate', repeatColumns: R, pageOrder: spec.pageOrder } : {}),
+      overflow: spec.overflow, repeatColumns: R, pageOrder: spec.pageOrder, // too wide: continues on the next pages unless "shrink" (table layout)
     };
     return ITEMS.table.layout(table, lc);
   },

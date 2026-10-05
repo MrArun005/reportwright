@@ -192,3 +192,5 @@ Total
 58,452
 End of the pack
 Page 5 of 5
+--- warnings
+Matrix1: its columns are wider than the page, so they are narrowed to fit
