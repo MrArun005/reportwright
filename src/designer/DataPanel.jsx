@@ -62,7 +62,8 @@ export default function DataPanel() {
             {(def.parameters || []).map((p, i) => (
               <li key={p.name} className="trow" onDoubleClick={() => setDlg({ kind: 'param', index: i })}>
                 <span className="nm">{p.name}</span><span className="ty">{p.type || 'string'}</span>
-                <button className="btn sm ghost act" onClick={() => setDlg({ kind: 'param', index: i })}>Edit</button>
+                {p.optionsFrom && !p.optionsFrom.value && <span className="warn-dot" role="img" aria-label={T('ux_paramNoValueField')} title={T('ux_paramNoValueField')} data-testid={`param-warn-${p.name}`}>!</span>}
+                <button className="btn sm ghost act" onClick={() => setDlg({ kind: 'param', index: i })} aria-label={`${T('ux_edit')} ${p.name}`}>{T('ux_edit')}</button>
               </li>
             ))}
             {!(def.parameters || []).length && <li className="subtle">None</li>}
@@ -85,7 +86,7 @@ export default function DataPanel() {
             {(def.dataSources || []).map((s, i) => (
               <li key={s.name} className="trow" onDoubleClick={() => setDlg({ kind: 'source', index: i })}>
                 <span className="nm">{s.name}</span><span className="ty">{s.type}</span>
-                <button className="btn sm ghost act" onClick={() => setDlg({ kind: 'source', index: i })}>Edit</button>
+                <button className="btn sm ghost act" onClick={() => setDlg({ kind: 'source', index: i })} aria-label={`${T('ux_edit')} ${s.name}`}>{T('ux_edit')}</button>
               </li>
             ))}
             {!(def.dataSources || []).length && <li className="subtle">None. Add a REST, JSON or CSV source.</li>}
@@ -98,12 +99,12 @@ export default function DataPanel() {
           <ul className="tree">
             {(def.dataSets || []).map((d, i) => (
               <li key={d.name}>
-                <div className="trow">
-                  <button className="btn sm ghost icon" style={{ width: 18, height: 18 }} onClick={() => toggle(d.name)} aria-label="Show fields">{open.has(d.name) ? '▾' : '▸'}</button>
+                <div className="trow" onDoubleClick={() => setDlg({ kind: 'dataset', index: i })}>
+                  <button className="btn sm ghost icon" style={{ width: 18, height: 18 }} onClick={() => toggle(d.name)} aria-label="Show fields" aria-expanded={open.has(d.name)}>{open.has(d.name) ? '▾' : '▸'}</button>
                   <span className="nm" draggable title="Drag onto the page for a table of these rows"
                     onDragStart={(e) => { e.dataTransfer.setData(MIME_DATASET, JSON.stringify({ dataSet: d.name })); e.dataTransfer.effectAllowed = 'copy'; }}><b>{d.name}</b></span>
                   <span className="ty">{sample?.dataSets?.[d.name] ? `${sample.dataSets[d.name].length} rows` : ''}</span>
-                  <button className="btn sm ghost act" onClick={() => setDlg({ kind: 'dataset', index: i })}>Edit</button>
+                  <button className="btn sm ghost act" onClick={() => setDlg({ kind: 'dataset', index: i })} aria-label={`${T('ux_edit')} ${d.name}`}>{T('ux_edit')}</button>
                 </div>
                 {(d.fields || []).length > 0 && <div className="btnrow" style={{ margin: '2px 0 4px 22px' }}>
                   <button type="button" className="btn sm ghost" onClick={() => useDesigner.getState().setUi({ instantVisuals: { dataSet: d.name } })} data-testid={`instant-${d.name}`}>{T('instantVisuals')}</button>
@@ -165,7 +166,28 @@ function ParamDialog({ index, onClose }) {
   const fromFields = (def.dataSets?.find(d => d.name === p.optionsFrom?.dataSet)?.fields || []).map(f => f.name);
   // the label is an expression: a field picks =Fields.x; another expression from the file stays as one more choice
   const labelOpts = [...fromFields.map(f => ({ value: `=Fields.${f}`, label: f })), ...(p.optionsFrom?.label && !fromFields.some(f => `=Fields.${f}` === p.optionsFrom.label) ? [{ value: p.optionsFrom.label, label: p.optionsFrom.label }] : [])];
-  const err = !NAME.test(p.name) ? T('paramNameRule') : !uniqueIn(def.parameters, p.name, index) ? T('paramNameTaken') : null;
+  // choices from a data set need a value field: the select shows a placeholder until one is picked, and Save waits for it
+  const err = !NAME.test(p.name) ? T('paramNameRule') : !uniqueIn(def.parameters, p.name, index) ? T('paramNameTaken')
+    : p.optionsFrom && !p.optionsFrom.value ? T('ux_paramPickValueField') : null;
+  const sampleRows = useDesigner(s => s.sample?.dataSets?.[p.optionsFrom?.dataSet]);
+  const fieldOf = (e) => /^=Fields\.(\w+)$/.exec(e || '')?.[1];
+  const choicePreview = (() => {
+    const vf = fieldOf(p.optionsFrom?.value);
+    if (!vf || !Array.isArray(sampleRows)) return null;
+    const lf = fieldOf(p.optionsFrom.label) || vf;
+    const seen = new Set(), list = [];
+    for (const r of sampleRows) { const v = r?.[vf]; if (v == null || seen.has(v)) continue; seen.add(v); list.push(String(r[lf] ?? v)); }
+    return list;
+  })();
+  /** A data set picked for the choices: the value field defaults to the one it had (when that set has it), else the first field. */
+  const pickChoiceSet = (v) => {
+    if (!v) { setP({ ...p, optionsFrom: undefined }); return; }
+    const fs = (def.dataSets?.find(d => d.name === v)?.fields || []).map(f => f.name);
+    const keep = fieldOf(p.optionsFrom?.value);
+    const value = keep && fs.includes(keep) ? `=Fields.${keep}` : fs[0] ? `=Fields.${fs[0]}` : '';
+    const label = p.optionsFrom?.label && fs.includes(fieldOf(p.optionsFrom.label)) ? p.optionsFrom.label : undefined;
+    setP({ ...p, optionsFrom: { dataSet: v, value, ...(label ? { label } : {}) } });
+  };
   // a limit is a number for number parameters, a date (yyyy-mm-dd) for date parameters
   const limit = (v) => (v === '' || v == null ? undefined : p.type === 'number' && !Number.isNaN(Number(v)) ? Number(v) : v);
   const setEditor = (editor) => setP({ ...p, editor, ...(RANGE_EDITORS.has(editor) ? { multi: true } : {}) });
@@ -193,7 +215,7 @@ function ParamDialog({ index, onClose }) {
         <Field label={T('name')}><TextInput value={p.name} onChange={v => setP({ ...p, name: v })} autoFocus /></Field>
         <Field label={T('paramType')}><Select value={p.type} options={['string', 'number', 'date', 'boolean']} onChange={v => setP({ ...p, type: v })} /></Field>
         <Field label={T('prompt')}><TextInput value={p.prompt} onChange={v => setP({ ...p, prompt: v })} /></Field>
-        <Field label={T('defaultValue')} hint={T('defaultHint')}><TextInput value={p.default} onChange={v => setP({ ...p, default: v })} mono /></Field>
+        <Field label={T('defaultValue')} hint={T(p.multi ? 'ux_defaultHintMulti' : 'defaultHint')}><TextInput value={p.default} onChange={v => setP({ ...p, default: v })} mono /></Field>
       </div>
       <Check label={T('required')} checked={p.required} onChange={v => setP({ ...p, required: v })} />
       <Check label={T('paramNullable')} checked={p.nullable} onChange={v => setP({ ...p, nullable: v || undefined })} />
@@ -205,10 +227,11 @@ function ParamDialog({ index, onClose }) {
           onChange={e => { setChoicesText(e.target.value); const list = e.target.value.split('\n').map(l => l.trim()).filter(Boolean).map(l => parseOptionLine(l, p.type)); setP({ ...p, options: list.length ? list : undefined }); }} />
       </Field>
       <div className="grid2">
-        <Field label={T('choicesFrom')}><Select value={p.optionsFrom?.dataSet} options={(def.dataSets || []).map(d => d.name)} allowEmpty onChange={v => setP({ ...p, optionsFrom: v ? { dataSet: v, value: p.optionsFrom?.value || '', label: p.optionsFrom?.label } : undefined })} /></Field>
-        {p.optionsFrom && <Field label={T('valueField')}><Select value={p.optionsFrom.value?.replace(/^=Fields\./, '')} options={fromFields} onChange={v => setP({ ...p, optionsFrom: { ...p.optionsFrom, value: `=Fields.${v}` } })} data-testid="param-value-field" /></Field>}
+        <Field label={T('choicesFrom')}><Select value={p.optionsFrom?.dataSet} options={(def.dataSets || []).map(d => d.name)} allowEmpty onChange={pickChoiceSet} data-testid="param-choices-from" /></Field>
+        {p.optionsFrom && <Field label={T('valueField')}><Select value={fieldOf(p.optionsFrom.value) || ''} options={[{ value: '', label: T('ux_choose') }, ...fromFields]} onChange={v => setP({ ...p, optionsFrom: { ...p.optionsFrom, value: v ? `=Fields.${v}` : '' } })} data-testid="param-value-field" aria-invalid={!p.optionsFrom.value || undefined} /></Field>}
         {p.optionsFrom && <Field label={T('labelField')} hint={T('labelFieldHint')}><Select value={p.optionsFrom.label} options={labelOpts} allowEmpty onChange={v => setP({ ...p, optionsFrom: { ...p.optionsFrom, label: v || undefined } })} data-testid="param-label-field" /></Field>}
       </div>
+      {p.optionsFrom && choicePreview && <div className="hint" data-testid="param-choice-preview">{T('ux_choicePreview', { n: choicePreview.length, list: choicePreview.slice(0, 5).join(', ') + (choicePreview.length > 5 ? ', …' : '') })}</div>}
       {p.optionsFrom && <div className="hint">{T('cascadeHint')}</div>}
       <div className="grid2">
         <Field label={T('editor')} hint={T(`editorHint_${p.editor || 'auto'}`)}>
