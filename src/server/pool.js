@@ -37,6 +37,7 @@ import { Worker, SHARE_ENV } from 'node:worker_threads';
 import { renderTimeoutMs } from './renderer.js';
 import { principalId } from './perms.js';
 import { accountsOn, sessionSecret } from './session.js';
+import { devMode } from './config.js';
 
 const num = (k, d, min = 0) => { const n = Number(process.env[k]); return process.env[k] !== undefined && process.env[k] !== '' && Number.isFinite(n) && n >= min ? n : d; };
 
@@ -144,7 +145,7 @@ function spawn() {
   const w = new Worker('import(require("node:url").pathToFileURL(require("node:worker_threads").workerData.file).href)',
     // devSecret: without PW_SESSION_SECRET (development only) each thread would make its own, and the server's calls to
     // itself from a worker would carry a cookie the request thread cannot check
-    { eval: true, env: SHARE_ENV, workerData: { file, devSecret: accountsOn() && !process.env.PW_SESSION_SECRET && process.env.NODE_ENV !== 'production' ? sessionSecret() : undefined }, resourceLimits: { maxOldGenerationSizeMb: heapMB() } });
+    { eval: true, env: SHARE_ENV, workerData: { file, devSecret: accountsOn() && !process.env.PW_SESSION_SECRET && devMode() ? sessionSecret() : undefined }, resourceLimits: { maxOldGenerationSizeMb: heapMB() } });
   w.unref();
   /** @type {Slot} */
   const s = { w, ready: false, job: null, renders: 0, timer: null };

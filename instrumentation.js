@@ -4,14 +4,17 @@ export async function register() {
     // every request carries its socket address (x-pw-peer), so limits never believe a made-up X-Forwarded-For
     (await import('./src/server/limits.js')).trackPeers();
     if (process.env.PW_AUTH && !['users', 'proxy'].includes(process.env.PW_AUTH)) throw new Error('PW_AUTH must be "users" or "proxy" (or not set at all).');
+    // every setting checked once (src/server/config.js): dangerous values are reported, errors stop a production start
+    const { reportConfig, devMode } = await import('./src/server/config.js');
+    reportConfig();
     const { openTrusted, accountsOn, publicReadonly, basicOn, NO_AUTH_HELP } = await import('./src/server/session.js');
     if (process.env.PW_BASIC_AUTH && !basicOn()) console.warn('[pagewright] PW_BASIC_AUTH must be "user:password" (both parts set): it is ignored, so nobody signs in.');
     // PW_AUTH=proxy in production without a secret would trust anyone who reaches the port around the proxy: refuse to start
-    if (process.env.PW_AUTH === 'proxy' && process.env.NODE_ENV === 'production' && (process.env.PW_PROXY_SECRET || '').length < 16) throw new Error('PW_AUTH=proxy needs PW_PROXY_SECRET (16+ random characters) in production, sent by the signing-in reverse proxy as x-pagewright-proxy-secret. Every request is refused until it is set.');
+    if (process.env.PW_AUTH === 'proxy' && !devMode() && (process.env.PW_PROXY_SECRET || '').length < 16) throw new Error('PW_AUTH=proxy needs PW_PROXY_SECRET (16+ random characters) in production, sent by the signing-in reverse proxy as x-pagewright-proxy-secret. Every request is refused until it is set.');
     // a short PW_AUDIT_KEY would leave the audit checkpoints unsigned: production refuses to start, development warns
     const { auditKeyProblem } = await import('./src/server/audit.js');
-    if (auditKeyProblem()) { if (process.env.NODE_ENV === 'production') throw new Error(auditKeyProblem()); console.error(`[pagewright] WARNING: ${auditKeyProblem()} (development: checkpoints are signed with PW_SESSION_SECRET if that is long enough, else unsigned).`); }
-    if (process.env.NODE_ENV === 'production' && !process.env.PW_BASE_URL) console.warn('[pagewright] PW_BASE_URL is not set: reports with relative data URLs (/api/...) fail in server renders. Set it to this server\'s public URL.');
+    if (auditKeyProblem()) { if (!devMode()) throw new Error(auditKeyProblem()); console.error(`[pagewright] WARNING: ${auditKeyProblem()} (development: checkpoints are signed with PW_SESSION_SECRET if that is long enough, else unsigned).`); }
+    if (!devMode() && !process.env.PW_BASE_URL) console.warn('[pagewright] PW_BASE_URL is not set: reports with relative data URLs (/api/...) fail in server renders. Set it to this server\'s public URL.');
     // production with nobody signing in fails closed (proxy.js): say so loudly at start, not only in each 401
     if (!accountsOn() && !openTrusted()) console.warn(`[pagewright] ${publicReadonly() ? 'PW_PUBLIC_READONLY=1: anyone can open and render the saved reports; nothing can be changed.' : 'Every page and API (but /api/v1 with keys) answers 401.'} ${NO_AUTH_HELP}`);
     if (process.env.PW_AUTH === 'users') {

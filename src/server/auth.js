@@ -10,6 +10,7 @@ import crypto from 'node:crypto';
 import { accountsOn, sameOrigin } from './session.js';
 import { userPrincipal, OPEN, PUBLIC } from './perms.js';
 import { audit } from './audit.js';
+import { devMode } from './config.js';
 
 /** [{ key, email|null }] */
 const keys = () => (process.env.PW_API_KEYS || '').split(',').map(s => s.trim()).filter(Boolean).map((s) => {
@@ -32,12 +33,12 @@ export async function apiPrincipal(req) {
   const list = keys();
   if (!list.length) {
     // with accounts on there is no keyless API: it would let anyone render every report
-    if (!accountsOn() && (process.env.NODE_ENV !== 'production' || process.env.PW_ALLOW_KEYLESS === '1')) {
+    if (!accountsOn() && (devMode() || process.env.PW_ALLOW_KEYLESS === '1')) {
       const { pathname } = new URL(req.url);
       const write = !['GET', 'HEAD'].includes(req.method.toUpperCase());
       // another site's page may post here (a form, or fetch with text/plain): it must not use the keyless API
       if (write && req.headers.get('origin') && !sameOrigin(req)) return { res: Response.json({ error: 'A keyless API call from another site is refused (Origin check). Set PW_API_KEYS.' }, { status: 403 }) };
-      if (process.env.NODE_ENV !== 'production') return { principal: OPEN };
+      if (devMode()) return { principal: OPEN };
       if (write && pathname !== '/api/v1/render') return { res: Response.json({ error: 'The keyless API is read-only in production: set PW_API_KEYS to make batches and schedules.' }, { status: 401 }) };
       return { principal: PUBLIC };
     }

@@ -8,6 +8,7 @@ import { mailOn, sendMail } from '@/server/mail.js';
 import { attempt, clientAddress, netKey, normAccount } from '@/server/limits.js';
 import { publicBase } from '@/server/sso.js';
 import { audit } from '@/server/audit.js';
+import { devMode } from '@/server/config.js';
 
 export const runtime = 'nodejs';
 const HOUR = 3600 * 1000;
@@ -15,7 +16,7 @@ const g = /** @type {any} */ (globalThis);
 g.__pwResets ||= new Set(); // the work still running (tests wait for it)
 
 /** The link's origin: PW_BASE_URL; outside production the request's (never a Host header in production). */
-const linkBase = (req) => (process.env.PW_BASE_URL ? process.env.PW_BASE_URL.replace(/\/$/, '') : process.env.NODE_ENV === 'production' ? null : publicBase(req));
+const linkBase = (req) => (process.env.PW_BASE_URL ? process.env.PW_BASE_URL.replace(/\/$/, '') : !devMode() ? null : publicBase(req));
 
 async function work(req, email, base) {
   try {

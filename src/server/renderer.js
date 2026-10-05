@@ -16,6 +16,7 @@ import { serverFetch, NO_BASE_URL } from './safeFetch.js';
 import { pdfSigner } from './sign.js';
 import { runSql } from './sql.js';
 import { listFonts, readFont } from './fonts.js';
+import { devMode } from './config.js';
 
 const ROOT = process.cwd();
 let store;
@@ -58,13 +59,13 @@ export const renderTimeoutMs = () => { const n = Number(process.env.PW_RENDER_TI
  */
 export function baseUrl(req) {
   if (process.env.PW_BASE_URL) return process.env.PW_BASE_URL.replace(/\/$/, '');
-  if (process.env.NODE_ENV === 'production') return NO_BASE_URL;
+  if (!devMode()) return NO_BASE_URL;
   if (req) return `http://${new URL(req.url).host}`;
   return `http://127.0.0.1:${process.env.PORT || 3000}`;
 }
 
 /** PW_FIXED_FETCH_HOSTS: 1 (the default in production), 0 (the default in development). */
-const fixedHosts = () => (process.env.PW_FIXED_FETCH_HOSTS ? process.env.PW_FIXED_FETCH_HOSTS !== '0' : process.env.NODE_ENV === 'production');
+const fixedHosts = () => (process.env.PW_FIXED_FETCH_HOSTS ? process.env.PW_FIXED_FETCH_HOSTS !== '0' : !devMode());
 /**
  * With PW_FIXED_FETCH_HOSTS on: a data source the server fetches must write its host out; parameters and expressions
  * may fill the path and the query only (they are URL-encoded there), so a viewer cannot point the server at a host.

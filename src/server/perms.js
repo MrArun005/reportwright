@@ -24,6 +24,7 @@ import { internalHosts } from './safeFetch.js';
 import { normEmail, GROUP, getUser } from './users.js';
 import { readReport, parseReport, safeId } from './reports.js';
 import { FETCHED_TYPES } from '../engine/data/index.js';
+import { devMode } from './config.js';
 
 export const LEVELS = /** @type {const} */ (['view', 'edit', 'manage']);
 const RANK = { none: 0, view: 1, edit: 2, manage: 3 };
@@ -145,7 +146,7 @@ export async function principalFromId(id, viaKey, { session = false, since = nul
   if (id === 'public') return vet(PUBLIC);
   // records made without a key ("open") or by a user's key while accounts were on: the open server's, in development
   // only. In production nobody can say who made them (a keyless caller, before keyless became read-only): no one's.
-  if (!accountsOn() && process.env.NODE_ENV !== 'production' && (id === 'open' || id.startsWith('user:'))) return vet(OPEN);
+  if (!accountsOn() && devMode() && (id === 'open' || id.startsWith('user:'))) return vet(OPEN);
   return NOBODY;
 }
 

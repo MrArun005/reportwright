@@ -10,6 +10,7 @@ import net from 'node:net';
 import { domainToASCII } from 'node:url';
 import { Readable, Transform } from 'node:stream';
 import { accountsOn, internalCookie, basicOn } from './session.js';
+import { devMode } from './config.js';
 
 const MAX_BYTES = 20 * 1024 * 1024;
 const TIMEOUT_MS = 30000;
@@ -95,7 +96,7 @@ export const serverFetch = (selfOrigin, { internal = true } = {}) => async (inpu
   for (const k of ['host', 'content-length', 'transfer-encoding', 'connection', 'te', 'upgrade', 'x-pagewright-proxy-secret']) headers.delete(k);
   const toSelf = self && url.origin === self;
   // credentials only to the configured self: PW_BASE_URL's exact origin (scheme, host, port); without it, development only
-  const credentials = toSelf && (process.env.PW_BASE_URL ? safeOrigin(process.env.PW_BASE_URL) === self : process.env.NODE_ENV !== 'production');
+  const credentials = toSelf && (process.env.PW_BASE_URL ? safeOrigin(process.env.PW_BASE_URL) === self : devMode());
   if (toSelf) {
     if (!['GET', 'HEAD'].includes((init.method || 'GET').toUpperCase())) throw Object.assign(new Error('A data source may only read (GET) from this server.'), { status: 403 });
     for (const k of ['origin', 'referer', 'cookie', 'authorization', 'x-api-key']) headers.delete(k);

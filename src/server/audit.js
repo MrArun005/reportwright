@@ -23,6 +23,7 @@ import { store } from './storage/index.js';
 import { clientAddress } from './limits.js';
 import { principalId } from './perms.js';
 import { logWarn } from './errors.js';
+import { devMode } from './config.js';
 
 /** @typedef {import('./perms.js').Principal} Principal */
 
@@ -121,7 +122,7 @@ function signingKey() {
   if (bad) {
     // never silently unsigned: production refuses (instrumentation.js stops the start, and this throws if it did not);
     // development says so loudly and signs with PW_SESSION_SECRET when that is long enough
-    if (process.env.NODE_ENV === 'production') throw Object.assign(new Error(bad), { status: 500 });
+    if (!devMode()) throw Object.assign(new Error(bad), { status: 500 });
     if (!g.__pwAudit.warnedShort) { g.__pwAudit.warnedShort = true; console.error(`[pagewright] audit log: ${bad}`); }
   }
   const secret = [process.env.PW_AUDIT_KEY, process.env.PW_SESSION_SECRET].find(x => x && x.length >= 32);

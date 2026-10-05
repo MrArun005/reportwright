@@ -9,6 +9,7 @@
 import crypto from 'node:crypto';
 import { cachedUser } from './users.js';
 import { getSettings } from './settings.js';
+import { devMode } from './config.js';
 
 export const ROLE_RANK = Object.freeze({ viewer: 1, designer: 2, admin: 3 });
 export const COOKIE = 'pw_session';
@@ -22,17 +23,17 @@ export const accountsOn = () => process.env.PW_AUTH === 'users';
  * (next dev) yes; in production only behind PW_BASIC_AUTH, or with PW_AUTH=proxy (a reverse proxy in front of the app
  * signs everyone in). Production with none of them fails closed: see openGate in proxy.js.
  */
-export const openTrusted = () => !accountsOn() && (process.env.NODE_ENV !== 'production' || basicOn() || proxyOn());
+export const openTrusted = () => !accountsOn() && (devMode() || basicOn() || proxyOn());
 /**
  * PW_AUTH=proxy as a sign-in: in production only with PW_PROXY_SECRET (16+ characters), which the reverse proxy sends
  * and proxySecretOk checks, so a request that reaches the app port around the proxy proves nothing. Pagewright reads no
  * identity header in this mode: whoever comes through the proxy is the one trusted operator (as PW_BASIC_AUTH).
  */
-export const proxyOn = () => process.env.PW_AUTH === 'proxy' && (process.env.NODE_ENV !== 'production' || (process.env.PW_PROXY_SECRET || '').length >= 16);
+export const proxyOn = () => process.env.PW_AUTH === 'proxy' && (devMode() || (process.env.PW_PROXY_SECRET || '').length >= 16);
 /** PW_BASIC_AUTH as "user:password", both parts non-empty. Anything else ("x", ":", "u:") is not a sign-in. */
 export const basicOn = () => /^[^:]+:.+$/.test(process.env.PW_BASIC_AUTH || '');
 /** Development with nobody signing in: trusted only because it is next dev (see devHostOk). */
-export const devOpen = () => !accountsOn() && process.env.NODE_ENV !== 'production' && !basicOn() && !(process.env.PW_AUTH === 'proxy' && process.env.PW_PROXY_SECRET);
+export const devOpen = () => !accountsOn() && devMode() && !basicOn() && !(process.env.PW_AUTH === 'proxy' && process.env.PW_PROXY_SECRET);
 /**
  * next dev with nobody signing in answers only to a local host name: a page that re-points its own name at 127.0.0.1
  * (DNS rebinding) sends its own name as Host. localhost, 127.0.0.1, ::1, the PW_BASE_URL host and PW_DEV_HOSTS.
@@ -69,7 +70,7 @@ export function sessionSecret() {
     if (s.length < 32) throw new Error('PW_SESSION_SECRET is too short: use at least 32 random characters (openssl rand -hex 32).');
     return s;
   }
-  if (process.env.NODE_ENV === 'production') throw new Error('PW_AUTH=users needs PW_SESSION_SECRET (at least 32 random characters, e.g. openssl rand -hex 32). The server will not serve requests without it.');
+  if (!devMode()) throw new Error('PW_AUTH=users needs PW_SESSION_SECRET (at least 32 random characters, e.g. openssl rand -hex 32). The server will not serve requests without it.');
   const g = /** @type {any} */ (globalThis);
   if (!g.__pwDevSecret) {
     g.__pwDevSecret = crypto.randomBytes(32).toString('hex');
