@@ -4,13 +4,14 @@ import { renderReport, pdfBlob, usingWorker, origin, fetchReport, loadModelFonts
 import { reportFetch } from './dataFetch.js';
 import { ALL_FONT_KEYS } from '@/engine/text/fonts.js';
 import { exportBlob, EXPORT_DEFAULTS, needsExportData } from './exports.js';
-import { pageToSvg } from '@/exporters/svg.js';
+import { pageToSvg, linkTitle } from '@/exporters/svg.js';
 import { parameterOptions, NO_CJK_FONTS } from '@/engine/index.js';
 import { safeUrl } from '@/engine/url.js';
 import { viewerTimeZone } from './timeZone.js';
 import { t as tr, dirOf, pickLang } from './i18n.js';
 import { arrangeToolbar, exportOptionsFrom, serverPdfUrl, findText, frozenAt, galleyDefinition, pageLinks, readingText } from './logic.js';
 import ParamInput from './ParamInput.jsx';
+import { Icon } from './icons.jsx';
 
 const PX = 96 / 72;
 const GAP = 18; // space between pages: the .vpages gap
@@ -51,7 +52,9 @@ const A11yLayer = ({ page, scale, T }) => {
           let key = a.type === 'toggle' ? `t:${a.key}` : a.type === 'sort' ? `s:${a.table}:${a.by}` : `${a.type}:${txt}`;
           const n = (seen.get(key) || 0) + 1; seen.set(key, n); if (n > 1) key += `#${n}`;
           const style = { left: l.x * scale, top: l.y * scale, width: l.w * scale, height: l.h * scale };
-          const common = { className: 'vlink pw-link', style, 'data-action': JSON.stringify(a) };
+          // a box-shaped spot: this control is what the mouse clicks too (the drawing's copy below takes no clicks), so nothing
+          // is mouse-only; a pie slice (a path) keeps its exact shape in the drawing and this control is its keyboard twin
+          const common = { className: `vlink pw-link${l.path ? '' : ' hit'}`, style, 'data-action': JSON.stringify(a), title: l.tip || linkTitle(a) || undefined };
           if (a.type === 'url') return <a key={key} {...common} href={a.href} target="_blank" rel="noopener noreferrer">{txt || a.href}</a>;
           if (a.type === 'drill') {
             const qs = new URLSearchParams(Object.entries(a.params || {}).map(([k, v]) => [k, v == null ? '' : String(v)]));
@@ -71,7 +74,8 @@ const A11yLayer = ({ page, scale, T }) => {
 const Page = ({ page, w, h, scale, index, total, hits, near, T }) => {
   const html = useMemo(() => (near ? pageToSvg(page, w, h, { animate: true }) : ''), [page, w, h, near]); // charts with `animation` play it once
   return (
-    <div className="vpage" data-page={index + 1} style={{ width: w * scale, height: h * scale }} {...(near ? { role: 'region', 'aria-roledescription': T('ux_a11yPageRole'), 'aria-label': T('ux_a11yPage', { n: index + 1, total }) } : {})}>
+    // a page is a document of its own for screen readers ("Page 3 of 12"), with its text and links in reading order below
+    <div className="vpage" data-page={index + 1} style={{ width: w * scale, height: h * scale }} {...(near ? { role: 'document', 'aria-roledescription': T('ux_a11yPageRole'), 'aria-label': T('b2_pageOf', { n: index + 1, total }) } : {})}>
       {near && <div style={{ width: '100%', height: '100%' }} aria-hidden="true" dangerouslySetInnerHTML={{ __html: html }} />}
       {near && hits?.map((r, i) => <div key={i} className={`hl${r.cur ? ' cur' : ''}`} style={{ left: r.x * scale, top: r.y * scale, width: r.w * scale, height: r.h * scale }} />)}
       {near && <A11yLayer page={page} scale={scale} T={T} />}
@@ -86,7 +90,40 @@ const Frozen = ({ page, region, w, h, scale }) => {
   return <div className="vfrozen-head" data-testid="frozen-header" aria-hidden="true" style={{ left: region.x * scale, width: region.w * scale, height: region.h * scale }} dangerouslySetInnerHTML={{ __html: html }} />;
 };
 
+/** A page in the sidebar: drawn when it is near the current page, a numbered sheet of the right shape otherwise. */
+const Thumb = ({ page, w, h, n, current, near, onGo, T }) => {
+  const html = useMemo(() => (near ? pageToSvg({ items: page.items.filter(i => i.t !== 'link') }, w, h) : ''), [page, w, h, near]);
+  const ref = useRef(null);
+  useEffect(() => { if (current) ref.current?.scrollIntoView?.({ block: 'nearest' }); }, [current]);
+  return (
+    <button ref={ref} type="button" className="vthumb" aria-current={current ? 'page' : undefined} aria-label={T('b2_pageN', { n })} onClick={() => onGo(n)}>
+      <span className="vthumb-sheet" style={{ aspectRatio: `${w} / ${h}` }}>{near && <span aria-hidden="true" dangerouslySetInnerHTML={{ __html: html }} />}</span>
+      <span className="vthumb-n">{n}</span>
+    </button>
+  );
+};
+
+/** While the first render runs: grey sheets the shape of the report's pages, lines shimmering where text will be. */
+const Skeleton = ({ def, scale, T }) => {
+  const sz = { A4: [595, 842], Letter: [612, 792], Legal: [612, 1008], A3: [842, 1191], A5: [420, 595] }[def?.page?.size] || [595, 842];
+  const [w, h] = def?.page?.orientation === 'landscape' ? [sz[1], sz[0]] : sz;
+  const k = Math.max(0.3, Math.min(scale, 1.4)); // px per point, as the pages will show
+  return (
+    <div className="vskel-wrap" role="status" data-testid="viewer-loading">
+      <span className="sr-only">{T('runningReport')}</span>
+      {[0, 1].map(i => (
+        <div key={i} className="vskel" aria-hidden="true" style={{ width: w * k, height: h * k }}>
+          <i style={{ width: '42%', height: 18 }} /><i style={{ width: '64%' }} /><i style={{ width: '30%', marginBottom: 22 }} />
+          {Array.from({ length: 9 }, (_, j) => <i key={j} style={{ width: `${88 - ((j * 17) % 30)}%` }} />)}
+          <i className="blk" />
+        </div>
+      ))}
+    </div>
+  );
+};
+
 const MODES = ['single', 'continuous', 'galley'];
+const FORMATS = { pdf: 'pdf', excel: 'xlsx', word: 'docx', powerpoint: 'pptx', html: 'html', csv: 'csv', json: 'json' };
 
 /**
  * @typedef {{ page: number, pages: number, goTo: (n: number) => void, run: () => void, print: () => void, exportAs: (fmt: 'pdf'|'xlsx'|'docx'|'pptx'|'html'|'csv'|'json') => void }} ViewerApi
@@ -140,6 +177,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   // Export options (accessible PDF, PDF/A, Excel formulas, kind of HTML file): kept in this browser
   const [xopt, setXopt] = useState(() => { try { return exportOptionsFrom(JSON.parse(localStorage.getItem('pw-export-options') || '{}')); } catch { return { ...EXPORT_DEFAULTS }; } });
   const [xmenu, setXmenu] = useState(false);
+  const [emenu, setEmenu] = useState(false); // the Export menu (the seven formats)
   const setX = (k, v) => setXopt((o) => { const n = { ...o, [k]: v }; try { localStorage.setItem('pw-export-options', JSON.stringify({ ...n, v: 2 })); } catch { /* private window */ } return n; });
   const [frozen, setFrozen] = useState(null); // { page, region }: the table header kept in view
   const root = useRef(null);
@@ -489,23 +527,29 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   const bookmarks = model?.bookmarks || [];
   const side = panel === 'params' && hasParams ? 'params'
     : panel === 'map' && bookmarks.length ? 'map'
-      : panel === 'matches' && query ? 'matches' : null;
+      : panel === 'pages' && total > 0 ? 'pages'
+        : panel === 'matches' && query ? 'matches' : null;
   const columns = Math.max(1, Math.min(6, Math.floor(Number(definition.parameterLayout?.columns) || 1)));
   const paramsOnTop = side === 'params' && columns > 1 && !narrow;
 
   /* ---------------- toolbar: every built-in item has a stable id (docs/API.md, "Viewer toolbar") ---------------- */
   /** @type {ViewerApi} */
   const api = { page: current, pages: total, goTo: go, run: () => run(), print, exportAs: doExport };
+  // the formats are items of the Export menu: a format badge, the name, and what the file is
   const exportItem = (id, fmt, label, extra = {}) => ({
-    id, group: 'export',
-    node: <button className={`btn sm${fmt === 'pdf' ? ' primary' : ''}`} onClick={() => doExport(fmt)} disabled={!model || exporting === 'print'} data-testid={`export-${fmt}`} {...extra}>{exporting === fmt ? T('exporting') : queued.includes(fmt) ? T('r4_queued') : label}</button>,
+    id, group: 'export', format: true,
+    node: <button type="button" role="menuitem" className="vdrop-item" onClick={() => { setEmenu(false); doExport(fmt); }} disabled={!model || exporting === 'print'} data-testid={`export-${fmt}`} {...extra}>
+      <span className={`fmt-badge ${fmt}`} aria-hidden="true">{fmt === 'xlsx' ? 'XLS' : fmt === 'docx' ? 'DOC' : fmt === 'pptx' ? 'PPT' : fmt.toUpperCase()}</span>
+      <span className="vdrop-txt"><b>{exporting === fmt ? T('exporting') : queued.includes(fmt) ? T('r4_queued') : label}</b><span className="hint">{T(`b2_fmt_${fmt}`)}</span></span>
+    </button>,
   });
   const builtIns = [
-    hasParams && { id: 'parameters', group: 'panels', primary: true, node: <button className="btn sm" aria-pressed={side === 'params'} onClick={() => setPanel(s => (s === 'params' ? null : 'params'))}>{T('parameters')}</button> },
-    bookmarks.length > 0 && { id: 'documentMap', group: 'panels', node: <button className="btn sm" aria-pressed={side === 'map'} onClick={() => setPanel(s => (s === 'map' ? null : 'map'))}>{T('documentMap')}</button> },
-    { id: 'run', group: 'panels', node: <button className="btn sm" onClick={() => run()} disabled={status.state === 'running'}>{status.state === 'running' ? (status.retry ? T('r4_busyRetry', { n: status.retry.attempt, max: status.retry.max }) : T('running')) : T('run')}</button> },
-    { id: 'firstPage', group: 'paging', node: <button className="btn sm icon" title={T('firstPage')} onClick={() => go(1)} disabled={!total || current === 1}><span className="flip" aria-hidden="true">⏮</span></button> },
-    { id: 'previousPage', group: 'paging', primary: true, node: <button className="btn sm icon" title={T('previousPage')} onClick={() => go(current - 1)} disabled={!total || current === 1}><span className="flip" aria-hidden="true">◀</span></button> },
+    { id: 'thumbnails', group: 'panels', node: <button className="btn sm icon" aria-pressed={side === 'pages' || side === 'map'} title={T('b2_sidebar')} onClick={() => setPanel(s => (s === 'pages' || s === 'map' ? null : 'pages'))} data-testid="viewer-sidebar"><Icon name="sidebar" /></button> },
+    hasParams && { id: 'parameters', group: 'panels', primary: true, node: <button className="btn sm" aria-pressed={side === 'params'} onClick={() => setPanel(s => (s === 'params' ? null : 'params'))}><Icon name="filter" /><span className="lbl">{T('parameters')}</span></button> },
+    bookmarks.length > 0 && { id: 'documentMap', group: 'panels', node: <button className="btn sm" aria-pressed={side === 'map'} onClick={() => setPanel(s => (s === 'map' ? null : 'map'))} title={T('documentMap')} aria-label={T('documentMap')}><Icon name="toc" /></button> },
+    { id: 'run', group: 'panels', node: <button className="btn sm" onClick={() => run()} disabled={status.state === 'running'}><Icon name="run" /><span className="lbl">{status.state === 'running' ? (status.retry ? T('r4_busyRetry', { n: status.retry.attempt, max: status.retry.max }) : T('running')) : T('run')}</span></button> },
+    { id: 'firstPage', group: 'paging', node: <button className="btn sm icon" title={T('firstPage')} onClick={() => go(1)} disabled={!total || current === 1}><span className="flip"><Icon name="first" /></span></button> },
+    { id: 'previousPage', group: 'paging', primary: true, node: <button className="btn sm icon" title={T('previousPage')} onClick={() => go(current - 1)} disabled={!total || current === 1}><span className="flip"><Icon name="prev" /></span></button> },
     {
       id: 'pageNumber', group: 'paging', primary: true,
       node: <>
@@ -513,20 +557,20 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
         <span className="stat" title={model?.partial ? T('stillRendering') : undefined}>/ {total ? (model?.partial ? `${total}+` : total) : '–'}</span>
       </>,
     },
-    { id: 'nextPage', group: 'paging', primary: true, node: <button className="btn sm icon" title={T('nextPage')} onClick={() => go(current + 1)} disabled={!total || current === total}><span className="flip" aria-hidden="true">▶</span></button> },
-    { id: 'lastPage', group: 'paging', node: <button className="btn sm icon" title={T('lastPage')} onClick={() => go(total)} disabled={!total || current === total}><span className="flip" aria-hidden="true">⏭</span></button> },
-    { id: 'zoomOut', group: 'zoom', node: <button className="btn sm icon" title={T('zoomOut')} aria-label={T('zoomOut')} onClick={() => zoomBy(1 / 1.2)}>−</button> },
+    { id: 'nextPage', group: 'paging', primary: true, node: <button className="btn sm icon" title={T('nextPage')} onClick={() => go(current + 1)} disabled={!total || current === total}><span className="flip"><Icon name="next" /></span></button> },
+    { id: 'lastPage', group: 'paging', node: <button className="btn sm icon" title={T('lastPage')} onClick={() => go(total)} disabled={!total || current === total}><span className="flip"><Icon name="last" /></span></button> },
+    { id: 'zoomOut', group: 'zoom', node: <button className="btn sm icon" title={T('zoomOut')} aria-label={T('zoomOut')} onClick={() => zoomBy(1 / 1.2)}><Icon name="zoomOut" /></button> },
     { id: 'zoomValue', group: 'zoom', node: <span className="stat zoomval">{Math.round((scale / PX) * 100)}%</span> },
-    { id: 'zoomIn', group: 'zoom', node: <button className="btn sm icon" title={T('zoomIn')} aria-label={T('zoomIn')} onClick={() => zoomBy(1.2)}>+</button> },
-    { id: 'fitPage', group: 'zoom', node: <button className="btn sm" aria-pressed={zoom === 'page'} onClick={() => setZoom('page')} data-testid="fit-page">{T('ux_wholePage')}</button> },
-    { id: 'fitWidth', group: 'zoom', node: <button className="btn sm" aria-pressed={zoom === 'fit'} onClick={() => setZoom('fit')}>{T('fitWidth')}</button> },
+    { id: 'zoomIn', group: 'zoom', node: <button className="btn sm icon" title={T('zoomIn')} aria-label={T('zoomIn')} onClick={() => zoomBy(1.2)}><Icon name="zoomIn" /></button> },
+    { id: 'fitPage', group: 'zoom', node: <button className="btn sm" aria-pressed={zoom === 'page'} onClick={() => setZoom('page')} data-testid="fit-page" title={T('ux_wholePage')}><Icon name="fitPage" /><span className="lbl">{T('ux_wholePage')}</span></button> },
+    { id: 'fitWidth', group: 'zoom', node: <button className="btn sm" aria-pressed={zoom === 'fit'} onClick={() => setZoom('fit')} title={T('fitWidth')} aria-label={T('fitWidth')}><Icon name="fitWidth" /><span className="lbl">{T('fitWidth')}</span></button> },
     {
       id: 'viewMode', group: 'view',
       node: <select className="select vmode" aria-label={T('viewMode')} value={mode} onChange={e => { setMode(e.target.value); setFrozen(null); }}>
         {MODES.map(m => <option key={m} value={m}>{T(m)}</option>)}
       </select>,
     },
-    canFullScreen && { id: 'fullScreen', group: 'view', node: <button className="btn sm icon" aria-pressed={fullScreen} title={fullScreen ? T('exitFullScreen') : T('fullScreen')} aria-label={T('fullScreen')} onClick={toggleFullScreen}>⛶</button> },
+    canFullScreen && { id: 'fullScreen', group: 'view', node: <button className="btn sm icon" aria-pressed={fullScreen} title={fullScreen ? T('exitFullScreen') : T('fullScreen')} aria-label={T('fullScreen')} onClick={toggleFullScreen}><Icon name="full" /></button> },
     model && {
       id: 'stats', group: 'stats',
       node: <span className="stat vstats" title={usingWorker() ? 'Rendered in a Web Worker' : 'Rendered on the main thread'}>
@@ -535,19 +579,20 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     },
     {
       id: 'search', group: 'search', primary: true,
-      node: <form className="search" onSubmit={(e) => { e.preventDefault(); goHit(hitIdx + 1); }}>
+      node: <form className="search" role="search" onSubmit={(e) => { e.preventDefault(); goHit(hitIdx + 1); }}>
+        <span className="search-ico"><Icon name="search" /></span>
         <input className="input" type="search" placeholder={T('search')} aria-label={T('search')} value={query} onChange={e => { setQuery(e.target.value); setHitIdx(0); }} />
         <button type="button" className="btn sm icon opt" aria-pressed={matchCase} aria-label={T('matchCase')} title={T('matchCase')} onClick={() => { setMatchCase(v => !v); setHitIdx(0); }}>Aa</button>
         <button type="button" className="btn sm icon opt" aria-pressed={wholeWord} aria-label={T('wholeWord')} title={T('wholeWord')} onClick={() => { setWholeWord(v => !v); setHitIdx(0); }}><u>ab</u></button>
         {query && <span className="stat" aria-live="polite">{hits.length ? `${hitIdx + 1}/${hits.length}` : '0'}</span>}
         {query && hits.length > 0 && <>
-          <button type="button" className="btn sm icon" onClick={() => goHit(hitIdx - 1)} aria-label={T('previousMatch')}>↑</button>
-          <button type="submit" className="btn sm icon" aria-label={T('nextMatch')}>↓</button>
-          <button type="button" className="btn sm icon" aria-pressed={side === 'matches'} aria-label={T('allMatches')} title={T('allMatches')} onClick={() => setPanel(s => (s === 'matches' ? null : 'matches'))}>☰</button>
+          <button type="button" className="btn sm icon" onClick={() => goHit(hitIdx - 1)} aria-label={T('previousMatch')} title={T('previousMatch')}><Icon name="up" /></button>
+          <button type="submit" className="btn sm icon" aria-label={T('nextMatch')} title={T('nextMatch')}><Icon name="down" /></button>
+          <button type="button" className="btn sm icon" aria-pressed={side === 'matches'} aria-label={T('allMatches')} title={T('allMatches')} onClick={() => setPanel(s => (s === 'matches' ? null : 'matches'))}><Icon name="list" /></button>
         </>}
       </form>,
     },
-    { id: 'print', group: 'export', node: <button className="btn sm" onClick={print} disabled={!model || !!exporting} data-testid="print">{exporting === 'print' ? T('printing') : T('print')}</button> },
+    { id: 'print', group: 'export', node: <button className="btn sm" onClick={print} disabled={!model || !!exporting} data-testid="print"><Icon name="print" /><span className="lbl">{exporting === 'print' ? T('printing') : T('print')}</span></button> },
     exportItem('pdf', 'pdf', 'PDF'),
     exportItem('excel', 'xlsx', 'Excel'),
     exportItem('word', 'docx', 'Word', { title: T('wordHint') }),
@@ -558,7 +603,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     {
       id: 'exportOptions', group: 'export',
       node: <span className="vexp">
-        <button type="button" className="btn sm icon" aria-label={T('exportOptions')} title={T('exportOptions')} aria-expanded={xmenu} aria-haspopup="true" data-testid="export-options" onClick={() => setXmenu(v => !v)}>⚙</button>
+        <button type="button" className="btn sm icon" aria-label={T('exportOptions')} title={T('exportOptions')} aria-expanded={xmenu} aria-haspopup="true" data-testid="export-options" onClick={() => setXmenu(v => !v)}><Icon name="gear" /></button>
       </span>,
     },
   ].filter(Boolean);
@@ -571,11 +616,33 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
       const g = list[i].group;
       const chunk = [];
       while (i < list.length && list[i].group === g) chunk.push(list[i++]);
-      const nodes = chunk.map(it => (
+      const node = (it) => (
         <span key={it.id} className="titem" data-toolbar-id={it.id}>
           {it.custom ? <button type="button" className="btn sm" title={it.title} onClick={() => it.onClick?.(api)}>{it.label}</button> : it.node}
         </span>
-      ));
+      );
+      let nodes = chunk.map(node);
+      if (g === 'export' && chunk.some(it => it.format)) {
+        // the seven formats (and custom items placed among them) in one Export menu, between Print and the options
+        const fmts = chunk.filter(it => it.format), rest = chunk.filter(it => !it.format); // custom items stay buttons
+        const at = rest.findIndex(it => it.id === 'exportOptions');
+        const menu = (
+          <span key="export-menu" className="vdrop-wrap">
+            <button type="button" className="btn sm" aria-haspopup="menu" aria-expanded={emenu} disabled={!model} data-testid="export-menu" onClick={() => setEmenu(v => !v)}
+              onKeyDown={(e) => { if (e.key === 'ArrowDown') { e.preventDefault(); setEmenu(true); requestAnimationFrame(() => root.current?.querySelector('.vdrop [role=menuitem]:not(:disabled)')?.focus()); } }}>
+              <Icon name="download" /><span className="lbl">{exporting && exporting !== 'print' ? T('exporting') : T('b2_export')}</span><Icon name="chevron" size={12} />
+            </button>
+            <div className="vdrop" role="menu" aria-label={T('b2_export')} hidden={!emenu} onKeyDown={(e) => {
+              const list = [...e.currentTarget.querySelectorAll('[role=menuitem]:not(:disabled), .titem > button:not(:disabled)')];
+              const k = list.indexOf(document.activeElement);
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); list[(k + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length]?.focus(); }
+              if (e.key === 'Escape') { e.stopPropagation(); setEmenu(false); e.currentTarget.previousSibling?.focus(); }
+            }}>{fmts.map(node)}</div>
+          </span>
+        );
+        nodes = rest.map(node);
+        nodes.splice(at < 0 ? nodes.length : at, 0, menu);
+      }
       if (g === 'search') out.push(<span key="gap" className="vbar-gap" />);
       out.push(GROUPS[g] ? <div key={`g${i}`} className={`tgroup ${g}`} role="group" aria-label={GROUPS[g]}>{nodes}</div> : nodes);
       if (g === 'panels') out.push(<span key="sep" className="sep" />);
@@ -588,10 +655,12 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   const onRootPointerDown = (e) => {
     if (menu && !e.target.closest?.('.vmenu, .vmore')) setMenu(false);
     if (xmenu && !e.target.closest?.('.vexp')) setXmenu(false);
+    if (emenu && !e.target.closest?.('.vdrop-wrap')) setEmenu(false);
   };
   const onRootKeyDown = (e) => {
     if (e.key !== 'Escape') return;
     if (xmenu) setXmenu(false);
+    if (emenu) setEmenu(false);
     if (menu) setMenu(false);
     else if (narrow && side) setPanel(null);
   };
@@ -651,11 +720,11 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
           </span>
         )}
       </div>
-      <div className="vbody" style={paramsOnTop ? { gridTemplateColumns: '1fr', gridTemplateRows: 'auto 1fr' } : { gridTemplateColumns: side && !narrow ? '240px 1fr' : '1fr' }}>
+      <div className="vbody" style={paramsOnTop ? { gridTemplateColumns: '1fr', gridTemplateRows: 'auto 1fr' } : { gridTemplateColumns: side && !narrow ? `${side === 'pages' ? 200 : 260}px minmax(0, 1fr)` : 'minmax(0, 1fr)' }}>
         {side === 'params' && sheet(T('parameters'), (
           <form className={`vparams${paramsOnTop ? ' top' : ''}`} style={paramsOnTop ? { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` } : undefined}
             onSubmit={(e) => { e.preventDefault(); const st = { toggles: {}, sort: {} }; setState(st); run(params, st); if (narrow) setPanel(null); }}>
-            <h3>{T('parameters')}</h3>
+            <h3><Icon name="filter" />{T('parameters')}</h3>
             {(definition.parameters || []).filter(p => !p.hidden).map(p => (
               <div className="field" key={p.name}>
                 <span>{p.prompt || p.name}{p.required ? ' *' : ''}</span>
@@ -669,10 +738,19 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
             </div>
           </form>
         ))}
-        {side === 'map' && sheet(T('documentMap'), (
-          <nav className="vside" aria-label={T('documentMap')}>
-            <h3>{T('documentMap')}</h3>
-            {bookmarks.map((b, i) => <button key={i} style={{ paddingInlineStart: 6 + (b.level || 0) * 12 }} onClick={() => { scrollToPoint(b.page, b.y); if (narrow) setPanel(null); }}>{b.label} <span className="hint">p.{b.page}</span></button>)}
+        {(side === 'map' || side === 'pages') && sheet(T(side === 'map' ? 'documentMap' : 'b2_pages'), (
+          <nav className={`vside vnav${side === 'pages' ? ' thumbs' : ''}`} aria-label={T(side === 'map' ? 'documentMap' : 'b2_pages')}>
+            <div className="vtabs" role="tablist" aria-label={T('b2_sidebar')}>
+              <button type="button" role="tab" aria-selected={side === 'pages'} onClick={() => setPanel('pages')} data-testid="side-pages"><Icon name="pages" />{T('b2_pages')}</button>
+              {bookmarks.length > 0 && <button type="button" role="tab" aria-selected={side === 'map'} onClick={() => setPanel('map')} data-testid="side-contents"><Icon name="toc" />{T('b2_contents')}</button>}
+            </div>
+            {side === 'map' && <>
+              <h3 className="sr-only">{T('documentMap')}</h3>
+              {bookmarks.map((b, i) => <button key={i} className="vtoc" aria-current={b.page === current ? 'location' : undefined} style={{ paddingInlineStart: 10 + (b.level || 0) * 14 }} onClick={() => { scrollToPoint(b.page, b.y); if (narrow) setPanel(null); }}><span className="vtoc-l">{b.label}</span> <span className="hint">p.{b.page}</span></button>)}
+            </>}
+            {side === 'pages' && <div className="vthumbs">
+              {model.pages.map((pg, i) => <Thumb key={i} page={pg} w={pg.width ?? model.width} h={pg.height ?? model.height} n={i + 1} current={i + 1 === current} near={Math.abs(i + 1 - current) <= 12} T={T} onGo={(n) => { go(n); if (narrow) setPanel(null); }} />)}
+            </div>}
           </nav>
         ))}
         {side === 'matches' && sheet(T('matches'), (
@@ -691,7 +769,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
             <div style={{ marginTop: 10 }}><button type="button" className="btn sm" onClick={() => run()} data-testid="viewer-retry">{T('r4_retry')}</button></div></div>}
           {note && <div className="vmsg" role="status" data-testid="viewer-note">{note} <button className="btn sm ghost" onClick={() => setNote(null)} aria-label={T('close')}>×</button></div>}
           {status.state === 'running' && status.retry && <div className="vmsg" role="status" data-testid="viewer-busy">{T('r4_busyRetry', { n: status.retry.attempt, max: status.retry.max })}</div>}
-          {!model && status.state === 'running' && !status.retry && <div className="vmsg">{T('runningReport')}</div>}
+          {!model && status.state === 'running' && !status.retry && <Skeleton def={renderDef} scale={zoom === 'fit' || narrow ? fitW / 600 : Math.min(fitW / 600, fitH / 850)} T={T} />}
           {model?.warnings?.length > 0 && (
             // content cut off (past the page edge or bottom): the warnings open by themselves and the summary says so
             <details className="warnings" open={hasErrorCells || model.clipped?.length > 0 || undefined} data-testid="viewer-warnings"><summary>{T('warnings', { n: model.warnings.length })}{model.clipped?.length > 0 && <b data-testid="viewer-clipped"> · {T('r4_clipped', { n: model.clipped.length })}</b>}</summary>

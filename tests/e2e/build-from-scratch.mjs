@@ -1,6 +1,9 @@
 // Phase 1 exit test: build a statement in the designer without touching JSON, then preview and export.
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
+// the formats are in the viewer's Export menu: open it first
+const openExport = async (pg) => { if (!(await pg.getByTestId('export-pdf').isVisible())) await pg.getByTestId('export-menu').click(); };
+
 
 const BASE = process.env.BASE || 'http://localhost:3000';
 const b = await chromium.launch();
@@ -101,7 +104,7 @@ assert.ok(allText.includes('36'), 'last installment shown');
 await p.screenshot({ path: '/tmp/shots/scratch-preview.png' });
 
 step('export PDF');
-const [dl] = await Promise.all([p.waitForEvent('download'), p.getByTestId('export-pdf').click()]);
+const [dl] = await Promise.all([p.waitForEvent('download'), openExport(p).then(() => p.getByTestId('export-pdf').click())]);
 await dl.saveAs('/tmp/scratch.pdf');
 
 console.log('errors:', errs.length ? errs : 'none');

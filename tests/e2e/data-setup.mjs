@@ -4,6 +4,9 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+// the formats are in the viewer's Export menu: open it first
+const openExport = async (pg) => { if (!(await pg.getByTestId('export-pdf').isVisible())) await pg.getByTestId('export-menu').click(); };
+
 const BASE = process.env.BASE || 'http://localhost:3000';
 // BASIC=user:password when the server runs with PW_BASIC_AUTH (needed in production for SQL previews)
 const [user, pass] = (process.env.BASIC || '').split(':');
@@ -99,7 +102,7 @@ await p.getByTestId('save-state').filter({ hasText: /^Saved$/ }).waitFor();
 step('Viewer: JSON export gives the laid-out pages');
 await p.goto(`${BASE}/viewer/${id2}`);
 await p.waitForSelector('.vpage');
-const [jsonDl] = await Promise.all([p.waitForEvent('download'), p.getByTestId('export-json').click()]);
+const [jsonDl] = await Promise.all([p.waitForEvent('download'), openExport(p).then(() => p.getByTestId('export-json').click())]);
 assert.match(jsonDl.suggestedFilename(), /\.json$/);
 const laid = JSON.parse(fs.readFileSync(await jsonDl.path(), 'utf8'));
 assert.ok(Array.isArray(laid.pages) && laid.pages.length > 0, 'pages in the JSON export');

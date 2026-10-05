@@ -2,6 +2,9 @@
 // interactive sort, document map, search, exports. Plus designer groups and lists.
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
+// the formats are in the viewer's Export menu: open it first
+const openExport = async (pg) => { if (!(await pg.getByTestId('export-pdf').isVisible())) await pg.getByTestId('export-menu').click(); };
+
 const BASE = process.env.BASE || 'http://localhost:3000';
 const b = await chromium.launch();
 const ctx = await b.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
@@ -18,18 +21,18 @@ assert.ok(t.includes('▶ Bengaluru'), 'cities start collapsed');
 assert.ok(!t.some(s => s === 'Home loans'), 'products hidden');
 
 step('drill-down toggle');
-await p.locator('.pw-link').filter({ has: p.locator('title', { hasText: 'Show or hide details' }) }).first().click();
+await p.locator('.vlink.hit[title*="Show or hide details"]').first().click();
 await p.waitForFunction(() => [...document.querySelectorAll('.vpage text')].some(n => n.textContent === 'Home loans'));
 t = await texts();
 assert.ok(t.some(s => s.startsWith('▼ ')), 'one city open');
 
 step('interactive sort');
-await p.locator('.pw-link').filter({ has: p.locator('title', { hasText: 'Sort' }) }).first().click();
+await p.locator('.vlink.hit[title*="Sort"]').first().click();
 await p.waitForFunction(() => [...document.querySelectorAll('.vpage text')].some(n => /↑|↓/.test(n.textContent)));
 
 step('document map');
 await p.getByRole('button', { name: 'Document map' }).click();
-const map = await p.locator('.vside button').allInnerTexts();
+const map = await p.locator('.vside > button').allInnerTexts();
 assert.equal(map.length, 4);
 
 step('search');
@@ -48,7 +51,7 @@ await p.screenshot({ path: '/tmp/shots/sales-viewer.png' });
 
 step('exports');
 for (const f of ['xlsx', 'html', 'csv']) {
-  const [dl] = await Promise.all([p.waitForEvent('download'), p.getByTestId(`export-${f}`).click()]);
+  const [dl] = await Promise.all([p.waitForEvent('download'), openExport(p).then(() => p.getByTestId(`export-${f}`).click())]);
   await dl.saveAs(`/tmp/sales.${f}`);
 }
 

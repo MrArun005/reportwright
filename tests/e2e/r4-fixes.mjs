@@ -4,6 +4,9 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+// the formats are in the viewer's Export menu: open it first
+const openExport = async (pg) => { if (!(await pg.getByTestId('export-pdf').isVisible())) await pg.getByTestId('export-menu').click(); };
+
 const BASE = process.env.BASE || 'http://localhost:3000';
 const ONLY = (process.env.ONLY || '').split(',').filter(Boolean);
 const want = (k) => !ONLY.length || ONLY.includes(k);
@@ -63,7 +66,7 @@ try {
     const pages = await p.locator('.vpage').count();
     assert.ok(pages > 1, `the wide pivot is on ${pages} page(s)`);
     // the laid-out pages, as the viewer has them (its JSON export)
-    const [jd] = await Promise.all([p.waitForEvent('download'), p.getByTestId('export-json').click()]);
+    const [jd] = await Promise.all([p.waitForEvent('download'), openExport(p).then(() => p.getByTestId('export-json').click())]);
     const model = JSON.parse(fs.readFileSync(await jd.path(), 'utf8'));
     const all = model.pages.flatMap(pg => pg.items.filter(i => i.t === 'text').flatMap(i => i.lines.map(l => l.text)));
     assert.ok(all.includes('K29') && all.includes('K00'), 'every column key is shown');
@@ -78,15 +81,15 @@ try {
         detail: [{ height: 14, cells: [{ value: '=Fields.region' }, { value: '=Fields.city' }, { value: '=Fields.amount', style: { format: 'N2' } }] }] }]));
     await p.goto(`${BASE}/viewer/${id}`);
     await p.waitForSelector('.vpage');
-    const [dl] = await Promise.all([p.waitForEvent('download'), p.getByTestId('export-html').click()]);
+    const [dl] = await Promise.all([p.waitForEvent('download'), openExport(p).then(() => p.getByTestId('export-html').click())]);
     const size = fs.statSync(await dl.path()).size;
     console.log(`  HTML export: ${(size / 1024).toFixed(0)} KB`);
     assert.ok(size < 300 * 1024, `one page of HTML is ${size} bytes`);
     step('a Word export asked for while the HTML export runs is queued, not dropped');
     const files = [];
     p.on('download', d => files.push(d.suggestedFilename()));
-    await p.getByTestId('export-html').click();
-    await p.getByTestId('export-docx').click();
+    await openExport(p).then(() => p.getByTestId('export-html').click());
+    await openExport(p).then(() => p.getByTestId('export-docx').click());
     await p.waitForFunction(() => true);
     for (let i = 0; i < 100 && files.length < 2; i++) await p.waitForTimeout(200);
     assert.deepEqual(files.map(f => f.split('.').pop()).sort(), ['docx', 'html']);

@@ -6,6 +6,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { unzipSync, strFromU8 } from 'fflate';
 import { PDFDocument, PDFName, PDFRawStream } from 'pdf-lib';
+// the formats are in the viewer's Export menu: open it first
+const openExport = async (pg) => { if (!(await pg.getByTestId('export-pdf').isVisible())) await pg.getByTestId('export-menu').click(); };
+
 const BASE = process.env.BASE || 'http://localhost:3000';
 const step = (s) => console.log('·', s);
 fs.mkdirSync('/tmp/shots', { recursive: true });
@@ -20,7 +23,7 @@ const ready = async () => {
   await p.waitForFunction(() => !document.querySelector('.stat[title*="still rendering"]'));
 };
 const download = async (testid) => {
-  const [d] = await Promise.all([p.waitForEvent('download', { timeout: 120000 }), p.getByTestId(testid).click()]);
+  const [d] = await Promise.all([p.waitForEvent('download', { timeout: 120000 }), openExport(p).then(() => p.getByTestId(testid).click())]);
   return { name: d.suggestedFilename(), bytes: fs.readFileSync(await d.path()) };
 };
 
