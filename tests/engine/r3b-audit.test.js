@@ -48,17 +48,25 @@ describe('unauthenticated events are rate-limited, counted, never lost', () => {
     const agg = failed.find(e => e.detail?.repeated);
     expect(agg).toMatchObject({ ip: '203.0.113.9', status: 'failed', detail: { repeated: 290 } });
   });
-  it('a flood from many addresses is capped in total (PW_AUDIT_ANON_PER_MINUTE), still counted', async () => {
+  it('a flood from many addresses is capped in total (PW_AUDIT_ANON_PER_MINUTE), still counted per source', async () => {
     await wipe();
-    process.env.PW_AUDIT_ANON_PER_MINUTE = '100';
-    try {
-      for (let s = 0; s < 40; s++) for (let i = 0; i < 10; i++) await A.audit('auth.sso_failed', { req: new Request(BASE, { headers: { 'x-pw-peer': `198.18.${s}.1` } }), detail: { reason: 'garbage' } });
-      await A.flushFlood();
-      const all = await rows('auth.sso_failed');
-      expect(all.length).toBeLessThanOrEqual(101);
-      expect(total(all)).toBe(400);
-      expect(all.find(e => e.ip === '*')?.detail.repeated).toBe(300);
-    } finally { delete process.env.PW_AUDIT_ANON_PER_MINUTE; }
+    for (let n = 0; n < 40; n++) for (let i = 0; i < 10; i++) await A.audit('auth.sso_failed', { req: new Request(BASE, { headers: { 'x-pw-peer': `198.18.${n}.1` } }), detail: { reason: 'garbage' } });
+    await A.flushFlood();
+    const all = await rows('auth.sso_failed');
+    expect(all.length).toBeLessThanOrEqual(100 + 40); // 600 a minute is 100 per 10 s window, then one counted entry per source
+    expect(total(all)).toBe(400);
+  });
+  it('a different action is never hidden among identical repeats: it gets its own entry and count', async () => {
+    await wipe();
+    const h = { 'x-pw-peer': '203.0.113.50' };
+    for (let i = 0; i < 100; i++) await A.audit('auth.login_failed', { req: new Request(BASE, { headers: h }), detail: { reason: 'bad email' } });
+    await A.audit('auth.login_failed', { req: new Request(BASE, { headers: h }), detail: { email: 'admin@x.io', reason: 'wrong email or password' } });
+    for (let i = 0; i < 3; i++) await A.audit('auth.reset_request', { req: new Request(BASE, { headers: h }), detail: { email: 'admin@x.io' } });
+    await A.flushFlood();
+    const failed = await rows('auth.login_failed');
+    expect(failed.filter(e => e.detail?.email === 'admin@x.io').map(e => e.detail.repeated || 1)).toEqual([1]);
+    expect(total(failed)).toBe(101);
+    expect(total(await rows('auth.reset_request'))).toBe(3);
   });
   it('events with a signed-in actor are never aggregated', async () => {
     await wipe();
@@ -68,7 +76,7 @@ describe('unauthenticated events are rate-limited, counted, never lost', () => {
 });
 
 describe('an API render writes one compact event', () => {
-  it('one report.render (no api.call), well under the 1.5 KB of before; sampling for anonymous embed renders', async () => {
+  it('one report.render (it names the caller: no second api.call event), well under the 1.5 KB of before', async () => {
     await wipe();
     await store().put('reports', 'inv', JSON.stringify(report([{ type: 'text', x: 0, y: 0, w: 100, h: 20, value: 'Hi' }])));
     const { POST } = await import('../../app/api/v1/render/route.js');
@@ -82,12 +90,36 @@ describe('an API render writes one compact event', () => {
     console.log(`[r3b] audit bytes per API render: ${bytes} (one event)`);
     expect(bytes).toBeLessThan(750);
     expect(after[0].detail).not.toHaveProperty('signed');
-    process.env.PW_AUDIT_ANON_RENDER_SAMPLE = '0.1';
-    try {
-      for (let i = 0; i < 400; i++) await A.audit('report.render', { principal: { kind: 'anon' }, report: 'inv' });
-      const kept = (await rows('report.render')).filter(e => e.detail?.sample === 0.1).length;
-      expect(kept).toBeGreaterThan(10);
-      expect(kept).toBeLessThan(100);
-    } finally { delete process.env.PW_AUDIT_ANON_RENDER_SAMPLE; }
+    // never sampled: anonymous embed renders are all recorded (identical ones counted)
+    for (let i = 0; i < 50; i++) await A.audit('report.render', { principal: { kind: 'anon' }, report: 'inv', req: new Request(BASE, { headers: { 'x-pw-peer': '192.0.2.77' } }) });
+    await A.flushFlood();
+    expect(total((await rows('report.render')).filter(e => e.ip === '192.0.2.77'))).toBe(50);
   });
 });
+
+describe('every path that renders, exports or reads data writes an audit event (ratchet)', () => {
+  const ROOT = path.join(import.meta.dirname, '../..');
+  const walk = (d) => fs.readdirSync(path.join(ROOT, d), { withFileTypes: true }).flatMap(n => (n.isDirectory() ? walk(`${d}/${n.name}`) : /\.(m?js|jsx)$/.test(n.name) ? [`${d}/${n.name}`] : []));
+  // a file that renders a report, exports one, runs SQL or fetches data for someone must also call audit(
+  const RENDERS = /\b(renderInPool|thumbnail|runSavedSql|runSql|safeFetch|packInPool|renderReport|exportPdf|exportXlsx|exportDocx)\s*\(/;
+  // the modules that do the work for a route that audits (the route is checked), or never for a caller
+  const LIBS = new Set(['src/server/pool.js', 'src/server/renderer.js', 'src/server/sql.js', 'src/server/sql/schema.js', 'src/server/thumbs.js', 'src/server/safeFetch.js',
+    'src/server/sso.js', 'src/server/siem.js', 'src/server/render-worker.mjs', 'src/server/snapshots.js', 'src/server/schedulePage.js', 'src/server/ai.js']);
+  it('lists them all', () => {
+    const files = [...walk('app/api'), ...walk('src/server')].filter(f => !LIBS.has(f) && RENDERS.test(fs.readFileSync(path.join(ROOT, f), 'utf8')));
+    const silent = files.filter(f => !/\baudit\(/.test(fs.readFileSync(path.join(ROOT, f), 'utf8')));
+    expect(files.length).toBeGreaterThanOrEqual(6);
+    expect(silent).toEqual([]);
+  });
+  it('a thumbnail view is recorded once per viewer and report per window, repeats counted', async () => {
+    await wipe();
+    for (let i = 0; i < 5; i++) await A.audit('report.view', { principal: { kind: 'user', email: 'v@x.io', role: 'viewer', groups: [] }, report: 'inv', detail: { via: 'thumbnail' }, repeat: true });
+    await A.audit('report.view', { principal: { kind: 'user', email: 'v@x.io', role: 'viewer', groups: [] }, report: 'other', detail: { via: 'thumbnail' }, repeat: true });
+    expect((await rows('report.view')).length).toBe(2); // the first of each, at once
+    await A.flushFlood();
+    const all = await rows('report.view');
+    expect(total(all.filter(e => e.report === 'inv'))).toBe(5);
+    expect(total(all.filter(e => e.report === 'other'))).toBe(1);
+  });
+});
+

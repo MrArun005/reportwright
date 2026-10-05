@@ -16,7 +16,7 @@ export const runtime = 'nodejs';
 const flags = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v));
 
 export async function POST(req) {
-  const { principal, res } = await apiPrincipal(req, { quiet: true }); // its own event (render) or none (a scrape)
+  const { principal, res } = await apiPrincipal(req, { quiet: true }); // report.render below is this call's event
   if (res) return res;
   try {
     admit(principal); // a caller over the limit hears 429/503 before anything is read

@@ -106,11 +106,8 @@ Every setting Pagewright reads, from `src/server/config.js` (the table there is 
 | `PW_AUDIT_SIEM_CA` | text |  | Its CA (PEM). |
 | `PW_AUDIT_SIEM_ALLOW_HTTP` | flag | 0 | 1: an http:// SIEM. |
 | `PW_AUDIT_SIEM_QUEUE` | int | 10000 | Events waiting to be sent. |
-| `PW_AUDIT_ANON_PER_SOURCE` | int | 20 | Events without a signed-in actor written in full per address per minute; more are counted into one entry. |
-| `PW_AUDIT_ANON_PER_MINUTE` | int | 600 | The same across all addresses: past it, one counted entry per event type and minute. |
-| `PW_AUDIT_API_CALLS` | all / denied | all | denied: successful /api/v1 calls write no api.call event (renders still write report.render). |
-| `PW_AUDIT_ANON_RENDER_SAMPLE` | text | 1 | Share (0–1) of renders and views by anonymous embed readers that are audited (each with its sample rate). |
-| `PW_AUDIT_THUMBNAILS` | flag | 1 | A thumbnail writes report.view once per viewer and report an hour; 0: never. |
+| `PW_AUDIT_ANON_PER_SOURCE` | int | 20 | Events without a signed-in actor written in full per address per 10 s; identical ones past it are counted into one entry. |
+| `PW_AUDIT_ANON_PER_MINUTE` | int | 600 | The same across all addresses (counted per 10 s, a sixth of it). |
 | `PW_CLUSTER_PROCESSES` | int | (cores / 4, ≥ 2) | scripts/cluster.mjs processes (a database for storage when > 1). |
 | `PW_CLUSTER` | internal |  | Set by cluster.mjs in its processes. |
 | `PW_STANDALONE` | internal |  | Build the Docker standalone server. |

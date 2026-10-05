@@ -8,7 +8,7 @@ import { poolStats } from '@/server/pool.js';
 export const runtime = 'nodejs';
 
 export async function GET(req) {
-  const { principal, res } = await apiPrincipal(req, { quiet: true }); // its own event (render) or none (a scrape)
+  const { principal, res } = await apiPrincipal(req);
   if (res) return res;
   const p = vet(principal);
   if (!(p.kind === 'service' || p.kind === 'open' || (p.kind === 'user' && p.role === 'admin'))) return Response.json({ error: 'Only a service key or an admin may read the server\'s health.' }, { status: 403 });

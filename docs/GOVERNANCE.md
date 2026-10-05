@@ -150,6 +150,23 @@ The audit log itself (append-only events, retention `PW_AUDIT_RETENTION_DAYS`, f
 
 Known limits are in [API.md](API.md#known-limits).
 
+## Audit volume: compact, counted, never sampled
+
+- **Nothing is sampled or dropped.** Every render (API, server PDF link, thumbnail, batch item, scheduled run), export,
+  SQL or proxied data read (`data.read`), sign-in and change writes an event. A render through `/api/v1/render`
+  writes one `report.render` event that names the caller's key (no second `api.call`), with only the flags that are on.
+- **Identical repeats are counted, not repeated.** Events nobody signed in caused (keyless API calls, malformed
+  sign-ins, garbage SAML posts) are written in full up to `PW_AUDIT_ANON_PER_SOURCE` (20) per address and
+  `PW_AUDIT_ANON_PER_MINUTE` (600) in total per minute (checked per 10 s window); past that, an event identical to one
+  already seen in the window (type, actor, address, outcome, report, format, parameter hash and detail) is counted into
+  one entry with `detail.repeated`, `from` and `to`, written when the window ends. A different event always gets its
+  own entry, so an action cannot hide among repeats. A viewer's thumbnails of one report within 10 s are counted the
+  same way. An unclean exit loses at most one window's counts (they are written on a normal exit).
+- `*_failed` events carry `status: "failed"`.
+- **Volume** is bounded by compaction and retention (`PW_AUDIT_RETENTION_DAYS`), not by omission. A ratchet test
+  (tests/engine/r3b-audit.test.js) fails when a route or server module that renders, exports or reads data does not
+  call `audit(`.
+
 ## Report snapshot cache
 
 **Settings page → Report snapshot cache:** a TTL in seconds (0, the default, is off) and a size bound in MB. A rendering

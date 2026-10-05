@@ -27,8 +27,8 @@ const denied = (error) => Response.json({ error }, { status: 401 });
 
 /**
  * Who calls /api/v1: { principal } or { res } (401). Every key is compared, so the time does not say which matched.
- * A successful call writes api.call, unless quiet (a route that writes its own event, as a render does, or a scrape of
- * health/metrics) or PW_AUDIT_API_CALLS=denied. Refused calls are always written (aggregated when nobody signed in).
+ * A successful call writes api.call, unless quiet: a render, whose report.render event names the same caller (one
+ * event per render, not two). Refused calls are always written (identical ones from nobody signed in are counted).
  * @param {Request} req @param {{ quiet?: boolean }} [o] @returns {Promise<{ principal: import('./perms.js').Principal, res?: undefined } | { res: Response, principal?: undefined }>}
  */
 export async function apiPrincipal(req, { quiet = false } = {}) {
@@ -70,7 +70,7 @@ export async function apiPrincipal(req, { quiet = false } = {}) {
     }
     principal = { ...p, viaKey: key };
   }
-  if (!quiet && process.env.PW_AUDIT_API_CALLS !== 'denied') await audit('api.call', { req, principal, detail: { ...where, key } });
+  if (!quiet) await audit('api.call', { req, principal, detail: { ...where, key } });
   return { principal };
 }
 
