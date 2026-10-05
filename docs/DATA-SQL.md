@@ -99,8 +99,16 @@ transactions, the server-side parse checks and BigQuery's dry run.
 
 ## Release status
 
-- **SQL Server, PostgreSQL, MySQL, SQLite**: live-tested (Docker: Azure SQL Edge, PostgreSQL 16, MySQL 8.4).
+- **SQLite, MySQL: released.** Live-tested; the last review round found nothing material in the MySQL probe.
+- **PostgreSQL, SQL Server: not released yet.** Live-tested (PostgreSQL 16, Azure SQL Edge). The last review round found
+  probe gaps (SQL Server: grants on system objects to the login; PostgreSQL: column, sequence, large-object and server
+  setting rights). They are fixed and tested live, but a further clean round is the release criterion.
 - **Oracle, Snowflake, BigQuery: not released.** Not live-tested (mocked drivers only); BigQuery's login is not checked.
+- **Stored procedures: not released.**
+- **Open by design:** `public`'s default EXECUTE on `xp_dirtree`, `xp_fileexist`, `xp_regread` in SQL Server's `master`
+  (reachable only through EXEC, which the keyword scan and the SHOWPLAN check refuse; on Windows, revoke them from
+  public: `xp_dirtree` to a UNC path leaks the server's NTLM hash); PUBLIC's default EXECUTE on PostgreSQL functions (only
+  the built-ins-only check stands in front of a SECURITY DEFINER function: revoke EXECUTE on such functions from PUBLIC).
 
 ## Stored procedures
 
