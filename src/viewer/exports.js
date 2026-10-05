@@ -19,8 +19,8 @@ async function loadExcel() {
   return mod.default || mod;
 }
 
-/** Export options the viewer offers (its Export options menu) and their defaults. */
-export const EXPORT_DEFAULTS = { pdfua: false, pdfa: false, formulas: true, html: 'interactive' };
+import { EXPORT_DEFAULTS } from './logic.js';
+export { EXPORT_DEFAULTS };
 /** Formats that need the table data a view renders without (render option exportData). */
 export { needsExportData } from '@/exporters/regions.js';
 
@@ -44,7 +44,7 @@ export async function exportBlob(fmt, model, def, opt = {}) {
   if (fmt === 'json') return new Blob([JSON.stringify(model)], { type: 'application/json' });
   if (fmt === 'csv') return new Blob([exportCsv(model, { locale: def.locale, currency: def.currency })], { type: 'text/csv;charset=utf-8' });
   if (fmt === 'html' && opt.interactive !== false && o.html === 'interactive') {
-    // interactive by default: the downloaded file runs the viewer itself
+    // interactive when chosen: the downloaded file runs the viewer itself (megabytes: the viewer, fonts, a data snapshot)
     try {
       const { exportInteractiveHtml } = await import('./interactiveHtml.js');
       const { html } = await exportInteractiveHtml(def, { params: opt.params, reportId: opt.reportId, lang: opt.lang, model });

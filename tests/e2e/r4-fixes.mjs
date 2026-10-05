@@ -52,6 +52,19 @@ try {
     await shot(p, 'no-source');
     if (process.env.FIX_SHOTS) await p.screenshot({ path: `${process.env.FIX_SHOTS}/fix-no-data-source.png` });
   }
+  if (want('html')) {
+    step('HTML export of a one-page report: the pages and tables, not the viewer and the data (was 9.7 MB)');
+    const id = await create(base('r4 html size', [
+      { type: 'table', name: 'T', x: 0, y: 0, w: 500, h: 28, dataSet: 'Sales', columns: [{ width: 100 }, { width: 200 }, { width: 200 }],
+        header: [{ height: 14, cells: [{ value: 'Region' }, { value: 'City' }, { value: 'Amount' }] }],
+        detail: [{ height: 14, cells: [{ value: '=Fields.region' }, { value: '=Fields.city' }, { value: '=Fields.amount', style: { format: 'N2' } }] }] }]));
+    await p.goto(`${BASE}/viewer/${id}`);
+    await p.waitForSelector('.vpage');
+    const [dl] = await Promise.all([p.waitForEvent('download'), p.getByTestId('export-html').click()]);
+    const size = fs.statSync(await dl.path()).size;
+    console.log(`  HTML export: ${(size / 1024).toFixed(0)} KB`);
+    assert.ok(size < 300 * 1024, `one page of HTML is ${size} bytes`);
+  }
   assert.deepEqual(errs.filter(e => !/ResizeObserver/.test(e)), [], 'no page errors');
   console.log('r4-fixes: all passed');
 } finally {

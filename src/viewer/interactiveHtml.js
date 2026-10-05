@@ -10,6 +10,7 @@ import { fontKeysOf } from '@/exporters/svg.js';
 import { loadSources } from '@/engine/data/index.js';
 import { resolveParameters } from '@/engine/index.js';
 import { reuseRefs } from '@/engine/reuse.js';
+import { pruneSnapshot } from './logic.js';
 
 const toB64 = (buf) => {
   const u8 = new Uint8Array(buf);
@@ -111,7 +112,8 @@ export async function exportInteractiveHtml(def, opt = {}) {
   } catch { /* system font */ }
 
   const { reports, missing } = await collectReports(def, opt.reportId);
-  const { snapshot, drillTargets, drillSnapshots } = await snapshotData(def, opt.params || {}, opt.model, reports);
+  const { snapshot: raw, drillTargets, drillSnapshots } = await snapshotData(def, opt.params || {}, opt.model, reports);
+  const snapshot = pruneSnapshot(raw, [def, ...Object.values(reports)]); // only the values a report can read, not whole data sets
 
   const config = {
     server: base, definition: def, params: opt.params || {}, lang: opt.lang || 'en', reports, fonts, customFonts: uploaded, uiFontCss: uiCss, snapshot,

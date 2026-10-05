@@ -147,3 +147,45 @@ export function readingText(page) {
   }
   return [...rows.entries()].sort((a, b) => a[0] - b[0]).map(([, ls]) => ls.sort((a, b) => a.x - b.x).map(l => l.text).join(' ').trim()).filter(Boolean);
 }
+
+/**
+ * Export options the viewer offers (its Export options menu) and their defaults. HTML: "tables" (the pages, fonts
+ * subset to the characters used, and the Tables view of the rendered tables); "interactive" (the whole viewer, full
+ * fonts and a data snapshot: megabytes) and "static" (pages only) are choices.
+ */
+export const EXPORT_DEFAULTS = { pdfua: false, pdfa: false, formulas: true, html: 'tables' };
+
+/**
+ * The export options from what this browser stored. Before v2 every option was stored on any change, so a stored
+ * "html" was mostly the old default "interactive" (a 10 MB file for one page), not a choice: it is dropped.
+ * @param {any} stored
+ */
+export function exportOptionsFrom(stored) {
+  const { v, ...rest } = stored && typeof stored === 'object' ? stored : {};
+  if (v !== 2) delete rest.html;
+  return { ...EXPORT_DEFAULTS, ...rest };
+}
+
+/**
+ * The data snapshot an interactive HTML file carries, with only what the reports can read: a scalar under a key no
+ * report mentions anywhere (fields, expressions, paths, filters) is left out; arrays and objects stay, in order.
+ * ponytail: a field picked at run time by name (Fields(Parameters.col)) is not mentioned, so it is left out of the
+ * offline fallback; the live data source still has it. Mark such keys as data-set fields to keep them.
+ * @param {Record<string, any>} snapshot URL → parsed JSON
+ * @param {any[]} defs the report and every report it can drill into
+ */
+export function pruneSnapshot(snapshot, defs) {
+  const text = defs.map(d => JSON.stringify(d)).join('\n');
+  const seen = new Map();
+  const used = (k) => { let u = seen.get(k); if (u === undefined) { u = text.includes(JSON.stringify(k).slice(1, -1)); seen.set(k, u); } return u; };
+  /** @returns {any} */
+  const walk = (x) => {
+    if (Array.isArray(x)) return x.map(walk);
+    if (!x || typeof x !== 'object') return x;
+    /** @type {Record<string, any>} */
+    const o = {};
+    for (const [k, y] of Object.entries(x)) if ((y && typeof y === 'object') || used(k)) o[k] = walk(y);
+    return o;
+  };
+  return Object.fromEntries(Object.entries(snapshot).map(([url, x]) => [url, walk(x)]));
+}

@@ -8,7 +8,7 @@ import { pageToSvg } from '@/exporters/svg.js';
 import { parameterOptions } from '@/engine/index.js';
 import { safeUrl } from '@/engine/url.js';
 import { t as tr, dirOf, pickLang } from './i18n.js';
-import { arrangeToolbar, findText, frozenAt, galleyDefinition, pageLinks, readingText } from './logic.js';
+import { arrangeToolbar, exportOptionsFrom, findText, frozenAt, galleyDefinition, pageLinks, readingText } from './logic.js';
 import ParamInput from './ParamInput.jsx';
 
 const PX = 96 / 72;
@@ -133,9 +133,9 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   const [narrow, setNarrow] = useState(false);
   const [menu, setMenu] = useState(false);
   // Export options (accessible PDF, PDF/A, Excel formulas, kind of HTML file): kept in this browser
-  const [xopt, setXopt] = useState(() => { try { return { ...EXPORT_DEFAULTS, ...JSON.parse(localStorage.getItem('pw-export-options') || '{}') }; } catch { return { ...EXPORT_DEFAULTS }; } });
+  const [xopt, setXopt] = useState(() => { try { return exportOptionsFrom(JSON.parse(localStorage.getItem('pw-export-options') || '{}')); } catch { return { ...EXPORT_DEFAULTS }; } });
   const [xmenu, setXmenu] = useState(false);
-  const setX = (k, v) => setXopt((o) => { const n = { ...o, [k]: v }; try { localStorage.setItem('pw-export-options', JSON.stringify(n)); } catch { /* private window */ } return n; });
+  const setX = (k, v) => setXopt((o) => { const n = { ...o, [k]: v }; try { localStorage.setItem('pw-export-options', JSON.stringify({ ...n, v: 2 })); } catch { /* private window */ } return n; });
   const [frozen, setFrozen] = useState(null); // { page, region }: the table header kept in view
   const root = useRef(null);
   const scroller = useRef(null);

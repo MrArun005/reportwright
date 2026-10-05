@@ -63,3 +63,48 @@ describe('a pivot wider than the page', () => {
     for (const pg of pages) expect(pg).toContain('R0');
   });
 });
+
+describe('HTML export size', () => {
+  const ROOT = path.join(import.meta.dirname, '..', '..');
+  const subsetP = import('../../src/exporters/subset.js').then(m => m.createSubsetter(() => fs.promises.readFile(path.join(ROOT, 'public', 'harfbuzz-subset.wasm'))));
+  // a one-page report over 3,000 rows: a summary and the top 25 rows
+  const rows = Array.from({ length: 3000 }, (_, i) => ({ id: i, customer: `Customer ${i} with a long name`, city: ['Pune', 'Delhi', 'Kochi'][i % 3], amount: i * 13.7, note: 'x'.repeat(120) }));
+  const def = report([
+    { type: 'textbox', name: 'Total', x: 0, y: 0, w: 300, h: 16, value: '="Total " & Format(Sum(Fields.amount, "Rows"), "N2")' },
+    { type: 'table', name: 'Top', x: 0, y: 24, w: 520, h: 28, dataSet: 'Rows', filters: [{ expr: '=Fields.id', op: '<', value: '=25' }],
+      columns: [{ width: 60 }, { width: 300 }, { width: 160 }],
+      header: [{ height: 14, cells: [{ value: 'Id' }, { value: 'Customer' }, { value: 'Amount' }] }],
+      detail: [{ height: 14, cells: [{ value: '=Fields.id' }, { value: '=Fields.customer' }, { value: '=Fields.amount', style: { format: 'N2' } }] }] },
+  ], { data: { rows } });
+  it('a one-page report is under 300 KB: the pages, subset fonts and the rendered tables, not the data set', async () => {
+    const { exportHtml } = await import('../../src/exporters/html.js');
+    const m = await render(def, { fontStore, exportData: true });
+    expect(m.pages.length).toBe(1);
+    const html = await exportHtml(m, fontStore, { subset: await subsetP });
+    expect(html.length).toBeLessThan(300 * 1024);
+    expect(html).not.toContain('Customer 2999');
+    expect(html).not.toContain('x'.repeat(120));
+  });
+  it('pw render -f html subsets the fonts (it embedded every font whole: 1.6 MB for one page)', async () => {
+    const { spawnSync } = await import('node:child_process');
+    const out = path.join(os.tmpdir(), `r4-${process.pid}.html`);
+    try {
+      const r = spawnSync(process.execPath, [path.join(ROOT, 'bin', 'pw.mjs'), 'render', path.join(ROOT, 'reports', 'style-showcase.pw.json'), '-f', 'html', '-o', out], { encoding: 'utf8' });
+      expect(r.status, r.stderr).toBe(0);
+      expect(fs.statSync(out).size).toBeLessThan(300 * 1024);
+    } finally { fs.rmSync(out, { force: true }); }
+  });
+  it('the viewer exports HTML as pages + tables by default; an old stored "interactive" default is dropped, a v2 choice kept', async () => {
+    const { EXPORT_DEFAULTS, exportOptionsFrom } = await import('../../src/viewer/logic.js');
+    expect(EXPORT_DEFAULTS.html).toBe('tables');
+    expect(exportOptionsFrom({ pdfua: true, pdfa: false, formulas: true, html: 'interactive' })).toEqual({ ...EXPORT_DEFAULTS, pdfua: true });
+    expect(exportOptionsFrom({ v: 2, html: 'interactive' }).html).toBe('interactive');
+    expect(exportOptionsFrom(null)).toEqual(EXPORT_DEFAULTS);
+  });
+  it('the interactive file\'s data snapshot keeps only the values a report can read', async () => {
+    const { pruneSnapshot } = await import('../../src/viewer/logic.js');
+    const d = { dataSets: [{ name: 'A', source: 's', path: '$.accounts[*]', fields: [{ name: 'id' }, { name: 'balance due' }] }], sections: { body: { items: [{ type: 'textbox', value: '=Fields.city' }] } } };
+    const snap = { '/api/x': { total: 3, accounts: [{ id: 1, 'balance due': 5, city: 'Pune', secret: 'no', notes: 'long', tags: ['a'], nested: { id: 2, junk: 1 } }] } };
+    expect(pruneSnapshot(snap, [d])).toEqual({ '/api/x': { accounts: [{ id: 1, 'balance due': 5, city: 'Pune', tags: ['a'], nested: { id: 2 } }] } });
+  });
+});
