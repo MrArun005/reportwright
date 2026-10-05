@@ -22,10 +22,14 @@ async function handle(req, form) {
     return Response.json({ error: e.message }, { status: e.status || 400 });
   }
   if (m.kind === 'LogoutResponse') {
+    // it must answer the request this browser sent (pw_slo): a response captured elsewhere cannot sign this browser out
     const rid = sloRequestId(req);
-    const mine = !!rid && rid === m.inResponseTo;
-    await audit(mine ? 'auth.slo' : 'auth.slo_failed', { req, status: mine ? (m.ok ? 'ok' : 'failed') : 'failed', detail: { from: 'idp response', ...(mine ? { idpStatus: m.ok ? 'success' : 'not success' } : { reason: 'not this browser\'s request' }) } });
-    // our side signed out before going to the IdP; this browser lands on the sign-in page either way
+    if (!rid || rid !== m.inResponseTo) {
+      await audit('auth.slo_failed', { req, status: 'failed', detail: { from: 'idp response', reason: 'not this browser\'s request' } });
+      return Response.json({ error: 'This logout answer is not for a sign-out from this browser.' }, { status: 400 });
+    }
+    await audit('auth.slo', { req, status: m.ok ? 'ok' : 'failed', detail: { from: 'idp response', idpStatus: m.ok ? 'success' : 'not success' } });
+    // our side signed out before going to the IdP; RelayState is ignored: the browser always lands on the sign-in page
     return go(`${publicBase(req)}/login`, [clearCookie(req), ...clearLogoutCookies(req)]);
   }
   const u = await samlUserFor(m.nameID, m.format);

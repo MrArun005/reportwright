@@ -68,7 +68,7 @@ function readRedirect(url) {
   return { origin: `${u.origin}${u.pathname}`, kind, xml: zlib.inflateRawSync(Buffer.from(p.get(kind), 'base64')).toString(), relay: p.get('RelayState') };
 }
 const logoutResponse = (inResponseTo, o = {}) => `<samlp:LogoutResponse ${NS} ID="_r${crypto.randomBytes(8).toString('hex')}" Version="2.0" IssueInstant="${o.at || iso()}" Destination="${o.dest || SLO}" InResponseTo="${inResponseTo}"><saml:Issuer>${o.issuer || IDP}</saml:Issuer><samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status></samlp:LogoutResponse>`;
-const logoutRequest = (o = {}) => `<samlp:LogoutRequest ${NS} ID="${o.id || `_q${crypto.randomBytes(8).toString('hex')}`}" Version="2.0" IssueInstant="${o.at || iso()}" Destination="${o.dest || SLO}"><saml:Issuer>${o.issuer || IDP}</saml:Issuer><saml:NameID Format="${NAMEID_FMT}">${o.nameID || 'bob@x.test'}</saml:NameID><samlp:SessionIndex>s1</samlp:SessionIndex></samlp:LogoutRequest>`;
+const logoutRequest = (o = {}) => `<samlp:LogoutRequest ${NS} ID="${o.id || `_q${crypto.randomBytes(8).toString('hex')}`}" Version="2.0" IssueInstant="${o.at || iso()}"${o.dest === null ? '' : ` Destination="${o.dest || SLO}"`}${o.noa ? ` NotOnOrAfter="${o.noa}"` : ''}><saml:Issuer>${o.issuer || IDP}</saml:Issuer><saml:NameID Format="${NAMEID_FMT}">${o.nameID || 'bob@x.test'}</saml:NameID><samlp:SessionIndex>s1</samlp:SessionIndex></samlp:LogoutRequest>`;
 
 describe('SAML single logout, SP-initiated', () => {
   let rid, sloCookie;
@@ -88,8 +88,17 @@ describe('SAML single logout, SP-initiated', () => {
     sloCookie = cookieOf(res, 'pw_slo');
     expect(sloCookie).toBeTruthy();
   });
-  it('the IdP\'s signed LogoutResponse for this browser\'s request lands on the sign-in page', async () => {
-    const res = await R.slo.GET(req(`${SLO}?${redirectQuery('SAMLResponse', logoutResponse(rid), idp.key)}`, { cookie: sloCookie }));
+  it('a signed response to another browser\'s request is refused and signs nobody out here', async () => {
+    const c = await sessionFor('bob@x.test', 'saml');
+    const res = await R.slo.GET(req(`${SLO}?${redirectQuery('SAMLResponse', logoutResponse(rid), idp.key)}`, { cookie: c })); // no pw_slo
+    expect(res.status).toBe(400);
+    expect(cookies(res)).toEqual([]);
+    expect(await who(c)).toBe('bob@x.test');
+    const res2 = await R.slo.GET(req(`${SLO}?${redirectQuery('SAMLResponse', logoutResponse('_someone-else'), idp.key)}`, { cookie: sloCookie }));
+    expect(res2.status).toBe(400);
+  });
+  it('the IdP\'s signed LogoutResponse for this browser\'s request lands on the sign-in page, whatever RelayState says', async () => {
+    const res = await R.slo.GET(req(`${SLO}?${redirectQuery('SAMLResponse', logoutResponse(rid), idp.key, { relay: 'https://evil.test/' })}`, { cookie: sloCookie }));
     expect(res.status).toBe(303);
     expect(res.headers.get('location')).toBe(`${BASE}/login`);
     const ev = (await (await import('../../src/server/audit.js')).queryAudit({ type: 'auth.slo', limit: 1 }))[0];
@@ -100,14 +109,18 @@ describe('SAML single logout, SP-initiated', () => {
       redirectQuery('SAMLResponse', logoutResponse(rid), idp.key, { unsigned: true }),
       redirectQuery('SAMLResponse', logoutResponse(rid), other.key),
       redirectQuery('SAMLResponse', logoutResponse(rid), idp.key, { alg: 'http://www.w3.org/2000/09/xmldsig#rsa-sha1' }),
+      redirectQuery('SAMLResponse', logoutResponse(rid), idp.key, { alg: 'none' }),
+      `${redirectQuery('SAMLResponse', logoutResponse(rid), idp.key, { unsigned: true })}&SigAlg=${encodeURIComponent('http://www.w3.org/2001/04/xmldsig-more#rsa-sha256')}&Signature=`,
+      `xSAMLResponse=1&${redirectQuery('SAMLResponse', logoutResponse(rid), idp.key)}`, // an extra parameter node-saml would match by substring
+      `${redirectQuery('SAMLResponse', logoutResponse(rid), idp.key)}&SigAlg=${encodeURIComponent('http://www.w3.org/2001/04/xmldsig-more#rsa-sha256')}`, // a name twice
       redirectQuery('SAMLResponse', logoutResponse(rid, { at: iso(Date.now() - 600000) }), idp.key),
       redirectQuery('SAMLResponse', logoutResponse(rid, { dest: 'https://evil.test/slo' }), idp.key),
       redirectQuery('SAMLResponse', logoutResponse(rid, { issuer: 'https://evil.test' }), idp.key),
     ];
     for (const q of tries) expect((await R.slo.GET(req(`${SLO}?${q}`, { cookie: sloCookie }))).status).toBeGreaterThanOrEqual(400);
     const q = redirectQuery('SAMLResponse', logoutResponse(rid), idp.key);
-    expect((await R.slo.GET(req(`${SLO}?${q}`))).status).toBe(303);
-    expect((await R.slo.GET(req(`${SLO}?${q}`))).status).toBe(401); // the same message again
+    expect((await R.slo.GET(req(`${SLO}?${q}`, { cookie: sloCookie }))).status).toBe(303);
+    expect((await R.slo.GET(req(`${SLO}?${q}`, { cookie: sloCookie }))).status).toBe(401); // the same message again
     // a tampered signed part (another InResponseTo) fails the signature
     const t = q.replace(/^SAMLResponse=[^&]+/, `SAMLResponse=${encodeURIComponent(zlib.deflateRawSync(Buffer.from(logoutResponse('_other'))).toString('base64'))}`);
     expect((await R.slo.GET(req(`${SLO}?${t}`))).status).toBe(401);
@@ -128,12 +141,25 @@ describe('SAML single logout, IdP-initiated', () => {
     expect(m.xml).toContain('urn:oasis:names:tc:SAML:2.0:status:Success');
     expect(m.relay).toBe('r1');
   });
-  it('refuses an unsigned or foreign-signed request: nobody is signed out', async () => {
+  it('refuses unsigned, foreign-signed, stale, expired and misdirected requests: nobody is signed out', async () => {
     const c = await sessionFor('bob@x.test', 'saml');
-    for (const q of [redirectQuery('SAMLRequest', logoutRequest(), idp.key, { unsigned: true }), redirectQuery('SAMLRequest', logoutRequest(), other.key)]) {
-      expect((await R.slo.GET(req(`${SLO}?${q}`))).status).toBe(401);
-    }
+    for (const q of [
+      redirectQuery('SAMLRequest', logoutRequest(), idp.key, { unsigned: true }),
+      redirectQuery('SAMLRequest', logoutRequest(), other.key),
+      redirectQuery('SAMLRequest', logoutRequest({ at: iso(Date.now() - 600000) }), idp.key),
+      redirectQuery('SAMLRequest', logoutRequest({ noa: iso(Date.now() - 120000) }), idp.key),
+      redirectQuery('SAMLRequest', logoutRequest({ dest: 'https://evil.test/slo' }), idp.key),
+      redirectQuery('SAMLRequest', logoutRequest({ issuer: 'https://evil.test' }), idp.key),
+    ]) expect((await R.slo.GET(req(`${SLO}?${q}`))).status).toBe(401);
     expect(await who(c)).toBe('bob@x.test');
+  });
+  it('a request for one IdP subject signs out only that account (not one with the same email from elsewhere)', async () => {
+    await users.createUser({ email: 'carol@x.test', role: 'viewer', password: 'carol password 1' });
+    const bob = await sessionFor('bob@x.test', 'saml'), carol = await sessionFor('carol@x.test');
+    const res = await R.slo.GET(req(`${SLO}?${redirectQuery('SAMLRequest', logoutRequest({ nameID: 'carol@x.test' }), idp.key)}`));
+    expect(res.status).toBe(303); // answered, but no account is bound to that subject at this IdP
+    expect(await who(carol)).toBe('carol@x.test');
+    expect(await who(bob)).toBe('bob@x.test');
   });
   it('HTTP-POST: a request signed by the IdP works; one signed by someone else does not', async () => {
     const sign = (xml, key, cert) => {
@@ -146,6 +172,7 @@ describe('SAML single logout, IdP-initiated', () => {
     const c = await sessionFor('bob@x.test', 'saml');
     expect((await post(sign(logoutRequest(), other.key, other.cert))).status).toBe(401);
     expect((await post(logoutRequest())).status).toBe(401);
+    expect((await post(sign(logoutRequest({ dest: null }), idp.key, idp.cert))).status).toBe(401); // a POST must name our address
     expect(await who(c)).toBe('bob@x.test');
     const res = await post(sign(logoutRequest({ id: '_post1' }), idp.key, idp.cert));
     expect(res.status).toBe(303);

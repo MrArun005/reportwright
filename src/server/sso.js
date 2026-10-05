@@ -409,10 +409,6 @@ async function pemFrom(name) {
   if (process.env[`${name}_FILE`]) return (await import('node:fs/promises')).readFile(String(process.env[`${name}_FILE`]), 'utf8');
   return null;
 }
-/** The IdP certificates as PEM (PW_SAML_IDP_CERT may hold bare base64). */
-async function idpPems() {
-  return (await idpCerts()).map(c => (c.includes('-----BEGIN') ? c : `-----BEGIN CERTIFICATE-----\n${c.match(/.{1,64}/g).join('\n')}\n-----END CERTIFICATE-----\n`));
-}
 /** The SP's signing key and certificate, when set (PW_SAML_SP_KEY, PW_SAML_SP_CERT). */
 async function spSigning() {
   const key = await pemFrom('PW_SAML_SP_KEY');
@@ -490,10 +486,11 @@ async function parseMessage(xml) {
 }
 
 /**
- * Check a logout message: from the pinned IdP, for our SLO address, issued within 5 minutes, its ID used once.
- * @param {any} doc xml2js @param {Request} req @returns {{ kind: 'LogoutRequest'|'LogoutResponse', el: any }}
+ * Check a logout message's envelope: SAML 2.0, from the pinned IdP, for our SLO address (a POST must name it; a redirect
+ * names it or nothing), issued within 5 minutes, not past NotOnOrAfter. useOnce records its ID afterwards.
+ * @param {any} doc xml2js @param {Request} req @param {boolean} post @returns {Promise<{ kind: 'LogoutRequest'|'LogoutResponse', el: any }>}
  */
-async function checkLogoutMessage(doc, req) {
+async function checkLogoutMessage(doc, req, post) {
   const [kind] = Object.keys(doc || {});
   const local = String(kind).replace(/^.*:/, '');
   if (!['LogoutRequest', 'LogoutResponse'].includes(local)) throw fail('Not a SAML logout message.', 400, 'slo');
@@ -503,56 +500,69 @@ async function checkLogoutMessage(doc, req) {
   const issuer = kids(el, 'Issuer')[0];
   const iss = typeof issuer === 'string' ? issuer : issuer?._;
   if (iss !== process.env.PW_SAML_IDP_ISSUER) throw fail('The logout message is from another identity provider.', 401, 'issuer');
-  if (el.$?.Destination && el.$.Destination !== SLO(req)) throw fail('The logout message is for another address (Destination).', 401, 'destination');
+  if ((el.$?.Destination || (post ? '' : SLO(req))) !== SLO(req)) throw fail('The logout message is for another address (Destination).', 401, 'destination');
   const at = Date.parse(el.$?.IssueInstant || '');
   if (!Number.isFinite(at) || Math.abs(Date.now() - at) > 5 * 60000) throw fail('The logout message is too old or from the future (IssueInstant).', 401, 'expired');
-  const id = String(el.$?.ID || '');
-  if (!id) throw fail('The logout message has no ID.', 400, 'slo');
-  if (!(await store().lease(`saml-slo:${crypto.createHash('sha256').update(id).digest('hex')}`, rand(8), 3600000))) throw fail('This logout message was used already.', 401, 'replay');
+  const noa = el.$?.NotOnOrAfter;
+  if (noa && !(Date.parse(noa) + 60000 > Date.now())) throw fail('The logout message has expired (NotOnOrAfter).', 401, 'expired');
+  if (!el.$?.ID) throw fail('The logout message has no ID.', 400, 'slo');
   return { kind: /** @type {any} */ (local), el };
+}
+/** Each logout message once, on every server (a storage lease for an hour). @param {any} el */
+async function useOnce(el) {
+  if (!(await store().lease(`saml-slo:${crypto.createHash('sha256').update(String(el.$.ID)).digest('hex')}`, rand(8), 3600000))) throw fail('This logout message was used already.', 401, 'replay');
 }
 
 /**
  * A logout message arriving at /api/auth/saml/slo: HTTP-Redirect (GET, signed query) or HTTP-POST (signed XML, requests
- * only). Returns what it is: { kind: 'LogoutResponse', inResponseTo, ok } or { kind: 'LogoutRequest', id, nameID, format,
- * relay }. Unsigned or badly signed messages are refused.
+ * only). The signature is checked by @node-saml/node-saml for the binding used (validateRedirectAsync: the raw encoded
+ * SAMLRequest|SAMLResponse, RelayState, SigAlg, in that order; validatePostRequestAsync: an enveloped signature over the
+ * root element), after this module has made sure the message is signed at all (node-saml lets an unsigned redirect
+ * through), with an allowed SigAlg (RSA-SHA256/512: no SHA-1, no "none"), and that the query holds nothing else and no
+ * name twice (node-saml finds its parameters by substring). The NameID is node-saml's, read from the verified DOM. Then
+ * checkLogoutMessage: the pinned issuer, our Destination, a recent IssueInstant, NotOnOrAfter, and each ID once.
+ * Returns { kind: 'LogoutResponse', inResponseTo, ok } or { kind: 'LogoutRequest', id, nameID, format, relay }.
  * @param {Request} req @param {Record<string, string>} [form] the POST form
  */
 export async function samlSloMessage(req, form) {
+  const saml = await samlFor(req);
   if (form) {
     if (!form.SAMLRequest || form.SAMLRequest.length > 512 * 1024) throw fail('Send a signed SAMLRequest (a LogoutResponse comes by HTTP-Redirect).', 400, 'slo');
     const xml = Buffer.from(form.SAMLRequest, 'base64').toString('utf8');
-    if (/<!DOCTYPE|<!ENTITY/i.test(xml)) throw fail('The SAML message has a DOCTYPE.', 400, 'slo');
-    const saml = await samlFor(req);
-    try { await saml.validatePostRequestAsync({ SAMLRequest: form.SAMLRequest }); } catch (e) { throw fail(`The logout request is not valid: ${/** @type {Error} */ (e).message}`, 401, 'signature'); }
-    const { kind, el } = await checkLogoutMessage(await parseMessage(xml), req);
-    if (kind !== 'LogoutRequest') throw fail('Send a LogoutRequest.', 400, 'slo');
-    return requestOf(el, String(form.RelayState || ''));
+    const { kind, el } = await checkLogoutMessage(await parseMessage(xml), req, true);
+    if (kind !== 'LogoutRequest') throw fail('Send a LogoutRequest (a LogoutResponse comes by HTTP-Redirect).', 400, 'slo');
+    let profile;
+    try { ({ profile } = await saml.validatePostRequestAsync({ SAMLRequest: form.SAMLRequest })); }
+    catch (e) { throw fail(`The logout request is not valid: ${/** @type {Error} */ (e).message}`, 401, 'signature'); }
+    await useOnce(el);
+    return requestOf(profile, el, String(form.RelayState || ''));
   }
   const q = rawQuery(req.url);
+  for (const k of q.keys()) if (!['SAMLRequest', 'SAMLResponse', 'RelayState', 'SigAlg', 'Signature'].includes(k)) throw fail(`The logout message has an unknown parameter (${k.slice(0, 20)}).`, 400, 'slo');
   const name = q.has('SAMLRequest') ? 'SAMLRequest' : q.has('SAMLResponse') ? 'SAMLResponse' : null;
   if (!name || (q.has('SAMLRequest') && q.has('SAMLResponse'))) throw fail('Send one SAMLRequest or SAMLResponse.', 400, 'slo');
-  if (!q.has('Signature') || !q.has('SigAlg')) throw fail('The logout message is not signed.', 401, 'signature');
-  const alg = SIG_ALGS[decodeURIComponent(q.get('SigAlg'))];
-  if (!alg) throw fail('The logout message is signed with an algorithm Pagewright does not take (use RSA-SHA256).', 401, 'signature');
-  const signed = `${name}=${q.get(name)}${q.has('RelayState') ? `&RelayState=${q.get('RelayState')}` : ''}&SigAlg=${q.get('SigAlg')}`;
-  const sig = Buffer.from(decodeURIComponent(q.get('Signature')), 'base64');
-  const pems = await idpPems();
-  if (!pems.some(pem => { try { return crypto.createVerify(alg).update(signed).verify(pem, sig); } catch { return false; } })) throw fail('The logout message signature is not the identity provider\'s.', 401, 'signature');
+  if (!q.get('Signature') || !q.get('SigAlg')) throw fail('The logout message is not signed.', 401, 'signature');
+  const dec = (k) => { try { return decodeURIComponent(q.get(k).replace(/\+/g, ' ')); } catch { throw fail(`Bad ${k}.`, 400, 'slo'); } };
+  if (!SIG_ALGS[dec('SigAlg')]) throw fail('The logout message is signed with an algorithm Pagewright does not take (use RSA-SHA256).', 401, 'signature');
   let xml;
-  try { xml = zlib.inflateRawSync(Buffer.from(decodeURIComponent(q.get(name)), 'base64'), { maxOutputLength: 256 * 1024 }).toString('utf8'); }
+  try { xml = zlib.inflateRawSync(Buffer.from(dec(name), 'base64'), { maxOutputLength: 256 * 1024 }).toString('utf8'); }
   catch { throw fail('The logout message does not inflate.', 400, 'slo'); }
-  const { kind, el } = await checkLogoutMessage(await parseMessage(xml), req);
-  const relay = q.has('RelayState') ? decodeURIComponent(q.get('RelayState')) : '';
-  if (kind === 'LogoutRequest') return requestOf(el, relay);
+  const { kind, el } = await checkLogoutMessage(await parseMessage(xml), req, false);
+  const container = Object.fromEntries([...q.keys()].map(k => [k, dec(k)]));
+  let out;
+  try { out = await saml.validateRedirectAsync(container, new URL(req.url).search.slice(1)); }
+  catch (e) { throw fail(`The logout message is not valid: ${/** @type {Error} */ (e).message}`, 401, 'signature'); }
+  await useOnce(el);
+  if (kind === 'LogoutRequest') return requestOf(out.profile, el, q.has('RelayState') ? dec('RelayState') : '');
   const code = kids(kids(el, 'Status')[0], 'StatusCode')[0]?.$?.Value;
   return { kind, inResponseTo: String(el.$?.InResponseTo || ''), ok: code === SUCCESS };
 }
-function requestOf(el, relay) {
-  const n = kids(el, 'NameID')[0];
-  const nameID = typeof n === 'string' ? n : n?._;
-  if (!nameID) throw fail('The logout request has no NameID.', 400, 'slo');
-  return { kind: 'LogoutRequest', id: String(el.$.ID), nameID: String(nameID), format: String(n?.$?.Format || ''), relay: relay.slice(0, 80) };
+/** @param {any} profile node-saml's, from the verified message @param {any} el @param {string} relay */
+function requestOf(profile, el, relay) {
+  if (!profile?.nameID) throw fail('The logout request has no NameID.', 400, 'slo');
+  if (String(profile.ID || el.$.ID) !== String(el.$.ID)) throw fail('The logout request does not match its signature.', 401, 'signature');
+  // RelayState only goes back to the IdP, inside our signed LogoutResponse: never a place this server sends the browser
+  return { kind: 'LogoutRequest', id: String(el.$.ID), nameID: String(profile.nameID), format: String(profile.nameIDFormat || ''), relay: relay.slice(0, 80) };
 }
 
 /** The pw_slo request id of this browser, or null. @param {Request} req */
