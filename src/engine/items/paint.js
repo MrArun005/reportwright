@@ -58,11 +58,15 @@ function layoutText(text, st, width, m, wrap) {
  * Paint a box: background, text lines, borders.
  * @returns {any[]} page-model items (appended to `out` when given)
  */
-export function paintBox({ x, y, w, h, st, tl, numeric = false, m, ellipsis = true, out = null }) {
-  return paintBoxAt(x, y, w, h, st, tl, numeric, m, ellipsis, out || []);
+export function paintBox({ x, y, w, h, st, tl, numeric = false, m, ellipsis = true, out = null, cell = null }) {
+  return paintBoxAt(x, y, w, h, st, tl, numeric, m, ellipsis, out || [], cell);
 }
-/** paintBox with positional arguments (no argument object: table cells call it hundreds of thousands of times). */
-export function paintBoxAt(x, y, w, h, st, tl, numeric, m, ellipsis, items) {
+/**
+ * paintBox with positional arguments (no argument object: table cells call it hundreds of thousands of times).
+ * cell: the text's table cell tag (export data), set when the text item is made: one added later would not fit the
+ * object and costs a separate property store per item.
+ */
+export function paintBoxAt(x, y, w, h, st, tl, numeric, m, ellipsis, items, cell = null) {
   // rounded corners (text boxes, containers, cells): the background and an all-round border become rounded rects
   const radius = Math.max(0, Math.min(Number(st.radius) || 0, w / 2, h / 2));
   if (st.backgroundColor) items.push(radius ? { t: 'rect', x, y, w, h, fill: st.backgroundColor, radius } : { t: 'rect', x, y, w, h, fill: st.backgroundColor });
@@ -116,13 +120,16 @@ export function paintBoxAt(x, y, w, h, st, tl, numeric, m, ellipsis, items) {
       out.push(o);
     }
     if (out.length) {
-      // an exact-size array: one grown by push keeps 16 slots, and the page model holds one per text
-      const text = { t: 'text', font: key, size, color: st.color || '#000', lines: out.length === 1 ? [out[0]] : out.slice(), clip: { x, y, w, h } };
-      items.push(text);
       const deco = st.textDecoration && st.textDecoration !== 'none' ? String(st.textDecoration).toLowerCase() : '';
       const under = deco.includes('underline'), strike = deco.includes('line-through');
+      // an exact-size array: one grown by push keeps 16 slots, and the page model holds one per text
+      const color = st.color || '#000', ls = out.length === 1 ? [out[0]] : out.slice(), clip = { x, y, w, h };
+      // deco: the Word export reads it. Every property in the literal, in the order they always had.
+      const text = under || strike
+        ? (cell ? { t: 'text', font: key, size, color, lines: ls, clip, deco, cell } : { t: 'text', font: key, size, color, lines: ls, clip, deco })
+        : (cell ? { t: 'text', font: key, size, color, lines: ls, clip, cell } : { t: 'text', font: key, size, color, lines: ls, clip });
+      items.push(text);
       if (under || strike) {
-        text.deco = deco; // the Word export reads this
         // decorations are plain lines, so every exporter draws them without special code; their position and
         // thickness come from the font's own underline and strikeout metrics
         const d = m.decoration(key, size), stroke = st.textDecorationColor || st.color || '#000';

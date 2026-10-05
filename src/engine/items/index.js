@@ -452,10 +452,9 @@ register('table', {
             else if (first) items.push(...c.nested.items);
             return;
           }
-          const at = items.length;
-          paintBoxAt(c.x, 0, c.w, h, c.st, lines ? { ...c.tl, lines: lines[k] } : c.tl, c.numeric, lc.m, true, items);
           // cell text knows its table, row and column, so the Word export can rebuild the table
-          if (lc.regions) for (let i = at; i < items.length; i++) if (items[i].t === 'text') items[i].cell = { table: item.name, row: rowId, col: colIdx[c.ci], span: c.span, kind, cols: colWidths, bg: c.st.backgroundColor || null };
+          const tag = lc.regions ? { table: item.name, row: rowId, col: colIdx[c.ci], span: c.span, kind, cols: colWidths, bg: c.st.backgroundColor || null } : null;
+          paintBoxAt(c.x, 0, c.w, h, c.st, lines ? { ...c.tl, lines: lines[k] } : c.tl, c.numeric, lc.m, true, items, tag);
           if (first) cellLinks(items, c, h, kind);
         });
         if (first) for (const c of cells) if (c.cell.toggle) items.push(toggleLink(c, c.w, h));
@@ -546,8 +545,8 @@ register('table', {
         const st = k === 0 && n === 1 ? s.st : { ...s.st, ...(k > 0 ? { borderTop: 'none' } : {}), ...(k < n - 1 ? { borderBottom: 'none' } : {}) };
         const add = paintBox({ x: s.x, y: 0, w: s.w, h: u.height, st, tl: null, m: lc.m });
         if (k === 0) {
-          const text = paintBox({ x: s.x, y: 0, w: s.w, h: H, st: { ...s.st, ...NO_BOX }, tl: s.tl, numeric: s.numeric, m: lc.m });
-          if (lc.regions) for (const b of text) if (b.t === 'text') b.cell = { table: item.name, row: u.rowId, col: colX.indexOf(s.x), span: s.cols, rowSpan: n, kind, cols: colWidths, bg: s.st.backgroundColor || null };
+          const tag = lc.regions ? { table: item.name, row: u.rowId, col: colX.indexOf(s.x), span: s.cols, rowSpan: n, kind, cols: colWidths, bg: s.st.backgroundColor || null } : null;
+          const text = paintBox({ x: s.x, y: 0, w: s.w, h: H, st: { ...s.st, ...NO_BOX }, tl: s.tl, numeric: s.numeric, m: lc.m, cell: tag });
           add.splice(s.st.backgroundColor ? 1 : 0, 0, ...text);
           cellLinks(add, s, u.height, kind);
           if (s.toggle) add.push(toggleLink(s, s.w, u.height));
