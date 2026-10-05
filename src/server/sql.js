@@ -155,7 +155,8 @@ export async function runSql({ connection, query }, params = {}) {
   } catch (e) {
     if (TIMEOUT_CODES.has(e.code)) throw fail(`The query ran longer than ${limits.ms / 1000} s.`, 504);
     // the report author sees this message: never the connection URL or a part of it (the password)
-    throw Object.assign(new Error(scrub(String(e.message || e), url)), { status: e.status, code: e.code });
+    // cut after scrubbing (a cut first could leave half a password); a server message can repeat a long value
+    throw Object.assign(new Error(scrub(String(e.message || e), url).slice(0, MAX_ERROR)), { status: e.status, code: e.code });
   }
   if (rows.length > limits.rows) throw fail(`The query returned more than ${limits.rows} rows. Filter or group it in SQL.`, 400);
   // the row cap does not bound one huge value (string_agg, FOR JSON in a subquery, repeat()): count the text too
@@ -166,6 +167,7 @@ export async function runSql({ connection, query }, params = {}) {
   return rows.map(plainRow);
 }
 
+const MAX_ERROR = 1000;
 // Postgres query_canceled, MySQL max_execution_time, MariaDB max_statement_time, SQL Server request timeout
 const TIMEOUT_CODES = new Set(['57014', 'ER_QUERY_TIMEOUT', 'ER_STATEMENT_TIMEOUT', 'ETIMEOUT']);
 
@@ -314,99 +316,126 @@ const DRIVERS = {
     const key = `mssql|${url}`;
     const sql = (await driver('mssql', 'SQL Server')).default;
     if (!pools.has(key)) {
-      const pool = new sql.ConnectionPool({ ...mssqlConfig(url), pool: { max: 5 }, connectionTimeout: 10000, requestTimeout: 0 }); // our own deadline below
+      // requestTimeout 0: our own deadline below; a wait for a pooled connection gives up on its own too
+      const pool = new sql.ConnectionPool({ ...mssqlConfig(url), pool: { max: 5, acquireTimeoutMillis: 60000 }, connectionTimeout: 10000, requestTimeout: 0 });
       pool.on('error', () => {});
       const ready = pool.connect();
       ready.catch(() => { if (pools.get(key)?.ready === ready) pools.delete(key); }); // handled at once: no unhandled rejection
       pools.set(key, { ready, probe: null });
     }
-    const entry = pools.get(key);
-    // One wall-clock deadline for everything below (connect, probe, a pooled connection, parse check, run): when it
-    // passes, the request in flight is cancelled, every later step refuses to start (mssql resets a request's
-    // cancelled state on each batch, so a request begun after the timer fired would run), and every wait (the pool,
-    // the probe) gives up at the deadline. The query fails with 504, whatever SQL Server is doing.
-    const deadline = Date.now() + Number(limits.ms);
-    let current = null, timedOut = false;
-    const late = () => Object.assign(fail(`The query ran longer than ${limits.ms / 1000} s.`, 504), { code: 'ETIMEOUT' });
-    const timer = setTimeout(() => { timedOut = true; try { current?.cancel(); } catch { /* gone */ } }, Number(limits.ms));
-    const track = (r) => { current = r; if (timedOut) r.cancel?.(); return r; };
-    const overdue = () => { if (timedOut || Date.now() > deadline) throw late(); };
-    /** p, or the 504 at the deadline (then `after` cleans up whatever p gives later). */
-    const inTime = (p, after = () => {}) => new Promise((resolve, reject) => {
-      const t = setTimeout(() => { p.then(after, () => {}); reject(late()); }, Math.max(0, deadline - Date.now()));
-      p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
-    });
-    try {
-      const pool = await inTime(entry.ready);
-      // the login is asked again before every query (a 5-second cache covers the queries of one render), on a fresh
-      // connection from the pool; any error in the probe refuses the query (fail closed)
-      if (!entry.probe || Date.now() - entry.probe.at > PROBE_MS) {
-        const at = Date.now();
-        entry.probe = { at, result: probeReadOnly(sql, pool) };
-        entry.probe.result.catch(() => { if (entry.probe?.at === at) entry.probe = null; });
-      }
-      let why;
-      try { why = await inTime(entry.probe.result); } catch (e) { overdue(); throw fail(`Could not check what this SQL Server login may do, so the query did not run: ${String(e.message || e).slice(0, 200)}`, 500); }
-      if (why) { entry.probe = null; throw fail(`This SQL Server login can write (${why}). Give report connections a login that can only read: a database user in db_datareader, with GRANT SHOWPLAN, and nothing else.`, 500); }
-      overdue();
-      const types = values.map(v => mssqlType(sql, v));
-      const tx = new sql.Transaction(pool);
-      // a pooled connection, within the time left; one that comes later is given back at once
-      await inTime(tx.begin(), () => tx.rollback().catch(() => {}));
-      const req = () => { overdue(); return track(new sql.Request(tx)); };
-      // cleanup runs on requests the timer does not cancel, and the session is reset first too (a cleanup that failed
-      // last time must not leave SHOWPLAN, a row cap or a text size on this pooled connection)
-      const quiet = (q) => new sql.Request(tx).batch(q).catch(() => {});
-      try {
-        await quiet('SET SHOWPLAN_XML OFF');
-        await quiet('SET ROWCOUNT 0; SET TEXTSIZE 2147483647');
-        // the plan is text too: cut at the cap (isOneSelect refuses a plan that does not end)
-        await req().batch(`SET TEXTSIZE ${textSize()}`);
-        await req().batch('SET SHOWPLAN_XML ON');
-        let plan;
-        try {
-          const decl = types.length ? `DECLARE ${types.map((t, i) => `@pw_${i + 1} ${t.decl}`).join(', ')};\n` : '';
-          plan = await req().batch(decl + text);
-        } catch (e) {
-          overdue();
-          throw e.status ? e : fail(`SQL Server cannot compile the query: ${String(e.message || e).slice(0, 300)}`, 400);
-        } finally { await quiet('SET SHOWPLAN_XML OFF'); }
-        overdue();
-        const kind = isOneSelect(plan);
-        if (!kind) throw fail('A SQL source can only run one SELECT query (one statement), and its plan must fit the size cap.', 400);
-        // the worst row, before a byte of it is read: the server describes the result (a read, no extra rights)
-        const describe = req();
-        describe.input('t', sql.NVarChar(sql.MAX), text);
-        describe.input('p', sql.NVarChar(sql.MAX), types.map((t, i) => `@pw_${i + 1} ${t.decl}`).join(', '));
-        const lobSize = rowBudget((await describe.query('EXEC sp_describe_first_result_set @tsql = @t, @params = @p')).recordset || []);
-        overdue();
-        // the server's own caps: rows (the client counts too) and the size of any one (MAX) value: TEXTSIZE is the
-        // smallest even number above the byte cap (an nvarchar is cut at whole characters), so a value the server
-        // cut is always over the cap on the client and is refused, and no more than that crosses the wire
-        await req().batch(`SET ROWCOUNT ${Number(limits.rows) + 1}; SET TEXTSIZE ${lobSize}`);
-        try {
-          const { rows, cols } = await streamRows(req(), text, values, types, overdue, sql, lobSize);
-          for (const row of rows) for (const c of cols) row[c.name] = mssqlCell(sql, c.type, row[c.name]);
-          // FOR XML / FOR JSON pack the rows into text (in chunks), in one column the server names with a fixed GUID
-          // (the plan does not always say XML/JSON SELECT). SET ROWCOUNT stops them at rows + 1 source rows without a
-          // word: FOR JSON's rows are counted and refused as a plain SELECT would be; FOR XML cannot be counted.
-          const packed = cols.length === 1 && /^(XML|JSON)_F52E2B61-18A1-11d1-B105-00805F49916B$/i.exec(cols[0].name);
-          if (kind === 'XML SELECT' || (packed && packed[1].toUpperCase() === 'XML')) throw fail('FOR XML is not supported in a SQL source: use a plain SELECT, or FOR JSON.', 400);
-          if (kind === 'JSON SELECT' || packed) {
-            let n = 0;
-            try { const v = JSON.parse(rows.map(r => Object.values(r)[0] ?? '').join('') || '[]'); n = Array.isArray(v) ? v.length : 1; } catch { n = limits.rows + 1; }
-            if (n > limits.rows) throw fail(`The query returned more than ${limits.rows} rows. Filter or group it in SQL.`, 400);
-          }
-          return rows;
-        } finally { await quiet('SET ROWCOUNT 0; SET TEXTSIZE 2147483647'); }
-      } finally { await tx.rollback().catch(() => {}); }
-    } catch (e) {
-      if (timedOut) throw late();
-      throw e;
-    } finally { clearTimeout(timer); }
+    // One wall-clock deadline for everything (connect, probe, a pooled connection, parse check, describe, run): when it
+    // passes, every request in flight is cancelled, no later step starts, and the caller has its 504 at once, even if
+    // a cleanup step (session reset, rollback) is still waiting on a stuck connection.
+    const clk = clock(Number(limits.ms));
+    try { return await clk.inTime(mssqlRun(sql, pools.get(key), text, values, clk)); } finally { clk.stop(); }
   },
 
 };
+
+/**
+ * One wall-clock deadline. `track` registers a request (refused once the deadline passed: mssql resets a request's
+ * cancelled state on each batch, so a request begun after the timer fired would run); when the timer fires every
+ * tracked request is cancelled. `inTime(p, after)` is p, or the 504 at the deadline (then `after` cleans up whatever
+ * p gives later).
+ * @param {number} ms
+ */
+export function clock(ms) {
+  const deadline = Date.now() + ms;
+  const live = new Set();
+  let fired = false;
+  const late = () => Object.assign(fail(`The query ran longer than ${limits.ms / 1000} s.`, 504), { code: 'ETIMEOUT' });
+  const timer = setTimeout(() => { fired = true; for (const r of live) { try { r.cancel(); } catch { /* finished */ } } live.clear(); }, ms);
+  const overdue = () => { if (fired || Date.now() > deadline) throw late(); };
+  return {
+    late, overdue,
+    get fired() { return fired; },
+    track(r) { overdue(); live.add(r); return r; },
+    inTime: (p, after = () => {}) => new Promise((resolve, reject) => {
+      const t = setTimeout(() => { p.then(after, () => {}); reject(late()); }, Math.max(0, deadline - Date.now()));
+      p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(fired || Date.now() > deadline ? late() : e); });
+    }),
+    stop: () => clearTimeout(timer),
+  };
+}
+
+const QUIET_MS = 5000; // a session reset or cleanup request that takes longer than this is cancelled
+
+async function mssqlRun(sql, entry, text, values, clk) {
+  const pool = await clk.inTime(entry.ready);
+  // the login is asked again before every query (a 5-second cache covers the queries of one render), on a fresh
+  // connection from the pool; any error in the probe refuses the query (fail closed). The probe has a clock of its own
+  // with the same time limit (it is shared by the queries that wait for it); this query waits for it until its deadline.
+  if (!entry.probe || Date.now() - entry.probe.at > PROBE_MS) {
+    const at = Date.now();
+    const pc = clock(Number(limits.ms));
+    const result = probeReadOnly(sql, pool, pc).finally(pc.stop);
+    entry.probe = { at, result };
+    result.catch(() => { if (entry.probe?.at === at) entry.probe = null; });
+  }
+  let why;
+  try { why = await clk.inTime(entry.probe.result); } catch (e) { clk.overdue(); throw fail(`Could not check what this SQL Server login may do, so the query did not run: ${String(e.message || e).slice(0, 200)}`, 500); }
+  if (why) { entry.probe = null; throw fail(`This SQL Server login can write (${why}). Give report connections a login that can only read: a database user in db_datareader, with GRANT SHOWPLAN, and nothing else.`, 500); }
+  clk.overdue();
+  const types = values.map(v => mssqlType(sql, v));
+  const tx = new sql.Transaction(pool);
+  // a pooled connection, within the time left; one that comes later is given back at once
+  await clk.inTime(tx.begin(), () => tx.rollback().catch(() => {}));
+  const req = () => clk.track(new sql.Request(tx));
+  // session resets and cleanup are not cancelled by the deadline (they must run after it), so each has a short timer of
+  // its own; the session is reset first too (a cleanup that failed last time must not leave SHOWPLAN, a row cap or a
+  // text size on this pooled connection)
+  const quiet = (q) => {
+    const r = new sql.Request(tx);
+    const t = setTimeout(() => { try { r.cancel(); } catch { /* done */ } }, QUIET_MS);
+    return r.batch(q).catch(() => {}).finally(() => clearTimeout(t));
+  };
+  try {
+    await quiet('SET SHOWPLAN_XML OFF');
+    await quiet('SET ROWCOUNT 0; SET TEXTSIZE 2147483647');
+    // the plan is text too: cut at the cap (isOneSelect refuses a plan that does not end), streamed like the rows
+    await req().batch(`SET TEXTSIZE ${textSize()}`);
+    await req().batch('SET SHOWPLAN_XML ON');
+    let plan;
+    try {
+      const decl = types.length ? `DECLARE ${types.map((t, i) => `@pw_${i + 1} ${t.decl}`).join(', ')};\n` : '';
+      plan = await streamRows(req(), (r) => r.batch(decl + text), { sql, overdue: clk.overdue, one: 'A SQL source can only run one SELECT query (one statement).' });
+    } catch (e) {
+      clk.overdue();
+      throw e.status ? e : fail(`SQL Server cannot compile the query: ${String(e.message || e).slice(0, 300)}`, 400);
+    } finally { await quiet('SET SHOWPLAN_XML OFF'); }
+    clk.overdue();
+    const kind = isOneSelect({ recordsets: [plan.rows] });
+    if (!kind) throw fail('A SQL source can only run one SELECT query (one statement), and its plan must fit the size cap.', 400);
+    if (kind === 'XML SELECT') throw fail('FOR XML is not supported in a SQL source: use a plain SELECT, or FOR JSON.', 400);
+    // the worst row, before a byte of it is read: the server describes the result (a read, no extra rights)
+    const describe = req();
+    describe.input('t', sql.NVarChar(sql.MAX), text);
+    describe.input('p', sql.NVarChar(sql.MAX), types.map((t, i) => `@pw_${i + 1} ${t.decl}`).join(', '));
+    const lobSize = rowBudget((await describe.query('EXEC sp_describe_first_result_set @tsql = @t, @params = @p')).recordset || []);
+    clk.overdue();
+    // the server's own caps: rows (the client counts too) and the size of any one (MAX) value: TEXTSIZE is the
+    // smallest even number above the byte cap (an nvarchar is cut at whole characters), so a value the server
+    // cut is always over the cap on the client and is refused, and no more than that crosses the wire
+    await req().batch(`SET ROWCOUNT ${Number(limits.rows) + 1}; SET TEXTSIZE ${lobSize}`);
+    try {
+      const r = req();
+      values.forEach((v, i) => r.input(`pw_${i + 1}`, types[i].type, v));
+      const { rows, cols } = await streamRows(r, (x) => x.query(text), { sql, overdue: clk.overdue, lobSize, odd: true });
+      for (const row of rows) for (const c of cols) row[c.name] = mssqlCell(sql, c.type, row[c.name]);
+      // FOR XML / FOR JSON pack the rows into text (in chunks), in one column the server names with a fixed GUID
+      // (the plan does not always say XML/JSON SELECT). SET ROWCOUNT stops them at rows + 1 source rows without a
+      // word: FOR JSON's rows are counted and refused as a plain SELECT would be; FOR XML cannot be counted.
+      const packed = cols.length === 1 && /^(XML|JSON)_F52E2B61-18A1-11d1-B105-00805F49916B$/i.exec(cols[0].name);
+      if (packed && packed[1].toUpperCase() === 'XML') throw fail('FOR XML is not supported in a SQL source: use a plain SELECT, or FOR JSON.', 400);
+      if (kind === 'JSON SELECT' || packed) {
+        let n = 0;
+        try { const v = JSON.parse(rows.map(r => Object.values(r)[0] ?? '').join('') || '[]'); n = Array.isArray(v) ? v.length : 1; } catch { n = limits.rows + 1; }
+        if (n > limits.rows) throw fail(`The query returned more than ${limits.rows} rows. Filter or group it in SQL.`, 400);
+      }
+      return rows;
+    } finally { await quiet('SET ROWCOUNT 0; SET TEXTSIZE 2147483647'); }
+  } finally { await tx.rollback().catch(() => {}); }
+}
 
 /**
  * True only for a SHOWPLAN_XML result of exactly one plan document holding exactly one statement element, a
@@ -432,15 +461,16 @@ export function isOneSelect(plan) {
   return types.length === 1 && SELECT_TYPES.has(types[0]) ? types[0] : false;
 }
 
-/**
- * Run the query as a stream and stop it on the client: more than limits.rows rows, more than limits.bytes of text,
- * a second result set, or the deadline, and the request is cancelled at once (the rest never crosses the wire).
- */
 /** The TEXTSIZE for a query: the smallest even number above limits.bytes. */
 const textSize = () => Number(limits.bytes) + 2 - (Number(limits.bytes) % 2);
-/** The server bytes a value can have been, at most: max(UTF-8, 2 × length) for text, the length for binary. */
-const sizeOf = (v) => (typeof v === 'string' ? Math.max(Buffer.byteLength(v), v.length * 2) : Buffer.isBuffer(v) ? v.length : 8);
-
+/**
+ * The bytes a value can have been on the server, at most: max(UTF-8, 2 × length) for text, the length for binary, the
+ * sum for a list (mssql gives a list for columns with the same name), the JSON text of anything else, 8 for a scalar.
+ */
+export const sizeOf = (v) => (typeof v === 'string' ? Math.max(Buffer.byteLength(v), v.length * 2)
+  : Buffer.isBuffer(v) || v instanceof Uint8Array ? v.length
+  : Array.isArray(v) ? v.reduce((n, x) => n + sizeOf(x), 8)
+  : v && typeof v === 'object' && !(v instanceof Date) ? sizeOf(JSON.stringify(v) ?? '') : 8);
 const MAX_COLUMNS = 1024, MIN_LOB = 16384; // a LOB share under 16 kB is too small to tell a cut value from a fixed one
 /**
  * The TEXTSIZE that keeps the worst row within limits.bytes, from sp_describe_first_result_set: the fixed columns take
@@ -469,39 +499,57 @@ export function rowBudget(desc) {
   return Math.min(share, textSize());
 }
 
-function streamRows(r, text, values, types, overdue, sql, lobSize = textSize()) {
-  values.forEach((v, i) => r.input(`pw_${i + 1}`, types[i].type, v));
+const MAX_MESSAGES = 1000; // info and error messages one request may send (each counts against the byte cap too)
+
+/**
+ * Run a request as a stream and stop it on the client: more than limits.rows rows, more than limits.bytes of values and
+ * messages (info and error messages count too, and at most MAX_MESSAGES of them), one value of lobSize or more (the
+ * server cut it at TEXTSIZE), a second result set, xml or CLR columns (`odd`), or the deadline: the request is
+ * cancelled at once and the rest never crosses the wire.
+ * @param {any} r a request @param {(r: any) => any} start runs it (query or batch)
+ * @param {{ sql: any, overdue: () => void, lobSize?: number, odd?: boolean, one?: string }} o
+ * @returns {Promise<{ rows: any[], cols: any[] }>}
+ */
+export function streamRows(r, start, { sql, overdue, lobSize = textSize(), odd = false, one = 'A SQL source can only run one SELECT query (one statement).' }) {
   r.stream = true;
   return new Promise((resolve, reject) => {
     const rows = [];
-    let cols = [], sets = 0, bytes = 0, stop = null;
-    const halt = (e) => { if (!stop) { stop = e; try { r.cancel(); } catch { /* done already */ } } };
+    let cols = [], sets = 0, bytes = 0, msgs = 0, stop = null;
+    // a cap overrides a server error seen before it (an error flood must be cancelled too)
+    const halt = (e) => { if (!stop?.status) { stop = e; try { r.cancel(); } catch { /* done already */ } } };
+    const over = () => bytes > limits.bytes && halt(fail(`The query returned more than ${Math.round(limits.bytes / 1048576)} MB. Filter or group it in SQL.`, 400));
+    const message = (m) => {
+      bytes += sizeOf(String(m?.message ?? m)) + 64;
+      if (++msgs > MAX_MESSAGES) halt(fail(`The query sent more than ${MAX_MESSAGES} messages. A SQL source must return rows only.`, 400));
+      else over();
+    };
     r.on('recordset', (c) => {
-      if (++sets > 1) return halt(fail('A SQL source can only run one SELECT query (one statement).', 400));
+      if (++sets > 1) return halt(fail(one, 400));
       cols = Object.values(c);
       // TEXTSIZE does not cut xml or CLR values (geometry, hierarchyid, …): refused before a row is read
-      const odd = cols.find(col => [sql.Xml, sql.UDT, sql.Geography, sql.Geometry].includes(col.type) || /^(xml|udt)$/i.test(String(col.type?.declaration || '')));
-      if (odd) halt(fail(`The column "${String(odd.name).slice(0, 60)}" is xml or a CLR type, which a SQL source cannot read. CAST it to NVARCHAR(MAX) in the query.`, 400));
+      const bad = odd && cols.find(col => [sql.Xml, sql.UDT, sql.Geography, sql.Geometry].includes(col.type) || /^(xml|udt)$/i.test(String(col.type?.declaration || '')));
+      if (bad) halt(fail(`The column "${String(bad.name).slice(0, 60)}" is xml or a CLR type, which a SQL source cannot read. CAST it to NVARCHAR(MAX) in the query.`, 400));
     });
     r.on('row', (row) => {
       if (stop) return;
       rows.push(row);
-      for (const v of Object.values(row)) {
+      for (const v of Object.values(row).flat()) { // a list: columns with the same name
         const n = sizeOf(v);
         // a value the server cut at TEXTSIZE measures at least TEXTSIZE here: refused, never passed on cut short
         if (n >= lobSize) return halt(fail(`A value is larger than the ${Math.round(lobSize / 1048576 * 10) / 10} MB this query may read in one column. Filter or shorten it in SQL.`, 400));
         bytes += n;
       }
       if (rows.length > limits.rows) halt(fail(`The query returned more than ${limits.rows} rows. Filter or group it in SQL.`, 400));
-      else if (bytes > limits.bytes) halt(fail(`The query returned more than ${Math.round(limits.bytes / 1048576)} MB. Filter or group it in SQL.`, 400));
+      else over();
     });
-    r.on('error', (e) => { if (!stop) stop = e; });
+    r.on('info', message);
+    r.on('error', (e) => { message(e); if (!stop) stop = e; });
     r.on('done', () => {
       if (stop?.status) return reject(stop);
       try { overdue(); } catch (e) { return reject(e); }
       return stop ? reject(stop) : resolve({ rows, cols });
     });
-    r.query(text);
+    start(r);
   });
 }
 
@@ -586,30 +634,34 @@ function whyNot(r) {
   return '';
 }
 
-const bracket = (n) => `[${String(n).replace(/]/g, ']]')}]`;
-
 /**
  * What this login could change, or '' when it can only read: PROBE_SQL in the connected database and in every other
  * user database it can enter (sp_executesql runs there; a write right anywhere counts, since one SELECT can reach any
  * database the login can enter), then a CREATE TABLE in each, in a transaction that is rolled back, which must fail.
- * Fails closed: only CONNECT, SELECT, SHOWPLAN, REFERENCES and VIEW … rights are taken as reading.
+ * Fails closed: only CONNECT, SELECT, SHOWPLAN, REFERENCES and VIEW … rights are taken as reading. Every request and
+ * every wait for a pooled connection is bound to `clk` (see clock): at its deadline the probe stops and fails.
+ * Database names are quoted by the server (QUOTENAME). Text answers are cut at 64 kB (TEXTSIZE), whatever they list.
+ * @param {any} sql @param {any} pool @param {ReturnType<typeof clock>} [clk]
  */
-export async function probeReadOnly(sql, pool, track = (r) => r) {
-  const here = whyNot((await track(pool.request()).query(PROBE_SQL)).recordset[0] || {});
+export async function probeReadOnly(sql, pool, clk) {
+  const track = (r) => (clk ? clk.track(r) : r);
+  const inTime = (p, after) => (clk ? clk.inTime(p, after) : p);
+  const SMALL = 'SET TEXTSIZE 65536;\n';
+  const here = whyNot((await track(pool.request()).query(SMALL + PROBE_SQL)).recordset[0] || {});
   if (here) return here;
-  const others = ((await track(pool.request()).query("SELECT name FROM sys.databases WHERE database_id > 4 AND state = 0 AND HAS_DBACCESS(name) = 1 AND name <> DB_NAME()")).recordset || [])
-    .map(r => r.name).filter(n => typeof n === 'string');
+  const others = ((await track(pool.request()).query("SELECT QUOTENAME(name) AS q, name FROM sys.databases WHERE database_id > 4 AND state = 0 AND HAS_DBACCESS(name) = 1 AND name <> DB_NAME()")).recordset || [])
+    .filter(r => typeof r.q === 'string' && typeof r.name === 'string');
   for (const db of others) {
-    const why = whyNot((await track(pool.request()).query(`EXEC ${bracket(db)}.sys.sp_executesql N'${PROBE_SQL.replace(/'/g, "''")}'`)).recordset[0] || {});
-    if (why) return `in the database ${db}: ${why}`;
+    const why = whyNot((await track(pool.request()).query(`${SMALL}EXEC ${db.q}.sys.sp_executesql N'${PROBE_SQL.replace(/'/g, "''")}'`)).recordset[0] || {});
+    if (why) return `in the database ${db.name.slice(0, 128)}: ${why}`;
   }
   const name = `pw_probe_${crypto.randomBytes(6).toString('hex')}`;
   for (const db of [null, ...others]) {
     const tx = new sql.Transaction(pool); // one each: a refused statement may end the transaction it ran in
-    await tx.begin();
+    await inTime(tx.begin(), () => tx.rollback().catch(() => {}));
     try {
-      await track(new sql.Request(tx)).batch(db ? `EXEC ${bracket(db)}.sys.sp_executesql N'CREATE TABLE dbo.${name} (a INT)'` : `CREATE TABLE dbo.${name} (a INT)`);
-      return db ? `in the database ${db}: it could create a table` : 'it could create a table';
+      await track(new sql.Request(tx)).batch(db ? `EXEC ${db.q}.sys.sp_executesql N'CREATE TABLE dbo.${name} (a INT)'` : `CREATE TABLE dbo.${name} (a INT)`);
+      return db ? `in the database ${db.name.slice(0, 128)}: it could create a table` : 'it could create a table';
     } catch (e) {
       // only "permission denied" passes (262: CREATE TABLE permission denied; 2760: no such schema); any other error
       // (a cancelled request, a lost connection) is not an answer, so the probe fails and the query is refused

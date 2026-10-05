@@ -2,7 +2,8 @@
 //   docker run -d --name pw-mssql -e ACCEPT_EULA=1 -e 'MSSQL_SA_PASSWORD=Pw-Test-Strong1!' -p 14330:1433 mcr.microsoft.com/azure-sql-edge
 //   PW_TEST_MSSQL='mssql://sa:Pw-Test-Strong1!@127.0.0.1:14330/master?encrypt=false' npx vitest run tests/engine/mssql.test.js
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { runSql, bindSql, limits, listConnections, testConnection, mssqlConfig, tsqlParts, isOneSelect, probeReadOnly } from '../../src/server/sql.js';
+import { EventEmitter } from 'node:events';
+import { runSql, bindSql, limits, listConnections, testConnection, mssqlConfig, tsqlParts, isOneSelect, probeReadOnly, streamRows, sizeOf, clock } from '../../src/server/sql.js';
 
 describe('binding for SQL Server', () => {
   it('binds @name as @pw_n inputs and leaves [names], strings and @@vars alone', () => {
@@ -55,6 +56,76 @@ describe('binding for SQL Server', () => {
     expect(mssqlConfig('mssql://u:p@h/db')).toMatchObject({ port: 1433, options: { encrypt: true, trustServerCertificate: false } });
     process.env.PW_DB_MSX = 'mssql://u:p@h/db';
     try { expect(listConnections().find(c => c.name === 'msx')).toEqual({ name: 'msx', kind: 'mssql' }); } finally { delete process.env.PW_DB_MSX; }
+  });
+});
+
+
+describe('SQL Server resource caps (batch 3b, no server needed)', () => {
+  const fake = () => Object.assign(new EventEmitter(), { cancelled: 0, cancel() { this.cancelled++; queueMicrotask(() => this.emit('done')); } });
+  const sql = { Xml: 'x', UDT: 'u', Geography: 'g', Geometry: 'm' };
+  const run = (r, o = {}) => streamRows(r, () => {}, { sql, overdue: () => {}, ...o });
+  it('counts info and error messages: a flood is cancelled', async () => {
+    const r = fake();
+    const p = run(r);
+    r.emit('recordset', { a: { name: 'a', type: 'n' } });
+    for (let i = 0; i < 1500 && !r.cancelled; i++) r.emit('info', { message: 'Warning: null value eliminated' });
+    await expect(p).rejects.toThrow(/more than 1000 messages/);
+    expect(r.cancelled).toBe(1);
+    const big = fake();
+    const keep = { ...limits };
+    Object.assign(limits, { bytes: 100000 });
+    try {
+      const q = run(big);
+      for (let i = 0; i < 50 && !big.cancelled; i++) big.emit('error', Object.assign(new Error('x'.repeat(4000)), { number: 50000 }));
+      await expect(q).rejects.toThrow(/MB/);
+    } finally { Object.assign(limits, keep); }
+  });
+  it('a second result set, and xml or CLR columns, stop the request', async () => {
+    const r = fake();
+    const p = run(r, { one: 'one only' });
+    r.emit('recordset', {}); r.emit('recordset', {});
+    await expect(p).rejects.toThrow(/one only/);
+    const x = fake();
+    const q = run(x, { odd: true });
+    x.emit('recordset', { h: { name: 'h', type: 'u' } });
+    await expect(q).rejects.toThrow(/xml or a CLR type/);
+  });
+  it('counts every value type: lists (same-name columns), buffers, objects', async () => {
+    expect(sizeOf(['ab', 'cd'])).toBe(8 + 4 + 4);
+    expect(sizeOf(Buffer.alloc(10))).toBe(10);
+    expect(sizeOf({ x: 'y'.repeat(100) })).toBeGreaterThan(200);
+    const keep = { ...limits };
+    Object.assign(limits, { bytes: 1000 });
+    try {
+      const r = fake();
+      const p = run(r, { lobSize: 10000 });
+      r.emit('recordset', { a: { name: 'a', type: 'n' } });
+      for (let i = 0; i < 10 && !r.cancelled; i++) r.emit('row', { a: ['x'.repeat(100), 'y'.repeat(100)] });
+      await expect(p).rejects.toThrow(/more than 0 MB/);
+    } finally { Object.assign(limits, keep); }
+  });
+  it('the clock cancels what it tracks, and nothing starts after it fired', async () => {
+    const c = clock(30);
+    const r = { cancel: () => { r.n = (r.n || 0) + 1; } };
+    c.track(r);
+    await new Promise(res => setTimeout(res, 60));
+    expect(r.n).toBe(1);
+    expect(() => c.track({})).toThrow(/longer than/);
+    await expect(c.inTime(new Promise(() => {}))).rejects.toMatchObject({ status: 504 });
+    c.stop();
+  });
+  it('the per-database probe stops at its deadline, whatever the server does', async () => {
+    const live = [];
+    const hang = () => { const r = { cancel() { r.reject(Object.assign(new Error('cancelled'), { code: 'ECANCEL' })); }, query: () => new Promise((_, rej) => { r.reject = rej; }) }; live.push(r); return r; };
+    let n = 0;
+    // the first answer passes and lists 1,000 databases; each database then hangs
+    const pool = { request: () => (n++ === 0 ? { query: async () => ({ recordset: [{ sysadmin: 0 }] }) } : n === 2 ? { query: async () => ({ recordset: Array.from({ length: 1000 }, (_, i) => ({ q: `[d${i}]`, name: `d${i}` })) }) } : hang()) };
+    const c = clock(150);
+    const t0 = Date.now();
+    await expect(probeReadOnly({}, pool, c)).rejects.toThrow();
+    c.stop();
+    expect(Date.now() - t0).toBeLessThan(1000);
+    expect(live).toHaveLength(1); // the next database never started
   });
 });
 
@@ -361,6 +432,57 @@ describe.skipIf(!process.env.PW_TEST_MSSQL)('SQL Server (live)', () => {
       await admin.close();
     }
   }, 60000);
+
+  it('batch 3b: columns with the same name count in full; plans are streamed; database names are quoted by the server', async () => {
+    const keep = { ...limits };
+    try {
+      Object.assign(limits, { bytes: 3 * 1048576 });
+      // 20 rows × two 200 kB values under one name: 8 MB, once counted as two numbers
+      await expect(runSql(ms("with x as (select top 20 replicate(cast('a' as varchar(max)), 200000) as v from sys.all_objects) select v as a, v as a from x"), {})).rejects.toThrow(/more than 3 MB/);
+      // 3,000 statements in one text: refused at the second plan, not buffered (each plan would be read in full before)
+      global.gc?.();
+      const before = process.memoryUsage().rss;
+      const t0 = Date.now();
+      await expect(runSql(ms(Array.from({ length: 3000 }, () => 'select a.name as n from sys.all_objects a cross join sys.all_objects b').join(' ')), {})).rejects.toMatchObject({ status: 400 });
+      expect(Date.now() - t0).toBeLessThan(10000);
+      expect(process.memoryUsage().rss - before).toBeLessThan(80 * 1048576);
+      // sql_variant has a fixed size (8016 bytes) and is read like any value
+      expect(await runSql(ms("select cast(N'x' as sql_variant) as v, cast(2 as sql_variant) as w"), {})).toEqual([{ v: 'x', w: 2 }]);
+    } finally { Object.assign(limits, keep); }
+    // a server message is cut, however long the value it repeats
+    const e = await runSql(ms('select cast(@s as int) as i'), { s: 'q'.repeat(20000) }).catch(x => x);
+    expect(e.message.length).toBeLessThanOrEqual(1000);
+    // a database whose name has ] and ' in it: the probe still runs there (QUOTENAME on the server)
+    const sql = (await import('mssql')).default;
+    const admin = await new sql.ConnectionPool(mssqlConfig(process.env.PW_TEST_MSSQL)).connect();
+    const odd = "pw]q'db";
+    try {
+      await admin.request().batch(`USE master; IF DB_ID(N'${odd.replace(/'/g, "''")}') IS NULL CREATE DATABASE ${'[' + odd.replace(/]/g, ']]') + ']'}`);
+      await admin.request().batch(`USE ${'[' + odd.replace(/]/g, ']]') + ']'}; IF USER_ID('pw_reader') IS NULL CREATE USER pw_reader FOR LOGIN pw_reader; ALTER ROLE db_datareader ADD MEMBER pw_reader;`);
+      process.env.PW_DB_MSQ = `${readerUrl()}&p=quoted`;
+      expect(await runSql({ connection: 'msq', query: 'select 1 as a' }, {})).toEqual([{ a: 1 }]);
+      await admin.request().batch(`USE ${'[' + odd.replace(/]/g, ']]') + ']'}; ALTER ROLE db_datawriter ADD MEMBER pw_reader;`);
+      process.env.PW_DB_MSQ = `${readerUrl()}&p=quoted2`;
+      await expect(runSql({ connection: 'msq', query: 'select 1 as a' }, {})).rejects.toThrow(/pw\]q'db: db_datawriter/);
+    } finally {
+      delete process.env.PW_DB_MSQ;
+      await admin.request().batch(`USE master; IF DB_ID(N'${odd.replace(/'/g, "''")}') IS NOT NULL BEGIN ALTER DATABASE ${'[' + odd.replace(/]/g, ']]') + ']'} SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE ${'[' + odd.replace(/]/g, ']]') + ']'}; END`);
+      await admin.close();
+    }
+  }, 120000);
+
+  it('batch 3b: a probe that runs out of time fails the query on time and is not cached', async () => {
+    const keep = { ...limits };
+    process.env.PW_DB_MSP = `${readerUrl()}&p=slowprobe`;
+    try {
+      Object.assign(limits, { ms: 40 });
+      const t0 = Date.now();
+      await expect(runSql({ connection: 'msp', query: 'select 1 as a' }, {})).rejects.toMatchObject({ status: 504 });
+      expect(Date.now() - t0).toBeLessThan(1500);
+      Object.assign(limits, keep);
+      expect(await runSql({ connection: 'msp', query: 'select 1 as a' }, {})).toEqual([{ a: 1 }]);
+    } finally { Object.assign(limits, keep); delete process.env.PW_DB_MSP; }
+  }, 30000);
 
   it('tests a connection without showing its URL', async () => {
     expect(await testConnection('ms')).toMatchObject({ ok: true });
