@@ -10,8 +10,8 @@
 //                                  waited longer anyway is dropped with a 503 when its turn comes
 //   PW_RENDER_WORKER_MAX_RENDERS   recycle a worker after this many renders (default 500)
 //   PW_RENDER_WORKER_RECYCLE_MB    recycle a worker whose heap is above this after a render (default 512)
-//   PW_RENDER_WORKER_HEAP_MB       a worker's hard heap limit: past it the worker dies, its render fails (default 2048,
-//                                  less when memory is short: at most half the memory limit)
+//   PW_RENDER_WORKER_HEAP_MB       a worker's hard heap limit: past it the worker dies, its render fails (default 1024,
+//                                  then twice that after a render ran out of it, up to 2048; at most half the memory)
 //   PW_MEMORY_LIMIT_MB             the memory this server may use (default: the container's cgroup limit, else the
 //                                  machine's RAM). Cores likewise come from the cgroup CPU quota when there is one,
 //   PW_CPUS                        or from this (scripts/cluster.mjs gives each process its share of both).
@@ -41,12 +41,21 @@ import { devMode } from './config.js';
 
 const num = (k, d, min = 0) => { const n = Number(process.env[k]); return process.env[k] !== undefined && process.env[k] !== '' && Number.isFinite(n) && n >= min ? n : d; };
 
-/** A cgroup file's text (v2 under /sys/fs/cgroup, v1 under its controller folders), or null. PW_CGROUP_DIR: tests. */
+/** A cgroup file's text (v2 under /sys/fs/cgroup, v1 under its controller folders), or null. PW_CGROUP_DIR: tests.
+ *  Read at most every 30 s (it was a synchronous read on every admission: REVIEW-ARCH-2 2.6). */
+const cgCache = new Map();
 function cgroup(...names) {
   const dir = process.env.PW_CGROUP_DIR || '/sys/fs/cgroup';
-  for (const n of names) { try { return fs.readFileSync(path.join(dir, n), 'utf8').trim(); } catch { /* not there */ } }
-  return null;
+  const key = `${dir}|${names.join('|')}`;
+  const hit = cgCache.get(key);
+  if (hit && Date.now() - hit.at < 30000) return hit.v;
+  let v = null;
+  for (const n of names) { try { v = fs.readFileSync(path.join(dir, n), 'utf8').trim(); break; } catch { /* not there */ } }
+  cgCache.set(key, { at: Date.now(), v });
+  return v;
 }
+/** Tests: forget the cached cgroup files. */
+export const resetCgroupCache = () => cgCache.clear();
 /** The container's memory limit in bytes, or null (none, or not Linux). */
 export function cgroupMemory() {
   const v = cgroup('memory.max', 'memory/memory.limit_in_bytes');
@@ -67,17 +76,21 @@ const RESERVE_MB = 512, WORKER_EXTRA_MB = 96; // the request thread and its cach
  * Worker count and heap for a machine: { cores, memMB, heapMB, workers }. Pure (tests pass their own numbers).
  * @param {{ cores: number, memMB: number, heapMB?: number|null, workers?: number|null }} m
  */
-export function memoryPlan({ cores, memMB, heapMB: heap = null, workers = null }) {
-  const h = Math.floor(heap ?? Math.max(256, Math.min(2048, memMB / 2)));
+export function memoryPlan({ cores, memMB, heapMB: heap = null, workers = null, grownMB = 0 }) {
+  // start at 1 GB a worker (a 250k-row grouped report peaks at ~770 MB); after a worker ran out of memory, new workers
+  // get the larger heap that render needed (grownMB, up to 2 GB): fewer workers, but the big report then fits
+  const h = Math.floor(heap ?? Math.max(256, Math.min(Math.max(1024, grownMB), 2048, memMB / 2)));
   const byMem = Math.floor((memMB * 0.7 - RESERVE_MB) / (h + WORKER_EXTRA_MB));
   const w = workers ?? Math.max(1, Math.min(8, cores - 1, byMem));
   return { cores, memMB: Math.round(memMB), heapMB: h, workers: Math.floor(w) };
 }
 // PW_MEMORY_LIMIT_MB narrows the machine's or container's memory, never widens it; the SQLite query processes' own
 // budget (sql/sqlite.js, outside these threads) comes off the top
+// budget (sql/sqlite.js, outside these threads) comes off the top, only when a SQL connection uses sqlite:
+export const sqliteDataSources = () => Object.entries(process.env).some(([k, v]) => /^PW_DB_\w+$/.test(k) && !/_PROCS$/.test(k) && /^sqlite:/.test(String(v || '')));
 const memLimitMB = () => {
   const box = Math.min(os.totalmem(), cgroupMemory() ?? Infinity) / 1048576;
-  const sqlite = num('PW_SQLITE_PROCESSES', 2, 0) * num('PW_SQLITE_MEMORY_MB', 1024, 64);
+  const sqlite = sqliteDataSources() ? num('PW_SQLITE_PROCESSES', 2, 0) * num('PW_SQLITE_MEMORY_MB', 1024, 64) : 0;
   return Math.max(64, Math.min(num('PW_MEMORY_LIMIT_MB', Infinity, 64), box - Math.min(sqlite, box / 4)));
 };
 const plan = () => memoryPlan({
@@ -85,6 +98,7 @@ const plan = () => memoryPlan({
   memMB: memLimitMB(),
   heapMB: num('PW_RENDER_WORKER_HEAP_MB', null, 64),
   workers: num('PW_RENDER_WORKERS', null),
+  grownMB: P.grownMB || 0,
 });
 export const poolSize = () => plan().workers;
 const queueMax = () => num('PW_RENDER_QUEUE', 1000, 1);
@@ -100,7 +114,7 @@ const memoryFull = () => process.memoryUsage.rss() / 1048576 > memLimitMB() * 0.
 /** @typedef {{ w: Worker, ready: boolean, job: Job|null, renders: number, timer: any }} Slot */
 
 const g = /** @type {any} */ (globalThis);
-/** @type {{ startFails: number, dying: Set<Worker>, slots: Slot[], queue: Job[], running: Map<string, number>, waiting: Map<string, number>, served: Map<string, number>, est: Map<string, number>, seq: number, noWorker: string|null, stats: Record<string, number>, hist?: { counts: number[], sum: number, n: number }, lastFree?: number }} */
+/** @type {{ startFails: number, dying: Set<Worker>, slots: Slot[], queue: Job[], running: Map<string, number>, waiting: Map<string, number>, served: Map<string, number>, est: Map<string, number>, seq: number, noWorker: string|null, stats: Record<string, number>, hist?: { counts: number[], sum: number, n: number }, lastFree?: number, grownMB?: number }} */
 const P = g.__pwRenderPool ||= { startFails: 0, dying: new Set(), slots: [], queue: [], running: new Map(), waiting: new Map(), served: new Map(), est: new Map(), seq: 0, noWorker: null,
   stats: { done: 0, failed: 0, rejected: 0, timedOut: 0, crashed: 0, recycled: 0, dropped: 0, heldForMemory: 0, restarts: 0 } };
 P.stats.heldForMemory ??= 0; P.stats.restarts ??= 0;
@@ -205,7 +219,11 @@ function died(s, e, exited = false) {
   const why = e ? String(e.message || e) : 'it exited';
   // the detail goes to the log only: it may come from another render's leftovers (an SQL error, a URL)
   if (e) console.warn(`[pagewright] a render worker stopped: ${why}`);
-  if (j) { finish(s); P.stats.crashed++; j.reject(Object.assign(new Error(e?.code === 'ERR_WORKER_OUT_OF_MEMORY' || /heap|memory/i.test(why) ? 'The render ran out of memory and was stopped.' : 'The render stopped unexpectedly. Try again.'), { status: 500 })); }
+  const oom = e?.code === 'ERR_WORKER_OUT_OF_MEMORY' || /heap|memory/i.test(why);
+  // observed need: a render ran out of this heap, so workers started from now on get twice it (up to 2 GB, the memory
+  // plan permitting): the pool starts small and many, and grows its heap only when a real report needs it
+  if (oom && !num('PW_RENDER_WORKER_HEAP_MB', null, 64)) P.grownMB = Math.min(2048, Math.max(P.grownMB || 0, heapMB() * 2));
+  if (j) { finish(s); P.stats.crashed++; j.reject(Object.assign(new Error(oom ? 'The render ran out of memory and was stopped.' : 'The render stopped unexpectedly. Try again.'), { status: 500 })); }
   if (!s.ready && ++P.startFails >= 3) { // it keeps dying while starting: no crash loop, render on this thread
     const i = P.slots.indexOf(s); if (i >= 0) P.slots.splice(i, 1);
     giveUp(why);

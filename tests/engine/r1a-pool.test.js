@@ -5,7 +5,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { report } from '../helpers.js';
-import { memoryPlan, cgroupMemory, cgroupCpus, poolSize, poolStats, renderInPool, stopPool } from '../../src/server/pool.js';
+import { memoryPlan, cgroupMemory as cgroupMemory0, cgroupCpus as cgroupCpus0, poolSize, poolStats, renderInPool, stopPool, resetCgroupCache } from '../../src/server/pool.js';
+// the limits are read at most every 30 s: these tests change the files between reads
+const cgroupCpus = () => { resetCgroupCache(); return cgroupCpus0(); };
+const cgroupMemory = () => { resetCgroupCache(); return cgroupMemory0(); };
 import { OPEN } from '../../src/server/perms.js';
 
 const ENV = ['PW_RENDER_WORKERS', 'PW_RENDER_WORKER_HEAP_MB', 'PW_MEMORY_LIMIT_MB', 'PW_CGROUP_DIR'];
@@ -14,10 +17,10 @@ afterAll(async () => { await stopPool(); });
 
 describe('S-4: memory-aware render pool', () => {
   it('sizes workers and heap by min(cores, memory), not cores alone', () => {
-    // the old default on an 8-core, 4 GB container: 7 workers × 2 GB heaps = 14 GB of ceiling
-    expect(memoryPlan({ cores: 8, memMB: 4096 })).toMatchObject({ heapMB: 2048, workers: 1 });
+    // the old default on an 8-core, 4 GB container: 7 workers × 2 GB heaps = 14 GB of ceiling; now 1 GB heaps that fit
+    expect(memoryPlan({ cores: 8, memMB: 4096 })).toMatchObject({ heapMB: 1024, workers: 2 });
     expect(memoryPlan({ cores: 8, memMB: 1024 })).toMatchObject({ heapMB: 512, workers: 1 });
-    expect(memoryPlan({ cores: 8, memMB: 32768 })).toMatchObject({ heapMB: 2048, workers: 7 });
+    expect(memoryPlan({ cores: 8, memMB: 32768 })).toMatchObject({ heapMB: 1024, workers: 7 });
     expect(memoryPlan({ cores: 2, memMB: 32768 })).toMatchObject({ workers: 1 });
     // a smaller heap per worker (PW_RENDER_WORKER_HEAP_MB) buys more workers in the same memory
     expect(memoryPlan({ cores: 8, memMB: 8192, heapMB: 512 })).toMatchObject({ heapMB: 512, workers: 7 });
@@ -37,7 +40,7 @@ describe('S-4: memory-aware render pool', () => {
       fs.writeFileSync(path.join(dir, 'cpu.max'), '200000 100000\n');
       expect(cgroupMemory()).toBe(1536 * 1048576);
       expect(cgroupCpus()).toBe(2);
-      expect(poolSize()).toBe(1);
+      resetCgroupCache(); expect(poolSize()).toBe(1);
       fs.rmSync(path.join(dir, 'memory.max')); fs.rmSync(path.join(dir, 'cpu.max'));
       fs.mkdirSync(path.join(dir, 'memory')); fs.mkdirSync(path.join(dir, 'cpu'));
       fs.writeFileSync(path.join(dir, 'memory/memory.limit_in_bytes'), '9223372036854771712\n'); // v1: no limit
