@@ -55,7 +55,16 @@ export async function listReports() {
 export async function readReport(ref) {
   const [id, version] = String(ref).split('@');
   const text = version ? await store().getVersion(safeId(id), safeVersion(version)) : await store().get('reports', safeId(id));
-  return text == null ? null : upgrade(JSON.parse(text)); // older definitions are brought up to this version
+  return text == null ? null : parseReport(text);
+}
+/**
+ * A stored definition as this version reads it: parsed and upgraded (engine/schema/upgrade.js: a pure transform of
+ * this one definition; it reads nothing else). Callers check access before this, so its errors tell nothing to
+ * someone who may not open the report. @param {string} text
+ */
+export function parseReport(text) {
+  try { return upgrade(JSON.parse(text)); }
+  catch (e) { throw /** @type {any} */ (e).status ? e : Object.assign(new Error('The stored report is not valid JSON.'), { status: 500 }); }
 }
 const safeVersion = (v) => { if (!/^\d{8}T\d{6}\d{3}Z?$/.test(v)) throw Object.assign(new Error('Bad version'), { status: 400 }); return v; };
 

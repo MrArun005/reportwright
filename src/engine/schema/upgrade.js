@@ -2,6 +2,8 @@
 // Report definitions by $schema version. Each step takes a definition of one version to the next; readReport runs the
 // chain on every stored definition, so an older file keeps working and a change of format is one function here.
 // A definition from a newer Pagewright than this one is refused rather than half-read.
+// Pure: it transforms the one definition it is given and reads nothing else (no storage, no other reports); the server
+// runs it only on a report the reader may open (perms.readReportFor), so its errors are no oracle.
 export const CURRENT = 'pagewright/report@1';
 
 /** @type {Record<string, { to: string, up: (def: any) => any }>} from-version → the step to the next */

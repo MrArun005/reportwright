@@ -22,7 +22,7 @@ import { store, localAclGen, withLock } from './storage/index.js';
 import { accountsOn, currentUser, openTrusted, publicReadonly, NO_AUTH_HELP } from './session.js';
 import { internalHosts } from './safeFetch.js';
 import { normEmail, GROUP, getUser } from './users.js';
-import { readReport } from './reports.js';
+import { readReport, parseReport, safeId } from './reports.js';
 import { FETCHED_TYPES } from '../engine/data/index.js';
 
 export const LEVELS = /** @type {const} */ (['view', 'edit', 'manage']);
@@ -359,10 +359,12 @@ export async function readReportFor(p, ref, need = 'view') {
     if (!v) throw fail('Report not found', 404);
     return v;
   }
-  const def = await readReport(ref); // one read: it is also the proof the report exists
-  if (!def) throw fail('Report not found', 404);
+  // one read (it is also the proof the report exists); parsed and upgraded only once the reader may open it, so a
+  // report they may not view answers as a missing one, whatever it holds (a newer $schema, broken JSON)
+  const text = await store().get('reports', safeId(String(ref)));
+  if (text == null) throw fail('Report not found', 404);
   await levelOn(p, ref, need);
-  return def;
+  return parseReport(text);
 }
 
 /** The principal a server-side render runs as when the caller did not say: nobody with accounts on, or in production
