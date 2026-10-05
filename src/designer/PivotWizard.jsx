@@ -26,7 +26,8 @@ export function pivotFor(ds, { rows = [], columns = [], values = [], width = 523
     const agg = v.agg || (f?.type === 'number' ? 'Sum' : 'Count');
     const pct = v.show && v.show !== 'value';
     return {
-      label: v.field ? `${agg} of ${labelOf(v.field)}` : 'Count',
+      // a Sum is headed by the field ("Amount", as the chart legend reads), short enough not to wrap
+      label: v.field ? (agg === 'Sum' ? labelOf(v.field) : `${agg} of ${labelOf(v.field)}`) : 'Count',
       value: agg === 'Count' ? (v.field ? `=Count(Fields.${v.field})` : '=CountRows()') : `=${agg}(Fields.${v.field})`,
       ...(pct ? { show: v.show } : { format: agg === 'Count' ? 'N0' : (f && formatFor(f, sample, { currency })) || 'N2' }),
     };

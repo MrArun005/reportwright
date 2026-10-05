@@ -7,7 +7,14 @@ const TOTAL = { fontWeight: 'bold', borderTop: '0.75 solid #94a3b8' };
 const ROW_H = 18;
 // a total of these means nothing: rates, prices, percentages, averages, ids, years
 const NOT_ADDITIVE = /rate|price|percent|pct|ratio|avg|average|^month$|^day$/i;
-const additive = (f) => f.type === 'number' && !NOT_ADDITIVE.test(f.name) && !isCode(f.name);
+// row numbers: an instalment, a line, a serial number (by name), or a column that counts up by one down the sample rows
+const SEQ_NAME = /^(installment|instalment|inst|seq|sequence|serial|sr|sno|slno|srno|idx|index|rank|line|lineno|row|rownum|rowno|pos|position|step|period|sl)(_?(no|num|number))?$/i;
+const isSequence = (name, rows) => {
+  const v = (rows || []).slice(0, 200).map(r => r?.[name]);
+  return v.length >= 5 && v.every((x, i) => Number.isInteger(x) && (i === 0 || x === v[i - 1] + 1));
+};
+let ROWS = null; // the sample rows while tableFor runs
+const additive = (f) => f.type === 'number' && !NOT_ADDITIVE.test(f.name) && !isCode(f.name) && !SEQ_NAME.test(f.name) && !isSequence(f.name, ROWS);
 
 /** "dueDate" → "Due date", "customer_name" → "Customer name"; all-caps names stay. */
 export function labelOf(name) {
@@ -67,7 +74,8 @@ function widths(fields, width) {
  */
 export function tableFor(ds, opt = {}) {
   CUR = opt.currency || null;
-  try { return tableOf(ds, opt); } finally { CUR = null; }
+  ROWS = opt.rows || null;
+  try { return tableOf(ds, opt); } finally { CUR = null; ROWS = null; }
 }
 function tableOf(ds, { layout = 'list', groupBy, width = 523, rows, fields: pick } = {}) {
   let fields = (ds.fields || []).filter(f => !pick || pick.includes(f.name));
@@ -142,6 +150,8 @@ export function instantPicks(fields, rows = []) {
     .map(f => ({ f, n: sample.length ? card(f) : 0 }))
     .filter(x => !sample.length || (x.n >= 2 && x.n <= 24 && x.n < sample.length * 0.5))
     .sort((a, b) => a.n - b.n).map(x => x.f.name);
+  ROWS = rows;
   const nums = fields.filter(additive).map(f => f.name);
+  ROWS = null;
   return [...dims.slice(0, 2), ...nums.slice(0, 1)];
 }
