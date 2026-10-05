@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 
 const BASE = process.env.BASE || 'http://localhost:3000';
-const MOCK_PORT = Number(process.env.MOCK_PORT || 3991);
+const MOCK_PORT = Number(process.env.MOCK_PORT || 4291);
 const M = `http://127.0.0.1:${MOCK_PORT}`;
 const step = (s) => console.log('·', s);
 
