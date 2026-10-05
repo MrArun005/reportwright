@@ -41,6 +41,8 @@ export function paginate(units, tables, pageH, warn) {
     if (b) { b.top = Math.min(b.top, u.top); b.bottom = Math.max(b.bottom, u.top + u.height); }
     else blockMap.set(u.block, { top: u.top, bottom: u.top + u.height });
   }
+  const blockUnits = new Map();
+  for (const u of units) if (u.block) { let l = blockUnits.get(u.block); if (!l) blockUnits.set(u.block, l = []); l.push(u); }
   const blocks = [...blockMap.values()].filter(b => b.bottom - b.top <= pageH + EPS);
   for (const b of blocks) cand.push(b.top, b.bottom);
   cand.sort((a, b) => a - b);
@@ -76,15 +78,26 @@ export function paginate(units, tables, pageH, warn) {
    */
   const ragged = (top, y, room) => {
     const moved = [];
+    const movedBlocks = new Set();
     for (let i = firstAtOrAfter(y - maxH - 1); i < units.length && units[i].top < y - EPS; i++) {
       const u = units[i];
       if (placed.has(u) || u.top + u.height <= y + EPS) continue;
-      if (u.top <= top + EPS || u.height > room + EPS || u.keepWithPrevious || u.block) return null;
+      if (u.top <= top + EPS || u.height > room + EPS || u.keepWithPrevious) return null;
+      if (u.block) {
+        // a keep-together group that fits a page moves whole (its rows above the line too), N8: it vetoed the
+        // ragged break, which left page 1 with only the headers and rows past the footer
+        const bl = blockMap.get(u.block);
+        if (movedBlocks.has(bl)) continue;
+        if (!bl || bl.bottom - bl.top > room + EPS || bl.top <= top + EPS) return null;
+        movedBlocks.add(bl);
+        for (const m of blockUnits.get(u.block)) if (!placed.has(m)) moved.push(m);
+        continue;
+      }
       moved.push(u);
     }
     if (!moved.length) return null;
     for (const u of units) if (u.keepWithNext && !placed.has(u) && u.top + u.height <= y + EPS && moved.some(m => Math.abs(m.top - (u.top + u.height)) < EPS)) return null;
-    for (const bl of blocks) if (bl.top < y - EPS && bl.bottom > y + EPS) return null;
+    for (const bl of blocks) if (!movedBlocks.has(bl) && bl.top < y - EPS && bl.bottom > y + EPS) return null;
     return new Set(moved);
   };
   const fitsFrom = (y) => {

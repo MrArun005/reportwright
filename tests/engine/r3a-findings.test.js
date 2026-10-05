@@ -139,3 +139,19 @@ describe('N23: column sets of a too-wide table break at the same rows', () => {
     for (let i = 0; i < half; i++) expect(pages[half + i]).toEqual(pages[i]);
   });
 });
+
+describe('N8: side-by-side regions with keep-together groups', () => {
+  it.each([[7, 17.3, 19.7], [5, 18, 14], [9, 15.5, 21]])('groups of %i rows (%dpt beside %dpt): page 1 has rows, nothing past the footer, no false warning', async (g, ha, hb) => {
+    const rows = Array.from({ length: 100 }, (_, i) => ({ i, k: Math.floor(i / g) }));
+    const t = (name, x, h, group) => ({ type: 'table', name, x, y: 0, w: 120, h: 40, dataSet: 'D', columns: [{ width: 120 }], header: [{ height: 14, cells: [{ value: name }] }],
+      ...(group ? { groups: [{ name: `${name}G`, expr: '=Fields.k', keepTogether: true }] } : {}), detail: [{ height: h, cells: [{ value: `=Fields.i` }] }], footer: [{ height: 14, cells: [{ value: 'end' }] }] });
+    const d = { $schema: 'pagewright/report@1', page: { size: 'A4', margins: [36, 36, 36, 36] }, dataSources: [{ name: 'S', type: 'json', data: rows }], dataSets: [{ name: 'D', source: 'S', path: '$' }],
+      sections: { body: { height: 60, items: [t('A', 0, ha, true), t('B', 130, hb, false)] }, pageFooter: { height: 30, items: [{ type: 'textbox', name: 'F', x: 0, y: 0, w: 200, h: 12, value: 'footer' }] } } };
+    const m = await render(d, { fontStore });
+    expect(m.warnings.join(' ')).not.toMatch(/taller than the page/);
+    const texts = m.pages[0].items.flatMap(i => i.lines || []).map(l => l.text);
+    expect(texts.filter(x => /^\d+$/.test(x)).length).toBeGreaterThan(20);
+    const footerTop = 842 - 36 - 30;
+    for (const p of m.pages) for (const it of p.items) for (const l of it.lines || []) if (/^\d+$/.test(l.text)) expect(l.y).toBeLessThan(footerTop);
+  });
+});
