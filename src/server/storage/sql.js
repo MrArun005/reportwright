@@ -18,11 +18,14 @@ async function load(pkg) {
 }
 
 /** @param {string} url @param {'sqlite'|'postgres'|'mysql'|'mssql'} dialect @returns {Promise<Query>} */
+/** Connections per storage pool (per server thread): PW_STORAGE_POOL_MAX, default 5. */
+const poolMax = () => { const n = Math.floor(Number(process.env.PW_STORAGE_POOL_MAX)); return n > 0 ? n : 5; };
+
 async function connect(url, dialect) {
   if (dialect === 'mssql') {
     const sql = (await load('mssql')).default;
     const { mssqlConfig } = await import('../sql.js');
-    const pool = await new sql.ConnectionPool({ ...mssqlConfig(url), pool: { max: 5 }, connectionTimeout: 10000 }).connect();
+    const pool = await new sql.ConnectionPool({ ...mssqlConfig(url), pool: { max: poolMax() }, connectionTimeout: 10000 }).connect();
     pool.on('error', () => {});
     // our statements have no "?" inside quotes, so each one is a placeholder
     return async (text, values = []) => {
@@ -40,13 +43,13 @@ async function connect(url, dialect) {
   }
   if (dialect === 'postgres') {
     const pg = (await load('pg')).default;
-    const pool = new pg.Pool({ connectionString: url, max: 5, connectionTimeoutMillis: 10000 });
+    const pool = new pg.Pool({ connectionString: url, max: poolMax(), connectionTimeoutMillis: 10000 });
     pool.on('error', () => {}); // an idle client that drops must not crash the server
     // our statements have no "?" inside quotes, so each one is a placeholder
     return async (text, values = []) => { let i = 0; return (await pool.query(text.replace(/\?/g, () => `$${++i}`), values)).rows; };
   }
   const mysql = (await load('mysql2/promise')).default;
-  const pool = mysql.createPool({ uri: url, connectionLimit: 5, connectTimeout: 10000 });
+  const pool = mysql.createPool({ uri: url, connectionLimit: poolMax(), connectTimeout: 10000 });
   return async (text, values = []) => { const [rows] = await pool.execute(text, values); return Array.isArray(rows) ? rows : []; };
 }
 

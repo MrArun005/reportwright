@@ -133,7 +133,7 @@ const COMMON = ['count', 'sum', 'avg', 'min', 'max', 'coalesce', 'nullif', 'cast
   'hex_decode_string', 'try_base64_decode_string', 'convert_timezone', 'date_from_parts', 'time_from_parts', 'timestamp_from_parts',
   'to_timestamp_ntz', 'to_timestamp_ltz', 'to_timestamp_tz', 'previous_day', 'yearofweek', 'weekiso', 'dayofweekiso', 'monthname', 'square',
   'cbrt', 'factorial', 'haversine', 'gcd', 'lcm', 'log2', 'cot', 'sinh', 'cosh', 'tanh', 'ascii', 'printf', 'instr', 'total', 'julianday',
-  'strftime', 'unixepoch', 'typeof', 'likely', 'unlikely', 'glob', 'hex', 'quote', 'zeroblob', 'json_each', 'json_tree', 'json_group_array',
+  'strftime', 'unixepoch', 'typeof', 'likely', 'unlikely', 'glob', 'hex', 'quote', 'json_each', 'json_tree', 'json_group_array',
   'json_group_object', 'json_type', 'json_valid', 'json_patch', 'json_insert', 'json_set', 'json_remove', 'json_array_length', 'group_concat',
   'sum', 'unicode', 'char', 'trim', 'nullif', 'instr', 'format', 'iif', 'string_agg', 'percentile', 'approx_percentile', 'approx_quantiles',
   'approx_top_count', 'array_concat', 'array_reverse', 'array_to_string', 'offset', 'ordinal', 'safe_offset', 'safe_ordinal', 'struct',
@@ -162,8 +162,9 @@ const EXTRA = {
 };
 
 const allowedFor = Object.fromEntries(['sqlite', 'postgres', 'mysql', 'mssql', 'oracle', 'snowflake', 'bigquery'].map(d => [d, new Set([...COMMON, ...(EXTRA[d] || [])])]));
-// table functions that read files or other servers, or system packages: refused even if a list above names them by mistake
-const NEVER = /^(pg_|lo_|dblink|utl_|dbms_|xp_|sp_|fn_|open|external_|ml\.|ai\.|system\$|sys\.|information_schema\.)/;
+// table functions that read files or other servers, or system packages, and SQLite's blob makers (zeroblob, randomblob:
+// a value of any size from one number): refused even if a list above names them by mistake
+const NEVER = /^(zeroblob|randomblob|pg_|lo_|dblink|utl_|dbms_|xp_|sp_|fn_|open|external_|ml\.|ai\.|system\$|sys\.|information_schema\.)/;
 
 /**
  * Every call in the code is to an allowed built-in. CTE names with a column list (`t(a, b) as (`) are not calls.

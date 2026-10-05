@@ -46,8 +46,9 @@ transactions, the server-side parse checks and BigQuery's dry run.
 - **Parameters bound by the driver.** `@name` binds the report parameter `name` (`$n` for Postgres, `?` for MySQL,
   Snowflake and BigQuery, `:n` for Oracle, `@pw_n` for SQL Server). A list becomes `in (@list)`; an empty list matches
   nothing. A value never becomes SQL text.
-- **Caps on the client.** `limits.rows` (100,000), `limits.bytes` (64 MB of returned values, every type counted) and one
-  wall-clock deadline `limits.ms` (30 s) for everything a query does. At a cap the read stops and the request is
+- **Caps on the client.** `limits.rows` (100,000, `PW_SQL_MAX_ROWS`), `limits.bytes` (64 MB of returned values, every
+  type counted, `PW_SQL_MAX_MB`) and one wall-clock deadline `limits.ms` (30 s, `PW_SQL_TIMEOUT_MS`) for everything a
+  query does. Each pool holds at most `PW_DB_POOL_MAX` connections (default 5) per server thread. At a cap the read stops and the request is
   cancelled; at the deadline the caller gets a 504 at once and the request in flight is cancelled.
 - **Admin-only connections and procedures.** Query text over 100,000 characters is refused.
 
@@ -62,8 +63,12 @@ transactions, the server-side parse checks and BigQuery's dry run.
   statement), `sql_select_limit` and `max_execution_time`; the same socket byte count, and at a cap or the deadline the
   thread is killed from another connection (`KILL`: an optimizer hint or a `CALL` is not bound by `max_execution_time`).
   JSON stays text, geometry bytes.
-- **SQLite**: the file is opened read-only; rows and bytes are counted as they are read. Queries run on the main thread,
-  so the deadline cannot stop them and SQLite builds each value in full first: keep SQLite for small local files.
+- **SQLite**: each query runs in a child process (`src/server/sql/sqlite.js`), never on a server thread: the file is
+  opened read-only, rows and bytes are counted as they are read, the deadline kills the process, its memory is watched
+  while it runs (`PW_SQLITE_MEMORY_MB`, default 1024, also its heap limit) and a value too large for Node (a
+  `printf('%.*c', 900000000, 'x')`) ends only that process. At most `PW_SQLITE_PROCESSES` (default 2) run at once per
+  server thread. `zeroblob` and `randomblob` are refused by the statement check. Node 22 has no `sqlite3_limit()`: the
+  query text is capped at 100,000 characters before it is sent, bound variables by SQLite's own 32,766.
 - **SQL Server**: the login is checked before every query (5-second cache) in the connected database and in every other
   database it can enter, `master` and `msdb` included: any role, ownership or right beyond reading (and `SHOWPLAN`)
   refuses the connection, and a `CREATE TABLE` in a rolled-back transaction must fail. Then a T-SQL keyword scan, the

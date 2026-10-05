@@ -14,9 +14,13 @@ import { codeOnly, assertCalls, visibleName } from './sql/check.js';
 import { oracle } from './sql/oracle.js';
 import { snowflake } from './sql/snowflake.js';
 import { bigquery } from './sql/bigquery.js';
+import { sqlite } from './sql/sqlite.js';
 
-/** Mutable so tests can lower them. */
-export const limits = { rows: 100000, ms: 30000, bytes: 64 * 1024 * 1024 };
+const envNum = (k, d) => { const n = Number(process.env[k]); return process.env[k] && Number.isFinite(n) && n > 0 ? n : d; };
+/** The caps on one query: PW_SQL_MAX_ROWS (100000), PW_SQL_MAX_MB (64), PW_SQL_TIMEOUT_MS (30000). Mutable so tests can lower them. */
+export const limits = { rows: envNum('PW_SQL_MAX_ROWS', 100000), ms: envNum('PW_SQL_TIMEOUT_MS', 30000), bytes: envNum('PW_SQL_MAX_MB', 64) * 1024 * 1024 };
+/** Connections per pool (one pool per connection URL per server thread): PW_DB_POOL_MAX, default 5. */
+export const poolMax = () => Math.floor(envNum('PW_DB_POOL_MAX', 5));
 
 /** @param {string} msg @param {number} status */
 const fail = (msg, status) => Object.assign(new Error(msg), { status });
@@ -332,7 +336,7 @@ function count() {
 /**
  * What a driver in ./sql/ gets besides the text: the shared pools, the caps, and the helpers that enforce them.
  * @typedef {{ pools: Map<string, any>, limits: typeof limits, fail: typeof fail, clock: typeof clock, count: typeof count,
- *   driver: typeof driver, code: string, allowed: string[], procedure: null | { name: string, names: string[] } }} DriverContext
+ *   driver: typeof driver, poolMax: typeof poolMax, code: string, allowed: string[], procedure: null | { name: string, names: string[] } }} DriverContext
  */
 
 /** @type {Map<string, any>} one pool per connection URL, kept across hot reloads */
@@ -437,26 +441,11 @@ export function whyNotMysql(lines, procs = [], db = '') {
 }
 
 /** @type {Omit<DriverContext, 'code' | 'procedure' | 'allowed'>} */
-const driverContext = { pools, limits, fail, clock: (ms) => clock(ms), count, driver };
+const driverContext = { pools, limits, fail, clock: (ms) => clock(ms), count, driver, poolMax };
 
 const DRIVERS = {
   oracle, snowflake, bigquery,
-  // ponytail: node:sqlite is synchronous, so a slow query holds the server's event loop and the time limit
-  // cannot stop it, and SQLite builds each value in full (up to its own 1 GB limit) before it is counted. Fine for a
-  // local file the admin chose; move it to a worker thread if big SQLite files appear. Rows and bytes are counted as
-  // they are read, and the read stops at either cap.
-  async sqlite(url, text, values) {
-    const { DatabaseSync } = /** @type {typeof import('node:sqlite')} */ (process.getBuiltinModule('node:sqlite'));
-    const db = new DatabaseSync(url.slice('sqlite:'.length), { readOnly: true });
-    try {
-      const st = db.prepare(text);
-      st.setReadBigInts(true);
-      const rows = [];
-      const take = count();
-      for (const r of st.iterate(...values)) { take(r); rows.push(r); }
-      return rows;
-    } finally { db.close(); }
-  },
+  sqlite, // in a child process with a deadline and a memory cap: see ./sql/sqlite.js
 
   // The client side bounds both: the socket's bytes are counted as they arrive (onWire), and at the cap or the
   // deadline it is destroyed, so no value or batch is ever buffered past the cap, whatever the server sends.
@@ -471,7 +460,7 @@ const DRIVERS = {
     if (!pools.has(url)) {
       const pg = (await driver('pg', 'postgres')).default;
       const parsed = new Set([16, 20, 21, 23, 26, 700, 701, 1700, 1184]); // bool, integers, oid, floats, numeric (text), timestamptz
-      const pool = new pg.Pool({ connectionString: url, max: 5, connectionTimeoutMillis: 10000, types: { getTypeParser: (oid, fmt) => (parsed.has(oid) ? pg.types.getTypeParser(oid, fmt) : (v) => v) } });
+      const pool = new pg.Pool({ connectionString: url, max: poolMax(), connectionTimeoutMillis: 10000, types: { getTypeParser: (oid, fmt) => (parsed.has(oid) ? pg.types.getTypeParser(oid, fmt) : (v) => v) } });
       pool.on('error', () => {}); // an idle client that drops must not crash the server
       pools.set(url, { pool, pg, checked: 0 });
     }
@@ -524,7 +513,7 @@ const DRIVERS = {
     if (!pools.has(url)) {
       const mysql = (await driver('mysql2/promise', 'mysql')).default;
       const typeCast = (field, next) => (field.type === 'JSON' ? field.string() : field.type === 'GEOMETRY' ? field.buffer() : next());
-      pools.set(url, { pool: mysql.createPool({ uri: url, connectionLimit: 5, connectTimeout: 10000, dateStrings: true, supportBigNumbers: true, typeCast }), mysql, checked: 0 });
+      pools.set(url, { pool: mysql.createPool({ uri: url, connectionLimit: poolMax(), connectTimeout: 10000, dateStrings: true, supportBigNumbers: true, typeCast }), mysql, checked: 0 });
     }
     const entry = pools.get(url);
     const clk = clock(Number(limits.ms));
@@ -574,7 +563,7 @@ const DRIVERS = {
     const sql = (await driver('mssql', 'SQL Server')).default;
     if (!pools.has(key)) {
       // requestTimeout 0: our own deadline below; a wait for a pooled connection gives up on its own too
-      const pool = new sql.ConnectionPool({ ...mssqlConfig(url), pool: { max: 5, acquireTimeoutMillis: 60000 }, connectionTimeout: 10000, requestTimeout: 0 });
+      const pool = new sql.ConnectionPool({ ...mssqlConfig(url), pool: { max: poolMax(), acquireTimeoutMillis: 60000 }, connectionTimeout: 10000, requestTimeout: 0 });
       pool.on('error', () => {});
       const ready = pool.connect();
       ready.catch(() => { if (pools.get(key)?.ready === ready) pools.delete(key); }); // handled at once: no unhandled rejection

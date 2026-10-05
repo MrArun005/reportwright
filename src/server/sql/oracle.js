@@ -66,12 +66,12 @@ const READABLE = new Set(['DB_TYPE_NUMBER', 'DB_TYPE_BINARY_INTEGER', 'DB_TYPE_B
  * @param {import('../sql.js').DriverContext} ctx
  */
 export async function oracle(url, text, values, ctx) {
-  const { pools, limits, fail, clock, count, driver } = ctx;
+  const { pools, limits, fail, clock, count, driver, poolMax } = ctx;
   const key = `oracle|${url}`;
   const mod = await driver('oracledb', 'Oracle');
   const oracledb = mod.default || mod;
   if (!pools.has(key)) {
-    const ready = oracledb.createPool({ ...oracleConfig(url), poolMin: 0, poolMax: 5, queueTimeout: 60000, connectTimeout: 10 });
+    const ready = oracledb.createPool({ ...oracleConfig(url), poolMin: 0, poolMax: poolMax(), queueTimeout: 60000, connectTimeout: 10 });
     const entry = { ready, checked: 0 };
     ready.catch(() => { if (pools.get(key) === entry) pools.delete(key); });
     pools.set(key, entry);

@@ -61,7 +61,7 @@ export async function probeSnowflake(conn, role, user) {
  * @param {import('../sql.js').DriverContext} ctx
  */
 export async function snowflake(url, text, values, ctx) {
-  const { pools, limits, fail, clock, count, driver } = ctx;
+  const { pools, limits, fail, clock, count, driver, poolMax } = ctx;
   const cfg = snowflakeConfig(url);
   if (!cfg.role) throw fail('A Snowflake connection must name a read-only role: add ?role=REPORTING_READER to its URL.', 500);
   const key = `snowflake|${url}`;
@@ -70,7 +70,7 @@ export async function snowflake(url, text, values, ctx) {
   if (!pools.has(key)) {
     sf.configure?.({ logLevel: 'OFF' });
     // VARIANT, OBJECT and ARRAY stay text: a parsed JSON value takes many times its size
-    pools.set(key, { pool: sf.createPool({ ...cfg, jsonColumnVariantParser: (raw) => raw }, { max: 5, min: 0, acquireTimeoutMillis: 60000 }), checked: 0 });
+    pools.set(key, { pool: sf.createPool({ ...cfg, jsonColumnVariantParser: (raw) => raw }, { max: poolMax(), min: 0, acquireTimeoutMillis: 60000 }), checked: 0 });
   }
   const entry = pools.get(key);
   const clk = clock(Number(limits.ms));
