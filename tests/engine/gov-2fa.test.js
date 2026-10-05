@@ -78,6 +78,26 @@ describe('TOTP primitives', () => {
   });
 });
 
+describe('expired leases are swept', () => {
+  it('on SQLite and on files', async () => {
+    const { store } = await import('../../src/server/storage/index.js');
+    for (let i = 0; i < 3; i++) await store().lease(`sweep-${i}`, 'o', 1);
+    await store().lease('sweep-live', 'o', 60000);
+    await new Promise(r => setTimeout(r, 10));
+    expect(await store().sweepLeases(Date.now())).toBeGreaterThanOrEqual(3);
+    expect(await store().lease('sweep-live', 'other', 60000)).toBe(false);
+    const fs2 = await import('node:fs'), os2 = await import('node:os'), path2 = await import('node:path');
+    const d = fs2.mkdtempSync(path2.join(os2.tmpdir(), 'pw-sweep-'));
+    const { fileStore } = await import('../../src/server/storage/file.js');
+    const f = fileStore(d);
+    await f.lease('a', 'o', 1); await f.lease('b', 'o', 60000);
+    await new Promise(r => setTimeout(r, 10));
+    expect(await f.sweepLeases(Date.now())).toBe(1);
+    expect(fs2.readdirSync(path2.join(d, 'data/leases'))).toEqual(['b.json']);
+    fs2.rmSync(d, { recursive: true, force: true });
+  });
+});
+
 describe('enrolling and signing in', () => {
   let secret, codes, cookie;
   it('without two-factor sign-in, the password is enough', async () => {
@@ -88,7 +108,9 @@ describe('enrolling and signing in', () => {
   });
   it('enrols from the account page: a QR code, a confirming code, recovery codes; other sessions end', async () => {
     const other = (await login('dee@x.test', 'designer password 1')).session;
-    const setup = await post(R.twoFa, '/api/account/2fa', { action: 'setup' }, cookie);
+    expect((await post(R.twoFa, '/api/account/2fa', { action: 'setup' }, cookie)).status).toBe(401); // a session alone is not enough
+    expect((await post(R.twoFa, '/api/account/2fa', { action: 'setup', password: 'not it at all' }, cookie)).status).toBe(401);
+    const setup = await post(R.twoFa, '/api/account/2fa', { action: 'setup', password: 'designer password 1' }, cookie);
     expect(setup.status).toBe(200);
     const s = await setup.json();
     expect(s.qr).toMatch(/^<svg/);
@@ -106,8 +128,10 @@ describe('enrolling and signing in', () => {
     expect(JSON.stringify(rec)).not.toContain(codes[0]);
     expect(await who(other)).toBe(null); // the session from before is over
     expect(await who(cookie)).toBe(null);
+    const before = session.sessionClaims(new Request(BASE, { headers: { cookie } }));
     cookie = cookieOf(en, 'pw_session');
     expect(await who(cookie)).toBe('dee@x.test');
+    expect(session.sessionClaims(new Request(BASE, { headers: { cookie } })).exp).toBe(before.exp); // enrolling does not lengthen the session
     const acc = await (await R.account(new Request(`${BASE}/api/account`, { headers: { cookie } }))).json();
     expect(acc.twoFactor).toMatchObject({ enabled: true, required: false, recoveryLeft: 10 });
   });
@@ -143,13 +167,23 @@ describe('enrolling and signing in', () => {
   });
   it('5 wrong codes in 15 minutes lock the second step, even for the right code', async () => {
     const l = await login('dee@x.test', 'designer password 1');
-    // three wrong codes above count too: the window is per user, not per sign-in
+    // the three wrong codes and two wrong setup passwords above count too: the window is per user, not per sign-in
     const statuses = [];
     for (let i = 0; i < 4; i++) statuses.push((await post(R.mfa, '/api/auth/mfa', { code: '000001' }, l.mfa)).status);
-    expect(statuses).toEqual([401, 401, 429, 429]);
+    expect(statuses).toEqual([429, 429, 429, 429]);
     const r = await post(R.mfa, '/api/auth/mfa', { code: totp.totp(secret, Date.now() - 30000) }, l.mfa);
     expect(r.status).toBe(429);
     expect(r.headers.get('retry-after')).toBe('900');
+  });
+});
+
+describe('password sign-in limits hold across servers', () => {
+  it('10 failures per address and email, then 429 even for the right password', async () => {
+    await users.createUser({ email: 'lim@x.test', role: 'viewer', password: 'limit password 1' });
+    const tryPw = (pw, ip = '10.9.9.9') => R.login(new Request(`${BASE}/api/auth/login`, { method: 'POST', headers: { ...H(), 'x-forwarded-for': ip }, body: JSON.stringify({ email: 'lim@x.test', password: pw }) }));
+    for (let i = 0; i < 10; i++) expect((await tryPw('wrong password x')).status).toBe(401);
+    expect((await tryPw('limit password 1')).status).toBe(429);
+    expect((await tryPw('limit password 1', '10.9.9.10')).status).toBe(200); // another address
   });
 });
 
@@ -194,5 +228,27 @@ describe('required per role, and an admin reset', () => {
     await users.createUser({ email: 'sso@x.test', role: 'viewer', sso: { via: 'oidc', issuer: 'https://idp', subject: '1' } });
     expect(users.secondFactor(await users.getUser('sso@x.test'), await settings.getSettings({ fresh: true }))).toBe(null);
     await expect(users.startTwoFactor('sso@x.test')).rejects.toThrow(/single sign-on/);
+  });
+});
+
+describe('a first enrolment at sign-in needs the mailbox too (with mail set up)', () => {
+  it('the password step mails a code; the authenticator is bound only with it; the owner is told', async () => {
+    const { startSmtp } = await import('../fixtures/mock-smtp.js');
+    const smtp = await startSmtp();
+    Object.assign(process.env, { PW_SMTP_URL: `smtp://127.0.0.1:${smtp.port}`, PW_MAIL_FROM: 'noreply@x.test' });
+    try {
+      await users.createUser({ email: 'enr@x.test', role: 'viewer', password: 'enrol password 1' }); // viewers must enrol (above)
+      const l = await login('enr@x.test', 'enrol password 1');
+      expect(l.body).toEqual({ mfa: 'enrol', emailed: true });
+      const mailed = /code to set up two-factor sign-in: (\d{8})/.exec(smtp.messages.at(-1).data)[1];
+      expect((await post(R.mfaSetup, '/api/auth/mfa/setup', {}, l.mfa)).status).toBe(401); // the password alone
+      expect((await post(R.mfaSetup, '/api/auth/mfa/setup', { emailCode: '00000000' }, l.mfa)).status).toBe(401);
+      const s = await (await post(R.mfaSetup, '/api/auth/mfa/setup', { emailCode: mailed }, l.mfa)).json();
+      const r = await post(R.mfa, '/api/auth/mfa', { code: totp.totp(s.secret) }, l.mfa);
+      expect(r.status).toBe(200);
+      for (let i = 0; i < 50 && !smtp.messages.some(m => /sign-in changed/.test(m.data)); i++) await new Promise(x => setTimeout(x, 20));
+      expect(smtp.messages.at(-1).data).toMatch(/Two-factor sign-in was turned on/);
+      expect((await users.getUser('enr@x.test')).enrolCode).toBeUndefined();
+    } finally { delete process.env.PW_SMTP_URL; delete process.env.PW_MAIL_FROM; await smtp.close(); }
   });
 });

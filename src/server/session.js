@@ -139,11 +139,14 @@ const isHttps = (req) => new URL(req.url).protocol === 'https:' || (req.headers.
 
 /**
  * Set-Cookie for a new session of this user. how: { m: 1 } after a second factor, { s: 'oidc'|'saml' } from SSO.
- * @param {Request} req @param {{ email: string, role: string, sessionVersion?: number }} user @param {{ m?: 1, s?: 'oidc'|'saml' }} [how]
+ * @param {Request} req @param {{ email: string, role: string, sessionVersion?: number }} user @param {{ m?: 1, s?: 'oidc'|'saml', exp?: number }} [how]
  */
 export function sessionCookie(req, user, how = {}) {
-  const token = signSession({ e: user.email, r: user.role, v: user.sessionVersion || 0, ...(how.m ? { m: 1 } : {}), ...(how.s ? { s: how.s } : {}) });
-  return `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${MAX_AGE}${isHttps(req) ? '; Secure' : ''}`;
+  // exp: keep a session's end when it is re-issued (enrolling must not lengthen a session that may be someone else's)
+  const now = Math.floor(Date.now() / 1000);
+  const exp = how.exp && how.exp > now ? Math.min(how.exp, now + MAX_AGE) : now + MAX_AGE;
+  const token = signSession({ e: user.email, r: user.role, v: user.sessionVersion || 0, exp, ...(how.m ? { m: 1 } : {}), ...(how.s ? { s: how.s } : {}) });
+  return `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${exp - now}${isHttps(req) ? '; Secure' : ''}`;
 }
 
 /* ---------------- the step between the password and the second factor ---------------- */

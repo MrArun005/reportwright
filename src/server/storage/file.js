@@ -196,6 +196,17 @@ export function fileStore(root) {
         return true;
       });
     },
+    /** Remove lease files that ran out before this time (ms); the number removed. */
+    async sweepLeases(before) {
+      const dir = path.join(data, 'leases');
+      let n = 0, names = [];
+      try { names = (await fs.readdir(dir)).filter(f => f.endsWith('.json')); } catch (e) { if (missing(e)) return 0; throw e; }
+      for (const f of names) {
+        const file = path.join(dir, f);
+        await withFileLock(file, async () => { const cur = await readLease(file); if (cur && cur.expires < before) { await fs.rm(file, { force: true }); n++; } }).catch(() => {});
+      }
+      return n;
+    },
     async release(name, owner) {
       const file = leaseFile(data, name);
       await withFileLock(file, async () => { if ((await readLease(file))?.owner === owner) await fs.rm(file, { force: true }); });

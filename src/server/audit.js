@@ -26,7 +26,7 @@ import { principalId } from './perms.js';
 
 export const AUDIT_TYPES = /** @type {const} */ ([
   'auth.login', 'auth.login_failed', 'auth.logout', 'auth.sso', 'auth.sso_failed', 'auth.sso_link', 'auth.slo', 'auth.slo_failed',
-  'auth.mfa_failed', 'auth.mfa_enabled', 'auth.mfa_disabled', 'auth.mfa_recovery', 'auth.reset_request', 'auth.reset', 'auth.reset_failed',
+  'auth.mfa_failed', 'auth.mfa_enabled', 'auth.mfa_disabled', 'auth.mfa_recovery', 'auth.mfa_setup', 'auth.reset_request', 'auth.reset', 'auth.reset_failed',
   'report.create', 'report.update', 'report.delete', 'report.restore', 'report.import', 'report.view', 'report.render', 'report.export',
   'access.report', 'access.folder', 'access.root', 'folder.create', 'folder.delete',
   'user.create', 'user.update', 'user.delete',

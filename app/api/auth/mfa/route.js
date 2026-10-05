@@ -7,6 +7,7 @@ import { getUser, checkSecondFactor, enableTwoFactor, secondFactor } from '@/ser
 import { getSettings } from '@/server/settings.js';
 import { attempt } from '@/server/limits.js';
 import { audit } from '@/server/audit.js';
+import { notifyAccount } from '@/server/mail.js';
 
 export const runtime = 'nodejs';
 const WINDOW = 15 * 60 * 1000;
@@ -37,7 +38,7 @@ export async function POST(req) {
       return Response.json({ error: 'That code is not right.' }, { status: 401 });
     }
     await slot.release(); // a good code does not count against the limit
-    if (via === 'enrol') await audit('auth.mfa_enabled', { req, actor: `user:${u.email}`, detail: { at: 'sign-in' } });
+    if (via === 'enrol') { await audit('auth.mfa_enabled', { req, actor: `user:${u.email}`, detail: { at: 'sign-in' } }); notifyAccount(u.email, 'Two-factor sign-in was turned on for your account.'); }
     await audit('auth.login', { req, actor: `user:${u.email}`, detail: { method: via === 'none' ? 'password' : `password+${via === 'recovery' ? 'recovery code' : 'totp'}` } });
     const h = new Headers({ 'cache-control': 'no-store' });
     h.append('set-cookie', sessionCookie(req, user, via === 'none' ? {} : { m: 1 }));

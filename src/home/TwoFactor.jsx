@@ -59,6 +59,8 @@ export default function TwoFactorSettings({ lang }) {
   const [codes, setCodes] = useState(null);
   const [code, setCode] = useState('');
   const [mode, setMode] = useState(null); // 'recovery' | 'disable' while asking for a code
+  const [asking, setAsking] = useState(false); // the password, before a new secret
+  const [pw, setPw] = useState('');
   const [err, setErr] = useState(null);
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -69,7 +71,7 @@ export default function TwoFactorSettings({ lang }) {
   useEffect(() => { load(); }, [load]);
 
   const run = async (fn) => { setBusy(true); setErr(null); setMsg(null); try { await fn(); } catch (e) { setErr(e.message); } finally { setBusy(false); } };
-  const start = () => run(async () => { setCodes(null); setSetup(await postJson('/api/account/2fa', { action: 'setup' })); setCode(''); });
+  const start = (e) => { e.preventDefault(); run(async () => { setCodes(null); setSetup(await postJson('/api/account/2fa', { action: 'setup', password: pw })); setPw(''); setAsking(false); setCode(''); }); };
   const enable = (e) => { e.preventDefault(); run(async () => { const d = await postJson('/api/account/2fa', { action: 'enable', code }); setSetup(null); setCodes(d.recoveryCodes); setCode(''); setMsg(T('twoFactorTurnedOn')); await load(); }); };
   const withCode = (e) => {
     e.preventDefault();
@@ -101,7 +103,16 @@ export default function TwoFactorSettings({ lang }) {
         {msg && <p role="status" style={{ margin: 0, color: 'var(--muted)' }}>{msg}</p>}
       </div>
       {codes && <RecoveryCodes codes={codes} lang={lang} />}
-      {acc.password && !tf.enabled && !setup && <div><button type="button" className="btn primary" onClick={start} disabled={busy}>{T('turnOn2fa')}</button></div>}
+      {acc.password && !tf.enabled && !setup && !asking && <div><button type="button" className="btn primary" onClick={() => setAsking(true)} disabled={busy}>{T('turnOn2fa')}</button></div>}
+      {asking && !setup && (
+        <form onSubmit={start} style={{ display: 'flex', gap: 8, alignItems: 'end', flexWrap: 'wrap' }} aria-label={T('turnOn2fa')}>
+          <label className="field" style={{ minWidth: 260 }}><span>{T('passwordToConfirm')}</span>
+            <input className="input" type="password" autoComplete="current-password" required autoFocus value={pw} onChange={e => setPw(e.target.value)} style={{ height: 32 }} />
+          </label>
+          <button className="btn primary" disabled={busy}>{T('continue')}</button>
+          <button type="button" className="btn" onClick={() => { setAsking(false); setPw(''); }}>{T('cancel')}</button>
+        </form>
+      )}
       {setup && (
         <form onSubmit={enable} style={{ display: 'grid', gap: 12 }} aria-label={T('turnOn2fa')}>
           <QrCode setup={setup} lang={lang} />

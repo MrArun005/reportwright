@@ -141,6 +141,14 @@ describe('SAML single logout, IdP-initiated', () => {
     expect(m.xml).toContain('urn:oasis:names:tc:SAML:2.0:status:Success');
     expect(m.relay).toBe('r1');
   });
+  it('a captured logout URL opened in someone else\'s browser does not clear that browser\'s session', async () => {
+    await users.createUser({ email: 'dan@x.test', role: 'viewer', password: 'dan password 12' });
+    const dan = await sessionFor('dan@x.test');
+    const res = await R.slo.GET(req(`${SLO}?${redirectQuery('SAMLRequest', logoutRequest(), idp.key)}`, { cookie: dan }));
+    expect(res.status).toBe(303);
+    expect(cookies(res)).toEqual([]);
+    expect(await who(dan)).toBe('dan@x.test');
+  });
   it('refuses unsigned, foreign-signed, stale, expired and misdirected requests: nobody is signed out', async () => {
     const c = await sessionFor('bob@x.test', 'saml');
     for (const q of [
@@ -149,6 +157,7 @@ describe('SAML single logout, IdP-initiated', () => {
       redirectQuery('SAMLRequest', logoutRequest({ at: iso(Date.now() - 600000) }), idp.key),
       redirectQuery('SAMLRequest', logoutRequest({ noa: iso(Date.now() - 120000) }), idp.key),
       redirectQuery('SAMLRequest', logoutRequest({ dest: 'https://evil.test/slo' }), idp.key),
+      redirectQuery('SAMLRequest', logoutRequest({ dest: null }), idp.key), // Destination is required for both bindings
       redirectQuery('SAMLRequest', logoutRequest({ issuer: 'https://evil.test' }), idp.key),
     ]) expect((await R.slo.GET(req(`${SLO}?${q}`))).status).toBe(401);
     expect(await who(c)).toBe('bob@x.test');

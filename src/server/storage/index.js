@@ -27,6 +27,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
  * @property {(name: string, owner: string, ttlMs: number) => Promise<boolean>} lease take or renew a named lease; false when
  *   another owner holds it and it has not expired (one job runner per batch, one scheduler for all servers)
  * @property {(name: string, owner: string) => Promise<void>} release
+ * @property {(before: number) => Promise<number>} sweepLeases remove leases that ran out before this time (ms)
  * @property {(entry: any) => Promise<void>} appendAudit add one audit event (never changed afterwards)
  * @property {(q: { from?: string, to?: string, type?: string, actor?: string, report?: string, before?: string, limit: number }) => Promise<any[]>} queryAudit newest first
  * @property {(before: string) => Promise<number>} pruneAudit remove events older than this ISO time (whole days on files)

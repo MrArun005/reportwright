@@ -13,6 +13,7 @@ import { store } from './storage/index.js';
  * @returns {Promise<{ ok: boolean, retryAfter: number, release: () => Promise<void> }>}
  */
 export async function attempt(key, limit, windowMs) {
+  sweepSoon();
   const name = `rl:${crypto.createHash('sha256').update(key).digest('hex').slice(0, 24)}`;
   const owner = crypto.randomBytes(8).toString('hex');
   const start = crypto.randomInt(limit);
@@ -25,3 +26,26 @@ export async function attempt(key, limit, windowMs) {
 
 /** The client address for limits: the last X-Forwarded-For hop (our own reverse proxy's), as the audit log. @param {Request} req */
 export const clientAddress = (req) => (req.headers.get('x-forwarded-for') || '').split(',').pop()?.trim().slice(0, 64) || '-';
+
+// leases that ran out are removed hourly (a spray of made-up keys must not grow the storage without bound)
+const g = /** @type {any} */ (globalThis);
+function sweepSoon() {
+  if (Date.now() - (g.__pwLeaseSweep || 0) < 3600 * 1000) return;
+  g.__pwLeaseSweep = Date.now();
+  store().sweepLeases?.(Date.now() - 60000).catch((e) => console.error(`[pagewright] lease sweep: ${e.message}`));
+}
+
+/**
+ * Password sign-in limits, across servers: 10 failures in 15 minutes per client address and email, 50 per email from
+ * all addresses. Take both before checking the password; give them back when it was right.
+ * @param {string} address @param {string} email
+ * @returns {Promise<{ ok: boolean, retryAfter: number, release: () => Promise<void> }>}
+ */
+export async function loginAttempt(address, email) {
+  const W = 15 * 60 * 1000;
+  const one = await attempt(`login:${address}|${email}`, 10, W);
+  if (!one.ok) return one;
+  const all = await attempt(`login:*|${email}`, 50, W);
+  if (!all.ok) { await one.release(); return all; }
+  return { ok: true, retryAfter: 0, release: async () => { await one.release(); await all.release(); } };
+}

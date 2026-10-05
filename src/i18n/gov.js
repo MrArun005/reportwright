@@ -100,6 +100,9 @@ export default {
     snapshotStats: "{n} snapshots, {mb} MB",
     clearSnapshots: "Clear the cache",
     snapshotsCleared: "The snapshot cache is cleared.",
+    passwordToConfirm: "Your password, to confirm it is you",
+    enrolEmailed: "We emailed a code to your address: enter it to set up your authenticator.",
+    emailCode: "Code from the email",
   },
   hi: {
     stateOn: 'चालू', stateOff: 'बंद',
@@ -199,6 +202,9 @@ export default {
     snapshotStats: "{n} स्नैपशॉट, {mb} MB",
     clearSnapshots: "कैश साफ़ करें",
     snapshotsCleared: "स्नैपशॉट कैश साफ़ हो गया।",
+    passwordToConfirm: "पुष्टि के लिए आपका पासवर्ड",
+    enrolEmailed: "हमने आपके पते पर एक कोड ईमेल किया है: ऑथेंटिकेटर सेट करने के लिए उसे डालें।",
+    emailCode: "ईमेल वाला कोड",
   },
   es: {
     stateOn: 'Activado', stateOff: 'Desactivado',
@@ -298,6 +304,9 @@ export default {
     snapshotStats: "{n} instantáneas, {mb} MB",
     clearSnapshots: "Vaciar la caché",
     snapshotsCleared: "La caché de instantáneas está vacía.",
+    passwordToConfirm: "Tu contraseña, para confirmar que eres tú",
+    enrolEmailed: "Te enviamos un código por correo: escríbelo para configurar tu autenticador.",
+    emailCode: "Código del correo",
   },
   fr: {
     stateOn: 'Activée', stateOff: 'Désactivée',
@@ -397,6 +406,9 @@ export default {
     snapshotStats: "{n} instantanés, {mb} Mo",
     clearSnapshots: "Vider le cache",
     snapshotsCleared: "Le cache des instantanés est vidé.",
+    passwordToConfirm: "Votre mot de passe, pour confirmer que c’est vous",
+    enrolEmailed: "Nous avons envoyé un code à votre adresse : saisissez-le pour configurer votre authentificateur.",
+    emailCode: "Code reçu par e-mail",
   },
   de: {
     stateOn: 'Ein', stateOff: 'Aus',
@@ -496,6 +508,9 @@ export default {
     snapshotStats: "{n} Snapshots, {mb} MB",
     clearSnapshots: "Cache leeren",
     snapshotsCleared: "Der Snapshot-Cache ist geleert.",
+    passwordToConfirm: "Ihr Passwort, zur Bestätigung",
+    enrolEmailed: "Wir haben einen Code an Ihre Adresse gesendet: Geben Sie ihn ein, um Ihren Authenticator einzurichten.",
+    emailCode: "Code aus der E-Mail",
   },
   ja: {
     stateOn: 'オン', stateOff: 'オフ',
@@ -595,6 +610,9 @@ export default {
     snapshotStats: "スナップショット {n} 件、{mb} MB",
     clearSnapshots: "キャッシュを消去",
     snapshotsCleared: "スナップショットキャッシュを消去しました。",
+    passwordToConfirm: "本人確認のためのパスワード",
+    enrolEmailed: "あなたのアドレスにコードを送りました。認証アプリを設定するには入力してください。",
+    emailCode: "メールのコード",
   },
   zh: {
     stateOn: '已开启', stateOff: '已关闭',
@@ -694,6 +712,9 @@ export default {
     snapshotStats: "{n} 个快照，{mb} MB",
     clearSnapshots: "清空缓存",
     snapshotsCleared: "快照缓存已清空。",
+    passwordToConfirm: "请输入密码以确认是你本人",
+    enrolEmailed: "我们已向你的邮箱发送验证码：输入它来设置身份验证器。",
+    emailCode: "邮件中的验证码",
   },
   'pt-BR': {
     stateOn: 'Ativado', stateOff: 'Desativado',
@@ -793,6 +814,9 @@ export default {
     snapshotStats: "{n} instantâneos, {mb} MB",
     clearSnapshots: "Limpar o cache",
     snapshotsCleared: "O cache de instantâneos foi limpo.",
+    passwordToConfirm: "Sua senha, para confirmar que é você",
+    enrolEmailed: "Enviamos um código para seu e-mail: digite-o para configurar o autenticador.",
+    emailCode: "Código do e-mail",
   },
   ar: {
     stateOn: 'مفعّل', stateOff: 'معطّل',
@@ -892,5 +916,8 @@ export default {
     snapshotStats: "{n} لقطة، {mb} MB",
     clearSnapshots: "مسح الذاكرة",
     snapshotsCleared: "مُسحت ذاكرة اللقطات.",
+    passwordToConfirm: "كلمة مرورك، للتأكد من أنك أنت",
+    enrolEmailed: "أرسلنا رمزًا إلى بريدك: أدخله لإعداد تطبيق المصادقة.",
+    emailCode: "الرمز من البريد",
   },
 };

@@ -141,5 +141,7 @@ export function sqlStore(url) {
       return r?.owner === owner;
     },
     async release(name, owner) { await q('DELETE FROM pw_leases WHERE name = ? AND owner = ?', [name, owner]); },
+    /** Remove leases that ran out before this time (ms); the number removed. */
+    async sweepLeases(before) { const [r] = await q('SELECT COUNT(*) AS n FROM pw_leases WHERE expires_at < ?', [before]); await q('DELETE FROM pw_leases WHERE expires_at < ?', [before]); return Number(r?.n || 0); },
   };
 }

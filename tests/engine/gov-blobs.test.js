@@ -96,6 +96,15 @@ describe('batch output is shared', () => {
         expect((await get('b_other', link.search.slice(1))).status).toBe(403);
         expect((await get(job.id, `exp=${Math.floor(Date.now() / 1000) - 1}&sig=${link.searchParams.get('sig')}`)).status).toBe(403);
         expect(jobs.linkOk(job.id, link.searchParams.get('exp'), link.searchParams.get('sig'))).toBe(true);
+        // a link to a saved report's batch stops when the report goes (the owner may no longer run it)
+        const { writeReport, deleteReport } = await import('../../src/server/reports.js');
+        await writeReport('linked', def);
+        const j2 = await jobs.createBatch({ template: 'linked', items: [{ parameters: { n: '1' } }], format: 'json' }, null);
+        while (await jobs.workOnce('A'));
+        const l2 = new URL(jobs.downloadLink(await jobs.getJob(j2.id)));
+        expect((await get(j2.id, l2.search.slice(1))).status).toBe(200);
+        await deleteReport('linked');
+        expect((await get(j2.id, l2.search.slice(1))).status).toBe(403);
       } finally { process.chdir(dir); fs.rmSync(other, { recursive: true, force: true }); }
     } finally { delete process.env.PW_STORAGE; }
   });

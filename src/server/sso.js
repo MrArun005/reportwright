@@ -486,8 +486,8 @@ async function parseMessage(xml) {
 }
 
 /**
- * Check a logout message's envelope: SAML 2.0, from the pinned IdP, for our SLO address (a POST must name it; a redirect
- * names it or nothing), issued within 5 minutes, not past NotOnOrAfter. useOnce records its ID afterwards.
+ * Check a logout message's envelope: SAML 2.0, from the pinned IdP, naming our SLO address (Destination, required for
+ * both bindings: SAML Bindings 3.4.5.2, 3.5.5.2), issued within 5 minutes, not past NotOnOrAfter. useOnce records its ID afterwards.
  * @param {any} doc xml2js @param {Request} req @param {boolean} post @returns {Promise<{ kind: 'LogoutRequest'|'LogoutResponse', el: any }>}
  */
 async function checkLogoutMessage(doc, req, post) {
@@ -500,7 +500,8 @@ async function checkLogoutMessage(doc, req, post) {
   const issuer = kids(el, 'Issuer')[0];
   const iss = typeof issuer === 'string' ? issuer : issuer?._;
   if (iss !== process.env.PW_SAML_IDP_ISSUER) throw fail('The logout message is from another identity provider.', 401, 'issuer');
-  if ((el.$?.Destination || (post ? '' : SLO(req))) !== SLO(req)) throw fail('The logout message is for another address (Destination).', 401, 'destination');
+  void post;
+  if (el.$?.Destination !== SLO(req)) throw fail('The logout message is for another address (Destination).', 401, 'destination');
   const at = Date.parse(el.$?.IssueInstant || '');
   if (!Number.isFinite(at) || Math.abs(Date.now() - at) > 5 * 60000) throw fail('The logout message is too old or from the future (IssueInstant).', 401, 'expired');
   const noa = el.$?.NotOnOrAfter;

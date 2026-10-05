@@ -4,7 +4,7 @@ import { t } from '@/i18n/index.js';
 import { QrCode, RecoveryCodes, CodeField, postJson } from '@/home/TwoFactor.jsx';
 
 /** The second step of a password sign-in: a code (or a recovery code), or enrolling when the role requires it. */
-function SecondFactor({ mode, lang, next, onRestart }) {
+function SecondFactor({ mode, lang, next, onRestart, emailed = false }) {
   const T = (k, v) => t(lang, k, v);
   const [code, setCode] = useState('');
   const [recovery, setRecovery] = useState(false);
@@ -12,9 +12,19 @@ function SecondFactor({ mode, lang, next, onRestart }) {
   const [codes, setCodes] = useState(null);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [mailCode, setMailCode] = useState('');
   useEffect(() => {
-    if (mode === 'enrol') postJson('/api/auth/mfa/setup').then(setSetup, (e) => setErr(e.message));
-  }, [mode]);
+    if (mode === 'enrol' && !emailed) postJson('/api/auth/mfa/setup').then(setSetup, (e) => setErr(e.message));
+  }, [mode, emailed]);
+  const fromMail = async (e) => { e.preventDefault(); setBusy(true); setErr(null); try { setSetup(await postJson('/api/auth/mfa/setup', { emailCode: mailCode })); } catch (ex) { setErr(ex.message); } finally { setBusy(false); } };
+  if (mode === 'enrol' && emailed && !setup) return (
+    <form onSubmit={fromMail} style={{ display: 'grid', gap: 12 }} aria-label={T('twoFactor')}>
+      <p style={{ margin: 0 }}>{T('mustEnrol')} {T('enrolEmailed')}</p>
+      <label className="field"><span>{T('emailCode')}</span><input className="input" inputMode="numeric" autoComplete="one-time-code" required autoFocus value={mailCode} onChange={e => setMailCode(e.target.value)} style={{ height: 32, fontFamily: 'var(--mono)' }} /></label>
+      {err && <p className="err" role="alert" style={{ margin: 0, fontSize: 13 }}>{err}</p>}
+      <div><button className="btn primary" disabled={busy}>{T('continue')}</button></div>
+    </form>
+  );
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true); setErr(null);
@@ -49,7 +59,7 @@ export default function LoginForm({ next, lang, sso = {}, password: passwordOn =
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
   const [me, setMe] = useState(null);
-  const [mfa, setMfa] = useState(null); // 'totp' | 'enrol' after a right password
+  const [mfa, setMfa] = useState(null); // { mode: 'totp' | 'enrol', emailed } after a right password
 
   useEffect(() => { fetch('/api/auth/me').then(r => (r.ok ? r.json() : null)).then(setMe, () => {}); }, []);
 
@@ -60,7 +70,7 @@ export default function LoginForm({ next, lang, sso = {}, password: passwordOn =
       const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }) });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || T('signInFailed', { status: res.status }));
-      if (body.mfa) { setMfa(body.mfa); setBusy(false); return; }
+      if (body.mfa) { setMfa({ mode: body.mfa, emailed: !!body.emailed }); setBusy(false); return; }
       window.location.assign(next);
     } catch (ex) { setErr(ex.message); setBusy(false); }
   };
@@ -91,7 +101,7 @@ export default function LoginForm({ next, lang, sso = {}, password: passwordOn =
     </div>
   );
   if (!passwordOn) return ssoButtons || <p className="vmsg">{T('noSignInMethod')}</p>;
-  if (mfa) return <SecondFactor mode={mfa} lang={lang} next={next} onRestart={() => { setMfa(null); setPassword(''); }} />;
+  if (mfa) return <SecondFactor mode={mfa.mode} emailed={mfa.emailed} lang={lang} next={next} onRestart={() => { setMfa(null); setPassword(''); }} />;
   return (
     <>{ssoButtons}
     <form onSubmit={submit} style={{ display: 'grid', gap: 12 }} aria-describedby={err ? 'login-error' : undefined}>

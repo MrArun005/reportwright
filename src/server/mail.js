@@ -78,3 +78,11 @@ export async function sendMail(m) {
   });
   return { messageId: info.messageId, accepted: info.accepted?.length ?? to.length };
 }
+
+/** Tell an account holder that their sign-in changed (2FA on or off); never throws. @param {string} email @param {string} what */
+export async function notifyAccount(email, what) {
+  if (!mailOn()) return;
+  try {
+    await sendMail({ to: [email], subject: 'Your Pagewright sign-in changed', text: `${what}\n\nIf this was not you, tell an admin at once: they can reset your two-factor sign-in and your password.\n` });
+  } catch (e) { console.error(`[pagewright] account notice mail: ${/** @type {Error} */ (e).message}`); }
+}

@@ -85,9 +85,18 @@ describe('schedules made on the Schedules page', () => {
       const users = await import('../../src/server/users.js');
       await users.createUser({ email: 'dee@corp.test', role: 'designer', password: 'designer pass 1' });
       expect(await perms.principalFromId('user:dee@corp.test', null)).toEqual(perms.NOBODY); // keyless, not from a session
-      expect((await perms.principalFromId('user:dee@corp.test', null, { session: true })).email).toBe('dee@corp.test');
-      await users.updateUser('dee@corp.test', { disabled: true });
-      expect(await perms.principalFromId('user:dee@corp.test', null, { session: true })).toEqual(perms.NOBODY);
+      const since = (await users.getUser('dee@corp.test')).createdAt;
+      const as = () => perms.principalFromId('user:dee@corp.test', null, { session: true, since });
+      expect((await as()).email).toBe('dee@corp.test');
+      expect(await perms.principalFromId('user:dee@corp.test', null, { session: true })).toEqual(perms.NOBODY); // no account stamp
+      await users.updateUser('dee@corp.test', { role: 'viewer' });
+      expect(await as()).toEqual(perms.NOBODY); // no longer a designer: the schedule stops
+      await users.updateUser('dee@corp.test', { role: 'designer', disabled: true });
+      expect(await as()).toEqual(perms.NOBODY);
+      await users.deleteUser('dee@corp.test');
+      await new Promise(r => setTimeout(r, 5));
+      await users.createUser({ email: 'dee@corp.test', role: 'designer', password: 'another person 1' });
+      expect(await as()).toEqual(perms.NOBODY); // a new account with the same email is someone else
       const s = await schedules.createSchedule({ template: def, cron: '0 7 * * *', items: [{ parameters: {} }], ownerSession: true }, { kind: 'service', key: undefined });
       const { store } = await import('../../src/server/storage/index.js');
       expect(JSON.parse(await store().get('schedules', s.id)).ownerSession).toBe(false);

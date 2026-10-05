@@ -42,7 +42,10 @@ export async function POST(req) {
   try { email = normEmail(body?.email); } catch (e) { return Response.json({ error: e.message }, { status: 400 }); }
   const byAddress = await attempt(`reset-ip:${clientAddress(req)}`, 20, HOUR);
   const byEmail = byAddress.ok ? await attempt(`reset-email:${email}`, 3, HOUR) : null;
-  if (!byAddress.ok || !byEmail?.ok) return Response.json({ error: 'Too many reset requests. Try again later.' }, { status: 429, headers: { 'retry-after': String(HOUR / 1000) } });
+  if (!byAddress.ok || !byEmail?.ok) {
+    await audit('auth.reset_request', { req, status: 'denied', detail: { email, reason: 'rate limited' } });
+    return Response.json({ error: 'Too many reset requests. Try again later.' }, { status: 429, headers: { 'retry-after': String(HOUR / 1000) } });
+  }
   const job = work(req, email, linkBase(req)).finally(() => g.__pwResets.delete(job));
   g.__pwResets.add(job);
   return Response.json({ ok: true }, { status: 202, headers: { 'cache-control': 'no-store' } });

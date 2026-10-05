@@ -4,7 +4,7 @@
 //        answered with a signed LogoutResponse back to the IdP
 //   POST SAMLRequest (+RelayState)          the same over HTTP-POST (a signed XML request)
 // Unsigned, badly signed, stale, replayed or misdirected messages are refused and logged.
-import { accountsOn, clearCookie } from '@/server/session.js';
+import { accountsOn, clearCookie, sessionClaims } from '@/server/session.js';
 import { sloOn, samlSloMessage, sloRequestId, samlUserFor, samlLogoutResponseUrl, clearLogoutCookies, publicBase } from '@/server/sso.js';
 import { endSessions } from '@/server/users.js';
 import { audit } from '@/server/audit.js';
@@ -35,7 +35,10 @@ async function handle(req, form) {
   const u = await samlUserFor(m.nameID, m.format);
   if (u) await endSessions(u.email);
   await audit('auth.slo', { req, actor: u ? `user:${u.email}` : 'anon', detail: { from: 'idp request', account: u ? 'signed out' : 'no such account' } });
-  return go(await samlLogoutResponseUrl(req, m), [clearCookie(req), ...clearLogoutCookies(req)]);
+  // this browser's own cookie goes only when it is that account's session (a captured logout URL opened by someone
+  // else signs nobody else out here)
+  const mine = !!u && sessionClaims(req)?.e === u.email;
+  return go(await samlLogoutResponseUrl(req, m), mine ? [clearCookie(req), ...clearLogoutCookies(req)] : []);
 }
 
 export async function GET(req) { return handle(req, null); }

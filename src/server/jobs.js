@@ -80,7 +80,7 @@ async function expandItems(spec, base, fetch) {
  * @param {import('./perms.js').Principal} [principal] who asks: the template and its subreports are checked for them,
  *   now and again when the items render (a schedule's owner may have lost access since)
  */
-export async function createBatch(spec, req, principal = defaultPrincipal(), { session = false } = {}) {
+export async function createBatch(spec, req, principal = defaultPrincipal(), { session = false, since = null } = {}) {
   // self: this server, the one local address batch fetches may reach; baseUrl may come from the caller
   const self = defaultBase(req);
   const designer = canDesign(principal);
@@ -96,7 +96,7 @@ export async function createBatch(spec, req, principal = defaultPrincipal(), { s
     id: rid(), status: 'queued', createdAt: new Date().toISOString(), template: typeof spec.template === 'string' ? spec.template : def.name,
     templateRef: typeof spec.template === 'string' ? spec.template : null,
     format, fromSnapshot: !!spec.fromSnapshot, output: spec.output || { type: 'zip' }, webhook: spec.webhook || null, fileName: spec.fileName || null, schedule: spec.schedule || null, pdfa: !!spec.pdfa, sign: !!spec.sign,
-    total: items.length, done: 0, failed: 0, results: [], errors: [], failedItems: [], base, self, owner: principalId(principal), ownerKey: vet(principal).viaKey || null, ownerSession: !!session, email: spec.email ? checkEmail(spec.email) : null, _work: { items, def },
+    total: items.length, done: 0, failed: 0, results: [], errors: [], failedItems: [], base, self, owner: principalId(principal), ownerKey: vet(principal).viaKey || null, ownerSession: !!session, ownerSince: since, email: spec.email ? checkEmail(spec.email) : null, _work: { items, def },
   };
   await save(job);
   poke();
@@ -141,6 +141,21 @@ export function downloadLink(job) {
   if (!linkSecret() || !process.env.PW_BASE_URL) return null;
   const exp = Math.floor(Date.now() / 1000) + linkDays() * 86400;
   return `${process.env.PW_BASE_URL.replace(/\/$/, '')}/api/v1/batches/${job.id}/download?exp=${exp}&sig=${linkSig(job.id, exp)}`;
+}
+/**
+ * A link's batch, when its owner may still run its report now (as the run itself checks before every item): a link
+ * stops when the owner is disabled, demoted past it or loses access, or the report goes. { job } or null.
+ * @param {string} id
+ */
+export async function linkJob(id) {
+  const t = await store().get('jobs', id);
+  const job = t ? JSON.parse(t) : null;
+  if (!job?.download) return null;
+  try {
+    const p = job.owner ? await principalFromId(job.owner, job.ownerKey, { session: !!job.ownerSession, since: job.ownerSince || null }) : defaultPrincipal();
+    if (job.templateRef) await loadTemplate(job.templateRef, p); else if (!canDesign(p)) return null;
+  } catch { return null; }
+  return job;
 }
 /** True for a link downloadLink made for this job that has not expired. @param {string} id @param {string|null} exp @param {string|null} sig */
 export function linkOk(id, exp, sig) {
@@ -223,7 +238,7 @@ async function run(job, owner, stopAfter) {
   // as the owner is now: the template must still be theirs to view; an inline definition needs a designer or a service.
   // Checked at the start (throws: the job fails, workOnce) and again before every item.
   const allowed = async () => {
-    const p = job.owner ? await principalFromId(job.owner, job.ownerKey, { session: !!job.ownerSession }) : defaultPrincipal(); // no owner: no one's
+    const p = job.owner ? await principalFromId(job.owner, job.ownerKey, { session: !!job.ownerSession, since: job.ownerSince || null }) : defaultPrincipal(); // no owner: no one's
     await loadTemplate(job.templateRef || def, p);
     return p;
   };
@@ -359,7 +374,7 @@ async function notify(job) {
   const headers = { 'content-type': 'application/json', 'user-agent': 'Pagewright' };
   if (process.env.PW_WEBHOOK_SECRET) headers['x-pagewright-signature'] = 'sha256=' + crypto.createHmac('sha256', process.env.PW_WEBHOOK_SECRET).update(body).digest('hex');
   try {
-    const owner = job.owner ? await principalFromId(job.owner, job.ownerKey, { session: !!job.ownerSession }) : defaultPrincipal(); // as the owner is now
+    const owner = job.owner ? await principalFromId(job.owner, job.ownerKey, { session: !!job.ownerSession, since: job.ownerSince || null }) : defaultPrincipal(); // as the owner is now
     const res = await serverFetch(job.self, { internal: canDesign(owner) })(job.webhook, { method: 'POST', headers, body });
     job.webhookStatus = res.status;
   } catch (e) { job.webhookStatus = `error: ${e.message}`; }

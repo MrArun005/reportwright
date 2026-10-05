@@ -196,6 +196,29 @@ export function secondFactor(u, settings) {
   return settings.require2fa.includes(u.role) ? 'enrol' : null;
 }
 
+const ENROL_MS = 15 * 60 * 1000;
+/**
+ * A one-time code mailed to the account before a first enrolment at sign-in (the password alone must not be enough to
+ * bind an authenticator: whoever has it could enrol first). Returns the code (to mail), stores only its hash.
+ * @param {string} email
+ */
+export function issueEnrolCode(email) {
+  return withLock('acl', async () => {
+    const u = await getUser(email);
+    if (!u) throw fail('No such user.', 404);
+    const code = String(crypto.randomInt(0, 1e8)).padStart(8, '0');
+    await save({ ...u, enrolCode: { hash: crypto.createHash('sha256').update(`${u.email}.${code}`).digest('hex'), expires: Date.now() + ENROL_MS } });
+    return code;
+  });
+}
+/** True when the mailed enrolment code is right and fresh (it stays until enrolment ends). @param {any} u @param {string} code */
+export function enrolCodeOk(u, code) {
+  const r = u?.enrolCode;
+  if (!r || !(r.expires > Date.now()) || typeof code !== 'string' || !/^\d{8}$/.test(code.trim())) return false;
+  const h = crypto.createHash('sha256').update(`${u.email}.${code.trim()}`).digest('hex');
+  return crypto.timingSafeEqual(Buffer.from(h), Buffer.from(String(r.hash).padEnd(64).slice(0, 64)));
+}
+
 /** Start enrolling: a new secret, kept pending until a code from it is confirmed. { secret, uri, qr (SVG) } @param {string} email */
 export function startTwoFactor(email) {
   return withLock('acl', async () => {
@@ -225,7 +248,7 @@ export function enableTwoFactor(email, code) {
     if (!(await useCode(u.email, secret, code))) throw fail('That code is not right. Check the time on your phone and try the next code.', 400);
     const { codes, hashes } = newRecoveryCodes();
     const next = { ...u, totp: { secret: u.totpPending.secret, enabledAt: new Date().toISOString() }, recovery: hashes, sessionVersion: (u.sessionVersion || 0) + 1, updatedAt: new Date().toISOString() };
-    delete next.totpPending;
+    delete next.totpPending; delete next.enrolCode;
     await save(next);
     return { codes, user: next };
   });

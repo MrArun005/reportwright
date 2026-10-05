@@ -10,7 +10,7 @@ export const runtime = 'nodejs';
 export async function POST(req) {
   if (!accountsOn()) return Response.json({ error: 'Accounts are off on this server (PW_AUTH is not "users").' }, { status: 404 });
   const slot = await attempt(`reset-confirm:${clientAddress(req)}`, 20, 3600 * 1000);
-  if (!slot.ok) return Response.json({ error: 'Too many tries. Try again later.' }, { status: 429, headers: { 'retry-after': '3600' } });
+  if (!slot.ok) { await audit('auth.reset_failed', { req, status: 'denied', detail: { reason: 'rate limited' } }); return Response.json({ error: 'Too many tries. Try again later.' }, { status: 429, headers: { 'retry-after': '3600' } }); }
   const body = await req.json().catch(() => ({}));
   try {
     const email = await useReset(body?.token, body?.password);
