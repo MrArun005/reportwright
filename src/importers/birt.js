@@ -54,6 +54,7 @@ export function importBirt(input, opts = {}) {
   if (r.error) return r;
   const warnings = [...notes, ...r.warnings].map(w => w.replace(/ActiveReports/g, 'BIRT'));
   r.definition.arithmetic = 'double'; // JavaScript and Java compute with IEEE doubles
+  r.definition.bandRows = 'first-last'; // headers are evaluated on their first row, footers on their last
   return { definition: r.definition, warnings: [...new Set(warnings)], stats: r.stats };
 }
 
@@ -172,10 +173,11 @@ function toRdlx(root, notes, reportName) {
           if (AGG[m]) {
             const args = a();
             if (args.length > 1 && !(n.args[1].k === 'null' || (n.args[1].k === 'bool' && n.args[1].v))) throw new Untranslatable(`Total.${n.name} with a filter`);
-            const grp = n.args[2]?.k === 'str' ? n.args[2].v : c.group;
-            return { s: `${AGG[m]}(${args[0]?.s ?? '1'}${grp && grp !== 'Overall' ? `, "${grp}"` : ''})`, t: 'num', p: 9 };
+            // BIRT: no group (or "Overall") is the whole table or list wherever the cell is (N1); a named group is that group
+            const grp = n.args[2]?.k === 'str' && n.args[2].v !== 'Overall' ? n.args[2].v : c.region;
+            return { s: `${AGG[m]}(${args[0]?.s ?? '1'}${grp ? `, "${String(grp).replace(/"/g, '""')}"` : ''})`, t: 'num', p: 9 };
           }
-          if (RUNNING[m]) return { s: `RunningValue(${a()[0]?.s ?? '1'}, ${RUNNING[m]})`, t: 'num', p: 9 };
+          if (RUNNING[m]) { const grp = n.args[2]?.k === 'str' && n.args[2].v !== 'Overall' ? n.args[2].v : c.region; return { s: `RunningValue(${a()[0]?.s ?? '1'}, ${RUNNING[m]}${grp ? `, "${String(grp).replace(/"/g, '""')}"` : ''})`, t: 'num', p: 9 }; }
           throw new Untranslatable(`Total.${n.name}()`);
         }
         if (cls === 'BirtDateTime') {

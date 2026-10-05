@@ -100,6 +100,7 @@ export async function render(def0, opts = {}) {
     nullPropagation: def.nullPropagation === true, // Nothing: VB semantics unless the report asks for SQL nulls (expr/evaluate.js)
     // + - * and Sum on decimal values (SSRS Decimal: 0.1 + 0.2 = 0.3) unless the report asks for IEEE doubles, as Java and JavaScript compute (imported JasperReports and BIRT reports)
     doubles: def.arithmetic === 'double',
+    bandRows: def.bandRows, // "first-last": table headers read the first data row, footers the last (imported BIRT reports; items/index.js)
     // dates on the wall clock of the report's time zone, else the render's (the server passes the viewer's), else the host's
     timeZone: timeZone || undefined, caseSensitive: def.caseSensitive === true, // text order and grouping (expr/evaluate.js sortCompare)
     functions: functionTable(def, fnCount), clock,

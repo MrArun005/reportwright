@@ -601,7 +601,10 @@ register('table', {
     const endBand = () => { for (const s of openSpans) closeSpan(s); openSpans = []; };
 
     // table header
-    const headerUnits = (item.header || []).map(r => layRow(r, base, 'header')).filter(Boolean);
+    // bandRows "first-last" (BIRT): a header row is evaluated on the first data row, a footer row on the last (fields and
+    // running values); the default (RDL) runs a group header's running values over its group and reads the first row
+    const fl = base.bandRows === 'first-last';
+    const headerUnits = (item.header || []).map(r => layRow(r, fl && rows.length ? { ...base, pendingRows: [rows[0]] } : base, 'header')).filter(Boolean);
     endBand();
     const headerHeight = headerUnits.reduce((s, u) => s + u.height, 0);
     if (item.repeatHeader !== false) repeatH = headerHeight;
@@ -695,7 +698,7 @@ register('table', {
         const open = !g.collapsible ? true : (lc.state?.toggles?.[tkey] ?? dflt);
         const start = units.length;
         // a group header comes before its rows: RunningValue and RowNumber over a scope count them too (RDL)
-        const hctx = g.header?.length ? { ...gctx, pendingRows: recOf.get(bk) || bk.rows } : gctx;
+        const hctx = g.header?.length ? { ...gctx, pendingRows: fl ? [bk.rows[0]] : recOf.get(bk) || bk.rows } : gctx;
         const hu = (g.header || []).map((r, ri) => layRow(r, hctx, 'groupHeader', { level, ...(ri === 0 && g.collapsible ? { toggle: { key: tkey, open } } : {}) })).filter(Boolean);
         endBand();
         const before = units.length;
@@ -718,7 +721,8 @@ register('table', {
         }
         // keep a group header with the group's content, never with the next group
         if (hu.length && units.length > before) hu[hu.length - 1].keepWithNext = true;
-        const fu = (g.footer || []).map(r => layRow(r, gctx, 'groupFooter', { level })).filter(Boolean);
+        const fctx = fl ? { ...gctx, fields: bk.rows[bk.rows.length - 1] } : gctx;
+        const fu = (g.footer || []).map(r => layRow(r, fctx, 'groupFooter', { level })).filter(Boolean);
         endBand();
         if (rep && units.length > before) {
           let off = item.repeatHeader !== false ? headerHeight : 0;
@@ -758,7 +762,7 @@ register('table', {
 
     // a total of the first rows only would be wrong: no footer in a partial (first pages) render
     const fStart = units.length;
-    const footerUnits = lc.rowBudget?.cut ? [] : (item.footer || []).map(r => layRow(r, base, 'footer')).filter(Boolean);
+    const footerUnits = lc.rowBudget?.cut ? [] : (item.footer || []).map(r => layRow(r, fl && rows.length ? { ...base, fields: rows[rows.length - 1] } : base, 'footer')).filter(Boolean);
     endBand();
     if (footerUnits.length) footerUnits[0].keepWithPrevious = true;
     if (item.printAtBottom && footerUnits.length && !lc.fixed) {
