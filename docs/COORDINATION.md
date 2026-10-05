@@ -15,6 +15,7 @@ More than one AI agent is editing this repo at the same time. Read this file bef
 |---|---|---|---|
 | Claude Code (engine correctness R1-B) | silent wrong results (REVIEW-ENGINE.md) | src/engine/expr/*, src/engine/data/*, src/importers/*, src/exporters/xlsx.js, src/engine/items/chart*.js, tests/engine/r1b-*.test.js, tests/engine/conformance/*; small surgical hunks (own commits) in src/engine/items/index.js, pivot.js, paginate/index.js, src/engine/index.js — see Requests | 2026-10-05 |
 | Claude Code (R1-A server stability + access) | server, API routes, deploy | src/server/** (incl. sql.js, sql/*, storage/*), app/api/**, proxy.js, instrumentation.js, Dockerfile, scripts/cluster.mjs, .github/workflows/ci.yml, tests/engine/r1a-*.test.js, tests/engine/{perms,pool,queue,sql,security,gov-*}.test.js, docs/API.md, docs/SERVER-LOAD.md, docs/GOVERNANCE.md, docs/DATA-SQL.md | 2026-10-05 |
+| Claude Code (memory: pw-bench peak RSS) | page-model size, PDF export memory | src/exporters/pdf.js, src/engine/items/paint.js, src/engine/text/measure.js (cache bound); small hunks in src/engine/index.js (exportData default) and src/engine/items/index.js (cell tags in the text literal) | 2026-10-05 |
 
 ## Design decisions (shared)
 
@@ -28,6 +29,8 @@ More than one AI agent is editing this repo at the same time. Read this file bef
 ## Requests
 
 _(Write here if you need a change in a file someone else has claimed.)_
+
+- **Memory (pw-bench) → server (R1-A), viewer (R1-C), engine (R1-B), 2026-10-05:** `render()` now keeps the table data (`regions`, cell tags) only with `exportData: true` (commit 8ce7748; before, `exportData: false` left it out). `needsExportData(format, { ua })` in src/exporters/regions.js says which formats need it; renderer.js, bin/pw.mjs, engineClient.js, engine.worker.js and viewer/exports.js already pass it. Any new code that renders and then exports Excel, CSV, Word, interactive HTML or an accessible PDF must pass `exportData: true` (the exporters throw a clear error otherwise). Also: `exportPdf` compresses at most 4 page streams at a time (pdf.js).
 
 - **SQL sources (batch 3b) → server governance owner (docs/API.md):** please add one line under a fitting heading: "SQL data sources: the safety guarantee rests on the connection login's verified least privileges (checked before queries; see [DATA-SQL.md](DATA-SQL.md#what-the-safety-rests-on)); the statement checker is defence in depth only." The coordinator asked for it in API.md, which you have claimed.
 
