@@ -76,6 +76,10 @@ const RESERVE_MB = 512, WORKER_EXTRA_MB = 96; // the request thread and its cach
  * Worker count and heap for a machine: { cores, memMB, heapMB, workers }. Pure (tests pass their own numbers).
  * @param {{ cores: number, memMB: number, heapMB?: number|null, workers?: number|null }} m
  */
+/** Tests: the ordering rule. */
+export const _next = () => next();
+export const _queue = () => P.queue;
+
 export function memoryPlan({ cores, memMB, heapMB: heap = null, workers = null, grownMB = 0 }) {
   // start at 1 GB a worker (a 250k-row grouped report peaks at ~770 MB); after a worker ran out of memory, new workers
   // get the larger heap that render needed (grownMB, up to 2 GB): fewer workers, but the big report then fits
@@ -233,14 +237,18 @@ function died(s, e, exited = false) {
   pump();
 }
 
-/** The next job for a free worker: interactive first; then the principal with the fewest running, then the one served
- *  longest ago (round robin); then the oldest. */
+/** The next job for a free worker: interactive first; then the principal with the fewest running; then a small render
+ *  (estimated under SMALL_MS) before a big one, unless the big one has waited AGE_MS already (no starvation); then
+ *  the principal served longest ago (round robin); then the oldest. */
+const SMALL_MS = 1500, AGE_MS = 5000;
 function next() {
   let best = -1;
+  const now = Date.now();
   const run = (j) => P.running.get(j.who) || 0, last = (j) => P.served.get(j.who) || 0;
+  const big = (j) => (j.est >= SMALL_MS && now - j.at < AGE_MS ? 1 : 0);
   for (let i = 0; i < P.queue.length; i++) {
     const j = P.queue[i], b = P.queue[best];
-    if (!b || j.cls < b.cls || (j.cls === b.cls && (run(j) < run(b) || (run(j) === run(b) && last(j) < last(b))))) best = i;
+    if (!b || j.cls < b.cls || (j.cls === b.cls && (run(j) < run(b) || (run(j) === run(b) && (big(j) < big(b) || (big(j) === big(b) && last(j) < last(b))))))) best = i;
   }
   return best < 0 ? null : P.queue.splice(best, 1)[0];
 }

@@ -32,3 +32,17 @@ describe('pool sizing', () => {
     expect(sqliteDataSources()).toBe(true);
   });
 });
+
+describe('interactive ordering', () => {
+  it('a small render goes before a big one queued earlier; a big one that waited 5 s is not starved', async () => {
+    const { _next, _queue } = await import('../../src/server/pool.js');
+    const q = _queue(); q.length = 0;
+    const job = (who, est, ago = 0) => ({ cls: 0, who, est, at: Date.now() - ago });
+    q.push(job('a', 20000), job('b', 200));
+    expect(_next().who).toBe('b');
+    expect(_next().who).toBe('a');
+    q.push(job('a', 20000, 6000), job('b', 200));
+    expect(_next().who).toBe('a');
+    q.length = 0;
+  });
+});
