@@ -11,10 +11,11 @@ import ptBR from './pt-BR.js';
 import ar from './ar.js';
 import gov from './gov.js';
 import ux from './ux.js';
+import home from './home.js';
 
-// gov.js: the server governance strings (batch 5); ux.js: the designer and viewer UX batch (R1-C). Both merged into each language
+// gov.js: the server governance strings (batch 5); ux.js: the designer and viewer UX batch (R1-C); home.js: the Overview. Both merged into each language
 const base = { en, hi, es, fr, de, ja, zh, 'pt-BR': ptBR, ar };
-export const STRINGS = Object.fromEntries(Object.entries(base).map(([k, v]) => [k, { ...v, ...gov[k], ...ux[k] }]));
+export const STRINGS = Object.fromEntries(Object.entries(base).map(([k, v]) => [k, { ...v, ...gov[k], ...ux[k], ...home[k] }]));
 export const LANGUAGES = Object.keys(STRINGS);
 const RTL = new Set(['ar']);
 

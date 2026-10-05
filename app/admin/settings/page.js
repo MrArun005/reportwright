@@ -1,5 +1,6 @@
 import SettingsAdmin from './SettingsAdmin.jsx';
 import { dirOf, pickLang } from '@/i18n/index.js';
+import Shell from '@/home/Shell.jsx';
 
 export const metadata = { title: 'Settings · Pagewright' };
 export const dynamic = 'force-dynamic';
@@ -8,8 +9,10 @@ export const dynamic = 'force-dynamic';
 export default async function SettingsPage({ searchParams }) {
   const lang = pickLang((await searchParams)?.lang);
   return (
-    <main className="home" dir={dirOf(lang)} lang={lang}>
-      <SettingsAdmin lang={lang} />
-    </main>
+    <Shell lang={lang} active="settings">
+      <main className="home" dir={dirOf(lang)} lang={lang}>
+        <SettingsAdmin lang={lang} />
+      </main>
+    </Shell>
   );
 }
