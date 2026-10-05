@@ -14,6 +14,8 @@
     "test": "vitest run",
     "pw": "node bin/pw.mjs",
     "test:reports": "node bin/pw.mjs test reports",
+    "test:diff": "vitest run tests/diff",
+    "diff:engines": "node scripts/diff-engines.mjs",
     "lint:engine": "node scripts/check-engine-boundary.mjs",
     "typecheck": "node scripts/typecheck.mjs",
     "test:e2e": "for t in build-from-scratch smoke expr-editor phase2 phase3 phase4 api progressive phase-bc data-setup galleries charts-p5 tablix ai designer-gaps reuse ssrs-import outline-charts layout-charts-b4 exports-b2 import-b6 data-xml gov-b5 ux-r1c; do node tests/e2e/$t.mjs || exit 1; done",
