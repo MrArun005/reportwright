@@ -539,9 +539,9 @@ function emCall(n, env, d) {
       if (o.t !== 'num' || !a.length) break;
       const rm = n.args[1] && dotted(n.args[1]);
       const mode = (rm ? rm.replace(/^(java\.math\.)?(RoundingMode|BigDecimal)\./, '') : 'UNNECESSARY').replace(/^ROUND_/, '');
-      const R = { HALF_UP: 'RoundHalfAway', HALF_EVEN: 'Round', UNNECESSARY: null }[mode];
-      if (R === null) return o;
-      if (R) return fn(R, [o, a[0]], 'num');
+      if (mode === 'UNNECESSARY') return o;
+      if (mode === 'HALF_UP') return A(`Math.Round(${o.s}, ${a[0].s}, MidpointRounding.AwayFromZero)`, 'num');
+      if (mode === 'HALF_EVEN') return fn('Round', [o, a[0]], 'num');
       if (mode === 'DOWN' || mode === 'FLOOR' || mode === 'UP' || mode === 'CEILING') {
         const f = { DOWN: 'Fix', FLOOR: 'Floor', CEILING: 'Ceiling' }[mode];
         const k = `(10 ^ ${wrap(a[0], 9)})`;

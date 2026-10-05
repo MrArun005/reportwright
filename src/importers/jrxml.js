@@ -145,21 +145,48 @@ function toRdlx(root, notes, charts, reportName) {
     if (rt === 'Page' || rt === 'Column') note(`Variables that restart on each ${rt.toLowerCase()} (${v.attrs.name}) add up over their band's rows instead: Pagewright has no page totals over data rows.`);
     return rt === 'Report' ? DETAILS : null;
   };
+  /** the groups' keys as VB, outermost first (JasperValue reads them to find where groups break); null if one cannot be read */
+  let keysVb;
+  const groupKeys = () => {
+    if (keysVb === undefined) { try { keysVb = groups.map(g => vb(exprOf(g, 'expression', 'groupExpression') ?? '""', {})); } catch (e) { if (!(e instanceof Untranslatable)) throw e; keysVb = null; } }
+    return keysVb;
+  };
+  const BAND_AT = { detail: 'detail', gh: 'header', gf: 'footer', title: 'start', summary: 'end' };
+  /**
+   * A variable as Jasper prints it (JasperValue in the engine: the value at the band's time, or at the end of the
+   * report or of a group for evaluationTime Report, Group or Auto). null where it does not apply: page and column
+   * bands, charts, page and column resets.
+   */
+  function jasper(calc, inner, reset, c) {
+    const at = BAND_AT[c.band];
+    const keys = at && reset != null ? groupKeys() : null;
+    if (!keys) return null;
+    let end = -1;
+    if (c.evalTime === 'Report') end = 0;
+    else if (c.evalTime === 'Group') { const k = groups.findIndex(g => g.attrs.name === c.evalGroup); end = k >= 0 ? k + 1 : -1; }
+    else if (c.evalTime === 'Auto') end = reset;
+    return `JasperValue("${MAIN}", "${calc}", ${inner}, "${at}", ${reset}, ${end}${keys.map(k => `, ${k}`).join('')})`;
+  }
+  const depthOf = (gname) => { const k = groups.findIndex(g => g.attrs.name === gname); return k >= 0 ? k + 1 : null; };
   /** $V{name} as VB: built-ins, then the report's variables (inlined) */
   function varRef(n, c, depth) {
     if (depth > 16) throw new Untranslatable('variables that use each other more than 16 deep');
     // evaluated at report end, PAGE_NUMBER is the last page (the total); at Page, Column or Auto it is the current page
     if (n === 'PAGE_NUMBER' || n === 'MASTER_CURRENT_PAGE') {
       if (c.evalTime === 'Group') note('A page number evaluated at the end of a group ($V{PAGE_NUMBER}, evaluationTime="Group") shows the page it is printed on.');
-      return { s: c.evalTime === 'Report' ? 'Globals!TotalPages' : 'Globals!PageNumber', t: 'num', p: 9, i: true };
+      // Report and Auto (PAGE_NUMBER resets with the report) print the last page number: the total (Jasper's "Page 2 of")
+      return { s: c.evalTime === 'Report' || c.evalTime === 'Auto' ? 'Globals!TotalPages' : 'Globals!PageNumber', t: 'num', p: 9, i: true };
     }
     if (n === 'MASTER_TOTAL_PAGES') return { s: 'Globals!TotalPages', t: 'num', p: 9, i: true };
     if (n === 'REPORT_COUNT') {
+      const j = jasper('Rows', '1', 0, c);
+      if (j) return { s: j, t: 'num', p: 9, i: true };
       if (!(c.inDetail && !c.evalLater)) return { s: `CountRows("${DETAILS}")`, t: 'num', p: 9, i: true };
       if (groups.length) note('Row numbers and running totals over the whole report restart at each group here (REPORT_COUNT, report-wide sums in the detail band).');
       return { s: `RowNumber("${DETAILS}")`, t: 'num', p: 9, i: true };
     }
     const gc = /^(.+)_COUNT$/.exec(n);
+    if (gc && groupNames.has(gc[1]) && !vars.has(n) && jasper('Rows', '1', depthOf(gc[1]), c)) return { s: jasper('Rows', '1', depthOf(gc[1]), c), t: 'num', p: 9, i: true };
     if (gc && groupNames.has(gc[1]) && !vars.has(n)) return { s: c.inDetail && !c.evalLater ? `RowNumber("${gc[1]}")` : `CountRows("${gc[1]}")`, t: 'num', p: 9, i: true };
     if (n === 'PAGE_COUNT' || n === 'COLUMN_COUNT' || n === 'COLUMN_NUMBER') throw new Untranslatable(`the built-in variable ${n}`);
     const v = vars.get(n);
@@ -178,10 +205,16 @@ function toRdlx(root, notes, charts, reportName) {
     if (!agg) throw new Untranslatable(`the ${calc} calculation of ${n}`);
     const inner = sub(e, { ...c, inDetail: false }, depth);
     if (/\b(Sum|Count|CountDistinct|Avg|Min|Max|StDev|Var|First|RunningValue|RowNumber|CountRows)\(/.test(inner.s)) throw new Untranslatable(`the variable ${n}, a total of other totals`);
-    if (v.attrs.incrementType && v.attrs.incrementType !== 'None') note(`Variables that add up only at a group or page end (${n}) add up every row in Pagewright.`);
+    if (v.attrs.incrementType && v.attrs.incrementType !== 'None' && v.attrs.incrementType !== 'Group') note(`Variables that add up only at a group or page end (${n}) add up every row in Pagewright.`);
     // Count and DistinctCount are Longs; a Sum, Highest… has the variable's class (Integer: no ".0" when printed)
     const ik = agg === 'Count' || agg === 'CountDistinct' || integral(v.attrs.class);
     if (c.chart) return { s: `${agg}(${inner.s})`, t: 'num', p: 9 };
+    const rt = v.attrs.resetType || 'Report';
+    const reset = rt === 'Report' ? 0 : rt === 'Group' ? depthOf(v.attrs.resetGroup) : rt === 'None' ? 0 : null;
+    const J = { Sum: 'Sum', Count: 'Count', Average: 'Average', Lowest: 'Lowest', Highest: 'Highest', DistinctCount: 'DistinctCount', First: 'First' }[calc];
+    const inc = v.attrs.incrementType === 'Group' ? depthOf(v.attrs.incrementGroup) : !v.attrs.incrementType || v.attrs.incrementType === 'None' ? 0 : null;
+    const jv = J && inc != null && jasper(inc ? `${J}@${inc}` : J, inner.s, reset, c);
+    if (jv) return { s: jv, t: agg === 'First' ? inner.t : 'num', p: 9, i: ik };
     const scope = scopeOf(v);
     const sc = scope ? `, "${scope}"` : '';
     if (c.inDetail && !c.evalLater) {
@@ -380,7 +413,7 @@ function toRdlx(root, notes, charts, reportName) {
     const st = { ...(defStyle ? styleAttrs(defStyle.attrs.name) : {}), ...(a.style ? styleAttrs(a.style) : {}), ...stripUndef(normAttrs(re.attrs === e.attrs ? e.attrs : { ...re.attrs, ...e.attrs, ...(n.te?.attrs || {}), ...(kid(n.te, 'font')?.attrs || {}) })), ...boxAttrs(kid(e, 'box')) };
     if (a.style && !styles.has(a.style)) (it.__notes ||= []).push(`its style "${a.style}" is not in the file (a style template?), so it has the default style.`);
     const evalLater = /^(Report|Group|Page|Column|Auto)$/.test(a.evaluationTime || '');
-    const ctx = { ...c, evalLater, evalTime: a.evaluationTime || 'Now' };
+    const ctx = { ...c, evalLater, evalTime: a.evaluationTime || 'Now', evalGroup: a.evaluationGroup };
     const pw = exprOf(re, 'printWhenExpression') ?? exprOf(e, 'printWhenExpression');
     if (pw) { const v = setting(pw, it, 'the condition that prints it', ctx); if (v) it.Visibility = { Hidden: `=Not (${v.slice(1)})` }; }
     if (a.positionType === 'FixRelativeToBottom') (it.__notes ||= []).push('it stays at the bottom of a band that grows in JasperReports; here it keeps its place.');
@@ -681,20 +714,20 @@ function toRdlx(root, notes, charts, reportName) {
   if (cols > 1) note(`The detail prints in ${cols} columns in JasperReports; it prints in ${cols} columns here too, filled down the page first.`);
   if (A.printOrder === 'Horizontal') note('Columns fill across in JasperReports; here they fill down.');
 
-  const title = stack(kid(root, 'title'), {});
+  const title = stack(kid(root, 'title'), { band: 'title' });
   const pageHeader = stack(kid(root, 'pageHeader'), { page: true });
   const colHeader = stack(kid(root, 'columnHeader'), { page: true });
   const colFooter = stack(kid(root, 'columnFooter'), { page: true });
   const pageFooter = stack(kid(root, 'pageFooter'), { page: true });
   const lastPageFooter = kid(root, 'lastPageFooter');
   if (lastPageFooter && bandH(bandOf(lastPageFooter))) note('The last page footer is not converted: every page gets the page footer.');
-  const summary = stack(kid(root, 'summary'), {});
-  const detail = stack(kid(root, 'detail'), { inDetail: true });
+  const summary = stack(kid(root, 'summary'), { band: 'summary' });
+  const detail = stack(kid(root, 'detail'), { inDetail: true, band: 'detail' });
   for (const [k, what] of [['background', 'The background band (a watermark)'], ['noData', 'The "no data" band']]) if (kid(root, k) && bandH(bandOf(kid(root, k)))) note(`${what} is not converted.`);
   if (colHeader.items.length) note('The column header is printed at the top of every page, as part of the page header.');
 
   /** @type {any[]} */
-  const Groups = groups.map((g) => {
+  const Groups = groups.map((g, gi) => {
     const key = exprOf(g, 'expression', 'groupExpression');
     /** @type {Record<string, any>} */
     const G = { Group: { Name: g.attrs.name, GroupExpressions: [] } };
@@ -703,8 +736,8 @@ function toRdlx(root, notes, charts, reportName) {
       if (v) G.Group.GroupExpressions.push(v);
       for (const n of G.__notes || []) note(n);
     }
-    const h = stack(kid(g, 'groupHeader'), {});
-    const f = stack(kid(g, 'groupFooter'), {});
+    const h = stack(kid(g, 'groupHeader'), { band: 'gh', gi: gi + 1 });
+    const f = stack(kid(g, 'groupFooter'), { band: 'gf', gi: gi + 1 });
     G.Header = { Height: pt(h.h), ReportItems: h.items };
     G.Footer = { Height: pt(f.h), ReportItems: f.items };
     if (g.attrs.isStartNewPage === 'true' || g.attrs.startNewPage === 'true') G.Group.PageBreak = { BreakLocation: 'Between' };

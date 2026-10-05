@@ -10,14 +10,14 @@ const jr = (body, { lang = 'java', fields = '', footer = '' } = {}) => `<jasperR
 const tf = (expr, { x = 0, pattern, evalTime } = {}) => `<textField${pattern ? ` pattern="${pattern}"` : ''}${evalTime ? ` evaluationTime="${evalTime}"` : ''}><reportElement x="${x}" y="0" width="120" height="14"/><textFieldExpression><![CDATA[${expr}]]></textFieldExpression></textField>`;
 
 describe('JRXML import', () => {
-  it('$V{PAGE_NUMBER} is the current page unless evaluationTime is Report', async () => {
+  it('$V{PAGE_NUMBER} is the current page unless evaluationTime is Report or Auto (ground truth: Jasper 7.0.8 prints the total for Auto)', async () => {
     const footer = `<pageFooter><band height="16">${tf('"Page " + $V{PAGE_NUMBER}', { evalTime: 'Page' })}${tf('" of " + $V{PAGE_NUMBER}', { x: 200, evalTime: 'Report' })}${tf('"auto " + $V{PAGE_NUMBER}', { x: 400, evalTime: 'Auto' })}</band></pageFooter>`;
     const r = importJrxml(jr(tf('$F{n}'), { fields: '<field name="n" class="java.lang.Integer"/>', footer }));
     const rows = Array.from({ length: 120 }, (_, n) => ({ n }));
     const out = await render(r.definition, { fontStore, sources: { JasperDataSource: rows } });
     expect(out.pages.length).toBeGreaterThan(1);
     const last = out.pages.length;
-    out.pages.forEach((p, i) => expect(texts(p)).toEqual(expect.arrayContaining([`Page ${i + 1}`, `of ${last}`, `auto ${i + 1}`])));
+    out.pages.forEach((p, i) => expect(texts(p)).toEqual(expect.arrayContaining([`Page ${i + 1}`, `of ${last}`, `auto ${last}`])));
   });
   it('Java numbers: int / int truncates, (int) and intValue() truncate, Math.round is floor(x + 0.5), DecimalFormat is half even', async () => {
     const fields = '<field name="q" class="java.lang.Integer"/><field name="amt" class="java.math.BigDecimal"/><field name="neg" class="java.lang.Double"/>';

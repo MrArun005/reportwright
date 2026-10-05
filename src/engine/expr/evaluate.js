@@ -895,6 +895,106 @@ Object.assign(FUNCTIONS, {
     return d;
   },
 });
+/* ------------------------------------------------------------- JasperReports variables */
+/**
+ * JasperValue(dataSet, calc, expr, at, reset, end, key1…keyN): a JasperReports report variable as Jasper prints it
+ * (the JRXML importer writes these). Jasper reads the data set's rows once, in order, and a variable adds each row in;
+ * it starts again (empty: null) when its reset group starts. Groups break on every change of their key (key1 is the
+ * outermost). The value depends on when the text field is evaluated:
+ *   at "detail": after the current row; "header": before the group's first row (a variable that resets with this
+ *   group, or an inner one, is still empty); "footer": after the group's last row; "start": before any row (title);
+ *   "end": after the last row (summary).
+ *   end 0: evaluationTime="Report" (after the last row); k: evaluationTime="Group" of group k (after the last row of
+ *   the group-k instance there); -1: the band's own time.
+ *   reset 0: the whole report; k: group k.
+ *   calc: Sum, Count (values that are not null), Rows (every row: REPORT_COUNT, <group>_COUNT), Average, Lowest,
+ *   Highest, DistinctCount, First.
+ * Linear: each (rows, expression, calc, reset) runs once per render, then every cell reads its index.
+ */
+const JASPER = new WeakMap();
+let astIds = new WeakMap(), astNext = 0;
+const astId = (a) => { let i = astIds.get(a); if (i === undefined) { i = ++astNext; astIds.set(a, i); } return i; };
+function jasperValue(n, ctx) {
+  const a = n.args;
+  if (a.length < 6) throw new ExprError('JasperValue needs a data set, a calculation, an expression, a time, a reset and an end', n.p);
+  const ds = String(evaluate(a[0], ctx)), at = String(evaluate(a[3], ctx)).toLowerCase();
+  // "Sum@k": incrementType="Group" of group k (the variable adds a value only on each group-k instance's last row)
+  const [calc, incrS] = String(evaluate(a[1], ctx)).toLowerCase().split('@');
+  const incr = incrS ? Math.trunc(Number(incrS)) || 0 : 0;
+  const reset = Math.trunc(Number(evaluate(a[4], ctx))) || 0, end = Math.trunc(Number(evaluate(a[5], ctx)));
+  const keys = a.slice(6);
+  if (reset < 0 || reset > keys.length || end > keys.length || incr < 0 || incr > keys.length) throw new ExprError('JasperValue: no such group', n.p);
+  const rows = ctx.dataSets?.[ds];
+  if (!rows) throw new ExprError(`JasperValue: the data set "${ds}" does not exist`, n.p);
+  let byRows = JASPER.get(rows);
+  if (!byRows) { byRows = new Map(); JASPER.set(rows, byRows); }
+  const kid = keys.map(astId).join(',');
+  let info = byRows.get(`k|${kid}`);
+  if (!info) { info = jasperIndex(rows, keys, ctx); byRows.set(`k|${kid}`, info); }
+  const N = rows.length;
+  const posOf = (r) => (r ? info.pos.get(r) : undefined);
+  let anchor;
+  if (at === 'detail') anchor = posOf(ctx.fields);
+  else if (at === 'header') anchor = posOf(ctx.aggRows?.[0]);
+  else if (at === 'footer') anchor = posOf(ctx.aggRows?.[ctx.aggRows.length - 1]);
+  else if (at === 'start') anchor = -1;
+  else anchor = N - 1;
+  if (anchor === undefined) return null;
+  let b;
+  if (end === 0) b = N - 1;
+  else if (end > 0) b = N ? info.end[end][Math.max(0, anchor)] : -1; // the title: the end of the first instance
+  else b = at === 'header' ? anchor - 1 : anchor;
+  if (b < 0) return calc === 'rows' ? 0 : null; // REPORT_COUNT and <group>_COUNT start at 0, the others empty
+  // a header's time is before its group's first row, but after the resets that row brings
+  // (the built-in counts are 0 there, a variable is empty)
+  if (end < 0 && at === 'header' && reset > 0 && info.start[reset][anchor] > b) return calc === 'rows' ? 0 : null;
+  const vk = `v|${astId(a[2])}|${calc}|${reset}|${incr}|${kid}`;
+  let vals = byRows.get(vk);
+  if (!vals) { vals = jasperRun(rows, a[2], calc, reset ? info.start[reset] : null, incr ? info.end[incr] : null, ctx); byRows.set(vk, vals); }
+  return vals[b];
+}
+/** Each row's position, and per group depth the first and last row of the instance it is in (break on change). */
+function jasperIndex(rows, keys, ctx) {
+  const pos = new Map(rows.map((r, i) => [r, i]));
+  const kv = keys.map(k => mapRows(rows, k, ctx).map(v => (v instanceof Date ? v.getTime() : v)));
+  const start = [null], endA = [null];
+  for (let d = 1; d <= keys.length; d++) {
+    const st = new Array(rows.length), en = new Array(rows.length);
+    for (let i = 0; i < rows.length; i++) {
+      let brk = i === 0;
+      for (let k = 0; k < d && !brk; k++) if (kv[k][i] !== kv[k][i - 1]) brk = true;
+      st[i] = brk ? i : st[i - 1];
+    }
+    for (let i = rows.length - 1; i >= 0; i--) en[i] = i === rows.length - 1 || st[i + 1] !== st[i] ? i : en[i + 1];
+    start.push(st); endA.push(en);
+  }
+  return { pos, start, end: endA };
+}
+/** The variable's value after each row (null before its first value), restarting where `start` says. */
+function jasperRun(rows, ast, calc, start, incrEnd, ctx) {
+  const xs = calc === 'rows' ? null : mapRows(rows, ast, ctx);
+  const out = new Array(rows.length);
+  let sum = null, cnt = 0, nn = 0, mn = null, mx = null, first, seen = null;
+  for (let i = 0; i < rows.length; i++) {
+    if (i === 0 || (start && start[i] === i)) { sum = null; cnt = 0; nn = 0; mn = null; mx = null; first = undefined; seen = new Set(); }
+    const v = xs ? xs[i] : 1;
+    // incrementType Group: a value is added only on each group instance's last row
+    if (incrEnd && incrEnd[i] !== i) { out[i] = i && !(start && start[i] === i) ? out[i - 1] : null; continue; }
+    cnt++;
+    if (v != null && v !== '') {
+      nn++;
+      if (calc === 'sum' || calc === 'average') sum = sum == null ? Number(v) : add(sum, Number(v), ctx);
+      if (mn == null || cmpVal(v, mn) < 0) mn = v;
+      if (mx == null || cmpVal(v, mx) > 0) mx = v;
+      seen.add(v instanceof Date ? v.getTime() : v);
+    }
+    if (first === undefined) first = v ?? null;
+    out[i] = calc === 'sum' ? sum : calc === 'count' ? nn : calc === 'rows' ? cnt : calc === 'average' ? (nn ? sum / nn : null)
+      : calc === 'lowest' ? mn : calc === 'highest' ? mx : calc === 'distinctcount' ? seen.size : calc === 'first' ? first : null;
+  }
+  return out;
+}
+
 /** Names that may be written without brackets. */
 const CONSTANTS = { pi: Math.PI, e: Math.E };
 
@@ -1062,6 +1162,7 @@ function call(n, ctx) {
     return AGG[fn](mapRows(rows, args[0], ctx), ctx);
   }
   if (name === 'rank') return rank(n, ctx);
+  if (name === 'jaspervalue') return jasperValue(n, ctx);
   if (name === 'previous') return previous(n, ctx);
   if (name === 'groupindex') {
     const sc = args.length ? ctx.scopes?.[evaluate(args[0], ctx)] : ctx.group;
@@ -1105,7 +1206,7 @@ const MAX_FN_DEPTH = 32;
 const MAX_FN_CALLS = 1_000_000; // per function table, i.e. per render
 const MAX_FUNCTIONS = 200, MAX_FN_PARAMS = 32;
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const RESERVED = new Set(['rank', 'iif', 'switch', 'choose', 'lookup', 'lookupset', 'previous', 'groupindex', 'level', 'countrows', 'rownumber',
+const RESERVED = new Set(['rank', 'jaspervalue', 'iif', 'switch', 'choose', 'lookup', 'lookupset', 'previous', 'groupindex', 'level', 'countrows', 'rownumber',
   'runningvalue', 'distinctsum', 'aggregateif', 'code', 'fields', 'parameters', 'globals', 'parent', 'and', 'or', 'not', 'true', 'false', 'null', 'nothing']);
 const builtin = (lower) => RESERVED.has(lower) || lower in FUNCTIONS || lower in AGG || lower in CONSTANTS;
 

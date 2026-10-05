@@ -159,8 +159,9 @@ describe('a design: bands, groups, variables, styles, chart', () => {
       const t = out.pages.flatMap(texts);
       expect(t[0]).toBe('SALES BY REGION');
       expect(t.slice(1, 3)).toEqual(['Header', 'City']);
-      expect(t).toEqual(expect.arrayContaining(['Region North', 'Pune', '10.00', 'Nashik', '30.00', '30.00', '2 cities', 'Region South', '12.00', '20.00', '3 cities', '5 cities, 50.00 in total', 'Page 1', 'of 1']));
-      expect(r.warnings.join('\n')).toMatch(/restart at each group/); // the report-wide running sum restarts per group: said
+      expect(t).toEqual(expect.arrayContaining(['Region North', 'Pune', '10.00', 'Nashik', '30.00', '30.00', '2 cities', 'Region South', '35.00', '20.00', '3 cities', '5 cities, 50.00 in total', 'Page 1', 'of 1']));
+      // the report-wide running sum runs on across groups, as Jasper prints it (JasperValue; ground truth tests/diff)
+      expect(r.warnings.join('\n')).not.toMatch(/restart at each group/);
       expect(r.warnings.join('\n')).toMatch(/PW_DB_JASPERDATASOURCE/);
     });
   }
