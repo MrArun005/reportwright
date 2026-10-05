@@ -58,11 +58,33 @@ function lookOf(st, m) {
   }
   return l;
 }
+/** A number as formatted (sign, currency, digits with separators, percent, exponent): it never breaks across lines. */
+const NUMBER = /^[\s(+\-\u2212]*[\p{Sc}]?\s?[\p{Sc}A-Z]{0,3}\.?\s?[\d][\d.,'\u00a0\u202f\s]*(?:[eE][+-]?\d+)?\s?%?\)?\s?[\p{Sc}A-Z]{0,3}$/u;
+const MIN_FONT = 5; // pt: smaller than this is not shrunk to; the line is cut (a number) or broken (a word) instead
+/**
+ * The font size a wrapped text needs so that it breaks only between words: a number on one line, a word as wide as
+ * the box. At most 25% smaller for a word, 40% for a number; past that a word breaks inside (the last resort) and a
+ * number stays on its line (cut with an ellipsis).
+ */
+function fitSize(text, key, size, inner, m) {
+  const s = String(text);
+  if (s.length > 200) return size;
+  const num = NUMBER.test(s.trim());
+  const longest = num ? m.width(s.trim(), key, size) : Math.max(0, ...s.split(/\s+/).map(w => (w ? m.width(w, key, size) : 0)));
+  if (longest <= inner) return size;
+  const floor = Math.max(MIN_FONT, size * (num ? 0.6 : 0.75));
+  return Math.max(floor, Math.min(size, size * (inner / longest) - 0.01));
+}
 function layoutText(text, st, width, m, wrap) {
-  const { key, size, pad, lh } = lookOf(st, m);
+  const look = lookOf(st, m);
+  const { key, pad } = look;
   const inner = Math.max(1, width - pad[1] - pad[3]);
-  const lines = wrap && st.wrap !== false
-    ? m.wrap(text, key, size, inner)
+  const wraps = wrap && st.wrap !== false;
+  // a number never breaks, a word only when it is wider than the box even a little smaller (R4: "4,966,681.4|5")
+  const size = wraps && !m.direction(String(text), key) ? fitSize(text, key, look.size, inner, m) : look.size;
+  const lh = size === look.size ? look.lh : look.lh * (size / look.size);
+  const lines = wraps
+    ? (size !== look.size && NUMBER.test(String(text).trim()) ? [{ text: String(text).trim(), width: m.width(String(text).trim(), key, size), end: true }] : m.wrap(text, key, size, inner))
     : String(text).split(/\r?\n/).map((t) => {
       const dir = m.direction(t, key); // set for text that needs shaping or bidi
       return dir ? { text: t, width: m.width(t, key, size, dir), dir } : { text: t, width: m.width(t, key, size) };

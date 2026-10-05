@@ -245,3 +245,28 @@ describe('a busy server: data reads are tried again', () => {
     expect(n).toBe(1);
   });
 });
+
+describe('narrow columns: numbers never break, words only between words', () => {
+  const cellTexts = async (values, width) => {
+    const d = report([{ type: 'table', name: 'T', x: 0, y: 0, w: width, h: 14, dataSet: 'Rows', columns: [{ width }],
+      detail: [{ height: 14, cells: [{ value: '=Fields.v', style: { fontSize: 9, padding: [2, 3, 2, 3] } }] }] }], { data: { rows: values.map(v => ({ v })) } });
+    const m = await render(d, { fontStore });
+    return m.pages[0].items.filter(i => i.t === 'text').map(i => ({ lines: i.lines.map(l => l.text), size: i.size }));
+  };
+  it('a number wider than the cell stays on one line (a smaller font), never "4,966,681.4|5"', async () => {
+    const [n] = await cellTexts(['4,966,681.45'], 46);
+    expect(n.lines).toEqual(['4,966,681.45']);
+    expect(n.size).toBeLessThan(9);
+  });
+  it('one word a little wider than the cell: smaller, not "restructure|d"', async () => {
+    const [w] = await cellTexts(['Restructured'], 52);
+    expect(w.lines).toEqual(['Restructured']);
+  });
+  it('words wrap between words at the normal size; a very long word still breaks as the last resort', async () => {
+    const [a, b] = await cellTexts(['Loan against property', 'Supercalifragilisticexpialidocious'], 60);
+    for (const l of a.lines) expect(['Loan', 'against', 'property', 'Loan against', 'against property']).toContain(l);
+    expect(a.lines.join(' ')).toBe('Loan against property');
+    expect(a.size).toBe(9);
+    expect(b.lines.length).toBeGreaterThan(1);
+  });
+});
