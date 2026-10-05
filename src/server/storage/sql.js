@@ -53,6 +53,33 @@ async function connect(url, dialect) {
   return async (text, values = []) => { const [rows] = await pool.execute(text, values); return Array.isArray(rows) ? rows : []; };
 }
 
+/**
+ * The storage schema's migrations, in order. pw_meta holds the version reached; each step runs once per database
+ * (a step another server ran at the same moment fails as "already exists" and is taken as done). v1 is the tables
+ * themselves (CREATE ... IF NOT EXISTS above, so databases from before pw_meta start there).
+ * @type {{ v: number, what: string, sql: (d: string) => string[] }[]}
+ */
+export const MIGRATIONS = [
+  { v: 2, what: 'indexes for the audit filters and the lease sweep', sql: () => [
+    'CREATE INDEX pw_audit_at ON pw_audit (at)', 'CREATE INDEX pw_audit_type ON pw_audit (type)', 'CREATE INDEX pw_audit_actor ON pw_audit (actor)',
+    'CREATE INDEX pw_audit_report ON pw_audit (report)', 'CREATE INDEX pw_leases_expires ON pw_leases (expires_at)'] },
+];
+/** @param {(sql: string, values?: any[]) => Promise<any[]>} run @param {string} dialect @param {(t: string, cols: string) => string} create */
+async function migrate(run, dialect, create) {
+  await run(create('pw_meta', 'k VARCHAR(64) PRIMARY KEY, v VARCHAR(255) NOT NULL'));
+  const [row] = await run("SELECT v FROM pw_meta WHERE k = 'schema'");
+  let at = row ? Number(row.v) : 1;
+  for (const m of MIGRATIONS) {
+    if (m.v <= at) continue;
+    for (const s of m.sql(dialect)) {
+      try { await run(s); } catch (e) { if (!/exist|duplicate|already/i.test(String(/** @type {any} */ (e)?.message))) throw e; }
+    }
+    if (row || at > 1) await run("UPDATE pw_meta SET v = ? WHERE k = 'schema'", [String(m.v)]);
+    else { try { await run("INSERT INTO pw_meta (k, v) VALUES ('schema', ?)", [String(m.v)]); } catch { await run("UPDATE pw_meta SET v = ? WHERE k = 'schema'", [String(m.v)]); } }
+    at = m.v;
+  }
+}
+
 /** @param {string} url @returns {import('./index.js').Store} */
 export function sqlStore(url) {
   const dialect = url.startsWith('sqlite:') ? 'sqlite' : url.startsWith('mysql://') ? 'mysql' : url.startsWith('mssql://') ? 'mssql' : 'postgres';
@@ -76,6 +103,7 @@ export function sqlStore(url) {
         await run(create('pw_leases', 'name VARCHAR(255) PRIMARY KEY, owner VARCHAR(255) NOT NULL, expires_at BIGINT NOT NULL'));
         // the audit log: only ever inserted into (and old rows deleted by retention); id sorts by time
         await run(create('pw_audit', `id VARCHAR(64) PRIMARY KEY, at VARCHAR(32) NOT NULL, type VARCHAR(64) NOT NULL, actor VARCHAR(400) NOT NULL, report VARCHAR(255), data ${text} NOT NULL`));
+        await migrate(run, dialect, create);
         return run;
       });
       conns.set(url, ready);
@@ -94,6 +122,11 @@ export function sqlStore(url) {
       return !!r;
     },
     async ids(k) { return (await q(`SELECT id FROM ${table(k)} ORDER BY id`)).map(r => String(r.id)); },
+    /** Ids that start with prefix (an index range, not a scan of the kind). */
+    async idsFrom(k, prefix) {
+      const like = `${String(prefix).replace(/[\\%_[]/g, (c) => `\\${c}`)}%`;
+      return (await q(`SELECT id FROM ${table(k)} WHERE id LIKE ? ESCAPE '\\' ORDER BY id`, [like])).map(r => String(r.id)).filter(id => id.startsWith(prefix));
+    },
     async list(k) { return (await q(`SELECT id, data, updated_at FROM ${table(k)} ORDER BY id`)).map(r => ({ id: String(r.id), text: String(r.data), updatedAt: String(r.updated_at) })); },
 
     async versions(id) {

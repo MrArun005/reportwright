@@ -35,6 +35,10 @@ pw audit rekey --old-secret S | --old-key file.pem
   --password, --owner-password, --deny  a password-protected PDF (AES-256); --deny takes away a permission
   --ua  an accessible PDF (PDF/UA-1; with --pdfa, PDF/A-2a)   --values  Excel totals as values, not formulas
   --static  an HTML file without its Tables view (sort, groups, filter)
+pw migrate-storage --to <url> [--from file|<url>]
+                                   copy everything (reports and their versions, users, grants, folders, schedules,
+                                   jobs, fonts, settings, blobs, the audit log) from one storage to another, e.g. the
+                                   files in this folder to sqlite:/srv/pw.db or postgres://…; stop the server first
 Exit codes: 0 ok, 1 a test failed, the pages differ or the audit log does not check, 2 bad usage.`;
 
 const fontStore = new FontStore((k) => fs.readFileSync(path.join(ROOT, 'public', 'fonts', `${k}.ttf`)));
@@ -207,6 +211,14 @@ async function cmdAudit(args) {
 }
 
 const [cmd, ...rest] = process.argv.slice(2);
-const commands = { render: cmdRender, test: cmdTest, diff: cmdDiff, audit: cmdAudit };
+async function cmdMigrateStorage(args) {
+  const { values } = parseArgs({ args, options: { from: { type: 'string' }, to: { type: 'string' } } });
+  if (!values.to) usage('migrate-storage needs --to <url>');
+  const { copyStorage } = await import('../src/server/storage/copy.js');
+  const n = await copyStorage(values.from || 'file', values.to, (msg) => process.stderr.write(`${msg}\n`));
+  console.log(`copied ${n.records} records, ${n.versions} versions and ${n.audit} audit events to ${values.to.replace(/\/\/[^@/]*@/, '//***@')}`);
+}
+
+const commands = { render: cmdRender, test: cmdTest, diff: cmdDiff, audit: cmdAudit, 'migrate-storage': cmdMigrateStorage };
 if (!commands[cmd]) usage(cmd && cmd !== 'help' && cmd !== '--help' ? `unknown command "${cmd}"` : '');
 try { await commands[cmd](rest); } catch (e) { fail(e.message); }

@@ -1,6 +1,7 @@
 // Server-only helpers for reports, with version history. Where they live: src/server/storage (PW_STORAGE).
 import path from 'node:path';
 import { store } from './storage/index.js';
+import { upgrade } from '../engine/schema/upgrade.js';
 
 /** Where file storage keeps reports (PW_STORAGE=file, the default). */
 export const REPORTS_DIR = path.join(process.cwd(), 'reports');
@@ -54,7 +55,7 @@ export async function listReports() {
 export async function readReport(ref) {
   const [id, version] = String(ref).split('@');
   const text = version ? await store().getVersion(safeId(id), safeVersion(version)) : await store().get('reports', safeId(id));
-  return text == null ? null : JSON.parse(text);
+  return text == null ? null : upgrade(JSON.parse(text)); // older definitions are brought up to this version
 }
 const safeVersion = (v) => { if (!/^\d{8}T\d{6}\d{3}Z?$/.test(v)) throw Object.assign(new Error('Bad version'), { status: 400 }); return v; };
 

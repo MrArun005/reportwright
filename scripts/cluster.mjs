@@ -7,7 +7,7 @@
 //                        of the memory (PW_MEMORY_LIMIT_MB: the cgroup limit or the RAM), and src/server/pool.js sizes
 //                        its workers from those, so processes + render threads ≈ cores and their heaps fit the memory
 // Everything else is the same environment as `next start`. The processes share the storage (PW_STORAGE: files on this
-// machine, or a database) and so the queue, the scheduler (one leader), locks, sessions and the audit log (one chained
+// database; file storage only with one process) and so the queue, the scheduler (one leader), locks, sessions and the audit log (one chained
 // stream each). The primary only forks and restarts processes; the kernel spreads connections across them.
 // PW_AUTH=users needs one PW_SESSION_SECRET for all of them: outside production a random one is made here and shared.
 import cluster from 'node:cluster';
@@ -27,6 +27,12 @@ process.env.NODE_ENV ||= 'production';
 if (cluster.isPrimary) {
   const cores = os.availableParallelism?.() || os.cpus().length;
   const n = Math.max(1, Number(process.env.PW_CLUSTER_PROCESSES) || Math.max(2, Math.round(cores / 4)));
+  // file storage keeps users, grants and settings in whole-file JSON arrays with an in-process lock: several processes
+  // would lose each other's writes. A database (or one process) only.
+  if (n > 1 && (!process.env.PW_STORAGE || process.env.PW_STORAGE === 'file')) {
+    console.error('[pagewright] cluster: several processes need a database for storage (PW_STORAGE=sqlite:/path/pw.db, postgres://…, mysql://… or mssql://…); file storage is safe for one process only. Move the data with: node bin/pw.mjs migrate-storage --to <url>. Or set PW_CLUSTER_PROCESSES=1.');
+    process.exit(1);
+  }
   let memMB = Number(process.env.PW_MEMORY_LIMIT_MB) || os.totalmem() / 1048576;
   for (const f of ['/sys/fs/cgroup/memory.max', '/sys/fs/cgroup/memory/memory.limit_in_bytes']) { // cgroup v2, v1
     try { const n = Number(fs.readFileSync(f, 'utf8').trim()); if (n > 0 && n < 2 ** 60) { memMB = Math.min(memMB, n / 1048576); break; } } catch { /* not there */ }

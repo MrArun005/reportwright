@@ -102,7 +102,8 @@ function storeBlobs() {
     },
     async list(prefix) {
       const out = [];
-      for (const id of await store().ids('blobs')) {
+      const s = /** @type {any} */ (store());
+      for (const id of await (s.idsFrom ? s.idsFrom('blobs', prefix) : s.ids('blobs'))) { // the prefix's range, where the storage has one
         if (!id.startsWith(prefix) || id.includes('#')) continue;
         const m = await manifest(id).catch(() => null);
         if (m) out.push({ key: id, size: m.size, at: m.lastUsed || m.at });
