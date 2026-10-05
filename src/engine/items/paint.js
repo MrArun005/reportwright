@@ -28,13 +28,14 @@ paintBoxAt.shapes = [
 /** Text layout for a box: lines, font key, needed height. */
 export function layoutTextLines(text, st, width, m, opt) {
   const wrap = opt?.wrap ?? true;
+  const atom = !!opt?.atom; // a number or date value: shrinks to stay on one line, never wraps (as a formatted number)
   // A frozen style is a static one shared by every cell that uses it (style.js): the same text at the same width lays
   // out once per render. Tables repeat most cell texts (a region, a status, a date), so most cells hit this.
   // only short texts (a cell's value), at most 200,000 per render: memory stays bounded whatever the data holds
-  if (typeof text !== 'string' || text.length > MAX_CACHED_TEXT || !m.boxes || !Object.isFrozen(st)) return layoutText(text, st, width, m, wrap);
+  if (typeof text !== 'string' || text.length > MAX_CACHED_TEXT || !m.boxes || !Object.isFrozen(st)) return layoutText(text, st, width, m, wrap, atom);
   let byW = m.boxes.get(st);
   if (!byW) { byW = new Map(); m.boxes.set(st, byW); }
-  const wk = wrap ? width : -1 - width;
+  const wk = wrap ? (atom ? `a${width}` : width) : -1 - width;
   let byText = byW.get(wk);
   if (!byText) { byText = new Map(); byW.set(wk, byText); }
   const tl = byText.get(text);
@@ -42,8 +43,8 @@ export function layoutTextLines(text, st, width, m, opt) {
   // ponytail: cleared when full; an LRU only if a profile shows thrashing
   if (++m.boxCount > 200000) { m.boxes = new WeakMap(); m.boxCount = 0; }
   // kept from the second time a text is seen: a column of unique values (ids, names) does not fill the cache
-  if (tl === undefined) { byText.set(text, 0); return layoutText(text, st, width, m, wrap); }
-  const out = layoutText(text, st, width, m, wrap);
+  if (tl === undefined) { byText.set(text, 0); return layoutText(text, st, width, m, wrap, atom); }
+  const out = layoutText(text, st, width, m, wrap, atom);
   Object.freeze(out.lines);
   byText.set(text, Object.freeze(out));
   return out;
@@ -66,25 +67,25 @@ const MIN_FONT = 5; // pt: smaller than this is not shrunk to; the line is cut (
  * the box. At most 25% smaller for a word, 40% for a number; past that a word breaks inside (the last resort) and a
  * number stays on its line (cut with an ellipsis).
  */
-function fitSize(text, key, size, inner, m) {
+function fitSize(text, key, size, inner, m, atom = false) {
   const s = String(text);
   if (s.length > 200) return size;
-  const num = NUMBER.test(s.trim());
+  const num = atom || NUMBER.test(s.trim());
   const longest = num ? m.width(s.trim(), key, size) : Math.max(0, ...s.split(/\s+/).map(w => (w ? m.width(w, key, size) : 0)));
   if (longest <= inner) return size;
   const floor = Math.max(MIN_FONT, size * (num ? 0.6 : 0.75));
   return Math.max(floor, Math.min(size, size * (inner / longest) - 0.01));
 }
-function layoutText(text, st, width, m, wrap) {
+function layoutText(text, st, width, m, wrap, atom = false) {
   const look = lookOf(st, m);
   const { key, pad } = look;
   const inner = Math.max(1, width - pad[1] - pad[3]);
   const wraps = wrap && st.wrap !== false;
   // a number never breaks, a word only when it is wider than the box even a little smaller (R4: "4,966,681.4|5")
-  const size = wraps && !m.direction(String(text), key) ? fitSize(text, key, look.size, inner, m) : look.size;
+  const size = wraps && !m.direction(String(text), key) ? fitSize(text, key, look.size, inner, m, atom && !/\n/.test(String(text))) : look.size;
   const lh = size === look.size ? look.lh : look.lh * (size / look.size);
   const lines = wraps
-    ? (size !== look.size && NUMBER.test(String(text).trim()) ? [{ text: String(text).trim(), width: m.width(String(text).trim(), key, size), end: true }] : m.wrap(text, key, size, inner))
+    ? (size !== look.size && ((atom && !/\n/.test(String(text))) || NUMBER.test(String(text).trim())) ? [{ text: String(text).trim(), width: m.width(String(text).trim(), key, size), end: true }] : m.wrap(text, key, size, inner))
     : String(text).split(/\r?\n/).map((t) => {
       const dir = m.direction(t, key); // set for text that needs shaping or bidi
       return dir ? { text: t, width: m.width(t, key, size, dir), dir } : { text: t, width: m.width(t, key, size) };

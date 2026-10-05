@@ -150,3 +150,22 @@ describe('R5 #1: the browser PDF writer is linear in pages', () => {
     expect(big / small).toBeLessThan(2);
   }, 120000);
 });
+
+describe('R5 #7: a date or number in a narrow column shrinks, it does not wrap the row', () => {
+  it('a formatted date stays on one line, so rows keep their designed height', async () => {
+    const { render } = await import('../../src/engine/index.js');
+    const { fontStore, report } = await import('../helpers.js');
+    const rows = Array.from({ length: 200 }, (_, i) => ({ d: `2024-03-${String(1 + (i % 28)).padStart(2, '0')}`, a: 123456789.12 + i, s: 'two words' }));
+    const def = report([{ type: 'table', name: 'T', x: 0, y: 0, w: 200, h: 36, dataSet: 'Rows', columns: [{ width: 47.5 }, { width: 39.6 }, { width: 40 }],
+      detail: [{ height: 18, cells: [{ value: '=Fields.d', style: { format: 'dd MMM yyyy' } }, { value: '=Fields.a', style: { format: 'N2' } }, { value: '=Fields.s' }] }] }], { data: { rows } });
+    def.dataSets[0].fields = [{ name: 'd', type: 'date' }, { name: 'a', type: 'number' }, { name: 's', type: 'string' }];
+    def.styles = { base: { fontFamily: 'Inter', fontSize: 9, padding: [3, 4, 3, 4] } };
+    const out = await render(def, { fontStore });
+    const texts = out.pages[0].items.filter(i => i.t === 'text');
+    const date = texts.find(i => /Mar/.test(i.lines.map(l => l.text).join(' ')));
+    expect(date.lines.length).toBe(1);
+    expect(date.lines[0].text).toMatch(/^\d\d Mar 2024$/);
+    // a text value may still wrap between words
+    expect(texts.find(i => /two/.test(i.lines[0].text)).lines.length).toBe(2);
+  });
+});

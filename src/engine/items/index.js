@@ -447,7 +447,7 @@ register('table', {
           if (cur && cur.by === cell.sortBy) text += cur.dir === 'desc' ? ' ↓' : ' ↑';
         }
         const nested = cell.item?.type && ITEMS[cell.item.type] ? layoutInCell(cell.item, colX[ci], cw, st, cctx, row) : null;
-        const tl = nested ? { ...layoutTextLines('', st, cw, lc.m), lines: [], needed: nested.height } : layoutTextLines(text, st, cw, lc.m);
+        const tl = nested ? { ...layoutTextLines('', st, cw, lc.m), lines: [], needed: nested.height } : layoutTextLines(text, st, cw, lc.m, { atom: !toggle && (typeof v === 'number' || v instanceof Date) });
         const c = { x: colX[ci], w: cw, st, tl, numeric: typeof v === 'number', cell, ctx: cctx, raw: v, span, plain: nested ? '' : plain, toggle, nested, ci };
         const rs = Math.floor(Number(cell.rowSpan)) || 1;
         if (rs > 1) { (started ||= []).push({ ...c, ci, cols: span, left: rs, units: [], kind }); continue; }
