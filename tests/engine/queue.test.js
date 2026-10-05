@@ -60,6 +60,29 @@ describe('a batch survives the replica that ran it', () => {
   });
 });
 
+describe('fencing: a replica that lost its lease writes nothing more', () => {
+  it('A is paused past its lease, B takes the job: A stops at its next write, B finishes alone', async () => {
+    const job = await jobs.createBatch({ template: def, items: Array.from({ length: 30 }, (_, n) => ({ parameters: { n: String(n) } })), format: 'json', output: { type: 'zip' } }, null);
+    const name = `job:${job.id}`;
+    const running = jobs.workOnce('A');
+    while (!((await jobs.getJob(job.id))?.done >= 1)) await sleep(5);
+    // A's lease is taken from it (a GC pause or a partition): B holds it now
+    await store().release(name, 'A');
+    expect(await store().lease(name, 'B', 60000)).toBe(true);
+    const warn = console.warn; console.warn = () => {};
+    try { expect(await running).toMatchObject({ id: job.id, stopped: true }); } finally { console.warn = warn; }
+    const mid = JSON.parse(await store().get('jobs', job.id));
+    expect(mid.status).toBe('running'); // A did not finish it, nor mark it failed
+    const byA = mid.results.length;
+    expect(byA).toBeLessThan(30);
+    await store().release(name, 'B');
+    expect(await jobs.workOnce('B')).toMatchObject({ id: job.id, stopped: false });
+    const done = await jobs.getJob(job.id);
+    expect(done).toMatchObject({ status: 'completed', done: 30, failed: 0 });
+    expect(new Set(done.results.map(r => r.index)).size).toBe(30); // no item twice
+  }, 60000);
+});
+
 describe('one scheduler for all replicas', () => {
   it('a due schedule runs once when two replicas tick at the same moment', async () => {
     const s = await schedules.createSchedule({ template: def, cron: '* * * * *', items: [{ parameters: { n: 'x' } }], format: 'json' });

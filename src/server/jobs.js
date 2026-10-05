@@ -21,6 +21,7 @@ import { mailOn, checkRecipients, oneLine, sendMail, maxAttachmentBytes } from '
 import { audit } from './audit.js';
 import { throughSnapshot } from './snapshots.js';
 import { principalId, principalFromId, defaultPrincipal, vet, canDesign } from './perms.js';
+import { logWarn } from './errors.js';
 
 const DATA = path.join(process.cwd(), 'data');
 const JOBS = path.join(DATA, 'jobs');
@@ -37,7 +38,8 @@ const Q = g.__pwQueue;
 
 const rid = () => `b_${Date.now().toString(36)}${crypto.randomBytes(3).toString('hex')}`;
 // the record holds the job's inputs (_work: items and template) until it finishes, so any server can run it
-const save = (job) => store().put('jobs', job.id, JSON.stringify(job, null, 2));
+const saveJob = (job) => store().put('jobs', job.id, JSON.stringify(job, null, 2));
+const save = saveJob;
 
 export function publicJob(job) {
   const { items, _def, _work, owner, ownerKey, ...rest } = job;
@@ -196,9 +198,14 @@ export async function workOnce(owner, { stopAfter } = {}) {
     const job = text ? JSON.parse(text) : null;
     if (!job?._work || (job.status !== 'queued' && job.status !== 'running')) { await store().release(name, owner); continue; }
     let stopped = false;
-    const beat = setInterval(() => { store().lease(name, owner, leaseMs()).catch(() => {}); }, Math.max(50, leaseMs() / 3));
-    try { stopped = await run(job, owner, stopAfter); }
-    catch (e) { job.status = 'failed'; job.errors.push(e.message); delete job._work; await save(job); }
+    // fencing: a server that lost its lease (paused, partitioned) writes nothing more: every save renews it first
+    const fence = { lost: false, async hold() { if (this.lost || !(await store().lease(name, owner, leaseMs()))) { this.lost = true; throw LEASE_LOST; } } };
+    const beat = setInterval(() => { store().lease(name, owner, leaseMs()).then(ok => { if (!ok) fence.lost = true; }, logWarn(`job lease ${cand.id}`)); }, Math.max(50, leaseMs() / 3));
+    try { stopped = await run(job, owner, stopAfter, fence); }
+    catch (e) {
+      if (e === LEASE_LOST || fence.lost) { console.warn(`[pagewright] batch ${job.id}: this server lost its lease; another server goes on with it`); stopped = true; }
+      else { job.status = 'failed'; job.errors.push(e.message); delete job._work; await fence.hold().then(() => save(job), () => {}); }
+    }
     finally { clearInterval(beat); }
     if (!stopped) await store().release(name, owner);
     return { id: job.id, stopped };
@@ -232,7 +239,11 @@ function itemName(job, item, i) {
   return safeName(p || `item-${i + 1}`);
 }
 
-async function run(job, owner, stopAfter) {
+const LEASE_LOST = Object.freeze(new Error('lease lost'));
+
+/** @param {{ lost: boolean, hold: () => Promise<void> }} [fence] */
+async function run(job, owner, stopAfter, fence = { lost: false, hold: async () => {} }) {
+  const save = async (j) => { await fence.hold(); await saveJob(j); };
   const { items, def } = job._work;
   // the owner as they are now: a user who lost access, or was disabled, gets no further items
   // as the owner is now: the template must still be theirs to view; an inline definition needs a designer or a service.
@@ -258,6 +269,7 @@ async function run(job, owner, stopAfter) {
   const worker = async () => {
     while (todo.length) {
       if (stopAfter != null && taken >= stopAfter) return;
+      if (fence.lost) return;
       taken++;
       const i = /** @type {number} */ (todo.shift());
       const item = items[i];
@@ -287,6 +299,7 @@ async function run(job, owner, stopAfter) {
   };
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, items.length) }, worker));
   await saving;
+  if (fence.lost) throw LEASE_LOST;
   if (todo.length) return true; // stopped early (tests): the lease is kept, the job stays running
 
   const ok = [...job.results].sort((a, b) => a.index - b.index);
@@ -312,6 +325,7 @@ async function run(job, owner, stopAfter) {
       job.download = { blob: `jobs/${job.id}/output.zip`, name: `${safeName(job.template)}.zip`, type: 'application/zip' };
     }
   }
+  await fence.hold(); // the output and the mail: once, by the server that holds the job
   if (job.email && ok.length) job.mail = await deliver(job, ok, bytesOf);
   await removePrefix(`jobs/${job.id}/items/`);
   job.status = job.failed && !job.done ? 'failed' : job.failed ? 'completed_with_errors' : 'completed';
