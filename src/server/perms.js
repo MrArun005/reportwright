@@ -13,7 +13,7 @@
 // Defaults (no root record yet): the creator of a report or folder manages it; designers view every report and may
 // create reports and folders at the top (the root record's "create": who may add at the top besides those with edit
 // there); viewers see only what a grant gives them. An install from before these
-// defaults (reports stored, no root record) gets the root record "everyone: view" once (migratePermissions), so nobody loses
+// defaults (report-access or folder records stored, no root record) gets the root record "everyone: view" once (migratePermissions), so nobody loses
 // sight of a report; managing an older report then takes its creator's grant (recordNewReport has written one for every
 // report made by a signed-in user) or an admin.
 // view: open, render, export, run its saved SQL. edit: save, restore, version history. manage: delete, move, share.
@@ -192,7 +192,7 @@ const gp = /** @type {any} */ (globalThis);
  * The one-time move to the defaults above, run at boot (instrumentation.js, before requests are served) and, should a
  * server have skipped it, before the first permission check. Under the "acl" lock with a marker record, so it runs once
  * across replicas and a second run changes nothing. It never reads a definition and never looks at who asks:
- *  - no root record: LEGACY_ROOT when reports are already stored (they had "everyone manage": now everyone keeps view,
+ *  - no root record: LEGACY_ROOT when report-access or folder records are already stored (they had "everyone manage": now everyone keeps view,
  *    nothing wider), else DEFAULT_ROOT; both with "create": designers;
  *  - owners: only the grants the server wrote when a report was created (recordNewReport, a user:<creator> manage
  *    grant in the access record) stay owners; a report without one is managed by admins only. No grant is added;
@@ -229,10 +229,14 @@ export async function migratePermissions() {
       } });
       root = await rootNow(); // a renamed grant at the top
       if (!root) {
-        const legacy = (await store().ids('reports')).length > 0;
+        // an upgrade only when the storage holds what a pre-defaults server with accounts wrote: report-access records
+        // (recordNewReport, for every report a signed-in user made) or folders. Stored reports are no evidence: the
+        // image and the repo ship sample reports, so a first boot would look like an upgrade (REVIEW-SECURITY-2 M2)
+        const legacy = (await store().ids('reportacl')).length > 0 || (await store().ids('folders')).some(id => id !== 'root');
         root = { grants: [...(legacy ? LEGACY_ROOT : DEFAULT_ROOT)], create: [...DEFAULT_CREATE] };
         await store().put('folders', 'root', JSON.stringify({ id: 'root', ...root, updatedAt: new Date().toISOString(), migrated: legacy ? 'legacy' : 'default', rev: rev() }));
-        if (legacy) console.warn('[pagewright] permissions: reports from before per-report defaults: everyone keeps view at the top; each report is managed by its creator or an admin. Change it on the Folders page.');
+        if (!legacy) console.warn('[pagewright] permissions: a new install: designers view every report at the top, viewers only what a grant gives them (share on the Folders page).');
+        else console.warn('[pagewright] permissions: reports from before per-report defaults: everyone keeps view at the top; each report is managed by its creator or an admin. Change it on the Folders page.');
       }
       await store().put('settings', MIGRATION, JSON.stringify({ id: MIGRATION, at: new Date().toISOString() }));
     }
