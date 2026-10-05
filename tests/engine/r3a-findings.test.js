@@ -84,3 +84,21 @@ describe('N11 / §3.4: RunningValue and RowNumber without a scope are over the d
   it.each([['RowNumber()'], ['RowNumber(Nothing)'], ['RowNumber("T")']])('%s', async (e) => expect(await texts(e)).toBe('D1 D2 D3 F3 D4 D5 F5 T5'));
   it('the RDL import keeps RowNumber(Nothing) meaning the region', () => expect(translateExpression('=RowNumber(Nothing)').ok).toBe(true));
 });
+
+describe('§3.3: empty matrix cells drill with their group values, not nulls', () => {
+  const m = (rowGroup) => ({ $schema: 'pagewright/report@1', page: { size: 'A4' },
+    dataSources: [{ name: 'S', type: 'json', data: [{ r: 'A', c: 'X', v: 1 }, { r: 'B', c: 'Y', v: 2 }] }], dataSets: [{ name: 'D', source: 'S', path: '$' }],
+    sections: { body: { height: 100, items: [{ type: 'matrix', name: 'M', x: 0, y: 0, w: 300, h: 60, dataSet: 'D', rowGroups: [{ expr: rowGroup }], columnGroups: [{ expr: '=Fields.c' }],
+      values: [{ value: '=Sum(Fields.v)', action: { type: 'report', report: 'detail', params: { r: '=Fields.r', c: '=Fields.c' } } }] }] } } });
+  const links = async (rg) => (await render(m(rg), { fontStore })).pages[0].items.filter(i => i.t === 'link' && i.action).map(l => JSON.stringify(l.action.params));
+  it('every cell, empty ones too, carries its row and column', async () => {
+    const ls = await links('=Fields.r');
+    expect(ls.length).toBe(4);
+    for (const want of [['A', 'X'], ['A', 'Y'], ['B', 'X'], ['B', 'Y']]) expect(ls.some(l => l.includes(`"${want[0]}"`) && l.includes(`"${want[1]}"`))).toBe(true);
+    expect(ls.join(' ')).not.toMatch(/null/);
+  });
+  it('a computed group key: empty cells get no action', async () => {
+    const ls = await links('=Upper(Fields.r)');
+    expect(ls.length).toBe(2);
+  });
+});

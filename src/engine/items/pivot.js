@@ -35,6 +35,20 @@ export function groupRows(rows, expr, ctx, lc, who, adjacent = false) {
   return adjacent ? out : [...map.values()];
 }
 
+/** The fields an empty matrix cell stands for: each row and column group's key field (=Fields.x keys only), or null. */
+function emptyCellFields(rchain, rg, cchain, cg) {
+  const out = {};
+  for (const [chain, groups] of [[rchain, rg], [cchain, cg]]) {
+    for (let l = 0; l < chain.length; l++) {
+      const m = /^=\s*Fields\s*[.!]\s*(\w+)\s*$/.exec(String(groups[l]?.expr ?? ''));
+      const r = chain[l]?.rows?.[0];
+      if (!m || !r) return null;
+      out[m[1]] = r[m[1]];
+    }
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 /** Group order: the report's locale, case-insensitive, natural ("9" before "10"); nulls last. */
 export const cmpKey = (a, b, ctx) => sortCompare(a, b, ctx);
 
@@ -373,7 +387,14 @@ export function buildPivot(item, rows, ctx, lc) {
         const d = v.show === 'percentOfTotal' ? den(ce.v, 't', rowRoot, scopes) : v.show === 'percentOfRow' ? den(ce.v, 'r', rn, scopes) : den(ce.v, 'c', ce.node, scopes);
         val = typeof val === 'number' && typeof d === 'number' && d !== 0 ? val / d : null;
       }
-      cells.push({ c: R + j, raw: val, rowSpan: 1, colSpan: 1, role: 'value', v: ce.v, colTotal: ce.kind === 'total', ctx: { ...ctx, fields: cr[0] || null, aggRows: cr, aggIndex: undefined, scopes }, ...clickOf(v) });
+      // an empty cell (no rows at the intersection): its action reads the group values of its row and column (SSRS
+      // takes them from the group scope), or it has none: a drill with null parameters would open the wrong report
+      let fields = cr[0] || null, click = clickOf(v);
+      if (!fields && click?.action) {
+        fields = emptyCellFields(re.chain, rg, ce.entry.chain, cg);
+        if (!fields) click = click.bookmark ? { bookmark: click.bookmark } : null;
+      }
+      cells.push({ c: R + j, raw: val, rowSpan: 1, colSpan: 1, role: 'value', v: ce.v, colTotal: ce.kind === 'total', ctx: { ...ctx, fields, aggRows: cr, aggIndex: undefined, scopes }, ...(click || {}) });
     });
     body.push({ kind: re.kind, level: re.level, node: rn, cells });
   });
