@@ -73,6 +73,9 @@ function* textsOf(def, dataSets) {
   }
 }
 
+/** The start of the warning for CJK text without the optional CJK fonts (the viewer opens its warnings for it). */
+export const NO_CJK_FONTS = 'Text in Japanese/Chinese/Korean needs the optional CJK fonts: npm run fonts:cjk';
+
 export async function render(def0, opts = {}) {
   const t0 = Date.now();
   // masters, stylesheets and part libraries: other saved reports, each loaded once for this render and its subreports
@@ -439,7 +442,9 @@ export async function render(def0, opts = {}) {
   if (m.noGlyph.size) {
     // Chinese, Japanese, Korean and emoji fonts are optional (about 40 MB): say how to add them
     const cjk = [...m.noGlyph].some(c => /[\u1100-\u11ff\u2600-\u27bf\u2b00-\u2bff\u3000-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]|[\u{1f000}-\u{1faff}]/u.test(c));
-    warn(`No font has these characters, so they show as boxes: ${[...m.noGlyph].slice(0, 20).join(' ')}. ${cjk ? 'Add the optional Chinese, Japanese, Korean and emoji fonts (npm run fonts:cjk, or the @pagewrightjs/fonts-cjk files in /fonts/cjk), or upload' : 'Upload'} a font that has them and use it for this text.`);
+    const list = [...m.noGlyph].slice(0, 20).join(' ');
+    warn(cjk ? `${NO_CJK_FONTS} (or the @pagewrightjs/fonts-cjk files in the server's /fonts/cjk). Until then these characters show as boxes: ${list}.`
+      : `No font has these characters, so they show as boxes: ${list}. Upload a font that has them and use it for this text.`);
   }
   if (opts.bodyOnly) return { units: result.body.units, tables: result.body.tables, height: result.body.height, regions, warnings, clipped: clipped() };
   const { pages, bookmarks, height } = result;

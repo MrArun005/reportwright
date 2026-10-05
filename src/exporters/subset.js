@@ -9,6 +9,7 @@ const HB_MEMORY_MODE_WRITABLE = 2;
 const HB_SUBSET_SETS_DROP_TABLE_TAG = 3;
 const HB_SUBSET_SETS_LAYOUT_FEATURE_TAG = 6;
 const HB_SUBSET_FLAGS_RETAIN_GIDS = 2;
+const HB_SUBSET_FLAGS_NOTDEF_OUTLINE = 0x40;
 const tag = (s) => [...s].reduce((a, c) => (a << 8) + c.charCodeAt(0), 0) >>> 0;
 
 /** @param {() => Promise<ArrayBuffer|Uint8Array>} loadWasm */
@@ -49,6 +50,8 @@ export function createSubsetter(loadWasm) {
         const drop = x.hb_subset_input_set(input, HB_SUBSET_SETS_DROP_TABLE_TAG);
         for (const t of ['GSUB', 'GPOS', 'GDEF', 'kern', 'morx', 'mort']) x.hb_set_add(drop, tag(t));
       }
+      // keep the .notdef box: a character no font has draws as a box, not as nothing (a CJK report without CJK fonts)
+      x.hb_subset_input_set_flags(input, x.hb_subset_input_get_flags(input) | HB_SUBSET_FLAGS_NOTDEF_OUTLINE);
       const uni = x.hb_subset_input_unicode_set(input);
       for (const cp of codePoints) x.hb_set_add(uni, cp);
       if (opt.glyphs) {

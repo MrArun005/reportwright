@@ -5,7 +5,7 @@ import { reportFetch } from './dataFetch.js';
 import { ALL_FONT_KEYS } from '@/engine/text/fonts.js';
 import { exportBlob, EXPORT_DEFAULTS, needsExportData } from './exports.js';
 import { pageToSvg } from '@/exporters/svg.js';
-import { parameterOptions } from '@/engine/index.js';
+import { parameterOptions, NO_CJK_FONTS } from '@/engine/index.js';
 import { safeUrl } from '@/engine/url.js';
 import { t as tr, dirOf, pickLang } from './i18n.js';
 import { arrangeToolbar, exportOptionsFrom, findText, frozenAt, galleyDefinition, pageLinks, readingText } from './logic.js';
@@ -300,7 +300,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
 
   const hits = useMemo(() => findText(model, query, { matchCase, wholeWord }), [model, query, matchCase, wholeWord]);
   // a cell showing #Error: the warnings that explain it open by themselves
-  const hasErrorCells = useMemo(() => !!model?.warnings?.length && findText(model, '#Error').length > 0, [model]);
+  const hasErrorCells = useMemo(() => !!model?.warnings?.length && (findText(model, '#Error').length > 0 || model.warnings.some(w => w.startsWith(NO_CJK_FONTS))), [model]); // or CJK text drawn as boxes
   const hitsByPage = useMemo(() => {
     const m = new Map();
     hits.forEach((h, i) => { if (!m.has(h.page)) m.set(h.page, []); m.get(h.page).push({ ...h, cur: i === hitIdx }); });
