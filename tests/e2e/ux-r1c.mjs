@@ -106,7 +106,7 @@ try {
     await p.locator('.vpage svg').first().waitFor();
     // toolbar buttons have real names (not the triangle characters)
     for (const n of ['First page', 'Previous page', 'Next page', 'Last page']) await p.getByRole('button', { name: n, exact: true }).waitFor();
-    const page1 = p.getByRole('region', { name: 'Page 1 of 1' });
+    const page1 = p.getByRole('region', { name: '1 of 1' });
     await page1.waitFor();
     assert.match(await page1.locator('.sr-only').innerText(), /Region Amount/);
     const aria = await page1.ariaSnapshot();

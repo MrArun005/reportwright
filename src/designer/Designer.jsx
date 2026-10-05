@@ -87,17 +87,10 @@ const plain = (d) => JSON.stringify(d, (k, v) => (k === 'id' ? undefined : v));
 const framed = () => { try { return window.self !== window.top; } catch { return true; } };
 
 /** Unsaved changes are kept as a draft every few seconds (and when the page goes away); "Restore" brings them back. */
-function useAutosave(id, T, lang) {
+function useAutosave(id, T, lang, user) {
   const [offer, setOffer] = useState(null); // { at, def }: a draft newer than the saved report
-  const [user, setUser] = useState(null); // the signed-in email ('' without accounts); null until known
   useEffect(() => {
-    if (!id || framed()) return undefined; // never inside another site's page
-    let alive = true;
-    fetch('/api/auth/me').then(r => (r.ok ? r.json() : {})).catch(() => ({})).then(me => { if (alive) setUser(String(me?.email || '')); });
-    return () => { alive = false; };
-  }, [id]);
-  useEffect(() => {
-    if (!id || user == null) return undefined;
+    if (!id || user == null || framed()) return undefined; // the page names the signed-in user; never inside another site's page
     let store;
     try { store = window.localStorage; } catch { return undefined; }
     clearDrafts(store, user); // another user's drafts in this browser go (and expired ones)
@@ -215,7 +208,7 @@ function HistoryDialog({ id, onClose, T, lang }) {
  *   toolbox?: { hide?: string[] }, panels?: { data?: boolean, inspector?: boolean }, dataSourceTemplates?: object[], server?: string } }} props
  *   embed: set by mountDesigner (another site); none on Pagewright's own pages
  */
-export default function Designer({ id, initial, lang: langIn, embed = null }) {
+export default function Designer({ id, initial, lang: langIn, embed = null, user = null }) {
   const lang = pickLang(langIn);
   const T = (k, v) => t(lang, k, v);
   const q = lang === 'en' ? '' : `?lang=${encodeURIComponent(lang)}`;
@@ -313,7 +306,7 @@ export default function Designer({ id, initial, lang: langIn, embed = null }) {
     if (d && typeof d === 'object') { st().init(id, d); loadSample(); }
   };
 
-  const draftBar = useAutosave(embed ? null : id, T, lang);
+  const draftBar = useAutosave(embed ? null : id, T, lang, user);
   if (!def) return <div className="designer" dir={dirOf(lang)} lang={lang}><div className="dtop"><span className="brand"><i />Pagewright</span><span className="hint">{T('loadingDesigner')}</span></div></div>;
 
   return (

@@ -249,7 +249,7 @@ assert.ok(t.includes(nf(total)) && t.includes(nf(total * 1.18)) , 'KPI values fr
 const perPage = await p.$$eval('.vpage', ps => ps.map(pg => [...pg.querySelectorAll('text')].map(n => n.textContent)));
 // section 1's table frame shows its first rows; the rest continue in the overflow placeholder of section 2, which
 // repeats page after page with the header each time
-const firstRow = (pg) => pg.indexOf('Amount') >= 0 ? pg[pg.indexOf('Amount') + 1] : null;
+const firstRow = (pg) => (pg.indexOf('Amount') >= 0 ? pg.slice(pg.indexOf('Amount') + 1, pg.indexOf('Amount') + 3).join('|') : null); // region and product: a region alone repeats
 const cont = perPage.slice(1).filter(pg => pg.includes('Region') && pg.includes('Product'));
 assert.ok(cont.length >= 3 && new Set(cont.map(firstRow)).size === cont.length, `the overflow placeholder continues the table on the next pages, header repeated (${cont.length} pages)`);
 await design();

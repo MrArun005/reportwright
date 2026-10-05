@@ -24,5 +24,6 @@ export default async function DesignerPage({ params, searchParams }) {
   try { def = await readReportFor(p, id, 'edit'); } catch { notFound(); }
   const h = await headers();
   await audit('report.view', { req: new Request('http://pagewright.local/', { headers: { 'x-forwarded-for': h.get('x-forwarded-for') || '', 'x-pw-peer': h.get('x-pw-peer') || '' } }), principal: p, report: id, detail: { via: 'designer' } });
-  return <Designer id={id} initial={def} lang={lang} />;
+  // user: who keeps autosave drafts in this browser (hashed into the key; '' without accounts)
+  return <Designer id={id} initial={def} lang={lang} user={p?.kind === 'user' ? p.email : ''} />;
 }

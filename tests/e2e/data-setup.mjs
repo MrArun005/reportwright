@@ -55,12 +55,12 @@ if (SQLITE) {
   await dlg.getByLabel('Connection').selectOption('main');
   await dlg.getByRole('button', { name: 'Test' }).click();
   await dlg.getByText(/Connected in \d+ ms/).waitFor();
-  await dlg.getByLabel('Query').fill('select region, month, amount from sales order by month, region');
+  await dlg.getByRole('textbox', { name: /^Query/ }).fill('select region, month, amount from sales order by month, region');
   await dlg.getByRole('button', { name: 'Save' }).click();
   await p.getByRole('button', { name: '+ Add' }).nth(2).click();
   dlg = p.getByRole('dialog');
   await dlg.getByLabel('Name').fill('Sales');
-  await dlg.getByLabel('Source').selectOption('db');
+  await dlg.locator('label.field').filter({ has: p.locator(':scope > span', { hasText: /^Source$/ }) }).locator('select').selectOption('db'); // "Rows from" lists "From a data source" too
   await dlg.getByRole('button', { name: 'Explore the response' }).click();
   await dlg.getByRole('listitem').filter({ hasText: '4 rows' }).getByRole('button', { name: 'Use' }).click();
   await dlg.getByText('Found 4 rows.').waitFor();

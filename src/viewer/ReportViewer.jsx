@@ -70,7 +70,7 @@ const A11yLayer = ({ page, scale, T }) => {
 const Page = ({ page, w, h, scale, index, total, hits, near, T }) => {
   const html = useMemo(() => (near ? pageToSvg(page, w, h, { animate: true }) : ''), [page, w, h, near]); // charts with `animation` play it once
   return (
-    <div className="vpage" data-page={index + 1} style={{ width: w * scale, height: h * scale }} {...(near ? { role: 'region', 'aria-label': T('ux_a11yPage', { n: index + 1, total }) } : {})}>
+    <div className="vpage" data-page={index + 1} style={{ width: w * scale, height: h * scale }} {...(near ? { role: 'region', 'aria-roledescription': T('ux_a11yPageRole'), 'aria-label': T('ux_a11yPage', { n: index + 1, total }) } : {})}>
       {near && <div style={{ width: '100%', height: '100%' }} aria-hidden="true" dangerouslySetInnerHTML={{ __html: html }} />}
       {near && hits?.map((r, i) => <div key={i} className={`hl${r.cur ? ' cur' : ''}`} style={{ left: r.x * scale, top: r.y * scale, width: r.w * scale, height: r.h * scale }} />)}
       {near && <A11yLayer page={page} scale={scale} T={T} />}
@@ -468,8 +468,8 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     hasParams && { id: 'parameters', group: 'panels', primary: true, node: <button className="btn sm" aria-pressed={side === 'params'} onClick={() => setPanel(s => (s === 'params' ? null : 'params'))}>{T('parameters')}</button> },
     bookmarks.length > 0 && { id: 'documentMap', group: 'panels', node: <button className="btn sm" aria-pressed={side === 'map'} onClick={() => setPanel(s => (s === 'map' ? null : 'map'))}>{T('documentMap')}</button> },
     { id: 'run', group: 'panels', node: <button className="btn sm" onClick={() => run()} disabled={status.state === 'running'}>{status.state === 'running' ? T('running') : T('run')}</button> },
-    { id: 'firstPage', group: 'paging', node: <button className="btn sm icon" title={T('firstPage')} aria-label={T('firstPage')} onClick={() => go(1)} disabled={!total || current === 1}><span className="flip" aria-hidden="true">⏮</span></button> },
-    { id: 'previousPage', group: 'paging', primary: true, node: <button className="btn sm icon" title={T('previousPage')} aria-label={T('previousPage')} onClick={() => go(current - 1)} disabled={!total || current === 1}><span className="flip" aria-hidden="true">◀</span></button> },
+    { id: 'firstPage', group: 'paging', node: <button className="btn sm icon" title={T('firstPage')} onClick={() => go(1)} disabled={!total || current === 1}><span className="flip" aria-hidden="true">⏮</span></button> },
+    { id: 'previousPage', group: 'paging', primary: true, node: <button className="btn sm icon" title={T('previousPage')} onClick={() => go(current - 1)} disabled={!total || current === 1}><span className="flip" aria-hidden="true">◀</span></button> },
     {
       id: 'pageNumber', group: 'paging', primary: true,
       node: <>
@@ -477,8 +477,8 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
         <span className="stat" title={model?.partial ? T('stillRendering') : undefined}>/ {total ? (model?.partial ? `${total}+` : total) : '–'}</span>
       </>,
     },
-    { id: 'nextPage', group: 'paging', primary: true, node: <button className="btn sm icon" title={T('nextPage')} aria-label={T('nextPage')} onClick={() => go(current + 1)} disabled={!total || current === total}><span className="flip" aria-hidden="true">▶</span></button> },
-    { id: 'lastPage', group: 'paging', node: <button className="btn sm icon" title={T('lastPage')} aria-label={T('lastPage')} onClick={() => go(total)} disabled={!total || current === total}><span className="flip" aria-hidden="true">⏭</span></button> },
+    { id: 'nextPage', group: 'paging', primary: true, node: <button className="btn sm icon" title={T('nextPage')} onClick={() => go(current + 1)} disabled={!total || current === total}><span className="flip" aria-hidden="true">▶</span></button> },
+    { id: 'lastPage', group: 'paging', node: <button className="btn sm icon" title={T('lastPage')} onClick={() => go(total)} disabled={!total || current === total}><span className="flip" aria-hidden="true">⏭</span></button> },
     { id: 'zoomOut', group: 'zoom', node: <button className="btn sm icon" title={T('zoomOut')} aria-label={T('zoomOut')} onClick={() => zoomBy(1 / 1.2)}>−</button> },
     { id: 'zoomValue', group: 'zoom', node: <span className="stat zoomval">{Math.round((scale / PX) * 100)}%</span> },
     { id: 'zoomIn', group: 'zoom', node: <button className="btn sm icon" title={T('zoomIn')} aria-label={T('zoomIn')} onClick={() => zoomBy(1.2)}>+</button> },
