@@ -48,7 +48,10 @@ export function checkFont(input, names = {}) {
 }
 
 /** Store an uploaded font. A face with the same family, weight and style replaces the old one. @returns {Promise<FontInfo>} */
-export async function saveFont(input, names) {
+/** Bumped by an upload or a delete here: renderer.syncFonts reads the list again at once. */
+export const fontsGen = { n: 0 };
+export async function saveFont(input, names) { try { return await saveFont0(input, names); } finally { fontsGen.n++; } }
+async function saveFont0(input, names) {
   const { info, sfnt } = checkFont(input, names);
   const id = crypto.createHash('sha256').update(`${info.family}\u0000${info.weight}\u0000${info.style}\u0000`).update(sfnt).digest('hex').slice(0, 16);
   const rec = { id, ...info, createdAt: new Date().toISOString() };
@@ -89,7 +92,8 @@ export async function readFont(id) {
 }
 
 /** @param {string} id @returns {Promise<boolean>} */
-export async function deleteFont(id) {
+export async function deleteFont(id) { try { return await deleteFont0(id); } finally { fontsGen.n++; } }
+async function deleteFont0(id) {
   if (!ID.test(String(id))) return false;
   infoCache.delete(id);
   return store().remove('fonts', id);

@@ -16,7 +16,7 @@ import { readRunnable, defaultPrincipal, vet, canDesign, writtenHost, normalizeS
 import { serverFetch, NO_BASE_URL } from './safeFetch.js';
 import { pdfSigner } from './sign.js';
 import { runSql } from './sql.js';
-import { listFonts, readFont } from './fonts.js';
+import { listFonts, readFont, fontsGen } from './fonts.js';
 import { devMode, num as cnum, formulasOn } from './config.js';
 
 const ROOT = process.cwd();
@@ -33,11 +33,12 @@ export const fontStore = () => (store ||= new FontStore(async (k) => {
 // ponytail: the list is read at most every FONT_SYNC_MS (a batch of 180 items reads it once, not 180 times); an
 // upload shows in renders within that time
 const FONT_SYNC_MS = 2000;
-let fontsSyncedAt = 0;
+let fontsSyncedAt = 0, fontsSyncedGen = -1;
 export async function syncFonts() {
-  if (Date.now() - fontsSyncedAt < FONT_SYNC_MS) return;
+  if (Date.now() - fontsSyncedAt < FONT_SYNC_MS && fontsSyncedGen === fontsGen.n) return;
+  const gen = fontsGen.n;
   setCustomFonts(await listFonts());
-  fontsSyncedAt = Date.now();
+  fontsSyncedAt = Date.now(); fontsSyncedGen = gen;
   for (const k of fontStore().failed) if (k.startsWith('u-')) fontStore().failed.delete(k);
 }
 const subset = createSubsetter(() => fs.readFile(path.join(ROOT, 'public', 'harfbuzz-subset.wasm')));
