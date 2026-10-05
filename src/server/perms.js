@@ -373,24 +373,24 @@ const rev = () => crypto.randomBytes(8).toString('hex');
 
 /** A principal's level on a report, from a snapshot. @param {Snapshot} s @param {Principal} p @param {string} id @returns {Level} */
 export function reportLevel(s, p, id) {
-  p = decisionContext(p);
-  if (isAll(p)) return 'manage';
-  if (p.kind === 'public') return 'view';
-  const names = namesOf(p);
+  const c = decisionContext(p);
+  if (isAll(c)) return 'manage';
+  if (c.kind === 'public') return 'view';
+  const names = namesOf(c);
   const r = s.reports.get(id);
   let n = best(r?.grants || [], names);
   if (!r || r.inherit !== false) n = Math.max(n, chain(s, r?.folder || null, names));
-  return levelName(Math.min(n, ceiling(p)));
+  return levelName(Math.min(n, ceiling(c)));
 }
 
 /** A principal's level on a folder ("root" or null is the top). @param {Snapshot} s @param {Principal} p @param {string|null} id @returns {Level} */
 export function folderLevel(s, p, id) {
-  p = decisionContext(p);
-  if (isAll(p)) return 'manage';
-  if (p.kind === 'public') return 'view';
-  const names = namesOf(p);
+  const c = decisionContext(p);
+  if (isAll(c)) return 'manage';
+  if (c.kind === 'public') return 'view';
+  const names = namesOf(c);
   const n = !id || id === 'root' ? best(s.root, names) : chain(s, id, names);
-  return levelName(Math.min(n, ceiling(p)));
+  return levelName(Math.min(n, ceiling(c)));
 }
 
 export const atLeast = (have, need) => RANK[have] >= RANK[need];

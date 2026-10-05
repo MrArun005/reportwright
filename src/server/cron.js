@@ -1,3 +1,4 @@
+// @ts-check
 // Five-field cron: minute hour day-of-month month day-of-week, evaluated in a time zone.
 const RANGES = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 7]]; // weekday 7 = Sunday, like 0
 
@@ -18,7 +19,7 @@ function parseField(f, [lo, hi]) {
 export function parseCron(expr) {
   const parts = String(expr).trim().split(/\s+/);
   if (parts.length !== 5) throw new Error('A cron expression has 5 fields: minute hour day month weekday');
-  return { fields: parts.map((p, i) => parseField(p, RANGES[i])), domStar: parts[2] === '*', dowStar: parts[4] === '*' };
+  return { fields: parts.map((p, i) => parseField(p, /** @type {[number, number]} */ (RANGES[i]))), domStar: parts[2] === '*', dowStar: parts[4] === '*' };
 }
 
 const fmts = new Map();

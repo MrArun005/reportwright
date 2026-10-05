@@ -1,3 +1,4 @@
+// @ts-check
 // Batch jobs: render one template for many parameter sets, then deliver.
 // The queue is the job records in storage (src/server/storage): any server can run a queued job. A server takes a job
 // with a lease (renewed while it works); if it dies, the lease runs out and another server goes on from the last
@@ -149,7 +150,7 @@ export async function createBatch(spec, req, principal = defaultPrincipal(), { s
     id: rid(), status: 'queued', createdAt: new Date().toISOString(), template: typeof spec.template === 'string' ? spec.template : def.name,
     templateRef: typeof spec.template === 'string' ? spec.template : null,
     format, timeZone: checkTimeZone(spec.timeZone) || null, fromSnapshot: !!spec.fromSnapshot, output: spec.output || { type: 'zip' }, webhook: spec.webhook || null, fileName: spec.fileName || null, schedule: spec.schedule || null, pdfa: !!spec.pdfa, sign: !!spec.sign,
-    total: items.length, done: 0, failed: 0, results: [], errors: [], failedItems: [], base, self, owner: principalId(principal), ownerKey: vet(principal).viaKey || null, ownerSession: !!session, ownerSince: since, email: spec.email ? checkEmail(spec.email) : null,
+    total: items.length, done: 0, failed: 0, results: [], errors: [], failedItems: [], base, self, owner: principalId(principal), ownerKey: /** @type {any} */ (vet(principal)).viaKey || null, ownerSession: !!session, ownerSince: since, email: spec.email ? checkEmail(spec.email) : null,
   };
   job._work = { blob: workKey(job.id) };
   await blobs().put(job._work.blob, Buffer.from(JSON.stringify({ items, def })));
@@ -451,7 +452,7 @@ export async function packOutput({ type, key, items }) {
   } else {
     const files = {};
     for (const it of items) files[it.name] = new Uint8Array(await get(it.key));
-    await blobs().put(key, zipSync(files, { level: 6 }));
+    await blobs().put(key, zipSync(/** @type {any} */ (files), { level: 6 }));
   }
   return { key };
 }

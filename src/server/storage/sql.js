@@ -127,7 +127,7 @@ export function sqlStore(url) {
         };
         // SQLite: under one write transaction (see connect). Databases with their own locking: a setup that lost a race
         // with another server's (a CREATE at the same moment) is retried a few times with backoff, then fails
-        if (run.setup) await run.setup(schema);
+        if (/** @type {any} */ (run).setup) await /** @type {any} */ (run).setup(schema);
         else for (let i = 0; ; i++) { try { await schema(run); break; } catch (e) { if (i >= 4) throw e; await new Promise(r => setTimeout(r, 100 * 2 ** i + Math.random() * 100)); } }
         return run;
       });

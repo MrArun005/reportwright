@@ -1,3 +1,4 @@
+// @ts-check
 // Draft a report from a description with Claude (official Anthropic SDK). The answer must pass
 // validate() and a trial render on the sample data; any problems go back to the model, 3 tries in all.
 // Nothing is saved here: the designer reviews the draft, then saves it like any report.

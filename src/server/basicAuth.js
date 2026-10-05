@@ -1,3 +1,4 @@
+// @ts-check
 // Optional password for the whole app: PW_BASIC_AUTH="user:password".
 // The designer, report storage and server renders have no login of their own: turn this on (or put
 // the app behind your SSO proxy) before anyone outside can reach it.

@@ -1,3 +1,4 @@
+// @ts-check
 // Server-side rendering to every format. The same engine as the browser, in Node.
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -142,7 +143,7 @@ export async function renderTo(def, opt = {}) {
   const base = opt.baseUrl || baseUrl();
   const fetch = serverFetch(opt.self || base);
   await syncFonts();
-  const model = await render(d, {
+  const model = await render(d, /** @type {any} */ ({
     parameters: opt.parameters || {}, state: opt.state || {}, fontStore: fontStore(), timeZone: checkTimeZone(opt.timeZone),
     baseUrl: base, fetch, timeoutMs: renderTimeoutMs(),
     exportData: !opt.modelOnly && (format !== 'pdf' || !!opt.ua), // a plain PDF needs no table data
@@ -156,7 +157,7 @@ export async function renderTo(def, opt = {}) {
       opt.onLoadReport?.(id, sub); // thumbs.js: what else this render drew, for its principal-independence check
       return Array.isArray(sub?.dataSources) ? { ...sub, dataSources: sub.dataSources.map(normalizeSource) } : sub;
     },
-  });
+  }));
   let bytes = null;
   if (opt.modelOnly) return { bytes, model, contentType: FORMATS[format].type, ext: FORMATS[format].ext };
   // images by URL (a logo) go through the same guard; one that fails to load is left out, as in the viewer
@@ -168,7 +169,7 @@ export async function renderTo(def, opt = {}) {
     if (signing) bytes = await signing.sign(bytes);
   }
   else if (format === 'html') bytes = Buffer.from(await exportHtml(model, fontStore(), { title: def.name, subset, drillBase: opt.self || base, static: !!opt.static, locale: def.locale, currency: def.currency })); // drill-through opens this server's viewer (never a caller's baseUrl)
-  else if (format === 'csv') bytes = Buffer.from(exportCsv(model, { locale: def.locale, currency: def.currency }));
+  else if (format === 'csv') bytes = Buffer.from(exportCsv(model, /** @type {any} */ ({ locale: def.locale, currency: def.currency })));
   else if (format === 'docx') bytes = Buffer.from(await exportDocx(model, { title: def.name, lang: def.locale, fontStore: fontStore(), fetchImage }));
   else if (format === 'pptx') bytes = Buffer.from(await exportPptx(model, { title: def.name, lang: def.locale, fontStore: fontStore(), fetchImage }));
   else if (format === 'xlsx') { const ExcelJS = (await import('exceljs')).default; bytes = await exportXlsx(model, ExcelJS, { currency: def.currency, title: def.name, formulas: opt.formulas !== false, fontStore: fontStore(), fetchImage }); }

@@ -1,3 +1,4 @@
+// @ts-check
 // API keys for /api/v1. Set PW_API_KEYS="key1,key2" and send "Authorization: Bearer <key>".
 // A key is a service key (it may do everything, as before), or with "email|key" it acts as that user: with
 // accounts on (PW_AUTH=users) it sees and renders only what that user may (src/server/perms.js).

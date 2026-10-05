@@ -1,3 +1,4 @@
+// @ts-check
 // Schedules: run a batch on a cron expression. Stored by src/server/storage (data/schedules.json by default); checked every 30 s.
 import crypto from 'node:crypto';
 import { parseCron, nextRun } from './cron.js';
@@ -60,7 +61,7 @@ export async function createSchedule(body, p = defaultPrincipal(), { session = f
   await checkTemplate(p, body.template);
   await checkDelivery(body, p);
   const { ownerSession: _x, ownerSince: _y, ...rest } = body;
-  const s = { enabled: true, timezone: 'UTC', format: 'pdf', ...rest, ...(rest.email ? { email: checkEmail(rest.email) } : {}), id: `s_${crypto.randomBytes(5).toString('hex')}`, createdAt: new Date().toISOString(), owner: principalId(p), ownerKey: vet(p).viaKey || null, ownerSession: !!session && !vet(p).viaKey, ownerSince: session && vet(p).kind === 'user' ? (await getUser(/** @type {any} */ (vet(p)).email))?.createdAt || null : null };
+  const s = { enabled: true, timezone: 'UTC', format: 'pdf', ...rest, ...(rest.email ? { email: checkEmail(rest.email) } : {}), id: `s_${crypto.randomBytes(5).toString('hex')}`, createdAt: new Date().toISOString(), owner: principalId(p), ownerKey: /** @type {any} */ (vet(p)).viaKey || null, ownerSession: !!session && !/** @type {any} */ (vet(p)).viaKey, ownerSince: session && vet(p).kind === 'user' ? (await getUser(/** @type {any} */ (vet(p)).email))?.createdAt || null : null };
   await withLock('schedules', () => save(s));
   return shown(s);
 }

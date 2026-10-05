@@ -1,3 +1,4 @@
+// @ts-check
 // Server-only helpers for reports, with version history. Where they live: src/server/storage (PW_STORAGE).
 import crypto from 'node:crypto';
 import path from 'node:path';

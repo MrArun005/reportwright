@@ -1,3 +1,4 @@
+// @ts-check
 // A render worker thread (pool.js): runs one server render at a time, so renders never hold the server's event loop.
 // Plain Node, outside the bundler: the "@/" imports of the server code are mapped to src/ here. The engine's fonts,
 // HarfBuzz and the ICC profile load once per worker (module state in renderer.js) and serve every render after.

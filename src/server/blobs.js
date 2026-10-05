@@ -60,7 +60,7 @@ function fileBlobs(root) {
       let h;
       try { h = await fs.open(file(k)); } catch (e) { if (missing(e)) return null; throw e; }
       const { size } = await h.stat();
-      return { size, stream: /** @type {ReadableStream} */ (h.readableWebStream({ type: 'bytes' })) }; // closes the file at the end
+      return { size, stream: /** @type {ReadableStream} */ (h.readableWebStream(/** @type {any} */ ({ type: 'bytes' }))) }; // closes the file at the end
     },
     async remove(k) { await fs.rm(file(k), { force: true }); },
     async list(prefix) {

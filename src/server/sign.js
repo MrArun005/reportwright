@@ -1,3 +1,4 @@
+// @ts-check
 // Digital signatures for PDFs rendered on the server: a detached PKCS#7 signature
 // (adbe.pkcs7.detached) over the whole file. The certificate is a .p12 file:
 // PW_SIGN_P12 (its path) and PW_SIGN_PASSWORD. Only routes behind an API key may sign:

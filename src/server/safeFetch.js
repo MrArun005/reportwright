@@ -1,3 +1,4 @@
+// @ts-check
 // Outbound HTTP for URLs that reports and API callers choose: data sources, images, batch lists,
 // uploads, webhooks, the data proxy. Private and local addresses are refused (SSRF) unless the
 // URL is this server (by origin) or its host is in the allow list (PW_INTERNAL_HOSTS).
@@ -19,10 +20,10 @@ const TIMEOUT_MS = 30000;
 const deadlineMs = () => cnum('PW_FETCH_DEADLINE_MS', 60000, { min: 1 });
 
 const blocked = new net.BlockList(); // also matches IPv4-mapped IPv6 (::ffff:127.0.0.1)
-for (const [a, p] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12],
-  ['192.0.0.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['224.0.0.0', 3]]) blocked.addSubnet(a, p, 'ipv4');
+for (const [a, p] of /** @type {[string, number][]} */ ([['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12],
+  ['192.0.0.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['224.0.0.0', 3]])) blocked.addSubnet(a, p, 'ipv4');
 // ::/96 and ::ffff:0:0:0/96 carry IPv4; local-use NAT64, 6to4 and Teredo can reach anything behind a gateway that routes them
-for (const [a, p] of [['::', 96], ['::ffff:0:0:0', 96], ['64:ff9b:1::', 48], ['2002::', 16], ['2001::', 32], ['fc00::', 7], ['fe80::', 10], ['fec0::', 10], ['ff00::', 8]]) blocked.addSubnet(a, p, 'ipv6');
+for (const [a, p] of /** @type {[string, number][]} */ ([['::', 96], ['::ffff:0:0:0', 96], ['64:ff9b:1::', 48], ['2002::', 16], ['2001::', 32], ['fc00::', 7], ['fe80::', 10], ['fec0::', 10], ['ff00::', 8]])) blocked.addSubnet(a, p, 'ipv6');
 
 /** The 8 groups of an IPv6 address. @param {string} ip */
 function expand6(ip) {
@@ -113,7 +114,7 @@ export const serverFetch = (selfOrigin, { internal = true } = {}) => async (inpu
  * A delivery or source URL saved for later (a webhook, an upload, a list of items): http(s), and not a private or
  * local address unless its host is in PW_INTERNAL_HOSTS. Checked when it is saved; safeFetch checks again when it is
  * used (the name may point elsewhere by then). relative: a path on this server is fine (itemsFrom).
- * @param {any} url @param {string} what @param {{ relative?: boolean }} [o]
+ * @param {any} url @param {string} what @param {{ relative?: boolean, internal?: boolean }} [o]
  */
 export async function checkTarget(url, what, { relative = false, internal = true } = {}) {
   if (relative && typeof url === 'string' && url.startsWith('/') && !url.startsWith('//')) return;
@@ -144,7 +145,7 @@ export async function safeFetch(input, init = {}, { allow = [], hops = 3, deadli
   const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
   const trusted = allow.some(a => (a.includes('://') ? safeOrigin(a) === url.origin : a.toLowerCase() === host));
   if (!trusted && net.isIP(host) && isPrivate(host)) throw refuse(host);
-  const lookup = (name, opts, cb) => dns.lookup(name, { ...opts, all: true }, (err, list) => {
+  const lookup = (name, opts, cb) => dns.lookup(name, { ...opts, all: true }, (err, /** @type {any} */ list) => {
     if (err) return cb(err);
     if (!trusted && list.some(a => isPrivate(a.address))) return cb(refuse(name));
     return opts.all ? cb(null, list) : cb(null, list[0].address, list[0].family);
@@ -191,7 +192,7 @@ export async function safeFetch(input, init = {}, { allow = [], hops = 3, deadli
     body = /** @type {any} */ (Readable.toWeb(capped));
   }
   const outHeaders = Object.entries(res.headers).flatMap(([k, v]) => (Array.isArray(v) ? v.map(x => [k, x]) : [[k, String(v)]]));
-  return new Response(body, { status: res.statusCode, statusText: res.statusMessage, headers: outHeaders });
+  return new Response(body, { status: res.statusCode, statusText: res.statusMessage, headers: /** @type {any} */ (outHeaders) });
 }
 
 /** The type the data proxy answers with: data types as such, anything else (HTML, SVG, XML) as bytes. @param {string|null} t */

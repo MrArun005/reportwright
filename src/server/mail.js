@@ -67,7 +67,7 @@ async function transport() {
 
 /**
  * Send one message. to: plain addresses (checked here too). attachments: { filename, content (bytes), contentType }.
- * @param {{ to: string[], subject: string, text: string, attachments?: { filename: string, content: Uint8Array|Buffer, contentType: string }[] }} m
+ * @param {{ to: string[], subject: string, text: string, idempotencyKey?: string, attachments?: { filename: string, content: Uint8Array|Buffer, contentType: string }[] }} m
  */
 export async function sendMail(m) {
   if (!mailOn()) throw fail('Mail is not set up on this server (PW_SMTP_URL, PW_MAIL_FROM).', 503);
