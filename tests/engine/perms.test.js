@@ -633,6 +633,7 @@ describe.each(backends)('routes on %s storage', (kind, setup) => {
 
   it('review: reading a report through the API is audited (definition and thumbnail)', async () => {
     const { queryAudit } = await import('../../src/server/audit.js');
+    globalThis.__pwThumbSeen?.clear(); // a thumbnail view is audited once an hour per viewer and report
     const before = (await queryAudit({ type: 'report.view', actor: 'user:carol@x.io', limit: 500 })).length;
     expect((await R.one.GET(req('/api/reports/salary', { who: 'carol' }), P('salary'))).status).toBe(200);
     expect((await thumbOf('carol', 'salary')).status).toBe(200);

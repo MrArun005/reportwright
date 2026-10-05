@@ -21,6 +21,7 @@ const ENV = (o) => ({
   PW_OIDC_ISSUER: o.issuer, PW_OIDC_CLIENT_ID: o.clientId, PW_OIDC_CLIENT_SECRET: o.clientSecret, PW_OIDC_ALLOW_HTTP: '1',
   PW_SAML_ENTRY_POINT: 'https://idp.example.com/sso', PW_SAML_IDP_CERT: idp.cert, PW_SAML_IDP_ISSUER: IDP,
   PW_SSO_ROLE_MAP: 'pw-admins=admin,pw-design=designer', PW_SSO_DEFAULT_ROLE: 'viewer',
+  PW_AUDIT_ANON_PER_SOURCE: '100000', // these tests read each refusal's own event (past 20 a minute they are counted together)
 });
 
 beforeAll(async () => {

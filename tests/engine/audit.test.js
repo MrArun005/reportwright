@@ -99,7 +99,7 @@ describe('what the routes record', () => {
   it('sign-in, failures and sign-out, never the password', async () => {
     const login = (await import('../../app/api/auth/login/route.js')).POST;
     await login(rq('/api/auth/login', { method: 'POST', body: { email: 'ann@x.io', password: 'not her password at all' } }));
-    expect(await last('auth.login_failed')).toMatchObject({ status: 'ok', ip: '203.0.113.9', detail: { email: 'ann@x.io', reason: 'wrong email or password' } });
+    expect(await last('auth.login_failed')).toMatchObject({ status: 'failed', ip: '203.0.113.9', detail: { email: 'ann@x.io', reason: 'wrong email or password' } });
     const ok = await login(rq('/api/auth/login', { method: 'POST', body: { email: 'ann@x.io', password: 'ann password 123' } }));
     expect(ok.status).toBe(200);
     expect(await last('auth.login')).toMatchObject({ actor: 'user:ann@x.io', ip: '203.0.113.9' });

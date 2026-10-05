@@ -23,7 +23,7 @@ import { store } from './storage/index.js';
 import { clientAddress } from './limits.js';
 import { principalId } from './perms.js';
 import { logWarn } from './errors.js';
-import { devMode } from './config.js';
+import { devMode, num } from './config.js';
 
 /** @typedef {import('./perms.js').Principal} Principal */
 
@@ -37,7 +37,7 @@ export const AUDIT_TYPES = /** @type {const} */ ([
   'settings.update', 'snapshot.clear', 'audit.checkpoint',
 ]);
 
-const retentionDays = () => { const n = Number(process.env.PW_AUDIT_RETENTION_DAYS); return Number.isFinite(n) && n > 0 ? n : 365; };
+const retentionDays = () => num('PW_AUDIT_RETENTION_DAYS', 365, { min: 1 });
 const HOUR = 3600 * 1000;
 const g = /** @type {any} */ (globalThis);
 g.__pwAudit ||= { pruned: 0, seq: 0 };
@@ -202,6 +202,13 @@ export const isSecurityEvent = (type) => SECURITY.test(String(type));
  */
 export async function audit(type, o = {}) {
   startCheckpoints();
+  // anonymous embed readers' renders and views may be sampled (PW_AUDIT_ANON_RENDER_SAMPLE): each kept one says its rate
+  const rate = Math.min(1, Math.max(0, Number(process.env.PW_AUDIT_ANON_RENDER_SAMPLE ?? 1)));
+  const embedReader = o.principal && ['anon', 'public'].includes(/** @type {any} */ (o.principal).kind);
+  if (embedReader && (type === 'report.render' || type === 'report.view') && rate < 1) {
+    if (!(Math.random() < rate)) return;
+    o = { ...o, detail: { ...(o.detail || {}), sample: rate } };
+  }
   const at = new Date().toISOString();
   const entry = {
     // sorts by time, then by order within this process (two events in one millisecond), then at random across servers
@@ -211,16 +218,58 @@ export async function audit(type, o = {}) {
     ...(o.report ? { report: String(o.report).slice(0, 255) } : {}),
     ...(o.format ? { format: String(o.format).slice(0, 16) } : {}),
     ...(o.params ? { params: paramsHash(o.params) } : {}),
-    status: o.status || 'ok',
+    // a refused sign-in, code, mail…: its event says so even when the caller did not
+    status: o.status || (/(_|\.)failed$/.test(type) ? 'failed' : 'ok'),
     ...(o.detail ? { detail: clean(o.detail) } : {}),
   };
+  if (entry.actor === 'anon' && !floodGate(entry)) return; // counted into an aggregate entry (never lost)
   const ok = await write(entry, type);
   if (!ok && isSecurityEvent(type)) throw Object.assign(new Error('The audit log could not record this, so it was refused. Try again, or ask an admin to check the server\'s storage.'), { status: 503 });
 }
 
+/* ---------------- flood control: events nobody signed in caused ---------------- */
+
+const FLOOD_MS = 60000;
+/**
+ * Whether an event without a signed-in actor is written now. Anyone who reaches the server can cause these (a
+ * request without a key, a malformed sign-in, garbage SAML posts), so they are rate-limited per address and in
+ * total, per minute: past PW_AUDIT_ANON_PER_SOURCE (20) from one address, or PW_AUDIT_ANON_PER_MINUTE (600) from all,
+ * an event is counted into one aggregate entry per (type, address or "*", status) instead, written when the minute
+ * ends: { detail: { ...the first one's detail, repeated: n, from, to } }. Nothing is dropped (security events included:
+ * their count is the record), but a flood writes a few entries a minute, not one per request, and the storage and
+ * the SIEM stay usable. Per process (each server counts its own).
+ * @param {any} entry @returns {boolean} true: write it now
+ */
+function floodGate(entry) {
+  const f = (g.__pwAudit.flood ||= { start: Date.now(), per: new Map(), total: 0, agg: new Map(), timer: null });
+  if (Date.now() - f.start >= FLOOD_MS) flushFlood();
+  const n = (f.per.get(entry.ip) || 0) + 1;
+  f.per.set(entry.ip, n);
+  if (n <= num('PW_AUDIT_ANON_PER_SOURCE', 20) && f.total < num('PW_AUDIT_ANON_PER_MINUTE', 600)) { f.total++; return true; }
+  const wide = f.total >= num('PW_AUDIT_ANON_PER_MINUTE', 600);
+  const key = `${entry.type}|${wide ? '*' : entry.ip}|${entry.status}`;
+  const a = f.agg.get(key);
+  if (a) { a.n++; a.to = entry.at; } else f.agg.set(key, { entry: { ...entry, ...(wide ? { ip: '*' } : {}) }, n: 1, from: entry.at, to: entry.at });
+  if (!f.timer) { f.timer = setTimeout(() => { f.timer = null; flushFlood(); }, Math.max(0, FLOOD_MS - (Date.now() - f.start))); f.timer.unref?.(); }
+  return false;
+}
+/** Write the aggregate entries of the minute that ended, and start a new one. Also at exit (beforeExit) and in tests. */
+export async function flushFlood() {
+  const f = g.__pwAudit.flood;
+  if (!f) return;
+  const agg = [...f.agg.values()];
+  g.__pwAudit.flood = { start: Date.now(), per: new Map(), total: 0, agg: new Map(), timer: null };
+  if (f.timer) clearTimeout(f.timer);
+  await Promise.all(agg.map(({ entry, n, from, to }) => {
+    const at = new Date().toISOString();
+    const e = { ...entry, id: `${at}-${String((g.__pwAudit.seq = ((g.__pwAudit.seq || 0) + 1) % 1e6)).padStart(6, '0')}-${crypto.randomBytes(3).toString('hex')}`, at, detail: { ...(entry.detail || {}), repeated: n, from, to } };
+    return write(e, e.type).then(ok => { if (!ok) console.error(`[pagewright] audit log: could not record ${n} × ${e.type} from ${e.ip}`); });
+  }));
+}
+
 /** Append one event (through the stream's queue); never throws. @param {any} entry @param {string} _type @returns {Promise<boolean>} written */
 async function write(entry, _type) {
-  if (!g.__pwAudit.exitHook) { g.__pwAudit.exitHook = true; process.once?.('beforeExit', () => { drain(); }); } // flush what waits before a quiet exit
+  if (!g.__pwAudit.exitHook) { g.__pwAudit.exitHook = true; process.once?.('beforeExit', () => { flushFlood().finally(drain); }); } // flush what waits before a quiet exit
   if (!(await enqueue(entry))) return false;
   const c = chain();
   // publish this stream's head every 30 s, so the next checkpoint (any server's) anchors it even if this process dies
