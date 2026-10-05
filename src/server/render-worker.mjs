@@ -22,6 +22,7 @@ const own = (b) => (b.byteOffset === 0 && b.byteLength === b.buffer.byteLength &
 
 async function run(m) {
   if (m.kind === 'thumb') return { result: await mod.drawThumb(m) };
+  if (m.kind === 'pack') return { result: await (await import('./jobs.js')).packOutput(m.spec) }; // a batch's zip or merged PDF
   const { opt } = m;
   // a saved template is read and checked here, as the principal (the same perms code as on the request thread)
   const def = m.def ?? (m.how === 'runnable' ? await (await import('./perms.js')).readRunnable(opt.principal, m.ref) : await mod.loadTemplate(m.ref, opt.principal));

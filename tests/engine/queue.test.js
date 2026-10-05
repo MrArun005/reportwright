@@ -73,13 +73,45 @@ describe('fencing: a replica that lost its lease writes nothing more', () => {
     try { expect(await running).toMatchObject({ id: job.id, stopped: true }); } finally { console.warn = warn; }
     const mid = JSON.parse(await store().get('jobs', job.id));
     expect(mid.status).toBe('running'); // A did not finish it, nor mark it failed
-    const byA = mid.results.length;
-    expect(byA).toBeLessThan(30);
+    expect(mid.done).toBeLessThan(30);
     await store().release(name, 'B');
     expect(await jobs.workOnce('B')).toMatchObject({ id: job.id, stopped: false });
     const done = await jobs.getJob(job.id);
     expect(done).toMatchObject({ status: 'completed', done: 30, failed: 0 });
     expect(new Set(done.results.map(r => r.index)).size).toBe(30); // no item twice
+  }, 60000);
+});
+
+describe('job records: small, indexed, kept for a while', () => {
+  it('the queue reads open jobs only; the record stays small; finished jobs go after the retention', async () => {
+    const { blobs } = await import('../../src/server/blobs.js');
+    const job = await jobs.createBatch({ template: def, items: Array.from({ length: 40 }, (_, n) => ({ parameters: { n: String(n) } })), format: 'pdf', output: { type: 'merged' } }, null);
+    expect(JSON.parse(await store().get('settings', 'jobs-open')).ids).toContain(job.id);
+    const raw = await store().get('jobs', job.id);
+    expect(raw.length).toBeLessThan(2000); // the inputs are not on it
+    const puts = [];
+    const s = store(), put = s.put;
+    s.put = async (k, id, text) => { if (k === 'jobs') puts.push(text.length); return put.call(s, k, id, text); };
+    try { await jobs.workOnce('A'); } finally { s.put = put; }
+    const done = await jobs.getJob(job.id);
+    expect(done).toMatchObject({ status: 'completed', done: 40 });
+    expect(done.results).toHaveLength(40);
+    expect(Math.max(...puts.slice(0, -1))).toBeLessThan(3000); // while it ran: counters only
+    expect(JSON.parse(await store().get('settings', 'jobs-open')).ids).not.toContain(job.id);
+    expect((await jobs.jobFile(job.id)).bytes.subarray(0, 5).toString()).toBe('%PDF-'); // merged in the pool
+    expect(await blobs().list(`jobs/${job.id}/results/`)).toEqual([]);
+    expect(await jobs.sweepJobs()).toBe(0); // younger than 30 days
+    expect(await jobs.sweepJobs(Date.now() + 31 * 86400000)).toBeGreaterThanOrEqual(1);
+    expect(await store().get('jobs', job.id)).toBe(null);
+    expect(await blobs().list(`jobs/${job.id}/`)).toEqual([]);
+  }, 60000);
+
+  it('an install from before: the index is built once from the records; old inline inputs still run', async () => {
+    const id = 'b_legacy0001';
+    await store().put('jobs', id, JSON.stringify({ id, status: 'queued', createdAt: new Date().toISOString(), template: 'Q', templateRef: null, format: 'json', output: { type: 'zip' }, total: 1, done: 0, failed: 0, results: [], errors: [], failedItems: [], base: 'http://127.0.0.1:3000', self: 'http://127.0.0.1:3000', owner: null, _work: { items: [{ parameters: { n: 'old' } }], def } }));
+    await store().remove('settings', 'jobs-open');
+    expect(await jobs.workOnce('A')).toMatchObject({ id, stopped: false });
+    expect(await jobs.getJob(id)).toMatchObject({ status: 'completed', done: 1 });
   }, 60000);
 });
 
@@ -161,7 +193,8 @@ describe('review: a slow delivery target cannot hold the scheduler or the queue'
       await schedules.updateSchedule(b.id, { items: [{ name: 'NEW', parameters: { n: 'new' } }] });
       await tick;
       const job = (await jobs.listJobs()).find(j => j.schedule?.id === b.id);
-      expect(JSON.parse(await store().get('jobs', job.id))._work.items.map(i => i.name)).toEqual(['NEW']);
+      const { blobs } = await import('../../src/server/blobs.js');
+      expect(JSON.parse(String(await blobs().get(`jobs/${job.id}/work.json`))).items.map(i => i.name)).toEqual(['NEW']); // the inputs: one blob, written once
       for (const x of [slow.id, b.id]) await schedules.deleteSchedule(x);
     } finally { delete process.env.PW_INTERNAL_HOSTS; srv.close(); }
   });

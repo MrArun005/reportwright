@@ -4,6 +4,12 @@
 // finished item, because every rendered item is written as it is made. Items and the output (zip, merged PDF) are
 // blobs (src/server/blobs.js): in the configured storage or S3, so every server reads what any server wrote. Only the
 // "folder" output writes into a local folder (data/outputs/), by design: it is for a server with a shared volume.
+//
+// Records: the job record is small (status, counters, the first errors) and is written at most about once a second.
+// The inputs (items and definition) are one blob written once (jobs/<id>/work.json); each finished item writes its own
+// small result blob (jobs/<id>/results/<i>), so a 10,000-item batch writes megabytes, not gigabytes. The queue reads
+// only the open jobs (the settings record "jobs-open"). The zip or merged PDF is made in the render pool, off the
+// request thread. Finished jobs and their blobs are removed after PW_JOB_RETENTION_DAYS (30; 0 keeps them).
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -11,11 +17,11 @@ import os from 'node:os';
 import { zipSync } from 'fflate';
 import { PDFDocument } from 'pdf-lib';
 import { loadTemplate, baseUrl as defaultBase } from './renderer.js';
-import { renderInPool } from './pool.js';
+import { renderInPool, submit } from './pool.js';
 import { serverFetch, checkTarget } from './safeFetch.js';
 import { jsonPath } from '@/engine/data/index.js';
 import { evalValue } from '@/engine/expr/evaluate.js';
-import { store } from './storage/index.js';
+import { store, withLock } from './storage/index.js';
 import { blobs, removePrefix } from './blobs.js';
 import { mailOn, checkRecipients, oneLine, sendMail, maxAttachmentBytes } from './mail.js';
 import { audit } from './audit.js';
@@ -40,6 +46,49 @@ const rid = () => `b_${Date.now().toString(36)}${crypto.randomBytes(3).toString(
 // the record holds the job's inputs (_work: items and template) until it finishes, so any server can run it
 const saveJob = (job) => store().put('jobs', job.id, JSON.stringify(job, null, 2));
 const save = saveJob;
+const MAX_ERRORS = 100; // on the record; the count is in "failed"
+const workKey = (id) => `jobs/${id}/work.json`;
+const resultKey = (id, i) => `jobs/${id}/results/${i}`;
+
+/* ---------------- the open-jobs index ---------------- */
+
+const OPEN = 'jobs-open';
+/** Every unfinished job's id, from a scan of all job records (the first time, and should the index be lost). */
+async function scanOpen() {
+  const ids = [];
+  for (const r of await store().list('jobs')) {
+    try { const j = JSON.parse(r.text); if ((j.status === 'queued' || j.status === 'running') && j._work) ids.push(j.id); } catch { /* skip */ }
+  }
+  return ids;
+}
+/** The open job ids. */
+async function openIds() {
+  const t = await store().get('settings', OPEN);
+  if (t) return JSON.parse(t).ids || [];
+  return withLock(OPEN, async () => {
+    const again = await store().get('settings', OPEN);
+    if (again) return JSON.parse(again).ids || [];
+    const ids = await scanOpen();
+    await store().put('settings', OPEN, JSON.stringify({ id: OPEN, ids }));
+    return ids;
+  });
+}
+/** @param {string} id @param {boolean} open */
+async function markOpen(id, open) {
+  await withLock(OPEN, async () => {
+    const t = await store().get('settings', OPEN);
+    const ids = new Set(t ? JSON.parse(t).ids || [] : await scanOpen());
+    if (open) ids.add(id); else ids.delete(id);
+    await store().put('settings', OPEN, JSON.stringify({ id: OPEN, ids: [...ids] }));
+  });
+}
+/** The job's inputs: { items, def } (jobs from before kept them on the record). @param {any} job */
+async function loadWork(job) {
+  if (!job._work?.blob) return job._work;
+  const b = await blobs().get(job._work.blob);
+  if (!b) throw new Error('The batch inputs are gone from storage.');
+  return JSON.parse(b.toString('utf8'));
+}
 
 export function publicJob(job) {
   const { items, _def, _work, owner, ownerKey, ...rest } = job;
@@ -98,9 +147,12 @@ export async function createBatch(spec, req, principal = defaultPrincipal(), { s
     id: rid(), status: 'queued', createdAt: new Date().toISOString(), template: typeof spec.template === 'string' ? spec.template : def.name,
     templateRef: typeof spec.template === 'string' ? spec.template : null,
     format, fromSnapshot: !!spec.fromSnapshot, output: spec.output || { type: 'zip' }, webhook: spec.webhook || null, fileName: spec.fileName || null, schedule: spec.schedule || null, pdfa: !!spec.pdfa, sign: !!spec.sign,
-    total: items.length, done: 0, failed: 0, results: [], errors: [], failedItems: [], base, self, owner: principalId(principal), ownerKey: vet(principal).viaKey || null, ownerSession: !!session, ownerSince: since, email: spec.email ? checkEmail(spec.email) : null, _work: { items, def },
+    total: items.length, done: 0, failed: 0, results: [], errors: [], failedItems: [], base, self, owner: principalId(principal), ownerKey: vet(principal).viaKey || null, ownerSession: !!session, ownerSince: since, email: spec.email ? checkEmail(spec.email) : null,
   };
+  job._work = { blob: workKey(job.id) };
+  await blobs().put(job._work.blob, Buffer.from(JSON.stringify({ items, def })));
   await save(job);
+  await markOpen(job.id, true);
   poke();
   return publicJob(job);
 }
@@ -185,10 +237,14 @@ export async function jobFile(id, p) {
  * @returns {Promise<{ id: string, stopped: boolean } | null>} null when there was nothing to run
  */
 export async function workOnce(owner, { stopAfter } = {}) {
-  // ponytail: reads every job record per poll; an index of open jobs when there are many thousands of them
   const open = [];
-  for (const r of await store().list('jobs')) {
-    try { const j = JSON.parse(r.text); if ((j.status === 'queued' || j.status === 'running') && j._work) open.push(j); } catch { /* skip */ }
+  for (const id of await openIds()) {
+    try {
+      const t = await store().get('jobs', id);
+      const j = t ? JSON.parse(t) : null;
+      if (j && (j.status === 'queued' || j.status === 'running') && j._work) open.push(j);
+      else await markOpen(id, false); // finished or gone
+    } catch { /* skip */ }
   }
   open.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
   for (const cand of open) {
@@ -204,7 +260,7 @@ export async function workOnce(owner, { stopAfter } = {}) {
     try { stopped = await run(job, owner, stopAfter, fence); }
     catch (e) {
       if (e === LEASE_LOST || fence.lost) { console.warn(`[pagewright] batch ${job.id}: this server lost its lease; another server goes on with it`); stopped = true; }
-      else { job.status = 'failed'; job.errors.push(e.message); delete job._work; await fence.hold().then(() => save(job), () => {}); }
+      else { job.status = 'failed'; job.errors.push(e.message); delete job._work; await fence.hold().then(() => save(job), () => {}); await markOpen(job.id, false); }
     }
     finally { clearInterval(beat); }
     if (!stopped) await store().release(name, owner);
@@ -224,6 +280,9 @@ export function startWorker() {
   Q.started = true;
   Q.timer = setInterval(poke, Number(process.env.PW_QUEUE_POLL_MS) || 2000);
   Q.timer.unref?.();
+  Q.sweep = setInterval(() => { sweepJobs().catch(logWarn('jobs sweep')); }, 3600000);
+  Q.sweep.unref?.();
+  setTimeout(() => { sweepJobs().catch(logWarn('jobs sweep')); }, 60000).unref?.();
   poke();
 }
 
@@ -244,7 +303,7 @@ const LEASE_LOST = Object.freeze(new Error('lease lost'));
 /** @param {{ lost: boolean, hold: () => Promise<void> }} [fence] */
 async function run(job, owner, stopAfter, fence = { lost: false, hold: async () => {} }) {
   const save = async (j) => { await fence.hold(); await saveJob(j); };
-  const { items, def } = job._work;
+  const { items, def } = await loadWork(job);
   // the owner as they are now: a user who lost access, or was disabled, gets no further items
   // as the owner is now: the template must still be theirs to view; an inline definition needs a designer or a service.
   // Checked at the start (throws: the job fails, workOnce) and again before every item.
@@ -260,12 +319,20 @@ async function run(job, owner, stopAfter, fence = { lost: false, hold: async () 
   job.failedItems ||= [];
   await save(job);
   const itemKey = (i) => `jobs/${job.id}/items/${i}`; // blobs: any server can go on from another's items
-  // go on where the last server stopped: items with a result (or a failure) are done
-  const finished = new Set([...job.results.map(r => r.index), ...job.failedItems]);
+  // go on where the last server stopped: items with a result blob (or, from before, on the record) are done
+  const results = [...job.results];
+  const failedItems = [...job.failedItems];
+  for (const b of await blobs().list(`jobs/${job.id}/results/`)) {
+    const r = JSON.parse(String(await blobs().get(b.key) || 'null'));
+    if (r?.failed) failedItems.push(r.index); else if (r) results.push(r);
+  }
+  const finished = new Set([...results.map(r => r.index), ...failedItems]);
+  job.done = results.length; job.failed = failedItems.length;
   const todo = items.map((_, i) => i).filter(i => !finished.has(i));
   let taken = 0;
-  let saving = Promise.resolve();
-  const saveSoon = () => { saving = saving.then(() => save(job)); return saving; }; // one write at a time
+  let saving = Promise.resolve(), savedAt = 0;
+  // the record is small now; written at most once a second (and at the end): the result blobs say what is done
+  const saveSoon = () => { if (Date.now() - savedAt < 1000 && todo.length) return saving; savedAt = Date.now(); saving = saving.then(() => save(job)); return saving; };
   const worker = async () => {
     while (todo.length) {
       if (stopAfter != null && taken >= stopAfter) return;
@@ -287,12 +354,17 @@ async function run(job, owner, stopAfter, fence = { lost: false, hold: async () 
           if (!res.ok) throw new Error(`upload: HTTP ${res.status}`);
         }
         await blobs().put(itemKey(i), r.bytes);
-        job.results.push({ index: i, name, pages: r.pages, bytes: r.bytes.length, by: owner });
+        const res = { index: i, name, pages: r.pages, bytes: r.bytes.length, by: owner };
+        if (fence.lost) return;
+        await blobs().put(resultKey(job.id, i), Buffer.from(JSON.stringify(res)));
+        results.push(res);
         job.done++;
       } catch (e) {
+        if (fence.lost) return;
+        await blobs().put(resultKey(job.id, i), Buffer.from(JSON.stringify({ index: i, failed: true })));
         job.failed++;
-        job.failedItems.push(i);
-        job.errors.push(`${name}: ${e.message}`);
+        failedItems.push(i);
+        if (job.errors.length < MAX_ERRORS) job.errors.push(`${name}: ${e.message}`);
       }
       await saveSoon(); // after every item: another server must see exactly what is done
     }
@@ -302,14 +374,15 @@ async function run(job, owner, stopAfter, fence = { lost: false, hold: async () 
   if (fence.lost) throw LEASE_LOST;
   if (todo.length) return true; // stopped early (tests): the lease is kept, the job stays running
 
-  const ok = [...job.results].sort((a, b) => a.index - b.index);
+  const ok = [...results].sort((a, b) => a.index - b.index);
+  job.results = ok; // once, at the end
+  job.failedItems = failedItems.sort((a, b) => a - b);
   const bytesOf = async (r) => { const b = await blobs().get(itemKey(r.index)); if (!b) throw new Error(`item ${r.index} of the batch is gone from storage`); return b; };
   const out = job.output || { type: 'zip' };
   if (ok.length) {
+    const packed = (type, key) => packInPool({ type, key, items: ok.map(r => ({ key: itemKey(r.index), name: r.name })) }, job);
     if (out.type === 'merged' && job.format === 'pdf') {
-      const merged = await PDFDocument.create();
-      for (const r of ok) { const d = await PDFDocument.load(await bytesOf(r)); (await merged.copyPages(d, d.getPageIndices())).forEach(p => merged.addPage(p)); }
-      await blobs().put(`jobs/${job.id}/merged.pdf`, await merged.save());
+      await packed('merged', `jobs/${job.id}/merged.pdf`);
       job.download = { blob: `jobs/${job.id}/merged.pdf`, name: `${safeName(job.template)}.pdf`, type: 'application/pdf' };
     } else if (out.type === 'folder') {
       // a user's batches write under their own folder: only service keys (and accounts off) write the shared ones
@@ -319,21 +392,74 @@ async function run(job, owner, stopAfter, fence = { lost: false, hold: async () 
       for (const r of ok) await fs.writeFile(path.join(target, r.name), await bytesOf(r));
       job.folder = path.relative(process.cwd(), target);
     } else if (out.type !== 'none') {
-      const files = {};
-      for (const r of ok) files[r.name] = new Uint8Array(await bytesOf(r));
-      await blobs().put(`jobs/${job.id}/output.zip`, zipSync(files, { level: 6 }));
+      await packed('zip', `jobs/${job.id}/output.zip`);
       job.download = { blob: `jobs/${job.id}/output.zip`, name: `${safeName(job.template)}.zip`, type: 'application/zip' };
     }
   }
   await fence.hold(); // the output and the mail: once, by the server that holds the job
   if (job.email && ok.length) job.mail = await deliver(job, ok, bytesOf);
-  await removePrefix(`jobs/${job.id}/items/`);
+  // by key, not by listing (a listing on SQL storage reads every blob's manifest), with a turn of the event loop now and then
+  for (let i = 0; i < items.length; i++) {
+    await blobs().remove(itemKey(i)); await blobs().remove(resultKey(job.id, i));
+    if (i % 100 === 99) await new Promise(r => setImmediate(r));
+  }
+  await blobs().remove(workKey(job.id));
   job.status = job.failed && !job.done ? 'failed' : job.failed ? 'completed_with_errors' : 'completed';
   job.finishedAt = new Date().toISOString();
   delete job._work;
   await save(job);
+  await markOpen(job.id, false);
   if (job.webhook) await notify(job);
   return false;
+}
+
+/* ---------------- packing the output (in the render pool) ---------------- */
+
+/**
+ * The zip or merged PDF of the items, written to the blob `key`. Runs where renders run (a worker thread), so a
+ * 10,000-item merge does not hold the request thread. @param {{ type: 'zip'|'merged', key: string, items: { key: string, name: string }[] }} spec
+ */
+export async function packOutput({ type, key, items }) {
+  const get = async (k) => { const b = await blobs().get(k); if (!b) throw new Error(`an item of the batch is gone from storage (${k})`); return b; };
+  if (type === 'merged') {
+    const merged = await PDFDocument.create();
+    for (const it of items) { const d = await PDFDocument.load(await get(it.key)); (await merged.copyPages(d, d.getPageIndices())).forEach(p => merged.addPage(p)); }
+    await blobs().put(key, await merged.save());
+  } else {
+    const files = {};
+    for (const it of items) files[it.name] = new Uint8Array(await get(it.key));
+    await blobs().put(key, zipSync(files, { level: 6 }));
+  }
+  return { key };
+}
+const packTimeoutMs = () => Number(process.env.PW_PACK_TIMEOUT_MS) || 600000;
+/** @param {any} spec @param {any} job */
+const packInPool = (spec, job) => submit({ kind: 'pack', spec, timeoutMs: packTimeoutMs() }, { background: true, key: `pack:${job.templateRef || ''}` });
+
+/* ---------------- retention ---------------- */
+
+const retentionDays = () => { const n = Number(process.env.PW_JOB_RETENTION_DAYS); return Number.isFinite(n) && n >= 0 && process.env.PW_JOB_RETENTION_DAYS !== '' && process.env.PW_JOB_RETENTION_DAYS !== undefined ? n : 30; };
+/**
+ * Remove finished jobs older than PW_JOB_RETENTION_DAYS with their blobs (output, items, inputs); the number removed.
+ * One server at a time (a lease). @param {number} [now]
+ */
+export async function sweepJobs(now = Date.now()) {
+  const days = retentionDays();
+  if (!days || !(await store().lease('jobs-sweep', ME, 600000))) return 0;
+  let n = 0;
+  try {
+    const before = now - days * 86400000;
+    for (const id of await store().ids('jobs')) {
+      const t = await store().get('jobs', id).catch(() => null);
+      const j = t ? JSON.parse(t) : null;
+      if (!j || ['queued', 'running'].includes(j.status) || !(Date.parse(j.finishedAt || j.createdAt) < before)) continue;
+      await removePrefix(`jobs/${id}/`);
+      await store().remove('jobs', id);
+      await fs.rm(path.join(JOBS, id), { recursive: true, force: true }).catch(logWarn('job folder'));
+      n++;
+    }
+  } finally { await store().release('jobs-sweep', ME).catch(logWarn('jobs sweep release')); }
+  return n;
 }
 
 /* ---------------- email delivery ---------------- */

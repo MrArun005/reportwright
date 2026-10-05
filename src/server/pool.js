@@ -245,7 +245,7 @@ function dispatch(s) {
   if (P.served.size > 10000) P.served.clear();
   P.served.set(j.who, ++P.seq); // when this principal was last served
   j.at = Date.now();
-  const limit = renderTimeoutMs();
+  const limit = j.msg.timeoutMs || renderTimeoutMs();
   // the time limit covers everything the worker does for this render; past it the worker is stopped and replaced
   s.timer = setTimeout(() => {
     if (s.job !== j) return;
@@ -274,6 +274,7 @@ async function runInline(j) {
     const m = j.msg;
     const { renderTo, loadTemplate } = await import('./renderer.js');
     if (m.kind === 'thumb') { const { drawThumb } = await import('./thumbs.js'); return j.resolve(await drawThumb(m)); }
+    if (m.kind === 'pack') { const { packOutput } = await import('./jobs.js'); return j.resolve(await packOutput(m.spec)); }
     const def = m.def ?? (m.how === 'runnable' ? await (await import('./perms.js')).readRunnable(m.opt.principal, m.ref) : await loadTemplate(m.ref, m.opt.principal));
     const r = await renderTo(def, m.opt);
     j.resolve({ bytes: r.bytes, contentType: r.contentType, ext: r.ext, name: def.name || null, pages: r.model.pages.length, ms: r.model.stats?.ms ?? null, warnings: r.model.warnings?.length ?? 0 });
