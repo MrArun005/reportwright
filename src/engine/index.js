@@ -410,7 +410,11 @@ export async function render(def0, opts = {}) {
   }
   overTime();
   if (m.unshaped) warn('The text shaper (harfbuzz.wasm) did not load, so Arabic, Hebrew, Indic and Thai text is not shaped (letters unjoined, marks misplaced). A font loader must map each key with fontFile(key).');
-  if (m.noGlyph.size) warn(`No font has these characters, so they show as boxes: ${[...m.noGlyph].slice(0, 20).join(' ')}. Upload a font that has them and use it for this text.`);
+  if (m.noGlyph.size) {
+    // Chinese, Japanese, Korean and emoji fonts are optional (about 40 MB): say how to add them
+    const cjk = [...m.noGlyph].some(c => /[\u1100-\u11ff\u2600-\u27bf\u2b00-\u2bff\u3000-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]|[\u{1f000}-\u{1faff}]/u.test(c));
+    warn(`No font has these characters, so they show as boxes: ${[...m.noGlyph].slice(0, 20).join(' ')}. ${cjk ? 'Add the optional Chinese, Japanese, Korean and emoji fonts (npm run fonts:cjk, or the @pagewright/fonts-cjk files in /fonts/cjk), or upload' : 'Upload'} a font that has them and use it for this text.`);
+  }
   if (opts.bodyOnly) return { units: result.body.units, tables: result.body.tables, height: result.body.height, regions, warnings };
   const { pages, bookmarks, height } = result;
   for (const pg of pages) finishText(pg.items, m);

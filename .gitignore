@@ -13,3 +13,4 @@ packages/*/LICENSE
 packages/*/package.json
 dist-site/
 pw-worker/
+public/fonts/cjk/

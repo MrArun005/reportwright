@@ -18,15 +18,21 @@ const BUNDLED = [
   // fallbacks loaded only when text uses the script (docs/TEXT.md has the sizes)
   ...['Thai', 'Lao', 'Khmer', 'Myanmar', 'Tamil', 'Bengali', 'Telugu', 'Kannada', 'Gujarati'].flatMap(s => [
     [`Noto Sans ${s}`, `NotoSans${s}-Regular`, 400], [`Noto Sans ${s}`, `NotoSans${s}-Bold`, 700]]),
+  // optional, about 40 MB (npm run fonts:cjk fetches them into /fonts/cjk): variable fonts drawn at their default
+  // (regular) weight. Without them the text shows as boxes, and the warning says how to add them.
+  ['Noto Sans JP', 'NotoSansJP', 400, 'normal', 'cjk/NotoSansJP.ttf'], ['Noto Sans KR', 'NotoSansKR', 400, 'normal', 'cjk/NotoSansKR.ttf'],
+  ['Noto Sans SC', 'NotoSansSC', 400, 'normal', 'cjk/NotoSansSC.ttf'], ['Noto Emoji', 'NotoEmoji', 400, 'normal', 'cjk/NotoEmoji.ttf'],
 ];
+/** The optional families (scripts/fetch-fonts-cjk.mjs). */
+export const OPTIONAL_KEYS = ['NotoSansJP', 'NotoSansKR', 'NotoSansSC', 'NotoEmoji'];
 
 /** family → its faces: the bundled families, then the fonts uploaded to the server (setCustomFonts). @type {Record<string, Face[]>} */
 export const FONT_FAMILIES = {};
 /** @type {Map<string, Face>} */
 const FACES = new Map();
 const addFace = (/** @type {Face} */ f) => { (FONT_FAMILIES[f.family] ||= []).push(f); FACES.set(f.key, f); };
-for (const [family, key, weight, style = 'normal'] of BUNDLED) {
-  addFace({ family: String(family), key: String(key), weight: Number(weight), style: style === 'italic' ? 'italic' : 'normal', file: `${key}.ttf` });
+for (const [family, key, weight, style = 'normal', file] of BUNDLED) {
+  addFace({ family: String(family), key: String(key), weight: Number(weight), style: style === 'italic' ? 'italic' : 'normal', file: String(file || `${key}.ttf`) });
 }
 export const BUNDLED_FAMILIES = Object.keys(FONT_FAMILIES);
 
@@ -94,6 +100,12 @@ const FALLBACK = [
   [0x0e00, 0x0e7f, 'Noto Sans Thai'], [0x0e80, 0x0eff, 'Noto Sans Lao'], [0x1000, 0x109f, 'Noto Sans Myanmar'],
   [0xa9e0, 0xa9ff, 'Noto Sans Myanmar'], [0xaa60, 0xaa7f, 'Noto Sans Myanmar'], [0x1780, 0x17ff, 'Noto Sans Khmer'],
   [0x19e0, 0x19ff, 'Noto Sans Khmer'],
+  // CJK (optional fonts): kana and Han in the Japanese face (Han shapes differ a little from Chinese; a report can
+  // set fontFamily "Noto Sans SC"), Hangul in the Korean one; emoji in Noto Emoji (monochrome)
+  [0x3040, 0x30ff, 'Noto Sans JP'], [0x31f0, 0x31ff, 'Noto Sans JP'], [0x3000, 0x303f, 'Noto Sans JP'], [0x3400, 0x4dbf, 'Noto Sans JP'],
+  [0x4e00, 0x9fff, 'Noto Sans JP'], [0xf900, 0xfaff, 'Noto Sans JP'], [0xff00, 0xffef, 'Noto Sans JP'],
+  [0x1100, 0x11ff, 'Noto Sans KR'], [0x3130, 0x318f, 'Noto Sans KR'], [0xac00, 0xd7af, 'Noto Sans KR'],
+  [0x1f000, 0x1faff, 'Noto Emoji'], [0x2600, 0x27bf, 'Noto Emoji'], [0x2b00, 0x2bff, 'Noto Emoji'],
 ];
 /** Every registered key: bundled and uploaded. */
 export const allFontKeys = () => [...FACES.keys()];
