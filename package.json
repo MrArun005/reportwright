@@ -15,7 +15,7 @@
     "pw": "node bin/pw.mjs",
     "test:reports": "node bin/pw.mjs test reports",
     "lint:engine": "node scripts/check-engine-boundary.mjs",
-    "test:e2e": "for t in build-from-scratch smoke expr-editor phase2 phase3 phase4 api progressive phase-bc data-setup galleries charts-p5 tablix ai designer-gaps reuse ssrs-import outline-charts layout-charts-b4 exports-b2 import-b6 data-xml; do node tests/e2e/$t.mjs || exit 1; done",
+    "test:e2e": "for t in build-from-scratch smoke expr-editor phase2 phase3 phase4 api progressive phase-bc data-setup galleries charts-p5 tablix ai designer-gaps reuse ssrs-import outline-charts layout-charts-b4 exports-b2 import-b6 data-xml gov-b5; do node tests/e2e/$t.mjs || exit 1; done",
     "sample": "node scripts/make-sample.mjs",
     "build:embed": "node scripts/build-embed.mjs",
     "build:packages": "node scripts/build-embed.mjs && node scripts/build-packages.mjs",
