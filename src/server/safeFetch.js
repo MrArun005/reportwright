@@ -87,7 +87,7 @@ export const NO_BASE_URL = 'http://pw-base-url-not-set.invalid';
  * Cookie and Authorization taken out, so a report cannot make a request look like this site's page or carry its own
  * credentials; they sign in with accounts on (PW_AUTH=users) by a viewer pass for that one GET, else with the
  * PW_BASIC_AUTH password. No other host ever gets either.
- * @param {string} selfOrigin @param {{ internal?: boolean }} [o]
+ * @param {string} selfOrigin @param {{ internal?: boolean, anon?: boolean }} [o]
  */
 export const serverFetch = (selfOrigin, { internal = true, anon = false } = {}) => async (input, init = {}) => {
   const self = selfOrigin && safeOrigin(selfOrigin);

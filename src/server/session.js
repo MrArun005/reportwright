@@ -117,7 +117,7 @@ export function cookie(req, name) {
  * The signed-in user, read again from storage: { email, role, groups }, or null. Null also when accounts are off.
  * A server-to-itself pass (internalCookie) gives { role: 'viewer', internal: true } for its one GET only.
  * sv: the session's version, so a write can check, just before it commits, that this session still stands (perms.asNow).
- * @param {Request} req @returns {Promise<{ email: string, role: 'viewer'|'designer'|'admin', groups: string[], sv?: number, internal?: boolean } | null>}
+ * @param {Request} req @returns {Promise<{ email: string, role: 'viewer'|'designer'|'admin', groups: string[], sv?: number, internal?: boolean, anon?: boolean } | null>}
  */
 export async function currentUser(req) {
   if (!accountsOn()) return null;
