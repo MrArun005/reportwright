@@ -419,6 +419,60 @@ try {
     await m.screenshot({ path: '/tmp/shots/r1c-u8-mobile.png' });
     await m.close();
   }
+  if (want('cf')) {
+    step('CF: rules on a cell write the style expressions; the viewer shows them; the rules reopen');
+    const id = await create(base('ux r1c cf', [{ type: 'table', name: 'Tbl', x: 0, y: 0, w: 300, h: 36, dataSet: 'Sales', columns: [{ width: 150 }, { width: 150 }],
+      header: [{ height: 18, cells: [{ value: 'Region' }, { value: 'Amount' }] }], detail: [{ height: 18, cells: [{ value: '=Fields.region' }, { value: '=Fields.amount', style: { format: 'N0' } }] }] },
+      { type: 'chart', name: 'Ch', x: 0, y: 60, w: 300, h: 160, dataSet: 'Sales', chartType: 'column', category: '=Fields.region', series: [{ name: 'Amount', value: '=Sum(Fields.amount)' }] }]));
+    await open(id);
+    await p.locator('[data-cell="detail-0-1"]').click();
+    await insp().getByTestId('cell-cf').getByTestId('cf-open').click();
+    let dlg = p.getByRole('dialog');
+    const r0 = dlg.getByTestId('cf-rule-0');
+    await r0.getByLabel('Condition').selectOption('gt');
+    await r0.getByLabel('Value').fill('50000');
+    await dlg.getByTestId('cf-add').click();
+    const r1 = dlg.getByTestId('cf-rule-1');
+    await r1.getByLabel('Field').selectOption('region');
+    await r1.getByLabel('Condition').selectOption('startsWith');
+    await r1.getByLabel('Value').fill('So');
+    await r1.getByLabel('Bold').uncheck();
+    await r1.getByLabel('Italic').check();
+    await field(r1, 'Icon').selectOption('warn');
+    await dlg.getByTestId('cf-mode').selectOption('stack');
+    await shot(p, 'cf-wizard');
+    await dlg.getByTestId('cf-apply').click();
+    await insp().getByTestId('cell-cf').getByText('Conditional formatting… (2 rules)').waitFor();
+    // a chart's points
+    await p.locator('[data-item=Ch]').click();
+    await insp().getByTestId('cf-open').click();
+    dlg = p.getByRole('dialog');
+    await dlg.getByTestId('cf-rule-0').getByLabel('Condition').selectOption('aboveAvg');
+    await dlg.getByTestId('cf-apply').click();
+    await save();
+    const def = await read(id);
+    const c = def.sections.body.items.find(i => i.name === 'Tbl').detail[0].cells[1];
+    assert.equal(c.cf.rules.length, 2);
+    assert.match(c.style.color, /^=IIf\(\(Fields\.amount\) > 50000, "#b42318", IIf\(StartsWith/);
+    assert.match(c.style.fontStyle, /StartsWith\(CStr\(Fields\.region\), "So"\)/);
+    assert.equal(c.visual.type, 'iconset');
+    const ch = def.sections.body.items.find(i => i.name === 'Ch');
+    assert.match(ch.pointColor, /> Sum\(Fields\.amount, "Sales"\) \/ CountDistinct\(Fields\.region, "Sales"\)/);
+    step('CF: the viewer draws the formats');
+    await p.goto(`${BASE}/viewer/${id}`);
+    await p.locator('.vpage svg').first().waitFor();
+    const html = await p.locator('.vpage').first().innerHTML();
+    assert.ok(/rgba\(220,\s*38,\s*38/.test(html), `a point coloured by its rule (${ch.pointColor})`); // the SVG writes colours as rgba()
+    step('CF: reopening shows the rules; a hand-written expression shows as custom');
+    await fetch(`${BASE}/api/reports/${id}`, { method: 'PUT', headers: H, body: JSON.stringify((d => { d.sections.body.items[0].detail[0].cells[1].style.backgroundColor = '=IIf(Fields.qty > 5, "#eee", Nothing)'; return d; })(def)) });
+    await open(id);
+    await p.locator('[data-cell="detail-0-1"]').click();
+    await insp().getByTestId('cell-cf').getByTestId('cf-open').click();
+    dlg = p.getByRole('dialog');
+    assert.equal(await dlg.getByTestId('cf-rule-1').getByLabel('Value').inputValue(), 'So');
+    await dlg.getByTestId('cf-custom').filter({ hasText: 'Background' }).waitFor();
+    await dlg.getByRole('button', { name: 'Cancel' }).click();
+  }
   assert.deepEqual(errs, [], `page errors: ${errs.join(' | ')}`);
   console.log('ux-r1c: all passed');
 } finally {

@@ -11,6 +11,8 @@ import { useFontFamilies, FontsDialog } from './Fonts.jsx';
 import { PAGE_SIZES, fromPt, toPt } from '@/engine/units.js';
 import { TextInput, NumberInput, Select, ColorInput, ExprInput, Field, Check, FieldScope } from './ui.jsx';
 import ExpressionEditor from './ExpressionEditor.jsx';
+import CondFormat from './CondFormat.jsx';
+import { applyCf, customProps, cfExpressions, pointAverage } from './cfRules.js';
 import { checkFunctions, isDynamic } from '@/engine/expr/evaluate.js';
 import { PALETTES } from '@/engine/items/chart-kit.js';
 import { ReuseSection, ThemeSection, LayerField, PartInstance, PartValues, PublishPart, useStyleNames } from './Reuse.jsx';
@@ -243,6 +245,22 @@ function ItemProps({ item, section, openExpr }) {
         <div className="hint">{(() => { const band = sectionList(def).find(s => s.key === section)?.label || section, parent = findItem(def, item.id)?.parent; return parent ? T('i_whereParent', { band, parent: parent.name }) : T('i_where', { band }); })()}</div>
         <LayerField item={item} />
       </div>}
+      {!q && (item.type === 'textbox' || item.type === 'chart') && (() => {
+        const dsn = item.dataSet || def.dataSets?.[0]?.name || null;
+        const at = item.type === 'chart'
+          ? { subject: subjectOf(item.series?.[0]?.value), scope: dsn, avg: pointAverage(subjectOf(item.series?.[0]?.value), item.category, dsn) }
+          : { subject: subjectOf(item.value), scope: dsn };
+        const fields = fieldsOf(def, dsn).map(f => f.name);
+        const apply = (cf) => updateItem(item.id, it => {
+          if (it.type !== 'chart') { applyCf(it, cf, at); return; }
+          const prev = it.cf ? cfExpressions(it.cf, at).style : {};
+          const next = cfExpressions(cf, at).style;
+          if (it.pointColor && it.pointColor === (prev.backgroundColor || prev.color)) delete it.pointColor;
+          if (next.backgroundColor || next.color) it.pointColor = next.backgroundColor || next.color;
+          if (cf.rules?.length) it.cf = cf; else delete it.cf;
+        });
+        return <div className="cat"><h5>{T('cf_title')}</h5><div className="btnrow"><CfButton label={T(item.type === 'chart' ? 'cf_points' : 'cf_button')} title={T('cf_titleOf', { name: item.name })} target={item} at={at} kind={item.type === 'chart' ? 'chart' : 'text'} fields={fields} apply={apply} testid="cf-open" /></div></div>;
+      })()}
       {!q && item.type === 'part' && <PartInstance item={item} />}
       {!q && item.partProps && typeof item.partProps === 'object' && <PartValues item={item} />}
       {!q && item.type === 'image' && <EmbeddedPicker item={item} onPick={v => set('src', v)} />}
@@ -640,6 +658,21 @@ function OverlaysEditor({ value, onChange, openExpr, dataSet, chartType }) {
 }
 
 /** A subreport's parameters: the same structured map as a drill-through, from the subreport's own parameters. */
+/** "Conditional formatting…": opens the rules wizard for a text box, a cell, a row or a chart's points. */
+function CfButton({ label, title, target, at, kind, fields, apply, testid }) {
+  const T = useT();
+  const [open, setOpen] = useState(false);
+  const n = target?.cf?.rules?.length || 0;
+  return (
+    <>
+      <button type="button" className="btn sm" onClick={() => setOpen(true)} data-testid={testid}>{label}{n ? ` (${T('cf_nRules', { n })})` : ''}</button>
+      {open && <CondFormat title={title} cf={target.cf} fields={fields} thisValue={!!at.subject} kind={kind} custom={customProps(target, at)} onApply={apply} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+/** What "this value" is for the rules: an expression's own text (=Fields.x → Fields.x); a text template has none. */
+const subjectOf = (v) => (typeof v === 'string' && v.startsWith('=') ? v.slice(1) : null);
+
 function ParamsEditor({ label, value, onChange, report, openExpr, dataSet }) {
   const known = useReportParams(report);
   return <Field label={label}><ParamMap value={value} onChange={v => onChange(v || {})} known={known} openExpr={openExpr} dataSet={dataSet} testid="pmap-subreport" /></Field>;
@@ -777,6 +810,7 @@ function ActionEditor({ value, onChange, openExpr, dataSet, label }) {
 /* ---------------------------------------------------------------- cell */
 function CellProps({ table, sel, openExpr }) {
   const T = useT();
+  const def = useDesigner(s => s.def);
   const row = rowsOf(table, sel.part)?.[sel.row];
   const cell = row?.cells?.[sel.col];
   if (!row || !cell) return <div className="cat"><span className="hint">{T('i_cellGone')}</span></div>;
@@ -788,7 +822,6 @@ function CellProps({ table, sel, openExpr }) {
   const partLabel = tableParts(table).find(p => p.part === sel.part)?.label || sel.part;
   // a total typed by hand (=Sum(Fields.x) in a header, group or footer row) takes its column's number format, as the
   // wizards' totals do: the detail cell's, else the field's own (tableGen formatFor)
-  const def = useDesigner(s => s.def);
   const setValue = (v) => {
     const f = sel.part !== 'detail' && !cell.style?.format && /^=(Sum|Avg|Min|Max|RunningValue)\(Fields\.(\w+)/.exec(v || '')?.[2];
     if (!f) { setCell('value', v); return; }
@@ -813,6 +846,15 @@ function CellProps({ table, sel, openExpr }) {
         {sel.part === 'header' && <Field label={T('i_interactiveSort')} hint={T('i_interactiveSortHint')}><ExprInput value={cell.sortBy} onChange={v => setCell('sortBy', v || undefined)} onOpen={() => openExpr({ value: cell.sortBy, dataSet: table.dataSet, onSave: v => setCell('sortBy', v || undefined), title: T('sfSortBy') })} placeholder="=Fields.amount" /></Field>}
         <Field label={T('cellBookmark')}><ExprInput value={cell.bookmark} onChange={v => setCell('bookmark', v || undefined)} onOpen={() => openExpr({ value: cell.bookmark, dataSet: table.dataSet, onSave: v => setCell('bookmark', v || undefined), title: T('cellBookmark') })} /></Field>
         <ActionEditor value={cell.action} onChange={v => setCell('action', v)} openExpr={openExpr} dataSet={table.dataSet} />
+      </div>
+      <div className="cat" data-testid="cell-cf">
+        <h5>{T('cf_title')}</h5>
+        <div className="btnrow">
+          <CfButton label={T('cf_button')} title={T('cf_titleCell', { name: table.name })} target={cell} at={{ subject: subjectOf(cell.value), scope: table.dataSet }} kind="cell" fields={fieldsOf(def, table.dataSet).map(f => f.name)} testid="cf-open"
+            apply={(cf) => updateItem(table.id, t => applyCf(rowsOf(t, sel.part)[sel.row].cells[sel.col], cf, { subject: subjectOf(cell.value), scope: table.dataSet }, { visuals: true }))} />
+          <CfButton label={T('cf_rowButton')} title={T('cf_titleRow', { name: table.name })} target={row} at={{ subject: null, scope: table.dataSet }} kind="text" fields={fieldsOf(def, table.dataSet).map(f => f.name)} testid="cf-row-open"
+            apply={(cf) => updateItem(table.id, t => applyCf(rowsOf(t, sel.part)[sel.row], cf, { subject: null, scope: table.dataSet }))} />
+        </div>
       </div>
       <div className="cat">
         <h5>{T('i_structure')}</h5>

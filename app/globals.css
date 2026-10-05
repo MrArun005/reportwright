@@ -536,3 +536,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .cbar > :not(:first-child) { display: none; }
   .cscroll { padding: 12px 8px 40px; }
 }
+/* conditional formatting wizard */
+.cf-rules { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; counter-reset: cf; }
+.cf-rules > li { counter-increment: cf; position: relative; padding-inline-start: 30px; }
+.cf-rules > li::before { content: counter(cf); position: absolute; inset-inline-start: 8px; top: 10px; font: var(--fw-strong) var(--fs-sm) var(--ui); color: var(--muted); }
+.cf-cond { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(130px, 1fr) minmax(70px, 1fr) minmax(70px, 1fr); gap: 6px; }
+.cf-fmt { display: flex; flex-wrap: wrap; align-items: end; gap: 6px 12px; }
+.cf-fmt .field { min-width: 150px; }
+@media (max-width: 640px) { .cf-cond { grid-template-columns: 1fr 1fr; } }

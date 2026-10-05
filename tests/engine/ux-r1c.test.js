@@ -232,3 +232,61 @@ describe('design-time layout issues (U-8)', () => {
     expect(is[0]).toMatchObject({ field: 'amont', suggest: 'amount' });
   });
 });
+
+import { cfExpressions, applyCf, customProps, condition } from '../../src/designer/cfRules.js';
+describe('conditional formatting rules write style expressions (CF wizard)', () => {
+  const rows2 = [{ region: 'North', amount: 50 }, { region: 'South', amount: 500 }, { region: 'East', amount: 0 }, { region: 'West', amount: 120 }];
+  const at = { subject: 'Fields.amount', scope: 'Rows' };
+  const cf = { mode: 'first', rules: [
+    { op: 'gt', value: '100', format: { color: '#067647', fontWeight: 'bold' } },
+    { op: 'empty', format: { backgroundColor: '#fee4e2' } },
+    { op: 'eq', value: '0', format: { color: '#b42318' } },
+    { field: 'region', op: 'startsWith', value: 'W', format: { fontStyle: 'italic' } },
+  ] };
+  const cellOf = (out, text) => out.pages[0].items.find(i => i.t === 'text' && i.lines[0].text === text);
+  it('first match wins; stack mixes the formats of every matching rule', async () => {
+    const cell = { value: '=Fields.amount' };
+    applyCf(cell, cf, at, { visuals: true });
+    const def = report([{ type: 'table', name: 'T', x: 0, y: 0, w: 200, h: 18, dataSet: 'Rows', columns: [{ width: 200 }], detail: [{ height: 18, cells: [cell] }] }], { data: { rows: rows2 } });
+    let out = await render(def, { fontStore });
+    expect(out.warnings).toEqual([]);
+    expect(cellOf(out, '500').color).toBe('#067647');
+    expect(cellOf(out, '500').font).toMatch(/Bold/);
+    expect(cellOf(out, '0').color).toBe('#b42318');
+    expect(cellOf(out, '50').color).toBe('#000');
+    // West (120) matches rule 1 first: italic does not mix in
+    expect(cellOf(out, '120').font).toMatch(/Bold$/);
+    applyCf(cell, { ...cf, mode: 'stack' }, at, { visuals: true });
+    out = await render(def, { fontStore });
+    expect(cellOf(out, '120').font).toMatch(/BoldItalic/);
+    expect(cell.cf.mode).toBe('stack');
+  });
+  it('averages over the data set, between, contains; rules reopen and hand edits show as custom', () => {
+    expect(condition({ op: 'aboveAvg' }, at)).toBe('(Fields.amount) > Avg((Fields.amount), "Rows")');
+    expect(condition({ op: 'between', value: '1', value2: '=Parameters.max' }, at)).toBe('(Fields.amount) >= 1 And (Fields.amount) <= (Parameters.max)');
+    expect(condition({ field: 'region', op: 'contains', value: 'or"th' }, at)).toBe('InStr(CStr(Fields.region), "or""th") > 0');
+    const t = { value: '=Fields.amount', style: { textAlign: 'right' } };
+    applyCf(t, cf, at);
+    expect(customProps(t, at)).toEqual([]);
+    t.style.color = '=IIf(Fields.amount < 0, "red", Nothing)';
+    expect(customProps(t, at)).toEqual(['color']);
+    applyCf(t, { mode: 'first', rules: [] }, at); // all rules removed: only the hand-written colour stays
+    expect(t.cf).toBeUndefined();
+    expect(t.style).toEqual({ textAlign: 'right', color: '=IIf(Fields.amount < 0, "red", Nothing)' });
+    expect(cfExpressions({ rules: [{ op: 'gt', value: 1, format: { icon: 'good' } }] }, at).icon).toBe('=IIf((Fields.amount) > 1, 3, Nothing)');
+  });
+});
+
+import { pointAverage } from '../../src/designer/cfRules.js';
+describe('a chart point above the average of the points (CF wizard)', () => {
+  it('colours the categories whose total is above the mean of the category totals', async () => {
+    const rows3 = [{ region: 'N', amount: 10 }, { region: 'S', amount: 100 }, { region: 'S', amount: 20 }, { region: 'E', amount: 5 }];
+    const avg = pointAverage('Sum(Fields.amount)', '=Fields.region', 'Rows');
+    const cf = { rules: [{ op: 'aboveAvg', format: { backgroundColor: '#dc2626' } }] };
+    const color = cfExpressions(cf, { subject: 'Sum(Fields.amount)', scope: 'Rows', avg }).style.backgroundColor;
+    const def = report([{ type: 'chart', name: 'C', x: 0, y: 0, w: 300, h: 160, dataSet: 'Rows', chartType: 'column', category: '=Fields.region', series: [{ name: 'A', value: '=Sum(Fields.amount)' }], pointColor: color }], { data: { rows: rows3 } });
+    const out = await render(def, { fontStore });
+    expect(out.warnings).toEqual([]);
+    expect(out.pages[0].items.filter(i => i.fill === '#dc2626').length).toBe(1); // only S (120 > 135/3)
+  });
+});
