@@ -70,3 +70,17 @@ describe('.NET formats in other cultures (N5, N13–N17, N28)', () => {
     ['dd\\/MM', 'de-DE', /^05\/03$/], ["dd'/'MM", 'de-DE', /^05\/03$/], ['d', 'fa-IR', /^2026\/3\/5$/], ['dd/MM/yyyy hh:mm tt', 'en-US', /^05\/03\/2026 02:30 PM$/],
   ])('%s in %s', (fmt, l, re) => expect(f(d, fmt, l)).toMatch(re));
 });
+
+describe('N11 / §3.4: RunningValue and RowNumber without a scope are over the data region', () => {
+  const tbl = (cell, groups = true) => ({ $schema: 'pagewright/report@1', page: { size: 'A4' },
+    dataSources: [{ name: 'S', type: 'json', data: [{ g: 'X', h: 'p', v: 1 }, { g: 'X', h: 'p', v: 2 }, { g: 'X', h: 'q', v: 4 }, { g: 'Y', h: 'p', v: 8 }, { g: 'Y', h: 'r', v: 16 }] }],
+    dataSets: [{ name: 'D', source: 'S', path: '$' }],
+    sections: { body: { height: 200, items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 200, h: 100, dataSet: 'D', columns: [{ width: 200 }],
+      groups: groups ? [{ name: 'G', expr: '=Fields.g', footer: [{ height: 12, cells: [{ value: `="F" & ${cell}` }] }] }, { name: 'H', expr: '=Fields.h' }] : [],
+      detail: [{ height: 12, cells: [{ value: `="D" & ${cell}` }] }], footer: [{ height: 12, cells: [{ value: `="T" & ${cell}` }] }] }] } } });
+  const texts = async (cell) => (await render(tbl(cell), { fontStore })).pages[0].items.flatMap(i => i.lines || []).map(l => l.text).join(' ');
+  it.each([['RunningValue(Fields.v, "Sum")'], ['RunningValue(Fields.v, "Sum", Nothing)'], ['RunningValue(Fields.v, "Sum", "T")']])('%s', async (e) =>
+    expect(await texts(e)).toBe('D1 D3 D7 F7 D15 D31 F31 T31'));
+  it.each([['RowNumber()'], ['RowNumber(Nothing)'], ['RowNumber("T")']])('%s', async (e) => expect(await texts(e)).toBe('D1 D2 D3 F3 D4 D5 F5 T5'));
+  it('the RDL import keeps RowNumber(Nothing) meaning the region', () => expect(translateExpression('=RowNumber(Nothing)').ok).toBe(true));
+});

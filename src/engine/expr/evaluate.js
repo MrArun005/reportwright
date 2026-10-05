@@ -1151,15 +1151,28 @@ function call(n, ctx) {
   if (name === 'countrows') return scopeRows(args, 0, ctx, n.name).length;
   if (name === 'rownumber') {
     // a group header comes before its rows: it counts them too (ctx.pendingRows), as RDL evaluates a group's running values
-    if (args.length) { const sc = ctx.scopes?.[evaluate(args[0], ctx)]; if (!sc) throw new ExprError('RowNumber: unknown scope', n.p); return sc.index + 1 + (ctx.pendingRows?.length || 0); }
-    return ctx.rowNumber ?? 1;
+    if (args.length && evaluate(args[0], ctx) != null) { const sc = ctx.scopes?.[evaluate(args[0], ctx)]; if (!sc) throw new ExprError('RowNumber: unknown scope', n.p); return sc.index + 1 + (ctx.pendingRows?.length || 0); }
+    // RowNumber() / RowNumber(Nothing): the data region; in a footer that is every row so far (it printed 1)
+    if (ctx.rowNumber != null) return ctx.rowNumber;
+    return ctx.region?.run ? ctx.region.index + 1 + (ctx.pendingRows?.length || 0) : 1;
   }
   if (name === 'runningvalue') {
     if (args.length < 2) throw new ExprError('RunningValue needs 2 arguments: RunningValue(expr, "Sum")', n.p);
     const fn = String(evaluate(args[1], ctx)).toLowerCase();
     if (!(fn in AGG)) throw new ExprError(`RunningValue: unknown function "${fn}"`, n.p);
     let rows;
-    if (args.length > 2) {
+    // no scope (or Nothing): the data region, as RDL does, so a detail row runs on across groups and a footer has the
+    // total (N11); the region's run is the same path as an explicit scope
+    const noScope = args.length <= 2 || evaluate(args[2], ctx) == null;
+    if (noScope && ctx.region?.run && !ctx.runningRows) {
+      const sc = ctx.region;
+      rows = sc.run;
+      const pend = ctx.pendingRows;
+      if (pend?.length) return AGG[fn](rowLocal(args[0]) ? prefixValues(rows, rows.length, args[0], ctx).concat(mapRows(pend, args[0], ctx)) : mapRows(rows.concat(pend), args[0], ctx), ctx);
+      if (rowLocal(args[0])) return fn === 'sum' ? runningSum(rows, rows.length, args[0], ctx) : AGG[fn](prefixValues(rows, rows.length, args[0], ctx), ctx);
+      return AGG[fn](mapRows(rows, args[0], ctx), ctx);
+    }
+    if (args.length > 2 && !noScope) {
       const sn = evaluate(args[2], ctx);
       const sc = ctx.scopes?.[sn];
       if (!sc) {
