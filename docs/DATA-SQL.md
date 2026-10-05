@@ -24,10 +24,25 @@ a host, a user, a password or a file of its own.
 
 User names and passwords are percent-decoded. No error a report author sees contains the URL or any part of it.
 
+## What the safety rests on
+
+**The login's verified privileges.** Before it runs report queries (and again every few seconds), Pagewright asks the
+database what the connection's login may do: every effective privilege, role (followed recursively) and grant, PUBLIC's
+included. Anything outside a short allow-list (connect, read, the database's harmless defaults) refuses the connection,
+and an error in the check refuses it too. This is the release criterion for each database; see
+[Logins](#logins-the-exact-setup) for the setup each one accepts.
+
+**Defence in depth, not the guarantee:** the statement check (`src/server/sql/check.js`) allows one `SELECT`/`WITH`
+whose every call is a built-in function on the dialect's list (an unknown, quoted or schema-qualified function is
+refused), and it fails closed on anything it does not fully classify (nested comments, optimizer hints, `{fn }`
+escapes, characters outside ASCII in code, dollar-quoting, `E''`/`U&''` strings, backslashes where the server's settings
+decide what they mean). No scanner reads SQL exactly as every server does, so it is a second guard; so are the read-only
+transactions, the server-side parse checks and BigQuery's dry run.
+
 ## What every connection guarantees
 
-- **One read-only SELECT.** The query must start with `SELECT` or `WITH`. Each database adds its own guard (below). Use a
-  database user that can only read: the guards are the second line, not the first.
+- **One read-only SELECT.** The query must start with `SELECT` or `WITH` and pass the statement check. Each database adds
+  its own guard (below).
 - **Parameters bound by the driver.** `@name` binds the report parameter `name` (`$n` for Postgres, `?` for MySQL,
   Snowflake and BigQuery, `:n` for Oracle, `@pw_n` for SQL Server). A list becomes `in (@list)`; an empty list matches
   nothing. A value never becomes SQL text.
@@ -38,11 +53,15 @@ User names and passwords are percent-decoded. No error a report author sees cont
 
 ## Per database
 
-- **PostgreSQL**: `BEGIN READ ONLY`, the extended protocol (one statement), a cursor read in counted batches,
-  `statement_timeout`. The socket's bytes are counted as they arrive: past half the byte cap, or at the deadline, the
-  connection is cut and thrown away, so no value is buffered past the cap.
-- **MySQL**: a read-only session and transaction, a server-side prepared statement (one statement),
-  `sql_select_limit` and `max_execution_time`; the same socket byte count and deadline as Postgres.
+- **PostgreSQL**: the login check (above), then `BEGIN READ ONLY`, the extended protocol (one statement), a cursor read
+  in counted batches with `statement_timeout` set again before each batch. The socket's bytes are counted as they
+  arrive: past half the byte cap, or at the deadline, the backend is terminated from another connection
+  (`pg_terminate_backend`; a dropped socket alone does not stop a running query) and the connection thrown away. Only
+  plain scalar types are parsed; json, jsonb, arrays and the rest stay text.
+- **MySQL**: the login check (above), a read-only session and transaction, a server-side prepared statement (one
+  statement), `sql_select_limit` and `max_execution_time`; the same socket byte count, and at a cap or the deadline the
+  thread is killed from another connection (`KILL`: an optimizer hint or a `CALL` is not bound by `max_execution_time`).
+  JSON stays text, geometry bytes.
 - **SQLite**: the file is opened read-only; rows and bytes are counted as they are read. Queries run on the main thread,
   so the deadline cannot stop them and SQLite builds each value in full first: keep SQLite for small local files.
 - **SQL Server**: the login is checked before every query (5-second cache) in the connected database and in every other
@@ -53,23 +72,35 @@ User names and passwords are percent-decoded. No error a report author sees cont
   cap per large value (the driver holds a value up to four times over before it can be measured), xml and CLR columns
   refused, info and error messages counted (at most 1,000), and a transaction that is always rolled back. Give the login
   `db_datareader` plus `GRANT SHOWPLAN` and nothing else.
-- **Oracle**: the login is checked before a query (5-second cache): only `CREATE SESSION` and `SELECT`/`READ` grants; any
-  other privilege, `EXECUTE` on anything, `EXECUTE` through `PUBLIC` on `UTL_HTTP`, `UTL_TCP`, `UTL_SMTP`, `UTL_MAIL`,
-  `UTL_FILE`, `UTL_INADDR`, `DBMS_LDAP`, `HTTPURITYPE`, `DBMS_JAVA`, `DBMS_SCHEDULER`, `DBMS_JOB` or
-  `DBMS_BACKUP_RESTORE`, objects of its own, or a visible database link refuse it. The text must be one plain
-  `SELECT`/`WITH` (no PL/SQL, `WITH FUNCTION`, `CALL`, `FOR UPDATE`, `@dblink`, `UTL_`/`DBMS_`/`OWA_` names, quoted or
-  not; `q'…'` quoting is refused), the server's parse must say SELECT (`getStatementInfo`), and it runs after
-  `SET TRANSACTION READ ONLY` and is rolled back. LOBs are measured before they are read; `LONG`, XMLType, JSON, object,
-  cursor and vector columns are refused; rows come in batches sized from the widest possible row. The deadline breaks the
-  call in flight.
-- **Snowflake**: the URL must name a `role` (give it `USAGE` on the warehouse, database and schema and `SELECT`, nothing
-  else). The statement check (one statement, no write or session words; `$$` strings refused), `MULTI_STATEMENT_COUNT=1`,
-  `STATEMENT_TIMEOUT_IN_SECONDS`, rows streamed and counted, the statement cancelled at a cap or the deadline. Ceiling:
-  the SDK downloads a result chunk (and a `VARIANT` up to Snowflake's own 128 MB) before a row of it can be counted.
+- **Oracle**: the login check (above); the text must be one plain `SELECT`/`WITH` with built-in functions only (no
+  PL/SQL, `WITH FUNCTION`, `CALL`, `FOR UPDATE`, `@dblink`, package calls; `q'…'` quoting and hints refused), the
+  server's parse must say SELECT (`getStatementInfo`), and it runs after `SET TRANSACTION READ ONLY` and is rolled back.
+  LOBs are measured before they are read; `LONG`, XMLType, JSON, object, cursor and vector columns are refused; rows come
+  in batches sized from the widest possible row. The deadline breaks the call in flight.
+- **Snowflake**: the URL must name a `role`; the role check (above, after `USE SECONDARY ROLES NONE`, once a minute);
+  the statement check (`$$` strings and `@stage` refused), `MULTI_STATEMENT_COUNT=1`, `STATEMENT_TIMEOUT_IN_SECONDS`,
+  rows streamed and counted, the statement cancelled at a cap or the deadline; VARIANT, OBJECT and ARRAY stay text.
+  Ceiling: the SDK downloads a result chunk before a row of it can be counted.
 - **BigQuery**: a dry run first (free): BigQuery's parse must say the statement type is `SELECT` and the bytes it would
   scan must be within `maxBytes` (default 10 GB). The job then runs with `maximumBytesBilled` and a job timeout; pages of
   at most 1,000 rows (and BigQuery's own 10 MB a page) are counted and the job is cancelled at a cap or the deadline. Give
   the service account BigQuery Data Viewer and Job User only.
+
+## Logins: the exact setup
+
+| Database | Accepted | Refused (examples) |
+|---|---|---|
+| SQL Server | `CREATE LOGIN rep WITH PASSWORD = '…'; USE sales; CREATE USER rep FOR LOGIN rep; ALTER ROLE db_datareader ADD MEMBER rep; GRANT SHOWPLAN TO rep;` Database rights exactly CONNECT, SELECT, SHOWPLAN and the two default `VIEW ANY COLUMN … KEY DEFINITION`; server rights CONNECT SQL, VIEW ANY DATABASE (CONNECT ANY DATABASE, SELECT ALL USER SECURABLES); schema rights SELECT only; checked in every database the login can enter, `master` and `msdb` included | any role but db_datareader, any other right (VIEW SERVER STATE, VIEW DATABASE STATE, ALTER, EXECUTE, IMPERSONATE…), ownership of anything, WITH GRANT OPTION, linked servers, `xp_cmdshell`, ad hoc distributed queries; a `CREATE TABLE` must fail |
+| PostgreSQL | `CREATE ROLE rep LOGIN PASSWORD '…'; GRANT CONNECT ON DATABASE sales TO rep; GRANT USAGE ON SCHEMA public TO rep; GRANT SELECT ON ALL TABLES IN SCHEMA public TO rep; REVOKE CREATE ON SCHEMA public FROM PUBLIC; REVOKE CREATE ON DATABASE sales FROM PUBLIC;` (optionally `GRANT pg_read_all_data TO rep`) | superuser, CREATEROLE, CREATEDB, REPLICATION, BYPASSRLS; any other role (pg_read_server_files, pg_execute_server_program, pg_database_owner…); any extension but plpgsql (dblink, postgres_fdw, file_fdw…); CREATE on any schema or the database; owning anything; INSERT/UPDATE/DELETE/TRUNCATE/TRIGGER/REFERENCES on any table |
+| MySQL | `CREATE USER 'rep'@'%' IDENTIFIED BY '…'; GRANT SELECT ON sales.* TO 'rep'@'%';` (`SHOW VIEW` too; `GRANT EXECUTE ON PROCEDURE sales.p` for a listed procedure) | every other `SHOW GRANTS` line: FILE, PROCESS, SUPER, any write right, a granted role, WITH GRANT OPTION |
+| Oracle | `CREATE USER rep IDENTIFIED BY "…"; GRANT CREATE SESSION TO rep; GRANT SELECT ON sales.orders TO rep;` and `REVOKE EXECUTE ON UTL_HTTP FROM PUBLIC` (and `UTL_TCP`, `UTL_SMTP`, `UTL_MAIL`, `UTL_FILE`, `UTL_INADDR`, `DBMS_LDAP`, `HTTPURITYPE`, `DBMS_JAVA`, `DBMS_SCHEDULER`, `DBMS_JOB`, `DBMS_BACKUP_RESTORE` where PUBLIC has them) | any system privilege but CREATE SESSION; any grant to the user, its roles or PUBLIC other than SELECT/READ on a table or view (EXECUTE on anything, READ on a DIRECTORY; PUBLIC's EXECUTE on Oracle's own packages is the install default); owning objects; a visible database link |
+| Snowflake | `CREATE ROLE reader; GRANT USAGE ON WAREHOUSE wh TO ROLE reader; GRANT USAGE ON DATABASE sales TO ROLE reader; GRANT USAGE ON SCHEMA sales.public TO ROLE reader; GRANT SELECT ON ALL TABLES IN SCHEMA sales.public TO ROLE reader; GRANT ROLE reader TO USER rep;` and `?role=READER` in the URL | any grant to the role, its granted roles or PUBLIC beyond USAGE on a warehouse, database or schema and SELECT on a table, view or materialized/dynamic table (OWNERSHIP, CREATE …, USAGE on an integration, stage, function or procedure, SELECT on an external table) |
+| BigQuery | a service account with BigQuery Data Viewer and BigQuery Job User | **not enforced**: the service account's IAM is not checked (it cannot be enumerated with the BigQuery API alone). The dry run (SELECT only, bytes within `maxBytes`) and the statement check are the only guards |
+
+## Release status
+
+- **SQL Server, PostgreSQL, MySQL, SQLite**: live-tested (Docker: Azure SQL Edge, PostgreSQL 16, MySQL 8.4).
+- **Oracle, Snowflake, BigQuery: not released.** Not live-tested (mocked drivers only); BigQuery's login is not checked.
 
 ## Stored procedures
 
