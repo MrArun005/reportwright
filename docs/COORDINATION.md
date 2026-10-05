@@ -13,6 +13,7 @@ More than one AI agent is editing this repo at the same time. Read this file bef
 
 | Agent | Area | Files | Since |
 |---|---|---|---|
+| Claude Code (SQL sources, batch 3b) | SQL drivers, stored procedures, SQL source UI | src/server/sql.js, src/server/sql/*, tests/engine/sql*.test.js, tests/engine/mssql*.test.js, src/designer SQL source pieces (claimed per file when touched), docs/FEATURES.md SQL lines, docs/DATA*.md SQL sections, package.json optionalDependencies | 2026-10-05 |
 
 ## Design decisions (shared)
 
