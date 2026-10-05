@@ -75,7 +75,7 @@ pages only. If a host blocks the script, the pages still work.
 
 The Excel/CSV regions and Word cell tags (about a third of a 50,000-row model's memory) are kept only when a render
 asks for them: `render(def, { exportData: true })`. `needsExportData(format, { ua })` (exporters/regions.js, also
-exported by @pagewright/engine) says which formats need them: Excel, CSV, Word, PowerPoint, interactive HTML, the
+exported by @pagewrightjs/engine) says which formats need them: Excel, CSV, Word, PowerPoint, interactive HTML, the
 model as JSON and the accessible PDF. The viewer's screen render and a plain PDF go without; an export that needs the
 table data renders again with it. CSV, Excel, Word, interactive HTML and the accessible PDF refuse a model rendered
 without it (static HTML does not need it). Until 2026-10-05 the default was the other way round (`exportData: false`

@@ -48,7 +48,7 @@ Ten dimensions. "Now" is today; "10" is what a 10/10 means. Re-score at the end 
 | 4 | Interactivity | 8 | Today's set + shareable state in the URL, several reports cross-filtering on one page, live refresh |
 | 5 | Export & server | 8 | + PDF/A, fillable forms, Word, PowerPoint, images; first-page streaming; render farm on a Redis queue |
 | 6 | Embedding & integration | 6 | Viewer ≈ 400 KB, React/Vue/Angular/Svelte wrappers, Web Component, theming API, 10 UI languages |
-| 7 | Developer experience | 6 | `@pagewright/*` on npm, CLI (`pw render`, `pw test`, `pw diff`), snapshot tests in CI, JSON schema + types, VS Code extension, GitHub Action |
+| 7 | Developer experience | 6 | `@pagewrightjs/*` on npm, CLI (`pw render`, `pw test`, `pw diff`), snapshot tests in CI, JSON schema + types, VS Code extension, GitHub Action |
 | 8 | Enterprise | 3 | SSO (OIDC/SAML), roles, per-report permissions, audit log, Postgres storage, multi-tenant, horizontal scale |
 | 9 | Migration | 0 | `.rdlx`/`.rdl` importer that converts 90% and lists the rest; Crystal and Jasper later |
 | 10 | Distribution & ecosystem | 1 | MIT on GitHub, docs site with live playground, template gallery, migration guide, Docker image, hosted free tier, community |

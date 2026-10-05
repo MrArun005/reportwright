@@ -165,9 +165,9 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 ## 11. Embedding and developer platform
 
 - Script tag or ES module; Shadow DOM so host styles do not leak in; CORS by `PW_EMBED_ORIGINS`.
-- Framework wrappers: `@pagewright/react`, `/vue`, `/svelte`, `/angular` (built, not published to npm yet).
+- Framework wrappers: `@pagewrightjs/react`, `/vue`, `/svelte`, `/angular` (built, not published to npm yet).
 - TypeScript types (`.d.ts`) for the engine, viewer and report format.
-- `@pagewright/engine` and `@pagewright/viewer` npm packages (built and packed, not published).
+- `@pagewrightjs/engine` and `@pagewrightjs/viewer` npm packages (built and packed, not published).
 - CLI: `pw render`, `pw test`, `pw diff`, PDF password options; a GitHub Action for report regression tests (syntax-checked only, not run on GitHub yet).
 
 ## 12. Server, automation and operations

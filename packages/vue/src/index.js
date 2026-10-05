@@ -1,4 +1,4 @@
-// @pagewright/vue: the Pagewright viewer and designer as Vue 3 components. <PagewrightViewer :options="{ server, report }" />
+// @pagewrightjs/vue: the Pagewright viewer and designer as Vue 3 components. <PagewrightViewer :options="{ server, report }" />
 // The viewer renders in a shadow root inside the component's <div>; it loads on mount, so SSR never touches `window`.
 import { defineComponent, h, ref, onMounted, onBeforeUnmount, watch } from 'vue';
 
@@ -27,7 +27,7 @@ function component(name, load, watched) {
 }
 const all = (props) => () => props.options;
 
-export const PagewrightViewer = component('PagewrightViewer', () => import('@pagewright/viewer').then(m => m.mountViewer), all);
+export const PagewrightViewer = component('PagewrightViewer', () => import('@pagewrightjs/viewer').then(m => m.mountViewer), all);
 // the designer keeps its edits: it remounts only for another report or a new definition object
-export const PagewrightDesigner = component('PagewrightDesigner', () => import('@pagewright/viewer/designer').then(m => m.mountDesigner),
+export const PagewrightDesigner = component('PagewrightDesigner', () => import('@pagewrightjs/viewer/designer').then(m => m.mountDesigner),
   (props) => () => [props.options.server, props.options.report, props.options.definition, props.options.readOnly]);

@@ -1,9 +1,9 @@
-// Builds the npm packages in packages/*: @pagewright/engine (engine, exporters, pw CLI, fonts),
-// @pagewright/viewer (the embeddable viewer and designer as ES modules) and the framework wrappers
-// @pagewright/react, /vue, /svelte and /angular. Pack them with `npm pack packages/<name>`.
+// Builds the npm packages in packages/*: @pagewrightjs/engine (engine, exporters, pw CLI, fonts),
+// @pagewrightjs/viewer (the embeddable viewer and designer as ES modules) and the framework wrappers
+// @pagewrightjs/react, /vue, /svelte and /angular. Pack them with `npm pack packages/<name>`.
 // Types: the engine's and the viewer's are generated from their JSDoc (tsc, no type check); the report
 // schema (packages/engine/report.d.ts) and the wrappers' index.d.ts are written by hand.
-// They stay "private": publishing is a decision for the owner of the @pagewright scope.
+// Public on npm under the @pagewrightjs scope (owner: arunmallik005).
 import { build } from 'esbuild';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -30,7 +30,7 @@ copy('public/icc', `${E}/public/icc`);
 fs.copyFileSync(path.join(root, 'public/harfbuzz-subset.wasm'), path.join(root, E, 'public/harfbuzz-subset.wasm'));
 fs.rmSync(path.join(root, E, 'public/fonts/ui'), { recursive: true, force: true }); // UI fonts are for the app only
 write(`${E}/package.json`, {
-  name: '@pagewright/engine', version: pkg.version, private: true, type: 'module', license: 'MIT',
+  name: '@pagewrightjs/engine', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT',
   description: 'Pagewright report engine: JSON report definitions to pages, PDF (incl. PDF/A), Word, Excel, HTML and CSV. Node and browsers. Includes the pw CLI.',
   exports: { '.': { types: './index.d.ts', default: './dist/index.js' }, './report': { types: './report.d.ts' }, './package.json': './package.json' },
   types: './index.d.ts',
@@ -56,7 +56,7 @@ fs.renameSync(path.join(T, 'index.d.ts'), path.join(root, V, 'dist/viewer.d.ts')
 fs.renameSync(path.join(T, 'designer.d.ts'), path.join(root, V, 'dist/designer.d.ts'));
 fs.rmSync(T, { recursive: true, force: true });
 write(`${V}/package.json`, {
-  name: '@pagewright/viewer', version: pkg.version, private: true, type: 'module', license: 'MIT',
+  name: '@pagewrightjs/viewer', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT',
   description: 'The Pagewright report viewer for any web app: parameters, paging, search, drill-down, exports. React is bundled inside.',
   exports: { '.': { types: './dist/viewer.d.ts', default: './dist/viewer.js' }, './designer': { types: './dist/designer.d.ts', default: './dist/designer.js' } },
   types: './dist/viewer.d.ts',
@@ -77,14 +77,14 @@ for (const [name, w] of Object.entries(WRAPPERS)) {
   fs.rmSync(path.join(root, P, 'dist'), { recursive: true, force: true });
   copy(`${P}/src`, `${P}/dist`);
   write(`${P}/package.json`, {
-    name: `@pagewright/${name}`, version: pkg.version, private: true, type: 'module', license: 'MIT', description: w.description,
+    name: `@pagewrightjs/${name}`, version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT', description: w.description,
     exports: { '.': { types: './index.d.ts', default: './dist/index.js' } },
     types: './index.d.ts',
     files: ['dist', 'index.d.ts', 'README.md', 'LICENSE'],
     sideEffects: false,
-    peerDependencies: { ...w.peers, '@pagewright/viewer': pkg.version },
+    peerDependencies: { ...w.peers, '@pagewrightjs/viewer': pkg.version },
     ...(w.optional ? { peerDependenciesMeta: Object.fromEntries(w.optional.map(n => [n, { optional: true }])) } : {}),
   });
   fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, P, 'LICENSE'));
 }
-console.log(`packages: @pagewright/engine, /viewer, ${Object.keys(WRAPPERS).map(n => '/' + n).join(', ')} built (npm pack packages/<name>)`);
+console.log(`packages: @pagewrightjs/engine, /viewer, ${Object.keys(WRAPPERS).map(n => '/' + n).join(', ')} built (npm pack packages/<name>)`);

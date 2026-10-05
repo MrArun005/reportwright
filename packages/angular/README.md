@@ -1,10 +1,10 @@
-# @pagewright/angular
+# @pagewrightjs/angular
 
 `<pagewright-viewer>` and `<pagewright-designer>` custom elements for Angular. Custom elements need no Angular compiler step, so they work with any Angular version.
 
 ```ts
 // main.ts
-import { definePagewrightElements } from '@pagewright/angular';
+import { definePagewrightElements } from '@pagewrightjs/angular';
 definePagewrightElements();
 
 // a standalone component
@@ -18,4 +18,4 @@ definePagewrightElements();
 export class ReportComponent { /* … */ }
 ```
 
-`options` are those of `mountViewer` / `mountDesigner` (see `@pagewright/viewer`); `server`, `report`, `height` and `lang` also work as attributes. Events: `pw-ready` (detail: the handle) and, on the designer without an `onSave`, `pw-save` (detail: the definition). MIT.
+`options` are those of `mountViewer` / `mountDesigner` (see `@pagewrightjs/viewer`); `server`, `report`, `height` and `lang` also work as attributes. Events: `pw-ready` (detail: the handle) and, on the designer without an `onSave`, `pw-save` (detail: the definition). MIT.

@@ -1,7 +1,7 @@
-# @pagewright/fonts-cjk (optional)
+# @pagewrightjs/fonts-cjk (optional)
 
 Chinese, Japanese, Korean and emoji fonts for Pagewright (Noto, SIL Open Font License). They are not in
-`@pagewright/engine` because they are large:
+`@pagewrightjs/engine` because they are large:
 
 | File | Covers | Size |
 |---|---|---|
@@ -15,7 +15,7 @@ Fetch them into the folder the font loader reads, `fonts/cjk/`:
 
 ```bash
 npm run fonts:cjk                                   # in the app: public/fonts/cjk
-node scripts/fetch-fonts-cjk.mjs node_modules/@pagewright/engine/public/fonts/cjk   # for the engine package
+node scripts/fetch-fonts-cjk.mjs node_modules/@pagewrightjs/engine/public/fonts/cjk   # for the engine package
 ```
 
 The engine loads a face only when text needs it (`FontStore` asks for `cjk/NotoSansJP.ttf` through `fontFile(key)`),

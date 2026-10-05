@@ -42,7 +42,7 @@ Phase 1's detailed plan is written and done: `2026-10-04-p1-text-styling.md` (it
 | 1 | **0. Stabilise and ship** | Nobody can adopt a repo that is not public. The stress-test bugs (blank page before a forced break, TOC out of place) are the first things a new user sees, and they touch the same files as Phases 1, 2 and 4. | 3–5 days |
 | 2 | 1. Text and styling | Done. | (done) |
 | 3 | 3. Expressions, data, parameters | Cheap, table-driven, and Phase 4 needs `Previous`, `GroupIndex`, `Level`. | 1–1.5 weeks |
-| 4 | **7a. Framework wrappers + TypeScript types (row 36 only)** | Moved up from Phase 7. A React or Angular developer evaluating us looks for `npm i @pagewright/react` and types in the first five minutes; without them the evaluation ends. | 1 week |
+| 4 | **7a. Framework wrappers + TypeScript types (row 36 only)** | Moved up from Phase 7. A React or Angular developer evaluating us looks for `npm i @pagewrightjs/react` and types in the first five minutes; without them the evaluation ends. | 1 week |
 | 5 | 4. Tables, pivot tables, pagination | The biggest gap (pivot tables). Needs its spec first. | 3–4 weeks |
 | 6 | 5. Charts | The second biggest gap. | 2 weeks |
 | 7 | 2. Rich text and vertical text | Builds on Phase 1's runs; fewer customers depend on it than on pivots and charts. | 1.5 weeks |
@@ -55,7 +55,7 @@ Phase 1's detailed plan is written and done: `2026-10-04-p1-text-styling.md` (it
 
 **Let real files reorder the middle.** The importer has only **3 real `.rdlx-json` fixtures** (`tests/fixtures/rdlx/`). A feature audit says what ActiveReports *can* do; real files say what customers *use*. Collect at least 20 real reports (MESCIUS forums and samples, GitHub search for `.rdlx-json`, prospects), run them through the importer, and count the warnings by kind. If, say, "rich text is lost" tops the count, Phase 2 moves ahead of Phase 5. Re-run the count at every phase gate.
 
-**A parallel track, not a phase: distribution.** Every phase ships features nobody sees until the repo is public and documented. From Phase 3 on, one day a week: README for strangers, CONTRIBUTING, SECURITY, the docs site with the live playground (see `docs/ROADMAP.md`, week 8), and publishing `@pagewright/*` to npm once the licence and name are decided.
+**A parallel track, not a phase: distribution.** Every phase ships features nobody sees until the repo is public and documented. From Phase 3 on, one day a week: README for strangers, CONTRIBUTING, SECURITY, the docs site with the live playground (see `docs/ROADMAP.md`, week 8), and publishing `@pagewrightjs/*` to npm once the licence and name are decided.
 
 Sizes:
 - **S** = under 1 day
@@ -154,7 +154,7 @@ Plan: `2026-10-04-p1-text-styling.md`.
 
 | # | Audit row | Was | Delivers |
 |---|---|---|---|
-| 36 | React / Angular / Vue / Svelte components and TypeScript types (**built early, as step 7a; see Order**) | behind | `@pagewright/react`, `/vue`, `/angular`, `/svelte`: thin wrappers over `mountViewer` and a new `mountDesigner`. `.d.ts` files are generated from the JSDoc with `tsc --declaration --allowJs --emitDeclarationOnly`, plus a hand-written `report.d.ts` for the report JSON schema. |
+| 36 | React / Angular / Vue / Svelte components and TypeScript types (**built early, as step 7a; see Order**) | behind | `@pagewrightjs/react`, `/vue`, `/angular`, `/svelte`: thin wrappers over `mountViewer` and a new `mountDesigner`. `.d.ts` files are generated from the JSDoc with `tsc --declaration --allowJs --emitDeclarationOnly`, plus a hand-written `report.d.ts` for the report JSON schema. |
 | 37 | Designer customisation API | behind | `mountDesigner(el, {onSave, onOpen, toolbox: {hide}, panels, readOnly, dataSourceTemplates})`. |
 | 38 | PDF passwords and permissions | behind | `pdf: {userPassword, ownerPassword, permissions}`, using AES-128 or AES-256 through an encryption pass (pdf-lib has no built-in encryption). Must not break PDF/A or signing; PDF/A forbids encryption, so validation rejects that combination. |
 | 39 | Barcode options | partial | Per-symbology options passed to bwip-js (QR error level, version, DataMatrix size, PDF417 columns) and caption position; the picker grows to 30+ symbologies. |

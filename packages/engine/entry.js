@@ -1,4 +1,4 @@
-// @pagewright/engine: the report engine, the exporters and helpers, for Node and browsers.
+// @pagewrightjs/engine: the report engine, the exporters and helpers, for Node and browsers.
 export { render, FontStore, ITEMS, parameterOptions, resolveParameters } from '../../src/engine/index.js';
 export { fontFile } from '../../src/engine/text/fonts.js';
 export { validate } from '../../src/engine/schema/validate.js';

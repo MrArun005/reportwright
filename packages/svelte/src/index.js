@@ -1,4 +1,4 @@
-// @pagewright/svelte: Svelte actions (no compiler step needed). <div use:pagewrightViewer={{ server, report }} />
+// @pagewrightjs/svelte: Svelte actions (no compiler step needed). <div use:pagewrightViewer={{ server, report }} />
 // The viewer loads when the element mounts, so SSR never touches `window`.
 function action(load, sameReport) {
   return (node, options) => {
@@ -16,7 +16,7 @@ function action(load, sameReport) {
   };
 }
 const shown = (o) => JSON.stringify(o, (k, v) => (typeof v === 'function' ? undefined : v));
-export const pagewrightViewer = action(() => import('@pagewright/viewer').then(m => m.mountViewer), (a, b) => shown(a) === shown(b));
+export const pagewrightViewer = action(() => import('@pagewrightjs/viewer').then(m => m.mountViewer), (a, b) => shown(a) === shown(b));
 // the designer keeps its edits: it remounts only for another report or a new definition object
-export const pagewrightDesigner = action(() => import('@pagewright/viewer/designer').then(m => m.mountDesigner),
+export const pagewrightDesigner = action(() => import('@pagewrightjs/viewer/designer').then(m => m.mountDesigner),
   (a, b) => a.server === b.server && a.report === b.report && a.definition === b.definition && a.readOnly === b.readOnly);

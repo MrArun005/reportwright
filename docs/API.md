@@ -396,25 +396,25 @@ The designer embeds like the viewer. It loads only on pages that ask for it (the
 </script>
 ```
 
-Keyboard shortcuts work only for keys typed in the designer, never in the host page; typing in the designer's own inputs is never a shortcut (Backspace in a field does not delete the selected item). One designer per page. As an ES module: `import { mountDesigner } from '@pagewright/viewer/designer'`.
+Keyboard shortcuts work only for keys typed in the designer, never in the host page; typing in the designer's own inputs is never a shortcut (Backspace in a field does not delete the selected item). One designer per page. As an ES module: `import { mountDesigner } from '@pagewrightjs/viewer/designer'`.
 
 ## Framework packages and types
 
 | Package | Use |
 |---|---|
-| `@pagewright/viewer` | `mountViewer`, and `mountDesigner` from `@pagewright/viewer/designer` |
-| `@pagewright/react` | `<PagewrightViewer server report params style />`, `<PagewrightDesigner server definition onSave />` |
-| `@pagewright/vue` | `<PagewrightViewer :options="{ server, report }" />`, `<PagewrightDesigner :options="…" @ready="…" />` |
-| `@pagewright/svelte` | `<div use:pagewrightViewer={{ server, report }}>`, `use:pagewrightDesigner` (actions: no compiler step) |
-| `@pagewright/angular` | `definePagewrightElements()`, then `<pagewright-viewer [options]="…">` and `<pagewright-designer (pw-save)="…">` with `CUSTOM_ELEMENTS_SCHEMA` |
-| `@pagewright/engine` | `render`, the exporters, the `pw` CLI |
+| `@pagewrightjs/viewer` | `mountViewer`, and `mountDesigner` from `@pagewrightjs/viewer/designer` |
+| `@pagewrightjs/react` | `<PagewrightViewer server report params style />`, `<PagewrightDesigner server definition onSave />` |
+| `@pagewrightjs/vue` | `<PagewrightViewer :options="{ server, report }" />`, `<PagewrightDesigner :options="…" @ready="…" />` |
+| `@pagewrightjs/svelte` | `<div use:pagewrightViewer={{ server, report }}>`, `use:pagewrightDesigner` (actions: no compiler step) |
+| `@pagewrightjs/angular` | `definePagewrightElements()`, then `<pagewright-viewer [options]="…">` and `<pagewright-designer (pw-save)="…">` with `CUSTOM_ELEMENTS_SCHEMA` |
+| `@pagewrightjs/engine` | `render`, the exporters, the `pw` CLI |
 
-The wrappers are thin: the framework and `@pagewright/viewer` are peer dependencies, nothing is bundled, and the viewer loads on mount, so server rendering (Next.js, Nuxt, SvelteKit, Angular SSR) never touches `window`. A viewer remounts when what it shows changes; a designer only for another `report` or a new `definition` object, so it keeps its edits. In React, a `style.height` on the component makes the viewer fill it.
+The wrappers are thin: the framework and `@pagewrightjs/viewer` are peer dependencies, nothing is bundled, and the viewer loads on mount, so server rendering (Next.js, Nuxt, SvelteKit, Angular SSR) never touches `window`. A viewer remounts when what it shows changes; a designer only for another `report` or a new `definition` object, so it keeps its edits. In React, a `style.height` on the component makes the viewer fill it.
 
 Types: every package ships `.d.ts`. The engine's API and the viewer's options are generated from their JSDoc; the report definition has hand-written types:
 
 ```ts
-import type { Report, Item } from '@pagewright/engine';
+import type { Report, Item } from '@pagewrightjs/engine';
 const report: Report = { $schema: 'pagewright/report@1', sections: { body: { items: [{ type: 'textbox', x: 0, y: 0, w: 200, h: 20, value: '=Fields.name' }] } } };
 ```
 

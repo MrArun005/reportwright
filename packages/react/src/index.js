@@ -1,10 +1,10 @@
-// @pagewright/react: the Pagewright viewer and designer as React components.
+// @pagewrightjs/react: the Pagewright viewer and designer as React components.
 // The viewer bundles its own React and renders in a shadow root; this only gives it a <div>.
 // It loads on mount (dynamic import), so server rendering never touches `window`.
 import { createElement, useEffect, useRef } from 'react';
 
-const loadViewer = () => import('@pagewright/viewer').then(m => m.mountViewer);
-const loadDesigner = () => import('@pagewright/viewer/designer').then(m => m.mountDesigner);
+const loadViewer = () => import('@pagewrightjs/viewer').then(m => m.mountViewer);
+const loadDesigner = () => import('@pagewrightjs/viewer/designer').then(m => m.mountDesigner);
 
 /** Callbacks always call the latest prop, so a new arrow function each render does not remount. */
 function liveCallbacks(latest) {

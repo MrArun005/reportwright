@@ -1,12 +1,12 @@
 // What a TypeScript app writes against the published types. Each @ts-expect-error line MUST fail to type-check:
 // if one starts to pass, tsc reports the directive as unused and the test fails.
-import type { Report, Item } from '@pagewright/engine';
-import { render, exportPdf, FontStore } from '@pagewright/engine';
-import { mountViewer, type ViewerOptions } from '@pagewright/viewer';
-import { mountDesigner } from '@pagewright/viewer/designer';
-import type { PagewrightViewerProps } from '@pagewright/react';
-import { pagewrightViewer } from '@pagewright/svelte';
-import { definePagewrightElements } from '@pagewright/angular';
+import type { Report, Item } from '@pagewrightjs/engine';
+import { render, exportPdf, FontStore } from '@pagewrightjs/engine';
+import { mountViewer, type ViewerOptions } from '@pagewrightjs/viewer';
+import { mountDesigner } from '@pagewrightjs/viewer/designer';
+import type { PagewrightViewerProps } from '@pagewrightjs/react';
+import { pagewrightViewer } from '@pagewrightjs/svelte';
+import { definePagewrightElements } from '@pagewrightjs/angular';
 
 const report: Report = {
   $schema: 'pagewright/report@1',

@@ -255,7 +255,7 @@ const SNIPPETS = [
     },
   });
 </script>`],
-  ['ES module', `import { mountViewer } from '@pagewright/viewer';
+  ['ES module', `import { mountViewer } from '@pagewrightjs/viewer';
 
 mountViewer('#report', {
   server: 'https://reports.example.com',
@@ -263,7 +263,7 @@ mountViewer('#report', {
   params: { accountId: 'LN-1' },
 });
 // PDF export and barcodes load only when used.`],
-  ['Designer', `import { mountDesigner } from '@pagewright/viewer/designer';
+  ['Designer', `import { mountDesigner } from '@pagewrightjs/viewer/designer';
 
 const designer = mountDesigner('#designer', {
   server: 'https://reports.example.com',
@@ -276,26 +276,26 @@ const designer = mountDesigner('#designer', {
   dataSourceTemplates: [{ label: 'Orders API', source: { name: 'orders', type: 'rest', url: 'https://api.example.com/orders' } }],
 });
 designer.getDefinition();`],
-  ['React', `import { PagewrightViewer, PagewrightDesigner } from '@pagewright/react';
+  ['React', `import { PagewrightViewer, PagewrightDesigner } from '@pagewrightjs/react';
 
 <PagewrightViewer server="https://reports.example.com" report="invoice" params={{ id: '42' }} style={{ height: 720 }} />
 <PagewrightDesigner server="https://reports.example.com" definition={def} onSave={(d) => save(d)} toolbox={{ hide: ['map'] }} />
 
 // Loads on mount, so it is safe in server-rendered apps (Next.js, Remix).`],
   ['Vue', `<script setup>
-import { PagewrightViewer, PagewrightDesigner } from '@pagewright/vue';
+import { PagewrightViewer, PagewrightDesigner } from '@pagewrightjs/vue';
 </script>
 <template>
   <PagewrightViewer :options="{ server: 'https://reports.example.com', report: 'invoice', params: { id: '42' } }" />
   <PagewrightDesigner :options="{ server, definition, onSave: save }" @ready="(h) => (designer = h)" />
 </template>`],
   ['Svelte', `<script>
-  import { pagewrightViewer, pagewrightDesigner } from '@pagewright/svelte';
+  import { pagewrightViewer, pagewrightDesigner } from '@pagewrightjs/svelte';
 </script>
 <div use:pagewrightViewer={{ server: 'https://reports.example.com', report: 'invoice', params: { id } }}></div>
 <div use:pagewrightDesigner={{ server, definition, onSave: save }}></div>`],
   ['Angular', `// main.ts
-import { definePagewrightElements } from '@pagewright/angular';
+import { definePagewrightElements } from '@pagewrightjs/angular';
 definePagewrightElements();
 
 // a standalone component

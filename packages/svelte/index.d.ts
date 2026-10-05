@@ -1,5 +1,5 @@
-import type { ViewerOptions, ViewerHandle } from '@pagewright/viewer';
-import type { DesignerOptions, DesignerHandle } from '@pagewright/viewer/designer';
+import type { ViewerOptions, ViewerHandle } from '@pagewrightjs/viewer';
+import type { DesignerOptions, DesignerHandle } from '@pagewrightjs/viewer/designer';
 
 /** Same shape as Svelte's Action (no svelte import needed). */
 export interface PagewrightAction<O> {

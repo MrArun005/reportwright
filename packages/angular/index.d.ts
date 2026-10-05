@@ -1,5 +1,5 @@
-import type { ViewerOptions, ViewerHandle } from '@pagewright/viewer';
-import type { DesignerOptions, DesignerHandle } from '@pagewright/viewer/designer';
+import type { ViewerOptions, ViewerHandle } from '@pagewrightjs/viewer';
+import type { DesignerOptions, DesignerHandle } from '@pagewrightjs/viewer/designer';
 
 /** Register <pagewright-viewer> and <pagewright-designer>. Use them with CUSTOM_ELEMENTS_SCHEMA. */
 export function definePagewrightElements(): void;

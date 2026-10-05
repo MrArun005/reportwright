@@ -20,14 +20,14 @@ const MODES = {
   ro: `{ readOnly: true }`,
   nodata: `{ panels: { data: false }, onSave: () => {} }`,
 };
-// the framework wrappers, as an app would load them: React bundled with the app, @pagewright/viewer from the server
+// the framework wrappers, as an app would load them: React bundled with the app, @pagewrightjs/viewer from the server
 const reactApp = (await build({ stdin: { contents: `
   import { createElement } from 'react'; import { createRoot } from 'react-dom/client';
   import { PagewrightViewer } from './packages/react/dist/index.js';
   createRoot(document.getElementById('react')).render(createElement(PagewrightViewer, { server: '${BASE}', report: 'loan-statement',
     params: { accountId: 'LN-2025-001982' }, style: { height: '500px' }, onReady: () => { window.__reactReady = true; } }));`, resolveDir: process.cwd(), loader: 'jsx' },
-  bundle: true, format: 'esm', write: false, external: ['@pagewright/viewer', '@pagewright/viewer/designer'], define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'error' })).outputFiles[0].text;
-const WRAPPERS = `<script type="importmap">{ "imports": { "@pagewright/viewer": "${BASE}/embed/esm/viewer.js", "@pagewright/viewer/designer": "${BASE}/embed/esm/designer.js" } }</script>
+  bundle: true, format: 'esm', write: false, external: ['@pagewrightjs/viewer', '@pagewrightjs/viewer/designer'], define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'error' })).outputFiles[0].text;
+const WRAPPERS = `<script type="importmap">{ "imports": { "@pagewrightjs/viewer": "${BASE}/embed/esm/viewer.js", "@pagewrightjs/viewer/designer": "${BASE}/embed/esm/designer.js" } }</script>
 <div id="react"></div><div id="svelte" style="height:500px"></div>
 <pagewright-designer id="ng" server="${BASE}" height="500px"></pagewright-designer>
 <script type="module" src="/react.js"></script>

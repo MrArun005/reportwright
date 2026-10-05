@@ -1,9 +1,9 @@
-# @pagewright/viewer
+# @pagewrightjs/viewer
 
 The Pagewright report viewer in any web app (React is bundled inside, in a shadow root, so your styles do not leak in):
 
 ```js
-import { mountViewer } from '@pagewright/viewer';
+import { mountViewer } from '@pagewrightjs/viewer';
 mountViewer('#report', { server: 'https://reports.example.com', report: 'loan-statement', params: { accountId: 'LN-1' } });
 ```
 
@@ -12,7 +12,7 @@ The Pagewright server must allow your site's origin (`PW_EMBED_ORIGINS`). PDF ex
 The designer is a second entry, loaded only by pages that use it:
 
 ```js
-import { mountDesigner } from '@pagewright/viewer/designer';
+import { mountDesigner } from '@pagewrightjs/viewer/designer';
 const designer = mountDesigner('#designer', {
   server: 'https://reports.example.com',
   definition,                                   // or report: 'id' to load it from the server
@@ -26,4 +26,4 @@ const designer = mountDesigner('#designer', {
 designer.getDefinition();
 ```
 
-Types are included (`ViewerOptions`, `DesignerOptions`, …). Framework wrappers: `@pagewright/react`, `@pagewright/vue`, `@pagewright/svelte`, `@pagewright/angular`.
+Types are included (`ViewerOptions`, `DesignerOptions`, …). Framework wrappers: `@pagewrightjs/react`, `@pagewrightjs/vue`, `@pagewrightjs/svelte`, `@pagewrightjs/angular`.

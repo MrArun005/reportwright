@@ -37,7 +37,7 @@ export function fontStore() {
 }
 
 /* global __PW_EMBED__ */
-// The embedded viewer (and @pagewright/viewer) renders on the main thread: leave the worker out of those builds,
+// The embedded viewer (and @pagewrightjs/viewer) renders on the main thread: leave the worker out of those builds,
 // so bundlers such as Vite do not try to resolve a worker file that is not shipped.
 const makeWorker = typeof __PW_EMBED__ !== 'undefined' && __PW_EMBED__ ? null
   : () => new Worker(new URL('../worker/engine.worker.js', import.meta.url), { type: 'module' });

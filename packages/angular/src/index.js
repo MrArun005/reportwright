@@ -1,4 +1,4 @@
-// @pagewright/angular: <pagewright-viewer> and <pagewright-designer> custom elements.
+// @pagewrightjs/angular: <pagewright-viewer> and <pagewright-designer> custom elements.
 // Angular uses them with CUSTOM_ELEMENTS_SCHEMA: no Angular compiler step, so they work with any Angular version.
 //   definePagewrightElements();  then  <pagewright-viewer [options]="{ server, report }"></pagewright-viewer>
 // The designer fires `pw-save` (detail: the definition) when no onSave is given, and `pw-ready` (detail: the handle).
@@ -49,6 +49,6 @@ function element(load, isDesigner) {
 /** Register <pagewright-viewer> and <pagewright-designer> (once). */
 export function definePagewrightElements() {
   if (typeof customElements === 'undefined') return; // server rendering
-  if (!customElements.get('pagewright-viewer')) customElements.define('pagewright-viewer', element(() => import('@pagewright/viewer').then(m => m.mountViewer), false));
-  if (!customElements.get('pagewright-designer')) customElements.define('pagewright-designer', element(() => import('@pagewright/viewer/designer').then(m => m.mountDesigner), true));
+  if (!customElements.get('pagewright-viewer')) customElements.define('pagewright-viewer', element(() => import('@pagewrightjs/viewer').then(m => m.mountViewer), false));
+  if (!customElements.get('pagewright-designer')) customElements.define('pagewright-designer', element(() => import('@pagewrightjs/viewer/designer').then(m => m.mountDesigner), true));
 }

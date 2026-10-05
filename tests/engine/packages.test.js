@@ -12,14 +12,14 @@ const json = (f) => JSON.parse(fs.readFileSync(path.join(root, f), 'utf8'));
 describe('npm packages', () => {
   beforeAll(() => { node('scripts/build-embed.mjs'); node('scripts/build-packages.mjs'); }, 240000);
 
-  it.each([['react', ['react']], ['vue', ['vue']], ['svelte', []], ['angular', []]])('@pagewright/%s imports the framework and the viewer, bundles neither', (name, frameworks) => {
+  it.each([['react', ['react']], ['vue', ['vue']], ['svelte', []], ['angular', []]])('@pagewrightjs/%s imports the framework and the viewer, bundles neither', (name, frameworks) => {
     const src = fs.readFileSync(path.join(root, `packages/${name}/dist/index.js`), 'utf8');
     expect(src.length).toBeLessThan(8000); // a thin wrapper, not a bundle
-    expect(src).toMatch(/import\('@pagewright\/viewer'\)/);
+    expect(src).toMatch(/import\('@pagewrightjs\/viewer'\)/);
     for (const f of frameworks) expect(src).toMatch(new RegExp(`from '${f}'`));
     const pkg = json(`packages/${name}/package.json`);
     expect(pkg.dependencies).toBeUndefined();
-    expect(Object.keys(pkg.peerDependencies)).toEqual(expect.arrayContaining(['@pagewright/viewer', ...frameworks]));
+    expect(Object.keys(pkg.peerDependencies)).toEqual(expect.arrayContaining(['@pagewrightjs/viewer', ...frameworks]));
     expect(fs.existsSync(path.join(root, `packages/${name}`, pkg.types))).toBe(true);
   });
 
