@@ -15,15 +15,18 @@ export default function ViewerShell({ id, def, params, canEdit = true }) {
   const lang = pickLang(langIn);
   const q = lang === 'en' ? '' : `?lang=${encodeURIComponent(lang)}`;
   return (
-    <div style={{ height: '100%', display: 'grid', gridTemplateRows: 'auto 1fr' }} dir={dirOf(lang)} lang={lang}>
-      <div className="dtop">
+    <div className="vshell" dir={dirOf(lang)} lang={lang}>
+      <header className="dtop">
         <Link href={`/${q}`} className="brand"><i />Pagewright</Link>
-        <span style={{ fontWeight: 'var(--fw-strong)' }}>{def.name}</span>
+        <span className="dtop-sep" aria-hidden="true" />
+        <h1 className="dtop-title">{def.name}</h1>
         <div className="spacer" />
         <ThemeToggle />
         {canEdit && <Link className="btn sm" href={`/designer/${id}${q}`}>{t(lang, 'editInDesigner')}</Link>}
-      </div>
-      <ReportViewer definition={def} reportId={id} params={rest} lang={lang} exportHtmlOptions={{ reportId: id }} onExported={exported} urlState />
+      </header>
+      <main className="vshell-main">
+        <ReportViewer definition={def} reportId={id} params={rest} lang={lang} exportHtmlOptions={{ reportId: id }} onExported={exported} urlState />
+      </main>
     </div>
-  );
+    );
 }

@@ -67,7 +67,7 @@ await p.goto(`${BASE}/viewer/${viewId}`);
 await p.waitForFunction(() => [...document.querySelectorAll('.vpage text')].some(n => n.textContent === '▼ North'), null, { timeout: 20000 });
 const delhi = (t) => t.filter(x => x === 'Delhi').length; // Delhi is also a branch in the officers table
 const before = delhi(await texts());
-await p.locator('.pw-link').filter({ has: p.locator('title', { hasText: 'Show or hide details' }) }).first().click();
+await p.locator('.vlink.hit[title*="Show or hide details"]').first().click();
 await p.waitForFunction(() => [...document.querySelectorAll('.vpage text')].some(n => n.textContent === '▶ North'), null, { timeout: 20000 });
 const t = await texts();
 assert.equal(delhi(t), before - 1, 'North collapsed: its cities are hidden');

@@ -7,6 +7,12 @@ import { audit } from '@/server/audit.js';
 
 export const dynamic = 'force-dynamic';
 
+// the tab names the report; a report the user may not see is just "Report"
+export async function generateMetadata({ params }) {
+  const { id } = await params;
+  try { const p = await principalFromCookie((await headers()).get('cookie')); const def = await readReportFor(p, safeId(id), 'view'); return { title: `${def.name || id} · Pagewright` }; } catch { return { title: 'Report · Pagewright' }; }
+}
+
 // View access; a report the user may not view is not found. "Edit in designer" shows only with edit access.
 export default async function ViewerPage({ params, searchParams }) {
   const { id } = await params;

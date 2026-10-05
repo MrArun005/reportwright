@@ -123,7 +123,7 @@ export function pageToSvg(page, w, h, { background = true, animate = false, box 
   return out.join('');
 }
 
-function linkTitle(a) {
+export function linkTitle(a) {
   if (a.type === 'url') return a.href;
   if (a.type === 'drill') return `Open ${a.report}`;
   if (a.type === 'toggle') return 'Show or hide details';

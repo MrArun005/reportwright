@@ -129,7 +129,7 @@ export function pageLinks(page) {
       const top = l.y - (t.size || 9) * 0.9, w = l.w || (t.size || 9) * String(l.text).length * 0.5;
       if (l.x < box.x + box.w && l.x + w > box.x && top < box.y + box.h && l.y > box.y) words.push(String(l.text));
     }
-    out.push({ action: it.action, ...box, tip: it.tip ? String(it.tip) : '', text: words.join(' ').replace(/^[▶▼]\s*/, '').replace(/\s*[↑↓]$/, '').trim() });
+    out.push({ action: it.action, ...box, path: !!it.d, tip: it.tip ? String(it.tip) : '', text: words.join(' ').replace(/^[▶▼]\s*/, '').replace(/\s*[↑↓]$/, '').trim() });
   }
   return out.sort((a, b) => (Math.abs(a.y - b.y) > 2 ? a.y - b.y : a.x - b.x));
 }

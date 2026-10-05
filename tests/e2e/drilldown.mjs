@@ -12,7 +12,8 @@ const errs = [];
 p.on('pageerror', e => errs.push(e.message));
 const texts = () => p.evaluate(() => [...document.querySelectorAll('.vpage text')].map(n => n.textContent));
 const hasText = (re) => p.waitForFunction((src) => [...document.querySelectorAll('.vpage text')].some(n => new RegExp(src).test(n.textContent)), re.source, { timeout: 20000 });
-const links = (title) => p.locator('.pw-link').filter({ has: p.locator('title', { hasText: title }) });
+// a box-shaped spot is clicked on its accessible control (title = the tooltip); a pie slice on the drawing
+const links = (title) => p.locator(`.vlink.hit[title*=${JSON.stringify(title)}]`).or(p.locator('svg path.pw-link').filter({ has: p.locator('title', { hasText: title }) }));
 const link = (title) => links(title).first();
 const crumbs = () => p.locator('nav.vcrumbs li').allTextContents();
 // regions in table order: the region names after the table header

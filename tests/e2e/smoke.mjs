@@ -37,7 +37,7 @@ await p.getByRole('button', { name: 'View report' }).click();
 await p.waitForFunction(() => document.querySelectorAll('.vpage').length === 8);
 await p.getByTitle('Last page').click();
 await p.waitForTimeout(300);
-assert.equal(await p.getByLabel('Page').inputValue(), '8');
+assert.equal(await p.getByLabel('Page', { exact: true }).inputValue(), '8');
 
 await b.close();
 assert.deepEqual(errs, []);
