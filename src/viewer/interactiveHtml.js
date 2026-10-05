@@ -9,7 +9,7 @@ import { ALL_FONT_KEYS, SHAPER, fontFile } from '@/engine/text/fonts.js';
 import { fontKeysOf } from '@/exporters/svg.js';
 import { loadSources } from '@/engine/data/index.js';
 import { resolveParameters } from '@/engine/index.js';
-import { reuseRefs } from '@/engine/reuse.js';
+import { reuseRefs, drillRefs } from '@/engine/reuse.js';
 import { pruneSnapshot } from './logic.js';
 
 const toB64 = (buf) => {
@@ -24,14 +24,7 @@ const getBuf = async (url) => { const r = await fetch(url); if (!r.ok) throw new
  *  stylesheet and theme (fixed ids only, not expressions). */
 export function reachableReportIds(def) {
   const out = reuseRefs(def);
-  const walk = (o) => {
-    if (!o || typeof o !== 'object') return;
-    if (Array.isArray(o)) { o.forEach(walk); return; }
-    for (const a of [o.action, o.pointAction]) if (a?.type === 'report' && typeof a.report === 'string' && a.report && !a.report.startsWith('=')) out.add(a.report);
-    if (o.type === 'subreport' && typeof o.report === 'string' && o.report && !o.report.startsWith('=')) out.add(o.report);
-    for (const v of Object.values(o)) if (v && typeof v === 'object') walk(v);
-  };
-  walk(def.sections);
+  for (const r of drillRefs(def)) out.add(r.report);
   return out;
 }
 

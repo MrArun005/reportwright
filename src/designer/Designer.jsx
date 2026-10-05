@@ -170,7 +170,7 @@ function IssuesButton({ T }) {
     <span className="issues-wrap">
       <button type="button" className="btn sm issues-btn" aria-expanded={open} onClick={() => setOpen(v => !v)} data-testid="issues">{T('ux_issues', { n: issues.length })}</button>
       {open && <ul className="issues-list" data-testid="issues-list">
-        {issues.map((i, k) => <li key={k}><button type="button" className="linklike" onClick={() => useDesigner.getState().select({ kind: 'items', ids: [i.id] })}>{issueLine(T, i)}</button></li>)}
+        {issues.map((i, k) => <li key={k}><button type="button" className="linklike" onClick={() => { if (i.id) useDesigner.getState().select({ kind: 'items', ids: [i.id] }); }}>{issueLine(T, i)}</button></li>)}
       </ul>}
     </span>
   );

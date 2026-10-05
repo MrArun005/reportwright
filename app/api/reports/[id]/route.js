@@ -5,6 +5,7 @@
 // A report the caller may not view is "not found" whatever the method.
 import { writeReport, deleteReport, safeId, readDefinition, revOf } from '@/server/reports.js';
 import { validate } from '@/engine/schema/validate.js';
+import { drillRefs } from '@/engine/reuse.js';
 import { principalOf, readReportFor, revOfRead, checkReport, canCreateIn, recordNewReport, forgetReport, stampDefinition, withReport, stableCheck } from '@/server/perms.js';
 import { audit } from '@/server/audit.js';
 import { store } from '@/server/storage/index.js';
@@ -49,8 +50,24 @@ export async function PUT(req, { params }) {
       return { fresh, rev: await writeReport(id, def) };
     });
     await audit(isNew ? 'report.create' : 'report.update', { req, principal: p, report: id });
-    return Response.json({ ok: true, rev, errors: v.errors, warnings: v.warnings }, { headers: { etag: `"${rev}"` } });
+    const missing = await missingTargets(p, id, def); // also as their own list: the designer shows them under "to check"
+    return Response.json({ ok: true, rev, errors: v.errors, warnings: [...v.warnings, ...missing], missing }, { headers: { etag: `"${rev}"` } });
   } catch (e) { return fail(e); }
+}
+
+/**
+ * Drill-through links and subreports to reports that do not exist, as save warnings with where they are. Only what the
+ * saver may open counts as there: a report they cannot see is "does not exist" to them, as GET answers it.
+ * @param {any} p @param {string} self @param {any} def
+ */
+async function missingTargets(p, self, def) {
+  const out = [], known = new Map();
+  for (const { report, where } of drillRefs(def).slice(0, 200)) {
+    if (report === self) continue;
+    if (!known.has(report)) known.set(report, await checkReport(p, report, 'view').then(() => true, (e) => { if (e.status === 404) return false; throw e; }));
+    if (!known.get(report)) out.push(`${where}: it opens the report "${report}", which does not exist`);
+  }
+  return out;
 }
 
 /** The revision If-Match names ('*', a revision, or null when there is none). @param {Request} req */

@@ -44,3 +44,20 @@ export function designIssues(def, bands, extents = {}) {
   for (const b of bands) walkList(b.items, b.width, sets[0]?.name || null);
   return out;
 }
+
+/**
+ * Problems validate() finds (an unknown function, a barcode symbology, an expression that does not parse) and the
+ * server's save warnings (a drill-through report that does not exist), as issues. Each message starts with the name
+ * of its item ("Ledger cell: …"): that item is selected on a click.
+ * @param {{ items: any[] }[]} bands @param {string[]} messages
+ * @returns {{ id: string | null, name: string, kind: 'check', text: string }[]}
+ */
+export function checkIssues(bands, messages) {
+  const ids = new Map();
+  const go = (items, depth) => { if (depth > 64) return; for (const it of items || []) { if (!it) continue; if (it.name && !ids.has(it.name)) ids.set(it.name, it.id); if (Array.isArray(it.items)) go(it.items, depth + 1); } };
+  for (const b of bands) go(b.items, 0);
+  return [...new Set(messages)].map(text => {
+    const name = String(text).split(':')[0].replace(/ (cell|group|header cell|detail cell|footer cell)$/, '');
+    return { id: ids.get(name) ?? null, name, kind: 'check', text: String(text) };
+  });
+}

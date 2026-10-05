@@ -56,6 +56,29 @@ export function reuseRefs(def) {
   return out;
 }
 
+/**
+ * The reports a definition opens by a fixed id: drill-through actions (an item's, a cell's, a chart point's, a matrix
+ * header's) and subreports, each with where it is ("Ledger cell", "Chart1"). Ids given by an expression are not listed.
+ * @param {any} def @returns {{ report: string, where: string }[]}
+ */
+export function drillRefs(def) {
+  const out = [], seen = new Set();
+  const add = (report, where) => { if (isId(report) && !seen.has(`${report}|${where}`)) { seen.add(`${report}|${where}`); out.push({ report, where }); } };
+  /** @param {any} n @param {string} where @param {number} depth */
+  const go = (n, where, depth) => {
+    if (!n || typeof n !== 'object' || depth > 64) return;
+    if (Array.isArray(n)) { for (const x of n) go(x, where, depth + 1); return; }
+    const here = n.type && n.name ? n.name : where;
+    if (n.type === 'subreport') add(n.report, here);
+    for (const [k, v] of Object.entries(n)) {
+      if (['action', 'pointAction', 'totalAction'].includes(k) && v?.type === 'report') add(v.report, k === 'action' && here === where && !n.type ? `${here} cell` : here);
+      else if (v && typeof v === 'object') go(v, here, depth + 1);
+    }
+  };
+  for (const [k, s] of Object.entries(def?.sections || {})) go(s, k, 0);
+  return out;
+}
+
 /** Every item of every band, nested items included (not table cells). */
 function eachItem(def, fn, stop = () => false) {
   const go = (list, depth) => { if (!Array.isArray(list) || depth > 64) return; for (const it of list) { if (stop()) return; if (!it || typeof it !== 'object') continue; fn(it); go(it.items, depth + 1); } };

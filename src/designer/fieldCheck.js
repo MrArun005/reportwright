@@ -14,7 +14,8 @@ export function exprParts(value) {
 }
 /** String literals blanked out (same length), so a field name inside quotes is not a reference. */
 const blankStrings = (t) => t.replace(/"(?:[^"]|"")*"?|'(?:[^'\\]|\\.)*'?/g, (q) => q[0] + ' '.repeat(Math.max(0, q.length - 2)) + (q.length > 1 ? q.slice(-1) : ''));
-const quoted = (t) => [...t.matchAll(/"((?:[^"]|"")*)"/g)].map(m => m[1].replace(/""/g, '"'));
+/** The text of every string literal: "VB" ("" inside) and 'single-quoted' (\' inside), as the expression lexer reads them. */
+const quoted = (t) => [...t.matchAll(/"((?:[^"]|"")*)"|'((?:[^'\\]|\\.)*)'/g)].map(m => (m[1] != null ? m[1].replace(/""/g, '"') : m[2].replace(/\\(.)/g, '$1')));
 
 function distance(a, b) {
   const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);

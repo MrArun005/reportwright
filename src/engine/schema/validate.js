@@ -1,6 +1,7 @@
 // @ts-check
-import { checkValue, checkFunctions } from '../expr/evaluate.js';
+import { checkValue, checkFunctions, parseValue, callIssues, compile } from '../expr/evaluate.js';
 import { ITEMS } from '../items/index.js';
+import { symbologyError } from '../items/barcode.js';
 
 export const SCHEMA_ID = 'pagewright/report@1';
 
@@ -49,8 +50,10 @@ const ownKeys = (type) => {
  * @param {any} def
  */
 export function validate(def) {
-  const errors = [], warnings = [], exprErrors = [];
-  if (!def || typeof def !== 'object') return { errors: ['The report definition is empty'], warnings, exprErrors };
+  // checkOnly: errors a render reports itself where it meets them (an unknown function, a symbology): non-fatal, and
+  // left out of the render's own warnings so they are not said twice
+  const errors = [], warnings = [], exprErrors = [], checkOnly = [];
+  if (!def || typeof def !== 'object') return { errors: ['The report definition is empty'], warnings, exprErrors, checkOnly };
   if (def.$schema && def.$schema !== SCHEMA_ID) warnings.push(`Unknown schema "${def.$schema}". Expected "${SCHEMA_ID}".`);
   for (const k of Object.keys(def)) if (!DEF_KEYS.has(k) && !k.startsWith('_')) { const g = didYouMean(k, DEF_KEYS); warnings.push(`Unknown report property "${k}"${g ? ` (did you mean "${g}"?)` : ''}; it is ignored`); }
   const body = def.sections?.body;
@@ -155,5 +158,41 @@ export function validate(def) {
       }
     }
   }
-  return { errors, warnings, exprErrors };
+  // functions an expression calls that do not exist, anywhere in the report (items, data sets, parameters, functions)
+  const custom = new Set((Array.isArray(def.functions) ? def.functions : []).map(f => String(f?.name ?? '').toLowerCase()));
+  const callErr = (label, msg) => { const e = `${label}: ${msg}`; if (!errors.includes(e)) { errors.push(e); exprErrors.push(e); checkOnly.push(e); } };
+  const asts = (v, key) => {
+    if (typeof v !== 'string' || !(v.startsWith('=') || (TEMPLATE_KEYS.has(key) && v.includes('{')))) return [];
+    try { const p = parseValue(v); return p.kind === 'expr' ? [p.ast] : p.kind === 'tpl' ? p.parts.filter(x => typeof x === 'object').map(x => x.ast) : []; } catch { return []; } // a syntax error is reported above
+  };
+  /** items: an object with a type and a name is an item, its messages carry its name (not in data sets or parameters) */
+  const calls = (n, label, depth, key, items = false) => {
+    if (depth > 64 || n == null) return;
+    if (typeof n === 'string') { for (const a of asts(n, key)) for (const m of callIssues(a, custom, didYouMean)) callErr(label, m); return; }
+    if (Array.isArray(n)) { for (const x of n) calls(x, label, depth + 1, key, items); return; }
+    if (typeof n === 'object') for (const [k, v] of Object.entries(n)) calls(v, items && n.type && n.name ? n.name : label, depth + 1, k, items);
+  };
+  for (const [, items] of lists) for (const it of Array.isArray(items) ? items : []) {
+    calls(it, it?.name || it?.type, 0, null, true);
+    walkItems(it, (x) => { if (x.type === 'barcode' && x.symbology != null) { const e = symbologyError(x.symbology); if (e) callErr(x.name || 'Barcode', e); } });
+  }
+  for (const d of def.dataSets || []) calls(d, `Data set "${d?.name}"`, 0, null);
+  for (const p of def.parameters || []) calls(p, `Parameter "${p?.name}"`, 0, null);
+  for (const f of Array.isArray(def.functions) ? def.functions : []) {
+    if (typeof f?.body !== 'string') continue;
+    try { for (const m of callIssues(compile(f.body.replace(/^=/, '')), custom, didYouMean)) callErr(`Function "${f.name}"`, m); } catch { /* checkFunctions says it */ }
+  }
+  return { errors, warnings, exprErrors, checkOnly };
+}
+
+/** Keys whose text may hold {expression} parts (a text template). */
+const TEMPLATE_KEYS = new Set(['value', 'text', 'label', 'tooltip', 'title', 'noRowsText']);
+/** fn on an item and every item inside it (containers, lists, table cells). @param {any} it @param {(x: any) => void} fn */
+function walkItems(it, fn, depth = 0) {
+  if (!it || typeof it !== 'object' || depth > 64) return;
+  if (it.type) fn(it);
+  for (const v of Object.values(it)) {
+    if (Array.isArray(v)) for (const x of v) { if (x && typeof x === 'object') walkItems(x, fn, depth + 1); }
+    else if (v && typeof v === 'object') walkItems(v, fn, depth + 1);
+  }
 }

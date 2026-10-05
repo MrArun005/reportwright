@@ -112,6 +112,7 @@ export const useDesigner = create((set, get) => ({
   rev: null, // the server revision this designer edits from (If-Match on save)
   conflict: null, // { rev, error }: a save met someone else's newer save (ConflictBar)
   saveError: null,
+  saveCheck: null, // { missing }: what the server found on the last save (drill-through reports that do not exist)
   past: [],
   future: [],
   /** selection: {kind:'report'} | {kind:'section', section} | {kind:'items', ids} | {kind:'cell', id, part, row, col} */
@@ -201,7 +202,7 @@ export const useDesigner = create((set, get) => ({
         const body = await res.json().catch(() => ({}));
         if (res.status === 409 || res.status === 428) { set({ conflict: { rev: body.rev || null, error: body.error || '' } }); return; }
         if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-        set({ rev: body.rev || null, conflict: null });
+        set({ rev: body.rev || null, conflict: null, saveCheck: { missing: Array.isArray(body.missing) ? body.missing : [] } });
       }
       if (get().def === def) set({ saved: true });
     } catch (e) {

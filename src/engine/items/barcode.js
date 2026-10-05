@@ -120,6 +120,44 @@ export function bwipOptions(item) {
   return out;
 }
 
+/**
+ * Every symbology bwip-js draws (its symbolList bcids, kept here so a check needs no 1 MB import; a test compares).
+ * A report may use any of them; the designer offers SYMBOLOGIES.
+ */
+export const BWIP_IDS = new Set([
+  'ean5', 'ean2', 'ean13', 'ean8', 'upca', 'upce', 'isbn', 'ismn', 'issn', 'mands', 'code128', 'gs1-128', 'ean14',
+  'sscc18', 'code39', 'code39ext', 'code32', 'pzn', 'code93', 'code93ext', 'interleaved2of5', 'itf14', 'identcode',
+  'leitcode', 'databaromni', 'databarstacked', 'databarstackedomni', 'databartruncated', 'databarlimited',
+  'databarexpanded', 'databarexpandedstacked', 'gs1northamericancoupon', 'pharmacode', 'pharmacode2', 'code2of5',
+  'industrial2of5', 'iata2of5', 'matrix2of5', 'coop2of5', 'datalogic2of5', 'code11', 'bc412', 'rationalizedCodabar',
+  'onecode', 'postnet', 'planet', 'royalmail', 'auspost', 'kix', 'japanpost', 'msi', 'plessey', 'telepen',
+  'telepennumeric', 'posicode', 'codablockf', 'code16k', 'code49', 'channelcode', 'flattermarken', 'raw', 'daft',
+  'symbol', 'pdf417', 'pdf417compact', 'micropdf417', 'datamatrix', 'datamatrixrectangular',
+  'datamatrixrectangularextension', 'mailmark', 'qrcode', 'swissqrcode', 'microqrcode', 'rectangularmicroqrcode',
+  'maxicode', 'azteccode', 'azteccodecompact', 'aztecrune', 'codeone', 'hanxin', 'dotcode', 'ultracode', 'gs1-cc',
+  'ean13composite', 'ean8composite', 'upcacomposite', 'upcecomposite', 'databaromnicomposite',
+  'databarstackedcomposite', 'databarstackedomnicomposite', 'databartruncatedcomposite', 'databarlimitedcomposite',
+  'databarexpandedcomposite', 'databarexpandedstackedcomposite', 'gs1-128composite', 'd3aqr', 'gs1datamatrix',
+  'gs1datamatrixrectangular', 'gs1dldatamatrix', 'gs1qrcode', 'gs1dlqrcode', 'gs1dotcode', 'hibccode39',
+  'hibccode128', 'hibcdatamatrix', 'hibcdatamatrixrectangular', 'hibcpdf417', 'hibcmicropdf417', 'hibcqrcode',
+  'hibccodablockf', 'hibcazteccode',
+]);
+/** Short names people write for a symbology (qr, dm, ean): the id they mean. */
+const NICK = { qr: 'qrcode', 'qr-code': 'qrcode', dm: 'datamatrix', 'data-matrix': 'datamatrix', ean: 'ean13', upc: 'upca', c128: 'code128', aztec: 'azteccode', pdf: 'pdf417', itf: 'interleaved2of5', codabar: 'rationalizedCodabar' };
+/**
+ * Why a symbology cannot draw, with the id that was probably meant ("qr" → "qrcode"); null when it is known.
+ * @param {any} sym
+ */
+export function symbologyError(sym) {
+  const s = String(sym ?? '');
+  if (BWIP_IDS.has(s)) return null;
+  const lower = s.toLowerCase();
+  const all = [...BWIP_IDS];
+  const near = NICK[lower] || all.find(id => id.toLowerCase() === lower)
+    || (lower.length >= 2 ? SYMBOLOGIES.find(x => x.id.startsWith(lower))?.id || all.find(id => id.startsWith(lower)) : null);
+  return `"${s.slice(0, 40)}" is not a barcode symbology${near ? ` (did you mean "${near}"?)` : ''}`;
+}
+
 /** @param {string} id */
 export const isTwoD = (id) => BY_ID.get(id)?.twoD ?? false;
 
@@ -160,7 +198,8 @@ export function transformPath(d, sx, sy, tx, ty) {
 export function paintBarcode({ type = 'code128', text, x, y, w, h, color = '#000000', showText = true, textHeight = 0, captionAbove = false, options = {} }) {
   if (!text) return { items: [] };
   text = String(text);
-  if (!/^[A-Za-z0-9-]{1,32}$/.test(type)) return { items: [], error: `"${String(type).slice(0, 40)}" is not a barcode symbology` };
+  const bad = symbologyError(type);
+  if (bad) return { items: [], error: bad };
   const max = BY_ID.get(type)?.max ?? OTHER_MAX;
   if (text.length > max) return { items: [], error: `The value is too long for ${BY_ID.get(type)?.name || type} (${text.length} characters; at most ${max})` };
   if (!bwip) return { items: [], error: 'The barcode library is not loaded (call loadBarcodes() before layout)' };

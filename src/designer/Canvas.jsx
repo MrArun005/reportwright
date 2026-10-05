@@ -21,7 +21,8 @@ import { t } from '@/i18n/index.js';
 import { themeContext, findItemNamed } from '@/engine/reuse.js';
 import { MIME_PART, insertPart, useReused, useLayerOf, useT } from './Reuse.jsx';
 import { wouldOverlap } from './store.js';
-import { designIssues } from './issues.js';
+import { designIssues, checkIssues } from './issues.js';
+import { validate } from '@/engine/schema/validate.js';
 
 export const PX = 96 / 72;
 
@@ -29,16 +30,19 @@ export const PX = 96 / 72;
 export function useDesignIssues() {
   const def = useDesigner(s => s.def);
   const extents = useDesigner(s => s.extents);
+  const saveCheck = useDesigner(s => s.saveCheck);
   return useMemo(() => {
     const bands = sectionList(def).map(s => ({ key: s.key, items: secOf(def, s.key)?.items || [], width: bodyWidth(def, s.key) }));
-    return designIssues(def, bands, extents || {});
-  }, [def, extents]);
+    // what a save would report (validate's errors: unknown functions, symbologies, syntax) and the last save's missing reports
+    return [...designIssues(def, bands, extents || {}), ...checkIssues(bands, [...validate(def).errors, ...(saveCheck?.missing || [])])];
+  }, [def, extents, saveCheck]);
 }
 const IssueMap = createContext(new Map());
 /** One line about an issue, in the UI language. */
 export function issueLine(T, i) {
   if (i.kind === 'overlap') return T('ux_issueOverlap', { name: i.name, other: i.other });
   if (i.kind === 'wide') return T('ux_issueWide', { name: i.name, width: i.width, room: i.room });
+  if (i.kind === 'check') return i.text;
   return i.suggest ? T('ux_issueFieldSuggest', { name: i.name, field: i.field, suggest: i.suggest }) : T('ux_issueField', { name: i.name, field: i.field });
 }
 export const MIME_TOOL = 'application/x-pw-tool';

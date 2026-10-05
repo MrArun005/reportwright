@@ -889,7 +889,8 @@ Object.assign(FUNCTIONS, {
   datestring: (ctx) => formatDate(FUNCTIONS.now(ctx), 'MM-dd-yyyy', undefined, ctx.timeZone),
   // inspection
   // VB IsNumeric reads the culture's grouping, currency symbol and parentheses: "1,000" and "$5" are numbers
-  isnumeric: (ctx, v) => (typeof v === 'number' ? Number.isFinite(v) : typeof v === 'string' && (numericText(v) || Number.isFinite(parseNumber(v, ctx.locale)))),
+  // VB Information.IsNumeric: a number, a Boolean (True is -1), or text that reads as a number in the report's locale
+  isnumeric: (ctx, v) => (typeof v === 'number' ? Number.isFinite(v) : typeof v === 'boolean' || (typeof v === 'string' && (numericText(v) || (!/\p{L}/u.test(v.replace(/e[+-]?\d+\s*$/i, '')) && Number.isFinite(parseNumber(v, ctx.locale)))))), // no letters: "12a" is not
   isdate: (ctx, v) => isDate(v, ctx),
   isarray: (ctx, v) => Array.isArray(v),
   // conversion
@@ -1275,6 +1276,38 @@ export function functionTable(def, count = { n: 0 }) {
     if (f && typeof f.name === 'string') byName.set(f.name.toLowerCase(), f);
   }
   return { byName, count };
+}
+
+/**
+ * Calls an expression makes that no render could answer: an unknown function (Frobnicate(1)), Code.X(…) with no report
+ * function X, or a method after "." that is not one of the .NET string methods. One message per name, with the
+ * nearest known name. Pure: walks the AST, evaluates nothing.
+ * @param {any} ast @param {Set<string>} custom the report's own function names, lower case
+ * @param {(name: string, known: string[]) => string | null} [suggest]
+ * @returns {string[]}
+ */
+export function callIssues(ast, custom, suggest) {
+  const out = [], seen = new Set();
+  const say = (key, msg) => { if (!seen.has(key)) { seen.add(key); out.push(msg); } };
+  const known = () => [...FUNCTION_NAMES, ...Object.keys(FUNCTIONS)];
+  /** @param {any} n @param {number} depth */
+  const walk = (n, depth) => {
+    if (!n || typeof n !== 'object' || depth > 200) return;
+    if (Array.isArray(n)) { for (const x of n) walk(x, depth + 1); return; }
+    if (n.type === 'call') {
+      const lower = String(n.name).toLowerCase();
+      const isCode = n.obj?.type === 'id' && n.obj.name.toLowerCase() === 'code';
+      const isString = n.obj?.type === 'id' && n.obj.name.toLowerCase() === 'string' && lower === 'format';
+      if (!n.obj && !builtin(lower) && !custom.has(lower)) {
+        const g = suggest?.(n.name, known());
+        say(lower, `Unknown function "${n.name}"${g ? ` (did you mean "${g}"?)` : ''}`);
+      } else if (isCode && !custom.has(lower)) say(`code.${lower}`, `The report has no function "${n.name}" (Code.${n.name})`);
+      else if (n.obj && !isCode && !isString && !METHODS[lower]) say(`.${lower}`, `"${n.name}(…)" after "." is not supported`);
+    }
+    for (const k in n) if (k !== 'p' && n[k] && typeof n[k] === 'object') walk(n[k], depth + 1);
+  };
+  walk(ast, 0);
+  return out;
 }
 
 /** Errors in report functions: names, parameters, body syntax. */

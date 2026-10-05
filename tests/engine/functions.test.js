@@ -36,7 +36,7 @@ const CASES = [
   ['=Format(TimeSerial(13, 5, 0), "HH:mm")', '13:05'], ['=Format(TimeSerial(25, 0, 0), "HH")', '01'], ['=Format(TimeSerial(0, -1, 0), "HH:mm")', '23:59'], ['=DateString()', '10-04-2026'],
   // inspection
   ['=IsNumeric("12.5")', true], ['=IsNumeric(" 7 ")', true], ['=IsNumeric(3)', true], ['=IsNumeric("")', false], ['=IsNumeric("1e3")', true], ['=IsNumeric("abc")', false],
-  ['=IsNumeric(Fields.n)', false], ['=IsNumeric(Fields.d)', false], ['=IsNumeric(True)', false],
+  ['=IsNumeric(Fields.n)', false], ['=IsNumeric(Fields.d)', false], ['=IsNumeric(True)', true], // VB Information.IsNumeric: a Boolean is numeric (R4)
   ['=IsDate("2026-03-01")', true], ['=IsDate("1 March 2026")', true], ['=IsDate("1")', false], ['=IsDate("2026-02-30")', false], ['=IsDate(Fields.d)', true], ['=IsDate(Fields.n)', false], ['=IsDate(5)', false],
   ['=IsArray(Split("a", ","))', true], ['=IsArray("a")', false], ['=IsArray(Fields.n)', false],
   // program flow
