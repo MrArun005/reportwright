@@ -75,7 +75,7 @@ describe('expressions', () => {
     ['=StDev(Fields!x.Value, "Sales")', '=StDev(Fields.x, "Sales")'],
     ['=Previous(Fields!x.Value)', '=Previous(Fields.x)'],
     ['=WeekdayName(Weekday(Fields!d.Value))', '=WeekdayName(Weekday(Fields.d))'],
-    ['=InStrRev(Fields!s.Value, "/")', '=LastIndexOf(Fields.s, "/") + 1'],
+    ['=InStrRev(Fields!s.Value, "/")', '=InStrRev(Fields.s, "/")'],
     ['=Hour(Fields!d.Value) & ":" & Space(1)', '{Hour(Fields.d)}:{Space(1)}'],
     ['=Math.Log(Fields!x.Value)', '=Log(Fields.x)'],
   ];

@@ -267,6 +267,7 @@ const SAME = { format: 'Format', left: 'Left', right: 'Right', mid: 'Mid', len: 
   chr: 'Chr', chrw: 'Chr', asc: 'Asc', ascw: 'Asc', strreverse: 'StrReverse', isnumeric: 'IsNumeric', isdate: 'IsDate', datevalue: 'DateValue',
   timeserial: 'TimeSerial', lookupset: 'LookupSet',
   // the JasperReports and BIRT front ends' Java and JavaScript string conversions (expr/javafmt.js)
+  hex: 'Hex', oct: 'Oct', lset: 'LSet', rset: 'RSet', strdup: 'StrDup', split: 'Split',
   javastr: 'JavaStr', jsstr: 'JsStr', javaformat: 'JavaFormat' };
 const CONVERT = { tostring: 'CStr', todecimal: 'CDbl', todouble: 'CDbl', tosingle: 'CDbl', toint16: 'ToInt16', toint32: 'ToInt32', toint64: 'ToInt64',
   todatetime: 'CDate', toboolean: 'CBool' };
@@ -413,6 +414,8 @@ function byName(root, args, o) {
 function emCall(n, o, res) {
   const f = n.fn, args = n.args;
   if (f.k === 'id') return emFunc(f.name, args, o, res);
+  // Split(s, ",")(1): an element of an array a call returns
+  if (f.k === 'call' && args.length === 1) return atom(`${wrap(em(f, o), 10)}(${em(args[0], o).s})`);
   if (f.k === 'dot') {
     const root = ROOT(f.obj), m = f.name.toLowerCase();
     if ((root === 'fields' || root === 'parameters') && m === 'item') return byName(root, args, o);
@@ -425,6 +428,7 @@ function emCall(n, o, res) {
     }
     if (root === 'convert') return CONVERT[m] ? fn(CONVERT[m], [em(args[0], o)]) : no(`Convert.${f.name}`);
     if (root === 'strings' || root === 'datetime') return emFunc(f.name, args, o, res);
+    if (root === 'string' && m === 'format') { if (!args.length) return no('String.Format without a format'); return atom(`String.Format(${args.map(a => em(a, o).s).join(', ')})`); }
     if (root === 'string') return no(`String.${f.name}`);
     return emMethod(f.obj, m, f.name, args, o);
   }
@@ -445,6 +449,8 @@ function emMethod(objNode, m, name, args, o) {
       return fn('Mid', args.length > 1 ? [v(), start, a(1)] : [v(), start]);
     }
     case 'contains': return fn('Contains', [v(), a(0)]);
+    case 'padleft': case 'padright': return fn(m === 'padleft' ? 'PadLeft' : 'PadRight', [v(), ...args.map((_, i) => a(i))]);
+    case 'split': return fn('Split', [v(), a(0)]);
     case 'startswith': { const x = a(0); return { s: `Left(${v().s}, Len(${x.s})) = ${x.s}`, p: 4 }; }
     case 'endswith': { const x = a(0); return { s: `Right(${v().s}, Len(${x.s})) = ${x.s}`, p: 4 }; }
     case 'replace': return fn('Replace', [v(), a(0), a(1)]);
@@ -537,9 +543,9 @@ function emFunc(name, args, o, res) {
       // InStr(start, s, find): 1-based, from start
       return { s: `IndexOf(${em(args[1], o).s}, ${em(args[2], o).s}, ${wrap(em(args[0], o), 7)} - 1) + 1`, p: 6 };
     }
-    case 'instrrev': // VB: 1-based position of the last occurrence (0: none)
-      if (args.length !== 2) return no('InStrRev with a start position');
-      return { s: `LastIndexOf(${em(args[0], o).s}, ${em(args[1], o).s}) + 1`, p: 6 };
+    case 'instrrev': // VB: 1-based position of the last occurrence (0: none), from an optional start
+      if (args.length > 3) return no('InStrRev with a compare mode');
+      return fn('InStrRev', all());
     case 'previous': { const sc = args[1] ? scopeArg(args[1], o, name) : null; return fn('Previous', sc ? [em(args[0], o), sc] : [em(args[0], o)]); }
     case 'ltrim': return fn('TrimStart', all());
     case 'rtrim': return fn('TrimEnd', all());

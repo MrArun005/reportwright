@@ -327,9 +327,12 @@ export function groupKeyText(key, ctx) {
 
 function binary(n, ctx) {
   const op = n.op;
-  if (op === 'and' || op === '&&') return truthy(evaluate(n.a, ctx)) && truthy(evaluate(n.b, ctx));
-  if (op === 'or' || op === '||') return truthy(evaluate(n.a, ctx)) || truthy(evaluate(n.b, ctx));
+  if (op === 'and' || op === '&&' || op === 'andalso') return truthy(evaluate(n.a, ctx)) && truthy(evaluate(n.b, ctx));
+  if (op === 'or' || op === '||' || op === 'orelse') return truthy(evaluate(n.a, ctx)) || truthy(evaluate(n.b, ctx));
   let a = evaluate(n.a, ctx), b = evaluate(n.b, ctx);
+  // Is / IsNot: x Is Nothing tests for null (and "" is not Nothing here); two values: the same value
+  if (op === 'is' || op === 'isnot') { const same = a == null || b == null ? a == null && b == null : a === b || cmpVal(a, b) === 0; return op === 'is' ? same : !same; }
+  if (op === 'xor') return truthy(a) !== truthy(b);
   if (op === '&') { const x = toText(a, null, ctx), y = toText(b, null, ctx); capText('&', x.length + y.length); return x + y; }
   const sql = ctx.nullPropagation === true;
   if (!sql && (a == null || b == null)) {
@@ -363,7 +366,14 @@ function binary(n, ctx) {
       const d = num(b);
       return d === 0 && sql ? null : num(a) / d; // VB Double: 5 / 0 is Infinity, 0 / 0 is NaN
     }
-    case '%': return a == null || b == null ? null : num(a) % num(b);
+    case '%': case 'mod': return a == null || b == null ? null : num(a) % num(b); // VB Mod: the dividend's sign (-7 Mod 3 is -1)
+    case '^': return a == null || b == null ? null : num(a) ** num(b);
+    case '\\': { // VB \: both sides rounded to Long (half to even), the quotient truncated
+      if (a == null || b == null) return null;
+      const x = roundHalfEven(num(a), 0), y = roundHalfEven(num(b), 0);
+      if (y === 0) throw new ExprError('\\ by zero');
+      return Math.trunc(x / y) + 0;
+    }
     case '=': case '==':
       if (a == null || b == null) return a == null && b == null;
       return cmpVal(a, b) === 0;
@@ -780,6 +790,12 @@ function replaceText(s, a, b, start, count) {
   }
   return out + s.slice(i);
 }
+function radix(v, base) {
+  const t = roundHalfEven(Number(v), 0);
+  if (!Number.isFinite(t)) throw new ExprError(`${base === 16 ? 'Hex' : 'Oct'}: ${v} is not a number`);
+  const h = t >= 0 ? t.toString(base) : BigInt.asUintN(t >= -(2 ** 31) ? 32 : 64, BigInt(t)).toString(base);
+  return h.toUpperCase();
+}
 const firstChar = (c) => (c == null || c === '' ? ' ' : [...String(c)][0]);
 function pad(fname, s, width, c, left) {
   s = S(s);
@@ -807,6 +823,15 @@ Object.assign(FUNCTIONS, {
   strreverse: (ctx, s) => { s = S(s); capText('StrReverse', s.length); return [...s].reverse().join(''); },
   space: (ctx, n) => { n = Math.max(0, Number(n) || 0); capText('Space', n); return ' '.repeat(n); },
   // VB StrDup(count, character): the first character of the text, count times (checked before it is built)
+  // VB Hex/Oct: Int32 two's complement for a negative (Long when outside Int32)
+  hex: (ctx, v) => (v == null ? null : radix(v, 16)),
+  oct: (ctx, v) => (v == null ? null : radix(v, 8)),
+  instrrev: (ctx, s, sub, start) => { s = S(s); const st = start == null || Number(start) === -1 ? s.length : Number(start); return s.lastIndexOf(S(sub), st - S(sub).length) + 1; },
+  formatnumber: (ctx, v, d) => toText(v == null ? null : Number(v), `N${d == null || Number(d) < 0 ? 2 : Math.min(99, Number(d))}`, ctx),
+  formatpercent: (ctx, v, d) => toText(v == null ? null : Number(v), `P${d == null || Number(d) < 0 ? 2 : Math.min(99, Number(d))}`, ctx),
+  formatcurrency: (ctx, v, d) => toText(v == null ? null : Number(v), `C${d == null || Number(d) < 0 ? 2 : Math.min(99, Number(d))}`, ctx),
+  lset: (ctx, s, n) => { n = Math.max(0, Math.trunc(Number(n)) || 0); capText('LSet', n); return S(s).slice(0, n).padEnd(n); },
+  rset: (ctx, s, n) => { n = Math.max(0, Math.trunc(Number(n)) || 0); capText('RSet', n); return S(s).slice(0, n).padStart(n); },
   strdup: (ctx, n, c) => { n = Math.max(0, Math.trunc(Number(n)) || 0); capText('StrDup', n); return c == null || c === '' ? '' : [...S(c)][0].repeat(n); },
   // math
   sign: math1(Math.sign),
@@ -880,7 +905,7 @@ export const FUNCTION_NAMES = [
   'IIF', 'Switch', 'IsNull', 'Coalesce', 'Lookup', 'LookupSet', 'Previous', 'GroupIndex', 'Level', 'Join', 'Contains', 'InList',
   ...['Format', 'Upper', 'Lower', 'Left', 'Right', 'Mid', 'Len', 'Trim', 'Replace', 'InStr', 'CStr', 'CDbl', 'CInt', 'CDate', 'CBool',
     'Round', 'RoundHalfAway', 'Abs', 'Floor', 'Ceiling', 'Int', 'Pow', 'Sqrt', 'Now', 'Today', 'DateAdd', 'DateDiff', 'DateSerial', 'Year', 'Month', 'Day', 'MonthName'],
-  'StartsWith', 'EndsWith', 'IndexOf', 'LastIndexOf', 'Substring', 'PadLeft', 'PadRight', 'Split', 'Chr', 'Asc', 'TrimStart', 'TrimEnd', 'StrReverse', 'Space', 'StrDup', 'LCase', 'UCase',
+  'StartsWith', 'EndsWith', 'IndexOf', 'LastIndexOf', 'Substring', 'PadLeft', 'PadRight', 'Split', 'Chr', 'Asc', 'TrimStart', 'TrimEnd', 'StrReverse', 'Space', 'StrDup', 'Hex', 'Oct', 'InStrRev', 'FormatNumber', 'FormatPercent', 'FormatCurrency', 'LSet', 'RSet', 'JavaStr', 'JsStr', 'JavaFormat', 'LCase', 'UCase',
   'Sign', 'Log', 'Log10', 'Exp', 'Truncate', 'Fix', 'Sin', 'Cos', 'Tan', 'Asin', 'Acos', 'Atan', 'Atan2', 'PI', 'E',
   'DatePart', 'Weekday', 'WeekdayName', 'Quarter', 'QuarterName', 'Hour', 'Minute', 'Second',
   'AddYears', 'AddMonths', 'AddDays', 'AddHours', 'AddMinutes', 'AddSeconds', 'DateValue', 'TimeSerial', 'DateString',
@@ -1127,7 +1152,43 @@ export function checkFunctions(list) {
   return errors;
 }
 
+/** .NET methods on a value, called as x.Name(…): the same as the function Name(x, …) */
+const METHODS = { padleft: 'padleft', padright: 'padright', substring: 'substring', toupper: 'ucase', toupperinvariant: 'ucase', tolower: 'lcase', tolowerinvariant: 'lcase',
+  trim: 'trim', trimstart: 'trimstart', trimend: 'trimend', startswith: 'startswith', endswith: 'endswith', indexof: 'indexof', lastindexof: 'lastindexof',
+  contains: 'contains', replace: 'replace', split: 'split', tostring: 'tostring' };
+/** .NET composite formatting, String.Format("{0:N2} of {1,-8}", a, b): {index[,alignment][:format]}, {{ and }} */
+export function netFormat(f, args, ctx) {
+  let out = '';
+  for (let i = 0; i < f.length; i++) {
+    const c = f[i];
+    if (c === '{' && f[i + 1] === '{') { out += '{'; i++; continue; }
+    if (c === '}' && f[i + 1] === '}') { out += '}'; i++; continue; }
+    if (c === '}') throw new ExprError('String.Format: a "}" without its "{"');
+    if (c !== '{') { out += c; continue; }
+    const e = f.indexOf('}', i);
+    if (e < 0) throw new ExprError('String.Format: a "{" without its "}"');
+    const m = /^\s*(\d{1,3})\s*(?:,\s*(-?\d{1,4}))?\s*(?::([^}]*))?$/.exec(f.slice(i + 1, e));
+    if (!m) throw new ExprError(`String.Format: "{${f.slice(i + 1, e).slice(0, 20)}}" is not a placeholder`);
+    const k = Number(m[1]);
+    if (k >= args.length) throw new ExprError(`String.Format: {${k}} has no argument`);
+    let t = toText(args[k], m[3] || null, ctx);
+    const w = m[2] ? Number(m[2]) : 0;
+    if (Math.abs(w) > t.length) t = w < 0 ? t.padEnd(-w) : t.padStart(w);
+    capText('String.Format', out.length + t.length + f.length - e);
+    out += t;
+    i = e;
+  }
+  return out;
+}
 function callCustom(n, name, ctx) {
+  if (n.obj && n.obj.type === 'id' && n.obj.name.toLowerCase() === 'string' && name === 'format') {
+    if (!n.args.length) throw new ExprError('String.Format needs a format', n.p);
+    const [f, ...rest] = n.args.map(a => evaluate(a, ctx));
+    return netFormat(S(f), rest, ctx);
+  }
+  if (n.obj && !(n.obj.type === 'id' && n.obj.name.toLowerCase() === 'code') && METHODS[name]) {
+    return FUNCTIONS[METHODS[name]](ctx, evaluate(n.obj, ctx), ...n.args.map(a => evaluate(a, ctx)));
+  }
   const viaCode = !!n.obj;
   if (viaCode && !(n.obj.type === 'id' && n.obj.name.toLowerCase() === 'code')) throw new ExprError(`"${n.name}(…)" after "." is not supported; report functions are called as Code.${n.name}(…)`, n.p);
   const table = ctx.functions;

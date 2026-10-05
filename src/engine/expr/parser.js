@@ -23,8 +23,9 @@ export const MAX_PATTERN = 1000, MAX_DIGITS = 340;
 export const capPattern = (fname, pat) => { if (pat.length > MAX_PATTERN) throw new ExprError(`${fname}: a format longer than ${MAX_PATTERN} characters`); };
 export const capDigits = (fname, n) => { if (n > MAX_DIGITS) throw new ExprError(`${fname}: ${n} digits is more than ${MAX_DIGITS}`); };
 
-const OPS = ['<>', '<=', '>=', '==', '!=', '&&', '||', '+', '-', '*', '/', '%', '&', '=', '<', '>', '(', ')', ',', '.', '!', '[', ']', '?', ':'];
-const KEYWORDS = new Set(['and', 'or', 'not', 'true', 'false', 'null', 'nothing']);
+const OPS = ['<>', '<=', '>=', '==', '!=', '&&', '||', '+', '-', '*', '/', '%', '&', '=', '<', '>', '(', ')', ',', '.', '!', '[', ']', '?', ':', '^', '\\'];
+// VB operators written as words: Mod, Is, IsNot, Xor, AndAlso, OrElse
+const KEYWORDS = new Set(['and', 'or', 'not', 'true', 'false', 'null', 'nothing', 'mod', 'is', 'isnot', 'xor', 'andalso', 'orelse']);
 
 /** @param {string} src */
 export function lex(src) {
@@ -68,12 +69,14 @@ export function lex(src) {
 }
 
 const BIN = {
-  'or': 1, '||': 1,
-  'and': 2, '&&': 2,
-  '=': 4, '==': 4, '<>': 4, '!=': 4, '<': 4, '<=': 4, '>': 4, '>=': 4,
+  'or': 1, '||': 1, 'orelse': 1, 'xor': 1,
+  'and': 2, '&&': 2, 'andalso': 2,
+  '=': 4, '==': 4, '<>': 4, '!=': 4, '<': 4, '<=': 4, '>': 4, '>=': 4, 'is': 4, 'isnot': 4,
   '&': 5,
   '+': 6, '-': 6,
-  '*': 7, '/': 7, '%': 7,
+  // VB: Mod below \ below * and /, all above + -; ^ above unary minus (-2 ^ 2 is -4), left to right (2 ^ 3 ^ 2 is 64)
+  'mod': 6.4, '\\': 6.7, '*': 7, '/': 7, '%': 7,
+  '^': 8.5,
 };
 
 /** @param {string} src */
@@ -89,6 +92,7 @@ export function parse(src) {
   };
   const lbp = (t) => {
     if (t.t === 'op' && (t.v === '.' || t.v === '[')) return 9;
+    if (t.t === 'op' && t.v === '(') return 9; // a call's result indexed: Split(s, ",")(1)
     if (t.t === 'op' && t.v === '?') return 0.5;
     if ((t.t === 'op' || t.t === 'kw') && BIN[t.v] != null) return BIN[t.v];
     return 0;
@@ -143,6 +147,11 @@ export function parse(src) {
     if (t.v === '[') {
       const e = expr(0); expect(']');
       return { type: 'index', obj: left, key: e };
+    }
+    if (t.v === '(') { // VB: an array element, Split(s, ",")(1) (0-based)
+      const args = callArgs();
+      if (args.length !== 1) throw new ExprError('An index needs one value: Split(s, ",")(1)', t.p, src);
+      return { type: 'index', obj: left, key: args[0] };
     }
     if (t.v === '?') {
       const a = expr(0); expect(':'); const b = expr(0); // right-assoc: a ? b : c ? d : e
