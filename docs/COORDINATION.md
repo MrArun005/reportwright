@@ -13,6 +13,8 @@ More than one AI agent is editing this repo at the same time. Read this file bef
 
 | Agent | Area | Files | Since |
 |---|---|---|---|
+| Claude Code (engine correctness R1-B) | silent wrong results (REVIEW-ENGINE.md) | src/engine/expr/*, src/engine/data/*, src/importers/*, src/exporters/xlsx.js, src/engine/items/chart*.js, tests/engine/r1b-*.test.js, tests/engine/conformance/*; small surgical hunks (own commits) in src/engine/items/index.js, pivot.js, paginate/index.js, src/engine/index.js — see Requests | 2026-10-05 |
+| Claude Code (R1-A server stability + access) | server, API routes, deploy | src/server/** (incl. sql.js, sql/*, storage/*), app/api/**, proxy.js, instrumentation.js, Dockerfile, scripts/cluster.mjs, .github/workflows/ci.yml, tests/engine/r1a-*.test.js, tests/engine/{perms,pool,queue,sql,security,gov-*}.test.js, docs/API.md, docs/SERVER-LOAD.md, docs/GOVERNANCE.md, docs/DATA-SQL.md | 2026-10-05 |
 
 ## Design decisions (shared)
 
