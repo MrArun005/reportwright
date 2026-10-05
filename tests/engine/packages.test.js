@@ -32,6 +32,15 @@ describe('npm packages', () => {
     expect(json('packages/engine/package.json').files).toEqual(expect.arrayContaining(['index.d.ts', 'report.d.ts']));
   });
 
+  it('the engine subsets fonts by default (finds its own harfbuzz-subset.wasm); subset: false embeds them whole', async () => {
+    const m = await import(path.join(root, 'packages/engine/dist/index.js'));
+    const fonts = new m.FontStore((key) => fs.readFileSync(path.join(root, 'packages/engine/public/fonts', m.fontFile(key))));
+    const model = await m.render(m.blankReport(), { fontStore: fonts });
+    const small = await m.exportPdf(model, fonts, {});
+    const full = await m.exportPdf(model, fonts, { subset: false });
+    expect(small.length * 4).toBeLessThan(full.length);
+  }, 60000);
+
   it('a TypeScript consumer type-checks, and every wrong case fails', () => {
     let out = '';
     try { node('node_modules/typescript/bin/tsc', '-p', 'tests/fixtures/types'); } catch (e) { out = String(e.stdout) + String(e.stderr); }
