@@ -318,6 +318,8 @@ const LEASE_LOST = Object.freeze(new Error('lease lost'));
 
 /** @param {{ lost: boolean, hold: () => Promise<void> }} [fence] */
 async function run(job, owner, stopAfter, fence = { lost: false, hold: async () => {} }) {
+  // this run's own name for once-only side effects: the same process taking the job again later is another run
+  const runId = `${owner}:${crypto.randomUUID()}`;
   const save = async (j) => { await fence.hold(); await saveJob(j); };
   const { items, def } = await loadWork(job);
   // the owner as they are now: a user who lost access, or was disabled, gets no further items
@@ -422,7 +424,7 @@ async function run(job, owner, stopAfter, fence = { lost: false, hold: async () 
   await fence.hold(); // the output and the mail: once, by the server that holds the job
   // exactly once even when the lease was lost between the hold and the send: the first runner to claim the mail sends
   // it; a runner that took the job over afterwards finds the claim and does not send again (at most once per batch)
-  if (job.email && ok.length) job.mail = (await claimOnce(`mail:${job.id}`, owner)) ? await deliver(job, ok, bytesOf) : (job.mail || { status: 'sent by an earlier run', at: new Date().toISOString() });
+  if (job.email && ok.length) job.mail = (await claimOnce(`mail:${job.id}`, runId)) ? await deliver(job, ok, bytesOf) : (job.mail || { status: 'sent by an earlier run', at: new Date().toISOString() });
   // by key, not by listing (a listing on SQL storage reads every blob's manifest), with a turn of the event loop now and then
   for (let i = 0; i < items.length; i++) {
     await blobs().remove(itemKey(i)); await blobs().remove(resultKey(job.id, i));
@@ -434,7 +436,7 @@ async function run(job, owner, stopAfter, fence = { lost: false, hold: async () 
   delete job._work;
   await save(job);
   await markOpen(job.id, false);
-  if (job.webhook && (await claimOnce(`webhook:${job.id}`, owner))) await notify(job);
+  if (job.webhook && (await claimOnce(`webhook:${job.id}`, runId))) await notify(job);
   return false;
 }
 

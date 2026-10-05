@@ -124,7 +124,7 @@ async function save(u) {
   const prev = await getUser(u.email);
   cache.delete(u.email);
   await store().put('users', u.email, JSON.stringify({ ...u, rev: crypto.randomBytes(8).toString('hex') })); // a new rev on every change (perms.accessStamp)
-  const key = (x) => x && JSON.stringify([x.sessionVersion || 0, x.deviceEpoch || 0, !!x.disabled, x.role, x.groups || []]);
+  const key = (x) => x && JSON.stringify([x.sessionVersion || 0, x.deviceEpoch || 0, !!x.disabled, x.role, x.groups || [], (x.devices || []).map(d => d.id)]); // a removed device too
   if (prev && key(prev) !== key(u)) await bumpGen(); // a revoke: every server's cache drops it
 }
 

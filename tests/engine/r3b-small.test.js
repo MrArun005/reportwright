@@ -122,8 +122,8 @@ describe('a batch mails and calls its webhook once, even after a lost lease (REV
     expect(await claimOnce('mail:j_1', 'runner-a')).toBe(true);  // the same runner asking again (a retry inside one run)
     expect(await claimOnce('webhook:j_1', 'runner-b')).toBe(true); // each side effect on its own
     const src = fs.readFileSync('src/server/jobs.js', 'utf8');
-    expect(src).toMatch(/claimOnce\(`mail:\$\{job\.id\}`, owner\)/);
-    expect(src).toMatch(/claimOnce\(`webhook:\$\{job\.id\}`, owner\)/);
+    expect(src).toMatch(/claimOnce\(`mail:\$\{job\.id\}`, runId\)/);
+    expect(src).toMatch(/claimOnce\(`webhook:\$\{job\.id\}`, runId\)/);
     expect(src).toMatch(/'idempotency-key': `\$\{job\.id\}:batch\.finished`/);
   });
 });

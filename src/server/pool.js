@@ -102,7 +102,7 @@ const plan = () => memoryPlan({
   memMB: memLimitMB(),
   heapMB: num('PW_RENDER_WORKER_HEAP_MB', null, 64),
   workers: num('PW_RENDER_WORKERS', null),
-  grownMB: P.grownMB || 0,
+  grownMB: P.grownMB && Date.now() - (P.grownAt || 0) < 30 * 60000 ? P.grownMB : 0, // back to 1 GB after 30 min without an OOM
 });
 export const poolSize = () => plan().workers;
 const queueMax = () => num('PW_RENDER_QUEUE', 1000, 1);
@@ -118,7 +118,7 @@ const memoryFull = () => process.memoryUsage.rss() / 1048576 > memLimitMB() * 0.
 /** @typedef {{ w: Worker, ready: boolean, job: Job|null, renders: number, timer: any }} Slot */
 
 const g = /** @type {any} */ (globalThis);
-/** @type {{ startFails: number, dying: Set<Worker>, slots: Slot[], queue: Job[], running: Map<string, number>, waiting: Map<string, number>, served: Map<string, number>, est: Map<string, number>, seq: number, noWorker: string|null, stats: Record<string, number>, hist?: { counts: number[], sum: number, n: number }, lastFree?: number, grownMB?: number }} */
+/** @type {{ startFails: number, dying: Set<Worker>, slots: Slot[], queue: Job[], running: Map<string, number>, waiting: Map<string, number>, served: Map<string, number>, est: Map<string, number>, seq: number, noWorker: string|null, stats: Record<string, number>, hist?: { counts: number[], sum: number, n: number }, lastFree?: number, grownMB?: number, grownAt?: number }} */
 const P = g.__pwRenderPool ||= { startFails: 0, dying: new Set(), slots: [], queue: [], running: new Map(), waiting: new Map(), served: new Map(), est: new Map(), seq: 0, noWorker: null,
   stats: { done: 0, failed: 0, rejected: 0, timedOut: 0, crashed: 0, recycled: 0, dropped: 0, heldForMemory: 0, restarts: 0 } };
 P.stats.heldForMemory ??= 0; P.stats.restarts ??= 0;
@@ -226,7 +226,7 @@ function died(s, e, exited = false) {
   const oom = e?.code === 'ERR_WORKER_OUT_OF_MEMORY' || /heap|memory/i.test(why);
   // observed need: a render ran out of this heap, so workers started from now on get twice it (up to 2 GB, the memory
   // plan permitting): the pool starts small and many, and grows its heap only when a real report needs it
-  if (oom && !num('PW_RENDER_WORKER_HEAP_MB', null, 64)) P.grownMB = Math.min(2048, Math.max(P.grownMB || 0, heapMB() * 2));
+  if (oom && !num('PW_RENDER_WORKER_HEAP_MB', null, 64)) { P.grownMB = Math.min(2048, Math.max(P.grownMB || 0, heapMB() * 2)); P.grownAt = Date.now(); }
   if (j) { finish(s); P.stats.crashed++; j.reject(Object.assign(new Error(oom ? 'The render ran out of memory and was stopped.' : 'The render stopped unexpectedly. Try again.'), { status: 500 })); }
   if (!s.ready && ++P.startFails >= 3) { // it keeps dying while starting: no crash loop, render on this thread
     const i = P.slots.indexOf(s); if (i >= 0) P.slots.splice(i, 1);
