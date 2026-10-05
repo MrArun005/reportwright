@@ -5,7 +5,7 @@
 import { accountsOn, readMfa } from '@/server/session.js';
 import { getUser, startTwoFactor, enrolCodeOk } from '@/server/users.js';
 import { mailOn } from '@/server/mail.js';
-import { attempt } from '@/server/limits.js';
+import { attempt, normAccount } from '@/server/limits.js';
 import { audit } from '@/server/audit.js';
 import { errorResponse } from '@/server/errors.js';
 
@@ -18,7 +18,7 @@ export async function POST(req) {
     const u = st?.enrol ? await getUser(st.e) : null;
     if (!st?.enrol || !u || u.disabled || (u.sessionVersion || 0) !== st.v) return Response.json({ error: 'The sign-in took too long. Sign in again.' }, { status: 401 });
     if (mailOn()) {
-      const slot = await attempt(`mfa:${u.email}`, 5, 15 * 60 * 1000);
+      const slot = await attempt(['mfa', normAccount(u.email)], 5, 15 * 60 * 1000);
       if (!slot.ok) { await audit('auth.mfa_failed', { req, actor: `user:${u.email}`, status: 'denied', detail: { reason: 'rate limited', at: 'enrol code' } }); return Response.json({ error: 'Too many wrong codes. Try again later.' }, { status: 429, headers: { 'retry-after': String(slot.retryAfter) } }); }
       const body = await req.json().catch(() => ({}));
       if (!enrolCodeOk(u, body?.emailCode)) { await audit('auth.mfa_failed', { req, actor: `user:${u.email}`, status: 'failed', detail: { reason: 'wrong enrolment code' } }); return Response.json({ error: 'That emailed code is not right.' }, { status: 401 }); }

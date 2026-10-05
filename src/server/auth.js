@@ -50,6 +50,12 @@ export async function apiPrincipal(req) {
   const where = { method: req.method, path: new URL(req.url).pathname };
   if (!hit) {
     await audit('api.call', { req, status: 'denied', detail: { ...where, reason: given ? 'unknown key' : 'no key' } });
+    // wrong keys count per network (the same limiter as passwords); a right key is never slowed by them
+    if (given) {
+      const { attempt, clientAddress, netKey } = await import('./limits.js');
+      const t = await attempt(['apikey', netKey(clientAddress(req))], 100, 15 * 60 * 1000);
+      if (!t.ok) return { res: Response.json({ error: 'Too many wrong API keys from this address. Try again later.' }, { status: 429, headers: { 'retry-after': String(t.retryAfter) } }) };
+    }
     return { res: denied('Give a valid API key: Authorization: Bearer <key>') };
   }
   const key = keyId(hit.key);

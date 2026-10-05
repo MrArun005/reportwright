@@ -3,7 +3,7 @@
 // Limits across servers (src/server/limits.js loginAttempt): too many failures from one source → 429 for that source;
 // failures for one account from everywhere only slow its tries down, so nobody can lock its owner out.
 import { authenticate, ensureAdmin, normEmail, secondFactor } from '@/server/users.js';
-import { accountsOn, sessionSecret, sessionCookie, mfaCookie } from '@/server/session.js';
+import { accountsOn, sessionSecret, sessionCookie, mfaCookie, deviceCookie, knownDevice } from '@/server/session.js';
 import { loginAttempt, clientAddress, unknownProxy } from '@/server/limits.js';
 import { getSettings } from '@/server/settings.js';
 import { issueEnrolCode, updateUser } from '@/server/users.js';
@@ -29,7 +29,7 @@ export async function POST(req) {
     let email;
     try { email = normEmail(body.email); } catch { await audit('auth.login_failed', { req, detail: { reason: 'bad email' } }); return Response.json({ error: WRONG }, { status: 401 }); }
     await ensureAdmin();
-    const slot = await loginAttempt(clientAddress(req), email, { perSource: !unknownProxy(req) });
+    const slot = await loginAttempt(clientAddress(req), email, { perSource: !unknownProxy(req), knownDevice: knownDevice(req, email) });
     if (!slot.ok) {
       await audit('auth.login_failed', { req, detail: { email, reason: 'rate limited' } });
       return Response.json({ error: 'Too many failed sign-ins. Try again later.' }, { status: 429, headers: { 'retry-after': String(slot.retryAfter) } });
@@ -56,7 +56,10 @@ export async function POST(req) {
     }
     if (need) return Response.json({ mfa: need }, { headers: { 'set-cookie': mfaCookie(req, user, need === 'enrol'), 'cache-control': 'no-store' } });
     await audit('auth.login', { req, actor: `user:${user.email}`, detail: { method: 'password' } });
-    return Response.json({ email: user.email, role: user.role }, { headers: { 'set-cookie': sessionCookie(req, user) } });
+    const h = new Headers();
+    h.append('set-cookie', sessionCookie(req, user));
+    h.append('set-cookie', deviceCookie(req, user)); // this browser skips the per-account throttle next time
+    return Response.json({ email: user.email, role: user.role }, { headers: h });
   } catch (e) {
     return errorResponse(e);
   }

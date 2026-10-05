@@ -10,7 +10,7 @@ import { getUser, verifyPassword, startTwoFactor, enableTwoFactor, checkSecondFa
 import { sessionCookie, sessionClaims } from '@/server/session.js';
 import { notifyAccount } from '@/server/mail.js';
 import { getSettings } from '@/server/settings.js';
-import { attempt } from '@/server/limits.js';
+import { attempt, normAccount } from '@/server/limits.js';
 import { audit } from '@/server/audit.js';
 import { errorResponse } from '@/server/errors.js';
 
@@ -25,7 +25,7 @@ export async function POST(req) {
     const body = await req.json().catch(() => ({}));
     const action = String(body.action || '');
     if (action === 'setup') {
-      const slot = await attempt(`mfa:${me.email}`, 5, 15 * 60 * 1000);
+      const slot = await attempt(['mfa', normAccount(me.email)], 5, 15 * 60 * 1000);
       if (!slot.ok) { await audit('auth.mfa_failed', { req, actor: `user:${me.email}`, status: 'denied', detail: { reason: 'rate limited', at: 'setup' } }); return Response.json({ error: 'Too many wrong tries. Try again later.' }, { status: 429, headers: { 'retry-after': String(slot.retryAfter) } }); }
       const u = await getUser(me.email);
       if (!u?.passwordHash || !(await verifyPassword(String(body.password ?? ''), u.passwordHash))) {
@@ -39,7 +39,7 @@ export async function POST(req) {
     }
     if (!['enable', 'recovery', 'disable'].includes(action)) throw fail('Send { action: "setup" | "enable" | "recovery" | "disable" }.', 400);
     if (action === 'disable' && (await getSettings({ fresh: true })).require2fa.includes((await getUser(me.email))?.role)) throw fail('Your role must use two-factor sign-in, so it cannot be turned off. An admin can reset it.', 409);
-    const slot = await attempt(`mfa:${me.email}`, 5, 15 * 60 * 1000);
+    const slot = await attempt(['mfa', normAccount(me.email)], 5, 15 * 60 * 1000);
     if (!slot.ok) { await audit('auth.mfa_failed', { req, actor: `user:${me.email}`, status: 'denied', detail: { reason: 'rate limited', at: action } }); return Response.json({ error: 'Too many wrong codes. Try again later.' }, { status: 429, headers: { 'retry-after': String(slot.retryAfter) } }); }
     if (action === 'enable') {
       let out;

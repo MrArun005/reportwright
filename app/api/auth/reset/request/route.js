@@ -5,7 +5,7 @@
 import { accountsOn } from '@/server/session.js';
 import { issueReset, normEmail, RESET_MS } from '@/server/users.js';
 import { mailOn, sendMail } from '@/server/mail.js';
-import { attempt, clientAddress } from '@/server/limits.js';
+import { attempt, clientAddress, netKey, normAccount } from '@/server/limits.js';
 import { publicBase } from '@/server/sso.js';
 import { audit } from '@/server/audit.js';
 
@@ -40,8 +40,8 @@ export async function POST(req) {
   const body = await req.json().catch(() => ({}));
   let email;
   try { email = normEmail(body?.email); } catch (e) { return Response.json({ error: e.message }, { status: 400 }); }
-  const byAddress = await attempt(`reset-ip:${clientAddress(req)}`, 20, HOUR);
-  const byEmail = byAddress.ok ? await attempt(`reset-email:${email}`, 3, HOUR) : null;
+  const byAddress = await attempt(['reset-ip', netKey(clientAddress(req))], 20, HOUR);
+  const byEmail = byAddress.ok ? await attempt(['reset-email', normAccount(email)], 3, HOUR) : null;
   if (!byAddress.ok || !byEmail?.ok) {
     await audit('auth.reset_request', { req, status: 'denied', detail: { email, reason: 'rate limited' } });
     return Response.json({ error: 'Too many reset requests. Try again later.' }, { status: 429, headers: { 'retry-after': String(HOUR / 1000) } });

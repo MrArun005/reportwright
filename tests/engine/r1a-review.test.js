@@ -22,7 +22,7 @@ describe('R1-A review fixes', () => {
     expect(id.groups).toEqual(['designers-custom', 'finance']);
   });
 
-  it('#2 behind a proxy nobody configured, per-address limits are off (and it says so)', () => {
+  it('#2 behind a proxy nobody configured, the all-accounts cap per address is off (and it says so)', () => {
     const r = (peer, xff) => new Request('http://pw.test/', { headers: { 'x-pw-peer': peer, ...(xff && { 'x-forwarded-for': xff }) } });
     const err = console.error; console.error = () => {};
     try {
@@ -35,9 +35,9 @@ describe('R1-A review fixes', () => {
   });
 
   it('#3 IPv6 counts by /64; a hot account takes one try at a time across all sources', async () => {
-    expect(limits.limitKey('2001:db8:1:2:aaaa::1')).toBe('2001:db8:1:2::/64');
-    expect(limits.limitKey('2001:db8:1:2:ffff:1:2:3')).toBe('2001:db8:1:2::/64');
-    expect(limits.limitKey('203.0.113.5')).toBe('203.0.113.5');
+    expect(limits.netKey('2001:db8:1:2:aaaa::1')).toBe('2001:db8:1:2::/64');
+    expect(limits.netKey('2001:db8:1:2:ffff:1:2:3')).toBe('2001:db8:1:2::/64');
+    expect(limits.netKey('203.0.113.5')).toBe('203.0.113.5');
     const email = 'hot@x.test';
     for (let i = 0; i < 50; i++) await limits.loginAttempt(`203.0.113.${i}`, email); // 50 failures (never released)
     const tries = await Promise.all(Array.from({ length: 20 }, (_, i) => limits.loginAttempt(`198.51.100.${i}`, email)));
