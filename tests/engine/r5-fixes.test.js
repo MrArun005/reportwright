@@ -204,4 +204,8 @@ describe('R5 #11: small fixes', () => {
     expect(src).toMatch(/<LocalTime iso=\{s\.nextRunAt\}/);
     expect(fs.readFileSync('src/home/ScheduleToggle.jsx', 'utf8')).toMatch(/^'use client'/);
   });
+  it('"Allow SSO" shows only when single sign-on is configured', () => {
+    expect(fs.readFileSync('app/admin/users/page.js', 'utf8')).toMatch(/sso=\{ssoOn\(\)\}/);
+    expect(fs.readFileSync('app/admin/users/UsersAdmin.jsx', 'utf8')).toMatch(/\{sso && !u\.sso && <button[^>]*allowSsoHint/);
+  });
 });

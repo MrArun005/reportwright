@@ -14,7 +14,7 @@ async function call(url, method = 'GET', body) {
 const one = (email) => `/api/users/${encodeURIComponent(email)}`;
 const cell = { padding: '10px 16px', borderTop: '1px solid var(--line-2)', textAlign: 'left', verticalAlign: 'middle' };
 
-export default function UsersAdmin({ lang }) {
+export default function UsersAdmin({ lang, sso = false }) {
   const T = (k, v) => t(lang, k, v);
   const q = lang && lang !== 'en' ? `?lang=${encodeURIComponent(lang)}` : '';
   const [users, setUsers] = useState(null);
@@ -128,7 +128,7 @@ export default function UsersAdmin({ lang }) {
                         {u.disabled ? T('enable') : T('disable')}
                       </button>
                       {u.twoFactor && <button type="button" className="btn sm" onClick={() => { if (window.confirm(T('confirmReset2fa', { email: u.email }))) act(() => call(one(u.email), 'PATCH', { resetTwoFactor: true }), T('twoFactorReset', { email: u.email })); }}>{T('reset2fa')}</button>}
-                      {!u.sso && <button type="button" className="btn sm" title={T('allowSsoHint')} onClick={() => act(() => call(one(u.email), 'PATCH', { allowSso: !u.allowSso }), T(u.allowSso ? 'ssoNotAllowed' : 'ssoAllowed', { email: u.email }))}>{u.allowSso ? T('stopSso') : T('allowSso')}</button>}
+                      {sso && !u.sso && <button type="button" className="btn sm" title={T('allowSsoHint')} onClick={() => act(() => call(one(u.email), 'PATCH', { allowSso: !u.allowSso }), T(u.allowSso ? 'ssoNotAllowed' : 'ssoAllowed', { email: u.email }))}>{u.allowSso ? T('stopSso') : T('allowSso')}</button>}
                       <button type="button" className="btn sm danger" onClick={() => remove(u)} aria-label={T('deleteUser', { email: u.email })}>{T('delete')}</button>
                     </div>
                   )}
