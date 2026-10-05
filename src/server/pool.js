@@ -315,7 +315,10 @@ async function runInline(j) {
     if (m.kind === 'thumb') { const { drawThumb } = await import('./thumbs.js'); return j.resolve(await drawThumb(m)); }
     if (m.kind === 'pack') { const { packOutput } = await import('./jobs.js'); return j.resolve(await packOutput(m.spec)); }
     const def = m.def ?? (m.how === 'runnable' ? await (await import('./perms.js')).readRunnable(m.opt.principal, m.ref) : await loadTemplate(m.ref, m.opt.principal));
-    const r = await renderTo(def, m.opt);
+    const t0 = Date.now();
+    let r;
+    try { r = await renderTo(def, m.opt); } catch (e) { P.stats.failed = (P.stats.failed || 0) + 1; throw e; }
+    observe(Date.now() - t0); P.stats.done = (P.stats.done || 0) + 1; // the dashboard's average counts inline renders too
     j.resolve({ bytes: r.bytes, contentType: r.contentType, ext: r.ext, name: def.name || null, pages: r.model.pages.length, ms: r.model.stats?.ms ?? null, warnings: r.model.warnings?.length ?? 0 });
   } catch (e) { j.reject(e); }
 }

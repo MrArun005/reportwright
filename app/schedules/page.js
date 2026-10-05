@@ -10,7 +10,7 @@ export default async function SchedulesPage({ searchParams }) {
   const lang = pickLang((await searchParams)?.lang);
   return (
     <Shell lang={lang} active="schedules">
-      <main className="home"><Schedules lang={lang} /></main>
+      <main className="home"><Schedules lang={lang} cronOnly={process.env.PW_SCHEDULER === 'off' ? process.env.PW_CRON || '' : ''} /></main>
     </Shell>
   );
 }

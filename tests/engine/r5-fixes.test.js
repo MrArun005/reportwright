@@ -169,3 +169,30 @@ describe('R5 #7: a date or number in a narrow column shrinks, it does not wrap t
     expect(texts.find(i => /two/.test(i.lines[0].text)).lines.length).toBe(2);
   });
 });
+
+describe('R5 #9: health with inline renders and a cron-driven scheduler', () => {
+  it('no worker pool is a neutral "inline" check, schedules and batches off say they run via cron, inline renders are timed', async () => {
+    const keep = { ...process.env };
+    Object.assign(process.env, { PW_RENDER_WORKERS: '0', PW_SCHEDULER: 'off', PW_WORKER: 'off', PW_CRON: 'daily' });
+    try {
+      const { health, renderStats } = await import('../../src/home/overview.js');
+      const { renderInPool } = await import('../../src/server/pool.js');
+      const by = Object.fromEntries((await health()).checks.map(c => [c.id, c]));
+      expect(by.engine).toMatchObject({ state: 'off', label: 'inline', note: 'inline' });
+      expect(by.scheduler).toMatchObject({ state: 'off', note: 'cron:daily' });
+      expect(by.worker).toMatchObject({ state: 'off', note: 'cron:daily' });
+      const before = renderStats().timed;
+      await renderInPool({ def: { $schema: 'pagewright/report@1', name: 'X', sections: { body: { items: [] } } }, opt: { format: 'json' } });
+      expect(renderStats().timed).toBe(before + 1);
+      expect(renderStats().avgMs).not.toBe(null);
+    } finally { for (const k of ['PW_RENDER_WORKERS', 'PW_SCHEDULER', 'PW_WORKER', 'PW_CRON']) if (keep[k] == null) delete process.env[k]; else process.env[k] = keep[k]; }
+  });
+  it('the schedule editor warns when a cadence faster than daily runs only on a daily cron', async () => {
+    const { fasterThanDaily } = await import('../../src/server/cron.js');
+    expect(fasterThanDaily('*/15 * * * *')).toBe(true);
+    expect(fasterThanDaily('0 * * * *')).toBe(true);
+    expect(fasterThanDaily('0 6,18 * * *')).toBe(true);
+    expect(fasterThanDaily('0 6 * * *')).toBe(false);
+    expect(fasterThanDaily('30 7 * * 1')).toBe(false);
+  });
+});

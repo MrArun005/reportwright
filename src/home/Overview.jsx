@@ -113,8 +113,8 @@ export default async function Overview({ lang, sp, p, isAdmin, designer, canCrea
               {h.checks.map(c => (
                 <li key={c.id} data-check={c.id} data-state={c.state}>
                   <span className="hl-name">{T(`hm_${c.id}`)}</span>
-                  <span className="hint hl-note">{c.id === 'engine' ? (c.note === 'inline' ? T('hm_inlineWorker') : T('hm_workers', { ready: c.note.split('/')[0], size: c.note.split('/')[1] })) : c.id === 'queue' ? T('hm_waiting', { n: c.note }) : c.note}</span>
-                  <span className={`hl-state ${c.state}`}><i />{T(`hm_${c.state}`)}</span>
+                  <span className="hint hl-note">{c.id === 'engine' ? (c.note === 'inline' ? T('hm_inlineWorker') : T('hm_workers', { ready: c.note.split('/')[0], size: c.note.split('/')[1] })) : c.id === 'queue' ? T('hm_waiting', { n: c.note }) : c.note.startsWith('cron:') ? T('hm_viaCron', { when: c.note.slice(5) }) : c.note}</span>
+                  <span className={`hl-state ${c.state}`}><i />{T(c.label === 'inline' ? 'hm_inlineState' : `hm_${c.state}`)}</span>
                 </li>
               ))}
             </ul>

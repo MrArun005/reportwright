@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { t } from '@/i18n/index.js';
+import { fasterThanDaily } from '@/server/cron.js';
 
 const FORMATS = ['pdf', 'xlsx', 'docx', 'pptx', 'html', 'csv'];
 const PRESETS = [['0 7 * * *', 'cronDaily'], ['0 7 * * 1', 'cronWeekly'], ['0 7 1 * *', 'cronMonthly'], ['0 * * * *', 'cronHourly']];
@@ -17,7 +18,7 @@ async function call(url, method = 'GET', body) {
 const parseParams = (text) => Object.fromEntries(String(text).split('\n').map(l => l.trim()).filter(Boolean).map(l => { const i = l.indexOf('='); return i > 0 ? [l.slice(0, i).trim(), l.slice(i + 1).trim()] : [l, '']; }));
 
 /** Scheduled runs of saved reports: to download from the server, or emailed (attached, or a link when large). */
-export default function Schedules({ lang }) {
+export default function Schedules({ lang, cronOnly = '' }) {
   const T = (k, v) => t(lang, k, v);
   const [data, setData] = useState(null);
   const [form, setForm] = useState(EMPTY);
@@ -54,6 +55,7 @@ export default function Schedules({ lang }) {
         <label className="field"><span>{T('scheduleWhen')}</span>
           <input className="input" required value={form.cron} onChange={set('cron')} list="cron-presets" style={{ fontFamily: 'var(--mono)' }} aria-describedby="cron-hint" />
           <datalist id="cron-presets">{PRESETS.map(([c, k]) => <option key={c} value={c}>{T(k)}</option>)}</datalist>
+          {cronOnly && (() => { try { return fasterThanDaily(form.cron); } catch { return false; } })() && <span className="hint" role="alert" data-testid="cron-only-warn" style={{ color: 'var(--warn)' }}>{T('scheduleCronOnly', { when: cronOnly })}</span>}
         </label>
         <label className="field"><span>{T('timeZone')}</span><input className="input" required value={form.timezone} onChange={set('timezone')} /></label>
         <label className="field"><span>{T('formatCol')}</span>

@@ -79,13 +79,16 @@ export async function health() {
   const s = poolStats(), w = s.workers;
   const waiting = s.queue.interactive + s.queue.background;
   const kind = (process.env.PW_STORAGE || 'file').split(':')[0];
+  // PW_CRON: how often an outside cron calls this server (e.g. Vercel's daily /api/v1/cron) when its own timers are off
+  const cron = process.env.PW_CRON ? `cron:${process.env.PW_CRON}` : '';
   return {
     checks: [
-      { id: 'engine', state: w.inline ? 'ok' : !w.size ? 'ok' : w.ready > 0 ? 'ok' : 'down', note: w.inline ? 'inline' : `${w.ready}/${w.size}` },
+      // no worker pool (PW_RENDER_WORKERS=0, or threads cannot run here): renders run in the request, a neutral state
+      (w.inline || !w.size) ? { id: 'engine', state: 'off', label: 'inline', note: 'inline' } : { id: 'engine', state: w.ready > 0 ? 'ok' : 'down', note: `${w.ready}/${w.size}` },
       { id: 'queue', state: waiting >= s.queue.max * 0.8 ? 'warn' : 'ok', note: String(waiting) },
       { id: 'storage', state: storage ? 'ok' : 'down', note: storage ? kind : storageNote },
-      { id: 'scheduler', state: process.env.PW_SCHEDULER === 'off' ? 'off' : g.__pwSched?.timer ? 'ok' : 'down', note: '' },
-      { id: 'worker', state: g.__pwQueue?.started ? 'ok' : 'down', note: '' },
+      { id: 'scheduler', state: process.env.PW_SCHEDULER === 'off' ? 'off' : g.__pwSched?.timer ? 'ok' : 'down', note: process.env.PW_SCHEDULER === 'off' ? cron : '' },
+      { id: 'worker', state: process.env.PW_WORKER === 'off' ? 'off' : g.__pwQueue?.started ? 'ok' : 'down', note: process.env.PW_WORKER === 'off' ? cron : '' },
     ],
   };
 }

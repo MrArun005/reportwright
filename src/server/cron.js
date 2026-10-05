@@ -22,6 +22,12 @@ export function parseCron(expr) {
   return { fields: parts.map((p, i) => parseField(p, /** @type {[number, number]} */ (RANGES[i]))), domStar: parts[2] === '*', dowStar: parts[4] === '*' };
 }
 
+/** True when a cron runs more than once on some day (every minute, hour, or several hours): a daily outside trigger misses runs. */
+export function fasterThanDaily(expr) {
+  const { fields } = parseCron(expr);
+  return fields[0].size > 1 || fields[1].size > 1;
+}
+
 const fmts = new Map();
 /** Wall-clock parts of a date in a time zone. */
 export function zoned(date, timeZone = 'UTC') {
