@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { render, FontStore } from '../src/engine/index.js';
+import { fontFile } from '../src/engine/text/fonts.js';
 import { pdfEncryptOptions } from '../src/exporters/encrypt.js';
 import { exportPdf } from '../src/exporters/pdf.js';
 import { createSubsetter } from '../src/exporters/subset.js';
@@ -41,7 +42,8 @@ pw migrate-storage --to <url> [--from file|<url>]
                                    files in this folder to sqlite:/srv/pw.db or postgres://…; stop the server first
 Exit codes: 0 ok, 1 a test failed, the pages differ or the audit log does not check, 2 bad usage.`;
 
-const fontStore = new FontStore((k) => fs.readFileSync(path.join(ROOT, 'public', 'fonts', `${k}.ttf`)));
+// fontFile(k), not `${k}.ttf`: the shaper key is "harfbuzz" → harfbuzz.wasm (without it Arabic and Indic text is not shaped)
+const fontStore = new FontStore((k) => fs.readFileSync(path.join(ROOT, 'public', 'fonts', fontFile(k))));
 // PDFs embed only the glyphs they use, as the server's do
 const subset = createSubsetter(() => fs.promises.readFile(path.join(ROOT, 'public', 'harfbuzz-subset.wasm')));
 const readJson = (f) => JSON.parse(fs.readFileSync(f, 'utf8').replace(/^﻿/, ''));

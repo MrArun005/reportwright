@@ -392,6 +392,7 @@ export async function render(def0, opts = {}) {
     result = await layoutAll();
   }
   overTime();
+  if (m.unshaped) warn('The text shaper (harfbuzz.wasm) did not load, so Arabic, Hebrew, Indic and Thai text is not shaped (letters unjoined, marks misplaced). A font loader must map each key with fontFile(key).');
   if (m.noGlyph.size) warn(`No font has these characters, so they show as boxes: ${[...m.noGlyph].slice(0, 20).join(' ')}. Upload a font that has them and use it for this text.`);
   if (opts.bodyOnly) return { units: result.body.units, tables: result.body.tables, height: result.body.height, regions, warnings };
   const { pages, bookmarks, height } = result;

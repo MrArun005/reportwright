@@ -454,6 +454,7 @@ export class TextMeasurer {
       return { font: key, x: 0, w: pen / hf.upem, text, ...(rtl ? { rtl } : {}), ...(complex ? { shaped: true } : {}), glyphs };
     }
     if ((complex || rtl) && !store.failed.has(SHAPER)) this.missing.add(SHAPER);
+    else if (complex || rtl) this.unshaped = true; // the shaper did not load: render() warns
     const f = store.get(key);
     const list = [];
     for (let i = 0; i < text.length;) {
