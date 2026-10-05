@@ -100,7 +100,7 @@ export default {
   matchCase: 'Respecter la casse', wholeWord: 'Mot entier', allMatches: 'Liste des résultats', matches: 'Résultats', matchCount: '{n} résultats',
   noMatches: 'Aucun résultat.', pageShort: 'p. {n}', more: 'Plus', close: 'Fermer', from: 'de', to: 'à',
   groupPaging: 'Pagination', groupZoom: 'Zoom', groupView: 'Affichage', groupExport: 'Exporter',
-  stillRendering: 'Le reste du rapport est encore en cours de rendu', exportFailed: 'Échec de {fmt} : {message}',
+  stillRendering: 'Le reste du rapport est encore en cours de rendu', exportFailed: 'Échec de {fmt} : {message}', serverPdfNote: 'Un rapport volumineux : le serveur génère ce PDF (bien plus vite que le navigateur). Il s’ouvre dans un nouvel onglet.',
   drillPath: 'Chemin d’exploration', wordHint: 'Texte et tableaux, à modifier dans Word',
   editInDesigner: 'Modifier dans le concepteur',
 

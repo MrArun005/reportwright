@@ -7,8 +7,9 @@ import { exportBlob, EXPORT_DEFAULTS, needsExportData } from './exports.js';
 import { pageToSvg } from '@/exporters/svg.js';
 import { parameterOptions, NO_CJK_FONTS } from '@/engine/index.js';
 import { safeUrl } from '@/engine/url.js';
+import { viewerTimeZone } from './timeZone.js';
 import { t as tr, dirOf, pickLang } from './i18n.js';
-import { arrangeToolbar, exportOptionsFrom, findText, frozenAt, galleyDefinition, pageLinks, readingText } from './logic.js';
+import { arrangeToolbar, exportOptionsFrom, serverPdfUrl, findText, frozenAt, galleyDefinition, pageLinks, readingText } from './logic.js';
 import ParamInput from './ParamInput.jsx';
 
 const PX = 96 / 72;
@@ -116,6 +117,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   const [state, setState] = useState({ toggles: {}, sort: {} });
   const [model, setModel] = useState(null);
   const [status, setStatus] = useState({ state: 'idle' });
+  const [note, setNote] = useState(null); // a one-line notice (the server makes this PDF)
   // a paged report opens showing whole pages; a pageless one (a dashboard) fills the width
   const [zoom, setZoom] = useState(() => (rootDef?.page?.size === 'Pageless' ? 'fit' : 'page'));
   const [current, setCurrent] = useState(1);
@@ -422,6 +424,18 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
       if (fmt !== exportQueue.current.busy && !exportQueue.current.includes(fmt)) { exportQueue.current.push(fmt); setQueued([...exportQueue.current]); }
       return;
     }
+    // a large saved report: the server makes the PDF (seconds, not minutes in the browser); toggles and sorts are not sent
+    const server = fmt === 'pdf' && !galley && serverPdfUrl(model, { reportId: level.id, params, origin: origin(), timeZone: viewerTimeZone(), dirty: compact });
+    if (server) {
+      const u = new URL(server);
+      if (xopt.pdfa) u.searchParams.set('pdfa', '1');
+      if (xopt.pdfua) u.searchParams.set('ua', '1');
+      setNote(T('serverPdfNote'));
+      const a = document.createElement('a');
+      a.href = u.toString(); a.target = '_blank'; a.rel = 'noopener';
+      document.body.appendChild(a); a.click(); a.remove(); // the server route audits the render itself
+      return;
+    }
     exportQueue.current.busy = fmt;
     setExporting(fmt);
     try {
@@ -675,6 +689,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
         <div className="vpages" ref={scroller} role="document" aria-label={definition.name || T('ux_a11yReport')} onScroll={onScroll} onClick={onClick} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
           {status.state === 'error' && <div className="vmsg error" role="alert"><b>{T('didNotRun')}</b><br />{status.message}
             <div style={{ marginTop: 10 }}><button type="button" className="btn sm" onClick={() => run()} data-testid="viewer-retry">{T('r4_retry')}</button></div></div>}
+          {note && <div className="vmsg" role="status" data-testid="viewer-note">{note} <button className="btn sm ghost" onClick={() => setNote(null)} aria-label={T('close')}>×</button></div>}
           {status.state === 'running' && status.retry && <div className="vmsg" role="status" data-testid="viewer-busy">{T('r4_busyRetry', { n: status.retry.attempt, max: status.retry.max })}</div>}
           {!model && status.state === 'running' && !status.retry && <div className="vmsg">{T('runningReport')}</div>}
           {model?.warnings?.length > 0 && (

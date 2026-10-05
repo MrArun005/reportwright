@@ -189,3 +189,28 @@ export function pruneSnapshot(snapshot, defs) {
   };
   return Object.fromEntries(Object.entries(snapshot).map(([url, x]) => [url, walk(x)]));
 }
+
+/** Past these the browser PDF writer is slow (100k rows: 142 s in a browser, 9 s on the server). */
+export const SERVER_PDF_ROWS = 20000, SERVER_PDF_PAGES = 800;
+/**
+ * The server's PDF of a saved report (/api/reports/<id>/pdf with the current parameters and the viewer's time zone)
+ * when the report is large, else null: small reports, an unsaved design (dirty), no server (no reportId) and
+ * multi-value parameters keep the browser PDF.
+ * @param {any} model @param {{ reportId?: string, params?: Record<string, any>, origin: string, timeZone?: string, dirty?: boolean }} o
+ * @returns {string|null}
+ */
+export function serverPdfUrl(model, { reportId, params = {}, origin, timeZone, dirty = false }) {
+  if (!reportId || dirty || !model) return null;
+  const rows = Object.values(model.stats?.rows || {}).reduce((a, n) => a + (Number(n) || 0), 0);
+  if (rows <= SERVER_PDF_ROWS && (model.pages?.length || 0) <= SERVER_PDF_PAGES) return null;
+  const q = new URLSearchParams();
+  for (const [k, v0] of Object.entries(params)) {
+    const v = Array.isArray(v0) ? (v0.length > 1 ? undefined : v0[0]) : v0;
+    if (v === undefined && Array.isArray(v0)) return null;
+    if (v == null) continue;
+    q.set(k, v instanceof Date ? v.toISOString() : String(v));
+  }
+  if (timeZone) q.set('timeZone', timeZone);
+  const s = q.toString();
+  return `${origin}/api/reports/${encodeURIComponent(reportId)}/pdf${s ? `?${s}` : ''}`;
+}

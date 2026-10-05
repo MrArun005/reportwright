@@ -100,7 +100,7 @@ export default {
   matchCase: '大文字と小文字を区別', wholeWord: '単語単位', allMatches: '一致の一覧', matches: '一致', matchCount: '{n} 件の一致',
   noMatches: '見つかりませんでした。', pageShort: '{n} ページ', more: 'その他', close: '閉じる', from: '開始', to: '終了',
   groupPaging: 'ページ移動', groupZoom: 'ズーム', groupView: '表示', groupExport: 'エクスポート',
-  stillRendering: 'レポートの残りを作成中です', exportFailed: '{fmt} に失敗しました: {message}',
+  stillRendering: 'レポートの残りを作成中です', exportFailed: '{fmt} に失敗しました: {message}', serverPdfNote: '大きなレポートです。この PDF はサーバーで作成します（ブラウザーよりずっと速い）。新しいタブで開きます。',
   drillPath: 'ドリルスルーの経路', wordHint: 'Word で編集するためのテキストと表',
   editInDesigner: 'デザイナーで編集',
 

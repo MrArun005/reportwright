@@ -100,7 +100,7 @@ export default {
   matchCase: 'अक्षर का आकार मिलाएँ', wholeWord: 'पूरा शब्द', allMatches: 'मिलानों की सूची', matches: 'मिलान', matchCount: '{n} मिलान',
   noMatches: 'कुछ नहीं मिला।', pageShort: 'पृ. {n}', more: 'और', close: 'बंद करें', from: 'से', to: 'तक',
   groupPaging: 'पृष्ठ बदलें', groupZoom: 'ज़ूम', groupView: 'दृश्य', groupExport: 'निर्यात',
-  stillRendering: 'बाकी रिपोर्ट अभी बन रही है', exportFailed: '{fmt} विफल: {message}',
+  stillRendering: 'बाकी रिपोर्ट अभी बन रही है', exportFailed: '{fmt} विफल: {message}', serverPdfNote: 'बड़ी रिपोर्ट: यह PDF सर्वर बनाता है (ब्राउज़र से बहुत तेज़)। यह नए टैब में खुलेगा।',
   drillPath: 'ड्रिल-थ्रू पथ', wordHint: 'Word में संपादन के लिए पाठ और तालिकाएँ',
   editInDesigner: 'डिज़ाइनर में संपादित करें',
 

@@ -100,7 +100,7 @@ export default {
   matchCase: 'Distinguir mayúsculas', wholeWord: 'Palabra completa', allMatches: 'Lista de coincidencias', matches: 'Coincidencias', matchCount: '{n} coincidencias',
   noMatches: 'No se encontró nada.', pageShort: 'pág. {n}', more: 'Más', close: 'Cerrar', from: 'desde', to: 'hasta',
   groupPaging: 'Paginación', groupZoom: 'Zoom', groupView: 'Vista', groupExport: 'Exportar',
-  stillRendering: 'El resto del informe aún se está generando', exportFailed: '{fmt} falló: {message}',
+  stillRendering: 'El resto del informe aún se está generando', exportFailed: '{fmt} falló: {message}', serverPdfNote: 'Un informe grande: el servidor genera este PDF (mucho más rápido que el navegador). Se abre en una pestaña nueva.',
   drillPath: 'Ruta de navegación', wordHint: 'Texto y tablas, para editar en Word',
   editInDesigner: 'Editar en el diseñador',
 

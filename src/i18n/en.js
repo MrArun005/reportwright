@@ -100,7 +100,7 @@ export default {
   matchCase: 'Match case', wholeWord: 'Whole word', allMatches: 'List of matches', matches: 'Matches', matchCount: '{n} matches',
   noMatches: 'Nothing found.', pageShort: 'p. {n}', more: 'More', close: 'Close', from: 'from', to: 'to',
   groupPaging: 'Paging', groupZoom: 'Zoom', groupView: 'View', groupExport: 'Export',
-  stillRendering: 'The rest of the report is still rendering', exportFailed: '{fmt} failed: {message}',
+  stillRendering: 'The rest of the report is still rendering', exportFailed: '{fmt} failed: {message}', serverPdfNote: 'A large report: the server makes this PDF (much faster than the browser). It opens in a new tab.',
   drillPath: 'Drill-through path', wordHint: 'Text and tables, to edit in Word',
   editInDesigner: 'Edit in designer',
 
