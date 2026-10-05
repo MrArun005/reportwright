@@ -174,7 +174,11 @@ export async function renderTo(def, opt = {}) {
   const anon = !['user', 'service'].includes(opt.principal ? vet(opt.principal).kind : '');
   const fetch = opt.batch ? batchFetch(serverFetch(opt.self || base, { anon }), `${opt.batch}|${principalId(opt.principal)}|${anon}|${opt.self || base}`) : serverFetch(opt.self || base, { anon });
   await syncFonts();
-  const model = await render(d, /** @type {any} */ ({
+  // the data CSV needs the tables' data only: no text layout, no pages (a report without a table falls back to its page text)
+  const dataOnly = format === 'csv' && opt.csv !== 'layout' && !opt.modelOnly && !opt.firstPages;
+  let sources;
+  const run = (only) => render(d, /** @type {any} */ ({ ...renderOpts, ...(only ? { dataOnly: true, onSources: (s) => { sources = s; } } : sources ? { sources } : {}) }));
+  const renderOpts = {
     parameters: opt.parameters || {}, state: opt.state || {}, fontStore: fontStore(), timeZone: checkTimeZone(opt.timeZone),
     baseUrl: base, fetch, timeoutMs: renderTimeoutMs(),
     exportData: !opt.modelOnly && (format !== 'pdf' || !!opt.ua), // a plain PDF needs no table data
@@ -188,7 +192,9 @@ export async function renderTo(def, opt = {}) {
       opt.onLoadReport?.(id, sub); // thumbs.js: what else this render drew, for its principal-independence check
       return Array.isArray(sub?.dataSources) ? { ...sub, dataSources: sub.dataSources.map(normalizeSource) } : sub;
     },
-  }));
+  };
+  let model = await run(dataOnly);
+  if (dataOnly && !model.regions.length) model = await run(false);
   let bytes = null;
   if (opt.modelOnly) return { bytes, model, contentType: FORMATS[format].type, ext: FORMATS[format].ext };
   // images by URL (a logo) go through the same guard; one that fails to load is left out, as in the viewer

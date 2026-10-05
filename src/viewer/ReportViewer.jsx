@@ -409,6 +409,12 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   // master, which may bring layers) renders again for the print or export target: a screen-only layer stays on screen.
   // A view renders without table data (render option exportData): Excel, CSV, Word, PowerPoint, HTML and the accessible PDF render again with it.
   const pagedModel = (target, exportData = false) => (galley || definition.layers?.length || definition.master || (exportData && model?.regions == null) ? renderReport(definition, params, { ...state, target }, reportId, { exportData }) : model);
+  // the data CSV: the tables' data without laying out pages (a report without a table: its page text, from the pages)
+  const csvModel = async () => {
+    if (model?.regions != null && !galley && !definition.layers?.length && !definition.master) return model;
+    const m = await renderReport(definition, params, { ...state, target: 'export' }, reportId, { dataOnly: true });
+    return m.regions?.length ? m : pagedModel('export', true);
+  };
 
   const doExport = async (fmt) => {
     if (!model) return;
@@ -419,7 +425,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     exportQueue.current.busy = fmt;
     setExporting(fmt);
     try {
-      const m = await pagedModel('export', needsExportData(fmt, xopt));
+      const m = fmt === 'csv' ? await csvModel() : await pagedModel('export', needsExportData(fmt, xopt));
       const strings = { pages: T('htmlPages'), tables: T('htmlTables'), all: T('htmlAll'), filter: T('htmlFilter'), toggle: T('htmlToggle'), sortAsc: T('htmlSortAsc'), sortDesc: T('htmlSortDesc') };
       const blob = fmt === 'pdf'
         ? await pdfBlob(m, definition.name, { tagged: xopt.pdfua ? { lang: definition.locale || lang } : undefined, pdfa: xopt.pdfa })

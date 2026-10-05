@@ -108,26 +108,27 @@ const loadReport = async (rid) => {
   return r.json();
 };
 export const fetchReport = loadReport;
-async function renderMain(def, params, state, reportId, exportData = false, onRetry = undefined) {
+async function renderMain(def, params, state, reportId, exportData = false, onRetry = undefined, dataOnly = false) {
   await customFonts();
-  return render(def, { parameters: params, state, reportId, exportData, fontStore: fontStore(), baseUrl: origin(), loadReport, fetch: reportFetch(origin(), undefined, { onRetry }) }); // a report reads data, never calls our API as the viewer
+  return render(def, { parameters: params, state, reportId, exportData, dataOnly, fontStore: fontStore(), baseUrl: origin(), loadReport, fetch: reportFetch(origin(), undefined, { onRetry }) }); // a report reads data, never calls our API as the viewer
 }
 
 /**
  * @param {string} [reportId] the saved report: the server runs its SQL sources
- * @param {{ onPartial?: (model: any) => void, exportData?: boolean, onRetry?: (r: { attempt: number, max: number, status: number }) => void }} [opt]
+ * @param {{ onPartial?: (model: any) => void, exportData?: boolean, dataOnly?: boolean, onRetry?: (r: { attempt: number, max: number, status: number }) => void }} [opt]
  *   onPartial: gets the first pages of a long report first. onRetry: a data source met a busy server and is tried again.
  *   exportData: with the table data Excel, CSV, Word, PowerPoint, HTML and the accessible PDF need (a view goes without)
+ *   dataOnly: the table data and no pages (the data CSV)
  * @returns {Promise<any>} page model
  */
-export async function renderReport(def, params = {}, state = {}, reportId = undefined, { onPartial, exportData = false, onRetry } = {}) {
+export async function renderReport(def, params = {}, state = {}, reportId = undefined, { onPartial, exportData = false, onRetry, dataOnly = false } = {}) {
   const w = getWorker();
-  if (!w) return renderMain(def, params, state, reportId, exportData, onRetry);
+  if (!w) return renderMain(def, params, state, reportId, exportData, onRetry, dataOnly);
   const fonts = await customFonts(); // the worker has its own copy of the font list
   return new Promise((resolve, reject) => {
     const id = ++seq;
-    waiting.set(id, { resolve, reject, onPartial, onRetry, retry: () => renderMain(def, params, state, reportId, exportData, onRetry).then(resolve, reject) });
-    w.postMessage({ id, def, params, state, reportId, fonts, firstPages: onPartial ? 2 : 0, exportData });
+    waiting.set(id, { resolve, reject, onPartial, onRetry, retry: () => renderMain(def, params, state, reportId, exportData, onRetry, dataOnly).then(resolve, reject) });
+    w.postMessage({ id, def, params, state, reportId, fonts, firstPages: onPartial && !dataOnly ? 2 : 0, exportData, dataOnly });
   });
 }
 

@@ -47,6 +47,7 @@ export const BAND_ITEMS = 250000; // page header and footer items drawn per rend
  *   onSources?: (sources: Record<string, any>) => void,
  *   deadline?: number,
  *   exportData?: boolean,
+ *   dataOnly?: boolean,
  * }} opts
  *   reportId: the saved report, whose SQL sources the server runs for a browser render.
  *   sql: runs SQL sources directly (server renders).
@@ -54,6 +55,7 @@ export const BAND_ITEMS = 250000; // page header and footer items drawn per rend
  *   exportData: keep the table data (model.regions) and cell tags that Excel, CSV, Word, interactive HTML and the
  *   accessible PDF rebuild tables from (needsExportData in exporters/regions.js says which). Off by default: a view
  *   or a plain PDF needs neither, and they are a third of a big table's model.
+ *   dataOnly: the table data only (model.regions; pages is empty): no text layout and no pages, for the data CSV.
  */
 /**
  * The text a render may draw: the definition's own and the string values of the data rows (and one level of nested
@@ -172,7 +174,7 @@ export async function render(def0, opts = {}) {
   const imageBudget = opts.imageBudget || { seen: new Set(), bytes: 0 };
   const makeLc = (globals, fixed) => {
     const lc = {
-      m, base, dataSets, warn, fixed, maxUnitHeight: contentH, state: opts.state || {}, regions: opts.exportData ? regions : null, // exportData: true: table data and cell tags (Excel, CSV, Word, HTML, accessible PDF)
+      m, base, dataSets, warn, fixed, maxUnitHeight: contentH, state: opts.state || {}, regions: opts.exportData || opts.dataOnly ? regions : null, dataOnly: !!opts.dataOnly, // exportData: true: table data and cell tags (Excel, CSV, Word, HTML, accessible PDF)
       named, parts, layerOff,
       nextId: () => ++idSeq,
       // the time limit, read every 256 rows of tables and lists (expr/evaluate.js counts evaluations the same way)
@@ -227,7 +229,7 @@ export async function render(def0, opts = {}) {
             if ((opts.chain || []).includes(rq.report)) throw new Error('it includes itself');
             if (!defs.has(rq.report)) defs.set(rq.report, await opts.loadReport(rq.report));
             const child = defs.get(rq.report);
-            const r = await render(child, { ...opts, target, onSources: undefined, deadline: deadline ?? undefined, reportId: rq.report, budget, fnCount, imageBudget, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, rq.report], bodyWidth: page.bodyWidth, state: {} });
+            const r = await render(child, { ...opts, dataOnly: false, target, onSources: undefined, deadline: deadline ?? undefined, reportId: rq.report, budget, fnCount, imageBudget, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, rq.report], bodyWidth: page.bodyWidth, state: {} });
             results.set(key, r);
             for (const w of r.warnings) warn(`Subreport ${rq.report}: ${w}`, r.clipped?.includes(w));
           } catch (e) { if (e.timeout) throw e; results.set(key, { error: e.message }); }
@@ -278,6 +280,7 @@ export async function render(def0, opts = {}) {
           overflow.more = null; overflow.repeat = rep > 0; overflow.head = null;
           const body = layoutItems(bodies[bi].items || [], blc);
           if (opts.bodyOnly) return { body };
+          if (opts.dataOnly) continue sections; // the table data (regions) only: no pages
           // one page that grows: page breaks have nothing to break
           if (g.pg.pageless) for (const u of body.units) { u.breakBefore = false; u.breakAfter = false; }
           const slices = paginate(body.units, body.tables, g.cH, warn);
@@ -287,6 +290,7 @@ export async function render(def0, opts = {}) {
           if (rep + 1 >= REUSE_LIMITS.repeats) { warn(`${overflow.more}: the rows need more than ${REUSE_LIMITS.repeats} continuation pages; the rest are left out.`); overflow.pending.clear(); break; }
         }
       }
+      if (opts.dataOnly) return null;
       if (!lc.rowBudget?.cut) for (const p of overflow.pending.values()) warn(`${p.table}: ${p.units.length} rows did not fit its frame and there is no overflow placeholder "${p.to}" after it.`);
       // the page list: [part, index of the page in its part]
       const list = [];
@@ -410,7 +414,7 @@ export async function render(def0, opts = {}) {
   const tocOf = (r, pending) => [...r.bookmarks.map(b => ({ label: b.label, level: b.level, page: pending ? '…' : b.page })), ...r.headings.map(b => ({ label: b.label, level: b.level, page: pending ? '…' : b.page, y: pending ? undefined : b.y, heading: true }))];
 
   let result = assemble([]);
-  if (opts.bodyOnly) return result;
+  if (opts.bodyOnly || opts.dataOnly) return result;
   if (hasToc) {
     // first pages: the entries are known now, their page numbers when the full render ends ("…" until then)
     if (firstPages > 0) {
@@ -447,6 +451,9 @@ export async function render(def0, opts = {}) {
       : `No font has these characters, so they show as boxes: ${list}. Upload a font that has them and use it for this text.`);
   }
   if (opts.bodyOnly) return { units: result.body.units, tables: result.body.tables, height: result.body.height, regions, warnings, clipped: clipped() };
+  // dataOnly: the tables' data (the data CSV) without text layout or pages
+  if (opts.dataOnly) return { pages: [], regions, warnings, name: def.name || '', timeZone: timeZone || null, locale: def.locale || null, currency: def.currency || null, dataOnly: true,
+    stats: { ms: Date.now() - t0, pages: 0, rows: Object.fromEntries(Object.entries(dataSets).map(([k, r]) => [k, r.length])) } };
   const { pages, bookmarks, height } = result;
   for (const pg of pages) finishText(pg.items, m);
   // Every image on every page passes the caps here, whatever drew it: background images (a style, painted

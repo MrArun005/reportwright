@@ -33,6 +33,8 @@ import { sliceColumns, itemLeft } from './hpage.js';
 /** @type {Record<string, any>} */
 export const ITEMS = {};
 export const GROW_TOLERANCE = 1;
+/** A cell's text layout in a dataOnly render (the data CSV): nothing is measured or drawn. */
+const DATA_ONLY_TL = Object.freeze({ lines: Object.freeze([]), needed: 0, lh: 1, pad: [0, 0, 0, 0], size: 0, key: '', inner: 0 });
 export function register(type, spec) { ITEMS[type] = { type, ...spec }; }
 /** Alternative text for a picture, chart, map, barcode, shape or visual: the tagged PDF's Figure /Alt and Word's description. */
 const ALT = { key: 'alt', label: 'Alternative text (screen readers: accessible PDF, Word)', type: 'text', category: 'Accessibility' };
@@ -447,7 +449,7 @@ register('table', {
           if (cur && cur.by === cell.sortBy) text += cur.dir === 'desc' ? ' ↓' : ' ↑';
         }
         const nested = cell.item?.type && ITEMS[cell.item.type] ? layoutInCell(cell.item, colX[ci], cw, st, cctx, row) : null;
-        const tl = nested ? { ...layoutTextLines('', st, cw, lc.m), lines: [], needed: nested.height } : layoutTextLines(text, st, cw, lc.m, { atom: !toggle && (typeof v === 'number' || v instanceof Date) });
+        const tl = lc.dataOnly ? DATA_ONLY_TL : nested ? { ...layoutTextLines('', st, cw, lc.m), lines: [], needed: nested.height } : layoutTextLines(text, st, cw, lc.m, { atom: !toggle && (typeof v === 'number' || v instanceof Date) });
         const c = { x: colX[ci], w: cw, st, tl, numeric: typeof v === 'number', cell, ctx: cctx, raw: v, span, plain: nested ? '' : plain, toggle, nested, ci };
         const rs = Math.floor(Number(cell.rowSpan)) || 1;
         if (rs > 1) { (started ||= []).push({ ...c, ci, cols: span, left: rs, units: [], kind }); continue; }
@@ -472,6 +474,7 @@ register('table', {
       // h: height of this piece; lines: per-cell lines when the row is split; first: links, visuals and toggles go on the first piece
       const paint = (h, lines, first, rowId, chunk) => {
         const items = [];
+        if (lc.dataOnly) return items; // the data CSV: no drawing
         cells.forEach((c, k) => {
           if (c.cell.visual?.type) {
             items.push(...paintBox({ x: c.x, y: 0, w: c.w, h, st: c.st, tl: null, m: lc.m }));

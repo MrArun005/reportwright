@@ -66,9 +66,9 @@ const siblingLoader = (file) => async (id) => {
   try { return readJson(path.join(path.dirname(path.resolve(file)), `${id}.pw.json`)); } catch { throw new Error(`Report "${id}" not found`); }
 };
 
-async function renderModel(def, { parameters = {}, data, base, now, state, file, exportData = true } = {}) {
+async function renderModel(def, { parameters = {}, data, base, now, state, file, exportData = true, dataOnly = false } = {}) {
   try {
-    return await render(withData(def, data), { fontStore, parameters, exportData, baseUrl: base, now: now ? new Date(now) : undefined, ...(state ? { state } : {}), ...(file ? { loadReport: siblingLoader(file) } : {}) });
+    return await render(withData(def, data), { fontStore, parameters, exportData, dataOnly, baseUrl: base, now: now ? new Date(now) : undefined, ...(state ? { state } : {}), ...(file ? { loadReport: siblingLoader(file) } : {}) });
   } catch (e) {
     const relative = /fetch|URL|Invalid URL/i.test(e.message) && !base;
     fail(`${e.message}${relative ? '\n    A data source needs a server: pass --base http://localhost:3000, or push the data with -d source=file.json.' : ''}`);
@@ -120,7 +120,10 @@ async function cmdRender(args) {
   const data = Object.fromEntries(Object.entries(pairs(values.d)).map(([k, f]) => [k, readJson(f)]));
   const fmt = values.f;
   // a plain PDF needs no table data (Excel, Word, the accessible PDF do)
-  const model = await renderModel(def, { parameters: pairs(values.p), data, base: values.base, file: positionals[0], exportData: !(fmt === 'pdf' && !values.ua) });
+  const ro = { parameters: pairs(values.p), data, base: values.base, file: positionals[0], exportData: !(fmt === 'pdf' && !values.ua) };
+  // the data CSV skips the page layout; a report without a table falls back to its page text
+  let model = fmt === 'csv' && !values.layout ? await renderModel(def, { ...ro, dataOnly: true }) : null;
+  if (!model?.regions?.length) model = await renderModel(def, ro);
   let bytes;
   let encrypt;
   try {
