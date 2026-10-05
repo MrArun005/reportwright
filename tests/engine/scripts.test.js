@@ -176,8 +176,8 @@ describe('HTML export', () => {
 
 describe('fonts that are missing', () => {
   it('warns once when no font has a character', async () => {
-    const model = await render(report([box('日本')]), { exportData: true, fontStore });
-    expect(model.warnings.join(' ')).toMatch(/No font.*日/);
+    const model = await render(report([box('ሀሁ')]), { exportData: true, fontStore });
+    expect(model.warnings.join(' ')).toMatch(/No font.*ሀ/);
   });
 });
 
