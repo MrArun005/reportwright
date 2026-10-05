@@ -374,7 +374,7 @@ function binary(n, ctx) {
       const d = num(b);
       return d === 0 && sql ? null : num(a) / d; // VB Double: 5 / 0 is Infinity, 0 / 0 is NaN
     }
-    case '%': case 'mod': return a == null || b == null ? null : num(a) % num(b); // VB Mod: the dividend's sign (-7 Mod 3 is -1)
+    case '%': case 'mod': return a == null || b == null ? null : (num(a) % num(b)) + 0; // + 0: no -0 // VB Mod: the dividend's sign (-7 Mod 3 is -1)
     case '^': return a == null || b == null ? null : num(a) ** num(b);
     case '\\': { // VB \: both sides rounded to Long (half to even), the quotient truncated
       if (a == null || b == null) return null;
