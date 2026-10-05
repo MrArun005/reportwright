@@ -134,3 +134,44 @@ describe('a data source that answers 404/5xx is a 502 with a clear message (synt
     } finally { console.error = err; }
   });
 });
+
+describe('batch output: streamed, paged, indexed (REVIEW-ARCH-2 2.7)', () => {
+  it('a file blob opens as a stream; the batch list pages with a cursor; Postgres gets a prefix index', async () => {
+    const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-r3b-stream-'));
+    process.env.PW_STORAGE = `sqlite:${path.join(d, 's.db')}`; delete process.env.PW_BLOBS;
+    const { blobs } = await import('../../src/server/blobs.js');
+    await blobs().put('jobs/b_x/output.zip', Buffer.alloc(300000, 7));
+    const o = await blobs().open('jobs/b_x/output.zip');
+    expect(o.size).toBe(300000);
+    expect((await new Response(o.stream).arrayBuffer()).byteLength).toBe(300000);
+    const { store } = await import('../../src/server/storage/index.js');
+    for (let i = 0; i < 7; i++) await store().put('jobs', `b_${String(i).padStart(3, '0')}`, JSON.stringify({ id: `b_${String(i).padStart(3, '0')}`, owner: 'service', status: 'completed', createdAt: new Date().toISOString(), results: [], errors: [], total: 0 }));
+    const jobs = await import('../../src/server/jobs.js');
+    const p1 = await jobs.listJobPage({ kind: 'service' }, { limit: 3 });
+    expect(p1.jobs.map(j => j.id)).toEqual(['b_006', 'b_005', 'b_004']);
+    const p2 = await jobs.listJobPage({ kind: 'service' }, { limit: 3, before: p1.next });
+    expect(p2.jobs.map(j => j.id)).toEqual(['b_003', 'b_002', 'b_001']);
+    const p3 = await jobs.listJobPage({ kind: 'service' }, { limit: 3, before: p2.next });
+    expect(p3).toMatchObject({ next: null });
+    const { MIGRATIONS } = await import('../../src/server/storage/sql.js');
+    expect(MIGRATIONS.find(m => m.v === 3).sql('postgres')[0]).toMatch(/text_pattern_ops/);
+    expect(MIGRATIONS.find(m => m.v === 3).sql('sqlite')).toEqual([]);
+  });
+});
+
+describe('a batch past PW_BATCH_MAX_OUTPUT_MB builds no zip (it would be built in one worker\'s memory)', () => {
+  it('the batch completes with a clear error and no download', async () => {
+    const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+    process.env.PW_STORAGE = `sqlite:${path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'pw-r3b-cap-')), 's.db')}`;
+    process.env.PW_BATCH_MAX_OUTPUT_MB = '0.000001'; process.env.PW_RENDER_WORKERS = '0';
+    const jobs = await import('../../src/server/jobs.js');
+    const def = { $schema: 'pagewright/report@1', name: 'Cap', parameters: [{ name: 'n' }], sections: { body: { height: 40, items: [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 100, h: 20, value: '=Parameters.n' }] } } };
+    const job = await jobs.createBatch({ template: def, items: [{ parameters: { n: '1' } }, { parameters: { n: '2' } }], format: 'json', output: { type: 'zip' } }, null);
+    for (let i = 0; i < 5 && (await jobs.workOnce('T')) !== null; i++) { /* run it */ }
+    const done = await jobs.getJob(job.id);
+    expect(done.done).toBe(2);
+    expect(done.errors.join(' ')).toMatch(/PW_BATCH_MAX_OUTPUT_MB/);
+    expect(done.download).toBeFalsy();
+  }, 60000);
+});

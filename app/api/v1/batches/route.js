@@ -1,6 +1,6 @@
 // POST /api/v1/batches — render many; GET — recent batches (a user's key: its own only).
 import { apiPrincipal, fail } from '@/server/auth.js';
-import { createBatch, listJobs } from '@/server/jobs.js';
+import { createBatch, listJobs, listJobPage } from '@/server/jobs.js';
 import { audit } from '@/server/audit.js';
 
 export const runtime = 'nodejs';
@@ -19,5 +19,9 @@ export async function POST(req) {
 export async function GET(req) {
   const { principal, res } = await apiPrincipal(req);
   if (res) return res;
-  return Response.json(await listJobs(principal));
+  // ?limit=&before=: a page, with the cursor of the next in X-Next-Before (the body stays a plain list)
+  const sp = new URL(req.url).searchParams;
+  if (!sp.has('limit') && !sp.has('before')) return Response.json(await listJobs(principal));
+  const { jobs, next } = await listJobPage(principal, { before: sp.get('before'), limit: Number(sp.get('limit')) || 50 });
+  return Response.json(jobs, { headers: next ? { 'x-next-before': next } : {} });
 }

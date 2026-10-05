@@ -68,7 +68,7 @@ export const SETTINGS = [
   // batches, schedules, mail
   ['PW_WORKER', 'onoff', 'on', 'off: this server runs no queued batches.'], ['PW_SCHEDULER', 'onoff', 'on', 'off: this server runs no schedules.'],
   ['PW_SCHEDULER_TICK_MS', 'ms', '30000', 'Scheduler tick.'], ['PW_SCHEDULER_LEASE_MS', 'ms', '(3 ticks)', 'Scheduler leader lease.'],
-  ['PW_BATCH_CONCURRENCY', 'int', '2', 'Items of one batch at once.'], ['PW_JOB_LEASE_MS', 'ms', '60000', 'A batch lease.'], ['PW_QUEUE_POLL_MS', 'ms', '2000', 'Queue poll.'],
+  ['PW_BATCH_CONCURRENCY', 'int', '2', 'Items of one batch at once.'], ['PW_BATCH_MAX_OUTPUT_MB', 'int', '1024', 'Largest zip or merged PDF a batch builds; past it, no packed output (use a folder output).'], ['PW_JOB_LEASE_MS', 'ms', '60000', 'A batch lease.'], ['PW_QUEUE_POLL_MS', 'ms', '2000', 'Queue poll.'],
   ['PW_JOB_RETENTION_DAYS', 'int', '30', 'Finished batches kept (0: forever).'], ['PW_PACK_TIMEOUT_MS', 'ms', '600000', 'Making a batch zip or merged PDF.'],
   ['PW_WEBHOOK_SECRET', 'secret', '(unsigned)', 'Signs batch webhooks.'],
   ['PW_SMTP_URL', 'url', '(off)', 'smtp:// or smtps:// relay.'], ['PW_SMTP_REQUIRE_TLS', 'flag', '1', '0 allows a plain connection to a non-local relay.'], ['PW_MAIL_FROM', 'text', '', 'Sender address.'],

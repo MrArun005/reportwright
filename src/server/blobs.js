@@ -20,6 +20,8 @@ import { store } from './storage/index.js';
  * @property {(key: string) => Promise<void>} remove
  * @property {(prefix: string) => Promise<BlobInfo[]>} list every blob whose key starts with prefix
  * @property {(key: string) => Promise<void>} touch mark as used now (LRU); a no-op where it would cost a copy (S3)
+ * @property {(key: string) => Promise<{ size: number, stream: ReadableStream }|null>} [open] a stream of it, where the
+ *   store can stream (files): a large batch output is sent without holding it in memory
  */
 
 const SEG = /^[\w@][\w.@-]{0,127}$/;
@@ -54,6 +56,12 @@ function fileBlobs(root) {
       await fs.rename(tmp, f);
     },
     async get(k) { try { return await fs.readFile(file(k)); } catch (e) { if (missing(e)) return null; throw e; } },
+    async open(k) {
+      let h;
+      try { h = await fs.open(file(k)); } catch (e) { if (missing(e)) return null; throw e; }
+      const { size } = await h.stat();
+      return { size, stream: /** @type {ReadableStream} */ (h.readableWebStream({ type: 'bytes' })) }; // closes the file at the end
+    },
     async remove(k) { await fs.rm(file(k), { force: true }); },
     async list(prefix) {
       // walk only the folder the prefix names (its whole segments), then filter
@@ -199,6 +207,7 @@ function sqliteBlobs(dbFile) {
   return {
     put: (k, bytes) => files.put(k, bytes),
     async get(k) { return (await files.get(k)) ?? old.get(k).catch(() => null); },
+    async open(k) { return /** @type {any} */ (files).open(k); }, // null for an old blob in the table: get() then
     async remove(k) { await files.remove(k); await old.remove(k).catch(() => {}); },
     async list(prefix) {
       const a = await files.list(prefix), seen = new Set(a.map(b => b.key));

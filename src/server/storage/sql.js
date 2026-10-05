@@ -79,6 +79,9 @@ export const MIGRATIONS = [
   { v: 2, what: 'indexes for the audit filters and the lease sweep', sql: () => [
     'CREATE INDEX pw_audit_at ON pw_audit (at)', 'CREATE INDEX pw_audit_type ON pw_audit (type)', 'CREATE INDEX pw_audit_actor ON pw_audit (actor)',
     'CREATE INDEX pw_audit_report ON pw_audit (report)', 'CREATE INDEX pw_leases_expires ON pw_leases (expires_at)'] },
+  // Postgres uses a btree for a prefix LIKE only with the pattern operator class (the id key's collation is the
+  // database's, usually not C): blob listings by prefix (a batch's items) scanned the table. The others use the key.
+  { v: 3, what: 'prefix index for blob listings (Postgres)', sql: (d) => (d === 'postgres' ? ['CREATE INDEX pw_blobs_id_prefix ON pw_blobs (id text_pattern_ops)'] : []) },
 ];
 /** @param {(sql: string, values?: any[]) => Promise<any[]>} run @param {string} dialect @param {(t: string, cols: string) => string} create */
 async function migrate(run, dialect, create) {

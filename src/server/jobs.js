@@ -173,14 +173,24 @@ export async function getJob(id, p = defaultPrincipal()) {
 }
 
 /** @param {import('./perms.js').Principal} [p] */
-export async function listJobs(p = defaultPrincipal()) {
+/**
+ * The newest batches this principal may see, a page at a time: { jobs, next } (next: pass as before= for the page
+ * after, null at the end). limit 1–200 (50).
+ * @param {any} [p] @param {{ before?: string|null, limit?: number }} [o]
+ */
+export async function listJobPage(p = defaultPrincipal(), { before = null, limit = 50 } = {}) {
   let names = [];
-  try { names = await store().ids('jobs'); } catch { return []; }
+  try { names = await store().ids('jobs'); } catch { return { jobs: [], next: null }; }
+  const n = Math.max(1, Math.min(200, Math.floor(limit) || 50));
   const out = [];
-  // ponytail: a scoped key reads up to 500 records to find its 50; an owner index if that gets slow
-  for (const n of names.sort().reverse().slice(0, p.kind === 'user' ? 500 : 50)) { const j = await getJob(n, p); if (j) out.push(j); if (out.length >= 50) break; }
-  return out;
+  const ids = names.sort().reverse().filter(x => !before || x < before);
+  // ponytail: a scoped principal reads up to 10 pages of records to find its page; an owner index if that gets slow
+  let i = 0;
+  for (; i < ids.length && i < n * 10 && out.length < n; i++) { const j = await getJob(ids[i], p); if (j) out.push(j); }
+  return { jobs: out, next: i < ids.length && out.length ? ids[i - 1] : null };
 }
+/** The newest 50 (the list as before). */
+export async function listJobs(p = defaultPrincipal()) { return (await listJobPage(p)).jobs; }
 
 /* ---------------- download links (for email) ---------------- */
 
@@ -224,12 +234,16 @@ export function linkOk(id, exp, sig) {
  * The finished output of a job the principal may see: { bytes, name, type }, or null.
  * @param {string} id @param {import('./perms.js').Principal} [p]
  */
-export async function jobFile(id, p) {
+/** @param {string} id @param {any} [p] @param {{ stream?: boolean }} [o] stream: a stream where the store can (the download route) */
+export async function jobFile(id, p, { stream = false } = {}) {
   const j = await getJob(id, p);
   if (!j?.download) return null;
   // jobs from before blobs kept their output under data/jobs/<id>/
+  // a store that streams (files) sends it without holding a multi-GB zip in memory
+  const opened = stream && j.download.blob && blobs().open ? await /** @type {any} */ (blobs()).open(j.download.blob) : null;
+  if (opened) return { stream: opened.stream, size: opened.size, name: j.download.name, type: j.download.type };
   const bytes = j.download.blob ? await blobs().get(j.download.blob) : await fs.readFile(path.join(JOBS, id, j.download.file)).catch(() => null);
-  return bytes ? { bytes, name: j.download.name, type: j.download.type } : null;
+  return bytes ? { bytes, size: bytes.length, name: j.download.name, type: j.download.type } : null;
 }
 
 /**
@@ -383,7 +397,12 @@ async function run(job, owner, stopAfter, fence = { lost: false, hold: async () 
   job.failedItems = failedItems.sort((a, b) => a - b);
   const bytesOf = async (r) => { const b = await blobs().get(itemKey(r.index)); if (!b) throw new Error(`item ${r.index} of the batch is gone from storage`); return b; };
   const out = job.output || { type: 'zip' };
-  if (ok.length) {
+  // a zip or merged PDF is built in a worker's memory: past PW_BATCH_MAX_OUTPUT_MB (1024) of items it is not built (the
+  // items are written to a folder output or fetched one by one instead), so one batch cannot take the worker down
+  const total = ok.reduce((n, r) => n + (r.bytes || 0), 0), cap = cnum('PW_BATCH_MAX_OUTPUT_MB', 1024, { min: 1e-9 }) * 1048576;
+  if (ok.length && out.type !== 'folder' && out.type !== 'none' && total > cap) {
+    job.errors.push(`The output would be ${Math.round(total / 1048576)} MB, over the ${Math.round(cap / 1048576)} MB limit (PW_BATCH_MAX_OUTPUT_MB): no zip or merged PDF was made. Use output { type: "folder" }, or smaller batches.`);
+  } else if (ok.length) {
     const packed = (type, key) => packInPool({ type, key, items: ok.map(r => ({ key: itemKey(r.index), name: r.name })) }, job);
     if (out.type === 'merged' && job.format === 'pdf') {
       await packed('merged', `jobs/${job.id}/merged.pdf`);

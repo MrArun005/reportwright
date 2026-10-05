@@ -26,8 +26,8 @@ export async function GET(req, { params }) {
     if (r.res) return r.res;
     principal = r.principal;
   }
-  const f = await jobFile(id, principal);
+  const f = await jobFile(id, principal, { stream: true });
   if (!f) return Response.json({ error: 'Nothing to download yet' }, { status: 404 });
-  await audit('batch.download', { req, ...(via === 'api' ? { principal } : { actor: 'link' }), detail: { batch: id, via, bytes: f.bytes.length } });
-  return new Response(f.bytes, { headers: { 'content-type': f.type, 'content-length': String(f.bytes.length), 'content-disposition': `attachment; filename="${f.name}"`, 'cache-control': 'no-store', ...outputHeaders(f.type) } });
+  await audit('batch.download', { req, ...(via === 'api' ? { principal } : { actor: 'link' }), detail: { batch: id, via, bytes: f.size } });
+  return new Response(f.stream || f.bytes, { headers: { 'content-type': f.type, 'content-length': String(f.size), 'content-disposition': `attachment; filename="${f.name}"`, 'cache-control': 'no-store', ...outputHeaders(f.type) } });
 }
