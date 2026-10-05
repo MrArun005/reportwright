@@ -19,7 +19,7 @@
     "fonts:cjk": "node scripts/fetch-fonts-cjk.mjs",
     "lint:engine": "node scripts/check-engine-boundary.mjs",
     "typecheck": "node scripts/typecheck.mjs",
-    "test:e2e": "for t in build-from-scratch smoke expr-editor phase2 phase3 phase4 api progressive phase-bc data-setup galleries charts-p5 tablix ai designer-gaps reuse ssrs-import outline-charts layout-charts-b4 exports-b2 import-b6 data-xml gov-b5 ux-r1c r3b-conflict r4-fixes; do node tests/e2e/$t.mjs || exit 1; done",
+    "test:e2e": "for t in build-from-scratch smoke expr-editor phase2 phase3 phase4 api progressive phase-bc data-setup galleries charts-p5 tablix ai designer-gaps reuse ssrs-import outline-charts layout-charts-b4 exports-b2 import-b6 data-xml gov-b5 ux-r1c r3b-conflict r4-fixes b2-ui b2-a11y; do node tests/e2e/$t.mjs || exit 1; done",
     "sample": "node scripts/make-sample.mjs",
     "build:embed": "node scripts/build-embed.mjs",
     "build:packages": "node scripts/build-embed.mjs && node scripts/build-packages.mjs",
