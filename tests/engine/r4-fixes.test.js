@@ -282,3 +282,22 @@ describe('data bar labels', () => {
     for (const t of labels) for (const l of t.lines) expect(l.x + l.w).toBeLessThanOrEqual(36 + 440 + 83 + 0.01);
   });
 });
+
+describe('a list row taller than a page', () => {
+  it('starts on the page it reaches and continues, borders on every piece, no "lower part is cut"', async () => {
+    const kids = (n) => Array.from({ length: n }, (_, i) => ({ k: `${n}-${i}` }));
+    const card = { type: 'container', name: 'Card', x: 0, y: 0, w: 500, h: 60, style: { border: '0.5 solid #cccccc' }, items: [
+      { type: 'textbox', name: 'N', x: 6, y: 4, w: 300, h: 14, value: '=Fields.name' },
+      { type: 'table', name: 'Inner', x: 6, y: 24, w: 400, h: 28, dataSet: 'Kids', columns: [{ width: 400 }], header: [{ height: 14, cells: [{ value: 'Kid' }] }], detail: [{ height: 14, cells: [{ value: '=Fields.k' }] }] }] };
+    const def = { ...report([{ type: 'list', name: 'L', x: 0, y: 0, w: 500, h: 70, dataSet: 'Rows', items: [card] }], { data: { rows: [{ name: 'A', kids: kids(30) }, { name: 'B', kids: kids(70) }] } }),
+      dataSets: [{ name: 'Rows', source: 'src', path: '$.rows' }, { name: 'Kids', relation: { parent: 'Rows', path: '$.kids[*]' } }] };
+    const m = await render(def, { fontStore });
+    expect(m.warnings.join(' ')).not.toMatch(/taller than the page|need "Keep together"/);
+    // B starts on page 1 under A, not on page 2
+    expect(m.pages[0].items.some(i => i.t === 'text' && i.lines[0].text === 'B')).toBe(true);
+    const all = m.pages.flatMap(texts);
+    for (let i = 0; i < 70; i++) expect(all).toContain(`70-${i}`);
+    // the card's sides are drawn on every page it spans
+    for (const p of m.pages.slice(1)) expect(p.items.some(i => i.t === 'line' && i.x1 === i.x2 && Math.abs(i.x1 - 36) < 1)).toBe(true);
+  });
+});

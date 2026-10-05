@@ -2,7 +2,7 @@
 import { evalValue, toText, isDynamic, truthy } from '../expr/evaluate.js';
 import { ExprError } from '../expr/parser.js';
 import { isoDate } from '../expr/format.js';
-import { resolveStyle, padding } from '../style.js';
+import { resolveStyle, padding, borders } from '../style.js';
 import { layoutTextLines, paintBox, paintBoxAt, OWNED } from './paint.js';
 import { applyFilters, applySort, related } from '../data/index.js';
 import { paintChart, CHART_TYPES } from './chart.js';
@@ -890,14 +890,32 @@ register('container', {
 });
 
 /** Wrap child units of a container or list row: background, border, keep-together block. */
-function frame(item, lc, ctx, res, blockId) {
+function frame(item, lc, ctx, res, blockId0) {
+  let blockId = blockId0;
   const h = Math.max(item.h, res.height);
   const st = resolveStyle([lc.base, lc.named?.[item.styleName], item.style], ctx);
   const deco = paintBox({ x: item.x, y: 0, w: item.w, h, st, tl: null, m: lc.m });
+  // taller than a page, it cannot be kept together: it flows, its rows start where it is (R4: a list row with a long
+  // nested table went to the next page whole and left most of the page empty)
+  if (blockId && h > (lc.maxUnitHeight ?? Infinity) + 0.01) blockId = null;
   const units = res.units.map(u => ({ ...u, block: u.block || blockId }));
   if (deco.length) {
     if (blockId || !units.length) units.unshift({ top: 0, height: h, items: deco, block: blockId, x0: item.x, x1: item.x + item.w, deco: true });
-    else lc.warn(`${item.name}: background and border need "Keep together"`);
+    else {
+      // not kept together: the background and border go with the rows, one strip per unit (sides on every strip, the
+      // top edge on the first, the bottom edge on the last), so they break across pages with them
+      const ord = [...units].sort((a, b) => a.top - b.top);
+      const b = borders(st), none = 'none';
+      ord.forEach((u, i) => {
+        const y0 = i === 0 ? 0 : u.top, y1 = i === ord.length - 1 ? h : ord[i + 1].top;
+        if (y1 <= y0) return;
+        const sst = { ...st, border: null, borderLeft: b.left ? st.borderLeft ?? st.border : none, borderRight: b.right ? st.borderRight ?? st.border : none,
+          borderTop: i === 0 && b.top ? st.borderTop ?? st.border : none, borderBottom: i === ord.length - 1 && b.bottom ? st.borderBottom ?? st.border : none };
+        const strip = paintBox({ x: item.x, y: y0 - u.top, w: item.w, h: y1 - y0, st: sst, tl: null, m: lc.m });
+        const k = units.indexOf(u);
+        units[k] = { ...u, items: [...strip, ...u.items], x0: Math.min(u.x0 ?? item.x, item.x), x1: Math.max(u.x1 ?? item.x + item.w, item.x + item.w) };
+      });
+    }
   }
   if (!units.length) units.push({ top: 0, height: h, items: [], x0: item.x, x1: item.x + item.w });
   return { height: h, units, tables: res.tables, width: item.w };
