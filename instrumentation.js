@@ -1,6 +1,14 @@
 // Starts the report scheduler and the batch worker when the Node server boots, and checks the account settings.
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
+    // the storage answers before anything else is set up. A process of scripts/cluster.mjs whose storage cannot open
+    // (a locked or missing database) exits, so the primary starts another, instead of answering 500 to every request
+    try { await (await import('./src/server/storage/index.js')).store().get('settings', 'server'); }
+    catch (e) {
+      console.error(`[pagewright] storage could not be opened: ${e?.message || e}`);
+      if (process.env.PW_CLUSTER === '1') process.exit(1);
+      throw e;
+    }
     // every request carries its socket address (x-pw-peer), so limits never believe a made-up X-Forwarded-For
     (await import('./src/server/limits.js')).trackPeers();
     if (process.env.PW_AUTH && !['users', 'proxy'].includes(process.env.PW_AUTH)) throw new Error('PW_AUTH must be "users" or "proxy" (or not set at all).');

@@ -45,3 +45,18 @@ describe('first boot on a fresh SQLite storage file', () => {
     for (const f of [file, `${file}-wal`, `${file}-shm`].filter(f => fs.existsSync(f))) expect((fs.statSync(f).mode & 0o777).toString(8), f).toBe('600');
   });
 });
+
+describe('a cluster process whose storage cannot open exits (the primary replaces it)', () => {
+  it('instrumentation register() exits with PW_CLUSTER=1; throws otherwise', async () => {
+    const code = `
+      process.env.NEXT_RUNTIME = 'nodejs';
+      const { register } = await import(${JSON.stringify(pathToFileURL(path.resolve('instrumentation.js')).href)});
+      try { await register(); process.stdout.write('started'); } catch (e) { process.stdout.write('threw'); }`;
+    const run = (env) => new Promise((resolve) => {
+      const cp = spawn(process.execPath, ['--no-warnings', '--input-type=module', '-e', code], { env: { ...process.env, PW_STORAGE: 'sqlite:/nonexistent-dir/x/pw.db', ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+      let out = ''; cp.stdout.on('data', d => (out += d)); cp.on('exit', (c) => resolve({ code: c, out }));
+    });
+    expect(await run({ PW_CLUSTER: '1' })).toMatchObject({ code: 1, out: '' });
+    expect((await run({})).out).toBe('threw');
+  }, 30000);
+});

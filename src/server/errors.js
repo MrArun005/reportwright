@@ -15,6 +15,14 @@ export function logError(e, where = '') {
 
 /** What the caller may see of an error: { message, status, id } (id when it was logged). @param {any} e @param {number} [status] */
 export function publicError(e, status = e?.status || 500) {
+  // a data source that answered an error (the engine's "HTTP 404 from <url>"): the report's data is missing, not the
+  // server broken: 502 with what failed (origin and path only: a query string may hold a token)
+  const ds = !e?.status && /^HTTP (\d{3}) from (\S+)/.exec(String(e?.message ?? ''));
+  if (ds) {
+    let where = ds[2]; try { const u = new URL(ds[2]); where = `${u.origin}${u.pathname}`; } catch { where = ds[2].split('?')[0]; }
+    logError(e, 'data source');
+    return { message: `A data source of this report answered HTTP ${ds[1]} (${where.slice(0, 200)}). Check the source's URL or the service behind it.`, status: 502, id: null };
+  }
   if (status < 500) return { message: String(e?.message ?? e), status, id: null };
   const id = logError(e);
   return { message: e?.status ? String(e.message) : `Something went wrong on the server. Reference: ${id}.`, status, id };

@@ -119,3 +119,18 @@ describe('a batch mails and calls its webhook once, even after a lost lease (REV
     expect(src).toMatch(/'idempotency-key': `\$\{job\.id\}:batch\.finished`/);
   });
 });
+
+describe('a data source that answers 404/5xx is a 502 with a clear message (synthetic-user run)', () => {
+  it('not a generic 500, and no query string (tokens) in the message', async () => {
+    const { errorResponse } = await import('../../src/server/errors.js');
+    const err = console.error; console.error = () => {};
+    try {
+      const r = errorResponse(new Error('HTTP 404 from https://api.example.com/v1/orders?token=SECRET123'));
+      expect(r.status).toBe(502);
+      const body = await r.json();
+      expect(body.error).toMatch(/data source.*HTTP 404.*https:\/\/api\.example\.com\/v1\/orders/);
+      expect(body.error).not.toMatch(/SECRET123/);
+      expect(errorResponse(Object.assign(new Error('HTTP 503 from x'), { status: 400 })).status).toBe(400); // a status the code chose stands
+    } finally { console.error = err; }
+  });
+});
