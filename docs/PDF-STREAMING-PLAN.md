@@ -107,3 +107,24 @@ Plan, if wanted: (1) a measuring pass that returns page count, TOC entries and c
 Smaller model without streaming (changes the model's shape, so exporters and viewers change with it): build the
 export regions (xlsx/csv) and the Word cell tags only when that export asks for them (~90 MB of the 220 MB), and
 keep positions of text lines in typed arrays per page.
+
+## Peak memory in the bench harness (2026-10-05, later)
+
+Why the harness peak was 1.1–1.5 GB with a ~220 MB model: one process renders the first page, the full report and
+the PDF twice, and V8 only collects the dead models when the old generation reaches about 4× what was live at the
+previous full GC (taken mid-export, model alive). So the peak follows the live model size roughly ×4, plus the
+export's native memory. Nothing in the engine holds a finished model: after a GC the heap is back to ~25 MB.
+
+What changed (S2, 963 pages, Node 22):
+
+| | before | after |
+|---|---|---|
+| model, plain render (heap after GC) | 222 MB (table data and cell tags always) | 116 MB (`exportData` opt-in; whole-number fields unboxed) |
+| model with `exportData: true` | 222 MB | 193 MB (cell tag in the text literal; shapes) |
+| export, native memory | ~250 MB (963 zlib jobs started at once) | ~80 MB (4 at a time, pages compress while the next are drawn) |
+| harness peak RSS (S1/S2, quiet machine) | 1,080–1,530 MB | ~700–830 MB |
+| harness pagination / PDF end to end | 540–600 / 1,030–1,220 ms | 450–530 / 920–1,020 ms |
+
+Done from the plan above: export regions and cell tags only on request. Not done: typed arrays for line positions
+(a model shape change for every exporter and viewer), streaming layout. A text item is now ~290 bytes (item, lines
+array, line, clip, boxed fractions); below that needs the shape change.
