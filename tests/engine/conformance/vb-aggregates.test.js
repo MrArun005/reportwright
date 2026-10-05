@@ -16,8 +16,8 @@ import { fontStore, report, texts } from '../../helpers.js';
 // region: the data region, as the importer passes it (a Nothing scope means the outermost data region)
 const pw = (src) => { const t = translateExpression(src, { region: 'T' }); if (!t.ok) throw new Error(t.notes.join('; ')); return t.value.slice(1); };
 /** A table grouped by g; `foot` is a VB expression shown in each group footer, `detail` one shown in each row. */
-function table(rows, { foot, detail, sort = 'asc' }) {
-  const cell = (tag, e) => [{ value: `="${tag}|" & (${pw(e)})` }];
+function table(rows, { foot, detail, sort = 'asc', native = false }) {
+  const cell = (tag, e) => [{ value: `="${tag}|" & (${native ? e.slice(1) : pw(e)})` }];
   return report([{
     type: 'table', name: 'T', x: 0, y: 0, w: 300, h: 40, dataSet: 'Rows', columns: [{ width: 300 }],
     groups: [{ name: 'G', expr: '=Fields.g', sort, header: [], footer: foot ? [{ height: 14, cells: cell('f', foot) }] : [] }],
@@ -90,6 +90,28 @@ const DETAILS = [
 
 describe('RunningValue, Previous, RowNumber', () => {
   for (const [src, want] of DETAILS) it(src, async () => expect(await shown(ROWS, { detail: src })).toEqual(want));
+});
+
+/**
+ * Rank is not an SSRS function (SSRS has Top N filters, SQL has RANK()): Pagewright's own, so these rows are written in
+ * Pagewright syntax. Competition rank, as SQL RANK() and Excel RANK.EQ: ties share a rank and the next one skips; a
+ * row whose value is Nothing is not ranked (and gets Nothing); the default order is descending (1 = the largest).
+ */
+const RANK_ROWS = [
+  { g: 'A', amt: 10 }, { g: 'A', amt: null }, { g: 'A', amt: 7 }, { g: 'B', amt: 10 }, { g: 'B', amt: 3 },
+];
+const RANKS = [
+  ['=Rank(Fields.amt)', ['1', '', '3', '1', '4']], // the data region: 10, 10, 7, 3 (the null is not ranked)
+  ['=Rank(Fields.amt, "Rows", False)', ['3', '', '2', '3', '1']],
+  ['=Rank(Fields.amt, "Rows", "asc")', ['3', '', '2', '3', '1']],
+  ['=Rank(Fields.amt, "G")', ['1', '', '2', '1', '2']],
+  ['=Rank(Fields.amt, "Rows", "desc") <= 2', ['True', 'True', 'False', 'True', 'False']], // top 2 keeps both rows tied at 10; Nothing <= 2 is True in VB
+  ['=Rank(Fields.amt, "Rows") > 0 And Rank(Fields.amt, "Rows") <= 2', ['True', 'False', 'False', 'True', 'False']], // so the wizard writes this
+  ['=Rank(-Fields.amt, "T")', ['4', '1', '3', '4', '2']], // -Nothing is 0 in VB, so that row is ranked
+];
+
+describe('Rank (Pagewright syntax)', () => {
+  for (const [src, want] of RANKS) it(src, async () => expect(await shown(RANK_ROWS, { detail: src, native: true })).toEqual(want));
 });
 
 describe('aggregate suite size', () => {

@@ -40,8 +40,8 @@ export function condition(r, at) {
     // a chart point's value is an aggregate per category: its average is the scope's total over the categories (at.avg)
     case 'aboveAvg': return `${s} > ${!r.field && at.avg ? at.avg : `Avg(${s}${sc})`}`;
     case 'belowAvg': return `${s} < ${!r.field && at.avg ? at.avg : `Avg(${s}${sc})`}`;
-    case 'top': return `Rank(${s}${sc}, "desc") <= ${Number(r.n) || 1}`;
-    case 'bottom': return `Rank(${s}${sc}, "asc") <= ${Number(r.n) || 1}`;
+    // Rank is Nothing for a blank value, and Nothing <= n is True in VB: "> 0" leaves blanks out (engine/expr rank())
+    case 'top': case 'bottom': { const k = `Rank(${s}${sc}, ${r.op === 'top' ? '"desc"' : '"asc"'})`; return `${k} > 0 And ${k} <= ${Number(r.n) || 1}`; }
     case 'contains': return `InStr(CStr(${s}), ${str(r.value)}) > 0`;
     case 'startsWith': return `StartsWith(CStr(${s}), ${str(r.value)})`;
     case 'empty': return `IsNull(${s}) Or CStr(${s}) = ""`;

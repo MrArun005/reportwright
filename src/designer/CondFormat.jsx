@@ -20,7 +20,8 @@ export default function CondFormat({ title, cf: start, fields, thisValue, kind, 
   const setRule = (i, patch) => setCf(c => ({ ...c, rules: c.rules.map((r, j) => (j === i ? { ...r, ...patch } : r)) }));
   const setFmt = (i, k, v) => setCf(c => ({ ...c, rules: c.rules.map((r, j) => { if (j !== i) return r; const f = { ...(r.format || {}) }; if (v === undefined || v === '' || v === false) delete f[k]; else f[k] = v; return { ...r, format: f }; }) }));
   const move = (i, d) => setCf(c => { const a = [...c.rules]; const j = i + d; if (j < 0 || j >= a.length) return c; [a[i], a[j]] = [a[j], a[i]]; return { ...c, rules: a }; });
-  const ops = CF_OPS.filter(o => HAS_RANK || (o !== 'top' && o !== 'bottom')).map(o => ({ value: o, label: T(`cf_op_${o}`) }));
+  // Rank ranks rows, not a chart's categories: no top/bottom N for chart points
+  const ops = CF_OPS.filter(o => (HAS_RANK && kind !== 'chart') || (o !== 'top' && o !== 'bottom')).map(o => ({ value: o, label: T(`cf_op_${o}`) }));
   const subjects = [...(thisValue ? [{ value: '', label: T('cf_thisValue') }] : []), ...fields.map(f => ({ value: f, label: f }))];
   const bad = rules.some(r => !r.format || !Object.keys(r.format).length || ((NEEDS[r.op] ?? 1) === 1 && String(r.value ?? '') === '') || (r.op === 'between' && (String(r.value ?? '') === '' || String(r.value2 ?? '') === '')));
   return (

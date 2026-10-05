@@ -277,6 +277,23 @@ describe('conditional formatting rules write style expressions (CF wizard)', () 
   });
 });
 
+describe('top and bottom N (CF wizard, engine Rank)', () => {
+  it('is offered and highlights the N largest / smallest rows, ties at the cut included, blanks left out', async () => {
+    const { HAS_RANK } = await import('../../src/designer/cfRules.js');
+    expect(HAS_RANK).toBe(true);
+    const at = { subject: 'Fields.amount', scope: 'Rows' };
+    expect(condition({ op: 'top', n: 2 }, at)).toBe('Rank((Fields.amount), "Rows", "desc") > 0 And Rank((Fields.amount), "Rows", "desc") <= 2');
+    const rows = [{ amount: 50 }, { amount: 500 }, { amount: null }, { amount: 120 }, { amount: 500 }, { amount: 7 }];
+    const cell = { value: '=Fields.amount' };
+    applyCf(cell, { mode: 'first', rules: [{ op: 'top', n: 2, format: { color: '#067647' } }, { op: 'bottom', n: 1, format: { color: '#b42318' } }] }, at);
+    const def = report([{ type: 'table', name: 'T', x: 0, y: 0, w: 200, h: 18, dataSet: 'Rows', columns: [{ width: 200 }], detail: [{ height: 18, cells: [cell] }] }], { data: { rows } });
+    const out = await render(def, { fontStore });
+    expect(out.warnings).toEqual([]);
+    const colors = out.pages[0].items.filter(i => i.t === 'text' && i.lines[0]?.text).map(i => [i.lines[0].text, i.color]); // the blank row draws no text
+    expect(colors).toEqual([['50', '#000'], ['500', '#067647'], ['120', '#000'], ['500', '#067647'], ['7', '#b42318']]);
+  });
+});
+
 import { pointAverage } from '../../src/designer/cfRules.js';
 describe('a chart point above the average of the points (CF wizard)', () => {
   it('colours the categories whose total is above the mean of the category totals', async () => {

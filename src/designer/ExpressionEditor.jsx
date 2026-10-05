@@ -11,7 +11,7 @@ import { checkValue, evalValue, toText, FUNCTION_NAMES, functionTable } from '@/
 const GLOBALS = ['PageNumber', 'TotalPages', 'ExecutionTime', 'ReportName'];
 const SNIPPETS = {
   Sum: 'Sum(Fields.x)', Avg: 'Avg(Fields.x)', Count: 'Count(Fields.x)', CountDistinct: 'CountDistinct(Fields.x)', CountRows: 'CountRows()',
-  Min: 'Min(Fields.x)', Max: 'Max(Fields.x)', First: 'First(Fields.x)', Last: 'Last(Fields.x)', RunningValue: 'RunningValue(Fields.x, "Sum")', RowNumber: 'RowNumber()',
+  Min: 'Min(Fields.x)', Max: 'Max(Fields.x)', First: 'First(Fields.x)', Last: 'Last(Fields.x)', RunningValue: 'RunningValue(Fields.x, "Sum")', RowNumber: 'RowNumber()', Rank: 'Rank(Fields.x, "DataSet")',
   IIF: 'IIF(test, ifTrue, ifFalse)', Switch: 'Switch(test1, value1, True, other)', Format: 'Format(value, "N2")', DateAdd: 'DateAdd("m", 1, Fields.x)',
   DateDiff: 'DateDiff("d", Fields.a, Fields.b)', Today: 'Today()', Now: 'Now()',
 };

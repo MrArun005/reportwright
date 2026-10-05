@@ -473,6 +473,22 @@ try {
     await dlg.getByTestId('cf-custom').filter({ hasText: 'Background' }).waitFor();
     await dlg.getByRole('button', { name: 'Cancel' }).click();
 
+    step('CF: "is in the top N" (engine Rank) colours the N largest amounts');
+    const tid = await create(base('ux r1c cf top', [{ type: 'table', name: 'Tbl', x: 0, y: 0, w: 150, h: 18, dataSet: 'Sales', columns: [{ width: 150 }],
+      detail: [{ height: 18, cells: [{ value: '=Fields.amount', style: { format: 'N0' } }] }] }]));
+    await open(tid);
+    await p.locator('[data-cell="detail-0-0"]').click();
+    await insp().getByTestId('cell-cf').getByTestId('cf-open').click();
+    dlg = p.getByRole('dialog');
+    await dlg.getByTestId('cf-rule-0').getByLabel('Condition').selectOption('top');
+    await dlg.getByTestId('cf-rule-0').getByLabel('N', { exact: true }).fill('2');
+    await dlg.getByTestId('cf-apply').click();
+    await save();
+    assert.match((await read(tid)).sections.body.items[0].detail[0].cells[0].style.color, /Rank\(\(Fields\.amount\), "Sales", "desc"\) <= 2/);
+    await p.goto(`${BASE}/viewer/${tid}`);
+    await p.locator('.vpage svg').first().waitFor();
+    const red = await p.locator('.vpage svg text').evaluateAll(ts => ts.filter(t => /180,\s*35,\s*24|#b42318/i.test(t.getAttribute('fill') || '')).map(t => t.textContent));
+    assert.deepEqual(red.sort(), ['2,730,135', '98,000'], `the top 2 in the rule's colour (${red})`);
   }
   if (want('tz')) {
     step('Time zone: the home card\'s "Server PDF" link asks the server to render in the reader\'s zone');

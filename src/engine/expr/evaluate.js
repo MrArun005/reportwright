@@ -833,7 +833,7 @@ const CONSTANTS = { pi: Math.PI, e: Math.E };
 /** Names shown in the designer's expression helper. */
 export const FUNCTION_NAMES = [
   'Sum', 'Avg', 'Count', 'CountDistinct', 'CountRows', 'Min', 'Max', 'First', 'Last', 'RunningValue', 'RowNumber',
-  'Median', 'Mode', 'StDev', 'StDevP', 'Var', 'VarP', 'DistinctSum', 'AggregateIf',
+  'Median', 'Mode', 'Rank', 'StDev', 'StDevP', 'Var', 'VarP', 'DistinctSum', 'AggregateIf',
   'IIF', 'Switch', 'IsNull', 'Coalesce', 'Lookup', 'LookupSet', 'Previous', 'GroupIndex', 'Level', 'Join', 'Contains', 'InList',
   ...['Format', 'Upper', 'Lower', 'Left', 'Right', 'Mid', 'Len', 'Trim', 'Replace', 'InStr', 'CStr', 'CDbl', 'CInt', 'CDate', 'CBool',
     'Round', 'RoundHalfAway', 'Abs', 'Floor', 'Ceiling', 'Int', 'Pow', 'Sqrt', 'Now', 'Today', 'DateAdd', 'DateDiff', 'DateSerial', 'Year', 'Month', 'Day', 'MonthName'],
@@ -866,6 +866,40 @@ function previous(n, ctx) {
   } else rows = (sc || ctx.group || ctx.region)?.prevRows || null;
   if (!rows) return null;
   return evaluate(args[0], Object.assign({}, ctx, { fields: rows[0], aggRows: rows, aggIndex: undefined }));
+}
+
+/**
+ * Rank(expr[, scope[, descending]]): the current row's place among the scope's rows by expr. Competition rank, as
+ * SQL RANK() and Excel RANK.EQ: ties share a rank and the next rank skips (10, 10, 7 → 1, 1, 3), so "Rank(…) <= 3"
+ * keeps every row tied at the cut, as an SSRS Top N filter does. descending (default True, or "desc"/"asc"): 1 is the
+ * largest; False or "asc": 1 is the smallest. expr is evaluated for each row of the scope as that row alone (a detail
+ * row is its own scope) and for the current row; rows where it is Nothing or "" are not ranked, and a current row
+ * whose value is Nothing gets Nothing. Scope: a group, data region or data set name; none means the data region.
+ * Values compare as in sorting (numbers, dates, text). It ranks rows, not group instances.
+ */
+const RANKS = new WeakMap();
+function rank(n, ctx) {
+  const args = n.args;
+  if (!args.length) throw new ExprError('Rank needs an expression: Rank(Fields.amount[, "Scope"[, descending]])', n.p);
+  const rows = args.length > 1 && evaluate(args[1], ctx) != null ? scopeRows(args, 1, ctx, n.name) : (ctx.region?.rows || ctx.aggRows || (ctx.fields ? [ctx.fields] : []));
+  const d = args.length > 2 ? evaluate(args[2], ctx) : true;
+  const desc = typeof d === 'string' ? !/^asc/i.test(d.trim()) : d == null || truthy(d);
+  const x = evaluate(args[0], ctx);
+  if (x == null || x === '') return null;
+  // the scope's values, sorted once per (row array, call, length): each row's rank is then two binary searches
+  let byCall = RANKS.get(rows);
+  if (!byCall) RANKS.set(rows, byCall = new Map());
+  let hit = pureRows(args[0]) ? byCall.get(n) : null;
+  if (!hit || hit.len !== rows.length) {
+    const c = Object.assign({}, ctx, { aggIndex: 0 });
+    const vals = [];
+    for (const r of rows) { c.fields = r; c.aggRows = [r]; const v = evaluate(args[0], c); if (v != null && v !== '') vals.push(v); }
+    hit = { len: rows.length, vals: vals.sort(cmpVal) };
+    if (pureRows(args[0])) byCall.set(n, hit);
+  }
+  const vals = hit.vals;
+  const bound = (strict) => { let lo = 0, hi = vals.length; while (lo < hi) { const m = (lo + hi) >> 1; const c = cmpVal(vals[m], x); if (c < 0 || (!strict && c === 0)) lo = m + 1; else hi = m; } return lo; };
+  return desc ? vals.length - bound(false) + 1 : bound(true) + 1; // 1 + how many are larger (smaller)
 }
 
 function call(n, ctx) {
@@ -959,6 +993,7 @@ function call(n, ctx) {
     }
     return AGG[fn](mapRows(rows, args[0], ctx));
   }
+  if (name === 'rank') return rank(n, ctx);
   if (name === 'previous') return previous(n, ctx);
   if (name === 'groupindex') {
     const sc = args.length ? ctx.scopes?.[evaluate(args[0], ctx)] : ctx.group;
@@ -1002,7 +1037,7 @@ const MAX_FN_DEPTH = 32;
 const MAX_FN_CALLS = 1_000_000; // per function table, i.e. per render
 const MAX_FUNCTIONS = 200, MAX_FN_PARAMS = 32;
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const RESERVED = new Set(['iif', 'switch', 'choose', 'lookup', 'lookupset', 'previous', 'groupindex', 'level', 'countrows', 'rownumber',
+const RESERVED = new Set(['rank', 'iif', 'switch', 'choose', 'lookup', 'lookupset', 'previous', 'groupindex', 'level', 'countrows', 'rownumber',
   'runningvalue', 'distinctsum', 'aggregateif', 'code', 'fields', 'parameters', 'globals', 'parent', 'and', 'or', 'not', 'true', 'false', 'null', 'nothing']);
 const builtin = (lower) => RESERVED.has(lower) || lower in FUNCTIONS || lower in AGG || lower in CONSTANTS;
 
