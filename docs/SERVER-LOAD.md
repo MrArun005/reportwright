@@ -50,3 +50,36 @@ Soak (300 s mixed load): 0 failures. The request thread's live heap after a full
 - A single API key used by a busy front end may need a larger `PW_RENDER_QUEUE_PER_PRINCIPAL` than the default 8 per worker.
 - Saved SQL from `/api/data/sql` stays on the request thread: it waits on the database, it does not compute. SQL inside a render runs in the worker.
 - Streaming: the PDF goes out as one buffer moved from the worker without a copy, as soon as it is made. Writing it page by page needs the exporter changes in `docs/PDF-STREAMING-PLAN.md`.
+
+## Batch 5: cluster mode (`scripts/cluster.mjs`)
+
+The same harness (`~/pw-load/load.mjs`, server part, invoice and grouped only, 30 s stages, API key in one principal),
+on the same 8-core M2 with 8 GB, which was busy with other work throughout (load average 6 to 65, every row flagged).
+"Before" is the copy at `085fd69` with `next start`; "after" is `4f5be54` (the batch 5 code: two-factor, the audit
+chain and its write queue, snapshots off by default) with `next start`, then with `scripts/cluster.mjs` at 2 and 4
+processes (render threads per process: the default, 3 and 1). Server CPU counts the whole process tree.
+
+| workload | VUs | before req/s | after, 1 process | after, cluster 2 | after, cluster 4 |
+|---|---:|---:|---:|---:|---:|
+| invoice | 1 | 140 | 203 | 157 | 120 |
+| invoice | 10 | 372 | 478 | 473 | 252 |
+| invoice | 50 | 282 (earlier run) | 393 | 465 | 301 |
+| invoice | 200 | 301 (65% × 429) | 314 (1% neterr) | 428 (30% × 429) | 235 (82% × 429) |
+| grouped 2,000 rows | 1 | 20.5 | 19.0 | 20.3 | 19.6 |
+| grouped 2,000 rows | 10 | 36.2 | 44.0 | 49.7 | 44.6 |
+| grouped 2,000 rows | 50 | 25.8 | 49.0 | 48.5 | 40.2 |
+| grouped 2,000 rows | 200 | 23.3 | 40.2 | 32.7 | 21.7 |
+
+p50 at 50 VUs, invoice: 123 ms (1 process), 98 ms (cluster 2). Server CPU in those stages: about 5 cores for one process,
+6.5 for cluster 2 (of 8, with the load generator on the same machine).
+
+Reading it:
+- **Two processes** give the invoice 18% more at 50 users and 36% more at 200, with lower latency; the grouped report is
+  unchanged (it is render-bound, and the render threads were already busy). That is the default for 8 cores.
+- **Four processes are worse here:** one render thread each, and the machine had no idle cores left (the load generator,
+  the other processes and the noise above use them). On a dedicated server with more cores, raise
+  `PW_CLUSTER_PROCESSES` and keep processes + render threads ≈ cores.
+- The invoice is no longer bound by one request thread but by the machine: about 6.5 of 8 cores were in use. Jasper's
+  1,700 to 1,900 req/s for this one-page PDF were measured on the same machine when it was quieter; closing that gap
+  needs cheaper rendering of small documents (or the snapshot cache, when a TTL is acceptable), not more processes.
+- The 429s at 200 users are the one API key's fair share per process (`PW_RENDER_QUEUE_PER_PRINCIPAL`), as before.
