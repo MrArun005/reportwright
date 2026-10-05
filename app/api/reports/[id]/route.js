@@ -5,7 +5,7 @@
 // A report the caller may not view is "not found" whatever the method.
 import { writeReport, deleteReport, safeId, readDefinition, revOf } from '@/server/reports.js';
 import { validate } from '@/engine/schema/validate.js';
-import { principalOf, readReportFor, checkReport, canCreateIn, recordNewReport, forgetReport, stampDefinition, withReport, stableCheck } from '@/server/perms.js';
+import { principalOf, readReportFor, revOfRead, checkReport, canCreateIn, recordNewReport, forgetReport, stampDefinition, withReport, stableCheck } from '@/server/perms.js';
 import { audit } from '@/server/audit.js';
 import { store } from '@/server/storage/index.js';
 import { errorResponse } from '@/server/errors.js';
@@ -20,7 +20,7 @@ export async function GET(req, { params }) {
     const p = await principalOf(req);
     const def = await readReportFor(p, id, 'view');
     await audit('report.view', { req, principal: p, report: id, detail: { via: 'api' } });
-    const rev = id.includes('@') ? null : revOf(await store().get('reports', id));
+    const rev = revOfRead(def); // of the very text sent, never of a later read (a save in between would slip past If-Match)
     return Response.json(def, { headers: rev ? { etag: `"${rev}"`, 'cache-control': 'no-store' } : {} });
   } catch (e) { return fail(e); }
 }

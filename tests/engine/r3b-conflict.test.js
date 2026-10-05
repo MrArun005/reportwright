@@ -90,3 +90,24 @@ describe('a draft remembers the revision it was made on', () => {
     expect(staleDraft({ ...d, rev: null }, 'bbbbbbbbbbbbbbbb')).toBe(false); // an old draft without one: as before
   });
 });
+
+describe('the ETag is the revision of the definition sent (review finding)', () => {
+  it('a save that lands while GET runs does not give the old definition the new revision', async () => {
+    const { store } = await import('../../src/server/storage/index.js');
+    const { revOf } = await import('../../src/server/reports.js');
+    const s = store(), orig = s.get;
+    let raced = false;
+    s.get = async function (k, id) {
+      const t = await orig.call(this, k, id);
+      if (k === 'reports' && id === 'shared' && !raced) { raced = true; await orig.call(this, 'reports', id); await s.put('reports', 'shared', JSON.stringify({ name: 'saved meanwhile' }, null, 2)); }
+      return t;
+    };
+    try {
+      const r = await get('shared', A);
+      expect(r.def.name).not.toBe('saved meanwhile');
+      expect(r.etag).not.toBe(`"${revOf(JSON.stringify({ name: 'saved meanwhile' }, null, 2))}"`);
+      // a save with it is refused: the report changed after the definition this editor holds
+      expect((await put('shared', { ...r.def, name: 'blind overwrite' }, { cookie: A, match: r.etag })).status).toBe(409);
+    } finally { s.get = orig; }
+  });
+});

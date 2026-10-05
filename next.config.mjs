@@ -2,7 +2,8 @@ import { pageHeaders } from './src/server/headers.js';
 
 /** @type {import('next').NextConfig} */
 const embedOrigin = process.env.PW_EMBED_ORIGINS || '';
-const cors = (value) => [{ key: 'Access-Control-Allow-Origin', value }, { key: 'Access-Control-Allow-Methods', value: 'GET' }];
+// ETag exposed: an embedded designer reads a report's revision for If-Match (its saves would otherwise be 428)
+const cors = (value) => [{ key: 'Access-Control-Allow-Origin', value }, { key: 'Access-Control-Allow-Methods', value: 'GET' }, { key: 'Access-Control-Expose-Headers', value: 'ETag' }];
 
 const nextConfig = {
   reactStrictMode: true,

@@ -22,7 +22,7 @@ import { store, localAclGen, withLock } from './storage/index.js';
 import { accountsOn, currentUser, openTrusted, publicReadonly, NO_AUTH_HELP } from './session.js';
 import { internalHosts } from './safeFetch.js';
 import { normEmail, GROUP, getUser } from './users.js';
-import { readReport, parseReport, safeId } from './reports.js';
+import { readReport, parseReport, safeId, revOf } from './reports.js';
 import { FETCHED_TYPES } from '../engine/data/index.js';
 import { devMode } from './config.js';
 
@@ -437,8 +437,14 @@ export async function readReportFor(p, ref, need = 'view') {
   const text = await store().get('reports', safeId(String(ref)));
   if (text == null) throw fail('Report not found', 404);
   await levelOn(p, ref, need);
-  return parseReport(text);
+  const def = parseReport(text);
+  if (def && typeof def === 'object') readRevs.set(def, revOf(text)); // the revision of exactly this text (the ETag)
+  return def;
 }
+/** The revision of the text a readReportFor result was parsed from (null for a version or an unknown object). */
+const readRevs = new WeakMap();
+/** @param {any} def @returns {string|null} */
+export const revOfRead = (def) => readRevs.get(def) ?? null;
 
 /** The principal a server-side render runs as when the caller did not say: nobody with accounts on, or in production
  *  with no sign-in (fail closed). */
