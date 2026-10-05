@@ -56,7 +56,7 @@ describe('SQL connections for the designer', () => {
 
   it('lists names and kinds, never the URLs', () => {
     const list = listConnections();
-    expect(list).toEqual(expect.arrayContaining([{ name: 'main', kind: 'sqlite' }, { name: 'broken', kind: 'sqlite' }]));
+    expect(list).toEqual(expect.arrayContaining([{ name: 'main', kind: 'sqlite', procs: [] }, { name: 'broken', kind: 'sqlite', procs: [] }]));
     expect(JSON.stringify(list)).not.toContain(db);
   });
 

@@ -55,7 +55,7 @@ describe('binding for SQL Server', () => {
       .toMatchObject({ user: 'u@x', password: 'p:w', server: 'db.example', port: 1444, database: 'sales', options: { encrypt: false, trustServerCertificate: true, instanceName: 'SQL1' } });
     expect(mssqlConfig('mssql://u:p@h/db')).toMatchObject({ port: 1433, options: { encrypt: true, trustServerCertificate: false } });
     process.env.PW_DB_MSX = 'mssql://u:p@h/db';
-    try { expect(listConnections().find(c => c.name === 'msx')).toEqual({ name: 'msx', kind: 'mssql' }); } finally { delete process.env.PW_DB_MSX; }
+    try { expect(listConnections().find(c => c.name === 'msx')).toEqual({ name: 'msx', kind: 'mssql', procs: [] }); } finally { delete process.env.PW_DB_MSX; }
   });
 });
 
@@ -113,6 +113,18 @@ describe('SQL Server resource caps (batch 3b, no server needed)', () => {
     expect(() => c.track({})).toThrow(/longer than/);
     await expect(c.inTime(new Promise(() => {}))).rejects.toMatchObject({ status: 504 });
     c.stop();
+  });
+  it('review 3b-2: the request in flight is cancelled even when the 504 timer fires first', async () => {
+    const real = Date.now;
+    let t = real();
+    const c = clock(50);
+    const r = { cancel: () => { r.n = (r.n || 0) + 1; } };
+    c.track(r);
+    Date.now = () => real() + 1; // the clock moved a millisecond between the deadline and the wait (seen live)
+    try { await expect(c.inTime(new Promise(() => {}))).rejects.toMatchObject({ status: 504 }); } finally { Date.now = real; }
+    c.stop();
+    expect(r.n).toBe(1);
+    void t;
   });
   it('the per-database probe stops at its deadline, whatever the server does', async () => {
     const live = [];
@@ -493,6 +505,36 @@ describe.skipIf(!process.env.PW_TEST_MSSQL)('SQL Server (live)', () => {
       expect(await runSql({ connection: 'msp', query: 'select 1 as a' }, {})).toEqual([{ a: 1 }]);
     } finally { Object.assign(limits, keep); delete process.env.PW_DB_MSP; }
   }, 30000);
+
+  it('batch 3b: an allow-listed stored procedure runs with bound arguments, first result set only, rolled back', async () => {
+    const sql = (await import('mssql')).default;
+    const admin = await new sql.ConnectionPool(mssqlConfig(process.env.PW_TEST_MSSQL)).connect();
+    try {
+      await admin.request().batch(`USE pwtest; IF OBJECT_ID('dbo.pw_by_region') IS NOT NULL DROP PROCEDURE dbo.pw_by_region;
+        IF OBJECT_ID('dbo.pw_other') IS NOT NULL DROP PROCEDURE dbo.pw_other;`);
+      await admin.request().batch(`USE pwtest; EXEC('CREATE PROCEDURE dbo.pw_by_region @region NVARCHAR(20), @min INT AS
+        BEGIN UPDATE dbo.pw_accounts SET name = name + ''!''; SELECT id, name FROM dbo.pw_accounts WHERE region = @region AND id >= @min ORDER BY id; SELECT 1 AS second; END');
+        EXEC('CREATE PROCEDURE dbo.pw_other AS SELECT 1 AS a');
+        GRANT EXECUTE ON dbo.pw_by_region TO pw_reader; GRANT EXECUTE ON dbo.pw_other TO pw_reader;`);
+      process.env.PW_DB_MSPROC = `${readerUrl()}&p=proc1`;
+      // EXECUTE on a procedure the connection does not list is a right to change data: refused
+      process.env.PW_DB_MSPROC_PROCS = 'dbo.pw_by_region';
+      await expect(runSql({ connection: 'msproc', procedure: 'dbo.pw_by_region', args: [{ name: 'region', param: 'r' }, { name: 'min', param: 'm' }] }, { r: 'North', m: 1 })).rejects.toThrow(/pw_other/);
+      await admin.request().batch('USE pwtest; REVOKE EXECUTE ON dbo.pw_other TO pw_reader');
+      process.env.PW_DB_MSPROC = `${readerUrl()}&p=proc2`;
+      // the update inside it is rolled back; the second result set is not read
+      expect(await runSql({ connection: 'msproc', procedure: 'dbo.pw_by_region', args: [{ name: 'region', param: 'r' }, { name: '@min', param: 'm' }] }, { r: 'North', m: 2 })).toEqual([{ id: 3, name: 'Chen!' }]);
+      expect(await runSql({ connection: 'msproc', query: 'select name from dbo.pw_accounts where id = 3' }, {})).toEqual([{ name: 'Chen' }]);
+      await expect(runSql({ connection: 'msproc', procedure: 'dbo.pw_other' }, {})).rejects.toThrow(/not allowed/);
+      // the same login without the allow-list is refused: it can EXECUTE something
+      process.env.PW_DB_MSPROC2 = `${readerUrl()}&p=proc3`;
+      await expect(runSql({ connection: 'msproc2', query: 'select 1 as a' }, {})).rejects.toThrow(/EXECUTE/);
+    } finally {
+      delete process.env.PW_DB_MSPROC; delete process.env.PW_DB_MSPROC_PROCS; delete process.env.PW_DB_MSPROC2;
+      await admin.request().batch(`USE pwtest; IF OBJECT_ID('dbo.pw_by_region') IS NOT NULL DROP PROCEDURE dbo.pw_by_region; IF OBJECT_ID('dbo.pw_other') IS NOT NULL DROP PROCEDURE dbo.pw_other;`);
+      await admin.close();
+    }
+  }, 60000);
 
   it('tests a connection without showing its URL', async () => {
     expect(await testConnection('ms')).toMatchObject({ ok: true });

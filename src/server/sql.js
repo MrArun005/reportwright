@@ -1,6 +1,7 @@
 // @ts-check
 // SQL data sources, run on the server only.
 // Connections come only from the environment: PW_DB_<NAME>=sqlite:/path/file.db | postgres://… | mysql://… | mssql://…
+//   | oracle://… | snowflake://… | bigquery://… (drivers in ./sql/). PW_DB_<NAME>_PROCS=a,b allow-lists stored procedures.
 // A report names a connection; it can never give a host, a password or a file of its own.
 // "@name" in the query binds the report parameter "name" through the driver; values never become SQL text.
 // Every query runs read-only, as one statement, for at most limits.ms and limits.rows rows.
@@ -9,6 +10,9 @@ import { readRunnable, defaultPrincipal } from './perms.js';
 import { resolveParameters } from '@/engine/index.js';
 import { isoDate } from '@/engine/expr/format.js';
 import crypto from 'node:crypto';
+import { oracle } from './sql/oracle.js';
+import { snowflake } from './sql/snowflake.js';
+import { bigquery } from './sql/bigquery.js';
 
 /** Mutable so tests can lower them. */
 export const limits = { rows: 100000, ms: 30000, bytes: 64 * 1024 * 1024 };
@@ -18,7 +22,7 @@ const fail = (msg, status) => Object.assign(new Error(msg), { status });
 
 /** @param {string} name connection name from the report ("main" → PW_DB_MAIN) */
 function connectionUrl(name) {
-  if (typeof name !== 'string' || !/^\w{1,64}$/.test(name)) throw fail('Give the SQL source a connection name (letters, digits and _).', 400);
+  if (typeof name !== 'string' || !/^\w{1,64}$/.test(name) || /_procs$/i.test(name)) throw fail('Give the SQL source a connection name (letters, digits and _).', 400);
   const key = `PW_DB_${name.toUpperCase()}`;
   const url = process.env[key];
   if (!url) throw fail(`The connection "${name}" is not set up on the server. Set ${key}.`, 400);
@@ -32,15 +36,16 @@ const SCALAR = new Set(['string', 'number', 'boolean']);
  * an empty list becomes NULL, so `x in (@list)` matches nothing (and so does `x not in (@list)`).
  * @ inside '…', "…", `…`, -- and /* *\/ is left alone; so is @@var (MySQL system variables).
  * SQL Server: "@pw_1", "@pw_2"… (request inputs), found by a T-SQL scanner (tsqlParts).
- * @param {string} query @param {Record<string, any>} params @param {'sqlite'|'postgres'|'mysql'|'mssql'} dialect
+ * Oracle: ":1", ":2"…; Snowflake and BigQuery: "?".
+ * @param {string} query @param {Record<string, any>} params @param {Dialect} dialect
  */
 export function bindSql(query, params, dialect) {
   if (dialect === 'mssql') return bindTsql(query, params);
-  // MySQL lets a backslash escape a quote inside a string; standard SQL does not
-  const str = dialect === 'mysql' ? String.raw`'(?:[^'\\]|\\[\s\S]|'')*'|"(?:[^"\\]|\\[\s\S]|"")*"` : `'(?:[^']|'')*'|"(?:[^"]|"")*"`;
+  // MySQL, Snowflake and BigQuery let a backslash escape a quote inside a string; standard SQL does not
+  const str = ['mysql', 'snowflake', 'bigquery'].includes(dialect) ? String.raw`'(?:[^'\\]|\\[\s\S]|'')*'|"(?:[^"\\]|\\[\s\S]|"")*"` : `'(?:[^']|'')*'|"(?:[^"]|"")*"`;
   const re = new RegExp(String.raw`${str}|\x60[^\x60]*\x60|--[^\n]*|/\*[\s\S]*?\*/|@@\w+|@([A-Za-z_]\w*)|(\?|(?<![\w$])\$\d+)|[^'"\x60@?$/-]+|[\s\S]`, 'g');
   const values = [];
-  const ph = () => (dialect === 'postgres' ? `$${values.length}` : '?');
+  const ph = () => (dialect === 'postgres' ? `$${values.length}` : dialect === 'oracle' ? `:${values.length}` : '?');
   const one = (v, name) => {
     values.push(bindValue(v, name, dialect));
     return ph();
@@ -136,24 +141,31 @@ const cell = (v) => (typeof v === 'bigint' ? (Number.isSafeInteger(Number(v)) ? 
 const plainRow = (r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, cell(v)]));
 
 /**
- * Run a query on a connection from the environment.
- * @param {{ connection: string, query: string }} src
+ * Run a query, or an allow-listed stored procedure, on a connection from the environment.
+ * @param {{ connection: string, query?: string, procedure?: string, args?: { name: string, param: string }[] }} src
  * @param {Record<string, any>} [params] report parameters (lists are arrays)
  * @returns {Promise<object[]>}
  */
-export async function runSql({ connection, query }, params = {}) {
+export async function runSql({ connection, query, procedure, args }, params = {}) {
   const { url, key } = connectionUrl(connection);
-  if (typeof query !== 'string' || !query.trim()) throw fail('The SQL source has no query.', 400);
-  // a huge text costs the database server time to compile, and a cancel does not always stop a compile
-  if (query.length > MAX_QUERY) throw fail(`The query is longer than ${MAX_QUERY / 1000}k characters.`, 400);
-  // first guard: a report reads data. (WITH … UPDATE passes this; the read-only transaction stops it.)
-  if (!/^[\s(]*(select|with)\b/i.test(query.replace(/^(\s*(--[^\n]*|\/\*[\s\S]*?\*\/))+/, ''))) throw fail('A SQL source can only run a SELECT query.', 400);
   const dialect = kindOf(url);
-  if (dialect === 'unknown') throw fail(`${key} must start with sqlite:, postgres://, mysql:// or mssql://.`, 500);
-  const { text, values } = bindSql(query, params, dialect);
+  if (dialect === 'unknown') throw fail(`${key} must start with sqlite:, postgres://, mysql://, mssql://, oracle://, snowflake:// or bigquery://.`, 500);
+  let text, values, names = [], code = '';
+  if (procedure != null && procedure !== '') ({ text, values, names = [] } = procCall(connection, dialect, procedure, args, params));
+  else {
+    if (typeof query !== 'string' || !query.trim()) throw fail('The SQL source has no query.', 400);
+    // a huge text costs the database server time to compile, and a cancel does not always stop a compile
+    if (query.length > MAX_QUERY) throw fail(`The query is longer than ${MAX_QUERY / 1000}k characters.`, 400);
+    // first guard: a report reads data. (WITH … UPDATE passes this; the read-only transaction stops it.)
+    if (!/^[\s(]*(select|with)\b/i.test(query.replace(/^(\s*(--[^\n]*|\/\*[\s\S]*?\*\/))+/, ''))) throw fail('A SQL source can only run a SELECT query.', 400);
+    ({ text, values } = bindSql(query, params, dialect));
+    // Oracle, Snowflake, BigQuery: one statement, no write or session words outside strings and comments (a second
+    // guard beside each driver's own: the server's parse, the read-only transaction or role, the dry run)
+    if (CHECKED.has(dialect)) code = assertOneRead(text, dialect);
+  }
   let rows;
   try {
-    rows = await DRIVERS[dialect](url, text, values);
+    rows = await DRIVERS[dialect](url, text, values, { ...driverContext, code, allowed: procsOf(connection), procedure: procedure ? { name: text, names } : null });
   } catch (e) {
     if (TIMEOUT_CODES.has(e.code)) throw fail(`The query ran longer than ${limits.ms / 1000} s.`, 504);
     // the report author sees this message: never the connection URL or a part of it (the password)
@@ -162,19 +174,113 @@ export async function runSql({ connection, query }, params = {}) {
   }
   if (rows.length > limits.rows) throw fail(`The query returned more than ${limits.rows} rows. Filter or group it in SQL.`, 400);
   // the row cap does not bound one huge value (string_agg, FOR JSON in a subquery, repeat()): count the text too
-  // ponytail: counted after the driver has the rows; stream them with a byte budget if this needs to be tighter
+  // ponytail: counted after the driver has the rows (SQLite, Postgres, MySQL); the other drivers count as they read
   let bytes = 0;
-  for (const r of rows) for (const v of Object.values(r)) bytes += typeof v === 'string' ? v.length * 2 : v instanceof Uint8Array ? v.length : 8;
+  for (const r of rows) for (const v of Object.values(r)) bytes += sizeOf(v);
   if (bytes > limits.bytes) throw fail(`The query returned more than ${Math.round(limits.bytes / 1048576)} MB. Filter or group it in SQL.`, 400);
   return rows.map(plainRow);
+}
+
+/** @typedef {'sqlite'|'postgres'|'mysql'|'mssql'|'oracle'|'snowflake'|'bigquery'} Dialect */
+const CHECKED = new Set(['oracle', 'snowflake', 'bigquery']);
+
+/* ---------------- statement check (Oracle, Snowflake, BigQuery) ---------------- */
+
+/**
+ * The code of a query with strings, quoted names and comments blanked, read as each database reads it. Quoting this
+ * scanner does not model (Oracle q'…', Snowflake $$…$$, BigQuery raw, bytes and triple-quoted strings) is refused, so
+ * the scanner and the server never disagree on where code is. Fails closed.
+ * @param {string} q @param {'oracle'|'snowflake'|'bigquery'} dialect
+ */
+export function codeOnly(q, dialect) {
+  const open = () => fail('The query has a comment, string or quoted name that does not end.', 400);
+  const refuse = (what) => fail(`A SQL source cannot use ${what} here: write a plain '…' string.`, 400);
+  const line = dialect === 'bigquery' ? ['--', '#'] : dialect === 'snowflake' ? ['--', '//'] : ['--'];
+  const quotes = dialect === 'bigquery' ? "'\"`" : `'"`;
+  let out = '', i = 0;
+  while (i < q.length) {
+    const c = q[i], prev = q[i - 1] || ' ';
+    if (line.some(m => q.startsWith(m, i))) { const e = q.slice(i).search(/[\r\n]/); i = e < 0 ? q.length : i + e; out += ' '; continue; }
+    if (q.startsWith('/*', i)) { const e = q.indexOf('*/', i + 2); if (e < 0) throw open(); i = e + 2; out += ' '; continue; }
+    if (!/[\w$#]/.test(prev)) {
+      if (dialect === 'oracle' && /^n?q'/i.test(q.slice(i, i + 3))) throw refuse("q'…' quoting");
+      if (dialect === 'bigquery' && /^(r|b|rb|br)['"]/i.test(q.slice(i, i + 3))) throw refuse('raw or bytes strings');
+    }
+    if (dialect === 'snowflake' && q.startsWith('$$', i)) throw refuse('$$ strings');
+    if (dialect === 'bigquery' && (q.startsWith("'''", i) || q.startsWith('"""', i))) throw refuse('triple-quoted strings');
+    if (quotes.includes(c)) {
+      // a backslash escapes in BigQuery strings and names, and in Snowflake '…' strings; Oracle has no escape but ''
+      const bs = dialect === 'bigquery' || (dialect === 'snowflake' && c === "'");
+      let j = i + 1;
+      for (;;) {
+        if (j >= q.length) throw open();
+        if (bs && q[j] === '\\') { j += 2; continue; }
+        if (q[j] === c) { if (q[j + 1] === c) { j += 2; continue; } break; }
+        j++;
+      }
+      i = j + 1;
+      out += ' x ';
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
+// words that never belong in a report's SELECT on these databases (outside strings and comments)
+const READ_DENY = /\b(insert|update|delete|merge|upsert|create|drop|alter|truncate|rename|grant|revoke|call|exec|execute|begin|commit|rollback|savepoint|copy|put|remove|unload|use|set|unset|declare|lock|undrop|into|export|load|procedure|function|transaction)\b/i;
+
+/** One statement (a trailing ";" at most) and no word from READ_DENY in code. @returns {string} the code */
+export function assertOneRead(text, dialect) {
+  const code = codeOnly(text, dialect);
+  if (code.replace(/[;\s]+$/, '').includes(';')) throw fail('A SQL source can only run one SELECT query (one statement).', 400);
+  const word = READ_DENY.exec(code);
+  if (word) throw fail(`A SQL source can only run one SELECT query: "${word[1]}" is not allowed.`, 400);
+  return code;
+}
+
+/* ---------------- stored procedures (opt-in per connection) ---------------- */
+
+const PROC_NAME = /^[A-Za-z_][\w$#]{0,127}(\.[A-Za-z_][\w$#]{0,127})?$/;
+/** "dbo.Sales" → "dbo.sales": the name as the allow-list compares it (schema dbo when SQL Server gets none). */
+const procName = (n) => String(n).trim().toLowerCase();
+
+/** The procedures PW_DB_<NAME>_PROCS allows on a connection ([] when none: the default). */
+export function procsOf(connection) {
+  const v = process.env[`PW_DB_${String(connection).toUpperCase()}_PROCS`] || '';
+  return v.split(',').map(x => x.trim()).filter(x => PROC_NAME.test(x));
+}
+
+/** The call text and bound values for an allow-listed procedure. Arguments are report parameters, bound by the driver. */
+function procCall(connection, dialect, procedure, args, params) {
+  if (typeof procedure !== 'string' || !PROC_NAME.test(procedure.trim())) throw fail('Give the stored procedure as name or schema.name.', 400);
+  const allowed = procsOf(connection);
+  if (!allowed.some(p => procName(p) === procName(procedure))) throw fail(`The procedure "${procedure.slice(0, 128)}" is not allowed on this connection. The admin lists allowed ones in PW_DB_${String(connection).toUpperCase()}_PROCS.`, 400);
+  const list = args == null ? [] : args;
+  if (!Array.isArray(list) || list.length > 100) throw fail('The procedure arguments must be a list of { name, param }.', 400);
+  const values = [], names = [];
+  for (const a of list) {
+    if (!a || typeof a.name !== 'string' || !/^@?[A-Za-z_]\w{0,127}$/.test(a.name)) throw fail('Each procedure argument needs a name (letters, digits and _).', 400);
+    if (typeof a.param !== 'string' || !Object.hasOwn(params, a.param)) throw fail(`The procedure argument "${a.name}" uses the report parameter "${String(a.param).slice(0, 64)}", which does not exist.`, 400);
+    const v = params[a.param];
+    if (Array.isArray(v)) throw fail(`The report parameter "${a.param}" is a list; a procedure argument takes one value.`, 400);
+    values.push(bindValue(v, a.param, dialect));
+    names.push(a.name.replace(/^@/, ''));
+  }
+  const name = procedure.trim();
+  if (dialect === 'mssql') return { text: name, values, names };
+  if (dialect === 'postgres') return { text: `SELECT * FROM ${name}(${names.map((n, i) => `${n} => $${i + 1}`).join(', ')})`, values };
+  if (dialect === 'mysql' || dialect === 'snowflake') return { text: `CALL ${name}(${values.map(() => '?').join(', ')})`, values };
+  throw fail(`Stored procedures are not supported on ${dialect} connections.`, 400);
 }
 
 const MAX_ERROR = 1000, MAX_QUERY = 100000;
 // Postgres query_canceled, MySQL max_execution_time, MariaDB max_statement_time, SQL Server request timeout
 const TIMEOUT_CODES = new Set(['57014', 'ER_QUERY_TIMEOUT', 'ER_STATEMENT_TIMEOUT', 'ETIMEOUT']);
 
-/** @returns {'sqlite'|'postgres'|'mysql'|'mssql'|'unknown'} */
-const kindOf = (v) => (/^sqlite:/.test(v) ? 'sqlite' : /^postgres(ql)?:\/\//.test(v) ? 'postgres' : /^mysql:\/\//.test(v) ? 'mysql' : /^mssql:\/\//.test(v) ? 'mssql' : 'unknown');
+/** @returns {Dialect|'unknown'} */
+const kindOf = (v) => (/^sqlite:/.test(v) ? 'sqlite' : /^postgres(ql)?:\/\//.test(v) ? 'postgres' : /^(mysql|mssql|oracle|snowflake|bigquery):\/\//.exec(v)?.[1] ?? 'unknown');
 
 /**
  * mssql://user:password@host[:port]/database[?encrypt=false&trustServerCertificate=true&instance=NAME] → a config
@@ -195,8 +301,8 @@ export function mssqlConfig(url) {
 /** The connections set up on this server: names and kinds only (the URLs hold passwords). */
 export function listConnections() {
   return Object.entries(process.env)
-    .filter(([k, v]) => /^PW_DB_\w+$/.test(k) && v)
-    .map(([k, v]) => ({ name: k.slice(6).toLowerCase(), kind: kindOf(v) }))
+    .filter(([k, v]) => /^PW_DB_\w+$/.test(k) && !/_PROCS$/.test(k) && v)
+    .map(([k, v]) => ({ name: k.slice(6).toLowerCase(), kind: kindOf(v), procs: procsOf(k.slice(6)) }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -235,6 +341,28 @@ export async function runSavedSql(reportId, sourceName, given = {}, principal = 
 
 /* ---------------- drivers: each returns at most limits.rows + 1 rows ---------------- */
 
+/**
+ * A counter for drivers that read row by row: `take(row)` refuses the row past limits.rows or the byte past
+ * limits.bytes; `take.reserve(n)` refuses a value of n bytes before it is read.
+ */
+function count() {
+  let n = 0, bytes = 0;
+  const big = () => fail(`The query returned more than ${Math.round(limits.bytes / 1048576)} MB. Filter or group it in SQL.`, 400);
+  const take = (row) => {
+    if (++n > limits.rows) throw fail(`The query returned more than ${limits.rows} rows. Filter or group it in SQL.`, 400);
+    for (const v of Object.values(row)) bytes += sizeOf(v);
+    if (bytes > limits.bytes) throw big();
+  };
+  take.reserve = (more) => { if (!(bytes + more <= limits.bytes)) throw big(); };
+  return take;
+}
+
+/**
+ * What a driver in ./sql/ gets besides the text: the shared pools, the caps, and the helpers that enforce them.
+ * @typedef {{ pools: Map<string, any>, limits: typeof limits, fail: typeof fail, clock: typeof clock, count: typeof count,
+ *   driver: typeof driver, code: string, allowed: string[], procedure: null | { name: string, names: string[] } }} DriverContext
+ */
+
 /** @type {Map<string, any>} one pool per connection URL, kept across hot reloads */
 const pools = (/** @type {any} */ (globalThis).__pwSqlPools ||= new Map());
 
@@ -248,7 +376,11 @@ async function driver(pkg, kind) {
   }
 }
 
+/** @type {Omit<DriverContext, 'code' | 'procedure' | 'allowed'>} */
+const driverContext = { pools, limits, fail, clock: (ms) => clock(ms), count, driver };
+
 const DRIVERS = {
+  oracle, snowflake, bigquery,
   // ponytail: node:sqlite is synchronous, so a slow query holds the server's event loop and the time limit
   // cannot stop it. Fine for a local file; move it to a worker thread if big SQLite files appear.
   async sqlite(url, text, values) {
@@ -300,7 +432,7 @@ const DRIVERS = {
       await c.query(`SET SESSION max_execution_time = ${Number(limits.ms)}`).catch(() => c.query(`SET SESSION max_statement_time = ${Number(limits.ms) / 1000}`)); // MySQL, else MariaDB
       await c.query('START TRANSACTION READ ONLY');
       const [rows] = await c.execute(text, values); // a server-side prepared statement: one statement, values bound
-      return rows;
+      return Array.isArray(rows[0]) ? rows[0] : rows; // CALL: the procedure's first result set
     } finally {
       await c.query('ROLLBACK').catch(() => {});
       c.release();
@@ -314,8 +446,9 @@ const DRIVERS = {
   // keyword outside strings and comments (bindTsql); the server compiles the same text with the same @pw_n declared,
   // under SHOWPLAN_XML (compiled, not run), and the plan must be exactly one SELECT; it runs in a transaction that is
   // always rolled back, under SET ROWCOUNT (the row cap) and the pool's request timeout (the time limit).
-  async mssql(url, text, values) {
-    const key = `mssql|${url}`;
+  async mssql(url, text, values, ctx) {
+    const proc = ctx?.procedure || null, allowed = ctx?.allowed || [];
+    const key = `mssql|${url}|${allowed.join(',')}`; // the probe allows EXECUTE on the connection's listed procedures
     const sql = (await driver('mssql', 'SQL Server')).default;
     if (!pools.has(key)) {
       // requestTimeout 0: our own deadline below; a wait for a pooled connection gives up on its own too
@@ -329,7 +462,7 @@ const DRIVERS = {
     // passes, every request in flight is cancelled, no later step starts, and the caller has its 504 at once, even if
     // a cleanup step (session reset, rollback) is still waiting on a stuck connection.
     const clk = clock(Number(limits.ms));
-    try { return await clk.inTime(mssqlRun(sql, pools.get(key), text, values, clk)); } finally { clk.stop(); }
+    try { return await clk.inTime(mssqlRun(sql, pools.get(key), text, values, clk, proc, allowed)); } finally { clk.stop(); }
   },
 
 };
@@ -346,23 +479,26 @@ export function clock(ms) {
   const live = new Set();
   let fired = false;
   const late = () => Object.assign(fail(`The query ran longer than ${limits.ms / 1000} s.`, 504), { code: 'ETIMEOUT' });
-  const timer = setTimeout(() => { fired = true; for (const r of live) { try { r.cancel(); } catch { /* finished */ } } live.clear(); }, ms);
+  // one way to fire, from every path that ends a wait: two timers set for the same moment can fire in either order
+  const fire = () => { if (fired) return; fired = true; for (const r of live) { try { r.cancel(); } catch { /* finished */ } } live.clear(); };
+  const timer = setTimeout(fire, ms);
   const overdue = () => { if (fired || Date.now() > deadline) throw late(); };
   return {
     late, overdue,
     get fired() { return fired; },
+    left: () => Math.max(0, deadline - Date.now()),
     track(r) { overdue(); live.add(r); return r; },
     inTime: (p, after = () => {}) => new Promise((resolve, reject) => {
-      const t = setTimeout(() => { p.then(after, () => {}); reject(late()); }, Math.max(0, deadline - Date.now()));
+      const t = setTimeout(() => { fire(); p.then(after, () => {}); reject(late()); }, Math.max(0, deadline - Date.now()));
       p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(fired || Date.now() > deadline ? late() : e); });
     }),
-    stop: () => clearTimeout(timer),
+    stop: () => { clearTimeout(timer); if (Date.now() >= deadline) fire(); },
   };
 }
 
 const QUIET_MS = 5000; // a session reset or cleanup request that takes longer than this is cancelled
 
-async function mssqlRun(sql, entry, text, values, clk) {
+async function mssqlRun(sql, entry, text, values, clk, proc = null, allowed = []) {
   const pool = await clk.inTime(entry.ready);
   // the login is asked again before every query (a 5-second cache covers the queries of one render), on a fresh
   // connection from the pool; any error in the probe refuses the query (fail closed). The probe has a clock of its own
@@ -371,7 +507,7 @@ async function mssqlRun(sql, entry, text, values, clk) {
     if (!entry.probe || entry.probe.pc.fired || Date.now() - entry.probe.at > PROBE_MS) { // a probe out of time is no answer
       const at = Date.now();
       const pc = clock(Number(limits.ms));
-      const result = probeReadOnly(sql, pool, pc).catch((e) => { throw pc.fired ? pc.late() : e; }).finally(pc.stop);
+      const result = probeReadOnly(sql, pool, pc, allowed).catch((e) => { throw pc.fired ? pc.late() : e; }).finally(pc.stop);
       entry.probe = { at, result, pc };
       result.catch(() => { if (entry.probe?.at === at) entry.probe = null; });
     }
@@ -400,6 +536,17 @@ async function mssqlRun(sql, entry, text, values, clk) {
   try {
     await quiet('SET SHOWPLAN_XML OFF');
     await quiet('SET ROWCOUNT 0; SET TEXTSIZE 2147483647');
+    if (proc) {
+      // an allow-listed procedure: no plan check (the admin chose it), the same caps; the first result set only
+      await req().batch(`SET ROWCOUNT ${Number(limits.rows) + 1}; SET TEXTSIZE ${textSize()}`);
+      try {
+        const r = req();
+        values.forEach((v, i) => r.input(proc.names[i], mssqlType(sql, v).type, v));
+        const { rows, cols } = await streamRows(r, (x) => x.execute(text), { sql, overdue: clk.overdue, odd: true, first: true });
+        for (const row of rows) for (const c of cols) row[c.name] = mssqlCell(sql, c.type, row[c.name]);
+        return rows;
+      } finally { await quiet('SET ROWCOUNT 0; SET TEXTSIZE 2147483647'); }
+    }
     // the plan is text too: cut at the cap (isOneSelect refuses a plan that does not end), streamed like the rows
     await req().batch(`SET TEXTSIZE ${textSize()}`);
     await req().batch('SET SHOWPLAN_XML ON');
@@ -517,16 +664,17 @@ const MAX_MESSAGES = 1000; // info and error messages one request may send (each
  * Run a request as a stream and stop it on the client: more than limits.rows rows, more than limits.bytes of values and
  * messages (info and error messages count too, and at most MAX_MESSAGES of them), one value of lobSize or more (the
  * server cut it at TEXTSIZE), a second result set, xml or CLR columns (`odd`), or the deadline: the request is
- * cancelled at once and the rest never crosses the wire.
+ * cancelled at once and the rest never crosses the wire. `first`: a second result set ends the read (a procedure's
+ * first result set is the data), it is not an error.
  * @param {any} r a request @param {(r: any) => any} start runs it (query or batch)
  * @param {{ sql: any, overdue: () => void, lobSize?: number, odd?: boolean, one?: string }} o
  * @returns {Promise<{ rows: any[], cols: any[] }>}
  */
-export function streamRows(r, start, { sql, overdue, lobSize = textSize(), odd = false, one = 'A SQL source can only run one SELECT query (one statement).' }) {
+export function streamRows(r, start, { sql, overdue, lobSize = textSize(), odd = false, first = false, one = 'A SQL source can only run one SELECT query (one statement).' }) {
   r.stream = true;
   return new Promise((resolve, reject) => {
     const rows = [];
-    let cols = [], sets = 0, bytes = 0, msgs = 0, stop = null;
+    let cols = [], sets = 0, bytes = 0, msgs = 0, stop = null, ended = false;
     // a cap overrides a server error seen before it (an error flood must be cancelled too)
     const halt = (e) => { if (!stop?.status) { stop = e; try { r.cancel(); } catch { /* done already */ } } };
     const over = () => bytes > limits.bytes && halt(fail(`The query returned more than ${Math.round(limits.bytes / 1048576)} MB. Filter or group it in SQL.`, 400));
@@ -536,14 +684,14 @@ export function streamRows(r, start, { sql, overdue, lobSize = textSize(), odd =
       else over();
     };
     r.on('recordset', (c) => {
-      if (++sets > 1) return halt(fail(one, 400));
+      if (++sets > 1) { if (!first) return halt(fail(one, 400)); if (!ended) { ended = true; try { r.cancel(); } catch { /* done */ } } return; }
       cols = Object.values(c);
       // TEXTSIZE does not cut xml or CLR values (geometry, hierarchyid, …): refused before a row is read
       const bad = odd && cols.find(col => [sql.Xml, sql.UDT, sql.Geography, sql.Geometry].includes(col.type) || /^(xml|udt)$/i.test(String(col.type?.declaration || '')));
       if (bad) halt(fail(`The column "${String(bad.name).slice(0, 60)}" is xml or a CLR type, which a SQL source cannot read. CAST it to NVARCHAR(MAX) in the query.`, 400));
     });
     r.on('row', (row) => {
-      if (stop) return;
+      if (stop || ended) return;
       rows.push(row);
       for (const v of Object.values(row).flat()) { // a list: columns with the same name
         const n = sizeOf(v);
@@ -555,7 +703,7 @@ export function streamRows(r, start, { sql, overdue, lobSize = textSize(), odd =
       else over();
     });
     r.on('info', message);
-    r.on('error', (e) => { message(e); if (!stop) stop = e; });
+    r.on('error', (e) => { message(e); if (!stop && !ended) stop = e; }); // after `ended`, the cancel's own error
     r.on('done', () => {
       if (stop?.status) return reject(stop);
       try { overdue(); } catch (e) { return reject(e); }
@@ -621,13 +769,19 @@ const PROBE_SQL = `
         WHERE sp.grantee_principal_id IN (SELECT principal_id FROM srv) AND sp.state IN ('G', 'W')
           AND NOT (sp.class = 105 AND sp.permission_name = 'CONNECT')
           AND (sp.state = 'W' OR (sp.permission_name NOT IN ('CONNECT SQL', 'CONNECT ANY DATABASE', 'SELECT ALL USER SECURABLES') AND sp.permission_name NOT LIKE 'VIEW %'))) AS srvgranted,
-      (SELECT TOP 1 QUOTENAME(SCHEMA_NAME(o.schema_id)) + '.' + QUOTENAME(o.name) FROM sys.objects o
+      (SELECT STRING_AGG(CAST(CONCAT(p.p, ' ', x.n) AS NVARCHAR(MAX)), '; ') FROM sys.objects o
         CROSS APPLY (SELECT QUOTENAME(SCHEMA_NAME(o.schema_id)) + '.' + QUOTENAME(o.name) AS n) x
-        WHERE o.is_ms_shipped = 0 AND EXISTS (SELECT 1 FROM (VALUES ('INSERT'), ('UPDATE'), ('DELETE'), ('ALTER'), ('CONTROL'), ('EXECUTE'), ('TAKE OWNERSHIP'), ('IMPERSONATE')) p(p)
-          WHERE HAS_PERMS_BY_NAME(x.n, 'OBJECT', p.p) = 1)) AS obj`;
+        CROSS JOIN (VALUES ('INSERT'), ('UPDATE'), ('DELETE'), ('ALTER'), ('CONTROL'), ('EXECUTE'), ('TAKE OWNERSHIP'), ('IMPERSONATE')) p(p)
+        WHERE o.is_ms_shipped = 0 AND HAS_PERMS_BY_NAME(x.n, 'OBJECT', p.p) = 1) AS obj`;
 
-/** What a PROBE_SQL row says this login could change, or ''. Fails closed. */
-function whyNot(r) {
+/** "dbo.Sales" / "Sales" → "[dbo].[sales]", as the probe names objects. */
+const quoted = (n) => { const [a, b] = String(n).toLowerCase().split('.'); return b ? `[${a}].[${b}]` : `[dbo].[${a}]`; };
+
+/** What a PROBE_SQL row says this login could change, or ''. Fails closed. `allow`: EXECUTE on these procedures is fine. */
+function whyNot(r, allow = []) {
+  const ok = new Set(allow.map(quoted));
+  const notAllowed = (list, sep, re) => String(list || '').split(sep).filter(x => { const m = re.exec(x.trim()); return !(m && ok.has(m[1].toLowerCase())); }).join(sep);
+  r = { ...r, granted: notAllowed(r.granted, ', ', /^EXECUTE \(OBJECT_OR_COLUMN (\[[^\]]*\]\.\[[^\]]*\])\)$/), obj: notAllowed(r.obj, '; ', /^EXECUTE (\[[^\]]*\]\.\[[^\]]*\])$/) };
   if (r.sysadmin !== 0) return 'sysadmin';
   if (r.cmdshell === 1) return 'it may run xp_cmdshell';
   if (r.adhoc === 1) return 'the server allows ad hoc distributed queries (OPENROWSET)';
@@ -653,13 +807,13 @@ function whyNot(r) {
  * Fails closed: only CONNECT, SELECT, SHOWPLAN, REFERENCES and VIEW … rights are taken as reading. Every request and
  * every wait for a pooled connection is bound to `clk` (see clock): at its deadline the probe stops and fails.
  * Database names are quoted by the server (QUOTENAME). Text answers are cut at 64 kB (TEXTSIZE), whatever they list.
- * @param {any} sql @param {any} pool @param {ReturnType<typeof clock>} [clk]
+ * @param {any} sql @param {any} pool @param {ReturnType<typeof clock>} [clk] @param {string[]} [allow] allow-listed procedures
  */
-export async function probeReadOnly(sql, pool, clk) {
+export async function probeReadOnly(sql, pool, clk, allow = []) {
   const track = (r) => (clk ? clk.track(r) : r);
   const inTime = (p, after) => (clk ? clk.inTime(p, after) : p);
   const SMALL = 'SET TEXTSIZE 65536;\n';
-  const here = whyNot((await track(pool.request()).query(SMALL + PROBE_SQL)).recordset[0] || {});
+  const here = whyNot((await track(pool.request()).query(SMALL + PROBE_SQL)).recordset[0] || {}, allow); // procedures: here only
   if (here) return here;
   const others = ((await track(pool.request()).query("SELECT QUOTENAME(name) AS q, name FROM sys.databases WHERE database_id NOT IN (2, 3) AND state = 0 AND HAS_DBACCESS(name) = 1 AND name <> DB_NAME()")).recordset || [])
     .filter(r => typeof r.q === 'string' && typeof r.name === 'string');
