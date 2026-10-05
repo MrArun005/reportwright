@@ -11,7 +11,7 @@ const OPEN_EXACT = ['/login', '/api/auth/login', '/api/auth/logout', '/harfbuzz-
   // the second factor (pw_mfa cookie), password reset by email (a one-time token), SAML single logout (signed messages)
   '/api/auth/mfa', '/api/auth/mfa/setup', '/login/reset', '/api/auth/reset/request', '/api/auth/reset/confirm', '/api/auth/saml/slo'];
 /** Writes that come from another site by design: the SAML IdP posts the response (its signature protects it). */
-export const CROSS_SITE_WRITES = ['/api/auth/saml/acs'];
+export const CROSS_SITE_WRITES = ['/api/auth/saml/acs', '/api/auth/saml/slo']; // and its signed LogoutRequest (HTTP-POST)
 
 /**
  * [method, path, least role]. The first row that matches wins; a path no row matches is for admins only.

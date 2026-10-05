@@ -145,7 +145,7 @@ async function samlBegin(next = '/viewer/sales') {
   const r = await routes.samlLogin(new Request(`${BASE}/api/auth/saml/login?next=${encodeURIComponent(next)}`));
   expect(r.status).toBe(302);
   const cookie = cookieOf(r, 'pw_sso');
-  const rid = session.readToken(cookie.split('=')[1]).rid;
+  const rid = session.readToken(cookie.split('=')[1], 'pw_sso').rid;
   return { cookie, rid, location: r.headers.get('location') };
 }
 const post = (xml) => routes.acs(new Request(ACS, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'https://idp.example.com' }, body: new URLSearchParams({ SAMLResponse: b64(xml) }) }));

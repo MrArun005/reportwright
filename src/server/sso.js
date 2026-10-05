@@ -23,7 +23,18 @@
 // with no mapped value the role is PW_SSO_DEFAULT_ROLE (default viewer; "none" refuses the sign-in). IdP values that
 // are valid group names become the user's groups. Users are made on first sign-in and updated on every sign-in.
 // PW_PASSWORD_LOGIN=off turns password sign-in off while SSO is set up.
+//
+// Single logout. SAML (PW_SAML_LOGOUT_URL, the IdP's SLO endpoint, and PW_SAML_SP_KEY or PW_SAML_SP_KEY_FILE, a PEM
+// private key; PW_SAML_SP_CERT[_FILE] goes in the metadata): signing out of a SAML session sends a signed LogoutRequest
+// (HTTP-Redirect, RSA-SHA256) to the IdP, and its LogoutResponse comes back to /api/auth/saml/slo, where InResponseTo
+// must be the request in this browser's signed pw_slo cookie. An IdP-initiated LogoutRequest (HTTP-Redirect or POST)
+// must be signed by the IdP's certificate (unsigned is refused), from the pinned issuer, for our SLO address, recent,
+// and is used once; it ends every session of the account bound to that NameID and is answered with a signed
+// LogoutResponse. OIDC: signing out of an OIDC session goes to the provider's end_session_endpoint (RP-initiated logout)
+// with the ID token as id_token_hint (kept in the HttpOnly pw_idt cookie, path /api/auth) and post_logout_redirect_uri
+// = <PW_BASE_URL>/login; PW_OIDC_LOGOUT=off keeps sign-out local.
 import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import { signSession, readToken, sessionSecret, safeNext } from './session.js';
 import { getUser, createUser, updateUser, normEmail, allUsers, ROLES, GROUP } from './users.js';
 import { store, withLock } from './storage/index.js';
@@ -51,14 +62,14 @@ const isHttps = (req) => publicBase(req).startsWith('https:');
 /** @param {Request} req @param {Record<string, any>} data */
 function stateCookie(req, data) {
   const now = Math.floor(Date.now() / 1000);
-  return `${COOKIE}=${signSession({ sso: 1, ...data, iat: now, exp: now + 600 })}; Path=/api/auth; HttpOnly; SameSite=Lax; Max-Age=600${isHttps(req) ? '; Secure' : ''}`;
+  return `${COOKIE}=${signSession({ sso: 1, ...data, iat: now, exp: now + 600 }, COOKIE)}; Path=/api/auth; HttpOnly; SameSite=Lax; Max-Age=600${isHttps(req) ? '; Secure' : ''}`;
 }
 const clearState = (req) => `${COOKIE}=; Path=/api/auth; HttpOnly; SameSite=Lax; Max-Age=0${isHttps(req) ? '; Secure' : ''}`;
 /** @param {Request} req */
 function readState(req) {
   for (const part of (req.headers.get('cookie') || '').split(';')) {
     const i = part.indexOf('=');
-    if (i > 0 && part.slice(0, i).trim() === COOKIE) { const p = readToken(part.slice(i + 1).trim()); return p?.sso ? p : null; }
+    if (i > 0 && part.slice(0, i).trim() === COOKIE) { const p = readToken(part.slice(i + 1).trim(), COOKIE); return p?.sso ? p : null; }
   }
   return null;
 }
@@ -76,11 +87,13 @@ export async function finishSignIn(req, step, via) {
   const { audit } = await import('./audit.js');
   const back = (path, cookies) => { const h = new Headers({ location: `${publicBase(req)}${path}` }); for (const c of cookies) h.append('set-cookie', c); return new Response(null, { status: 303, headers: h }); };
   try {
-    const { identity, next } = await step();
+    const { identity, next, idToken } = await step();
     const email = await upsertSsoUser(identity, via);
     const user = await getUser(email);
     await audit('auth.sso', { req, actor: `user:${email}`, detail: { method: via, issuer: identity.issuer, role: identity.role, groups: identity.groups } });
-    return back(safeNext(next), [sessionCookie(req, user), clearState(req)]);
+    // the ID token, for id_token_hint at sign-out (RP-initiated logout); too big for a cookie: sign-out goes without it
+    const idt = idToken && idToken.length < 3800 ? [`${IDT}=${idToken}; Path=/api/auth; HttpOnly; SameSite=Lax; Max-Age=${12 * 3600}${isHttps(req) ? '; Secure' : ''}`] : [];
+    return back(safeNext(next), [sessionCookie(req, user, { s: via }), clearState(req), ...idt]);
   } catch (e) {
     const err = /** @type {any} */ (e);
     await audit('auth.sso_failed', { req, status: 'failed', detail: { method: via, reason: String(err.message).slice(0, 200) } });
@@ -232,7 +245,7 @@ export async function oidcCallback(req) {
   if (typeof claims.email !== 'string') throw fail('The identity provider sent no email for this account.', 401, 'email');
   if (claims.email_verified !== true) throw fail('The identity provider has not verified this email address.', 401, 'email');
   const values = claims[process.env.PW_OIDC_GROUPS_CLAIM || 'groups'];
-  return { identity: mapIdentity(claims.email, /** @type {any} */ (values), { issuer: d.issuer, subject: String(claims.sub) }), next: st.next || '/' };
+  return { identity: mapIdentity(claims.email, /** @type {any} */ (values), { issuer: d.issuer, subject: String(claims.sub) }), next: st.next || '/', idToken: tok.id_token };
 }
 
 /** @param {string} idToken @param {any} d discovery @param {string} nonce */
@@ -287,6 +300,7 @@ async function samlFor(req, id) {
     acceptedClockSkewMs: 60000, maxAssertionAgeMs: 10 * 60000,
     identifierFormat: null, disableRequestedAuthnContext: true,
     ...(id ? { generateUniqueId: () => id } : {}),
+    ...(await spSigning()), // with an SP key the AuthnRequests are signed too
   });
 }
 
@@ -369,8 +383,193 @@ export async function samlFinish(req) {
   return { identity: rec.identity, next: st.next || '/' };
 }
 
-/** SP metadata for the IdP admin. @param {Request} req */
+/** SP metadata for the IdP admin (with the SLO address and the SP's signing certificate when single logout is on). @param {Request} req */
 export async function samlMetadata(req) {
   const { generateServiceProviderMetadata } = await import('@node-saml/node-saml');
-  return generateServiceProviderMetadata({ issuer: spEntity(req), callbackUrl: ACS(req), wantAssertionsSigned: true, identifierFormat: null });
+  const signing = await spSigning();
+  return generateServiceProviderMetadata({ issuer: spEntity(req), callbackUrl: ACS(req), wantAssertionsSigned: true, identifierFormat: null,
+    ...(signing.privateKey && signing.publicCerts ? signing : {}), ...(sloOn() ? { logoutCallbackUrl: SLO(req) } : {}) });
+}
+
+/* ---------------- single logout ---------------- */
+
+const IDT = 'pw_idt';
+const SLO_COOKIE = 'pw_slo';
+const NS_P = 'urn:oasis:names:tc:SAML:2.0:protocol';
+const SIG_ALGS = { 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256': 'RSA-SHA256', 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha512': 'RSA-SHA512' };
+const RSA_SHA256 = 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256';
+const SUCCESS = 'urn:oasis:names:tc:SAML:2.0:status:Success';
+
+export const sloOn = () => samlOn() && !!process.env.PW_SAML_LOGOUT_URL && !!(process.env.PW_SAML_SP_KEY || process.env.PW_SAML_SP_KEY_FILE);
+const SLO = (req) => `${publicBase(req)}/api/auth/saml/slo`;
+const xmlEsc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+/** PEM from NAME or NAME_FILE. */
+async function pemFrom(name) {
+  if (process.env[name]) return String(process.env[name]).replace(/\\n/g, '\n');
+  if (process.env[`${name}_FILE`]) return (await import('node:fs/promises')).readFile(String(process.env[`${name}_FILE`]), 'utf8');
+  return null;
+}
+/** The IdP certificates as PEM (PW_SAML_IDP_CERT may hold bare base64). */
+async function idpPems() {
+  return (await idpCerts()).map(c => (c.includes('-----BEGIN') ? c : `-----BEGIN CERTIFICATE-----\n${c.match(/.{1,64}/g).join('\n')}\n-----END CERTIFICATE-----\n`));
+}
+/** The SP's signing key and certificate, when set (PW_SAML_SP_KEY, PW_SAML_SP_CERT). */
+async function spSigning() {
+  const key = await pemFrom('PW_SAML_SP_KEY');
+  if (!key) return {};
+  const cert = await pemFrom('PW_SAML_SP_CERT');
+  return { privateKey: key, signatureAlgorithm: 'sha256', ...(cert ? { publicCerts: cert } : {}) };
+}
+const newId = () => `_pw${crypto.randomBytes(20).toString('hex')}`;
+
+/** A signed HTTP-Redirect URL to the IdP's SLO endpoint. @param {'SAMLRequest'|'SAMLResponse'} kind @param {string} xml @param {string} [relay] */
+async function signedRedirect(kind, xml, relay) {
+  const key = await pemFrom('PW_SAML_SP_KEY');
+  if (!key) throw fail('PW_SAML_SP_KEY is not set: single logout needs the SP signing key.', 500);
+  let q = `${kind}=${encodeURIComponent(zlib.deflateRawSync(Buffer.from(xml)).toString('base64'))}`;
+  if (relay) q += `&RelayState=${encodeURIComponent(relay)}`;
+  q += `&SigAlg=${encodeURIComponent(RSA_SHA256)}`;
+  q += `&Signature=${encodeURIComponent(crypto.createSign('RSA-SHA256').update(q).sign(key, 'base64'))}`;
+  const u = String(process.env.PW_SAML_LOGOUT_URL);
+  return `${u}${u.includes('?') ? '&' : '?'}${q}`;
+}
+
+/**
+ * Begin SP-initiated logout for a SAML-bound account: the IdP URL (a signed LogoutRequest) and the pw_slo cookie that
+ * the IdP's answer must match. @param {Request} req @param {any} user the stored user
+ */
+export async function samlLogoutStart(req, user) {
+  const subject = String(user?.sso?.subject || '');
+  const i = subject.indexOf('|');
+  const format = subject.slice(0, i), nameID = subject.slice(i + 1);
+  if (i < 0 || !nameID) throw fail('This account has no SAML NameID.', 400);
+  const id = newId();
+  const xml = `<samlp:LogoutRequest xmlns:samlp="${NS_P}" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="${id}" Version="2.0" IssueInstant="${new Date().toISOString()}" Destination="${xmlEsc(process.env.PW_SAML_LOGOUT_URL)}">`
+    + `<saml:Issuer>${xmlEsc(spEntity(req))}</saml:Issuer><saml:NameID${format ? ` Format="${xmlEsc(format)}"` : ''}>${xmlEsc(nameID)}</saml:NameID></samlp:LogoutRequest>`;
+  const now = Math.floor(Date.now() / 1000);
+  const cookie = `${SLO_COOKIE}=${signSession({ slo: 1, rid: id, iat: now, exp: now + 600 }, SLO_COOKIE)}; Path=/api/auth; HttpOnly; SameSite=Lax; Max-Age=600${isHttps(req) ? '; Secure' : ''}`;
+  return { url: await signedRedirect('SAMLRequest', xml), cookie };
+}
+
+/** Where sign-out of an OIDC session goes next (RP-initiated logout), or null. @param {Request} req */
+export async function oidcLogoutUrl(req) {
+  if (!oidcOn() || process.env.PW_OIDC_LOGOUT === 'off') return null;
+  let d;
+  try { d = await discovery(); } catch { return null; }
+  const end = d.end_session_endpoint;
+  if (typeof end !== 'string' || (!/^https:\/\//.test(end) && process.env.PW_OIDC_ALLOW_HTTP !== '1')) return null;
+  const u = new URL(end);
+  let idt = null;
+  for (const part of (req.headers.get('cookie') || '').split(';')) { const k = part.indexOf('='); if (k > 0 && part.slice(0, k).trim() === IDT) idt = part.slice(k + 1).trim(); }
+  if (idt && /^[\w-]+\.[\w-]+\.[\w-]*$/.test(idt)) u.searchParams.set('id_token_hint', idt);
+  u.searchParams.set('client_id', String(process.env.PW_OIDC_CLIENT_ID));
+  u.searchParams.set('post_logout_redirect_uri', `${publicBase(req)}/login`);
+  return u.href;
+}
+/** Set-Cookie lines that forget the single-logout state. @param {Request} req */
+export const clearLogoutCookies = (req) => [IDT, SLO_COOKIE].map(n => `${n}=; Path=/api/auth; HttpOnly; SameSite=Lax; Max-Age=0${isHttps(req) ? '; Secure' : ''}`);
+
+/** The raw (still encoded) query parameters, each name at most once. @param {string} url */
+function rawQuery(url) {
+  const q = new URL(url).search.slice(1);
+  const out = new Map();
+  for (const part of q ? q.split('&') : []) {
+    const i = part.indexOf('=');
+    const k = decodeURIComponent(i < 0 ? part : part.slice(0, i));
+    if (out.has(k)) throw fail(`The SAML message has ${k} twice.`, 400, 'slo');
+    out.set(k, i < 0 ? '' : part.slice(i + 1));
+  }
+  return out;
+}
+
+/** Inflate and parse a message; no DOCTYPE, at most 256 KB. */
+async function parseMessage(xml) {
+  if (/<!DOCTYPE|<!ENTITY/i.test(xml)) throw fail('The SAML message has a DOCTYPE.', 400, 'slo');
+  const { parseStringPromise } = await import('xml2js');
+  return parseStringPromise(xml);
+}
+
+/**
+ * Check a logout message: from the pinned IdP, for our SLO address, issued within 5 minutes, its ID used once.
+ * @param {any} doc xml2js @param {Request} req @returns {{ kind: 'LogoutRequest'|'LogoutResponse', el: any }}
+ */
+async function checkLogoutMessage(doc, req) {
+  const [kind] = Object.keys(doc || {});
+  const local = String(kind).replace(/^.*:/, '');
+  if (!['LogoutRequest', 'LogoutResponse'].includes(local)) throw fail('Not a SAML logout message.', 400, 'slo');
+  const el = doc[kind];
+  const prefix = kind.includes(':') ? kind.slice(0, kind.indexOf(':')) : '';
+  if ((prefix ? el?.$?.[`xmlns:${prefix}`] : el?.$?.xmlns) !== NS_P) throw fail('The logout message is not SAML 2.0.', 400, 'slo');
+  const issuer = kids(el, 'Issuer')[0];
+  const iss = typeof issuer === 'string' ? issuer : issuer?._;
+  if (iss !== process.env.PW_SAML_IDP_ISSUER) throw fail('The logout message is from another identity provider.', 401, 'issuer');
+  if (el.$?.Destination && el.$.Destination !== SLO(req)) throw fail('The logout message is for another address (Destination).', 401, 'destination');
+  const at = Date.parse(el.$?.IssueInstant || '');
+  if (!Number.isFinite(at) || Math.abs(Date.now() - at) > 5 * 60000) throw fail('The logout message is too old or from the future (IssueInstant).', 401, 'expired');
+  const id = String(el.$?.ID || '');
+  if (!id) throw fail('The logout message has no ID.', 400, 'slo');
+  if (!(await store().lease(`saml-slo:${crypto.createHash('sha256').update(id).digest('hex')}`, rand(8), 3600000))) throw fail('This logout message was used already.', 401, 'replay');
+  return { kind: /** @type {any} */ (local), el };
+}
+
+/**
+ * A logout message arriving at /api/auth/saml/slo: HTTP-Redirect (GET, signed query) or HTTP-POST (signed XML, requests
+ * only). Returns what it is: { kind: 'LogoutResponse', inResponseTo, ok } or { kind: 'LogoutRequest', id, nameID, format,
+ * relay }. Unsigned or badly signed messages are refused.
+ * @param {Request} req @param {Record<string, string>} [form] the POST form
+ */
+export async function samlSloMessage(req, form) {
+  if (form) {
+    if (!form.SAMLRequest || form.SAMLRequest.length > 512 * 1024) throw fail('Send a signed SAMLRequest (a LogoutResponse comes by HTTP-Redirect).', 400, 'slo');
+    const xml = Buffer.from(form.SAMLRequest, 'base64').toString('utf8');
+    if (/<!DOCTYPE|<!ENTITY/i.test(xml)) throw fail('The SAML message has a DOCTYPE.', 400, 'slo');
+    const saml = await samlFor(req);
+    try { await saml.validatePostRequestAsync({ SAMLRequest: form.SAMLRequest }); } catch (e) { throw fail(`The logout request is not valid: ${/** @type {Error} */ (e).message}`, 401, 'signature'); }
+    const { kind, el } = await checkLogoutMessage(await parseMessage(xml), req);
+    if (kind !== 'LogoutRequest') throw fail('Send a LogoutRequest.', 400, 'slo');
+    return requestOf(el, String(form.RelayState || ''));
+  }
+  const q = rawQuery(req.url);
+  const name = q.has('SAMLRequest') ? 'SAMLRequest' : q.has('SAMLResponse') ? 'SAMLResponse' : null;
+  if (!name || (q.has('SAMLRequest') && q.has('SAMLResponse'))) throw fail('Send one SAMLRequest or SAMLResponse.', 400, 'slo');
+  if (!q.has('Signature') || !q.has('SigAlg')) throw fail('The logout message is not signed.', 401, 'signature');
+  const alg = SIG_ALGS[decodeURIComponent(q.get('SigAlg'))];
+  if (!alg) throw fail('The logout message is signed with an algorithm Pagewright does not take (use RSA-SHA256).', 401, 'signature');
+  const signed = `${name}=${q.get(name)}${q.has('RelayState') ? `&RelayState=${q.get('RelayState')}` : ''}&SigAlg=${q.get('SigAlg')}`;
+  const sig = Buffer.from(decodeURIComponent(q.get('Signature')), 'base64');
+  const pems = await idpPems();
+  if (!pems.some(pem => { try { return crypto.createVerify(alg).update(signed).verify(pem, sig); } catch { return false; } })) throw fail('The logout message signature is not the identity provider\'s.', 401, 'signature');
+  let xml;
+  try { xml = zlib.inflateRawSync(Buffer.from(decodeURIComponent(q.get(name)), 'base64'), { maxOutputLength: 256 * 1024 }).toString('utf8'); }
+  catch { throw fail('The logout message does not inflate.', 400, 'slo'); }
+  const { kind, el } = await checkLogoutMessage(await parseMessage(xml), req);
+  const relay = q.has('RelayState') ? decodeURIComponent(q.get('RelayState')) : '';
+  if (kind === 'LogoutRequest') return requestOf(el, relay);
+  const code = kids(kids(el, 'Status')[0], 'StatusCode')[0]?.$?.Value;
+  return { kind, inResponseTo: String(el.$?.InResponseTo || ''), ok: code === SUCCESS };
+}
+function requestOf(el, relay) {
+  const n = kids(el, 'NameID')[0];
+  const nameID = typeof n === 'string' ? n : n?._;
+  if (!nameID) throw fail('The logout request has no NameID.', 400, 'slo');
+  return { kind: 'LogoutRequest', id: String(el.$.ID), nameID: String(nameID), format: String(n?.$?.Format || ''), relay: relay.slice(0, 80) };
+}
+
+/** The pw_slo request id of this browser, or null. @param {Request} req */
+export function sloRequestId(req) {
+  for (const part of (req.headers.get('cookie') || '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0 && part.slice(0, i).trim() === SLO_COOKIE) { const p = readToken(part.slice(i + 1).trim(), SLO_COOKIE); return p?.slo === 1 ? String(p.rid) : null; }
+  }
+  return null;
+}
+/** The account bound to a SAML NameID from the pinned IdP, or null. */
+export async function samlUserFor(nameID, format) {
+  return (await allUsers()).find(u => u.sso?.via === 'saml' && u.sso.issuer === process.env.PW_SAML_IDP_ISSUER && u.sso.subject === `${format}|${nameID}`) || null;
+}
+/** The signed LogoutResponse URL answering an IdP's LogoutRequest. @param {Request} req @param {{ id: string, relay?: string }} r */
+export async function samlLogoutResponseUrl(req, r) {
+  const xml = `<samlp:LogoutResponse xmlns:samlp="${NS_P}" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="${newId()}" Version="2.0" IssueInstant="${new Date().toISOString()}" Destination="${xmlEsc(process.env.PW_SAML_LOGOUT_URL)}" InResponseTo="${xmlEsc(r.id)}">`
+    + `<saml:Issuer>${xmlEsc(spEntity(req))}</saml:Issuer><samlp:Status><samlp:StatusCode Value="${SUCCESS}"/></samlp:Status></samlp:LogoutResponse>`;
+  return signedRedirect('SAMLResponse', xml, r.relay || undefined);
 }

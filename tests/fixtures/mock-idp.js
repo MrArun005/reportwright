@@ -23,7 +23,7 @@ export async function startOidc({ port = 0, clientId = 'pagewright', clientSecre
     const u = new URL(req.url, issuer);
     const json = (o, s = 200) => { res.writeHead(s, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
     if (u.pathname === '/.well-known/openid-configuration') {
-      return json({ issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token`, jwks_uri: `${issuer}/jwks`, id_token_signing_alg_values_supported: ['RS256'], response_types_supported: ['code'], code_challenge_methods_supported: ['S256'] });
+      return json({ issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token`, jwks_uri: `${issuer}/jwks`, end_session_endpoint: `${issuer}/logout`, id_token_signing_alg_values_supported: ['RS256'], response_types_supported: ['code'], code_challenge_methods_supported: ['S256'] });
     }
     if (u.pathname === '/jwks') return json({ keys: [jwk] });
     if (u.pathname === '/authorize') {
