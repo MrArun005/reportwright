@@ -268,6 +268,47 @@ export function newRecovery(email) {
 /** Turn two-factor sign-in off (the user, after a code; an admin uses resetTwoFactor). Every session ends. @param {string} email */
 export function disableTwoFactor(email) { return updateUser(email, { resetTwoFactor: true }); }
 
+/* ---------------- password reset by email ---------------- */
+
+export const RESET_MS = 30 * 60 * 1000;
+const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
+/**
+ * A one-time reset token for a password account that is on, or null (no such account, single sign-on only, disabled).
+ * The token is "<email, base64url>.<32 random bytes>"; only its SHA-256 is stored, with an expiry (30 minutes). A new
+ * token replaces the one before. @param {string} email
+ */
+export function issueReset(email) {
+  return withLock('acl', async () => {
+    const u = await getUser(email);
+    if (!u || u.disabled || !u.passwordHash) return null;
+    const secret = crypto.randomBytes(32).toString('base64url');
+    await save({ ...u, reset: { hash: sha(secret), expires: Date.now() + RESET_MS } });
+    return `${Buffer.from(u.email).toString('base64url')}.${secret}`;
+  });
+}
+/**
+ * Use a reset token: the new password is set, the token is spent and every session ends (updateUser). The email of the
+ * account, or a 400 for a bad, spent or expired token (one message for all).
+ * @param {string} token @param {string} password
+ */
+export async function useReset(token, password) {
+  const bad = () => fail('This link does not work any more. Ask for a new one.', 400);
+  const [e, secret, extra] = String(token ?? '').split('.');
+  if (!e || !secret || extra !== undefined || secret.length !== 43) throw bad();
+  let email;
+  try { email = normEmail(Buffer.from(e, 'base64url').toString()); } catch { throw bad(); }
+  const passwordHash = await hashPassword(password); // a bad password is a 400 before the token is spent
+  return withLock('acl', async () => {
+    const u = await getUser(email);
+    const r = u?.reset;
+    if (!u || u.disabled || !r || typeof r.hash !== 'string' || !(r.expires > Date.now()) || !crypto.timingSafeEqual(Buffer.from(sha(secret)), Buffer.from(r.hash.padEnd(64).slice(0, 64)))) throw bad();
+    const next = { ...u, passwordHash, sessionVersion: (u.sessionVersion || 0) + 1, updatedAt: new Date().toISOString() };
+    delete next.reset;
+    await save(next);
+    return u.email;
+  });
+}
+
 let dummy;
 /** The user when the password is right and the account is on; null otherwise (in about the same time). */
 export async function authenticate(email, password) {
