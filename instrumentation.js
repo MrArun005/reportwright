@@ -36,7 +36,12 @@ export async function register() {
       if (problem) { if (!devMode()) throw new Error(problem); console.error(`[pagewright] WARNING: ${problem}`); }
     }
     // permissions: the one-time move to the secure defaults, before any request is served (src/server/perms.js)
-    if (process.env.PW_AUTH === 'users') await (await import('./src/server/perms.js')).migratePermissions();
+    // ponytail: on serverless, cold starts race for the "acl" lock; the loser must not poison its instance (a throw
+    // here answers 500 to every request until the instance dies). The holder is running the same one-time move.
+    if (process.env.PW_AUTH === 'users') {
+      try { await (await import('./src/server/perms.js')).migratePermissions(); }
+      catch (e) { if (e?.status !== 503) throw e; console.warn(`[pagewright] permission defaults: ${e.message} (another server holds the lock and is doing it)`); }
+    }
     const { startScheduler } = await import('./src/server/schedules.js');
     startScheduler();
     // run queued batches here too (also ones another server left when it stopped); PW_WORKER=off for a web-only server
