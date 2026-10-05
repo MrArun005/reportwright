@@ -11,22 +11,26 @@ import { copyStorage } from '../src/server/storage/copy.js';
 
 const [cmd, file, flag] = process.argv.slice(2);
 const live = process.env.PW_STORAGE || 'file';
-const say = (m) => process.stderr.write(`${m}\n`);
-const hide = (u) => u.replace(/\/\/[^@/]*@/, '//***@');
+// never print the storage's password: every line out (and any error) has user:password@ and the password itself masked
+const secret = (() => { try { return decodeURIComponent(new URL(live).password || ''); } catch { return ''; } })();
+const hide = (u) => { let t = String(u).replace(/\/\/[^@/\s]*@/g, '//***@'); if (secret) t = t.split(secret).join('***').split(encodeURIComponent(secret)).join('***'); return t; };
+const say = (m) => process.stderr.write(`${hide(m)}\n`);
+process.on('uncaughtException', (e) => { say(`backup failed: ${e?.message || e}`); process.exit(1); });
+process.on('unhandledRejection', (e) => { say(`backup failed: ${/** @type {any} */ (e)?.message || e}`); process.exit(1); });
 
 if (cmd === 'backup') {
   const out = path.resolve(file || `backups/pw-${new Date().toISOString().replace(/[:.]/g, '-')}.db`);
   if (fs.existsSync(out)) { say(`${out} exists: pick a new file`); process.exit(2); }
   fs.mkdirSync(path.dirname(out), { recursive: true });
   const n = await copyStorage(live, `sqlite:${out}`, say);
-  console.log(`backed up ${n.records} records, ${n.versions} versions, ${n.audit} audit events from ${hide(live)} to ${out}`);
+  console.log(hide(`backed up ${n.records} records, ${n.versions} versions, ${n.audit} audit events from ${hide(live)} to ${out}`));
 } else if (cmd === 'restore' && file) {
   if (!fs.existsSync(file)) { say(`${file} not found`); process.exit(2); }
   const { store } = await import('../src/server/storage/index.js');
   const used = (await store().ids('reports')).length + (await store().ids('users')).length;
   if (used && flag !== '--force') { say(`${hide(live)} already holds ${used} reports and users: restore into an empty storage, or pass --force`); process.exit(2); }
   const n = await copyStorage(`sqlite:${path.resolve(file)}`, live, say);
-  console.log(`restored ${n.records} records, ${n.versions} versions, ${n.audit} audit events to ${hide(live)}`);
+  console.log(hide(`restored ${n.records} records, ${n.versions} versions, ${n.audit} audit events to ${live}`));
 } else {
   say('node scripts/backup.mjs backup [out.db] | restore <in.db> [--force]   (the storage is PW_STORAGE, default the files here)');
   process.exit(2);
