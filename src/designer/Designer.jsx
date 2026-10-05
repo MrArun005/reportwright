@@ -238,7 +238,7 @@ function HistoryDialog({ id, onClose, T, lang }) {
  *   toolbox?: { hide?: string[] }, panels?: { data?: boolean, inspector?: boolean }, dataSourceTemplates?: object[], server?: string } }} props
  *   embed: set by mountDesigner (another site); none on Pagewright's own pages
  */
-export default function Designer({ id, initial, rev = null, lang: langIn, embed = null, user = null }) {
+export default function Designer({ id, initial, rev = null, lang: langIn, embed = null, user = null, ai = false }) {
   const lang = pickLang(langIn);
   const T = (k, v) => t(lang, k, v);
   const q = lang === 'en' ? '' : `?lang=${encodeURIComponent(lang)}`;
@@ -354,7 +354,7 @@ export default function Designer({ id, initial, rev = null, lang: langIn, embed 
           <button aria-pressed={tab === 'design'} onClick={() => st().setUi({ tab: 'design' })}>{T('design')}</button>
           <button aria-pressed={tab === 'preview'} onClick={() => st().setUi({ tab: 'preview' })} data-testid="tab-preview">{T('preview')}</button>
         </div>
-        {!embed && <button className="btn sm ghost" onClick={() => setDialog('ai')} title={T('askAiHint')}>{T('askAi')}</button>}
+        {!embed && <button className="btn sm ghost" onClick={() => setDialog('ai')} disabled={!ai} title={ai ? T('askAiHint') : T('r4_aiOff')} data-testid="ask-ai">{T('askAi')}</button>}
         {!embed && <button className="btn sm ghost" onClick={() => setDialog('history')} title={T('historyHint')}>{T('history')}</button>}
         <button className="btn sm ghost" onClick={download} title={T('downloadDefHint')} data-testid="download-def">{T('downloadDef')}</button>
         <button className="btn sm ghost icon" onClick={() => setDialog('keys')} title={T('shortcutsHint')} aria-label={T('shortcutsHint')}>?</button>

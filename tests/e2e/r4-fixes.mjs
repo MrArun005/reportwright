@@ -112,6 +112,16 @@ try {
     }
     await p.setViewportSize({ width: 1440, height: 900 });
   }
+  if (want('ai')) {
+    step('Ask AI: enabled when the server has an Anthropic key, else disabled and saying why (E2E_NO_AI=1: a server without one)');
+    const id = await create(base('r4 ai', []));
+    await open(id);
+    const btn = p.getByTestId('ask-ai');
+    if (process.env.E2E_NO_AI) {
+      assert.equal(await btn.isDisabled(), true);
+      assert.match(await btn.getAttribute('title'), /no ANTHROPIC_API_KEY/);
+    } else assert.equal(await btn.isDisabled(), false);
+  }
   assert.deepEqual(errs.filter(e => !/ResizeObserver/.test(e)), [], 'no page errors');
   console.log('r4-fixes: all passed');
 } finally {

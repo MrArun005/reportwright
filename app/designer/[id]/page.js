@@ -27,5 +27,7 @@ export default async function DesignerPage({ params, searchParams }) {
   // user: who keeps autosave drafts in this browser (hashed into the key; '' without accounts)
   // rev: the revision this designer edits from; a save sends it back (If-Match), so a newer save is never overwritten
   const rev = revOfRead(def); // of the text this page shows
-  return <Designer id={id} initial={def} rev={rev} lang={lang} user={p?.kind === 'user' ? p.email : ''} />;
+  // ai: whether Ask AI can work here (the server has an Anthropic key); without one the button says why it is off
+  const ai = !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+  return <Designer id={id} initial={def} rev={rev} lang={lang} user={p?.kind === 'user' ? p.email : ''} ai={ai} />;
 }
