@@ -125,3 +125,28 @@ describe('R5 #4: a batch fetches each data request once, per principal', () => {
     } finally { srv.close(); }
   });
 });
+
+describe('R5 #1: the browser PDF writer is linear in pages', () => {
+  it('time per page at 4x the rows stays within 2x (the browser path: CompressionStream, no node:zlib)', async () => {
+    const { renderTo } = await import('../../src/server/renderer.js');
+    const { sampleStress } = await import('../../src/sample/stress.js');
+    const { createSubsetter } = await import('../../src/exporters/subset.js');
+    const { fontKeysOf } = await import('../../src/exporters/svg.js');
+    const { fontStore } = await import('../helpers.js');
+    const gbm = process.getBuiltinModule; process.getBuiltinModule = undefined; // pdf.js picks the browser's deflate
+    let exportPdf;
+    try { ({ exportPdf } = await import('../../src/exporters/pdf.js?browser')); } finally { process.getBuiltinModule = gbm; }
+    const def = JSON.parse(fs.readFileSync('reports/stress-scale.pw.json', 'utf8'));
+    const subset = createSubsetter(async () => fs.readFileSync('public/harfbuzz-subset.wasm'));
+    const perPage = async (n) => {
+      const { model } = await renderTo(def, { format: 'pdf', modelOnly: true, parameters: { rows: n }, data: { s: sampleStress(n) } });
+      await fontStore.load(fontKeysOf(model));
+      let best = Infinity;
+      for (let k = 0; k < 2; k++) { const t = performance.now(); await exportPdf(structuredClone(model), fontStore, { title: 'x', subset }); best = Math.min(best, performance.now() - t); }
+      return best / model.pages.length;
+    };
+    await perPage(500); // warm up (WASM, fonts, JIT)
+    const small = await perPage(2500), big = await perPage(10000);
+    expect(big / small).toBeLessThan(2);
+  }, 120000);
+});
