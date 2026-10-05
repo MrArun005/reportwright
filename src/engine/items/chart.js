@@ -231,7 +231,24 @@ export function paintChart(item, ctx, lc, base) {
   else if (ROUND_TYPES.has(type)) paintRound(type, g);
   else if (PER_ROW.has(type)) paintXY(type, g);
   else paintCartesian(type, g);
+  // data exports (exportData): the chart's own numbers ride on its first item, so Excel can draw an editable chart
+  if (lc.regions && out.length && NATIVE_XL.has(type)) out[0].xchart = nativeSpec(type, item, data, g, title, axes);
   return out.concat(links);
+}
+
+/** Chart types Excel draws natively (DrawingML c:chart); the others export as pictures. */
+const NATIVE_XL = new Set(['column', 'bar', 'line', 'area', 'pie', 'donut', 'scatter', 'bubble', 'radar']);
+const XL_CAP = 4000; // points per series in an exported chart
+/** What a native Excel chart needs: categories and series values (or x/y points), titles, stacking, series kinds. */
+function nativeSpec(type, item, data, g, title, axes) {
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const base = { type, title: title || null, stacked: item.stacked === 'percent' ? 'percent' : item.stacked ? 'stacked' : null,
+    xTitle: axes.x?.title || item.xTitle || null, yTitle: axes.y?.title || null, format: axes.y?.format || item.valueFormat || null, legend: item.legend !== 'none' };
+  if (g.xy) return { ...base, series: g.xy.slice(0, 50).map(st => ({ name: String(st.s.name ?? ''), color: st.s.color, x: st.pts.slice(0, XL_CAP).map(p => p.x), y: st.pts.slice(0, XL_CAP).map(p => p.y), size: type === 'bubble' ? st.pts.slice(0, XL_CAP).map(p => p.size) : undefined })) };
+  const colors = type === 'pie' || type === 'donut' ? data.categories.slice(0, XL_CAP).map((_, i) => g.pointFill(i, g.pal[i % g.pal.length])) : undefined;
+  return { ...base, colors, categories: data.categories.slice(0, XL_CAP).map(String),
+    series: data.series.slice(0, 50).map(s => ({ name: String(s.name ?? ''), color: s.color, values: s.values.slice(0, XL_CAP).map(num),
+      kind: ['column', 'bar', 'line', 'area'].includes(s.def?.type) ? s.def.type : undefined, secondary: s.def?.axis === 'secondary' || undefined })) };
 }
 
 /* ---------------------------------------------------------------- axes */
@@ -649,6 +666,7 @@ function rowPoints(type, g) {
 function paintXY(type, g) {
   const { item, ctx, lc, out, X, W, top, bottom, fs, font, text, label, labelsOn, axes, who, grid, anim } = g;
   const sets = rowPoints(type, g);
+  g.xy = sets; // the points, for a native Excel chart (paintChart)
   if (!sets.some(x => x.pts.length)) { text('No data', X + W / 2, (top + bottom) / 2, { align: 'center', color: '#9ca3af' }); return; }
   if (type === 'polar') { paintPolar(g, sets); return; }
   let xlo = Infinity, xhi = -Infinity, ylo = Infinity, yhi = -Infinity, xmp = Infinity, ymp = Infinity, smax = 0;

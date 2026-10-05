@@ -2,6 +2,7 @@
 import { mergedRegions, textRows, needsTableData } from './regions.js';
 import { figures, figurePicture, altOf, b64 } from './figures.js';
 import { toWall } from '../engine/expr/format.js';
+import { chartTable, addCharts } from './xlsxchart.js';
 
 /** .NET-style format → Excel number format. */
 export function excelFormat(fmt, currencySymbol = '') {
@@ -105,7 +106,7 @@ function totalFormula(rows, at, c, made) {
  *   fetchImage?: (src: string) => Promise<Uint8Array|null>, rasterize?: any }} [opt]
  * @returns {Promise<Uint8Array>}
  */
-export async function exportXlsx(model, ExcelJS, { currency, title, formulas = true, pictures = true, fontStore, fetchImage, rasterize, timeZone } = {}) {
+export async function exportXlsx(model, ExcelJS, { currency, title, formulas = true, pictures = true, charts = true, fontStore, fetchImage, rasterize, timeZone } = {}) {
   needsTableData(model, 'Excel');
   // Excel dates have no zone: ExcelJS writes a Date's UTC parts, so a date goes in as its wall clock in the zone the
   // report showed it in (a local midnight east of UTC was a day early)
@@ -165,11 +166,26 @@ export async function exportXlsx(model, ExcelJS, { currency, title, formulas = t
     if (headerRows) ws.views = [{ state: 'frozen', ySplit: headerRows }];
     ws.properties.outlineLevelRow = Math.max(0, ...r.rows.map(x => (x.kind === 'detail' ? x.level : 0)));
   }
+  // charts Excel can draw: a sheet each, with the chart's data at A1 and an editable chart bound to it (xlsxchart.js)
+  const native = [];
+  const nativeFigs = new Set();
+  if (charts) {
+    for (const pg of model.pages) for (const f of figures(pg.items)) {
+      const spec = f.tag.k === 'chart' ? f.items.find(it => it.xchart)?.xchart : null;
+      if (!spec || native.length >= 100) continue;
+      const ws = wb.addWorksheet(sheetName(spec.title || f.tag.alt || `Chart ${native.length + 1}`));
+      const rows = chartTable(spec);
+      rows.forEach((r, ri) => { const xr = ws.addRow(r); if (ri === 0) xr.font = { bold: true }; });
+      rows[0].forEach((_, ci) => { ws.getColumn(ci + 1).width = ci === 0 && spec.categories ? 18 : 12; });
+      native.push({ sheet: ws.name, spec, at: { col: rows[0].length + 1, row: 1 } });
+      nativeFigs.add(f.tag);
+    }
+  }
   if (pictures) {
     // charts, pictures, maps, barcodes: one below the other on their own sheet, each with its description above it
     let ws = null, row = 1;
     for (const pg of model.pages) for (const f of figures(pg.items)) {
-      if (f.tag.k === 'shape' || f.tag.k === 'line') continue; // decoration, not data
+      if (f.tag.k === 'shape' || f.tag.k === 'line' || nativeFigs.has(f.tag)) continue; // decoration, not data; native charts are above
       const pic = await figurePicture(f, { fontStore, fetchImage, rasterize });
       const bytes = pic.png || pic.jpeg;
       if (!bytes) continue;
@@ -184,5 +200,5 @@ export async function exportXlsx(model, ExcelJS, { currency, title, formulas = t
   }
   if (formulas) wb.calcProperties.fullCalcOnLoad = true; // Excel works the totals out again on open
   const buf = await wb.xlsx.writeBuffer();
-  return new Uint8Array(buf);
+  return addCharts(new Uint8Array(buf), native);
 }

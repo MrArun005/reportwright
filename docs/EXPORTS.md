@@ -9,7 +9,7 @@ browser. CSV and JSON are unchanged.
 | PDF | The exact pages. Subset fonts, links, outline, form fields. | **Accessible PDF (PDF/UA)**, **PDF/A**, passwords (API), signing (API) |
 | Word (.docx) | Text and tables as editable Word content; charts, pictures, maps, barcodes, shapes and in-cell visuals as pictures | — |
 | PowerPoint (.pptx) | One slide per page: text boxes, shapes and lines native and editable; charts, pictures and barcodes as pictures | — |
-| Excel (.xlsx) | One sheet per table, typed cells, number formats, outline, frozen header, **live totals**; a Charts sheet of pictures | **Live formulas for totals** (on) |
+| Excel (.xlsx) | One sheet per table, typed cells (full-precision values, dates on the report's clock), number formats, outline, frozen header, **live totals**; **native, editable charts** (a sheet each, bound to their data); a Charts sheet of pictures for the rest | **Live formulas for totals** (on) |
 | HTML | Interactive viewer (default in the viewer), **pages and sortable tables**, or static pages | **HTML file** |
 
 ## Pictures in Word, PowerPoint and Excel
@@ -25,6 +25,15 @@ on pictures, charts, maps, barcodes, shapes, lines and visuals) becomes the pict
 Word also keeps a text box's background and borders (paragraph shading and borders), cell borders and fills, rounded
 shapes (as pictures), text boxes side by side (one row of a borderless layout table), and a box shape under text (the
 cell's fill). A new report page starts with "page break before", so a full page gets no blank page after it.
+
+## Excel charts
+
+Column, bar, line, area (clustered, stacked, 100%), pie, doughnut, scatter, bubble and radar charts export as real
+Excel charts (DrawingML, `src/exporters/xlsxchart.js`): each gets a sheet with its categories and series at A1 and a
+chart bound to that range, with cached values so readers that do not recalculate still draw it. Series of another kind
+(a line over columns) and series on the secondary axis make a combination chart with a second value axis. Treemap,
+histogram, box plot, waterfall, Gantt, funnel, gauge, polar and stock charts stay pictures (`charts: false` makes every
+chart a picture). Checked by opening the file in LibreOffice and converting it to PDF.
 
 ## Excel totals
 

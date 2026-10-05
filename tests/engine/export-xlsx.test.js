@@ -44,9 +44,11 @@ describe('Excel export: live totals', () => {
     wb.getWorksheet('Sales').eachRow(row => { if (row.getCell(1).value === 'Total') v = row.getCell(2).value; });
     expect(v).toBe(999);
   });
-  it('charts, pictures and barcodes are pictures on a Charts sheet, with their description; shapes are not', async () => {
+  it('pictures and barcodes are pictures on a Charts sheet, with their description; shapes are not; a chart is a native chart', async () => {
     const ws = (await book()).getWorksheet('Charts');
-    expect(ws.getImages().length).toBe(3);
-    expect(ws.getCell(1, 1).value).toBe('Column chart: Kochi has the highest amount');
+    expect(ws.getImages().length).toBe(2); // the column chart is a native Excel chart on its own sheet now
+    const pics = (await book({ charts: false })).getWorksheet('Charts');
+    expect(pics.getImages().length).toBe(3);
+    expect(pics.getCell(1, 1).value).toBe('Column chart: Kochi has the highest amount');
   });
 });
