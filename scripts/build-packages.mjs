@@ -107,6 +107,17 @@ fs.rmSync(path.join(root, V, 'dist'), { recursive: true, force: true });
 if (!fs.existsSync(path.join(root, 'public/embed/esm/viewer.js'))) throw new Error('Run npm run build:embed first');
 copy('public/embed/esm', `${V}/dist`);
 copy('public/embed/esm-peer', `${V}/dist/peer`);
+// the two builds share every chunk that has no React in it (same content, same hashed name): keep one copy, and let
+// the peer build import it from ../ (half the unpacked size)
+{
+  const D = path.join(root, V, 'dist'), P = path.join(D, 'peer');
+  const same = new Set(fs.readdirSync(P).filter(f => /^chunk-.*\.js$/.test(f) && fs.existsSync(path.join(D, f)) && fs.readFileSync(path.join(D, f)).equals(fs.readFileSync(path.join(P, f)))));
+  for (const f of same) { fs.rmSync(path.join(P, f)); fs.rmSync(path.join(P, `${f}.map`), { force: true }); }
+  for (const f of fs.readdirSync(P).filter(f => f.endsWith('.js'))) {
+    const file = path.join(P, f);
+    fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/(["'])\.\/(chunk-[\w-]+\.js)\1/g, (m, q, c) => (same.has(c) ? `${q}../${c}${q}` : m)));
+  }
+}
 // types from the JSDoc of the two entries; their signatures use only their own typedefs, so no imports are followed
 const T = path.join(root, V, 'dist/.types');
 tsc(['src/embed/index.js', 'src/embed/designer.js', '--noResolve', '--outDir', path.relative(root, T)]);
