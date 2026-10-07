@@ -179,8 +179,9 @@ function ReportPicker({ value, onChange }) {
   const [list, setList] = useState(reportList || []);
   const listId = useState(() => `reports-${Math.random().toString(36).slice(2, 8)}`)[0];
   useEffect(() => {
-    if (reportList) return;
-    const server = useDesigner.getState().embed?.server || '';
+    const embed = useDesigner.getState().embed;
+    if (reportList || (embed && !embed.server)) return; // standalone: no saved reports
+    const server = embed?.server || '';
     fetch(`${server}/api/reports`).then(r => (r.ok ? r.json() : [])).then(l => { reportList = Array.isArray(l) ? l : []; setList(reportList); }).catch(() => {});
   }, []);
   return (
@@ -759,7 +760,9 @@ function useReportParams(id) {
     if (!id || isDynamic(id)) { setList(null); return; }
     if (reportParams.has(id)) { setList(reportParams.get(id)); return; }
     let alive = true;
-    const server = useDesigner.getState().embed?.server || '';
+    const embed = useDesigner.getState().embed;
+    if (embed && !embed.server) { setList(null); return; } // standalone: no saved reports
+    const server = embed?.server || '';
     fetch(`${server}/api/reports/${encodeURIComponent(id)}`).then(r => (r.ok ? r.json() : null)).then(r => {
       const d = r?.definition || r;
       const ps = d && typeof d === 'object' ? (d.parameters || []).map(p => ({ name: p.name, required: !!p.required && p.default == null, prompt: p.prompt })) : null;

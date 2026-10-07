@@ -14,6 +14,7 @@ definePagewrightElements();
   selector: 'app-report',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   template: `
+    <pagewright-viewer [options]="{ definition: def, data: { orders: orders }, fontsUrl: '/pw/fonts/' }"></pagewright-viewer>
     <pagewright-viewer [options]="{ server: 'https://reports.example.com', report: 'invoice', params: { id: id } }"></pagewright-viewer>
     <pagewright-designer [options]="{ server: server, definition: def }" (pw-save)="save($event.detail)"></pagewright-designer>`,
 })
@@ -21,3 +22,5 @@ export class ReportComponent { /* … */ }
 ```
 
 `options` are those of `mountViewer` / `mountDesigner` (see `@pagewrightjs/viewer`); `server`, `report`, `height` and `lang` also work as attributes. Events: `pw-ready` (detail: the handle) and, on the designer without an `onSave`, `pw-save` (detail: the definition). MIT.
+
+No server needed: pass `definition`, `data` (JSON by data source name) and `fontsUrl` (a copy of `@pagewrightjs/fonts/public/fonts`). `server` (the [self-hosted Pagewright server](https://github.com/MrArun005/pagewright#docker)) is optional: see [what works standalone](https://github.com/MrArun005/pagewright/tree/main/packages/viewer#what-works-standalone-what-needs-the-server).

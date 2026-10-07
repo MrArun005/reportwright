@@ -49,5 +49,20 @@ const fonts = requests.filter(r => r.startsWith('/pw-fonts/'));
 assert.ok(fonts.includes('/pw-fonts/Inter-Regular.ttf'), fonts.join());
 assert.equal(fonts.length, new Set(fonts).size, `a font fetched twice: ${fonts}`);
 assert.deepEqual(errs, []);
+
+// the designer, standalone: no /api calls, no Save button (no server, no onSave), Open… only with onOpen
+requests.length = 0; missing.length = 0;
+const designerHtml = `<!doctype html><meta charset="utf-8"><div id="d"></div><script type="module">
+import { mountDesigner } from '/pw/designer.js';
+mountDesigner('#d', { definition: ${JSON.stringify(definition)}, fontsUrl: '/pw-fonts/' });
+</script>`;
+await p.route(`${ORIGIN}/designer`, (route) => route.fulfill({ body: designerHtml, contentType: 'text/html' }));
+await p.goto(`${ORIGIN}/designer`);
+await p.waitForFunction(() => document.querySelector('#d')?.shadowRoot?.querySelector('[data-rail]'), null, { timeout: 30000 });
+await p.waitForTimeout(1500);
+assert.equal(await p.evaluate(() => !!document.querySelector('#d').shadowRoot.querySelector('[data-testid="save"]')), false);
+assert.deepEqual(requests.filter(r => r.startsWith('/api/')), []);
+assert.deepEqual(missing, [], `designer 404s: ${missing}`);
+assert.deepEqual(errs, []);
 await b.close();
 console.log(`standalone viewer: OK (${requests.length} requests, ${fonts.length} fonts, no server)`);

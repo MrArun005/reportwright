@@ -14,6 +14,8 @@ const S = () => useDesigner.getState();
 export function useT() { const lang = useDesigner(s => s.lang); return (k, v) => t(lang, k, v); }
 const apply = (fn, key) => S().apply(fn, key);
 const server = () => S().embed?.server || '';
+/** Embedded with no server (standalone): there are no saved reports to list or load. */
+const noServer = () => !!S().embed && !S().embed.server;
 
 /* ---------------------------------------------------------------- reports this one reuses */
 const pending = new Map();
@@ -22,6 +24,7 @@ export function fetchReused(id, force = false) {
   if (!id || typeof id !== 'string' || id.startsWith('=')) return Promise.resolve(null);
   if (!force && S().reused[id]) return Promise.resolve(S().reused[id]);
   if (pending.has(id)) return pending.get(id);
+  if (noServer()) return Promise.resolve(null);
   const p = fetch(`${server()}/api/reports/${encodeURIComponent(id)}`)
     .then(r => (r.ok ? r.json() : { __error: `HTTP ${r.status}` }))
     .catch(e => ({ __error: e.message }))
@@ -41,6 +44,7 @@ let listCache = null;
 export function ReportSelect({ value, onChange, exclude, ...rest }) {
   const [list, setList] = useState(listCache || []);
   useEffect(() => {
+    if (noServer()) return;
     fetch(`${server()}/api/reports`).then(r => (r.ok ? r.json() : [])).then(l => { listCache = Array.isArray(l) ? l : []; setList(listCache); }).catch(() => {});
   }, []);
   const opts = list.filter(r => r.id !== exclude).map(r => ({ value: r.id, label: `${r.name} (${r.id})` }));

@@ -7,8 +7,11 @@ The Pagewright viewer and designer as React components. React is a peer dependen
 ```jsx
 import { PagewrightViewer, PagewrightDesigner } from '@pagewrightjs/react';
 
+<PagewrightViewer definition={def} data={{ orders }} fontsUrl="/pw/fonts/" style={{ height: 720 }} />   {/* no server */}
 <PagewrightViewer server="https://reports.example.com" report="invoice" params={{ id: '42' }} style={{ height: 720 }} />
 <PagewrightDesigner server="https://reports.example.com" definition={def} onSave={(d) => save(d)} toolbox={{ hide: ['map'] }} />
 ```
 
 Props are the options of `mountViewer` / `mountDesigner` (see `@pagewrightjs/viewer`), plus `className`, `style` and `onReady(handle)`. The viewer remounts when what it shows changes; the designer only for a new `report` or `definition` object, so it keeps its edits. MIT.
+
+No server needed: pass `definition`, `data` (JSON by data source name) and `fontsUrl` (a copy of `@pagewrightjs/fonts/public/fonts`). `server` (the [self-hosted Pagewright server](https://github.com/MrArun005/pagewright#docker)) is optional: see [what works standalone](https://github.com/MrArun005/pagewright/tree/main/packages/viewer#what-works-standalone-what-needs-the-server).

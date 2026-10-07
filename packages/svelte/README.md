@@ -8,8 +8,11 @@ Svelte actions for the Pagewright viewer and designer. Plain JavaScript, so no c
 <script>
   import { pagewrightViewer, pagewrightDesigner } from '@pagewrightjs/svelte';
 </script>
+<div use:pagewrightViewer={{ definition, data: { orders }, fontsUrl: '/pw/fonts/' }}></div>  <!-- no server -->
 <div use:pagewrightViewer={{ server: 'https://reports.example.com', report: 'invoice', params: { id } }}></div>
 <div use:pagewrightDesigner={{ server, definition, onSave: save }}></div>
 ```
 
 Options are those of `mountViewer` / `mountDesigner` (see `@pagewrightjs/viewer`). MIT.
+
+No server needed: pass `definition`, `data` (JSON by data source name) and `fontsUrl` (a copy of `@pagewrightjs/fonts/public/fonts`). `server` (the [self-hosted Pagewright server](https://github.com/MrArun005/pagewright#docker)) is optional: see [what works standalone](https://github.com/MrArun005/pagewright/tree/main/packages/viewer#what-works-standalone-what-needs-the-server).

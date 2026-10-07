@@ -9,9 +9,12 @@ The Pagewright viewer and designer as Vue 3 components. Vue is a peer dependency
 import { PagewrightViewer, PagewrightDesigner } from '@pagewrightjs/vue';
 </script>
 <template>
+  <PagewrightViewer :options="{ definition, data: { orders }, fontsUrl: '/pw/fonts/' }" />  <!-- no server -->
   <PagewrightViewer :options="{ server: 'https://reports.example.com', report: 'invoice', params: { id: '42' } }" />
   <PagewrightDesigner :options="{ server, definition, onSave: save }" @ready="(h) => (designer = h)" />
 </template>
 ```
 
 `options` are those of `mountViewer` / `mountDesigner` (see `@pagewrightjs/viewer`). MIT.
+
+No server needed: pass `definition`, `data` (JSON by data source name) and `fontsUrl` (a copy of `@pagewrightjs/fonts/public/fonts`). `server` (the [self-hosted Pagewright server](https://github.com/MrArun005/pagewright#docker)) is optional: see [what works standalone](https://github.com/MrArun005/pagewright/tree/main/packages/viewer#what-works-standalone-what-needs-the-server).

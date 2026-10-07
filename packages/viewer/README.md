@@ -24,6 +24,25 @@ mountViewer('#report', {
 Nothing calls `/api`; each font is downloaded once; the toolbar uses the system font. Copying only `fonts/` works too
 (PDFs then embed whole fonts, and PDF/A export needs `icc/`).
 
+## What works standalone, what needs the server
+
+The npm packages are a library: nothing here needs a Pagewright server. The server is a separate, self-hosted app
+(not on npm): [github.com/MrArun005/pagewright](https://github.com/MrArun005/pagewright), run it with Docker
+([instructions](https://github.com/MrArun005/pagewright#docker)). Options that need it are optional and hidden without it.
+
+| Feature | Standalone (`definition`, `data`, `fontsUrl`) | With `server` |
+|---|---|---|
+| View, page, search, zoom, parameters, sort, drill-down, document map | yes | yes |
+| Export PDF, PDF/A, Word, Excel, PowerPoint, HTML, CSV (in the browser) | yes | yes |
+| REST / JSON / XML / CSV data sources the browser can reach (CORS) | yes | yes |
+| Designer: edit, preview, `onSave` / `onOpen` to your app | yes | yes |
+| Load a saved report by id (`report: 'id'`), drill-through to another saved report | pass `reports: { id: definition }` | yes |
+| Designer **Save** without `onSave` (writes to the server), version history | no (Save is hidden) | yes |
+| SQL data sources (the server holds the connections) | no | yes |
+| Server-side PDF for very large reports, schedules and e-mail, uploaded fonts, AI drafts, users and roles | no | yes |
+
+In Node, `@pagewrightjs/engine` renders and exports with no server and no browser.
+
 ## With the self-hosted Pagewright server
 
 ```js
