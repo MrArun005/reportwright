@@ -6,6 +6,29 @@ import { createElement, useEffect, useRef } from 'react';
 const loadViewer = () => import('@pagewrightjs/viewer/react-peer').then(m => m.mountViewer);
 const loadDesigner = () => import('@pagewrightjs/viewer/react-peer/designer').then(m => m.mountDesigner);
 
+// A stable key for options: functions left out, object keys sorted, each object turned to text once (cached by
+// identity), so a big `data` array the app keeps in state costs nothing on a re-render and an inline object with the
+// same content gives the same key (no remount).
+const texts = new WeakMap();
+const json = (v) => JSON.stringify(v, (k, x) => (typeof x === 'function' ? undefined
+  : x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(n => [n, x[n]])) : x));
+const keyOf = (v) => {
+  if (!v || typeof v !== 'object') return typeof v === 'function' ? '' : String(json(v));
+  let s = texts.get(v);
+  if (s === undefined) texts.set(v, s = String(json(v)));
+  return s;
+};
+/** What the viewer shows: every option but callbacks. */
+const viewerKey = (o) => Object.keys(o).sort().map(k => (typeof o[k] === 'function' ? '' : `${k}=${keyOf(o[k])}`)).join('\u0000');
+/** The designer keeps its edits: it remounts only for another server, report, read-only state or definition content. */
+const designerKey = (o) => [o.server, o.report, o.readOnly, keyOf(o.definition)].join('\u0000');
+/** The error a viewer that did not load shows in its element. */
+const showError = (el, e) => {
+  if (!el) return;
+  el.textContent = `Pagewright did not load: ${e?.message || e}`;
+  el.setAttribute('role', 'alert');
+};
+
 /** Callbacks always call the latest prop, so a new arrow function each render does not remount. */
 function liveCallbacks(latest) {
   const out = { ...latest.current };
@@ -24,7 +47,7 @@ function useMounted(load, latest, deps, style) {
       if (opts.height == null && style?.height != null) opts.height = '100%';
       handle = mount(ref.current, opts);
       latest.current.onReady?.(handle);
-    });
+    }).catch(e => { if (!live) return; showError(ref.current, e); latest.current.onError?.(e); if (!latest.current.onError) console.error(e); });
     return () => { live = false; handle?.unmount(); };
   }, deps); // eslint-disable-line react-hooks/exhaustive-deps
   return ref;
@@ -35,15 +58,14 @@ export function PagewrightViewer({ className, style, ...options }) {
   const latest = useRef(options);
   latest.current = options;
   // a remount when what is shown changes (not when a callback is a new function)
-  const key = JSON.stringify(options, (k, v) => (typeof v === 'function' ? undefined : v));
-  const ref = useMounted(loadViewer, latest, [key], style);
+  const ref = useMounted(loadViewer, latest, [viewerKey(options)], style);
   return createElement('div', { ref, className, style });
 }
 
-/** <PagewrightDesigner server="…" definition={def} onSave={(def) => …} /> — remounts only for a new report or definition object. */
+/** <PagewrightDesigner server="…" definition={def} onSave={(def) => …} /> — remounts only for another report or definition (by content). */
 export function PagewrightDesigner({ className, style, ...options }) {
   const latest = useRef(options);
   latest.current = options;
-  const ref = useMounted(loadDesigner, latest, [options.server, options.report, options.definition, options.readOnly], style);
+  const ref = useMounted(loadDesigner, latest, [designerKey(options)], style);
   return createElement('div', { ref, className, style });
 }
