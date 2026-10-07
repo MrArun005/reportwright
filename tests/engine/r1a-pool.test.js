@@ -16,16 +16,17 @@ afterEach(async () => { await stopPool(); for (const k of ENV) delete process.en
 afterAll(async () => { await stopPool(); });
 
 describe('S-4: memory-aware render pool', () => {
-  it('sizes workers and heap by min(cores, memory), not cores alone', () => {
-    // the old default on an 8-core, 4 GB container: 7 workers × 2 GB heaps = 14 GB of ceiling; now 1 GB heaps that fit
-    expect(memoryPlan({ cores: 8, memMB: 4096 })).toMatchObject({ heapMB: 1024, workers: 2 });
-    expect(memoryPlan({ cores: 8, memMB: 1024 })).toMatchObject({ heapMB: 512, workers: 1 });
-    expect(memoryPlan({ cores: 8, memMB: 32768 })).toMatchObject({ heapMB: 1024, workers: 7 });
+  it('sizes workers by cores, and gives only as many big heaps as fit in 70% of memory', () => {
+    // 8 cores, 4 GB: 7 workers (cores - 1), 2 of them with 1 GB heaps that fit beside the request thread
+    expect(memoryPlan({ cores: 8, memMB: 4096 })).toMatchObject({ heapMB: 1024, smallHeapMB: 192, workers: 7, bigWorkers: 2 });
+    expect(memoryPlan({ cores: 8, memMB: 1024 })).toMatchObject({ heapMB: 512, workers: 2, bigWorkers: 1 });
+    expect(memoryPlan({ cores: 8, memMB: 32768 })).toMatchObject({ heapMB: 1024, workers: 7, bigWorkers: 7 });
     expect(memoryPlan({ cores: 2, memMB: 32768 })).toMatchObject({ workers: 1 });
-    // a smaller heap per worker (PW_RENDER_WORKER_HEAP_MB) buys more workers in the same memory
-    expect(memoryPlan({ cores: 8, memMB: 8192, heapMB: 512 })).toMatchObject({ heapMB: 512, workers: 7 });
+    expect(memoryPlan({ cores: 64, memMB: 262144 })).toMatchObject({ workers: 16 });
+    // a smaller big heap (PW_RENDER_WORKER_HEAP_MB) buys more big workers in the same memory
+    expect(memoryPlan({ cores: 8, memMB: 8192, heapMB: 512 })).toMatchObject({ heapMB: 512, workers: 7, bigWorkers: 7 });
     for (const p of [memoryPlan({ cores: 16, memMB: 6000 }), memoryPlan({ cores: 4, memMB: 3000, heapMB: 700 })]) {
-      expect(p.workers * (p.heapMB + 96) + 512).toBeLessThanOrEqual(Math.max(p.memMB * 0.7, 512 + p.heapMB + 96)); // the heaps fit (one worker always)
+      expect(p.bigWorkers * (p.heapMB + 96) + 512).toBeLessThanOrEqual(Math.max(p.memMB * 0.7, 512 + p.heapMB + 96)); // the big heaps fit (one always)
     }
   });
 

@@ -3,6 +3,7 @@
 // request thread per process instead of one in all. Build first (npm run build), then:
 //   node scripts/cluster.mjs [-p 3000] [-H 0.0.0.0]
 // PW_CLUSTER_PROCESSES   processes (default: a quarter of the cores, at least 2)
+// UV_THREADPOOL_SIZE     libuv threads per process (default: its cores, at least 4): its render threads compress there
 // PW_RENDER_WORKERS      render threads per process; default: each process gets its share of the cores (PW_CPUS) and
 //                        of the memory (PW_MEMORY_LIMIT_MB: the cgroup limit or the RAM), and src/server/pool.js sizes
 //                        its workers from those, so processes + render threads ≈ cores and their heaps fit the memory
@@ -38,7 +39,10 @@ if (cluster.isPrimary) {
     try { const n = Number(fs.readFileSync(f, 'utf8').trim()); if (n > 0 && n < 2 ** 60) { memMB = Math.min(memMB, n / 1048576); break; } } catch { /* not there */ }
   }
   if (process.env.PW_AUTH === 'users' && !process.env.PW_SESSION_SECRET && process.env.NODE_ENV !== 'production') process.env.PW_SESSION_SECRET = crypto.randomBytes(32).toString('hex');
-  const env = { PW_CPUS: String(Math.max(2, Math.floor(cores / n))), PW_MEMORY_LIMIT_MB: String(Math.floor(memMB / n)), PW_CLUSTER: '1' };
+  // UV_THREADPOOL_SIZE: libuv's pool (zlib for PDF pages, fs) is per process and shared by all its render threads; its
+  // default of 4 queues their compression. Read once, before its first use: so it is set here, in the environment
+  const cpus = Math.max(2, Math.floor(cores / n));
+  const env = { PW_CPUS: String(cpus), PW_MEMORY_LIMIT_MB: String(Math.floor(memMB / n)), PW_CLUSTER: '1', UV_THREADPOOL_SIZE: process.env.UV_THREADPOOL_SIZE || String(Math.max(4, cpus)) };
   console.log(`[reportwright] cluster: ${n} processes, each with ${env.PW_CPUS} cores and ${env.PW_MEMORY_LIMIT_MB} MB for its render threads${process.env.PW_RENDER_WORKERS ? ` (${process.env.PW_RENDER_WORKERS} each)` : ''}, port ${port}`);
   let stopping = false;
   const starts = [];

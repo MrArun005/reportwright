@@ -18,5 +18,6 @@ export interface Pool {
   /** renders waiting or running */
   readonly pending: number;
 }
-/** workers: default the CPU count less one. fontsDir: a folder of the fonts (default @reportwright/fonts). */
-export function createPool(opt?: { workers?: number; fontsDir?: string; maxQueue?: number }): Pool;
+/** workers: default the CPU count less one. fontsDir: a folder of the fonts (default @reportwright/fonts).
+ *  heapMB: each worker's heap limit (default 1024). timeoutMs: stop a render past it with status 504 (default 0: no limit). */
+export function createPool(opt?: { workers?: number; fontsDir?: string; maxQueue?: number; heapMB?: number; timeoutMs?: number }): Pool;

@@ -34,14 +34,19 @@ async function run(m) {
 
 if (mod) {
   parentPort.on('message', async (m) => {
-    let out;
+    // the render's peak heap growth, sampled between its awaits and at its end: the pool learns each template's size
+    // from it (admission by memory, and whether it needs a big heap)
+    const heap = () => process.memoryUsage().heapUsed;
+    const base = heap();
+    let peak = base;
+    const sample = setInterval(() => { const h = heap(); if (h > peak) peak = h; }, 25);
+    const peakMB = () => { clearInterval(sample); peak = Math.max(peak, heap()); return Math.max(1, Math.ceil((peak - base) / 1048576)); };
     try {
       const { result, transfer } = await run(m);
-      out = { id: m.id, ok: result, heapMB: process.memoryUsage().heapUsed / 1048576 };
-      parentPort.postMessage(out, transfer || []);
+      parentPort.postMessage({ id: m.id, ok: result, peakMB: peakMB(), heapMB: process.memoryUsage().heapUsed / 1048576 }, transfer || []);
     } catch (e) {
       const err = /** @type {any} */ (e);
-      parentPort.postMessage({ id: m.id, err: { message: String(err?.message || err), status: err?.status, missingParameters: err?.missingParameters }, heapMB: process.memoryUsage().heapUsed / 1048576 });
+      parentPort.postMessage({ id: m.id, err: { message: String(err?.message || err), status: err?.status, missingParameters: err?.missingParameters }, peakMB: peakMB(), heapMB: process.memoryUsage().heapUsed / 1048576 });
     }
   });
   parentPort.postMessage({ ready: true });

@@ -70,7 +70,8 @@ Every setting ReportWright reads, from `src/server/config.js` (the table there i
 | `PW_SQLITE_PROCESSES` | int | 2 | SQLite query processes per server thread. |
 | `PW_SQLITE_MEMORY_MB` | int | 1024 | Memory one SQLite query process may use. |
 | `PW_RENDER_WORKERS` | int | (by cores and memory) | Render threads; 0 renders on the request thread. |
-| `PW_RENDER_WORKER_HEAP_MB` | int | (by memory, ≤ 2048) | A render thread's heap limit. |
+| `PW_RENDER_WORKER_HEAP_MB` | int | 1024 (2048 after an out-of-memory; ≤ half the memory) | A big render thread's heap limit. |
+| `PW_RENDER_SMALL_HEAP_MB` | int | 192 | The other render threads' heap limit (streams, small renders). |
 | `PW_RENDER_WORKER_MAX_RENDERS` | int | 500 | Renders before a thread is replaced. |
 | `PW_RENDER_WORKER_RECYCLE_MB` | int | 512 | Heap after which a thread is replaced. |
 | `PW_RENDER_TIMEOUT_MS` | ms | 60000 | A server render. |
