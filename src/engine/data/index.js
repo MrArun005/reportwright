@@ -90,8 +90,13 @@ export function coerce(v, type, opt) {
   }
 }
 
-/** Guess field names and types from sample rows. */
-export function detectFields(rows) {
+/**
+ * Guess field names and types from sample rows. A string that looks like an ISO date (2024-01-31, 2024-01-31T10:00Z)
+ * becomes a date field; dates: false (a data set's detectDates: false) keeps it text. To keep one field as text,
+ * declare the data set's fields with that one as type "string".
+ * @param {any[]} rows @param {{ dates?: boolean }} [opt]
+ */
+export function detectFields(rows, { dates = true } = {}) {
   const out = new Map();
   for (const r of rows.slice(0, 50)) {
     if (!r || typeof r !== 'object') continue;
@@ -99,19 +104,19 @@ export function detectFields(rows) {
       // an array of plain values is a list field (an array of objects is rows: a nested data set)
       const list = Array.isArray(v) && v.every(x => x == null || typeof x !== 'object');
       if (v != null && typeof v === 'object' && !(v instanceof Date) && !list) continue;
-      const t = list ? 'list' : guessType(v);
+      const t = list ? 'list' : guessType(v, dates);
       if (!out.has(k) || out.get(k) === 'null') out.set(k, t);
       else if (out.get(k) !== t && t !== 'null') out.set(k, 'string');
     }
   }
   return [...out].map(([name, type]) => ({ name, type: type === 'null' ? 'string' : type }));
 }
-function guessType(v) {
+function guessType(v, dates = true) {
   if (v == null) return 'null';
   if (typeof v === 'number') return 'number';
   if (typeof v === 'boolean') return 'boolean';
   if (v instanceof Date) return 'date';
-  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}([T ][\d:.]+(Z|[+-]\d{2}:?\d{2})?)?$/.test(v)) return 'date';
+  if (dates && typeof v === 'string' && /^\d{4}-\d{2}-\d{2}([T ][\d:.]+(Z|[+-]\d{2}:?\d{2})?)?$/.test(v)) return 'date';
   return 'string';
 }
 
@@ -435,7 +440,7 @@ export function buildDataSets(def, sources, baseCtx) {
         }
       }
     }
-    const fields = ds.fields && ds.fields.length ? ds.fields : detectFields(list);
+    const fields = ds.fields && ds.fields.length ? ds.fields : detectFields(list, { dates: ds.detectDates !== false });
     const plain = fields.filter(fd => !fd.expr);
     const calc = fields.filter(fd => fd.expr);
     const keepRaw = raws.has(ds.name);

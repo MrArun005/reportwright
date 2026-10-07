@@ -22,6 +22,15 @@ fs.writeFileSync('statement.pdf', await exportPdf(model, { fonts, title: 'Statem
 // only when asked: render(def, { exportData: true }) (needsExportData(format) says which formats need it)
 ```
 
+## Implicit behaviour, and how to switch it
+
+- **ISO dates.** When a data set has no `fields`, they are detected from the rows, and a string that looks like an ISO
+  date (`2024-01-31`, `2024-01-31T10:00:00Z`) becomes a date. Keep such strings as text with `detectDates: false` on
+  the data set, or declare the fields and give that one `type: 'string'`.
+- **Chart colours.** By default colours go by position. `colorByCategory: true` on charts gives each category (pie,
+  donut and funnel slices; `seriesGroup` series) one colour in every chart of the report that sets it.
+- **Currency.** `C2` with no `currency` on the report uses the locale's own (`en-IN` ₹, `de-DE` €, `en-US` $).
+
 ## Many reports at once (Node): a worker pool
 
 ```js

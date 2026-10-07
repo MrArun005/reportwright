@@ -26,6 +26,17 @@ const numOrNull = (v) => { if (v == null || v === '') return null; const n = Num
 const tag = (o, a) => { if (a) o.anim = a; return o; };
 const f = (v) => Math.round(v * 100) / 100;
 
+/**
+ * colorByCategory: one colour per category or series name across every chart of the render that asks for it (first
+ * seen, first colour), so "North" is the same blue in the pie and the column chart. Off: colours by position.
+ * @param {any} lc @param {string[]} pal
+ */
+const byName = (lc, pal) => (name) => {
+  const m = (lc.categoryColors ||= new Map());
+  const k = String(name);
+  if (!m.has(k)) m.set(k, m.size);
+  return pal[/** @type {number} */ (m.get(k)) % pal.length];
+};
 /** Categories × series values from the data. */
 export function chartData(item, ctx, lc, pal = paletteOf(item.palette)) {
   let rows = item.dataSet ? related(lc.dataSets[item.dataSet] || [], ctx) : ctx.aggRows || [];
@@ -95,7 +106,8 @@ export function chartData(item, ctx, lc, pal = paletteOf(item.palette)) {
     groups.forEach((gr, gIdx) => {
       for (const sd of defs) {
         const name = defs.length > 1 ? `${toText(gr.key, null, ctx)} · ${sd.name}` : toText(gr.key, null, ctx);
-        series.push(make(sd, name, pal[ci++ % pal.length], (cat, i) => split[i][gIdx]));
+        series.push(make(sd, name, item.colorByCategory ? byName(lc, pal)(name) : pal[ci % pal.length], (cat, i) => split[i][gIdx]));
+        ci++;
       }
     });
   } else {
@@ -134,10 +146,12 @@ export function paintChart(item, ctx, lc, base) {
   };
   if (item.background) out.push({ t: 'rect', x: X, y: 0, w: W, h: H, fill: item.background });
 
-  const pal = paletteOf(item.palette);
+  let pal = paletteOf(item.palette);
   const type = CHART_TYPES.includes(item.chartType) ? item.chartType : 'column';
   // Gantt colours its bars by seriesGroup itself (per row); the others here draw one series
   const data = chartData({ ...item, chartType: type, ...(MORE_TYPES.has(type) ? { seriesGroup: undefined } : {}) }, ctx, lc, pal);
+  // pie, donut and funnel colour by category: with colorByCategory, slice i gets its category's colour of the report
+  if (item.colorByCategory && (type === 'pie' || type === 'donut' || type === 'funnel') && data.categories.length) pal = data.categories.map(byName(lc, pal));
   // Interactivity per point: pointAction (any action, usually "params" to filter the report), pointColor and tooltips.
   // The point's scope is its category: Fields = first row, aggregates over the category's rows.
   const links = [];
