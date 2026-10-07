@@ -3,6 +3,7 @@ import { checkValue, checkFunctions, parseValue, callIssues, compile } from '../
 import { ITEMS } from '../items/index.js';
 import { symbologyError } from '../items/barcode.js';
 import { rowCells } from '../items/cells.js';
+import { REPORT_SCHEMA } from './report.schema.js';
 
 export const SCHEMA_ID = 'pagewright/report@1';
 
@@ -19,6 +20,7 @@ const ITEM_KEYS = new Set(('id type name x y w h style styleName items hidden la
 const DEF_KEYS = new Set(('$schema name description locale currency timeZone page parameters dataSources dataSets styles sections functions layers '
   + 'images theme themeDef master nullPropagation caseSensitive naturalSort nullOrder collation arithmetic bandRows version id tags author folder '
   + 'stylesheet parts partProperties dashboard comment notes customCode libraries liveParameters parameterLayout drafts history nonFinite').split(' '));
+for (const k of Object.keys(REPORT_SCHEMA.$defs.Report.properties)) DEF_KEYS.add(k); // the schema's, too
 const lev = (a, b) => {
   if (Math.abs(a.length - b.length) > 2) return 3;
   const d = Array.from({ length: b.length + 1 }, (_, i) => i);
@@ -37,11 +39,30 @@ export function didYouMean(k, known) {
   }
   return best;
 }
+/** Each item type's properties in the report JSON Schema (its own and ItemBase's): type → Map(key → schema). */
+const SCHEMA_ITEMS = (() => {
+  const defs = /** @type {Record<string, any>} */ (REPORT_SCHEMA.$defs);
+  const of = (/** @type {any} */ s) => (s?.$ref ? defs[s.$ref.replace('#/$defs/', '')] : s);
+  /** @type {Map<string, Map<string, any>>} */
+  const out = new Map();
+  for (const r of defs.Item.anyOf) {
+    const props = new Map();
+    for (const part of of(r).allOf || []) for (const [k, v] of Object.entries(of(part).properties || {})) props.set(k, v);
+    out.set(props.get('type').const, props);
+  }
+  return out;
+})();
+/** A value outside its property's enum in the schema (a literal, not an expression), else null. @param {any} sch @param {any} v */
+const offEnum = (sch, v) => {
+  const list = sch?.enum || (sch?.anyOf?.every((/** @type {any} */ x) => 'const' in x) ? sch.anyOf.map((/** @type {any} */ x) => x.const) : null);
+  if (!list || v == null || (typeof v === 'string' && v.startsWith('='))) return null;
+  return list.includes(v) ? null : list;
+};
 const ownKeys = (type) => {
   const spec = ITEMS[type];
   let dflt = {};
   try { dflt = spec?.defaults?.() || {}; } catch { /* none */ }
-  return [...(spec?.props || []).map(p => p.key), ...Object.keys(dflt)];
+  return [...(spec?.props || []).map(p => p.key), ...Object.keys(dflt), ...(SCHEMA_ITEMS.get(type)?.keys() || [])];
 };
 
 /**
@@ -134,6 +155,11 @@ export function validate(def) {
         if (k.startsWith('_') || k.startsWith('$') || ITEM_KEYS.has(k) || own.includes(k)) continue;
         const g = didYouMean(k, [...own, 'value', 'style', 'hidden', 'name', 'dataSet']);
         warnings.push(`${label}: unknown property "${k}"${g ? ` (did you mean "${g}"?)` : ''}; it is ignored`);
+      }
+      // a literal outside the schema's choices ("dir": "rtl2")
+      for (const [k, sch] of SCHEMA_ITEMS.get(it.type) || []) {
+        const list = k === 'type' ? null : offEnum(sch, it[k]);
+        if (list) warnings.push(`${label}: "${k}" is ${JSON.stringify(it[k])}; expected one of ${list.map(x => JSON.stringify(x)).join(', ')}`);
       }
       check(where, it.value, label);
       check(where, it.src, label);

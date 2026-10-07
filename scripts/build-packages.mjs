@@ -36,9 +36,9 @@ write(`${E}/package.json`, {
   name: '@pagewrightjs/engine', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT',
   ...meta(E, ['pdf', 'pdf-a', 'excel', 'xlsx', 'docx', 'pptx', 'report-engine', 'jasperreports', 'ssrs', 'rdl']),
   description: 'Pagewright report engine: JSON report definitions to pages, PDF (incl. PDF/A), Word, Excel, PowerPoint, HTML and CSV. Node and browsers. Fonts: @pagewrightjs/fonts; CLI: @pagewrightjs/cli.',
-  exports: { '.': { types: './index.d.ts', default: './dist/index.js' }, './report': { types: './report.d.ts' }, './package.json': './package.json' },
+  exports: { '.': { types: './index.d.ts', default: './dist/index.js' }, './report': { types: './report.d.ts' }, './schema.json': './schema.json', './package.json': './package.json' },
   types: './index.d.ts',
-  files: ['dist', 'index.d.ts', 'report.d.ts', 'README.md', 'CHANGELOG.md', 'LICENSE'],
+  files: ['dist', 'index.d.ts', 'report.d.ts', 'schema.json', 'README.md', 'CHANGELOG.md', 'LICENSE'],
   engines: { node: '>=20.9' },
   sideEffects: false,
   dependencies: deps(['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate']),
@@ -46,6 +46,8 @@ write(`${E}/package.json`, {
   peerDependenciesMeta: { '@pagewrightjs/fonts': { optional: true } },
 });
 fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, E, 'LICENSE')); docs(E);
+// the report JSON Schema (report.d.ts is generated from it: scripts/gen-report-types.mjs)
+write(`${E}/schema.json`, (await import('../src/engine/schema/report.schema.js')).REPORT_SCHEMA);
 
 /* fonts: the bundled fonts, the shaper, harfbuzz-subset.wasm and the PDF/A colour profile (the engine resolves them) */
 const F = 'packages/fonts';
