@@ -43,9 +43,11 @@ const noSections: Report = { $schema: 'pagewright/report@1' };
 
 async function exportIt(store: FontStore) {
   const model = await render(report, { fontStore: store });
-  await exportPdf(model, store, { encrypt: { userPassword: 'x', ownerPassword: 'y', permissions: { copy: false, print: true } } });
+  await exportPdf(model, { fonts: store, encrypt: { userPassword: 'x', ownerPassword: 'y', permissions: { copy: false, print: true } } });
   // @ts-expect-error not a permission
-  await exportPdf(model, store, { encrypt: { permissions: { root: false } } });
+  await exportPdf(model, { fonts: store, encrypt: { permissions: { root: false } } });
+  // @ts-expect-error fonts is a FontStore
+  await exportPdf(model, { fonts: 'Inter' });
 }
 
 const viewer: ViewerOptions = { server: 'https://r.example.com', report: 'invoice', params: { id: '1' }, viewMode: 'single', toolbar: { hide: ['excel'] } };

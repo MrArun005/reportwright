@@ -24,32 +24,100 @@ const readUrl = async (url) => url.protocol === 'file:' ? (await import(/* @vite
  */
 export function defaultFontStore() {
   if (!fontsUrl('fonts/Inter-Regular.ttf')) throw new Error('Install @pagewrightjs/fonts, or pass your own FontStore');
-  return new FontStore((key) => readUrl(/** @type {URL} */ (fontsUrl(`fonts/${fontFile(key)}`))));
-}
+  return new FontStore((key) => readUrl(/** @type {URL} */ (fontsUrl(`fonts/${fontFile(key)}`))));}
 /** @type {ReturnType<typeof createSubsetter>|undefined} */
 let defaultSubset;
 
+/** @type {Set<string>} */
+const warned = new Set();
+/** One console warning per deprecated form. @param {string} key @param {string} msg */
+const deprecated = (key, msg) => { if (!warned.has(key)) { warned.add(key); console.warn(`[@pagewrightjs/engine] DEPRECATED: ${msg}`); } };
+const isFontStore = (/** @type {any} */ x) => x instanceof FontStore || (!!x && typeof x === 'object' && typeof x.load === 'function' && typeof x.get === 'function');
+/** @param {string} fn @param {any} model */
+function checkModel(fn, model) {
+  if (!model || typeof model !== 'object' || !Array.isArray(model.pages)) throw new TypeError(`${fn}(model, options): model must be the page model render() returns (an object with pages), got ${model === null ? 'null' : Array.isArray(model) ? 'an array' : typeof model}`);
+}
 /**
- * Page model → PDF bytes. Fonts are subset by default with harfbuzz-subset.wasm from @pagewrightjs/fonts (when it
- * can't be loaded the full font is embedded); `subset: false` embeds every font in full, a function replaces the subsetter.
+ * The options object of exportX(model, options), from either signature: (model, { fonts, ... }) or the 0.7
+ * positional one (model, fontStore | ExcelJS, options), which still works in 0.8 with a deprecation warning.
+ * @param {string} fn @param {any[]} args @param {'fonts'|'excel'|'none'} legacy what the 0.7 second argument was
+ */
+function optionsOf(fn, args, legacy) {
+  const [model, second, third] = args;
+  checkModel(fn, model);
+  if (legacy === 'fonts' && isFontStore(second)) {
+    deprecated(fn, `${fn}(model, fontStore, options) is replaced by ${fn}(model, { fonts: fontStore, ...options }); the old form is removed in 0.9`);
+    return { ...(third || {}), fonts: second };
+  }
+  if (legacy === 'excel' && second && (typeof second === 'function' || typeof second.Workbook === 'function')) {
+    deprecated(fn, `${fn}(model, ExcelJS, options) is replaced by ${fn}(model, options): ExcelJS is no longer used; the old form is removed in 0.9`);
+    return { ...(third || {}) };
+  }
+  if (second != null && (typeof second !== 'object' || Array.isArray(second))) throw new TypeError(`${fn}(model, options): options must be an object such as { fonts }, got ${Array.isArray(second) ? 'an array' : typeof second}`);
+  const o = { ...(second || {}) };
+  if (o.fonts != null && !isFontStore(o.fonts)) throw new TypeError(`${fn}(model, { fonts }): fonts must be a FontStore (defaultFontStore() or new FontStore(loader)), got ${typeof o.fonts}`);
+  return o;
+}
+/** The FontStore of the options, else the one over @pagewrightjs/fonts. @param {any} o */
+const fontsOf = (o) => o.fonts || o.fontStore || defaultFontStore();
+
+/**
+ * @typedef {Omit<NonNullable<Parameters<typeof exportPdfFull>[2]>, 'subset' | 'pdfa'> & {
+ *   fonts?: FontStore, subset?: false | NonNullable<Parameters<typeof exportPdfFull>[2]>['subset'],
+ *   pdfa?: boolean | { icc?: Uint8Array, [k: string]: unknown } }} PdfOptions
+ */
+/**
+ * Page model → PDF bytes: exportPdf(model, { fonts, title, ... }). fonts: the FontStore render() used (default: the
+ * one over @pagewrightjs/fonts). Fonts are subset with harfbuzz-subset.wasm from @pagewrightjs/fonts (when it can't be
+ * loaded the full font is embedded); `subset: false` embeds every font in full, a function replaces the subsetter.
+ * The 0.7 form exportPdf(model, fontStore, options) still works in 0.8 (deprecated).
  * @param {any} model  render() output
- * @param {import('../../src/engine/text/fonts.js').FontStore} fontStore
- * @param {Omit<NonNullable<Parameters<typeof exportPdfFull>[2]>, 'subset'> & { subset?: false | NonNullable<Parameters<typeof exportPdfFull>[2]>['subset'] }} [opt]
+ * @param {PdfOptions} [options]
  * @returns {Promise<Uint8Array>}
  */
-export function exportPdf(model, fontStore, opt = {}) {
+export async function exportPdf(model, options) {
+  const opt = optionsOf('exportPdf', [...arguments], 'fonts');
   const subset = opt.subset === false ? undefined : opt.subset || (defaultSubset ||= createSubsetter(async () => {
     const url = fontsUrl('harfbuzz-subset.wasm');
     if (!url) throw new Error('@pagewrightjs/fonts is not installed');
     return readUrl(url);
   }));
-  return exportPdfFull(model, fontStore, { ...opt, subset });
+  const { fonts, fontStore, ...rest } = opt;
+  return exportPdfFull(model, fontsOf(opt), /** @type {any} */ ({ ...rest, subset }));
+}
+/**
+ * Page model → .xlsx bytes: exportXlsx(model, { fonts, currency, formulas, ... }) (needs render(def, { exportData: true })).
+ * The 0.7 form exportXlsx(model, ExcelJS, options) still works in 0.8 (deprecated; ExcelJS is not used).
+ * @param {any} model @param {NonNullable<Parameters<typeof exportXlsxFull>[1]> & { fonts?: FontStore }} [options]
+ * @returns {Promise<Uint8Array>}
+ */
+export function exportXlsx(model, options) {
+  const opt = optionsOf('exportXlsx', [...arguments], 'excel');
+  return exportXlsxFull(model, { ...opt, fontStore: opt.fonts || opt.fontStore });
+}
+/**
+ * Page model → .docx bytes: exportDocx(model, { fonts, ... }) (needs render(def, { exportData: true })).
+ * @param {any} model @param {NonNullable<Parameters<typeof exportDocxFull>[1]> & { fonts?: FontStore }} [options]
+ * @returns {Promise<Uint8Array>}
+ */
+export function exportDocx(model, options) {
+  const opt = optionsOf('exportDocx', [...arguments], 'none');
+  return exportDocxFull(model, { ...opt, fontStore: opt.fonts || opt.fontStore });
+}
+/**
+ * Page model → .pptx bytes: exportPptx(model, { fonts, ... }).
+ * @param {any} model @param {NonNullable<Parameters<typeof exportPptxFull>[1]> & { fonts?: FontStore }} [options]
+ * @returns {Promise<Uint8Array>}
+ */
+export function exportPptx(model, options) {
+  const opt = optionsOf('exportPptx', [...arguments], 'none');
+  return exportPptxFull(model, { ...opt, fontStore: opt.fonts || opt.fontStore });
 }
 export { exportHtml } from '../../src/exporters/html.js';
 export { exportCsv } from '../../src/exporters/csv.js';
 export { needsExportData } from '../../src/exporters/regions.js';
-export { exportXlsx } from '../../src/exporters/xlsx.js';
-export { exportDocx } from '../../src/exporters/docx.js';
-export { exportPptx } from '../../src/exporters/pptx.js';
+import { exportXlsx as exportXlsxFull } from '../../src/exporters/xlsx.js';
+import { exportDocx as exportDocxFull } from '../../src/exporters/docx.js';
+import { exportPptx as exportPptxFull } from '../../src/exporters/pptx.js';
 export { pageToSvg } from '../../src/exporters/svg.js';
 export { tableFor, matrixFor } from '../../src/designer/tableGen.js';

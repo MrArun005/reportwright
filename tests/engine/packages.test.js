@@ -37,8 +37,8 @@ describe('npm packages', () => {
     const m = await import(path.join(root, 'packages/engine/dist/index.js'));
     const fonts = new m.FontStore((key) => fs.readFileSync(path.join(root, 'packages/fonts/public/fonts', m.fontFile(key))));
     const model = await m.render(m.blankReport(), { fontStore: fonts });
-    const small = await m.exportPdf(model, fonts, { subset: m.createSubsetter(() => fs.promises.readFile(path.join(root, 'packages/fonts/public/harfbuzz-subset.wasm'))) });
-    const full = await m.exportPdf(model, fonts, { subset: false });
+    const small = await m.exportPdf(model, { fonts, subset: m.createSubsetter(() => fs.promises.readFile(path.join(root, 'packages/fonts/public/harfbuzz-subset.wasm'))) });
+    const full = await m.exportPdf(model, { fonts, subset: false });
     expect(small.length * 4).toBeLessThan(full.length);
   }, 60000);
 

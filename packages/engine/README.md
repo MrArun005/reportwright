@@ -16,7 +16,8 @@ import fs from 'node:fs';
 const fonts = defaultFontStore();
 const model = await render(JSON.parse(fs.readFileSync('statement.pw.json', 'utf8')), { fontStore: fonts, parameters: { accountId: 'LN-1' } });
 // fonts are subset by default (only the glyphs the PDF uses); { subset: false } embeds every font in full
-fs.writeFileSync('statement.pdf', await exportPdf(model, fonts, { title: 'Statement' }));
+fs.writeFileSync('statement.pdf', await exportPdf(model, { fonts, title: 'Statement' }));
+// the same options object everywhere: exportXlsx(model, { fonts }), exportDocx(model, { fonts }), exportPptx(model, { fonts })
 // Excel, CSV, Word, interactive HTML and the accessible PDF rebuild tables from the table data, which render() keeps
 // only when asked: render(def, { exportData: true }) (needsExportData(format) says which formats need it)
 ```
