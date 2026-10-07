@@ -67,6 +67,10 @@ describe('npm packages', () => {
     const pdf = fs.readFileSync(path.join(tmp, 'statement.pdf'));
     expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
     expect(pdf.length).toBeLessThan(400000); // subset: harfbuzz-subset.wasm came from @pagewrightjs/fonts
+    // pdfa: true finds the sRGB profile in @pagewrightjs/fonts by itself (B5 item 10)
+    fs.writeFileSync(path.join(tmp, 'pdfa.mjs'), "import { render, defaultFontStore, exportPdf, blankReport } from '@pagewrightjs/engine'; import fs from 'node:fs'; const fonts = defaultFontStore(); fs.writeFileSync('a.pdf', await exportPdf(await render(blankReport(), { fontStore: fonts }), { fonts, pdfa: true }));");
+    execFileSync(process.execPath, ['pdfa.mjs'], { cwd: tmp, stdio: 'pipe' });
+    expect(fs.readFileSync(path.join(tmp, 'a.pdf')).toString('latin1')).toMatch(/<pdfaid:part>2<\/pdfaid:part>/); // no icc passed: without the profile exportPdf throws
     execFileSync(path.join(tmp, 'node_modules/.bin/pw'), ['render', 'statement.pw.json', '-f', 'pdf', '-o', 'cli.pdf'], { cwd: tmp, stdio: 'pipe' });
     expect(fs.readFileSync(path.join(tmp, 'cli.pdf')).subarray(0, 5).toString()).toBe('%PDF-');
     fs.rmSync(tmp, { recursive: true, force: true });

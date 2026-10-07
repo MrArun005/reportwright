@@ -83,6 +83,12 @@ export async function exportPdf(model, options) {
     return readUrl(url);
   }));
   const { fonts, fontStore, ...rest } = opt;
+  // pdfa: true (or without icc): the sRGB profile from @pagewrightjs/fonts/public/icc
+  if (rest.pdfa && !(typeof rest.pdfa === 'object' && rest.pdfa.icc)) {
+    const url = fontsUrl('icc/sRGB-v2-magic.icc');
+    if (!url) throw new Error('PDF/A needs an sRGB colour profile: install @pagewrightjs/fonts, or pass pdfa: { icc: bytes }');
+    rest.pdfa = { ...(typeof rest.pdfa === 'object' ? rest.pdfa : {}), icc: new Uint8Array(await readUrl(url)) };
+  }
   return exportPdfFull(model, fontsOf(opt), /** @type {any} */ ({ ...rest, subset }));
 }
 /**
