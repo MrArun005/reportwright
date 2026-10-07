@@ -19,8 +19,9 @@
 //   PW_CPUS                        or from this (scripts/cluster.mjs gives each process its share of both).
 // Cores decide the worker count; memory decides what runs at once. The render budget is 70% of the limit less the
 // request thread (512 MB). Only as many workers as that budget holds big heaps for get the big heap (bigWorkers); the
-// rest get the small one. Each render is admitted by an estimate of its memory (what that template used last time,
-// else 256 MB, 64 MB for a stream): a render waits while the running renders' estimates leave no room for it (unless
+// rest get the small one. Each render is admitted by an estimate of its memory (sizeOf: never from the request; per
+// principal and template; the small heap for a render bound to a small worker, else the template's measured peak for
+// that principal, else the whole big heap): a render waits while the running renders' estimates leave no room for it (unless
 // none is running), so several big renders at once queue instead of the kernel killing the whole server. Backstop:
 // while the process's resident memory is above 85% of the limit, no further render starts unless none is running.
 // The render time limit (renderer.renderTimeoutMs) covers the whole render (template read, data fetch, layout,
@@ -79,6 +80,10 @@ const RESERVE_MB = 512, WORKER_EXTRA_MB = 96; // the request thread and its cach
 /** Tests: the ordering rule. */
 export const _next = () => next();
 export const _queue = () => P.queue;
+/** Tests: the admission estimate and how it is learnt. */
+export const _sizeOf = (msg, who, key) => sizeOf(msg, who, key);
+export const _learn = (j, mb) => learn(j, mb);
+export const _forget = () => P.mem.clear();
 
 /**
  * Worker count and heaps for a machine: { cores, memMB, heapMB, smallHeapMB, workers, bigWorkers, budgetMB }. Pure
@@ -131,14 +136,28 @@ const P = g.__pwRenderPool ||= { startFails: 0, dying: new Set(), dyingBig: new 
   stats: { done: 0, failed: 0, rejected: 0, timedOut: 0, crashed: 0, recycled: 0, dropped: 0, heldForMemory: 0, restarts: 0, retriedBig: 0 } };
 P.stats.heldForMemory ??= 0; P.stats.restarts ??= 0; P.stats.retriedBig ??= 0; P.mem ||= new Map(); P.dyingBig ||= new Set();
 
-/** MB a render of this kind is expected to need (admission), and whether it needs a big heap. A template's last
- *  measured peak, else a guess: 256 MB in a big worker, 64 MB for a stream or a thumbnail (they are bounded). */
-const DEFAULT_MB = 256, STREAM_MB = 64;
-function sizeOf(msg, key) {
-  const seen = P.mem.get(key);
-  const bounded = !!msg.stream || msg.kind === 'thumb';
-  const mem = seen ?? (bounded ? STREAM_MB : DEFAULT_MB);
-  return { mem, big: !bounded && !(seen != null && seen < plan().smallHeapMB * 0.5) };
+/**
+ * MB a render is charged at admission, and whether it needs a big heap. Never from the request: the caller chooses
+ * neither the number nor the class. A render bound for a small worker (a stream, a thumbnail, or a template this
+ * principal rendered small before) is charged the small heap, the most it can hold; any other render its template's
+ * measured peak for this principal (learned from the worker, biased up, clamped to [MEM_MIN, heap]), else the whole big
+ * heap. Estimates are per principal and template: one user's renders never set another's. The heap limits stay the
+ * hard backstop, and the RSS hold (memoryFull) a second one.
+ */
+const MEM_MIN = 32;
+const memKey = (who, key) => `${who}\u0000${key}`;
+function sizeOf(msg, who, key) {
+  const { smallHeapMB, heapMB: big } = plan();
+  const seen = P.mem.get(memKey(who, key));
+  if (msg.stream || msg.kind === 'thumb' || (seen != null && seen < smallHeapMB * 0.5)) return { mem: smallHeapMB, big: false };
+  return { mem: Math.min(big, Math.max(MEM_MIN, seen ?? big)), big: true };
+}
+/** Learn a principal's template size from a finished render: the measured peak, clamped, biased up. */
+function learn(j, peakMB) {
+  if (!(peakMB > 0)) return;
+  const k = memKey(j.who, j.key), o = P.mem.get(k), mb = Math.min(plan().heapMB, Math.max(MEM_MIN, Math.ceil(peakMB)));
+  P.mem.set(k, Math.round(o == null ? mb : Math.max(mb, 0.8 * o + 0.2 * mb)));
+  if (P.mem.size > 5000) P.mem.clear();
 }
 const runningMB = () => P.slots.reduce((s, x) => s + (x.job ? x.job.mem : 0), 0);
 
@@ -203,7 +222,7 @@ function spawn(big) {
     if (!m.err) { P.est.set(job.key, Math.round(0.7 * (P.est.get(job.key) ?? took) + 0.3 * took)); if (P.est.size > 5000) P.est.clear(); } // successes only: a made-up ref teaches nothing
     // the memory it used (the worker's peak heap growth): a template learns its size, biased up (a bigger render
     // counts at once, a smaller one only slowly)
-    if (!m.err && m.peakMB > 0) { const o = P.mem.get(job.key); P.mem.set(job.key, Math.round(o == null ? m.peakMB : Math.max(m.peakMB, 0.8 * o + 0.2 * m.peakMB))); if (P.mem.size > 5000) P.mem.clear(); }
+    if (!m.err) learn(job, m.peakMB);
     if (m.err) { P.stats.failed++; job.reject(Object.assign(new Error(m.err.message), m.err)); }
     else { P.stats.done++; job.resolve(m.ok); }
     if (s.renders >= maxRenders() || m.heapMB > recycleMB()) { P.stats.recycled++; retire(s); }
@@ -259,7 +278,7 @@ function died(s, e, exited = false) {
   // whose answer has started cannot: its caller sees the stream fail)
   if (j && oom && !s.big && !j.retried && !j.msg.port) {
     finish(s); P.stats.retriedBig++;
-    j.retried = true; j.big = true; j.mem = Math.max(j.mem, DEFAULT_MB); P.mem.set(j.key, Math.max(P.mem.get(j.key) ?? 0, plan().smallHeapMB));
+    j.retried = true; j.big = true; j.mem = plan().heapMB; P.mem.set(memKey(j.who, j.key), plan().heapMB);
     bump(P.waiting, j.who, 1); P.queue.unshift(j);
   } else if (j) { finish(s); P.stats.crashed++; j.reject(Object.assign(new Error(oom ? 'The render ran out of memory and was stopped.' : 'The render stopped unexpectedly. Try again.'), { status: 500 })); }
   if (!s.ready && ++P.startFails >= 3) { // it keeps dying while starting: no crash loop, render on this thread
@@ -318,7 +337,7 @@ function dispatch(s) {
     if (j.cls === 0 && !j.fresh && Date.now() - j.at > maxWaitMs()) { P.stats.dropped++; j.reject(busy('The server is busy: this render waited too long for its turn. Try again shortly.', 503, 5000)); continue; }
     break;
   }
-  if (!j) return;
+  if (!j) { if (any && P.queue.some(x => (s.big || !x.big) && x.mem > room)) P.stats.heldForMemory++; return; } // waits for room
   s.job = j;
   bump(P.running, j.who, 1);
   if (P.served.size > 10000) P.served.clear();
@@ -391,7 +410,7 @@ export function submit(msg, { background = false, principal, key = '', signal } 
   return new Promise((resolve, reject) => {
     const est = P.est.get(key) ?? 200;
     /** @type {Job} */
-    const j = { id: ++P.seq, msg: { ...msg, id: 0 }, cls, who, est, ...sizeOf(msg, key), at: Date.now(), key, resolve, reject, signal };
+    const j = { id: ++P.seq, msg: { ...msg, id: 0 }, cls, who, est, ...sizeOf(msg, who, key), at: Date.now(), key, resolve, reject, signal };
     j.msg.id = j.id;
     if (poolSize() < 1 || P.noWorker) return void runInline(j);
     fill();
