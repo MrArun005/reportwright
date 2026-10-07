@@ -6,7 +6,7 @@ import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import Designer from '../designer/Designer.jsx';
 import { useDesigner } from '../designer/store.js';
-import { setAssetBase } from '../viewer/engineClient.js';
+import { setAssetBase, setStandalone } from '../viewer/engineClient.js';
 import { uiFontCss } from '../viewer/uiFonts.js';
 
 /* global __PW_CSS__ */
@@ -15,13 +15,14 @@ const BLANK = { $schema: 'pagewright/report@1', name: 'New report', page: { size
 
 /**
  * @typedef {{ label?: string, source: { name: string, type: string, [key: string]: unknown } }} DataSourceTemplate
- * @typedef {{ server?: string, report?: string, definition?: object, lang?: string, height?: string,
+ * @typedef {{ server?: string, fontsUrl?: string, report?: string, definition?: object, lang?: string, height?: string,
  *   onSave?: (definition: object) => unknown, onOpen?: () => object | null | undefined | Promise<object | null | undefined>, readOnly?: boolean,
  *   toolbox?: { hide?: string[] }, panels?: { data?: boolean, inspector?: boolean }, dataSourceTemplates?: DataSourceTemplate[] }} DesignerOptions
  * @typedef {{ unmount: () => void, getDefinition: () => object, save: () => Promise<void> }} DesignerHandle
  */
 /**
- * Mount the Pagewright designer in an element. With onSave the host app saves; without it, the server named.
+ * Mount the Pagewright designer in an element. With onSave the host app saves; without it, the server named
+ * (with neither, there is no Save button). Without `server`, fonts load from `fontsUrl` (a copy of @pagewrightjs/fonts/public/fonts).
  * @param {string|HTMLElement} target
  * @param {DesignerOptions} opts
  * @returns {DesignerHandle}
@@ -31,7 +32,8 @@ export function mountDesigner(target, opts = {}) {
   if (!el) throw new Error(`mountDesigner: no element for ${target}`);
   const server = String(opts.server || '').replace(/\/$/, '');
   setAssetBase(server);
-  if (!document.getElementById('pw-embed-fonts')) {
+  setStandalone({ standalone: !server, fontsUrl: opts.fontsUrl });
+  if (server && !document.getElementById('pw-embed-fonts')) { // standalone: the system UI font
     const st = document.createElement('style');
     st.id = 'pw-embed-fonts';
     st.textContent = uiFontCss(server);

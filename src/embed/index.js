@@ -7,7 +7,7 @@
 import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import ReportViewer from '../viewer/ReportViewer.jsx';
-import { setAssetBase, registerReports, setBundledFonts } from '../viewer/engineClient.js';
+import { setAssetBase, registerReports, setBundledFonts, setStandalone } from '../viewer/engineClient.js';
 import { uiFontCss } from '../viewer/uiFonts.js';
 
 /* global __PW_CSS__ */
@@ -29,16 +29,32 @@ function installSnapshot(snapshot) {
 }
 
 /**
+ * The definition with `data` in place of its data sources: data maps a data source name to its JSON. A definition with
+ * one data source also takes the JSON itself (data with none of the source names).
+ * @param {any} def @param {Record<string, unknown>|undefined} data
+ */
+export function withData(def, data) {
+  if (data == null || !def) return def;
+  const srcs = def.dataSources || [];
+  const keyed = typeof data === 'object' && !Array.isArray(data) && srcs.some(s => Object.hasOwn(data, s.name));
+  if (!keyed && srcs.length !== 1) throw new Error(`mountViewer: data must be keyed by data source name (${srcs.map(s => s.name).join(', ') || 'the definition has none'})`);
+  const of = (s) => (keyed ? (Object.hasOwn(data, s.name) ? data[s.name] : undefined) : data);
+  return { ...def, dataSources: srcs.map(s => (of(s) === undefined ? s : { name: s.name, type: 'json', data: of(s) })) };
+}
+
+/**
  * @typedef {{ id: string, label: string, title?: string, after?: string, onClick?: (api: ViewerApi) => void }} ToolbarButton
  * @typedef {{ page: number, pages: number, goTo: (page: number) => void }} ViewerApi
- * @typedef {{ server?: string, report?: string, definition?: object, params?: Record<string, string>, lang?: string, height?: string,
+ * @typedef {{ server?: string, report?: string, definition?: object, data?: Record<string, unknown>, fontsUrl?: string, params?: Record<string, string>, lang?: string, height?: string,
  *   onDrill?: (report: string, params: Record<string, unknown>) => void,
  *   reports?: Record<string, object>, fonts?: Record<string, string>, customFonts?: object[], uiFontCss?: string, snapshot?: Record<string, any>, title?: string,
  *   toolbar?: { hide?: string[], add?: ToolbarButton[] }, viewMode?: 'single' | 'continuous' | 'galley' }} ViewerOptions
  * @typedef {{ unmount: () => void }} ViewerHandle
  */
 /**
- * Mount the Pagewright viewer in an element. Fonts and report definitions load from `server`.
+ * Mount the Pagewright viewer in an element. With `server` (a self-hosted Pagewright server), fonts and saved reports
+ * load from it. Without one (standalone): pass `definition` (and `data`, keyed by data source name), and `fontsUrl`, the
+ * URL of a copy of @pagewrightjs/fonts/public/fonts; nothing calls /api, and the interface uses the system font.
  * @param {string|HTMLElement} target
  * @param {ViewerOptions} opts
  * @returns {ViewerHandle}
@@ -48,13 +64,14 @@ export function mountViewer(target, opts = {}) {
   if (!el) throw new Error(`mountViewer: no element for ${target}`);
   const server = String(opts.server || '').replace(/\/$/, '');
   setAssetBase(server);
+  setStandalone({ standalone: !server, fontsUrl: opts.fontsUrl });
   if (opts.reports) registerReports(opts.reports);
   if (opts.fonts) setBundledFonts(opts.fonts, opts.customFonts);
   if (opts.snapshot) installSnapshot(opts.snapshot);
   // Fonts must be declared on the document; the rest of the styles live in a shadow root.
   // (Report fonts are added as FontFace objects by the viewer; this is the interface font.)
-  const fontCss = opts.uiFontCss ?? uiFontCss(server);
-  if (!document.getElementById('pw-embed-fonts')) {
+  const fontCss = opts.uiFontCss ?? (server ? uiFontCss(server) : ''); // standalone: the system UI font, no 404s
+  if (fontCss && !document.getElementById('pw-embed-fonts')) {
     const st = document.createElement('style');
     st.id = 'pw-embed-fonts';
     st.textContent = fontCss;
@@ -64,7 +81,8 @@ export function mountViewer(target, opts = {}) {
   shadow.innerHTML = `<style>${CSS}</style><div class="pw-embed" style="height:${opts.height || '720px'}"></div>`;
   const root = createRoot(shadow.querySelector('.pw-embed'));
   const show = (definition) => root.render(createElement(ReportViewer, { definition, reportId: opts.report, params: opts.params, lang: opts.lang, onDrill: opts.onDrill, title: opts.title, toolbar: opts.toolbar, viewMode: opts.viewMode }));
-  if (opts.definition) show(opts.definition);
+  if (opts.definition) show(withData(opts.definition, opts.data));
+  else if (!server) throw new Error('mountViewer: pass definition (standalone), or server and report');
   else fetch(`${server}/api/reports/${encodeURIComponent(opts.report)}`)
     .then(r => (r.ok ? r.json() : r.json().then(j => Promise.reject(new Error(j.error || `HTTP ${r.status}`)))))
     .then(show)

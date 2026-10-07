@@ -11,7 +11,7 @@ import ReportViewer from '@/viewer/ReportViewer.jsx';
 import { ITEMS } from '@/engine/items/index.js';
 import { fontFaceCss } from '@/exporters/svg.js';
 import { allFontKeys } from '@/engine/text/fonts.js';
-import { customFonts } from '@/viewer/engineClient.js';
+import { customFonts, fontsBase } from '@/viewer/engineClient.js';
 import ThemeToggle from '@/theme/ThemeToggle.jsx';
 import ChartWizard from './ChartWizard.jsx';
 import TableWizard from './TableWizard.jsx';
@@ -338,7 +338,7 @@ export default function Designer({ id, initial, rev = null, lang: langIn, embed 
   // every report font, bundled and uploaded: the canvas draws text boxes as HTML in them (the browser only
   // downloads the ones it uses, e.g. Noto Sans Devanagari once there is Hindi on the page)
   const fonts = useDesigner(s => s.fonts);
-  const fontCss = useMemo(() => fontFaceCss(allFontKeys(), `${embed?.server || ''}/fonts`), [fonts]); // eslint-disable-line react-hooks/exhaustive-deps
+  const fontCss = useMemo(() => fontFaceCss(allFontKeys(), fontsBase().replace(/\/$/, '')), [fonts]); // eslint-disable-line react-hooks/exhaustive-deps
   // embedded: @font-face is ignored inside a shadow root, so the report fonts are declared on the host document
   useEffect(() => {
     if (!embed) return;
@@ -474,7 +474,7 @@ export default function Designer({ id, initial, rev = null, lang: langIn, embed 
           </div>
         </TbGroup>
         {!embed && <button className="btn ai-btn" onClick={() => setDialog('ai')} disabled={!ai} title={ai ? T('askAiHint') : T('r4_aiOff')} data-testid="ask-ai"><Icon name="ai" />{T('askAi')}</button>}
-        {!readOnly && <button className="btn primary save-btn" onClick={() => st().save()} disabled={saving || saved} data-testid="save"><Icon name="save" />{T('save')} <span className="kbd" style={{ background: 'transparent', color: 'inherit', borderColor: 'currentColor', opacity: 0.7 }}>⌘S</span></button>}
+        {!readOnly && (!embed || embed.onSave || embed.server) && <button className="btn primary save-btn" onClick={() => st().save()} disabled={saving || saved} data-testid="save"><Icon name="save" />{T('save')} <span className="kbd" style={{ background: 'transparent', color: 'inherit', borderColor: 'currentColor', opacity: 0.7 }}>⌘S</span></button>}
       </header>
       {draftBar}
       <ConflictBar T={T} />

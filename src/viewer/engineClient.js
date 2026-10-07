@@ -10,7 +10,18 @@ import { fontFamilyCss, fontKeysOf } from '@/exporters/svg.js';
 let assetBase = '';
 export function setAssetBase(url) { assetBase = String(url || '').replace(/\/$/, ''); mainStore = null; }
 export const origin = () => assetBase || window.location.origin;
-export const subsetter = createSubsetter(async () => (await fetch(`${assetBase}/harfbuzz-subset.wasm`)).arrayBuffer());
+// Standalone (the npm viewer with no `server`): no /api calls; fonts from `fontsUrl`, a copy of @pagewrightjs/fonts/public/fonts.
+let fontsUrl = null;
+let standalone = false;
+/** @param {{ standalone?: boolean, fontsUrl?: string|null }} o */
+export function setStandalone({ standalone: on = false, fontsUrl: f = null } = {}) {
+  standalone = !!on; fontsUrl = f ? String(f).replace(/\/?$/, '/') : null; mainStore = null; fontList = null; fontBytes.clear();
+}
+/** Where the report fonts are: fontsUrl, else <server>/fonts/. */
+export const fontsBase = () => fontsUrl || `${assetBase}/fonts/`;
+/** A file next to the fonts folder (harfbuzz-subset.wasm, icc/…): ../ of fontsUrl, else the server's root. */
+const besideFonts = (file) => (fontsUrl ? new URL(`../${file}`, new URL(fontsUrl, typeof location !== 'undefined' ? location.href : undefined)).href : `${assetBase}/${file}`);
+export const subsetter = createSubsetter(async () => (await fetch(besideFonts('harfbuzz-subset.wasm'))).arrayBuffer());
 
 let worker = null;
 let workerBroken = false;
@@ -24,11 +35,23 @@ let bundledFonts = null;
 let bundledList = null;
 export function setBundledFonts(map, list) { bundledFonts = map || null; bundledList = list || null; mainStore = null; fontList = null; }
 const b64ToBuffer = (b64) => { const s = atob(b64); const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u.buffer; };
+/** Each font file fetched once, shared by the engine (FontStore) and the page (FontFace). */
+const fontBytes = new Map();
+const fetchFont = (k) => {
+  if (!fontBytes.has(k)) {
+    const p = (async () => {
+      const r = await fetch(`${fontsBase()}${fontFile(k)}`);
+      if (!r.ok) throw new Error(`Font "${k}" did not load (HTTP ${r.status})`);
+      return r.arrayBuffer();
+    })();
+    p.catch(() => fontBytes.delete(k)); // a failed fetch may be tried again
+    fontBytes.set(k, p);
+  }
+  return fontBytes.get(k);
+};
 const getFont = async (k) => {
   if (bundledFonts?.[k]) return b64ToBuffer(bundledFonts[k]);
-  const r = await fetch(`${assetBase}/fonts/${fontFile(k)}`);
-  if (!r.ok) throw new Error(`Font "${k}" did not load (HTTP ${r.status})`);
-  return r.arrayBuffer();
+  return (await fetchFont(k)).slice(0); // a copy: the engine may transfer or detach its buffer
 };
 
 export function fontStore() {
@@ -46,7 +69,7 @@ const makeWorker = typeof __PW_EMBED__ !== 'undefined' && __PW_EMBED__ ? null
 let fontList = null;
 export function customFonts(refresh = false) {
   if (!fontList || refresh) {
-    fontList = (bundledList ? Promise.resolve(bundledList) : fetch(`${assetBase}/api/fonts`).then(r => (r.ok ? r.json() : [])).catch(() => []))
+    fontList = (bundledList ? Promise.resolve(bundledList) : standalone ? Promise.resolve([]) : fetch(`${assetBase}/api/fonts`).then(r => (r.ok ? r.json() : [])).catch(() => []))
       .then((list) => { setCustomFonts(list); return list; });
   }
   return fontList;
@@ -61,10 +84,13 @@ export function loadReportFonts(keys) {
   if (typeof document === 'undefined' || !document.fonts || typeof FontFace === 'undefined') return Promise.resolve();
   return Promise.all(keys.filter(k => k !== SHAPER).map((k) => {
     if (!faces.has(k)) {
-      const src = bundledFonts?.[k] ? b64ToBuffer(bundledFonts[k]) : `url("${assetBase}/fonts/${fontFile(k)}")`;
-      const face = new FontFace(fontFamilyCss(k), src, { display: 'block' });
-      document.fonts.add(face);
-      faces.set(k, face.load().catch(() => {}));
+      // the same bytes the engine measures with (one download per font), not a url() the browser fetches again
+      const bytes = bundledFonts?.[k] ? Promise.resolve(b64ToBuffer(bundledFonts[k])) : fetchFont(k).then(b => b.slice(0));
+      faces.set(k, bytes.then((src) => {
+        const face = new FontFace(fontFamilyCss(k), src, { display: 'block' });
+        document.fonts.add(face);
+        return face.load();
+      }).catch(() => {}));
     }
     return faces.get(k);
   }));
@@ -103,6 +129,7 @@ const bundled = new Map();
 export function registerReports(map) { for (const [k, v] of Object.entries(map || {})) bundled.set(k, v); }
 const loadReport = async (rid) => {
   if (bundled.has(rid)) return structuredClone(bundled.get(rid));
+  if (standalone) throw new Error(`Report "${rid}" is not loaded: pass it in reports: { "${rid}": definition }, or set server (a self-hosted Pagewright server)`);
   const r = await fetch(`${assetBase}/api/reports/${encodeURIComponent(rid)}`);
   if (!r.ok) throw new Error(`Report "${rid}" not found`);
   return r.json();
@@ -136,7 +163,7 @@ export const usingWorker = () => !!worker && !workerBroken;
 
 /** The sRGB profile a PDF/A file carries (public/icc). */
 async function iccProfile() {
-  const r = await fetch(`${origin()}/icc/sRGB-v2-magic.icc`);
+  const r = await fetch(fontsUrl ? besideFonts('icc/sRGB-v2-magic.icc') : `${origin()}/icc/sRGB-v2-magic.icc`);
   if (!r.ok) throw new Error(`the PDF/A colour profile did not load (HTTP ${r.status})`);
   return new Uint8Array(await r.arrayBuffer());
 }

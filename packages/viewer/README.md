@@ -4,8 +4,29 @@
 
 The Pagewright report viewer in any web app (React is bundled inside, in a shadow root, so your styles do not leak in). A React app imports `@pagewrightjs/viewer/react-peer` (and `/react-peer/designer`) instead, the same viewer using the app's own React, so the page loads React once; `@pagewrightjs/react` does this for you:
 
+## Without a server (library only)
+
+```bash
+npm i @pagewrightjs/viewer @pagewrightjs/fonts
+# serve the fonts as static files, e.g. from your app's public folder
+cp -r node_modules/@pagewrightjs/fonts/public public/pw     # fonts/, harfbuzz-subset.wasm, icc/
+```
+
 ```js
 import { mountViewer } from '@pagewrightjs/viewer';
+mountViewer('#report', {
+  definition,                         // the report JSON (see @pagewrightjs/engine/report)
+  data: { orders: { rows: [...] } },  // JSON for each data source, by name (REST sources in the definition are fetched as usual)
+  fontsUrl: '/pw/fonts/',             // the copied fonts folder; PDF subsetting and PDF/A use ../harfbuzz-subset.wasm and ../icc/
+});
+```
+
+Nothing calls `/api`; each font is downloaded once; the toolbar uses the system font. Copying only `fonts/` works too
+(PDFs then embed whole fonts, and PDF/A export needs `icc/`).
+
+## With the self-hosted Pagewright server
+
+```js
 mountViewer('#report', { server: 'https://reports.example.com', report: 'loan-statement', params: { accountId: 'LN-1' } });
 ```
 
