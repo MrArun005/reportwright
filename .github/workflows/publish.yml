@@ -6,6 +6,7 @@
 #   - trusted publishing (preferred, no token): on npmjs.com, each @pagewrightjs package > Settings > Trusted
 #     publisher > GitHub Actions, repository MrArun005/pagewright, workflow publish.yml; or
 #   - a granular npm access token with publish rights on @pagewrightjs, saved as the repository secret NPM_TOKEN.
+# Step by step: docs/RELEASING.md.
 name: Publish to npm
 on:
   release:
