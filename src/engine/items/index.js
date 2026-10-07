@@ -22,6 +22,7 @@ import { tocNumbers } from './toc.js';
 import { resolveImageSrc, imageInfo, PX } from '../image.js';
 import { groupRows, cmpKey, buildPivot, isTablix } from './pivot.js';
 import { sliceColumns, itemLeft } from './hpage.js';
+import { rowCells } from './cells.js';
 
 /**
  * Item registry. Each item type has:
@@ -412,6 +413,7 @@ register('table', {
     let openSpans = [];
     const cover = new Array(cols.length).fill(null); // the open span over each column: O(1) per cell
     const covered = (ci) => cover[ci] !== null;
+    const cellsAt = new WeakMap(); // row → its cells by column
     const layRow = (row, ctx, kind, extra) => {
       // a row hidden by its expression (per record for detail rows) takes no space; merged cells over it still count it
       if (row.hidden != null && row.hidden !== false && row.hidden !== '' && hidden({ hidden: row.hidden, name: `${item.name || 'Table'} row` }, ctx, lc)) {
@@ -426,8 +428,10 @@ register('table', {
       const cells = [];
       let started = null; // merged cells that start on this row (rare: no array otherwise)
       let need = row.height || 18;
+      let at = cellsAt.get(row);
+      if (!at) cellsAt.set(row, at = rowCells(row.cells, cols.length).at); // both colSpan forms; a cell under a span is not drawn
       for (let ci = 0; ci < cols.length; ci++) {
-        const cell = row.cells?.[ci];
+        const cell = at[ci];
         if (!cell || covered(ci)) continue;
         const span = Math.max(1, Math.min(cell.colSpan || 1, cols.length - ci));
         let cw = 0;

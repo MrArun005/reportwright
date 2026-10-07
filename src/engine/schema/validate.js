@@ -2,6 +2,7 @@
 import { checkValue, checkFunctions, parseValue, callIssues, compile } from '../expr/evaluate.js';
 import { ITEMS } from '../items/index.js';
 import { symbologyError } from '../items/barcode.js';
+import { rowCells } from '../items/cells.js';
 
 export const SCHEMA_ID = 'pagewright/report@1';
 
@@ -155,6 +156,11 @@ export function validate(def) {
         for (const part of ['header', 'detail', 'footer']) {
           for (const row of it[part] || []) for (const c of row.cells || []) if (c) check(where, c.value, `${label} ${part} cell`);
         }
+        const n = Array.isArray(it.columns) ? it.columns.length : 0;
+        const rowsOf = [['header', it.header], ['detail', it.detail], ['footer', it.footer], ...(it.groups || []).flatMap((g, gi) => [[`group ${gi + 1} header`, g?.header], [`group ${gi + 1} footer`, g?.footer]])];
+        for (const [part, rows] of rowsOf) (Array.isArray(rows) ? rows : []).forEach((row, ri) => {
+          for (const [k, j] of rowCells(row?.cells, n).covered) warnings.push(`${label} ${part} row ${ri + 1}: cell ${k} is covered by colSpan of cell ${j}, so it is not drawn (leave it null, or omit the spanned cells: a row with fewer cells than columns places each cell after the previous one's span)`);
+        });
       }
     }
   }
