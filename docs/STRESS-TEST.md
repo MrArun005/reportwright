@@ -60,3 +60,18 @@ Open: data / designer
 - **Testing the designer:** open the report, pick any section, change a value, watch the live preview. Try the chart gallery on `Accounts` (dirty categories) and on `Empty`.
 - **Testing exports:** every format from the viewer. The PDF must match the page model (`scripts/check-pdf-matches-model.mjs`); Excel must survive the 40-column sheet and the Unicode table.
 - **Testing scale:** `/api/sample/hard?rows=200000` and bind a table to `Transactions`.
+
+## Memory per row (0.8, `node --expose-gc scripts/mem-rows.mjs 50000`)
+
+A 50,000-row, 6-column table (1,021 A4 pages), heap held after GC:
+
+| | per row |
+|---|---|
+| the source rows (JSON) | 0.18 KB |
+| page model, `exportData: false` (the default; a view, a PDF) | 2.12 KB |
+| page model, `exportData: true` (Excel, CSV, Word, HTML, accessible PDF) | 3.33 KB |
+
+The model is 6.1 text operations per row (one per cell, about 350 bytes each: position, font, clip box, the text).
+`exportData` adds 1.2 KB/row of table data, so it stays off unless the format needs it (`needsExportData(format)`;
+the pool and the viewer ask only then). The model keeps no reference to the data sets. A disk-backed page store
+(pages written out as they are laid out) would cut the remaining 2 KB/row; not done (large change).
