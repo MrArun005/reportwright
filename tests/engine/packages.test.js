@@ -93,6 +93,16 @@ describe('npm packages', () => {
     expect(json('packages/viewer/package.json').exports['./react-peer'].default).toBe('./dist/peer/viewer.js');
   }, 120000);
 
+  it('every package ships readable code (not minified) with source maps', () => {
+    for (const f of ['engine/dist/index.js', 'cli/dist/pw.mjs', 'viewer/dist/viewer.js', 'viewer/dist/designer.js', 'viewer/dist/peer/viewer.js']) {
+      const src = fs.readFileSync(path.join(root, 'packages', f), 'utf8');
+      const lines = src.split('\n');
+      expect(src.length / lines.length, f).toBeLessThan(120); // minified code is a few very long lines
+      expect(src, f).toMatch(/\/\/# sourceMappingURL=\S+\.map/);
+      expect(fs.existsSync(path.join(root, 'packages', f + '.map')), f).toBe(true);
+    }
+  });
+
   it('a TypeScript consumer type-checks, and every wrong case fails', () => {
     let out = '';
     try { node('node_modules/typescript/bin/tsc', '-p', 'tests/fixtures/types'); } catch (e) { out = String(e.stdout) + String(e.stderr); }

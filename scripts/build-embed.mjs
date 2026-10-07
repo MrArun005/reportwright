@@ -20,15 +20,18 @@ const common = {
   logLevel: 'warning',
   logOverride: { 'empty-import-meta': 'silent', 'unsupported-dynamic-import': 'silent' },
 };
+// The ES modules are what @pagewrightjs/viewer publishes: readable (not minified, names kept) with source maps, so a
+// reviewer (or Socket's scanner) reads the same code we wrote. The single-file IIFE below stays minified.
+const readable = { minify: false, sourcemap: 'linked', sourcesContent: false, legalComments: 'inline' };
 // 1. Everything in one classic script: the interactive HTML export inlines this one (it must work offline).
 await build({ ...common, format: 'iife', outfile: path.join(root, 'public/embed/pagewright-viewer.full.js') });
 // 2. For other sites: ES modules split in chunks, so PDF export (pdf-lib) and barcodes (bwip-js) load only when used.
 fs.rmSync(path.join(root, 'public/embed/esm'), { recursive: true, force: true });
 //    The designer is a second entry: it shares React, the engine and the viewer with it.
-await build({ ...common, entryPoints: { viewer: path.join(root, 'src/embed/index.js'), designer: path.join(root, 'src/embed/designer.js') }, format: 'esm', splitting: true, outdir: path.join(root, 'public/embed/esm'), entryNames: '[name]', chunkNames: 'chunk-[hash]' });
+await build({ ...common, entryPoints: { viewer: path.join(root, 'src/embed/index.js'), designer: path.join(root, 'src/embed/designer.js') }, format: 'esm', ...readable, splitting: true, outdir: path.join(root, 'public/embed/esm'), entryNames: '[name]', chunkNames: 'chunk-[hash]' });
 //    The same ES modules with React left to the host app (@pagewrightjs/viewer/react-peer, used by @pagewrightjs/react).
 fs.rmSync(path.join(root, 'public/embed/esm-peer'), { recursive: true, force: true });
-await build({ ...common, entryPoints: { viewer: path.join(root, 'src/embed/index.js'), designer: path.join(root, 'src/embed/designer.js') }, format: 'esm', splitting: true, outdir: path.join(root, 'public/embed/esm-peer'), entryNames: '[name]', chunkNames: 'chunk-[hash]', external: ['react', 'react-dom', 'react/*', 'react-dom/*'] });
+await build({ ...common, entryPoints: { viewer: path.join(root, 'src/embed/index.js'), designer: path.join(root, 'src/embed/designer.js') }, format: 'esm', ...readable, splitting: true, outdir: path.join(root, 'public/embed/esm-peer'), entryNames: '[name]', chunkNames: 'chunk-[hash]', external: ['react', 'react-dom', 'react/*', 'react-dom/*'] });
 // 3. The script tag people paste: a tiny loader that keeps the Pagewright.mountViewer(...) call working.
 fs.writeFileSync(path.join(root, 'public/embed/pagewright-viewer.js'), `/* Pagewright viewer loader: the viewer itself is in esm/ */
 (function () {
