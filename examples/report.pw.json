@@ -1,0 +1,19 @@
+{
+  "$schema": "pagewright/report@1",
+  "name": "Orders",
+  "page": { "size": "A4", "margins": [36, 36, 36, 36] },
+  "dataSources": [{ "name": "orders", "type": "json", "data": { "rows": [] } }],
+  "dataSets": [{ "name": "Lines", "source": "orders", "path": "$.rows" }],
+  "sections": {
+    "body": {
+      "items": [
+        { "type": "textbox", "name": "Title", "x": 0, "y": 0, "w": 300, "h": 24, "value": "Orders", "style": { "fontSize": 18, "fontWeight": "bold" } },
+        { "type": "table", "name": "Table", "x": 0, "y": 40, "w": 400, "h": 60, "dataSet": "Lines",
+          "columns": [{ "width": 250 }, { "width": 150 }],
+          "header": [{ "height": 18, "cells": [{ "value": "Customer" }, { "value": "Amount", "style": { "textAlign": "right" } }] }],
+          "detail": [{ "height": 18, "cells": [{ "value": "=Fields.customer" }, { "value": "=Fields.amount", "style": { "format": "C2", "textAlign": "right" } }] }],
+          "footer": [{ "height": 18, "cells": [{ "value": "Total" }, { "value": "=Sum(Fields.amount)", "style": { "format": "C2", "textAlign": "right", "fontWeight": "bold" } }] }] }
+      ]
+    }
+  }
+}

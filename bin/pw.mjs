@@ -24,6 +24,8 @@ const PUB = fs.existsSync(path.join(ROOT, 'public', 'fonts')) ? path.join(ROOT, 
 const HELP = `pw render <report.pw.json> [-p name=value]… [-d source=data.json]… [-f pdf|xlsx|docx|pptx|html|csv|json|txt] [-o file|-] [--base URL] [--pdfa] [--ua]
           [--values] [--static] [--layout]
           [--password PW] [--owner-password PW] [--deny print|modify|copy|annotate|fillForms|accessibility|assemble|printHighQuality]…
+pw import <report.jrxml|.rdl|.rptdesign> [-o out.pw.json]
+                                   convert a JasperReports, SSRS or BIRT report to a Pagewright definition
 pw test [folder] [--update]        render every <folder>/__tests__/*.test.json case and compare it with its snapshot
 pw diff <old.pw.json> <new.pw.json> [-p name=value]… [-d source=data.json]… [--base URL]
 pw audit verify [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--json] [--public-key file.pem]
@@ -229,6 +231,20 @@ async function cmdMigrateStorage(args) {
   console.log(`copied ${n.records} records, ${n.versions} versions and ${n.audit} audit events to ${values.to.replace(/\/\/[^@/]*@/, '//***@')}`);
 }
 
-const commands = { render: cmdRender, test: cmdTest, diff: cmdDiff, audit: cmdAudit, 'migrate-storage': cmdMigrateStorage };
+async function cmdImport(args) {
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { o: { type: 'string' } } });
+  if (positionals.length !== 1) usage('give one .jrxml, .rdl or .rptdesign file');
+  const { importXmlReport } = await import('../src/importers/index.js');
+  const file = positionals[0];
+  const r = importXmlReport(fs.readFileSync(file, 'utf8'), { name: path.basename(file).replace(/\.[^.]+$/, '') });
+  for (const w of r.warnings) console.error(`pw: ${w}`);
+  if (r.error) fail(r.error);
+  const out = values.o || file.replace(/\.[^.]+$/, '.pw.json');
+  const json = JSON.stringify(r.definition, null, 2) + '\n';
+  if (out === '-') process.stdout.write(json); else fs.writeFileSync(out, json);
+  if (out !== '-') console.error(`${out}: ${r.stats.items} items (${r.stats.mapped} mapped, ${r.stats.approximated} approximated, ${r.stats.dropped} dropped)`);
+}
+
+const commands = { render: cmdRender, import: cmdImport, test: cmdTest, diff: cmdDiff, audit: cmdAudit, 'migrate-storage': cmdMigrateStorage };
 if (!commands[cmd]) usage(cmd && cmd !== 'help' && cmd !== '--help' ? `unknown command "${cmd}"` : '');
 try { await commands[cmd](rest); } catch (e) { fail(e.message); }

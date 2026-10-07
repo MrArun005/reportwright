@@ -1,0 +1,7 @@
+{
+  "name": "pagewright-example-node",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node render.js" },
+  "dependencies": { "@pagewrightjs/engine": "0.8.0", "@pagewrightjs/fonts": "0.8.0" }
+}

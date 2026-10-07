@@ -7,6 +7,7 @@
 ```bash
 npx -p @pagewrightjs/cli pw render statement.pw.json -p accountId=LN-1 -d loans=data.json -f pdf -o statement.pdf
 npx -p @pagewrightjs/cli pw test reports        # snapshot tests for reports-as-code
+npx -p @pagewrightjs/cli pw import invoice.jrxml   # JasperReports, SSRS (.rdl) or BIRT → invoice.pw.json
 ```
 
 MIT.
