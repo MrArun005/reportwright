@@ -223,7 +223,7 @@ export async function renderTo(def, opt = {}) {
   else if (format === 'csv') bytes = Buffer.from(exportCsv(model, /** @type {any} */ ({ locale: def.locale, currency: def.currency, layout: opt.csv === 'layout' })));
   else if (format === 'docx') bytes = Buffer.from(await exportDocx(model, { title: def.name, lang: def.locale, fontStore: fontStore(), fetchImage }));
   else if (format === 'pptx') bytes = Buffer.from(await exportPptx(model, { title: def.name, lang: def.locale, fontStore: fontStore(), fetchImage }));
-  else if (format === 'xlsx') { const ExcelJS = (await import('exceljs')).default; bytes = await exportXlsx(model, ExcelJS, { currency: def.currency, title: def.name, formulas: formulasOn(opt.formulas), fontStore: fontStore(), fetchImage }); }
+  else if (format === 'xlsx') { bytes = await exportXlsx(model, { currency: def.currency, title: def.name, formulas: formulasOn(opt.formulas), fontStore: fontStore(), fetchImage }); }
   else bytes = Buffer.from(JSON.stringify(model));
   return { bytes, model, contentType: FORMATS[format].type, ext: FORMATS[format].ext };
 }

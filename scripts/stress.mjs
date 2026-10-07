@@ -47,7 +47,7 @@ console.log(`         ${model.pages.length} pages, ${model.pages.reduce((s, p) =
 for (const f of formats) {
   try {
     if (f === 'pdf') await time('pdf', () => exportPdf(model, fontStore, { title: 'Stress' }));
-    if (f === 'xlsx') await time('xlsx', async () => exportXlsx(model, (await import('exceljs')).default, { title: 'Stress' }));
+    if (f === 'xlsx') await time('xlsx', async () => exportXlsx(model, { title: 'Stress' }));
     if (f === 'docx') await time('docx', () => exportDocx(model, { title: 'Stress' }));
     if (f === 'html') await time('html', () => exportHtml(model, fontStore, { title: 'Stress' }));
     if (f === 'csv') await time('csv', () => exportCsv(model, {}));

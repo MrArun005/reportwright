@@ -1,8 +1,9 @@
 // @ts-check
 import { mergedRegions, textRows, needsTableData } from './regions.js';
-import { figures, figurePicture, altOf, b64 } from './figures.js';
+import { figures, figurePicture, altOf } from './figures.js';
 import { toWall, standardDate, currencyOf } from '../engine/expr/format.js';
 import { chartTable, addCharts } from './xlsxchart.js';
+import { Book, colName } from './xlsxwriter.js';
 
 /** A .NET date pattern → an Excel date format (months m, minutes after an hour, tt → AM/PM, 24-hour H). */
 const excelDate = (f) => f.replace(/'([^']*)'/g, (_, t) => (/^[\s./:,-]*$/.test(t) ? t : `"${t}"`)).replace(/M/g, 'm').replace(/tt?/g, 'AM/PM').replace(/HH?/g, 'hh').replace(/f+/g, (x) => `.${'0'.repeat(Math.min(3, x.length))}`).replace(/\s*zzz?/g, '');
@@ -64,8 +65,6 @@ export function currencySymbol(iso, locale) {
 
 const SYMBOL = { INR: '₹', USD: '$', EUR: '€', GBP: '£', JPY: '¥' };
 
-/** Excel's column letters for a 1-based column. */
-const colName = (c) => { let s = ''; for (let n = c; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s; return s; };
 /** decimals a .NET format shows (N2 → 2, C0 → 0, P1 → 1, #,##0.00 → 2), or null when unknown */
 const decimalsOf = (fmt) => {
   const m = /^[CcNnFfPp](\d{0,2})$/.exec(fmt || '');
@@ -137,25 +136,26 @@ function totalFormula(rows, at, c, made) {
  * Excel workbook in "data mode": one sheet per table, typed cells, number formats,
  * bold header and group rows, and outline levels for grouped detail rows. Group and table totals that are a sum,
  * count, average, minimum or maximum of their column are live SUBTOTAL formulas (formulas: false keeps values).
- * Charts and pictures go on a sheet of their own as pictures (PNG; needs a rasteriser, see figures.js).
+ * Charts are native Excel charts; pictures go on a sheet of their own (PNG; needs a rasteriser, see figures.js).
+ * Written by xlsxwriter.js (no ExcelJS).
  * @param {any} model  render() output
- * @param {any} ExcelJS  the exceljs module (passed in so the browser can load it lazily)
- * @param {{ currency?: string, title?: string, formulas?: boolean, pictures?: boolean, fontStore?: any,
- *   fetchImage?: (src: string) => Promise<Uint8Array|null>, rasterize?: any }} [opt]
+ * @param {{ currency?: string, title?: string, formulas?: boolean, pictures?: boolean, charts?: boolean, fontStore?: any, fonts?: any,
+ *   fetchImage?: (src: string) => Promise<Uint8Array|null>, rasterize?: any, timeZone?: string }} [opt]
  * @returns {Promise<Uint8Array>}
  */
-export async function exportXlsx(model, ExcelJS, { currency, title, formulas = true, pictures = true, charts = true, fontStore, fetchImage, rasterize, timeZone } = {}) {
+export async function exportXlsx(model, opt = {}) {
+  // 0.7 signature: exportXlsx(model, ExcelJS, opt) (ExcelJS is no longer used)
+  if (arguments.length > 2 || (opt && (typeof opt === 'function' || opt.Workbook))) opt = arguments[2] || {};
+  const { currency, title, formulas = true, pictures = true, charts = true, fetchImage, rasterize, timeZone } = opt;
+  const fontStore = opt.fontStore || opt.fonts;
   needsTableData(model, 'Excel');
-  // Excel dates have no zone: ExcelJS writes a Date's UTC parts, so a date goes in as its wall clock in the zone the
-  // report showed it in (a local midnight east of UTC was a day early)
+  // Excel dates have no zone: a date goes in as its wall clock in the zone the report showed it in (a local midnight
+  // east of UTC was a day early); xlsxwriter writes a Date's UTC parts
   const tz = timeZone ?? model.timeZone ?? undefined;
   // the page's currency when none is passed: the report's, else the locale's own (en-IN ₹), as C2 shows it (N7)
   const sym = currencySymbol(currency || model.currency || currencyOf(model.locale), model.locale);
   const cellValue = (v) => (v === '' ? null : v instanceof Date ? new Date(toWall(v, tz)) : v);
-  const wb = new ExcelJS.Workbook();
-  wb.creator = 'Pagewright';
-  wb.created = new Date();
-  wb.title = title || model.name || 'Report';
+  const wb = new Book({ title: title || model.name || 'Report' });
   const regions = mergedRegions(model);
   const used = new Set();
   const sheetName = (n) => {
@@ -167,45 +167,51 @@ export async function exportXlsx(model, ExcelJS, { currency, title, formulas = t
     return k;
   };
   if (!regions.length) {
-    const ws = wb.addWorksheet(sheetName(title || 'Report'));
+    const ws = wb.addSheet(sheetName(title || 'Report'));
     model.pages.forEach((p, pi) => {
-      for (const l of textRows(p.items)) ws.addRow([pi + 1, l]);
+      for (const l of textRows(p.items)) ws.addRow([{ v: pi + 1 }, { v: l }]);
     });
-    ws.getColumn(1).width = 6; ws.getColumn(2).width = 80;
+    ws.widths = [6, 80];
   }
   for (const r of regions) {
-    const ws = wb.addWorksheet(sheetName(r.name));
-    r.columns.forEach((w, i) => { ws.getColumn(i + 1).width = Math.max(6, Math.round(w / 5.5)); });
+    const ws = wb.addSheet(sheetName(r.name));
+    ws.widths = r.columns.map(w => Math.max(6, Math.round(w / 5.5)));
     let headerRows = 0;
-    const merges = []; // applied after the rows exist (a merge down would otherwise create rows ahead of addRow)
+    const merges = []; // applied after the rows exist (clipped to the last row)
     const rows = r.rows.map(row => ({ ...row, n: 0 }));
     const made = new Map();
     rows.forEach((row, ri) => {
-      const values = new Array(r.columns.length).fill(null);
-      for (const c of row.cells) if (c.colIndex >= 0) values[c.colIndex] = cellValue(c.value);
-      const xr = ws.addRow(values);
-      row.n = xr.number;
-      if (row.kind === 'header') headerRows++;
-      if (row.kind === 'detail' && row.level > 0) xr.outlineLevel = Math.min(7, row.level);
+      row.n = ws.rowCount + 1;
+      /** @type {any[]} */
+      const cells = new Array(r.columns.length).fill(null);
+      const header = row.kind === 'header';
       for (const c of row.cells) {
         if (c.colIndex < 0) continue;
-        const cell = xr.getCell(c.colIndex + 1);
+        const value = cellValue(c.value);
         const nf = excelFormat(c.format, sym, model.locale, c.value);
-        if (nf && (typeof c.value === 'number' || c.value instanceof Date)) cell.numFmt = nf;
-        else if (c.value instanceof Date) cell.numFmt = 'dd mmm yyyy';
-        if (c.bold || row.kind !== 'detail') cell.font = { bold: c.bold || row.kind === 'header' };
-        if (c.span > 1 || c.rowSpan > 1) merges.push([xr.number, c.colIndex + 1, xr.number + Math.max(1, c.rowSpan || 1) - 1, c.colIndex + Math.max(1, c.span || 1)]);
+        const numFmt = nf && (typeof c.value === 'number' || c.value instanceof Date) ? nf : c.value instanceof Date ? 'dd mmm yyyy' : null;
+        const cell = { v: value, style: { numFmt, bold: !!(c.bold || header), fill: header } };
+        if (c.span > 1 || c.rowSpan > 1) merges.push([row.n, c.colIndex + 1, row.n + Math.max(1, c.rowSpan || 1) - 1, c.colIndex + Math.max(1, c.span || 1)]);
         if (formulas && (row.kind === 'groupFooter' || row.kind === 'footer') && !(c.span > 1)) {
           const f = totalFormula(rows, ri, c, made);
-          if (f) { cell.value = { formula: f, result: c.value }; made.set(`${ri}|${c.colIndex}`, f); }
+          if (f) { cell.f = f; made.set(`${ri}|${c.colIndex}`, f); }
         }
+        cells[c.colIndex] = cell;
       }
-      if (row.kind === 'header') xr.eachCell(cell => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8EEF3' } }; });
+      if (header) for (let i = 0; i < cells.length; i++) cells[i] ||= { v: null, style: { fill: true } };
+      ws.addRow(cells, { outlineLevel: row.kind === 'detail' && row.level > 0 ? Math.min(7, row.level) : 0 });
+      if (header) headerRows++;
     });
-    const last = ws.rowCount;
-    for (const [r1, c1, r2, c2] of merges) { try { ws.mergeCells(r1, c1, Math.min(r2, last), c2); } catch { /* overlaps a merge already made */ } }
-    if (headerRows) ws.views = [{ state: 'frozen', ySplit: headerRows }];
-    ws.properties.outlineLevelRow = r.rows.reduce((m, x) => Math.max(m, x.kind === 'detail' ? x.level || 0 : 0), 0);
+    const last = ws.rowCount, taken = new Set();
+    for (const [r1, c1, r2, c2] of merges) {
+      const box = []; let clash = false;
+      for (let y = r1; y <= Math.min(r2, last); y++) for (let x = c1; x <= c2; x++) { const k = `${y},${x}`; if (taken.has(k)) clash = true; box.push(k); }
+      if (clash) continue; // overlaps a merge already made
+      box.forEach(k => taken.add(k));
+      ws.merge(r1, c1, Math.min(r2, last), c2);
+    }
+    ws.frozenRows = headerRows;
+    ws.outlineLevelRow = Math.min(7, r.rows.reduce((m, x) => Math.max(m, x.kind === 'detail' ? x.level || 0 : 0), 0));
   }
   // charts Excel can draw: a sheet each, with the chart's data at A1 and an editable chart bound to it (xlsxchart.js)
   const native = [];
@@ -214,10 +220,10 @@ export async function exportXlsx(model, ExcelJS, { currency, title, formulas = t
     for (const pg of model.pages) for (const f of figures(pg.items)) {
       const spec = f.tag.k === 'chart' ? f.items.find(it => it.xchart)?.xchart : null;
       if (!spec || native.length >= 100) continue;
-      const ws = wb.addWorksheet(sheetName(spec.title || f.tag.alt || `Chart ${native.length + 1}`));
+      const ws = wb.addSheet(sheetName(spec.title || f.tag.alt || `Chart ${native.length + 1}`));
       const rows = chartTable(spec);
-      rows.forEach((r, ri) => { const xr = ws.addRow(r); if (ri === 0) xr.font = { bold: true }; });
-      rows[0].forEach((_, ci) => { ws.getColumn(ci + 1).width = ci === 0 && spec.categories ? 18 : 12; });
+      rows.forEach((r, ri) => ws.addRow(r.map(v => ({ v, style: ri === 0 ? { bold: true } : undefined }))));
+      ws.widths = rows[0].map((_, ci) => (ci === 0 && spec.categories ? 18 : 12));
       native.push({ sheet: ws.name, spec, at: { col: rows[0].length + 1, row: 1 } });
       nativeFigs.add(f.tag);
     }
@@ -230,16 +236,14 @@ export async function exportXlsx(model, ExcelJS, { currency, title, formulas = t
       const pic = await figurePicture(f, { fontStore, fetchImage, rasterize });
       const bytes = pic.png || pic.jpeg;
       if (!bytes) continue;
-      ws ||= wb.addWorksheet(sheetName('Charts'));
-      ws.getCell(row, 1).value = altOf(f.tag);
-      ws.getCell(row, 1).font = { bold: true };
-      const id = wb.addImage({ base64: `data:image/${pic.png ? 'png' : 'jpeg'};base64,${b64(bytes)}`, extension: pic.png ? 'png' : 'jpeg' });
+      ws ||= wb.addSheet(sheetName('Charts'));
+      while (ws.rowCount < row - 1) ws.addRow([]);
+      ws.addRow([{ v: altOf(f.tag), style: { bold: true } }]);
       const w = Math.round(pic.w * 4 / 3), h = Math.round(pic.h * 4 / 3); // points → pixels
-      ws.addImage(id, { tl: { col: 0, row }, ext: { width: w, height: h }, editAs: 'oneCell' });
+      ws.addImage(bytes, pic.png ? 'png' : 'jpeg', 0, row, w, h);
       row += 2 + Math.ceil(h / 20); // default rows are 20 px
     }
   }
-  if (formulas) wb.calcProperties.fullCalcOnLoad = true; // Excel works the totals out again on open
-  const buf = await wb.xlsx.writeBuffer();
-  return addCharts(new Uint8Array(buf), native);
+  wb.fullCalcOnLoad = !!formulas; // Excel works the totals out again on open
+  return addCharts(wb.write(), native);
 }

@@ -17,7 +17,6 @@ const common = {
   alias: { '@': path.join(root, 'src'), 'next/link': path.join(root, 'src/embed/link.js') },
   loader: { '.js': 'jsx', '.jsx': 'jsx' }, jsx: 'automatic',
   define: { 'process.env.NODE_ENV': '"production"', __PW_CSS__: JSON.stringify(css), __PW_EMBED__: 'true' },
-  external: ['exceljs'],
   logLevel: 'warning',
   logOverride: { 'empty-import-meta': 'silent', 'unsupported-dynamic-import': 'silent' },
 };
@@ -29,7 +28,7 @@ fs.rmSync(path.join(root, 'public/embed/esm'), { recursive: true, force: true })
 await build({ ...common, entryPoints: { viewer: path.join(root, 'src/embed/index.js'), designer: path.join(root, 'src/embed/designer.js') }, format: 'esm', splitting: true, outdir: path.join(root, 'public/embed/esm'), entryNames: '[name]', chunkNames: 'chunk-[hash]' });
 //    The same ES modules with React left to the host app (@pagewrightjs/viewer/react-peer, used by @pagewrightjs/react).
 fs.rmSync(path.join(root, 'public/embed/esm-peer'), { recursive: true, force: true });
-await build({ ...common, entryPoints: { viewer: path.join(root, 'src/embed/index.js'), designer: path.join(root, 'src/embed/designer.js') }, format: 'esm', splitting: true, outdir: path.join(root, 'public/embed/esm-peer'), entryNames: '[name]', chunkNames: 'chunk-[hash]', external: [...common.external, 'react', 'react-dom', 'react/*', 'react-dom/*'] });
+await build({ ...common, entryPoints: { viewer: path.join(root, 'src/embed/index.js'), designer: path.join(root, 'src/embed/designer.js') }, format: 'esm', splitting: true, outdir: path.join(root, 'public/embed/esm-peer'), entryNames: '[name]', chunkNames: 'chunk-[hash]', external: ['react', 'react-dom', 'react/*', 'react-dom/*'] });
 // 3. The script tag people paste: a tiny loader that keeps the Pagewright.mountViewer(...) call working.
 fs.writeFileSync(path.join(root, 'public/embed/pagewright-viewer.js'), `/* Pagewright viewer loader: the viewer itself is in esm/ */
 (function () {
@@ -43,7 +42,7 @@ fs.writeFileSync(path.join(root, 'public/embed/pagewright-viewer.js'), `/* Pagew
   };
 })();
 `);
-fs.copyFileSync(path.join(root, 'node_modules/exceljs/dist/exceljs.min.js'), path.join(root, 'public/embed/exceljs.min.js'));
+fs.rmSync(path.join(root, 'public/embed/exceljs.min.js'), { force: true }); // the Excel export has its own writer now
 // what a page loads up front: the entry and the chunks it imports statically
 const dir = path.join(root, 'public/embed/esm');
 const first = new Set();

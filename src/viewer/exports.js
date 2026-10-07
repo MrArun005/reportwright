@@ -6,19 +6,6 @@ import { exportHtml } from '@/exporters/html.js';
 import { fontKeysOf } from '@/exporters/svg.js';
 import { exportXlsx } from '@/exporters/xlsx.js';
 
-/* global __PW_EMBED__ */
-/** ExcelJS: bundled for the app; loaded from the server as a script in the embeddable viewer. */
-async function loadExcel() {
-  if (typeof __PW_EMBED__ !== 'undefined' && __PW_EMBED__) {
-    if (!window.ExcelJS) {
-      await new Promise((res, rej) => { const s = document.createElement('script'); s.src = `${origin()}/embed/exceljs.min.js`; s.onload = res; s.onerror = () => rej(new Error('ExcelJS did not load')); document.head.appendChild(s); });
-    }
-    return window.ExcelJS;
-  }
-  const mod = await import('exceljs');
-  return mod.default || mod;
-}
-
 import { EXPORT_DEFAULTS } from './logic.js';
 export { EXPORT_DEFAULTS };
 /** Formats that need the table data a view renders without (render option exportData). */
@@ -68,8 +55,7 @@ export async function exportBlob(fmt, model, def, opt = {}) {
     return new Blob([await exportPptx(model, { title: def.name, lang, fontStore: await loadedFonts(model), fetchImage })], { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
   }
   if (fmt === 'xlsx') {
-    const ExcelJS = await loadExcel();
-    const bytes = await exportXlsx(model, ExcelJS, { currency: def.currency, title: def.name, formulas: o.formulas, fontStore: await loadedFonts(model), fetchImage });
+    const bytes = await exportXlsx(model, { currency: def.currency, title: def.name, formulas: o.formulas, fontStore: await loadedFonts(model), fetchImage });
     return new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   }
   throw new Error(`Unknown format "${fmt}"`);

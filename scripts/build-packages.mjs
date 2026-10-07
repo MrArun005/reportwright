@@ -10,7 +10,8 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 const root = path.join(import.meta.dirname, '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-const deps = (names) => Object.fromEntries(names.map(n => [n, pkg.dependencies[n] || pkg.devDependencies?.[n]]).filter(([, v]) => v));
+// runtime dependencies are pinned to the exact version installed here (the one the tests ran against)
+const deps = (names) => Object.fromEntries(names.map(n => [n, JSON.parse(fs.readFileSync(path.join(root, 'node_modules', n, 'package.json'), 'utf8')).version]));
 const copy = (from, to) => fs.cpSync(path.join(root, from), path.join(root, to), { recursive: true });
 const tsc = (args) => execFileSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--allowJs', '--declaration', '--emitDeclarationOnly', '--noCheck', '--skipLibCheck',
   '--jsx', 'react-jsx', '--module', 'esnext', '--moduleResolution', 'bundler', '--target', 'es2022', ...args], { cwd: root, stdio: 'inherit' });
@@ -18,7 +19,7 @@ const write = (f, s) => fs.writeFileSync(path.join(root, f), typeof s === 'strin
 
 /* engine */
 const E = 'packages/engine';
-const external = ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate', 'harfbuzzjs', 'exceljs'];
+const external = ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate'];
 fs.rmSync(path.join(root, E, 'dist'), { recursive: true, force: true });
 fs.rmSync(path.join(root, E, 'public'), { recursive: true, force: true }); // fonts moved to @pagewrightjs/fonts
 await build({ entryPoints: [path.join(root, E, 'entry.js')], bundle: true, format: 'esm', platform: 'neutral', target: 'es2022', outfile: path.join(root, E, 'dist/index.js'), external, logLevel: 'warning', mainFields: ['module', 'main'] });
@@ -29,8 +30,7 @@ write(`${E}/package.json`, {
   types: './index.d.ts',
   files: ['dist', 'index.d.ts', 'report.d.ts', 'README.md', 'LICENSE'],
   engines: { node: '>=20.9' },
-  dependencies: deps(['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate', 'harfbuzzjs']),
-  optionalDependencies: deps(['exceljs']),
+  dependencies: deps(['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate']),
   peerDependencies: { '@pagewrightjs/fonts': pkg.version },
   peerDependenciesMeta: { '@pagewrightjs/fonts': { optional: true } },
 });
@@ -62,8 +62,7 @@ write(`${C}/package.json`, {
   bin: { pw: 'dist/pw.mjs' },
   files: ['dist', 'README.md', 'LICENSE'],
   engines: { node: '>=20.9' },
-  dependencies: { ...deps(['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate', 'harfbuzzjs']), '@pagewrightjs/fonts': pkg.version },
-  optionalDependencies: deps(['exceljs']),
+  dependencies: { ...deps(['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate']), '@pagewrightjs/fonts': pkg.version },
 });
 fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, C, 'LICENSE'));
 

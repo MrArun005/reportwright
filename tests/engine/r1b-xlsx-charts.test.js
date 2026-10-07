@@ -38,7 +38,7 @@ describe('native Excel charts', () => {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(bytes);
     const ws = wb.getWorksheet('Sales and margin');
-    expect(ws.getRow(1).values.slice(1)).toEqual(['', 'Sales', 'Margin']);
+    expect(ws.getRow(1).values.slice(2)).toEqual(['Sales', 'Margin']); // A1, the corner, is empty
     expect(ws.getRow(3).values.slice(1)).toEqual(['Feb', 20, 0.7]);
     const sheetXml = Object.entries(z).find(([p, v]) => /^xl\/worksheets\/sheet\d+\.xml$/.test(p) && strFromU8(v).includes('rIdPW1'));
     expect(sheetXml).toBeTruthy();
