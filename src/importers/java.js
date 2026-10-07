@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * Java and Groovy expressions of a JasperReports design → VB.NET expressions as SSRS/ActiveReports write them, which
- * rdlx.js then translates to Pagewright. The common forms are covered: $F{x}, $P{x}, $V{x} (variables come from the
+ * rdlx.js then translates to ReportWright. The common forms are covered: $F{x}, $P{x}, $V{x} (variables come from the
  * caller), string concatenation, the ternary, comparisons, null tests, casts and boxing, the usual String, Number, Math
  * and Date methods, msg(…) message formats and the JasperReports built-in functions (UPPER, IF, DATEFORMAT…).
  * Anything else throws Untranslatable with what it was, so the item says so and shows the expression as text.
@@ -246,7 +246,7 @@ const jstr = (v) => (v.nn ? v : { s: `JavaStr(${v.s}${v.i ? ', "int"' : ''})`, t
 /** The same in JavaScript (BIRT expressions): String(v), so 5 is "5" and null "null". */
 const toStr = (v, env) => (env?.js ? (v.nn ? v : { s: `JsStr(${v.s})`, t: 'str', p: 9, nn: true }) : jstr(v));
 
-/** Java DecimalFormat / SimpleDateFormat pattern → a .NET format string (what rdlx.js and Pagewright read). */
+/** Java DecimalFormat / SimpleDateFormat pattern → a .NET format string (what rdlx.js and ReportWright read). */
 export function javaPattern(pat, kind = 'any') {
   const s = String(pat ?? '');
   if (!s) return undefined;

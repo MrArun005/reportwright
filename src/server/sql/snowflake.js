@@ -17,7 +17,7 @@ export function snowflakeConfig(url) {
     account: u.hostname, username: decodeURIComponent(u.username), password: decodeURIComponent(u.password),
     ...(database ? { database } : {}), ...(schema ? { schema } : {}),
     ...(q.get('warehouse') ? { warehouse: q.get('warehouse') } : {}), ...(role ? { role } : {}),
-    application: 'Pagewright',
+    application: 'ReportWright',
   };
 }
 

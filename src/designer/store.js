@@ -192,7 +192,7 @@ export const useDesigner = create((set, get) => ({
     if (readOnly) return;
     set({ saving: true, saveError: null });
     try {
-      // embedded: the host app saves (onSave gets a plain copy), or the Pagewright server it named
+      // embedded: the host app saves (onSave gets a plain copy), or the ReportWright server it named
       if (embed?.onSave) await embed.onSave(JSON.parse(JSON.stringify(def)));
       else {
         if (!id) throw new Error('This report has no id to save to');
@@ -424,7 +424,7 @@ export function duplicateSelection() {
 }
 
 /* ---- clipboard: copy / paste items, also across reports (JSON on the system clipboard) ---- */
-const CLIP = 'pagewright/items@1';
+const CLIP = 'pagewright/items@1'; // kept after the rename: copy and paste between 0.8 and 0.9 tabs
 export async function copySelection() {
   const { sel, def } = S();
   if (sel.kind !== 'items') return 0;

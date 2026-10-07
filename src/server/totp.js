@@ -74,7 +74,7 @@ export async function useCode(email, secret, code) {
 
 /** The otpauth:// URI an authenticator app reads (from the QR code). @param {string} email @param {string} secret */
 export function otpauthUri(email, secret) {
-  const issuer = (process.env.PW_TOTP_ISSUER || 'Pagewright').replace(/[:\x00-\x1f]/g, '').slice(0, 64) || 'Pagewright';
+  const issuer = (process.env.PW_TOTP_ISSUER || 'ReportWright').replace(/[:\x00-\x1f]/g, '').slice(0, 64) || 'ReportWright';
   return `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(email)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=${DIGITS}&period=${STEP}`;
 }
 
@@ -93,6 +93,7 @@ export async function qrSvg(text) {
 // unreadable. In development, without PW_DATA_KEY, the session secret seals (said once in the log). Seals from before
 // key ids ("v1:") are opened with PW_DATA_KEY or the session secret, as they were made. checkDataKey() at boot refuses a
 // changed key that would strand the stored seals.
+// 'pagewright' stays after the rename to ReportWright: it derives the key that stored TOTP secrets are encrypted with
 const kdf = (material) => Buffer.from(crypto.hkdfSync('sha256', material, 'pagewright', 'totp-secret-v1', 32));
 const kidOf = (material) => crypto.createHash('sha256').update(`pw-data-key:${material}`).digest('hex').slice(0, 8);
 const g = /** @type {any} */ (globalThis);
@@ -105,7 +106,7 @@ function dataKeys() {
   else {
     const dev = (/** @type {any} */ (process.env).PW_MODE === 'dev') || (!process.env.PW_MODE && ['development', 'test'].includes(String(process.env.NODE_ENV)));
     if (!dev) throw Object.assign(new Error('Two-factor sign-in needs PW_DATA_KEY on the server (32+ random characters, kept apart from PW_SESSION_SECRET): it seals the authenticator secrets.'), { status: 500 });
-    if (!g.__pwDataKeyWarned) { g.__pwDataKeyWarned = true; console.warn('[pagewright] PW_DATA_KEY is not set: development seals two-factor secrets with PW_SESSION_SECRET. Production refuses this.'); }
+    if (!g.__pwDataKeyWarned) { g.__pwDataKeyWarned = true; console.warn('[reportwright] PW_DATA_KEY is not set: development seals two-factor secrets with PW_SESSION_SECRET. Production refuses this.'); }
     list.push(sessionSecret());
   }
   for (const o of (process.env.PW_DATA_KEY_OLD || '').split(',').map(x => x.trim()).filter(x => x.length >= 32)) list.push(o);

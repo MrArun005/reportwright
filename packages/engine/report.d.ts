@@ -1,6 +1,6 @@
-// Types for a Pagewright report definition (pagewright/report@1), the JSON that render() takes.
+// Types for a ReportWright report definition (pagewright/report@1), the JSON that render() takes.
 // GENERATED from src/engine/schema/report.schema.js by scripts/gen-report-types.mjs: do not edit by hand.
-// The same schema is published as @pagewrightjs/engine/schema.json, and validate() checks against it.
+// The same schema is published as @reportwright/engine/schema.json, and validate() checks against it.
 // Any value marked Expr may be a literal or an expression string starting with "=" (e.g. "=Fields.amount").
 
 /** A literal value or an expression ("=Sum(Fields.amount)"). */
@@ -569,12 +569,13 @@ export interface DataSet {
   sort?: unknown;
   [key: string]: unknown;
 }
-/** A Pagewright report definition (pagewright/report@1).
+/** A ReportWright report definition (pagewright/report@1).
  * @example
  * {"$schema":"pagewright/report@1","name":"Invoice","page":{"size":"A4","margins":[36,36,36,36]},"dataSources":[{"name":"orders","type":"json","data":{"rows":[{"customer":"Asha Rao","amount":1200.5}]}}],"dataSets":[{"name":"Rows","source":"orders","path":"$.rows"}],"sections":{"body":{"items":[{"type":"textbox","name":"Title","x":0,"y":0,"w":300,"h":24,"value":"Invoice","style":{"fontSize":18,"fontWeight":"bold"}},{"type":"table","name":"Lines","x":0,"y":40,"w":400,"h":40,"dataSet":"Rows","columns":[{"width":250},{"width":150}],"header":[{"height":18,"cells":[{"value":"Customer","colSpan":1},{"value":"Amount"}]}],"detail":[{"height":18,"cells":[{"value":"=Fields.customer"},{"value":"=Fields.amount","style":{"format":"C2"}}]}],"footer":[{"height":18,"cells":[{"value":"Total","colSpan":2}]}]}]}}}
  */
 export interface Report {
-  $schema: 'pagewright/report@1';
+  /** pagewright/report@1; reportwright/report@1 is the same format under the new name. */
+  $schema: 'pagewright/report@1' | 'reportwright/report@1';
   name?: string;
   description?: string;
   locale?: string;

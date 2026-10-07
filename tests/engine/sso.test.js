@@ -75,7 +75,7 @@ describe('OpenID Connect', () => {
     const start = await routes.oidcStart(new Request(`${BASE}/api/auth/oidc/start?next=/x`));
     const u = new URL(start.headers.get('location'));
     expect(u.origin).toBe(oidc.issuer);
-    expect(Object.fromEntries(u.searchParams)).toMatchObject({ response_type: 'code', client_id: 'pagewright', redirect_uri: `${BASE}/api/auth/oidc/callback`, code_challenge_method: 'S256', scope: 'openid email profile' });
+    expect(Object.fromEntries(u.searchParams)).toMatchObject({ response_type: 'code', client_id: 'reportwright', redirect_uri: `${BASE}/api/auth/oidc/callback`, code_challenge_method: 'S256', scope: 'openid email profile' });
     expect(u.searchParams.get('state')).toMatch(/^[\w-]{40,}$/);
     expect(u.searchParams.get('nonce')).toMatch(/^[\w-]{40,}$/);
     const set = start.headers.get('set-cookie');
@@ -115,7 +115,7 @@ describe('OpenID Connect', () => {
     await refused({ user, tamper: { otherKey: true } }, 'id_token');
     await refused({ user, tamper: { alg: 'none' } }, 'id_token');
     await refused({ user, tamper: { alg: 'HS256' } }, 'id_token');
-    await refused({ user, tamper: { aud: ['pagewright', 'another-client'] } }, 'azp'); // several audiences need azp
+    await refused({ user, tamper: { aud: ['reportwright', 'another-client'] } }, 'azp'); // several audiences need azp
     expect(await users.getUser('mallory@example.com')).toBe(null);
   });
   it('refuses a state from another browser, no cookie at all, and an unverified email', async () => {

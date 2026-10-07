@@ -73,7 +73,7 @@ export async function throughSnapshot(r, render) {
   const out = await render();
   const meta = { contentType: out.contentType, ext: out.ext, name: out.name ?? null, pages: out.pages, ms: /** @type {any} */ (out).ms ?? null, warnings: /** @type {any} */ (out).warnings ?? 0, at: new Date().toISOString() };
   if (out.bytes.length <= s.snapshotMaxMb * 1024 * 1024 / 4) { // one rendering never takes more than a quarter of the cache
-    await blobs().put(name, pack(meta, out.bytes)).catch((e) => console.error(`[pagewright] snapshot: ${e.message}`));
+    await blobs().put(name, pack(meta, out.bytes)).catch((e) => console.error(`[reportwright] snapshot: ${e.message}`));
     evictSoon(s.snapshotMaxMb);
   }
   return { ...out, snapshot: 'miss' };

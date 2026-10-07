@@ -1,9 +1,9 @@
-// Embeddable viewer: <script src=".../embed/pagewright-viewer.js"></script>
-// Pagewright.mountViewer('#el', { server: 'https://reports.example.com', report: 'loan-statement', params: {...} })
+// Embeddable viewer: <script src=".../embed/reportwright-viewer.js"></script>
+// ReportWright.mountViewer('#el', { server: 'https://reports.example.com', report: 'loan-statement', params: {...} })
 //
 // The interactive HTML export uses the same entry point with everything bundled in:
 //   { definition, reports: {id: def}, fonts: {key: base64}, customFonts: [uploaded font info], uiFontCss, snapshot: {url: json} }
-// so the file keeps working (filters, open/close, sort, chart clicks, drill-through) without the Pagewright server.
+// so the file keeps working (filters, open/close, sort, chart clicks, drill-through) without the ReportWright server.
 import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import ReportViewer from '../viewer/ReportViewer.jsx';
@@ -53,9 +53,9 @@ export function withData(def, data) {
  * @typedef {{ unmount: () => void }} ViewerHandle
  */
 /**
- * Mount the Pagewright viewer in an element. With `server` (a self-hosted Pagewright server), fonts and saved reports
+ * Mount the ReportWright viewer in an element. With `server` (a self-hosted ReportWright server), fonts and saved reports
  * load from it. Without one (standalone): pass `definition` (and `data`, keyed by data source name), and `fontsUrl`, the
- * URL of a copy of @pagewrightjs/fonts/public/fonts; nothing calls /api, and the interface uses the system font.
+ * URL of a copy of @reportwright/fonts/public/fonts; nothing calls /api, and the interface uses the system font.
  * @param {string|HTMLElement} target
  * @param {ViewerOptions} opts
  * @returns {ViewerHandle}
@@ -93,4 +93,4 @@ export function mountViewer(target, opts = {}) {
   return { unmount: () => root.unmount() };
 }
 
-if (typeof window !== 'undefined') window.Pagewright = { mountViewer };
+if (typeof window !== 'undefined') window.ReportWright = window.Pagewright = { mountViewer }; // Pagewright: the old name, deprecated (0.9)

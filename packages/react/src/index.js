@@ -1,10 +1,10 @@
-// @pagewrightjs/react: the Pagewright viewer and designer as React components.
-// The viewer renders in a shadow root with the app's own React (@pagewrightjs/viewer/react-peer); this only gives it a <div>.
+// @reportwright/react: the ReportWright viewer and designer as React components.
+// The viewer renders in a shadow root with the app's own React (@reportwright/viewer/react-peer); this only gives it a <div>.
 // It loads on mount (dynamic import), so server rendering never touches `window`.
 import { createElement, useEffect, useRef } from 'react';
 
-const loadViewer = () => import('@pagewrightjs/viewer/react-peer').then(m => m.mountViewer);
-const loadDesigner = () => import('@pagewrightjs/viewer/react-peer/designer').then(m => m.mountDesigner);
+const loadViewer = () => import('@reportwright/viewer/react-peer').then(m => m.mountViewer);
+const loadDesigner = () => import('@reportwright/viewer/react-peer/designer').then(m => m.mountDesigner);
 
 // A stable key for options: functions left out, object keys sorted, each object turned to text once (cached by
 // identity), so a big `data` array the app keeps in state costs nothing on a re-render and an inline object with the
@@ -25,7 +25,7 @@ const designerKey = (o) => [o.server, o.report, o.readOnly, keyOf(o.definition)]
 /** The error a viewer that did not load shows in its element. */
 const showError = (el, e) => {
   if (!el) return;
-  el.textContent = `Pagewright did not load: ${e?.message || e}`;
+  el.textContent = `ReportWright did not load: ${e?.message || e}`;
   el.setAttribute('role', 'alert');
 };
 
@@ -53,8 +53,8 @@ function useMounted(load, latest, deps, style) {
   return ref;
 }
 
-/** <PagewrightViewer server="https://reports.example.com" report="invoice" params={{ id: '42' }} /> */
-export function PagewrightViewer({ className, style, ...options }) {
+/** <ReportWrightViewer server="https://reports.example.com" report="invoice" params={{ id: '42' }} /> */
+export function ReportWrightViewer({ className, style, ...options }) {
   const latest = useRef(options);
   latest.current = options;
   // a remount when what is shown changes (not when a callback is a new function)
@@ -62,10 +62,13 @@ export function PagewrightViewer({ className, style, ...options }) {
   return createElement('div', { ref, className, style });
 }
 
-/** <PagewrightDesigner server="…" definition={def} onSave={(def) => …} /> — remounts only for another report or definition (by content). */
-export function PagewrightDesigner({ className, style, ...options }) {
+/** <ReportWrightDesigner server="…" definition={def} onSave={(def) => …} /> — remounts only for another report or definition (by content). */
+export function ReportWrightDesigner({ className, style, ...options }) {
   const latest = useRef(options);
   latest.current = options;
   const ref = useMounted(loadDesigner, latest, [designerKey(options)], style);
   return createElement('div', { ref, className, style });
 }
+
+/** @deprecated 0.9: renamed ReportWrightViewer / ReportWrightDesigner; the old names go in 1.0. */
+export { ReportWrightViewer as PagewrightViewer, ReportWrightDesigner as PagewrightDesigner };

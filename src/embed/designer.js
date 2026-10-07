@@ -1,5 +1,5 @@
-// Embeddable designer: <script src=".../embed/pagewright-viewer.js"></script>
-// Pagewright.mountDesigner('#el', { server, definition | report, onSave(def), onOpen(), readOnly,
+// Embeddable designer: <script src=".../embed/reportwright-viewer.js"></script>
+// ReportWright.mountDesigner('#el', { server, definition | report, onSave(def), onOpen(), readOnly,
 //   toolbox: { hide: ['map', …] }, panels: { data: false, inspector: false }, dataSourceTemplates: [{ label, source }] })
 // A second entry of the ESM build: it shares chunks with the viewer; the offline single-file viewer has no designer.
 import { createElement } from 'react';
@@ -22,8 +22,8 @@ const BLANK = { $schema: 'pagewright/report@1', name: 'New report', page: { size
  * @typedef {{ unmount: () => void, getDefinition: () => object, save: () => Promise<void> }} DesignerHandle
  */
 /**
- * Mount the Pagewright designer in an element. With onSave the host app saves; without it, the server named
- * (with neither, there is no Save button). Without `server`, fonts load from `fontsUrl` (a copy of @pagewrightjs/fonts/public/fonts).
+ * Mount the ReportWright designer in an element. With onSave the host app saves; without it, the server named
+ * (with neither, there is no Save button). Without `server`, fonts load from `fontsUrl` (a copy of @reportwright/fonts/public/fonts).
  * @param {string|HTMLElement} target
  * @param {DesignerOptions} opts
  * @returns {DesignerHandle}

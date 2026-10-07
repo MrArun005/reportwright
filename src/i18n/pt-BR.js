@@ -173,7 +173,7 @@ export default {
   isEnabled: '{email} está ativado.', isDisabled: '{email} está desativado.',
 
   /* ---- sign in ---- */
-  signIn: 'Entrar', signingIn: 'Entrando…', signInLede: 'Relatórios Pagewright', password: 'Senha',
+  signIn: 'Entrar', signingIn: 'Entrando…', signInLede: 'Relatórios ReportWright', password: 'Senha',
   signInFailed: 'Falha ao entrar (HTTP {status}).', signedInAsLong: 'Você está conectado como', continue: 'Continuar',
   accountsOff: 'As contas estão desativadas neste servidor. Defina {setting} para ativá-las.',
   noUsersYet: 'Ainda não há usuários.', firstAdmin: 'Crie o primeiro administrador de uma destas duas formas:',

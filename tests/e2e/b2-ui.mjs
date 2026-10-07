@@ -109,7 +109,7 @@ try {
   await p.waitForFunction(() => document.querySelector('input.pageno').value === '2');
   await p.locator('.vlink.hit[title*="Far"]').first().click();
   await p.waitForFunction(() => document.querySelector('input.pageno').value === '3');
-  assert.match(await p.title(), /e2e b2 ui · Pagewright/);
+  assert.match(await p.title(), /e2e b2 ui · ReportWright/);
   assert.deepEqual(errs, []);
 } finally {
   for (const id of ids) await fetch(`${BASE}/api/reports/${id}`, { method: 'DELETE', headers: H });

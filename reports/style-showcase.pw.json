@@ -140,7 +140,7 @@
           "y": 140,
           "w": 260,
           "h": 60,
-          "value": "Pagewright lays out every line itself, so a justified paragraph looks the same in the viewer, the PDF and the HTML export. Each line is stretched to both edges by widening the spaces between its words. The last line of each paragraph stays ragged, as in any book or newspaper.",
+          "value": "ReportWright lays out every line itself, so a justified paragraph looks the same in the viewer, the PDF and the HTML export. Each line is stretched to both edges by widening the spaces between its words. The last line of each paragraph stays ragged, as in any book or newspaper.",
           "style": {
             "textAlign": "justify",
             "lineHeight": 1.35

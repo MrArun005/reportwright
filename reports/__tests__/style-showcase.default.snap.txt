@@ -8,7 +8,7 @@ STRIKE-THROUGH
 Was ₹1,200
 Now ₹999
 JUSTIFIED PARAGRAPH
-Pagewright lays out every line itself, so a justified
+ReportWright lays out every line itself, so a justified
 paragraph looks the same in the viewer, the PDF and the
 HTML export. Each line is stretched to both edges by
 widening the spaces between its words. The last line of

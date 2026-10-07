@@ -1,5 +1,5 @@
 // @ts-check
-// File storage: exactly the files Pagewright has always written, under one root folder (the working folder).
+// File storage: exactly the files ReportWright has always written, under one root folder (the working folder).
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';

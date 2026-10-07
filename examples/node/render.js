@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { render, defaultFontStore, exportPdf, exportXlsx, validate } from '@pagewrightjs/engine';
+import { render, defaultFontStore, exportPdf, exportXlsx, validate } from '@reportwright/engine';
 
 const def = JSON.parse(fs.readFileSync(new URL('../report.pw.json', import.meta.url), 'utf8'));
 def.dataSources[0].data = JSON.parse(fs.readFileSync(new URL('../data.json', import.meta.url), 'utf8'));

@@ -191,7 +191,7 @@ function spawn() {
 function giveUp(why) {
   if (P.noWorker) return;
   P.noWorker = why;
-  console.warn(`[pagewright] renders run on the request thread: ${why}`);
+  console.warn(`[reportwright] renders run on the request thread: ${why}`);
   for (const s of P.slots.splice(0)) { const j = s.job; s.w.removeAllListeners(); s.w.on('error', () => {}); s.w.terminate(); if (j) { finish(s); runInline(j); } }
   for (const j of P.queue.splice(0)) { unwait(j); runInline(j); }
 }
@@ -222,7 +222,7 @@ function died(s, e, exited = false) {
   const j = s.job;
   const why = e ? String(e.message || e) : 'it exited';
   // the detail goes to the log only: it may come from another render's leftovers (an SQL error, a URL)
-  if (e) console.warn(`[pagewright] a render worker stopped: ${why}`);
+  if (e) console.warn(`[reportwright] a render worker stopped: ${why}`);
   const oom = e?.code === 'ERR_WORKER_OUT_OF_MEMORY' || /heap|memory/i.test(why);
   // observed need: a render ran out of this heap, so workers started from now on get twice it (up to 2 GB, the memory
   // plan permitting): the pool starts small and many, and grows its heap only when a real report needs it

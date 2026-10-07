@@ -1,6 +1,9 @@
 import type { DefineComponent } from 'vue';
-import type { ViewerOptions } from '@pagewrightjs/viewer';
-import type { DesignerOptions } from '@pagewrightjs/viewer/designer';
+import type { ViewerOptions } from '@reportwright/viewer';
+import type { DesignerOptions } from '@reportwright/viewer/designer';
 
-export const PagewrightViewer: DefineComponent<{ options: ViewerOptions }>;
-export const PagewrightDesigner: DefineComponent<{ options: DesignerOptions }>;
+export const ReportWrightViewer: DefineComponent<{ options: ViewerOptions }>;
+export const ReportWrightDesigner: DefineComponent<{ options: DesignerOptions }>;
+
+/** @deprecated renamed ReportWrightViewer */ export const PagewrightViewer: typeof ReportWrightViewer;
+/** @deprecated renamed ReportWrightDesigner */ export const PagewrightDesigner: typeof ReportWrightDesigner;

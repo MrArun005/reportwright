@@ -22,7 +22,7 @@ it('every PW_ setting the code reads is in the table, and the table is in docs/C
 
 it('checkConfig: typos, wrong kinds, dangerous production values, short secrets', () => {
   const r = checkConfig({ NODE_ENV: 'production', PW_RENDR_WORKERS: '2', PW_RENDER_WORKERS: 'many', PW_PUBLIC_READONLY: '1', PW_FIXED_FETCH_HOSTS: '0', PW_AUTH: 'users', PW_SESSION_SECRET: 'short', PW_TRUSTED_PROXIES: '0.0.0.0/0' });
-  expect(r.warnings.join('\n')).toMatch(/PW_RENDR_WORKERS is not a Pagewright setting/);
+  expect(r.warnings.join('\n')).toMatch(/PW_RENDR_WORKERS is not a ReportWright setting/);
   expect(r.warnings.join('\n')).toMatch(/PW_RENDER_WORKERS="many" is not a number/);
   expect(r.warnings.join('\n')).toMatch(/PW_PUBLIC_READONLY=1/);
   expect(r.warnings.join('\n')).toMatch(/PW_FIXED_FETCH_HOSTS=0/);
@@ -30,7 +30,7 @@ it('checkConfig: typos, wrong kinds, dangerous production values, short secrets'
   expect(r.errors).toEqual(['PW_SESSION_SECRET is shorter than 32 characters.']);
   expect(checkConfig({ NODE_ENV: 'production', PW_MODE: 'staging' }).errors[0]).toMatch(/PW_MODE/);
   expect(checkConfig({ NODE_ENV: 'development', PW_PUBLIC_READONLY: '1' }).warnings).toEqual([]); // dev: not reported
-  expect(checkConfig({ PW_DB_MAIN: 'sqlite:/x.db', PW_DB_MAIN_PROCS: 'a' }).warnings.filter(w => /not a Pagewright/.test(w))).toEqual([]);
+  expect(checkConfig({ PW_DB_MAIN: 'sqlite:/x.db', PW_DB_MAIN_PROCS: 'a' }).warnings.filter(w => /not a ReportWright/.test(w))).toEqual([]);
 });
 
 it('devMode: explicit PW_MODE, else only NODE_ENV development or test; anything else is production', () => {

@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * ActiveReports importer: an ActiveReportsJS report (.rdlx-json) becomes a Pagewright report definition.
+ * ActiveReports importer: an ActiveReportsJS report (.rdlx-json) becomes a ReportWright report definition.
  *
  * Pure JavaScript, no Node APIs and no DOM, so it runs on the server, in a worker or in the browser.
  * It never throws. Whatever it cannot map becomes a warning that names the item and what was lost,
@@ -27,7 +27,7 @@ export function toPt(v, fallback = 0) {
   return m ? r2(Number(m[1]) * UNIT[/** @type {keyof UNIT} */ ((m[2] || 'pt').toLowerCase())]) : fallback;
 }
 
-// CSS colour names: ActiveReports uses them freely, Pagewright's exporters know only a few.
+// CSS colour names: ActiveReports uses them freely, ReportWright's exporters know only a few.
 const NAMED = Object.fromEntries(('aliceblue:f0f8ff,antiquewhite:faebd7,aqua:00ffff,aquamarine:7fffd4,azure:f0ffff,beige:f5f5dc,bisque:ffe4c4,black:000000,' +
   'blanchedalmond:ffebcd,blue:0000ff,blueviolet:8a2be2,brown:a52a2a,burlywood:deb887,cadetblue:5f9ea0,chartreuse:7fff00,chocolate:d2691e,coral:ff7f50,' +
   'cornflowerblue:6495ed,cornsilk:fff8dc,crimson:dc143c,cyan:00ffff,darkblue:00008b,darkcyan:008b8b,darkgoldenrod:b8860b,darkgray:a9a9a9,darkgreen:006400,' +
@@ -69,7 +69,7 @@ const weightOf = (w) => {
 const ALIGN = { left: 'left', center: 'center', centre: 'center', right: 'right', general: 'auto', justify: 'justify' };
 const VALIGN = { top: 'top', middle: 'middle', center: 'middle', bottom: 'bottom' };
 
-/** .NET format string → one Pagewright reads (it knows C N F P D E, custom number patterns and date patterns). */
+/** .NET format string → one ReportWright reads (it knows C N F P D E, custom number patterns and date patterns). */
 function formatOf(f) {
   if (f == null || f === '') return undefined;
   const s = String(f);
@@ -78,7 +78,7 @@ function formatOf(f) {
   return { T: 'HH:mm:ss', t: 'HH:mm', M: 'MMMM dd', m: 'MMMM dd', Y: 'MMMM yyyy', y: 'MMMM yyyy' }[s] || s;
 }
 
-/** String literals in expressions that set a style become values Pagewright reads ("Red" → "#ff0000"). */
+/** String literals in expressions that set a style become values ReportWright reads ("Red" → "#ff0000"). */
 const LITS = {
   color: (s) => { const h = hexColor(s); return h === null ? 'transparent' : h ?? s; },
   weight: (s) => weightOf(s) ?? s,
@@ -97,7 +97,7 @@ export function reportId(name) {
   return (base.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'report').slice(0, 48);
 }
 
-/* ================================================================ expressions (VB.NET subset) → Pagewright */
+/* ================================================================ expressions (VB.NET subset) → ReportWright */
 
 class Untranslatable extends Error {
   /** @param {string} what @param {boolean} [syntax] */
@@ -244,7 +244,7 @@ function vbParse(src) {
   return ast;
 }
 
-/* ---- emit Pagewright source. Precedence there: or 1, and 2, not 3, comparison 4, & 5, + - 6, * / % 7, unary minus 8. */
+/* ---- emit ReportWright source. Precedence there: or 1, and 2, not 3, comparison 4, & 5, + - 6, * / % 7, unary minus 8. */
 const q = (s) => '"' + String(s).replace(/[\\"]/g, '\\$&') + '"';
 const wrap = (e, min) => (e.p < min ? `(${e.s})` : e.s);
 const atom = (s) => ({ s, p: 10 });
@@ -380,7 +380,7 @@ function emMember(n, o) {
     }
     if (root === 'parameters') {
       if (prop === 'value') return em(obj, o);
-      if (prop === 'label') { o.notes.push(`Parameters!${obj.name}.Label gives the value, not the label, in Pagewright`); return em(obj, o); }
+      if (prop === 'label') { o.notes.push(`Parameters!${obj.name}.Label gives the value, not the label, in ReportWright`); return em(obj, o); }
       return no(`Parameters!${obj.name}.${n.name}`);
     }
     if (prop === 'value') return em(obj, o);
@@ -478,8 +478,8 @@ function scopeArg(node, o, fname) {
 }
 
 /**
- * Round(x[, digits][, MidpointRounding.X]): VB's Round and Math.Round round half to even (Pagewright Round);
- * MidpointRounding.AwayFromZero is Pagewright RoundHalfAway.
+ * Round(x[, digits][, MidpointRounding.X]): VB's Round and Math.Round round half to even (ReportWright Round);
+ * MidpointRounding.AwayFromZero is ReportWright RoundHalfAway.
  */
 function emRound(args, o) {
   const last = args[args.length - 1];
@@ -556,7 +556,7 @@ function emFunc(name, args, o, res) {
   return no(`the function ${name}()`);
 }
 
-/** text: "a " & x & " b" → "a {x} b" (a Pagewright template). Literal-only text stays plain. undefined: use "=…". */
+/** text: "a " & x & " b" → "a {x} b" (a ReportWright template). Literal-only text stays plain. undefined: use "=…". */
 function asTemplate(ast, o) {
   const parts = [];
   const flat = (n) => { if (n.k === 'bin' && n.op === '&') { flat(n.a); flat(n.b); } else parts.push(n); };
@@ -571,16 +571,16 @@ function asTemplate(ast, o) {
   return out.startsWith('=') ? undefined : out;
 }
 
-/** Literal text as a Pagewright value: "{" starts an expression there, so braces are doubled. */
+/** Literal text as a ReportWright value: "{" starts an expression there, so braces are doubled. */
 const escText = (s) => (s.includes('{') ? s.replace(/[{}]/g, '$&$&') : s);
 
 /**
- * Translate one ActiveReports value (literal text or "=expression") into a Pagewright value.
+ * Translate one ActiveReports value (literal text or "=expression") into a ReportWright value.
  * @param {any} src
  * @param {{ text?: boolean, fields?: string, region?: string, scopes?: Map<string, string|null>, lit?: string | ((s: string) => string) }} [opt]
  *   text: the value is shown as text (concatenations become templates; what cannot be translated stays visible as text).
  *   fields: "Parent" reads fields from the enclosing list row. region: the data region, for Nothing scopes.
- *   scopes: ActiveReports scope name → Pagewright scope (null: drop it). lit: map style literals ("color", "weight", "align").
+ *   scopes: ActiveReports scope name → ReportWright scope (null: drop it). lit: map style literals ("color", "weight", "align").
  * @returns {{ value: any, ok: boolean, notes: string[] }} value is undefined when nothing usable is left outside text.
  */
 export function translateExpression(src, opt = {}) {
@@ -599,11 +599,11 @@ export function translateExpression(src, opt = {}) {
     let value = opt.text ? asTemplate(ast, o) : undefined;
     if (value === undefined) value = '=' + em(ast, o, true).s;
     const err = checkValue(value);
-    if (err) no(`a result Pagewright cannot read (${err})`);
+    if (err) no(`a result ReportWright cannot read (${err})`);
     return { value, ok: true, notes };
   } catch (e) {
     const why = e instanceof Untranslatable
-      ? (e.syntax ? `the expression ${src} could not be read (${e.message})` : `${e.message} has no Pagewright equivalent`)
+      ? (e.syntax ? `the expression ${src} could not be read (${e.message})` : `${e.message} has no ReportWright equivalent`)
       : `the expression ${src} could not be translated (${e.message})`;
     notes.push(why);
     return { value: opt.text ? '=' + q(src) : undefined, ok: false, notes };
@@ -611,7 +611,7 @@ export function translateExpression(src, opt = {}) {
 }
 
 const isExpr = (v) => typeof v === 'string' && v.trimStart().startsWith('=');
-/** The body of a Pagewright value as an expression: "=x" → "(x)", "text" → "\"text\"". */
+/** The body of a ReportWright value as an expression: "=x" → "(x)", "text" → "\"text\"". */
 const inner = (v) => (typeof v === 'string' && v.startsWith('=') ? `(${v.slice(1)})` : typeof v === 'string' ? q(v) : String(v));
 const AGG_RE = /\b(Sum|Avg|Count|CountDistinct|CountRows|Min|Max|First|Last|RunningValue|RowNumber)\s*\(/i;
 
@@ -720,16 +720,16 @@ function fontFamily(name, cx) {
   const sub = MONO.test(fam) && FONT_FAMILIES['JetBrains Mono'] ? 'JetBrains Mono' : 'Inter';
   if (!cx.fonts.has(fam.toLowerCase())) {
     cx.fonts.add(fam.toLowerCase());
-    cx.warn(`The font "${fam}" is not bundled with Pagewright, so text set in it uses ${sub}.`);
+    cx.warn(`The font "${fam}" is not bundled with ReportWright, so text set in it uses ${sub}.`);
   }
   return sub;
 }
 
-/** One style setting: a literal, or an expression where Pagewright evaluates styles. */
+/** One style setting: a literal, or an expression where ReportWright evaluates styles. */
 function styleVal(v, cx, t, ctx, what, plain, lit) {
   if (v == null || v === '') return undefined;
   if (isExpr(v)) {
-    if (!lit) { t.approx(`its ${what} is set by an expression, which Pagewright does not support for this setting; the default is used.`); return undefined; }
+    if (!lit) { t.approx(`its ${what} is set by an expression, which ReportWright does not support for this setting; the default is used.`); return undefined; }
     return ex(cx, t, v, ctx, { lit, what: `its ${what}` });
   }
   return plain(v);
@@ -859,7 +859,7 @@ const CONVERTERS = {
 
 /* ================================================================ reuse: layers, report parts, master reports */
 
-// TargetDevice → Pagewright layer target
+// TargetDevice → ReportWright layer target
 const TARGETS = { all: 'all', screen: 'screen', paper: 'print', print: 'print', export: 'export', none: 'design' };
 /** The report's layers (not "default", where every item is anyway). */
 function layersOf(ar, cx) {
@@ -885,7 +885,7 @@ function layerOf(ar, cx) {
   if (!cx.layers.has(name)) { cx.layers.add(name); cx.extraLayers.push({ name }); cx.warn(`Layer "${name}" is used by an item but not declared; it was added, shown everywhere.`); }
   return name;
 }
-/** A library's report parts → Pagewright parts ({ name, item, properties }). */
+/** A library's report parts → ReportWright parts ({ name, item, properties }). */
 function partsOf(ar, cx) {
   const out = [];
   for (const p of Array.isArray(ar.ReportParts) ? ar.ReportParts.slice(0, 500) : []) {
@@ -900,7 +900,7 @@ function partsOf(ar, cx) {
   }
   return out;
 }
-/** A report part instance → a Pagewright part item, its library referenced by report id. */
+/** A report part instance → a ReportWright part item, its library referenced by report id. */
 function reportPart(ar, cx, ctx) {
   const t = track(cx, ar);
   const it = common(ar, cx, t, ctx, 'part');
@@ -980,7 +980,7 @@ const isFalse = (v) => v == null || v === false || v === '' || (typeof v === 'st
 function visibility(v, cx, t, ctx) {
   if (!v || typeof v !== 'object') return undefined;
   if (v.ToggleItem) {
-    if (!isFalse(v.Hidden)) t.approx(`it is hidden until a click on "${v.ToggleItem}" in ActiveReports; Pagewright cannot toggle this item, so it is always shown.`);
+    if (!isFalse(v.Hidden)) t.approx(`it is hidden until a click on "${v.ToggleItem}" in ActiveReports; ReportWright cannot toggle this item, so it is always shown.`);
     return undefined;
   }
   if (isFalse(v.Hidden)) return undefined;
@@ -1013,7 +1013,7 @@ function action(a, cx, t, ctx) {
       const v = ex(cx, t, p.Value, ctx, { what: `the drill-through parameter ${p.ParameterName}` });
       if (v !== undefined) params[safeName(p.ParameterName)] = v;
     }
-    if (!isExpr(d.ReportName)) t.note(`it drills through to "${d.ReportName}"; import that report too, as Pagewright opens it by the id "${report}".`);
+    if (!isExpr(d.ReportName)) t.note(`it drills through to "${d.ReportName}"; import that report too, as ReportWright opens it by the id "${report}".`);
     return { type: 'report', report, params };
   }
   if (a.BookmarkLink != null && a.BookmarkLink !== '') return { type: 'bookmark', target: ex(cx, t, a.BookmarkLink, ctx, { text: true }) };
@@ -1041,7 +1041,7 @@ function interactivity(ar, it, cx, t, ctx) {
 }
 
 /**
- * FormattedText (and RichText): the HTML is kept as a Pagewright rich text item. Literal HTML is the author's
+ * FormattedText (and RichText): the HTML is kept as a ReportWright rich text item. Literal HTML is the author's
  * markup; its mail-merge fields (<%Name%>) become {…} parts, which the engine escapes. HTML that comes from an
  * expression is data: ActiveReports renders it as HTML, so htmlFromData is set and a warning names it.
  */
@@ -1085,10 +1085,10 @@ function textbox(ar, cx, ctx) {
   it.value = ex(cx, t, v, ctx, { text: true });
   it.canGrow = isTrue(ar.CanGrow);
   if (isTrue(ar.CanShrink)) it.canShrink = true;
-  // MinCondenseRate squeezes text sideways; shrinking the font is the closest Pagewright does
+  // MinCondenseRate squeezes text sideways; shrinking the font is the closest ReportWright does
   const condense = Number(ar.MinCondenseRate);
   if (isTrue(ar.ShrinkToFit) || (condense > 0 && condense < 100)) it.shrinkToFit = true;
-  // ActiveReports turns text counter-clockwise; Pagewright's rotate is clockwise
+  // ActiveReports turns text counter-clockwise; ReportWright's rotate is clockwise
   const angle = Number(ar.Angle);
   const cw = ((-angle % 360) + 360) % 360;
   if (cw && !isExpr(ar.Angle)) it.rotate = cw;
@@ -1105,18 +1105,18 @@ function image(ar, cx, ctx) {
   const source = String(ar.Source || '').toLowerCase();
   const v = ar.Value;
   if (source === 'embedded' || (!isExpr(v) && cx.images.has(v))) {
-    if (isExpr(v)) t.approx('it picks an embedded image by an expression, which Pagewright does not support, so no image is shown.');
+    if (isExpr(v)) t.approx('it picks an embedded image by an expression, which ReportWright does not support, so no image is shown.');
     else if (cx.images.has(v)) it.src = cx.images.get(v);
     else t.approx(`the embedded image "${v}" is not in the file, so no image is shown.`);
   } else if (source === 'database') {
     const e = ex(cx, t, v, ctx, { what: 'the image' });
     if (e !== undefined) {
       it.src = `data:${ar.MIMEType || 'image/png'};base64,{${isExpr(e) ? e.slice(1) : q(e)}}`;
-      t.note('its image comes from a field; Pagewright reads it as base64 text.');
+      t.note('its image comes from a field; ReportWright reads it as base64 text.');
     }
   } else if (v != null && v !== '') {
     it.src = ex(cx, t, v, ctx, { what: 'the image address' });
-    if (typeof it.src === 'string' && !isExpr(it.src) && !/^(https?:|data:|\/)/i.test(it.src)) t.approx(`the image address "${v}" is relative; Pagewright needs a full URL or a data URI.`);
+    if (typeof it.src === 'string' && !isExpr(it.src) && !/^(https?:|data:|\/)/i.test(it.src)) t.approx(`the image address "${v}" is relative; ReportWright needs a full URL or a data URI.`);
   }
   it.fit = { fitproportional: 'contain', fit: 'fill', clip: 'cover', autosize: 'contain' }[String(ar.Sizing || 'AutoSize').toLowerCase()] || 'contain';
   const st = textStyle(ar.Style, cx, t, ctx, { box: true });
@@ -1213,11 +1213,11 @@ function subreport(ar, cx, ctx) {
     if (v !== undefined) it.params[safeName(p.ParameterName)] = v;
   }
   if (isTrue(ar.KeepTogether)) it.keepTogether = true;
-  t.note(`it shows the report "${ar.ReportName}"; import that report too, as Pagewright finds it by the id "${it.report}".`);
+  t.note(`it shows the report "${ar.ReportName}"; import that report too, as ReportWright finds it by the id "${it.report}".`);
   return finish(cx, t, it);
 }
 
-/** A state indicator (from the .rdl importer): a Pagewright icon set with low and high thresholds. */
+/** A state indicator (from the .rdl importer): a ReportWright icon set with low and high thresholds. */
 function indicator(ar, cx, ctx) {
   const t = track(cx, ar);
   const it = common(ar, cx, t, ctx, 'iconset');
@@ -1269,7 +1269,7 @@ function inputField(ar, cx, ctx) {
 
 /* ================================================================ filters and sorting */
 
-/** Fields and parameters an expression uses that do not exist: Pagewright stops the render on those in sorts, filters and calculated fields. */
+/** Fields and parameters an expression uses that do not exist: ReportWright stops the render on those in sorts, filters and calculated fields. */
 function unknownRefs(v, ds, cx) {
   if (typeof v !== 'string' || /\bLookup\s*\(/i.test(v)) return [];
   const out = [];
@@ -1291,7 +1291,7 @@ function filterList(list, cx, t, ctx, ds) {
     if (expr === undefined) continue;
     const op = String(f.Operator || 'Equal').toLowerCase();
     const vals = (Array.isArray(f.FilterValues) ? f.FilterValues : [f.FilterValues]).filter(v => v != null).map(v => {
-      // "False" compared with a true/false field: ActiveReports converts, Pagewright compares as is
+      // "False" compared with a true/false field: ActiveReports converts, ReportWright compares as is
       if (typeof v === 'string' && /^\s*(=\s*")?(true|false)"?\s*$/i.test(v)) return `=${/true/i.test(v)}`;
       return ex(cx, t, op === 'like' && !isExpr(v) ? String(v).replace(/%/g, '*') : v, ctx, { what: 'a filter value' });
     });
@@ -1326,7 +1326,7 @@ function groupSort(list, key, cx, t, ctx, label, ds) {
   const s = sortList(list, cx, t, ctx, ds)[0];
   if (!s) return {};
   if (s.by === key) return { dir: s.dir };
-  if (typeof s.by === 'string' && AGG_RE.test(s.by)) { t.approx(`${label} is sorted by ${s.by} in ActiveReports; Pagewright sorts groups by their key or by row values, so they keep the data order.`); return {}; }
+  if (typeof s.by === 'string' && AGG_RE.test(s.by)) { t.approx(`${label} is sorted by ${s.by} in ActiveReports; ReportWright sorts groups by their key or by row values, so they keep the data order.`); return {}; }
   return { rows: s };
 }
 
@@ -1338,14 +1338,14 @@ function cellOf(c, cx, tt, ctx, kind, opt = {}) {
   /** @type {Record<string, any>} */
   let cell = { value: '' };
   if (ar && typeof ar === 'object' && CELL_ITEMS.has(String(ar.Type || '').toLowerCase()) && !TEXT_CELL(ar)) {
-    // an image, chart, table, list or rectangle in a cell: Pagewright lays it out inside the cell, in the row's scope
+    // an image, chart, table, list or rectangle in a cell: ReportWright lays it out inside the cell, in the row's scope
     const inner = convertItem({ ...ar, Left: '0pt', Top: '0pt' }, cx, { ...ctx, top: false });
     if (inner) cell.item = inner;
   } else if (ar && typeof ar === 'object') {
     const type = String(ar.Type || '').toLowerCase();
     const t = track(cx, ar);
     if (type === 'formattedtext' || type === 'richtext') {
-      // a table cell is plain text in Pagewright: keep the words of the HTML
+      // a table cell is plain text in ReportWright: keep the words of the HTML
       const v = ar.Html ?? ar.Value ?? '';
       cell.value = isExpr(v) ? ex(cx, t, v, ctx, { text: true }) : ex(cx, t, stripHtml(String(v)), ctx, { text: true });
       t.approx('its formatting (HTML) is lost in a table cell; the text is kept.');
@@ -1361,7 +1361,7 @@ function cellOf(c, cx, tt, ctx, kind, opt = {}) {
       if (us) {
         const by = ex(cx, t, us, ctx, { what: 'its sort link' });
         if (by !== undefined) cell.sortBy = by;
-        if (kind !== 'header') t.approx('its sort link works only in the table header in Pagewright.');
+        if (kind !== 'header') t.approx('its sort link works only in the table header in ReportWright.');
       }
       if (ar.Visibility && !ar.Visibility.ToggleItem && !isFalse(ar.Visibility.Hidden)) {
         const h = isTrue(ar.Visibility.Hidden) ? true : ex(cx, t, ar.Visibility.Hidden, ctx, { what: 'the condition that hides it' });
@@ -1369,7 +1369,7 @@ function cellOf(c, cx, tt, ctx, kind, opt = {}) {
         else if (h !== undefined) {
           const raw = ex(cx, t, ar.Value ?? '', ctx, { what: 'its value' });
           cell.value = `=IIF(${h.slice(1)}, "", ${inner(raw ?? '')})`;
-          t.approx('it is hidden by a condition; Pagewright clears its text instead, so its background and borders stay.');
+          t.approx('it is hidden by a condition; ReportWright clears its text instead, so its background and borders stay.');
         }
       } else if (ar.Visibility?.ToggleItem) t.approx(`a click on "${ar.Visibility.ToggleItem}" toggles it in ActiveReports; here it is always shown.`);
     } else if (type === 'checkbox') {
@@ -1457,13 +1457,13 @@ function toggles(groups, levelVis, tt) {
   });
 }
 
-/** Cell items a Pagewright table cell can show: text (and check boxes as text). */
+/** Cell items a ReportWright table cell can show: text (and check boxes as text). */
 const TEXT_CELL = (it) => !it || ['textbox', 'formattedtext', 'checkbox'].includes(String(it.Type || '').toLowerCase())
   || (String(it.Type || '').toLowerCase() === 'rectangle' && (it.ReportItems || []).length === 1 && String(it.ReportItems[0]?.Type).toLowerCase() === 'textbox');
 
 /**
  * A table whose cells hold images, barcodes, charts or other tables becomes a banded list: each row a band,
- * each cell a positioned item. Pagewright table cells hold only text.
+ * each cell a positioned item. ReportWright table cells hold only text.
  */
 function tableAsBands(ar) {
   const widths = ar.TableColumns.filter(Boolean).map(c => toPt(c.Width, 72));
@@ -1509,7 +1509,7 @@ function table(ar, cx, ctx) {
   const t = track(cx, ar);
   const cols = Array.isArray(ar.TableColumns) ? ar.TableColumns.filter(Boolean) : [];
   if (!cols.length) { t.drop('the table has no columns, so it was left out.'); dropInside(ar, cx); return finish(cx, t, null); }
-  if (ctx.band !== 'body' && ctx.top) { t.drop('Pagewright allows tables only in the body, not in the page header or footer.'); dropInside(ar, cx); return finish(cx, t, null); }
+  if (ctx.band !== 'body' && ctx.top) { t.drop('ReportWright allows tables only in the body, not in the page header or footer.'); dropInside(ar, cx); return finish(cx, t, null); }
   const it = common(ar, cx, t, ctx, 'table');
   const rctx = { ...ctx, region: it.name, top: false };
   const N = cols.length;
@@ -1532,8 +1532,8 @@ function table(ar, cx, ctx) {
     const pb = breaks(G);
     if (pb.between) out.pageBreak = String(G.PageBreak?.BreakLocation ?? G.PageBreak).toLowerCase() === 'end' ? 'after' : 'between';
     if (isTrue(g.KeepTogether ?? G.KeepTogether)) out.keepTogether = true;
-    if (Array.isArray(G.Filters) && G.Filters.length) t.approx(`the group "${out.name}" has filters, which Pagewright groups do not support, so all its rows show.`);
-    if (isTrue(g.Header?.RepeatOnNewPage)) t.approx(`the header of the group "${out.name}" does not repeat on each new page in Pagewright.`);
+    if (Array.isArray(G.Filters) && G.Filters.length) t.approx(`the group "${out.name}" has filters, which ReportWright groups do not support, so all its rows show.`);
+    if (isTrue(g.Header?.RepeatOnNewPage)) t.approx(`the header of the group "${out.name}" does not repeat on each new page in ReportWright.`);
     const label = G.DocumentMapLabel ?? G.Label;
     const first = out.header[0]?.cells.find(Boolean);
     if (label && first && first.bookmark == null) first.bookmark = ex(cx, t, label, rctx, { text: true });
@@ -1543,7 +1543,7 @@ function table(ar, cx, ctx) {
   it.detail = tableRows(ar.Details?.TableRows, N, cx, t, rctx, 'detail');
   it.footer = tableRows(ar.Footer?.TableRows, N, cx, t, rctx, 'footer');
   toggles(it.groups, [...(ar.TableGroups || []).filter(Boolean).map(g => g.Visibility), ar.Details?.Visibility], t);
-  if ((ar.Details?.Group || ar.Details?.Grouping)?.GroupExpressions?.length) t.approx('its detail rows are grouped (one row per group) in ActiveReports; Pagewright shows every row.');
+  if ((ar.Details?.Group || ar.Details?.Grouping)?.GroupExpressions?.length) t.approx('its detail rows are grouped (one row per group) in ActiveReports; ReportWright shows every row.');
   if (ar.Details?.Visibility && !ar.Details.Visibility.ToggleItem && isTrue(ar.Details.Visibility.Hidden)) it.detail = [];
   regionData(ar, it, cx, t, rctx, ctx);
   if (sorts.length) it.sort = sorts;
@@ -1558,7 +1558,7 @@ function regionData(ar, it, cx, t, rctx, ctx) {
   const f = filterList(ar.Filters, cx, t, rctx, it.dataSet);
   if (it.dataSet && it.dataSet === ctx.listDataSet) {
     if (ctx.parentFilters?.length) f.unshift(...ctx.parentFilters);
-    else if (ctx.listDataSet) t.approx('it uses the same data as the list around it; Pagewright shows all of its rows in every list row.');
+    else if (ctx.listDataSet) t.approx('it uses the same data as the list around it; ReportWright shows all of its rows in every list row.');
   }
   if (f.length) it.filters = f;
 }
@@ -1606,7 +1606,7 @@ function tablixItems(ar) {
 /** A tablix without column groups: a table, with its row groups as table groups. */
 function tablixTable(ar, cx, ctx) {
   const t = track(cx, ar);
-  if (ctx.band !== 'body' && ctx.top) { t.drop('Pagewright allows tables only in the body, not in the page header or footer.'); dropInside(ar, cx); return finish(cx, t, null); }
+  if (ctx.band !== 'body' && ctx.top) { t.drop('ReportWright allows tables only in the body, not in the page header or footer.'); dropInside(ar, cx); return finish(cx, t, null); }
   const it = common(ar, cx, t, ctx, 'table');
   const rctx = { ...ctx, region: it.name, top: false };
   const rowH = ar.RowHierarchy || {}, colH = ar.ColumnHierarchy || {};
@@ -1728,7 +1728,7 @@ function tablixTable(ar, cx, ctx) {
       // a recursive hierarchy: Parent is the parent's id
       if (g.m.Group.Parent != null && g.m.Group.Parent !== '') { const pe = ex(cx, t, g.m.Group.Parent, rctx, { what: 'a recursive parent' }); if (pe !== undefined) out.parent = pe; }
       if (isTrue(g.m.KeepTogether)) out.keepTogether = true;
-      if (Array.isArray(g.m.Group.Filters) && g.m.Group.Filters.length) t.approx(`the group "${g.name}" has filters, which Pagewright groups do not support, so all its rows show.`);
+      if (Array.isArray(g.m.Group.Filters) && g.m.Group.Filters.length) t.approx(`the group "${g.name}" has filters, which ReportWright groups do not support, so all its rows show.`);
       const label = g.m.Group.DocumentMapLabel;
       const first = out.header[0]?.cells.find(Boolean);
       if (label && first && first.bookmark == null) first.bookmark = ex(cx, t, label, rctx, { text: true });
@@ -1747,7 +1747,7 @@ function tablixTable(ar, cx, ctx) {
 }
 
 /**
- * A tablix with column groups: a Pagewright matrix in the array form (spec §6). Each chain of dynamic members
+ * A tablix with column groups: a ReportWright matrix in the array form (spec §6). Each chain of dynamic members
  * becomes rowGroups / columnGroups (outer → inner), a static member beside a dynamic one becomes that group's
  * total, the static children of the innermost column group become several values.
  */
@@ -1804,7 +1804,7 @@ function tablixMatrix(ar, cx, ctx) {
       if (ta) g.totalAction = ta;
     }
     if (which === 'row') { const w = ar.RowHierarchy?.LevelSizes?.[l]; if (w != null) g.width = toPt(w, 110); }
-    if (Array.isArray(m.Group.Filters) && m.Group.Filters.length) t.approx(`the group "${m.Group.Name}" has filters, which Pagewright groups do not support, so all its rows show.`);
+    if (Array.isArray(m.Group.Filters) && m.Group.Filters.length) t.approx(`the group "${m.Group.Name}" has filters, which ReportWright groups do not support, so all its rows show.`);
     return g;
   };
   it.rowGroups = rc.levels.slice(0, 8).map((L, l) => groupOf(L, l, 'row'));
@@ -1831,14 +1831,14 @@ function tablixMatrix(ar, cx, ctx) {
     return v;
   });
   it.columnWidth = toPt(ar.Body.Columns[cIdx.get(cLeaves[0]) ?? 0], 64);
-  // total cells: Pagewright totals use the value formulas
+  // total cells: ReportWright totals use the value formulas
   const totRows = rc.levels.filter(L => L.tm).map(L => rIdx.get(L.tm)), totCols = cc.levels.filter(L => L.tm).map(L => cIdx.get(L.tm));
   for (const r of [ri, ...totRows]) for (const c of [...cLeaves.map(m => cIdx.get(m)), ...totCols]) {
     const ti = cellAt(r, c);
     if (!ti || used.has(ti)) continue;
     used.add(ti);
     const tv = translateExpression(ti.Value, { scopes: cx.scopes }).value;
-    if (!it.values.some(v => v.value === tv)) t.approx(`a total cell uses ${ti.Value}; Pagewright totals use the same formula as the cells.`);
+    if (!it.values.some(v => v.value === tv)) t.approx(`a total cell uses ${ti.Value}; ReportWright totals use the same formula as the cells.`);
   }
   // corner: one text, or one header per row group in its last row
   const crow = ar.Corner?.[ar.Corner.length - 1] || [];
@@ -1860,7 +1860,7 @@ function tablixMatrix(ar, cx, ctx) {
   // count the items inside: what the matrix shows is mapped, the rest is noted
   for (const inside of tablixItems(ar)) {
     const ti = track(cx, inside);
-    if (!used.has(inside) && inside.Value != null && String(inside.Value).trim() !== '') ti.approx('this cell is not shown: a Pagewright matrix shows group headers, values and totals.');
+    if (!used.has(inside) && inside.Value != null && String(inside.Value).trim() !== '') ti.approx('this cell is not shown: a ReportWright matrix shows group headers, values and totals.');
     finish(cx, ti, null);
   }
   return finish(cx, t, it);
@@ -1949,7 +1949,7 @@ function bandedlist(ar, cx, ctx) {
     const f = parentF(lvl);
     if (f.length) lst.filters = f;
     if (breaks(G).between || breaks(G).after) lst.pageBreakBetween = true;
-    if (isTrue(g.Header?.RepeatOnNewPage)) t.approx('group headers do not repeat on each new page in Pagewright.');
+    if (isTrue(g.Header?.RepeatOnNewPage)) t.approx('group headers do not repeat on each new page in ReportWright.');
     const gs = groupSort(g.SortExpressions ?? G.SortExpressions, keys[lvl].key, cx, t, rctx, `the group "${G.Name || lvl + 1}"`, ds);
     if (gs.dir || gs.rows) lst.sort = [gs.rows || { by: keys[lvl].key, dir: gs.dir }];
     const label = G.DocumentMapLabel ?? G.Label;
@@ -1982,12 +1982,12 @@ const CHART_TYPES = { column: 'column', bar: 'bar', line: 'line', area: 'area', 
   bubble: 'bubble', spline: 'line', stepline: 'line', splinearea: 'area', candlestick: 'candlestick', highlowopenclose: 'ohlc', highlowclose: 'ohlc',
   funnel: 'funnel', pyramid: 'funnel', gauge: 'gauge', radar: 'radar', polar: 'polar', rangearea: 'area', rangebar: 'bar', rangecolumn: 'column',
   treemap: 'treemap', waterfall: 'waterfall', histogram: 'histogram', boxplot: 'boxplot', boxwhisker: 'boxplot' };
-// ActiveReports palette names → the nearest of Pagewright's 12 named palettes
+// ActiveReports palette names → the nearest of ReportWright's 12 named palettes
 const PALETTES = { office: 'office', office2010: 'office', office2016: 'office', standard: 'default', light: 'pastel', dark: 'vivid', blue: 'ocean', cerulean: 'ocean',
   green: 'forest', orange: 'sunset', red: 'sunset', yellow: 'sunset', coral: 'sunset', pink: 'berry', purple: 'berry', violet: 'berry', grey: 'grayscale', gray: 'grayscale', grayscale: 'grayscale', cocoa: 'earth' };
 const SERIES_KIND = { column: 'column', bar: 'bar', line: 'line', area: 'area', spline: 'line', splinearea: 'area', stepline: 'line', rangearea: 'area', rangebar: 'bar', rangecolumn: 'column' };
 
-/** Line aspect → `line`: Spline is smooth, any step is Pagewright's centred step. */
+/** Line aspect → `line`: Spline is smooth, any step is ReportWright's centred step. */
 function lineOf(cfg, pt, t) {
   const a = String(cfg?.LineAspect || '').toLowerCase();
   if (a === 'spline' || pt === 'spline' || pt === 'splinearea') return 'smooth';
@@ -1998,7 +1998,7 @@ function lineOf(cfg, pt, t) {
   return undefined;
 }
 
-/** An axis's settings that Pagewright can draw. */
+/** An axis's settings that ReportWright can draw. */
 function axisOf(a, t, which) {
   if (!a || typeof a !== 'object') return {};
   const o = {};
@@ -2006,7 +2006,7 @@ function axisOf(a, t, which) {
   if (which !== 'x') { if (num(a.Min) != null) o.min = num(a.Min); if (num(a.Max) != null) o.max = num(a.Max); }
   if (/log/i.test(String(a.Scale || ''))) {
     o.log = true;
-    if (num(a.LogBase) != null && num(a.LogBase) !== 10) t.approx(`its log axis uses base ${a.LogBase}; Pagewright uses base 10.`);
+    if (num(a.LogBase) != null && num(a.LogBase) !== 10) t.approx(`its log axis uses base ${a.LogBase}; ReportWright uses base 10.`);
   }
   if (isTrue(a.Reversed)) o.reversed = true;
   if (which === 'x' && num(a.LabelAngle)) o.labelAngle = num(a.LabelAngle);
@@ -2055,7 +2055,7 @@ function chart(ar, cx, ctx, dv) {
   const axes = (Array.isArray(ar.PlotArea?.Axes) ? ar.PlotArea.Axes : []).filter(a => a && typeof a === 'object');
   const yAxes = axes.filter(a => /y/i.test(String(a.AxisType || ''))), xAxis = axes.find(a => /x/i.test(String(a.AxisType || '')));
   const yAxis = yAxes[0];
-  // plots bound to the second Y axis draw on Pagewright's secondary axis
+  // plots bound to the second Y axis draw on ReportWright's secondary axis
   const secondary = new Set(yAxes.slice(1).flatMap(a => (Array.isArray(a.Plots) ? a.Plots : []).map(String)));
   const vf = formatOf(yAxis?.Format);
   if (vf) it.valueFormat = vf;
@@ -2157,7 +2157,7 @@ function chart(ar, cx, ctx, dv) {
       if (isExpr(tpl)) { const e2 = ex(cx, t, tpl, rctx, { what: 'the label text' }); if (e2 !== undefined) it.labelTemplate = e2; }
       else if (!/^\{value\}$/i.test(tpl.trim())) {
         if ([...tpl.matchAll(/\{(\w+)\}/g)].every(m2 => /^(value|category|series|percent)$/i.test(m2[1]))) it.labelTemplate = tpl;
-        else t.approx(`its label template "${tpl.slice(0, 60)}" uses fields Pagewright cannot fill; the labels show the values.`);
+        else t.approx(`its label template "${tpl.slice(0, 60)}" uses fields ReportWright cannot fill; the labels show the values.`);
       }
     }
     const palName = String(ar.Palette || '').toLowerCase();
@@ -2211,7 +2211,7 @@ function chart(ar, cx, ctx, dv) {
     const refs = unknownRefs(by, it.dataSet, cx);
     if (refs.length) t.approx(`its categories are sorted by ${missing(refs, it.dataSet)}, so they keep the data order.`);
     else if (by !== undefined && by === it.category) it.categorySort = dir;
-    else if (by !== undefined && AGG_RE.test(String(by))) t.approx(`its categories are sorted by ${by}; Pagewright sorts them by row values, so they keep the data order.`);
+    else if (by !== undefined && AGG_RE.test(String(by))) t.approx(`its categories are sorted by ${by}; ReportWright sorts them by row values, so they keep the data order.`);
     else if (by !== undefined) it.sort = [{ by, dir }];
   }
   const bg = hexColor(ar.Style?.BackgroundColor);
@@ -2253,7 +2253,7 @@ function keyValues(str) {
 const getKey = (kv, k) => kv.find(([key]) => key.toLowerCase() === k)?.[1];
 const unescapeTpl = (s) => String(s ?? '').replace(/\{\{/g, '{').replace(/\}\}/g, '}');
 
-/** JSONPath as written in ActiveReports ($.value.*) → the subset Pagewright reads ($.value[*]). null: not supported. */
+/** JSONPath as written in ActiveReports ($.value.*) → the subset ReportWright reads ($.value[*]). null: not supported. */
 function convertPath(p) {
   if (p == null || String(p).trim() === '' || String(p).trim() === '$') return '$';
   let s = String(p).trim();
@@ -2306,14 +2306,14 @@ function dataPart(ar, cx) {
     const src = info.get(srcRef);
     const pathOf = (jp) => {
       const p = convertPath(jp);
-      if (p === null) { cx.warn(`Data set "${name}": the JSON path "${jp}" uses features Pagewright does not support (.. or filters), so it reads the whole response.`); return '$'; }
+      if (p === null) { cx.warn(`Data set "${name}": the JSON path "${jp}" uses features ReportWright does not support (.. or filters), so it reads the whole response.`); return '$'; }
       return p;
     };
     if (!src) {
       cx.warn(`Data set "${name}": its data source "${srcRef}" is not in the file, so it has no rows.`);
       out.source = addSource({ name: srcRef || `${name}_source`, type: 'json', data: [] });
     } else if (src.shared) {
-      cx.warn(`Data source "${src.name}" is a shared data source (${src.shared}); Pagewright cannot read it, so data set "${name}" has no rows until you set its source.`);
+      cx.warn(`Data source "${src.name}" is a shared data source (${src.shared}); ReportWright cannot read it, so data set "${name}" has no rows until you set its source.`);
       out.source = src.inlineName ||= addSource({ name: src.name, type: 'json', data: [] });
     } else if (SQL_PROVIDERS.test(src.provider)) {
       const sql = sqlSource(d, src, name, cx);
@@ -2323,12 +2323,12 @@ function dataPart(ar, cx) {
       // pass what they read as Query.Xml ({ path, url, inline, soap })
       const x = d.Query?.Xml || {};
       const cmd = String(d.Query?.CommandText ?? '').trim();
-      if (cmd.startsWith('=')) cx.warn(`Data set "${name}": its XPath is built by an expression; Pagewright needs a fixed path, so it reads the likeliest rows.`);
+      if (cmd.startsWith('=')) cx.warn(`Data set "${name}": its XPath is built by an expression; ReportWright needs a fixed path, so it reads the likeliest rows.`);
       out.path = x.path ?? (cmd && !cmd.startsWith('=') ? cmd : '$');
       const kvXml = getKey(src.kv, 'xmldata');
       const inline = x.inline ?? (kvXml == null ? null : unescapeTpl(kvXml));
       const url = unescapeTpl(x.url ?? getKey(src.kv, 'xmldoc') ?? getKey(src.kv, 'url') ?? getKey(src.kv, 'path') ?? '').trim();
-      if (url && !/^(https?:)?\/\/|^\//i.test(url)) cx.warn(`Data source "${src.name}" reads the file "${url}"; Pagewright reads XML from a URL, so set one.`);
+      if (url && !/^(https?:)?\/\/|^\//i.test(url)) cx.warn(`Data source "${src.name}" reads the file "${url}"; ReportWright reads XML from a URL, so set one.`);
       if (!url && inline == null) cx.warn(`Data source "${src.name}" has no XML address or data, so data set "${name}" has no rows until you set one.`);
       const web = /^(https?:)?\/\/|^\//i.test(url) ? url : '';
       if (x.soap) out.source = addSource({ name: src.used > 1 ? `${src.name}_${name}` : src.name, type: 'soap', url: web, soapAction: x.soap.action || '', envelope: x.soap.envelope });
@@ -2338,7 +2338,7 @@ function dataPart(ar, cx) {
       if (!cmdT.ok) cx.warn(`Data set "${name}": its query ${cmdT.notes.join('; ')}; it reads the whole response.`);
       const cmd = cmdT.ok ? keyValues(String(cmdT.value ?? '')) : [];
       const jp = unescapeTpl(getKey(cmd, 'jpath'));
-      if (/\{/.test(getKey(cmd, 'jpath') ?? '')) cx.warn(`Data set "${name}": its JSON path is built by an expression; Pagewright needs a fixed path, so it reads the whole response.`);
+      if (/\{/.test(getKey(cmd, 'jpath') ?? '')) cx.warn(`Data set "${name}": its JSON path is built by an expression; ReportWright needs a fixed path, so it reads the whole response.`);
       if (src.inline != null) {
         if (!src.inlineName) {
           let data;
@@ -2367,9 +2367,9 @@ function dataPart(ar, cx) {
         if (src.provider === 'CSV') {
           out.source = addSource({ name: sname, type: 'csv', url });
           const sep = getKey(src.kv, 'columnsseparator') ?? getKey(src.kv, 'delimiter') ?? getKey(src.kv, 'separator');
-          if (sep && sep.trim() !== ',') cx.warn(`Data source "${src.name}": Pagewright reads CSV with commas, not "${sep}".`);
+          if (sep && sep.trim() !== ',') cx.warn(`Data source "${src.name}": ReportWright reads CSV with commas, not "${sep}".`);
         } else {
-          // a JSON body with a "query" is GraphQL; Pagewright's GraphQL source returns the "data" part
+          // a JSON body with a "query" is GraphQL; ReportWright's GraphQL source returns the "data" part
           let gql = null;
           if (method === 'POST' && body && !/\{[^{]/.test(body.replace(/\{\{|\}\}/g, ''))) { try { gql = JSON.parse(unescapeTpl(body)); } catch { gql = null; } }
           if (gql && typeof gql.query === 'string') {
@@ -2394,7 +2394,7 @@ function dataPart(ar, cx) {
         }
       }
     } else {
-      cx.warn(`Data source "${src.name}" uses the provider "${src.provider}", which Pagewright cannot read; data set "${name}" has no rows until you set its source.`);
+      cx.warn(`Data source "${src.name}" uses the provider "${src.provider}", which ReportWright cannot read; data set "${name}" has no rows until you set its source.`);
       out.source = src.inlineName ||= addSource({ name: src.name, type: 'json', data: [] });
     }
     const fl = filterList(d.Filters, cx, dataTracker(cx, name), { band: 'body' }, name);
@@ -2412,7 +2412,7 @@ function dataPart(ar, cx) {
     }
     out.source = parent.source;
     out.path = convertPath(parent.path + chain.slice(1).map(c => `.${c}[*]`).join('')) || '$';
-    cx.warn(`Data set "${out.name}": it lists the ${chain.slice(1).join('/')} of every ${chain[0]} row together (Pagewright has no nested data sets); filter it by the parent key if the report shows more than one ${chain[0]}.`);
+    cx.warn(`Data set "${out.name}": it lists the ${chain.slice(1).join('/')} of every ${chain[0]} row together (ReportWright has no nested data sets); filter it by the parent key if the report shows more than one ${chain[0]}.`);
   }
   return { dataSources: sources, dataSets: sets };
 }
@@ -2482,15 +2482,15 @@ function fieldsOf(d, dsName, cx, xml = false) {
 function sqlSource(d, src, name, cx) {
   const conn = safeName(src.name).toLowerCase();
   let query = d.Query?.CommandText ?? '';
-  if (isExpr(query)) { cx.warn(`Data set "${name}": its SQL is built by an expression; Pagewright runs fixed SQL with @parameters, so check the query.`); query = String(query).replace(/^\s*=\s*/, ''); }
+  if (isExpr(query)) { cx.warn(`Data set "${name}": its SQL is built by an expression; ReportWright runs fixed SQL with @parameters, so check the query.`); query = String(query).replace(/^\s*=\s*/, ''); }
   for (const p of d.Query?.QueryParameters || []) {
     const pn = String(p?.Name || '').replace(/^@/, '');
     const m = /^=\s*Parameters!(\w+)\.Value\s*$/i.exec(String(p?.Value ?? ''));
     if (m && pn) query = query.replace(new RegExp(`@${pn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g'), `@${safeName(m[1])}`);
-    else if (pn) cx.warn(`Data set "${name}": the query parameter @${pn} is set by ${p?.Value}; Pagewright binds @name to the report parameter of that name, so add one.`);
+    else if (pn) cx.warn(`Data set "${name}": the query parameter @${pn} is set by ${p?.Value}; ReportWright binds @name to the report parameter of that name, so add one.`);
   }
   if (/storedprocedure/i.test(String(d.Query?.CommandType || ''))) cx.warn(`Data set "${name}": it calls the stored procedure ${query}; write the call in SQL for your database (e.g. exec ${query} @param).`);
-  cx.warn(`Data source "${src.name}" is a ${src.provider} database: Pagewright runs its SQL on the server, so set PW_DB_${conn.toUpperCase()}=<connection URL> there (the connection string in the file is not imported).`);
+  cx.warn(`Data source "${src.name}" is a ${src.provider} database: ReportWright runs its SQL on the server, so set PW_DB_${conn.toUpperCase()}=<connection URL> there (the connection string in the file is not imported).`);
   return { name: src.used > 1 ? `${src.name}_${name}` : src.name, type: 'sql', connection: conn, query: String(query) };
 }
 
@@ -2532,7 +2532,7 @@ function parametersOf(list, cx) {
         out1.default = out1.multi ? vals.map(String).join(',') : coerceLit(vals[0], type);
         hasDefault = true;
       }
-    } else if (dv?.DataSetReference) t.approx(`its default comes from the data set "${dv.DataSetReference.DataSetName}", which Pagewright does not support; pick a value when you run the report.`);
+    } else if (dv?.DataSetReference) t.approx(`its default comes from the data set "${dv.DataSetReference.DataSetName}", which ReportWright does not support; pick a value when you run the report.`);
     const vv = p.ValidValues;
     if (Array.isArray(vv?.ParameterValues) && vv.ParameterValues.length) {
       out1.options = vv.ParameterValues.filter(Boolean).map(o => ({ value: coerceLit(o.Value, type), label: String(o.Label ?? o.Value) }));
@@ -2541,7 +2541,7 @@ function parametersOf(list, cx) {
       out1.optionsFrom = { dataSet: r.DataSetName, value: `=Fields.${safeName(r.ValueField)}`, label: `=Fields.${safeName(r.LabelField || r.ValueField)}` };
     }
     if (!hasDefault && !isTrue(p.Nullable) && !isTrue(p.AllowBlank)) out1.required = true;
-    if (isTrue(p.Hidden)) t.note('it is hidden in ActiveReports; Pagewright shows it in the parameter panel.');
+    if (isTrue(p.Hidden)) t.note('it is hidden in ActiveReports; ReportWright shows it in the parameter panel.');
     out.push(out1);
   }
   return out;
@@ -2627,7 +2627,7 @@ function fixedPage(fp, cx, info) {
   return { header, footer, items };
 }
 
-/** Group, region and data set names → the Pagewright scope that aggregates use (null: the current scope). */
+/** Group, region and data set names → the ReportWright scope that aggregates use (null: the current scope). */
 function collectScopes(ar, cx) {
   const seen = new Set();
   const walk = (o) => {
@@ -2682,8 +2682,8 @@ function convertReport(ar, cx, opts) {
   const master = ar.MasterReport ? reportId(ar.MasterReport) : undefined;
   if (master) cx.warn(`The report uses the master report "${ar.MasterReport}": import it too and save it as the report "${master}". Its page header, footer and items frame this report; the body goes in its first content placeholder.`);
   const fnHint = 'Rewrite reusable formulas as report functions ("functions", written in the expression language and called as Code.Name(…)).';
-  if (ar.Code) cx.warn(`The report has custom code (Code); Pagewright does not run JavaScript, and expressions that call it are shown as text. ${fnHint}`);
-  if (Array.isArray(ar.CustomCodeBlocks) && ar.CustomCodeBlocks.length) cx.warn(`The report has custom code; Pagewright does not run JavaScript. ${fnHint}`);
+  if (ar.Code) cx.warn(`The report has custom code (Code); ReportWright does not run JavaScript, and expressions that call it are shown as text. ${fnHint}`);
+  if (Array.isArray(ar.CustomCodeBlocks) && ar.CustomCodeBlocks.length) cx.warn(`The report has custom code; ReportWright does not run JavaScript. ${fnHint}`);
 
   let header, footer, bodyItems = [], bodyH = 0;
   const fixed = sec0?.FixedPage || (String(sec0?.Type || '').toLowerCase() === 'fixedpage' ? sec0 : null) || (!sec0 && ar.FixedPage);
@@ -2703,7 +2703,7 @@ function convertReport(ar, cx, opts) {
   // more sections: body sections, each with its own page setup; the first section's header and footer are used
   const more = [];
   for (const [k, s] of sections.slice(1).entries()) {
-    if (s.PageHeader?.ReportItems?.length || s.PageFooter?.ReportItems?.length) cx.warn(`Section ${k + 2} has its own page header or footer; Pagewright uses the first section's for every page.`);
+    if (s.PageHeader?.ReportItems?.length || s.PageFooter?.ReportItems?.length) cx.warn(`Section ${k + 2} has its own page header or footer; ReportWright uses the first section's for every page.`);
     const sp = s.Page ? pageOf(s.Page, cx) : pinfo;
     const f = s.FixedPage || (String(s.Type || '').toLowerCase() === 'fixedpage' ? s : null);
     const its = f?.Pages ? fixedPage(f, cx, sp).items : convertItems(s.Body?.ReportItems, cx, { band: 'body', top: true });
@@ -2713,7 +2713,7 @@ function convertReport(ar, cx, opts) {
     if (JSON.stringify(sp.page) !== JSON.stringify(pinfo.page)) b.page = sp.page;
     more.push(b);
   }
-  // Pagewright needs room for the body between the header and the footer
+  // ReportWright needs room for the body between the header and the footer
   if (pinfo.contentH - header.height - footer.height < 24) {
     cx.warn('The page header and footer leave no room for the body; they were made shorter.');
     const room = Math.max(0, pinfo.contentH - 24);

@@ -1,4 +1,4 @@
-// Cinematic automated walkthrough recording for Pagewright
+// Cinematic automated walkthrough recording for ReportWright
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -98,7 +98,7 @@ await context.close();
 await browser.close();
 
 if (videoPath && fs.existsSync(videoPath)) {
-  const destPath = '/Users/arunmallikarjun/Documents/pw-stress/public/pagewright-product-tour.webm';
+  const destPath = '/Users/arunmallikarjun/Documents/pw-stress/public/reportwright-product-tour.webm';
   fs.copyFileSync(videoPath, destPath);
   console.log('SUCCESS: Video saved to:', destPath);
   console.log('File size:', (fs.statSync(destPath).size / (1024 * 1024)).toFixed(2), 'MB');

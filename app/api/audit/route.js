@@ -14,7 +14,7 @@ export async function GET(req) {
     const q = Object.fromEntries(['from', 'to', 'type', 'actor', 'report', 'before', 'limit'].map(k => [k, sp.get(k) || undefined]));
     if (sp.get('format') === 'csv') {
       const events = await queryAudit({ ...q, limit: Math.min(Number(q.limit) || 10000, 10000) });
-      return new Response(auditCsv(events), { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="pagewright-audit-${new Date().toISOString().slice(0, 10)}.csv"` } });
+      return new Response(auditCsv(events), { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="reportwright-audit-${new Date().toISOString().slice(0, 10)}.csv"` } });
     }
     return Response.json(await queryAudit(q));
   } catch (e) { return errorResponse(e); }

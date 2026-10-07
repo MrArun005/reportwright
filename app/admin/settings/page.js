@@ -2,7 +2,7 @@ import SettingsAdmin from './SettingsAdmin.jsx';
 import { dirOf, pickLang } from '@/i18n/index.js';
 import Shell from '@/home/Shell.jsx';
 
-export const metadata = { title: 'Settings · Pagewright' };
+export const metadata = { title: 'Settings · ReportWright' };
 export const dynamic = 'force-dynamic';
 
 // Admins only (proxy.js). Everything goes through /api/admin/settings, which checks again.

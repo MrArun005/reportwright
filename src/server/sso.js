@@ -140,7 +140,7 @@ const RANK = { viewer: 1, designer: 2, admin: 3 };
  */
 export function mapIdentity(email, values, who) {
   let e;
-  try { e = normEmail(email); } catch { throw fail('The identity provider sent an email address Pagewright does not take.', 401, 'email'); }
+  try { e = normEmail(email); } catch { throw fail('The identity provider sent an email address ReportWright does not take.', 401, 'email'); }
   if (!who?.issuer || !who?.subject) throw fail('The identity provider did not say who this is (issuer, subject).', 401, 'subject');
   const domains = (process.env.PW_SSO_ALLOWED_DOMAINS || '').split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
   if (domains.length && !domains.includes(e.split('@')[1])) throw fail('Accounts of this email domain cannot sign in here.', 403, 'domain');
@@ -150,7 +150,7 @@ export function mapIdentity(email, values, who) {
   for (const v of vals) { const r = map.get(v); if (r && (!role || RANK[r] > RANK[role])) role = r; }
   const fallback = process.env.PW_SSO_DEFAULT_ROLE || 'viewer';
   if (!role) role = fallback === 'none' ? null : ROLES.includes(/** @type {any} */ (fallback)) ? fallback : 'viewer';
-  if (!role) throw fail('Your account has no role in Pagewright. Ask an admin to add you to a group that has one.', 403, 'no_role');
+  if (!role) throw fail('Your account has no role in ReportWright. Ask an admin to add you to a group that has one.', 403, 'no_role');
   // built-in names never come from the IdP; its "designers" group is the custom group the upgrade renamed (perms.js)
   const groups = [...new Set(vals.map(v => v.trim()).map(v => (v.toLowerCase() === 'designers' ? RENAMED_GROUP : v)).filter(v => GROUP.test(v) && !BUILTIN_GROUPS.includes(v.toLowerCase())))].slice(0, 50).sort();
   return { email: e, role, groups, issuer: String(who.issuer), subject: String(who.subject) };
@@ -575,7 +575,7 @@ export async function samlSloMessage(req, form) {
   if (!name || (q.has('SAMLRequest') && q.has('SAMLResponse'))) throw fail('Send one SAMLRequest or SAMLResponse.', 400, 'slo');
   if (!q.get('Signature') || !q.get('SigAlg')) throw fail('The logout message is not signed.', 401, 'signature');
   const dec = (k) => { try { return decodeURIComponent(q.get(k).replace(/\+/g, ' ')); } catch { throw fail(`Bad ${k}.`, 400, 'slo'); } };
-  if (!SIG_ALGS[dec('SigAlg')]) throw fail('The logout message is signed with an algorithm Pagewright does not take (use RSA-SHA256).', 401, 'signature');
+  if (!SIG_ALGS[dec('SigAlg')]) throw fail('The logout message is signed with an algorithm ReportWright does not take (use RSA-SHA256).', 401, 'signature');
   let xml;
   try { xml = zlib.inflateRawSync(Buffer.from(dec(name), 'base64'), { maxOutputLength: 256 * 1024 }).toString('utf8'); }
   catch { throw fail('The logout message does not inflate.', 400, 'slo'); }

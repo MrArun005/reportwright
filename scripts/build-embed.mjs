@@ -23,21 +23,21 @@ const common = {
   plugins: [{ name: 'i18n-embed', setup: (b) => b.onResolve({ filter: /(^|\/)i18n\/index\.js$/ }, () => ({ path: path.join(root, 'src/i18n/embed.js') })) }],
   logOverride: { 'empty-import-meta': 'silent', 'unsupported-dynamic-import': 'silent' },
 };
-// The ES modules are what @pagewrightjs/viewer publishes: readable (not minified, names kept) with source maps, so a
+// The ES modules are what @reportwright/viewer publishes: readable (not minified, names kept) with source maps, so a
 // reviewer (or Socket's scanner) reads the same code we wrote. The single-file IIFE below stays minified.
 // lineLimit and utf8: no line over a few hundred characters (long lines read as obfuscated to a scanner; \u escapes
 // made translated strings six times longer)
 const readable = { minify: false, sourcemap: 'linked', sourcesContent: false, legalComments: 'inline', charset: 'utf8', lineLimit: 400 };
 // 1. Everything in one classic script: the interactive HTML export inlines this one (it must work offline).
-await build({ ...common, format: 'iife', outfile: path.join(root, 'public/embed/pagewright-viewer.full.js') });
+await build({ ...common, format: 'iife', outfile: path.join(root, 'public/embed/reportwright-viewer.full.js') });
 // 2. For other sites: ES modules split in chunks, so PDF export (pdf-lib) and barcodes (bwip-js) load only when used.
 fs.rmSync(path.join(root, 'public/embed/esm'), { recursive: true, force: true });
 //    The designer is a second entry: it shares React, the engine and the viewer with it.
 await build({ ...common, entryPoints: { viewer: path.join(root, 'src/embed/index.js'), designer: path.join(root, 'src/embed/designer.js') }, format: 'esm', ...readable, splitting: true, outdir: path.join(root, 'public/embed/esm'), entryNames: '[name]', chunkNames: 'chunk-[hash]' });
-//    The same ES modules with React left to the host app (@pagewrightjs/viewer/react-peer, used by @pagewrightjs/react).
+//    The same ES modules with React left to the host app (@reportwright/viewer/react-peer, used by @reportwright/react).
 fs.rmSync(path.join(root, 'public/embed/esm-peer'), { recursive: true, force: true });
 await build({ ...common, entryPoints: { viewer: path.join(root, 'src/embed/index.js'), designer: path.join(root, 'src/embed/designer.js') }, format: 'esm', ...readable, splitting: true, outdir: path.join(root, 'public/embed/esm-peer'), entryNames: '[name]', chunkNames: 'chunk-[hash]', external: ['react', 'react-dom', 'react/*', 'react-dom/*'] });
-//    What @pagewrightjs/viewer publishes: the same two builds with the third-party libraries that carry data blobs
+//    What @reportwright/viewer publishes: the same two builds with the third-party libraries that carry data blobs
 //    (pdf-lib's standard fonts, fontkit's brotli dictionary, bwip-js's barcode tables, bidi-js's Unicode data) and
 //    fflate left as imports: they are the package's pinned dependencies, so the tarball holds only our code.
 const PKG_EXTERNAL = ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate', 'bidi-js'];
@@ -45,12 +45,12 @@ for (const [dir, ext] of [['esm-pkg', []], ['esm-pkg-peer', ['react', 'react-dom
   fs.rmSync(path.join(root, 'public/embed', dir), { recursive: true, force: true });
   await build({ ...common, entryPoints: { viewer: path.join(root, 'src/embed/index.js'), designer: path.join(root, 'src/embed/designer.js') }, format: 'esm', ...readable, splitting: true, outdir: path.join(root, 'public/embed', dir), entryNames: '[name]', chunkNames: 'chunk-[hash]', external: [...ext, ...PKG_EXTERNAL] });
 }
-// 3. The script tag people paste: a tiny loader that keeps the Pagewright.mountViewer(...) call working.
-fs.writeFileSync(path.join(root, 'public/embed/pagewright-viewer.js'), `/* Pagewright viewer loader: the viewer itself is in esm/ */
+// 3. The script tag people paste: a tiny loader that keeps the ReportWright.mountViewer(...) call working.
+fs.writeFileSync(path.join(root, 'public/embed/reportwright-viewer.js'), `/* ReportWright viewer loader: the viewer itself is in esm/ */
 (function () {
   var s = document.currentScript, base = s && s.src ? s.src.replace(/[^/]*$/, '') : '/embed/';
   var ready = import(base + 'esm/viewer.js'), designer = null;
-  window.Pagewright = {
+  window.ReportWright = window.Pagewright = { // Pagewright: the old name, deprecated (0.9)
     mountViewer: function (t, o) { return ready.then(function (m) { return m.mountViewer(t, o); }); },
     // the designer loads only when a page asks for it
     mountDesigner: function (t, o) { designer = designer || import(base + 'esm/designer.js'); return designer.then(function (m) { return m.mountDesigner(t, o); }); },
@@ -58,6 +58,8 @@ fs.writeFileSync(path.join(root, 'public/embed/pagewright-viewer.js'), `/* Pagew
   };
 })();
 `);
+// the old file names (embed snippets pasted before the rename) keep working; deprecated (0.9)
+for (const f of ['viewer.js', 'viewer.full.js']) fs.copyFileSync(path.join(root, `public/embed/reportwright-${f}`), path.join(root, `public/embed/pagewright-${f}`));
 fs.rmSync(path.join(root, 'public/embed/exceljs.min.js'), { force: true }); // the Excel export has its own writer now
 // what a page loads up front: the entry and the chunks it imports statically
 const dir = path.join(root, 'public/embed/esm');
@@ -69,4 +71,4 @@ const kb = (n) => `${(n / 1024).toFixed(0)} KB`;
 const lazy = fs.readdirSync(dir).filter(f => !first.has(f) && f !== 'designer.js');
 console.log(`embed designer entry ${kb(size('designer.js'))} (+ shared chunks)`);
 const gz = [...first].reduce((s, f) => s + zlib.gzipSync(fs.readFileSync(path.join(dir, f)), { level: 9 }).length, 0);
-console.log(`embed: first load ${kb([...first].reduce((s, f) => s + size(f), 0))} (${kb(gz)} gzipped); on demand ${lazy.map(f => kb(size(f))).join(', ')}; offline single file ${kb(fs.statSync(path.join(root, 'public/embed/pagewright-viewer.full.js')).size)}`);
+console.log(`embed: first load ${kb([...first].reduce((s, f) => s + size(f), 0))} (${kb(gz)} gzipped); on demand ${lazy.map(f => kb(size(f))).join(', ')}; offline single file ${kb(fs.statSync(path.join(root, 'public/embed/reportwright-viewer.full.js')).size)}`);

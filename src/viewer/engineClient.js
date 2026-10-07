@@ -10,7 +10,7 @@ import { fontFamilyCss, fontKeysOf } from '@/exporters/svg.js';
 let assetBase = '';
 export function setAssetBase(url) { assetBase = String(url || '').replace(/\/$/, ''); mainStore = null; }
 export const origin = () => assetBase || window.location.origin;
-// Standalone (the npm viewer with no `server`): no /api calls; fonts from `fontsUrl`, a copy of @pagewrightjs/fonts/public/fonts.
+// Standalone (the npm viewer with no `server`): no /api calls; fonts from `fontsUrl`, a copy of @reportwright/fonts/public/fonts.
 let fontsUrl = null;
 let standalone = false;
 /** @param {{ standalone?: boolean, fontsUrl?: string|null }} o */
@@ -60,7 +60,7 @@ export function fontStore() {
 }
 
 /* global __PW_EMBED__ */
-// The embedded viewer (and @pagewrightjs/viewer) renders on the main thread: leave the worker out of those builds,
+// The embedded viewer (and @reportwright/viewer) renders on the main thread: leave the worker out of those builds,
 // so bundlers such as Vite do not try to resolve a worker file that is not shipped.
 const makeWorker = typeof __PW_EMBED__ !== 'undefined' && __PW_EMBED__ ? null
   : () => new Worker(new URL('../worker/engine.worker.js', import.meta.url), { type: 'module' });
@@ -129,7 +129,7 @@ const bundled = new Map();
 export function registerReports(map) { for (const [k, v] of Object.entries(map || {})) bundled.set(k, v); }
 const loadReport = async (rid) => {
   if (bundled.has(rid)) return structuredClone(bundled.get(rid));
-  if (standalone) throw new Error(`Report "${rid}" is not loaded: pass it in reports: { "${rid}": definition }, or set server (a self-hosted Pagewright server)`);
+  if (standalone) throw new Error(`Report "${rid}" is not loaded: pass it in reports: { "${rid}": definition }, or set server (a self-hosted ReportWright server)`);
   const r = await fetch(`${assetBase}/api/reports/${encodeURIComponent(rid)}`);
   if (!r.ok) throw new Error(`Report "${rid}" not found`);
   return r.json();

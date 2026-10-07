@@ -21,7 +21,7 @@ export function systemPrompt() {
     const props = (s.props || []).map(p => `${p.key} (${p.type}${p.options ? `: ${p.options.join('|')}` : ''})`).join(', ');
     return `- "${s.type}" (${s.label}). Defaults: ${JSON.stringify(s.defaults?.() ?? {})}. Properties: ${props}`;
   }).join('\n');
-  return `You write report definitions for Pagewright, a report engine. Reply with one JSON object, the whole definition, in a \`\`\`json block.
+  return `You write report definitions for ReportWright, a report engine. Reply with one JSON object, the whole definition, in a \`\`\`json block.
 
 Format ("${SCHEMA_ID}"):
 - page: { size: "A4" | "A5" | "A3" | "Letter" | "Legal" | "Pageless", orientation: "portrait" | "landscape", margins: [top, right, bottom, left] }. Units are points; A4 is 595 × 842. Pageless pages grow to fit and take a width.

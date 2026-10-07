@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({ params }) {
   const { id } = await params;
-  return { title: `${id} · Designer · Pagewright` };
+  return { title: `${id} · Designer · ReportWright` };
 }
 
 // Edit access. Someone who may only view the report goes to the viewer; someone who may not even view it gets 404.
@@ -23,7 +23,7 @@ export default async function DesignerPage({ params, searchParams }) {
   let def;
   try { def = await readReportFor(p, id, 'edit'); } catch { notFound(); }
   const h = await headers();
-  await audit('report.view', { req: new Request('http://pagewright.local/', { headers: { 'x-forwarded-for': h.get('x-forwarded-for') || '', 'x-pw-peer': h.get('x-pw-peer') || '' } }), principal: p, report: id, detail: { via: 'designer' } });
+  await audit('report.view', { req: new Request('http://reportwright.local/', { headers: { 'x-forwarded-for': h.get('x-forwarded-for') || '', 'x-pw-peer': h.get('x-pw-peer') || '' } }), principal: p, report: id, detail: { via: 'designer' } });
   // user: who keeps autosave drafts in this browser (hashed into the key; '' without accounts)
   // rev: the revision this designer edits from; a save sends it back (If-Match), so a newer save is never overwritten
   const rev = revOfRead(def); // of the text this page shows

@@ -1,4 +1,4 @@
-// Pagewright demo site. No server: the viewer and designer come from embed/esm, and the few API paths they read
+// ReportWright demo site. No server: the viewer and designer come from embed/esm, and the few API paths they read
 // (api/reports/<id>, api/fonts, api/sample/...) are static files written by scripts/build-site.mjs.
 
 /** The one "Get it" call to action. Change it here; every [data-get-it] link on the page follows. */
@@ -241,9 +241,9 @@ whenNear(dHost, () => {
 /* ---------- code ---------- */
 const SNIPPETS = [
   ['Script tag', `<div id="report"></div>
-<script src="https://reports.example.com/embed/pagewright-viewer.js"></script>
+<script src="https://reports.example.com/embed/reportwright-viewer.js"></script>
 <script>
-  Pagewright.mountViewer('#report', {
+  ReportWright.mountViewer('#report', {
     server: 'https://reports.example.com',
     report: 'loan-statement',
     params: { accountId: 'LN-2025-001982' },
@@ -255,7 +255,7 @@ const SNIPPETS = [
     },
   });
 </script>`],
-  ['ES module', `import { mountViewer } from '@pagewrightjs/viewer';
+  ['ES module', `import { mountViewer } from '@reportwright/viewer';
 
 mountViewer('#report', {
   server: 'https://reports.example.com',
@@ -263,12 +263,12 @@ mountViewer('#report', {
   params: { accountId: 'LN-1' },
 });
 // PDF export and barcodes load only when used.`],
-  ['Designer', `import { mountDesigner } from '@pagewrightjs/viewer/designer';
+  ['Designer', `import { mountDesigner } from '@reportwright/viewer/designer';
 
 const designer = mountDesigner('#designer', {
   server: 'https://reports.example.com',
   definition,                                   // or report: 'id' to load it from the server
-  onSave: (def) => saveToMyApp(def),            // without onSave, Save writes to the Pagewright server
+  onSave: (def) => saveToMyApp(def),            // without onSave, Save writes to the ReportWright server
   onOpen: () => pickAReport(),                  // shows an Open… button; return a definition
   readOnly: false,
   toolbox: { hide: ['map', 'chart'] },
@@ -276,35 +276,35 @@ const designer = mountDesigner('#designer', {
   dataSourceTemplates: [{ label: 'Orders API', source: { name: 'orders', type: 'rest', url: 'https://api.example.com/orders' } }],
 });
 designer.getDefinition();`],
-  ['React', `import { PagewrightViewer, PagewrightDesigner } from '@pagewrightjs/react';
+  ['React', `import { ReportWrightViewer, ReportWrightDesigner } from '@reportwright/react';
 
-<PagewrightViewer server="https://reports.example.com" report="invoice" params={{ id: '42' }} style={{ height: 720 }} />
-<PagewrightDesigner server="https://reports.example.com" definition={def} onSave={(d) => save(d)} toolbox={{ hide: ['map'] }} />
+<ReportWrightViewer server="https://reports.example.com" report="invoice" params={{ id: '42' }} style={{ height: 720 }} />
+<ReportWrightDesigner server="https://reports.example.com" definition={def} onSave={(d) => save(d)} toolbox={{ hide: ['map'] }} />
 
 // Loads on mount, so it is safe in server-rendered apps (Next.js, Remix).`],
   ['Vue', `<script setup>
-import { PagewrightViewer, PagewrightDesigner } from '@pagewrightjs/vue';
+import { ReportWrightViewer, ReportWrightDesigner } from '@reportwright/vue';
 </script>
 <template>
-  <PagewrightViewer :options="{ server: 'https://reports.example.com', report: 'invoice', params: { id: '42' } }" />
-  <PagewrightDesigner :options="{ server, definition, onSave: save }" @ready="(h) => (designer = h)" />
+  <ReportWrightViewer :options="{ server: 'https://reports.example.com', report: 'invoice', params: { id: '42' } }" />
+  <ReportWrightDesigner :options="{ server, definition, onSave: save }" @ready="(h) => (designer = h)" />
 </template>`],
   ['Svelte', `<script>
-  import { pagewrightViewer, pagewrightDesigner } from '@pagewrightjs/svelte';
+  import { reportWrightViewer, reportWrightDesigner } from '@reportwright/svelte';
 </script>
-<div use:pagewrightViewer={{ server: 'https://reports.example.com', report: 'invoice', params: { id } }}></div>
-<div use:pagewrightDesigner={{ server, definition, onSave: save }}></div>`],
+<div use:reportWrightViewer={{ server: 'https://reports.example.com', report: 'invoice', params: { id } }}></div>
+<div use:reportWrightDesigner={{ server, definition, onSave: save }}></div>`],
   ['Angular', `// main.ts
-import { definePagewrightElements } from '@pagewrightjs/angular';
-definePagewrightElements();
+import { defineReportWrightElements } from '@reportwright/angular';
+defineReportWrightElements();
 
 // a standalone component
 @Component({
   selector: 'app-report',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   template: \`
-    <pagewright-viewer [options]="{ server: 'https://reports.example.com', report: 'invoice', params: { id: id } }"></pagewright-viewer>
-    <pagewright-designer [options]="{ server: server, definition: def }" (pw-save)="save($event.detail)"></pagewright-designer>\`,
+    <reportwright-viewer [options]="{ server: 'https://reports.example.com', report: 'invoice', params: { id: id } }"></reportwright-viewer>
+    <reportwright-designer [options]="{ server: server, definition: def }" (pw-save)="save($event.detail)"></reportwright-designer>\`,
 })
 export class ReportComponent { /* … */ }`],
   ['This page', `// How this demo runs with no server: the viewer's API paths are static files.

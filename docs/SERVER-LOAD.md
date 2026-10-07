@@ -14,7 +14,7 @@
 
 ## Results
 
-Same harness, same templates (data inline), same client (closed loop, 30 s stages, retries at once after an error, ignores `Retry-After`). Apple M2, 8 GB. **Neither run had a quiet machine**: other agents ran builds, e2e and test suites alongside, with 1-minute load averages of 7 to 105 (⚠ on every row of `~/pw-load/load-results.md`). Read differences under 1.5× as noise. Jasper was measured in the same run as the "after" column, right after Pagewright.
+Same harness, same templates (data inline), same client (closed loop, 30 s stages, retries at once after an error, ignores `Retry-After`). Apple M2, 8 GB. **Neither run had a quiet machine**: other agents ran builds, e2e and test suites alongside, with 1-minute load averages of 7 to 105 (⚠ on every row of `~/pw-load/load-results.md`). Read differences under 1.5× as noise. Jasper was measured in the same run as the "after" column, right after ReportWright.
 
 | workload | VUs | before (834e31f) req/s | after (fc62422) req/s | Jasper, same run as after |
 |---|---:|---:|---:|---:|

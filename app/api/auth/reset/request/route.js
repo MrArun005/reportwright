@@ -25,12 +25,12 @@ async function work(req, email, base) {
     if (!base) throw new Error('PW_BASE_URL is not set, so the link has no address');
     const link = `${base}/login/reset?token=${encodeURIComponent(token)}`;
     await sendMail({
-      to: [email], subject: 'Reset your Pagewright password',
-      text: `Someone asked to reset the Pagewright password of ${email}.\n\nSet a new password here (the link works once, for ${RESET_MS / 60000} minutes):\n${link}\n\nIf it was not you, ignore this email: your password stays as it is.\n`,
+      to: [email], subject: 'Reset your ReportWright password',
+      text: `Someone asked to reset the ReportWright password of ${email}.\n\nSet a new password here (the link works once, for ${RESET_MS / 60000} minutes):\n${link}\n\nIf it was not you, ignore this email: your password stays as it is.\n`,
     });
     await audit('auth.reset_request', { req, actor: `user:${email}`, detail: { sent: true } });
   } catch (e) {
-    console.error(`[pagewright] password reset mail: ${e.message}`);
+    console.error(`[reportwright] password reset mail: ${e.message}`);
     await audit('auth.reset_request', { req, status: 'failed', detail: { email, reason: String(e.message).slice(0, 200) } });
   }
 }

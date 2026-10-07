@@ -3,17 +3,17 @@ import 'zone.js';
 import '@angular/compiler';
 import { Component, CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
-import { definePagewrightElements } from '@pagewrightjs/angular';
+import { defineReportWrightElements } from '@reportwright/angular';
 import definition from '../../report.pw.json';
 import orders from '../../data.json';
 
-definePagewrightElements();
+defineReportWrightElements();
 class App { options = { definition, data: { orders }, fontsUrl: '/pw/fonts/', height: '760px' }; }
 Component({
   selector: 'app-root',
   standalone: true,
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
-  template: '<pagewright-viewer [options]="options" (pw-error)="error($event.detail)"></pagewright-viewer>',
+  template: '<reportwright-viewer [options]="options" (pw-error)="error($event.detail)"></reportwright-viewer>',
 })(App);
 App.prototype.error = (e) => console.error(e);
 bootstrapApplication(App);

@@ -1,8 +1,8 @@
-// One render thread of @pagewrightjs/engine/pool: the engine and the fonts load once, then one job at a time.
+// One render thread of @reportwright/engine/pool: the engine and the fonts load once, then one job at a time.
 import { parentPort, workerData } from 'node:worker_threads';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { render, FontStore, fontFile, defaultFontStore, exportPdf, exportXlsx, exportDocx, exportPptx, exportHtml, exportCsv, needsExportData } from '@pagewrightjs/engine';
+import { render, FontStore, fontFile, defaultFontStore, exportPdf, exportXlsx, exportDocx, exportPptx, exportHtml, exportCsv, needsExportData } from '@reportwright/engine';
 
 const fonts = workerData?.fontsDir ? new FontStore((key) => fs.readFile(path.join(workerData.fontsDir, fontFile(key)))) : defaultFontStore();
 const EXPORT = {

@@ -126,7 +126,7 @@
           "w": 150,
           "h": 70,
           "symbology": "qrcode",
-          "value": "https://pagewright.dev/p7",
+          "value": "https://reportwright.dev/p7",
           "qrErrorLevel": "H"
         },
         {
@@ -150,7 +150,7 @@
           "w": 150,
           "h": 70,
           "symbology": "datamatrix",
-          "value": "PAGEWRIGHT-P7",
+          "value": "REPORTWRIGHT-P7",
           "dmShape": "square"
         },
         {
@@ -174,7 +174,7 @@
           "w": 180,
           "h": 70,
           "symbology": "pdf417",
-          "value": "Pagewright PDF417",
+          "value": "ReportWright PDF417",
           "pdfColumns": 3
         },
         {

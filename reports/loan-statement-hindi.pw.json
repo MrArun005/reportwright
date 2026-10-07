@@ -153,7 +153,7 @@
           "y": 0,
           "w": 260,
           "h": 18,
-          "value": "Pagewright Finance",
+          "value": "ReportWright Finance",
           "canGrow": true,
           "style": {
             "fontSize": 13,
@@ -874,7 +874,7 @@
           "y": 318,
           "w": 523.28,
           "h": 14,
-          "value": "सहायता: 1800-000-0000 (सोम–शनि, सुबह 9 से शाम 6 बजे) · help@pagewright.example",
+          "value": "सहायता: 1800-000-0000 (सोम–शनि, सुबह 9 से शाम 6 बजे) · help@reportwright.example",
           "style": {
             "fontFamily": "Inter",
             "fontSize": 7.5,

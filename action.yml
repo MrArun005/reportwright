@@ -1,6 +1,6 @@
 # GitHub Action: render every report with its test cases and fail the build when a page changes.
-# In your workflow:   - uses: <owner>/pagewright@v1   with: { reports: reports }
-name: Pagewright report tests
+# In your workflow:   - uses: <owner>/reportwright@v1   with: { reports: reports }
+name: ReportWright report tests
 description: Render each report's test cases with pw test and fail when a page or a total changes.
 inputs:
   reports:
@@ -12,7 +12,7 @@ runs:
     - uses: actions/setup-node@v4
       with:
         node-version: 22
-    - name: Install Pagewright
+    - name: Install ReportWright
       shell: bash
       run: npm ci --prefix "${{ github.action_path }}" --omit=optional --no-audit --no-fund
     - name: pw test

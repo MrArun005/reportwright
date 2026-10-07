@@ -173,7 +173,7 @@ export default {
   isEnabled: '{email} 已启用。', isDisabled: '{email} 已停用。',
 
   /* ---- sign in ---- */
-  signIn: '登录', signingIn: '正在登录…', signInLede: 'Pagewright 报表', password: '密码',
+  signIn: '登录', signingIn: '正在登录…', signInLede: 'ReportWright 报表', password: '密码',
   signInFailed: '登录失败（HTTP {status}）。', signedInAsLong: '你已登录为', continue: '继续',
   accountsOff: '此服务器未启用账户。设置 {setting} 即可启用。',
   noUsersYet: '还没有用户。', firstAdmin: '可用以下两种方式之一创建第一个管理员：',

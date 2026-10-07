@@ -1,4 +1,4 @@
-// A light benchmark of @pagewrightjs/engine/pool (run npm run build:packages first): N small reports (charts-showcase) as PDFs,
+// A light benchmark of @reportwright/engine/pool (run npm run build:packages first): N small reports (charts-showcase) as PDFs,
 // one after another on the main thread, then on a pool of 1 and of 4 workers.  node scripts/bench-pool.mjs [N]
 import path from 'node:path';
 import fs from 'node:fs';

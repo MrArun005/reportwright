@@ -1,4 +1,4 @@
-# Pagewright: feature list
+# ReportWright: feature list
 
 Version 0.6.0+ (`main`, 4 Oct 2026). Everything below is built and covered by tests unless it is marked otherwise.
 
@@ -131,7 +131,7 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 - Nothing follows VB: it is 0 in arithmetic, "" next to text, and `Nothing = 0` is True, so `Sum(a + b)` keeps a row with one null field; x / 0 is Infinity (0 / 0 NaN), printed as SSRS prints them unless the report's `nonFinite` setting (Inspector, report settings: Regional) shows them blank (`"blank"`) or as `#Error` (`"error"`); `CInt(True)` is -1. A report with `nullPropagation: true` keeps SQL nulls instead (null through arithmetic, comparisons with null False, x / 0 null).
 - Deliberately not VB: IIf evaluates only the chosen branch; And/Or short-circuit and are never bitwise.
 - `Previous`, `GroupIndex`, `Level`, `Lookup`, `LookupSet`.
-- `Rank(expr[, scope[, descending]])` (Pagewright's own; SSRS has none): the current row's place among the scope's rows (default: the data region), competition rank as SQL `RANK()` and Excel `RANK.EQ`: ties share a rank and the next skips (10, 10, 7 → 1, 1, 3), so `Rank(…) <= 3` keeps every row tied at the cut, as an SSRS Top N filter does. `descending` is True by default (1 = the largest); False or "asc" ranks from the smallest. Blank values are not ranked and get Nothing, and as `Nothing <= 3` is True in VB, test `Rank(…) > 0 And Rank(…) <= 3` (the conditional formatting wizard's Top N / Bottom N do). It ranks rows, not group instances or chart categories.
+- `Rank(expr[, scope[, descending]])` (ReportWright's own; SSRS has none): the current row's place among the scope's rows (default: the data region), competition rank as SQL `RANK()` and Excel `RANK.EQ`: ties share a rank and the next skips (10, 10, 7 → 1, 1, 3), so `Rank(…) <= 3` keeps every row tied at the cut, as an SSRS Top N filter does. `descending` is True by default (1 = the largest); False or "asc" ranks from the smallest. Blank values are not ranked and get Nothing, and as `Nothing <= 3` is True in VB, test `Rank(…) > 0 And Rank(…) <= 3` (the conditional formatting wizard's Top N / Bottom N do). It ranks rows, not group instances or chart categories.
 - Filters: equals, `in` (multi-value), TopN, BottomN, TopPercent, BottomPercent, Between; filters run in order.
 - Data sources: JSON, REST, GraphQL, CSV (separator, quote, header row, start row), XML (XPath rows and fields, namespaces; inline or by URL), SOAP (envelope template with escaped parameters, SOAPAction 1.1/1.2), OData (query editor from $metadata: entity set, $select, $filter builder, $orderby, $top/$skip, $expand, next links up to a page cap), inline data, pushed data via the API.
 - Importers map XML data: SSRS's XML data provider (ElementPath, XmlData, SOAP Method), ActiveReports' XML provider and JasperReports xPath queries.
@@ -160,14 +160,14 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 - PDF/A-2b, digital signatures, fillable PDF form fields.
 - PDF passwords (AES-256, user and owner passwords, permissions).
 - Excel (merged cells), Word `.docx` (real tables, section page sizes; charts and images are left out), HTML (incl. a single-file offline interactive version), CSV, SVG, JSON (the laid-out pages, in the viewer and the API), print.
-- Static HTML links: web links, bookmark jumps and table-of-contents entries (anchors at the target page and height), drill-through opening the Pagewright viewer.
+- Static HTML links: web links, bookmark jumps and table-of-contents entries (anchors at the target page and height), drill-through opening the ReportWright viewer.
 
 ## 11. Embedding and developer platform
 
 - Script tag or ES module; Shadow DOM so host styles do not leak in; CORS by `PW_EMBED_ORIGINS`.
-- Framework wrappers: `@pagewrightjs/react`, `/vue`, `/svelte`, `/angular` (built, not published to npm yet).
+- Framework wrappers: `@reportwright/react`, `/vue`, `/svelte`, `/angular` (built, not published to npm yet).
 - TypeScript types (`.d.ts`) for the engine, viewer and report format.
-- `@pagewrightjs/engine` and `@pagewrightjs/viewer` npm packages (built and packed, not published).
+- `@reportwright/engine` and `@reportwright/viewer` npm packages (built and packed, not published).
 - CLI: `pw render`, `pw test`, `pw diff`, PDF password options; a GitHub Action for report regression tests (syntax-checked only, not run on GitHub yet).
 
 ## 12. Server, automation and operations
@@ -191,7 +191,7 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 ## 13. Migration
 
 - ActiveReportsJS importer (`.rdlx-json`): both layouts, FixedPage, tablix (incl. nested), banded lists, charts (incl. the Phase 5 types), expressions, recursive groups, row spans, sections. 40 real files imported, validated and rendered with no item dropped; what changed is listed as notes.
-- JasperReports importer (`.jrxml`, JR 3–6 and the 7.x format) and BIRT importer (`.rptdesign`), both through the home page's Import; ActiveReports master reports, report parts and layers map to Pagewright's master, parts and layers. See API.md, "JasperReports import" and "BIRT import". 49 Jasper demo samples: 99.8% of elements kept; 29 BIRT samples: 99.5%.
+- JasperReports importer (`.jrxml`, JR 3–6 and the 7.x format) and BIRT importer (`.rptdesign`), both through the home page's Import; ActiveReports master reports, report parts and layers map to ReportWright's master, parts and layers. See API.md, "JasperReports import" and "BIRT import". 49 Jasper demo samples: 99.8% of elements kept; 29 BIRT samples: 99.5%.
 - SSRS / Report Builder importer (`.rdl`, `.rdlc`; RDL 2008, 2010, 2016): data sources and sets (SQL with @parameters, "Enter Data" rows), parameters (cascading, multi-value, hidden), text runs and rich text, tablix as table / matrix / list / banded list, charts (combos, secondary axis, data bars, sparklines), gauges and indicators (approximated), images, subreports, actions, document map, Variables / ReportItems / Me.Value, VB expressions. A safe XML reader (no DTDs, size and depth caps, linear). Maps and custom code are not converted (noted; code kept as text). 32 Microsoft sample reports imported, validated and rendered, no item dropped. See API.md, "SSRS import".
 
 ## 14. Report library (`reports/`)
@@ -202,7 +202,7 @@ Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 
 | **Account detail** | Drill-through target for Stress ledger | **Designer only** |
 | Invoice gallery | Tables from the gallery, totals | Designer, by an automated UI test from a blank page |
 | **Reuse showcase** (+ Reuse master, Reuse parts, Reuse theme) | A content report on a master, linked and copied report parts, a stylesheet, a theme picked by parameter, a pivot from the pivot wizard, a chart from instant visuals, screen-only and designer-only layers, a fixed table frame continued in an overflow placeholder; 5 pages | **Designer only**, by an automated UI test (`tests/e2e/reuse.mjs`, `PROOF=1`) |
-| Pagewright Torture Test | 180-loan portfolio: KPIs, pivot, combo chart, grouped register with sparklines, 6 drill-through pages, QR, watermark; 18 pages | Script (to be rebuilt in the Designer) |
+| ReportWright Torture Test | 180-loan portfolio: KPIs, pivot, combo chart, grouped register with sparklines, 6 drill-through pages, QR, watermark; 18 pages | Script (to be rebuilt in the Designer) |
 | Stress test | 58 items on deliberately broken data; 88 pages | Script |
 | Sales dashboard, Sales explorer → city → month | Charts, matrix, 3-level drill-through | Script |
 | Loan statement (+ Hindi) | 8-page amortisation; HarfBuzz Devanagari | Script |

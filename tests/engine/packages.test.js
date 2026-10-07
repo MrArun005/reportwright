@@ -13,14 +13,14 @@ const json = (f) => JSON.parse(fs.readFileSync(path.join(root, f), 'utf8'));
 describe('npm packages', () => {
   beforeAll(() => { node('scripts/build-embed.mjs'); node('scripts/build-packages.mjs'); }, 240000);
 
-  it.each([['react', ['react']], ['vue', ['vue']], ['svelte', []], ['angular', []]])('@pagewrightjs/%s imports the framework and the viewer, bundles neither', (name, frameworks) => {
+  it.each([['react', ['react']], ['vue', ['vue']], ['svelte', []], ['angular', []]])('@reportwright/%s imports the framework and the viewer, bundles neither', (name, frameworks) => {
     const src = fs.readFileSync(path.join(root, `packages/${name}/dist/index.js`), 'utf8');
     expect(src.length).toBeLessThan(8000); // a thin wrapper, not a bundle
-    expect(src).toMatch(/import\('@pagewrightjs\/viewer(\/react-peer)?'\)/);
+    expect(src).toMatch(/import\('@reportwright\/viewer(\/react-peer)?'\)/);
     for (const f of frameworks) expect(src).toMatch(new RegExp(`from '${f}'`));
     const pkg = json(`packages/${name}/package.json`);
     expect(pkg.dependencies).toBeUndefined();
-    expect(Object.keys(pkg.peerDependencies)).toEqual(expect.arrayContaining(['@pagewrightjs/viewer', ...frameworks]));
+    expect(Object.keys(pkg.peerDependencies)).toEqual(expect.arrayContaining(['@reportwright/viewer', ...frameworks]));
     expect(fs.existsSync(path.join(root, `packages/${name}`, pkg.types))).toBe(true);
   });
 
@@ -33,7 +33,7 @@ describe('npm packages', () => {
     expect(json('packages/engine/package.json').files).toEqual(expect.arrayContaining(['index.d.ts', 'report.d.ts']));
   });
 
-  it('the engine subsets fonts (harfbuzz-subset.wasm from @pagewrightjs/fonts); subset: false embeds them whole', async () => {
+  it('the engine subsets fonts (harfbuzz-subset.wasm from @reportwright/fonts); subset: false embeds them whole', async () => {
     const m = await import(path.join(root, 'packages/engine/dist/index.js'));
     const fonts = new m.FontStore((key) => fs.readFileSync(path.join(root, 'packages/fonts/public/fonts', m.fontFile(key))));
     const model = await m.render(m.blankReport(), { fontStore: fonts });
@@ -66,9 +66,9 @@ describe('npm packages', () => {
     execFileSync(process.execPath, ['quick.mjs'], { cwd: tmp, stdio: 'pipe' });
     const pdf = fs.readFileSync(path.join(tmp, 'statement.pdf'));
     expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
-    expect(pdf.length).toBeLessThan(400000); // subset: harfbuzz-subset.wasm came from @pagewrightjs/fonts
-    // pdfa: true finds the sRGB profile in @pagewrightjs/fonts by itself (B5 item 10)
-    fs.writeFileSync(path.join(tmp, 'pdfa.mjs'), "import { render, defaultFontStore, exportPdf, blankReport } from '@pagewrightjs/engine'; import fs from 'node:fs'; const fonts = defaultFontStore(); fs.writeFileSync('a.pdf', await exportPdf(await render(blankReport(), { fontStore: fonts }), { fonts, pdfa: true }));");
+    expect(pdf.length).toBeLessThan(400000); // subset: harfbuzz-subset.wasm came from @reportwright/fonts
+    // pdfa: true finds the sRGB profile in @reportwright/fonts by itself (B5 item 10)
+    fs.writeFileSync(path.join(tmp, 'pdfa.mjs'), "import { render, defaultFontStore, exportPdf, blankReport } from '@reportwright/engine'; import fs from 'node:fs'; const fonts = defaultFontStore(); fs.writeFileSync('a.pdf', await exportPdf(await render(blankReport(), { fontStore: fonts }), { fonts, pdfa: true }));");
     execFileSync(process.execPath, ['pdfa.mjs'], { cwd: tmp, stdio: 'pipe' });
     expect(fs.readFileSync(path.join(tmp, 'a.pdf')).toString('latin1')).toMatch(/<pdfaid:part>2<\/pdfaid:part>/); // no icc passed: without the profile exportPdf throws
     // examples/node runs as it is against the packed packages
@@ -85,15 +85,15 @@ describe('npm packages', () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   }, 240000);
 
-  it('@pagewrightjs/react uses the viewer build that takes React as a peer: an app bundle has one React (the host app\'s)', async () => {
+  it('@reportwright/react uses the viewer build that takes React as a peer: an app bundle has one React (the host app\'s)', async () => {
     const { build } = await import('esbuild');
     const nm = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'pw-nm-')), 'node_modules');
-    fs.mkdirSync(path.join(nm, '@pagewrightjs'), { recursive: true });
-    fs.symlinkSync(path.join(root, 'packages/viewer'), path.join(nm, '@pagewrightjs/viewer')); // resolved through its package.json exports
+    fs.mkdirSync(path.join(nm, '@reportwright'), { recursive: true });
+    fs.symlinkSync(path.join(root, 'packages/viewer'), path.join(nm, '@reportwright/viewer')); // resolved through its package.json exports
     const out = await build({
-      stdin: { contents: "import { PagewrightViewer, PagewrightDesigner } from '@pagewrightjs/react'; console.log(PagewrightViewer, PagewrightDesigner);", resolveDir: root },
+      stdin: { contents: "import { ReportWrightViewer, ReportWrightDesigner } from '@reportwright/react'; console.log(ReportWrightViewer, ReportWrightDesigner);", resolveDir: root },
       bundle: true, format: 'esm', write: false, splitting: true, outdir: '/out', logLevel: 'silent',
-      alias: { '@pagewrightjs/react': path.join(root, 'packages/react/dist/index.js') },
+      alias: { '@reportwright/react': path.join(root, 'packages/react/dist/index.js') },
       nodePaths: [nm],
       external: ['react', 'react-dom', 'react/*', 'react-dom/*', 'scheduler', 'exceljs', 'sharp'],
     });
@@ -106,9 +106,9 @@ describe('npm packages', () => {
     expect(json('packages/viewer/package.json').exports['./react-peer'].default).toBe('./dist/peer/viewer.js');
   }, 120000);
 
-  it.each(['engine', 'fonts', 'cli', 'viewer', 'react', 'vue', 'svelte', 'angular'])('@pagewrightjs/%s has the metadata npm and Socket read', (name) => {
+  it.each(['engine', 'fonts', 'cli', 'viewer', 'react', 'vue', 'svelte', 'angular'])('@reportwright/%s has the metadata npm and Socket read', (name) => {
     const p = json(`packages/${name}/package.json`);
-    expect(p.repository).toEqual({ type: 'git', url: 'git+https://github.com/MrArun005/pagewright.git', directory: `packages/${name}` });
+    expect(p.repository).toEqual({ type: 'git', url: 'git+https://github.com/MrArun005/reportwright.git', directory: `packages/${name}` });
     for (const k of ['homepage', 'bugs', 'keywords', 'author', 'license', 'sideEffects', 'files']) expect(p[k], k).toBeDefined();
     if (name !== 'fonts') expect(p.engines.node).toBeDefined();
     if (p.exports && name !== 'fonts') expect(Object.values(p.exports)[0].types).toBeDefined();
@@ -159,6 +159,27 @@ describe('npm packages', () => {
     expect(src).not.toMatch(/child_process/);
     const env = [...src.matchAll(/process\.env(?:\.(\w+)|\[\s*['"](\w+)['"]\s*\])?/g)].map(m => m[1] || m[2] || '(dynamic)');
     expect(env.filter(n => !/^PW_/.test(n))).toEqual([]);
+  });
+
+  it('the rename keeps the Pagewright names as deprecated aliases (0.9); the CLI answers to reportwright and pw', async () => {
+    const src = (n) => fs.readFileSync(path.join(root, `packages/${n}/dist/index.js`), 'utf8');
+    expect(src('react')).toMatch(/ReportWrightViewer as PagewrightViewer/);
+    expect(src('vue')).toMatch(/ReportWrightViewer as PagewrightViewer/);
+    expect(src('svelte')).toMatch(/reportWrightViewer as pagewrightViewer/);
+    // the Angular elements: both tag names registered, each its own class
+    const defined = new Map();
+    globalThis.HTMLElement ??= class {};
+    const prev = globalThis.customElements;
+    globalThis.customElements = { get: (t) => defined.get(t), define: (t, c) => { if ([...defined.values()].includes(c)) throw new Error('class reused'); defined.set(t, c); } };
+    try {
+      const m = await import(path.join(root, 'packages/angular/dist/index.js'));
+      expect(m.definePagewrightElements).toBe(m.defineReportWrightElements);
+      m.definePagewrightElements();
+      expect([...defined.keys()].sort()).toEqual(['pagewright-designer', 'pagewright-viewer', 'reportwright-designer', 'reportwright-viewer']);
+    } finally { globalThis.customElements = prev; }
+    expect(json('packages/cli/package.json').bin).toEqual({ reportwright: 'dist/pw.mjs', pw: 'dist/pw.mjs' });
+    expect(Object.keys(json('packages/fonts-cjk/package.json').bin)).toEqual(['reportwright-fonts-cjk', 'pagewright-fonts-cjk']);
+    for (const n of ['engine', 'viewer', 'react']) expect(json(`packages/${n}/package.json`).repository.url).toBe('git+https://github.com/MrArun005/reportwright.git');
   });
 
   it('every package passes the Socket-style scan (scripts/scan-packages.mjs packs each one)', () => {

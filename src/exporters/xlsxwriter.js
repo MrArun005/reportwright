@@ -54,7 +54,7 @@ export class Sheet {
 }
 
 export class Book {
-  constructor({ title = 'Report', creator = 'Pagewright' } = {}) {
+  constructor({ title = 'Report', creator = 'ReportWright' } = {}) {
     this.title = title; this.creator = creator; this.fullCalcOnLoad = false;
     /** @type {Sheet[]} */ this.sheets = [];
     /** @type {Map<string, number>} */ this.styles = new Map([['||', 0]]);

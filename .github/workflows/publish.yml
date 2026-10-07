@@ -1,11 +1,11 @@
-# Publishes the @pagewrightjs/* packages to npm with provenance (a signed statement, checked by npm and Socket, that
+# Publishes the @reportwright/* packages to npm with provenance (a signed statement, checked by npm and Socket, that
 # the tarball was built from this repository by this workflow).
 #
 # Runs only when the owner starts it: publish a GitHub release, or "Run workflow" on the Actions tab.
 # Before the first run, the owner sets up ONE of:
-#   - trusted publishing (preferred, no token): on npmjs.com, each @pagewrightjs package > Settings > Trusted
-#     publisher > GitHub Actions, repository MrArun005/pagewright, workflow publish.yml; or
-#   - a granular npm access token with publish rights on @pagewrightjs, saved as the repository secret NPM_TOKEN.
+#   - trusted publishing (preferred, no token): on npmjs.com, each @reportwright package > Settings > Trusted
+#     publisher > GitHub Actions, repository MrArun005/reportwright, workflow publish.yml; or
+#   - a granular npm access token with publish rights on @reportwright, saved as the repository secret NPM_TOKEN.
 # Step by step: docs/RELEASING.md.
 name: Publish to npm
 on:

@@ -275,7 +275,7 @@ export async function workOnce(owner, { stopAfter } = {}) {
     const beat = setInterval(() => { store().lease(name, owner, leaseMs()).then(ok => { if (!ok) fence.lost = true; }, logWarn(`job lease ${cand.id}`)); }, Math.max(50, leaseMs() / 3));
     try { stopped = await run(job, owner, stopAfter, fence); }
     catch (e) {
-      if (e === LEASE_LOST || fence.lost) { console.warn(`[pagewright] batch ${job.id}: this server lost its lease; another server goes on with it`); stopped = true; }
+      if (e === LEASE_LOST || fence.lost) { console.warn(`[reportwright] batch ${job.id}: this server lost its lease; another server goes on with it`); stopped = true; }
       else { job.status = 'failed'; job.errors.push(e.message); delete job._work; await fence.hold().then(() => save(job), () => {}); await markOpen(job.id, false); }
     }
     finally { clearInterval(beat); }
@@ -289,7 +289,7 @@ export async function workOnce(owner, { stopAfter } = {}) {
 function poke() {
   if (!Q.started || Q.busy) return;
   Q.busy = true;
-  (async () => { try { while (await workOnce(ME)); } catch (e) { console.error(`[pagewright] batch queue: ${e.message}`); } finally { Q.busy = false; } })();
+  (async () => { try { while (await workOnce(ME)); } catch (e) { console.error(`[reportwright] batch queue: ${e.message}`); } finally { Q.busy = false; } })();
 }
 export function startWorker() {
   if (Q.started) return;
@@ -565,7 +565,7 @@ export async function claimOnce(name, owner) {
  */
 async function notify(job) {
   const body = JSON.stringify({ event: 'batch.finished', job: publicJob(job), downloadUrl: job.download ? `${job.base}/api/v1/batches/${job.id}/download` : null });
-  const headers = { 'content-type': 'application/json', 'user-agent': 'Pagewright', 'idempotency-key': `${job.id}:batch.finished` };
+  const headers = { 'content-type': 'application/json', 'user-agent': 'ReportWright', 'idempotency-key': `${job.id}:batch.finished` };
   if (process.env.PW_WEBHOOK_SECRET) headers['x-pagewright-signature'] = 'sha256=' + crypto.createHmac('sha256', process.env.PW_WEBHOOK_SECRET).update(body).digest('hex');
   try {
     const owner = job.owner ? await principalFromId(job.owner, job.ownerKey, { session: !!job.ownerSession, since: job.ownerSince || null, madeAt: job.createdAt }) : defaultPrincipal(); // as the owner is now

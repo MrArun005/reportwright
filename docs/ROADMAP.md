@@ -1,12 +1,12 @@
-# Pagewright roadmap: from alternative to replacement
+# ReportWright roadmap: from alternative to replacement
 
-4 Oct 2026. This is the plan to make Pagewright the default choice over ActiveReportsJS and its peers (Telerik, DevExpress, Stimulsoft, Bold Reports). It replaces nothing in [`ARCHITECTURE.md`](ARCHITECTURE.md); it says what comes after the four phases.
+4 Oct 2026. This is the plan to make ReportWright the default choice over ActiveReportsJS and its peers (Telerik, DevExpress, Stimulsoft, Bold Reports). It replaces nothing in [`ARCHITECTURE.md`](ARCHITECTURE.md); it says what comes after the four phases.
 
 ## The thesis
 
-ActiveReportsJS is a **component you buy and embed**. Pagewright is a **reporting platform developers adopt**: open source, reports-as-code, server-native, interactive by default, AI-native. That is a different category, and nobody owns it in JavaScript today.
+ActiveReportsJS is a **component you buy and embed**. ReportWright is a **reporting platform developers adopt**: open source, reports-as-code, server-native, interactive by default, AI-native. That is a different category, and nobody owns it in JavaScript today.
 
-Their 20 years is a moat only where customers need all of it. Most buyers make invoices, statements, grouped lists with totals, a few charts, PDF and Excel. Pagewright does that now. The real gap is about 12 months wide and sits in four places: fonts, data setup, migration, and a long tail of layout edge cases that only real reports expose.
+Their 20 years is a moat only where customers need all of it. Most buyers make invoices, statements, grouped lists with totals, a few charts, PDF and Excel. ReportWright does that now. The real gap is about 12 months wide and sits in four places: fonts, data setup, migration, and a long tail of layout edge cases that only real reports expose.
 
 Three facts work for us:
 
@@ -48,7 +48,7 @@ Ten dimensions. "Now" is today; "10" is what a 10/10 means. Re-score at the end 
 | 4 | Interactivity | 8 | Today's set + shareable state in the URL, several reports cross-filtering on one page, live refresh |
 | 5 | Export & server | 8 | + PDF/A, fillable forms, Word, PowerPoint, images; first-page streaming; render farm on a Redis queue |
 | 6 | Embedding & integration | 6 | Viewer ≈ 400 KB, React/Vue/Angular/Svelte wrappers, Web Component, theming API, 10 UI languages |
-| 7 | Developer experience | 6 | `@pagewrightjs/*` on npm, CLI (`pw render`, `pw test`, `pw diff`), snapshot tests in CI, JSON schema + types, VS Code extension, GitHub Action |
+| 7 | Developer experience | 6 | `@reportwright/*` on npm, CLI (`pw render`, `pw test`, `pw diff`), snapshot tests in CI, JSON schema + types, VS Code extension, GitHub Action |
 | 8 | Enterprise | 3 | SSO (OIDC/SAML), roles, per-report permissions, audit log, Postgres storage, multi-tenant, horizontal scale |
 | 9 | Migration | 0 | `.rdlx`/`.rdl` importer that converts 90% and lists the rest; Crystal and Jasper later |
 | 10 | Distribution & ecosystem | 1 | MIT on GitHub, docs site with live playground, template gallery, migration guide, Docker image, hosted free tier, community |

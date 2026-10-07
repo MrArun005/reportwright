@@ -5,7 +5,7 @@
 // string functions and sorting.
 //
 // Every compared value is one line: a static label "@<band><n>" and, to its right, the value. Both sides' text is
-// read line by line (pdftotext for the real engines, the page model for Pagewright) and compared cell by cell.
+// read line by line (pdftotext for the real engines, the page model for ReportWright) and compared cell by cell.
 // Same seed, same cases: the recorded ground truth (tests/diff/truth/*.json) is keyed by case id and a hash of the
 // design text, so a changed generator shows up as stale truth rather than as a mismatch.
 
@@ -313,7 +313,7 @@ function bPage(r, id) {
 
 export const BIRT_FAMILIES = { agg: bAgg, expr: bExpr, format: bFormat, sort: bSort, page: bPage };
 
-/** Field types for the Pagewright side (the importers declare most; data comes as JSON). */
+/** Field types for the ReportWright side (the importers declare most; data comes as JSON). */
 export const FIELD_KINDS = { d: 'date' };
 
 /**

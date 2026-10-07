@@ -316,7 +316,7 @@ function HistoryDialog({ id, onClose, T, lang }) {
 /**
  * @param {{ id?: string, initial: object, rev?: string|null, lang?: string, embed?: { onSave?: (def: object) => any, onOpen?: () => any, readOnly?: boolean,
  *   toolbox?: { hide?: string[] }, panels?: { data?: boolean, inspector?: boolean }, dataSourceTemplates?: object[], server?: string } }} props
- *   embed: set by mountDesigner (another site); none on Pagewright's own pages
+ *   embed: set by mountDesigner (another site); none on ReportWright's own pages
  */
 export default function Designer({ id, initial, rev = null, lang: langIn, embed = null, user = null, ai = false }) {
   const lang = pickLang(langIn);
@@ -422,13 +422,13 @@ export default function Designer({ id, initial, rev = null, lang: langIn, embed 
   const draftBar = useAutosave(embed ? null : id, T, lang, user);
   const hasLeft = !readOnly || embed?.panels?.data !== false;
   const hasRight = embed?.panels?.inspector !== false;
-  if (!def) return <div className="designer" dir={dirOf(lang)} lang={lang}><div className="dtop"><span className="brand"><i />Pagewright</span><span className="hint">{T('loadingDesigner')}</span></div></div>;
+  if (!def) return <div className="designer" dir={dirOf(lang)} lang={lang}><div className="dtop"><span className="brand"><i />ReportWright</span><span className="hint">{T('loadingDesigner')}</span></div></div>;
 
   return (
     <div className="designer" data-testid="designer" dir={dirOf(lang)} lang={lang} ref={rootRef} data-readonly={readOnly || undefined}>
       {!embed && <style>{fontCss}</style>}
       <header className="dtop dbar">
-        {embed ? <span className="brand"><i />Pagewright</span> : <Link href={`/${q}`} className="brand"><i />Pagewright</Link>}
+        {embed ? <span className="brand"><i />ReportWright</span> : <Link href={`/${q}`} className="brand"><i />ReportWright</Link>}
         <span className="dtop-sep" aria-hidden="true" />
         <div className="dname">
           <input className="name" value={def.name || ''} aria-label={T('reportName')} readOnly={readOnly} onChange={e => st().apply(d => { d.name = e.target.value; }, 'name')} />

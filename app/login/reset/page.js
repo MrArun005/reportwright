@@ -4,7 +4,7 @@ import ResetForm from './ResetForm.jsx';
 import { t, dirOf, pickLang } from '@/i18n/index.js';
 
 export const dynamic = 'force-dynamic';
-export const metadata = { title: 'Reset password · Pagewright', referrer: 'no-referrer' };
+export const metadata = { title: 'Reset password · ReportWright', referrer: 'no-referrer' };
 
 // Open (proxy.js): ?token= sets a new password; without it, asks for the link by email.
 export default async function ResetPage({ searchParams }) {

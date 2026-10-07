@@ -85,7 +85,7 @@ describe('production with no sign-in fails closed', () => {
       const r = await proxy(rq(p));
       expect(r?.status, p).toBe(401);
     }
-    for (const p of ['/_next/static/x.js', '/fonts/x.woff2', '/embed/pagewright-viewer.js', '/api/v1/templates']) expect(await proxy(rq(p)), p).toBe(undefined);
+    for (const p of ['/_next/static/x.js', '/fonts/x.woff2', '/embed/reportwright-viewer.js', '/api/v1/templates']) expect(await proxy(rq(p)), p).toBe(undefined);
     expect(await principalOf(rq('/'))).toEqual(NOBODY);
   }));
 
@@ -320,14 +320,14 @@ describe('this server\'s own origin and credentials', () => {
 describe('a report\'s data sources in the browser (reportFetch)', () => {
   const calls = [];
   const f = reportFetch('https://pw.example.com', async (u, init) => { calls.push([init.method || 'GET', u, init.credentials]); return new Response('[]'); });
-  it('may read data on this server: sample data, the data proxy, saved SQL, and paths that are not Pagewright\'s', async () => {
+  it('may read data on this server: sample data, the data proxy, saved SQL, and paths that are not ReportWright\'s', async () => {
     await f('/api/sample/sales/2024');
     await f('https://pw.example.com/api/data/proxy?url=x');
     await f('/api/data/sql', { method: 'POST', body: JSON.stringify({ report: 'r', source: 'db', params: {} }) });
     await f('/my-api/rows.json');
     expect(calls.map(c => c[2])).toEqual(['same-origin', 'same-origin', 'same-origin', 'omit']); // not ours: no cookie
   });
-  it('may not call Pagewright\'s other APIs or pages with the viewer\'s cookie (an admin opening it would create users)', async () => {
+  it('may not call ReportWright\'s other APIs or pages with the viewer\'s cookie (an admin opening it would create users)', async () => {
     calls.length = 0;
     for (const [url, method] of [['/api/users', 'POST'], ['/api/users', 'GET'], ['https://pw.example.com//api/users', 'GET'], ['/.//api/users', 'GET'], ['/%61pi/users', 'GET'], ['https://pw.example.com//api/audit', 'GET'], ['/%zz', 'GET'], ['/api/folders/root', 'PATCH'], ['/api/reports/x', 'DELETE'], ['/api/audit', 'GET'],
       ['/admin/users', 'GET'], ['/api/sample/x', 'POST'], ['/api/sample/%2e%2e/%2e%2e/api/users', 'GET'], ['/api/sample%2f..%2f..%2fusers', 'GET'], ['/api/data/sql/test', 'POST'], ['/', 'GET']]) {
@@ -472,7 +472,7 @@ describe('round 3', () => {
     expect((await proxy(rq('/api/reports/x')))?.status).toBe(401);
     expect((await proxy(rq('/api/sample/sales')))?.status).toBe(401);
     expect(await proxy(rq('/api/reports/x', { headers: VIA_PROXY }))).toBe(undefined);
-    expect(await proxy(rq('/embed/pagewright-viewer.js'))).toBe(undefined);
+    expect(await proxy(rq('/embed/reportwright-viewer.js'))).toBe(undefined);
   }));
 });
 

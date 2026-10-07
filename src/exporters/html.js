@@ -7,7 +7,7 @@ import { needsTableData } from './regions.js';
 /**
  * One self-contained HTML file: every page as inline SVG, fonts embedded as
  * base64 (subset when a subsetter is given). URLs open, bookmark jumps and TOC entries scroll to their target, and
- * drill-through opens the Pagewright viewer at drillBase (without one it is shown disabled).
+ * drill-through opens the ReportWright viewer at drillBase (without one it is shown disabled).
  * Unless static, a file whose report has tables also gets a Tables view (htmldata.js): the tables as HTML, re-sorted on
  * their interactive-sort columns, groups opened and closed, rows filtered, by one inline script the file's CSP allows.
  * @param {any} model
@@ -38,7 +38,7 @@ export async function exportHtml(model, fontStore, opt = {}) {
   }
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); // text content only (attributes use attr())
   // Links: URLs open; bookmark jumps and table-of-contents entries go to an anchor at the target's page and height
-  // (as in the PDF); drill-through opens the report in the Pagewright viewer at opt.drillBase, or is shown disabled.
+  // (as in the PDF); drill-through opens the report in the ReportWright viewer at opt.drillBase, or is shown disabled.
   const anchors = new Map(); // `${page}:${y}` → { id, page, y }
   const jumpTo = (a) => {
     const to = a.page ? a : model.bookmarks?.find(b => b.label === a.target) || model.headings?.find(b => b.label === a.target);
@@ -59,7 +59,7 @@ export async function exportHtml(model, fontStore, opt = {}) {
   const target = (a) => {
     if (a?.type === 'url') { const h = safeUrl(a.href); return h ? { href: h, external: true } : null; }
     if (a?.type === 'bookmark') { const h = jumpTo(a); return h ? { href: h } : null; }
-    if (a?.type === 'drill') { const h = drillHref(a); return h ? { href: h, external: true } : { off: `Opens the report "${a.report}" in the Pagewright viewer` }; }
+    if (a?.type === 'drill') { const h = drillHref(a); return h ? { href: h, external: true } : { off: `Opens the report "${a.report}" in the ReportWright viewer` }; }
     return null; // sorting, open/close, filters: they run the report again, which a file cannot
   };
   const svgs = model.pages.map((p) => pageToSvg({ items: p.items.filter(it => it.t !== 'link' || target(it.action)) }, p.width ?? model.width, p.height ?? model.height, { proxyBase: opt.drillBase || '' }) // images by URL: through the server's data proxy

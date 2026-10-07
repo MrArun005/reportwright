@@ -1,7 +1,7 @@
 {
-  "name": "pagewright-example-node",
+  "name": "reportwright-example-node",
   "private": true,
   "type": "module",
   "scripts": { "start": "node render.js" },
-  "dependencies": { "@pagewrightjs/engine": "0.8.0", "@pagewrightjs/fonts": "0.8.0" }
+  "dependencies": { "@reportwright/engine": "0.8.0", "@reportwright/fonts": "0.8.0" }
 }

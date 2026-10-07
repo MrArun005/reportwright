@@ -101,7 +101,7 @@ South
 18%
 said "ok"
 Function samples
-Text: Pagewright · 000042 · a+b+c · wright · 1 · A66
+Text: ReportWright · 000042 · a+b+c · wright · 1 · A66
 Math: -1 · 3 · 3.14159 · -2 · 3.1416
 Dates: 28 Feb 2026 · week 12 · Sunday · 13:05 · 10-04-2026
 Checks: True False True · two · 2 True

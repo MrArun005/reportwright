@@ -38,7 +38,7 @@ const def = {
   sections: {
     pageHeader: { height: 50, items: [
       { type: 'shape', name: 'BrandMark', shape: 'rect', x: 0, y: 2, w: 5, h: 28, style: { fill: ACC, stroke: 'none' } },
-      tb('Company', 12, 0, 260, 18, 'Pagewright Finance', { fontSize: 13, fontWeight: 'bold', color: ACC }),
+      tb('Company', 12, 0, 260, 18, 'ReportWright Finance', { fontSize: 13, fontWeight: 'bold', color: ACC }),
       tb('Address', 12, 18, 300, 12, 'Registered office: 4th Floor, 100 Feet Road, Indiranagar, Bengaluru 560038', { fontSize: 7, color: MUTED }),
       tb('DocTitle', W - 200, 1, 200, 14, 'LOAN STATEMENT', { fontSize: 9, fontWeight: 'bold', color: ACC, textAlign: 'right' }),
       tb('DocAccount', W - 200, 16, 200, 12, '=Parameters.accountId', { fontSize: 8, fontFamily: 'JetBrains Mono', textAlign: 'right', color: MUTED }),

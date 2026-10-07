@@ -677,7 +677,7 @@
           "y": 348,
           "w": 523,
           "h": 14,
-          "value": "=\"Text: \" & StrReverse(\"thgirwegaP\") & \" · \" & PadLeft(\"42\", 6, \"0\") & \" · \" & Join(Split(\"a;b;c\", \";\"), \"+\") & \" · \" & Substring(\"Pagewright\", 4) & \" · \" & IndexOf(\"banana\", \"an\") & \" · \" & Chr(65) & Asc(\"B\")"
+          "value": "=\"Text: \" & StrReverse(\"thgirWtropeR\") & \" · \" & PadLeft(\"42\", 6, \"0\") & \" · \" & Join(Split(\"a;b;c\", \";\"), \"+\") & \" · \" & Substring(\"reportwright\", 6) & \" · \" & IndexOf(\"banana\", \"an\") & \" · \" & Chr(65) & Asc(\"B\")"
         },
         {
           "type": "textbox",

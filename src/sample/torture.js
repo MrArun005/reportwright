@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Synthetic lending portfolio for the "Pagewright Torture Test" report (reports/torture-test.pw.json).
+ * Synthetic lending portfolio for the "ReportWright Torture Test" report (reports/torture-test.pw.json).
  * Deterministic: the same seed gives the same output, byte for byte. Fictional borrowers, no real data.
  *
  *   GET /api/sample/torture → { meta, loans, monthly, buckets }
@@ -11,9 +11,9 @@
  */
 
 export const TORTURE_CONFIG = Object.freeze({
-  title: 'Pagewright Torture Test',
+  title: 'ReportWright Torture Test',
   subtitle: 'Interactive report PDF: every feature a report engine must get right',
-  author: 'Generated for Arun / Pagewright',
+  author: 'Generated for Arun / ReportWright',
   demoUrl: 'https://mrarun005.github.io/pagewright-demo/',
   repoUrl: 'https://github.com/MrArun005',
   seed: 20261004,

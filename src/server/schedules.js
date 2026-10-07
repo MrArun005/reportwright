@@ -158,7 +158,7 @@ export async function tickAs(owner, now = new Date(), { horizonMs = 0 } = {}) {
       });
       if (claimed) ran.push((await runSchedule(claimed, 'cron')).id); // as it is now, not as the tick listed it
     }
-    catch (e) { console.error(`[pagewright] schedule ${s.id}: ${e.message}`); }
+    catch (e) { console.error(`[reportwright] schedule ${s.id}: ${e.message}`); }
   }
   return ran;
 }

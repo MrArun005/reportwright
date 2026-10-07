@@ -179,7 +179,7 @@ export async function renderTo(def, opt = {}) {
   if (opt.encrypt && opt.pdfa) throw Object.assign(new Error('A PDF/A file cannot have a password. Turn off PDF/A or the password.'), { status: 400 });
   if (opt.encrypt && opt.sign) throw Object.assign(new Error('A signed PDF cannot have a password. Turn off signing or the password.'), { status: 400 });
   if (opt.sign && opt.principal && vet(opt.principal).kind === 'public') throw Object.assign(new Error('Signing needs an API key (PW_API_KEYS).'), { status: 401 });
-  const signing = opt.sign ? await pdfSigner({ name: def.name || 'Pagewright' }) : null; // fail before rendering
+  const signing = opt.sign ? await pdfSigner({ name: def.name || 'ReportWright' }) : null; // fail before rendering
   assertFixedHosts(d);
   // the engine runs exactly the objects the permission checks classified (perms.normalizeSource)
   if (Array.isArray(d?.dataSources)) d = { ...d, dataSources: d.dataSources.map(normalizeSource) };

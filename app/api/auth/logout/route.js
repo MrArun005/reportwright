@@ -28,7 +28,7 @@ export async function POST(req) {
         const u = await getUser(user.email);
         if (u?.sso?.via === 'saml') { const r = await samlLogoutStart(req, u); redirect = r.url; slo = 'saml'; h.append('set-cookie', r.cookie); }
       } else if (via === 'oidc') { redirect = await oidcLogoutUrl(req); slo = redirect ? 'oidc' : null; }
-    } catch (e) { console.error(`[pagewright] single logout: ${e.message}`); }
+    } catch (e) { console.error(`[reportwright] single logout: ${e.message}`); }
     await audit('auth.logout', { req, actor: `user:${user.email}`, ...(slo || everywhere ? { detail: { ...(slo ? { slo } : {}), ...(everywhere ? { everywhere } : {}) } } : {}) });
   }
   if (!slo || slo === 'oidc') for (const c of clearLogoutCookies(req)) h.append('set-cookie', c);

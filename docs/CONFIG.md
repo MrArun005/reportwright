@@ -1,6 +1,6 @@
 # Configuration
 
-Every setting Pagewright reads, from `src/server/config.js` (the table there is the source; `tests/engine/r2-config.test.js` keeps this page, the table and the code in step). At boot `checkConfig()` reports unknown `PW_` names (typos), values of the wrong kind and values that weaken security; in production its errors stop the start.
+Every setting ReportWright reads, from `src/server/config.js` (the table there is the source; `tests/engine/r2-config.test.js` keeps this page, the table and the code in step). At boot `checkConfig()` reports unknown `PW_` names (typos), values of the wrong kind and values that weaken security; in production its errors stop the start.
 
 **Mode.** `PW_MODE=dev|prod`. Unset: development only under `next dev` (`NODE_ENV=development`) or tests; any other `NODE_ENV` (unset under a custom server, `staging`, a typo) is production, so an unknown mode never opens the server. Every development-only behaviour (keyless API, open server, base URL from the request, fetch hosts by expression) follows this one switch.
 
@@ -19,7 +19,7 @@ Every setting Pagewright reads, from `src/server/config.js` (the table there is 
 | `PW_PASSWORD_LOGIN` | onoff | on | off: password sign-in off while SSO is set up. |
 | `PW_DEV_HOSTS` | list | (localhost) | More host names the dev server answers on (DNS rebinding guard). |
 | `PW_TRUSTED_PROXIES` | list | (none) | Proxy IPs or CIDRs whose X-Forwarded-For is believed. |
-| `PW_TOTP_ISSUER` | text | Pagewright | The issuer name authenticator apps show. |
+| `PW_TOTP_ISSUER` | text | ReportWright | The issuer name authenticator apps show. |
 | `PW_DATA_KEY` | secret | (required for two-factor in prod) | Seals TOTP secrets at rest (32+ characters). Never falls back to PW_SESSION_SECRET in prod. |
 | `PW_DATA_KEY_OLD` | list |  | Previous PW_DATA_KEY values (comma-separated) during a rotation: old seals still open. |
 | `PW_REQUEST_LOG` | flag | 1 | 0: no JSON line per request on stdout (HTTP metrics are kept either way). |

@@ -24,7 +24,7 @@ const smtp = await startSmtp();
 const server = spawn(process.execPath, [path.join(ROOT, 'node_modules/next/dist/bin/next'), 'start', '-p', String(PORT)], {
   cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'],
   env: { ...process.env, NODE_ENV: 'production', PW_AUTH: 'users', PW_SESSION_SECRET: 'g'.repeat(48), PW_DATA_KEY: 'd'.repeat(48), PW_BASE_URL: BASE, PW_STORAGE: `sqlite:${path.join(tmp, 'gov.db')}`,
-    PW_ADMIN_EMAIL: ADMIN, PW_ADMIN_PASSWORD: ADMIN_PW, PW_SMTP_URL: `smtp://127.0.0.1:${smtp.port}`, PW_MAIL_FROM: 'Pagewright <noreply@e2e.test>', PW_MAIL_ALLOWED_DOMAINS: 'e2e.test',
+    PW_ADMIN_EMAIL: ADMIN, PW_ADMIN_PASSWORD: ADMIN_PW, PW_SMTP_URL: `smtp://127.0.0.1:${smtp.port}`, PW_MAIL_FROM: 'ReportWright <noreply@e2e.test>', PW_MAIL_ALLOWED_DOMAINS: 'e2e.test',
     PW_SCHEDULER: 'off', PW_INTERNAL_HOSTS: '127.0.0.1' },
 });
 let log = '';

@@ -116,7 +116,7 @@ describe('enrolling and signing in', () => {
     expect(setup.status).toBe(200);
     const s = await setup.json();
     expect(s.qr).toMatch(/^<svg/);
-    expect(s.uri).toMatch(/^otpauth:\/\/totp\/Pagewright:dee%40x\.test\?secret=[A-Z2-7]+&issuer=Pagewright/);
+    expect(s.uri).toMatch(/^otpauth:\/\/totp\/ReportWright:dee%40x\.test\?secret=[A-Z2-7]+&issuer=ReportWright/);
     secret = s.secret;
     const stored = await users.getUser('dee@x.test');
     expect(JSON.stringify(stored)).not.toContain(secret); // sealed at rest

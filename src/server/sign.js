@@ -9,7 +9,7 @@ import { SignPdf } from '@signpdf/signpdf';
 import { P12Signer } from '@signpdf/signer-p12';
 
 /** @returns {Promise<{ prepare: (doc: any) => void, save: object, sign: (pdf: Uint8Array) => Promise<Uint8Array> }>} */
-export async function pdfSigner({ name = 'Pagewright', reason = 'Issued by Pagewright', location = '', contactInfo = '' } = {}) {
+export async function pdfSigner({ name = 'ReportWright', reason = 'Issued by ReportWright', location = '', contactInfo = '' } = {}) {
   const file = process.env.PW_SIGN_P12;
   if (!file) throw Object.assign(new Error('Signing is not set up: set PW_SIGN_P12 (a .p12 certificate file) and PW_SIGN_PASSWORD'), { status: 400 });
   let p12;

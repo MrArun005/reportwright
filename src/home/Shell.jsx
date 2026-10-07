@@ -9,7 +9,7 @@ import { t, dirOf } from '@/i18n/index.js';
 /** Who is looking: the signed-in user (accounts on) and what their role may use. */
 export async function viewer() {
   const cookie = (await headers()).get('cookie') || '';
-  const user = accountsOn() ? await currentUser(new Request('http://pagewright.local/', { headers: { cookie } })) : null;
+  const user = accountsOn() ? await currentUser(new Request('http://reportwright.local/', { headers: { cookie } })) : null;
   return {
     cookie, user,
     designer: !accountsOn() || (ROLE_RANK[user?.role] || 0) >= ROLE_RANK.designer,
@@ -56,7 +56,7 @@ export default async function Shell({ lang, active, search = '', children }) {
   return (
     <div className="app" dir={dirOf(lang)} lang={lang}>
       <aside className="side">
-        <Link href={`/${q}`} className="brand side-brand"><i />Pagewright</Link>
+        <Link href={`/${q}`} className="brand side-brand"><i />ReportWright</Link>
         <nav aria-label={T('hm_nav')} className="side-nav">
           {nav.map(n => <Link key={n.id} href={n.href} className="side-link" aria-current={n.id === active ? 'page' : undefined}><Icon name={n.id} />{n.label}</Link>)}
         </nav>

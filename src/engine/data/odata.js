@@ -17,7 +17,7 @@ const IDENT = /^[A-Za-z_][\w]*(?:\/[A-Za-z_][\w]*)*$/;
 const NUMERIC = /^Edm\.(Int16|Int32|Int64|Byte|SByte|Decimal|Double|Single)$/;
 const OPS = new Set(['eq', 'ne', 'gt', 'ge', 'lt', 'le', 'contains', 'startswith', 'endswith']);
 
-/** Pagewright field type of an Edm type. @param {string} [edm] */
+/** ReportWright field type of an Edm type. @param {string} [edm] */
 export function odataFieldType(edm) {
   const t = String(edm || '');
   if (NUMERIC.test(t)) return 'number';

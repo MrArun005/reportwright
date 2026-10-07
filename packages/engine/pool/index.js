@@ -1,4 +1,4 @@
-// @pagewrightjs/engine/pool (Node only): render many reports in parallel on worker threads.
+// @reportwright/engine/pool (Node only): render many reports in parallel on worker threads.
 //   const pool = createPool({ workers: 4 });
 //   const pdf = await pool.render(definition, { format: 'pdf', parameters: { id: 42 } });
 //   await pool.close();
@@ -15,7 +15,7 @@ import os from 'node:os';
 /**
  * A pool of worker threads, each with the engine and its fonts loaded once.
  * @param {{ workers?: number, fontsDir?: string, maxQueue?: number }} [opt]
- *   workers: default the CPU count less one. fontsDir: a folder of the fonts (default @pagewrightjs/fonts).
+ *   workers: default the CPU count less one. fontsDir: a folder of the fonts (default @reportwright/fonts).
  *   maxQueue: renders waiting beyond it are refused (default 10,000).
  * @returns {Pool}
  */

@@ -12,7 +12,7 @@ import { generateKeyPair, exportJWK, SignJWT } from 'jose';
  * /authorize answers at once (no login page): it redirects back with a code.
  * @param {{ port?: number, clientId?: string, clientSecret?: string }} [o]
  */
-export async function startOidc({ port = 0, clientId = 'pagewright', clientSecret = 'oidc-test-secret' } = {}) {
+export async function startOidc({ port = 0, clientId = 'reportwright', clientSecret = 'oidc-test-secret' } = {}) {
   const { privateKey, publicKey } = await generateKeyPair('RS256', { extractable: true });
   const other = await generateKeyPair('RS256', { extractable: true }); // a key the provider does not publish
   const jwk = { ...(await exportJWK(publicKey)), kid: 'k1', alg: 'RS256', use: 'sig' };

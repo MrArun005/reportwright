@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// pw: render, test and diff Pagewright reports from the command line. No server needed.
+// pw: render, test and diff ReportWright reports from the command line. No server needed.
 // The same engine and exporters as the app; fonts come from public/fonts.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -18,14 +18,14 @@ import { exportPptx } from '../src/exporters/pptx.js';
 import { textRows } from '../src/exporters/regions.js';
 
 const ROOT = path.join(import.meta.dirname, '..');
-// fonts, harfbuzz-subset.wasm and the colour profile: the repo's public/, or the @pagewrightjs/fonts package (the npm CLI)
+// fonts, harfbuzz-subset.wasm and the colour profile: the repo's public/, or the @reportwright/fonts package (the npm CLI)
 const PUB = fs.existsSync(path.join(ROOT, 'public', 'fonts')) ? path.join(ROOT, 'public')
-  : path.join(path.dirname(createRequire(import.meta.url).resolve('@pagewrightjs/fonts/package.json')), 'public');
+  : path.join(path.dirname(createRequire(import.meta.url).resolve('@reportwright/fonts/package.json')), 'public');
 const HELP = `pw render <report.pw.json> [-p name=value]… [-d source=data.json]… [-f pdf|xlsx|docx|pptx|html|csv|json|txt] [-o file|-] [--base URL] [--pdfa] [--ua]
           [--values] [--static] [--layout]
           [--password PW] [--owner-password PW] [--deny print|modify|copy|annotate|fillForms|accessibility|assemble|printHighQuality]…
 pw import <report.jrxml|.rdl|.rptdesign> [-o out.pw.json]
-                                   convert a JasperReports, SSRS or BIRT report to a Pagewright definition
+                                   convert a JasperReports, SSRS or BIRT report to a ReportWright definition
 pw test [folder] [--update]        render every <folder>/__tests__/*.test.json case and compare it with its snapshot
 pw diff <old.pw.json> <new.pw.json> [-p name=value]… [-d source=data.json]… [--base URL]
 pw audit verify [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--json] [--public-key file.pem]

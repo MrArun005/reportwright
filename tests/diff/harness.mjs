@@ -1,4 +1,4 @@
-// Differential testing: the Pagewright side of a case, text extraction and the cell-by-cell comparison.
+// Differential testing: the ReportWright side of a case, text extraction and the cell-by-cell comparison.
 // Used by scripts/diff-engines.mjs (which also runs the real engines) and tests/diff/diff.test.js (which replays the
 // recorded ground truth, so it needs no Java).
 import fs from 'node:fs';
@@ -14,7 +14,7 @@ export const TRUTH_DIR = path.join(import.meta.dirname, 'truth');
 export const fontStore = () => new FontStore((k) => fs.readFileSync(path.join(ROOT, 'public', 'fonts', fontFile(k))));
 
 /** The imported definition with the case's rows and locale, rendered in UTC. */
-export async function pagewright(c, store) {
+export async function reportwright(c, store) {
   const imp = (c.engine === 'jrxml' ? importJrxml : importBirt)(c.xml, { name: c.id });
   const def = imp.definition;
   def.locale = c.locale;

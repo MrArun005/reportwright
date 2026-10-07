@@ -14,7 +14,7 @@ export async function loadBarcodes() {
  */
 const S = (id, name, sample, max = 128, twoD = false) => ({ id, name, sample, max, twoD });
 export const SYMBOLOGIES = [
-  S('code128', 'Code 128', 'Pagewright-128'),
+  S('code128', 'Code 128', 'ReportWright-128'),
   S('gs1-128', 'GS1-128', '(01)09521234543213(10)ABC123'),
   S('code39', 'Code 39', 'CODE-39'),
   S('code39ext', 'Code 39 Extended', 'Code39 Ext'),
@@ -52,7 +52,7 @@ export const SYMBOLOGIES = [
   S('code16k', 'Code 16K', 'Code 16K', 77, true),
   S('code49', 'Code 49', 'CODE 49', 49, true),
   S('codablockf', 'Codablock F', 'CODABLOCK F', 2725, true),
-  S('qrcode', 'QR Code', 'https://pagewright.dev', 7089, true),
+  S('qrcode', 'QR Code', 'https://reportwright.dev', 7089, true),
   S('microqrcode', 'Micro QR Code', '1234', 35, true),
   S('gs1qrcode', 'GS1 QR Code', '(01)03453120000011(10)ABCD1234', 2000, true),
   S('datamatrix', 'Data Matrix', 'Data Matrix', 3116, true),

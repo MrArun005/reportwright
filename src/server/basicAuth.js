@@ -25,5 +25,5 @@ export async function basicAuth(req) {
     if (/** @type {any} */ (e).status !== 429) throw e;
     return new Response(/** @type {any} */ (e).message, { status: 429, headers: { 'retry-after': String(/** @type {any} */ (e).retryAfter) } });
   }
-  return new Response('Sign in to Pagewright', { status: 401, headers: { 'www-authenticate': 'Basic realm="Pagewright", charset="UTF-8"' } });
+  return new Response('Sign in to ReportWright', { status: 401, headers: { 'www-authenticate': 'Basic realm="ReportWright", charset="UTF-8"' } });
 }

@@ -39,7 +39,7 @@ export function checkFont(input, names = {}) {
   if ((t.noEmbedding && !t.viewOnly && !t.editable) || t.bitmapOnly) throw bad("This font's licence does not allow embedding it in documents (OS/2 fsType), so it cannot be used in PDFs.");
   const family = String(names.family || font.getName?.('preferredFamily') || font.familyName || '').trim();
   if (!family || family.length > 64 || !/^[\p{L}\p{N} .,'&()+_-]+$/u.test(family)) throw bad('Give the font a family name: letters, digits and spaces, up to 64 characters.');
-  if (BUNDLED_FAMILIES.some(f => f.toLowerCase() === family.toLowerCase())) throw bad(`"${family}" is a font Pagewright already has. Give your font another family name.`);
+  if (BUNDLED_FAMILIES.some(f => f.toLowerCase() === family.toLowerCase())) throw bad(`"${family}" is a font ReportWright already has. Give your font another family name.`);
   const weight = names.weight ? Number(names.weight) : os2?.usWeightClass || 400;
   if (!Number.isInteger(weight) || weight < 1 || weight > 1000) throw bad('The weight is a number from 1 to 1000 (400 regular, 700 bold).');
   const style = names.style ? String(names.style) : os2?.fsSelection?.italic || font.italicAngle ? 'italic' : 'normal';

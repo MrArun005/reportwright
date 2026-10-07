@@ -15,7 +15,7 @@ const fontStore = new FontStore(async (k) => fs.readFileSync(path.join(ROOT, 'pu
 const times = [], cpus = [];
 for (let r = 0; r < Number(runs); r++) {
   const t0 = performance.now(), c0 = process.threadCpuUsage?.() ?? process.cpuUsage();
-  const model = await render(defs.pagewright(scenario, JSON.parse(raw)), { fontStore, ...(process.env.LEAN ? { exportData: false } : {}) }); // LEAN=1: as a view or a plain PDF renders (no Excel/Word table data)
+  const model = await render(defs.reportwright(scenario, JSON.parse(raw)), { fontStore, ...(process.env.LEAN ? { exportData: false } : {}) }); // LEAN=1: as a view or a plain PDF renders (no Excel/Word table data)
   times.push(performance.now() - t0);
   const c1 = process.threadCpuUsage?.(c0) ?? process.cpuUsage(c0);
   cpus.push((c1.user + c1.system) / 1000); // CPU time of this thread: steadier than wall time on a busy machine

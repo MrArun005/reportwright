@@ -22,7 +22,7 @@ describe('docs', () => {
     const v = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
     for (const d of ['node', 'react', 'vue', 'svelte', 'angular']) {
       const deps = JSON.parse(fs.readFileSync(`examples/${d}/package.json`, 'utf8')).dependencies;
-      for (const [n, r] of Object.entries(deps)) if (n.startsWith('@pagewrightjs/')) expect(r, `${d} ${n}`).toBe(v);
+      for (const [n, r] of Object.entries(deps)) if (n.startsWith('@reportwright/')) expect(r, `${d} ${n}`).toBe(v);
     }
   });
 });

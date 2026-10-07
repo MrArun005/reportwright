@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * SSRS importer: a Microsoft SQL Server Reporting Services / Report Builder report (.rdl, .rdlc; RDL 2008, 2010
- * and 2016) becomes a Pagewright report definition.
+ * and 2016) becomes a ReportWright report definition.
  *
  * RDLX-JSON, the ActiveReportsJS format, is RDL written as JSON with the same element and property names. So this
  * file is only a front end: it reads the XML (safely, see xml.js), rewrites it into the RDLX-JSON shape and hands
@@ -19,7 +19,7 @@ const MAX_EXPR = 20_000; // longer expressions are left out (the translation is 
 const MAX_REGION_DEPTH = 8; // tables, charts and gauges inside table cells, inside each other
 
 const isExpr = (v) => typeof v === 'string' && v.trimStart().startsWith('=');
-/** A Pagewright-bound value as a VB operand: "=x" → (x), "text" → "text". */
+/** A ReportWright-bound value as a VB operand: "=x" → (x), "text" → "text". */
 const vb = (v) => (isExpr(v) ? `(${v.trimStart().slice(1)})` : `"${String(v ?? '').replace(/"/g, '""')}"`);
 const isIdStart = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c === '_';
 const isId = (c) => isIdStart(c) || (c >= '0' && c <= '9');
@@ -61,7 +61,7 @@ export function importRdl(input, opts = {}) {
   const def = r.definition;
   for (const p of def.parameters || []) if (ar.__hidden?.has(p.name)) p.hidden = true;
   if (ar.__code) def.customCode = ar.__code;
-  const warnings = [...notes, ...r.warnings.filter(w => !/is hidden in ActiveReports; Pagewright shows it/.test(w))]
+  const warnings = [...notes, ...r.warnings.filter(w => !/is hidden in ActiveReports; ReportWright shows it/.test(w))]
     .map(w => w.replace(/ActiveReports/g, 'SSRS'));
   return { definition: def, warnings: [...new Set(warnings)], stats: r.stats };
 }
@@ -471,7 +471,7 @@ function toRdlx(root, notes, year) {
             SortExpressions: c.detailsMember?.SortExpressions?.length ? c.detailsMember.SortExpressions : base.SortExpressions };
         }
       }
-      // SSRS sorts detail rows on the details member; Pagewright sorts the table's rows (groups keep their own order)
+      // SSRS sorts detail rows on the details member; ReportWright sorts the table's rows (groups keep their own order)
       const detailsOf = (ms) => { for (const m of ms) { if (m.Group && !m.Group.GroupExpressions.length) return m; const d = detailsOf(m.Children); if (d) return d; } return null; };
       const dsort = detailsOf(rowH.Members)?.SortExpressions || [];
       if (dsort.length) base.SortExpressions = [...base.SortExpressions, ...dsort];
@@ -516,11 +516,11 @@ function toRdlx(root, notes, year) {
     return null;
   };
   const leaves = (ms) => ms.flatMap(m => { const k = list(m, 'ChartMembers', 'ChartMember'); return k.length ? leaves(k) : [m]; });
-  /** SSRS label keywords → Pagewright label placeholders. */
+  /** SSRS label keywords → ReportWright label placeholders. */
   const keywords = (s) => String(s).replace(/#(PERCENT|VALY|VALX|AXISLABEL|SERIESNAME|LABEL|TOTAL|INDEX)(\{[^{}]{0,20}\})?/gi, (_, k) =>
     ({ percent: '{percent}', valy: '{value}', valx: '{category}', axislabel: '{category}', seriesname: '{series}', label: '{category}' }[k.toLowerCase()] ?? `#${k}`));
 
-  /** An SSRS data bar or sparkline (a chart that Report Builder made for a cell): Pagewright's own visual. */
+  /** An SSRS data bar or sparkline (a chart that Report Builder made for a cell): ReportWright's own visual. */
   function cellVisual(e, mode) {
     const it = common(e, 'visual');
     const cat = firstDyn(list(kid(e, 'ChartCategoryHierarchy'), 'ChartMembers', 'ChartMember'));
@@ -533,7 +533,7 @@ function toRdlx(root, notes, year) {
       out.Category = cat ? exprs(kid(cat, 'Group'), 'GroupExpressions', 'GroupExpression')[0] : undefined;
       out.VisualStyle = type === 'line' ? 'line' : type === 'area' ? 'area' : 'column';
     } else {
-      // SSRS scales the bars to the largest one in the region; Pagewright needs a maximum: the region's total keeps their proportions
+      // SSRS scales the bars to the largest one in the region; ReportWright needs a maximum: the region's total keeps their proportions
       const m = isExpr(y) ? /^\s*=\s*(Sum|Count)\(([^"]*)\)\s*$/i.exec(y) : null;
       if (m && region) { out.Max = `=${m[1]}(${m[2]}, "${region}")`; note('its bars are scaled to the region\'s total, not to the largest bar, so they are shorter than in SSRS.'); }
       else note('its bars have no maximum; set one so they are scaled.');
@@ -601,7 +601,7 @@ function toRdlx(root, notes, year) {
       if (!Plots.length) note('it has no series with a value.');
       const axis = (a, type) => {
         if (!a) return null;
-        if (/^false$/i.test(raw(a, 'Visible') || '')) { note(`its ${type === 'X' ? 'category' : 'value'} axis is hidden in SSRS; Pagewright draws it.`); return { AxisType: type }; }
+        if (/^false$/i.test(raw(a, 'Visible') || '')) { note(`its ${type === 'X' ? 'category' : 'value'} axis is hidden in SSRS; ReportWright draws it.`); return { AxisType: type }; }
         const grid = raw(kid(a, 'ChartMajorGridLines'), 'Enabled');
         const title = val(kid(a, 'ChartAxisTitle'), 'Caption');
         const st = obj(kid(a, 'Style')) || {};
@@ -623,7 +623,7 @@ function toRdlx(root, notes, year) {
     } finally { region = saved; }
   }
 
-  /** A gauge becomes Pagewright's half-circle gauge; a state indicator its icon set. */
+  /** A gauge becomes ReportWright's half-circle gauge; a state indicator its icon set. */
   function gauge(e) {
     const it = common(e, 'dvchart');
     const ind = list(e, 'StateIndicators', 'StateIndicator')[0];
@@ -634,7 +634,7 @@ function toRdlx(root, notes, year) {
       const states = list(ind, 'IndicatorStates', 'IndicatorState').map(s => num(raw(kid(s, 'StartValue'), 'Value'))).filter(v => v != null).sort((a, b) => a - b);
       const transform = raw(ind, 'TransformationType') ?? 'Percentage';
       if (!/^none$/i.test(transform)) note('its states are percentages of the value range in SSRS; here the thresholds compare the value itself.');
-      if (states.length !== 3) note(`it has ${states.length} states; Pagewright icon sets have 3 (low, middle, high).`);
+      if (states.length !== 3) note(`it has ${states.length} states; ReportWright icon sets have 3 (low, middle, high).`);
       return { ...it, Type: 'indicator', Value: value, Lower: states[1] != null ? `=${states[1]}` : undefined, Upper: states[2] != null ? `=${states[2]}` : undefined,
         IconSet: /arrow/i.test(style) ? 'arrows' : /flag/i.test(style) ? 'flags' : /sign|symbol/i.test(style) ? 'symbols' : /star|rating|box|pie|bar/i.test(style) ? 'ratings' : 'trafficLights' };
     }

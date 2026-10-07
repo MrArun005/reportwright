@@ -8,7 +8,7 @@ import { StreamLanguage, syntaxHighlighting, HighlightStyle, bracketMatching } f
 import { tags } from '@lezer/highlight';
 import { FUNCTION_NAMES } from '@/engine/expr/evaluate.js';
 
-/* Tiny tokenizer for the Pagewright expression language. */
+/* Tiny tokenizer for the ReportWright expression language. */
 const lang = StreamLanguage.define({
   token(stream) {
     if (stream.eatSpace()) return null;

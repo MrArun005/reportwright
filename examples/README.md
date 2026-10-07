@@ -1,6 +1,6 @@
 # Examples
 
-Tiny apps that use the published packages (0.8.0) with no Pagewright server. Each shows `report.pw.json` with `data.json`.
+Tiny apps that use the published packages (0.8.0) with no ReportWright server. Each shows `report.pw.json` with `data.json`.
 
 | Folder | Run |
 |---|---|
@@ -10,5 +10,5 @@ Tiny apps that use the published packages (0.8.0) with no Pagewright server. Eac
 | `svelte` | `npm i && npm run dev` (Vite) |
 | `angular` | `npm i && npm run dev` (Vite, Angular in JIT mode: no Angular CLI needed) |
 
-The browser examples copy `@pagewrightjs/fonts/public` to `public/pw` before they start (`predev`), and pass
+The browser examples copy `@reportwright/fonts/public` to `public/pw` before they start (`predev`), and pass
 `fontsUrl: '/pw/fonts/'`.

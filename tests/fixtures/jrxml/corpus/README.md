@@ -7,7 +7,7 @@ by kind. They are copied unchanged; the file name is the format, the sample fold
 Licence: the JasperReports Library and its samples are published by TIBCO Software (Jaspersoft) under the
 [GNU Lesser General Public License, version 3](https://github.com/TIBCOSoftware/jasperreports/blob/master/LICENSE)
 (Copyright (C) 2005–2025 TIBCO Software Inc. / Cloud Software Group, Inc. and the JasperReports contributors). The LGPL
-permits copying and redistributing them unchanged with this notice; they are test data here, not linked into Pagewright.
+permits copying and redistributing them unchanged with this notice; they are test data here, not linked into ReportWright.
 Downloaded 2026-10-05.
 
 - `jr6-*`: the JasperReports 6 XML format (`<textField><reportElement …/>`), from the tag

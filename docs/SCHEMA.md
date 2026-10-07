@@ -1,7 +1,7 @@
 # Report schema reference
 
 GENERATED from `src/engine/schema/report.schema.js` by `node scripts/gen-docs.mjs`; the same schema is published as
-`@pagewrightjs/engine/schema.json` and is what `packages/engine/report.d.ts` and `validate()` are made from.
+`@reportwright/engine/schema.json` and is what `packages/engine/report.d.ts` and `validate()` are made from.
 A value of type `Expr` may also be an expression: a string starting with `=` (`"=Sum(Fields.amount)"`).
 
 ## Style
@@ -592,11 +592,11 @@ One of: { name, type, data }, { name, type, data, url }, { name, type, url, meth
 
 ## Report
 
-A Pagewright report definition (pagewright/report@1).
+A ReportWright report definition (pagewright/report@1).
 
 | Property | Type | Required | Description |
 |---|---|---|---|
-| `$schema` | "pagewright/report@1" | yes |  |
+| `$schema` | "pagewright/report@1" \\| "reportwright/report@1" | yes | pagewright/report@1; reportwright/report@1 is the same format under the new name. |
 | `name` | string |  |  |
 | `description` | string |  |  |
 | `locale` | string |  |  |

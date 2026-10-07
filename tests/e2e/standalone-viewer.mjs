@@ -1,4 +1,4 @@
-// B5 item 5: @pagewrightjs/viewer on a static page with no Pagewright server: definition + data + fontsUrl.
+// B5 item 5: @reportwright/viewer on a static page with no ReportWright server: definition + data + fontsUrl.
 // No HTTP server at all: Playwright answers every request from disk. The page's script is the package bundled the way an
 // app bundles it (esbuild; pdf-lib, fontkit, bwip-js, fflate and bidi-js are the package's dependencies, not inside it).
 // Run npm run build:packages first.
@@ -13,10 +13,10 @@ import path from 'node:path';
 const root = path.join(import.meta.dirname, '..', '..');
 const ORIGIN = 'http://static.test';
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-static-'));
-fs.mkdirSync(path.join(tmp, 'node_modules/@pagewrightjs'), { recursive: true });
-fs.symlinkSync(path.join(root, 'packages/viewer'), path.join(tmp, 'node_modules/@pagewrightjs/viewer')); // resolved through its exports
-fs.writeFileSync(path.join(tmp, 'viewer.js'), "export { mountViewer } from '@pagewrightjs/viewer';");
-fs.writeFileSync(path.join(tmp, 'designer.js'), "export { mountDesigner } from '@pagewrightjs/viewer/designer';");
+fs.mkdirSync(path.join(tmp, 'node_modules/@reportwright'), { recursive: true });
+fs.symlinkSync(path.join(root, 'packages/viewer'), path.join(tmp, 'node_modules/@reportwright/viewer')); // resolved through its exports
+fs.writeFileSync(path.join(tmp, 'viewer.js'), "export { mountViewer } from '@reportwright/viewer';");
+fs.writeFileSync(path.join(tmp, 'designer.js'), "export { mountDesigner } from '@reportwright/viewer/designer';");
 await build({ entryPoints: [path.join(tmp, 'viewer.js'), path.join(tmp, 'designer.js')], bundle: true, format: 'esm', splitting: true, outdir: path.join(tmp, 'out'),
   nodePaths: [path.join(tmp, 'node_modules')], define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'error' });
 const FILES = { '/pw/': path.join(tmp, 'out/'), '/pw-fonts/': path.join(root, 'packages/fonts/public/fonts/'), '/pw-public/': path.join(root, 'packages/fonts/public/') };

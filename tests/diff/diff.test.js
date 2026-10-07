@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { cases } from './gen.mjs';
-import { pagewright, modelPages, compare, fontStore, readTruth } from './harness.mjs';
+import { reportwright, modelPages, compare, fontStore, readTruth } from './harness.mjs';
 
 const store = fontStore();
 for (const engine of ['jrxml', 'birt']) {
@@ -22,7 +22,7 @@ for (const engine of ['jrxml', 'birt']) {
       expect(stale).toEqual([]);
     });
     it.each(list.filter(c => truth.cases[c.id]?.pages).map(c => [c.id, c]))('%s', async (id, c) => {
-      const r = await pagewright(c, store);
+      const r = await reportwright(c, store);
       const cmp = compare(truth.cases[id].pages, modelPages(r.model));
       if (known.has(id)) {
         expect(cmp.ok, `${id} now matches ${truth.tool}: rerun node scripts/diff-engines.mjs to update the mismatch corpus`).toBe(false);

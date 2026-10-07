@@ -3,7 +3,7 @@ import { dirOf, pickLang } from '@/i18n/index.js';
 import Shell from '@/home/Shell.jsx';
 import { AUDIT_TYPES } from '@/server/audit.js';
 
-export const metadata = { title: 'Audit log · Pagewright' };
+export const metadata = { title: 'Audit log · ReportWright' };
 export const dynamic = 'force-dynamic';
 
 // Admins only (proxy.js). The events come from /api/audit, which checks again.

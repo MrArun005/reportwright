@@ -327,7 +327,7 @@ describe('expressions', () => {
       const { value, warnings } = valueOf(src);
       expect(value).toBe(want);
       expect(checkValue(value)).toBeNull();
-      expect(warnings.join(' ')).not.toMatch(/no Pagewright equivalent|could not be read/);
+      expect(warnings.join(' ')).not.toMatch(/no ReportWright equivalent|could not be read/);
     });
   }
   it('Parameters!p.Label gives the value, with a note', () => {

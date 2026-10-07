@@ -1,4 +1,4 @@
-// B5 item 8: one export signature in @pagewrightjs/engine: exportPdf/Xlsx/Docx/Pptx(model, { fonts, ... }).
+// B5 item 8: one export signature in @reportwright/engine: exportPdf/Xlsx/Docx/Pptx(model, { fonts, ... }).
 // The 0.7 positional forms still work in 0.8 with one deprecation warning each; a wrong argument is a clear TypeError.
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 import fs from 'node:fs';

@@ -173,7 +173,7 @@ export default {
   isEnabled: '{email} is enabled.', isDisabled: '{email} is disabled.',
 
   /* ---- sign in ---- */
-  signIn: 'Sign in', signingIn: 'Signing in…', signInLede: 'Pagewright reports', password: 'Password',
+  signIn: 'Sign in', signingIn: 'Signing in…', signInLede: 'ReportWright reports', password: 'Password',
   signInFailed: 'Sign-in failed (HTTP {status}).', signedInAsLong: 'You are signed in as', continue: 'Continue',
   accountsOff: 'Accounts are off on this server. Set {setting} to turn them on.',
   noUsersYet: 'There are no users yet.', firstAdmin: 'Create the first admin in one of two ways:',

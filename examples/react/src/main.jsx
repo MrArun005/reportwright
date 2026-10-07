@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { PagewrightViewer, PagewrightDesigner } from '@pagewrightjs/react';
+import { ReportWrightViewer, ReportWrightDesigner } from '@reportwright/react';
 import definition from '../../report.pw.json';
 import orders from '../../data.json';
 
@@ -10,8 +10,8 @@ function App() {
     <>
       <button onClick={() => setDesign(!design)}>{design ? 'View' : 'Design'}</button>
       {design
-        ? <PagewrightDesigner definition={definition} fontsUrl="/pw/fonts/" onSave={(d) => console.log('saved', d)} style={{ height: 760 }} />
-        : <PagewrightViewer definition={definition} data={{ orders }} fontsUrl="/pw/fonts/" onError={(e) => console.error(e)} style={{ height: 760 }} />}
+        ? <ReportWrightDesigner definition={definition} fontsUrl="/pw/fonts/" onSave={(d) => console.log('saved', d)} style={{ height: 760 }} />
+        : <ReportWrightViewer definition={definition} data={{ orders }} fontsUrl="/pw/fonts/" onError={(e) => console.error(e)} style={{ height: 760 }} />}
     </>
   );
 }

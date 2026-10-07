@@ -1,6 +1,6 @@
-# Pagewright: the app (designer, viewer, server renders, automation API) in one image.
-#   docker build -t pagewright .
-#   docker run -p 3000:3000 -e PW_BASIC_AUTH=admin:change-me -v pw-data:/app/data -v pw-reports:/app/reports pagewright
+# ReportWright: the app (designer, viewer, server renders, automation API) in one image.
+#   docker build -t reportwright .
+#   docker run -p 3000:3000 -e PW_BASIC_AUTH=admin:change-me -v pw-data:/app/data -v pw-reports:/app/reports reportwright
 # Settings are the same environment variables as in the README (PW_AUTH, PW_STORAGE, PW_DB_<NAME>, …).
 # PW_EMBED_ORIGINS is read at build time: pass it with --build-arg.
 FROM node:22-bookworm-slim AS build

@@ -26,5 +26,5 @@ jobs:
         run: |
           n=$(gh issue list --label uptime --state open --json number --jq '.[0].number')
           if [ -n "$n" ]; then gh issue comment "$n" --body-file result.txt
-          else gh label create uptime --color B60205 2>/dev/null || true; gh issue create --title "Pagewright is down or failing" --label uptime --body-file result.txt; fi
+          else gh label create uptime --color B60205 2>/dev/null || true; gh issue create --title "ReportWright is down or failing" --label uptime --body-file result.txt; fi
           exit 1

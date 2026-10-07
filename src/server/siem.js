@@ -43,7 +43,7 @@ export function shipAudit(entry) {
 export function rfc5424(e) {
   const sev = e.status === 'ok' ? 6 : 4; // info, or warning for failed and denied
   const clean = (s, n) => String(s || '-').replace(/[^\x21-\x7e]/g, '_').slice(0, n) || '-';
-  return `<${16 * 8 + sev}>1 ${e.at} ${clean(os.hostname(), 255)} pagewright ${process.pid} ${clean(e.type, 32)} - ${JSON.stringify(e)}`;
+  return `<${16 * 8 + sev}>1 ${e.at} ${clean(os.hostname(), 255)} reportwright ${process.pid} ${clean(e.type, 32)} - ${JSON.stringify(e)}`;
 }
 
 function pump() {
@@ -67,7 +67,7 @@ async function send(batch) {
   if (!t) return;
   if (t.kind === 'webhook') {
     const body = JSON.stringify(batch);
-    const headers = { 'content-type': 'application/json', 'user-agent': 'Pagewright' };
+    const headers = { 'content-type': 'application/json', 'user-agent': 'ReportWright' };
     if (process.env.PW_AUDIT_SIEM_SECRET) headers['x-pagewright-signature'] = `sha256=${crypto.createHmac('sha256', process.env.PW_AUDIT_SIEM_SECRET).update(body).digest('hex')}`;
     // through the SSRF guard (the address the operator set is trusted; no redirects anywhere else)
     const { safeFetch } = await import('./safeFetch.js');

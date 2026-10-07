@@ -582,7 +582,7 @@
      "y": 2,
      "w": 350,
      "h": 12,
-     "value": "Pagewright · stress test · {Globals.ReportName}",
+     "value": "ReportWright · stress test · {Globals.ReportName}",
      "canGrow": false,
      "style": {
       "fontSize": 7.5,

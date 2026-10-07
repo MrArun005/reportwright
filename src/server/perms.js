@@ -63,7 +63,7 @@ export async function principalOf(req) {
 }
 
 /** For server pages: the principal of the request whose Cookie header this is. @param {string} cookie */
-export const principalFromCookie = (cookie) => principalOf(new Request('http://pagewright.local/', { headers: { cookie: cookie || '' } }));
+export const principalFromCookie = (cookie) => principalOf(new Request('http://reportwright.local/', { headers: { cookie: cookie || '' } }));
 
 /** The ids (first 8 hex of the SHA-256) of the service keys in PW_API_KEYS now. With accounts off a user's key
  *  ("email|key") is a service key too: there are no users to act as. */
@@ -244,8 +244,8 @@ export async function migratePermissions() {
         const legacy = (await store().ids('reportacl')).length > 0 || (await store().ids('folders')).some(id => id !== 'root');
         root = { grants: [...(legacy ? LEGACY_ROOT : DEFAULT_ROOT)], create: [...DEFAULT_CREATE] };
         await store().put('folders', 'root', JSON.stringify({ id: 'root', ...root, updatedAt: new Date().toISOString(), migrated: legacy ? 'legacy' : 'default', rev: rev() }));
-        if (!legacy) console.warn('[pagewright] permissions: a new install: designers view every report at the top, viewers only what a grant gives them (share on the Folders page).');
-        else console.warn('[pagewright] permissions: reports from before per-report defaults: everyone keeps view at the top; each report is managed by its creator or an admin. Change it on the Folders page.');
+        if (!legacy) console.warn('[reportwright] permissions: a new install: designers view every report at the top, viewers only what a grant gives them (share on the Folders page).');
+        else console.warn('[reportwright] permissions: reports from before per-report defaults: everyone keeps view at the top; each report is managed by its creator or an admin. Change it on the Folders page.');
       }
       await store().put('settings', MIGRATION, JSON.stringify({ id: MIGRATION, at: new Date().toISOString() }));
     }
@@ -555,7 +555,7 @@ async function stampNow(id, src) {
 /**
  * A report's definition for running it on the server (render, saved SQL, thumbnail), when the principal may view it:
  * its server-side data must be as someone allowed stored it (stampDefinition). A definition stored any other way
- * (changed outside Pagewright, or saved while an open production server let anyone save) does not run its SQL or
+ * (changed outside ReportWright, or saved while an open production server let anyone save) does not run its SQL or
  * internal fetches until a designer saves it again: the stored definition cannot raise what its author could do.
  * @param {Principal} p @param {string} ref "id" or "id@version"
  */

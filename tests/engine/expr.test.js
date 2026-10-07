@@ -40,7 +40,7 @@ describe('functions', () => {
   });
   it('evaluates IIF lazily', () => expect(evalValue('=IIF(True, 1, Fields.nope)', ctx())).toBe(1));
   it('handles text and dates', () => {
-    expect(evalValue('=Upper(Left("pagewright", 4))', ctx())).toBe('PAGE');
+    expect(evalValue('=Upper(Left("reportwright", 6))', ctx())).toBe('REPORT');
     expect(evalValue('=Mid("abcdef", 2, 3)', ctx())).toBe('bcd');
     expect(evalValue('=DateDiff("d", CDate("2026-01-01"), CDate("2026-03-01"))', ctx())).toBe(59);
     expect(evalValue('=Month(DateAdd("m", 1, CDate("2026-01-31")))', ctx())).toBe(2); // VB clamps to 28 Feb (JS setMonth rolled into March)

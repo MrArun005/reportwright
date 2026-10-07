@@ -173,7 +173,7 @@ export default {
   isEnabled: '{email} सक्षम है।', isDisabled: '{email} अक्षम है।',
 
   /* ---- sign in ---- */
-  signIn: 'साइन इन', signingIn: 'साइन इन हो रहा है…', signInLede: 'Pagewright रिपोर्टें', password: 'पासवर्ड',
+  signIn: 'साइन इन', signingIn: 'साइन इन हो रहा है…', signInLede: 'ReportWright रिपोर्टें', password: 'पासवर्ड',
   signInFailed: 'साइन इन विफल (HTTP {status})।', signedInAsLong: 'आप इस रूप में साइन इन हैं:', continue: 'जारी रखें',
   accountsOff: 'इस सर्वर पर खाते बंद हैं। उन्हें चालू करने के लिए {setting} सेट करें।',
   noUsersYet: 'अभी कोई उपयोगकर्ता नहीं है।', firstAdmin: 'पहला एडमिन दो में से किसी एक तरीके से बनाएँ:',

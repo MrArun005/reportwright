@@ -199,8 +199,8 @@ step('toolbar API through mountViewer on another origin');
 const host = http.createServer((req, res) => {
   res.setHeader('content-type', 'text/html');
   res.end(`<!doctype html><meta charset="utf-8"><div id="r"></div>
-<script src="${BASE}/embed/pagewright-viewer.js"></script>
-<script>Pagewright.mountViewer('#r', { server: '${BASE}', report: 'loan-statement', params: { accountId: 'LN-2025-001982' }, viewMode: 'single',
+<script src="${BASE}/embed/reportwright-viewer.js"></script>
+<script>ReportWright.mountViewer('#r', { server: '${BASE}', report: 'loan-statement', params: { accountId: 'LN-2025-001982' }, viewMode: 'single',
   toolbar: { hide: ['excel', 'word', 'csv'], add: [{ id: 'hello', label: 'Say hello', title: 'A custom button', after: 'print', onClick: (api) => { window.__hello = { page: api.page, pages: api.pages }; api.goTo(2); } }] } });</script>`);
 }).listen(4000);
 const e = await newPage();

@@ -371,7 +371,7 @@ describe('shipping to a SIEM', () => {
       await A.audit('auth.login_failed', { actor: 'anon', status: 'failed', detail: { reason: 'x' } });
       await siem.siemIdle();
       for (let i = 0; i < 50 && !data; i++) await new Promise(r => setTimeout(r, 20));
-      const m = /^(\d+) (<(\d+)>1 \S+ \S+ pagewright \d+ auth\.login_failed - (\{.*\}))$/s.exec(data);
+      const m = /^(\d+) (<(\d+)>1 \S+ \S+ reportwright \d+ auth\.login_failed - (\{.*\}))$/s.exec(data);
       expect(m).toBeTruthy();
       expect(Number(m[1])).toBe(Buffer.byteLength(m[2]));
       expect(m[3]).toBe(String(16 * 8 + 4)); // local0.warning for a failure

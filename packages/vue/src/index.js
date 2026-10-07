@@ -1,4 +1,4 @@
-// @pagewrightjs/vue: the Pagewright viewer and designer as Vue 3 components. <PagewrightViewer :options="{ server, report }" />
+// @reportwright/vue: the ReportWright viewer and designer as Vue 3 components. <ReportWrightViewer :options="{ server, report }" />
 // The viewer renders in a shadow root inside the component's <div>; it loads on mount, so SSR never touches `window`.
 import { defineComponent, h, ref, onMounted, onBeforeUnmount, watch } from 'vue';
 
@@ -14,7 +14,7 @@ const designerKey = (o) => [o.server, o.report, o.readOnly, keyOf(o.definition)]
 /** The error a viewer that did not load shows in its element. */
 const showError = (el, e) => {
   if (!el) return;
-  el.textContent = `Pagewright did not load: ${e?.message || e}`;
+  el.textContent = `ReportWright did not load: ${e?.message || e}`;
   el.setAttribute('role', 'alert');
 };
 
@@ -44,6 +44,9 @@ function component(name, load, watched) {
   });
 }
 
-export const PagewrightViewer = component('PagewrightViewer', () => import('@pagewrightjs/viewer').then(m => m.mountViewer), viewerKey);
+export const ReportWrightViewer = component('ReportWrightViewer', () => import('@reportwright/viewer').then(m => m.mountViewer), viewerKey);
 // the designer keeps its edits: it remounts only for another report or definition (by content)
-export const PagewrightDesigner = component('PagewrightDesigner', () => import('@pagewrightjs/viewer/designer').then(m => m.mountDesigner), designerKey);
+export const ReportWrightDesigner = component('ReportWrightDesigner', () => import('@reportwright/viewer/designer').then(m => m.mountDesigner), designerKey);
+
+/** @deprecated 0.9: renamed ReportWrightViewer / ReportWrightDesigner; the old names go in 1.0. */
+export { ReportWrightViewer as PagewrightViewer, ReportWrightDesigner as PagewrightDesigner };

@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * A table row's cells by column (null where nothing starts). Two forms, both accepted:
- * - one entry per column, null under a colSpan (Pagewright's own form);
+ * - one entry per column, null under a colSpan (ReportWright's own form);
  * - RDL / HTML style: the row has fewer cells than columns and spans, the spanned cells are omitted.
  * covered: [k, j] pairs, cell k (0-based, own form) sits under the colSpan of cell j; it is not drawn.
  * @param {any} cells @param {number} ncols @returns {{ at: any[], covered: [number, number][] }}

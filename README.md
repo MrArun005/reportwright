@@ -1,6 +1,19 @@
-# Pagewright
+# ReportWright
 
 A report designer, report engine, report viewer and report automation server for the web. Next.js app, JavaScript.
+
+**Renamed from Pagewright** in 0.9.0. The npm packages moved from `@pagewrightjs/*` to `@reportwright/*`; the old
+packages are deprecated. What did not change, so deployments and stored data keep working:
+
+- settings keep the `PW_` prefix (`PW_AUTH`, `PW_BASE_URL`, …), and the CLI is still `pw` (`reportwright` works too);
+- the `x-pagewright-*` HTTP headers (proxy secret, webhook signature, page count…), the `pagewright_*` metric
+  names, cookie names and storage table names;
+- report files: the `.pw.json` extension and `"$schema": "pagewright/report@1"` (`reportwright/report@1` is read as
+  the same format).
+
+Deprecated for one version (removed in 1.0): `<pagewright-viewer>` / `<pagewright-designer>`, `PagewrightViewer`,
+`PagewrightDesigner`, `pagewrightViewer`, `definePagewrightElements`, `window.Pagewright` and the
+`/embed/pagewright-viewer.js` loader. Each is an alias of its ReportWright name.
 
 The plan is in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). All four phases are done. Status and gaps: [`docs/STATUS.md`](docs/STATUS.md). Automation API: [`docs/API.md`](docs/API.md).
 
@@ -8,14 +21,14 @@ The plan is in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). All four phases a
 
 **Measured against other engines** (same reports, same data, same Apple M2 laptop; harness in `~/pw-bench`, numbers indicative, not a published benchmark):
 
-| 50,000-row report | Pagewright (Node) | JasperReports | BIRT |
+| 50,000-row report | ReportWright (Node) | JasperReports | BIRT |
 |---|---|---|---|
 | PDF end to end | ~1.0–1.2 s | ~2.2–2.4 s | ~2.3–2.9 s |
 | Pagination only | ~0.45–0.56 s | ~0.51–0.60 s | – |
 | PDF size (962 pages) | 2.28 MB | 3.70 MB | 3.47 MB |
 | Peak memory (after the memory work) | ~0.76–0.83 GB | ~0.8–0.95 GB | ~0.57–0.69 GB |
 
-ActiveReportsJS did not finish the 50,000-row reports within 10 minutes; Pagewright renders its charts report ~60× faster and invoices ~25× faster. Telerik, DevExpress, Bold Reports and Stimulsoft were not tested: their licences forbid benchmarking by a competitor.
+ActiveReportsJS did not finish the 50,000-row reports within 10 minutes; ReportWright renders its charts report ~60× faster and invoices ~25× faster. Telerik, DevExpress, Bold Reports and Stimulsoft were not tested: their licences forbid benchmarking by a competitor.
 
 **Independent code-only review (5 Oct):** 6.7 / 10 on features, 6.3 overall (no outside users yet). Strong: speed, PDF output, embedding, deny-by-default security. The ranked fix list from five specialist reviews (security, engine correctness, architecture, UX) is being worked through.
 
@@ -41,16 +54,16 @@ PW_BASIC_AUTH=admin:change-me PW_API_KEYS=change-me npm start
 |---|---|
 | `PW_AUTH=users` (+ `PW_SESSION_SECRET`) | People with their own accounts and roles, or single sign-on (OIDC, SAML). See [Users and roles](#users-and-roles). |
 | `PW_BASIC_AUTH=user:password` | Everyone who has the shared password. They can do everything, SQL included. |
-| `PW_AUTH=proxy` | Everyone who reaches the app. Only behind a reverse proxy that signs people in (oauth2-proxy, Cloudflare Access, your SSO gateway) and that nothing can bypass. **`PW_PROXY_SECRET` is required in production** (16+ random characters; the server refuses to start without it): the proxy sends it as `x-pagewright-proxy-secret`, and a request that reaches the app port around the proxy is refused (401). Pagewright reads no identity header from the proxy: whoever comes through it is one trusted operator, as with `PW_BASIC_AUTH`. |
+| `PW_AUTH=proxy` | Everyone who reaches the app. Only behind a reverse proxy that signs people in (oauth2-proxy, Cloudflare Access, your SSO gateway) and that nothing can bypass. **`PW_PROXY_SECRET` is required in production** (16+ random characters; the server refuses to start without it): the proxy sends it as `x-pagewright-proxy-secret`, and a request that reaches the app port around the proxy is refused (401). ReportWright reads no identity header from the proxy: whoever comes through it is one trusted operator, as with `PW_BASIC_AUTH`. |
 | `PW_PUBLIC_READONLY=1` (with none of the above) | Anyone may open and render the saved reports, **including the rows their saved queries return**; nobody can change anything, run SQL of their own, or open the designer. |
 
 With `PW_EMBED_ORIGINS` and `PW_BASIC_AUTH`, report definitions (`GET /api/reports/<id>`, which hold SQL text and data-source headers) and sample data are readable without the password, for embedded viewers: keep secrets out of definitions, or use accounts (then only reports shared with `group:public` are). With `PW_AUTH=proxy` they need the proxy secret like everything else.
 
-In every mode, a change (POST, PUT, PATCH, DELETE outside `/api/v1`) must come from a Pagewright page: the `Origin` (or `Referer`) header must name this server, so another site cannot post to it. A report's SQL, and its data sources that may reach a host in `PW_INTERNAL_HOSTS`, run only as a designer (or a service API key) saved them: the server records a fingerprint of those sources at each save, and a definition changed any other way (a file edited on disk, a storage row, a report saved while an older version of the server was open) refuses to run them until a designer saves it again. After upgrading, open and save each report that uses SQL once.
+In every mode, a change (POST, PUT, PATCH, DELETE outside `/api/v1`) must come from a ReportWright page: the `Origin` (or `Referer`) header must name this server, so another site cannot post to it. A report's SQL, and its data sources that may reach a host in `PW_INTERNAL_HOSTS`, run only as a designer (or a service API key) saved them: the server records a fingerprint of those sources at each save, and a definition changed any other way (a file edited on disk, a storage row, a report saved while an older version of the server was open) refuses to run them until a designer saves it again. After upgrading, open and save each report that uses SQL once.
 
 `PW_BASIC_AUTH` must be `user:password` with both parts set; any other value is ignored (with a warning at start), so the server stays closed.
 
-Set **`PW_BASE_URL`** (this server's public URL) in production. The server never takes its own address from a request (Host, X-Forwarded-Host): relative data URLs (`/api/...`) in server renders, thumbnails, batches and schedules resolve against `PW_BASE_URL`, and without it they fail with a message naming it. A report's data sources in the browser (viewer, designer preview) may only read data from this server too: sample data, the data proxy, saved SQL, and paths that are not Pagewright's own; never another Pagewright API with the viewer's cookie. A viewer's API key cannot aim batches or schedules (`itemsFrom`, `putUrl`, `webhook`, `baseUrl`) at `PW_INTERNAL_HOSTS`. A data source may only read (GET) from this server; the server's own credentials (the `PW_BASIC_AUTH` password, a one-request viewer pass with accounts on) go to this server only, never to another host, and a report's own `Origin`, `Cookie` and `Authorization` headers are dropped on those calls. Those credentials go only to `PW_BASE_URL`'s exact origin (scheme, host and port), never across a redirect to another origin; a URL with a user name or password in it is refused. Every URL the server fetches (data sources, images, the data proxy, batch lists, uploads, webhooks, redirects) is parsed once, and that same parsed URL is checked and fetched, connecting to the address the check resolved; a host the parser would rewrite (`0x7f.1`, `2130706433`, `[::ffff:127.0.0.1]`, percent-encoding, backslashes, a trailing dot) is refused (400). In the browser, a report's data requests send cookies only to this server's own data routes, follow no redirect on this server, and send nothing to other sites (an embedding page included). An API that your reverse proxy serves on the same host gets no cookies from a report either, and may not redirect: give it its own host, or a token in the data source's headers. A REST source cannot post SQL of its own to `/api/data/sql`; only a report's saved SQL runs. The data proxy (`/api/data/proxy`) follows redirects only to `PW_PROXY_ALLOW` hosts and answers JSON, CSV or text, anything else as bytes. A redirect from a public host cannot lead into this server or a `PW_INTERNAL_HOSTS` host.
+Set **`PW_BASE_URL`** (this server's public URL) in production. The server never takes its own address from a request (Host, X-Forwarded-Host): relative data URLs (`/api/...`) in server renders, thumbnails, batches and schedules resolve against `PW_BASE_URL`, and without it they fail with a message naming it. A report's data sources in the browser (viewer, designer preview) may only read data from this server too: sample data, the data proxy, saved SQL, and paths that are not ReportWright's own; never another ReportWright API with the viewer's cookie. A viewer's API key cannot aim batches or schedules (`itemsFrom`, `putUrl`, `webhook`, `baseUrl`) at `PW_INTERNAL_HOSTS`. A data source may only read (GET) from this server; the server's own credentials (the `PW_BASIC_AUTH` password, a one-request viewer pass with accounts on) go to this server only, never to another host, and a report's own `Origin`, `Cookie` and `Authorization` headers are dropped on those calls. Those credentials go only to `PW_BASE_URL`'s exact origin (scheme, host and port), never across a redirect to another origin; a URL with a user name or password in it is refused. Every URL the server fetches (data sources, images, the data proxy, batch lists, uploads, webhooks, redirects) is parsed once, and that same parsed URL is checked and fetched, connecting to the address the check resolved; a host the parser would rewrite (`0x7f.1`, `2130706433`, `[::ffff:127.0.0.1]`, percent-encoding, backslashes, a trailing dot) is refused (400). In the browser, a report's data requests send cookies only to this server's own data routes, follow no redirect on this server, and send nothing to other sites (an embedding page included). An API that your reverse proxy serves on the same host gets no cookies from a report either, and may not redirect: give it its own host, or a token in the data source's headers. A REST source cannot post SQL of its own to `/api/data/sql`; only a report's saved SQL runs. The data proxy (`/api/data/proxy`) follows redirects only to `PW_PROXY_ALLOW` hosts and answers JSON, CSV or text, anything else as bytes. A redirect from a public host cannot lead into this server or a `PW_INTERNAL_HOSTS` host.
 
 **Hosts in data URLs are fixed in production** (`PW_FIXED_FETCH_HOSTS`, default `1` in production and `0` in development): a data source the server fetches must write its host out. Parameters and expressions may fill the path and the query (`https://api.example.com/loans/{Parameters.id}?from={Parameters.from}`), not the host (`={Parameters.url}`, `http://{Parameters.host}/x`); such a report answers 403 in server renders. Image URLs then do not reach `PW_INTERNAL_HOSTS` either. Set `PW_FIXED_FETCH_HOSTS=0` to allow dynamic hosts (they still pass the SSRF guard).
 
@@ -67,7 +80,7 @@ Open the home page. Three sample reports are there: **Loan statement**, **Sales 
 | `/viewer/<id>?param=value&lang=hi` | Viewer: parameters, paging, zoom, search, document map, drill-down, exports |
 | `/api/reports/<id>/pdf?format=pdf\|xlsx\|docx\|html\|csv` | The report rendered **on the server** |
 | `/api/v1/*` | Automation API: render, batches, schedules (needs an API key) |
-| `/embed/pagewright-viewer.js` | Script to put the viewer in another web app |
+| `/embed/reportwright-viewer.js` | Script to put the viewer in another web app |
 | `/login`, `/admin/users` | Sign-in and user management, when accounts are on (`PW_AUTH=users`, see [Users and roles](#users-and-roles)) |
 
 Reports are JSON files in `reports/*.pw.json`. Commit them with your code. Each save keeps a version in `reports/.history/` (last 50). With `PW_STORAGE` set to a database, reports, versions, schedules, job records and users live there instead (see below).
@@ -75,9 +88,9 @@ Reports are JSON files in `reports/*.pw.json`. Commit them with your code. Each 
 ## Docker
 
 ```bash
-docker build -t pagewright .                     # add --build-arg PW_EMBED_ORIGINS=https://your.site for embeds
+docker build -t reportwright .                     # add --build-arg PW_EMBED_ORIGINS=https://your.site for embeds
 docker run -p 3000:3000 -e PW_BASIC_AUTH=admin:change-me \
-  -v pw-data:/app/data -v pw-reports:/app/reports pagewright
+  -v pw-data:/app/data -v pw-reports:/app/reports reportwright
 ```
 
 The image runs Next's standalone server as the `node` user, keeps run-time state in `/app/data` and reports in `/app/reports` (or set `PW_STORAGE` for a database), and has a health check. Every setting in the table below is an environment variable.
@@ -86,9 +99,9 @@ The image runs Next's standalone server as the `node` user, keeps run-time state
 
 ```html
 <div id="report"></div>
-<script src="https://reports.example.com/embed/pagewright-viewer.js"></script>
+<script src="https://reports.example.com/embed/reportwright-viewer.js"></script>
 <script>
-  Pagewright.mountViewer('#report', {
+  ReportWright.mountViewer('#report', {
     server: 'https://reports.example.com',
     report: 'loan-statement',
     params: { accountId: 'LN-2025-001982' },
@@ -208,7 +221,7 @@ A test case names the report, its parameters, pushed data (`-d`-style JSON files
 
 `POST /api/ai/report` with `{ "prompt": "Monthly sales by region with a chart", "sample": [ …rows… ], "url"?: "https://…", "base"?: "<report id to change>" }` returns `{ definition, warnings, tries }`. Nothing is saved: review the draft, then `POST /api/reports` with `{ name, definition }`.
 
-- Claude (`claude-opus-5`, override with `PW_AI_MODEL`) writes the definition from a description of the format built from the engine's own item list. Pagewright checks it with `validate()` and a trial render on your sample rows (which never fetches anything), and sends any problems back, 3 tries in all. Refusals come back as a clear 422; the request opts in to the API's server-side fallback model.
+- Claude (`claude-opus-5`, override with `PW_AI_MODEL`) writes the definition from a description of the format built from the engine's own item list. ReportWright checks it with `validate()` and a trial render on your sample rows (which never fetches anything), and sends any problems back, 3 tries in all. Refusals come back as a clear 422; the request opts in to the API's server-side fallback model.
 - Needs `ANTHROPIC_API_KEY`. In production it also needs a sign-in (`PW_AUTH=users` with the designer role, `PW_BASIC_AUTH` or `PW_AUTH=proxy`), because every draft costs money.
 - Your sample rows are sent to the Anthropic API. Send a few representative rows, not personal data you may not share.
 
@@ -218,7 +231,7 @@ On the home page, **Import ActiveReports file** takes an ActiveReportsJS `.rdlx-
 
 - **What maps:** both file layouts (`Body`/`PageHeader`/`PageFooter`, and `ReportSections` with continuous and fixed pages), page size and margins, parameters (types, defaults, multi-value, value lists, lists from a data set), JSON data (endpoint and URI, embedded `jsondata`, headers, GraphQL bodies), CSV, nested `$dataset:` sets, fields (paths, type hints, calculated), filters and sorts; text boxes, images (embedded, URL), lines, rectangles, shapes, check boxes, barcodes, subreports, tables (groups, drill-down, column spans, sort links, document map), tablix (row groups → table, pivot → matrix), lists, banded lists, charts (both chart formats), styles, colour names and links.
 - **Expressions:** `Fields!x.Value`, `Parameters!x.Value`, `Globals!…`, `&`, `IIF`, `Switch`, `Choose`, `Is Nothing`, `Mod`, `Like`, aggregates with their scopes, `RunningValue`, `Lookup`, `Format`/`FormatNumber`/`FormatCurrency`, dates, conversions, `.ToString()` and other methods, interpolated strings.
-- **What becomes a note:** `ReportItems!`, custom `Code.` and functions Pagewright lacks (`Previous`, `StDev`, `Weekday`…) stay visible as text. Also noted: group headers that repeat on new pages, sort links outside the table header, groups sorted by an aggregate, row spans, rounded corners, chart plots that do not share the first plot's category, fonts that are not bundled (Inter or JetBrains Mono is used), hidden parameters, SQL connections (set `PW_DB_<NAME>`), nested data sets (flattened). Tables whose cells hold images, barcodes or other tables become banded lists.
+- **What becomes a note:** `ReportItems!`, custom `Code.` and functions ReportWright lacks (`Previous`, `StDev`, `Weekday`…) stay visible as text. Also noted: group headers that repeat on new pages, sort links outside the table header, groups sorted by an aggregate, row spans, rounded corners, chart plots that do not share the first plot's category, fonts that are not bundled (Inter or JetBrains Mono is used), hidden parameters, SQL connections (set `PW_DB_<NAME>`), nested data sets (flattened). Tables whose cells hold images, barcodes or other tables become banded lists.
 - **Drill-through and subreports** point at the report id made from the target's file name, so import those files too.
 - **Conversion rate:** the 9 MESCIUS sample reports (10 files) and 30 public `.rdlx-json` files from GitHub all import, validate and render. All 40 keep every item (mapped or approximated); none is dropped. `stats` counts each report item as mapped, approximated (a note says what changed) or dropped. Proof: `tests/fixtures/rdlx/regional-sales.rdlx-json` → `reports/imported-regional-sales.pw.json`.
 - Not yet: SSRS XML (`.rdl`, `.rdlx`).

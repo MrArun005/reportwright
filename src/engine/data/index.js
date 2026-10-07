@@ -286,7 +286,7 @@ function soapEnvelope(tpl, ctx) {
 async function loadOData(src, ctx, root, headers, call) {
   const pages = Math.min(ODATA_MAX_PAGES, Math.max(1, Math.floor(Number(src.maxPages) || ODATA_DEFAULT_PAGES)));
   let url = odataUrl(root, src, (v) => evalValue(v, ctx));
-  const DUMMY = 'http://pagewright.invalid';
+  const DUMMY = 'http://reportwright.invalid';
   const first = new URL(url, DUMMY);
   const rows = [];
   const h = { accept: 'application/json', ...headers };

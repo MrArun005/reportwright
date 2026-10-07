@@ -17,7 +17,7 @@ export default function ViewerShell({ id, def, params, canEdit = true }) {
   return (
     <div className="vshell" dir={dirOf(lang)} lang={lang}>
       <header className="dtop">
-        <Link href={`/${q}`} className="brand"><i />Pagewright</Link>
+        <Link href={`/${q}`} className="brand"><i />ReportWright</Link>
         <span className="dtop-sep" aria-hidden="true" />
         <h1 className="dtop-title">{def.name}</h1>
         <div className="spacer" />

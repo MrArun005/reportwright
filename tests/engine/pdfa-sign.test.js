@@ -68,7 +68,7 @@ describe('digital signatures', () => {
     cert.serialNumber = '01';
     cert.validity.notBefore = new Date(Date.now() - 86400000);
     cert.validity.notAfter = new Date(Date.now() + 86400000 * 365);
-    const attrs = [{ name: 'commonName', value: 'Pagewright Test Signer' }];
+    const attrs = [{ name: 'commonName', value: 'ReportWright Test Signer' }];
     cert.setSubject(attrs); cert.setIssuer(attrs);
     cert.sign(keys.privateKey, forge.md.sha256.create());
     const p12 = forge.pkcs12.toPkcs12Asn1(keys.privateKey, [cert], 'test-pass', { algorithm: '3des' });

@@ -2,7 +2,7 @@
 // Every URL in the site is relative, so dist-site works at any path on any static host.
 // PW_SITE_BASE (default /pagewright-demo/) and PW_SITE_ORIGIN only fill the canonical link.
 //
-// The demo has no Pagewright server, so the parts of its API the viewer calls are written as static files:
+// The demo has no ReportWright server, so the parts of its API the viewer calls are written as static files:
 //   api/reports/<id>         the report definitions in reports/
 //   api/fonts                [] (no uploaded fonts)
 //   api/sample/...           the same deterministic sample data the server's /api/sample routes return

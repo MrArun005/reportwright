@@ -3,9 +3,9 @@ import crypto from 'node:crypto';
 import { num as cnum } from './config.js';
 // Outgoing mail over SMTP (nodemailer): password-reset links and scheduled reports.
 //   PW_SMTP_URL   smtp://user:pass@host:587 (STARTTLS) or smtps://user:pass@host:465
-//   PW_MAIL_FROM  the sender: "reports@example.com" or "Pagewright <reports@example.com>"
+//   PW_MAIL_FROM  the sender: "reports@example.com" or "ReportWright <reports@example.com>"
 //   PW_SMTP_REQUIRE_TLS  0 allows a plain connection (default: TLS is required, except to localhost)
-// SPF, DKIM and DMARC for the sender's domain are the mail admin's job (docs/GOVERNANCE.md): Pagewright signs nothing.
+// SPF, DKIM and DMARC for the sender's domain are the mail admin's job (docs/GOVERNANCE.md): ReportWright signs nothing.
 // Header injection: every address is checked against a strict pattern (no CR, LF, quotes, commas or angle brackets),
 // subjects and names lose control characters, and nodemailer may read no file or URL (attachments are bytes only).
 
@@ -26,7 +26,7 @@ export const oneLine = (s, max = 200) => String(s ?? '').replace(/[\x00-\x1f\x7f
 export function sender() {
   const raw = String(process.env.PW_MAIL_FROM || '');
   const m = /^\s*(.*?)\s*<([^<>]+)>\s*$/.exec(raw);
-  return m ? { name: oneLine(m[1].replace(/["\\]/g, ''), 80), address: checkAddress(m[2]) } : { name: 'Pagewright', address: checkAddress(raw) };
+  return m ? { name: oneLine(m[1].replace(/["\\]/g, ''), 80), address: checkAddress(m[2]) } : { name: 'ReportWright', address: checkAddress(raw) };
 }
 
 /** PW_MAIL_ALLOWED_DOMAINS: "*" or a list; unset means scheduled mail goes nowhere (fail closed). */
@@ -87,6 +87,6 @@ export async function sendMail(m) {
 export async function notifyAccount(email, what) {
   if (!mailOn()) return;
   try {
-    await sendMail({ to: [email], subject: 'Your Pagewright sign-in changed', text: `${what}\n\nIf this was not you, tell an admin at once: they can reset your two-factor sign-in and your password.\n` });
-  } catch (e) { console.error(`[pagewright] account notice mail: ${/** @type {Error} */ (e).message}`); }
+    await sendMail({ to: [email], subject: 'Your ReportWright sign-in changed', text: `${what}\n\nIf this was not you, tell an admin at once: they can reset your two-factor sign-in and your password.\n` });
+  } catch (e) { console.error(`[reportwright] account notice mail: ${/** @type {Error} */ (e).message}`); }
 }

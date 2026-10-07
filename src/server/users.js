@@ -451,7 +451,7 @@ export async function ensureAdmin() {
   boot ||= (async () => {
     if (await countUsers()) return;
     await createUser({ email, role: 'admin', password });
-    console.warn(`[pagewright] created the first admin, ${normEmail(email)}, from PW_ADMIN_EMAIL`);
+    console.warn(`[reportwright] created the first admin, ${normEmail(email)}, from PW_ADMIN_EMAIL`);
   })().finally(() => { boot = null; });
   await boot;
 }

@@ -9,7 +9,7 @@ import { t, tParts, dirOf, pickLang } from '@/i18n/index.js';
 const withCode = (lang, key, code) => tParts(lang, key).map((s, i) => (i % 2 ? <code key={i}>{code[s]}</code> : s));
 
 export const dynamic = 'force-dynamic';
-export const metadata = { title: 'Sign in · Pagewright' };
+export const metadata = { title: 'Sign in · ReportWright' };
 
 export default async function LoginPage({ searchParams }) {
   const sp = await searchParams;

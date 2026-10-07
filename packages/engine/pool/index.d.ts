@@ -1,4 +1,4 @@
-// @pagewrightjs/engine/pool (Node only): render many reports in parallel on worker threads.
+// @reportwright/engine/pool (Node only): render many reports in parallel on worker threads.
 import type { Report } from '../report.js';
 export interface PoolRenderOptions {
   /** default pdf */
@@ -18,5 +18,5 @@ export interface Pool {
   /** renders waiting or running */
   readonly pending: number;
 }
-/** workers: default the CPU count less one. fontsDir: a folder of the fonts (default @pagewrightjs/fonts). */
+/** workers: default the CPU count less one. fontsDir: a folder of the fonts (default @reportwright/fonts). */
 export function createPool(opt?: { workers?: number; fontsDir?: string; maxQueue?: number }): Pool;

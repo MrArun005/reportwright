@@ -209,7 +209,7 @@ describe('barcodes', () => {
     expect(wide.h).toBeCloseTo(100, 1);
     expect(wide.x).toBeCloseTo(60, 1); // centred: 10 + (200 - 100) / 2
     for (const type of ['datamatrix', 'azteccode', 'hanxin']) {
-      const s = bbox(paintBarcode({ type, text: 'Pagewright 2D', x: 0, y: 0, w: 90, h: 90 }).items);
+      const s = bbox(paintBarcode({ type, text: 'ReportWright 2D', x: 0, y: 0, w: 90, h: 90 }).items);
       expect(s.w / s.h, type).toBeCloseTo(1, 1);
     }
   });

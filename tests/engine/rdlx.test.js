@@ -460,7 +460,7 @@ describe('text styling (phase 1)', () => {
     expect(t.shrinkToFit).toBe(true);
     expect(r.warnings.join(' ')).not.toMatch(/underline|background image|justify/i);
   });
-  it('turns ActiveReports angles (counter-clockwise) into Pagewright rotation (clockwise)', () => {
+  it('turns ActiveReports angles (counter-clockwise) into ReportWright rotation (clockwise)', () => {
     expect(one({ Angle: '90' }).definition.sections.body.items[0].rotate).toBe(270);
     expect(one({ Angle: '-90' }).definition.sections.body.items[0].rotate).toBe(90);
     expect(one({ Angle: '45' }).definition.sections.body.items[0].rotate).toBe(315);

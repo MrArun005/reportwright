@@ -83,7 +83,7 @@ const QUEUE_MAX = 20000;
 function enqueue(entry, o = {}) {
   const c = chain();
   return new Promise((resolve) => {
-    if (c.q.length >= QUEUE_MAX) { console.error(`[pagewright] audit log: the write queue is full; dropped ${entry.type}`); return resolve(false); }
+    if (c.q.length >= QUEUE_MAX) { console.error(`[reportwright] audit log: the write queue is full; dropped ${entry.type}`); return resolve(false); }
     c.q.push({ entry, sign: !!o.sign, oldKey: o.oldKey || null, resolve });
     drain();
   });
@@ -107,7 +107,7 @@ async function drain() {
         try { await store().appendAudit(e); ok = true; } catch (err) { last = err; }
       }
       if (ok) { c.n++; c.prev = e.hash; c.at = e.at; ship(e); }
-      else console.error(`[pagewright] audit log: could not record ${e.type}: ${/** @type {Error} */ (last)?.message}`);
+      else console.error(`[reportwright] audit log: could not record ${e.type}: ${/** @type {Error} */ (last)?.message}`);
       job.resolve(ok);
     }
   } finally { c.busy = false; }
@@ -123,11 +123,11 @@ function signingKey() {
     // never silently unsigned: production refuses (instrumentation.js stops the start, and this throws if it did not);
     // development says so loudly and signs with PW_SESSION_SECRET when that is long enough
     if (!devMode()) throw Object.assign(new Error(bad), { status: 500 });
-    if (!g.__pwAudit.warnedShort) { g.__pwAudit.warnedShort = true; console.error(`[pagewright] audit log: ${bad}`); }
+    if (!g.__pwAudit.warnedShort) { g.__pwAudit.warnedShort = true; console.error(`[reportwright] audit log: ${bad}`); }
   }
   const secret = [process.env.PW_AUDIT_KEY, process.env.PW_SESSION_SECRET].find(x => x && x.length >= 32);
   if (!secret) {
-    if (!g.__pwAudit.warnedKey) { g.__pwAudit.warnedKey = true; console.error('[pagewright] audit log: no PW_AUDIT_KEY (32+ characters), PW_AUDIT_SIGNING_KEY or PW_SESSION_SECRET, so checkpoints are written UNSIGNED and the chain proves only consistency. Set PW_AUDIT_KEY.'); }
+    if (!g.__pwAudit.warnedKey) { g.__pwAudit.warnedKey = true; console.error('[reportwright] audit log: no PW_AUDIT_KEY (32+ characters), PW_AUDIT_SIGNING_KEY or PW_SESSION_SECRET, so checkpoints are written UNSIGNED and the chain proves only consistency. Set PW_AUDIT_KEY.'); }
     return null;
   }
   return keyFromSecret(secret);
@@ -139,6 +139,7 @@ export function auditKeyProblem() {
 }
 /** The Ed25519 key a secret stands for (the same secret gives the same key on every server). @param {string} secret */
 export function keyFromSecret(secret) {
+  // the old product name stays: existing audit chains are verified against this seed
   const seed = crypto.createHmac('sha256', secret).update('pagewright-audit-checkpoint-v1').digest();
   return crypto.createPrivateKey({ key: Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), seed]), format: 'der', type: 'pkcs8' });
 }
@@ -291,7 +292,7 @@ export async function flushFlood() {
   await Promise.all([...f.agg.values()].map(({ entry, n, from, to, sources, distinct }) => {
     const at = new Date().toISOString();
     const e = { ...entry, id: `${at}-${String((g.__pwAudit.seq = ((g.__pwAudit.seq || 0) + 1) % 1e6)).padStart(6, '0')}-${crypto.randomBytes(3).toString('hex')}`, at, detail: { ...(entry.detail || {}), repeated: n, from, to, ...(sources ? { distinct, sources: [...sources] } : {}) } };
-    return write(e, e.type).then(ok => { if (!ok) console.error(`[pagewright] audit log: could not record ${n} × ${e.type} from ${e.ip}`); });
+    return write(e, e.type).then(ok => { if (!ok) console.error(`[reportwright] audit log: could not record ${n} × ${e.type} from ${e.ip}`); });
   }));
 }
 
@@ -304,7 +305,7 @@ async function write(entry, _type) {
   if (Date.now() - (c.headAt || 0) > 30000 && process.env.PW_AUDIT_CHECKPOINTS !== 'off') { c.headAt = Date.now(); publishHead().catch(logWarn('audit head')); }
   if (Date.now() - g.__pwAudit.pruned > HOUR) {
     g.__pwAudit.pruned = Date.now();
-    await prune().catch((e) => console.error(`[pagewright] audit retention: ${e.message}`));
+    await prune().catch((e) => console.error(`[reportwright] audit retention: ${e.message}`));
   }
   return true;
 }
@@ -320,7 +321,7 @@ function ship(entry) {
 const checkpointMs = () => cnum('PW_AUDIT_CHECKPOINT_MINUTES', 15, { min: 0.001 }) * 60000;
 function startCheckpoints() {
   if (g.__pwAudit.timer || process.env.PW_AUDIT_CHECKPOINTS === 'off') return;
-  g.__pwAudit.timer = setInterval(() => { checkpoint().catch(e => console.error(`[pagewright] audit checkpoint: ${e.message}`)); }, checkpointMs());
+  g.__pwAudit.timer = setInterval(() => { checkpoint().catch(e => console.error(`[reportwright] audit checkpoint: ${e.message}`)); }, checkpointMs());
   g.__pwAudit.timer.unref?.();
   // and one soon after start: it anchors the heads a stopped process left
   setTimeout(() => { checkpoint().catch(logWarn('audit checkpoint')); }, 10000).unref?.();
@@ -520,7 +521,7 @@ async function verifyNow(q, bad, problems) {
   /** a signed prune record removed this stream up to and including event n (with this hash) */
   const prunedTo = (st) => prunes.reduce((m, p) => (Array.isArray(p.last[st]) && Number.isInteger(p.last[st][0]) && (!m || p.last[st][0] > m[0]) ? p.last[st] : m), null);
   // events with no chain are history from before the chain; one written after chaining began was put in by hand
-  for (const e of loose) { unchained++; if (firstChained && e.at >= firstChained) bad({ kind: 'unchained', id: e.id, detail: 'An event without a chain, written after the chain began: it was added outside Pagewright.' }); }
+  for (const e of loose) { unchained++; if (firstChained && e.at >= firstChained) bad({ kind: 'unchained', id: e.id, detail: 'An event without a chain, written after the chain began: it was added outside ReportWright.' }); }
   let pending = 0; // events after their stream's newest signed head: not yet checkpointed (counted, never "proven")
   const grace = 2 * checkpointMs() + Math.min(5 * 60000, checkpointMs()); // events newer than this may not be in a checkpoint yet
   for (const [s, m] of streams) {

@@ -83,8 +83,8 @@ async function snapshotData(def, params, model, reports) {
  */
 export async function exportInteractiveHtml(def, opt = {}) {
   const base = origin();
-  // the single-file bundle (the loader in pagewright-viewer.js would need the server)
-  const bundleRes = await fetch(`${base}/embed/pagewright-viewer.full.js`);
+  // the single-file bundle (the loader in reportwright-viewer.js would need the server)
+  const bundleRes = await fetch(`${base}/embed/reportwright-viewer.full.js`);
   if (!bundleRes.ok) throw Object.assign(new Error('The viewer bundle is missing. Run "npm run build:embed" (it also runs in "npm run build").'), { code: 'NO_BUNDLE' });
   const bundle = (await bundleRes.text()).replace(/<\/script/gi, '<\\/script');
 
@@ -117,7 +117,7 @@ export async function exportInteractiveHtml(def, opt = {}) {
   const html = `<!doctype html>
 <html lang="${esc(opt.lang || 'en')}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(def.name || 'Report')}</title>
-<meta name="generator" content="Pagewright interactive HTML">
+<meta name="generator" content="ReportWright interactive HTML">
 <style>html,body{margin:0;height:100%;background:#e6eaee}#report{height:100vh}#report-note{position:fixed;right:8px;bottom:6px;font:11px system-ui,sans-serif;color:#5f6b77;pointer-events:none}</style>
 </head><body>
 <div id="report"></div>
@@ -127,7 +127,7 @@ export async function exportInteractiveHtml(def, opt = {}) {
 <script>
 (function(){var c=JSON.parse(document.getElementById('pw-config').textContent);
 var el=document.getElementById('report');var s=el.style;s.height='100vh';
-Pagewright.mountViewer(el,c);})();
+ReportWright.mountViewer(el,c);})();
 </script>
 </body></html>`;
   return { html, info: { reports: Object.keys(reports).length || 1, missing, bytes: html.length, drillTargets, drillSnapshots } };

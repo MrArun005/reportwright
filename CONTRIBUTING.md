@@ -1,6 +1,6 @@
 # Contributing
 
-Issues and pull requests are welcome at https://github.com/MrArun005/pagewright.
+Issues and pull requests are welcome at https://github.com/MrArun005/reportwright.
 
 ```bash
 npm ci
@@ -14,7 +14,7 @@ Write the test first. One change per commit, with a plain message.
 
 ## Versioning (semver)
 
-All `@pagewrightjs/*` packages share one version and are released together.
+All `@reportwright/*` packages share one version and are released together.
 
 - **Before 1.0** (now): a **minor** release (0.7 → 0.8) may change the public API; a **patch** release (0.8.0 → 0.8.1)
   only fixes bugs and adds nothing that breaks. Anything removed is first deprecated for one minor release, with a
@@ -22,6 +22,6 @@ All `@pagewrightjs/*` packages share one version and are released together.
   deprecated in 0.8 and removed in 0.9).
 - **From 1.0**: the usual rules. Breaking changes only in a major release.
 - **The public API** is what `index.d.ts` / `report.d.ts` of each package declare, and the report JSON schema
-  (`@pagewrightjs/engine/schema.json`). A report that validates in a release keeps rendering the same in every later
+  (`@reportwright/engine/schema.json`). A report that validates in a release keeps rendering the same in every later
   release of the same major version (older definitions are upgraded on load, `src/engine/schema/upgrade.js`).
 - Every release has a CHANGELOG.md entry.

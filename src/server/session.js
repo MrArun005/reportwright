@@ -26,7 +26,7 @@ export const accountsOn = () => process.env.PW_AUTH === 'users';
 export const openTrusted = () => !accountsOn() && (devMode() || basicOn() || proxyOn());
 /**
  * PW_AUTH=proxy as a sign-in: in production only with PW_PROXY_SECRET (16+ characters), which the reverse proxy sends
- * and proxySecretOk checks, so a request that reaches the app port around the proxy proves nothing. Pagewright reads no
+ * and proxySecretOk checks, so a request that reaches the app port around the proxy proves nothing. ReportWright reads no
  * identity header in this mode: whoever comes through the proxy is the one trusted operator (as PW_BASIC_AUTH).
  */
 export const proxyOn = () => process.env.PW_AUTH === 'proxy' && (devMode() || (process.env.PW_PROXY_SECRET || '').length >= 16);
@@ -61,7 +61,7 @@ export function proxySecretOk(req) {
 /** Production with nobody signing in, and PW_PUBLIC_READONLY=1: anyone may open and render the saved reports, nothing more. */
 export const publicReadonly = () => !accountsOn() && !openTrusted() && process.env.PW_PUBLIC_READONLY === '1';
 /** What a production server with no sign-in answers (and logs when it starts). */
-export const NO_AUTH_HELP = 'This Pagewright server runs in production with no sign-in, so it refuses changes and server-side data. Set PW_AUTH=users (accounts, SSO), or PW_BASIC_AUTH="user:password", or PW_AUTH=proxy with PW_PROXY_SECRET (16+ characters, sent by the signing-in reverse proxy as x-pagewright-proxy-secret). PW_PUBLIC_READONLY=1 lets anyone open and render the saved reports (and their saved queries), read-only.';
+export const NO_AUTH_HELP = 'This ReportWright server runs in production with no sign-in, so it refuses changes and server-side data. Set PW_AUTH=users (accounts, SSO), or PW_BASIC_AUTH="user:password", or PW_AUTH=proxy with PW_PROXY_SECRET (16+ characters, sent by the signing-in reverse proxy as x-pagewright-proxy-secret). PW_PUBLIC_READONLY=1 lets anyone open and render the saved reports (and their saved queries), read-only.';
 
 /** PW_SESSION_SECRET; in development a random one per process (sessions end on restart). */
 export function sessionSecret() {
@@ -74,7 +74,7 @@ export function sessionSecret() {
   const g = /** @type {any} */ (globalThis);
   if (!g.__pwDevSecret) {
     g.__pwDevSecret = crypto.randomBytes(32).toString('hex');
-    console.warn('[pagewright] PW_SESSION_SECRET is not set: using a random secret for this process, so sessions end when it restarts.');
+    console.warn('[reportwright] PW_SESSION_SECRET is not set: using a random secret for this process, so sessions end when it restarts.');
   }
   return g.__pwDevSecret;
 }

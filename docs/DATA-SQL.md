@@ -26,7 +26,7 @@ User names and passwords are percent-decoded. No error a report author sees cont
 
 ## What the safety rests on
 
-**The login's verified privileges.** Before it runs report queries (and again every few seconds), Pagewright asks the
+**The login's verified privileges.** Before it runs report queries (and again every few seconds), ReportWright asks the
 database what the connection's login may do: every effective privilege, role (followed recursively) and grant, PUBLIC's
 included. Anything outside a short allow-list (connect, read, the database's harmless defaults) refuses the connection,
 and an error in the check refuses it too. This is the release criterion for each database; see

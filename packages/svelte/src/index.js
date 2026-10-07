@@ -1,4 +1,4 @@
-// @pagewrightjs/svelte: Svelte actions (no compiler step needed). <div use:pagewrightViewer={{ server, report }} />
+// @reportwright/svelte: Svelte actions (no compiler step needed). <div use:reportWrightViewer={{ server, report }} />
 // The viewer loads when the element mounts, so SSR never touches `window`.
 
 // A stable key for options: functions left out, object keys sorted, each object turned to text once (cached by
@@ -20,7 +20,7 @@ const designerKey = (o) => [o.server, o.report, o.readOnly, keyOf(o.definition)]
 /** The error a viewer that did not load shows in its element. */
 const showError = (el, e) => {
   if (!el) return;
-  el.textContent = `Pagewright did not load: ${e?.message || e}`;
+  el.textContent = `ReportWright did not load: ${e?.message || e}`;
   el.setAttribute('role', 'alert');
 };
 function action(load, sameReport) {
@@ -39,6 +39,9 @@ function action(load, sameReport) {
     };
   };
 }
-export const pagewrightViewer = action(() => import('@pagewrightjs/viewer').then(m => m.mountViewer), (a, b) => viewerKey(a) === viewerKey(b));
+export const reportWrightViewer = action(() => import('@reportwright/viewer').then(m => m.mountViewer), (a, b) => viewerKey(a) === viewerKey(b));
 // the designer keeps its edits: it remounts only for another report or definition (by content)
-export const pagewrightDesigner = action(() => import('@pagewrightjs/viewer/designer').then(m => m.mountDesigner), (a, b) => designerKey(a) === designerKey(b));
+export const reportWrightDesigner = action(() => import('@reportwright/viewer/designer').then(m => m.mountDesigner), (a, b) => designerKey(a) === designerKey(b));
+
+/** @deprecated 0.9: renamed reportWrightViewer / reportWrightDesigner; the old names go in 1.0. */
+export { reportWrightViewer as pagewrightViewer, reportWrightDesigner as pagewrightDesigner };

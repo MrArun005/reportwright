@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * BIRT importer: an Eclipse BIRT report design (.rptdesign) becomes a Pagewright report definition.
+ * BIRT importer: an Eclipse BIRT report design (.rptdesign) becomes a ReportWright report definition.
  *
  * A front end like rdl.js and jrxml.js: the XML (read safely, see xml.js) is rewritten into the RDLX-JSON shape and
  * rdlx.js does the mapping, the expression translation, the notes and the stats. BIRT lays out in a flow (each item
@@ -106,7 +106,7 @@ function toRdlx(root, notes, reportName) {
   let scripts = 0;
   const walkAll = (e, fn, depth = 0) => { if (depth > 200) return; fn(e); for (const c of e.children) walkAll(c, fn, depth + 1); };
   walkAll(root, (e) => { if (e.name === 'method' && e.text.trim()) scripts++; });
-  if (scripts) note(`The report has ${scripts} event script${scripts > 1 ? 's' : ''} (JavaScript run while it renders); Pagewright does not run them, so what they change is missing.`);
+  if (scripts) note(`The report has ${scripts} event script${scripts > 1 ? 's' : ''} (JavaScript run while it renders); ReportWright does not run them, so what they change is missing.`);
   if (kids(root, 'list-property').some(l => l.attrs.name === 'libraries') || kid(root, 'list-property')?.attrs.name === 'libraries') note('The report uses BIRT libraries; their items are not in this file, so items from them are missing.');
 
   /* ---------------------------------------------------------------- parameters */
@@ -163,7 +163,7 @@ function toRdlx(root, notes, reportName) {
       memberOf: (n, E) => {
         if (n.obj.k === 'index' && n.obj.obj.k === 'id' && n.obj.obj.name === 'params') {
           if (n.name === 'value') return paramRef(String(n.obj.key));
-          if (n.name === 'displayText') { note('params["…"].displayText gives the value, not its label, in Pagewright.'); return paramRef(String(n.obj.key)); }
+          if (n.name === 'displayText') { note('params["…"].displayText gives the value, not its label, in ReportWright.'); return paramRef(String(n.obj.key)); }
         }
         if (n.obj.k === 'id' && n.obj.name === 'params' && paramNames.has(n.name)) return paramRef(n.name); // params.P (then .value)
         if (n.name === 'value' && n.obj.k === 'member' && n.obj.obj.k === 'id' && n.obj.obj.name === 'params') return paramRef(n.obj.name);
@@ -264,14 +264,14 @@ function toRdlx(root, notes, reportName) {
     if (lit) { const t = lit[1].replace(/\\(.)/g, '$1'); return t.startsWith('=') ? `="${t.replace(/"/g, '""')}"` : t; }
     try { return '=' + vb(s, c); } catch (e) {
       if (!(e instanceof Untranslatable)) throw e;
-      (item.__notes ||= []).push(`${e.message} has no Pagewright equivalent, so the expression ${s.length > 200 ? s.slice(0, 200) + '…' : s} is shown as text.`);
+      (item.__notes ||= []).push(`${e.message} has no ReportWright equivalent, so the expression ${s.length > 200 ? s.slice(0, 200) + '…' : s} is shown as text.`);
       return s.startsWith('=') ? `="${s.replace(/"/g, '""')}"` : s;
     }
   }
   function setting(src, item, what, c) {
     try { return '=' + vb(src, c); } catch (e) {
       if (!(e instanceof Untranslatable)) throw e;
-      (item.__notes ||= []).push(`${what} uses ${e.message}, which has no Pagewright equivalent, so it is left out.`);
+      (item.__notes ||= []).push(`${what} uses ${e.message}, which has no ReportWright equivalent, so it is left out.`);
       return undefined;
     }
   }
@@ -306,7 +306,7 @@ function toRdlx(root, notes, reportName) {
     const s = String(f).split(',')[0].trim().replace(/^["']|["']$/g, '');
     return /^(sans-serif|serif|cursive|fantasy)$/i.test(s) ? 'Inter' : /^monospace$/i.test(s) ? 'JetBrains Mono' : s;
   };
-  /** A BIRT numberFormat / dateTimeFormat as a Pagewright format: "icu:<pattern>" or an ICU style; undefined: none. */
+  /** A BIRT numberFormat / dateTimeFormat as a ReportWright format: "icu:<pattern>" or an ICU style; undefined: none. */
   function icuFormat0(f, kind) {
     if (!f || (!f.category && !f.pattern)) return undefined;
     const cat = f.category || 'Custom', p = f.pattern || '';
@@ -489,7 +489,7 @@ function toRdlx(root, notes, reportName) {
       case 'text': case 'text-data': {
         if (e.name === 'text-data') {
           const ve = prop(e, 'valueExpr') ?? '';
-          if ((prop(e, 'contentType') || 'html') === 'html') (it.__notes ||= []).push('its value is HTML in BIRT; Pagewright shows it as text.');
+          if ((prop(e, 'contentType') || 'html') === 'html') (it.__notes ||= []).push('its value is HTML in BIRT; ReportWright shows it as text.');
           return textItem(value(ve, it, c), given || textH('', st));
         }
         const content = prop(e, 'content') ?? '';
@@ -506,13 +506,13 @@ function toRdlx(root, notes, reportName) {
           v = `=${pieces.join(' & ') || '""'}`;
         } else v = parts.map(p => p.t).join('');
         if (typeof v === 'string' && !v.startsWith('=') && v.startsWith('=')) v = `="${v}"`;
-        if (html && /<(table|img|ul|ol)\b/i.test(content)) (it.__notes ||= []).push('its HTML has tables, images or lists; Pagewright keeps the text only.');
+        if (html && /<(table|img|ul|ol)\b/i.test(content)) (it.__notes ||= []).push('its HTML has tables, images or lists; ReportWright keeps the text only.');
         return textItem(v, given || textH(parts.map(p => p.t ?? 'x').join(''), st));
       }
       case 'auto-text': {
         const t = prop(e, 'type') || 'page-number';
         const v = t === 'total-page' || t === 'unfiltered-total-page' ? '=Globals!TotalPages' : t === 'page-number-of-total-page' ? '=Globals!PageNumber & " of " & Globals!TotalPages' : t === 'page-variable' ? '' : '=Globals!PageNumber';
-        if (t === 'page-variable') (it.__notes ||= []).push('it shows a page variable, which Pagewright does not have.');
+        if (t === 'page-variable') (it.__notes ||= []).push('it shows a page variable, which ReportWright does not have.');
         return textItem(v, given || textH('1', st));
       }
       case 'image': {
@@ -550,9 +550,9 @@ function toRdlx(root, notes, reportName) {
         const ext = e.attrs.extensionName || '?';
         it.Type = ext.toLowerCase();
         it.Height = pt(given || 144);
-        it.__drop = ext === 'Chart' ? 'a BIRT chart is not converted; add a Pagewright chart (its data set and series are in the design).'
+        it.__drop = ext === 'Chart' ? 'a BIRT chart is not converted; add a ReportWright chart (its data set and series are in the design).'
           : /Crosstab/.test(ext) ? 'a BIRT crosstab is not converted; rebuild it as a matrix (row and column groups).'
-            : `the BIRT item "${ext}" has no Pagewright equivalent, so it was left out.`;
+            : `the BIRT item "${ext}" has no ReportWright equivalent, so it was left out.`;
         return { it, h: given || 144 };
       }
     }
@@ -685,13 +685,13 @@ function toRdlx(root, notes, reportName) {
       const key = prop(g, 'keyExpr');
       const k = key && setting(key, it, `The group "${gname}"`, cc);
       if (k) G.Group.GroupExpressions.push(k);
-      if ((prop(g, 'interval') || 'none') !== 'none') (it.__notes ||= []).push(`the group "${gname}" groups by ${prop(g, 'interval')} intervals in BIRT; Pagewright groups by the value.`);
+      if ((prop(g, 'interval') || 'none') !== 'none') (it.__notes ||= []).push(`the group "${gname}" groups by ${prop(g, 'interval')} intervals in BIRT; ReportWright groups by the value.`);
       const dir = prop(g, 'sortDirection');
       if (k && dir) G.SortExpressions = [{ Value: k, Direction: dir === 'desc' ? 'Descending' : 'Ascending' }];
       if (/always/.test(prop(g, 'pageBreakBefore') || '') || /always/.test(prop(g, 'pageBreakAfter') || '')) G.Group.PageBreak = { BreakLocation: 'Between' };
       G.Header = { TableRows: rows(kid(g, 'header'), `table-group-header-${i + 1}`, gc), ...(prop(g, 'repeatHeader') === 'true' ? { RepeatOnNewPage: true } : {}) };
       G.Footer = { TableRows: rows(kid(g, 'footer'), `table-group-footer-${i + 1}`, gc) };
-      if (prop(g, 'hideDetail') === 'true') (it.__notes ||= []).push(`the group "${gname}" hides its detail rows in BIRT; Pagewright shows them.`);
+      if (prop(g, 'hideDetail') === 'true') (it.__notes ||= []).push(`the group "${gname}" hides its detail rows in BIRT; ReportWright shows them.`);
       return G;
     });
     it.Details = { TableRows: rows(det, 'table-detail', cc) };
@@ -765,7 +765,7 @@ function toRdlx(root, notes, reportName) {
     sources.set(s.attrs.name, { jdbc, kind: id });
     if (jdbc) DataSources.push({ Name: s.attrs.name, ConnectionProperties: { DataProvider: 'SQL', ConnectString: '' } });
     else {
-      note(`Data source "${s.attrs.name}" is a ${/flatfile/i.test(id) ? 'flat file (CSV)' : /xml/i.test(id) ? 'XML' : /script/i.test(id) ? 'scripted' : id} source; point the Pagewright data source at the data (JSON or CSV).`);
+      note(`Data source "${s.attrs.name}" is a ${/flatfile/i.test(id) ? 'flat file (CSV)' : /xml/i.test(id) ? 'XML' : /script/i.test(id) ? 'scripted' : id} source; point the ReportWright data source at the data (JSON or CSV).`);
       DataSources.push({ Name: s.attrs.name, ConnectionProperties: { DataProvider: 'JSON', ConnectString: 'jsondata=[]' } });
     }
   }
@@ -807,7 +807,7 @@ function toRdlx(root, notes, reportName) {
         return `@${p ? prop(p, 'name') : `p${k}`}`;
       });
       set.Query.CommandText = q;
-    } else if (src) note(`Data set "${name}": its query is not converted; point the Pagewright data source at the data and set its path.`);
+    } else if (src) note(`Data set "${name}": its query is not converted; point the ReportWright data source at the data and set its path.`);
     const filters = filtersOf(d, set, { inSet: true });
     for (const x of set.__notes || []) note(`Data set "${name}": ${x}`);
     delete set.__notes;
@@ -835,7 +835,7 @@ function toRdlx(root, notes, reportName) {
       const field = (ex) => /^\s*(?:row|dataSetRow)\["([^"]+)"\]\s*$/.exec(ex || '')?.[1];
       const vf = field(prop(p, 'valueExpr')), lf = field(prop(p, 'labelExpr'));
       if (ds && vf) rp.ValidValues = { DataSetReference: { DataSetName: ds, ValueField: vf, ...(lf ? { LabelField: lf } : {}) } };
-      else note(`The choices of parameter "${p.attrs.name}" are computed in a way Pagewright cannot read; it takes any value.`);
+      else note(`The choices of parameter "${p.attrs.name}" are computed in a way ReportWright cannot read; it takes any value.`);
     } else {
       const sel = listProp(p, 'selectionList');
       if (sel.length) rp.ValidValues = { ParameterValues: sel.map(s => ({ Value: prop(s, 'value'), Label: prop(s, 'label') ?? prop(s, 'value') })) };

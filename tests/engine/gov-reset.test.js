@@ -16,7 +16,7 @@ const g = globalThis;
 
 beforeAll(async () => {
   smtp = await startSmtp();
-  const ENV = { PW_AUTH: 'users', PW_SESSION_SECRET: 'r'.repeat(40), PW_BASE_URL: BASE, PW_STORAGE: `sqlite:${path.join(tmp, 'r.db')}`, PW_SMTP_URL: `smtp://127.0.0.1:${smtp.port}`, PW_MAIL_FROM: 'Pagewright <noreply@pw.test>' };
+  const ENV = { PW_AUTH: 'users', PW_SESSION_SECRET: 'r'.repeat(40), PW_BASE_URL: BASE, PW_STORAGE: `sqlite:${path.join(tmp, 'r.db')}`, PW_SMTP_URL: `smtp://127.0.0.1:${smtp.port}`, PW_MAIL_FROM: 'ReportWright <noreply@pw.test>' };
   for (const [k, v] of Object.entries(ENV)) { saved[k] = process.env[k]; process.env[k] = v; }
   users = await import('../../src/server/users.js');
   session = await import('../../src/server/session.js');
@@ -49,7 +49,7 @@ describe('password reset by email', () => {
     expect(new Set(answers.map(a => JSON.stringify(a))).size).toBe(1);
     expect(answers[0][0]).toBe(202);
     expect(smtp.messages.map(m => m.to)).toEqual([['pat@x.test']]);
-    expect(smtp.messages[0].data).toMatch(/^Subject: Reset your Pagewright password/m);
+    expect(smtp.messages[0].data).toMatch(/^Subject: Reset your ReportWright password/m);
     const rec = await users.getUser('pat@x.test');
     expect(rec.reset.hash).toMatch(/^[0-9a-f]{64}$/);
     expect(JSON.stringify(rec)).not.toContain(tokenOf(smtp.messages[0]).split('.')[1]); // only the hash is stored

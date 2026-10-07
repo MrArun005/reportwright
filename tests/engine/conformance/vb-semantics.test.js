@@ -1,14 +1,14 @@
 // VB.NET / SSRS expression conformance.
 //
 // Each row is an SSRS (VB) expression, run the way an imported report runs it: translated by the RDL/ActiveReports
-// importer (translateExpression), then evaluated by the Pagewright engine. The expected value is what SSRS gives,
+// importer (translateExpression), then evaluated by the ReportWright engine. The expected value is what SSRS gives,
 // from the documented VB.NET runtime (Microsoft.VisualBasic.DateAndTime / Strings / Conversion, System.Math,
 // .NET Framework format strings, which is what the SSRS report server runs).
 //
 // Row kinds:
-//   ok(vb, want)                 Pagewright matches VB.
+//   ok(vb, want)                 ReportWright matches VB.
 //   unsure(vb, want, why)        the expected value is our best reading of the docs, not verified against SSRS.
-//   dev(vb, pw, vbValue, why)    a deliberate difference: Pagewright gives `pw`, VB gives `vbValue`. Listed in
+//   dev(vb, pw, vbValue, why)    a deliberate difference: ReportWright gives `pw`, VB gives `vbValue`. Listed in
 //                                the report of the change that added this suite; each row says why.
 // The locale is en-US with USD unless a row says otherwise (the default of an SSRS server in the US).
 import { describe, it, expect } from 'vitest';
@@ -231,9 +231,9 @@ const FORMAT = table('Format (.NET format strings, en-US)', [
   ok('=Format(1234.5, "C2")', '$1,234.50'),
   ok('=Format(1234.5, "C0")', '$1,235'),
   ok('=FormatCurrency(1234.5)', '$1,234.50'),
-  dev('=Format(-1234.5, "C2")', '-$1,234.50', '($1,234.50)', 'en-US CurrencyNegativePattern on .NET Framework is "($n)"; Pagewright writes the minus sign (as .NET 5+ does)'),
+  dev('=Format(-1234.5, "C2")', '-$1,234.50', '($1,234.50)', 'en-US CurrencyNegativePattern on .NET Framework is "($n)"; ReportWright writes the minus sign (as .NET 5+ does)'),
   ok('=Format(0.1234, "P1")', '12.3%'),
-  dev('=Format(0.1234, "P")', '12.34%', '12.34 %', '.NET Framework en-US PercentPositivePattern puts a space before %; Pagewright follows CLDR (as .NET 5+ does)'),
+  dev('=Format(0.1234, "P")', '12.34%', '12.34 %', '.NET Framework en-US PercentPositivePattern puts a space before %; ReportWright follows CLDR (as .NET 5+ does)'),
   ok('=FormatPercent(0.5, 0)', '50%'),
   ok('=FormatNumber(1234.567, 1)', '1,234.6'),
   ok('=Format(2.675, "F2")', '2.68'),
@@ -307,7 +307,7 @@ const FORMAT = table('Format (.NET format strings, en-US)', [
  * InvalidCastException (#Error). Val reads the leading number, skipping blanks, and gives 0 for none; it does not
  * read grouping commas and does read &H hex. IsNothing is True only for Nothing (not for ""). Comparisons convert a
  * numeric string to a number when the other side is a number.
- * Nothing in arithmetic and comparisons: VB treats Nothing as 0 / "" there. Pagewright keeps it as null (see dev rows).
+ * Nothing in arithmetic and comparisons: VB treats Nothing as 0 / "" there. ReportWright keeps it as null (see dev rows).
  */
 const COERCION = table('Type coercion and Nothing', [
   ok('=CStr(1.5)', '1.5'),
@@ -370,7 +370,7 @@ const COERCION = table('Type coercion and Nothing', [
   ok('=CInt(Nothing)', 0),
   ok('=CInt(True)', -1),
   ok('=True + 1', 0),
-  dev('="abc" > 9', false, ERR, 'VB raises InvalidCastException converting "abc" to Double; Pagewright compares as text'),
+  dev('="abc" > 9', false, ERR, 'VB raises InvalidCastException converting "abc" to Double; ReportWright compares as text'),
 ]);
 
 /* ------------------------------------------------------------------------------------------------ operators
@@ -415,9 +415,9 @@ const OPERATORS = table('Operators and precedence', [
   ok('=IIf(Fields!zero.Value = 0, 0, 10 / Fields!zero.Value)', 0),
   ok('=Choose(2, "a", "b", "c")', 'b'),
   ok('=Switch(1 > 2, "a", 2 > 1, "b")', 'b'),
-  dev('=IIf(True, 1, CInt("x"))', 1, ERR, 'Pagewright evaluates only the chosen IIf branch; VB evaluates both, so an error in the unused one shows #Error'),
-  dev('=False And CInt("x") = 1', false, ERR, 'Pagewright And/Or short-circuit like AndAlso/OrElse; VB And evaluates both sides'),
-  dev('=5 And 3', true, 1, 'VB And/Or/Xor on integers are bitwise; Pagewright treats them as logical'),
+  dev('=IIf(True, 1, CInt("x"))', 1, ERR, 'ReportWright evaluates only the chosen IIf branch; VB evaluates both, so an error in the unused one shows #Error'),
+  dev('=False And CInt("x") = 1', false, ERR, 'ReportWright And/Or short-circuit like AndAlso/OrElse; VB And evaluates both sides'),
+  dev('=5 And 3', true, 1, 'VB And/Or/Xor on integers are bitwise; ReportWright treats them as logical'),
   ok('=1 / 0', Infinity),
 ]);
 
@@ -425,7 +425,7 @@ const OPERATORS = table('Operators and precedence', [
  * Math.Round(x) and Math.Round(x, digits) round half to even (MidpointRounding.ToEven, "banker's rounding"):
  * Round(2.5) = 2, Round(3.5) = 4, Round(-2.5) = -2. Math.Round(x, d, MidpointRounding.AwayFromZero) rounds halves
  * away from zero. VB Int is floor (Int(-2.5) = -3); Fix and Math.Truncate truncate toward zero.
- * Pagewright rounds the decimal value it shows (2.675 is the decimal 2.675), as Math.Round(Decimal) does for money
+ * ReportWright rounds the decimal value it shows (2.675 is the decimal 2.675), as Math.Round(Decimal) does for money
  * fields; Math.Round(Double) would see 2.67499999… and give 2.67.
  */
 const ROUNDING = table('Round, Int, Fix', [
@@ -440,7 +440,7 @@ const ROUNDING = table('Round, Int, Fix', [
   ok('=Math.Round(0.125, 2)', 0.12),
   ok('=Math.Round(0.135, 2)', 0.14),
   ok('=Round(1234.5678, 2)', 1234.57),
-  unsure('=Round(2.675, 2)', 2.68, 'Math.Round(Decimal) gives 2.68; Math.Round(Double) gives 2.67 (binary 2.67499…). Pagewright rounds the decimal value'),
+  unsure('=Round(2.675, 2)', 2.68, 'Math.Round(Decimal) gives 2.68; Math.Round(Double) gives 2.67 (binary 2.67499…). ReportWright rounds the decimal value'),
   unsure('=Round(1.005, 2)', 1, 'Decimal: 1.005 is a midpoint, to even gives 1.00; Double gives 1 too (binary 1.00499…)'),
   ok('=Math.Round(2.5, MidpointRounding.AwayFromZero)', 3),
   ok('=Math.Round(-2.5, MidpointRounding.AwayFromZero)', -3),
@@ -460,7 +460,7 @@ const ROUNDING = table('Round, Int, Fix', [
 
 /* -------------------------------------------------------------------------------------------- decimal arithmetic
  * SSRS reads SQL decimal/money columns as System.Decimal, so 0.1 + 0.2 = 0.3 exactly and ten 0.1s sum to 1.
- * Pagewright treats a number as its shortest decimal form and adds, subtracts and multiplies on that form exactly
+ * ReportWright treats a number as its shortest decimal form and adds, subtracts and multiplies on that form exactly
  * (while it fits 15 significant digits), so money arithmetic shows no binary-float artefacts.
  */
 const DECIMALS = table('Decimal arithmetic', [

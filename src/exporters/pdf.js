@@ -50,8 +50,8 @@ export async function exportPdf(model, fontStore, opt = {}) {
   const doc = await PDFDocument.create();
   doc.registerFontkit(fontkit);
   doc.setTitle(opt.title || 'Report');
-  doc.setProducer('Pagewright');
-  doc.setCreator('Pagewright');
+  doc.setProducer('ReportWright');
+  doc.setCreator('ReportWright');
   if (opt.author) doc.setAuthor(opt.author);
 
   // Which characters each font must draw, and which shaped glyphs (by ID, with the text each one stands for).

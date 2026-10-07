@@ -1,9 +1,9 @@
-# @pagewrightjs/fonts-cjk (optional)
+# @reportwright/fonts-cjk (optional)
 
-[![npm](https://img.shields.io/npm/v/%40pagewrightjs%2Ffonts-cjk)](https://www.npmjs.com/package/@pagewrightjs/fonts-cjk) [![license](https://img.shields.io/badge/license-OFL--1.1%20%2B%20MIT-blue)](https://github.com/MrArun005/pagewright/blob/main/LICENSE) [![Socket](https://socket.dev/api/badge/npm/package/@pagewrightjs/fonts-cjk)](https://socket.dev/npm/package/@pagewrightjs/fonts-cjk) [![provenance](https://img.shields.io/badge/npm-provenance-green)](https://docs.npmjs.com/generating-provenance-statements)
+[![npm](https://img.shields.io/npm/v/%40reportwright%2Ffonts-cjk)](https://www.npmjs.com/package/@reportwright/fonts-cjk) [![license](https://img.shields.io/badge/license-OFL--1.1%20%2B%20MIT-blue)](https://github.com/MrArun005/reportwright/blob/main/LICENSE) [![Socket](https://socket.dev/api/badge/npm/package/@reportwright/fonts-cjk)](https://socket.dev/npm/package/@reportwright/fonts-cjk) [![provenance](https://img.shields.io/badge/npm-provenance-green)](https://docs.npmjs.com/generating-provenance-statements)
 
-Chinese, Japanese, Korean and emoji fonts for Pagewright (Noto, SIL Open Font License). They are not in
-`@pagewrightjs/fonts` because they are large:
+Chinese, Japanese, Korean and emoji fonts for ReportWright (Noto, SIL Open Font License). They are not in
+`@reportwright/fonts` because they are large:
 
 | File | Covers | Size |
 |---|---|---|
@@ -18,17 +18,17 @@ The package is small: the fonts are downloaded on demand (no install script runs
 it is written.
 
 ```bash
-npm i @pagewrightjs/engine @pagewrightjs/fonts @pagewrightjs/fonts-cjk
-npx pagewright-fonts-cjk              # into node_modules/@pagewrightjs/fonts-cjk/fonts, where defaultFontStore() looks
-npx pagewright-fonts-cjk public/pw/fonts/cjk   # or a folder you serve to the viewer (fontsUrl + cjk/)
+npm i @reportwright/engine @reportwright/fonts @reportwright/fonts-cjk
+npx reportwright-fonts-cjk              # into node_modules/@reportwright/fonts-cjk/fonts, where defaultFontStore() looks
+npx reportwright-fonts-cjk public/pw/fonts/cjk   # or a folder you serve to the viewer (fontsUrl + cjk/)
 ```
 
 ```js
-import { fetchCjkFonts } from '@pagewrightjs/fonts-cjk';
+import { fetchCjkFonts } from '@reportwright/fonts-cjk';
 await fetchCjkFonts();                 // the same, from code (e.g. in your Docker build)
 ```
 
-In the Pagewright app repository: `npm run fonts:cjk` (into `public/fonts/cjk`).
+In the ReportWright app repository: `npm run fonts:cjk` (into `public/fonts/cjk`).
 
 Licences: the fonts are SIL Open Font License 1.1 (`OFL.txt` is downloaded with them); the downloader is MIT.
 

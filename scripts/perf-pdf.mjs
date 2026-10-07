@@ -20,7 +20,7 @@ for (let r = 0; r < Number(runs); r++) {
   let tr = 0, te = 0, bytes;
   for (const d of docs) {
     const t0 = performance.now();
-    const model = await render(defs.pagewright(scenario, d), { fontStore });
+    const model = await render(defs.reportwright(scenario, d), { fontStore });
     const t1 = performance.now();
     bytes = await exportPdf(model, fontStore, { subset });
     te += performance.now() - t1; tr += t1 - t0;

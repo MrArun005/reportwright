@@ -3,7 +3,7 @@ node_modules
 data
 .git
 *.log
-pagewright.bundle
+reportwright.bundle
 Claude outputs
 reports/.history
 reports/e2e-*

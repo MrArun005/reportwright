@@ -5,7 +5,8 @@ import { symbologyError } from '../items/barcode.js';
 import { rowCells } from '../items/cells.js';
 import { REPORT_SCHEMA } from './report.schema.js';
 
-export const SCHEMA_ID = 'pagewright/report@1';
+export const SCHEMA_ID = 'pagewright/report@1'; // kept after the rename: every saved report carries it
+export const SCHEMA_ALIAS = 'reportwright/report@1'; // the same format under the new name
 
 /** Properties the engine reads on any item, beyond each type's own (its inspector props and defaults). ponytail: a
  *  list; a new item property is added here (or to the type's props) or validate() calls it unknown. */
@@ -76,7 +77,7 @@ export function validate(def) {
   // left out of the render's own warnings so they are not said twice
   const errors = [], warnings = [], exprErrors = [], checkOnly = [];
   if (!def || typeof def !== 'object') return { errors: ['The report definition is empty'], warnings, exprErrors, checkOnly };
-  if (def.$schema && def.$schema !== SCHEMA_ID) warnings.push(`Unknown schema "${def.$schema}". Expected "${SCHEMA_ID}".`);
+  if (def.$schema && def.$schema !== SCHEMA_ID && def.$schema !== SCHEMA_ALIAS) warnings.push(`Unknown schema "${def.$schema}". Expected "${SCHEMA_ID}".`);
   for (const k of Object.keys(def)) if (!DEF_KEYS.has(k) && !k.startsWith('_')) { const g = didYouMean(k, DEF_KEYS); warnings.push(`Unknown report property "${k}"${g ? ` (did you mean "${g}"?)` : ''}; it is ignored`); }
   const body = def.sections?.body;
   if (!body || (Array.isArray(body) && !body.length)) errors.push('The report has no body section');
@@ -119,7 +120,7 @@ export function validate(def) {
     if (err) { errors.push(`${label}: ${err}`); exprErrors.push(`${label}: ${err}`); }
   };
   // PageNumber and TotalPages anywhere in the body (a cell, a group header, an item inside a list or a cell): the body
-  // is laid out before it is paginated, so they show 1 there. SSRS refuses them; Pagewright warns once per item.
+  // is laid out before it is paginated, so they show 1 there. SSRS refuses them; ReportWright warns once per item.
   const PAGE_GLOBALS = /Globals\s*[.!]\s*(PageNumber|TotalPages)/i;
   const paged = new Set();
   const scan = (n, label, depth) => {

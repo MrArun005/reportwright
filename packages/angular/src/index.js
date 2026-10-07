@@ -1,6 +1,6 @@
-// @pagewrightjs/angular: <pagewright-viewer> and <pagewright-designer> custom elements.
+// @reportwright/angular: <reportwright-viewer> and <reportwright-designer> custom elements.
 // Angular uses them with CUSTOM_ELEMENTS_SCHEMA: no Angular compiler step, so they work with any Angular version.
-//   definePagewrightElements();  then  <pagewright-viewer [options]="{ server, report }"></pagewright-viewer>
+//   defineReportWrightElements();  then  <reportwright-viewer [options]="{ server, report }"></reportwright-viewer>
 // The designer fires `pw-save` (detail: the definition) when no onSave is given, and `pw-ready` (detail: the handle).
 const ATTRS = ['server', 'report', 'height', 'lang'];
 
@@ -23,7 +23,7 @@ const designerKey = (o) => [o.server, o.report, o.readOnly, keyOf(o.definition)]
 /** The error a viewer that did not load shows in its element. */
 const showError = (el, e) => {
   if (!el) return;
-  el.textContent = `Pagewright did not load: ${e?.message || e}`;
+  el.textContent = `ReportWright did not load: ${e?.message || e}`;
   el.setAttribute('role', 'alert');
 };
 
@@ -68,9 +68,13 @@ function element(load, isDesigner) {
   };
 }
 
-/** Register <pagewright-viewer> and <pagewright-designer> (once). */
-export function definePagewrightElements() {
+/** Register <reportwright-viewer> and <reportwright-designer> (once), and the old <pagewright-*> tags (deprecated 0.9, gone in 1.0). */
+export function defineReportWrightElements() {
   if (typeof customElements === 'undefined') return; // server rendering
-  if (!customElements.get('pagewright-viewer')) customElements.define('pagewright-viewer', element(() => import('@pagewrightjs/viewer').then(m => m.mountViewer), false));
-  if (!customElements.get('pagewright-designer')) customElements.define('pagewright-designer', element(() => import('@pagewrightjs/viewer/designer').then(m => m.mountDesigner), true));
+  for (const p of ['reportwright', 'pagewright']) {
+    if (!customElements.get(`${p}-viewer`)) customElements.define(`${p}-viewer`, element(() => import('@reportwright/viewer').then(m => m.mountViewer), false));
+    if (!customElements.get(`${p}-designer`)) customElements.define(`${p}-designer`, element(() => import('@reportwright/viewer/designer').then(m => m.mountDesigner), true));
+  }
 }
+/** @deprecated 0.9: renamed defineReportWrightElements; the old name goes in 1.0. */
+export const definePagewrightElements = defineReportWrightElements;

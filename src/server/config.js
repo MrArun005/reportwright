@@ -24,7 +24,7 @@ export const SETTINGS = [
   ['PW_PASSWORD_LOGIN', 'onoff', 'on', 'off: password sign-in off while SSO is set up.'],
   ['PW_DEV_HOSTS', 'list', '(localhost)', 'More host names the dev server answers on (DNS rebinding guard).'],
   ['PW_TRUSTED_PROXIES', 'list', '(none)', 'Proxy IPs or CIDRs whose X-Forwarded-For is believed.'],
-  ['PW_TOTP_ISSUER', 'text', 'Pagewright', 'The issuer name authenticator apps show.'],
+  ['PW_TOTP_ISSUER', 'text', 'ReportWright', 'The issuer name authenticator apps show.'],
   ['PW_DATA_KEY', 'secret', '(required for two-factor in prod)', 'Seals TOTP secrets at rest (32+ characters). Never falls back to PW_SESSION_SECRET in prod.'],
   ['PW_DATA_KEY_OLD', 'list', '', 'Previous PW_DATA_KEY values (comma-separated) during a rotation: old seals still open.'],
   ['PW_REQUEST_LOG', 'flag', '1', '0: no JSON line per request on stdout (HTTP metrics are kept either way).'],
@@ -132,7 +132,7 @@ export function checkConfig(env = process.env) {
   const prod = env === process.env ? !devMode() : !(env.PW_MODE === 'dev' || (!env.PW_MODE && (env.NODE_ENV === 'development' || env.NODE_ENV === 'test')));
   for (const [k, v] of Object.entries(env)) {
     if (!k.startsWith('PW_') || v === undefined) continue;
-    if (!NAMES.has(k) && !FAMILY.test(k)) { warnings.push(`${k} is not a Pagewright setting (a typo?); it does nothing.`); continue; }
+    if (!NAMES.has(k) && !FAMILY.test(k)) { warnings.push(`${k} is not a ReportWright setting (a typo?); it does nothing.`); continue; }
     const kind = SETTINGS.find(s => s[0] === k)?.[1] || 'url';
     if (kind.startsWith('enum:') && v !== '' && !kind.slice(5).split('|').includes(v)) (k === 'PW_MODE' || k === 'PW_AUTH' ? errors : warnings).push(`${k}="${v.slice(0, 40)}" is not one of ${kind.slice(5).replaceAll('|', ', ')}.`);
     if ((kind === 'int' || kind === 'ms') && v !== '' && !(Number.isFinite(Number(v)) && Number(v) >= 0)) warnings.push(`${k}="${v.slice(0, 40)}" is not a number; the default is used.`);
@@ -172,10 +172,10 @@ export function checkConfig(env = process.env) {
 /** At boot: log the report; in production, errors stop the start. */
 export function reportConfig() {
   const { errors, warnings, fatal } = checkConfig();
-  for (const w of warnings) console.warn(`[pagewright] config: ${w}`);
-  for (const e of errors) console.error(`[pagewright] config: ${e}`);
+  for (const w of warnings) console.warn(`[reportwright] config: ${w}`);
+  for (const e of errors) console.error(`[reportwright] config: ${e}`);
   // errors stop a production start; a fatal one (an open dev-mode server on a public address) stops any start
-  if ((errors.length && !devMode()) || fatal.length) throw new Error(`Pagewright will not start: ${(devMode() ? fatal : errors).join(' ')}`);
+  if ((errors.length && !devMode()) || fatal.length) throw new Error(`ReportWright will not start: ${(devMode() ? fatal : errors).join(' ')}`);
   return { errors, warnings };
 }
 

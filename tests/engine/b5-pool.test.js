@@ -1,5 +1,5 @@
-// B5 item 12: @pagewrightjs/engine/pool renders on worker threads and returns the file's bytes.
-// Runs against the built package (npm run build:packages): the workers import @pagewrightjs/engine by name.
+// B5 item 12: @reportwright/engine/pool renders on worker threads and returns the file's bytes.
+// Runs against the built package (npm run build:packages): the workers import @reportwright/engine by name.
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';

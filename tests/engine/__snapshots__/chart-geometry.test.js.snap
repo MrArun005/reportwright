@@ -26,22 +26,22 @@ exports[`existing chart geometry > pointColor 1`] = `"7357cfe79a881c66"`;
 
 exports[`existing chart geometry > reports/sales-city.pw.json 1`] = `
 [
-  "2791d80996a4ebee",
-  "cd14a94401cac992",
-  "9e756eb58bdc66d9",
+  "a0bd4060877809d7",
+  "ee6b09ee93b1e0a6",
+  "ebdd3c32b873a6bc",
 ]
 `;
 
 exports[`existing chart geometry > reports/sales-explorer.pw.json 1`] = `
 [
-  "a0612e83236edef7",
-  "5fcbc83908e3ad31",
+  "7616d654517cf4f6",
+  "fcf9e6c7790d9d2f",
 ]
 `;
 
 exports[`existing chart geometry > reports/sales-month.pw.json 1`] = `
 [
-  "bf6ea459cddbcce5",
+  "183cea40f406f12d",
 ]
 `;
 

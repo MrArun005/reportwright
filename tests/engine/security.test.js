@@ -113,7 +113,7 @@ describe('basic auth (PW_BASIC_AUTH)', () => {
   }));
   it('leaves /api/v1 (API keys) and the embed script alone', () => withEnv({ PW_BASIC_AUTH: 'admin:s3cret' }, async () => {
     expect(await basicAuth(req('/api/v1/render', { method: 'POST' }))).toBe(null);
-    expect(await basicAuth(req('/embed/pagewright-viewer.js'))).toBe(null);
+    expect(await basicAuth(req('/embed/reportwright-viewer.js'))).toBe(null);
   }));
   it('with PW_EMBED_ORIGINS, embeds can read reports and sample data but not change them', () => withEnv({ PW_BASIC_AUTH: 'admin:s3cret', PW_EMBED_ORIGINS: 'https://host.example' }, async () => {
     expect(await basicAuth(req('/api/reports/loan-statement'))).toBe(null);

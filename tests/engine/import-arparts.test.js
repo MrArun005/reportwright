@@ -1,4 +1,4 @@
-// ActiveReports reuse: master reports, report parts (libraries) and layers map to Pagewright's own.
+// ActiveReports reuse: master reports, report parts (libraries) and layers map to ReportWright's own.
 import { describe, it, expect } from 'vitest';
 import { importRdlx } from '../../src/importers/rdlx.js';
 import { render } from '../../src/engine/index.js';

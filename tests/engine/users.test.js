@@ -384,7 +384,7 @@ describe('who may do what (decide)', () => {
     ['GET', '/harfbuzz-subset.wasm', A, A, A, A],
     ['GET', '/icc/sRGB-v2-magic.icc', A, A, A, A],
     ['GET', '/favicon.ico', A, A, A, A],
-    ['GET', '/embed/pagewright-viewer.js', A, A, A, A],
+    ['GET', '/embed/reportwright-viewer.js', A, A, A, A],
     ['POST', '/api/v1/render', A, A, A, A],
     // path tricks
     ['GET', '/api/users/', S, N, N, Y],

@@ -1,17 +1,17 @@
-# @pagewrightjs/engine
+# @reportwright/engine
 
-[![npm](https://img.shields.io/npm/v/%40pagewrightjs%2Fengine)](https://www.npmjs.com/package/@pagewrightjs/engine) [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/MrArun005/pagewright/blob/main/LICENSE) [![Socket](https://socket.dev/api/badge/npm/package/@pagewrightjs/engine)](https://socket.dev/npm/package/@pagewrightjs/engine) [![provenance](https://img.shields.io/badge/npm-provenance-green)](https://docs.npmjs.com/generating-provenance-statements)
+[![npm](https://img.shields.io/npm/v/%40reportwright%2Fengine)](https://www.npmjs.com/package/@reportwright/engine) [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/MrArun005/reportwright/blob/main/LICENSE) [![Socket](https://socket.dev/api/badge/npm/package/@reportwright/engine)](https://socket.dev/npm/package/@reportwright/engine) [![provenance](https://img.shields.io/badge/npm-provenance-green)](https://docs.npmjs.com/generating-provenance-statements)
 
-The Pagewright report engine for Node and browsers: a JSON report definition and data in, pages out, then PDF (also PDF/A-2b), Word, Excel, PowerPoint (exportPptx), HTML or CSV. Includes the `pw` command line.
+The ReportWright report engine for Node and browsers: a JSON report definition and data in, pages out, then PDF (also PDF/A-2b), Word, Excel, PowerPoint (exportPptx), HTML or CSV. Includes the `pw` command line.
 
 ```bash
-npm i @pagewrightjs/engine @pagewrightjs/fonts
+npm i @reportwright/engine @reportwright/fonts
 ```
 
 ```js
-import { render, defaultFontStore, exportPdf } from '@pagewrightjs/engine';
+import { render, defaultFontStore, exportPdf } from '@reportwright/engine';
 import fs from 'node:fs';
-// the fonts, the text shaper (Arabic, Hebrew, Indic, Thai…) and the PDF subsetter come from @pagewrightjs/fonts;
+// the fonts, the text shaper (Arabic, Hebrew, Indic, Thai…) and the PDF subsetter come from @reportwright/fonts;
 // for your own fonts: new FontStore((key) => bytesOf(fontFile(key)))
 const fonts = defaultFontStore();
 const model = await render(JSON.parse(fs.readFileSync('statement.pw.json', 'utf8')), { fontStore: fonts, parameters: { accountId: 'LN-1' } });
@@ -38,7 +38,7 @@ fs.writeFileSync('statement.pdf', await exportPdf(model, { fonts, title: 'Statem
 ## Many reports at once (Node): a worker pool
 
 ```js
-import { createPool } from '@pagewrightjs/engine/pool';
+import { createPool } from '@reportwright/engine/pool';
 const pool = createPool({ workers: 4 });            // default: CPU count - 1; each worker loads the engine and fonts once
 const pdf = await pool.render(definition, { format: 'pdf', parameters: { id: 42 } });   // Uint8Array
 await pool.close();
@@ -47,11 +47,11 @@ await pool.close();
 Measured on an 8-core laptop, 40 copies of a one-page chart report (`node scripts/bench-pool.mjs`): 1 worker 14.7/s,
 4 workers 40.7/s.
 
-The `pw` command line is in `@pagewrightjs/cli`:
+The `pw` command line is in `@reportwright/cli`:
 
 ```bash
-npx -p @pagewrightjs/cli pw render statement.pw.json -p accountId=LN-1 -d loans=data.json -f pdf -o statement.pdf
-npx -p @pagewrightjs/cli pw test reports        # snapshot tests for reports-as-code
+npx -p @reportwright/cli pw render statement.pw.json -p accountId=LN-1 -d loans=data.json -f pdf -o statement.pdf
+npx -p @reportwright/cli pw test reports        # snapshot tests for reports-as-code
 ```
 
 MIT.

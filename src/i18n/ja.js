@@ -173,7 +173,7 @@ export default {
   isEnabled: '{email} を有効にしました。', isDisabled: '{email} を無効にしました。',
 
   /* ---- sign in ---- */
-  signIn: 'サインイン', signingIn: 'サインイン中…', signInLede: 'Pagewright レポート', password: 'パスワード',
+  signIn: 'サインイン', signingIn: 'サインイン中…', signInLede: 'ReportWright レポート', password: 'パスワード',
   signInFailed: 'サインインに失敗しました（HTTP {status}）。', signedInAsLong: '現在のサインイン:', continue: '続行',
   accountsOff: 'このサーバーではアカウントが無効です。有効にするには {setting} を設定してください。',
   noUsersYet: 'ユーザーはまだいません。', firstAdmin: '最初の管理者は次のいずれかの方法で作成します:',

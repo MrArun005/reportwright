@@ -520,7 +520,7 @@
             "type": "textbox",
             "w": 460,
             "h": 14,
-            "value": "PAGEWRIGHT · REPORT ENGINE STRESS TEST",
+            "value": "REPORTWRIGHT · REPORT ENGINE STRESS TEST",
             "canGrow": true,
             "canShrink": false,
             "style": {

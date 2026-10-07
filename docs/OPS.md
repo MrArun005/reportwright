@@ -38,7 +38,7 @@ On Neon, point-in-time restore (History) is the first line; these files are the 
 Schedule it with cron (or a GitHub Actions schedule) and keep 7 daily and 4 weekly files:
 
 ```cron
-15 2 * * * cd /srv/pagewright && PW_STORAGE=… node scripts/backup.mjs backup backups/pw-$(date +\%F).db && find backups -name 'pw-*.db' -mtime +30 -delete
+15 2 * * * cd /srv/reportwright && PW_STORAGE=… node scripts/backup.mjs backup backups/pw-$(date +\%F).db && find backups -name 'pw-*.db' -mtime +30 -delete
 ```
 
 ### Restore drill (once a quarter, and after storage changes)
@@ -116,7 +116,7 @@ Vercel's deployment protection (signed in to the team) unless it is turned off f
 ## Cold starts (Vercel)
 
 A new serverless instance runs `instrumentation.js` before its first answer and logs one line,
-`[pagewright] boot: storage …ms, accounts …ms, ready …ms`. What it does: open the storage (one read when the database
+`[reportwright] boot: storage …ms, accounts …ms, ready …ms`. What it does: open the storage (one read when the database
 is at the latest schema: `src/server/storage/sql.js`), check the two-factor data key and the permission defaults side
 by side (two reads, no lock once migrated: `migratePermissions` in `src/server/perms.js`), start the scheduler. It does
 not start render threads on Vercel (the first render starts them). The Neon compute itself suspends after 5 minutes

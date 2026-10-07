@@ -49,7 +49,7 @@ const local = (/** @type {any} */ (globalThis).__pwLocalLimits ||= new Map());
 /** attempt() in memory, while the storage cannot answer. @param {string} name @param {number} limit @param {number} windowMs @param {any} why */
 function localAttempt(name, limit, windowMs, why) {
   const now = Date.now();
-  if (now - (g.__pwLimitWarned || 0) > 60000) { g.__pwLimitWarned = now; console.error(`[pagewright] LIMITS: the storage did not answer (${String(why?.message || why).slice(0, 200)}); counting tries in this process until it does.`); }
+  if (now - (g.__pwLimitWarned || 0) > 60000) { g.__pwLimitWarned = now; console.error(`[reportwright] LIMITS: the storage did not answer (${String(why?.message || why).slice(0, 200)}); counting tries in this process until it does.`); }
   if (local.size > 50000) local.clear();
   const list = (local.get(name) || []).filter(t => t.until > now);
   if (list.length >= limit) { local.set(name, list); return { ok: false, retryAfter: Math.ceil((Math.min(...list.map(t => t.until)) - now) / 1000), release: async () => {} }; }
@@ -145,7 +145,7 @@ function trusted() {
     for (const part of v.split(',').map(x => x.trim()).filter(Boolean)) {
       const [ip, bits] = part.split('/');
       const type = net.isIPv6(ip) ? 'ipv6' : net.isIPv4(ip) ? 'ipv4' : null;
-      if (!type) { console.warn(`[pagewright] PW_TRUSTED_PROXIES: "${part}" is not an IP or CIDR; ignored.`); continue; }
+      if (!type) { console.warn(`[reportwright] PW_TRUSTED_PROXIES: "${part}" is not an IP or CIDR; ignored.`); continue; }
       if (bits !== undefined) list.addSubnet(ip, Number(bits), type); else list.addAddress(ip, type);
     }
     trustedKey = v; trustedList = list;
@@ -164,7 +164,7 @@ export function unknownProxy(req) {
   if (!req?.headers || !g.__pwPeers) return false;
   const peer = norm(req.headers.get(PEER));
   const yes = !!peer && PRIVATE.test(peer) && !isTrusted(peer) && !!req.headers.get('x-forwarded-for');
-  if (yes && !g.__pwWarnedProxy) { g.__pwWarnedProxy = true; console.error(`[pagewright] requests come through a proxy at ${peer} that PW_TRUSTED_PROXIES does not name: every client looks like it, so every client shares one sign-in count. Set PW_TRUSTED_PROXIES.`); }
+  if (yes && !g.__pwWarnedProxy) { g.__pwWarnedProxy = true; console.error(`[reportwright] requests come through a proxy at ${peer} that PW_TRUSTED_PROXIES does not name: every client looks like it, so every client shares one sign-in count. Set PW_TRUSTED_PROXIES.`); }
   return yes;
 }
 
@@ -204,7 +204,7 @@ export function clientAddress(req) {
 function sweepSoon() {
   if (Date.now() - (g.__pwLeaseSweep || 0) < 3600 * 1000) return;
   g.__pwLeaseSweep = Date.now();
-  store().sweepLeases?.(Date.now() - 60000).catch((e) => console.error(`[pagewright] lease sweep: ${e.message}`));
+  store().sweepLeases?.(Date.now() - 60000).catch((e) => console.error(`[reportwright] lease sweep: ${e.message}`));
 }
 
 /* ---------------- every credential check ---------------- */

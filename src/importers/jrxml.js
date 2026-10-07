@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * JasperReports importer: a .jrxml design (JasperReports 3 to 6, and the 7.x format with <element kind="…">) becomes a
- * Pagewright report definition.
+ * ReportWright report definition.
  *
  * Like rdl.js, a front end: the XML (read safely, see xml.js) is rewritten into the RDLX-JSON shape and rdlx.js does the
  * mapping, the expression translation, the notes and the stats. The bands map as Jasper prints them:
@@ -10,7 +10,7 @@
  *   page footer: the page footer.
  * Java and Groovy expressions become VB (java.js); variables are inlined as aggregates with their reset scope (a sum
  * that resets per group is Sum(…, "Group"); in the detail band it is the running value Jasper prints there).
- * Charts become Pagewright charts directly (their datasets have no RDLX shape). Crosstabs, tables and other
+ * Charts become ReportWright charts directly (their datasets have no RDLX shape). Crosstabs, tables and other
  * components are noted and left out; lists and barcodes are kept.
  *
  * Pure JavaScript, no Node APIs and no DOM. It never throws: whatever it cannot map becomes a warning.
@@ -45,7 +45,7 @@ export function importJrxml(input, opts = {}) {
   }
   /** @type {string[]} */
   const notes = [];
-  /** @type {Map<string, any>} chart placeholders → Pagewright charts */
+  /** @type {Map<string, any>} chart placeholders → ReportWright charts */
   const charts = new Map();
   let ar;
   try { ar = toRdlx(root, notes, charts, opts.name || root.attrs.name); } catch (e) {
@@ -102,8 +102,8 @@ function toRdlx(root, notes, charts, reportName) {
   /* ---------------------------------------------------------------- data: fields, parameters, variables, groups */
   const lang = String(A.language || 'java').toLowerCase();
   if (lang !== 'java' && lang !== 'groovy') note(`Expressions are written in ${A.language}; they are read as Java, so some may show as text.`);
-  if (A.scriptletClass || kids(root, 'scriptlet').length) note('The report uses scriptlets (Java code that runs while it fills); Pagewright does not run them, so values they set are missing.');
-  if (A.resourceBundle) note(`Texts come from the resource bundle "${A.resourceBundle}"; Pagewright shows the keys instead (put the texts in the report or in parameters).`);
+  if (A.scriptletClass || kids(root, 'scriptlet').length) note('The report uses scriptlets (Java code that runs while it fills); ReportWright does not run them, so values they set are missing.');
+  if (A.resourceBundle) note(`Texts come from the resource bundle "${A.resourceBundle}"; ReportWright shows the keys instead (put the texts in the report or in parameters).`);
 
   const fieldKinds = new Map(), paramKinds = new Map(), ints = new Set(); // ints: 'F:name' / 'P:name' of an integral class
   const fields = kids(root, 'field');
@@ -129,7 +129,7 @@ function toRdlx(root, notes, charts, reportName) {
     if (src.length > MAX_EXPR) throw new Untranslatable(`an expression of ${src.length} characters`);
     const env = {
       notes: [], intDivision,
-      field: (n) => { if (c.page) throw new Untranslatable(`$F{${n}} in a page header or footer (Pagewright page bands show no row values)`); return fieldRef(n, fieldKinds.get(n)); },
+      field: (n) => { if (c.page) throw new Untranslatable(`$F{${n}} in a page header or footer (ReportWright page bands show no row values)`); return fieldRef(n, fieldKinds.get(n)); },
       param: (n) => paramRef(n),
       variable: (n) => varRef(n, c, 0),
       resource: (k) => { note('Texts from the resource bundle ($R{…}, str(…)) show their keys.'); return { s: `"${String(k).replace(/"/g, '""')}"`, t: 'str', p: 9 }; },
@@ -148,7 +148,7 @@ function toRdlx(root, notes, charts, reportName) {
   const scopeOf = (v) => {
     const rt = v.attrs.resetType || 'Report';
     if (rt === 'Group' && groupNames.has(v.attrs.resetGroup)) return v.attrs.resetGroup;
-    if (rt === 'Page' || rt === 'Column') note(`Variables that restart on each ${rt.toLowerCase()} (${v.attrs.name}) add up over their band's rows instead: Pagewright has no page totals over data rows.`);
+    if (rt === 'Page' || rt === 'Column') note(`Variables that restart on each ${rt.toLowerCase()} (${v.attrs.name}) add up over their band's rows instead: ReportWright has no page totals over data rows.`);
     return rt === 'Report' ? DETAILS : null;
   };
   /** the groups' keys as VB, outermost first (JasperValue reads them to find where groups break); null if one cannot be read */
@@ -211,7 +211,7 @@ function toRdlx(root, notes, charts, reportName) {
     if (!agg) throw new Untranslatable(`the ${calc} calculation of ${n}`);
     const inner = sub(e, { ...c, inDetail: false }, depth);
     if (/\b(Sum|Count|CountDistinct|Avg|Min|Max|StDev|Var|First|RunningValue|RowNumber|CountRows)\(/.test(inner.s)) throw new Untranslatable(`the variable ${n}, a total of other totals`);
-    if (v.attrs.incrementType && v.attrs.incrementType !== 'None' && v.attrs.incrementType !== 'Group') note(`Variables that add up only at a group or page end (${n}) add up every row in Pagewright.`);
+    if (v.attrs.incrementType && v.attrs.incrementType !== 'None' && v.attrs.incrementType !== 'Group') note(`Variables that add up only at a group or page end (${n}) add up every row in ReportWright.`);
     // Count and DistinctCount are Longs; a Sum, Highest… has the variable's class (Integer: no ".0" when printed)
     const ik = agg === 'Count' || agg === 'CountDistinct' || integral(v.attrs.class);
     if (c.chart) return { s: `${agg}(${inner.s})`, t: 'num', p: 9 };
@@ -224,7 +224,7 @@ function toRdlx(root, notes, charts, reportName) {
     const scope = scopeOf(v);
     const sc = scope ? `, "${scope}"` : '';
     if (c.inDetail && !c.evalLater) {
-      // the detail rows of a group are their own region in Pagewright: a report-wide running total restarts per group
+      // the detail rows of a group are their own region in ReportWright: a report-wide running total restarts per group
       if (scope === DETAILS && groups.length) note('Row numbers and running totals over the whole report restart at each group here (REPORT_COUNT, report-wide sums in the detail band).');
       return { s: `RunningValue(${inner.s}, ${agg}${sc || `, "${DETAILS}"`})`, t: 'num', p: 9, i: ik };
     }
@@ -249,7 +249,7 @@ function toRdlx(root, notes, charts, reportName) {
     if (lit && !/\\u|\$\{/.test(lit[1])) { const t = lit[1].replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\(.)/g, '$1'); return t.startsWith('=') ? `="${t.replace(/"/g, '""')}"` : t; }
     try { const v = vbT(s, c); item.__kind = v; return '=' + v.s; } catch (e) {
       if (!(e instanceof Untranslatable)) throw e;
-      (item.__notes ||= []).push(`${e.message} has no Pagewright equivalent, so the expression ${s.length > 200 ? s.slice(0, 200) + '…' : s} is shown as text.`);
+      (item.__notes ||= []).push(`${e.message} has no ReportWright equivalent, so the expression ${s.length > 200 ? s.slice(0, 200) + '…' : s} is shown as text.`);
       return s.startsWith('=') ? `="${s.replace(/"/g, '""')}"` : s;
     }
   }
@@ -257,7 +257,7 @@ function toRdlx(root, notes, charts, reportName) {
   function setting(src, item, what, c = {}) {
     try { return '=' + vb(String(src).trim(), c); } catch (e) {
       if (!(e instanceof Untranslatable)) throw e;
-      (item.__notes ||= []).push(`${what} uses ${e.message}, which has no Pagewright equivalent, so it is left out.`);
+      (item.__notes ||= []).push(`${what} uses ${e.message}, which has no ReportWright equivalent, so it is left out.`);
       return undefined;
     }
   }
@@ -431,7 +431,7 @@ function toRdlx(root, notes, charts, reportName) {
         it.Value = t.startsWith('=') ? `="${t.replace(/"/g, '""')}"` : t;
         it.CanGrow = false;
         it.Style = rdlxStyle(st, 'text', it, ctx);
-        if (st.markup && st.markup !== 'none') (it.__notes ||= []).push(`its text is ${st.markup} markup; Pagewright shows it as plain text.`);
+        if (st.markup && st.markup !== 'none') (it.__notes ||= []).push(`its text is ${st.markup} markup; ReportWright shows it as plain text.`);
         return it;
       }
       case 'textField': {
@@ -450,7 +450,7 @@ function toRdlx(root, notes, charts, reportName) {
         if (!st.blankWhenNull) style.NullText = 'null'; // Jasper prints a null value as "null" unless blankWhenNull
         if (pat) (it.__notes ||= []).push('its format is set by an expression (patternExpression); it is left out.');
         it.Style = style;
-        if (st.markup && st.markup !== 'none') (it.__notes ||= []).push(`its text is ${st.markup} markup; Pagewright shows it as plain text.`);
+        if (st.markup && st.markup !== 'none') (it.__notes ||= []).push(`its text is ${st.markup} markup; ReportWright shows it as plain text.`);
         link(e, it, ctx);
         return it;
       }
@@ -514,8 +514,8 @@ function toRdlx(root, notes, charts, reportName) {
           const v = value(pe, it, ctx);
           it.Parameters.push({ ParameterName: p.attrs.name, Value: v });
         }
-        if (exprOf(e, 'dataSourceExpression') || exprOf(e, 'connectionExpression')) (it.__info ||= []).push('JasperReports passes it a data source or connection; in Pagewright the subreport reads its own data sets.');
-        if (kids(e, 'returnValue').length) (it.__notes ||= []).push('it returns values to the master report (returnValue); Pagewright subreports return nothing.');
+        if (exprOf(e, 'dataSourceExpression') || exprOf(e, 'connectionExpression')) (it.__info ||= []).push('JasperReports passes it a data source or connection; in ReportWright the subreport reads its own data sets.');
+        if (kids(e, 'returnValue').length) (it.__notes ||= []).push('it returns values to the master report (returnValue); ReportWright subreports return nothing.');
         return it;
       }
       case 'part': {
@@ -528,7 +528,7 @@ function toRdlx(root, notes, charts, reportName) {
         return r;
       }
       case 'break':
-        if (a.type === 'Column') { it.Type = 'rectangle'; it.__drop = 'a column break: Pagewright prints one column, so it was left out.'; return it; }
+        if (a.type === 'Column') { it.Type = 'rectangle'; it.__drop = 'a column break: ReportWright prints one column, so it was left out.'; return it; }
         return { ...base, Type: 'rectangle', Width: '0pt', Height: '0pt', PageBreakAtStart: true, ReportItems: [] };
       case 'chart': return chart(n, it, c);
       case 'crosstab':
@@ -539,7 +539,7 @@ function toRdlx(root, notes, charts, reportName) {
       case 'list': case 'table': return component(n, it, c);
       case 'genericElement':
         it.Type = 'genericElement';
-        it.__drop = 'a generic element (drawn by an exporter plug-in) has no Pagewright equivalent, so it was left out.';
+        it.__drop = 'a generic element (drawn by an exporter plug-in) has no ReportWright equivalent, so it was left out.';
         return it;
     }
     it.Type = String(n.kind);
@@ -583,7 +583,7 @@ function toRdlx(root, notes, charts, reportName) {
     it.Type = 'rectangle';
     it.ReportItems = [];
     const pwType = CHART_TYPES[type];
-    if (!pwType) { it.__drop = `a ${type} chart has no Pagewright equivalent, so it was left out.`; return it; }
+    if (!pwType) { it.__drop = `a ${type} chart has no ReportWright equivalent, so it was left out.`; return it; }
     const key = `pwchart§${charts.size + 1}`;
     const chartName = it.Name;
     it.Name = key;
@@ -594,7 +594,7 @@ function toRdlx(root, notes, charts, reportName) {
     const inner = kid(dsEl, 'dataset') || dsEl;
     const run = kid(inner, 'datasetRun');
     const dataSet = run?.attrs.subDataset || MAIN;
-    if (run && kids(run, 'datasetParameter').length) (it.__notes ||= []).push('the chart passes parameters to its data set; Pagewright reads that data set as it is.');
+    if (run && kids(run, 'datasetParameter').length) (it.__notes ||= []).push('the chart passes parameters to its data set; ReportWright reads that data set as it is.');
     const seriesEls = dsEl ? dsEl.children.filter(x => /^(categorySeries|xySeries|xyzSeries|timeSeries|timePeriodSeries|ganttSeries|series)$/.test(x.name)) : [];
     if (!seriesEls.length && dsEl) seriesEls.push(dsEl); // a pie: key and value on the dataset itself
     const cc = { chart: true };
@@ -610,7 +610,7 @@ function toRdlx(root, notes, charts, reportName) {
     const out = { type: 'chart', name: chartName, chartType: pwType, dataSet, series: [], legend: e.attrs.isShowLegend === 'false' || e.attrs.showLegend === 'false' || kid(e, 'chart')?.attrs.isShowLegend === 'false' ? 'none' : 'bottom' };
     if (/^stacked/.test(type)) out.stacked = true;
     if ((type === 'bar' || type === 'bar3D' || type === 'stackedBar' || type === 'stackedBar3D') && /Horizontal/i.test(plot.orientation || '')) out.chartType = 'bar';
-    if (/3D/.test(type)) (it.__notes ||= []).push('it is a 3D chart in JasperReports; Pagewright draws it flat.');
+    if (/3D/.test(type)) (it.__notes ||= []).push('it is a 3D chart in JasperReports; ReportWright draws it flat.');
     const title = exprOf(kid(kid(e, 'chart'), 'chartTitle'), 'titleExpression') ?? exprOf(e, 'titleExpression');
     if (title) { const t = /^\s*"([^"]*)"\s*$/.exec(title); out.title = t ? t[1] : conv(title, 'title') ?? ''; }
     let category, groupBy;
@@ -659,7 +659,7 @@ function toRdlx(root, notes, charts, reportName) {
       it.Type = 'list';
       it.DataSetName = run?.attrs.subDataset || MAIN;
       it.ReportItems = items(contents, { ...c, inDetail: true, depth: (c.depth || 0) + 1 });
-      if (run && kids(run, 'datasetParameter').length) (it.__notes ||= []).push('the list passes parameters to its data set; Pagewright reads that data set as it is (add a filter if it should show related rows only).');
+      if (run && kids(run, 'datasetParameter').length) (it.__notes ||= []).push('the list passes parameters to its data set; ReportWright reads that data set as it is (add a filter if it should show related rows only).');
       if (comp.attrs.printOrder === 'Horizontal') (it.__notes ||= []).push('its rows go across in JasperReports; here they go down.');
       return it;
     }
@@ -672,8 +672,8 @@ function toRdlx(root, notes, charts, reportName) {
     }
     it.Type = kind || 'component';
     it.__drop = kind === 'table'
-      ? 'a table component is not converted; rebuild it as a Pagewright table (its columns and cells are in the design).'
-      : `the component "${kind || '?'}" has no Pagewright equivalent, so it was left out.`;
+      ? 'a table component is not converted; rebuild it as a ReportWright table (its columns and cells are in the design).'
+      : `the component "${kind || '?'}" has no ReportWright equivalent, so it was left out.`;
     return it;
   }
 
@@ -805,7 +805,7 @@ function toRdlx(root, notes, charts, reportName) {
     }), Query: { DataSourceName: srcName, CommandText: '' } };
     if (sql) {
       let text = q.text.trim();
-      if (/\$P!\{/.test(text)) note(`Data set "${name}": its SQL pastes parameters in as text ($P!{…}); Pagewright binds @parameters only, so check the query.`);
+      if (/\$P!\{/.test(text)) note(`Data set "${name}": its SQL pastes parameters in as text ($P!{…}); ReportWright binds @parameters only, so check the query.`);
       if (/\$X\{/.test(text)) note(`Data set "${name}": its SQL uses $X{…} clauses; rewrite them with @parameters.`);
       text = text.replace(/\$P\{([^}]+)\}/g, (_, p) => `@${safeName(p)}`);
       set.Query.CommandText = text;
@@ -813,11 +813,11 @@ function toRdlx(root, notes, charts, reportName) {
     } else if (xpath) {
       set.Query.CommandText = q?.text.trim() || '';
       const at = String(root.children.find(c => c.name === 'property' && c.attrs.name === 'net.sf.jasperreports.xml.source')?.attrs.value || '').trim();
-      if (!at) note(`Data set "${name}": JasperReports gets its XML from Java code; set the XML source's URL in Pagewright.`);
+      if (!at) note(`Data set "${name}": JasperReports gets its XML from Java code; set the XML source's URL in ReportWright.`);
       DataSources.push({ Name: srcName, ConnectionProperties: { DataProvider: 'XML', ConnectString: at ? `XmlDoc=${at}` : '' } });
     } else {
       if (q && q.text.trim()) note(`Data set "${name}": its ${q.attrs.language || 'query'} query is not converted; point the data source at the data (JSON or CSV) and set its path.`);
-      else note(`Data set "${name}": JasperReports gets its rows from Java code (a data source); point the Pagewright data source at the data.`);
+      else note(`Data set "${name}": JasperReports gets its rows from Java code (a data source); point the ReportWright data source at the data.`);
       DataSources.push({ Name: srcName, ConnectionProperties: { DataProvider: 'JSON', ConnectString: 'jsondata=[]' } });
     }
     const filter = exprOf(ds, 'filterExpression');
@@ -840,7 +840,7 @@ function toRdlx(root, notes, charts, reportName) {
   for (const p of params) {
     const nm = p.attrs.name;
     if (!nm) continue;
-    if (SKIP.test(p.attrs.class || '')) { note(`The parameter "${nm}" holds a ${String(p.attrs.class).split('.').pop()} (passed by Java code); it is not a report parameter in Pagewright.`); continue; }
+    if (SKIP.test(p.attrs.class || '')) { note(`The parameter "${nm}" holds a ${String(p.attrs.class).split('.').pop()} (passed by Java code); it is not a report parameter in ReportWright.`); continue; }
     const k = kindOf(p.attrs.class);
     /** @type {Record<string, any>} */
     const rp = { Name: nm, DataType: { num: /Integer|Long|Short|Byte/.test(p.attrs.class || '') ? 'Integer' : 'Float', bool: 'Boolean', date: 'DateTime' }[k] || 'String', Prompt: (txt(p, 'parameterDescription') ?? txt(p, 'description') ?? nm).trim() || nm };
@@ -875,7 +875,7 @@ function toRdlx(root, notes, charts, reportName) {
   };
 }
 
-/** The chart placeholders (containers named pwchart§n) → the Pagewright charts, at their place and size. */
+/** The chart placeholders (containers named pwchart§n) → the ReportWright charts, at their place and size. */
 function placeCharts(def, charts) {
   if (!charts.size) return;
   const names = new Set();

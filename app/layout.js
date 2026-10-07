@@ -2,7 +2,7 @@ import './globals.css';
 import { THEME_BOOT } from '@/theme/theme.js';
 
 export const metadata = {
-  title: 'Pagewright',
+  title: 'ReportWright',
   description: 'Report designer, engine and viewer',
 };
 

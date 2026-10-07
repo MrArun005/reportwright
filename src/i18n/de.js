@@ -173,7 +173,7 @@ export default {
   isEnabled: '{email} ist aktiviert.', isDisabled: '{email} ist deaktiviert.',
 
   /* ---- sign in ---- */
-  signIn: 'Anmelden', signingIn: 'Anmeldung läuft…', signInLede: 'Pagewright-Berichte', password: 'Passwort',
+  signIn: 'Anmelden', signingIn: 'Anmeldung läuft…', signInLede: 'ReportWright-Berichte', password: 'Passwort',
   signInFailed: 'Anmeldung fehlgeschlagen (HTTP {status}).', signedInAsLong: 'Sie sind angemeldet als', continue: 'Weiter',
   accountsOff: 'Konten sind auf diesem Server ausgeschaltet. Setzen Sie {setting}, um sie einzuschalten.',
   noUsersYet: 'Es gibt noch keine Benutzer.', firstAdmin: 'Legen Sie den ersten Administrator auf eine von zwei Arten an:',

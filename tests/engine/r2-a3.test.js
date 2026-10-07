@@ -48,7 +48,7 @@ describe('A-3', () => {
       const list = await reports.listReports();
       expect(list.find(r => r.id === 'r2')).toMatchObject({ name: 'R2', parameters: [{ name: 'p', type: 'string', required: false }] });
       expect(c.n.v).toBe(0);
-      await store().put('reports', 'copied-in', JSON.stringify({ name: 'Copied' })); // written outside Pagewright
+      await store().put('reports', 'copied-in', JSON.stringify({ name: 'Copied' })); // written outside ReportWright
       expect((await reports.listReports()).find(r => r.id === 'copied-in')?.name).toBe('Copied');
       expect(c.n.v).toBe(1);
       await reports.listReports();

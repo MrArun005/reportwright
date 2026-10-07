@@ -8,7 +8,7 @@ const ev = (s, o = {}) => evalValue(s, { ...ctx, ...o });
 
 const CASES = [
   // text
-  ['=StartsWith("Pagewright", "Page")', true], ['=StartsWith("Pagewright", "page")', false], ['=StartsWith(Fields.n, "a")', false], ['=EndsWith("abc", "bc")', true], ['=EndsWith(Fields.e, "")', true],
+  ['=StartsWith("ReportWright", "Report")', true], ['=StartsWith("ReportWright", "report")', false], ['=StartsWith(Fields.n, "a")', false], ['=EndsWith("abc", "bc")', true], ['=EndsWith(Fields.e, "")', true],
   ['=IndexOf("banana", "an")', 1], ['=IndexOf("banana", "an", 2)', 3], ['=IndexOf("banana", "x")', -1], ['=IndexOf(Fields.n, "x")', -1],
   ['=LastIndexOf("banana", "an")', 3], ['=LastIndexOf("banana", "an", 2)', 1],
   ['=Substring("abcdef", 2)', 'cdef'], ['=Substring("abcdef", 2, 3)', 'cde'], ['=Substring("abc", 5)', ''], ['=Substring(Fields.n, 1)', ''],

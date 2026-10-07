@@ -1,6 +1,6 @@
 {
   "$schema": "pagewright/report@1",
-  "name": "Pagewright Torture Test",
+  "name": "ReportWright Torture Test",
   "description": "Synthetic lending portfolio (180 loans, 12 months) that exercises every feature a report engine must get right: cover links and QR, numbered contents and PDF outline, KPIs, pivot, combo/donut/bucket charts, a grouped register with sparklines, data bars, interactive sort and drill-down, and drill-through detail pages with Code 128 barcodes.",
   "locale": "en-IN",
   "currency": "INR",
@@ -471,7 +471,7 @@
             "y": 28,
             "w": 460,
             "h": 14,
-            "value": "PAGEWRIGHT · REPORT ENGINE STRESS TEST",
+            "value": "REPORTWRIGHT · REPORT ENGINE STRESS TEST",
             "style": {
               "fontSize": 8,
               "color": "#9fb3c8",

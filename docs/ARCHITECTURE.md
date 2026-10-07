@@ -1,4 +1,4 @@
-# Pagewright — Architecture and Roadmap
+# ReportWright — Architecture and Roadmap
 
 > Working name. Change it in one place later.
 > Status: Phase 1 built — see PHASE1.md · 3 Oct 2026 · Owner: Arun · Stack: Next.js, JavaScript
@@ -301,7 +301,7 @@ Charts and barcodes also produce only `path`, `rect`, `line` and `text`. So ever
 ## 13. Project layout
 
 ```
-pagewright/
+reportwright/
 ├─ app/
 │  ├─ page.js                        # report list
 │  ├─ designer/[id]/page.js
@@ -395,7 +395,7 @@ Effort is in **focused dev-days**. Each phase ends with an exit test. Phase N+1 
 
 Updated 4 Oct 2026 after Phases B and C (`docs/PLAN-PHASE-BC.md`).
 
-| ActiveReportsJS feature | Pagewright | Where |
+| ActiveReportsJS feature | ReportWright | Where |
 |---|---|---|
 | Standalone desktop designer | Web designer only (no desktop app) | — |
 | Embeddable designer component | Yes | Phase 4 |
@@ -462,7 +462,7 @@ Updated 4 Oct 2026 after Phases B and C (`docs/PLAN-PHASE-BC.md`).
 
 ## 18. Open questions for Arun
 
-1. **Name.** Keep "Pagewright"?
+1. **Name.** Keep "ReportWright"?
 2. **First real report.** What should the Phase 1 exit sample be — a loan statement, a promotion summary, something else?
 3. **Users.** One user, or several users with login and permissions?
 4. **License.** Open source or private?

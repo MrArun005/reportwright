@@ -7,7 +7,7 @@
 /** Size caps for untrusted data; each cap warns when it bites. */
 export const CAPS = { categories: 1000, series: 50, points: 10000, overlays: 20, period: 1000 };
 
-/** 12 named palettes. `default` is the original Pagewright palette. */
+/** 12 named palettes. `default` is the original ReportWright palette. */
 export const PALETTES = {
   default: ['#2563eb', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#64748b', '#f97316'],
   office: ['#4472c4', '#ed7d31', '#a5a5a5', '#ffc000', '#5b9bd5', '#70ad47', '#264478', '#9e480e', '#636363', '#997300'],

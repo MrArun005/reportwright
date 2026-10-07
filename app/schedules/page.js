@@ -3,7 +3,7 @@ import Shell from '@/home/Shell.jsx';
 import { pickLang } from '@/i18n/index.js';
 
 export const dynamic = 'force-dynamic';
-export const metadata = { title: 'Schedules · Pagewright' };
+export const metadata = { title: 'Schedules · ReportWright' };
 
 // Designers and admins (proxy.js); /api/schedules checks again.
 export default async function SchedulesPage({ searchParams }) {

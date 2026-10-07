@@ -37,9 +37,9 @@ export async function POST(req) {
       const code = await issueEnrolCode(user.email);
       if (code) {
         try {
-          await sendMail({ to: [user.email], subject: 'Your Pagewright enrolment code', text: `Your code to set up two-factor sign-in: ${code}\n\nIt works for 15 minutes. If you did not just sign in, tell an admin: someone has your password.\n` });
+          await sendMail({ to: [user.email], subject: 'Your ReportWright enrolment code', text: `Your code to set up two-factor sign-in: ${code}\n\nIt works for 15 minutes. If you did not just sign in, tell an admin: someone has your password.\n` });
         } catch (e) {
-          console.error(`[pagewright] enrolment code mail: ${e.message}`);
+          console.error(`[reportwright] enrolment code mail: ${e.message}`);
           await audit('auth.mfa_failed', { req, actor: `user:${user.email}`, status: 'failed', detail: { reason: 'enrol mail failed' } });
           await updateUser(user.email, { clearEnrolCode: true }).catch(logWarn('clear enrolment code'));
           return Response.json({ error: 'The enrolment code could not be mailed. Try again later, or ask an admin.' }, { status: 503 });

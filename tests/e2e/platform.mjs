@@ -20,26 +20,26 @@ const MODES = {
   ro: `{ readOnly: true }`,
   nodata: `{ panels: { data: false }, onSave: () => {} }`,
 };
-// the framework wrappers, as an app would load them: React bundled with the app, @pagewrightjs/viewer from the server
+// the framework wrappers, as an app would load them: React bundled with the app, @reportwright/viewer from the server
 const reactApp = (await build({ stdin: { contents: `
   import { createElement } from 'react'; import { createRoot } from 'react-dom/client';
-  import { PagewrightViewer } from './packages/react/dist/index.js';
-  createRoot(document.getElementById('react')).render(createElement(PagewrightViewer, { server: '${BASE}', report: 'loan-statement',
+  import { ReportWrightViewer } from './packages/react/dist/index.js';
+  createRoot(document.getElementById('react')).render(createElement(ReportWrightViewer, { server: '${BASE}', report: 'loan-statement',
     params: { accountId: 'LN-2025-001982' }, style: { height: '500px' }, onReady: () => { window.__reactReady = true; } }));`, resolveDir: process.cwd(), loader: 'jsx' },
-  bundle: true, format: 'esm', write: false, external: ['@pagewrightjs/viewer', '@pagewrightjs/viewer/designer'], define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'error' })).outputFiles[0].text;
-const WRAPPERS = `<script type="importmap">{ "imports": { "@pagewrightjs/viewer": "${BASE}/embed/esm/viewer.js", "@pagewrightjs/viewer/designer": "${BASE}/embed/esm/designer.js" } }</script>
+  bundle: true, format: 'esm', write: false, external: ['@reportwright/viewer', '@reportwright/viewer/designer'], define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'error' })).outputFiles[0].text;
+const WRAPPERS = `<script type="importmap">{ "imports": { "@reportwright/viewer": "${BASE}/embed/esm/viewer.js", "@reportwright/viewer/designer": "${BASE}/embed/esm/designer.js" } }</script>
 <div id="react"></div><div id="svelte" style="height:500px"></div>
-<pagewright-designer id="ng" server="${BASE}" height="500px"></pagewright-designer>
+<reportwright-designer id="ng" server="${BASE}" height="500px"></reportwright-designer>
 <script type="module" src="/react.js"></script>
 <script type="module">
-  import { pagewrightViewer } from '/pkg/svelte/dist/index.js';
-  import { definePagewrightElements } from '/pkg/angular/dist/index.js';
-  pagewrightViewer(document.getElementById('svelte'), { server: '${BASE}', report: 'loan-statement', params: { accountId: 'LN-2025-001982' }, height: '480px', onReady: () => { window.__svelteReady = true; } });
+  import { reportWrightViewer } from '/pkg/svelte/dist/index.js';
+  import { defineReportWrightElements } from '/pkg/angular/dist/index.js';
+  reportWrightViewer(document.getElementById('svelte'), { server: '${BASE}', report: 'loan-statement', params: { accountId: 'LN-2025-001982' }, height: '480px', onReady: () => { window.__svelteReady = true; } });
   const ng = document.getElementById('ng');
   ng.addEventListener('pw-ready', (e) => { window.__ngHandle = e.detail; });
   ng.addEventListener('pw-save', (e) => { window.__ngSaved = e.detail; });
   ng.options = { definition: ${JSON.stringify(DEF)} };
-  definePagewrightElements();
+  defineReportWrightElements();
 </script>`;
 const host = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
@@ -50,8 +50,8 @@ const host = http.createServer((req, res) => {
   res.setHeader('content-type', 'text/html');
   res.end(`<!doctype html><meta charset="utf-8"><style>body{margin:0;font-family:Georgia,serif} .btn{background:red}</style>
 <input id="hostInput" placeholder="the host's own input"><div id="d"></div>
-<script src="${BASE}/embed/pagewright-viewer.js"></script>
-<script>window.__pw = Pagewright.mountDesigner('#d', Object.assign({ server: '${BASE}', definition: ${JSON.stringify(DEF)}, height: '820px' }, ${MODES[mode]}));</script>`);
+<script src="${BASE}/embed/reportwright-viewer.js"></script>
+<script>window.__pw = ReportWright.mountDesigner('#d', Object.assign({ server: '${BASE}', definition: ${JSON.stringify(DEF)}, height: '820px' }, ${MODES[mode]}));</script>`);
 }).listen(4000);
 
 const b = await chromium.launch();

@@ -97,7 +97,7 @@ CLI: `pw render report.pw.json --password 'to open it' --owner-password 'boss' -
   // ... or a URL that gives the list
   itemsFrom: { url: '/api/sample/loans', path: '$[*]', map: { accountId: '$.id' }, headers: {} },
   output: { type: 'zip' },        // zip (default) | merged (one PDF) | folder ({ type, folder }) | none
-  webhook: 'https://your-app/hooks/pagewright',
+  webhook: 'https://your-app/hooks/reportwright',
 }
 ```
 
@@ -142,7 +142,7 @@ A schedule runs a batch on a cron expression in a time zone.
   itemsFrom: { url: '/api/sample/loans', path: '$[*]', map: { accountId: '$.id' } },
   output: { type: 'folder', folder: 'monthly' },
   fileName: '{Parameters.accountId}',
-  webhook: 'https://your-app/hooks/pagewright',
+  webhook: 'https://your-app/hooks/reportwright',
   enabled: true,
 }
 ```
@@ -177,11 +177,11 @@ Cron supports `*`, lists `1,15`, ranges `1-5` and steps `*/15`. Names such as `M
 | `POST /api/reports/import?name=…&folder=…` | Import a report file (at most 5 MB): ActiveReportsJS `.rdlx-json` as JSON, or an SSRS `.rdl` / `.rdlc` sent as `application/xml`. `201 { id, warnings, stats }`; `400 { error }` when the file is not a report |
 | `POST /api/audit/export` | `{ report, format }`: the viewer reports an export it made in the browser (logged as `client: true`) |
 
-These routes use the app's sign-in (`PW_AUTH=users`, the shared `PW_BASIC_AUTH`, or `PW_AUTH=proxy` with `PW_PROXY_SECRET` behind a reverse proxy that signs people in), not API keys. In production with none of them they answer **401** with how to set one up, or, with `PW_PUBLIC_READONLY=1`, allow only what a viewer does (read and render saved reports, run their saved queries). Every write must come from a Pagewright page in every mode: an `Origin` (or `Referer`) naming this server, else **403**.
+These routes use the app's sign-in (`PW_AUTH=users`, the shared `PW_BASIC_AUTH`, or `PW_AUTH=proxy` with `PW_PROXY_SECRET` behind a reverse proxy that signs people in), not API keys. In production with none of them they answer **401** with how to set one up, or, with `PW_PUBLIC_READONLY=1`, allow only what a viewer does (read and render saved reports, run their saved queries). Every write must come from a ReportWright page in every mode: an `Origin` (or `Referer`) naming this server, else **403**.
 
 Server-side fetches: relative data URLs resolve against `PW_BASE_URL` (required in production; the server never takes its own address from a request header). A data source may only GET from this server, and only this server receives its credentials. With a user's key, batches and schedules reach public hosts only (`itemsFrom`, `putUrl`, `webhook`; `baseUrl` is ignored) unless the user is a designer. In production a data source's host must be written out: parameters and expressions may fill only the path and query (`PW_FIXED_FETCH_HOSTS`, 403 otherwise). Redirects from public hosts cannot reach this server or `PW_INTERNAL_HOSTS`.
 
-Saving, creating, importing or restoring a report whose data sources include SQL, or a fetch that may reach a host in `PW_INTERNAL_HOSTS`, needs a designer (or admin) in every mode; others get **403**. The server records a fingerprint of those sources with each such save. When a report runs on the server (`/api/data/sql` with `{ report, source }`, `/pdf`, `/thumb`, `/api/v1/render`, batches, schedules, subreports), its SQL and internal fetches run only if their fingerprint was recorded: a definition changed outside Pagewright answers **403** (`… no designer saved on this server. A designer must open it and save it again.`) until a designer saves it.
+Saving, creating, importing or restoring a report whose data sources include SQL, or a fetch that may reach a host in `PW_INTERNAL_HOSTS`, needs a designer (or admin) in every mode; others get **403**. The server records a fingerprint of those sources with each such save. When a report runs on the server (`/api/data/sql` with `{ report, source }`, `/pdf`, `/thumb`, `/api/v1/render`, batches, schedules, subreports), its SQL and internal fetches run only if their fingerprint was recorded: a definition changed outside ReportWright answers **403** (`… no designer saved on this server. A designer must open it and save it again.`) until a designer saves it.
 
 | Route | Who may call it with accounts off |
 |---|---|
@@ -194,20 +194,20 @@ With accounts on, each report has a level for each user: `view` (open, run, expo
 
 ### SSRS import
 
-`POST /api/reports/import` with `content-type: application/xml` (the home page's **Import file** does this for `.rdl` and `.rdlc`) converts a Microsoft SQL Server Reporting Services or Report Builder report, RDL 2008, 2010 or 2016, into a Pagewright report. In code: `importRdl(xmlText, { name })` from `src/importers/rdl.js` returns `{ definition, warnings, stats, error? }` and never throws. RDLX-JSON (ActiveReportsJS) is RDL written as JSON, so the SSRS importer rewrites the XML into that shape and reuses the ActiveReports mapping and expression translator.
+`POST /api/reports/import` with `content-type: application/xml` (the home page's **Import file** does this for `.rdl` and `.rdlc`) converts a Microsoft SQL Server Reporting Services or Report Builder report, RDL 2008, 2010 or 2016, into a ReportWright report. In code: `importRdl(xmlText, { name })` from `src/importers/rdl.js` returns `{ definition, warnings, stats, error? }` and never throws. RDLX-JSON (ActiveReportsJS) is RDL written as JSON, so the SSRS importer rewrites the XML into that shape and reuses the ActiveReports mapping and expression translator.
 
 **The file is untrusted.** The XML reader (`src/importers/xml.js`) refuses `<!DOCTYPE` and `<!ENTITY` (no XXE, no entity expansion), knows only the five XML entities and character references, caps the size (16 M characters; the route allows 5 MB), nesting (128), elements (250,000) and attributes per element (64), and runs in linear time. Expressions longer than 20,000 characters are left out; the expression translator and every pattern applied to the file are linear. Custom code (`<Code>`) is never run. The output is budgeted too, so a small file cannot become a huge report: `Variables!` and `ReportItems!` expansions are worked out once and capped (20,000 characters each, 16 M in all), tables are capped at 250,000 cells each and 1,000,000 in all (checked before cells are converted), data regions nest at most 8 deep, embedded images are stored once (`images`, referenced as `embedded:name`), and the finished definition is capped at 16 M characters. Going over a total refuses the import with `400 { error }`.
 
 `stats` counts report items: **mapped** (behaves the same), **approximated** (in the report, something changed: a warning says what), **dropped** (left out: a warning says why). Each warning starts with the item's name.
 
-| SSRS | In Pagewright |
+| SSRS | In ReportWright |
 |---|---|
 | Data sources and data sets | SQL Server (and other SQL providers): a `sql` source; the connection string is not imported, set `PW_DB_<NAME>` on the server. A shared data source (`DataSourceReference`) is treated as SQL Server, with a note. "Enter Data" data sets become rows embedded in the report. Query parameters bind to the report parameter they name (`@Region` = `Parameters!Region.Value`). Fields keep their type (`rd:TypeName`); calculated fields and data set filters are mapped. Shared data sets, XML, SharePoint and cube (MDX) sources: no rows, with a note. |
 | Report parameters | Types, prompts, defaults (literal; from an "Enter Data" data set), valid values (a list, or a data set: cascading parameters re-query it), multi-value, nullable / allow blank, hidden. A default from a SQL data set: a note. |
 | Page, header, footer | Page size and margins, page header and footer (with backgrounds, first/last page), several report sections. A body wider than its page widens the page (SSRS prints the overflow on extra pages). |
 | Text boxes | One text run: a text box with its style. Several runs with the same style: one value (`"Page " & Globals!PageNumber & …` becomes a template). Runs formatted differently: rich text (bold, italic, colours, sizes, fonts, underline, bullets and numbering; expression runs become fields). In a table cell, runs keep the first run's style (a note). |
 | Tablix | No column groups: a table (row groups with headers and footers, nested groups, several detail rows per record, static rows, spans, sorting, filters, drill-down from `Visibility/ToggleItem`, `RepeatOnNewPage`, `KeepTogether`, page breaks, document map labels, user sort). Column groups: a matrix (row and column groups, totals). One cell holding a rectangle: a list. One column of rectangles (letters, invoices): a banded list. Images, charts, sub-tables and indicators in cells are laid out inside the cell. |
-| Charts | Column, bar, line (smooth, stepped), area, pie, doughnut, funnel, pyramid, scatter, bubble, range, stock and candlestick, polar, radar; stacked and 100 % stacked; combinations of series types and a secondary axis; category and series groups; titles, legend, axis titles, formats, min/max, log scale, gridlines, label angle; data labels (`#PERCENT`, `#VALY`… keywords); palettes and custom palettes; drill-through on points. Data bars and sparklines (Report Builder's charts in cells) become Pagewright's data bar and sparkline. |
+| Charts | Column, bar, line (smooth, stepped), area, pie, doughnut, funnel, pyramid, scatter, bubble, range, stock and candlestick, polar, radar; stacked and 100 % stacked; combinations of series types and a secondary axis; category and series groups; titles, legend, axis titles, formats, min/max, log scale, gridlines, label angle; data labels (`#PERCENT`, `#VALY`… keywords); palettes and custom palettes; drill-through on points. Data bars and sparklines (Report Builder's charts in cells) become ReportWright's data bar and sparkline. |
 | Gauges | **Approximated**: a radial or linear gauge becomes a half-circle gauge with the first pointer's value and the scale's minimum and maximum (ranges, ticks and frame are left out). A state indicator becomes an icon set (arrows, flags, symbols, ratings, traffic lights) with its state thresholds. |
 | Other items | Line, rectangle (container), image (embedded, external URL, database field as base64), subreport (and its parameters; import the target report too, it is found by its file name). **Not supported**: maps (left out, with a note), custom report items, RDL 2005 Table/Matrix/List (upgrade the file in Report Builder first). |
 | Actions | Hyperlinks, drill-through (to the imported report with that file name, with parameters), bookmark links, bookmarks and document map labels. |
@@ -220,10 +220,10 @@ Tested on 32 Microsoft sample reports (`tests/fixtures/rdl/corpus`, MIT): all im
 
 `POST /api/reports/import` with `content-type: application/xml` (the home page's **Import file** does this for `.jrxml`) converts a JasperReports design, JasperReports 3 to 6 (`<textField><reportElement …/>`) or the 7.x format (`<element kind="…">`). XML imports are told apart by their root element (`src/importers/index.js`, `importXmlReport`). In code: `importJrxml(xmlText, { name })` from `src/importers/jrxml.js`, `{ definition, warnings, stats, error? }`, never throws. Like the SSRS importer it rewrites the design into the RDLX-JSON shape and reuses the ActiveReports mapping, notes and stats; the file is untrusted in the same way (the safe XML reader; the only DOCTYPE dropped is a bare reference to the JasperReports DTD, one with an internal subset is refused; expressions capped at 20,000 characters; variables inlined at most 16 deep; the output budget).
 
-| JasperReports | In Pagewright |
+| JasperReports | In ReportWright |
 |---|---|
 | Bands | Title, then the page header and column header on page 1 (later pages: the page header band, column header included); the detail and the groups as a banded list (group header and footer bands, several bands per section stacked, a band's `printWhenExpression` kept); summary; column footer above the page footer. Several detail columns (`columnCount`): body columns. Background, no-data and last-page-footer bands: a note. Book reports (`sectionType="Part"`): each part a subreport on its own pages. |
-| Elements | Text fields (pattern → format, stretch → can grow, hyperlinks, anchors, tooltips), static text, images (a field: database image; a path: needs a URL), lines, rectangles (rounded), ellipses, frames, subreports (and their parameters; import the target too), page breaks. Lists (`jr:list`) become lists, barcodes (Barbecue, Barcode4J) barcodes. Charts become Pagewright charts: pie, bar/column (horizontal, stacked), line, area, XY and time series, scatter, bubble, meter and thermometer (gauge), candlestick, high-low, Gantt; 3D charts are drawn flat. **Not converted** (noted): crosstabs, table components, generic elements, multi-axis charts. |
+| Elements | Text fields (pattern → format, stretch → can grow, hyperlinks, anchors, tooltips), static text, images (a field: database image; a path: needs a URL), lines, rectangles (rounded), ellipses, frames, subreports (and their parameters; import the target too), page breaks. Lists (`jr:list`) become lists, barcodes (Barbecue, Barcode4J) barcodes. Charts become ReportWright charts: pie, bar/column (horizontal, stacked), line, area, XY and time series, scatter, bubble, meter and thermometer (gauge), candlestick, high-low, Gantt; 3D charts are drawn flat. **Not converted** (noted): crosstabs, table components, generic elements, multi-axis charts. |
 | Styles | Named styles with parents, the default style, conditional styles (colours, bold, italic as `IIF`), boxes (pens per side, padding), fonts, alignment. Markup (HTML, styled text) shows as plain text; rotated text is not rotated. |
 | Data | The main query: SQL with `$P{x}` → `@x` (a `sql` source; set `PW_DB_<NAME>`); `$P!{…}` and `$X{…}` are noted. No query (a Java data source) or xPath/JSON/CSV queries: a JSON source to point at the data. Sub-datasets become data sets; fields keep their type; `filterExpression` and `sortField` map. Parameters keep their type, description, `isForPrompting`, literal and expression defaults; parameters holding Java objects (images, connections, maps) are left out. |
 | Variables | Inlined where used as aggregates with their reset scope: `calculation="Sum"` with `resetType="Group"` is `Sum(…, "Group")`; report totals use the whole data set; in the detail band the running value Jasper prints there (a report-wide running total restarts per group, noted). Count, DistinctCount, Average, Lowest, Highest, StandardDeviation, Variance, First. `PAGE_NUMBER` (and with `evaluationTime="Report"` the page count), `REPORT_COUNT`, `<group>_COUNT`. Page and column totals add up over their band's rows (noted); `PAGE_COUNT`, `COLUMN_*` and scriptlet-set (`System`) variables show as text. |
@@ -235,7 +235,7 @@ Tested on 49 JasperReports demo samples (`tests/fixtures/jrxml/corpus`, LGPL-3.0
 
 `.rptdesign` files go through the same route (the home page's **Import file**). In code: `importBirt(xmlText, { name })` from `src/importers/birt.js`. Same front-end design and the same untrusted-file rules (no DTDs, caps, bound columns resolved at most 12 deep, the output budget).
 
-| BIRT | In Pagewright |
+| BIRT | In ReportWright |
 |---|---|
 | Layout | BIRT flows items top to bottom: they are stacked with their height, or one estimated from the text. Master page: size (`us-letter`, `a4`, `a5`, `a3`, `us-legal`, custom), orientation, margins, page header and footer. Several master pages: the first. |
 | Items | Tables (column widths, header, groups with header and footer rows, detail, footer, spans, the `table-header`/`table-detail`… selectors, highlight rules as `IIF` colours, sorts, filters, group sort and page breaks), grids (each cell's items at its column and row), lists (banded list with groups), labels, data (bound columns, number and date formats), text (HTML reduced to text, `<value-of>` as expressions), dynamic text, auto text (page number, total pages), images (embedded, URL, data), drill-through, hyperlinks, bookmarks, visibility. **Not converted** (noted): charts, crosstabs, items from libraries, event scripts. |
@@ -255,7 +255,7 @@ Tested on 29 BIRT sample reports (`tests/fixtures/birt/corpus`, EPL-2.0): all im
 |---|---|
 | `PW_OIDC_ISSUER`, `PW_OIDC_CLIENT_ID`, `PW_OIDC_CLIENT_SECRET` | OpenID Connect (authorization code + PKCE). Register `https://<PW_BASE_URL>/api/auth/oidc/callback` as the redirect URI. `PW_OIDC_SCOPES` (default `openid email profile`), `PW_OIDC_GROUPS_CLAIM` (default `groups`), `PW_OIDC_NAME` (button label). The ID token must carry `email_verified: true` |
 | `PW_SAML_ENTRY_POINT`, `PW_SAML_IDP_CERT` (PEM or base64, or `PW_SAML_IDP_CERT_FILE`), `PW_SAML_IDP_ISSUER` (all three required) | SAML 2.0 (HTTP-Redirect request, HTTP-POST response, signed assertions required). SP metadata: `/api/auth/saml/metadata`; ACS: `/api/auth/saml/acs`. `PW_SAML_ISSUER` (SP entity id), `PW_SAML_EMAIL_ATTR`, `PW_SAML_GROUPS_ATTR` (default `groups`), `PW_SAML_NAME` |
-| `PW_SSO_ROLE_MAP` | `idp-admins=admin,idp-designers=designer`: an IdP group or role value → Pagewright role (the highest wins) |
+| `PW_SSO_ROLE_MAP` | `idp-admins=admin,idp-designers=designer`: an IdP group or role value → ReportWright role (the highest wins) |
 | `PW_SSO_DEFAULT_ROLE` | Role without a mapped value: `viewer` (default), `designer`, `admin`, or `none` to refuse the sign-in |
 | `PW_PASSWORD_LOGIN=off` | No password sign-in while SSO is set up |
 | `PW_SSO_ALLOWED_DOMAINS` | `acme.com,acme.co.uk`: only these email domains may sign in with SSO |
@@ -302,9 +302,9 @@ Details and settings: [GOVERNANCE.md](GOVERNANCE.md).
 The viewer is one component: the `/viewer/<id>` page, the designer's Preview tab, `mountViewer()` on other sites and the interactive HTML export all use it.
 
 ```html
-<script src="https://reports.example.com/embed/pagewright-viewer.js"></script>
+<script src="https://reports.example.com/embed/reportwright-viewer.js"></script>
 <script>
-  Pagewright.mountViewer('#report', {
+  ReportWright.mountViewer('#report', {
     server: 'https://reports.example.com',
     report: 'loan-statement',
     params: { accountId: 'LN-2025-001982' },
@@ -377,12 +377,12 @@ A range with one bound filled takes the other from `min`/`max`. Filter with both
 The designer embeds like the viewer. It loads only on pages that ask for it (the viewer's script stays the same size), and it renders in a shadow root so the host page's styles do not leak in.
 
 ```html
-<script src="https://reports.example.com/embed/pagewright-viewer.js"></script>
+<script src="https://reports.example.com/embed/reportwright-viewer.js"></script>
 <script>
-  const designer = await Pagewright.mountDesigner('#designer', {
+  const designer = await ReportWright.mountDesigner('#designer', {
     server: 'https://reports.example.com',
     definition,                              // or report: 'id' to load it from the server
-    onSave: (def) => saveToMyApp(def),       // without onSave, Save writes to the Pagewright server (PUT /api/reports/<report>)
+    onSave: (def) => saveToMyApp(def),       // without onSave, Save writes to the ReportWright server (PUT /api/reports/<report>)
     onOpen: () => pickAReport(),             // adds an Open… button; return a definition (or a promise of one)
     readOnly: false,                         // true: no Save, no toolbox, nothing can be changed
     toolbox: { hide: ['map', 'chart'] },     // tool ids: textbox, richtext, table, image, line, shape, list, container, chart,
@@ -396,27 +396,27 @@ The designer embeds like the viewer. It loads only on pages that ask for it (the
 </script>
 ```
 
-Keyboard shortcuts work only for keys typed in the designer, never in the host page; typing in the designer's own inputs is never a shortcut (Backspace in a field does not delete the selected item). One designer per page. As an ES module: `import { mountDesigner } from '@pagewrightjs/viewer/designer'`.
+Keyboard shortcuts work only for keys typed in the designer, never in the host page; typing in the designer's own inputs is never a shortcut (Backspace in a field does not delete the selected item). One designer per page. As an ES module: `import { mountDesigner } from '@reportwright/viewer/designer'`.
 
 ## Framework packages and types
 
 | Package | Use |
 |---|---|
-| `@pagewrightjs/viewer` | `mountViewer`, and `mountDesigner` from `@pagewrightjs/viewer/designer` |
-| `@pagewrightjs/react` | `<PagewrightViewer server report params style />`, `<PagewrightDesigner server definition onSave />` |
-| `@pagewrightjs/vue` | `<PagewrightViewer :options="{ server, report }" />`, `<PagewrightDesigner :options="…" @ready="…" />` |
-| `@pagewrightjs/svelte` | `<div use:pagewrightViewer={{ server, report }}>`, `use:pagewrightDesigner` (actions: no compiler step) |
-| `@pagewrightjs/angular` | `definePagewrightElements()`, then `<pagewright-viewer [options]="…">` and `<pagewright-designer (pw-save)="…">` with `CUSTOM_ELEMENTS_SCHEMA` |
-| `@pagewrightjs/engine` | `render`, the exporters, `defaultFontStore()` |
-| `@pagewrightjs/fonts` | the fonts, shaper and subsetter the engine loads (install next to it) |
-| `@pagewrightjs/cli` | the `pw` command line |
+| `@reportwright/viewer` | `mountViewer`, and `mountDesigner` from `@reportwright/viewer/designer` |
+| `@reportwright/react` | `<ReportWrightViewer server report params style />`, `<ReportWrightDesigner server definition onSave />` |
+| `@reportwright/vue` | `<ReportWrightViewer :options="{ server, report }" />`, `<ReportWrightDesigner :options="…" @ready="…" />` |
+| `@reportwright/svelte` | `<div use:reportWrightViewer={{ server, report }}>`, `use:reportWrightDesigner` (actions: no compiler step) |
+| `@reportwright/angular` | `defineReportWrightElements()`, then `<reportwright-viewer [options]="…">` and `<reportwright-designer (pw-save)="…">` with `CUSTOM_ELEMENTS_SCHEMA` |
+| `@reportwright/engine` | `render`, the exporters, `defaultFontStore()` |
+| `@reportwright/fonts` | the fonts, shaper and subsetter the engine loads (install next to it) |
+| `@reportwright/cli` | the `pw` command line |
 
-The wrappers are thin: the framework and `@pagewrightjs/viewer` are peer dependencies, nothing is bundled, and the viewer loads on mount, so server rendering (Next.js, Nuxt, SvelteKit, Angular SSR) never touches `window`. A viewer remounts when what it shows changes; a designer only for another `report` or a new `definition` object, so it keeps its edits. In React, a `style.height` on the component makes the viewer fill it.
+The wrappers are thin: the framework and `@reportwright/viewer` are peer dependencies, nothing is bundled, and the viewer loads on mount, so server rendering (Next.js, Nuxt, SvelteKit, Angular SSR) never touches `window`. A viewer remounts when what it shows changes; a designer only for another `report` or a new `definition` object, so it keeps its edits. In React, a `style.height` on the component makes the viewer fill it.
 
 Types: every package ships `.d.ts`. The engine's API and the viewer's options are generated from their JSDoc; the report definition has hand-written types:
 
 ```ts
-import type { Report, Item } from '@pagewrightjs/engine';
+import type { Report, Item } from '@reportwright/engine';
 const report: Report = { $schema: 'pagewright/report@1', sections: { body: { items: [{ type: 'textbox', x: 0, y: 0, w: 200, h: 20, value: '=Fields.name' }] } } };
 ```
 

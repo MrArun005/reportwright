@@ -16,8 +16,8 @@ export function makePdfA(doc, { icc, title = 'Report', author, created = new Dat
   const when = new Date(Math.floor(created.getTime() / 1000) * 1000);
   const stamp = when.toISOString().replace('.000Z', 'Z');
   doc.setTitle(title);
-  doc.setProducer('Pagewright');
-  doc.setCreator('Pagewright');
+  doc.setProducer('ReportWright');
+  doc.setCreator('ReportWright');
   if (author) doc.setAuthor(author);
   doc.setCreationDate(when);
   doc.setModificationDate(when);
@@ -60,8 +60,8 @@ function xmpPacket({ title, author, stamp, pdfa = null, ua = false }) {
 <x:xmpmeta xmlns:x="adobe:ns:meta/">
 <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
 ${pdfa ? `<rdf:Description rdf:about="" xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/"><pdfaid:part>2</pdfaid:part><pdfaid:conformance>${pdfa}</pdfaid:conformance></rdf:Description>\n` : ''}${ua ? `<rdf:Description rdf:about="" xmlns:pdfuaid="http://www.aiim.org/pdfua/ns/id/"><pdfuaid:part>1</pdfuaid:part></rdf:Description>\n` : ''}${ua && pdfa ? PDFUA_SCHEMA : ''}<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:format>application/pdf</dc:format><dc:title><rdf:Alt><rdf:li xml:lang="x-default">${xml(title)}</rdf:li></rdf:Alt></dc:title>${author ? `<dc:creator><rdf:Seq><rdf:li>${xml(author)}</rdf:li></rdf:Seq></dc:creator>` : ''}</rdf:Description>
-<rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/"><xmp:CreatorTool>Pagewright</xmp:CreatorTool><xmp:CreateDate>${stamp}</xmp:CreateDate><xmp:ModifyDate>${stamp}</xmp:ModifyDate><xmp:MetadataDate>${stamp}</xmp:MetadataDate></rdf:Description>
-<rdf:Description rdf:about="" xmlns:pdf="http://ns.adobe.com/pdf/1.3/"><pdf:Producer>Pagewright</pdf:Producer></rdf:Description>
+<rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/"><xmp:CreatorTool>ReportWright</xmp:CreatorTool><xmp:CreateDate>${stamp}</xmp:CreateDate><xmp:ModifyDate>${stamp}</xmp:ModifyDate><xmp:MetadataDate>${stamp}</xmp:MetadataDate></rdf:Description>
+<rdf:Description rdf:about="" xmlns:pdf="http://ns.adobe.com/pdf/1.3/"><pdf:Producer>ReportWright</pdf:Producer></rdf:Description>
 </rdf:RDF>
 </x:xmpmeta>
 <?xpacket end="w"?>`;

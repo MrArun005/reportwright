@@ -39,5 +39,5 @@ it('a definition referencing a forbidden report renders exactly as one referenci
   const missing = await view('nopexx');
   expect(await view('newerx')).toBe(missing);
   expect(await view('broken')).toBe(missing);
-  expect(missing).not.toMatch(/2027|newer Pagewright|JSON/);
+  expect(missing).not.toMatch(/2027|newer ReportWright|JSON/);
 });

@@ -18,7 +18,7 @@ is an environment variable unless it says "Settings page" (`/admin/settings`, ad
   the user's sessions end. CLI-free recovery: a recovery code, or an admin.
 - Secrets are sealed with AES-256-GCM, key from `PW_DATA_KEY` (32+ characters), else `PW_SESSION_SECRET`. Rotating that
   secret makes enrolled authenticators unreadable: reset the users and they enrol again.
-- `PW_TOTP_ISSUER` names the account in the app (default Pagewright).
+- `PW_TOTP_ISSUER` names the account in the app (default ReportWright).
 
 ## Revocation: how fast a signed-out or changed account stops working
 
@@ -91,7 +91,7 @@ ask an admin, who sets a new password on the Users page.
 | Setting | |
 |---|---|
 | `PW_SMTP_URL` | `smtp://user:pass@host:587` (STARTTLS, required except to localhost; `PW_SMTP_REQUIRE_TLS=0` allows plain) or `smtps://…:465` |
-| `PW_MAIL_FROM` | `reports@example.com` or `Pagewright <reports@example.com>` |
+| `PW_MAIL_FROM` | `reports@example.com` or `ReportWright <reports@example.com>` |
 | `PW_MAIL_ALLOWED_DOMAINS` | `example.com,example.co.uk`, or `*`. Scheduled mail goes only to these domains (exact, no subdomains); unset: scheduled mail is refused |
 | `PW_MAIL_MAX_RECIPIENTS` | per schedule or batch (default 20) |
 | `PW_MAIL_MAX_ATTACHMENT_MB` | larger output is sent as a link (default 10) |
@@ -100,7 +100,7 @@ ask an admin, who sets a new password on the Users page.
 
 Addresses are checked against a strict pattern (no CR, LF, commas, quotes or angle brackets); subjects lose control
 characters; nodemailer may read no file or URL. **SPF, DKIM and DMARC are the mail administrator's job**: publish SPF
-for the relay, sign at the relay (Pagewright does not DKIM-sign), and send from a domain whose DMARC policy the relay
+for the relay, sign at the relay (ReportWright does not DKIM-sign), and send from a domain whose DMARC policy the relay
 satisfies, or the mail lands in spam.
 
 ## Scheduled reports by email

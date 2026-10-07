@@ -20,7 +20,7 @@ const def = JSON.parse(fs.readFileSync(new URL('../../reports/torture-test.pw.js
 const put = await fetch(`${BASE}/api/reports/torture-test`, { method: 'PUT', headers: { cookie, origin: BASE, 'content-type': 'application/json', 'if-match': '*' }, body: JSON.stringify(def) });
 assert.ok(put.ok, `save: ${put.status}`);
 await p.goto(`${BASE}/?view=reports`);
-for (const name of ['Pagewright Torture Test']) {
+for (const name of ['ReportWright Torture Test']) {
   const card = p.locator('article').filter({ hasText: name }).filter({ has: p.getByRole('button', { name: 'Share' }) }).first();
   await card.getByRole('button', { name: 'Share' }).click();
   const dlg = p.getByRole('dialog');
@@ -33,7 +33,7 @@ for (const name of ['Pagewright Torture Test']) {
 // a busy server that holds the read (Vercel: an inline render on the same instance): an error and Retry, not "Loading…" for good
 let held = 0;
 await p.route('**/api/reports/torture-test/access', async (route) => { if (held++ === 0) { await new Promise(r => setTimeout(r, 17000)); return route.abort().catch(() => {}); } return route.fallback(); });
-const card = p.locator('article').filter({ hasText: 'Pagewright Torture Test' }).first();
+const card = p.locator('article').filter({ hasText: 'ReportWright Torture Test' }).first();
 await card.getByRole('button', { name: 'Share' }).click();
 const dlg = p.getByRole('dialog');
 await dlg.getByRole('alert').filter({ hasText: 'did not answer in time' }).waitFor({ timeout: 20000 });

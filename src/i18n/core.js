@@ -1,5 +1,5 @@
 // The lookups over a STRINGS table (language → key → text), shared by index.js (every language, the app) and
-// embed.js (English, other languages loaded on demand: the embeddable viewer and @pagewrightjs/viewer).
+// embed.js (English, other languages loaded on demand: the embeddable viewer and @reportwright/viewer).
 /** @param {Record<string, Record<string, string>>} STRINGS @param {string[]} LANGUAGES */
 export function lookups(STRINGS, LANGUAGES) {
   const RTL = new Set(['ar']);

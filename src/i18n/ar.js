@@ -173,7 +173,7 @@ export default {
   isEnabled: '{email} مفعّل.', isDisabled: '{email} معطّل.',
 
   /* ---- sign in ---- */
-  signIn: 'تسجيل الدخول', signingIn: 'جارٍ تسجيل الدخول…', signInLede: 'تقارير Pagewright', password: 'كلمة المرور',
+  signIn: 'تسجيل الدخول', signingIn: 'جارٍ تسجيل الدخول…', signInLede: 'تقارير ReportWright', password: 'كلمة المرور',
   signInFailed: 'فشل تسجيل الدخول (HTTP {status}).', signedInAsLong: 'أنت مسجّل الدخول باسم', continue: 'متابعة',
   accountsOff: 'الحسابات متوقفة على هذا الخادم. عيّن {setting} لتشغيلها.',
   noUsersYet: 'لا يوجد مستخدمون بعد.', firstAdmin: 'أنشئ المسؤول الأول بإحدى طريقتين:',

@@ -21,7 +21,7 @@ function typeOf(s) {
 export function schemaMd() {
   const out = ['# Report schema reference', '',
     'GENERATED from `src/engine/schema/report.schema.js` by `node scripts/gen-docs.mjs`; the same schema is published as',
-    '`@pagewrightjs/engine/schema.json` and is what `packages/engine/report.d.ts` and `validate()` are made from.',
+    '`@reportwright/engine/schema.json` and is what `packages/engine/report.d.ts` and `validate()` are made from.',
     'A value of type `Expr` may also be an expression: a string starting with `=` (`"=Sum(Fields.amount)"`).', ''];
   for (const [n, s] of Object.entries(REPORT_SCHEMA.$defs)) {
     if (s['x-ts-decl']) continue;

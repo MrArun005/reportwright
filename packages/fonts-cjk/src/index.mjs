@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// @pagewrightjs/fonts-cjk: the Chinese, Japanese, Korean and emoji fonts (Noto, SIL Open Font License), about 40 MB.
+// @reportwright/fonts-cjk: the Chinese, Japanese, Korean and emoji fonts (Noto, SIL Open Font License), about 40 MB.
 // The package itself is small: the fonts are downloaded on demand from google/fonts at a pinned commit and checked
 // against their SHA-256 before they are written. No install script runs.
-//   npx pagewright-fonts-cjk [folder]          (default: this package's fonts/ folder, where the engine looks)
-//   import { fetchCjkFonts } from '@pagewrightjs/fonts-cjk'; await fetchCjkFonts();
+//   npx reportwright-fonts-cjk [folder]          (default: this package's fonts/ folder, where the engine looks)
+//   import { fetchCjkFonts } from '@reportwright/fonts-cjk'; await fetchCjkFonts();
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -32,9 +32,9 @@ export async function fetchCjkFonts(dir = FONTS_DIR, { log = () => {}, fetch: ge
     const file = path.join(dir, name);
     if (fs.existsSync(file) && sha(fs.readFileSync(file)) === hash) continue;
     const r = await get(`https://github.com/google/fonts/raw/${COMMIT}/ofl/${src}`);
-    if (!r.ok) throw new Error(`@pagewrightjs/fonts-cjk: could not download ${name}: HTTP ${r.status}`);
+    if (!r.ok) throw new Error(`@reportwright/fonts-cjk: could not download ${name}: HTTP ${r.status}`);
     const b = Buffer.from(await r.arrayBuffer());
-    if (sha(b) !== hash) throw new Error(`@pagewrightjs/fonts-cjk: ${name} does not match its SHA-256; not written`);
+    if (sha(b) !== hash) throw new Error(`@reportwright/fonts-cjk: ${name} does not match its SHA-256; not written`);
     fs.writeFileSync(file, b);
     log(`${name}: ${(b.length / 1e6).toFixed(1)} MB`);
   }

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Run several Pagewright server processes on one machine, sharing one port (node:cluster), for throughput: one Next.js
+// Run several ReportWright server processes on one machine, sharing one port (node:cluster), for throughput: one Next.js
 // request thread per process instead of one in all. Build first (npm run build), then:
 //   node scripts/cluster.mjs [-p 3000] [-H 0.0.0.0]
 // PW_CLUSTER_PROCESSES   processes (default: a quarter of the cores, at least 2)
@@ -30,7 +30,7 @@ if (cluster.isPrimary) {
   // file storage keeps users, grants and settings in whole-file JSON arrays with an in-process lock: several processes
   // would lose each other's writes. A database (or one process) only.
   if (n > 1 && (!process.env.PW_STORAGE || process.env.PW_STORAGE === 'file')) {
-    console.error('[pagewright] cluster: several processes need a database for storage (PW_STORAGE=sqlite:/path/pw.db, postgres://…, mysql://… or mssql://…); file storage is safe for one process only. Move the data with: node bin/pw.mjs migrate-storage --to <url>. Or set PW_CLUSTER_PROCESSES=1.');
+    console.error('[reportwright] cluster: several processes need a database for storage (PW_STORAGE=sqlite:/path/pw.db, postgres://…, mysql://… or mssql://…); file storage is safe for one process only. Move the data with: node bin/pw.mjs migrate-storage --to <url>. Or set PW_CLUSTER_PROCESSES=1.');
     process.exit(1);
   }
   let memMB = Number(process.env.PW_MEMORY_LIMIT_MB) || os.totalmem() / 1048576;
@@ -39,7 +39,7 @@ if (cluster.isPrimary) {
   }
   if (process.env.PW_AUTH === 'users' && !process.env.PW_SESSION_SECRET && process.env.NODE_ENV !== 'production') process.env.PW_SESSION_SECRET = crypto.randomBytes(32).toString('hex');
   const env = { PW_CPUS: String(Math.max(2, Math.floor(cores / n))), PW_MEMORY_LIMIT_MB: String(Math.floor(memMB / n)), PW_CLUSTER: '1' };
-  console.log(`[pagewright] cluster: ${n} processes, each with ${env.PW_CPUS} cores and ${env.PW_MEMORY_LIMIT_MB} MB for its render threads${process.env.PW_RENDER_WORKERS ? ` (${process.env.PW_RENDER_WORKERS} each)` : ''}, port ${port}`);
+  console.log(`[reportwright] cluster: ${n} processes, each with ${env.PW_CPUS} cores and ${env.PW_MEMORY_LIMIT_MB} MB for its render threads${process.env.PW_RENDER_WORKERS ? ` (${process.env.PW_RENDER_WORKERS} each)` : ''}, port ${port}`);
   let stopping = false;
   const starts = [];
   const fork = () => { starts.push(Date.now()); cluster.fork(env); };
@@ -48,8 +48,8 @@ if (cluster.isPrimary) {
     if (stopping) return;
     // a process that died is replaced; ten deaths in a minute is a crash loop: stop rather than spin
     const recent = starts.filter(t => t > Date.now() - 60000);
-    if (recent.length >= n + 10) { console.error('[pagewright] cluster: processes keep dying; stopping.'); process.exit(1); }
-    console.warn(`[pagewright] cluster: process ${w.process.pid} exited (${signal || code}); starting another`);
+    if (recent.length >= n + 10) { console.error('[reportwright] cluster: processes keep dying; stopping.'); process.exit(1); }
+    console.warn(`[reportwright] cluster: process ${w.process.pid} exited (${signal || code}); starting another`);
     setTimeout(fork, 500);
   });
   const stop = (sig) => { stopping = true; for (const w of Object.values(cluster.workers || {})) w?.process.kill(sig); setTimeout(() => process.exit(0), 10000).unref(); };

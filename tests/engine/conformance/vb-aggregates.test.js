@@ -37,7 +37,7 @@ const TENTHS = Array.from({ length: 10 }, () => ({ g: 'A', amt: 0.1 }));
 
 /** [VB expression in the group footer, values shown for groups A and B]. */
 const FOOTERS = [
-  ['=Sum(Fields!amt.Value)', ['3', '0'], 'unsure: SSRS Sum over only nulls; Pagewright gives 0 (we believe SSRS gives Nothing, a blank)'],
+  ['=Sum(Fields!amt.Value)', ['3', '0'], 'unsure: SSRS Sum over only nulls; ReportWright gives 0 (we believe SSRS gives Nothing, a blank)'],
   ['=Avg(Fields!amt.Value)', ['1.5', '']],
   ['=Count(Fields!amt.Value)', ['2', '0']],
   ['=CountRows()', ['3', '2']],
@@ -93,8 +93,8 @@ describe('RunningValue, Previous, RowNumber', () => {
 });
 
 /**
- * Rank is not an SSRS function (SSRS has Top N filters, SQL has RANK()): Pagewright's own, so these rows are written in
- * Pagewright syntax. Competition rank, as SQL RANK() and Excel RANK.EQ: ties share a rank and the next one skips; a
+ * Rank is not an SSRS function (SSRS has Top N filters, SQL has RANK()): ReportWright's own, so these rows are written in
+ * ReportWright syntax. Competition rank, as SQL RANK() and Excel RANK.EQ: ties share a rank and the next one skips; a
  * row whose value is Nothing is not ranked (and gets Nothing); the default order is descending (1 = the largest).
  */
 const RANK_ROWS = [
@@ -110,7 +110,7 @@ const RANKS = [
   ['=Rank(-Fields.amt, "T")', ['4', '1', '3', '4', '2']], // -Nothing is 0 in VB, so that row is ranked
 ];
 
-describe('Rank (Pagewright syntax)', () => {
+describe('Rank (ReportWright syntax)', () => {
   for (const [src, want] of RANKS) it(src, async () => expect(await shown(RANK_ROWS, { detail: src, native: true })).toEqual(want));
 });
 

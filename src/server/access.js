@@ -89,7 +89,7 @@ export async function guard(req) {
   try { sessionSecret(); } catch (e) { return new Response(e.message, { status: 500 }); }
   // CSRF: every write must come from this site's pages (API keys on /api/v1 are not cookies, so they are exempt)
   if (UNSAFE.has(req.method.toUpperCase()) && !url.pathname.startsWith('/api/v1/') && !CROSS_SITE_WRITES.includes(url.pathname) && !sameOrigin(req)) {
-    return json('This request did not come from a Pagewright page (Origin check).', 403);
+    return json('This request did not come from a ReportWright page (Origin check).', 403);
   }
   let d = decide(req.method, url.pathname, null);
   if (d === 'bad') return json('Bad path', 400);
@@ -102,7 +102,7 @@ export async function guard(req) {
     return Response.redirect(new URL(`/login?next=${encodeURIComponent(url.pathname + url.search)}`, url), 307); // Next wants an absolute URL here
   }
   if (api) return json(`Your role (${user?.role}) cannot do this.`, 403);
-  return new Response(`<!doctype html><meta charset="utf-8"><title>No access · Pagewright</title><h1>No access</h1><p>Your role (${user?.role}) cannot open this page.</p><p><a href="/">Back to the reports</a></p>`,
+  return new Response(`<!doctype html><meta charset="utf-8"><title>No access · ReportWright</title><h1>No access</h1><p>Your role (${user?.role}) cannot open this page.</p><p><a href="/">Back to the reports</a></p>`,
     { status: 403, headers: { 'content-type': 'text/html; charset=utf-8' } });
 }
 

@@ -23,7 +23,7 @@ const def = {
   styles: { base: { fontFamily: 'Inter', fontSize: 8.5, color: '#111827' } },
   sections: {
     pageHeader: { height: 34, items: [
-      tb('Brand', 0, 0, 300, 16, 'Pagewright Finance · Sales', { fontSize: 11, fontWeight: 'bold', color: ACC }),
+      tb('Brand', 0, 0, 300, 16, 'ReportWright Finance · Sales', { fontSize: 11, fontWeight: 'bold', color: ACC }),
       tb('Year', W - 200, 2, 200, 12, 'Financial year {Parameters.year}', { fontSize: 8, color: MUTED, textAlign: 'right' }),
       { type: 'line', name: 'Rule', x: 0, y: 24, w: W, h: 0, style: { stroke: '#d1d5db', strokeWidth: 0.75 } },
     ] },

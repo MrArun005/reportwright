@@ -5,7 +5,7 @@ import { resolveFontKey } from '../text/fonts.js';
 /**
  * Map item: shapes from GeoJSON (inline text, or a data set of features), filled by a value
  * joined on a key (choropleth), line layers (LineString, MultiLineString), plus point markers sized
- * by a value. Web Mercator, fitted to everything drawn. No map data ships with Pagewright: bring your own GeoJSON.
+ * by a value. Web Mercator, fitted to everything drawn. No map data ships with ReportWright: bring your own GeoJSON.
  * Page-model output only (path, ellipse, rect, text), so every exporter draws it.
  * A click on a region can drill through or set parameters (regionAction, like a chart's pointAction).
  * Deliberately no tile/basemap layer: tiles need a network at render time and do not print to a PDF

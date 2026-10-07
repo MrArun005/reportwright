@@ -43,7 +43,7 @@ export default function AskAi({ onClose }) {
       let preview = null;
       try {
         const params = resolveParameters(out.definition, {}, { lenient: true });
-        const model = await render(out.definition, { fontStore: fontStore(), parameters: params, sources: sources ? Object.fromEntries((out.definition.dataSources || []).map(s => [s.name, sources[s.name] ?? (s.type === 'json' ? s.data : [])])) : undefined, baseUrl: origin(), fetch: reportFetch(origin()) }); // the Pagewright server, also when embedded
+        const model = await render(out.definition, { fontStore: fontStore(), parameters: params, sources: sources ? Object.fromEntries((out.definition.dataSources || []).map(s => [s.name, sources[s.name] ?? (s.type === 'json' ? s.data : [])])) : undefined, baseUrl: origin(), fetch: reportFetch(origin()) }); // the ReportWright server, also when embedded
         preview = { html: pageToSvg(model.pages[0], model.width, model.height), pages: model.pages.length };
       } catch (e) { preview = { error: e.message }; }
       setSt({ state: 'done', next: out.definition, warnings: out.warnings || [], diff: changes(def, out.definition), preview });

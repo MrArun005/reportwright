@@ -1,6 +1,6 @@
 # sales-explorer › default · 2 pages
 --- page 1
-Pagewright Finance · Sales explorer
+ReportWright Finance · Sales explorer
 Financial year 2026
 Sales explorer
 Regions: all · focus: none · product: all · ₹ crore unless noted
@@ -138,7 +138,7 @@ Region › city › product · ▶ expands, blue names drill through, headers so
 Generated 04 Oct 2026, 10:00 AM · click any blue text, bar or slice to drill
 Page 1 of 2
 --- page 2
-Pagewright Finance · Sales explorer
+ReportWright Finance · Sales explorer
 Financial year 2026
 Region / city / product
 Trend

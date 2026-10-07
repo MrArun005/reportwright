@@ -3,7 +3,7 @@ import { dirOf, pickLang } from '@/i18n/index.js';
 import Shell from '@/home/Shell.jsx';
 import { ssoOn } from '@/server/sso.js';
 
-export const metadata = { title: 'Users · Pagewright' };
+export const metadata = { title: 'Users · ReportWright' };
 
 // Admins only (proxy.js). The list and every change go through /api/users, which checks again.
 export default async function UsersPage({ searchParams }) {

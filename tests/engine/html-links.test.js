@@ -1,5 +1,5 @@
 // Static HTML export: bookmark jumps and TOC entries are anchors at the target page and height; drill-through
-// opens the Pagewright viewer (or is shown disabled without a server); URLs stay as they were.
+// opens the ReportWright viewer (or is shown disabled without a server); URLs stay as they were.
 import { describe, it, expect } from 'vitest';
 import { render } from '../../src/engine/index.js';
 import { exportHtml } from '../../src/exporters/html.js';
@@ -45,7 +45,7 @@ describe('static HTML export links', () => {
     const html = await exportHtml(await render(def(), { exportData: true, fontStore }), fontStore);
     expect(links(html).some(h => h.includes('/viewer/'))).toBe(false);
     expect(html).toContain('<g class="pw-off">');
-    expect(html).toContain('Opens the report &quot;loan-statement&quot; in the Pagewright viewer'.replace(/&quot;/g, '"'));
+    expect(html).toContain('Opens the report &quot;loan-statement&quot; in the ReportWright viewer'.replace(/&quot;/g, '"'));
     expect(html).not.toContain('data-action');
   });
 });

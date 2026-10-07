@@ -25,7 +25,16 @@ it('definitions go through the upgrade chain; a newer one is refused', async () 
   const { upgrade } = await import('../../src/engine/schema/upgrade.js');
   const d = { $schema: 'pagewright/report@1', name: 'A' };
   expect(upgrade(d)).toBe(d);
-  expect(() => upgrade({ $schema: 'pagewright/report@9' })).toThrow(/newer Pagewright/);
+  expect(() => upgrade({ $schema: 'pagewright/report@9' })).toThrow(/newer ReportWright/);
+});
+
+it('the renamed $schema (reportwright/report@1) is the same format: read and validated as pagewright/report@1', async () => {
+  const { upgrade } = await import('../../src/engine/schema/upgrade.js');
+  const { validate } = await import('../../src/engine/schema/validate.js');
+  const def = { $schema: 'reportwright/report@1', name: 'A', sections: { body: { items: [] } } };
+  expect(upgrade(def).$schema).toBe('pagewright/report@1');
+  expect(validate(def).warnings.join(' ')).not.toMatch(/Unknown schema/);
+  expect(() => upgrade({ $schema: 'reportwright/report@9' })).toThrow(/newer ReportWright/);
 });
 
 it('pw migrate-storage copies a file install into SQLite: reports, versions, users, blobs, the audit log', () => {

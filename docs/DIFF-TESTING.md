@@ -1,6 +1,6 @@
 # Differential testing against the real engines
 
-Pagewright imports JasperReports (.jrxml) and BIRT (.rptdesign) designs. To stop the "fix one repro, a variant breaks"
+ReportWright imports JasperReports (.jrxml) and BIRT (.rptdesign) designs. To stop the "fix one repro, a variant breaks"
 cycle, the importers and the engine are compared with **the real JasperReports 7.0.8 and BIRT 4.25** on hundreds of
 generated designs, cell by cell.
 
@@ -10,7 +10,7 @@ generated designs, cell by cell.
 |---|---|
 | `tests/diff/gen.mjs` | Seeded generator: 280 JRXML and 265 BIRT designs with data and a locale. Families: aggregates (group nesting, Sum/Count/Average/Lowest/Highest/DistinctCount/First, resetType, incrementType, evaluationTime Now/Report/Group/Auto; BIRT aggregateOn, Total.*, running), expressions (int/double division, casts, Math, strings, null and boolean concatenation, BigDecimal, String.format; BIRT JS, BirtStr/BirtMath, parseInt, toFixed), formats (number and date patterns × en-US, de-DE, en-IN, ar-SA, ja-JP; BIRT categories), sorting (case, digits, nulls), pages (page numbers, page-reset sums, pageBreakInterval), unsorted groups. Every compared value is one line: a label `@<band><n>` and its value. |
 | `tests/diff/jvm/DiffJasper.java`, `DiffBirt.java` | One JVM per engine runs the whole batch: PDF, plus the engine's exact strings (Jasper's filled print objects, BIRT's HTML of the same run), because pdftotext cannot read glyphs the PDF font lacks (Arabic-Indic digits, Japanese). Pages and order come from the PDF. |
-| `scripts/diff-engines.mjs` | `--capture` records the ground truth in `tests/diff/truth/<engine>.json`; without it, compares Pagewright's import + render and writes the mismatch corpus `tests/diff/mismatches/<engine>.json`. `--pdf` also reads Pagewright's own PDF back (it agreed with the page model in every case checked). Needs `~/pw-bench` (jvm/jasper/lib, jvm/birt/runtime, JDK 23) only for `--capture`. |
+| `scripts/diff-engines.mjs` | `--capture` records the ground truth in `tests/diff/truth/<engine>.json`; without it, compares ReportWright's import + render and writes the mismatch corpus `tests/diff/mismatches/<engine>.json`. `--pdf` also reads ReportWright's own PDF back (it agreed with the page model in every case checked). Needs `~/pw-bench` (jvm/jasper/lib, jvm/birt/runtime, JDK 23) only for `--capture`. |
 | `tests/diff/diff.test.js` | `npm run test:diff`: replays the truth without Java. A ratchet: a case that matched and now differs fails; a corpus case that now matches fails until the corpus is rewritten; a corpus case may not get worse. |
 
 ## Results
@@ -26,7 +26,7 @@ JasperReports variable semantics (`JasperValue`); BIRT Total.* scopes, header/fo
 scopes, row heights, pageBreakInterval; null order and collation per engine; groups that break on every change.
 
 Known remaining differences (in the corpus): Jasper page and column footers that sum the rows on their page (no
-page totals over data rows in Pagewright); incrementType on a few calculations; BIRT negative infinity printed as
+page totals over data rows in ReportWright); incrementType on a few calculations; BIRT negative infinity printed as
 "Infinity" and a few float display edge cases; two BIRT layouts paginate a group header differently.
 
 SSRS cannot run here (no Windows). Its semantics are tested from Microsoft's documentation as properties over

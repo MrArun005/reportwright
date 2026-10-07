@@ -1,12 +1,12 @@
 # torture-test › sorted-dpd-central-collapsed · 16 pages
 --- page 1
-Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+ReportWright Torture Test · lending portfolio, period ending 30 Sep 2026
 SAMPLE DATA
-PAGEWRIGHT · REPORT ENGINE STRESS TEST
-Pagewright Torture Test
+REPORTWRIGHT · REPORT ENGINE STRESS TEST
+ReportWright Torture Test
 Interactive report PDF: every feature a report engine must get right
 Lending portfolio · period ending 30 Sep 2026 · Oct 2025 – Sep 2026
-Generated for Arun / Pagewright
+Generated for Arun / ReportWright
 Links
 Live demo: https://mrarun005.github.io/pagewright-demo/
 Source: https://github.com/MrArun005
@@ -34,7 +34,7 @@ in a browser.
 Page 1 of 16
 SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
 --- page 2
-Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+ReportWright Torture Test · lending portfolio, period ending 30 Sep 2026
 SAMPLE DATA
 Contents
 1 Methodology and data
@@ -83,7 +83,7 @@ series and the drill-through pages always show the whole book.
 Page 2 of 16
 SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
 --- page 3
-Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+ReportWright Torture Test · lending portfolio, period ending 30 Sep 2026
 SAMPLE DATA
 Portfolio at a glance
 Filtered by the parameters: regions Central, East, North, South, West · statuses Current, Overdue, Closed, NPA · outstanding ≥ ₹0
@@ -236,7 +236,7 @@ Days past due
 Page 3 of 16
 SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
 --- page 4
-Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+ReportWright Torture Test · lending portfolio, period ending 30 Sep 2026
 SAMPLE DATA
 Monthly disbursement and collection, Oct 2025 – Sep 2026
 Disbursed vs collected (₹ lakh), with collection efficiency on the right axis
@@ -343,7 +343,7 @@ Sep 2026
 Page 4 of 16
 SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
 --- page 5
-Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+ReportWright Torture Test · lending portfolio, period ending 30 Sep 2026
 SAMPLE DATA
 Loan register
 Grouped by region, then product; sorted by outstanding (largest first). Rows: NPA in red, Overdue in amber. ★ marks the 6 drill-through loans. In the viewer, click a column header to sort and the ▼ on a region to
@@ -535,7 +535,7 @@ Current
 Page 5 of 16
 SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
 --- page 6
-Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+ReportWright Torture Test · lending portfolio, period ending 30 Sep 2026
 SAMPLE DATA
 Loan
 Borrower
@@ -884,7 +884,7 @@ collected ₹70,36,186
 Page 6 of 16
 SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
 --- page 7
-Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+ReportWright Torture Test · lending portfolio, period ending 30 Sep 2026
 SAMPLE DATA
 Loan
 Borrower
@@ -1162,7 +1162,7 @@ Current
 Page 7 of 16
 SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
 --- page 8
-Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+ReportWright Torture Test · lending portfolio, period ending 30 Sep 2026
 SAMPLE DATA
 Loan
 Borrower
@@ -1506,7 +1506,7 @@ Current
 Page 8 of 16
 SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
 --- page 9
-Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+ReportWright Torture Test · lending portfolio, period ending 30 Sep 2026
 SAMPLE DATA
 Loan
 Borrower
@@ -1850,7 +1850,7 @@ Current
 Page 9 of 16
 SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
 --- page 10
-Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+ReportWright Torture Test · lending portfolio, period ending 30 Sep 2026
 SAMPLE DATA
 Loan
 Borrower
@@ -2197,7 +2197,7 @@ collected ₹3,16,00,181
 Page 10 of 16
 SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
 --- page 11
-Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+ReportWright Torture Test · lending portfolio, period ending 30 Sep 2026
 SAMPLE DATA
 Drill-through: loan details
 The 6 Overdue and NPA loans with the largest outstanding balance, one per page: the last 12 months of the schedule as simulated (opening
@@ -2368,7 +2368,7 @@ Sep 2026
 Page 11 of 16
 SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
 --- page 12
-Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+ReportWright Torture Test · lending portfolio, period ending 30 Sep 2026
 SAMPLE DATA
 LN-2026-0023 · Borrower 023
 LN-2026-0023
@@ -2538,7 +2538,7 @@ Sep 2026
 Page 12 of 16
 SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
 --- page 13
-Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+ReportWright Torture Test · lending portfolio, period ending 30 Sep 2026
 SAMPLE DATA
 LN-2026-0134 · Borrower 134
 LN-2026-0134
@@ -2706,7 +2706,7 @@ Sep 2026
 Page 13 of 16
 SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
 --- page 14
-Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+ReportWright Torture Test · lending portfolio, period ending 30 Sep 2026
 SAMPLE DATA
 LN-2026-0026 · Borrower 026
 LN-2026-0026
@@ -2873,7 +2873,7 @@ Sep 2026
 Page 14 of 16
 SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
 --- page 15
-Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+ReportWright Torture Test · lending portfolio, period ending 30 Sep 2026
 SAMPLE DATA
 LN-2026-0017 · Borrower 017
 LN-2026-0017
@@ -3039,7 +3039,7 @@ Sep 2026
 Page 15 of 16
 SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
 --- page 16
-Pagewright Torture Test · lending portfolio, period ending 30 Sep 2026
+ReportWright Torture Test · lending portfolio, period ending 30 Sep 2026
 SAMPLE DATA
 LN-2026-0158 · Borrower 158
 LN-2026-0158

@@ -1,6 +1,6 @@
 # sales-city › pune · 3 pages
 --- page 1
-Pagewright Finance · City detail
+ReportWright Finance · City detail
 Financial year 2026
 Pune
 West region · all products · all months · ₹ lakh unless noted
@@ -113,7 +113,7 @@ May
 Generated 04 Oct 2026, 10:00 AM · click any blue text, bar or slice to drill
 Page 1 of 3
 --- page 2
-Pagewright Finance · City detail
+ReportWright Finance · City detail
 Financial year 2026
 Product / month
 Loans
@@ -356,7 +356,7 @@ August
 Generated 04 Oct 2026, 10:00 AM · click any blue text, bar or slice to drill
 Page 2 of 3
 --- page 3
-Pagewright Finance · City detail
+ReportWright Finance · City detail
 Financial year 2026
 Product / month
 Loans

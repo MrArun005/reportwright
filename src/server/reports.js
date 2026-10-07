@@ -58,7 +58,7 @@ function metaOf(id, def, updatedAt) {
 /**
  * Every report: { id, name, updatedAt, items, parameters }, newest first. From the "reportmeta" index that writeReport
  * keeps, not from every definition; a report the index lacks (an older install, a file copied in) is read once and
- * added. ponytail: a definition changed outside Pagewright keeps its old name here until it is saved.
+ * added. ponytail: a definition changed outside ReportWright keeps its old name here until it is saved.
  */
 export async function listReports() {
   const [ids, metas] = await Promise.all([store().ids('reports'), store().list('reportmeta')]);

@@ -21,7 +21,7 @@ export async function proxy(request) {
   }
   // CSRF in every mode: the browser sends a cached Basic password, or reaches a server on localhost, from any site's page
   if (UNSAFE.has(method) && !pathname.startsWith('/api/v1/') && !CROSS_SITE_WRITES.includes(pathname) && !sameOrigin(request)) {
-    return Response.json({ error: 'This request did not come from a Pagewright page (Origin check).' }, { status: 403 });
+    return Response.json({ error: 'This request did not come from a ReportWright page (Origin check).' }, { status: 403 });
   }
   // around the proxy only static files and /api/v1 (its own keys): not the embed's reads of definitions either
   if (!(await proxySecretChecked(request)) && !/^\/(_next|fonts|icc|embed)\/|^\/api\/v1\/|^\/favicon|^\/harfbuzz-subset\.wasm$/.test(pathname)) {
@@ -32,7 +32,7 @@ export async function proxy(request) {
     if (d === 'bad') return Response.json({ error: 'Bad path' }, { status: 400 });
     if (d !== 'open' && !(d === 'allow' && publicReadonly())) {
       return pathname.startsWith('/api/') ? Response.json({ error: NO_AUTH_HELP }, { status: 401 })
-        : new Response(`<!doctype html><meta charset="utf-8"><title>Sign-in is not set up · Pagewright</title><h1>Sign-in is not set up</h1><p>${NO_AUTH_HELP}</p>`,
+        : new Response(`<!doctype html><meta charset="utf-8"><title>Sign-in is not set up · ReportWright</title><h1>Sign-in is not set up</h1><p>${NO_AUTH_HELP}</p>`,
           { status: 401, headers: { 'content-type': 'text/html; charset=utf-8' } });
     }
   }

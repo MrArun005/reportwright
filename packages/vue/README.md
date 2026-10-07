@@ -1,20 +1,20 @@
-# @pagewrightjs/vue
+# @reportwright/vue
 
-[![npm](https://img.shields.io/npm/v/%40pagewrightjs%2Fvue)](https://www.npmjs.com/package/@pagewrightjs/vue) [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/MrArun005/pagewright/blob/main/LICENSE) [![Socket](https://socket.dev/api/badge/npm/package/@pagewrightjs/vue)](https://socket.dev/npm/package/@pagewrightjs/vue) [![provenance](https://img.shields.io/badge/npm-provenance-green)](https://docs.npmjs.com/generating-provenance-statements)
+[![npm](https://img.shields.io/npm/v/%40reportwright%2Fvue)](https://www.npmjs.com/package/@reportwright/vue) [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/MrArun005/reportwright/blob/main/LICENSE) [![Socket](https://socket.dev/api/badge/npm/package/@reportwright/vue)](https://socket.dev/npm/package/@reportwright/vue) [![provenance](https://img.shields.io/badge/npm-provenance-green)](https://docs.npmjs.com/generating-provenance-statements)
 
-The Pagewright viewer and designer as Vue 3 components. Vue is a peer dependency; the viewer loads on mount (SSR-safe).
+The ReportWright viewer and designer as Vue 3 components. Vue is a peer dependency; the viewer loads on mount (SSR-safe).
 
 ```vue
 <script setup>
-import { PagewrightViewer, PagewrightDesigner } from '@pagewrightjs/vue';
+import { ReportWrightViewer, ReportWrightDesigner } from '@reportwright/vue';
 </script>
 <template>
-  <PagewrightViewer :options="{ definition, data: { orders }, fontsUrl: '/pw/fonts/' }" />  <!-- no server -->
-  <PagewrightViewer :options="{ server: 'https://reports.example.com', report: 'invoice', params: { id: '42' } }" />
-  <PagewrightDesigner :options="{ server, definition, onSave: save }" @ready="(h) => (designer = h)" />
+  <ReportWrightViewer :options="{ definition, data: { orders }, fontsUrl: '/pw/fonts/' }" />  <!-- no server -->
+  <ReportWrightViewer :options="{ server: 'https://reports.example.com', report: 'invoice', params: { id: '42' } }" />
+  <ReportWrightDesigner :options="{ server, definition, onSave: save }" @ready="(h) => (designer = h)" />
 </template>
 ```
 
-`options` are those of `mountViewer` / `mountDesigner` (see `@pagewrightjs/viewer`). MIT.
+`options` are those of `mountViewer` / `mountDesigner` (see `@reportwright/viewer`). MIT.
 
-No server needed: pass `definition`, `data` (JSON by data source name) and `fontsUrl` (a copy of `@pagewrightjs/fonts/public/fonts`). `server` (the [self-hosted Pagewright server](https://github.com/MrArun005/pagewright#docker)) is optional: see [what works standalone](https://github.com/MrArun005/pagewright/tree/main/packages/viewer#what-works-standalone-what-needs-the-server).
+No server needed: pass `definition`, `data` (JSON by data source name) and `fontsUrl` (a copy of `@reportwright/fonts/public/fonts`). `server` (the [self-hosted ReportWright server](https://github.com/MrArun005/reportwright#docker)) is optional: see [what works standalone](https://github.com/MrArun005/reportwright/tree/main/packages/viewer#what-works-standalone-what-needs-the-server).

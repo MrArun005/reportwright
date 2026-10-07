@@ -3,9 +3,9 @@
 //
 //   node scripts/diff-engines.mjs --capture            run JasperReports and BIRT on every generated case and record
 //                                                      the text of their PDFs as ground truth (tests/diff/truth/*.json)
-//   node scripts/diff-engines.mjs                      compare Pagewright's import + render with the recorded truth;
+//   node scripts/diff-engines.mjs                      compare ReportWright's import + render with the recorded truth;
 //                                                      writes the mismatch corpus (tests/diff/mismatches/*.json)
-//   options: --engines=jrxml,birt  --only=<family>  --pdf (also export Pagewright's PDF and read it back with pdftotext)
+//   options: --engines=jrxml,birt  --only=<family>  --pdf (also export ReportWright's PDF and read it back with pdftotext)
 //            --bench=<dir> (default ~/pw-bench: jvm/jasper/lib, jvm/birt/runtime, Java 23)  --quiet
 //
 // The ground truth needs Java and the engines; the comparison needs neither (tests/diff/diff.test.js replays it).
@@ -15,7 +15,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { cases } from '../tests/diff/gen.mjs';
-import { pagewright, modelPages, pdfPages, printPages, htmlLines, withExactValues, compare, fontStore, TRUTH_DIR, readTruth } from '../tests/diff/harness.mjs';
+import { reportwright, modelPages, pdfPages, printPages, htmlLines, withExactValues, compare, fontStore, TRUTH_DIR, readTruth } from '../tests/diff/harness.mjs';
 
 const ROOT = path.join(import.meta.dirname, '..');
 const { values: o } = parseArgs({ options: { capture: { type: 'boolean' }, engines: { type: 'string', default: 'jrxml,birt' }, only: { type: 'string' }, pdf: { type: 'boolean' }, bench: { type: 'string', default: path.join(os.homedir(), 'pw-bench') }, quiet: { type: 'boolean' } } });
@@ -81,7 +81,7 @@ async function diff(engine) {
     f.cases++;
     let got, warnings = [];
     try {
-      const r = await pagewright(c, store);
+      const r = await reportwright(c, store);
       got = modelPages(r.model); warnings = r.warnings;
       if (o.pdf) {
         const { exportPdf } = await import('../src/exporters/pdf.js');
@@ -102,7 +102,7 @@ async function diff(engine) {
   fs.mkdirSync(dir, { recursive: true });
   if (!o.only) fs.writeFileSync(path.join(dir, `${engine}.json`), `[\n${corpus.map(m => JSON.stringify(m)).join(',\n')}\n]\n`);
   const tot = Object.values(fams).reduce((a, f) => ({ cases: a.cases + f.cases, bad: a.bad + f.bad, cells: a.cells + f.cells, badCells: a.badCells + f.badCells }), { cases: 0, bad: 0, cells: 0, badCells: 0 });
-  console.log(`\n${truth.tool} (truth ${truth.captured}) vs Pagewright: ${tot.bad}/${tot.cases} cases differ (${pct(tot.bad, tot.cases)}), ${tot.badCells}/${tot.cells} cells (${pct(tot.badCells, tot.cells)})${o.pdf ? `; PDF text ≠ model text in ${pdfDisagree} cases` : ''}`);
+  console.log(`\n${truth.tool} (truth ${truth.captured}) vs ReportWright: ${tot.bad}/${tot.cases} cases differ (${pct(tot.bad, tot.cases)}), ${tot.badCells}/${tot.cells} cells (${pct(tot.badCells, tot.cells)})${o.pdf ? `; PDF text ≠ model text in ${pdfDisagree} cases` : ''}`);
   console.log('family        cases  differ  cells  wrong  pages-only  engine-error  stale');
   for (const [k, f] of Object.entries(fams)) console.log(`${k.padEnd(13)} ${String(f.cases).padStart(5)}  ${String(f.bad).padStart(6)}  ${String(f.cells).padStart(5)}  ${String(f.badCells).padStart(5)}  ${String(f.pagination).padStart(10)}  ${String(f.engineError).padStart(12)}  ${String(f.stale).padStart(5)}`);
   if (!o.quiet) for (const m of corpus.slice(0, 12)) console.log(`  ${m.id} [${m.locale}]${m.pagesOk ? '' : ` pages ${m.truthPages}→${m.gotPages}`}: ${m.bad.slice(0, 3).map(b => `${b.cell} want ${JSON.stringify(b.want)} got ${JSON.stringify(b.got)}`).join('; ')}`);
