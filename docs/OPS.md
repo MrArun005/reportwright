@@ -69,7 +69,7 @@ answers). On a failure it opens an issue labelled `uptime` (or comments on the o
 Set it up:
 
 ```bash
-gh variable set PW_MONITOR_URL --body https://pagewright-app.vercel.app
+gh variable set PW_MONITOR_URL --body https://reportwright.vercel.app
 gh secret set PW_MONITOR_KEY            # a service key from PW_API_KEYS
 ```
 
@@ -79,7 +79,7 @@ scrape `/api/v1/metrics` into Prometheus or Grafana Cloud (free tier) and alert 
 `sum(rate(pagewright_http_requests_total{status="5xx"}[10m])) / sum(rate(pagewright_http_requests_total[10m])) > 0.05`.
 On Vercel, Log Drains or the Observability tab also show 5xx counts per route.
 
-Locally: `BASE=https://pagewright-app.vercel.app PW_MONITOR_KEY=… node scripts/uptime-check.mjs`.
+Locally: `BASE=https://reportwright.vercel.app PW_MONITOR_KEY=… node scripts/uptime-check.mjs`.
 
 ## Staging deploy (Vercel preview, its own Neon branch)
 
@@ -104,7 +104,9 @@ Each deploy:
 ```bash
 cd ~/pw-vercel
 git fetch ~/Documents/pw-stress main && git cherry-pick <new commits>
-vercel deploy                              # preview: prints https://pagewright-app-<hash>-….vercel.app
+# the Vercel project is still named pagewright-app (the CLI cannot rename a project); production answers on
+# https://reportwright.vercel.app and, as an alias that stays, https://pagewright-app.vercel.app. PW_BASE_URL is the new one.
+vercel deploy                              # preview: prints https://pagewright-<hash>-….vercel.app
 BASE=<preview url> node scripts/uptime-check.mjs
 # smoke: sign in, open a report, export a PDF; then promote the same build:
 vercel promote <preview url>               # or vercel deploy --prod
