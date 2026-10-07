@@ -44,7 +44,7 @@ export function tablesData(model, o = {}) {
   }));
 }
 
-/** The script of the Tables view (a constant: its hash goes in the file's CSP). */
+/** The script of the Tables view (a constant: its hash goes in the file's CSP). @type {string} */
 export const DATA_SCRIPT = `(() => {
 const d = JSON.parse(document.getElementById('pw-data').textContent), S = d.strings;
 const bar = document.getElementById('pw-bar'), box = document.getElementById('pw-tables');
@@ -156,7 +156,7 @@ function view(t) {
 }
 })();`;
 
-/** CSS of the bar and the Tables view. */
+/** CSS of the bar and the Tables view. @type {string} */
 export const DATA_CSS = `.pw-bar{position:sticky;top:0;z-index:2;display:flex;gap:4px;padding:4px;background:#fff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.15)}
 .pw-bar button{font:inherit;border:1px solid #c9d1d9;background:#fff;border-radius:6px;padding:4px 12px;cursor:pointer}.pw-bar button[aria-pressed=true]{background:#1f2937;color:#fff;border-color:#1f2937}
 body.pw-show-tables .page{display:none}#pw-tables{width:100%;max-width:none;display:flex;flex-direction:column;gap:24px}

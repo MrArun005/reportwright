@@ -140,6 +140,19 @@ describe('npm packages', () => {
     }
   });
 
+  it('the viewer imports pdf-lib, fontkit, bwip-js, fflate and bidi-js (pinned dependencies) instead of bundling their data blobs', () => {
+    const LIBS = ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate', 'bidi-js'];
+    const v = json('packages/viewer/package.json');
+    expect(Object.keys(v.dependencies).sort()).toEqual([...LIBS].sort());
+    for (const n of LIBS) expect(v.dependencies[n]).toBe(json(`node_modules/${n}/package.json`).version);
+    const dir = path.join(root, 'packages/viewer/dist');
+    const files = fs.readdirSync(dir, { recursive: true }).filter(f => /\.(js|css)$/.test(f));
+    const all = files.map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n');
+    expect(all).not.toMatch(/code49_patterns|dictionary_bin|Helvetica\w*_compressed/);
+    for (const n of LIBS) expect(all).toMatch(new RegExp(`(from |import\\()"${n.replace('/', '\\/')}"`));
+    for (const f of files) for (const l of fs.readFileSync(path.join(dir, f), 'utf8').split('\n')) expect(l.length, f).toBeLessThanOrEqual(1000);
+  });
+
   it('the CLI is render, test, diff and import only: no server modules, no shell access, only its own PW_* options', () => {
     const src = fs.readFileSync(path.join(root, 'packages/cli/dist/pw.mjs'), 'utf8');
     expect(src).not.toMatch(/^\/\/ src\/server\//m); // esbuild marks every bundled file with its path

@@ -4,6 +4,10 @@
 
 The Pagewright report viewer in any web app (React is bundled inside, in a shadow root, so your styles do not leak in). A React app imports `@pagewrightjs/viewer/react-peer` (and `/react-peer/designer`) instead, the same viewer using the app's own React, so the page loads React once; `@pagewrightjs/react` does this for you:
 
+Import it through your bundler (Vite, webpack, esbuild, Rollup, Next…). Its third-party libraries (pdf-lib,
+@pdf-lib/fontkit, bwip-js, fflate, bidi-js) are ordinary dependencies, pinned to the versions the tests ran
+against, so the package itself holds only Pagewright's own readable code.
+
 ## Without a server (library only)
 
 ```bash
@@ -76,4 +80,5 @@ What a page downloads when the viewer mounts: **847 KB gzipped** (0.7.3: 877 KB)
 source maps. Loaded only when used: other interface languages (about 20 KB gzipped each), PDF export (pdf-lib),
 barcodes (bwip-js), Excel/HTML/CSV export, the designer. Most of the first load is the font engine (fontkit) the
 layout measures text with, and React. The package is larger unpacked (two builds: React inside, and React from your
-app at `@pagewrightjs/viewer/react-peer`, plus source maps); only one build reaches your page.
+app at `@pagewrightjs/viewer/react-peer`, plus source maps); only one build reaches your page. PDF export, fontkit,
+barcodes, zip and bidi come from the dependencies above, so your bundler can share them with the rest of your app.

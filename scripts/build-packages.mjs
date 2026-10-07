@@ -28,10 +28,11 @@ const write = (f, s) => fs.writeFileSync(path.join(root, f), typeof s === 'strin
 
 /* engine */
 const E = 'packages/engine';
-const external = ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate'];
+// third-party libraries stay imports (pinned dependencies), never bundled: our tarballs hold only our code
+const external = ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate', 'bidi-js'];
 fs.rmSync(path.join(root, E, 'dist'), { recursive: true, force: true });
 fs.rmSync(path.join(root, E, 'public'), { recursive: true, force: true }); // fonts moved to @pagewrightjs/fonts
-await build({ entryPoints: [path.join(root, E, 'entry.js')], bundle: true, format: 'esm', platform: 'neutral', target: 'es2022', minify: false, sourcemap: 'linked', sourcesContent: false, outfile: path.join(root, E, 'dist/index.js'), external, logLevel: 'warning', mainFields: ['module', 'main'] });
+await build({ entryPoints: [path.join(root, E, 'entry.js')], bundle: true, format: 'esm', platform: 'neutral', target: 'es2022', minify: false, sourcemap: 'linked', sourcesContent: false, charset: 'utf8', lineLimit: 400, outfile: path.join(root, E, 'dist/index.js'), external, logLevel: 'warning', mainFields: ['module', 'main'] });
 write(`${E}/package.json`, {
   name: '@pagewrightjs/engine', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT',
   ...meta(E, ['pdf', 'pdf-a', 'excel', 'xlsx', 'docx', 'pptx', 'report-engine', 'jasperreports', 'ssrs', 'rdl']),
@@ -41,7 +42,7 @@ write(`${E}/package.json`, {
   files: ['dist', 'pool', 'index.d.ts', 'report.d.ts', 'schema.json', 'README.md', 'CHANGELOG.md', 'LICENSE'],
   engines: { node: '>=20.9' },
   sideEffects: false,
-  dependencies: deps(['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate']),
+  dependencies: deps(external),
   peerDependencies: { '@pagewrightjs/fonts': pkg.version },
   peerDependenciesMeta: { '@pagewrightjs/fonts': { optional: true } },
 });
@@ -90,7 +91,7 @@ const serverStub = { name: 'server-stub', setup: (b) => {
   b.onResolve({ filter: /\/src\/server\// }, (a) => ({ path: a.path, namespace: 'server-stub' }));
   b.onLoad({ filter: /.*/, namespace: 'server-stub' }, () => ({ contents: "throw new Error('this is a server command: run it with node bin/pw.mjs in the Pagewright app folder');" }));
 } };
-await build({ entryPoints: [path.join(root, 'bin/pw.mjs')], bundle: true, format: 'esm', platform: 'node', target: 'node22', minify: false, sourcemap: 'linked', sourcesContent: false, outfile: path.join(root, C, 'dist/pw.mjs'), external: [...external, '@pagewrightjs/fonts'], plugins: [serverStub], logLevel: 'warning' }); // esbuild keeps bin/pw.mjs's #! line
+await build({ entryPoints: [path.join(root, 'bin/pw.mjs')], bundle: true, format: 'esm', platform: 'node', target: 'node22', minify: false, sourcemap: 'linked', sourcesContent: false, charset: 'utf8', lineLimit: 400, outfile: path.join(root, C, 'dist/pw.mjs'), external: [...external, '@pagewrightjs/fonts'], plugins: [serverStub], logLevel: 'warning' }); // esbuild keeps bin/pw.mjs's #! line
 fs.chmodSync(path.join(root, C, 'dist/pw.mjs'), 0o755);
 write(`${C}/package.json`, {
   name: '@pagewrightjs/cli', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT',
@@ -100,7 +101,7 @@ write(`${C}/package.json`, {
   files: ['dist', 'README.md', 'CHANGELOG.md', 'LICENSE'],
   sideEffects: false,
   engines: { node: '>=20.9' },
-  dependencies: { ...deps(['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate']), '@pagewrightjs/fonts': pkg.version },
+  dependencies: { ...deps(external), '@pagewrightjs/fonts': pkg.version },
 });
 fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, C, 'LICENSE')); docs(C);
 
@@ -110,9 +111,10 @@ tsc([`${E}/entry.js`, '--rootDir', '.', '--outDir', `${E}/dist/types`]);
 /* viewer */
 const V = 'packages/viewer';
 fs.rmSync(path.join(root, V, 'dist'), { recursive: true, force: true });
-if (!fs.existsSync(path.join(root, 'public/embed/esm/viewer.js'))) throw new Error('Run npm run build:embed first');
-copy('public/embed/esm', `${V}/dist`);
-copy('public/embed/esm-peer', `${V}/dist/peer`);
+if (!fs.existsSync(path.join(root, 'public/embed/esm-pkg/viewer.js'))) throw new Error('Run npm run build:embed first');
+// the builds that import the third-party libraries (scripts/build-embed.mjs): the same `external` list as the engine
+copy('public/embed/esm-pkg', `${V}/dist`);
+copy('public/embed/esm-pkg-peer', `${V}/dist/peer`);
 // the two builds share every chunk that has no React in it (same content, same hashed name): keep one copy, and let
 // the peer build import it from ../ (half the unpacked size)
 {
@@ -134,6 +136,7 @@ write(`${V}/package.json`, {
   name: '@pagewrightjs/viewer', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT',
   ...meta(V, ['viewer', 'report-viewer', 'report-designer', 'web-component', 'pdf']),
   description: 'The Pagewright report viewer for any web app: parameters, paging, search, drill-down, exports. React is bundled inside.',
+  dependencies: deps(external),
   exports: {
     '.': { types: './dist/viewer.d.ts', default: './dist/viewer.js' }, './designer': { types: './dist/designer.d.ts', default: './dist/designer.js' },
     // the same, with React from the host app (one React in the page): what @pagewrightjs/react imports
