@@ -28,7 +28,7 @@ describe('safeFetch', () => {
   beforeAll(async () => {
     server = http.createServer((req, res) => {
       if (req.url === '/hop') { res.writeHead(302, { location: `http://127.0.0.2:${server.address().port}/` }); return res.end(); }
-      if (req.url === '/big') { res.write(Buffer.alloc(21 * 1024 * 1024)); return res.end(); }
+      if (req.url === '/big') { res.write(Buffer.alloc(2 * 1024 * 1024)); return res.end(); }
       let body = '';
       req.on('data', (c) => { body += c; });
       req.on('end', () => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ method: req.method, body, auth: req.headers.authorization || null })); });
@@ -61,10 +61,11 @@ describe('safeFetch', () => {
   it('checks every redirect hop', async () => {
     await expect(safeFetch(`${origin}/hop`, {}, { allow: [origin] })).rejects.toThrow(/private/);
   });
-  it('stops reading a response over 20 MB', async () => {
+  // PW_FETCH_MAX_MB (default 64) set to 1 here, so the test reads 2 MB, not 64
+  it('stops reading a response over PW_FETCH_MAX_MB', () => withEnv({ PW_FETCH_MAX_MB: '1' }, async () => {
     const r = await safeFetch(`${origin}/big`, {}, { allow: [origin] });
-    await expect(r.arrayBuffer()).rejects.toThrow(/20 MB/);
-  });
+    await expect(r.arrayBuffer()).rejects.toThrow(/larger than 1 MB/);
+  }));
 });
 
 describe('server renders fetch through the guard', () => {
