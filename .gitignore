@@ -17,3 +17,4 @@ pw-worker/
 public/fonts/cjk/
 packages/*/CHANGELOG.md
 packages/engine/schema.json
+packages/fonts-cjk/fonts

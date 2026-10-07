@@ -451,7 +451,7 @@ export async function render(def0, opts = {}) {
     // Chinese, Japanese, Korean and emoji fonts are optional (about 40 MB): say how to add them
     const cjk = [...m.noGlyph].some(c => /[\u1100-\u11ff\u2600-\u27bf\u2b00-\u2bff\u3000-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]|[\u{1f000}-\u{1faff}]/u.test(c));
     const list = [...m.noGlyph].slice(0, 20).join(' ');
-    warn(cjk ? `${NO_CJK_FONTS} (or the @pagewrightjs/fonts-cjk files in the server's /fonts/cjk). Until then these characters show as boxes: ${list}.`
+    warn(cjk ? `${NO_CJK_FONTS} (the app), or npm i @pagewrightjs/fonts-cjk then npx pagewright-fonts-cjk (the npm engine). Until then these characters show as boxes: ${list}.`
       : `No font has these characters, so they show as boxes: ${list}. Upload a font that has them and use it for this text.`);
   }
   if (opts.bodyOnly) return { units: result.body.units, tables: result.body.tables, height: result.body.height, regions, warnings, clipped: clipped() };

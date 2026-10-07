@@ -67,6 +67,20 @@ write(`${F}/package.json`, {
 });
 docs(F);
 
+/* fonts-cjk: a downloader for the CJK and emoji fonts (pinned commit, SHA-256 checked); the fonts are not in the tarball */
+const K = 'packages/fonts-cjk';
+write(`${K}/package.json`, {
+  name: '@pagewrightjs/fonts-cjk', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT AND OFL-1.1',
+  description: 'Chinese, Japanese, Korean and emoji fonts (Noto, OFL) for @pagewrightjs/engine, downloaded on demand: npx pagewright-fonts-cjk.',
+  ...meta(K, ['fonts', 'cjk', 'noto', 'japanese', 'chinese', 'korean', 'emoji']),
+  bin: { 'pagewright-fonts-cjk': 'src/index.mjs' },
+  exports: { '.': './src/index.mjs', './fonts/*': './fonts/*', './package.json': './package.json' },
+  files: ['src', 'README.md', 'CHANGELOG.md', 'LICENSE'],
+  engines: { node: '>=20.9' },
+  sideEffects: false,
+});
+fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, K, 'LICENSE')); docs(K);
+
 /* cli: the pw command (bundled engine), fonts from @pagewrightjs/fonts */
 const C = 'packages/cli';
 fs.rmSync(path.join(root, C, 'dist'), { recursive: true, force: true });
@@ -141,4 +155,4 @@ for (const [name, w] of Object.entries(WRAPPERS)) {
   });
   fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, P, 'LICENSE')); docs(P);
 }
-console.log(`packages: @pagewrightjs/engine, /fonts, /cli, /viewer, ${Object.keys(WRAPPERS).map(n => '/' + n).join(', ')} built (npm pack packages/<name>)`);
+console.log(`packages: @pagewrightjs/engine, /fonts, /fonts-cjk, /cli, /viewer, ${Object.keys(WRAPPERS).map(n => '/' + n).join(', ')} built (npm pack packages/<name>)`);

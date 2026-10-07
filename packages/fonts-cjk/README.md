@@ -13,12 +13,24 @@ Chinese, Japanese, Korean and emoji fonts for Pagewright (Noto, SIL Open Font Li
 | `NotoEmoji.ttf` | emoji (monochrome) | 2.0 MB |
 | total | | 39.8 MB (the bundled fonts are 5.0 MB) |
 
-Fetch them into the folder the font loader reads, `fonts/cjk/`:
+The package is small: the fonts are downloaded on demand (no install script runs), from
+[google/fonts](https://github.com/google/fonts) at a pinned commit, and each file is checked against its SHA-256 before
+it is written.
 
 ```bash
-npm run fonts:cjk                                   # in the app: public/fonts/cjk
-node scripts/fetch-fonts-cjk.mjs node_modules/@pagewrightjs/fonts/public/fonts/cjk   # for the engine package
+npm i @pagewrightjs/engine @pagewrightjs/fonts @pagewrightjs/fonts-cjk
+npx pagewright-fonts-cjk              # into node_modules/@pagewrightjs/fonts-cjk/fonts, where defaultFontStore() looks
+npx pagewright-fonts-cjk public/pw/fonts/cjk   # or a folder you serve to the viewer (fontsUrl + cjk/)
 ```
+
+```js
+import { fetchCjkFonts } from '@pagewrightjs/fonts-cjk';
+await fetchCjkFonts();                 // the same, from code (e.g. in your Docker build)
+```
+
+In the Pagewright app repository: `npm run fonts:cjk` (into `public/fonts/cjk`).
+
+Licences: the fonts are SIL Open Font License 1.1 (`OFL.txt` is downloaded with them); the downloader is MIT.
 
 The engine loads a face only when text needs it (`FontStore` asks for `cjk/NotoSansJP.ttf` through `fontFile(key)`),
 and a PDF embeds only the glyphs it uses: a line of Japanese, Korean and emoji adds about 8 KB. Without the files,

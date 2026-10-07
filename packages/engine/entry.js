@@ -11,9 +11,9 @@ export { createSubsetter };
 
 // Fonts, the shaper and harfbuzz-subset.wasm live in @pagewrightjs/fonts (kept out of the engine for size).
 const NODE_FS = 'node:fs/promises'; // a variable, so browser bundlers leave the import alone
-/** URL of a file in @pagewrightjs/fonts/public, or undefined when the package can't be resolved. @param {string} file */
-function fontsUrl(file) {
-  try { return new URL(/** @type {any} */ (import.meta).resolve(`@pagewrightjs/fonts/public/${file}`)); } catch { return undefined; }
+/** URL of a file in @pagewrightjs/fonts/public (or another package folder), or undefined when it can't be resolved. @param {string} file @param {string} [pkg] */
+function fontsUrl(file, pkg = '@pagewrightjs/fonts/public') {
+  try { return new URL(/** @type {any} */ (import.meta).resolve(`${pkg}/${file}`)); } catch { return undefined; }
 }
 /** @param {URL} url */
 const readUrl = async (url) => url.protocol === 'file:' ? (await import(/* @vite-ignore */ /* webpackIgnore: true */ NODE_FS)).readFile(url) : new Uint8Array(await (await fetch(url)).arrayBuffer());
@@ -24,7 +24,14 @@ const readUrl = async (url) => url.protocol === 'file:' ? (await import(/* @vite
  */
 export function defaultFontStore() {
   if (!fontsUrl('fonts/Inter-Regular.ttf')) throw new Error('Install @pagewrightjs/fonts, or pass your own FontStore');
-  return new FontStore((key) => readUrl(/** @type {URL} */ (fontsUrl(`fonts/${fontFile(key)}`))));}
+  return new FontStore(async (key) => {
+    const file = fontFile(key);
+    // Chinese, Japanese, Korean and emoji: @pagewrightjs/fonts-cjk (npx pagewright-fonts-cjk downloads them) when installed
+    const cjk = file.startsWith('cjk/') ? fontsUrl(file.slice(4), '@pagewrightjs/fonts-cjk/fonts') : undefined;
+    if (cjk) try { return await readUrl(cjk); } catch { /* not downloaded: the fonts package's cjk/ folder, else no font */ }
+    return readUrl(/** @type {URL} */ (fontsUrl(`fonts/${file}`)));
+  });
+}
 /** @type {ReturnType<typeof createSubsetter>|undefined} */
 let defaultSubset;
 
