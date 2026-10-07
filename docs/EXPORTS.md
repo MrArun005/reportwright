@@ -94,3 +94,15 @@ left it out).
   gives none (valid, but tell authors to fill it in). In-cell visuals are described as "Chart in a table cell".
 - The HTML Tables view sorts and filters the rows the render produced; groups the report had closed have no detail
   rows to open.
+
+## Excel export memory (0.8)
+
+The Excel export writes its own .xlsx (src/exporters/xlsxwriter.js): each row becomes XML as it is added, instead of an
+ExcelJS cell object per cell. `node scripts/mem-xlsx.mjs 50000` (50,000 rows × 6 columns, M-series laptop, Node 22):
+
+| | export time | peak RSS over start (render + export) | export's own share |
+|---|---|---|---|
+| 0.7.3, ExcelJS | 1,600 ms | +639 MB | +409 MB |
+| 0.8.0, own writer | 560 ms | +378 MB | +124 MB |
+
+Most of what is left is the page model render() keeps for a 50,000-row table (see docs/STRESS-TEST.md).
