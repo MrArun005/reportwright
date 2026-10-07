@@ -15,6 +15,15 @@ const deps = (names) => Object.fromEntries(names.map(n => [n, JSON.parse(fs.read
 const copy = (from, to) => fs.cpSync(path.join(root, from), path.join(root, to), { recursive: true });
 const tsc = (args) => execFileSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--allowJs', '--declaration', '--emitDeclarationOnly', '--noCheck', '--skipLibCheck',
   '--jsx', 'react-jsx', '--module', 'esnext', '--moduleResolution', 'bundler', '--target', 'es2022', ...args], { cwd: root, stdio: 'inherit' });
+const REPO = 'https://github.com/MrArun005/pagewright';
+/** The fields every package.json carries (Socket and npm read them): repository with its folder, homepage, bugs… */
+const meta = (dir, keywords) => ({
+  author: 'Arun Mallikarjun', homepage: `${REPO}/tree/main/${dir}#readme`, bugs: { url: `${REPO}/issues` },
+  repository: { type: 'git', url: `git+${REPO}.git`, directory: dir },
+  keywords: ['pagewright', 'report', 'reporting', ...keywords],
+});
+/** README.md stays the package's own; CHANGELOG.md is the repository's (one version for all packages). */
+const docs = (dir) => fs.copyFileSync(path.join(root, 'CHANGELOG.md'), path.join(root, dir, 'CHANGELOG.md'));
 const write = (f, s) => fs.writeFileSync(path.join(root, f), typeof s === 'string' ? s : JSON.stringify(s, null, 2) + '\n');
 
 /* engine */
@@ -25,16 +34,18 @@ fs.rmSync(path.join(root, E, 'public'), { recursive: true, force: true }); // fo
 await build({ entryPoints: [path.join(root, E, 'entry.js')], bundle: true, format: 'esm', platform: 'neutral', target: 'es2022', minify: false, sourcemap: 'linked', sourcesContent: false, outfile: path.join(root, E, 'dist/index.js'), external, logLevel: 'warning', mainFields: ['module', 'main'] });
 write(`${E}/package.json`, {
   name: '@pagewrightjs/engine', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT',
+  ...meta(E, ['pdf', 'pdf-a', 'excel', 'xlsx', 'docx', 'pptx', 'report-engine', 'jasperreports', 'ssrs', 'rdl']),
   description: 'Pagewright report engine: JSON report definitions to pages, PDF (incl. PDF/A), Word, Excel, PowerPoint, HTML and CSV. Node and browsers. Fonts: @pagewrightjs/fonts; CLI: @pagewrightjs/cli.',
   exports: { '.': { types: './index.d.ts', default: './dist/index.js' }, './report': { types: './report.d.ts' }, './package.json': './package.json' },
   types: './index.d.ts',
-  files: ['dist', 'index.d.ts', 'report.d.ts', 'README.md', 'LICENSE'],
+  files: ['dist', 'index.d.ts', 'report.d.ts', 'README.md', 'CHANGELOG.md', 'LICENSE'],
   engines: { node: '>=20.9' },
+  sideEffects: false,
   dependencies: deps(['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate']),
   peerDependencies: { '@pagewrightjs/fonts': pkg.version },
   peerDependenciesMeta: { '@pagewrightjs/fonts': { optional: true } },
 });
-fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, E, 'LICENSE'));
+fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, E, 'LICENSE')); docs(E);
 
 /* fonts: the bundled fonts, the shaper, harfbuzz-subset.wasm and the PDF/A colour profile (the engine resolves them) */
 const F = 'packages/fonts';
@@ -46,10 +57,13 @@ fs.rmSync(path.join(root, F, 'public/fonts/ui'), { recursive: true, force: true 
 fs.rmSync(path.join(root, F, 'public/fonts/cjk'), { recursive: true, force: true }); // @pagewrightjs/fonts-cjk
 write(`${F}/package.json`, {
   name: '@pagewrightjs/fonts', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'OFL-1.1 AND MIT',
+  ...meta(F, ['fonts', 'harfbuzz', 'noto', 'inter', 'pdf-a', 'icc']),
   description: 'Fonts (Inter, JetBrains Mono, Noto), the HarfBuzz shaper and subsetter for @pagewrightjs/engine.',
   exports: { './public/*': './public/*', './package.json': './package.json' },
-  files: ['public', 'README.md'],
+  files: ['public', 'README.md', 'CHANGELOG.md'],
+  sideEffects: false,
 });
+docs(F);
 
 /* cli: the pw command (bundled engine), fonts from @pagewrightjs/fonts */
 const C = 'packages/cli';
@@ -58,13 +72,15 @@ await build({ entryPoints: [path.join(root, 'bin/pw.mjs')], bundle: true, format
 fs.chmodSync(path.join(root, C, 'dist/pw.mjs'), 0o755);
 write(`${C}/package.json`, {
   name: '@pagewrightjs/cli', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT',
+  ...meta(C, ['cli', 'pdf', 'snapshot-testing', 'reports-as-code']),
   description: 'pw: render, test and diff Pagewright reports from the command line.',
   bin: { pw: 'dist/pw.mjs' },
-  files: ['dist', 'README.md', 'LICENSE'],
+  files: ['dist', 'README.md', 'CHANGELOG.md', 'LICENSE'],
+  sideEffects: false,
   engines: { node: '>=20.9' },
   dependencies: { ...deps(['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate']), '@pagewrightjs/fonts': pkg.version },
 });
-fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, C, 'LICENSE'));
+fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, C, 'LICENSE')); docs(C);
 
 // the API's types, from the JSDoc of everything entry.js exports (index.d.ts re-exports them with report.d.ts)
 tsc([`${E}/entry.js`, '--rootDir', '.', '--outDir', `${E}/dist/types`]);
@@ -83,6 +99,7 @@ fs.renameSync(path.join(T, 'designer.d.ts'), path.join(root, V, 'dist/designer.d
 fs.rmSync(T, { recursive: true, force: true });
 write(`${V}/package.json`, {
   name: '@pagewrightjs/viewer', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT',
+  ...meta(V, ['viewer', 'report-viewer', 'report-designer', 'web-component', 'pdf']),
   description: 'The Pagewright report viewer for any web app: parameters, paging, search, drill-down, exports. React is bundled inside.',
   exports: {
     '.': { types: './dist/viewer.d.ts', default: './dist/viewer.js' }, './designer': { types: './dist/designer.d.ts', default: './dist/designer.js' },
@@ -90,12 +107,13 @@ write(`${V}/package.json`, {
     './react-peer': { types: './dist/viewer.d.ts', default: './dist/peer/viewer.js' }, './react-peer/designer': { types: './dist/designer.d.ts', default: './dist/peer/designer.js' },
   },
   types: './dist/viewer.d.ts',
-  files: ['dist', 'README.md', 'LICENSE'],
+  files: ['dist', 'README.md', 'CHANGELOG.md', 'LICENSE'],
+  engines: { node: '>=20.9' },
   peerDependencies: { react: '>=18', 'react-dom': '>=18' },
   peerDependenciesMeta: { react: { optional: true }, 'react-dom': { optional: true } },
   sideEffects: true,
 });
-fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, V, 'LICENSE'));
+fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, V, 'LICENSE')); docs(V);
 
 /* framework wrappers: plain JavaScript, the framework and the viewer as peer dependencies (nothing bundled) */
 const WRAPPERS = {
@@ -110,13 +128,15 @@ for (const [name, w] of Object.entries(WRAPPERS)) {
   copy(`${P}/src`, `${P}/dist`);
   write(`${P}/package.json`, {
     name: `@pagewrightjs/${name}`, version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT', description: w.description,
+    ...meta(P, [name, 'report-viewer', 'report-designer']),
     exports: { '.': { types: './index.d.ts', default: './dist/index.js' } },
     types: './index.d.ts',
-    files: ['dist', 'index.d.ts', 'README.md', 'LICENSE'],
+    files: ['dist', 'index.d.ts', 'README.md', 'CHANGELOG.md', 'LICENSE'],
+    engines: { node: '>=20.9' },
     sideEffects: false,
     peerDependencies: { ...w.peers, '@pagewrightjs/viewer': pkg.version },
     ...(w.optional ? { peerDependenciesMeta: Object.fromEntries(w.optional.map(n => [n, { optional: true }])) } : {}),
   });
-  fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, P, 'LICENSE'));
+  fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, P, 'LICENSE')); docs(P);
 }
 console.log(`packages: @pagewrightjs/engine, /fonts, /cli, /viewer, ${Object.keys(WRAPPERS).map(n => '/' + n).join(', ')} built (npm pack packages/<name>)`);

@@ -1,5 +1,7 @@
 # @pagewrightjs/cli
 
+[![npm](https://img.shields.io/npm/v/%40pagewrightjs%2Fcli)](https://www.npmjs.com/package/@pagewrightjs/cli) [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/MrArun005/pagewright/blob/main/LICENSE) [![Socket](https://socket.dev/api/badge/npm/package/@pagewrightjs/cli)](https://socket.dev/npm/package/@pagewrightjs/cli) [![provenance](https://img.shields.io/badge/npm-provenance-green)](https://docs.npmjs.com/generating-provenance-statements)
+
 `pw`: render, test and diff Pagewright reports from the command line (no server). Fonts come from `@pagewrightjs/fonts`.
 
 ```bash

@@ -93,6 +93,18 @@ describe('npm packages', () => {
     expect(json('packages/viewer/package.json').exports['./react-peer'].default).toBe('./dist/peer/viewer.js');
   }, 120000);
 
+  it.each(['engine', 'fonts', 'cli', 'viewer', 'react', 'vue', 'svelte', 'angular'])('@pagewrightjs/%s has the metadata npm and Socket read', (name) => {
+    const p = json(`packages/${name}/package.json`);
+    expect(p.repository).toEqual({ type: 'git', url: 'git+https://github.com/MrArun005/pagewright.git', directory: `packages/${name}` });
+    for (const k of ['homepage', 'bugs', 'keywords', 'author', 'license', 'sideEffects', 'files']) expect(p[k], k).toBeDefined();
+    if (name !== 'fonts') expect(p.engines.node).toBeDefined();
+    if (p.exports && name !== 'fonts') expect(Object.values(p.exports)[0].types).toBeDefined();
+    expect(p.files).toContain('CHANGELOG.md');
+    expect(fs.existsSync(path.join(root, `packages/${name}/CHANGELOG.md`))).toBe(true);
+    expect(fs.readFileSync(path.join(root, `packages/${name}/README.md`), 'utf8')).toMatch(/socket\.dev\/api\/badge/);
+    for (const v of Object.values(p.dependencies || {})) expect(v).toMatch(/^\d+\.\d+\.\d+$|^0\.\d+\.\d+$/); // pinned
+  });
+
   it('every package ships readable code (not minified) with source maps', () => {
     for (const f of ['engine/dist/index.js', 'cli/dist/pw.mjs', 'viewer/dist/viewer.js', 'viewer/dist/designer.js', 'viewer/dist/peer/viewer.js']) {
       const src = fs.readFileSync(path.join(root, 'packages', f), 'utf8');

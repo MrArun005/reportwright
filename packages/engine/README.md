@@ -1,5 +1,7 @@
 # @pagewrightjs/engine
 
+[![npm](https://img.shields.io/npm/v/%40pagewrightjs%2Fengine)](https://www.npmjs.com/package/@pagewrightjs/engine) [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/MrArun005/pagewright/blob/main/LICENSE) [![Socket](https://socket.dev/api/badge/npm/package/@pagewrightjs/engine)](https://socket.dev/npm/package/@pagewrightjs/engine) [![provenance](https://img.shields.io/badge/npm-provenance-green)](https://docs.npmjs.com/generating-provenance-statements)
+
 The Pagewright report engine for Node and browsers: a JSON report definition and data in, pages out, then PDF (also PDF/A-2b), Word, Excel, PowerPoint (exportPptx), HTML or CSV. Includes the `pw` command line.
 
 ```bash

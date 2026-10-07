@@ -1,5 +1,7 @@
 # @pagewrightjs/fonts-cjk (optional)
 
+[![npm](https://img.shields.io/npm/v/%40pagewrightjs%2Ffonts-cjk)](https://www.npmjs.com/package/@pagewrightjs/fonts-cjk) [![license](https://img.shields.io/badge/license-OFL--1.1%20%2B%20MIT-blue)](https://github.com/MrArun005/pagewright/blob/main/LICENSE) [![Socket](https://socket.dev/api/badge/npm/package/@pagewrightjs/fonts-cjk)](https://socket.dev/npm/package/@pagewrightjs/fonts-cjk) [![provenance](https://img.shields.io/badge/npm-provenance-green)](https://docs.npmjs.com/generating-provenance-statements)
+
 Chinese, Japanese, Korean and emoji fonts for Pagewright (Noto, SIL Open Font License). They are not in
 `@pagewrightjs/fonts` because they are large:
 
