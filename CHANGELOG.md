@@ -2,6 +2,26 @@
 
 All `@pagewrightjs/*` packages share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
+## 0.8.1
+
+Supply-chain hardening (what Socket.dev and similar scanners read). No change to rendering or exports.
+
+### Changed
+- `@pagewrightjs/viewer` no longer bundles pdf-lib, @pdf-lib/fontkit, bwip-js, fflate or bidi-js: they are
+  dependencies pinned to exact versions, as in the engine. Import the viewer through a bundler (Vite, webpack,
+  esbuild, Rollup…). Unpacked size 14.8 MB to 10.1 MB.
+- The engine and the CLI import bidi-js too (a pinned dependency) instead of bundling its Unicode tables.
+- `@pagewrightjs/cli` holds the report commands only (render, test, diff, import): no server modules, no
+  `child_process`, no environment reads. `pw audit` and `pw migrate-storage` run from the app (`node bin/pw.mjs`).
+- No line over 1,000 characters in any package (source maps aside).
+- `render(def, { fetch })` is the documented way to give the engine its network access; `globalThis.fetch` is only
+  the fallback, and the error without either says so.
+- `@pagewrightjs/fonts` ships a LICENSE file.
+
+### Added
+- `npm run scan:packages` (`scripts/scan-packages.mjs`): a Socket-style scan of every packed package, run in CI and
+  before publishing. Release steps: [docs/RELEASING.md](docs/RELEASING.md).
+
 ## 0.8.0
 
 ### Breaking (with a deprecation period)
