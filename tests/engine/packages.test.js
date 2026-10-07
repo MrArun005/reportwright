@@ -79,6 +79,9 @@ describe('npm packages', () => {
     expect(fs.readFileSync(path.join(tmp, 'orders.pdf')).subarray(0, 5).toString()).toBe('%PDF-');
     execFileSync(path.join(tmp, 'node_modules/.bin/pw'), ['render', 'statement.pw.json', '-f', 'pdf', '-o', 'cli.pdf'], { cwd: tmp, stdio: 'pipe' });
     expect(fs.readFileSync(path.join(tmp, 'cli.pdf')).subarray(0, 5).toString()).toBe('%PDF-');
+    let out = ''; // the server commands are not in the package, and say where they are
+    try { execFileSync(path.join(tmp, 'node_modules/.bin/pw'), ['audit', 'verify'], { cwd: tmp, encoding: 'utf8', stdio: 'pipe' }); } catch (e) { out = e.stderr; }
+    expect(out).toMatch(/server command: run it with node bin\/pw\.mjs/);
     fs.rmSync(tmp, { recursive: true, force: true });
   }, 240000);
 
@@ -135,6 +138,14 @@ describe('npm packages', () => {
       expect(src, f).toMatch(/\/\/# sourceMappingURL=\S+\.map/);
       expect(fs.existsSync(path.join(root, 'packages', f + '.map')), f).toBe(true);
     }
+  });
+
+  it('the CLI is render, test, diff and import only: no server modules, no shell access, only its own PW_* options', () => {
+    const src = fs.readFileSync(path.join(root, 'packages/cli/dist/pw.mjs'), 'utf8');
+    expect(src).not.toMatch(/^\/\/ src\/server\//m); // esbuild marks every bundled file with its path
+    expect(src).not.toMatch(/child_process/);
+    const env = [...src.matchAll(/process\.env(?:\.(\w+)|\[\s*['"](\w+)['"]\s*\])?/g)].map(m => m[1] || m[2] || '(dynamic)');
+    expect(env.filter(n => !/^PW_/.test(n))).toEqual([]);
   });
 
   it('a TypeScript consumer type-checks, and every wrong case fails', () => {

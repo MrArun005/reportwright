@@ -10,4 +10,8 @@ npx -p @pagewrightjs/cli pw test reports        # snapshot tests for reports-as-
 npx -p @pagewrightjs/cli pw import invoice.jrxml   # JasperReports, SSRS (.rdl) or BIRT → invoice.pw.json
 ```
 
+The package is the report commands only (render, test, diff, import): no server code, no child processes, and it
+reads no environment variables. `pw audit` and `pw migrate-storage` work on a Pagewright server's storage, so they run
+from the app folder (`node bin/pw.mjs audit verify`).
+
 MIT.

@@ -84,7 +84,13 @@ fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, K, 'LICENSE')); docs
 /* cli: the pw command (bundled engine), fonts from @pagewrightjs/fonts */
 const C = 'packages/cli';
 fs.rmSync(path.join(root, C, 'dist'), { recursive: true, force: true });
-await build({ entryPoints: [path.join(root, 'bin/pw.mjs')], bundle: true, format: 'esm', platform: 'node', target: 'node22', minify: false, sourcemap: 'linked', sourcesContent: false, outfile: path.join(root, C, 'dist/pw.mjs'), external: [...external, '@pagewrightjs/fonts'], logLevel: 'warning' }); // esbuild keeps bin/pw.mjs's #! line
+// pw audit and pw migrate-storage work on a server's storage: they stay in the app's bin/pw.mjs, and the package
+// gets a stub, so no server module (storage drivers, config, child processes) is in the CLI
+const serverStub = { name: 'server-stub', setup: (b) => {
+  b.onResolve({ filter: /\/src\/server\// }, (a) => ({ path: a.path, namespace: 'server-stub' }));
+  b.onLoad({ filter: /.*/, namespace: 'server-stub' }, () => ({ contents: "throw new Error('this is a server command: run it with node bin/pw.mjs in the Pagewright app folder');" }));
+} };
+await build({ entryPoints: [path.join(root, 'bin/pw.mjs')], bundle: true, format: 'esm', platform: 'node', target: 'node22', minify: false, sourcemap: 'linked', sourcesContent: false, outfile: path.join(root, C, 'dist/pw.mjs'), external: [...external, '@pagewrightjs/fonts'], plugins: [serverStub], logLevel: 'warning' }); // esbuild keeps bin/pw.mjs's #! line
 fs.chmodSync(path.join(root, C, 'dist/pw.mjs'), 0o755);
 write(`${C}/package.json`, {
   name: '@pagewrightjs/cli', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT',
