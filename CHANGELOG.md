@@ -1,6 +1,33 @@
 # Changelog
 
-All `@pagewrightjs/*` packages share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
+All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
+
+## 0.9.0
+
+Pagewright is now **ReportWright** (formerly Pagewright). No change to rendering, totals or page counts.
+
+### Changed
+- The npm packages moved to the `@reportwright` scope: `@reportwright/engine`, `/viewer`, `/fonts`, `/fonts-cjk`,
+  `/cli`, `/react`, `/vue`, `/svelte`, `/angular`. The `@pagewrightjs/*` packages are deprecated and get no updates.
+  Change the package names in your `package.json` and imports; nothing else.
+- The brand in the app, the Designer, the viewer, mails, the 9 interface languages, the CLI, error messages and
+  exports (the PDF Producer and Creator, HTML titles) reads ReportWright.
+- The CLI installs as `reportwright` and still as `pw`; the CJK font downloader as `reportwright-fonts-cjk` (and
+  `pagewright-fonts-cjk`).
+- The repository is `github.com/MrArun005/reportwright` (the old URL redirects).
+
+### Deprecated (removed in 1.0)
+- `<pagewright-viewer>` and `<pagewright-designer>` (now `<reportwright-viewer>`, `<reportwright-designer>`; both are
+  registered), `definePagewrightElements` (now `defineReportWrightElements`), `PagewrightViewer` and
+  `PagewrightDesigner` in React and Vue (now `ReportWrightViewer`, `ReportWrightDesigner`), `pagewrightViewer` and
+  `pagewrightDesigner` in Svelte (now `reportWrightViewer`, `reportWrightDesigner`), `window.Pagewright` (now
+  `window.ReportWright`) and `/embed/pagewright-viewer.js` (now `/embed/reportwright-viewer.js`). Each old name is
+  an alias of the new one.
+
+### Kept (so deployments and stored data keep working)
+- Settings keep the `PW_` prefix. The `x-pagewright-*` headers, the `pagewright_*` metrics, cookie and storage table
+  names, the `.pw.json` extension and `"$schema": "pagewright/report@1"` are unchanged; `reportwright/report@1` is
+  accepted as the same format.
 
 ## 0.8.1
 

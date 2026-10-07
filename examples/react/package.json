@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "scripts": { "predev": "rm -rf public/pw && mkdir -p public && cp -r node_modules/@reportwright/fonts/public public/pw", "dev": "vite", "build": "npm run predev && vite build" },
-  "dependencies": { "@reportwright/fonts": "0.8.0", "@reportwright/react": "0.8.0", "@reportwright/viewer": "0.8.0", "react": "^19.0.0", "react-dom": "^19.0.0" },
+  "dependencies": { "@reportwright/fonts": "0.9.0", "@reportwright/react": "0.9.0", "@reportwright/viewer": "0.9.0", "react": "^19.0.0", "react-dom": "^19.0.0" },
   "devDependencies": { "@vitejs/plugin-react": "^5.0.0", "vite": "^7.0.0" }
 }
