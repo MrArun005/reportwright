@@ -42,6 +42,8 @@ jobs:
       - run: node scripts/check-engine-boundary.mjs
       - name: Report snapshots (fails when a page or a total changes)
         run: node bin/pw.mjs test reports
+      - name: npm packages, Socket-style scan (install scripts, eval, child_process, long lines, pinned deps, metadata)
+        run: npm run build:packages && npm run scan:packages
       - run: npm run build
 
   verapdf:

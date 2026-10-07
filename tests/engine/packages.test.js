@@ -161,6 +161,13 @@ describe('npm packages', () => {
     expect(env.filter(n => !/^PW_/.test(n))).toEqual([]);
   });
 
+  it('every package passes the Socket-style scan (scripts/scan-packages.mjs packs each one)', () => {
+    let out = '', code = 0;
+    try { out = node('scripts/scan-packages.mjs'); } catch (e) { out = String(e.stdout) + String(e.stderr); code = e.status; }
+    expect(out).toMatch(/scan: all packages pass/);
+    expect(code).toBe(0);
+  }, 240000);
+
   it('a TypeScript consumer type-checks, and every wrong case fails', () => {
     let out = '';
     try { node('node_modules/typescript/bin/tsc', '-p', 'tests/fixtures/types'); } catch (e) { out = String(e.stdout) + String(e.stderr); }

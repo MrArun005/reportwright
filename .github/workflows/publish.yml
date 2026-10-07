@@ -28,6 +28,7 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run build:packages
       - run: npx vitest run tests/engine/packages.test.js
+      - run: npm run scan:packages
       # fonts first: the engine, the CLI and the viewer depend on it at the same version
       - name: npm publish --provenance
         env:

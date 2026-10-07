@@ -63,10 +63,10 @@ write(`${F}/package.json`, {
   ...meta(F, ['fonts', 'harfbuzz', 'noto', 'inter', 'pdf-a', 'icc']),
   description: 'Fonts (Inter, JetBrains Mono, Noto), the HarfBuzz shaper and subsetter for @pagewrightjs/engine.',
   exports: { './public/*': './public/*', './package.json': './package.json' },
-  files: ['public', 'README.md', 'CHANGELOG.md'],
+  files: ['public', 'README.md', 'CHANGELOG.md', 'LICENSE'],
   sideEffects: false,
 });
-docs(F);
+fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, F, 'LICENSE')); docs(F); // MIT; each font's OFL is in public/fonts
 
 /* fonts-cjk: a downloader for the CJK and emoji fonts (pinned commit, SHA-256 checked); the fonts are not in the tarball */
 const K = 'packages/fonts-cjk';

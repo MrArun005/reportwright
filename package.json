@@ -23,6 +23,7 @@
     "sample": "node scripts/make-sample.mjs",
     "build:embed": "node scripts/build-embed.mjs",
     "build:packages": "node scripts/build-embed.mjs && node scripts/build-packages.mjs",
+    "scan:packages": "node scripts/scan-packages.mjs",
     "perf": "node scripts/perf.mjs",
     "build:site": "node scripts/build-site.mjs"
   },
