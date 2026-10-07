@@ -22,6 +22,18 @@ fs.writeFileSync('statement.pdf', await exportPdf(model, { fonts, title: 'Statem
 // only when asked: render(def, { exportData: true }) (needsExportData(format) says which formats need it)
 ```
 
+## Many reports at once (Node): a worker pool
+
+```js
+import { createPool } from '@pagewrightjs/engine/pool';
+const pool = createPool({ workers: 4 });            // default: CPU count - 1; each worker loads the engine and fonts once
+const pdf = await pool.render(definition, { format: 'pdf', parameters: { id: 42 } });   // Uint8Array
+await pool.close();
+```
+
+Measured on an 8-core laptop, 40 copies of a one-page chart report (`node scripts/bench-pool.mjs`): 1 worker 14.7/s,
+4 workers 40.7/s.
+
 The `pw` command line is in `@pagewrightjs/cli`:
 
 ```bash
