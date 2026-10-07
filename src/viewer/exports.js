@@ -1,10 +1,7 @@
 'use client';
 import { fontStore, subsetter, origin } from './engineClient.js';
 import { reportFetch } from './dataFetch.js';
-import { exportCsv } from '@/exporters/csv.js';
-import { exportHtml } from '@/exporters/html.js';
 import { fontKeysOf } from '@/exporters/svg.js';
-import { exportXlsx } from '@/exporters/xlsx.js';
 
 import { EXPORT_DEFAULTS } from './logic.js';
 export { EXPORT_DEFAULTS };
@@ -29,7 +26,7 @@ export async function exportBlob(fmt, model, def, opt = {}) {
   const lang = def.locale || opt.lang || 'en';
   // the laid-out pages, as the server's json format gives them
   if (fmt === 'json') return new Blob([JSON.stringify(model)], { type: 'application/json' });
-  if (fmt === 'csv') return new Blob([exportCsv(model, { locale: def.locale, currency: def.currency })], { type: 'text/csv;charset=utf-8' });
+  if (fmt === 'csv') return new Blob([(await import('@/exporters/csv.js')).exportCsv(model, { locale: def.locale, currency: def.currency })], { type: 'text/csv;charset=utf-8' });
   if (fmt === 'html' && opt.interactive !== false && o.html === 'interactive') {
     // interactive when chosen: the downloaded file runs the viewer itself (megabytes: the viewer, fonts, a data snapshot)
     try {
@@ -44,6 +41,7 @@ export async function exportBlob(fmt, model, def, opt = {}) {
   if (fmt === 'html') {
     const store = await loadedFonts(model);
     // drill-through links open the report in this server's viewer
+    const { exportHtml } = await import('@/exporters/html.js'); // exporters load when used
     return new Blob([await exportHtml(model, store, { title: def.name, subset: subsetter, drillBase: origin(), static: o.html === 'static', locale: def.locale, currency: def.currency, lang: opt.lang, strings: opt.strings })], { type: 'text/html;charset=utf-8' });
   }
   if (fmt === 'docx') {
@@ -55,6 +53,7 @@ export async function exportBlob(fmt, model, def, opt = {}) {
     return new Blob([await exportPptx(model, { title: def.name, lang, fontStore: await loadedFonts(model), fetchImage })], { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
   }
   if (fmt === 'xlsx') {
+    const { exportXlsx } = await import('@/exporters/xlsx.js');
     const bytes = await exportXlsx(model, { currency: def.currency, title: def.name, formulas: o.formulas, fontStore: await loadedFonts(model), fetchImage });
     return new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   }

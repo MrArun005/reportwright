@@ -8,6 +8,7 @@ import Designer from '../designer/Designer.jsx';
 import { useDesigner } from '../designer/store.js';
 import { setAssetBase, setStandalone } from '../viewer/engineClient.js';
 import { uiFontCss } from '../viewer/uiFonts.js';
+import { loadLanguage } from '../i18n/index.js';
 
 /* global __PW_CSS__ */
 const CSS = typeof __PW_CSS__ === 'string' ? __PW_CSS__ : '';
@@ -44,7 +45,7 @@ export function mountDesigner(target, opts = {}) {
   const box = /** @type {HTMLElement} */ (shadow.querySelector('.pw-embed'));
   const root = createRoot(box);
   const embed = { onSave: opts.onSave, onOpen: opts.onOpen, readOnly: !!opts.readOnly, toolbox: opts.toolbox, panels: opts.panels, dataSourceTemplates: opts.dataSourceTemplates, server };
-  const show = (definition) => root.render(createElement(Designer, { id: opts.report, initial: definition, lang: opts.lang, embed }));
+  const show = (definition) => loadLanguage(opts.lang).catch(() => {}).then(() => root.render(createElement(Designer, { id: opts.report, initial: definition, lang: opts.lang, embed })));
   if (opts.definition || !opts.report) show(opts.definition || BLANK);
   else fetch(`${server}/api/reports/${encodeURIComponent(opts.report)}`)
     .then(r => (r.ok ? r.json() : r.json().then(j => Promise.reject(new Error(j.error || `HTTP ${r.status}`)))))

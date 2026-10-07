@@ -1,6 +1,7 @@
 // Builds public/embed/: the viewer (and, in the ESM build, the designer) for other sites.
 import { build } from 'esbuild';
 import fs from 'node:fs';
+import zlib from 'node:zlib';
 import path from 'node:path';
 const root = path.join(import.meta.dirname, '..');
 // viewer styles, scoped to the shadow root
@@ -18,6 +19,8 @@ const common = {
   loader: { '.js': 'jsx', '.jsx': 'jsx' }, jsx: 'automatic',
   define: { 'process.env.NODE_ENV': '"production"', __PW_CSS__: JSON.stringify(css), __PW_EMBED__: 'true' },
   logLevel: 'warning',
+  // English strings in the first load, other languages on demand (src/i18n/embed.js)
+  plugins: [{ name: 'i18n-embed', setup: (b) => b.onResolve({ filter: /(^|\/)i18n\/index\.js$/ }, () => ({ path: path.join(root, 'src/i18n/embed.js') })) }],
   logOverride: { 'empty-import-meta': 'silent', 'unsupported-dynamic-import': 'silent' },
 };
 // The ES modules are what @pagewrightjs/viewer publishes: readable (not minified, names kept) with source maps, so a
@@ -55,4 +58,5 @@ const size = (f) => fs.statSync(path.join(dir, f)).size;
 const kb = (n) => `${(n / 1024).toFixed(0)} KB`;
 const lazy = fs.readdirSync(dir).filter(f => !first.has(f) && f !== 'designer.js');
 console.log(`embed designer entry ${kb(size('designer.js'))} (+ shared chunks)`);
-console.log(`embed: first load ${kb([...first].reduce((s, f) => s + size(f), 0))}; on demand ${lazy.map(f => kb(size(f))).join(', ')}; offline single file ${kb(fs.statSync(path.join(root, 'public/embed/pagewright-viewer.full.js')).size)}`);
+const gz = [...first].reduce((s, f) => s + zlib.gzipSync(fs.readFileSync(path.join(dir, f)), { level: 9 }).length, 0);
+console.log(`embed: first load ${kb([...first].reduce((s, f) => s + size(f), 0))} (${kb(gz)} gzipped); on demand ${lazy.map(f => kb(size(f))).join(', ')}; offline single file ${kb(fs.statSync(path.join(root, 'public/embed/pagewright-viewer.full.js')).size)}`);

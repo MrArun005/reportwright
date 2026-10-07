@@ -69,3 +69,11 @@ designer.getDefinition();
 ```
 
 Types are included (`ViewerOptions`, `DesignerOptions`, …). Framework wrappers: `@pagewrightjs/react`, `@pagewrightjs/vue`, `@pagewrightjs/svelte`, `@pagewrightjs/angular`.
+
+## Size
+
+What a page downloads when the viewer mounts: **847 KB gzipped** (0.7.3: 877 KB), readable unminified code with
+source maps. Loaded only when used: other interface languages (about 20 KB gzipped each), PDF export (pdf-lib),
+barcodes (bwip-js), Excel/HTML/CSV export, the designer. Most of the first load is the font engine (fontkit) the
+layout measures text with, and React. The package is larger unpacked (two builds: React inside, and React from your
+app at `@pagewrightjs/viewer/react-peer`, plus source maps); only one build reaches your page.

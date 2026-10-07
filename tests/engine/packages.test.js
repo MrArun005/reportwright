@@ -109,6 +109,18 @@ describe('npm packages', () => {
     for (const v of Object.values(p.dependencies || {})) expect(v).toMatch(/^\d+\.\d+\.\d+$|^0\.\d+\.\d+$/); // pinned
   });
 
+  it('the viewer\'s first load is under 860 KB gzipped (other languages, exporters, PDF and barcodes load on demand)', async () => {
+    const zlib = await import('node:zlib');
+    const dir = path.join(root, 'packages/viewer/dist');
+    const first = new Set();
+    const walk = (f) => { if (first.has(f)) return; first.add(f); for (const m of fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/import\s*(?:[\w{},*\s$]+from\s*)?"\.\/(chunk-[\w-]+\.js)"/g)) walk(m[1]); };
+    walk('viewer.js');
+    const gz = [...first].reduce((n, f) => n + zlib.gzipSync(fs.readFileSync(path.join(dir, f)), { level: 9 }).length, 0);
+    expect(gz).toBeLessThan(860 * 1024);
+    const all = [...first].map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('');
+    expect(all).not.toMatch(/SUBTOTAL\(/); // the Excel writer is not in it
+  });
+
   it('every package ships readable code (not minified) with source maps', () => {
     for (const f of ['engine/dist/index.js', 'cli/dist/pw.mjs', 'viewer/dist/viewer.js', 'viewer/dist/designer.js', 'viewer/dist/peer/viewer.js']) {
       const src = fs.readFileSync(path.join(root, 'packages', f), 'utf8');

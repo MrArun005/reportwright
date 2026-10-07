@@ -9,6 +9,7 @@ import { createRoot } from 'react-dom/client';
 import ReportViewer from '../viewer/ReportViewer.jsx';
 import { setAssetBase, registerReports, setBundledFonts, setStandalone } from '../viewer/engineClient.js';
 import { uiFontCss } from '../viewer/uiFonts.js';
+import { loadLanguage } from '../i18n/index.js';
 
 /* global __PW_CSS__ */
 const CSS = typeof __PW_CSS__ === 'string' ? __PW_CSS__ : '';
@@ -80,7 +81,9 @@ export function mountViewer(target, opts = {}) {
   const shadow = el.shadowRoot || el.attachShadow({ mode: 'open' });
   shadow.innerHTML = `<style>${CSS}</style><div class="pw-embed" style="height:${opts.height || '720px'}"></div>`;
   const root = createRoot(shadow.querySelector('.pw-embed'));
-  const show = (definition) => root.render(createElement(ReportViewer, { definition, reportId: opts.report, params: opts.params, lang: opts.lang, onDrill: opts.onDrill, title: opts.title, toolbar: opts.toolbar, viewMode: opts.viewMode }));
+  const show0 = (definition) => root.render(createElement(ReportViewer, { definition, reportId: opts.report, params: opts.params, lang: opts.lang, onDrill: opts.onDrill, title: opts.title, toolbar: opts.toolbar, viewMode: opts.viewMode }));
+  // the language's strings first (English is built in; the others load on demand)
+  const show = (definition) => loadLanguage(opts.lang).catch(() => {}).then(() => show0(definition));
   if (opts.definition) show(withData(opts.definition, opts.data));
   else if (!server) throw new Error('mountViewer: pass definition (standalone), or server and report');
   else fetch(`${server}/api/reports/${encodeURIComponent(opts.report)}`)
