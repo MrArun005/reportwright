@@ -16,7 +16,7 @@ function fontsUrl(file, pkg = '@pagewrightjs/fonts/public') {
   try { return new URL(/** @type {any} */ (import.meta).resolve(`${pkg}/${file}`)); } catch { return undefined; }
 }
 /** @param {URL} url */
-const readUrl = async (url) => url.protocol === 'file:' ? (await import(/* @vite-ignore */ /* webpackIgnore: true */ NODE_FS)).readFile(url) : new Uint8Array(await (await fetch(url)).arrayBuffer());
+const readUrl = async (url) => url.protocol === 'file:' ? (await import(/* @vite-ignore */ /* webpackIgnore: true */ NODE_FS)).readFile(url) : new Uint8Array(await (await globalThis.fetch(url)).arrayBuffer()); // a browser: the fonts package's URL
 
 /**
  * A FontStore over the @pagewrightjs/fonts package (install it next to the engine). Throws when it isn't installed.

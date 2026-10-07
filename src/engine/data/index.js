@@ -187,6 +187,8 @@ export function parseCsv(text, opts = {}) {
   return body.map(r => Object.fromEntries(names.map((h, k) => [h, r[k] ?? ''])));
 }
 
+const NO_FETCH = 'No fetch() available: pass render(def, { fetch })';
+
 /**
  * Load every data source used by the report.
  * @param {any} def
@@ -198,7 +200,8 @@ export function parseCsv(text, opts = {}) {
 export async function loadSources(def, opt) {
   const ctx = { params: opt.params, globals: {}, dataSets: {}, fields: null, functions: functionTable(def) };
   const out = {};
-  const f = opt.fetch || (typeof fetch !== 'undefined' ? fetch : null);
+  // the caller's fetch (render(def, { fetch })); globalThis.fetch only as the fallback (browsers, Node 18+)
+  const f = opt.fetch || globalThis.fetch || null;
   await Promise.all((def.dataSources || []).map(async (src) => {
     try {
       if (src.type === 'json') out[src.name] = typeof src.data === 'string' ? JSON.parse(src.data) : src.data;
@@ -206,7 +209,7 @@ export async function loadSources(def, opt) {
       else if (src.type === 'csv' && src.data) out[src.name] = parseCsv(src.data, src);
       else if (src.type === 'xml' && src.data) out[src.name] = xmlDocument(src.data, src);
       else if (FETCHED_TYPES.includes(src.type)) {
-        if (!f) throw new Error('No fetch() available');
+        if (!f) throw new Error(NO_FETCH);
         out[src.name] = await loadFetched(src, ctx, opt, f);
       } else throw new Error(`Unknown data source type "${src.type}"`);
     } catch (e) {
@@ -308,7 +311,7 @@ async function loadSql(src, params, opt, f) {
   const day = (v) => (v instanceof Date ? isoDate(v) : v);
   const p = Object.fromEntries(Object.entries(params || {}).map(([k, v]) => [k, Array.isArray(v) ? v.map(day) : day(v)]));
   if (opt.sql) return opt.sql(src, p);
-  if (!f) throw new Error('No fetch() available');
+  if (!f) throw new Error(NO_FETCH);
   // sqlPreview: the designer's unsaved query (the server allows it for designers only)
   if (!opt.reportId && !opt.sqlPreview) throw new Error('Save the report first: SQL runs on the server, from the saved report.');
   const url = `${(opt.baseUrl || '').replace(/\/$/, '')}/api/data/sql`;

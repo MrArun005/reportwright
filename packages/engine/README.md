@@ -29,6 +29,10 @@ fs.writeFileSync('statement.pdf', await exportPdf(model, { fonts, title: 'Statem
   the data set, or declare the fields and give that one `type: 'string'`.
 - **Chart colours.** By default colours go by position. `colorByCategory: true` on charts gives each category (pie,
   donut and funnel slices; `seriesGroup` series) one colour in every chart of the report that sets it.
+- **Network.** Only data sources of a fetched type (`rest`, `graphql`, `soap`, `odata`, and `csv` or `xml` with a URL) and SQL sources without
+  `sql` make requests, through `render(def, { fetch })`. Without that option the engine falls back to
+  `globalThis.fetch`. Pass your own to add auth, a proxy or an allow-list, or to forbid requests altogether:
+  `render(def, { fetch: () => { throw new Error('no network') } })`.
 - **Currency.** `C2` with no `currency` on the report uses the locale's own (`en-IN` ₹, `de-DE` €, `en-US` $).
 
 ## Many reports at once (Node): a worker pool
