@@ -16,19 +16,22 @@ const tag = (s) => [...s].reduce((a, c) => (a << 8) + c.charCodeAt(0), 0) >>> 0;
 const WEIGHT_NAMES = { 100: 'Thin', 200: 'ExtraLight', 300: 'Light', 400: 'Regular', 500: 'Medium', 600: 'SemiBold', 700: 'Bold', 800: 'ExtraBold', 900: 'Black' };
 const WEIGHT_WORD = /\b(Thin|ExtraLight|UltraLight|Light|Regular|Medium|SemiBold|DemiBold|Bold|ExtraBold|UltraBold|Black|Heavy)\b/i;
 
+/** bytes as one char each (tags, Mac name strings); a loop instead of spreading into a call (r5-fixes R5 #3) */
+const chars = (b) => { let s = ''; for (const c of b) s += String.fromCharCode(c); return s; };
+
 /**
  * The tables of a single-face sfnt (TrueType or CFF) as a Map of tag to bytes. A collection (ttcf) gives an empty map.
  * @param {Uint8Array} bytes
  */
 export function sfntTables(bytes) {
   const t = new Map();
-  if (bytes.length < 12 || String.fromCharCode(...bytes.subarray(0, 4)) === 'ttcf') return t;
+  if (bytes.length < 12 || chars(bytes.subarray(0, 4)) === 'ttcf') return t;
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const n = dv.getUint16(4);
   for (let i = 0; i < n; i++) {
     const p = 12 + i * 16;
     const off = dv.getUint32(p + 8), len = dv.getUint32(p + 12);
-    t.set(String.fromCharCode(...bytes.subarray(p, p + 4)), bytes.subarray(off, off + len));
+    t.set(chars(bytes.subarray(p, p + 4)), bytes.subarray(off, off + len));
   }
   return t;
 }
@@ -107,7 +110,7 @@ function renameForWeight(tables, weight) {
         if (dv.getUint16(p + 6) !== id) continue;
         const platform = dv.getUint16(p), len = dv.getUint16(p + 8), off = store + dv.getUint16(p + 10);
         const b = nm.subarray(off, off + len);
-        if (platform === 1) return String.fromCharCode(...b);
+        if (platform === 1) return chars(b);
         let s = ''; for (let k = 0; k + 1 < b.length; k += 2) s += String.fromCharCode((b[k] << 8) | b[k + 1]);
         return s;
       }
