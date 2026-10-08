@@ -5,6 +5,15 @@ All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. T
 ## Unreleased
 
 ### Fixed
+- **Data and form-field retest tickets (B9):**
+  - A `number` (or `date`) field with text in it (N26) warns once per field with the first bad row and how many values
+    are empty, in a render and in a streamed export. Numeric strings such as "12.34" stay silent.
+  - A data set whose path matches an object that holds the rows (`data: { orders: { rows: [...] } }`) warns and names
+    the array key (N8). An object of fields, such as `$.meta`, does not.
+  - `validate()` warns on an aggregate with no scope outside a table, list or data-set item (it uses the first data
+    set), and on `nullable: false` or `allowBlank: false` with no default on a parameter that is not required.
+  - A form field has a `label` (falls back to `tooltip`); a tagged PDF uses it as the field's accessible name (`/TU`)
+    and warns for each field without one (N30).
 - **Streaming PDF (`exportPdfStream`) failures, from the 0.12.1 retest:**
   - A sink that stops reading no longer hangs the export: `timeoutMs` covers the waits for drain (504, `code:
     'ETIMEDOUT'`), a sink's `error` or `close` ends the wait, and the new `signal` option (an `AbortSignal`) stops the
