@@ -214,3 +214,19 @@ export function serverPdfUrl(model, { reportId, params = {}, origin, timeZone, d
   const s = q.toString();
   return `${origin}/api/reports/${encodeURIComponent(reportId)}/pdf${s ? `?${s}` : ''}`;
 }
+
+/**
+ * The choices shown for each parameter: a parameter with fixed `options` and `optionsFrom` keeps its fixed options
+ * ("All") first, then the fetched list, without repeats. `fetched` is what the engine's parameter options call returned.
+ * @param {{ parameters?: any[] }} def @param {Record<string, {value: any, label: string}[]>} fetched
+ */
+export function paramChoices(def, fetched) {
+  const out = { ...fetched };
+  for (const p of def?.parameters || []) {
+    if (!Array.isArray(p.options) || !p.optionsFrom || !Array.isArray(fetched?.[p.name])) continue;
+    const fixed = p.options.map(o => (typeof o === 'object' && o ? { value: o.value, label: String(o.label ?? o.value) } : { value: o, label: String(o) }));
+    const seen = new Set(fixed.map(o => String(o.value)));
+    out[p.name] = [...fixed, ...fetched[p.name].filter(o => !seen.has(String(o.value)))];
+  }
+  return out;
+}

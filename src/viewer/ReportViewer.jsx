@@ -9,7 +9,7 @@ import { parameterOptions, NO_CJK_FONTS } from '@/engine/index.js';
 import { safeUrl } from '@/engine/url.js';
 import { viewerTimeZone } from './timeZone.js';
 import { t as tr, dirOf, pickLang } from './i18n.js';
-import { arrangeToolbar, exportOptionsFrom, serverPdfUrl, findText, frozenAt, galleyDefinition, pageLinks, readingText } from './logic.js';
+import { paramChoices, arrangeToolbar, exportOptionsFrom, serverPdfUrl, findText, frozenAt, galleyDefinition, pageLinks, readingText } from './logic.js';
 import ParamInput from './ParamInput.jsx';
 import { Icon } from './icons.jsx';
 
@@ -301,7 +301,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   useEffect(() => {
     if (!(definition.parameters || []).some(p => p.options || p.optionsFrom)) return;
     const t = setTimeout(() => {
-      parameterOptions(definition, params, { baseUrl: origin(), reportId, fetch: reportFetch(origin()) }).then(setOptions).catch(() => {});
+      parameterOptions(definition, params, { baseUrl: origin(), reportId, fetch: reportFetch(origin()) }).then(o => setOptions(paramChoices(definition, o))).catch(() => {});
     }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
