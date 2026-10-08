@@ -47,3 +47,34 @@ describe('P0: PNGs are checked before pdf-lib decodes them', () => {
     }
   });
 });
+
+describe('P0: the PNG check is bounded itself', () => {
+  it('a 20000×20000 header is refused before anything is inflated', async () => {
+    const { png: make } = await import('./png-fixture.js');
+    const b = make(4, 4).slice();
+    const v = new DataView(b.buffer); v.setUint32(16, 20000); v.setUint32(20, 20000);
+    // fix the IHDR CRC so only the size is wrong
+    const { pngProblem: p } = await import('../../src/exporters/png.js');
+    const crcT = new Uint32Array(256).map((_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+    let c = 0xffffffff; for (let i = 12; i < 29; i++) c = crcT[(c ^ b[i]) & 255] ^ (c >>> 8);
+    v.setUint32(29, (c ^ 0xffffffff) >>> 0);
+    const t = Date.now();
+    expect(p(b)).toMatch(/MP/);
+    expect(Date.now() - t).toBeLessThan(50);
+  });
+  it('IDAT that inflates past what the header promises is refused (a bomb stops early)', async () => {
+    const { zlibSync } = await import('fflate');
+    const { chunkPng } = await import('./png-fixture.js');
+    const bomb = chunkPng(16, 16, [zlibSync(new Uint8Array(50 * 1048576))]);
+    const t = Date.now();
+    expect(pngProblem(bomb)).toMatch(/larger than its header/);
+    expect(Date.now() - t).toBeLessThan(1000);
+  });
+  it('thousands of tiny chunks are refused', async () => {
+    const { zlibSync } = await import('fflate');
+    const { chunkPng } = await import('./png-fixture.js');
+    const z = zlibSync(new Uint8Array(4 * (1 + 4 * 3)));
+    const parts = [z, ...Array.from({ length: 5000 }, () => new Uint8Array(0))];
+    expect(pngProblem(chunkPng(4, 4, parts))).toMatch(/chunks/);
+  });
+});

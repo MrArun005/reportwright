@@ -10,3 +10,10 @@ export function png(w, h, { cutIdat = 0 } = {}) {
   const parts = [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ih), chunk('IDAT', z), chunk('IEND', new Uint8Array())];
   const out = new Uint8Array(parts.reduce((s, p) => s + p.length, 0)); let o = 0; for (const p of parts) { out.set(p, o); o += p.length; } return out;
 }
+
+/** A w×h RGB PNG header with the given IDAT payloads (each its own chunk), as they are. */
+export function chunkPng(w, h, idats) {
+  const ih = new Uint8Array(13); const v = new DataView(ih.buffer); v.setUint32(0, w); v.setUint32(4, h); ih[8] = 8; ih[9] = 2;
+  const parts = [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ih), ...idats.map(d => chunk('IDAT', d)), chunk('IEND', new Uint8Array())];
+  const out = new Uint8Array(parts.reduce((s, p) => s + p.length, 0)); let o = 0; for (const p of parts) { out.set(p, o); o += p.length; } return out;
+}

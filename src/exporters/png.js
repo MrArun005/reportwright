@@ -14,6 +14,8 @@ function crc32(b, from, to) {
   return (c ^ 0xffffffff) >>> 0;
 }
 const CHANNELS = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 };
+/** Bounds on the check itself: pixels (100 MP), scanline bytes once inflated (256 MB), and chunks walked. */
+export const PNG_LIMITS = { pixels: 100e6, rawBytes: 256 * 1048576, chunks: 4096 };
 /** Bytes of the filtered scanlines of a w×h image (with the filter byte per line). */
 function rawBytes(w, h, bits, interlace) {
   const line = (pw) => (pw > 0 ? 1 + Math.ceil(pw * bits / 8) : 0);
@@ -35,8 +37,9 @@ export function pngProblem(b) {
   const SIG = [137, 80, 78, 71, 13, 10, 26, 10];
   if (b.length < 8 || SIG.some((x, i) => b[i] !== x)) return 'not a PNG';
   const u32 = (i) => ((b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]) >>> 0;
-  let off = 8, ihdr = null, idat = [], end = false, first = true;
+  let off = 8, ihdr = null, idat = [], end = false, first = true, chunks = 0;
   while (off < b.length) {
+    if (++chunks > PNG_LIMITS.chunks) return `more than ${PNG_LIMITS.chunks} chunks`;
     if (off + 12 > b.length) return 'the file is cut short';
     const len = u32(off);
     if (off + 12 + len > b.length) return 'the file is cut short';
@@ -48,6 +51,8 @@ export function pngProblem(b) {
     if (t === 'IHDR') {
       if (ihdr || len !== 13) return 'a bad IHDR';
       ihdr = { w: u32(d), h: u32(d + 4), depth: b[d + 8], color: b[d + 9], interlace: b[d + 12] };
+      // the declared size, before anything is inflated or allocated for it
+      if (ihdr.w * ihdr.h > PNG_LIMITS.pixels) return `${ihdr.w}×${ihdr.h} pixels, more than ${PNG_LIMITS.pixels / 1e6} MP`;
     } else if (t === 'IDAT') idat.push(b.subarray(d, d + len));
     else if (t === 'IEND') { end = true; break; }
     off = d + len + 4;
@@ -58,12 +63,14 @@ export function pngProblem(b) {
   const ch = CHANNELS[ihdr.color];
   if (!ch || ![1, 2, 4, 8, 16].includes(ihdr.depth) || ihdr.w < 1 || ihdr.h < 1 || ihdr.interlace > 1) return 'an unsupported PNG header';
   const want = rawBytes(ihdr.w, ihdr.h, ch * ihdr.depth, ihdr.interlace);
-  // inflate as a stream, counting: a bomb stops as soon as it passes what the header promises
+  if (want > PNG_LIMITS.rawBytes) return `${Math.round(want / 1048576)} MB of pixel data, more than ${PNG_LIMITS.rawBytes / 1048576} MB`;
+  // inflate as a stream, counting, nothing kept: a bomb stops (the throw leaves push) as soon as it passes the header
   let got = 0, over = false, failed = false;
-  const z = new Unzlib((chunk) => { got += chunk.length; if (got > want) over = true; });
+  const OVER = new Error('over');
+  const z = new Unzlib((chunk) => { got += chunk.length; if (got > want) { over = true; throw OVER; } });
   try {
     for (let i = 0; i < idat.length && !over; i++) z.push(idat[i], i === idat.length - 1);
-  } catch { failed = true; }
+  } catch (e) { if (e !== OVER) failed = true; }
   if (failed) return 'the image data does not inflate';
   if (over) return 'the image data is larger than its header says';
   if (got !== want) return 'the image data is cut short';
