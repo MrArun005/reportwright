@@ -221,7 +221,7 @@ export function validate(def) {
         warnings.push(`${label}: there is no named style "${it.styleName}"${g ? ` (did you mean "${g}"?)` : ''}; it is ignored`);
       }
       if (Array.isArray(it.sort)) sortIssues(it.sort, label, warnings);
-      if (it.type === 'chart' && Array.isArray(it.series) && !it.series.length) warnings.push(`${label}: the chart has no series, so it draws nothing; add one, e.g. series: [{ "name": "Value", "value": "=Sum(Fields.Amount)" }]`);
+      if (it.type === 'chart' && it.chartType !== 'gantt' && Array.isArray(it.series) && !it.series.length) warnings.push(`${label}: the chart has no series, so it draws nothing; add one, e.g. series: [{ "name": "Value", "value": "=Sum(Fields.Amount)" }]`);
       if (it.type === 'image' && typeof it.src === 'string' && !it.src.startsWith('=') && LOCAL_IMAGE.test(it.src.trim())) warnings.push(`${label}: "${it.src}" is a local file path, which a browser cannot load; embed the image (images: { name: "data:image/png;base64,..." } and src: "embedded:name") or use an https:// address`);
       if (it.style != null && (typeof it.style !== 'object' || Array.isArray(it.style))) warnings.push(`${label}: "style" must be an object of style properties, such as { "fontWeight": "bold" }; ${JSON.stringify(it.style).slice(0, 40)} is ignored`);
       // a mistyped property is ignored silently otherwise ("vale" for value: a blank box)

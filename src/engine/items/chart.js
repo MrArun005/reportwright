@@ -710,22 +710,24 @@ function rowPoints(type, g) {
   if (rows.length > cap) { lc.warn(`${who}: ${rows.length} rows; only the first ${cap} points are drawn`); rows = rows.slice(0, cap); }
   // a blank x or y is not a zero: Number(null) and Number('') are 0, which would draw the row on the axis
   const blank = (v) => v == null || v === '';
-  const missing = new Set(); // rows (of this chart) with no x or y for any series, counted once
+  const drawn = new Set(); // rows that some series draws: a row one series leaves blank is still drawn by the others
   const sets = data.series.map((s, si) => {
     const pts = [];
     rows.forEach((r, ri) => {
       c.fields = r;
       const rx = safe(item.xValue, c, lc, who), ry = safe(s.def.value || '=0', { ...c, aggRows: [r] }, lc, who);
-      if (blank(rx) || blank(ry)) { missing.add(ri); return; }
+      if (blank(rx) || blank(ry)) return;
       const x = Number(rx), y = Number(ry);
-      if (!Number.isFinite(x) || !Number.isFinite(y)) { missing.add(ri); return; }
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
       let size = 1;
       if (type === 'bubble') { size = Number(safe(s.def.size || '=1', { ...c, aggRows: [r] }, lc, who)); if (!Number.isFinite(size) || size <= 0) return; }
       pts.push({ x, y, size });
+      drawn.add(ri);
     });
     return { s, pts, i: si };
   });
-  if (missing.size) lc.warn(`${who}: ${missing.size} of ${rows.length} rows have no x or y value and are not drawn`);
+  const missing = rows.length - drawn.size; // rows no series draws
+  if (missing > 0) lc.warn(`${who}: ${missing} of ${rows.length} rows have no x or y value and are not drawn`);
   return sets;
 }
 

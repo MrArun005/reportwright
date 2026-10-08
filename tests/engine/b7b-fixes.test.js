@@ -75,3 +75,25 @@ describe('N6: exportHtml takes the options object like the other exporters', () 
     expect(() => exportHtml(m, { fonts: new Map() })).toThrow(/fonts must be a FontStore/);
   });
 });
+
+import { validate } from '../../src/engine/schema/validate.js';
+
+describe('N9: chart warnings name only what is really not drawn', () => {
+  const rowsP = [{ deg: 0, v: 10 }, { deg: 90, v: 20 }, { deg: 180, v: 15 }, { deg: 270, v: 5 }];
+  const polar = (series) => ({ type: 'chart', name: 'C', x: 0, y: 0, w: 300, h: 300, dataSet: 'Rows', chartType: 'polar', xValue: '=Fields.deg', series });
+  it('a polar chart drawn by one series does not warn that rows are not drawn when another series is blank', async () => {
+    const m = await render(report([polar([{ name: 'V', value: '=Sum(Fields.v)' }, { name: 'W', value: '=Sum(Fields.nope)' }])], { data: { rows: rowsP } }), { fontStore });
+    expect(m.warnings.filter(w => /not drawn/.test(w))).toEqual([]);
+    expect(m.pages[0].items.filter(i => i.t === 'text').some(i => i.lines?.[0]?.text === '90°')).toBe(true);
+  });
+  it('rows that no series draws are still counted', async () => {
+    const rows = [{ deg: 0, v: 10 }, { deg: null, v: 20 }, { deg: 180, v: 15 }];
+    const m = await render(report([{ type: 'chart', name: 'S', x: 0, y: 0, w: 300, h: 300, dataSet: 'Rows', chartType: 'scatter', xValue: '=Fields.deg', series: [{ name: 'V', value: '=Sum(Fields.v)' }] }], { data: { rows } }), { fontStore });
+    expect(m.warnings).toContain('S: 1 of 3 rows have no x or y value and are not drawn');
+  });
+  it('a gantt chart has no series by design: no "has no series" warning', () => {
+    const def = report([{ type: 'chart', name: 'G', x: 0, y: 0, w: 300, h: 200, dataSet: 'Rows', chartType: 'gantt', series: [], ganttStart: '=Fields.v', ganttEnd: '=Fields.deg' }], { data: { rows: rowsP } });
+    expect(validate(def).warnings.filter(w => /has no series/.test(w))).toEqual([]);
+    expect(validate(report([{ type: 'chart', name: 'B', x: 0, y: 0, w: 300, h: 200, dataSet: 'Rows', chartType: 'column', series: [] }])).warnings.some(w => /has no series/.test(w))).toBe(true);
+  });
+});
