@@ -234,7 +234,7 @@ export default function ChartWizard() {
             {TYPES.map(type => {
               const th = thumbs[type];
               return (
-                <button key={type} type="button" role="radio" aria-checked={c.chartType === type} className={`cw-card${c.chartType === type ? ' sel' : ''}`}
+                <button key={type} type="button" role="radio" aria-label={tr(`t_${type}`)} aria-checked={c.chartType === type} className={`cw-card${c.chartType === type ? ' sel' : ''}`}
                   onClick={() => set({ chartType: type })} data-chart-type={type}>
                   <span className="cw-thumb">
                     {!sample?.dataSets ? <span className="hint">{loading ? tr('calling') : tr('noData')}</span>

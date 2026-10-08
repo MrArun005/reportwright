@@ -8,6 +8,7 @@ import { t } from '@/i18n/index.js';
 import { TextInput, NumberInput, Select, ColorInput, Field, Check } from './ui.jsx';
 import { THEME_COLORS, DEFAULT_THEME, findItemNamed } from '@/engine/reuse.js';
 import { useFontFamilies } from './Fonts.jsx';
+import CatHead from './CatHead.jsx';
 
 export const MIME_PART = 'application/x-pw-part';
 const S = () => useDesigner.getState();
@@ -77,7 +78,7 @@ export function ReuseSection() {
   });
   return (
     <div className="cat" data-testid="reuse">
-      <h5>{T('reuse')}</h5>
+      <CatHead>{T('reuse')}</CatHead>
       <Field label={T('masterReport')} hint={T('masterHint')}>
         <ReportSelect value={def.master} exclude={id} onChange={setMaster} data-testid="master-picker" aria-label={T('masterReport')} />
       </Field>
@@ -110,7 +111,7 @@ export function ThemeSection() {
   const [newConst, setNewConst] = useState('');
   return (
     <div className="cat" data-testid="theme">
-      <h5>{T('theme')}</h5>
+      <CatHead>{T('theme')}</CatHead>
       <Field label={T('themeSource')}>
         <Select value={mode} aria-label={T('themeSource')} data-testid="theme-source"
           options={[{ value: 'own', label: T('themeOwn') }, { value: 'report', label: T('themeReport') }, { value: 'expr', label: T('themeExpr') }]}
@@ -325,7 +326,7 @@ export function PartInstance({ item }) {
   const setProp = (k, v) => updateItem(item.id, it => { it.properties ||= {}; if (v === undefined || v === '') delete it.properties[k]; else it.properties[k] = v; }, `${item.id}.pp.${k}`);
   return (
     <div className="cat" data-testid="part-instance">
-      <h5>{T('partInstance')}</h5>
+      <CatHead>{T('partInstance')}</CatHead>
       <div className={err || (l && !p) ? 'err' : 'hint'}>{err ? T('reusedNotLoaded', { id: item.library, error: err }) : l && !p ? T('partMissing', { part: item.part, library: item.library }) : T('partLinked', { part: p?.label || item.part, library: l?.name || item.library })}</div>
       {(p?.properties || []).map(q => (
         <Field key={q.name} label={q.label || q.name}>
@@ -347,7 +348,7 @@ export function PartValues({ item }) {
   const set = (k, v) => updateItem(item.id, it => { it.partProps[k] = v === undefined ? null : v; }, `${item.id}.pv.${k}`);
   return (
     <div className="cat" data-testid="part-values">
-      <h5>{T('partValues')}</h5>
+      <CatHead>{T('partValues')}</CatHead>
       {Object.entries(item.partProps || {}).map(([k, v]) => (
         <Field key={k} label={k}><PropValue type={typeof v === 'number' ? 'number' : typeof v === 'boolean' ? 'boolean' : 'string'} value={v} onChange={x => set(k, x)} label={k} /></Field>
       ))}
@@ -369,7 +370,7 @@ export function PublishPart({ item }) {
   const [newProp, setNewProp] = useState('');
   return (
     <div className="cat" data-testid="publish-part">
-      <h5>{T('reportPart')}</h5>
+      <CatHead>{T('reportPart')}</CatHead>
       <Check label={T('publishPart')} checked={!!p} onChange={on => set(l => {
         if (!on) { l.splice(i, 1); return; }
         let name = item.name, k = 2;

@@ -554,7 +554,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   // the formats are items of the Export menu: a format badge, the name, and what the file is
   const exportItem = (id, fmt, label, extra = {}) => ({
     id, group: 'export', format: true,
-    node: <button type="button" role="menuitem" className="vdrop-item" onClick={() => { setEmenu(false); doExport(fmt); }} disabled={!model || exporting === 'print'} data-testid={`export-${fmt}`} {...extra}>
+    node: <button type="button" role="menuitem" className="vdrop-item" onClick={() => { setEmenu(false); doExport(fmt); }} disabled={!model || exporting === 'print'} aria-label={T(`b2_fmt_${fmt}`)} data-testid={`export-${fmt}`} {...extra}>
       <span className={`fmt-badge ${fmt}`} aria-hidden="true">{fmt === 'xlsx' ? 'XLS' : fmt === 'docx' ? 'DOC' : fmt === 'pptx' ? 'PPT' : fmt.toUpperCase()}</span>
       <span className="vdrop-txt"><b>{exporting === fmt ? T('exporting') : queued.includes(fmt) ? T('r4_queued') : label}</b><span className="hint">{T(`b2_fmt_${fmt}`)}</span></span>
     </button>,

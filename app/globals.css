@@ -824,6 +824,8 @@ a.cell-name:hover { color: var(--accent); }
 .cat[data-collapsed] > h5::after { transform: rotate(-45deg); }
 .cat[data-collapsed] { padding-bottom: 6px; }
 .cat[data-collapsed] > :not(h5) { display: none; }
+.cat > h5 > .cat-toggle { all: unset; flex: 1 1 auto; cursor: pointer; font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; }
+.cat > h5 > .cat-toggle:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .cat > h5[data-icon="Layout"]::before, .cat > h5[data-icon="i_structure"]::before, .cat > h5[data-icon="i_columns"]::before, .cat > h5[data-icon="i_rows"]::before, .cat > h5[data-icon="rowTitle"]::before, .cat > h5[data-icon="bodySections"]::before { --ico: var(--ico-layout); }
 .cat > h5[data-icon="i_position"]::before, .cat > h5[data-icon="i_distribute"]::before { --ico: var(--ico-position); }
 .cat > h5[data-icon="Data"]::before, .cat > h5[data-icon="Field"]::before, .cat > h5[data-icon="i_data"]::before, .cat > h5[data-icon="i_groups"]::before, .cat > h5[data-icon="pivotValues"]::before { --ico: var(--ico-data); }

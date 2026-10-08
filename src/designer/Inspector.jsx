@@ -16,6 +16,7 @@ import { applyCf, customProps, cfExpressions, pointAverage } from './cfRules.js'
 import { checkFunctions, isDynamic } from '@/engine/expr/evaluate.js';
 import { PALETTES } from '@/engine/items/chart-kit.js';
 import { ReuseSection, ThemeSection, LayerField, PartInstance, PartValues, PublishPart, useStyleNames } from './Reuse.jsx';
+import CatHead from './CatHead.jsx';
 
 /** The designer's UI language (set by the Designer) as a translate function. */
 function useT() { const lang = useDesigner(s => s.lang); return (k, v) => t(lang, k, v); }
@@ -66,21 +67,19 @@ export default function Inspector() {
   useLayoutEffect(() => {
     for (const h of ref.current?.querySelectorAll('.cat > h5') || []) {
       const shut = closed.has(h.textContent);
-      h.setAttribute('role', 'button');
-      h.setAttribute('tabindex', '0');
-      h.setAttribute('aria-expanded', String(!shut));
+      h.querySelector('button')?.setAttribute('aria-expanded', String(!shut));
       h.parentElement.toggleAttribute('data-collapsed', shut);
     }
   });
+  // the heading's button is a native button: Enter and Space arrive as clicks
   const toggle = (e) => {
     const h = e.target.closest?.('.cat > h5');
-    if (!h || (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ')) return;
-    e.preventDefault();
+    if (!h) return;
     const k = h.textContent;
     setClosed(c => { const n = new Set(c); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   };
   return (
-    <div data-testid="inspector" ref={ref} onClick={toggle} onKeyDown={toggle}>
+    <div data-testid="inspector" ref={ref} onClick={toggle}>
       <FieldScope.Provider value={scope}><Fragment key={selKey}>{body}</Fragment></FieldScope.Provider>
       {expr && <ExpressionEditor {...expr} onClose={() => setExpr(null)} />}
     </div>
@@ -203,7 +202,7 @@ function StyleCats({ props, style, onSet, openExpr, dataSet, skipBox }) {
   const tk = useTk();
   return groupBy(props.filter(p => !(skipBox && p.category === 'Box'))).map(([cat, ps]) => (
     <div className="cat" key={cat}>
-      <h5 data-icon={cat}>{catLabel(tk, cat)}</h5>
+      <CatHead data-icon={cat}>{catLabel(tk, cat)}</CatHead>
       <div className="grid2">
         {ps.map(p => <div key={p.key} data-prop={p.key} style={p.type === 'color' || p.type === 'text' ? { gridColumn: '1 / -1' } : undefined}>
           <PropEditor p={p} value={style?.[p.key]} onChange={v => onSet(p.key, v)} openExpr={openExpr} dataSet={dataSet} />
@@ -261,7 +260,7 @@ function ItemProps({ item, section, openExpr }) {
         </div>
       )}
       {!q && <div className="cat">
-        <h5 data-icon="i_position">{T('i_position')}</h5>
+        <CatHead data-icon="i_position">{T('i_position')}</CatHead>
         <div className="grid2">
           <Geo label="X" value={item.x} onChange={v => setGeo('x', Math.max(0, v))} />
           <Geo label="Y" value={item.y} onChange={v => setGeo('y', Math.max(0, v))} />
@@ -286,14 +285,14 @@ function ItemProps({ item, section, openExpr }) {
           if (next.backgroundColor || next.color) it.pointColor = next.backgroundColor || next.color;
           if (cf.rules?.length) it.cf = cf; else delete it.cf;
         });
-        return <div className="cat"><h5 data-icon="cf_title">{T('cf_title')}</h5><div className="btnrow"><CfButton label={T(item.type === 'chart' ? 'cf_points' : 'cf_button')} title={T('cf_titleOf', { name: item.name })} target={item} at={at} kind={item.type === 'chart' ? 'chart' : 'text'} fields={fields} apply={apply} testid="cf-open" /></div></div>;
+        return <div className="cat"><CatHead data-icon="cf_title">{T('cf_title')}</CatHead><div className="btnrow"><CfButton label={T(item.type === 'chart' ? 'cf_points' : 'cf_button')} title={T('cf_titleOf', { name: item.name })} target={item} at={at} kind={item.type === 'chart' ? 'chart' : 'text'} fields={fields} apply={apply} testid="cf-open" /></div></div>;
       })()}
       {!q && item.type === 'part' && <PartInstance item={item} />}
       {!q && item.partProps && typeof item.partProps === 'object' && <PartValues item={item} />}
       {!q && item.type === 'image' && <EmbeddedPicker item={item} onPick={v => set('src', v)} />}
       {groupBy(props).map(([cat, ps]) => (
         <div className="cat" key={cat}>
-          <h5 data-icon={cat}>{catLabel(tk, cat)}</h5>
+          <CatHead data-icon={cat}>{catLabel(tk, cat)}</CatHead>
           {ps.map(p => <PropEditor key={p.key} p={p} value={item[p.key] ?? DEFAULT_SHOWN[item.type]?.[p.key]} onChange={v => set(p.key, v)} openExpr={openExpr} dataSet={dataSet} item={item} />)}
         </div>
       ))}
@@ -319,7 +318,7 @@ function TableProps({ table, openExpr }) {
   return (
     <>
       <div className="cat">
-        <h5 data-icon="i_columns">{T('i_columns')}</h5>
+        <CatHead data-icon="i_columns">{T('i_columns')}</CatHead>
         <div className="grid4">
           {table.columns.map((c, i) => (
             <Field key={i} label={`#${i + 1}`}><NumberInput value={c.width} step={1} onChange={v => tableSetColumnWidth(table.id, i, v, `${table.id}.col${i}`)} /></Field>
@@ -331,7 +330,7 @@ function TableProps({ table, openExpr }) {
         <div className="hint">{T('i_tableWidthHint', { w: round(table.columns.reduce((s, c) => s + c.width, 0)) })}</div>
       </div>
       <div className="cat">
-        <h5 data-icon="i_rows">{T('i_rows')}</h5>
+        <CatHead data-icon="i_rows">{T('i_rows')}</CatHead>
         {tableParts(table).map(({ part, label }) => (
           <div key={part} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>{T('i_partRows', { part: label })} <b>{(rowsOf(table, part) || []).length}</b></span>
@@ -398,7 +397,7 @@ function PivotEditor({ item, openExpr }) {
   const totals = [{ value: 'none', label: T('totalNone') }, { value: 'before', label: T('totalBefore') }, { value: 'after', label: T('totalAfter') }];
   const groupList = (list, title) => (
     <div className="cat" data-testid={`pivot-${list}`}>
-      <h5>{title}</h5>
+      <CatHead>{title}</CatHead>
       {spec[list].map((g, i) => (
         <div className="group-card" key={i}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}><b>{i + 1}. {g.name || g.expr}</b>{tools(list, i, spec[list].length)}</div>
@@ -435,7 +434,7 @@ function PivotEditor({ item, openExpr }) {
       {groupList('rowGroups', T('pivotRows'))}
       {groupList('columnGroups', T('pivotColumns'))}
       <div className="cat" data-testid="pivot-values">
-        <h5 data-icon="pivotValues">{T('pivotValues')}</h5>
+        <CatHead data-icon="pivotValues">{T('pivotValues')}</CatHead>
         {spec.values.map((v, i) => (
           <div className="group-card" key={i}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}><b>{i + 1}. {v.label || v.value}</b>{tools('values', i, spec.values.length)}</div>
@@ -454,7 +453,7 @@ function PivotEditor({ item, openExpr }) {
         <div className="hint">{T('ux_pivotActionHint')}</div>
       </div>
       <div className="cat" data-testid="pivot-styles">
-        <h5 data-icon="pivotStyles">{T('pivotStyles')}</h5>
+        <CatHead data-icon="pivotStyles">{T('pivotStyles')}</CatHead>
         {MATRIX_STYLES.map(([k, labelKey, dflt]) => (
           <details className="group-card" key={k} data-testid={`pivot-${k}`}>
             <summary>{T(labelKey)}</summary>
@@ -489,7 +488,7 @@ function GroupsEditor({ table, openExpr }) {
   const numericCols = () => (table.detail?.[0]?.cells || []).map((c, ci) => [ci, /^=Fields\.(\w+)$/.exec(c?.value || '')?.[1]]).filter(([, f]) => f && fields.find(x => x.name === f)?.type === 'number');
   return (
     <div className="cat">
-      <h5 data-icon="i_groups">{T('i_groups')}</h5>
+      <CatHead data-icon="i_groups">{T('i_groups')}</CatHead>
       {(table.groups || []).map((g, i) => (
         <div className="group-card" key={i}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><b>{i + 1}. {g.name}</b>
@@ -536,7 +535,7 @@ function SortFilterEditor({ item, noSort }) {
   const sort = item.sort?.[0];
   return (
     <div className="cat" data-testid="sort-filter">
-      <h5>{T(noSort ? 'sfFilterTitle' : 'sfTitle')}</h5>
+      <CatHead>{T(noSort ? 'sfFilterTitle' : 'sfTitle')}</CatHead>
       {!noSort && <div className="grid2">
         <Field label={T('sfSortBy')}><Select value={sort?.by?.replace(/^=Fields\./, '') || ''} options={fields} allowEmpty onChange={v => set(t => { if (v) t.sort = [{ by: `=Fields.${v}`, dir: sort?.dir || 'asc' }]; else delete t.sort; })} aria-label={T('sfSortBy')} /></Field>
         <Field label={T('sfDirection')}><Select value={sort?.dir || 'asc'} options={[{ value: 'asc', label: T('dsAsc') }, { value: 'desc', label: T('dsDesc') }]} onChange={v => set(t => { if (t.sort?.[0]) t.sort[0].dir = v; })} aria-label={T('sfDirection')} /></Field>
@@ -862,22 +861,22 @@ function CellProps({ table, sel, openExpr }) {
     <>
       <div className="insp-head"><b>{T('i_cellOf', { name: table.name })}</b><span className="ty">{T('i_cellPos', { part: partLabel, row: sel.row + 1, col: sel.col + 1 })}</span></div>
       <div className="cat">
-        <h5 data-icon="i_data">{T('i_data')}</h5>
+        <CatHead data-icon="i_data">{T('i_data')}</CatHead>
         <Field label={T('i_value')}><ExprInput value={cell.value} onChange={setValue} onOpen={() => openExpr({ value: cell.value, dataSet: table.dataSet, onSave: setValue, title: T('i_cellTitle', { name: table.name, part: partLabel }) })} /></Field>
         <div className="hint">{T(sel.part === 'detail' ? 'i_cellHintDetail' : /^g/.test(sel.part) ? 'i_cellHintGroup' : 'i_cellHintAll')}</div>
       </div>
       <div className="cat">
-        <h5 data-icon="i_visual">{T('i_visual')}</h5>
+        <CatHead data-icon="i_visual">{T('i_visual')}</CatHead>
         <VisualEditor cell={cell} setCell={setCell} openExpr={openExpr} dataSet={table.dataSet} />
       </div>
       <div className="cat">
-        <h5 data-icon="i_interactivity">{T('i_interactivity')}</h5>
+        <CatHead data-icon="i_interactivity">{T('i_interactivity')}</CatHead>
         {sel.part === 'header' && <Field label={T('i_interactiveSort')} hint={T('i_interactiveSortHint')}><ExprInput value={cell.sortBy} onChange={v => setCell('sortBy', v || undefined)} onOpen={() => openExpr({ value: cell.sortBy, dataSet: table.dataSet, onSave: v => setCell('sortBy', v || undefined), title: T('sfSortBy') })} placeholder="=Fields.amount" /></Field>}
         <Field label={T('cellBookmark')}><ExprInput value={cell.bookmark} onChange={v => setCell('bookmark', v || undefined)} onOpen={() => openExpr({ value: cell.bookmark, dataSet: table.dataSet, onSave: v => setCell('bookmark', v || undefined), title: T('cellBookmark') })} /></Field>
         <ActionEditor value={cell.action} onChange={v => setCell('action', v)} openExpr={openExpr} dataSet={table.dataSet} />
       </div>
       <div className="cat" data-testid="cell-cf">
-        <h5 data-icon="cf_title">{T('cf_title')}</h5>
+        <CatHead data-icon="cf_title">{T('cf_title')}</CatHead>
         <div className="btnrow">
           <CfButton label={T('cf_button')} title={T('cf_titleCell', { name: table.name })} target={cell} at={{ subject: subjectOf(cell.value), scope: table.dataSet }} kind="cell" fields={fieldsOf(def, table.dataSet).map(f => f.name)} testid="cf-open"
             apply={(cf) => updateItem(table.id, t => applyCf(rowsOf(t, sel.part)[sel.row].cells[sel.col], cf, { subject: subjectOf(cell.value), scope: table.dataSet }, { visuals: true }))} />
@@ -886,7 +885,7 @@ function CellProps({ table, sel, openExpr }) {
         </div>
       </div>
       <div className="cat">
-        <h5 data-icon="i_structure">{T('i_structure')}</h5>
+        <CatHead data-icon="i_structure">{T('i_structure')}</CatHead>
         <div className="btnrow">
           <button className="btn sm" onClick={() => tableInsertColumn(table.id, sel.col)}>{T('i_colLeft')}</button>
           <button className="btn sm" onClick={() => tableInsertColumn(table.id, sel.col + (cell.colSpan || 1))}>{T('i_colRight')}</button>
@@ -905,7 +904,7 @@ function CellProps({ table, sel, openExpr }) {
         </div>
       </div>
       <div className="cat" data-testid="row-props">
-        <h5 data-icon="rowTitle">{T('rowTitle')}</h5>
+        <CatHead data-icon="rowTitle">{T('rowTitle')}</CatHead>
         <div className="grid2">
           <Field label={T('i_heightPt')}><NumberInput value={row.height || 18} step={1} onChange={v => setRow('height', Math.max(6, v))} /></Field>
           <Check label={T('rowCanGrow')} checked={row.canGrow !== false} onChange={v => setRow('canGrow', v ? undefined : false)} />
@@ -959,7 +958,7 @@ function Multi({ ids }) {
     <>
       <div className="insp-head"><b>{T('i_nItems', { n: items.length })}</b></div>
       <div className="cat">
-        <h5 data-icon="i_align">{T('i_align')}</h5>
+        <CatHead data-icon="i_align">{T('i_align')}</CatHead>
         <div className="btnrow">
           <button className="btn sm" onClick={() => align(its => { const v = Math.min(...its.map(i => i.x)); its.forEach(i => { i.x = v; }); })}>{T('i_left')}</button>
           <button className="btn sm" onClick={() => align(its => { const v = Math.max(...its.map(i => i.x + i.w)); its.forEach(i => { i.x = round(v - i.w); }); })}>{T('i_right')}</button>
@@ -971,7 +970,7 @@ function Multi({ ids }) {
         </div>
       </div>
       <div className="cat">
-        <h5 data-icon="i_distribute">{T('i_distribute')}</h5>
+        <CatHead data-icon="i_distribute">{T('i_distribute')}</CatHead>
         <div className="btnrow">
           <button className="btn sm" disabled={items.length < 3} onClick={() => align(its => { const s2 = [...its].sort((a, b) => a.x - b.x); const total = s2[s2.length - 1].x + s2[s2.length - 1].w - s2[0].x; const gap = (total - s2.reduce((a, i) => a + i.w, 0)) / (s2.length - 1); let x = s2[0].x; s2.forEach(i => { i.x = round(x); x += i.w + gap; }); })}>{T('i_horizontally')}</button>
           <button className="btn sm" disabled={items.length < 3} onClick={() => align(its => { const s2 = [...its].sort((a, b) => a.y - b.y); const total = s2[s2.length - 1].y + s2[s2.length - 1].h - s2[0].y; const gap = (total - s2.reduce((a, i) => a + i.h, 0)) / (s2.length - 1); let y = s2[0].y; s2.forEach(i => { i.y = round(y); y += i.h + gap; }); })}>{T('i_vertically')}</button>
@@ -1018,7 +1017,7 @@ function SectionProps({ section }) {
         </>}
       </div>
       {isBody && <div className="cat" data-testid="body-sections">
-        <h5 data-icon="bodySections">{T('bodySections')}</h5>
+        <CatHead data-icon="bodySections">{T('bodySections')}</CatHead>
         {multi && <>
           <div className="grid2">
             <Field label={T('sectionPageSize')}><Select value={pg.size || ''} options={Object.keys(PAGE_SIZES)} allowEmpty onChange={v => setPage('size', v || undefined)} /></Field>
@@ -1075,7 +1074,7 @@ function ReportProps() {
     <>
       <div className="insp-head"><b>{T('i_report')}</b><span className="ty">{def.$schema}</span></div>
       <div className="cat">
-        <h5 data-icon="i_page">{T('i_page')}</h5>
+        <CatHead data-icon="i_page">{T('i_page')}</CatHead>
         <div className="grid2">
           <Field label={T('i_size')}><Select value={def.page?.size || 'A4'} options={[...Object.keys(PAGE_SIZES), { value: 'Pageless', label: T('i_pageless') }]} onChange={v => set(d => { d.page.size = v; })} /></Field>
           {def.page?.size === 'Pageless'
@@ -1092,7 +1091,7 @@ function ReportProps() {
       </div>
       <ReuseSection />
       <div className="cat">
-        <h5 data-icon="i_regional">{T('i_regional')}</h5>
+        <CatHead data-icon="i_regional">{T('i_regional')}</CatHead>
         <div className="grid2">
           <Field label={T('i_locale')}><TextInput value={def.locale} onChange={v => set(d => { d.locale = v || undefined; }, 'locale')} placeholder="en-US" /></Field>
           <Field label={T('i_currency')}><TextInput value={def.currency} onChange={v => set(d => { d.currency = v.toUpperCase() || undefined; }, 'currency')} placeholder="USD" /></Field>
@@ -1100,7 +1099,7 @@ function ReportProps() {
         </div>
       </div>
       <div className="cat">
-        <h5 data-icon="i_defaultText">{T('i_defaultText')}</h5>
+        <CatHead data-icon="i_defaultText">{T('i_defaultText')}</CatHead>
         <div className="grid2">
           <Field label={T('i_font')}><Select value={base.fontFamily} options={families} onChange={v => set(d => { d.styles ||= {}; d.styles.base ||= {}; d.styles.base.fontFamily = v; })} /></Field>
           <Field label={T('i_size')}><NumberInput value={base.fontSize ?? 9} onChange={v => set(d => { d.styles ||= {}; d.styles.base ||= {}; d.styles.base.fontSize = v; }, 'basesize')} /></Field>
@@ -1127,7 +1126,7 @@ function ReportImages() {
   const upload = async (files) => { setErr(null); const r = await uploadImages(files, T); if (r.err) setErr(r.err); };
   return (
     <div className="cat" data-testid="report-images">
-      <h5 data-icon="images">{T('images')}</h5>
+      <CatHead data-icon="images">{T('images')}</CatHead>
       {Object.entries(images).map(([name, uri]) => (
         <div key={name} className="trow" style={{ gap: 8 }}>
           <img src={typeof uri === 'string' && uri.startsWith('data:image/') ? uri : undefined} alt="" style={{ width: 28, height: 28, objectFit: 'contain', border: '1px solid var(--line)', borderRadius: 4 }} />
@@ -1155,7 +1154,7 @@ function EmbeddedPicker({ item, onPick }) {
   const upload = async (files) => { setErr(null); const r = await uploadImages(files, T); if (r.err) setErr(r.err); if (r.names[0]) onPick(`embedded:${r.names[0]}`); };
   return (
     <div className="cat" data-testid="image-source">
-      <h5 data-icon="ux_imageCat">{T('ux_imageCat')}</h5>
+      <CatHead data-icon="ux_imageCat">{T('ux_imageCat')}</CatHead>
       <label className="btn sm primary" style={{ justifySelf: 'start' }}>{T('ux_imageUploadHere')}
         <input type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" hidden onChange={e => { upload([...e.target.files]); e.target.value = ''; }} data-testid="item-image-upload" />
       </label>
@@ -1180,7 +1179,7 @@ function ReportFunctions() {
   const errors = checkFunctions(fns);
   return (
     <div className="cat">
-      <h5 data-icon="i_functions">{T('i_functions')}</h5>
+      <CatHead data-icon="i_functions">{T('i_functions')}</CatHead>
       {fns.map((f, i) => (
         <div key={i} style={{ display: 'grid', gap: 4, marginBottom: 8 }}>
           <div className="grid2">
@@ -1229,7 +1228,7 @@ function NamedStyles() {
   const setS = (name, k, v) => useDesigner.getState().apply(d => { d.styles ||= {}; d.styles.named ||= {}; d.styles.named[name] ||= {}; if (v === undefined || v === '') delete d.styles.named[name][k]; else d.styles.named[name][k] = v; }, `ns.${name}.${k}`);
   return (
     <div className="cat">
-      <h5 data-icon="i_namedStyles">{T('i_namedStyles')}</h5>
+      <CatHead data-icon="i_namedStyles">{T('i_namedStyles')}</CatHead>
       <Field label={T('i_applyTheme')}>
         <Select value="" allowEmpty options={Object.keys(THEMES)} onChange={v => { if (v) useDesigner.getState().apply(d => { d.styles = themeStyles(THEMES[v]); }); }} />
       </Field>
