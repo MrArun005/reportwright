@@ -53,6 +53,14 @@ for (const [tool, files] of SAMPLES) {
     })));
 }
 
+// the preview is never an empty box: open the first sample (the SSRS transcript) when the stage comes near, unless a file was chosen first
+whenNear(stage, async () => {
+  if (runId) return;
+  const [f] = SAMPLES[0][1][0];
+  try { const r = await fetch(`switch/samples/${f}`); if (!r.ok) throw new Error(`HTTP ${r.status}`); if (!runId) load(f, await r.text()); }
+  catch (e) { fail(stage, e); }
+});
+
 const drop = $('#drop'), fileIn = $('#file');
 drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileIn.click(); } });
 fileIn.addEventListener('change', () => { const f = fileIn.files[0]; fileIn.value = ''; if (f) readFile(f); });

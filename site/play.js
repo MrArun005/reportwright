@@ -1,7 +1,7 @@
 // ReportWright playground: the designer full-screen, plus start-from, data, export, share and autosave.
 // No server: api/reports and api/sample are static files written by scripts/build-site.mjs.
 const SERVER = new URL('.', document.baseURI).href.replace(/\/$/, '');
-const KEY = 'pw-play-autosave', HASH = '#r=', MAX_URL = 8000;
+const MINE = '__mine', KEY = 'pw-play-autosave', HASH = '#r=', MAX_URL = 8000;
 const $ = (s) => document.querySelector(s);
 const el = (tag, props = {}, ...kids) => { const n = Object.assign(document.createElement(tag), props); n.append(...kids); return n; };
 const BLANK = { $schema: 'pagewright/report@1', name: 'New report', page: { size: 'A4', margins: [36, 36, 36, 36] }, dataSources: [], dataSets: [], sections: { body: { items: [] } } };
@@ -79,11 +79,20 @@ const getJson = (path) => fetch(`${SERVER}/${path}`).then(r => (r.ok ? r.json() 
 
 /* ---------- start from ---------- */
 const start = $('#start');
-fetch(`${SERVER}/api/reports/`).then(r => r.json()).then(list => { // the folder's index.html is the report list
+const startReady = fetch(`${SERVER}/api/reports/`).then(r => r.json()).then(list => { // the folder's index.html is the report list
   for (const r of list) start.append(el('option', { value: r.id, textContent: r.name }));
 }).catch(e => console.error(e));
+/** After a restore or a share link: show which gallery report this is, or "Your report". */
+async function syncStart(def) {
+  await startReady;
+  const hit = def.name === BLANK.name ? { value: '' } : [...start.options].find(o => o.value && o.value !== MINE && o.textContent === def.name);
+  if (hit) start.value = hit.value;
+  else { if (!start.querySelector(`[value="${MINE}"]`)) start.append(el('option', { value: MINE, textContent: 'Your report' })); start.value = MINE; }
+  start.dataset.at = start.value;
+}
 start.addEventListener('change', async () => {
   const id = start.value;
+  if (id === MINE) return;
   if (!confirmLose()) { start.value = start.dataset.at || ''; return; }
   start.dataset.at = id;
   try { await open(id ? await getJson(`api/reports/${id}`) : structuredClone(BLANK)); say(id ? `Opened "${start.selectedOptions[0].text}". Edits stay in this browser.` : ''); }
@@ -198,5 +207,5 @@ $('#share-dl').addEventListener('click', downloadJson);
     } catch { def = null; }
   }
   await open(def || structuredClone(BLANK));
-  if (def) save();
+  if (def) { save(); syncStart(def); }
 })();
