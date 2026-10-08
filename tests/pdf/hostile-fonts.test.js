@@ -123,3 +123,114 @@ describe('hostile fonts', () => {
     await failsFast(() => draw(new Uint8Array(4)), /too short/);
   });
 });
+
+// OpenType/CFF and layout tables: the repo's CID-keyed CFF fixture and Inter's GPOS, made to lie.
+import { parseCff } from '../../packages/pdf/src/fonts/cff.js';
+import { ROOT } from './tools.js';
+import nodePath from 'node:path';
+import nodeFs from 'node:fs';
+
+const SC = nodeFs.readFileSync(nodePath.join(ROOT, 'tests/fixtures/fonts/NotoSansSC-Subset.otf'));
+/** the fixture with its CFF table changed by fix(cff, info) (or replaced by its return value), rebuilt */
+function cffFont(fix) {
+  const t = sfntTables(SC), F = parseFont(SC);
+  const cff = new Uint8Array(t.get('CFF ')), c = parseCff(cff, F.numGlyphs);
+  t.set('CFF ', fix(cff, { c, A: F.glyphFor(65), dv: new DataView(cff.buffer) }) ?? cff);
+  return buildSfnt(t, [0x4f, 0x54, 0x54, 0x4f]);
+}
+/** Inter with its GPOS changed by fix(gpos, dv) */
+function gposFont(fix) {
+  const t = sfntTables(INTER), g = new Uint8Array(t.get('GPOS'));
+  fix(g, new DataView(g.buffer));
+  t.set('GPOS', g);
+  return buildSfnt(t);
+}
+/** the offset (in GPOS) of the first lookup of Inter's 'kern' feature */
+function kernLookup(g, dv) {
+  const fl = dv.getUint16(6), ll = dv.getUint16(8);
+  for (let i = 0; i < dv.getUint16(fl); i++) {
+    const r = fl + 2 + i * 6;
+    if (String.fromCharCode(...g.subarray(r, r + 4)) !== 'kern') continue;
+    const f = fl + dv.getUint16(r + 4);
+    return ll + dv.getUint16(ll + 2 + dv.getUint16(f + 4) * 2);
+  }
+  throw new Error('no kern feature');
+}
+/** embeds, draws and ends in under 1 s; the warnings */
+async function embedsSafely(bytes, txt = 'AVATAR') {
+  const t = performance.now();
+  let r;
+  const out = await toBytes(async (pdf) => {
+    const f = await pdf.embedFont(bytes);
+    expect(f.widthOfText(txt, 10)).toBeCloseTo(f.widthOf(txt, 10), 3); // kerning off
+    pdf.addPage().text(txt, { x: 10, y: 10, font: f });
+    const end = pdf.end; pdf.end = async () => (r = await end());
+  }, { creationDate: new Date(0) });
+  expect(performance.now() - t).toBeLessThan(1000);
+  await PDFDocument.load(out);
+  if (HAS.poppler) expect(pdftotext(out).trim()).toBe(txt);
+  return r.warnings;
+}
+
+describe('hostile OpenType/CFF fonts', () => {
+  it('a CharStrings INDEX whose count lies is refused when embedded', async () => {
+    const b = cffFont((cff, { c, dv }) => { dv.setUint16(c.cs.p, 0xffff); });
+    await failsFast(() => draw(b, 'ABC'), /Broken font: the CFF CharStrings INDEX says 65535 entries/);
+  });
+
+  it('an INDEX whose offsets go backwards, or whose offset size is 7, is refused', async () => {
+    const back = cffFont((cff, { c }) => { const os = c.cs.os, at = c.cs.p + 3 + 5 * os; for (let k = 0; k < os; k++) cff[at + k] = 0; cff[at + os - 1] = 1; });
+    await failsFast(() => draw(back, 'ABC'), /Broken font: the CFF CharStrings INDEX (goes backwards|does not start)/);
+    const os7 = cffFont((cff, { c }) => { cff[c.gsubrs.p + 2] = 7; });
+    await failsFast(() => draw(os7, 'ABC'), /Broken font: the CFF Global Subr INDEX has offset size 7/);
+  });
+
+  it('a subroutine that calls itself stops at depth 10 with a clear error', async () => {
+    const b = cffFont((cff, { c, A }) => {
+      const [s] = c.gsubrs.at(0); cff.set([32, 29], s); // gsubr 0: push -107 (+ bias 107 = 0), callgsubr: itself
+      const [a, e] = c.cs.at(A); expect(e - a).toBeGreaterThanOrEqual(3); cff.set([32, 29, 14], a); // glyph A calls it
+    });
+    await failsFast(() => draw(b, 'A'), /Broken font: glyph \d+ nests subroutines deeper than 10/);
+  });
+
+  it('a charstring over 65,535 bytes is refused', async () => {
+    const b = cffFont((cff, { c, A }) => {
+      // a new CharStrings INDEX (offset size 4) at the end of the table, glyph A 70,000 bytes long; the Top DICT's
+      // CharStrings operand (29 + 4 bytes, 17) pointed at it
+      const n = c.cs.count, parts = Array.from({ length: n }, (_, g) => (g === A ? new Uint8Array(70_000).fill(139) : cff.subarray(...c.cs.at(g))));
+      const size = parts.reduce((t, x) => t + x.length, 0), idx = new Uint8Array(3 + (n + 1) * 4 + size), dv = new DataView(idx.buffer);
+      dv.setUint16(0, n); idx[2] = 4;
+      let off = 1, at = 3 + (n + 1) * 4;
+      parts.forEach((x, g) => { dv.setUint32(3 + g * 4, off); idx.set(x, at); at += x.length; off += x.length; });
+      dv.setUint32(3 + n * 4, off);
+      const out = new Uint8Array(cff.length + idx.length); out.set(cff); out.set(idx, cff.length);
+      const p = c.cs.p, odv = new DataView(out.buffer);
+      const op = out.findIndex((v, i) => v === 29 && odv.getInt32(i + 1) === p && out[i + 5] === 17); // 29: a 4-byte operand
+      expect(op).toBeGreaterThan(0);
+      odv.setInt32(op + 1, cff.length);
+      return out;
+    });
+    await failsFast(() => draw(b, 'A'), /Broken font: the charstring of glyph \d+ is 70000 bytes \(at most 65535\)/);
+  });
+
+  it('GPOS with a lying lookup count: kerning off with a warning, the font embeds', async () => {
+    const w = await embedsSafely(gposFont((g, dv) => dv.setUint16(dv.getUint16(8), 0xffff)));
+    expect(w.join()).toMatch(/Broken font: GPOS lookup list lies outside the table: GPOS kerning is off/);
+  });
+
+  it('GPOS with a kern subtable offset past the table, or a pair set count that lies: kerning off with a warning', async () => {
+    let w = await embedsSafely(gposFont((g, dv) => { const L = kernLookup(g, dv); dv.setUint16(L + 6, 0xfff0); }));
+    expect(w.join()).toMatch(/Broken font: GPOS (.* lies outside the table|has a coverage table of format \d+): GPOS kerning is off/); // garbage there, or nothing
+    w = await embedsSafely(gposFont((g, dv) => { const L = kernLookup(g, dv); dv.setUint16(L + 4, 0xffff); }));
+    expect(w.join()).toMatch(/GPOS kerning is off/);
+  });
+
+  it('a legacy kern table whose pair count lies: kerning off with a warning', async () => {
+    const t = sfntTables(INTER);
+    t.delete('GPOS');
+    const kern = new Uint8Array(4 + 14 + 6), dv = new DataView(kern.buffer);
+    dv.setUint16(2, 1); dv.setUint16(6, 20); dv.setUint16(8, 1); dv.setUint16(10, 0xffff);
+    t.set('kern', kern);
+    expect((await embedsSafely(buildSfnt(t))).join()).toMatch(/Broken font: kern a subtable lies outside the table: kern-table kerning is off/);
+  });
+});
