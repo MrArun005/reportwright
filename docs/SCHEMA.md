@@ -331,6 +331,7 @@ Also has every property of [ItemBase](#itembase).
 | `type` | "field" | yes |  |
 | `kind` | "text" \\| "multiline" \\| "checkbox" \\| "choice" |  |  |
 | `fieldName` | Expr<string> |  |  |
+| `label` | Expr<string> |  |  |
 | `value` | Expr |  |  |
 | `options` | Expr |  |  |
 | `required` | boolean |  |  |
