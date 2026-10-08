@@ -265,7 +265,7 @@ export class TextMeasurer {
    * character), exactly as before. Others also break between CJK characters (kinsoku applied), never
    * inside a grapheme cluster (a conjunct, a letter and its marks), and remember their direction.
    * @param {string} text @param {string} key @param {number} size @param {number} maxWidth
-   * @returns {{text: string, width: number, dir?: 'ltr'|'rtl'}[]}
+   * @returns {{text: string, width: number, dir?: 'ltr'|'rtl', end?: boolean}[]}
    */
   wrap(text, key, size, maxWidth) {
     if (text === '') return [{ text: '', width: 0, end: true }]; // an empty cell: no font needed (a standard-fonts-only report then loads no Inter)
