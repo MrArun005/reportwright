@@ -173,6 +173,7 @@ Also has every property of [ItemBase](#itembase).
 | `detail` | [TableRow](#tablerow)[] |  |  |
 | `footer` | [TableRow](#tablerow)[] |  |  |
 | `repeatHeader` | boolean |  |  |
+| `widowControl` | boolean |  | Default true: a group of four or more rows never leaves one of its rows alone at a page foot or head, and a group of two or three rows that fits a page moves whole to the next page. false lets a break fall anywhere inside a group. |
 | `fitColumns` | boolean |  | Column widths from the content: the header, the first 50 rows and the footer, in proportion, filling the table's width. Columns without a width are measured anyway. |
 | `noRowsText` | string |  |  |
 | `sortBy` | any |  |  |

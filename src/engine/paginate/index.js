@@ -47,16 +47,20 @@ export function paginate(units, tables, pageH, warn) {
   for (const b of blocks) cand.push(b.top, b.bottom);
   cand.sort((a, b) => a - b);
 
-  // A group taller than a page (its rows tagged grp by the table layout) is split with at least two rows on each side of
-  // the break: no lone row at the foot or head of a page. A group of under four rows cannot meet that and is left alone.
+  // Widow control (its rows tagged grp by the table layout, off with widowControl: false): a group of four or more rows
+  // is split with at least two rows on each side of a break, so no lone row sits at a page foot or head. A group of two
+  // or three rows that fits a page is not split at all: it moves whole. A group taller than a page of under four rows
+  // cannot meet either rule and is left alone.
   const grpRows = new Map();
-  for (const u of units) if (u.grp) { let g = grpRows.get(u.grp); if (!g) grpRows.set(u.grp, g = { tops: [], first: u.top, last: 0 }); g.tops.push(u.top); g.last = Math.max(g.last, u.top + u.height); }
-  const tallGroups = [...grpRows.values()].filter(g => g.tops.length >= 4 && g.last - g.first > pageH + EPS);
+  for (const u of units) if (u.grp) { let g = grpRows.get(u.grp); if (!g) grpRows.set(u.grp, g = { tops: new Set(), first: u.top, last: 0 }); g.tops.add(u.top); g.last = Math.max(g.last, u.top + u.height); }
+  const widowGroups = [...grpRows.values()].map(g => ({ ...g, tops: [...g.tops].sort((a, b) => a - b) }))
+    .filter(g => g.tops.length >= 4 || (g.tops.length >= 2 && g.last - g.first <= pageH + EPS));
   /** rows of the group above y (tops are sorted) */
   const rowsAbove = (tops, y) => { let lo = 0, hi = tops.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (tops[mid] < y - EPS) lo = mid + 1; else hi = mid; } return lo; };
   const splitOk = (y) => {
-    for (const g of tallGroups) {
+    for (const g of widowGroups) {
       if (g.first >= y - EPS || g.last <= y + EPS) continue;
+      if (g.tops.length < 4) return false;
       const above = rowsAbove(g.tops, y);
       if (above < 2 || g.tops.length - above < 2) return false;
     }
@@ -194,12 +198,13 @@ export function paginate(units, tables, pageH, warn) {
         if (mv) { bottom = limit; moved = mv; }
       }
       if (bottom < 0) {
-        // Nothing valid: drop keep-rules and try again, then cut.
+        // Nothing valid: drop the keep-together and keep-with rules and try again (a block cut here keeps widow control:
+        // a group's rows still split at least two and two), then cut.
         for (let i = last; i >= 0; i--) {
           const y = cand[i];
           if (y > limit + EPS) continue;
           if (y <= top + EPS) break;
-          if (!units.some(u => !placed.has(u) && u.top < y - EPS && u.top + u.height > y + EPS) && !useless(top, y)) { bottom = y; break; }
+          if (splitOk(y) && !units.some(u => !placed.has(u) && u.top < y - EPS && u.top + u.height > y + EPS) && !useless(top, y)) { bottom = y; break; }
         }
         if (bottom < 0) {
           bottom = limit;

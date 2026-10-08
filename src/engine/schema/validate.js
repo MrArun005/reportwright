@@ -12,7 +12,7 @@ export const SCHEMA_ALIAS = 'reportwright/report@1'; // the same format under th
  *  list; a new item property is added here (or to the type's props) or validate() calls it unknown. */
 const ITEM_KEYS = new Set(('id type name x y w h style styleName items hidden layer locked label alt value dataSet canGrow canShrink action bookmark tooltip '
   + 'keepTogether pageBreakBefore pageBreakAfter pageBreakBetween newSection filters sort groups groupBy groupAdjacent inheritRows columns header detail '
-  + 'footer repeatHeader noRowsText pageBreakEvery cells rows rowGroup rowGroups columnGroup columnGroups values value valueFormat rowSort columnSort '
+  + 'footer repeatHeader widowControl noRowsText pageBreakEvery cells rows rowGroup rowGroups columnGroup columnGroups values value valueFormat rowSort columnSort '
   + 'rowTotals columnTotals cellStyle headerStyle totalStyle corner partProps library part properties overflow overflowTo src fit headingLevel '
   + 'rotate shrinkToFit minFontSize shrinkStep tocDots tocLink tocPage format chartType series seriesGroup category title legend palette stacked '
   + 'valueAxis xTitle maxCategories outliers categorySort categoryFormat showValues labelPosition symbology quietZone report params text toggle '

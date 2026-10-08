@@ -122,6 +122,8 @@ export function sliceColumns(o) {
     if (u.block) c.block = `${u.block}#${k}`;
     // a numbering section starts once, on the first column set, not again on every set
     if (si > 0 && c.sectionStart) delete c.sectionStart;
+    // a row shown again on a later column set is not another row of its group (widow control counts the first set one)
+    if (si > 0) delete c.grp;
     if (first) c.breakBefore = true;
     out.push(c);
     y += u.height;
