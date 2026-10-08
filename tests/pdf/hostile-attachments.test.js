@@ -91,3 +91,53 @@ describe('hostile attachment names', () => {
     if (HAS.poppler) expect(run('pdfdetach', ['-list', save(out)])).toMatch(/1: Rechnung März\.pdf/);
   });
 });
+
+describe('hostile attachment names (review 3)', () => {
+  it('slash look-alikes, Unicode spaces and padding', () => {
+    refused('docs／..／x.pdf', {}, /looks like a slash \(U\+FF0F\)/);
+    refused('a∕b.pdf', {}, /looks like a slash \(U\+2215\)/);
+    refused('a⁄b.pdf', {}, /U\+2044/);
+    refused('a＼b.pdf', {}, /U\+FF3C/);
+    refused('a∖b.pdf', {}, /U\+2216/);
+    refused(`report.pdf${' '.repeat(60)}.txt`, {}, /3 spaces in a row/);
+    refused('a　b.pdf', {}, /a space other than U\+0020 \(U\+3000\)/);
+    refused('a b.pdf', {}, /U\+00A0/);
+    refused('a b.pdf', {}, /U\+2009/);
+    expect(() => page().attachFile(FILE, { name: 'a b.pdf' })).not.toThrow();
+    expect(() => page().attachFile(FILE, { name: 'a  b.pdf' })).not.toThrow(); // two are fine
+  });
+
+  it('every passive extension has its MIME types; a contradicting one is refused; allowTypes takes any', () => {
+    refused('invoice.pdf', { mimeType: 'application/x-msdownload' }, /MIME type application\/x-msdownload does not match the extension \.pdf/);
+    refused('sheet.xlsx', { mimeType: 'application/vnd.ms-excel.sheet.macroEnabled.12' }, /does not match/);
+    refused('data.json', { mimeType: 'text/javascript' }, /does not match/);
+    expect(() => page().attachFile(FILE, { name: 'sheet.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })).not.toThrow();
+    expect(() => page().attachFile(FILE, { name: 'photo.JPG', mimeType: 'image/jpeg' })).not.toThrow();
+    expect(() => page().attachFile(FILE, { name: 'tool.exe', mimeType: 'application/x-msdownload', allowTypes: ['exe'] })).not.toThrow();
+  });
+
+  it('random hostile names: every accepted one is safe, has an allowed extension and re-checks clean', async () => {
+    const { checkFileName, PASSIVE } = await import('../../packages/pdf/src/core/filename.js');
+    const ALPHA = ['a', 'b', 'x', ' ', ' ', '.', '.', ':', '/', '\\', '‮', '⁦', '​', '﻿', '­', '．', '․', '。', '／', '∕', '＼', '　', ' ', '\u0085', 'C', 'O', 'N', 'ä', 'ä'];
+    let seed = 42;
+    const rnd = (n) => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return (seed >>> 8) % n; };
+    let accepted = 0;
+    const t = performance.now();
+    for (let i = 0; i < 2000; i++) {
+      let s = '';
+      for (let k = 1 + rnd(12); k > 0; k--) s += ALPHA[rnd(ALPHA.length)];
+      s += `.${PASSIVE[rnd(PASSIVE.length)]}`;
+      if (rnd(4) === 0) s += ALPHA[rnd(ALPHA.length)] + (rnd(2) ? '.exe' : '');
+      let r;
+      try { r = checkFileName(s, {}, 'test'); } catch (e) { expect(e).toBeInstanceOf(Error); continue; }
+      accepted++;
+      expect(r.name.slice(0, r.name.lastIndexOf('.')), JSON.stringify(s)).toMatch(/^[abxCONä .]+$/u); // only safe characters (ä as NFC)
+      expect(r.name.normalize('NFC')).toBe(r.name);
+      expect(r.name).not.toMatch(/ {3}|^\.|[. ]$/);
+      expect(PASSIVE).toContain(r.name.split('.').pop().toLowerCase());
+      expect(checkFileName(r.name, {}, 'test').name).toBe(r.name);
+    }
+    expect(accepted).toBeGreaterThan(50);
+    expect(performance.now() - t).toBeLessThan(1000);
+  });
+});
