@@ -288,7 +288,7 @@ function nativeSpec(type, item, data, g, title, axes) {
 /** Decimals a tick step needs to tell its ticks apart (0.2 → 1, 0.25 → 2, 5 → 0). */
 const stepDecimals = (step) => { const t = String(Number(step.toPrecision(6))); const m = /\.(\d+)$/.exec(t); return t.includes('e-') ? Math.min(6, Number(t.split('e-')[1])) : m ? Math.min(6, m[1].length) : 0; };
 /** autoFmt: no format was given: labels get the decimals the tick step needs (ticks 0, 0.2 … 0.8, not 0, 0, 0, 1, 1). */
-function valueAxis(spec, lo, hi, minPos, { includeZero = true, len = 100, fs = 7.5, fmt, percent = false, lc, who, name, autoFmt }) {
+function valueAxis(spec, lo, hi, minPos, { includeZero = true, len = 100, fs = 7.5, fmt, percent = false, pad = 0, lc, who, name, autoFmt }) {
   spec = spec && typeof spec === 'object' ? spec : {};
   const smin = numOrNull(spec.min), smax = numOrNull(spec.max);
   if (spec.log) {
@@ -301,6 +301,8 @@ function valueAxis(spec, lo, hi, minPos, { includeZero = true, len = 100, fs = 7
   }
   if (includeZero) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
   if (percent) { lo = lo < 0 ? -1 : 0; hi = 1; }
+  // pad: the automatic range keeps a margin past the data, so the largest point is not drawn on the frame (explicit min/max are kept as given)
+  if (pad > 0 && hi > lo) { const d = (hi - lo) * pad; if (smin == null) lo -= d; if (smax == null) hi += d; }
   const want = len < fs * 6 ? 3 : 5;
   const sc = niceScale(smin ?? lo, smax ?? hi, want);
   let a = sc.lo, b = sc.hi, ticks;
@@ -707,8 +709,8 @@ function paintXY(type, g) {
   const fmtY = (v) => toText(v, ys.format || item.valueFormat || 'N0', ctx);
   const fmtX = (v) => toText(v, xs.format || item.xFormat || 'N0', ctx);
   // as before: scatter axes are nice scales of the data, not forced through 0
-  const ay = valueAxis(ys, ylo, yhi, ymp, { includeZero: false, len: bottom - top, fs, fmt: fmtY, lc, who, name: 'y' });
-  const axx = valueAxis(xs, xlo, xhi, xmp, { includeZero: false, len: W, fs, fmt: fmtX, lc, who, name: 'x' });
+  const ay = valueAxis(ys, ylo, yhi, ymp, { includeZero: false, pad: 0.05, len: bottom - top, fs, fmt: fmtY, lc, who, name: 'y' });
+  const axx = valueAxis(xs, xlo, xhi, xmp, { includeZero: false, pad: 0.05, len: W, fs, fmt: fmtX, lc, who, name: 'x' });
   const leftTitle = ys.title, bottomTitle = xs.title || item.xTitle;
   const left = X + 10 + (leftTitle ? fs * 1.6 : 0) + Math.max(...ay.ticks.map(t => lc.m.width(fmtY(t), font, fs)));
   const right = X + W - 6, pb = bottom - fs * 1.8 - (bottomTitle ? fs * 1.6 : 0), pt = top + fs * 0.6;
