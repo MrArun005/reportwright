@@ -68,6 +68,20 @@ function foldOf(v) {
  *   deadline?: number, timeoutMs?: number, maxRows?: number, maxJsonRowBytes?: number, maxJsonWholeBytes?: number }} opts
  * @returns {Promise<{ why: string } | { why?: undefined, name: string, columns: number[], title: string, timeZone: string|null, locale: string|null, currency: string|null, warnings: string[], rows: () => AsyncGenerator<any>, records: () => AsyncGenerator<any>, grouped: () => AsyncGenerator<any>, fieldList: () => Promise<any[]>, stats: { rows: number } }>}
  */
+/**
+ * The batches of a sqlRows source: an async or sync iterable of arrays of rows, each checked (a single row is a common slip).
+ * @param {Function} sqlRows @param {any} src @param {any} p @param {AbortSignal} [signal]
+ */
+export async function* sqlBatches(sqlRows, src, p, signal) {
+  for await (const b of sqlRows(src, p, { signal })) {
+    if (!Array.isArray(b)) {
+      const what = b && typeof b === 'object' ? `an object with keys ${Object.keys(b).slice(0, 3).join(', ')}${Object.keys(b).length > 3 ? '…' : ''}` : b === null ? 'null' : `a ${typeof b}`;
+      throw new TypeError(`sqlRows must yield arrays of rows (got ${what}); yield [row, …] batches, not single rows`);
+    }
+    yield b;
+  }
+}
+
 export async function planStream(def0, opts) {
   const no = (why) => ({ why });
   if (!def0 || typeof def0 !== 'object' || Array.isArray(def0)) return no('not a definition');
@@ -203,7 +217,7 @@ export async function planStream(def0, opts) {
         yield* jsonRows(res.body ?? await res.text(), ds.path, { maxElementBytes: opts.maxJsonRowBytes ?? 8 * 1048576, maxWholeBytes: opts.maxJsonWholeBytes });
       } else { // sql
         const p = Object.fromEntries(Object.entries(params || {}).map(([k, x]) => [k, Array.isArray(x) ? x.map(day) : day(x)]));
-        if (opts.sqlRows) yield* opts.sqlRows(src, p, { signal: opts.signal });
+        if (opts.sqlRows) yield* sqlBatches(opts.sqlRows, src, p, opts.signal);
         else if (opts.sql) yield* inBatches(await opts.sql(src, p));
         else throw new Error('SQL runs on the server');
       }

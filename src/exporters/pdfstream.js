@@ -20,6 +20,7 @@ import fontkitModule from '@pdf-lib/fontkit';
 import { Zlib } from 'fflate';
 import { render } from '../engine/index.js';
 import { planPaged } from '../engine/paged.js';
+import { sqlBatches } from '../engine/stream.js';
 import { safeUrl, drillUrl, asciiUrl } from '../engine/url.js';
 import { exportPdf } from './pdf.js';
 import { xmpPacket } from './pdfa.js';
@@ -563,7 +564,9 @@ async function streamed(def, opts, sink) {
   const why = opts.encrypt ? 'encrypted' : opts.prepare ? 'signed' : opts.save ? 'save options' : opts.pdfa && !opts.pdfa.icc?.length ? 'PDF/A without a colour profile' : null;
   const plan = why ? { why } : await raced(planPaged(def, opts), signal);
   if (plan.why !== undefined) {
-    const model = await raced(render(def, opts), signal);
+    // render() reads SQL through opts.sql (whole rows): the sqlRows batches, gathered (this path holds the model whole anyway)
+    const rOpts = opts.sqlRows && !opts.sql ? { ...opts, sql: async (/** @type {any} */ src, /** @type {any} */ p) => { const all = []; for await (const b of sqlBatches(opts.sqlRows, src, p, signal)) for (const r of b) all.push(r); return all; } } : opts;
+    const model = await raced(render(def, rOpts), signal);
     const bytes = await raced(exportPdf(model, opts.fontStore, { ...opts, timeoutMs: opts.deadline ? Math.max(1, opts.deadline - Date.now()) : undefined }), signal);
     await raced(written(sink, sink.write(bytes)), signal);
     // said, not silent: a report that was meant to stream holds every page in memory instead

@@ -1,7 +1,7 @@
 // @reportwright/engine: the report engine, the exporters and helpers, for Node and browsers.
 import { FontStore } from '../../src/engine/index.js';
 import { fontFile } from '../../src/engine/text/fonts.js';
-export { render, FontStore, ITEMS, parameterOptions, resolveParameters } from '../../src/engine/index.js';
+export { FontStore, ITEMS, parameterOptions, resolveParameters } from '../../src/engine/index.js';
 /** @typedef {import('../../src/engine/index.js').RenderOptions} RenderOptions */
 export { fontFile };
 export { validate } from '../../src/engine/schema/validate.js';
@@ -63,6 +63,15 @@ let defaultSubset;
 /** @type {Set<string>} */
 const warned = new Set();
 /** One console warning per deprecated form. @param {string} key @param {string} msg */
+import { render as renderFull } from '../../src/engine/index.js';
+import { checkOptions } from '../../src/engine/options.js';
+/** @type {typeof renderFull} */
+export async function render(def, opts) {
+  const warn = checkOptions(opts);
+  const model = await renderFull(def, opts);
+  if (warn.length && model?.warnings) model.warnings.push(...warn);
+  return model;
+}
 const deprecated = (key, msg) => { if (!warned.has(key)) { warned.add(key); console.warn(`[@reportwright/engine] DEPRECATED: ${msg}`); } };
 const isFontStore = (/** @type {any} */ x) => x instanceof FontStore || (!!x && typeof x === 'object' && typeof x.load === 'function' && typeof x.get === 'function');
 /** @param {string} fn @param {any} model */
@@ -109,6 +118,7 @@ const fontsOf = (o) => o.fonts || o.fontStore || defaultFontStore();
  */
 export async function exportPdf(model, options) {
   const opt = optionsOf('exportPdf', [...arguments], 'fonts');
+  for (const w of checkOptions(opt)) (opt.onWarning || console.warn)(w);
   const subset = opt.subset === false ? undefined : opt.subset || (defaultSubset ||= createSubsetter(async () => {
     const url = fontsUrl('harfbuzz-subset.wasm');
     if (!url) throw new Error('@reportwright/fonts is not installed');
@@ -189,6 +199,7 @@ export { planPaged } from '../../src/engine/paged.js';
  * @returns {Promise<{ streamed: boolean, pages: number, warnings: string[], why?: string }>}
  */
 export async function exportPdfStream(def, options, sink) {
+  const unknown = checkOptions(options);
   const { fonts, fontStore, subset: sub, pdfa, spill, ...rest } = /** @type {any} */ (options || {});
   const store = fonts || fontStore || defaultFontStore();
   const subset = sub === false ? undefined : sub || (defaultSubset ||= createSubsetter(async () => {
@@ -204,6 +215,8 @@ export async function exportPdfStream(def, options, sink) {
   }
   // a sort (table sort, groups) spills its rows to disk in Node, so a grouped report's memory stays flat
   const sorter = rest.sorter || (spill !== false && canSpill() ? spillSorter({ ...(spill?.dir ? { dir: spill.dir } : {}), ...(spill?.maxMB ? { maxMB: spill.maxMB } : {}) }) : undefined);
-  return exportPdfStreamFull(def, { ...rest, sorter, fontStore: store, subset, pdfa: pdfaOpt, exportData: !!rest.tagged }, sink);
+  const r = await exportPdfStreamFull(def, { ...rest, sorter, fontStore: store, subset, pdfa: pdfaOpt, exportData: !!rest.tagged }, sink);
+  if (unknown.length) r.warnings = [...unknown, ...r.warnings];
+  return r;
 }
 export { tableFor, matrixFor } from '../../src/designer/tableGen.js';
