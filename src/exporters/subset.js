@@ -27,9 +27,10 @@ export function createSubsetter(loadWasm) {
   /**
    * @param {Uint8Array} font  TrueType or OpenType (CFF) bytes
    * @param {Iterable<number>} codePoints
-   * @param {{ glyphs?: Iterable<number>, layout?: boolean }} [opt]
+   * @param {{ glyphs?: Iterable<number>, layout?: boolean, weight?: number }} [opt]
    *   glyphs: shaped glyphs to keep as well (conjuncts, joined Arabic forms); their IDs stay the same, because
    *   the PDF draws them by ID. layout: keep GSUB/GPOS for a browser that shapes the text itself (HTML export).
+   *   weight: the wght axis of a variable font (default 400, Regular); static fonts have no such axis and are unchanged.
    * @returns {Promise<Uint8Array>}
    */
   return async function subset(font, codePoints, opt = {}) {
@@ -59,7 +60,9 @@ export function createSubsetter(loadWasm) {
         const gs = x.hb_subset_input_glyph_set(input);
         for (const g of opt.glyphs) x.hb_set_add(gs, g);
       }
-      x.hb_subset_input_pin_all_axes_to_default(input, face); // a variable font becomes its default instance
+      x.hb_subset_input_pin_all_axes_to_default(input, face); // a variable font becomes its default instance...
+      // ...except weight: the default of a variable CJK face is Thin (wght 100), so it is cut at Regular (or opt.weight)
+      x.hb_subset_input_pin_axis_location(input, face, tag('wght'), opt.weight ?? 400);
       const sub = x.hb_subset_or_fail(face, input);
       if (!sub) throw new Error('HarfBuzz: subsetting failed');
       const res = x.hb_face_reference_blob(sub);

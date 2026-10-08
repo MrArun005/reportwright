@@ -153,3 +153,32 @@ describe('N14: the guarded fetch decodes gzip and names the scheme it refuses', 
     await expect(sourceResponse({ type: 'json', url: 'data:application/json,[1]' }, ctx, { params: {} })).rejects.toThrow(/not data:/);
   });
 });
+
+import fs from 'node:fs';
+import path from 'node:path';
+import fontkitModule from '@pdf-lib/fontkit';
+import { createSubsetter } from '../../src/exporters/subset.js';
+
+describe('N10: a variable CJK face is cut at Regular, not its default (Thin)', () => {
+  const cjk = path.join(import.meta.dirname, '..', '..', 'public', 'fonts', 'cjk', 'NotoSansJP.ttf');
+  const inter = path.join(import.meta.dirname, '..', '..', 'public', 'fonts', 'Inter-Regular.ttf');
+  const fontkit = fontkitModule.default || fontkitModule;
+  const subset = createSubsetter(async () => fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'public', 'harfbuzz-subset.wasm')));
+  it.skipIf(!fs.existsSync(cjk))('the subset has no variation left and its Latin advance is the Regular one', async () => {
+    const orig = new Uint8Array(fs.readFileSync(cjk));
+    const cut = fontkit.create(Buffer.from(await subset(orig, [...'日本語A'].map(c => c.codePointAt(0)), {})));
+    const regular = fontkit.create(Buffer.from(orig)).getVariation({ wght: 400 });
+    const thin = fontkit.create(Buffer.from(orig));
+    expect(cut.fvar).toBeFalsy();
+    // the Latin advance: Regular's (607.5, 608 after the subset's rounding) and not Thin's (574)
+    const adv = (f) => f.glyphForCodePoint(0x41).advanceWidth;
+    expect(Math.abs(adv(cut) - adv(regular))).toBeLessThanOrEqual(1);
+    expect(Math.abs(adv(cut) - adv(thin))).toBeGreaterThan(20);
+  });
+  it('a static face is cut the same whatever weight is asked for', async () => {
+    const bytes = new Uint8Array(fs.readFileSync(inter));
+    const a = await subset(bytes, [65, 66, 67], {});
+    const b = await subset(bytes, [65, 66, 67], { weight: 100 });
+    expect(Buffer.from(a).equals(Buffer.from(b))).toBe(true);
+  });
+});
