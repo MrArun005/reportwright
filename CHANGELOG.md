@@ -5,6 +5,23 @@ All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. T
 ## Unreleased
 
 ### Fixed
+- **Word export: long reports.** The document XML goes to the zip in pieces instead of one string: a 500k-row report
+  hit V8's string limit (RangeError: Invalid string length). A report with no tables exports without `exportData`.
+- **`exportHtml(model, { fonts, ...options })`** takes the options object like the other exporters; the 0.7 form
+  `exportHtml(model, fontStore, options)` still works with a deprecation warning. It threw before ("reading 'get'").
+- **Charts: scatter and bubble axes** no longer pad past zero the data does not stay above (0-100 data gives 0 to 120,
+  not -50 to 150). Warnings: a row one series leaves blank is drawn by the others, so it is not reported as not drawn;
+  a gantt chart has no series by design and gets no "has no series" warning.
+- **Variable CJK fonts** are cut at Regular (wght 400), not their default Thin instance, in the PDF and HTML subsets.
+- **Data fetch:** gzip, deflate and br bodies are decoded (the byte cap counts decoded bytes); `file:` and `data:` URLs
+  are refused with the scheme named, not "its host is made by a parameter".
+- **Format characters** (RLM, LRE/LRI, ZWJ/ZWNJ, soft hyphen) need no glyph: no "No font has these characters" warning,
+  and no notdef box in the PDF.
+- **Warnings:** an unnamed item is named by its type (no "undefined:"), and a sub-report warning that validate and the
+  render both say is said once.
+- **`parameterOptions()`** lists a parameter's fixed options first, then the fetched ones, each value once (as the viewer does).
+- **HTML Tables: date sort keys** use the wall clock, so the same report gives the same keys in every host time zone.
+
 - **BIRT import: SUM and other aggregates total their column.** A bound column with `aggregateFunction` (SUM, AVE,
   MIN, MAX, FIRST, LAST…) had no listed argument, so it fell back to a row count: `Sum(1, …)` showed 3 for a total of
   250.75. The column's own expression is now the argument. An aggregate with no expression is counted as approximated.

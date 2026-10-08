@@ -14,24 +14,24 @@ import { needsTableData } from './regions.js';
  * exportHtml(model, { fonts, ...options }). The 0.7 form exportHtml(model, fontStore, options) still works (deprecated).
  * @param {any} model
  * @param {{ fonts?: import('../engine/text/fonts.js').FontStore, fontStore?: import('../engine/text/fonts.js').FontStore, title?: string, drillBase?: string, subset?: (font: Uint8Array, cps: Iterable<number>, o?: { layout?: boolean }) => Promise<Uint8Array>,
- *   static?: boolean, locale?: string, currency?: string, lang?: string, strings?: Partial<typeof DATA_STRINGS>, timeoutMs?: number } | FontStore} [options]
+ *   static?: boolean, locale?: string, currency?: string, lang?: string, strings?: Partial<typeof DATA_STRINGS>, timeoutMs?: number } | import('../engine/text/fonts.js').FontStore} [options]
  * @param {any} [legacyOpt] the options of the 0.7 form
  */
 export function exportHtml(model, options, legacyOpt) {
   const isStore = (/** @type {any} */ x) => !!x && typeof x.load === 'function' && typeof x.get === 'function' && x.bytes instanceof Map;
-  let fontStore, opt;
+  /** @type {any} */ let fontStore, opt;
   if (isStore(options)) {
     if (!warnedLegacy) { warnedLegacy = true; console.warn('[reportwright] DEPRECATED: exportHtml(model, fontStore, options) is replaced by exportHtml(model, { fonts: fontStore, ...options }); the old form is removed in 0.9'); }
     fontStore = options; opt = legacyOpt || {};
   } else {
-    opt = options || {};
+    opt = /** @type {any} */ (options) || {};
     fontStore = opt.fonts || opt.fontStore;
     if (!isStore(fontStore)) throw new TypeError('exportHtml(model, { fonts }): fonts must be a FontStore (defaultFontStore() or new FontStore(loader)), got ' + (fontStore === undefined ? 'nothing' : typeof fontStore));
   }
   return withDeadline(htmlOf(model, fontStore, opt), /** @type {any} */ (opt).timeoutMs);
 }
 let warnedLegacy = false;
-/** @type {typeof exportHtml} */
+/** @type {(model: any, fontStore: any, opt: any) => Promise<string>} */
 async function htmlOf(model, fontStore, opt) {
   const used = new Map();
   const layout = new Set(); // fonts the browser shapes text in (Indic, Arabic, Hebrew): their subsets keep GSUB/GPOS
