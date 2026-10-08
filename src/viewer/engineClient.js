@@ -77,11 +77,12 @@ export function customFonts(refresh = false) {
 
 /**
  * Declare and load the fonts a page model draws with. FontFace on the document (not CSS in the component),
- * so viewers inside a shadow root (the embed) see them too.
+ * so viewers inside a shadow root (the embed) see them too. Resolves to the keys that did not load (each with its error);
+ * a font that failed is tried again the next time.
  */
 const faces = new Map();
 export function loadReportFonts(keys) {
-  if (typeof document === 'undefined' || !document.fonts || typeof FontFace === 'undefined') return Promise.resolve();
+  if (typeof document === 'undefined' || !document.fonts || typeof FontFace === 'undefined') return Promise.resolve([]);
   return Promise.all(keys.filter(k => k !== SHAPER).map((k) => {
     if (!faces.has(k)) {
       // the same bytes the engine measures with (one download per font), not a url() the browser fetches again
@@ -90,10 +91,10 @@ export function loadReportFonts(keys) {
         const face = new FontFace(fontFamilyCss(k), src, { display: 'block' });
         document.fonts.add(face);
         return face.load();
-      }).catch(() => {}));
+      }).then(() => null, (error) => { faces.delete(k); return { key: k, error }; }));
     }
     return faces.get(k);
-  }));
+  })).then(results => results.filter(Boolean));
 }
 export const loadModelFonts = (model) => loadReportFonts([...new Set([...ALL_FONT_KEYS, ...fontKeysOf(model)])]);
 

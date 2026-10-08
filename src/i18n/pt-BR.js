@@ -90,7 +90,7 @@ export default {
   parameters: 'Parâmetros', documentMap: 'Mapa do documento', run: 'Executar', running: 'Executando…', runningReport: 'Executando o relatório…',
   firstPage: 'Primeira página', previousPage: 'Página anterior', nextPage: 'Próxima página', lastPage: 'Última página', page: 'Página',
   zoomIn: 'Ampliar', zoomOut: 'Reduzir', fitWidth: 'Ajustar à largura', search: 'Pesquisar', previousMatch: 'Ocorrência anterior', nextMatch: 'Próxima ocorrência',
-  exporting: 'Exportando…', viewReport: 'Ver relatório', didNotRun: 'O relatório não foi executado.', true: 'Sim', false: 'Não',
+  exporting: 'Exportando…', viewReport: 'Ver relatório', didNotRun: 'O relatório não foi executado.', fontsDidNotLoad: 'Algumas fontes não carregaram ({fonts}). O texto usa uma fonte de substituição. Verifique se a pasta de fontes está em fontsUrl.', true: 'Sim', false: 'Não',
   commaSeparated: 'Valores separados por vírgulas',
   selectAll: 'Selecionar tudo', nullValue: 'Nulo (sem valor)',
   pagesRows: '{pages} páginas · {rows} linhas · {ms} ms', warnings: '{n} aviso(s)',

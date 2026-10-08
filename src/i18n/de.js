@@ -90,7 +90,7 @@ export default {
   parameters: 'Parameter', documentMap: 'Dokumentstruktur', run: 'Ausführen', running: 'Läuft…', runningReport: 'Bericht wird ausgeführt…',
   firstPage: 'Erste Seite', previousPage: 'Vorherige Seite', nextPage: 'Nächste Seite', lastPage: 'Letzte Seite', page: 'Seite',
   zoomIn: 'Vergrößern', zoomOut: 'Verkleinern', fitWidth: 'An Breite anpassen', search: 'Suchen', previousMatch: 'Vorheriger Treffer', nextMatch: 'Nächster Treffer',
-  exporting: 'Wird exportiert…', viewReport: 'Bericht anzeigen', didNotRun: 'Der Bericht wurde nicht ausgeführt.', true: 'Wahr', false: 'Falsch',
+  exporting: 'Wird exportiert…', viewReport: 'Bericht anzeigen', didNotRun: 'Der Bericht wurde nicht ausgeführt.', fontsDidNotLoad: 'Einige Schriften konnten nicht geladen werden ({fonts}). Der Text wird in einer Ersatzschrift gezeigt. Prüfen Sie, ob der Schriftordner unter fontsUrl erreichbar ist.', true: 'Wahr', false: 'Falsch',
   commaSeparated: 'Werte, durch Kommas getrennt',
   selectAll: 'Alle auswählen', nullValue: 'Null (kein Wert)',
   pagesRows: '{pages} Seiten · {rows} Zeilen · {ms} ms', warnings: '{n} Warnung(en)',

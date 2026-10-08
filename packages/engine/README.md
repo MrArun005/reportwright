@@ -17,6 +17,9 @@ const fonts = defaultFontStore();
 const model = await render(JSON.parse(fs.readFileSync('statement.pw.json', 'utf8')), { fontStore: fonts, parameters: { accountId: 'LN-1' } });
 // fonts are subset by default (only the glyphs the PDF uses); { subset: false } embeds every font in full
 fs.writeFileSync('statement.pdf', await exportPdf(model, { fonts, title: 'Statement' }));
+// a bundled browser app (Vite, webpack, Next client code): copy the fonts folder to your site and point at it, since the
+// package's location is not known to the bundler. `cp -r node_modules/@reportwright/fonts/public/fonts public/pw/fonts`
+const bundledFonts = defaultFontStore({ fontsUrl: '/pw/fonts/' }); // a missing font is an error; a URL or, in Node, a path
 // the same options object everywhere: exportXlsx(model, { fonts }), exportDocx(model, { fonts }), exportPptx(model, { fonts })
 // Excel, CSV, Word, interactive HTML and the accessible PDF rebuild tables from the table data, which render() keeps
 // only when asked: render(def, { exportData: true }) (needsExportData(format) says which formats need it)

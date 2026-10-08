@@ -90,7 +90,7 @@ export default {
   parameters: 'Paramètres', documentMap: 'Plan du document', run: 'Exécuter', running: 'Exécution…', runningReport: 'Exécution du rapport…',
   firstPage: 'Première page', previousPage: 'Page précédente', nextPage: 'Page suivante', lastPage: 'Dernière page', page: 'Page',
   zoomIn: 'Zoom avant', zoomOut: 'Zoom arrière', fitWidth: 'Ajuster à la largeur', search: 'Rechercher', previousMatch: 'Résultat précédent', nextMatch: 'Résultat suivant',
-  exporting: 'Exportation…', viewReport: 'Afficher le rapport', didNotRun: "Le rapport ne s'est pas exécuté.", true: 'Vrai', false: 'Faux',
+  exporting: 'Exportation…', viewReport: 'Afficher le rapport', didNotRun: "Le rapport ne s'est pas exécuté.", fontsDidNotLoad: "Certaines polices n'ont pas été chargées ({fonts}). Le texte utilise une police de secours. Vérifiez que le dossier des polices est servi à fontsUrl.", true: 'Vrai', false: 'Faux',
   commaSeparated: 'Valeurs séparées par des virgules',
   selectAll: 'Tout sélectionner', nullValue: 'Nul (aucune valeur)',
   pagesRows: '{pages} pages · {rows} lignes · {ms} ms', warnings: '{n} avertissement(s)',

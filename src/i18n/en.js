@@ -90,7 +90,7 @@ export default {
   parameters: 'Parameters', documentMap: 'Document map', run: 'Run', running: 'Running…', runningReport: 'Running the report…',
   firstPage: 'First page', previousPage: 'Previous page', nextPage: 'Next page', lastPage: 'Last page', page: 'Page',
   zoomIn: 'Zoom in', zoomOut: 'Zoom out', fitWidth: 'Fit width', search: 'Search', previousMatch: 'Previous match', nextMatch: 'Next match',
-  exporting: 'Exporting…', viewReport: 'View report', didNotRun: 'The report did not run.', true: 'True', false: 'False',
+  exporting: 'Exporting…', viewReport: 'View report', didNotRun: 'The report did not run.', fontsDidNotLoad: 'Some fonts did not load ({fonts}). Text is drawn in a fallback font. Check that the fonts folder is served at fontsUrl.', true: 'True', false: 'False',
   commaSeparated: 'Values, separated by commas',
   selectAll: 'Select all', nullValue: 'Null (no value)',
   pagesRows: '{pages} pages · {rows} rows · {ms} ms', warnings: '{n} warning(s)',

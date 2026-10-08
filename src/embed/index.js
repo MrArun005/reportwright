@@ -50,7 +50,8 @@ export function withData(def, data) {
  * @typedef {{ server?: string, report?: string, definition?: object, data?: Record<string, unknown>, fontsUrl?: string, params?: Record<string, string>, lang?: string, height?: string,
  *   onDrill?: (report: string, params: Record<string, unknown>) => void,
  *   reports?: Record<string, object>, fonts?: Record<string, string>, customFonts?: object[], uiFontCss?: string, snapshot?: Record<string, any>, title?: string,
- *   toolbar?: { hide?: string[], add?: ToolbarButton[] }, viewMode?: 'single' | 'continuous' | 'galley', nonce?: string }} ViewerOptions
+ *   toolbar?: { hide?: string[], add?: ToolbarButton[] }, viewMode?: 'single' | 'continuous' | 'galley', nonce?: string,
+ *   onReady?: (error: Error | null) => void }} ViewerOptions
  * @typedef {{ unmount: () => void }} ViewerHandle
  */
 /**
@@ -80,7 +81,7 @@ export function mountViewer(target, opts = {}) {
   const box = /** @type {HTMLElement} */ (shadow.querySelector('.pw-embed'));
   box.style.height = opts.height || '720px'; // set through CSSOM: a style attribute in markup is blocked by style-src 'self'
   const root = createRoot(box);
-  const show0 = (definition) => root.render(createElement(ReportViewer, { definition, reportId: opts.report, params: opts.params, lang: opts.lang, onDrill: opts.onDrill, title: opts.title, toolbar: opts.toolbar, viewMode: opts.viewMode }));
+  const show0 = (definition) => root.render(createElement(ReportViewer, { definition, reportId: opts.report, params: opts.params, lang: opts.lang, onDrill: opts.onDrill, title: opts.title, toolbar: opts.toolbar, viewMode: opts.viewMode, onReady: opts.onReady }));
   // the language's strings first (English is built in; the others load on demand)
   const show = (definition) => loadLanguage(opts.lang).catch(() => {}).then(() => show0(definition));
   if (opts.definition) show(withData(opts.definition, opts.data));
@@ -88,7 +89,7 @@ export function mountViewer(target, opts = {}) {
   else fetch(`${server}/api/reports/${encodeURIComponent(opts.report)}`)
     .then(r => (r.ok ? r.json() : r.json().then(j => Promise.reject(new Error(j.error || `HTTP ${r.status}`)))))
     .then(show)
-    .catch(e => { shadow.querySelector('.pw-embed').innerHTML = `<div class="vmsg error">The report did not load: ${String(e.message).replace(/</g, '&lt;')}</div>`; });
+    .catch(e => { shadow.querySelector('.pw-embed').innerHTML = `<div class="vmsg error">The report did not load: ${String(e.message).replace(/</g, '&lt;')}</div>`; opts.onReady?.(e); });
   return { unmount: () => root.unmount() };
 }
 

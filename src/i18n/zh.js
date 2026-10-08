@@ -90,7 +90,7 @@ export default {
   parameters: '参数', documentMap: '文档结构图', run: '运行', running: '正在运行…', runningReport: '正在运行报表…',
   firstPage: '第一页', previousPage: '上一页', nextPage: '下一页', lastPage: '最后一页', page: '页',
   zoomIn: '放大', zoomOut: '缩小', fitWidth: '适合宽度', search: '搜索', previousMatch: '上一个匹配项', nextMatch: '下一个匹配项',
-  exporting: '正在导出…', viewReport: '查看报表', didNotRun: '报表未能运行。', true: '是', false: '否',
+  exporting: '正在导出…', viewReport: '查看报表', didNotRun: '报表未能运行。', fontsDidNotLoad: '部分字体未能加载（{fonts}），文字以备用字体显示。请确认字体文件夹可通过 fontsUrl 访问。', true: '是', false: '否',
   commaSeparated: '多个值用逗号分隔',
   selectAll: '全选', nullValue: 'Null（无值）',
   pagesRows: '{pages} 页 · {rows} 行 · {ms} 毫秒', warnings: '{n} 条警告',

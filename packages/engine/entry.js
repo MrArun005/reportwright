@@ -14,17 +14,41 @@ export { createSubsetter };
 const NODE_FS = 'node:fs/promises'; // a variable, so browser bundlers leave the import alone
 /** URL of a file in @reportwright/fonts/public (or another package folder), or undefined when it can't be resolved. @param {string} file @param {string} [pkg] */
 function fontsUrl(file, pkg = '@reportwright/fonts/public') {
-  try { return new URL(/** @type {any} */ (import.meta).resolve(`${pkg}/${file}`)); } catch { return undefined; }
+  try { return new URL(/** @type {any} */ (import.meta).resolve(`${pkg}/${file}`)); } catch { /* no import.meta.resolve (a bundler, older Node): the Node module API below */ }
+  try { // Node: require.resolve from this module, where getBuiltinModule exists (Node 20.16+, 22.3+)
+    const proc = /** @type {any} */ (globalThis).process;
+    const req = proc?.getBuiltinModule?.('module')?.createRequire(import.meta.url);
+    return req ? proc.getBuiltinModule('url').pathToFileURL(req.resolve(`${pkg}/${file}`)) : undefined;
+  } catch { return undefined; }
+}
+/** A folder as a URL: a URL as it is, a relative URL against the page, or (Node) a path. @param {string} s */
+function folderUrl(s) {
+  const folder = s.replace(/\/?$/, '/');
+  if (/^[a-z][a-z0-9+.-]*:/i.test(folder)) return new URL(folder);
+  if (globalThis.location) return new URL(folder, globalThis.location.href);
+  return /** @type {any} */ (globalThis).process.getBuiltinModule('url').pathToFileURL(folder);
 }
 /** @param {URL} url */
-const readUrl = async (url) => url.protocol === 'file:' ? (await import(/* @vite-ignore */ /* webpackIgnore: true */ NODE_FS)).readFile(url) : new Uint8Array(await (await globalThis.fetch(url)).arrayBuffer()); // a browser: the fonts package's URL
+const readUrl = async (url) => {
+  if (url.protocol === 'file:') return (await import(/* @vite-ignore */ /* webpackIgnore: true */ NODE_FS)).readFile(url);
+  const res = await globalThis.fetch(url); // a browser: the fonts folder's URL
+  if (!res.ok) throw new Error(`Font ${url.pathname.split('/').pop()} did not load (HTTP ${res.status})`);
+  return new Uint8Array(await res.arrayBuffer());
+};
 
 /**
  * A FontStore over the @reportwright/fonts package (install it next to the engine). Throws when it isn't installed.
+ * In a bundled browser app, pass `fontsUrl`: the URL (or, in Node, the path) of a copy of the package's public/fonts
+ * folder; each font is read from there, and a missing one is an error.
+ * @param {{ fontsUrl?: string }} [opts]
  * @returns {FontStore}
  */
-export function defaultFontStore() {
-  if (!fontsUrl('fonts/Inter-Regular.ttf')) throw new Error('Install @reportwright/fonts, or pass your own FontStore');
+export function defaultFontStore(opts = {}) {
+  if (opts.fontsUrl) {
+    const base = folderUrl(String(opts.fontsUrl));
+    return new FontStore(async (key) => readUrl(new URL(fontFile(key), base)));
+  }
+  if (!fontsUrl('fonts/Inter-Regular.ttf')) throw new Error('Install @reportwright/fonts, or pass { fontsUrl } (a copy of its public/fonts folder), or your own FontStore');
   return new FontStore(async (key) => {
     const file = fontFile(key);
     // Chinese, Japanese, Korean and emoji: @reportwright/fonts-cjk (npx reportwright-fonts-cjk downloads them) when installed

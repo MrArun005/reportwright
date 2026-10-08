@@ -146,7 +146,7 @@ const DRILL_KEY = '_drill';
 const drillOfUrl = () => { try { const v = new URL(window.location.href).searchParams.get(DRILL_KEY); const a = v ? JSON.parse(v) : []; return Array.isArray(a) ? a.filter(x => x && typeof x.id === 'string').slice(0, 50) : []; } catch { return []; } };
 const urlWithDrill = (list) => { const u = new URL(window.location.href); if (list.length) u.searchParams.set(DRILL_KEY, JSON.stringify(list)); else u.searchParams.delete(DRILL_KEY); return u.toString(); };
 
-export default function ReportViewer({ definition: rootDef, reportId: rootReportId, params: rootParams, title, compact = false, autoRun = true, lang: langIn = 'en', onDrill, exportHtmlOptions, toolbar, viewMode = 'continuous', onExported, urlState = false }) {
+export default function ReportViewer({ definition: rootDef, reportId: rootReportId, params: rootParams, title, compact = false, autoRun = true, lang: langIn = 'en', onDrill, exportHtmlOptions, toolbar, viewMode = 'continuous', onExported, urlState = false, onReady }) {
   const lang = pickLang(langIn);
   const dir = dirOf(lang);
   const T = (k, v) => tr(lang, k, v);
@@ -163,6 +163,9 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   const [state, setState] = useState({ toggles: {}, sort: {} });
   const [model, setModel] = useState(null);
   const [status, setStatus] = useState({ state: 'idle' });
+  // onReady(error | null) once, when the first run ends: null, or the error that stopped it (a font that did not load counts)
+  const readied = useRef(false);
+  const ready = (error) => { if (!readied.current) { readied.current = true; onReady?.(error); } };
   const [note, setNote] = useState(null); // a one-line notice (the server makes this PDF)
   // a paged report opens showing whole pages; a pageless one (a dashboard) fills the width
   const [zoom, setZoom] = useState(() => (rootDef?.page?.size === 'Pageless' ? 'fit' : 'page'));
@@ -212,11 +215,14 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
       // target: layers meant for the screen show here; print and export render again for theirs (pagedModel)
       // a busy server (503, 429): the data source is tried again, and the status says so
       const onRetry = (r) => { if (id === runId.current) setStatus({ state: 'running', retry: r }); };
-      const [m] = await Promise.all([renderReport(renderDef, p, { ...st, target: 'screen' }, reportId, { onPartial, onRetry }), loadReportFonts(ALL_FONT_KEYS)]);
-      await loadModelFonts(m); // and the fallback or uploaded fonts this model draws with
+      const [m, defaultFailed] = await Promise.all([renderReport(renderDef, p, { ...st, target: 'screen' }, reportId, { onPartial, onRetry }), loadReportFonts(ALL_FONT_KEYS)]);
+      const failed = [...defaultFailed, ...(await loadModelFonts(m))]; // and the fallback or uploaded fonts this model draws with
       if (id !== runId.current) return;
       setModel(m);
-      setStatus({ state: 'done' });
+      // a font that did not load is named on screen (the report still draws, in a fallback font)
+      const fonts = failed.length ? T('fontsDidNotLoad', { fonts: [...new Set(failed.map(f => f.key))].join(', ') }) : null;
+      setStatus({ state: 'done', fonts });
+      ready(failed[0]?.error || null);
       if (keepScroll) requestAnimationFrame(() => scroller.current?.scrollTo({ top }));
       else { setCurrent(1); setFrozen(null); scroller.current?.scrollTo({ top: 0 }); }
     } catch (e) {
@@ -224,6 +230,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
       setModel(null);
       setStatus({ state: 'error', message: e.message, missing: e.missingParameters });
       if (e.missingParameters) setPanel('params');
+      ready(e);
     }
   }, [renderDef, params, state, reportId]);
 
@@ -776,6 +783,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
         <div className="vpages" ref={scroller} role="document" aria-label={definition.name || T('ux_a11yReport')} onScroll={onScroll} onClick={onClick} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
           {status.state === 'error' && <div className="vmsg error" role="alert"><b>{T('didNotRun')}</b><br />{status.message}
             <div style={{ marginTop: 10 }}><button type="button" className="btn sm" onClick={() => run()} data-testid="viewer-retry">{T('r4_retry')}</button></div></div>}
+          {status.state === 'done' && status.fonts && <div className="vmsg error" role="alert" data-testid="viewer-fonts">{status.fonts}</div>}
           {note && <div className="vmsg" role="status" data-testid="viewer-note">{note} <button className="btn sm ghost" onClick={() => setNote(null)} aria-label={T('close')}>×</button></div>}
           {status.state === 'running' && status.retry && <div className="vmsg" role="status" data-testid="viewer-busy">{T('r4_busyRetry', { n: status.retry.attempt, max: status.retry.max })}</div>}
           {!model && status.state === 'running' && !status.retry && <Skeleton def={renderDef} scale={zoom === 'fit' || narrow ? fitW / 600 : Math.min(fitW / 600, fitH / 850)} T={T} />}

@@ -25,7 +25,12 @@ mountViewer('#report', {
 });
 ```
 
-Nothing calls `/api`; each font is downloaded once; the toolbar uses the system font. Copying only `fonts/` works too
+Nothing calls `/api`; each font is downloaded once; the toolbar uses the system font.
+
+If a font cannot be loaded (wrong `fontsUrl`, the folder not served), the report still draws in a fallback font and the
+viewer says which fonts failed, on screen. `onReady(error)` is called when the first run ends: `null` when it went
+through, or the error that stopped it (a font that did not load counts). Bundled apps: serve the fonts folder at the URL
+you pass as `fontsUrl`; `fontsUrl` is not inferred from the package. Copying only `fonts/` works too
 (PDFs then embed whole fonts, and PDF/A export needs `icc/`).
 
 ## What works standalone, what needs the server

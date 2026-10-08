@@ -90,7 +90,7 @@ export default {
   parameters: 'パラメーター', documentMap: 'ドキュメントマップ', run: '実行', running: '実行中…', runningReport: 'レポートを実行しています…',
   firstPage: '最初のページ', previousPage: '前のページ', nextPage: '次のページ', lastPage: '最後のページ', page: 'ページ',
   zoomIn: '拡大', zoomOut: '縮小', fitWidth: '幅に合わせる', search: '検索', previousMatch: '前の一致', nextMatch: '次の一致',
-  exporting: 'エクスポート中…', viewReport: 'レポートを表示', didNotRun: 'レポートを実行できませんでした。', true: 'はい', false: 'いいえ',
+  exporting: 'エクスポート中…', viewReport: 'レポートを表示', didNotRun: 'レポートを実行できませんでした。', fontsDidNotLoad: '一部のフォントを読み込めませんでした（{fonts}）。代替フォントで表示しています。フォントのフォルダが fontsUrl で配信されているか確認してください。', true: 'はい', false: 'いいえ',
   commaSeparated: '値をカンマで区切って入力',
   selectAll: 'すべて選択', nullValue: 'Null（値なし）',
   pagesRows: '{pages} ページ · {rows} 行 · {ms} ms', warnings: '警告 {n} 件',

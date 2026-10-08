@@ -90,7 +90,7 @@ export default {
   parameters: 'المعلمات', documentMap: 'خريطة المستند', run: 'تشغيل', running: 'جارٍ التشغيل…', runningReport: 'جارٍ تشغيل التقرير…',
   firstPage: 'الصفحة الأولى', previousPage: 'الصفحة السابقة', nextPage: 'الصفحة التالية', lastPage: 'الصفحة الأخيرة', page: 'الصفحة',
   zoomIn: 'تكبير', zoomOut: 'تصغير', fitWidth: 'ملاءمة العرض', search: 'بحث', previousMatch: 'التطابق السابق', nextMatch: 'التطابق التالي',
-  exporting: 'جارٍ التصدير…', viewReport: 'عرض التقرير', didNotRun: 'لم يعمل التقرير.', true: 'نعم', false: 'لا',
+  exporting: 'جارٍ التصدير…', viewReport: 'عرض التقرير', didNotRun: 'لم يعمل التقرير.', fontsDidNotLoad: 'تعذّر تحميل بعض الخطوط ({fonts}). يُعرض النص بخط بديل. تحقّق من أن مجلد الخطوط متاح عبر fontsUrl.', true: 'نعم', false: 'لا',
   commaSeparated: 'قيم مفصولة بفواصل',
   selectAll: 'تحديد الكل', nullValue: 'Null (بلا قيمة)',
   pagesRows: '{pages} صفحة · {rows} صف · {ms} مللي ثانية', warnings: '{n} تحذير',
