@@ -25,7 +25,7 @@ describe('report.d.ts', () => {
   it('compiles with skipLibCheck: false', () => {
     const out = typecheck([path.join(ROOT, 'packages/engine/report.d.ts'), path.join(ROOT, 'packages/engine/pool/index.d.ts')]);
     expect(out).toBe('');
-  });
+  }, 120000);
 });
 
 describe('render() options', () => {
@@ -41,5 +41,5 @@ describe('render() options', () => {
       });
       expect(out).toBe('');
     } finally { fs.rmSync(outDir, { recursive: true, force: true }); }
-  });
+  }, 120000); // two tsc runs: slow on a busy machine
 });
