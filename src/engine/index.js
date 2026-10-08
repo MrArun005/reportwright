@@ -5,7 +5,7 @@
  * No React, no DOM. Runs in a Web Worker and in Node.
  */
 import { resolvePage } from './units.js';
-import { FontStore, CORE_FONT_KEY, fontsFor, SHAPER } from './text/fonts.js';
+import { FontStore, CORE_FONT_KEY, fontsFor, SHAPER, OPTIONAL_KEYS } from './text/fonts.js';
 import { safeUrl } from './url.js';
 import { TextMeasurer, finishText } from './text/measure.js';
 import { loadSources, buildDataSets, coerce } from './data/index.js';
@@ -452,7 +452,8 @@ export async function render(def0, opts = {}) {
     result = await layoutAll();
   }
   overTime();
-  for (const k of store.failed) if (k !== SHAPER) warn(`The font "${k}" did not load, so its text is drawn in a bundled face instead.`);
+  // the optional CJK and emoji faces are not installed by default: their missing glyphs have their own warning (NO_CJK_FONTS)
+  for (const k of store.failed) if (k !== SHAPER && !OPTIONAL_KEYS.includes(k)) warn(`The font "${k}" did not load, so its text is drawn in a bundled face instead.`);
   if (m.unshaped) warn('The text shaper (harfbuzz.wasm) did not load, so Arabic, Hebrew, Indic and Thai text is not shaped (letters unjoined, marks misplaced). A font loader must map each key with fontFile(key).');
   if (m.noGlyph.size) {
     // Chinese, Japanese, Korean and emoji fonts are optional (about 40 MB): say how to add them
