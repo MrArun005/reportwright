@@ -123,7 +123,7 @@ function guessType(v, dates = true) {
 const MAX_CSV_COLUMNS = 10000;
 const MAX_CSV_CELLS = 5_000_000; // rows × columns: a wide header over many short lines would multiply
 /** One-character CSV option: "tab" and "\\t" mean a tab. */
-function csvChar(v, dflt, what) {
+export function csvChar(v, dflt, what) {
   if (v == null || v === '') return dflt;
   const c = v === 'tab' || v === '\\t' ? '\t' : String(v);
   if (c.length !== 1 || c === '\n' || c === '\r') throw new Error(`The CSV ${what} must be one character`);
@@ -256,19 +256,43 @@ async function loadFetched(src, ctx, opt, f) {
     }
     return soapBody(text, src);
   }
-  const init = { method: src.type === 'graphql' ? 'POST' : src.method || 'GET', headers };
-  if (src.type === 'graphql') {
-    headers['content-type'] ||= 'application/json';
-    const vars = src.variables ? variablesFrom(src.variables, ctx) : {};
-    init.body = JSON.stringify({ query: src.query, variables: vars });
-  } else if (src.body && init.method !== 'GET') init.body = src.type === 'xml' ? soapEnvelope(src.body, ctx) : String(evalValue(src.body, ctx));
-  const { res, u } = await call(target, init);
+  const { res, u } = await call(target, requestInit(src, ctx, headers));
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${u}`);
   if (src.type === 'csv') return parseCsv(await res.text(), src);
   if (src.type === 'xml') return xmlDocument(await res.text(), src);
   const json = await res.json();
   if (src.type === 'graphql' && json.errors?.length) throw new Error(`GraphQL: ${json.errors[0].message}`);
   return src.type === 'graphql' ? json.data : json;
+}
+
+/** The request of a rest, csv, graphql or xml source (method, headers, body). */
+function requestInit(src, ctx, headers) {
+  const init = { method: src.type === 'graphql' ? 'POST' : src.method || 'GET', headers };
+  if (src.type === 'graphql') {
+    headers['content-type'] ||= 'application/json';
+    const vars = src.variables ? variablesFrom(src.variables, ctx) : {};
+    init.body = JSON.stringify({ query: src.query, variables: vars });
+  } else if (src.body && init.method !== 'GET') init.body = src.type === 'xml' ? soapEnvelope(src.body, ctx) : String(evalValue(src.body, ctx));
+  return init;
+}
+
+/**
+ * The response of a rest (JSON) or csv source, unread, for a streaming render: the same URL, headers, body and proxy as
+ * loadSources. init.pwStream asks the server's fetch for its streaming size cap (safeFetch) instead of the whole-body one.
+ * @param {any} src @param {any} ctx @param {{ fetch?: typeof fetch, baseUrl?: string }} opt
+ * @returns {Promise<Response>}
+ */
+export async function sourceResponse(src, ctx, opt) {
+  const f = opt.fetch || globalThis.fetch || null;
+  if (!f) throw new Error(NO_FETCH);
+  let u = urlFrom(src.url || '', ctx);
+  const headers = {};
+  for (const [k, v] of Object.entries(src.headers || {})) headers[k] = String(evalValue(v, ctx));
+  if (src.useProxy) u = `/api/data/proxy?url=${encodeURIComponent(u)}`;
+  if (opt.baseUrl && u.startsWith('/')) u = opt.baseUrl.replace(/\/$/, '') + u;
+  const res = await f(u, /** @type {any} */ ({ ...requestInit(src, ctx, headers), pwStream: true }));
+  if (!res.ok) throw new Error(`HTTP ${res.status} from ${u}`);
+  return res;
 }
 
 /**
@@ -533,12 +557,12 @@ export function applyFilters(rows, filters, baseCtx) {
   return rows;
 }
 
-const SET_OPS = new Set(['topn', 'bottomn', 'toppercent', 'bottompercent']);
+export const SET_OPS = new Set(['topn', 'bottomn', 'toppercent', 'bottompercent']);
 const PARAM_ONLY = /^=\s*Parameters\s*[.!]\s*\w+(\.Value)?\s*$/i;
 
 const blank = (v) => v == null || v === '' || (Array.isArray(v) && !v.length);
 
-function rowFilter(f, c) {
+export function rowFilter(f, c) {
   const b = evalValue(f.value, c);
   // skipBlank: a blank value (an optional parameter left empty) turns the filter off; Between: either bound blank
   if (f.skipBlank && (blank(b) || ((f.op === 'between' || f.op === 'Between') && !Array.isArray(b) && blank(evalValue(f.value2, c))))) return true;
@@ -594,26 +618,32 @@ function looseEq(a, b) {
   return a == b;
 }
 
+/** A row's sort keys (dates as their time): what applySort and a streaming sort compare. @param {any[]} sort @param {any} c a context whose fields are set */
+export const sortKeys = (sort, c) => sort.map(s => { const v = evalValue(s.by, c); return v instanceof Date ? v.getTime() : v; });
+/** Compare two rows' sort keys as applySort does (nulls last, or lowest with nullOrder "low"; the report's collation);
+ *  0 when equal (the caller keeps the rows' order). @param {any[]} sort */
+export function compareKeys(ka, kb, sort, ctx) {
+  for (let k = 0; k < sort.length; k++) {
+    const a = ka[k], b = kb[k];
+    if (a === b) continue;
+    // nulls last either way (default), or lowest (nullOrder "low": JasperReports and BIRT put them first ascending)
+    const low = ctx?.nullOrder === 'low', desc = sort[k].dir === 'desc';
+    if (a == null) return low ? (desc ? 1 : -1) : 1;
+    if (b == null) return low ? (desc ? -1 : 1) : -1;
+    const r = sortCompare(a, b, ctx); // the report's locale, case-insensitive, natural (SSRS collation)
+    if (r === 0) continue;
+    return desc ? -r : r;
+  }
+  return 0;
+}
+
 /** @param {any[]} rows @param {any[]|undefined} sort */
 export function applySort(rows, sort, baseCtx) {
   if (!sort || !sort.length) return rows;
   const c = { ...baseCtx };
-  const keys = rows.map((r) => { c.fields = r; return sort.map(s => { const v = evalValue(s.by, c); return v instanceof Date ? v.getTime() : v; }); });
+  const keys = rows.map((r) => { c.fields = r; return sortKeys(sort, c); });
   const idx = rows.map((_, i) => i);
-  idx.sort((i, j) => {
-    for (let k = 0; k < sort.length; k++) {
-      const a = keys[i][k], b = keys[j][k];
-      if (a === b) continue;
-      // nulls last either way (default), or lowest (nullOrder "low": JasperReports and BIRT put them first ascending)
-      const low = baseCtx?.nullOrder === 'low', desc = sort[k].dir === 'desc';
-      if (a == null) return low ? (desc ? 1 : -1) : 1;
-      if (b == null) return low ? (desc ? -1 : 1) : -1;
-      const r = sortCompare(a, b, baseCtx); // the report's locale, case-insensitive, natural (SSRS collation)
-      if (r === 0) continue;
-      return sort[k].dir === 'desc' ? -r : r;
-    }
-    return i - j;
-  });
+  idx.sort((i, j) => compareKeys(keys[i], keys[j], sort, baseCtx) || i - j);
   return idx.map(i => rows[i]);
 }
 

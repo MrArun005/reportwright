@@ -239,7 +239,7 @@ import { unzipSync, strFromU8 } from 'fflate';
 describe('rich text: exports', () => {
   const def = rich('<p>Plain <b>bold</b> <i>it</i><u>under</u> <s>gone</s> <span style="color:#ff0000;font-size:14pt">red</span></p><p>Second</p>');
   it('CSV gets whole plain lines', async () => {
-    expect(exportCsv(await out(def)).split('\r\n')).toEqual(['Plain bold itunder gone red', 'Second']);
+    expect(exportCsv(await out(def)).split('\r\n')).toEqual(['\uFEFFPlain bold itunder gone red', 'Second']); // with the BOM, as every CSV (Excel reads UTF-8)
   });
   it('Word keeps one paragraph per rich paragraph with per-run bold, italic, underline, strike, colour and size', async () => {
     const doc = strFromU8(unzipSync(await exportDocx(await out(def)))['word/document.xml']);

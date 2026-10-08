@@ -50,7 +50,7 @@ function evalSafe(v, ctx, lc, who) {
 /** The row arrays of a group's sibling instances, once per sibling list (data bar maxima, ranks over groups). */
 const SIBS = new WeakMap();
 const sibRows = (sibs) => { let r = SIBS.get(sibs); if (!r) SIBS.set(sibs, r = sibs.map(b => b.rows)); return r; };
-function textOf(raw, st, ctx, lc) {
+export function textOf(raw, st, ctx, lc) {
   if (typeof raw === 'string') return raw;
   if (raw == null && st.nullText != null) return String(st.nullText); // what a null shows (JasperReports prints "null")
   try { return toText(raw, st.format, ctx); } catch (e) {
@@ -873,7 +873,7 @@ const CELL_ITEM_UNITS = 100000;
  * column of 0.333, 0.333, 0.334 shown as N2 still sums to 1). Only binary noise past 15 significant digits goes
  * (0.30000000000000004 is 0.3), which Excel would not show either. fmt is unused (kept for the call sites).
  */
-function roundFor(v, fmt) { // eslint-disable-line no-unused-vars
+export function roundFor(v, fmt) { // eslint-disable-line no-unused-vars
   return Number.isInteger(v) || !Number.isFinite(v) ? v : Number(v.toPrecision(15));
 }
 

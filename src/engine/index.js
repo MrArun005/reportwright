@@ -122,22 +122,7 @@ export async function render(def0, opts = {}) {
   };
   const now = opts.now || new Date();
   const fnCount = opts.fnCount || { n: 0 }; // report function calls, for this render and its subreports
-  const baseCtx = {
-    params, globals: { ExecutionTime: now, ReportName: def.name || '', PageNumber: 1, TotalPages: 1 },
-    dataSets: {}, fields: null, locale: def.locale, currency: def.currency, nonFinite: def.nonFinite, // neither set: en-US numbers, no currency symbol (expr/format.js)
-    nullPropagation: def.nullPropagation === true, // Nothing: VB semantics unless the report asks for SQL nulls (expr/evaluate.js)
-    // + - * and Sum on decimal values (SSRS Decimal: 0.1 + 0.2 = 0.3) unless the report asks for IEEE doubles, as Java and JavaScript compute (imported JasperReports and BIRT reports)
-    doubles: def.arithmetic === 'double',
-    bandRows: def.bandRows, // "first-last": table headers read the first data row, footers the last (imported BIRT reports; items/index.js)
-    // dates on the wall clock of the report's time zone, else the render's (the server passes the viewer's), else the host's
-    timeZone: timeZone || undefined, caseSensitive: def.caseSensitive === true, // text order and grouping (expr/evaluate.js sortCompare)
-    nullOrder: def.nullOrder, // "low": nulls sort as the smallest value (imported JasperReports and BIRT reports)
-    collation: def.collation, // "ordinal" (BIRT) or "java" (JasperReports): text order as the source engine compares
-    naturalSort: def.naturalSort === true, // "9" before "10" in text (default: text order, as SSRS)
-    functions: functionTable(def, fnCount), clock,
-    aggCache: new WeakMap(), // aggregate results for this render (expr/evaluate.js)
-    fmtMemo: new Map(), // formatted dates for this render (expr/format.js)
-  };
+  const baseCtx = baseContext(def, { params, now, timeZone, fnCount, clock });
   // Theme.* in expressions: a theme report (maybe picked by a parameter), the report's own theme, or the default
   baseCtx.theme = await resolveTheme(def, baseCtx, getReport, warn);
   // where this render goes: layers can be for the screen, print or export only (the viewer says which; else export)
@@ -482,6 +467,29 @@ export async function render(def0, opts = {}) {
     locale: def.locale || null, // exports format numbers the report's way (Excel: Indian lakh grouping)
     currency: def.currency || null, // Excel's currency symbol (else the locale's, as the page)
     stats: { ms: Date.now() - t0, pages: pages.length, rows: Object.fromEntries(Object.entries(dataSets).map(([k, r]) => [k, r.length])) },
+  };
+}
+
+/**
+ * The evaluation context every expression of a render starts from (render, and the streaming exports in stream.js).
+ * @param {any} def @param {{ params: any, now: Date, timeZone?: string, fnCount: { n: number }, clock: any }} o
+ */
+export function baseContext(def, { params, now, timeZone, fnCount, clock }) {
+  return {
+    params, globals: { ExecutionTime: now, ReportName: def.name || '', PageNumber: 1, TotalPages: 1 },
+    dataSets: {}, fields: null, locale: def.locale, currency: def.currency, nonFinite: def.nonFinite, // neither set: en-US numbers, no currency symbol (expr/format.js)
+    nullPropagation: def.nullPropagation === true, // Nothing: VB semantics unless the report asks for SQL nulls (expr/evaluate.js)
+    // + - * and Sum on decimal values (SSRS Decimal: 0.1 + 0.2 = 0.3) unless the report asks for IEEE doubles, as Java and JavaScript compute (imported JasperReports and BIRT reports)
+    doubles: def.arithmetic === 'double',
+    bandRows: def.bandRows, // "first-last": table headers read the first data row, footers the last (imported BIRT reports; items/index.js)
+    // dates on the wall clock of the report's time zone, else the render's (the server passes the viewer's), else the host's
+    timeZone: timeZone || undefined, caseSensitive: def.caseSensitive === true, // text order and grouping (expr/evaluate.js sortCompare)
+    nullOrder: def.nullOrder, // "low": nulls sort as the smallest value (imported JasperReports and BIRT reports)
+    collation: def.collation, // "ordinal" (BIRT) or "java" (JasperReports): text order as the source engine compares
+    naturalSort: def.naturalSort === true, // "9" before "10" in text (default: text order, as SSRS)
+    functions: functionTable(def, fnCount), clock,
+    aggCache: new WeakMap(), // aggregate results for this render (expr/evaluate.js)
+    fmtMemo: new Map(), // formatted dates for this render (expr/format.js)
   };
 }
 

@@ -472,6 +472,64 @@ function rowLocal(ast) {
   return r;
 }
 
+/**
+ * True when a property value (a literal, an =expression or a {template}) reads only the current row, the parameters
+ * and the globals: no aggregate, scope, Lookup, Previous, Parent or report function. Streaming exports
+ * (engine/stream.js) evaluate such values one row at a time. rowNumber: RowNumber() / RowNumber(Nothing) is allowed
+ * too (the caller supplies ctx.rowNumber). A value that does not parse counts as row-local: it is #Error either way.
+ * @param {any} v @param {{ rowNumber?: boolean }} [o]
+ */
+export function streamable(v, { rowNumber = false } = {}) {
+  let p;
+  try { p = parseValue(v); } catch { return true; }
+  if (p.kind === 'lit') return true;
+  const asts = p.kind === 'expr' ? [p.ast] : p.parts.filter(x => typeof x !== 'string').map(x => /** @type {any} */ (x).ast);
+  return asts.every(a => streamableAst(a, { rowNumber }));
+}
+/** streamable for a parsed expression. @param {any} ast @param {{ rowNumber?: boolean }} [o] */
+export function streamableAst(ast, { rowNumber = false } = {}) {
+  const ok = (n) => {
+    if (!n || typeof n !== 'object') return true;
+    if (Array.isArray(n)) return n.every(ok);
+    if (n.type === 'id') { const k = n.name.toLowerCase(); return k !== 'parent' && (k in ROOTS || k in CONSTANTS); }
+    if (n.type === 'call') {
+      const k = n.name.toLowerCase();
+      if (n.obj) return false;
+      if (k === 'rownumber') return rowNumber && (!n.args.length || (n.args.length === 1 && n.args[0].type === 'lit' && n.args[0].v == null));
+      if (!(k in FUNCTIONS || k === 'iif' || k === 'switch' || k === 'choose')) return false;
+    }
+    return Object.values(n).every(ok);
+  };
+  return ok(ast);
+}
+
+/** The aggregates a streaming export folds row by row (aggregator). */
+export const FOLDS = new Set(['sum', 'count', 'avg', 'min', 'max']);
+/**
+ * A running Sum, Count, Avg, Min or Max: values added one at a time give the same result as the aggregate over the
+ * whole list (the same decimal addition, the same comparison, the same errors), in O(1) memory.
+ * @param {string} name lower case, one of FOLDS @param {EvalCtx} ctx
+ */
+export function aggregator(name, ctx) {
+  let s = 0, c = 0, m = null, bad = null;
+  const one = (v) => {
+    if (name === 'count') { if (v != null) c++; return; }
+    if (name === 'min' || name === 'max') { if (v != null && (m == null || (name === 'min' ? cmpVal(v, m) < 0 : cmpVal(v, m) > 0))) m = v; return; }
+    if (v == null || v === '') return;
+    const x = Number(v);
+    if (name === 'sum' && Number.isNaN(x) && typeof v === 'string') { bad ||= new ExprError(`Sum: "${v.slice(0, 40)}" is not a number`); return; }
+    s = add(s, x, ctx); c++;
+  };
+  return {
+    /** @param {any} v one row's value (an array, a LookupSet's, adds each item) */
+    add(v) { if (Array.isArray(v)) for (const x of v) one(x); else one(v); },
+    value() {
+      if (bad) throw bad;
+      return name === 'sum' ? s : name === 'count' ? c : name === 'avg' ? (c ? s / c : null) : m;
+    },
+  };
+}
+
 const PURE_ROWS = new WeakMap();
 /** Row-local, and reads neither Globals (page numbers change between passes) nor Parent (the caller's row). */
 function pureRows(ast) {
