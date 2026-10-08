@@ -81,7 +81,10 @@ const baseHost = (base, internal) => { try { return base && internal ? [new URL(
 
 async function renderModel(def, { parameters = {}, data, base, internal = false, now, state, file, exportData = true, dataOnly = false } = {}) {
   try {
-    return await render(withData(def, data), { fontStore, parameters, exportData, dataOnly, baseUrl: base, allowHosts: baseHost(base, internal), now: now ? new Date(now) : undefined, ...(state ? { state } : {}), ...(file ? { loadReport: siblingLoader(file) } : {}) });
+    const m = await render(withData(def, data), { fontStore, parameters, exportData, dataOnly, baseUrl: base, allowHosts: baseHost(base, internal), now: now ? new Date(now) : undefined, ...(state ? { state } : {}), ...(file ? { loadReport: siblingLoader(file) } : {}) });
+    // one line per warning: validate() and the render can name the same problem with different labels ("textbox:", "TextBox:")
+    const seen = new Set();
+    return { ...m, warnings: m.warnings.filter(w => !seen.has(w.toLowerCase()) && seen.add(w.toLowerCase())) };
   } catch (e) {
     const relative = /fetch|URL|Invalid URL/i.test(e.message) && !base;
     fail(`${e.message}${relative ? '\n    A data source needs a server: pass --base http://localhost:3000, or push the data with -d source=file.json.' : ''}`);
