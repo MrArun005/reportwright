@@ -2,6 +2,34 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
+## 0.10.0
+
+Streaming exports and a pool that uses every core. No change to rendering, totals or page counts. Design and measurements:
+[docs/research/STREAMING-1M.md](docs/research/STREAMING-1M.md).
+
+### Added
+- **Streaming data CSV and Excel.** A report with one table and row-by-row expressions (group and table footers may
+  total with Sum, Count, Avg, Min, Max or CountRows) exports as it reads: rows come from the source a batch at a time
+  (JSON arrays split from the byte stream, CSV, SQLite, PostgreSQL and MySQL cursors), are sorted and grouped through
+  temporary files when needed, and are written to the response with back-pressure. Memory stays flat: 100k → 300k rows
+  measured 160 → 168 MB for a CSV render, 185 → 197 MB for a grouped Excel one (the whole render process); 1M rows
+  projects under 300 MB. Same bytes as before for CSV, same cells and formulas for Excel. Other reports take the page
+  model as before. The answer has no `content-length`; a failure after the first bytes breaks the download off (CSV:
+  a last line `#ERROR <reference>`). Settings: `PW_STREAM`, `PW_STREAM_MAX_ROWS`, `PW_STREAM_FETCH_MAX_MB`,
+  `PW_STREAM_SQL_MAX_MB`, `PW_SPILL_MAX_MB`, `PW_SPILL_TOTAL_MB`, `PW_STREAM_STALL_MS`.
+- Excel tables longer than 1,048,576 rows continue on a sheet "Name (2)" with their header rows again.
+- `@reportwright/engine/pool`: `createPool({ heapMB, timeoutMs })`.
+
+### Changed
+- The server's render pool has a worker per core (less one, at most 16); memory decides what runs at once, by an
+  estimate per template and caller, with small heaps for small and streaming renders (`PW_RENDER_SMALL_HEAP_MB`) and
+  a cap on one caller's running renders (`PW_RENDER_RUNNING_PER_PRINCIPAL`). `UV_THREADPOOL_SIZE` follows the cores
+  (Dockerfile, cluster.mjs).
+- Excel: a plain cell no longer carries a duplicate style; the no-table CSV starts with a BOM like the others.
+
+### Fixed
+- SQLite sources: a reused query process failed every second query ("statement has been finalized").
+
 ## 0.9.0
 
 Pagewright is now **ReportWright** (formerly Pagewright). No change to rendering, totals or page counts.
