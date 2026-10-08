@@ -105,9 +105,9 @@ const Thumb = ({ page, w, h, n, current, near, onGo, T }) => {
   const ref = useRef(null);
   useEffect(() => { if (current) ref.current?.scrollIntoView?.({ block: 'nearest' }); }, [current]);
   return (
-    <button ref={ref} type="button" className="vthumb" aria-current={current ? 'page' : undefined} aria-label={T('b2_pageN', { n })} onClick={() => onGo(n)}>
+    <button ref={ref} type="button" className="vthumb" aria-current={current ? 'page' : undefined} onClick={() => onGo(n)}>
       <span className="vthumb-sheet" style={{ aspectRatio: `${w} / ${h}` }}>{near && <SvgHtml as="span" html={html} aria-hidden="true" />}</span>
-      <span className="vthumb-n">{n}</span>
+      <span className="sr-only">{T('b2_pageN', { n })}</span><span className="vthumb-n" aria-hidden="true">{n}</span>
     </button>
   );
 };
