@@ -9,6 +9,7 @@ All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. T
   "N of N rows have no x or y value". A valid polar chart gets no warnings.
 - **Variable font subsets say their weight:** a variable font cut at Regular is named Regular (family, subfamily, full and PostScript names) with usWeightClass 400, and its variation tables are dropped, in the PDF and HTML subsets.
 - **Deprecation messages** all say "will be removed in 1.0" (exportHtml's said 0.9). A test greps the source for a deprecation string that names 0.9.
+- **Rich text warnings** say "Rich text:" once (an unnamed item was named "Rich text" and the parser repeated it). The legend warning says what is accepted: a chart's legend is "bottom" or "none", and it is drawn at the bottom.
 
 ## 0.12.1 — 2026-10-08
 

@@ -227,6 +227,10 @@ export function validate(def) {
         warnings.push(`${label}: there is no named style "${it.styleName}"${g ? ` (did you mean "${g}"?)` : ''}; it is ignored`);
       }
       if (Array.isArray(it.sort)) sortIssues(it.sort, label, warnings);
+      if (it.type === 'chart' && it.legend != null && it.legend !== 'bottom' && it.legend !== 'none') {
+        const shown = typeof it.legend === 'object' ? `is an object (${JSON.stringify(it.legend).slice(0, 60)})` : `is ${JSON.stringify(it.legend)}`;
+        warnings.push(`${label}: "legend" ${shown}; only "bottom" (show the legend) or "none" (hide it) is supported, and the legend is drawn at the bottom`);
+      }
       if (it.type === 'chart' && !NO_SERIES_CHARTS.has(it.chartType) && !(Array.isArray(it.series) && it.series.length)) warnings.push(`${label}: the chart has no series, so it plots a count of its rows; add one, e.g. series: [{ "name": "Value", "value": "=Sum(Fields.Amount)" }]`);
       if (it.type === 'chart' && it.chartType === 'polar' && it.xValue == null) warnings.push(`${label}: a polar chart needs xValue, the angle of each point in degrees (0 at the top, clockwise); without it no point is drawn`);
       if (it.type === 'image' && typeof it.src === 'string' && !it.src.startsWith('=') && LOCAL_IMAGE.test(it.src.trim())) warnings.push(`${label}: "${it.src}" is a local file path, which a browser cannot load; embed the image (images: { name: "data:image/png;base64,..." } and src: "embedded:name") or use an https:// address`);
@@ -240,6 +244,7 @@ export function validate(def) {
       }
       // a literal outside the schema's choices ("dir": "rtl2")
       for (const [k, sch] of SCHEMA_ITEMS.get(it.type) || []) {
+        if (it.type === 'chart' && k === 'legend') continue; // its own message, above
         const list = k === 'type' ? null : offEnum(sch, it[k]);
         if (list) warnings.push(`${label}: "${k}" is ${JSON.stringify(it[k])}; expected one of ${list.map(x => JSON.stringify(x)).join(', ')}`);
       }

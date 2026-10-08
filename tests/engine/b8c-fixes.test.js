@@ -94,3 +94,28 @@ describe('N19: deprecation messages all say the same thing (removed in 1.0)', ()
     expect(fs.readFileSync(path.join(root, 'src', 'exporters', 'html.js'), 'utf8')).toMatch(/the old form will be removed in 1\.0/);
   });
 });
+
+import { richValue as _rv } from '../../src/engine/items/rich.js';
+describe('N20: one prefix per warning; the legend warning says what to do', () => {
+  const rich = (extra) => ({ type: 'textbox', x: 0, y: 0, w: 300, h: 40, value: '<p>Hi <a href="javascript:alert(1)">x</a></p>', ...extra });
+  it('an unnamed rich text item says "Rich text:" once', async () => {
+    const m = await render(report([{ ...rich({}), type: 'richtext' }]), { fontStore });
+    const hits = m.warnings.filter(w => /link/.test(w));
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatch(/^Rich text: the link "javascript:alert\(1\)" is not allowed/);
+  });
+  it('a named rich text item says its name, then the problem, once', async () => {
+    const m = await render(report([{ ...rich({ name: 'Hero' }), type: 'richtext' }]), { fontStore });
+    const hits = m.warnings.filter(w => /link/.test(w));
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatch(/^Hero: the link "javascript:alert\(1\)" is not allowed/);
+  });
+  it('a legend that is an object or another word says what is accepted and where the legend goes', () => {
+    const chart = (legend) => report([{ type: 'chart', name: 'C', x: 0, y: 0, w: 300, h: 200, dataSet: 'Rows', chartType: 'column', legend, series: [{ name: 'V', value: '=Sum(Fields.v)' }] }]);
+    const obj = validate(chart({ position: 'right' })).warnings.filter(w => /legend/.test(w));
+    expect(obj).toHaveLength(1);
+    expect(obj[0]).toBe('C: "legend" is an object ({"position":"right"}); only "bottom" (show the legend) or "none" (hide it) is supported, and the legend is drawn at the bottom');
+    const word = validate(chart('right')).warnings.filter(w => /legend/.test(w));
+    expect(word[0]).toBe('C: "legend" is "right"; only "bottom" (show the legend) or "none" (hide it) is supported, and the legend is drawn at the bottom');
+  });
+});
