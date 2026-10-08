@@ -5,7 +5,7 @@
  * No React, no DOM. Runs in a Web Worker and in Node.
  */
 import { resolvePage } from './units.js';
-import { FontStore, CORE_FONT_KEY, fontsFor, SHAPER, OPTIONAL_KEYS } from './text/fonts.js';
+import { FontStore, CORE_FONT_KEY, fontsFor, fontsForDef, SHAPER, OPTIONAL_KEYS } from './text/fonts.js';
 import { safeUrl } from './url.js';
 import { TextMeasurer, finishText } from './text/measure.js';
 import { loadSources, buildDataSets, coerce } from './data/index.js';
@@ -37,6 +37,7 @@ export const BAND_ITEMS = 250000; // page header and footer items drawn per rend
 /**
  * Options for render(). All optional.
  * @typedef {object} RenderOptions
+ * @property {{ layoutPasses?: number }} [stats] filled in: how many times the report was laid out (tests, the bench)
  * @property {Record<string, any>} [parameters] values of the report's parameters, by name (invariant form: 1234.5, 2026-03-05)
  * @property {import('./text/fonts.js').FontStore} [fontStore] the fonts; share one across renders (a new one loads them again)
  * @property {(key: string) => Promise<ArrayBuffer|Uint8Array>} [loadFont] loads a font the store does not have
@@ -129,7 +130,8 @@ export async function render(def0, opts = {}) {
   const params = resolveParameters(def, opts.parameters || {}, { now: opts.now, timeZone, locale: def.locale });
 
   const store = opts.fontStore || new FontStore(/** @type {any} */ (opts.loadFont));
-  await store.load([CORE_FONT_KEY]); // the other faces load when the text needs them (below)
+  // the faces the definition names load now (one layout pass for a bold or italic report); the others load if layout finds them
+  await store.load([CORE_FONT_KEY, ...fontsForDef(def)]);
   let m = new TextMeasurer(store);
 
   // the time limit: an absolute deadline, the same for this render and its subreports
@@ -202,7 +204,9 @@ export async function render(def0, opts = {}) {
   /* ---------------- body: layout + push-down ---------------- */
   const firstPages = Number(opts.firstPages) || 0;
   let cutRows = () => false;
+  let layoutPasses = 0; // for opts.stats (tests and the bench): how many times the report was laid out
   const layoutAll = async () => {
+    layoutPasses++;
     warnings.length = kept;
     idSeq = 0;
     if (!opts.fnCount) fnCount.n = 0; // each layout pass (fonts, TOC) gets the full budget
@@ -452,6 +456,7 @@ export async function render(def0, opts = {}) {
     result = await layoutAll();
   }
   overTime();
+  if (opts.stats) opts.stats.layoutPasses = layoutPasses;
   // the optional CJK and emoji faces are not installed by default: their missing glyphs have their own warning (NO_CJK_FONTS)
   for (const k of store.failed) if (k !== SHAPER && !OPTIONAL_KEYS.includes(k)) warn(`The font "${k}" did not load, so its text is drawn in a bundled face instead.`);
   if (m.unshaped) warn('The text shaper (harfbuzz.wasm) did not load, so Arabic, Hebrew, Indic and Thai text is not shaped (letters unjoined, marks misplaced). A font loader must map each key with fontFile(key).');

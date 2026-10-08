@@ -147,6 +147,26 @@ const BEYOND_LATIN = /[^\u0000-\u024f\u1e00-\u1eff\u2000-\u20cf\u2100-\u218f]/;
  * @param {Iterable<any>} texts
  * @returns {string[]}
  */
+/**
+ * The faces a report definition names before layout: every object with fontFamily, fontWeight or fontStyle (styles,
+ * named styles, item and rich-text styles, table and group styles), and the bold face a chart's titles use. Loaded up
+ * front, so a report that uses bold or italic lays out in one pass. Data (dataSources, inline data) is not read.
+ * @param {any} def @returns {string[]} face keys
+ */
+export function fontsForDef(def) {
+  const keys = new Set();
+  const seen = new Set();
+  const walk = (/** @type {any} */ o) => {
+    if (!o || typeof o !== 'object' || seen.has(o)) return;
+    seen.add(o);
+    if (Array.isArray(o)) { for (const x of o) walk(x); return; }
+    if (o.fontFamily != null || o.fontWeight != null || o.fontStyle != null) keys.add(resolveFontKey(o.fontFamily, o.fontWeight, o.fontStyle));
+    if (o.type === 'chart') keys.add(resolveFontKey(o.fontFamily, 'bold', 'normal'));
+    for (const [k, v] of Object.entries(o)) if (v && typeof v === 'object' && k !== 'dataSources' && k !== 'data') walk(v);
+  };
+  walk(def);
+  return [...keys];
+}
 export function fontsFor(texts) {
   const keys = new Set(), seen = new Set();
   let shaper = false;

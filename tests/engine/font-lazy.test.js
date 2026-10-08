@@ -21,4 +21,12 @@ describe('font loading', () => {
     expect(texts(page.pages[0])).toContain('Slanted');
     expect(page.warnings.filter(w => /Inter-Italic|did not load/.test(w))).toHaveLength(1);
   });
+
+  it('a bold report lays out in one pass: the faces its styles name load before layout', async () => {
+    const items = [{ type: 'textbox', x: 0, y: 0, w: 200, h: 20, value: 'Bold total', style: { fontWeight: 'bold' } }];
+    const stats = {};
+    const page = await render(report(items), { fontStore: new FontStore(async (k) => bundled(k)), stats });
+    expect(texts(page.pages[0])).toContain('Bold total');
+    expect(stats.layoutPasses).toBe(1);
+  });
 });
