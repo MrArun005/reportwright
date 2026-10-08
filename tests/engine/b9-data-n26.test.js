@@ -32,3 +32,18 @@ describe('N26: text in a number field', () => {
     expect(r.warnings.filter(w => /not read/.test(w))).toEqual([want]);
   });
 });
+
+describe('N8: data set rows given as an object', () => {
+  const mk = (data, path) => ({ ...jsonDef(), dataSources: [{ name: 's', type: 'json', data }], dataSets: [{ name: 'D', source: 's', path }],
+    sections: { body: { items: [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 100, h: 20, value: '=Sum(Fields.n)', dataSet: 'D' }] } } });
+  it('an object holding the rows warns and names the key', async () => {
+    const m = await render(mk({ orders: { rows: [{ n: 1 }, { n: 2 }] } }, '$.orders'), { fontStore });
+    expect(m.warnings).toContain('Data set "D": $.orders is an object, not a list of rows, so it is one row; expected an array of rows (did you mean $.orders.rows?)');
+  });
+  it('a single-object data set ($.meta) does not warn', async () => {
+    const m = await render(mk({ meta: { n: 3, tags: [{ a: 1 }] } }, '$.meta'), { fontStore });
+    expect(m.warnings.filter(w => /not a list/.test(w))).toEqual([]);
+    const m2 = await render(mk({ meta: { n: 3, title: 'x' } }, '$.meta'), { fontStore });
+    expect(m2.warnings.filter(w => /not a list/.test(w))).toEqual([]);
+  });
+});

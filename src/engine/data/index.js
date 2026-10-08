@@ -500,7 +500,7 @@ export function buildDataSets(def, sources, baseCtx) {
   // rows of a data set that others hang off (relation.parent) keep their raw object
   const raws = new Set((def.dataSets || []).filter(d => d.relation).map(d => d.relation.parent));
   for (const ds of def.dataSets || []) {
-    let list, parents = null, xdoc = null, xels = null;
+    let list, parents = null, xdoc = null, xels = null, asObject = null; // asObject: the path matched one object, not a list
     if (ds.relation) {
       // nested data set: the children of every parent row, each knowing its parent row
       const prows = sets[ds.relation.parent];
@@ -524,7 +524,7 @@ export function buildDataSets(def, sources, baseCtx) {
       } else {
         ({ rows: list, parents } = jsonPathRows(raw, xmlSrc ? '$' : ds.path || '$'));
         if (list == null) list = [];
-        if (!Array.isArray(list)) list = [list];
+        if (!Array.isArray(list)) { asObject = list; list = [list]; }
       }
     }
     // silent blanks: a path that matches nothing, or declared fields that no row has (a renamed column, a CSV read with
@@ -532,6 +532,16 @@ export function buildDataSets(def, sources, baseCtx) {
     if (!ds.relation && !xdoc) {
       const rawSrc = sources[ds.source];
       if (!list.length && ds.path && ds.path !== '$' && rawSrc != null && typeof rawSrc === 'object' && !(Array.isArray(rawSrc) && !rawSrc.length) && jsonPath(rawSrc, ds.path) == null) baseCtx.warn?.(`Data set "${ds.name}": the path ${ds.path} matches nothing in the source "${ds.source}", so it has no rows`);
+      // one object with a list of objects inside it (data.orders = { rows: [...] }) is not rows; $.meta, an object of fields, is
+      if (asObject && typeof asObject === 'object') {
+        const inner = Object.keys(asObject).filter(k => Array.isArray(asObject[k]) && asObject[k].some(x => x && typeof x === 'object'));
+        const declared = (ds.fields || []).filter(fd => !fd.expr && !fd.path);
+        const hasFields = Object.values(asObject).some(v => v != null && typeof v !== 'object'); // ponytail: {rows, total} is missed; an object with fields of its own is a row
+        if (inner.length && !hasFields && !declared.some(fd => Object.hasOwn(asObject, fd.name))) {
+          const at = ds.path && ds.path !== '$' ? ds.path : `$.${ds.source}`;
+          baseCtx.warn?.(`Data set "${ds.name}": ${at} is an object, not a list of rows, so it is one row; expected an array of rows (did you mean ${at}.${inner[0]}?)`);
+        }
+      }
       const keys = new Set();
       for (const r of list.slice(0, 200)) if (r && typeof r === 'object' && !Array.isArray(r)) for (const k of Object.keys(r)) keys.add(k);
       if (keys.size) {
