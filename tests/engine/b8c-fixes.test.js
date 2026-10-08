@@ -32,3 +32,48 @@ describe('N9: a valid polar chart gives no warnings', () => {
     expect(m.warnings.some(x => /rows have no x or y value/.test(x))).toBe(false);
   });
 });
+
+import fs from 'node:fs';
+import path from 'node:path';
+import fontkitModule from '@pdf-lib/fontkit';
+import { createSubsetter, sfntTables, buildSfnt, setNameStrings } from '../../src/exporters/subset.js';
+
+describe('N10: a variable font cut at Regular says Regular (names and weight class)', () => {
+  const fontkit = fontkitModule.default || fontkitModule;
+  const inter = path.join(import.meta.dirname, '..', '..', 'public', 'fonts', 'Inter-Regular.ttf');
+  const subset = createSubsetter(async () => fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'public', 'harfbuzz-subset.wasm')));
+  // a variable font in miniature: Inter with an fvar wght axis (100 to 900, default 100) and its names set to Thin
+  const variableThin = () => {
+    const bytes = new Uint8Array(fs.readFileSync(inter));
+    const t = sfntTables(bytes);
+    const fvar = new Uint8Array(36), dv = new DataView(fvar.buffer);
+    dv.setUint16(0, 1); dv.setUint16(2, 0); dv.setUint16(4, 16); dv.setUint16(6, 2); dv.setUint16(8, 1); dv.setUint16(10, 20);
+    fvar.set([...'wght'].map(c => c.charCodeAt(0)), 16);
+    dv.setInt32(20, 100 * 65536); dv.setInt32(24, 100 * 65536); dv.setInt32(28, 900 * 65536); dv.setUint16(32, 0); dv.setUint16(34, 256);
+    t.set('fvar', fvar);
+    t.set('name', setNameStrings(t.get('name'), new Map([[1, 'Inter Thin'], [2, 'Thin'], [4, 'Inter Thin'], [6, 'Inter-Thin'], [17, 'Thin']])));
+    const os2 = t.get('OS/2').slice(); new DataView(os2.buffer).setUint16(4, 100); t.set('OS/2', os2);
+    return buildSfnt(bytes, t);
+  };
+  it('the fixture is a Thin face before the subset', () => {
+    const f = fontkit.create(Buffer.from(variableThin()));
+    expect(f.fvar).toBeTruthy();
+    expect(f.fullName).toBe('Inter Thin');
+    expect(f['OS/2'].usWeightClass).toBe(100);
+  });
+  it('the subset is named Regular, its PostScript name follows, and usWeightClass is 400', async () => {
+    const cut = fontkit.create(Buffer.from(await subset(variableThin(), [...'AB'].map(c => c.codePointAt(0)), {})));
+    expect(cut.fvar).toBeFalsy();
+    expect(cut.familyName).toBe('Inter');
+    expect(cut.subfamilyName).toBe('Regular');
+    expect(cut.fullName).toBe('Inter Regular');
+    expect(cut.postscriptName).toBe('Inter-Regular');
+    expect(cut['OS/2'].usWeightClass).toBe(400);
+  });
+  it('a static face keeps its own names and weight class', async () => {
+    const bytes = new Uint8Array(fs.readFileSync(inter));
+    const cut = fontkit.create(Buffer.from(await subset(bytes, [65], {})));
+    expect(cut.fullName).toBe(fontkit.create(Buffer.from(bytes)).fullName);
+    expect(cut['OS/2'].usWeightClass).toBe(fontkit.create(Buffer.from(bytes))['OS/2'].usWeightClass);
+  });
+});
