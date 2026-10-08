@@ -40,7 +40,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Worker, SHARE_ENV, MessageChannel } from 'node:worker_threads';
 import { portSource, portSink } from './stream-out.js';
-import { spillShared, sweepAtBoot } from './spill.js';
+import { spillShared, sweepAtBoot } from '../exporters/spill.js';
 import { renderTimeoutMs } from './renderer.js';
 import { principalId } from './perms.js';
 import { accountsOn, sessionSecret } from './session.js';

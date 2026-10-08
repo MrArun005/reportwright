@@ -65,3 +65,49 @@ describe('rows given in memory', () => {
     expect(got).toEqual(await wholeOf(ledger(rows)));
   });
 });
+
+describe('grouped rows', () => {
+  // in group order already: region, then type (as a source sorted by region, type gives them)
+  const ordered = () => rowsOf(1500).sort((a, b) => a.region.localeCompare(b.region) || a.type.localeCompare(b.type) || a.id - b.id);
+  const noSort = () => { throw new Error('sorted'); };
+  it('presorted: never sorted, the same pages as the sorted path', async () => {
+    const def = ledger(ordered(), { groups: [{}, {}] });
+    expect(await pagesOf(def, { presorted: true, sorter: noSort })).toEqual(await pagesOf(def));
+    // with the groups in key order (sort: asc) and a sort by the table: checked the same way
+    const sortedDef = ledger(ordered().sort((a, b) => a.region.localeCompare(b.region) || a.type.localeCompare(b.type) || b.amount - a.amount || a.id - b.id), { groups: [{ sort: 'asc' }, { sort: 'asc' }] });
+    sortedDef.sections.body.items[0].sort = [{ by: '=Fields.amount', dir: 'desc' }];
+    expect(await pagesOf(sortedDef, { presorted: true, sorter: noSort })).toEqual(await pagesOf(sortedDef));
+  });
+  it('presorted rows out of order stop the export, saying so', async () => {
+    const rows = ordered();
+    rows.push(rows.splice(10, 1)[0]); // a North row at the end, after West's
+    await expect(pagesOf(ledger(rows, { groups: [{}, {}] }), { presorted: true })).rejects.toThrow(/not in the report's order \(row 1500/);
+    const desc = ledger(ordered(), { groups: [{ sort: 'desc' }, {}] }); // the rows ascend: out of order for desc
+    await expect(pagesOf(desc, { presorted: true })).rejects.toThrow(/presorted/);
+  });
+  it('presorted: Excel and CSV subtotals are the sorted path\'s', async () => {
+    const { planStream } = await import('../../src/engine/stream.js');
+    const rowsOfPlan = async (o) => { const p = /** @type {any} */ (await planStream(ledger(ordered(), { groups: [{}, {}] }), { format: 'xlsx', now, ...o })); const out = []; for await (const r of p.rows()) out.push(r); return out; };
+    const a = await rowsOfPlan({ presorted: true, sorter: noSort });
+    expect(a.filter(r => r.kind === 'groupFooter').length).toBe(16); // 4 regions, 12 types in them
+    expect(a).toEqual(await rowsOfPlan({}));
+  });
+});
+
+describe('the engine package (Node)', () => {
+  it('a grouped report\'s sort spills to disk by default, and its folder goes when the export ends', async () => {
+    const fs = await import('node:fs'), os = await import('node:os'), path = await import('node:path');
+    const { exportPdfStream } = await import('../../packages/engine/entry.js');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pwe-'));
+    try {
+      let spilled = 0;
+      const sink = { write: async () => { spilled = Math.max(spilled, fs.readdirSync(dir).filter(n => n.startsWith('pw-spill-')).length); } };
+      const def = ledger(rowsOf(20500), { groups: [{}, {}] }); // past one run of 20,000 rows
+      def.sections.pageFooter.items[0].value = 'Page {Globals.PageNumber}';
+      const r = await exportPdfStream(def, { fonts: fontStore, subset: false, now, spill: { dir } }, sink);
+      expect(r.streamed).toBe(true);
+      expect(spilled).toBe(1);
+      expect(fs.readdirSync(dir)).toEqual([]);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  }, 60000);
+});

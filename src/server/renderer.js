@@ -14,7 +14,7 @@ import { planPaged } from '@/engine/paged.js';
 import { writePagedPdf } from '@/exporters/pdfstream.js';
 import { textWriter, byteWriter } from './stream-out.js';
 import { writeXlsxStream } from '@/exporters/xlsxstream.js';
-import { spillSorter } from './spill.js';
+import { spillSorter } from '../exporters/spill.js';
 import { fetchMaxBytes, deadlineMs as fetchDeadlineMs } from './safeFetch.js';
 import { exportXlsx } from '@/exporters/xlsx.js';
 import { exportDocx } from '@/exporters/docx.js';
@@ -183,7 +183,7 @@ async function streamTo(d, format, def, renderOpts, opt) {
   /** @type {any} */
   let plan;
   // the caps are the server's, never the request's (the same for every streaming format)
-  const caps = { sqlRows: (src, p) => runSqlRows(src, p, { ms: Math.max(0, renderOpts.deadline - Date.now()) }), sorter: spillSorter(),
+  const caps = { sqlRows: (src, p) => runSqlRows(src, p, { ms: Math.max(0, renderOpts.deadline - Date.now()) }), sorter: spillSorter({ maxMB: cnum('PW_SPILL_MAX_MB', 2048, { min: 1 }), totalMB: cnum('PW_SPILL_TOTAL_MB', 8192, { min: 1 }), staleMs: 2 * renderTimeoutMs() + 60000 }),
     maxRows: Number(streamLimits.rows), maxJsonWholeBytes: fetchMaxBytes() };
   try {
     // pdf: the page layout runs window by window over the same rows (engine/paged.js), with render()'s options

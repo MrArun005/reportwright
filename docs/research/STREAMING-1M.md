@@ -2,7 +2,7 @@
 
 Status: phases 0–4 built (0.10.0, 8 Oct 2026): the memory harness (scripts/mem-stream.mjs), streamed responses with
 back-pressure (src/server/stream-out.js), row-by-row sources (JSON, CSV, SQLite, PostgreSQL, MySQL; src/engine/data/stream.js,
-src/server/sql.js runSqlRows), the spill sort (src/server/spill.js), the streaming data CSV and Excel writers
+src/server/sql.js runSqlRows), the spill sort (src/exporters/spill.js), the streaming data CSV and Excel writers
 (src/engine/stream.js, src/exporters/csv.js writeCsvStream, src/exporters/xlsxstream.js), and §8's pool fixes (cores-sized,
 admission by memory estimate, small heaps; sharing fonts and HarfBuzz was measured and saved nothing, so it is not in).
 Measured: CSV 160 → 168 MB RSS from 100k to 300k rows (sorted: 179 → 191), grouped Excel 185 → 197 MB, for the whole

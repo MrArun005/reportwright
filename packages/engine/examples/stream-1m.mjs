@@ -33,13 +33,16 @@ if (process.env.RW_PUBLIC) {
   icc = fs.readFileSync(path.join(dir, 'icc', 'sRGB-v2-magic.icc'));
 }
 
+const presorted = flag('presorted');
 const REGIONS = ['North', 'South', 'East', 'West'], TYPES = ['Deposit', 'Withdrawal', 'Transfer', 'Fee', 'Interest'];
 /** the rows, a thousand at a time, made as they are asked for */
 async function* rows() {
   for (let i = 0; i < N; i += 1000) {
     const batch = [];
     for (let j = i; j < Math.min(N, i + 1000); j++) {
-      batch.push({ id: j + 1, account: `AC${String(10000 + (j * 7) % 9000)}`, region: REGIONS[(j >> 9) % 4], type: TYPES[(j >> 6) % 5],
+      // --presorted: the rows come in group order (as a query ordered by region, type gives them)
+      const region = presorted ? REGIONS[Math.floor(j * 4 / N)] : REGIONS[(j >> 9) % 4], type = presorted ? TYPES[Math.floor(j * 20 / N) % 5] : TYPES[(j >> 6) % 5];
+      batch.push({ id: j + 1, account: `AC${String(10000 + (j * 7) % 9000)}`, region, type,
         date: new Date(Date.UTC(2025, j % 12, 1 + (j % 28))), amount: Math.round(((j * 7919) % 200000 - 100000) * 1.37) / 100,
         reference: j % 37 === 0 ? `Reversal of an earlier transfer between linked accounts, batch ${j}` : `REF-${j * 31}` });
     }
@@ -86,10 +89,10 @@ if (flag('array') || opt('array')) {
   def.dataSources = [{ name: 'db', type: 'json', data: opt('array') === 'text' ? JSON.stringify(all) : all }];
   rss(); arrayRssMB = Math.round(process.memoryUsage.rss() / 1048576);
 }
-const r = await exportPdfStream(def, { fonts, subset, title: 'Ledger', window: Number(opt('window')) || undefined, sqlRows: () => rows(), maxRows: Math.max(N, 5_000_000), timeoutMs: 24 * 3600e3,
+const r = await exportPdfStream(def, { fonts, subset, title: 'Ledger', window: Number(opt('window')) || undefined, presorted, ...(flag('memsort') ? { spill: false } : {}), sqlRows: () => rows(), maxRows: Math.max(N, 5_000_000), timeoutMs: 24 * 3600e3,
   ...(flag('tagged') ? { tagged: { lang: 'en-IN' }, pdfa: icc ? { icc } : true } : {}), ...(opt('parallel') ? { parallel: Number(opt('parallel')) } : {}) }, out);
 await new Promise((ok, fail) => out.end((e) => (e ? fail(e) : ok())));
 clearInterval(timer);
 rss();
 console.log(JSON.stringify({ rows: N, pages: r.pages, streamed: r.streamed, ...(r.why ? { why: r.why } : {}), peakRssMB: Math.round(peak), startRssMB: Math.round(base), ...(arrayRssMB ? { arrayRssMB } : {}), ms: Date.now() - t0,
-  bytes: fs.statSync(file).size, file, node: process.version, grouped, tagged: flag('tagged'), parallel: Number(opt('parallel')) || 1 }));
+  bytes: fs.statSync(file).size, file, node: process.version, grouped, presorted, tagged: flag('tagged'), parallel: Number(opt('parallel')) || 1 }));

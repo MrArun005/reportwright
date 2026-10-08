@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { MessageChannel } from 'node:worker_threads';
 import { DatabaseSync } from 'node:sqlite';
-import { spillSorter, sweepAtBoot } from '../../src/server/spill.js';
+import { spillSorter, sweepAtBoot } from '../../src/exporters/spill.js';
 import { memorySorter } from '../../src/engine/stream.js';
 import { applySort, compareKeys, sortKeys } from '../../src/engine/data/index.js';
 import { runSql, runSqlRows, streamLimits, limits } from '../../src/server/sql.js';
@@ -256,7 +256,7 @@ describe('streaming keeps its caps (review)', () => {
     fs.rmSync(path.join(dir, `pw-spill-${process.pid}-1-mine`), { recursive: true });
   });
   it('spill: sorts racing for the last of the budget never pass it together (reserve, then check)', async () => {
-    const { spillShared } = await import('../../src/server/spill.js');
+    const { spillShared } = await import('../../src/exporters/spill.js');
     const used = () => Array.from(spillShared().cells).reduce((a, b) => a + b, 0);
     const sorts = Array.from({ length: 8 }, () => spillSorter({ run: 50, runBytes: 1e9, maxMB: 100, totalMB: 0.1, dir })((x, y) => x.k - y.k));
     let peak = 0;

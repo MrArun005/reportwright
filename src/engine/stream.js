@@ -30,7 +30,7 @@ const BESIDE = { csv: new Set(['textbox', 'line', 'shape', 'image']), xlsx: new 
 const SOURCES = new Set(['json', 'csv', 'rest', 'sql']);
 
 /**
- * An in-memory sorter (the browser, the CLI): the server passes one that spills runs to disk (server/spill.js).
+ * An in-memory sorter (the browser, the CLI): the server passes one that spills runs to disk (exporters/spill.js; exportPdfStream's default in Node).
  * @param {(a: any, b: any) => number} cmp
  */
 export function memorySorter(cmp) {
@@ -64,7 +64,7 @@ function foldOf(v) {
  * @param {any} def0 the report definition
  * @param {{ format: 'csv'|'xlsx', parameters?: object, timeZone?: string, now?: Date, state?: any, loadReport?: (id: string) => Promise<any>,
  *   reportId?: string, fetch?: typeof fetch, baseUrl?: string, sql?: (src: any, p: any) => Promise<object[]>,
- *   sqlRows?: (src: any, p: any) => AsyncIterable<object[]>, sources?: Record<string, any>, sorter?: (cmp: (a: any, b: any) => number) => any,
+ *   sqlRows?: (src: any, p: any) => AsyncIterable<object[]>, sources?: Record<string, any>, sorter?: (cmp: (a: any, b: any) => number) => any, presorted?: boolean,
  *   deadline?: number, timeoutMs?: number, maxRows?: number, maxJsonRowBytes?: number, maxJsonWholeBytes?: number }} opts
  * @returns {Promise<{ why: string } | { why?: undefined, name: string, columns: number[], title: string, timeZone: string|null, locale: string|null, currency: string|null, warnings: string[], rows: () => AsyncGenerator<any>, records: () => AsyncGenerator<any>, grouped: () => AsyncGenerator<any>, stats: { rows: number } }>}
  */
@@ -270,19 +270,37 @@ export async function planStream(def0, opts) {
   const tSort = item.sort || [], dSort = ds.sort || [];
   const sorted = tSort.length || dSort.length;
   const sorter = opts.sorter || memorySorter;
-  /** Rows in the table's order (after its sort), one at a time. */
-  async function* inOrder() {
-    if (!sorted) { for await (const b of typed()) for (const r of b) yield r; return; }
-    const kc = { ...tctx }, dkc = { ...setCtx };
-    const s = sorter((a, b) => (tSort.length && compareKeys(a.t, b.t, tSort, tctx)) || (dSort.length && compareKeys(a.d, b.d, dSort, setCtx)) || a.s - b.s);
+  /**
+   * presorted: the source gives the rows in the report's order already (the table's sort, then its groups together, in
+   * the groups' order), so nothing is sorted or held: each row is checked against the one before as it passes, and a
+   * row out of order stops the export.
+   */
+  const checked = (/** @type {(a: any, b: any) => number} */ cmp) => {
+    let prev = /** @type {any} */ (null), n = 0;
+    return (/** @type {any} */ x) => {
+      n++;
+      if (prev && cmp(prev, x) > 0) throw Object.assign(new Error(`The rows are not in the report's order (row ${n} comes before the one above it, by the table's sort or its groups), so they cannot be read as presorted. Sort them at the source, or leave presorted off.`), { status: 400 });
+      prev = x;
+    };
+  };
+  const kc = { ...tctx }, dkc = { ...setCtx };
+  /** a row's sort keys (the table's, the data set's) and its place in the data */
+  const keyed = (r, s) => { kc.fields = r; dkc.fields = r; return { t: tSort.length ? sortKeys(tSort, kc) : null, d: dSort.length ? sortKeys(dSort, dkc) : null, s, r }; };
+  const keyCmp = (a, b) => (tSort.length && compareKeys(a.t, b.t, tSort, tctx)) || (dSort.length && compareKeys(a.d, b.d, dSort, setCtx));
+  /** Rows in the table's order (after its sort), one at a time. grouped: presorted rows are checked by displayOrder. */
+  async function* inOrder(grouped = false) {
+    if (!sorted || (grouped && opts.presorted)) { for await (const b of typed()) for (const r of b) yield r; return; }
+    const cmp = (a, b) => keyCmp(a, b) || a.s - b.s;
+    const check = opts.presorted ? checked(cmp) : null;
+    const s = check ? null : sorter(cmp);
     try {
       let seq = 0;
       for await (const b of typed()) for (const r of b) {
-        kc.fields = r; dkc.fields = r;
-        await s.push({ t: tSort.length ? sortKeys(tSort, kc) : null, d: dSort.length ? sortKeys(dSort, dkc) : null, s: seq++, r });
+        const x = keyed(r, seq++);
+        if (check) { check(x); yield r; } else await s.push(x);
       }
-      for await (const x of s.drain()) yield x.r;
-    } finally { await s.close(); }
+      if (s) for await (const x of s.drain()) yield x.r;
+    } finally { await s?.close(); }
   }
   /** Rows in display order, each with its group path ([ordinal, key] per level). */
   async function* displayOrder() {
@@ -290,7 +308,7 @@ export async function planStream(def0, opts) {
     const gc = { ...tctx }, fc = { ...tctx };
     const paths = groups.map(() => new Map()); // per level: path text → [ordinal, the first row's key]
     let ord = 0, keyText = 0; // the groups' key text held, bounded like the groups' number
-    const s = sorter((a, b) => {
+    const byGroup = (a, b) => {
       for (let l = 0; l < groups.length; l++) {
         const x = a.g[l], y = b.g[l];
         if (x[0] === y[0]) continue;
@@ -298,11 +316,15 @@ export async function planStream(def0, opts) {
         if (dir) { const c = cmpKey(x[1], y[1], tctx) * dir; if (c) return c; }
         return x[0] - y[0];
       }
-      return a.s - b.s;
-    });
+      return 0;
+    };
+    const cmp = (a, b) => byGroup(a, b) || a.s - b.s;
+    // presorted: the groups in order, and in each the table's sort
+    const check = opts.presorted ? checked((a, b) => byGroup(a, b) || (sorted ? keyCmp(a.k, b.k) : 0)) : null;
+    const s = check ? null : sorter(cmp);
     try {
       let seq = 0;
-      for await (const r of inOrder()) {
+      for await (const r of inOrder(true)) {
         gc.fields = r;
         let path = '';
         const g = [];
@@ -325,11 +347,12 @@ export async function planStream(def0, opts) {
           foldRow(folds.table, fc);
           for (let l = 0; l < groups.length; l++) { let sc = folds.groups[l].get(g[l][0]); if (!sc) folds.groups[l].set(g[l][0], sc = openScope(l)); foldRow(sc, fc); }
         }
-        await s.push({ g, s: seq++, r });
+        const x = { g, s: seq++, r };
+        if (check) { check({ g, k: sorted ? keyed(r, 0) : null }); yield x; } else await s.push(x);
       }
       for (const m of paths) m.clear();
-      for await (const x of s.drain()) yield x;
-    } finally { await s.close(); }
+      if (s) for await (const x of s.drain()) yield x;
+    } finally { await s?.close(); }
   }
 
   // ---- footer folds: one set of running aggregates per open scope (each group level, and the table)
@@ -364,7 +387,8 @@ export async function planStream(def0, opts) {
     const L = groups.length;
     const tableScope = openScope(L);
     folds.table = tableScope;
-    folds.groups = bands && L ? groups.map(() => new Map()) : null; // with groups, displayOrder folds (in data order)
+    // with groups, displayOrder folds (in data order); presorted, the data order is the display order: folded here
+    folds.groups = bands && L && !opts.presorted ? groups.map(() => new Map()) : null;
     const scopes = new Array(L).fill(null); // per level: { fold scope, first row, last row, ord }
     const dctx = { ...tctx, rowNumber: 0 };
     let headerDone = false, rowNo = 0, first = null, last = null;
@@ -398,7 +422,7 @@ export async function planStream(def0, opts) {
       rowNo++; last = r;
       if ((rowNo & 255) === 0) overTime();
       dctx.fields = r; dctx.rowNumber = rowNo;
-      if (bands && !L) foldRow(tableScope, dctx); // no groups: the display order is the data order
+      if (bands && !folds.groups) { foldRow(tableScope, dctx); for (const s of scopes) foldRow(s.folds, dctx); } // the display order is the data order
       for (const dr of item.detail || []) { const x = regionRow(dr, dctx, 'detail', L); if (x) yield x; }
     }
     if (!headerDone) yield* header(null);

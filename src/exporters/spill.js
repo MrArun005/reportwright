@@ -7,12 +7,13 @@
 // actually written). The files live in a private folder (0700, files 0600) os.tmpdir()/pw-spill-<pid>-<thread>-*,
 // removed when the sort ends, fails or is abandoned, when the thread exits, and at the server's start (sweepAtBoot:
 // folders of processes that are gone) or by age (a thread terminated at its time limit runs no cleanup).
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import v8 from 'node:v8';
-import { threadId } from 'node:worker_threads';
-import { num } from './config.js';
+//
+// Node only, and in the engine package too (exportPdfStream's default sorter in Node): Node's modules are taken when a
+// sort starts (process.getBuiltinModule), so a browser bundle of the engine carries this file without importing them.
+/** @param {string} m */
+const node = (m) => /** @type {any} */ (globalThis).process.getBuiltinModule(m);
+/** Node can spill here (getBuiltinModule: Node 20.16+, 22.3+); elsewhere a caller sorts in memory. */
+export const canSpill = () => typeof (/** @type {any} */ (globalThis).process?.getBuiltinModule) === 'function';
 
 /**
  * Bytes on disk per render thread, in KB: one cell per thread in a SharedArrayBuffer the pool hands every worker
@@ -25,7 +26,7 @@ const usedKB = () => { const { cells } = spillShared(); let n = 0; for (let i = 
 
 const live = new Set();
 let hooked = false;
-const sweep = () => { for (const d of live) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* gone */ } } live.clear(); };
+const sweep = () => { const fs = node('node:fs'); for (const d of live) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* gone */ } } live.clear(); };
 
 /**
  * A sorter factory for planStream (engine/stream.js): sorter(cmp) → { push, drain, close }. The engine closes it
@@ -35,6 +36,7 @@ const sweep = () => { for (const d of live) { try { fs.rmSync(d, { recursive: tr
 /** Spill folders left by a render that was stopped hard (a worker terminated at the time limit runs no cleanup):
  *  any older than staleMs is removed when a new sort starts. */
 function sweepStale(root, staleMs) {
+  const fs = node('node:fs'), path = node('node:path');
   try {
     for (const n of fs.readdirSync(root)) {
       if (!n.startsWith('pw-spill-')) continue;
@@ -46,7 +48,8 @@ function sweepStale(root, staleMs) {
 }
 
 /** At the server's start: remove the spill folders of processes that are gone (pw-spill-<pid>-…) and old-style ones. */
-export function sweepAtBoot(root = os.tmpdir()) {
+export function sweepAtBoot(root = node('node:os').tmpdir()) {
+  const fs = node('node:fs'), path = node('node:path');
   try {
     for (const n of fs.readdirSync(root)) {
       const m = /^pw-spill-(\d+)-/.exec(n);
@@ -58,7 +61,8 @@ export function sweepAtBoot(root = os.tmpdir()) {
   } catch { /* no folder */ }
 }
 
-export function spillSorter({ run = 20000, runBytes = 24 * 1048576, frame = 1000, maxMB = num('PW_SPILL_MAX_MB', 2048, { min: 1 }), totalMB = num('PW_SPILL_TOTAL_MB', 8192, { min: 1 }), dir: root = os.tmpdir(), staleMs = 2 * num('PW_RENDER_TIMEOUT_MS', 60000, { min: 1 }) + 60000 } = {}) {
+export function spillSorter({ run = 20000, runBytes = 24 * 1048576, frame = 1000, maxMB = 2048, totalMB = 8192, dir: root = node('node:os').tmpdir(), staleMs = 180000 } = {}) {
+  const fs = node('node:fs'), path = node('node:path'), v8 = node('node:v8'), { threadId } = node('node:worker_threads');
   sweepStale(root, staleMs);
   /** @param {(a: any, b: any) => number} cmp */
   return (cmp) => {
@@ -146,6 +150,7 @@ function approx(x, d = 0) {
 
 /** A run file read a batch at a time: next() → the next record, or undefined at its end. @param {string} file */
 async function openRun(file) {
+  const fs = node('node:fs'), v8 = node('node:v8');
   const fh = await fs.promises.open(file, 'r');
   let pos = 0, batch = [], i = 0;
   const head = Buffer.alloc(4);
