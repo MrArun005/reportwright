@@ -141,3 +141,19 @@ describe('hostile attachment names (review 3)', () => {
     expect(performance.now() - t).toBeLessThan(1000);
   });
 });
+
+describe('allowTypes keeps the checks of passive types; every reserved device name', () => {
+  it('a passive type in allowTypes keeps its MIME check; a risky one takes any MIME', async () => {
+    const { checkFileName } = await import('../../packages/pdf/src/core/filename.js');
+    expect(() => checkFileName('invoice.pdf', { mimeType: 'application/x-msdownload', allowTypes: ['pdf'] }, 't')).toThrow(/MIME type application\/x-msdownload does not match/);
+    expect(() => checkFileName('scan.png', { mimeType: 'application/pdf', allowTypes: ['png', 'pdf'] }, 't')).toThrow(/does not match/);
+    expect(() => checkFileName('a.zip', { mimeType: 'application/x-msdownload', allowArchives: true, allowTypes: ['zip'] }, 't')).toThrow(/does not match/);
+    expect(checkFileName('invoice.pdf', { mimeType: 'application/pdf', allowTypes: ['pdf'] }, 't').name).toBe('invoice.pdf');
+    expect(checkFileName('tool.exe', { mimeType: 'application/octet-stream', allowTypes: ['exe'] }, 't').name).toBe('tool.exe');
+  });
+  it('CONIN$, CONOUT$, CLOCK$, COM0 and LPT0 are device names', async () => {
+    const { checkFileName } = await import('../../packages/pdf/src/core/filename.js');
+    for (const n of ['CONIN$.txt', 'conout$.pdf', 'CLOCK$.csv', 'COM0.txt', 'lpt0.pdf']) expect(() => checkFileName(n, {}, 't'), n).toThrow(/device name/);
+    expect(checkFileName('console.txt', {}, 't').name).toBe('console.txt');
+  });
+});
