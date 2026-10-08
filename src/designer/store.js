@@ -1,5 +1,6 @@
 'use client';
-import { create } from 'zustand';
+import { createStore, useStore } from 'zustand';
+import { createContext, useContext } from 'react';
 import { produce } from 'immer';
 import { ITEMS } from '@/engine/items/index.js';
 import { resolvePage } from '@/engine/units.js';
@@ -59,6 +60,15 @@ export function pageOf(def, key = 'body') {
 }
 
 const rid = () => Math.random().toString(36).slice(2, 10);
+/** An id from the item's place (band, path) and name: opening the same file twice gives the same ids (N38). FNV-1a. */
+export function stableId(key, taken) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  let id = `i${(h >>> 0).toString(36)}`;
+  for (let k = 2; taken.has(id); k++) id = `i${(h >>> 0).toString(36)}_${k}`;
+  taken.add(id);
+  return id;
+}
 
 /** Visit every item, nested ones included. fn(item, list, index, parent, section) */
 export function walk(def, fn) {
@@ -75,9 +85,13 @@ export function normalize(def) {
     if (Array.isArray(d.sections.body) && !d.sections.body.length) d.sections.body = { height: 420, items: [] };
     for (const { key } of sectionList(d)) { const x = secOf(d, key); if (x && typeof x === 'object') x.items ||= []; }
     const used = allNames(d);
-    walk(d, (it) => {
-      it.id ||= rid();
+    const ids = new Set();
+    walk(d, (it) => { if (it.id) ids.add(it.id); });
+    const path = new Map(); // item → its place, e.g. body/2/0 (the third item's first child)
+    walk(d, (it, list, i, parent, section) => {
+      path.set(it, `${parent ? path.get(parent) : section}/${i}`);
       if (!it.name) it.name = uniqueName(used, ITEMS[it.type]?.label.replace(/\s/g, '') || 'Item');
+      it.id ||= stableId(`${path.get(it)}/${it.name}`, ids);
       if (NESTING.has(it.type)) it.items ||= [];
       // a table's height is its rows': kept in step, so items below it do not shift when it is first edited
       if (it.type === 'table' && Array.isArray(it.columns)) tableSync(it);
@@ -104,7 +118,8 @@ export function findItem(def, id) {
   return hit;
 }
 
-export const useDesigner = create((set, get) => ({
+/** A designer's state. One per Designer (two designers on a page never share one: N17). */
+export const newDesignerStore = () => createStore((set, get) => ({
   id: null,
   def: null,
   saved: true,
@@ -220,8 +235,25 @@ export const useDesigner = create((set, get) => ({
   },
 }));
 
+/**
+ * The store of the designer in use. Hooks read the store of their own Designer (DesignerStore context). The commands
+ * below and useDesigner.getState() read the active one: a Designer makes its store active when it renders and on
+ * every event inside it (Designer.jsx), so a click in one designer edits that designer.
+ */
+let active = newDesignerStore();
+export const DesignerStore = createContext(null);
+export const activateStore = (store) => { active = store; };
+export const activeStore = () => active;
+/** The store of the Designer this component is in (for effects and async work, which may run while another is active). */
+export const useDesignerStore = () => useContext(DesignerStore) || active;
+/** @type {any} */
+export const useDesigner = (sel) => useStore(useDesignerStore(), sel);
+useDesigner.getState = () => active.getState();
+useDesigner.setState = (...a) => active.setState(...a);
+useDesigner.subscribe = (fn) => active.subscribe(fn);
+
 /* ------------------------------------------------------------ commands */
-const S = () => useDesigner.getState();
+const S = () => active.getState();
 
 export function bodyWidth(def, key = 'body') { return pageOf(def, key).bodyWidth; }
 /** Width available to an item: the band width, or its parent's width. */
@@ -266,7 +298,7 @@ export function addItem(type, section, x, y, extra = {}, parentId = null) {
     } else {
       const sec = secOf(d, section);
       sec.items.push(it);
-      if (it.y + it.h > sec.height) sec.height = Math.ceil(it.y + it.h + (isBodyKey(section) ? 24 : 4));
+      if (it.y + it.h > (sec.height || 0)) sec.height = Math.ceil(it.y + it.h + (isBodyKey(section) ? 24 : 4)); // also a 0 pt band
     }
   });
   S().select({ kind: 'items', ids: [id] });
@@ -299,7 +331,20 @@ export function insertItem(type, section, x, y, extra = {}, parentId = null) {
 }
 
 export function updateItem(id, recipe, key) {
-  S().apply((d) => { const f = findItem(d, id); if (f) recipe(f.item, d, f.section, f); }, key);
+  S().apply((d) => {
+    const f = findItem(d, id);
+    if (!f) return;
+    recipe(f.item, d, f.section, f);
+    minSize(f.item);
+    const nf = findItem(d, id); // the recipe may have moved it
+    if (nf) growToFit(d, nf); // a table that got taller (a group added) pushes its band down, not over the next one
+  }, key);
+}
+/** No item smaller than 1 pt (a 0 × 0 box can neither be seen nor clicked: N33); a line may be 0 one way, not both. */
+export function minSize(it) {
+  for (const k of ['w', 'h']) if (typeof it[k] === 'number' && !(it[k] >= 0)) it[k] = 0;
+  if (it.type === 'line') { if (it.w === 0 && it.h === 0) it.w = 1; return; }
+  for (const k of ['w', 'h']) if (typeof it[k] === 'number' && it[k] < 1) it[k] = 1;
 }
 
 export function moveItems(ids, dx, dy) {
@@ -415,7 +460,8 @@ export function duplicateSelection() {
       const f = findItem(d, id);
       if (!f) continue;
       const copy = cloneWithIds(f.item, used);
-      copy.x += 8; copy.y += 8;
+      copy.x += PASTE_OFFSET; copy.y += PASTE_OFFSET; // as a paste: not exactly on top of the original (N37)
+      growToFit(d, { ...f, item: copy });
       f.list.push(copy);
       newIds.push(copy.id);
     }
@@ -424,6 +470,7 @@ export function duplicateSelection() {
 }
 
 /* ---- clipboard: copy / paste items, also across reports (JSON on the system clipboard) ---- */
+const PASTE_OFFSET = 12;
 const CLIP = 'pagewright/items@1'; // kept after the rename: copy and paste between 0.8 and 0.9 tabs
 export async function copySelection() {
   const { sel, def } = S();
@@ -435,25 +482,28 @@ export async function copySelection() {
   return items.length;
 }
 let memClip = null;
-export async function pasteItems(section = 'body') {
-  let text = null;
-  try { text = await navigator.clipboard.readText(); } catch { text = memClip; }
-  if (!text || !text.includes(CLIP)) text = memClip;
-  let data;
-  try { data = JSON.parse(text); } catch { return 0; }
-  if (data?.kind !== CLIP || !Array.isArray(data.items)) return 0;
+const clipOf = (text) => { try { const d = JSON.parse(text); return d?.kind === CLIP && Array.isArray(d.items) ? d : null; } catch { return null; } };
+/**
+ * Paste items: from the text of a paste event (e.clipboardData: no permission prompt, N36), else the copy made in this
+ * tab. @returns {number} how many were pasted (0: nothing to paste, the caller says so)
+ */
+export function pasteItems(section = 'body', text = null) {
+  const st = active; // the designer pasted into
+  const data = clipOf(text) || clipOf(memClip);
+  if (!data) return 0;
   const ids = [];
-  S().apply((d) => {
+  st.getState().apply((d) => {
     const used = allNames(d);
     for (const it of data.items) {
       const c = cloneWithIds(it, used);
-      c.x += 12; c.y += 12;
+      c.x += PASTE_OFFSET; c.y += PASTE_OFFSET;
       if (c.type === 'table' && !isBodyKey(section)) continue;
       secOf(d, section).items.push(c);
+      growToFit(d, { section, parent: null, item: c });
       ids.push(c.id);
     }
   });
-  if (ids.length) S().select({ kind: 'items', ids });
+  if (ids.length) st.getState().select({ kind: 'items', ids });
   return ids.length;
 }
 
@@ -665,6 +715,7 @@ const IMAGE_MAX = 10 * 1024 * 1024; // the engine's limit per image
  * Used by Report → Images, the Image item's Upload button and a file dropped on the page.
  */
 export async function uploadImages(files, T) {
+  const st = active; // the designer the images go to
   const names = [];
   let err = null;
   for (const f of files) {
@@ -672,7 +723,7 @@ export async function uploadImages(files, T) {
     if (f.size > IMAGE_MAX) { err = T('imageTooBig', { name: f.name }); continue; }
     const uri = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(f); });
     const base = f.name.replace(/\.[^.]+$/, '').replace(/\W+/g, '_').replace(/^_+|_+$/g, '') || 'image';
-    S().apply(d => { d.images ||= {}; let n = base, k = 2; while (d.images[n]) n = `${base}${k++}`; d.images[n] = uri; names.push(n); });
+    st.getState().apply(d => { d.images ||= {}; let n = base, k = 2; while (d.images[n]) n = `${base}${k++}`; d.images[n] = uri; names.push(n); });
   }
   return { names, err };
 }
@@ -735,4 +786,15 @@ export function wouldOverlap(def, ids, rectOf) {
     if (f.list.some(o => !ids.includes(o.id) && overlap(r, o))) return true;
   }
   return false;
+}
+
+/**
+ * A matrix value's "Show" changed. A share printed with N0 reads 0 or 1, so a percentage gets P1 while the format is
+ * still the default (N0 or none); back to the value, P1 goes back to N0. A format chosen by hand is kept.
+ */
+export function setMatrixShow(v, show) {
+  const pct = !!show && show !== 'value';
+  if (pct) v.show = show; else delete v.show;
+  if (pct && (!v.format || v.format === 'N0')) v.format = 'P1';
+  else if (!pct && v.format === 'P1') v.format = 'N0';
 }

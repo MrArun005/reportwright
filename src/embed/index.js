@@ -7,7 +7,7 @@
 import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import ReportViewer from '../viewer/ReportViewer.jsx';
-import { setAssetBase, registerReports, setBundledFonts, setStandalone } from '../viewer/engineClient.js';
+import { setAssetBase, registerReports, setBundledFonts, setStandalone, usingWorker } from '../viewer/engineClient.js';
 import { uiFontCss } from '../viewer/uiFonts.js';
 import { setFetchPolicy } from '../viewer/dataFetch.js';
 import { loadLanguage } from '../i18n/index.js';
@@ -55,7 +55,7 @@ export function withData(def, data) {
  *   onReady?: (error: Error | null) => void, allowHosts?: string[], unsafeFetch?: boolean, fetch?: typeof fetch }} ViewerOptions
  * @typedef {'ready' | 'error' | 'page' | 'parameters'} ViewerEvent
  * @typedef {'pdf' | 'xlsx' | 'docx' | 'pptx' | 'html' | 'csv' | 'json' | 'excel' | 'word' | 'powerpoint'} ViewerFormat
- * @typedef {{ unmount: () => void, setParameters: (params: Record<string, any>) => Promise<void>, setDefinition: (definition: object) => Promise<void>,
+ * @typedef {{ usesWorker: boolean, unmount: () => void, setParameters: (params: Record<string, any>) => Promise<void>, setDefinition: (definition: object) => Promise<void>,
  *   goToPage: (page: number) => Promise<void>, getPageCount: () => number, print: () => Promise<void>, export: (format: ViewerFormat) => Promise<Blob>,
  *   on: (event: ViewerEvent, fn: (detail: any) => void) => () => void }} ViewerHandle
  */
@@ -112,6 +112,7 @@ export function mountViewer(target, opts = {}) {
     .catch(e => { shadow.querySelector('.pw-embed').innerHTML = `<div class="vmsg error">The report did not load: ${String(e.message).replace(/</g, '&lt;')}</div>`; opts.onReady?.(e); emit('error', { message: e.message }); });
   /** @type {ViewerHandle} */
   const handle = {
+    get usesWorker() { return usingWorker(); },
     unmount: () => { api = null; root.unmount(); },
     setParameters: (params) => viewerReady.then(() => api?.setParameters(params)),
     setDefinition: (definition) => viewerReady.then(() => api?.setDefinition(definition)),

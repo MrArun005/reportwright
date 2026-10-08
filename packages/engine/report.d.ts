@@ -344,6 +344,7 @@ export interface FormField extends ItemBase {
   type: 'field';
   kind?: 'text' | 'multiline' | 'checkbox' | 'choice';
   fieldName?: Expr<string>;
+  label?: Expr<string>;
   value?: Expr;
   options?: Expr;
   required?: boolean;

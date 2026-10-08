@@ -1,5 +1,5 @@
 'use client';
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { fieldIssues } from './fieldCheck.js';
 import { checkValue } from '@/engine/expr/evaluate.js';
 import { t } from '@/i18n/index.js';
@@ -58,7 +58,7 @@ export function ExprInput({ value, onChange, onOpen, placeholder }) {
     <div>
       <div className="expr-row">
         <TextInput value={value} onChange={onChange} mono invalid={!!err} className={issues.length ? 'squiggle' : undefined} aria-invalid={err || issues.length ? true : undefined} placeholder={placeholder || T('i_exprPh')} />
-        <button className="fx" title={T('i_openExprEditor')} aria-label={T('i_openExprEditor')} onClick={onOpen} type="button">fx</button>
+        <button className="fx" title={T('i_openExprEditor')} aria-label={`fx: ${T('i_openExprEditor')}`} onClick={onOpen} type="button">fx</button>
       </div>
       {err && <div className="err">{err}</div>}
       {issues.map((i, k) => <div key={k} className="warn" data-testid="field-warning">{issueText(T, i)}</div>)}
@@ -75,13 +75,16 @@ export function Check({ label, checked, onChange }) {
 }
 
 export function Dialog({ title, children, onClose, footer, wide, className = '' }) {
+  const ref = useRef(null);
   useEffect(() => {
-    const k = (e) => { if (e.key === 'Escape' && !e.defaultPrevented) onClose(); }; // CodeMirror uses Escape to close its suggestions
+    // CodeMirror uses Escape to close its suggestions. Escape typed in another designer on the page is not ours.
+    const inOther = (e) => { const mine = ref.current?.closest('.designer'); return e.composedPath().some(n => n !== mine && n?.classList?.contains('designer')); };
+    const k = (e) => { if (e.key === 'Escape' && !e.defaultPrevented && !inOther(e)) onClose(); };
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, [onClose]);
   return (
-    <div className="scrim" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="scrim" ref={ref} onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={`dialog${wide ? ' wide' : ''}${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" aria-label={title}>
         <header>{title}</header>
         <div className="dbody">{children}</div>

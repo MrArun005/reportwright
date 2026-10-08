@@ -4,7 +4,6 @@
  * a page's operators as text (Content), shaped runs drawn by glyph ID (drawRun, glyphText), colours and numbers.
  * A font here is anything with { embedder: { font } } (fontkit) whose resource name shared.font(pf) gives.
  */
-import { PDFHexString, rgb } from 'pdf-lib';
 import { parseColor } from './color.js';
 import { FORMAT_CHAR } from '../engine/text/measure.js';
 
@@ -17,6 +16,10 @@ export const col = (c) => {
   return v;
 };
 export const BLACK = { color: rgb(0, 0, 0), opacity: 1, rgb: '0 0 0' };
+/** pdf-lib's rgb() and PDFHexString.fromText(s).toString(), here so the streaming writer never loads pdf-lib */
+/** @param {number} red @param {number} green @param {number} blue @returns {import('pdf-lib').RGB} */
+function rgb(red, green, blue) { return { type: /** @type {any} */ ('RGB'), red, green, blue }; }
+const hexText = (/** @type {string} */ s) => { let h = '<FEFF'; for (let i = 0; i < s.length; i++) h += s.charCodeAt(i).toString(16).toUpperCase().padStart(4, '0'); return `${h}>`; };
 // numbers in content streams: positions to 1/100 pt, colours and matrices finer
 export const n2 = (v) => Math.round(v * 100) / 100;
 export const n3 = (v) => Math.round(v * 1000) / 1000;
@@ -41,7 +44,7 @@ const formatAt = (run, cl) => { const cp = run.text.codePointAt(cl); return cp !
 export function drawRun(c, run, x, y, size, pf, color, spans, texts) {
   const f = pf.embedder.font;
   const per = 1000 / size;
-  const span = (text) => `/Span <</ActualText ${PDFHexString.fromText(text).toString()}>> BDC\n`;
+  const span = (text) => `/Span <</ActualText ${hexText(text)}>> BDC\n`;
   c.et();
   c.paint(color, null); c.font(pf, size);
   if (!run.rtl) c.s += span(run.text);
@@ -80,7 +83,7 @@ export function drawRun(c, run, x, y, size, pf, color, spans, texts) {
     // a tagged PDF draws no .notdef (PDF/UA 7.21.8): the glyph is left out, its place kept; so is a format character's (no glyph, no box)
     if (id === 0 && (c.tagged || formatAt(run, cl))) pen = gx;
     else {
-      arr += (adj ? `${adj}` : '') + `<${hex4(id)}>`;
+      arr += (adj ? `${adj}` : '') + `<${f.standard ? id.toString(16).padStart(2, '0') : hex4(id)}>`; // a standard font: one byte
       pen = gx + (adv(id) * size) / f.unitsPerEm;
     }
     if (inSpan && (i + 4 >= g.length || (quietAt < 0 || i + 4 < quietAt) && g[i + 7] !== cl || i + 4 === quietAt)) { flush(); c.s += 'EMC\n'; inSpan = false; }

@@ -72,7 +72,7 @@ export function layoutRich(blocks, st, width, m, opt = {}) {
   const lookOf = (rs) => {
     let l = looks.get(rs);
     if (l) return l;
-    const key = resolveFontKey(rs.fontFamily || st.fontFamily, rs.fontWeight || st.fontWeight, rs.fontStyle || st.fontStyle);
+    const key = resolveFontKey(rs.fontFamily || st.fontFamily, rs.fontWeight || st.fontWeight, rs.fontStyle || st.fontStyle, m.unknownFonts);
     const lineSize = clamp(rs.fontSize || baseSize, SIZE.min, SIZE.max);
     let size = lineSize, rise = 0;
     if (rs.script) {
@@ -117,7 +117,7 @@ export function layoutRich(blocks, st, width, m, opt = {}) {
       if (full) return;
       if (lines.length >= RICH_DEFAULTS.maxLines || fragCount >= RICH_DEFAULTS.maxFragments) {
         full = true;
-        warn(`Rich text: more than ${RICH_DEFAULTS.maxLines} lines or ${RICH_DEFAULTS.maxFragments} styled pieces; the rest is cut.`);
+        warn(`more than ${RICH_DEFAULTS.maxLines} lines or ${RICH_DEFAULTS.maxFragments} styled pieces; the rest is cut.`);
         return;
       }
       // merge neighbours of one look into fragments, measured once each

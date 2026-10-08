@@ -44,7 +44,7 @@ self.onmessage = async (e) => {
       if (!r.ok) throw new Error(`Report "${rid}" not found`);
       return r.json();
     };
-    const opts = { parameters: params, state, reportId, exportData: !!exportData, dataOnly: !!dataOnly, fontStore: store, baseUrl: origin, fetch: reportFetch(origin, undefined, { onRetry: (retry) => self.postMessage({ id, retry }) }), loadReport };
+    const opts = { parameters: params, state, reportId, exportData: !!exportData, dataOnly: !!dataOnly, fontStore: store, lazyFonts: true, baseUrl: origin, fetch: reportFetch(origin, undefined, { onRetry: (retry) => self.postMessage({ id, retry }) }), loadReport };
     // the first pages first, so a long report shows at once; then the whole report
     let sources;
     if (firstPages) {
@@ -55,6 +55,9 @@ self.onmessage = async (e) => {
     const model = await render(def, { ...opts, sources }); // the data the first pages loaded, not fetched again
     send(id, { ok: true }, model);
   } catch (err) {
+    // a library file next to this one (engine.worker.bwip.js) did not load, e.g. the worker was copied alone: the page
+    // renders this report on the main thread, where its chunk loads
+    if (err instanceof TypeError && /import/i.test(err.message)) { self.postMessage({ id, mainThread: err.message }); return; }
     self.postMessage({ id, ok: false, error: { message: err.message, missingParameters: err.missingParameters || null } });
   }
 };

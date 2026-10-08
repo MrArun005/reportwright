@@ -5,7 +5,7 @@
  * No React, no DOM. Runs in a Web Worker and in Node.
  */
 import { resolvePage } from './units.js';
-import { FontStore, CORE_FONT_KEY, PRELOAD_KEYS, fontsFor, fontsForDef, SHAPER, OPTIONAL_KEYS } from './text/fonts.js';
+import { FontStore, CORE_FONT_KEY, PRELOAD_KEYS, fontsFor, fontsForDef, familyOf, fontCss, embeddedFace, SHAPER, OPTIONAL_KEYS } from './text/fonts.js';
 import { safeUrl } from './url.js';
 import { TextMeasurer, finishText } from './text/measure.js';
 import { loadSources, buildDataSets, coerce } from './data/index.js';
@@ -40,6 +40,7 @@ export const BAND_ITEMS = 250000; // page header and footer items drawn per rend
  * @property {{ layoutPasses?: number }} [stats] filled in: how many times the report was laid out (tests, the bench)
  * @property {Record<string, any>} [parameters] values of the report's parameters, by name (invariant form: 1234.5, 2026-03-05)
  * @property {import('./text/fonts.js').FontStore} [fontStore] the fonts; share one across renders (a new one loads them again)
+ * @property {boolean} [lazyFonts] the viewer: load only the core face up front; the other bundled faces when the layout first needs one
  * @property {(key: string) => Promise<ArrayBuffer|Uint8Array>} [loadFont] loads a font the store does not have
  * @property {typeof fetch} [fetch] fetch for data sources (default: the SSRF-guarded fetch, see unsafeFetch)
  * @property {string} [baseUrl] the origin relative data URLs resolve against
@@ -61,6 +62,8 @@ export const BAND_ITEMS = 250000; // page header and footer items drawn per rend
  * @property {'screen'|'print'|'export'} [target] which layers draw (default export)
  * @property {Record<string, any>} [state] the viewer's interactive state: sorts, toggles, selections
  * @property {string} [timeZone] the zone dates show in, when the report sets none
+ * @property {number|false} [largeReportRows] the engine package's render() warns once (model.warnings, and the console once
+ *   per process) when a data set has more rows than this, pointing at exportPdfStream (default 100000; 0 or false: no warning)
  * @property {any} [bodyWidth] internal (subreports): the width the child body is laid out to
  * @property {number} [depth] internal (subreports): nesting level, at most 3
  * @property {{ used: number }} [budget] internal (subreports): subreports rendered so far, all levels together
@@ -94,7 +97,8 @@ function* textsOf(def, dataSets) {
 }
 
 /** The start of the warning for CJK text without the optional CJK fonts (the viewer opens its warnings for it). */
-export const NO_CJK_FONTS = 'Text in Japanese/Chinese/Korean needs the optional CJK fonts: npm i @reportwright/fonts-cjk, then npx reportwright-fonts-cjk (npm); in the app, npm run fonts:cjk';
+import { NO_CJK_FONTS } from './notices.js';
+export { NO_CJK_FONTS };
 
 /**
  * Render a report definition to a page model (pages, regions), the input of every exporter. Throws ReportError for a
@@ -133,10 +137,12 @@ export async function render(def0, opts = {}) {
   if (timeZone && !validTimeZone(timeZone)) { warn(`The time zone "${String(timeZone).slice(0, 60)}" is not known, so dates show in the server's zone.`); timeZone = undefined; }
   const params = resolveParameters(def, opts.parameters || {}, { now: opts.now, timeZone, locale: def.locale });
 
+  /** font names the report asks for that are not available (N39): never swapped without a warning @type {Set<string>} */
+  const unknownFonts = new Set();
   const store = opts.fontStore || new FontStore(/** @type {any} */ (opts.loadFont));
   // the bundled Latin faces and the faces the definition names load now, in parallel and each on its own (a face that fails
   // falls back, with a warning). A CJK or emoji face loads in a later pass, only when text needs it (the optional fonts).
-  await store.load([...new Set([CORE_FONT_KEY, ...PRELOAD_KEYS, ...fontsForDef(def)])]);
+  await store.load([...new Set([CORE_FONT_KEY, ...(opts.lazyFonts ? [] : PRELOAD_KEYS), ...fontsForDef(def, unknownFonts)])]); // lazyFonts (the viewer): the other bundled faces load when the layout first needs one
   let m = new TextMeasurer(store);
 
   // the time limit: an absolute deadline, the same for this render and its subreports
@@ -474,6 +480,15 @@ export async function render(def0, opts = {}) {
   if (opts.stats) opts.stats.layoutPasses = layoutPasses;
   // the optional CJK and emoji faces are not installed by default: their missing glyphs have their own warning (NO_CJK_FONTS)
   for (const k of store.failed) if (k !== SHAPER && !OPTIONAL_KEYS.includes(k)) warn(`The font "${k}" did not load, so its text is drawn in a bundled face instead.`);
+  for (const f of [...unknownFonts, ...m.unknownFonts]) warn(`Font "${f}" is not available; using ${familyOf(f).family}.`);
+  /** @type {Map<string, { sub: string, chars: Set<string> }>} */
+  const lacking = new Map(); // a standard font's family → the characters its encoding lacks (WinAnsi has no Ł or →)
+  for (const [k, chars] of m.substituted) {
+    const f = fontCss(k).family, l = lacking.get(f) || { sub: fontCss(embeddedFace(k)).family, chars: new Set() };
+    for (const c of chars) l.chars.add(c);
+    lacking.set(f, l);
+  }
+  for (const [f, l] of lacking) warn(`Font "${f}" can't show "${[...l.chars].slice(0, 20).join('')}"; used ${l.sub} for them.`);
   if (m.unshaped) warn('The text shaper (harfbuzz.wasm) did not load, so Arabic, Hebrew, Indic and Thai text is not shaped (letters unjoined, marks misplaced). A font loader must map each key with fontFile(key).');
   if (m.noGlyph.size) {
     // Chinese, Japanese, Korean and emoji fonts are optional (about 40 MB): say how to add them

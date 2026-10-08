@@ -149,7 +149,7 @@ export function textOutline(it, fontOf) {
   for (const l of it.lines) {
     if (!l.runs) {
       const f = fontOf(it.font);
-      if (!f) return null;
+      if (!f || f.standard) return null; // a standard PDF font has no outlines: the text stays text
       let x = l.x;
       for (const ch of l.text.replace(/\t/g, '    ')) {
         const g = f.glyphForCodePoint(/** @type {number} */ (ch.codePointAt(0)));
@@ -160,7 +160,7 @@ export function textOutline(it, fontOf) {
     }
     for (const r of l.runs) {
       const f = fontOf(r.font);
-      if (!f) return null;
+      if (!f || f.standard) return null;
       const gs = r.glyphs || [];
       for (let k = 0; k < gs.length; k += 4) glyph(f, f.getGlyph(gs[k]), l.x + r.x + gs[k + 1], l.y - gs[k + 2], it.size);
     }

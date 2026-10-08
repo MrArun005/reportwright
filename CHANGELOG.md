@@ -2,6 +2,83 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
+## 0.13.0 — 2026-10-09
+
+A minor release: new options (`largeReportRows`, `signal`, `warnOnLeave`, `onDirtyChange`), the 14 standard PDF fonts, streamed Excel and Word exports, and warnings where mistakes used to be silent. The tester's 0.12.1 tickets are fixed except where noted; fonts are still TTF (WOFF2 is not done).
+
+### Fixed
+- **Cold start (A1.1):** pdf-lib and fontkit load on first use (in Node through `require`, elsewhere `import()`), not
+  when the engine is imported: `import('@reportwright/engine')` takes about 42 ms instead of 175 ms on an M2, a render
+  loads only fontkit, and the streaming PDF writer never loads pdf-lib. A new process making a 1-page invoice PDF:
+  about 318 ms instead of 364 ms (most of what is left is compiling harfbuzz-subset.wasm, about 150 ms).
+- **Large classic renders (A1.4, A1.5):** `render()` past 100,000 rows warns once (`Large report (N rows):
+  exportPdfStream writes it in about 320 MB; render + exportPdf holds it all in memory`), in the model's warnings and
+  once per process on the console. The threshold is the render option `largeReportRows` (100000; `0` or `false`: off). `exportPdf` takes a rendered model, so it cannot switch to streaming itself; the
+  engine README shows `exportPdfStream` with a sink that keeps the bytes.
+- **Excel streams; Word is written page by page (A1.9):** `exportXlsxStream` keeps memory flat; `exportDocxStream` lowers it, but a Word export's memory still grows slowly with the rows, so it is not yet a flat stream. `exportDocxStream` and `exportXlsxStream` (engine package and `src/exporters/officestream.js`) write a report's Word or Excel file to a sink as its pages or rows are made, with `exportPdfStream`'s sink, `timeoutMs` and `signal`; a report that cannot stream is written whole (`why`). `exportDocx` writes the document XML into the zip page by page instead of holding it. Peak RSS of a Word export, 20k / 50k rows: 329 / 499 MB before (render + exportDocx), 259 / 286 MB streamed with a flat live heap (17.5 / 17.3 MB after GC); Excel 251 / 432 MB before, 125 / 126 MB streamed (`scripts/mem-office.mjs`).
+- **Viewer first load (A1.6):** the embedded viewer no longer loads the engine (layout, expressions, charts, maps, barcodes) on the main thread up front: the worker renders, and the engine loads on the main thread on the first export, parameter list or main-thread render. First load 827 → 652 KB gzipped (about 262 KB once fontkit loads lazily); the render worker 908 → 579 KB, with bwip-js in `engine.worker.bwip.js` beside it, imported for a report with a barcode (a worker copied alone renders such a report on the main thread). `tests/engine/b10-bundle-size.test.js` holds both to a budget.
+- **`pw render -f pdf` streams (A1.4):** into a file, a flowing report is written by `exportPdfStream` (the message says
+  `streamed`; the text is the whole-model PDF's), through a temporary file renamed on success, so a failed run leaves
+  no damaged PDF. Encrypted files, reports that cannot stream and `-o -` render the whole model as before. A streamed
+  grouped report no longer warns that the group totals' internal fields (`__g0_0`) are missing.
+- **First PDF of a cold process (Node):** harfbuzz-subset.wasm is compiled synchronously, which V8 does lazily; the async compile also optimized the whole module in the background, and the first export waited for it. A cold 1-page invoice in Inter: export 215 ms → 40 ms, whole process 498 ms → 305 ms (median of 10, M2). Browsers keep the async compile. A PDF in the standard fonts never loads the subsetter.
+- **CJK fonts survive upgrades (N10):** `@reportwright/fonts-cjk` downloads into a cache folder outside the package (`REPORTWRIGHT_FONTS_DIR`, else `$XDG_CACHE_HOME/reportwright/fonts-cjk`, else `%LOCALAPPDATA%\reportwright\fonts-cjk` on Windows or `~/.cache/reportwright/fonts-cjk`), so upgrading the package no longer deletes them; `defaultFontStore()` reads that folder, then the package's old `fonts/` folder, so existing installs keep working. New exports: `cacheDir()`, `fontPath(name)`.
+- **The 14 standard PDF fonts (A1.2):** `fontFamily` `Helvetica`, `Times-Roman` and `Courier` (four faces each, PostScript names such as `Helvetica-BoldOblique`), `Symbol` and `ZapfDingbats` are named in the PDF and not embedded (Type1, WinAnsiEncoding, the Adobe AFM widths from `@pdf-lib/standard-fonts`); layout measures with the same widths. Aliases: Arial → Helvetica, Times New Roman → Times-Roman, Courier New → Courier. An invoice in Helvetica is about 1.6 KB. Characters WinAnsi lacks are drawn in Inter with a warning; PDF/A and PDF/UA embed Inter (JetBrains Mono for Courier) at the standard font's glyph positions, with a warning; `exportPdfStream` does the same. SVG/HTML name the font with a CSS fallback list, Word and PowerPoint name Arial, Times New Roman or Courier New. `@pdf-lib/standard-fonts` (already installed with pdf-lib) is now a declared dependency, kept external in the packages.
+- **Unknown fonts (N39):** a `fontFamily` the engine does not have is no longer swapped silently: the render warns once per name (`Font "NoSuchFont" is not available; using Inter.`), and monospace names (Consolas, Menlo, Monaco…) use the shipped JetBrains Mono instead of Inter, so aligned columns stay aligned. Family names match in any case, a CSS list (`"Brand, Inter"`) uses its first available font, and the generic names `sans-serif` and `monospace` map to Inter and JetBrains Mono without a warning.
+- **Streaming tickets, from the 0.12.1 retest (N23-N29):** `exportPdfStream` with `encrypt` or `prepare` and `sqlRows` no
+  longer fails with "Save the report first" (the rows are gathered for the whole-model render); a misspelled option
+  key (`encrpyt`, `windw`) warns with "Did you mean" in `render()`'s model warnings, `exportPdfStream`'s result and
+  `exportPdf`'s `onWarning`, and a misspelling of `encrypt` or `prepare` throws so no file is written without its
+  password or signature; `sqlRows` yielding single rows says "sqlRows must yield arrays of rows (got an object with
+  keys …)" and sync iterables are accepted; `spill.dir` that does not exist says so; `pw render --base` on a private
+  address names `--allow-internal`; README: the temp-file + rename pattern for a failed stream and a `pg` +
+  `pg-cursor` `sqlRows` example; the `exportPdf` option docs (pdfa, prepare, save) say what the code does.
+- **Data and form-field retest tickets (B9):**
+  - A `number` (or `date`) field with text in it (N26) warns once per field with the first bad row and how many values
+    are empty, in a render and in a streamed export. Numeric strings such as "12.34" stay silent.
+  - A data set whose path matches an object that holds the rows (`data: { orders: { rows: [...] } }`) warns and names
+    the array key (N8). An object of fields, such as `$.meta`, does not.
+  - `validate()` warns on an aggregate with no scope outside a table, list or data-set item (it uses the first data
+    set), and on `nullable: false` or `allowBlank: false` with no default on a parameter that is not required.
+  - A form field has a `label` (falls back to `tooltip`); a tagged PDF uses it as the field's accessible name (`/TU`)
+    and warns for each field without one (N30).
+- **Tagged PDF table of contents (N32):** a TOC is tagged `TOC > TOCI > Reference > Link`, with the entry text, its page number and the link annotation inside one Link (it was plain `P` elements with a Link around the number only), and its title is an `H1`. veraPDF PDF/UA-1: compliant. The streaming PDF's tagging is unchanged.
+- **Cascading parameters in the viewer:** when a parent parameter changes, a dependent value its list no longer offers is replaced (by the default if still offered, else the first choice) in the state the run uses, and the report re-runs with it. Before, the panel dropped the value but the run kept the old one ("Delhi, South region" with no rows).
+- **Viewer page thumbnails (A11Y-3):** `.vthumb` no longer has an `aria-label` that differs from its visible number (axe `label-content-name-mismatch`); its name "Page 1" comes from hidden text beside the visible 1.
+- **Viewer worker fallback (N1):** when the render worker cannot load (Vite 7 without `worker: { format: 'es' }`, or esbuild not following `new Worker(new URL(...))`), the viewer logs once `[reportwright] worker did not load (<reason>); rendering on the main thread`, and `handle.usesWorker` says which one you got. The viewer README now starts with the bundler setup. No Vite plugin: the setting is one line.
+- **Worker file (N18):** `engine.worker.js` is one self-contained file (no `chunk-*.js` imports), so copying it alone next to a page works.
+- **Viewer fonts (N31):** the viewer fetches a font face only when the layout first needs it, not all seven up front. A report in Inter Regular and Bold now downloads 670 KB (two files) instead of 4.9 MB. Serve `fontsUrl` with `Cache-Control: public, max-age=31536000, immutable` (in the viewer README). WOFF2 for the browser is not done yet.
+- **Streaming PDF (`exportPdfStream`) failures, from the 0.12.1 retest:**
+  - A sink that stops reading no longer hangs the export: `timeoutMs` covers the waits for drain (504, `code:
+    'ETIMEDOUT'`), a sink's `error` or `close` ends the wait, and the new `signal` option (an `AbortSignal`) stops the
+    export at its next wait (rows, sink, sort, page) with an `AbortError`. `sqlRows` gets `{ signal }` as its third
+    argument. On timeout or abort the rows' cursors are closed and spill files removed.
+- **Polar chart without `xValue`** (the angle) says so in validate() and the render ("a polar chart needs xValue"), instead of
+  "N of N rows have no x or y value". A valid polar chart gets no warnings.
+- **Variable font subsets say their weight:** a variable font cut at Regular is named Regular (family, subfamily, full and PostScript names) with usWeightClass 400, and its variation tables are dropped, in the PDF and HTML subsets.
+- **Deprecation messages** all say "will be removed in 1.0" (exportHtml's said 0.9). A test greps the source for a deprecation string that names 0.9.
+- **Rich text warnings** say "Rich text:" once (an unnamed item was named "Rich text" and the parser repeated it). The legend warning says what is accepted: a chart's legend is "bottom" or "none", and it is drawn at the bottom.
+
+- **Designer (b9):**
+  - Embedded designer: `mountDesigner` asks before the page is left with unsaved changes (`warnOnLeave`, default
+    true; false leaves it to the host), and the handle has `isDirty()` and an `onDirtyChange(dirty)` option. The guard is
+    removed on save and on `unmount()` (N34). A blank report is named "Untitled report" (it was "New report").
+  - Keyboard: the outline rows are a listbox with one Tab stop (Up/Down/Home/End move, Enter or Space selects, Shift
+    adds; then Delete and the arrows act on the selection); the left rail's tabs take the focus to their section;
+    canvas items are Tab stops named "Text box T1, x 10, y 10" that Enter selects (N35).
+  - Paste uses the paste event's clipboard (no clipboard-read permission), else the copy made in this tab, and says
+    when there is nothing to paste (N36).
+  - Width and height are at least 1 pt (a line may be 0 one way) (N33). Ctrl+D offsets the copy by 12 pt, as a paste
+    does (N37).
+  - Opening a report gives an item without an `id` a stable one (a hash of its band, place and name), so the same
+    file always reads back the same; the other normalisation (names, band heights, a table's size) is unchanged (N38).
+  - Embedded designer (shadow root): the table cell menu acts again, and Esc and Ctrl+S work after a click on a band
+    label, a matrix or a drill-through in Preview.
+  - A table that gets taller (Add group) grows its band; a drop into a 0 pt band grows it. A number field dropped on a
+    group header cell gives `=Sum(...)`, as on a footer. A matrix value shown as a percentage gets the format P1 while
+    its format is still the default N0. The matrix's drill-down toggle starts closed, as the table's.
+  - Accessibility: the fx button is named "fx: Open the expression editor"; table row tags have 4.85:1 contrast.
+
 ## 0.12.1 — 2026-10-08
 
 ### Fixed

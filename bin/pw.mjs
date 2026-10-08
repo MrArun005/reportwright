@@ -9,6 +9,8 @@ import { render, FontStore } from '../src/engine/index.js';
 import { fontFile } from '../src/engine/text/fonts.js';
 import { pdfEncryptOptions } from '../src/exporters/encrypt.js';
 import { exportPdf } from '../src/exporters/pdf.js';
+import { exportPdfStream } from '../src/exporters/pdfstream.js';
+import { spillSorter, canSpill } from '../src/exporters/spill.js';
 import { createSubsetter } from '../src/exporters/subset.js';
 import { exportHtml } from '../src/exporters/html.js';
 import { exportCsv } from '../src/exporters/csv.js';
@@ -83,11 +85,37 @@ async function renderModel(def, { parameters = {}, data, base, internal = false,
   try {
     const m = await render(withData(def, data), { fontStore, parameters, exportData, dataOnly, baseUrl: base, allowHosts: baseHost(base, internal), now: now ? new Date(now) : undefined, ...(state ? { state } : {}), ...(file ? { loadReport: siblingLoader(file) } : {}) });
     // one line per warning: validate() and the render can name the same problem with different labels ("textbox:", "TextBox:")
-    const seen = new Set();
-    return { ...m, warnings: m.warnings.filter(w => !seen.has(w.toLowerCase()) && seen.add(w.toLowerCase())) };
+    return { ...m, warnings: uniq(m.warnings) };
+  } catch (e) { renderFailed(e, base); }
+}
+const uniq = (warnings) => { const seen = new Set(); return warnings.filter(w => !seen.has(w.toLowerCase()) && seen.add(w.toLowerCase())); };
+/** A render's error as the CLI says it. @param {any} e @param {string} [base] */
+function renderFailed(e, base) {
+  const relative = /fetch|URL|Invalid URL/i.test(e.message) && !base;
+  // the engine names its option (allowHosts); a CLI user has the flag
+  if (e.code === 'EPRIVATE' || /pass allowHosts:/.test(e.message)) e.message = e.message.replace(/\(pass allowHosts: \[[^\]]*\] to render to allow it\)/, '(pass --allow-internal with --base to allow it)');
+  fail(`${e.message}${relative ? '\n    A data source needs a server: pass --base http://localhost:3000, or push the data with -d source=file.json.' : ''}`);
+}
+
+/**
+ * -f pdf into a file: exportPdfStream writes a flowing table as it is laid out (its memory stays flat), else renders the
+ * whole model and writes exportPdf's file (encrypted files, reports that cannot stream). Into a temporary file renamed
+ * when the export succeeded, so a failed run leaves no damaged PDF (and an older file at the path as it was).
+ */
+async function writePdf(def, { parameters = {}, data, base, internal = false, file, exportData = false }, pdfOpts, out) {
+  const d = withData(def, data);
+  const tmp = `${out}.${process.pid}.part`;
+  const sink = fs.createWriteStream(tmp);
+  try {
+    const r = await exportPdfStream(d, { fontStore, subset, parameters, exportData, baseUrl: base, allowHosts: baseHost(base, internal), ...(file ? { loadReport: siblingLoader(file) } : {}),
+      sorter: canSpill() ? spillSorter() : undefined, ...pdfOpts }, sink); // a sort's rows spill to temporary files
+    await new Promise((ok, no) => { sink.once('error', no); sink.end(ok); });
+    fs.renameSync(tmp, out);
+    return { pages: r.pages, streamed: r.streamed, warnings: uniq(r.streamed ? r.warnings : r.warnings.slice(1)) }; // not "was not streamed": the CLI chose
   } catch (e) {
-    const relative = /fetch|URL|Invalid URL/i.test(e.message) && !base;
-    fail(`${e.message}${relative ? '\n    A data source needs a server: pass --base http://localhost:3000, or push the data with -d source=file.json.' : ''}`);
+    sink.destroy();
+    fs.rmSync(tmp, { force: true });
+    renderFailed(e, base);
   }
 }
 
@@ -137,10 +165,6 @@ async function cmdRender(args) {
   const fmt = values.f;
   // a plain PDF needs no table data (Excel, Word, the accessible PDF do)
   const ro = { parameters: pairs(values.p), data, base: values.base, internal: !!values['allow-internal'], file: positionals[0], exportData: !(fmt === 'pdf' && !values.ua) };
-  // the data CSV skips the page layout; a report without a table falls back to its page text
-  let model = fmt === 'csv' && !values.layout ? await renderModel(def, { ...ro, dataOnly: true }) : null;
-  if (!model?.regions?.length) model = await renderModel(def, ro);
-  let bytes;
   let encrypt;
   try {
     encrypt = pdfEncryptOptions({ userPassword: values.password, ownerPassword: values['owner-password'], permissions: Object.fromEntries((values.deny || []).map(k => [k, false])) });
@@ -148,7 +172,18 @@ async function cmdRender(args) {
   if (encrypt && fmt !== 'pdf') usage('--password, --owner-password and --deny apply to -f pdf only');
   if (encrypt && values.pdfa) usage('a PDF/A file cannot have a password');
   if (values.ua && fmt !== 'pdf') usage('--ua applies to -f pdf only');
-  if (fmt === 'pdf') bytes = await exportPdf(model, fontStore, { title: def.name, subset, encrypt, drillBase: values.base, pdfa: values.pdfa ? { icc: fs.readFileSync(path.join(PUB, 'icc', 'sRGB-v2-magic.icc')) } : undefined, tagged: values.ua ? { lang: def.locale || 'en' } : undefined });
+  const out = values.o ?? `${path.basename(positionals[0]).replace(/\.pw\.json$|\.json$/, '')}.${fmt}`;
+  const pdfOpts = () => ({ title: def.name, subset, encrypt, drillBase: values.base, pdfa: values.pdfa ? { icc: fs.readFileSync(path.join(PUB, 'icc', 'sRGB-v2-magic.icc')) } : undefined, tagged: values.ua ? { lang: def.locale || 'en' } : undefined });
+  if (fmt === 'pdf' && out !== '-') {
+    const r = await writePdf(def, ro, pdfOpts(), out);
+    console.error(`pw: wrote ${out} (${r.pages} pages${r.streamed ? ', streamed' : ''}${r.warnings.length ? `, ${r.warnings.length} warnings` : ''})`);
+    return;
+  }
+  // the data CSV skips the page layout; a report without a table falls back to its page text
+  let model = fmt === 'csv' && !values.layout ? await renderModel(def, { ...ro, dataOnly: true }) : null;
+  if (!model?.regions?.length) model = await renderModel(def, ro);
+  let bytes;
+  if (fmt === 'pdf') bytes = await exportPdf(model, fontStore, pdfOpts()); // -o -: the whole model, nothing half-written to stdout
   else if (fmt === 'html') bytes = await exportHtml(model, { fonts: fontStore, title: def.name, subset, static: !!values.static, locale: def.locale, currency: def.currency });
   else if (fmt === 'csv') bytes = exportCsv(model, { locale: def.locale, currency: def.currency, layout: !!values.layout });
   else if (fmt === 'xlsx') bytes = await exportXlsx(model, { currency: def.currency, title: def.name, formulas: !values.values, fontStore });
@@ -157,7 +192,6 @@ async function cmdRender(args) {
   else if (fmt === 'json') bytes = JSON.stringify(model);
   else if (fmt === 'txt') bytes = snapshotText(def.name || positionals[0], model);
   else usage(`unknown format "${fmt}"`);
-  const out = values.o ?? `${path.basename(positionals[0]).replace(/\.pw\.json$|\.json$/, '')}.${fmt}`;
   if (out === '-') process.stdout.write(typeof bytes === 'string' ? bytes : Buffer.from(bytes));
   else { fs.writeFileSync(out, typeof bytes === 'string' ? bytes : Buffer.from(bytes)); console.error(`pw: wrote ${out} (${model.pages.length} pages${model.warnings.length ? `, ${model.warnings.length} warnings` : ''})`); }
 }

@@ -86,6 +86,79 @@ out.end();
 console.log(r.streamed ? `${r.pages} pages, streamed` : `written whole: ${r.why}`);
 ```
 
+**Bytes in memory instead of a file.** `exportPdf(model)` takes a page model that `render()` has already built, so it
+cannot stream: render + exportPdf holds every page (measured on a flowing 4-column table: 435 MB peak RSS at 100,000
+rows, against 273 MB streamed with the rows themselves in the definition). For a large report that you want as bytes, give
+`exportPdfStream` a sink that keeps the chunks; it renders the report whole itself when it cannot stream (`r.why`).
+`render()` warns once per render when a data set has more rows than its `largeReportRows` option (default 100,000; `0`
+or `false` turns it off): `Large report (N rows): …` in `model.warnings`, and on the console once per process.
+
+```js
+const parts = [];
+const r = await exportPdfStream(definition, { title: 'Ledger' }, { write: (b) => { parts.push(b); } });
+const bytes = Buffer.concat(parts); // the same pages as render + exportPdf
+```
+
+**A failed export leaves a damaged file.** The PDF is written as it goes, so an error, a timeout or an abort halfway
+leaves a partial file at the path. Write to a temporary name and rename it when the export has succeeded:
+
+```js
+import fs from 'node:fs';
+import { finished } from 'node:stream/promises';
+
+const tmp = `${file}.part`;
+const out = fs.createWriteStream(tmp);
+try {
+  await exportPdfStream(def, opts, out);
+  await finished(out.end());
+  await fs.promises.rename(tmp, file);
+} catch (e) {
+  out.destroy();
+  await fs.promises.rm(tmp, { force: true });
+  throw e;
+}
+```
+
+**Rows from a database (`sqlRows`).** `sqlRows(source, params, { signal })` returns an async (or sync) iterable of
+arrays of rows, a batch at a time; a single row is an error. This one reads a PostgreSQL cursor with `pg` and
+`pg-cursor`, releases the client when the export ends or stops, and checks `signal` between batches:
+
+```js
+import pg from 'pg';
+import Cursor from 'pg-cursor';
+
+const pool = new pg.Pool();
+const sqlRows = async function* (source, params, { signal }) {
+  const client = await pool.connect();
+  const cursor = client.query(new Cursor(source.query, Object.values(params)));
+  try {
+    for (;;) {
+      signal?.throwIfAborted(); // stop between batches when the export is cancelled or times out
+      const rows = await cursor.read(1000); // one batch of up to 1,000 rows
+      if (!rows.length) break;
+      yield rows;
+    }
+  } finally {
+    await cursor.close().catch(() => {});
+    client.release();
+  }
+};
+await exportPdfStream(def, { sqlRows, timeoutMs: 120_000 }, out);
+```
+
+**Word and Excel, streamed.** `exportDocxStream(definition, options, sink)` and `exportXlsxStream(definition, options,
+sink)` take the same sink, `timeoutMs`, `signal`, `sqlRows`, `maxRows` and `spill`: Word lays out a window of rows at a
+time and writes each page's XML into the zip as it comes, Excel writes the sheet row by row, so neither holds the rows,
+the pages or the XML (measured: live heap 17 MB after 20,000 and after 50,000 rows; a 50,000-row Word export runs in
+`node --max-old-space-size=48`). A report that cannot stream is rendered whole and written in one piece (`streamed:
+false`, and `why`). `exportDocx` and `exportXlsx` still take a rendered model.
+
+Options that are not options are reported: a misspelled key (`{ windw: 500 }`) is ignored with a warning in the
+result's `warnings` (`render()`: in the model's; `exportPdf`: through `onWarning`) naming the nearest option, and a
+misspelling of `encrypt` or `prepare` throws, so a file is never written without the password or signature you asked
+for. `encrypt`, `prepare`, `save` and PDF/A without a profile need the whole model, `sqlRows` included: the rows are
+gathered, and the result says `streamed: false`.
+
 The sink is a Node `Writable` or anything with `write(bytes)` that may return a promise (back-pressure); it is not
 closed for you. Options are `render()`'s and `exportPdf`'s (`fonts`, `parameters`, `title`, `pdfa`, `tagged`, …), plus
 `window` (rows laid out at once, 1,000), `maxRows` (rows read, 5,000,000), `presorted`, `spill` and `parallel`. Rows come
@@ -106,6 +179,12 @@ many.
   Each thread loads the engine and fonts and lays out its own windows: about 150–300 MB a thread (measured: 260 MB
   serial, 590 MB with 2, 890 MB with 4, for 100,000 rows). It helps only with idle cores and a report whose layout, not
   its source, is the slow part: 15% faster with 2 threads on a 2-core machine. Leave it off unless you have measured.
+- **Time limit and cancelling.** `timeoutMs` bounds the whole export, including waits for a sink that stops reading
+  (an HTTP client gone quiet, a `Writable` that never drains): past it the export rejects with status 504 and
+  `code: 'ETIMEDOUT'`. `signal` (an `AbortSignal`) stops it at its next wait (a batch of rows, the sink, a sort, a
+  page) and rejects with the signal's reason (an `AbortError`). `sqlRows(source, params, { signal })` gets the signal
+  too, so a database cursor can cancel its query. Either way the rows' cursors are closed and a sort's temporary
+  files removed.
 - **Tagged files.** A tagged (PDF/UA) table has a structure element a cell: a million-row ledger has some 8 million,
   about 200 MB of file. Readers open it; tools that load every object (qpdf, pikepdf) may need gigabytes. Past a
   million elements the result warns; `tagged: { lang, maxElements }` caps it (the export stops with an error).

@@ -1,6 +1,5 @@
 // @ts-check
-import { PDFDocument, PDFName, PDFString, PDFHexString, PDFRawStream, rgb } from 'pdf-lib';
-import fontkitModule from '@pdf-lib/fontkit';
+import { PDFDocument, PDFName, PDFString, PDFHexString, PDFRawStream, rgb, fontkit, loadPdfLib } from '../engine/lazylibs.js';
 import { makePdfA, setUaMetadata, setInfoDates } from './pdfa.js';
 import { safeUrl, drillUrl, asciiUrl } from '../engine/url.js';
 import { dataUriBytesOf, dataUriBytes, imageInfoOf, IMAGE_LIMITS } from '../engine/image.js';
@@ -10,9 +9,9 @@ import { createTagger } from './pdfua.js';
 import { withDeadline } from './deadline.js';
 import { pngProblem } from './png.js';
 import { needsTableData } from './regions.js';
+import { embeddedFace, isStandard } from '../engine/text/fonts.js';
+import { standardFontEntries, standardLiteral, embeddedPage, embeddedWarnings } from './pdfstandard.js';
 import { Content, drawRun, glyphText, insideClip, col, BLACK, n2, n4, hex4, KAPPA, cleanText, latin1, deflate, NODE_ZLIB } from './pdfpaint.js';
-
-const fontkit = /** @type {any} */ (fontkitModule).default || fontkitModule;
 
 
 /**
@@ -26,8 +25,10 @@ const fontkit = /** @type {any} */ (fontkitModule).default || fontkitModule;
  *   tagged?: { lang?: string }, drillBase?: string, onWarning?: (message: string) => void, timeoutMs?: number,
  *   creationDate?: Date }} [opt]
  *   subset: a HarfBuzz subsetter (see subset.js). Without it, fonts embed in full.
- *   pdfa: make a PDF/A-2b file (needs an sRGB ICC profile). prepare: last change before saving
- *   (the server adds a signature placeholder there). save: extra pdf-lib save options.
+ *   pdfa: a PDF/A-2b file (2a with tagged): true uses the sRGB profile of @reportwright/fonts, or pass { icc } (this
+ *   function itself needs icc; the engine package fills it in). prepare: last change to the pdf-lib PDFDocument before
+ *   saving (the server adds a signature placeholder there). save: pdf-lib save options. These, encrypt and PDF/A without
+ *   a profile take the whole-model path in exportPdfStream; a PDF/A file with a profile streams.
  *   encrypt: { userPassword, ownerPassword, permissions } — AES-256 (see encrypt.js); not with pdfa or prepare.
  *   tagged: an accessible PDF (PDF/UA-1, see pdfua.js): structure tree, marked content, artifacts, language, title
  *   shown; with pdfa it is PDF/A-2a. Off, the file is exactly what it was.
@@ -41,6 +42,7 @@ export function exportPdf(model, fontStore, opt = {}) {
 }
 /** @type {typeof exportPdf} */
 async function pdfOf(model, fontStore, opt) {
+  await loadPdfLib(); // on first use: importing the engine does not load pdf-lib
   // a fixed date (creationDate, else SOURCE_DATE_EPOCH) makes the file reproducible: its ID then derives from the content
   const fixed = fixedDate(opt);
   const when = fixed ?? new Date();
@@ -55,6 +57,12 @@ async function pdfOf(model, fontStore, opt) {
   setInfoDates(doc, when);
   if (fileId) doc.context.trailerInfo.ID = doc.context.obj([PDFHexString.of(fileId), PDFHexString.of(fileId)]);
 
+  // PDF/A and PDF/UA embed every font: standard-font text is drawn in its embedded stand-in (pdfstandard.js)
+  if (opt.pdfa || opt.tagged) {
+    const families = new Set();
+    model = { ...model, pages: model.pages.map((/** @type {any} */ pg) => embeddedPage(pg, k => fontStore.get(k), families)) };
+    for (const w of embeddedWarnings(families)) opt.onWarning?.(w);
+  }
   // Which characters each font must draw, and which shaped glyphs (by ID, with the text each one stands for).
   const used = new Map();
   /** @type {Map<string, Map<number, string>>} */
@@ -79,6 +87,10 @@ async function pdfOf(model, fontStore, opt) {
   for (const pg of model.pages) for (const it of pg.items) if (it.t === 'field') fieldFonts.add(fieldFont(it));
   const fonts = new Map();
   const font = async (key) => {
+    if (!fonts.has(key) && isStandard(key)) { // a standard PDF font: named, not embedded (pdfstandard.js)
+      const f = fontStore.get(key);
+      fonts.set(key, { ref: doc.context.register(doc.context.obj(/** @type {any} */ (standardFontEntries(f)))), embedder: { font: f, literalOf: (/** @type {string} */ t) => standardLiteral(f, t), tjOf: () => null } });
+    }
     if (!fonts.has(key)) {
       const full = fontStore.bytes.get(key);
       let bytes = full;
@@ -318,6 +330,7 @@ async function pdfOf(model, fontStore, opt) {
           if (it.readOnly) field.enableReadOnly();
           if (tags) {
             // an accessible field: its name as the description a screen reader says, its widget in a Form element
+            if (!it.label) opt.onWarning?.(`Form field "${name}" has no label, so a screen reader announces its name; give it a label`);
             field.acroField.dict.set(PDFName.of('TU'), PDFHexString.fromText(it.label || it.name || name));
             const w = field.acroField.getWidgets()[0];
             const ref = w && doc.context.getObjectRef(w.dict);
@@ -446,8 +459,8 @@ async function contentId(model, opt, when) {
  * value is drawn in (Arabic in Inter would be blank boxes once a viewer redraws the field).
  */
 function fieldFont(it) {
-  for (const d of it.draw) if (d.t === 'text') for (const l of d.lines) for (const r of l.runs || []) if (r.font !== it.font && r.text.trim()) return r.font;
-  return it.font;
+  for (const d of it.draw) if (d.t === 'text') for (const l of d.lines) for (const r of l.runs || []) if (r.font !== it.font && r.text.trim()) return embeddedFace(r.font);
+  return embeddedFace(it.font); // a field's font is embedded: what is typed into it later can be any character
 }
 
 

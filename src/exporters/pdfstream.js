@@ -16,17 +16,18 @@
  * The writer itself has no encryption, forms or signing (those stay on exportPdf, pdf.js); PDF/A and tagging (PDF/UA)
  * are added by writePagedPdf (pdfstreamtags.js, the XMP and output intent).
  */
-import fontkitModule from '@pdf-lib/fontkit';
+import { fontkit, loadFontkit } from '../engine/lazylibs.js';
 import { Zlib } from 'fflate';
 import { render } from '../engine/index.js';
 import { planPaged } from '../engine/paged.js';
+import { sqlBatches } from '../engine/stream.js';
 import { safeUrl, drillUrl, asciiUrl } from '../engine/url.js';
 import { exportPdf } from './pdf.js';
 import { xmpPacket } from './pdfa.js';
 import { createStreamTagger } from './pdfstreamtags.js';
+import { standardFontDict, embeddedPage, embeddedWarnings } from './pdfstandard.js';
 import { Content, drawRun, glyphText, insideClip, col, BLACK, n2, n4, KAPPA, cleanText, deflate } from './pdfpaint.js';
 
-const fontkit = /** @type {any} */ (fontkitModule).default || fontkitModule;
 const CHUNK = 64 * 1024;
 const LEAF = 64; // pages per node of the page tree
 const OBJSTM = 100; // small objects per object stream
@@ -47,12 +48,43 @@ const esc = (/** @type {number} */ b) => (b === 0x28 || b === 0x29 || b === 0x5c
  */
 
 /**
+ * What sink.write(bytes) returned, waited for: a promise, or false and the 'drain' event (a Node Writable; its 'error'
+ * or 'close' ends the wait too, with an error, so a destroyed sink does not leave the export waiting forever).
+ * @param {Sink} sink @param {any} r
+ */
+function written(sink, r) {
+  const s = /** @type {any} */ (sink);
+  if (r !== false || !s.once) return Promise.resolve(r);
+  return new Promise((ok, fail) => {
+    const off = () => { s.off?.('drain', onDrain); s.off?.('error', onError); s.off?.('close', onClose); };
+    const onDrain = () => { off(); ok(undefined); };
+    const onError = (/** @type {any} */ e) => { off(); fail(e); };
+    const onClose = () => { off(); fail(Object.assign(new Error('The sink closed before the PDF was written'), { code: 'ERR_STREAM_PREMATURE_CLOSE' })); };
+    s.once('drain', onDrain); s.once('error', onError); s.once('close', onClose);
+  });
+}
+/**
+ * p, or signal's reason as soon as it aborts (p goes on, unwatched).
+ * @template T @param {Promise<T>} p @param {AbortSignal} [signal] @returns {Promise<T>}
+ */
+export function raced(p, signal) {
+  if (!signal) return p;
+  if (signal.aborted) { p.catch(() => {}); return Promise.reject(signal.reason); }
+  return new Promise((ok, fail) => {
+    const on = () => fail(signal.reason);
+    signal.addEventListener('abort', on, { once: true });
+    p.then((v) => { signal.removeEventListener('abort', on); ok(v); }, (e) => { signal.removeEventListener('abort', on); fail(e); });
+  });
+}
+
+/**
  * @param {Sink} sink
  * @param {{ fontStore: import('../engine/text/fonts.js').FontStore, fonts?: string[],
  *   subset?: (font: Uint8Array, codePoints: Iterable<number>, opt?: { glyphs?: Iterable<number> }) => Promise<Uint8Array>,
- *   id?: string }} opt
+ *   id?: string, signal?: AbortSignal }} opt
  *   fonts: font keys to name now (F1, F2… in this order); any other font is named on first use.
  *   subset: subset.js's subsetter; without it fonts embed in full. id: the file ID (32 hex digits), else random.
+ *   signal: stops a wait for the sink (back-pressure) when it aborts.
  */
 export function createPdfStream(sink, opt) {
   const { fontStore } = opt;
@@ -79,9 +111,7 @@ export function createPdfStream(sink, opt) {
     let at = 0;
     for (const p of parts) { all.set(p, at); at += p.length; }
     parts = []; size = 0;
-    const r = sink.write(all);
-    if (r === false && sink.once) await new Promise((ok) => /** @type {any} */ (sink).once('drain', ok));
-    else await r;
+    await raced(written(sink, sink.write(all)), opt.signal);
   };
   /** @param {string | Uint8Array} x */
   const put = (x) => {
@@ -159,7 +189,7 @@ export function createPdfStream(sink, opt) {
         let h = F.memo.get(cp);
         if (h === undefined) {
           const id = F.font.glyphForCodePoint(cp).id;
-          F.memo.set(cp, h = hex4(id));
+          F.memo.set(cp, h = F.font.standard ? id.toString(16).padStart(2, '0') : hex4(id)); // a standard font: one byte
           F.cps.add(cp);
           if (!F.glyphs.has(id)) F.glyphs.set(id, ch);
         }
@@ -179,7 +209,7 @@ export function createPdfStream(sink, opt) {
         let b = F.lit.get(cp);
         if (b === undefined) {
           const id = parseInt(w.encode(key, ch), 16);
-          F.lit.set(cp, b = esc(id >> 8) + esc(id & 255));
+          F.lit.set(cp, b = F.font.standard ? esc(id) : esc(id >> 8) + esc(id & 255));
         }
         out += b;
       }
@@ -376,6 +406,7 @@ export function createPdfStream(sink, opt) {
    * @param {string} key @param {NonNullable<ReturnType<typeof fonts.get>>} F
    */
   async function writeFont(key, F) {
+    if (F.font.standard) { await writeObj(F.ref, standardFontDict(F.font)); return; } // named, not embedded (pdfstandard.js)
     const f = F.font, full = /** @type {Uint8Array} */ (fontStore.bytes.get(key));
     let bytes = full;
     if (opt.subset && !f['OS/2']?.fsType?.noSubsetting) {
@@ -497,17 +528,48 @@ function latin1(s) {
  * opts: render()'s options and exportPdf's (fontStore, subset, title, author, creationDate, drillBase…). Tagged
  * (PDF/UA-1) and PDF/A files stream too; encrypted and signed files, save options and PDF/A without a colour profile
  * take the whole-model path (the result's why says which).
+ * timeoutMs (or deadline) bounds the whole export, waits for the sink included; signal (an AbortSignal) stops it at its
+ * next wait (a row batch, the sink, a sort, a page). Stopped or failed: it rejects (the signal's reason, an AbortError;
+ * a timeout: status 504, code 'ETIMEDOUT'), the rows' cursors are closed, a sort's temporary files removed.
  * @param {any} def @param {any} opts @param {Sink} sink
  * @returns {Promise<{ streamed: boolean, pages: number, warnings: string[], why?: string }>}
  */
 export async function exportPdfStream(def, opts, sink) {
+  opts.signal?.throwIfAborted();
+  const t0 = Date.now();
+  const deadline = opts.deadline ?? (Number(opts.timeoutMs) > 0 ? t0 + Number(opts.timeoutMs) : undefined);
+  // one signal for every wait: the caller's, the time limit, and an error the sink reports
+  const ctl = new AbortController();
+  const signal = ctl.signal;
+  const onAbort = () => ctl.abort(opts.signal.reason);
+  opts.signal?.addEventListener('abort', onAbort, { once: true });
+  const timer = deadline ? setTimeout(() => ctl.abort(Object.assign(new Error(`The PDF export ran longer than ${Math.round((deadline - t0) / 100) / 10} s, its time limit (timeoutMs).`), { name: 'TimeoutError', code: 'ETIMEDOUT', status: 504, timeout: true })), Math.max(0, deadline - t0)) : null;
+  const s = /** @type {any} */ (sink);
+  const onSinkError = (/** @type {any} */ e) => ctl.abort(e);
+  s.on?.('error', onSinkError);
+  try {
+    return await streamed(def, { ...opts, deadline, signal }, sink);
+  } catch (e) {
+    const err = signal.aborted ? signal.reason : e;
+    if (err?.timeout && !err.code) err.code = 'ETIMEDOUT';
+    throw err;
+  } finally {
+    clearTimeout(/** @type {any} */ (timer));
+    opts.signal?.removeEventListener('abort', onAbort);
+    s.off?.('error', onSinkError);
+  }
+}
+/** @param {any} def @param {any} opts @param {Sink} sink */
+async function streamed(def, opts, sink) {
+  const { signal } = opts;
   const why = opts.encrypt ? 'encrypted' : opts.prepare ? 'signed' : opts.save ? 'save options' : opts.pdfa && !opts.pdfa.icc?.length ? 'PDF/A without a colour profile' : null;
-  const plan = why ? { why } : await planPaged(def, opts);
+  const plan = why ? { why } : await raced(planPaged(def, opts), signal);
   if (plan.why !== undefined) {
-    const model = await render(def, opts);
-    const bytes = await exportPdf(model, opts.fontStore, opts);
-    const r = sink.write(bytes);
-    if (r === false && sink.once) await new Promise((ok) => /** @type {any} */ (sink).once('drain', ok)); else await r;
+    // render() reads SQL through opts.sql (whole rows): the sqlRows batches, gathered (this path holds the model whole anyway)
+    const rOpts = opts.sqlRows && !opts.sql ? { ...opts, sql: async (/** @type {any} */ src, /** @type {any} */ p) => { const all = []; for await (const b of sqlBatches(opts.sqlRows, src, p, signal)) for (const r of b) all.push(r); return all; } } : opts;
+    const model = await raced(render(def, rOpts), signal);
+    const bytes = await raced(exportPdf(model, opts.fontStore, { ...opts, timeoutMs: opts.deadline ? Math.max(1, opts.deadline - Date.now()) : undefined }), signal);
+    await raced(written(sink, sink.write(bytes)), signal);
     // said, not silent: a report that was meant to stream holds every page in memory instead
     const warnings = [`The PDF was not streamed (${plan.why}): the report was rendered whole, so its memory grows with its pages.`, ...model.warnings];
     return { streamed: false, pages: model.pages.length, warnings, why: plan.why };
@@ -522,21 +584,31 @@ export async function exportPdfStream(def, opts, sink) {
  * @returns {Promise<{ pages: number, warnings: string[] }>}
  */
 export async function writePagedPdf(plan, opts, sink) {
+  await loadFontkit(); // writeFont checks a subset with it (a FontStore that parsed its fonts has loaded it already)
   const { fontStore } = opts;
-  const w = createPdfStream(sink, { fontStore, subset: opts.subset, id: opts.id });
+  const w = createPdfStream(sink, { fontStore, subset: opts.subset, id: opts.id, signal: opts.signal });
   const { info, pages } = /** @type {any} */ (plan);
   // tagged (PDF/UA-1): a structure tree written as the pages are (pdfstreamtags.js)
   const tags = opts.tagged ? createStreamTagger(w, { maxElements: Number(opts.tagged.maxElements) || Infinity }) : null;
-  const env = paintEnv(w, fontStore, { drillBase: opts.drillBase, tags });
+  const env = paintEnv(w, fontStore, { drillBase: opts.drillBase, tags, embedAll: !!(opts.pdfa || tags) });
   const { shaped } = env;
   // opts.parallel: windows laid out and painted by that many worker threads (Node), their pages written here in order
   const pool = !tags && Number(opts.parallel) > 1 ? paintPool(Number(opts.parallel), fontStore, opts, info) : null;
   let pi = -1;
+  const it = pages(pool ? { run: pool.run, parallel: pool.size } : {})[Symbol.asyncIterator]();
+  let pending = false; // a read the signal stopped waiting for: the iterator is busy, its return() would wait for it
   try {
-    for await (const pg of pages(pool ? { run: pool.run, parallel: pool.size } : {})) {
+    for (;;) {
+      opts.signal?.throwIfAborted();
+      pending = true;
+      const x = await raced(it.next(), opts.signal);
+      pending = false;
+      if (x.done) break;
+      const pg = x.value;
       pi++;
       const H = pg.height ?? info.height;
       if (pg.deflated) { // painted by a worker: its fonts and glyphs first, then its links' pages by number
+        for (const f of pg.embedded || []) env.embedded?.add(f);
         if (pg.used) { w.take(pg.used); for (const [k, g] of pg.shaped) { const m = env.shapedOf(k); for (const [id, t] of g) if (!m.has(id)) m.set(id, t); } }
         const annots = pg.annots.map((/** @type {string} */ a) => a.replace(/@@P(\d+)@@/g, (_, i) => String(w.pageRef(Number(i)))));
         await w.addPage({ width: pg.width ?? info.width, height: H, deflated: pg.deflated, annots });
@@ -545,7 +617,12 @@ export async function writePagedPdf(plan, opts, sink) {
       const { content, annots } = paintPage(pg, H, env);
       await w.addPage({ width: pg.width ?? info.width, height: H, content, annots, extra: tags ? await tags.end(w.pageRef(pi)) : undefined });
     }
-  } finally { await pool?.close(); }
+  } finally {
+    // the rows' cursors close as the pages' generators unwind; a read still running (its cursor told by the signal)
+    // closes them when it ends
+    if (pending) it.return?.(undefined)?.catch(() => {}); else await it.return?.(undefined);
+    await pool?.close();
+  }
   for (const [key, g] of shaped) w.addGlyphs(key, g);
   // the outline as exportPdf makes it: bookmarks and headings in page order, each entry once
   const seen = new Set();
@@ -566,6 +643,7 @@ export async function writePagedPdf(plan, opts, sink) {
   }
   const res = await w.finish({ outline, catalog, info: { title, author: opts.author, creationDate: when } });
   // a tagged file of millions of elements is valid, but tools that load every object (qpdf, pikepdf) need gigabytes
+  for (const x of env.embedded ? embeddedWarnings(env.embedded) : []) info.warnings.push(x);
   if (tags && tags.count > TAGGED_LARGE) info.warnings.push(`The tagged PDF has ${tags.count.toLocaleString('en-US')} structure elements (${res.pages.toLocaleString('en-US')} pages): readers open it, but tools that load every object of a file (qpdf, pikepdf) may run out of memory on it. tagged.maxElements caps it.`);
   return { pages: res.pages, warnings: info.warnings };
 }
@@ -587,6 +665,7 @@ function coveredText(items, box) {
  * @returns {{ content: string, annots: any[] }}
  */
 export function paintPage(pg, H, env) {
+  if (env.embedded) pg = embeddedPage(pg, env.font, env.embedded);
   const annots = [];
   const c = new Content(env.shared);
   const { tags } = env;
@@ -673,7 +752,7 @@ export function paintPage(pg, H, env) {
 
 /**
  * What paintPage draws with: a writer's resource names and glyph records (w), the fonts, shaped glyphs' texts.
- * @param {any} w @param {any} fontStore @param {{ drillBase?: string, pageRef?: (i: number) => any, tags?: any }} [o]
+ * @param {any} w @param {any} fontStore @param {{ drillBase?: string, pageRef?: (i: number) => any, tags?: any, embedAll?: boolean }} [o]
  */
 export function paintEnv(w, fontStore, o = {}) {
   /** @type {Map<string, any>} pdf-lib-like fonts for the shared painter: { key, embedder: { font } } */
@@ -697,6 +776,8 @@ export function paintEnv(w, fontStore, o = {}) {
     reserve: () => w.reserve(),
     drillBase: o.drillBase,
     tags: o.tags || null,
+    /** PDF/A, PDF/UA: standard fonts drawn in embedded stand-ins; the families that were @type {Set<string>|null} */
+    embedded: o.embedAll ? new Set() : null,
   };
 }
 
@@ -733,11 +814,11 @@ function paintPool(size, fontStore, opts, info) {
       await (started ||= start());
       const id = ++seq;
       const pw = job.pageWindow;
-      const msg = { id, def: job.def, rows: job.rows.map(clean), keep: job.keep, drillBase: opts.drillBase, height: info.height,
+      const msg = { id, def: job.def, rows: job.rows.map(clean), keep: job.keep, drillBase: opts.drillBase, embedAll: !!opts.pdfa, height: info.height,
         opts: Object.fromEntries(pick.filter(k => opts[k] !== undefined).map(k => [k, opts[k]])),
         pageWindow: { ...pw, first: clean(pw.first), cont: pw.cont.map((/** @type {any} */ c) => c && { first: clean(c.first), before: c.before }) } };
       const r = await new Promise((ok, fail) => { waiting.set(id, { ok, fail }); workers[turn++ % workers.length].postMessage(msg); });
-      if (r.pages.length) { r.pages[0].used = r.used; r.pages[0].shaped = r.shaped; }
+      if (r.pages.length) { r.pages[0].used = r.used; r.pages[0].shaped = r.shaped; r.pages[0].embedded = r.embedded; }
       return r;
     },
     async close() { await Promise.all(workers.map(w => w.terminate())); },

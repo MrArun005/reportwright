@@ -29,7 +29,7 @@ const write = (f, s) => fs.writeFileSync(path.join(root, f), typeof s === 'strin
 /* engine */
 const E = 'packages/engine';
 // third-party libraries stay imports (pinned dependencies), never bundled: our tarballs hold only our code
-const external = ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate', 'bidi-js'];
+const external = ['pdf-lib', '@pdf-lib/fontkit', '@pdf-lib/standard-fonts', 'bwip-js', 'fflate', 'bidi-js'];
 fs.rmSync(path.join(root, E, 'dist'), { recursive: true, force: true });
 fs.rmSync(path.join(root, E, 'public'), { recursive: true, force: true }); // fonts moved to @reportwright/fonts
 // no source map: the bundle is readable (not minified), and the map was ~0.8 MB of a 2 MB package
@@ -50,14 +50,14 @@ write(`${E}/package.json`, {
   description: 'ReportWright report engine: JSON report definitions to pages, PDF (incl. PDF/A), Word, Excel, PowerPoint, HTML and CSV. Node and browsers. Fonts: @reportwright/fonts; CLI: @reportwright/cli.',
   exports: { '.': { types: './index.d.ts', default: './dist/index.js' }, './report': { types: './report.d.ts' }, './schema.json': './schema.json', './pool': { types: './pool/index.d.ts', default: './pool/index.js' }, './package.json': './package.json' },
   types: './index.d.ts',
-  files: ['dist', 'pool', 'examples', 'index.d.ts', 'report.d.ts', 'schema.json', 'README.md', 'CHANGELOG.md', 'LICENSE'],
+  files: ['dist', 'pool', 'examples', 'index.d.ts', 'report.d.ts', 'schema.json', 'README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md'],
   engines: { node: '>=20.9' },
   sideEffects: false,
   dependencies: deps(external),
   peerDependencies: { '@reportwright/fonts': pkg.version },
   peerDependenciesMeta: { '@reportwright/fonts': { optional: true } },
 });
-fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, E, 'LICENSE')); docs(E);
+fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, E, 'LICENSE')); fs.copyFileSync(path.join(root, 'THIRD-PARTY-NOTICES.md'), path.join(root, E, 'THIRD-PARTY-NOTICES.md')); docs(E);
 // the report JSON Schema (report.d.ts is generated from it: scripts/gen-report-types.mjs)
 write(`${E}/schema.json`, (await import('../src/engine/schema/report.schema.js')).REPORT_SCHEMA);
 
@@ -74,10 +74,10 @@ write(`${F}/package.json`, {
   ...meta(F, ['fonts', 'harfbuzz', 'noto', 'inter', 'pdf-a', 'icc']),
   description: 'Fonts (Inter, JetBrains Mono, Noto), the HarfBuzz shaper and subsetter for @reportwright/engine.',
   exports: { './public/*': './public/*', './package.json': './package.json' },
-  files: ['public', 'README.md', 'CHANGELOG.md', 'LICENSE'],
+  files: ['public', 'README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md'],
   sideEffects: false,
 });
-fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, F, 'LICENSE')); docs(F); // MIT; each font's OFL is in public/fonts
+fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, F, 'LICENSE')); fs.copyFileSync(path.join(root, 'THIRD-PARTY-NOTICES.md'), path.join(root, F, 'THIRD-PARTY-NOTICES.md')); docs(F); // MIT; each font's OFL is in public/fonts
 
 /* fonts-cjk: a downloader for the CJK and emoji fonts (pinned commit, SHA-256 checked); the fonts are not in the tarball */
 const K = 'packages/fonts-cjk';
@@ -87,11 +87,11 @@ write(`${K}/package.json`, {
   ...meta(K, ['fonts', 'cjk', 'noto', 'japanese', 'chinese', 'korean', 'emoji']),
   bin: { 'reportwright-fonts-cjk': 'src/index.mjs', 'pagewright-fonts-cjk': 'src/index.mjs' }, // old name kept for 0.9
   exports: { '.': './src/index.mjs', './fonts/*': './fonts/*', './package.json': './package.json' },
-  files: ['src', 'README.md', 'CHANGELOG.md', 'LICENSE'],
+  files: ['src', 'README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md'],
   engines: { node: '>=20.9' },
   sideEffects: false,
 });
-fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, K, 'LICENSE')); docs(K);
+fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, K, 'LICENSE')); fs.copyFileSync(path.join(root, 'THIRD-PARTY-NOTICES.md'), path.join(root, K, 'THIRD-PARTY-NOTICES.md')); docs(K);
 
 /* cli: the pw command (bundled engine), fonts from @reportwright/fonts */
 const C = 'packages/cli';
@@ -109,12 +109,12 @@ write(`${C}/package.json`, {
   ...meta(C, ['cli', 'pdf', 'snapshot-testing', 'reports-as-code']),
   description: 'pw: render, test and diff ReportWright reports from the command line.',
   bin: { reportwright: 'dist/pw.mjs', pw: 'dist/pw.mjs' },
-  files: ['dist', 'README.md', 'CHANGELOG.md', 'LICENSE'],
+  files: ['dist', 'README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md'],
   sideEffects: false,
   engines: { node: '>=20.9' },
   dependencies: { ...deps(external), '@reportwright/fonts': pkg.version },
 });
-fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, C, 'LICENSE')); docs(C);
+fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, C, 'LICENSE')); fs.copyFileSync(path.join(root, 'THIRD-PARTY-NOTICES.md'), path.join(root, C, 'THIRD-PARTY-NOTICES.md')); docs(C);
 
 // the API's types, from the JSDoc of everything entry.js exports (index.d.ts re-exports them with report.d.ts)
 tsc([`${E}/entry.js`, '--rootDir', '.', '--outDir', `${E}/dist/types`]);
@@ -162,13 +162,13 @@ write(`${V}/package.json`, {
     './react-peer': { types: './dist/viewer.d.ts', default: './dist/peer/viewer.js' }, './react-peer/designer': { types: './dist/designer.d.ts', default: './dist/peer/designer.js' },
   },
   types: './dist/viewer.d.ts',
-  files: ['dist', 'README.md', 'CHANGELOG.md', 'LICENSE'],
+  files: ['dist', 'README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md'],
   engines: { node: '>=20.9' },
   peerDependencies: { react: '>=18', 'react-dom': '>=18' },
   peerDependenciesMeta: { react: { optional: true }, 'react-dom': { optional: true } },
   sideEffects: true,
 });
-fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, V, 'LICENSE')); docs(V);
+fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, V, 'LICENSE')); fs.copyFileSync(path.join(root, 'THIRD-PARTY-NOTICES.md'), path.join(root, V, 'THIRD-PARTY-NOTICES.md')); docs(V);
 
 /* framework wrappers: plain JavaScript, the framework and the viewer as peer dependencies (nothing bundled) */
 const WRAPPERS = {
@@ -186,12 +186,12 @@ for (const [name, w] of Object.entries(WRAPPERS)) {
     ...meta(P, [name, 'report-viewer', 'report-designer']),
     exports: { '.': { types: './index.d.ts', default: './dist/index.js' } },
     types: './index.d.ts',
-    files: ['dist', 'index.d.ts', 'README.md', 'CHANGELOG.md', 'LICENSE'],
+    files: ['dist', 'index.d.ts', 'README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md'],
     engines: { node: '>=20.9' },
     sideEffects: false,
     peerDependencies: { ...w.peers, '@reportwright/viewer': pkg.version },
     ...(w.optional ? { peerDependenciesMeta: Object.fromEntries(w.optional.map(n => [n, { optional: true }])) } : {}),
   });
-  fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, P, 'LICENSE')); docs(P);
+  fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, P, 'LICENSE')); fs.copyFileSync(path.join(root, 'THIRD-PARTY-NOTICES.md'), path.join(root, P, 'THIRD-PARTY-NOTICES.md')); docs(P);
 }
 console.log(`packages: @reportwright/engine, /fonts, /fonts-cjk, /cli, /viewer, ${Object.keys(WRAPPERS).map(n => '/' + n).join(', ')} built (npm pack packages/<name>)`);

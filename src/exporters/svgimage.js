@@ -6,7 +6,7 @@
  * Not drawn: text, gradients, patterns, clip paths, masks, filters, <use>, <style> sheets; evenodd fills
  * are drawn nonzero. Anything it cannot read is skipped; it never throws on bad input.
  */
-import { pushGraphicsState, popGraphicsState, concatTransformationMatrix, rgb } from 'pdf-lib';
+import { pushGraphicsState, popGraphicsState, concatTransformationMatrix, rgb } from '../engine/lazylibs.js'; // set once exportPdf has loaded pdf-lib
 import { parseColor } from './color.js';
 import { svgRootAttrs, svgLength, xmlTags, xmlAttrs, IMAGE_LIMITS } from '../engine/image.js';
 

@@ -3,7 +3,7 @@
 // Masters, libraries, stylesheets and themes are other saved reports, fetched here for display only:
 // the engine reads them again on every render, so a change to them shows everywhere.
 import { useEffect, useState } from 'react';
-import { useDesigner, findItem, walk, addItem, cloneWithIds, allNames, secOf, updateItem } from './store.js';
+import { useDesigner, activeStore, useDesignerStore, findItem, walk, addItem, cloneWithIds, allNames, secOf, updateItem } from './store.js';
 import { t } from '@/i18n/index.js';
 import { TextInput, NumberInput, Select, ColorInput, Field, Check } from './ui.jsx';
 import { THEME_COLORS, DEFAULT_THEME, findItemNamed } from '@/engine/reuse.js';
@@ -21,22 +21,27 @@ const noServer = () => !!S().embed && !S().embed.server;
 /* ---------------------------------------------------------------- reports this one reuses */
 const pending = new Map();
 /** Fetch a report for display (a master, a library, a stylesheet, a theme); force: again, after it changed. */
-export function fetchReused(id, force = false) {
+export function fetchReused(id, force = false, api = activeStore()) {
   if (!id || typeof id !== 'string' || id.startsWith('=')) return Promise.resolve(null);
-  if (!force && S().reused[id]) return Promise.resolve(S().reused[id]);
-  if (pending.has(id)) return pending.get(id);
-  if (noServer()) return Promise.resolve(null);
-  const p = fetch(`${server()}/api/reports/${encodeURIComponent(id)}`)
+  const st = api.getState();
+  if (!force && st.reused[id]) return Promise.resolve(st.reused[id]);
+  // one fetch per server and report; each designer that asked gets it in its own store
+  const server = st.embed?.server || '', key = `${server} ${id}`;
+  const keep = (d) => { api.setState(s => ({ reused: { ...s.reused, [id]: d } })); return d; };
+  if (pending.has(key)) return pending.get(key).then(keep);
+  if (st.embed && !server) return Promise.resolve(null); // standalone: no saved reports
+  const p = fetch(`${server}/api/reports/${encodeURIComponent(id)}`)
     .then(r => (r.ok ? r.json() : { __error: `HTTP ${r.status}` }))
     .catch(e => ({ __error: e.message }))
-    .then(d => { pending.delete(id); useDesigner.setState(s => ({ reused: { ...s.reused, [id]: d } })); return d; });
-  pending.set(id, p);
-  return p;
+    .finally(() => pending.delete(key));
+  pending.set(key, p);
+  return p.then(keep);
 }
 /** A reused report's definition (null while it loads or when it did not load). */
 export function useReused(id) {
+  const api = useDesignerStore();
   const d = useDesigner(s => (id ? s.reused[id] : undefined));
-  useEffect(() => { fetchReused(id); }, [id]);
+  useEffect(() => { fetchReused(id, false, api); }, [id, api]);
   return d && !d.__error ? d : null;
 }
 

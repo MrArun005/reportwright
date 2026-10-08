@@ -1,12 +1,19 @@
 // @ts-check
 import { cssColor } from './color.js';
-import { fontFile, unicodeRange } from '../engine/text/fonts.js';
+import { fontFile, unicodeRange, standardCss, fontCss, isStandard } from '../engine/text/fonts.js';
 import { textOutline } from './figures.js';
 
 /** Each font file gets its own CSS family, so local fonts can never replace it. */
 export const fontFamilyCss = (key) => `pw-${key}`;
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+/** A text element's font attributes: its own face, or a standard PDF font by name with a fallback list, weight and style. */
+const fontAttrs = (key) => {
+  const stack = standardCss(key);
+  if (!stack) return `font-family="${fontFamilyCss(key)}"`;
+  const c = fontCss(key);
+  return `font-family="${esc(stack)}"${c.weight !== 400 ? ` font-weight="${c.weight}"` : ''}${c.style === 'italic' ? ' font-style="italic"' : ''}`;
+};
 
 /**
  * The address a browser may load an image from, by the policy of the data fetches: a data:image URI or this server's
@@ -74,14 +81,14 @@ export function pageToSvg(page, w, h, { background = true, animate = false, box 
         const d = outline ? textOutline(it, outline) : null;
         if (d) { out.push(`<path d="${d}" fill="${cssColor(it.color)}"/>`); break; }
         const paint = `font-size="${n(it.size)}" fill="${cssColor(it.color)}"`;
-        const attrs = `font-family="${fontFamilyCss(it.font)}" ${paint}`;
+        const attrs = `${fontAttrs(it.font)} ${paint}`;
         for (const l of it.lines) {
           if (!l.runs) { out.push(`<text x="${n(l.x)}" y="${n(l.y)}" ${attrs} xml:space="preserve">${esc(l.text)}</text>`); continue; }
           // Shaped or bidi text: one <text> per run, in visual order, at the engine's position. The browser shapes
           // each run with the same font (Chrome and Firefox use HarfBuzz too) and must not reorder it.
           for (const r of l.runs) {
             if (!r.text.trim()) continue;
-            const font = `font-family="${fontFamilyCss(r.font)}" ${paint}`;
+            const font = `${fontAttrs(r.font)} ${paint}`;
             if (!r.shaped && !r.rtl) { out.push(`<text x="${n(l.x + r.x)}" y="${n(l.y)}" ${font}>${esc(r.text)}</text>`); continue; }
             const style = (r.rtl ? 'direction:rtl;unicode-bidi:bidi-override;' : '') + (r.shaped ? 'font-kerning:normal;font-variant-ligatures:normal' : '');
             out.push(`<text x="${n(l.x + r.x + r.w / 2)}" y="${n(l.y)}" text-anchor="middle" ${font} style="${style}">${esc(r.text)}</text>`);
@@ -135,7 +142,7 @@ export function linkTitle(a) {
 
 /** @font-face rules for report fonts served from /fonts (uploaded ones from /fonts/custom). */
 export function fontFaceCss(keys, base = '/fonts') {
-  return keys.map((k) => {
+  return keys.filter(k => !isStandard(k)).map((k) => { // a standard PDF font has no file: the text names it (fontAttrs)
     const file = fontFile(k), range = unicodeRange(k); // a script fallback downloads only for text in its script
     return `@font-face{font-family:"${fontFamilyCss(k)}";src:url("${base}/${file}")${file.endsWith('.ttf') ? ' format("truetype")' : ''};font-display:block${range ? `;unicode-range:${range}` : ''}}`;
   }).join('\n');

@@ -11,7 +11,7 @@
 //   visuals; a shape or line only when it has alt text, else decoration), Link > OBJR, Form > OBJR.
 // Reading order: the page model's order (the order the engine lays items out: by position, column by column).
 // Checked with veraPDF's PDF/UA-1 profile (tests/engine/export-pdfua.test.js).
-import { PDFName, PDFNumber, PDFHexString, PDFDict, PDFArray, PDFString } from 'pdf-lib';
+import { PDFName, PDFNumber, PDFHexString, PDFDict, PDFArray, PDFString } from '../engine/lazylibs.js'; // set once exportPdf has loaded pdf-lib
 import { figures, altOf, cellVisuals } from './figures.js';
 import { visualLines } from './regions.js';
 
@@ -46,6 +46,7 @@ export function createTagger(model, doc) {
     /** A link annotation of item ii (or a field's widget): its structure element; returns its StructParent key. */
     annot(pi, ii, ref, kind) {
       const p = plans[pi].get(ii);
+      if (p?.link) { p.link.kids.push({ objr: ref, pi }); annots.push({ ref, el: p.link, pi }); return; } // a contents entry: its one Link holds the text, the number and this
       const el = node(kind === 'field' ? 'Form' : 'Link');
       // the Link goes into the element of the text it covers when there is one (a P, a TD), else at the end
       (p?.near || root).kids.push(el);
@@ -148,8 +149,30 @@ function plan(model, pg, pi, root) {
   }
   const add = (el) => { root.kids.push(el); el.parent = root; return el; };
   let lastText = null;
+  // a table of contents: TOC > TOCI > Reference > Link, one per entry; the entry's text, its number and its link annotation
+  // are all inside that Link. A TOC runs on across pages; a new one starts when entry numbers start over.
+  const tocLink = (e) => {
+    const toc = (root.toc ||= { el: null, last: -1, entries: new Map() });
+    if (!toc.el || e < toc.last) { toc.el = add(node('TOC')); toc.entries = new Map(); }
+    toc.last = Math.max(toc.last, e);
+    let link = toc.entries.get(e);
+    if (!link) {
+      const toci = node('TOCI'), ref = node('Reference'); link = node('Link');
+      toci.parent = toc.el; toc.el.kids.push(toci);
+      ref.parent = toci; toci.kids.push(ref);
+      link.parent = ref; ref.kids.push(link);
+      toc.entries.set(e, link);
+    }
+    return link;
+  };
   items.forEach((it, i) => {
     if (it.t === 'bookmark') return;
+    if (it.tocEntry != null && (it.t === 'text' || it.t === 'link') && !it.art) {
+      const link = tocLink(it.tocEntry);
+      out.set(i, it.t === 'link' ? { link } : { el: link });
+      return;
+    }
+    if (it.tocTitle && it.t === 'text' && it.lines?.length) { out.set(i, { el: add(node('H1')) }); return; }
     if (it.t === 'link' || it.t === 'field') { out.set(i, { near: lastText && overlaps(lastText.it, it) ? lastText.el : null }); return; }
     const f = figAt.get(i);
     if (f === 'deco') { out.set(i, { art: 'Layout' }); return; }

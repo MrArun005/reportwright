@@ -1,8 +1,7 @@
 'use client';
 // Runs the engine in a Web Worker. Falls back to the main thread if the worker cannot start.
 import { reportFetch, policyKeysIn, fetchPolicy } from './dataFetch.js';
-import { render, FontStore } from '@/engine/index.js';
-import { fontFile, setCustomFonts, SHAPER, ALL_FONT_KEYS } from '@/engine/text/fonts.js';
+import { fontFile, setCustomFonts, isStandard, SHAPER, CORE_FONT_KEY } from '@/engine/text/fonts.js';
 import { createSubsetter } from '@/exporters/subset.js';
 import { fontFamilyCss, fontKeysOf } from '@/exporters/svg.js';
 
@@ -54,10 +53,17 @@ const getFont = async (k) => {
   return (await fetchFont(k)).slice(0); // a copy: the engine may transfer or detach its buffer
 };
 
-export function fontStore() {
-  if (!mainStore) mainStore = new FontStore(getFont);
-  return mainStore;
+// The engine (layout, expressions, charts, maps, barcodes, fontkit) is not in the viewer's first load: the worker
+// renders. Here it loads on first use: a render on the main thread (no worker), an export, the parameter lists.
+let engineP = null;
+export const loadEngine = () => (engineP ||= import('@/engine/index.js'));
+/** The main thread's FontStore (the engine loads with it). */
+export async function loadFontStore() {
+  const { FontStore } = await loadEngine();
+  return (mainStore ||= new FontStore(getFont));
 }
+/** The choices of the report's parameters (their queries run here): the engine's parameterOptions, loaded when used. */
+export const parameterOptions = async (...a) => (await loadEngine()).parameterOptions(...a);
 
 // The worker file: a sibling of this source in the app (Next bundles it); scripts/build-embed.mjs rewrites the path to
 // ./engine.worker.js, which it builds next to the viewer's chunks, so Vite, webpack and Next bundle it from the package.
@@ -81,7 +87,7 @@ export function customFonts(refresh = false) {
 const faces = new Map();
 export function loadReportFonts(keys) {
   if (typeof document === 'undefined' || !document.fonts || typeof FontFace === 'undefined') return Promise.resolve([]);
-  return Promise.all(keys.filter(k => k !== SHAPER).map((k) => {
+  return Promise.all(keys.filter(k => k !== SHAPER && !isStandard(k)).map((k) => { // a standard PDF font has no file (the SVG names it)
     if (!faces.has(k)) {
       // the same bytes the engine measures with (one download per font), not a url() the browser fetches again
       const bytes = bundledFonts?.[k] ? Promise.resolve(b64ToBuffer(bundledFonts[k])) : fetchFont(k).then(b => b.slice(0));
@@ -94,7 +100,15 @@ export function loadReportFonts(keys) {
     return faces.get(k);
   })).then(results => results.filter(Boolean));
 }
-export const loadModelFonts = (model) => loadReportFonts([...new Set([...ALL_FONT_KEYS, ...fontKeysOf(model)])]);
+export const loadModelFonts = (model) => loadReportFonts([...new Set([CORE_FONT_KEY, ...fontKeysOf(model)])]);
+
+let warned = false;
+/** Said once: the report now renders on the main thread (a long task at 100k rows). N1. */
+function workerFailed(reason) {
+  if (warned) return;
+  warned = true;
+  console.warn(`[reportwright] worker did not load (${reason}); rendering on the main thread`);
+}
 
 function getWorker() {
   // main thread: no Worker; fonts bundled in the page or a data snapshot (the offline HTML export); the page's own fetch
@@ -116,16 +130,19 @@ function getWorker() {
       if (e.data.partial) { w.onPartial?.(e.data.model); return; } // the full model follows
       if (e.data.retry) { w.onRetry?.(e.data.retry); return; } // the server was busy: a data source is tried again
       waiting.delete(e.data.id);
+      if (e.data.mainThread) { workerFailed(e.data.mainThread); w.retry(); return; } // a library the worker imports did not load
       if (e.data.ok) w.resolve(e.data.model);
       else w.reject(Object.assign(new Error(e.data.error.message), e.data.error));
     };
-    worker.onerror = () => {
+    worker.onerror = (ev) => {
+      workerFailed(ev?.message || 'the worker file did not load: it was not found or could not be built');
       workerBroken = true;
       worker = null;
       for (const [, w] of waiting) w.retry();
       waiting.clear();
     };
-  } catch {
+  } catch (err) {
+    workerFailed(err?.message || String(err));
     workerBroken = true;
     worker = null;
   }
@@ -144,8 +161,8 @@ const loadReport = async (rid) => {
 };
 export const fetchReport = loadReport;
 async function renderMain(def, params, state, reportId, exportData = false, onRetry = undefined, dataOnly = false) {
-  await customFonts();
-  return render(def, { parameters: params, state, reportId, exportData, dataOnly, fontStore: fontStore(), baseUrl: origin(), loadReport, fetch: reportFetch(origin(), undefined, { onRetry }) }); // a report reads data, never calls our API as the viewer
+  const [{ render }, store] = await Promise.all([loadEngine(), loadFontStore(), customFonts()]);
+  return render(def, { parameters: params, state, reportId, exportData, dataOnly, fontStore: store, lazyFonts: true, baseUrl: origin(), loadReport, fetch: reportFetch(origin(), undefined, { onRetry }) }); // a report reads data, never calls our API as the viewer
 }
 
 /**
@@ -184,7 +201,7 @@ async function iccProfile() {
  * @param {{ tagged?: { lang?: string }, pdfa?: boolean }} [o] tagged: an accessible PDF (PDF/UA); pdfa: PDF/A (2a when tagged)
  */
 export async function pdfBlob(model, title, o = {}) {
-  const store = fontStore();
+  const store = await loadFontStore();
   await customFonts();
   await store.load(fontKeysOf(model));
   const { exportPdf } = await import('@/exporters/pdf.js'); // pdf-lib loads on the first PDF export

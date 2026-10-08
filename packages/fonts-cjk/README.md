@@ -19,7 +19,7 @@ it is written.
 
 ```bash
 npm i @reportwright/engine @reportwright/fonts @reportwright/fonts-cjk
-npx reportwright-fonts-cjk              # into node_modules/@reportwright/fonts-cjk/fonts, where defaultFontStore() looks
+npx reportwright-fonts-cjk              # into the cache folder (below), where defaultFontStore() looks
 npx reportwright-fonts-cjk public/pw/fonts/cjk   # or a folder you serve to the viewer (fontsUrl + cjk/)
 ```
 
@@ -27,6 +27,20 @@ npx reportwright-fonts-cjk public/pw/fonts/cjk   # or a folder you serve to the 
 import { fetchCjkFonts } from '@reportwright/fonts-cjk';
 await fetchCjkFonts();                 // the same, from code (e.g. in your Docker build)
 ```
+
+The fonts go to a cache folder outside `node_modules`, so upgrading or reinstalling the package keeps them:
+
+| | Folder |
+|---|---|
+| `REPORTWRIGHT_FONTS_DIR` set | that folder |
+| `XDG_CACHE_HOME` set | `$XDG_CACHE_HOME/reportwright/fonts-cjk` |
+| Windows | `%LOCALAPPDATA%\reportwright\fonts-cjk` |
+| otherwise | `~/.cache/reportwright/fonts-cjk` |
+
+`defaultFontStore()` reads that folder first, then `node_modules/@reportwright/fonts-cjk/fonts`, where earlier versions
+downloaded them (so an existing install keeps working until its next upgrade). In a Docker image, set
+`REPORTWRIGHT_FONTS_DIR` for both the download step and the server, or run the download as the user the server runs as.
+`cacheDir()` and `fontPath(name)` give the folder and a downloaded file's path from code.
 
 In the ReportWright app repository: `npm run fonts:cjk` (into `public/fonts/cjk`).
 

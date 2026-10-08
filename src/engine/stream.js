@@ -19,7 +19,7 @@ import { baseContext, resolveParameters, ReportError } from './index.js';
 import { validTimeZone, isoDate } from './expr/format.js';
 import { BASE_STYLE, resolveStyle } from './style.js';
 import { evalValue, evaluate, streamable, streamableAst, FOLDS, aggregator, compile, groupKeyText, isDynamic, functionTable } from './expr/evaluate.js';
-import { coerce, detectFields, jsonPath, jsonPathRows, rowFilter, SET_OPS, sortKeys, compareKeys, parseCsv, sourceResponse, csvChar } from './data/index.js';
+import { coerce, badValues, detectFields, jsonPath, jsonPathRows, rowFilter, SET_OPS, sortKeys, compareKeys, parseCsv, sourceResponse, csvChar } from './data/index.js';
 import { jsonRows, csvRows } from './data/stream.js';
 import { textOf, roundFor } from './items/index.js';
 import { rowCells } from './items/cells.js';
@@ -64,10 +64,24 @@ function foldOf(v) {
  * @param {any} def0 the report definition
  * @param {{ format: 'csv'|'xlsx', parameters?: object, timeZone?: string, now?: Date, state?: any, loadReport?: (id: string) => Promise<any>,
  *   reportId?: string, fetch?: typeof fetch, baseUrl?: string, sql?: (src: any, p: any) => Promise<object[]>,
- *   sqlRows?: (src: any, p: any) => AsyncIterable<object[]>, sources?: Record<string, any>, sorter?: (cmp: (a: any, b: any) => number) => any, presorted?: boolean,
+ *   sqlRows?: (src: any, p: any, o: { signal?: AbortSignal }) => AsyncIterable<object[]>, signal?: AbortSignal, sources?: Record<string, any>, sorter?: (cmp: (a: any, b: any) => number) => any, presorted?: boolean,
  *   deadline?: number, timeoutMs?: number, maxRows?: number, maxJsonRowBytes?: number, maxJsonWholeBytes?: number }} opts
  * @returns {Promise<{ why: string } | { why?: undefined, name: string, columns: number[], title: string, timeZone: string|null, locale: string|null, currency: string|null, warnings: string[], rows: () => AsyncGenerator<any>, records: () => AsyncGenerator<any>, grouped: () => AsyncGenerator<any>, fieldList: () => Promise<any[]>, stats: { rows: number } }>}
  */
+/**
+ * The batches of a sqlRows source: an async or sync iterable of arrays of rows, each checked (a single row is a common slip).
+ * @param {Function} sqlRows @param {any} src @param {any} p @param {AbortSignal} [signal]
+ */
+export async function* sqlBatches(sqlRows, src, p, signal) {
+  for await (const b of sqlRows(src, p, { signal })) {
+    if (!Array.isArray(b)) {
+      const what = b && typeof b === 'object' ? `an object with keys ${Object.keys(b).slice(0, 3).join(', ')}${Object.keys(b).length > 3 ? '…' : ''}` : b === null ? 'null' : `a ${typeof b}`;
+      throw new TypeError(`sqlRows must yield arrays of rows (got ${what}); yield [row, …] batches, not single rows`);
+    }
+    yield b;
+  }
+}
+
 export async function planStream(def0, opts) {
   const no = (why) => ({ why });
   if (!def0 || typeof def0 !== 'object' || Array.isArray(def0)) return no('not a definition');
@@ -203,12 +217,12 @@ export async function planStream(def0, opts) {
         yield* jsonRows(res.body ?? await res.text(), ds.path, { maxElementBytes: opts.maxJsonRowBytes ?? 8 * 1048576, maxWholeBytes: opts.maxJsonWholeBytes });
       } else { // sql
         const p = Object.fromEntries(Object.entries(params || {}).map(([k, x]) => [k, Array.isArray(x) ? x.map(day) : day(x)]));
-        if (opts.sqlRows) yield* opts.sqlRows(src, p);
+        if (opts.sqlRows) yield* sqlBatches(opts.sqlRows, src, p, opts.signal);
         else if (opts.sql) yield* inBatches(await opts.sql(src, p));
         else throw new Error('SQL runs on the server');
       }
     } catch (e) {
-      if (e instanceof ReportError) throw e;
+      if (e instanceof ReportError || (opts.signal?.aborted && e === opts.signal.reason)) throw e;
       throw Object.assign(new Error(`Data source "${src.name}": ${e.message}`), { status: e.status });
     }
   }
@@ -225,8 +239,8 @@ export async function planStream(def0, opts) {
   async function* typed() {
     let fields = ds.fields && ds.fields.length ? ds.fields : null;
     let head = fields ? null : [];
-    const bad = new Map();
-    const optFor = (fd) => ({ locale: ds.locale || baseCtx.locale, timeZone: baseCtx.timeZone, bad: (x) => { const b = bad.get(fd.name); if (b) b.n++; else bad.set(fd.name, { n: 1, v: x, type: fd.type }); } });
+    const watch = badValues(ds.name, warn);
+    const optFor = (fd) => watch.opt(fd, { locale: ds.locale || baseCtx.locale, timeZone: baseCtx.timeZone });
     let plain, calc, fopts, cc;
     const failed = new Set();
     const dsRun = (ds.filters || []), tRun = (item.filters || []);
@@ -236,6 +250,7 @@ export async function planStream(def0, opts) {
       for (const r of list) {
         if (++stats.rows > maxRows) throw Object.assign(new Error(`The data has more than ${maxRows.toLocaleString('en-US')} rows, the most a streaming export reads (PW_STREAM_MAX_ROWS). Filter it.`), { status: 413 });
         if ((stats.rows & 255) === 0) overTime();
+        watch.at(stats.rows);
         const o = {};
         for (const fd of plain) o[fd.name] = coerce(fd.path ? jsonPath(r, fd.path) : r?.[fd.name], fd.type, fopts.get(fd));
         if (calc.length) {
@@ -260,6 +275,7 @@ export async function planStream(def0, opts) {
     };
     if (fields) ready(fields);
     for await (const batch of raw()) {
+      opts.signal?.throwIfAborted();
       if (head) { // no declared fields: guessed from the first 50 rows, as buildDataSets does
         for (const r of batch) head.push(r);
         if (head.length < 50) continue;
@@ -271,7 +287,7 @@ export async function planStream(def0, opts) {
       yield build(batch);
     }
     if (head) { ready(detectFields(head, { dates: ds.detectDates !== false })); yield build(head); }
-    for (const [f, b] of bad) warn(`Data set "${ds.name}", field "${f}": ${b.n} value${b.n > 1 ? 's do' : ' does'} not read as ${b.type === 'date' ? 'a date' : 'a number'} (for example "${String(b.v).slice(0, 40)}"), so ${b.n > 1 ? 'they are' : 'it is'} blank.`);
+    watch.done();
   }
 
   // ---- order: the table's sort, then the data set's (stable), then the groups (first seen, or by key)

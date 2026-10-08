@@ -10,6 +10,7 @@ import { figures, figurePicture, figureSvg, rasterize, hexOrNull, altOf, boxOf }
 import { alignOf } from './docx.js';
 import { parseColor } from './color.js';
 import { withDeadline } from './deadline.js';
+import { officeFamily } from '../engine/text/fonts.js';
 import { safeUrl } from '../engine/url.js';
 
 const EMU = 12700; // per point
@@ -143,10 +144,10 @@ async function pptxOf(model, opt) {
           const lIns = it.clip && !it.rich ? Math.max(0, (algn === 'l' || algn === 'just' ? minX - box.x : algn === 'ctr' ? 0 : 0)) : 0;
           const rIns = it.clip && !it.rich && algn === 'r' ? Math.max(0, box.x + box.w - maxX) : 0;
           const f = String(it.font || '');
-          const family = /mono/i.test(f) ? 'JetBrains Mono' : f.split('-')[0] || 'Inter';
+          const family = officeFamily(f);
           const link = href.get(it);
           const hl = link ? `<a:hlinkClick r:id="${rel('hyperlink', link, true)}"/>` : '';
-          const rpr = `<a:rPr lang="${lang}" sz="${Math.max(100, Math.round(it.size * 100))}" b="${/bold/i.test(f) ? 1 : 0}" i="${/italic/i.test(f) ? 1 : 0}"${deco.includes('underline') ? ' u="sng"' : ''}${deco.includes('line-through') ? ' strike="sngStrike"' : ''} dirty="0">${fill(it.color || '#000')}<a:latin typeface="${esc(family)}"/><a:cs typeface="${esc(family)}"/>${hl}</a:rPr>`;
+          const rpr = `<a:rPr lang="${lang}" sz="${Math.max(100, Math.round(it.size * 100))}" b="${/bold/i.test(f) ? 1 : 0}" i="${/italic|oblique/i.test(f) ? 1 : 0}"${deco.includes('underline') ? ' u="sng"' : ''}${deco.includes('line-through') ? ' strike="sngStrike"' : ''} dirty="0">${fill(it.color || '#000')}<a:latin typeface="${esc(family)}"/><a:cs typeface="${esc(family)}"/>${hl}</a:rPr>`;
           const paras = text.map(t => `<a:p><a:pPr algn="${algn}"><a:lnSpc><a:spcPts val="${Math.max(100, Math.round(gap * 100))}"/></a:lnSpc></a:pPr><a:r>${rpr}<a:t>${esc(t)}</a:t></a:r></a:p>`).join('');
           const body = `<p:txBody><a:bodyPr wrap="${it.clip && !it.rich && text.length > 1 ? 'square' : 'none'}" lIns="${e(lIns)}" tIns="${e(top)}" rIns="${e(rIns)}" bIns="0" anchor="t" rtlCol="0"><a:noAutofit/></a:bodyPr><a:lstStyle/>${paras}</p:txBody>`;
           shapes.push(sp('Text', box.x, box.y, box.w, box.h, '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/>', body, rot(it)));

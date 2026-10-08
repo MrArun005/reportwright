@@ -63,6 +63,8 @@ export function sweepAtBoot(root = node('node:os').tmpdir()) {
 
 export function spillSorter({ run = 20000, runBytes = 24 * 1048576, frame = 1000, maxMB = 2048, totalMB = 8192, dir: root = node('node:os').tmpdir(), staleMs = 180000 } = {}) {
   const fs = node('node:fs'), path = node('node:path'), v8 = node('node:v8'), { threadId } = node('node:worker_threads');
+  // a folder that is not there (or not writable) says so now, not as a raw mkdtemp error when the first run is written
+  try { fs.accessSync(root, fs.constants.W_OK); } catch { throw Object.assign(new Error(`spill.dir "${root}" does not exist or is not writable`), { status: 400 }); }
   sweepStale(root, staleMs);
   /** @param {(a: any, b: any) => number} cmp */
   return (cmp) => {

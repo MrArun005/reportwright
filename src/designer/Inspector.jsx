@@ -1,6 +1,6 @@
 'use client';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { allNames, cloneWithIds, isContentKey } from './store.js';
+import { allNames, cloneWithIds, isContentKey, setMatrixShow } from './store.js';
 import { useDesigner, findItem, updateItem, deleteSelection, duplicateSelection, sectionList, secOf, isBodyKey, addBodySection, removeBodySection, walk, tableParts, rowsOf, selCells,
   tableInsertColumn, tableDeleteColumn, tableInsertRow, tableDeleteRow, tableSetColumnWidth, tableMergeRight, tableSplit, tableMergeDown, tableSplitRows, tableSync, tableAddGroup, tableRemoveGroup, round, growToFit, uploadImages } from './store.js';
 import { normalizeMatrix, isTablix } from '@/engine/items/pivot.js';
@@ -87,11 +87,11 @@ export default function Inspector() {
 }
 
 /* ---------------------------------------------------------------- shared */
-function Geo({ label, value, onChange }) {
+function Geo({ label, value, onChange, min }) {
   const unit = useDesigner(s => s.unit);
   return (
     <Field label={`${label} (${unit})`}>
-      <NumberInput value={round(fromPt(value ?? 0, unit) * 100) / 100} step={unit === 'pt' ? 1 : unit === 'in' ? 0.05 : 0.5} onChange={v => onChange(round(toPt(v, unit)))} />
+      <NumberInput value={round(fromPt(value ?? 0, unit) * 100) / 100} min={min == null ? undefined : round(fromPt(min, unit) * 100) / 100} step={unit === 'pt' ? 1 : unit === 'in' ? 0.05 : 0.5} onChange={v => onChange(round(toPt(v, unit)))} />
     </Field>
   );
 }
@@ -172,16 +172,16 @@ function PaletteEditor({ label, value, onChange }) {
   );
 }
 
-let reportList = null;
+const reportLists = new Map(); // server → report list (designers on different servers must not share one: N17)
 /** Report ids for drill-through and subreports: a list to pick from, still free text (an =expression works). */
 function ReportPicker({ value, onChange }) {
-  const [list, setList] = useState(reportList || []);
+  const [list, setList] = useState(() => reportLists.get(useDesigner.getState().embed?.server || '') || []);
   const listId = useState(() => `reports-${Math.random().toString(36).slice(2, 8)}`)[0];
   useEffect(() => {
     const embed = useDesigner.getState().embed;
-    if (reportList || (embed && !embed.server)) return; // standalone: no saved reports
     const server = embed?.server || '';
-    fetch(`${server}/api/reports`).then(r => (r.ok ? r.json() : [])).then(l => { reportList = Array.isArray(l) ? l : []; setList(reportList); }).catch(() => {});
+    if (reportLists.has(server) || (embed && !embed.server)) return; // standalone: no saved reports
+    fetch(`${server}/api/reports`).then(r => (r.ok ? r.json() : [])).then(l => { const v = Array.isArray(l) ? l : []; reportLists.set(server, v); setList(v); }).catch(() => {});
   }, []);
   return (
     <>
@@ -264,8 +264,8 @@ function ItemProps({ item, section, openExpr }) {
         <div className="grid2">
           <Geo label="X" value={item.x} onChange={v => setGeo('x', Math.max(0, v))} />
           <Geo label="Y" value={item.y} onChange={v => setGeo('y', Math.max(0, v))} />
-          {item.type !== 'table' && <Geo label={T('i_width')} value={item.w} onChange={v => setGeo('w', Math.max(0, v))} />}
-          {item.type !== 'table' && <Geo label={T('i_height')} value={item.h} onChange={v => setGeo('h', Math.max(0, v))} />}
+          {item.type !== 'table' && <Geo label={T('i_width')} value={item.w} min={item.type === 'line' ? 0 : 1} onChange={v => setGeo('w', Math.max(0, v))} />}
+          {item.type !== 'table' && <Geo label={T('i_height')} value={item.h} min={item.type === 'line' ? 0 : 1} onChange={v => setGeo('h', Math.max(0, v))} />}
           {item.type === 'table' && <Field label={T('tableSize')} hint={T('tableSizeHint')}><TextInput value={`${round(item.w)} × ${round(item.h)} pt`} readOnly data-testid="table-size" /></Field>}
         </div>
         <div className="hint">{(() => { const band = sectionList(def).find(s => s.key === section)?.label || section, parent = findItem(def, item.id)?.parent; return parent ? T('i_whereParent', { band, parent: parent.name }) : T('i_where', { band }); })()}</div>
@@ -419,7 +419,7 @@ function PivotEditor({ item, openExpr }) {
               <Field label={T('groupExpandLevels')}><NumberInput value={g.expandLevels ?? ''} step={1} onChange={v => setK(list, i, 'expandLevels', Number.isFinite(v) && v >= 0 ? Math.round(v) : undefined)} /></Field>
             </div>}
           </>}
-          {(i < spec[list].length - 1 || (list === 'rowGroups' && g.parent)) && <Check label={T('pivotCollapsible')} checked={g.collapsible} onChange={v => setK(list, i, 'collapsible', v)} />}
+          {(i < spec[list].length - 1 || (list === 'rowGroups' && g.parent)) && <Check label={T('pivotCollapsible')} checked={g.collapsible} onChange={v => edit(it => { const o = it[list][i]; if (v) { o.collapsible = true; o.initiallyCollapsed = true; } else { delete o.collapsible; delete o.initiallyCollapsed; } }, `${item.id}.${list}${i}.collapsible`)} />} {/* starts closed, as a table's drill-down toggle does */}
           {g.collapsible && <Check label={T('pivotStartCollapsed')} checked={g.initiallyCollapsed} onChange={v => setK(list, i, 'initiallyCollapsed', v)} />}
           <div data-testid={`pivot-${list}${i}-action`}><ActionEditor label={T('ux_headerAction')} value={g.action} onChange={v => setK(list, i, 'action', v)} openExpr={openExpr} dataSet={item.dataSet} /></div>
           {g.total && g.total !== 'none' && <div data-testid={`pivot-${list}${i}-total-action`}><ActionEditor label={T('ux_totalAction')} value={g.totalAction} onChange={v => setK(list, i, 'totalAction', v)} openExpr={openExpr} dataSet={item.dataSet} /></div>}
@@ -442,7 +442,7 @@ function PivotEditor({ item, openExpr }) {
             <div className="grid2">
               <Field label={T('pivotLabel')}><TextInput value={v.label || ''} onChange={x => setK('values', i, 'label', x)} /></Field>
               <Field label={T('pivotFormat')}><TextInput value={v.format || ''} onChange={x => setK('values', i, 'format', x)} placeholder="N0" /></Field>
-              <Field label={T('pivotShow')}><Select value={v.show || 'value'} options={shows} onChange={x => setK('values', i, 'show', x === 'value' ? undefined : x)} /></Field>
+              <Field label={T('pivotShow')}><Select value={v.show || 'value'} options={shows} onChange={x => edit(it => setMatrixShow(it.values[i], x), `${item.id}.values${i}.show`)} /></Field>
             </div>
             <div data-testid={`pivot-values${i}-action`}><ActionEditor label={T('ux_cellAction')} value={v.action} onChange={x => setK('values', i, 'action', x)} openExpr={openExpr} dataSet={item.dataSet} /></div>
             <Field label={T('cellBookmark')}>{exprField('values', i, 'bookmark', v.bookmark, T('cellBookmark'))}</Field>
@@ -754,10 +754,12 @@ function VisualEditor({ cell, setCell, openExpr, dataSet }) {
 /** A report's parameters, for the drill-through mapping: { name, required, prompt }[] (null while loading or unknown). */
 const reportParams = new Map();
 function useReportParams(id) {
-  const [list, setList] = useState(() => reportParams.get(id) ?? null);
+  const srv = () => useDesigner.getState().embed?.server || '';
+  const [list, setList] = useState(() => reportParams.get(`${srv()} ${id}`) ?? null);
   useEffect(() => {
     if (!id || isDynamic(id)) { setList(null); return; }
-    if (reportParams.has(id)) { setList(reportParams.get(id)); return; }
+    const key = `${srv()} ${id}`;
+    if (reportParams.has(key)) { setList(reportParams.get(key)); return; }
     let alive = true;
     const embed = useDesigner.getState().embed;
     if (embed && !embed.server) { setList(null); return; } // standalone: no saved reports
@@ -765,7 +767,7 @@ function useReportParams(id) {
     fetch(`${server}/api/reports/${encodeURIComponent(id)}`).then(r => (r.ok ? r.json() : null)).then(r => {
       const d = r?.definition || r;
       const ps = d && typeof d === 'object' ? (d.parameters || []).map(p => ({ name: p.name, required: !!p.required && p.default == null, prompt: p.prompt })) : null;
-      if (ps) reportParams.set(id, ps);
+      if (ps) reportParams.set(key, ps);
       if (alive) setList(ps);
     }).catch(() => { if (alive) setList(null); });
     return () => { alive = false; };

@@ -1186,6 +1186,7 @@ register('field', {
   props: [
     { key: 'kind', label: 'Kind', type: 'select', options: FIELD_KINDS, category: 'Field' },
     { key: 'fieldName', label: 'Field name (unique; {Fields.x} allowed)', type: 'expr', category: 'Field' },
+    { key: 'label', label: 'Label (the name a screen reader says)', type: 'expr', category: 'Field' },
     { key: 'value', label: 'Starting value', type: 'expr', category: 'Field' },
     { key: 'options', label: 'Choices (comma-separated or =expression)', type: 'expr', category: 'Field' },
     { key: 'required', label: 'Required', type: 'bool', category: 'Field' },
@@ -1201,6 +1202,8 @@ register('field', {
     const kind = FIELD_KINDS.includes(item.kind) ? item.kind : 'text';
     // "." means a field hierarchy in PDF forms; spaces trip some readers
     const name = String(evalSafe(item.fieldName || item.name || 'field', ctx, lc, who).v || 'field').replace(/[.\s]+/g, '_');
+    const lab = item.label ?? item.tooltip; // the accessible name (a tagged PDF's /TU)
+    const label = lab == null || lab === '' ? '' : String(evalSafe(lab, ctx, lc, who).v ?? '');
     const raw = evalSafe(item.value ?? '', ctx, lc, who).v;
     let options = [];
     if (kind === 'choice') {
@@ -1219,7 +1222,7 @@ register('field', {
       if (kind === 'choice') draw.push({ t: 'path', x: item.x + item.w - 10, y: item.h / 2 - 2, d: 'M 0 0 L 3 3 L 6 0', stroke: '#6b7280', strokeWidth: 1, fill: null });
     }
     const field = {
-      t: 'field', kind, name, value, options, required: !!item.required, readOnly: !!item.readOnly,
+      t: 'field', kind, name, ...(label ? { label } : {}), value, options, required: !!item.required, readOnly: !!item.readOnly,
       x: item.x, y: 0, w: item.w, h: item.h, font: resolveFontKey(st.fontFamily, st.fontWeight, st.fontStyle), size: Number(st.fontSize) || 9, draw,
     };
     return { height: item.h, units: [{ top: 0, height: item.h, items: [field] }] };
@@ -1623,7 +1626,9 @@ register('toc', {
     if (item.title) {
       const tst = { ...st, fontWeight: 'bold', fontSize: (Number(st.fontSize) || 9) * 1.5, padding: [0, 0, 6, 0] };
       const tl = layoutTextLines(String(item.title), tst, item.w, lc.m);
-      units.push({ top: 0, height: tl.needed, items: paintBox({ x: item.x, y: 0, w: item.w, h: tl.needed, st: tst, tl, m: lc.m }), keepWithNext: true });
+      const ti = paintBox({ x: item.x, y: 0, w: item.w, h: tl.needed, st: tst, tl, m: lc.m });
+      for (const x of ti) if (x.t === 'text') x.tocTitle = true; // the tagged PDF's heading for the contents
+      units.push({ top: 0, height: tl.needed, items: ti, keepWithNext: true });
       y += tl.needed;
     }
     const fromHeadings = item.source === 'headings';
@@ -1649,10 +1654,10 @@ register('toc', {
       const lw = lc.m.width(label, key, size);
       const base = (lh - size) / 2 + ascent * 0.9;
       const items = [
-        { t: 'text', font: key, size, color: st.color || '#111', lines: [{ x: item.x + indent, y: base, text: label, w: lw }] },
+        { t: 'text', font: key, size, color: st.color || '#111', lines: [{ x: item.x + indent, y: base, text: label, w: lw }], tocEntry: e.i },
         { t: 'line', x1: item.x + indent + lw + 4, y1: base, x2: item.x + item.w - nw - 4, y2: base, stroke: '#9ca3af', strokeWidth: 0.6, dash: [0.6, 2.4], tocDots: e.i },
-        { t: 'text', font: key, size, color: st.color || '#111', lines: [{ x: item.x + item.w - nw, y: base, text: num, w: nw }], tocPage: e.i },
-        { t: 'link', x: item.x, y: 0, w: item.w, h: lh, action: e.heading && typeof e.page === 'number' ? { type: 'bookmark', target: e.label, page: e.page, y: e.y } : { type: 'bookmark', target: e.label }, tocLink: e.i },
+        { t: 'text', font: key, size, color: st.color || '#111', lines: [{ x: item.x + item.w - nw, y: base, text: num, w: nw }], tocPage: e.i, tocEntry: e.i },
+        { t: 'link', x: item.x, y: 0, w: item.w, h: lh, action: e.heading && typeof e.page === 'number' ? { type: 'bookmark', target: e.label, page: e.page, y: e.y } : { type: 'bookmark', target: e.label }, tocLink: e.i, tocEntry: e.i },
       ];
       units.push({ top: y, height: lh, items });
       y += lh;
