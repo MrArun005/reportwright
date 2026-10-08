@@ -1325,7 +1325,8 @@ register('barcode', {
     const ctx = lc.ctxFor(item);
     if (hidden(item, ctx, lc)) return { height: 0, units: [] };
     const st = resolveStyle([lc.base, lc.named?.[item.styleName], item.style], ctx);
-    const r = evalSafe(item.value ?? '', ctx, lc, item.name || 'Barcode');
+    const who = item.name || `Barcode at (${item.x}, ${item.y})`; // an unnamed item is named by its type and place
+    const r = evalSafe(item.value ?? '', ctx, lc, who);
     const text = r.err ? '' : textOf(r.v, st, ctx, lc);
     const size = Number(st.fontSize) || 8;
     const show = item.showText !== false;
@@ -1341,7 +1342,7 @@ register('barcode', {
     const bc = paintBarcode({ type: item.symbology || 'code128', text, x: bx + q, y: by + q, w: bw - 2 * q, h: bh - 2 * q, color: st.color || '#000', showText: show, textHeight: th, captionAbove: above, options: bwipOptions(item) });
     let items = [...bc.items];
     if (bc.error) {
-      lc.warn(`${item.name}: ${bc.error}`);
+      lc.warn(`${who}: ${bc.error}`);
       const tl = layoutTextLines(`Barcode error: ${bc.error}`, { ...st, color: '#b91c1c' }, item.w, lc.m);
       return { height: item.h, units: [{ top: 0, height: item.h, items: paintBox({ x: item.x, y: 0, w: item.w, h: item.h, st: { ...st, color: '#b91c1c', border: '0.5 dashed #b91c1c' }, tl, m: lc.m }) }] };
     }
