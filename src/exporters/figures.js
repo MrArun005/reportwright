@@ -206,7 +206,7 @@ export async function rasterize(svg, w, h, opt = {}) {
     }
     if (/** @type {any} */ (globalThis).process?.versions?.node) {
       const name = 'sharp'; // not bundled for the browser: a runtime import in Node only
-      const sharp = (await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ name)).default;
+      const sharp = (await import(/* @vite-ignore */ /* webpackIgnore: true */ /* turbopackIgnore: true */ name)).default;
       return new Uint8Array(await sharp(Buffer.from(svg), { density: 72 * scale }).resize(W, H, { fit: 'fill' }).png().toBuffer());
     }
   } catch { /* no rasteriser: SVG only */ }
