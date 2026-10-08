@@ -2,7 +2,7 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
-## 0.13.1 — unreleased
+## 0.13.1 — 2026-10-09
 
 ### Fixed
 - **N10: the CJK fonts are named Regular in the PDF.** `@reportwright/fonts-cjk` downloads variable TrueType fonts whose default instance is Thin; 0.13.0 cut and renamed the subset at Regular, but `exportPdf` and `exportPdfStream` built the BaseFont from the full font's PostScript name, so pdffonts showed `NotoSansJP-Thin` / `NotoSansKR-Thin`. Both now take the name from the subset they embed (`NotoSansJP-Regular`). Test: tests/engine/b11-cjk-names.test.js (the downloaded fonts are tested when present).
