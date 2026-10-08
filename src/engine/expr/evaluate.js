@@ -244,14 +244,38 @@ function dec(x) {
   }
   return null;
 }
-/** a + b on the decimal values. */
+/**
+ * x as [BigInt integer, scale] from its shortest decimal form (String(x)), exact at any size; null when it has none
+ * (NaN, Infinity, or more than 15 decimals).
+ */
+function decBig(x) {
+  const m = Number.isFinite(x) ? /^(-?)(\d+)(?:\.(\d+))?(?:e([+-]\d+))?$/.exec(String(x)) : null;
+  if (!m) return null;
+  const frac = m[3] || '';
+  let scale = frac.length - Number(m[4] || 0), digits = m[2] + frac;
+  if (scale < 0) { digits += '0'.repeat(-scale); scale = 0; }
+  return scale > 15 ? null : [BigInt(m[1] + digits), scale];
+}
+/** the decimal t / 10^k as the double nearest to it (the parse of its digits is correctly rounded). */
+function decNum(t, k) {
+  const neg = t < 0n;
+  let s = (neg ? -t : t).toString().padStart(k + 1, '0');
+  if (k) s = `${s.slice(0, -k)}.${s.slice(-k)}`;
+  return Number((neg ? '-' : '') + s);
+}
+/** a + b on the decimal values. Past 2^49 a scaled integer leaves the fast path: the sum is then BigInt arithmetic. */
 export function decAdd(a, b) {
   if (Number.isInteger(a) && Number.isInteger(b)) return a + b;
   const x = dec(a), y = dec(b);
-  if (!x || !y) return a + b;
-  const k = Math.max(x[1], y[1]);
-  const p = x[0] * P10[k - x[1]], q = y[0] * P10[k - y[1]], t = p + q;
-  return Number.isSafeInteger(p) && Number.isSafeInteger(q) && Number.isSafeInteger(t) ? t / P10[k] : a + b;
+  if (x && y) {
+    const k = Math.max(x[1], y[1]);
+    const p = x[0] * P10[k - x[1]], q = y[0] * P10[k - y[1]], t = p + q;
+    if (Number.isSafeInteger(p) && Number.isSafeInteger(q) && Number.isSafeInteger(t)) return t / P10[k];
+  }
+  const X = decBig(a), Y = decBig(b);
+  if (!X || !Y) return a + b;
+  const k = Math.max(X[1], Y[1]);
+  return decNum(X[0] * 10n ** BigInt(k - X[1]) + Y[0] * 10n ** BigInt(k - Y[1]), k);
 }
 /** a * b on the decimal values. */
 export function decMul(a, b) {
