@@ -419,7 +419,7 @@ function PivotEditor({ item, openExpr }) {
               <Field label={T('groupExpandLevels')}><NumberInput value={g.expandLevels ?? ''} step={1} onChange={v => setK(list, i, 'expandLevels', Number.isFinite(v) && v >= 0 ? Math.round(v) : undefined)} /></Field>
             </div>}
           </>}
-          {(i < spec[list].length - 1 || (list === 'rowGroups' && g.parent)) && <Check label={T('pivotCollapsible')} checked={g.collapsible} onChange={v => setK(list, i, 'collapsible', v)} />}
+          {(i < spec[list].length - 1 || (list === 'rowGroups' && g.parent)) && <Check label={T('pivotCollapsible')} checked={g.collapsible} onChange={v => edit(it => { const o = it[list][i]; if (v) { o.collapsible = true; o.initiallyCollapsed = true; } else { delete o.collapsible; delete o.initiallyCollapsed; } }, `${item.id}.${list}${i}.collapsible`)} />} {/* starts closed, as a table's drill-down toggle does */}
           {g.collapsible && <Check label={T('pivotStartCollapsed')} checked={g.initiallyCollapsed} onChange={v => setK(list, i, 'initiallyCollapsed', v)} />}
           <div data-testid={`pivot-${list}${i}-action`}><ActionEditor label={T('ux_headerAction')} value={g.action} onChange={v => setK(list, i, 'action', v)} openExpr={openExpr} dataSet={item.dataSet} /></div>
           {g.total && g.total !== 'none' && <div data-testid={`pivot-${list}${i}-total-action`}><ActionEditor label={T('ux_totalAction')} value={g.totalAction} onChange={v => setK(list, i, 'totalAction', v)} openExpr={openExpr} dataSet={item.dataSet} /></div>}
