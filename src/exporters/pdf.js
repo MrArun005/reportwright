@@ -128,29 +128,36 @@ async function pdfOf(model, fontStore, opt) {
     return fonts.get(key);
   };
   const images = new Map();
+  /** the picture for a source: { img } (embedded) or { why }, the reason it is left out */
   const image = async (src) => {
     if (images.has(src)) return images.get(src);
-    let img = null;
-    try {
-      let bytes = null;
-      if (/^data:/i.test(src)) bytes = dataUriBytes(src) <= IMAGE_LIMITS.bytes ? dataUriBytesOf(src) : null;
-      else if (opt.fetchImage) bytes = await opt.fetchImage(src);
-      const info = bytes && bytes.length <= IMAGE_LIMITS.bytes ? imageInfoOf(bytes) : null;
-      if (info?.type === 'svg') {
-        const svg = parseSvg(new TextDecoder().decode(bytes));
-        if (svg) img = { svg, width: svg.w, height: svg.h };
-      } else if (info?.type === 'png') {
-        // a small PNG can inflate to gigabytes: refuse very large pixel counts before decoding
-        // the size is read the way the decoder reads it (last IHDR); animated or multi-IHDR files are refused
-        // a cut or damaged PNG can hang pdf-lib's decoder: checked first, left out with a warning
-        const why = 'w' in info && !(/** @type {any} */ (info).suspect) && info.w * info.h <= IMAGE_LIMITS.pixels ? pngProblem(bytes) : 'too large or animated';
-        if (why) opt.onWarning?.(`An image was left out: the PNG is not usable (${why})`);
-        else img = await doc.embedPng(bytes);
-      } else if (info?.type === 'jpeg') img = await doc.embedJpg(bytes);
-    } catch { img = null; }
-    images.set(src, img);
-    return img;
+    const out = await loadImage(src).catch((e) => ({ img: null, why: `it could not be embedded (${e?.message || e})` }));
+    images.set(src, out);
+    return out;
   };
+  async function loadImage(src) {
+    const local = /^data:/i.test(src);
+    if (local && dataUriBytes(src) > IMAGE_LIMITS.bytes) return { img: null, why: 'it is larger than the image size limit' };
+    if (!local && !opt.fetchImage) return { img: null, why: 'it is a URL, and no fetchImage was given to load it' };
+    const bytes = local ? dataUriBytesOf(src) : await opt.fetchImage(src);
+    if (!bytes?.length) return { img: null, why: 'it could not be loaded' };
+    if (bytes.length > IMAGE_LIMITS.bytes) return { img: null, why: 'it is larger than the image size limit' };
+    const info = imageInfoOf(bytes);
+    if (info?.type === 'svg') {
+      const svg = parseSvg(new TextDecoder().decode(bytes));
+      return svg ? { img: { svg, width: svg.w, height: svg.h } } : { img: null, why: 'the SVG could not be read' };
+    }
+    if (info?.type === 'png') {
+      // a small PNG can inflate to gigabytes: refuse very large pixel counts before decoding
+      // the size is read the way the decoder reads it (last IHDR); animated or multi-IHDR files are refused
+      // a cut or damaged PNG can hang pdf-lib's decoder: checked first, left out with a warning
+      const why = 'w' in info && !(/** @type {any} */ (info).suspect) && info.w * info.h <= IMAGE_LIMITS.pixels ? pngProblem(bytes) : 'too large or animated';
+      return why ? { img: null, why: `the PNG is not usable (${why})` } : { img: await doc.embedPng(bytes) };
+    }
+    if (info?.type === 'jpeg') return { img: await doc.embedJpg(bytes) };
+    // GIF and WebP are not decoded here (no decoder without a new dependency): left out, with a warning
+    return { img: null, why: info ? `${info.type.toUpperCase()} is not embedded (PNG, JPEG and SVG are)` : 'it is not a PNG, JPEG or SVG' };
+  }
 
   // One Resources dictionary for every page: fonts, opacity states and images are named once per document.
   const ctx = doc.context;
@@ -351,8 +358,12 @@ async function pdfOf(model, fontStore, opt) {
           break;
         }
         case 'image': {
-          const img = await image(it.src);
-          if (!img) break;
+          const { img, why } = await image(it.src);
+          if (!img) {
+            const alt = it.tag?.alt;
+            opt.onWarning?.(`Image on page ${pi + 1} (${alt ? `"${alt}"` : String(it.src).slice(0, 40)}) was left out: ${why}`);
+            break;
+          }
           let w = it.w, h = it.h, x = it.x, y = it.y;
           // clip: the image at its natural size (w, h) from the box's top-left corner, cut to the box (cw, ch)
           const clipBox = it.fit === 'clip' ? [it.x, H - it.y - it.ch, it.cw, it.ch] : it.fit === 'cover' ? [it.x, H - it.y - it.h, it.w, it.h] : null;
