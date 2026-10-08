@@ -2,6 +2,25 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
+## Unreleased
+
+### Fixed
+- **BIRT import: SUM and other aggregates total their column.** A bound column with `aggregateFunction` (SUM, AVE,
+  MIN, MAX, FIRST, LAST…) had no listed argument, so it fell back to a row count: `Sum(1, …)` showed 3 for a total of
+  250.75. The column's own expression is now the argument. An aggregate with no expression is counted as approximated.
+  The Jasper and SSRS importers were checked: they already take the expression.
+- **Docs: no npm provenance badge.** The repository is private, so npm provenance cannot be generated. The badges and
+  the claims are removed from the package READMEs and `docs/RELEASING.md`; the publish workflow stays, and its notes say
+  provenance needs a public repository.
+- **Docs: the viewer's `data` example** says which shape matches the data set's path: `{ orders: { rows: [...] } }` for
+  `"path": "$.rows"`, `{ orders: [...] }` for a data set with no path. A mismatch gives empty tables, silently.
+- **Docs: a missing font** stops the viewer's run with a message naming the font and a Retry button; the README said the
+  report draws in a fallback font, which it does not.
+- **Docs: the engine README** says `pw` is in `@reportwright/cli`, and its quick start has a `statement.pw.json` to save.
+- **CLI help** marks `pw audit` and `pw migrate-storage` as server only; the npm CLI does not include them.
+- **Engine text:** the CJK font warning names `npx reportwright-fonts-cjk` first (the app's `npm run fonts:cjk` second),
+  and the deprecated positional export forms say they are removed in 1.0.
+
 ## 0.12.0 — 2026-10-09
 
 Streaming PDF: very large reports are written page by page, with flat memory.
