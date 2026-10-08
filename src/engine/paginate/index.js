@@ -190,6 +190,13 @@ export function paginate(units, tables, pageH, warn) {
         }
       }
     }
+    // a page with nothing on it (its break falls above the first unit still to place, e.g. a page break inside a
+    // keep-together block): the page starts at that unit instead of making a blank page
+    if (!moved && !cut) {
+      let g = firstAtOrAfter(top - EPS);
+      while (g < units.length && placed.has(units[g])) g++;
+      if (g < units.length && units[g].top >= bottom - EPS) { top = units[g].top; continue; }
+    }
     const onPage = [];
     for (let i = firstAtOrAfter(top - EPS); i < units.length && units[i].top < bottom - EPS; i++) {
       const u = units[i];
