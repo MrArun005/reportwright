@@ -460,7 +460,7 @@ export function duplicateSelection() {
       const f = findItem(d, id);
       if (!f) continue;
       const copy = cloneWithIds(f.item, used);
-      copy.x += PASTE_OFFSET; copy.y += PASTE_OFFSET; // as a paste: not exactly on top of the original (N37)
+      offsetCopy(f.list, copy); // as a paste: not on top of the original, nor of an earlier copy (N37)
       growToFit(d, { ...f, item: copy });
       f.list.push(copy);
       newIds.push(copy.id);
@@ -471,6 +471,17 @@ export function duplicateSelection() {
 
 /* ---- clipboard: copy / paste items, also across reports (JSON on the system clipboard) ---- */
 const PASTE_OFFSET = 12;
+/** A copy goes 12 pt right and down, and 12 more while an item already sits there (an earlier copy): repeated copies
+ *  cascade instead of stacking (N37). @param {any[]} list the items the copy joins @param {any} c */
+function offsetCopy(list, c) {
+  // pasted JSON is not trusted: a coordinate that is not a finite number (1e309 parses to Infinity) starts at 0, and
+  // the steps are bounded (list.length + 1 spots cannot all be taken; past 2^53, += 12 changes nothing)
+  for (const k of ['x', 'y']) if (!Number.isFinite(c[k])) c[k] = 0;
+  for (let n = 0; n <= list.length; n++) {
+    c.x += PASTE_OFFSET; c.y += PASTE_OFFSET;
+    if (!list.some(i => i !== c && i.x === c.x && i.y === c.y)) return;
+  }
+}
 const CLIP = 'pagewright/items@1'; // kept after the rename: copy and paste between 0.8 and 0.9 tabs
 export async function copySelection() {
   const { sel, def } = S();
@@ -496,8 +507,8 @@ export function pasteItems(section = 'body', text = null) {
     const used = allNames(d);
     for (const it of data.items) {
       const c = cloneWithIds(it, used);
-      c.x += PASTE_OFFSET; c.y += PASTE_OFFSET;
       if (c.type === 'table' && !isBodyKey(section)) continue;
+      offsetCopy(secOf(d, section).items, c);
       secOf(d, section).items.push(c);
       growToFit(d, { section, parent: null, item: c });
       ids.push(c.id);

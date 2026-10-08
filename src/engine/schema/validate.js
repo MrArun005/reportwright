@@ -5,7 +5,7 @@ import { symbologyError } from '../items/barcode.js';
 import { rowCells } from '../items/cells.js';
 import { REPORT_SCHEMA } from './report.schema.js';
 import { toDate } from '../expr/format.js';
-import { PAGE_SIZES, normalizePageSize } from '../units.js';
+import { PAGE_SIZES, normalizePageSize, resolvePage } from '../units.js';
 
 export const SCHEMA_ID = 'pagewright/report@1'; // kept after the rename: every saved report carries it
 export const SCHEMA_ALIAS = 'reportwright/report@1'; // the same format under the new name
@@ -335,7 +335,25 @@ export function validate(def) {
     if (typeof f?.body !== 'string') continue;
     try { for (const m of callIssues(compile(f.body.replace(/^=/, '')), custom, didYouMean)) callErr(`Function "${f.name}"`, m); } catch { /* checkFunctions says it */ }
   }
-  return { errors, warnings, exprErrors, checkOnly };
+  // SILENT-6: an item taller than the room the page has for the body (the page less its margins, page header and
+  // footer; a body section's own page and bands count). The paginator cuts such an item at the page bottom (text of
+  // more lines than fit is split first); tables, matrices, lists and subreports split by their rows. render() says it
+  // itself where it cuts (with the page), so these are left out of its warnings (renderSays).
+  const renderSays = [];
+  const band = (own, shared) => (!own || typeof own !== 'object' || Array.isArray(own) ? Number(shared?.height) || 0 : own.hidden ? 0 : Number(own.height) || 0);
+  for (const b of Array.isArray(body) ? body : body ? [body] : []) {
+    if (!b || typeof b !== 'object') continue;
+    const pg = resolvePage({ ...(def.page || {}), ...(b.page && typeof b.page === 'object' ? b.page : {}) });
+    if (pg.pageless) continue;
+    const room = pg.height - pg.margins.top - pg.margins.bottom - band(b.pageHeader, def.sections?.pageHeader) - band(b.pageFooter, def.sections?.pageFooter);
+    for (const it of Array.isArray(b.items) ? b.items : []) {
+      if (!it || typeof it !== 'object' || ['table', 'matrix', 'list', 'subreport', 'toc'].includes(it.type) || !(Number(it.h) > room + 0.5)) continue;
+      const text = it.type === 'textbox' || it.type === 'richtext';
+      const msg = `${it.name || it.type}: it is ${Math.round(it.h)} pt tall, taller than the ${Math.round(room)} pt the page has for the body (the page less its margins, page header and footer). ${text ? 'Its text of more than one line continues on the next page; otherwise the lower part of the box is cut at the page bottom' : 'Its lower part is cut at the page bottom'}; make it shorter.`;
+      warnings.push(msg); renderSays.push(msg);
+    }
+  }
+  return { errors, warnings, exprErrors, checkOnly, renderSays };
 }
 
 /** Keys whose text may hold {expression} parts (a text template). */
