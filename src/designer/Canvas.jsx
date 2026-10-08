@@ -781,7 +781,7 @@ function TableView({ item, scale, drag, setDrag }) {
         const h = t.header?.[t.header.length - 1]?.cells?.[ci];
         if (h && (!h.value || /^Column \d+$/.test(h.value))) h.value = f.field.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase());
         if (h && f.type === 'number') h.style = { ...(h.style || {}), textAlign: 'right' };
-      } else if ((part === 'footer' || /^g\d+f$/.test(part)) && f.type === 'number') {
+      } else if ((part === 'footer' || /^g\d+[hf]$/.test(part)) && f.type === 'number') { // a group header sums its group too
         cell.value = `=Sum(Fields.${f.field})`;
         cell.style = { ...(cell.style || {}), ...fieldStyle(f) };
       }
