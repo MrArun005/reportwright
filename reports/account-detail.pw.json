@@ -258,7 +258,7 @@
           "h": 180,
           "chartType": "column",
           "dataSet": "Tx",
-          "category": "=Fields.txDate",
+          "category": "=Format(Fields.txDate, \"MMM yyyy\")",
           "series": [
             {
               "name": "Sum of amountInr",
