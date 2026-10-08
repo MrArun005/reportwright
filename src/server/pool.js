@@ -161,7 +161,15 @@ function learn(j, peakMB) {
   P.mem.set(k, Math.round(o == null ? mb : Math.max(mb, 0.8 * o + 0.2 * mb)));
   if (P.mem.size > 5000) P.mem.clear();
 }
+/** The memory admitted now: always the sum over the renders running at this moment (a slot's job is set once and
+ *  cleared once, by finish(), whichever way the render ends: done, failed, crashed, timed out, retired). No counter
+ *  is kept, so nothing can drift, leak or go below 0. */
 const runningMB = () => P.slots.reduce((s, x) => s + (x.job ? x.job.mem : 0), 0);
+/** Tests: what is admitted, and by whom. */
+export const _running = () => ({ mb: runningMB(), jobs: P.slots.filter(s => s.job).length, principals: Object.fromEntries(P.running) });
+/** Renders one principal may have running at once (PW_RENDER_RUNNING_PER_PRINCIPAL; default half the workers, at least
+ *  2): the rest wait their turn, so one caller's stalled streams cannot hold every worker and the memory budget. */
+const runningMax = () => num('PW_RENDER_RUNNING_PER_PRINCIPAL', Math.max(2, Math.ceil(poolSize() / 2)), 1);
 
 // render durations (seconds) for /api/v1/metrics: a Prometheus histogram
 export const BUCKETS = [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60];
@@ -338,9 +346,9 @@ function pump() {
 function dispatch(s) {
   const room = plan().budgetMB - runningMB(), any = P.slots.some(x => x.job), now = Date.now();
   // a render that has waited AGE_MS for room goes next: smaller ones may not keep taking the room it waits for
-  const stuck = any ? P.queue.find(x => now - x.at > AGE_MS && x.mem > room) : null;
+  const stuck = any ? P.queue.find(x => now - x.at > AGE_MS && x.mem > room && (P.running.get(x.who) || 0) < runningMax()) : null;
   let j;
-  while ((j = next((x) => (s.big || !x.big) && (stuck ? x === stuck : !any || x.mem <= room)))) {
+  while ((j = next((x) => (s.big || !x.big) && (P.running.get(x.who) || 0) < runningMax() && (stuck ? x === stuck : !any || x.mem <= room)))) {
     unwait(j);
     // waited past the limit (the estimate was wrong): the caller has given up by now, or is about to
     if (j.cls === 0 && !j.fresh && Date.now() - j.at > maxWaitMs()) { P.stats.dropped++; j.reject(busy('The server is busy: this render waited too long for its turn. Try again shortly.', 503, 5000)); continue; }

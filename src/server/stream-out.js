@@ -17,7 +17,7 @@ export const STREAM_CANCELLED = 'The client stopped reading the output.';
  * The render side: head(meta) once the render knows it streams, write(bytes) (awaits credit), end(), fail(error).
  * @param {import('node:worker_threads').MessagePort} port
  */
-export function portSink(port) {
+export function portSink(port, { stallMs = Number(process.env.PW_STREAM_STALL_MS) || 30000 } = {}) {
   let credit = 0, cancelled = false, wake = null, headSent = false;
   port.on('message', (m) => {
     if (m?.credit) credit += m.credit;
@@ -31,7 +31,14 @@ export function portSink(port) {
     head(meta) { headSent = true; port.postMessage({ head: meta }); },
     /** @param {Uint8Array} u8 */
     async write(u8) {
-      while (!credit && !cancelled) await new Promise((r) => { wake = r; });
+      // a client that stops reading holds a render thread and its memory: past stallMs without asking for more, the
+      // render stops (as if the client had left) and frees them
+      while (!credit && !cancelled) {
+        let timer;
+        const stalled = await new Promise((r) => { wake = () => r(false); timer = setTimeout(() => r(true), stallMs); });
+        clearTimeout(timer);
+        if (stalled && !credit) { cancelled = true; throw Object.assign(cancel(), { message: `The client read nothing for ${Math.round(stallMs / 1000)} s (PW_STREAM_STALL_MS); the export stopped.`, status: 408 }); }
+      }
       if (cancelled) throw cancel();
       credit--;
       const own = u8.byteOffset === 0 && u8.byteLength === u8.buffer.byteLength ? u8 : u8.slice();

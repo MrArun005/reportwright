@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 const src = pathToFileURL(path.join(import.meta.dirname, '..', 'src') + '/').href;
 register(`data:text/javascript,${encodeURIComponent(`export function resolve(s, c, next) { return next(s.startsWith('@/') ? ${JSON.stringify(src)} + s.slice(2) : s, c); }`)}`);
 process.env.PW_MEMORY_LIMIT_MB ||= '8192';
+process.env.PW_RENDER_RUNNING_PER_PRINCIPAL ||= '64'; // one caller here: let it use every worker
 const N = Number(process.argv[2]) || 32, ROWS = Number(process.argv[3]) || 2000, FORMAT = process.argv[4] || 'pdf';
 const { renderInPool, stopPool, poolStats } = await import('../src/server/pool.js');
 const { OPEN } = await import('../src/server/perms.js');

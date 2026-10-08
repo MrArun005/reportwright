@@ -255,6 +255,16 @@ describe('streaming keeps its caps (review)', () => {
     expect(fs.existsSync(path.join(dir, `pw-spill-${process.pid}-1-mine`))).toBe(true);
     fs.rmSync(path.join(dir, `pw-spill-${process.pid}-1-mine`), { recursive: true });
   });
+  it('spill: sorts racing for the last of the budget never pass it together (reserve, then check)', async () => {
+    const { spillShared } = await import('../../src/server/spill.js');
+    const used = () => Array.from(spillShared().cells).reduce((a, b) => a + b, 0);
+    const sorts = Array.from({ length: 8 }, () => spillSorter({ run: 50, runBytes: 1e9, maxMB: 100, totalMB: 0.1, dir })((x, y) => x.k - y.k));
+    let peak = 0;
+    await Promise.all(sorts.map(async (s) => { try { for (let i = 0; i < 300; i++) { await s.push({ k: i, r: 'x'.repeat(100) }); peak = Math.max(peak, used()); } } catch (e) { expect(e.status).toBe(503); } }));
+    expect(peak).toBeLessThanOrEqual(Math.ceil(0.1 * 1024) + 64); // within the budget (a refused reservation is taken back at once)
+    for (const s of sorts) await s.close();
+    expect(used()).toBe(0);
+  });
   it('spill: a run ends at its bytes as well as its records (a few huge rows cannot fill memory)', async () => {
     const s = spillSorter({ run: 1e9, runBytes: 200000, dir })((x, y) => x.k - y.k);
     for (let i = 0; i < 40; i++) await s.push({ k: 40 - i, r: { big: 'x'.repeat(20000) } });

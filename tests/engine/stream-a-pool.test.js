@@ -2,10 +2,10 @@
 // estimate; small renders run in small-heap workers, and one that runs out of a small heap runs again in a big one.
 import { describe, it, expect, afterEach, afterAll } from 'vitest';
 import { report } from '../helpers.js';
-import { poolStats, renderInPool, submit, stopPool, memoryPlan, _sizeOf, _learn, _forget } from '../../src/server/pool.js';
+import { poolStats, renderInPool, streamInPool, submit, stopPool, memoryPlan, _sizeOf, _learn, _forget, _running } from '../../src/server/pool.js';
 import { OPEN } from '../../src/server/perms.js';
 
-const ENV = ['PW_RENDER_WORKERS', 'PW_RENDER_WORKER_HEAP_MB', 'PW_RENDER_SMALL_HEAP_MB', 'PW_MEMORY_LIMIT_MB'];
+const ENV = ['PW_RENDER_WORKERS', 'PW_RENDER_WORKER_HEAP_MB', 'PW_RENDER_SMALL_HEAP_MB', 'PW_MEMORY_LIMIT_MB', 'PW_RENDER_TIMEOUT_MS', 'PW_STREAM_STALL_MS', 'PW_RENDER_RUNNING_PER_PRINCIPAL'];
 afterEach(async () => { await stopPool(); for (const k of ENV) delete process.env[k]; });
 afterAll(async () => { await stopPool(); });
 
@@ -95,4 +95,54 @@ describe('streaming phase A: cores-sized pool, memory-estimate admission', () =>
     expect(_sizeOf({ kind: 'render' }, 'carol', 'r2').mem).toBe(340);
     _forget();
   });
+
+  // the admitted memory is the sum over running renders (no counter): whatever way a render ends, it is 0 after
+  const settled = async () => { for (let i = 0; i < 100 && _running().jobs; i++) await new Promise(r => setTimeout(r, 20)); return _running(); };
+  it('admission state after a crash, a timeout, a cancelled and a stalled stream: back to nothing, never below', async () => {
+    process.env.PW_RENDER_WORKERS = '2';
+    process.env.PW_MEMORY_LIMIT_MB = '8192';
+    // crash: out of a 64 MB heap (big workers too)
+    process.env.PW_RENDER_WORKER_HEAP_MB = '64'; process.env.PW_RENDER_SMALL_HEAP_MB = '48';
+    await expect(renderInPool({ def: table(150000, 'crash'), opt: { format: 'pdf', principal: OPEN } })).rejects.toThrow(/memory|stopped/);
+    expect(await settled()).toMatchObject({ mb: 0, jobs: 0, principals: {} });
+    await stopPool(); delete process.env.PW_RENDER_WORKER_HEAP_MB; delete process.env.PW_RENDER_SMALL_HEAP_MB;
+    // timeout
+    process.env.PW_RENDER_TIMEOUT_MS = '300';
+    await expect(renderInPool({ def: table(150000, 'slow'), opt: { format: 'pdf', principal: OPEN } })).rejects.toMatchObject({ status: 504 });
+    expect(await settled()).toMatchObject({ mb: 0, jobs: 0 });
+    delete process.env.PW_RENDER_TIMEOUT_MS;
+    // a stream cancelled by its client after the first chunk
+    const big = table(200000, 'stream');
+    let r = await streamInPool({ def: big, opt: { format: 'csv', principal: OPEN } });
+    expect(r.stream).toBeDefined();
+    const rd = r.stream.getReader(); await rd.read(); await rd.cancel();
+    await r.done;
+    expect(await settled()).toMatchObject({ mb: 0, jobs: 0 });
+    // a stream whose client never reads: stopped at PW_STREAM_STALL_MS, its worker and memory freed
+    await stopPool();
+    process.env.PW_STREAM_STALL_MS = '300';
+    r = await streamInPool({ def: big, opt: { format: 'csv', principal: OPEN } });
+    const t0 = Date.now();
+    await r.done;
+    expect(Date.now() - t0).toBeLessThan(10000);
+    expect(await settled()).toMatchObject({ mb: 0, jobs: 0 });
+    // and the pool still renders
+    expect((await renderInPool({ def: table(10, 'after'), opt: { format: 'pdf', principal: OPEN } })).pages).toBe(1);
+  }, 180000);
+
+  it('one caller may hold at most PW_RENDER_RUNNING_PER_PRINCIPAL renders; others still get the rest', async () => {
+    process.env.PW_RENDER_WORKERS = '2';
+    process.env.PW_MEMORY_LIMIT_MB = '8192';
+    process.env.PW_RENDER_RUNNING_PER_PRINCIPAL = '1';
+    const def = table(20000, 'cap');
+    await renderInPool({ def: table(5, 'warm'), opt: { format: 'pdf', principal: OPEN } });
+    while (poolStats().workers.ready < 2) await new Promise(r => setTimeout(r, 20));
+    let stop = busyMax();
+    await Promise.all([1, 2, 3].map(() => submit({ kind: 'render', def, opt: { format: 'csv', principal: OPEN }, stream: true }, { principal: OPEN, key: 'cap' })));
+    expect(stop()).toBe(1);
+    const other = { kind: 'user', email: 'b@x.test', role: 'viewer' };
+    stop = busyMax();
+    await Promise.all([submit({ kind: 'render', def, opt: { format: 'csv', principal: OPEN }, stream: true }, { principal: OPEN, key: 'cap' }), submit({ kind: 'render', def, opt: { format: 'csv', principal: OPEN }, stream: true }, { principal: other, key: 'cap' })]);
+    expect(stop()).toBe(2);
+  }, 120000);
 });

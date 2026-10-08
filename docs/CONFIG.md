@@ -76,6 +76,8 @@ Every setting ReportWright reads, from `src/server/config.js` (the table there i
 | `PW_STREAM_FETCH_MAX_MB` | int | 4096 | Megabytes a streaming export fetches from one source. |
 | `PW_STREAM_SQL_MAX_MB` | int | 4096 | Megabytes of values a streaming export reads from one query. |
 | `PW_SPILL_MAX_MB` | int | 2048 | Temporary disk one streaming export may use to sort. |
+| `PW_STREAM_STALL_MS` | ms | 30000 | A streaming export whose client reads nothing this long stops. |
+| `PW_RENDER_RUNNING_PER_PRINCIPAL` | int | (half the threads, at least 2) | Renders one caller may have running at once. |
 | `PW_SPILL_TOTAL_MB` | int | 8192 | Temporary disk all streaming exports of a process may use at once. |
 | `PW_RENDER_SMALL_HEAP_MB` | int | 192 | The other render threads' heap limit (streams, small renders). |
 | `PW_RENDER_WORKER_MAX_RENDERS` | int | 500 | Renders before a thread is replaced. |

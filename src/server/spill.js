@@ -80,12 +80,14 @@ export function spillSorter({ run = 20000, runBytes = 24 * 1048576, frame = 1000
           const body = v8.serialize(buf.slice(i, i + frame));
           written += body.length + 4;
           if (written > maxMB * 1048576) throw Object.assign(new Error(`The sort needs more than ${maxMB} MB of temporary disk (PW_SPILL_MAX_MB). Filter the data, or sort it at the source.`), { status: 413 });
-          // the process-wide budget, in whole KB, taken before the bytes are written and given back at close
+          // the process-wide budget, in whole KB: reserved (an atomic add) before the bytes are written, then checked;
+          // over it, the reservation is taken back and the sort refused. Two threads racing past the limit both see
+          // it and both fail (closed, never open). Given back at close.
           const kb = Math.ceil(written / 1024) - takenKB;
           if (kb > 0) {
             const { cells, cell } = spillShared();
-            if (usedKB() + kb > totalMB * 1024) throw Object.assign(new Error(`The server's temporary disk for sorting is in use (PW_SPILL_TOTAL_MB, ${totalMB} MB). Try again shortly, or filter the data.`), { status: 503 });
             Atomics.add(cells, cell, kb); takenKB += kb;
+            if (usedKB() > totalMB * 1024) throw Object.assign(new Error(`The server's temporary disk for sorting is in use (PW_SPILL_TOTAL_MB, ${totalMB} MB). Try again shortly, or filter the data.`), { status: 503 });
           }
           const head = Buffer.alloc(4);
           head.writeUInt32LE(body.length);
