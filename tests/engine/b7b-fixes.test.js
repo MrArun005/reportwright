@@ -48,3 +48,30 @@ describe('N5: Word export writes the document XML in pieces', () => {
     expect(strFromU8(piecewise['word/document.xml'])).toContain('Name 399 &amp; &lt;co&gt;');
   });
 });
+
+import { exportHtml } from '../../src/exporters/html.js';
+
+describe('N6: exportHtml takes the options object like the other exporters', () => {
+  it('exportHtml(model, { fonts }) works and embeds the fonts', async () => {
+    const m = await render(report([text('T', 'Hello')]), { fontStore });
+    const html = await exportHtml(m, { fonts: fontStore, title: 'T', static: true });
+    expect(html).toContain('@font-face');
+    expect(html).toContain('<title>T</title>');
+  });
+  it('the 0.7 form exportHtml(model, fontStore, options) still works, with one deprecation warning', async () => {
+    const m = await render(report([text('T', 'Hello')]), { fontStore });
+    const warn = [];
+    const orig = console.warn; console.warn = (...a) => warn.push(a.join(' '));
+    try {
+      const html = await exportHtml(m, fontStore, { title: 'Old', static: true });
+      expect(html).toContain('<title>Old</title>');
+      await exportHtml(m, fontStore, { static: true });
+    } finally { console.warn = orig; }
+    expect(warn.filter(w => /DEPRECATED.*exportHtml/.test(w))).toHaveLength(1);
+  });
+  it('a missing or wrong fonts value is a TypeError that says what was expected', async () => {
+    const m = await render(report([text('T', 'Hello')]), { fontStore });
+    expect(() => exportHtml(m, { title: 'x' })).toThrow(/fonts must be a FontStore/);
+    expect(() => exportHtml(m, { fonts: new Map() })).toThrow(/fonts must be a FontStore/);
+  });
+});

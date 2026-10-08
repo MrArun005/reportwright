@@ -10,7 +10,7 @@ const EXPORT = {
   xlsx: (m, o) => exportXlsx(m, { fonts, ...o }),
   docx: (m, o) => exportDocx(m, { fonts, ...o }),
   pptx: (m, o) => exportPptx(m, { fonts, ...o }),
-  html: async (m, o) => new TextEncoder().encode(await exportHtml(m, fonts, o)),
+  html: async (m, o) => new TextEncoder().encode(await exportHtml(m, { ...o, fonts })),
   csv: async (m, o) => new TextEncoder().encode(exportCsv(m, o)),
 };
 /** @type {import('node:worker_threads').MessagePort} */ (parentPort).on('message', async ({ def, opts }) => {
