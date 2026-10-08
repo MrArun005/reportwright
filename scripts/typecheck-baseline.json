@@ -10,7 +10,6 @@
   "src/engine/items/index.js": 11,
   "src/engine/items/pivot.js": 1,
   "src/engine/text/shaper.js": 1,
-  "src/engine/units.js": 1,
   "src/exporters/docx.js": 13,
   "src/exporters/encrypt.js": 2,
   "src/exporters/figures.js": 5,
