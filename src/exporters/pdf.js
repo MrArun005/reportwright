@@ -100,6 +100,7 @@ async function pdfOf(model, fontStore, opt) {
       const full = fontStore.bytes.get(key);
       let bytes = full;
       if (!bytes) throw new Error(`Font "${key}" is not loaded`);
+      let psName = fontStore.get(key).postscriptName; // N10: a subset of a variable font says the weight it is cut at
       const glyphs = shaped.get(key);
       // fsType "no subsetting": the licence wants the whole font embedded
       if (opt.subset && !fieldFonts.has(key) && !fontStore.get(key)['OS/2']?.fsType?.noSubsetting) {
@@ -114,10 +115,11 @@ async function pdfOf(model, fontStore, opt) {
           for (const cp of cps) void f.glyphForCodePoint(cp).advanceWidth;
           for (const id of glyphs?.keys() || []) void f.getGlyph(id).advanceWidth;
           bytes = sub;
+          psName = f.postscriptName || psName;
         } catch { /* embed the full font */ }
       }
       // a subset's name starts with a tag (ABCDEF+), which tells readers (and pdffonts) it is one
-      const pf = await doc.embedFont(bytes, { subset: false, customName: bytes === full ? undefined : `${subsetTag(bytes)}+${fontStore.get(key).postscriptName || 'Font'}` });
+      const pf = await doc.embedFont(bytes, { subset: false, customName: bytes === full ? undefined : `${subsetTag(bytes)}+${psName || 'Font'}` });
       plainEncoding(pf);
       if (glyphs) addGlyphs(pf, glyphs, !!opt.tagged);
       // the font file through our deflate (pdf-lib's is pako, on the main thread), with the Length1 TrueType wants
