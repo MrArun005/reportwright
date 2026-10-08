@@ -65,8 +65,9 @@ const MIN_FONT = 5; // pt: a word is not shrunk below this; it breaks instead
 const MIN_NUMBER_FONT = 3; // pt: a number shrinks until it fits, down to this (cut digits would read as another number)
 /**
  * The font size a wrapped text needs so that it breaks only between words: a number on one line, a word as wide as
- * the box. At most 25% smaller for a word, past that it breaks inside (the last resort); a number shrinks until it
- * fits (a matrix grand total in a narrow column), never below MIN_NUMBER_FONT.
+ * the box. A number (or a single short token) shrinks until it fits (a matrix grand total in a narrow column), never
+ * below MIN_NUMBER_FONT; a short label's word down to MIN_FONT; a longer text's word at most 25%. Past that a word
+ * breaks inside (the last resort).
  */
 function fitSize(text, key, size, inner, m, atom = false) {
   const s = String(text);
@@ -77,7 +78,10 @@ function fitSize(text, key, size, inner, m, atom = false) {
   if (num) longest = m.width(s.trim(), key, size);
   else for (const w of s.split(/\s+/)) { const ww = w ? m.width(w, key, size) : 0; if (ww > longest) { longest = ww; word = w; } }
   if (longest <= inner) return size;
-  const floor = num || NUMBER.test(word) ? Math.min(size, MIN_NUMBER_FONT) : Math.max(MIN_FONT, size * 0.75);
+  // a short label (a column header, a code such as "m02") shrinks further before a word breaks: "Amou|nt" reads as
+  // two words. One short token goes as small as a number; a few words to MIN_FONT; a paragraph at most 25%.
+  const floor = num || NUMBER.test(word) || (word.length <= 12 && word === s.trim()) ? Math.min(size, MIN_NUMBER_FONT)
+    : s.length <= 40 ? Math.min(size, MIN_FONT) : Math.max(MIN_FONT, size * 0.75);
   // in half points: cells shrunk alike share one size (fewer font changes, a smaller PDF)
   return Math.max(floor, Math.min(size, Math.floor((size * (inner / longest) - 0.01) * 2) / 2));
 }

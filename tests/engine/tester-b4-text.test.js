@@ -35,3 +35,15 @@ describe('5: a number inside a text never breaks either', () => {
     expect(t.lines.map(l => l.text)).toContain('₹1,61,70,192.00');
   });
 });
+
+describe('6: a header word never breaks inside', () => {
+  it('"Amount", "Outstanding amount" and "m02" in narrow columns shrink or wrap between words', async () => {
+    const def = report([table([{ width: 26 }, { width: 44 }, { width: 11.6 }], ['Amount', 'Outstanding amount', 'm02'], [{ value: '1' }, { value: '2' }, { value: '3' }], { style: { padding: [1, 1, 1, 1] } })], { data: { rows: [{}] } });
+    const out = await render(def, { fontStore });
+    for (const [re, words] of [[/^Amount$/, ['Amount']], [/^Outstanding.?amount$/, ['Outstanding', 'amount']], [/^m02$/, ['m02']]]) {
+      const t = textItems(out).find(i => re.test(i.lines.map(l => l.text).join(i.lines.length > 1 ? ' ' : '')));
+      expect(t, String(re)).toBeTruthy();
+      expect(t.lines.map(l => l.text).join(' ').split(' ')).toEqual(words);
+    }
+  });
+});
