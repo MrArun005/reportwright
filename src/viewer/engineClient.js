@@ -1,6 +1,6 @@
 'use client';
 // Runs the engine in a Web Worker. Falls back to the main thread if the worker cannot start.
-import { reportFetch, policyKeysIn } from './dataFetch.js';
+import { reportFetch, policyKeysIn, fetchPolicy } from './dataFetch.js';
 import { render, FontStore } from '@/engine/index.js';
 import { fontFile, setCustomFonts, SHAPER, ALL_FONT_KEYS } from '@/engine/text/fonts.js';
 import { createSubsetter } from '@/exporters/subset.js';
@@ -59,11 +59,9 @@ export function fontStore() {
   return mainStore;
 }
 
-/* global __PW_EMBED__ */
-// The embedded viewer (and @reportwright/viewer) renders on the main thread: leave the worker out of those builds,
-// so bundlers such as Vite do not try to resolve a worker file that is not shipped.
-const makeWorker = typeof __PW_EMBED__ !== 'undefined' && __PW_EMBED__ ? null
-  : () => new Worker(new URL('../worker/engine.worker.js', import.meta.url), { type: 'module' });
+// The worker file: a sibling of this source in the app (Next bundles it); scripts/build-embed.mjs rewrites the path to
+// ./engine.worker.js, which it builds next to the viewer's chunks, so Vite, webpack and Next bundle it from the package.
+const makeWorker = () => new Worker(new URL('../worker/engine.worker.js', import.meta.url), { type: 'module' });
 
 /** Fonts uploaded to the server, known to the engine by family. Cached; refresh after an upload. */
 let fontList = null;
@@ -99,11 +97,18 @@ export function loadReportFonts(keys) {
 export const loadModelFonts = (model) => loadReportFonts([...new Set([...ALL_FONT_KEYS, ...fontKeysOf(model)])]);
 
 function getWorker() {
-  if (!makeWorker || workerBroken || typeof Worker === 'undefined' || assetBase || bundledFonts) return null; // embedded: run on the main thread
+  // main thread: no Worker; fonts bundled in the page or a data snapshot (the offline HTML export); the page's own fetch
+  // (a function cannot go to a worker)
+  if (workerBroken || typeof Worker === 'undefined' || bundledFonts || fetchPolicy().fetch || (typeof window !== 'undefined' && /** @type {any} */ (window).__pwSnapshot)) return null;
   if (worker) return worker;
   try {
     worker = makeWorker();
     worker.onmessage = (e) => {
+      if (e.data.font) { // the worker's font: fetched here once, shared with the page's FontFace
+        const { fid } = e.data;
+        getFont(e.data.font).then(buf => worker?.postMessage({ fid, buf }, [buf]), err => worker?.postMessage({ fid, error: String(err?.message || err) }));
+        return;
+      }
       const w = waiting.get(e.data.id);
       if (!w) return;
       if (e.data.partial) { w.onPartial?.(e.data.model); return; } // the full model follows
@@ -158,7 +163,9 @@ export async function renderReport(def, params = {}, state = {}, reportId = unde
   return new Promise((resolve, reject) => {
     const id = ++seq;
     waiting.set(id, { resolve, reject, onPartial, onRetry, retry: () => renderMain(def, params, state, reportId, exportData, onRetry, dataOnly).then(resolve, reject) });
-    w.postMessage({ id, def, params, state, reportId, fonts, firstPages: onPartial && !dataOnly ? 2 : 0, exportData, dataOnly });
+    const { allowHosts, unsafeFetch } = fetchPolicy();
+    const env = { origin: origin(), standalone, reports: bundled.size ? Object.fromEntries(bundled) : null, fetchPolicy: { allowHosts, unsafeFetch } };
+    w.postMessage({ id, def, params, state, reportId, fonts, firstPages: onPartial && !dataOnly ? 2 : 0, exportData, dataOnly, env });
   });
 }
 

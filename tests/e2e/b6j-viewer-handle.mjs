@@ -14,7 +14,7 @@ const bundle = await build({
   entryPoints: [path.join(root, 'src/embed/index.js')], bundle: true, format: 'iife', write: false, target: ['es2020'],
   alias: { '@': path.join(root, 'src'), 'next/link': path.join(root, 'src/embed/link.js') },
   loader: { '.js': 'jsx', '.jsx': 'jsx' }, jsx: 'automatic', logLevel: 'error',
-  define: { 'process.env.NODE_ENV': '"production"', __PW_CSS__: '""', __PW_EMBED__: 'true' },
+  define: { 'process.env.NODE_ENV': '"production"', __PW_CSS__: '""' },
   plugins: [{ name: 'i18n-embed', setup: (b) => b.onResolve({ filter: /(^|\/)i18n\/index\.js$/ }, () => ({ path: path.join(root, 'src/i18n/embed.js') })) }],
   logOverride: { 'empty-import-meta': 'silent', 'unsupported-dynamic-import': 'silent' },
 }).then(r => r.outputFiles[0].text);

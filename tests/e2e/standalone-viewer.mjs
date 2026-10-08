@@ -54,7 +54,9 @@ await p.waitForFunction(() => document.querySelector('#r')?.shadowRoot?.querySel
 const text = await p.evaluate(() => [...document.querySelector('#r').shadowRoot.querySelectorAll('.vpage text')].map(n => n.textContent).join(' '));
 assert.match(text, /Asha Rao/);
 assert.match(text, /1,200\.50/);
-assert.deepEqual(missing, [], `404s: ${missing}`);
+// esbuild does not bundle new Worker(new URL(…)) (Vite, webpack and Next do: tests/e2e/vite-build.mjs): the worker is
+// not found and the viewer renders on the main thread instead (the fallback)
+assert.deepEqual(missing.filter(m => m !== '/pw/engine.worker.js'), [], `404s: ${missing}`);
 assert.deepEqual(requests.filter(r => r.startsWith('/api/')), []);
 assert.deepEqual(requests.filter(r => r.includes('/ui/')), []); // no IBM Plex interface fonts
 const fonts = requests.filter(r => r.startsWith('/pw-fonts/'));
@@ -83,7 +85,7 @@ await p.waitForFunction(() => document.querySelector('#d')?.shadowRoot?.querySel
 await p.waitForTimeout(1500);
 assert.equal(await p.evaluate(() => !!document.querySelector('#d').shadowRoot.querySelector('[data-testid="save"]')), false);
 assert.deepEqual(requests.filter(r => r.startsWith('/api/')), []);
-assert.deepEqual(missing, [], `designer 404s: ${missing}`);
+assert.deepEqual(missing.filter(m => m !== '/pw/engine.worker.js'), [], `designer 404s: ${missing}`);
 assert.deepEqual(errs, []);
 await b.close();
 fs.rmSync(tmp, { recursive: true, force: true });

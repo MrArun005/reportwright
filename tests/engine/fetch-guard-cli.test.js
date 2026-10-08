@@ -50,7 +50,7 @@ const REVIEWED = {
   'src/viewer/engineClient.js': 'fonts, the report and the colour profile from this app (same origin)',
   'src/viewer/interactiveHtml.js': 'the exported file reads its own embedded snapshot and this app\'s fonts',
   'src/viewer/ViewerShell.jsx': 'this app\'s own API',
-  'src/worker/engine.worker.js': 'fonts from this app; data through reportFetch',
+  'src/worker/engine.worker.js': 'a saved report from this app\'s server (fonts come from the page); data through reportFetch',
   'src/embed/index.js': 'the embed viewer: this app\'s API at its configured server',
   'src/embed/designer.js': 'the embed designer: this app\'s API at its configured server',
   ...Object.fromEntries(['AskAi', 'DataPanel', 'Designer', 'Fonts', 'Inspector', 'Reuse', 'SqlBuilder'].map(n => [`src/designer/${n}.jsx`, 'the designer: this app\'s own API'])),
