@@ -1,4 +1,4 @@
-// b9 viewer tickets, standalone viewer (no server; Playwright answers from disk like standalone-viewer.mjs). Run npm run build:packages first.
+// (N41 copy: tests/e2e/b11-esbuild-worker.mjs) b9 viewer tickets, standalone viewer (no server; Playwright answers from disk like standalone-viewer.mjs). Run npm run build:packages first.
 //  N31: only the font faces the layout needs are fetched (2 of 7 for a report in Inter Regular + Bold); numbers printed
 //  N1: with esbuild bundling the worker 404s: one console.warn, handle.usesWorker === false, the report still renders
 //  N18: the built worker has no chunk imports (copying it alone works)

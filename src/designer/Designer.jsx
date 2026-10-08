@@ -100,7 +100,7 @@ function LeftRail({ T, readOnly, embed }) {
     if (el) {
       body.current.scrollTo({ top: el.offsetTop - body.current.offsetTop, behavior: 'smooth' });
       // the keyboard goes along: to the outline's current row, else the section's first control (N35: no long Tab walk)
-      (el.querySelector('[role=listbox] [tabindex="0"]') || el.querySelector('button, input, select, textarea'))?.focus({ preventScroll: true });
+      (el.querySelector('[data-opt][tabindex="0"]') || el.querySelector('button, input, select, textarea'))?.focus({ preventScroll: true });
     }
     setAt(id);
   };

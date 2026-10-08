@@ -149,7 +149,12 @@ describe('npm packages', () => {
     expect(Object.keys(v.dependencies).sort()).toEqual([...LIBS].sort());
     for (const n of LIBS) expect(v.dependencies[n]).toBe(json(`node_modules/${n}/package.json`).version);
     const dir = path.join(root, 'packages/viewer/dist');
-    const files = fs.readdirSync(dir, { recursive: true }).filter(f => /\.(js|css)$/.test(f));
+    const all_ = fs.readdirSync(dir, { recursive: true }).filter(f => /\.(js|css)$/.test(f));
+    // the render worker and its two side files bundle their libraries (N41: a copied engine.worker.js must start
+    // without a bundler); everything else imports them by name
+    const worker = all_.filter(f => /(^|\/)engine\.worker[^/]*\.js$/.test(f));
+    const files = all_.filter(f => !worker.includes(f));
+    for (const f of worker.filter(f => /engine\.worker\.js$/.test(f))) expect(fs.readFileSync(path.join(dir, f), 'utf8'), f).not.toMatch(/(from\s*|import\()["'][a-z@][^"'./]*["']/);
     const all = files.map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n');
     expect(all).not.toMatch(/code49_patterns|dictionary_bin|Helvetica\w*_compressed/);
     for (const n of LIBS) expect(all).toMatch(new RegExp(`(from |import\\()"${n.replace('/', '\\/')}"`));

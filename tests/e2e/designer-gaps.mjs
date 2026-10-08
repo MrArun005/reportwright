@@ -111,7 +111,7 @@ try {
   await fetch(`${BASE}/api/reports/${id}`, { method: 'PUT', headers: { ...H, 'if-match': '*' }, body: JSON.stringify((d => { d.sections.body.height = oldH; return d; })(await read(id))) });
   await open(id);
   const outline = p.getByTestId('outline');
-  await outline.getByRole('option', { name: 'Under', exact: true }).click();
+  await outline.getByRole('button', { name: 'Under', exact: true }).click();
   assert.equal(await p.getByLabel('Item name').inputValue(), 'Under');
   await outline.getByRole('button', { name: 'Draw later (in front): Under' }).click();
   await outline.getByRole('button', { name: 'Move out of Box: Inner' }).click();

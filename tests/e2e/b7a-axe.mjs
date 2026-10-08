@@ -60,7 +60,23 @@ await p.goto(`${ORIGIN}/designer`);
 await p.waitForFunction(() => document.querySelector('#r')?.shadowRoot?.querySelector('[data-testid], button'), null, { timeout: 60000 });
 await p.waitForTimeout(1500);
 const designer = await axe();
+// N42: every critical or serious axe rule on the designer, in four states: as opened, the Outline shown, an item
+// selected from the Outline, and after keyboard moves in it (aria-required-children flagged the Outline's listbox)
+const full = async (state) => {
+  const r = await p.evaluate(() => window.axe.run(document, { resultTypes: ['violations'] }));
+  return r.violations.filter(v => v.impact === 'critical' || v.impact === 'serious').map(v => `${state}: ${v.id} (${v.impact}) ${v.nodes.map(n => n.target.join(' > ')).slice(0, 3).join('; ')}`);
+};
+const states = [...await full('opened')];
+await p.locator('#r').getByRole('tab', { name: /outline/i }).first().click().catch(() => p.locator('#r').getByRole('button', { name: /outline/i }).first().click());
+await p.waitForTimeout(400);
+states.push(...await full('outline shown'));
+await p.locator('#r').getByRole('button', { name: 'T', exact: true }).first().click();
+await p.waitForTimeout(400);
+states.push(...await full('item selected'));
+await p.keyboard.press('ArrowUp'); await p.keyboard.press('ArrowDown'); await p.keyboard.press('Home');
+await p.waitForTimeout(300);
+states.push(...await full('keyboard moved'));
 await b.close();
-assert.deepEqual({ viewer, designer }, { viewer: [], designer: [] });
+assert.deepEqual({ viewer, designer, states }, { viewer: [], designer: [], states: [] });
 assert.deepEqual(errors, []);
-console.log(`b7a-axe: ok (${RULES.join(', ')} on the viewer and the designer)`);
+console.log(`b7a-axe: ok (${RULES.join(', ')} on the viewer and the designer; every critical or serious rule on the designer in 4 states)`);

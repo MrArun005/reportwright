@@ -78,7 +78,7 @@ try {
   { const d = await def(); const t = item(d, 'Tab'); assert.ok(d.sections.body.height >= t.y + t.h); }
 
   step('bug 2: a band label click leaves the focus on <body>; Esc brings back the report, Ctrl+S saves');
-  const selected = () => page.locator('#d [role=listbox] [aria-selected=true]').evaluateAll(l => l.map(o => o.textContent));
+  const selected = () => page.locator('#d [data-opt][aria-pressed=true]').evaluateAll(l => l.map(o => o.textContent));
   await page.locator('#d .band-label').nth(1).click();
   assert.deepEqual(await selected(), ['Body'], 'the band is selected');
   await page.evaluate(() => document.activeElement?.blur?.()); // as after a re-render that removed the focused element
@@ -109,15 +109,15 @@ try {
   let n = 0, onOption = false;
   for (; n < 160 && !onOption; n++) {
     await page.keyboard.press('Tab');
-    onOption = await page.evaluate(() => { let a = document.activeElement; while (a?.shadowRoot?.activeElement) a = a.shadowRoot.activeElement; return a?.getAttribute('role') === 'option'; });
+    onOption = await page.evaluate(() => { let a = document.activeElement; while (a?.shadowRoot?.activeElement) a = a.shadowRoot.activeElement; return a?.hasAttribute('data-opt'); });
   }
   assert.ok(onOption, `an outline row is reached by Tab (${n} presses from the Outline tab)`);
   console.log(`  outline reached after ${n} Tab presses from the rail tab`);
-  const opts = await page.locator('#d [role=listbox] [role=option]').evaluateAll(l => l.map(o => o.tabIndex));
+  const opts = await page.locator('#d [data-opt]').evaluateAll(l => l.map(o => o.tabIndex));
   assert.equal(opts.filter(t => t === 0).length, 1, 'one Tab stop in the listbox');
   // the Outline tab itself moves the focus to the listbox
   await page.locator('#d [data-testid=rail-outline]').click();
-  assert.equal(await page.evaluate(() => document.querySelector('#d').shadowRoot.activeElement?.getAttribute('role')), 'option');
+  assert.equal(await page.evaluate(() => document.querySelector('#d').shadowRoot.activeElement?.hasAttribute('data-opt')), true);
   // arrows to T1's row, Enter selects it, Delete removes it
   for (let k = 0; k < 20; k++) {
     const name = await page.evaluate(() => document.querySelector('#d').shadowRoot.activeElement?.textContent);
@@ -126,7 +126,7 @@ try {
   }
   assert.equal(await page.evaluate(() => document.querySelector('#d').shadowRoot.activeElement?.textContent), 'T1');
   await page.keyboard.press('Enter');
-  assert.equal(await page.locator('#d [data-outline="T1"] [role=option]').getAttribute('aria-selected'), 'true');
+  assert.equal(await page.locator('#d [data-outline="T1"] [data-opt]').getAttribute('aria-pressed'), 'true');
   const x0 = item(await def(), 'T1').x;
   await page.keyboard.press('ArrowRight'); // not a listbox key: moves the selection on the page
   assert.equal(item(await def(), 'T1').x, x0 + 1, 'ArrowRight nudged T1');
@@ -142,7 +142,7 @@ try {
   await page.keyboard.press('Escape');
   await t1.focus();
   await page.keyboard.press('Enter');
-  await page.locator('#d [data-outline="T1"] [role=option][aria-selected=true]').waitFor({ timeout: 3000 });
+  await page.locator('#d [data-outline="T1"] [data-opt][aria-pressed=true]').waitFor({ timeout: 3000 });
 
   step('N33: width and height inputs have a minimum of 1');
   const minW = await page.locator('#d [data-testid=inspector] input[type=number][min]').evaluateAll(l => l.map(i => i.min));
@@ -170,7 +170,7 @@ try {
   assert.equal(item(await def(), 'Tab').groups[0].header[0].cells[1].value, '=Sum(Fields.loans)');
 
   step('bug 7: the matrix drill-down toggle starts closed, as the table\'s');
-  await page.locator('#d [data-outline="M"] [role=option]').click();
+  await page.locator('#d [data-outline="M"] [data-opt]').click();
   await page.locator('#d [data-testid=inspector]').getByLabel('Drill-down: show a toggle').first().check();
   assert.equal(item(await def(), 'M').rowGroups[0].initiallyCollapsed, true);
 

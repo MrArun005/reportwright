@@ -3,7 +3,7 @@
 // or move an item into or out of a container or list: drag a row (onto the top or bottom edge of a row: before or after
 // it; onto the middle of a container or list: into it; onto a band: to its end), or with the keyboard (Alt+arrows on a
 // name). The buttons do the same for the mouse.
-// Keyboard (N35): the rows are one listbox, a single Tab stop (roving tabindex): Up/Down/Home/End move between rows,
+// Keyboard (N35): the rows are one group of toggle buttons (aria-pressed; not a listbox, which may not hold the row buttons: N42), a single Tab stop (roving tabindex): Up/Down/Home/End move between rows,
 // Enter or Space selects (Shift adds); Delete, the other arrows and Ctrl+D then act on the selection as on the canvas.
 import { useRef, useState } from 'react';
 import { useDesigner, sectionList, secOf, reorderItem, moveOutOfParent, moveItemTo, findItem, NESTING } from './store.js';
@@ -29,8 +29,8 @@ export default function Outline() {
   const stop = keys.includes(cur) ? cur : keys.find(k => chosen.has(k) || (sel.kind === 'section' && k === `band:${sel.section}`)) || keys[0];
   const roving = (k) => ({ tabIndex: k === stop ? 0 : -1, onFocus: () => setCur(k) });
   const nav = (e) => {
-    if (e.defaultPrevented || e.altKey || e.metaKey || e.ctrlKey || e.target.getAttribute('role') !== 'option') return;
-    const all = [...e.currentTarget.querySelectorAll('[role=option]')];
+    if (e.defaultPrevented || e.altKey || e.metaKey || e.ctrlKey || !e.target.hasAttribute('data-opt')) return;
+    const all = [...e.currentTarget.querySelectorAll('[data-opt]')];
     const i = all.indexOf(e.target);
     const j = e.key === 'ArrowDown' ? i + 1 : e.key === 'ArrowUp' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? all.length - 1 : null;
     if (j == null) return;
@@ -126,7 +126,7 @@ export default function Outline() {
       <li key={it.id} role="none">
         <div className={`trow outline-row${chosen.has(it.id) ? ' sel' : ''}${mark}`} style={{ paddingInlineStart: depth * 14 }} data-outline={it.name} data-outline-id={it.id} {...dragProps(it, i, parent, section)}>
           {!readOnly && <span className="grip" aria-hidden="true">⠿</span>}
-          <button type="button" role="option" className="linklike nm" onClick={(e) => pick(e, it.id)} onKeyDown={(e) => onKey(e, it, list, i, parent)} aria-selected={chosen.has(it.id)} aria-describedby={readOnly ? 'outline-nav' : 'outline-nav outline-keys'} {...roving(it.id)}>{it.name}</button>
+          <button type="button" data-opt="" className="linklike nm" onClick={(e) => pick(e, it.id)} onKeyDown={(e) => onKey(e, it, list, i, parent)} aria-pressed={chosen.has(it.id)} aria-describedby={readOnly ? 'outline-nav' : 'outline-nav outline-keys'} {...roving(it.id)}>{it.name}</button>
           <span className="ty">{T(`item_${it.type}`) === `item_${it.type}` ? ITEMS[it.type]?.label || it.type : T(`item_${it.type}`)}</span>
           {!readOnly && <span className="act" style={{ display: 'inline-flex', gap: 2 }}>
             <button type="button" className="btn sm ghost icon" tabIndex={-1} disabled={i === 0} onClick={() => reorderItem(it.id, -1)} title={T('outlineBackward')} aria-label={`${T('outlineBackward')}: ${it.name}`}>↑</button>
@@ -142,12 +142,12 @@ export default function Outline() {
     <div className="pane" data-testid="outline">
       <h4>{T('outline')}</h4>
       <div className="pane-body" ref={body}>
-        <div role="listbox" aria-label={T('outline')} aria-multiselectable="true" onKeyDown={nav}>
+        <div role="group" aria-label={T('outline')} onKeyDown={nav}>
         {sectionList(def).map(({ key, label }) => {
           const items = secOf(def, key)?.items || [];
           return (
             <div key={key} role="group" aria-label={label} className={`outline-sec${drop?.band === key ? ' drop-band' : ''}`} data-outline-band={key} {...bandDrop(key)}>
-              <button type="button" role="option" aria-selected={sel.kind === 'section' && sel.section === key} aria-describedby="outline-nav" className={`linklike outline-band${sel.kind === 'section' && sel.section === key ? ' sel' : ''}`} onClick={() => useDesigner.getState().select({ kind: 'section', section: key })} {...roving(`band:${key}`)}><b>{label}</b></button>
+              <button type="button" data-opt="" aria-pressed={sel.kind === 'section' && sel.section === key} aria-describedby="outline-nav" className={`linklike outline-band${sel.kind === 'section' && sel.section === key ? ' sel' : ''}`} onClick={() => useDesigner.getState().select({ kind: 'section', section: key })} {...roving(`band:${key}`)}><b>{label}</b></button>
               <ul className="tree" role="none">{items.length ? rows(items, null, 1, key) : <li className="subtle" role="none">{T('outlineEmpty')}</li>}</ul>
             </div>
           );

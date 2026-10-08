@@ -28,7 +28,9 @@ const PKG_EXTERNAL = ['pdf-lib', '@pdf-lib/fontkit', '@pdf-lib/standard-fonts', 
 for (const [dir, ext] of [['esm-pkg', []], ['esm-pkg-peer', ['react', 'react-dom', 'react/*', 'react-dom/*']]]) {
   fs.rmSync(path.join(root, 'public/embed', dir), { recursive: true, force: true });
   await build({ ...common, entryPoints: ENTRIES, format: 'esm', ...readable, splitting: true, outdir: path.join(root, 'public/embed', dir), entryNames: '[name]', chunkNames: 'chunk-[hash]', external: [...ext, ...PKG_EXTERNAL] });
-  await workerBuild({ outfile: path.join(root, 'public/embed', dir, 'engine.worker.js'), external: [...ext, ...PKG_EXTERNAL] });
+  // the worker bundles its libraries (N41): a bundler that copies engine.worker.js as a file (esbuild) cannot resolve
+  // bare imports in it; bwip-js and the standard-font metrics are files of their own next to it, as in esm
+  await workerWithBwip(path.join(root, 'public/embed', dir), { external: ext });
 }
 // 3. The script tag people paste: a tiny loader that keeps the ReportWright.mountViewer(...) call working.
 fs.writeFileSync(path.join(root, 'public/embed/reportwright-viewer.js'), `/* ReportWright viewer loader: the viewer itself is in esm/ */

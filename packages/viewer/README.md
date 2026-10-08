@@ -11,8 +11,10 @@ The viewer renders in a Web Worker (`engine.worker.js`, one self-contained file 
 
 - **Vite 7**: set `worker: { format: 'es' }` in `vite.config.js`. Without it the build fails with
   `Invalid value "iife" for option "worker.format"`.
-- **esbuild** (plain bundling) does not follow `new Worker(new URL(...))`: copy `node_modules/@reportwright/viewer/dist/engine.worker.js`
-  next to your bundle (it is one file; its only imports are the package's own dependencies).
+- **esbuild** (plain bundling) does not follow `new Worker(new URL(...))`: copy the worker files next to your bundle:
+  `cp node_modules/@reportwright/viewer/dist/engine.worker*.js dist/`. `engine.worker.js` has no imports (its libraries are
+  inside it); `engine.worker.bwip.js` (barcodes) and `engine.worker.stdfonts.js` (Helvetica, Times, Courier) load only
+  when a report needs them. Without them those reports render on the main thread, with the warning below.
 
 If the worker cannot load, the viewer still renders, on the main thread (slow and janky at 100k rows), and logs once
 `[reportwright] worker did not load (<reason>); rendering on the main thread`. `handle.usesWorker` tells you which one you got.

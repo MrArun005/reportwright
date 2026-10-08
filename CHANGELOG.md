@@ -2,6 +2,12 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
+## 0.13.1 — unreleased
+
+### Fixed
+- **N41: a copied worker starts.** The npm package's `engine.worker.js` bundles its libraries (bidi-js, fontkit) instead of importing them by name, so an esbuild app that copies it next to its bundle renders in the worker (it crashed with "Failed to resolve module specifier bidi-js" and fell back to the main thread). Barcodes and the standard-font metrics are files next to it (`engine.worker.bwip.js`, `engine.worker.stdfonts.js`), as in the browser build; the README says to copy `engine.worker*.js`. Test: tests/e2e/b11-esbuild-worker.mjs.
+- **N42: the designer Outline passes axe.** It was a `listbox` whose rows also hold their move buttons (a listbox may hold only options: aria-required-children, critical). The rows are now toggle buttons (`aria-pressed`) in a labelled group, with the same keyboard: one Tab stop, Up/Down/Home/End, Enter or Space selects.
+
 ## 0.13.0 — 2026-10-09
 
 A minor release: new options (`largeReportRows`, `signal`, `warnOnLeave`, `onDirtyChange`), the 14 standard PDF fonts, streamed Excel and Word exports, and warnings where mistakes used to be silent. The tester's 0.12.1 tickets are fixed except where noted; fonts are still TTF (WOFF2 is not done).
