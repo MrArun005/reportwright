@@ -130,13 +130,9 @@ describe('transforms and save/restore', () => {
   });
   it('restore without save throws; saves left open are closed at the page end with a warning', async () => {
     await expect(make((p) => p.restore())).rejects.toThrow(/no page\.save\(\)/);
-    const r = await make(async (p, pdf) => { p.save(); p.save(); p.translate(1, 1); });
+    const r = await make((p) => { p.save(); p.save(); p.translate(1, 1); });
     expect(r.ops.match(/^q$/gm)).toHaveLength(2);
     expect(r.ops.match(/^Q$/gm)).toHaveLength(2);
-    const res = await toBytes(async (pdf) => {
-      const p = pdf.addPage(); p.save();
-    }, { creationDate: DATE }).then(() => null);
-    expect(res).toBe(null);
   });
   it('the unbalanced-save warning reaches pdf.end()', async () => {
     let warnings;
