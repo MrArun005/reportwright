@@ -17,7 +17,7 @@ const sweep = () => { for (const d of live) { try { fs.rmSync(d, { recursive: tr
 /**
  * A sorter factory for planStream (engine/stream.js): sorter(cmp) → { push, drain, close }. The engine closes it
  * when the rows end, fail or are abandoned (a client that left): its files go then.
- * @param {{ run?: number, frame?: number, maxMB?: number, dir?: string, staleMs?: number }} [o]
+ * @param {{ run?: number, runBytes?: number, frame?: number, maxMB?: number, dir?: string, staleMs?: number }} [o]
  */
 /** Spill folders left by a render that was stopped hard (a worker terminated at the time limit runs no cleanup):
  *  any older than staleMs is removed when a new sort starts. */
@@ -32,11 +32,11 @@ function sweepStale(root, staleMs) {
   } catch { /* no folder */ }
 }
 
-export function spillSorter({ run = 20000, frame = 1000, maxMB = num('PW_SPILL_MAX_MB', 2048, { min: 1 }), dir: root = os.tmpdir(), staleMs = 2 * num('PW_RENDER_TIMEOUT_MS', 60000, { min: 1 }) + 60000 } = {}) {
+export function spillSorter({ run = 20000, runBytes = 24 * 1048576, frame = 1000, maxMB = num('PW_SPILL_MAX_MB', 2048, { min: 1 }), dir: root = os.tmpdir(), staleMs = 2 * num('PW_RENDER_TIMEOUT_MS', 60000, { min: 1 }) + 60000 } = {}) {
   sweepStale(root, staleMs);
   /** @param {(a: any, b: any) => number} cmp */
   return (cmp) => {
-    let buf = [], dir = null, written = 0;
+    let buf = [], dir = null, written = 0, held = 0; // held: the run in memory, about (a run ends at run records or runBytes)
     /** @type {string[]} */
     const runs = [];
     const flush = async () => {
@@ -61,11 +61,11 @@ export function spillSorter({ run = 20000, frame = 1000, maxMB = num('PW_SPILL_M
         }
       } finally { await fh.close(); }
       runs.push(file);
-      buf = [];
+      buf = []; held = 0;
     };
     return {
       /** @param {any} r */
-      async push(r) { buf.push(r); if (buf.length >= run) await flush(); },
+      async push(r) { buf.push(r); held += approx(r); if (buf.length >= run || held >= runBytes) await flush(); },
       async *drain() {
         if (!runs.length) { const all = buf; buf = []; all.sort(cmp); for (let i = 0; i < all.length; i++) { yield all[i]; all[i] = null; } return; }
         await flush();
@@ -96,6 +96,16 @@ export function spillSorter({ run = 20000, frame = 1000, maxMB = num('PW_SPILL_M
       get runs() { return runs.length; },
     };
   };
+}
+
+/** A record's size in memory, about: strings at 2 bytes a character, everything else 8, two levels deep (a record holds
+ *  its keys and its row). It counts what is there, never a declared length. */
+function approx(x, d = 0) {
+  if (typeof x === 'string') return 2 * x.length + 16;
+  if (!x || typeof x !== 'object' || d > 2) return 8;
+  let n = 32;
+  for (const k in x) n += approx(x[k], d + 1) + 8;
+  return n;
 }
 
 /** A run file read a batch at a time: next() → the next record, or undefined at its end. @param {string} file */

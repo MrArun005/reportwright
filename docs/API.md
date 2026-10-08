@@ -57,8 +57,8 @@ Response headers: `x-pagewright-pages`, `x-pagewright-ms`, `x-pagewright-warning
 streams: rows are read from the source a batch at a time (JSON arrays, CSV, SQLite, PostgreSQL and MySQL cursors),
 sorted and grouped through temporary files when needed, and written as they come, so memory stays flat however many rows
 (1M rows: well under 300 MB for the render). The answer then has no `content-length` and `x-pagewright-pages: 0`. If the
-render fails after the first bytes, the CSV ends with a last line `#ERROR <message>` and the connection is broken off:
-check for it. Reports the stream cannot do (aggregates in detail rows, Lookup, nested data sets, TopN filters, several
+render fails after the first bytes, the CSV ends with a last line `#ERROR <reference>` and the connection is broken off
+(a failed download, never a short file that looks whole); the reason is in the server's log under that reference. Reports the stream cannot do (aggregates in detail rows, Lookup, nested data sets, TopN filters, several
 tables) take the usual path, under the usual caps. Limits: `PW_STREAM_MAX_ROWS`, `PW_STREAM_FETCH_MAX_MB`,
 `PW_STREAM_SQL_MAX_MB`, `PW_SPILL_MAX_MB`; `PW_STREAM=0` turns streaming off. Design: docs/research/STREAMING-1M.md.
 

@@ -6,6 +6,8 @@
 // stops at its next write. The same port works within one thread (PW_RENDER_WORKERS=0: the render runs on the request
 // thread and yields at every write).
 
+import { randomUUID } from 'node:crypto';
+
 const CHUNK = 64 * 1024;
 export const STREAM_CANCELLED = 'The client stopped reading the output.';
 
@@ -66,8 +68,10 @@ export function textWriter(sink, meta) {
 /**
  * The request side: a ReadableStream of the chunks a render writes to the other end of this port, and a promise of
  * the head (or null when the render answered without streaming: its bytes come back as usual).
- * @param {import('node:worker_threads').MessagePort} port @param {{ csv?: boolean }} [o] csv: a failure after the head
- *   adds a last line "#ERROR <message>" before the stream breaks off
+ * A failure after the head (the 200 is out) never puts its message in the body (it can name a source, a query): the
+ * message goes to the server log under a reference, a CSV gets a last line "#ERROR <reference>", and the stream is
+ * errored, so the connection breaks off and the client sees a failed download, not a short file.
+ * @param {import('node:worker_threads').MessagePort} port @param {{ csv?: boolean }} [o]
  */
 export function portSource(port, { csv = false } = {}) {
   /** @type {ReadableStreamDefaultController<Uint8Array>} */
@@ -76,14 +80,21 @@ export function portSource(port, { csv = false } = {}) {
   const head = new Promise((r) => { onHead = r; });
   const release = () => { const p = pulled; pulled = null; p?.(); };
   const finish = () => { if (done) return; done = true; release(); try { port.close(); } catch { /* closed */ } };
+  const broke = (message) => {
+    const ref = randomUUID().slice(0, 8);
+    console.error(JSON.stringify({ level: 'error', time: new Date().toISOString(), msg: 'stream failed after its first bytes', ref, error: String(message).slice(0, 2000) }));
+    try {
+      if (csv) ctrl.enqueue(new TextEncoder().encode(`\r\n#ERROR ${ref}`));
+      ctrl.error(Object.assign(new Error(`The export failed after it started (reference ${ref}).`), { ref }));
+    } catch { /* closed */ }
+  };
   port.on('message', (m) => {
     if (done) return;
     if (m?.head) onHead(m.head);
     else if (m?.chunk) { ctrl.enqueue(new Uint8Array(m.chunk.buffer, m.chunk.byteOffset, m.chunk.byteLength)); release(); }
     else if (m?.end) { ctrl.close(); finish(); }
     else if (m?.error) {
-      if (csv) ctrl.enqueue(new TextEncoder().encode(`\r\n#ERROR ${String(m.error).replace(/[\r\n]+/g, ' ')}`));
-      ctrl.error(new Error(m.error)); finish();
+      broke(m.error); finish();
     }
   });
   const stream = new ReadableStream({
@@ -97,6 +108,6 @@ export function portSource(port, { csv = false } = {}) {
     /** The render ended without streaming (or failed before its head): stop listening. */
     abandon() { onHead(null); if (!done) { try { ctrl.close(); } catch { /* closed */ } } finish(); },
     /** The render failed after its head (it was stopped: a timeout, a crash). @param {any} e */
-    fail(e) { if (done) return; try { if (csv) ctrl.enqueue(new TextEncoder().encode(`\r\n#ERROR ${String(e?.message || e).replace(/[\r\n]+/g, ' ')}`)); ctrl.error(e); } catch { /* closed */ } finish(); },
+    fail(e) { if (done) return; broke(String(e?.message || e)); finish(); },
   };
 }

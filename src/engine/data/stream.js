@@ -53,12 +53,14 @@ export function splitPath(path) {
  * The rows of a JSON body at a path, in batches, without holding the body: the bytes are scanned for the array the
  * path names, and its elements are parsed (JSON.parse, a batch at a time) as they complete. A body whose shape the path
  * does not meet that way (an object where the rows should be, a path with indexes) is read whole and taken through
- * jsonPathRows, exactly as a whole-body read would: maxWholeBytes caps that case.
+ * jsonPathRows, exactly as a whole-body read would: maxWholeBytes caps that case. Every cap counts the text actually read
+ * (characters), not a declared length: the body before the rows (maxWholeBytes), one row (maxElementBytes, so one huge
+ * string or a row that never ends cannot grow without bound) and the nesting (maxDepth).
  * @param {any} body @param {string|undefined} path
- * @param {{ maxElementBytes?: number, maxWholeBytes?: number, batch?: number }} [o]
+ * @param {{ maxElementBytes?: number, maxWholeBytes?: number, maxDepth?: number, batch?: number }} [o]
  * @returns {AsyncGenerator<any[]>}
  */
-export async function* jsonRows(body, path, { maxElementBytes = 1048576, maxWholeBytes = 64 * 1048576, batch = 1000 } = {}) {
+export async function* jsonRows(body, path, { maxElementBytes = 1048576, maxWholeBytes = 64 * 1048576, maxDepth = 512, batch = 1000 } = {}) {
   const keys = splitPath(path);
   let whole = keys == null ? '' : null; // the body as text, once the splitter gave up
   let buf = '', i = 0; // unscanned text; i: scan position in buf
@@ -95,6 +97,7 @@ export async function* jsonRows(body, path, { maxElementBytes = 1048576, maxWhol
         if (target < 0 && c === 91 && onPath()) { stack.push({ arr: true }); target = stack.length; continue; }
         // the value the path names is not an array (or the root of "$" is an object): no splitting
         if (target < 0 && onPath()) { giveUp(); break; }
+        if (stack.length >= maxDepth) throw Object.assign(new Error(`The JSON data nests deeper than ${maxDepth} levels`), { status: 413 });
         stack.push({ arr: c === 91, key: null, want: c === 123 });
         continue;
       }
@@ -152,8 +155,8 @@ const tooBig = (n) => Object.assign(new Error(`The JSON data is larger than ${Ma
 export async function* csvRecords(body, { sep, quote, maxFieldBytes = 8 * 1048576 }, batch = 1000) {
   const S = sep.charCodeAt(0), Q = quote.charCodeAt(0);
   const START = 0, PLAIN = 1, QUOTED = 2, QQ = 3, CR = 4;
-  let state = START, field = '', row = [], out = [];
-  const endRow = () => { row.push(field); field = ''; out.push(row); row = []; };
+  let state = START, field = '', row = [], out = [], rowLen = 0; // rowLen: the text of the record's finished fields
+  const endRow = () => { row.push(field); field = ''; out.push(row); row = []; rowLen = 0; };
   for await (const t of textOf(body)) {
     let a = 0; // start of the text not yet added to field
     for (let i = 0; i < t.length; i++) {
@@ -166,7 +169,7 @@ export async function* csvRecords(body, { sep, quote, maxFieldBytes = 8 * 104857
           state = PLAIN; a = i;
         // eslint-disable-next-line no-fallthrough
         case PLAIN:
-          if (c === S) { field += t.slice(a, i); row.push(field); field = ''; state = START; a = i + 1; }
+          if (c === S) { field += t.slice(a, i); rowLen += field.length; row.push(field); field = ''; state = START; a = i + 1; }
           else if (c === 10 || c === 13) { field += t.slice(a, i); endRow(); state = c === 13 ? CR : START; a = i + 1; }
           break;
         case QUOTED:
@@ -181,7 +184,8 @@ export async function* csvRecords(body, { sep, quote, maxFieldBytes = 8 * 104857
     }
     if (state === PLAIN || state === QUOTED) field += t.slice(a);
     // one field held across chunks (an unclosed quote takes the rest of the body): bounded
-    if (field.length > maxFieldBytes) throw Object.assign(new Error(`A field of the CSV data is larger than ${Math.round(maxFieldBytes / 1048576)} MB (an unclosed quote?)`), { status: 413 });
+    // and one record (a line that never ends, a field or many): bounded
+    if (rowLen + field.length > maxFieldBytes) throw Object.assign(new Error(`A line of the CSV data is larger than ${Math.round(maxFieldBytes / 1048576)} MB (an unclosed quote, or no line breaks?)`), { status: 413 });
     if (out.length >= batch) { yield out; out = []; }
   }
   // the end: a record still open is the last one (an unclosed quote takes the rest)

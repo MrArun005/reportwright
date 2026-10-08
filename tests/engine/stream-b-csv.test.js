@@ -107,3 +107,19 @@ describe('source caps (review)', () => {
     await expect((async () => { for await (const _ of plan.rows()) { /* read */ } })()).rejects.toMatchObject({ status: 413 });
   });
 });
+
+describe('source caps count what is read (review 2)', () => {
+  const chunks = (s, n) => (async function* () { const b = new TextEncoder().encode(s); for (let i = 0; i < b.length; i += n) yield b.subarray(i, i + n); })();
+  const read = (it) => (async () => { for await (const _ of it) { /* read */ } })();
+  it('JSON: one huge string in a row, a row that never ends, deep nesting, a huge prefix before the rows', async () => {
+    await expect(read(jsonRows(chunks(`[{"a":"${'x'.repeat(50000)}"}]`, 4096), '$', { maxElementBytes: 10000 }))).rejects.toMatchObject({ status: 413 });
+    await expect(read(jsonRows(chunks(`[{"a":[${'1,'.repeat(50000)}`, 4096), '$', { maxElementBytes: 10000 }))).rejects.toMatchObject({ status: 413 });
+    await expect(read(jsonRows(chunks(`[${'['.repeat(2000)}`, 4096), '$', { maxDepth: 512 }))).rejects.toMatchObject({ status: 413 });
+    await expect(read(jsonRows(chunks(`{"meta":"${'x'.repeat(50000)}","rows":[1]}`, 4096), '$.rows', { maxWholeBytes: 10000 }))).rejects.toMatchObject({ status: 413 });
+    await expect(read(jsonRows(chunks(`${'['.repeat(2000)}`, 4096), '$.rows', { maxDepth: 512 }))).rejects.toMatchObject({ status: 413 });
+  });
+  it('CSV: a line that never ends (many fields, or one) is capped', async () => {
+    await expect(read(csvRows(chunks(`a\n${'x,'.repeat(5000)}`, 100), {}, csvChar, 1000))).rejects.toMatchObject({ status: 413 });
+    await expect(read(csvRows(chunks(`a\n${'x'.repeat(5000)}`, 100), {}, csvChar, 1000))).rejects.toMatchObject({ status: 413 });
+  });
+});

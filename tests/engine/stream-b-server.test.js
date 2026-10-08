@@ -109,7 +109,7 @@ describe('the output port', () => {
     await writer;
     expect(bytes).toBe(50 * 65536);
   });
-  it('a reader that cancels stops the writer at its next write; a failure after the head ends a CSV with #ERROR', async () => {
+  it('a reader that cancels stops the writer at its next write; a failure after the head breaks the stream, with only a reference in it', async () => {
     let { port1, port2 } = new MessageChannel();
     let src = portSource(port1);
     let sink = portSink(port2);
@@ -120,12 +120,20 @@ describe('the output port', () => {
     await expect(writer).rejects.toMatchObject({ status: 499 });
     ({ port1, port2 } = new MessageChannel());
     src = portSource(port1, { csv: true }); sink = portSink(port2);
-    (async () => { sink.head({ contentType: 'text/csv', ext: 'csv' }); await sink.write(new TextEncoder().encode('a,b')); sink.fail('The source went away'); })();
+    const logged = [];
+    const keep = console.error; console.error = (x) => logged.push(String(x));
+    (async () => { sink.head({ contentType: 'text/csv', ext: 'csv' }); await sink.write(new TextEncoder().encode('a,b')); sink.fail('HTTP 500 from http://secret.internal/q?token=abc'); })();
     let text = '', err = null;
     const r = src.stream.getReader();
-    try { for (;;) { const { done, value } = await r.read(); if (done) break; text += new TextDecoder().decode(value); } } catch (e) { err = e; }
-    expect(text).toBe('a,b\r\n#ERROR The source went away');
-    expect(err?.message).toBe('The source went away');
+    try { for (;;) { const { done, value } = await r.read(); if (done) break; text += new TextDecoder().decode(value); } } catch (e) { err = e; } finally { console.error = keep; }
+    // the body: a reference only, never the error's text; the stream errors (a broken download, not a short file)
+    expect(text).toMatch(/^a,b\r\n#ERROR [0-9a-f]{8}$/);
+    expect(text).not.toMatch(/secret|token|HTTP/);
+    expect(err?.message).toMatch(/failed after it started \(reference [0-9a-f]{8}\)/);
+    expect(err.message).not.toMatch(/secret/);
+    // the log has the reason, under the same reference
+    const ref = text.slice(-8);
+    expect(logged.some(l => l.includes(ref) && l.includes('secret.internal'))).toBe(true);
   });
 });
 
@@ -216,6 +224,23 @@ describe('streaming keeps its caps (review)', () => {
       await expect(streamInPool({ def: sqlDef('select * from t'), opt: { format: 'csv', principal: OPEN } })).rejects.toMatchObject({ status: expect.any(Number) });
     } finally { streamLimits.rows = keep; }
   }, 60000);
+  it('caps come from the server, never from the request: options in the render request change nothing', async () => {
+    process.env.PW_RENDER_WORKERS = '0';
+    await stopPool();
+    const keep = streamLimits.rows;
+    streamLimits.rows = 1000;
+    try {
+      await expect(streamInPool({ def: sqlDef('select * from t'), opt: { format: 'csv', principal: OPEN, maxRows: 1e12, maxJsonRowBytes: 1e12, maxJsonWholeBytes: 1e12, sorter: null, sqlRows: null } })).rejects.toMatchObject({ status: expect.any(Number) });
+    } finally { streamLimits.rows = keep; }
+  }, 60000);
+  it('spill: a run ends at its bytes as well as its records (a few huge rows cannot fill memory)', async () => {
+    const s = spillSorter({ run: 1e9, runBytes: 200000, dir })((x, y) => x.k - y.k);
+    for (let i = 0; i < 40; i++) await s.push({ k: 40 - i, r: { big: 'x'.repeat(20000) } });
+    expect(s.runs).toBeGreaterThanOrEqual(7); // 40 rows of ~40 KB each in runs of ~200 KB
+    const ks = []; for await (const x of s.drain()) ks.push(x.k);
+    await s.close();
+    expect(ks).toEqual(Array.from({ length: 40 }, (_, i) => i + 1));
+  });
   it('time: a render past its deadline stops (504)', async () => {
     const { planStream } = await import('../../src/engine/stream.js');
     const plan = await planStream(sqlDef('select * from t'), { format: 'csv', sql: (s, p) => runSql(s, p), deadline: Date.now() - 1, timeoutMs: 1 });

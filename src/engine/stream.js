@@ -182,7 +182,9 @@ export async function planStream(def0, opts) {
   };
 
   // ---- rows from the source, typed as buildDataSets types them
-  const maxRows = opts.maxRows ?? Infinity;
+  // the caps: the server passes its own (renderer.js, from its settings; nothing in a request sets them); a caller
+  // that passes none gets these
+  const maxRows = opts.maxRows ?? 5000000;
   const stats = { rows: 0 };
   const day = (x) => (x instanceof Date ? isoDate(x) : x);
   async function* raw() {
@@ -285,7 +287,7 @@ export async function planStream(def0, opts) {
     if (!groups.length) { for await (const r of inOrder()) yield { r, g: null }; return; }
     const gc = { ...tctx };
     const paths = groups.map(() => new Map()); // per level: path text → [ordinal, the first row's key]
-    let ord = 0;
+    let ord = 0, keyText = 0; // the groups' key text held, bounded like the groups' number
     const s = sorter((a, b) => {
       for (let l = 0; l < groups.length; l++) {
         const x = a.g[l], y = b.g[l];
@@ -307,7 +309,11 @@ export async function planStream(def0, opts) {
           try { key = evalValue(groups[l].expr, gc); } catch (e) { warn(`${item.name} group: ${e.message}`); key = '#Error'; }
           path += `\u0000${groupKeyText(key, tctx)}`;
           let p = paths[l].get(path);
-          if (!p) { if (ord > 1e6) throw Object.assign(new Error('More than a million groups: too many to stream.'), { fallBack: true }); paths[l].set(path, p = [ord++, key]); }
+          if (!p) {
+            keyText += path.length;
+            if (ord > 1e6 || keyText > 64 * 1048576) throw Object.assign(new Error('Too many groups (or group keys too long) to stream: filter the data.'), { status: 413, fallBack: true });
+            paths[l].set(path, p = [ord++, key]);
+          }
           g.push(p);
         }
         await s.push({ g, s: seq++, r });
