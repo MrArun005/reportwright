@@ -252,3 +252,23 @@ export function paramChoices(def, fetched) {
   }
   return out;
 }
+
+/**
+ * Cascading parameters: a value the parameter's list no longer offers (its parent changed) is cleared in the state the
+ * run uses, not only in the panel. A multi-value keeps the items still offered. A single value becomes the default if still offered, else the first choice. Returns `params` itself when nothing changed.
+ * @param {any} def @param {Record<string, any>} params @param {Record<string, {value: any}[]>} choices from paramChoices
+ */
+export function clearStaleParams(def, params, choices) {
+  let out = params;
+  for (const p of def?.parameters || []) {
+    const list = choices?.[p.name], v = params[p.name];
+    if (!p.optionsFrom || !Array.isArray(list) || v == null || v === '') continue;
+    const ok = new Set(list.map(o => String(o.value)));
+    // an empty value would make the engine use the default, which may be as stale as the value: take the default if it is
+    // still offered, else the first choice (none offered: empty)
+    const fresh = ok.has(String(p.default)) ? String(p.default) : list.length ? String(list[0].value) : '';
+    const next = p.multi ? String(v).split(',').filter(x => ok.has(x)).join(',') : (ok.has(String(v)) ? v : fresh);
+    if (next !== v) out = { ...out, [p.name]: next };
+  }
+  return out;
+}

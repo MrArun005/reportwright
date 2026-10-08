@@ -10,7 +10,7 @@ import { safeUrl } from '@/engine/url.js';
 import { viewerTimeZone } from './timeZone.js';
 import { applyStyleAttributes, deferStyleAttributes } from '../embed/styles.js';
 import { t as tr, dirOf, pickLang } from './i18n.js';
-import { paramChoices, arrangeToolbar, exportOptionsFrom, serverPdfUrl, findText, frozenAt, galleyDefinition, pageLinks, readingText } from './logic.js';
+import { paramChoices, clearStaleParams, arrangeToolbar, exportOptionsFrom, serverPdfUrl, findText, frozenAt, galleyDefinition, pageLinks, readingText } from './logic.js';
 import ParamInput from './ParamInput.jsx';
 import { Icon } from './icons.jsx';
 
@@ -318,10 +318,16 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   const optKey = JSON.stringify(params);
   useEffect(() => {
     if (!(definition.parameters || []).some(p => p.options || p.optionsFrom)) return;
+    let stale = false;
     const t = setTimeout(() => {
-      parameterOptions(definition, params, { baseUrl: origin(), reportId, fetch: reportFetch(origin()) }).then(o => setOptions(paramChoices(definition, o))).catch(() => {});
+      parameterOptions(definition, params, { baseUrl: origin(), reportId, fetch: reportFetch(origin()) }).then((o) => {
+        if (stale) return; // the parameters changed again: these choices belong to the old ones
+        const choices = paramChoices(definition, o);
+        setOptions(choices);
+        setParams(s => clearStaleParams(definition, s, choices)); // a dependent value its parent no longer offers is cleared for the run too
+      }).catch(() => {});
     }, 250);
-    return () => clearTimeout(t);
+    return () => { stale = true; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [definition, optKey]);
 
