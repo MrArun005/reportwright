@@ -30,3 +30,12 @@ describe('paginator: a group taller than a page keeps two rows on each side of a
     for (const c of counts) expect(c === 0 || c >= 2).toBe(true);
   });
 });
+
+describe('paginator: keep with next', () => {
+  it('a heading never ends a page; a chain of headings moves with the content under it', () => {
+    const one = paginate([{ top: 0, height: 380, items: ['a'] }, { top: 380, height: 30, items: ['H'], keepWithNext: true }, { top: 410, height: 200, items: ['b'] }], [], 400, () => {});
+    expect(one.map(p => p.units.at(-1).items[0])).toEqual(['a', 'b']);
+    const chain = paginate([{ top: 0, height: 300, items: ['a'] }, { top: 300, height: 30, items: ['H1'], keepWithNext: true }, { top: 330, height: 30, items: ['H2'], keepWithNext: true }, { top: 360, height: 200, items: ['b'] }], [], 400, () => {});
+    expect(chain.map(p => p.units.at(-1).items[0])).toEqual(['a', 'b']);
+  });
+});
