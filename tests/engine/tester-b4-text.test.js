@@ -136,3 +136,14 @@ describe('12, 13: a short text shrinks before it is cut or wraps alone', () => {
     expect(t.size).toBe(8);
   });
 });
+
+describe('14: a save keeps UTF-8 as it is', () => {
+  it('a body whose "·" and "₹" are split across chunks reads back unchanged (no Â·)', async () => {
+    const { readDefinition } = await import('../../src/server/reports.js');
+    const bytes = new TextEncoder().encode(JSON.stringify({ name: 'a · b ₹ — é' }));
+    const cut = bytes.indexOf(0xb7); // the second byte of "·" (C2 B7)
+    const body = new ReadableStream({ start(c) { c.enqueue(bytes.slice(0, cut)); c.enqueue(bytes.slice(cut, cut + 3)); c.enqueue(bytes.slice(cut + 3)); c.close(); } });
+    const def = await readDefinition(new Request('http://x/', { method: 'PUT', body, duplex: 'half' }));
+    expect(def.name).toBe('a · b ₹ — é');
+  });
+});
