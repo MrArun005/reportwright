@@ -90,7 +90,8 @@ console.log(r.streamed ? `${r.pages} pages, streamed` : `written whole: ${r.why}
 cannot stream: render + exportPdf holds every page (measured on a flowing 4-column table: 435 MB peak RSS at 100,000
 rows, against 273 MB streamed with the rows themselves in the definition). For a large report that you want as bytes, give
 `exportPdfStream` a sink that keeps the chunks; it renders the report whole itself when it cannot stream (`r.why`).
-`render()` warns once past 100,000 rows (`Large report (N rows): …`).
+`render()` warns once per render when a data set has more rows than its `largeReportRows` option (default 100,000; `0`
+or `false` turns it off): `Large report (N rows): …` in `model.warnings`, and on the console once per process.
 
 ```js
 const parts = [];

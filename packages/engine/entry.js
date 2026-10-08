@@ -72,14 +72,15 @@ export async function render(def, opts) {
   if (warn.length && model?.warnings) model.warnings.push(...warn);
   // A1.5: a model this size is most of render + exportPdf's memory; exportPdfStream lays a flowing table out in windows
   const rows = Math.max(0, ...Object.values(model?.stats?.rows || {}).map(Number));
-  if (rows > LARGE_ROWS && !opts?.dataOnly && model?.warnings) {
+  const limit = opts?.largeReportRows ?? LARGE_ROWS; // 0 or false: off
+  if (limit && rows > Number(limit) && !opts?.dataOnly && model?.warnings) {
     const w = `Large report (${rows.toLocaleString('en-US')} rows): exportPdfStream writes it in about 320 MB; render + exportPdf holds it all in memory`;
     model.warnings.push(w);
     if (!warned.has('large')) { warned.add('large'); console.warn(`[@reportwright/engine] ${w}`); }
   }
   return model;
 }
-const LARGE_ROWS = 100_000;
+const LARGE_ROWS = 100_000; // render's largeReportRows default
 const deprecated = (key, msg) => { if (!warned.has(key)) { warned.add(key); console.warn(`[@reportwright/engine] DEPRECATED: ${msg}`); } };
 const isFontStore = (/** @type {any} */ x) => x instanceof FontStore || (!!x && typeof x === 'object' && typeof x.load === 'function' && typeof x.get === 'function');
 /** @param {string} fn @param {any} model */

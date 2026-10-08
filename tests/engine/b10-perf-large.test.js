@@ -29,3 +29,23 @@ describe('B10 A1.5 large classic render', () => {
     expect(m.warnings.some(w => /^Large report/.test(w))).toBe(false);
   }, 30000);
 });
+
+describe('B10 A1.5 largeReportRows', () => {
+  const table = (n) => ({ ...report(n), sections: { body: { items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 200, h: 40, dataSet: 'R',
+    columns: [{ width: 200 }], detail: [{ height: 18, cells: [{ value: '=Fields.v' }] }] }] },
+  pageFooter: { height: 20, items: [{ type: 'textbox', name: 'P', x: 0, y: 0, w: 200, h: 18, value: '="Page " & Globals.PageNumber & " of " & Globals.TotalPages' }] } } });
+
+  it('sets the threshold; a multi-page render warns exactly once; it is a known option', async () => {
+    const m = await render(table(1001), { fontStore: fonts, largeReportRows: 1000 });
+    expect(m.pages.length).toBeGreaterThan(10);
+    expect(m.warnings.filter(w => /^Large report \(1,001 rows\)/.test(w))).toHaveLength(1);
+    expect(m.warnings.some(w => /Unknown option/.test(w))).toBe(false);
+  });
+
+  it('0 or false turns it off; below the threshold says nothing', async () => {
+    for (const largeReportRows of [0, false, 2000]) {
+      const m = await render(table(1001), { fontStore: fonts, largeReportRows });
+      expect(m.warnings.some(w => /^Large report/.test(w))).toBe(false);
+    }
+  });
+});

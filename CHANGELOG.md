@@ -11,7 +11,7 @@ All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. T
   about 318 ms instead of 364 ms (most of what is left is compiling harfbuzz-subset.wasm, about 150 ms).
 - **Large classic renders (A1.4, A1.5):** `render()` past 100,000 rows warns once (`Large report (N rows):
   exportPdfStream writes it in about 320 MB; render + exportPdf holds it all in memory`), in the model's warnings and
-  once per process on the console. `exportPdf` takes a rendered model, so it cannot switch to streaming itself; the
+  once per process on the console. The threshold is the render option `largeReportRows` (100000; `0` or `false`: off). `exportPdf` takes a rendered model, so it cannot switch to streaming itself; the
   engine README shows `exportPdfStream` with a sink that keeps the bytes.
 - **Streaming tickets, from the 0.12.1 retest (N23-N29):** `exportPdfStream` with `encrypt` or `prepare` and `sqlRows` no
   longer fails with "Save the report first" (the rows are gathered for the whole-model render); a misspelled option
