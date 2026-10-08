@@ -15,11 +15,15 @@ describe('font loading', () => {
     expect(texts(page.pages[0])).toContain('Plain text');
   });
 
-  it('an italic run with a failed face renders in a fallback face and warns once', async () => {
+  it('an italic run with a failed face renders in a fallback face and warns once per failed face', async () => {
     const items = [{ type: 'textbox', x: 0, y: 0, w: 200, h: 20, value: 'Slanted', style: { fontStyle: 'italic' } }];
     const page = await render(report(items), { fontStore: noItalic() });
     expect(texts(page.pages[0])).toContain('Slanted');
-    expect(page.warnings.filter(w => /Inter-Italic|did not load/.test(w))).toHaveLength(1);
+    // each failed italic face warns once
+    expect(page.warnings.filter(w => /Italic/.test(w))).toEqual([
+      'The font "Inter-Italic" did not load, so its text is drawn in a bundled face instead.',
+      'The font "Inter-BoldItalic" did not load, so its text is drawn in a bundled face instead.',
+    ]);
   });
 
   it('a bold report lays out in one pass: the faces its styles name load before layout', async () => {

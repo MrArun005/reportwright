@@ -5,7 +5,7 @@
  * No React, no DOM. Runs in a Web Worker and in Node.
  */
 import { resolvePage } from './units.js';
-import { FontStore, CORE_FONT_KEY, fontsFor, fontsForDef, SHAPER, OPTIONAL_KEYS } from './text/fonts.js';
+import { FontStore, CORE_FONT_KEY, PRELOAD_KEYS, fontsFor, fontsForDef, SHAPER, OPTIONAL_KEYS } from './text/fonts.js';
 import { safeUrl } from './url.js';
 import { TextMeasurer, finishText } from './text/measure.js';
 import { loadSources, buildDataSets, coerce } from './data/index.js';
@@ -130,8 +130,9 @@ export async function render(def0, opts = {}) {
   const params = resolveParameters(def, opts.parameters || {}, { now: opts.now, timeZone, locale: def.locale });
 
   const store = opts.fontStore || new FontStore(/** @type {any} */ (opts.loadFont));
-  // the faces the definition names load now (one layout pass for a bold or italic report); the others load if layout finds them
-  await store.load([CORE_FONT_KEY, ...fontsForDef(def)]);
+  // every face the render can draw with loads now, in parallel and each on its own (a face that fails falls back, with a
+  // warning): layout then runs once. Only a face that a fallback script or an uploaded family names later loads in a pass.
+  await store.load([...new Set([CORE_FONT_KEY, ...PRELOAD_KEYS, ...fontsForDef(def)])]);
   let m = new TextMeasurer(store);
 
   // the time limit: an absolute deadline, the same for this render and its subreports
