@@ -90,3 +90,52 @@ describe('N21: a sink that stops reading', () => {
     expect(c.opened).toBe(0);
   });
 });
+
+describe('N22: every cursor opened is closed, on every exit', () => {
+  /** a sink whose write fails after n bytes */
+  // the writer hands the sink 64 KB at a time: the first write fails, mid-way through the rows (12,000 rows: ~300 KB)
+  const failing = () => ({ write: async () => { throw new Error('disk full'); } });
+  const run = async (c, d, o, sink) => {
+    const e = await exportPdfStream(d, opts(c, o), sink).then(() => null, x => x);
+    await new Promise(r => setTimeout(r, 20));
+    return e;
+  };
+  it('a write that throws in the second pass ("Page N of M" reads the rows twice)', async () => {
+    const c = cursor(12000);
+    expect((await run(c, def(), {}, failing()))?.message).toBe('disk full');
+    expect(c.opened).toBe(2);
+    expect(c.batches).toBeLessThan(240); // the second pass stopped before its end
+    expect(c.closed).toBe(2);
+  });
+  it('a write that throws in the one pass, and the spill path', async () => {
+    const c = cursor(12000);
+    expect((await run(c, def({ single: true }), {}, failing()))?.message).toBe('disk full');
+    expect([c.opened, c.closed]).toEqual([1, 1]);
+    expect(c.batches).toBeLessThan(120);
+    const dir = fs.mkdtempSync(path.join(tmp, 'sp-'));
+    const c2 = cursor(12000);
+    expect((await run(c2, def({ sort: true, single: true }), { sorter: spillSorter({ dir, run: 500 }) }, failing()))?.message).toBe('disk full');
+    expect(c2.opened).toBe(c2.closed);
+    expect(spillDirs(dir)).toEqual([]);
+  });
+  it('a sink that emits error (a Node Writable whose write fails)', async () => {
+    const c = cursor(3000);
+    const w = new Writable({ write(_c, _e, cb) { cb(new Error('EPIPE')); } });
+    w.on('error', () => {});
+    expect((await run(c, def(), {}, w))?.message).toBe('EPIPE');
+    expect(c.opened).toBe(c.closed);
+  });
+  it('a cursor that throws, a row cap, a presorted row out of order, a tagged file over its cap', async () => {
+    for (const [d, o, c, msg] of [
+      [def(), {}, cursor(3000, { throwAt: 1500 }), /cursor broke/],
+      [def(), { maxRows: 1000 }, cursor(3000), /more than 1,000 rows/],
+      [def({ sort: true }), { presorted: true }, cursor(3000, { order: (i) => (i === 900 ? 'A' : 'B') }), /not in the report's order/],
+      [def(), { tagged: { lang: 'en', maxElements: 500 } }, cursor(3000), /./],
+    ]) {
+      const e = await run(c, d, o, memSink());
+      expect(e?.message, JSON.stringify(o)).toMatch(msg);
+      expect(c.opened, JSON.stringify(o)).toBeGreaterThan(0);
+      expect(c.closed, JSON.stringify(o)).toBe(c.opened);
+    }
+  });
+});
