@@ -214,3 +214,13 @@ describe.skipIf(!HAS.poppler || !sharp)('JPEG (DCTDecode passthrough)', () => {
     expect(near(px(40, 40), [0, 200, 0], 20)).toBe(true);
   });
 });
+
+describe('after pdf.end()', () => {
+  it('embedImage, iccColorSpace and spotColor throw instead of writing past the end of the file', async () => {
+    const pdf = (await import('../../packages/pdf/src/index.js')).createPdf({ write() {} });
+    await pdf.end();
+    await expect(pdf.embedImage(png({ w: 1, h: 1, type: 0, depth: 8, px: () => [0] }))).rejects.toThrow(/has ended/);
+    expect(() => pdf.spotColor('X', 0)).toThrow(/has ended/);
+    await expect(pdf.end()).rejects.toThrow(/has ended/);
+  });
+});
