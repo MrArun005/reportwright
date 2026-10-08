@@ -58,7 +58,7 @@ export function ExprInput({ value, onChange, onOpen, placeholder }) {
     <div>
       <div className="expr-row">
         <TextInput value={value} onChange={onChange} mono invalid={!!err} className={issues.length ? 'squiggle' : undefined} aria-invalid={err || issues.length ? true : undefined} placeholder={placeholder || T('i_exprPh')} />
-        <button className="fx" title={T('i_openExprEditor')} aria-label={T('i_openExprEditor')} onClick={onOpen} type="button">fx</button>
+        <button className="fx" title={T('i_openExprEditor')} aria-label={`fx: ${T('i_openExprEditor')}`} onClick={onOpen} type="button">fx</button>
       </div>
       {err && <div className="err">{err}</div>}
       {issues.map((i, k) => <div key={k} className="warn" data-testid="field-warning">{issueText(T, i)}</div>)}
