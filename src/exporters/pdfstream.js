@@ -643,7 +643,7 @@ export async function writePagedPdf(plan, opts, sink) {
   }
   const res = await w.finish({ outline, catalog, info: { title, author: opts.author, creationDate: when } });
   // a tagged file of millions of elements is valid, but tools that load every object (qpdf, pikepdf) need gigabytes
-  if (env.embedded) info.warnings.push(...embeddedWarnings(env.embedded));
+  for (const x of env.embedded ? embeddedWarnings(env.embedded) : []) info.warnings.push(x);
   if (tags && tags.count > TAGGED_LARGE) info.warnings.push(`The tagged PDF has ${tags.count.toLocaleString('en-US')} structure elements (${res.pages.toLocaleString('en-US')} pages): readers open it, but tools that load every object of a file (qpdf, pikepdf) may run out of memory on it. tagged.maxElements caps it.`);
   return { pages: res.pages, warnings: info.warnings };
 }
