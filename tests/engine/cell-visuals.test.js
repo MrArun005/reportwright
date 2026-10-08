@@ -62,3 +62,64 @@ describe('data bar labels', () => {
     expect(l.x + l.w).toBeLessThanOrEqual(col + 120);
   });
 });
+
+describe('negative data bars', () => {
+  // a column with negatives: bars grow from a zero line placed at min..max (0 included); negatives are red, to the left
+  const bars = (vals, visual = {}) => {
+    const rows = vals.map((v, i) => ({ n: 'R' + i, v }));
+    return render(report([table({ type: 'databar', value: '=Fields.v', ...visual })], { data: { rows } }), { fontStore }).then(out => {
+      const t = out.pages[0].items.filter(i => i.t === 'text');
+      const col = t.find(i => i.lines[0].text === 'Visual').lines[0].x - 4;
+      const bar = out.pages[0].items.filter(i => i.t === 'rect' && /cc$/.test(i.fill) && i.w > 0 && i.h > 1);
+      return { col, bar, label: (s) => t.find(i => i.lines[0].text === s && i.lines[0].x > col).lines[0] };
+    });
+  };
+
+  it('a negative bar ends at the zero line, a positive one starts there, in proportion to min..max', async () => {
+    const { bar } = await bars([40, -30]);
+    const pos = bar.find(b => b.fill === '#2563ebcc'), neg = bar.find(b => b.fill === '#dc2626cc');
+    expect(neg.x + neg.w).toBeCloseTo(pos.x, 2);                    // the zero line: where the two meet
+    const area = pos.x + pos.w - neg.x;                              // min (-30) to max (40), 70 wide
+    expect(neg.w / area).toBeCloseTo(30 / 70, 3);
+    expect(pos.w / area).toBeCloseTo(40 / 70, 3);
+  });
+
+  it('negativeColor sets the colour of the negative bars', async () => {
+    const { bar } = await bars([40, -30], { negativeColor: '#000000' });
+    expect(bar.some(b => b.fill === '#000000cc')).toBe(true);
+    expect(bar.some(b => b.fill === '#dc2626cc')).toBe(false);
+  });
+
+  it('a zero line is drawn at the zero position', async () => {
+    const { bar } = await bars([40, -30]);
+    const neg = bar.find(b => b.fill === '#dc2626cc'), pos = bar.find(b => b.fill === '#2563ebcc');
+    const line = (await render(report([table({ type: 'databar', value: '=Fields.v' })], { data: { rows: [{ n: 'a', v: 40 }, { n: 'b', v: -30 }] } }), { fontStore }))
+      .pages[0].items.find(i => i.t === 'rect' && i.w <= 1 && i.h > 1);
+    expect(line.x + line.w / 2).toBeCloseTo(neg.x + neg.w, 1);
+  });
+
+  it('a negative label sits before the bar end (to its left) when it fits, mirrored from the positive rule', async () => {
+    // -10 and -40 and 100: the -10 bar has room to its left inside the cell; the -40 bar reaches the cell edge
+    const { bar, label, col } = await bars([-10, -40, 100]);
+    const b = bar.filter(x => x.fill === '#dc2626cc').sort((a, c) => a.w - c.w)[0]; // the -10 bar
+    const l = label('-10');
+    expect(l.x + l.w).toBeCloseTo(b.x - 3, 1);
+    expect(l.x).toBeGreaterThanOrEqual(col);
+  });
+
+  it('a negative label that does not fit before its bar sits inside it, from the bar\'s far end, in an ink that reads on red', async () => {
+    const { bar, label } = await bars([-10, -40, 100]);
+    const far = bar.filter(x => x.fill === '#dc2626cc').sort((a, c) => c.w - a.w)[0]; // the -40 bar
+    const l = label('-40');
+    expect(l.x).toBeGreaterThanOrEqual(far.x + 3 - 0.01);
+    expect(l.x + l.w).toBeLessThanOrEqual(far.x + far.w + 0.01);
+  });
+
+  it('a column of only positive values draws the bars from the left edge, unchanged', async () => {
+    const { bar } = await bars([40, 20]);
+    expect(bar.every(b => b.fill === '#2563ebcc')).toBe(true);
+    const big = bar.find(b => b.w === Math.max(...bar.map(x => x.w))), small = bar.find(b => b.w === Math.min(...bar.map(x => x.w)));
+    expect(small.x).toBeCloseTo(big.x, 6);                           // every bar starts at the left edge
+    expect(small.w / big.w).toBeCloseTo(20 / 40, 6);
+  });
+});

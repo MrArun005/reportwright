@@ -10,23 +10,23 @@ export const ICON_SETS = ['trafficLights', 'arrows', 'symbols', 'flags', 'rating
 const STATE = ['#dc2626', '#f59e0b', '#16a34a']; // low, middle, high
 
 const f = (v) => Math.round(v * 100) / 100;
-/** The largest |value| over the rows of the data region a cell is in (a detail row), or over the sibling instances of
- *  the group a group cell is in (computed per instance), or null outside a region. Cached per row array. */
-const COLMAX = new WeakMap();
-function columnMax(expr, ctx, lc, who) {
+/** The smallest and largest value over the rows of the data region a cell is in (a detail row), or over the sibling
+ *  instances of the group a group cell is in (computed per instance), or null outside a region. Cached per row array. */
+const COLRANGE = new WeakMap();
+function columnRange(expr, ctx, lc, who) {
   if (expr == null || !ctx?.region?.rows) return null;
   const detail = ctx.aggIndex != null;
   const sets = detail ? ctx.region.rows.map(r => [r]) : ctx.group?.siblings;
   if (!sets?.length) return null;
-  let byExpr = COLMAX.get(sets);
-  if (!byExpr) COLMAX.set(sets, byExpr = new Map());
+  let byExpr = COLRANGE.get(sets);
+  if (!byExpr) COLRANGE.set(sets, byExpr = new Map());
   if (byExpr.has(expr)) return byExpr.get(expr);
-  let m = null;
+  let lo = null, hi = null;
   for (const rs of sets) {
     const v = num(expr, { ...ctx, fields: rs[0], aggRows: rs, aggIndex: detail ? 0 : undefined }, lc, who);
-    if (v != null && Number.isFinite(v) && (m == null || Math.abs(v) > m)) m = Math.abs(v);
+    if (v != null && Number.isFinite(v)) { if (lo == null || v < lo) lo = v; if (hi == null || v > hi) hi = v; }
   }
-  const out = m && m > 0 ? m : null;
+  const out = lo == null ? null : { lo, hi };
   byExpr.set(expr, out);
   return out;
 }
@@ -37,7 +37,7 @@ function num(expr, ctx, lc, who) {
 
 /**
  * @param {{type: 'sparkline'|'databar'|'bullet'|'iconset'|'rangebar', value?: string, values?: string, max?: string, min?: string, target?: string, color?: string, showValue?: boolean, format?: string,
- *   style?: 'line'|'column'|'area'|'winloss', bandLow?: string, bandHigh?: string, bandColor?: string, negColor?: string,
+ *   style?: 'line'|'column'|'area'|'winloss', bandLow?: string, bandHigh?: string, bandColor?: string, negColor?: string, negativeColor?: string,
  *   iconSet?: string, lower?: string, upper?: string, low?: string, high?: string}} v
  * @param {{x:number, y:number, w:number, h:number}} box
  */
@@ -156,14 +156,31 @@ export function paintVisual(v, box, ctx, lc, base, who = 'Visual', opt = {}) {
     return out;
   }
   const val = num(v.value, ctx, lc, who) ?? 0;
+  const range = columnRange(v.value, ctx, lc, who);
+  const absMax = range ? Math.max(Math.abs(range.lo), Math.abs(range.hi)) : 0;
   // no max: the largest value in the cell's column (the region's rows; a group cell, its sibling groups'), so the
   // bars compare (N10: every bar was full); a value alone has nothing to compare with
-  const max = num(v.max, ctx, lc, who) ?? columnMax(v.value, ctx, lc, who) ?? Math.max(val, 1);
+  const max = num(v.max, ctx, lc, who) ?? (absMax > 0 ? absMax : null) ?? Math.max(val, 1);
   const frac = Math.max(0, Math.min(1, max ? val / max : 0));
   if (v.type === 'databar') {
+    // a column with negatives (or a negative value): bars grow from a zero line placed at min..max, 0 included; positive
+    // bars run right, negative bars left, in negativeColor. Without negatives the bars are drawn from the left edge.
+    const neg = (range?.lo ?? 0) < 0 || val < 0;
+    let x0 = x, bw = w * frac, zf = 0;
+    if (neg) {
+      const hi = Math.max(0, num(v.max, ctx, lc, who) ?? range?.hi ?? val, val), lo = Math.min(0, range?.lo ?? val, val);
+      const span = hi - lo;
+      zf = -lo / span;
+      bw = val >= 0 ? Math.min(w * val / span, w * (1 - zf)) : Math.min(w * -val / span, w * zf);
+      x0 = val >= 0 ? x + w * zf : x + w * zf - bw;
+    }
+    let negColor = v.negativeColor || '#dc2626';
+    if (isDynamic(negColor)) { try { negColor = String(evalValue(negColor, ctx) || '#dc2626'); } catch { negColor = '#dc2626'; } }
+    const barColor = val < 0 ? negColor : color;
     // in a cell: the bar spans the text line and the value sits on its neighbours' baseline
-    out.push(line ? { t: 'rect', x, y: line.top + line.lh * 0.05, w: w * frac, h: line.lh * 0.9, fill: color + 'cc', radius: 1 }
-      : { t: 'rect', x, y: y + h * 0.18, w: w * frac, h: h * 0.64, fill: color + 'cc', radius: 1 });
+    const by = line ? line.top + line.lh * 0.05 : y + h * 0.18, bh = line ? line.lh * 0.9 : h * 0.64;
+    out.push({ t: 'rect', x: x0, y: by, w: bw, h: bh, fill: barColor + 'cc', radius: 1 });
+    if (neg) out.push({ t: 'rect', x: x + w * zf - 0.5, y: by, w: 1, h: bh, fill: '#6b7280' }); // the zero line
     if (v.showValue !== false) {
       const key = resolveFontKey(base.fontFamily, 'normal', 'normal');
       let size = line ? line.size : Math.min(h * 0.75, Number(base.fontSize) || 8);
@@ -171,13 +188,14 @@ export function paintVisual(v, box, ctx, lc, base, who = 'Visual', opt = {}) {
       const s = toText(val, v.format || base.format || 'N0', ctx);
       let tw = lc.m.width(s, key, size);
       if (tw > w) { size *= w / tw; tw = w; } // wider than the box: smaller, never past its edge
-      const barEnd = x + w * frac;
-      // after the bar when it fits in the cell (normal ink); else inside the bar, right-aligned to its end, in an ink that
-      // reads on the fill, and smaller if the bar cannot hold it. Never past the bar end or the cell edge.
-      const after = barEnd + 3 + tw <= x + w;
-      if (!after && tw > w * frac - 6) { const fit = Math.max(0, w * frac - 6); size *= fit / tw; tw = fit; }
-      const lx = after ? barEnd + 3 : Math.max(x, barEnd - 3 - tw);
-      out.push({ t: 'text', font: key, size, color: after ? '#374151' : inkOn(color), lines: [{ x: lx, y: line ? line.baseline : y + h / 2 + size * 0.35, text: s, w: tw }] });
+      // the bar's far end (its right end, or its left end when negative): a label after it when it fits in the cell (normal
+      // ink); else inside the bar, right-aligned to its far end (left-aligned for a negative bar), in an ink that reads on
+      // the fill, and smaller if the bar cannot hold it. Never past the bar end or the cell edge.
+      const barEnd = val < 0 ? x0 : x0 + bw;
+      const after = val < 0 ? barEnd - 3 - tw >= x : barEnd + 3 + tw <= x + w;
+      if (!after && tw > bw - 6) { const fit = Math.max(0, bw - 6); size *= fit / tw; tw = fit; }
+      const lx = after ? (val < 0 ? barEnd - 3 - tw : barEnd + 3) : (val < 0 ? barEnd + 3 : Math.max(x, barEnd - 3 - tw));
+      out.push({ t: 'text', font: key, size, color: after ? '#374151' : inkOn(barColor), lines: [{ x: lx, y: line ? line.baseline : y + h / 2 + size * 0.35, text: s, w: tw }] });
     }
     return out;
   }

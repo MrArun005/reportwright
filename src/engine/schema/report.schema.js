@@ -1366,6 +1366,10 @@ export const REPORT_SCHEMA = {
       },
       "negColor": {
        "type": "string"
+      },
+      "negativeColor": {
+       "type": "string",
+       "description": "data bars: the colour of a bar with a negative value (default #dc2626)"
       }
      },
      "required": [
@@ -1393,6 +1397,10 @@ export const REPORT_SCHEMA = {
       },
       "color": {
        "type": "string"
+      },
+      "negativeColor": {
+       "type": "string",
+       "description": "the colour of a bar with a negative value (default #dc2626)"
       }
      },
      "required": [
