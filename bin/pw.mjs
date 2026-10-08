@@ -26,7 +26,9 @@ const HELP = `pw render <report.pw.json> [-p name=value]… [-d source=data.json
           [--password PW] [--owner-password PW] [--deny print|modify|copy|annotate|fillForms|accessibility|assemble|printHighQuality]…
 pw import <report.jrxml|.rdl|.rptdesign> [-o out.pw.json]
                                    convert a JasperReports, SSRS or BIRT report to a ReportWright definition
-pw test [folder] [--update]        render every <folder>/__tests__/*.test.json case and compare it with its snapshot
+pw test [folder] [--update] [--layout]
+                                   render every <folder>/__tests__/*.test.json case and compare it with its snapshot
+                                   (the words; --layout: the layout, see the CLI README)
 pw diff <old.pw.json> <new.pw.json> [-p name=value]… [-d source=data.json]… [--base URL]
 pw audit verify [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--json] [--public-key file.pem]
                                    check the server's audit log (hash chain, signed checkpoints); run it in the app
@@ -156,8 +158,28 @@ async function cmdRender(args) {
   else { fs.writeFileSync(out, typeof bytes === 'string' ? bytes : Buffer.from(bytes)); console.error(`pw: wrote ${out} (${model.pages.length} pages${model.warnings.length ? `, ${model.warnings.length} warnings` : ''})`); }
 }
 
+/** The layout of every page, one line per item: its box (points, rounded to 0.5), size and colour; then each table's column widths. What pw test --layout compares. */
+function layoutLines(model) {
+  const r = (v) => Math.round(v * 2) / 2;
+  const box = (b) => ['x', 'y', 'w', 'h'].filter(k => typeof b[k] === 'number').map(k => `${k}=${r(b[k])}`).join(' ');
+  const out = [];
+  model.pages.forEach((pg, i) => {
+    out.push(`--- page ${i + 1}`);
+    const tables = new Map();
+    for (const it of pg.items.flatMap(x => (x.t === 'field' ? x.draw || [] : [x]))) {
+      if (it.cell && !tables.has(it.cell.table)) tables.set(it.cell.table, it.cell.cols);
+      if (it.t === 'text') {
+        const first = it.lines?.[0] || {};
+        out.push(`text ${box(it.clip || { x: first.x, y: first.y, w: first.w, h: it.size })} size=${it.size} color=${it.color} "${String(first.text ?? '').slice(0, 40)}"`);
+      } else out.push(`${it.t} ${box(it)}${it.fill ? ` fill=${it.fill}` : ''}`.trimEnd());
+    }
+    for (const [name, cols] of tables) out.push(`table ${name} columns ${(cols || []).map(r).join(' ')}`);
+  });
+  return out;
+}
+
 async function cmdTest(args) {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { update: { type: 'boolean' } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { update: { type: 'boolean' }, layout: { type: 'boolean' } } });
   const dir = positionals[0] || 'reports';
   const testsDir = path.join(dir, '__tests__');
   let files = [];
@@ -171,12 +193,21 @@ async function cmdTest(args) {
       const data = Object.fromEntries(Object.entries(c.data || {}).map(([k, v]) => [k, typeof v === 'string' ? readJson(path.resolve(testsDir, v)) : v]));
       const model = await renderModel(def, { parameters: c.parameters, data, now: c.now || '2026-01-01T09:00:00', state: c.state, file: path.resolve(testsDir, spec.report) }); // state: drill-down toggles, e.g. {"toggles": {"Pivot|r0|/North": false}}
       const label = `${id} › ${c.name}`;
-      const snapFile = path.join(testsDir, `${id}.${c.name}.snap.txt`);
-      const text = snapshotText(label, model);
+      // --layout (or the case's "layout": true) compares the layout; otherwise the words of each page
+      const layout = !!values.layout || c.layout === true;
+      const snapFile = path.join(testsDir, `${id}.${c.name}.${layout ? 'layout.' : ''}snap.txt`);
+      const text = layout ? layoutLines(model).join('\n') + '\n' : snapshotText(label, model);
       if (values.update || !fs.existsSync(snapFile)) { fs.writeFileSync(snapFile, text); written++; passed++; continue; }
       const old = fs.readFileSync(snapFile, 'utf8');
       if (old === text) { passed++; continue; }
       failed++;
+      if (layout) {
+        const d = diffLines(old.split('\n'), text.split('\n'));
+        console.log(`${label}: the layout changed`);
+        for (const l of d.slice(0, 60)) console.log(l);
+        if (d.length > 60) console.log(`  … ${d.length - 60} more lines`);
+        continue;
+      }
       const pages = old.split(/\n--- page \d+\n/).slice(1).map(s => s.split('\n--- warnings\n')[0].replace(/\n$/, '').split('\n'));
       if (!compare(label, { pages: pages.map(lines => ({ items: [{ t: 'text', lines: lines.map((text, y) => ({ text, x: 0, y })) }] })) }, model)) console.log(`${label}: the warnings changed`);
     }
