@@ -243,6 +243,9 @@ export { planPaged } from '../../src/engine/paged.js';
  * @param {{ write(bytes: Uint8Array): any, once?: (ev: string, cb: () => void) => any }} sink
  * @returns {Promise<{ streamed: boolean, pages: number, warnings: string[], why?: string }>}
  */
+/** The documented spill options only (dir, maxMB, runMB, mergeMB): a typo or an internal knob is not passed on. */
+const spillOptions = (spill) => Object.fromEntries(['dir', 'maxMB', 'runMB', 'mergeMB'].filter(k => spill?.[k] != null).map(k => [k, spill[k]]));
+
 export async function exportPdfStream(def, options, sink) {
   const unknown = checkOptions(options);
   const { fonts, fontStore, subset: sub, pdfa, spill, ...rest } = /** @type {any} */ (options || {});
@@ -259,7 +262,7 @@ export async function exportPdfStream(def, options, sink) {
     pdfaOpt = { ...(typeof pdfa === 'object' ? pdfa : {}), icc: new Uint8Array(await readUrl(url)) };
   }
   // a sort (table sort, groups) spills its rows to disk in Node, so a grouped report's memory stays flat
-  const sorter = rest.sorter || (spill !== false && canSpill() ? spillSorter({ ...(spill?.dir ? { dir: spill.dir } : {}), ...(spill?.maxMB ? { maxMB: spill.maxMB } : {}) }) : undefined);
+  const sorter = rest.sorter || (spill !== false && canSpill() ? spillSorter(spillOptions(spill)) : undefined);
   const r = await exportPdfStreamFull(def, { ...rest, sorter, fontStore: store, subset, pdfa: pdfaOpt, exportData: !!rest.tagged }, sink);
   if (unknown.length) r.warnings = [...unknown, ...r.warnings];
   return r;
@@ -270,7 +273,7 @@ import { exportDocxStream as exportDocxStreamFull, exportXlsxStream as exportXls
 /** exportPdfStream's sorter for the Office streams: a sort spills its rows to disk in Node. @param {any} o */
 const officeOpts = (o = {}) => {
   const { fonts, fontStore, spill, ...rest } = o;
-  const sorter = rest.sorter || (spill !== false && canSpill() ? spillSorter({ ...(spill?.dir ? { dir: spill.dir } : {}), ...(spill?.maxMB ? { maxMB: spill.maxMB } : {}) }) : undefined);
+  const sorter = rest.sorter || (spill !== false && canSpill() ? spillSorter(spillOptions(spill)) : undefined);
   return { ...rest, sorter, fontStore: fonts || fontStore || defaultStore() };
 };
 /**

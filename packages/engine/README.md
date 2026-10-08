@@ -170,7 +170,7 @@ and stays in memory for the export: the export's own memory stays flat beside it
 many.
 
 - **Sorts and groups.** A table sort or groups put the rows in order first. In Node the sort spills to the system temp
-  folder (`spill: { dir, maxMB }`; 2 GB at most), so memory stays flat: the sort holds about 8 MB of rows while reading
+  folder (`spill: { dir, maxMB, runMB, mergeMB }`; 2 GB of disk at most; `runMB` (default 8) and `mergeMB` (default 4) set the memory), so memory stays flat: the sort holds about 8 MB of rows while reading
   and 4 MB while merging, whatever the row count (past that many sorted runs, groups of them are merged on disk first).
   `spill: false`, and in a browser, it is in memory (all the rows: measured about 1.3 KB a row, so keep browser exports
   under about 100,000 sorted or grouped rows).
