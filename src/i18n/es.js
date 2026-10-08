@@ -616,6 +616,7 @@ export default {
   p_shape: "Forma",
   p_fill: "Relleno",
   p_repeatHeader: "Repetir el encabezado en cada página",
+  p_fitColumns: "Ancho de columnas según el contenido",
   p_printAtBottom: "Pie al final de la página",
   p_overflow: "Más ancho que la página",
   p_repeatColumns: "Columnas repetidas en cada grupo de páginas",

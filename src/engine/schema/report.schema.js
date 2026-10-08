@@ -585,6 +585,10 @@ export const REPORT_SCHEMA = {
       "repeatHeader": {
        "type": "boolean"
       },
+      "fitColumns": {
+       "type": "boolean",
+       "description": "Column widths from the content: the header, the first 50 rows and the footer, in proportion, filling the table's width. Columns without a width are measured anyway."
+      },
       "noRowsText": {
        "type": "string"
       },

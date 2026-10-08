@@ -616,6 +616,7 @@ export default {
   p_shape: "図形",
   p_fill: "塗りつぶし",
   p_repeatHeader: "各ページでヘッダーを繰り返す",
+  p_fitColumns: "内容に合わせた列幅",
   p_printAtBottom: "フッターをページ下端に配置",
   p_overflow: "ページより幅が広い場合",
   p_repeatColumns: "各ページセットで繰り返す列",

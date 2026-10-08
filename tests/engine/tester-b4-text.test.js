@@ -47,3 +47,31 @@ describe('6: a header word never breaks inside', () => {
     }
   });
 });
+
+describe('8: column widths from the content', () => {
+  const rows = Array.from({ length: 30 }, (_, i) => ({ id: i + 1, name: `Customer with a long name ${i}`, amount: 123456.78 * (i + 1) }));
+  const cells = [{ value: '=Fields.id' }, { value: '=Fields.name' }, { value: '=Fields.amount', style: { format: 'N2' } }];
+  const widths = (out) => out.regions?.[0]?.columns;
+  it('columns without a width share the table width by what their first rows hold', async () => {
+    const def = report([table([{}, {}, {}], ['Id', 'Name', 'Amount'], cells, { w: 400 })], { data: { rows } });
+    const out = await render(def, { fontStore, exportData: true });
+    const [a, b, c] = widths(out);
+    expect(a + b + c).toBeCloseTo(400, 1);
+    expect(a).toBeLessThan(c);
+    expect(c).toBeLessThan(b);
+    // every value fits its column on one line
+    for (const t of textItems(out)) expect(t.lines.length, joined(t)).toBe(1);
+  });
+  it('fitColumns re-measures a table that has widths', async () => {
+    const def = report([table([{ width: 150 }, { width: 100 }, { width: 150 }], ['Id', 'Name', 'Amount'], cells, { fitColumns: true })], { data: { rows } });
+    const out = await render(def, { fontStore, exportData: true });
+    const [a, b, c] = widths(out);
+    expect(a + b + c).toBeCloseTo(400, 1);
+    expect(b).toBeGreaterThan(a);
+    expect(b).toBeGreaterThan(c);
+  });
+  it('explicit widths without fitColumns stay as designed', async () => {
+    const def = report([table([{ width: 150 }, { width: 100 }, { width: 150 }], ['Id', 'Name', 'Amount'], cells)], { data: { rows } });
+    expect(widths(await render(def, { fontStore, exportData: true }))).toEqual([150, 100, 150]);
+  });
+});

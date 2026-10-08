@@ -616,6 +616,7 @@ export default {
   p_shape: "الشكل",
   p_fill: "التعبئة",
   p_repeatHeader: "تكرار الرأس في كل صفحة",
+  p_fitColumns: "عرض الأعمدة حسب المحتوى",
   p_printAtBottom: "التذييل في أسفل الصفحة",
   p_overflow: "عند تجاوز عرض الصفحة",
   p_repeatColumns: "أعمدة تتكرر في كل مجموعة صفحات",

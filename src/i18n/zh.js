@@ -616,6 +616,7 @@ export default {
   p_shape: "形状",
   p_fill: "填充",
   p_repeatHeader: "在每页重复表头",
+  p_fitColumns: "按内容设置列宽",
   p_printAtBottom: "表尾位于页面底部",
   p_overflow: "宽于页面时",
   p_repeatColumns: "在每组页面上重复的列",

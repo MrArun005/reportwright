@@ -173,6 +173,7 @@ Also has every property of [ItemBase](#itembase).
 | `detail` | [TableRow](#tablerow)[] |  |  |
 | `footer` | [TableRow](#tablerow)[] |  |  |
 | `repeatHeader` | boolean |  |  |
+| `fitColumns` | boolean |  | Column widths from the content: the header, the first 50 rows and the footer, in proportion, filling the table's width. Columns without a width are measured anyway. |
 | `noRowsText` | string |  |  |
 | `sortBy` | any |  |  |
 | `filters` | any[] |  |  |

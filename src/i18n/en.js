@@ -616,6 +616,7 @@ export default {
   p_shape: "Shape",
   p_fill: "Fill",
   p_repeatHeader: "Repeat header on each page",
+  p_fitColumns: "Column widths from the content",
   p_printAtBottom: "Footer at the bottom of the page",
   p_overflow: "Wider than the page",
   p_repeatColumns: "Columns repeated on each page set",

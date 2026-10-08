@@ -616,6 +616,7 @@ export default {
   p_shape: "आकृति",
   p_fill: "भराव",
   p_repeatHeader: "हर पृष्ठ पर हेडर दोहराएँ",
+  p_fitColumns: "सामग्री के अनुसार कॉलम की चौड़ाई",
   p_printAtBottom: "फ़ुटर पृष्ठ के नीचे",
   p_overflow: "पृष्ठ से चौड़ा होने पर",
   p_repeatColumns: "हर पृष्ठ समूह पर दोहराए जाने वाले कॉलम",

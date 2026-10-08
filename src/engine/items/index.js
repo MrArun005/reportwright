@@ -326,6 +326,43 @@ register('shape', {
 const OVERFLOW_OPTIONS = [{ value: 'paginate', label: 'Continue on the next pages' }, { value: 'shrink', label: 'Narrow the columns' }, { value: 'clip', label: 'Cut at the page edge' }];
 
 /* ---------------------------------------------------------------- table */
+/** Rows measured for column widths from the content. */
+const FIT_ROWS = 50;
+/**
+ * Column widths from the formatted content of the header, the first FIT_ROWS detail rows and the footer (single
+ * cells; a merged cell does not count): each auto column's widest text plus its padding. Auto columns (all with
+ * fitColumns, else those without a width) share what the fixed ones leave of the table's width, in proportion to
+ * those natural widths. ponytail: proportional, not a water-fill; a column squeezed below its widest text wraps.
+ */
+function fitColumns(item, cols, rows, tctx, lc) {
+  const auto = cols.map(c => !!item.fitColumns || c.width == null);
+  const nat = cols.map(() => 0);
+  const measure = (row, ctx) => {
+    const rst = resolveStyle([lc.base, lc.named?.[item.styleName], item.style, row.style], ctx);
+    const { at } = rowCells(row.cells, cols.length);
+    for (let ci = 0; ci < cols.length; ci++) {
+      const cell = at[ci];
+      if (!auto[ci] || !cell || (cell.colSpan || 1) > 1 || cell.item) continue;
+      let v;
+      try { v = evalValue(cell.value ?? '', ctx); } catch { continue; }
+      const st = resolveStyle([rst, lc.named?.[cell.styleName], cell.style], ctx);
+      const tl = layoutTextLines(textOf(v, st, ctx, lc), st, 1e6, lc.m, { wrap: false });
+      const w = Math.max(0, ...tl.lines.map(l => l.width)) + tl.pad[1] + tl.pad[3];
+      if (w > nat[ci]) nat[ci] = w;
+    }
+  };
+  const base = { ...tctx, aggRows: rows, fields: rows[0] || null };
+  for (const r of item.header || []) measure(r, base);
+  for (const r of item.footer || []) measure(r, base);
+  const n = Math.min(rows.length, FIT_ROWS);
+  for (let i = 0; i < n; i++) for (const r of item.detail || []) measure(r, { ...base, fields: rows[i], aggIndex: i });
+  const total = item.fitColumns ? (cols.reduce((t, c) => t + (Number(c.width) || 0), 0) || Number(item.w) || 0) : Number(item.w) || 0;
+  const fixed = cols.reduce((t, c, i) => t + (auto[i] ? 0 : Number(c.width) || 0), 0);
+  const room = Math.max(0, total - fixed);
+  const want = nat.reduce((t, w, i) => t + (auto[i] ? Math.max(w, 1) : 0), 0);
+  return cols.map((c, i) => (auto[i] ? { ...c, width: room * Math.max(nat[i], 1) / want } : c));
+}
+
 register('table', {
   label: 'Table',
   defaults: () => ({
@@ -340,6 +377,7 @@ register('table', {
   props: [
     { key: 'dataSet', label: 'Data set', type: 'dataset', category: 'Data' },
     { key: 'repeatHeader', label: 'Repeat header on each page', type: 'bool', category: 'Layout' },
+    { key: 'fitColumns', label: 'Column widths from the content', type: 'bool', category: 'Layout' },
     { key: 'printAtBottom', label: 'Footer at the bottom of the page', type: 'bool', category: 'Layout' },
     { key: 'overflowTo', label: 'Fixed frame: continue rows in', labelKey: 'overflowTo', type: 'overflowTarget', category: 'Layout' },
     { key: 'overflow', label: 'Wider than the page', type: 'select', options: OVERFLOW_OPTIONS, category: 'Layout' },
@@ -366,6 +404,8 @@ register('table', {
     }
 
     let cols = item.columns || [];
+    // widths from the content: every column with fitColumns, else the columns that have no width
+    if (!item.__body && cols.length && (item.fitColumns || cols.some(c => c.width == null))) cols = fitColumns(item, cols, rows, tctx, lc);
     // wider than the page: columns are never dropped silently. Unless the author chose otherwise they continue on the
     // next page set ("paginate", as SSRS); "shrink" narrows every column in proportion; "clip" cuts at the page edge
     const room = (lc.bodyWidth ?? Infinity) - item.x;

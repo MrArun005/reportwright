@@ -616,6 +616,7 @@ export default {
   p_shape: "Forme",
   p_fill: "Remplissage",
   p_repeatHeader: "Répéter l’en-tête sur chaque page",
+  p_fitColumns: "Largeur des colonnes selon le contenu",
   p_printAtBottom: "Pied en bas de la page",
   p_overflow: "Plus large que la page",
   p_repeatColumns: "Colonnes répétées sur chaque groupe de pages",

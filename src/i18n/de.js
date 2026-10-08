@@ -616,6 +616,7 @@ export default {
   p_shape: "Form",
   p_fill: "Füllung",
   p_repeatHeader: "Kopf auf jeder Seite wiederholen",
+  p_fitColumns: "Spaltenbreiten nach Inhalt",
   p_printAtBottom: "Fuß am unteren Seitenrand",
   p_overflow: "Breiter als die Seite",
   p_repeatColumns: "Auf jeder Seitengruppe wiederholte Spalten",
