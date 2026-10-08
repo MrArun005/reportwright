@@ -1250,7 +1250,22 @@
                     "value": "=Fields.amount",
                     "style": {
                       "format": "N2",
-                      "textAlign": "right"
+                      "textAlign": "right",
+                      "color": "=IIf((Fields.amount) < 0, \"#b91c1c\", Nothing)",
+                      "fontWeight": "=IIf((Fields.amount) < 0, \"bold\", Nothing)"
+                    },
+                    "cf": {
+                      "mode": "first",
+                      "rules": [
+                        {
+                          "op": "lt",
+                          "value": "0",
+                          "format": {
+                            "color": "#b91c1c",
+                            "fontWeight": "bold"
+                          }
+                        }
+                      ]
                     }
                   },
                   {
@@ -1275,7 +1290,22 @@
                     "value": "=RunningValue(Fields.amountInr, \"Sum\", \"Branch\")",
                     "style": {
                       "format": "N0",
-                      "textAlign": "right"
+                      "textAlign": "right",
+                      "color": "=IIf((RunningValue(Fields.amountInr, \"Sum\", \"Branch\")) < 0, \"#b91c1c\", Nothing)",
+                      "fontWeight": "=IIf((RunningValue(Fields.amountInr, \"Sum\", \"Branch\")) < 0, \"bold\", Nothing)"
+                    },
+                    "cf": {
+                      "mode": "first",
+                      "rules": [
+                        {
+                          "op": "lt",
+                          "value": "0",
+                          "format": {
+                            "color": "#b91c1c",
+                            "fontWeight": "bold"
+                          }
+                        }
+                      ]
                     }
                   }
                 ]
