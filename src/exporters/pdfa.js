@@ -10,7 +10,7 @@ const xml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
  * @param {{ icc?: Uint8Array, title?: string, author?: string, created?: Date, conformance?: 'A'|'B', ua?: boolean }} opt
  *   icc: an RGB ICC profile (the sRGB one in public/icc). conformance A (PDF/A-2a) for a tagged file; ua: it is PDF/UA-1 too.
  */
-export function makePdfA(doc, { icc, title = 'Report', author, created = new Date(), conformance = 'B', ua = false } = {}) {
+export function makePdfA(doc, { icc, title = 'Report', author, created = new Date(), conformance = 'B', ua = false, id } = {}) {
   if (!icc?.length) throw new Error('PDF/A needs an sRGB colour profile: pass pdfa.icc (public/icc/sRGB-v2-magic.icc)');
   // The Info dictionary and the XMP metadata must say the same thing, to the second.
   const when = new Date(Math.floor(created.getTime() / 1000) * 1000);
@@ -19,8 +19,7 @@ export function makePdfA(doc, { icc, title = 'Report', author, created = new Dat
   doc.setProducer('ReportWright');
   doc.setCreator('ReportWright');
   if (author) doc.setAuthor(author);
-  doc.setCreationDate(when);
-  doc.setModificationDate(when);
+  setInfoDates(doc, when);
 
   setMetadata(doc, xmpPacket({ title, author, stamp, pdfa: conformance, ua }));
   const ctx = doc.context;
@@ -46,9 +45,22 @@ export function makePdfA(doc, { icc, title = 'Report', author, created = new Dat
   const acro = doc.catalog.lookup(PDFName.of('AcroForm'));
   if (acro instanceof PDFDict) acro.delete(PDFName.of('NeedAppearances'));
 
-  // a file identifier
-  const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
-  ctx.trailerInfo.ID = ctx.obj([PDFHexString.of(id), PDFHexString.of(id)]);
+  // a file identifier: the caller's (derived from the content, for a fixed date), else random
+  const fileId = id ?? Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+  ctx.trailerInfo.ID = ctx.obj([PDFHexString.of(fileId), PDFHexString.of(fileId)]);
+}
+
+/**
+ * The Info dictionary's CreationDate and ModDate for an instant, in UTC (D:…+00'00'): the same instant gives the
+ * same bytes in any time zone. pdf-lib's own setters write the local offset.
+ * @param {import('pdf-lib').PDFDocument} doc
+ * @param {Date} when
+ */
+export function setInfoDates(doc, when) {
+  const s = new Date(Math.floor(when.getTime() / 1000) * 1000).toISOString().replace(/\D/g, '').slice(0, 14);
+  const info = /** @type {any} */ (doc).getInfoDict();
+  info.set(PDFName.of('CreationDate'), PDFString.of(`D:${s}+00'00'`));
+  info.set(PDFName.of('ModDate'), PDFString.of(`D:${s}+00'00'`));
 }
 
 /**
@@ -84,8 +96,7 @@ function setMetadata(doc, xmp) {
  */
 export function setUaMetadata(doc, { title = 'Report', author = undefined, created = new Date() } = {}) {
   const when = new Date(Math.floor(created.getTime() / 1000) * 1000);
-  doc.setCreationDate(when);
-  doc.setModificationDate(when);
+  setInfoDates(doc, when);
   if (author) doc.setAuthor(author);
   setMetadata(doc, xmpPacket({ title, author, stamp: when.toISOString().replace('.000Z', 'Z'), ua: true }));
 }

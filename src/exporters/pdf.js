@@ -2,7 +2,7 @@
 import { PDFDocument, PDFName, PDFString, PDFHexString, PDFRawStream, rgb } from 'pdf-lib';
 import fontkitModule from '@pdf-lib/fontkit';
 import { parseColor } from './color.js';
-import { makePdfA, setUaMetadata } from './pdfa.js';
+import { makePdfA, setUaMetadata, setInfoDates } from './pdfa.js';
 import { safeUrl, drillUrl, asciiUrl } from '../engine/url.js';
 import { dataUriBytesOf, dataUriBytes, imageInfoOf, IMAGE_LIMITS } from '../engine/image.js';
 import { parseSvg, drawSvg } from './svgimage.js';
@@ -40,7 +40,8 @@ const cleanText = (t) => t.replace(/\t|\u0085|\u2028|\u2029/g, '    ').replace(/
  *   subset?: (font: Uint8Array, codePoints: Iterable<number>) => Promise<Uint8Array>,
  *   pdfa?: { icc?: Uint8Array }, prepare?: (doc: PDFDocument) => any, save?: object,
  *   encrypt?: { userPassword?: string, ownerPassword?: string, permissions?: Partial<Record<keyof typeof import('./encrypt.js').PERMISSION_BITS, boolean>> },
- *   tagged?: { lang?: string }, drillBase?: string, onWarning?: (message: string) => void, timeoutMs?: number }} [opt]
+ *   tagged?: { lang?: string }, drillBase?: string, onWarning?: (message: string) => void, timeoutMs?: number,
+ *   creationDate?: Date }} [opt]
  *   subset: a HarfBuzz subsetter (see subset.js). Without it, fonts embed in full.
  *   pdfa: make a PDF/A-2b file (needs an sRGB ICC profile). prepare: last change before saving
  *   (the server adds a signature placeholder there). save: extra pdf-lib save options.
@@ -49,18 +50,27 @@ const cleanText = (t) => t.replace(/\t|\u0085|\u2028|\u2029/g, '    ').replace(/
  *   shown; with pdfa it is PDF/A-2a. Off, the file is exactly what it was.
  *   drillBase: the ReportWright server whose viewer a drill-through opens (a URI link); without it a drill-through
  *   is not a link. onWarning: what was left out (a damaged image). timeoutMs: the export's time limit (504).
+ *   creationDate: the file's dates (UTC); else SOURCE_DATE_EPOCH when set; with either, the same report exports to the
+ *   same bytes (encryption keeps its random key, so it does not).
  */
 export function exportPdf(model, fontStore, opt = {}) {
   return withDeadline(pdfOf(model, fontStore, opt), /** @type {any} */ (opt).timeoutMs);
 }
 /** @type {typeof exportPdf} */
 async function pdfOf(model, fontStore, opt) {
-  const doc = await PDFDocument.create();
+  // a fixed date (creationDate, else SOURCE_DATE_EPOCH) makes the file reproducible: its ID then derives from the content
+  const fixed = fixedDate(opt);
+  const when = fixed ?? new Date();
+  const fileId = fixed ? await contentId(model, opt, when) : undefined;
+  // updateMetadata off: pdf-lib would stamp the current time on save
+  const doc = await PDFDocument.create({ updateMetadata: false });
   doc.registerFontkit(fontkit);
   doc.setTitle(opt.title || 'Report');
   doc.setProducer('ReportWright');
   doc.setCreator('ReportWright');
   if (opt.author) doc.setAuthor(opt.author);
+  setInfoDates(doc, when);
+  if (fileId) doc.context.trailerInfo.ID = doc.context.obj([PDFHexString.of(fileId), PDFHexString.of(fileId)]);
 
   // Which characters each font must draw, and which shaped glyphs (by ID, with the text each one stands for).
   const used = new Map();
@@ -395,8 +405,8 @@ async function pdfOf(model, fontStore, opt) {
   pageLabels(doc, model);
   if (tags) tags.finish({ lang: opt.tagged?.lang, title: opt.title || 'Report' });
   if (opt.prepare) await opt.prepare(doc);
-  if (opt.pdfa) makePdfA(doc, { ...opt.pdfa, title: opt.title || 'Report', author: opt.author, ...(tags ? { conformance: 'A', ua: true } : {}) });
-  else if (tags) setUaMetadata(doc, { title: opt.title || 'Report', author: opt.author });
+  if (opt.pdfa) makePdfA(doc, { ...opt.pdfa, title: opt.title || 'Report', author: opt.author, created: when, id: fileId, ...(tags ? { conformance: 'A', ua: true } : {}) });
+  else if (tags) setUaMetadata(doc, { title: opt.title || 'Report', author: opt.author, created: when });
   if (opt.encrypt) {
     // PDF/A forbids encryption; a signature would need its /Contents left plain inside an encrypted file
     if (opt.pdfa) throw Object.assign(new Error('A PDF/A file cannot have a password. Turn off PDF/A or the password.'), { status: 400 });
@@ -406,6 +416,27 @@ async function pdfOf(model, fontStore, opt) {
   }
   // appearances are already drawn in the report font; regenerating would switch them to Helvetica
   return doc.save({ updateFieldAppearances: false, ...(opt.save || {}) });
+}
+
+/**
+ * The export's fixed date: creationDate, else SOURCE_DATE_EPOCH (seconds since 1970), else none (the time now).
+ * @returns {Date | null}
+ */
+function fixedDate(opt) {
+  if (opt.creationDate !== undefined) {
+    if (!(opt.creationDate instanceof Date) || Number.isNaN(opt.creationDate.getTime())) throw Object.assign(new Error('creationDate must be a valid Date'), { status: 400 });
+    return opt.creationDate;
+  }
+  const epoch = globalThis.process?.env?.SOURCE_DATE_EPOCH;
+  return epoch && /^\d+$/.test(epoch) ? new Date(Number(epoch) * 1000) : null;
+}
+
+/** The document ID for a fixed date: a digest of the page model (its timing left out) and the metadata. */
+async function contentId(model, opt, when) {
+  // stats (the render's time in ms) is left out
+  const bytes = new TextEncoder().encode(JSON.stringify([{ ...model, stats: undefined }, opt.title || 'Report', opt.author || '', when.toISOString()]));
+  const digest = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', bytes));
+  return Array.from(digest.subarray(0, 16), b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
 }
 
 /**
