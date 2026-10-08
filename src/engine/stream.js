@@ -64,7 +64,7 @@ function foldOf(v) {
  * @param {any} def0 the report definition
  * @param {{ format: 'csv'|'xlsx', parameters?: object, timeZone?: string, now?: Date, state?: any, loadReport?: (id: string) => Promise<any>,
  *   reportId?: string, fetch?: typeof fetch, baseUrl?: string, sql?: (src: any, p: any) => Promise<object[]>,
- *   sqlRows?: (src: any, p: any) => AsyncIterable<object[]>, sources?: Record<string, any>, sorter?: (cmp: (a: any, b: any) => number) => any, presorted?: boolean,
+ *   sqlRows?: (src: any, p: any, o: { signal?: AbortSignal }) => AsyncIterable<object[]>, signal?: AbortSignal, sources?: Record<string, any>, sorter?: (cmp: (a: any, b: any) => number) => any, presorted?: boolean,
  *   deadline?: number, timeoutMs?: number, maxRows?: number, maxJsonRowBytes?: number, maxJsonWholeBytes?: number }} opts
  * @returns {Promise<{ why: string } | { why?: undefined, name: string, columns: number[], title: string, timeZone: string|null, locale: string|null, currency: string|null, warnings: string[], rows: () => AsyncGenerator<any>, records: () => AsyncGenerator<any>, grouped: () => AsyncGenerator<any>, fieldList: () => Promise<any[]>, stats: { rows: number } }>}
  */
@@ -203,12 +203,12 @@ export async function planStream(def0, opts) {
         yield* jsonRows(res.body ?? await res.text(), ds.path, { maxElementBytes: opts.maxJsonRowBytes ?? 8 * 1048576, maxWholeBytes: opts.maxJsonWholeBytes });
       } else { // sql
         const p = Object.fromEntries(Object.entries(params || {}).map(([k, x]) => [k, Array.isArray(x) ? x.map(day) : day(x)]));
-        if (opts.sqlRows) yield* opts.sqlRows(src, p);
+        if (opts.sqlRows) yield* opts.sqlRows(src, p, { signal: opts.signal });
         else if (opts.sql) yield* inBatches(await opts.sql(src, p));
         else throw new Error('SQL runs on the server');
       }
     } catch (e) {
-      if (e instanceof ReportError) throw e;
+      if (e instanceof ReportError || (opts.signal?.aborted && e === opts.signal.reason)) throw e;
       throw Object.assign(new Error(`Data source "${src.name}": ${e.message}`), { status: e.status });
     }
   }
@@ -260,6 +260,7 @@ export async function planStream(def0, opts) {
     };
     if (fields) ready(fields);
     for await (const batch of raw()) {
+      opts.signal?.throwIfAborted();
       if (head) { // no declared fields: guessed from the first 50 rows, as buildDataSets does
         for (const r of batch) head.push(r);
         if (head.length < 50) continue;

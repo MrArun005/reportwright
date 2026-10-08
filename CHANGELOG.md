@@ -2,6 +2,15 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
+## Unreleased
+
+### Fixed
+- **Streaming PDF (`exportPdfStream`) failures, from the 0.12.1 retest:**
+  - A sink that stops reading no longer hangs the export: `timeoutMs` covers the waits for drain (504, `code:
+    'ETIMEDOUT'`), a sink's `error` or `close` ends the wait, and the new `signal` option (an `AbortSignal`) stops the
+    export at its next wait (rows, sink, sort, page) with an `AbortError`. `sqlRows` gets `{ signal }` as its third
+    argument. On timeout or abort the rows' cursors are closed and spill files removed.
+
 ## 0.12.1 — 2026-10-08
 
 ### Fixed
