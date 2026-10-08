@@ -1,7 +1,7 @@
 // @ts-check
 import { evalValue, evaluate, compile, parseValue, toText, functionTable, cmpVal, sortCompare, ROW_PARENT } from '../expr/evaluate.js';
 import { toDate, isoDate, parseNumber, plainText } from '../expr/format.js';
-import { guardedFetch, boundedFetch } from './guard.js';
+import { guardedFetch, boundedFetch, redactUrl } from './guard.js';
 import { xmlDocument, soapBody, xmlEscape, isXmlDoc, xmlRows, xmlValue } from './xml.js';
 import { odataUrl, odataPage, odataClean, ODATA_MAX_PAGES, ODATA_DEFAULT_PAGES } from './odata.js';
 
@@ -286,12 +286,12 @@ async function loadFetched(src, ctx, opt, f) {
     if (!res.ok) { // a SOAP fault comes with HTTP 500: its message says more than the status
       let fault = null;
       try { soapBody(text, src); } catch (e) { fault = /^SOAP fault/.test(e.message) ? e.message : null; }
-      throw new Error(fault || `HTTP ${res.status} from ${u}`);
+      throw new Error(fault || `HTTP ${res.status} from ${redactUrl(u)}`);
     }
     return soapBody(text, src);
   }
   const { res, u } = await call(target, requestInit(src, ctx, headers));
-  if (!res.ok) throw new Error(`HTTP ${res.status} from ${u}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status} from ${redactUrl(u)}`);
   if (src.type === 'csv') return parseCsv(await res.text(), src);
   if (src.type === 'xml') return xmlDocument(await res.text(), src);
   const json = await res.json();
@@ -326,7 +326,7 @@ export async function sourceResponse(src, ctx, opt) {
   if (src.useProxy) u = `/api/data/proxy?url=${encodeURIComponent(u)}`;
   if (opt.baseUrl && u.startsWith('/')) u = opt.baseUrl.replace(/\/$/, '') + u;
   const res = await f(u, /** @type {any} */ ({ ...requestInit(src, ctx, headers), pwStream: true }));
-  if (!res.ok) throw new Error(`HTTP ${res.status} from ${u}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status} from ${redactUrl(u)}`);
   return res;
 }
 
@@ -351,7 +351,7 @@ async function loadOData(src, ctx, root, headers, call) {
   const h = { accept: 'application/json', ...headers };
   for (let n = 0; n < pages && url; n++) {
     const { res, u } = await call(url, { method: 'GET', headers: h });
-    if (!res.ok) throw new Error(`HTTP ${res.status} from ${u}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${redactUrl(u)}`);
     const page = odataPage(await res.json());
     for (const r of page.rows) rows.push(r);
     const here = new URL(url, DUMMY);
@@ -377,7 +377,7 @@ async function loadSql(src, params, opt, f) {
   const body = opt.sqlPreview ? { connection: src.connection, query: src.query, procedure: src.procedure, args: src.args, params: p } : { report: opt.reportId, source: src.name, params: p };
   const res = await f(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(json.error || `HTTP ${res.status} from ${url}`), { status: res.status });
+  if (!res.ok) throw Object.assign(new Error(json.error || `HTTP ${res.status} from ${redactUrl(url)}`), { status: res.status });
   return json.rows;
 }
 

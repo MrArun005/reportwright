@@ -179,7 +179,7 @@ export function boundedFetch(f, opt) {
     // raced with the abort: a fetch that ignores the signal (a DNS lookup, a custom fetch) still stops waiting
     const stop = new Promise((_, rej) => signal.addEventListener('abort', () => rej(signal.reason), { once: true }));
     stop.catch(() => {}); // aborted after the answer came: nobody waits on it
-    try { res = await Promise.race([f(input, { ...init, signal }), stop]); } catch (e) { clearTimeout(timer); throw ctl.signal.aborted ? ctl.signal.reason : e; }
+    try { res = await Promise.race([f(input, { ...init, signal }), stop]); } catch (e) { clearTimeout(timer); throw ctl.signal.aborted ? ctl.signal.reason : fetchFailure(e, input); }
     if (!res.body || /** @type {any} */ (init).pwStream) { clearTimeout(timer); return res; }
     // the body inside the same time limit, and at most `max` bytes (as decoded: fetch has inflated it already)
     let n = 0;
@@ -198,6 +198,38 @@ export function boundedFetch(f, opt) {
     });
     return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
   });
+}
+/** The cause of a failed request in words, by the error code Node and undici give (error.cause.code). */
+const CAUSES = {
+  ENOTFOUND: 'the host name did not resolve', EAI_AGAIN: 'DNS lookup timed out', ECONNREFUSED: 'connection refused',
+  ECONNRESET: 'connection reset', EPIPE: 'connection closed', UND_ERR_SOCKET: 'connection closed early',
+  ETIMEDOUT: 'timed out', UND_ERR_CONNECT_TIMEOUT: 'connect timed out', EPROTO: 'TLS error',
+  ERR_TLS_CERT_ALTNAME_INVALID: 'TLS certificate does not match the host', DEPTH_ZERO_SELF_SIGNED_CERT: 'TLS certificate is self-signed',
+  SELF_SIGNED_CERT_IN_CHAIN: 'TLS certificate chain is untrusted', UNABLE_TO_VERIFY_LEAF_SIGNATURE: 'TLS certificate chain is untrusted',
+  CERT_HAS_EXPIRED: 'TLS certificate has expired',
+};
+/**
+ * A URL safe to print: no userinfo, and the query and fragment shown as ?… / #… (their values can hold keys and tokens).
+ * @param {string} s
+ */
+export function redactUrl(s) {
+  const str = String(s);
+  const q = str.search(/[?#]/);
+  const base = (q >= 0 ? str.slice(0, q) : str).replace(/^([a-z][\w+.-]*:\/\/)[^/?#]*@/i, '$1');
+  return q >= 0 ? `${base}${str[q]}…` : base;
+}
+/**
+ * A failed request as an error that says why: the cause code (DNS, refused, reset, TLS, timeout) and the redacted URL.
+ * An error that already carries a status (a refused address, a redirect) passes through.
+ * @param {any} e @param {any} input
+ */
+export function fetchFailure(e, input) {
+  if (!e || e.status) return e;
+  const code = String(e.cause?.code || e.code || '');
+  if (!code && e.message !== 'fetch failed') return e;
+  const why = CAUSES[code] || (/^ERR_TLS|CERT_|SSL/.test(code) ? 'TLS error' : '');
+  const at = redactUrl(input?.href ?? input);
+  return Object.assign(new Error(`the request to ${at} failed${why ? `: ${why}` : ''}${code ? ` (${code})` : ''}`), { code: e.code });
 }
 /** @param {AbortSignal[]} list */
 function anySignal(list) {
