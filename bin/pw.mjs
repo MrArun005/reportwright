@@ -72,9 +72,12 @@ const siblingLoader = (file) => async (id) => {
   try { return readJson(path.join(path.dirname(path.resolve(file)), `${id}.pw.json`)); } catch { throw new Error(`Report "${id}" not found`); }
 };
 
+/** --base names the server to read from: its host may be local (the engine's fetch guard allows it). */
+const baseHost = (base) => { try { return base ? [new URL(base).hostname.replace(/^\[|\]$/g, '')] : []; } catch { return []; } };
+
 async function renderModel(def, { parameters = {}, data, base, now, state, file, exportData = true, dataOnly = false } = {}) {
   try {
-    return await render(withData(def, data), { fontStore, parameters, exportData, dataOnly, baseUrl: base, now: now ? new Date(now) : undefined, ...(state ? { state } : {}), ...(file ? { loadReport: siblingLoader(file) } : {}) });
+    return await render(withData(def, data), { fontStore, parameters, exportData, dataOnly, baseUrl: base, allowHosts: baseHost(base), now: now ? new Date(now) : undefined, ...(state ? { state } : {}), ...(file ? { loadReport: siblingLoader(file) } : {}) });
   } catch (e) {
     const relative = /fetch|URL|Invalid URL/i.test(e.message) && !base;
     fail(`${e.message}${relative ? '\n    A data source needs a server: pass --base http://localhost:3000, or push the data with -d source=file.json.' : ''}`);

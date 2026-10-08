@@ -22,6 +22,9 @@ import { validate } from './schema/validate.js';
 import { makeLoader, resolveReuse, resolveTheme, flattenNamed, REUSE_LIMITS } from './reuse.js';
 import { layerFilter } from './layout.js';
 
+/** The data fetch options of a render: the SSRF guard's (data/guard.js) and the time and size limits. */
+const fetchOpts = (o, deadline = o.deadline) => ({ unsafeFetch: !!o.unsafeFetch, allowHosts: o.allowHosts, fetchTimeoutMs: o.fetchTimeoutMs, maxFetchBytes: o.maxFetchBytes, deadline });
+
 export class ReportError extends Error {
   /** @param {string} msg @param {object} [extra] */
   constructor(msg, extra = {}) { super(msg); Object.assign(this, extra); this.name = 'ReportError'; }
@@ -48,6 +51,7 @@ export const BAND_ITEMS = 250000; // page header and footer items drawn per rend
  *   deadline?: number,
  *   exportData?: boolean,
  *   dataOnly?: boolean,
+ *   unsafeFetch?: boolean, allowHosts?: string[], fetchTimeoutMs?: number, maxFetchBytes?: number,
  * }} opts
  *   reportId: the saved report, whose SQL sources the server runs for a browser render.
  *   sql: runs SQL sources directly (server renders).
@@ -55,6 +59,9 @@ export const BAND_ITEMS = 250000; // page header and footer items drawn per rend
  *   exportData: keep the table data (model.regions) and cell tags that Excel, CSV, Word, interactive HTML and the
  *   accessible PDF rebuild tables from (needsExportData in exporters/regions.js says which). Off by default: a view
  *   or a plain PDF needs neither, and they are a third of a big table's model.
+ *   unsafeFetch, allowHosts: without a fetch option, data is read through the engine's SSRF guard (data/guard.js): public
+ *   http(s) hosts only, allowHosts may be private, unsafeFetch: true turns it off. fetchTimeoutMs (30 s) and maxFetchBytes
+ *   (64 MB, decoded) bound every data fetch.
  *   dataOnly: the table data only (model.regions; pages is empty): no text layout and no pages, for the data CSV.
  */
 /**
@@ -129,7 +136,7 @@ export async function render(def0, opts = {}) {
   const target = opts.target || opts.state?.target || 'export';
   const layerOff = layerFilter(def.layers, target);
   const named = flattenNamed(def.styles?.named, warn);
-  const sources = opts.sources || await loadSources(def, { params, fetch: opts.fetch, baseUrl: opts.baseUrl, sql: opts.sql, reportId: opts.reportId });
+  const sources = opts.sources || await loadSources(def, { params, fetch: opts.fetch, baseUrl: opts.baseUrl, sql: opts.sql, reportId: opts.reportId, ...fetchOpts(opts, deadline) });
   opts.onSources?.(sources); // the worker's first-pages render hands its data to the full render that follows
   const dataSets = buildDataSets(def, sources, { ...baseCtx, warn });
   baseCtx.dataSets = dataSets;
@@ -564,7 +571,7 @@ export async function parameterOptions(def, given = {}, opts = {}) {
   const sets = (def.dataSets || []).filter(d => need.has(d.name));
   const srcNames = new Set(sets.map(d => d.source));
   const sub = { ...def, dataSources: (def.dataSources || []).filter(s => srcNames.has(s.name)), dataSets: sets };
-  const sources = opts.sources || await loadSources(sub, { params, fetch: opts.fetch, baseUrl: opts.baseUrl, sql: opts.sql, reportId: opts.reportId });
+  const sources = opts.sources || await loadSources(sub, { params, fetch: opts.fetch, baseUrl: opts.baseUrl, sql: opts.sql, reportId: opts.reportId, ...fetchOpts(opts) });
   const ctx = { params, globals: { ExecutionTime: new Date() }, dataSets: {}, fields: null, functions: functionTable(def) };
   const built = buildDataSets(sub, sources, ctx);
   for (const p of dyn) {

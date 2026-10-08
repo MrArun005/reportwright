@@ -30,9 +30,16 @@ fs.writeFileSync('statement.pdf', await exportPdf(model, { fonts, title: 'Statem
 - **Chart colours.** By default colours go by position. `colorByCategory: true` on charts gives each category (pie,
   donut and funnel slices; `seriesGroup` series) one colour in every chart of the report that sets it.
 - **Network.** Only data sources of a fetched type (`rest`, `graphql`, `soap`, `odata`, and `csv` or `xml` with a URL) and SQL sources without
-  `sql` make requests, through `render(def, { fetch })`. Without that option the engine falls back to
-  `globalThis.fetch`. Pass your own to add auth, a proxy or an allow-list, or to forbid requests altogether:
-  `render(def, { fetch: () => { throw new Error('no network') } })`.
+  `sql` make requests, through `render(def, { fetch })`. Without that option the engine uses `globalThis.fetch` behind
+  an SSRF guard: http(s) only; no loopback, private, link-local, CGNAT, multicast or reserved address in any spelling
+  (`2130706433`, `0x7f.1`, `[::ffff:127.0.0.1]`), no `localhost` name, and in Node no name that resolves to one; every
+  redirect hop checked again (at most 5); a parameter fills a URL's path and query, never its scheme and host (unless the
+  whole URL is a parameter and its host is in `allowHosts`). `allowHosts: ['10.0.0.5']` lets named hosts through;
+  `unsafeFetch: true` turns the guard off. Pass your own `fetch` to add auth, a proxy or an allow-list, or to forbid
+  requests altogether: `render(def, { fetch: () => { throw new Error('no network') } })`.
+- **Fetch limits.** Every data request (yours too) stops after `fetchTimeoutMs` (30 s, never past the render's
+  `timeoutMs`) and after `maxFetchBytes` (64 MB, counted decoded, so a gzip bomb stops too). Exporters take
+  `timeoutMs` as well; the PDF exporter checks every PNG before decoding it and leaves a damaged one out (`onWarning`).
 - **Currency.** `C2` with no `currency` on the report uses the locale's own (`en-IN` ₹, `de-DE` €, `en-US` $).
 
 ## Many reports at once (Node): a worker pool

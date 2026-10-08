@@ -21,7 +21,7 @@ export const streamFetchMaxBytes = () => cnum('PW_STREAM_FETCH_MAX_MB', 4096, { 
 const TIMEOUT_MS = 30000;
 /** One deadline for a whole fetch (every redirect, the headers and the body): a server that drips bytes cannot hold a
  *  request open (a socket timeout only counts silence). PW_FETCH_DEADLINE_MS, default 60 s. */
-const deadlineMs = () => cnum('PW_FETCH_DEADLINE_MS', 60000, { min: 1 });
+export const deadlineMs = () => cnum('PW_FETCH_DEADLINE_MS', 60000, { min: 1 });
 
 const blocked = new net.BlockList(); // also matches IPv4-mapped IPv6 (::ffff:127.0.0.1)
 for (const [a, p] of /** @type {[string, number][]} */ ([['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12],

@@ -1,6 +1,7 @@
 // @ts-check
 import { evalValue, evaluate, compile, parseValue, toText, functionTable, cmpVal, sortCompare, ROW_PARENT } from '../expr/evaluate.js';
 import { toDate, isoDate, parseNumber, plainText } from '../expr/format.js';
+import { guardedFetch, boundedFetch } from './guard.js';
 import { xmlDocument, soapBody, xmlEscape, isXmlDoc, xmlRows, xmlValue } from './xml.js';
 import { odataUrl, odataPage, odataClean, ODATA_MAX_PAGES, ODATA_DEFAULT_PAGES } from './odata.js';
 
@@ -190,6 +191,39 @@ export function parseCsv(text, opts = {}) {
 const NO_FETCH = 'No fetch() available: pass render(def, { fetch })';
 
 /**
+ * The fetch a render's data sources use: the caller's (render(def, { fetch }): the app's guarded ones), else
+ * globalThis.fetch behind the engine's SSRF guard (guard.js; unsafeFetch: true turns it off). Either way with the
+ * engine's time limit and byte cap. null when there is no fetch at all.
+ * @param {any} opt @returns {typeof fetch | null}
+ */
+function fetcherFor(opt) {
+  let f = opt.fetch;
+  if (!f) {
+    if (!globalThis.fetch) return null;
+    const plain = globalThis.fetch.bind(globalThis);
+    f = opt.unsafeFetch ? plain : guardedFetch(opt, plain);
+  }
+  return boundedFetch(f, opt);
+}
+/**
+ * With the default (guarded) fetch, a parameter or an expression fills only the path and the query: the scheme and
+ * host must be written out, unless the whole URL is one parameter or expression and its host is in allowHosts.
+ * @param {any} src @param {string} url the URL as filled @param {any} opt
+ */
+function checkHostSource(src, url, opt) {
+  if (opt.fetch || opt.unsafeFetch) return;
+  const t = String(src.url ?? '').trim();
+  if (/^\/(?![/\\])/.test(t)) return; // a path on the base URL
+  const m = /^https?:\/\/([^/?#\\]*)/i.exec(t);
+  if (m && !m[1].includes('{')) return; // written out
+  const whole = t.startsWith('=') || /^\{[^{}]+\}$/.test(t);
+  let host = '';
+  try { host = new URL(url).hostname.replace(/^\[|\]$/g, '').toLowerCase(); } catch { /* checked by the fetch */ }
+  if (whole && host && (opt.allowHosts || []).map(h => String(h).toLowerCase()).includes(host)) return;
+  throw Object.assign(new Error('its host is made by a parameter or an expression: write the scheme and host out (parameters may fill the path and query), or make the whole URL a parameter and list its host in allowHosts'), { status: 403 });
+}
+
+/**
  * Load every data source used by the report.
  * @param {any} def
  * @param {{params: object, fetch?: typeof fetch, baseUrl?: string, reportId?: string,
@@ -200,8 +234,7 @@ const NO_FETCH = 'No fetch() available: pass render(def, { fetch })';
 export async function loadSources(def, opt) {
   const ctx = { params: opt.params, globals: {}, dataSets: {}, fields: null, functions: functionTable(def) };
   const out = {};
-  // the caller's fetch (render(def, { fetch })); globalThis.fetch only as the fallback (browsers, Node 18+)
-  const f = opt.fetch || globalThis.fetch || null;
+  const f = fetcherFor(opt);
   await Promise.all((def.dataSources || []).map(async (src) => {
     try {
       if (src.type === 'json') out[src.name] = typeof src.data === 'string' ? JSON.parse(src.data) : src.data;
@@ -228,6 +261,7 @@ export const FETCHED_TYPES = ['rest', 'csv', 'graphql', 'xml', 'soap', 'odata'];
  */
 async function loadFetched(src, ctx, opt, f) {
   const target = urlFrom(src.url || '', ctx);
+  checkHostSource(src, target, opt);
   const headers = {};
   for (const [k, v] of Object.entries(src.headers || {})) headers[k] = String(evalValue(v, ctx));
   /** @param {string} url the target (before the proxy) @param {RequestInit} init */
@@ -283,9 +317,10 @@ function requestInit(src, ctx, headers) {
  * @returns {Promise<Response>}
  */
 export async function sourceResponse(src, ctx, opt) {
-  const f = opt.fetch || globalThis.fetch || null;
+  const f = fetcherFor(opt);
   if (!f) throw new Error(NO_FETCH);
   let u = urlFrom(src.url || '', ctx);
+  checkHostSource(src, u, opt);
   const headers = {};
   for (const [k, v] of Object.entries(src.headers || {})) headers[k] = String(evalValue(v, ctx));
   if (src.useProxy) u = `/api/data/proxy?url=${encodeURIComponent(u)}`;

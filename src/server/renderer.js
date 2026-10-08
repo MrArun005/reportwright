@@ -13,7 +13,7 @@ import { planStream } from '@/engine/stream.js';
 import { textWriter, byteWriter } from './stream-out.js';
 import { writeXlsxStream } from '@/exporters/xlsxstream.js';
 import { spillSorter } from './spill.js';
-import { fetchMaxBytes } from './safeFetch.js';
+import { fetchMaxBytes, deadlineMs as fetchDeadlineMs } from './safeFetch.js';
 import { exportXlsx } from '@/exporters/xlsx.js';
 import { exportDocx } from '@/exporters/docx.js';
 import { exportPptx } from '@/exporters/pptx.js';
@@ -230,6 +230,7 @@ export async function renderTo(def, opt = {}) {
   const renderOpts = {
     parameters: opt.parameters || {}, state: opt.state || {}, fontStore: fontStore(), timeZone: checkTimeZone(opt.timeZone),
     baseUrl: base, fetch, timeoutMs: renderTimeoutMs(), deadline: Date.now() + renderTimeoutMs(), // one deadline for both CSV passes (dataOnly, then the full fallback)
+    maxFetchBytes: fetchMaxBytes(), fetchTimeoutMs: fetchDeadlineMs(), // the engine's own fetch limits: the server's settings (PW_FETCH_MAX_MB, PW_FETCH_DEADLINE_MS)
     exportData: !opt.modelOnly && (format !== 'pdf' || !!opt.ua), // a plain PDF needs no table data
     ...(opt.firstPages ? { firstPages: opt.firstPages } : {}),
     sql: runSql, // SQL sources query the database directly, not through /api/data/sql
