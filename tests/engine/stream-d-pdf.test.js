@@ -136,7 +136,7 @@ describe('the server streams a flowing report\'s PDF', () => {
     process.env.PW_RENDER_WORKERS = '0';
     await stopPool();
     const def = ledger(300);
-    def.sections.body.items[0].groups = [{ name: 'R', expr: '=Fields.region', header: [{ cells: [{ value: '=Fields.region' }] }] }];
+    def.sections.body.items[0].groups = [{ name: 'R', expr: '=Fields.region', newSection: true, header: [{ cells: [{ value: '=Fields.region' }] }] }];
     const r = await streamInPool({ def, opt: { format: 'pdf', principal: OPEN } });
     expect(r.stream).toBeUndefined();
     expect(Buffer.from(r.bytes).subarray(0, 5).toString()).toBe('%PDF-');

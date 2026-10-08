@@ -70,8 +70,10 @@ export const BAND_ITEMS = 250000; // page header and footer items drawn per rend
  * @property {{ items: number }} [reuseBudget] internal: items drawn through report parts so far
  * @property {{ n: number }} [fnCount] internal: report function calls so far
  * @property {any} [imageBudget] internal: the images drawn so far, shared with subreports
- * @property {{ offset: number, total?: number|null, final: boolean }} [pageWindow] internal (paged.js): these pages are a window of a
- *   longer report: numbered from offset + 1 of total ('…' when not known yet); final: the window holds the report's last page
+ * @property {{ offset: number, total?: number|null, final: boolean, first?: any, rowOffset?: number, cont?: ({ first: any }|null)[] }} [pageWindow]
+ *   internal (paged.js): these pages are a window of a longer report: numbered from offset + 1 of total ('…' when not known
+ *   yet); final: the window holds the report's last page; first: the report's first row; rowOffset: the rows before this
+ *   window; cont: per group level, the group the window's first row continues (its first row), or null
  */
 /**
  * The text a render may draw: the definition's own and the string values of the data rows (and one level of nested
@@ -194,13 +196,14 @@ export async function render(def0, opts = {}) {
       ctxFor: (item) => {
         const ds = item.dataSet || defaultDs;
         const rows = (ds && dataSets[ds]) || [];
-        return { ...baseCtx, globals, fields: rows[0] || null, aggRows: rows };
+        // a window of a longer report (paged.js): Fields outside the rows read the report's first row, not the window's
+        return { ...baseCtx, globals, fields: (opts.pageWindow?.first && ds === defaultDs ? opts.pageWindow.first : rows[0]) || null, aggRows: rows };
       },
       subreports: null,
       bodyWidth: opts.bodyWidth ?? page.bodyWidth,
       images: def.images || {}, imageBudget,
       cellItems: { left: 100000 }, // rows of items inside table cells, for the whole render (items/index.js)
-      markRows: !!opts.pageWindow, // paged.js: detail units carry their row number (dataRow, rowHead)
+      win: opts.pageWindow || null, // paged.js: units carry their row number (dataRow, rowHead), rows and groups continue
     };
     return lc;
   };
@@ -401,10 +404,9 @@ export async function render(def0, opts = {}) {
         }
         items.length = j;
         const out = frozen.length ? { items, frozen } : { items };
-        if (win) { // the first data row on this page, and whether it starts here (not a piece of a row split across pages)
-          const s0 = slices[k * colCount];
-          const du = s0 && s0.units.find(u => u.dataRow != null);
-          if (du) { out.firstRow = du.dataRow; out.rowHead = !!du.rowHead; }
+        if (win) { // where this page starts: a row's first piece, or a group's header (headLevel), else not at a row
+          const u = slices[k * colCount]?.units[0];
+          if (u?.dataRow != null) { out.firstRow = u.dataRow; out.rowHead = !!u.rowHead; if (u.headLevel != null) out.headLevel = u.headLevel; }
         }
         // a section with another page size: the page carries its own
         if (pg.width !== first.width || ph !== pageH) { out.width = pg.width; out.height = ph; }

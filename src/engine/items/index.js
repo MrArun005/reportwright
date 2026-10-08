@@ -450,7 +450,8 @@ register('table', {
     const groupChains = {};
     (item.groups || []).forEach((g, i) => { if (g.name) groupChains[g.name] = { rows, keys: item.groups.slice(0, i + 1).map(x => x.expr) }; });
     // region: Previous() in a detail row reads its run; group: the innermost group instance (none at table level)
-    const base = { ...tctx, aggRows: rows, aggIndex: undefined, fields: rows[0] || null, scopes, region: tableScope, group: undefined, groupChains: { ...(tctx.groupChains || {}), ...groupChains } };
+    // a window of a longer report (paged.js): the header reads the report's first row, not the window's
+    const base = { ...tctx, aggRows: rows, aggIndex: undefined, fields: lc.win?.first || rows[0] || null, scopes, region: tableScope, group: undefined, groupChains: { ...(tctx.groupChains || {}), ...groupChains } };
     const units = [];
     let y = 0;
     let repeatH = 0; // header height that repeats above continued rows
@@ -678,7 +679,8 @@ register('table', {
     // bandRows "first-last" (BIRT): a header row is evaluated on the first data row, a footer row on the last (fields and
     // running values); the default (RDL) runs a group header's running values over its group and reads the first row
     const fl = base.bandRows === 'first-last';
-    const headerUnits = (item.header || []).map(r => layRow(r, fl && rows.length ? { ...base, pendingRows: [rows[0]] } : base, 'header')).filter(Boolean);
+    const first0 = lc.win?.first || rows[0]; // a window of a longer report (paged.js): the report's first row
+    const headerUnits = (item.header || []).map(r => layRow(r, fl && rows.length ? { ...base, pendingRows: [first0] } : base, 'header')).filter(Boolean);
     endBand();
     const headerHeight = headerUnits.reduce((s, u) => s + u.height, 0);
     if (item.repeatHeader !== false) repeatH = headerHeight;
@@ -695,7 +697,7 @@ register('table', {
 
     // groups (outer → inner), then detail rows
     const groups = item.groups || [];
-    let rowNo = 0;
+    let rowNo = lc.win?.rowOffset || 0; // a window (paged.js): the rows before it
     const groupTables = []; // groups whose header repeats: paginated like a table header (paginate/index.js)
     const tableKey = `${item.name}#${lc.nextId()}`;
     const emit = (level, grows, ctx, chain, keyPath) => {
@@ -709,12 +711,13 @@ register('table', {
           const dctx = { ...ctx, fields: grows[i], aggRows: grows, aggIndex: i, rowNumber: rowNo };
           const u0 = units.length;
           for (const r of item.detail || []) layRow(r, dctx, 'detail', { level: groups.length });
-          if (lc.markRows && units[u0]) { units[u0].rowHead = true; for (let k = u0; k < units.length; k++) units[k].dataRow = rowNo; } // paged.js: where a window may start
+          if (lc.win && units[u0]) { units[u0].rowHead = true; for (let k = u0; k < units.length; k++) units[k].dataRow = rowNo; } // paged.js: where a window may start
           // rows of one group instance: paginate keeps widows off them (no lone row at a page foot or head)
-          if (groups.length && item.widowControl !== false) for (let k = u0; k < units.length; k++) units[k].grp = tableKey + keyPath;
+          // a group a window continues (paged.js): its rows before the window count too (grpBefore)
+          if (groups.length && item.widowControl !== false) for (let k = u0; k < units.length; k++) { units[k].grp = tableKey + keyPath; if (ctx.__before) units[k].grpBefore = ctx.__before; }
           // pageBreakEvery: a new page after every N detail rows (BIRT's pageBreakInterval)
           const every = Math.trunc(Number(item.pageBreakEvery)) || 0;
-          if (every > 0 && rowNo > 1 && (rowNo - 1) % every === 0 && units[u0]) units[u0].breakBefore = true;
+          if (every > 0 && rowNo > (lc.win?.rowOffset || 0) + 1 && (rowNo - 1) % every === 0 && units[u0]) units[u0].breakBefore = true;
           endBand();
         }
         return;
@@ -771,7 +774,9 @@ register('table', {
         shown.add(bk);
         // number: GroupIndex(); prevRows: Previous() in a group header or footer
         const sc = { rows: bk.rows, index: -1, run: [], number: bi + 1, prevRows: bi > 0 ? sibs[bi - 1].rows : null, siblings: sibRows(sibs), ...(kids ? { level: depth, recRows: recOf.get(bk) } : {}) };
-        const gctx = { ...ctx, fields: bk.rows[0], aggRows: bk.rows, aggIndex: undefined, scopes: { ...ctx.scopes, [gname]: sc }, groupKey: bk.key, group: sc };
+        // a window of a longer report (paged.js): its first group at each level may continue one begun before it
+        const cont = bi === 0 && (level === 0 || ctx.__cont) ? lc.win?.cont?.[level] : null;
+        const gctx = { ...ctx, fields: cont ? cont.first : bk.rows[0], aggRows: bk.rows, aggIndex: undefined, scopes: { ...ctx.scopes, [gname]: sc }, groupKey: bk.key, group: sc, __cont: !!cont, __before: cont && level === groups.length - 1 ? cont.before : 0 };
         if (kids) { gctx.level = depth; if (g.indent) gctx.indent = (ctx.indent || 0) + depth * Number(g.indent); }
         const path = `${parentPath}/${bk.text}`;
         const tkey = `${item.name}|${level}|${path}`;
@@ -779,10 +784,12 @@ register('table', {
         const open = !g.collapsible ? true : (lc.state?.toggles?.[tkey] ?? dflt);
         const start = units.length;
         // a group header comes before its rows: RunningValue and RowNumber over a scope count them too (RDL)
-        const hctx = g.header?.length ? { ...gctx, pendingRows: fl ? [bk.rows[0]] : recOf.get(bk) || bk.rows } : gctx;
-        const hu = (g.header || []).map((r, ri) => layRow(r, hctx, 'groupHeader', { level, ...(ri === 0 && g.collapsible ? { toggle: { key: tkey, open } } : {}) })).filter(Boolean);
+        const hctx = g.header?.length ? { ...gctx, pendingRows: fl ? [cont ? cont.first : bk.rows[0]] : recOf.get(bk) || bk.rows } : gctx;
+        // a continued group's header shows again only where it repeats on each page (as the whole report draws it)
+        const hu = (cont && !g.repeatHeader ? [] : g.header || []).map((r, ri) => layRow(r, hctx, 'groupHeader', { level, ...(ri === 0 && g.collapsible ? { toggle: { key: tkey, open } } : {}) })).filter(Boolean);
         endBand();
         const before = units.length;
+        if (lc.win && !cont && before > start) { for (let k = start; k < before; k++) units[k].dataRow = rowNo + 1; units[start].rowHead = true; units[start].headLevel = level; } // paged.js: a window may start at a group
         // a group header that repeats on each page its group continues on, under the table's (and outer groups') headers
         const rep = g.repeatHeader && before > start && !lc.fixed ? [...(ctx.__rep || []), (() => {
           const hdr = units.slice(start, before), h0 = hdr[0].top, its = [];
@@ -816,7 +823,9 @@ register('table', {
           if ((g.pageBreak === 'between' || g.newSection) && bi > 0) units[start].breakBefore = true;
           if (g.newSection) units[start].sectionStart = true;
           if (g.pageBreak === 'after' && bi < sibs.length - 1) units[units.length - 1].breakAfter = true;
-          if (g.keepTogether) { const id = `${item.name}:g${level}:${path}:${lc.nextId()}`; for (let k = start; k < units.length; k++) units[k].block ||= id; }
+          // a group a window continues (paged.js) was split in the whole report: its block stays (widow control reads it)
+          // but is open: never kept together
+          if (g.keepTogether) { const id = `${item.name}:g${level}:${path}:${lc.nextId()}`; for (let k = start; k < units.length; k++) if (!units[k].block) { units[k].block = id; if (cont) units[k].blockOpen = true; } }
         }
       };
       // a collapsed node hides its subtree: those nodes count as shown

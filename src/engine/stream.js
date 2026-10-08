@@ -66,7 +66,7 @@ function foldOf(v) {
  *   reportId?: string, fetch?: typeof fetch, baseUrl?: string, sql?: (src: any, p: any) => Promise<object[]>,
  *   sqlRows?: (src: any, p: any) => AsyncIterable<object[]>, sources?: Record<string, any>, sorter?: (cmp: (a: any, b: any) => number) => any,
  *   deadline?: number, timeoutMs?: number, maxRows?: number, maxJsonRowBytes?: number, maxJsonWholeBytes?: number }} opts
- * @returns {Promise<{ why: string } | { why?: undefined, name: string, columns: number[], title: string, timeZone: string|null, locale: string|null, currency: string|null, warnings: string[], rows: () => AsyncGenerator<any>, records: () => AsyncGenerator<any>, stats: { rows: number } }>}
+ * @returns {Promise<{ why: string } | { why?: undefined, name: string, columns: number[], title: string, timeZone: string|null, locale: string|null, currency: string|null, warnings: string[], rows: () => AsyncGenerator<any>, records: () => AsyncGenerator<any>, grouped: () => AsyncGenerator<any>, stats: { rows: number } }>}
  */
 export async function planStream(def0, opts) {
   const no = (why) => ({ why });
@@ -405,8 +405,9 @@ export async function planStream(def0, opts) {
     overTime();
   }
 
-  // records: the typed rows in the table's order (filtered and sorted), for the paged PDF (paged.js)
-  return { name: item.name, columns: cols.map(c => c.width), title: def.name || '', timeZone: timeZone || null, locale: def.locale || null, currency: def.currency || null, warnings, rows, records: inOrder, stats };
+  // records: the typed rows in the table's order (filtered and sorted); grouped: in display order, each with its group
+  // path ({ r, g }: [ordinal, key] per level); for the paged PDF (paged.js)
+  return { name: item.name, columns: cols.map(c => c.width), title: def.name || '', timeZone: timeZone || null, locale: def.locale || null, currency: def.currency || null, warnings, rows, records: inOrder, grouped: displayOrder, stats };
 }
 
 /** The rows at a data set's path in a value held in memory (inline JSON, pushed data). */

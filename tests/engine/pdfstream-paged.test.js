@@ -74,12 +74,55 @@ describe('paged rendering of a flowing table', () => {
     pages.forEach((p, i) => expect(JSON.stringify(p.items), `page ${i + 1}`).toBe(JSON.stringify(whole.pages[i].items)));
   });
 
-  it('reports it cannot page fall back: groups, RowNumber, aggregates in the bands', async () => {
+  const sumF = (label) => [{ height: 15, style: { fontWeight: 'bold' }, cells: [{ value: label }, { value: '=CountRows()' }, null, null, null, { value: '=Sum(Fields.amount)', style: { format: 'N2', textAlign: 'right' } }, { value: '=Fields.region' }, { value: '=Max(Fields.date)', style: { format: 'd' } }] }];
+  /** two group levels (subtotals, counts, max; the outer header repeats), RowNumber, fields in the table header */
+  const grouped = (n, o = {}) => {
+    const def = ledger(ledgerRows(n), o.def);
+    const t = def.sections.body.items[1];
+    t.groups = [
+      { name: 'Region', expr: '=Fields.region', repeatHeader: true, header: [{ height: 18, style: { backgroundColor: '#dbeafe', fontWeight: 'bold' }, cells: [{ value: '="Region " & Fields.region', colSpan: 3 }, null, null] }], footer: sumF('Region total'), ...o.outer },
+      { name: 'Type', expr: '=Fields.type', header: [{ height: 15, cells: [null, { value: '=Fields.type' }] }], footer: sumF('Type total'), ...o.inner },
+    ];
+    t.detail[0].cells[0] = { value: '=RowNumber() & "/" & Fields.id' };
+    t.header[0].cells[1] = { value: '="From " & Fields.accountId' };
+    Object.assign(t, o.table);
+    if (o.single) def.sections.pageFooter.items[0].value = 'Page {Globals.PageNumber}';
+    return def;
+  };
+  const same = async (def, window) => {
+    const whole = await render(def, { fontStore, now });
+    const plan = await planPaged(def, { fontStore, now, window });
+    expect(plan.why).toBeUndefined();
+    let i = 0;
+    for await (const p of /** @type {any} */ (plan).pages()) { expect(JSON.stringify(p.items), `page ${i + 1}`).toBe(JSON.stringify(whole.pages[i].items)); i++; }
+    expect(i).toBe(whole.pages.length);
+    return i;
+  };
+  it('groups page window by window as the whole render: headers that repeat, subtotals, RowNumber, header fields', async () => {
+    expect(await same(grouped(1500), 120)).toBeGreaterThan(20);
+  });
+  it('… with groups kept together, a break between groups, pageBreakEvery, first-last band rows, a sorted inner group', async () => {
+    await same(grouped(1500, { outer: { keepTogether: true }, inner: { keepTogether: true } }), 60);
+    await same(grouped(1500, { outer: { keepTogether: true }, inner: { keepTogether: true }, single: true }), 60); // one pass (no page count)
+    await same(grouped(1500, { outer: { pageBreak: 'between' }, table: { pageBreakEvery: 25 } }), 120);
+    await same(grouped(1200, { def: { bandRows: 'first-last' }, inner: { sort: 'desc' }, table: { header: [{ height: 16, cells: [{ value: 'Id' }, { value: 'Account' }] }] } }), 200); // header fields: not with sorted groups
+  });
+
+  it.skipIf(!hasPoppler)('a grouped ledger streams as a PDF that reads as exportPdf\'s', async () => {
+    const def = grouped(3000);
+    const today = await exportPdf(await render(def, { fontStore, now }), fontStore, { subset, creationDate: now });
+    const s = sink();
+    expect((await exportPdfStream(def, { fontStore, now, subset, creationDate: now, window: 300 }, s)).streamed).toBe(true);
+    for (const args of [[], ['-layout']]) expect(pdftotext(s.bytes(), ...args).text).toBe(pdftotext(today, ...args).text);
+  });
+
+  it('reports it cannot page fall back: group sections, aggregates in the bands, header fields of a re-sorted table', async () => {
     const base = ledger(ledgerRows(10));
     const t = base.sections.body.items[1];
-    expect((await planPaged({ ...base, sections: { ...base.sections, body: { items: [{ ...t, groups: [{ name: 'R', expr: '=Fields.region' }] }] } } }, { fontStore })).why).toBe('groups');
-    expect((await planPaged({ ...base, sections: { ...base.sections, body: { items: [{ ...t, detail: [{ cells: [{ value: '=RowNumber()' }] }] }] } } }, { fontStore })).why).toBe('RowNumber in the rows');
+    const withTable = (x) => ({ ...base, sections: { ...base.sections, body: { items: [{ ...t, ...x }] } } });
+    expect((await planPaged(withTable({ groups: [{ name: 'R', expr: '=Fields.region', newSection: true }] }), { fontStore })).why).toBe('group sections');
     expect((await planPaged({ ...base, sections: { ...base.sections, pageHeader: { height: 20, items: [{ type: 'textbox', x: 0, y: 0, w: 100, h: 14, value: '=Sum(Fields.amount)' }] } } }, { fontStore })).why).toBeTruthy();
+    expect((await planPaged(withTable({ sort: [{ by: '=Fields.amount' }], header: [{ cells: [{ value: '=Fields.id' }] }] }), { fontStore })).why).toBe('fields outside the rows of a re-ordered table');
   });
 });
 
@@ -104,11 +147,11 @@ describe('exportPdfStream', () => {
 
   it('a report that does not page is exportPdf\'s file, byte for byte', async () => {
     const def = ledger(ledgerRows(50));
-    def.sections.body.items[1].groups = [{ name: 'R', expr: '=Fields.region', header: [{ cells: [{ value: '=Fields.region' }] }] }];
+    def.sections.body.items[1].groups = [{ name: 'R', expr: '=Fields.region', newSection: true, header: [{ cells: [{ value: '=Fields.region' }] }] }];
     const today = Buffer.from(await exportPdf(await render(def, { fontStore, now }), fontStore, { subset, creationDate: now }));
     const s = sink();
     const r = await exportPdfStream(def, { fontStore, now, subset, creationDate: now }, s);
-    expect(r).toMatchObject({ streamed: false, why: 'groups' });
+    expect(r).toMatchObject({ streamed: false, why: 'group sections' });
     expect(s.bytes().equals(today)).toBe(true);
   });
 });

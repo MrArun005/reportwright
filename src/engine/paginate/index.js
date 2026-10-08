@@ -39,12 +39,12 @@ export function paginate(units, tables, pageH, warn, stats) {
   const blockMap = new Map();
   for (const u of units) if (u.block) {
     const b = blockMap.get(u.block);
-    if (b) { b.top = Math.min(b.top, u.top); b.bottom = Math.max(b.bottom, u.top + u.height); }
-    else blockMap.set(u.block, { top: u.top, bottom: u.top + u.height });
+    if (b) { b.top = Math.min(b.top, u.top); b.bottom = Math.max(b.bottom, u.top + u.height); if (u.blockOpen) b.open = true; }
+    else blockMap.set(u.block, { top: u.top, bottom: u.top + u.height, open: !!u.blockOpen }); // open: begun before this strip (paged.js)
   }
   const blockUnits = new Map();
   for (const u of units) if (u.block) { let l = blockUnits.get(u.block); if (!l) blockUnits.set(u.block, l = []); l.push(u); }
-  const blocks = [...blockMap.values()].filter(b => b.bottom - b.top <= pageH + EPS);
+  const blocks = [...blockMap.values()].filter(b => !b.open && b.bottom - b.top <= pageH + EPS);
   for (const b of blocks) cand.push(b.top, b.bottom);
   cand.sort((a, b) => a - b);
 
@@ -57,9 +57,10 @@ export function paginate(units, tables, pageH, warn, stats) {
   const grpRows = new Map();
   // A group that is one keep-together block is left out of the search for a clean break (valid), and counted only when
   // a fallback break is looked for (splitOk with withBlocks): a block may be cut then, its rows still split two and two.
-  for (const u of units) if (u.grp) { let g = grpRows.get(u.grp); if (!g) grpRows.set(u.grp, g = { tops: new Set(), first: u.top, last: 0, block: u.block || null }); g.tops.add(u.top); g.last = Math.max(g.last, u.top + u.height); if (g.block !== (u.block || null)) g.block = undefined; }
-  const widowGroups = [...grpRows.values()].map(g => ({ first: g.first, last: g.last, tops: [...g.tops].sort((a, b) => a - b), block: g.block }))
-    .filter(g => (g.tops.length >= 4 || (g.tops.length >= 2 && g.last - g.first <= pageH + EPS)))
+  // grpBefore: rows of the group above this strip (a window of a longer report, paged.js), above every break here
+  for (const u of units) if (u.grp) { let g = grpRows.get(u.grp); if (!g) grpRows.set(u.grp, g = { tops: new Set(), first: u.top, last: 0, block: u.block || null, before: u.grpBefore || 0 }); g.tops.add(u.top); g.last = Math.max(g.last, u.top + u.height); if (g.block !== (u.block || null)) g.block = undefined; }
+  const widowGroups = [...grpRows.values()].map(g => ({ first: g.first, last: g.last, tops: [...g.tops].sort((a, b) => a - b), block: g.block, before: g.before, n: g.tops.size + g.before }))
+    .filter(g => (g.n >= 4 || (!g.before && g.n >= 2 && g.last - g.first <= pageH + EPS)))
     .sort((a, b) => a.first - b.first);
   const wFirst = widowGroups.map(g => g.first);
   const wMaxLast = [];
@@ -76,9 +77,9 @@ export function paginate(units, tables, pageH, warn, stats) {
       tick(1);
       const g = widowGroups[i];
       if (g.last <= y + EPS || (g.block && !withBlocks)) continue;
-      if (g.tops.length < 4) return false;
-      const above = rowsAbove(g.tops, y);
-      if (above < 2 || g.tops.length - above < 2) return false;
+      if (g.n < 4) return false;
+      const above = g.before + rowsAbove(g.tops, y);
+      if (above < 2 || g.n - above < 2) return false;
     }
     return true;
   };
@@ -131,7 +132,7 @@ export function paginate(units, tables, pageH, warn, stats) {
         // ragged break, which left page 1 with only the headers and rows past the footer
         const bl = blockMap.get(u.block);
         if (movedBlocks.has(bl)) continue;
-        if (!bl || bl.bottom - bl.top > room + EPS || bl.top <= top + EPS) return null;
+        if (!bl || bl.open || bl.bottom - bl.top > room + EPS || bl.top <= top + EPS) return null;
         movedBlocks.add(bl);
         for (const m of blockUnits.get(u.block)) if (!placed.has(m)) moved.push(m);
         continue;
