@@ -172,16 +172,16 @@ function PaletteEditor({ label, value, onChange }) {
   );
 }
 
-let reportList = null;
+const reportLists = new Map(); // server → report list (designers on different servers must not share one: N17)
 /** Report ids for drill-through and subreports: a list to pick from, still free text (an =expression works). */
 function ReportPicker({ value, onChange }) {
-  const [list, setList] = useState(reportList || []);
+  const [list, setList] = useState(() => reportLists.get(useDesigner.getState().embed?.server || '') || []);
   const listId = useState(() => `reports-${Math.random().toString(36).slice(2, 8)}`)[0];
   useEffect(() => {
     const embed = useDesigner.getState().embed;
-    if (reportList || (embed && !embed.server)) return; // standalone: no saved reports
     const server = embed?.server || '';
-    fetch(`${server}/api/reports`).then(r => (r.ok ? r.json() : [])).then(l => { reportList = Array.isArray(l) ? l : []; setList(reportList); }).catch(() => {});
+    if (reportLists.has(server) || (embed && !embed.server)) return; // standalone: no saved reports
+    fetch(`${server}/api/reports`).then(r => (r.ok ? r.json() : [])).then(l => { const v = Array.isArray(l) ? l : []; reportLists.set(server, v); setList(v); }).catch(() => {});
   }, []);
   return (
     <>
@@ -754,10 +754,12 @@ function VisualEditor({ cell, setCell, openExpr, dataSet }) {
 /** A report's parameters, for the drill-through mapping: { name, required, prompt }[] (null while loading or unknown). */
 const reportParams = new Map();
 function useReportParams(id) {
-  const [list, setList] = useState(() => reportParams.get(id) ?? null);
+  const srv = () => useDesigner.getState().embed?.server || '';
+  const [list, setList] = useState(() => reportParams.get(`${srv()} ${id}`) ?? null);
   useEffect(() => {
     if (!id || isDynamic(id)) { setList(null); return; }
-    if (reportParams.has(id)) { setList(reportParams.get(id)); return; }
+    const key = `${srv()} ${id}`;
+    if (reportParams.has(key)) { setList(reportParams.get(key)); return; }
     let alive = true;
     const embed = useDesigner.getState().embed;
     if (embed && !embed.server) { setList(null); return; } // standalone: no saved reports
@@ -765,7 +767,7 @@ function useReportParams(id) {
     fetch(`${server}/api/reports/${encodeURIComponent(id)}`).then(r => (r.ok ? r.json() : null)).then(r => {
       const d = r?.definition || r;
       const ps = d && typeof d === 'object' ? (d.parameters || []).map(p => ({ name: p.name, required: !!p.required && p.default == null, prompt: p.prompt })) : null;
-      if (ps) reportParams.set(id, ps);
+      if (ps) reportParams.set(key, ps);
       if (alive) setList(ps);
     }).catch(() => { if (alive) setList(null); });
     return () => { alive = false; };

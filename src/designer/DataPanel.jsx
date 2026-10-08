@@ -24,17 +24,19 @@ const NAME = /^[A-Za-z_][\w]*$/;
 export const noSourceKey = (def) => ((def?.dataSources || []).length ? null : 'r4_noDataSource');
 
 /** Load every source and build data sets with parameter defaults. Used for previews and field detection. */
-export async function loadSample() {
-  const { def } = useDesigner.getState();
-  useDesigner.setState({ sample: { loading: true } });
+export async function loadSample(store) {
+  // the designer's store (an onClick passes an event: the active designer's); the sample lands there after the await
+  const api = store?.getState ? store : activeStore();
+  const { def } = api.getState();
+  api.setState({ sample: { loading: true } });
   try {
     const params = resolveParameters(def, {});
     const sources = await loadSources(def, { params, baseUrl: origin(), sqlPreview: true, fetch: reportFetch(origin(), undefined, { sqlPreview: true }) }); // the ReportWright server, also when embedded
     const ctx = { params, globals: { ExecutionTime: new Date() }, dataSets: {}, fields: null, locale: def.locale, currency: def.currency, functions: functionTable(def) };
     const dataSets = buildDataSets(def, sources, ctx);
-    useDesigner.setState({ sample: { dataSets, sources, at: Date.now() } });
+    api.setState({ sample: { dataSets, sources, at: Date.now() } });
   } catch (e) {
-    useDesigner.setState({ sample: { error: e.message } });
+    api.setState({ sample: { error: e.message } });
   }
 }
 

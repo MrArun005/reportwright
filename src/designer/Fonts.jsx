@@ -1,7 +1,7 @@
 'use client';
 // Uploaded fonts: the family list for the font pickers, and a small dialog to upload or remove fonts.
 import { useState } from 'react';
-import { useDesigner } from './store.js';
+import { useDesigner, activeStore } from './store.js';
 import { Dialog, Field, Select, TextInput } from './ui.jsx';
 import { BUNDLED_FAMILIES } from '@/engine/text/fonts.js';
 import { customFonts } from '@/viewer/engineClient.js';
@@ -12,7 +12,7 @@ export function useFontFamilies() {
   return [...BUNDLED_FAMILIES, ...[...new Set(fonts.map(f => f.family))].sort()];
 }
 
-const refresh = async () => useDesigner.getState().setUi({ fonts: await customFonts(true) });
+const refresh = async () => { const api = activeStore(); const fonts = await customFonts(true); api.getState().setUi({ fonts }); };
 
 export function FontsDialog({ onClose }) {
   const fonts = useDesigner(s => s.fonts);

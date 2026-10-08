@@ -23,6 +23,7 @@ export default function TableWizard() {
   const wiz = useDesigner(s => s.tableWizard);
   const def = useDesigner(s => s.def);
   const sample = useDesigner(s => s.sample);
+  const lang = useDesigner(s => s.lang);
   const close = () => useDesigner.getState().setUi({ tableWizard: null });
   // the band the table goes into (a landscape section is wider), or the container it is dropped in
   const parent = wiz?.parentId ? findItem(def, wiz.parentId)?.item : null;
@@ -78,7 +79,7 @@ export default function TableWizard() {
     <Dialog className="cw" title="Insert a table" onClose={close}
       footer={<>
         <button className="btn ghost" style={{ marginRight: 'auto' }} onClick={plain}>Insert an empty {wiz.type === 'matrix' ? 'matrix' : 'table'}</button>
-        <button className="btn ghost" onClick={() => { useDesigner.getState().setUi({ tableWizard: null, pivotWizard: { section: wiz.section, x: wiz.x, y: wiz.y, parentId: wiz.parentId, dataSet: c.dataSet } }); }} data-testid="open-pivot-wizard">{t(useDesigner.getState().lang, 'pivotWizard')}…</button>
+        <button className="btn ghost" onClick={() => { useDesigner.getState().setUi({ tableWizard: null, pivotWizard: { section: wiz.section, x: wiz.x, y: wiz.y, parentId: wiz.parentId, dataSet: c.dataSet } }); }} data-testid="open-pivot-wizard">{t(lang, 'pivotWizard')}…</button>
         <button className="btn" onClick={close}>Cancel</button>
         <button className="btn primary" onClick={insert} disabled={!ds || !itemFor(c.layout, width) || sample?.loading} data-testid="table-wizard-apply">Insert {c.layout === 'matrix' ? 'matrix' : 'table'}</button>
       </>}>
@@ -86,7 +87,7 @@ export default function TableWizard() {
         <section className="cw-side" aria-label="Data for the table">
           <Field label="Data set"><Select value={c.dataSet} options={(def.dataSets || []).map(d => d.name)} onChange={v => set({ dataSet: v, fields: null, groupBy: '', mRows: '', mCols: '', mValue: '' })} /></Field>
           {sample?.loading && <span className="hint">Calling the API…</span>}
-          {noSourceKey(def) && <span className="hint" role="status" data-testid="no-source">{t(useDesigner.getState().lang, noSourceKey(def))}</span>}
+          {noSourceKey(def) && <span className="hint" role="status" data-testid="no-source">{t(lang, noSourceKey(def))}</span>}
           {sample?.error && <span className="err">{sample.error}</span>}
           {c.layout !== 'matrix' && <>
             {c.layout !== 'list' && <Field label="Group by"><Select value={groupBy} options={text.map(f => f.name)} onChange={v => set({ groupBy: v })} /></Field>}

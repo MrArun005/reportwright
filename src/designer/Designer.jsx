@@ -4,7 +4,7 @@ import { declareDocumentStyles } from '../embed/styles.js';
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Dialog } from './ui.jsx';
 import Link from 'next/link';
-import { useDesigner, insertItem, insertSpot, deleteSelection, duplicateSelection, moveItems, copySelection, pasteItems, alignItems } from './store.js';
+import { useDesigner, useDesignerStore, newDesignerStore, activateStore, DesignerStore, insertItem, insertSpot, deleteSelection, duplicateSelection, moveItems, copySelection, pasteItems, alignItems } from './store.js';
 import Canvas, { MIME_TOOL, useDesignIssues, issueLine } from './Canvas.jsx';
 import Inspector from './Inspector.jsx';
 import DataPanel, { loadSample } from './DataPanel.jsx';
@@ -53,10 +53,11 @@ const TOOLS = [
 ];
 
 function Toolbox({ T, hide = [] }) {
+  const api = useDesignerStore();
   const name = (type) => (T(`item_${type}`) === `item_${type}` ? ITEMS[type].label : T(`item_${type}`));
   // a selected list or container takes the new item; otherwise it goes below the body's items
   const add = (type) => {
-    const s = useDesigner.getState();
+    const s = api.getState();
     const at = insertSpot(s.def, s.sel);
     insertItem(type, at.section, 0, at.y, {}, at.parentId);
   };
@@ -170,6 +171,7 @@ const framed = () => { try { return window.self !== window.top; } catch { return
 
 /** Unsaved changes are kept as a draft every few seconds (and when the page goes away); "Restore" brings them back. */
 function useAutosave(id, T, lang, user) {
+  const api = useDesignerStore();
   const [offer, setOffer] = useState(null); // { at, def }: a draft newer than the saved report
   useEffect(() => {
     if (!id || user == null || framed()) return undefined; // the page names the signed-in user; never inside another site's page
@@ -177,23 +179,23 @@ function useAutosave(id, T, lang, user) {
     try { store = window.localStorage; } catch { return undefined; }
     clearDrafts(store, user); // another user's drafts in this browser go (and expired ones)
     const d = readDraft(store, user, id);
-    if (d && plain(mergeDraft(d.def, useDesigner.getState().def)) !== plain(useDesigner.getState().def)) setOffer(d); else if (d) clearDraft(store, user, id);
-    const keep = () => { const s = useDesigner.getState(); if (!s.saved && !s.readOnly) writeDraft(store, user, id, s.def, Date.now(), s.rev || null); };
+    if (d && plain(mergeDraft(d.def, api.getState().def)) !== plain(api.getState().def)) setOffer(d); else if (d) clearDraft(store, user, id);
+    const keep = () => { const s = api.getState(); if (!s.saved && !s.readOnly) writeDraft(store, user, id, s.def, Date.now(), s.rev || null); };
     const t = setInterval(keep, AUTOSAVE_MS);
     const hide = () => { if (document.visibilityState === 'hidden') keep(); };
     window.addEventListener('pagehide', keep);
     document.addEventListener('visibilitychange', hide);
-    const unsub = useDesigner.subscribe((s, prev) => { if (s.saved && !prev.saved) clearDraft(store, user, id); }); // saved: no draft needed
+    const unsub = api.subscribe((s, prev) => { if (s.saved && !prev.saved) clearDraft(store, user, id); }); // saved: no draft needed
     return () => { clearInterval(t); window.removeEventListener('pagehide', keep); document.removeEventListener('visibilitychange', hide); unsub(); };
   }, [id, user]);
   if (!offer) return null;
   const when = new Date(offer.at).toLocaleString(lang === 'en' ? 'en-IN' : lang, { dateStyle: 'medium', timeStyle: 'short' });
   // made on an older revision: the report was saved again after these changes; restoring and saving would replace it
-  const stale = staleDraft(offer, useDesigner.getState().rev);
+  const stale = staleDraft(offer, api.getState().rev);
   return (
     <div className="draft-bar" role="alert" data-testid="draft-offer" data-stale={stale || undefined}>
       <span>{T(stale ? 'ux_draftStale' : 'ux_draftFound', { when })}</span>
-      <button className={`btn sm${stale ? '' : ' primary'}`} data-testid="draft-restore" onClick={() => { const d = mergeDraft(offer.def, useDesigner.getState().def); useDesigner.getState().apply(() => JSON.parse(JSON.stringify(d))); useDesigner.getState().fixSelection(); setOffer(null); }}>{T(stale ? 'ux_draftRestoreAnyway' : 'ux_draftRestore')}</button>
+      <button className={`btn sm${stale ? '' : ' primary'}`} data-testid="draft-restore" onClick={() => { const d = mergeDraft(offer.def, api.getState().def); api.getState().apply(() => JSON.parse(JSON.stringify(d))); api.getState().fixSelection(); setOffer(null); }}>{T(stale ? 'ux_draftRestoreAnyway' : 'ux_draftRestore')}</button>
       <button className="btn sm" data-testid="draft-discard" onClick={() => { try { clearDraft(window.localStorage, user, id); } catch { /* no storage */ } setOffer(null); }}>{T('ux_draftDiscard')}</button>
     </div>
   );
@@ -201,13 +203,14 @@ function useAutosave(id, T, lang, user) {
 
 /** A save that met someone else's newer save (409): nothing was overwritten; the user chooses. */
 function ConflictBar({ T }) {
+  const api = useDesignerStore();
   const conflict = useDesigner(s => s.conflict);
   if (!conflict) return null;
   return (
     <div className="draft-bar" role="alert" data-testid="save-conflict">
       <span>{T('ux_conflict')}</span>
-      <button className="btn sm" data-testid="conflict-mine" onClick={() => useDesigner.getState().save({ overwrite: true })}>{T('ux_conflictMine')}</button>
-      <button className="btn sm" data-testid="conflict-theirs" onClick={() => useDesigner.getState().takeTheirs()}>{T('ux_conflictTheirs')}</button>
+      <button className="btn sm" data-testid="conflict-mine" onClick={() => api.getState().save({ overwrite: true })}>{T('ux_conflictMine')}</button>
+      <button className="btn sm" data-testid="conflict-theirs" onClick={() => api.getState().takeTheirs()}>{T('ux_conflictTheirs')}</button>
     </div>
   );
 }
@@ -244,6 +247,7 @@ function AlignBar({ T }) {
 
 /** The design problems of the report (overlaps, wider than the page, unknown fields): a count, and a list to jump from. */
 function IssuesButton({ T }) {
+  const api = useDesignerStore();
   const issues = useDesignIssues();
   const [open, setOpen] = useState(false);
   useEffect(() => { if (!issues.length) setOpen(false); }, [issues.length]);
@@ -267,7 +271,7 @@ function IssuesButton({ T }) {
     <span className="issues-wrap">
       <button type="button" className="btn sm issues-btn" aria-expanded={open} onClick={() => setOpen(v => !v)} data-testid="issues">{T('ux_issues', { n: issues.length })}</button>
       {open && <ul className="issues-list" data-testid="issues-list" ref={listRef}>
-        {issues.map((i, k) => <li key={k}><button type="button" className="linklike" onClick={() => { if (i.id) useDesigner.getState().select({ kind: 'items', ids: [i.id] }); }}>{issueLine(T, i)}</button></li>)}
+        {issues.map((i, k) => <li key={k}><button type="button" className="linklike" onClick={() => { if (i.id) api.getState().select({ kind: 'items', ids: [i.id] }); }}>{issueLine(T, i)}</button></li>)}
       </ul>}
     </span>
   );
@@ -287,6 +291,7 @@ const SHORTCUTS = [
 ];
 
 function HistoryDialog({ id, onClose, T, lang }) {
+  const api = useDesignerStore();
   const [list, setList] = useState(null);
   const [err, setErr] = useState(null);
   useEffect(() => { fetch(`/api/reports/${id}/versions`).then(r => r.json()).then(setList).catch(e => setErr(e.message)); }, [id]);
@@ -294,7 +299,7 @@ function HistoryDialog({ id, onClose, T, lang }) {
     const res = await fetch(`/api/reports/${id}/versions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: v }) });
     if (!res.ok) { setErr((await res.json()).error); return; }
     const def = await res.json();
-    useDesigner.getState().init(id, def);
+    api.getState().init(id, def);
     onClose();
   };
   return (
@@ -320,13 +325,23 @@ function HistoryDialog({ id, onClose, T, lang }) {
  *   toolbox?: { hide?: string[] }, panels?: { data?: boolean, inspector?: boolean }, dataSourceTemplates?: object[], server?: string } }} props
  *   embed: set by mountDesigner (another site); none on ReportWright's own pages
  */
-export default function Designer({ id, initial, rev = null, lang: langIn, embed = null, user = null, ai = false }) {
+export default function Designer({ store: storeIn = null, ...props }) {
+  // its own store (N17: two designers on a page shared one), active from its first render and on every event in it
+  const [store] = useState(() => { const s = storeIn || newDesignerStore(); activateStore(s); return s; });
+  return <DesignerStore.Provider value={store}><DesignerIn {...props} /></DesignerStore.Provider>;
+}
+/** Events that may change a designer's state: each makes this designer's store the active one first (capture phase). */
+const ACTIVATE = ['onPointerDownCapture', 'onMouseDownCapture', 'onKeyDownCapture', 'onFocusCapture', 'onClickCapture', 'onInputCapture', 'onChangeCapture',
+  'onDragStartCapture', 'onDragOverCapture', 'onDropCapture', 'onPasteCapture', 'onWheelCapture', 'onContextMenuCapture', 'onDoubleClickCapture', 'onSubmitCapture'];
+
+function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user = null, ai = false }) {
+  const api = useDesignerStore();
+  const activators = useMemo(() => { const on = () => activateStore(api); return Object.fromEntries(ACTIVATE.map(k => [k, on])); }, [api]);
   const lang = pickLang(langIn);
   const T = (k, v) => t(lang, k, v);
   const q = lang === 'en' ? '' : `?lang=${encodeURIComponent(lang)}`;
   const ready = useRef(false);
-  // The store is module-global: never fill it on the server, where requests share it.
-  if (!ready.current && typeof window !== 'undefined') { useDesigner.getState().init(id, initial); useDesigner.getState().setUi({ lang, embed, readOnly: !!embed?.readOnly, rev, conflict: null }); ready.current = true; }
+  if (!ready.current && typeof window !== 'undefined') { api.getState().init(id, initial); api.getState().setUi({ lang, embed, readOnly: !!embed?.readOnly, rev, conflict: null }); ready.current = true; }
   const readOnly = !!embed?.readOnly;
   const rootRef = useRef(null);
   const def = useDesigner(s => s.def);
@@ -343,11 +358,11 @@ export default function Designer({ id, initial, rev = null, lang: langIn, embed 
   const fontCss = useMemo(() => fontFaceCss(allFontKeys(), fontsBase().replace(/\/$/, '')), [fonts]); // eslint-disable-line react-hooks/exhaustive-deps
   // embedded: @font-face is ignored inside a shadow root, so the report fonts are declared on the host document
   useEffect(() => { if (embed) declareDocumentStyles('pw-designer-fonts', fontCss); }, [embed, fontCss]);
-  useEffect(() => { customFonts().then(list => useDesigner.getState().setUi({ fonts: list })); }, []);
-  useEffect(() => { const z = savedZoom(); if (z != null) useDesigner.getState().setUi({ zoom: z }); }, []);
+  useEffect(() => { customFonts().then(list => api.getState().setUi({ fonts: list })); }, []);
+  useEffect(() => { const z = savedZoom(); if (z != null) api.getState().setUi({ zoom: z }); }, []);
   const canUndo = useDesigner(s => s.past.length > 0);
   const canRedo = useDesigner(s => s.future.length > 0);
-  const st = useDesigner.getState;
+  const st = api.getState;
   const [dialog, setDialog] = useState(null);
   const [showLeft, setShowLeft] = useState(true);
   const [showRight, setShowRight] = useState(true);
@@ -361,7 +376,7 @@ export default function Designer({ id, initial, rev = null, lang: langIn, embed 
 
   // sample data again whenever a data source or data set comes or goes (a report part brings its own)
   const dataKey = useDesigner(s => `${(s.def?.dataSources || []).map(x => x.name)}|${(s.def?.dataSets || []).map(x => x.name)}`);
-  useEffect(() => { loadSample(); }, [dataKey]);
+  useEffect(() => { loadSample(api); }, [dataKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const onKey = (e) => {
@@ -413,7 +428,7 @@ export default function Designer({ id, initial, rev = null, lang: langIn, embed 
   };
   const open = async () => {
     const d = await embed.onOpen();
-    if (d && typeof d === 'object') { st().init(id, d); loadSample(); }
+    if (d && typeof d === 'object') { st().init(id, d); loadSample(api); }
   };
   // Import: a JasperReports, SSRS or BIRT design, or a definition file (.pw.json); the warnings of the importer are shown
   const importInput = useRef(null);
@@ -421,7 +436,7 @@ export default function Designer({ id, initial, rev = null, lang: langIn, embed 
   const importFile = async (file) => {
     if (!file) return;
     const r = readReportFile(file.name, await file.text());
-    if (r.definition) { st().init(id, r.definition); loadSample(); }
+    if (r.definition) { st().init(id, r.definition); loadSample(api); }
     setImported({ name: file.name, ok: !!r.definition, warnings: r.warnings || [], error: r.error });
   };
 
@@ -431,7 +446,7 @@ export default function Designer({ id, initial, rev = null, lang: langIn, embed 
   if (!def) return <div className="designer" dir={dirOf(lang)} lang={lang}><div className="dtop"><span className="brand"><i />ReportWright</span><span className="hint">{T('loadingDesigner')}</span></div></div>;
 
   return (
-    <div className="designer" data-testid="designer" dir={dirOf(lang)} lang={lang} ref={rootRef} data-readonly={readOnly || undefined}>
+    <div className="designer" data-testid="designer" dir={dirOf(lang)} lang={lang} ref={rootRef} data-readonly={readOnly || undefined} {...activators}>
       {!embed && <style>{fontCss}</style>}
       <header className="dtop dbar">
         {embed ? <span className="brand"><i />ReportWright</span> : <Link href={`/${q}`} className="brand"><i />ReportWright</Link>}

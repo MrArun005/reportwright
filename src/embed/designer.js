@@ -5,7 +5,7 @@
 import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import Designer from '../designer/Designer.jsx';
-import { useDesigner } from '../designer/store.js';
+import { newDesignerStore } from '../designer/store.js';
 import { setAssetBase, setStandalone } from '../viewer/engineClient.js';
 import { setFetchPolicy } from '../viewer/dataFetch.js';
 import { uiFontCss } from '../viewer/uiFonts.js';
@@ -45,8 +45,9 @@ export function mountDesigner(target, opts = {}) {
   const box = /** @type {HTMLElement} */ (shadow.querySelector('.pw-embed'));
   box.style.height = opts.height || '760px'; // CSSOM, not a style attribute: style-src 'self' blocks the latter
   const root = createRoot(box);
+  const store = newDesignerStore(); // this designer's own state: other designers on the page have theirs (N17)
   const embed = { onSave: opts.onSave, onOpen: opts.onOpen, readOnly: !!opts.readOnly, toolbox: opts.toolbox, panels: opts.panels, dataSourceTemplates: opts.dataSourceTemplates, server };
-  const show = (definition) => loadLanguage(opts.lang).catch(() => {}).then(() => root.render(createElement(Designer, { id: opts.report, initial: definition, lang: opts.lang, embed })));
+  const show = (definition) => loadLanguage(opts.lang).catch(() => {}).then(() => root.render(createElement(Designer, { id: opts.report, initial: definition, lang: opts.lang, embed, store })));
   if (opts.definition || !opts.report) show(opts.definition || BLANK);
   else fetch(`${server}/api/reports/${encodeURIComponent(opts.report)}`)
     .then(r => (r.ok ? r.json() : r.json().then(j => Promise.reject(new Error(j.error || `HTTP ${r.status}`)))))
@@ -55,7 +56,7 @@ export function mountDesigner(target, opts = {}) {
   return {
     unmount: () => root.unmount(),
     /** the definition as it is now (a plain copy) */
-    getDefinition: () => JSON.parse(JSON.stringify(useDesigner.getState().def)),
-    save: () => useDesigner.getState().save(),
+    getDefinition: () => JSON.parse(JSON.stringify(store.getState().def)),
+    save: () => store.getState().save(),
   };
 }

@@ -1,5 +1,6 @@
 'use client';
-import { create } from 'zustand';
+import { createStore, useStore } from 'zustand';
+import { createContext, useContext } from 'react';
 import { produce } from 'immer';
 import { ITEMS } from '@/engine/items/index.js';
 import { resolvePage } from '@/engine/units.js';
@@ -104,7 +105,8 @@ export function findItem(def, id) {
   return hit;
 }
 
-export const useDesigner = create((set, get) => ({
+/** A designer's state. One per Designer (two designers on a page never share one: N17). */
+export const newDesignerStore = () => createStore((set, get) => ({
   id: null,
   def: null,
   saved: true,
@@ -220,8 +222,25 @@ export const useDesigner = create((set, get) => ({
   },
 }));
 
+/**
+ * The store of the designer in use. Hooks read the store of their own Designer (DesignerStore context). The commands
+ * below and useDesigner.getState() read the active one: a Designer makes its store active when it renders and on
+ * every event inside it (Designer.jsx), so a click in one designer edits that designer.
+ */
+let active = newDesignerStore();
+export const DesignerStore = createContext(null);
+export const activateStore = (store) => { active = store; };
+export const activeStore = () => active;
+/** The store of the Designer this component is in (for effects and async work, which may run while another is active). */
+export const useDesignerStore = () => useContext(DesignerStore) || active;
+/** @type {any} */
+export const useDesigner = (sel) => useStore(useDesignerStore(), sel);
+useDesigner.getState = () => active.getState();
+useDesigner.setState = (...a) => active.setState(...a);
+useDesigner.subscribe = (fn) => active.subscribe(fn);
+
 /* ------------------------------------------------------------ commands */
-const S = () => useDesigner.getState();
+const S = () => active.getState();
 
 export function bodyWidth(def, key = 'body') { return pageOf(def, key).bodyWidth; }
 /** Width available to an item: the band width, or its parent's width. */
@@ -436,6 +455,7 @@ export async function copySelection() {
 }
 let memClip = null;
 export async function pasteItems(section = 'body') {
+  const st = active; // the designer pasted into, also if another one is used while the clipboard is read
   let text = null;
   try { text = await navigator.clipboard.readText(); } catch { text = memClip; }
   if (!text || !text.includes(CLIP)) text = memClip;
@@ -443,7 +463,7 @@ export async function pasteItems(section = 'body') {
   try { data = JSON.parse(text); } catch { return 0; }
   if (data?.kind !== CLIP || !Array.isArray(data.items)) return 0;
   const ids = [];
-  S().apply((d) => {
+  st.getState().apply((d) => {
     const used = allNames(d);
     for (const it of data.items) {
       const c = cloneWithIds(it, used);
@@ -453,7 +473,7 @@ export async function pasteItems(section = 'body') {
       ids.push(c.id);
     }
   });
-  if (ids.length) S().select({ kind: 'items', ids });
+  if (ids.length) st.getState().select({ kind: 'items', ids });
   return ids.length;
 }
 
@@ -665,6 +685,7 @@ const IMAGE_MAX = 10 * 1024 * 1024; // the engine's limit per image
  * Used by Report → Images, the Image item's Upload button and a file dropped on the page.
  */
 export async function uploadImages(files, T) {
+  const st = active; // the designer the images go to
   const names = [];
   let err = null;
   for (const f of files) {
@@ -672,7 +693,7 @@ export async function uploadImages(files, T) {
     if (f.size > IMAGE_MAX) { err = T('imageTooBig', { name: f.name }); continue; }
     const uri = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(f); });
     const base = f.name.replace(/\.[^.]+$/, '').replace(/\W+/g, '_').replace(/^_+|_+$/g, '') || 'image';
-    S().apply(d => { d.images ||= {}; let n = base, k = 2; while (d.images[n]) n = `${base}${k++}`; d.images[n] = uri; names.push(n); });
+    st.getState().apply(d => { d.images ||= {}; let n = base, k = 2; while (d.images[n]) n = `${base}${k++}`; d.images[n] = uri; names.push(n); });
   }
   return { names, err };
 }

@@ -21,7 +21,7 @@ import { withPartProps } from '@/engine/items/index.js';
 import { t } from '@/i18n/index.js';
 import { themeContext, findItemNamed } from '@/engine/reuse.js';
 import { MIME_PART, insertPart, useReused, useLayerOf, useT } from './Reuse.jsx';
-import { wouldOverlap } from './store.js';
+import { wouldOverlap, useDesignerStore, activeStore } from './store.js';
 import { designIssues, checkIssues } from './issues.js';
 import { validate } from '@/engine/schema/validate.js';
 
@@ -363,7 +363,7 @@ function StaticItem({ item, scale }) {
 }
 
 let alerted = 0;
-function alertOnce(msg) { if (Date.now() - alerted > 3000) { alerted = Date.now(); useDesigner.setState({ saveError: msg }); setTimeout(() => useDesigner.setState({ saveError: null }), 3000); } }
+function alertOnce(msg) { if (Date.now() - alerted > 3000) { alerted = Date.now(); const api = activeStore(); api.setState({ saveError: msg }); setTimeout(() => api.setState({ saveError: null }), 3000); } }
 /** Default format for a dropped field: the field's one format (tableGen formatFor), the same in every row and total. */
 export function fieldStyle(f) {
   const st = useDesigner.getState();
@@ -540,7 +540,7 @@ let measurer = null;
  * Paint one item with the real engine and the sample data. Returns {html, h} (SVG at the item's size).
  * Used by the canvas and by the chart gallery.
  */
-export async function paintItemSvg(shape, def, sample) {
+export async function paintItemSvg(shape, def, sample, api = activeStore()) { // api: the designer's store (its reused reports)
   const store = fontStore();
   await Promise.all([store.load(), customFonts()]);
   if (shape.type === 'barcode' || hasType(shape.items, 'barcode')) await loadBarcodes();
@@ -549,7 +549,7 @@ export async function paintItemSvg(shape, def, sample) {
   let params = {};
   try { params = resolveParameters(def, {}, { lenient: true }); } catch { /* defaults only */ }
   const base = { fontFamily: 'Inter', fontSize: 9, color: '#1f2937', padding: 2, lineHeight: 1.25, textAlign: 'auto', verticalAlign: 'top', ...(def.styles?.base || {}) };
-  const theme = themeContext((typeof def.theme === 'string' && useDesigner.getState().reused[def.theme]?.themeDef) || def.themeDef);
+  const theme = themeContext((typeof def.theme === 'string' && api.getState().reused[def.theme]?.themeDef) || def.themeDef);
   const ctxBase = { params, globals: { PageNumber: 1, TotalPages: 1, ExecutionTime: new Date(), ReportName: def.name }, dataSets, fields: null, locale: def.locale, currency: def.currency, functions: functionTable(def), theme };
   let seq = 0;
   const lc = {
@@ -575,6 +575,7 @@ export async function paintItemSvg(shape, def, sample) {
 
 /** Draw chart-like items with the real engine and the sample data, so the design looks like the output. */
 function LivePreview({ item, scale }) {
+  const api = useDesignerStore(); // the timer below may fire while another designer is the active one
   const sample = useDesigner(s => s.sample);
   const def = useDesigner(s => s.def);
   const [svg, setSvg] = useState(null);
@@ -584,11 +585,11 @@ function LivePreview({ item, scale }) {
     let alive = true;
     const t = setTimeout(async () => {
       try {
-        const out = await paintItemSvg(shape, def, sample);
+        const out = await paintItemSvg(shape, def, sample, api);
         if (alive) {
           setSvg(out);
-          const ex = useDesigner.getState().extents || {};
-          if (Math.round(ex[item.id]?.w || 0) !== Math.round(out.w)) useDesigner.setState({ extents: { ...ex, [item.id]: { w: out.w } } });
+          const ex = api.getState().extents || {};
+          if (Math.round(ex[item.id]?.w || 0) !== Math.round(out.w)) api.setState({ extents: { ...ex, [item.id]: { w: out.w } } });
         }
       } catch (e) { if (alive) setSvg({ error: e.message }); }
     }, 120);
