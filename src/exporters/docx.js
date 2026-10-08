@@ -53,7 +53,9 @@ const pBorders = (d) => {
 const shading = (fill) => (fill ? `<w:shd w:val="clear" w:color="auto" w:fill="${fill}"/>` : '');
 
 const textOf = (it) => visualLines(it).join(' ');
-const para = (it, indentPt, decor) => `<w:p><w:pPr>${pBorders(decor)}${shading(decor?.fill)}<w:spacing w:before="0" w:after="${Math.round((it.size || 9) * 4)}"/>${indentPt > 0 ? `<w:ind w:left="${Math.round(indentPt * TW)}"/>` : ''}<w:jc w:val="${alignOf(it)}"/></w:pPr><w:r>${rPr(it)}<w:t xml:space="preserve">${esc(textOf(it))}</w:t></w:r></w:p>`;
+/** A heading item (headingLevel, tagged by the engine) is a Heading 1..6 paragraph: the outline and the navigation pane. */
+const headingStyle = (it) => (it.tag?.h >= 1 ? `<w:pStyle w:val="Heading${Math.min(6, Math.round(it.tag.h))}"/>` : '');
+const para = (it, indentPt, decor) => `<w:p><w:pPr>${headingStyle(it)}${pBorders(decor)}${shading(decor?.fill)}<w:spacing w:before="0" w:after="${Math.round((it.size || 9) * 4)}"/>${indentPt > 0 ? `<w:ind w:left="${Math.round(indentPt * TW)}"/>` : ''}<w:jc w:val="${alignOf(it)}"/></w:pPr><w:r>${rPr(it)}<w:t xml:space="preserve">${esc(textOf(it))}</w:t></w:r></w:p>`;
 
 /** One paragraph of rich text: its fragments as runs, a <br> as a Word break, a wrapped line as a space. */
 function richPara(items, indentPt) {
@@ -69,7 +71,7 @@ function richPara(items, indentPt) {
     runs += `<w:r>${rPr(it)}<w:t xml:space="preserve">${esc(prev)}</w:t></w:r>`;
   }
   const jc = { center: 'center', right: 'right' }[items[0].rich.a] || 'left';
-  return `<w:p><w:pPr><w:spacing w:before="0" w:after="${Math.round((items[0].size || 9) * 4)}"/>${indentPt > 0 ? `<w:ind w:left="${Math.round(indentPt * TW)}"/>` : ''}<w:jc w:val="${jc}"/></w:pPr>${runs}</w:p>`;
+  return `<w:p><w:pPr>${headingStyle(items[0])}<w:spacing w:before="0" w:after="${Math.round((items[0].size || 9) * 4)}"/>${indentPt > 0 ? `<w:ind w:left="${Math.round(indentPt * TW)}"/>` : ''}<w:jc w:val="${jc}"/></w:pPr>${runs}</w:p>`;
 }
 
 /** The border most cell sides of a table draw (the table-wide border), or null when most sides have none. */
@@ -287,9 +289,12 @@ async function docxOf(model, opt) {
   const last = model.pages[model.pages.length - 1] || {};
   const document = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${xml}${sectPr(last)}</w:body></w:document>`;
-  const lang = opt.lang ? `<w:lang w:val="${esc(opt.lang)}"/>` : '';
+  // the document language: opt.lang, else the report's locale (the engine's default when it has none)
+  const lang = `<w:lang w:val="${esc(opt.lang || model.locale || 'en-US')}"/>`;
+  // Heading 1..6 (built-in names, so Word's navigation pane and outline use them); the look stays the direct formatting
+  const headings = [28, 24, 22, 20, 18, 18].map((sz, i) => `<w:style w:type="paragraph" w:styleId="Heading${i + 1}"><w:name w:val="heading ${i + 1}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:outlineLvl w:val="${i}"/></w:pPr><w:rPr><w:b/><w:sz w:val="${sz}"/></w:rPr></w:style>`).join('');
   const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Inter" w:hAnsi="Inter" w:cs="Inter"/><w:sz w:val="18"/>${lang}</w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>`;
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Inter" w:hAnsi="Inter" w:cs="Inter"/><w:sz w:val="18"/>${lang}</w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>${headings}</w:styles>`;
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
   const core = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${esc(opt.title || model.name || 'Report')}</dc:title>${opt.author ? `<dc:creator>${esc(opt.author)}</dc:creator>` : ''}<dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created></cp:coreProperties>`;
