@@ -179,7 +179,7 @@ describe('annotations', () => {
     expect(() => p.note(0, 0, { replyTo: { type: 'annotation' } })).toThrow(/Not an annotation made by this library/);
     expect(() => p.freeText('x', { width: 10, height: 10 })).toThrow(/Not a font/);
     expect(() => p.attachFile('text', { name: 'a.txt' })).toThrow(/Uint8Array/);
-    expect(() => p.attachFile(CSV, { name: 'a\n.txt' })).toThrow(/control character/);
+    expect(() => p.attachFile(CSV, { name: 'a\n.txt' })).toThrow(/control, format or bidi character/);
     expect(() => p.attachFile(CSV, { name: 'a.csv', mimeType: 'text/csv /JS' })).toThrow(/mimeType/);
     expect(() => p.stamp({ width: 10, height: 10, draw: async () => {} })).toThrow(/synchronously/);
     expect(() => p.stamp({ width: 10, height: 10, draw: (ap) => ap.note(0, 0) })).toThrow(/cannot be used in an annotation's appearance/);
