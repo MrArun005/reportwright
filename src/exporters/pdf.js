@@ -10,7 +10,7 @@ import { withDeadline } from './deadline.js';
 import { pngProblem } from './png.js';
 import { needsTableData } from './regions.js';
 import { embeddedFace, isStandard } from '../engine/text/fonts.js';
-import { standardFontEntries, standardLiteral, embeddedPage, embeddedWarnings } from './pdfstandard.js';
+import { standardFontEntries, standardLiteral, embeddedPage, embeddedWarnings, standIns } from './pdfstandard.js';
 import { Content, drawRun, glyphText, insideClip, col, BLACK, n2, n4, hex4, KAPPA, cleanText, latin1, deflate, NODE_ZLIB } from './pdfpaint.js';
 
 
@@ -57,7 +57,9 @@ async function pdfOf(model, fontStore, opt) {
   setInfoDates(doc, when);
   if (fileId) doc.context.trailerInfo.ID = doc.context.obj([PDFHexString.of(fileId), PDFHexString.of(fileId)]);
 
-  // PDF/A and PDF/UA embed every font: standard-font text is drawn in its embedded stand-in (pdfstandard.js)
+  // PDF/A and PDF/UA embed every font: standard-font text is drawn in its embedded stand-in (pdfstandard.js); a
+  // form field's font is embedded too
+  if (opt.pdfa || opt.tagged || model.pages.some((/** @type {any} */ pg) => pg.items.some((/** @type {any} */ i) => i.t === 'field'))) await fontStore.load(standIns(fontStore));
   if (opt.pdfa || opt.tagged) {
     const families = new Set();
     model = { ...model, pages: model.pages.map((/** @type {any} */ pg) => embeddedPage(pg, k => fontStore.get(k), families)) };

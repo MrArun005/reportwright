@@ -5,7 +5,7 @@
  * No React, no DOM. Runs in a Web Worker and in Node.
  */
 import { resolvePage } from './units.js';
-import { FontStore, CORE_FONT_KEY, PRELOAD_KEYS, fontsFor, fontsForDef, familyOf, fontCss, embeddedFace, SHAPER, OPTIONAL_KEYS } from './text/fonts.js';
+import { FontStore, CORE_FONT_KEY, PRELOAD_KEYS, fontsFor, fontsForDef, familyOf, fontCss, embeddedFace, isStandard, SHAPER, OPTIONAL_KEYS } from './text/fonts.js';
 import { safeUrl } from './url.js';
 import { TextMeasurer, finishText } from './text/measure.js';
 import { loadSources, buildDataSets, coerce } from './data/index.js';
@@ -142,7 +142,13 @@ export async function render(def0, opts = {}) {
   const store = opts.fontStore || new FontStore(/** @type {any} */ (opts.loadFont));
   // the bundled Latin faces and the faces the definition names load now, in parallel and each on its own (a face that fails
   // falls back, with a warning). A CJK or emoji face loads in a later pass, only when text needs it (the optional fonts).
-  await store.load([...new Set([CORE_FONT_KEY, ...(opts.lazyFonts ? [] : PRELOAD_KEYS), ...fontsForDef(def, unknownFonts)])]); // lazyFonts (the viewer): the other bundled faces load when the layout first needs one
+  // A report that names only standard PDF fonts (Helvetica, Times, Courier) loads just their metrics: no font file is
+  // parsed (fontkit not even loaded). Inter loads in a second layout pass, and only if some text turns out to need it
+  // (a character WinAnsi lacks, an item without a font of its own) (A1.1).
+  const defFonts = fontsForDef(def, unknownFonts);
+  const standardOnly = defFonts.length > 0 && defFonts.every(isStandard);
+  await store.load([...new Set([...(standardOnly ? [] : [CORE_FONT_KEY, ...(opts.lazyFonts ? [] : PRELOAD_KEYS)]), ...defFonts])]); // lazyFonts (the viewer): the other bundled faces load when the layout first needs one
+  if (!store.fonts.size) await store.load([CORE_FONT_KEY]); // the standard fonts did not load: the layout measures with Inter
   let m = new TextMeasurer(store);
 
   // the time limit: an absolute deadline, the same for this render and its subreports

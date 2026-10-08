@@ -25,7 +25,7 @@ import { safeUrl, drillUrl, asciiUrl } from '../engine/url.js';
 import { exportPdf } from './pdf.js';
 import { xmpPacket } from './pdfa.js';
 import { createStreamTagger } from './pdfstreamtags.js';
-import { standardFontDict, embeddedPage, embeddedWarnings } from './pdfstandard.js';
+import { standardFontDict, embeddedPage, embeddedWarnings, standIns } from './pdfstandard.js';
 import { Content, drawRun, glyphText, insideClip, col, BLACK, n2, n4, KAPPA, cleanText, deflate } from './pdfpaint.js';
 
 const CHUNK = 64 * 1024;
@@ -407,6 +407,7 @@ export function createPdfStream(sink, opt) {
    */
   async function writeFont(key, F) {
     if (F.font.standard) { await writeObj(F.ref, standardFontDict(F.font)); return; } // named, not embedded (pdfstandard.js)
+    await loadFontkit(); // checks a subset (loaded already when the FontStore parsed this font; never for a standard font)
     const f = F.font, full = /** @type {Uint8Array} */ (fontStore.bytes.get(key));
     let bytes = full;
     if (opt.subset && !f['OS/2']?.fsType?.noSubsetting) {
@@ -584,8 +585,8 @@ async function streamed(def, opts, sink) {
  * @returns {Promise<{ pages: number, warnings: string[] }>}
  */
 export async function writePagedPdf(plan, opts, sink) {
-  await loadFontkit(); // writeFont checks a subset with it (a FontStore that parsed its fonts has loaded it already)
   const { fontStore } = opts;
+  if (opts.pdfa || opts.tagged) await fontStore.load(standIns(fontStore)); // standard fonts are drawn in their embedded stand-ins
   const w = createPdfStream(sink, { fontStore, subset: opts.subset, id: opts.id, signal: opts.signal });
   const { info, pages } = /** @type {any} */ (plan);
   // tagged (PDF/UA-1): a structure tree written as the pages are (pdfstreamtags.js)

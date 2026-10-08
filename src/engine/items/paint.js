@@ -133,18 +133,18 @@ export function paintBoxAt(x, y, w, h, st, tl, numeric, m, ellipsis, items, cell
         lines[lines.length - 1] = { ...last, text: t, width: m.width(t, key, size, last.dir) };
       }
     }
-    const { ascent, descent } = m.metrics(key, size);
+    let ascent = 0, half = 0; // the font's metrics, read at the first line with text: empty cells need no font (A1.1)
     const blockH = lines.length * lh;
     let top = y + pad[0];
     if (st.verticalAlign === 'middle') top = y + pad[0] + (avail - blockH) / 2;
     else if (st.verticalAlign === 'bottom') top = y + h - pad[2] - blockH;
     const auto = st.textAlign === 'auto' || !st.textAlign;
-    const half = (lh - (ascent + descent)) / 2;
     const cut = lines.length < tl.lines.length; // the last visible line ends in an ellipsis
     const out = [];
     for (let i = 0; i < lines.length; i++) {
       const ln = lines[i];
       if (ln.text === '') continue;
+      if (!ascent) { const mt = m.metrics(key, size); ascent = mt.ascent; half = (lh - (ascent + mt.descent)) / 2; }
       // auto: numbers right, text by its paragraph direction (Arabic and Hebrew right)
       const align = auto ? (numeric || ln.dir === 'rtl' ? 'right' : 'left') : st.textAlign;
       const ly = top + i * lh + half + ascent;

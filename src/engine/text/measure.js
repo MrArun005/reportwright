@@ -137,7 +137,11 @@ export class TextMeasurer {
     if (!this.store.failed.has(key)) this.missing.add(key);
     const c = fontCss(key);
     const same = resolveFontKey(DEFAULT_FAMILY, c.weight, c.style);
-    return this.store.has(same) ? same : CORE_FONT_KEY;
+    if (this.store.has(same)) return same;
+    if (this.store.has(CORE_FONT_KEY)) return CORE_FONT_KEY;
+    // a standard-fonts-only render (A1.1): Inter loads for the next pass; this one measures with any loaded face
+    this.missing.add(this.store.failed.has(same) ? CORE_FONT_KEY : same);
+    return this.store.fonts.keys().next().value ?? CORE_FONT_KEY;
   }
 
   /**
@@ -264,6 +268,7 @@ export class TextMeasurer {
    * @returns {{text: string, width: number, dir?: 'ltr'|'rtl'}[]}
    */
   wrap(text, key, size, maxWidth) {
+    if (text === '') return [{ text: '', width: 0, end: true }]; // an empty cell: no font needed (a standard-fonts-only report then loads no Inter)
     const out = [];
     const k = this.usable(key);
     const sp = this.width(' ', k, size);
