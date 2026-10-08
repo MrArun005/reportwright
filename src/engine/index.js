@@ -124,7 +124,7 @@ export async function render(def0, opts = {}) {
   if (fatal.length) throw new ReportError(fatal[0], { errors: v.errors });
   const checkOnly = new Set(v.checkOnly); // the render says these itself where it meets them
   /** @type {string[]} */
-  const warnings = [...new Set([...v.warnings, ...[...cellErrors].filter(e => !checkOnly.has(e)).slice(0, 100), ...reuseWarnings])].slice(0, 200); // once each (validate and the render can say the same); warn() keeps it at 200
+  const warnings = [...new Set([...v.warnings.filter(w => !v.renderSays.includes(w)), ...[...cellErrors].filter(e => !checkOnly.has(e)).slice(0, 100), ...reuseWarnings])].slice(0, 200); // once each (validate and the render can say the same); warn() keeps it at 200
   // clip: the warning says content is cut off (past the page edge, under the page bottom): the viewer shows those
   const clips = new Set();
   /** @type {(msg: string, clip?: boolean) => void} */
