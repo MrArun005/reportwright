@@ -7,6 +7,7 @@ All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. T
 A minor release: new options (`largeReportRows`, `signal`, `warnOnLeave`, `onDirtyChange`), the 14 standard PDF fonts, streamed Excel and Word exports, and warnings where mistakes used to be silent. The tester's 0.12.1 tickets are fixed except where noted; fonts are still TTF (WOFF2 is not done).
 
 ### Fixed
+- **Cold Helvetica invoice (A1.1):** a report that names only the standard PDF fonts loads no font file and no fontkit (Inter loads in a second layout pass only when some text needs it, such as a character WinAnsi lacks), and `exportPdf` writes such a model (standard-font text, boxes, lines, links) with the engine's own PDF writer instead of pdf-lib. A new process making a 1-page Helvetica invoice PDF: about 115 ms instead of 224 ms on an M2, with the same text, fonts and page content. Embedded fonts, images, form fields, PDF/A, tagged, encrypted and signed files still go through pdf-lib.
 - **Cold start (A1.1):** pdf-lib and fontkit load on first use (in Node through `require`, elsewhere `import()`), not
   when the engine is imported: `import('@reportwright/engine')` takes about 42 ms instead of 175 ms on an M2, a render
   loads only fontkit, and the streaming PDF writer never loads pdf-lib. A new process making a 1-page invoice PDF:

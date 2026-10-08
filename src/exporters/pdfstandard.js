@@ -24,6 +24,13 @@ export function standardFontDict(f) {
   return `<< /Type /Font /Subtype /Type1 /BaseFont /${e.BaseFont}${e.Encoding ? ` /Encoding /${e.Encoding}` : ''} /FirstChar 32 /LastChar 255 /Widths [${e.Widths.join(' ')}] >>`;
 }
 
+/**
+ * The embedded stand-ins of the standard fonts a FontStore holds: what PDF/A, PDF/UA and form fields draw them in. A
+ * render that named only standard fonts did not load them (A1.1): an exporter loads these first.
+ * @param {import('../engine/text/fonts.js').FontStore} store
+ */
+export const standIns = (store) => [...new Set([...store.fonts.keys()].filter(isStandard).map(embeddedFace))];
+
 const esc = (/** @type {number} */ b) => (b === 0x28 || b === 0x29 || b === 0x5c ? '\\' + String.fromCharCode(b) : b === 0x0d ? '\\r' : String.fromCharCode(b));
 /** A literal string's body: one byte per character, escaped. @param {any} f a standard font @param {string} text */
 export function standardLiteral(f, text) {
