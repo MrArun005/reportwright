@@ -19,6 +19,8 @@ const ITEM_KEYS = new Set(('id type name x y w h style styleName items hidden la
   + 'rotate shrinkToFit minFontSize shrinkStep tocDots tocLink tocPage format chartType series seriesGroup category title legend palette stacked '
   + 'valueAxis xTitle maxCategories outliers categorySort categoryFormat showValues labelPosition symbology quietZone report params text toggle '
   + 'initiallyCollapsed collapsible expandLevels repeatColumns columnGap rowHeaderWidth anim animation visual comment notes description').split(' '));
+/** Chart types that take their bars from ganttStart and ganttEnd, not from a series (items/chart-more.js). */
+const NO_SERIES_CHARTS = new Set(['gantt']);
 /** Text styled as a link (underlined, in a blue link colour) with no action: a reader clicks it and nothing happens. */
 function looksLikeLink(it) {
   if (it.type !== 'textbox' || (it.action && it.action.type && it.action.type !== 'none')) return false;
@@ -151,6 +153,10 @@ export function validate(def) {
     if (p?.hidden && p.required && (p.default == null || p.default === '') && !p.nullable) {
       warnings.push(`Parameter "${p.name}" is hidden and required but has no default: only a URL, the API or a drill-through can set it`);
     }
+    // required + nullable: an unset value is null (the engine keeps that: an explicit null is a value), so the report can draw blank
+    if (p?.required && p.nullable && !p.multi && (p.default == null || p.default === '')) {
+      warnings.push(`Parameter "${p.name}" is required and nullable with no default: when no value is given it is null and the report can draw blank; give it a default, or drop "nullable" to require a value`);
+    }
     // a date default is read as a date in the invariant form (2026-12-31); "31/12/2026" is none, and the parameter stays blank
     if (p?.type === 'date' && typeof p.default === 'string' && p.default.trim() && !p.default.startsWith('=') && !toDate(p.default)) {
       warnings.push(`Parameter "${p.name}": its default "${p.default}" is not a date; write it as 2026-12-31 (year-month-day)`);
@@ -221,7 +227,7 @@ export function validate(def) {
         warnings.push(`${label}: there is no named style "${it.styleName}"${g ? ` (did you mean "${g}"?)` : ''}; it is ignored`);
       }
       if (Array.isArray(it.sort)) sortIssues(it.sort, label, warnings);
-      if (it.type === 'chart' && it.chartType !== 'gantt' && Array.isArray(it.series) && !it.series.length) warnings.push(`${label}: the chart has no series, so it draws nothing; add one, e.g. series: [{ "name": "Value", "value": "=Sum(Fields.Amount)" }]`);
+      if (it.type === 'chart' && !NO_SERIES_CHARTS.has(it.chartType) && !(Array.isArray(it.series) && it.series.length)) warnings.push(`${label}: the chart has no series, so it plots a count of its rows; add one, e.g. series: [{ "name": "Value", "value": "=Sum(Fields.Amount)" }]`);
       if (it.type === 'image' && typeof it.src === 'string' && !it.src.startsWith('=') && LOCAL_IMAGE.test(it.src.trim())) warnings.push(`${label}: "${it.src}" is a local file path, which a browser cannot load; embed the image (images: { name: "data:image/png;base64,..." } and src: "embedded:name") or use an https:// address`);
       if (it.style != null && (typeof it.style !== 'object' || Array.isArray(it.style))) warnings.push(`${label}: "style" must be an object of style properties, such as { "fontWeight": "bold" }; ${JSON.stringify(it.style).slice(0, 40)} is ignored`);
       // a mistyped property is ignored silently otherwise ("vale" for value: a blank box)
@@ -260,6 +266,10 @@ export function validate(def) {
         const n = Array.isArray(it.columns) ? it.columns.length : 0;
         const rowsOf = [['header', it.header], ['detail', it.detail], ['footer', it.footer], ...(it.groups || []).flatMap((g, gi) => [[`group ${gi + 1} header`, g?.header], [`group ${gi + 1} footer`, g?.footer]])];
         for (const [part, rows] of rowsOf) (Array.isArray(rows) ? rows : []).forEach((row, ri) => {
+          // cells placed as rowCells places them: a short row with a colSpan covers its gap with the spans, else each cell takes one column
+          const cells = Array.isArray(row?.cells) ? row.cells : [];
+          const placed = cells.length < n && cells.some(c => Number(c?.colSpan) > 1) ? cells.reduce((s, c) => s + (Math.max(1, Math.floor(Number(c?.colSpan)) || 1)), 0) : cells.length;
+          if (placed < n) warnings.push(`${label} ${part} row ${ri + 1}: the row has ${placed} of ${n} cells and no colSpan covers the other ${n - placed}; add the cells or a colSpan`);
           for (const [k, j] of rowCells(row?.cells, n).covered) warnings.push(`${label} ${part} row ${ri + 1}: cell ${k} is covered by colSpan of cell ${j}, so it is not drawn (leave it null, or omit the spanned cells: a row with fewer cells than columns places each cell after the previous one's span)`);
         });
       }
