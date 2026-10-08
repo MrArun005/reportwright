@@ -718,7 +718,8 @@ function TableView({ item, scale, drag, setDrag }) {
   const chosen = sel.kind === 'cell' && sel.id === item.id ? selCells(sel) : [];
   useEffect(() => {
     if (!menu) return undefined;
-    const close = (e) => { if (e.type === 'keydown' ? e.key === 'Escape' : !e.target.closest?.('.cell-menu')) setMenu(null); };
+    // composedPath: inside the embed's shadow root e.target is the host element, never the menu
+    const close = (e) => { if (e.type === 'keydown' ? e.key === 'Escape' : !e.composedPath().some(n => n.classList?.contains('cell-menu'))) setMenu(null); };
     window.addEventListener('pointerdown', close, true); window.addEventListener('keydown', close);
     return () => { window.removeEventListener('pointerdown', close, true); window.removeEventListener('keydown', close); };
   }, [menu]);
