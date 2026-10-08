@@ -630,7 +630,9 @@ export async function parameterOptions(def, given = {}, opts = {}) {
       seen.add(k);
       list.push({ value: v instanceof Date ? isoDate(v) : v, label: String(p.optionsFrom.label ? evalValue(p.optionsFrom.label, c) : v) });
     }
-    out[p.name] = list;
+    // the fixed options ("All", say) stay first, then the fetched ones, each value once
+    const fixed = out[p.name] || [], have = new Set(fixed.map(o => o.value));
+    out[p.name] = [...fixed, ...list.filter(o => !have.has(o.value))];
   }
   return out;
 }

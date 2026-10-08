@@ -246,3 +246,15 @@ describe('#22: warnings once, and named by their item (never "undefined")', () =
     expect(m.warnings.join('\n')).not.toMatch(/undefined/);
   });
 });
+
+import { parameterOptions } from '../../src/engine/index.js';
+describe('#25: parameterOptions keeps the fixed options, first', () => {
+  it('a parameter with fixed options and a data set lists the fixed ones first, then the fetched, each once', async () => {
+    const def = report([text('T', 'x')], {
+      data: { rows: [{ city: 'Home' }, { city: 'Gold' }, { city: 'All' }, { city: 'Pune' }] },
+      def: { parameters: [{ name: 'Where', type: 'string', options: [{ value: 'All', label: 'All' }], optionsFrom: { dataSet: 'Rows', value: '=Fields.city' } }] },
+    });
+    const opts = await parameterOptions(def, {}, {});
+    expect(opts.Where.map(o => o.value)).toEqual(['All', 'Home', 'Gold', 'Pune']);
+  });
+});
