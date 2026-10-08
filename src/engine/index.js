@@ -130,8 +130,8 @@ export async function render(def0, opts = {}) {
   const params = resolveParameters(def, opts.parameters || {}, { now: opts.now, timeZone, locale: def.locale });
 
   const store = opts.fontStore || new FontStore(/** @type {any} */ (opts.loadFont));
-  // every face the render can draw with loads now, in parallel and each on its own (a face that fails falls back, with a
-  // warning): layout then runs once. Only a face that a fallback script or an uploaded family names later loads in a pass.
+  // the bundled Latin faces and the faces the definition names load now, in parallel and each on its own (a face that fails
+  // falls back, with a warning). A CJK or emoji face loads in a later pass, only when text needs it (the optional fonts).
   await store.load([...new Set([CORE_FONT_KEY, ...PRELOAD_KEYS, ...fontsForDef(def)])]);
   let m = new TextMeasurer(store);
 

@@ -41,8 +41,8 @@ export const DEFAULT_FAMILY = 'Inter';
 export const ALL_FONT_KEYS = [...FONT_FAMILIES.Inter, ...FONT_FAMILIES['JetBrains Mono']].map(f => f.key);
 /** The one face a render cannot do without: the fallback for every other face that is missing or failed. */
 export const CORE_FONT_KEY = 'Inter-Regular';
-/** Every bundled face a render can draw with (the Latin faces and the optional CJK and emoji faces): loaded before layout. */
-export const PRELOAD_KEYS = [...ALL_FONT_KEYS, ...OPTIONAL_KEYS];
+/** The bundled Latin faces, loaded before layout. The optional CJK and emoji faces (~40 MB once installed) stay lazy: loaded only when text needs them. */
+export const PRELOAD_KEYS = [...ALL_FONT_KEYS];
 /** The HarfBuzz shaper (WASM). FontStore loads it like a font, from /fonts/harfbuzz.wasm, once text needs shaping. */
 export const SHAPER = 'harfbuzz';
 
