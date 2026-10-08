@@ -41,3 +41,17 @@ export function directory(b) {
 }
 /** inflate-free view of a PDF written with compress: false, as text */
 export const latin = (bytes) => Buffer.from(bytes).toString('latin1');
+
+/** page 1 rendered by pdftoppm in gray, no anti-aliasing: { w, h, px(x, y) 0–255, ink(x0, y0, x1, y1) dark pixels in the box, box() the bounding box of all ink } */
+export function gray(bytes, dpi = 72) {
+  const file = save(bytes);
+  run('pdftoppm', ['-r', String(dpi), '-gray', '-aa', 'no', '-aaVector', 'no', '-singlefile', file, file]);
+  const pgm = fs.readFileSync(`${file}.pgm`);
+  let at = 0; const f = [];
+  while (f.length < 4) { const e = pgm.indexOf(0x0a, at); f.push(...pgm.subarray(at, e).toString().trim().split(/\s+/)); at = e + 1; }
+  const w = Number(f[1]), h = Number(f[2]);
+  const px = (x, y) => pgm[at + y * w + x];
+  const ink = (x0 = 0, y0 = 0, x1 = w, y1 = h) => { let n = 0; for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (px(x, y) < 128) n++; return n; };
+  const box = () => { let a = w, b = h, c = -1, d = -1; for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (px(x, y) < 128) { a = Math.min(a, x); b = Math.min(b, y); c = Math.max(c, x); d = Math.max(d, y); } return c < 0 ? null : [a, b, c + 1, d + 1]; };
+  return { w, h, px, ink, box, raw: pgm.subarray(at) };
+}
