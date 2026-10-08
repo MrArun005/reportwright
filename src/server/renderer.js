@@ -276,7 +276,7 @@ export async function renderTo(def, opt = {}) {
       pdfa: opt.pdfa ? { icc: await iccProfile() } : undefined, tagged: opt.ua ? { lang: def.locale || 'en' } : undefined, prepare: signing?.prepare, save: signing?.save, encrypt: opt.encrypt });
     if (signing) bytes = await signing.sign(bytes);
   }
-  else if (format === 'html') bytes = Buffer.from(await exportHtml(model, fontStore(), { title: def.name, subset, drillBase: opt.self || base, static: !!opt.static, locale: def.locale, currency: def.currency })); // drill-through opens this server's viewer (never a caller's baseUrl)
+  else if (format === 'html') bytes = Buffer.from(await exportHtml(model, { fonts: fontStore(), title: def.name, subset, drillBase: opt.self || base, static: !!opt.static, locale: def.locale, currency: def.currency })); // drill-through opens this server's viewer (never a caller's baseUrl)
   else if (format === 'csv') bytes = Buffer.from(exportCsv(model, /** @type {any} */ ({ locale: def.locale, currency: def.currency, layout: opt.csv === 'layout' })));
   else if (format === 'docx') bytes = Buffer.from(await exportDocx(model, { title: def.name, lang: def.locale, fontStore: fontStore(), fetchImage }));
   else if (format === 'pptx') bytes = Buffer.from(await exportPptx(model, { title: def.name, lang: def.locale, fontStore: fontStore(), fetchImage }));

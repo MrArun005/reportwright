@@ -146,7 +146,7 @@ async function cmdRender(args) {
   if (encrypt && values.pdfa) usage('a PDF/A file cannot have a password');
   if (values.ua && fmt !== 'pdf') usage('--ua applies to -f pdf only');
   if (fmt === 'pdf') bytes = await exportPdf(model, fontStore, { title: def.name, subset, encrypt, drillBase: values.base, pdfa: values.pdfa ? { icc: fs.readFileSync(path.join(PUB, 'icc', 'sRGB-v2-magic.icc')) } : undefined, tagged: values.ua ? { lang: def.locale || 'en' } : undefined });
-  else if (fmt === 'html') bytes = await exportHtml(model, fontStore, { title: def.name, subset, static: !!values.static, locale: def.locale, currency: def.currency });
+  else if (fmt === 'html') bytes = await exportHtml(model, { fonts: fontStore, title: def.name, subset, static: !!values.static, locale: def.locale, currency: def.currency });
   else if (fmt === 'csv') bytes = exportCsv(model, { locale: def.locale, currency: def.currency, layout: !!values.layout });
   else if (fmt === 'xlsx') bytes = await exportXlsx(model, { currency: def.currency, title: def.name, formulas: !values.values, fontStore });
   else if (fmt === 'docx') bytes = await exportDocx(model, { title: def.name, lang: def.locale, fontStore });

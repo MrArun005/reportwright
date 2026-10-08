@@ -42,7 +42,7 @@ export async function exportBlob(fmt, model, def, opt = {}) {
     const store = await loadedFonts(model);
     // drill-through links open the report in this server's viewer
     const { exportHtml } = await import('@/exporters/html.js'); // exporters load when used
-    return new Blob([await exportHtml(model, store, { title: def.name, subset: subsetter, drillBase: origin(), static: o.html === 'static', locale: def.locale, currency: def.currency, lang: opt.lang, strings: opt.strings })], { type: 'text/html;charset=utf-8' });
+    return new Blob([await exportHtml(model, { fonts: store, title: def.name, subset: subsetter, drillBase: origin(), static: o.html === 'static', locale: def.locale, currency: def.currency, lang: opt.lang, strings: opt.strings })], { type: 'text/html;charset=utf-8' });
   }
   if (fmt === 'docx') {
     const { exportDocx } = await import('@/exporters/docx.js');
