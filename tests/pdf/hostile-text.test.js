@@ -1,0 +1,82 @@
+// Text from a caller is untrusted in size and shape: page.textBox must stay linear in the text it reads (one
+// measuring pass per word, long words broken in one pass, layout stopped one line past what can show) and capped.
+import { describe, it, expect } from 'vitest';
+import { PDFDocument } from 'pdf-lib';
+import { toBytes } from '../../packages/pdf/src/index.js';
+import { INTER } from './tools.js';
+
+/** run box(page, font) on a fresh page; its result and the elapsed ms (the PDF is ended and parsed too) */
+async function timed(box, standard = false) {
+  let r, ms;
+  const out = await toBytes(async (pdf) => {
+    const f = standard ? pdf.standardFont('Helvetica') : await pdf.embedFont(INTER);
+    const page = pdf.addPage();
+    const t = performance.now();
+    r = box(page, f);
+    ms = performance.now() - t;
+  }, { creationDate: new Date(0) });
+  await PDFDocument.load(out);
+  return { r, ms };
+}
+
+describe('hostile text (each under 1 s)', () => {
+  it('a 2 MB word with no spaces in a narrow box: broken a few characters a line, stopped at the height', async () => {
+    const word = 'abcdefghij'.repeat(200_000);
+    for (const standard of [false, true]) {
+      const { r, ms } = await timed((p, font) => p.textBox(word, { x: 10, y: 10, width: 30, height: 800, font, size: 10 }), standard);
+      expect(ms).toBeLessThan(1000);
+      expect(r.lines).toBeGreaterThan(50);
+      expect(r.overflow.length).toBeGreaterThan(word.length - 500);
+      expect(word.endsWith(r.overflow)).toBe(true);
+    }
+  });
+
+  it('a 2 MB word without a height stops at the 100,000-line cap', async () => {
+    const word = 'x'.repeat(2_000_000);
+    const { r, ms } = await timed((p, font) => p.textBox(word, { x: 10, y: 10, width: 100, font, size: 10 }));
+    expect(ms).toBeLessThan(1000);
+    expect(r.lines).toBe(100_000);
+    expect(r.overflow.length).toBeLessThan(2_000_000); expect(r.overflow.length).toBeGreaterThan(1_000_000); // about 14 x a line
+  });
+
+  it('1 MB of words with maxLines 1: one line with an ellipsis, the rest as overflow', async () => {
+    const txt = 'lorem ipsum dolor sit amet '.repeat(40_000);
+    const { r, ms } = await timed((p, font) => p.textBox(txt, { x: 10, y: 10, width: 200, font, size: 10, maxLines: 1 }));
+    expect(ms).toBeLessThan(1000);
+    expect(r.lines).toBe(1);
+    expect(txt.endsWith(r.overflow)).toBe(true);
+    expect(r.overflow.length).toBeGreaterThan(txt.length - 60);
+  });
+
+  it('200,000 paragraphs of "\\n": capped lines, nothing drawn, fast', async () => {
+    const { r, ms } = await timed((p, font) => p.textBox('\n'.repeat(200_000), { x: 10, y: 10, width: 200, font, size: 10 }));
+    expect(ms).toBeLessThan(1000);
+    expect(r.lines).toBe(100_000);
+    expect(r.overflow.length).toBe(100_000);
+  });
+
+  it('a box 0.001 pt wide: one character a line', async () => {
+    const txt = 'hello world '.repeat(100_000);
+    const { r, ms } = await timed((p, font) => p.textBox(txt, { x: 10, y: 10, width: 0.001, height: 120, font, size: 10 }));
+    expect(ms).toBeLessThan(1000);
+    expect(r.lines).toBe(9); // 120 / Inter's 12.1 pt line: h e l l o w o r l
+    expect(r.overflow).toBe(txt.slice(10)); // the space between the words starts no line
+  });
+
+  it('a huge font size: no line fits the height, or one character a line', async () => {
+    const txt = 'huge text here '.repeat(10_000);
+    let { r, ms } = await timed((p, font) => p.textBox(txt, { x: 0, y: 0, width: 500, height: 1000, font, size: 1e6 }));
+    expect(ms).toBeLessThan(1000);
+    expect(r).toEqual({ height: 0, lines: 0, overflow: txt });
+    ({ r, ms } = await timed((p, font) => p.textBox(txt, { x: 0, y: 0, width: 500, font, size: 1e5, maxLines: 2 })));
+    expect(ms).toBeLessThan(1000);
+    expect(r.lines).toBe(2);
+    expect(r.overflow.startsWith('uge text')).toBe(true); // 'h'; then the ellipsis alone (no character fits beside it)
+  });
+
+  it('text over 10 MB is refused with a clear error', async () => {
+    const big = 'a'.repeat(10_000_001);
+    await expect(timed((p, font) => p.textBox(big, { width: 100, font }))).rejects.toThrow(/more than 10000000/);
+    await expect(timed((p, font) => p.text(big, { font }))).rejects.toThrow(/more than 10000000/);
+  });
+});
