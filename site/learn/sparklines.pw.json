@@ -1,0 +1,210 @@
+{
+  "$schema": "pagewright/report@1",
+  "name": "Sparklines and data bars",
+  "page": {
+    "size": "A4",
+    "margins": [
+      36,
+      36,
+      36,
+      36
+    ]
+  },
+  "dataSources": [
+    {
+      "name": "sales",
+      "type": "rest",
+      "url": "/api/sample/sales/2026",
+      "method": "GET"
+    }
+  ],
+  "dataSets": [
+    {
+      "name": "Sales",
+      "source": "sales",
+      "path": "$.rows",
+      "fields": [
+        {
+          "name": "year",
+          "type": "number"
+        },
+        {
+          "name": "month",
+          "type": "number"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "city",
+          "type": "string"
+        },
+        {
+          "name": "product",
+          "type": "string"
+        },
+        {
+          "name": "loans",
+          "type": "number"
+        },
+        {
+          "name": "disbursed",
+          "type": "number"
+        },
+        {
+          "name": "npa",
+          "type": "number"
+        }
+      ]
+    }
+  ],
+  "sections": {
+    "body": {
+      "items": [
+        {
+          "type": "table",
+          "w": 523,
+          "h": 54,
+          "dataSet": "Sales",
+          "repeatHeader": true,
+          "noRowsText": "No rows",
+          "columns": [
+            {
+              "width": 140
+            },
+            {
+              "width": 130
+            },
+            {
+              "width": 170
+            },
+            {
+              "width": 83
+            }
+          ],
+          "header": [
+            {
+              "height": 18,
+              "style": {
+                "fontWeight": "bold",
+                "backgroundColor": "#f1f5f9",
+                "borderBottom": "0.75 solid #94a3b8"
+              },
+              "cells": [
+                {
+                  "value": "City",
+                  "style": {}
+                },
+                {
+                  "value": "Disbursed",
+                  "style": {
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "Month by month"
+                },
+                {
+                  "value": "Loans"
+                }
+              ]
+            }
+          ],
+          "groups": [
+            {
+              "name": "ByCity",
+              "expr": "=Fields.city",
+              "sort": "asc",
+              "header": [
+                {
+                  "height": 18,
+                  "cells": [
+                    {
+                      "value": "=Fields.city",
+                      "style": {
+                        "fontWeight": "bold"
+                      }
+                    },
+                    {
+                      "value": "=Sum(Fields.disbursed)",
+                      "style": {
+                        "format": "N2",
+                        "textAlign": "right"
+                      }
+                    },
+                    {
+                      "value": "",
+                      "visual": {
+                        "type": "sparkline",
+                        "category": "=Fields.month",
+                        "value": "=Sum(Fields.disbursed)"
+                      }
+                    },
+                    {
+                      "value": "",
+                      "visual": {
+                        "type": "databar",
+                        "value": "=Sum(Fields.loans)",
+                        "format": "N0"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "detail": [],
+          "footer": [
+            {
+              "height": 18,
+              "style": {
+                "fontWeight": "bold",
+                "borderTop": "0.75 solid #94a3b8"
+              },
+              "cells": [
+                {
+                  "value": "Total"
+                },
+                {
+                  "value": "=Sum(Fields.disbursed)",
+                  "style": {
+                    "format": "N2",
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": ""
+                },
+                {
+                  "value": ""
+                }
+              ]
+            }
+          ],
+          "style": {
+            "padding": [
+              3,
+              4,
+              3,
+              4
+            ]
+          },
+          "id": "vp89ejo6",
+          "name": "Table1",
+          "x": 0,
+          "y": 20
+        }
+      ],
+      "height": 120
+    },
+    "pageHeader": {
+      "height": 0,
+      "items": []
+    },
+    "pageFooter": {
+      "height": 0,
+      "items": []
+    }
+  }
+}

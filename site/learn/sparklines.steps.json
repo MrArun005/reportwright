@@ -1,0 +1,10 @@
+[
+  "Under **Data**, add a REST data source `sales` with URL `/api/sample/sales/2026`, then a data set `Sales` with path `$.rows`; **Detect fields** finds 432 rows.",
+  "Drag **Table** onto the Body. In the gallery untick everything but City and Disbursed, pick **Summary**, Group by `city`, and click **Insert table**: one row per city with its total.",
+  "Click the Disbursed cell of the city row and press **Column right** twice under Structure in the Inspector. Name the new header cells `Month by month` and `Loans`.",
+  "Click the city row's new third cell. Under **Visual** set Cell shows to **Sparkline**, One point per `=Fields.month`, and Value `=Sum(Fields.disbursed)`.",
+  "Click the fourth cell. Set Cell shows to **Data bar**, Value `=Sum(Fields.loans)` and tick **Show the value**. Leave Maximum empty: each bar is then measured against the largest city.",
+  "The new columns made the table wider than the page. Select the table by its grip, set X to `0`, and under **Columns** set the widths #1 to #4 to `140`, `130`, `170` and `83` (523 pt, the width between the margins). Then click the **Body** label and set its Height to `120`.",
+  "Click **Preview**: twelve cities, each with its year as a line and its loans as a bar.",
+  "Type `Sparklines and data bars` over *New report* at the top left and press **Save**."
+]

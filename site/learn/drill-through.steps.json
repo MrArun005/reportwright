@@ -1,0 +1,13 @@
+[
+  "Under **Data**, add a REST data source `sales` with URL `/api/sample/sales/2026`, then a data set `Sales` with path `$.rows`; **Detect fields** finds 432 rows.",
+  "Drag **Table** onto the Body. In the gallery untick Year, Month, Product and Npa, pick **Summary**, set Group by to `region`, and click **Insert table**. You get one row per region with its totals.",
+  "Select the table by its grip, set X to `0`, then under **Groups** choose `city` in Field to group by and click **Add group**.",
+  "Give each city its totals: click the empty Loans cell of the City header row and set Value `=Sum(Fields.loans)`, Format `N0`; the Disbursed cell gets `=Sum(Fields.disbursed)`, Format `N2`, as in the region row.",
+  "A city needs no footer here: click the `Subtotal {Fields.city}` cell and press **Delete row** under Structure in the Inspector.",
+  "Drill-down: select the table again and, in group 1 (ByRegion), tick **Drill-down: show a toggle**. Each region now starts closed behind a ▶.",
+  "Drill-through: click the `=Fields.city` cell. Under Interactivity set **Action on click** to *Open another report (drill-through)* and type `sales-city` as the Report. Its parameters are listed: set city to `=Fields.city` and year to `2026`. Set the cell's Color to `#1d4ed8` so it reads as a link.",
+  "Click the **Page header** label, set Height to `32`, drag a **Text box** into it with the Value `Disbursed by region, 2026: open a region, click a city`, X `0`, Width `523`, Size `13`, Weight Bold.",
+  "Click **Preview**. The four regions show closed; ▶ opens one to its cities, with each city's totals.",
+  "Click a blue city name: the city report opens in the same viewer with that city and year, and the breadcrumb leads back.",
+  "Type `Drill-down and drill-through` over *New report* at the top left and press **Save**."
+]

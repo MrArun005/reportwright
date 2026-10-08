@@ -1,0 +1,13 @@
+[
+  "Under **Data**, add a REST data source `sales` with URL `/api/sample/sales/2026`.",
+  "Add a data set `Regions` with path `$.regions` and click **Detect fields** (4 rows, one per region). This is the list for the first parameter.",
+  "Click **+ Add** next to Parameters. Name `region`, Prompt `Region`, Default `North`. Under **Or choices from a data set** pick `Regions`, and `name` as the value field. Save.",
+  "Add a data set `Cities` with path `$.rows`, **Detect fields**, then **Add filter**: field `=Fields.region`, operator `=`, value `=Parameters.region`. Save. This list now holds only the chosen region's rows.",
+  "Add a parameter `city`, Prompt `City`, Default `Delhi`, choices from the data set `Cities` with `city` as the value field. The designer notes that the list cascades. Save.",
+  "Add a data set `Sales` with path `$.rows`, **Detect fields**, and two filters: `=Fields.region` = `=Parameters.region`, and `=Fields.city` = `=Parameters.city`.",
+  "Drag **Table** onto the Body. In the gallery pick the `Sales` data set, untick Year, Region, City and Npa, keep **List**, and click **Insert table**. Select it by its grip and set X to `0`.",
+  "Click the **Page header** label, set Height to `32`, drag a **Text box** into it with the Value `{Parameters.city}, {Parameters.region} region: 2026`, X `0`, Width `523`, Size `14`, Weight Bold.",
+  "Click **Preview**. Region shows North and City offers Delhi, Jaipur and Lucknow. Pick South: City now offers only the southern cities.",
+  "Pick Chennai under City. The table and the title follow both choices.",
+  "Type `Cascading parameters` over *New report* at the top left and press **Save**."
+]

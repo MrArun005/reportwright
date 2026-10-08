@@ -1,0 +1,10 @@
+[
+  "Under **Data**, add a REST data source `sales` with URL `/api/sample/sales/2026`, then a data set `Sales` with path `$.rows`; **Detect fields** finds 432 rows.",
+  "Drag **Chart** onto the Body. In the chart gallery set Category to `month`, Value to **Sum** of `disbursed`, pick **Column** and click **Insert chart**. The designer shows months as Jan, Feb, … on its own.",
+  "With the chart selected, set X to `0`, Width to `523` and Height to `300` under Position, and Title to `Disbursed and loans by month, 2026`.",
+  "Under **Chart**, click **Add series**. Name the new series `Loans`, give it the value `=Sum(Fields.loans)`, set Draw as **Line** and Axis **Secondary**.",
+  "Under **Axes**, a Secondary value axis section has appeared. Give the value axis the title `Disbursed, ₹ million` (its format `#,##0,,\"M\"` was set by the gallery) and the secondary axis the title `Loans` with Number format `N0`.",
+  "Click the **Body** label and set its Height to `320` so the band fits the chart.",
+  "Click **Preview**: twelve columns on the left axis and the loans line on its own scale on the right.",
+  "Type `Combo chart on two axes` over *New report* at the top left and press **Save**."
+]
