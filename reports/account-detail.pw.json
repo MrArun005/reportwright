@@ -424,7 +424,22 @@
                   "value": "=Fields.amount",
                   "style": {
                     "format": "N2",
-                    "textAlign": "right"
+                    "textAlign": "right",
+                    "color": "=IIf((Fields.amount) < 0, \"#b91c1c\", Nothing)",
+                    "fontWeight": "=IIf((Fields.amount) < 0, \"bold\", Nothing)"
+                  },
+                  "cf": {
+                    "mode": "first",
+                    "rules": [
+                      {
+                        "op": "lt",
+                        "value": "0",
+                        "format": {
+                          "color": "#b91c1c",
+                          "fontWeight": "bold"
+                        }
+                      }
+                    ]
                   }
                 },
                 {
