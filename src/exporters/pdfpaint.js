@@ -248,7 +248,7 @@ export function latin1(s) {
  */
 export async function deflate(bytes) {
   // a few at a time: each zlib job holds ~260 KB of state, so a thousand pages started at once held ~250 MB
-  if (zslots.free > 0) zslots.free--; else await new Promise((ok) => zslots.wait.push(ok));
+  if (zslots.free > 0) zslots.free--; else await new Promise((ok) => zslots.wait.push(/** @type {() => void} */ (ok)));
   try { return await deflateNow(bytes); } finally { const next = zslots.wait.shift(); if (next) next(); else zslots.free++; }
 }
 const zslots = { free: 4, wait: /** @type {(() => void)[]} */ ([]) }; // ponytail: 4 = libuv's default thread pool

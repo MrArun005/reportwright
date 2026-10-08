@@ -101,7 +101,7 @@ export function createPdfStream(sink, opt) {
   put('%PDF-1.7\n%\xe2\xe3\xcf\xd3\n');
 
   // fonts: a resource name and the Type0 font's object number each, now; their glyphs are recorded as pages draw
-  /** @type {Map<string, { name: string, ref: number, font: any, cps: Set<number>, glyphs: Map<number, string>, memo: Map<number, string> }>} */
+  /** @type {Map<string, { name: string, ref: number, font: any, cps: Set<number>, glyphs: Map<number, string>, memo: Map<number, string>, lit: Map<number, string> }>} */
   const fonts = new Map();
   let pages = 0, done = false;
   /** @type {any[]} pages whose streams are compressing */
