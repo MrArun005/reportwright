@@ -2,6 +2,33 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
+## 0.12.0 — 2026-10-09
+
+Streaming PDF: very large reports are written page by page, with flat memory.
+
+### Added
+- **`exportPdfStream(definition, options, sink)`** in `@reportwright/engine`: a report whose body is a flowing table
+  (plain or grouped: repeating group headers, subtotals, `RowNumber()`, widow control, keep-together, page breaks) is laid
+  out a window of rows at a time and each finished page goes straight to the sink. Peak memory stays flat: about 260 MB
+  for the whole render process from 20,000 to 100,000 rows (projected about 250–275 MB at 1,000,000).
+  "Page N of M" and footer totals work (a counting pass first). PDF/A-2b, PDF/UA-1 and PDF/A-2a + PDF/UA-1 stream too
+  (veraPDF passes). Anything else (images, charts, matrices, rich text, subreports, signing, encryption) falls back to
+  `exportPdf`, with the same output.
+- **The server streams large PDFs** (`/api/reports/<id>/pdf`, `/api/v1/render`) with the same row caps, deadline, stall
+  timeout and abort handling as the CSV/Excel streaming; the viewer's large-report button gets the streamed file.
+- **`parallel: N`** (Node, opt-in): page ranges painted on worker threads, byte-identical to the serial file. Measure on
+  your hardware before relying on it; each worker costs about 150 MB.
+- `examples/stream-1m.mjs` in the engine package: streams a generated million-row ledger to a file and prints peak memory.
+- `planPaged` exported for custom pipelines.
+
+### Changed
+- The PDF painter is shared between `exportPdf` and the streaming writer; `exportPdf` output is byte-for-byte unchanged.
+- The engine package ships its readable bundle without a source map (1.3 MB unpacked).
+
+### Known limits
+- In the npm engine, grouped reports sort rows in memory (the server spills them to disk), so a 1M-row grouped report is
+  not flat outside the server yet.
+
 ## 0.11.0 — 2026-10-08
 
 Everything since 0.10.0. Items marked **Behaviour change** alter output that a pixel-locked layout or a locale-sensitive
