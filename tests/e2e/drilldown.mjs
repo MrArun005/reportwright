@@ -78,6 +78,7 @@ assert.ok((await gold()) > before, 'the expanded city is still open');
 
 step('exports of the current view');
 for (const f of ['pdf', 'docx', 'xlsx']) {
+  if (!(await p.getByTestId(`export-${f}`).isVisible())) await p.getByTestId('export-menu').click(); // the formats are in the Export menu
   const [dl] = await Promise.all([p.waitForEvent('download'), p.getByTestId(`export-${f}`).click()]);
   const file = `/tmp/drilldown.${f}`;
   await dl.saveAs(file);
