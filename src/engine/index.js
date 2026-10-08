@@ -40,6 +40,7 @@ export const BAND_ITEMS = 250000; // page header and footer items drawn per rend
  * @property {{ layoutPasses?: number }} [stats] filled in: how many times the report was laid out (tests, the bench)
  * @property {Record<string, any>} [parameters] values of the report's parameters, by name (invariant form: 1234.5, 2026-03-05)
  * @property {import('./text/fonts.js').FontStore} [fontStore] the fonts; share one across renders (a new one loads them again)
+ * @property {boolean} [lazyFonts] the viewer: load only the core face up front; the other bundled faces when the layout first needs one
  * @property {(key: string) => Promise<ArrayBuffer|Uint8Array>} [loadFont] loads a font the store does not have
  * @property {typeof fetch} [fetch] fetch for data sources (default: the SSRF-guarded fetch, see unsafeFetch)
  * @property {string} [baseUrl] the origin relative data URLs resolve against
@@ -136,7 +137,7 @@ export async function render(def0, opts = {}) {
   const store = opts.fontStore || new FontStore(/** @type {any} */ (opts.loadFont));
   // the bundled Latin faces and the faces the definition names load now, in parallel and each on its own (a face that fails
   // falls back, with a warning). A CJK or emoji face loads in a later pass, only when text needs it (the optional fonts).
-  await store.load([...new Set([CORE_FONT_KEY, ...PRELOAD_KEYS, ...fontsForDef(def)])]);
+  await store.load([...new Set([CORE_FONT_KEY, ...(opts.lazyFonts ? [] : PRELOAD_KEYS), ...fontsForDef(def)])]); // lazyFonts (the viewer): the other bundled faces load when the layout first needs one
   let m = new TextMeasurer(store);
 
   // the time limit: an absolute deadline, the same for this render and its subreports

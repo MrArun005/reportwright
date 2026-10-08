@@ -44,7 +44,7 @@ self.onmessage = async (e) => {
       if (!r.ok) throw new Error(`Report "${rid}" not found`);
       return r.json();
     };
-    const opts = { parameters: params, state, reportId, exportData: !!exportData, dataOnly: !!dataOnly, fontStore: store, baseUrl: origin, fetch: reportFetch(origin, undefined, { onRetry: (retry) => self.postMessage({ id, retry }) }), loadReport };
+    const opts = { parameters: params, state, reportId, exportData: !!exportData, dataOnly: !!dataOnly, fontStore: store, lazyFonts: true, baseUrl: origin, fetch: reportFetch(origin, undefined, { onRetry: (retry) => self.postMessage({ id, retry }) }), loadReport };
     // the first pages first, so a long report shows at once; then the whole report
     let sources;
     if (firstPages) {

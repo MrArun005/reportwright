@@ -36,16 +36,21 @@ const common = {
 // made translated strings six times longer)
 const readable = { minify: false, sourcemap: 'linked', sourcesContent: false, legalComments: 'inline', charset: 'utf8', lineLimit: 400 };
 // the ES module builds: the viewer, the designer, and the render worker the viewer starts (src/worker)
-const ENTRIES = { viewer: path.join(root, 'src/embed/index.js'), designer: path.join(root, 'src/embed/designer.js'), 'engine.worker': path.join(root, 'src/worker/engine.worker.js') };
+const ENTRIES = { viewer: path.join(root, 'src/embed/index.js'), designer: path.join(root, 'src/embed/designer.js') };
+// the render worker is one self-contained file (no chunk imports), so copying it alone next to the page works (N18)
+const WORKER = path.join(root, 'src/worker/engine.worker.js');
+const workerBuild = (o) => build({ ...common, entryPoints: [WORKER], format: 'esm', ...readable, splitting: false, ...o });
 // 1. Everything in one classic script: the interactive HTML export inlines this one (it must work offline).
 await build({ ...common, format: 'iife', outfile: path.join(root, 'public/embed/reportwright-viewer.full.js') });
 // 2. For other sites: ES modules split in chunks, so PDF export (pdf-lib) and barcodes (bwip-js) load only when used.
 fs.rmSync(path.join(root, 'public/embed/esm'), { recursive: true, force: true });
 //    The designer is a second entry: it shares React, the engine and the viewer with it.
 await build({ ...common, entryPoints: ENTRIES, format: 'esm', ...readable, splitting: true, outdir: path.join(root, 'public/embed/esm'), entryNames: '[name]', chunkNames: 'chunk-[hash]' });
+await workerBuild({ outfile: path.join(root, 'public/embed/esm/engine.worker.js') });
 //    The same ES modules with React left to the host app (@reportwright/viewer/react-peer, used by @reportwright/react).
 fs.rmSync(path.join(root, 'public/embed/esm-peer'), { recursive: true, force: true });
 await build({ ...common, entryPoints: ENTRIES, format: 'esm', ...readable, splitting: true, outdir: path.join(root, 'public/embed/esm-peer'), entryNames: '[name]', chunkNames: 'chunk-[hash]', external: ['react', 'react-dom', 'react/*', 'react-dom/*'] });
+await workerBuild({ outfile: path.join(root, 'public/embed/esm-peer/engine.worker.js'), external: ['react', 'react-dom', 'react/*', 'react-dom/*'] });
 //    What @reportwright/viewer publishes: the same two builds with the third-party libraries that carry data blobs
 //    (pdf-lib's standard fonts, fontkit's brotli dictionary, bwip-js's barcode tables, bidi-js's Unicode data) and
 //    fflate left as imports: they are the package's pinned dependencies, so the tarball holds only our code.
@@ -53,6 +58,7 @@ const PKG_EXTERNAL = ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate', 'bidi-
 for (const [dir, ext] of [['esm-pkg', []], ['esm-pkg-peer', ['react', 'react-dom', 'react/*', 'react-dom/*']]]) {
   fs.rmSync(path.join(root, 'public/embed', dir), { recursive: true, force: true });
   await build({ ...common, entryPoints: ENTRIES, format: 'esm', ...readable, splitting: true, outdir: path.join(root, 'public/embed', dir), entryNames: '[name]', chunkNames: 'chunk-[hash]', external: [...ext, ...PKG_EXTERNAL] });
+  await workerBuild({ outfile: path.join(root, 'public/embed', dir, 'engine.worker.js'), external: [...ext, ...PKG_EXTERNAL] });
 }
 // 3. The script tag people paste: a tiny loader that keeps the ReportWright.mountViewer(...) call working.
 fs.writeFileSync(path.join(root, 'public/embed/reportwright-viewer.js'), `/* ReportWright viewer loader: the viewer itself is in esm/ */

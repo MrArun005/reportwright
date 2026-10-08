@@ -22,6 +22,12 @@ All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. T
     set), and on `nullable: false` or `allowBlank: false` with no default on a parameter that is not required.
   - A form field has a `label` (falls back to `tooltip`); a tagged PDF uses it as the field's accessible name (`/TU`)
     and warns for each field without one (N30).
+- **Tagged PDF table of contents (N32):** a TOC is tagged `TOC > TOCI > Reference > Link`, with the entry text, its page number and the link annotation inside one Link (it was plain `P` elements with a Link around the number only), and its title is an `H1`. veraPDF PDF/UA-1: compliant. The streaming PDF's tagging is unchanged.
+- **Cascading parameters in the viewer:** when a parent parameter changes, a dependent value its list no longer offers is replaced (by the default if still offered, else the first choice) in the state the run uses, and the report re-runs with it. Before, the panel dropped the value but the run kept the old one ("Delhi, South region" with no rows).
+- **Viewer page thumbnails (A11Y-3):** `.vthumb` no longer has an `aria-label` that differs from its visible number (axe `label-content-name-mismatch`); its name "Page 1" comes from hidden text beside the visible 1.
+- **Viewer worker fallback (N1):** when the render worker cannot load (Vite 7 without `worker: { format: 'es' }`, or esbuild not following `new Worker(new URL(...))`), the viewer logs once `[reportwright] worker did not load (<reason>); rendering on the main thread`, and `handle.usesWorker` says which one you got. The viewer README now starts with the bundler setup. No Vite plugin: the setting is one line.
+- **Worker file (N18):** `engine.worker.js` is one self-contained file (no `chunk-*.js` imports), so copying it alone next to a page works.
+- **Viewer fonts (N31):** the viewer fetches a font face only when the layout first needs it, not all seven up front. A report in Inter Regular and Bold now downloads 670 KB (two files) instead of 4.9 MB. Serve `fontsUrl` with `Cache-Control: public, max-age=31536000, immutable` (in the viewer README). WOFF2 for the browser is not done yet.
 - **Streaming PDF (`exportPdfStream`) failures, from the 0.12.1 retest:**
   - A sink that stops reading no longer hangs the export: `timeoutMs` covers the waits for drain (504, `code:
     'ETIMEDOUT'`), a sink's `error` or `close` ends the wait, and the new `signal` option (an `AbortSignal`) stops the

@@ -4,6 +4,19 @@
 
 The ReportWright report viewer in any web app (React is bundled inside, in a shadow root, so your styles do not leak in). A React app imports `@reportwright/viewer/react-peer` (and `/react-peer/designer`) instead, the same viewer using the app's own React, so the page loads React once; `@reportwright/react` does this for you:
 
+## Bundler setup (read this first)
+
+The viewer renders in a Web Worker (`engine.worker.js`, one self-contained file next to the viewer). Bundlers that understand
+`new Worker(new URL(...))` pick it up; two settings matter:
+
+- **Vite 7**: set `worker: { format: 'es' }` in `vite.config.js`. Without it the build fails with
+  `Invalid value "iife" for option "worker.format"`.
+- **esbuild** (plain bundling) does not follow `new Worker(new URL(...))`: copy `node_modules/@reportwright/viewer/dist/engine.worker.js`
+  next to your bundle (it is one file; its only imports are the package's own dependencies).
+
+If the worker cannot load, the viewer still renders, on the main thread (slow and janky at 100k rows), and logs once
+`[reportwright] worker did not load (<reason>); rendering on the main thread`. `handle.usesWorker` tells you which one you got.
+
 Import it through your bundler (Vite, webpack, esbuild, Rollup, Next…). Its third-party libraries (pdf-lib,
 @pdf-lib/fontkit, bwip-js, fflate, bidi-js) are ordinary dependencies, pinned to the versions the tests ran
 against, so the package itself holds only ReportWright's own readable code.
@@ -28,7 +41,7 @@ mountViewer('#report', {
 });
 ```
 
-Nothing calls `/api`; each font is downloaded once; the toolbar uses the system font.
+Nothing calls `/api`; each font is downloaded once, and only when the layout first needs it (a report in Inter Regular and Bold fetches those two files, not all seven); the toolbar uses the system font.
 
 If a font cannot be loaded (wrong `fontsUrl`, the folder not served), the report does not draw: the viewer shows
 "The report did not run. Font "Inter-Regular" did not load (HTTP 404)" with a Retry button, and `onReady(error)` is called
@@ -36,6 +49,8 @@ with that error. Fix the path and retry; there is no fallback font. `onReady(err
 `null` when it went through, or the error that stopped it. Bundled apps: serve the fonts folder at the URL
 you pass as `fontsUrl`; `fontsUrl` is not inferred from the package. Copying only `fonts/` works too
 (PDFs then embed whole fonts, and PDF/A export needs `icc/`).
+
+Serve `fontsUrl` with `Cache-Control: public, max-age=31536000, immutable`: the files do not change within a package version, so a returning visitor downloads none of them.
 
 ## What works standalone, what needs the server
 

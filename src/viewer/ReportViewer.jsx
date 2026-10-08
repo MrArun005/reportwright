@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { renderReport, pdfBlob, usingWorker, origin, fetchReport, loadModelFonts, loadReportFonts } from './engineClient.js';
 import { reportFetch } from './dataFetch.js';
-import { ALL_FONT_KEYS } from '@/engine/text/fonts.js';
+import { CORE_FONT_KEY } from '@/engine/text/fonts.js';
 import { exportBlob, EXPORT_DEFAULTS, needsExportData } from './exports.js';
 import { pageToSvg, linkTitle } from '@/exporters/svg.js';
 import { parameterOptions, NO_CJK_FONTS } from '@/engine/index.js';
@@ -10,7 +10,7 @@ import { safeUrl } from '@/engine/url.js';
 import { viewerTimeZone } from './timeZone.js';
 import { applyStyleAttributes, deferStyleAttributes } from '../embed/styles.js';
 import { t as tr, dirOf, pickLang } from './i18n.js';
-import { paramChoices, arrangeToolbar, exportOptionsFrom, serverPdfUrl, findText, frozenAt, galleyDefinition, pageLinks, readingText } from './logic.js';
+import { paramChoices, clearStaleParams, arrangeToolbar, exportOptionsFrom, serverPdfUrl, findText, frozenAt, galleyDefinition, pageLinks, readingText } from './logic.js';
 import ParamInput from './ParamInput.jsx';
 import { Icon } from './icons.jsx';
 
@@ -105,9 +105,9 @@ const Thumb = ({ page, w, h, n, current, near, onGo, T }) => {
   const ref = useRef(null);
   useEffect(() => { if (current) ref.current?.scrollIntoView?.({ block: 'nearest' }); }, [current]);
   return (
-    <button ref={ref} type="button" className="vthumb" aria-current={current ? 'page' : undefined} aria-label={T('b2_pageN', { n })} onClick={() => onGo(n)}>
+    <button ref={ref} type="button" className="vthumb" aria-current={current ? 'page' : undefined} onClick={() => onGo(n)}>
       <span className="vthumb-sheet" style={{ aspectRatio: `${w} / ${h}` }}>{near && <SvgHtml as="span" html={html} aria-hidden="true" />}</span>
-      <span className="vthumb-n">{n}</span>
+      <span className="sr-only">{T('b2_pageN', { n })}</span><span className="vthumb-n" aria-hidden="true">{n}</span>
     </button>
   );
 };
@@ -215,7 +215,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
       // target: layers meant for the screen show here; print and export render again for theirs (pagedModel)
       // a busy server (503, 429): the data source is tried again, and the status says so
       const onRetry = (r) => { if (id === runId.current) setStatus({ state: 'running', retry: r }); };
-      const [m, defaultFailed] = await Promise.all([renderReport(renderDef, p, { ...st, target: 'screen' }, reportId, { onPartial, onRetry }), loadReportFonts(ALL_FONT_KEYS)]);
+      const [m, defaultFailed] = await Promise.all([renderReport(renderDef, p, { ...st, target: 'screen' }, reportId, { onPartial, onRetry }), loadReportFonts([CORE_FONT_KEY])]);
       const failed = [...defaultFailed, ...(await loadModelFonts(m))]; // and the fallback or uploaded fonts this model draws with
       if (id !== runId.current) return;
       setModel(m);
@@ -318,10 +318,16 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   const optKey = JSON.stringify(params);
   useEffect(() => {
     if (!(definition.parameters || []).some(p => p.options || p.optionsFrom)) return;
+    let stale = false;
     const t = setTimeout(() => {
-      parameterOptions(definition, params, { baseUrl: origin(), reportId, fetch: reportFetch(origin()) }).then(o => setOptions(paramChoices(definition, o))).catch(() => {});
+      parameterOptions(definition, params, { baseUrl: origin(), reportId, fetch: reportFetch(origin()) }).then((o) => {
+        if (stale) return; // the parameters changed again: these choices belong to the old ones
+        const choices = paramChoices(definition, o);
+        setOptions(choices);
+        setParams(s => clearStaleParams(definition, s, choices)); // a dependent value its parent no longer offers is cleared for the run too
+      }).catch(() => {});
     }, 250);
-    return () => clearTimeout(t);
+    return () => { stale = true; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [definition, optKey]);
 
