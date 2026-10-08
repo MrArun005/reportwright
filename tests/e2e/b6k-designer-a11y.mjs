@@ -71,6 +71,13 @@ for (const r of radios) assert.equal(r.label, r.name, `radio ${r.type} is named 
 await page.keyboard.press('Escape');
 
 console.log('· viewer');
+// 2b. Import: a JasperReports file read by the Designer's Import action gives a definition with the importer's result
+await page.locator('[data-testid="import-file"]').setInputFiles(path.join(root, 'tests/fixtures/jrxml/corpus/jr6-table-TableReport.jrxml'));
+await page.waitForSelector('[data-testid="import-result"]', { timeout: 60000 });
+const imp = await page.locator('[data-testid="import-result"]').textContent();
+assert.match(imp, /is imported/, `import result: ${imp}`);
+await page.keyboard.press('Escape');
+
 // 3. Viewer export items: the format name, the badge hidden
 await page.goto(`${ORIGIN}/viewer`);
 await page.waitForSelector('#r', { timeout: 60000 });

@@ -1,4 +1,5 @@
 'use client';
+import { readReportFile } from './importFile.js';
 import { declareDocumentStyles } from '../embed/styles.js';
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Dialog } from './ui.jsx';
@@ -414,6 +415,15 @@ export default function Designer({ id, initial, rev = null, lang: langIn, embed 
     const d = await embed.onOpen();
     if (d && typeof d === 'object') { st().init(id, d); loadSample(); }
   };
+  // Import: a JasperReports, SSRS or BIRT design, or a definition file (.pw.json); the warnings of the importer are shown
+  const importInput = useRef(null);
+  const [imported, setImported] = useState(null);
+  const importFile = async (file) => {
+    if (!file) return;
+    const r = readReportFile(file.name, await file.text());
+    if (r.definition) { st().init(id, r.definition); loadSample(); }
+    setImported({ name: file.name, ok: !!r.definition, warnings: r.warnings || [], error: r.error });
+  };
 
   const draftBar = useAutosave(embed ? null : id, T, lang, user);
   const hasLeft = !readOnly || embed?.panels?.data !== false;
@@ -436,6 +446,9 @@ export default function Designer({ id, initial, rev = null, lang: langIn, embed 
           {!embed && <button className="tb-btn" onClick={() => setDialog('history')} title={T('historyHint')} aria-label={T('history')}><Icon name="history" /></button>}
           <button className="tb-btn" onClick={download} title={T('downloadDefHint')} aria-label={T('downloadDef')} data-testid="download-def"><Icon name="download" /></button>
           {embed?.onOpen && <button className="tb-btn" onClick={open} data-testid="open" title="Open…" aria-label="Open…"><Icon name="open" /></button>}
+          {!readOnly && <button className="tb-btn" onClick={() => importInput.current?.click()} data-testid="import-report" title="Import report…" aria-label="Import report…"><Icon name="open" /></button>}
+          <input ref={importInput} type="file" accept=".jrxml,.rdl,.rdlc,.rptdesign,.json" hidden data-testid="import-file"
+            onChange={(e) => { importFile(e.target.files?.[0]); e.target.value = ''; }} />
           {!embed && <a className="tb-btn" href={`/viewer/${id}${q}`} target="_blank" rel="noreferrer" title={T('openViewerHint')} aria-label={T('openViewer')}><Icon name="viewer" /></a>}
         </TbGroup>
         {!readOnly && tab === 'design' && (
@@ -475,6 +488,12 @@ export default function Designer({ id, initial, rev = null, lang: langIn, embed 
       {draftBar}
       <ConflictBar T={T} />
       <div className="narrow-note" role="note">{T('ux_narrowDesigner')}</div>
+      {imported && (
+        <Dialog title="Import report" onClose={() => setImported(null)} footer={<button className="btn" onClick={() => setImported(null)}>{T('close')}</button>}>
+          <p data-testid="import-result">{imported.error || `${imported.name} is imported. Read the warnings below, then save.`}</p>
+          {imported.warnings.length > 0 && <ul>{imported.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
+        </Dialog>
+      )}
       {dialog === 'keys' && (
         <Dialog title={T('shortcuts')} onClose={() => setDialog(null)} footer={<button className="btn" onClick={() => setDialog(null)}>{T('close')}</button>}>
           <div className="kbd-grid">{SHORTCUTS.map(([k, d]) => <Fragment key={d}><span className="kbd">{k}</span><span>{T(d)}</span></Fragment>)}</div>

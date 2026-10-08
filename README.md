@@ -234,7 +234,7 @@ On the home page, **Import ActiveReports file** takes an ActiveReportsJS `.rdlx-
 - **What becomes a note:** `ReportItems!`, custom `Code.` and functions ReportWright lacks (`Previous`, `StDev`, `Weekday`…) stay visible as text. Also noted: group headers that repeat on new pages, sort links outside the table header, groups sorted by an aggregate, row spans, rounded corners, chart plots that do not share the first plot's category, fonts that are not bundled (Inter or JetBrains Mono is used), hidden parameters, SQL connections (set `PW_DB_<NAME>`), nested data sets (flattened). Tables whose cells hold images, barcodes or other tables become banded lists.
 - **Drill-through and subreports** point at the report id made from the target's file name, so import those files too.
 - **Conversion rate:** the 9 MESCIUS sample reports (10 files) and 30 public `.rdlx-json` files from GitHub all import, validate and render. All 40 keep every item (mapped or approximated); none is dropped. `stats` counts each report item as mapped, approximated (a note says what changed) or dropped. Proof: `tests/fixtures/rdlx/regional-sales.rdlx-json` → `reports/imported-regional-sales.pw.json`.
-- Not yet: SSRS XML (`.rdl`, `.rdlx`).
+- Not yet: the XML form of ActiveReports (`.rdlx`); only the JSON form imports here. SSRS (`.rdl`), JasperReports and BIRT files import with `pw import` and with the Designer's Import report action.
 
 ## PDF/A and signatures
 
