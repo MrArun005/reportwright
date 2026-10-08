@@ -1,6 +1,5 @@
 // @ts-check
-import { PDFDocument, PDFName, PDFString, PDFHexString, PDFRawStream, rgb } from 'pdf-lib';
-import fontkitModule from '@pdf-lib/fontkit';
+import { PDFDocument, PDFName, PDFString, PDFHexString, PDFRawStream, rgb, fontkit, loadPdfLib } from '../engine/lazylibs.js';
 import { makePdfA, setUaMetadata, setInfoDates } from './pdfa.js';
 import { safeUrl, drillUrl, asciiUrl } from '../engine/url.js';
 import { dataUriBytesOf, dataUriBytes, imageInfoOf, IMAGE_LIMITS } from '../engine/image.js';
@@ -11,8 +10,6 @@ import { withDeadline } from './deadline.js';
 import { pngProblem } from './png.js';
 import { needsTableData } from './regions.js';
 import { Content, drawRun, glyphText, insideClip, col, BLACK, n2, n4, hex4, KAPPA, cleanText, latin1, deflate, NODE_ZLIB } from './pdfpaint.js';
-
-const fontkit = /** @type {any} */ (fontkitModule).default || fontkitModule;
 
 
 /**
@@ -43,6 +40,7 @@ export function exportPdf(model, fontStore, opt = {}) {
 }
 /** @type {typeof exportPdf} */
 async function pdfOf(model, fontStore, opt) {
+  await loadPdfLib(); // on first use: importing the engine does not load pdf-lib
   // a fixed date (creationDate, else SOURCE_DATE_EPOCH) makes the file reproducible: its ID then derives from the content
   const fixed = fixedDate(opt);
   const when = fixed ?? new Date();

@@ -1,9 +1,6 @@
 // @ts-check
-import fontkitModule from '@pdf-lib/fontkit';
+import { fontkit, loadFontkit } from '../lazylibs.js';
 import { createShaper } from './shaper.js';
-
-/** @type {any} */
-const fontkit = /** @type {any} */ (fontkitModule).default || fontkitModule;
 
 /** @typedef {{ key: string, family: string, weight: number, style: 'normal'|'italic', file: string }} Face */
 
@@ -215,6 +212,7 @@ export class FontStore {
             const b = await this.loader(k);
             const u8 = b instanceof Uint8Array ? b : new Uint8Array(b);
             if (k === SHAPER) { this.shaper = await createShaper(u8); return; }
+            await loadFontkit(); // on first use: importing the engine does not load fontkit
             this.fonts.set(k, fontkit.create(u8));
             this.bytes.set(k, u8);
           } catch (e) {

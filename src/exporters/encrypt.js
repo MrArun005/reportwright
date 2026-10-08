@@ -7,7 +7,7 @@
  * becomes a hex string of ciphertext and every stream a raw stream of ciphertext. Nothing is spliced into PDF
  * syntax by hand. Error messages never contain a password.
  */
-import { PDFArray, PDFDict, PDFNumber, PDFString, PDFHexString, PDFRawStream, PDFStream, PDFBool } from 'pdf-lib';
+import { PDFArray, PDFDict, PDFNumber, PDFString, PDFHexString, PDFRawStream, PDFStream, PDFBool } from '../engine/lazylibs.js'; // set once exportPdf has loaded pdf-lib
 
 const subtle = () => {
   const s = globalThis.crypto?.subtle;

@@ -1,7 +1,7 @@
 // @ts-check
 // PDF/A-2b: what a plain pdf-lib file lacks. pdf-lib only, so it also runs in the browser.
 // Checked with veraPDF (PDF/A-2B profile) in tests/engine/pdfa-sign.test.js.
-import { PDFName, PDFNumber, PDFString, PDFHexString, PDFArray, PDFDict } from 'pdf-lib';
+import { PDFName, PDFNumber, PDFString, PDFHexString, PDFArray, PDFDict } from '../engine/lazylibs.js'; // set once exportPdf has loaded pdf-lib
 
 const xml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 

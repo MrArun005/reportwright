@@ -16,7 +16,7 @@
  * The writer itself has no encryption, forms or signing (those stay on exportPdf, pdf.js); PDF/A and tagging (PDF/UA)
  * are added by writePagedPdf (pdfstreamtags.js, the XMP and output intent).
  */
-import fontkitModule from '@pdf-lib/fontkit';
+import { fontkit, loadFontkit } from '../engine/lazylibs.js';
 import { Zlib } from 'fflate';
 import { render } from '../engine/index.js';
 import { planPaged } from '../engine/paged.js';
@@ -27,7 +27,6 @@ import { xmpPacket } from './pdfa.js';
 import { createStreamTagger } from './pdfstreamtags.js';
 import { Content, drawRun, glyphText, insideClip, col, BLACK, n2, n4, KAPPA, cleanText, deflate } from './pdfpaint.js';
 
-const fontkit = /** @type {any} */ (fontkitModule).default || fontkitModule;
 const CHUNK = 64 * 1024;
 const LEAF = 64; // pages per node of the page tree
 const OBJSTM = 100; // small objects per object stream
@@ -583,6 +582,7 @@ async function streamed(def, opts, sink) {
  * @returns {Promise<{ pages: number, warnings: string[] }>}
  */
 export async function writePagedPdf(plan, opts, sink) {
+  await loadFontkit(); // writeFont checks a subset with it (a FontStore that parsed its fonts has loaded it already)
   const { fontStore } = opts;
   const w = createPdfStream(sink, { fontStore, subset: opts.subset, id: opts.id, signal: opts.signal });
   const { info, pages } = /** @type {any} */ (plan);

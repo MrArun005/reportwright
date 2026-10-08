@@ -5,6 +5,10 @@ All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. T
 ## Unreleased
 
 ### Fixed
+- **Cold start (A1.1):** pdf-lib and fontkit load on first use (in Node through `require`, elsewhere `import()`), not
+  when the engine is imported: `import('@reportwright/engine')` takes about 42 ms instead of 175 ms on an M2, a render
+  loads only fontkit, and the streaming PDF writer never loads pdf-lib. A new process making a 1-page invoice PDF:
+  about 318 ms instead of 364 ms (most of what is left is compiling harfbuzz-subset.wasm, about 150 ms).
 - **Streaming tickets, from the 0.12.1 retest (N23-N29):** `exportPdfStream` with `encrypt` or `prepare` and `sqlRows` no
   longer fails with "Save the report first" (the rows are gathered for the whole-model render); a misspelled option
   key (`encrpyt`, `windw`) warns with "Did you mean" in `render()`'s model warnings, `exportPdfStream`'s result and
