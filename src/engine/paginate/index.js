@@ -47,12 +47,29 @@ export function paginate(units, tables, pageH, warn) {
   for (const b of blocks) cand.push(b.top, b.bottom);
   cand.sort((a, b) => a - b);
 
+  // A group taller than a page (its rows tagged grp by the table layout) is split with at least two rows on each side of
+  // the break: no lone row at the foot or head of a page. A group of under four rows cannot meet that and is left alone.
+  const grpRows = new Map();
+  for (const u of units) if (u.grp) { let g = grpRows.get(u.grp); if (!g) grpRows.set(u.grp, g = { tops: [], first: u.top, last: 0 }); g.tops.push(u.top); g.last = Math.max(g.last, u.top + u.height); }
+  const tallGroups = [...grpRows.values()].filter(g => g.tops.length >= 4 && g.last - g.first > pageH + EPS);
+  /** rows of the group above y (tops are sorted) */
+  const rowsAbove = (tops, y) => { let lo = 0, hi = tops.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (tops[mid] < y - EPS) lo = mid + 1; else hi = mid; } return lo; };
+  const splitOk = (y) => {
+    for (const g of tallGroups) {
+      if (g.first >= y - EPS || g.last <= y + EPS) continue;
+      const above = rowsAbove(g.tops, y);
+      if (above < 2 || g.tops.length - above < 2) return false;
+    }
+    return true;
+  };
+
   // Units are sorted by top. Only units that start within maxH above y can cut y.
   const maxH = units.reduce((m, u) => Math.max(m, u.height), 0);
   const firstAtOrAfter = (v) => { let lo = 0, hi = units.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (units[mid].top < v) lo = mid + 1; else hi = mid; } return lo; };
   /** units already drawn on an earlier page (a ragged break draws units below the next page's top) */
   const placed = new Set();
   const valid = (y) => {
+    if (!splitOk(y)) return false;
     const from = firstAtOrAfter(y - maxH - 1);
     const to = firstAtOrAfter(y + EPS * 2);
     for (let i = from; i < to + 1 && i < units.length; i++) {
@@ -96,6 +113,7 @@ export function paginate(units, tables, pageH, warn) {
       moved.push(u);
     }
     if (!moved.length) return null;
+    if (!splitOk(moved.reduce((m, u) => Math.min(m, u.top), Infinity))) return null;
     for (const u of units) if (u.keepWithNext && !placed.has(u) && u.top + u.height <= y + EPS && moved.some(m => Math.abs(m.top - (u.top + u.height)) < EPS)) return null;
     for (const bl of blocks) if (!movedBlocks.has(bl) && bl.top < y - EPS && bl.bottom > y + EPS) return null;
     return new Set(moved);

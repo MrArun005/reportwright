@@ -709,6 +709,8 @@ register('table', {
           const dctx = { ...ctx, fields: grows[i], aggRows: grows, aggIndex: i, rowNumber: rowNo };
           const u0 = units.length;
           for (const r of item.detail || []) layRow(r, dctx, 'detail', { level: groups.length });
+          // rows of one group instance: paginate keeps two on each side of a break in a group taller than a page
+          if (groups.length) for (let k = u0; k < units.length; k++) units[k].grp = tableKey + keyPath;
           // pageBreakEvery: a new page after every N detail rows (BIRT's pageBreakInterval)
           const every = Math.trunc(Number(item.pageBreakEvery)) || 0;
           if (every > 0 && rowNo > 1 && (rowNo - 1) % every === 0 && units[u0]) units[u0].breakBefore = true;

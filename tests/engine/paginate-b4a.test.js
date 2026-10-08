@@ -18,3 +18,15 @@ describe('paginator: page-break-before inside a keep-together block', () => {
     expect(placedCount(pages)).toBe(units.length);
   });
 });
+
+describe('paginator: a group taller than a page keeps two rows on each side of a break', () => {
+  it('no page holds a single row of such a group when it is split', () => {
+    // a 200-point header, then ten 50-point rows of one group (the group is 500 tall, the page 260)
+    const units = [{ top: 0, height: 200, items: ['H'] }];
+    for (let i = 0; i < 10; i++) units.push({ top: 200 + i * 50, height: 50, items: [i], grp: 'G' });
+    const pages = paginate(units, [], 260, () => {});
+    const counts = pages.map(p => p.units.filter(u => u.grp === 'G').length);
+    expect(counts.reduce((a, b) => a + b, 0)).toBe(10);
+    for (const c of counts) expect(c === 0 || c >= 2).toBe(true);
+  });
+});
