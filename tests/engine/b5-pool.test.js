@@ -23,14 +23,16 @@ describe.skipIf(!built)('createPool', () => {
 
   it('heapMB and timeoutMs: a render past either fails alone, and the pool goes on', async () => {
     const { createPool } = await import('../../packages/engine/pool/index.js');
-    const big = { ...def(7), dataSources: [{ name: 's', type: 'json', data: Array.from({ length: 60000 }, (_, i) => ({ a: i, b: `row ${i} ${'x'.repeat(40)}` })) }], dataSets: [{ name: 'D', source: 's' }],
+    // big renders in ~6 s on a warm worker; a cold replacement worker boots in ~1 s. timeoutMs is 2 s, so the render after the
+    // timeout (on a fresh worker) is not cut by boot time under load, while the big one stays far past the budget.
+    const big = { ...def(7), dataSources: [{ name: 's', type: 'json', data: Array.from({ length: 150000 }, (_, i) => ({ a: i, b: `row ${i} ${'x'.repeat(40)}` })) }], dataSets: [{ name: 'D', source: 's' }],
       sections: { body: { items: [{ type: 'table', x: 0, y: 0, w: 300, h: 20, dataSet: 'D', columns: [{ width: 100 }, { width: 200 }], detail: [{ cells: [{ value: '=Fields.a' }, { value: '=Fields.b' }] }] }] } } };
     const pool = createPool({ workers: 1, fontsDir: path.resolve('public/fonts'), heapMB: 64 });
     try {
       await expect(pool.render(big, { options: { subset: false } })).rejects.toThrow(/memory/i);
       expect(new TextDecoder().decode((await pool.render(def(1), { options: { subset: false } })).subarray(0, 5))).toBe('%PDF-');
     } finally { await pool.close(); }
-    const slow = createPool({ workers: 1, fontsDir: path.resolve('public/fonts'), timeoutMs: 300 });
+    const slow = createPool({ workers: 1, fontsDir: path.resolve('public/fonts'), timeoutMs: 2000 });
     try {
       await expect(slow.render(big, { options: { subset: false } })).rejects.toMatchObject({ status: 504 });
       expect(new TextDecoder().decode((await slow.render(def(2), { options: { subset: false } })).subarray(0, 5))).toBe('%PDF-');
