@@ -41,7 +41,7 @@ const byName = (lc, pal) => (name) => {
 /** Categories × series values from the data. */
 export function chartData(item, ctx, lc, pal = paletteOf(item.palette)) {
   let rows = item.dataSet ? related(lc.dataSets[item.dataSet] || [], ctx) : ctx.aggRows || [];
-  if (item.dataSet && !lc.dataSets[item.dataSet]) lc.warn(`${item.name}: the data set "${item.dataSet}" does not exist`);
+  if (item.dataSet && !lc.dataSets[item.dataSet]) lc.warn(`${item.name || item.type}: the data set "${item.dataSet}" does not exist`);
   if (item.filters?.length) rows = applyFilters(rows, item.filters, ctx);
   if (item.sort?.length) rows = applySort(rows, item.sort, ctx);
   const who = item.name || 'Chart';

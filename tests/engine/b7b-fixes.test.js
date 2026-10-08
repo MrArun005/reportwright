@@ -233,3 +233,16 @@ describe('#10 leftover: HTML Tables sort keys do not depend on the host time zon
     expect(keys[0]).toBe(JSON.stringify([[[1791417600000], [1772323200000]]]));
   });
 });
+
+describe('#22: warnings once, and named by their item (never "undefined")', () => {
+  it('a sub-report warning about an unnamed chart is said once, naming the chart type', async () => {
+    const child = report([{ type: 'chart', x: 0, y: 30, w: 200, h: 100, dataSet: 'Nope', chartType: 'column', series: [{ name: 'V', value: '=Sum(Fields.a)' }] }], { data: { rows: [{ a: 1 }] } });
+    const parent = report([{ type: 'subreport', name: 'S', x: 0, y: 0, w: 300, h: 200, report: 'child1' }]);
+    const m = await render(parent, { fontStore, loadReport: async () => child });
+    expect(m.warnings).toEqual(['Subreport child1: chart: the data set "Nope" does not exist']);
+  });
+  it('no warning reads "undefined" for an item without a name', async () => {
+    const m = await render(report([{ type: 'table', x: 0, y: 0, w: 200, h: 40, dataSet: 'Nope', columns: [{ width: 200 }], detail: [{ height: 14, cells: [{ value: '=1' }] }] }], { data: { rows: [{ a: 1 }] } }), { fontStore });
+    expect(m.warnings.join('\n')).not.toMatch(/undefined/);
+  });
+});

@@ -174,7 +174,7 @@ export async function planStream(def0, opts) {
       const span = Math.max(1, Math.min(cell.colSpan || 1, ncols - ci));
       const st = resolveStyle([rst, named?.[cell.styleName], cell.style], ctx);
       let v;
-      try { const f = fold && fold(row, ci); v = f ? f.v : evalValue(cell.value ?? '', ctx); } catch (e) { warn(`${item.name || 'Table'} cell: ${e.message}`); v = '#Error'; }
+      try { const f = fold && fold(row, ci); v = f ? f.v : evalValue(cell.value ?? '', ctx); } catch (e) { warn(`${item.name || item.type} cell: ${e.message}`); v = '#Error'; }
       const plain = textOf(v, st, ctx, lc);
       cells.push({ col: Math.round((colX[ci] - item.x) * 100), value: v instanceof Date || typeof v === 'boolean' ? v : typeof v === 'number' ? roundFor(v, st.format) : plain, format: st.format || null, bold: st.fontWeight === 'bold' || Number(st.fontWeight) >= 600, span, colIndex: colIdx[ci] });
     }
@@ -306,7 +306,7 @@ export async function planStream(def0, opts) {
         const g = [];
         for (let l = 0; l < groups.length; l++) {
           let key;
-          try { key = evalValue(groups[l].expr, gc); } catch (e) { warn(`${item.name} group: ${e.message}`); key = '#Error'; }
+          try { key = evalValue(groups[l].expr, gc); } catch (e) { warn(`${item.name || item.type} group: ${e.message}`); key = '#Error'; }
           path += `\u0000${groupKeyText(key, tctx)}`;
           let p = paths[l].get(path);
           if (!p) {

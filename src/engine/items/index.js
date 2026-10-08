@@ -65,7 +65,7 @@ function hidden(item, ctx, lc) {
   if (item.hidden === true) h = true;
   else if (item.hidden != null && item.hidden !== false && item.hidden !== '') { const r = evalSafe(item.hidden, ctx, lc, item.name || item.type); h = !r.err && truthy(r.v); }
   // another item's "toggle visibility" action flips it (the viewer keeps that in state.toggles)
-  return item.name && lc.state?.toggles?.[`item:${item.name}`] ? !h : h;
+  return item.name && lc.state?.toggles?.[`item:${item.name || item.type}`] ? !h : h;
 }
 
 /* ---------------------------------------------------------------- textbox */
@@ -412,7 +412,7 @@ register('table', {
     else {
       rows = (item.dataSet && lc.dataSets[item.dataSet]) || [];
       rows = related(rows, tctx); // a nested data set inside a list of its parent: that row's children
-      if (item.dataSet && !lc.dataSets[item.dataSet]) lc.warn(`${item.name || 'Table'}: the data set "${item.dataSet}" does not exist`);
+      if (item.dataSet && !lc.dataSets[item.dataSet]) lc.warn(`${item.name || item.type}: the data set "${item.dataSet}" does not exist`);
       if (item.filters?.length) rows = applyFilters(rows, item.filters, tctx);
       const sort = lc.state?.sort?.[item.name] || item.sort;
       if (sort?.length) rows = applySort(rows, sort, tctx);
@@ -430,11 +430,11 @@ register('table', {
     if (overflow === 'shrink' && room > 0) {
       const k = room / designedW;
       cols = cols.map(c => ({ ...c, width: (Number(c.width) || 0) * k }));
-      lc.warn(`${item.name || 'Table'}: its columns are ${Math.round(designedW)}pt wide, wider than the page (${Math.round(room)}pt), so they are narrowed to fit`);
+      lc.warn(`${item.name || item.type}: its columns are ${Math.round(designedW)}pt wide, wider than the page (${Math.round(room)}pt), so they are narrowed to fit`);
     } else if (overflow === 'clip' || (overflow === 'paginate' && lc.fixed)) {
-      lc.warn(`${item.name || 'Table'}: its columns are ${Math.round(designedW)}pt wide, wider than the page (${Math.round(room)}pt), so the columns past the page edge are cut`, true);
+      lc.warn(`${item.name || item.type}: its columns are ${Math.round(designedW)}pt wide, wider than the page (${Math.round(room)}pt), so the columns past the page edge are cut`, true);
     } else if (overflow === 'paginate' && item.overflow !== 'paginate') {
-      lc.warn(`${item.name || 'Table'}: its columns are ${Math.round(designedW)}pt wide, wider than the page (${Math.round(room)}pt), so they continue on the next pages`);
+      lc.warn(`${item.name || item.type}: its columns are ${Math.round(designedW)}pt wide, wider than the page (${Math.round(room)}pt), so they continue on the next pages`);
     }
     const colX = [];
     let acc = item.x;
@@ -473,7 +473,7 @@ register('table', {
     const cellsAt = new WeakMap(); // row → its cells by column
     const layRow = (row, ctx, kind, extra) => {
       // a row hidden by its expression (per record for detail rows) takes no space; merged cells over it still count it
-      if (row.hidden != null && row.hidden !== false && row.hidden !== '' && hidden({ hidden: row.hidden, name: `${item.name || 'Table'} row` }, ctx, lc)) {
+      if (row.hidden != null && row.hidden !== false && row.hidden !== '' && hidden({ hidden: row.hidden, name: `${item.name || item.type} row` }, ctx, lc)) {
         if (openSpans.length) {
           for (const s of openSpans) s.left--;
           for (const s of openSpans) if (s.left <= 0) closeSpan(s);
@@ -500,7 +500,7 @@ register('table', {
         else if (cell.indent > 0) { const pd = padding(st); st = { ...st, padding: [pd[0], pd[1], pd[2], pd[3] + Math.min(Number(cell.indent), cw / 2)] }; } // a pivot's recursive row header
         let v; // evalSafe without its result object: this runs for every cell
         if ('raw' in cell) v = cell.raw;
-        else try { v = evalValue(cell.value ?? '', cctx); } catch (e) { lc.warn(`${item.name || 'Table'} cell: ${e.message}`); v = '#Error'; }
+        else try { v = evalValue(cell.value ?? '', cctx); } catch (e) { lc.warn(`${item.name || item.type} cell: ${e.message}`); v = '#Error'; }
         let text = textOf(v, st, cctx, lc);
         const plain = text;
         const toggle = cell.toggle || (extra?.toggle && ci === 0 ? extra.toggle : null);
@@ -539,7 +539,7 @@ register('table', {
         cells.forEach((c, k) => {
           if (c.cell.visual?.type) {
             items.push(...paintBox({ x: c.x, y: 0, w: c.w, h, st: c.st, tl: null, m: lc.m }));
-            if (first) items.push(...paintVisual(c.cell.visual, { x: c.x, y: 0, w: c.w, h }, c.ctx, lc, c.st, `${item.name} cell`, { cell: true }));
+            if (first) items.push(...paintVisual(c.cell.visual, { x: c.x, y: 0, w: c.w, h }, c.ctx, lc, c.st, `${item.name || item.type} cell`, { cell: true }));
             return;
           }
           if (c.nested) {
@@ -594,7 +594,7 @@ register('table', {
      */
     const layoutInCell = (inner, x, cw, st, cctx, row) => {
       const pd = padding(st);
-      const it = { ...inner, name: inner.name || `${item.name}_cell`, x: x + pd[3], y: 0, w: Math.max(1, cw - pd[1] - pd[3]), h: Number(inner.h) || Math.max(1, (row.height || 18) - pd[0] - pd[2]) };
+      const it = { ...inner, name: inner.name || `${item.name || item.type}_cell`, x: x + pd[3], y: 0, w: Math.max(1, cw - pd[1] - pd[3]), h: Number(inner.h) || Math.max(1, (row.height || 18) - pd[0] - pd[2]) };
       const scopeRows = cctx.aggIndex != null ? [cctx.fields] : cctx.aggRows || [];
       const current = item.dataSet ? { ...(cctx.current || {}), [item.dataSet]: scopeRows } : cctx.current;
       const child = { ...lc, regions: null, rowBudget: null, maxUnitHeight: Infinity,
@@ -609,7 +609,7 @@ register('table', {
       // charged by the data rows the item reads (a pivot over an unrelated data set reads every row) and the rows it draws
       const budget = lc.cellItems || (lc.cellItems = { left: CELL_ITEM_UNITS });
       const reads = (it.dataSet && it.dataSet !== item.dataSet ? child.ctxFor(it).aggRows?.length : scopeRows.length) || 1;
-      if (budget.left < reads) { budget.left = 0; lc.warn(`${item.name}: more than ${CELL_ITEM_UNITS} rows of items inside cells; the rest are left empty`); return { items: [], height: 0 }; }
+      if (budget.left < reads) { budget.left = 0; lc.warn(`${item.name || item.type}: more than ${CELL_ITEM_UNITS} rows of items inside cells; the rest are left empty`); return { items: [], height: 0 }; }
       budget.left -= reads;
       const res = lc.layoutItems([it], child);
       budget.left -= res.units.length;
@@ -655,7 +655,7 @@ register('table', {
       });
       // text that reaches below the first row (more lines, or centred): keep the rows on one page when they fit
       if (s.tl.needed > s.units[0].height + GROW_TOLERANCE || (s.st.verticalAlign && s.st.verticalAlign !== 'top')) {
-        const id = `${item.name}:span:${lc.nextId()}`;
+        const id = `${item.name || item.type}:span:${lc.nextId()}`;
         for (const u of s.units) u.block ||= id;
       } else {
         // a page break inside the merged rows draws the text again at the top of the next page
@@ -700,7 +700,7 @@ register('table', {
     const groups = item.groups || [];
     let rowNo = lc.win?.rowOffset || 0; // a window (paged.js): the rows before it
     const groupTables = []; // groups whose header repeats: paginated like a table header (paginate/index.js)
-    const tableKey = `${item.name}#${lc.nextId()}`;
+    const tableKey = `${item.name || item.type}#${lc.nextId()}`;
     const emit = (level, grows, ctx, chain, keyPath) => {
       if (level === groups.length) {
         for (let i = 0; i < grows.length; i++) {
@@ -752,7 +752,7 @@ register('table', {
         const byText = new Map(buckets.map(b => [b.text, b]));
         kids = new Map(); roots = [];
         for (const b of buckets) {
-          const pk = evalSafe(g.parent, { ...ctx, fields: b.rows[0], aggRows: b.rows, aggIndex: undefined }, lc, `${item.name} group parent`).v;
+          const pk = evalSafe(g.parent, { ...ctx, fields: b.rows[0], aggRows: b.rows, aggIndex: undefined }, lc, `${item.name || item.type} group parent`).v;
           const pr = pk == null || pk === '' ? null : byText.get(pk instanceof Date ? String(pk.getTime()) : String(pk));
           if (!pr || pr === b) roots.push(b);
           else { let k = kids.get(pr); if (!k) kids.set(pr, k = []); k.push(b); }
@@ -780,7 +780,7 @@ register('table', {
         const gctx = { ...ctx, fields: cont ? cont.first : bk.rows[0], aggRows: bk.rows, aggIndex: undefined, scopes: { ...ctx.scopes, [gname]: sc }, groupKey: bk.key, group: sc, __cont: !!cont, __before: cont && level === groups.length - 1 ? cont.before : 0 };
         if (kids) { gctx.level = depth; if (g.indent) gctx.indent = (ctx.indent || 0) + depth * Number(g.indent); }
         const path = `${parentPath}/${bk.text}`;
-        const tkey = `${item.name}|${level}|${path}`;
+        const tkey = `${item.name || item.type}|${level}|${path}`;
         const dflt = kids && g.expandLevels != null ? depth < Number(g.expandLevels) : !g.initiallyCollapsed;
         const open = !g.collapsible ? true : (lc.state?.toggles?.[tkey] ?? dflt);
         const start = units.length;
@@ -801,7 +801,7 @@ register('table', {
         const ch = kids?.get(bk) || [];
         if (open) {
           emit(level + 1, bk.rows, gctx, [...chain, sc], path);
-          if (ch.length && depth + 1 >= MAX_TREE_DEPTH) lc.warn(`${item.name}: the group "${gname}" is more than ${MAX_TREE_DEPTH} levels deep; deeper rows are listed at the top level`);
+          if (ch.length && depth + 1 >= MAX_TREE_DEPTH) lc.warn(`${item.name || item.type}: the group "${gname}" is more than ${MAX_TREE_DEPTH} levels deep; deeper rows are listed at the top level`);
           else ch.forEach((c, ci) => node(c, ci, ch, depth + 1, path));
         } else {
           const rs = recOf.get(bk) || bk.rows;
@@ -826,7 +826,7 @@ register('table', {
           if (g.pageBreak === 'after' && bi < sibs.length - 1) units[units.length - 1].breakAfter = true;
           // a group a window continues (paged.js) was split in the whole report: its block stays (widow control reads it)
           // but is open: never kept together
-          if (g.keepTogether) { const id = `${item.name}:g${level}:${path}:${lc.nextId()}`; for (let k = start; k < units.length; k++) if (!units[k].block) { units[k].block = id; if (cont) units[k].blockOpen = true; } }
+          if (g.keepTogether) { const id = `${item.name || item.type}:g${level}:${path}:${lc.nextId()}`; for (let k = start; k < units.length; k++) if (!units[k].block) { units[k].block = id; if (cont) units[k].blockOpen = true; } }
         }
       };
       // a collapsed node hides its subtree: those nodes count as shown
@@ -838,7 +838,7 @@ register('table', {
       if (kids) {
         // nodes in a cycle (A → B → A) or cut off by the depth limit: listed at the top level, once
         const rest = buckets.filter(b => !shown.has(b));
-        if (rest.length) { lc.warn(`${item.name}: ${rest.length} rows of the group "${gname}" have no root (a cycle or too deep); they are listed at the top level`); rest.forEach((bk, bi) => node(bk, bi, rest, 0, keyPath)); }
+        if (rest.length) { lc.warn(`${item.name || item.type}: ${rest.length} rows of the group "${gname}" have no root (a cycle or too deep); they are listed at the top level`); rest.forEach((bk, bi) => node(bk, bi, rest, 0, keyPath)); }
       }
     };
     if (item.__body) {
@@ -864,7 +864,7 @@ register('table', {
 
     // the table's own bookmark (document map, jump targets): at its top, on the page where it starts
     if (item.bookmark && units.length) {
-      const b = evalSafe(item.bookmark, base, lc, `${item.name || 'Table'} bookmark`).v;
+      const b = evalSafe(item.bookmark, base, lc, `${item.name || item.type} bookmark`).v;
       if (b != null && b !== '' && b !== '#Error') units[0].items.unshift({ t: 'bookmark', label: String(b), x: item.x, y: 0, level: item.bookmarkLevel ?? 0 });
     }
     if (!lc.fixed) lc.regions?.push(region);
@@ -962,7 +962,7 @@ register('container', {
     const ctx = lc.ctxFor(item);
     if (hidden(item, ctx, lc)) return { height: 0, units: [] };
     const res = lc.layoutItems(item.items, lc, { dx: item.x });
-    return frame(item, lc, ctx, res, item.keepTogether !== false ? `c:${item.name}:${lc.nextId()}` : null);
+    return frame(item, lc, ctx, res, item.keepTogether !== false ? `c:${item.name || item.type}:${lc.nextId()}` : null);
   },
 });
 
@@ -1022,7 +1022,7 @@ register('list', {
     // inheritRows: a list inside a row of a list over the same data set takes that row's rows (a banded group)
     if (item.inheritRows && item.dataSet && ctx.current?.[item.dataSet]) rows = ctx.current[item.dataSet];
     else rows = related(rows, ctx); // a nested data set inside a list of its parent: that row's children
-    if (item.dataSet && !lc.dataSets[item.dataSet]) lc.warn(`${item.name}: the data set "${item.dataSet}" does not exist`);
+    if (item.dataSet && !lc.dataSets[item.dataSet]) lc.warn(`${item.name || item.type}: the data set "${item.dataSet}" does not exist`);
     if (item.filters?.length) rows = applyFilters(rows, item.filters, ctx);
     if (item.sort?.length) rows = applySort(rows, item.sort, ctx);
     const reps = item.groupBy ? groupRows(rows, item.groupBy, ctx, lc, item.name, item.groupAdjacent === true).map(b => b.rows) : rows.map(r => [r]);
@@ -1049,7 +1049,7 @@ register('list', {
       } };
       const k = i % ncol;
       const res = lc.layoutItems(item.items, child, { dx: item.x + k * (item.w + gap) });
-      const fr = frame({ ...item, x: item.x + k * (item.w + gap), name: `${item.name}[${i + 1}]` }, child, rctx, res, item.keepTogether !== false ? `l:${item.name}:${i}:${lc.nextId()}` : null);
+      const fr = frame({ ...item, x: item.x + k * (item.w + gap), name: `${item.name || item.type}[${i + 1}]` }, child, rctx, res, item.keepTogether !== false ? `l:${item.name || item.type}:${i}:${lc.nextId()}` : null);
       if (ncol > 1) {
         // a grid list: n records side by side, each row of the grid one unit
         if (k === 0) { cells = { top: y, height: 0, items: [], x0: item.x, x1: item.x + ncol * item.w + (ncol - 1) * gap, block: undefined }; units.push(cells); }
@@ -1490,7 +1490,7 @@ register('subreport', {
     if (hidden(item, ctx, lc)) return { height: 0, units: [] };
     const params = {};
     for (const [k, v] of Object.entries(item.params || {})) {
-      const r = evalSafe(v, ctx, lc, `${item.name} parameter ${k}`);
+      const r = evalSafe(v, ctx, lc, `${item.name || item.type} parameter ${k}`);
       params[k] = r.v instanceof Date ? isoDate(r.v, ctx.timeZone) : r.v;
     }
     const key = `${item.report}|${JSON.stringify(params)}`;
@@ -1505,8 +1505,8 @@ register('subreport', {
     if (sub.mode === 'collect') { sub.requests.set(key, { report: item.report, params }); return { height: item.h, units: [{ top: 0, height: item.h, items: [] }] }; }
     const res = sub.results.get(key);
     if (!res) return placeholder(`Subreport "${item.report}" did not load`);
-    if (res.error) { lc.warn(`${item.name}: ${res.error}`); return placeholder(`Subreport "${item.report}": ${res.error}`); }
-    const block = item.keepTogether ? `s:${item.name}:${lc.nextId()}` : undefined;
+    if (res.error) { lc.warn(`${item.name || item.type}: ${res.error}`); return placeholder(`Subreport "${item.report}": ${res.error}`); }
+    const block = item.keepTogether ? `s:${item.name || item.type}:${lc.nextId()}` : undefined;
     const units = res.units.map(u => ({ ...u, items: shiftItems(u.items, item.x, 0), ...(u.cont ? { cont: shiftItems(u.cont, item.x, 0) } : {}), x0: (u.x0 ?? 0) + item.x, x1: (u.x1 ?? item.w) + item.x, block: u.block || block, tableId: undefined }));
     const tables = res.tables.map(t => ({ ...t, x0: t.x0 + item.x, x1: t.x1 + item.x, headerItems: shiftItems(t.headerItems, item.x, 0), id: `sub${lc.nextId()}` }));
     for (const r of res.regions || []) lc.regions?.push(r);
