@@ -33,3 +33,32 @@ describe('cell visuals', () => {
     expect(formatValue(-0.5, 'P1')).toBe('-50.0%');
   });
 });
+
+describe('data bar labels', () => {
+  // the visual column is 120 wide; a label after the bar end when it fits in the cell, else inside the bar, right-aligned
+  const bars = (vals, visual = {}) => {
+    const rows = vals.map((v, i) => ({ n: 'R' + i, v }));
+    return render(report([table({ type: 'databar', value: '=Fields.v', max: '=100', ...visual })], { data: { rows } }), { fontStore }).then(out => {
+      const t = out.pages[0].items.filter(i => i.t === 'text');
+      const col = t.find(i => i.lines[0].text === 'Visual').lines[0].x - 4;
+      const bar = out.pages[0].items.filter(i => i.t === 'rect' && i.fill.endsWith('cc'));
+      return { col, bar, label: (s) => t.find(i => i.lines[0].text === s && i.lines[0].x > col).lines[0] };
+    });
+  };
+
+  it('a label that fits after a short bar sits after it in the normal text colour', async () => {
+    const { bar, label, col } = await bars([40]);
+    const l = label('40');
+    expect(l.x).toBeCloseTo(bar[0].x + bar[0].w + 3, 1);
+    expect(l.x + l.w).toBeLessThanOrEqual(col + 120);
+  });
+
+  it('a wide label on a half bar is shrunk to sit inside it, ending 3 before the bar end (it used to overlap the tail)', async () => {
+    const { bar, label, col } = await bars([1234567.89], { max: '=2469135.78', format: 'N2' });
+    const l = label('1,234,567.89');
+    const end = bar[0].x + bar[0].w;
+    expect(l.x + l.w).toBeLessThanOrEqual(end - 3 + 0.01);
+    expect(l.x).toBeGreaterThanOrEqual(bar[0].x);
+    expect(l.x + l.w).toBeLessThanOrEqual(col + 120);
+  });
+});

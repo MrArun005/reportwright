@@ -3,6 +3,7 @@
 import { evalValue, toText, isDynamic } from '../expr/evaluate.js';
 import { resolveFontKey } from '../text/fonts.js';
 import { padding } from '../style.js';
+import { inkOn } from './chart-kit.js';
 
 const MAX_POINTS = 5000;
 export const ICON_SETS = ['trafficLights', 'arrows', 'symbols', 'flags', 'ratings'];
@@ -170,10 +171,13 @@ export function paintVisual(v, box, ctx, lc, base, who = 'Visual', opt = {}) {
       const s = toText(val, v.format || base.format || 'N0', ctx);
       let tw = lc.m.width(s, key, size);
       if (tw > w) { size *= w / tw; tw = w; } // wider than the box: smaller, never past its edge
-      const inside = w * frac > tw + 6;
-      // after the bar when there is room, else against the box's end: a label never runs past the cell (or the page)
-      const lx = inside ? x + w * frac - tw - 3 : Math.min(x + w * frac + 3, x + w - tw);
-      out.push({ t: 'text', font: key, size, color: inside ? '#ffffff' : '#374151', lines: [{ x: lx, y: line ? line.baseline : y + h / 2 + size * 0.35, text: s, w: tw }] });
+      const barEnd = x + w * frac;
+      // after the bar when it fits in the cell (normal ink); else inside the bar, right-aligned to its end, in an ink that
+      // reads on the fill, and smaller if the bar cannot hold it. Never past the bar end or the cell edge.
+      const after = barEnd + 3 + tw <= x + w;
+      if (!after && tw > w * frac - 6) { const fit = Math.max(0, w * frac - 6); size *= fit / tw; tw = fit; }
+      const lx = after ? barEnd + 3 : Math.max(x, barEnd - 3 - tw);
+      out.push({ t: 'text', font: key, size, color: after ? '#374151' : inkOn(color), lines: [{ x: lx, y: line ? line.baseline : y + h / 2 + size * 0.35, text: s, w: tw }] });
     }
     return out;
   }
