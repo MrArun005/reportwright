@@ -5,7 +5,10 @@
 // re-sorts the columns the report made sortable (interactive sort), opens and closes groups, and filters rows by
 // the values of a column. Without the script (blocked), the file is the static pages.
 import { mergedRegions } from './regions.js';
-import { formatValue, isoDate } from '../engine/expr/format.js';
+import { formatValue, isoDate, toWall } from '../engine/expr/format.js';
+
+/** A date's sort key: its wall clock as a UTC timestamp (the report's zone, else the host's clock fields), so the key does not depend on the host's zone (a date-only value is host-local midnight). */
+const dateKey = (d, tz) => (tz ? toWall(d, tz) : Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds()));
 
 /** Most rows a file carries for the Tables view (beyond it, the file stays pages only). */
 export const MAX_DATA_ROWS = 20000;
@@ -39,7 +42,7 @@ export function tablesData(model, o = {}) {
     sort: [...(sortable.get(r.name) || [])],
     rows: r.rows.map(row => ({
       k: row.kind, l: row.level || 0,
-      c: row.cells.filter(c => c.colIndex >= 0).map(c => [c.colIndex, String(show(c) ?? ''), c.value instanceof Date ? c.value.getTime() : typeof c.value === 'number' ? c.value : String(c.value ?? '').toLowerCase(), c.span || 1]),
+      c: row.cells.filter(c => c.colIndex >= 0).map(c => [c.colIndex, String(show(c) ?? ''), c.value instanceof Date ? dateKey(c.value, model.timeZone || undefined) : typeof c.value === 'number' ? c.value : String(c.value ?? '').toLowerCase(), c.span || 1]),
     })),
   }));
 }

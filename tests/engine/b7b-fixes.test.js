@@ -213,3 +213,23 @@ describe('#29: format characters (bidi marks, joiners, soft hyphen) need no glyp
     expect(pdfStreams(pdf)).not.toMatch(/<0000>\]? ?(TJ|Tj)|\[<0000>/); // and no notdef glyph in it
   });
 });
+
+import { execFileSync } from 'node:child_process';
+describe('#10 leftover: HTML Tables sort keys do not depend on the host time zone', () => {
+  it('the same report gives the same sort keys under UTC, Kolkata and Los Angeles', () => {
+    const root = path.join(import.meta.dirname, '..', '..');
+    const script = `
+      const { render } = await import(${JSON.stringify(path.join(root, 'src/engine/index.js'))});
+      const { tablesData } = await import(${JSON.stringify(path.join(root, 'src/exporters/htmldata.js'))});
+      const { fontStore, report } = await import(${JSON.stringify(path.join(root, 'tests/helpers.js'))});
+      const def = report([{ type: 'table', name: 'Tb', x: 0, y: 0, w: 200, h: 40, dataSet: 'Rows', columns: [{ width: 200 }],
+        detail: [{ height: 14, cells: [{ value: '=CDate(Fields.d)' }] }] }], { data: { rows: [{ d: '2026-10-08' }, { d: '2026-03-01' }] } });
+      const m = await render(def, { fontStore, exportData: true });
+      console.log(JSON.stringify(tablesData(m).map(t => t.rows.map(r => r.c.map(c => c[2])))));`;
+    const keys = ['UTC', 'Asia/Kolkata', 'America/Los_Angeles'].map(tz =>
+      execFileSync(process.execPath, ['--input-type=module', '-e', script], { env: { ...process.env, TZ: tz }, encoding: 'utf8' }).trim());
+    expect(keys[1]).toBe(keys[0]);
+    expect(keys[2]).toBe(keys[0]);
+    expect(keys[0]).toBe(JSON.stringify([[[1791417600000], [1772323200000]]]));
+  });
+});
