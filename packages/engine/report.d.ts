@@ -274,6 +274,7 @@ export interface Chart extends ItemBase {
   fontSize?: number;
   background?: string;
   maxCategories?: number;
+  /** Scatter and bubble. clip: the axes stop at the 1st and 99th percentiles; points beyond are drawn at the edge with a ring and a warning. none: the full range. Unset: clip when 20 or more points have an extreme spread (full range over 5x the 1st-99th percentile range), else none */
   outliers?: 'clip' | 'none';
   line?: 'straight' | 'smooth' | 'step';
   axes?: {
