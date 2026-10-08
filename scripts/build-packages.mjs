@@ -29,7 +29,7 @@ const write = (f, s) => fs.writeFileSync(path.join(root, f), typeof s === 'strin
 /* engine */
 const E = 'packages/engine';
 // third-party libraries stay imports (pinned dependencies), never bundled: our tarballs hold only our code
-const external = ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate', 'bidi-js'];
+const external = ['pdf-lib', '@pdf-lib/fontkit', '@pdf-lib/standard-fonts', 'bwip-js', 'fflate', 'bidi-js'];
 fs.rmSync(path.join(root, E, 'dist'), { recursive: true, force: true });
 fs.rmSync(path.join(root, E, 'public'), { recursive: true, force: true }); // fonts moved to @reportwright/fonts
 // no source map: the bundle is readable (not minified), and the map was ~0.8 MB of a 2 MB package

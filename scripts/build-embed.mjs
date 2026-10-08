@@ -54,7 +54,7 @@ await workerBuild({ outfile: path.join(root, 'public/embed/esm-peer/engine.worke
 //    What @reportwright/viewer publishes: the same two builds with the third-party libraries that carry data blobs
 //    (pdf-lib's standard fonts, fontkit's brotli dictionary, bwip-js's barcode tables, bidi-js's Unicode data) and
 //    fflate left as imports: they are the package's pinned dependencies, so the tarball holds only our code.
-const PKG_EXTERNAL = ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate', 'bidi-js'];
+const PKG_EXTERNAL = ['pdf-lib', '@pdf-lib/fontkit', '@pdf-lib/standard-fonts', 'bwip-js', 'fflate', 'bidi-js'];
 for (const [dir, ext] of [['esm-pkg', []], ['esm-pkg-peer', ['react', 'react-dom', 'react/*', 'react-dom/*']]]) {
   fs.rmSync(path.join(root, 'public/embed', dir), { recursive: true, force: true });
   await build({ ...common, entryPoints: ENTRIES, format: 'esm', ...readable, splitting: true, outdir: path.join(root, 'public/embed', dir), entryNames: '[name]', chunkNames: 'chunk-[hash]', external: [...ext, ...PKG_EXTERNAL] });

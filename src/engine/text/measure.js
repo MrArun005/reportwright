@@ -12,7 +12,7 @@
  * in one font and one direction, with the glyphs the PDF draws and the widths the SVG reproduces.
  */
 import bidiFactory from 'bidi-js';
-import { fallbackKey, fontCss, resolveFontKey, DEFAULT_FAMILY, SHAPER, CORE_FONT_KEY } from './fonts.js';
+import { fallbackKey, fontCss, resolveFontKey, embeddedFace, isStandard, DEFAULT_FAMILY, SHAPER, CORE_FONT_KEY } from './fonts.js';
 
 const bidi = bidiFactory();
 
@@ -124,6 +124,8 @@ export class TextMeasurer {
     this.noGlyph = new Set();
     /** font names the text asked for that are not available (resolveFontKey): the render warns @type {Set<string>} */
     this.unknownFonts = new Set();
+    /** standard-font key → the characters its encoding lacks, drawn in embeddedFace(key): the render warns @type {Map<string, Set<string>>} */
+    this.substituted = new Map();
   }
 
   /**
@@ -237,7 +239,7 @@ export class TextMeasurer {
    * @returns {Run[]|null}
    */
   runs(text, key, size, dir) {
-    if (!dir && !MAYBE.test(text)) return null; // drawn as it is, in its own font (also when a glyph is missing)
+    if (!dir && !MAYBE.test(text) && !isStandard(key)) return null; // drawn as it is, in its own font (also when a glyph is missing)
     const k = this.usable(key);
     if (this.fast(text, k) >= 0) return null;
     return this.layout(text, k, dir).runs.map(r => ({
@@ -376,6 +378,21 @@ export class TextMeasurer {
   pick(cp, key, prev) {
     // a format character (RLM, LRE, ZWJ, soft hyphen...) is drawn as nothing: it needs no glyph in any face
     if (cp < 0x20 || this.has(key, cp) || FORMAT_CHAR.test(String.fromCodePoint(cp))) return key;
+    // a standard font (WinAnsi): its embedded stand-in draws what the encoding lacks (Ł, →), then the script fallbacks
+    if (isStandard(key)) {
+      const sub = embeddedFace(key);
+      if (!this.store.has(sub)) {
+        if (!this.store.failed.has(sub)) { this.missing.add(sub); return key; }
+      } else {
+        if (this.has(sub, cp)) {
+          let s = this.substituted.get(key);
+          if (!s) this.substituted.set(key, s = new Set());
+          if (s.size < 20) s.add(String.fromCodePoint(cp));
+          return sub;
+        }
+        key = sub;
+      }
+    }
     const fb = fallbackKey(cp, key);
     if (fb && !this.store.failed.has(fb)) {
       if (!this.store.has(fb)) { this.missing.add(fb); return key; }
@@ -448,12 +465,13 @@ export class TextMeasurer {
 
   /** One run at size 1: HarfBuzz for complex scripts and right-to-left text, else character-map glyphs. @returns {Run} */
   shapeRun(text, key, rtl, script) {
-    const complex = !SIMPLE.has(script);
     const store = this.store;
+    const complex = !SIMPLE.has(script);
+    const shape = (complex || rtl) && !store.get(key).standard; // a standard font: one byte per character, never shaped
     /** @type {number[]} */
     const glyphs = [];
     let pen = 0;
-    if ((complex || rtl) && store.shaper) {
+    if (shape && store.shaper) {
       const hf = store.hbFont(key);
       const g = store.shaper.shape(hf, text, rtl, !complex);
       for (let i = 0; i < g.length; i += 5) {
@@ -462,8 +480,8 @@ export class TextMeasurer {
       }
       return { font: key, x: 0, w: pen / hf.upem, text, ...(rtl ? { rtl } : {}), ...(complex ? { shaped: true } : {}), glyphs };
     }
-    if ((complex || rtl) && !store.failed.has(SHAPER)) this.missing.add(SHAPER);
-    else if (complex || rtl) this.unshaped = true; // the shaper did not load: render() warns
+    if (shape && !store.failed.has(SHAPER)) this.missing.add(SHAPER);
+    else if (shape) this.unshaped = true; // the shaper did not load: render() warns
     const f = store.get(key);
     const list = [];
     for (let i = 0; i < text.length;) {

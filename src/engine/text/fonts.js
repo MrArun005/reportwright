@@ -1,11 +1,13 @@
 // @ts-check
 import fontkitModule from '@pdf-lib/fontkit';
 import { createShaper } from './shaper.js';
+import { STANDARD_FACES, isStandard, standardFont } from './standard.js';
+export { isStandard };
 
 /** @type {any} */
 const fontkit = /** @type {any} */ (fontkitModule).default || fontkitModule;
 
-/** @typedef {{ key: string, family: string, weight: number, style: 'normal'|'italic', file: string }} Face */
+/** @typedef {{ key: string, family: string, weight: number, style: 'normal'|'italic', file: string, standard?: boolean }} Face */
 
 /** Bundled fonts (OFL), in /public/fonts: [family, key, weight, style]. The key is the file name without ".ttf". */
 const BUNDLED = [
@@ -33,6 +35,10 @@ const FACES = new Map();
 const addFace = (/** @type {Face} */ f) => { (FONT_FAMILIES[f.family] ||= []).push(f); FACES.set(f.key, f); };
 for (const [family, key, weight, style = 'normal', file] of BUNDLED) {
   addFace({ family: String(family), key: String(key), weight: Number(weight), style: style === 'italic' ? 'italic' : 'normal', file: String(file || `${key}.ttf`) });
+}
+// the 14 standard PDF fonts (standard.js): metrics only, never embedded (PDF/A and PDF/UA embed embeddedFace(key))
+for (const [family, key, weight, style] of STANDARD_FACES) {
+  addFace({ family: String(family), key: String(key), weight: Number(weight), style: style === 'italic' ? 'italic' : 'normal', file: '', standard: true });
 }
 export const BUNDLED_FAMILIES = Object.keys(FONT_FAMILIES);
 
@@ -71,7 +77,9 @@ export function setCustomFonts(list) {
 }
 
 /** Generic CSS families: they name no font, so using ours for them is not a substitution (no warning). */
-const GENERIC = { 'sans-serif': DEFAULT_FAMILY, 'system-ui': DEFAULT_FAMILY, monospace: 'JetBrains Mono', 'ui-monospace': 'JetBrains Mono' };
+const GENERIC = { 'sans-serif': DEFAULT_FAMILY, 'system-ui': DEFAULT_FAMILY, monospace: 'JetBrains Mono', 'ui-monospace': 'JetBrains Mono', serif: 'Times-Roman',
+  // the standard fonts' common names (metric-compatible: Arial has Helvetica's widths, and so on)
+  arial: 'Helvetica', times: 'Times-Roman', 'times new roman': 'Times-Roman', 'courier new': 'Courier', 'zapf dingbats': 'ZapfDingbats' };
 /** Names of monospace fonts we do not have: they get the shipped monospace face, so aligned columns stay aligned. */
 const MONO = /mono|courier|consol|menlo|monaco|code|typewriter|fixed|terminal|lucida console|andale/i;
 /** @type {Map<string, { family: string, unknown?: string }>} */
@@ -122,6 +130,29 @@ export function resolveFontKey(family, weight, style, unknown) {
     return fw >= w ? fw - w : 1000 + w - fw;
   };
   return list.reduce((best, f) => (rank(f) < rank(best) ? f : best)).key;
+}
+
+/**
+ * The embedded face that stands in for a standard font where one must be embedded (PDF/A, PDF/UA, form fields) and for
+ * the characters its encoding lacks: JetBrains Mono for Courier, else Inter, in the same weight and style. No
+ * metric-compatible face (Liberation, say) ships, so its widths differ. Any other key is returned as it is.
+ * @param {string} key
+ */
+export function embeddedFace(key) {
+  if (!isStandard(key)) return key;
+  const f = /** @type {Face} */ (FACES.get(key));
+  return resolveFontKey(f.family === 'Courier' ? 'JetBrains Mono' : DEFAULT_FAMILY, f.weight, f.style);
+}
+
+/** CSS font-family for HTML and SVG: a standard font by name, then what most systems have with its widths. */
+const CSS_STACK = { Helvetica: 'Helvetica, Arial, "Liberation Sans", sans-serif', 'Times-Roman': '"Times New Roman", Times, "Liberation Serif", serif',
+  Courier: '"Courier New", Courier, "Liberation Mono", monospace', Symbol: 'Symbol', ZapfDingbats: '"Zapf Dingbats", ZapfDingbats' };
+/** @param {string} key @returns {string|null} a standard font's CSS font-family list, else null */
+export const standardCss = (key) => (isStandard(key) ? CSS_STACK[/** @type {Face} */ (FACES.get(key)).family] : null);
+/** The name Word, Excel and PowerPoint know for a font key's family (the standard fonts by their Windows equivalents). */
+export function officeFamily(key) {
+  const fam = fontCss(key).family;
+  return { Helvetica: 'Arial', 'Times-Roman': 'Times New Roman', Courier: 'Courier New' }[fam] || fam;
 }
 
 /** CSS description of a font key, for SVG/HTML output. */
@@ -249,6 +280,7 @@ export class FontStore {
       if (!this.pending.has(k)) {
         this.pending.set(k, (async () => {
           try {
+            if (isStandard(k)) { this.fonts.set(k, await standardFont(k)); return; } // metrics only: no file, no bytes
             const b = await this.loader(k);
             const u8 = b instanceof Uint8Array ? b : new Uint8Array(b);
             if (k === SHAPER) { this.shaper = await createShaper(u8); return; }

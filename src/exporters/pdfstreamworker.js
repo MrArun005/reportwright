@@ -22,7 +22,7 @@ parentPort.on('message', async (/** @type {any} */ job) => {
     const m = await render(job.def, { ...job.opts, fontStore, sources: { __rows: { rows: job.rows } }, pageWindow: job.pageWindow });
     // a writer of its own for the names and glyphs (nothing is written): the pages' links name pages by placeholder
     const rec = createPdfStream({ write() {} }, { fontStore });
-    const env = paintEnv(rec, fontStore, { drillBase: job.drillBase, pageRef: (i) => `@@P${i}@@` });
+    const env = paintEnv(rec, fontStore, { drillBase: job.drillBase, pageRef: (i) => `@@P${i}@@`, embedAll: job.embedAll });
     const pages = [], transfer = [];
     for (let k = 0; k < Math.min(job.keep, m.pages.length); k++) {
       const pg = m.pages[k];
@@ -32,7 +32,7 @@ parentPort.on('message', async (/** @type {any} */ job) => {
       pages.push({ deflated: z, annots, width: pg.width, height: pg.height, firstRow: pg.firstRow, rowHead: pg.rowHead, headLevel: pg.headLevel });
     }
     parentPort.postMessage({ id: job.id, count: m.pages.length, nextFirst: m.pages[job.keep]?.firstRow, pages, used: rec.used(),
-      shaped: [...env.shaped].map(([k, g]) => [k, [...g]]), bookmarks: m.bookmarks, headings: m.headings, warnings: m.warnings, ms: Date.now() - t0 }, transfer);
+      shaped: [...env.shaped].map(([k, g]) => [k, [...g]]), embedded: [...env.embedded || []], bookmarks: m.bookmarks, headings: m.headings, warnings: m.warnings, ms: Date.now() - t0 }, transfer);
   } catch (e) {
     parentPort.postMessage({ id: job.id, error: { message: String(/** @type {any} */ (e)?.message || e), status: /** @type {any} */ (e)?.status, timeout: /** @type {any} */ (e)?.timeout } });
   }
