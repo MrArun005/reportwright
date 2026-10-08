@@ -20,16 +20,20 @@ cp -r node_modules/@reportwright/fonts/public public/pw     # fonts/, harfbuzz-s
 import { mountViewer } from '@reportwright/viewer';
 mountViewer('#report', {
   definition,                         // the report JSON (see @reportwright/engine/report)
-  data: { orders: { rows: [...] } },  // JSON for each data source, by name (REST sources in the definition are fetched as usual)
+  // data: JSON for each data source, by name. Match the data set's path: { orders: { rows: [...] } } when it reads "$.rows"
+  // (docs/QUICKSTART.md), or { orders: [...] } when it has no path (the array is the rows). A mismatch gives empty tables.
+  data: { orders: { rows: [...] } },
+  // REST sources in the definition are fetched as usual
   fontsUrl: '/pw/fonts/',             // the copied fonts folder; PDF subsetting and PDF/A use ../harfbuzz-subset.wasm and ../icc/
 });
 ```
 
 Nothing calls `/api`; each font is downloaded once; the toolbar uses the system font.
 
-If a font cannot be loaded (wrong `fontsUrl`, the folder not served), the report still draws in a fallback font and the
-viewer says which fonts failed, on screen. `onReady(error)` is called when the first run ends: `null` when it went
-through, or the error that stopped it (a font that did not load counts). Bundled apps: serve the fonts folder at the URL
+If a font cannot be loaded (wrong `fontsUrl`, the folder not served), the report does not draw: the viewer shows
+"The report did not run. Font "Inter-Regular" did not load (HTTP 404)" with a Retry button, and `onReady(error)` is called
+with that error. Fix the path and retry; there is no fallback font. `onReady(error)` is called when the first run ends:
+`null` when it went through, or the error that stopped it. Bundled apps: serve the fonts folder at the URL
 you pass as `fontsUrl`; `fontsUrl` is not inferred from the package. Copying only `fonts/` works too
 (PDFs then embed whole fonts, and PDF/A export needs `icc/`).
 
