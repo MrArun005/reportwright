@@ -62,6 +62,8 @@ export const BAND_ITEMS = 250000; // page header and footer items drawn per rend
  * @property {'screen'|'print'|'export'} [target] which layers draw (default export)
  * @property {Record<string, any>} [state] the viewer's interactive state: sorts, toggles, selections
  * @property {string} [timeZone] the zone dates show in, when the report sets none
+ * @property {number|false} [largeReportRows] the engine package's render() warns once (model.warnings, and the console once
+ *   per process) when a data set has more rows than this, pointing at exportPdfStream (default 100000; 0 or false: no warning)
  * @property {any} [bodyWidth] internal (subreports): the width the child body is laid out to
  * @property {number} [depth] internal (subreports): nesting level, at most 3
  * @property {{ used: number }} [budget] internal (subreports): subreports rendered so far, all levels together

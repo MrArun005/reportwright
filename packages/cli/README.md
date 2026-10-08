@@ -10,6 +10,11 @@ npx -p @reportwright/cli pw test reports        # snapshot tests for reports-as-
 npx -p @reportwright/cli pw import invoice.jrxml   # JasperReports, SSRS (.rdl) or BIRT → invoice.pw.json
 ```
 
+`pw render -f pdf -o file` streams a flowing table into the file as it is laid out (`exportPdfStream`; the message says
+`streamed`), so a large report's memory stays flat; other reports, `--password` and `-o -` render the whole model first.
+It writes to a temporary file beside the target and renames it when the export succeeded: a failed run leaves no
+damaged PDF, and an older file at the path stays as it was.
+
 ## Snapshot tests: `pw test`
 
 `pw test <folder>` renders every `<folder>/__tests__/*.test.json` and compares it with a snapshot beside it. Each test file says which report to render and which cases to run:
