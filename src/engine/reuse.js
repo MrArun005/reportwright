@@ -23,6 +23,8 @@ function countItems(def, stop = Infinity) {
 }
 const ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const isId = (v) => typeof v === 'string' && ID.test(v);
+/** The server's report id rule (src/server/reports.js safeId): what a loader accepts. */
+export const isReportId = isId;
 
 /**
  * A loader for one render (and its subreports): each id loaded once, at most REUSE_LIMITS.reports ids.

@@ -19,7 +19,7 @@ import { placeItems, shiftItems } from './items/paint.js';
 import { paginate } from './paginate/index.js';
 import { layoutItems } from './layout.js';
 import { validate } from './schema/validate.js';
-import { makeLoader, resolveReuse, resolveTheme, flattenNamed, REUSE_LIMITS } from './reuse.js';
+import { makeLoader, resolveReuse, resolveTheme, flattenNamed, REUSE_LIMITS, isReportId } from './reuse.js';
 import { layerFilter } from './layout.js';
 
 /** The data fetch options of a render: the SSRF guard's (data/guard.js) and the time and size limits. */
@@ -218,10 +218,11 @@ export async function render(def0, opts = {}) {
         const defs = new Map();
         for (const [key, rq] of requests) {
           try {
-            if ((opts.chain || []).includes(rq.report)) throw new Error('it includes itself');
-            if (!defs.has(rq.report)) defs.set(rq.report, await opts.loadReport(rq.report));
-            const child = defs.get(rq.report);
-            const r = await render(child, { ...opts, dataOnly: false, target, onSources: undefined, deadline: deadline ?? undefined, reportId: rq.report, budget, fnCount, imageBudget, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, rq.report], bodyWidth: page.bodyWidth, state: {} });
+            const id = subreportId(rq.report, baseCtx);
+            if ((opts.chain || []).includes(id)) throw new Error('it includes itself');
+            if (!defs.has(id)) defs.set(id, await opts.loadReport(id));
+            const child = defs.get(id);
+            const r = await render(child, { ...opts, dataOnly: false, target, onSources: undefined, deadline: deadline ?? undefined, reportId: id, budget, fnCount, imageBudget, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, id], bodyWidth: page.bodyWidth, state: {} });
             results.set(key, r);
             for (const w of r.warnings) warn(`Subreport ${rq.report}: ${w}`, r.clipped?.includes(w));
           } catch (e) { if (e.timeout) throw e; results.set(key, { error: e.message }); }
@@ -481,6 +482,14 @@ export async function render(def0, opts = {}) {
  * The evaluation context every expression of a render starts from (render, and the streaming exports in stream.js).
  * @param {any} def @param {{ params: any, now: Date, timeZone?: string, fnCount: { n: number }, clock: any }} o
  */
+/** A subreport's report id: an expression is evaluated first, then the id must pass the server's id rule. Only then
+ *  does loadReport see it, so "../" or a parameter's value cannot name a file or a report outside the saved ones. */
+function subreportId(raw, ctx) {
+  const id = typeof raw === 'string' && raw.startsWith('=') ? evalValue(raw, ctx) : raw;
+  if (!isReportId(id)) throw new Error(`"${String(id).slice(0, 80)}" is not a report id`);
+  return id;
+}
+
 export function baseContext(def, { params, now, timeZone, fnCount, clock }) {
   return {
     params, globals: { ExecutionTime: now, ReportName: def.name || '', PageNumber: 1, TotalPages: 1 },
