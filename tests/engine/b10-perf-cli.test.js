@@ -75,3 +75,24 @@ describe('B10 A1.4 pw render -f pdf streams', () => {
     expect(r.warnings).toEqual((await render(def, { fontStore })).warnings);
   }, 60000);
 });
+
+describe('N45: pw render stopped by a signal', () => {
+  // Docker, Kubernetes and CI stop a job with SIGTERM; a closed terminal sends SIGHUP; Ctrl+C is SIGINT
+  for (const [sig, code] of [['SIGTERM', 143], ['SIGINT', 130], ['SIGHUP', 129]]) {
+    it(`${sig} removes the temporary file, keeps the old PDF and exits ${code}`, async () => {
+      const { spawn } = await import('node:child_process');
+      const dir = fs.mkdtempSync(path.join(tmp, 'sig-')), file = path.join(dir, 'big.pw.json'), out = path.join(dir, 'big.pdf');
+      fs.writeFileSync(file, JSON.stringify(ledger(60000)));
+      fs.writeFileSync(out, 'OLD');
+      const child = spawn(process.execPath, [path.join(ROOT, 'bin/pw.mjs'), 'render', file, '-o', out], { cwd: ROOT, stdio: 'ignore' });
+      const part = () => fs.readdirSync(dir).find(f => f.endsWith('.part') && fs.statSync(path.join(dir, f)).size > 0);
+      for (let i = 0; i < 300 && !part(); i++) await new Promise(r => setTimeout(r, 50)); // the export is writing
+      expect(part(), 'the export started writing before the signal').toBeTruthy();
+      child.kill(sig);
+      const exit = await new Promise(r => child.on('exit', (c, s) => r(c ?? s)));
+      expect(exit).toBe(code);
+      expect(fs.readdirSync(dir).filter(f => f.endsWith('.part'))).toEqual([]);
+      expect(fs.readFileSync(out, 'utf8')).toBe('OLD');
+    }, 60000);
+  }
+});

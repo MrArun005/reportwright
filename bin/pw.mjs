@@ -106,6 +106,10 @@ async function writePdf(def, { parameters = {}, data, base, internal = false, fi
   const d = withData(def, data);
   const tmp = `${out}.${process.pid}.part`;
   const sink = fs.createWriteStream(tmp);
+  // N45: stopped by Ctrl+C, SIGTERM (Docker, Kubernetes, CI) or a closed terminal: remove the temporary file, exit 128+n
+  const stop = (sig, n) => () => { sink.destroy(); fs.rmSync(tmp, { force: true }); process.exit(128 + n); };
+  const sigs = [['SIGINT', 2], ['SIGTERM', 15], ['SIGHUP', 1]].map(([s, n]) => [s, stop(s, n)]);
+  for (const [s, f] of sigs) process.once(s, f);
   try {
     const r = await exportPdfStream(d, { fontStore, subset, parameters, exportData, baseUrl: base, allowHosts: baseHost(base, internal), ...(file ? { loadReport: siblingLoader(file) } : {}),
       sorter: canSpill() ? spillSorter() : undefined, ...pdfOpts }, sink); // a sort's rows spill to temporary files
@@ -116,6 +120,8 @@ async function writePdf(def, { parameters = {}, data, base, internal = false, fi
     sink.destroy();
     fs.rmSync(tmp, { force: true });
     renderFailed(e, base);
+  } finally {
+    for (const [s, f] of sigs) process.off(s, f);
   }
 }
 

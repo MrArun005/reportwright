@@ -5,6 +5,7 @@ All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. T
 ## 0.13.1 — unreleased
 
 ### Fixed
+- **N45: `pw render` stopped by a signal leaves no temporary file.** SIGTERM (Docker, Kubernetes, CI), SIGINT (Ctrl+C) and SIGHUP remove `<file>.<pid>.part`, keep an older PDF at the path as it was, and exit 143, 130 or 129. Before, every one of them left the `.part` file. Test: tests/engine/b10-perf-cli.test.js.
 - **N41: a copied worker starts.** The npm package's `engine.worker.js` bundles its libraries (bidi-js, fontkit) instead of importing them by name, so an esbuild app that copies it next to its bundle renders in the worker (it crashed with "Failed to resolve module specifier bidi-js" and fell back to the main thread). Barcodes and the standard-font metrics are files next to it (`engine.worker.bwip.js`, `engine.worker.stdfonts.js`), as in the browser build; the README says to copy `engine.worker*.js`. Test: tests/e2e/b11-esbuild-worker.mjs.
 - **N42: the designer Outline passes axe.** It was a `listbox` whose rows also hold their move buttons (a listbox may hold only options: aria-required-children, critical). The rows are now toggle buttons (`aria-pressed`) in a labelled group, with the same keyboard: one Tab stop, Up/Down/Home/End, Enter or Space selects.
 
