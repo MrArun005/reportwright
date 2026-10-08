@@ -33,10 +33,10 @@ describe('scan-packages', () => {
     expect(scanDir(dir, 'react').problems).toEqual(['missing: repository', 'missing: license', 'missing: licence file', 'missing: README']);
   });
 
-  it('network and environment use fail outside engine, cli and viewer (fonts-cjk may download)', () => {
+  it('network and environment use fail outside engine, cli and viewer (fonts-cjk may download, and read its cache folder from the environment)', () => {
     const files = { 'index.js': "const r = await fetch('https://x');\nconst k = process.env.HOME;\n" };
     expect(scanDir(pkg(files), 'react').problems).toEqual(['network: index.js:1', 'env: index.js:2']);
-    expect(scanDir(pkg(files), 'fonts-cjk').problems).toEqual(['env: index.js:2']);
+    expect(scanDir(pkg(files), 'fonts-cjk').problems).toEqual([]);
     expect(scanDir(pkg(files), 'engine').problems).toEqual([]);
   });
 });
