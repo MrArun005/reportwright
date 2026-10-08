@@ -42,6 +42,8 @@ export function createStreamTagger(w, { maxElements = Infinity } = {}) {
   return {
     /** structure elements so far */
     get count() { return count; },
+    /** elements of the page being drawn, held until it ends */
+    get held() { return els.length + rows.size + mcids.length; },
     /** a new page (window: the paged window it came from; row ids are its own) @param {number} window */
     page(window) { mcids = []; rows = new Map(); els = []; last = null; links = false; win = window; },
     /**
@@ -120,6 +122,7 @@ export function createStreamTagger(w, { maxElements = Infinity } = {}) {
         extra += ` /StructParents ${key++}`;
       }
       if (links) extra += ' /Tabs /S';
+      mcids = []; rows = new Map(); els = []; last = null; // nothing of the page stays (N44)
       return extra;
     },
     /**
