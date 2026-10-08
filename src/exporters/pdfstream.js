@@ -16,18 +16,21 @@
  * ponytail: no encryption, PDF/A, tagging, forms or signing yet: those stay on exportPdf (pdf.js) for now.
  */
 import fontkitModule from '@pdf-lib/fontkit';
-import { zlibSync } from 'fflate';
 import { render } from '../engine/index.js';
 import { planPaged } from '../engine/paged.js';
 import { safeUrl, drillUrl, asciiUrl } from '../engine/url.js';
 import { exportPdf } from './pdf.js';
-import { Content, drawRun, glyphText, insideClip, col, BLACK, n2, n4, KAPPA, cleanText } from './pdfpaint.js';
+import { Content, drawRun, glyphText, insideClip, col, BLACK, n2, n4, KAPPA, cleanText, deflate } from './pdfpaint.js';
 
 const fontkit = /** @type {any} */ (fontkitModule).default || fontkitModule;
 const CHUNK = 64 * 1024;
 const LEAF = 64; // pages per node of the page tree
+const OBJSTM = 100; // small objects per object stream
+const IN_FLIGHT = 8; // pages compressing at once (zlib's 4 threads busy, the next drawn meanwhile)
 const hex4 = (/** @type {number} */ id) => id.toString(16).padStart(4, '0');
 const num = (/** @type {number} */ v) => String(Math.round(v * 1000) / 1000);
+/** a byte in a literal string: ( ) \\ escaped, CR as \\r (a bare CR would read as a line end) */
+const esc = (/** @type {number} */ b) => (b === 0x28 || b === 0x29 || b === 0x5c ? '\\' + String.fromCharCode(b) : b === 0x0d ? '\\r' : String.fromCharCode(b));
 
 /**
  * @typedef {{ write(u8: Uint8Array): any, once?: (ev: string, cb: () => void) => any }} Sink
@@ -40,10 +43,9 @@ const num = (/** @type {number} */ v) => String(Math.round(v * 1000) / 1000);
  * @param {Sink} sink
  * @param {{ fontStore: import('../engine/text/fonts.js').FontStore, fonts?: string[],
  *   subset?: (font: Uint8Array, codePoints: Iterable<number>, opt?: { glyphs?: Iterable<number> }) => Promise<Uint8Array>,
- *   id?: string, compress?: number }} opt
+ *   id?: string }} opt
  *   fonts: font keys to name now (F1, F2… in this order); any other font is named on first use.
  *   subset: subset.js's subsetter; without it fonts embed in full. id: the file ID (32 hex digits), else random.
- *   compress: the deflate level for page streams (default 6).
  */
 export function createPdfStream(sink, opt) {
   const { fontStore } = opt;
@@ -71,28 +73,45 @@ export function createPdfStream(sink, opt) {
     parts.push(u8); size += u8.length; pos += u8.length;
     return size >= CHUNK ? flush() : undefined;
   };
+  /** @type {[number, string][]} small objects waiting for their object stream */
+  let batch = [];
+  /** an object stream of the waiting objects; each one's place: -(stream × OBJSTM + index) - 1 in offsets */
+  const writeBatch = async () => {
+    if (!batch.length) return;
+    const b = batch; batch = [];
+    const sn = reserve();
+    let head = '', body = '';
+    b.forEach(([n, d], i) => { head += `${n} ${body.length} `; body += `${d}\n`; offsets[n] = -(sn * OBJSTM + i) - 1; });
+    const raw = latin1(head + body);
+    await writeObj(sn, `<< /Type /ObjStm /N ${b.length} /First ${head.length} /Filter /FlateDecode >>`, await deflate(raw));
+  };
   /** an object: its dictionary (or any value), and its stream's bytes (already filtered) */
   /** @param {number} n @param {string} dict @param {Uint8Array} [stream] */
   const writeObj = async (n, dict, stream) => {
+    if (!stream) { // small objects go into object streams, OBJSTM at a time (compressed together, as pdf-lib saves)
+      batch.push([n, dict]);
+      offsets[n] = NaN; // placed when its object stream is written
+      return batch.length >= OBJSTM ? writeBatch() : undefined;
+    }
     offsets[n] = pos;
-    if (!stream) return put(`${n} 0 obj\n${dict}\nendobj\n`);
     await put(`${n} 0 obj\n${dict.replace(/>>\s*$/, `/Length ${stream.length} >>`)}\nstream\n`);
     await put(stream);
     return put('\nendstream\nendobj\n');
   };
-  const deflate = (/** @type {Uint8Array} */ b) => zlibSync(b, { level: /** @type {any} */ (opt.compress ?? 6) });
   put('%PDF-1.7\n%\xe2\xe3\xcf\xd3\n');
 
   // fonts: a resource name and the Type0 font's object number each, now; their glyphs are recorded as pages draw
   /** @type {Map<string, { name: string, ref: number, font: any, cps: Set<number>, glyphs: Map<number, string>, memo: Map<number, string> }>} */
   const fonts = new Map();
   let pages = 0, done = false;
+  /** @type {any[]} pages whose streams are compressing */
+  const inFlight = [];
   /** a font's record: its resource name and Type0 object number are reserved on first use (its objects come at the end) */
   const fontOf = (/** @type {string} */ key) => {
     let f = fonts.get(key);
     if (!f) {
       if (done) throw new Error('The PDF is finished');
-      fonts.set(key, f = { name: `F${fonts.size + 1}`, ref: reserve(), font: fontStore.get(key), cps: new Set([32]), glyphs: new Map(), memo: new Map() });
+      fonts.set(key, f = { name: `F${fonts.size + 1}`, ref: reserve(), font: fontStore.get(key), cps: new Set([32]), glyphs: new Map(), memo: new Map(), lit: new Map() });
     }
     return f;
   };
@@ -129,6 +148,24 @@ export function createPdfStream(sink, opt) {
           if (!F.glyphs.has(id)) F.glyphs.set(id, ch);
         }
         out += h;
+      }
+      return out;
+    },
+    /**
+     * The same glyphs as a literal string's body, two bytes each, escaped (as pdf.js draws plain text): ( … ) Tj.
+     * @param {string} key @param {string} text
+     */
+    literal(key, text) {
+      const F = fontOf(key);
+      let out = '';
+      for (const ch of text) {
+        const cp = /** @type {number} */ (ch.codePointAt(0));
+        let b = F.lit.get(cp);
+        if (b === undefined) {
+          const id = parseInt(w.encode(key, ch), 16);
+          F.lit.set(cp, b = esc(id >> 8) + esc(id & 255));
+        }
+        out += b;
       }
       return out;
     },
@@ -181,11 +218,12 @@ export function createPdfStream(sink, opt) {
       const i = pages++;
       const ref = w.pageRef(i);
       if (i % LEAF === 0) leaves.push(reserve());
-      const contents = reserve();
-      await writeObj(contents, '<< /Filter /FlateDecode >>', deflate(typeof p.content === 'string' ? latin1(p.content) : p.content));
-      const annots = [];
-      for (const a of p.annots || []) annots.push(await w.object(a));
-      await writeObj(ref, `<< /Type /Page /Parent ${leaves[leaves.length - 1]} 0 R /MediaBox [0 0 ${num(p.width)} ${num(p.height)}] /Resources ${resRef} 0 R /Contents ${contents} 0 R${annots.length ? ` /Annots [${annots.map(a => `${a} 0 R`).join(' ')}]` : ''} >>`);
+      const contents = reserve(), parent = leaves[leaves.length - 1];
+      // the stream compresses on zlib's threads while the next pages are drawn: a few pages wait, in order
+      const z = deflate(typeof p.content === 'string' ? latin1(p.content) : p.content);
+      z.catch(() => {}); // awaited (and thrown) when the page is written
+      inFlight.push({ ref, contents, parent, p: { width: p.width, height: p.height, annots: p.annots }, z });
+      while (inFlight.length > IN_FLIGHT) await writeNext();
     },
     /**
      * The end of the file: totals, fonts, resources, page tree, outline, catalog, Info, xref, trailer.
@@ -194,8 +232,9 @@ export function createPdfStream(sink, opt) {
      */
     async finish(o = {}) {
       if (done) throw new Error('The PDF is finished');
-      done = true;
       if (!pages) await w.addPage({ width: 595.28, height: 841.89, content: '' }); // a PDF has at least one page
+      while (inFlight.length) await writeNext();
+      done = true;
       // "of Y": the number's glyphs are recorded before the fonts are subset
       for (const t of totals) {
         const F = fontOf(t.font), text = String(pages), hex = w.encode(t.font, text);
@@ -204,7 +243,7 @@ export function createPdfStream(sink, opt) {
         const tw = adv * t.size / F.font.unitsPerEm;
         const dx = t.align === 'right' ? t.width - tw : t.align === 'center' ? (t.width - tw) / 2 : 0;
         await writeObj(t.ref, `<< /Type /XObject /Subtype /Form /BBox [${num(Math.min(0, dx))} ${num(-t.size)} ${num(Math.max(t.width, dx + tw))} ${num(2 * t.size)}] /Resources << /Font << /${F.name} ${F.ref} 0 R >> >> /Filter /FlateDecode >>`,
-          deflate(latin1(`${t.color} rg BT /${F.name} ${num(t.size)} Tf ${num(dx)} 0 Td <${hex}> Tj ET`)));
+          await deflate(latin1(`${t.color} rg BT /${F.name} ${num(t.size)} Tf ${num(dx)} 0 Td <${hex}> Tj ET`)));
       }
       const fontDict = [];
       for (const [key, F] of fonts) {
@@ -237,15 +276,35 @@ export function createPdfStream(sink, opt) {
 
       // object numbers reserved and never used (a link to a page that never came): null objects keep the xref whole
       for (let n = 1; n < nextNum; n++) if (offsets[n] === undefined) await writeObj(n, 'null');
-      const xref = pos;
-      await put(`xref\n0 ${nextNum}\n0000000000 65535 f \n`);
-      for (let n = 1; n < nextNum; n++) await put(`${String(offsets[n]).padStart(10, '0')} 00000 n \n`);
+      await writeBatch();
+      // a cross-reference stream (object streams need one): per object its type, offset or object stream, index
+      const xn = reserve(), size = nextNum, xref = pos;
+      offsets[xn] = xref;
+      const rows = new Uint8Array(size * 7);
+      rows.set([0, 0, 0, 0, 0, 0xff, 0xff], 0); // object 0: free
+      for (let n = 1; n < size; n++) {
+        const o = offsets[n], at = n * 7;
+        if (o >= 0) { rows[at] = 1; rows[at + 1] = o / 2 ** 24 & 255; rows[at + 2] = o >>> 16 & 255; rows[at + 3] = o >>> 8 & 255; rows[at + 4] = o & 255; }
+        else { const k = -o - 1, sn = Math.floor(k / OBJSTM), i = k % OBJSTM; rows[at] = 2; rows[at + 1] = sn / 2 ** 24 & 255; rows[at + 2] = sn >>> 16 & 255; rows[at + 3] = sn >>> 8 & 255; rows[at + 4] = sn & 255; rows[at + 6] = i; }
+      }
       const id = opt.id || [...globalThis.crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
-      await put(`trailer\n<< /Size ${nextNum} /Root ${catalog} 0 R /Info ${info} 0 R /ID [<${id}> <${id}>] >>\nstartxref\n${xref}\n%%EOF\n`);
+      const z = await deflate(rows);
+      await put(`${xn} 0 obj\n<< /Type /XRef /Size ${size} /W [1 4 2] /Root ${catalog} 0 R /Info ${info} 0 R /ID [<${id}> <${id}>] /Filter /FlateDecode /Length ${z.length} >>\nstream\n`);
+      await put(z);
+      await put(`\nendstream\nendobj\nstartxref\n${xref}\n%%EOF\n`);
       await flush();
       return { pages, bytes: pos };
     },
   };
+
+  /** the oldest page waiting for its compressed stream: written, stream and dictionary */
+  async function writeNext() {
+    const { ref, contents, parent, p, z } = /** @type {any} */ (inFlight.shift());
+    await writeObj(contents, '<< /Filter /FlateDecode >>', await z);
+    const annots = [];
+    for (const a of p.annots || []) annots.push(await w.object(a));
+    await writeObj(ref, `<< /Type /Page /Parent ${parent} 0 R /MediaBox [0 0 ${num(p.width)} ${num(p.height)}] /Resources ${resRef} 0 R /Contents ${contents} 0 R${annots.length ? ` /Annots [${annots.map(a => `${a} 0 R`).join(' ')}]` : ''} >>`);
+  }
 
   /** @param {{ ref: number, kids: number[], count: number, parent?: number }[]} nodes */
   async function writeNodes(nodes) {
@@ -278,7 +337,7 @@ export function createPdfStream(sink, opt) {
     const k = 1000 / f.unitsPerEm, s = (/** @type {number} */ v) => String(v * k);
     const desc = reserve(), file = reserve(), cid = reserve(), cmap = reserve();
     const fileDict = cff ? '<< /Subtype /OpenType /Filter /FlateDecode >>' : `<< /Length1 ${bytes.length} /Filter /FlateDecode >>`;
-    await writeObj(file, fileDict, deflate(bytes));
+    await writeObj(file, fileDict, await deflate(bytes));
     const bb = f.bbox, italic = f.italicAngle || 0;
     const flags = (f.post?.isFixedPitch ? 1 : 0) | 4 | (italic ? 64 : 0);
     await writeObj(desc, `<< /Type /FontDescriptor /FontName /${base} /Flags ${flags} /FontBBox [${s(bb.minX)} ${s(bb.minY)} ${s(bb.maxX)} ${s(bb.maxY)}] /ItalicAngle ${num(italic)} /Ascent ${s(f.ascent)} /Descent ${s(f.descent)} /CapHeight ${s(f.capHeight || f.ascent)} /XHeight ${s(f.xHeight || 0)} /StemV 0 /${cff ? 'FontFile3' : 'FontFile2'} ${file} 0 R >>`);
@@ -292,7 +351,7 @@ export function createPdfStream(sink, opt) {
       i = j + 1;
     }
     await writeObj(cid, `<< /Type /Font /Subtype /${cff ? 'CIDFontType0' : 'CIDFontType2'} /BaseFont /${base} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ${desc} 0 R /W [${W}]${cff ? '' : ' /CIDToGIDMap /Identity'} >>`);
-    await writeObj(cmap, '<< /Filter /FlateDecode >>', deflate(latin1(toUnicode(F.glyphs))));
+    await writeObj(cmap, '<< /Filter /FlateDecode >>', await deflate(latin1(toUnicode(F.glyphs))));
     await writeObj(F.ref, `<< /Type /Font /Subtype /Type0 /BaseFont /${base} /Encoding /Identity-H /DescendantFonts [${cid} 0 R] /ToUnicode ${cmap} 0 R >>`);
   }
 
@@ -458,7 +517,7 @@ export async function writePagedPdf(plan, opts, sink) {
           const clipped = it.clip && !insideClip(it, vmetrics(it.font));
           if (clipped) { c.q(); c.s += `${n2(it.clip.x)} ${n2(H - it.clip.y - it.clip.h)} ${n2(it.clip.w)} ${n2(it.clip.h)} re W n\n`; }
           for (const l of it.lines) {
-            if (!l.runs) { c.text(pf(it.font), it.size, color, l.x, H - l.y, `<${w.encode(it.font, cleanText(l.text))}>`, true); continue; }
+            if (!l.runs) { c.text(pf(it.font), it.size, color, l.x, H - l.y, w.literal(it.font, cleanText(l.text))); continue; }
             for (const r of l.runs) {
               const g = shapedOf(r.font), spans = new WeakMap();
               glyphText(r, fontStore.get(r.font), g, spans);

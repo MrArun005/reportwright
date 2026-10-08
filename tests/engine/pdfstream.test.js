@@ -30,21 +30,40 @@ const pdftotext = (bytes, ...args) => {
   const r = spawnSync('pdftotext', [...args, tmp(bytes), '-']);
   return { text: r.stdout.toString(), err: r.stderr.toString() };
 };
-/** every xref entry points at its "n 0 obj", and startxref at the xref */
+/**
+ * The cross-reference stream: every object it lists is where it says (at its offset, or in an object stream that
+ * holds that many objects), startxref points at it. Returns the text of every object (object streams unpacked).
+ */
 function checkXref(pdf) {
   const s = Buffer.from(pdf).toString('latin1');
   expect(s.startsWith('%PDF-1.7\n')).toBe(true);
   const at = Number(s.match(/startxref\s+(\d+)\s+%%EOF\s*$/)[1]);
-  expect(s.slice(at, at + 4)).toBe('xref');
-  const [, first, count] = s.slice(at).match(/^xref\n(\d+) (\d+)\n/);
-  const body = s.slice(at).split('\n').slice(2, 2 + Number(count));
-  body.forEach((line, i) => {
-    if (i + Number(first) === 0) return expect(line).toBe('0000000000 65535 f ');
-    expect(line).toMatch(/^\d{10} 00000 n $/);
-    const off = Number(line.slice(0, 10));
-    expect(s.slice(off, off + 12)).toMatch(new RegExp(`^${i + Number(first)} 0 obj`));
-  });
-  expect(s).toMatch(new RegExp(`trailer\\n<< /Size ${count} /Root \\d+ 0 R`));
+  const streamOf = (off) => {
+    const head = s.slice(off, off + 400).match(/^(\d+) 0 obj\n(<<.*?>>)\nstream\n/s);
+    const len = Number(head[2].match(/\/Length (\d+)/)[1]);
+    const from = off + head[0].length;
+    return { n: Number(head[1]), dict: head[2], data: zlib.inflateSync(pdf.subarray(from, from + len)) };
+  };
+  const x = streamOf(at);
+  expect(x.dict).toMatch(/\/Type \/XRef/);
+  expect(x.dict).toMatch(/\/W \[1 4 2\]/);
+  const size = Number(x.dict.match(/\/Size (\d+)/)[1]);
+  expect(x.data.length).toBe(size * 7);
+  let text = '';
+  const stms = new Map();
+  for (let n = 1; n < size; n++) {
+    const e = x.data.subarray(n * 7, n * 7 + 7), f = e.readUInt32BE(1);
+    if (e[0] === 1) { expect(s.slice(f, f + 12)).toMatch(new RegExp(`^${n} 0 obj`)); continue; }
+    expect(e[0]).toBe(2);
+    if (!stms.has(f)) {
+      const o = x.data.readUInt32BE(f * 7 + 1), st = streamOf(o);
+      expect(st.dict).toMatch(/\/Type \/ObjStm/);
+      stms.set(f, Number(st.dict.match(/\/N (\d+)/)[1]));
+      text += st.data.toString('latin1');
+    }
+    expect(e.readUInt16BE(5)).toBeLessThan(stms.get(f));
+  }
+  return text + s;
 }
 
 /** to a tenth of a point, as pdf.js's Content places text */
@@ -135,7 +154,7 @@ describe('streaming PDF writer', () => {
     expect(pages[6]).toMatch(/Page 7 of\s*7/);
     const doc = await PDFDocument.load(pdf);
     expect(doc.getPageCount()).toBe(7);
-    const s = pdf.toString('latin1');
+    const s = checkXref(pdf);
     expect(s).toContain('/Type /Outlines');
     expect(s).toMatch(/\/Dest \[\d+ 0 R \/XYZ null 150 null\]/);
   });

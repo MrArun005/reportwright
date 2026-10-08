@@ -10,7 +10,7 @@ import { createTagger } from './pdfua.js';
 import { withDeadline } from './deadline.js';
 import { pngProblem } from './png.js';
 import { needsTableData } from './regions.js';
-import { Content, drawRun, glyphText, insideClip, col, BLACK, n2, n4, hex4, KAPPA, cleanText, latin1 } from './pdfpaint.js';
+import { Content, drawRun, glyphText, insideClip, col, BLACK, n2, n4, hex4, KAPPA, cleanText, latin1, deflate, NODE_ZLIB } from './pdfpaint.js';
 
 const fontkit = /** @type {any} */ (fontkitModule).default || fontkitModule;
 
@@ -600,24 +600,6 @@ function subsetTag(bytes) {
   return tag;
 }
 
-
-/**
- * zlib (Flate) compression: Node's zlib on its thread pool (pages compress in parallel, off the main thread), else
- * the platform's CompressionStream (browsers; in Node it is the same zlib behind web streams, slower), else fflate.
- */
-async function deflate(bytes) {
-  // a few at a time: each zlib job holds ~260 KB of state, so a thousand pages started at once held ~250 MB
-  if (zslots.free > 0) zslots.free--; else await new Promise((ok) => zslots.wait.push(ok));
-  try { return await deflateNow(bytes); } finally { const next = zslots.wait.shift(); if (next) next(); else zslots.free++; }
-}
-const zslots = { free: 4, wait: /** @type {(() => void)[]} */ ([]) }; // ponytail: 4 = libuv's default thread pool
-const NODE_ZLIB = /** @type {any} */ (globalThis).process?.getBuiltinModule?.('node:zlib');
-async function deflateNow(bytes) {
-  const zlib = NODE_ZLIB;
-  if (zlib) return new Promise((ok, fail) => zlib.deflate(bytes, { level: 9 }, (e, z) => (e ? fail(e) : ok(z))));
-  if (typeof CompressionStream === 'undefined') return (await import('fflate')).zlibSync(bytes);
-  return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
-}
 
 function roundRect(x, y, w, h, r) {
   r = Math.min(r, w / 2, h / 2);

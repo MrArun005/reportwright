@@ -143,6 +143,7 @@ describe('exportPdfStream', () => {
     const [x, y] = [await PDFDocument.load(today), await PDFDocument.load(pdf)];
     expect(y.getPageCount()).toBe(x.getPageCount());
     expect(r.pages).toBe(x.getPageCount());
+    expect(pdf.length / today.length).toBeLessThan(1.05); // object streams, literal text, zlib 9: about exportPdf's size
   });
 
   it('a report that does not page is exportPdf\'s file, byte for byte', async () => {
