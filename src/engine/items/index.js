@@ -709,6 +709,7 @@ register('table', {
           const dctx = { ...ctx, fields: grows[i], aggRows: grows, aggIndex: i, rowNumber: rowNo };
           const u0 = units.length;
           for (const r of item.detail || []) layRow(r, dctx, 'detail', { level: groups.length });
+          if (lc.markRows && units[u0]) { units[u0].rowHead = true; for (let k = u0; k < units.length; k++) units[k].dataRow = rowNo; } // paged.js: where a window may start
           // rows of one group instance: paginate keeps widows off them (no lone row at a page foot or head)
           if (groups.length && item.widowControl !== false) for (let k = u0; k < units.length; k++) units[k].grp = tableKey + keyPath;
           // pageBreakEvery: a new page after every N detail rows (BIRT's pageBreakInterval)

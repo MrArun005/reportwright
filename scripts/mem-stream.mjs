@@ -3,7 +3,8 @@
 // a stream that a reader drains, and reports the render process's peak resident memory above its start (engine loaded),
 // sampled every 10 ms. The render process gets the small worker's heap (--max-old-space-size=192), as a streaming render
 // gets in the server's pool.
-//   node scripts/mem-stream.mjs [format=csv] [rows=100000,300000] [shape=plain|sorted|grouped]
+//   node scripts/mem-stream.mjs [format=csv|xlsx|pdf] [rows=100000,300000] [shape=plain|sorted|grouped]
+// pdf: exportPdfStream directly (src/engine/paged.js windows of rows → src/exporters/pdfstream.js), no server.
 // Prints one JSON line per run, then the flat-line verdict: peak(last) - peak(first) < FLAT_MB (30).
 // Never run 1M on a small laptop: project it from the slope (rows are linear).
 import { spawn } from 'node:child_process';
@@ -63,7 +64,37 @@ export function runOnce(format, rows, shape, url) {
   });
 }
 
+/** pdf: exportPdfStream (paged.js windows → pdfstream.js) to a sink that counts bytes, as the server will pipe it */
+async function childPdf(rows, shape, url) {
+  const fs = await import('node:fs');
+  const { FontStore } = await import('../src/engine/index.js');
+  const { fontFile } = await import('../src/engine/text/fonts.js');
+  const { createSubsetter } = await import('../src/exporters/subset.js');
+  const { exportPdfStream } = await import('../src/exporters/pdfstream.js');
+  const fontStore = new FontStore(async (k) => fs.readFileSync(path.join(ROOT, 'public/fonts', fontFile(k))));
+  const subset = createSubsetter(() => fs.promises.readFile(path.join(ROOT, 'public/harfbuzz-subset.wasm')));
+  const run = async (u) => {
+    let bytes = 0;
+    const r = await exportPdfStream(memReport(u, shape, 'pdf'), { fontStore, subset, allowHosts: ['127.0.0.1'] }, { write: async (u8) => { bytes += u8.length; await new Promise(ok => setImmediate(ok)); } });
+    return { ...r, bytes };
+  };
+  await run(`${url.split('?')[0]}?n=100`); // warm: the engine, the fonts, HarfBuzz
+  global.gc?.();
+  await new Promise(r => setTimeout(r, 200));
+  const rss = () => process.memoryUsage.rss() / 1048576;
+  const base = rss();
+  let peak = base;
+  const t = setInterval(() => { const x = rss(); if (x > peak) peak = x; }, 10);
+  const t0 = Date.now();
+  const r = await run(url);
+  clearInterval(t);
+  peak = Math.max(peak, rss());
+  process.stdout.write(JSON.stringify({ format: 'pdf', rows, shape, streamed: r.streamed, why: r.why, pages: r.pages, baseMB: Math.round(base), peakMB: Math.round(peak), aboveBaseMB: Math.round(peak - base), bytes: r.bytes, ms: Date.now() - t0 }) + '\n');
+  process.exit(0);
+}
+
 async function child(format, rows, shape, url) {
+  if (format === 'pdf') return childPdf(rows, shape, url);
   const src = pathToFileURL(path.join(ROOT, 'src') + '/').href;
   const { register } = await import('node:module');
   register(`data:text/javascript,${encodeURIComponent(`export function resolve(s, c, next) { return next(s.startsWith('@/') ? ${JSON.stringify(src)} + s.slice(2) : s, c); }`)}`);

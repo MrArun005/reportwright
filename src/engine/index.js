@@ -70,6 +70,8 @@ export const BAND_ITEMS = 250000; // page header and footer items drawn per rend
  * @property {{ items: number }} [reuseBudget] internal: items drawn through report parts so far
  * @property {{ n: number }} [fnCount] internal: report function calls so far
  * @property {any} [imageBudget] internal: the images drawn so far, shared with subreports
+ * @property {{ offset: number, total?: number|null, final: boolean }} [pageWindow] internal (paged.js): these pages are a window of a
+ *   longer report: numbered from offset + 1 of total ('…' when not known yet); final: the window holds the report's last page
  */
 /**
  * The text a render may draw: the definition's own and the string values of the data rows (and one level of nested
@@ -198,6 +200,7 @@ export async function render(def0, opts = {}) {
       bodyWidth: opts.bodyWidth ?? page.bodyWidth,
       images: def.images || {}, imageBudget,
       cellItems: { left: 100000 }, // rows of items inside table cells, for the whole render (items/index.js)
+      markRows: !!opts.pageWindow, // paged.js: detail units carry their row number (dataRow, rowHead)
     };
     return lc;
   };
@@ -338,7 +341,10 @@ export async function render(def0, opts = {}) {
         const bodyTop = mt + g.hH;
         const items = [];
         const cut = lc.rowBudget?.cut;
-        const globals = { ...baseCtx.globals, PageNumber: n - secStart[n] + 1, TotalPages: cut ? '…' : secLen.get(secStart[n]), OverallPageNumber: n + 1, OverallTotalPages: cut ? '…' : total };
+        // pageWindow (paged.js): these pages are a window of a longer report, from page offset + 1, of total pages
+        const win = opts.pageWindow, off = win ? win.offset : 0, all = win ? win.total ?? '…' : null;
+        const globals = { ...baseCtx.globals, PageNumber: n - secStart[n] + 1 + (secStart[n] ? 0 : off), TotalPages: cut ? '…' : all ?? secLen.get(secStart[n]), OverallPageNumber: n + 1 + off, OverallTotalPages: cut ? '…' : all ?? total };
+        const isFirst = n + off === 0, isLast = n === total - 1 && (!win || win.final);
         const plc = makeLc(globals, true);
         const band = (section, y0, isFirst, isLast) => {
           if (!section) return;
@@ -360,7 +366,7 @@ export async function render(def0, opts = {}) {
           for (const u of r.units) if (c.paged) placeItems(u.items, ml, y0 + u.top, items); else for (const it of shiftItems(u.items, ml, y0 + u.top)) items.push(it);
         };
         // a section's own band: first and last are the section's pages; the shared one: the report's
-        band(g.hdr, mt, g.own.h ? k === 0 : n === 0, g.own.h ? last : n === total - 1);
+        band(g.hdr, mt, g.own.h ? k === 0 : isFirst, g.own.h ? last : isLast);
         const frozen = []; // table headers on this page and where each table ends: viewers keep them in view while scrolling
         for (let c = 0; c < colCount; c++) {
           const p = slices[k * colCount + c];
@@ -386,15 +392,20 @@ export async function render(def0, opts = {}) {
             placeItems(u.items, cx, bodyTop + off + (u.top - p.top), items);
           }
         }
-        band(g.ftr, ph - pg.margins.bottom - g.fH, g.own.f ? k === 0 : n === 0, g.own.f ? last : n === total - 1);
+        band(g.ftr, ph - pg.margins.bottom - g.fH, g.own.f ? k === 0 : isFirst, g.own.f ? last : isLast);
         let j = 0; // bookmarks leave the page's items (compacted in place: a page holds hundreds of items)
         for (let i = 0; i < items.length; i++) {
           const it = items[i];
-          if (it.t === 'bookmark') (it.heading ? headings : bookmarks).push({ label: it.label, page: n + 1, y: it.y, level: it.level || 0, ...(secStart[n] ? { shown: n - secStart[n] + 1 } : {}) });
+          if (it.t === 'bookmark') (it.heading ? headings : bookmarks).push({ label: it.label, page: n + 1 + off, y: it.y, level: it.level || 0, ...(secStart[n] ? { shown: n - secStart[n] + 1 } : {}) });
           else items[j++] = it;
         }
         items.length = j;
         const out = frozen.length ? { items, frozen } : { items };
+        if (win) { // the first data row on this page, and whether it starts here (not a piece of a row split across pages)
+          const s0 = slices[k * colCount];
+          const du = s0 && s0.units.find(u => u.dataRow != null);
+          if (du) { out.firstRow = du.dataRow; out.rowHead = !!du.rowHead; }
+        }
         // a section with another page size: the page carries its own
         if (pg.width !== first.width || ph !== pageH) { out.width = pg.width; out.height = ph; }
         pages.push(out);
