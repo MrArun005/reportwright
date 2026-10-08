@@ -3702,24 +3702,3 @@ Sep 2026
 ← Back to the watchlist
 Page 18 of 18
 SAMPLE DATA · synthetic data, seed 20261004 · https://github.com/MrArun005
---- warnings
-Watermark: The field "watermark" does not exist; check the spelling, or the data set that has it
-HdrName: The field "periodEnd" does not exist; check the spelling, or the data set that has it
-CoverTitle: The field "title" does not exist; check the spelling, or the data set that has it
-CoverSub: The field "subtitle" does not exist; check the spelling, or the data set that has it
-CoverPeriod: The field "periodEnd" does not exist; check the spelling, or the data set that has it
-CoverPeriod: The field "periodLabel" does not exist; check the spelling, or the data set that has it
-CoverAuthor: The field "author" does not exist; check the spelling, or the data set that has it
-CoverQR: The field "demoUrl" does not exist; check the spelling, or the data set that has it
-url: The field "demoUrl" does not exist; check the spelling, or the data set that has it
-CoverDemo: The field "demoUrl" does not exist; check the spelling, or the data set that has it
-CoverRepo: The field "repoUrl" does not exist; check the spelling, or the data set that has it
-url: The field "repoUrl" does not exist; check the spelling, or the data set that has it
-CoverSynT: The field "seed" does not exist; check the spelling, or the data set that has it
-Methodology: The field "overdueThresholdDays" does not exist; check the spelling, or the data set that has it
-Methodology: The field "seed" does not exist; check the spelling, or the data set that has it
-RegisterNote: The field "drillThroughTopN" does not exist; check the spelling, or the data set that has it
-DetailNote: The field "drillThroughTopN" does not exist; check the spelling, or the data set that has it
-FtrNote: The field "watermark" does not exist; check the spelling, or the data set that has it
-FtrNote: The field "seed" does not exist; check the spelling, or the data set that has it
-FtrNote: The field "repoUrl" does not exist; check the spelling, or the data set that has it

@@ -128,6 +128,8 @@ describe('N-silent: validate() names mistakes that otherwise pass quietly', () =
     expect(ws([tb({ value: '=Fields.nope' })])).toContain('The field "nope" does not exist; check the spelling');
     expect(ws([tb({ value: '=Parameters.p' })])).toContain('The parameter "p" does not exist; declare it under parameters');
     expect(ws([tb({ value: '=Fields.a' })])).not.toContain('does not exist');
+    // a field of a single-object data set ($.meta) is known
+    expect(validate(report([tb({ value: '=First(Fields.title, "Meta")' })], { data: { rows, meta: { title: 't' } } })).warnings.join('\n')).not.toContain('does not exist');
   });
   it('a zero or negative width or height is flagged (a line may be flat)', () => {
     expect(ws([tb({ h: 0 })])).toContain('height is 0');
