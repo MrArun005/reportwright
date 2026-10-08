@@ -8,7 +8,11 @@ import { FETCHED_TYPES } from '@/engine/data/index.js';
 import { fontFile, setCustomFonts } from '@/engine/text/fonts.js';
 import { exportPdf } from '@/exporters/pdf.js';
 import { exportHtml } from '@/exporters/html.js';
-import { exportCsv } from '@/exporters/csv.js';
+import { exportCsv, writeCsvStream } from '@/exporters/csv.js';
+import { planStream } from '@/engine/stream.js';
+import { textWriter } from './stream-out.js';
+import { spillSorter } from './spill.js';
+import { fetchMaxBytes } from './safeFetch.js';
 import { exportXlsx } from '@/exporters/xlsx.js';
 import { exportDocx } from '@/exporters/docx.js';
 import { exportPptx } from '@/exporters/pptx.js';
@@ -16,7 +20,7 @@ import { createSubsetter } from '@/exporters/subset.js';
 import { readRunnable, defaultPrincipal, vet, canDesign, writtenHost, normalizeSource, principalId } from './perms.js';
 import { serverFetch, NO_BASE_URL } from './safeFetch.js';
 import { pdfSigner } from './sign.js';
-import { runSql } from './sql.js';
+import { runSql, runSqlRows, streamLimits } from './sql.js';
 import { listFonts, readFont, fontsGen } from './fonts.js';
 import { devMode, num as cnum, formulasOn } from './config.js';
 
@@ -166,6 +170,35 @@ function batchFetch(fetch, scope) {
   };
 }
 
+/**
+ * A streaming render (docs/research/STREAMING-1M.md): rows from the source a batch at a time, sorted through spill
+ * files when they need sorting, written to opt.out as they come. Null when the report cannot stream (the caller renders
+ * the model instead). An error before any output is thrown as usual; after it, the caller's stream breaks off.
+ */
+async function streamTo(d, format, def, renderOpts, opt) {
+  const t0 = Date.now();
+  /** @type {any} */
+  let plan;
+  try {
+    plan = await planStream(d, { format, parameters: renderOpts.parameters, timeZone: renderOpts.timeZone, state: renderOpts.state, loadReport: renderOpts.loadReport,
+      fetch: renderOpts.fetch, baseUrl: renderOpts.baseUrl, deadline: renderOpts.deadline, timeoutMs: renderOpts.timeoutMs,
+      sqlRows: (src, p) => runSqlRows(src, p, { ms: Math.max(0, renderOpts.deadline - Date.now()) }), sorter: spillSorter(),
+      maxRows: Number(streamLimits.rows), maxJsonWholeBytes: fetchMaxBytes() });
+  } catch { return null; } // a definition or parameter error: the model path reports it as it always has
+  if (plan.why) return null;
+  const meta = { contentType: FORMATS[format].type, ext: FORMATS[format].ext };
+  const w = textWriter(opt.out, meta);
+  try {
+    await writeCsvStream(plan, w.put, { locale: def.locale, currency: def.currency });
+    await w.end();
+  } catch (e) {
+    if (!opt.out.started && /** @type {any} */ (e).fallBack) return null; // nothing written yet: the model path can still do it
+    throw e;
+  }
+  const model = { pages: [], regions: null, warnings: plan.warnings, streamed: true, stats: { ms: Date.now() - t0, pages: 0, rows: { [plan.name]: plan.stats.rows } } };
+  return { bytes: null, streamed: true, model, ...meta };
+}
+
 export async function renderTo(def, opt = {}) {
   const format = opt.format || 'pdf';
   if (!FORMATS[format]) throw Object.assign(new Error(`Unknown format "${format}". Use pdf, xlsx, docx, pptx, html, csv or json.`), { status: 400 });
@@ -207,6 +240,11 @@ export async function renderTo(def, opt = {}) {
       return Array.isArray(sub?.dataSources) ? { ...sub, dataSources: sub.dataSources.map(normalizeSource) } : sub;
     },
   };
+  // opt.out (a portSink): the data CSV streams when the report allows it (engine/stream.js), else the model path below
+  if (opt.out && dataOnly && !opt.batch && process.env.PW_STREAM !== '0') {
+    const r = await streamTo(d, format, def, renderOpts, opt);
+    if (r) return r;
+  }
   let model = await run(dataOnly);
   if (dataOnly && !model.regions.length) model = await run(false);
   let bytes = null;

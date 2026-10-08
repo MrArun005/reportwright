@@ -53,6 +53,15 @@ const pdf = await res.arrayBuffer();
 
 Response headers: `x-pagewright-pages`, `x-pagewright-ms`, `x-pagewright-warnings`.
 
+**Streaming CSV.** A data CSV (`format: 'csv'`, not `csv: 'layout'`) of a report with one table and row-by-row expressions
+streams: rows are read from the source a batch at a time (JSON arrays, CSV, SQLite, PostgreSQL and MySQL cursors),
+sorted and grouped through temporary files when needed, and written as they come, so memory stays flat however many rows
+(1M rows: well under 300 MB for the render). The answer then has no `content-length` and `x-pagewright-pages: 0`. If the
+render fails after the first bytes, the CSV ends with a last line `#ERROR <message>` and the connection is broken off:
+check for it. Reports the stream cannot do (aggregates in detail rows, Lookup, nested data sets, TopN filters, several
+tables) take the usual path, under the usual caps. Limits: `PW_STREAM_MAX_ROWS`, `PW_STREAM_FETCH_MAX_MB`,
+`PW_STREAM_SQL_MAX_MB`, `PW_SPILL_MAX_MB`; `PW_STREAM=0` turns streaming off. Design: docs/research/STREAMING-1M.md.
+
 Export options in the body (see [EXPORTS.md](EXPORTS.md)): `ua: true` an accessible PDF (PDF/UA-1; with `pdfa: true` it is PDF/A-2a), `formulas: false` Excel totals as values instead of live `SUBTOTAL` formulas, `static: true` an HTML file without its Tables view. The server link `GET /api/reports/:id/pdf` takes `?ua=1` (and `?pdfa=1`, `?format=`, `?formulas=0` for Excel totals as values; formulas are on by default).
 
 Errors are JSON `{ error, missingParameters? }`: 400 for a bad request or missing parameters, 401 for a bad key, 404 for an unknown template.

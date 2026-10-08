@@ -21,7 +21,10 @@ describe('streaming phase A: cores-sized pool, memory-estimate admission', () =>
 
   it('renders whose estimates fit the budget run at once; ones that do not, one after another', async () => {
     process.env.PW_RENDER_WORKERS = '2';
-    const def = table(2000, 'fits');
+    const def = table(20000, 'fits');
+    // both workers up first, so the two renders can overlap
+    await renderInPool({ def: table(5, 'warm'), opt: { format: 'pdf', principal: OPEN } });
+    while (poolStats().workers.ready < 2) await new Promise(r => setTimeout(r, 20));
     // 400 MB of budget: two small-worker renders (charged the 192 MB small heap each) fit together
     process.env.PW_MEMORY_LIMIT_MB = String(Math.ceil((512 + 400) / 0.7));
     let stop = busyMax();

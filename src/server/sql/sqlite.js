@@ -21,7 +21,7 @@ import { num as cnum } from '../config.js';
 const num = (k, d, min = 1) => cnum(k, d, { min });
 const memMB = () => num('PW_SQLITE_MEMORY_MB', 1024, 64);
 const maxProcs = () => Math.floor(num('PW_SQLITE_PROCESSES', 2));
-const IDLE_MS = 30000, WATCH_MS = 200;
+const IDLE_MS = 30000, WATCH_MS = 200, MAX_STMTS = 500;
 
 // The child: plain CommonJS for `node -e`, so no bundler touches it. Answers { rows } or { over } or { err }.
 const CHILD = `
@@ -41,7 +41,7 @@ const FN_DENY = /^(sqlite_attach|sqlite_detach|load_extension|readfile|writefile
 // catalog: the server's own schema reads (sql/schema.js, never a caller's text) also read pragma_table_info and
 // pragma_foreign_key_list.
 function refused(db, text, values, catalog) {
-  const plan = (q, v = []) => db.prepare('EXPLAIN ' + q).all(...v);
+  const plan = (q, v = []) => prep(db, 'EXPLAIN ' + q).all(...v);
   const vt = ['json_each', 'json_tree', ...(catalog ? ['pragma_table_info', 'pragma_foreign_key_list'] : [])];
   const okVtab = new Set(vt.map(f => (plan("SELECT * FROM " + f + "('[]')").find(r => r.opcode === 'VOpen') || {}).p4));
   for (const r of plan(text, values)) {
@@ -54,16 +54,48 @@ function refused(db, text, values, catalog) {
   }
   return '';
 }
+// a streaming read (m.batch): rows go out in batches of m.batch, the next batch only after the parent's ack
+let ack = null;
 process.on('message', (m) => {
-  let db;
-  try {
-    db = new DatabaseSync(m.file, { readOnly: true });
+  if (m && m.ack) { const a = ack; ack = null; if (a) a(); return; }
+  run(m);
+});
+// node:sqlite (Node 22.14) finalizes a statement when its JavaScript object is collected, and a later statement that
+// SQLite placed at the same address then fails ("statement has been finalized") or crashes: every second query in a
+// reused process failed. So no statement here is ever collected or closed: one connection per file for the life of
+// this process, and its statements kept by their text (reused when a query repeats). The parent replaces a process
+// that holds more than MAX_STMTS of them. Read-only, query_only: nothing a query leaves behind changes the next one.
+// Keyed by the file's inode too: a file replaced on disk (a new copy renamed over it) gets a new connection.
+const dbs = new Map();
+function open(file) {
+  let key = file;
+  try { const st = require('node:fs').statSync(file); key = file + '|' + st.dev + ':' + st.ino; } catch {}
+  let db = dbs.get(key);
+  if (!db) {
+    db = new DatabaseSync(file, { readOnly: true });
     // query_only: no write even through a path readOnly misses; trusted_schema off: a view or trigger in the file
     // cannot call functions with side effects
     db.exec('PRAGMA query_only = ON; PRAGMA trusted_schema = OFF;');
+    db.stmts = new Map();
+    dbs.set(key, db);
+  }
+  return db;
+}
+let held = 0;
+function prep(db, text) {
+  let st = db.stmts.get(text);
+  if (!st) { st = db.prepare(text); db.stmts.set(text, st); held++; }
+  return st;
+}
+// a query's last message says how many statements this process holds (the parent replaces it past MAX_STMTS)
+const reply = (x) => process.send({ ...x, held });
+async function run(m) {
+  let db;
+  try {
+    db = open(m.file);
     const bad = refused(db, m.text, m.values, m.catalog);
-    if (bad) return process.send({ err: bad });
-    const st = db.prepare(m.text);
+    if (bad) return reply({ err: bad });
+    const st = prep(db, m.text);
     st.setReadBigInts(true);
     const rows = [];
     let bytes = 0;
@@ -72,16 +104,19 @@ process.on('message', (m) => {
       // the parent's timers cannot reach a query that never yields; between rows this process checks for itself that
       // the server is still there and the deadline has not passed (a parent killed outright leaves no one to kill it)
       if (++n % 256 === 0 && (process.ppid !== ppid || Date.now() > m.until)) process.exit(0);
-      if (rows.length >= m.rows) return process.send({ over: 'rows' });
+      if (n > m.rows) return reply({ over: 'rows' });
       for (const k in r) bytes += size(r[k]);
-      if (bytes > m.bytes) return process.send({ over: 'bytes' });
+      if (bytes > m.bytes) return reply({ over: 'bytes' });
       rows.push(r);
+      if (m.batch && rows.length >= m.batch) {
+        await new Promise((res) => { ack = res; process.send({ batch: rows.splice(0) }); });
+      }
     }
-    process.send({ rows });
+    reply(m.batch ? { batch: rows, end: true } : { rows });
   } catch (e) {
-    process.send({ err: String(e && e.message || e) });
-  } finally { try { db && db.close(); } catch {} }
-});
+    reply({ err: String(e && e.message || e) });
+  }
+}
 process.on('disconnect', () => process.exit(0));
 `;
 
@@ -154,6 +189,7 @@ export async function sqlite(url, text, values, ctx) {
     let done = false;
     const end = (reuse, e, rows) => {
       if (done) return;
+      if (held > MAX_STMTS) reuse = false; // its statements are never freed (see the child): a fresh process next time
       done = true;
       clearTimeout(timer); clearInterval(watch);
       cp.off('message', onMsg); cp.off('exit', onExit);
@@ -162,7 +198,15 @@ export async function sqlite(url, text, values, ctx) {
     };
     const big = (what) => fail(what === 'rows' ? `The query returned more than ${limits.rows} rows. Filter or group it in SQL.`
       : `The query returned more than ${Math.round(limits.bytes / 1048576)} MB. Filter or group it in SQL.`, 400);
-    const onMsg = (m) => (m?.rows ? end(true, null, m.rows) : end(true, m?.over ? big(m.over) : fail(String(m?.err || 'The query failed.'), 400)));
+    let held = 0;
+    const onMsg = (m) => {
+      if (m?.held != null) held = m.held;
+      if (m?.batch) { // a streaming read: hand the batch over, ask for the next when the reader has taken it
+        Promise.resolve(m.batch.length ? ctx.onRows?.(m.batch) : undefined).then(() => { if (m.end) end(true, null, []); else if (!done) cp.send({ ack: true }); }, (e) => end(false, e));
+        return;
+      }
+      if (m?.rows) end(true, null, m.rows); else end(true, m?.over ? big(m.over) : fail(String(m?.err || 'The query failed.'), 400));
+    };
     const onExit = () => { S.stats.crashed++; end(false, fail('The query stopped: it built a value or a result too large for the server (SQLite). Filter or shorten it in SQL.', 400)); };
     const timer = setTimeout(() => { S.stats.killed++; end(false, late()); }, Math.max(0, deadline - Date.now()));
     const cap = memMB();
@@ -172,7 +216,7 @@ export async function sqlite(url, text, values, ctx) {
     cp.on('message', onMsg);
     cp.once('exit', onExit);
     try {
-      cp.send({ file: url.slice('sqlite:'.length), text, values, catalog: !!ctx.catalog, rows: Number(limits.rows), bytes: Number(limits.bytes), until: deadline + 1000 });
+      cp.send({ file: url.slice('sqlite:'.length), text, values, catalog: !!ctx.catalog, rows: Number(limits.rows), bytes: Number(limits.bytes), until: deadline + 1000, batch: ctx.onRows ? 1000 : 0 });
     } catch { onExit(); }
   });
 }

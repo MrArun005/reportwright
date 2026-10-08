@@ -71,6 +71,7 @@ export async function throughSnapshot(r, render) {
   }
   g.__pwSnap.misses++;
   const out = await render();
+  if (/** @type {any} */ (out).stream) return { ...out, snapshot: 'off' }; // a stream is not kept (its bytes are never all here)
   const meta = { contentType: out.contentType, ext: out.ext, name: out.name ?? null, pages: out.pages, ms: /** @type {any} */ (out).ms ?? null, warnings: /** @type {any} */ (out).warnings ?? 0, at: new Date().toISOString() };
   if (out.bytes.length <= s.snapshotMaxMb * 1024 * 1024 / 4) { // one rendering never takes more than a quarter of the cache
     await blobs().put(name, pack(meta, out.bytes)).catch((e) => console.error(`[reportwright] snapshot: ${e.message}`));

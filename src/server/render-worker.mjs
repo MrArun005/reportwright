@@ -14,8 +14,8 @@ if (workerData?.devSecret) globalThis.__pwDevSecret = workerData.devSecret;
 
 let mod;
 try {
-  const [renderer, thumbs] = await Promise.all([import('./renderer.js'), import('./thumbs.js')]);
-  mod = { ...renderer, drawThumb: thumbs.drawThumb };
+  const [renderer, thumbs, out] = await Promise.all([import('./renderer.js'), import('./thumbs.js'), import('./stream-out.js')]);
+  mod = { ...renderer, drawThumb: thumbs.drawThumb, portSink: out.portSink };
 } catch (e) { parentPort.postMessage({ ready: false, error: String(e?.message || e) }); }
 
 /** The bytes, transferable: their own ArrayBuffer (a small Buffer lives in Node's shared pool and cannot move). */
@@ -27,7 +27,12 @@ async function run(m) {
   const { opt } = m;
   // a saved template is read and checked here, as the principal (the same perms code as on the request thread)
   const def = m.def ?? (m.how === 'runnable' ? await (await import('./perms.js')).readRunnable(opt.principal, m.ref) : await mod.loadTemplate(m.ref, opt.principal));
-  const r = await mod.renderTo(def, opt);
+  // m.port: the output may stream to the request thread (stream-out.js); a render that does not stream closes it
+  const sink = m.port ? mod.portSink(m.port) : null;
+  let r;
+  try { r = await mod.renderTo(def, sink ? { ...opt, out: sink } : opt); } catch (e) { if (sink?.started) sink.fail(String(e?.message || e)); else sink?.close(); throw e; }
+  if (r.streamed) { sink.end(); return { result: { streamed: true, contentType: r.contentType, ext: r.ext, name: def.name || null, pages: 0, ms: r.model.stats?.ms ?? null, warnings: r.model.warnings?.length ?? 0 } }; }
+  sink?.close();
   const bytes = own(r.bytes instanceof Uint8Array ? r.bytes : new Uint8Array(r.bytes));
   return { result: { bytes, contentType: r.contentType, ext: r.ext, name: def.name || null, pages: r.model.pages.length, ms: r.model.stats?.ms ?? null, warnings: r.model.warnings?.length ?? 0 }, transfer: [bytes.buffer] };
 }
@@ -45,6 +50,7 @@ if (mod) {
       const { result, transfer } = await run(m);
       parentPort.postMessage({ id: m.id, ok: result, peakMB: peakMB(), heapMB: process.memoryUsage().heapUsed / 1048576 }, transfer || []);
     } catch (e) {
+      try { m.port?.close(); } catch { /* closed */ }
       const err = /** @type {any} */ (e);
       parentPort.postMessage({ id: m.id, err: { message: String(err?.message || err), status: err?.status, missingParameters: err?.missingParameters }, peakMB: peakMB(), heapMB: process.memoryUsage().heapUsed / 1048576 });
     }

@@ -4,7 +4,7 @@
 // A user's API key ("email|key") renders only what that user may view (src/server/perms.js).
 import { apiPrincipal, fail } from '@/server/auth.js';
 import { baseUrl, loadTemplate, checkTimeZone } from '@/server/renderer.js';
-import { renderInPool, admit } from '@/server/pool.js';
+import { renderInPool, streamInPool, admit } from '@/server/pool.js';
 import { canDesign, checkParameterValues } from '@/server/perms.js';
 import { pdfEncryptOptions } from '@/exporters/encrypt.js';
 import { audit } from '@/server/audit.js';
@@ -13,6 +13,9 @@ import { throughSnapshot } from '@/server/snapshots.js';
 import { outputHeaders } from '@/server/headers.js';
 
 export const runtime = 'nodejs';
+
+/** Formats whose output may stream (src/server/pool.js streamInPool). */
+const STREAMS = new Set(['csv']);
 
 /** Only the flags that are on: a render's audit event stays small (it is written for every render). */
 const flags = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v));
@@ -33,14 +36,15 @@ export async function POST(req) {
     checkParameterValues(def, body.parameters, principal); // fixed lists and hidden parameters hold on the server too
     const opt = { encrypt, timeZone: checkTimeZone(body.timeZone), parameters: body.parameters, data: body.data, format: body.format, baseUrl: baseUrl(req), state: body.state, pdfa: !!body.pdfa, ua: !!body.ua, formulas: body.formulas, csv: body.csv, static: !!body.static, sign: !!body.sign, principal };
     // a saved template may come from the snapshot cache (src/server/snapshots.js: off unless an admin sets a TTL)
-    const r = await throughSnapshot({ def: typeof body.template === 'string' ? def : null, opt, principal }, () => renderInPool({ ref: typeof body.template === 'string' ? body.template : undefined, def, opt }, { signal: req.signal }));
+    const r = await throughSnapshot({ def: typeof body.template === 'string' ? def : null, opt, principal }, () => { const job = { ref: typeof body.template === 'string' ? body.template : undefined, def, opt }; return STREAMS.has(opt.format) ? streamInPool(job, { signal: req.signal }) : renderInPool(job, { signal: req.signal }); });
     await audit('report.render', { req, principal, report: typeof body.template === 'string' ? body.template : null, format: body.format || 'pdf', params: body.parameters, detail: { pages: r.pages, ms: r.ms ?? undefined, via: 'api', ...(r.snapshot !== 'off' ? { snapshot: r.snapshot } : {}), ...flags({ inline: typeof body.template !== 'string', pushedData: !!body.data, signed: !!body.sign, encrypted: !!encrypt }) } }); // the only event of a render (no api.call)
     const name = (body.fileName || r.name || 'report').replace(/[^\w.-]+/g, '-');
-    return new Response(r.bytes, { // the worker's buffer, moved here without a copy
+    // a stream (the data CSV of a report that can stream): no length, its first rows go out while the rest render
+    return new Response(r.stream || r.bytes, { // the worker's buffer, moved here without a copy
       headers: {
         'content-type': r.contentType,
         ...outputHeaders(r.contentType),
-        'content-length': String(r.bytes.byteLength),
+        ...(r.stream ? {} : { 'content-length': String(r.bytes.byteLength) }),
         'content-disposition': `${body.format === 'json' ? 'inline' : 'attachment'}; filename="${name}.${r.ext}"`,
         'x-pagewright-pages': String(r.pages),
         'x-pagewright-ms': String(r.ms),

@@ -71,6 +71,11 @@ Every setting ReportWright reads, from `src/server/config.js` (the table there i
 | `PW_SQLITE_MEMORY_MB` | int | 1024 | Memory one SQLite query process may use. |
 | `PW_RENDER_WORKERS` | int | (by cores and memory) | Render threads; 0 renders on the request thread. |
 | `PW_RENDER_WORKER_HEAP_MB` | int | 1024 (2048 after an out-of-memory; ≤ half the memory) | A big render thread's heap limit. |
+| `PW_STREAM` | flag | 1 | 0: no streaming exports (every CSV goes through the page model). |
+| `PW_STREAM_MAX_ROWS` | int | 5000000 | Rows a streaming export reads. |
+| `PW_STREAM_FETCH_MAX_MB` | int | 4096 | Megabytes a streaming export fetches from one source. |
+| `PW_STREAM_SQL_MAX_MB` | int | 4096 | Megabytes of values a streaming export reads from one query. |
+| `PW_SPILL_MAX_MB` | int | 2048 | Temporary disk one streaming export may use to sort. |
 | `PW_RENDER_SMALL_HEAP_MB` | int | 192 | The other render threads' heap limit (streams, small renders). |
 | `PW_RENDER_WORKER_MAX_RENDERS` | int | 500 | Renders before a thread is replaced. |
 | `PW_RENDER_WORKER_RECYCLE_MB` | int | 512 | Heap after which a thread is replaced. |

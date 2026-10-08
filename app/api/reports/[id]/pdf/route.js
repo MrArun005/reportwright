@@ -2,7 +2,7 @@
 import { safeId } from '@/server/reports.js';
 import { baseUrl, checkTimeZone } from '@/server/renderer.js';
 import { principalOf, readRunnable, checkParameterValues } from '@/server/perms.js';
-import { renderInPool, admit } from '@/server/pool.js';
+import { renderInPool, streamInPool, admit } from '@/server/pool.js';
 import { busyHeaders } from '@/server/auth.js';
 import { audit } from '@/server/audit.js';
 import { throughSnapshot } from '@/server/snapshots.js';
@@ -11,6 +11,9 @@ import { errorResponse } from '@/server/errors.js';
 import { outputHeaders } from '@/server/headers.js';
 
 export const runtime = 'nodejs';
+
+/** Formats whose output may stream (src/server/pool.js streamInPool). */
+const STREAMS = new Set(['csv']);
 
 export async function GET(req, { params }) {
   try {
@@ -25,12 +28,13 @@ export async function GET(req, { params }) {
     const def = await readRunnable(principal, safeId(id));
     checkParameterValues(def, parameters, principal); // fixed lists and hidden parameters hold on the server too
     const opt = { parameters, format, baseUrl: baseUrl(req), pdfa: url.searchParams.get('pdfa') === '1', ua: url.searchParams.get('ua') === '1', formulas: url.searchParams.get('formulas') ?? undefined, csv: url.searchParams.get('csv') ?? undefined, timeZone: checkTimeZone(url.searchParams.get('timeZone')), principal }; // ?timeZone=: the viewer's zone
-    const r = await throughSnapshot({ def, opt, principal }, () => renderInPool({ ref: safeId(id), def, opt }, { signal: req.signal }));
+    const r = await throughSnapshot({ def, opt, principal }, () => (STREAMS.has(format) ? streamInPool({ ref: safeId(id), def, opt }, { signal: req.signal }) : renderInPool({ ref: safeId(id), def, opt }, { signal: req.signal })));
     await audit('report.render', { req, principal, report: id, format, params: parameters, detail: { pages: r.pages, ms: r.ms ?? undefined, via: 'server link', ...(r.snapshot !== 'off' ? { snapshot: r.snapshot } : {}) } });
-    return new Response(r.bytes, {
+    // a stream (the data CSV of a report that can stream): no length, its first rows go out while the rest render
+    return new Response(r.stream || r.bytes, {
       headers: {
         'content-type': r.contentType,
-        'content-length': String(r.bytes.byteLength),
+        ...(r.stream ? {} : { 'content-length': String(r.bytes.byteLength) }),
         'content-disposition': `inline; filename="${id}.${r.ext}"`,
         'x-pagewright-pages': String(r.pages),
         'x-pagewright-ms': String(r.ms),

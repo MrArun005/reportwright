@@ -1,6 +1,7 @@
 // Regression across every report × 7 formats, through two running servers (an old build and a new one), so a broken
 // total cannot hide behind a speed gain. Compares, per report and format: the HTTP status, the page count
-// (x-pagewright-pages; not for csv, which has no pages), and for csv the row count and every numeric column's sum.
+// (x-pagewright-pages; not for csv, which has no pages), and for csv the row count, every numeric column's sum and the
+// text itself (a leading BOM aside).
 //   BASE_OLD=http://localhost:3400 BASE_NEW=http://localhost:3300 PW_ADMIN_EMAIL=… PW_ADMIN_PASSWORD=… node scripts/regress-all.mjs
 // Both servers need accounts on (PW_AUTH=users) with that admin; the reports in reports/ (not e2e-*) are saved to both.
 // Exit code 1 when anything differs. ONLY=<id,id> limits the reports.
@@ -45,7 +46,7 @@ async function facts(base, cookie, id, format) {
   const body = Buffer.from(await r.arrayBuffer());
   const out = { status: r.status, ms: Date.now() - t, bytes: body.length };
   if (r.ok && format !== 'csv') out.pages = Number(r.headers.get('x-pagewright-pages'));
-  if (r.ok && format === 'csv') Object.assign(out, csvFacts(body.toString('utf8')));
+  if (r.ok && format === 'csv') Object.assign(out, csvFacts(body.toString('utf8')), { text: body.toString('utf8').replace(/^\uFEFF/, '') }); // the bytes too (a BOM aside)
   if (r.ok && format === 'json') out.pages = JSON.parse(body.toString('utf8')).pages?.length;
   return out;
 }
@@ -65,6 +66,7 @@ for (const id of ids) for (const f of FORMATS) {
   if (a.pages !== b.pages) bad.push(`pages ${a.pages} → ${b.pages}`);
   if (a.rows !== b.rows) bad.push(`rows ${a.rows} → ${b.rows}`);
   if (JSON.stringify(a.sums) !== JSON.stringify(b.sums)) bad.push(`sums ${JSON.stringify(a.sums)} → ${JSON.stringify(b.sums)}`);
+  if (a.text !== b.text) bad.push('the CSV text differs');
   if (bad.length) { diffs++; console.log(`DIFF ${id} ${f}: ${bad.join('; ')}`); }
   else console.log(`ok   ${id} ${f} (${a.status}${a.pages != null ? `, ${a.pages} pages` : ''}${a.rows != null ? `, ${a.rows} rows` : ''}; ${a.ms} → ${b.ms} ms, ${a.bytes} → ${b.bytes} B)`);
 }

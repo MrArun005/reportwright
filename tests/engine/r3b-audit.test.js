@@ -101,7 +101,7 @@ describe('every path that renders, exports or reads data writes an audit event (
   const ROOT = path.join(import.meta.dirname, '../..');
   const walk = (d) => fs.readdirSync(path.join(ROOT, d), { withFileTypes: true }).flatMap(n => (n.isDirectory() ? walk(`${d}/${n.name}`) : /\.(m?js|jsx)$/.test(n.name) ? [`${d}/${n.name}`] : []));
   // a file that renders a report, exports one, runs SQL or fetches data for someone must also call audit(
-  const RENDERS = /\b(renderInPool|thumbnail|runSavedSql|runSql|safeFetch|packInPool|renderReport|exportPdf|exportXlsx|exportDocx)\s*\(/;
+  const RENDERS = /\b(renderInPool|streamInPool|thumbnail|runSavedSql|runSql|safeFetch|packInPool|renderReport|exportPdf|exportXlsx|exportDocx)\s*\(/;
   // the modules that do the work for a route that audits (the route is checked), or never for a caller
   const LIBS = new Set(['src/server/pool.js', 'src/server/renderer.js', 'src/server/sql.js', 'src/server/sql/schema.js', 'src/server/thumbs.js', 'src/server/safeFetch.js',
     'src/server/sso.js', 'src/server/siem.js', 'src/server/render-worker.mjs', 'src/server/snapshots.js', 'src/server/schedulePage.js', 'src/server/ai.js']);

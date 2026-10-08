@@ -21,6 +21,13 @@ import { num as cnum } from './config.js';
 const envNum = (k, d) => cnum(k, d, { min: 1e-9 });
 /** The caps on one query: PW_SQL_MAX_ROWS (100000), PW_SQL_MAX_MB (64), PW_SQL_TIMEOUT_MS (30000). Mutable so tests can lower them. */
 export const limits = { rows: envNum('PW_SQL_MAX_ROWS', 100000), ms: envNum('PW_SQL_TIMEOUT_MS', 30000), bytes: envNum('PW_SQL_MAX_MB', 64) * 1024 * 1024 };
+const LIMITS = limits;
+/**
+ * The caps on a streaming query (runSqlRows: a streaming render reads its rows a batch at a time, so the whole-result
+ * caps above do not apply): PW_STREAM_MAX_ROWS (5,000,000) rows, PW_STREAM_SQL_MAX_MB (4096) MB of values in all, and
+ * the render's own time (at least PW_SQL_TIMEOUT_MS). Mutable so tests can lower them.
+ */
+export const streamLimits = { rows: envNum('PW_STREAM_MAX_ROWS', 5000000), bytes: envNum('PW_STREAM_SQL_MAX_MB', 4096) * 1024 * 1024 };
 /** Connections per pool (one pool per connection URL per server thread): PW_DB_POOL_MAX, default 5. */
 export const poolMax = () => Math.floor(envNum('PW_DB_POOL_MAX', 5));
 
@@ -176,7 +183,75 @@ const plainRow = (r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k,
  * @param {Record<string, any>} [params] report parameters (lists are arrays)
  * @returns {Promise<object[]>}
  */
-export async function runSql({ connection, query, procedure, args }, params = {}, { catalog = false } = {}) {
+export async function runSql(src, params = {}, { catalog = false } = {}) {
+  const { url, dialect, text, values, names, code, procedure } = prepareSql(src, params, { catalog });
+  let rows;
+  try {
+    rows = await DRIVERS[dialect](url, text, values, { ...driverContext, code, catalog, allowed: procsOf(src.connection), procedure: procedure ? { name: text, names } : null });
+  } catch (e) { throw driverError(e, url); }
+  if (rows.length > limits.rows) throw fail(`The query returned more than ${limits.rows} rows. Filter or group it in SQL.`, 400);
+  // the row cap does not bound one huge value (string_agg, FOR JSON in a subquery, repeat()): count the text too
+  // ponytail: counted after the driver has the rows (SQLite, Postgres, MySQL); the other drivers count as they read
+  let bytes = 0;
+  for (const r of rows) for (const v of Object.values(r)) bytes += sizeOf(v);
+  if (bytes > limits.bytes) throw fail(`The query returned more than ${Math.round(limits.bytes / 1048576)} MB. Filter or group it in SQL.`, 400);
+  return rows.map(plainRow);
+}
+
+/** A driver's error as the report author may see it: a timeout as 504, never the connection URL. */
+function driverError(e, url) {
+  if (TIMEOUT_CODES.has(e.code)) return fail(`The query ran longer than ${(e.limitMs || limits.ms) / 1000} s.`, 504);
+  // the report author sees this message: never the connection URL or a part of it (the password)
+  // cut after scrubbing (a cut first could leave half a password); a server message can repeat a long value
+  return Object.assign(new Error(scrub(String(e.message || e), url).slice(0, MAX_ERROR)), { status: e.status, code: e.code });
+}
+
+/** Drivers that hand rows over in batches (ctx.onRows): the others run runSql's way, under its caps. */
+const STREAMING = new Set(['sqlite', 'postgres', 'mysql']);
+
+/**
+ * A query's rows in batches, for a streaming render: the same checks as runSql (one read, bound values, the login
+ * probes, read-only), but the rows are handed over a batch at a time and the next batch is read only when the caller
+ * asks (back-pressure down to the database cursor). Caps: streamLimits, and ms (the render's time left). A caller that
+ * stops reading ends the query. Connections whose driver cannot stream run runSql (whole, under its caps).
+ * @param {any} src @param {Record<string, any>} [params] @param {{ ms?: number }} [o]
+ * @returns {AsyncGenerator<object[]>}
+ */
+export async function* runSqlRows(src, params = {}, { ms = 0 } = {}) {
+  const { url, dialect, text, values, names, code, procedure } = prepareSql(src, params, {});
+  if (!STREAMING.has(dialect) || procedure) { yield await runSql(src, params); return; }
+  const lim = { rows: Number(streamLimits.rows), bytes: Number(streamLimits.bytes), ms: Math.max(Number(limits.ms), Number(ms) || 0) };
+  const ch = channel();
+  DRIVERS[dialect](url, text, values, { ...driverContext, limits: lim, code, allowed: procsOf(src.connection), procedure: null, onRows: (rows) => ch.put(rows) })
+    .then(() => ch.end(null), (e) => ch.end(e === CANCEL ? null : driverError(Object.assign(e, { limitMs: lim.ms }), url)));
+  for await (const rows of ch.iter()) yield rows.map(plainRow);
+}
+
+const CANCEL = Object.assign(new Error('The render stopped reading the query.'), { status: 499 });
+/** One batch in flight between a driver (put, awaited) and its reader (iter): the driver reads on only when asked. */
+function channel() {
+  let pending = null, taken = null, wake = null, done = false, error = null, stopped = false;
+  const poke = () => { const w = wake; wake = null; w?.(); };
+  return {
+    /** @param {any[]} batch */
+    put: (batch) => new Promise((resolve, reject) => { if (stopped) return reject(CANCEL); pending = { batch, resolve, reject }; poke(); }),
+    /** @param {any} e */
+    end(e) { done = true; error = e; poke(); },
+    async *iter() {
+      try {
+        for (;;) {
+          if (pending) { const p = taken = pending; pending = null; yield p.batch; taken = null; p.resolve(undefined); continue; }
+          if (done) { if (error) throw error; return; }
+          await new Promise(r => { wake = r; });
+        }
+      } finally { stopped = true; for (const p of [taken, pending]) p?.reject(CANCEL); taken = pending = null; } // a reader that stopped: the driver ends
+    },
+  };
+}
+
+/** The connection, dialect, bound text and values of a SQL source: every check that runs before a driver does. @param {any} src */
+function prepareSql(src, params = {}, { catalog = false } = {}) {
+  const { connection, query, procedure, args } = src;
   const { url, key } = connectionUrl(connection);
   const dialect = kindOf(url);
   if (dialect === 'unknown') throw fail(`${key} must start with sqlite:, postgres://, mysql://, mssql://, oracle://, snowflake:// or bigquery://.`, 500);
@@ -194,22 +269,7 @@ export async function runSql({ connection, query, procedure, args }, params = {}
     // server's own catalog reads (sql/schema.js, never a caller's text) may call catalog functions (pragma_table_info)
     code = catalog ? text : assertOneRead(text, dialect);
   }
-  let rows;
-  try {
-    rows = await DRIVERS[dialect](url, text, values, { ...driverContext, code, catalog, allowed: procsOf(connection), procedure: procedure ? { name: text, names } : null });
-  } catch (e) {
-    if (TIMEOUT_CODES.has(e.code)) throw fail(`The query ran longer than ${limits.ms / 1000} s.`, 504);
-    // the report author sees this message: never the connection URL or a part of it (the password)
-    // cut after scrubbing (a cut first could leave half a password); a server message can repeat a long value
-    throw Object.assign(new Error(scrub(String(e.message || e), url).slice(0, MAX_ERROR)), { status: e.status, code: e.code });
-  }
-  if (rows.length > limits.rows) throw fail(`The query returned more than ${limits.rows} rows. Filter or group it in SQL.`, 400);
-  // the row cap does not bound one huge value (string_agg, FOR JSON in a subquery, repeat()): count the text too
-  // ponytail: counted after the driver has the rows (SQLite, Postgres, MySQL); the other drivers count as they read
-  let bytes = 0;
-  for (const r of rows) for (const v of Object.values(r)) bytes += sizeOf(v);
-  if (bytes > limits.bytes) throw fail(`The query returned more than ${Math.round(limits.bytes / 1048576)} MB. Filter or group it in SQL.`, 400);
-  return rows.map(plainRow);
+  return { url, dialect, text, values, names, code, procedure: procedure != null && procedure !== '' };
 }
 
 /** @typedef {'sqlite'|'postgres'|'mysql'|'mssql'|'oracle'|'snowflake'|'bigquery'} Dialect */
@@ -355,7 +415,7 @@ export async function runSavedSql(reportId, sourceName, given = {}, principal = 
  * A counter for drivers that read row by row: `take(row)` refuses the row past limits.rows or the byte past
  * limits.bytes; `take.reserve(n)` refuses a value of n bytes before it is read.
  */
-function count() {
+function count(limits = LIMITS) {
   let n = 0, bytes = 0;
   const big = () => fail(`The query returned more than ${Math.round(limits.bytes / 1048576)} MB. Filter or group it in SQL.`, 400);
   const take = (row) => {
@@ -370,7 +430,8 @@ function count() {
 /**
  * What a driver in ./sql/ gets besides the text: the shared pools, the caps, and the helpers that enforce them.
  * @typedef {{ pools: Map<string, any>, limits: typeof limits, fail: typeof fail, clock: typeof clock, count: typeof count,
- *   driver: typeof driver, poolMax: typeof poolMax, code: string, catalog?: boolean, allowed: string[], procedure: null | { name: string, names: string[] } }} DriverContext
+ *   driver: typeof driver, poolMax: typeof poolMax, code: string, catalog?: boolean, allowed: string[], procedure: null | { name: string, names: string[] },
+ *   onRows?: (rows: any[]) => Promise<void> }} DriverContext onRows: a streaming read (runSqlRows) hands each batch over and reads on when it resolves
  */
 
 /** @type {Map<string, any>} one pool per connection URL, kept across hot reloads */
@@ -393,7 +454,7 @@ async function driver(pkg, kind) {
  * (marked `wire`: the connection is gone and must not go back to the pool). `onCut` stops the query on the server.
  * @param {import('node:net').Socket} socket @param {ReturnType<typeof clock>} clk @param {() => Promise<any>} work
  */
-export async function onWire(socket, clk, work, onCut = () => {}) {
+export async function onWire(socket, clk, work, onCut = () => {}, limits = LIMITS) {
   let n = 0, why = null;
   const cut = (e) => { if (!why) { why = Object.assign(e, { wire: true }); onCut(); socket.destroy(); } };
   const data = (b) => { n += b.length; if (n > Number(limits.bytes) / 2 + 65536) cut(fail(`The query returned more than ${Math.round(limits.bytes / 1048576)} MB. Filter or group it in SQL.`, 400)); };
@@ -490,7 +551,8 @@ const DRIVERS = {
   // connection (a dropped socket alone does not stop a running query, and the query can turn statement_timeout off),
   // the socket is cut and the connection thrown away. Only plain scalar types are parsed: json, arrays and the rest
   // stay text (a parsed JSON value takes many times its size).
-  async postgres(url, text, values) {
+  async postgres(url, text, values, ctx) {
+    const limits = ctx?.limits || LIMITS, onRows = ctx?.onRows; // a streaming read: its own caps, rows handed over per batch
     if (!pools.has(url)) {
       const pg = (await driver('pg', 'postgres')).default;
       const parsed = new Set([16, 20, 21, 23, 26, 700, 701, 1700, 1184]); // bool, integers, oid, floats, numeric (text), timestamptz
@@ -520,15 +582,16 @@ const DRIVERS = {
           // extended protocol: one statement only, so "…; COMMIT; DELETE …" cannot end the read-only transaction
           await c.query({ text: `DECLARE pw_rows NO SCROLL CURSOR FOR ${text}`, values, queryMode: 'extended' });
           const out = [];
-          const take = count();
+          const take = count(limits);
           for (;;) {
             clk.overdue();
             await c.query(`SET LOCAL statement_timeout = ${Math.max(1, clk.left())}`); // again: the query may have changed it
             const got = (await c.query('FETCH 500 FROM pw_rows')).rows;
-            for (const r of got) { take(r); out.push(r); }
+            for (const r of got) take(r);
+            if (onRows) { if (got.length) await onRows(got); } else for (const r of got) out.push(r);
             if (got.length < 500) return out;
           }
-        }, () => killPostgres(entry.pg, url, c.processID));
+        }, () => killPostgres(entry.pg, url, c.processID), limits);
         ok = true;
         return rows;
       } finally {
@@ -543,7 +606,8 @@ const DRIVERS = {
   // statement (one statement), sql_select_limit and max_execution_time; the socket's bytes are counted as they arrive,
   // and at a cap or the deadline the query is killed from another connection (KILL; an optimizer hint or a CALL is not
   // bound by max_execution_time) and the connection thrown away. JSON and geometry stay text and bytes.
-  async mysql(url, text, values) {
+  async mysql(url, text, values, ctx) {
+    const limits = ctx?.limits || LIMITS, onRows = ctx?.onRows; // a streaming read: its own caps, rows handed over per batch
     if (!pools.has(url)) {
       const mysql = (await driver('mysql2/promise', 'mysql')).default;
       const typeCast = (field, next) => (field.type === 'JSON' ? field.string() : field.type === 'GEOMETRY' ? field.buffer() : next());
@@ -569,12 +633,23 @@ const DRIVERS = {
           await c.query(`SET SESSION sql_select_limit = ${Number(limits.rows) + 1}`);
           await c.query(`SET SESSION max_execution_time = ${Number(limits.ms)}`).catch(() => c.query(`SET SESSION max_statement_time = ${Number(limits.ms) / 1000}`)); // MySQL, else MariaDB
           await c.query('START TRANSACTION READ ONLY');
+          const take = count(limits);
+          if (onRows) {
+            // streaming: the plain query protocol (values escaped by the driver; one statement: multipleStatements is
+            // off) read as a stream, 500 rows a batch, the socket paused while the reader is busy
+            const st = c.connection.query({ sql: text, values }).stream({ highWaterMark: 500 });
+            let batch = [];
+            try {
+              for await (const r of st) { take(r); batch.push(r); if (batch.length >= 500) { const b = batch; batch = []; await onRows(b); } }
+            } finally { st.destroy(); }
+            if (batch.length) await onRows(batch);
+            return [];
+          }
           const [res] = await c.execute(text, values); // a server-side prepared statement: one statement, values bound
           const out = Array.isArray(res[0]) ? res[0] : res; // CALL: the procedure's first result set
-          const take = count();
           for (const r of out) take(r);
           return out;
-        }, () => killMysql(entry.mysql, url, thread));
+        }, () => killMysql(entry.mysql, url, thread), limits);
         ok = true;
         return rows;
       } finally {

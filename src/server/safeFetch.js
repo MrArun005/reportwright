@@ -15,6 +15,9 @@ import { devMode, num as cnum } from './config.js';
 
 /** Largest response body a fetch reads: PW_FETCH_MAX_MB, default 64 (the 100k-row hard sample is ~22 MB). */
 export const fetchMaxBytes = () => cnum('PW_FETCH_MAX_MB', 64, { min: 1 }) * 1048576;
+/** A streaming render reads its source a batch at a time (engine/data/stream.js), so its cap is on the stream, not on
+ *  memory: PW_STREAM_FETCH_MAX_MB, default 4096. A request asks for it with init.pwStream. */
+export const streamFetchMaxBytes = () => cnum('PW_STREAM_FETCH_MAX_MB', 4096, { min: 1 }) * 1048576;
 const TIMEOUT_MS = 30000;
 /** One deadline for a whole fetch (every redirect, the headers and the body): a server that drips bytes cannot hold a
  *  request open (a socket timeout only counts silence). PW_FETCH_DEADLINE_MS, default 60 s. */
@@ -180,11 +183,11 @@ export async function safeFetch(input, init = {}, { allow = [], hops = 3, deadli
   if (empty) res.resume(); // nothing to read, and no deadline timer left behind
   else {
     let size = 0;
-    const max = fetchMaxBytes();
+    const max = /** @type {any} */ (init).pwStream ? streamFetchMaxBytes() : fetchMaxBytes();
     const capped = res.pipe(new Transform({
       transform(chunk, _enc, cb) {
         size += chunk.length;
-        cb(size > max ? Object.assign(new Error(`The response from ${url.host} is larger than ${max / 1048576} MB (raise PW_FETCH_MAX_MB)`), { status: 413 }) : null, chunk);
+        cb(size > max ? Object.assign(new Error(`The response from ${url.host} is larger than ${max / 1048576} MB (raise ${/** @type {any} */ (init).pwStream ? 'PW_STREAM_FETCH_MAX_MB' : 'PW_FETCH_MAX_MB'})`), { status: 413 }) : null, chunk);
       },
     }));
     // the body within the same deadline

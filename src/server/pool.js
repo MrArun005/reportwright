@@ -38,7 +38,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Worker, SHARE_ENV } from 'node:worker_threads';
+import { Worker, SHARE_ENV, MessageChannel } from 'node:worker_threads';
+import { portSource, portSink } from './stream-out.js';
 import { renderTimeoutMs } from './renderer.js';
 import { principalId } from './perms.js';
 import { accountsOn, sessionSecret } from './session.js';
@@ -127,7 +128,7 @@ const heapMB = () => plan().heapMB;
 /** Resident memory is too high to start one more render now (85% of the limit). */
 const memoryFull = () => process.memoryUsage.rss() / 1048576 > memLimitMB() * 0.85;
 
-/** @typedef {{ id: number, fresh?: boolean, msg: any, transfer?: any[], cls: 0|1, who: string, est: number, mem: number, big: boolean, retried?: boolean, at: number, key: string, resolve: (v: any) => void, reject: (e: any) => void, signal?: AbortSignal, onAbort?: () => void }} Job */
+/** @typedef {{ id: number, fresh?: boolean, msg: any, transfer?: any[], started?: { v: boolean }, cls: 0|1, who: string, est: number, mem: number, big: boolean, retried?: boolean, at: number, key: string, resolve: (v: any) => void, reject: (e: any) => void, signal?: AbortSignal, onAbort?: () => void }} Job */
 /** @typedef {{ w: Worker, ready: boolean, job: Job|null, renders: number, timer: any, big: boolean }} Slot */
 
 const g = /** @type {any} */ (globalThis);
@@ -275,9 +276,10 @@ function died(s, e, exited = false) {
   // plan permitting): the pool starts small and many, and grows its heap only when a real report needs it
   if (oom && s.big && !num('PW_RENDER_WORKER_HEAP_MB', null, 64)) { P.grownMB = Math.min(2048, Math.max(P.grownMB || 0, heapMB() * 2)); P.grownAt = Date.now(); }
   // out of a small worker's heap: the estimate was wrong; the render runs again, once, in a big worker (a stream
-  // whose answer has started cannot: its caller sees the stream fail)
-  if (j && oom && !s.big && !j.retried && !j.msg.port) {
+  // whose answer has started cannot: its caller sees the stream fail; one that has not runs again without streaming)
+  if (j && oom && !s.big && !j.retried && !j.started?.v) {
     finish(s); P.stats.retriedBig++;
+    if (j.msg.port) { j.msg = { ...j.msg, port: undefined, stream: false }; j.transfer = []; }
     j.retried = true; j.big = true; j.mem = plan().heapMB; P.mem.set(memKey(j.who, j.key), plan().heapMB);
     bump(P.waiting, j.who, 1); P.queue.unshift(j);
   } else if (j) { finish(s); P.stats.crashed++; j.reject(Object.assign(new Error(oom ? 'The render ran out of memory and was stopped.' : 'The render stopped unexpectedly. Try again.'), { status: 500 })); }
@@ -376,8 +378,12 @@ async function runInline(j) {
     const def = m.def ?? (m.how === 'runnable' ? await (await import('./perms.js')).readRunnable(m.opt.principal, m.ref) : await loadTemplate(m.ref, m.opt.principal));
     const t0 = Date.now();
     let r;
-    try { r = await renderTo(def, m.opt); } catch (e) { P.stats.failed = (P.stats.failed || 0) + 1; throw e; }
+    // a stream on this thread: the same port protocol as a worker's (stream-out.js), so the render yields at each write
+    const sink = m.port ? portSink(m.port) : null;
+    try { r = await renderTo(def, sink ? { ...m.opt, out: sink } : m.opt); } catch (e) { P.stats.failed = (P.stats.failed || 0) + 1; if (sink?.started) sink.fail(String(/** @type {any} */ (e)?.message || e)); else sink?.close(); throw e; }
     observe(Date.now() - t0); P.stats.done = (P.stats.done || 0) + 1; // the dashboard's average counts inline renders too
+    if (/** @type {any} */ (r).streamed) { sink?.end(); return j.resolve({ streamed: true, contentType: r.contentType, ext: r.ext, name: def.name || null, pages: 0, ms: r.model.stats?.ms ?? null, warnings: r.model.warnings?.length ?? 0 }); }
+    sink?.close();
     j.resolve({ bytes: r.bytes, contentType: r.contentType, ext: r.ext, name: def.name || null, pages: r.model.pages.length, ms: r.model.stats?.ms ?? null, warnings: r.model.warnings?.length ?? 0 });
   } catch (e) { j.reject(e); }
 }
@@ -401,16 +407,17 @@ export function admit(principal) { const no = refusal(principalId(principal)); i
 /**
  * Queue one task for the pool. Rejects at once with 429 or 503 (and .retryAfter, seconds) when the server is full.
  * @param {any} msg { kind: 'render', ref|def, how?, opt } or { kind: 'thumb', def, principal, base }
- * @param {{ background?: boolean, principal?: any, key?: string, signal?: AbortSignal }} [o] key: what to estimate
- *   the render time by (the template); signal: the request's, a render still waiting when the caller leaves is dropped
+ * @param {{ background?: boolean, principal?: any, key?: string, signal?: AbortSignal, transfer?: any[], started?: { v: boolean } }} [o] key: what to
+ *   estimate the render time by (the template); signal: the request's, a render still waiting when the caller leaves is
+ *   dropped; transfer: what the message moves to the worker (a stream's port)
  */
-export function submit(msg, { background = false, principal, key = '', signal } = {}) {
+export function submit(msg, { background = false, principal, key = '', signal, transfer, started } = {}) {
   const who = principalId(principal);
   const cls = background ? 1 : 0;
   return new Promise((resolve, reject) => {
     const est = P.est.get(key) ?? 200;
     /** @type {Job} */
-    const j = { id: ++P.seq, msg: { ...msg, id: 0 }, cls, who, est, ...sizeOf(msg, who, key), at: Date.now(), key, resolve, reject, signal };
+    const j = { id: ++P.seq, msg: { ...msg, id: 0 }, transfer, started, cls, who, est, ...sizeOf(msg, who, key), at: Date.now(), key, resolve, reject, signal };
     j.msg.id = j.id;
     if (poolSize() < 1 || P.noWorker) return void runInline(j);
     fill();
@@ -438,6 +445,27 @@ export function submit(msg, { background = false, principal, key = '', signal } 
 export function renderInPool({ ref, def, how = 'template', opt = {} }, { background = false, signal } = {}) {
   const key = typeof ref === 'string' ? ref : def?.name ? `def:${def.name}` : 'inline';
   return submit({ kind: 'render', ref, def, how, opt }, { background, principal: opt.principal, key, signal });
+}
+
+/**
+ * renderInPool for a format that can stream (the data CSV): the result is the usual one (bytes), or, when the report
+ * streams, { stream: ReadableStream, contentType, ext, name, pages: 0, done } where done settles when the render ends.
+ * The response starts with the first rows; memory stays flat however many rows (docs/research/STREAMING-1M.md).
+ * @param {{ ref?: any, def?: any, how?: string, opt?: any }} r @param {{ background?: boolean, signal?: AbortSignal }} [o]
+ * @returns {Promise<any>}
+ */
+export function streamInPool({ ref, def, how = 'template', opt = {} }, { background = false, signal } = {}) {
+  const key = typeof ref === 'string' ? ref : def?.name ? `def:${def.name}` : 'inline';
+  const { port1, port2 } = new MessageChannel();
+  const src = portSource(port1, { csv: opt.format === 'csv' });
+  const started = { v: false }; // once the head is out, a failed render cannot run again
+  const done = submit({ kind: 'render', ref, def, how, opt, stream: true, port: port2 }, { background, principal: opt.principal, key, signal, transfer: [port2], started });
+  let streaming = false;
+  // the head (port) and the end (the worker's reply) come on different channels, in either order
+  return new Promise((resolve, reject) => {
+    src.head.then((h) => { if (h) { streaming = true; started.v = true; resolve({ ...h, stream: src.stream, name: def?.name || null, pages: 0, ms: null, warnings: 0, streamed: true, done: done.catch(() => null) }); } });
+    done.then((r) => { if (r?.streamed) return; if (streaming) src.fail(new Error('The render stopped and ran again without streaming.')); else { src.abandon(); resolve(r); } }, (e) => { if (streaming) src.fail(e); else { src.abandon(); reject(e); } });
+  });
 }
 
 /** Queue depth and worker state, for /api/v1/health. */
