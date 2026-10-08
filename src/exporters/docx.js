@@ -5,13 +5,27 @@
 // a cell's become the cell's. Charts, pictures, maps, barcodes, shapes and in-cell visuals (sparklines, data bars)
 // become pictures: an SVG with a PNG fallback (Word 2016+ draws the SVG, older Word and other readers the PNG), or the
 // picture's own PNG/JPEG. Written by hand with fflate (WordprocessingML is small), no Word library.
-import { zipSync, strToU8 } from 'fflate';
+import { Zip, ZipDeflate, strToU8 } from 'fflate';
 import { visualLines, isJustified, needsTableData } from './regions.js';
 import { withDeadline } from './deadline.js';
 import { figures, figurePicture, boxOf, figureSvg, rasterize, cellVisuals, boxDecor, hexOrNull, altOf } from './figures.js';
 
 const TW = 20; // twips per point
 const EMU = 12700; // EMU per point
+const XML_CHUNK = 4 * 1024 * 1024; // chars of document XML per zip write: a 500k-row report is far past V8's string limit in one piece
+/** The string cut into pieces of at most about max chars, each ending at a '>' (a tag boundary), so their join is s. */
+export function slices(s, max) {
+  const out = [];
+  let i = 0;
+  while (s.length - i > max) {
+    const j = s.indexOf('>', i + max);
+    if (j < 0) break;
+    out.push(s.slice(i, j + 1));
+    i = j + 1;
+  }
+  out.push(s.slice(i));
+  return out;
+}
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const hex = (c) => { const m = /^#?([0-9a-f]{6})$/i.exec(String(c || '').trim()); return m ? m[1].toUpperCase() : '000000'; };
 
@@ -161,7 +175,8 @@ function layoutRow(row, margin) {
 /**
  * @param {any} model render() output
  * @param {{ title?: string, author?: string, lang?: string, fontStore?: any, fetchImage?: (src: string) => Promise<Uint8Array|null>,
- *   rasterize?: (svg: string, w: number, h: number, scale: number) => Promise<Uint8Array|null>, figures?: boolean }} [opt]
+ *   rasterize?: (svg: string, w: number, h: number, scale: number) => Promise<Uint8Array|null>, figures?: boolean, xmlChunk?: number }} [opt]
+ *   xmlChunk: the document XML is written to the zip in pieces of about this many chars (default 4M; tests lower it)
  *   fontStore: text in pictures as outlines (else the reader's fallback font); fetchImage: pictures by URL;
  *   rasterize: the PNG fallback of a picture (default: a canvas in a browser, sharp in Node); figures: false leaves them out.
  * @returns {Promise<Uint8Array>}
@@ -277,18 +292,29 @@ async function docxOf(model, opt) {
     return `<w:sectPr><w:pgSz w:w="${W}" w:h="${H}"${W > H ? ' w:orient="landscape"' : ''}/><w:pgMar w:top="${V}" w:right="${M}" w:bottom="${V}" w:left="${M}" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr>`;
   };
   const sizeOf = (pg) => `${pg.width ?? model.width}x${pg.height ?? model.height}`;
-  let xml = '';
+  const zipOut = [];
+  const zip = new Zip((err, data) => { if (err) throw err; zipOut.push(data); });
+  const put = (name, bytes) => { const e = new ZipDeflate(name, { level: 6 }); zip.add(e); e.push(bytes, true); };
+  // the document XML is kept as pieces (body[i] is one page's XML; the pieces are never joined into one string)
+  const parts = [];
+  const max = opt.xmlChunk || XML_CHUNK;
+  let buf = ''; // pieces are joined up to max chars: many tiny pushes to the deflater compress worse
+  const write = (str) => {
+    for (const p of slices(str, max)) { if (buf.length + p.length > max) { parts.push(buf); buf = ''; } buf += p; }
+  };
+  write(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>`);
   model.pages.forEach((pg, i) => {
-    xml += body[i];
+    write(body[i]);
     const next = model.pages[i + 1];
     if (!next) return;
     // the section break carries the size of the pages before it
     // a new page by "page break before" on a one-point paragraph: a page that already ends at the bottom gets no blank page after it
-    xml += sizeOf(next) !== sizeOf(pg) ? `<w:p><w:pPr>${sectPr(pg)}</w:pPr></w:p>` : '<w:p><w:pPr><w:pageBreakBefore/><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr></w:p>';
+    write(sizeOf(next) !== sizeOf(pg) ? `<w:p><w:pPr>${sectPr(pg)}</w:pPr></w:p>` : '<w:p><w:pPr><w:pageBreakBefore/><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr></w:p>');
   });
   const last = model.pages[model.pages.length - 1] || {};
-  const document = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${xml}${sectPr(last)}</w:body></w:document>`;
+  write(`${sectPr(last)}</w:body></w:document>`);
+  parts.push(buf);
   // the document language: opt.lang, else the report's locale (the engine's default when it has none)
   const lang = `<w:lang w:val="${esc(opt.lang || model.locale || 'en-US')}"/>`;
   // Heading 1..6 (built-in names, so Word's navigation pane and outline use them); the look stays the direct formatting
@@ -298,18 +324,22 @@ async function docxOf(model, opt) {
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
   const core = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${esc(opt.title || model.name || 'Report')}</dc:title>${opt.author ? `<dc:creator>${esc(opt.author)}</dc:creator>` : ''}<dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created></cp:coreProperties>`;
-  /** @type {Record<string, Uint8Array>} */
-  const files = {
-    '[Content_Types].xml': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpeg" ContentType="image/jpeg"/><Default Extension="svg" ContentType="image/svg+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`),
-    '_rels/.rels': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>`),
-    'word/_rels/document.xml.rels': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>${media.map(m => `<Relationship Id="${m.rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${m.name}"/>`).join('')}</Relationships>`),
-    'word/document.xml': strToU8(document),
-    'word/styles.xml': strToU8(styles),
-    'docProps/core.xml': strToU8(core),
-  };
-  for (const m of media) files[`word/media/${m.name}`] = m.bytes;
-  return zipSync(files, { level: 6 });
+  put('[Content_Types].xml', strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpeg" ContentType="image/jpeg"/><Default Extension="svg" ContentType="image/svg+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`));
+  put('_rels/.rels', strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>`));
+  put('word/_rels/document.xml.rels', strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>${media.map(m => `<Relationship Id="${m.rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${m.name}"/>`).join('')}</Relationships>`));
+  const doc = new ZipDeflate('word/document.xml', { level: 6 });
+  zip.add(doc);
+  for (const p of parts) doc.push(strToU8(p), false);
+  doc.push(new Uint8Array(0), true);
+  put('word/styles.xml', strToU8(styles));
+  put('docProps/core.xml', strToU8(core));
+  for (const m of media) put(`word/media/${m.name}`, m.bytes);
+  zip.end();
+  const total = zipOut.reduce((n, c) => n + c.length, 0), bytes = new Uint8Array(total);
+  let at = 0;
+  for (const c of zipOut) { bytes.set(c, at); at += c.length; }
+  return bytes;
 }
