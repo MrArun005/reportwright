@@ -299,6 +299,8 @@ export async function planPaged(def0, opts = {}) {
       want = size; first = false;
     }
     info.pages = off;
+    // what reading and typing the rows said (text in a number field): the windows only see the rows already typed
+    for (const w of /** @type {any} */ (plan).warnings) if (!info.warnings.includes(w) && info.warnings.length < 200) info.warnings.push(w);
   }
   /** the time limit as render() reports it (504), also where an expression of the rows' order or filter met it */
   const limit = (/** @type {any} */ e) => (e?.message === OVER_TIME ? new ReportError(`The report ran longer than ${Math.round(Number(opts.timeoutMs) / 100) / 10} s, the time limit on this server.`, { status: 504, timeout: true }) : e);
