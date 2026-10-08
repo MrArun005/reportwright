@@ -555,6 +555,7 @@ a.cell-name:hover { color: var(--accent); }
 .vfrozen-head { position: absolute; top: 0; background: var(--paper); box-shadow: 0 3px 8px rgba(16, 24, 40, .18); pointer-events: none; }
 .vfrozen-head svg { display: block; width: 100%; height: 100%; }
 .search .opt { font-size: var(--fs-xs); font-weight: var(--fw-strong); }
+.search .opt .ww::before { content: "ab"; text-decoration: underline; } /* CSS, not text: the name is "Whole word" alone */
 .search .opt[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 .vmatches button { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vmatches button[aria-current] { background: var(--accent-soft); color: var(--accent); }

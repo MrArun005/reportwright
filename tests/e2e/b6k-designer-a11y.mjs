@@ -1,6 +1,6 @@
 // Accessibility names in the embedded Designer and viewer (#15, #39): section headings of the Inspector are real
 // buttons (Enter toggles them), chart-gallery radios are named by the chart type only, and the viewer's export items
-// are named by the format ("PDF document"), with the format badge hidden from screen readers.
+// are named by their visible text said once ("PDF document"): the badge and a name the hint repeats are aria-hidden.
 // Run npm run build:embed first (it serves public/embed/esm).
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
@@ -84,7 +84,8 @@ await page.waitForSelector('#r', { timeout: 60000 });
 await page.waitForFunction(() => document.querySelector('#r')?.shadowRoot?.querySelector('.vpage'), null, { timeout: 60000 }).catch(async (e) => { console.log('viewer:', (await page.evaluate(() => document.querySelector('#r')?.shadowRoot?.querySelector('.vmsg, .err, [class*=status]')?.textContent)), errors); throw e; });
 if (!(await page.getByTestId('export-pdf').isVisible().catch(() => false))) await page.getByTestId('export-menu').click();
 const pdf = await page.getByTestId('export-pdf').evaluate(b => ({ label: b.getAttribute('aria-label'), badgeHidden: b.querySelector('.fmt-badge')?.getAttribute('aria-hidden') }));
-assert.deepEqual(pdf, { label: 'PDF document', badgeHidden: 'true' });
+assert.deepEqual(pdf, { label: null, badgeHidden: 'true' }); // named by its visible text (label-content-name-mismatch: tests/e2e/b7a-axe.mjs)
+assert.equal(await page.getByRole('menuitem', { name: 'PDF document', exact: true }).count(), 1);
 assert.deepEqual(errors, []);
 await browser.close();
 console.log('b6k-designer-a11y: ok');

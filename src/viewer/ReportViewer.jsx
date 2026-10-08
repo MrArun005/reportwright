@@ -582,14 +582,19 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     const key = JSON.stringify(params);
     if (lastEvent.current.params !== key) { lastEvent.current.params = key; onEvent?.('parameters', params); }
   }, [params]); // eslint-disable-line react-hooks/exhaustive-deps
-  // the formats are items of the Export menu: a format badge, the name, and what the file is
-  const exportItem = (id, fmt, label, extra = {}) => ({
+  // the formats are items of the Export menu: a format badge, the name, and what the file is. Badge and a name the hint
+  // already says ("PDF" in "PDF document") are aria-hidden, so the accessible name is the visible text said once
+  const exportItem = (id, fmt, label, extra = {}) => {
+    const name = exporting === fmt ? T('exporting') : queued.includes(fmt) ? T('r4_queued') : label;
+    const hint = T(`b2_fmt_${fmt}`);
+    return {
     id, group: 'export', format: true,
-    node: <button type="button" role="menuitem" className="vdrop-item" onClick={() => { setEmenu(false); doExport(fmt); }} disabled={!model || exporting === 'print'} aria-label={T(`b2_fmt_${fmt}`)} data-testid={`export-${fmt}`} {...extra}>
+    node: <button type="button" role="menuitem" className="vdrop-item" onClick={() => { setEmenu(false); doExport(fmt); }} disabled={!model || exporting === 'print'} data-testid={`export-${fmt}`} {...extra}>
       <span className={`fmt-badge ${fmt}`} aria-hidden="true">{fmt === 'xlsx' ? 'XLS' : fmt === 'docx' ? 'DOC' : fmt === 'pptx' ? 'PPT' : fmt.toUpperCase()}</span>
-      <span className="vdrop-txt"><b>{exporting === fmt ? T('exporting') : queued.includes(fmt) ? T('r4_queued') : label}</b><span className="hint">{T(`b2_fmt_${fmt}`)}</span></span>
+      <span className="vdrop-txt"><b aria-hidden={(name === label && hint.includes(label)) || undefined}>{name}</b><span className="hint">{hint}</span></span>
     </button>,
-  });
+    };
+  };
   const builtIns = [
     { id: 'thumbnails', group: 'panels', node: <button className="btn sm icon" aria-pressed={side === 'pages' || side === 'map'} title={T('b2_sidebar')} onClick={() => setPanel(s => (s === 'pages' || s === 'map' ? null : 'pages'))} data-testid="viewer-sidebar"><Icon name="sidebar" /></button> },
     hasParams && { id: 'parameters', group: 'panels', primary: true, node: <button className="btn sm" aria-pressed={side === 'params'} onClick={() => setPanel(s => (s === 'params' ? null : 'params'))}><Icon name="filter" /><span className="lbl">{T('parameters')}</span></button> },
@@ -629,8 +634,8 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
       node: <form className="search" role="search" onSubmit={(e) => { e.preventDefault(); goHit(hitIdx + 1); }}>
         <span className="search-ico"><Icon name="search" /></span>
         <input className="input" type="search" placeholder={T('search')} aria-label={T('search')} value={query} onChange={e => { setQuery(e.target.value); setHitIdx(0); }} />
-        <button type="button" className="btn sm icon opt" aria-pressed={matchCase} aria-label={T('matchCase')} title={T('matchCase')} onClick={() => { setMatchCase(v => !v); setHitIdx(0); }}>Aa</button>
-        <button type="button" className="btn sm icon opt" aria-pressed={wholeWord} aria-label={T('wholeWord')} title={T('wholeWord')} onClick={() => { setWholeWord(v => !v); setHitIdx(0); }}><u>ab</u></button>
+        <button type="button" className="btn sm icon opt" aria-pressed={matchCase} aria-label={T('matchCase')} title={T('matchCase')} onClick={() => { setMatchCase(v => !v); setHitIdx(0); }}><span aria-hidden="true">Aa</span></button>
+        <button type="button" className="btn sm icon opt" aria-pressed={wholeWord} aria-label={T('wholeWord')} title={T('wholeWord')} onClick={() => { setWholeWord(v => !v); setHitIdx(0); }}><span className="ww" aria-hidden="true" /></button>
         {query && <span className="stat" aria-live="polite">{hits.length ? `${hitIdx + 1}/${hits.length}` : '0'}</span>}
         {query && hits.length > 0 && <>
           <button type="button" className="btn sm icon" onClick={() => goHit(hitIdx - 1)} aria-label={T('previousMatch')} title={T('previousMatch')}><Icon name="up" /></button>
