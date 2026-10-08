@@ -4,6 +4,8 @@ import { ITEMS } from '../items/index.js';
 import { symbologyError } from '../items/barcode.js';
 import { rowCells } from '../items/cells.js';
 import { REPORT_SCHEMA } from './report.schema.js';
+import { toDate } from '../expr/format.js';
+import { PAGE_SIZES } from '../units.js';
 
 export const SCHEMA_ID = 'pagewright/report@1'; // kept after the rename: every saved report carries it
 export const SCHEMA_ALIAS = 'reportwright/report@1'; // the same format under the new name
@@ -50,6 +52,45 @@ export function didYouMean(k, known) {
   }
   return best;
 }
+/** Colour names the renderer reads (exporters/color.js; the engine does not import the exporters). Another word is not drawn. */
+const COLOUR_NAMES = ['black', 'white', 'red', 'green', 'blue', 'gray', 'grey', 'orange', 'yellow'];
+const COLOUR_KEYS = ['color', 'backgroundColor', 'fill', 'stroke', 'textDecorationColor'];
+/** A standard numeric format code with a stray letter after it: "N2x" (the code is "N2"). */
+const NUMERIC_FORMAT = /^([CcNnFfPpEeXxGgRr])(\d{1,2})[A-Za-z]/;
+/** A source the browser cannot load: a Windows or relative path, file:, or a bare image file name. */
+const LOCAL_IMAGE = /^(?:[a-z]:[\\/]|\\\\|\.{1,2}[\\/]|file:|[^:/\\\s]+\.(?:png|jpe?g|gif|webp|svg)$)/i;
+/** Keys a sort entry is often written with, for the one it means: {by, dir}. */
+const SORT_ALIAS = { expr: 'by', expression: 'by', field: 'by', direction: 'dir', order: 'dir' };
+/** Warnings for a style object: an unknown colour name, a numeric format code with a stray letter. */
+function styleIssues(st, label, out) {
+  if (!st || typeof st !== 'object' || Array.isArray(st)) return;
+  for (const k of COLOUR_KEYS) {
+    const v = st[k];
+    if (typeof v !== 'string' || v.startsWith('=')) continue;
+    const s = v.trim().toLowerCase();
+    if (!/^[a-z]+$/.test(s) || COLOUR_NAMES.includes(s) || s === 'none' || s === 'transparent') continue;
+    const g = didYouMean(s, COLOUR_NAMES);
+    out.push(`${label}: "${v}" is not a colour name the report can draw${g ? ` (did you mean "${g}"?)` : ''}; use a name such as "red" or a hex colour such as "#dc2626"`);
+  }
+  formatIssue(st.format, label, out);
+}
+function formatIssue(f, label, out) {
+  const m = typeof f === 'string' ? NUMERIC_FORMAT.exec(f) : null;
+  if (m) out.push(`${label}: the format "${f}" is not a format code (did you mean "${m[1]}${m[2]}"?)`);
+}
+/** A sort is a list of {by, dir}: an entry without "by" (or with other keys) is ignored, so it says so. */
+function sortIssues(sort, label, out) {
+  sort.forEach((s, i) => {
+    const at = `${label}, sort ${i + 1}`;
+    if (!s || typeof s !== 'object' || Array.isArray(s) || !('by' in s)) { out.push(`${at}: a sort entry is {by, dir}, e.g. {"by": "=Fields.Name", "dir": "asc"}; this one has no "by" and is ignored`); return; }
+    for (const k of Object.keys(s)) {
+      if (k === 'by' || k === 'dir' || k.startsWith('_')) continue;
+      const g = SORT_ALIAS[k] || didYouMean(k, ['by', 'dir']);
+      out.push(`${at}: "${k}" is ignored; a sort entry is {by, dir}${g ? ` (did you mean "${g}"?)` : ''}`);
+    }
+    if (s.dir != null && !['asc', 'desc'].includes(s.dir)) out.push(`${at}: "dir" is ${JSON.stringify(s.dir)}; expected "asc" or "desc"`);
+  });
+}
 /** Each item type's properties in the report JSON Schema (its own and ItemBase's): type → Map(key → schema). */
 const SCHEMA_ITEMS = (() => {
   const defs = /** @type {Record<string, any>} */ (REPORT_SCHEMA.$defs);
@@ -91,6 +132,14 @@ export function validate(def) {
   for (const k of Object.keys(def)) if (!DEF_KEYS.has(k) && !k.startsWith('_')) { const g = didYouMean(k, DEF_KEYS); warnings.push(`Unknown report property "${k}"${g ? ` (did you mean "${g}"?)` : ''}; it is ignored`); }
   const body = def.sections?.body;
   if (!body || (Array.isArray(body) && !body.length)) errors.push('The report has no body section');
+  const size = def.page?.size;
+  if (typeof size === 'string' && size !== 'Pageless' && !Object.hasOwn(PAGE_SIZES, size)) {
+    const t = size.trim();
+    if (t !== size && (Object.hasOwn(PAGE_SIZES, t) || t === 'Pageless')) warnings.push(`Page size "${size}" has spaces around the name; it is not a size, so the page falls back to A4 unless width and height are set. Write "${t}"`);
+    else { const g = didYouMean(t, [...Object.keys(PAGE_SIZES), 'Pageless']); warnings.push(`Unknown page size "${size}"${g ? ` (did you mean "${g}"?)` : ''}; the page falls back to A4 unless width and height are set`); }
+  }
+  for (const [n, st] of Object.entries(def.styles?.named || {})) styleIssues(st, `Named style "${n}"`, warnings);
+  styleIssues(def.styles?.base, 'Base style', warnings);
   if (Array.isArray(body)) body.forEach((b, i) => {
     if (!b || typeof b !== 'object' || Array.isArray(b)) errors.push(`Body section ${i + 1} is not an object`);
     else if (b.page != null && (typeof b.page !== 'object' || Array.isArray(b.page))) errors.push(`Body section ${i + 1}: "page" must be an object`);
@@ -102,6 +151,10 @@ export function validate(def) {
   for (const p of def.parameters || []) {
     if (p?.hidden && p.required && (p.default == null || p.default === '') && !p.nullable) {
       warnings.push(`Parameter "${p.name}" is hidden and required but has no default: only a URL, the API or a drill-through can set it`);
+    }
+    // a date default is read as a date in the invariant form (2026-12-31); "31/12/2026" is none, and the parameter stays blank
+    if (p?.type === 'date' && typeof p.default === 'string' && p.default.trim() && !p.default.startsWith('=') && !toDate(p.default)) {
+      warnings.push(`Parameter "${p.name}": its default "${p.default}" is not a date; write it as 2026-12-31 (year-month-day)`);
     }
   }
 
@@ -121,6 +174,7 @@ export function validate(def) {
       if (d.relation.path != null && typeof d.relation.path !== 'string') errors.push(`Data set "${d.name}": the relation path must be text, e.g. $.items[*]`);
     } else if (!srcNames.has(d.source)) errors.push(`Data set "${d.name}" uses the source "${d.source}", which does not exist`);
     dsNames.add(d.name);
+    if (Array.isArray(d.sort)) sortIssues(d.sort, `Data set "${d.name}"`, warnings);
   }
 
   const names = new Set();
@@ -161,6 +215,15 @@ export function validate(def) {
       }
       for (const k of ['x', 'y', 'w', 'h']) if (typeof it[k] !== 'number' || Number.isNaN(it[k])) errors.push(`${label}: "${k}" must be a number`);
       if (looksLikeLink(it)) warnings.push(`${label}: its text looks like a link (underlined, in a link colour) but it has no action; give it one (Action) or a plain style`);
+      styleIssues(it.style, label, warnings);
+      formatIssue(it.format, label, warnings);
+      if (it.styleName != null && typeof it.styleName === 'string' && !it.styleName.startsWith('=') && !def.styles?.sheet && !def.master && !def.theme && !Object.hasOwn(def.styles?.named || {}, it.styleName)) {
+        const g = didYouMean(it.styleName, Object.keys(def.styles?.named || {}));
+        warnings.push(`${label}: there is no named style "${it.styleName}"${g ? ` (did you mean "${g}"?)` : ''}; it is ignored`);
+      }
+      if (Array.isArray(it.sort)) sortIssues(it.sort, label, warnings);
+      if (it.type === 'chart' && Array.isArray(it.series) && !it.series.length) warnings.push(`${label}: the chart has no series, so it draws nothing; add one, e.g. series: [{ "name": "Value", "value": "=Sum(Fields.Amount)" }]`);
+      if (it.type === 'image' && typeof it.src === 'string' && !it.src.startsWith('=') && LOCAL_IMAGE.test(it.src.trim())) warnings.push(`${label}: "${it.src}" is a local file path, which a browser cannot load; embed the image (images: { name: "data:image/png;base64,..." } and src: "embedded:name") or use an https:// address`);
       if (it.style != null && (typeof it.style !== 'object' || Array.isArray(it.style))) warnings.push(`${label}: "style" must be an object of style properties, such as { "fontWeight": "bold" }; ${JSON.stringify(it.style).slice(0, 40)} is ignored`);
       // a mistyped property is ignored silently otherwise ("vale" for value: a blank box)
       const own = ownKeys(it.type);
