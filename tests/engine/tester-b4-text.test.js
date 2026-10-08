@@ -1,0 +1,37 @@
+// Batch 4 tester list, group 1: numbers, ids and text stay whole (items 5, 6, 8, 9, 10, 12, 13, 14).
+import { describe, it, expect } from 'vitest';
+import { render } from '../../src/engine/index.js';
+import { fontStore, report } from '../helpers.js';
+
+const textItems = (out) => out.pages.flatMap(p => p.items.filter(i => i.t === 'text'));
+const joined = (t) => t.lines.map(l => l.text).join('⏎');
+const find = (out, re) => textItems(out).find(t => re.test(t.lines.map(l => l.text).join('')));
+const table = (columns, header, detail, extra = {}) => ({ type: 'table', name: 'T', x: 0, y: 0, w: columns.reduce((s, c) => s + (c.width || 0), 0) || 300, h: 40, dataSet: 'Rows', columns, header: [{ height: 14, cells: header.map(v => ({ value: v })) }], detail: [{ height: 14, cells: detail }], ...extra });
+
+describe('5: a number never breaks inside its digits', () => {
+  it('in a narrow table cell, a KPI box and a matrix cell', async () => {
+    const rows = [{ v: -2138350.5, k: 99999999.99 }];
+    const def = report([
+      table([{ width: 30 }, { width: 200 }], ['A', 'B'], [{ value: '=Fields.v', style: { format: 'N2' } }, { value: 'x' }]),
+      { type: 'textbox', name: 'Kpi', x: 0, y: 60, w: 40, h: 16, canGrow: false, dataSet: 'Rows', value: '=Format(First(Fields.k), "C2")', style: { fontSize: 13 } },
+      { type: 'matrix', name: 'M', x: 0, y: 100, w: 200, h: 40, dataSet: 'Rows', columnWidth: 28, rowGroups: [{ name: 'R', expr: '="r"', width: 30 }], columnGroups: [{ name: 'C', expr: '="c"' }], values: [{ value: '=Sum(Fields.k)', format: 'N2' }] },
+    ], { data: { rows }, def: { locale: 'en-IN', currency: 'INR' } });
+    def.dataSets[0].fields = [{ name: 'v', type: 'number' }, { name: 'k', type: 'number' }];
+    const out = await render(def, { fontStore });
+    for (const re of [/-21,38,350\.50/, /₹9,99,99,999\.99/, /9,99,99,999\.99/]) {
+      const t = find(out, re);
+      expect(t, String(re)).toBeTruthy();
+      expect(t.lines.length, joined(t)).toBe(1);
+      expect(t.lines[0].text).not.toMatch(/…/);
+    }
+  });
+});
+
+describe('5: a number inside a text never breaks either', () => {
+  it('"Total ₹1,61,70,192.00" in a narrow box keeps the amount whole', async () => {
+    const def = report([{ type: 'textbox', name: 'K', x: 0, y: 0, w: 46, h: 30, value: 'Total ₹1,61,70,192.00', style: { fontSize: 9 } }]);
+    const out = await render(def, { fontStore });
+    const t = find(out, /Total/);
+    expect(t.lines.map(l => l.text)).toContain('₹1,61,70,192.00');
+  });
+});

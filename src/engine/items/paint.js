@@ -72,9 +72,12 @@ function fitSize(text, key, size, inner, m, atom = false) {
   const s = String(text);
   if (s.length > 200) return size;
   const num = atom || NUMBER.test(s.trim());
-  const longest = num ? m.width(s.trim(), key, size) : Math.max(0, ...s.split(/\s+/).map(w => (w ? m.width(w, key, size) : 0)));
+  // the widest word decides; an amount inside a text ("Total ₹1,61,70,192") shrinks like a number, never breaks
+  let longest = 0, word = '';
+  if (num) longest = m.width(s.trim(), key, size);
+  else for (const w of s.split(/\s+/)) { const ww = w ? m.width(w, key, size) : 0; if (ww > longest) { longest = ww; word = w; } }
   if (longest <= inner) return size;
-  const floor = num ? Math.min(size, MIN_NUMBER_FONT) : Math.max(MIN_FONT, size * 0.75);
+  const floor = num || NUMBER.test(word) ? Math.min(size, MIN_NUMBER_FONT) : Math.max(MIN_FONT, size * 0.75);
   // in half points: cells shrunk alike share one size (fewer font changes, a smaller PDF)
   return Math.max(floor, Math.min(size, Math.floor((size * (inner / longest) - 0.01) * 2) / 2));
 }
