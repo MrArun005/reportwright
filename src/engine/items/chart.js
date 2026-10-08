@@ -429,21 +429,28 @@ function paintCartesian(type, g) {
   const catW = data.categories.reduce((m, c) => Math.max(m, measure(c).w), 10);
   const leftTitle = horiz ? xSpec.title : ySpec.title;
   const bottomTitle = horiz ? (ySpec.title || item.xTitle) : (xSpec.title || item.xTitle);
-  const angle = !horiz ? Math.max(-90, Math.min(90, Number(xSpec.labelAngle) || 0)) : 0;
-  const sin = Math.abs(Math.sin(angle * Math.PI / 180)), cos = Math.abs(Math.cos(angle * Math.PI / 180));
-  const catBand = angle ? Math.min(catW, (bottom - top) * 0.4) * sin + fs * cos + fs * 0.8 : fs * 1.8;
-  const plotTop = top + fs * 0.6 + (horiz && hasY2 ? fs * 1.6 : 0);
-  const plotBottom = bottom - (horiz ? fs * 1.6 : catBand) - (bottomTitle ? fs * 1.6 : 0);
-  const opt = { len: horiz ? W * 0.6 : plotBottom - plotTop, fs, lc, who, percent: stackMode === 'percent' };
-  const ax = [
-    valueAxis(ySpec, rng[0].lo, rng[0].hi, rng[0].minPos, { ...opt, includeZero: !rng[0].allFin || !rng[0].any, fmt: fmt1, name: 'y', autoFmt: auto(ySpec, item.valueFormat) }),
-    valueAxis(y2Spec, rng[1].lo, rng[1].hi, rng[1].minPos, { ...opt, includeZero: !rng[1].allFin, fmt: fmt2, name: 'secondary y', autoFmt: auto(y2Spec, ySpec.format, item.valueFormat) }),
-  ];
+  // the x labels turn (-45°) when they do not fit flat, rather than thinning out; a label angle set by hand is kept
+  const angleSet = !horiz ? Math.max(-90, Math.min(90, Number(xSpec.labelAngle) || 0)) : 0;
+  const layoutAt = (angle) => {
+    const sin = Math.abs(Math.sin(angle * Math.PI / 180)), cos = Math.abs(Math.cos(angle * Math.PI / 180));
+    const catBand = angle ? Math.min(catW, (bottom - top) * 0.4) * sin + fs * cos + fs * 0.8 : fs * 1.8;
+    const plotTop = top + fs * 0.6 + (horiz && hasY2 ? fs * 1.6 : 0);
+    const plotBottom = bottom - (horiz ? fs * 1.6 : catBand) - (bottomTitle ? fs * 1.6 : 0);
+    const opt = { len: horiz ? W * 0.6 : plotBottom - plotTop, fs, lc, who, percent: stackMode === 'percent' };
+    const ax = [
+      valueAxis(ySpec, rng[0].lo, rng[0].hi, rng[0].minPos, { ...opt, includeZero: !rng[0].allFin || !rng[0].any, fmt: fmt1, name: 'y', autoFmt: auto(ySpec, item.valueFormat) }),
+      valueAxis(y2Spec, rng[1].lo, rng[1].hi, rng[1].minPos, { ...opt, includeZero: !rng[1].allFin, fmt: fmt2, name: 'secondary y', autoFmt: auto(y2Spec, ySpec.format, item.valueFormat) }),
+    ];
+    const valW = Math.max(10, ...ax[0].ticks.map(t => m.width(ax[0].fmt(t), font, fs)));
+    const valW2 = hasY2 ? Math.max(10, ...ax[1].ticks.map(t => m.width(ax[1].fmt(t), font, fs))) : 0;
+    const left = X + 4 + (leftTitle ? fs * 1.6 : 0) + (horiz ? Math.min(catW, W * 0.32) : valW) + 6;
+    const right = X + W - 6 - (!horiz && hasY2 ? valW2 + 6 + (y2Spec.title ? fs * 1.6 : 0) : 0);
+    return { angle, sin, cos, catBand, plotTop, plotBottom, ax, valW, valW2, left, right };
+  };
+  let lay = layoutAt(angleSet);
+  if (!horiz && xSpec.labelAngle == null && catW + 6 > (lay.right - lay.left) / Math.max(1, n)) lay = layoutAt(-45);
+  const { angle, sin, cos, catBand, plotTop, plotBottom, ax, valW, valW2, left, right } = lay;
   for (const r of S) if (ax[r.axis].log && r.pts.some(p => p && !r.fin && p.b <= 0)) { lc.warn(`${who}: values of 0 or less cannot be drawn on a logarithmic axis`); break; }
-  const valW = Math.max(10, ...ax[0].ticks.map(t => m.width(ax[0].fmt(t), font, fs)));
-  const valW2 = hasY2 ? Math.max(10, ...ax[1].ticks.map(t => m.width(ax[1].fmt(t), font, fs))) : 0;
-  const left = X + 4 + (leftTitle ? fs * 1.6 : 0) + (horiz ? Math.min(catW, W * 0.32) : valW) + 6;
-  const right = X + W - 6 - (!horiz && hasY2 ? valW2 + 6 + (y2Spec.title ? fs * 1.6 : 0) : 0);
   if (bottomTitle) text(bottomTitle, (left + right) / 2, bottom - 2, { align: 'center', color: '#6b7280' });
   const midY = (plotTop + plotBottom) / 2;
   if (leftTitle) text(leftTitle, X + 4 + fs, midY, { align: 'center', color: '#6b7280', maxW: plotBottom - plotTop, rotate: { a: -90, cx: X + 4 + fs, cy: midY } });
@@ -516,6 +523,7 @@ function paintCartesian(type, g) {
       const cx = center(i), cy = plotBottom + fs * 0.6;
       text(c, cx, cy + fs * 0.35 * cos, { align: angle < 0 ? 'right' : 'left', maxW, rotate: { a: angle, cx, cy } });
     });
+    if (every > 1) lc.warn(`${who}: ${n - Math.ceil(n / every)} of ${n} category labels do not fit even turned, so they are not shown (every bar is drawn)`);
   } else {
     const every = Math.max(1, Math.ceil((horiz ? fs * 1.3 : catW + 6) / band));
     data.categories.forEach((c, i) => {
@@ -523,6 +531,7 @@ function paintCartesian(type, g) {
       if (horiz) text(c, left - 5, center(i) + fs * 0.35, { align: 'right', maxW: left - X - 8 - (leftTitle ? fs * 1.6 : 0) });
       else text(c, center(i), plotBottom + fs * 1.35, { align: 'center', maxW: band * every - 2 });
     });
+    if (every > 1) lc.warn(`${who}: ${n - Math.ceil(n / every)} of ${n} category labels do not fit, so they are not shown (every bar is drawn)`);
   }
 
   const multi = data.series.length > 1;

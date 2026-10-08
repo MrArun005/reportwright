@@ -44,11 +44,17 @@ Monthly trend by product
 4.0
 5.0
 Jan
+Feb
 Mar
+Apr
 May
+Jun
 Jul
+Aug
 Sep
+Oct
 Nov
+Dec
 Region × month (₹ crore)
 Region
 Jan
