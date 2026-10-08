@@ -40,7 +40,7 @@
     <div class="hero-copy">
       <p class="kicker"><span class="mark">●</span> Report designer · viewer · engine</p>
       <h1>Pixel-exact business reports, <em>laid out in the browser.</em></h1>
-      <p class="lede">ReportWright is an MIT-licensed alternative to ActiveReportsJS: a banded report designer, a viewer you embed with one call, and an engine that lays out every line itself, so the screen, the PDF and the printout match. Every report on this page is rendered live, in this tab, including a 5,000-row ledger built entirely in the designer. There is no server behind this site.</p>
+      <p class="lede">ReportWright is an MIT-licensed alternative to ActiveReportsJS: a banded report designer, a viewer you embed with one call, and an engine that lays out every line itself, so the screen, the PDF and the printout match. Its PDFs pass veraPDF as PDF/A and PDF/UA (tagged for screen readers), with no Chromium, and stream from Node at flat memory. Every report on this page is rendered live, in this tab, including a 5,000-row ledger built entirely in the designer. There is no server behind this site.</p>
       <div class="hero-actions">
         <a class="btn btn-solid" href="#gallery">Open the live gallery</a>
         <a class="btn" href="#designer">Try the designer</a>
@@ -49,6 +49,8 @@
     </div>
     <dl class="spec">
       <div><dt>Exports</dt><dd>PDF, Excel, Word, HTML, CSV, JSON, print</dd></div>
+      <div><dt>Standards</dt><dd>PDF/A-2b, PDF/UA-1, both together <small>(veraPDF passes)</small></dd></div>
+      <div><dt>Streaming</dt><dd><code>exportPdfStream</code> in Node: about 260 MB peak from 20,000 to 100,000 rows <small>(measured)</small></dd></div>
       <div><dt>Scale</dt><dd>50,000 rows → 1,112 pages in 1.6 s <small>(Node, measured)</small></dd></div>
       <div><dt>Scripts</dt><dd>HarfBuzz shaping + bidi: Hindi, Arabic, Hebrew</dd></div>
       <div><dt>Items</dt><dd>Grouped tables, pivot tables, merged cells, list, subreports, rich text, sparklines, data bars, bullets, TOC</dd></div>
@@ -124,7 +126,7 @@
     <header class="sect-head">
       <p class="num">04</p>
       <h2 id="embed-h">Embed it</h2>
-      <p class="sect-note">The viewer and designer are one script or ES module. Thin wrappers for four frameworks (the framework is a peer dependency; nothing is bundled twice). The packages are built and packed in the repository but not yet published to npm.</p>
+      <p class="sect-note">The viewer and designer are one script or ES module. Thin wrappers for four frameworks (the framework is a peer dependency; nothing is bundled twice). On npm: <code>npm i @reportwright/engine</code> for PDFs in Node, <code>@reportwright/viewer</code> for the browser.</p>
     </header>
     <div class="code-split">
       <div class="tabs" role="tablist" aria-label="Framework" id="code-tabs"></div>
