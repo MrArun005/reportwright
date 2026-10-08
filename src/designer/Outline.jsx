@@ -2,7 +2,9 @@
 // Outline: every band and item as a tree. Select any item (also one hidden under another), change the drawing order,
 // or move an item into or out of a container or list: drag a row (onto the top or bottom edge of a row: before or after
 // it; onto the middle of a container or list: into it; onto a band: to its end), or with the keyboard (Alt+arrows on a
-// name). The buttons do the same and stay as the accessible fallback.
+// name). The buttons do the same for the mouse.
+// Keyboard (N35): the rows are one listbox, a single Tab stop (roving tabindex): Up/Down/Home/End move between rows,
+// Enter or Space selects (Shift adds); Delete, the other arrows and Ctrl+D then act on the selection as on the canvas.
 import { useRef, useState } from 'react';
 import { useDesigner, sectionList, secOf, reorderItem, moveOutOfParent, moveItemTo, findItem, NESTING } from './store.js';
 import { ITEMS } from '@/engine/items/index.js';
@@ -18,9 +20,23 @@ export default function Outline() {
   const T = (k, v) => t(lang, k, v);
   const [drop, setDrop] = useState(null); // { id, where: 'before' | 'after' | 'into' } or { band }
   const [said, setSaid] = useState('');
+  const [cur, setCur] = useState(null); // the row with the Tab stop: an item id or 'band:<key>'
   const dragged = useRef(null);
   const body = useRef(null);
   const chosen = new Set(sel.kind === 'items' ? sel.ids : sel.kind === 'cell' ? [sel.id] : []);
+  // the Tab stop: the row moved to last, else the first selected, else the first row
+  const keys = sectionList(def).flatMap(({ key }) => { const out = [`band:${key}`]; const go = (l) => l.forEach(it => { out.push(it.id); if (NESTING.has(it.type)) go(it.items || []); }); go(secOf(def, key)?.items || []); return out; });
+  const stop = keys.includes(cur) ? cur : keys.find(k => chosen.has(k) || (sel.kind === 'section' && k === `band:${sel.section}`)) || keys[0];
+  const roving = (k) => ({ tabIndex: k === stop ? 0 : -1, onFocus: () => setCur(k) });
+  const nav = (e) => {
+    if (e.defaultPrevented || e.altKey || e.metaKey || e.ctrlKey || e.target.getAttribute('role') !== 'option') return;
+    const all = [...e.currentTarget.querySelectorAll('[role=option]')];
+    const i = all.indexOf(e.target);
+    const j = e.key === 'ArrowDown' ? i + 1 : e.key === 'ArrowUp' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? all.length - 1 : null;
+    if (j == null) return;
+    e.preventDefault(); // the designer's own arrow keys (moving the selection on the page) skip it
+    all[Math.max(0, Math.min(all.length - 1, j))]?.focus();
+  };
   const pick = (e, id) => {
     const st = useDesigner.getState();
     if (e.shiftKey && st.sel.kind === 'items') {
@@ -107,18 +123,18 @@ export default function Outline() {
   const rows = (list, parent, depth, section) => list.map((it, i) => {
     const mark = drop && drop.id != null && drop.id === it.id ? ` drop-${drop.where}` : ''; // an item from Ask AI may have no id yet
     return (
-      <li key={it.id}>
+      <li key={it.id} role="none">
         <div className={`trow outline-row${chosen.has(it.id) ? ' sel' : ''}${mark}`} style={{ paddingInlineStart: depth * 14 }} data-outline={it.name} data-outline-id={it.id} {...dragProps(it, i, parent, section)}>
           {!readOnly && <span className="grip" aria-hidden="true">⠿</span>}
-          <button type="button" className="linklike nm" onClick={(e) => pick(e, it.id)} onKeyDown={(e) => onKey(e, it, list, i, parent)} aria-pressed={chosen.has(it.id)} aria-describedby={readOnly ? undefined : 'outline-keys'}>{it.name}</button>
+          <button type="button" role="option" className="linklike nm" onClick={(e) => pick(e, it.id)} onKeyDown={(e) => onKey(e, it, list, i, parent)} aria-selected={chosen.has(it.id)} aria-describedby={readOnly ? 'outline-nav' : 'outline-nav outline-keys'} {...roving(it.id)}>{it.name}</button>
           <span className="ty">{T(`item_${it.type}`) === `item_${it.type}` ? ITEMS[it.type]?.label || it.type : T(`item_${it.type}`)}</span>
           {!readOnly && <span className="act" style={{ display: 'inline-flex', gap: 2 }}>
-            <button type="button" className="btn sm ghost icon" disabled={i === 0} onClick={() => reorderItem(it.id, -1)} title={T('outlineBackward')} aria-label={`${T('outlineBackward')}: ${it.name}`}>↑</button>
-            <button type="button" className="btn sm ghost icon" disabled={i === list.length - 1} onClick={() => reorderItem(it.id, 1)} title={T('outlineForward')} aria-label={`${T('outlineForward')}: ${it.name}`}>↓</button>
-            {parent && <button type="button" className="btn sm ghost icon" onClick={() => moveOutOfParent(it.id)} title={T('outlineMoveOut', { name: parent.name })} aria-label={`${T('outlineMoveOut', { name: parent.name })}: ${it.name}`}>⇱</button>}
+            <button type="button" className="btn sm ghost icon" tabIndex={-1} disabled={i === 0} onClick={() => reorderItem(it.id, -1)} title={T('outlineBackward')} aria-label={`${T('outlineBackward')}: ${it.name}`}>↑</button>
+            <button type="button" className="btn sm ghost icon" tabIndex={-1} disabled={i === list.length - 1} onClick={() => reorderItem(it.id, 1)} title={T('outlineForward')} aria-label={`${T('outlineForward')}: ${it.name}`}>↓</button>
+            {parent && <button type="button" className="btn sm ghost icon" tabIndex={-1} onClick={() => moveOutOfParent(it.id)} title={T('outlineMoveOut', { name: parent.name })} aria-label={`${T('outlineMoveOut', { name: parent.name })}: ${it.name}`}>⇱</button>}
           </span>}
         </div>
-        {NESTING.has(it.type) && (it.items || []).length > 0 && <ul className="tree">{rows(it.items, it, depth + 1, section)}</ul>}
+        {NESTING.has(it.type) && (it.items || []).length > 0 && <ul className="tree" role="none">{rows(it.items, it, depth + 1, section)}</ul>}
       </li>
     );
   });
@@ -126,15 +142,18 @@ export default function Outline() {
     <div className="pane" data-testid="outline">
       <h4>{T('outline')}</h4>
       <div className="pane-body" ref={body}>
+        <div role="listbox" aria-label={T('outline')} aria-multiselectable="true" onKeyDown={nav}>
         {sectionList(def).map(({ key, label }) => {
           const items = secOf(def, key)?.items || [];
           return (
-            <div key={key} className={`outline-sec${drop?.band === key ? ' drop-band' : ''}`} data-outline-band={key} {...bandDrop(key)}>
-              <button type="button" className={`linklike outline-band${sel.kind === 'section' && sel.section === key ? ' sel' : ''}`} onClick={() => useDesigner.getState().select({ kind: 'section', section: key })}><b>{label}</b></button>
-              <ul className="tree">{items.length ? rows(items, null, 1, key) : <li className="subtle">{T('outlineEmpty')}</li>}</ul>
+            <div key={key} role="group" aria-label={label} className={`outline-sec${drop?.band === key ? ' drop-band' : ''}`} data-outline-band={key} {...bandDrop(key)}>
+              <button type="button" role="option" aria-selected={sel.kind === 'section' && sel.section === key} aria-describedby="outline-nav" className={`linklike outline-band${sel.kind === 'section' && sel.section === key ? ' sel' : ''}`} onClick={() => useDesigner.getState().select({ kind: 'section', section: key })} {...roving(`band:${key}`)}><b>{label}</b></button>
+              <ul className="tree" role="none">{items.length ? rows(items, null, 1, key) : <li className="subtle" role="none">{T('outlineEmpty')}</li>}</ul>
             </div>
           );
         })}
+        </div>
+        <div className="sr-only" id="outline-nav">{T('b9_outlineKeys')}</div>
         <div className="hint">{T('outlineHint')}</div>
         {!readOnly && <div className="hint" id="outline-keys">{T('outlineKeys')}</div>}
         <div className="sr-only" role="status" aria-live="polite">{said}</div>

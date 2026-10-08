@@ -95,7 +95,15 @@ function LeftRail({ T, readOnly, embed }) {
   const body = useRef(null);
   const [at, setAt] = useState('tools');
   const tabs = [!readOnly && ['tools', 'b2_toolbox', 'tools'], embed?.panels?.data !== false && ['data', 'b2_data', 'data'], ['outline', 'b2_outline', 'outline']].filter(Boolean);
-  const go = (id) => { const el = body.current?.querySelector(`[data-rail="${id}"]`); if (el) body.current.scrollTo({ top: el.offsetTop - body.current.offsetTop, behavior: 'smooth' }); setAt(id); };
+  const go = (id) => {
+    const el = body.current?.querySelector(`[data-rail="${id}"]`);
+    if (el) {
+      body.current.scrollTo({ top: el.offsetTop - body.current.offsetTop, behavior: 'smooth' });
+      // the keyboard goes along: to the outline's current row, else the section's first control (N35: no long Tab walk)
+      (el.querySelector('[role=listbox] [tabindex="0"]') || el.querySelector('button, input, select, textarea'))?.focus({ preventScroll: true });
+    }
+    setAt(id);
+  };
   const spy = () => {
     const b = body.current;
     if (!b) return;
@@ -379,9 +387,15 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
   useEffect(() => { loadSample(api); }, [dataKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    // Embedded: only keys typed inside the designer, never the host page's. A click that leaves the focus nowhere (a band
+    // label, a matrix, a drill-through link in Preview that re-renders) puts it on <body>: a key there belongs to the
+    // designer clicked last, so Esc and Ctrl+S still work after it.
+    let lastInside = false;
+    const inside = (e) => (e.composedPath?.() || []).includes(rootRef.current);
+    const onDown = (e) => { lastInside = inside(e); };
+    const ours = (e) => inside(e) || (lastInside && (e.target === document.body || e.target === document.documentElement));
     const onKey = (e) => {
-      // embedded: only keys typed inside the designer, never the host page's
-      if (embed && !(e.composedPath?.() || []).includes(rootRef.current)) return;
+      if (embed && !ours(e)) return;
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === 's') {
         e.preventDefault();
@@ -393,12 +407,12 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
         st().save();
         return;
       }
-      if (isTyping(e) || st().tab !== 'design') return;
+      if (isTyping(e) || st().tab !== 'design' || e.defaultPrevented) return; // handled already (the outline's arrows)
       if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? st().redo() : st().undo(); return; }
       if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); st().redo(); return; }
       if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSelection(); return; }
       if (mod && e.key.toLowerCase() === 'c') { if (st().sel.kind === 'items') { e.preventDefault(); copySelection(); } return; }
-      if (mod && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteItems(st().sel.kind === 'section' ? st().sel.section : 'body'); return; }
+      if (mod && e.key.toLowerCase() === 'v') return; // the paste event below: its clipboard needs no permission (N36)
       if (e.key === 'Delete' || e.key === 'Backspace') { if (st().sel.kind === 'items') { e.preventDefault(); deleteSelection(); } return; }
       if (e.key === 'Escape') { st().select({ kind: 'report' }); return; }
       if (e.key === '?') { setDialog(d => (d === 'keys' ? null : 'keys')); return; }
@@ -413,9 +427,20 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
       }
     };
     const onLeave = (e) => { if (!st().saved) { e.preventDefault(); e.returnValue = ''; } };
+    const onPaste = (e) => {
+      if ((embed && !ours(e)) || isTyping(e) || st().tab !== 'design') return;
+      e.preventDefault();
+      if (!pasteItems(st().sel.kind === 'section' ? st().sel.section : 'body', e.clipboardData?.getData('text/plain'))) {
+        st().setUi({ saveError: t(lang, 'b9_nothingToPaste') }); setTimeout(() => st().setUi({ saveError: null }), 3000);
+      }
+    };
     window.addEventListener('keydown', onKey);
-    if (!embed) window.addEventListener('beforeunload', onLeave); // the host page decides about leaving
-    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('beforeunload', onLeave); };
+    window.addEventListener('paste', onPaste);
+    window.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('focusin', onDown, true); // a keyboard user's last focus counts as a click
+    // embedded: mountDesigner's warnOnLeave adds its own guard (the host page can turn it off)
+    if (!embed) window.addEventListener('beforeunload', onLeave);
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('paste', onPaste); window.removeEventListener('pointerdown', onDown, true); window.removeEventListener('focusin', onDown, true); window.removeEventListener('beforeunload', onLeave); };
   }, [st, embed]);
   // the definition as it is in the Designer now (unsaved changes too), as a file to keep, share or `pw render`
   const download = () => {

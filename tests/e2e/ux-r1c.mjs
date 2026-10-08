@@ -340,8 +340,8 @@ try {
     assert.equal(await p.locator('[data-item=B].issue').count(), 1);
     step('U-8: the align toolbar aligns the selection');
     const outline = p.getByTestId('outline');
-    await outline.getByRole('button', { name: 'A', exact: true }).click();
-    await outline.getByRole('button', { name: 'B', exact: true }).click({ modifiers: ['Shift'] });
+    await outline.getByRole('option', { name: 'A', exact: true }).click();
+    await outline.getByRole('option', { name: 'B', exact: true }).click({ modifiers: ['Shift'] });
     await p.getByTestId('align-bar').getByRole('button', { name: 'Align top edges' }).click();
     await p.getByTestId('align-bar').getByRole('button', { name: 'Align left edges' }).click();
     await save();

@@ -1,6 +1,7 @@
 // Embeddable designer: <script src=".../embed/reportwright-viewer.js"></script>
 // ReportWright.mountDesigner('#el', { server, definition | report, onSave(def), onOpen(), readOnly,
-//   toolbox: { hide: ['map', …] }, panels: { data: false, inspector: false }, dataSourceTemplates: [{ label, source }] })
+//   toolbox: { hide: ['map', …] }, panels: { data: false, inspector: false }, dataSourceTemplates: [{ label, source }],
+//   warnOnLeave = true, onDirtyChange(dirty) }) → { unmount, getDefinition, save, isDirty }
 // A second entry of the ESM build: it shares chunks with the viewer; the offline single-file viewer has no designer.
 import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -14,15 +15,18 @@ import { setShadowStyles, declareDocumentStyles } from './styles.js';
 
 /* global __PW_CSS__ */
 const CSS = typeof __PW_CSS__ === 'string' ? __PW_CSS__ : '';
-const BLANK = { $schema: 'pagewright/report@1', name: 'New report', page: { size: 'A4', margins: [36, 36, 36, 36] }, dataSources: [], dataSets: [], sections: { body: { items: [] } } };
+const BLANK = { $schema: 'pagewright/report@1', name: 'Untitled report', page: { size: 'A4', margins: [36, 36, 36, 36] }, dataSources: [], dataSets: [], sections: { body: { items: [] } } };
 
 /**
  * @typedef {{ label?: string, source: { name: string, type: string, [key: string]: unknown } }} DataSourceTemplate
  * @typedef {{ server?: string, fontsUrl?: string, report?: string, definition?: object, lang?: string, height?: string,
  *   onSave?: (definition: import('@reportwright/engine/report').Report) => unknown, onOpen?: () => object | null | undefined | Promise<object | null | undefined>, readOnly?: boolean,
  *   toolbox?: { hide?: string[] }, panels?: { data?: boolean, inspector?: boolean }, dataSourceTemplates?: DataSourceTemplate[], nonce?: string,
- *   allowHosts?: string[], unsafeFetch?: boolean, fetch?: typeof fetch }} DesignerOptions (allowHosts, unsafeFetch, fetch: as mountViewer's)
- * @typedef {{ unmount: () => void, getDefinition: () => object, save: () => Promise<void> }} DesignerHandle
+ *   allowHosts?: string[], unsafeFetch?: boolean, fetch?: typeof fetch, warnOnLeave?: boolean, onDirtyChange?: (dirty: boolean) => void }} DesignerOptions
+ *   (allowHosts, unsafeFetch, fetch: as mountViewer's). warnOnLeave (default true): the browser asks before the page is
+ *   left or reloaded with unsaved changes; false leaves that to the host (isDirty, onDirtyChange). onDirtyChange: called
+ *   when the report gets unsaved changes (true) and when they are saved (false).
+ * @typedef {{ unmount: () => void, getDefinition: () => object, save: () => Promise<void>, isDirty: () => boolean }} DesignerHandle
  */
 /**
  * Mount the ReportWright designer in an element. With onSave the host app saves; without it, the server named
@@ -53,8 +57,20 @@ export function mountDesigner(target, opts = {}) {
     .then(r => (r.ok ? r.json() : r.json().then(j => Promise.reject(new Error(j.error || `HTTP ${r.status}`)))))
     .then(show)
     .catch(e => { box.innerHTML = `<div class="vmsg error">The report did not load: ${String(e.message).replace(/</g, '&lt;')}</div>`; });
+  // unsaved changes (N34): the host is told, and (unless warnOnLeave: false) the browser asks before leaving. The
+  // beforeunload listener is there only while there are unsaved changes: a save or unmount() removes it.
+  const onLeave = (e) => { e.preventDefault(); e.returnValue = ''; };
+  let dirty = false;
+  const unsub = store.subscribe((s) => {
+    if (!s.saved === dirty) return;
+    dirty = !s.saved;
+    if (opts.warnOnLeave !== false) { if (dirty) window.addEventListener('beforeunload', onLeave); else window.removeEventListener('beforeunload', onLeave); }
+    try { opts.onDirtyChange?.(dirty); } catch (e) { console.error(e); } // eslint-disable-line no-console
+  });
   return {
-    unmount: () => root.unmount(),
+    unmount: () => { unsub(); window.removeEventListener('beforeunload', onLeave); root.unmount(); },
+    /** whether there are changes not saved yet */
+    isDirty: () => !store.getState().saved,
     /** the definition as it is now (a plain copy) */
     getDefinition: () => JSON.parse(JSON.stringify(store.getState().def)),
     save: () => store.getState().save(),

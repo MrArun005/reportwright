@@ -22,6 +22,7 @@
   --ink: #16202a;
   --muted: #5f6b77;
   --faint: #64717e;          /* 5:1 on panel (was #8e99a4, 2.9:1) */
+  --faint-desk: #5a6672;     /* small text on the desk: 4.85:1 on #e6eaee (--faint is 4.13:1 there) */
   --line-strong: #848f9b;    /* control borders, 3:1 */
   --accent: #0e7490;
   --accent-ink: #ffffff;
@@ -75,6 +76,7 @@
   --ink: #e6edf3;
   --muted: #a3afbb;
   --faint: #8693a0;
+  --faint-desk: #8693a0;
   --accent: #3cbfd4;
   --accent-ink: #03222a;
   --accent-soft: #123a44;
@@ -413,7 +415,7 @@ a.cell-name:hover { color: var(--accent); }
 .tbl .grip { position: absolute; left: -18px; top: -18px; width: 14px; height: 14px; border-radius: 3px; background: var(--panel-2); border: 1px solid var(--line); display: grid; place-items: center; cursor: move; font-size: var(--fs-2xs); color: var(--muted); }
 .tbl.sel .grip { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .tbl .row { position: relative; display: flex; }
-.tbl .row-tag { position: absolute; left: -18px; width: 14px; display: grid; place-items: center; font: var(--fs-2xs) var(--mono); color: var(--faint); height: 100%; }
+.tbl .row-tag { position: absolute; left: -18px; width: 14px; display: grid; place-items: center; font: var(--fs-2xs) var(--mono); color: var(--faint-desk); height: 100%; }
 .tbl .cell { position: relative; overflow: hidden; display: flex; border-right: 1px dashed rgba(95,107,119,.3); border-bottom: 1px dashed rgba(95,107,119,.3); cursor: cell; }
 .tbl .cell:first-child { border-left: 1px dashed rgba(95,107,119,.3); }
 .tbl .row:first-child .cell { border-top: 1px dashed rgba(95,107,119,.3); }

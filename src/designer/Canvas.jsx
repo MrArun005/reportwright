@@ -371,11 +371,35 @@ export function fieldStyle(f) {
   return format ? { format } : {};
 }
 
+/**
+ * Keyboard access to an item (N35): a Tab stop named "Text box T1, x 10, y 10"; Enter or Space selects it (Shift adds
+ * or removes); then Delete, the arrows and Ctrl+D act on the selection as after a click.
+ */
+function useItemKeys(item) {
+  const T = useT();
+  const type = T(`item_${item.type}`) === `item_${item.type}` ? ITEMS[item.type]?.label || item.type : T(`item_${item.type}`);
+  return {
+    tabIndex: 0, role: 'group', 'data-item-key': item.id,
+    'aria-label': T('b9_itemLabel', { type, name: item.name, x: round(item.x), y: round(item.y) }),
+    onKeyDown: (e) => {
+      if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
+      e.preventDefault(); e.stopPropagation();
+      const st = useDesigner.getState();
+      const cur = st.sel.kind === 'items' ? st.sel.ids : [];
+      const ids = !e.shiftKey ? [item.id] : cur.includes(item.id) ? cur.filter(i => i !== item.id) : [...cur, item.id];
+      st.select(ids.length ? { kind: 'items', ids } : { kind: 'report' });
+    },
+  };
+}
+
 /* ---------------------------------------------------------------- shared drag */
 function useItemDrag(item, scale, setDrag) {
   return (e) => {
     if (e.button !== 0) return;
     e.preventDefault(); e.stopPropagation();
+    // preventDefault keeps the focus where it was (a removed Inspector field leaves it nowhere): the item takes it, so
+    // Esc, Delete and Ctrl+S reach the designer (also embedded)
+    e.currentTarget.closest?.('[data-item-key]')?.focus({ preventScroll: true });
     const st = useDesigner.getState();
     let ids;
     if (e.shiftKey) {
@@ -473,6 +497,7 @@ function ItemView({ item, scale, drag, setDrag, bw, nest, section }) {
   const selected = useDesigner(s => s.sel.kind === 'items' && s.sel.ids.includes(item.id));
   const single = useDesigner(s => s.sel.kind === 'items' && s.sel.ids.length === 1);
   const onDown = useItemDrag(item, scale, setDrag);
+  const keys = useItemKeys(item);
   const r = rectOf(item, drag);
   const problems = useContext(IssueMap).get(item.id);
 
@@ -516,7 +541,7 @@ function ItemView({ item, scale, drag, setDrag, bw, nest, section }) {
   return (
     <div className={`it${selected ? ' sel' : ''}${problems ? ' issue' : ''}`} data-item={item.name} title={problems?.join('\n')}
       style={{ left: r.x * scale, top: r.y * scale, width: Math.max(r.w * scale, 2), height: Math.max(r.h * scale, 2) }}
-      onPointerDown={onDown}>
+      onPointerDown={onDown} {...keys}>
       {nest ? <NestBox item={{ ...item, ...r }} scale={scale} /> : <ItemBody item={{ ...item, ...r }} scale={scale} />}
       {nest && <NestChildren item={item} scale={scale} drag={drag} setDrag={setDrag} section={section} />}
       {selected && single && HANDLES.map(d => <div key={d} className="handle" style={handlePos(d)} onPointerDown={onHandle(d)} />)}
@@ -709,6 +734,7 @@ function TableView({ item, scale, drag, setDrag }) {
   const readOnly = useDesigner(s => s.readOnly);
   const tableSelected = sel.kind === 'items' && sel.ids.includes(item.id);
   const onGrip = useItemDrag(item, scale, setDrag);
+  const keys = useItemKeys(item);
   const r = rectOf(item, drag);
   const widths = item.columns.map((c, i) => (drag?.mode === 'col' && drag.id === item.id && drag.col === i ? drag.w : c.width));
   const [dropCell, setDropCell] = useState(null);
@@ -718,7 +744,8 @@ function TableView({ item, scale, drag, setDrag }) {
   const chosen = sel.kind === 'cell' && sel.id === item.id ? selCells(sel) : [];
   useEffect(() => {
     if (!menu) return undefined;
-    const close = (e) => { if (e.type === 'keydown' ? e.key === 'Escape' : !e.target.closest?.('.cell-menu')) setMenu(null); };
+    // composedPath: inside the embed's shadow root e.target is the host element, never the menu
+    const close = (e) => { if (e.type === 'keydown' ? e.key === 'Escape' : !e.composedPath().some(n => n.classList?.contains('cell-menu'))) setMenu(null); };
     window.addEventListener('pointerdown', close, true); window.addEventListener('keydown', close);
     return () => { window.removeEventListener('pointerdown', close, true); window.removeEventListener('keydown', close); };
   }, [menu]);
@@ -728,6 +755,7 @@ function TableView({ item, scale, drag, setDrag }) {
     e.stopPropagation();
     if (e.button !== 0) return;
     e.preventDefault(); // no text selection across cells
+    e.currentTarget.closest('[data-item-key]')?.focus({ preventScroll: true }); // the keys go to this designer
     const st = useDesigner.getState();
     const here = { part, row: ri, col: ci };
     const cur = st.sel.kind === 'cell' && st.sel.id === item.id ? st.sel : null;
@@ -780,7 +808,7 @@ function TableView({ item, scale, drag, setDrag }) {
         const h = t.header?.[t.header.length - 1]?.cells?.[ci];
         if (h && (!h.value || /^Column \d+$/.test(h.value))) h.value = f.field.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase());
         if (h && f.type === 'number') h.style = { ...(h.style || {}), textAlign: 'right' };
-      } else if ((part === 'footer' || /^g\d+f$/.test(part)) && f.type === 'number') {
+      } else if ((part === 'footer' || /^g\d+[hf]$/.test(part)) && f.type === 'number') { // a group header sums its group too
         cell.value = `=Sum(Fields.${f.field})`;
         cell.style = { ...(cell.style || {}), ...fieldStyle(f) };
       }
@@ -791,7 +819,7 @@ function TableView({ item, scale, drag, setDrag }) {
 
   let first = true;
   return (
-    <div ref={tblRef} className={`tbl${tableSelected ? ' sel' : ''}${problems ? ' issue' : ''}`} data-item={item.name} style={{ left: r.x * scale, top: r.y * scale }}>
+    <div ref={tblRef} className={`tbl${tableSelected ? ' sel' : ''}${problems ? ' issue' : ''}`} data-item={item.name} style={{ left: r.x * scale, top: r.y * scale }} {...keys}>
       {problems && <div className="issue-tag" title={problems.join('\n')} aria-label={problems.join('. ')}>!</div>}
       <div className="grip" title="Select or move the table" onPointerDown={onGrip}>⠿</div>
       <div className="col-handles" aria-label={T('ux_columns')} role="group">

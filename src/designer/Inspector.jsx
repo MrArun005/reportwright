@@ -1,6 +1,6 @@
 'use client';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { allNames, cloneWithIds, isContentKey } from './store.js';
+import { allNames, cloneWithIds, isContentKey, setMatrixShow } from './store.js';
 import { useDesigner, findItem, updateItem, deleteSelection, duplicateSelection, sectionList, secOf, isBodyKey, addBodySection, removeBodySection, walk, tableParts, rowsOf, selCells,
   tableInsertColumn, tableDeleteColumn, tableInsertRow, tableDeleteRow, tableSetColumnWidth, tableMergeRight, tableSplit, tableMergeDown, tableSplitRows, tableSync, tableAddGroup, tableRemoveGroup, round, growToFit, uploadImages } from './store.js';
 import { normalizeMatrix, isTablix } from '@/engine/items/pivot.js';
@@ -87,11 +87,11 @@ export default function Inspector() {
 }
 
 /* ---------------------------------------------------------------- shared */
-function Geo({ label, value, onChange }) {
+function Geo({ label, value, onChange, min }) {
   const unit = useDesigner(s => s.unit);
   return (
     <Field label={`${label} (${unit})`}>
-      <NumberInput value={round(fromPt(value ?? 0, unit) * 100) / 100} step={unit === 'pt' ? 1 : unit === 'in' ? 0.05 : 0.5} onChange={v => onChange(round(toPt(v, unit)))} />
+      <NumberInput value={round(fromPt(value ?? 0, unit) * 100) / 100} min={min == null ? undefined : round(fromPt(min, unit) * 100) / 100} step={unit === 'pt' ? 1 : unit === 'in' ? 0.05 : 0.5} onChange={v => onChange(round(toPt(v, unit)))} />
     </Field>
   );
 }
@@ -264,8 +264,8 @@ function ItemProps({ item, section, openExpr }) {
         <div className="grid2">
           <Geo label="X" value={item.x} onChange={v => setGeo('x', Math.max(0, v))} />
           <Geo label="Y" value={item.y} onChange={v => setGeo('y', Math.max(0, v))} />
-          {item.type !== 'table' && <Geo label={T('i_width')} value={item.w} onChange={v => setGeo('w', Math.max(0, v))} />}
-          {item.type !== 'table' && <Geo label={T('i_height')} value={item.h} onChange={v => setGeo('h', Math.max(0, v))} />}
+          {item.type !== 'table' && <Geo label={T('i_width')} value={item.w} min={item.type === 'line' ? 0 : 1} onChange={v => setGeo('w', Math.max(0, v))} />}
+          {item.type !== 'table' && <Geo label={T('i_height')} value={item.h} min={item.type === 'line' ? 0 : 1} onChange={v => setGeo('h', Math.max(0, v))} />}
           {item.type === 'table' && <Field label={T('tableSize')} hint={T('tableSizeHint')}><TextInput value={`${round(item.w)} × ${round(item.h)} pt`} readOnly data-testid="table-size" /></Field>}
         </div>
         <div className="hint">{(() => { const band = sectionList(def).find(s => s.key === section)?.label || section, parent = findItem(def, item.id)?.parent; return parent ? T('i_whereParent', { band, parent: parent.name }) : T('i_where', { band }); })()}</div>
@@ -419,7 +419,7 @@ function PivotEditor({ item, openExpr }) {
               <Field label={T('groupExpandLevels')}><NumberInput value={g.expandLevels ?? ''} step={1} onChange={v => setK(list, i, 'expandLevels', Number.isFinite(v) && v >= 0 ? Math.round(v) : undefined)} /></Field>
             </div>}
           </>}
-          {(i < spec[list].length - 1 || (list === 'rowGroups' && g.parent)) && <Check label={T('pivotCollapsible')} checked={g.collapsible} onChange={v => setK(list, i, 'collapsible', v)} />}
+          {(i < spec[list].length - 1 || (list === 'rowGroups' && g.parent)) && <Check label={T('pivotCollapsible')} checked={g.collapsible} onChange={v => edit(it => { const o = it[list][i]; if (v) { o.collapsible = true; o.initiallyCollapsed = true; } else { delete o.collapsible; delete o.initiallyCollapsed; } }, `${item.id}.${list}${i}.collapsible`)} />} {/* starts closed, as a table's drill-down toggle does */}
           {g.collapsible && <Check label={T('pivotStartCollapsed')} checked={g.initiallyCollapsed} onChange={v => setK(list, i, 'initiallyCollapsed', v)} />}
           <div data-testid={`pivot-${list}${i}-action`}><ActionEditor label={T('ux_headerAction')} value={g.action} onChange={v => setK(list, i, 'action', v)} openExpr={openExpr} dataSet={item.dataSet} /></div>
           {g.total && g.total !== 'none' && <div data-testid={`pivot-${list}${i}-total-action`}><ActionEditor label={T('ux_totalAction')} value={g.totalAction} onChange={v => setK(list, i, 'totalAction', v)} openExpr={openExpr} dataSet={item.dataSet} /></div>}
@@ -442,7 +442,7 @@ function PivotEditor({ item, openExpr }) {
             <div className="grid2">
               <Field label={T('pivotLabel')}><TextInput value={v.label || ''} onChange={x => setK('values', i, 'label', x)} /></Field>
               <Field label={T('pivotFormat')}><TextInput value={v.format || ''} onChange={x => setK('values', i, 'format', x)} placeholder="N0" /></Field>
-              <Field label={T('pivotShow')}><Select value={v.show || 'value'} options={shows} onChange={x => setK('values', i, 'show', x === 'value' ? undefined : x)} /></Field>
+              <Field label={T('pivotShow')}><Select value={v.show || 'value'} options={shows} onChange={x => edit(it => setMatrixShow(it.values[i], x), `${item.id}.values${i}.show`)} /></Field>
             </div>
             <div data-testid={`pivot-values${i}-action`}><ActionEditor label={T('ux_cellAction')} value={v.action} onChange={x => setK('values', i, 'action', x)} openExpr={openExpr} dataSet={item.dataSet} /></div>
             <Field label={T('cellBookmark')}>{exprField('values', i, 'bookmark', v.bookmark, T('cellBookmark'))}</Field>
