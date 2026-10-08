@@ -28,7 +28,7 @@ describe('Word export: figures', () => {
     expect(media.some(f => f.endsWith('.svg'))).toBe(true);
     expect(doc).toContain('descr="Column chart: Kochi has the highest amount"');
     expect(doc).toContain('descr="Company logo"');
-    expect(doc).toContain('descr="Barcode"');
+    expect(doc).toContain('descr="Code 128 barcode: PW-123"');
     expect(doc).toContain('descr="Shape"');
     expect(doc).toContain('asvg:svgBlip');
     // the chart's axis labels are in the picture, not stray paragraphs

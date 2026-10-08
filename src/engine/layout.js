@@ -63,7 +63,8 @@ export function layoutItems(items, lc, { dx = 0 } = {}) {
     const own = L.res.table ? { id: lc.nextId(), ...L.res.table } : null;
     const us = L.res.units;
     // tag ids come from the render's counter: they tell two figures apart in a page model that went through JSON
-    const tag = it.alt || it.headingLevel || FIGURES.has(it.type) ? { k: it.type, id: lc.nextId(), alt: it.alt ? String(it.alt).slice(0, 2000) : undefined, h: Number(it.headingLevel) || undefined } : null; // exports (Word, PowerPoint, tagged PDF): what drew these items
+    const alt = it.alt || L.res.alt; // an author's alt text, else the item's own description (a chart's, a barcode's)
+    const tag = alt || it.headingLevel || FIGURES.has(it.type) ? { k: it.type, id: lc.nextId(), alt: alt ? String(alt).slice(0, 2000) : undefined, h: Number(it.headingLevel) || undefined } : null; // exports (Word, PowerPoint, tagged PDF): what drew these items
     // units are fresh from the item's layout and used once: placed in this set's coordinates in place, not copied
     for (let k = 0; k < us.length; k++) {
       const u = us[k];

@@ -118,9 +118,11 @@ export function chartData(item, ctx, lc, pal = paletteOf(item.palette)) {
 
 /**
  * Paint the chart into item-local coordinates (x from item.x, y from 0).
+ * meta.alt receives the chart's generated alt text (its type, title, series and categories).
+ * @param {{ alt?: string }} [meta]
  * @returns {any[]} page-model items
  */
-export function paintChart(item, ctx, lc, base) {
+export function paintChart(item, ctx, lc, base, meta = {}) {
   const m = lc.m;
   const font = resolveFontKey(base.fontFamily, 'normal', 'normal');
   const bold = resolveFontKey(base.fontFamily, 'bold', 'normal');
@@ -261,6 +263,11 @@ export function paintChart(item, ctx, lc, base) {
   else paintCartesian(type, g);
   // data exports (exportData): the chart's own numbers ride on its first item, so Excel can draw an editable chart
   if (lc.regions && out.length && NATIVE_XL.has(type)) out[0].xchart = nativeSpec(type, item, data, g, title, axes);
+  // alt text when the author gave none: the chart's type, title, series and category count
+  const kind = type[0].toUpperCase() + type.slice(1);
+  const n = data.categories.length;
+  const alt = `${kind} chart${title ? `: ${title}` : ''}${data.series.length ? `; series ${data.series.map(s => s.name).join(', ')}` : ''}; ${n} ${n === 1 ? 'category' : 'categories'}`;
+  meta.alt = alt;
   return out.concat(links);
 }
 

@@ -40,7 +40,7 @@ describe('accessible PDF (PDF/UA-1)', () => {
     const t = tree(doc);
     expect(t.S).toBe('Document');
     expect(t.kids.map(k => k.S)).toEqual(['H1', 'P', 'Figure', 'Figure', 'Figure', 'P', 'L', 'Table']);
-    expect(find(t, 'Figure').map(f => f.alt)).toEqual(['Column chart: Kochi has the highest amount', 'Company logo', 'Barcode', 'Chart in a table cell', 'Chart in a table cell', 'Chart in a table cell', 'Chart in a table cell']);
+    expect(find(t, 'Figure').map(f => f.alt)).toEqual(['Column chart: Kochi has the highest amount', 'Company logo', 'Code 128 barcode: PW-123', 'Chart in a table cell', 'Chart in a table cell', 'Chart in a table cell', 'Chart in a table cell']);
     expect(find(t, 'LI').length).toBe(2);
     expect(find(t, 'Lbl').length).toBe(2);
     const table = find(t, 'Table')[0];

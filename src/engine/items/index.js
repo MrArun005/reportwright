@@ -1159,9 +1159,10 @@ register('chart', {
   layout(item, lc) {
     const ctx = lc.ctxFor(item);
     if (hidden(item, ctx, lc)) return { height: 0, units: [] };
-    const items = paintChart(item, ctx, lc, lc.base);
+    const meta = {};
+    const items = paintChart(item, ctx, lc, lc.base, meta);
     addInteractivity(items, item, ctx, lc, { x: item.x, y: 0, w: item.w, h: item.h });
-    return { height: item.h, units: [{ top: 0, height: item.h, items }] };
+    return { height: item.h, units: [{ top: 0, height: item.h, items }], alt: meta.alt };
   },
 });
 
@@ -1352,7 +1353,8 @@ register('barcode', {
     }
     if (a) items = items.map(i => ({ ...i, rotate: { a, cx, cy } }));
     addInteractivity(items, item, ctx, lc, { x: item.x, y: 0, w: item.w, h: item.h }); // after the turn: the hot spot is the item's box
-    return { height: item.h, units: [{ top: 0, height: item.h, items }] };
+    const name = SYMBOLOGIES.find(s => s.id === (item.symbology || 'code128'))?.name || item.symbology || 'code128';
+    return { height: item.h, units: [{ top: 0, height: item.h, items }], alt: `${name} barcode${text ? `: ${text}` : ''}` };
   },
 });
 
