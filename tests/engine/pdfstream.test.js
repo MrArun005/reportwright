@@ -1,0 +1,156 @@
+// The streaming PDF writer (src/exporters/pdfstream.js, docs/research/STREAMING-1M.md §6): objects go to the sink as
+// they are made, fonts are subset at the end with their glyph IDs kept, "of Y" is an XObject written at the end.
+import { describe, it, expect } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import zlib from 'node:zlib';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { PDFDocument } from 'pdf-lib';
+import fontkitModule from '@pdf-lib/fontkit';
+import { render } from '../../src/engine/index.js';
+import { exportPdf } from '../../src/exporters/pdf.js';
+import { createSubsetter } from '../../src/exporters/subset.js';
+import { createPdfStream } from '../../src/exporters/pdfstream.js';
+import { fontStore, report } from '../helpers.js';
+
+const fontkit = /** @type {any} */ (fontkitModule).default || fontkitModule;
+const root = path.join(import.meta.dirname, '../..');
+const subset = createSubsetter(() => fs.promises.readFile(path.join(root, 'public/harfbuzz-subset.wasm')));
+const hasPoppler = spawnSync('pdftotext', ['-v']).status === 0;
+
+/** a sink that keeps the chunks (and awaits a turn per write, like a slow socket) */
+const memorySink = () => {
+  const chunks = [];
+  return { chunks, write: async (u8) => { chunks.push(Uint8Array.from(u8)); await new Promise(r => setImmediate(r)); }, bytes: () => Buffer.concat(chunks) };
+};
+const tmp = (bytes) => { const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'pws-')), 'a.pdf'); fs.writeFileSync(f, bytes); return f; };
+/** pdftotext's text and its complaints (a broken xref or object makes poppler print "Syntax Error") */
+const pdftotext = (bytes, ...args) => {
+  const r = spawnSync('pdftotext', [...args, tmp(bytes), '-']);
+  return { text: r.stdout.toString(), err: r.stderr.toString() };
+};
+/** every xref entry points at its "n 0 obj", and startxref at the xref */
+function checkXref(pdf) {
+  const s = Buffer.from(pdf).toString('latin1');
+  expect(s.startsWith('%PDF-1.7\n')).toBe(true);
+  const at = Number(s.match(/startxref\s+(\d+)\s+%%EOF\s*$/)[1]);
+  expect(s.slice(at, at + 4)).toBe('xref');
+  const [, first, count] = s.slice(at).match(/^xref\n(\d+) (\d+)\n/);
+  const body = s.slice(at).split('\n').slice(2, 2 + Number(count));
+  body.forEach((line, i) => {
+    if (i + Number(first) === 0) return expect(line).toBe('0000000000 65535 f ');
+    expect(line).toMatch(/^\d{10} 00000 n $/);
+    const off = Number(line.slice(0, 10));
+    expect(s.slice(off, off + 12)).toMatch(new RegExp(`^${i + Number(first)} 0 obj`));
+  });
+  expect(s).toMatch(new RegExp(`trailer\\n<< /Size ${count} /Root \\d+ 0 R`));
+}
+
+/** to a tenth of a point, as pdf.js's Content places text */
+const r1 = (v) => Math.round(v * 10) / 10;
+/** A minimal painter for a page model's plain text (what this test compares: the text and its order). */
+async function streamModel(model, w) {
+  for (const pg of model.pages) {
+    let s = '';
+    const H = pg.height ?? model.height;
+    for (const it of pg.items) {
+      if (it.t !== 'text') continue;
+      for (const l of it.lines) s += `BT /${w.fontName(it.font)} ${it.size} Tf ${r1(l.x)} ${r1(H - l.y)} Td <${w.encode(it.font, l.text)}> Tj ET\n`;
+    }
+    await w.addPage({ width: pg.width ?? model.width, height: H, content: s });
+  }
+}
+
+describe('streaming PDF writer', () => {
+  it.skipIf(!hasPoppler)('a report streamed and exported today reads the same (text and order), and the file is well formed', async () => {
+    const rows = Array.from({ length: 120 }, (_, i) => ({ a: `Customer ${i}`, b: i * 1.5, c: ['Pune', 'Delhi', 'Chennai'][i % 3] }));
+    const def = report([{ type: 'table', name: 'T', x: 0, y: 0, w: 360, h: 36, dataSet: 'Rows', columns: [{ width: 140 }, { width: 100 }, { width: 120 }],
+      header: [{ height: 18, cells: [{ value: 'Name' }, { value: 'Amount' }, { value: 'City' }] }],
+      detail: [{ height: 18, cells: [{ value: '=Fields.a' }, { value: '=Fields.b', style: { format: 'N2' } }, { value: '=Fields.c' }] }] }],
+    { data: { rows }, footer: { height: 20, items: [{ type: 'textbox', name: 'P', x: 0, y: 2, w: 300, h: 14, value: 'Page {Globals.PageNumber} of {Globals.TotalPages}' }] } });
+    def.dataSets[0].fields = [{ name: 'a', type: 'string' }, { name: 'b', type: 'number' }, { name: 'c', type: 'string' }];
+    const model = await render(def, { fontStore });
+    expect(model.pages.length).toBeGreaterThan(2);
+    const today = await exportPdf(model, fontStore, { subset });
+    const keys = [...new Set(model.pages.flatMap(p => p.items.filter(i => i.t === 'text').map(i => i.font)))];
+    const sink = memorySink();
+    const w = createPdfStream(sink, { fontStore, fonts: keys, subset });
+    await streamModel(model, w);
+    const res = await w.finish({ info: { title: 'T' } });
+    const pdf = sink.bytes();
+    expect(res.pages).toBe(model.pages.length);
+    expect(res.bytes).toBe(pdf.length);
+    checkXref(pdf);
+    for (const args of [[], ['-layout']]) {
+      const a = pdftotext(today, ...args), b = pdftotext(pdf, ...args);
+      expect(b.err).toBe('');
+      expect(b.text).toBe(a.text);
+    }
+    expect(pdftotext(pdf).text).toContain('Page 2 of');
+    const doc = await PDFDocument.load(pdf);
+    expect(doc.getPageCount()).toBe(model.pages.length);
+    expect(doc.getTitle()).toBe('T');
+  });
+
+  it.skipIf(!hasPoppler)('fonts: only the glyphs drawn are embedded (IDs kept), and the text reads back', async () => {
+    await fontStore.load(['Inter-Regular', 'Inter-Bold']);
+    const sink = memorySink();
+    const w = createPdfStream(sink, { fontStore, fonts: ['Inter-Regular', 'Inter-Bold'], subset });
+    await w.addPage({ width: 300, height: 200, content: `BT /${w.fontName('Inter-Regular')} 12 Tf 20 150 Td <${w.encode('Inter-Regular', 'Hello ABBA')}> Tj ET` });
+    await w.finish();
+    const pdf = sink.bytes();
+    checkXref(pdf);
+    expect(pdftotext(pdf).text.trim()).toBe('Hello ABBA');
+    const fonts = execFileSync('pdffonts', [tmp(pdf)]).toString();
+    expect(fonts).toMatch(/[A-Z]{6}\+Inter/); // a subset, named as one
+    expect(fonts).not.toMatch(/Bold/); // a font no page used is not written
+    // the embedded file: the drawn glyphs have outlines, the others are empty, and the IDs are the full font's
+    const s = pdf.toString('latin1');
+    const m = s.match(/\/Length1 \d+ \/Filter \/FlateDecode \/Length (\d+) >>\nstream\n/);
+    const len = Number(m[1]);
+    const file = zlib.inflateSync(pdf.subarray(m.index + m[0].length, m.index + m[0].length + len));
+    expect(file.length).toBeLessThan(fontStore.bytes.get('Inter-Regular').length / 4);
+    const full = fontStore.get('Inter-Regular'), sub = fontkit.create(new Uint8Array([...file, ...new Uint8Array(16)]));
+    const gid = (ch) => full.glyphForCodePoint(ch.codePointAt(0)).id;
+    for (const ch of 'HeloAB') expect(sub.getGlyph(gid(ch)).path.commands.length).toBeGreaterThan(0);
+    for (const ch of 'ZxQ') expect(sub.getGlyph(gid(ch)).path.commands.length).toBe(0);
+  });
+
+  it.skipIf(!hasPoppler)('"Page X of Y": the total is an XObject written at the end', async () => {
+    await fontStore.load(['Inter-Regular']);
+    const sink = memorySink();
+    const w = createPdfStream(sink, { fontStore, fonts: ['Inter-Regular'], subset });
+    const F = w.fontName('Inter-Regular');
+    const total = w.totalPages({ font: 'Inter-Regular', size: 10, width: 30 });
+    for (let i = 1; i <= 7; i++) {
+      await w.addPage({ width: 300, height: 200, content: `BT /${F} 10 Tf 20 20 Td <${w.encode('Inter-Regular', `Page ${i} of`)}> Tj ET\nq 1 0 0 1 80 20 cm /${total} Do Q\n`,
+        annots: i === 1 ? [`<< /Type /Annot /Subtype /Link /Rect [20 100 120 120] /Border [0 0 0] /Dest [${w.pageRef(6)} 0 R /Fit] >>`] : [] });
+    }
+    await w.finish({ outline: [{ title: 'Start', page: 1 }, { title: 'Three', page: 3, top: 150, level: 1 }, { title: 'Seven', page: 7 }] });
+    const pdf = sink.bytes();
+    checkXref(pdf);
+    const pages = pdftotext(pdf).text.split('\f');
+    expect(pages[2]).toMatch(/Page 3 of\s*7/);
+    expect(pages[6]).toMatch(/Page 7 of\s*7/);
+    const doc = await PDFDocument.load(pdf);
+    expect(doc.getPageCount()).toBe(7);
+    const s = pdf.toString('latin1');
+    expect(s).toContain('/Type /Outlines');
+    expect(s).toMatch(/\/Dest \[\d+ 0 R \/XYZ null 150 null\]/);
+  });
+
+  it('pages leave memory once written: heap after GC stays flat from 2,000 to 10,000 pages', () => {
+    const run = (n) => {
+      const r = spawnSync(process.execPath, ['--expose-gc', '--max-old-space-size=128', path.join(root, 'scripts/mem-pdfstream.mjs'), String(n)], { cwd: root, encoding: 'utf8' });
+      if (r.status !== 0) throw new Error(r.stderr);
+      return JSON.parse(r.stdout.trim().split('\n').pop());
+    };
+    const a = run(2000), b = run(10000);
+    console.log(JSON.stringify({ a, b }));
+    expect(b.pages).toBe(10000);
+    // per page the writer keeps two offsets and a ref (a few dozen bytes): 8,000 more pages are well under 4 MB
+    expect(b.liveMB - a.liveMB).toBeLessThan(4);
+    expect(b.peakRssMB - a.peakRssMB).toBeLessThan(30);
+  }, 240000);
+});
