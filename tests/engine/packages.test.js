@@ -50,11 +50,11 @@ describe('npm packages', () => {
     expect(fs.readFileSync(path.join(root, 'packages/engine/dist/types/packages/engine/entry.d.ts'), 'utf8')).toMatch(/exportPptx/);
   }, 60000);
 
-  it('the engine packs under 2 MB unpacked (fonts and the CLI are their own packages); a clean install runs the README quick start', () => {
+  it('the engine packs under 2.25 MB unpacked (fonts and the CLI are their own packages); a clean install runs the README quick start', () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-pack-'));
     const pack = (p) => JSON.parse(execFileSync('npm', ['pack', path.join(root, p), '--json', '--pack-destination', tmp], { encoding: 'utf8' }))[0];
     const eng = pack('packages/engine'), fonts = pack('packages/fonts'), cli = pack('packages/cli');
-    expect(eng.unpackedSize).toBeLessThan(2 * 1024 * 1024);
+    expect(eng.unpackedSize).toBeLessThan(2.25 * 1024 * 1024); // 2 MB until the streaming PDF (+90 KB with its map, 2026-10)
     expect(eng.files.some(f => /\.(ttf|wasm)$/.test(f.path))).toBe(false);
     expect(fonts.files.some(f => f.path === 'public/harfbuzz-subset.wasm')).toBe(true);
     fs.writeFileSync(path.join(tmp, 'package.json'), '{"type":"module","private":true}');

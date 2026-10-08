@@ -33,13 +33,23 @@ const external = ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate', 'bidi-js']
 fs.rmSync(path.join(root, E, 'dist'), { recursive: true, force: true });
 fs.rmSync(path.join(root, E, 'public'), { recursive: true, force: true }); // fonts moved to @reportwright/fonts
 await build({ entryPoints: [path.join(root, E, 'entry.js')], bundle: true, format: 'esm', platform: 'neutral', target: 'es2022', minify: false, sourcemap: 'linked', sourcesContent: false, charset: 'utf8', lineLimit: 400, outfile: path.join(root, E, 'dist/index.js'), external, logLevel: 'warning', mainFields: ['module', 'main'] });
+// the streaming PDF's paint worker (exportPdfStream with parallel): its own file next to dist/index.js, which starts it;
+// it imports the engine from that bundle (one copy of the engine in the package)
+{
+  const w = fs.readFileSync(path.join(root, 'src/exporters/pdfstreamworker.js'), 'utf8')
+    .replace("import { render, FontStore } from '../engine/index.js';", "import { render, FontStore, __streamPaint } from './index.js';")
+    .replace("import { createPdfStream, paintPage, paintEnv } from './pdfstream.js';", 'const { createPdfStream, paintPage, paintEnv, latin1 } = __streamPaint;')
+    .replace("import { latin1 } from './pdfpaint.js';\n", '');
+  if (/from '\.\.?\/(engine|pdf)/.test(w)) throw new Error('pdfstreamworker.js: its imports changed; update build-packages.mjs');
+  write(`${E}/dist/pdfstreamworker.js`, w);
+}
 write(`${E}/package.json`, {
   name: '@reportwright/engine', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT',
   ...meta(E, ['pdf', 'pdf-a', 'excel', 'xlsx', 'docx', 'pptx', 'report-engine', 'jasperreports', 'ssrs', 'rdl']),
   description: 'ReportWright report engine: JSON report definitions to pages, PDF (incl. PDF/A), Word, Excel, PowerPoint, HTML and CSV. Node and browsers. Fonts: @reportwright/fonts; CLI: @reportwright/cli.',
   exports: { '.': { types: './index.d.ts', default: './dist/index.js' }, './report': { types: './report.d.ts' }, './schema.json': './schema.json', './pool': { types: './pool/index.d.ts', default: './pool/index.js' }, './package.json': './package.json' },
   types: './index.d.ts',
-  files: ['dist', 'pool', 'index.d.ts', 'report.d.ts', 'schema.json', 'README.md', 'CHANGELOG.md', 'LICENSE'],
+  files: ['dist', 'pool', 'examples', 'index.d.ts', 'report.d.ts', 'schema.json', 'README.md', 'CHANGELOG.md', 'LICENSE'],
   engines: { node: '>=20.9' },
   sideEffects: false,
   dependencies: deps(external),

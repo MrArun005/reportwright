@@ -158,4 +158,42 @@ import { exportXlsx as exportXlsxFull } from '../../src/exporters/xlsx.js';
 import { exportDocx as exportDocxFull } from '../../src/exporters/docx.js';
 import { exportPptx as exportPptxFull } from '../../src/exporters/pptx.js';
 export { pageToSvg } from '../../src/exporters/svg.js';
+import { exportPdfStream as exportPdfStreamFull, createPdfStream, paintPage, paintEnv } from '../../src/exporters/pdfstream.js';
+import { latin1 } from '../../src/exporters/pdfpaint.js';
+/** internal: the paint worker (dist/pdfstreamworker.js) uses this bundle's painter, not a copy of the engine */
+export const __streamPaint = { createPdfStream, paintPage, paintEnv, latin1 };
+export { planPaged } from '../../src/engine/paged.js';
+
+/**
+ * @typedef {RenderOptions & Omit<PdfOptions, 'fonts'> & { fonts?: FontStore, tagged?: { lang?: string },
+ *   window?: number, parallel?: number, maxRows?: number, id?: string }} PdfStreamOptions
+ *   render()'s options and exportPdf's, plus: window (rows laid out at once, 1000), parallel (Node: worker threads
+ *   that lay out and paint pages, opt-in; the file is the same), maxRows (rows read, 5,000,000), id (the file ID).
+ */
+/**
+ * Report definition → PDF written to a sink as it is made, for reports too large to hold as a page model: a flowing
+ * table (and its groups) is laid out a window of rows at a time and each page leaves memory once written. Other
+ * reports are rendered whole and written by exportPdf in one piece (the result says why). sink: a Node Writable
+ * (fs.createWriteStream) or anything with write(bytes) that may return a promise (back-pressure); it is not closed.
+ * @param {any} def the report definition
+ * @param {PdfStreamOptions} options
+ * @param {{ write(bytes: Uint8Array): any, once?: (ev: string, cb: () => void) => any }} sink
+ * @returns {Promise<{ streamed: boolean, pages: number, warnings: string[], why?: string }>}
+ */
+export async function exportPdfStream(def, options, sink) {
+  const { fonts, fontStore, subset: sub, pdfa, ...rest } = /** @type {any} */ (options || {});
+  const store = fonts || fontStore || defaultFontStore();
+  const subset = sub === false ? undefined : sub || (defaultSubset ||= createSubsetter(async () => {
+    const url = fontsUrl('harfbuzz-subset.wasm');
+    if (!url) throw new Error('@reportwright/fonts is not installed');
+    return readUrl(url);
+  }));
+  let pdfaOpt = pdfa;
+  if (pdfa && !(typeof pdfa === 'object' && pdfa.icc)) {
+    const url = fontsUrl('icc/sRGB-v2-magic.icc');
+    if (!url) throw new Error('PDF/A needs an sRGB colour profile: install @reportwright/fonts, or pass pdfa: { icc: bytes }');
+    pdfaOpt = { ...(typeof pdfa === 'object' ? pdfa : {}), icc: new Uint8Array(await readUrl(url)) };
+  }
+  return exportPdfStreamFull(def, { ...rest, fontStore: store, subset, pdfa: pdfaOpt, exportData: !!rest.tagged }, sink);
+}
 export { tableFor, matrixFor } from '../../src/designer/tableGen.js';

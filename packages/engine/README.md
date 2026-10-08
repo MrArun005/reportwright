@@ -46,6 +46,44 @@ const bundledFonts = defaultFontStore({ fontsUrl: '/pw/fonts/' }); // a missing 
   `timeoutMs` as well; the PDF exporter checks every PNG before decoding it and leaves a damaged one out (`onWarning`).
 - **Currency.** `C2` with no `currency` on the report uses the locale's own (`en-IN` ₹, `de-DE` €, `en-US` $).
 
+## Streaming PDF for large reports
+
+`exportPdfStream(definition, options, sink)` writes the PDF as it is laid out: a flowing table is laid out a window of
+rows at a time and each page leaves memory once it is written, so a million-row report's PDF needs about the memory of a
+few pages (measured: peak RSS flat from 20,000 to 100,000 rows, about 270 MB for the whole Node process). The file reads as
+`exportPdf`'s: the same pages, text and positions.
+
+```js
+import fs from 'node:fs';
+import { exportPdfStream } from '@reportwright/engine';
+
+const out = fs.createWriteStream('ledger.pdf');
+const r = await exportPdfStream(definition, { parameters: { year: 2026 }, title: 'Ledger' }, out);
+out.end();
+console.log(r.streamed ? `${r.pages} pages, streamed` : `written whole: ${r.why}`);
+```
+
+The sink is a Node `Writable` or anything with `write(bytes)` that may return a promise (back-pressure); it is not
+closed for you. Options are `render()`'s and `exportPdf`'s (`fonts`, `parameters`, `title`, `pdfa`, `tagged`, …), plus
+`window` (rows laid out at once, 1,000), `maxRows` (rows read, 5,000,000) and `parallel` (Node: that many worker threads
+lay out and paint the pages; the file is byte for byte the same; each thread loads the engine and fonts, so it costs
+memory: about 150 MB a thread). Rows come from the report's source a batch at a time: CSV and REST (JSON) sources are read
+as streams, and `sqlRows(source, params)`, an async iterable of row batches, stands in for a database cursor.
+
+**What streams:** a body that is one table (with items above or below it), its rows' expressions row by row (fields,
+parameters, functions of the row, `RowNumber()`), groups with headers that repeat, subtotals (`Sum`, `Count`, `Avg`,
+`Min`, `Max` of a row expression, `CountRows()`), keep-together and page breaks, filters and sorts, page headers and
+footers without aggregates ("Page N of M" included: the pages are counted first, so the source is read twice), PDF/A-2b,
+and accessible PDFs (PDF/UA-1, PDF/A-2a; validated with veraPDF).
+
+**What is written whole** (`exportPdf`, the result says why): matrices, charts, lists, subreports, images, rich text,
+lookups and aggregates outside footers, more than one data set, group sections (`newSection`), signed or encrypted PDFs.
+Grouped and sorted tables hold their rows in the sort unless `sorter` spills them to disk (the ReportWright server does).
+
+`examples/stream-1m.mjs` streams a generated million-row ledger to a file and prints its peak memory:
+`node node_modules/@reportwright/engine/examples/stream-1m.mjs 1000000 ledger.pdf` (`--grouped`, `--tagged`,
+`--parallel=4`, `--plain`).
+
 ## Many reports at once (Node): a worker pool
 
 ```js
