@@ -747,6 +747,11 @@ function paintXY(type, g) {
   const beyond = (p) => (clipX && (p.x < clipX.lo || p.x > clipX.hi)) || (clipY && (p.y < clipY.lo || p.y > clipY.hi));
   const clipped = clipOn ? sets.reduce((k, st) => k + st.pts.filter(beyond).length, 0) : 0;
   if (clipped) lc.warn(`${who}: ${clipped} of ${allX.length} points are outside the 1st-99th percentile range and are drawn at the edge (set outliers: 'none' to show the full range)`);
+  // an explicit axis min/max is kept as given, so a point past it is pinned to the edge: marked like an outlier, and counted
+  const xmin = numOrNull(xs.min), xmax = numOrNull(xs.max), ymin = numOrNull(ys.min), ymax = numOrNull(ys.max);
+  const pastAxis = (p) => (xmin != null && p.x < xmin) || (xmax != null && p.x > xmax) || (ymin != null && p.y < ymin) || (ymax != null && p.y > ymax);
+  const pinned = sets.reduce((k, st) => k + st.pts.filter(pastAxis).length, 0);
+  if (pinned) lc.warn(`${who}: ${pinned} points are outside the axis range you set and are drawn at the edge`);
   if (clipX) { xlo = clipX.lo; xhi = clipX.hi; }
   if (clipY) { ylo = clipY.lo; yhi = clipY.hi; }
   // as before: scatter axes are nice scales of the data, not forced through 0
@@ -785,9 +790,9 @@ function paintXY(type, g) {
       const r = type === 'bubble' ? Math.max(1.5, maxR * Math.sqrt(p.size / smax)) : 2.2;
       const e = type === 'bubble' ? { t: 'ellipse', cx: px(p.x), cy: py(p.y), rx: r, ry: r, fill: col + '99', stroke: col, strokeWidth: 0.75 } : { t: 'ellipse', cx: px(p.x), cy: py(p.y), rx: r, ry: r, fill: col + 'b3', stroke: null };
       out.push(tag(e, anim && { k: anim === 'grow' ? 'scale' : 'fade', i: j }));
-      const isClipped = clipped && beyond(p);
+      const isClipped = (clipped && beyond(p)) || pastAxis(p);
       if (isClipped) out.push({ t: 'ellipse', cx: e.cx, cy: e.cy, rx: r + 1.6, ry: r + 1.6, fill: 'none', stroke: col, strokeWidth: 0.9 });
-      if (item.tooltips !== false && (type === 'bubble' || multi || isClipped)) g.links.push({ t: 'link', x: e.cx - r, y: e.cy - r, w: r * 2, h: r * 2, action: null, tip: `${multi ? `${s.name}: ` : ''}${fmtX(p.x)}, ${fmtY(p.y)}${type === 'bubble' ? ` (${toText(p.size, null, ctx)})` : ''}${isClipped ? ' (outlier, drawn at the edge)' : ''}` });
+      if (item.tooltips !== false && (type === 'bubble' || multi || isClipped)) g.links.push({ t: 'link', x: e.cx - r, y: e.cy - r, w: r * 2, h: r * 2, action: null, tip: `${multi ? `${s.name}: ` : ''}${fmtX(p.x)}, ${fmtY(p.y)}${type === 'bubble' ? ` (${toText(p.size, null, ctx)})` : ''}${isClipped ? (clipped && beyond(p) ? ' (outlier, drawn at the edge)' : ' (outside the axis range you set, drawn at the edge)') : ''}` });
       if (labelsOn) {
         const str = item.labelTemplate ? String(item.labelTemplate).slice(0, 500).replace(/\{(\w+)\}/g, (all, k) => ({ value: fmtY(p.y), x: fmtX(p.x), series: s.name, size: toText(p.size, null, ctx) })[k.toLowerCase()] ?? all) : fmtY(p.y);
         label(str, e.cx, e.cy - r - 2, { size: fs * 0.85 });
