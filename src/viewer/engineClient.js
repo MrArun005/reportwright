@@ -111,6 +111,8 @@ function getWorker() {
       }
       const w = waiting.get(e.data.id);
       if (!w) return;
+      if (e.data.pagesPart) { (w.pages ||= []).push(...e.data.pagesPart); return; } // a model's pages come in parts
+      if (e.data.inParts) { e.data.model.pages = w.pages || []; w.pages = []; }
       if (e.data.partial) { w.onPartial?.(e.data.model); return; } // the full model follows
       if (e.data.retry) { w.onRetry?.(e.data.retry); return; } // the server was busy: a data source is tried again
       waiting.delete(e.data.id);

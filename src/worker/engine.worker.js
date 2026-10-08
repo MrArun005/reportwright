@@ -13,6 +13,18 @@ const store = new FontStore((key) => new Promise((resolve, reject) => {
   self.postMessage({ font: key, fid: n });
 }));
 
+/**
+ * A page model to the page in parts of PART pages: each message is read (deserialized) in its own task on the main
+ * thread, so a report of thousands of pages arrives without one long freeze. The last message has the rest of the model.
+ */
+const PART = 50;
+function send(id, msg, model) {
+  const { pages, ...rest } = model;
+  if (!Array.isArray(pages)) { self.postMessage({ id, ...msg, model }); return; }
+  for (let i = 0; i < pages.length; i += PART) self.postMessage({ id, pagesPart: pages.slice(i, i + PART) });
+  self.postMessage({ id, ...msg, model: rest, inParts: true });
+}
+
 self.onmessage = async (e) => {
   if (e.data.fid) { // a font the page fetched for us
     const w = fontWait.get(e.data.fid);
@@ -37,11 +49,11 @@ self.onmessage = async (e) => {
     let sources;
     if (firstPages) {
       const part = await render(def, { ...opts, firstPages, onSources: (s) => { sources = s; } });
-      if (!part.partial) { self.postMessage({ id, ok: true, model: part }); return; }
-      self.postMessage({ id, ok: true, partial: true, model: part });
+      if (!part.partial) { send(id, { ok: true }, part); return; }
+      send(id, { ok: true, partial: true }, part);
     }
     const model = await render(def, { ...opts, sources }); // the data the first pages loaded, not fetched again
-    self.postMessage({ id, ok: true, model });
+    send(id, { ok: true }, model);
   } catch (err) {
     self.postMessage({ id, ok: false, error: { message: err.message, missingParameters: err.missingParameters || null } });
   }
