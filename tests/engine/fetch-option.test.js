@@ -17,10 +17,10 @@ describe('render(def, { fetch })', () => {
     expect(global).toEqual([]);
   });
 
-  it('falls back to globalThis.fetch, and says so when there is none', async () => {
+  it('falls back to globalThis.fetch (unguarded only with unsafeFetch: see p0-fetch.test.js), and says so when there is none', async () => {
     const global = [];
     vi.stubGlobal('fetch', reply(global));
-    await render(def(), { fontStore });
+    await render(def(), { fontStore, unsafeFetch: true });
     expect(global).toEqual(['https://api.example.com/rows']);
     vi.stubGlobal('fetch', undefined);
     await expect(render(def(), { fontStore })).rejects.toThrow(/No fetch\(\) available: pass render\(def, \{ fetch \}\)/);

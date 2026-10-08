@@ -21,7 +21,7 @@ const ROOT = path.join(import.meta.dirname, '..');
 // fonts, harfbuzz-subset.wasm and the colour profile: the repo's public/, or the @reportwright/fonts package (the npm CLI)
 const PUB = fs.existsSync(path.join(ROOT, 'public', 'fonts')) ? path.join(ROOT, 'public')
   : path.join(path.dirname(createRequire(import.meta.url).resolve('@reportwright/fonts/package.json')), 'public');
-const HELP = `pw render <report.pw.json> [-p name=value]… [-d source=data.json]… [-f pdf|xlsx|docx|pptx|html|csv|json|txt] [-o file|-] [--base URL] [--pdfa] [--ua]
+const HELP = `pw render <report.pw.json> [-p name=value]… [-d source=data.json]… [-f pdf|xlsx|docx|pptx|html|csv|json|txt] [-o file|-] [--base URL [--allow-internal]] [--pdfa] [--ua]
           [--values] [--static] [--layout]
           [--password PW] [--owner-password PW] [--deny print|modify|copy|annotate|fillForms|accessibility|assemble|printHighQuality]…
 pw import <report.jrxml|.rdl|.rptdesign> [-o out.pw.json]
@@ -39,6 +39,7 @@ pw audit rekey --old-secret S | --old-key file.pem
   -p  a report parameter            -d  replace a data source with a JSON file
   -f  output format (default pdf)   -o  output file, or - for stdout
   --base  where relative data URLs go (e.g. http://localhost:3000)
+  --allow-internal  the --base host may be a local or private address (data fetches refuse those otherwise)
   --password, --owner-password, --deny  a password-protected PDF (AES-256); --deny takes away a permission
   --ua  an accessible PDF (PDF/UA-1; with --pdfa, PDF/A-2a)   --values  Excel totals as values, not formulas
   --layout  CSV of the printed layout (every table, group lines, totals), not just the data
@@ -72,12 +73,12 @@ const siblingLoader = (file) => async (id) => {
   try { return readJson(path.join(path.dirname(path.resolve(file)), `${id}.pw.json`)); } catch { throw new Error(`Report "${id}" not found`); }
 };
 
-/** --base names the server to read from: its host may be local (the engine's fetch guard allows it). */
-const baseHost = (base) => { try { return base ? [new URL(base).hostname.replace(/^\[|\]$/g, '')] : []; } catch { return []; } };
+/** --allow-internal: the --base host may be a local or private address (the engine's fetch guard refuses one otherwise). */
+const baseHost = (base, internal) => { try { return base && internal ? [new URL(base).hostname.replace(/^\[|\]$/g, '')] : []; } catch { return []; } };
 
-async function renderModel(def, { parameters = {}, data, base, now, state, file, exportData = true, dataOnly = false } = {}) {
+async function renderModel(def, { parameters = {}, data, base, internal = false, now, state, file, exportData = true, dataOnly = false } = {}) {
   try {
-    return await render(withData(def, data), { fontStore, parameters, exportData, dataOnly, baseUrl: base, allowHosts: baseHost(base), now: now ? new Date(now) : undefined, ...(state ? { state } : {}), ...(file ? { loadReport: siblingLoader(file) } : {}) });
+    return await render(withData(def, data), { fontStore, parameters, exportData, dataOnly, baseUrl: base, allowHosts: baseHost(base, internal), now: now ? new Date(now) : undefined, ...(state ? { state } : {}), ...(file ? { loadReport: siblingLoader(file) } : {}) });
   } catch (e) {
     const relative = /fetch|URL|Invalid URL/i.test(e.message) && !base;
     fail(`${e.message}${relative ? '\n    A data source needs a server: pass --base http://localhost:3000, or push the data with -d source=file.json.' : ''}`);
@@ -123,13 +124,13 @@ function compare(label, before, after) {
 }
 
 async function cmdRender(args) {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { p: { type: 'string', multiple: true }, d: { type: 'string', multiple: true }, f: { type: 'string', default: 'pdf' }, o: { type: 'string' }, base: { type: 'string' }, pdfa: { type: 'boolean' }, ua: { type: 'boolean' }, values: { type: 'boolean' }, layout: { type: 'boolean' }, static: { type: 'boolean' }, password: { type: 'string' }, 'owner-password': { type: 'string' }, deny: { type: 'string', multiple: true } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { p: { type: 'string', multiple: true }, d: { type: 'string', multiple: true }, f: { type: 'string', default: 'pdf' }, o: { type: 'string' }, base: { type: 'string' }, 'allow-internal': { type: 'boolean' }, pdfa: { type: 'boolean' }, ua: { type: 'boolean' }, values: { type: 'boolean' }, layout: { type: 'boolean' }, static: { type: 'boolean' }, password: { type: 'string' }, 'owner-password': { type: 'string' }, deny: { type: 'string', multiple: true } } });
   if (positionals.length !== 1) usage('give one report file');
   const def = readJson(positionals[0]);
   const data = Object.fromEntries(Object.entries(pairs(values.d)).map(([k, f]) => [k, readJson(f)]));
   const fmt = values.f;
   // a plain PDF needs no table data (Excel, Word, the accessible PDF do)
-  const ro = { parameters: pairs(values.p), data, base: values.base, file: positionals[0], exportData: !(fmt === 'pdf' && !values.ua) };
+  const ro = { parameters: pairs(values.p), data, base: values.base, internal: !!values['allow-internal'], file: positionals[0], exportData: !(fmt === 'pdf' && !values.ua) };
   // the data CSV skips the page layout; a report without a table falls back to its page text
   let model = fmt === 'csv' && !values.layout ? await renderModel(def, { ...ro, dataOnly: true }) : null;
   if (!model?.regions?.length) model = await renderModel(def, ro);
@@ -185,10 +186,10 @@ async function cmdTest(args) {
 }
 
 async function cmdDiff(args) {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { p: { type: 'string', multiple: true }, d: { type: 'string', multiple: true }, base: { type: 'string' } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { p: { type: 'string', multiple: true }, d: { type: 'string', multiple: true }, base: { type: 'string' }, 'allow-internal': { type: 'boolean' } } });
   if (positionals.length !== 2) usage('give two report files');
   const data = Object.fromEntries(Object.entries(pairs(values.d)).map(([k, f]) => [k, readJson(f)]));
-  const opts = { parameters: pairs(values.p), data, base: values.base, now: '2026-01-01T09:00:00' };
+  const opts = { parameters: pairs(values.p), data, base: values.base, internal: !!values['allow-internal'], now: '2026-01-01T09:00:00' };
   const [a, b] = await Promise.all(positionals.map(f => renderModel(readJson(f), { ...opts, file: f })));
   if (!compare(path.basename(positionals[1]), a, b)) { console.log('No differences.'); return; }
   process.exit(1);

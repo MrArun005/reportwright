@@ -32,8 +32,9 @@ fs.writeFileSync('statement.pdf', await exportPdf(model, { fonts, title: 'Statem
 - **Network.** Only data sources of a fetched type (`rest`, `graphql`, `soap`, `odata`, and `csv` or `xml` with a URL) and SQL sources without
   `sql` make requests, through `render(def, { fetch })`. Without that option the engine uses `globalThis.fetch` behind
   an SSRF guard: http(s) only; no loopback, private, link-local, CGNAT, multicast or reserved address in any spelling
-  (`2130706433`, `0x7f.1`, `[::ffff:127.0.0.1]`), no `localhost` name, and in Node no name that resolves to one; every
-  redirect hop checked again (at most 5); a parameter fills a URL's path and query, never its scheme and host (unless the
+  (`2130706433`, `0x7f.1`, `[::ffff:127.0.0.1]`), no `localhost` name; in Node (20.16+) the request goes through
+  node:http(s) with the checked address pinned (no DNS rebinding; a failed lookup refuses); every redirect hop checked
+  again (at most 5; never https → http; another origin gets none of the source's headers); a parameter fills a URL's path and query, never its scheme and host (unless the
   whole URL is a parameter and its host is in `allowHosts`). `allowHosts: ['10.0.0.5']` lets named hosts through;
   `unsafeFetch: true` turns the guard off. Pass your own `fetch` to add auth, a proxy or an allow-list, or to forbid
   requests altogether: `render(def, { fetch: () => { throw new Error('no network') } })`.

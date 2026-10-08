@@ -254,7 +254,8 @@ export async function renderTo(def, opt = {}) {
   if (opt.modelOnly) return { bytes, model, contentType: FORMATS[format].type, ext: FORMATS[format].ext };
   // images by URL (a logo) go through the same guard; one that fails to load is left out, as in the viewer
   // with fixed hosts an image URL (often made by an expression) does not reach PW_INTERNAL_HOSTS either
-  const imageFetch = fixedHosts() ? serverFetch(opt.self || base, { internal: false }) : fetch;
+  // images through the SSRF guard always; with fixed hosts off they may also reach PW_INTERNAL_HOSTS
+  const imageFetch = serverFetch(opt.self || base, { internal: !fixedHosts() });
   const fetchImage = async (src) => { try { const r = await imageFetch(new URL(src, base)); return r.ok ? new Uint8Array(await r.arrayBuffer()) : null; } catch { return null; } };
   if (format === 'pdf') {
     bytes = await exportPdf(model, fontStore(), { title: def.name, subset, fetchImage, pdfa: opt.pdfa ? { icc: await iccProfile() } : undefined, tagged: opt.ua ? { lang: def.locale || 'en' } : undefined, prepare: signing?.prepare, save: signing?.save, encrypt: opt.encrypt });

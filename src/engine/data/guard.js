@@ -5,14 +5,16 @@
  * loopback, private, link-local, shared (CGNAT), multicast and reserved addresses in any spelling the URL parser
  * reads (2130706433, 0x7f.1, 0177.0.0.1 and IPv4 in IPv6 are normalised by it first), "localhost" names, and in Node a
  * name that resolves to such an address (dns.lookup; a browser has no DNS to ask, its literal addresses are still
- * checked). Redirects are followed by hand, each hop checked again, at most 5. `allowHosts` names hosts that may be
- * private (an internal API); `unsafeFetch: true` turns the guard off.
- * ponytail: the name is resolved before the request and again by fetch() itself, so a DNS answer that changes in
- * between (rebinding) is not caught here; the server's safeFetch pins the address in the socket's lookup instead.
+ * checked). In Node the request goes out through node:http(s) with the address pinned: the socket's own lookup checks
+ * what the name resolves to and connects to that (no rebinding); a failed lookup refuses. Redirects are followed by
+ * hand, each hop checked again, at most 5; https → http is refused; another origin gets none of the source's headers.
+ * Anything the guard cannot read is refused (fail closed). `allowHosts` names hosts that may be private (an internal
+ * API); `unsafeFetch: true` turns the guard off.
  *
- * Every engine fetch, the caller's too, gets a time limit (fetchTimeoutMs, default 30 s, never past the render's
- * deadline) and a cap on the bytes read (maxFetchBytes, default 64 MB, counted after decompression, so a gzip bomb
- * stops at the cap). A streaming source (init.pwStream) keeps the caller's own cap.
+ * Every engine fetch, the caller's too, gets one time limit for the whole request (every redirect hop, the headers and
+ * the body: fetchTimeoutMs, default 30 s, never past the render's deadline) and one cap on the bytes read
+ * (maxFetchBytes, default 64 MB, counted as decoded, so a gzip bomb stops at the cap). A streaming source
+ * (init.pwStream) keeps the caller's own cap. Each request (an OData page, a subreport's source) has its own.
  */
 
 export const FETCH_DEFAULTS = { timeoutMs: 30000, maxBytes: 64 * 1048576, hops: 5 };
@@ -56,56 +58,105 @@ const isIp = (h) => /^\[.*\]$/.test(h) || /^\d+\.\d+\.\d+\.\d+$/.test(h);
 
 const refuse = (host) => Object.assign(new Error(`"${host}" is a private or local address; a data source may not reach it (pass allowHosts: ["${host}"] to render to allow it)`), { status: 403, code: 'EPRIVATE' });
 
-/** Node's DNS, when the engine runs in Node (no import: the engine has no Node modules; null in a browser). */
-function nodeDns() {
-  try { const p = /** @type {any} */ (globalThis).process; return p?.getBuiltinModule?.('node:dns') || null; } catch { return null; }
+/** Node's built-in modules, without an import (the engine has no Node imports): null outside Node. */
+function nodeMod(name) {
+  const p = /** @type {any} */ (globalThis).process;
+  if (!p?.versions?.node) return null;
+  if (!p.getBuiltinModule) throw Object.assign(new Error('The engine\'s fetch guard needs Node 20.16 or later (process.getBuiltinModule); or pass your own fetch to render'), { status: 500 });
+  return p.getBuiltinModule(name);
 }
+const inNode = () => !!(/** @type {any} */ (globalThis).process?.versions?.node);
+const addrHost = (a) => (a.family === 6 || String(a.address).includes(':') ? `[${a.address}]` : String(a.address));
 
 /**
- * Check one URL the default fetch would request.
+ * Check one URL the default fetch would request: scheme, credentials, and a literal address. Anything it cannot
+ * read is refused (fail closed). A name is checked again, as resolved, by the Node transport's lookup.
  * @param {string} input @param {string[]} allow lower-case host names
- * @returns {Promise<URL>}
+ * @returns {URL}
  */
-export async function checkUrl(input, allow) {
+export function checkUrl(input, allow) {
   let u;
   try { u = new URL(input); } catch { throw Object.assign(new Error(`Not a URL: ${String(input).slice(0, 200)}`), { status: 400 }); }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') throw Object.assign(new Error(`Only http and https URLs can be fetched, not ${u.protocol}`), { status: 400 });
   if (u.username || u.password) throw Object.assign(new Error('A user name or password in a data URL is not allowed'), { status: 400 });
   const host = u.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (!host) throw Object.assign(new Error('A data URL needs a host'), { status: 400 });
   if (allow.includes(host)) return u;
-  if (privateHost(u.hostname)) throw refuse(host);
-  const dns = !isIp(u.hostname) && nodeDns();
-  if (dns) {
-    const list = await dns.promises.lookup(host, { all: true }).catch(() => []);
-    if (list.some(a => privateHost(a.family === 6 ? `[${a.address}]` : a.address))) throw refuse(host);
-  }
+  let bad = true;
+  try { bad = privateHost(u.hostname); } catch { /* unreadable: refused */ }
+  if (bad) throw refuse(host);
   return u;
 }
 
 /**
- * The guarded default fetch (see the top of this file).
+ * Node: one request with the address pinned. The socket's own DNS lookup checks every address the name resolves to
+ * and connects to the one checked (no second lookup to rebind); a lookup error or an empty answer refuses. The body is
+ * asked for uncompressed (identity), so the byte cap counts what is read.
+ * @param {URL} url @param {any} init @param {boolean} trusted the host is in allowHosts
+ * @returns {Promise<Response>}
+ */
+function nodeRequest(url, init, trusted) {
+  const http = nodeMod('node:http'), https = nodeMod('node:https'), dns = nodeMod('node:dns'), stream = nodeMod('node:stream');
+  const lookup = (name, o, cb) => dns.lookup(name, { ...o, all: true }, (err, list) => {
+    if (err || !Array.isArray(list) || !list.length) return cb(err || refuse(name));
+    let bad = true;
+    try { bad = !trusted && list.some(a => privateHost(addrHost(a))); } catch { /* unreadable: refused */ }
+    if (bad) return cb(refuse(name));
+    return o.all ? cb(null, list) : cb(null, list[0].address, list[0].family);
+  });
+  const headers = Object.fromEntries(new Headers(init.headers || {}));
+  headers['accept-encoding'] = 'identity';
+  return new Promise((resolve, reject) => {
+    const req = (url.protocol === 'https:' ? https : http).request(url, { method: init.method || 'GET', headers, lookup, signal: init.signal }, (res) => {
+      const pairs = [];
+      for (let i = 0; i < res.rawHeaders.length; i += 2) pairs.push([res.rawHeaders[i], res.rawHeaders[i + 1]]);
+      const none = [101, 204, 205, 304].includes(res.statusCode) || (init.method || 'GET').toUpperCase() === 'HEAD';
+      if (none) res.resume();
+      resolve(new Response(none ? null : stream.Readable.toWeb(res), { status: res.statusCode, statusText: res.statusMessage, headers: /** @type {any} */ (pairs) }));
+    });
+    req.on('error', reject);
+    req.end(init.body ?? undefined);
+  });
+}
+
+/** Headers kept on a redirect to another origin: none of the source's own (auth, cookies, keys, custom tokens). */
+const CROSS_ORIGIN_KEEP = new Set(['accept', 'accept-language', 'content-type']);
+/**
+ * The request for a redirect hop, or an error: https → http is refused; another origin keeps only CROSS_ORIGIN_KEEP;
+ * 303 (and 301/302 after a non-GET) becomes a GET without a body.
+ * @param {URL} from @param {URL} to @param {any} req @param {number} status
+ */
+export function redirectRequest(from, to, req, status) {
+  if (from.protocol === 'https:' && to.protocol !== 'https:') throw Object.assign(new Error(`${from.host} redirects from https to http; not followed`), { status: 403 });
+  const headers = new Headers(req.headers || {});
+  if (to.origin !== from.origin) for (const k of [...headers.keys()]) if (!CROSS_ORIGIN_KEEP.has(k)) headers.delete(k);
+  const get = status === 303 || ((status === 301 || status === 302) && (req.method || 'GET').toUpperCase() !== 'GET');
+  return get ? { ...req, method: 'GET', body: undefined, headers } : { ...req, headers };
+}
+
+/**
+ * The guarded default fetch (see the top of this file). In Node every hop goes through nodeRequest (address pinned);
+ * in a browser through `base` with redirects by hand (literal addresses checked; a browser has no DNS to ask).
  * @param {{ allowHosts?: string[] }} opt @param {typeof fetch} base
  * @returns {typeof fetch}
  */
 export function guardedFetch(opt, base) {
   const allow = (opt.allowHosts || []).map(h => String(h).toLowerCase().replace(/^\[|\]$/g, ''));
+  const node = inNode();
   return /** @type {any} */ (async (input, init = {}) => {
-    let url = await checkUrl(String(input), allow);
+    let url = checkUrl(String(input), allow);
     /** @type {any} */
     let req = { ...init };
     for (let hop = 0; ; hop++) {
-      const res = await base(url.href, { ...req, redirect: 'manual' });
+      const trusted = allow.includes(url.hostname.replace(/^\[|\]$/g, '').toLowerCase());
+      const res = node ? await nodeRequest(url, req, trusted) : await base(url.href, { ...req, redirect: 'manual' });
       if (res.type === 'opaqueredirect') throw new Error(`${url.host} redirects; a redirect cannot be checked here (pass your own fetch to render)`);
       const loc = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
       if (!loc) return res;
       await res.body?.cancel().catch(() => {});
       if (hop >= FETCH_DEFAULTS.hops) throw new Error(`Too many redirects from ${url.host}`);
-      const next = await checkUrl(new URL(loc, url).href, allow);
-      // credentials never follow a redirect to another site; 303 (and 301/302 after a POST) become a GET
-      const headers = new Headers(req.headers || {});
-      if (next.origin !== url.origin) for (const k of ['authorization', 'cookie', 'x-api-key']) headers.delete(k);
-      const get = res.status === 303 || ((res.status === 301 || res.status === 302) && (req.method || 'GET').toUpperCase() !== 'GET');
-      req = get ? { ...req, method: 'GET', body: undefined, headers } : { ...req, headers };
+      const next = checkUrl(new URL(loc, url).href, allow);
+      req = redirectRequest(url, next, req, res.status);
       url = next;
     }
   });
