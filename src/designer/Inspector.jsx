@@ -87,11 +87,11 @@ export default function Inspector() {
 }
 
 /* ---------------------------------------------------------------- shared */
-function Geo({ label, value, onChange }) {
+function Geo({ label, value, onChange, min }) {
   const unit = useDesigner(s => s.unit);
   return (
     <Field label={`${label} (${unit})`}>
-      <NumberInput value={round(fromPt(value ?? 0, unit) * 100) / 100} step={unit === 'pt' ? 1 : unit === 'in' ? 0.05 : 0.5} onChange={v => onChange(round(toPt(v, unit)))} />
+      <NumberInput value={round(fromPt(value ?? 0, unit) * 100) / 100} min={min == null ? undefined : round(fromPt(min, unit) * 100) / 100} step={unit === 'pt' ? 1 : unit === 'in' ? 0.05 : 0.5} onChange={v => onChange(round(toPt(v, unit)))} />
     </Field>
   );
 }
@@ -264,8 +264,8 @@ function ItemProps({ item, section, openExpr }) {
         <div className="grid2">
           <Geo label="X" value={item.x} onChange={v => setGeo('x', Math.max(0, v))} />
           <Geo label="Y" value={item.y} onChange={v => setGeo('y', Math.max(0, v))} />
-          {item.type !== 'table' && <Geo label={T('i_width')} value={item.w} onChange={v => setGeo('w', Math.max(0, v))} />}
-          {item.type !== 'table' && <Geo label={T('i_height')} value={item.h} onChange={v => setGeo('h', Math.max(0, v))} />}
+          {item.type !== 'table' && <Geo label={T('i_width')} value={item.w} min={item.type === 'line' ? 0 : 1} onChange={v => setGeo('w', Math.max(0, v))} />}
+          {item.type !== 'table' && <Geo label={T('i_height')} value={item.h} min={item.type === 'line' ? 0 : 1} onChange={v => setGeo('h', Math.max(0, v))} />}
           {item.type === 'table' && <Field label={T('tableSize')} hint={T('tableSizeHint')}><TextInput value={`${round(item.w)} × ${round(item.h)} pt`} readOnly data-testid="table-size" /></Field>}
         </div>
         <div className="hint">{(() => { const band = sectionList(def).find(s => s.key === section)?.label || section, parent = findItem(def, item.id)?.parent; return parent ? T('i_whereParent', { band, parent: parent.name }) : T('i_where', { band }); })()}</div>

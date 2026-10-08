@@ -298,7 +298,7 @@ export function addItem(type, section, x, y, extra = {}, parentId = null) {
     } else {
       const sec = secOf(d, section);
       sec.items.push(it);
-      if (it.y + it.h > sec.height) sec.height = Math.ceil(it.y + it.h + (isBodyKey(section) ? 24 : 4));
+      if (it.y + it.h > (sec.height || 0)) sec.height = Math.ceil(it.y + it.h + (isBodyKey(section) ? 24 : 4)); // also a 0 pt band
     }
   });
   S().select({ kind: 'items', ids: [id] });
@@ -331,7 +331,20 @@ export function insertItem(type, section, x, y, extra = {}, parentId = null) {
 }
 
 export function updateItem(id, recipe, key) {
-  S().apply((d) => { const f = findItem(d, id); if (f) recipe(f.item, d, f.section, f); }, key);
+  S().apply((d) => {
+    const f = findItem(d, id);
+    if (!f) return;
+    recipe(f.item, d, f.section, f);
+    minSize(f.item);
+    const nf = findItem(d, id); // the recipe may have moved it
+    if (nf) growToFit(d, nf); // a table that got taller (a group added) pushes its band down, not over the next one
+  }, key);
+}
+/** No item smaller than 1 pt (a 0 × 0 box can neither be seen nor clicked: N33); a line may be 0 one way, not both. */
+export function minSize(it) {
+  for (const k of ['w', 'h']) if (typeof it[k] === 'number' && !(it[k] >= 0)) it[k] = 0;
+  if (it.type === 'line') { if (it.w === 0 && it.h === 0) it.w = 1; return; }
+  for (const k of ['w', 'h']) if (typeof it[k] === 'number' && it[k] < 1) it[k] = 1;
 }
 
 export function moveItems(ids, dx, dy) {
