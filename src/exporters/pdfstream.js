@@ -409,7 +409,7 @@ export function createPdfStream(sink, opt) {
     if (F.font.standard) { await writeObj(F.ref, standardFontDict(F.font)); return; } // named, not embedded (pdfstandard.js)
     await loadFontkit(); // checks a subset (loaded already when the FontStore parsed this font; never for a standard font)
     const f = F.font, full = /** @type {Uint8Array} */ (fontStore.bytes.get(key));
-    let bytes = full;
+    let bytes = full, psName = f.postscriptName; // N10: a subset of a variable font says the weight it is cut at
     if (opt.subset && !f['OS/2']?.fsType?.noSubsetting) {
       try {
         // glyphs given: subset.js keeps their IDs (HB_SUBSET_FLAGS_RETAIN_GIDS), which the pages already drew with
@@ -420,10 +420,11 @@ export function createPdfStream(sink, opt) {
         const check = fontkit.create(padded);
         for (const id of F.glyphs.keys()) void check.getGlyph(id).advanceWidth;
         bytes = sub;
+        psName = check.postscriptName || psName;
       } catch { /* the full font */ }
     }
     const cff = 'CFF ' in f.directory.tables || 'CFF2' in f.directory.tables;
-    const base = `${bytes === full ? '' : `${subsetTag(bytes)}+`}${String(f.postscriptName || 'Font').replace(/[^A-Za-z0-9_.-]/g, '')}`;
+    const base = `${bytes === full ? '' : `${subsetTag(bytes)}+`}${String(psName || 'Font').replace(/[^A-Za-z0-9_.-]/g, '')}`;
     // metrics and widths unrounded in 1/1000 em, as pdf-lib writes them (readers that place text by them agree)
     const k = 1000 / f.unitsPerEm, s = (/** @type {number} */ v) => String(v * k);
     const desc = reserve(), file = reserve(), cid = reserve(), cmap = reserve();
