@@ -60,6 +60,15 @@ export function pageOf(def, key = 'body') {
 }
 
 const rid = () => Math.random().toString(36).slice(2, 10);
+/** An id from the item's place (band, path) and name: opening the same file twice gives the same ids (N38). FNV-1a. */
+export function stableId(key, taken) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  let id = `i${(h >>> 0).toString(36)}`;
+  for (let k = 2; taken.has(id); k++) id = `i${(h >>> 0).toString(36)}_${k}`;
+  taken.add(id);
+  return id;
+}
 
 /** Visit every item, nested ones included. fn(item, list, index, parent, section) */
 export function walk(def, fn) {
@@ -76,9 +85,13 @@ export function normalize(def) {
     if (Array.isArray(d.sections.body) && !d.sections.body.length) d.sections.body = { height: 420, items: [] };
     for (const { key } of sectionList(d)) { const x = secOf(d, key); if (x && typeof x === 'object') x.items ||= []; }
     const used = allNames(d);
-    walk(d, (it) => {
-      it.id ||= rid();
+    const ids = new Set();
+    walk(d, (it) => { if (it.id) ids.add(it.id); });
+    const path = new Map(); // item → its place, e.g. body/2/0 (the third item's first child)
+    walk(d, (it, list, i, parent, section) => {
+      path.set(it, `${parent ? path.get(parent) : section}/${i}`);
       if (!it.name) it.name = uniqueName(used, ITEMS[it.type]?.label.replace(/\s/g, '') || 'Item');
+      it.id ||= stableId(`${path.get(it)}/${it.name}`, ids);
       if (NESTING.has(it.type)) it.items ||= [];
       // a table's height is its rows': kept in step, so items below it do not shift when it is first edited
       if (it.type === 'table' && Array.isArray(it.columns)) tableSync(it);
