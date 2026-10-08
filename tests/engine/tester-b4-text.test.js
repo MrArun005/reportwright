@@ -75,3 +75,19 @@ describe('8: column widths from the content', () => {
     expect(widths(await render(def, { fontStore, exportData: true }))).toEqual([150, 100, 150]);
   });
 });
+
+describe('9: ids are not amounts', () => {
+  it('the Designer gives integer ids, numbers, codes and sequences no decimals and no grouping', async () => {
+    const { formatFor } = await import('../../src/designer/tableGen.js');
+    const ints = [{ id: 885, seq: 2113, txnNo: 4470, code: 12, number: 3685, lineSeq: 7 }, { id: 2113, seq: 3252, txnNo: 1, code: 3, number: 1, lineSeq: 8 }];
+    for (const name of ['id', 'seq', 'txnNo', 'code', 'number', 'lineSeq', 'branch_id']) expect(formatFor({ name, type: 'number' }, ints), name).toBe('0');
+    expect(formatFor({ name: 'amount', type: 'number' }, [{ amount: 1.5 }])).toBe('N2');
+  });
+  it('the engine adds no decimals or grouping to a whole number without a format', async () => {
+    const def = report([table([{ width: 100 }], ['Id'], [{ value: '=Fields.id' }])], { data: { rows: [{ id: 2113 }, { id: 1234567 }] } });
+    def.dataSets[0].fields = [{ name: 'id', type: 'number' }];
+    const out = await render(def, { fontStore });
+    expect(find(out, /^2113$/)).toBeTruthy();
+    expect(find(out, /^1234567$/)).toBeTruthy();
+  });
+});

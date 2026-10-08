@@ -26,7 +26,7 @@ export function labelOf(name) {
 // ids, codes and years read as they are: 2785, not 2,785 or 2,785.00
 // whole words or a camelCase suffix only: "paid" and "principalPaid" are money, not ids. Money-like names never are.
 const MONEY_LIKE = /amount|paid|price|total|balance|principal|interest|emi|fee|cost|tax|salary|revenue|sales|value|due|outstanding|disburs|rate|income|expense|budget|spend|profit|margin/i;
-const CODE_LIKE = [/^(id|year|no|pin|code|number)$/i, /_(id|no|code|number)$/i, /[a-z](Id|ID|No|Code|Number)$/, /zip/i];
+const CODE_LIKE = [/^(id|year|no|pin|code|number|seq)$/i, /_(id|no|code|number|seq)$/i, /[a-z](Id|ID|No|Code|Number|Seq)$/, /zip/i];
 // parts of a date as numbers: no grouping, no decimals (month 3, not 3.00)
 const DATE_PART = /^(year|month|quarter|week|day|hour|fy|fiscalyear)$|(Year|Month|Quarter)$/;
 export const isCode = (name) => !MONEY_LIKE.test(name) && (CODE_LIKE.some(r => r.test(name)) || DATE_PART.test(name));
