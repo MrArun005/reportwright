@@ -19,7 +19,7 @@ function sqlCall(body, sqlPreview) {
   return sqlPreview && typeof b.query === 'string' && keys.every(k => ['connection', 'query', 'params'].includes(k));
 }
 
-import { guardedFetch } from '../engine/data/guard.js';
+import { guardedFetch, redactUrl } from '../engine/data/guard.js';
 
 /**
  * The embedding page's rules for data on other hosts (mountViewer's allowHosts, unsafeFetch and fetch). By default a
@@ -37,6 +37,11 @@ export function setFetchPolicy({ allowHosts, unsafeFetch = false, fetch: f = nul
 /** What a worker needs to apply the same rules (no function: a worker keeps the page's own fetch on the main thread). */
 export const fetchPolicy = () => policy;
 
+/** A browser's network failure ("Failed to fetch", a TypeError) as an error that says where and the likely causes. */
+function failed(e, url) {
+  if (e?.status || !(e instanceof TypeError)) return e;
+  return Object.assign(new Error(`the request to ${redactUrl(url)} failed (${e.message}): the server may not allow this page to read it (CORS: it must send Access-Control-Allow-Origin), the network or the server may be down, or the browser blocked it (a content security policy or an extension)`), { cause: e });
+}
 
 const DATA = [/^\/api\/sample\//, /^\/api\/data\/proxy$/];
 const OURS = /^\/(?:$|api(?:\/|$)|admin(?:\/|$)|designer(?:\/|$)|viewer(?:\/|$)|login(?:\/|$)|embed(?:\/|$)|_next(?:\/|$))/i;
@@ -73,7 +78,8 @@ export function withRetry(f, { onRetry, retries = 3, wait = (ms) => new Promise(
 export function reportFetch(base, f0 = policy.fetch || ((...a) => fetch(...a)), { sqlPreview = false, onRetry, retries = 3, wait } = {}) {
   const self = new URL(base).origin;
   const { allowHosts, unsafeFetch } = policy;
-  const f = withRetry(f0, { onRetry, retries, wait });
+  const send = (url, init) => f0(url, init).catch((e) => { throw failed(e, url); });
+  const f = withRetry(send, { onRetry, retries, wait });
   // other sites: public hosts only, each redirect checked (the engine's guard); a refusal names the viewer's option
   const guarded = unsafeFetch ? f : guardedFetch({ allowHosts, viaBase: true }, f);
   const other = (url, init) => guarded(url, init).catch((e) => {

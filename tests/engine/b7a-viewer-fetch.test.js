@@ -70,7 +70,15 @@ describe('the viewer refuses private and local addresses (N2)', () => {
   });
 });
 
-describe('a refused request says why', () => {
+describe('a failed request says where and why (#18)', () => {
+  it('"Failed to fetch" becomes the redacted URL and the likely causes', async () => {
+    const f0 = async () => { throw new TypeError('Failed to fetch'); };
+    const err = await reportFetch('https://pw.example.com', f0)('https://api.example.com/rows?token=secret').catch(e => e);
+    expect(err.message).toContain('https://api.example.com/rows?…');
+    expect(err.message).not.toContain('secret');
+    expect(err.message).toMatch(/CORS/);
+    expect(err.message).toMatch(/network/);
+  });
   it('a refused address names the viewer option that allows it', async () => {
     const err = await reportFetch('https://pw.example.com', async () => new Response('[]'))('http://192.168.1.1/rows').catch(e => e);
     expect(err.message).toMatch(/192\.168\.1\.1/);
