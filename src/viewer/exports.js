@@ -1,5 +1,5 @@
 'use client';
-import { fontStore, subsetter, origin } from './engineClient.js';
+import { loadFontStore, subsetter, origin } from './engineClient.js';
 import { reportFetch } from './dataFetch.js';
 import { fontKeysOf } from '@/exporters/svg.js';
 
@@ -10,7 +10,7 @@ export { needsExportData } from '@/exporters/regions.js';
 
 /** The report's fonts, loaded: Word, PowerPoint and Excel draw the text of charts as outlines from them. */
 async function loadedFonts(model) {
-  const store = fontStore();
+  const store = await loadFontStore();
   await store.load(fontKeysOf(model));
   return store;
 }

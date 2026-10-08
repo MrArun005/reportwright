@@ -95,7 +95,8 @@ function* textsOf(def, dataSets) {
 }
 
 /** The start of the warning for CJK text without the optional CJK fonts (the viewer opens its warnings for it). */
-export const NO_CJK_FONTS = 'Text in Japanese/Chinese/Korean needs the optional CJK fonts: npm i @reportwright/fonts-cjk, then npx reportwright-fonts-cjk (npm); in the app, npm run fonts:cjk';
+import { NO_CJK_FONTS } from './notices.js';
+export { NO_CJK_FONTS };
 
 /**
  * Render a report definition to a page model (pages, regions), the input of every exporter. Throws ReportError for a

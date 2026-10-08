@@ -1,11 +1,11 @@
 'use client';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { renderReport, pdfBlob, usingWorker, origin, fetchReport, loadModelFonts, loadReportFonts } from './engineClient.js';
+import { renderReport, pdfBlob, usingWorker, origin, fetchReport, loadModelFonts, loadReportFonts, parameterOptions } from './engineClient.js';
 import { reportFetch } from './dataFetch.js';
 import { CORE_FONT_KEY } from '@/engine/text/fonts.js';
 import { exportBlob, EXPORT_DEFAULTS, needsExportData } from './exports.js';
 import { pageToSvg, linkTitle } from '@/exporters/svg.js';
-import { parameterOptions, NO_CJK_FONTS } from '@/engine/index.js';
+import { NO_CJK_FONTS } from '@/engine/notices.js';
 import { safeUrl } from '@/engine/url.js';
 import { viewerTimeZone } from './timeZone.js';
 import { applyStyleAttributes, deferStyleAttributes } from '../embed/styles.js';
