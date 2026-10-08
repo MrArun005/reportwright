@@ -97,3 +97,24 @@ describe('N9: chart warnings name only what is really not drawn', () => {
     expect(validate(report([{ type: 'chart', name: 'B', x: 0, y: 0, w: 300, h: 200, dataSet: 'Rows', chartType: 'column', series: [] }])).warnings.some(w => /has no series/.test(w))).toBe(true);
   });
 });
+
+describe('N4: scatter axes are not over-padded past zero', () => {
+  const axisLabels = async (vals) => {
+    const rows = vals.map(v => ({ x: v, y: v }));
+    const m = await render(report([{ type: 'chart', name: 'S', x: 0, y: 0, w: 400, h: 300, dataSet: 'Rows', chartType: 'scatter', xValue: '=Fields.x', series: [{ name: 'V', value: '=Fields.y' }] }], { data: { rows } }), { fontStore });
+    return m.pages[0].items.filter(i => i.t === 'text').map(i => i.lines?.[0]?.text).filter(t => /^-?\d+(\.\d+)?$/.test(t)).map(Number);
+  };
+  it('0-100 data: no negative tick, the top stays near the data (not 150)', async () => {
+    const labels = await axisLabels([0, 25, 50, 75, 100]);
+    expect(Math.min(...labels)).toBeGreaterThanOrEqual(0);
+    expect(Math.max(...labels)).toBeLessThanOrEqual(120);
+    expect(Math.max(...labels)).toBeGreaterThanOrEqual(100);
+  });
+  it('40-100 data: the axis min stays at or above zero and within one step of the data', async () => {
+    const labels = await axisLabels([40, 60, 80, 100]);
+    expect(Math.min(...labels)).toBeGreaterThanOrEqual(0);
+    expect(Math.min(...labels)).toBeGreaterThanOrEqual(0);
+    expect(Math.min(...labels)).toBeLessThanOrEqual(40);
+    expect(Math.max(...labels)).toBeLessThanOrEqual(120);
+  });
+});

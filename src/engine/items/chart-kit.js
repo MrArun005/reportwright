@@ -66,6 +66,12 @@ export function niceScale(min, max, ticks = 5) {
   const step = niceNum(range / Math.max(1, ticks - 1), true);
   return { lo: Math.floor(min / step) * step, hi: Math.ceil(max / step) * step, step };
 }
+/** A nice scale whose step is the span over the ticks: niceScale rounds the span first, which can add a whole step. */
+export function niceScaleSpan(min, max, ticks = 5) {
+  if (!Number.isFinite(min) || !Number.isFinite(max) || !(max > min)) return niceScale(min, max, ticks);
+  const step = niceNum((max - min) / Math.max(1, ticks - 1), true);
+  return { lo: Math.floor(min / step) * step, hi: Math.ceil(max / step) * step, step };
+}
 function niceNum(x, round) {
   const e = Math.floor(Math.log10(x));
   const f = x / 10 ** e;

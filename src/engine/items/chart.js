@@ -8,11 +8,12 @@
 import { evalValue, toText, sortCompare } from '../expr/evaluate.js';
 import { resolveFontKey } from '../text/fonts.js';
 import { applyFilters, applySort, related } from '../data/index.js';
-import { CAPS, PALETTES, paletteOf, inkOn, niceScale, linearTicks, logTicks, curvePath, fitTrend, movingAverage, LabelPlacer } from './chart-kit.js';
+import { CAPS, PALETTES, paletteOf, inkOn, niceScale, niceScaleSpan, linearTicks, logTicks, curvePath, fitTrend, movingAverage, LabelPlacer } from './chart-kit.js';
 import { paintRound, ROUND_TYPES } from './chart-round.js';
 import { paintMore, moreLegend, MORE_TYPES } from './chart-more.js';
 
 export { niceScale };
+
 export const PALETTE = PALETTES.default;
 export const CHART_TYPES = ['column', 'bar', 'line', 'area', 'pie', 'donut', 'scatter', 'bubble', 'radar', 'polar', 'candlestick', 'ohlc', 'gauge', 'funnel', 'treemap', 'histogram', 'boxplot', 'waterfall', 'gantt'];
 const PER_ROW = new Set(['scatter', 'bubble', 'polar']);
@@ -308,10 +309,18 @@ function valueAxis(spec, lo, hi, minPos, { includeZero = true, len = 100, fs = 7
   }
   if (includeZero) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
   if (percent) { lo = lo < 0 ? -1 : 0; hi = 1; }
-  // pad: the automatic range keeps a margin past the data, so the largest point is not drawn on the frame (explicit min/max are kept as given)
-  if (pad > 0 && hi > lo) { const d = (hi - lo) * pad; if (smin == null) lo -= d; if (smax == null) hi += d; }
+  // pad: the automatic range keeps a margin past the data, so the largest point is not drawn on the frame (explicit min/max are kept as given).
+  // The margin never crosses zero the data does not (data from 0 keeps its axis at 0 or above), and the scale's step is
+  // taken from the padded span itself, so the nice bounds do not jump a whole extra step (0-100 data: 0 to 120, not -50 to 150).
+  let padded = false;
+  if (pad > 0 && hi > lo) {
+    const d = (hi - lo) * pad;
+    if (smin == null) lo = lo >= 0 && lo - d < 0 ? 0 : lo - d;
+    if (smax == null) hi = hi <= 0 && hi + d > 0 ? 0 : hi + d;
+    padded = true;
+  }
   const want = len < fs * 6 ? 3 : 5;
-  const sc = niceScale(smin ?? lo, smax ?? hi, want);
+  const sc = padded && smin == null && smax == null && (lo >= 0 || hi <= 0) ? niceScaleSpan(lo, hi, want) : niceScale(smin ?? lo, smax ?? hi, want); // data that crosses zero keeps its scale
   let a = sc.lo, b = sc.hi, ticks;
   if (smin != null || smax != null) {
     a = smin ?? sc.lo; b = smax ?? sc.hi;
