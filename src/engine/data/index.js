@@ -269,7 +269,7 @@ async function loadFetched(src, ctx, opt, f) {
     let u = url;
     if (src.useProxy) u = `/api/data/proxy?url=${encodeURIComponent(u)}`;
     if (opt.baseUrl && u.startsWith('/')) u = opt.baseUrl.replace(/\/$/, '') + u;
-    const res = await f(u, init);
+    const res = utf8Response(await f(u, init));
     return { res, u };
   };
   if (src.type === 'odata') return loadOData(src, ctx, target, headers, call);
@@ -327,7 +327,24 @@ export async function sourceResponse(src, ctx, opt) {
   if (opt.baseUrl && u.startsWith('/')) u = opt.baseUrl.replace(/\/$/, '') + u;
   const res = await f(u, /** @type {any} */ ({ ...requestInit(src, ctx, headers), pwStream: true }));
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${redactUrl(u)}`);
-  return res;
+  return utf8Response(res);
+}
+/**
+ * A response whose Content-Type names a charset other than UTF-8 is re-encoded to UTF-8 as it streams, so every reader
+ * (text, the CSV and JSON splitters) gets the text the server meant. TextDecoder knows the labels; an unknown one is an error.
+ * @param {Response} res
+ */
+export function utf8Response(res) {
+  const m = /charset\s*=\s*["']?([^"';\s]+)/i.exec(res.headers?.get?.('content-type') || '');
+  if (!m || !res.body || /^utf-?8$/i.test(m[1])) return res;
+  let dec;
+  try { dec = new TextDecoder(m[1]); } catch { throw new Error(`The response character set "${m[1]}" is not known`); }
+  const enc = new TextEncoder();
+  const body = res.body.pipeThrough(new TransformStream({
+    transform(chunk, c) { const s = dec.decode(chunk, { stream: true }); if (s) c.enqueue(enc.encode(s)); },
+    flush(c) { const s = dec.decode(); if (s) c.enqueue(enc.encode(s)); },
+  }));
+  return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
 }
 
 /**
