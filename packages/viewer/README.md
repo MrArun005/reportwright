@@ -47,6 +47,24 @@ The npm packages are a library: nothing here needs a ReportWright server. The se
 
 In Node, `@reportwright/engine` renders and exports with no server and no browser.
 
+## Content Security Policy
+
+The viewer needs no `'unsafe-inline'`: its styles are constructable stylesheets, and the style attributes of the drawing
+are applied through CSSOM. The policy for a page with the viewer (standalone, fonts on the same origin):
+
+```
+default-src 'self';
+script-src 'self';
+style-src 'self';
+font-src 'self';
+img-src 'self' data: blob:;
+connect-src 'self'
+```
+
+This is the policy the viewer's standalone page is tested under (PDF export included). Keep the viewer's script in a
+file (`<script type="module" src="…">`), not inline. The viewer adds a `<style>` element only in browsers without
+constructable stylesheets, and gives it the `nonce` you pass (`mountViewer(el, { nonce })`).
+
 ## With the self-hosted ReportWright server
 
 ```js

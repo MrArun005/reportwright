@@ -10,6 +10,7 @@ import ReportViewer from '../viewer/ReportViewer.jsx';
 import { setAssetBase, registerReports, setBundledFonts, setStandalone } from '../viewer/engineClient.js';
 import { uiFontCss } from '../viewer/uiFonts.js';
 import { loadLanguage } from '../i18n/index.js';
+import { setShadowStyles, declareDocumentStyles } from './styles.js';
 
 /* global __PW_CSS__ */
 const CSS = typeof __PW_CSS__ === 'string' ? __PW_CSS__ : '';
@@ -49,7 +50,7 @@ export function withData(def, data) {
  * @typedef {{ server?: string, report?: string, definition?: object, data?: Record<string, unknown>, fontsUrl?: string, params?: Record<string, string>, lang?: string, height?: string,
  *   onDrill?: (report: string, params: Record<string, unknown>) => void,
  *   reports?: Record<string, object>, fonts?: Record<string, string>, customFonts?: object[], uiFontCss?: string, snapshot?: Record<string, any>, title?: string,
- *   toolbar?: { hide?: string[], add?: ToolbarButton[] }, viewMode?: 'single' | 'continuous' | 'galley' }} ViewerOptions
+ *   toolbar?: { hide?: string[], add?: ToolbarButton[] }, viewMode?: 'single' | 'continuous' | 'galley', nonce?: string }} ViewerOptions
  * @typedef {{ unmount: () => void }} ViewerHandle
  */
 /**
@@ -72,15 +73,13 @@ export function mountViewer(target, opts = {}) {
   // Fonts must be declared on the document; the rest of the styles live in a shadow root.
   // (Report fonts are added as FontFace objects by the viewer; this is the interface font.)
   const fontCss = opts.uiFontCss ?? (server ? uiFontCss(server) : ''); // standalone: the system UI font, no 404s
-  if (fontCss && !document.getElementById('pw-embed-fonts')) {
-    const st = document.createElement('style');
-    st.id = 'pw-embed-fonts';
-    st.textContent = fontCss;
-    document.head.appendChild(st);
-  }
+  if (fontCss) declareDocumentStyles('pw-embed-fonts', fontCss, opts.nonce);
   const shadow = el.shadowRoot || el.attachShadow({ mode: 'open' });
-  shadow.innerHTML = `<style>${CSS}</style><div class="pw-embed" style="height:${opts.height || '720px'}"></div>`;
-  const root = createRoot(shadow.querySelector('.pw-embed'));
+  shadow.innerHTML = '<div class="pw-embed"></div>';
+  setShadowStyles(shadow, CSS, opts.nonce);
+  const box = /** @type {HTMLElement} */ (shadow.querySelector('.pw-embed'));
+  box.style.height = opts.height || '720px'; // set through CSSOM: a style attribute in markup is blocked by style-src 'self'
+  const root = createRoot(box);
   const show0 = (definition) => root.render(createElement(ReportViewer, { definition, reportId: opts.report, params: opts.params, lang: opts.lang, onDrill: opts.onDrill, title: opts.title, toolbar: opts.toolbar, viewMode: opts.viewMode }));
   // the language's strings first (English is built in; the others load on demand)
   const show = (definition) => loadLanguage(opts.lang).catch(() => {}).then(() => show0(definition));

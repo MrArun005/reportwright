@@ -9,6 +9,7 @@ import { useDesigner } from '../designer/store.js';
 import { setAssetBase, setStandalone } from '../viewer/engineClient.js';
 import { uiFontCss } from '../viewer/uiFonts.js';
 import { loadLanguage } from '../i18n/index.js';
+import { setShadowStyles, declareDocumentStyles } from './styles.js';
 
 /* global __PW_CSS__ */
 const CSS = typeof __PW_CSS__ === 'string' ? __PW_CSS__ : '';
@@ -18,7 +19,7 @@ const BLANK = { $schema: 'pagewright/report@1', name: 'New report', page: { size
  * @typedef {{ label?: string, source: { name: string, type: string, [key: string]: unknown } }} DataSourceTemplate
  * @typedef {{ server?: string, fontsUrl?: string, report?: string, definition?: object, lang?: string, height?: string,
  *   onSave?: (definition: object) => unknown, onOpen?: () => object | null | undefined | Promise<object | null | undefined>, readOnly?: boolean,
- *   toolbox?: { hide?: string[] }, panels?: { data?: boolean, inspector?: boolean }, dataSourceTemplates?: DataSourceTemplate[] }} DesignerOptions
+ *   toolbox?: { hide?: string[] }, panels?: { data?: boolean, inspector?: boolean }, dataSourceTemplates?: DataSourceTemplate[], nonce?: string }} DesignerOptions
  * @typedef {{ unmount: () => void, getDefinition: () => object, save: () => Promise<void> }} DesignerHandle
  */
 /**
@@ -34,15 +35,12 @@ export function mountDesigner(target, opts = {}) {
   const server = String(opts.server || '').replace(/\/$/, '');
   setAssetBase(server);
   setStandalone({ standalone: !server, fontsUrl: opts.fontsUrl });
-  if (server && !document.getElementById('pw-embed-fonts')) { // standalone: the system UI font
-    const st = document.createElement('style');
-    st.id = 'pw-embed-fonts';
-    st.textContent = uiFontCss(server);
-    document.head.appendChild(st);
-  }
+  if (server) declareDocumentStyles('pw-embed-fonts', uiFontCss(server), opts.nonce); // standalone: the system UI font
   const shadow = el.shadowRoot || el.attachShadow({ mode: 'open' });
-  shadow.innerHTML = `<style>${CSS}</style><div class="pw-embed" style="height:${opts.height || '760px'}"></div>`;
+  shadow.innerHTML = '<div class="pw-embed"></div>';
+  setShadowStyles(shadow, CSS, opts.nonce);
   const box = /** @type {HTMLElement} */ (shadow.querySelector('.pw-embed'));
+  box.style.height = opts.height || '760px'; // CSSOM, not a style attribute: style-src 'self' blocks the latter
   const root = createRoot(box);
   const embed = { onSave: opts.onSave, onOpen: opts.onOpen, readOnly: !!opts.readOnly, toolbox: opts.toolbox, panels: opts.panels, dataSourceTemplates: opts.dataSourceTemplates, server };
   const show = (definition) => loadLanguage(opts.lang).catch(() => {}).then(() => root.render(createElement(Designer, { id: opts.report, initial: definition, lang: opts.lang, embed })));

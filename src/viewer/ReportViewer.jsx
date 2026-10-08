@@ -8,6 +8,7 @@ import { pageToSvg, linkTitle } from '@/exporters/svg.js';
 import { parameterOptions, NO_CJK_FONTS } from '@/engine/index.js';
 import { safeUrl } from '@/engine/url.js';
 import { viewerTimeZone } from './timeZone.js';
+import { applyStyleAttributes, deferStyleAttributes } from '../embed/styles.js';
 import { t as tr, dirOf, pickLang } from './i18n.js';
 import { paramChoices, arrangeToolbar, exportOptionsFrom, serverPdfUrl, findText, frozenAt, galleyDefinition, pageLinks, readingText } from './logic.js';
 import ParamInput from './ParamInput.jsx';
@@ -71,12 +72,20 @@ const A11yLayer = ({ page, scale, T }) => {
   );
 };
 
+/** SVG markup from pageToSvg, inserted as HTML: its style attributes go through CSSOM so a strict CSP still applies them. */
+const SvgHtml = ({ html, as: Tag = 'div', ...rest }) => {
+  const ref = useRef(null);
+  const markup = useMemo(() => deferStyleAttributes(html), [html]);
+  useLayoutEffect(() => { if (ref.current) applyStyleAttributes(ref.current); }, [markup]);
+  return <Tag ref={ref} {...rest} dangerouslySetInnerHTML={{ __html: markup }} />;
+};
+
 const Page = ({ page, w, h, scale, index, total, hits, near, T }) => {
   const html = useMemo(() => (near ? pageToSvg(page, w, h, { animate: true }) : ''), [page, w, h, near]); // charts with `animation` play it once
   return (
     // a page is a document of its own for screen readers ("Page 3 of 12"), with its text and links in reading order below
     <div className="vpage" data-page={index + 1} style={{ width: w * scale, height: h * scale }} {...(near ? { role: 'document', 'aria-roledescription': T('ux_a11yPageRole'), 'aria-label': T('b2_pageOf', { n: index + 1, total }) } : {})}>
-      {near && <div style={{ width: '100%', height: '100%' }} aria-hidden="true" dangerouslySetInnerHTML={{ __html: html }} />}
+      {near && <SvgHtml html={html} style={{ width: '100%', height: '100%' }} aria-hidden="true" />}
       {near && hits?.map((r, i) => <div key={i} className={`hl${r.cur ? ' cur' : ''}`} style={{ left: r.x * scale, top: r.y * scale, width: r.w * scale, height: r.h * scale }} />)}
       {near && <A11yLayer page={page} scale={scale} T={T} />}
     </div>
@@ -87,7 +96,7 @@ const Page = ({ page, w, h, scale, index, total, hits, near, T }) => {
 const Frozen = ({ page, region, w, h, scale }) => {
   const html = useMemo(() => pageToSvg({ items: page.items.filter(i => i.t !== 'link') }, w, h)
     .replace(/viewBox="[^"]*" width="[^"]*" height="[^"]*"/, `viewBox="${region.x} ${region.y} ${region.w} ${region.h}" width="${region.w}" height="${region.h}"`), [page, region, w, h]);
-  return <div className="vfrozen-head" data-testid="frozen-header" aria-hidden="true" style={{ left: region.x * scale, width: region.w * scale, height: region.h * scale }} dangerouslySetInnerHTML={{ __html: html }} />;
+  return <SvgHtml html={html} className="vfrozen-head" data-testid="frozen-header" aria-hidden="true" style={{ left: region.x * scale, width: region.w * scale, height: region.h * scale }} />;
 };
 
 /** A page in the sidebar: drawn when it is near the current page, a numbered sheet of the right shape otherwise. */
@@ -97,7 +106,7 @@ const Thumb = ({ page, w, h, n, current, near, onGo, T }) => {
   useEffect(() => { if (current) ref.current?.scrollIntoView?.({ block: 'nearest' }); }, [current]);
   return (
     <button ref={ref} type="button" className="vthumb" aria-current={current ? 'page' : undefined} aria-label={T('b2_pageN', { n })} onClick={() => onGo(n)}>
-      <span className="vthumb-sheet" style={{ aspectRatio: `${w} / ${h}` }}>{near && <span aria-hidden="true" dangerouslySetInnerHTML={{ __html: html }} />}</span>
+      <span className="vthumb-sheet" style={{ aspectRatio: `${w} / ${h}` }}>{near && <SvgHtml as="span" html={html} aria-hidden="true" />}</span>
       <span className="vthumb-n">{n}</span>
     </button>
   );
