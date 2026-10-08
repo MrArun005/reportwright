@@ -243,7 +243,9 @@ function toRdlx(root, notes, reportName) {
     const on = prop(b, 'aggregateOn') ?? simpleList(b, 'aggregateOn')[0]?.text;
     const gc = { ...c, group: on && on !== 'All' ? on : undefined };
     if (fn) {
-      const arg = listProp(b, 'arguments').map(x => prop(x, 'value')).find(x => x != null);
+      // the argument is the listed one, or (the usual case for SUM, AVE, MIN…) the column's own expression
+      const arg = listProp(b, 'arguments').map(x => prop(x, 'value')).find(x => x != null) ?? prop(b, 'expression');
+      if (arg == null && fn !== 'count') throw new Untranslatable(`the aggregate ${fn.toUpperCase()} with no expression`);
       const inner = arg != null ? vb(arg, { ...c, inSet: false }, depth) : '1';
       if (prop(b, 'filterExpr')) throw new Untranslatable(`the bound column "${prop(b, 'name')}", an aggregate with a filter`);
       // aggregateOn "All" (or none, BIRT's default) is the whole table or list, wherever the cell is: a grand total

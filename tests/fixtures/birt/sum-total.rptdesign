@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<report xmlns="http://www.eclipse.org/birt/2005/design" version="3.2.23" id="1">
+  <property name="units">in</property>
+  <data-sources>
+    <oda-data-source extensionID="org.eclipse.birt.report.data.oda.jdbc" name="Sales DB" id="2">
+      <property name="odaURL">jdbc:x</property>
+    </oda-data-source>
+  </data-sources>
+  <data-sets>
+    <oda-data-set extensionID="org.eclipse.birt.report.data.oda.jdbc.JdbcSelectDataSet" name="Sales" id="3">
+      <property name="dataSource">Sales DB</property>
+      <list-property name="resultSet">
+        <structure><property name="position">1</property><property name="name">REGION</property><property name="dataType">string</property></structure>
+        <structure><property name="position">2</property><property name="name">AMOUNT</property><property name="dataType">float</property></structure>
+      </list-property>
+      <xml-property name="queryText">select REGION, AMOUNT from SALES</xml-property>
+    </oda-data-set>
+  </data-sets>
+  <page-setup>
+    <simple-master-page name="Simple MasterPage" id="4">
+      <property name="type">a4</property>
+    </simple-master-page>
+  </page-setup>
+  <body>
+    <table id="5">
+      <property name="dataSet">Sales</property>
+      <list-property name="boundDataColumns">
+        <structure>
+          <property name="name">REGION</property>
+          <expression name="expression" type="javascript">dataSetRow["REGION"]</expression>
+          <property name="dataType">string</property>
+        </structure>
+        <structure>
+          <property name="name">AMOUNT</property>
+          <expression name="expression" type="javascript">dataSetRow["AMOUNT"]</expression>
+          <property name="dataType">float</property>
+        </structure>
+        <structure>
+          <property name="name">SumAmount</property>
+          <expression name="expression" type="javascript">dataSetRow["AMOUNT"]</expression>
+          <property name="dataType">float</property>
+          <property name="aggregateFunction">SUM</property>
+        </structure>
+      </list-property>
+      <column id="6"/>
+      <column id="7"/>
+      <header>
+        <row id="8">
+          <cell id="9"><label id="10"><text-property name="text">Region</text-property></label></cell>
+          <cell id="11"><label id="12"><text-property name="text">Amount</text-property></label></cell>
+        </row>
+      </header>
+      <detail>
+        <row id="13">
+          <cell id="14"><data id="15"><property name="resultSetColumn">REGION</property></data></cell>
+          <cell id="16">
+            <data id="17">
+              <property name="resultSetColumn">AMOUNT</property>
+              <structure name="numberFormat"><property name="category">Fixed</property><property name="pattern">#,##0.00</property></structure>
+            </data>
+          </cell>
+        </row>
+      </detail>
+      <footer>
+        <row id="18">
+          <cell id="19"><label id="20"><text-property name="text">Total</text-property></label></cell>
+          <cell id="21">
+            <data id="22">
+              <property name="resultSetColumn">SumAmount</property>
+              <structure name="numberFormat"><property name="category">Fixed</property><property name="pattern">#,##0.00</property></structure>
+            </data>
+          </cell>
+        </row>
+      </footer>
+    </table>
+  </body>
+</report>
