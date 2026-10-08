@@ -15,43 +15,53 @@
 </head>
 <body>
 <header class="bar">
-  <a class="brand" href="#top" aria-label="ReportWright home">
+  <a class="brand" href="index.html" aria-label="ReportWright home">
     <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><path d="M4 1v6M1 4h6M28 1v6M25 4h6M4 25v6M1 28h6M28 25v6M25 28h6" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="7" width="14" height="18" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 12h8M12 15.5h8M12 19h5" stroke="var(--accent)" stroke-width="1.6"/></svg>
     <span>ReportWright</span>
   </a>
-  <nav class="nav" aria-label="Sections">
-    <a href="#gallery">Gallery</a>
-    <a href="#scale">Scale</a>
-    <a href="#designer">Designer</a>
-    <a href="#embed">Embed</a>
-    <a href="#capabilities">Capabilities</a>
+  <nav class="nav" id="site-nav" aria-label="Site">
+    <a href="index.html#gallery" aria-current="page">Gallery</a>
+    <a href="learn.html">Recipes</a>
+    <a href="switch.html">Switch</a>
+    <a href="bench.html">Benchmarks</a>
+    <a href="play.html">Playground</a>
   </nav>
   <div class="bar-end">
     <span class="licence">MIT licensed</span>
     <button class="icon-btn" id="theme" type="button" aria-label="Switch light or dark theme" title="Light / dark">
       <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 3a7 7 0 0 1 0 14z" fill="currentColor"/></svg>
     </button>
-    <a class="btn btn-solid" data-get-it href="#embed">Get it</a>
+    <a class="btn btn-solid" data-get-it href="index.html#embed">Get it</a>
+    <button class="icon-btn menu-btn" id="menu-btn" type="button" aria-label="Site menu" aria-expanded="false" aria-controls="site-nav">
+      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="1.8" fill="none"/></svg>
+    </button>
   </div>
 </header>
+<nav class="subnav" aria-label="On this page">
+  <a href="#scale">Scale</a>
+  <a href="#designer">Designer</a>
+  <a href="#embed">Embed</a>
+  <a href="#capabilities">Capabilities</a>
+</nav>
 
 <main id="top">
   <section class="hero">
     <div class="hero-copy">
       <p class="kicker"><span class="mark">●</span> Report designer · viewer · engine</p>
-      <h1>Pixel-exact business reports, <em>laid out in the browser.</em></h1>
-      <p class="lede">ReportWright is an MIT-licensed alternative to ActiveReportsJS: a banded report designer, a viewer you embed with one call, and an engine that lays out every line itself, so the screen, the PDF and the printout match. Its PDFs pass veraPDF as PDF/A and PDF/UA (tagged for screen readers), with no Chromium, and stream from Node at flat memory. Every report on this page is rendered live, in this tab, including a 5,000-row ledger built entirely in the designer. There is no server behind this site.</p>
+      <h1>Report PDFs that pass PDF/A and PDF/UA. <em>No Chromium.</em></h1>
+      <p class="lede">An MIT-licensed report designer, viewer and engine. It streams a million rows in about 320 MB. <a href="bench.html">See the benchmarks →</a></p>
       <div class="hero-actions">
         <a class="btn btn-solid" href="#gallery">Open the live gallery</a>
         <a class="btn" href="#designer">Try the designer</a>
-        <a class="btn btn-ghost" data-get-it href="#embed">Get it</a>
       </div>
     </div>
     <dl class="spec">
-      <div><dt>Exports</dt><dd>PDF, Excel, Word, HTML, CSV, JSON, print</dd></div>
       <div><dt>Standards</dt><dd>PDF/A-2b, PDF/UA-1, both together <small>(veraPDF passes)</small></dd></div>
+      <div><dt>Exports</dt><dd>PDF, Excel, Word, HTML, CSV, JSON, print</dd></div>
       <div><dt>Streaming</dt><dd><code>exportPdfStream</code> in Node: about 260 MB peak from 20,000 to 100,000 rows <small>(measured)</small></dd></div>
       <div><dt>Scale</dt><dd>50,000 rows → 1,112 pages in 1.6 s <small>(Node, measured)</small></dd></div>
+      <div><dt>Fonts</dt><dd>Standard fonts: Helvetica, Times, Courier <small>(not embedded: a 1.6 KB invoice)</small></dd></div>
+      <div><dt>Phone</dt><dd>First page in 5.1 s on Fast 3G with a 4× slower CPU <small>(2,000 rows; measured)</small></dd></div>
       <div><dt>Scripts</dt><dd>HarfBuzz shaping + bidi: Hindi, Arabic, Hebrew</dd></div>
       <div><dt>Items</dt><dd>Grouped tables, pivot tables, merged cells, list, subreports, rich text, sparklines, data bars, bullets, TOC</dd></div>
       <div><dt>Charts</dt><dd>14 types incl. combo, radar, candlestick, gauge, funnel; trend lines, reference bands, 12 palettes</dd></div>
@@ -59,7 +69,7 @@
       <div><dt>Interaction</dt><dd>Parameters, drill-down, drill-through, interactive sort, search</dd></div>
       <div><dt>Embedding</dt><dd>Script tag or ES module in a Shadow DOM; React, Vue, Svelte, Angular wrappers</dd></div>
       <div><dt>Reuse</dt><dd>Master reports, report part libraries, themes, layers</dd></div>
-      <div><dt>Migration</dt><dd>Imports SSRS <code>.rdl</code> / <code>.rdlc</code> and ActiveReportsJS <code>.rdlx-json</code></dd></div>
+      <div><dt>Migration</dt><dd>SSRS <code>.rdl</code> / <code>.rdlc</code>, ActiveReportsJS <code>.rdlx-json</code>, JasperReports <code>.jrxml</code>, BIRT <code>.rptdesign</code> <small>(<a href="switch.html">try your own file</a>)</small></dd></div>
       <div><dt>Server</dt><dd>Per-report permissions, audit log, OIDC and SAML sign-in <small>(in the server app, not this static demo)</small></dd></div>
     </dl>
   </section>
@@ -126,8 +136,9 @@
     <header class="sect-head">
       <p class="num">04</p>
       <h2 id="embed-h">Embed it</h2>
-      <p class="sect-note">The viewer and designer are one script or ES module. Thin wrappers for four frameworks (the framework is a peer dependency; nothing is bundled twice). On npm: <code>npm i @reportwright/engine</code> for PDFs in Node, <code>@reportwright/viewer</code> for the browser.</p>
+      <p class="sect-note">The viewer and designer are one script or ES module. Thin wrappers for four frameworks (the framework is a peer dependency; nothing is bundled twice). Both packages are on npm: <code>@reportwright/engine</code> makes PDFs in Node, <code>@reportwright/viewer</code> runs in the browser.</p>
     </header>
+    <p class="install"><code>npm i @reportwright/engine @reportwright/viewer</code></p>
     <div class="code-split">
       <div class="tabs" role="tablist" aria-label="Framework" id="code-tabs"></div>
       <pre class="code" id="code-body" tabindex="0"></pre>
@@ -170,5 +181,6 @@
   <p>Loan, portfolio, sales, ledger and stress data are fictional and generated by the repository's sample code. The transcript is a Microsoft SSRS sample with its fictitious data. Product data is a snapshot of <a href="https://dummyjson.com" rel="noopener">dummyjson.com</a>. <a data-get-it href="#embed">Get it</a></p>
 </footer>
 <script type="module" src="site.js"></script>
+<script src="nav.js"></script>
 </body>
 </html>
