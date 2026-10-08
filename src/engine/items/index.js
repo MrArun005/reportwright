@@ -1623,7 +1623,9 @@ register('toc', {
     if (item.title) {
       const tst = { ...st, fontWeight: 'bold', fontSize: (Number(st.fontSize) || 9) * 1.5, padding: [0, 0, 6, 0] };
       const tl = layoutTextLines(String(item.title), tst, item.w, lc.m);
-      units.push({ top: 0, height: tl.needed, items: paintBox({ x: item.x, y: 0, w: item.w, h: tl.needed, st: tst, tl, m: lc.m }), keepWithNext: true });
+      const ti = paintBox({ x: item.x, y: 0, w: item.w, h: tl.needed, st: tst, tl, m: lc.m });
+      for (const x of ti) if (x.t === 'text') x.tocTitle = true; // the tagged PDF's heading for the contents
+      units.push({ top: 0, height: tl.needed, items: ti, keepWithNext: true });
       y += tl.needed;
     }
     const fromHeadings = item.source === 'headings';
@@ -1649,10 +1651,10 @@ register('toc', {
       const lw = lc.m.width(label, key, size);
       const base = (lh - size) / 2 + ascent * 0.9;
       const items = [
-        { t: 'text', font: key, size, color: st.color || '#111', lines: [{ x: item.x + indent, y: base, text: label, w: lw }] },
+        { t: 'text', font: key, size, color: st.color || '#111', lines: [{ x: item.x + indent, y: base, text: label, w: lw }], tocEntry: e.i },
         { t: 'line', x1: item.x + indent + lw + 4, y1: base, x2: item.x + item.w - nw - 4, y2: base, stroke: '#9ca3af', strokeWidth: 0.6, dash: [0.6, 2.4], tocDots: e.i },
-        { t: 'text', font: key, size, color: st.color || '#111', lines: [{ x: item.x + item.w - nw, y: base, text: num, w: nw }], tocPage: e.i },
-        { t: 'link', x: item.x, y: 0, w: item.w, h: lh, action: e.heading && typeof e.page === 'number' ? { type: 'bookmark', target: e.label, page: e.page, y: e.y } : { type: 'bookmark', target: e.label }, tocLink: e.i },
+        { t: 'text', font: key, size, color: st.color || '#111', lines: [{ x: item.x + item.w - nw, y: base, text: num, w: nw }], tocPage: e.i, tocEntry: e.i },
+        { t: 'link', x: item.x, y: 0, w: item.w, h: lh, action: e.heading && typeof e.page === 'number' ? { type: 'bookmark', target: e.label, page: e.page, y: e.y } : { type: 'bookmark', target: e.label }, tocLink: e.i, tocEntry: e.i },
       ];
       units.push({ top: y, height: lh, items });
       y += lh;

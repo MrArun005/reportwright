@@ -5,6 +5,7 @@ All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. T
 ## Unreleased
 
 ### Fixed
+- **Tagged PDF table of contents (N32):** a TOC is tagged `TOC > TOCI > Reference > Link`, with the entry text, its page number and the link annotation inside one Link (it was plain `P` elements with a Link around the number only), and its title is an `H1`. veraPDF PDF/UA-1: compliant. The streaming PDF's tagging is unchanged.
 - **Cascading parameters in the viewer:** when a parent parameter changes, a dependent value its list no longer offers is replaced (by the default if still offered, else the first choice) in the state the run uses, and the report re-runs with it. Before, the panel dropped the value but the run kept the old one ("Delhi, South region" with no rows).
 - **Viewer page thumbnails (A11Y-3):** `.vthumb` no longer has an `aria-label` that differs from its visible number (axe `label-content-name-mismatch`); its name "Page 1" comes from hidden text beside the visible 1.
 - **Viewer worker fallback (N1):** when the render worker cannot load (Vite 7 without `worker: { format: 'es' }`, or esbuild not following `new Worker(new URL(...))`), the viewer logs once `[reportwright] worker did not load (<reason>); rendering on the main thread`, and `handle.usesWorker` says which one you got. The viewer README now starts with the bundler setup. No Vite plugin: the setting is one line.
