@@ -13,6 +13,10 @@ All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. T
   exportPdfStream writes it in about 320 MB; render + exportPdf holds it all in memory`), in the model's warnings and
   once per process on the console. The threshold is the render option `largeReportRows` (100000; `0` or `false`: off). `exportPdf` takes a rendered model, so it cannot switch to streaming itself; the
   engine README shows `exportPdfStream` with a sink that keeps the bytes.
+- **`pw render -f pdf` streams (A1.4):** into a file, a flowing report is written by `exportPdfStream` (the message says
+  `streamed`; the text is the whole-model PDF's), through a temporary file renamed on success, so a failed run leaves
+  no damaged PDF. Encrypted files, reports that cannot stream and `-o -` render the whole model as before. A streamed
+  grouped report no longer warns that the group totals' internal fields (`__g0_0`) are missing.
 - **Streaming tickets, from the 0.12.1 retest (N23-N29):** `exportPdfStream` with `encrypt` or `prepare` and `sqlRows` no
   longer fails with "Save the report first" (the rows are gathered for the whole-model render); a misspelled option
   key (`encrpyt`, `windw`) warns with "Did you mean" in `render()`'s model warnings, `exportPdfStream`'s result and

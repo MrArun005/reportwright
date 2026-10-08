@@ -183,6 +183,7 @@ export async function planPaged(def0, opts = {}) {
         close(l);
         for (let k = l; k < L; k++) open[k] = { ord: r.__g[k][0], first: r, at: seen, acc: newAcc(gfolds[k]) };
         r.__i = open.slice();
+        for (const f of gfields) r[f.name] = null; // set when its group closes; present, so the data set does not warn it is missing
         delete r.__g;
         for (let k = 0; k < L; k++) addTo(gfolds[k], open[k].acc, r);
       }
