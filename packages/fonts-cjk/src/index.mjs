@@ -2,9 +2,10 @@
 // @reportwright/fonts-cjk: the Chinese, Japanese, Korean and emoji fonts (Noto, SIL Open Font License), about 40 MB.
 // The package itself is small: the fonts are downloaded on demand from google/fonts at a pinned commit and checked
 // against their SHA-256 before they are written. No install script runs.
-//   npx reportwright-fonts-cjk [folder]          (default: this package's fonts/ folder, where the engine looks)
+//   npx reportwright-fonts-cjk [folder]          (default: the cache folder, cacheDir(), where the engine looks)
 //   import { fetchCjkFonts } from '@reportwright/fonts-cjk'; await fetchCjkFonts();
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -18,15 +19,36 @@ export const CJK_FONTS = [
   ['notoemoji/NotoEmoji%5Bwght%5D.ttf', 'NotoEmoji.ttf', 'de6c18832938afc99caf132b39d6a30a19bac7f2e812e28db2535b4608d27551'],
   ['notosansjp/OFL.txt', 'OFL.txt', '1c05c68c34f9708415aada51f17e1b0092d2cea709bf4a94cd38114f9e73d7d9'],
 ];
-/** Where the fonts go by default: this package's fonts/ folder. */
-export const FONTS_DIR = fileURLToPath(new URL('../fonts/', import.meta.url));
+/**
+ * Where the fonts go by default: a cache folder outside the package, so upgrading or reinstalling it keeps them.
+ * REPORTWRIGHT_FONTS_DIR if set, else $XDG_CACHE_HOME/reportwright/fonts-cjk, else %LOCALAPPDATA%\reportwright\fonts-cjk
+ * on Windows, else ~/.cache/reportwright/fonts-cjk. @reportwright/engine's defaultFontStore() looks in the same place
+ * (packages/engine/entry.js computes it the same way: keep the two in step).
+ */
+export function cacheDir(env = process.env, platform = process.platform, home = os.homedir()) {
+  if (env.REPORTWRIGHT_FONTS_DIR) return path.resolve(env.REPORTWRIGHT_FONTS_DIR);
+  const base = env.XDG_CACHE_HOME || (platform === 'win32' && env.LOCALAPPDATA) || path.join(home, '.cache');
+  return path.join(base, 'reportwright', 'fonts-cjk');
+}
+/** The default folder when this module loaded (cacheDir()). */
+export const FONTS_DIR = cacheDir();
+/** Where earlier versions put the fonts: this package's fonts/ folder (an upgrade deletes it). Still read. */
+export const LEGACY_DIR = fileURLToPath(new URL('../fonts/', import.meta.url));
+/**
+ * The path of a downloaded font file (NotoSansJP.ttf…): the cache folder first, then the old package folder; undefined
+ * when neither has it. @param {string} name @param {string[]} [dirs]
+ */
+export function fontPath(name, dirs = [cacheDir(), LEGACY_DIR]) {
+  for (const d of dirs) { const f = path.join(d, name); if (fs.existsSync(f)) return f; }
+  return undefined;
+}
 const sha = (b) => createHash('sha256').update(b).digest('hex');
 
 /**
  * Download the fonts that are missing (or damaged) into dir. Resolves to the folder.
  * @param {string} [dir] @param {{ log?: (line: string) => void, fetch?: typeof fetch }} [opt]
  */
-export async function fetchCjkFonts(dir = FONTS_DIR, { log = () => {}, fetch: get = fetch } = {}) {
+export async function fetchCjkFonts(dir = cacheDir(), { log = () => {}, fetch: get = fetch } = {}) {
   fs.mkdirSync(dir, { recursive: true });
   for (const [src, name, hash] of CJK_FONTS) {
     const file = path.join(dir, name);
@@ -42,6 +64,6 @@ export async function fetchCjkFonts(dir = FONTS_DIR, { log = () => {}, fetch: ge
 }
 
 if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const dir = await fetchCjkFonts(process.argv[2] ? path.resolve(process.argv[2]) : FONTS_DIR, { log: console.log });
+  const dir = await fetchCjkFonts(process.argv[2] ? path.resolve(process.argv[2]) : cacheDir(), { log: console.log });
   console.log(`CJK and emoji fonts in ${dir}`);
 }
