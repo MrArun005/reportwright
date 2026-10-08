@@ -21,6 +21,20 @@ function fontsUrl(file, pkg = '@reportwright/fonts/public') {
     return req ? proc.getBuiltinModule('url').pathToFileURL(req.resolve(`${pkg}/${file}`)) : undefined;
   } catch { return undefined; }
 }
+/**
+ * A file in @reportwright/fonts-cjk's download folder (Node only): REPORTWRIGHT_FONTS_DIR, else
+ * $XDG_CACHE_HOME/reportwright/fonts-cjk, else %LOCALAPPDATA% (Windows) or ~/.cache. The same rule as cacheDir() in
+ * packages/fonts-cjk/src/index.mjs, written out here so a browser bundle never resolves that package.
+ * @param {string} file @returns {URL|undefined}
+ */
+function cjkCacheUrl(file) {
+  const proc = /** @type {any} */ (globalThis).process;
+  if (!proc?.getBuiltinModule) return undefined;
+  const path = proc.getBuiltinModule('path'), env = proc.env || {};
+  const base = env.XDG_CACHE_HOME || (proc.platform === 'win32' && env.LOCALAPPDATA) || path.join(proc.getBuiltinModule('os').homedir(), '.cache');
+  const dir = env.REPORTWRIGHT_FONTS_DIR ? path.resolve(env.REPORTWRIGHT_FONTS_DIR) : path.join(base, 'reportwright', 'fonts-cjk');
+  return proc.getBuiltinModule('url').pathToFileURL(path.join(dir, file));
+}
 /** A folder as a URL: a URL as it is, a relative URL against the page, or (Node) a path. @param {string} s */
 function folderUrl(s) {
   const folder = s.replace(/\/?$/, '/');
@@ -51,9 +65,13 @@ export function defaultFontStore(opts = {}) {
   if (!fontsUrl('fonts/Inter-Regular.ttf')) throw new Error('Install @reportwright/fonts, or pass { fontsUrl } (a copy of its public/fonts folder), or your own FontStore');
   return new FontStore(async (key) => {
     const file = fontFile(key);
-    // Chinese, Japanese, Korean and emoji: @reportwright/fonts-cjk (npx reportwright-fonts-cjk downloads them) when installed
-    const cjk = file.startsWith('cjk/') ? fontsUrl(file.slice(4), '@reportwright/fonts-cjk/fonts') : undefined;
-    if (cjk) try { return await readUrl(cjk); } catch { /* not downloaded: the fonts package's cjk/ folder, else no font */ }
+    // Chinese, Japanese, Korean and emoji: @reportwright/fonts-cjk (npx reportwright-fonts-cjk downloads them) when installed,
+    // in its cache folder, else (earlier versions) its own fonts/ folder
+    if (file.startsWith('cjk/')) {
+      for (const cjk of [cjkCacheUrl(file.slice(4)), fontsUrl(file.slice(4), '@reportwright/fonts-cjk/fonts')]) {
+        if (cjk) try { return await readUrl(cjk); } catch { /* not downloaded there: the next place, then the fonts package's cjk/ folder, else no font */ }
+      }
+    }
     return readUrl(/** @type {URL} */ (fontsUrl(`fonts/${file}`)));
   });
 }

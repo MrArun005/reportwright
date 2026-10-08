@@ -1,7 +1,7 @@
 'use client';
 // Runs the engine in a Web Worker. Falls back to the main thread if the worker cannot start.
 import { reportFetch, policyKeysIn, fetchPolicy } from './dataFetch.js';
-import { fontFile, setCustomFonts, SHAPER, CORE_FONT_KEY } from '@/engine/text/fonts.js';
+import { fontFile, setCustomFonts, isStandard, SHAPER, CORE_FONT_KEY } from '@/engine/text/fonts.js';
 import { createSubsetter } from '@/exporters/subset.js';
 import { fontFamilyCss, fontKeysOf } from '@/exporters/svg.js';
 
@@ -87,7 +87,7 @@ export function customFonts(refresh = false) {
 const faces = new Map();
 export function loadReportFonts(keys) {
   if (typeof document === 'undefined' || !document.fonts || typeof FontFace === 'undefined') return Promise.resolve([]);
-  return Promise.all(keys.filter(k => k !== SHAPER).map((k) => {
+  return Promise.all(keys.filter(k => k !== SHAPER && !isStandard(k)).map((k) => { // a standard PDF font has no file (the SVG names it)
     if (!faces.has(k)) {
       // the same bytes the engine measures with (one download per font), not a url() the browser fetches again
       const bytes = bundledFonts?.[k] ? Promise.resolve(b64ToBuffer(bundledFonts[k])) : fetchFont(k).then(b => b.slice(0));

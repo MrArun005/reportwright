@@ -5,7 +5,7 @@
 // when the file is opened; the snapshot is the fallback when a call fails (offline, CORS, server gone).
 import { reportFetch } from './dataFetch.js';
 import { origin, fetchReport, customFonts } from './engineClient.js';
-import { ALL_FONT_KEYS, SHAPER, fontFile } from '@/engine/text/fonts.js';
+import { ALL_FONT_KEYS, SHAPER, fontFile, isStandard } from '@/engine/text/fonts.js';
 import { fontKeysOf } from '@/exporters/svg.js';
 import { loadSources } from '@/engine/data/index.js';
 import { resolveParameters } from '@/engine/index.js';
@@ -91,7 +91,7 @@ export async function exportInteractiveHtml(def, opt = {}) {
   // the default fonts, the ones this view draws with (fallbacks, uploaded fonts) and the shaper when text needs it
   const used = fontKeysOf(opt.model);
   const shaped = (opt.model?.pages || []).some(pg => pg.items.some(it => it.t === 'text' && it.lines.some(l => l.runs?.some(r => r.shaped || r.rtl))));
-  const keys = [...new Set([...ALL_FONT_KEYS, ...used, ...(shaped ? [SHAPER] : [])])];
+  const keys = [...new Set([...ALL_FONT_KEYS, ...used, ...(shaped ? [SHAPER] : [])])].filter(k => !isStandard(k)); // standard PDF fonts have no file
   const fonts = {};
   await Promise.all(keys.map(async (k) => { fonts[k] = toB64(await getBuf(`${base}/fonts/${fontFile(k)}`)); }));
   const uploaded = (await customFonts()).filter(f => keys.includes(`u-${f.id}`));

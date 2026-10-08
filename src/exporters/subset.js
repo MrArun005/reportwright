@@ -138,7 +138,15 @@ export function createSubsetter(loadWasm) {
   let hbP = null;
   const hb = () => (hbP ||= (async () => {
     const bytes = await loadWasm();
-    const { instance } = await WebAssembly.instantiate(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), {});
+    const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    // Node: compiled synchronously, which V8 does lazily (each function when first called). The async compile also
+    // optimizes the whole module in the background, and a cold process then waited ~140 ms for it before its first
+    // PDF was written (measured: 1-page invoice export 175 ms → 35 ms). Browsers keep the async compile (a large
+    // synchronous one is refused on the main thread).
+    const src = /** @type {any} */ (u8);
+    const instance = /** @type {any} */ (globalThis).process?.versions?.node
+      ? new WebAssembly.Instance(new WebAssembly.Module(src), {})
+      : (await WebAssembly.instantiate(src, {})).instance;
     const x = /** @type {any} */ (instance.exports);
     x._initialize?.();
     return x;

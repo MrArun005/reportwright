@@ -54,7 +54,7 @@ function lookOf(st, m) {
   let l = m.looks && Object.isFrozen(st) ? m.looks.get(st) : undefined;
   if (!l) {
     const size = Number(st.fontSize) || 9;
-    l = { key: resolveFontKey(st.fontFamily, st.fontWeight, st.fontStyle), size, pad: padding(st), lh: size * (Number(st.lineHeight) || 1.25) };
+    l = { key: resolveFontKey(st.fontFamily, st.fontWeight, st.fontStyle, m.unknownFonts), size, pad: padding(st), lh: size * (Number(st.lineHeight) || 1.25) };
     if (m.looks && Object.isFrozen(st)) m.looks.set(st, l);
   }
   return l;

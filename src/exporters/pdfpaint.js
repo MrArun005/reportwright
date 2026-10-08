@@ -83,7 +83,7 @@ export function drawRun(c, run, x, y, size, pf, color, spans, texts) {
     // a tagged PDF draws no .notdef (PDF/UA 7.21.8): the glyph is left out, its place kept; so is a format character's (no glyph, no box)
     if (id === 0 && (c.tagged || formatAt(run, cl))) pen = gx;
     else {
-      arr += (adj ? `${adj}` : '') + `<${hex4(id)}>`;
+      arr += (adj ? `${adj}` : '') + `<${f.standard ? id.toString(16).padStart(2, '0') : hex4(id)}>`; // a standard font: one byte
       pen = gx + (adv(id) * size) / f.unitsPerEm;
     }
     if (inSpan && (i + 4 >= g.length || (quietAt < 0 || i + 4 < quietAt) && g[i + 7] !== cl || i + 4 === quietAt)) { flush(); c.s += 'EMC\n'; inSpan = false; }

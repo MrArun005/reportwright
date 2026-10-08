@@ -9,6 +9,8 @@ import { createTagger } from './pdfua.js';
 import { withDeadline } from './deadline.js';
 import { pngProblem } from './png.js';
 import { needsTableData } from './regions.js';
+import { embeddedFace, isStandard } from '../engine/text/fonts.js';
+import { standardFontEntries, standardLiteral, embeddedPage, embeddedWarnings } from './pdfstandard.js';
 import { Content, drawRun, glyphText, insideClip, col, BLACK, n2, n4, hex4, KAPPA, cleanText, latin1, deflate, NODE_ZLIB } from './pdfpaint.js';
 
 
@@ -55,6 +57,12 @@ async function pdfOf(model, fontStore, opt) {
   setInfoDates(doc, when);
   if (fileId) doc.context.trailerInfo.ID = doc.context.obj([PDFHexString.of(fileId), PDFHexString.of(fileId)]);
 
+  // PDF/A and PDF/UA embed every font: standard-font text is drawn in its embedded stand-in (pdfstandard.js)
+  if (opt.pdfa || opt.tagged) {
+    const families = new Set();
+    model = { ...model, pages: model.pages.map((/** @type {any} */ pg) => embeddedPage(pg, k => fontStore.get(k), families)) };
+    for (const w of embeddedWarnings(families)) opt.onWarning?.(w);
+  }
   // Which characters each font must draw, and which shaped glyphs (by ID, with the text each one stands for).
   const used = new Map();
   /** @type {Map<string, Map<number, string>>} */
@@ -79,6 +87,10 @@ async function pdfOf(model, fontStore, opt) {
   for (const pg of model.pages) for (const it of pg.items) if (it.t === 'field') fieldFonts.add(fieldFont(it));
   const fonts = new Map();
   const font = async (key) => {
+    if (!fonts.has(key) && isStandard(key)) { // a standard PDF font: named, not embedded (pdfstandard.js)
+      const f = fontStore.get(key);
+      fonts.set(key, { ref: doc.context.register(doc.context.obj(/** @type {any} */ (standardFontEntries(f)))), embedder: { font: f, literalOf: (/** @type {string} */ t) => standardLiteral(f, t), tjOf: () => null } });
+    }
     if (!fonts.has(key)) {
       const full = fontStore.bytes.get(key);
       let bytes = full;
@@ -447,8 +459,8 @@ async function contentId(model, opt, when) {
  * value is drawn in (Arabic in Inter would be blank boxes once a viewer redraws the field).
  */
 function fieldFont(it) {
-  for (const d of it.draw) if (d.t === 'text') for (const l of d.lines) for (const r of l.runs || []) if (r.font !== it.font && r.text.trim()) return r.font;
-  return it.font;
+  for (const d of it.draw) if (d.t === 'text') for (const l of d.lines) for (const r of l.runs || []) if (r.font !== it.font && r.text.trim()) return embeddedFace(r.font);
+  return embeddedFace(it.font); // a field's font is embedded: what is typed into it later can be any character
 }
 
 

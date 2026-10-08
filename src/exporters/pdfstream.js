@@ -25,6 +25,7 @@ import { safeUrl, drillUrl, asciiUrl } from '../engine/url.js';
 import { exportPdf } from './pdf.js';
 import { xmpPacket } from './pdfa.js';
 import { createStreamTagger } from './pdfstreamtags.js';
+import { standardFontDict, embeddedPage, embeddedWarnings } from './pdfstandard.js';
 import { Content, drawRun, glyphText, insideClip, col, BLACK, n2, n4, KAPPA, cleanText, deflate } from './pdfpaint.js';
 
 const CHUNK = 64 * 1024;
@@ -188,7 +189,7 @@ export function createPdfStream(sink, opt) {
         let h = F.memo.get(cp);
         if (h === undefined) {
           const id = F.font.glyphForCodePoint(cp).id;
-          F.memo.set(cp, h = hex4(id));
+          F.memo.set(cp, h = F.font.standard ? id.toString(16).padStart(2, '0') : hex4(id)); // a standard font: one byte
           F.cps.add(cp);
           if (!F.glyphs.has(id)) F.glyphs.set(id, ch);
         }
@@ -208,7 +209,7 @@ export function createPdfStream(sink, opt) {
         let b = F.lit.get(cp);
         if (b === undefined) {
           const id = parseInt(w.encode(key, ch), 16);
-          F.lit.set(cp, b = esc(id >> 8) + esc(id & 255));
+          F.lit.set(cp, b = F.font.standard ? esc(id) : esc(id >> 8) + esc(id & 255));
         }
         out += b;
       }
@@ -405,6 +406,7 @@ export function createPdfStream(sink, opt) {
    * @param {string} key @param {NonNullable<ReturnType<typeof fonts.get>>} F
    */
   async function writeFont(key, F) {
+    if (F.font.standard) { await writeObj(F.ref, standardFontDict(F.font)); return; } // named, not embedded (pdfstandard.js)
     const f = F.font, full = /** @type {Uint8Array} */ (fontStore.bytes.get(key));
     let bytes = full;
     if (opt.subset && !f['OS/2']?.fsType?.noSubsetting) {
@@ -588,7 +590,7 @@ export async function writePagedPdf(plan, opts, sink) {
   const { info, pages } = /** @type {any} */ (plan);
   // tagged (PDF/UA-1): a structure tree written as the pages are (pdfstreamtags.js)
   const tags = opts.tagged ? createStreamTagger(w, { maxElements: Number(opts.tagged.maxElements) || Infinity }) : null;
-  const env = paintEnv(w, fontStore, { drillBase: opts.drillBase, tags });
+  const env = paintEnv(w, fontStore, { drillBase: opts.drillBase, tags, embedAll: !!(opts.pdfa || tags) });
   const { shaped } = env;
   // opts.parallel: windows laid out and painted by that many worker threads (Node), their pages written here in order
   const pool = !tags && Number(opts.parallel) > 1 ? paintPool(Number(opts.parallel), fontStore, opts, info) : null;
@@ -606,6 +608,7 @@ export async function writePagedPdf(plan, opts, sink) {
       pi++;
       const H = pg.height ?? info.height;
       if (pg.deflated) { // painted by a worker: its fonts and glyphs first, then its links' pages by number
+        for (const f of pg.embedded || []) env.embedded?.add(f);
         if (pg.used) { w.take(pg.used); for (const [k, g] of pg.shaped) { const m = env.shapedOf(k); for (const [id, t] of g) if (!m.has(id)) m.set(id, t); } }
         const annots = pg.annots.map((/** @type {string} */ a) => a.replace(/@@P(\d+)@@/g, (_, i) => String(w.pageRef(Number(i)))));
         await w.addPage({ width: pg.width ?? info.width, height: H, deflated: pg.deflated, annots });
@@ -640,6 +643,7 @@ export async function writePagedPdf(plan, opts, sink) {
   }
   const res = await w.finish({ outline, catalog, info: { title, author: opts.author, creationDate: when } });
   // a tagged file of millions of elements is valid, but tools that load every object (qpdf, pikepdf) need gigabytes
+  for (const x of env.embedded ? embeddedWarnings(env.embedded) : []) info.warnings.push(x);
   if (tags && tags.count > TAGGED_LARGE) info.warnings.push(`The tagged PDF has ${tags.count.toLocaleString('en-US')} structure elements (${res.pages.toLocaleString('en-US')} pages): readers open it, but tools that load every object of a file (qpdf, pikepdf) may run out of memory on it. tagged.maxElements caps it.`);
   return { pages: res.pages, warnings: info.warnings };
 }
@@ -661,6 +665,7 @@ function coveredText(items, box) {
  * @returns {{ content: string, annots: any[] }}
  */
 export function paintPage(pg, H, env) {
+  if (env.embedded) pg = embeddedPage(pg, env.font, env.embedded);
   const annots = [];
   const c = new Content(env.shared);
   const { tags } = env;
@@ -747,7 +752,7 @@ export function paintPage(pg, H, env) {
 
 /**
  * What paintPage draws with: a writer's resource names and glyph records (w), the fonts, shaped glyphs' texts.
- * @param {any} w @param {any} fontStore @param {{ drillBase?: string, pageRef?: (i: number) => any, tags?: any }} [o]
+ * @param {any} w @param {any} fontStore @param {{ drillBase?: string, pageRef?: (i: number) => any, tags?: any, embedAll?: boolean }} [o]
  */
 export function paintEnv(w, fontStore, o = {}) {
   /** @type {Map<string, any>} pdf-lib-like fonts for the shared painter: { key, embedder: { font } } */
@@ -771,6 +776,8 @@ export function paintEnv(w, fontStore, o = {}) {
     reserve: () => w.reserve(),
     drillBase: o.drillBase,
     tags: o.tags || null,
+    /** PDF/A, PDF/UA: standard fonts drawn in embedded stand-ins; the families that were @type {Set<string>|null} */
+    embedded: o.embedAll ? new Set() : null,
   };
 }
 
@@ -807,11 +814,11 @@ function paintPool(size, fontStore, opts, info) {
       await (started ||= start());
       const id = ++seq;
       const pw = job.pageWindow;
-      const msg = { id, def: job.def, rows: job.rows.map(clean), keep: job.keep, drillBase: opts.drillBase, height: info.height,
+      const msg = { id, def: job.def, rows: job.rows.map(clean), keep: job.keep, drillBase: opts.drillBase, embedAll: !!opts.pdfa, height: info.height,
         opts: Object.fromEntries(pick.filter(k => opts[k] !== undefined).map(k => [k, opts[k]])),
         pageWindow: { ...pw, first: clean(pw.first), cont: pw.cont.map((/** @type {any} */ c) => c && { first: clean(c.first), before: c.before }) } };
       const r = await new Promise((ok, fail) => { waiting.set(id, { ok, fail }); workers[turn++ % workers.length].postMessage(msg); });
-      if (r.pages.length) { r.pages[0].used = r.used; r.pages[0].shaped = r.shaped; }
+      if (r.pages.length) { r.pages[0].used = r.used; r.pages[0].shaped = r.shaped; r.pages[0].embedded = r.embedded; }
       return r;
     },
     async close() { await Promise.all(workers.map(w => w.terminate())); },

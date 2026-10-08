@@ -1,8 +1,10 @@
 // @ts-check
 import { fontkit, loadFontkit } from '../lazylibs.js';
 import { createShaper } from './shaper.js';
+import { STANDARD_FACES, isStandard, standardFont } from './standard.js';
+export { isStandard };
 
-/** @typedef {{ key: string, family: string, weight: number, style: 'normal'|'italic', file: string }} Face */
+/** @typedef {{ key: string, family: string, weight: number, style: 'normal'|'italic', file: string, standard?: boolean }} Face */
 
 /** Bundled fonts (OFL), in /public/fonts: [family, key, weight, style]. The key is the file name without ".ttf". */
 const BUNDLED = [
@@ -31,6 +33,10 @@ const addFace = (/** @type {Face} */ f) => { (FONT_FAMILIES[f.family] ||= []).pu
 for (const [family, key, weight, style = 'normal', file] of BUNDLED) {
   addFace({ family: String(family), key: String(key), weight: Number(weight), style: style === 'italic' ? 'italic' : 'normal', file: String(file || `${key}.ttf`) });
 }
+// the 14 standard PDF fonts (standard.js): metrics only, never embedded (PDF/A and PDF/UA embed embeddedFace(key))
+for (const [family, key, weight, style] of STANDARD_FACES) {
+  addFace({ family: String(family), key: String(key), weight: Number(weight), style: style === 'italic' ? 'italic' : 'normal', file: '', standard: true });
+}
 export const BUNDLED_FAMILIES = Object.keys(FONT_FAMILIES);
 
 export const DEFAULT_FAMILY = 'Inter';
@@ -55,6 +61,7 @@ export function fontFile(key) {
  * @param {{ id: string, family: string, weight?: number, style?: string }[]} list
  */
 export function setCustomFonts(list) {
+  familyCache.clear();
   for (const [k, f] of FACES) if (k.startsWith('u-')) {
     FACES.delete(k);
     const left = FONT_FAMILIES[f.family].filter(x => x.key !== k);
@@ -66,13 +73,50 @@ export function setCustomFonts(list) {
   }
 }
 
+/** Generic CSS families: they name no font, so using ours for them is not a substitution (no warning). */
+const GENERIC = { 'sans-serif': DEFAULT_FAMILY, 'system-ui': DEFAULT_FAMILY, monospace: 'JetBrains Mono', 'ui-monospace': 'JetBrains Mono', serif: 'Times-Roman',
+  // the standard fonts' common names (metric-compatible: Arial has Helvetica's widths, and so on)
+  arial: 'Helvetica', times: 'Times-Roman', 'times new roman': 'Times-Roman', 'courier new': 'Courier', 'zapf dingbats': 'ZapfDingbats' };
+/** Names of monospace fonts we do not have: they get the shipped monospace face, so aligned columns stay aligned. */
+const MONO = /mono|courier|consol|menlo|monaco|code|typewriter|fixed|terminal|lucida console|andale/i;
+/** @type {Map<string, { family: string, unknown?: string }>} */
+const familyCache = new Map();
+/**
+ * The family a fontFamily value names: a registered family (any case), else the first of a CSS list that is one, else a
+ * generic name's family. Anything else is unknown: Inter, or JetBrains Mono for a monospace name, and `unknown` is the
+ * name the render warns about.
+ * @param {string} name @returns {{ family: string, unknown?: string }}
+ */
+export function familyOf(name) {
+  let r = familyCache.get(name);
+  if (r) return r;
+  const names = String(name).split(',').map(n => n.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+  const known = Object.keys(FONT_FAMILIES);
+  for (const n of names) {
+    const lc = n.toLowerCase();
+    const hit = known.find(k => k.toLowerCase() === lc) || GENERIC[lc];
+    if (hit) { r = { family: hit }; break; }
+  }
+  const first = names[0] || DEFAULT_FAMILY;
+  r ||= { family: MONO.test(first) ? 'JetBrains Mono' : DEFAULT_FAMILY, unknown: first.slice(0, 60) };
+  if (familyCache.size >= 500) familyCache.clear();
+  familyCache.set(name, r);
+  return r;
+}
+
 /**
  * The face for a family, weight and style, matched as CSS does: style first (italic faces when asked
- * and there are some), then the nearest weight (CSS Fonts 4, §5.2). Unknown families use Inter.
- * @param {string} [family] @param {string|number} [weight] @param {string} [style]
+ * and there are some), then the nearest weight (CSS Fonts 4, §5.2). Unknown families use Inter (JetBrains Mono for a
+ * monospace name), and their names go into `unknown`, for the render's warning (N39).
+ * @param {string} [family] @param {string|number} [weight] @param {string} [style] @param {Set<string>} [unknown]
  */
-export function resolveFontKey(family, weight, style) {
-  const faces = FONT_FAMILIES[family || DEFAULT_FAMILY] || FONT_FAMILIES[DEFAULT_FAMILY];
+export function resolveFontKey(family, weight, style, unknown) {
+  let faces = FONT_FAMILIES[family || DEFAULT_FAMILY];
+  if (!faces) {
+    const f = familyOf(String(family));
+    if (f.unknown && unknown && !f.unknown.startsWith('=')) unknown.add(f.unknown); // "=…": an expression, not a name
+    faces = FONT_FAMILIES[f.family] || FONT_FAMILIES[DEFAULT_FAMILY];
+  }
   const w = weight === 'bold' ? 700 : weight === 'normal' || weight == null ? 400 : Number(weight) || 400;
   const italic = faces.filter(f => f.style === 'italic');
   const list = style === 'italic' && italic.length ? italic : faces.filter(f => f.style !== 'italic').length ? faces.filter(f => f.style !== 'italic') : faces;
@@ -83,6 +127,29 @@ export function resolveFontKey(family, weight, style) {
     return fw >= w ? fw - w : 1000 + w - fw;
   };
   return list.reduce((best, f) => (rank(f) < rank(best) ? f : best)).key;
+}
+
+/**
+ * The embedded face that stands in for a standard font where one must be embedded (PDF/A, PDF/UA, form fields) and for
+ * the characters its encoding lacks: JetBrains Mono for Courier, else Inter, in the same weight and style. No
+ * metric-compatible face (Liberation, say) ships, so its widths differ. Any other key is returned as it is.
+ * @param {string} key
+ */
+export function embeddedFace(key) {
+  if (!isStandard(key)) return key;
+  const f = /** @type {Face} */ (FACES.get(key));
+  return resolveFontKey(f.family === 'Courier' ? 'JetBrains Mono' : DEFAULT_FAMILY, f.weight, f.style);
+}
+
+/** CSS font-family for HTML and SVG: a standard font by name, then what most systems have with its widths. */
+const CSS_STACK = { Helvetica: 'Helvetica, Arial, "Liberation Sans", sans-serif', 'Times-Roman': '"Times New Roman", Times, "Liberation Serif", serif',
+  Courier: '"Courier New", Courier, "Liberation Mono", monospace', Symbol: 'Symbol', ZapfDingbats: '"Zapf Dingbats", ZapfDingbats' };
+/** @param {string} key @returns {string|null} a standard font's CSS font-family list, else null */
+export const standardCss = (key) => (isStandard(key) ? CSS_STACK[/** @type {Face} */ (FACES.get(key)).family] : null);
+/** The name Word, Excel and PowerPoint know for a font key's family (the standard fonts by their Windows equivalents). */
+export function officeFamily(key) {
+  const fam = fontCss(key).family;
+  return { Helvetica: 'Arial', 'Times-Roman': 'Times New Roman', Courier: 'Courier New' }[fam] || fam;
 }
 
 /** CSS description of a font key, for SVG/HTML output. */
@@ -150,16 +217,17 @@ const BEYOND_LATIN = /[^\u0000-\u024f\u1e00-\u1eff\u2000-\u20cf\u2100-\u218f]/;
  * The faces a report definition names before layout: every object with fontFamily, fontWeight or fontStyle (styles,
  * named styles, item and rich-text styles, table and group styles), and the bold face a chart's titles use. Loaded up
  * front, so a report that uses bold or italic lays out in one pass. Data (dataSources, inline data) is not read.
- * @param {any} def @returns {string[]} face keys
+ * Unknown family names go into `unknown` (the render warns about them).
+ * @param {any} def @param {Set<string>} [unknown] @returns {string[]} face keys
  */
-export function fontsForDef(def) {
+export function fontsForDef(def, unknown = undefined) {
   const keys = new Set();
   const seen = new Set();
   const walk = (/** @type {any} */ o) => {
     if (!o || typeof o !== 'object' || seen.has(o)) return;
     seen.add(o);
     if (Array.isArray(o)) { for (const x of o) walk(x); return; }
-    if (o.fontFamily != null || o.fontWeight != null || o.fontStyle != null) keys.add(resolveFontKey(o.fontFamily, o.fontWeight, o.fontStyle));
+    if (o.fontFamily != null || o.fontWeight != null || o.fontStyle != null) keys.add(resolveFontKey(o.fontFamily, o.fontWeight, o.fontStyle, unknown));
     if (o.type === 'chart') keys.add(resolveFontKey(o.fontFamily, 'bold', 'normal'));
     for (const [k, v] of Object.entries(o)) if (v && typeof v === 'object' && k !== 'dataSources' && k !== 'data') walk(v);
   };
@@ -209,6 +277,7 @@ export class FontStore {
       if (!this.pending.has(k)) {
         this.pending.set(k, (async () => {
           try {
+            if (isStandard(k)) { this.fonts.set(k, await standardFont(k)); return; } // metrics only: no file, no bytes
             const b = await this.loader(k);
             const u8 = b instanceof Uint8Array ? b : new Uint8Array(b);
             if (k === SHAPER) { this.shaper = await createShaper(u8); return; }

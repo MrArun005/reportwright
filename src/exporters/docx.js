@@ -8,6 +8,7 @@
 import { Zip, ZipDeflate, strToU8 } from 'fflate';
 import { visualLines, isJustified, needsTableData } from './regions.js';
 import { withDeadline } from './deadline.js';
+import { officeFamily } from '../engine/text/fonts.js';
 import { figures, figurePicture, boxOf, figureSvg, rasterize, cellVisuals, boxDecor, hexOrNull, altOf } from './figures.js';
 
 const TW = 20; // twips per point
@@ -36,13 +37,13 @@ const hex = (c) => { const m = /^#?([0-9a-f]{6})$/i.exec(String(c || '').trim())
 /** Run properties from a page-model text item. */
 function rPr(it) {
   const f = String(it.font || '');
-  const family = /mono/i.test(f) ? 'JetBrains Mono' : f.split('-')[0] || 'Inter';
+  const family = officeFamily(f); // Helvetica → Arial, Times-Roman → Times New Roman, Courier → Courier New
   const deco = String(it.deco || '');
   // element order follows the schema: rFonts, b, i, strike, color, sz, u
   // rich text superscript and subscript: Word shrinks them itself, so give it the size of the line
   const script = it.rich?.s ? `<w:vertAlign w:val="${it.rich.s === 'sup' ? 'superscript' : 'subscript'}"/>` : '';
   const size = it.rich?.s ? it.rich.z : it.size;
-  return `<w:rPr><w:rFonts w:ascii="${esc(family)}" w:hAnsi="${esc(family)}" w:cs="${esc(family)}"/>${/bold/i.test(f) ? '<w:b/>' : ''}${/italic/i.test(f) ? '<w:i/>' : ''}${deco.includes('line-through') ? '<w:strike/>' : ''}<w:color w:val="${hex(it.color)}"/><w:sz w:val="${Math.round((size || 9) * 2)}"/>${deco.includes('underline') ? '<w:u w:val="single"/>' : ''}${script}</w:rPr>`;
+  return `<w:rPr><w:rFonts w:ascii="${esc(family)}" w:hAnsi="${esc(family)}" w:cs="${esc(family)}"/>${/bold/i.test(f) ? '<w:b/>' : ''}${/italic|oblique/i.test(f) ? '<w:i/>' : ''}${deco.includes('line-through') ? '<w:strike/>' : ''}<w:color w:val="${hex(it.color)}"/><w:sz w:val="${Math.round((size || 9) * 2)}"/>${deco.includes('underline') ? '<w:u w:val="single"/>' : ''}${script}</w:rPr>`;
 }
 
 /** Left, right or centre, from where the lines sit in their box. */
