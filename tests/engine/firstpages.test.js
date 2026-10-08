@@ -12,6 +12,8 @@ const footer = { height: 20, items: [{ type: 'textbox', name: 'P', x: 0, y: 0, w
 describe('first pages', () => {
   it('lays out only enough rows for the first pages and says it is partial', async () => {
     const def = report([table], { data: rows(20000), footer });
+    // fontkit and the font load on first use (A1.1): pay that once here, so the timings below compare layout only
+    await render(report([table], { data: rows(1), footer }), { fontStore });
     const t0 = performance.now();
     const part = await render(def, { fontStore, firstPages: 2 });
     const partMs = performance.now() - t0;
