@@ -14,7 +14,7 @@ const subset = createSubsetter(() => fs.promises.readFile(path.join(root, 'publi
 describe('CJK without CJK fonts', () => {
   it('warns with the fix', async () => {
     const m = await render(report([{ type: 'textbox', x: 0, y: 0, w: 300, h: 20, value: 'Hello 日本語 한국어 中文' }]), { fontStore });
-    expect(m.warnings.join('\n')).toMatch(/^Text in Japanese\/Chinese\/Korean needs the optional CJK fonts: npm run fonts:cjk/m);
+    expect(m.warnings.join('\n')).toMatch(/^Text in Japanese\/Chinese\/Korean needs the optional CJK fonts: npm i @reportwright\/fonts-cjk, then npx reportwright-fonts-cjk \(npm\); in the app, npm run fonts:cjk/m);
   });
   it('a subset font keeps the .notdef outline, so missing characters draw as boxes', async () => {
     await fontStore.load(['Inter-Regular']);
