@@ -9,6 +9,7 @@ import { visualLines } from './regions.js';
 import { figures, figurePicture, figureSvg, rasterize, hexOrNull, altOf, boxOf } from './figures.js';
 import { alignOf } from './docx.js';
 import { parseColor } from './color.js';
+import { withDeadline } from './deadline.js';
 import { safeUrl } from '../engine/url.js';
 
 const EMU = 12700; // per point
@@ -39,7 +40,11 @@ const rot = (it) => (it.rotate ? ` rot="${Math.round(((it.rotate.a % 360) + 360)
  *   rasterize?: (svg: string, w: number, h: number, scale: number) => Promise<Uint8Array|null> }} [opt]
  * @returns {Promise<Uint8Array>}
  */
-export async function exportPptx(model, opt = {}) {
+export function exportPptx(model, opt = {}) {
+  return withDeadline(pptxOf(model, opt), /** @type {any} */ (opt).timeoutMs);
+}
+/** @type {typeof exportPptx} */
+async function pptxOf(model, opt) {
   const W = model.pages[0]?.width ?? model.width, H = model.pages[0]?.height ?? model.height;
   const lang = esc(opt.lang || 'en-US');
   /** @type {Record<string, Uint8Array>} */

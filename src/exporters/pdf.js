@@ -8,6 +8,8 @@ import { dataUriBytesOf, dataUriBytes, imageInfoOf, IMAGE_LIMITS } from '../engi
 import { parseSvg, drawSvg } from './svgimage.js';
 import { encryptPdf } from './encrypt.js';
 import { createTagger } from './pdfua.js';
+import { withDeadline } from './deadline.js';
+import { pngProblem } from './png.js';
 import { needsTableData } from './regions.js';
 
 const fontkit = /** @type {any} */ (fontkitModule).default || fontkitModule;
@@ -46,7 +48,11 @@ const cleanText = (t) => t.replace(/\t|\u0085|\u2028|\u2029/g, '    ').replace(/
  *   tagged: an accessible PDF (PDF/UA-1, see pdfua.js): structure tree, marked content, artifacts, language, title
  *   shown; with pdfa it is PDF/A-2a. Off, the file is exactly what it was.
  */
-export async function exportPdf(model, fontStore, opt = {}) {
+export function exportPdf(model, fontStore, opt = {}) {
+  return withDeadline(pdfOf(model, fontStore, opt), /** @type {any} */ (opt).timeoutMs);
+}
+/** @type {typeof exportPdf} */
+async function pdfOf(model, fontStore, opt) {
   const doc = await PDFDocument.create();
   doc.registerFontkit(fontkit);
   doc.setTitle(opt.title || 'Report');
@@ -124,7 +130,10 @@ export async function exportPdf(model, fontStore, opt = {}) {
       } else if (info?.type === 'png') {
         // a small PNG can inflate to gigabytes: refuse very large pixel counts before decoding
         // the size is read the way the decoder reads it (last IHDR); animated or multi-IHDR files are refused
-        if ('w' in info && !info.suspect && info.w * info.h <= IMAGE_LIMITS.pixels) img = await doc.embedPng(bytes);
+        // a cut or damaged PNG can hang pdf-lib's decoder: checked first, left out with a warning
+        const why = 'w' in info && !(/** @type {any} */ (info).suspect) && info.w * info.h <= IMAGE_LIMITS.pixels ? pngProblem(bytes) : 'too large or animated';
+        if (why) opt.onWarning?.(`An image was left out: the PNG is not usable (${why})`);
+        else img = await doc.embedPng(bytes);
       } else if (info?.type === 'jpeg') img = await doc.embedJpg(bytes);
     } catch { img = null; }
     images.set(src, img);

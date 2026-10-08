@@ -3,6 +3,7 @@ import { mergedRegions, textRows, needsTableData } from './regions.js';
 import { figures, figurePicture, altOf } from './figures.js';
 import { toWall, standardDate, currencyOf } from '../engine/expr/format.js';
 import { chartTable, addCharts } from './xlsxchart.js';
+import { withDeadline } from './deadline.js';
 import { Book, colName } from './xlsxwriter.js';
 
 /** A .NET date pattern → an Excel date format (months m, minutes after an hour, tt → AM/PM, 24-hour H). */
@@ -193,9 +194,13 @@ export function xlsxCell({ sym, locale, tz }) {
  *   fetchImage?: (src: string) => Promise<Uint8Array|null>, rasterize?: any, timeZone?: string }} [opt]
  * @returns {Promise<Uint8Array>}
  */
-export async function exportXlsx(model, opt = {}) {
+export function exportXlsx(model, opt = {}, legacy = undefined) {
   // 0.7 signature: exportXlsx(model, ExcelJS, opt) (ExcelJS is no longer used)
-  if (arguments.length > 2 || (opt && (typeof opt === 'function' || opt.Workbook))) opt = arguments[2] || {};
+  if (legacy || (opt && (typeof opt === 'function' || /** @type {any} */ (opt).Workbook))) opt = legacy || {};
+  return withDeadline(xlsxOf(model, opt), /** @type {any} */ (opt).timeoutMs);
+}
+/** @param {any} model @param {any} opt */
+async function xlsxOf(model, opt) {
   const { currency, title, formulas = true, pictures = true, charts = true, fetchImage, rasterize, timeZone } = opt;
   const fontStore = opt.fontStore || opt.fonts;
   needsTableData(model, 'Excel');

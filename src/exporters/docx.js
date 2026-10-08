@@ -7,6 +7,7 @@
 // picture's own PNG/JPEG. Written by hand with fflate (WordprocessingML is small), no Word library.
 import { zipSync, strToU8 } from 'fflate';
 import { visualLines, isJustified, needsTableData } from './regions.js';
+import { withDeadline } from './deadline.js';
 import { figures, figurePicture, boxOf, figureSvg, rasterize, cellVisuals, boxDecor, hexOrNull, altOf } from './figures.js';
 
 const TW = 20; // twips per point
@@ -163,7 +164,11 @@ function layoutRow(row, margin) {
  *   rasterize: the PNG fallback of a picture (default: a canvas in a browser, sharp in Node); figures: false leaves them out.
  * @returns {Promise<Uint8Array>}
  */
-export async function exportDocx(model, opt = {}) {
+export function exportDocx(model, opt = {}) {
+  return withDeadline(docxOf(model, opt), /** @type {any} */ (opt).timeoutMs);
+}
+/** @type {typeof exportDocx} */
+async function docxOf(model, opt) {
   needsTableData(model, 'Word');
   // the left and right page margins of the Word document; content keeps its place (indents are from the report's x)
   const margin = 18;

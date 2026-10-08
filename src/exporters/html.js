@@ -2,6 +2,7 @@
 import { pageToSvg, fontFamilyCss } from './svg.js';
 import { safeUrl } from '../engine/url.js';
 import { tablesData, DATA_SCRIPT, DATA_CSS, DATA_STRINGS, cspHash } from './htmldata.js';
+import { withDeadline } from './deadline.js';
 import { needsTableData } from './regions.js';
 
 /**
@@ -15,7 +16,11 @@ import { needsTableData } from './regions.js';
  * @param {{ title?: string, drillBase?: string, subset?: (font: Uint8Array, cps: Iterable<number>, o?: { layout?: boolean }) => Promise<Uint8Array>,
  *   static?: boolean, locale?: string, currency?: string, lang?: string, strings?: Partial<typeof DATA_STRINGS> }} [opt]
  */
-export async function exportHtml(model, fontStore, opt = {}) {
+export function exportHtml(model, fontStore, opt = {}) {
+  return withDeadline(htmlOf(model, fontStore, opt), /** @type {any} */ (opt).timeoutMs);
+}
+/** @type {typeof exportHtml} */
+async function htmlOf(model, fontStore, opt) {
   const used = new Map();
   const layout = new Set(); // fonts the browser shapes text in (Indic, Arabic, Hebrew): their subsets keep GSUB/GPOS
   const add = (key, text) => {
