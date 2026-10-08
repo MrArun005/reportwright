@@ -33,10 +33,11 @@ describe('hostile text (each under 1 s)', () => {
 
   it('a 2 MB word without a height stops at the 100,000-line cap', async () => {
     const word = 'x'.repeat(2_000_000);
-    const { r, ms } = await timed((p, font) => p.textBox(word, { x: 10, y: 10, width: 100, font, size: 10 }));
+    let per = 0;
+    const { r, ms } = await timed((p, font) => { per = Math.floor(100 / font.widthOfText('x', 10)); return p.textBox(word, { x: 10, y: 10, width: 100, font, size: 10 }); });
     expect(ms).toBeLessThan(1000);
     expect(r.lines).toBe(100_000);
-    expect(r.overflow.length).toBeLessThan(2_000_000); expect(r.overflow.length).toBeGreaterThan(1_000_000); // about 14 x a line
+    expect(r.overflow.length).toBe(2_000_000 - 100_000 * per); // every line holds as many x as fit
   });
 
   it('1 MB of words with maxLines 1: one line with an ellipsis, the rest as overflow', async () => {
