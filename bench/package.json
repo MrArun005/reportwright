@@ -1,0 +1,20 @@
+{
+  "name": "reportwright-bench",
+  "private": true,
+  "type": "module",
+  "description": "PDF benchmarks: ReportWright against pdfmake, @react-pdf/renderer, PDFKit and Puppeteer. Kept out of the main package's dependencies.",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "smoke": "node run.mjs --smoke",
+    "bench": "node run.mjs"
+  },
+  "dependencies": {
+    "@react-pdf/renderer": "4.9.0",
+    "@reportwright/engine": "0.12.1",
+    "@reportwright/fonts": "0.12.1",
+    "pdfkit": "0.20.2",
+    "pdfmake": "0.3.11",
+    "puppeteer": "25.13.0",
+    "react": "19.3.0"
+  }
+}
