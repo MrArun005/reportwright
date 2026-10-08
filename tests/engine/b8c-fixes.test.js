@@ -119,3 +119,23 @@ describe('N20: one prefix per warning; the legend warning says what to do', () =
     expect(word[0]).toBe('C: "legend" is "right"; only "bottom" (show the legend) or "none" (hide it) is supported, and the legend is drawn at the bottom');
   });
 });
+
+describe('N-silent: validate() names mistakes that otherwise pass quietly', () => {
+  const rows = [{ a: 1 }];
+  const tb = (extra) => ({ type: 'textbox', name: 'T', x: 0, y: 0, w: 100, h: 18, value: 'x', ...extra });
+  const ws = (items, over = {}) => validate({ ...report(items, { data: { rows } }), ...over }).warnings.join('\n');
+  it('a misspelt field or parameter is named, with the same words the render uses', () => {
+    expect(ws([tb({ value: '=Fields.nope' })])).toContain('The field "nope" does not exist; check the spelling');
+    expect(ws([tb({ value: '=Parameters.p' })])).toContain('The parameter "p" does not exist; declare it under parameters');
+    expect(ws([tb({ value: '=Fields.a' })])).not.toContain('does not exist');
+  });
+  it('a zero or negative width or height is flagged (a line may be flat)', () => {
+    expect(ws([tb({ h: 0 })])).toContain('height is 0');
+    expect(ws([{ type: 'line', name: 'L', x: 0, y: 0, w: 100, h: 0 }])).not.toContain('height is');
+  });
+  it('a missing $schema is flagged', () => {
+    const def = report([tb({})], { data: { rows } });
+    delete def.$schema;
+    expect(validate(def).warnings.join('\n')).toContain('no "$schema"');
+  });
+});

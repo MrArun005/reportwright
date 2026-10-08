@@ -36,7 +36,7 @@ describe('report JSON Schema', () => {
     const def = (tb) => ({ $schema: 'pagewright/report@1', sections: { body: { items: [{ type: 'textbox', x: 0, y: 0, w: 10, h: 10, ...tb }] } } });
     expect(validate(def({ dir: 'rtl', alt: 'x' })).warnings).toEqual([]);
     expect(validate(def({ dir: 'rtl2' })).warnings).toEqual(['textbox: "dir" is "rtl2"; expected one of "ltr", "rtl", "auto"']);
-    expect(validate(def({ dir: '=Parameters.d' })).warnings).toEqual([]);
+    expect(validate(def({ dir: '=Fields.d' })).warnings).toEqual([]);
   });
   const examples = [
     ...Object.entries(defs).flatMap(([n, s]) => (s.examples || []).map((e, i) => [`schema ${n} example ${i + 1}`, e])),
