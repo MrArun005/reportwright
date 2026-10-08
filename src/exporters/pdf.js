@@ -344,16 +344,17 @@ async function pdfOf(model, fontStore, opt) {
         }
         case 'link': {
           const rect = [it.x, H - it.y - it.h, it.x + it.w, H - it.y];
-          if (it.action?.type === 'url' && safeUrl(it.action.href)) links.push({ page: p, rect, href: it.action.href, pi, ii, tip: it.tip });
+          const text = tags ? coveredText(pg.items, it) : ''; // what a screen reader says for the link: its visible text first
+          if (it.action?.type === 'url' && safeUrl(it.action.href)) links.push({ page: p, rect, href: it.action.href, pi, ii, tip: it.tip, text });
           // drill-through: the target report in the ReportWright viewer, with its parameters (opt.drillBase: the server)
           else if (it.action?.type === 'drill') {
             const href = drillUrl(opt.drillBase, it.action);
-            if (href) links.push({ page: p, rect, href, pi, ii, tip: it.tip || `Open the report "${it.action.report}"` });
+            if (href) links.push({ page: p, rect, href, pi, ii, tip: it.tip || `Open the report "${it.action.report}"`, text });
           }
           // a jump: TOC entries from headings carry their place; others go to the first bookmark of that name (as the viewer does)
           else if (it.action?.type === 'bookmark') {
             const to = it.action.page ? it.action : model.bookmarks?.find(b => b.label === it.action.target);
-            if (to) links.push({ page: p, rect, to, pi, ii, tip: it.tip || `Go to ${it.action.target || `page ${to.page}`}` });
+            if (to) links.push({ page: p, rect, to, pi, ii, tip: it.tip || `Go to ${it.action.target || `page ${to.page}`}`, text });
           }
           break;
         }
@@ -404,7 +405,7 @@ async function pdfOf(model, fontStore, opt) {
     const to = l.href ? { A: { Type: 'Action', S: 'URI', URI: pdfLiteral(asciiUrl(l.href)) } } : { Dest: dest(l.to) };
     if (!l.href && !to.Dest) continue;
     const annot = doc.context.obj({ Type: 'Annot', Subtype: 'Link', F: 4, Rect: l.rect, Border: [0, 0, 0], ...to });
-    if (tags) annot.set(PDFName.of('Contents'), PDFHexString.fromText(String(l.tip || l.href || 'Link'))); // what the link does, for a screen reader
+    if (tags) annot.set(PDFName.of('Contents'), PDFHexString.fromText(String(l.text || l.tip || l.href || 'Link'))); // what the link does, for a screen reader
     const ref = doc.context.register(annot);
     if (tags) tags.annot(l.pi, l.ii, ref, 'link');
     const annots = l.page.node.lookup(PDFName.of('Annots'));
@@ -427,6 +428,13 @@ async function pdfOf(model, fontStore, opt) {
   }
   // appearances are already drawn in the report font; regenerating would switch them to Helvetica
   return doc.save({ updateFieldAppearances: false, ...(opt.save || {}) });
+}
+
+/** The text a link covers: the page's text lines whose start and baseline lie in its box, in reading order. */
+function coveredText(items, box) {
+  const lines = [];
+  for (const t of items) if (t.t === 'text' && t.lines) for (const l of t.lines) if (l.text?.trim() && l.x >= box.x && l.x <= box.x + box.w && l.y >= box.y && l.y <= box.y + box.h) lines.push(l);
+  return lines.sort((a, b) => a.y - b.y || a.x - b.x).map(l => l.text.trim()).join(' ');
 }
 
 /**
