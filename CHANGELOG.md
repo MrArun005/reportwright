@@ -2,7 +2,9 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
-## Unreleased
+## 0.13.0 — 2026-10-09
+
+A minor release: new options (`largeReportRows`, `signal`, `warnOnLeave`, `onDirtyChange`), the 14 standard PDF fonts, streamed Excel and Word exports, and warnings where mistakes used to be silent. The tester's 0.12.1 tickets are fixed except where noted; fonts are still TTF (WOFF2 is not done).
 
 ### Fixed
 - **Cold start (A1.1):** pdf-lib and fontkit load on first use (in Node through `require`, elsewhere `import()`), not
@@ -13,7 +15,7 @@ All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. T
   exportPdfStream writes it in about 320 MB; render + exportPdf holds it all in memory`), in the model's warnings and
   once per process on the console. The threshold is the render option `largeReportRows` (100000; `0` or `false`: off). `exportPdf` takes a rendered model, so it cannot switch to streaming itself; the
   engine README shows `exportPdfStream` with a sink that keeps the bytes.
-- **Office exports stream (A1.9):** `exportDocxStream` and `exportXlsxStream` (engine package and `src/exporters/officestream.js`) write a report's Word or Excel file to a sink as its pages or rows are made, with `exportPdfStream`'s sink, `timeoutMs` and `signal`; a report that cannot stream is written whole (`why`). `exportDocx` writes the document XML into the zip page by page instead of holding it. Peak RSS of a Word export, 20k / 50k rows: 329 / 499 MB before (render + exportDocx), 259 / 286 MB streamed with a flat live heap (17.5 / 17.3 MB after GC); Excel 251 / 432 MB before, 125 / 126 MB streamed (`scripts/mem-office.mjs`).
+- **Excel streams; Word is written page by page (A1.9):** `exportXlsxStream` keeps memory flat; `exportDocxStream` lowers it, but a Word export's memory still grows slowly with the rows, so it is not yet a flat stream. `exportDocxStream` and `exportXlsxStream` (engine package and `src/exporters/officestream.js`) write a report's Word or Excel file to a sink as its pages or rows are made, with `exportPdfStream`'s sink, `timeoutMs` and `signal`; a report that cannot stream is written whole (`why`). `exportDocx` writes the document XML into the zip page by page instead of holding it. Peak RSS of a Word export, 20k / 50k rows: 329 / 499 MB before (render + exportDocx), 259 / 286 MB streamed with a flat live heap (17.5 / 17.3 MB after GC); Excel 251 / 432 MB before, 125 / 126 MB streamed (`scripts/mem-office.mjs`).
 - **Viewer first load (A1.6):** the embedded viewer no longer loads the engine (layout, expressions, charts, maps, barcodes) on the main thread up front: the worker renders, and the engine loads on the main thread on the first export, parameter list or main-thread render. First load 827 → 652 KB gzipped (about 262 KB once fontkit loads lazily); the render worker 908 → 579 KB, with bwip-js in `engine.worker.bwip.js` beside it, imported for a report with a barcode (a worker copied alone renders such a report on the main thread). `tests/engine/b10-bundle-size.test.js` holds both to a budget.
 - **`pw render -f pdf` streams (A1.4):** into a file, a flowing report is written by `exportPdfStream` (the message says
   `streamed`; the text is the whole-model PDF's), through a temporary file renamed on success, so a failed run leaves
