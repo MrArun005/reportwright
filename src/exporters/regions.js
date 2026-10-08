@@ -4,7 +4,7 @@
  * the exports that rebuild tables refuse it rather than write a file without its tables.
  */
 export function needsTableData(model, what) {
-  if (model && model.regions === null) throw Object.assign(new Error(`${what} needs the report's table data: render it with { exportData: true }`), { code: 'NO_EXPORT_DATA' });
+  if (model && model.regions === null && model.hasTables !== false) throw Object.assign(new Error(`${what} needs the report's table data: render it with { exportData: true }`), { code: 'NO_EXPORT_DATA' });
 }
 /** True when an export of this format needs the table data: render(def, { exportData: needsExportData(format, options) }). */
 export const needsExportData = (fmt, o = {}) => ['xlsx', 'csv', 'docx', 'pptx', 'html', 'json'].includes(fmt) || (fmt === 'pdf' && !!(o.pdfua || o.ua || o.tagged));

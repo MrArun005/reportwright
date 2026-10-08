@@ -181,12 +181,13 @@ export async function render(def0, opts = {}) {
   const base = { ...BASE_STYLE, ...(def.styles?.base || {}) };
   let idSeq = 0;
   const regions = [];
+  const tablesSeen = { n: 0 }; // tables laid out, counted without their data (model.hasTables)
   // 50 MB of images per render, each distinct image once: subreports share their parent's, and every layout pass
   // the same one (an image is counted once, so a second pass adds nothing)
   const imageBudget = opts.imageBudget || { seen: new Set(), bytes: 0 };
   const makeLc = (globals, fixed) => {
     const lc = {
-      m, base, dataSets, warn, fixed, maxUnitHeight: contentH, state: opts.state || {}, regions: opts.exportData || opts.dataOnly ? regions : null, dataOnly: !!opts.dataOnly, // exportData: true: table data and cell tags (Excel, CSV, Word, HTML, accessible PDF)
+      m, base, dataSets, warn, fixed, maxUnitHeight: contentH, state: opts.state || {}, tablesSeen, regions: opts.exportData || opts.dataOnly ? regions : null, dataOnly: !!opts.dataOnly, // exportData: true: table data and cell tags (Excel, CSV, Word, HTML, accessible PDF)
       named, parts, layerOff,
       nextId: () => ++idSeq,
       // the time limit, read every 256 rows of tables and lists (expr/evaluate.js counts evaluations the same way)
@@ -504,7 +505,7 @@ export async function render(def0, opts = {}) {
   }
 
   return {
-    width: result.width ?? page.width, height, pages, warnings, clipped: clipped(), bookmarks, headings: result.headings || [], pageStarts: result.pageStarts || [], regions: opts.exportData ? regions : null, name: def.name || '', partial: cutRows(),
+    width: result.width ?? page.width, height, pages, warnings, clipped: clipped(), bookmarks, headings: result.headings || [], pageStarts: result.pageStarts || [], regions: opts.exportData ? regions : null, hasTables: tablesSeen.n > 0, name: def.name || '', partial: cutRows(),
     timeZone: timeZone || null, // the zone dates were shown in (exports write their dates on that clock)
     locale: def.locale || null, // exports format numbers the report's way (Excel: Indian lakh grouping)
     currency: def.currency || null, // Excel's currency symbol (else the locale's, as the page)

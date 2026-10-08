@@ -442,6 +442,7 @@ register('table', {
     const width = acc - item.x;
 
     const region = { name: item.name, columns: cols.map(c => c.width), rows: [] };
+    if (lc.tablesSeen) lc.tablesSeen.n++; // a table in the report, whether or not its data is kept (exportData): Word and the others then say they need it
     // run: rows shown so far, in display order (groups reorder rows), for RunningValue over a scope
     const tableScope = { rows, index: -1, run: [] };
     const scopes = { ...(tctx.scopes || {}), [item.name]: tableScope };
