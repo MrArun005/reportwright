@@ -1,6 +1,6 @@
 // The streaming PDF writer (src/exporters/pdfstream.js, docs/research/STREAMING-1M.md §6): objects go to the sink as
 // they are made, fonts are subset at the end with their glyph IDs kept, "of Y" is an XObject written at the end.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -24,7 +24,10 @@ const memorySink = () => {
   const chunks = [];
   return { chunks, write: async (u8) => { chunks.push(Uint8Array.from(u8)); await new Promise(r => setImmediate(r)); }, bytes: () => Buffer.concat(chunks) };
 };
-const tmp = (bytes) => { const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'pws-')), 'a.pdf'); fs.writeFileSync(f, bytes); return f; };
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pws-'));
+afterAll(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+let tmpN = 0;
+const tmp = (bytes) => { const f = path.join(tmpDir, `${++tmpN}.pdf`); fs.writeFileSync(f, bytes); return f; };
 /** pdftotext's text and its complaints (a broken xref or object makes poppler print "Syntax Error") */
 const pdftotext = (bytes, ...args) => {
   const r = spawnSync('pdftotext', [...args, tmp(bytes), '-']);

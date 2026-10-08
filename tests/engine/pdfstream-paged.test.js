@@ -1,7 +1,7 @@
 // Paged rendering (src/engine/paged.js) and the streaming export (exportPdfStream): a flowing ledger laid out a window of
 // rows at a time gives the same pages as the whole render, and the same text in the PDF; other reports fall back to
 // exportPdf, byte for byte.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -17,8 +17,11 @@ import { fontStore } from '../helpers.js';
 const root = path.join(import.meta.dirname, '../..');
 const subset = createSubsetter(() => fs.promises.readFile(path.join(root, 'public/harfbuzz-subset.wasm')));
 const hasPoppler = spawnSync('pdftotext', ['-v']).status === 0;
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pwp-'));
+afterAll(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+let tmpN = 0;
 const pdftotext = (bytes, ...args) => {
-  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'pwp-')), 'a.pdf');
+  const f = path.join(tmpDir, `${++tmpN}.pdf`);
   fs.writeFileSync(f, bytes);
   const r = spawnSync('pdftotext', [...args, f, '-']);
   return { text: r.stdout.toString(), err: r.stderr.toString() };
