@@ -56,6 +56,6 @@ try {
   assert.equal(await p.evaluate(() => window.h.usesWorker), true, `the copied worker must start: ${warns.join(' | ')} ${errors.join(' | ')}`);
   assert.ok(!warns.some(w => /worker did not load/.test(w)), warns.join(' | '));
   assert.ok(!errors.some(e => /Failed to resolve module specifier/.test(e)), errors.join(' | '));
-  assert.ok(asked.includes('/pw/engine.worker.bwip.js') && asked.includes('/pw/engine.worker.stdfonts.js'), 'barcode and standard-font files load next to the worker');
+  assert.ok(asked.includes('/pw/engine.worker.bwip.js'), 'the barcode file loads next to the worker');
 } finally { await b.close(); fs.rmSync(tmp, { recursive: true, force: true }); }
 console.log('b11-esbuild-worker: ok (a copied engine.worker.js starts; barcode and Helvetica drawn in the worker)');

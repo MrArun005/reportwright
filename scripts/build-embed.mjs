@@ -24,12 +24,12 @@ await workerWithBwip(path.join(root, 'public/embed/esm-peer'), { external: ['rea
 //    What @reportwright/viewer publishes: the same two builds with the third-party libraries that carry data blobs
 //    (pdf-lib's standard fonts, fontkit's brotli dictionary, bwip-js's barcode tables, bidi-js's Unicode data) and
 //    fflate left as imports: they are the package's pinned dependencies, so the tarball holds only our code.
-const PKG_EXTERNAL = ['pdf-lib', '@pdf-lib/fontkit', '@pdf-lib/standard-fonts', 'bwip-js', 'fflate', 'bidi-js'];
+const PKG_EXTERNAL = ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate', 'bidi-js'];
 for (const [dir, ext] of [['esm-pkg', []], ['esm-pkg-peer', ['react', 'react-dom', 'react/*', 'react-dom/*']]]) {
   fs.rmSync(path.join(root, 'public/embed', dir), { recursive: true, force: true });
   await build({ ...common, entryPoints: ENTRIES, format: 'esm', ...readable, splitting: true, outdir: path.join(root, 'public/embed', dir), entryNames: '[name]', chunkNames: 'chunk-[hash]', external: [...ext, ...PKG_EXTERNAL] });
   // the worker bundles its libraries (N41): a bundler that copies engine.worker.js as a file (esbuild) cannot resolve
-  // bare imports in it; bwip-js and the standard-font metrics are files of their own next to it, as in esm
+  // bare imports in it; bwip-js is a file of its own next to it, as in esm
   await workerWithBwip(path.join(root, 'public/embed', dir), { external: ext });
 }
 // 3. The script tag people paste: a tiny loader that keeps the ReportWright.mountViewer(...) call working.

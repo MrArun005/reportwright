@@ -11,7 +11,7 @@ import { root, common, readable, ENTRIES, WORKER, bwipApart, firstLoad } from '.
 // first load shrinks, never raise it. 652 KB on b10-bundle alone; fontkit (1.1 MB, in the first load only because
 // src/engine/text/fonts.js imports it at its top) going lazy (b10-perf) takes it to about 262 KB: lower this then.
 const FIRST_LOAD_KB = 270; // 262 KB with pdf-lib and fontkit lazy (was 827 KB)
-const WORKER_KB = 590; // the render worker without bwip-js (was 908 KB)
+const WORKER_KB = 600; // the render worker without bwip-js (was 908 KB); since N43 it holds the standard-font metrics (+6 KB; the ~100 KB side file is gone)
 
 const OUT = path.join(root, 'public/embed/esm');
 let viewer, worker;

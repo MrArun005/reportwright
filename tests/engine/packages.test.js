@@ -155,7 +155,7 @@ describe('npm packages', () => {
   });
 
   it('the viewer imports pdf-lib, fontkit, bwip-js, fflate and bidi-js (pinned dependencies) instead of bundling their data blobs', () => {
-    const LIBS = ['pdf-lib', '@pdf-lib/fontkit', '@pdf-lib/standard-fonts', 'bwip-js', 'fflate', 'bidi-js'];
+    const LIBS = ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate', 'bidi-js'];
     const v = json('packages/viewer/package.json');
     expect(Object.keys(v.dependencies).sort()).toEqual([...LIBS].sort());
     for (const n of LIBS) expect(v.dependencies[n]).toBe(json(`node_modules/${n}/package.json`).version);
