@@ -276,23 +276,14 @@
         },
         {
           "type": "table",
-          "w": 523,
-          "h": 54,
+          "w": 285.27,
+          "h": 72,
           "dataSet": "Tx",
           "repeatHeader": true,
           "noRowsText": "No rows",
           "columns": [
             {
               "width": 39.621212121212125
-            },
-            {
-              "width": 79.24242424242425
-            },
-            {
-              "width": 79.24242424242425
-            },
-            {
-              "width": 79.24242424242425
             },
             {
               "width": 47.54545454545455
@@ -323,18 +314,6 @@
                   }
                 },
                 {
-                  "value": "Account id",
-                  "style": {}
-                },
-                {
-                  "value": "Region",
-                  "style": {}
-                },
-                {
-                  "value": "Branch id",
-                  "style": {}
-                },
-                {
                   "value": "Date",
                   "style": {}
                 },
@@ -355,7 +334,68 @@
               ]
             }
           ],
-          "groups": [],
+          "groups": [
+            {
+              "name": "Currency",
+              "expr": "=Fields.currency",
+              "sort": "asc",
+              "header": [
+                {
+                  "height": 18,
+                  "cells": [
+                    {
+                      "value": "=Fields.currency"
+                    },
+                    {
+                      "value": ""
+                    },
+                    {
+                      "value": ""
+                    },
+                    {
+                      "value": ""
+                    },
+                    {
+                      "value": ""
+                    }
+                  ],
+                  "style": {
+                    "fontWeight": "bold",
+                    "backgroundColor": "#f8fafc"
+                  }
+                }
+              ],
+              "footer": [
+                {
+                  "height": 18,
+                  "cells": [
+                    {
+                      "value": "Subtotal {Fields.currency}"
+                    },
+                    {
+                      "value": ""
+                    },
+                    {
+                      "value": ""
+                    },
+                    {
+                      "value": "=Sum(Fields.amount)",
+                      "style": {
+                        "format": "N2"
+                      }
+                    },
+                    {
+                      "value": ""
+                    }
+                  ],
+                  "style": {
+                    "fontWeight": "600",
+                    "borderTop": "0.5 solid #cbd5e1"
+                  }
+                }
+              ]
+            }
+          ],
           "detail": [
             {
               "height": 18,
@@ -369,18 +409,6 @@
                     "format": "N2",
                     "textAlign": "right"
                   }
-                },
-                {
-                  "value": "=Fields.accountId",
-                  "style": {}
-                },
-                {
-                  "value": "=Fields.region",
-                  "style": {}
-                },
-                {
-                  "value": "=Fields.branchId",
-                  "style": {}
                 },
                 {
                   "value": "=Fields.date",
@@ -400,77 +428,13 @@
                   }
                 },
                 {
-                  "value": "=Fields.currency",
+                  "value": "",
                   "style": {}
                 }
               ]
             }
           ],
-          "footer": [
-            {
-              "height": 18,
-              "cells": [
-                {
-                  "value": "Total",
-                  "style": {
-                    "fontWeight": "bold",
-                    "borderTop": "0.75 solid #94a3b8"
-                  }
-                },
-                {
-                  "value": "",
-                  "style": {
-                    "fontWeight": "bold",
-                    "borderTop": "0.75 solid #94a3b8"
-                  }
-                },
-                {
-                  "value": "",
-                  "style": {
-                    "fontWeight": "bold",
-                    "borderTop": "0.75 solid #94a3b8"
-                  }
-                },
-                {
-                  "value": "",
-                  "style": {
-                    "fontWeight": "bold",
-                    "borderTop": "0.75 solid #94a3b8"
-                  }
-                },
-                {
-                  "value": "",
-                  "style": {
-                    "fontWeight": "bold",
-                    "borderTop": "0.75 solid #94a3b8"
-                  }
-                },
-                {
-                  "value": "",
-                  "style": {
-                    "fontWeight": "bold",
-                    "borderTop": "0.75 solid #94a3b8"
-                  }
-                },
-                {
-                  "value": "=Sum(Fields.amount)",
-                  "style": {
-                    "format": "N2",
-                    "textAlign": "right",
-                    "fontWeight": "bold",
-                    "borderTop": "0.75 solid #94a3b8"
-                  }
-                },
-                {
-                  "value": "",
-                  "style": {
-                    "fontWeight": "bold",
-                    "borderTop": "0.75 solid #94a3b8"
-                  }
-                }
-              ]
-            }
-          ],
+          "footer": [],
           "style": {
             "padding": [
               3,
