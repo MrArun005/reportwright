@@ -140,7 +140,8 @@
         },
         {
           "name": "overdue",
-          "type": "boolean"
+          "type": "boolean",
+          "expr": "=Fields.dpd > First(Fields.overdueThresholdDays, \"Meta\")"
         },
         {
           "name": "collected",
@@ -210,7 +211,8 @@
         },
         {
           "name": "overdue",
-          "type": "boolean"
+          "type": "boolean",
+          "expr": "=Fields.dpd > First(Fields.overdueThresholdDays, \"Meta\")"
         },
         {
           "name": "collected",
@@ -328,11 +330,18 @@
         },
         {
           "name": "overdue",
-          "type": "boolean"
+          "type": "boolean",
+          "expr": "=Fields.dpd > First(Fields.overdueThresholdDays, \"Meta\")"
         },
         {
           "name": "collected",
           "type": "number"
+        }
+      ],
+      "sort": [
+        {
+          "by": "=Fields.outstanding",
+          "dir": "desc"
         }
       ],
       "filters": [
@@ -345,12 +354,6 @@
           "expr": "=Fields.outstanding",
           "op": "TopN",
           "value": "=First(Fields.drillThroughTopN, \"Meta\")"
-        }
-      ],
-      "sort": [
-        {
-          "by": "=Fields.outstanding",
-          "dir": "desc"
         }
       ]
     },
@@ -427,7 +430,8 @@
             "color": "#eef1f5",
             "textAlign": "center",
             "verticalAlign": "middle"
-          }
+          },
+          "id": "x8kddjds"
         },
         {
           "type": "textbox",
@@ -442,7 +446,8 @@
             "fontSize": 8,
             "fontWeight": "600",
             "color": "#1e3a5f"
-          }
+          },
+          "id": "rvag88c4"
         }
       ]
     },
@@ -462,7 +467,8 @@
               "fill": "#1e3a5f",
               "stroke": "#1e3a5f",
               "radius": 6
-            }
+            },
+            "id": "gay7mqy8"
           },
           {
             "type": "textbox",
@@ -476,7 +482,8 @@
               "fontSize": 8,
               "color": "#9fb3c8",
               "fontWeight": "600"
-            }
+            },
+            "id": "3k487h7g"
           },
           {
             "type": "textbox",
@@ -491,7 +498,8 @@
               "fontSize": 30,
               "fontWeight": "bold",
               "color": "#ffffff"
-            }
+            },
+            "id": "iw8zbp91"
           },
           {
             "type": "textbox",
@@ -506,7 +514,8 @@
             "style": {
               "fontSize": 13,
               "color": "#dbe5ef"
-            }
+            },
+            "id": "yrgb5yx0"
           },
           {
             "type": "textbox",
@@ -520,7 +529,8 @@
             "style": {
               "fontSize": 9.5,
               "color": "#ffffff"
-            }
+            },
+            "id": "105sy7lc"
           },
           {
             "type": "textbox",
@@ -534,7 +544,8 @@
             "style": {
               "fontSize": 9.5,
               "color": "#9fb3c8"
-            }
+            },
+            "id": "yml1kmeq"
           },
           {
             "type": "barcode",
@@ -551,7 +562,8 @@
             "action": {
               "type": "url",
               "url": "=First(Fields.demoUrl, \"Meta\")"
-            }
+            },
+            "id": "wgugjycj"
           },
           {
             "type": "textbox",
@@ -566,7 +578,8 @@
               "fontSize": 7,
               "color": "#6b7280",
               "textAlign": "center"
-            }
+            },
+            "id": "87l9i8ms"
           },
           {
             "type": "textbox",
@@ -580,7 +593,8 @@
               "fontSize": 10,
               "fontWeight": "bold",
               "color": "#1e3a5f"
-            }
+            },
+            "id": "4dw3jpmu"
           },
           {
             "type": "textbox",
@@ -598,7 +612,8 @@
             "action": {
               "type": "url",
               "url": "=First(Fields.demoUrl, \"Meta\")"
-            }
+            },
+            "id": "574xjlzg"
           },
           {
             "type": "textbox",
@@ -616,7 +631,8 @@
             "action": {
               "type": "url",
               "url": "=First(Fields.repoUrl, \"Meta\")"
-            }
+            },
+            "id": "pvxabnhr"
           },
           {
             "type": "container",
@@ -642,7 +658,8 @@
                 "style": {
                   "fontWeight": "bold",
                   "color": "#b54708"
-                }
+                },
+                "id": "by61muic"
               },
               {
                 "type": "textbox",
@@ -657,9 +674,11 @@
                 "style": {
                   "fontSize": 7.5,
                   "color": "#7a2e0e"
-                }
+                },
+                "id": "maro92kh"
               }
-            ]
+            ],
+            "id": "u4hd2rv3"
           },
           {
             "type": "textbox",
@@ -673,7 +692,8 @@
               "fontSize": 10,
               "fontWeight": "bold",
               "color": "#1e3a5f"
-            }
+            },
+            "id": "fqxpfpdc"
           },
           {
             "type": "checkbox",
@@ -686,7 +706,8 @@
             "text": "Cover, links, QR code, watermark",
             "style": {
               "fontSize": 8.5
-            }
+            },
+            "id": "c6lyuyq0"
           },
           {
             "type": "checkbox",
@@ -699,7 +720,8 @@
             "text": "Numbered contents + PDF outline",
             "style": {
               "fontSize": 8.5
-            }
+            },
+            "id": "ei4sagb4"
           },
           {
             "type": "checkbox",
@@ -712,7 +734,8 @@
             "text": "KPI band: aggregates, conditional colour",
             "style": {
               "fontSize": 8.5
-            }
+            },
+            "id": "3mb2azrc"
           },
           {
             "type": "checkbox",
@@ -725,7 +748,8 @@
             "text": "Pivot: region × product, % of total",
             "style": {
               "fontSize": 8.5
-            }
+            },
+            "id": "aplo320i"
           },
           {
             "type": "checkbox",
@@ -738,7 +762,8 @@
             "text": "Combo chart, 2nd axis, target line",
             "style": {
               "fontSize": 8.5
-            }
+            },
+            "id": "m3ylfogx"
           },
           {
             "type": "checkbox",
@@ -751,7 +776,8 @@
             "text": "Donut and DPD bucket bars",
             "style": {
               "fontSize": 8.5
-            }
+            },
+            "id": "dwp7101f"
           },
           {
             "type": "checkbox",
@@ -764,7 +790,8 @@
             "text": "Grouped register, subtotals, sorting",
             "style": {
               "fontSize": 8.5
-            }
+            },
+            "id": "qezucm7l"
           },
           {
             "type": "checkbox",
@@ -777,7 +804,8 @@
             "text": "Sparklines and data bars per row",
             "style": {
               "fontSize": 8.5
-            }
+            },
+            "id": "s88yoz0t"
           },
           {
             "type": "checkbox",
@@ -790,7 +818,8 @@
             "text": "Repeated headers, keep-together",
             "style": {
               "fontSize": 8.5
-            }
+            },
+            "id": "qmn6frpz"
           },
           {
             "type": "checkbox",
@@ -803,7 +832,8 @@
             "text": "Drill-down (collapsible regions)",
             "style": {
               "fontSize": 8.5
-            }
+            },
+            "id": "jzo35o2x"
           },
           {
             "type": "checkbox",
@@ -816,7 +846,8 @@
             "text": "Drill-through to loan detail pages",
             "style": {
               "fontSize": 8.5
-            }
+            },
+            "id": "vtq33no0"
           },
           {
             "type": "checkbox",
@@ -829,7 +860,8 @@
             "text": "Parameters, rich text, Code 128",
             "style": {
               "fontSize": 8.5
-            }
+            },
+            "id": "8dsneu8o"
           },
           {
             "type": "textbox",
@@ -843,9 +875,11 @@
             "style": {
               "fontSize": 8,
               "color": "#6b7280"
-            }
+            },
+            "id": "4j7jd2it"
           }
-        ]
+        ],
+        "height": 624
       },
       {
         "name": "Contents",
@@ -863,7 +897,8 @@
             "levels": 2,
             "style": {
               "fontSize": 9
-            }
+            },
+            "id": "u4auwxxt"
           },
           {
             "type": "textbox",
@@ -880,7 +915,8 @@
               "fontWeight": "bold",
               "color": "#1e3a5f",
               "borderBottom": "1 solid #1e3a5f"
-            }
+            },
+            "id": "yuqzpddm"
           },
           {
             "type": "richtext",
@@ -894,9 +930,11 @@
             "value": "<h3>How the numbers are made</h3>\n<p>The portfolio has <b>{CountRows(\"AllLoans\")} loans</b> across five regions and five products. Each loan is simulated month by month from its disbursal: interest on the opening balance at <i>rate ÷ 1200</i>, then the payment. Before the 12-month window every installment is paid in full; inside it, <span style=\"color:#b54708\"><b>Overdue</b></span> and <span style=\"color:#b42318\"><b>NPA</b></span> loans pay several partial installments, and <b>Closed</b> loans pay a few partials and then settle the balance.</p>\n<ul><li><b>EMI</b>: the standard amortising installment, <i>P·i·(1+i)<sup>n</sup> ÷ ((1+i)<sup>n</sup> − 1)</i>, rounded to the paisa.</li>\n<li><b>Collection efficiency</b>: amount collected ÷ amount due in the month. Settlements of Closed loans count as collections, so a month can exceed 100%.</li>\n<li><b>Overdue</b>: days past due above {First(Fields.overdueThresholdDays, \"Meta\")}. <b>NPA</b>: over 180 days past due. Ratios are shares of outstanding.</li>\n<li><b>DPD buckets</b>: 0, 1–30, 31–60, 61–90, 90+.</li></ul>\n<p style=\"color:#6b7280\">Data is synthetic (seed {First(Fields.seed, \"Meta\")}). Parameters filter the KPIs, the pivot, the status and DPD charts and the register; the monthly series and the drill-through pages always show the whole book.</p>",
             "style": {
               "fontSize": 8.5
-            }
+            },
+            "id": "a9j78mcv"
           }
-        ]
+        ],
+        "height": 438
       },
       {
         "name": "Summary",
@@ -916,7 +954,8 @@
               "fontWeight": "bold",
               "color": "#1e3a5f",
               "borderBottom": "1 solid #1e3a5f"
-            }
+            },
+            "id": "68v70bhj"
           },
           {
             "type": "textbox",
@@ -930,7 +969,8 @@
             "style": {
               "fontSize": 7.5,
               "color": "#6b7280"
-            }
+            },
+            "id": "lg0d2edp"
           },
           {
             "type": "container",
@@ -960,7 +1000,8 @@
                   "fontSize": 6.5,
                   "color": "#6b7280",
                   "fontWeight": "600"
-                }
+                },
+                "id": "q50n6qz8"
               },
               {
                 "type": "textbox",
@@ -978,7 +1019,8 @@
                   "textAlign": "left",
                   "format": "N0",
                   "color": "#1f2937"
-                }
+                },
+                "id": "bpk44cdl"
               },
               {
                 "type": "textbox",
@@ -993,9 +1035,11 @@
                 "style": {
                   "fontSize": 6,
                   "color": "#6b7280"
-                }
+                },
+                "id": "yio1gu3o"
               }
-            ]
+            ],
+            "id": "hschrrzd"
           },
           {
             "type": "container",
@@ -1025,7 +1069,8 @@
                   "fontSize": 6.5,
                   "color": "#6b7280",
                   "fontWeight": "600"
-                }
+                },
+                "id": "k2kexfs7"
               },
               {
                 "type": "textbox",
@@ -1043,7 +1088,8 @@
                   "textAlign": "left",
                   "format": "C0",
                   "color": "#1f2937"
-                }
+                },
+                "id": "k6wiwfod"
               },
               {
                 "type": "textbox",
@@ -1058,9 +1104,11 @@
                 "style": {
                   "fontSize": 6,
                   "color": "#6b7280"
-                }
+                },
+                "id": "mh6mbxc7"
               }
-            ]
+            ],
+            "id": "tn6fm7f3"
           },
           {
             "type": "container",
@@ -1090,7 +1138,8 @@
                   "fontSize": 6.5,
                   "color": "#6b7280",
                   "fontWeight": "600"
-                }
+                },
+                "id": "yqbpdk3b"
               },
               {
                 "type": "textbox",
@@ -1108,7 +1157,8 @@
                   "textAlign": "left",
                   "format": "C0",
                   "color": "#1f2937"
-                }
+                },
+                "id": "5ltc7hx5"
               },
               {
                 "type": "textbox",
@@ -1123,9 +1173,11 @@
                 "style": {
                   "fontSize": 6,
                   "color": "#6b7280"
-                }
+                },
+                "id": "g7dknyff"
               }
-            ]
+            ],
+            "id": "v4pn4xvm"
           },
           {
             "type": "container",
@@ -1155,7 +1207,8 @@
                   "fontSize": 6.5,
                   "color": "#6b7280",
                   "fontWeight": "600"
-                }
+                },
+                "id": "xbou016v"
               },
               {
                 "type": "textbox",
@@ -1173,7 +1226,8 @@
                   "textAlign": "left",
                   "format": "P1",
                   "color": "=IIF(Sum(Fields.collected, \"Monthly\") / Sum(Fields.due, \"Monthly\") >= 0.95, \"#067647\", \"#b54708\")"
-                }
+                },
+                "id": "74pwzh20"
               },
               {
                 "type": "textbox",
@@ -1188,9 +1242,11 @@
                 "style": {
                   "fontSize": 6,
                   "color": "#6b7280"
-                }
+                },
+                "id": "ac3n120v"
               }
-            ]
+            ],
+            "id": "h31n9k0g"
           },
           {
             "type": "container",
@@ -1220,7 +1276,8 @@
                   "fontSize": 6.5,
                   "color": "#6b7280",
                   "fontWeight": "600"
-                }
+                },
+                "id": "loc3t07v"
               },
               {
                 "type": "textbox",
@@ -1238,7 +1295,8 @@
                   "textAlign": "left",
                   "format": "P1",
                   "color": "=IIF(Sum(IIF(Fields.overdue, Fields.outstanding, 0)) / Sum(Fields.outstanding) > 0.10, \"#b42318\", \"#067647\")"
-                }
+                },
+                "id": "gtdrvz76"
               },
               {
                 "type": "textbox",
@@ -1253,9 +1311,11 @@
                 "style": {
                   "fontSize": 6,
                   "color": "#6b7280"
-                }
+                },
+                "id": "n4tk7rbf"
               }
-            ]
+            ],
+            "id": "10auykch"
           },
           {
             "type": "container",
@@ -1285,7 +1345,8 @@
                   "fontSize": 6.5,
                   "color": "#6b7280",
                   "fontWeight": "600"
-                }
+                },
+                "id": "hhp75whg"
               },
               {
                 "type": "textbox",
@@ -1303,7 +1364,8 @@
                   "textAlign": "left",
                   "format": "P1",
                   "color": "=IIF(Sum(IIF(Fields.status = \"NPA\", Fields.outstanding, 0)) / Sum(Fields.outstanding) > 0.02, \"#b42318\", \"#067647\")"
-                }
+                },
+                "id": "5uitckgi"
               },
               {
                 "type": "textbox",
@@ -1318,9 +1380,11 @@
                 "style": {
                   "fontSize": 6,
                   "color": "#6b7280"
-                }
+                },
+                "id": "i4vij4pe"
               }
-            ]
+            ],
+            "id": "acf3hvpb"
           },
           {
             "type": "textbox",
@@ -1335,7 +1399,8 @@
               "fontSize": 10.5,
               "fontWeight": "bold",
               "color": "#1e3a5f"
-            }
+            },
+            "id": "z9rtwtlt"
           },
           {
             "type": "matrix",
@@ -1393,7 +1458,8 @@
                 "show": "percentOfTotal",
                 "format": "P1"
               }
-            ]
+            ],
+            "id": "mrevqc85"
           },
           {
             "type": "textbox",
@@ -1409,7 +1475,8 @@
               "fontWeight": "bold",
               "color": "#1e3a5f"
             },
-            "pageBreakBefore": true
+            "pageBreakBefore": true,
+            "id": "dw6pdqib"
           },
           {
             "type": "chart",
@@ -1470,7 +1537,8 @@
                 "label": "Target 95%",
                 "showValue": false
               }
-            ]
+            ],
+            "id": "zb9y3rei"
           },
           {
             "type": "table",
@@ -1628,7 +1696,8 @@
                   }
                 ]
               }
-            ]
+            ],
+            "id": "5nxu8rr6"
           },
           {
             "type": "textbox",
@@ -1643,7 +1712,8 @@
               "fontSize": 10.5,
               "fontWeight": "bold",
               "color": "#1e3a5f"
-            }
+            },
+            "id": "57qct084"
           },
           {
             "type": "chart",
@@ -1666,7 +1736,8 @@
               }
             ],
             "labelTemplate": "{value} ({percent})",
-            "pointColor": "=Switch(Fields.status = \"Current\", \"#067647\", Fields.status = \"Overdue\", \"#d97706\", Fields.status = \"NPA\", \"#b42318\", True, \"#94a3b8\")"
+            "pointColor": "=Switch(Fields.status = \"Current\", \"#067647\", Fields.status = \"Overdue\", \"#d97706\", Fields.status = \"NPA\", \"#b42318\", True, \"#94a3b8\")",
+            "id": "2rnvaylo"
           },
           {
             "type": "chart",
@@ -1699,9 +1770,11 @@
               "y": {
                 "min": 0
               }
-            }
+            },
+            "id": "sl2o847v"
           }
-        ]
+        ],
+        "height": 920
       },
       {
         "name": "Register",
@@ -1724,7 +1797,8 @@
               "fontWeight": "bold",
               "color": "#1e3a5f",
               "borderBottom": "1 solid #1e3a5f"
-            }
+            },
+            "id": "c687a4of"
           },
           {
             "type": "textbox",
@@ -1739,7 +1813,8 @@
               "fontSize": 7.5,
               "color": "#6b7280"
             },
-            "dataSet": "Meta"
+            "dataSet": "Meta",
+            "id": "e1ie4927"
           },
           {
             "type": "textbox",
@@ -1755,7 +1830,8 @@
               "fontSize": 10.5,
               "fontWeight": "bold",
               "color": "#1e3a5f"
-            }
+            },
+            "id": "yssadu2c"
           },
           {
             "type": "table",
@@ -1763,7 +1839,7 @@
             "x": 0,
             "y": 64,
             "w": 560,
-            "h": 40,
+            "h": 27,
             "dataSet": "TopLoans",
             "columns": [
               {
@@ -1893,7 +1969,8 @@
                   }
                 ]
               }
-            ]
+            ],
+            "id": "1gesc1h6"
           },
           {
             "type": "textbox",
@@ -1909,7 +1986,8 @@
               "fontWeight": "bold",
               "color": "#1e3a5f"
             },
-            "pageBreakBefore": false
+            "pageBreakBefore": false,
+            "id": "x3permwt"
           },
           {
             "type": "table",
@@ -1917,7 +1995,7 @@
             "x": 0,
             "y": 132,
             "w": 770,
-            "h": 60,
+            "h": 90,
             "dataSet": "Loans",
             "repeatHeader": true,
             "columns": [
@@ -2434,9 +2512,11 @@
                   null
                 ]
               }
-            ]
+            ],
+            "id": "3eh80w2m"
           }
-        ]
+        ],
+        "height": 282
       },
       {
         "name": "Loan details",
@@ -2456,7 +2536,8 @@
               "fontWeight": "bold",
               "color": "#1e3a5f",
               "borderBottom": "1 solid #1e3a5f"
-            }
+            },
+            "id": "3bzhd5bb"
           },
           {
             "type": "textbox",
@@ -2471,7 +2552,8 @@
               "fontSize": 7.5,
               "color": "#6b7280"
             },
-            "dataSet": "Meta"
+            "dataSet": "Meta",
+            "id": "bwyyb63a"
           },
           {
             "type": "list",
@@ -2503,7 +2585,8 @@
                   "fontSize": 13,
                   "fontWeight": "bold",
                   "color": "#1e3a5f"
-                }
+                },
+                "id": "i6fe4zx2"
               },
               {
                 "type": "textbox",
@@ -2517,7 +2600,8 @@
                 "style": {
                   "fontSize": 8.5,
                   "color": "#6b7280"
-                }
+                },
+                "id": "hrjajtup"
               },
               {
                 "type": "textbox",
@@ -2540,7 +2624,8 @@
                     6
                   ],
                   "radius": 3
-                }
+                },
+                "id": "abp3v2ru"
               },
               {
                 "type": "barcode",
@@ -2554,7 +2639,8 @@
                 "style": {
                   "fontSize": 7,
                   "textAlign": "center"
-                }
+                },
+                "id": "06fj8rty"
               },
               {
                 "type": "textbox",
@@ -2567,7 +2653,8 @@
                 "style": {
                   "fontSize": 6.5,
                   "color": "#6b7280"
-                }
+                },
+                "id": "1vnojux3"
               },
               {
                 "type": "textbox",
@@ -2584,7 +2671,8 @@
                   "textAlign": "left",
                   "format": "C0",
                   "color": "#1f2937"
-                }
+                },
+                "id": "akn1ujgj"
               },
               {
                 "type": "textbox",
@@ -2597,7 +2685,8 @@
                 "style": {
                   "fontSize": 6.5,
                   "color": "#6b7280"
-                }
+                },
+                "id": "ujo8civ0"
               },
               {
                 "type": "textbox",
@@ -2614,7 +2703,8 @@
                   "textAlign": "left",
                   "format": "P2",
                   "color": "#1f2937"
-                }
+                },
+                "id": "6iw73k9v"
               },
               {
                 "type": "textbox",
@@ -2627,7 +2717,8 @@
                 "style": {
                   "fontSize": 6.5,
                   "color": "#6b7280"
-                }
+                },
+                "id": "h8yidtd6"
               },
               {
                 "type": "textbox",
@@ -2643,7 +2734,8 @@
                   "fontWeight": "bold",
                   "textAlign": "left",
                   "color": "#1f2937"
-                }
+                },
+                "id": "otoaad41"
               },
               {
                 "type": "textbox",
@@ -2656,7 +2748,8 @@
                 "style": {
                   "fontSize": 6.5,
                   "color": "#6b7280"
-                }
+                },
+                "id": "90ztrgbo"
               },
               {
                 "type": "textbox",
@@ -2673,7 +2766,8 @@
                   "textAlign": "left",
                   "format": "C2",
                   "color": "#1f2937"
-                }
+                },
+                "id": "uf83jx5z"
               },
               {
                 "type": "textbox",
@@ -2686,7 +2780,8 @@
                 "style": {
                   "fontSize": 6.5,
                   "color": "#6b7280"
-                }
+                },
+                "id": "oo5y3kq7"
               },
               {
                 "type": "textbox",
@@ -2703,7 +2798,8 @@
                   "textAlign": "left",
                   "format": "C2",
                   "color": "#b42318"
-                }
+                },
+                "id": "uq5g10g8"
               },
               {
                 "type": "textbox",
@@ -2716,7 +2812,8 @@
                 "style": {
                   "fontSize": 6.5,
                   "color": "#6b7280"
-                }
+                },
+                "id": "1dllzzjn"
               },
               {
                 "type": "textbox",
@@ -2733,7 +2830,8 @@
                   "textAlign": "left",
                   "format": "C2",
                   "color": "#1f2937"
-                }
+                },
+                "id": "s4ahwsxk"
               },
               {
                 "type": "textbox",
@@ -2746,7 +2844,8 @@
                 "style": {
                   "fontSize": 6.5,
                   "color": "#6b7280"
-                }
+                },
+                "id": "acrpe6f3"
               },
               {
                 "type": "textbox",
@@ -2764,7 +2863,8 @@
                   "textAlign": "left",
                   "format": "C2",
                   "color": "#b54708"
-                }
+                },
+                "id": "sme40a48"
               },
               {
                 "type": "textbox",
@@ -2777,7 +2877,8 @@
                 "style": {
                   "fontSize": 6.5,
                   "color": "#6b7280"
-                }
+                },
+                "id": "oq0zm44h"
               },
               {
                 "type": "textbox",
@@ -2793,7 +2894,8 @@
                   "fontWeight": "bold",
                   "textAlign": "left",
                   "color": "#1f2937"
-                }
+                },
+                "id": "1c9q8rxw"
               },
               {
                 "type": "chart",
@@ -2840,15 +2942,16 @@
                     "min": 0,
                     "format": "N0"
                   }
-                }
+                },
+                "id": "wfv9r9q7"
               },
               {
                 "type": "table",
                 "name": "LoanSchedule",
                 "x": 0,
                 "y": 310,
-                "w": 523,
-                "h": 40,
+                "w": 496,
+                "h": 41,
                 "dataSet": "Schedule",
                 "columns": [
                   {
@@ -3077,7 +3180,8 @@
                       }
                     ]
                   }
-                ]
+                ],
+                "id": "thicorik"
               },
               {
                 "type": "textbox",
@@ -3096,11 +3200,14 @@
                 "action": {
                   "type": "bookmark",
                   "target": "watchlist"
-                }
+                },
+                "id": "3k2m1kd9"
               }
-            ]
+            ],
+            "id": "du5d6neu"
           }
-        ]
+        ],
+        "height": 680
       }
     ],
     "pageFooter": {
@@ -3118,7 +3225,8 @@
             "fontSize": 7,
             "fontWeight": "600",
             "color": "#1f2937"
-          }
+          },
+          "id": "psf8eh4r"
         },
         {
           "type": "textbox",
@@ -3132,7 +3240,8 @@
           "style": {
             "fontSize": 7,
             "color": "#6b7280"
-          }
+          },
+          "id": "hnenrajy"
         }
       ]
     }
