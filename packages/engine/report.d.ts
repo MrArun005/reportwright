@@ -376,12 +376,16 @@ export interface Sparkline extends ItemBase {
   bandHigh?: Expr<number>;
   bandColor?: string;
   negColor?: string;
+  /** data bars: the colour of a bar with a negative value (default #dc2626) */
+  negativeColor?: string;
 }
 export interface DataBar extends ItemBase {
   type: 'databar';
   value?: Expr<number>;
   max?: Expr<number>;
   color?: string;
+  /** the colour of a bar with a negative value (default #dc2626) */
+  negativeColor?: string;
 }
 export interface Bullet extends ItemBase {
   type: 'bullet';

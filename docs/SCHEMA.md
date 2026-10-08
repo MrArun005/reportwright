@@ -370,6 +370,7 @@ Also has every property of [ItemBase](#itembase).
 | `bandHigh` | Expr<number> |  |  |
 | `bandColor` | string |  |  |
 | `negColor` | string |  |  |
+| `negativeColor` | string |  | data bars: the colour of a bar with a negative value (default #dc2626) |
 
 ## DataBar
 
@@ -381,6 +382,7 @@ Also has every property of [ItemBase](#itembase).
 | `value` | Expr<number> |  |  |
 | `max` | Expr<number> |  |  |
 | `color` | string |  |  |
+| `negativeColor` | string |  | the colour of a bar with a negative value (default #dc2626) |
 
 ## Bullet
 
