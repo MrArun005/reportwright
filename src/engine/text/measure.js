@@ -12,7 +12,7 @@
  * in one font and one direction, with the glyphs the PDF draws and the widths the SVG reproduces.
  */
 import bidiFactory from 'bidi-js';
-import { fallbackKey, fontCss, resolveFontKey, DEFAULT_FAMILY, SHAPER } from './fonts.js';
+import { fallbackKey, fontCss, resolveFontKey, DEFAULT_FAMILY, SHAPER, CORE_FONT_KEY } from './fonts.js';
 
 const bidi = bidiFactory();
 
@@ -122,12 +122,16 @@ export class TextMeasurer {
     this.noGlyph = new Set();
   }
 
-  /** The key to measure with: `key` when loaded, else the default face of the same weight and style. */
+  /**
+   * The key to measure with: `key` when loaded; else (not loaded yet, or failed) the bundled face of the same weight
+   * and style when that is loaded, else the core regular face. A key not yet loaded is asked for in the next pass.
+   */
   usable(key) {
     if (this.store.has(key)) return key;
     if (!this.store.failed.has(key)) this.missing.add(key);
     const c = fontCss(key);
-    return resolveFontKey(DEFAULT_FAMILY, c.weight, c.style);
+    const same = resolveFontKey(DEFAULT_FAMILY, c.weight, c.style);
+    return this.store.has(same) ? same : CORE_FONT_KEY;
   }
 
   /**

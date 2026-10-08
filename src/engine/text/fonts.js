@@ -39,6 +39,8 @@ export const BUNDLED_FAMILIES = Object.keys(FONT_FAMILIES);
 export const DEFAULT_FAMILY = 'Inter';
 /** Loaded before every render. Fallback and uploaded fonts load when a report needs them. */
 export const ALL_FONT_KEYS = [...FONT_FAMILIES.Inter, ...FONT_FAMILIES['JetBrains Mono']].map(f => f.key);
+/** The one face a render cannot do without: the fallback for every other face that is missing or failed. */
+export const CORE_FONT_KEY = 'Inter-Regular';
 /** The HarfBuzz shaper (WASM). FontStore loads it like a font, from /fonts/harfbuzz.wasm, once text needs shaping. */
 export const SHAPER = 'harfbuzz';
 
@@ -194,9 +196,9 @@ export class FontStore {
             this.fonts.set(k, fontkit.create(u8));
             this.bytes.set(k, u8);
           } catch (e) {
-            // the default fonts must load; any other font falls back, and the report warns
+            // the core face must load; any other font falls back, and the report warns
             this.pending.delete(k);
-            if (ALL_FONT_KEYS.includes(k)) throw e;
+            if (k === CORE_FONT_KEY) throw e;
             this.failed.add(k);
           }
         })());
