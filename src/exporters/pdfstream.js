@@ -30,6 +30,7 @@ const fontkit = /** @type {any} */ (fontkitModule).default || fontkitModule;
 const CHUNK = 64 * 1024;
 const LEAF = 64; // pages per node of the page tree
 const OBJSTM = 100; // small objects per object stream
+const TAGGED_LARGE = 1000000; // structure elements past which a tagged file's result warns (about 120,000 table rows)
 const IN_FLIGHT = 8; // pages compressing at once (zlib's 4 threads busy, the next drawn meanwhile)
 const hex4 = (/** @type {number} */ id) => id.toString(16).padStart(4, '0');
 const num = (/** @type {number} */ v) => String(Math.round(v * 1000) / 1000);
@@ -57,12 +58,12 @@ export function createPdfStream(sink, opt) {
   const { fontStore } = opt;
   let pos = 0, nextNum = 1;
   // where each object is: kind 1 at byte loc, 2 in object stream loc at index idx, 3 waiting for its object stream;
-  // typed arrays (6 bytes an object): a tagged file has an element per table cell
-  let kind = new Uint8Array(4096), loc = new Uint32Array(4096), idx = new Uint8Array(4096);
+  // typed arrays (7 bytes an object): a tagged file has an element per table cell
+  let kind = new Uint8Array(4096), loc = new Uint32Array(4096), idx = new Uint16Array(4096);
   const place = (/** @type {number} */ n, /** @type {number} */ k, /** @type {number} */ l, i = 0) => {
     if (n >= kind.length) {
       let L = kind.length; while (L <= n) L *= 2;
-      const k2 = new Uint8Array(L), l2 = new Uint32Array(L), i2 = new Uint8Array(L);
+      const k2 = new Uint8Array(L), l2 = new Uint32Array(L), i2 = new Uint16Array(L);
       k2.set(kind); l2.set(loc); i2.set(idx); kind = k2; loc = l2; idx = i2;
     }
     kind[n] = k; loc[n] = l; idx[n] = i;
@@ -325,20 +326,29 @@ export function createPdfStream(sink, opt) {
       // compressed a block of entries at a time (fflate's streaming zlib): never all the entries at once
       const out = /** @type {Uint8Array[]} */ ([]);
       const zs = new Zlib({ level: 6 }, (d) => { out.push(d); });
+      // each entry filtered by PNG's Up predictor (/Predictor 12: a filter byte, then each byte less the one above): the
+      // offsets and object stream numbers that change little row to row compress to almost nothing
+      const prev = new Uint8Array(7), row = new Uint8Array(7);
       for (let from = 0; from < size; from += 65536) {
-        const to = Math.min(size, from + 65536), rows = new Uint8Array((to - from) * 7);
+        const to = Math.min(size, from + 65536), rows = new Uint8Array((to - from) * 8);
         for (let n = from; n < to; n++) {
-          const at = (n - from) * 7, l = loc[n];
-          if (n === 0) { rows[at + 5] = 0xff; rows[at + 6] = 0xff; continue; } // object 0: free
-          rows[at] = kind[n]; rows[at + 1] = l >>> 24 & 255; rows[at + 2] = l >>> 16 & 255; rows[at + 3] = l >>> 8 & 255; rows[at + 4] = l & 255;
-          if (kind[n] === 2) rows[at + 6] = idx[n];
+          row.fill(0);
+          const l = loc[n];
+          if (n === 0) { row[5] = 0xff; row[6] = 0xff; } // object 0: free
+          else {
+            row[0] = kind[n]; row[1] = l >>> 24 & 255; row[2] = l >>> 16 & 255; row[3] = l >>> 8 & 255; row[4] = l & 255;
+            if (kind[n] === 2) { row[5] = idx[n] >> 8; row[6] = idx[n] & 255; }
+          }
+          const at = (n - from) * 8;
+          rows[at] = 2; // Up
+          for (let b = 0; b < 7; b++) { rows[at + 1 + b] = (row[b] - prev[b]) & 255; prev[b] = row[b]; }
         }
         zs.push(rows, to === size);
       }
       let zn = 0; for (const c of out) zn += c.length;
       const z = new Uint8Array(zn); zn = 0; for (const c of out) { z.set(c, zn); zn += c.length; }
       const id = opt.id || [...globalThis.crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
-      await put(`${xn} 0 obj\n<< /Type /XRef /Size ${size} /W [1 4 2] /Root ${catalog} 0 R /Info ${info} 0 R /ID [<${id}> <${id}>] /Filter /FlateDecode /Length ${z.length} >>\nstream\n`);
+      await put(`${xn} 0 obj\n<< /Type /XRef /Size ${size} /W [1 4 2] /DecodeParms << /Columns 7 /Predictor 12 >> /Root ${catalog} 0 R /Info ${info} 0 R /ID [<${id}> <${id}>] /Filter /FlateDecode /Length ${z.length} >>\nstream\n`);
       await put(z);
       await put(`\nendstream\nendobj\nstartxref\n${xref}\n%%EOF\n`);
       await flush();
@@ -516,7 +526,7 @@ export async function writePagedPdf(plan, opts, sink) {
   const w = createPdfStream(sink, { fontStore, subset: opts.subset, id: opts.id });
   const { info, pages } = /** @type {any} */ (plan);
   // tagged (PDF/UA-1): a structure tree written as the pages are (pdfstreamtags.js)
-  const tags = opts.tagged ? createStreamTagger(w) : null;
+  const tags = opts.tagged ? createStreamTagger(w, { maxElements: Number(opts.tagged.maxElements) || Infinity }) : null;
   const env = paintEnv(w, fontStore, { drillBase: opts.drillBase, tags });
   const { shaped } = env;
   // opts.parallel: windows laid out and painted by that many worker threads (Node), their pages written here in order
@@ -555,6 +565,8 @@ export async function writePagedPdf(plan, opts, sink) {
     catalog += ` /OutputIntents [${await w.object(`<< /Type /OutputIntent /S /GTS_PDFA1 /OutputConditionIdentifier (sRGB) /Info (sRGB IEC61966-2.1) /DestOutputProfile ${icc} 0 R >>`)} 0 R]`;
   }
   const res = await w.finish({ outline, catalog, info: { title, author: opts.author, creationDate: when } });
+  // a tagged file of millions of elements is valid, but tools that load every object (qpdf, pikepdf) need gigabytes
+  if (tags && tags.count > TAGGED_LARGE) info.warnings.push(`The tagged PDF has ${tags.count.toLocaleString('en-US')} structure elements (${res.pages.toLocaleString('en-US')} pages): readers open it, but tools that load every object of a file (qpdf, pikepdf) may run out of memory on it. tagged.maxElements caps it.`);
   return { pages: res.pages, warnings: info.warnings };
 }
 
@@ -578,10 +590,16 @@ export function paintPage(pg, H, env) {
   const annots = [];
   const c = new Content(env.shared);
   const { tags } = env;
-  if (tags) { c.tagged = true; tags.page(pg.win ?? 0); }
+  if (tags) { c.tagged = true; c.artLines = true; tags.page(pg.win ?? 0); }
   for (const it of pg.items) {
-    const mark = tags && tags.open(it);
-    if (mark) { c.et(); c.s += mark; }
+    // tagged: lines wait and are drawn together as one artifact (a table's borders); a cell's plain text is marked inside
+    // the open text object, so the cells' text stays one text object as untagged (BT, then BDC … EMC per cell)
+    const mark = tags && it.t !== 'line' && tags.open(it);
+    const inText = mark && it.t === 'text' && !it.rotate && it.lines.every((/** @type {any} */ l) => !l.runs) && !(it.clip && !insideClip(it, env.vmetrics(it.font)));
+    if (inText) {
+      if (!c.bt) { c._s += 'BT\n'; c.bt = true; c.tx = 0; c.ty = 0; }
+      c._s += mark;
+    } else if (mark) { c.et(); c.s += mark; }
     if ((it.t !== 'text' && it.t !== 'line') || it.rotate) c.et();
     if (it.rotate) {
       const t = -it.rotate.a * Math.PI / 180, cs = Math.cos(t), sn = Math.sin(t);
@@ -646,7 +664,8 @@ export function paintPage(pg, H, env) {
       default: throw new Error(`A ${it.t} item does not stream yet`);
     }
     if (it.rotate) c.Q();
-    if (mark) { c.et(); c.s += 'EMC\n'; }
+    if (inText) c._s += 'EMC\n';
+    else if (mark) { c.et(); c.s += 'EMC\n'; }
   }
   c.et();
   return { content: c.s, annots };

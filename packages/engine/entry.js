@@ -166,7 +166,7 @@ export const __streamPaint = { createPdfStream, paintPage, paintEnv, latin1 };
 export { planPaged } from '../../src/engine/paged.js';
 
 /**
- * @typedef {RenderOptions & Omit<PdfOptions, 'fonts'> & { fonts?: FontStore, tagged?: { lang?: string },
+ * @typedef {RenderOptions & Omit<PdfOptions, 'fonts'> & { fonts?: FontStore, tagged?: { lang?: string, maxElements?: number },
  *   window?: number, parallel?: number, maxRows?: number, id?: string, presorted?: boolean,
  *   spill?: false | { dir?: string, maxMB?: number }, sorter?: (cmp: (a: any, b: any) => number) => any }} PdfStreamOptions
  *   render()'s options and exportPdf's, plus: window (rows laid out at once, 1000), parallel (Node: worker threads

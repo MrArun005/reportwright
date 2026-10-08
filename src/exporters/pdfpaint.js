@@ -153,6 +153,8 @@ export class Content {
     /** straight lines waiting to be drawn after the text around them: { key, stroke, w, dash, segs: [x1, y1, x2, y2][] } */
     this.lines = null;
     this.tagged = false;
+    /** tagged, lines wait all the same and are drawn as one artifact (the streamed PDF's painter sets it) */
+    this.artLines = false;
   }
   /**
    * The operators so far. Any other drawing reads or appends to it, so the lines waiting are drawn first: the text
@@ -166,7 +168,7 @@ export class Content {
    * ponytail: lines move after the text drawn just after them; both are thin and do not cover each other.
    */
   line(stroke, w, dash, x1, y1, x2, y2) {
-    if (this.tagged) { this.paint(null, stroke, w, dash); this._s += `${n2(x1)} ${n2(y1)} m ${n2(x2)} ${n2(y2)} l S\n`; return; }
+    if (this.tagged && !this.artLines) { this.paint(null, stroke, w, dash); this._s += `${n2(x1)} ${n2(y1)} m ${n2(x2)} ${n2(y2)} l S\n`; return; }
     const key = `${stroke.rgb}|${stroke.opacity}|${w}|${(dash || []).join(' ')}`;
     if (this.lines && this.lines.key !== key) this.flushLines();
     this.lines ||= { key, stroke, w, dash, segs: [] };
@@ -181,6 +183,8 @@ export class Content {
     if (!L) return;
     this.lines = null;
     this.et();
+    const end = this.artLines ? 'EMC\n' : '';
+    if (end) this._s += '/Artifact BMC\n';
     this.paint(null, L.stroke, L.w, L.dash);
     const g = L.segs;
     // a table's row borders: the same line a row height apart. Drawn once and moved down (cm) for each row, so the
@@ -188,10 +192,10 @@ export class Content {
     const dy = g.length > 2 ? Math.round((g[1][1] - g[0][1]) * 100) : 0;
     if (dy && g.every((q, i) => q[1] === q[3] && n2(q[0]) === n2(g[0][0]) && n2(q[2]) === n2(g[0][2]) && Math.abs(q[1] - (g[0][1] + i * dy / 100)) < 0.01)) {
       const one = `${n2(g[0][0])} ${n2(g[0][1])} m ${n2(g[0][2])} ${n2(g[0][1])} l S\n`;
-      this._s += `q\n${one}${`1 0 0 1 0 ${dy / 100} cm ${one}`.repeat(g.length - 1)}Q\n`;
+      this._s += `q\n${one}${`1 0 0 1 0 ${dy / 100} cm ${one}`.repeat(g.length - 1)}Q\n${end}`;
       return;
     }
-    this._s += g.map(([a, b, c, d]) => `${n2(a)} ${n2(b)} m ${n2(c)} ${n2(d)} l`).join(' ') + ' S\n';
+    this._s += g.map(([a, b, c, d]) => `${n2(a)} ${n2(b)} m ${n2(c)} ${n2(d)} l`).join(' ') + ' S\n' + end;
   }
   q() { this.et(); this._s += 'q\n'; this.saved.push({ ...this.st }); }
   Q() { this.et(); this._s += 'Q\n'; this.st = this.saved.pop(); }

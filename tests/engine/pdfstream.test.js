@@ -49,7 +49,15 @@ function checkXref(pdf) {
   };
   const x = streamOf(at);
   expect(x.dict).toMatch(/\/Type \/XRef/);
-  expect(x.dict).toMatch(/\/W \[1 4 2\]/);
+  expect(x.dict).toMatch(/\/W \[1 4 2\] \/DecodeParms << \/Columns 7 \/Predictor 12 >>/);
+  { // PNG Up: a filter byte (2) a row, then each byte plus the one above
+    const raw = x.data, rows = raw.length / 8, out = Buffer.alloc(rows * 7);
+    for (let r = 0; r < rows; r++) {
+      expect(raw[r * 8]).toBe(2);
+      for (let b = 0; b < 7; b++) out[r * 7 + b] = (raw[r * 8 + 1 + b] + (r ? out[(r - 1) * 7 + b] : 0)) & 255;
+    }
+    x.data = out;
+  }
   const size = Number(x.dict.match(/\/Size (\d+)/)[1]);
   expect(x.data.length).toBe(size * 7);
   let text = '';

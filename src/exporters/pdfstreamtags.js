@@ -6,12 +6,19 @@
  * ColSpan), Link > OBJR inside the element whose text it covers; page header and footer, borders and boxes artifacts.
  * Each page's rows (TR, TD), its parent-tree array and its links' elements are written when the page ends; what stays
  * is one number per row (the Table's kids) and two per page and link (the parent tree), written at the end.
+ * A cell's element is a few dozen bytes in an object stream (no /Type, which is optional; no /A on a plain TD): a
+ * million-row table has some 8 million of them, the most of the file's objects.
  */
 
 /**
  * @param {any} w the PDF writer (pdfstream.js createPdfStream)
+ * @param {{ maxElements?: number }} [o] maxElements: past it the export stops (413)
  */
-export function createStreamTagger(w) {
+export function createStreamTagger(w, { maxElements = Infinity } = {}) {
+  let count = 0; // structure elements made
+  const made = () => {
+    if (++count > maxElements) throw Object.assign(new Error(`The tagged PDF has more than ${maxElements.toLocaleString('en-US')} structure elements (tagged.maxElements). Filter the data, or export it untagged.`), { status: 413 });
+  };
   const rootRef = w.reserve(), docRef = w.reserve();
   /** Document's kids: elements in reading order ({ ref }) */
   const docKids = [];
@@ -29,10 +36,12 @@ export function createStreamTagger(w) {
   let last = /** @type {any} */ (null); // the last text's element and box (links go into it)
   let links = false, win = 0;
 
-  const el = (S, parent, attrs) => { const e = { ref: w.reserve(), S, parent, mcid: /** @type {number[]} */ ([]), kids: /** @type {any[]} */ ([]), attrs }; els.push(e); return e; };
+  const el = (S, parent, attrs) => { made(); const e = { ref: w.reserve(), S, parent, mcid: /** @type {number[]} */ ([]), kids: /** @type {any[]} */ ([]), attrs }; els.push(e); return e; };
   const mark = (e) => { const m = mcids.length; mcids.push(e.ref); e.mcid.push(m); return `/${e.S} <</MCID ${m}>> BDC\n`; };
 
   return {
+    /** structure elements so far */
+    get count() { return count; },
     /** a new page (window: the paged window it came from; row ids are its own) @param {number} window */
     page(window) { mcids = []; rows = new Map(); els = []; last = null; links = false; win = window; },
     /**
@@ -55,10 +64,11 @@ export function createStreamTagger(w) {
       if (!table) { table = { ref: w.reserve(), cols: c.cols.length, rows: new Int32Array(4096), n: 0 }; docKids.push(table.ref); }
       const rk = `${win}:${c.row}`;
       let r = rows.get(rk);
-      if (!r) { r = { ref: w.reserve(), kind: c.kind, cells: new Map() }; rows.set(rk, r); addRow(r.ref); }
+      if (!r) { made(); r = { ref: w.reserve(), kind: c.kind, cells: new Map() }; rows.set(rk, r); addRow(r.ref); }
       let cell = r.cells.get(c.col);
       if (!cell) {
-        const attrs = { O: '/Table', ...(c.kind === 'header' ? { Scope: '/Column' } : {}), ...(c.span > 1 ? { ColSpan: c.span } : {}) };
+        // a plain TD has no attributes (an /A of /O /Table alone says nothing): the most numerous element, kept short
+        const attrs = c.kind === 'header' || c.span > 1 ? { O: '/Table', ...(c.kind === 'header' ? { Scope: '/Column' } : {}), ...(c.span > 1 ? { ColSpan: c.span } : {}) } : null;
         cell = el(c.kind === 'header' ? 'TH' : 'TD', r.ref, attrs);
         r.cells.set(c.col, cell);
       }
@@ -89,19 +99,19 @@ export function createStreamTagger(w) {
         const kids = [];
         for (let col = 0; col < /** @type {any} */ (table).cols;) {
           let cell = r.cells.get(col);
-          if (!cell) { cell = el(r.kind === 'header' ? 'TH' : 'TD', r.ref, r.kind === 'header' ? { O: '/Table', Scope: '/Column' } : { O: '/Table' }); }
+          if (!cell) { cell = el(r.kind === 'header' ? 'TH' : 'TD', r.ref, r.kind === 'header' ? { O: '/Table', Scope: '/Column' } : null); }
           kids.push(cell.ref);
           col += Math.max(1, cell.attrs?.ColSpan || 1);
         }
         for (const [col, cell] of r.cells) if (!kids.includes(cell.ref)) { void col; kids.push(cell.ref); }
-        await w.objectAt(r.ref, `<< /Type /StructElem /S /TR /P ${/** @type {any} */ (table).ref} 0 R /K [${kids.map(k => `${k} 0 R`).join(' ')}] >>`);
+        await w.objectAt(r.ref, `<< /S /TR /P ${/** @type {any} */ (table).ref} 0 R /K [${kids.map(k => `${k} 0 R`).join(' ')}] >>`);
       }
       if (rows.size && [...rows.values()].some(r => r.kind === 'header')) headerDone = true;
       for (const e of els) {
         const K = [...e.mcid.map(String), ...e.kids].join(' ');
         const A = e.attrs ? ` /A << ${Object.entries(e.attrs).map(([k, v]) => `/${k} ${v}`).join(' ')} >>` : '';
         const P = e.parent === docRef ? docRef : e.parent;
-        await w.objectAt(e.ref, `<< /Type /StructElem /S /${e.S} /P ${P} 0 R${e.mcid.length || e.S === 'Link' ? ` /Pg ${pageRef} 0 R` : ''} /K [${K}]${A} >>`);
+        await w.objectAt(e.ref, `<< /S /${e.S} /P ${P} 0 R${e.mcid.length || e.S === 'Link' ? ` /Pg ${pageRef} 0 R` : ''} /K [${K}]${A} >>`);
       }
       let extra = '';
       if (mcids.length) {

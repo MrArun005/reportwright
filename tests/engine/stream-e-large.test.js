@@ -126,3 +126,12 @@ describe('a data set without declared fields', () => {
     expect(r.warnings[0]).toMatch(/^The PDF was not streamed \(undeclared fields/);
   });
 });
+
+describe('a large tagged PDF', () => {
+  it('tagged.maxElements stops the export past that many structure elements', async () => {
+    const { exportPdfStream } = await import('../../src/exporters/pdfstream.js');
+    const run = (maxElements) => exportPdfStream(ledger(rowsOf(600)), { fontStore, now, tagged: { lang: 'en', maxElements } }, { write: async () => {} });
+    await expect(run(1000)).rejects.toMatchObject({ status: 413, message: expect.stringMatching(/more than 1,000 structure elements \(tagged.maxElements\)/) });
+    expect((await run(100000)).streamed).toBe(true);
+  });
+});
