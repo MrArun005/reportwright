@@ -54,6 +54,9 @@ describe('render pool', () => {
     process.env.PW_RENDER_WORKERS = '1';
     process.env.PW_RENDER_QUEUE = '1';
     process.env.PW_RENDER_QUEUE_PER_PRINCIPAL = '1';
+    // the queued renders wait behind a 6 s render: on a loaded machine that can pass the default 30 s wait budget, and a
+    // dropped wait is a 503 this test does not expect. The test checks admission (the queue's places), not the wait budget.
+    process.env.PW_RENDER_MAX_WAIT_MS = '300000';
     const r0 = poolStats().totals.rejected;
     const a = render(slow(6000)); // runs
     await running();
