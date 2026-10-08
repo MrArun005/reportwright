@@ -1,6 +1,6 @@
 // B7a: the viewer's data fetch in the browser (reportFetch): the SSRF guard (N2) and errors that say why (#18).
 import { describe, it, expect, afterEach } from 'vitest';
-import { reportFetch, setFetchPolicy } from '../../src/viewer/dataFetch.js';
+import { reportFetch, setFetchPolicy, policyKeysIn } from '../../src/viewer/dataFetch.js';
 import { loadSources } from '../../src/engine/data/index.js';
 
 const recorder = () => {
@@ -83,5 +83,28 @@ describe('a failed request says where and why (#18)', () => {
     const err = await reportFetch('https://pw.example.com', async () => new Response('[]'))('http://192.168.1.1/rows').catch(e => e);
     expect(err.message).toMatch(/192\.168\.1\.1/);
     expect(err.message).toMatch(/allowHosts/);
+  });
+});
+
+describe('only the host page sets the guard policy (review: ssrf-policy-override)', () => {
+  it('allowHosts / unsafeFetch / allowPrivate in a definition, a data source or a parameter widen nothing', async () => {
+    const { calls, f0 } = recorder();
+    const def = { allowHosts: ['192.168.1.1'], unsafeFetch: true, allowPrivate: true,
+      dataSources: [{ name: 's', type: 'rest', url: 'http://192.168.1.1/rows', allowHosts: ['192.168.1.1'], unsafeFetch: true, allowPrivate: true }] };
+    const opt = { params: { allowHosts: ['192.168.1.1'], unsafeFetch: true }, fetch: reportFetch('https://pw.example.com', f0), baseUrl: 'https://pw.example.com' };
+    await expect(loadSources(def, opt)).rejects.toThrow(/private or local/);
+    expect(calls).toHaveLength(0);
+  });
+  it('such keys are reported, so the viewer can warn that they are ignored', () => {
+    expect(policyKeysIn({ allowHosts: [], dataSources: [{ name: 's', unsafeFetch: true }, { name: 't', allowPrivate: 1 }] })).toEqual(['allowHosts', 's.unsafeFetch', 't.allowPrivate']);
+    expect(policyKeysIn({ dataSources: [{ name: 's', url: 'https://x' }] })).toEqual([]);
+  });
+  it('the designer\'s preview fetch (sqlPreview, DataPanel) has the same guard, redirects included', async () => {
+    const seen = [];
+    const f0 = async (u, init) => { seen.push([u, init.redirect]); return new Response(null, { status: 301, headers: { location: 'http://169.254.169.254/latest' } }); };
+    const f = reportFetch('https://pw.example.com', f0, { sqlPreview: true });
+    await expect(loadSources({ dataSources: [{ name: 's', type: 'rest', url: 'http://10.0.0.5/rows' }] }, { params: {}, sqlPreview: true, fetch: f, baseUrl: 'https://pw.example.com' })).rejects.toThrow(/private or local/);
+    await expect(f('https://a.example.com/rows')).rejects.toMatchObject({ status: 403 });
+    expect(seen).toEqual([['https://a.example.com/rows', 'manual']]);
   });
 });

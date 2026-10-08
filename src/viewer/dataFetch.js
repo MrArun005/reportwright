@@ -34,6 +34,16 @@ let policy = { allowHosts: [], unsafeFetch: false, fetch: null };
 export function setFetchPolicy({ allowHosts, unsafeFetch = false, fetch: f = null } = {}) {
   policy = { allowHosts: (allowHosts || []).map(h => String(h).toLowerCase().replace(/^\[|\]$/g, '')), unsafeFetch: !!unsafeFetch, fetch: typeof f === 'function' ? f : null };
 }
+const POLICY_KEYS = ['allowHosts', 'unsafeFetch', 'allowPrivate'];
+/**
+ * Guard settings written into a definition or its data sources: never read (only the host page's mountViewer /
+ * mountDesigner options set the policy), listed so the viewer can say they are ignored.
+ * @param {any} def @returns {string[]}
+ */
+export function policyKeysIn(def) {
+  const has = (o) => POLICY_KEYS.filter(k => o && typeof o === 'object' && Object.hasOwn(o, k));
+  return [...has(def), ...(Array.isArray(def?.dataSources) ? def.dataSources : []).flatMap(s => has(s).map(k => `${s.name}.${k}`))];
+}
 /** What a worker needs to apply the same rules (no function: a worker keeps the page's own fetch on the main thread). */
 export const fetchPolicy = () => policy;
 

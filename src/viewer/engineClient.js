@@ -1,6 +1,6 @@
 'use client';
 // Runs the engine in a Web Worker. Falls back to the main thread if the worker cannot start.
-import { reportFetch } from './dataFetch.js';
+import { reportFetch, policyKeysIn } from './dataFetch.js';
 import { render, FontStore } from '@/engine/index.js';
 import { fontFile, setCustomFonts, SHAPER, ALL_FONT_KEYS } from '@/engine/text/fonts.js';
 import { createSubsetter } from '@/exporters/subset.js';
@@ -150,6 +150,8 @@ async function renderMain(def, params, state, reportId, exportData = false, onRe
  * @returns {Promise<any>} page model
  */
 export async function renderReport(def, params = {}, state = {}, reportId = undefined, { onPartial, exportData = false, onRetry, dataOnly = false } = {}) {
+  const policyKeys = policyKeysIn(def);
+  if (policyKeys.length) console.warn(`ReportWright: ${policyKeys.join(', ')} in the report definition ignored: only the page's mountViewer options set allowHosts and unsafeFetch`);
   const w = getWorker();
   if (!w) return renderMain(def, params, state, reportId, exportData, onRetry, dataOnly);
   const fonts = await customFonts(); // the worker has its own copy of the font list
