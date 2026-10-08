@@ -155,6 +155,11 @@ export function sampleHard(n = 3000) {
   };
 }
 
+/** ?account=<id>: only that account's accounts and transactions (a report that reads one account asks for it by id). */
+export function hardForAccount(data, accountId) {
+  return { ...data, accounts: data.accounts.filter(a => a.accountId === accountId), transactions: data.transactions.filter(t => t.accountId === accountId) };
+}
+
 export function listHardAccounts() { return sampleHard(100).accounts.slice(0, 50).map(a => ({ id: a.accountId, customer: a.customer, status: a.status })); }
 
 function isoDate(y, m, d) { return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`; }
