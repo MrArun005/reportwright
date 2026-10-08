@@ -13,6 +13,9 @@ import { sqlStore } from './sql.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { logWarn } from '../errors.js';
 
+// ponytail: Vercel's Neon integration stores DATABASE_URL as a sensitive variable that cannot be copied into PW_STORAGE
+if (!process.env.PW_STORAGE && process.env.DATABASE_URL) process.env.PW_STORAGE = process.env.DATABASE_URL;
+
 /** @typedef {'reports'|'schedules'|'jobs'|'users'|'fonts'|'folders'|'reportacl'|'reportmeta'|'tokens'|'settings'|'blobs'} Kind */
 /**
  * @typedef {object} Store

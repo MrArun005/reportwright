@@ -58,7 +58,8 @@ async function connect(url, dialect) {
     return Object.assign(run, { setup: async (fn) => { db.exec('BEGIN IMMEDIATE'); try { await fn(run); db.exec('COMMIT'); } catch (e) { db.exec('ROLLBACK'); throw e; } } });
   }
   if (dialect === 'postgres') {
-    const pg = (await load('pg')).default;
+    // a literal import, so the Vercel build traces pg into the functions (load() by name is invisible to the tracer)
+    const pg = (await import('pg').catch(() => load('pg'))).default;
     const pool = new pg.Pool({ connectionString: url, max: poolMax(), connectionTimeoutMillis: 10000 });
     pool.on('error', () => {}); // an idle client that drops must not crash the server
     // our statements have no "?" inside quotes, so each one is a placeholder

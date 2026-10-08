@@ -287,9 +287,36 @@ export async function workOnce(owner, { stopAfter } = {}) {
 
 /** Run queued jobs on this server: now (poke) and every PW_QUEUE_POLL_MS (2 s), for jobs other servers left. */
 function poke() {
+  if (!Q.started && process.env.VERCEL) return void drainAfterResponse();
   if (!Q.started || Q.busy) return;
   Q.busy = true;
   (async () => { try { while (await workOnce(ME)); } catch (e) { console.error(`[reportwright] batch queue: ${e.message}`); } finally { Q.busy = false; } })();
+}
+/**
+ * Run queued jobs here one after another until none is left or the deadline passes. One drain per process: every
+ * caller here holds leases as the same owner (ME), so two drains at once would run the same job twice; a caller that
+ * finds one running asks it to go round again instead. Returns the jobs this call ran.
+ */
+export async function drainQueue(deadline = Infinity) {
+  // another drain here: wait for it, then go round (a caller that returned at once left the cron tick's own batch
+  // to some later request's after(): 23 minutes for a one-page schedule)
+  while (Q.drain) { Q.again = true; await Q.drain.catch(() => {}); }
+  Q.busy = true;
+  let n = 0;
+  Q.drain = (async () => { do { Q.again = false; while (Date.now() < deadline && await workOnce(ME)) n++; } while (Q.again && Date.now() < deadline); })();
+  try { await Q.drain; } finally { Q.busy = false; Q.drain = null; }
+  return n;
+}
+// ponytail: serverless (Vercel) has no long-lived worker: the request that queued a batch runs it after its response
+// (next/server after(), within the function's maxDuration); /api/v1/cron picks up anything left over
+async function drainAfterResponse() {
+  try { (await import('next/server')).after(() => drainQueue().catch(logWarn('batch queue'))); }
+  catch { /* not inside a request: the cron route drains the queue */ }
+}
+/** Vercel Cron's "Authorization: Bearer $CRON_SECRET" (app/api/v1/cron; called inside limits.checkCredential). */
+export function cronSecretOk(req) {
+  const want = Buffer.from(`Bearer ${process.env.CRON_SECRET || ''}`), got = Buffer.from(req.headers.get('authorization') || '');
+  return (process.env.CRON_SECRET || '').length >= 16 && got.length === want.length && crypto.timingSafeEqual(got, want);
 }
 export function startWorker() {
   if (Q.started) return;

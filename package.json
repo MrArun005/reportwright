@@ -3,6 +3,7 @@
   "version": "0.10.0",
   "license": "MIT",
   "private": true,
+  "engines": { "node": "22.x" },
   "type": "module",
   "bin": {
     "reportwright": "bin/pw.mjs",

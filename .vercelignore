@@ -1,0 +1,14 @@
+/node_modules
+/.next
+/data
+/dist-site
+/reports/.history
+/reports/e2e-*
+/tests
+/docs
+/site
+/test-results
+*.log
+/.secrets.local
+/pw-worker
+/public/embed

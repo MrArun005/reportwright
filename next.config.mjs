@@ -11,7 +11,9 @@ const nextConfig = {
   ...(process.env.PW_STANDALONE ? { output: 'standalone' } : {}),
   // report definitions and fonts are read from disk by API routes
   // pw-worker/: the render worker's own bundle (scripts/build-worker.mjs), for the standalone output, which has no src/
-  outputFileTracingIncludes: { '/api/**': ['./reports/**', './public/fonts/**', './public/harfbuzz-subset.wasm', './public/icc/**', './pw-worker/**'] },
+  outputFileTracingIncludes: { '/api/**': ['./reports/**', './public/fonts/**', './public/harfbuzz-subset.wasm', './public/icc/**', './pw-worker/**'],
+    // Vercel: demo/: the demo SQLite database. PW_STORAGE=postgres loads pg by name at run time, which the tracer cannot see; pages read storage too
+    '/**': ['./demo/**', './node_modules/pg/**', './node_modules/pg-*/**', './node_modules/pgpass/**', './node_modules/postgres-*/**', './node_modules/split2/**', './node_modules/xtend/**'] },
   async headers() {
     return [
       // security headers on every page and answer (src/server/headers.js); routes serving report output add their own
