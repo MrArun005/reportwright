@@ -195,3 +195,6 @@ for (const [name, w] of Object.entries(WRAPPERS)) {
   fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, P, 'LICENSE')); fs.copyFileSync(path.join(root, 'THIRD-PARTY-NOTICES.md'), path.join(root, P, 'THIRD-PARTY-NOTICES.md')); docs(P);
 }
 console.log(`packages: @reportwright/engine, /fonts, /fonts-cjk, /cli, /viewer, ${Object.keys(WRAPPERS).map(n => '/' + n).join(', ')} built (npm pack packages/<name>)`);
+
+/* pdf: @reportwright/pdf, the streaming PDF writer (its own version; no runtime dependencies, fflate bundled) */
+await import('../packages/pdf/build.mjs');
