@@ -1,6 +1,6 @@
 'use client';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { allNames, cloneWithIds, isContentKey } from './store.js';
+import { allNames, cloneWithIds, isContentKey, setMatrixShow } from './store.js';
 import { useDesigner, findItem, updateItem, deleteSelection, duplicateSelection, sectionList, secOf, isBodyKey, addBodySection, removeBodySection, walk, tableParts, rowsOf, selCells,
   tableInsertColumn, tableDeleteColumn, tableInsertRow, tableDeleteRow, tableSetColumnWidth, tableMergeRight, tableSplit, tableMergeDown, tableSplitRows, tableSync, tableAddGroup, tableRemoveGroup, round, growToFit, uploadImages } from './store.js';
 import { normalizeMatrix, isTablix } from '@/engine/items/pivot.js';
@@ -442,7 +442,7 @@ function PivotEditor({ item, openExpr }) {
             <div className="grid2">
               <Field label={T('pivotLabel')}><TextInput value={v.label || ''} onChange={x => setK('values', i, 'label', x)} /></Field>
               <Field label={T('pivotFormat')}><TextInput value={v.format || ''} onChange={x => setK('values', i, 'format', x)} placeholder="N0" /></Field>
-              <Field label={T('pivotShow')}><Select value={v.show || 'value'} options={shows} onChange={x => setK('values', i, 'show', x === 'value' ? undefined : x)} /></Field>
+              <Field label={T('pivotShow')}><Select value={v.show || 'value'} options={shows} onChange={x => edit(it => setMatrixShow(it.values[i], x), `${item.id}.values${i}.show`)} /></Field>
             </div>
             <div data-testid={`pivot-values${i}-action`}><ActionEditor label={T('ux_cellAction')} value={v.action} onChange={x => setK('values', i, 'action', x)} openExpr={openExpr} dataSet={item.dataSet} /></div>
             <Field label={T('cellBookmark')}>{exprField('values', i, 'bookmark', v.bookmark, T('cellBookmark'))}</Field>

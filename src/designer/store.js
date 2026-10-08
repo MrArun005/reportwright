@@ -785,3 +785,14 @@ export function wouldOverlap(def, ids, rectOf) {
   }
   return false;
 }
+
+/**
+ * A matrix value's "Show" changed. A share printed with N0 reads 0 or 1, so a percentage gets P1 while the format is
+ * still the default (N0 or none); back to the value, P1 goes back to N0. A format chosen by hand is kept.
+ */
+export function setMatrixShow(v, show) {
+  const pct = !!show && show !== 'value';
+  if (pct) v.show = show; else delete v.show;
+  if (pct && (!v.format || v.format === 'N0')) v.format = 'P1';
+  else if (!pct && v.format === 'P1') v.format = 'N0';
+}
