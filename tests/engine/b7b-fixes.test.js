@@ -118,3 +118,38 @@ describe('N4: scatter axes are not over-padded past zero', () => {
     expect(Math.max(...labels)).toBeLessThanOrEqual(120);
   });
 });
+
+import http from 'node:http';
+import zlib from 'node:zlib';
+import { guardedFetch, boundedFetch } from '../../src/engine/data/guard.js';
+import { sourceResponse } from '../../src/engine/data/index.js';
+
+describe('N14: the guarded fetch decodes gzip and names the scheme it refuses', () => {
+  const serve = (body, headers) => new Promise((resolve) => {
+    const srv = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'application/json', ...headers }); res.end(body); });
+    srv.listen(0, '127.0.0.1', () => resolve(srv));
+  });
+  it('a gzip body (sent although the request asked for identity) reads as its JSON, and the encoding header is not passed on', async () => {
+    const data = { rows: [{ a: 1 }, { a: 2 }] };
+    const srv = await serve(zlib.gzipSync(JSON.stringify(data)), { 'content-encoding': 'gzip' });
+    try {
+      const f = boundedFetch(guardedFetch({ allowHosts: ['127.0.0.1'] }, fetch), {});
+      const res = await f(`http://127.0.0.1:${srv.address().port}/x`, {});
+      expect(res.headers.get('content-encoding')).toBeNull();
+      expect(await res.json()).toEqual(data);
+    } finally { srv.close(); }
+  });
+  it('the byte cap counts the decoded bytes: a small gzip that inflates past the cap is refused', async () => {
+    const srv = await serve(zlib.gzipSync(Buffer.alloc(1024 * 1024)), { 'content-encoding': 'gzip' });
+    try {
+      const f = boundedFetch(guardedFetch({ allowHosts: ['127.0.0.1'] }, fetch), { maxFetchBytes: 100 * 1024 });
+      const res = await f(`http://127.0.0.1:${srv.address().port}/x`, {});
+      await expect(res.text()).rejects.toThrow(/larger than/);
+    } finally { srv.close(); }
+  });
+  it('file: and data: URLs are refused for their scheme, not for a host made by a parameter', async () => {
+    const ctx = { params: {}, globals: {}, dataSets: {}, fields: null, functions: {} };
+    await expect(sourceResponse({ type: 'json', url: 'file:///etc/hosts' }, ctx, { params: {} })).rejects.toThrow(/Only http and https URLs can be fetched, not file:/);
+    await expect(sourceResponse({ type: 'json', url: 'data:application/json,[1]' }, ctx, { params: {} })).rejects.toThrow(/not data:/);
+  });
+});

@@ -112,7 +112,18 @@ function nodeRequest(url, init, trusted) {
       for (let i = 0; i < res.rawHeaders.length; i += 2) pairs.push([res.rawHeaders[i], res.rawHeaders[i + 1]]);
       const none = [101, 204, 205, 304].includes(res.statusCode) || (init.method || 'GET').toUpperCase() === 'HEAD';
       if (none) res.resume();
-      resolve(new Response(none ? null : stream.Readable.toWeb(res), { status: res.statusCode, statusText: res.statusMessage, headers: /** @type {any} */ (pairs) }));
+      // a server that compresses anyway (it ignores accept-encoding: identity): decoded here, so the byte cap counts what is read
+      const enc = String(res.headers['content-encoding'] || '').trim().toLowerCase();
+      let body = res, decoded = false;
+      if (!none && enc && enc !== 'identity') {
+        const zlib = nodeMod('node:zlib');
+        const dec = enc === 'gzip' || enc === 'x-gzip' ? zlib.createGunzip() : enc === 'deflate' ? zlib.createInflate() : enc === 'br' ? zlib.createBrotliDecompress() : null;
+        if (!dec) { res.resume(); return reject(Object.assign(new Error(`the response is encoded as "${enc}", which the data fetch cannot decode`), { status: 415 })); }
+        body = stream.pipeline(res, dec, () => {}); // an error in either destroys the decoded stream too: the caller's read fails
+        decoded = true;
+      }
+      const kept = decoded ? pairs.filter(([k]) => !/^(content-encoding|content-length)$/i.test(k)) : pairs;
+      resolve(new Response(none ? null : stream.Readable.toWeb(body), { status: res.statusCode, statusText: res.statusMessage, headers: /** @type {any} */ (kept) }));
     });
     req.on('error', reject);
     req.end(init.body ?? undefined);

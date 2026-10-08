@@ -214,6 +214,8 @@ function checkHostSource(src, url, opt) {
   // a caller's fetch opts in by carrying the rule (the browser viewer's reportFetch); else only the engine's own guard
   const rule = opt.fetch ? opt.fetch.hostRule : opt.unsafeFetch ? null : opt;
   if (!rule) return;
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(String(url).trim()); // the URL as filled: file:, data: and the like say why they are refused
+  if (scheme && !/^https?$/i.test(scheme[1])) throw Object.assign(new Error(`Only http and https URLs can be fetched, not ${scheme[1].toLowerCase()}:`), { status: 400 });
   const t = String(src.url ?? '').trim();
   if (/^\/(?![/\\])/.test(t)) return; // a path on the base URL
   const m = /^https?:\/\/([^/?#\\]*)/i.exec(t);
