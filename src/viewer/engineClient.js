@@ -63,7 +63,7 @@ export async function loadFontStore() {
   return (mainStore ||= new FontStore(getFont));
 }
 /** The choices of the report's parameters (their queries run here): the engine's parameterOptions, loaded when used. */
-export const parameterOptions = async (...a) => (await loadEngine()).parameterOptions(...a);
+export async function parameterOptions(def, params, opts) { if (!opts?.fetch) throw new TypeError('parameterOptions: pass the guarded fetch (reportFetch); the engine would use the global fetch'); return (await loadEngine()).parameterOptions(def, params, opts); }
 
 // The worker file: a sibling of this source in the app (Next bundles it); scripts/build-embed.mjs rewrites the path to
 // ./engine.worker.js, which it builds next to the viewer's chunks, so Vite, webpack and Next bundle it from the package.
