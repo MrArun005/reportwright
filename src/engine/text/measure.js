@@ -25,6 +25,8 @@ function special(cp) {
     || (cp >= 0xf900 && cp <= 0xfaff) || (cp >= 0xfb1d && cp <= 0xfdff) || (cp >= 0xfe00 && cp <= 0xfe0f)
     || (cp >= 0xfe30 && cp <= 0xfe4f) || (cp >= 0xfe70 && cp <= 0xfefe) || (cp >= 0xff00 && cp <= 0xffef) || cp >= 0x10000;
 }
+/** Unicode format characters (Cf): bidi marks and embeddings, joiners, soft hyphen. They have no shape of their own. */
+export const FORMAT_CHAR = /^\p{Cf}$/u;
 /** CJK: a line may break between any two of these characters. */
 const cjk = (cp) => (cp >= 0x2e80 && cp <= 0x9fff) || (cp >= 0xac00 && cp <= 0xd7af) || (cp >= 0xf900 && cp <= 0xfaff)
   || (cp >= 0xff00 && cp <= 0xffef) || (cp >= 0x20000 && cp <= 0x3ffff);
@@ -370,7 +372,8 @@ export class TextMeasurer {
 
   /** The font for one character: the chosen one, else the bundled fallback for its script, else the one before. */
   pick(cp, key, prev) {
-    if (cp < 0x20 || this.has(key, cp)) return key;
+    // a format character (RLM, LRE, ZWJ, soft hyphen...) is drawn as nothing: it needs no glyph in any face
+    if (cp < 0x20 || this.has(key, cp) || FORMAT_CHAR.test(String.fromCodePoint(cp))) return key;
     const fb = fallbackKey(cp, key);
     if (fb && !this.store.failed.has(fb)) {
       if (!this.store.has(fb)) { this.missing.add(fb); return key; }

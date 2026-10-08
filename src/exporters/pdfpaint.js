@@ -6,6 +6,7 @@
  */
 import { PDFHexString, rgb } from 'pdf-lib';
 import { parseColor } from './color.js';
+import { FORMAT_CHAR } from '../engine/text/measure.js';
 
 /** a colour for pdf-lib (color) and for our own operators (rgb: "r g b") */
 const colors = new Map();
@@ -35,6 +36,8 @@ export const cleanText = (t) => t.replace(/\t|\u0085|\u2028|\u2029/g, '    ').re
  * the dots of joined letters drawn among the letters, made pdftotext split words ("الج ميل", "الت قن ية").
  * @param {Content} c @param {Set<number>} [spans] @param {Map<number, string>} [texts]
  */
+/** True when the character at a cluster's start is a Unicode format character (see FORMAT_CHAR in measure.js). */
+const formatAt = (run, cl) => { const cp = run.text.codePointAt(cl); return cp !== undefined && FORMAT_CHAR.test(String.fromCodePoint(cp)); };
 export function drawRun(c, run, x, y, size, pf, color, spans, texts) {
   const f = pf.embedder.font;
   const per = 1000 / size;
@@ -74,7 +77,8 @@ export function drawRun(c, run, x, y, size, pf, color, spans, texts) {
     }
     if (gy !== rise) { flush(); c.s += `${n4(gy)} Ts\n`; rise = gy; }
     const adj = Math.round((pen - gx) * per * 1000) / 1000;
-    if (id === 0 && c.tagged) pen = gx; // a tagged PDF draws no .notdef (PDF/UA 7.21.8): the glyph is left out, its place kept
+    // a tagged PDF draws no .notdef (PDF/UA 7.21.8): the glyph is left out, its place kept; so is a format character's (no glyph, no box)
+    if (id === 0 && (c.tagged || formatAt(run, cl))) pen = gx;
     else {
       arr += (adj ? `${adj}` : '') + `<${hex4(id)}>`;
       pen = gx + (adv(id) * size) / f.unitsPerEm;

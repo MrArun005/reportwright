@@ -182,3 +182,34 @@ describe('N10: a variable CJK face is cut at Regular, not its default (Thin)', (
     expect(Buffer.from(a).equals(Buffer.from(b))).toBe(true);
   });
 });
+
+import { TextMeasurer } from '../../src/engine/text/measure.js';
+import { SHAPER } from '../../src/engine/text/fonts.js';
+import { exportPdf } from '../../src/exporters/pdf.js';
+
+// the PDF's content streams, inflated (pdf-lib compresses them)
+const pdfStreams = (bytes) => {
+  const s = Buffer.from(bytes).toString('latin1');
+  const out = [];
+  for (const m of s.matchAll(/stream\r?\n/g)) {
+    const end = s.indexOf('endstream', m.index);
+    try { out.push(zlib.inflateSync(Buffer.from(s.slice(m.index + m[0].length, end), 'latin1')).toString('latin1')); } catch { /* not flate */ }
+  }
+  return out.join('\n');
+};
+describe('#29: format characters (bidi marks, joiners, soft hyphen) need no glyph', () => {
+  it('no "no font has these characters" for RLM, LRE, LRI, ZWJ, ZWNJ, soft hyphen', async () => {
+    await fontStore.load([SHAPER, 'Inter-Regular', 'NotoSansArabic-Regular', 'NotoSansHebrew-Regular']);
+    for (const cp of [0x200f, 0x200e, 0x202a, 0x202c, 0x2066, 0x200d, 0x200c, 0x00ad]) {
+      const m = new TextMeasurer(fontStore);
+      m.pick(cp, 'Inter-Regular', null);
+      expect([...m.noGlyph], cp.toString(16)).toEqual([]);
+    }
+  });
+  it('a PDF draws no .notdef box for a format character no face has', async () => {
+    const m = await render(report([{ type: 'textbox', name: 'T', x: 0, y: 0, w: 300, h: 20, value: 'a‪b‬c' }], { def: { locale: 'ar-SA' } }), { fontStore });
+    const pdf = await exportPdf(m, fontStore, {});
+    expect(pdfStreams(pdf)).toMatch(/\[<[0-9a-f]{4}>/); // the text is drawn
+    expect(pdfStreams(pdf)).not.toMatch(/<0000>\]? ?(TJ|Tj)|\[<0000>/); // and no notdef glyph in it
+  });
+});
