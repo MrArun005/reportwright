@@ -16,6 +16,26 @@ All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. T
 - **Deprecation messages** all say "will be removed in 1.0" (exportHtml's said 0.9). A test greps the source for a deprecation string that names 0.9.
 - **Rich text warnings** say "Rich text:" once (an unnamed item was named "Rich text" and the parser repeated it). The legend warning says what is accepted: a chart's legend is "bottom" or "none", and it is drawn at the bottom.
 
+- **Designer (b9):**
+  - Embedded designer: `mountDesigner` asks before the page is left with unsaved changes (`warnOnLeave`, default
+    true; false leaves it to the host), and the handle has `isDirty()` and an `onDirtyChange(dirty)` option. The guard is
+    removed on save and on `unmount()` (N34). A blank report is named "Untitled report" (it was "New report").
+  - Keyboard: the outline rows are a listbox with one Tab stop (Up/Down/Home/End move, Enter or Space selects, Shift
+    adds; then Delete and the arrows act on the selection); the left rail's tabs take the focus to their section;
+    canvas items are Tab stops named "Text box T1, x 10, y 10" that Enter selects (N35).
+  - Paste uses the paste event's clipboard (no clipboard-read permission), else the copy made in this tab, and says
+    when there is nothing to paste (N36).
+  - Width and height are at least 1 pt (a line may be 0 one way) (N33). Ctrl+D offsets the copy by 12 pt, as a paste
+    does (N37).
+  - Opening a report gives an item without an `id` a stable one (a hash of its band, place and name), so the same
+    file always reads back the same; the other normalisation (names, band heights, a table's size) is unchanged (N38).
+  - Embedded designer (shadow root): the table cell menu acts again, and Esc and Ctrl+S work after a click on a band
+    label, a matrix or a drill-through in Preview.
+  - A table that gets taller (Add group) grows its band; a drop into a 0 pt band grows it. A number field dropped on a
+    group header cell gives `=Sum(...)`, as on a footer. A matrix value shown as a percentage gets the format P1 while
+    its format is still the default N0. The matrix's drill-down toggle starts closed, as the table's.
+  - Accessibility: the fx button is named "fx: Open the expression editor"; table row tags have 4.85:1 contrast.
+
 ## 0.12.1 — 2026-10-08
 
 ### Fixed
