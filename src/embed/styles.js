@@ -24,23 +24,27 @@ export function setShadowStyles(shadow, css, nonce) {
 }
 
 /**
- * Report and interface @font-face rules, declared on the document once (@font-face is ignored inside a shadow root).
+ * Report and interface @font-face rules, declared on the document (@font-face is ignored inside a shadow root). Calling
+ * again with the same id replaces the rules.
  * @param {string} id @param {string} css @param {string} [nonce]
  */
 export function declareDocumentStyles(id, css, nonce) {
   if (CONSTRUCTABLE && 'adoptedStyleSheets' in document) {
-    if (document.adoptedStyleSheets.some(s => s.pwId === id)) return;
+    const have = document.adoptedStyleSheets.find(s => s.pwId === id);
+    if (have) { have.replaceSync(css); return; }
     const s = sheet(css);
     s.pwId = id;
     document.adoptedStyleSheets = [...document.adoptedStyleSheets, s];
     return;
   }
-  if (document.getElementById(id)) return;
-  const st = document.createElement('style');
-  st.id = id;
-  if (nonce) st.nonce = nonce;
+  let st = document.getElementById(id);
+  if (!st) {
+    st = document.createElement('style');
+    st.id = id;
+    if (nonce) st.nonce = nonce;
+    document.head.appendChild(st);
+  }
   st.textContent = css;
-  document.head.appendChild(st);
 }
 
 /**

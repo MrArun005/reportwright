@@ -1,4 +1,5 @@
 'use client';
+import { declareDocumentStyles } from '../embed/styles.js';
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Dialog } from './ui.jsx';
 import Link from 'next/link';
@@ -340,12 +341,7 @@ export default function Designer({ id, initial, rev = null, lang: langIn, embed 
   const fonts = useDesigner(s => s.fonts);
   const fontCss = useMemo(() => fontFaceCss(allFontKeys(), fontsBase().replace(/\/$/, '')), [fonts]); // eslint-disable-line react-hooks/exhaustive-deps
   // embedded: @font-face is ignored inside a shadow root, so the report fonts are declared on the host document
-  useEffect(() => {
-    if (!embed) return;
-    let el = document.getElementById('pw-designer-fonts');
-    if (!el) { el = document.createElement('style'); el.id = 'pw-designer-fonts'; document.head.appendChild(el); }
-    el.textContent = fontCss;
-  }, [embed, fontCss]);
+  useEffect(() => { if (embed) declareDocumentStyles('pw-designer-fonts', fontCss); }, [embed, fontCss]);
   useEffect(() => { customFonts().then(list => useDesigner.getState().setUi({ fonts: list })); }, []);
   useEffect(() => { const z = savedZoom(); if (z != null) useDesigner.getState().setUi({ zoom: z }); }, []);
   const canUndo = useDesigner(s => s.past.length > 0);

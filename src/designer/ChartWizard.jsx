@@ -1,6 +1,7 @@
 'use client';
 // Chart gallery: every chart type drawn live with the report's own data (the API in Data sources is called),
 // next to a preview of the rows and the raw response. Pick a data set, the fields and a type, then insert.
+import SvgHtml from './SvgHtml.jsx';
 import { useEffect, useMemo, useState } from 'react';
 import { useDesigner, addItem, updateItem, findItem } from './store.js';
 import { loadSample, noSourceKey } from './DataPanel.jsx';
@@ -240,7 +241,7 @@ export default function ChartWizard() {
                     {!sample?.dataSets ? <span className="hint">{loading ? tr('calling') : tr('noData')}</span>
                       : PER_ROW.has(type) && fields.find(f => f.name === c.category)?.type !== 'number' ? <span className="hint">{tr('pickNumber')}</span>
                       : th?.error ? <span className="err">{th.error}</span>
-                        : th ? <span dangerouslySetInnerHTML={{ __html: th.html }} /> : <span className="hint">{tr('drawing')}</span>}
+                        : th ? <SvgHtml html={th.html} /> : <span className="hint">{tr('drawing')}</span>}
                   </span>
                   <span className="cw-name">{tr(`t_${type}`)}{good.includes(type) && <em>{tr('suggested')}</em>}</span>
                   <span className="hint">{tr(`w_${type}`)}</span>
@@ -251,7 +252,7 @@ export default function ChartWizard() {
           <div className="cw-preview">
             <div className="cw-big">
               <h5>{tr('preview', { type: tr(`t_${c.chartType}`) })}</h5>
-              <div className="cw-paper">{big?.error ? <span className="err">{big.error}</span> : big ? <div dangerouslySetInnerHTML={{ __html: big.html }} /> : <span className="hint">{tr('drawing')}</span>}</div>
+              <div className="cw-paper">{big?.error ? <span className="err">{big.error}</span> : big ? <SvgHtml as="div" html={big.html} /> : <span className="hint">{tr('drawing')}</span>}</div>
             </div>
             <div className="cw-data">
               <h5>{tr(ds?.filters?.length ? 'apiDataFiltered' : 'apiData', { n: rows.length })}</h5>

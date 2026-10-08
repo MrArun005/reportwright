@@ -1,4 +1,5 @@
 'use client';
+import SvgHtml from './SvgHtml.jsx';
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useDesigner, sectionList, secOf, isBodyKey, isContentKey, bodyWidth, addItem, insertItem, moveItems, updateItem, findItem, tableSetColumnWidth, tableParts, rowsOf, round, NESTING,
   selCells, selectCells, uploadImages, cellRange, columnCells, rowCells, tableInsertRow, tableDeleteRow, tableInsertColumn, tableDeleteColumn, tableMergeRight, tableAddGroup } from './store.js';
@@ -596,7 +597,7 @@ function LivePreview({ item, scale }) {
   }, [key, sample, def.styles, def.parameters]);
   if (!svg) return <div className="box"><span className="hint">{ITEMS[item.type].label}</span></div>;
   if (svg.error) return <div className="box"><span className="err">{svg.error}</span></div>;
-  return <div className="box live" style={{ overflow: 'visible' }}><div style={{ width: item.w * scale, height: svg.h * scale }} dangerouslySetInnerHTML={{ __html: svg.html }} /></div>;
+  return <div className="box live" style={{ overflow: 'visible' }}><SvgHtml as="div" style={{ width: item.w * scale, height: svg.h * scale }} html={svg.html} /></div>;
 }
 
 /** A linked report part, drawn by the engine from its library with this instance's property values. */
@@ -617,7 +618,7 @@ function PartPreview({ item, scale }) {
   }, [key, sample]); // eslint-disable-line react-hooks/exhaustive-deps
   const tag = <span className="nest-tag">{ITEMS.part.label} · {p?.label || item.part}</span>;
   if (!src || !svg || svg.error) return <div className="box reuse-box"><span className={svg?.error ? 'err' : 'hint'}>{svg?.error || `${item.library} / ${item.part}`}</span>{tag}</div>;
-  return <div className="box live reuse-part" style={{ overflow: 'visible' }}><div style={{ width: src.w * scale, height: svg.h * scale }} dangerouslySetInnerHTML={{ __html: svg.html }} />{tag}</div>;
+  return <div className="box live reuse-part" style={{ overflow: 'visible' }}><SvgHtml as="div" style={{ width: src.w * scale, height: svg.h * scale }} html={svg.html} />{tag}</div>;
 }
 
 function ItemBody({ item, scale }) {

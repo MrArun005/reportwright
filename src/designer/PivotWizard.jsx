@@ -2,6 +2,7 @@
 // Pivot wizard: fields dragged (or sent with a click) to Rows, Columns and Values, each value with its aggregate and
 // "show as" (% of total, row or column), drawn live with the sample rows; inserts a Phase 4 tablix matrix.
 // Instant visuals: tick fields, get a suggested chart, table and pivot drawn live, insert one.
+import SvgHtml from './SvgHtml.jsx';
 import { useEffect, useState } from 'react';
 import { useDesigner, addItem, bodyWidth, secOf } from './store.js';
 import { loadSample, noSourceKey } from './DataPanel.jsx';
@@ -51,7 +52,7 @@ function Thumb({ item }) {
   // no data source or a failed load: say so, not an endless "…"
   if (!svg) return <span className="hint">{(noSourceKey(def) && T(noSourceKey(def))) || sample?.error || '…'}</span>;
   if (svg.error) return <span className="err">{svg.error}</span>;
-  return <span dangerouslySetInnerHTML={{ __html: svg.html }} />;
+  return <SvgHtml html={svg.html} />;
 }
 
 function useData(name) {

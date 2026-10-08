@@ -1,6 +1,7 @@
 'use client';
 // Ask AI in the designer: describe a change, see what it does to the report, apply it as one undoable step.
 // The report and a trimmed copy of its loaded data go to /api/ai/report; nothing changes until Apply.
+import SvgHtml from './SvgHtml.jsx';
 import { reportFetch } from '@/viewer/dataFetch.js';
 import { useEffect, useState } from 'react';
 import { useDesigner, sectionList, secOf, normalize } from './store.js';
@@ -85,7 +86,7 @@ export default function AskAi({ onClose }) {
           <div>
             <h5>Preview · page 1{st.preview?.pages > 1 ? ` of ${st.preview.pages}` : ''}</h5>
             <div className="cw-paper" style={{ maxHeight: 420, overflow: 'auto' }}>
-              {st.preview?.error ? <span className="err">{st.preview.error}</span> : <div dangerouslySetInnerHTML={{ __html: st.preview?.html || '' }} />}
+              {st.preview?.error ? <span className="err">{st.preview.error}</span> : <SvgHtml as="div" html={st.preview?.html || ''} />}
             </div>
           </div>
         </div>

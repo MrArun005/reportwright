@@ -1,6 +1,7 @@
 'use client';
 // Table gallery: a list, a grouped list with subtotals, a summary per group, or a matrix, each drawn live
 // with the report's own rows. Pick a data set, the fields and a layout, then insert. Same look as the chart gallery.
+import SvgHtml from './SvgHtml.jsx';
 import { useEffect, useState } from 'react';
 import { useDesigner, addItem, bodyWidth, findItem } from './store.js';
 import { loadSample, noSourceKey } from './DataPanel.jsx';
@@ -110,7 +111,7 @@ export default function TableWizard() {
                     {!sample?.dataSets ? <span className="hint">{sample?.loading ? 'Calling the API…' : 'No data yet'}</span>
                       : th?.error ? <span className="err">{th.error}</span>
                         : th?.note ? <span className="hint">{th.note}</span>
-                          : th ? <span dangerouslySetInnerHTML={{ __html: th.html }} /> : <span className="hint">Drawing…</span>}
+                          : th ? <SvgHtml html={th.html} /> : <span className="hint">Drawing…</span>}
                   </span>
                   <span className="cw-name">{l.label}</span>
                   <span className="hint">{l.when}</span>
