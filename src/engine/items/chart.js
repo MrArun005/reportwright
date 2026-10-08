@@ -701,18 +701,25 @@ function rowPoints(type, g) {
   const cap = Math.max(1, Math.floor(CAPS.points / Math.max(1, data.series.length)));
   let rows = data.rows;
   if (rows.length > cap) { lc.warn(`${who}: ${rows.length} rows; only the first ${cap} points are drawn`); rows = rows.slice(0, cap); }
-  return data.series.map((s, si) => {
+  // a blank x or y is not a zero: Number(null) and Number('') are 0, which would draw the row on the axis
+  const blank = (v) => v == null || v === '';
+  const missing = new Set(); // rows (of this chart) with no x or y for any series, counted once
+  const sets = data.series.map((s, si) => {
     const pts = [];
-    for (const r of rows) {
+    rows.forEach((r, ri) => {
       c.fields = r;
-      const x = Number(safe(item.xValue, c, lc, who)), y = Number(safe(s.def.value || '=0', { ...c, aggRows: [r] }, lc, who));
-      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      const rx = safe(item.xValue, c, lc, who), ry = safe(s.def.value || '=0', { ...c, aggRows: [r] }, lc, who);
+      if (blank(rx) || blank(ry)) { missing.add(ri); return; }
+      const x = Number(rx), y = Number(ry);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) { missing.add(ri); return; }
       let size = 1;
-      if (type === 'bubble') { size = Number(safe(s.def.size || '=1', { ...c, aggRows: [r] }, lc, who)); if (!Number.isFinite(size) || size <= 0) continue; }
+      if (type === 'bubble') { size = Number(safe(s.def.size || '=1', { ...c, aggRows: [r] }, lc, who)); if (!Number.isFinite(size) || size <= 0) return; }
       pts.push({ x, y, size });
-    }
+    });
     return { s, pts, i: si };
   });
+  if (missing.size) lc.warn(`${who}: ${missing.size} of ${rows.length} rows have no x or y value and are not drawn`);
+  return sets;
 }
 
 function paintXY(type, g) {
