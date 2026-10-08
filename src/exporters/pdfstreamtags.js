@@ -37,7 +37,7 @@ export function createStreamTagger(w) {
     page(window) { mcids = []; rows = new Map(); els = []; last = null; links = false; win = window; },
     /**
      * The marked content that opens item it: a structure element's MCID, or an artifact; null for a link.
-     * @param {any} it @param {number} H
+     * @param {any} it
      */
     open(it) {
       if (it.t === 'link' || it.t === 'bookmark') return null;

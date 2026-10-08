@@ -53,7 +53,6 @@ const esc = (/** @type {number} */ b) => (b === 0x28 || b === 0x29 || b === 0x5c
 export function createPdfStream(sink, opt) {
   const { fontStore } = opt;
   let pos = 0, nextNum = 1;
-  /** @type {number[]} byte offset per object number */
   // where each object is: kind 1 at byte loc, 2 in object stream loc at index idx, 3 waiting for its object stream;
   // typed arrays (6 bytes an object): a tagged file has an element per table cell
   let kind = new Uint8Array(4096), loc = new Uint32Array(4096), idx = new Uint8Array(4096);
