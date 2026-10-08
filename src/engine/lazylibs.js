@@ -7,6 +7,17 @@
  * through every re-exported file). Elsewhere (a bundler, a browser): import(), which a bundler may split into a chunk.
  */
 /** @typedef {typeof import('pdf-lib')} PdfLib */
+/* the classes as types too (JSDoc such as @param {PDFDocument} doc in the modules that import these) */
+/** @typedef {import('pdf-lib').PDFDocument} PDFDocument */
+/** @typedef {import('pdf-lib').PDFName} PDFName */
+/** @typedef {import('pdf-lib').PDFString} PDFString */
+/** @typedef {import('pdf-lib').PDFHexString} PDFHexString */
+/** @typedef {import('pdf-lib').PDFRawStream} PDFRawStream */
+/** @typedef {import('pdf-lib').PDFStream} PDFStream */
+/** @typedef {import('pdf-lib').PDFArray} PDFArray */
+/** @typedef {import('pdf-lib').PDFDict} PDFDict */
+/** @typedef {import('pdf-lib').PDFNumber} PDFNumber */
+/** @typedef {import('pdf-lib').PDFBool} PDFBool */
 
 /** @type {any} @pdf-lib/fontkit */ export let fontkit;
 /** @type {PdfLib['PDFDocument']} */ export let PDFDocument;

@@ -17,8 +17,9 @@ export const col = (c) => {
 };
 export const BLACK = { color: rgb(0, 0, 0), opacity: 1, rgb: '0 0 0' };
 /** pdf-lib's rgb() and PDFHexString.fromText(s).toString(), here so the streaming writer never loads pdf-lib */
+/** @param {number} red @param {number} green @param {number} blue @returns {import('pdf-lib').RGB} */
 function rgb(red, green, blue) { return { type: /** @type {any} */ ('RGB'), red, green, blue }; }
-const hexText = (s) => { let h = '<FEFF'; for (let i = 0; i < s.length; i++) h += s.charCodeAt(i).toString(16).toUpperCase().padStart(4, '0'); return `${h}>`; };
+const hexText = (/** @type {string} */ s) => { let h = '<FEFF'; for (let i = 0; i < s.length; i++) h += s.charCodeAt(i).toString(16).toUpperCase().padStart(4, '0'); return `${h}>`; };
 // numbers in content streams: positions to 1/100 pt, colours and matrices finer
 export const n2 = (v) => Math.round(v * 100) / 100;
 export const n3 = (v) => Math.round(v * 1000) / 1000;
