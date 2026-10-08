@@ -17,6 +17,7 @@ import { javaString, jsString, javaFormatString } from './javafmt.js';
  * @property {string} [locale]
  * @property {string} [currency]
  * @property {string} [nonFinite]    how Infinity and NaN print: undefined (as SSRS), "blank" or "error"
+ * @property {string} [grouping]     digit grouping of numbers: undefined (the locale's rule, as Intl), "always" or "never"
  */
 
 const ROOTS = { fields: 'Fields', parameters: 'Parameters', globals: 'Globals', parent: 'Parent', theme: 'Theme', partproperties: 'PartProperties' };

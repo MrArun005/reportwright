@@ -143,6 +143,11 @@ export const isoDate = (d, tz) => formatDate(d, 'yyyy-MM-dd', undefined, tz);
 
 /* ------------------------------------------------------------------ reading numbers */
 const sepCache = new Map();
+/** The decimal sign for Latin digits: the locale's own when it is ASCII (de: ','), else '.' (ar-SA: U+066B would sit between Latin digits). */
+function latinDecimal(locale) {
+  const d = separators(locale).dec;
+  return /^[.,]$/.test(d) ? d : '.';
+}
 /** The locale's decimal and grouping separators (en-US: "." and ","; de-DE: "," and "."). */
 export function separators(locale) {
   const l = locale || 'en-US';
@@ -250,7 +255,7 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
  * locale names a country ("en-IN" → ₹, as a .NET culture does), else none, and "C" then shows the number alone.
  * @param {any} value
  * @param {string|undefined|null} fmt
- * @param {{locale?: string, currency?: string, timeZone?: string, nonFinite?: string, fmtMemo?: Map<string, Map<any, string>>}} [opt] fmtMemo: a render's memo of formatted dates
+ * @param {{locale?: string, currency?: string, timeZone?: string, nonFinite?: string, grouping?: string, fmtMemo?: Map<string, Map<any, string>>}} [opt] fmtMemo: a render's memo of formatted dates
  */
 export function formatValue(value, fmt, opt = {}) {
   if (value == null) return '';
@@ -280,7 +285,7 @@ export function formatValue(value, fmt, opt = {}) {
     // No format: as VB CStr, up to 15 significant digits with the locale's decimal sign and no grouping (a year stays
     // 2026). Use N0/N2/C2 to group. A safe integer reads the same.
     if (!fmt) return Number.isSafeInteger(value) && !Object.is(value, -0) ? String(value) : general(value, 15, 'E', undefined, locale);
-    return numberFn(fmt, locale, opt.currency || currencyOf(opt.locale))(value);
+    return numberFn(fmt, locale, opt.currency || currencyOf(opt.locale), opt.grouping)(value);
   }
   if (typeof value === 'boolean') return value ? 'True' : 'False';
   if (typeof value === 'object') return plainText(value);
@@ -322,11 +327,11 @@ function memoFor(all, kind, fmt, locale) {
 }
 /** @type {Map<string, (v: number) => string>} a number format, compiled once per format, locale and currency */
 const numberFns = new Map();
-function numberFn(fmt, locale, currency) {
-  const key = `${fmt}\u0001${locale}\u0001${currency ?? ''}`;
+function numberFn(fmt, locale, currency, grouping) {
+  const key = `${fmt}\u0001${locale}\u0001${currency ?? ''}\u0001${grouping ?? ''}`;
   let fn = numberFns.get(key);
   if (!fn) {
-    fn = compileNumber(fmt, locale, currency);
+    fn = compileNumber(fmt, locale, currency, grouping);
     if (key.length <= 128) { // formats from expressions can be any text: only short keys, at most 2,000
       if (numberFns.size >= 2000) numberFns.clear();
       numberFns.set(key, fn);
@@ -336,14 +341,15 @@ function numberFn(fmt, locale, currency) {
 }
 const BIDI_MARKS = /[\u200e\u061c]/g;
 /** @returns {(value: number) => string} for a finite number */
-function compileNumber(fmt, locale, currency) {
+function compileNumber(fmt, locale, currency, grouping) {
   const m = /^([CcNnFfPpDdEeXxGgRr])(\d{0,2})$/.exec(fmt);
   if (m) {
     const k = m[1].toUpperCase();
     const d = m[2] === '' ? null : Number(m[2]);
     // signDisplay 'negative': a value that rounds to zero shows 0.0, never -0.0
-    // .NET groups every number above 999 (es-ES 1.234,50); CLDR's "auto" leaves 1234,50 below 10,000 (N13)
-    const fixed = { minimumFractionDigits: d ?? 2, maximumFractionDigits: d ?? 2, signDisplay: 'negative', useGrouping: 'always' };
+    // grouping as Intl's CLDR rules by default (es-ES: 1234,50 and 12.345,50); the report can force 'always' or 'never' (N13)
+    const useGrouping = grouping === 'always' ? 'always' : grouping === 'never' ? false : 'auto';
+    const fixed = { minimumFractionDigits: d ?? 2, maximumFractionDigits: d ?? 2, signDisplay: 'negative', useGrouping };
     switch (k) {
       // ja-JP JPY comes out as the full-width ￥ (U+FFE5), which the bundled fonts lack; .NET ja-JP writes ¥ (U+00A5)
       case 'C': { const f = nf(locale, currency ? { style: 'currency', currency, ...fixed } : fixed); return (v) => f.format(v).replace(/\uFFE5/g, '\u00A5'); }
@@ -351,7 +357,7 @@ function compileNumber(fmt, locale, currency) {
       case 'F': { const f = nf(locale, { ...fixed, useGrouping: false }); return (v) => f.format(v); } // the locale's decimal sign, no grouping
       case 'P': { const f = nf(locale, { style: 'percent', ...fixed }); return (v) => f.format(v).replace(BIDI_MARKS, ''); }
       case 'D': return (value) => { const t = Math.trunc(value); return (t < 0 ? '-' : '') + String(Math.abs(t)).padStart(d ?? 0, '0'); };
-      case 'E': { const dec = separators(locale).dec; return (v) => scientific(v, d ?? 6, m[1] === 'e' ? 'e' : 'E', 3).replace('.', dec); }
+      case 'E': { const dec = latinDecimal(locale); return (v) => scientific(v, d ?? 6, m[1] === 'e' ? 'e' : 'E', 3).replace('.', dec); }
       case 'X': return (value) => {
         const t = Math.trunc(value);
         const h = t >= 0 ? t.toString(16) : BigInt.asUintN(t >= -(2 ** 31) ? 32 : 64, BigInt(t)).toString(16); // two's complement, as Int32 / Int64
@@ -379,7 +385,7 @@ function general(v, p, e, shortest, locale) {
   if (v === 0) return '0';
   const [mant, exp] = (shortest ? Number(shortest) : v).toExponential(shortest ? undefined : Math.min(p, 100) - 1).split('e');
   const x = Number(exp), digits = mant.includes('.') ? mant.replace(/\.?0+$/, '') : mant;
-  const dec = locale ? separators(locale).dec : '.';
+  const dec = locale ? latinDecimal(locale) : '.';
   if (x > -5 && x < p) return nf('en-US', { maximumFractionDigits: 20, maximumSignificantDigits: 21, useGrouping: false }).format(Number(`${digits}e${x}`)).replace('.', dec);
   return `${digits.replace('.', dec)}${e}${x < 0 ? '-' : '+'}${String(Math.abs(x)).padStart(2, '0')}`;
 }
@@ -515,7 +521,7 @@ function formatShape(s, x, minus, locale) {
       out.unshift(dch || (t.k === '0' ? '0' : ''));
     }
     const frac = fp.slice(0, s.decimals).replace(new RegExp(`0{0,${s.decimals - s.minDec}}$`), '');
-    body = out.join('') + (frac ? separators(locale).dec + frac : '');
+    body = out.join('') + (frac ? latinDecimal(locale) + frac : '');
     minus = minus && r !== 0;
   } else {
     body = nf(locale, { useGrouping: s.grouping && !s.groups, minimumFractionDigits: s.minDec, maximumFractionDigits: s.decimals, minimumIntegerDigits: Math.max(1, s.minInt) }).format(x);

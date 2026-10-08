@@ -608,6 +608,8 @@ export interface Report {
   currency?: string;
   /** how Infinity and NaN (1/0, 0/0) print: as SSRS (default), blank, or #Error */
   nonFinite?: 'blank' | 'error';
+  /** digit grouping of numbers: as the locale's rule (default, Intl/CLDR: es-ES 1234,50), always, or never */
+  grouping?: 'always' | 'never';
   page?: {
     size?: 'A4' | 'A3' | 'A5' | 'Letter' | 'Legal' | 'Pageless' | string | [number, number];
     orientation?: 'portrait' | 'landscape';

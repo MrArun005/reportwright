@@ -618,6 +618,7 @@ A ReportWright report definition (pagewright/report@1).
 | `locale` | string |  |  |
 | `currency` | string |  | ISO 4217 code for C formats; none: the locale's own currency (en-IN: INR) |
 | `nonFinite` | "blank" \\| "error" |  | how Infinity and NaN (1/0, 0/0) print: as SSRS (default), blank, or #Error |
+| `grouping` | "always" \\| "never" |  | digit grouping of numbers: as the locale's rule (default, Intl/CLDR: es-ES 1234,50), always, or never |
 | `page` | { size, orientation, margins, width, height } |  |  |
 | `parameters` | [Parameter](#parameter)[] |  |  |
 | `parameterLayout` | any |  |  |

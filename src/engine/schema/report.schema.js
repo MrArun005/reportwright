@@ -2310,6 +2310,13 @@ export const REPORT_SCHEMA = {
      ],
      "description": "how Infinity and NaN (1/0, 0/0) print: as SSRS (default), blank, or #Error"
     },
+    "grouping": {
+     "enum": [
+      "always",
+      "never"
+     ],
+     "description": "digit grouping of numbers: as the locale's rule (default, Intl/CLDR: es-ES 1234,50), always, or never"
+    },
     "page": {
      "type": "object",
      "properties": {
