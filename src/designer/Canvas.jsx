@@ -16,7 +16,7 @@ import { TextMeasurer, finishText } from '@/engine/text/measure.js';
 import { layoutItems } from '@/engine/layout.js';
 import { shiftItems } from '@/engine/items/paint.js';
 import { resolveParameters } from '@/engine/index.js';
-import { fontStore, customFonts, loadModelFonts } from '@/viewer/engineClient.js';
+import { loadFontStore, customFonts, loadModelFonts } from '@/viewer/engineClient.js';
 import { withPartProps } from '@/engine/items/index.js';
 import { t } from '@/i18n/index.js';
 import { themeContext, findItemNamed } from '@/engine/reuse.js';
@@ -566,7 +566,7 @@ let measurer = null;
  * Used by the canvas and by the chart gallery.
  */
 export async function paintItemSvg(shape, def, sample, api = activeStore()) { // api: the designer's store (its reused reports)
-  const store = fontStore();
+  const store = await loadFontStore();
   await Promise.all([store.load(), customFonts()]);
   if (shape.type === 'barcode' || hasType(shape.items, 'barcode')) await loadBarcodes();
   measurer ||= new TextMeasurer(store);

@@ -55,6 +55,9 @@ self.onmessage = async (e) => {
     const model = await render(def, { ...opts, sources }); // the data the first pages loaded, not fetched again
     send(id, { ok: true }, model);
   } catch (err) {
+    // a library file next to this one (engine.worker.bwip.js) did not load, e.g. the worker was copied alone: the page
+    // renders this report on the main thread, where its chunk loads
+    if (err instanceof TypeError && /import/i.test(err.message)) { self.postMessage({ id, mainThread: err.message }); return; }
     self.postMessage({ id, ok: false, error: { message: err.message, missingParameters: err.missingParameters || null } });
   }
 };

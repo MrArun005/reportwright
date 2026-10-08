@@ -9,7 +9,7 @@ import { loadSample } from './DataPanel.jsx';
 import { Dialog } from './ui.jsx';
 import { render, resolveParameters } from '@/engine/index.js';
 import { pageToSvg } from '@/exporters/svg.js';
-import { fontStore, origin } from '@/viewer/engineClient.js';
+import { loadFontStore, origin } from '@/viewer/engineClient.js';
 
 /** The same data with every list cut to its first `n` items: enough for a trial render, small to send. */
 const trim = (v, n = 200) => (Array.isArray(v) ? v.slice(0, n).map(x => trim(x, n)) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, trim(x, n)])) : v);
@@ -44,7 +44,7 @@ export default function AskAi({ onClose }) {
       let preview = null;
       try {
         const params = resolveParameters(out.definition, {}, { lenient: true });
-        const model = await render(out.definition, { fontStore: fontStore(), parameters: params, sources: sources ? Object.fromEntries((out.definition.dataSources || []).map(s => [s.name, sources[s.name] ?? (s.type === 'json' ? s.data : [])])) : undefined, baseUrl: origin(), fetch: reportFetch(origin()) }); // the ReportWright server, also when embedded
+        const model = await render(out.definition, { fontStore: await loadFontStore(), parameters: params, sources: sources ? Object.fromEntries((out.definition.dataSources || []).map(s => [s.name, sources[s.name] ?? (s.type === 'json' ? s.data : [])])) : undefined, baseUrl: origin(), fetch: reportFetch(origin()) }); // the ReportWright server, also when embedded
         preview = { html: pageToSvg(model.pages[0], model.width, model.height), pages: model.pages.length };
       } catch (e) { preview = { error: e.message }; }
       setSt({ state: 'done', next: out.definition, warnings: out.warnings || [], diff: changes(def, out.definition), preview });

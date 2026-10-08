@@ -5,6 +5,7 @@ All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. T
 ## Unreleased
 
 ### Fixed
+- **Viewer first load (A1.6):** the embedded viewer no longer loads the engine (layout, expressions, charts, maps, barcodes) on the main thread up front: the worker renders, and the engine loads on the main thread on the first export, parameter list or main-thread render. First load 827 → 652 KB gzipped (about 262 KB once fontkit loads lazily); the render worker 908 → 579 KB, with bwip-js in `engine.worker.bwip.js` beside it, imported for a report with a barcode (a worker copied alone renders such a report on the main thread). `tests/engine/b10-bundle-size.test.js` holds both to a budget.
 - **Streaming tickets, from the 0.12.1 retest (N23-N29):** `exportPdfStream` with `encrypt` or `prepare` and `sqlRows` no
   longer fails with "Save the report first" (the rows are gathered for the whole-model render); a misspelled option
   key (`encrpyt`, `windw`) warns with "Did you mean" in `render()`'s model warnings, `exportPdfStream`'s result and
