@@ -170,11 +170,16 @@ and stays in memory for the export: the export's own memory stays flat beside it
 many.
 
 - **Sorts and groups.** A table sort or groups put the rows in order first. In Node the sort spills to the system temp
-  folder (`spill: { dir, maxMB }`; 2 GB at most), so memory stays flat; `spill: false`, and in a
-  browser, it is in memory (all the rows: measured about 1.3 KB a row, so keep browser exports under about 100,000 sorted or
-  grouped rows). When the source already gives the rows in the report's order (`order by region, type` for groups by
-  region then type), pass `presorted: true`: nothing is sorted or held, each row is checked against the one before as it
-  passes, and a row out of order stops the export with an error.
+  folder (`spill: { dir, maxMB }`; 2 GB at most), so memory stays flat: the sort holds about 8 MB of rows while reading
+  and 4 MB while merging, whatever the row count (past that many sorted runs, groups of them are merged on disk first).
+  `spill: false`, and in a browser, it is in memory (all the rows: measured about 1.3 KB a row, so keep browser exports
+  under about 100,000 sorted or grouped rows).
+- **Big grouped reports: sort at the source.** When the source already gives the rows in the report's order (`ORDER BY
+  region, type` for groups by region then type), pass `presorted: true`: nothing is sorted or held, each row is checked
+  against the one before as it passes, and a row out of order stops the export with an error. It is the cheapest way to
+  a large grouped report: a tester's 1,000,000-row grouped ledger (0.13.0, Node 22, 2 vCPU Linux) peaked at 293 MB
+  presorted and 386 MB sorted by the engine; the engine's sort holds less since 0.13.1, but it still reads and writes
+  every row to disk once more.
 - **parallel: N** (Node, off by default) lays out and paints with N worker threads; the file is byte for byte the same.
   Each thread loads the engine and fonts and lays out its own windows: about 150–300 MB a thread (measured: 260 MB
   serial, 590 MB with 2, 890 MB with 4, for 100,000 rows). It helps only with idle cores and a report whose layout, not

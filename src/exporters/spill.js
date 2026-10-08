@@ -1,8 +1,9 @@
 // @ts-check
 // An external merge sort for streaming renders (docs/research/STREAMING-1M.md §4, §7): records are sorted in runs of
-// 20,000 records in memory (run), each run written to a temp file as framed batches (v8.serialize keeps Dates and numbers), then
-// the runs are merged k ways with a small heap, reading one batch per run at a time. Memory: one run while writing, one
-// batch per run while merging. Disk: the records once. PW_SPILL_MAX_MB (default 2048) caps one render's temp files,
+// about runMB (8 MB, at most 10,000 records) in memory, each run written to a temp file as framed batches of 200 records
+// (v8.serialize keeps Dates and numbers), then the runs are merged k ways with a small heap, reading one batch per run
+// at a time; k is what mergeMB (4 MB) holds a batch of, and more runs than that are merged in groups first. Memory: one
+// run while writing, mergeMB while merging, whatever the row count. Disk: the records once, more with group merges. PW_SPILL_MAX_MB (default 2048) caps one render's temp files,
 // PW_SPILL_TOTAL_MB (default 8192) all of this process's at once (every render thread: a shared counter, the bytes
 // actually written). The files live in a private folder (0700, files 0600) os.tmpdir()/pw-spill-<pid>-<thread>-*,
 // removed when the sort ends, fails or is abandoned, when the thread exits, and at the server's start (sweepAtBoot:
@@ -61,81 +62,118 @@ export function sweepAtBoot(root = node('node:os').tmpdir()) {
   } catch { /* no folder */ }
 }
 
-export function spillSorter({ run = 20000, runBytes = 24 * 1048576, frame = 1000, maxMB = 2048, totalMB = 8192, dir: root = node('node:os').tmpdir(), staleMs = 180000 } = {}) {
+const MB = 1048576;
+/**
+ * A sorter factory for planStream (engine/stream.js): sorter(cmp) → { push, drain, close }. The engine closes it
+ * when the rows end, fail or are abandoned (a client that left): its files go then.
+ * Memory, whatever the row count (N44): one run in memory while reading (runMB of records, about, and at most run
+ * records), and while merging at most mergeMB of batches (frame records a run): past that many runs, groups of runs
+ * are first merged into longer ones on disk (one more pass over those records), so the merge never holds a batch from
+ * every run of a large sort.
+ * @param {{ runMB?: number, mergeMB?: number, run?: number, runBytes?: number, frame?: number, maxMB?: number, totalMB?: number, dir?: string, staleMs?: number }} [o]
+ */
+export function spillSorter({ runMB = 8, mergeMB = 4, run = 10000, runBytes = runMB * MB, frame = 200, maxMB = 2048, totalMB = 8192, dir: root = node('node:os').tmpdir(), staleMs = 180000 } = {}) {
   const fs = node('node:fs'), path = node('node:path'), v8 = node('node:v8'), { threadId } = node('node:worker_threads');
   // a folder that is not there (or not writable) says so now, not as a raw mkdtemp error when the first run is written
   try { fs.accessSync(root, fs.constants.W_OK); } catch { throw Object.assign(new Error(`spill.dir "${root}" does not exist or is not writable`), { status: 400 }); }
   sweepStale(root, staleMs);
   /** @param {(a: any, b: any) => number} cmp */
   return (cmp) => {
-    let buf = [], dir = null, written = 0, held = 0, takenKB = 0; // held: the run in memory, about (a run ends at run records or runBytes)
+    // held: the run in memory, about (a run ends at run records or runBytes); onDisk: the bytes of the run files there now
+    let buf = [], dir = null, onDisk = 0, held = 0, takenKB = 0, seen = 0, seenBytes = 0, made = 0, passes = 0;
     /** @type {string[]} */
     const runs = [];
-    const flush = async () => {
-      if (!buf.length) return;
-      buf.sort(cmp);
+    /** @type {Map<string, number>} */
+    const sizes = new Map();
+    /** The process-wide budget, in whole KB, kept equal to the bytes on disk: reserved (an atomic add) before the
+     *  bytes are written, then checked; over it, the sort is refused. Two threads racing past the limit both see it and
+     *  both fail (closed, never open). Given back as run files are merged away, and at close. */
+    const account = () => {
+      const kb = Math.ceil(onDisk / 1024) - takenKB;
+      if (!kb) return;
+      const { cells, cell } = spillShared();
+      Atomics.add(cells, cell, kb); takenKB += kb;
+      if (kb > 0 && usedKB() > totalMB * 1024) throw Object.assign(new Error(`The server's temporary disk for sorting is in use (PW_SPILL_TOTAL_MB, ${totalMB} MB). Try again shortly, or filter the data.`), { status: 503 });
+    };
+    /** Writes sorted batches of records to a new run file. @param {AsyncIterable<any[]> | Iterable<any[]>} batches */
+    const writeRun = async (batches) => {
       if (!dir) {
         dir = fs.mkdtempSync(path.join(root, `pw-spill-${process.pid}-${threadId}-`)); // mode 0700
         live.add(dir);
         if (!hooked) { hooked = true; process.once('exit', sweep); }
       }
-      const file = path.join(dir, `run-${runs.length}`);
+      const file = path.join(dir, `run-${made++}`);
       const fh = await fs.promises.open(file, 'wx', 0o600);
+      let size = 0;
+      sizes.set(file, 0);
       try {
-        for (let i = 0; i < buf.length; i += frame) {
-          const body = v8.serialize(buf.slice(i, i + frame));
-          written += body.length + 4;
-          if (written > maxMB * 1048576) throw Object.assign(new Error(`The sort needs more than ${maxMB} MB of temporary disk (PW_SPILL_MAX_MB). Filter the data, or sort it at the source.`), { status: 413 });
-          // the process-wide budget, in whole KB: reserved (an atomic add) before the bytes are written, then checked;
-          // over it, the reservation is taken back and the sort refused. Two threads racing past the limit both see
-          // it and both fail (closed, never open). Given back at close.
-          const kb = Math.ceil(written / 1024) - takenKB;
-          if (kb > 0) {
-            const { cells, cell } = spillShared();
-            Atomics.add(cells, cell, kb); takenKB += kb;
-            if (usedKB() > totalMB * 1024) throw Object.assign(new Error(`The server's temporary disk for sorting is in use (PW_SPILL_TOTAL_MB, ${totalMB} MB). Try again shortly, or filter the data.`), { status: 503 });
-          }
+        for await (const b of batches) {
+          const body = v8.serialize(b);
+          size += body.length + 4; onDisk += body.length + 4; sizes.set(file, size);
+          if (onDisk > maxMB * MB) throw Object.assign(new Error(`The sort needs more than ${maxMB} MB of temporary disk (PW_SPILL_MAX_MB). Filter the data, or sort it at the source.`), { status: 413 });
+          account();
           const head = Buffer.alloc(4);
           head.writeUInt32LE(body.length);
           await fh.write(head);
           await fh.write(body);
         }
       } finally { await fh.close(); }
-      runs.push(file);
-      buf = []; held = 0;
+      return file;
     };
+    const flush = async () => {
+      if (!buf.length) return;
+      buf.sort(cmp);
+      const b = buf;
+      buf = []; held = 0;
+      runs.push(await writeRun((function* () { for (let i = 0; i < b.length; i += frame) yield b.slice(i, i + frame); })()));
+    };
+    /** The records of some runs, merged (a binary min-heap of [record, reader]). @param {string[]} files */
+    async function* merge(files) {
+      const readers = await Promise.all(files.map(openRun));
+      try {
+        /** @type {[any, any][]} */
+        const heap = [];
+        const less = (i, j) => cmp(heap[i][0], heap[j][0]) < 0;
+        const swap = (i, j) => { const t = heap[i]; heap[i] = heap[j]; heap[j] = t; };
+        const up = (i) => { while (i > 0) { const p = (i - 1) >> 1; if (!less(i, p)) break; swap(i, p); i = p; } };
+        const down = (i) => { for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && less(l, m)) m = l; if (r < heap.length && less(r, m)) m = r; if (m === i) return; swap(i, m); i = m; } };
+        for (const rd of readers) { const x = await rd.next(); if (x !== undefined) { heap.push([x, rd]); up(heap.length - 1); } }
+        while (heap.length) {
+          const [x, rd] = heap[0];
+          yield x;
+          const n = await rd.next();
+          if (n === undefined) { const last = /** @type {[any, any]} */ (heap.pop()); if (heap.length) { heap[0] = last; down(0); } }
+          else { heap[0] = [n, rd]; down(0); }
+        }
+      } finally { await Promise.all(readers.map(r => r.close())); }
+    }
+    /** @param {AsyncIterable<any>} it */
+    async function* framed(it) { let b = []; for await (const x of it) { b.push(x); if (b.length >= frame) { yield b; b = []; } } if (b.length) yield b; }
     return {
       /** @param {any} r */
-      async push(r) { buf.push(r); held += approx(r); if (buf.length >= run || held >= runBytes) await flush(); },
+      async push(r) { const n = approx(r); buf.push(r); held += n; seen++; seenBytes += n; if (buf.length >= run || held >= runBytes) await flush(); },
       async *drain() {
         if (!runs.length) { const all = buf; buf = []; all.sort(cmp); for (let i = 0; i < all.length; i++) { yield all[i]; all[i] = null; } return; }
         await flush();
-        const readers = await Promise.all(runs.map(openRun));
-        try {
-          // a binary min-heap of [record, reader]
-          /** @type {[any, any][]} */
-          const heap = [];
-          const less = (i, j) => cmp(heap[i][0], heap[j][0]) < 0;
-          const swap = (i, j) => { const t = heap[i]; heap[i] = heap[j]; heap[j] = t; };
-          const up = (i) => { while (i > 0) { const p = (i - 1) >> 1; if (!less(i, p)) break; swap(i, p); i = p; } };
-          const down = (i) => { for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && less(l, m)) m = l; if (r < heap.length && less(r, m)) m = r; if (m === i) return; swap(i, m); i = m; } };
-          for (const rd of readers) { const x = await rd.next(); if (x !== undefined) { heap.push([x, rd]); up(heap.length - 1); } }
-          while (heap.length) {
-            const [x, rd] = heap[0];
-            yield x;
-            const n = await rd.next();
-            if (n === undefined) { const last = /** @type {[any, any]} */ (heap.pop()); if (heap.length) { heap[0] = last; down(0); } }
-            else { heap[0] = [n, rd]; down(0); }
-          }
-        } finally { await Promise.all(readers.map(r => r.close())); }
+        // runs merged at once: as many as mergeMB holds a batch of (2 to 64)
+        const fanIn = Math.max(2, Math.min(64, Math.floor(mergeMB * MB / (frame * Math.max(64, seenBytes / seen)))));
+        while (runs.length > fanIn) {
+          const group = runs.splice(0, fanIn);
+          runs.push(await writeRun(framed(merge(group))));
+          for (const f of group) { onDisk -= sizes.get(f) || 0; sizes.delete(f); await fs.promises.rm(f, { force: true }); }
+          account();
+          passes++;
+        }
+        yield* merge(runs);
       },
       async close() {
         buf = [];
         if (takenKB) { const { cells, cell } = spillShared(); Atomics.sub(cells, cell, takenKB); takenKB = 0; }
         if (dir) { const d = dir; dir = null; live.delete(d); await fs.promises.rm(d, { recursive: true, force: true }).catch(() => {}); }
       },
-      /** Tests: the runs written so far. */
+      /** Tests: the runs on disk now, and the merges of groups of runs before the last. */
       get runs() { return runs.length; },
+      get passes() { return passes; },
     };
   };
 }
