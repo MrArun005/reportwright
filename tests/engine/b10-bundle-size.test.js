@@ -10,8 +10,8 @@ import { root, common, readable, ENTRIES, WORKER, bwipApart, firstLoad } from '.
 // gzip -9 KB of the readable (unminified) ES modules, as build-embed.mjs prints them. A ratchet: lower it when the
 // first load shrinks, never raise it. 652 KB on b10-bundle alone; fontkit (1.1 MB, in the first load only because
 // src/engine/text/fonts.js imports it at its top) going lazy (b10-perf) takes it to about 262 KB: lower this then.
-const FIRST_LOAD_KB = 660;
-const WORKER_KB = 585; // the render worker without bwip-js (was 908 KB)
+const FIRST_LOAD_KB = 270; // 262 KB with pdf-lib and fontkit lazy (was 827 KB)
+const WORKER_KB = 590; // the render worker without bwip-js (was 908 KB)
 
 const OUT = path.join(root, 'public/embed/esm');
 let viewer, worker;
