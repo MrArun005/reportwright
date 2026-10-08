@@ -1,0 +1,116 @@
+{
+  "$schema": "pagewright/report@1",
+  "name": "Combo chart on two axes",
+  "page": {
+    "size": "A4",
+    "margins": [
+      36,
+      36,
+      36,
+      36
+    ]
+  },
+  "dataSources": [
+    {
+      "name": "sales",
+      "type": "rest",
+      "url": "/api/sample/sales/2026",
+      "method": "GET"
+    }
+  ],
+  "dataSets": [
+    {
+      "name": "Sales",
+      "source": "sales",
+      "path": "$.rows",
+      "fields": [
+        {
+          "name": "year",
+          "type": "number"
+        },
+        {
+          "name": "month",
+          "type": "number"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "city",
+          "type": "string"
+        },
+        {
+          "name": "product",
+          "type": "string"
+        },
+        {
+          "name": "loans",
+          "type": "number"
+        },
+        {
+          "name": "disbursed",
+          "type": "number"
+        },
+        {
+          "name": "npa",
+          "type": "number"
+        }
+      ]
+    }
+  ],
+  "sections": {
+    "body": {
+      "items": [
+        {
+          "type": "chart",
+          "w": 523,
+          "h": 300,
+          "chartType": "column",
+          "dataSet": "Sales",
+          "category": "=DateSerial(2000, Fields.month, 1)",
+          "series": [
+            {
+              "name": "Disbursed",
+              "value": "=Sum(Fields.disbursed)"
+            },
+            {
+              "name": "Loans",
+              "value": "=Sum(Fields.loans)",
+              "type": "line",
+              "axis": "secondary"
+            }
+          ],
+          "legend": "bottom",
+          "valueFormat": "N0",
+          "title": "Disbursed and loans by month, 2026",
+          "categoryFormat": "MMM",
+          "categorySort": "asc",
+          "axes": {
+            "y": {
+              "format": "#,##0,,\"M\"",
+              "title": "Disbursed, ₹ million"
+            },
+            "y2": {
+              "title": "Loans",
+              "format": "N0"
+            }
+          },
+          "id": "mhly8y97",
+          "name": "Chart1",
+          "x": 0,
+          "y": 8
+        }
+      ],
+      "height": 320
+    },
+    "pageHeader": {
+      "height": 0,
+      "items": []
+    },
+    "pageFooter": {
+      "height": 0,
+      "items": []
+    }
+  }
+}

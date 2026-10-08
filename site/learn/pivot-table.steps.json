@@ -1,0 +1,10 @@
+[
+  "Under **Data**, add a REST data source `sales` with URL `/api/sample/sales/2026`, then a data set `Sales` with path `$.rows`; **Detect fields** finds 432 rows.",
+  "Drag **Matrix** onto the Body and click **Pivot wizard…** at the bottom of the gallery.",
+  "In the wizard press **Rows** next to Region, then next to City; **Cols** next to Product; **Values** next to Disbursed. Keep **Totals** ticked and click **Insert pivot**.",
+  "With the matrix selected, set X to `0`, Row header width to `90` and Column width to `70`. Under **Rows**, in 1. Region tick **Drill-down: show a toggle**.",
+  "Under **Values**, set the Disbursed value's Format to `N0`. Pick `disbursed` again in Field to add and click **Add**; on the new value set Label `Share`, Show **% of row** and Format `P1` (the added value starts with `N0`, which would print a share as 0 or 1).",
+  "Two values under three products and a total make eight columns. Click the empty grey canvas around the page: the Inspector shows the report's own properties. Set Orientation to **Landscape** under Page.",
+  "Click **Preview**. Each region shows its cities and a total row; click ▼ next to North to close it to one line. Share is each product's part of the row's total.",
+  "Type `Pivot table` over *New report* at the top left and press **Save**."
+]
