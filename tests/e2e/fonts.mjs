@@ -100,6 +100,8 @@ for (const [file, weight] of [['Poppins-Regular.ttf', 400], ['Poppins-SemiBold.t
   r = await fetch(`${BASE}/api/fonts`, { method: 'POST', headers: { origin: BASE }, body: form });
   assert.equal(r.status, 201, await r.clone().text());
 }
+// a render sees an upload within FONT_SYNC_MS (renderer.js, 2 s): the pool's workers re-read the list on that clock
+await new Promise(r => setTimeout(r, 2500));
 r = await fetch(`${BASE}/api/reports/loan-statement-hindi/pdf`);
 assert.equal(r.status, 200);
 const proof = await pdfFonts(Buffer.from(await r.arrayBuffer()));
