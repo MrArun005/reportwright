@@ -220,3 +220,30 @@ export async function exportPdfStream(def, options, sink) {
   return r;
 }
 export { tableFor, matrixFor } from '../../src/designer/tableGen.js';
+
+import { exportDocxStream as exportDocxStreamFull, exportXlsxStream as exportXlsxStreamFull } from '../../src/exporters/officestream.js';
+/** exportPdfStream's sorter for the Office streams: a sort spills its rows to disk in Node. @param {any} o */
+const officeOpts = (o = {}) => {
+  const { fonts, fontStore, spill, ...rest } = o;
+  const sorter = rest.sorter || (spill !== false && canSpill() ? spillSorter({ ...(spill?.dir ? { dir: spill.dir } : {}), ...(spill?.maxMB ? { maxMB: spill.maxMB } : {}) }) : undefined);
+  return { ...rest, sorter, fontStore: fonts || fontStore || defaultFontStore() };
+};
+/**
+ * Report definition → .docx written to a sink as its pages are laid out (exportPdfStream's sink, timeoutMs, signal,
+ * window, maxRows, sqlRows and spill): a flowing table report is never held whole; any other report is rendered whole
+ * and written in one piece (the result's why says why).
+ * @param {any} def @param {RenderOptions & { fonts?: FontStore, title?: string, lang?: string, figures?: boolean, timeoutMs?: number, signal?: AbortSignal,
+ *   window?: number, maxRows?: number, spill?: false | { dir?: string, maxMB?: number } }} options
+ * @param {{ write(bytes: Uint8Array): any, once?: (ev: string, cb: () => void) => any }} sink not closed
+ * @returns {Promise<{ streamed: boolean, pages?: number, warnings: string[], why?: string }>}
+ */
+export function exportDocxStream(def, options, sink) { return exportDocxStreamFull(def, officeOpts(options), sink); }
+/**
+ * Report definition → .xlsx written to a sink row by row (exportPdfStream's sink, timeoutMs, signal, maxRows, sqlRows
+ * and spill); any other report is rendered whole and written in one piece (the result's why says why).
+ * @param {any} def @param {RenderOptions & { fonts?: FontStore, title?: string, currency?: string, formulas?: boolean, timeoutMs?: number, signal?: AbortSignal,
+ *   maxRows?: number, spill?: false | { dir?: string, maxMB?: number } }} options
+ * @param {{ write(bytes: Uint8Array): any, once?: (ev: string, cb: () => void) => any }} sink not closed
+ * @returns {Promise<{ streamed: boolean, rows?: number, warnings: string[], why?: string }>}
+ */
+export function exportXlsxStream(def, options, sink) { return exportXlsxStreamFull(def, officeOpts(options), sink); }

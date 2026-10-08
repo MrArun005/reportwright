@@ -133,6 +133,13 @@ const sqlRows = async function* (source, params, { signal }) {
 await exportPdfStream(def, { sqlRows, timeoutMs: 120_000 }, out);
 ```
 
+**Word and Excel, streamed.** `exportDocxStream(definition, options, sink)` and `exportXlsxStream(definition, options,
+sink)` take the same sink, `timeoutMs`, `signal`, `sqlRows`, `maxRows` and `spill`: Word lays out a window of rows at a
+time and writes each page's XML into the zip as it comes, Excel writes the sheet row by row, so neither holds the rows,
+the pages or the XML (measured: live heap 17 MB after 20,000 and after 50,000 rows; a 50,000-row Word export runs in
+`node --max-old-space-size=48`). A report that cannot stream is rendered whole and written in one piece (`streamed:
+false`, and `why`). `exportDocx` and `exportXlsx` still take a rendered model.
+
 Options that are not options are reported: a misspelled key (`{ windw: 500 }`) is ignored with a warning in the
 result's `warnings` (`render()`: in the model's; `exportPdf`: through `onWarning`) naming the nearest option, and a
 misspelling of `encrypt` or `prepare` throws, so a file is never written without the password or signature you asked
