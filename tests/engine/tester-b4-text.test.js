@@ -107,3 +107,32 @@ describe('10: no JavaScript values in the output', () => {
     expect(all).toContain('-25000000000000000000000');
   });
 });
+
+describe('12, 13: a short text shrinks before it is cut or wraps alone', () => {
+  it('a KPI value and a label in fixed boxes shrink instead of ending in …', async () => {
+    const def = report([
+      { type: 'textbox', name: 'Kpi', x: 0, y: 0, w: 70, h: 18, canGrow: false, value: '₹9,99,99,999 crore', style: { fontSize: 13 } },
+      { type: 'textbox', name: 'Lbl', x: 0, y: 30, w: 60, h: 12, canGrow: false, value: "Named 'Main Branch'", style: { fontSize: 8 } },
+    ]);
+    const out = await render(def, { fontStore });
+    for (const re of [/₹9,99,99,999/, /Named/]) {
+      const t = find(out, re);
+      expect(joined(t)).not.toMatch(/…/);
+      expect(t.size).toBeLessThan(re.source.includes('9') ? 13 : 8);
+    }
+    expect(joined(find(out, /Named/)).replace('⏎', ' ')).toBe("Named 'Main Branch'");
+  });
+  it('a one-line label a little too wide shrinks to stay on one line, like its neighbours', async () => {
+    const def = report([{ type: 'textbox', name: 'L', x: 0, y: 0, w: 60, h: 10, value: 'Collection efficiency', style: { fontSize: 6.8, padding: 0 } }]);
+    const out = await render(def, { fontStore });
+    const t = find(out, /Collection/);
+    expect(t.lines.length).toBe(1);
+    expect(t.size).toBeGreaterThanOrEqual(6.8 * 0.85 - 0.01);
+  });
+  it('a long paragraph still wraps and grows', async () => {
+    const def = report([{ type: 'textbox', name: 'P', x: 0, y: 0, w: 70, h: 10, value: 'The quick brown fox jumps over the lazy dog again', style: { fontSize: 8 } }]);
+    const t = find(await render(def, { fontStore }), /quick/);
+    expect(t.lines.length).toBeGreaterThan(1);
+    expect(t.size).toBe(8);
+  });
+});

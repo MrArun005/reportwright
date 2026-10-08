@@ -87,22 +87,37 @@ function paintTextbox(item, lc, ctx, forcedH) {
   let tl = layoutTextLines(text, st, layoutW, lc.m);
   // shrink to fit: the largest size, in 0.5pt steps down to 4pt, at which the text fits the designed height.
   // A binary search, so a long text costs about 5 layouts, not 16.
-  if (item.shrinkToFit && tl.needed > layoutH + GROW_TOLERANCE) {
-    const size0 = Number(st.fontSize) || 9;
-    const min = Math.max(1, Number(item.minFontSize) || SHRINK_DEFAULTS.minFontSize);
-    // a definition can come from anyone with an API key: never more than 4,096 candidate sizes (12 layouts)
-    const asked = Number(item.shrinkStep) > 0 ? Number(item.shrinkStep) : SHRINK_DEFAULTS.step;
-    const step = Math.max(asked, 0.05, (size0 - min) / 4096);
+  const size0 = Number(st.fontSize) || 9;
+  /** The largest size down to `min` at which fits(layout) holds, or null. */
+  const shrink = (min, fits, step) => {
     const steps = Number.isFinite(size0) ? Math.max(0, Math.floor((size0 - min) / step + 1e-9)) : 0;
     const at = (i) => { const s2 = { ...st, fontSize: Math.max(min, size0 - step * (i + 1)) }; return { s2, t2: layoutTextLines(text, s2, layoutW, lc.m) }; };
     let lo = 0, hi = steps - 1, best = null;
     while (lo <= hi) {
       const mid = Math.floor((lo + hi) / 2);
       const c = at(mid);
-      if (c.t2.needed <= layoutH + GROW_TOLERANCE) { best = c; hi = mid - 1; } else lo = mid + 1;
+      if (fits(c.t2)) { best = c; hi = mid - 1; } else lo = mid + 1;
     }
-    if (!best && steps > 0) best = at(steps - 1); // still too long at the minimum: draw at the minimum, the box ellipsises
+    return { best, last: steps > 0 ? () => at(steps - 1) : null };
+  };
+  const fitsBox = (t) => t.needed <= layoutH + GROW_TOLERANCE;
+  if (item.shrinkToFit && !fitsBox(tl)) {
+    const min = Math.max(1, Number(item.minFontSize) || SHRINK_DEFAULTS.minFontSize);
+    // a definition can come from anyone with an API key: never more than 4,096 candidate sizes (12 layouts)
+    const asked = Number(item.shrinkStep) > 0 ? Number(item.shrinkStep) : SHRINK_DEFAULTS.step;
+    const r2 = shrink(min, fitsBox, Math.max(asked, 0.05, (size0 - min) / 4096));
+    const best = r2.best || r2.last?.(); // still too long at the minimum: draw at the minimum, the box ellipsises
     if (best) { st = best.s2; tl = best.t2; }
+  } else if (!item.shrinkToFit && !rot && forcedH == null && String(text).length <= 80 && tl.lines.length > 1) {
+    // a short text (a KPI value, a label) shrinks before it is cut: in a box that cannot grow, down to half its size
+    // so it fits; in one that can, a one-line box keeps it on one line when 15% smaller does it (a label as wide as
+    // its neighbours' does not wrap alone)
+    const fixed = item.canGrow === false && !fitsBox(tl);
+    const oneLine = !fixed && layoutH < 2 * tl.lh + tl.pad[0] + tl.pad[2] - GROW_TOLERANCE;
+    if (fixed || oneLine) {
+      const { best } = shrink(Math.max(SHRINK_DEFAULTS.minFontSize, size0 * (fixed ? 0.5 : 0.85)), fixed ? fitsBox : (t) => t.lines.length === 1, 0.25);
+      if (best) { st = best.s2; tl = best.t2; }
+    }
   }
   let h = item.h;
   if (forcedH == null) {
