@@ -161,9 +161,9 @@ export function evaluate(n, ctx) {
     case 'id': {
       const lower = n.name.toLowerCase();
       if (ctx.locals && Object.hasOwn(ctx.locals, lower)) return ctx.locals[lower];
-      const r = ROOTS[lower];
+      const r = Object.hasOwn(ROOTS, lower) ? ROOTS[lower] : undefined; // own names only: "constructor" is not a root
       if (r) return { __root: r };
-      if (lower in CONSTANTS) return CONSTANTS[lower];
+      if (Object.hasOwn(CONSTANTS, lower)) return CONSTANTS[lower];
       throw new ExprError(`Unknown name "${n.name}". Use Fields.x, Parameters.x, Globals.x or Parent.x`, n.p);
     }
     case 'member': {
@@ -207,7 +207,9 @@ function member(o, prop, ctx) {
   }
   if (o == null) return null;
   if (prop === 'Value') return o;
-  if (typeof o === 'object') return o[prop] ?? null;
+  // an inherited name (constructor, __proto__, toString) is no member of the value: an error, never the JS function
+  if (prop in Object(o) && !Object.hasOwn(Object(o), prop)) throw new ExprError(`The value has no member ${prop}`);
+  if (typeof o === 'object') return Object.hasOwn(o, prop) ? o[prop] ?? null : null;
   return null;
 }
 
@@ -1209,7 +1211,7 @@ function call(n, ctx) {
     return null;
   }
   // aggregates
-  if (name in AGG) {
+  if (Object.hasOwn(AGG, name)) {
     if (!args.length) throw new ExprError(`${n.name} needs an expression, e.g. ${n.name}(Fields.amount)`, n.p);
     const rows = scopeRows(args, 1, ctx, n.name);
     // memoised per render (ctx.aggCache) for each (row array, call): a group total asked in every detail row is
@@ -1244,7 +1246,7 @@ function call(n, ctx) {
     // AggregateIf(condition, "Sum", expr[, scope])
     if (args.length < 3) throw new ExprError('AggregateIf needs 3 arguments: AggregateIf(condition, "Sum", expr)', n.p);
     const fn = String(evaluate(args[1], ctx)).toLowerCase();
-    if (!(fn in AGG)) throw new ExprError(`AggregateIf: unknown aggregate "${fn}"`, n.p);
+    if (!Object.hasOwn(AGG, fn)) throw new ExprError(`AggregateIf: unknown aggregate "${fn}"`, n.p);
     const rows = scopeRows(args, 3, ctx, n.name);
     const ok = mapRows(rows, args[0], ctx);
     return AGG[fn](aggValues(rows.filter((_, i) => truthy(ok[i])), args[2], ctx), ctx);
@@ -1260,7 +1262,7 @@ function call(n, ctx) {
   if (name === 'runningvalue') {
     if (args.length < 2) throw new ExprError('RunningValue needs 2 arguments: RunningValue(expr, "Sum")', n.p);
     const fn = String(evaluate(args[1], ctx)).toLowerCase();
-    if (!(fn in AGG)) throw new ExprError(`RunningValue: unknown function "${fn}"`, n.p);
+    if (!Object.hasOwn(AGG, fn)) throw new ExprError(`RunningValue: unknown function "${fn}"`, n.p);
     let rows;
     // no scope (or Nothing): the data region, as RDL does, so a detail row runs on across groups and a footer has the
     // total (N11); the region's run is the same path as an explicit scope
@@ -1334,7 +1336,7 @@ function call(n, ctx) {
     for (const r of rows) { c.fields = r; if (cmpVal(evaluate(args[1], c), key) === 0) return evaluate(args[2], c); }
     return null;
   }
-  const f = FUNCTIONS[name];
+  const f = Object.hasOwn(FUNCTIONS, name) ? FUNCTIONS[name] : undefined;
   if (f) return f(ctx, ...args.map(a => evaluate(a, ctx)));
   return callCustom(n, name, ctx);
 }
@@ -1346,7 +1348,7 @@ const MAX_FUNCTIONS = 200, MAX_FN_PARAMS = 32;
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const RESERVED = new Set(['rank', 'jaspervalue', 'iif', 'switch', 'choose', 'lookup', 'lookupset', 'previous', 'groupindex', 'level', 'countrows', 'rownumber',
   'runningvalue', 'distinctsum', 'aggregateif', 'code', 'fields', 'parameters', 'globals', 'parent', 'and', 'or', 'not', 'true', 'false', 'null', 'nothing']);
-const builtin = (lower) => RESERVED.has(lower) || lower in FUNCTIONS || lower in AGG || lower in CONSTANTS;
+const builtin = (lower) => RESERVED.has(lower) || Object.hasOwn(FUNCTIONS, lower) || Object.hasOwn(AGG, lower) || Object.hasOwn(CONSTANTS, lower);
 
 /**
  * Compile-on-call table of the report's functions. One per render: it also counts calls.
@@ -1457,9 +1459,11 @@ function callCustom(n, name, ctx) {
     const [f, ...rest] = n.args.map(a => evaluate(a, ctx));
     return netFormat(S(f), rest, ctx);
   }
-  if (n.obj && !(n.obj.type === 'id' && n.obj.name.toLowerCase() === 'code') && METHODS[name]) {
+  const viaValue = n.obj && !(n.obj.type === 'id' && n.obj.name.toLowerCase() === 'code');
+  if (viaValue && Object.hasOwn(METHODS, name)) {
     return FUNCTIONS[METHODS[name]](ctx, evaluate(n.obj, ctx), ...n.args.map(a => evaluate(a, ctx)));
   }
+  if (viaValue && n.name in Object.prototype) throw new ExprError(`The value has no member ${n.name}`, n.p);
   const viaCode = !!n.obj;
   if (viaCode && !(n.obj.type === 'id' && n.obj.name.toLowerCase() === 'code')) throw new ExprError(`"${n.name}(…)" after "." is not supported; report functions are called as Code.${n.name}(…)`, n.p);
   const table = ctx.functions;
