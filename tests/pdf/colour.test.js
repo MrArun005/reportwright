@@ -47,23 +47,23 @@ describe('spot colours (Separation)', () => {
   it("a named spot goes through pdfName, with a tint transform to its alternate; tints; used for fill, stroke, text", async () => {
     const t = await ops((p, pdf) => {
       const s = pdf.spotColor('PANTONE 185 C', cmyk(0, 0.91, 0.76, 0));
-      expect(s.name).toBe('PANTONE-185-C');
+      expect(s.name).toBe('PANTONE 185 C');
       p.rect(0, 0, 10, 10, { fill: s });
       p.rect(0, 0, 10, 10, { stroke: s.tint(0.25) });
-      const r = pdf.spotColor('Brand / Red <</JS>>', '#cc0000');
+      const r = pdf.spotColor('Brand / Red <</JS>>', '#CC0000');
       p.fill(p.path().rect(0, 0, 50, 50), { fill: r.tint(0.5) });
     });
-    expect(t).toContain('[/Separation /PANTONE-185-C /DeviceCMYK << /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 0.91 0.76 0] /N 1 >>]');
-    expect(t).toContain('[/Separation /Brand---Red----JS-- /DeviceRGB << /FunctionType 2 /Domain [0 1] /C0 [1 1 1] /C1 [0.8 0 0] /N 1 >>]');
+    expect(t).toContain('[/Separation /PANTONE#20185#20C /DeviceCMYK << /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 0.91 0.76 0] /N 1 >>]');
+    expect(t).toContain('[/Separation /Brand#20#2F#20Red#20#3C#3C#2FJS#3E#3E /DeviceRGB << /FunctionType 2 /Domain [0 1] /C0 [1 1 1] /C1 [0.8 0 0] /N 1 >>]');
     expect(t).toMatch(/\/C1 cs 1 scn\n/);
     expect(t).toMatch(/\/C1 CS 0.25 SCN\n/);
     expect(t).toMatch(/\/C2 cs 0.5 scn\n/);
   });
   it('one name, one definition; bad names, alternates and tints throw; forged and foreign spots are refused', async () => {
-    await expect(ops((p, pdf) => { pdf.spotColor('X', '#f00'); pdf.spotColor('X', '#00f'); })).rejects.toThrow(/already defined/);
-    await expect(ops((p, pdf) => { pdf.spotColor('X', '#f00'); pdf.spotColor('X', '#f00'); })).resolves.toBeTruthy();
-    await expect(ops((p, pdf) => pdf.spotColor('', '#f00'))).rejects.toThrow(/1–127/);
-    await expect(ops((p, pdf) => pdf.spotColor('X'.repeat(128), '#f00'))).rejects.toThrow(/1–127/);
+    await expect(ops((p, pdf) => { pdf.spotColor('X', '#F00'); pdf.spotColor('X', '#00f'); })).rejects.toThrow(/already defined/);
+    await expect(ops((p, pdf) => { pdf.spotColor('X', '#F00'); pdf.spotColor('X', '#F00'); })).resolves.toBeTruthy();
+    await expect(ops((p, pdf) => pdf.spotColor('', '#F00'))).rejects.toThrow(/1–127/);
+    await expect(ops((p, pdf) => pdf.spotColor('X'.repeat(128), '#F00'))).rejects.toThrow(/1–127/);
     await expect(ops((p, pdf) => pdf.spotColor('X', 'red'))).rejects.toThrow(/alternate is a device colour/);
     await expect(ops((p, pdf) => pdf.spotColor('X', 0).tint(2))).rejects.toThrow(/tint is 0–1/);
     await expect(ops((p) => p.rect(0, 0, 1, 1, { fill: Object.freeze({ type: 'spot', name: 'X', tint() {} }) }))).rejects.toThrow(/Not a colour/);
@@ -74,7 +74,7 @@ describe('spot colours (Separation)', () => {
   it.skipIf(!HAS.poppler)("renders as its alternate (CMYK and RGB), tints lighter", async () => {
     const out = await toBytes(async (pdf) => {
       const p = pdf.addPage({ width: 100, height: 100 });
-      const red = pdf.spotColor('Red', '#ff0000'), cyan = pdf.spotColor('Cyan ink', cmyk(1, 0, 0, 0));
+      const red = pdf.spotColor('Red', '#FF0000'), cyan = pdf.spotColor('Cyan ink', cmyk(1, 0, 0, 0));
       p.rect(0, 0, 50, 50, { fill: red });
       p.rect(50, 0, 50, 50, { fill: red.tint(0.5) });
       p.rect(0, 50, 50, 50, { fill: cyan });
@@ -118,11 +118,11 @@ describe('gradients in every colour space', () => {
     const t = await ops(async (p, pdf) => {
       const s = pdf.spotColor('Gold', cmyk(0, 0.2, 0.8, 0.1));
       p.fill(p.path().rect(0, 0, 10, 10), { fill: p.linearGradient(0, 0, 10, 0, [[0, 0], [1, 1]]) });
-      p.fill(p.path().rect(0, 0, 10, 10), { fill: p.linearGradient(0, 0, 10, 0, [[0, 0.5], [1, '#ff0000']]) });
+      p.fill(p.path().rect(0, 0, 10, 10), { fill: p.linearGradient(0, 0, 10, 0, [[0, 0.5], [1, '#FF0000']]) });
       p.fill(p.path().rect(0, 0, 10, 10), { fill: p.linearGradient(0, 0, 10, 0, [[0, cmyk(1, 0, 0, 0)], [1, [0, 0, 1, 0]]]) });
       p.fill(p.path().rect(0, 0, 10, 10), { fill: p.radialGradient(5, 5, 0, 5, 5, 5, [[0, s.tint(0)], [1, s]]) });
       if (SRGB) { const icc = await pdf.iccColorSpace(SRGB); p.shade(p.linearGradient(0, 0, 10, 0, [[0, icc.color(1, 0, 0)], [1, icc.color(0, 0, 1)]])); }
-      expect(() => p.linearGradient(0, 0, 1, 0, [[0, '#f00'], [1, cmyk(0, 0, 0, 1)]])).toThrow(/share one colour space/);
+      expect(() => p.linearGradient(0, 0, 1, 0, [[0, '#F00'], [1, cmyk(0, 0, 0, 1)]])).toThrow(/share one colour space/);
       expect(() => p.linearGradient(0, 0, 1, 0, [[0, s], [1, pdf.spotColor('Silver', 0.7)]])).toThrow(/share one colour space/);
     });
     expect(t).toContain('/ShadingType 2 /ColorSpace /DeviceGray /Coords [0 0 10 0] /Function << /FunctionType 2 /Domain [0 1] /C0 [0] /C1 [1] /N 1 >>');
@@ -148,15 +148,15 @@ describe('PDF/A output-intent rules (ISO 19005-2 6.2.4.3)', () => {
     await expect(ops((p, pdf) => pdf.spotColor('S', cmyk(0, 1, 0, 0)), { pdfa: true })).rejects.toThrow(msg);
     await expect(ops((p) => p.linearGradient(0, 0, 1, 0, [[0, [0, 0, 0, 0]], [1, [0, 0, 0, 1]]]), { pdfa: true })).rejects.toThrow(msg);
     if (sharp) {
-      const jpg = await sharp({ create: { width: 8, height: 8, channels: 3, background: '#f00' } }).toColourspace('cmyk').jpeg().toBuffer();
+      const jpg = await sharp({ create: { width: 8, height: 8, channels: 3, background: '#F00' } }).toColourspace('cmyk').jpeg().toBuffer();
       await expect(ops(async (p, pdf) => pdf.embedImage(jpg), { pdfa: true })).rejects.toThrow(msg);
     }
   });
   it.skipIf(!CMYK)('with a CMYK output intent, DeviceCMYK is allowed and DeviceRGB refused (colours, gradients, images)', async () => {
     const o = { pdfa: { outputIntent: CMYK } };
     const msg = /with a CMYK output intent, RGB colour \(DeviceRGB\) is not allowed/;
-    await expect(ops((p) => p.rect(0, 0, 1, 1, { fill: '#ff0000' }), o)).rejects.toThrow(msg);
-    await expect(ops((p) => p.linearGradient(0, 0, 1, 0, [[0, 0], [1, '#fff']]), o)).rejects.toThrow(msg);
+    await expect(ops((p) => p.rect(0, 0, 1, 1, { fill: '#FF0000' }), o)).rejects.toThrow(msg);
+    await expect(ops((p) => p.linearGradient(0, 0, 1, 0, [[0, 0], [1, '#FFf']]), o)).rejects.toThrow(msg);
     await expect(ops(async (p, pdf) => pdf.embedImage(png({ w: 2, h: 2, type: 2, depth: 8, px: () => [1, 2, 3] })), o)).rejects.toThrow(msg);
     await expect(ops(async (p, pdf) => pdf.embedImage(png({ w: 2, h: 2, type: 3, depth: 1, px: () => [0], palette: [[0, 0, 0]] })), o)).rejects.toThrow(msg);
     const t = await ops((p) => { p.rect(0, 0, 1, 1, { fill: cmyk(0, 0, 0, 1) }); p.fill(p.path().rect(0, 0, 1, 1), { fill: 0.5, opacity: 0.5 }); }, o);
@@ -172,7 +172,7 @@ describe('PDF/A output-intent rules (ISO 19005-2 6.2.4.3)', () => {
     const out = await toBytes(async (pdf) => {
       const font = await pdf.embedFont(INTER);
       const p = pdf.addPage();
-      const icc = await pdf.iccColorSpace(SRGB), spot = pdf.spotColor('PANTONE 185 C', '#e4002b');
+      const icc = await pdf.iccColorSpace(SRGB), spot = pdf.spotColor('PANTONE 185 C', '#E4002b');
       p.text('Colours', { x: 40, y: 40, font, size: 14, color: icc.color(0.2, 0.2, 0.6) });
       p.rect(40, 70, 100, 40, { fill: spot.tint(0.6), stroke: spot });
       p.rect(160, 70, 100, 40, { fill: 'rgb(30, 120, 200)' });

@@ -5,7 +5,7 @@ import { PDFDocument } from 'pdf-lib';
 import { toBytes } from '../../packages/pdf/src/index.js';
 import { buildSfnt } from '../../packages/pdf/src/fonts/subset.js';
 import { sfntTables, parseFont } from '../../packages/pdf/src/fonts/truetype.js';
-import { pdfName } from '../../packages/pdf/src/core/serialize.js';
+import { pdfName, fontName } from '../../packages/pdf/src/core/serialize.js';
 import { INTER, HAS, pdffonts, pdftotext, directory, latin, run, save } from './tools.js';
 
 const EVIL = 'A /OpenAction << /S /JavaScript /JS (app.alert(1)) >>';
@@ -54,7 +54,7 @@ describe('hostile fonts', () => {
   it('unsafe characters become "-", an empty name is "Font", long names are cut to 63', async () => {
     expect(latin(await draw(withName('()<>[]{}/% \u00e9'), 'Hi', { subset: false }))).toMatch(/\/BaseFont \/------------ /);
     expect(latin(await draw(withName(''), 'Hi', { subset: false }))).toMatch(/\/BaseFont \/Font /);
-    expect(pdfName('')).toBe('/X'); expect(pdfName(null, 'Font')).toBe('/Font'); expect(pdfName('a b/c#d')).toBe('/a-b-c-d');
+    expect(fontName('')).toBe('/Font'); expect(fontName(null, 'X')).toBe('/X'); expect(fontName('a b/c#d')).toBe('/a-b-c-d');
     const long = latin(await draw(withName('N'.repeat(500)), 'Hi', { subset: false }));
     expect(long).toMatch(new RegExp(`/BaseFont /${'N'.repeat(63)} `));
   });
