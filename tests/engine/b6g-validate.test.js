@@ -65,7 +65,9 @@ describe('validate: silent mistakes', () => {
   it('an unknown page size (A44) is flagged, suggesting A4', () => {
     expectWarning(validate(base({ page: { size: 'A44', margins: 36 } })).warnings, '"A44"', '"A4"');
   });
-  it('a page size with a trailing space ("A4 ") is flagged, suggesting the trimmed name', () => {
-    expectWarning(validate(base({ page: { size: 'A4 ', margins: 36 } })).warnings, '"A4 "', 'A4');
+  // resolvePage matches a padded or differently cased name ("A4 ", "a4") to A4, so it is not flagged. The old
+  // expectation (a warning) predates that: the engine used to ignore the padding and fall back to A4 silently.
+  it('a page size with a trailing space ("A4 ") resolves to A4 and is not flagged', () => {
+    expect(validate(base({ page: { size: 'A4 ', margins: 36 } })).warnings.some(w => /page size/i.test(w))).toBe(false);
   });
 });
