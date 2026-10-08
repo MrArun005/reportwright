@@ -2,6 +2,12 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
+## Unreleased
+
+### Fixed
+- **Polar chart without `xValue`** (the angle) says so in validate() and the render ("a polar chart needs xValue"), instead of
+  "N of N rows have no x or y value". A valid polar chart gets no warnings.
+
 ## 0.12.1 — 2026-10-08
 
 ### Fixed

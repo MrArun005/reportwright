@@ -736,7 +736,8 @@ function rowPoints(type, g) {
     return { s, pts, i: si };
   });
   const missing = rows.length - drawn.size; // rows no series draws
-  if (missing > 0) lc.warn(`${who}: ${missing} of ${rows.length} rows have no x or y value and are not drawn`);
+  // a polar chart without xValue has no angle at all: validate() says so, and this would only repeat it per row
+  if (missing > 0 && !(type === 'polar' && item.xValue == null)) lc.warn(`${who}: ${missing} of ${rows.length} rows have no x or y value and are not drawn`);
   return sets;
 }
 
