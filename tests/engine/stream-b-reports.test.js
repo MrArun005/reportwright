@@ -17,6 +17,7 @@ const local = (def) => (def.dataSources || []).every(s => s.type === 'json' || (
 describe('streaming CSV on the shipped reports', () => {
   it('byte for byte the model path wherever a report streams', async () => {
     let streamed = 0, checked = 0;
+    const streamedNames = [];
     const why = {};
     for (const f of files) {
       const def = read(f);
@@ -32,8 +33,12 @@ describe('streaming CSV on the shipped reports', () => {
       await writeCsvStream(plan, (s) => { got += s; }, { locale: def.locale, currency: def.currency });
       expect(got, f).toBe(want);
       streamed++;
+      streamedNames.push(f);
     }
     console.log(`[stream] ${streamed} of ${checked} local-data reports stream; the rest fall back:`, why);
-    expect(streamed).toBeGreaterThan(3);
+    // The floor names a report rather than counting: reports/ also holds gitignored e2e output on a dev machine, so a
+    // count differs between a clean checkout and a working copy. parameter-editors is a shipped report with one table
+    // and no other data items, the shape that streams.
+    expect(streamedNames).toContain('parameter-editors.pw.json');
   }, 120000);
 });
