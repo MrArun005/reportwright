@@ -86,7 +86,8 @@ describe('accessible PDF (PDF/UA-1)', () => {
     expect(page.get(PDFName.of('Tabs')).toString()).toBe('/S');
     const annots = page.lookup(PDFName.of('Annots'), PDFArray).asArray().map(a => doc.context.lookup(a));
     for (const a of annots) expect(a.get(PDFName.of('StructParent'))).toBeTruthy();
-    expect(annots.find(a => a.get(PDFName.of('Subtype')).toString() === '/Link').lookup(PDFName.of('Contents')).decodeText()).toBe('https://example.com/');
+    // the link's visible text, not its URL (a screen reader says what the link shows)
+    expect(annots.find(a => a.get(PDFName.of('Subtype')).toString() === '/Link').lookup(PDFName.of('Contents')).decodeText()).toBe('Our site');
     fs.writeFileSync(path.join(tmp, 'form.pdf'), bytes);
   });
 
