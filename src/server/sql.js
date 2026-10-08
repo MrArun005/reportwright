@@ -635,9 +635,10 @@ const DRIVERS = {
           await c.query('START TRANSACTION READ ONLY');
           const take = count(limits);
           if (onRows) {
-            // streaming: the plain query protocol (values escaped by the driver; one statement: multipleStatements is
-            // off) read as a stream, 500 rows a batch, the socket paused while the reader is busy
-            const st = c.connection.query({ sql: text, values }).stream({ highWaterMark: 500 });
+            // streaming: the same server-side prepared statement as below (one statement, values bound by the server,
+            // the very text assertOneRead checked), read as a stream, 500 rows a batch, the socket paused while the
+            // reader is busy
+            const st = c.connection.execute({ sql: text, values }).stream({ highWaterMark: 500 });
             let batch = [];
             try {
               for await (const r of st) { take(r); batch.push(r); if (batch.length >= 500) { const b = batch; batch = []; await onRows(b); } }

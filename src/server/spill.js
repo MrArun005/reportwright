@@ -15,10 +15,25 @@ let hooked = false;
 const sweep = () => { for (const d of live) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* gone */ } } live.clear(); };
 
 /**
- * A sorter factory for planStream (engine/stream.js): sorter(cmp) → { push, drain, close }.
- * @param {{ run?: number, frame?: number, maxMB?: number, dir?: string }} [o]
+ * A sorter factory for planStream (engine/stream.js): sorter(cmp) → { push, drain, close }. The engine closes it
+ * when the rows end, fail or are abandoned (a client that left): its files go then.
+ * @param {{ run?: number, frame?: number, maxMB?: number, dir?: string, staleMs?: number }} [o]
  */
-export function spillSorter({ run = 20000, frame = 1000, maxMB = num('PW_SPILL_MAX_MB', 2048, { min: 1 }), dir: root = os.tmpdir() } = {}) {
+/** Spill folders left by a render that was stopped hard (a worker terminated at the time limit runs no cleanup):
+ *  any older than staleMs is removed when a new sort starts. */
+function sweepStale(root, staleMs) {
+  try {
+    for (const n of fs.readdirSync(root)) {
+      if (!n.startsWith('pw-spill-')) continue;
+      const d = path.join(root, n);
+      if (live.has(d)) continue;
+      try { if (Date.now() - fs.statSync(d).mtimeMs > staleMs) fs.rmSync(d, { recursive: true, force: true }); } catch { /* gone */ }
+    }
+  } catch { /* no folder */ }
+}
+
+export function spillSorter({ run = 20000, frame = 1000, maxMB = num('PW_SPILL_MAX_MB', 2048, { min: 1 }), dir: root = os.tmpdir(), staleMs = 2 * num('PW_RENDER_TIMEOUT_MS', 60000, { min: 1 }) + 60000 } = {}) {
+  sweepStale(root, staleMs);
   /** @param {(a: any, b: any) => number} cmp */
   return (cmp) => {
     let buf = [], dir = null, written = 0;

@@ -22,7 +22,10 @@ async function* textOf(body) {
 }
 async function* readerIter(rs) {
   const r = rs.getReader();
-  try { for (;;) { const { done, value } = await r.read(); if (done) return; yield value; } } finally { r.releaseLock?.(); }
+  let done = false;
+  try { for (;;) { const x = await r.read(); if (x.done) { done = true; return; } yield x.value; } }
+  // a reader that stopped early (the client left, a cap, an error): cancel the body, so the fetch stops too
+  finally { if (!done) await r.cancel().catch(() => {}); r.releaseLock?.(); }
 }
 
 /**
@@ -144,9 +147,9 @@ const tooBig = (n) => Object.assign(new Error(`The JSON data is larger than ${Ma
  * CSV records as they arrive: the same reading as parseCsv (a quote opens a quoted field only at the start of a field;
  * inside, a doubled quote is a quote and separators and line breaks are data; text after the closing quote is kept;
  * \n, \r\n and \r end a record), across chunk boundaries.
- * @param {any} body @param {{ sep: string, quote: string }} o @returns {AsyncGenerator<string[][]>}
+ * @param {any} body @param {{ sep: string, quote: string, maxFieldBytes?: number }} o @returns {AsyncGenerator<string[][]>}
  */
-export async function* csvRecords(body, { sep, quote }, batch = 1000) {
+export async function* csvRecords(body, { sep, quote, maxFieldBytes = 8 * 1048576 }, batch = 1000) {
   const S = sep.charCodeAt(0), Q = quote.charCodeAt(0);
   const START = 0, PLAIN = 1, QUOTED = 2, QQ = 3, CR = 4;
   let state = START, field = '', row = [], out = [];
@@ -177,6 +180,8 @@ export async function* csvRecords(body, { sep, quote }, batch = 1000) {
       if (row.length > MAX_COLUMNS) throw new Error(`A CSV row has more than ${MAX_COLUMNS} columns`);
     }
     if (state === PLAIN || state === QUOTED) field += t.slice(a);
+    // one field held across chunks (an unclosed quote takes the rest of the body): bounded
+    if (field.length > maxFieldBytes) throw Object.assign(new Error(`A field of the CSV data is larger than ${Math.round(maxFieldBytes / 1048576)} MB (an unclosed quote?)`), { status: 413 });
     if (out.length >= batch) { yield out; out = []; }
   }
   // the end: a record still open is the last one (an unclosed quote takes the rest)
@@ -188,14 +193,14 @@ export async function* csvRecords(body, { sep, quote }, batch = 1000) {
  * CSV rows as objects, as parseCsv gives them (startRow, the header row's names, blank lines dropped), in batches.
  * headerRow: false needs every row's width first: not read this way (null).
  * @param {any} body @param {{ separator?: string, quote?: string, headerRow?: boolean, startRow?: number }} src
- * @param {(v: any, d: string, what: string) => string} csvChar
+ * @param {(v: any, d: string, what: string) => string} csvChar @param {number} [maxFieldBytes]
  */
-export async function* csvRows(body, src, csvChar) {
+export async function* csvRows(body, src, csvChar, maxFieldBytes) {
   const sep = csvChar(src.separator, ',', 'separator'), quote = csvChar(src.quote, '"', 'quote');
   if (sep === quote) throw new Error('The CSV separator and quote must differ');
   let skip = Math.max(1, Math.floor(Number(src.startRow) || 1)) - 1;
   let names = null;
-  for await (const recs of csvRecords(body, { sep, quote })) {
+  for await (const recs of csvRecords(body, { sep, quote, maxFieldBytes })) {
     const rows = [];
     for (const r of recs) {
       if (skip > 0) { skip--; continue; }

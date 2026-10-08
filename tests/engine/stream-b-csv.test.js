@@ -95,3 +95,15 @@ describe('row-by-row sources', () => {
     expect(await all(csvRecords(chunks('a,b\n1,2\n', 1), { sep: ',', quote: '"' }))).toEqual([['a', 'b'], ['1', '2']]);
   });
 });
+
+describe('source caps (review)', () => {
+  const chunks = (s, n) => (async function* () { const b = new TextEncoder().encode(s); for (let i = 0; i < b.length; i += n) yield b.subarray(i, i + n); })();
+  it('CSV: an unclosed quote cannot take the whole stream into one field', async () => {
+    const t = 'a,b\n"' + 'x'.repeat(5000);
+    await expect((async () => { for await (const _ of csvRows(chunks(t, 100), {}, csvChar, 1000)) { /* read */ } })()).rejects.toMatchObject({ status: 413 });
+  });
+  it('rows: maxRows stops the read', async () => {
+    const plan = await planStream(CASES.plain, { format: 'csv', maxRows: 100 });
+    await expect((async () => { for await (const _ of plan.rows()) { /* read */ } })()).rejects.toMatchObject({ status: 413 });
+  });
+});

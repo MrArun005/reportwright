@@ -193,10 +193,10 @@ export async function planStream(def0, opts) {
       else if (src.type === 'csv') {
         const res = await sourceResponse(src, { params, globals: {}, dataSets: {}, fields: null, functions: functionTable(def) }, opts);
         if (src.headerRow === false) yield* inBatches(parseCsv(await res.text(), src)); // the width of every row first: read whole
-        else yield* csvRows(res.body ?? await res.text(), src, csvChar);
+        else yield* csvRows(res.body ?? await res.text(), src, csvChar, opts.maxJsonRowBytes);
       } else if (src.type === 'rest') {
         const res = await sourceResponse(src, { params, globals: {}, dataSets: {}, fields: null, functions: functionTable(def) }, opts);
-        yield* jsonRows(res.body ?? await res.text(), ds.path, { maxElementBytes: opts.maxJsonRowBytes, maxWholeBytes: opts.maxJsonWholeBytes });
+        yield* jsonRows(res.body ?? await res.text(), ds.path, { maxElementBytes: opts.maxJsonRowBytes ?? 8 * 1048576, maxWholeBytes: opts.maxJsonWholeBytes });
       } else { // sql
         const p = Object.fromEntries(Object.entries(params || {}).map(([k, x]) => [k, Array.isArray(x) ? x.map(day) : day(x)]));
         if (opts.sqlRows) yield* opts.sqlRows(src, p);

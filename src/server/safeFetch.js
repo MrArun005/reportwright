@@ -193,7 +193,8 @@ export async function safeFetch(input, init = {}, { allow = [], hops = 3, deadli
     // the body within the same deadline
     const bodyTimer = setTimeout(() => { capped.destroy(late()); res.destroy(); }, Math.max(0, deadline - Date.now()));
     bodyTimer.unref?.();
-    capped.on('close', () => clearTimeout(bodyTimer));
+    // a reader that stops early (a streaming render whose client left) cancels the body: the connection goes too
+    capped.on('close', () => { clearTimeout(bodyTimer); if (!res.complete) res.destroy(); });
     body = /** @type {any} */ (Readable.toWeb(capped));
   }
   const outHeaders = Object.entries(res.headers).flatMap(([k, v]) => (Array.isArray(v) ? v.map(x => [k, x]) : [[k, String(v)]]));

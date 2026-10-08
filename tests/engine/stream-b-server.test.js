@@ -188,3 +188,76 @@ for (const [kind, env, reader, series] of [
     }, 60000);
   });
 }
+
+describe('streaming keeps its caps (review)', () => {
+  const sqlDef = (query, extra = {}) => ({ $schema: 'pagewright/report@1', name: 'Cap', page: { size: 'A4' }, dataSources: [{ name: 's', type: 'sql', connection: 'big', query }], dataSets: [{ name: 'D', source: 's', ...extra }],
+    sections: { body: { items: [{ type: 'table', name: 'T', dataSet: 'D', x: 0, y: 0, w: 200, h: 40, columns: [{ width: 200 }], detail: [{ cells: [{ value: '=Fields.id' }] }] }] } } });
+  const drain = async (r) => (r.stream ? Buffer.from(await new Response(r.stream).arrayBuffer()).toString('utf8') : null);
+
+  it('SQL: the streaming path runs the same checks on the same text as runSql (no rewrite)', async () => {
+    for (const q of ['select 1; select 2', 'delete from t', 'select * from pragma_database_list', "select * from t where name = 'x' union select sqlite_version()"]) {
+      const a = await runSql({ connection: 'big', query: q }).then(() => 'ok', e => e.message);
+      const b = await (async () => { for await (const _ of runSqlRows({ connection: 'big', query: q })) { /* read */ } return 'ok'; })().catch(e => e.message);
+      expect(b, q).toBe(a);
+    }
+    // parameters stay bound values in both
+    const p = { n: "1 or 1=1" };
+    const a = await runSql({ connection: 'big', query: 'select count(*) as c from t where id = @n' }, p);
+    const rows = []; for await (const b of runSqlRows({ connection: 'big', query: 'select count(*) as c from t where id = @n' }, p)) rows.push(...b);
+    expect(rows).toEqual(a);
+    expect(a[0].c).toBe(0);
+  });
+  it('rows: PW_STREAM_MAX_ROWS stops a streaming render (413), before any output', async () => {
+    process.env.PW_RENDER_WORKERS = '0';
+    await stopPool();
+    const keep = streamLimits.rows;
+    streamLimits.rows = 1000;
+    try {
+      await expect(streamInPool({ def: sqlDef('select * from t'), opt: { format: 'csv', principal: OPEN } })).rejects.toMatchObject({ status: expect.any(Number) });
+    } finally { streamLimits.rows = keep; }
+  }, 60000);
+  it('time: a render past its deadline stops (504)', async () => {
+    const { planStream } = await import('../../src/engine/stream.js');
+    const plan = await planStream(sqlDef('select * from t'), { format: 'csv', sql: (s, p) => runSql(s, p), deadline: Date.now() - 1, timeoutMs: 1 });
+    await expect((async () => { for await (const _ of plan.rows()) { /* read */ } })()).rejects.toMatchObject({ status: 504 });
+  });
+  it('spill: the files go when the rows are abandoned, and stale ones from a stopped render are swept', async () => {
+    const stale = fs.mkdtempSync(path.join(dir, 'pw-spill-'));
+    fs.utimesSync(stale, new Date(Date.now() - 3600e3), new Date(Date.now() - 3600e3));
+    const s = spillSorter({ run: 100, dir, staleMs: 60000 })((x, y) => x - y);
+    expect(fs.existsSync(stale)).toBe(false);
+    for (let i = 0; i < 1000; i++) await s.push(1000 - i);
+    expect(fs.readdirSync(dir).filter(f => f.startsWith('pw-spill-')).length).toBe(1);
+    const it = s.drain();
+    await it.next(); await it.return(); await s.close();
+    expect(fs.readdirSync(dir).filter(f => f.startsWith('pw-spill-'))).toEqual([]);
+  });
+  it('a client that leaves cancels the stream down to the source: the HTTP fetch is closed', async () => {
+    const http = await import('node:http');
+    let closed = false, sent = 0;
+    const srv = http.createServer(async (req, res) => {
+      res.on('close', () => { closed = true; });
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.write('[');
+      for (let i = 0; i < 5e6 && !closed; i++) { const ok = res.write(`${i ? ',' : ''}{"id":${i},"name":"row ${i}"}`); sent++; if (!ok) await new Promise(r => res.once('drain', r)); }
+      res.end(']');
+    });
+    await new Promise(r => srv.listen(0, '127.0.0.1', r));
+    const url = `http://127.0.0.1:${srv.address().port}/rows`;
+    process.env.PW_RENDER_WORKERS = '0';
+    await stopPool();
+    const def = { $schema: 'pagewright/report@1', name: 'Gone', page: { size: 'A4' }, dataSources: [{ name: 's', type: 'rest', url }], dataSets: [{ name: 'D', source: 's' }],
+      sections: { body: { items: [{ type: 'table', name: 'T', dataSet: 'D', x: 0, y: 0, w: 200, h: 40, columns: [{ width: 100 }, { width: 100 }], detail: [{ cells: [{ value: '=Fields.id' }, { value: '=Fields.name' }] }] }] } } };
+    try {
+      const r = await streamInPool({ def, opt: { format: 'csv', principal: OPEN, self: new URL(url).origin } });
+      expect(r.stream).toBeDefined();
+      const rd = r.stream.getReader();
+      await rd.read(); await rd.read();
+      await rd.cancel();
+      for (let i = 0; i < 100 && !closed; i++) await new Promise(x => setTimeout(x, 50));
+      expect(closed).toBe(true);
+      expect(sent).toBeLessThan(5e6);
+      await r.done; // the render ended
+    } finally { srv.close(); }
+  }, 60000);
+});
