@@ -68,11 +68,11 @@ describe('painting', () => {
       p.fillAndStroke(sq, { fill: 1, stroke: 0 });
       p.fillAndStroke(sq, { fill: 1, stroke: 0, rule: 'evenodd' });
     });
-    expect(o).toContain('1 0 0 rg\n0 100 m 10 100 l 10 90 l 0 90 l h f\n');
-    expect(o).toContain('0.5 g\n0 100 m 10 100 l 10 90 l 0 90 l h f*\n');
-    expect(o).toContain('0 0 1 RG\n0 100 m 10 100 l 10 90 l 0 90 l h S\n');
-    expect(o).toMatch(/1 g\n0 G\n0 100 m .* h B\n/);
-    expect(o).toMatch(/ h B\*\n/);
+    expect(o).toContain('1 0 0 rg\nq 1 0 0 1 0 100 cm 0 0 m 10 0 l 10 -10 l 0 -10 l h f Q\n');
+    expect(o).toContain('0.5 g\nq 1 0 0 1 0 100 cm 0 0 m 10 0 l 10 -10 l 0 -10 l h f* Q\n');
+    expect(o).toContain('0 0 1 RG\nq 1 0 0 1 0 100 cm 0 0 m 10 0 l 10 -10 l 0 -10 l h S Q\n');
+    expect(o).toMatch(/1 g\n0 G\nq 1 0 0 1 0 100 cm 0 0 m .* h B Q\n/);
+    expect(o).toMatch(/ h B\* Q\n/);
     await expect(make((p) => p.fill(p.path().rect(0, 0, 1, 1), { rule: 'odd' }))).rejects.toThrow(/nonzero.*evenodd/);
     await expect(make((p) => p.fill('M0 0'))).rejects.toThrow(/Not a path/);
   });
@@ -92,7 +92,7 @@ describe('painting', () => {
       p.save(); p.clip(p.path().rect(0, 0, 50, 50), 'evenodd'); p.restore();
       p.save(); p.clip(p.path()); p.restore();
     });
-    expect(o).toContain('q\n0 100 m 50 100 l 50 50 l 0 50 l h W n\n0 100 m 100 100 l 100 0 l 0 0 l h f\nQ\n');
+    expect(o).toContain('q\n0 100 m 50 100 l 50 50 l 0 50 l h W n\nq 1 0 0 1 0 100 cm 0 0 m 100 0 l 100 -100 l 0 -100 l h f Q\nQ\n');
     expect(o).toContain('h W* n\nQ\n');
     expect(o).toContain('q\n0 0 0 0 re W n\nQ\n');
   });
@@ -102,9 +102,9 @@ describe('painting', () => {
       p.svgPath('M0 0 H10', { stroke: '#00ff00', width: 3 });
       p.svgPath('M0 0 V10 H10 z', { fill: 1, stroke: 0 });
     });
-    expect(o.startsWith('0 100 m 10 100 l 10 90 l h f\n')).toBe(true);
+    expect(o.startsWith('q 1 0 0 1 0 100 cm 0 0 m 10 0 l 10 -10 l h f Q\n')).toBe(true);
     expect(o).toContain('0 1 0 RG\n3 w\n0 100 m 10 100 l S\n');
-    expect(o).toMatch(/0 100 m 0 90 l 10 90 l h B\n/);
+    expect(o).toMatch(/q 1 0 0 1 0 100 cm 0 0 m 0 -10 l 10 -10 l h B Q\n/);
   });
 });
 
@@ -126,7 +126,7 @@ describe('transforms and save/restore', () => {
   it('a translated shape lands where the translation says (checked through the matrix and the operators)', async () => {
     const { ops: o } = await make((p) => { p.translate(30, 40); p.fill(p.path().rect(0, 0, 10, 10)); });
     // PDF point (0, 100) (the shape's top-left) through cm [1 0 0 1 30 -40] is (30, 60) = top-left (30, 40)
-    expect(o).toContain('1 0 0 1 30 -40 cm\n0 100 m 10 100 l 10 90 l 0 90 l h f\n');
+    expect(o).toContain('1 0 0 1 30 -40 cm\nq 1 0 0 1 0 100 cm 0 0 m 10 0 l 10 -10 l 0 -10 l h f Q\n');
   });
   it('restore without save throws; saves left open are closed at the page end with a warning', async () => {
     await expect(make((p) => p.restore())).rejects.toThrow(/no page\.save\(\)/);
@@ -162,7 +162,7 @@ describe('opacity and blend modes', () => {
     const t = latin(out);
     expect(t).toContain('/ExtGState << /GS1 << /Type /ExtGState /ca 0.5 /CA 0.5 >> /GS2 << /Type /ExtGState /ca 0.25 /CA 0.75 >> >>');
     expect(t.match(/\/GS1 gs/g)).toHaveLength(3);
-    expect(t).toContain('q\n/GS1 gs\n0 841.89 m');
+    expect(t).toContain('q\n/GS1 gs\n1 0 0 1 0 841.89 cm 0 0 m');
     const doc = await PDFDocument.load(out);
     const group = (i) => doc.getPage(i).node.get(PDFName.of('Group'))?.toString() ?? null;
     expect(group(0)).toMatch('/S /Transparency');
@@ -259,7 +259,7 @@ describe('tagged PDFs: figures and artifacts', () => {
       expect(() => p.figure({}, () => {})).toThrow(/needs alt text/);
     }, { title: 'T', tagged: { lang: 'en' }, compress: false, creationDate: DATE });
     const t = latin(out);
-    expect(t).toContain('/Artifact BMC\n0 841.89 m');
+    expect(t).toContain('/Artifact BMC\nq 1 0 0 1 0 841.89 cm 0 0 m');
     expect(t).toMatch(/EMC\n\/Figure <<\/MCID 0>> BDC\n1 0 0 rg\n/);
     const doc = await PDFDocument.load(out);
     const root = doc.catalog.lookup(PDFName.of('StructTreeRoot'), PDFDict);
