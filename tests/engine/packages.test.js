@@ -71,6 +71,17 @@ describe('npm packages', () => {
     fs.writeFileSync(path.join(tmp, 'pdfa.mjs'), "import { render, defaultFontStore, exportPdf, blankReport } from '@reportwright/engine'; import fs from 'node:fs'; const fonts = defaultFontStore(); fs.writeFileSync('a.pdf', await exportPdf(await render(blankReport(), { fontStore: fonts }), { fonts, pdfa: true }));");
     execFileSync(process.execPath, ['pdfa.mjs'], { cwd: tmp, stdio: 'pipe' });
     expect(fs.readFileSync(path.join(tmp, 'a.pdf')).toString('latin1')).toMatch(/<pdfaid:part>2<\/pdfaid:part>/); // no icc passed: without the profile exportPdf throws
+    // N40: no store, one on render only, one on export only (a different one), or both: each makes the PDF
+    fs.writeFileSync(path.join(tmp, 'n40.mjs'), `import { render, defaultFontStore, exportPdf, blankReport } from '@reportwright/engine';
+      const out = [];
+      for (const family of ['Helvetica', 'Inter']) for (const [r, e] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+        const def = blankReport(); def.styles.base.fontFamily = family;
+        const fonts = defaultFontStore();
+        const pdf = await exportPdf(await render(def, r ? { fontStore: fonts } : {}), e ? { fonts: r ? fonts : defaultFontStore() } : {});
+        out.push(family + r + e + ':' + pdf.length);
+      }
+      console.log(out.join(' '));`);
+    expect(execFileSync(process.execPath, ['n40.mjs'], { cwd: tmp, encoding: 'utf8' }).trim().split(' ')).toHaveLength(8);
     // examples/node runs as it is against the packed packages
     fs.mkdirSync(path.join(tmp, 'ex/node'), { recursive: true });
     for (const f of ['report.pw.json', 'data.json']) fs.copyFileSync(path.join(root, 'examples', f), path.join(tmp, 'ex', f));

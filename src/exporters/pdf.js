@@ -10,7 +10,7 @@ import { withDeadline } from './deadline.js';
 import { pngProblem } from './png.js';
 import { writePagedPdf } from './pdfstream.js';
 import { needsTableData } from './regions.js';
-import { embeddedFace, isStandard } from '../engine/text/fonts.js';
+import { embeddedFace, isStandard, modelFontKeys } from '../engine/text/fonts.js';
 import { standardFontEntries, standardLiteral, embeddedPage, embeddedWarnings, standIns } from './pdfstandard.js';
 import { Content, drawRun, glyphText, insideClip, col, BLACK, n2, n4, hex4, KAPPA, cleanText, latin1, deflate, NODE_ZLIB } from './pdfpaint.js';
 
@@ -43,6 +43,7 @@ export function exportPdf(model, fontStore, opt = {}) {
 }
 /** @type {typeof exportPdf} */
 async function pdfOf(model, fontStore, opt) {
+  await fontStore.load(modelFontKeys(model)); // N40: a store render() did not fill (loaded keys are skipped)
   if (ownWriterFits(model, opt)) return ownWriter(model, fontStore, opt);
   await loadPdfLib(); // on first use: importing the engine does not load pdf-lib
   // a fixed date (creationDate, else SOURCE_DATE_EPOCH) makes the file reproducible: its ID then derives from the content
