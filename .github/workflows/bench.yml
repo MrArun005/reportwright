@@ -1,0 +1,56 @@
+# PDF benchmarks: ReportWright against pdfmake, @react-pdf/renderer, PDFKit and Puppeteer (bench/README.md).
+# Run by hand (Actions > bench > Run workflow). The artifact holds results.json and the runner's hardware; copy
+# results.json to site/bench/results.json to publish it on the demo site's benchmarks page.
+name: bench
+on:
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: Measured runs a cell, after one warmup (100,000 rows use at most 3)
+        default: '5'
+      sizes:
+        description: Table row counts
+        default: '1000,10000,100000'
+      timeout:
+        description: Seconds before one run is stopped and recorded as "did not finish"
+        default: '900'
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    defaults:
+      run:
+        working-directory: bench
+    env:
+      TMPDIR: /tmp # the veraPDF container sees /tmp only
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install the contestants (pinned in bench/package-lock.json; Puppeteer downloads its Chrome)
+        run: npm ci --no-audit --no-fund
+      - name: Runner hardware
+        run: |
+          mkdir -p out
+          { echo "node $(node -v)"; lscpu; free -m; df -h /; uname -a; } | tee out/hardware.txt
+      - name: veraPDF (the CLI image) as a command
+        run: |
+          docker pull verapdf/cli:latest
+          printf '#!/bin/sh\nexec docker run --rm -v /tmp:/tmp verapdf/cli:latest "$@"\n' | sudo tee /usr/local/bin/verapdf && sudo chmod +x /usr/local/bin/verapdf
+          verapdf --version | head -1
+      - name: Install footprint, each library alone
+        run: node install-size.mjs
+      - name: PDF/A-2b and PDF/UA-1 of every library's output (veraPDF)
+        run: node verapdf.mjs
+      - name: Timings (a process a run)
+        run: node run.mjs "--runs=$RUNS" "--sizes=$SIZES" "--timeout=$TIMEOUT"
+        env: # inputs through the environment, never pasted into the script
+          RUNS: ${{ inputs.runs }}
+          SIZES: ${{ inputs.sizes }}
+          TIMEOUT: ${{ inputs.timeout }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-results
+          path: bench/out/

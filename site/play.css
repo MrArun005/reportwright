@@ -1,0 +1,35 @@
+/* Playground: the site's tokens (site.css), a slim bar, and a designer that takes everything below it. */
+body.play { height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+.pbar { flex: none; display: flex; align-items: center; gap: 14px; padding: 6px var(--gut); min-height: 52px; background: var(--bg); border-bottom: 1px solid var(--rule); overflow-x: auto; white-space: nowrap; }
+.pbar .brand { font-size: 16px; }
+.tag { font-family: var(--mono); font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 1px 8px; margin-left: 2px; }
+.ctl { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.ctl-group { display: flex; align-items: center; gap: 6px; }
+.lbl { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.pbar select, dialog textarea, dialog input { font: 400 14px var(--sans); color: var(--ink); background: var(--surface); border: 1px solid var(--rule-strong); border-radius: 6px; padding: 6px 8px; max-width: 220px; }
+.pbtn { min-height: 34px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--ink); background: transparent; color: var(--ink); font: 500 13.5px/1 var(--sans); cursor: pointer; white-space: nowrap; }
+.pbtn:hover { background: var(--bg-2); }
+.pbtn.solid { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.pbtn.solid:hover { background: color-mix(in srgb, var(--accent) 86%, var(--ink)); }
+.pbtn:disabled { opacity: .5; cursor: progress; }
+.privacy { margin-left: auto; font-size: 13px; color: var(--muted); }
+.narrow-note { display: none; margin: 0; padding: 8px var(--gut); background: var(--accent-soft); font-size: 13.5px; }
+.status { flex: none; margin: 0; padding: 0 var(--gut); font-size: 13px; color: var(--muted); min-height: 0; }
+.status:not(:empty) { padding: 5px var(--gut); background: var(--bg-2); border-bottom: 1px solid var(--rule); }
+.status button { font: inherit; color: var(--ink); background: none; border: 0; padding: 0; margin-left: 8px; text-decoration: underline; text-decoration-color: var(--accent); cursor: pointer; }
+.host { flex: 1; min-height: 0; position: relative; background: var(--surface); }
+.host .mount { position: absolute; inset: 0; }
+.host-msg { padding: var(--gut); color: var(--muted); }
+dialog { width: min(640px, calc(100vw - 32px)); background: var(--bg); color: var(--ink); border: 1px solid var(--rule-strong); border-radius: 8px; padding: 18px 20px; box-shadow: var(--shadow); }
+dialog::backdrop { background: #0008; }
+dialog h2 { margin: 0 0 8px; font-size: 20px; letter-spacing: -.01em; }
+dialog textarea, dialog input { width: 100%; max-width: none; font-family: var(--mono); font-size: 13px; }
+dialog .row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.muted { color: var(--muted); font-size: 14px; }
+.err { color: var(--accent); font-size: 13px; min-height: 1.2em; margin: 6px 0 0; }
+@media (max-width: 700px) {
+  .narrow-note { display: block; }
+  .privacy { display: none; }
+  .pbar { flex-wrap: wrap; gap: 8px; overflow: visible; }
+  .pbar .brand { flex-basis: 100%; }
+}
