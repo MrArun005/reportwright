@@ -2,10 +2,31 @@
 
 [![npm](https://img.shields.io/npm/v/%40reportwright%2Fengine)](https://www.npmjs.com/package/@reportwright/engine) [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/MrArun005/reportwright/blob/main/LICENSE) [![Socket](https://socket.dev/api/badge/npm/package/@reportwright/engine)](https://socket.dev/npm/package/@reportwright/engine)
 
-The ReportWright report engine for Node and browsers: a JSON report definition and data in, pages out, then PDF (also PDF/A-2b), Word, Excel, PowerPoint (exportPptx), HTML or CSV. Includes the `pw` command line.
+The ReportWright report engine for Node and browsers: a JSON report definition and data in, pages out, then PDF (also PDF/A-2b), Word, Excel, PowerPoint (exportPptx), HTML or CSV. The command line is `@reportwright/cli` (`pw`).
 
 ```bash
 npm i @reportwright/engine @reportwright/fonts
+```
+
+Save this as `statement.pw.json` (a minimal report; the repository's `examples/` has more):
+
+```json
+{
+  "$schema": "pagewright/report@1",
+  "name": "Statement",
+  "page": { "size": "A4", "margins": [36, 36, 36, 36] },
+  "parameters": [{ "name": "accountId", "type": "string" }],
+  "dataSources": [{ "name": "ledger", "type": "json", "data": { "rows": [{ "item": "Design", "amount": 1200 }, { "item": "Hosting", "amount": 99.5 }] } }],
+  "dataSets": [{ "name": "Lines", "source": "ledger", "path": "$.rows" }],
+  "sections": { "body": { "items": [
+    { "type": "textbox", "name": "Title", "x": 0, "y": 0, "w": 400, "h": 24, "value": "Statement", "style": { "fontSize": 18, "fontWeight": "bold" } },
+    { "type": "table", "name": "Table", "x": 0, "y": 40, "w": 400, "h": 60, "dataSet": "Lines",
+      "columns": [{ "width": 250 }, { "width": 150 }],
+      "header": [{ "height": 18, "cells": [{ "value": "Item" }, { "value": "Amount", "style": { "textAlign": "right" } }] }],
+      "detail": [{ "height": 18, "cells": [{ "value": "=Fields.item" }, { "value": "=Fields.amount", "style": { "format": "C2", "textAlign": "right" } }] }],
+      "footer": [{ "height": 18, "cells": [{ "value": "Total" }, { "value": "=Sum(Fields.amount)", "style": { "format": "C2", "textAlign": "right", "fontWeight": "bold" } }] }] }
+  ] } }
+}
 ```
 
 ```js
