@@ -86,6 +86,59 @@ out.end();
 console.log(r.streamed ? `${r.pages} pages, streamed` : `written whole: ${r.why}`);
 ```
 
+**A failed export leaves a damaged file.** The PDF is written as it goes, so an error, a timeout or an abort halfway
+leaves a partial file at the path. Write to a temporary name and rename it when the export has succeeded:
+
+```js
+import fs from 'node:fs';
+import { finished } from 'node:stream/promises';
+
+const tmp = `${file}.part`;
+const out = fs.createWriteStream(tmp);
+try {
+  await exportPdfStream(def, opts, out);
+  await finished(out.end());
+  await fs.promises.rename(tmp, file);
+} catch (e) {
+  out.destroy();
+  await fs.promises.rm(tmp, { force: true });
+  throw e;
+}
+```
+
+**Rows from a database (`sqlRows`).** `sqlRows(source, params, { signal })` returns an async (or sync) iterable of
+arrays of rows, a batch at a time; a single row is an error. This one reads a PostgreSQL cursor with `pg` and
+`pg-cursor`, releases the client when the export ends or stops, and checks `signal` between batches:
+
+```js
+import pg from 'pg';
+import Cursor from 'pg-cursor';
+
+const pool = new pg.Pool();
+const sqlRows = async function* (source, params, { signal }) {
+  const client = await pool.connect();
+  const cursor = client.query(new Cursor(source.query, Object.values(params)));
+  try {
+    for (;;) {
+      signal?.throwIfAborted(); // stop between batches when the export is cancelled or times out
+      const rows = await cursor.read(1000); // one batch of up to 1,000 rows
+      if (!rows.length) break;
+      yield rows;
+    }
+  } finally {
+    await cursor.close().catch(() => {});
+    client.release();
+  }
+};
+await exportPdfStream(def, { sqlRows, timeoutMs: 120_000 }, out);
+```
+
+Options that are not options are reported: a misspelled key (`{ windw: 500 }`) is ignored with a warning in the
+result's `warnings` (`render()`: in the model's; `exportPdf`: through `onWarning`) naming the nearest option, and a
+misspelling of `encrypt` or `prepare` throws, so a file is never written without the password or signature you asked
+for. `encrypt`, `prepare`, `save` and PDF/A without a profile need the whole model, `sqlRows` included: the rows are
+gathered, and the result says `streamed: false`.
+
 The sink is a Node `Writable` or anything with `write(bytes)` that may return a promise (back-pressure); it is not
 closed for you. Options are `render()`'s and `exportPdf`'s (`fonts`, `parameters`, `title`, `pdfa`, `tagged`, …), plus
 `window` (rows laid out at once, 1,000), `maxRows` (rows read, 5,000,000), `presorted`, `spill` and `parallel`. Rows come

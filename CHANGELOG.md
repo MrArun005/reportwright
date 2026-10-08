@@ -5,6 +5,14 @@ All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. T
 ## Unreleased
 
 ### Fixed
+- **Streaming tickets, from the 0.12.1 retest (N23-N29):** `exportPdfStream` with `encrypt` or `prepare` and `sqlRows` no
+  longer fails with "Save the report first" (the rows are gathered for the whole-model render); a misspelled option
+  key (`encrpyt`, `windw`) warns with "Did you mean" in `render()`'s model warnings, `exportPdfStream`'s result and
+  `exportPdf`'s `onWarning`, and a misspelling of `encrypt` or `prepare` throws so no file is written without its
+  password or signature; `sqlRows` yielding single rows says "sqlRows must yield arrays of rows (got an object with
+  keys …)" and sync iterables are accepted; `spill.dir` that does not exist says so; `pw render --base` on a private
+  address names `--allow-internal`; README: the temp-file + rename pattern for a failed stream and a `pg` +
+  `pg-cursor` `sqlRows` example; the `exportPdf` option docs (pdfa, prepare, save) say what the code does.
 - **Streaming PDF (`exportPdfStream`) failures, from the 0.12.1 retest:**
   - A sink that stops reading no longer hangs the export: `timeoutMs` covers the waits for drain (504, `code:
     'ETIMEDOUT'`), a sink's `error` or `close` ends the wait, and the new `signal` option (an `AbortSignal`) stops the

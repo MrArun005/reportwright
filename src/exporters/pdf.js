@@ -26,8 +26,10 @@ const fontkit = /** @type {any} */ (fontkitModule).default || fontkitModule;
  *   tagged?: { lang?: string }, drillBase?: string, onWarning?: (message: string) => void, timeoutMs?: number,
  *   creationDate?: Date }} [opt]
  *   subset: a HarfBuzz subsetter (see subset.js). Without it, fonts embed in full.
- *   pdfa: make a PDF/A-2b file (needs an sRGB ICC profile). prepare: last change before saving
- *   (the server adds a signature placeholder there). save: extra pdf-lib save options.
+ *   pdfa: a PDF/A-2b file (2a with tagged): true uses the sRGB profile of @reportwright/fonts, or pass { icc } (this
+ *   function itself needs icc; the engine package fills it in). prepare: last change to the pdf-lib PDFDocument before
+ *   saving (the server adds a signature placeholder there). save: pdf-lib save options. These, encrypt and PDF/A without
+ *   a profile take the whole-model path in exportPdfStream; a PDF/A file with a profile streams.
  *   encrypt: { userPassword, ownerPassword, permissions } — AES-256 (see encrypt.js); not with pdfa or prepare.
  *   tagged: an accessible PDF (PDF/UA-1, see pdfua.js): structure tree, marked content, artifacts, language, title
  *   shown; with pdfa it is PDF/A-2a. Off, the file is exactly what it was.
