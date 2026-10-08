@@ -9,6 +9,7 @@ import { createRoot } from 'react-dom/client';
 import ReportViewer from '../viewer/ReportViewer.jsx';
 import { setAssetBase, registerReports, setBundledFonts, setStandalone } from '../viewer/engineClient.js';
 import { uiFontCss } from '../viewer/uiFonts.js';
+import { setFetchPolicy } from '../viewer/dataFetch.js';
 import { loadLanguage } from '../i18n/index.js';
 import { setShadowStyles, declareDocumentStyles } from './styles.js';
 
@@ -51,7 +52,7 @@ export function withData(def, data) {
  *   onDrill?: (report: string, params: Record<string, unknown>) => void,
  *   reports?: Record<string, object>, fonts?: Record<string, string>, customFonts?: object[], uiFontCss?: string, snapshot?: Record<string, any>, title?: string,
  *   toolbar?: { hide?: string[], add?: ToolbarButton[] }, viewMode?: 'single' | 'continuous' | 'galley', nonce?: string,
- *   onReady?: (error: Error | null) => void }} ViewerOptions
+ *   onReady?: (error: Error | null) => void, allowHosts?: string[], unsafeFetch?: boolean, fetch?: typeof fetch }} ViewerOptions
  * @typedef {'ready' | 'error' | 'page' | 'parameters'} ViewerEvent
  * @typedef {'pdf' | 'xlsx' | 'docx' | 'pptx' | 'html' | 'csv' | 'json' | 'excel' | 'word' | 'powerpoint'} ViewerFormat
  * @typedef {{ unmount: () => void, setParameters: (params: Record<string, any>) => Promise<void>, setDefinition: (definition: object) => Promise<void>,
@@ -62,6 +63,11 @@ export function withData(def, data) {
  * Mount the ReportWright viewer in an element. With `server` (a self-hosted ReportWright server), fonts and saved reports
  * load from it. Without one (standalone): pass `definition` (and `data`, keyed by data source name), and `fontsUrl`, the
  * URL of a copy of @reportwright/fonts/public/fonts; nothing calls /api, and the interface uses the system font.
+ * Data sources on other hosts may reach public http(s) addresses only (literal private, loopback, link-local and CGNAT
+ * addresses and "localhost" names are refused; a parameter may not make the host): `allowHosts` names private hosts that
+ * may be reached, `unsafeFetch: true` turns the check off. A browser cannot resolve DNS, so a public name that points at
+ * a private address is not caught here: for multi-tenant use render on the server, or pass `fetch` (it then makes every
+ * data request, after the check) that allows only the hosts you know.
  * @param {string|HTMLElement} target
  * @param {ViewerOptions} opts
  * @returns {ViewerHandle}
@@ -72,6 +78,7 @@ export function mountViewer(target, opts = {}) {
   const server = String(opts.server || '').replace(/\/$/, '');
   setAssetBase(server);
   setStandalone({ standalone: !server, fontsUrl: opts.fontsUrl });
+  setFetchPolicy({ allowHosts: opts.allowHosts, unsafeFetch: opts.unsafeFetch, fetch: opts.fetch });
   if (opts.reports) registerReports(opts.reports);
   if (opts.fonts) setBundledFonts(opts.fonts, opts.customFonts);
   if (opts.snapshot) installSnapshot(opts.snapshot);

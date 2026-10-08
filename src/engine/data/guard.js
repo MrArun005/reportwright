@@ -137,12 +137,14 @@ export function redirectRequest(from, to, req, status) {
 /**
  * The guarded default fetch (see the top of this file). In Node every hop goes through nodeRequest (address pinned);
  * in a browser through `base` with redirects by hand (literal addresses checked; a browser has no DNS to ask).
- * @param {{ allowHosts?: string[] }} opt @param {typeof fetch} base
+ * @param {{ allowHosts?: string[], viaBase?: boolean }} opt viaBase: every hop through `base`, in Node too (the browser
+ *   viewer's fetch, which its tests run in Node)
+ * @param {typeof fetch} base
  * @returns {typeof fetch}
  */
 export function guardedFetch(opt, base) {
   const allow = (opt.allowHosts || []).map(h => String(h).toLowerCase().replace(/^\[|\]$/g, ''));
-  const node = inNode();
+  const node = !opt.viaBase && inNode();
   return /** @type {any} */ (async (input, init = {}) => {
     let url = checkUrl(String(input), allow);
     /** @type {any} */

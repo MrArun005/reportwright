@@ -52,6 +52,24 @@ The npm packages are a library: nothing here needs a ReportWright server. The se
 
 In Node, `@reportwright/engine` renders and exports with no server and no browser.
 
+## Data sources and private addresses
+
+A report definition says which URLs its data comes from, and the viewer's browser requests them. So that a definition
+cannot point a viewer at your network, a data source on another host may reach public `http(s)` addresses only: literal
+private, loopback, link-local and CGNAT addresses (`192.168.1.1`, `127.0.0.1`, `[::1]`, `169.254.169.254`,
+`100.64.0.1`, in any spelling), `localhost` / `.local` / `.internal` names and other schemes are refused, redirects are
+checked hop by hop, and a parameter may fill a URL's path and query but not its host.
+
+```js
+mountViewer(el, { definition, allowHosts: ['reports-api.corp.example'] }); // private hosts that may be reached
+mountViewer(el, { definition, unsafeFetch: true });                          // no check (trusted definitions only)
+mountViewer(el, { definition, fetch: myFetch });                             // every data request goes through yours
+```
+
+A browser cannot resolve DNS, so a public name that resolves to a private address is not caught. When definitions come
+from people you do not trust (a multi-tenant app), render on the server (its guard checks DNS), or pass a `fetch` that
+allows only the hosts you know. The same options apply to `mountDesigner`.
+
 ## Content Security Policy
 
 The viewer needs no `'unsafe-inline'`: its styles are constructable stylesheets, and the style attributes of the drawing

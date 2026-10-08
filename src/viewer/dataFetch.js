@@ -19,6 +19,25 @@ function sqlCall(body, sqlPreview) {
   return sqlPreview && typeof b.query === 'string' && keys.every(k => ['connection', 'query', 'params'].includes(k));
 }
 
+import { guardedFetch } from '../engine/data/guard.js';
+
+/**
+ * The embedding page's rules for data on other hosts (mountViewer's allowHosts, unsafeFetch and fetch). By default a
+ * source may reach public http(s) hosts only: literal private, loopback, link-local and CGNAT addresses, "localhost"
+ * names and other schemes are refused, and redirects are checked hop by hop (the engine's guard, data/guard.js). A
+ * browser cannot resolve DNS, so a public name that resolves to a private address still gets through: for a
+ * multi-tenant app render on the server (its guard checks DNS), or pass a `fetch` that allows only the hosts you know.
+ * `fetch` replaces the transport; the guard still runs before it (unsafeFetch turns it off).
+ */
+let policy = { allowHosts: [], unsafeFetch: false, fetch: null };
+/** @param {{ allowHosts?: string[], unsafeFetch?: boolean, fetch?: typeof fetch|null }} [p] */
+export function setFetchPolicy({ allowHosts, unsafeFetch = false, fetch: f = null } = {}) {
+  policy = { allowHosts: (allowHosts || []).map(h => String(h).toLowerCase().replace(/^\[|\]$/g, '')), unsafeFetch: !!unsafeFetch, fetch: typeof f === 'function' ? f : null };
+}
+/** What a worker needs to apply the same rules (no function: a worker keeps the page's own fetch on the main thread). */
+export const fetchPolicy = () => policy;
+
+
 const DATA = [/^\/api\/sample\//, /^\/api\/data\/proxy$/];
 const OURS = /^\/(?:$|api(?:\/|$)|admin(?:\/|$)|designer(?:\/|$)|viewer(?:\/|$)|login(?:\/|$)|embed(?:\/|$)|_next(?:\/|$))/i;
 
@@ -51,13 +70,21 @@ export function withRetry(f, { onRetry, retries = 3, wait = (ms) => new Promise(
  * @param {typeof fetch} [f]
  * @returns {typeof fetch}
  */
-export function reportFetch(base, f0 = (...a) => fetch(...a), { sqlPreview = false, onRetry, retries = 3, wait } = {}) {
+export function reportFetch(base, f0 = policy.fetch || ((...a) => fetch(...a)), { sqlPreview = false, onRetry, retries = 3, wait } = {}) {
   const self = new URL(base).origin;
+  const { allowHosts, unsafeFetch } = policy;
   const f = withRetry(f0, { onRetry, retries, wait });
-  return /** @type {any} */ (async (input, init = {}) => {
+  // other sites: public hosts only, each redirect checked (the engine's guard); a refusal names the viewer's option
+  const guarded = unsafeFetch ? f : guardedFetch({ allowHosts, viaBase: true }, f);
+  const other = (url, init) => guarded(url, init).catch((e) => {
+    if (e?.code === 'EPRIVATE') e.message = e.message.replace(/pass allowHosts: (\[[^\]]*\]) to render/, 'mountViewer({ allowHosts: $1 })');
+    else if (e && typeof e === 'object') e.message = String(e.message).replace('(pass your own fetch to render)', '(a browser cannot see where it leads: use the URL it redirects to, or render on the server)');
+    throw e;
+  });
+  const out = /** @type {any} */ (async (input, init = {}) => {
     const u = new URL(String(input instanceof Request ? input.url : input), base);
     const method = String(init.method || 'GET').toUpperCase();
-    if (u.origin !== self) return f(u.href, { ...init, credentials: 'omit' }); // another site (the host page too) gets no cookies
+    if (u.origin !== self) return other(u.href, { ...init, credentials: 'omit' }); // another site (the host page too) gets no cookies
     // the path as the server's router sees it: decoded (Next also tries /%61pi as /api) and with repeated slashes
     // collapsed (Next redirects //api/users to /api/users); an encoded slash or broken encoding is refused
     let path;
@@ -70,4 +97,7 @@ export function reportFetch(base, f0 = (...a) => fetch(...a), { sqlPreview = fal
     const ours = DATA.some(r => r.test(u.pathname)) || u.pathname === '/api/data/sql'; // as written, not decoded
     return f(u.href, { ...init, credentials: ours ? 'same-origin' : 'omit', redirect: 'error' });
   });
+  // the engine refuses a source whose host a parameter or an expression builds, as with its own guard
+  if (!unsafeFetch) out.hostRule = { allowHosts };
+  return out;
 }

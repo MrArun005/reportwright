@@ -211,7 +211,9 @@ function fetcherFor(opt) {
  * @param {any} src @param {string} url the URL as filled @param {any} opt
  */
 function checkHostSource(src, url, opt) {
-  if (opt.fetch || opt.unsafeFetch) return;
+  // a caller's fetch opts in by carrying the rule (the browser viewer's reportFetch); else only the engine's own guard
+  const rule = opt.fetch ? opt.fetch.hostRule : opt.unsafeFetch ? null : opt;
+  if (!rule) return;
   const t = String(src.url ?? '').trim();
   if (/^\/(?![/\\])/.test(t)) return; // a path on the base URL
   const m = /^https?:\/\/([^/?#\\]*)/i.exec(t);
@@ -219,7 +221,7 @@ function checkHostSource(src, url, opt) {
   const whole = t.startsWith('=') || /^\{[^{}]+\}$/.test(t);
   let host = '';
   try { host = new URL(url).hostname.replace(/^\[|\]$/g, '').toLowerCase(); } catch { /* checked by the fetch */ }
-  if (whole && host && (opt.allowHosts || []).map(h => String(h).toLowerCase()).includes(host)) return;
+  if (whole && host && (rule.allowHosts || []).map(h => String(h).toLowerCase()).includes(host)) return;
   throw Object.assign(new Error('its host is made by a parameter or an expression: write the scheme and host out (parameters may fill the path and query), or make the whole URL a parameter and list its host in allowHosts'), { status: 403 });
 }
 

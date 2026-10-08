@@ -7,6 +7,7 @@ import { createRoot } from 'react-dom/client';
 import Designer from '../designer/Designer.jsx';
 import { useDesigner } from '../designer/store.js';
 import { setAssetBase, setStandalone } from '../viewer/engineClient.js';
+import { setFetchPolicy } from '../viewer/dataFetch.js';
 import { uiFontCss } from '../viewer/uiFonts.js';
 import { loadLanguage } from '../i18n/index.js';
 import { setShadowStyles, declareDocumentStyles } from './styles.js';
@@ -19,7 +20,8 @@ const BLANK = { $schema: 'pagewright/report@1', name: 'New report', page: { size
  * @typedef {{ label?: string, source: { name: string, type: string, [key: string]: unknown } }} DataSourceTemplate
  * @typedef {{ server?: string, fontsUrl?: string, report?: string, definition?: object, lang?: string, height?: string,
  *   onSave?: (definition: object) => unknown, onOpen?: () => object | null | undefined | Promise<object | null | undefined>, readOnly?: boolean,
- *   toolbox?: { hide?: string[] }, panels?: { data?: boolean, inspector?: boolean }, dataSourceTemplates?: DataSourceTemplate[], nonce?: string }} DesignerOptions
+ *   toolbox?: { hide?: string[] }, panels?: { data?: boolean, inspector?: boolean }, dataSourceTemplates?: DataSourceTemplate[], nonce?: string,
+ *   allowHosts?: string[], unsafeFetch?: boolean, fetch?: typeof fetch }} DesignerOptions (allowHosts, unsafeFetch, fetch: as mountViewer's)
  * @typedef {{ unmount: () => void, getDefinition: () => object, save: () => Promise<void> }} DesignerHandle
  */
 /**
@@ -35,6 +37,7 @@ export function mountDesigner(target, opts = {}) {
   const server = String(opts.server || '').replace(/\/$/, '');
   setAssetBase(server);
   setStandalone({ standalone: !server, fontsUrl: opts.fontsUrl });
+  setFetchPolicy({ allowHosts: opts.allowHosts, unsafeFetch: opts.unsafeFetch, fetch: opts.fetch });
   if (server) declareDocumentStyles('pw-embed-fonts', uiFontCss(server), opts.nonce); // standalone: the system UI font
   const shadow = el.shadowRoot || el.attachShadow({ mode: 'open' });
   shadow.innerHTML = '<div class="pw-embed"></div>';
