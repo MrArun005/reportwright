@@ -56,6 +56,7 @@ Every setting ReportWright reads, from `src/server/config.js` (the table there i
 | `PW_FETCH_DEADLINE_MS` | ms | 60000 | A server fetch, start to last byte. |
 | `PW_FETCH_MAX_MB` | int | 64 | Largest response a server fetch reads (data sources, images); past it the render fails with 413. |
 | `PW_STORAGE` | text | file | file, sqlite:/path, postgres://, mysql://, mssql:// or sql:<name>. |
+| `PW_STORAGE_FROM_DATABASE_URL` | flag | unset | 1: when `PW_STORAGE` is unset, DATABASE_URL is the storage (always on when VERCEL is set). Otherwise DATABASE_URL is never read. |
 | `PW_STORAGE_POOL_MAX` | int | 5 | Storage connections per server thread. |
 | `PW_BLOBS` | url | (PW_STORAGE) | s3://bucket[/prefix]?region=… for blobs. |
 | `PW_S3_ACCESS_KEY_ID` | text |  | S3 key id. |

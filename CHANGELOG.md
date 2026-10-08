@@ -44,7 +44,7 @@ export may depend on: check them before you upgrade.
 
 ### Added
 - **Vercel hosting.** `GET /api/v1/cron` runs the schedule tick and the batch queue when `CRON_SECRET` (16+ characters) is set, with `Authorization: Bearer $CRON_SECRET`; without it the route answers 404. `vercel.json` runs it daily. On Vercel, a queued batch runs after its response.
-- `PW_STORAGE` falls back to `DATABASE_URL` when unset (Neon on Vercel).
+- `PW_STORAGE` falls back to `DATABASE_URL` when unset, on Vercel or with `PW_STORAGE_FROM_DATABASE_URL=1` only (documented in docs/CONFIG.md).
 - **Designer: Import report** (File group) reads `.jrxml`, `.rdl`, `.rdlc`, `.rptdesign` and `.json` definitions through
   the importers, and shows the importer's warnings. The CLI (`pw import`) does the same.
 - **ViewerHandle:** `setParameters`, `setDefinition`, `goToPage`, `getPageCount`, `print`, `export` (Blob), and `on(ready |

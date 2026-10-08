@@ -13,8 +13,19 @@ import { sqlStore } from './sql.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { logWarn } from '../errors.js';
 
-// ponytail: Vercel's Neon integration stores DATABASE_URL as a sensitive variable that cannot be copied into PW_STORAGE
-if (!process.env.PW_STORAGE && process.env.DATABASE_URL) process.env.PW_STORAGE = process.env.DATABASE_URL;
+/**
+ * Vercel's Neon integration stores DATABASE_URL as a sensitive variable that cannot be copied into PW_STORAGE, so on
+ * Vercel (or with PW_STORAGE_FROM_DATABASE_URL=1) an unset PW_STORAGE takes DATABASE_URL. Anywhere else DATABASE_URL is
+ * the host app's own database and is never used: ReportWright's tables must not land in it.
+ * @param {Record<string, string | undefined>} env @returns {boolean} whether the fallback was applied
+ */
+export function applyDatabaseUrlFallback(env = process.env) {
+  if (env.PW_STORAGE || !env.DATABASE_URL) return false;
+  if (!env.VERCEL && env.PW_STORAGE_FROM_DATABASE_URL !== '1') return false;
+  env.PW_STORAGE = env.DATABASE_URL;
+  return true;
+}
+applyDatabaseUrlFallback();
 
 /** @typedef {'reports'|'schedules'|'jobs'|'users'|'fonts'|'folders'|'reportacl'|'reportmeta'|'tokens'|'settings'|'blobs'} Kind */
 /**
