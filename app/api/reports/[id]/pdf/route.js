@@ -13,7 +13,9 @@ import { outputHeaders } from '@/server/headers.js';
 export const runtime = 'nodejs';
 
 /** Formats whose output may stream (src/server/pool.js streamInPool). */
-const STREAMS = new Set(['csv', 'xlsx']);
+const STREAMS = new Set(['csv', 'xlsx', 'pdf']);
+/** PDF/A, accessible, signed and encrypted PDFs are made whole (the model path), in a big worker. */
+const streams = (o) => { const f = o.format || 'pdf'; return STREAMS.has(f) && !(f === 'pdf' && (o.pdfa || o.ua || o.sign || o.encrypt)); };
 
 export async function GET(req, { params }) {
   try {
@@ -28,9 +30,9 @@ export async function GET(req, { params }) {
     const def = await readRunnable(principal, safeId(id));
     checkParameterValues(def, parameters, principal); // fixed lists and hidden parameters hold on the server too
     const opt = { parameters, format, baseUrl: baseUrl(req), pdfa: url.searchParams.get('pdfa') === '1', ua: url.searchParams.get('ua') === '1', formulas: url.searchParams.get('formulas') ?? undefined, csv: url.searchParams.get('csv') ?? undefined, timeZone: checkTimeZone(url.searchParams.get('timeZone')), principal }; // ?timeZone=: the viewer's zone
-    const r = await throughSnapshot({ def, opt, principal }, () => (STREAMS.has(format) ? streamInPool({ ref: safeId(id), def, opt }, { signal: req.signal }) : renderInPool({ ref: safeId(id), def, opt }, { signal: req.signal })));
+    const r = await throughSnapshot({ def, opt, principal }, () => (streams(opt) ? streamInPool({ ref: safeId(id), def, opt }, { signal: req.signal }) : renderInPool({ ref: safeId(id), def, opt }, { signal: req.signal })));
     await audit('report.render', { req, principal, report: id, format, params: parameters, detail: { pages: r.pages, ms: r.ms ?? undefined, via: 'server link', ...(r.snapshot !== 'off' ? { snapshot: r.snapshot } : {}) } });
-    // a stream (the data CSV of a report that can stream): no length, its first rows go out while the rest render
+    // a stream (a data CSV, Excel or plain PDF of a report that can stream): no length, its first rows go out while the rest render
     return new Response(r.stream || r.bytes, {
       headers: {
         'content-type': r.contentType,

@@ -274,13 +274,14 @@ export function createPdfStream(sink, opt) {
     }
     const cff = 'CFF ' in f.directory.tables || 'CFF2' in f.directory.tables;
     const base = `${bytes === full ? '' : `${subsetTag(bytes)}+`}${String(f.postscriptName || 'Font').replace(/[^A-Za-z0-9_.-]/g, '')}`;
-    const k = 1000 / f.unitsPerEm, s = (/** @type {number} */ v) => Math.round(v * k);
+    // metrics and widths unrounded in 1/1000 em, as pdf-lib writes them (readers that place text by them agree)
+    const k = 1000 / f.unitsPerEm, s = (/** @type {number} */ v) => String(v * k);
     const desc = reserve(), file = reserve(), cid = reserve(), cmap = reserve();
     const fileDict = cff ? '<< /Subtype /OpenType /Filter /FlateDecode >>' : `<< /Length1 ${bytes.length} /Filter /FlateDecode >>`;
     await writeObj(file, fileDict, deflate(bytes));
     const bb = f.bbox, italic = f.italicAngle || 0;
     const flags = (f.post?.isFixedPitch ? 1 : 0) | 4 | (italic ? 64 : 0);
-    await writeObj(desc, `<< /Type /FontDescriptor /FontName /${base} /Flags ${flags} /FontBBox [${s(bb.minX)} ${s(bb.minY)} ${s(bb.maxX)} ${s(bb.maxY)}] /ItalicAngle ${num(italic)} /Ascent ${s(f.ascent)} /Descent ${s(f.descent)} /CapHeight ${s(f.capHeight || f.ascent)} /StemV 80 /${cff ? 'FontFile3' : 'FontFile2'} ${file} 0 R >>`);
+    await writeObj(desc, `<< /Type /FontDescriptor /FontName /${base} /Flags ${flags} /FontBBox [${s(bb.minX)} ${s(bb.minY)} ${s(bb.maxX)} ${s(bb.maxY)}] /ItalicAngle ${num(italic)} /Ascent ${s(f.ascent)} /Descent ${s(f.descent)} /CapHeight ${s(f.capHeight || f.ascent)} /XHeight ${s(f.xHeight || 0)} /StemV 0 /${cff ? 'FontFile3' : 'FontFile2'} ${file} 0 R >>`);
     // widths: runs of consecutive glyph IDs, "first [w w w]"
     const ids = [...F.glyphs.keys()].sort((a, b) => a - b);
     let W = '';
@@ -389,6 +390,16 @@ export async function exportPdfStream(def, opts, sink) {
     if (r === false && sink.once) await new Promise((ok) => /** @type {any} */ (sink).once('drain', ok)); else await r;
     return { streamed: false, pages: model.pages.length, warnings: model.warnings, why: plan.why };
   }
+  const r = await writePagedPdf(plan, opts, sink);
+  return { streamed: true, ...r };
+}
+
+/**
+ * The pages of a paged plan (planPaged) as a PDF written to sink, page by page.
+ * @param {any} plan @param {any} opts fontStore, subset, title, author, creationDate, drillBase @param {Sink} sink
+ * @returns {Promise<{ pages: number, warnings: string[] }>}
+ */
+export async function writePagedPdf(plan, opts, sink) {
   const { fontStore } = opts;
   const w = createPdfStream(sink, { fontStore, subset: opts.subset });
   /** @type {Map<string, any>} pdf-lib-like fonts for the shared painter: { key, embedder: { font } } */
@@ -480,5 +491,5 @@ export async function exportPdfStream(def, opts, sink) {
     .filter((b) => { const k = `${b.page}|${Math.round(b.y ?? 0)}|${b.label}`; if (seen.has(k)) return false; seen.add(k); return true; })
     .map(b => ({ title: b.label, page: b.page, top: info.height - b.y + 4, level: b.level }));
   const res = await w.finish({ outline, info: { title: opts.title || 'Report', author: opts.author, creationDate: opts.creationDate } });
-  return { streamed: true, pages: res.pages, warnings: info.warnings };
+  return { pages: res.pages, warnings: info.warnings };
 }

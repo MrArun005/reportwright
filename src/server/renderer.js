@@ -10,6 +10,8 @@ import { exportPdf } from '@/exporters/pdf.js';
 import { exportHtml } from '@/exporters/html.js';
 import { exportCsv, writeCsvStream } from '@/exporters/csv.js';
 import { planStream } from '@/engine/stream.js';
+import { planPaged } from '@/engine/paged.js';
+import { writePagedPdf } from '@/exporters/pdfstream.js';
 import { textWriter, byteWriter } from './stream-out.js';
 import { writeXlsxStream } from '@/exporters/xlsxstream.js';
 import { spillSorter } from './spill.js';
@@ -180,16 +182,24 @@ async function streamTo(d, format, def, renderOpts, opt) {
   const t0 = Date.now();
   /** @type {any} */
   let plan;
+  // the caps are the server's, never the request's (the same for every streaming format)
+  const caps = { sqlRows: (src, p) => runSqlRows(src, p, { ms: Math.max(0, renderOpts.deadline - Date.now()) }), sorter: spillSorter(),
+    maxRows: Number(streamLimits.rows), maxJsonWholeBytes: fetchMaxBytes() };
   try {
-    plan = await planStream(d, { format, parameters: renderOpts.parameters, timeZone: renderOpts.timeZone, state: renderOpts.state, loadReport: renderOpts.loadReport,
-      fetch: renderOpts.fetch, baseUrl: renderOpts.baseUrl, deadline: renderOpts.deadline, timeoutMs: renderOpts.timeoutMs,
-      sqlRows: (src, p) => runSqlRows(src, p, { ms: Math.max(0, renderOpts.deadline - Date.now()) }), sorter: spillSorter(),
-      maxRows: Number(streamLimits.rows), maxJsonWholeBytes: fetchMaxBytes() });
+    // pdf: the page layout runs window by window over the same rows (engine/paged.js), with render()'s options
+    plan = format === 'pdf' ? await planPaged(d, { ...renderOpts, ...caps })
+      : await planStream(d, { format, parameters: renderOpts.parameters, timeZone: renderOpts.timeZone, state: renderOpts.state, loadReport: renderOpts.loadReport,
+        fetch: renderOpts.fetch, baseUrl: renderOpts.baseUrl, deadline: renderOpts.deadline, timeoutMs: renderOpts.timeoutMs, ...caps });
   } catch { return null; } // a definition or parameter error: the model path reports it as it always has
   if (plan.why) return null;
   const meta = { contentType: FORMATS[format].type, ext: FORMATS[format].ext };
-  const w = format === 'xlsx' ? byteWriter(opt.out, meta) : textWriter(opt.out, meta);
+  const w = format === 'csv' ? textWriter(opt.out, meta) : byteWriter(opt.out, meta);
   try {
+    if (format === 'pdf') {
+      const r = await writePagedPdf(plan, { fontStore: renderOpts.fontStore, subset, title: def.name, drillBase: opt.self || renderOpts.baseUrl }, { write: (u8) => w.put(u8) });
+      await w.end();
+      return { bytes: null, streamed: true, model: { pages: [], regions: null, warnings: r.warnings, streamed: true, stats: { ms: Date.now() - t0, pages: r.pages, rows: {} } }, ...meta };
+    }
     if (format === 'xlsx') await writeXlsxStream(plan, /** @type {any} */ (w.put), { currency: def.currency, title: def.name, formulas: formulasOn(opt.formulas) });
     else await writeCsvStream(plan, /** @type {any} */ (w.put), { locale: def.locale, currency: def.currency });
     await w.end();
@@ -244,7 +254,9 @@ export async function renderTo(def, opt = {}) {
     },
   };
   // opt.out (a portSink): the data CSV streams when the report allows it (engine/stream.js), else the model path below
-  if (opt.out && (dataOnly || (format === 'xlsx' && !opt.modelOnly && !opt.firstPages)) && !opt.batch && process.env.PW_STREAM !== '0') {
+  // a plain PDF streams too (engine/paged.js); PDF/A, accessible, signed and encrypted files take the model path
+  const pdfStreams = format === 'pdf' && !opt.pdfa && !opt.ua && !opt.sign && !opt.encrypt;
+  if (opt.out && (dataOnly || ((format === 'xlsx' || pdfStreams) && !opt.modelOnly && !opt.firstPages)) && !opt.batch && process.env.PW_STREAM !== '0') {
     const r = await streamTo(d, format, def, renderOpts, opt);
     if (r) return r;
   }
