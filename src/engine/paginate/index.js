@@ -23,9 +23,10 @@ const EPS = 0.01;
  * @param {any[]} tables
  * @param {number} pageH  content height available for the body
  * @param {(msg: string, clip?: boolean) => void} warn
+ * @param {{ work: number }} [stats]  counts the comparisons the search makes (the complexity test reads it)
  * @returns {{ top: number, bottom: number, offset: number, repeat: any[], units: any[] }[]}
  */
-export function paginate(units, tables, pageH, warn) {
+export function paginate(units, tables, pageH, warn, stats) {
   const end = units.reduce((m, u) => Math.max(m, u.top + u.height), 0);
   const pages = [];
   // nothing with any height (an empty list): still one page, so the page header and footer print
@@ -51,32 +52,53 @@ export function paginate(units, tables, pageH, warn) {
   // is split with at least two rows on each side of a break, so no lone row sits at a page foot or head. A group of two
   // or three rows that fits a page is not split at all: it moves whole. A group taller than a page of under four rows
   // cannot meet either rule and is left alone.
+  // Groups are intervals of the strip: sorted by their first top, with the running max of their ends, so a break finds
+  // the groups it cuts by a binary search (and stops once no earlier group reaches past it): O(log groups) per break.
   const grpRows = new Map();
-  for (const u of units) if (u.grp) { let g = grpRows.get(u.grp); if (!g) grpRows.set(u.grp, g = { tops: new Set(), first: u.top, last: 0 }); g.tops.add(u.top); g.last = Math.max(g.last, u.top + u.height); }
-  const widowGroups = [...grpRows.values()].map(g => ({ ...g, tops: [...g.tops].sort((a, b) => a - b) }))
-    .filter(g => g.tops.length >= 4 || (g.tops.length >= 2 && g.last - g.first <= pageH + EPS));
+  // A group that is one keep-together block is left out of the search for a clean break (valid), and counted only when
+  // a fallback break is looked for (splitOk with withBlocks): a block may be cut then, its rows still split two and two.
+  for (const u of units) if (u.grp) { let g = grpRows.get(u.grp); if (!g) grpRows.set(u.grp, g = { tops: new Set(), first: u.top, last: 0, block: u.block || null }); g.tops.add(u.top); g.last = Math.max(g.last, u.top + u.height); if (g.block !== (u.block || null)) g.block = undefined; }
+  const widowGroups = [...grpRows.values()].map(g => ({ first: g.first, last: g.last, tops: [...g.tops].sort((a, b) => a - b), block: g.block }))
+    .filter(g => (g.tops.length >= 4 || (g.tops.length >= 2 && g.last - g.first <= pageH + EPS)))
+    .sort((a, b) => a.first - b.first);
+  const wFirst = widowGroups.map(g => g.first);
+  const wMaxLast = [];
+  widowGroups.forEach((g, i) => wMaxLast.push(Math.max(i ? wMaxLast[i - 1] : -Infinity, g.last)));
   /** rows of the group above y (tops are sorted) */
   const rowsAbove = (tops, y) => { let lo = 0, hi = tops.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (tops[mid] < y - EPS) lo = mid + 1; else hi = mid; } return lo; };
-  const splitOk = (y) => {
-    for (const g of widowGroups) {
-      if (g.first >= y - EPS || g.last <= y + EPS) continue;
+  /** work done by the paginator (its comparisons), for the complexity test: stats.work */
+  const tick = (n) => { if (stats) stats.work += n; };
+  const splitOk = (y, withBlocks = false) => {
+    // the last group that starts above y; walk back only while an earlier group still reaches past y
+    let lo = 0, hi = widowGroups.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (wFirst[mid] < y - EPS) lo = mid + 1; else hi = mid; }
+    for (let i = lo - 1; i >= 0 && wMaxLast[i] > y + EPS; i--) {
+      tick(1);
+      const g = widowGroups[i];
+      if (g.last <= y + EPS || (g.block && !withBlocks)) continue;
       if (g.tops.length < 4) return false;
       const above = rowsAbove(g.tops, y);
       if (above < 2 || g.tops.length - above < 2) return false;
     }
     return true;
   };
-
   // Units are sorted by top. Only units that start within maxH above y can cut y.
   const maxH = units.reduce((m, u) => Math.max(m, u.height), 0);
   const firstAtOrAfter = (v) => { let lo = 0, hi = units.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (units[mid].top < v) lo = mid + 1; else hi = mid; } return lo; };
   /** units already drawn on an earlier page (a ragged break draws units below the next page's top) */
   const placed = new Set();
+  /** a unit still to place that the break at y cuts (only units near y are looked at: the strip is sorted) */
+  const cutsUnit = (y) => {
+    const from = firstAtOrAfter(y - maxH - 1), to = firstAtOrAfter(y + EPS * 2);
+    for (let i = from; i < to + 1 && i < units.length; i++) { tick(1); const u = units[i]; if (!placed.has(u) && u.top < y - EPS && u.top + u.height > y + EPS) return true; }
+    return false;
+  };
   const valid = (y) => {
     if (!splitOk(y)) return false;
     const from = firstAtOrAfter(y - maxH - 1);
     const to = firstAtOrAfter(y + EPS * 2);
     for (let i = from; i < to + 1 && i < units.length; i++) {
+      tick(1);
       const u = units[i];
       if (placed.has(u)) continue;
       const b = u.top + u.height;
@@ -198,13 +220,16 @@ export function paginate(units, tables, pageH, warn) {
         if (mv) { bottom = limit; moved = mv; }
       }
       if (bottom < 0) {
-        // Nothing valid: drop the keep-together and keep-with rules and try again (a block cut here keeps widow control:
-        // a group's rows still split at least two and two), then cut.
-        for (let i = last; i >= 0; i--) {
-          const y = cand[i];
-          if (y > limit + EPS) continue;
-          if (y <= top + EPS) break;
-          if (splitOk(y) && !units.some(u => !placed.has(u) && u.top < y - EPS && u.top + u.height > y + EPS) && !useless(top, y)) { bottom = y; break; }
+        // Nothing valid: drop the keep-together and keep-with rules and try again, then cut. A break that keeps widow
+        // control is preferred (a block cut here still splits a group two and two); when none is left, any break does.
+        for (const widowRule of [true, false]) {
+          for (let i = last; i >= 0 && bottom < 0; i--) {
+            const y = cand[i];
+            if (y > limit + EPS) continue;
+            if (y <= top + EPS) break;
+            if ((!widowRule || splitOk(y, true)) && !cutsUnit(y) && !useless(top, y)) bottom = y;
+          }
+          if (bottom >= 0) break;
         }
         if (bottom < 0) {
           bottom = limit;

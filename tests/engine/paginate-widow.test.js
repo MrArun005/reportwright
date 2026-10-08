@@ -53,3 +53,34 @@ describe('tables: widow control for every group, widowControl: false turns it of
     expect(counts).toContain(1);
   });
 });
+
+describe('paginator: widow control costs work linear in the units', () => {
+  // The work counter counts comparisons (groups and units looked at). A quadratic search would look at ~n² of them.
+  const strip = (groupSize, n) => {
+    const units = [];
+    for (let i = 0; i < n; i++) units.push({ top: i * 10, height: 10, items: [], grp: 'G' + Math.floor(i / groupSize) });
+    return units;
+  };
+  const run = (groupSize, n) => {
+    const stats = { work: 0 };
+    const t0 = Date.now();
+    const pages = paginate(strip(groupSize, n), [], 1000, () => {}, stats);
+    return { work: stats.work, ms: Date.now() - t0, pages: pages.length, placed: pages.reduce((s, p) => s + p.units.length, 0) };
+  };
+
+  it('200k rows in 10k-row groups: each break is checked locally', () => {
+    const r = run(10000, 200000);
+    expect(r.placed).toBe(200000);
+    expect(r.work).toBeLessThan(40 * 200000);
+    expect(r.ms).toBeLessThan(60000);
+  }, 120000);
+
+  it('200k rows in 2-row groups and in single-row groups: linear as well', () => {
+    for (const size of [2, 1]) {
+      const r = run(size, 200000);
+      expect(r.placed).toBe(200000);
+      expect(r.work).toBeLessThan(40 * 200000);
+      expect(r.ms).toBeLessThan(60000);
+    }
+  }, 240000);
+});
