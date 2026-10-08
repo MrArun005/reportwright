@@ -371,6 +371,27 @@ export function fieldStyle(f) {
   return format ? { format } : {};
 }
 
+/**
+ * Keyboard access to an item (N35): a Tab stop named "Text box T1, x 10, y 10"; Enter or Space selects it (Shift adds
+ * or removes); then Delete, the arrows and Ctrl+D act on the selection as after a click.
+ */
+function useItemKeys(item) {
+  const T = useT();
+  const type = T(`item_${item.type}`) === `item_${item.type}` ? ITEMS[item.type]?.label || item.type : T(`item_${item.type}`);
+  return {
+    tabIndex: 0, role: 'group', 'data-item-key': item.id,
+    'aria-label': T('b9_itemLabel', { type, name: item.name, x: round(item.x), y: round(item.y) }),
+    onKeyDown: (e) => {
+      if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
+      e.preventDefault(); e.stopPropagation();
+      const st = useDesigner.getState();
+      const cur = st.sel.kind === 'items' ? st.sel.ids : [];
+      const ids = !e.shiftKey ? [item.id] : cur.includes(item.id) ? cur.filter(i => i !== item.id) : [...cur, item.id];
+      st.select(ids.length ? { kind: 'items', ids } : { kind: 'report' });
+    },
+  };
+}
+
 /* ---------------------------------------------------------------- shared drag */
 function useItemDrag(item, scale, setDrag) {
   return (e) => {
@@ -473,6 +494,7 @@ function ItemView({ item, scale, drag, setDrag, bw, nest, section }) {
   const selected = useDesigner(s => s.sel.kind === 'items' && s.sel.ids.includes(item.id));
   const single = useDesigner(s => s.sel.kind === 'items' && s.sel.ids.length === 1);
   const onDown = useItemDrag(item, scale, setDrag);
+  const keys = useItemKeys(item);
   const r = rectOf(item, drag);
   const problems = useContext(IssueMap).get(item.id);
 
@@ -516,7 +538,7 @@ function ItemView({ item, scale, drag, setDrag, bw, nest, section }) {
   return (
     <div className={`it${selected ? ' sel' : ''}${problems ? ' issue' : ''}`} data-item={item.name} title={problems?.join('\n')}
       style={{ left: r.x * scale, top: r.y * scale, width: Math.max(r.w * scale, 2), height: Math.max(r.h * scale, 2) }}
-      onPointerDown={onDown}>
+      onPointerDown={onDown} {...keys}>
       {nest ? <NestBox item={{ ...item, ...r }} scale={scale} /> : <ItemBody item={{ ...item, ...r }} scale={scale} />}
       {nest && <NestChildren item={item} scale={scale} drag={drag} setDrag={setDrag} section={section} />}
       {selected && single && HANDLES.map(d => <div key={d} className="handle" style={handlePos(d)} onPointerDown={onHandle(d)} />)}
@@ -709,6 +731,7 @@ function TableView({ item, scale, drag, setDrag }) {
   const readOnly = useDesigner(s => s.readOnly);
   const tableSelected = sel.kind === 'items' && sel.ids.includes(item.id);
   const onGrip = useItemDrag(item, scale, setDrag);
+  const keys = useItemKeys(item);
   const r = rectOf(item, drag);
   const widths = item.columns.map((c, i) => (drag?.mode === 'col' && drag.id === item.id && drag.col === i ? drag.w : c.width));
   const [dropCell, setDropCell] = useState(null);
@@ -792,7 +815,7 @@ function TableView({ item, scale, drag, setDrag }) {
 
   let first = true;
   return (
-    <div ref={tblRef} className={`tbl${tableSelected ? ' sel' : ''}${problems ? ' issue' : ''}`} data-item={item.name} style={{ left: r.x * scale, top: r.y * scale }}>
+    <div ref={tblRef} className={`tbl${tableSelected ? ' sel' : ''}${problems ? ' issue' : ''}`} data-item={item.name} style={{ left: r.x * scale, top: r.y * scale }} {...keys}>
       {problems && <div className="issue-tag" title={problems.join('\n')} aria-label={problems.join('. ')}>!</div>}
       <div className="grip" title="Select or move the table" onPointerDown={onGrip}>⠿</div>
       <div className="col-handles" aria-label={T('ux_columns')} role="group">

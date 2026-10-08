@@ -95,7 +95,15 @@ function LeftRail({ T, readOnly, embed }) {
   const body = useRef(null);
   const [at, setAt] = useState('tools');
   const tabs = [!readOnly && ['tools', 'b2_toolbox', 'tools'], embed?.panels?.data !== false && ['data', 'b2_data', 'data'], ['outline', 'b2_outline', 'outline']].filter(Boolean);
-  const go = (id) => { const el = body.current?.querySelector(`[data-rail="${id}"]`); if (el) body.current.scrollTo({ top: el.offsetTop - body.current.offsetTop, behavior: 'smooth' }); setAt(id); };
+  const go = (id) => {
+    const el = body.current?.querySelector(`[data-rail="${id}"]`);
+    if (el) {
+      body.current.scrollTo({ top: el.offsetTop - body.current.offsetTop, behavior: 'smooth' });
+      // the keyboard goes along: to the outline's current row, else the section's first control (N35: no long Tab walk)
+      (el.querySelector('[role=listbox] [tabindex="0"]') || el.querySelector('button, input, select, textarea'))?.focus({ preventScroll: true });
+    }
+    setAt(id);
+  };
   const spy = () => {
     const b = body.current;
     if (!b) return;
@@ -393,7 +401,7 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
         st().save();
         return;
       }
-      if (isTyping(e) || st().tab !== 'design') return;
+      if (isTyping(e) || st().tab !== 'design' || e.defaultPrevented) return; // handled already (the outline's arrows)
       if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? st().redo() : st().undo(); return; }
       if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); st().redo(); return; }
       if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSelection(); return; }
