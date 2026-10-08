@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { renderReport, pdfBlob, usingWorker, origin, fetchReport, loadModelFonts, loadReportFonts } from './engineClient.js';
 import { reportFetch } from './dataFetch.js';
-import { ALL_FONT_KEYS } from '@/engine/text/fonts.js';
+import { CORE_FONT_KEY } from '@/engine/text/fonts.js';
 import { exportBlob, EXPORT_DEFAULTS, needsExportData } from './exports.js';
 import { pageToSvg, linkTitle } from '@/exporters/svg.js';
 import { parameterOptions, NO_CJK_FONTS } from '@/engine/index.js';
@@ -215,7 +215,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
       // target: layers meant for the screen show here; print and export render again for theirs (pagedModel)
       // a busy server (503, 429): the data source is tried again, and the status says so
       const onRetry = (r) => { if (id === runId.current) setStatus({ state: 'running', retry: r }); };
-      const [m, defaultFailed] = await Promise.all([renderReport(renderDef, p, { ...st, target: 'screen' }, reportId, { onPartial, onRetry }), loadReportFonts(ALL_FONT_KEYS)]);
+      const [m, defaultFailed] = await Promise.all([renderReport(renderDef, p, { ...st, target: 'screen' }, reportId, { onPartial, onRetry }), loadReportFonts([CORE_FONT_KEY])]);
       const failed = [...defaultFailed, ...(await loadModelFonts(m))]; // and the fallback or uploaded fonts this model draws with
       if (id !== runId.current) return;
       setModel(m);

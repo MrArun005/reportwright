@@ -5,6 +5,7 @@ All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. T
 ## Unreleased
 
 ### Fixed
+- **Viewer fonts (N31):** the viewer fetches a font face only when the layout first needs it, not all seven up front. A report in Inter Regular and Bold now downloads 670 KB (two files) instead of 4.9 MB. Serve `fontsUrl` with `Cache-Control: public, max-age=31536000, immutable` (in the viewer README). WOFF2 for the browser is not done yet.
 - **Streaming PDF (`exportPdfStream`) failures, from the 0.12.1 retest:**
   - A sink that stops reading no longer hangs the export: `timeoutMs` covers the waits for drain (504, `code:
     'ETIMEDOUT'`), a sink's `error` or `close` ends the wait, and the new `signal` option (an `AbortSignal`) stops the

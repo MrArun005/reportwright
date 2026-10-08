@@ -2,7 +2,7 @@
 // Runs the engine in a Web Worker. Falls back to the main thread if the worker cannot start.
 import { reportFetch, policyKeysIn, fetchPolicy } from './dataFetch.js';
 import { render, FontStore } from '@/engine/index.js';
-import { fontFile, setCustomFonts, SHAPER, ALL_FONT_KEYS } from '@/engine/text/fonts.js';
+import { fontFile, setCustomFonts, SHAPER, CORE_FONT_KEY } from '@/engine/text/fonts.js';
 import { createSubsetter } from '@/exporters/subset.js';
 import { fontFamilyCss, fontKeysOf } from '@/exporters/svg.js';
 
@@ -94,7 +94,7 @@ export function loadReportFonts(keys) {
     return faces.get(k);
   })).then(results => results.filter(Boolean));
 }
-export const loadModelFonts = (model) => loadReportFonts([...new Set([...ALL_FONT_KEYS, ...fontKeysOf(model)])]);
+export const loadModelFonts = (model) => loadReportFonts([...new Set([CORE_FONT_KEY, ...fontKeysOf(model)])]);
 
 function getWorker() {
   // main thread: no Worker; fonts bundled in the page or a data snapshot (the offline HTML export); the page's own fetch
@@ -145,7 +145,7 @@ const loadReport = async (rid) => {
 export const fetchReport = loadReport;
 async function renderMain(def, params, state, reportId, exportData = false, onRetry = undefined, dataOnly = false) {
   await customFonts();
-  return render(def, { parameters: params, state, reportId, exportData, dataOnly, fontStore: fontStore(), baseUrl: origin(), loadReport, fetch: reportFetch(origin(), undefined, { onRetry }) }); // a report reads data, never calls our API as the viewer
+  return render(def, { parameters: params, state, reportId, exportData, dataOnly, fontStore: fontStore(), lazyFonts: true, baseUrl: origin(), loadReport, fetch: reportFetch(origin(), undefined, { onRetry }) }); // a report reads data, never calls our API as the viewer
 }
 
 /**
