@@ -32,7 +32,8 @@ const E = 'packages/engine';
 const external = ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate', 'bidi-js'];
 fs.rmSync(path.join(root, E, 'dist'), { recursive: true, force: true });
 fs.rmSync(path.join(root, E, 'public'), { recursive: true, force: true }); // fonts moved to @reportwright/fonts
-await build({ entryPoints: [path.join(root, E, 'entry.js')], bundle: true, format: 'esm', platform: 'neutral', target: 'es2022', minify: false, sourcemap: 'linked', sourcesContent: false, charset: 'utf8', lineLimit: 400, outfile: path.join(root, E, 'dist/index.js'), external, logLevel: 'warning', mainFields: ['module', 'main'] });
+// no source map: the bundle is readable (not minified), and the map was ~0.8 MB of a 2 MB package
+await build({ entryPoints: [path.join(root, E, 'entry.js')], bundle: true, format: 'esm', platform: 'neutral', target: 'es2022', minify: false, sourcemap: false, charset: 'utf8', lineLimit: 400, outfile: path.join(root, E, 'dist/index.js'), external, logLevel: 'warning', mainFields: ['module', 'main'] });
 // the streaming PDF's paint worker (exportPdfStream with parallel): its own file next to dist/index.js, which starts it;
 // it imports the engine from that bundle (one copy of the engine in the package)
 {
