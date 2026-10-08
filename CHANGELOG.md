@@ -2,7 +2,7 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
-## Unreleased
+## 0.12.1 — 2026-10-08
 
 ### Fixed
 - **Word export: long reports.** The document XML goes to the zip in pieces instead of one string: a 500k-row report
