@@ -77,3 +77,20 @@ describe('N10: a variable font cut at Regular says Regular (names and weight cla
     expect(cut['OS/2'].usWeightClass).toBe(fontkit.create(Buffer.from(bytes))['OS/2'].usWeightClass);
   });
 });
+
+describe('N19: deprecation messages all say the same thing (removed in 1.0)', () => {
+  const root = path.join(import.meta.dirname, '..', '..');
+  const files = ['src', 'packages', 'bin'].flatMap(d => fs.readdirSync(path.join(root, d), { recursive: true })
+    .filter(f => /\.(m?js|jsx|ts|tsx)$/.test(f) && !/node_modules|dist/.test(f)).map(f => path.join(root, d, f)));
+  it('no deprecation message string names 0.9 as the removal version', () => {
+    const bad = [];
+    for (const f of files) fs.readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
+      if (/^\s*(\*|\/\/|\/\*)/.test(line) || !/deprecat/i.test(line)) return; // comments are not messages
+      if (/['"`][^'"`]*\b0\.9\b/.test(line.replace(/\s\/\/\s.*$/, ''))) bad.push(`${path.relative(root, f)}:${i + 1}`);
+    });
+    expect(bad).toEqual([]);
+  });
+  it('the exportHtml message says "will be removed in 1.0"', () => {
+    expect(fs.readFileSync(path.join(root, 'src', 'exporters', 'html.js'), 'utf8')).toMatch(/the old form will be removed in 1\.0/);
+  });
+});
