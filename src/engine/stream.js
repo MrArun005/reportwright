@@ -190,7 +190,9 @@ export async function planStream(def0, opts) {
   async function* raw() {
     if (given) { yield* inBatches(listAt(opts.sources?.[ds.source], ds.path)); return; }
     try {
-      if (src.type === 'json') yield* inBatches(listAt(typeof src.data === 'string' ? JSON.parse(src.data) : src.data, ds.path));
+      // JSON text: read row by row as a fetched body is (never parsed whole); an array or object: read where it is
+      if (src.type === 'json' && typeof src.data === 'string') yield* jsonRows(src.data, ds.path, { maxElementBytes: opts.maxJsonRowBytes ?? 8 * 1048576, maxWholeBytes: Infinity });
+      else if (src.type === 'json') yield* inBatches(listAt(src.data, ds.path));
       else if (src.type === 'csv' && src.data) yield* inBatches(parseCsv(src.data, src));
       else if (src.type === 'csv') {
         const res = await sourceResponse(src, { params, globals: {}, dataSets: {}, fields: null, functions: functionTable(def) }, opts);

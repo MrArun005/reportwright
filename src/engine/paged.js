@@ -221,7 +221,10 @@ export async function planPaged(def0, opts = {}) {
         // footer that keeps with its rows, a lone row moved, a group kept together reach back no further than these
         let e2 = -1;
         for (let k = end + 1; end >= 0 && k < bounds.length && e2 < 0; k++) if (bounds[k] >= 0 && bounds[k] - bounds[end] >= reach) e2 = k;
-        await read(end < 0 || e2 < 0 ? Infinity : bounds[e2] - base);
+        // fewer rows than that left: this window is the last (laid out with the footer, as the count was: a footer that
+        // keeps with its rows may move the last rows to a page of their own)
+        if (e2 < 0) end = -1;
+        await read(end < 0 ? Infinity : bounds[e2] - base);
         if (!ended) { const r = await next(); if (r.done) { ended = true; close(0); } else ahead = r; }
         first0 ??= win[0] ?? null;
         const last = end < 0, keep = last ? bounds.length - off : end - off;

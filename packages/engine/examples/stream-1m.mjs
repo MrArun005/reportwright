@@ -78,10 +78,18 @@ const base = peak;
 const timer = setInterval(rss, 20);
 const t0 = Date.now();
 const out = fs.createWriteStream(file);
-const r = await exportPdfStream(def, { fonts, subset, title: 'Ledger', sqlRows: () => rows(), maxRows: Math.max(N, 5_000_000), timeoutMs: 24 * 3600e3,
+// --array: the rows made first, one array in the report's JSON source (how a library caller often has them)
+let arrayRssMB;
+if (flag('array') || opt('array')) {
+  const all = [];
+  for await (const b of rows()) for (const x of b) all.push(x);
+  def.dataSources = [{ name: 'db', type: 'json', data: opt('array') === 'text' ? JSON.stringify(all) : all }];
+  rss(); arrayRssMB = Math.round(process.memoryUsage.rss() / 1048576);
+}
+const r = await exportPdfStream(def, { fonts, subset, title: 'Ledger', window: Number(opt('window')) || undefined, sqlRows: () => rows(), maxRows: Math.max(N, 5_000_000), timeoutMs: 24 * 3600e3,
   ...(flag('tagged') ? { tagged: { lang: 'en-IN' }, pdfa: icc ? { icc } : true } : {}), ...(opt('parallel') ? { parallel: Number(opt('parallel')) } : {}) }, out);
 await new Promise((ok, fail) => out.end((e) => (e ? fail(e) : ok())));
 clearInterval(timer);
 rss();
-console.log(JSON.stringify({ rows: N, pages: r.pages, streamed: r.streamed, ...(r.why ? { why: r.why } : {}), peakRssMB: Math.round(peak), startRssMB: Math.round(base), ms: Date.now() - t0,
+console.log(JSON.stringify({ rows: N, pages: r.pages, streamed: r.streamed, ...(r.why ? { why: r.why } : {}), peakRssMB: Math.round(peak), startRssMB: Math.round(base), ...(arrayRssMB ? { arrayRssMB } : {}), ms: Date.now() - t0,
   bytes: fs.statSync(file).size, file, node: process.version, grouped, tagged: flag('tagged'), parallel: Number(opt('parallel')) || 1 }));
