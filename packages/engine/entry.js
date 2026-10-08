@@ -184,27 +184,27 @@ export async function exportPdf(model, options) {
  * @param {any} model @param {NonNullable<Parameters<typeof exportXlsxFull>[1]> & { fonts?: FontStore }} [options]
  * @returns {Promise<Uint8Array>}
  */
-export async function exportXlsx(model, options) {
+export function exportXlsx(model, options) {
   const opt = optionsOf('exportXlsx', [...arguments], 'excel');
-  return exportXlsxFull(model, { ...opt, fontStore: await modelFonts(model, opt) });
+  return modelFonts(model, opt).then(fontStore => exportXlsxFull(model, { ...opt, fontStore })); // checked now, so a wrong argument throws
 }
 /**
  * Page model → .docx bytes: exportDocx(model, { fonts, ... }) (needs render(def, { exportData: true })).
  * @param {any} model @param {NonNullable<Parameters<typeof exportDocxFull>[1]> & { fonts?: FontStore }} [options]
  * @returns {Promise<Uint8Array>}
  */
-export async function exportDocx(model, options) {
+export function exportDocx(model, options) {
   const opt = optionsOf('exportDocx', [...arguments], 'none');
-  return exportDocxFull(model, { ...opt, fontStore: await modelFonts(model, opt) });
+  return modelFonts(model, opt).then(fontStore => exportDocxFull(model, { ...opt, fontStore })); // checked now, so a wrong argument throws
 }
 /**
  * Page model → .pptx bytes: exportPptx(model, { fonts, ... }).
  * @param {any} model @param {NonNullable<Parameters<typeof exportPptxFull>[1]> & { fonts?: FontStore }} [options]
  * @returns {Promise<Uint8Array>}
  */
-export async function exportPptx(model, options) {
+export function exportPptx(model, options) {
   const opt = optionsOf('exportPptx', [...arguments], 'none');
-  return exportPptxFull(model, { ...opt, fontStore: await modelFonts(model, opt) });
+  return modelFonts(model, opt).then(fontStore => exportPptxFull(model, { ...opt, fontStore })); // checked now, so a wrong argument throws
 }
 export { exportHtml } from '../../src/exporters/html.js';
 export { exportCsv } from '../../src/exporters/csv.js';
