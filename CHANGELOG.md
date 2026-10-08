@@ -2,6 +2,87 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
+## Unreleased
+
+Everything since 0.10.0. Items marked **Behaviour change** alter output that a pixel-locked layout or a locale-sensitive
+export may depend on: check them before you upgrade.
+
+### Behaviour changes
+- **Numbers and dates shrink instead of wrapping.** An amount inside a text box shrinks like a number, a short code or a
+  header word shrinks before it breaks inside (`Amou|nt`, `m0|2`), and a short text shrinks before it is cut with `…`
+  or wraps alone in a one-line box. Reports that relied on the old wrap need a wider box or `shrinkToFit: false`.
+- **Widow control is on by default** for every group: a heading or a lone row no longer ends a page. `widowControl: false`
+  turns it off. Page counts can change for reports that break inside groups.
+- **A group taller than a page splits** with at least two rows on each side of the break, so no lone row sits at a page
+  foot or head. A keep-together block no longer leaves a blank page.
+- **Sideways tables spread their column sets evenly** over the pages they need (a balanced split, not a long last page).
+- **Number grouping follows Intl by default** (es-ES shows `1234,50`). The report option `grouping` is `always` or
+  `never`. Unformatted numbers use a Latin decimal sign with Latin digits (ar-SA).
+- **Page size names are forgiving.** `"a4 "` and `"letter"` resolve to A4 and Letter. An unknown size (`"A44"`) still
+  falls back to A4 with a warning and a suggestion.
+- **Data bars:** a value label sits after the bar when it fits, else inside it, right-aligned, in a contrasting ink.
+  Negative values draw from a zero line in `negativeColor` (default red); positive-only columns are unchanged.
+- **Charts:** column category labels turn (-45) when they do not fit flat, instead of dropping every other label. Scatter
+  and bubble axes pad the automatic range so the largest point is not on the frame. `outliers: clip | none` decides what
+  happens to points past an explicit axis min or max; clipped points get a ring and a warning. A scatter or bubble row
+  with no x or y is no longer drawn at 0 (one warning counts them).
+- **Fetched CSV, XML and JSON** read the response charset (ISO-8859-1, windows-1252, ...); UTF-8 is the default and a BOM
+  is stripped.
+- **Fetch is SSRF-guarded by default:** http(s) only, private and local addresses refused in every spelling, DNS checked
+  in Node, each redirect re-checked, parameters fill the path and query only. `allowHosts` and `unsafeFetch` opt out.
+- **Expressions read own members only:** `constructor`, `__proto__` and other inherited names give `#Error`.
+- **Data fetch errors** name the cause (DNS, refused, reset, TLS, timeout) and redact the URL (query shown as `?…`, no
+  userinfo, no keys or tokens).
+- **Charts and barcodes get generated alt text** (type, title, series, categories; symbology and value) when the author
+  sets none. The author's alt text always wins.
+- **Subreport report ids** may use capitals and underscores (still no `/`, `\`, `.` or `..`).
+- **Deterministic output:** structure tag ids come from the render's counter, so two renders give one model.
+  `exportPdf` takes `creationDate`, or `SOURCE_DATE_EPOCH`; then the dates are UTC and the document ID derives from the
+  content.
+- **PDF images that cannot be embedded** (GIF, WebP, undecodable, a URL with no `fetchImage`, too large) are left out
+  with a warning that names the picture and the reason. A cut or damaged PNG is checked and left out instead of hanging.
+
+### Added
+- **Designer: Import report** (File group) reads `.jrxml`, `.rdl`, `.rdlc`, `.rptdesign` and `.json` definitions through
+  the importers, and shows the importer's warnings. The CLI (`pw import`) does the same.
+- **ViewerHandle:** `setParameters`, `setDefinition`, `goToPage`, `getPageCount`, `print`, `export` (Blob), and `on(ready |
+  error | page | parameters)`. The React ref gets the handle. Documented in the viewer README.
+- **validate()** warns about unknown format codes (`N2x`), colour names (`redd`), named styles, sort entries not shaped
+  `{by, dir}`, date defaults that are not dates, charts with no series, local image paths, and unknown or padded page
+  sizes. Each warning has a did-you-mean where one exists.
+- **Word export:** heading items are Heading 1 to 6 paragraphs, and the document language is the report locale by default
+  (`lang` still wins).
+- **Tagged PDF:** link annotations say the link's visible text, else its tooltip, else its URL.
+- **PDF drill-through links** open the viewer with their parameters (a URI when the base URL is known). URIs are ASCII,
+  the outline holds headings and nests group bookmarks, and every PDF has page labels.
+- **Types:** `render()` takes a `RenderOptions` type. Sort entries are `{by, dir}` (`SortSpec`) on data sets, tables and
+  lists. `report.d.ts` is regenerated.
+- **Strict CSP:** the viewer and the Designer run under `style-src 'self'` with no style element and no style attribute
+  written by the engine. See the viewer README.
+- **Fonts:** `defaultFontStore({ fontsUrl })` reads a copied fonts folder in bundled apps. A font that does not load is named
+  on screen and `onReady` reports it. Faces load lazily, only those a report uses; a face that fails to load falls back to a
+  bundled face with a warning.
+
+### Changed
+- **Designer accessibility:** Inspector section headings are real buttons (Enter and Space toggle them). Chart gallery
+  choices are named by the chart type alone. The Designer's embedded font rules go through a constructable stylesheet.
+- **Viewer export menu:** each format is named by its format ("PDF document"), with the badge hidden from screen readers.
+- **Toolbar:** `toolbar.hide` takes group keys (`export`, `search`, `zoom`, `navigation`), `sidebar`, and every format id.
+  No Export gear when no format is left.
+- **Optional CJK and emoji faces** do not add a font warning; their own `NO_CJK_FONTS` warning covers them.
+
+### Fixed
+- Subreport ids and render warnings: a render's warning list holds each message once, and a barcode warning names an
+  unnamed item by place instead of `undefined`.
+- Text with objects, arrays or large numbers from data prints as data, not `[object Object]` or `1e+21`.
+- Decimal sums stay exact above 2^49.
+- Designer seq fields format as codes (no decimals, no grouping).
+- Tables take column widths from the content (`fitColumns`, and columns with no width).
+- Styles that are not objects (`"bold"`) are ignored with a validate() warning instead of crashing the render.
+- Expression and render guards: a traversal subreport id or a parameter value like `../x` is refused before `loadReport`.
+- Server renders: image URLs never reach internal hosts, dev mode included.
+- Vite bundles no longer warn 'cannot be analyzed' for the Node-only sharp import.
+
 ## 0.10.0
 
 Streaming exports and a pool that uses every core. No change to rendering, totals or page counts. Design and measurements:
