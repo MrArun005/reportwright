@@ -13,7 +13,8 @@
  *   await w.finish({ outline, info });
  *
  * Text is drawn by glyph ID (Identity-H, two bytes per glyph): encode() gives the hex and records the glyphs.
- * ponytail: no encryption, PDF/A, tagging, forms or signing yet: those stay on exportPdf (pdf.js) for now.
+ * The writer itself has no encryption, forms or signing (those stay on exportPdf, pdf.js); PDF/A and tagging (PDF/UA)
+ * are added by writePagedPdf (pdfstreamtags.js, the XMP and output intent).
  */
 import fontkitModule from '@pdf-lib/fontkit';
 import { Zlib } from 'fflate';
@@ -483,8 +484,9 @@ function latin1(s) {
 /**
  * A report to PDF bytes written to sink as its pages are laid out (planPaged: a flowing table, one window of rows at a
  * time), else rendered whole and exported by exportPdf, the same file it always was, written to sink in one piece.
- * opts: render()'s options and exportPdf's (fontStore, subset, title, author, creationDate, drillBase…). Tagged,
- * PDF/A, encrypted and signed files take the whole-model path.
+ * opts: render()'s options and exportPdf's (fontStore, subset, title, author, creationDate, drillBase…). Tagged
+ * (PDF/UA-1) and PDF/A files stream too; encrypted and signed files, save options and PDF/A without a colour profile
+ * take the whole-model path (the result's why says which).
  * @param {any} def @param {any} opts @param {Sink} sink
  * @returns {Promise<{ streamed: boolean, pages: number, warnings: string[], why?: string }>}
  */

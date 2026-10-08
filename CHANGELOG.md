@@ -38,7 +38,7 @@ All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. T
 - **Engine text:** the CJK font warning names `npx reportwright-fonts-cjk` first (the app's `npm run fonts:cjk` second),
   and the deprecated positional export forms say they are removed in 1.0.
 
-## 0.12.0 — 2026-10-09
+## 0.12.0 — 2026-10-08
 
 Streaming PDF: very large reports are written page by page, with flat memory.
 
