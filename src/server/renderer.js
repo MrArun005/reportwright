@@ -196,7 +196,7 @@ async function streamTo(d, format, def, renderOpts, opt) {
   const w = format === 'csv' ? textWriter(opt.out, meta) : byteWriter(opt.out, meta);
   try {
     if (format === 'pdf') {
-      const r = await writePagedPdf(plan, { fontStore: renderOpts.fontStore, subset, title: def.name, drillBase: opt.self || renderOpts.baseUrl }, { write: (u8) => w.put(u8) });
+      const r = await writePagedPdf(plan, { fontStore: renderOpts.fontStore, subset, title: def.name, drillBase: opt.self || renderOpts.baseUrl }, { write: (u8) => /** @type {any} */ (w).put(u8) });
       await w.end();
       return { bytes: null, streamed: true, model: { pages: [], regions: null, warnings: r.warnings, streamed: true, stats: { ms: Date.now() - t0, pages: r.pages, rows: {} } }, ...meta };
     }

@@ -115,7 +115,7 @@ export async function planPaged(def0, opts = {}) {
     };
     const read = async (win, upTo) => { while (win.length < upTo && !ended) { const r = await next(); if (!r.done) { win.push(r.value); fold(r.value); } } };
     // pages per window when the bounds are known: about `size` rows each
-    const per = bounds ? Math.max(1, Math.round(bounds.length * size / Math.max(1, bounds.rows))) : 0;
+    const per = bounds ? Math.max(1, Math.round(bounds.length * size / Math.max(1, /** @type {any} */ (bounds).rows))) : 0;
     let carry = /** @type {any[]} */ ([]), want = size, off = 0, base = 0, first = true;
     for (;;) {
       const win = carry;
