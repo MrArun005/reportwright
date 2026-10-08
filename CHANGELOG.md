@@ -22,6 +22,24 @@ All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. T
 - **`parameterOptions()`** lists a parameter's fixed options first, then the fetched ones, each value once (as the viewer does).
 - **HTML Tables: date sort keys** use the wall clock, so the same report gives the same keys in every host time zone.
 
+- **Streaming PDF (`exportPdfStream`), from an independent 1M-row verification:**
+  - Rows given as an array are read where they are (never copied whole or sorted, tested); JSON given as text is read
+    row by row instead of parsed whole (a 300,000-row text source: 910 → 500 MB peak). The README says why a large array
+    still shows a large RSS (it is the caller's, and V8 lets garbage grow beside it) and to pass a cursor or text.
+  - Grouped and sorted tables: in Node the engine package sorts through a disk spill by default (`spill: { dir, maxMB }`,
+    `spill: false`), so a grouped export's memory is flat (300,000 rows: 300 MB, was 670 MB and growing); `presorted:
+    true` reads rows that come in the report's order without sorting, checking each against the one before (a row out of
+    order stops the export with an error).
+  - A data set without declared `fields` streams: its fields are detected from the first 50 rows, as the whole render
+    detects them. A report written whole now says why in its first warning, not only in `why`.
+  - The window that reaches the last rows is the last one: a table whose footer keeps with its rows could stop with
+    "The data changed while the PDF was written".
+  - Tagged PDFs are about 27% smaller (a page's borders are one artifact and its cells' text one text object; plain cells
+    carry no attributes; the xref stream is predicted). Past a million structure elements the result warns that tools
+    which load every object (qpdf, pikepdf) may run out of memory; `tagged.maxElements` caps it.
+  - `parallel: N` is documented with its memory (150–300 MB a thread) and when it helps; the example runs serial.
+  - The comments of `exportPdfStream` said tagged and PDF/A files do not stream; they do.
+  - Note: the non-streaming `exportPdf` still uses pdf-lib, which stays a dependency.
 - **BIRT import: SUM and other aggregates total their column.** A bound column with `aggregateFunction` (SUM, AVE,
   MIN, MAX, FIRST, LAST…) had no listed argument, so it fell back to a row count: `Sum(1, …)` showed 3 for a total of
   250.75. The column's own expression is now the argument. An aggregate with no expression is counted as approximated.

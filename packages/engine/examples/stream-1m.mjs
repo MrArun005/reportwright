@@ -4,13 +4,15 @@
 // cursor), so nothing holds them all.
 //
 //   npm i @reportwright/engine @reportwright/fonts
-//   node node_modules/@reportwright/engine/examples/stream-1m.mjs [rows=1000000] [out=ledger.pdf] [--plain] [--grouped] [--tagged] [--parallel=4]
+//   node node_modules/@reportwright/engine/examples/stream-1m.mjs [rows=1000000] [out=ledger.pdf] [--plain] [--grouped] [--presorted] [--tagged] [--array[=text]] [--parallel=N]
 //
 // Prints one JSON line: { rows, pages, streamed, peakRssMB, ms, bytes, ... }. "Page N of M" is in the page footer
 // (the rows are read twice: once to count the pages); --plain leaves M out (one pass). --grouped adds two group levels
-// with subtotals; --tagged makes an accessible PDF/A (PDF/UA-1 + PDF/A-2a); --parallel=N lays out and paints with N
-// worker threads. RW_ENGINE: import the engine from another path (a checkout: packages/engine/entry.js); RW_PUBLIC: a
-// folder with fonts/ and harfbuzz-subset.wasm instead of @reportwright/fonts.
+// with subtotals (sorted through a disk spill; --presorted: the rows come in group order and are only checked); --tagged
+// makes an accessible PDF/A (PDF/UA-1 + PDF/A-2a); --array: the rows as one array in the definition (--array=text: as
+// JSON text); --parallel=N lays out and paints with N worker threads (serial by default: each thread costs 150-300 MB).
+// RW_ENGINE: import the engine from another path (a checkout: packages/engine/entry.js); RW_PUBLIC: a folder with fonts/
+// and harfbuzz-subset.wasm instead of @reportwright/fonts.
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';

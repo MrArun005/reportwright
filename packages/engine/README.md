@@ -71,7 +71,9 @@ const bundledFonts = defaultFontStore({ fontsUrl: '/pw/fonts/' }); // a missing 
 
 `exportPdfStream(definition, options, sink)` writes the PDF as it is laid out: a flowing table is laid out a window of
 rows at a time and each page leaves memory once it is written, so a million-row report's PDF needs about the memory of a
-few pages (measured: peak RSS flat from 20,000 to 100,000 rows, about 270 MB for the whole Node process). The file reads as
+few pages (measured: peak RSS flat from 20,000 to 300,000 rows, about 250 MB for the whole Node process; most of it is
+garbage V8 has not collected yet, not rows: it does not shrink with a smaller `window`, and
+`node --max-old-space-size=128` holds a 300,000-row export to about 180 MB). The file reads as
 `exportPdf`'s: the same pages, text and positions.
 
 ```js
@@ -86,10 +88,27 @@ console.log(r.streamed ? `${r.pages} pages, streamed` : `written whole: ${r.why}
 
 The sink is a Node `Writable` or anything with `write(bytes)` that may return a promise (back-pressure); it is not
 closed for you. Options are `render()`'s and `exportPdf`'s (`fonts`, `parameters`, `title`, `pdfa`, `tagged`, …), plus
-`window` (rows laid out at once, 1,000), `maxRows` (rows read, 5,000,000) and `parallel` (Node: that many worker threads
-lay out and paint the pages; the file is byte for byte the same; each thread loads the engine and fonts, so it costs
-memory: about 150 MB a thread). Rows come from the report's source a batch at a time: CSV and REST (JSON) sources are read
-as streams, and `sqlRows(source, params)`, an async iterable of row batches, stands in for a database cursor.
+`window` (rows laid out at once, 1,000), `maxRows` (rows read, 5,000,000), `presorted`, `spill` and `parallel`. Rows come
+from the report's source a batch at a time: CSV and REST (JSON) sources are read as streams, JSON given as text is read
+row by row, an array given in the definition (or in `sources`) is read where it is, never copied or sorted, and
+`sqlRows(source, params)`, an async iterable of row batches, stands in for a database cursor. An array you pass is yours
+and stays in memory for the export: the export's own memory stays flat beside it (measured: the array plus about
+150 MB), but V8 lets garbage grow with a large live heap, so pass a cursor (`sqlRows`) or JSON text when the rows are
+many.
+
+- **Sorts and groups.** A table sort or groups put the rows in order first. In Node the sort spills to the system temp
+  folder (`spill: { dir, maxMB }`; 2 GB at most), so memory stays flat; `spill: false`, and in a
+  browser, it is in memory (all the rows: measured about 1.3 KB a row, so keep browser exports under about 100,000 sorted or
+  grouped rows). When the source already gives the rows in the report's order (`order by region, type` for groups by
+  region then type), pass `presorted: true`: nothing is sorted or held, each row is checked against the one before as it
+  passes, and a row out of order stops the export with an error.
+- **parallel: N** (Node, off by default) lays out and paints with N worker threads; the file is byte for byte the same.
+  Each thread loads the engine and fonts and lays out its own windows: about 150–300 MB a thread (measured: 260 MB
+  serial, 590 MB with 2, 890 MB with 4, for 100,000 rows). It helps only with idle cores and a report whose layout, not
+  its source, is the slow part: 15% faster with 2 threads on a 2-core machine. Leave it off unless you have measured.
+- **Tagged files.** A tagged (PDF/UA) table has a structure element a cell: a million-row ledger has some 8 million,
+  about 200 MB of file. Readers open it; tools that load every object (qpdf, pikepdf) may need gigabytes. Past a
+  million elements the result warns; `tagged: { lang, maxElements }` caps it (the export stops with an error).
 
 **What streams:** a body that is one table (with items above or below it), its rows' expressions row by row (fields,
 parameters, functions of the row, `RowNumber()`), groups with headers that repeat, subtotals (`Sum`, `Count`, `Avg`,
@@ -101,11 +120,11 @@ detected from its first 50 rows, as the whole render detects them (declare them 
 **What is written whole** (`exportPdf`; the result says why, in `why` and in its first warning, since its memory grows
 with its pages): matrices, charts, lists, subreports, images, rich text,
 lookups and aggregates outside footers, more than one data set, group sections (`newSection`), signed or encrypted PDFs.
-Grouped and sorted tables hold their rows in the sort unless `sorter` spills them to disk (the ReportWright server does).
+Grouped and sorted tables sort through a disk spill in Node (above), in memory in a browser.
 
 `examples/stream-1m.mjs` streams a generated million-row ledger to a file and prints its peak memory:
-`node node_modules/@reportwright/engine/examples/stream-1m.mjs 1000000 ledger.pdf` (`--grouped`, `--tagged`,
-`--parallel=4`, `--plain`).
+`node node_modules/@reportwright/engine/examples/stream-1m.mjs 1000000 ledger.pdf` (`--grouped`, `--presorted`,
+`--tagged`, `--plain`, `--array`, `--array=text`; serial unless `--parallel=N`).
 
 ## Many reports at once (Node): a worker pool
 
