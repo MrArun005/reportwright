@@ -95,9 +95,11 @@ as streams, and `sqlRows(source, params)`, an async iterable of row batches, sta
 parameters, functions of the row, `RowNumber()`), groups with headers that repeat, subtotals (`Sum`, `Count`, `Avg`,
 `Min`, `Max` of a row expression, `CountRows()`), keep-together and page breaks, filters and sorts, page headers and
 footers without aggregates ("Page N of M" included: the pages are counted first, so the source is read twice), PDF/A-2b,
-and accessible PDFs (PDF/UA-1, PDF/A-2a; validated with veraPDF).
+and accessible PDFs (PDF/UA-1, PDF/A-2a; validated with veraPDF). A data set without declared `fields` streams too: its fields are
+detected from its first 50 rows, as the whole render detects them (declare them when a column first appears later).
 
-**What is written whole** (`exportPdf`, the result says why): matrices, charts, lists, subreports, images, rich text,
+**What is written whole** (`exportPdf`; the result says why, in `why` and in its first warning, since its memory grows
+with its pages): matrices, charts, lists, subreports, images, rich text,
 lookups and aggregates outside footers, more than one data set, group sections (`newSection`), signed or encrypted PDFs.
 Grouped and sorted tables hold their rows in the sort unless `sorter` spills them to disk (the ReportWright server does).
 

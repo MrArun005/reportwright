@@ -36,8 +36,7 @@ export async function planPaged(def0, opts = {}) {
   const plan = await planStream(def, { ...opts, format: 'xlsx' });
   if (plan.why !== undefined) return no(plan.why);
   if ((def.dataSets || []).length !== 1) return no('more than one data set');
-  const ds = def.dataSets[0];
-  if (!ds.fields?.length) return no('undeclared fields');
+  let ds = def.dataSets[0];
   if (opts.firstPages || opts.dataOnly) return no('first pages or table data');
   const sec = def.sections || {};
   const body = Array.isArray(sec.body) ? sec.body[0] : sec.body;
@@ -92,6 +91,12 @@ export async function planPaged(def0, opts = {}) {
   const gfields = gfolds.flat().map(f => ({ name: f.name }));
 
   const size = Math.max(50, Number(opts.window) || WINDOW);
+  // no declared fields: the ones the first rows have (as the whole render detects them), the same in every window
+  if (!ds.fields?.length) {
+    const fields = await /** @type {any} */ (plan).fieldList();
+    if (!fields.length) return no('undeclared fields (no rows to detect them from)');
+    ds = { ...ds, fields };
+  }
   const strip = (/** @type {any[]} */ fields) => fields.map(({ expr, path, ...f }) => f);
   /** the definition for one window: its rows given, the table alone after the first, the footer and what follows last */
   const windowDef = (/** @type {boolean} */ first, /** @type {boolean} */ last, /** @type {any[]} */ done) => {

@@ -66,7 +66,7 @@ function foldOf(v) {
  *   reportId?: string, fetch?: typeof fetch, baseUrl?: string, sql?: (src: any, p: any) => Promise<object[]>,
  *   sqlRows?: (src: any, p: any) => AsyncIterable<object[]>, sources?: Record<string, any>, sorter?: (cmp: (a: any, b: any) => number) => any, presorted?: boolean,
  *   deadline?: number, timeoutMs?: number, maxRows?: number, maxJsonRowBytes?: number, maxJsonWholeBytes?: number }} opts
- * @returns {Promise<{ why: string } | { why?: undefined, name: string, columns: number[], title: string, timeZone: string|null, locale: string|null, currency: string|null, warnings: string[], rows: () => AsyncGenerator<any>, records: () => AsyncGenerator<any>, grouped: () => AsyncGenerator<any>, stats: { rows: number } }>}
+ * @returns {Promise<{ why: string } | { why?: undefined, name: string, columns: number[], title: string, timeZone: string|null, locale: string|null, currency: string|null, warnings: string[], rows: () => AsyncGenerator<any>, records: () => AsyncGenerator<any>, grouped: () => AsyncGenerator<any>, fieldList: () => Promise<any[]>, stats: { rows: number } }>}
  */
 export async function planStream(def0, opts) {
   const no = (why) => ({ why });
@@ -213,6 +213,14 @@ export async function planStream(def0, opts) {
     }
   }
   const plainOf = (fields) => fields.filter(fd => !fd.expr);
+  let seen = /** @type {any[]|null} */ (null); // the fields the rows are typed by (declared, else detected)
+  /** The data set's fields: declared, else detected from its first 50 rows as the whole render does (they are read). */
+  const fieldList = async () => {
+    if (ds.fields?.length) return ds.fields;
+    const it = typed();
+    try { await it.next(); } finally { await it.return(undefined); stats.rows = 0; }
+    return seen || [];
+  };
   /** Typed rows that pass the data set's and the table's row filters, in source order, in batches. */
   async function* typed() {
     let fields = ds.fields && ds.fields.length ? ds.fields : null;
@@ -246,7 +254,7 @@ export async function planStream(def0, opts) {
       return out;
     };
     const ready = (fs) => {
-      fields = fs; plain = plainOf(fs); calc = fs.filter(fd => fd.expr);
+      fields = seen = fs; plain = plainOf(fs); calc = fs.filter(fd => fd.expr);
       fopts = new Map(fs.map(fd => [fd, optFor(fd)]));
       cc = { ...baseCtx, dataSets: {}, fields: null };
     };
@@ -433,7 +441,7 @@ export async function planStream(def0, opts) {
 
   // records: the typed rows in the table's order (filtered and sorted); grouped: in display order, each with its group
   // path ({ r, g }: [ordinal, key] per level); for the paged PDF (paged.js)
-  return { name: item.name, columns: cols.map(c => c.width), title: def.name || '', timeZone: timeZone || null, locale: def.locale || null, currency: def.currency || null, warnings, rows, records: inOrder, grouped: displayOrder, stats };
+  return { name: item.name, columns: cols.map(c => c.width), title: def.name || '', timeZone: timeZone || null, locale: def.locale || null, currency: def.currency || null, warnings, rows, records: inOrder, grouped: displayOrder, fieldList, stats };
 }
 
 /** The rows at a data set's path in a value held in memory (inline JSON, pushed data). */

@@ -111,3 +111,18 @@ describe('the engine package (Node)', () => {
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   }, 60000);
 });
+
+describe('a data set without declared fields', () => {
+  it('streams: its fields are detected from the first rows, as the whole render detects them', async () => {
+    const def = ledger(rowsOf(1200), { fields: null });
+    expect(await pagesOf(def)).toEqual(await wholeOf(def));
+    const grouped = ledger(rowsOf(1200), { fields: null, groups: [{}, {}] });
+    expect(await pagesOf(grouped)).toEqual(await wholeOf(grouped));
+  });
+  it('with no rows to detect them from it is written whole, and the result says so in its warnings', async () => {
+    const { exportPdfStream } = await import('../../src/exporters/pdfstream.js');
+    const r = await exportPdfStream(ledger([], { fields: null }), { fontStore, now }, { write: async () => {} });
+    expect(r).toMatchObject({ streamed: false, why: 'undeclared fields (no rows to detect them from)' });
+    expect(r.warnings[0]).toMatch(/^The PDF was not streamed \(undeclared fields/);
+  });
+});

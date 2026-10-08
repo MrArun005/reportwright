@@ -498,7 +498,9 @@ export async function exportPdfStream(def, opts, sink) {
     const bytes = await exportPdf(model, opts.fontStore, opts);
     const r = sink.write(bytes);
     if (r === false && sink.once) await new Promise((ok) => /** @type {any} */ (sink).once('drain', ok)); else await r;
-    return { streamed: false, pages: model.pages.length, warnings: model.warnings, why: plan.why };
+    // said, not silent: a report that was meant to stream holds every page in memory instead
+    const warnings = [`The PDF was not streamed (${plan.why}): the report was rendered whole, so its memory grows with its pages.`, ...model.warnings];
+    return { streamed: false, pages: model.pages.length, warnings, why: plan.why };
   }
   const r = await writePagedPdf(plan, opts, sink);
   return { streamed: true, ...r };
