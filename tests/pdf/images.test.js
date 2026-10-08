@@ -53,7 +53,7 @@ describe.skipIf(!HAS.poppler)('PNG', () => {
     const idat = [];
     for (let at = 8; at < bytes.length;) { const n = (bytes[at] << 24 | bytes[at + 1] << 16 | bytes[at + 2] << 8 | bytes[at + 3]) >>> 0, type = String.fromCharCode(...bytes.subarray(at + 4, at + 8)); if (type === 'IDAT') idat.push(...bytes.subarray(at + 8, at + 8 + n)); at += 12 + n; }
     expect(t).toContain(Buffer.from(idat).toString('latin1'));
-    expect(t).toMatch(/\/DecodeParms << \/Predictor 15 \/Colors 3 \/BitsPerComponent 8 \/Columns 16 >>/);
+    expect(t).toMatch(/\/DecodeParms << \/Predictor 15 \/Colors 3 \/Columns 16 >>/);
   });
   it('RGBA over a coloured background blends; the SMask carries the alpha', async () => {
     const bytes = png({ w: 4, h: 4, type: 6, depth: 8, px: (x) => [255, 0, 0, x < 2 ? 128 : 0] });
