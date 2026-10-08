@@ -87,6 +87,8 @@ async function renderModel(def, { parameters = {}, data, base, internal = false,
     return { ...m, warnings: m.warnings.filter(w => !seen.has(w.toLowerCase()) && seen.add(w.toLowerCase())) };
   } catch (e) {
     const relative = /fetch|URL|Invalid URL/i.test(e.message) && !base;
+    // the engine names its option (allowHosts); a CLI user has the flag
+    if (e.code === 'EPRIVATE' || /pass allowHosts:/.test(e.message)) e.message = e.message.replace(/\(pass allowHosts: \[[^\]]*\] to render to allow it\)/, '(pass --allow-internal with --base to allow it)');
     fail(`${e.message}${relative ? '\n    A data source needs a server: pass --base http://localhost:3000, or push the data with -d source=file.json.' : ''}`);
   }
 }
