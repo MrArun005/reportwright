@@ -142,6 +142,14 @@ const T = path.join(root, V, 'dist/.types');
 tsc(['src/embed/index.js', 'src/embed/designer.js', '--noResolve', '--outDir', path.relative(root, T)]);
 fs.renameSync(path.join(T, 'index.d.ts'), path.join(root, V, 'dist/viewer.d.ts'));
 fs.renameSync(path.join(T, 'designer.d.ts'), path.join(root, V, 'dist/designer.d.ts'));
+// onSave's parameter is the report definition: the one signature that names another package (the engine's report type), so
+// it is written after the emit (--noResolve turns the JSDoc import into any)
+{
+  const dts = path.join(root, V, 'dist/designer.d.ts');
+  const typed = fs.readFileSync(dts, 'utf8').replace('onSave?: (definition: any) => unknown;', "onSave?: (definition: import('@reportwright/engine/report').Report) => unknown;");
+  if (!typed.includes("import('@reportwright/engine/report').Report")) throw new Error('the designer onSave type did not match the emit');
+  fs.writeFileSync(dts, typed);
+}
 fs.rmSync(T, { recursive: true, force: true });
 write(`${V}/package.json`, {
   name: '@reportwright/viewer', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT',

@@ -19,7 +19,7 @@ const BLANK = { $schema: 'pagewright/report@1', name: 'New report', page: { size
 /**
  * @typedef {{ label?: string, source: { name: string, type: string, [key: string]: unknown } }} DataSourceTemplate
  * @typedef {{ server?: string, fontsUrl?: string, report?: string, definition?: object, lang?: string, height?: string,
- *   onSave?: (definition: object) => unknown, onOpen?: () => object | null | undefined | Promise<object | null | undefined>, readOnly?: boolean,
+ *   onSave?: (definition: import('@reportwright/engine/report').Report) => unknown, onOpen?: () => object | null | undefined | Promise<object | null | undefined>, readOnly?: boolean,
  *   toolbox?: { hide?: string[] }, panels?: { data?: boolean, inspector?: boolean }, dataSourceTemplates?: DataSourceTemplate[], nonce?: string,
  *   allowHosts?: string[], unsafeFetch?: boolean, fetch?: typeof fetch }} DesignerOptions (allowHosts, unsafeFetch, fetch: as mountViewer's)
  * @typedef {{ unmount: () => void, getDefinition: () => object, save: () => Promise<void> }} DesignerHandle

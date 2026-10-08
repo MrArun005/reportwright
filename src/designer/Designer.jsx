@@ -316,7 +316,7 @@ function HistoryDialog({ id, onClose, T, lang }) {
 }
 
 /**
- * @param {{ id?: string, initial: object, rev?: string|null, lang?: string, embed?: { onSave?: (def: object) => any, onOpen?: () => any, readOnly?: boolean,
+ * @param {{ id?: string, initial: object, rev?: string|null, lang?: string, embed?: { onSave?: (def: import('@reportwright/engine/report').Report) => any, onOpen?: () => any, readOnly?: boolean,
  *   toolbox?: { hide?: string[] }, panels?: { data?: boolean, inspector?: boolean }, dataSourceTemplates?: object[], server?: string } }} props
  *   embed: set by mountDesigner (another site); none on ReportWright's own pages
  */
