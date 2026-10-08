@@ -72,7 +72,7 @@ export function layoutRich(blocks, st, width, m, opt = {}) {
   const lookOf = (rs) => {
     let l = looks.get(rs);
     if (l) return l;
-    const key = resolveFontKey(rs.fontFamily || st.fontFamily, rs.fontWeight || st.fontWeight, rs.fontStyle || st.fontStyle);
+    const key = resolveFontKey(rs.fontFamily || st.fontFamily, rs.fontWeight || st.fontWeight, rs.fontStyle || st.fontStyle, m.unknownFonts);
     const lineSize = clamp(rs.fontSize || baseSize, SIZE.min, SIZE.max);
     let size = lineSize, rise = 0;
     if (rs.script) {

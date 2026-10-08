@@ -5,6 +5,7 @@ All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. T
 ## Unreleased
 
 ### Fixed
+- **Unknown fonts (N39):** a `fontFamily` the engine does not have is no longer swapped silently: the render warns once per name (`Font "NoSuchFont" is not available; using Inter.`), and monospace names (Consolas, Menlo, Monaco…) use the shipped JetBrains Mono instead of Inter, so aligned columns stay aligned. Family names match in any case, a CSS list (`"Brand, Inter"`) uses its first available font, and the generic names `sans-serif` and `monospace` map to Inter and JetBrains Mono without a warning.
 - **Streaming tickets, from the 0.12.1 retest (N23-N29):** `exportPdfStream` with `encrypt` or `prepare` and `sqlRows` no
   longer fails with "Save the report first" (the rows are gathered for the whole-model render); a misspelled option
   key (`encrpyt`, `windw`) warns with "Did you mean" in `render()`'s model warnings, `exportPdfStream`'s result and

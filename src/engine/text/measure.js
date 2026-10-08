@@ -122,6 +122,8 @@ export class TextMeasurer {
     this.missing = new Set();
     /** characters no font could draw @type {Set<string>} */
     this.noGlyph = new Set();
+    /** font names the text asked for that are not available (resolveFontKey): the render warns @type {Set<string>} */
+    this.unknownFonts = new Set();
   }
 
   /**
