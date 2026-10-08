@@ -11,6 +11,8 @@ register(`data:text/javascript,${encodeURIComponent(`export function resolve(s, 
 
 // development without PW_SESSION_SECRET: the request thread's random secret, so the server's calls to itself check out
 if (workerData?.devSecret) globalThis.__pwDevSecret = workerData.devSecret;
+// the process-wide spill counter and this thread's cell in it (pool.js, spill.js)
+if (workerData?.spill) globalThis.__pwSpill = workerData.spill;
 
 let mod;
 try {
@@ -30,7 +32,7 @@ async function run(m) {
   // m.port: the output may stream to the request thread (stream-out.js); a render that does not stream closes it
   const sink = m.port ? mod.portSink(m.port) : null;
   let r;
-  try { r = await mod.renderTo(def, sink ? { ...opt, out: sink } : opt); } catch (e) { if (sink?.started) sink.fail(String(e?.message || e)); else sink?.close(); throw e; }
+  try { r = await mod.renderTo(def, sink ? { ...opt, out: sink } : opt); } catch (e) { if (sink?.started) sink.fail(e); else sink?.close(); throw e; }
   if (r.streamed) { sink.end(); return { result: { streamed: true, contentType: r.contentType, ext: r.ext, name: def.name || null, pages: 0, ms: r.model.stats?.ms ?? null, warnings: r.model.warnings?.length ?? 0 } }; }
   sink?.close();
   const bytes = own(r.bytes instanceof Uint8Array ? r.bytes : new Uint8Array(r.bytes));

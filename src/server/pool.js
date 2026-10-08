@@ -40,6 +40,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Worker, SHARE_ENV, MessageChannel } from 'node:worker_threads';
 import { portSource, portSink } from './stream-out.js';
+import { spillShared, sweepAtBoot } from './spill.js';
 import { renderTimeoutMs } from './renderer.js';
 import { principalId } from './perms.js';
 import { accountsOn, sessionSecret } from './session.js';
@@ -129,7 +130,7 @@ const heapMB = () => plan().heapMB;
 const memoryFull = () => process.memoryUsage.rss() / 1048576 > memLimitMB() * 0.85;
 
 /** @typedef {{ id: number, fresh?: boolean, msg: any, transfer?: any[], started?: { v: boolean }, cls: 0|1, who: string, est: number, mem: number, big: boolean, retried?: boolean, at: number, key: string, resolve: (v: any) => void, reject: (e: any) => void, signal?: AbortSignal, onAbort?: () => void }} Job */
-/** @typedef {{ w: Worker, ready: boolean, job: Job|null, renders: number, timer: any, big: boolean }} Slot */
+/** @typedef {{ w: Worker, ready: boolean, job: Job|null, renders: number, timer: any, big: boolean, cell: number }} Slot */
 
 const g = /** @type {any} */ (globalThis);
 /** @type {{ startFails: number, dying: Set<Worker>, dyingBig: Set<Worker>, slots: Slot[], queue: Job[], running: Map<string, number>, waiting: Map<string, number>, served: Map<string, number>, est: Map<string, number>, mem: Map<string, number>, seq: number, noWorker: string|null, stats: Record<string, number>, hist?: { counts: number[], sum: number, n: number }, lastFree?: number, grownMB?: number, grownAt?: number }} */
@@ -186,7 +187,7 @@ function workerFile() {
 }
 
 /** Start the workers now (instrumentation.js), so the first renders do not wait for them. */
-export function warmPool() { fill(); }
+export function warmPool() { sweepAtBoot(); fill(); }
 
 function fill() {
   if (P.noWorker || poolSize() < 1) return;
@@ -203,14 +204,20 @@ function spawn(big) {
   const file = workerFile();
   if (!file) { giveUp('src/server/render-worker.mjs is not here'); return false; }
   // eval: the bundler sees a string, not a module to trace; the bootstrap imports the worker from its file
+  // a cell of the shared spill counter for this thread (spill.js): cell 0 is the request thread's own
+  const used = new Set(P.slots.map(x => x.cell));
+  let cell = 1;
+  while (used.has(cell) && cell < 63) cell++;
   const w = new Worker('import(require("node:url").pathToFileURL(require("node:worker_threads").workerData.file).href)',
     // devSecret: without PW_SESSION_SECRET (development only) each thread would make its own, and the server's calls to
     // itself from a worker would carry a cookie the request thread cannot check
-    { eval: true, env: SHARE_ENV, workerData: { file, devSecret: accountsOn() && !process.env.PW_SESSION_SECRET && devMode() ? sessionSecret() : undefined },
+    { eval: true, env: SHARE_ENV, workerData: { file, spill: { cells: spillShared().cells, cell }, devSecret: accountsOn() && !process.env.PW_SESSION_SECRET && devMode() ? sessionSecret() : undefined },
       resourceLimits: big ? { maxOldGenerationSizeMb: heapMB() } : { maxOldGenerationSizeMb: plan().smallHeapMB, maxYoungGenerationSizeMb: 16 } });
   w.unref();
   /** @type {Slot} */
-  const s = { w, ready: false, job: null, renders: 0, timer: null, big };
+  const s = { w, ready: false, job: null, renders: 0, timer: null, big, cell };
+  // the thread's spill bytes count no more once it has ended (a terminated render cannot give them back itself)
+  w.once('exit', () => Atomics.store(spillShared().cells, cell, 0));
   P.slots.push(s);
   w.on('message', (m) => {
     if (m?.ready === true) { s.ready = true; P.startFails = 0; pump(); return; }
@@ -380,7 +387,7 @@ async function runInline(j) {
     let r;
     // a stream on this thread: the same port protocol as a worker's (stream-out.js), so the render yields at each write
     const sink = m.port ? portSink(m.port) : null;
-    try { r = await renderTo(def, sink ? { ...m.opt, out: sink } : m.opt); } catch (e) { P.stats.failed = (P.stats.failed || 0) + 1; if (sink?.started) sink.fail(String(/** @type {any} */ (e)?.message || e)); else sink?.close(); throw e; }
+    try { r = await renderTo(def, sink ? { ...m.opt, out: sink } : m.opt); } catch (e) { P.stats.failed = (P.stats.failed || 0) + 1; if (sink?.started) sink.fail(e); else sink?.close(); throw e; }
     observe(Date.now() - t0); P.stats.done = (P.stats.done || 0) + 1; // the dashboard's average counts inline renders too
     if (/** @type {any} */ (r).streamed) { sink?.end(); return j.resolve({ streamed: true, contentType: r.contentType, ext: r.ext, name: def.name || null, pages: 0, ms: r.model.stats?.ms ?? null, warnings: r.model.warnings?.length ?? 0 }); }
     sink?.close();
@@ -457,7 +464,7 @@ export function renderInPool({ ref, def, how = 'template', opt = {} }, { backgro
 export function streamInPool({ ref, def, how = 'template', opt = {} }, { background = false, signal } = {}) {
   const key = typeof ref === 'string' ? ref : def?.name ? `def:${def.name}` : 'inline';
   const { port1, port2 } = new MessageChannel();
-  const src = portSource(port1, { csv: opt.format === 'csv' });
+  const src = portSource(port1, { csv: opt.format === 'csv', format: opt.format || null, report: typeof ref === 'string' ? ref : 'inline' });
   const started = { v: false }; // once the head is out, a failed render cannot run again
   const done = submit({ kind: 'render', ref, def, how, opt, stream: true, port: port2 }, { background, principal: opt.principal, key, signal, transfer: [port2], started });
   let streaming = false;

@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { MessageChannel } from 'node:worker_threads';
 import { DatabaseSync } from 'node:sqlite';
-import { spillSorter } from '../../src/server/spill.js';
+import { spillSorter, sweepAtBoot } from '../../src/server/spill.js';
 import { memorySorter } from '../../src/engine/stream.js';
 import { applySort, compareKeys, sortKeys } from '../../src/engine/data/index.js';
 import { runSql, runSqlRows, streamLimits, limits } from '../../src/server/sql.js';
@@ -122,7 +122,7 @@ describe('the output port', () => {
     src = portSource(port1, { csv: true }); sink = portSink(port2);
     const logged = [];
     const keep = console.error; console.error = (x) => logged.push(String(x));
-    (async () => { sink.head({ contentType: 'text/csv', ext: 'csv' }); await sink.write(new TextEncoder().encode('a,b')); sink.fail('HTTP 500 from http://secret.internal/q?token=abc'); })();
+    (async () => { sink.head({ contentType: 'text/csv', ext: 'csv' }); await sink.write(new TextEncoder().encode('a,b')); sink.fail(Object.assign(new Error("HTTP 500 from http://secret.internal/q?token=abc for SELECT * FROM t WHERE email = 'a@b.c'"), { status: 502 })); })();
     let text = '', err = null;
     const r = src.stream.getReader();
     try { for (;;) { const { done, value } = await r.read(); if (done) break; text += new TextDecoder().decode(value); } } catch (e) { err = e; } finally { console.error = keep; }
@@ -131,9 +131,11 @@ describe('the output port', () => {
     expect(text).not.toMatch(/secret|token|HTTP/);
     expect(err?.message).toMatch(/failed after it started \(reference [0-9a-f]{8}\)/);
     expect(err.message).not.toMatch(/secret/);
-    // the log has the reason, under the same reference
+    // the log has the reference, the error's class and how far it got; never the message (URL, query, values)
     const ref = text.slice(-8);
-    expect(logged.some(l => l.includes(ref) && l.includes('secret.internal'))).toBe(true);
+    const line = logged.find(l => l.includes(ref));
+    expect(JSON.parse(line)).toMatchObject({ ref, bytes: 3, error: { status: 502, kind: 'Error' } });
+    expect(line).not.toMatch(/secret|token|SELECT|a@b/);
   });
 });
 
@@ -233,6 +235,26 @@ describe('streaming keeps its caps (review)', () => {
       await expect(streamInPool({ def: sqlDef('select * from t'), opt: { format: 'csv', principal: OPEN, maxRows: 1e12, maxJsonRowBytes: 1e12, maxJsonWholeBytes: 1e12, sorter: null, sqlRows: null } })).rejects.toMatchObject({ status: expect.any(Number) });
     } finally { streamLimits.rows = keep; }
   }, 60000);
+  it('spill: one budget for every sort in the process; private files; dead processes\' folders go at start', async () => {
+    const mk = () => spillSorter({ run: 50, runBytes: 1e9, maxMB: 100, totalMB: 0.05, dir })((x, y) => x.k - y.k);
+    const a = mk(), b = mk();
+    for (let i = 0; i < 300; i++) await a.push({ k: i, r: 'x'.repeat(100) }); // ~33 KB on disk
+    const d = fs.readdirSync(dir).find(f => f.startsWith(`pw-spill-${process.pid}-`));
+    expect((fs.statSync(path.join(dir, d)).mode & 0o777).toString(8)).toBe('700');
+    for (const f of fs.readdirSync(path.join(dir, d))) expect((fs.statSync(path.join(dir, d, f)).mode & 0o777).toString(8)).toBe('600');
+    // the second sort would take the process past 50 KB: refused while the first holds its files
+    await expect((async () => { for (let i = 0; i < 300; i++) await b.push({ k: i, r: 'x'.repeat(100) }); })()).rejects.toMatchObject({ status: 503 });
+    await b.close(); await a.close();
+    const c = mk();
+    for (let i = 0; i < 300; i++) await c.push({ k: i, r: 'x'.repeat(100) }); // room again
+    await c.close();
+    fs.mkdirSync(path.join(dir, 'pw-spill-999999-1-abc'));
+    fs.mkdirSync(path.join(dir, `pw-spill-${process.pid}-1-mine`));
+    sweepAtBoot(dir);
+    expect(fs.existsSync(path.join(dir, 'pw-spill-999999-1-abc'))).toBe(false);
+    expect(fs.existsSync(path.join(dir, `pw-spill-${process.pid}-1-mine`))).toBe(true);
+    fs.rmSync(path.join(dir, `pw-spill-${process.pid}-1-mine`), { recursive: true });
+  });
   it('spill: a run ends at its bytes as well as its records (a few huge rows cannot fill memory)', async () => {
     const s = spillSorter({ run: 1e9, runBytes: 200000, dir })((x, y) => x.k - y.k);
     for (let i = 0; i < 40; i++) await s.push({ k: 40 - i, r: { big: 'x'.repeat(20000) } });

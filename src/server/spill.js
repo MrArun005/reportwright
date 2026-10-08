@@ -2,13 +2,26 @@
 // An external merge sort for streaming renders (docs/research/STREAMING-1M.md §4, §7): records are sorted in runs of
 // 20,000 records in memory (run), each run written to a temp file as framed batches (v8.serialize keeps Dates and numbers), then
 // the runs are merged k ways with a small heap, reading one batch per run at a time. Memory: one run while writing, one
-// batch per run while merging. Disk: the records once. PW_SPILL_MAX_MB (default 2048) caps a render's temp files.
-// The files live in os.tmpdir()/pw-spill-*, removed when the sort is closed (and, at the latest, when the thread exits).
+// batch per run while merging. Disk: the records once. PW_SPILL_MAX_MB (default 2048) caps one render's temp files,
+// PW_SPILL_TOTAL_MB (default 8192) all of this process's at once (every render thread: a shared counter, the bytes
+// actually written). The files live in a private folder (0700, files 0600) os.tmpdir()/pw-spill-<pid>-<thread>-*,
+// removed when the sort ends, fails or is abandoned, when the thread exits, and at the server's start (sweepAtBoot:
+// folders of processes that are gone) or by age (a thread terminated at its time limit runs no cleanup).
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import v8 from 'node:v8';
+import { threadId } from 'node:worker_threads';
 import { num } from './config.js';
+
+/**
+ * Bytes on disk per render thread, in KB: one cell per thread in a SharedArrayBuffer the pool hands every worker
+ * (spillShared, workerData.spill), so the total across threads is known; the pool zeroes a thread's cell when the
+ * thread ends. Without a pool (the request thread, tests, the CLI): a cell of its own.
+ */
+const CELLS = 64;
+export const spillShared = () => /** @type {any} */ (globalThis).__pwSpill ||= { cells: new Int32Array(new SharedArrayBuffer(4 * CELLS)), cell: 0 };
+const usedKB = () => { const { cells } = spillShared(); let n = 0; for (let i = 0; i < CELLS; i++) n += Number(Atomics.load(cells, i)); return n; };
 
 const live = new Set();
 let hooked = false;
@@ -17,7 +30,7 @@ const sweep = () => { for (const d of live) { try { fs.rmSync(d, { recursive: tr
 /**
  * A sorter factory for planStream (engine/stream.js): sorter(cmp) → { push, drain, close }. The engine closes it
  * when the rows end, fail or are abandoned (a client that left): its files go then.
- * @param {{ run?: number, runBytes?: number, frame?: number, maxMB?: number, dir?: string, staleMs?: number }} [o]
+ * @param {{ run?: number, runBytes?: number, frame?: number, maxMB?: number, totalMB?: number, dir?: string, staleMs?: number }} [o]
  */
 /** Spill folders left by a render that was stopped hard (a worker terminated at the time limit runs no cleanup):
  *  any older than staleMs is removed when a new sort starts. */
@@ -32,28 +45,48 @@ function sweepStale(root, staleMs) {
   } catch { /* no folder */ }
 }
 
-export function spillSorter({ run = 20000, runBytes = 24 * 1048576, frame = 1000, maxMB = num('PW_SPILL_MAX_MB', 2048, { min: 1 }), dir: root = os.tmpdir(), staleMs = 2 * num('PW_RENDER_TIMEOUT_MS', 60000, { min: 1 }) + 60000 } = {}) {
+/** At the server's start: remove the spill folders of processes that are gone (pw-spill-<pid>-…) and old-style ones. */
+export function sweepAtBoot(root = os.tmpdir()) {
+  try {
+    for (const n of fs.readdirSync(root)) {
+      const m = /^pw-spill-(\d+)-/.exec(n);
+      if (!n.startsWith('pw-spill-') || (m && Number(m[1]) === process.pid)) continue;
+      let alive = false;
+      if (m) { try { process.kill(Number(m[1]), 0); alive = true; } catch { /* gone */ } }
+      if (!alive) fs.rmSync(path.join(root, n), { recursive: true, force: true });
+    }
+  } catch { /* no folder */ }
+}
+
+export function spillSorter({ run = 20000, runBytes = 24 * 1048576, frame = 1000, maxMB = num('PW_SPILL_MAX_MB', 2048, { min: 1 }), totalMB = num('PW_SPILL_TOTAL_MB', 8192, { min: 1 }), dir: root = os.tmpdir(), staleMs = 2 * num('PW_RENDER_TIMEOUT_MS', 60000, { min: 1 }) + 60000 } = {}) {
   sweepStale(root, staleMs);
   /** @param {(a: any, b: any) => number} cmp */
   return (cmp) => {
-    let buf = [], dir = null, written = 0, held = 0; // held: the run in memory, about (a run ends at run records or runBytes)
+    let buf = [], dir = null, written = 0, held = 0, takenKB = 0; // held: the run in memory, about (a run ends at run records or runBytes)
     /** @type {string[]} */
     const runs = [];
     const flush = async () => {
       if (!buf.length) return;
       buf.sort(cmp);
       if (!dir) {
-        dir = fs.mkdtempSync(path.join(root, 'pw-spill-'));
+        dir = fs.mkdtempSync(path.join(root, `pw-spill-${process.pid}-${threadId}-`)); // mode 0700
         live.add(dir);
         if (!hooked) { hooked = true; process.once('exit', sweep); }
       }
       const file = path.join(dir, `run-${runs.length}`);
-      const fh = await fs.promises.open(file, 'w');
+      const fh = await fs.promises.open(file, 'wx', 0o600);
       try {
         for (let i = 0; i < buf.length; i += frame) {
           const body = v8.serialize(buf.slice(i, i + frame));
           written += body.length + 4;
           if (written > maxMB * 1048576) throw Object.assign(new Error(`The sort needs more than ${maxMB} MB of temporary disk (PW_SPILL_MAX_MB). Filter the data, or sort it at the source.`), { status: 413 });
+          // the process-wide budget, in whole KB, taken before the bytes are written and given back at close
+          const kb = Math.ceil(written / 1024) - takenKB;
+          if (kb > 0) {
+            const { cells, cell } = spillShared();
+            if (usedKB() + kb > totalMB * 1024) throw Object.assign(new Error(`The server's temporary disk for sorting is in use (PW_SPILL_TOTAL_MB, ${totalMB} MB). Try again shortly, or filter the data.`), { status: 503 });
+            Atomics.add(cells, cell, kb); takenKB += kb;
+          }
           const head = Buffer.alloc(4);
           head.writeUInt32LE(body.length);
           await fh.write(head);
@@ -90,6 +123,7 @@ export function spillSorter({ run = 20000, runBytes = 24 * 1048576, frame = 1000
       },
       async close() {
         buf = [];
+        if (takenKB) { const { cells, cell } = spillShared(); Atomics.sub(cells, cell, takenKB); takenKB = 0; }
         if (dir) { const d = dir; dir = null; live.delete(d); await fs.promises.rm(d, { recursive: true, force: true }).catch(() => {}); }
       },
       /** Tests: the runs written so far. */

@@ -9,10 +9,12 @@
 import { randomUUID } from 'node:crypto';
 
 const CHUNK = 64 * 1024;
+/** An error as the log may record it: its status and kind only. @param {any} e */
+const errorClass = (e) => (e && typeof e === 'object' && 'status' in e && !('message' in e) ? e : { status: Number(e?.status) || null, kind: String(e?.code || e?.name || 'Error').replace(/[^\w.-]/g, '').slice(0, 40) });
 export const STREAM_CANCELLED = 'The client stopped reading the output.';
 
 /**
- * The render side: head(meta) once the render knows it streams, write(bytes) (awaits credit), end(), fail(message).
+ * The render side: head(meta) once the render knows it streams, write(bytes) (awaits credit), end(), fail(error).
  * @param {import('node:worker_threads').MessagePort} port
  */
 export function portSink(port) {
@@ -37,7 +39,8 @@ export function portSink(port) {
     },
     end() { port.postMessage({ end: true }); port.close(); },
     /** @param {string} message */
-    fail(message) { try { port.postMessage({ error: message }); } catch { /* closed */ } port.close(); },
+    /** Only the error's class crosses: its status and kind, never its message (it can hold a URL, a query, data). @param {any} e */
+    fail(e) { try { port.postMessage({ error: errorClass(e) }); } catch { /* closed */ } port.close(); },
     close() { port.close(); },
   };
 }
@@ -71,18 +74,20 @@ export function textWriter(sink, meta) {
  * A failure after the head (the 200 is out) never puts its message in the body (it can name a source, a query): the
  * message goes to the server log under a reference, a CSV gets a last line "#ERROR <reference>", and the stream is
  * errored, so the connection breaks off and the client sees a failed download, not a short file.
- * @param {import('node:worker_threads').MessagePort} port @param {{ csv?: boolean }} [o]
+ * @param {import('node:worker_threads').MessagePort} port @param {{ csv?: boolean, report?: string|null, format?: string|null }} [o]
  */
-export function portSource(port, { csv = false } = {}) {
+export function portSource(port, { csv = false, report = null, format = null } = {}) {
   /** @type {ReadableStreamDefaultController<Uint8Array>} */
   let ctrl;
-  let pulled = null, done = false, onHead;
+  let pulled = null, done = false, onHead, bytes = 0;
   const head = new Promise((r) => { onHead = r; });
   const release = () => { const p = pulled; pulled = null; p?.(); };
   const finish = () => { if (done) return; done = true; release(); try { port.close(); } catch { /* closed */ } };
-  const broke = (message) => {
+  // the log line: a reference, the report, the format, how far it got and the error's class; never its message, rows,
+  // queries, parameter values, URLs or who asked (the audit log has the caller)
+  const broke = (cls) => {
     const ref = randomUUID().slice(0, 8);
-    console.error(JSON.stringify({ level: 'error', time: new Date().toISOString(), msg: 'stream failed after its first bytes', ref, error: String(message).slice(0, 2000) }));
+    console.error(JSON.stringify({ level: 'error', time: new Date().toISOString(), msg: 'stream failed after its first bytes', ref, report, format, bytes, error: cls }));
     try {
       if (csv) ctrl.enqueue(new TextEncoder().encode(`\r\n#ERROR ${ref}`));
       ctrl.error(Object.assign(new Error(`The export failed after it started (reference ${ref}).`), { ref }));
@@ -91,7 +96,7 @@ export function portSource(port, { csv = false } = {}) {
   port.on('message', (m) => {
     if (done) return;
     if (m?.head) onHead(m.head);
-    else if (m?.chunk) { ctrl.enqueue(new Uint8Array(m.chunk.buffer, m.chunk.byteOffset, m.chunk.byteLength)); release(); }
+    else if (m?.chunk) { bytes += m.chunk.byteLength; ctrl.enqueue(new Uint8Array(m.chunk.buffer, m.chunk.byteOffset, m.chunk.byteLength)); release(); }
     else if (m?.end) { ctrl.close(); finish(); }
     else if (m?.error) {
       broke(m.error); finish();
@@ -108,6 +113,6 @@ export function portSource(port, { csv = false } = {}) {
     /** The render ended without streaming (or failed before its head): stop listening. */
     abandon() { onHead(null); if (!done) { try { ctrl.close(); } catch { /* closed */ } } finish(); },
     /** The render failed after its head (it was stopped: a timeout, a crash). @param {any} e */
-    fail(e) { if (done) return; broke(String(e?.message || e)); finish(); },
+    fail(e) { if (done) return; broke(errorClass(e)); finish(); },
   };
 }
