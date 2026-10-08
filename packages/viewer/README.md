@@ -97,11 +97,21 @@ designer.getDefinition();
 
 Types are included (`ViewerOptions`, `DesignerOptions`, …). Framework wrappers: `@reportwright/react`, `@reportwright/vue`, `@reportwright/svelte`, `@reportwright/angular`.
 
-## Size
+### Viewer toolbar: `toolbar.hide`
 
-What a page downloads when the viewer mounts: **847 KB gzipped** (0.7.3: 877 KB), readable unminified code with
-source maps. Loaded only when used: other interface languages (about 20 KB gzipped each), PDF export (pdf-lib),
-barcodes (bwip-js), Excel/HTML/CSV export, the designer. Most of the first load is the font engine (fontkit) the
-layout measures text with, and React. The package is larger unpacked (two builds: React inside, and React from your
-app at `@reportwright/viewer/react-peer`, plus source maps); only one build reaches your page. PDF export, fontkit,
-barcodes, zip and bidi come from the dependencies above, so your bundler can share them with the rest of your app.
+`toolbar: { hide: [...], add: [...] }` hides built-in items. A group key hides the whole group; an item id hides that one item. Hiding every export format also hides the Export menu and its options gear.
+
+| Key | Hides |
+|---|---|
+| `export` | the Export menu: every format and the options gear (Print stays) |
+| `pdf`, `excel`, `word`, `powerpoint`, `html`, `csv`, `json` | that one export format |
+| `print` | the Print button |
+| `search` | the search box and its match controls |
+| `zoom` | zoom out, zoom value, zoom in, whole page, fit width |
+| `navigation` | first page, previous, page number, next, last page |
+| `sidebar` | the page thumbnails and the document map buttons |
+| `parameters` | the Parameters button |
+| `run`, `viewMode`, `fullScreen`, `stats` | those single items (use their id) |
+| `exportOptions` | the options gear (the formats stay) |
+
+Any other key is taken as an item id. Unknown keys hide nothing.

@@ -3,8 +3,23 @@
 import { resolvePage } from '../engine/units.js';
 
 /**
+ * The toolbar.hide keys that name a group of built-in items. `export` is the Export menu's formats and its options
+ * gear (Print is its own key); `navigation` is the paging group (first, previous, page number, next, last).
+ * @type {Record<string, (i: {id: string, group?: string}) => boolean>}
+ */
+export const TOOLBAR_GROUP_KEYS = {
+  export: (i) => i.group === 'export' && i.id !== 'print',
+  search: (i) => i.group === 'search',
+  zoom: (i) => i.group === 'zoom',
+  navigation: (i) => i.group === 'paging',
+};
+/** The toolbar.hide keys that name one or more built-in items by id; any other key is taken as an item id. */
+export const TOOLBAR_ID_KEYS = { sidebar: ['thumbnails', 'documentMap'] };
+
+/**
  * Built-in toolbar items minus `hide`, plus custom `add` items placed after the item they name (else at the end).
  * A custom item joins the group of the item it follows. A custom id that clashes with a built-in id is ignored.
+ * Hiding every export format also hides the Export options gear (no empty gear).
  * @template {{id: string, group?: string}} T
  * @param {T[]} builtIns
  * @param {{ hide?: string[], add?: any[] }} [opt]
@@ -21,8 +36,15 @@ export function arrangeToolbar(builtIns, { hide = [], add = [] } = {}) {
     const item = { ...a, custom: true, group: at >= 0 ? out[at].group : `custom:${a.id}` };
     if (at >= 0) out.splice(at + 1, 0, item); else out.push(item);
   }
-  const hidden = new Set(hide);
-  return out.filter(i => i.custom || !hidden.has(i.id));
+  const hiddenIds = new Set();
+  const hiddenBy = [];
+  for (const k of hide) {
+    if (Object.hasOwn(TOOLBAR_GROUP_KEYS, k)) hiddenBy.push(TOOLBAR_GROUP_KEYS[k]);
+    else for (const id of Object.hasOwn(TOOLBAR_ID_KEYS, k) ? TOOLBAR_ID_KEYS[k] : [k]) hiddenIds.add(id);
+  }
+  let kept = out.filter(i => i.custom || !(hiddenIds.has(i.id) || hiddenBy.some(f => f(i))));
+  if (!kept.some(i => i.format)) kept = kept.filter(i => i.custom || i.id !== 'exportOptions');
+  return kept;
 }
 
 /** The same report as one long page (the engine's pageless layout), as wide as its normal page. */
