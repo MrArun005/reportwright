@@ -79,3 +79,30 @@ describe('forged handles', () => {
     expect(latin(out)).not.toContain('/JavaScript');
   });
 });
+
+describe('group B handles: images, spot colours, ICC colour spaces and colours', () => {
+  const PNG = new Uint8Array(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNgAAAAAgABSK+kcQAAAABJRU5ErkJggg==', 'base64'));
+  it('a forged image, spot, ICC colour space or colour carrying raw PDF is refused', async () => {
+    await refused((p) => p.image({ type: 'image', width: 1, height: 1, ref: EVIL }), /Not an image \(pdf.embedImage\) made by this library/);
+    await refused((p) => p.rect(0, 0, 1, 1, { fill: { type: 'spot', name: EVIL, tint: () => ({}) } }), /Not a colour/);
+    await refused((p) => p.rect(0, 0, 1, 1, { fill: { type: 'color', cs: EVIL, comps: [1] } }), /Not a colour/);
+    await refused((p, pdf) => pdf.embedImage(PNG, { colorSpace: { type: 'iccColorSpace', components: 1, cs: EVIL } }), /Not an ICC colour space/);
+  });
+  it('copies of real ones are refused; real ones cannot be altered', async () => {
+    await refused(async (p, pdf) => {
+      const img = await pdf.embedImage(PNG), s = pdf.spotColor('S', 0);
+      expect(Object.isFrozen(img) && Object.isFrozen(s)).toBe(true);
+      expect(() => { img.ref = EVIL; }).toThrow();
+      p.rect(0, 0, 1, 1, { fill: { ...s } });
+    }, /Not a colour/);
+    await refused(async (p, pdf) => p.image({ ...(await pdf.embedImage(PNG)) }), /Not an image/);
+  });
+  it('handles from another PDF are refused', async () => {
+    let img, spot, icc, col;
+    await toBytes(async (pdf) => { img = await pdf.embedImage(PNG); spot = pdf.spotColor('S', 0); col = spot.tint(0.5); icc = spot; });
+    await refused((p) => p.image(img), /another PDF/);
+    await refused((p) => p.rect(0, 0, 1, 1, { fill: spot }), /another PDF/);
+    await refused((p) => p.rect(0, 0, 1, 1, { fill: col }), /another PDF/);
+    await refused((p, pdf) => pdf.embedImage(PNG, { colorSpace: icc }), /Not an ICC colour space/);
+  });
+});

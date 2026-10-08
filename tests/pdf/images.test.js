@@ -141,7 +141,7 @@ describe('page.image placement', () => {
     await expect(toBytes(async (pdf) => { const i = await pdf.embedImage(img); pdf.addPage().image(i, { fit: 'stretch' }); })).rejects.toThrow(/fit is/);
     await expect(toBytes(async (pdf) => { const i = await pdf.embedImage(img); pdf.addPage().image(i, { width: -1 }); })).rejects.toThrow(/> 0/);
     await expect(toBytes(async (pdf) => { const i = await pdf.embedImage(img); pdf.addPage().image(i, { x: NaN }); })).rejects.toThrow(/usable number/);
-    await expect(toBytes(async (pdf) => { pdf.addPage().image({ type: 'image', width: 1, height: 1 }); })).rejects.toThrow(/Not a image/);
+    await expect(toBytes(async (pdf) => { pdf.addPage().image({ type: 'image', width: 1, height: 1 }); })).rejects.toThrow(/Not an image/);
     let other;
     await toBytes(async (pdf) => { other = await pdf.embedImage(img); });
     await expect(toBytes(async (pdf) => { pdf.addPage().image(other); })).rejects.toThrow(/another PDF/);
