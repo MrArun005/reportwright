@@ -1,0 +1,478 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Written for ReportWright's SSRS importer tests: one report that uses most of RDL 2016. -->
+<Report MustUnderstand="df" xmlns="http://schemas.microsoft.com/sqlserver/reporting/2016/01/reportdefinition" xmlns:rd="http://schemas.microsoft.com/SQLServer/reporting/reportdesigner" xmlns:df="http://schemas.microsoft.com/sqlserver/reporting/2016/01/reportdefinition/defaults">
+  <df:DefaultFontFamily>Segoe UI</df:DefaultFontFamily>
+  <Description>Kitchen sink</Description>
+  <Language>en-GB</Language>
+  <DataSources>
+    <DataSource Name="Sales">
+      <ConnectionProperties>
+        <DataProvider>SQL</DataProvider>
+        <ConnectString>Data Source=db;Initial Catalog=Sales</ConnectString>
+      </ConnectionProperties>
+    </DataSource>
+    <DataSource Name="Warehouse">
+      <DataSourceReference>/Shared/Warehouse</DataSourceReference>
+    </DataSource>
+    <DataSource Name="Typed">
+      <ConnectionProperties>
+        <DataProvider>ENTERDATA</DataProvider>
+        <ConnectString />
+      </ConnectionProperties>
+    </DataSource>
+  </DataSources>
+  <DataSets>
+    <DataSet Name="Orders">
+      <Query>
+        <DataSourceName>Sales</DataSourceName>
+        <CommandText>SELECT Region, Country, Product, Amount, OrderDate FROM Orders WHERE Region = @Region AND YEAR(OrderDate) = @Yr</CommandText>
+        <QueryParameters>
+          <QueryParameter Name="@Region"><Value>=Parameters!Region.Value</Value></QueryParameter>
+          <QueryParameter Name="@Yr"><Value>=Parameters!Year.Value</Value></QueryParameter>
+        </QueryParameters>
+      </Query>
+      <Fields>
+        <Field Name="Region"><DataField>Region</DataField><rd:TypeName>System.String</rd:TypeName></Field>
+        <Field Name="Country"><DataField>Country</DataField><rd:TypeName>System.String</rd:TypeName></Field>
+        <Field Name="Product"><DataField>Product</DataField><rd:TypeName>System.String</rd:TypeName></Field>
+        <Field Name="Amount"><DataField>Amount</DataField><rd:TypeName>System.Decimal</rd:TypeName></Field>
+        <Field Name="OrderDate"><DataField>OrderDate</DataField><rd:TypeName>System.DateTime</rd:TypeName></Field>
+        <Field Name="Margin"><Value>=Fields!Amount.Value * 0.2</Value></Field>
+      </Fields>
+      <Filters>
+        <Filter>
+          <FilterExpression>=Fields!Amount.Value</FilterExpression>
+          <Operator>GreaterThan</Operator>
+          <FilterValues><FilterValue DataType="Integer">0</FilterValue></FilterValues>
+        </Filter>
+      </Filters>
+    </DataSet>
+    <DataSet Name="Regions">
+      <Query>
+        <DataSourceName>Typed</DataSourceName>
+        <CommandText>&lt;Query&gt;&lt;XmlData&gt;&lt;Data&gt;&lt;Row&gt;&lt;Name&gt;West&lt;/Name&gt;&lt;Rank&gt;1&lt;/Rank&gt;&lt;/Row&gt;&lt;Row&gt;&lt;Name&gt;East&lt;/Name&gt;&lt;Rank&gt;2&lt;/Rank&gt;&lt;/Row&gt;&lt;/Data&gt;&lt;/XmlData&gt;&lt;/Query&gt;</CommandText>
+      </Query>
+      <Fields>
+        <Field Name="Name"><DataField>Name</DataField><rd:TypeName>System.String</rd:TypeName></Field>
+        <Field Name="Rank"><DataField>Rank</DataField><rd:TypeName>System.Int32</rd:TypeName></Field>
+      </Fields>
+    </DataSet>
+    <DataSet Name="Countries">
+      <Query>
+        <DataSourceName>Warehouse</DataSourceName>
+        <CommandText>SELECT DISTINCT Country FROM Orders WHERE Region = @Region</CommandText>
+        <QueryParameters>
+          <QueryParameter Name="@Region"><Value>=Parameters!Region.Value</Value></QueryParameter>
+        </QueryParameters>
+      </Query>
+      <Fields>
+        <Field Name="Country"><DataField>Country</DataField></Field>
+      </Fields>
+    </DataSet>
+  </DataSets>
+  <ReportParameters>
+    <ReportParameter Name="Region">
+      <DataType>String</DataType>
+      <DefaultValue><Values><Value>West</Value></Values></DefaultValue>
+      <Prompt>Region</Prompt>
+      <ValidValues>
+        <DataSetReference><DataSetName>Regions</DataSetName><ValueField>Name</ValueField><LabelField>Name</LabelField></DataSetReference>
+      </ValidValues>
+    </ReportParameter>
+    <ReportParameter Name="Country">
+      <DataType>String</DataType>
+      <AllowBlank>true</AllowBlank>
+      <Prompt>Countries</Prompt>
+      <ValidValues>
+        <DataSetReference><DataSetName>Countries</DataSetName><ValueField>Country</ValueField></DataSetReference>
+      </ValidValues>
+      <MultiValue>true</MultiValue>
+    </ReportParameter>
+    <ReportParameter Name="Year">
+      <DataType>Integer</DataType>
+      <DefaultValue><Values><Value>2024</Value></Values></DefaultValue>
+      <Prompt>Year</Prompt>
+      <ValidValues>
+        <ParameterValues>
+          <ParameterValue><Value>2023</Value><Label>Last year</Label></ParameterValue>
+          <ParameterValue><Value>2024</Value><Label>This year</Label></ParameterValue>
+        </ParameterValues>
+      </ValidValues>
+    </ReportParameter>
+    <ReportParameter Name="ShowDetails">
+      <DataType>Boolean</DataType>
+      <DefaultValue><Values><Value>true</Value></Values></DefaultValue>
+      <Prompt>Show details</Prompt>
+      <Hidden>true</Hidden>
+    </ReportParameter>
+    <ReportParameter Name="Since">
+      <DataType>DateTime</DataType>
+      <Nullable>true</Nullable>
+      <DefaultValue><Values><Value xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:nil="true" /></Values></DefaultValue>
+      <Prompt>Since</Prompt>
+    </ReportParameter>
+  </ReportParameters>
+  <Variables>
+    <Variable Name="Title"><Value>="Sales " &amp; Parameters!Year.Value</Value></Variable>
+  </Variables>
+  <Code>Public Function Pct(a As Double, b As Double) As Double
+  If b = 0 Then Return 0
+  Return a / b
+End Function</Code>
+  <EmbeddedImages>
+    <EmbeddedImage Name="Logo">
+      <MIMEType>image/png</MIMEType>
+      <ImageData>iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==</ImageData>
+    </EmbeddedImage>
+  </EmbeddedImages>
+  <ReportSections>
+    <ReportSection>
+      <Body>
+        <ReportItems>
+          <Textbox Name="Heading">
+            <CanGrow>true</CanGrow>
+            <Paragraphs>
+              <Paragraph>
+                <TextRuns>
+                  <TextRun><Value>Sales for </Value><Style><FontSize>14pt</FontSize></Style></TextRun>
+                  <TextRun><Value>=Parameters!Region.Value</Value><Style><FontSize>14pt</FontSize><FontWeight>Bold</FontWeight><Color>#1f4e79</Color></Style></TextRun>
+                </TextRuns>
+                <Style><TextAlign>Center</TextAlign></Style>
+              </Paragraph>
+              <Paragraph>
+                <TextRuns><TextRun><Value>Figures in thousands &lt;not audited&gt;</Value><Style><FontStyle>Italic</FontStyle></Style></TextRun></TextRuns>
+                <ListStyle>Bulleted</ListStyle>
+              </Paragraph>
+            </Paragraphs>
+            <DocumentMapLabel>Heading</DocumentMapLabel>
+            <Bookmark>top</Bookmark>
+            <Top>0in</Top><Left>0in</Left><Height>0.5in</Height><Width>7.5in</Width>
+            <Style />
+          </Textbox>
+          <Textbox Name="Grand">
+            <Paragraphs><Paragraph><TextRuns><TextRun>
+              <Value>=Sum(Fields!Amount.Value, "Orders")</Value>
+              <Style><Format>C0</Format><Color>=IIF(Me.Value &lt; 0, "Red", "Black")</Color></Style>
+            </TextRun></TextRuns></Paragraph></Paragraphs>
+            <Top>0.6in</Top><Left>0in</Left><Height>0.25in</Height><Width>2in</Width>
+            <Style><Border><Style>Solid</Style><Color>Silver</Color></Border><BackgroundColor>WhiteSmoke</BackgroundColor><PaddingLeft>2pt</PaddingLeft></Style>
+          </Textbox>
+          <Textbox Name="Echo">
+            <Paragraphs><Paragraph><TextRuns><TextRun><Value>=ReportItems!Grand.Value</Value><Style /></TextRun></TextRuns></Paragraph></Paragraphs>
+            <Top>0.6in</Top><Left>2.1in</Left><Height>0.25in</Height><Width>2in</Width>
+          </Textbox>
+          <Textbox Name="Custom">
+            <Paragraphs><Paragraph><TextRuns><TextRun><Value>=Code.Pct(1, 2)</Value><Style /></TextRun></TextRuns></Paragraph></Paragraphs>
+            <Top>0.6in</Top><Left>4.2in</Left><Height>0.25in</Height><Width>1.5in</Width>
+          </Textbox>
+          <Textbox Name="Dates">
+            <Paragraphs><Paragraph><TextRuns><TextRun><Value>=FormatDateTime(Today(), Microsoft.VisualBasic.DateFormat.ShortDate) &amp; " " &amp; Format(Globals!ExecutionTime, "yyyy") &amp; " " &amp; IIf(Parameters!Year.Value Mod 2 = 0 And Not False, "even", "odd")</Value><Style /></TextRun></TextRuns></Paragraph></Paragraphs>
+            <Top>0.6in</Top><Left>5.8in</Left><Height>0.25in</Height><Width>1.7in</Width>
+          </Textbox>
+          <Line Name="Rule">
+            <Top>0.9in</Top><Left>0in</Left><Height>0in</Height><Width>7.5in</Width>
+            <Style><Border><Color>Gray</Color><Style>Dashed</Style><Width>1pt</Width></Border></Style>
+          </Line>
+          <Rectangle Name="Links">
+            <ReportItems>
+              <Textbox Name="Site">
+                <Paragraphs><Paragraph><TextRuns><TextRun><Value>Our site</Value><Style><TextDecoration>Underline</TextDecoration><Color>Blue</Color></Style></TextRun></TextRuns></Paragraph></Paragraphs>
+                <ActionInfo><Actions><Action><Hyperlink>="https://example.com/" &amp; Parameters!Region.Value</Hyperlink></Action></Actions></ActionInfo>
+                <Top>0in</Top><Left>0in</Left><Height>0.25in</Height><Width>1.5in</Width>
+              </Textbox>
+              <Textbox Name="BackToTop">
+                <Paragraphs><Paragraph><TextRuns><TextRun><Value>Back to top</Value><Style /></TextRun></TextRuns></Paragraph></Paragraphs>
+                <ActionInfo><Actions><Action><BookmarkLink>top</BookmarkLink></Action></Actions></ActionInfo>
+                <Top>0in</Top><Left>1.6in</Left><Height>0.25in</Height><Width>1.5in</Width>
+              </Textbox>
+            </ReportItems>
+            <KeepTogether>true</KeepTogether>
+            <Top>1in</Top><Left>0in</Left><Height>0.3in</Height><Width>3.2in</Width>
+            <Style><Border><Style>Solid</Style></Border></Style>
+          </Rectangle>
+          <Tablix Name="OrdersTable">
+            <TablixBody>
+              <TablixColumns>
+                <TablixColumn><Width>2in</Width></TablixColumn>
+                <TablixColumn><Width>3in</Width></TablixColumn>
+                <TablixColumn><Width>1.5in</Width></TablixColumn>
+              </TablixColumns>
+              <TablixRows>
+                <TablixRow>
+                  <Height>0.25in</Height>
+                  <TablixCells>
+                    <TablixCell><CellContents><Textbox Name="HRegion"><Paragraphs><Paragraph><TextRuns><TextRun><Value>Region</Value><Style><FontWeight>Bold</FontWeight></Style></TextRun></TextRuns></Paragraph></Paragraphs>
+                      <UserSort><SortExpression>=Fields!Region.Value</SortExpression></UserSort><Style><BackgroundColor>LightGrey</BackgroundColor></Style></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="HProduct"><Paragraphs><Paragraph><TextRuns><TextRun><Value>Product</Value><Style><FontWeight>Bold</FontWeight></Style></TextRun></TextRuns></Paragraph></Paragraphs><Style /></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="HAmount"><Paragraphs><Paragraph><TextRuns><TextRun><Value>Amount</Value><Style><FontWeight>Bold</FontWeight></Style></TextRun></TextRuns><Style><TextAlign>Right</TextAlign></Style></Paragraph></Paragraphs><Style /></Textbox></CellContents></TablixCell>
+                  </TablixCells>
+                </TablixRow>
+                <TablixRow>
+                  <Height>0.25in</Height>
+                  <TablixCells>
+                    <TablixCell><CellContents><Textbox Name="RegionBox"><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Region.Value</Value><Style /></TextRun></TextRuns></Paragraph></Paragraphs><Style /></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="RegionCount"><Paragraphs><Paragraph><TextRuns><TextRun><Value>=CountRows() &amp; " orders"</Value><Style /></TextRun></TextRuns></Paragraph></Paragraphs><Style /></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="RegionSum"><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Sum(Fields!Amount.Value)</Value><Style><Format>N0</Format></Style></TextRun></TextRuns></Paragraph></Paragraphs><Style /></Textbox></CellContents></TablixCell>
+                  </TablixCells>
+                </TablixRow>
+                <TablixRow>
+                  <Height>0.25in</Height>
+                  <TablixCells>
+                    <TablixCell><CellContents><Textbox Name="DCountry"><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Country.Value</Value><Style /></TextRun></TextRuns></Paragraph></Paragraphs><Style /></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="DProduct"><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Product.Value</Value><Style /></TextRun></TextRuns></Paragraph></Paragraphs>
+                      <ActionInfo><Actions><Action><Drillthrough><ReportName>Order Detail</ReportName><Parameters><Parameter Name="Product"><Value>=Fields!Product.Value</Value></Parameter></Parameters></Drillthrough></Action></Actions></ActionInfo><Style /></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="DAmount"><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Amount.Value</Value><Style><Format>N2</Format></Style></TextRun></TextRuns></Paragraph></Paragraphs><Style /></Textbox></CellContents></TablixCell>
+                  </TablixCells>
+                </TablixRow>
+                <TablixRow>
+                  <Height>0.25in</Height>
+                  <TablixCells>
+                    <TablixCell><CellContents><Textbox Name="Total"><Paragraphs><Paragraph><TextRuns><TextRun><Value>Total</Value><Style /></TextRun></TextRuns></Paragraph></Paragraphs><Style /></Textbox><ColSpan>2</ColSpan></CellContents></TablixCell>
+                    <TablixCell />
+                    <TablixCell><CellContents><Textbox Name="TotalSum"><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Sum(Fields!Amount.Value, "OrdersTable")</Value><Style><Format>N0</Format></Style></TextRun></TextRuns></Paragraph></Paragraphs><Style /></Textbox></CellContents></TablixCell>
+                  </TablixCells>
+                </TablixRow>
+              </TablixRows>
+            </TablixBody>
+            <TablixColumnHierarchy><TablixMembers><TablixMember /><TablixMember /><TablixMember /></TablixMembers></TablixColumnHierarchy>
+            <TablixRowHierarchy>
+              <TablixMembers>
+                <TablixMember><KeepWithGroup>After</KeepWithGroup><RepeatOnNewPage>true</RepeatOnNewPage></TablixMember>
+                <TablixMember>
+                  <Group Name="RegionGroup">
+                    <GroupExpressions><GroupExpression>=Fields!Region.Value</GroupExpression></GroupExpressions>
+                    <PageBreak><BreakLocation>Between</BreakLocation></PageBreak>
+                    <DocumentMapLabel>=Fields!Region.Value</DocumentMapLabel>
+                  </Group>
+                  <SortExpressions><SortExpression><Value>=Fields!Region.Value</Value></SortExpression></SortExpressions>
+                  <TablixMembers>
+                    <TablixMember><KeepWithGroup>After</KeepWithGroup></TablixMember>
+                    <TablixMember>
+                      <Group Name="Details" />
+                      <SortExpressions><SortExpression><Value>=Fields!Amount.Value</Value><Direction>Descending</Direction></SortExpression></SortExpressions>
+                      <Visibility><Hidden>true</Hidden><ToggleItem>RegionBox</ToggleItem></Visibility>
+                    </TablixMember>
+                  </TablixMembers>
+                  <KeepTogether>true</KeepTogether>
+                </TablixMember>
+                <TablixMember><KeepWithGroup>Before</KeepWithGroup></TablixMember>
+              </TablixMembers>
+            </TablixRowHierarchy>
+            <RepeatColumnHeaders>true</RepeatColumnHeaders>
+            <DataSetName>Orders</DataSetName>
+            <Filters>
+              <Filter><FilterExpression>=Fields!Country.Value</FilterExpression><Operator>In</Operator>
+                <FilterValues><FilterValue>=Parameters!Country.Value</FilterValue></FilterValues></Filter>
+            </Filters>
+            <NoRowsMessage>No orders</NoRowsMessage>
+            <Top>1.4in</Top><Left>0in</Left><Height>1in</Height><Width>6.5in</Width>
+            <Style><Border><Style>None</Style></Border></Style>
+          </Tablix>
+          <Tablix Name="Pivot">
+            <TablixCorner><TablixCornerRows><TablixCornerRow><TablixCornerCell><CellContents>
+              <Textbox Name="CornerBox"><Paragraphs><Paragraph><TextRuns><TextRun><Value>Region</Value><Style /></TextRun></TextRuns></Paragraph></Paragraphs><Style /></Textbox>
+            </CellContents></TablixCornerCell></TablixCornerRow></TablixCornerRows></TablixCorner>
+            <TablixBody>
+              <TablixColumns><TablixColumn><Width>1in</Width></TablixColumn><TablixColumn><Width>1in</Width></TablixColumn></TablixColumns>
+              <TablixRows>
+                <TablixRow><Height>0.25in</Height><TablixCells>
+                  <TablixCell><CellContents><Textbox Name="Cell"><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Sum(Fields!Amount.Value)</Value><Style><Format>N0</Format></Style></TextRun></TextRuns></Paragraph></Paragraphs><Style /></Textbox></CellContents></TablixCell>
+                  <TablixCell><CellContents><Textbox Name="RowTotal"><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Sum(Fields!Amount.Value)</Value><Style /></TextRun></TextRuns></Paragraph></Paragraphs><Style /></Textbox></CellContents></TablixCell>
+                </TablixCells></TablixRow>
+              </TablixRows>
+            </TablixBody>
+            <TablixColumnHierarchy><TablixMembers>
+              <TablixMember>
+                <Group Name="YearGroup"><GroupExpressions><GroupExpression>=Year(Fields!OrderDate.Value)</GroupExpression></GroupExpressions></Group>
+                <SortExpressions><SortExpression><Value>=Year(Fields!OrderDate.Value)</Value></SortExpression></SortExpressions>
+                <TablixHeader><Size>0.25in</Size><CellContents><Textbox Name="YearBox"><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Year(Fields!OrderDate.Value)</Value><Style /></TextRun></TextRuns></Paragraph></Paragraphs><Style /></Textbox></CellContents></TablixHeader>
+              </TablixMember>
+              <TablixMember>
+                <TablixHeader><Size>0.25in</Size><CellContents><Textbox Name="TotalHead"><Paragraphs><Paragraph><TextRuns><TextRun><Value>All years</Value><Style /></TextRun></TextRuns></Paragraph></Paragraphs><Style /></Textbox></CellContents></TablixHeader>
+              </TablixMember>
+            </TablixMembers></TablixColumnHierarchy>
+            <TablixRowHierarchy><TablixMembers>
+              <TablixMember>
+                <Group Name="PivotRegion"><GroupExpressions><GroupExpression>=Fields!Region.Value</GroupExpression></GroupExpressions></Group>
+                <TablixHeader><Size>1.2in</Size><CellContents><Textbox Name="PivotRegionBox"><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Region.Value</Value><Style /></TextRun></TextRuns></Paragraph></Paragraphs><Style /></Textbox></CellContents></TablixHeader>
+              </TablixMember>
+            </TablixMembers></TablixRowHierarchy>
+            <DataSetName>Orders</DataSetName>
+            <Top>2.5in</Top><Left>0in</Left><Height>0.5in</Height><Width>3.2in</Width>
+          </Tablix>
+          <Tablix Name="CountryList">
+            <TablixBody>
+              <TablixColumns><TablixColumn><Width>3in</Width></TablixColumn></TablixColumns>
+              <TablixRows><TablixRow><Height>0.4in</Height><TablixCells><TablixCell><CellContents>
+                <Rectangle Name="CountryCard">
+                  <ReportItems>
+                    <Textbox Name="CountryName"><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Country.Value</Value><Style /></TextRun></TextRuns></Paragraph></Paragraphs>
+                      <Top>0in</Top><Left>0in</Left><Height>0.2in</Height><Width>2in</Width><Style /></Textbox>
+                    <Textbox Name="CountryTotal"><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Sum(Fields!Amount.Value)</Value><Style /></TextRun></TextRuns></Paragraph></Paragraphs>
+                      <Top>0.2in</Top><Left>0in</Left><Height>0.2in</Height><Width>2in</Width><Style /></Textbox>
+                  </ReportItems>
+                  <KeepTogether>true</KeepTogether>
+                  <Style />
+                </Rectangle>
+              </CellContents></TablixCell></TablixCells></TablixRow></TablixRows>
+            </TablixBody>
+            <TablixColumnHierarchy><TablixMembers><TablixMember /></TablixMembers></TablixColumnHierarchy>
+            <TablixRowHierarchy><TablixMembers><TablixMember>
+              <Group Name="CountryGroup"><GroupExpressions><GroupExpression>=Fields!Country.Value</GroupExpression></GroupExpressions></Group>
+              <SortExpressions><SortExpression><Value>=Fields!Country.Value</Value></SortExpression></SortExpressions>
+            </TablixMember></TablixMembers></TablixRowHierarchy>
+            <DataSetName>Orders</DataSetName>
+            <Top>2.5in</Top><Left>3.5in</Left><Height>0.4in</Height><Width>3in</Width>
+          </Tablix>
+          <Chart Name="SalesChart">
+            <ChartCategoryHierarchy><ChartMembers><ChartMember>
+              <Group Name="ChartProduct"><GroupExpressions><GroupExpression>=Fields!Product.Value</GroupExpression></GroupExpressions></Group>
+              <SortExpressions><SortExpression><Value>=Fields!Product.Value</Value><Direction>Descending</Direction></SortExpression></SortExpressions>
+              <Label>=Fields!Product.Value</Label>
+            </ChartMember></ChartMembers></ChartCategoryHierarchy>
+            <ChartSeriesHierarchy><ChartMembers><ChartMember><Label>Amount</Label></ChartMember><ChartMember><Label>Margin</Label></ChartMember></ChartMembers></ChartSeriesHierarchy>
+            <ChartData><ChartSeriesCollection>
+              <ChartSeries Name="Amount">
+                <ChartDataPoints><ChartDataPoint>
+                  <ChartDataPointValues><Y>=Sum(Fields!Amount.Value)</Y></ChartDataPointValues>
+                  <ChartDataLabel><Style /><Visible>true</Visible></ChartDataLabel>
+                  <ActionInfo><Actions><Action><Drillthrough><ReportName>Order Detail</ReportName><Parameters><Parameter Name="Product"><Value>=Fields!Product.Value</Value></Parameter></Parameters></Drillthrough></Action></Actions></ActionInfo>
+                  <Style />
+                </ChartDataPoint></ChartDataPoints>
+                <Subtype>Stacked</Subtype>
+                <Style />
+              </ChartSeries>
+              <ChartSeries Name="Margin">
+                <ChartDataPoints><ChartDataPoint><ChartDataPointValues><Y>=Sum(Fields!Margin.Value)</Y></ChartDataPointValues><Style /></ChartDataPoint></ChartDataPoints>
+                <Type>Line</Type>
+                <Subtype>Smooth</Subtype>
+                <ValueAxisName>Secondary</ValueAxisName>
+              </ChartSeries>
+            </ChartSeriesCollection></ChartData>
+            <ChartAreas><ChartArea Name="Default">
+              <ChartCategoryAxes><ChartAxis Name="Primary"><ChartAxisTitle><Caption>Product</Caption></ChartAxisTitle><Angle>-45</Angle></ChartAxis></ChartCategoryAxes>
+              <ChartValueAxes>
+                <ChartAxis Name="Primary"><Style><Format>N0</Format></Style><ChartAxisTitle><Caption>Amount</Caption></ChartAxisTitle><ChartMajorGridLines><Enabled>False</Enabled></ChartMajorGridLines><Minimum>0</Minimum></ChartAxis>
+                <ChartAxis Name="Secondary"><Style><Format>P0</Format></Style><ChartAxisTitle><Caption>Margin</Caption></ChartAxisTitle><Location>Opposite</Location></ChartAxis>
+              </ChartValueAxes>
+            </ChartArea></ChartAreas>
+            <ChartLegends><ChartLegend Name="Default" /></ChartLegends>
+            <ChartTitles><ChartTitle Name="Default"><Caption>=Variables!Title.Value</Caption></ChartTitle></ChartTitles>
+            <Palette>EarthTones</Palette>
+            <DataSetName>Orders</DataSetName>
+            <Top>3.1in</Top><Left>0in</Left><Height>2.5in</Height><Width>4.5in</Width>
+          </Chart>
+          <Chart Name="ShareChart">
+            <ChartCategoryHierarchy><ChartMembers><ChartMember>
+              <Group Name="ShareRegion"><GroupExpressions><GroupExpression>=Fields!Region.Value</GroupExpression></GroupExpressions></Group>
+            </ChartMember></ChartMembers></ChartCategoryHierarchy>
+            <ChartSeriesHierarchy><ChartMembers><ChartMember><Label>Amount</Label></ChartMember></ChartMembers></ChartSeriesHierarchy>
+            <ChartData><ChartSeriesCollection><ChartSeries Name="Share">
+              <ChartDataPoints><ChartDataPoint><ChartDataPointValues><Y>=Sum(Fields!Amount.Value)</Y></ChartDataPointValues>
+                <ChartDataLabel><Style><Format>P0</Format></Style><Label>=Sum(Fields!Amount.Value) / Sum(Fields!Amount.Value, "Orders")</Label><Visible>true</Visible></ChartDataLabel></ChartDataPoint></ChartDataPoints>
+              <Type>Shape</Type><Subtype>Doughnut</Subtype>
+            </ChartSeries></ChartSeriesCollection></ChartData>
+            <ChartAreas><ChartArea Name="Default" /></ChartAreas>
+            <Palette>Custom</Palette>
+            <ChartCustomPaletteColors><ChartCustomPaletteColor>#1f77b4</ChartCustomPaletteColor><ChartCustomPaletteColor>#ff7f0e</ChartCustomPaletteColor></ChartCustomPaletteColors>
+            <DataSetName>Orders</DataSetName>
+            <Top>3.1in</Top><Left>4.6in</Left><Height>2.5in</Height><Width>2.9in</Width>
+          </Chart>
+          <GaugePanel Name="Speed">
+            <RadialGauges><RadialGauge Name="RadialGauge1">
+              <GaugeScales><RadialScale Name="RadialScale1">
+                <GaugePointers><RadialPointer Name="RadialPointer1"><GaugeInputValue><Value>=Sum(Fields!Amount.Value)</Value></GaugeInputValue></RadialPointer></GaugePointers>
+                <MaximumValue><Value>1000</Value></MaximumValue><MinimumValue><Value>0</Value></MinimumValue>
+              </RadialScale></GaugeScales>
+            </RadialGauge></RadialGauges>
+            <DataSetName>Orders</DataSetName>
+            <Top>5.7in</Top><Left>0in</Left><Height>1.5in</Height><Width>2in</Width>
+          </GaugePanel>
+          <GaugePanel Name="Status">
+            <StateIndicators><StateIndicator Name="Indicator1">
+              <GaugeInputValue><Value>=Sum(Fields!Amount.Value)</Value></GaugeInputValue>
+              <TransformationType>None</TransformationType>
+              <IndicatorStyle>3Arrows</IndicatorStyle>
+              <IndicatorStates>
+                <IndicatorState Name="Down"><StartValue><Value>0</Value></StartValue><EndValue><Value>100</Value></EndValue><Color>Red</Color></IndicatorState>
+                <IndicatorState Name="Flat"><StartValue><Value>100</Value></StartValue><EndValue><Value>500</Value></EndValue><Color>Yellow</Color></IndicatorState>
+                <IndicatorState Name="Up"><StartValue><Value>500</Value></StartValue><EndValue><Value>100000</Value></EndValue><Color>Green</Color></IndicatorState>
+              </IndicatorStates>
+            </StateIndicator></StateIndicators>
+            <DataSetName>Orders</DataSetName>
+            <Top>5.7in</Top><Left>2.1in</Left><Height>0.3in</Height><Width>0.3in</Width>
+          </GaugePanel>
+          <Image Name="Photo">
+            <Source>External</Source>
+            <Value>https://example.com/photo.png</Value>
+            <Sizing>FitProportional</Sizing>
+            <Top>5.7in</Top><Left>2.5in</Left><Height>1in</Height><Width>1in</Width>
+          </Image>
+          <Image Name="Stored">
+            <Source>Database</Source>
+            <Value>=First(Fields!Product.Value, "Orders")</Value>
+            <MIMEType>image/jpeg</MIMEType>
+            <Top>5.7in</Top><Left>3.6in</Left><Height>1in</Height><Width>1in</Width>
+          </Image>
+          <Subreport Name="Detail">
+            <ReportName>Order Detail</ReportName>
+            <Parameters><Parameter Name="Region"><Value>=Parameters!Region.Value</Value></Parameter></Parameters>
+            <Top>5.7in</Top><Left>4.7in</Left><Height>0.5in</Height><Width>2.8in</Width>
+          </Subreport>
+          <Map Name="SalesMap">
+            <Top>7.3in</Top><Left>0in</Left><Height>1in</Height><Width>3in</Width>
+          </Map>
+        </ReportItems>
+        <Height>8.5in</Height>
+        <Style />
+      </Body>
+      <Width>7.5in</Width>
+      <Page>
+        <PageHeader>
+          <Height>0.6in</Height>
+          <PrintOnFirstPage>true</PrintOnFirstPage>
+          <PrintOnLastPage>true</PrintOnLastPage>
+          <ReportItems>
+            <Textbox Name="HeaderTitle">
+              <Paragraphs><Paragraph><TextRuns><TextRun><Value>=Variables!Title.Value</Value><Style><FontSize>16pt</FontSize><FontWeight>Bold</FontWeight></Style></TextRun></TextRuns></Paragraph></Paragraphs>
+              <Top>0in</Top><Left>0in</Left><Height>0.4in</Height><Width>5in</Width><Style />
+            </Textbox>
+            <Image Name="HeaderLogo">
+              <Source>Embedded</Source><Value>Logo</Value><Sizing>FitProportional</Sizing>
+              <Top>0in</Top><Left>6.5in</Left><Height>0.5in</Height><Width>1in</Width>
+            </Image>
+          </ReportItems>
+          <Style><BackgroundColor>#eef3f8</BackgroundColor></Style>
+        </PageHeader>
+        <PageFooter>
+          <Height>0.4in</Height>
+          <PrintOnFirstPage>true</PrintOnFirstPage>
+          <PrintOnLastPage>true</PrintOnLastPage>
+          <ReportItems>
+            <Textbox Name="PageNo">
+              <Paragraphs><Paragraph>
+                <TextRuns>
+                  <TextRun><Value>Page </Value><Style /></TextRun>
+                  <TextRun><Value>=Globals!PageNumber</Value><Style /></TextRun>
+                  <TextRun><Value> of </Value><Style /></TextRun>
+                  <TextRun><Value>=Globals!TotalPages</Value><Style /></TextRun>
+                </TextRuns>
+                <Style><TextAlign>Right</TextAlign></Style>
+              </Paragraph></Paragraphs>
+              <Top>0.1in</Top><Left>5.5in</Left><Height>0.25in</Height><Width>2in</Width><Style />
+            </Textbox>
+          </ReportItems>
+          <Style />
+        </PageFooter>
+        <PageHeight>11in</PageHeight>
+        <PageWidth>8.5in</PageWidth>
+        <LeftMargin>0.5in</LeftMargin>
+        <RightMargin>0.5in</RightMargin>
+        <TopMargin>0.5in</TopMargin>
+        <BottomMargin>0.5in</BottomMargin>
+        <Style />
+      </Page>
+    </ReportSection>
+  </ReportSections>
+  <rd:ReportUnitType>Inch</rd:ReportUnitType>
+</Report>
