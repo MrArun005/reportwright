@@ -32,6 +32,8 @@ const OBJSTM = 100; // small objects per object stream
 const IN_FLIGHT = 8; // pages compressing at once (zlib's 4 threads busy, the next drawn meanwhile)
 const hex4 = (/** @type {number} */ id) => id.toString(16).padStart(4, '0');
 const num = (/** @type {number} */ v) => String(Math.round(v * 1000) / 1000);
+/** a font's resource name, from its key: the same in every writer */
+const fontRes = (/** @type {string} */ key) => `F_${key.replace(/[^A-Za-z0-9.-]/g, '_')}`;
 /** a byte in a literal string: ( ) \\ escaped, CR as \\r (a bare CR would read as a line end) */
 const esc = (/** @type {number} */ b) => (b === 0x28 || b === 0x29 || b === 0x5c ? '\\' + String.fromCharCode(b) : b === 0x0d ? '\\r' : String.fromCharCode(b));
 
@@ -123,7 +125,7 @@ export function createPdfStream(sink, opt) {
     let f = fonts.get(key);
     if (!f) {
       if (done) throw new Error('The PDF is finished');
-      fonts.set(key, f = { name: `F${fonts.size + 1}`, ref: reserve(), font: fontStore.get(key), cps: new Set([32]), glyphs: new Map(), memo: new Map(), lit: new Map() });
+      fonts.set(key, f = { name: fontRes(key), ref: reserve(), font: fontStore.get(key), cps: new Set([32]), glyphs: new Map(), memo: new Map(), lit: new Map() });
     }
     return f;
   };
@@ -193,15 +195,25 @@ export function createPdfStream(sink, opt) {
      * A name in the shared Resources dictionary for a value (an indirect ref "12 0 R" or an inline dictionary).
      * @param {'ExtGState'|'XObject'|'Pattern'|'Shading'|'ColorSpace'} kind @param {string} value
      */
-    resource(kind, value) {
+    resource(kind, value, name = undefined) {
       let m = res.get(kind);
       if (!m) res.set(kind, m = new Map());
       let n = m.get(value);
-      if (!n) m.set(value, n = `${kind === 'ExtGState' ? 'GS' : kind[0]}${m.size + 1}`);
+      if (!n) m.set(value, n = name || `${kind === 'ExtGState' ? 'GS' : kind[0]}${m.size + 1}`);
       return n;
     },
-    /** The ExtGState name for fill and stroke opacity. @param {number} ca @param {number} CA */
-    gs: (ca, CA) => w.resource('ExtGState', `<< /Type /ExtGState /ca ${num(ca)} /CA ${num(CA)} >>`),
+    /**
+     * The ExtGState name for fill and stroke opacity, named by its values (the same name in every writer: pages
+     * painted elsewhere, parallel.js, use it too). @param {number} ca @param {number} CA
+     */
+    gs: (ca, CA) => w.resource('ExtGState', `<< /Type /ExtGState /ca ${num(ca)} /CA ${num(CA)} >>`, `GS${num(ca)}_${num(CA)}`),
+    /** What this writer's pages used, for another writer to take over (pages painted elsewhere). */
+    used: () => ({ fonts: [...fonts].map(([key, F]) => [key, [...F.cps], [...F.glyphs]]), gs: [...(res.get('ExtGState')?.keys() || [])] }),
+    /** Take over what pages painted elsewhere used (used() of their writer). @param {any} u */
+    take(u) {
+      for (const [key, cps, glyphs] of u.fonts) { const F = fontOf(key); for (const cp of cps) F.cps.add(cp); for (const [id, t] of glyphs) if (!F.glyphs.has(id)) F.glyphs.set(id, t); }
+      for (const v of u.gs) { const m = /** @type {any} */ (v).match(/\/ca (\S+) \/CA (\S+)/); w.gs(Number(m[1]), Number(m[2])); }
+    },
     /**
      * Write an object now (an image: its dictionary and its stream, already filtered). @returns {Promise<number>} its number
      * @param {string} dict @param {Uint8Array} [stream]
@@ -236,7 +248,8 @@ export function createPdfStream(sink, opt) {
     },
     /**
      * Write a page: its content stream (deflated) and its dictionary, now. Nothing of it stays but two offsets.
-     * @param {{ width: number, height: number, content: string | Uint8Array, annots?: (string | { ref: number, dict: string })[], extra?: string }} p
+     * @param {{ width: number, height: number, content?: string | Uint8Array, deflated?: Uint8Array, annots?: (string | { ref: number, dict: string })[], extra?: string }} p
+     *   deflated: the content stream already compressed (zlib), as pages painted elsewhere come.
      *   content: the page's operators (a string holds bytes 0–255, as pdf.js's Content makes). annots: annotation
      *   dictionaries (with a reserved number: { ref, dict }). extra: more entries for the page dictionary (/StructParents 3).
      */
@@ -247,7 +260,7 @@ export function createPdfStream(sink, opt) {
       if (i % LEAF === 0) leaves.push(reserve());
       const contents = reserve(), parent = leaves[leaves.length - 1];
       // the stream compresses on zlib's threads while the next pages are drawn: a few pages wait, in order
-      const z = deflate(typeof p.content === 'string' ? latin1(p.content) : p.content);
+      const z = p.deflated ? Promise.resolve(p.deflated) : deflate(typeof p.content === 'string' ? latin1(p.content) : p.content);
       z.catch(() => {}); // awaited (and thrown) when the page is written
       inFlight.push({ ref, contents, parent, p: { width: p.width, height: p.height, annots: p.annots, extra: p.extra }, z });
       while (inFlight.length > IN_FLIGHT) await writeNext();
@@ -496,101 +509,29 @@ export async function exportPdfStream(def, opts, sink) {
  */
 export async function writePagedPdf(plan, opts, sink) {
   const { fontStore } = opts;
-  const w = createPdfStream(sink, { fontStore, subset: opts.subset });
-  /** @type {Map<string, any>} pdf-lib-like fonts for the shared painter: { key, embedder: { font } } */
-  const pfs = new Map();
-  const pf = (/** @type {string} */ key) => { let f = pfs.get(key); if (!f) pfs.set(key, f = { key, embedder: { font: fontStore.get(key) } }); return f; };
-  /** @type {Map<string, Map<number, string>>} shaped glyphs per font: the text each stands for */
-  const shaped = new Map();
-  const shapedOf = (/** @type {string} */ key) => { let g = shaped.get(key); if (!g) shaped.set(key, g = new Map()); return g; };
-  const shared = { font: (f) => w.fontName(f.key), gs: (ca, CA) => w.gs(ca, CA), image: () => { throw new Error('images do not stream yet'); } };
-  const vm = new Map();
-  const vmetrics = (key) => {
-    let m = vm.get(key);
-    if (!m) { const f = fontStore.get(key), u = f?.unitsPerEm || 1000; vm.set(key, m = { asc: (f?.ascent ?? u) / u, desc: -(f?.descent ?? 0) / u }); }
-    return m;
-  };
+  const w = createPdfStream(sink, { fontStore, subset: opts.subset, id: opts.id });
   const { info, pages } = /** @type {any} */ (plan);
   // tagged (PDF/UA-1): a structure tree written as the pages are (pdfstreamtags.js)
   const tags = opts.tagged ? createStreamTagger(w) : null;
+  const env = paintEnv(w, fontStore, { drillBase: opts.drillBase, tags });
+  const { shaped } = env;
+  // opts.parallel: windows laid out and painted by that many worker threads (Node), their pages written here in order
+  const pool = !tags && Number(opts.parallel) > 1 ? paintPool(Number(opts.parallel), fontStore, opts, info) : null;
   let pi = -1;
-  for await (const pg of pages()) {
-    pi++;
-    const H = pg.height ?? info.height, annots = [];
-    const c = new Content(shared);
-    if (tags) { c.tagged = true; tags.page(pg.win ?? 0); }
-    for (const it of pg.items) {
-      const mark = tags && tags.open(it);
-      if (mark) { c.et(); c.s += mark; }
-      if ((it.t !== 'text' && it.t !== 'line') || it.rotate) c.et();
-      if (it.rotate) {
-        const t = -it.rotate.a * Math.PI / 180, cs = Math.cos(t), sn = Math.sin(t);
-        const px = it.rotate.cx, py = H - it.rotate.cy;
-        c.q();
-        c.s += `${n4(cs)} ${n4(sn)} ${n4(-sn)} ${n4(cs)} ${n2(px - px * cs + py * sn)} ${n2(py - px * sn - py * cs)} cm\n`;
+  try {
+    for await (const pg of pages(pool ? { run: pool.run, parallel: pool.size } : {})) {
+      pi++;
+      const H = pg.height ?? info.height;
+      if (pg.deflated) { // painted by a worker: its fonts and glyphs first, then its links' pages by number
+        if (pg.used) { w.take(pg.used); for (const [k, g] of pg.shaped) { const m = env.shapedOf(k); for (const [id, t] of g) if (!m.has(id)) m.set(id, t); } }
+        const annots = pg.annots.map((/** @type {string} */ a) => a.replace(/@@P(\d+)@@/g, (_, i) => String(w.pageRef(Number(i)))));
+        await w.addPage({ width: pg.width ?? info.width, height: H, deflated: pg.deflated, annots });
+        continue;
       }
-      switch (it.t) {
-        case 'rect': {
-          const fill = col(it.fill), stroke = col(it.stroke);
-          if (!fill && !stroke) break;
-          if (it.radius) throw new Error('rounded boxes do not stream yet');
-          c.paint(fill, stroke, it.strokeWidth || 1, it.dash);
-          const x = n2(it.x), y = n2(H - it.y - it.h), rw = n2(it.w), rh = n2(it.h);
-          c.s += (stroke && it.dash?.length ? `${x} ${y} m ${x} ${n2(y + rh)} l ${n2(x + rw)} ${n2(y + rh)} l ${n2(x + rw)} ${y} l h` : `${x} ${y} ${rw} ${rh} re`) + (fill && stroke ? ' B\n' : fill ? ' f\n' : ' S\n');
-          break;
-        }
-        case 'ellipse': {
-          const fill = col(it.fill), stroke = col(it.stroke);
-          if (!fill && !stroke) break;
-          c.paint(fill, stroke, it.strokeWidth || 1, it.dash);
-          const cx = it.cx, cy = H - it.cy, rx = it.rx, ry = it.ry, ox = rx * KAPPA, oy = ry * KAPPA;
-          c.s += `${n2(cx - rx)} ${n2(cy)} m ${n2(cx - rx)} ${n2(cy - oy)} ${n2(cx - ox)} ${n2(cy - ry)} ${n2(cx)} ${n2(cy - ry)} c `
-            + `${n2(cx + ox)} ${n2(cy - ry)} ${n2(cx + rx)} ${n2(cy - oy)} ${n2(cx + rx)} ${n2(cy)} c `
-            + `${n2(cx + rx)} ${n2(cy + oy)} ${n2(cx + ox)} ${n2(cy + ry)} ${n2(cx)} ${n2(cy + ry)} c `
-            + `${n2(cx - ox)} ${n2(cy + ry)} ${n2(cx - rx)} ${n2(cy + oy)} ${n2(cx - rx)} ${n2(cy)} c h ${fill && stroke ? 'B' : fill ? 'f' : 'S'}\n`;
-          break;
-        }
-        case 'line': {
-          const st = col(it.stroke);
-          if (st) c.line(st, it.strokeWidth || 1, it.dash, it.x1, H - it.y1, it.x2, H - it.y2);
-          break;
-        }
-        case 'text': {
-          const color = col(it.color) || BLACK;
-          const clipped = it.clip && !insideClip(it, vmetrics(it.font));
-          if (clipped) { c.q(); c.s += `${n2(it.clip.x)} ${n2(H - it.clip.y - it.clip.h)} ${n2(it.clip.w)} ${n2(it.clip.h)} re W n\n`; }
-          for (const l of it.lines) {
-            if (!l.runs) { c.text(pf(it.font), it.size, color, l.x, H - l.y, w.literal(it.font, cleanText(l.text))); continue; }
-            for (const r of l.runs) {
-              const g = shapedOf(r.font), spans = new WeakMap();
-              glyphText(r, fontStore.get(r.font), g, spans);
-              if (r.text.trim()) drawRun(c, r, l.x + r.x, H - l.y, it.size, pf(r.font), color, spans.get(r), g);
-            }
-          }
-          if (clipped) c.Q();
-          break;
-        }
-        case 'link': {
-          const rect = `[${[it.x, H - it.y - it.h, it.x + it.w, H - it.y].map(n2).join(' ')}]`;
-          const a = it.action;
-          const href = a?.type === 'url' && safeUrl(a.href) ? a.href : a?.type === 'drill' ? drillUrl(opts.drillBase, a) : null;
-          const to = href ? `/A << /Type /Action /S /URI /URI ${lit(asciiUrl(href))} >>` : a?.type === 'bookmark' && a.page ? `/Dest [${w.pageRef(a.page - 1)} 0 R /XYZ null ${n2(H - a.y + 4)} null]` : null;
-          if (!to) break; // ponytail: a jump to a bookmark by name needs every page's bookmarks first: left out while streaming
-          if (!tags) { annots.push(`<< /Type /Annot /Subtype /Link /F 4 /Rect ${rect} /Border [0 0 0] ${to} >>`); break; }
-          // tagged: what the link does, for a screen reader, and its Link element
-          const ref = w.reserve(), key = tags.link(it, ref);
-          const say = coveredText(pg.items, it) || it.tip || href || (a.target ? `Go to ${a.target}` : `Go to page ${a.page}`);
-          annots.push({ ref, dict: `<< /Type /Annot /Subtype /Link /F 4 /Rect ${rect} /Border [0 0 0] ${to} /Contents ${pdfText(say)} /StructParent ${key} >>` });
-          break;
-        }
-        default: throw new Error(`A ${it.t} item does not stream yet`);
-      }
-      if (it.rotate) c.Q();
-      if (mark) { c.et(); c.s += 'EMC\n'; }
+      const { content, annots } = paintPage(pg, H, env);
+      await w.addPage({ width: pg.width ?? info.width, height: H, content, annots, extra: tags ? await tags.end(w.pageRef(pi)) : undefined });
     }
-    c.et();
-    await w.addPage({ width: pg.width ?? info.width, height: H, content: c.s, annots, extra: tags ? await tags.end(w.pageRef(pi)) : undefined });
-  }
+  } finally { await pool?.close(); }
   for (const [key, g] of shaped) w.addGlyphs(key, g);
   // the outline as exportPdf makes it: bookmarks and headings in page order, each entry once
   const seen = new Set();
@@ -620,4 +561,162 @@ function coveredText(items, box) {
   const lines = [];
   for (const t of items) if (t.t === 'text' && t.lines) for (const l of t.lines) if (l.text?.trim() && l.x >= box.x && l.x <= box.x + box.w && l.y >= box.y && l.y <= box.y + box.h) lines.push(l);
   return lines.sort((a, b) => a.y - b.y || a.x - b.x).map(l => l.text.trim()).join(' ');
+}
+
+/**
+ * A page of the model as its content stream's operators and its link annotations, drawn with the shared painter
+ * (pdfpaint.js) as exportPdf draws it. env (paintEnv): the writer's names and glyph records, the page refs links jump
+ * to, the tagger when tagged. Pages painted in parallel (parallel.js) use a writer of their own and the same names.
+ * @param {any} pg @param {number} H @param {any} env
+ * @returns {{ content: string, annots: any[] }}
+ */
+export function paintPage(pg, H, env) {
+  const annots = [];
+  const c = new Content(env.shared);
+  const { tags } = env;
+  if (tags) { c.tagged = true; tags.page(pg.win ?? 0); }
+  for (const it of pg.items) {
+    const mark = tags && tags.open(it);
+    if (mark) { c.et(); c.s += mark; }
+    if ((it.t !== 'text' && it.t !== 'line') || it.rotate) c.et();
+    if (it.rotate) {
+      const t = -it.rotate.a * Math.PI / 180, cs = Math.cos(t), sn = Math.sin(t);
+      const px = it.rotate.cx, py = H - it.rotate.cy;
+      c.q();
+      c.s += `${n4(cs)} ${n4(sn)} ${n4(-sn)} ${n4(cs)} ${n2(px - px * cs + py * sn)} ${n2(py - px * sn - py * cs)} cm\n`;
+    }
+    switch (it.t) {
+      case 'rect': {
+        const fill = col(it.fill), stroke = col(it.stroke);
+        if (!fill && !stroke) break;
+        if (it.radius) throw new Error('rounded boxes do not stream yet');
+        c.paint(fill, stroke, it.strokeWidth || 1, it.dash);
+        const x = n2(it.x), y = n2(H - it.y - it.h), rw = n2(it.w), rh = n2(it.h);
+        c.s += (stroke && it.dash?.length ? `${x} ${y} m ${x} ${n2(y + rh)} l ${n2(x + rw)} ${n2(y + rh)} l ${n2(x + rw)} ${y} l h` : `${x} ${y} ${rw} ${rh} re`) + (fill && stroke ? ' B\n' : fill ? ' f\n' : ' S\n');
+        break;
+      }
+      case 'ellipse': {
+        const fill = col(it.fill), stroke = col(it.stroke);
+        if (!fill && !stroke) break;
+        c.paint(fill, stroke, it.strokeWidth || 1, it.dash);
+        const cx = it.cx, cy = H - it.cy, rx = it.rx, ry = it.ry, ox = rx * KAPPA, oy = ry * KAPPA;
+        c.s += `${n2(cx - rx)} ${n2(cy)} m ${n2(cx - rx)} ${n2(cy - oy)} ${n2(cx - ox)} ${n2(cy - ry)} ${n2(cx)} ${n2(cy - ry)} c `
+          + `${n2(cx + ox)} ${n2(cy - ry)} ${n2(cx + rx)} ${n2(cy - oy)} ${n2(cx + rx)} ${n2(cy)} c `
+          + `${n2(cx + rx)} ${n2(cy + oy)} ${n2(cx + ox)} ${n2(cy + ry)} ${n2(cx)} ${n2(cy + ry)} c `
+          + `${n2(cx - ox)} ${n2(cy + ry)} ${n2(cx - rx)} ${n2(cy + oy)} ${n2(cx - rx)} ${n2(cy)} c h ${fill && stroke ? 'B' : fill ? 'f' : 'S'}\n`;
+        break;
+      }
+      case 'line': {
+        const st = col(it.stroke);
+        if (st) c.line(st, it.strokeWidth || 1, it.dash, it.x1, H - it.y1, it.x2, H - it.y2);
+        break;
+      }
+      case 'text': {
+        const color = col(it.color) || BLACK;
+        const clipped = it.clip && !insideClip(it, env.vmetrics(it.font));
+        if (clipped) { c.q(); c.s += `${n2(it.clip.x)} ${n2(H - it.clip.y - it.clip.h)} ${n2(it.clip.w)} ${n2(it.clip.h)} re W n\n`; }
+        for (const l of it.lines) {
+          if (!l.runs) { c.text(env.pf(it.font), it.size, color, l.x, H - l.y, env.literal(it.font, cleanText(l.text))); continue; }
+          for (const r of l.runs) {
+            const g = env.shapedOf(r.font), spans = new WeakMap();
+            glyphText(r, env.font(r.font), g, spans);
+            if (r.text.trim()) drawRun(c, r, l.x + r.x, H - l.y, it.size, env.pf(r.font), color, spans.get(r), g);
+          }
+        }
+        if (clipped) c.Q();
+        break;
+      }
+      case 'link': {
+        const rect = `[${[it.x, H - it.y - it.h, it.x + it.w, H - it.y].map(n2).join(' ')}]`;
+        const a = it.action;
+        const href = a?.type === 'url' && safeUrl(a.href) ? a.href : a?.type === 'drill' ? drillUrl(env.drillBase, a) : null;
+        const to = href ? `/A << /Type /Action /S /URI /URI ${lit(asciiUrl(href))} >>` : a?.type === 'bookmark' && a.page ? `/Dest [${env.pageRef(a.page - 1)} 0 R /XYZ null ${n2(H - a.y + 4)} null]` : null;
+        if (!to) break; // ponytail: a jump to a bookmark by name needs every page's bookmarks first: left out while streaming
+        if (!tags) { annots.push(`<< /Type /Annot /Subtype /Link /F 4 /Rect ${rect} /Border [0 0 0] ${to} >>`); break; }
+        // tagged: what the link does, for a screen reader, and its Link element
+        const ref = env.reserve(), key = tags.link(it, ref);
+        const say = coveredText(pg.items, it) || it.tip || href || (a.target ? `Go to ${a.target}` : `Go to page ${a.page}`);
+        annots.push({ ref, dict: `<< /Type /Annot /Subtype /Link /F 4 /Rect ${rect} /Border [0 0 0] ${to} /Contents ${pdfText(say)} /StructParent ${key} >>` });
+        break;
+      }
+      default: throw new Error(`A ${it.t} item does not stream yet`);
+    }
+    if (it.rotate) c.Q();
+    if (mark) { c.et(); c.s += 'EMC\n'; }
+  }
+  c.et();
+  return { content: c.s, annots };
+}
+
+/**
+ * What paintPage draws with: a writer's resource names and glyph records (w), the fonts, shaped glyphs' texts.
+ * @param {any} w @param {any} fontStore @param {{ drillBase?: string, pageRef?: (i: number) => any, tags?: any }} [o]
+ */
+export function paintEnv(w, fontStore, o = {}) {
+  /** @type {Map<string, any>} pdf-lib-like fonts for the shared painter: { key, embedder: { font } } */
+  const pfs = new Map();
+  /** @type {Map<string, Map<number, string>>} shaped glyphs per font: the text each stands for */
+  const shaped = new Map();
+  const vm = new Map();
+  return {
+    shared: { font: (f) => w.fontName(f.key), gs: (ca, CA) => w.gs(ca, CA), image: () => { throw new Error('images do not stream yet'); } },
+    pf: (/** @type {string} */ key) => { let f = pfs.get(key); if (!f) pfs.set(key, f = { key, embedder: { font: fontStore.get(key) } }); return f; },
+    font: (/** @type {string} */ key) => fontStore.get(key),
+    shaped,
+    shapedOf: (/** @type {string} */ key) => { let g = shaped.get(key); if (!g) shaped.set(key, g = new Map()); return g; },
+    vmetrics: (/** @type {string} */ key) => {
+      let m = vm.get(key);
+      if (!m) { const f = fontStore.get(key), u = f?.unitsPerEm || 1000; vm.set(key, m = { asc: (f?.ascent ?? u) / u, desc: -(f?.descent ?? 0) / u }); }
+      return m;
+    },
+    literal: (/** @type {string} */ key, /** @type {string} */ text) => w.literal(key, text),
+    pageRef: o.pageRef || ((/** @type {number} */ i) => w.pageRef(i)),
+    reserve: () => w.reserve(),
+    drillBase: o.drillBase,
+    tags: o.tags || null,
+  };
+}
+
+/**
+ * Worker threads that lay out and paint windows of pages (pdfstreamworker.js): run(job) answers as paged.js's own
+ * layout does, with pages painted and compressed. Started at the first job, when every font the report uses is loaded
+ * (the counting pass loaded them); each worker gets their bytes. Node only.
+ * @param {number} size @param {any} fontStore @param {any} opts @param {any} info
+ */
+function paintPool(size, fontStore, opts, info) {
+  const wt = /** @type {any} */ (globalThis).process?.getBuiltinModule?.('node:worker_threads');
+  if (!wt) return null;
+  /** @type {any[]} */
+  let workers = [];
+  let seq = 0, turn = 0;
+  const waiting = new Map();
+  const clean = (/** @type {any} */ r) => { if (!r) return r; const { __i, ...o } = r; return o; };
+  const start = async () => {
+    const fonts = [...fontStore.bytes];
+    if (fontStore.shaper) fonts.push(['harfbuzz', await fontStore.loader('harfbuzz')]);
+    workers = Array.from({ length: size }, () => {
+      const w = new wt.Worker(new URL('./pdfstreamworker.js', import.meta.url), { workerData: { fonts } });
+      w.on('message', (/** @type {any} */ m) => { const p = waiting.get(m.id); waiting.delete(m.id); if (m.error) p.fail(Object.assign(new Error(m.error.message), { status: m.error.status, timeout: m.error.timeout })); else p.ok(m); });
+      w.on('error', (/** @type {any} */ e) => { for (const p of waiting.values()) p.fail(e); waiting.clear(); });
+      return w;
+    });
+  };
+  let started = null;
+  const pick = ['parameters', 'now', 'timeZone', 'state', 'target', 'deadline', 'timeoutMs'];
+  return {
+    size,
+    /** @param {any} job */
+    async run(job) {
+      await (started ||= start());
+      const id = ++seq;
+      const pw = job.pageWindow;
+      const msg = { id, def: job.def, rows: job.rows.map(clean), keep: job.keep, drillBase: opts.drillBase, height: info.height,
+        opts: Object.fromEntries(pick.filter(k => opts[k] !== undefined).map(k => [k, opts[k]])),
+        pageWindow: { ...pw, first: clean(pw.first), cont: pw.cont.map((/** @type {any} */ c) => c && { first: clean(c.first), before: c.before }) } };
+      const r = await new Promise((ok, fail) => { waiting.set(id, { ok, fail }); workers[turn++ % workers.length].postMessage(msg); });
+      if (r.pages.length) { r.pages[0].used = r.used; r.pages[0].shaped = r.shaped; }
+      return r;
+    },
+    async close() { await Promise.all(workers.map(w => w.terminate())); },
+  };
 }

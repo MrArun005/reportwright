@@ -66,6 +66,21 @@ const ledger = (rows, extra = {}) => ({
 });
 const now = new Date('2026-01-02T03:04:05Z');
 
+const sumF = (label) => [{ height: 15, style: { fontWeight: 'bold' }, cells: [{ value: label }, { value: '=CountRows()' }, null, null, null, { value: '=Sum(Fields.amount)', style: { format: 'N2', textAlign: 'right' } }, { value: '=Fields.region' }, { value: '=Max(Fields.date)', style: { format: 'd' } }] }];
+/** two group levels (subtotals, counts, max; the outer header repeats), RowNumber, fields in the table header */
+const grouped = (n, o = {}) => {
+  const def = ledger(ledgerRows(n), o.def);
+  const t = def.sections.body.items[1];
+  t.groups = [
+    { name: 'Region', expr: '=Fields.region', repeatHeader: true, header: [{ height: 18, style: { backgroundColor: '#dbeafe', fontWeight: 'bold' }, cells: [{ value: '="Region " & Fields.region', colSpan: 3 }, null, null] }], footer: sumF('Region total'), ...o.outer },
+    { name: 'Type', expr: '=Fields.type', header: [{ height: 15, cells: [null, { value: '=Fields.type' }] }], footer: sumF('Type total'), ...o.inner },
+  ];
+  t.detail[0].cells[0] = { value: '=RowNumber() & "/" & Fields.id' };
+  t.header[0].cells[1] = { value: '="From " & Fields.accountId' };
+  Object.assign(t, o.table);
+  if (o.single) def.sections.pageFooter.items[0].value = 'Page {Globals.PageNumber}';
+  return def;
+};
 describe('paged rendering of a flowing table', () => {
   it('window by window, the pages are the whole render\'s pages', async () => {
     const def = ledger(ledgerRows(1500));
@@ -79,21 +94,6 @@ describe('paged rendering of a flowing table', () => {
     pages.forEach((p, i) => expect(JSON.stringify(p.items), `page ${i + 1}`).toBe(JSON.stringify(whole.pages[i].items)));
   });
 
-  const sumF = (label) => [{ height: 15, style: { fontWeight: 'bold' }, cells: [{ value: label }, { value: '=CountRows()' }, null, null, null, { value: '=Sum(Fields.amount)', style: { format: 'N2', textAlign: 'right' } }, { value: '=Fields.region' }, { value: '=Max(Fields.date)', style: { format: 'd' } }] }];
-  /** two group levels (subtotals, counts, max; the outer header repeats), RowNumber, fields in the table header */
-  const grouped = (n, o = {}) => {
-    const def = ledger(ledgerRows(n), o.def);
-    const t = def.sections.body.items[1];
-    t.groups = [
-      { name: 'Region', expr: '=Fields.region', repeatHeader: true, header: [{ height: 18, style: { backgroundColor: '#dbeafe', fontWeight: 'bold' }, cells: [{ value: '="Region " & Fields.region', colSpan: 3 }, null, null] }], footer: sumF('Region total'), ...o.outer },
-      { name: 'Type', expr: '=Fields.type', header: [{ height: 15, cells: [null, { value: '=Fields.type' }] }], footer: sumF('Type total'), ...o.inner },
-    ];
-    t.detail[0].cells[0] = { value: '=RowNumber() & "/" & Fields.id' };
-    t.header[0].cells[1] = { value: '="From " & Fields.accountId' };
-    Object.assign(t, o.table);
-    if (o.single) def.sections.pageFooter.items[0].value = 'Page {Globals.PageNumber}';
-    return def;
-  };
   const same = async (def, window) => {
     const whole = await render(def, { fontStore, now });
     const plan = await planPaged(def, { fontStore, now, window });
@@ -170,6 +170,16 @@ describe('exportPdfStream', () => {
       }
     }
   }, 240000);
+
+  it('parallel: windows laid out and painted by worker threads give the same file, byte for byte', async () => {
+    const def = grouped(3000);
+    const run = async (parallel) => { const s = sink(); const r = await exportPdfStream(def, { fontStore, now, subset, creationDate: now, id: '0123456789abcdef0123456789abcdef', window: 300, parallel }, s); expect(r.streamed).toBe(true); return s.bytes(); };
+    const one = await run(1);
+    expect((await run(3)).equals(one)).toBe(true);
+    // without "of M" the pages are counted first all the same (the workers need the page starts)
+    def.sections.pageFooter.items[0].value = 'Page {Globals.PageNumber}';
+    expect((await run(2)).equals(await run(1))).toBe(true);
+  }, 120000);
 
   it('a report that does not page is exportPdf\'s file, byte for byte', async () => {
     const def = ledger(ledgerRows(50));
