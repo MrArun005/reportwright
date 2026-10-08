@@ -46,18 +46,27 @@ export class Sheet {
   /** A picture with its top-left at (col, row), 0-based, w × h pixels. */
   addImage(bytes, ext, col, row, w, h) { this.images.push({ bytes, ext, col, row, w, h }); }
   /** @param {number} i */
-  toXml(i) {
-    const cols = this.widths.map((w, c) => (w ? `<col min="${c + 1}" max="${c + 1}" width="${w}" customWidth="1"/>` : '')).join('');
-    const view = this.frozenRows ? `<sheetViews><sheetView workbookViewId="0"><pane ySplit="${this.frozenRows}" topLeftCell="A${this.frozenRows + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>` : '<sheetViews><sheetView workbookViewId="0"/></sheetViews>';
-    return `${XML}<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="${R}"><sheetPr><outlinePr summaryBelow="1"/></sheetPr>${view}<sheetFormatPr defaultRowHeight="15"${this.outlineLevelRow ? ` outlineLevelRow="${this.outlineLevelRow}"` : ''}/>${cols ? `<cols>${cols}</cols>` : ''}<sheetData>${this.xml.join('')}</sheetData>${this.merges.length ? `<mergeCells count="${this.merges.length}">${this.merges.map(m => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>` : ''}<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>${this.images.length ? `<drawing r:id="rId1"/>` : ''}</worksheet>`;
-  }
+  toXml(i) { return sheetHead(this) + this.xml.join('') + sheetTail(this.merges, this.images.length > 0); }
+}
+
+/** A worksheet's XML up to and including <sheetData> (what must be known before the rows: widths, frozen rows, outline). */
+export function sheetHead({ widths, frozenRows, outlineLevelRow }) {
+  const cols = widths.map((w, c) => (w ? `<col min="${c + 1}" max="${c + 1}" width="${w}" customWidth="1"/>` : '')).join('');
+  const view = frozenRows ? `<sheetViews><sheetView workbookViewId="0"><pane ySplit="${frozenRows}" topLeftCell="A${frozenRows + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>` : '<sheetViews><sheetView workbookViewId="0"/></sheetViews>';
+  return `${XML}<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="${R}"><sheetPr><outlinePr summaryBelow="1"/></sheetPr>${view}<sheetFormatPr defaultRowHeight="15"${outlineLevelRow ? ` outlineLevelRow="${outlineLevelRow}"` : ''}/>${cols ? `<cols>${cols}</cols>` : ''}<sheetData>`;
+}
+/** The rest of a worksheet after its rows: merges (they come after <sheetData>, so they can be gathered while rows stream). */
+export function sheetTail(merges, drawing = false) {
+  return `</sheetData>${merges.length ? `<mergeCells count="${merges.length}">${merges.map(m => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>` : ''}<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>${drawing ? `<drawing r:id="rId1"/>` : ''}</worksheet>`;
 }
 
 export class Book {
   constructor({ title = 'Report', creator = 'ReportWright' } = {}) {
     this.title = title; this.creator = creator; this.fullCalcOnLoad = false;
     /** @type {Sheet[]} */ this.sheets = [];
-    /** @type {Map<string, number>} */ this.styles = new Map([['||', 0]]);
+    // the default style (no number format, not bold, no fill) is xf 0: a plain cell carries no s="…" (it was seeded with
+    // '||', a key no style has, so every plain cell got a second, identical xf)
+    /** @type {Map<string, number>} */ this.styles = new Map([['0|0|0', 0]]);
     /** @type {Map<string, number>} */ this.numFmts = new Map();
   }
   /** @param {string} name */
@@ -114,12 +123,23 @@ export class Book {
       put(`xl/drawings/drawing${n}.xml`, `${XML}<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="${R}">${anchors.join('')}</xdr:wsDr>`);
       over.push([`/xl/drawings/drawing${n}.xml`, 'application/vnd.openxmlformats-officedocument.drawing+xml']);
     });
+    for (const [p, x] of this.bookParts(over)) put(p, x);
+    return zipSync(files, { level: 6 });
+  }
+  /**
+   * The workbook's own parts, written after the sheets (their names, the styles they used): styles, workbook,
+   * relationships, properties and content types. over: [part, content type] of the sheets and drawings.
+   * @param {[string, string][]} over @returns {[string, string][]}
+   */
+  bookParts(over) {
+    const out = [];
+    const put = (p, s) => out.push([p, s]);
     put('xl/styles.xml', this.stylesXml());
     put('xl/workbook.xml', `${XML}<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="${R}"><bookViews><workbookView/></bookViews><sheets>${this.sheets.map((s, i) => `<sheet name="${esc(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets><calcPr calcId="171027"${this.fullCalcOnLoad ? ' fullCalcOnLoad="1"' : ''}/></workbook>`);
     put('xl/_rels/workbook.xml.rels', rels([...this.sheets.map((s, i) => [`rId${i + 1}`, 'worksheet', `worksheets/sheet${i + 1}.xml`]), [`rId${this.sheets.length + 1}`, 'styles', 'styles.xml']]));
     put('docProps/core.xml', `${XML}<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${esc(this.title)}</dc:title><dc:creator>${esc(this.creator)}</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${new Date().toISOString().replace(/\.\d+Z$/, 'Z')}</dcterms:created></cp:coreProperties>`);
     put('_rels/.rels', rels([['rId1', 'officeDocument', 'xl/workbook.xml'], ['rId2', 'http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties', 'docProps/core.xml']]));
     put('[Content_Types].xml', `${XML}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpeg" ContentType="image/jpeg"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>${over.map(([p, t]) => `<Override PartName="${p}" ContentType="${t}"/>`).join('')}</Types>`);
-    return zipSync(files, { level: 6 });
+    return out;
   }
 }

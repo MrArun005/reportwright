@@ -76,6 +76,28 @@ export function textWriter(sink, meta) {
 }
 
 /**
+ * Bytes (a zip as it is made) in ~64 KB chunks to a sink; as textWriter, the head goes out with the first chunk.
+ * @param {ReturnType<typeof portSink>} sink @param {{ contentType: string, ext: string }} meta
+ */
+export function byteWriter(sink, meta) {
+  let parts = [], size = 0;
+  const flush = async () => {
+    if (!size) return;
+    if (!sink.started) sink.head(meta);
+    const all = new Uint8Array(size);
+    let at = 0;
+    for (const p of parts) { all.set(p, at); at += p.length; }
+    parts = []; size = 0;
+    await sink.write(all);
+  };
+  return {
+    /** @param {Uint8Array} u8 */
+    put(u8) { parts.push(u8); size += u8.length; return size >= CHUNK ? flush() : undefined; },
+    async end() { if (!sink.started) sink.head(meta); await flush(); },
+  };
+}
+
+/**
  * The request side: a ReadableStream of the chunks a render writes to the other end of this port, and a promise of
  * the head (or null when the render answered without streaming: its bytes come back as usual).
  * A failure after the head (the 200 is out) never puts its message in the body (it can name a source, a query): the

@@ -1,6 +1,13 @@
 # 1 million rows: streaming exports, a 300 MB RSS cap, and every core used
 
-Status: research and design only. Nothing in this doc has been built yet.
+Status: phases 0–4 built (0.10.0, 8 Oct 2026): the memory harness (scripts/mem-stream.mjs), streamed responses with
+back-pressure (src/server/stream-out.js), row-by-row sources (JSON, CSV, SQLite, PostgreSQL, MySQL; src/engine/data/stream.js,
+src/server/sql.js runSqlRows), the spill sort (src/server/spill.js), the streaming data CSV and Excel writers
+(src/engine/stream.js, src/exporters/csv.js writeCsvStream, src/exporters/xlsxstream.js), and §8's pool fixes (cores-sized,
+admission by memory estimate, small heaps; sharing fonts and HarfBuzz was measured and saved nothing, so it is not in).
+Measured: CSV 160 → 168 MB RSS from 100k to 300k rows (sorted: 179 → 191), grouped Excel 185 → 197 MB, for the whole
+render process with a 192 MB heap; 1M projects at ~185–240 MB. PDF streaming (phase 5) and viewer paging (phase 6) are not
+built. The rest of this doc is the design as written before the build.
 Written 2026-10-08 against `main` @ 803f598 (Node 22.14, an 8-core / 8 GB laptop).
 
 How the numbers were taken: the machine already had a load average of 3–6 from another agent, so treat

@@ -15,7 +15,7 @@ import { outputHeaders } from '@/server/headers.js';
 export const runtime = 'nodejs';
 
 /** Formats whose output may stream (src/server/pool.js streamInPool). */
-const STREAMS = new Set(['csv']);
+const STREAMS = new Set(['csv', 'xlsx']);
 
 /** Only the flags that are on: a render's audit event stays small (it is written for every render). */
 const flags = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v));

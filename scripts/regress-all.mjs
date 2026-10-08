@@ -1,12 +1,23 @@
 // Regression across every report × 7 formats, through two running servers (an old build and a new one), so a broken
 // total cannot hide behind a speed gain. Compares, per report and format: the HTTP status, the page count
 // (x-pagewright-pages; not for csv, which has no pages), and for csv the row count, every numeric column's sum and the
-// text itself (a leading BOM aside).
+// text itself (a leading BOM aside); for xlsx every sheet's cells (values, types, formulas; not style numbers). A streamed
+// answer has no page count to compare.
 //   BASE_OLD=http://localhost:3400 BASE_NEW=http://localhost:3300 PW_ADMIN_EMAIL=… PW_ADMIN_PASSWORD=… node scripts/regress-all.mjs
 // Both servers need accounts on (PW_AUTH=users) with that admin; the reports in reports/ (not e2e-*) are saved to both.
 // Exit code 1 when anything differs. ONLY=<id,id> limits the reports.
 import fs from 'node:fs';
 import path from 'node:path';
+import { unzipSync, strFromU8 } from 'fflate';
+
+/** An xlsx's cells, sheet by sheet: reference, type, formula and value, without style indexes (they number styles in
+ *  the order first used; 0.10.0 gives the plain style index 0, so an empty plain cell is no longer written at all). */
+function xlsxCells(bytes) {
+  try {
+    const f = unzipSync(bytes);
+    return Object.keys(f).filter(k => /^xl\/worksheets\/sheet\d+\.xml$/.test(k)).sort().map(k => strFromU8(f[k]).replace(/ s="\d+"/g, '').replace(/<c r="[A-Z]+\d+"\/>/g, '').match(/<c [^>]*?(\/>|>.*?<\/c>)/g)?.join('') || '').join('|');
+  } catch { return 'unreadable'; }
+}
 
 const OLD = process.env.BASE_OLD, NEW = process.env.BASE_NEW;
 if (!OLD || !NEW) { console.error('Set BASE_OLD and BASE_NEW'); process.exit(2); }
@@ -45,7 +56,10 @@ async function facts(base, cookie, id, format) {
   const r = await fetch(`${base}/api/reports/${encodeURIComponent(id)}/pdf?format=${format}`, { headers: { cookie } });
   const body = Buffer.from(await r.arrayBuffer());
   const out = { status: r.status, ms: Date.now() - t, bytes: body.length };
+  // a streamed answer (no content-length: the data CSV, Excel) has no page model: its page count is not compared
+  out.streamed = r.ok && !r.headers.get('content-length');
   if (r.ok && format !== 'csv') out.pages = Number(r.headers.get('x-pagewright-pages'));
+  if (r.ok && format === 'xlsx') out.cells = xlsxCells(new Uint8Array(body)); // the workbook's cells instead
   if (r.ok && format === 'csv') Object.assign(out, csvFacts(body.toString('utf8')), { text: body.toString('utf8').replace(/^\uFEFF/, '') }); // the bytes too (a BOM aside)
   if (r.ok && format === 'json') out.pages = JSON.parse(body.toString('utf8')).pages?.length;
   return out;
@@ -63,7 +77,8 @@ for (const id of ids) for (const f of FORMATS) {
   checked++;
   const bad = [];
   if (a.status !== b.status) bad.push(`status ${a.status} → ${b.status}`);
-  if (a.pages !== b.pages) bad.push(`pages ${a.pages} → ${b.pages}`);
+  if (a.pages !== b.pages && !(f === 'xlsx' && (a.streamed || b.streamed))) bad.push(`pages ${a.pages} → ${b.pages}`);
+  if (a.cells !== b.cells) bad.push('the Excel cells differ');
   if (a.rows !== b.rows) bad.push(`rows ${a.rows} → ${b.rows}`);
   if (JSON.stringify(a.sums) !== JSON.stringify(b.sums)) bad.push(`sums ${JSON.stringify(a.sums)} → ${JSON.stringify(b.sums)}`);
   if (a.text !== b.text) bad.push('the CSV text differs');

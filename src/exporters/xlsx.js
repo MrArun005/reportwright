@@ -73,6 +73,43 @@ const decimalsOf = (fmt) => {
   return d ? d[1].length : fmt ? 0 : null;
 };
 
+/** A column's values over the rows a total covers, kept as they pass: what subtotalFn needs, in O(1) memory. */
+export function colStats() {
+  const s = { vals: 0, nums: 0, sum: 0, min: Infinity, max: -Infinity, first: undefined, differ: false,
+    /** @param {any} v a region cell's value */
+    add(v) {
+      if (v == null || v === '') return;
+      s.vals++;
+      if (typeof v !== 'number' || !Number.isFinite(v)) return;
+      if (s.nums === 0) s.first = v; else if (v !== s.first) s.differ = true;
+      s.nums++; s.sum += v;
+      if (v < s.min) s.min = v;
+      if (v > s.max) s.max = v;
+    },
+  };
+  return s;
+}
+
+/**
+ * The SUBTOTAL function a total's shown value is, over its column's values (colStats), or null: 9 the sum, 2/3 the
+ * count (COUNTA when there is text), 1 the average, 5 the minimum, 4 the maximum, each within the format's precision.
+ * @param {{ value: any, format?: string }} c @param {ReturnType<typeof colStats>} st
+ */
+export function subtotalFn(c, st) {
+  const d = decimalsOf(c.format);
+  const tol = d == null ? 1e-9 * Math.max(1, Math.abs(c.value)) : 0.5 * 10 ** -d + 1e-9;
+  const same = (v) => Math.abs(v - c.value) <= tol;
+  if (st.nums && same(st.sum)) return 9;
+  if (same(st.vals)) return st.nums === st.vals ? 2 : 3; // COUNT, or COUNTA when there is text
+  // average, minimum, maximum: only when the values differ (a column of equal ratios matches all three by chance)
+  if (st.nums > 1 && st.differ) {
+    if (same(st.sum / st.nums)) return 1;
+    if (same(st.min)) return 5;
+    if (same(st.max)) return 4;
+  }
+  return null;
+}
+
 /**
  * A group footer's or table footer's total as a live formula: SUBTOTAL over the detail rows it covers, when the shown
  * value is the sum, count, average, minimum or maximum of those rows (checked here, to the format's decimals).
@@ -95,21 +132,9 @@ function totalFormula(rows, at, c, made) {
   }
   if (!covered.length) return null;
   covered.reverse();
-  const vals = covered.map(k => rows[k].cells.find(x => x.colIndex === c.colIndex)?.value).filter(v => v != null && v !== '');
-  const nums = vals.filter(v => typeof v === 'number' && Number.isFinite(v));
-  const d = decimalsOf(c.format);
-  const tol = d == null ? 1e-9 * Math.max(1, Math.abs(c.value)) : 0.5 * 10 ** -d + 1e-9;
-  const same = (v) => Math.abs(v - c.value) <= tol;
-  let fn = null;
-  const sum = nums.reduce((s, v) => s + v, 0);
-  if (nums.length && same(sum)) fn = 9;
-  else if (same(vals.length)) fn = nums.length === vals.length ? 2 : 3; // COUNT, or COUNTA when there is text
-  // average, minimum, maximum: only when the values differ (a column of equal ratios matches all three by chance)
-  else if (nums.length > 1 && nums.some(v => v !== nums[0])) {
-    if (same(sum / nums.length)) fn = 1;
-    else if (same(nums.reduce((m, v) => Math.min(m, v), Infinity))) fn = 5;
-    else if (same(nums.reduce((m, v) => Math.max(m, v), -Infinity))) fn = 4;
-  }
+  const st = colStats();
+  for (const k of covered) st.add(rows[k].cells.find(x => x.colIndex === c.colIndex)?.value);
+  const fn = subtotalFn(c, st);
   if (!fn) return null;
   const col = colName(c.colIndex + 1);
   // runs of consecutive covered rows
@@ -130,6 +155,31 @@ function totalFormula(rows, at, c, made) {
     refs = [`${col}${rows[first].n}:${col}${rows[last].n}`];
   }
   return `SUBTOTAL(${fn},${refs.join(',')})`;
+}
+
+ /** Excel's sheet names, unique in a workbook: no \\ / ? * [ ] :, no control characters, not starting or ending with ', at
+ *  most 31 characters (28 here, room for a " 2"). suffix: kept whole (a split sheet's " (2)"). */
+export function sheetNamer() {
+  const used = new Set();
+  return (n, suffix = '') => {
+    let s = String(n || 'Sheet').replace(/[\\/?*[\]:\u0000-\u001f\u007f\uFFFE\uFFFF]|[\uD800-\uDFFF]/g, ' ').replace(/^['\s]+|['\s]+$/g, '').slice(0, 28).trim() || 'Sheet';
+    if (suffix) s = `${s.slice(0, 31 - suffix.length)}${suffix}`;
+    let k = s, i = 2;
+    while (used.has(k.toLowerCase())) k = `${s.slice(0, 28)} ${i++}`;
+    used.add(k.toLowerCase());
+    return k;
+  };
+}
+
+/** A region cell → an Excel cell: its value (dates as the report's wall clock), number format, bold and header fill. */
+export function xlsxCell({ sym, locale, tz }) {
+  const cellValue = (v) => (v === '' ? null : v instanceof Date ? new Date(toWall(v, tz)) : v);
+  /** @param {any} c @param {boolean} header */
+  return (c, header) => {
+    const nf = excelFormat(c.format, sym, locale, c.value);
+    const numFmt = nf && (typeof c.value === 'number' || c.value instanceof Date) ? nf : c.value instanceof Date ? 'dd mmm yyyy' : null;
+    return /** @type {any} */ ({ v: cellValue(c.value), style: { numFmt, bold: !!(c.bold || header), fill: header } });
+  };
 }
 
 /**
@@ -154,18 +204,10 @@ export async function exportXlsx(model, opt = {}) {
   const tz = timeZone ?? model.timeZone ?? undefined;
   // the page's currency when none is passed: the report's, else the locale's own (en-IN ₹), as C2 shows it (N7)
   const sym = currencySymbol(currency || model.currency || currencyOf(model.locale), model.locale);
-  const cellValue = (v) => (v === '' ? null : v instanceof Date ? new Date(toWall(v, tz)) : v);
+  const toCell = xlsxCell({ sym, locale: model.locale, tz });
   const wb = new Book({ title: title || model.name || 'Report' });
   const regions = mergedRegions(model);
-  const used = new Set();
-  const sheetName = (n) => {
-    // Excel's rules: no \\ / ? * [ ] :, no control characters, not starting or ending with ', at most 31 characters
-    let s = String(n || 'Sheet').replace(/[\\/?*[\]:\u0000-\u001f\u007f\uFFFE\uFFFF]|[\uD800-\uDFFF]/g, ' ').replace(/^['\s]+|['\s]+$/g, '').slice(0, 28).trim() || 'Sheet';
-    let k = s, i = 2;
-    while (used.has(k.toLowerCase())) k = `${s} ${i++}`;
-    used.add(k.toLowerCase());
-    return k;
-  };
+  const sheetName = sheetNamer();
   if (!regions.length) {
     const ws = wb.addSheet(sheetName(title || 'Report'));
     model.pages.forEach((p, pi) => {
@@ -187,10 +229,7 @@ export async function exportXlsx(model, opt = {}) {
       const header = row.kind === 'header';
       for (const c of row.cells) {
         if (c.colIndex < 0) continue;
-        const value = cellValue(c.value);
-        const nf = excelFormat(c.format, sym, model.locale, c.value);
-        const numFmt = nf && (typeof c.value === 'number' || c.value instanceof Date) ? nf : c.value instanceof Date ? 'dd mmm yyyy' : null;
-        const cell = { v: value, style: { numFmt, bold: !!(c.bold || header), fill: header } };
+        const cell = toCell(c, header);
         if (c.span > 1 || c.rowSpan > 1) merges.push([row.n, c.colIndex + 1, row.n + Math.max(1, c.rowSpan || 1) - 1, c.colIndex + Math.max(1, c.span || 1)]);
         if (formulas && (row.kind === 'groupFooter' || row.kind === 'footer') && !(c.span > 1)) {
           const f = totalFormula(rows, ri, c, made);

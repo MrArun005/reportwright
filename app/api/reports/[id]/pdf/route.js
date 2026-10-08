@@ -13,7 +13,7 @@ import { outputHeaders } from '@/server/headers.js';
 export const runtime = 'nodejs';
 
 /** Formats whose output may stream (src/server/pool.js streamInPool). */
-const STREAMS = new Set(['csv']);
+const STREAMS = new Set(['csv', 'xlsx']);
 
 export async function GET(req, { params }) {
   try {

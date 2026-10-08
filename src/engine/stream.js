@@ -285,7 +285,7 @@ export async function planStream(def0, opts) {
   /** Rows in display order, each with its group path ([ordinal, key] per level). */
   async function* displayOrder() {
     if (!groups.length) { for await (const r of inOrder()) yield { r, g: null }; return; }
-    const gc = { ...tctx };
+    const gc = { ...tctx }, fc = { ...tctx };
     const paths = groups.map(() => new Map()); // per level: path text → [ordinal, the first row's key]
     let ord = 0, keyText = 0; // the groups' key text held, bounded like the groups' number
     const s = sorter((a, b) => {
@@ -316,6 +316,13 @@ export async function planStream(def0, opts) {
           }
           g.push(p);
         }
+        // totals add their rows in the data's order, as the model's aggregates do (a decimal sum in another order
+        // can differ in its last digit): here, before the rows are put in their groups' order
+        if (folds.groups) {
+          fc.fields = r;
+          foldRow(folds.table, fc);
+          for (let l = 0; l < groups.length; l++) { let sc = folds.groups[l].get(g[l][0]); if (!sc) folds.groups[l].set(g[l][0], sc = openScope(l)); foldRow(sc, fc); }
+        }
         await s.push({ g, s: seq++, r });
       }
       for (const m of paths) m.clear();
@@ -330,6 +337,15 @@ export async function planStream(def0, opts) {
     return out;
   };
   const scopeFolds = bands ? [...groups.map(g => foldCells(g.footer)), foldCells(item.footer)] : groups.map(() => []).concat([[]]);
+  /** The totals being folded: the table's, and with groups each group instance's by its ordinal (filled in data order). */
+  const folds = { table: /** @type {any} */ (null), groups: /** @type {Map<number, any>[]|null} */ (null) };
+  const foldRow = (sc, ctx) => {
+    for (const [f, a] of sc) {
+      if (a.n != null) { a.n++; continue; }
+      if (a.err) continue;
+      try { a.agg.add(evaluate(f.ast, ctx)); } catch (e) { a.err = e; }
+    }
+  };
   const openScope = (l) => new Map(scopeFolds[l].map(f => [f, f.fn === 'countrows' ? { n: 0 } : { agg: aggregator(f.fn, tctx), err: null }]));
   const foldFrom = (sc) => (row, ci) => {
     for (const [f, a] of sc) {
@@ -345,6 +361,8 @@ export async function planStream(def0, opts) {
     overTime();
     const L = groups.length;
     const tableScope = openScope(L);
+    folds.table = tableScope;
+    folds.groups = bands && L ? groups.map(() => new Map()) : null; // with groups, displayOrder folds (in data order)
     const scopes = new Array(L).fill(null); // per level: { fold scope, first row, last row, ord }
     const dctx = { ...tctx, rowNumber: 0 };
     let headerDone = false, rowNo = 0, first = null, last = null;
@@ -368,7 +386,8 @@ export async function planStream(def0, opts) {
         if (l < L) {
           yield* closeTo(l);
           for (let k = l; k < L; k++) {
-            scopes[k] = { ord: g[k][0], first: r, last: r, folds: openScope(k) };
+            scopes[k] = { ord: g[k][0], first: r, last: r, folds: folds.groups?.[k].get(g[k][0]) || openScope(k) };
+            folds.groups?.[k].delete(g[k][0]);
             if (bands) { const hctx = { ...tctx, fields: r, groupKey: g[k][1] }; for (const hr of groups[k].header || []) { const x = regionRow(hr, hctx, 'groupHeader', k); if (x) yield x; } }
           }
         }
@@ -377,14 +396,7 @@ export async function planStream(def0, opts) {
       rowNo++; last = r;
       if ((rowNo & 255) === 0) overTime();
       dctx.fields = r; dctx.rowNumber = rowNo;
-      if (bands) for (const sc of [...scopes.map(s => s?.folds), tableScope]) {
-        if (!sc) continue;
-        for (const [f, a] of sc) {
-          if (a.n != null) { a.n++; continue; }
-          if (a.err) continue;
-          try { a.agg.add(evaluate(f.ast, dctx)); } catch (e) { a.err = e; }
-        }
-      }
+      if (bands && !L) foldRow(tableScope, dctx); // no groups: the display order is the data order
       for (const dr of item.detail || []) { const x = regionRow(dr, dctx, 'detail', L); if (x) yield x; }
     }
     if (!headerDone) yield* header(null);
