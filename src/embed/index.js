@@ -52,7 +52,11 @@ export function withData(def, data) {
  *   reports?: Record<string, object>, fonts?: Record<string, string>, customFonts?: object[], uiFontCss?: string, snapshot?: Record<string, any>, title?: string,
  *   toolbar?: { hide?: string[], add?: ToolbarButton[] }, viewMode?: 'single' | 'continuous' | 'galley', nonce?: string,
  *   onReady?: (error: Error | null) => void }} ViewerOptions
- * @typedef {{ unmount: () => void }} ViewerHandle
+ * @typedef {'ready' | 'error' | 'page' | 'parameters'} ViewerEvent
+ * @typedef {'pdf' | 'xlsx' | 'docx' | 'pptx' | 'html' | 'csv' | 'json' | 'excel' | 'word' | 'powerpoint'} ViewerFormat
+ * @typedef {{ unmount: () => void, setParameters: (params: Record<string, any>) => Promise<void>, setDefinition: (definition: object) => Promise<void>,
+ *   goToPage: (page: number) => Promise<void>, getPageCount: () => number, print: () => Promise<void>, export: (format: ViewerFormat) => Promise<Blob>,
+ *   on: (event: ViewerEvent, fn: (detail: any) => void) => () => void }} ViewerHandle
  */
 /**
  * Mount the ReportWright viewer in an element. With `server` (a self-hosted ReportWright server), fonts and saved reports
@@ -81,7 +85,16 @@ export function mountViewer(target, opts = {}) {
   const box = /** @type {HTMLElement} */ (shadow.querySelector('.pw-embed'));
   box.style.height = opts.height || '720px'; // set through CSSOM: a style attribute in markup is blocked by style-src 'self'
   const root = createRoot(box);
-  const show0 = (definition) => root.render(createElement(ReportViewer, { definition, reportId: opts.report, params: opts.params, lang: opts.lang, onDrill: opts.onDrill, title: opts.title, toolbar: opts.toolbar, viewMode: opts.viewMode, onReady: opts.onReady }));
+  // the handle's listeners, and the viewer's live API (ReportViewer sets `control.current` on every render)
+  /** @type {Record<string, Array<(detail: any) => void>>} */
+  const listeners = {};
+  const emit = (/** @type {string} */ name, /** @type {any} */ detail) => { for (const fn of listeners[name] || []) { try { fn(detail); } catch (e) { console.error(e); } } };
+  /** @type {any} */
+  let api = null;
+  let wake = () => {};
+  const viewerReady = new Promise((resolve) => { wake = () => resolve(undefined); });
+  const control = { get current() { return api; }, set current(v) { api = v; if (v) wake(); } };
+  const show0 = (definition) => root.render(createElement(ReportViewer, { definition, reportId: opts.report, params: opts.params, lang: opts.lang, onDrill: opts.onDrill, title: opts.title, toolbar: opts.toolbar, viewMode: opts.viewMode, onReady: opts.onReady, control, onEvent: emit }));
   // the language's strings first (English is built in; the others load on demand)
   const show = (definition) => loadLanguage(opts.lang).catch(() => {}).then(() => show0(definition));
   if (opts.definition) show(withData(opts.definition, opts.data));
@@ -89,8 +102,27 @@ export function mountViewer(target, opts = {}) {
   else fetch(`${server}/api/reports/${encodeURIComponent(opts.report)}`)
     .then(r => (r.ok ? r.json() : r.json().then(j => Promise.reject(new Error(j.error || `HTTP ${r.status}`)))))
     .then(show)
-    .catch(e => { shadow.querySelector('.pw-embed').innerHTML = `<div class="vmsg error">The report did not load: ${String(e.message).replace(/</g, '&lt;')}</div>`; opts.onReady?.(e); });
-  return { unmount: () => root.unmount() };
+    .catch(e => { shadow.querySelector('.pw-embed').innerHTML = `<div class="vmsg error">The report did not load: ${String(e.message).replace(/</g, '&lt;')}</div>`; opts.onReady?.(e); emit('error', { message: e.message }); });
+  /** @type {ViewerHandle} */
+  const handle = {
+    unmount: () => { api = null; root.unmount(); },
+    setParameters: (params) => viewerReady.then(() => api?.setParameters(params)),
+    setDefinition: (definition) => viewerReady.then(() => api?.setDefinition(definition)),
+    goToPage: (page) => viewerReady.then(() => api?.goTo(page)),
+    getPageCount: () => api?.pages ?? 0,
+    print: () => viewerReady.then(() => api?.print()),
+    export: (format) => viewerReady.then(() => {
+      const f = { excel: 'xlsx', word: 'docx', powerpoint: 'pptx' }[format] ?? format;
+      if (!['pdf', 'xlsx', 'docx', 'pptx', 'html', 'csv', 'json'].includes(f)) throw new Error(`export: unknown format "${format}"`);
+      if (!api) throw new Error('export: the viewer is not showing a report');
+      return api.exportBlob(f);
+    }),
+    on: (event, fn) => {
+      (listeners[event] ||= []).push(fn);
+      return () => { listeners[event] = (listeners[event] || []).filter(x => x !== fn); };
+    },
+  };
+  return handle;
 }
 
 if (typeof window !== 'undefined') window.ReportWright = window.Pagewright = { mountViewer }; // Pagewright: the old name, deprecated (0.9)

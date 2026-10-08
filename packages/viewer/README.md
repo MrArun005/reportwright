@@ -115,3 +115,33 @@ Types are included (`ViewerOptions`, `DesignerOptions`, …). Framework wrappers
 | `exportOptions` | the options gear (the formats stay) |
 
 Any other key is taken as an item id. Unknown keys hide nothing.
+
+### Controlling a mounted viewer: `ViewerHandle`
+
+`mountViewer` returns a handle (the React, Vue, Svelte and Angular wrappers give you the same one through their ready callback or event):
+
+| Method | What it does |
+|---|---|
+| `setParameters(params)` | merges `params` into the current parameters and runs the report again; the host element is not remounted |
+| `setDefinition(def)` | shows another report definition in the same element |
+| `goToPage(n)` | scrolls to page `n` (1-based) |
+| `getPageCount()` | the page count of the last run (0 before the first) |
+| `print()` | opens the print dialog for the PDF |
+| `export(format)` | `Promise<Blob>`: `format` is `pdf`, `xlsx`, `docx`, `pptx`, `html`, `csv` or `json` (or the item ids `excel`, `word`, `powerpoint`) |
+| `on(event, fn)` | listens for `ready` (a run finished, detail: page count), `error` (detail: message), `page` (detail: current page), `parameters` (detail: the parameters); returns an unsubscribe function |
+| `unmount()` | removes the viewer |
+
+```js
+const viewer = mountViewer('#report', { server, report: 'loan-statement' });
+viewer.setParameters({ accountId: 'LN-2' });      // re-runs; 'ready' fires when it is done
+const pdf = await viewer.export('pdf');           // a Blob
+```
+
+## Size
+
+What a page downloads when the viewer mounts: **847 KB gzipped** (0.7.3: 877 KB), readable unminified code with
+source maps. Loaded only when used: other interface languages (about 20 KB gzipped each), PDF export (pdf-lib),
+barcodes (bwip-js), Excel/HTML/CSV export, the designer. Most of the first load is the font engine (fontkit) the
+layout measures text with, and React. The package is larger unpacked (two builds: React inside, and React from your
+app at `@reportwright/viewer/react-peer`, plus source maps); only one build reaches your page. PDF export, fontkit,
+barcodes, zip and bidi come from the dependencies above, so your bundler can share them with the rest of your app.

@@ -146,7 +146,7 @@ const DRILL_KEY = '_drill';
 const drillOfUrl = () => { try { const v = new URL(window.location.href).searchParams.get(DRILL_KEY); const a = v ? JSON.parse(v) : []; return Array.isArray(a) ? a.filter(x => x && typeof x.id === 'string').slice(0, 50) : []; } catch { return []; } };
 const urlWithDrill = (list) => { const u = new URL(window.location.href); if (list.length) u.searchParams.set(DRILL_KEY, JSON.stringify(list)); else u.searchParams.delete(DRILL_KEY); return u.toString(); };
 
-export default function ReportViewer({ definition: rootDef, reportId: rootReportId, params: rootParams, title, compact = false, autoRun = true, lang: langIn = 'en', onDrill, exportHtmlOptions, toolbar, viewMode = 'continuous', onExported, urlState = false, onReady }) {
+export default function ReportViewer({ definition: rootDef, reportId: rootReportId, params: rootParams, title, compact = false, autoRun = true, lang: langIn = 'en', onDrill, exportHtmlOptions, toolbar, viewMode = 'continuous', onExported, urlState = false, onReady, control, onEvent }) {
   const lang = pickLang(langIn);
   const dir = dirOf(lang);
   const T = (k, v) => tr(lang, k, v);
@@ -223,6 +223,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
       const fonts = failed.length ? T('fontsDidNotLoad', { fonts: [...new Set(failed.map(f => f.key))].join(', ') }) : null;
       setStatus({ state: 'done', fonts });
       ready(failed[0]?.error || null);
+      onEvent?.('ready', { pages: m.pages.length });
       if (keepScroll) requestAnimationFrame(() => scroller.current?.scrollTo({ top }));
       else { setCurrent(1); setFrozen(null); scroller.current?.scrollTo({ top: 0 }); }
     } catch (e) {
@@ -231,6 +232,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
       setStatus({ state: 'error', message: e.message, missing: e.missingParameters });
       if (e.missingParameters) setPanel('params');
       ready(e);
+      onEvent?.('error', { message: e.message });
     }
   }, [renderDef, params, state, reportId]);
 
@@ -472,6 +474,15 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     return m.regions?.length ? m : pagedModel('export', true);
   };
 
+  /** The file of one format, as a Blob (the Export menu downloads it; the embed's handle returns it). */
+  const buildBlob = async (fmt) => {
+    const m = fmt === 'csv' ? await csvModel() : await pagedModel('export', needsExportData(fmt, xopt));
+    const strings = { pages: T('htmlPages'), tables: T('htmlTables'), all: T('htmlAll'), filter: T('htmlFilter'), toggle: T('htmlToggle'), sortAsc: T('htmlSortAsc'), sortDesc: T('htmlSortDesc') };
+    return fmt === 'pdf'
+      ? pdfBlob(m, definition.name, { tagged: xopt.pdfua ? { lang: definition.locale || lang } : undefined, pdfa: xopt.pdfa })
+      : exportBlob(fmt, m, definition, { params, state, lang, options: xopt, strings, ...(exportHtmlOptions || {}), ...(level.id ? { reportId: level.id } : {}) });
+  };
+
   const doExport = async (fmt) => {
     if (!model) return;
     if (exportQueue.current.busy) {
@@ -493,11 +504,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     exportQueue.current.busy = fmt;
     setExporting(fmt);
     try {
-      const m = fmt === 'csv' ? await csvModel() : await pagedModel('export', needsExportData(fmt, xopt));
-      const strings = { pages: T('htmlPages'), tables: T('htmlTables'), all: T('htmlAll'), filter: T('htmlFilter'), toggle: T('htmlToggle'), sortAsc: T('htmlSortAsc'), sortDesc: T('htmlSortDesc') };
-      const blob = fmt === 'pdf'
-        ? await pdfBlob(m, definition.name, { tagged: xopt.pdfua ? { lang: definition.locale || lang } : undefined, pdfa: xopt.pdfa })
-        : await exportBlob(fmt, m, definition, { params, state, lang, options: xopt, strings, ...(exportHtmlOptions || {}), ...(level.id ? { reportId: level.id } : {}) });
+      const blob = await buildBlob(fmt);
       const ext = { pdf: 'pdf', xlsx: 'xlsx', docx: 'docx', pptx: 'pptx', html: 'html', csv: 'csv', json: 'json' }[fmt];
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -551,6 +558,30 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   /* ---------------- toolbar: every built-in item has a stable id (docs/API.md, "Viewer toolbar") ---------------- */
   /** @type {ViewerApi} */
   const api = { page: current, pages: total, goTo: go, run: () => run(), print, exportAs: doExport };
+
+  // The embed's ViewerHandle drives this viewer through `control` (refreshed on every render, cleared on unmount).
+  // setParameters merges into the parameters and runs again; the element stays mounted.
+  useEffect(() => {
+    if (!control) return undefined;
+    control.current = {
+      pages: total,
+      goTo: go,
+      print,
+      setParameters: (p) => { const next = { ...params, ...p }; setParams(next); run(next, state); },
+      setDefinition: (def) => setLevels([{ def, params: rootParams, id: rootReportId }]),
+      exportBlob: (fmt) => { if (!model) return Promise.reject(new Error('the report has not run yet')); return buildBlob(fmt); },
+    };
+  });
+  useEffect(() => () => { if (control) control.current = null; }, [control]);
+  // events: 'page' and 'parameters' fire when they change (not on the first render)
+  const lastEvent = useRef({ page: current, params: JSON.stringify(params) });
+  useEffect(() => {
+    if (lastEvent.current.page !== current) { lastEvent.current.page = current; onEvent?.('page', current); }
+  }, [current]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const key = JSON.stringify(params);
+    if (lastEvent.current.params !== key) { lastEvent.current.params = key; onEvent?.('parameters', params); }
+  }, [params]); // eslint-disable-line react-hooks/exhaustive-deps
   // the formats are items of the Export menu: a format badge, the name, and what the file is
   const exportItem = (id, fmt, label, extra = {}) => ({
     id, group: 'export', format: true,
