@@ -64,7 +64,7 @@ try {
   assert.equal(await p.evaluate(() => !!document.activeElement?.closest('.dright')), false, 'the focus is not in a stale field');
 
   step('Inspector sections collapse and expand');
-  const head = p.locator('.dright .cat > h5').first();
+  const head = p.locator('.dright .cat > h5 > button').first(); // the heading's toggle button (27d73e3)
   await head.click();
   assert.equal(await head.getAttribute('aria-expanded'), 'false');
   await head.press('Enter');
