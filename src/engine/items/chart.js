@@ -672,6 +672,19 @@ function paintCartesian(type, g) {
 
 /* ---------------------------------------------------------------- scatter, bubble, polar (one point per row) */
 
+/**
+ * The robust window of a set of values: its 1st and 99th percentiles (nearest rank). extreme: the full spread is more
+ * than five times that window, so a few outliers would flatten the rest of the data.
+ * @param {number[]} vals
+ */
+export function robustWindow(vals) {
+  const s = vals.filter(Number.isFinite).sort((a, b) => a - b);
+  if (s.length < 2) return null;
+  const at = (q) => s[Math.min(s.length - 1, Math.floor(q * (s.length - 1)))];
+  const p1 = at(0.01), p99 = at(0.99);
+  return { p1, p99, extreme: p99 > p1 && s[s.length - 1] - s[0] > 5 * (p99 - p1) };
+}
+
 function rowPoints(type, g) {
   const { item, ctx, lc, data, who } = g;
   const c = { ...ctx };
@@ -708,6 +721,18 @@ function paintXY(type, g) {
   const xs = axes.x || {}, ys = axes.y || {};
   const fmtY = (v) => toText(v, ys.format || item.valueFormat || 'N0', ctx);
   const fmtX = (v) => toText(v, xs.format || item.xFormat || 'N0', ctx);
+  // outliers: 'clip' draws the axes on the 1st-99th percentiles and marks the points beyond them; 'none' keeps the full
+  // range. Unset: 'clip' only where the spread is extreme (see robustWindow), else 'none'.
+  const allX = sets.flatMap(st => st.pts.map(p => p.x)), allY = sets.flatMap(st => st.pts.map(p => p.y));
+  const wx = robustWindow(allX), wy = robustWindow(allY);
+  // ponytail: 20 points before the default clips; a percentile of a handful of points clips real data
+  const clipOn = item.outliers === 'clip' || (item.outliers !== 'none' && allX.length >= 20 && !!(wx?.extreme || wy?.extreme));
+  const clipX = clipOn && wx ? { lo: wx.p1, hi: wx.p99 } : null, clipY = clipOn && wy ? { lo: wy.p1, hi: wy.p99 } : null;
+  const beyond = (p) => (clipX && (p.x < clipX.lo || p.x > clipX.hi)) || (clipY && (p.y < clipY.lo || p.y > clipY.hi));
+  const clipped = clipOn ? sets.reduce((k, st) => k + st.pts.filter(beyond).length, 0) : 0;
+  if (clipped) lc.warn(`${who}: ${clipped} of ${allX.length} points are outside the 1st-99th percentile range and are drawn at the edge (set outliers: 'none' to show the full range)`);
+  if (clipX) { xlo = clipX.lo; xhi = clipX.hi; }
+  if (clipY) { ylo = clipY.lo; yhi = clipY.hi; }
   // as before: scatter axes are nice scales of the data, not forced through 0
   const ay = valueAxis(ys, ylo, yhi, ymp, { includeZero: false, pad: 0.05, len: bottom - top, fs, fmt: fmtY, lc, who, name: 'y' });
   const axx = valueAxis(xs, xlo, xhi, xmp, { includeZero: false, pad: 0.05, len: W, fs, fmt: fmtX, lc, who, name: 'x' });
@@ -744,7 +769,9 @@ function paintXY(type, g) {
       const r = type === 'bubble' ? Math.max(1.5, maxR * Math.sqrt(p.size / smax)) : 2.2;
       const e = type === 'bubble' ? { t: 'ellipse', cx: px(p.x), cy: py(p.y), rx: r, ry: r, fill: col + '99', stroke: col, strokeWidth: 0.75 } : { t: 'ellipse', cx: px(p.x), cy: py(p.y), rx: r, ry: r, fill: col + 'b3', stroke: null };
       out.push(tag(e, anim && { k: anim === 'grow' ? 'scale' : 'fade', i: j }));
-      if (item.tooltips !== false && (type === 'bubble' || multi)) g.links.push({ t: 'link', x: e.cx - r, y: e.cy - r, w: r * 2, h: r * 2, action: null, tip: `${multi ? `${s.name}: ` : ''}${fmtX(p.x)}, ${fmtY(p.y)}${type === 'bubble' ? ` (${toText(p.size, null, ctx)})` : ''}` });
+      const isClipped = clipped && beyond(p);
+      if (isClipped) out.push({ t: 'ellipse', cx: e.cx, cy: e.cy, rx: r + 1.6, ry: r + 1.6, fill: 'none', stroke: col, strokeWidth: 0.9 });
+      if (item.tooltips !== false && (type === 'bubble' || multi || isClipped)) g.links.push({ t: 'link', x: e.cx - r, y: e.cy - r, w: r * 2, h: r * 2, action: null, tip: `${multi ? `${s.name}: ` : ''}${fmtX(p.x)}, ${fmtY(p.y)}${type === 'bubble' ? ` (${toText(p.size, null, ctx)})` : ''}${isClipped ? ' (outlier, drawn at the edge)' : ''}` });
       if (labelsOn) {
         const str = item.labelTemplate ? String(item.labelTemplate).slice(0, 500).replace(/\{(\w+)\}/g, (all, k) => ({ value: fmtY(p.y), x: fmtX(p.x), series: s.name, size: toText(p.size, null, ctx) })[k.toLowerCase()] ?? all) : fmtY(p.y);
         label(str, e.cx, e.cy - r - 2, { size: fs * 0.85 });

@@ -38,3 +38,35 @@ describe('scatter: the automatic axis fits the data', () => {
     expect(Math.max(...ticks.filter(t => t <= 1000))).toBe(100);
   });
 });
+
+describe('scatter: outliers', () => {
+  // 40 points in 1..20 and one at 10000: the spread is extreme, so 'clip' is the default
+  const core = Array.from({ length: 40 }, (_, i) => ({ x: i % 20, y: 10 + (i % 7) }));
+  const withOutlier = [...core, { x: 5, y: 10000 }];
+
+  it('by default an extreme spread is clipped to the 1st-99th percentile, with a warning and a marked point', async () => {
+    const { ticks, warnings, items } = await draw({}, withOutlier);
+    expect(warnings.join(' ')).toMatch(/1 of 41 points are outside the 1st-99th percentile/);
+    expect(Math.max(...ticks.filter(t => t <= 1000))).toBeLessThan(1000); // the axis stops near the core, not at 10000
+    const rings = items.filter(i => i.t === 'ellipse' && i.fill === 'none');
+    expect(rings.length).toBe(1);
+  });
+
+  it("outliers: 'none' keeps every point on the full range and warns nothing", async () => {
+    const { ticks, warnings, items } = await draw({ outliers: 'none' }, withOutlier);
+    expect(warnings).toEqual([]);
+    expect(Math.max(...ticks.filter(t => t <= 20000))).toBeGreaterThanOrEqual(10000);
+    expect(items.filter(i => i.t === 'ellipse' && i.fill === 'none').length).toBe(0);
+  });
+
+  it('an ordinary spread is not clipped by default', async () => {
+    const { warnings, items } = await draw({}, core);
+    expect(warnings).toEqual([]);
+    expect(items.filter(i => i.t === 'ellipse' && i.fill === 'none').length).toBe(0);
+  });
+
+  it("outliers: 'clip' clips an ordinary spread too", async () => {
+    const { warnings } = await draw({ outliers: 'clip' }, [...core, { x: 5, y: 60 }]);
+    expect(warnings.length).toBe(1);
+  });
+});

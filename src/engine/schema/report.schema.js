@@ -1048,6 +1048,12 @@ export const REPORT_SCHEMA = {
       "maxCategories": {
        "type": "number"
       },
+      "outliers": {
+       "enum": [
+        "clip",
+        "none"
+       ]
+      },
       "line": {
        "enum": [
         "straight",

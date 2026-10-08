@@ -283,6 +283,7 @@ Also has every property of [ItemBase](#itembase).
 | `fontSize` | number |  |  |
 | `background` | string |  |  |
 | `maxCategories` | number |  |  |
+| `outliers` | "clip" \\| "none" |  | scatter and bubble. "clip": the axes stop at the 1st and 99th percentiles, and points beyond them are drawn at the edge with a ring and a warning. "none": the full range. Unset: "clip" when 20 or more points have an extreme spread (the full range is over five times the 1st-99th percentile range), else "none" |
 | `line` | "straight" \\| "smooth" \\| "step" |  |  |
 | `axes` | { x, y, y2 } |  |  |
 | `overlays` | [ChartOverlay](#chartoverlay)[] |  |  |

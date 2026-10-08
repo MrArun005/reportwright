@@ -274,6 +274,7 @@ export interface Chart extends ItemBase {
   fontSize?: number;
   background?: string;
   maxCategories?: number;
+  outliers?: 'clip' | 'none';
   line?: 'straight' | 'smooth' | 'step';
   axes?: {
     x?: ChartAxis;

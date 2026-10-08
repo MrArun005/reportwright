@@ -15,7 +15,7 @@ const ITEM_KEYS = new Set(('id type name x y w h style styleName items hidden la
   + 'footer repeatHeader noRowsText pageBreakEvery cells rows rowGroup rowGroups columnGroup columnGroups values value valueFormat rowSort columnSort '
   + 'rowTotals columnTotals cellStyle headerStyle totalStyle corner partProps library part properties overflow overflowTo src fit headingLevel '
   + 'rotate shrinkToFit minFontSize shrinkStep tocDots tocLink tocPage format chartType series seriesGroup category title legend palette stacked '
-  + 'valueAxis xTitle maxCategories categorySort categoryFormat showValues labelPosition symbology quietZone report params text toggle '
+  + 'valueAxis xTitle maxCategories outliers categorySort categoryFormat showValues labelPosition symbology quietZone report params text toggle '
   + 'initiallyCollapsed collapsible expandLevels repeatColumns columnGap rowHeaderWidth anim animation visual comment notes description').split(' '));
 /** Text styled as a link (underlined, in a blue link colour) with no action: a reader clicks it and nothing happens. */
 function looksLikeLink(it) {
