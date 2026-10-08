@@ -96,6 +96,14 @@ export function loadReportFonts(keys) {
 }
 export const loadModelFonts = (model) => loadReportFonts([...new Set([CORE_FONT_KEY, ...fontKeysOf(model)])]);
 
+let warned = false;
+/** Said once: the report now renders on the main thread (a long task at 100k rows). N1. */
+function workerFailed(reason) {
+  if (warned) return;
+  warned = true;
+  console.warn(`[reportwright] worker did not load (${reason}); rendering on the main thread`);
+}
+
 function getWorker() {
   // main thread: no Worker; fonts bundled in the page or a data snapshot (the offline HTML export); the page's own fetch
   // (a function cannot go to a worker)
@@ -119,13 +127,15 @@ function getWorker() {
       if (e.data.ok) w.resolve(e.data.model);
       else w.reject(Object.assign(new Error(e.data.error.message), e.data.error));
     };
-    worker.onerror = () => {
+    worker.onerror = (ev) => {
+      workerFailed(ev?.message || 'the worker file did not load: it was not found or could not be built');
       workerBroken = true;
       worker = null;
       for (const [, w] of waiting) w.retry();
       waiting.clear();
     };
-  } catch {
+  } catch (err) {
+    workerFailed(err?.message || String(err));
     workerBroken = true;
     worker = null;
   }
