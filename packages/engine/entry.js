@@ -167,13 +167,16 @@ export { planPaged } from '../../src/engine/paged.js';
 
 /**
  * @typedef {RenderOptions & Omit<PdfOptions, 'fonts'> & { fonts?: FontStore, tagged?: { lang?: string, maxElements?: number },
- *   window?: number, parallel?: number, maxRows?: number, id?: string, presorted?: boolean,
+ *   window?: number, parallel?: number, maxRows?: number, id?: string, presorted?: boolean, signal?: AbortSignal,
  *   spill?: false | { dir?: string, maxMB?: number }, sorter?: (cmp: (a: any, b: any) => number) => any }} PdfStreamOptions
  *   render()'s options and exportPdf's, plus: window (rows laid out at once, 1000), parallel (Node: worker threads
  *   that lay out and paint pages, opt-in; the file is the same, each thread costs memory), maxRows (rows read,
  *   5,000,000), id (the file ID). presorted: the rows come in the report's order (its sort, its groups together), so
  *   they are not sorted, only checked as they pass (a row out of order stops the export). spill: where a sort's runs go
  *   (Node: the system temp folder, 2 GB at most; false sorts in memory); in a browser a sort is in memory.
+ *   timeoutMs: the whole export's time limit, waits for the sink included (504, code 'ETIMEDOUT'). signal: an
+ *   AbortSignal that stops the export at its next wait (rejects with the signal's reason, an AbortError); sqlRows gets
+ *   it as its third argument ({ signal }) so a database cursor can cancel its query.
  */
 /**
  * Report definition → PDF written to a sink as it is made, for reports too large to hold as a page model: a flowing

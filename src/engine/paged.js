@@ -153,6 +153,10 @@ export async function planPaged(def0, opts = {}) {
    */
   async function* pass(total, bounds, starts, o = /** @type {{ run?: (job: any) => Promise<any>, parallel?: number }} */ ({})) {
     const src = rowsOf()[Symbol.asyncIterator]();
+    try { yield* passOver(src, total, bounds, starts, o); } finally { await src.return?.(undefined); } // the cursor closes on every exit
+  }
+  /** pass, over the rows of src @param {AsyncIterator<any>} src @param {number|null} total @param {number[]|null} bounds @param {number[]} [starts] */
+  async function* passOver(src, total, bounds, starts, o = /** @type {{ run?: (job: any) => Promise<any>, parallel?: number }} */ ({})) {
     let ahead = /** @type {any} */ (null), ended = false;
     const next = async () => { if (ahead) { const a = ahead; ahead = null; return a; } const r = await src.next(); if (r.done) ended = true; return r; };
     const acc = newAcc(folds);
@@ -185,6 +189,7 @@ export async function planPaged(def0, opts = {}) {
       seen++;
     };
     const read = async (upTo) => {
+      opts.signal?.throwIfAborted();
       while (win.length < upTo && !ended) { const r = await next(); if (!r.done) { take(r.value); win.push(r.value); } }
       if (ended) close(0);
     };

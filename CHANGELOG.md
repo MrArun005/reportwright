@@ -2,6 +2,20 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
+## Unreleased
+
+### Fixed
+- **Streaming PDF (`exportPdfStream`) failures, from the 0.12.1 retest:**
+  - A sink that stops reading no longer hangs the export: `timeoutMs` covers the waits for drain (504, `code:
+    'ETIMEDOUT'`), a sink's `error` or `close` ends the wait, and the new `signal` option (an `AbortSignal`) stops the
+    export at its next wait (rows, sink, sort, page) with an `AbortError`. `sqlRows` gets `{ signal }` as its third
+    argument. On timeout or abort the rows' cursors are closed and spill files removed.
+- **Polar chart without `xValue`** (the angle) says so in validate() and the render ("a polar chart needs xValue"), instead of
+  "N of N rows have no x or y value". A valid polar chart gets no warnings.
+- **Variable font subsets say their weight:** a variable font cut at Regular is named Regular (family, subfamily, full and PostScript names) with usWeightClass 400, and its variation tables are dropped, in the PDF and HTML subsets.
+- **Deprecation messages** all say "will be removed in 1.0" (exportHtml's said 0.9). A test greps the source for a deprecation string that names 0.9.
+- **Rich text warnings** say "Rich text:" once (an unnamed item was named "Rich text" and the parser repeated it). The legend warning says what is accepted: a chart's legend is "bottom" or "none", and it is drawn at the bottom.
+
 ## 0.12.1 — 2026-10-08
 
 ### Fixed

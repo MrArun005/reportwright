@@ -130,6 +130,7 @@ export function validate(def) {
   // left out of the render's own warnings so they are not said twice
   const errors = [], warnings = [], exprErrors = [], checkOnly = [];
   if (!def || typeof def !== 'object') return { errors: ['The report definition is empty'], warnings, exprErrors, checkOnly };
+  if (!def.$schema) warnings.push(`The report has no "$schema", so an editor cannot check it; add "$schema": "${SCHEMA_ID}" at the top. It renders as before.`);
   if (def.$schema && def.$schema !== SCHEMA_ID && def.$schema !== SCHEMA_ALIAS) warnings.push(`Unknown schema "${def.$schema}". Expected "${SCHEMA_ID}".`);
   for (const k of Object.keys(def)) if (!DEF_KEYS.has(k) && !k.startsWith('_')) { const g = didYouMean(k, DEF_KEYS); warnings.push(`Unknown report property "${k}"${g ? ` (did you mean "${g}"?)` : ''}; it is ignored`); }
   const body = def.sections?.body;
@@ -202,6 +203,7 @@ export function validate(def) {
     }
   };
   const lists = [];
+  const fields = inlineFields(def), params = new Set((Array.isArray(def.parameters) ? def.parameters : []).map(p => p?.name));
   for (const where of ['pageHeader', 'body', 'pageFooter']) {
     const sec = def.sections?.[where];
     if (!sec) continue;
@@ -214,6 +216,7 @@ export function validate(def) {
     for (const it of Array.isArray(items) ? items : []) {
       const label = it.name || it.type;
       if (!ITEMS[it.type]) { warnings.push(`Unknown item type "${it.type}"`); continue; }
+      walkItems(it, (x) => itemRefs(x, warnings, fields, params));
       if (it.name) {
         if (names.has(it.name)) warnings.push(`Two items have the name "${it.name}"`);
         names.add(it.name);
@@ -227,7 +230,12 @@ export function validate(def) {
         warnings.push(`${label}: there is no named style "${it.styleName}"${g ? ` (did you mean "${g}"?)` : ''}; it is ignored`);
       }
       if (Array.isArray(it.sort)) sortIssues(it.sort, label, warnings);
+      if (it.type === 'chart' && it.legend != null && it.legend !== 'bottom' && it.legend !== 'none') {
+        const shown = typeof it.legend === 'object' ? `is an object (${JSON.stringify(it.legend).slice(0, 60)})` : `is ${JSON.stringify(it.legend)}`;
+        warnings.push(`${label}: "legend" ${shown}; only "bottom" (show the legend) or "none" (hide it) is supported, and the legend is drawn at the bottom`);
+      }
       if (it.type === 'chart' && !NO_SERIES_CHARTS.has(it.chartType) && !(Array.isArray(it.series) && it.series.length)) warnings.push(`${label}: the chart has no series, so it plots a count of its rows; add one, e.g. series: [{ "name": "Value", "value": "=Sum(Fields.Amount)" }]`);
+      if (it.type === 'chart' && it.chartType === 'polar' && it.xValue == null) warnings.push(`${label}: a polar chart needs xValue, the angle of each point in degrees (0 at the top, clockwise); without it no point is drawn`);
       if (it.type === 'image' && typeof it.src === 'string' && !it.src.startsWith('=') && LOCAL_IMAGE.test(it.src.trim())) warnings.push(`${label}: "${it.src}" is a local file path, which a browser cannot load; embed the image (images: { name: "data:image/png;base64,..." } and src: "embedded:name") or use an https:// address`);
       if (it.style != null && (typeof it.style !== 'object' || Array.isArray(it.style))) warnings.push(`${label}: "style" must be an object of style properties, such as { "fontWeight": "bold" }; ${JSON.stringify(it.style).slice(0, 40)} is ignored`);
       // a mistyped property is ignored silently otherwise ("vale" for value: a blank box)
@@ -239,6 +247,7 @@ export function validate(def) {
       }
       // a literal outside the schema's choices ("dir": "rtl2")
       for (const [k, sch] of SCHEMA_ITEMS.get(it.type) || []) {
+        if (it.type === 'chart' && k === 'legend') continue; // its own message, above
         const list = k === 'type' ? null : offEnum(sch, it[k]);
         if (list) warnings.push(`${label}: "${k}" is ${JSON.stringify(it[k])}; expected one of ${list.map(x => JSON.stringify(x)).join(', ')}`);
       }
@@ -304,6 +313,55 @@ export function validate(def) {
 
 /** Keys whose text may hold {expression} parts (a text template). */
 const TEMPLATE_KEYS = new Set(['value', 'text', 'label', 'tooltip', 'title', 'noRowsText']);
+/**
+ * The field names the inline (JSON) data has and the data sets declare, or null when some data is not inline (a
+ * database or an API: the fields are not known here, so no field is reported).
+ * @param {any} def
+ * @returns {Set<string>|null}
+ */
+function inlineFields(def) {
+  const srcs = Array.isArray(def.dataSources) ? def.dataSources : [];
+  if (!srcs.length || srcs.some(x => x?.type !== 'json' || !x.data || typeof x.data !== 'object')) return null;
+  const names = new Set();
+  // a top-level object is one row (a data set at $.meta); a list is rows
+  for (const x of srcs) for (const v of Object.values(x.data)) for (const r of (Array.isArray(v) ? v.slice(0, 200) : [v])) if (r && typeof r === 'object' && !Array.isArray(r)) for (const k of Object.keys(r)) names.add(k);
+  for (const d of Array.isArray(def.dataSets) ? def.dataSets : []) for (const f of Array.isArray(d?.fields) ? d.fields : []) if (f?.name) names.add(f.name);
+  return names.size ? names : null;
+}
+/**
+ * One item's sizes and references: a zero or negative width or height (a line may be flat), and Fields.x or Parameters.x
+ * that the report does not declare. Child items are checked on their own (walkItems), so each is said once.
+ * @param {any} it
+ * @param {string[]} warnings
+ * @param {Set<string>|null} fields
+ * @param {Set<string>} params
+ */
+function itemRefs(it, warnings, fields, params) {
+  const label = it.name || it.type;
+  if (!/line/i.test(String(it.type))) for (const [k, what] of [['w', 'width'], ['h', 'height']]) {
+    if (typeof it[k] === 'number' && it[k] <= 0) warnings.push(`${label}: ${what} is ${it[k]}, so the item is not drawn; give it a positive ${what}`);
+  }
+  const seen = new Set();
+  const scan = (node, depth) => {
+    if (depth > 64 || node == null) return;
+    if (typeof node === 'string') {
+      if (!(node.startsWith('=') || node.includes('{'))) return;
+      for (const m of node.matchAll(/\b(Fields|Parameters)\.([A-Za-z_]\w*)/g)) {
+        const key = `${m[1]}.${m[2]}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        // the same words as the render's own message, so the two are said once (render() drops a repeated warning)
+        if (m[1] === 'Parameters' && !params.has(m[2])) warnings.push(`${label}: The parameter "${m[2]}" does not exist; declare it under parameters, or check the spelling`);
+        if (m[1] === 'Fields' && fields && !fields.has(m[2])) warnings.push(`${label}: The field "${m[2]}" does not exist; check the spelling, or the data set that has it`);
+      }
+      return;
+    }
+    if (Array.isArray(node)) { for (const x of node) scan(x, depth + 1); return; }
+    if (typeof node === 'object') for (const [k, v] of Object.entries(node)) if (k !== 'items' && !(v && typeof v === 'object' && v.type && v.name)) scan(v, depth + 1);
+  };
+  scan(it, 0);
+}
+
 /** fn on an item and every item inside it (containers, lists, table cells). @param {any} it @param {(x: any) => void} fn */
 function walkItems(it, fn, depth = 0) {
   if (!it || typeof it !== 'object' || depth > 64) return;

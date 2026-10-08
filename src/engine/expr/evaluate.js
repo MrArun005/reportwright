@@ -202,8 +202,8 @@ function member(o, prop, ctx) {
     if (Object.hasOwn(src, prop)) return src[prop];
     const lower = prop.toLowerCase();
     for (const k of Object.keys(src)) if (k.toLowerCase() === lower) return src[k];
-    if (o.__root === 'Fields' && ctx.fields && Object.keys(ctx.fields).length) throw new ExprError(`The field "${prop}" does not exist`);
-    if (o.__root === 'Parameters') throw new ExprError(`The parameter "${prop}" does not exist`);
+    if (o.__root === 'Fields' && ctx.fields && Object.keys(ctx.fields).length) throw new ExprError(`The field "${prop}" does not exist; check the spelling, or the data set that has it`);
+    if (o.__root === 'Parameters') throw new ExprError(`The parameter "${prop}" does not exist; declare it under parameters, or check the spelling`);
     return null;
   }
   if (o == null) return null;

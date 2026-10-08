@@ -21,7 +21,7 @@ export function exportHtml(model, options, legacyOpt) {
   const isStore = (/** @type {any} */ x) => !!x && typeof x.load === 'function' && typeof x.get === 'function' && x.bytes instanceof Map;
   /** @type {any} */ let fontStore, opt;
   if (isStore(options)) {
-    if (!warnedLegacy) { warnedLegacy = true; console.warn('[reportwright] DEPRECATED: exportHtml(model, fontStore, options) is replaced by exportHtml(model, { fonts: fontStore, ...options }); the old form is removed in 0.9'); }
+    if (!warnedLegacy) { warnedLegacy = true; console.warn('[reportwright] DEPRECATED: exportHtml(model, fontStore, options) is replaced by exportHtml(model, { fonts: fontStore, ...options }); the old form will be removed in 1.0'); }
     fontStore = options; opt = legacyOpt || {};
   } else {
     opt = /** @type {any} */ (options) || {};

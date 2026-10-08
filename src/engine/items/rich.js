@@ -117,7 +117,7 @@ export function layoutRich(blocks, st, width, m, opt = {}) {
       if (full) return;
       if (lines.length >= RICH_DEFAULTS.maxLines || fragCount >= RICH_DEFAULTS.maxFragments) {
         full = true;
-        warn(`Rich text: more than ${RICH_DEFAULTS.maxLines} lines or ${RICH_DEFAULTS.maxFragments} styled pieces; the rest is cut.`);
+        warn(`more than ${RICH_DEFAULTS.maxLines} lines or ${RICH_DEFAULTS.maxFragments} styled pieces; the rest is cut.`);
         return;
       }
       // merge neighbours of one look into fragments, measured once each

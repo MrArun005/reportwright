@@ -106,6 +106,12 @@ many.
   Each thread loads the engine and fonts and lays out its own windows: about 150–300 MB a thread (measured: 260 MB
   serial, 590 MB with 2, 890 MB with 4, for 100,000 rows). It helps only with idle cores and a report whose layout, not
   its source, is the slow part: 15% faster with 2 threads on a 2-core machine. Leave it off unless you have measured.
+- **Time limit and cancelling.** `timeoutMs` bounds the whole export, including waits for a sink that stops reading
+  (an HTTP client gone quiet, a `Writable` that never drains): past it the export rejects with status 504 and
+  `code: 'ETIMEDOUT'`. `signal` (an `AbortSignal`) stops it at its next wait (a batch of rows, the sink, a sort, a
+  page) and rejects with the signal's reason (an `AbortError`). `sqlRows(source, params, { signal })` gets the signal
+  too, so a database cursor can cancel its query. Either way the rows' cursors are closed and a sort's temporary
+  files removed.
 - **Tagged files.** A tagged (PDF/UA) table has a structure element a cell: a million-row ledger has some 8 million,
   about 200 MB of file. Readers open it; tools that load every object (qpdf, pikepdf) may need gigabytes. Past a
   million elements the result warns; `tagged: { lang, maxElements }` caps it (the export stops with an error).

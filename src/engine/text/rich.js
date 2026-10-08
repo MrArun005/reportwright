@@ -176,7 +176,7 @@ export function parseRich(html, opt = {}) {
     s = s.slice(0, RICH_LIMITS.maxLength);
     const lt = s.lastIndexOf('<');
     if (lt >= 0 && s.indexOf('>', lt) < 0) s = s.slice(0, lt); // do not leave half a tag as text
-    warn(`Rich text: the markup is longer than ${RICH_LIMITS.maxLength} characters and was cut.`);
+    warn(`the markup is longer than ${RICH_LIMITS.maxLength} characters and was cut.`);
   }
   const low = s.toLowerCase();
   /** @type {RichBlock[]} */
@@ -187,7 +187,7 @@ export function parseRich(html, opt = {}) {
   const lists = [];
   const unknown = new Set();
   let ignored = 0, deepWarned = false, nRuns = 0, nBreaks = 0, full = false;
-  const cutAt = (what) => { if (!full) { full = true; warn(`Rich text: more than ${what}; the rest is cut.`); } };
+  const cutAt = (what) => { if (!full) { full = true; warn(`more than ${what}; the rest is cut.`); } };
   /** @type {RichBlock|null} */
   let cur = null;
   let marker = /** @type {string|undefined} */ (undefined);
@@ -278,7 +278,7 @@ export function parseRich(html, opt = {}) {
     if (tag.self && name !== 'li') continue; // <b/> opens and closes nothing
     if (stack.length > RICH_LIMITS.maxDepth) {
       ignored++;
-      if (!deepWarned) { deepWarned = true; warn(`Rich text: tags nest more than ${RICH_LIMITS.maxDepth} deep; the deeper ones are ignored (their text is kept).`); }
+      if (!deepWarned) { deepWarned = true; warn(`tags nest more than ${RICH_LIMITS.maxDepth} deep; the deeper ones are ignored (their text is kept).`); }
       continue;
     }
     const st = { ...top().st };
@@ -293,7 +293,7 @@ export function parseRich(html, opt = {}) {
         const h = decode(tag.attrs.href ?? ''); // checked as emitted: no trimming after the check
         const ok = safeHref(h);
         if (ok) st.href = ok;
-        else if (h) warn(`Rich text: the link "${h.slice(0, 40)}" is not allowed (only http, https, mailto and / links); its text is kept.`);
+        else if (h) warn(`the link "${h.slice(0, 40)}" is not allowed (only http, https, mailto and / links); its text is kept.`);
         break;
       }
       default:
@@ -311,6 +311,6 @@ export function parseRich(html, opt = {}) {
     stack.push({ name, st });
   }
   flush();
-  if (unknown.size) warn(`Rich text: these tags are not supported and were left out (their text is kept): ${[...unknown].slice(0, 10).join(', ')}.`);
+  if (unknown.size) warn(`these tags are not supported and were left out (their text is kept): ${[...unknown].slice(0, 10).join(', ')}.`);
   return { blocks };
 }
