@@ -2,7 +2,8 @@
 // Fails (exit 1) on: install scripts; eval or new Function; child_process; a line over 1,000 characters
 // (source maps and binaries aside: Socket reads code, and a map's "mappings" is one line by design); a dependency
 // not pinned to an exact version; no repository, licence or README; and, outside engine/cli/viewer, any network
-// or environment use (fonts-cjk may use the network: downloading the fonts is all it does).
+// or environment use (fonts-cjk may use the network: downloading the fonts is all it does; and the environment: its
+// cache folder is REPORTWRIGHT_FONTS_DIR, XDG_CACHE_HOME or LOCALAPPDATA).
 // Prints a table per package. Usage: node scripts/scan-packages.mjs [name ...]   (run npm run build:packages first)
 import fs from 'node:fs';
 import os from 'node:os';
@@ -12,7 +13,7 @@ import { execFileSync } from 'node:child_process';
 const root = path.join(import.meta.dirname, '..');
 const ORDER = ['fonts', 'fonts-cjk', 'engine', 'cli', 'viewer', 'react', 'vue', 'svelte', 'angular'];
 const NET_OK = new Set(['engine', 'cli', 'viewer', 'fonts-cjk']);
-const ENV_OK = new Set(['engine', 'cli', 'viewer']);
+const ENV_OK = new Set(['engine', 'cli', 'viewer', 'fonts-cjk']);
 const MAX_LINE = 1000;
 const CODE = /\.(m|c)?js$/;
 const BINARY = /\.(ttf|otf|woff2?|wasm|icc|png|jpe?g|gif|ico|gz)$/i;
