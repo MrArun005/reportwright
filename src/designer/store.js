@@ -447,7 +447,8 @@ export function duplicateSelection() {
       const f = findItem(d, id);
       if (!f) continue;
       const copy = cloneWithIds(f.item, used);
-      copy.x += 8; copy.y += 8;
+      copy.x += PASTE_OFFSET; copy.y += PASTE_OFFSET; // as a paste: not exactly on top of the original (N37)
+      growToFit(d, { ...f, item: copy });
       f.list.push(copy);
       newIds.push(copy.id);
     }
@@ -456,6 +457,7 @@ export function duplicateSelection() {
 }
 
 /* ---- clipboard: copy / paste items, also across reports (JSON on the system clipboard) ---- */
+const PASTE_OFFSET = 12;
 const CLIP = 'pagewright/items@1'; // kept after the rename: copy and paste between 0.8 and 0.9 tabs
 export async function copySelection() {
   const { sel, def } = S();
