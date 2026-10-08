@@ -1,6 +1,6 @@
 # @reportwright/svelte
 
-[![npm](https://img.shields.io/npm/v/%40reportwright%2Fsvelte)](https://www.npmjs.com/package/@reportwright/svelte) [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/MrArun005/reportwright/blob/main/LICENSE) [![Socket](https://socket.dev/api/badge/npm/package/@reportwright/svelte)](https://socket.dev/npm/package/@reportwright/svelte) [![provenance](https://img.shields.io/badge/npm-provenance-green)](https://docs.npmjs.com/generating-provenance-statements)
+[![npm](https://img.shields.io/npm/v/%40reportwright%2Fsvelte)](https://www.npmjs.com/package/@reportwright/svelte) [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/MrArun005/reportwright/blob/main/LICENSE) [![Socket](https://socket.dev/api/badge/npm/package/@reportwright/svelte)](https://socket.dev/npm/package/@reportwright/svelte)
 
 Svelte actions for the ReportWright viewer and designer. Plain JavaScript, so no compiler step and any Svelte version.
 

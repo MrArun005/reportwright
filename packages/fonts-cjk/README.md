@@ -1,6 +1,6 @@
 # @reportwright/fonts-cjk (optional)
 
-[![npm](https://img.shields.io/npm/v/%40reportwright%2Ffonts-cjk)](https://www.npmjs.com/package/@reportwright/fonts-cjk) [![license](https://img.shields.io/badge/license-OFL--1.1%20%2B%20MIT-blue)](https://github.com/MrArun005/reportwright/blob/main/LICENSE) [![Socket](https://socket.dev/api/badge/npm/package/@reportwright/fonts-cjk)](https://socket.dev/npm/package/@reportwright/fonts-cjk) [![provenance](https://img.shields.io/badge/npm-provenance-green)](https://docs.npmjs.com/generating-provenance-statements)
+[![npm](https://img.shields.io/npm/v/%40reportwright%2Ffonts-cjk)](https://www.npmjs.com/package/@reportwright/fonts-cjk) [![license](https://img.shields.io/badge/license-OFL--1.1%20%2B%20MIT-blue)](https://github.com/MrArun005/reportwright/blob/main/LICENSE) [![Socket](https://socket.dev/api/badge/npm/package/@reportwright/fonts-cjk)](https://socket.dev/npm/package/@reportwright/fonts-cjk)
 
 Chinese, Japanese, Korean and emoji fonts for ReportWright (Noto, SIL Open Font License). They are not in
 `@reportwright/fonts` because they are large:

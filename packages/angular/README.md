@@ -1,6 +1,6 @@
 # @reportwright/angular
 
-[![npm](https://img.shields.io/npm/v/%40reportwright%2Fangular)](https://www.npmjs.com/package/@reportwright/angular) [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/MrArun005/reportwright/blob/main/LICENSE) [![Socket](https://socket.dev/api/badge/npm/package/@reportwright/angular)](https://socket.dev/npm/package/@reportwright/angular) [![provenance](https://img.shields.io/badge/npm-provenance-green)](https://docs.npmjs.com/generating-provenance-statements)
+[![npm](https://img.shields.io/npm/v/%40reportwright%2Fangular)](https://www.npmjs.com/package/@reportwright/angular) [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/MrArun005/reportwright/blob/main/LICENSE) [![Socket](https://socket.dev/api/badge/npm/package/@reportwright/angular)](https://socket.dev/npm/package/@reportwright/angular)
 
 `<reportwright-viewer>` and `<reportwright-designer>` custom elements for Angular. Custom elements need no Angular compiler step, so they work with any Angular version.
 

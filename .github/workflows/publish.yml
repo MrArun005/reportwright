@@ -1,5 +1,7 @@
 # Publishes the @reportwright/* packages to npm with provenance (a signed statement, checked by npm and Socket, that
 # the tarball was built from this repository by this workflow).
+# NOTE: npm provenance is generated only for public repositories. The repository is private, so the --provenance
+# publish below cannot succeed until it is public. Until then, publish by hand (docs/RELEASING.md "By hand").
 #
 # Runs only when the owner starts it: publish a GitHub release, or "Run workflow" on the Actions tab.
 # Before the first run, the owner sets up ONE of:

@@ -2,9 +2,14 @@
 
 All `@reportwright/*` packages share one version (the root `package.json`). They are published by
 `.github/workflows/publish.yml` with `npm publish --provenance --access public`, in dependency order:
-fonts, fonts-cjk, engine, cli, viewer, react, vue, svelte, angular. Provenance (a signed statement that the tarball
-was built from this repository by that workflow) only comes from CI. A publish from a laptop has none, and Socket's
-supply-chain score is lower without it.
+fonts, fonts-cjk, engine, cli, viewer, react, vue, svelte, angular.
+
+**Provenance needs a public repository.** npm's provenance statement (a signed record that the tarball was built from
+this repository by that workflow) is generated only for public GitHub repositories. The repository is private for now,
+so `--provenance` cannot succeed and no package is published with a provenance badge. The workflow is kept so the
+publish path is ready: until the repository goes public, publish by hand (see "By hand" below), and do not add a
+provenance badge or claim to a README. When the repository goes public: make it public, re-run the publish workflow for
+the next release, then check each package on npmjs.com shows "Provenance" before adding any badge.
 
 ## The 0.9.0 rename (Pagewright → ReportWright): the owner's steps, in order
 
@@ -73,7 +78,8 @@ secret, named `NPM_TOKEN`.
    `npx vitest run tests/engine/packages.test.js` and `npm run scan:packages` (all green). Commit and push.
 2. On GitHub: Releases > Draft a new release > tag `v<version>` on `main` > Publish release. The workflow builds,
    tests, scans and publishes. Or start it from Actions > Publish to npm > Run workflow.
-3. Check each package on npmjs.com shows the "Provenance" badge, and on socket.dev after it rescans (a few minutes).
+3. Once the repository is public: check each package on npmjs.com shows "Provenance", then on socket.dev after it rescans
+   (a few minutes). While the repository is private this step does not apply.
 
 ## By hand (no provenance)
 

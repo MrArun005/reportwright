@@ -23,5 +23,5 @@ a minimal report or script that shows the problem. You get an answer within 5 wo
   `new Function`, no access to globals. A report definition that escapes it is a vulnerability.
 - The engine makes no network requests of its own. Images and data come through the `fetchImage` / data callbacks you
   pass in; validate URLs there if definitions come from untrusted users.
-- Published tarballs are built by `.github/workflows/publish.yml` with npm provenance; check it with
-  `npm audit signatures`.
+- Published tarballs are built by `.github/workflows/publish.yml`. npm provenance (checked with `npm audit signatures`)
+  needs a public repository; until the repository is public, the packages carry no provenance statement.
