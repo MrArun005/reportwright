@@ -39,13 +39,13 @@ export function resolveStyle(layers, ctx) {
   // Fast path: every layer is static → reuse one merged object per layer combination.
   let node = null, allStatic = true;
   for (const l of layers) {
-    if (!l) continue;
+    if (!l || typeof l !== 'object') continue; // a style that is not an object ("bold") is ignored; validate() says so
     if (hasDynamic(l)) { allStatic = false; break; }
   }
   if (allStatic) {
     let map = CACHE;
     for (const l of layers) {
-      if (!l) continue;
+      if (!l || typeof l !== 'object') continue; // a style that is not an object ("bold") is ignored; validate() says so
       let next = map.get(l);
       if (!next) { next = { map: new WeakMap(), value: null }; map.set(l, next); }
       node = next;
@@ -55,7 +55,7 @@ export function resolveStyle(layers, ctx) {
   }
   const out = {};
   for (const l of layers) {
-    if (!l) continue;
+    if (!l || typeof l !== 'object') continue; // a style that is not an object ("bold") is ignored; validate() says so
     for (const k in l) {
       const v = l[k];
       if (v === undefined) continue;

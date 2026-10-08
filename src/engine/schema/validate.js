@@ -150,6 +150,7 @@ export function validate(def) {
         names.add(it.name);
       }
       for (const k of ['x', 'y', 'w', 'h']) if (typeof it[k] !== 'number' || Number.isNaN(it[k])) errors.push(`${label}: "${k}" must be a number`);
+      if (it.style != null && (typeof it.style !== 'object' || Array.isArray(it.style))) warnings.push(`${label}: "style" must be an object of style properties, such as { "fontWeight": "bold" }; ${JSON.stringify(it.style).slice(0, 40)} is ignored`);
       // a mistyped property is ignored silently otherwise ("vale" for value: a blank box)
       const own = ownKeys(it.type);
       for (const k of Object.keys(it)) {
