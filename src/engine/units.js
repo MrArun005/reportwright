@@ -22,13 +22,22 @@ export function fromPt(pt, unit) { return pt / UNITS[unit]; }
 /**
  * @param {{size?: string, width?: number, height?: number, orientation?: string, margins?: number[]|number}} page
  */
+/** A size name as the engine reads it: trimmed, case-insensitive ("a4 " -> "A4"); undefined when it names no size. */
+export function normalizePageSize(size) {
+  if (typeof size !== 'string') return undefined;
+  const t = size.trim().toLowerCase();
+  if (t === 'pageless') return 'Pageless';
+  return Object.keys(PAGE_SIZES).find(k => k.toLowerCase() === t);
+}
+
 export function resolvePage(page = {}) {
-  if (page.size === 'Pageless') {
+  const size = normalizePageSize(page.size);
+  if (size === 'Pageless') {
     const w = Number(page.width) || 960;
     const m = normBox(page.margins ?? 24);
     return { width: w, height: PAGELESS_MAX, margins: { top: m[0], right: m[1], bottom: m[2], left: m[3] }, bodyWidth: w - m[1] - m[3], pageless: true, minHeight: Number(page.minHeight) || 0 };
   }
-  let [w, h] = page.size && PAGE_SIZES[page.size] ? PAGE_SIZES[page.size] : [page.width || PAGE_SIZES.A4[0], page.height || PAGE_SIZES.A4[1]];
+  let [w, h] = size ? PAGE_SIZES[size] : [page.width || PAGE_SIZES.A4[0], page.height || PAGE_SIZES.A4[1]];
   if (page.orientation === 'landscape' && h > w) [w, h] = [h, w];
   const m = normBox(page.margins ?? 36);
   return { width: w, height: h, margins: { top: m[0], right: m[1], bottom: m[2], left: m[3] }, bodyWidth: w - m[1] - m[3] };

@@ -5,7 +5,7 @@ import { symbologyError } from '../items/barcode.js';
 import { rowCells } from '../items/cells.js';
 import { REPORT_SCHEMA } from './report.schema.js';
 import { toDate } from '../expr/format.js';
-import { PAGE_SIZES } from '../units.js';
+import { PAGE_SIZES, normalizePageSize } from '../units.js';
 
 export const SCHEMA_ID = 'pagewright/report@1'; // kept after the rename: every saved report carries it
 export const SCHEMA_ALIAS = 'reportwright/report@1'; // the same format under the new name
@@ -133,10 +133,9 @@ export function validate(def) {
   const body = def.sections?.body;
   if (!body || (Array.isArray(body) && !body.length)) errors.push('The report has no body section');
   const size = def.page?.size;
-  if (typeof size === 'string' && size !== 'Pageless' && !Object.hasOwn(PAGE_SIZES, size)) {
-    const t = size.trim();
-    if (t !== size && (Object.hasOwn(PAGE_SIZES, t) || t === 'Pageless')) warnings.push(`Page size "${size}" has spaces around the name; it is not a size, so the page falls back to A4 unless width and height are set. Write "${t}"`);
-    else { const g = didYouMean(t, [...Object.keys(PAGE_SIZES), 'Pageless']); warnings.push(`Unknown page size "${size}"${g ? ` (did you mean "${g}"?)` : ''}; the page falls back to A4 unless width and height are set`); }
+  if (typeof size === 'string' && !normalizePageSize(size)) {
+    const g = didYouMean(size.trim(), [...Object.keys(PAGE_SIZES), 'Pageless']);
+    warnings.push(`Unknown page size "${size}"${g ? ` (did you mean "${g}"?)` : ''}; the page falls back to A4 unless width and height are set`);
   }
   for (const [n, st] of Object.entries(def.styles?.named || {})) styleIssues(st, `Named style "${n}"`, warnings);
   styleIssues(def.styles?.base, 'Base style', warnings);
