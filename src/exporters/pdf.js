@@ -8,6 +8,7 @@ import { encryptPdf } from './encrypt.js';
 import { createTagger } from './pdfua.js';
 import { withDeadline } from './deadline.js';
 import { pngProblem } from './png.js';
+import { writePagedPdf } from './pdfstream.js';
 import { needsTableData } from './regions.js';
 import { embeddedFace, isStandard } from '../engine/text/fonts.js';
 import { standardFontEntries, standardLiteral, embeddedPage, embeddedWarnings, standIns } from './pdfstandard.js';
@@ -42,6 +43,7 @@ export function exportPdf(model, fontStore, opt = {}) {
 }
 /** @type {typeof exportPdf} */
 async function pdfOf(model, fontStore, opt) {
+  if (ownWriterFits(model, opt)) return ownWriter(model, fontStore, opt);
   await loadPdfLib(); // on first use: importing the engine does not load pdf-lib
   // a fixed date (creationDate, else SOURCE_DATE_EPOCH) makes the file reproducible: its ID then derives from the content
   const fixed = fixedDate(opt);
@@ -426,6 +428,43 @@ async function pdfOf(model, fontStore, opt) {
   }
   // appearances are already drawn in the report font; regenerating would switch them to Helvetica
   return doc.save({ updateFieldAppearances: false, ...(opt.save || {}) });
+}
+
+/**
+ * Can the engine's own PDF writer (pdfstream.js, the one exportPdfStream uses) write this model, with the same text,
+ * fonts and page content as pdf-lib? Then pdf-lib (about 35 ms to load) is not needed (A1.1). Kept to what it draws
+ * the same: text in the standard fonts, boxes, ellipses, lines and links. Anything else stays on pdf-lib: embedded
+ * fonts and shaped runs (pdf-lib subsets them its own way), images, SVG paths, rounded boxes, form fields, PDF/A,
+ * tagged PDF, encryption, prepare (signing), save options, page sizes that differ (the outline's places) and page
+ * numbering that restarts (page labels).
+ * @param {any} model @param {any} opt
+ */
+function ownWriterFits(model, opt) {
+  if (opt.pdfa || opt.tagged || opt.encrypt || opt.prepare || opt.save || !model.pages.length) return false;
+  if ((model.pageStarts || []).some((/** @type {number} */ i) => i > 0)) return false;
+  for (const pg of model.pages) {
+    if ((pg.height ?? model.height) !== model.height) return false;
+    for (const it of pg.items) {
+      if (it.t === 'text') { if (!isStandard(it.font) || it.lines.some((/** @type {any} */ l) => l.runs)) return false; }
+      else if (it.t === 'link') { const a = it.action; if (a?.type === 'bookmark' && !(a.page >= 1 && a.page <= model.pages.length)) return false; }
+      else if (!(it.t === 'line' || it.t === 'ellipse' || (it.t === 'rect' && !it.radius))) return false;
+    }
+  }
+  return true;
+}
+/** The model through the engine's own writer (ownWriterFits): the same metadata, dates and file ID rules as pdf-lib's path. */
+async function ownWriter(model, fontStore, opt) {
+  const fixed = fixedDate(opt), when = fixed ?? new Date();
+  /** @type {Uint8Array[]} */
+  const parts = [];
+  const info = { width: model.width, height: model.height, bookmarks: model.bookmarks || [], headings: model.headings || [], warnings: [] };
+  await writePagedPdf({ info, pages: async function* () { yield* model.pages; } },
+    { fontStore, subset: opt.subset, id: fixed ? await contentId(model, opt, when) : undefined, title: opt.title, author: opt.author, creationDate: when, drillBase: opt.drillBase },
+    { write: (/** @type {Uint8Array} */ u8) => { parts.push(u8); } });
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let at = 0;
+  for (const p of parts) { out.set(p, at); at += p.length; }
+  return out;
 }
 
 /** The text a link covers: the page's text lines whose start and baseline lie in its box, in reading order. */
