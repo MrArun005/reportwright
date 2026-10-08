@@ -142,7 +142,10 @@ function optionsOf(fn, args, legacy) {
 /** The FontStore of the options, else the default one. @param {any} o */
 const fontsOf = (o) => o.fonts || o.fontStore || defaultStore();
 /** The store of the options (else the default one) with the fonts the model draws with loaded. @param {any} model @param {any} o */
-const modelFonts = async (model, o) => { const s = fontsOf(o); await s.load(modelFontKeys(model)); return s; };
+const modelFonts = async (model, o) => {
+  const s = fontsOf(o);
+  try { await s.load(modelFontKeys(model)); return s; } catch { return o.fonts || o.fontStore; } // Office files name their fonts: the store only draws text in pictures
+};
 
 /**
  * @typedef {Omit<NonNullable<Parameters<typeof exportPdfFull>[2]>, 'subset' | 'pdfa'> & {
