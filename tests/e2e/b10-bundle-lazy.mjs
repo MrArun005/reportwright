@@ -19,6 +19,7 @@ const definition = {
   sections: { body: { items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 400, h: 40, dataSet: 'Rows', columns: [{ width: 200 }, { width: 200 }],
     header: [{ height: 16, cells: [{ value: 'Customer' }, { value: 'Amount' }] }],
     detail: [{ height: 16, cells: [{ value: '=Fields.customer' }, { value: '=Fields.amount', style: { format: 'N2' } }] }] },
+    { type: 'textbox', name: 'H', x: 200, y: 60, w: 200, h: 20, value: 'Helvetica line', style: { fontFamily: 'Helvetica' } },
     { type: 'barcode', name: 'B', x: 0, y: 60, w: 160, h: 48, symbology: 'code128', value: 'LN-2026-004417' },
     { type: 'chart', name: 'C', x: 0, y: 130, w: 300, h: 180, dataSet: 'Rows', chartType: 'bar', category: '=Fields.customer', series: [{ value: '=Fields.amount', name: 'Amount' }] }] } },
 };
@@ -50,6 +51,7 @@ async function run({ hideBwip = false } = {}) {
     return { text: svg.textContent, longest: Math.max(0, ...[...svg.querySelectorAll('path')].map(p => (p.getAttribute('d') || '').length)) };
   });
   assert.match(drawn.text, /Asha Rao: 1,201/, 'the chart draws (its data labels)');
+  assert.match(drawn.text, /Helvetica line/, 'a standard-14 font draws in the worker');
   assert.ok(drawn.longest > 300, `the barcode draws (its bars, one long path): ${JSON.stringify(drawn)}`);
   // nothing of the engine on the main thread yet: only the viewer and its static chunks, the worker and the fonts
   const lazyBefore = asked.filter(p => p.startsWith('/pw/chunk-')).length;
@@ -71,6 +73,8 @@ const normal = await run();
 assert.ok(normal.asked.includes('/pw/engine.worker.js'));
 assert.ok(normal.asked.includes('/pw/engine.worker.bwip.js'), 'the worker imported bwip-js for the barcode');
 assert.equal(normal.usesWorker, true);
+assert.ok(normal.asked.includes('/pw/engine.worker.stdfonts.js'), 'the worker imported the standard-font metrics for Helvetica');
+assert.ok(!normal.warnings.some(w => /not available/.test(w)), `no font substitution warning: ${normal.warnings}`);
 const alone = await run({ hideBwip: true });
 assert.ok(alone.warnings.some(w => /rendering on the main thread/.test(w)), `a warning says so: ${alone.warnings}`);
 await browser.close();

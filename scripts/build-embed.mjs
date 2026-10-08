@@ -3,11 +3,11 @@ import { build } from 'esbuild';
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import path from 'node:path';
-import { root, common, readable, ENTRIES, WORKER, BWIP_FILE, bwipApart, firstLoad } from './embed-options.mjs';
+import { root, common, readable, ENTRIES, WORKER, APART, bwipApart, firstLoad } from './embed-options.mjs';
 const workerBuild = (o) => build({ ...common, entryPoints: [WORKER], format: 'esm', ...readable, splitting: false, ...o });
 const workerWithBwip = async (dir, o = {}) => {
   const r = await workerBuild({ outfile: path.join(dir, 'engine.worker.js'), plugins: [...common.plugins, bwipApart], ...o });
-  await build({ entryPoints: ['bwip-js'], absWorkingDir: root, bundle: true, format: 'esm', target: ['es2020'], logLevel: 'warning', ...readable, outfile: path.join(dir, BWIP_FILE) });
+  for (const [lib, file] of Object.entries(APART)) await build({ entryPoints: [lib], absWorkingDir: root, bundle: true, format: 'esm', target: ['es2020'], logLevel: 'warning', ...readable, outfile: path.join(dir, file) });
   return r;
 };
 // 1. Everything in one classic script: the interactive HTML export inlines this one (it must work offline).
