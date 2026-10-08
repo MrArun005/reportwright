@@ -45,7 +45,8 @@ function clipTo(it, a, b) {
 /**
  * @param {{ units: any[], height: number, headerCount: number, headerHeight: number, repeatHeader: boolean,
  *   colX: number[], widths: number[], x: number, repeat: number, room: number, order: 'down' | 'across', pageH: number,
- *   name: string, nextId: () => number, warn: (m: string, clip?: boolean) => void, shiftLocal: (items: any[], dy: number) => any[] }} o
+ *   name: string, nextId: () => number, warn: (m: string, clip?: boolean) => void, shiftLocal: (items: any[], dy: number) => any[],
+ *   block?: number }} o  block: columns that move together (a pivot's value columns per measure), default 1
  * @returns {{ height: number, units: any[], tables: any[], width: number } | null}  null when the columns fit
  */
 export function sliceColumns(o) {
@@ -54,13 +55,34 @@ export function sliceColumns(o) {
   const repW = o.widths.slice(0, rep).reduce((s, w) => s + w, 0);
   const avail = o.room - repW;
   if (avail <= 1) { o.warn(`${o.name}: its repeated columns leave no room on the page`); return null; }
-  /** column sets after the repeated columns: { from, to, w } */
-  const sets = [];
-  for (let ci = rep; ci < n; ci++) {
+  // column blocks: a set never splits one (a pivot measure is a block of its value columns; a plain column is a block of one)
+  const B = Math.max(1, o.block | 0);
+  const blocks = [];
+  for (let ci = rep; ci < n; ci += B) {
+    const to = Math.min(n, ci + B);
+    let w = 0;
+    for (let c = ci; c < to; c++) { w += o.widths[c]; if (o.widths[c] > avail + EPS) o.warn(`${o.name}: column ${c + 1} is wider than the page, so it is cut`, true); }
+    blocks.push({ from: ci, to, w });
+  }
+  /** column sets after the repeated columns: { from, to, w }, packed as full as the page allows */
+  let sets = [];
+  for (const b of blocks) {
     const last = sets[sets.length - 1];
-    if (last && last.w + o.widths[ci] <= avail + EPS) { last.to = ci + 1; last.w += o.widths[ci]; continue; }
-    if (o.widths[ci] > avail + EPS) o.warn(`${o.name}: column ${ci + 1} is wider than the page, so it is cut`, true);
-    sets.push({ from: ci, to: ci + 1, w: o.widths[ci] });
+    if (last && last.w + b.w <= avail + EPS) { last.to = b.to; last.w += b.w; continue; }
+    sets.push({ from: b.from, to: b.to, w: b.w });
+  }
+  // the same number of pages, the blocks spread evenly over them (4 + 4 + 1 becomes 3 + 3 + 3) when every page still fits
+  const k = sets.length;
+  if (k >= 2) {
+    const base = Math.floor(blocks.length / k), extra = blocks.length % k;
+    const even = [];
+    let at = 0;
+    for (let p = 0; p < k; p++) {
+      const part = blocks.slice(at, at + base + (p < extra ? 1 : 0));
+      at += part.length;
+      even.push({ from: part[0].from, to: part[part.length - 1].to, w: part.reduce((s, b) => s + b.w, 0) });
+    }
+    if (even.every(s => s.w <= avail + EPS)) sets = even;
   }
   if (sets.length < 2) return null;
   if (sets.length > MAX_SETS) { o.warn(`${o.name}: its columns would fill more than ${MAX_SETS} pages across; the rest are left out`, true); sets.length = MAX_SETS; }

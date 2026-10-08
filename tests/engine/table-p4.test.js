@@ -87,16 +87,16 @@ describe('wide tables paginate sideways (horizontal pagination)', () => {
   it('down, then across: every row with the first column set, then the next set, row headers repeated', async () => {
     const { def } = wide(20);
     const out = await render(def, { exportData: true, fontStore });
-    // body 523 pt: 80 for Name leaves 443 → 8 columns of 50 per set: C0–C7, C8–C15, C16–C19
+    // body 523 pt: 80 for Name leaves 443 → greedy 8 + 8 + 4 columns of 50, spread evenly over the same 3 pages: 7 + 7 + 6
     expect(out.pages.length).toBe(3);
     const p = out.pages.map(texts);
-    expect(p[0].slice(0, 10)).toEqual(['Name', 'C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'Row 1']);
-    expect(p[1].slice(0, 10)).toEqual(['Name', 'C8', 'C9', 'C10', 'C11', 'C12', 'C13', 'C14', 'C15', 'Row 1']);
-    expect(p[2].slice(0, 6)).toEqual(['Name', 'C16', 'C17', 'C18', 'C19', 'Row 1']);
+    expect(p[0].slice(0, 9)).toEqual(['Name', 'C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'Row 1']);
+    expect(p[1].slice(0, 9)).toEqual(['Name', 'C7', 'C8', 'C9', 'C10', 'C11', 'C12', 'C13', 'Row 1']);
+    expect(p[2].slice(0, 8)).toEqual(['Name', 'C14', 'C15', 'C16', 'C17', 'C18', 'C19', 'Row 1']);
     const c8 = out.pages[1].items.find(i => i.t === 'text' && i.lines[0].text === 'C8');
-    expect(c8.clip.x).toBe(36 + 80); // right after the repeated column
+    expect(c8.clip.x).toBe(36 + 80 + 50); // right after the repeated column and C7
     expect(out.regions[0].columns.length).toBe(21); // the data export keeps every column
-    expect(c8.cell).toMatchObject({ col: 1, cols: [80, 50, 50, 50, 50, 50, 50, 50, 50] });
+    expect(c8.cell).toMatchObject({ col: 2, cols: [80, 50, 50, 50, 50, 50, 50, 50] });
   });
   it('across, then down: each block of rows on every column set before the next rows', async () => {
     const rows = Array.from({ length: 100 }, (_, i) => ({ name: `Row ${i + 1}`, ...Object.fromEntries(Array.from({ length: 12 }, (_, c) => [`c${c}`, c])) }));
@@ -105,7 +105,7 @@ describe('wide tables paginate sideways (horizontal pagination)', () => {
     const out = await render(def, { exportData: true, fontStore });
     const firstRow = out.pages.map(p => texts(p)[texts(p).findIndex(t => t.startsWith('Row '))]);
     const firstCol = out.pages.map(p => texts(p)[1]);
-    expect(firstCol.slice(0, 4)).toEqual(['C0', 'C8', 'C0', 'C8']);
+    expect(firstCol.slice(0, 4)).toEqual(['C0', 'C6', 'C0', 'C6']); // 8 + 4 columns of 50 are spread 6 + 6 over the two sets
     expect(firstRow[0]).toBe('Row 1');
     expect(firstRow[1]).toBe('Row 1');
     expect(firstRow[2]).toBe(firstRow[3]);

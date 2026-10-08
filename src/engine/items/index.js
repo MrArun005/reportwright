@@ -863,7 +863,7 @@ register('table', {
       const sliced = sliceColumns({
         units, height: y, headerCount: hc < 0 ? units.length : hc, headerHeight, repeatHeader: item.repeatHeader !== false,
         colX, widths: colWidths, x: item.x, repeat: item.repeatColumns || 0, room, order: item.pageOrder === 'across' ? 'across' : 'down',
-        pageH: lc.maxUnitHeight ?? Infinity, name: item.name || 'Table', nextId: lc.nextId, warn: lc.warn, shiftLocal,
+        pageH: lc.maxUnitHeight ?? Infinity, name: item.name || 'Table', nextId: lc.nextId, warn: lc.warn, shiftLocal, block: item.columnBlock,
       });
       if (sliced) return sliced;
     }
@@ -1455,7 +1455,7 @@ register('matrix', {
       columns, header, footer, __body: rows.length ? body : [], __rows: rows, __ctx: ctx, noRowsText: 'No data',
       // too wide: continues on the next pages (the table warns when the author did not ask for it), "clip" cuts at the edge;
       // "shrink" was done above
-      overflow: spec.overflow === 'paginate' ? item.overflow : spec.overflow, repeatColumns: R, pageOrder: spec.pageOrder,
+      overflow: spec.overflow === 'paginate' ? item.overflow : spec.overflow, repeatColumns: R, pageOrder: spec.pageOrder, columnBlock: V,
     };
     return ITEMS.table.layout(table, lc);
   },
