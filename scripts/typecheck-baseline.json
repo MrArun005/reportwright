@@ -2,7 +2,7 @@
   "src/engine/data/index.js": 1,
   "src/engine/data/xml.js": 1,
   "src/engine/expr/evaluate.js": 5,
-  "src/engine/index.js": 8,
+  "src/engine/index.js": 4,
   "src/engine/items/barcode.js": 1,
   "src/engine/items/chart-more.js": 2,
   "src/engine/items/chart.js": 8,
@@ -14,9 +14,8 @@
   "src/exporters/docx.js": 13,
   "src/exporters/encrypt.js": 2,
   "src/exporters/figures.js": 5,
-  "src/exporters/pdf.js": 9,
+  "src/exporters/pdf.js": 6,
   "src/exporters/subset.js": 1,
   "src/exporters/svg.js": 1,
-  "src/exporters/svgimage.js": 8,
-  "src/exporters/xlsx.js": 1
+  "src/exporters/svgimage.js": 8
 }

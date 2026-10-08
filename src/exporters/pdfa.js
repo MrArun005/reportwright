@@ -7,7 +7,8 @@ const xml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 
 /**
  * @param {import('pdf-lib').PDFDocument} doc  call after all pages, fields and annotations are added
- * @param {{ icc?: Uint8Array, title?: string, author?: string, created?: Date, conformance?: 'A'|'B', ua?: boolean }} opt
+ * @param {{ icc?: Uint8Array, title?: string, author?: string, created?: Date, conformance?: 'A'|'B', ua?: boolean, id?: string }} opt
+ *   id: the file identifier as hex (derived from the content for a fixed date), else random
  *   icc: an RGB ICC profile (the sRGB one in public/icc). conformance A (PDF/A-2a) for a tagged file; ua: it is PDF/UA-1 too.
  */
 export function makePdfA(doc, { icc, title = 'Report', author, created = new Date(), conformance = 'B', ua = false, id } = {}) {

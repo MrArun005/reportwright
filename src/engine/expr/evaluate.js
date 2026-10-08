@@ -249,6 +249,7 @@ function dec(x) {
 /**
  * x as [BigInt integer, scale] from its shortest decimal form (String(x)), exact at any size; null when it has none
  * (NaN, Infinity, or more than 15 decimals).
+ * @param {number} x @returns {[bigint, number] | null}
  */
 function decBig(x) {
   const m = Number.isFinite(x) ? /^(-?)(\d+)(?:\.(\d+))?(?:e([+-]\d+))?$/.exec(String(x)) : null;
@@ -258,7 +259,7 @@ function decBig(x) {
   if (scale < 0) { digits += '0'.repeat(-scale); scale = 0; }
   return scale > 15 ? null : [BigInt(m[1] + digits), scale];
 }
-/** the decimal t / 10^k as the double nearest to it (the parse of its digits is correctly rounded). */
+/** the decimal t / 10^k as the double nearest to it (the parse of its digits is correctly rounded). @param {bigint} t @param {number} k */
 function decNum(t, k) {
   const neg = t < 0n;
   let s = (neg ? -t : t).toString().padStart(k + 1, '0');
