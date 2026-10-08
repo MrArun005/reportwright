@@ -19,7 +19,7 @@ import { placeItems, shiftItems } from './items/paint.js';
 import { paginate } from './paginate/index.js';
 import { layoutItems } from './layout.js';
 import { validate } from './schema/validate.js';
-import { makeLoader, resolveReuse, resolveTheme, flattenNamed, REUSE_LIMITS, isReportId } from './reuse.js';
+import { makeLoader, resolveReuse, resolveTheme, flattenNamed, REUSE_LIMITS, isSubreportId } from './reuse.js';
 import { layerFilter } from './layout.js';
 
 /** The data fetch options of a render: the SSRF guard's (data/guard.js) and the time and size limits. */
@@ -499,7 +499,7 @@ export async function render(def0, opts = {}) {
  *  does loadReport see it, so "../" or a parameter's value cannot name a file or a report outside the saved ones. */
 function subreportId(raw, ctx) {
   const id = typeof raw === 'string' && raw.startsWith('=') ? evalValue(raw, ctx) : raw;
-  if (!isReportId(id)) throw new Error(`"${String(id).slice(0, 80)}" is not a report id`);
+  if (!isSubreportId(id)) throw new Error(`"${String(id).slice(0, 80)}" is not a report id`);
   return id;
 }
 

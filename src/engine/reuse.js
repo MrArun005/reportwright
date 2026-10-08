@@ -25,6 +25,12 @@ const ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const isId = (v) => typeof v === 'string' && ID.test(v);
 /** The server's report id rule (src/server/reports.js safeId): what a loader accepts. */
 export const isReportId = isId;
+/**
+ * A sub-report id handed to the host's loadReport: letters (any case), digits, '_' and '-', at most 128. Never '/', '\\',
+ * '.' or '..', so a host that maps ids to files or URLs cannot be walked out of its folder. Wider than isReportId
+ * (masters and parts) because hosts name their own reports; the server still applies its own safeId.
+ */
+export const isSubreportId = (v) => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(v);
 
 /**
  * A loader for one render (and its subreports): each id loaded once, at most REUSE_LIMITS.reports ids.

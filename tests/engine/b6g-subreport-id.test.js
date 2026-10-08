@@ -30,6 +30,15 @@ describe('subreport report ids', () => {
     const { asked } = await run('=Parameters.r', { r: 'sales-2026' });
     expect(asked).toEqual(['sales-2026']);
   });
+  it('a host id with capitals and underscores is loaded as it is (library users name their own reports)', async () => {
+    const { asked } = await run('Invoice_Detail');
+    expect(asked).toEqual(['Invoice_Detail']);
+  });
+  it.each(['a/b', 'a\\b', 'a.json', '..', '.hidden', 'a b', 'x'.repeat(129)])('%s is refused', async (id) => {
+    const { asked, warnings } = await run(id);
+    expect(asked).toEqual([]);
+    expect(warnings.some(w => /not a report id/.test(w))).toBe(true);
+  });
   it('an unevaluated expression text is refused, not sent as an id', async () => {
     const { asked } = await run('=Parameters.r');
     expect(asked.every(id => !id.startsWith('='))).toBe(true);
