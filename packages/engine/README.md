@@ -86,6 +86,18 @@ out.end();
 console.log(r.streamed ? `${r.pages} pages, streamed` : `written whole: ${r.why}`);
 ```
 
+**Bytes in memory instead of a file.** `exportPdf(model)` takes a page model that `render()` has already built, so it
+cannot stream: render + exportPdf holds every page (measured on a flowing 4-column table: 435 MB peak RSS at 100,000
+rows, against 273 MB streamed with the rows themselves in the definition). For a large report that you want as bytes, give
+`exportPdfStream` a sink that keeps the chunks; it renders the report whole itself when it cannot stream (`r.why`).
+`render()` warns once past 100,000 rows (`Large report (N rows): …`).
+
+```js
+const parts = [];
+const r = await exportPdfStream(definition, { title: 'Ledger' }, { write: (b) => { parts.push(b); } });
+const bytes = Buffer.concat(parts); // the same pages as render + exportPdf
+```
+
 **A failed export leaves a damaged file.** The PDF is written as it goes, so an error, a timeout or an abort halfway
 leaves a partial file at the path. Write to a temporary name and rename it when the export has succeeded:
 

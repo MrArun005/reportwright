@@ -9,6 +9,10 @@ All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. T
   when the engine is imported: `import('@reportwright/engine')` takes about 42 ms instead of 175 ms on an M2, a render
   loads only fontkit, and the streaming PDF writer never loads pdf-lib. A new process making a 1-page invoice PDF:
   about 318 ms instead of 364 ms (most of what is left is compiling harfbuzz-subset.wasm, about 150 ms).
+- **Large classic renders (A1.4, A1.5):** `render()` past 100,000 rows warns once (`Large report (N rows):
+  exportPdfStream writes it in about 320 MB; render + exportPdf holds it all in memory`), in the model's warnings and
+  once per process on the console. `exportPdf` takes a rendered model, so it cannot switch to streaming itself; the
+  engine README shows `exportPdfStream` with a sink that keeps the bytes.
 - **Streaming tickets, from the 0.12.1 retest (N23-N29):** `exportPdfStream` with `encrypt` or `prepare` and `sqlRows` no
   longer fails with "Save the report first" (the rows are gathered for the whole-model render); a misspelled option
   key (`encrpyt`, `windw`) warns with "Did you mean" in `render()`'s model warnings, `exportPdfStream`'s result and
