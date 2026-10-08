@@ -97,8 +97,14 @@ export async function planPaged(def0, opts = {}) {
   };
 
   const info = { width: page.width, height: page.height, bookmarks: /** @type {any[]} */ ([]), headings: /** @type {any[]} */ ([]), warnings: /** @type {string[]} */ ([]), pages: 0 };
-  /** One pass over the rows: each final page with its number. count: pages only (no models kept, no folds). */
-  async function* pass(/** @type {number|null} */ total) {
+  /**
+   * One pass over the rows: each final page in order. bounds (from a first pass): where each page starts (the row's
+   * index, -1 for a page that starts inside a row), so the windows end on page breaks and nothing is laid out twice;
+   * without it a window lays out a page more than it keeps, and the next window starts with that page's rows. starts:
+   * filled with where each page starts, for a later pass.
+   * @param {number|null} total @param {number[]|null} bounds @param {number[]} [starts]
+   */
+  async function* pass(total, bounds, starts) {
     const src = /** @type {any} */ (plan).records()[Symbol.asyncIterator]();
     let ahead = /** @type {any} */ (null), ended = false;
     const next = async () => { if (ahead) { const a = ahead; ahead = null; return a; } const r = await src.next(); if (r.done) ended = true; return r; };
@@ -107,33 +113,47 @@ export async function planPaged(def0, opts = {}) {
       fctx.fields = r;
       folds.forEach((f, i) => { const a = acc[i]; if (a.n != null) a.n++; else if (!a.err) { try { a.agg.add(evaluate(f.ast, fctx)); } catch (e) { a.err = e; } } });
     };
-    let carry = /** @type {any[]} */ ([]), want = size, off = 0, first = true;
+    const read = async (win, upTo) => { while (win.length < upTo && !ended) { const r = await next(); if (!r.done) { win.push(r.value); fold(r.value); } } };
+    // pages per window when the bounds are known: about `size` rows each
+    const per = bounds ? Math.max(1, Math.round(bounds.length * size / Math.max(1, bounds.rows))) : 0;
+    let carry = /** @type {any[]} */ ([]), want = size, off = 0, base = 0, first = true;
     for (;;) {
       const win = carry;
-      while (win.length < want && !ended) { const r = await next(); if (!r.done) { win.push(r.value); fold(r.value); } }
-      if (!ended) { const r = await next(); if (r.done) ended = true; else ahead = r; } // is there more?
-      const last = ended;
+      let end = -1; // bounds: the page this window stops before (a page that starts on a row of its own)
+      if (bounds) {
+        for (let k = Math.min(bounds.length - 1, off + per); k > off && end < 0; k--) if (bounds[k] >= 0) end = k;
+        for (let k = off + per + 1; k < bounds.length && end < 0; k++) if (bounds[k] >= 0) end = k;
+        await read(win, end < 0 ? Infinity : bounds[end] - base);
+      } else await read(win, want);
+      if (!ended && !(bounds && end >= 0)) { const r = await next(); if (r.done) ended = true; else ahead = r; } // is there more?
+      const last = bounds ? end < 0 : ended;
+      if (bounds && last && !ended) await read(win, Infinity);
       const done = last ? folds.map((f, i) => ({ cell: f.cell, value: acc[i].n ?? (acc[i].err ? '#Error' : acc[i].agg.value()) })) : [];
       const model = await render(windowDef(first, last, done), { ...opts, sources: { __rows: { rows: win } }, pageWindow: { offset: off, total, final: last } });
       for (const w of model.warnings) if (!info.warnings.includes(w) && info.warnings.length < 200) info.warnings.push(w);
       const pg = model.pages;
       let keep = pg.length;
-      if (!last) {
+      if (bounds) {
+        // the data changed between the passes (a live source): the page count would be wrong, so stop
+        if (keep !== (last ? bounds.length : end) - off) throw Object.assign(new Error('The data changed while the PDF was written (its pages were counted first). Export it again.'), { status: 409 });
+      } else if (!last) {
         keep = 0;
         for (let k = pg.length - 1; k >= 1; k--) if (pg[k].firstRow != null && pg[k].rowHead) { keep = k; break; }
         if (!keep) { want = win.length * 2; carry = win; continue; } // the rows fill less than two pages: a bigger window
       }
       for (let k = 0; k < keep; k++) {
         const p = pg[k];
+        starts?.push(p.firstRow != null && p.rowHead ? base + p.firstRow - 1 : -1);
         delete p.firstRow; delete p.rowHead;
         yield p;
         pg[k] = null;
       }
       const isKept = (b) => b.page <= off + keep;
-      if (total !== null || !totals) { for (const b of model.bookmarks) if (isKept(b)) info.bookmarks.push(b); for (const b of model.headings) if (isKept(b)) info.headings.push(b); }
+      if (!starts) { for (const b of model.bookmarks) if (isKept(b)) info.bookmarks.push(b); for (const b of model.headings) if (isKept(b)) info.headings.push(b); }
       off += keep;
-      if (last) break;
-      carry = win.slice(pg[keep].firstRow - 1);
+      if (last) { if (starts) /** @type {any} */ (starts).rows = base + win.length; break; }
+      if (bounds) { base = bounds[end]; carry = []; }
+      else { const cut = pg[keep].firstRow - 1; base += cut; carry = win.slice(cut); }
       want = size; first = false;
     }
     info.pages = off;
@@ -141,9 +161,12 @@ export async function planPaged(def0, opts = {}) {
   return {
     info,
     async *pages() {
-      let total = null;
-      if (totals) { let n = 0; for await (const p of pass(null)) { void p; n++; } total = n; }
-      yield* pass(total);
+      if (!totals) { yield* pass(null, null); return; }
+      // "of M": a first pass counts the pages and notes where each starts (nothing is drawn); the second lays out
+      // exactly those pages, window by window
+      const starts = /** @type {number[]} */ ([]);
+      for await (const p of pass(null, null, starts)) void p;
+      yield* pass(starts.length, starts);
     },
   };
 }
