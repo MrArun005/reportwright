@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Switch to ReportWright</title>
+<meta name="description" content="Bring a report from SSRS, ActiveReportsJS, JasperReports or BIRT, or move from pdfmake, react-pdf, Puppeteer or PDFKit. The import runs in your browser.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="site.css">
+<link rel="stylesheet" href="switch.css">
+<script>try { const t = localStorage.getItem('pw-site-theme'); if (t) document.documentElement.dataset.theme = t; } catch {}</script>
+</head>
+<body>
+<header class="bar">
+  <a class="brand" href="index.html" aria-label="ReportWright home">
+    <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><path d="M4 1v6M1 4h6M28 1v6M25 4h6M4 25v6M1 28h6M28 25v6M25 28h6" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="7" width="14" height="18" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 12h8M12 15.5h8M12 19h5" stroke="var(--accent)" stroke-width="1.6"/></svg>
+    <span>ReportWright</span>
+  </a>
+  <nav class="nav" id="site-nav" aria-label="Site">
+    <a href="index.html#gallery">Gallery</a>
+    <a href="learn.html">Recipes</a>
+    <a href="switch.html" aria-current="page">Switch</a>
+    <a href="bench.html">Benchmarks</a>
+    <a href="play.html">Playground</a>
+  </nav>
+  <div class="bar-end">
+    <span class="licence">MIT licensed</span>
+    <button class="icon-btn" id="theme" type="button" aria-label="Switch light or dark theme" title="Light / dark">
+      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 3a7 7 0 0 1 0 14z" fill="currentColor"/></svg>
+    </button>
+    <a class="btn btn-solid" href="index.html#embed">Get it</a>
+    <button class="icon-btn menu-btn" id="menu-btn" type="button" aria-label="Site menu" aria-expanded="false" aria-controls="site-nav">
+      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="1.8" fill="none"/></svg>
+    </button>
+  </div>
+</header>
+<nav class="subnav" aria-label="On this page">
+  <a href="#tools">From report tools</a>
+  <a href="#code">From PDF libraries</a>
+  <a href="#gaps">What does not carry over</a>
+</nav>
+
+<main id="top">
+  <section class="hero">
+    <div class="hero-copy">
+      <p class="kicker"><span class="mark">●</span> Switching</p>
+      <h1>Bring your reports. <em>See what you get</em> before you commit.</h1>
+      <p class="lede">Drop a report file from your current tool on this page. It is converted in your browser, opened in the designer and previewed, and every change the importer had to make is listed. If you write PDFs with a code library, the same invoice is shown below in theirs and ours.</p>
+      <div class="hero-actions">
+        <a class="btn btn-solid" href="#tools">Import a report file</a>
+        <a class="btn" href="#code">Compare the code</a>
+        <a class="btn btn-ghost" href="#gaps">What does not carry over</a>
+      </div>
+    </div>
+    <dl class="spec">
+      <div><dt>SSRS</dt><dd><code>.rdl</code>, <code>.rdlc</code> (RDL 2008, 2010, 2016) <small>· converts in this page</small></dd></div>
+      <div><dt>ActiveReportsJS</dt><dd><code>.rdlx-json</code> <small>· converts in this page</small></dd></div>
+      <div><dt>JasperReports</dt><dd><code>.jrxml</code> (JasperReports 3 to 6, and the 7.x format) <small>· converts in this page</small></dd></div>
+      <div><dt>BIRT</dt><dd><code>.rptdesign</code> <small>· converts in this page</small></dd></div>
+      <div><dt>pdfmake</dt><dd>Code comparison and concept map</dd></div>
+      <div><dt>react-pdf</dt><dd>Code comparison and concept map</dd></div>
+      <div><dt>Puppeteer</dt><dd>HTML to PDF: code comparison and concept map</dd></div>
+      <div><dt>PDFKit</dt><dd>Code comparison and concept map</dd></div>
+    </dl>
+  </section>
+
+  <section class="sect" id="tools" aria-labelledby="tools-h">
+    <header class="sect-head">
+      <p class="num">01</p>
+      <h2 id="tools-h">From a report tool</h2>
+      <p class="sect-note">The four importers are plain JavaScript with no server calls: the same source the ReportWright server uses, bundled for this page. Your file is read with the browser's File API and never uploaded; open the network tab to check. Data sources that run SQL need the ReportWright server, so a SQL-backed report previews its layout with no rows.</p>
+    </header>
+    <div class="import-grid">
+      <div class="import-side">
+        <label class="drop" id="drop" tabindex="0">
+          <input type="file" id="file" accept=".rdl,.rdlc,.rdlx-json,.jrxml,.rptdesign" hidden>
+          <span class="drop-t">Drop a report file here</span>
+          <span class="drop-s">or click to choose one. <code>.rdl</code> <code>.rdlc</code> <code>.rdlx-json</code> <code>.jrxml</code> <code>.rptdesign</code></span>
+          <span class="drop-n">Converted on this page. Nothing is uploaded.</span>
+        </label>
+        <div class="samples">
+          <h3>No file to hand? Try a sample</h3>
+          <div id="samples"></div>
+          <p class="fine">Samples are unmodified files from the repository's test corpus: Microsoft's SSRS samples (MIT), JasperReports demos (LGPL-3.0), BIRT samples (EPL-2.0), and our own ActiveReportsJS-format files.</p>
+        </div>
+        <div class="result" id="result" aria-live="polite" hidden>
+          <h3 id="res-title"></h3>
+          <p id="res-stats" class="res-stats"></p>
+          <h4>What the importer changed or could not carry over</h4>
+          <ul id="res-warn" class="warns"></ul>
+          <p class="fine" id="res-note"></p>
+          <div class="tools"><button class="btn" type="button" id="res-download">Download as .pw.json</button></div>
+        </div>
+      </div>
+      <div class="import-stage">
+        <div class="seg seg-tabs" role="tablist" aria-label="View">
+          <button type="button" role="tab" id="tab-designer" aria-selected="true">Designer</button>
+          <button type="button" role="tab" id="tab-preview" aria-selected="false">Preview</button>
+        </div>
+        <div class="viewer-host stage-host" id="stage"><p class="host-msg">Drop a file or pick a sample →</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect" id="gaps" aria-labelledby="gaps-h">
+    <header class="sect-head">
+      <p class="num">02</p>
+      <h2 id="gaps-h">What does not carry over yet</h2>
+      <p class="sect-note">From the importers' own warnings and the project's docs (API.md, FEATURES.md). The importer never drops a thing silently: each of these produces a line in the list above. Counts are from the repository's sample corpora.</p>
+    </header>
+    <div class="caps caps-3" id="gap-grid"></div>
+  </section>
+
+  <section class="sect" id="code" aria-labelledby="code-h">
+    <header class="sect-head">
+      <p class="num">03</p>
+      <h2 id="code-h">From a PDF library: the same invoice</h2>
+      <p class="sect-note">One invoice: a title, a customer, three lines, a total. The ReportWright side is run by <code>scripts/check-switch-snippets.mjs</code> against <code>@reportwright/engine</code> and the report below is that same definition. The other libraries' code is written from their public documentation and was not run for this page.</p>
+    </header>
+    <div class="tools">
+      <label class="field">Compare with
+        <select id="lib-pick"></select>
+      </label>
+    </div>
+    <div class="compare">
+      <div class="pane">
+        <h3 id="their-h">Theirs</h3>
+        <pre class="code" id="their-code" tabindex="0"></pre>
+        <p class="fine" id="their-note"></p>
+      </div>
+      <div class="pane">
+        <h3>Ours: <code>@reportwright/engine</code></h3>
+        <pre class="code" id="our-code" tabindex="0"></pre>
+        <p class="fine">Checked: the snippet renders one A4 page, writes a PDF, and the page model holds the total 2,432.00.</p>
+      </div>
+    </div>
+    <div class="live">
+      <h3>The report above, rendered in this page by the viewer</h3>
+      <div class="viewer-host live-host" id="live"><p class="host-msg">The viewer loads when you get here.</p></div>
+    </div>
+  </section>
+
+  <section class="sect" id="concepts" aria-labelledby="con-h">
+    <header class="sect-head">
+      <p class="num">04</p>
+      <h2 id="con-h">Concept map</h2>
+      <p class="sect-note">What you wrote in code, and where it lives in a ReportWright definition.</p>
+    </header>
+    <table class="map">
+      <thead><tr><th>In your code library</th><th>In ReportWright</th></tr></thead>
+      <tbody id="concept-rows"></tbody>
+    </table>
+  </section>
+
+  <section class="sect" id="code-gaps" aria-labelledby="cg-h">
+    <header class="sect-head">
+      <p class="num">05</p>
+      <h2 id="cg-h">Moving from code: what to know</h2>
+      <p class="sect-note">There is no converter from code to a definition: you rewrite the layout once, as data. Honest list of what that costs and what stays missing.</p>
+    </header>
+    <div class="caps caps-3" id="code-gap-grid"></div>
+  </section>
+</main>
+
+<footer class="foot">
+  <p><strong>ReportWright</strong> · MIT licensed. Interface fonts IBM Plex and report fonts Inter, JetBrains Mono, Noto: SIL Open Font Licence.</p>
+  <p>Loan, portfolio, sales, ledger and stress data are fictional and generated by the repository's sample code. The transcript is a Microsoft SSRS sample with its fictitious data. Product data is a snapshot of <a href="https://dummyjson.com" rel="noopener">dummyjson.com</a>. <a data-get-it href="#embed">Get it</a></p>
+</footer>
+<script type="module" src="switch.js"></script>
+<script src="nav.js"></script>
+</body>
+</html>

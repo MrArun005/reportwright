@@ -79,7 +79,8 @@ for (const n of stress) write(`api/sample/stress/${n}`, sampleStress(n));
 // stress-ledger and account-detail read /api/sample/hard?rows=5000; a static host ignores the query string,
 // so api/sample/hard is the 5,000-row set. Change both if a report ever asks for another row count.
 const hardUrls = ['stress-ledger', 'account-detail'].flatMap(id => JSON.parse(fs.readFileSync(path.join(root, `reports/${id}.pw.json`), 'utf8')).dataSources.map(s => s.url));
-if (hardUrls.some(u => u !== '/api/sample/hard?rows=5000')) throw new Error(`api/sample/hard is emitted for rows=5000 only; reports ask for ${hardUrls}`);
+// account-detail also sends &account=; it filters by account itself, so the 5,000-row set still answers it
+if (hardUrls.some(u => !u.startsWith('/api/sample/hard?') || new URLSearchParams(u.split('?')[1]).get('rows') !== '5000')) throw new Error(`api/sample/hard is emitted for rows=5000 only; reports ask for ${hardUrls}`);
 write('api/sample/hard', sampleHard(5000));
 write('api/sample/torture', sampleTorture());
 

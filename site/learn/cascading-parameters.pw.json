@@ -1,0 +1,326 @@
+{
+  "$schema": "pagewright/report@1",
+  "name": "Cascading parameters",
+  "page": {
+    "size": "A4",
+    "margins": [
+      36,
+      36,
+      36,
+      36
+    ]
+  },
+  "dataSources": [
+    {
+      "name": "sales",
+      "type": "rest",
+      "url": "/api/sample/sales/2026",
+      "method": "GET"
+    }
+  ],
+  "dataSets": [
+    {
+      "name": "Regions",
+      "source": "sales",
+      "path": "$.regions",
+      "fields": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "cities",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "Cities",
+      "source": "sales",
+      "path": "$.rows",
+      "fields": [
+        {
+          "name": "year",
+          "type": "number"
+        },
+        {
+          "name": "month",
+          "type": "number"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "city",
+          "type": "string"
+        },
+        {
+          "name": "product",
+          "type": "string"
+        },
+        {
+          "name": "loans",
+          "type": "number"
+        },
+        {
+          "name": "disbursed",
+          "type": "number"
+        },
+        {
+          "name": "npa",
+          "type": "number"
+        }
+      ],
+      "filters": [
+        {
+          "expr": "=Fields.region",
+          "op": "=",
+          "value": "=Parameters.region"
+        }
+      ]
+    },
+    {
+      "name": "Sales",
+      "source": "sales",
+      "path": "$.rows",
+      "fields": [
+        {
+          "name": "year",
+          "type": "number"
+        },
+        {
+          "name": "month",
+          "type": "number"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "city",
+          "type": "string"
+        },
+        {
+          "name": "product",
+          "type": "string"
+        },
+        {
+          "name": "loans",
+          "type": "number"
+        },
+        {
+          "name": "disbursed",
+          "type": "number"
+        },
+        {
+          "name": "npa",
+          "type": "number"
+        }
+      ],
+      "filters": [
+        {
+          "expr": "=Fields.region",
+          "op": "=",
+          "value": "=Parameters.region"
+        },
+        {
+          "expr": "=Fields.city",
+          "op": "=",
+          "value": "=Parameters.city"
+        }
+      ]
+    }
+  ],
+  "sections": {
+    "body": {
+      "items": [
+        {
+          "type": "table",
+          "w": 503,
+          "h": 54,
+          "dataSet": "Sales",
+          "repeatHeader": true,
+          "noRowsText": "No rows",
+          "columns": [
+            {
+              "width": 100.6
+            },
+            {
+              "width": 201.2
+            },
+            {
+              "width": 100.6
+            },
+            {
+              "width": 100.6
+            }
+          ],
+          "header": [
+            {
+              "height": 18,
+              "style": {
+                "fontWeight": "bold",
+                "backgroundColor": "#f1f5f9",
+                "borderBottom": "0.75 solid #94a3b8"
+              },
+              "cells": [
+                {
+                  "value": "Month",
+                  "style": {
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "Product",
+                  "style": {}
+                },
+                {
+                  "value": "Loans",
+                  "style": {
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "Disbursed",
+                  "style": {
+                    "textAlign": "right"
+                  }
+                }
+              ]
+            }
+          ],
+          "groups": [],
+          "detail": [
+            {
+              "height": 18,
+              "style": {
+                "borderBottom": "0.5 solid #e5e7eb"
+              },
+              "cells": [
+                {
+                  "value": "=Fields.month",
+                  "style": {
+                    "format": "0",
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "=Fields.product",
+                  "style": {}
+                },
+                {
+                  "value": "=Fields.loans",
+                  "style": {
+                    "format": "N0",
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "=Fields.disbursed",
+                  "style": {
+                    "format": "N2",
+                    "textAlign": "right"
+                  }
+                }
+              ]
+            }
+          ],
+          "footer": [
+            {
+              "height": 18,
+              "style": {
+                "fontWeight": "bold",
+                "borderTop": "0.75 solid #94a3b8"
+              },
+              "cells": [
+                {
+                  "value": "Total"
+                },
+                {
+                  "value": ""
+                },
+                {
+                  "value": "=Sum(Fields.loans)",
+                  "style": {
+                    "format": "N0",
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "=Sum(Fields.disbursed)",
+                  "style": {
+                    "format": "N2",
+                    "textAlign": "right"
+                  }
+                }
+              ]
+            }
+          ],
+          "style": {
+            "padding": [
+              3,
+              4,
+              3,
+              4
+            ]
+          },
+          "id": "qul3hoye",
+          "name": "Table1",
+          "x": 0,
+          "y": 28
+        }
+      ],
+      "height": 106
+    },
+    "pageHeader": {
+      "height": 32,
+      "items": [
+        {
+          "type": "textbox",
+          "w": 523,
+          "h": 18,
+          "value": "{Parameters.city}, {Parameters.region} region: 2026",
+          "canGrow": true,
+          "canShrink": false,
+          "style": {
+            "fontSize": 14,
+            "fontWeight": "bold"
+          },
+          "id": "2a0p1ef9",
+          "name": "Textbox1",
+          "x": 0,
+          "y": 4
+        }
+      ]
+    },
+    "pageFooter": {
+      "height": 0,
+      "items": []
+    }
+  },
+  "parameters": [
+    {
+      "name": "region",
+      "type": "string",
+      "prompt": "Region",
+      "default": "North",
+      "required": false,
+      "optionsFrom": {
+        "dataSet": "Regions",
+        "value": "=Fields.name"
+      }
+    },
+    {
+      "name": "city",
+      "type": "string",
+      "prompt": "City",
+      "default": "Delhi",
+      "required": false,
+      "optionsFrom": {
+        "dataSet": "Cities",
+        "value": "=Fields.city"
+      }
+    }
+  ]
+}

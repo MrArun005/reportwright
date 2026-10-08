@@ -1,0 +1,263 @@
+{
+  "$schema": "pagewright/report@1",
+  "name": "Drill-down and drill-through",
+  "page": {
+    "size": "A4",
+    "margins": [
+      36,
+      36,
+      36,
+      36
+    ]
+  },
+  "dataSources": [
+    {
+      "name": "sales",
+      "type": "rest",
+      "url": "/api/sample/sales/2026",
+      "method": "GET"
+    }
+  ],
+  "dataSets": [
+    {
+      "name": "Sales",
+      "source": "sales",
+      "path": "$.rows",
+      "fields": [
+        {
+          "name": "year",
+          "type": "number"
+        },
+        {
+          "name": "month",
+          "type": "number"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "city",
+          "type": "string"
+        },
+        {
+          "name": "product",
+          "type": "string"
+        },
+        {
+          "name": "loans",
+          "type": "number"
+        },
+        {
+          "name": "disbursed",
+          "type": "number"
+        },
+        {
+          "name": "npa",
+          "type": "number"
+        }
+      ]
+    }
+  ],
+  "sections": {
+    "body": {
+      "items": [
+        {
+          "type": "table",
+          "w": 503,
+          "h": 72,
+          "dataSet": "Sales",
+          "repeatHeader": true,
+          "noRowsText": "No rows",
+          "columns": [
+            {
+              "width": 251.5
+            },
+            {
+              "width": 125.75
+            },
+            {
+              "width": 125.75
+            }
+          ],
+          "header": [
+            {
+              "height": 18,
+              "style": {
+                "fontWeight": "bold",
+                "backgroundColor": "#f1f5f9",
+                "borderBottom": "0.75 solid #94a3b8"
+              },
+              "cells": [
+                {
+                  "value": "Region",
+                  "style": {}
+                },
+                {
+                  "value": "Loans",
+                  "style": {
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "Disbursed",
+                  "style": {
+                    "textAlign": "right"
+                  }
+                }
+              ]
+            }
+          ],
+          "groups": [
+            {
+              "name": "ByRegion",
+              "expr": "=Fields.region",
+              "sort": "asc",
+              "header": [
+                {
+                  "height": 18,
+                  "cells": [
+                    {
+                      "value": "=Fields.region",
+                      "style": {
+                        "fontWeight": "bold"
+                      }
+                    },
+                    {
+                      "value": "=Sum(Fields.loans)",
+                      "style": {
+                        "format": "N0",
+                        "textAlign": "right"
+                      }
+                    },
+                    {
+                      "value": "=Sum(Fields.disbursed)",
+                      "style": {
+                        "format": "N2",
+                        "textAlign": "right"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "collapsible": true,
+              "initiallyCollapsed": true
+            },
+            {
+              "name": "City",
+              "expr": "=Fields.city",
+              "sort": "asc",
+              "header": [
+                {
+                  "height": 18,
+                  "cells": [
+                    {
+                      "value": "=Fields.city",
+                      "action": {
+                        "type": "report",
+                        "report": "sales-city",
+                        "params": {
+                          "city": "=Fields.city",
+                          "year": "2026"
+                        }
+                      },
+                      "style": {
+                        "color": "#1d4ed8"
+                      }
+                    },
+                    {
+                      "value": "=Sum(Fields.loans)",
+                      "style": {
+                        "format": "N0",
+                        "textAlign": "right"
+                      }
+                    },
+                    {
+                      "value": "=Sum(Fields.disbursed)",
+                      "style": {
+                        "format": "N2",
+                        "textAlign": "right"
+                      }
+                    }
+                  ],
+                  "style": {
+                    "fontWeight": "bold",
+                    "backgroundColor": "#f8fafc"
+                  }
+                }
+              ],
+              "footer": []
+            }
+          ],
+          "detail": [],
+          "footer": [
+            {
+              "height": 18,
+              "style": {
+                "fontWeight": "bold",
+                "borderTop": "0.75 solid #94a3b8"
+              },
+              "cells": [
+                {
+                  "value": "Total"
+                },
+                {
+                  "value": "=Sum(Fields.loans)",
+                  "style": {
+                    "format": "N0",
+                    "textAlign": "right"
+                  }
+                },
+                {
+                  "value": "=Sum(Fields.disbursed)",
+                  "style": {
+                    "format": "N2",
+                    "textAlign": "right"
+                  }
+                }
+              ]
+            }
+          ],
+          "style": {
+            "padding": [
+              3,
+              4,
+              3,
+              4
+            ]
+          },
+          "id": "dgt1bq7k",
+          "name": "Table1",
+          "x": 0,
+          "y": 20
+        }
+      ],
+      "height": 98
+    },
+    "pageHeader": {
+      "height": 32,
+      "items": [
+        {
+          "type": "textbox",
+          "w": 523,
+          "h": 18,
+          "value": "Disbursed by region, 2026: open a region, click a city",
+          "canGrow": true,
+          "canShrink": false,
+          "style": {
+            "fontSize": 13,
+            "fontWeight": "bold"
+          },
+          "id": "pwymnz8y",
+          "name": "Textbox1",
+          "x": 0,
+          "y": 4
+        }
+      ]
+    },
+    "pageFooter": {
+      "height": 0,
+      "items": []
+    }
+  }
+}

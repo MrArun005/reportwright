@@ -1,0 +1,149 @@
+{
+  "$schema": "pagewright/report@1",
+  "name": "Pivot table",
+  "page": {
+    "size": "A4",
+    "margins": [
+      36,
+      36,
+      36,
+      36
+    ],
+    "orientation": "landscape"
+  },
+  "dataSources": [
+    {
+      "name": "sales",
+      "type": "rest",
+      "url": "/api/sample/sales/2026",
+      "method": "GET"
+    }
+  ],
+  "dataSets": [
+    {
+      "name": "Sales",
+      "source": "sales",
+      "path": "$.rows",
+      "fields": [
+        {
+          "name": "year",
+          "type": "number"
+        },
+        {
+          "name": "month",
+          "type": "number"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "city",
+          "type": "string"
+        },
+        {
+          "name": "product",
+          "type": "string"
+        },
+        {
+          "name": "loans",
+          "type": "number"
+        },
+        {
+          "name": "disbursed",
+          "type": "number"
+        },
+        {
+          "name": "npa",
+          "type": "number"
+        }
+      ]
+    }
+  ],
+  "sections": {
+    "body": {
+      "items": [
+        {
+          "type": "matrix",
+          "w": 515,
+          "h": 54,
+          "dataSet": "Sales",
+          "rowGroup": "",
+          "columnGroup": "",
+          "value": "=Count(Fields)",
+          "valueFormat": "N0",
+          "corner": "Region",
+          "rowHeaderWidth": 90,
+          "columnWidth": 70,
+          "rowTotals": true,
+          "columnTotals": true,
+          "columnSort": "asc",
+          "rowSort": "asc",
+          "headerStyle": {
+            "fontWeight": "bold",
+            "backgroundColor": "#f1f5f9",
+            "borderBottom": "1 solid #94a3b8"
+          },
+          "style": {
+            "padding": [
+              3,
+              4,
+              3,
+              4
+            ]
+          },
+          "rowGroups": [
+            {
+              "name": "Region",
+              "expr": "=Fields.region",
+              "sort": "asc",
+              "total": "after",
+              "collapsible": true
+            },
+            {
+              "name": "City",
+              "expr": "=Fields.city",
+              "sort": "asc",
+              "total": "after"
+            }
+          ],
+          "columnGroups": [
+            {
+              "name": "Product",
+              "expr": "=Fields.product",
+              "sort": "asc",
+              "total": "after"
+            }
+          ],
+          "values": [
+            {
+              "label": "Disbursed",
+              "value": "=Sum(Fields.disbursed)",
+              "format": "N0"
+            },
+            {
+              "label": "Share",
+              "value": "=Sum(Fields.disbursed)",
+              "format": "P1",
+              "show": "percentOfRow"
+            }
+          ],
+          "repeatHeader": true,
+          "id": "33rcn2xi",
+          "name": "Matrix1",
+          "x": 0,
+          "y": 8
+        }
+      ],
+      "height": 86
+    },
+    "pageHeader": {
+      "height": 0,
+      "items": []
+    },
+    "pageFooter": {
+      "height": 0,
+      "items": []
+    }
+  }
+}

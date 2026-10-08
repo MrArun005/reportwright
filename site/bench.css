@@ -1,0 +1,56 @@
+/* Benchmarks page: only what site.css does not have. Same tokens, same proof-sheet look. */
+:root { --pass: #176032; --pass-soft: #dcefe1; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --pass: #6fd08f; --pass-soft: #163322; } }
+:root[data-theme="dark"] { --pass: #6fd08f; --pass-soft: #163322; }
+
+.pending { margin: 0; padding: 12px var(--gut); background: var(--accent-soft); border-bottom: 1px solid var(--accent); font-size: var(--fs-3); }
+.pending strong { color: var(--accent-text); }
+
+.bench-hero { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+
+.method { margin-bottom: 28px; }
+.method ul { color: var(--ink); }
+.method b { font-weight: 600; }
+
+.two { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 20px 32px; align-items: start; }
+.sub { margin: 0 0 10px; font-size: var(--fs-3); }
+.repro { min-height: 0; border-radius: 8px; background: var(--code-bg); box-shadow: var(--shadow); }
+.mono { font-family: var(--mono); font-size: var(--fs-2); }
+.muted { color: var(--muted); }
+
+.scroll { overflow-x: auto; }
+.data { width: 100%; border-collapse: collapse; font-size: var(--fs-2); border-top: 2px solid var(--ink); }
+.data th, .data td { text-align: left; padding: 8px 10px 8px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.data thead th { font-family: var(--mono); font-weight: 400; font-size: var(--fs-1); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); white-space: nowrap; }
+.data tbody th { font-weight: 600; white-space: nowrap; }
+.data .num-col { text-align: right; font-family: var(--mono); font-size: var(--fs-2); white-space: nowrap; }
+.data .best { font-weight: 600; color: var(--accent-text); }
+.data .dnf { color: var(--muted); font-style: italic; }
+
+.results-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 32px; }
+.result h3 { margin: 0 0 2px; font-size: var(--fs-4); letter-spacing: -.01em; }
+.result .fine { margin-bottom: 10px; }
+.bar-col { width: 42%; min-width: 180px; }
+.bar-cell { display: grid; grid-template-columns: minmax(60px, 1fr) auto; align-items: center; gap: 10px; font-family: var(--mono); font-size: var(--fs-2); white-space: nowrap; }
+.bar-svg { width: 100%; height: 14px; display: block; }
+.bar-fill { fill: var(--ink); opacity: .82; }
+.bar-spread { stroke: var(--accent); stroke-width: 2; }
+
+.matrix td { font-size: var(--fs-2); }
+.verdict { display: inline-block; font-family: var(--mono); font-size: var(--fs-1); font-weight: 600; padding: 1px 8px; border-radius: 999px; }
+.verdict.pass { color: var(--pass); background: var(--pass-soft); }
+.verdict.fail { color: var(--accent-text); background: var(--accent-soft); }
+.why { font-size: var(--fs-1); color: var(--muted); }
+.opt { font-family: var(--mono); font-size: var(--fs-1); color: var(--muted); min-width: 260px; }
+#vera-note { margin: 10px 0 28px; }
+
+@media (max-width: 1180px) {
+  .results-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 900px) {
+  .bench-hero, .two { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+  .bar-col { min-width: 150px; }
+  .data { font-size: var(--fs-2); }
+}

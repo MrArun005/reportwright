@@ -1,0 +1,13 @@
+[
+  "Under **Data**, click **+ Add** next to Data sources. Name it `sales`, URL `/api/sample/sales/2026`, Save.",
+  "Click **+ Add** next to Data sets. Name it `Sales`, path to the rows `$.rows`, click **Detect fields** (it finds 432 rows), Save.",
+  "Drag **Table** from the toolbox onto the Body. In the table gallery untick Year, Region, City and Npa, pick **Grouped**, set Group by to `region`, and click **Insert table**.",
+  "Click the table's grip (top-left corner) to select it and set X to `0` in the Inspector. Scroll the Inspector to **Groups**, choose `city` under Field to group by and click **Add group**. The city group gets its own header and a subtotal row.",
+  "In group 1 (ByRegion) tick **Repeat the group header on each page it continues on**.",
+  "Click the ByRegion footer cell that says Subtotal and change its value in the Inspector to `Total {Fields.region}`.",
+  "The two new group rows make the table taller than the Body. Click the **Body** label above the band and set Height to `200`.",
+  "Click the **Page header** label, set Height to `32`. Drag a **Text box** into it, type `Disbursements by region and city, 2026` as its Value, set Width to `523`, Size `14`, Weight Bold.",
+  "Click the **Page footer** label, set Height to `24`. Drag a **Text box** into it and give it the Value `Page {Globals.PageNumber} of {Globals.TotalPages}`. Set X `0`, Width `523`, Align Right.",
+  "Click **Preview**. Each city closes with its subtotal, each region with its total, the last page with the grand total, and every page footer reads Page N of M.",
+  "Type `Grouped table with subtotals` over *New report* at the top left and press **Save**."
+]

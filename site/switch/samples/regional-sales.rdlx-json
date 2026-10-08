@@ -1,0 +1,968 @@
+{
+ "Name": "RegionalSales",
+ "Language": "en-IN",
+ "Page": {
+  "PageWidth": "210mm",
+  "PageHeight": "297mm",
+  "LeftMargin": "15mm",
+  "RightMargin": "15mm",
+  "TopMargin": "12mm",
+  "BottomMargin": "12mm",
+  "PaperOrientation": "Portrait"
+ },
+ "ReportParameters": [
+  {
+   "Name": "Regions",
+   "DataType": "String",
+   "MultiValue": true,
+   "Prompt": "Regions",
+   "DefaultValue": {
+    "Values": [
+     "North",
+     "South",
+     "East",
+     "West"
+    ]
+   },
+   "ValidValues": {
+    "DataSetReference": {
+     "DataSetName": "RegionList",
+     "ValueField": "name",
+     "LabelField": "name"
+    }
+   }
+  },
+  {
+   "Name": "MinAmount",
+   "DataType": "Float",
+   "Prompt": "Smallest amount to list",
+   "DefaultValue": {
+    "Values": [
+     "0"
+    ]
+   }
+  }
+ ],
+ "DataSources": [
+  {
+   "Name": "Ledger",
+   "ConnectionProperties": {
+    "DataProvider": "JSON",
+    "ConnectString": "jsondata={\"regions\":[{\"name\":\"North\",\"manager\":\"R. Iyer\"},{\"name\":\"South\",\"manager\":\"K. Menon\"},{\"name\":\"East\",\"manager\":\"S. Das\"},{\"name\":\"West\",\"manager\":\"P. Shah\"}],\"sales\":[{\"region\":\"North\",\"month\":\"Jan\",\"monthNo\":1,\"quarter\":\"Q1\",\"product\":\"Home loan\",\"units\":3,\"amount\":2000},{\"region\":\"North\",\"month\":\"Jan\",\"monthNo\":1,\"quarter\":\"Q1\",\"product\":\"Car loan\",\"units\":6,\"amount\":7000},{\"region\":\"North\",\"month\":\"Jan\",\"monthNo\":1,\"quarter\":\"Q1\",\"product\":\"Gold loan\",\"units\":9,\"amount\":12000},{\"region\":\"North\",\"month\":\"Feb\",\"monthNo\":2,\"quarter\":\"Q1\",\"product\":\"Home loan\",\"units\":8,\"amount\":9000},{\"region\":\"North\",\"month\":\"Feb\",\"monthNo\":2,\"quarter\":\"Q1\",\"product\":\"Car loan\",\"units\":11,\"amount\":14000},{\"region\":\"North\",\"month\":\"Feb\",\"monthNo\":2,\"quarter\":\"Q1\",\"product\":\"Gold loan\",\"units\":5,\"amount\":6000},{\"region\":\"North\",\"month\":\"Mar\",\"monthNo\":3,\"quarter\":\"Q1\",\"product\":\"Home loan\",\"units\":4,\"amount\":3000},{\"region\":\"North\",\"month\":\"Mar\",\"monthNo\":3,\"quarter\":\"Q1\",\"product\":\"Car loan\",\"units\":7,\"amount\":8000},{\"region\":\"North\",\"month\":\"Mar\",\"monthNo\":3,\"quarter\":\"Q1\",\"product\":\"Gold loan\",\"units\":10,\"amount\":13000},{\"region\":\"North\",\"month\":\"Apr\",\"monthNo\":4,\"quarter\":\"Q2\",\"product\":\"Home loan\",\"units\":9,\"amount\":10000},{\"region\":\"North\",\"month\":\"Apr\",\"monthNo\":4,\"quarter\":\"Q2\",\"product\":\"Car loan\",\"units\":3,\"amount\":2000},{\"region\":\"North\",\"month\":\"Apr\",\"monthNo\":4,\"quarter\":\"Q2\",\"product\":\"Gold loan\",\"units\":6,\"amount\":7000},{\"region\":\"North\",\"month\":\"May\",\"monthNo\":5,\"quarter\":\"Q2\",\"product\":\"Home loan\",\"units\":5,\"amount\":4000},{\"region\":\"North\",\"month\":\"May\",\"monthNo\":5,\"quarter\":\"Q2\",\"product\":\"Car loan\",\"units\":8,\"amount\":9000},{\"region\":\"North\",\"month\":\"May\",\"monthNo\":5,\"quarter\":\"Q2\",\"product\":\"Gold loan\",\"units\":11,\"amount\":14000},{\"region\":\"North\",\"month\":\"Jun\",\"monthNo\":6,\"quarter\":\"Q2\",\"product\":\"Home loan\",\"units\":10,\"amount\":11000},{\"region\":\"North\",\"month\":\"Jun\",\"monthNo\":6,\"quarter\":\"Q2\",\"product\":\"Car loan\",\"units\":4,\"amount\":3000},{\"region\":\"North\",\"month\":\"Jun\",\"monthNo\":6,\"quarter\":\"Q2\",\"product\":\"Gold loan\",\"units\":7,\"amount\":8000},{\"region\":\"South\",\"month\":\"Jan\",\"monthNo\":1,\"quarter\":\"Q1\",\"product\":\"Home loan\",\"units\":10,\"amount\":13000},{\"region\":\"South\",\"month\":\"Jan\",\"monthNo\":1,\"quarter\":\"Q1\",\"product\":\"Car loan\",\"units\":4,\"amount\":5000},{\"region\":\"South\",\"month\":\"Jan\",\"monthNo\":1,\"quarter\":\"Q1\",\"product\":\"Gold loan\",\"units\":7,\"amount\":10000},{\"region\":\"South\",\"month\":\"Feb\",\"monthNo\":2,\"quarter\":\"Q1\",\"product\":\"Home loan\",\"units\":6,\"amount\":7000},{\"region\":\"South\",\"month\":\"Feb\",\"monthNo\":2,\"quarter\":\"Q1\",\"product\":\"Car loan\",\"units\":9,\"amount\":12000},{\"region\":\"South\",\"month\":\"Feb\",\"monthNo\":2,\"quarter\":\"Q1\",\"product\":\"Gold loan\",\"units\":3,\"amount\":4000},{\"region\":\"South\",\"month\":\"Mar\",\"monthNo\":3,\"quarter\":\"Q1\",\"product\":\"Home loan\",\"units\":11,\"amount\":14000},{\"region\":\"South\",\"month\":\"Mar\",\"monthNo\":3,\"quarter\":\"Q1\",\"product\":\"Car loan\",\"units\":5,\"amount\":6000},{\"region\":\"South\",\"month\":\"Mar\",\"monthNo\":3,\"quarter\":\"Q1\",\"product\":\"Gold loan\",\"units\":8,\"amount\":11000},{\"region\":\"South\",\"month\":\"Apr\",\"monthNo\":4,\"quarter\":\"Q2\",\"product\":\"Home loan\",\"units\":7,\"amount\":8000},{\"region\":\"South\",\"month\":\"Apr\",\"monthNo\":4,\"quarter\":\"Q2\",\"product\":\"Car loan\",\"units\":10,\"amount\":13000},{\"region\":\"South\",\"month\":\"Apr\",\"monthNo\":4,\"quarter\":\"Q2\",\"product\":\"Gold loan\",\"units\":4,\"amount\":5000},{\"region\":\"South\",\"month\":\"May\",\"monthNo\":5,\"quarter\":\"Q2\",\"product\":\"Home loan\",\"units\":3,\"amount\":2000},{\"region\":\"South\",\"month\":\"May\",\"monthNo\":5,\"quarter\":\"Q2\",\"product\":\"Car loan\",\"units\":6,\"amount\":7000},{\"region\":\"South\",\"month\":\"May\",\"monthNo\":5,\"quarter\":\"Q2\",\"product\":\"Gold loan\",\"units\":9,\"amount\":12000},{\"region\":\"South\",\"month\":\"Jun\",\"monthNo\":6,\"quarter\":\"Q2\",\"product\":\"Home loan\",\"units\":8,\"amount\":9000},{\"region\":\"South\",\"month\":\"Jun\",\"monthNo\":6,\"quarter\":\"Q2\",\"product\":\"Car loan\",\"units\":11,\"amount\":14000},{\"region\":\"South\",\"month\":\"Jun\",\"monthNo\":6,\"quarter\":\"Q2\",\"product\":\"Gold loan\",\"units\":5,\"amount\":6000},{\"region\":\"East\",\"month\":\"Jan\",\"monthNo\":1,\"quarter\":\"Q1\",\"product\":\"Home loan\",\"units\":8,\"amount\":11000},{\"region\":\"East\",\"month\":\"Jan\",\"monthNo\":1,\"quarter\":\"Q1\",\"product\":\"Car loan\",\"units\":11,\"amount\":3000},{\"region\":\"East\",\"month\":\"Jan\",\"monthNo\":1,\"quarter\":\"Q1\",\"product\":\"Gold loan\",\"units\":5,\"amount\":8000},{\"region\":\"East\",\"month\":\"Feb\",\"monthNo\":2,\"quarter\":\"Q1\",\"product\":\"Home loan\",\"units\":4,\"amount\":5000},{\"region\":\"East\",\"month\":\"Feb\",\"monthNo\":2,\"quarter\":\"Q1\",\"product\":\"Car loan\",\"units\":7,\"amount\":10000},{\"region\":\"East\",\"month\":\"Feb\",\"monthNo\":2,\"quarter\":\"Q1\",\"product\":\"Gold loan\",\"units\":10,\"amount\":2000},{\"region\":\"East\",\"month\":\"Mar\",\"monthNo\":3,\"quarter\":\"Q1\",\"product\":\"Home loan\",\"units\":9,\"amount\":12000},{\"region\":\"East\",\"month\":\"Mar\",\"monthNo\":3,\"quarter\":\"Q1\",\"product\":\"Car loan\",\"units\":3,\"amount\":4000},{\"region\":\"East\",\"month\":\"Mar\",\"monthNo\":3,\"quarter\":\"Q1\",\"product\":\"Gold loan\",\"units\":6,\"amount\":9000},{\"region\":\"East\",\"month\":\"Apr\",\"monthNo\":4,\"quarter\":\"Q2\",\"product\":\"Home loan\",\"units\":5,\"amount\":6000},{\"region\":\"East\",\"month\":\"Apr\",\"monthNo\":4,\"quarter\":\"Q2\",\"product\":\"Car loan\",\"units\":8,\"amount\":11000},{\"region\":\"East\",\"month\":\"Apr\",\"monthNo\":4,\"quarter\":\"Q2\",\"product\":\"Gold loan\",\"units\":11,\"amount\":3000},{\"region\":\"East\",\"month\":\"May\",\"monthNo\":5,\"quarter\":\"Q2\",\"product\":\"Home loan\",\"units\":10,\"amount\":13000},{\"region\":\"East\",\"month\":\"May\",\"monthNo\":5,\"quarter\":\"Q2\",\"product\":\"Car loan\",\"units\":4,\"amount\":5000},{\"region\":\"East\",\"month\":\"May\",\"monthNo\":5,\"quarter\":\"Q2\",\"product\":\"Gold loan\",\"units\":7,\"amount\":10000},{\"region\":\"East\",\"month\":\"Jun\",\"monthNo\":6,\"quarter\":\"Q2\",\"product\":\"Home loan\",\"units\":6,\"amount\":7000},{\"region\":\"East\",\"month\":\"Jun\",\"monthNo\":6,\"quarter\":\"Q2\",\"product\":\"Car loan\",\"units\":9,\"amount\":12000},{\"region\":\"East\",\"month\":\"Jun\",\"monthNo\":6,\"quarter\":\"Q2\",\"product\":\"Gold loan\",\"units\":3,\"amount\":4000},{\"region\":\"West\",\"month\":\"Jan\",\"monthNo\":1,\"quarter\":\"Q1\",\"product\":\"Home loan\",\"units\":6,\"amount\":9000},{\"region\":\"West\",\"month\":\"Jan\",\"monthNo\":1,\"quarter\":\"Q1\",\"product\":\"Car loan\",\"units\":9,\"amount\":14000},{\"region\":\"West\",\"month\":\"Jan\",\"monthNo\":1,\"quarter\":\"Q1\",\"product\":\"Gold loan\",\"units\":3,\"amount\":6000},{\"region\":\"West\",\"month\":\"Feb\",\"monthNo\":2,\"quarter\":\"Q1\",\"product\":\"Home loan\",\"units\":11,\"amount\":3000},{\"region\":\"West\",\"month\":\"Feb\",\"monthNo\":2,\"quarter\":\"Q1\",\"product\":\"Car loan\",\"units\":5,\"amount\":8000},{\"region\":\"West\",\"month\":\"Feb\",\"monthNo\":2,\"quarter\":\"Q1\",\"product\":\"Gold loan\",\"units\":8,\"amount\":13000},{\"region\":\"West\",\"month\":\"Mar\",\"monthNo\":3,\"quarter\":\"Q1\",\"product\":\"Home loan\",\"units\":7,\"amount\":10000},{\"region\":\"West\",\"month\":\"Mar\",\"monthNo\":3,\"quarter\":\"Q1\",\"product\":\"Car loan\",\"units\":10,\"amount\":2000},{\"region\":\"West\",\"month\":\"Mar\",\"monthNo\":3,\"quarter\":\"Q1\",\"product\":\"Gold loan\",\"units\":4,\"amount\":7000},{\"region\":\"West\",\"month\":\"Apr\",\"monthNo\":4,\"quarter\":\"Q2\",\"product\":\"Home loan\",\"units\":3,\"amount\":4000},{\"region\":\"West\",\"month\":\"Apr\",\"monthNo\":4,\"quarter\":\"Q2\",\"product\":\"Car loan\",\"units\":6,\"amount\":9000},{\"region\":\"West\",\"month\":\"Apr\",\"monthNo\":4,\"quarter\":\"Q2\",\"product\":\"Gold loan\",\"units\":9,\"amount\":14000},{\"region\":\"West\",\"month\":\"May\",\"monthNo\":5,\"quarter\":\"Q2\",\"product\":\"Home loan\",\"units\":8,\"amount\":11000},{\"region\":\"West\",\"month\":\"May\",\"monthNo\":5,\"quarter\":\"Q2\",\"product\":\"Car loan\",\"units\":11,\"amount\":3000},{\"region\":\"West\",\"month\":\"May\",\"monthNo\":5,\"quarter\":\"Q2\",\"product\":\"Gold loan\",\"units\":5,\"amount\":8000},{\"region\":\"West\",\"month\":\"Jun\",\"monthNo\":6,\"quarter\":\"Q2\",\"product\":\"Home loan\",\"units\":4,\"amount\":5000},{\"region\":\"West\",\"month\":\"Jun\",\"monthNo\":6,\"quarter\":\"Q2\",\"product\":\"Car loan\",\"units\":7,\"amount\":10000},{\"region\":\"West\",\"month\":\"Jun\",\"monthNo\":6,\"quarter\":\"Q2\",\"product\":\"Gold loan\",\"units\":10,\"amount\":2000}]}"
+   }
+  }
+ ],
+ "DataSets": [
+  {
+   "Name": "RegionList",
+   "Fields": [
+    {
+     "Name": "name",
+     "DataField": "name"
+    },
+    {
+     "Name": "manager",
+     "DataField": "manager"
+    }
+   ],
+   "Query": {
+    "DataSourceName": "Ledger",
+    "CommandText": "jpath=$.regions.*"
+   }
+  },
+  {
+   "Name": "Sales",
+   "Query": {
+    "DataSourceName": "Ledger",
+    "CommandText": "jpath=$.sales.*"
+   },
+   "Fields": [
+    {
+     "Name": "region",
+     "DataField": "region"
+    },
+    {
+     "Name": "month",
+     "DataField": "month"
+    },
+    {
+     "Name": "monthNo",
+     "DataField": "monthNo"
+    },
+    {
+     "Name": "quarter",
+     "DataField": "quarter"
+    },
+    {
+     "Name": "product",
+     "DataField": "product"
+    },
+    {
+     "Name": "units",
+     "DataField": "units"
+    },
+    {
+     "Name": "amount",
+     "DataField": "amount"
+    },
+    {
+     "Name": "avgTicket",
+     "Value": "=Fields!amount.Value / Fields!units.Value"
+    }
+   ],
+   "Filters": [
+    {
+     "FilterExpression": "=Fields!region.Value",
+     "Operator": "In",
+     "FilterValues": [
+      "=Parameters!Regions.Value"
+     ]
+    },
+    {
+     "FilterExpression": "=Fields!amount.Value",
+     "Operator": "GreaterThanOrEqual",
+     "FilterValues": [
+      "=Parameters!MinAmount.Value"
+     ]
+    }
+   ]
+  }
+ ],
+ "ReportSections": [
+  {
+   "Type": "Continuous",
+   "Name": "Main",
+   "Width": "180mm",
+   "Page": {
+    "PageWidth": "210mm",
+    "PageHeight": "297mm",
+    "LeftMargin": "15mm",
+    "RightMargin": "15mm",
+    "TopMargin": "12mm",
+    "BottomMargin": "12mm",
+    "PaperOrientation": "Portrait"
+   },
+   "PageHeader": {
+    "Type": "pagesection",
+    "Name": "PageHeader",
+    "Height": "22mm",
+    "Style": {
+     "BackgroundColor": "#f3f6fa"
+    },
+    "ReportItems": [
+     {
+      "Type": "textbox",
+      "Name": "Title",
+      "Value": "Regional sales, first half",
+      "Left": "3mm",
+      "Top": "2mm",
+      "Width": "120mm",
+      "Height": "10mm",
+      "Style": {
+       "FontFamily": "Segoe UI",
+       "FontSize": "18pt",
+       "FontWeight": "Bold",
+       "Color": "#1f4e79"
+      }
+     },
+     {
+      "Type": "textbox",
+      "Name": "Subtitle",
+      "Value": "=\"Regions: \" & Join(Parameters!Regions.Value, \", \")",
+      "Left": "3mm",
+      "Top": "12mm",
+      "Width": "120mm",
+      "Height": "6mm",
+      "Style": {
+       "FontSize": "9pt",
+       "Color": "DimGray"
+      }
+     },
+     {
+      "Type": "textbox",
+      "Name": "RunDate",
+      "Value": "=Globals!ExecutionTime",
+      "Left": "125mm",
+      "Top": "12mm",
+      "Width": "52mm",
+      "Height": "6mm",
+      "Style": {
+       "FontSize": "8pt",
+       "Color": "Gray",
+       "TextAlign": "Right",
+       "Format": "dd MMM yyyy HH:mm"
+      }
+     }
+    ]
+   },
+   "PageFooter": {
+    "Type": "pagesection",
+    "Name": "PageFooter",
+    "Height": "8mm",
+    "PrintOnFirstPage": true,
+    "ReportItems": [
+     {
+      "Type": "line",
+      "Name": "FooterRule",
+      "StartPoint": {
+       "X": "0mm",
+       "Y": "1mm"
+      },
+      "EndPoint": {
+       "X": "180mm",
+       "Y": "1mm"
+      },
+      "LineColor": "Silver",
+      "LineWidth": "0.5pt"
+     },
+     {
+      "Type": "textbox",
+      "Name": "PageNo",
+      "Value": "=\"Page \" & Globals!PageNumber & \" of \" & Globals!TotalPages",
+      "Left": "120mm",
+      "Top": "2mm",
+      "Width": "60mm",
+      "Height": "5mm",
+      "Style": {
+       "FontSize": "8pt",
+       "TextAlign": "Right"
+      }
+     }
+    ]
+   },
+   "Body": {
+    "Height": "200mm",
+    "ReportItems": [
+     {
+      "Type": "dvchart",
+      "Name": "MonthlyChart",
+      "DataSetName": "Sales",
+      "Top": "0mm",
+      "Width": "180mm",
+      "Height": "70mm",
+      "Header": {
+       "Title": "Sales by month and region"
+      },
+      "Legend": {
+       "Hidden": false
+      },
+      "PlotArea": {
+       "Axes": [
+        {
+         "AxisType": "X"
+        },
+        {
+         "AxisType": "Y",
+         "Format": "n0"
+        }
+       ]
+      },
+      "Plots": [
+       {
+        "PlotName": "Plot1",
+        "PlotChartType": "Column",
+        "PlotChartSubtype": "Stacked",
+        "Encodings": {
+         "Values": [
+          {
+           "Field": {
+            "Value": [
+             "=Fields!amount.Value"
+            ]
+           },
+           "Aggregate": "Sum"
+          }
+         ],
+         "Category": {
+          "Field": {
+           "Value": [
+            "=Fields!month.Value"
+           ]
+          },
+          "Sort": "Ascending",
+          "SortingField": "=Fields!monthNo.Value"
+         },
+         "Details": [
+          {
+           "Group": "Stack",
+           "Field": {
+            "Value": [
+             "=Fields!region.Value"
+            ]
+           }
+          }
+         ]
+        }
+       }
+      ]
+     },
+     {
+      "Type": "table",
+      "Name": "SalesTable",
+      "DataSetName": "Sales",
+      "Top": "75mm",
+      "Width": "180mm",
+      "Height": "30mm",
+      "TableColumns": [
+       {
+        "Width": "40mm"
+       },
+       {
+        "Width": "40mm"
+       },
+       {
+        "Width": "45mm"
+       },
+       {
+        "Width": "25mm"
+       },
+       {
+        "Width": "30mm"
+       }
+      ],
+      "SortExpressions": [
+       {
+        "Value": "=Fields!monthNo.Value",
+        "Direction": "Ascending"
+       }
+      ],
+      "Header": {
+       "RepeatOnNewPage": true,
+       "TableRows": [
+        {
+         "Height": "8mm",
+         "TableCells": [
+          {
+           "Item": {
+            "Type": "textbox",
+            "Name": "HRegion",
+            "Value": "Region",
+            "CanGrow": true,
+            "Style": {
+             "PaddingLeft": "4pt",
+             "PaddingRight": "4pt",
+             "PaddingTop": "2pt",
+             "PaddingBottom": "2pt",
+             "VerticalAlign": "Middle",
+             "FontWeight": "Bold",
+             "Color": "#ffffff",
+             "BackgroundColor": "#1f4e79"
+            }
+           }
+          },
+          {
+           "Item": {
+            "Type": "textbox",
+            "Name": "HMonth",
+            "Value": "Month",
+            "CanGrow": true,
+            "Style": {
+             "PaddingLeft": "4pt",
+             "PaddingRight": "4pt",
+             "PaddingTop": "2pt",
+             "PaddingBottom": "2pt",
+             "VerticalAlign": "Middle",
+             "FontWeight": "Bold",
+             "Color": "#ffffff",
+             "BackgroundColor": "#1f4e79"
+            },
+            "UserSort": {
+             "SortExpression": "=Fields!monthNo.Value"
+            }
+           }
+          },
+          {
+           "Item": {
+            "Type": "textbox",
+            "Name": "HProduct",
+            "Value": "Product",
+            "CanGrow": true,
+            "Style": {
+             "PaddingLeft": "4pt",
+             "PaddingRight": "4pt",
+             "PaddingTop": "2pt",
+             "PaddingBottom": "2pt",
+             "VerticalAlign": "Middle",
+             "FontWeight": "Bold",
+             "Color": "#ffffff",
+             "BackgroundColor": "#1f4e79"
+            },
+            "UserSort": {
+             "SortExpression": "=Fields!product.Value"
+            }
+           }
+          },
+          {
+           "Item": {
+            "Type": "textbox",
+            "Name": "HUnits",
+            "Value": "Units",
+            "CanGrow": true,
+            "Style": {
+             "PaddingLeft": "4pt",
+             "PaddingRight": "4pt",
+             "PaddingTop": "2pt",
+             "PaddingBottom": "2pt",
+             "VerticalAlign": "Middle",
+             "FontWeight": "Bold",
+             "Color": "#ffffff",
+             "BackgroundColor": "#1f4e79",
+             "TextAlign": "Right"
+            }
+           }
+          },
+          {
+           "Item": {
+            "Type": "textbox",
+            "Name": "HAmount",
+            "Value": "Amount",
+            "CanGrow": true,
+            "Style": {
+             "PaddingLeft": "4pt",
+             "PaddingRight": "4pt",
+             "PaddingTop": "2pt",
+             "PaddingBottom": "2pt",
+             "VerticalAlign": "Middle",
+             "FontWeight": "Bold",
+             "Color": "#ffffff",
+             "BackgroundColor": "#1f4e79",
+             "TextAlign": "Right"
+            },
+            "UserSort": {
+             "SortExpression": "=Fields!amount.Value"
+            }
+           }
+          }
+         ]
+        }
+       ]
+      },
+      "TableGroups": [
+       {
+        "Group": {
+         "Name": "RegionGroup",
+         "GroupExpressions": [
+          "=Fields!region.Value"
+         ],
+         "DocumentMapLabel": "=Fields!region.Value",
+         "PageBreak": "None"
+        },
+        "SortExpressions": [
+         {
+          "Value": "=Fields!region.Value",
+          "Direction": "Ascending"
+         }
+        ],
+        "Header": {
+         "TableRows": [
+          {
+           "Height": "7mm",
+           "TableCells": [
+            {
+             "Item": {
+              "Type": "textbox",
+              "Name": "GRegion",
+              "Value": "=Fields!region.Value",
+              "CanGrow": true,
+              "Style": {
+               "PaddingLeft": "4pt",
+               "PaddingRight": "4pt",
+               "PaddingTop": "2pt",
+               "PaddingBottom": "2pt",
+               "VerticalAlign": "Middle",
+               "FontWeight": "Bold",
+               "BottomBorder": {
+                "Style": "Solid",
+                "Color": "Gainsboro",
+                "Width": "0.5pt"
+               }
+              }
+             }
+            },
+            {
+             "Item": {
+              "Type": "textbox",
+              "Name": "GManager",
+              "Value": "=\"Manager: \" & Lookup(Fields!region.Value, Fields!name.Value, Fields!manager.Value, \"RegionList\")",
+              "CanGrow": true,
+              "Style": {
+               "PaddingLeft": "4pt",
+               "PaddingRight": "4pt",
+               "PaddingTop": "2pt",
+               "PaddingBottom": "2pt",
+               "VerticalAlign": "Middle",
+               "Color": "DimGray",
+               "BottomBorder": {
+                "Style": "Solid",
+                "Color": "Gainsboro",
+                "Width": "0.5pt"
+               }
+              }
+             },
+             "ColSpan": 2
+            },
+            null,
+            {
+             "Item": {
+              "Type": "textbox",
+              "Name": "GUnits",
+              "Value": "=Sum(Fields!units.Value)",
+              "CanGrow": true,
+              "Style": {
+               "PaddingLeft": "4pt",
+               "PaddingRight": "4pt",
+               "PaddingTop": "2pt",
+               "PaddingBottom": "2pt",
+               "VerticalAlign": "Middle",
+               "FontWeight": "Bold",
+               "Format": "n0",
+               "BottomBorder": {
+                "Style": "Solid",
+                "Color": "Gainsboro",
+                "Width": "0.5pt"
+               }
+              }
+             }
+            },
+            {
+             "Item": {
+              "Type": "textbox",
+              "Name": "GAmount",
+              "Value": "=Sum(Fields!amount.Value)",
+              "CanGrow": true,
+              "Style": {
+               "PaddingLeft": "4pt",
+               "PaddingRight": "4pt",
+               "PaddingTop": "2pt",
+               "PaddingBottom": "2pt",
+               "VerticalAlign": "Middle",
+               "FontWeight": "Bold",
+               "Format": "c0",
+               "BottomBorder": {
+                "Style": "Solid",
+                "Color": "Gainsboro",
+                "Width": "0.5pt"
+               }
+              }
+             }
+            }
+           ]
+          }
+         ]
+        },
+        "Footer": {
+         "TableRows": [
+          {
+           "Height": "6mm",
+           "TableCells": [
+            {
+             "Item": {
+              "Type": "textbox",
+              "Name": "GShare",
+              "Value": "=\"Share of total: \" & Format(Sum(Fields!amount.Value) / Sum(Fields!amount.Value, \"Sales\"), \"P1\")",
+              "CanGrow": true,
+              "Style": {
+               "PaddingLeft": "4pt",
+               "PaddingRight": "4pt",
+               "PaddingTop": "2pt",
+               "PaddingBottom": "2pt",
+               "VerticalAlign": "Middle",
+               "FontStyle": "Italic",
+               "Color": "Gray"
+              }
+             },
+             "ColSpan": 5
+            },
+            null,
+            null,
+            null,
+            null
+           ]
+          }
+         ]
+        }
+       }
+      ],
+      "Details": {
+       "Visibility": {
+        "Hidden": false,
+        "ToggleItem": "GRegion"
+       },
+       "TableRows": [
+        {
+         "Height": "6mm",
+         "TableCells": [
+          {
+           "Item": {
+            "Type": "textbox",
+            "Name": "DBlank",
+            "Value": "",
+            "CanGrow": true,
+            "Style": {
+             "PaddingLeft": "4pt",
+             "PaddingRight": "4pt",
+             "PaddingTop": "2pt",
+             "PaddingBottom": "2pt",
+             "VerticalAlign": "Middle"
+            }
+           }
+          },
+          {
+           "Item": {
+            "Type": "textbox",
+            "Name": "DMonth",
+            "Value": "=Fields!month.Value",
+            "CanGrow": true,
+            "Style": {
+             "PaddingLeft": "4pt",
+             "PaddingRight": "4pt",
+             "PaddingTop": "2pt",
+             "PaddingBottom": "2pt",
+             "VerticalAlign": "Middle"
+            }
+           }
+          },
+          {
+           "Item": {
+            "Type": "textbox",
+            "Name": "DProduct",
+            "Value": "=Fields!product.Value",
+            "CanGrow": true,
+            "Style": {
+             "PaddingLeft": "4pt",
+             "PaddingRight": "4pt",
+             "PaddingTop": "2pt",
+             "PaddingBottom": "2pt",
+             "VerticalAlign": "Middle"
+            }
+           }
+          },
+          {
+           "Item": {
+            "Type": "textbox",
+            "Name": "DUnits",
+            "Value": "=Fields!units.Value",
+            "CanGrow": true,
+            "Style": {
+             "PaddingLeft": "4pt",
+             "PaddingRight": "4pt",
+             "PaddingTop": "2pt",
+             "PaddingBottom": "2pt",
+             "VerticalAlign": "Middle",
+             "Format": "n0"
+            }
+           }
+          },
+          {
+           "Item": {
+            "Type": "textbox",
+            "Name": "DAmount",
+            "Value": "=Fields!amount.Value",
+            "CanGrow": true,
+            "Style": {
+             "PaddingLeft": "4pt",
+             "PaddingRight": "4pt",
+             "PaddingTop": "2pt",
+             "PaddingBottom": "2pt",
+             "VerticalAlign": "Middle",
+             "Format": "c0",
+             "Color": "=IIF(Fields!amount.Value >= 10000, \"SeaGreen\", \"Black\")"
+            }
+           }
+          }
+         ]
+        }
+       ]
+      },
+      "Footer": {
+       "TableRows": [
+        {
+         "Height": "8mm",
+         "TableCells": [
+          {
+           "Item": {
+            "Type": "textbox",
+            "Name": "TLabel",
+            "Value": "Grand total",
+            "CanGrow": true,
+            "Style": {
+             "PaddingLeft": "4pt",
+             "PaddingRight": "4pt",
+             "PaddingTop": "2pt",
+             "PaddingBottom": "2pt",
+             "VerticalAlign": "Middle",
+             "FontWeight": "Bold",
+             "TopBorder": {
+              "Style": "Solid",
+              "Width": "1pt"
+             }
+            }
+           },
+           "ColSpan": 3
+          },
+          null,
+          null,
+          {
+           "Item": {
+            "Type": "textbox",
+            "Name": "TUnits",
+            "Value": "=Sum(Fields!units.Value)",
+            "CanGrow": true,
+            "Style": {
+             "PaddingLeft": "4pt",
+             "PaddingRight": "4pt",
+             "PaddingTop": "2pt",
+             "PaddingBottom": "2pt",
+             "VerticalAlign": "Middle",
+             "FontWeight": "Bold",
+             "Format": "n0",
+             "TopBorder": {
+              "Style": "Solid",
+              "Width": "1pt"
+             }
+            }
+           }
+          },
+          {
+           "Item": {
+            "Type": "textbox",
+            "Name": "TAmount",
+            "Value": "=Sum(Fields!amount.Value)",
+            "CanGrow": true,
+            "Style": {
+             "PaddingLeft": "4pt",
+             "PaddingRight": "4pt",
+             "PaddingTop": "2pt",
+             "PaddingBottom": "2pt",
+             "VerticalAlign": "Middle",
+             "FontWeight": "Bold",
+             "Format": "c0",
+             "TopBorder": {
+              "Style": "Solid",
+              "Width": "1pt"
+             }
+            }
+           }
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "Type": "tablix",
+      "Name": "QuarterPivot",
+      "DataSetName": "Sales",
+      "Top": "115mm",
+      "Width": "120mm",
+      "Height": "20mm",
+      "Corner": [
+       [
+        {
+         "Item": {
+          "Type": "textbox",
+          "Name": "PCorner",
+          "Value": "Region",
+          "Style": {
+           "PaddingLeft": "4pt",
+           "PaddingRight": "4pt",
+           "PaddingTop": "2pt",
+           "PaddingBottom": "2pt",
+           "FontWeight": "Bold"
+          }
+         }
+        }
+       ]
+      ],
+      "ColumnHierarchy": {
+       "LevelSizes": [
+        "7mm"
+       ],
+       "Members": [
+        {
+         "Header": {
+          "Item": {
+           "Type": "textbox",
+           "Name": "PQuarter",
+           "Value": "=Fields!quarter.Value",
+           "Style": {
+            "PaddingLeft": "4pt",
+            "PaddingRight": "4pt",
+            "PaddingTop": "2pt",
+            "PaddingBottom": "2pt",
+            "FontWeight": "Bold",
+            "TextAlign": "Right",
+            "BackgroundColor": "#eef2f7"
+           }
+          }
+         },
+         "Group": {
+          "Name": "QuarterGroup",
+          "GroupExpressions": [
+           "=Fields!quarter.Value"
+          ]
+         },
+         "SortExpressions": [
+          {
+           "Value": "=Fields!quarter.Value",
+           "Direction": "Ascending"
+          }
+         ],
+         "BodyIndex": 0
+        },
+        {
+         "Header": {
+          "Item": {
+           "Type": "textbox",
+           "Name": "PTotalHead",
+           "Value": "Total",
+           "Style": {
+            "PaddingLeft": "4pt",
+            "PaddingRight": "4pt",
+            "PaddingTop": "2pt",
+            "PaddingBottom": "2pt",
+            "FontWeight": "Bold",
+            "TextAlign": "Right",
+            "BackgroundColor": "#eef2f7"
+           }
+          }
+         },
+         "BodyIndex": 1
+        }
+       ]
+      },
+      "RowHierarchy": {
+       "LevelSizes": [
+        "40mm"
+       ],
+       "Members": [
+        {
+         "Header": {
+          "Item": {
+           "Type": "textbox",
+           "Name": "PRegion",
+           "Value": "=Fields!region.Value",
+           "Style": {
+            "PaddingLeft": "4pt",
+            "PaddingRight": "4pt",
+            "PaddingTop": "2pt",
+            "PaddingBottom": "2pt"
+           }
+          }
+         },
+         "Group": {
+          "Name": "PivotRegion",
+          "GroupExpressions": [
+           "=Fields!region.Value"
+          ]
+         },
+         "SortExpressions": [
+          {
+           "Value": "=Fields!region.Value",
+           "Direction": "Ascending"
+          }
+         ],
+         "BodyIndex": 0
+        },
+        {
+         "Header": {
+          "Item": {
+           "Type": "textbox",
+           "Name": "PTotalRow",
+           "Value": "Total",
+           "Style": {
+            "PaddingLeft": "4pt",
+            "PaddingRight": "4pt",
+            "PaddingTop": "2pt",
+            "PaddingBottom": "2pt",
+            "FontWeight": "Bold"
+           }
+          }
+         },
+         "BodyIndex": 1
+        }
+       ]
+      },
+      "Body": {
+       "Columns": [
+        "30mm",
+        "30mm"
+       ],
+       "Rows": [
+        {
+         "Height": "6mm",
+         "Cells": [
+          {
+           "Item": {
+            "Type": "textbox",
+            "Name": "PValue",
+            "Value": "=Sum(Fields!amount.Value)",
+            "Style": {
+             "PaddingLeft": "4pt",
+             "PaddingRight": "4pt",
+             "PaddingTop": "2pt",
+             "PaddingBottom": "2pt",
+             "Format": "n0"
+            }
+           }
+          },
+          {
+           "Item": {
+            "Type": "textbox",
+            "Name": "PRowTotal",
+            "Value": "=Sum(Fields!amount.Value)",
+            "Style": {
+             "PaddingLeft": "4pt",
+             "PaddingRight": "4pt",
+             "PaddingTop": "2pt",
+             "PaddingBottom": "2pt",
+             "Format": "n0",
+             "FontWeight": "Bold"
+            }
+           }
+          }
+         ]
+        },
+        {
+         "Height": "6mm",
+         "Cells": [
+          {
+           "Item": {
+            "Type": "textbox",
+            "Name": "PColTotal",
+            "Value": "=Sum(Fields!amount.Value)",
+            "Style": {
+             "PaddingLeft": "4pt",
+             "PaddingRight": "4pt",
+             "PaddingTop": "2pt",
+             "PaddingBottom": "2pt",
+             "Format": "n0",
+             "FontWeight": "Bold"
+            }
+           }
+          },
+          {
+           "Item": {
+            "Type": "textbox",
+            "Name": "PGrand",
+            "Value": "=Sum(Fields!amount.Value)",
+            "Style": {
+             "PaddingLeft": "4pt",
+             "PaddingRight": "4pt",
+             "PaddingTop": "2pt",
+             "PaddingBottom": "2pt",
+             "Format": "n0",
+             "FontWeight": "Bold"
+            }
+           }
+          }
+         ]
+        }
+       ]
+      }
+     }
+    ]
+   }
+  }
+ ]
+}

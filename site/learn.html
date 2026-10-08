@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ReportWright · made by hand in the designer</title>
+<meta name="description" content="Step-by-step recipes for building reports in the ReportWright designer: grouped tables with subtotals, combo charts, drill-through, cascading parameters, pivot tables, sparklines. Each one recorded from the real designer.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="site.css">
+<link rel="stylesheet" href="learn.css">
+<script>try { const t = localStorage.getItem('pw-site-theme'); if (t) document.documentElement.dataset.theme = t; } catch {}</script>
+</head>
+<body>
+<header class="bar">
+  <a class="brand" href="index.html" aria-label="ReportWright home">
+    <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><path d="M4 1v6M1 4h6M28 1v6M25 4h6M4 25v6M1 28h6M28 25v6M25 28h6" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="7" width="14" height="18" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 12h8M12 15.5h8M12 19h5" stroke="var(--accent)" stroke-width="1.6"/></svg>
+    <span>ReportWright</span>
+  </a>
+  <nav class="nav" id="site-nav" aria-label="Site">
+    <a href="index.html#gallery">Gallery</a>
+    <a href="learn.html" aria-current="page">Recipes</a>
+    <a href="switch.html">Switch</a>
+    <a href="bench.html">Benchmarks</a>
+    <a href="play.html">Playground</a>
+  </nav>
+  <div class="bar-end">
+    <span class="licence">MIT licensed</span>
+    <button class="icon-btn" id="theme" type="button" aria-label="Switch light or dark theme" title="Light / dark">
+      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 3a7 7 0 0 1 0 14z" fill="currentColor"/></svg>
+    </button>
+    <a class="btn btn-solid" href="index.html#embed">Get it</a>
+    <button class="icon-btn menu-btn" id="menu-btn" type="button" aria-label="Site menu" aria-expanded="false" aria-controls="site-nav">
+      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="1.8" fill="none"/></svg>
+    </button>
+  </div>
+</header>
+<nav class="subnav" aria-label="On this page">
+  <a href="#recipes">Recipes</a>
+  <a href="#playground">Try the designer here</a>
+</nav>
+
+<main id="top">
+  <section class="hero learn-hero">
+    <div class="hero-copy">
+      <p class="kicker"><span class="mark">●</span> Recipes · made by hand in the designer</p>
+      <h1>The hard reports, <em>click by click.</em></h1>
+      <p class="lede">Each recipe below was built in the ReportWright designer by clicking and typing, with no hand-written report JSON. A Playwright script drives the same designer you can open on this page, takes the screenshots, and saves the finished <code>.pw.json</code>; the numbered steps are the steps that script performs. Open any result in the playground to take it apart.</p>
+    </div>
+    <dl class="spec">
+      <div><dt>Data</dt><dd>The demo's sample sales: 432 rows, 4 regions, 12 cities, 3 products, 12 months <small>(fictional)</small></dd></div>
+      <div><dt>Recorded with</dt><dd><code>scripts/site-recipes/*.mjs</code>, one script per recipe</dd></div>
+      <div><dt>Output</dt><dd>A <code>.pw.json</code> per recipe, saved by the designer's own Save</dd></div>
+      <div><dt>Not recorded yet</dt><dd>Master report and parts, barcodes, rich text, table of contents <small>(the designer has them; their recipes are still to be written)</small></dd></div>
+    </dl>
+  </section>
+
+  <section class="sect" id="recipes" aria-labelledby="recipes-h">
+    <header class="sect-head">
+      <p class="num">01</p>
+      <h2 id="recipes-h">Recipes</h2>
+      <p class="sect-note">Pick one. Every step names the panel and the control; the pictures are the designer at that moment.</p>
+    </header>
+    <div class="learn-split">
+      <ol class="demo-list" id="recipe-list" role="tablist" aria-label="Recipes"></ol>
+      <article class="recipe" id="recipe" aria-live="polite"></article>
+    </div>
+  </section>
+
+  <section class="sect" id="playground" aria-labelledby="play-h">
+    <header class="sect-head">
+      <p class="num">02</p>
+      <h2 id="play-h">Playground</h2>
+      <p class="sect-note">The finished recipe in the full designer. Select an item to see the settings the steps made; switch to Preview to run it. Nothing is uploaded.</p>
+    </header>
+    <div class="tools">
+      <label class="field">Recipe
+        <select id="play-pick"></select>
+      </label>
+      <button class="btn" type="button" id="play-download">Download .pw.json</button>
+    </div>
+    <div class="viewer-host designer-host" id="play-host"><p class="host-msg">Pick “Open in the playground” on a recipe, or the designer loads when you get here.</p></div>
+  </section>
+</main>
+
+<footer class="foot">
+  <p><strong>ReportWright</strong> · MIT licensed. Interface fonts IBM Plex and report fonts Inter: SIL Open Font Licence.</p>
+  <p>Sales data is fictional and generated by the repository's sample code. <a href="index.html">Back to the live demo</a></p>
+</footer>
+<script type="module" src="learn.js"></script>
+<script src="nav.js"></script>
+</body>
+</html>
