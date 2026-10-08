@@ -2,7 +2,7 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
-## Unreleased
+## 0.11.0 — 2026-10-08
 
 Everything since 0.10.0. Items marked **Behaviour change** alter output that a pixel-locked layout or a locale-sensitive
 export may depend on: check them before you upgrade.
@@ -43,6 +43,8 @@ export may depend on: check them before you upgrade.
   with a warning that names the picture and the reason. A cut or damaged PNG is checked and left out instead of hanging.
 
 ### Added
+- **Vercel hosting.** `GET /api/v1/cron` runs the schedule tick and the batch queue when `CRON_SECRET` (16+ characters) is set, with `Authorization: Bearer $CRON_SECRET`; without it the route answers 404. `vercel.json` runs it daily. On Vercel, a queued batch runs after its response.
+- `PW_STORAGE` falls back to `DATABASE_URL` when unset (Neon on Vercel).
 - **Designer: Import report** (File group) reads `.jrxml`, `.rdl`, `.rdlc`, `.rptdesign` and `.json` definitions through
   the importers, and shows the importer's warnings. The CLI (`pw import`) does the same.
 - **ViewerHandle:** `setParameters`, `setDefinition`, `goToPage`, `getPageCount`, `print`, `export` (Blob), and `on(ready |

@@ -1,6 +1,6 @@
 {
   "name": "reportwright",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "license": "MIT",
   "private": true,
   "engines": { "node": "22.x" },
