@@ -397,6 +397,9 @@ function useItemDrag(item, scale, setDrag) {
   return (e) => {
     if (e.button !== 0) return;
     e.preventDefault(); e.stopPropagation();
+    // preventDefault keeps the focus where it was (a removed Inspector field leaves it nowhere): the item takes it, so
+    // Esc, Delete and Ctrl+S reach the designer (also embedded)
+    e.currentTarget.closest?.('[data-item-key]')?.focus({ preventScroll: true });
     const st = useDesigner.getState();
     let ids;
     if (e.shiftKey) {
@@ -752,6 +755,7 @@ function TableView({ item, scale, drag, setDrag }) {
     e.stopPropagation();
     if (e.button !== 0) return;
     e.preventDefault(); // no text selection across cells
+    e.currentTarget.closest('[data-item-key]')?.focus({ preventScroll: true }); // the keys go to this designer
     const st = useDesigner.getState();
     const here = { part, row: ri, col: ci };
     const cur = st.sel.kind === 'cell' && st.sel.id === item.id ? st.sel : null;

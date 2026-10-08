@@ -482,22 +482,24 @@ export async function copySelection() {
   return items.length;
 }
 let memClip = null;
-export async function pasteItems(section = 'body') {
-  const st = active; // the designer pasted into, also if another one is used while the clipboard is read
-  let text = null;
-  try { text = await navigator.clipboard.readText(); } catch { text = memClip; }
-  if (!text || !text.includes(CLIP)) text = memClip;
-  let data;
-  try { data = JSON.parse(text); } catch { return 0; }
-  if (data?.kind !== CLIP || !Array.isArray(data.items)) return 0;
+const clipOf = (text) => { try { const d = JSON.parse(text); return d?.kind === CLIP && Array.isArray(d.items) ? d : null; } catch { return null; } };
+/**
+ * Paste items: from the text of a paste event (e.clipboardData: no permission prompt, N36), else the copy made in this
+ * tab. @returns {number} how many were pasted (0: nothing to paste, the caller says so)
+ */
+export function pasteItems(section = 'body', text = null) {
+  const st = active; // the designer pasted into
+  const data = clipOf(text) || clipOf(memClip);
+  if (!data) return 0;
   const ids = [];
   st.getState().apply((d) => {
     const used = allNames(d);
     for (const it of data.items) {
       const c = cloneWithIds(it, used);
-      c.x += 12; c.y += 12;
+      c.x += PASTE_OFFSET; c.y += PASTE_OFFSET;
       if (c.type === 'table' && !isBodyKey(section)) continue;
       secOf(d, section).items.push(c);
+      growToFit(d, { section, parent: null, item: c });
       ids.push(c.id);
     }
   });
