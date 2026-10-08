@@ -29,3 +29,17 @@ describe('N37: repeated copies cascade', () => {
     expect(offs()).toEqual([[0, 0], [12, 12], [24, 24]]);
   });
 });
+
+describe('N37: pasted coordinates are not trusted', () => {
+  it('x/y 1e309 (Infinity) or 2**60 (where += 12 changes nothing) on top of an item there: the paste returns at once', () => {
+    for (const [raw, v] of [['1e309', Infinity], [String(2 ** 60), 2 ** 60]]) {
+      load(report([{ ...tb('A'), x: v, y: v }, tb('B', 0, 0)]));
+      const text = `{"kind":"pagewright/items@1","items":[{"type":"textbox","name":"A","x":${raw},"y":${raw},"w":100,"h":20,"value":"x"}]}`;
+      const t0 = Date.now();
+      expect(pasteItems('body', text)).toBe(1);
+      expect(Date.now() - t0).toBeLessThan(1000);
+      const c = items()[2];
+      expect(Number.isFinite(c.x) && Number.isFinite(c.y)).toBe(true);
+    }
+  });
+});

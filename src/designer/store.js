@@ -474,7 +474,13 @@ const PASTE_OFFSET = 12;
 /** A copy goes 12 pt right and down, and 12 more while an item already sits there (an earlier copy): repeated copies
  *  cascade instead of stacking (N37). @param {any[]} list the items the copy joins @param {any} c */
 function offsetCopy(list, c) {
-  do { c.x += PASTE_OFFSET; c.y += PASTE_OFFSET; } while (list.some(i => i !== c && i.x === c.x && i.y === c.y));
+  // pasted JSON is not trusted: a coordinate that is not a finite number (1e309 parses to Infinity) starts at 0, and
+  // the steps are bounded (list.length + 1 spots cannot all be taken; past 2^53, += 12 changes nothing)
+  for (const k of ['x', 'y']) if (!Number.isFinite(c[k])) c[k] = 0;
+  for (let n = 0; n <= list.length; n++) {
+    c.x += PASTE_OFFSET; c.y += PASTE_OFFSET;
+    if (!list.some(i => i !== c && i.x === c.x && i.y === c.y)) return;
+  }
 }
 const CLIP = 'pagewright/items@1'; // kept after the rename: copy and paste between 0.8 and 0.9 tabs
 export async function copySelection() {
