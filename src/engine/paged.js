@@ -38,7 +38,7 @@ export async function planPaged(def0, opts = {}) {
   if ((def.dataSets || []).length !== 1) return no('more than one data set');
   const ds = def.dataSets[0];
   if (!ds.fields?.length) return no('undeclared fields');
-  if (opts.firstPages || opts.exportData || opts.dataOnly) return no('first pages or table data');
+  if (opts.firstPages || opts.dataOnly) return no('first pages or table data');
   const sec = def.sections || {};
   const body = Array.isArray(sec.body) ? sec.body[0] : sec.body;
   const items = body.items || [];
@@ -188,7 +188,7 @@ export async function planPaged(def0, opts = {}) {
     // the rows a window lays out past the pages it keeps: two pages of the most rows a page holds
     let reach = 0;
     if (bounds) { let prev = -1; for (const b of bounds) if (b >= 0) { if (prev >= 0) reach = Math.max(reach, b - prev); prev = b; } reach = 2 * reach + 2; }
-    let want = size, off = 0, base = 0, first = true, first0 = null, cont = /** @type {any[]} */ ([]);
+    let want = size, off = 0, base = 0, first = true, first0 = null, cont = /** @type {any[]} */ ([]), wn = 0;
     for (;;) {
       let end = -1; // bounds: the page this window stops before
       if (bounds) {
@@ -204,7 +204,9 @@ export async function planPaged(def0, opts = {}) {
       first0 ??= win[0] ?? null;
       const last = bounds ? end < 0 : ended;
       const done = last ? folds.map((f, i) => ({ cell: f.cell, value: value(acc[i]) })) : [];
-      const model = await render(windowDef(first, last, done), { ...opts, sources: { __rows: { rows: win } },
+      wn++;
+      // tagged: the cell tags an accessible PDF builds its tables from (exportData)
+      const model = await render(windowDef(first, last, done), { ...opts, exportData: !!(opts.exportData || opts.tagged), sources: { __rows: { rows: win } },
         pageWindow: { offset: off, total, final: last, first: first0, rowOffset: base, cont } });
       for (const w of model.warnings) if (!info.warnings.includes(w) && info.warnings.length < 200) info.warnings.push(w);
       const pg = model.pages;
@@ -227,6 +229,7 @@ export async function planPaged(def0, opts = {}) {
         const p = pg[k];
         starts?.push(startsAt(p, win, base) ? p.firstRow - 1 : -1);
         delete p.firstRow; delete p.rowHead; delete p.headLevel;
+        p.win = wn; // the window it came from: row ids are a window's own (pdfstreamtags.js)
         yield p;
         pg[k] = null;
       }

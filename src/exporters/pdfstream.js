@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * A PDF written as it is made (docs/research/STREAMING-1M.md §6): each page's objects go to the sink as soon as the
- * page is added, and only their byte offsets stay, so memory does not grow with the pages. What must come last is
+ * page is added, and only their places stay, so memory does not grow with the pages. What must come last is
  * written by finish(): the fonts (subset with HarfBuzz, glyph IDs retained, so pages drawn earlier with the full
  * font's IDs stay right), the "of Y" total, the shared Resources, the page tree, outline, catalog, Info, a classic
  * xref table and the trailer. Object numbers the pages refer to (fonts, resources, page parents, later pages) are
@@ -16,10 +16,13 @@
  * ponytail: no encryption, PDF/A, tagging, forms or signing yet: those stay on exportPdf (pdf.js) for now.
  */
 import fontkitModule from '@pdf-lib/fontkit';
+import { Zlib } from 'fflate';
 import { render } from '../engine/index.js';
 import { planPaged } from '../engine/paged.js';
 import { safeUrl, drillUrl, asciiUrl } from '../engine/url.js';
 import { exportPdf } from './pdf.js';
+import { xmpPacket } from './pdfa.js';
+import { createStreamTagger } from './pdfstreamtags.js';
 import { Content, drawRun, glyphText, insideClip, col, BLACK, n2, n4, KAPPA, cleanText, deflate } from './pdfpaint.js';
 
 const fontkit = /** @type {any} */ (fontkitModule).default || fontkitModule;
@@ -51,7 +54,17 @@ export function createPdfStream(sink, opt) {
   const { fontStore } = opt;
   let pos = 0, nextNum = 1;
   /** @type {number[]} byte offset per object number */
-  const offsets = [];
+  // where each object is: kind 1 at byte loc, 2 in object stream loc at index idx, 3 waiting for its object stream;
+  // typed arrays (6 bytes an object): a tagged file has an element per table cell
+  let kind = new Uint8Array(4096), loc = new Uint32Array(4096), idx = new Uint8Array(4096);
+  const place = (/** @type {number} */ n, /** @type {number} */ k, /** @type {number} */ l, i = 0) => {
+    if (n >= kind.length) {
+      let L = kind.length; while (L <= n) L *= 2;
+      const k2 = new Uint8Array(L), l2 = new Uint32Array(L), i2 = new Uint8Array(L);
+      k2.set(kind); l2.set(loc); i2.set(idx); kind = k2; loc = l2; idx = i2;
+    }
+    kind[n] = k; loc[n] = l; idx[n] = i;
+  };
   /** @type {Uint8Array[]} */
   let parts = [];
   let size = 0;
@@ -75,13 +88,13 @@ export function createPdfStream(sink, opt) {
   };
   /** @type {[number, string][]} small objects waiting for their object stream */
   let batch = [];
-  /** an object stream of the waiting objects; each one's place: -(stream × OBJSTM + index) - 1 in offsets */
+  /** an object stream of the waiting objects */
   const writeBatch = async () => {
     if (!batch.length) return;
     const b = batch; batch = [];
     const sn = reserve();
     let head = '', body = '';
-    b.forEach(([n, d], i) => { head += `${n} ${body.length} `; body += `${d}\n`; offsets[n] = -(sn * OBJSTM + i) - 1; });
+    b.forEach(([n, d], i) => { head += `${n} ${body.length} `; body += `${d}\n`; place(n, 2, sn, i); });
     const raw = latin1(head + body);
     await writeObj(sn, `<< /Type /ObjStm /N ${b.length} /First ${head.length} /Filter /FlateDecode >>`, await deflate(raw));
   };
@@ -90,10 +103,10 @@ export function createPdfStream(sink, opt) {
   const writeObj = async (n, dict, stream) => {
     if (!stream) { // small objects go into object streams, OBJSTM at a time (compressed together, as pdf-lib saves)
       batch.push([n, dict]);
-      offsets[n] = NaN; // placed when its object stream is written
+      place(n, 3, 0); // placed when its object stream is written
       return batch.length >= OBJSTM ? writeBatch() : undefined;
     }
-    offsets[n] = pos;
+    place(n, 1, pos);
     await put(`${n} 0 obj\n${dict.replace(/>>\s*$/, `/Length ${stream.length} >>`)}\nstream\n`);
     await put(stream);
     return put('\nendstream\nendobj\n');
@@ -195,6 +208,20 @@ export function createPdfStream(sink, opt) {
      * @param {string} dict @param {Uint8Array} [stream]
      */
     async object(dict, stream) { const n = reserve(); await writeObj(n, dict, stream); return n; },
+    /** An object number to write later (objectAt). */
+    reserve: () => reserve(),
+    /** Write a reserved object. @param {number} n @param {string} dict @param {Uint8Array} [stream] */
+    objectAt: (n, dict, stream) => writeObj(n, dict, stream),
+    /**
+     * Write a reserved object whose text may be long (an array of every row's element): head, the parts as they come,
+     * tail; written out in place, never held whole. @param {number} n @param {string} head @param {Iterable<string>} parts @param {string} tail
+     */
+    async bigObject(n, head, parts, tail) {
+      place(n, 1, pos);
+      await put(`${n} 0 obj\n${head}`);
+      for (const x of parts) await put(x);
+      await put(`${tail}\nendobj\n`);
+    },
     /** The object number of page i (0-based), written or not: links and outline entries may point ahead. @param {number} i */
     pageRef(i) { return (pageRefs[i] ??= reserve()); },
     /**
@@ -210,8 +237,9 @@ export function createPdfStream(sink, opt) {
     },
     /**
      * Write a page: its content stream (deflated) and its dictionary, now. Nothing of it stays but two offsets.
-     * @param {{ width: number, height: number, content: string | Uint8Array, annots?: string[] }} p
-     *   content: the page's operators (a string holds bytes 0–255, as pdf.js's Content makes). annots: annotation dictionaries.
+     * @param {{ width: number, height: number, content: string | Uint8Array, annots?: (string | { ref: number, dict: string })[], extra?: string }} p
+     *   content: the page's operators (a string holds bytes 0–255, as pdf.js's Content makes). annots: annotation
+     *   dictionaries (with a reserved number: { ref, dict }). extra: more entries for the page dictionary (/StructParents 3).
      */
     async addPage(p) {
       if (done) throw new Error('The PDF is finished');
@@ -222,12 +250,13 @@ export function createPdfStream(sink, opt) {
       // the stream compresses on zlib's threads while the next pages are drawn: a few pages wait, in order
       const z = deflate(typeof p.content === 'string' ? latin1(p.content) : p.content);
       z.catch(() => {}); // awaited (and thrown) when the page is written
-      inFlight.push({ ref, contents, parent, p: { width: p.width, height: p.height, annots: p.annots }, z });
+      inFlight.push({ ref, contents, parent, p: { width: p.width, height: p.height, annots: p.annots, extra: p.extra }, z });
       while (inFlight.length > IN_FLIGHT) await writeNext();
     },
     /**
      * The end of the file: totals, fonts, resources, page tree, outline, catalog, Info, xref, trailer.
-     * @param {{ outline?: OutlineEntry[], info?: { title?: string, author?: string, subject?: string, creationDate?: Date } }} [o]
+     * @param {{ outline?: OutlineEntry[], info?: { title?: string, author?: string, subject?: string, creationDate?: Date }, catalog?: string }} [o]
+     *   catalog: more entries for the catalog (the structure tree, metadata, output intents).
      * @returns {Promise<{ pages: number, bytes: number }>}
      */
     async finish(o = {}) {
@@ -270,25 +299,32 @@ export function createPdfStream(sink, opt) {
 
       const outline = await writeOutline(o.outline || []);
       const catalog = reserve();
-      await writeObj(catalog, `<< /Type /Catalog /Pages ${pagesRoot} 0 R /PageLabels << /Nums [0 << /S /D /St 1 >>] >>${outline ? ` /Outlines ${outline} 0 R /PageMode /UseOutlines` : ''} >>`);
+      await writeObj(catalog, `<< /Type /Catalog /Pages ${pagesRoot} 0 R /PageLabels << /Nums [0 << /S /D /St 1 >>] >>${outline ? ` /Outlines ${outline} 0 R /PageMode /UseOutlines` : ''}${o.catalog || ''} >>`);
       const info = reserve(), I = o.info || {};
-      await writeObj(info, `<< /Producer ${pdfText('ReportWright')} /Creator ${pdfText('ReportWright')} /Title ${pdfText(I.title || 'Report')}${I.author ? ` /Author ${pdfText(I.author)}` : ''}${I.subject ? ` /Subject ${pdfText(I.subject)}` : ''} /CreationDate ${pdfDate(I.creationDate || new Date())} >>`);
+      await writeObj(info, `<< /Producer ${pdfText('ReportWright')} /Creator ${pdfText('ReportWright')} /Title ${pdfText(I.title || 'Report')}${I.author ? ` /Author ${pdfText(I.author)}` : ''}${I.subject ? ` /Subject ${pdfText(I.subject)}` : ''} /CreationDate ${pdfDate(I.creationDate || new Date())} /ModDate ${pdfDate(I.creationDate || new Date())} >>`);
 
       // object numbers reserved and never used (a link to a page that never came): null objects keep the xref whole
-      for (let n = 1; n < nextNum; n++) if (offsets[n] === undefined) await writeObj(n, 'null');
+      for (let n = 1; n < nextNum; n++) if (n >= kind.length || !kind[n]) await writeObj(n, 'null');
       await writeBatch();
       // a cross-reference stream (object streams need one): per object its type, offset or object stream, index
       const xn = reserve(), size = nextNum, xref = pos;
-      offsets[xn] = xref;
-      const rows = new Uint8Array(size * 7);
-      rows.set([0, 0, 0, 0, 0, 0xff, 0xff], 0); // object 0: free
-      for (let n = 1; n < size; n++) {
-        const o = offsets[n], at = n * 7;
-        if (o >= 0) { rows[at] = 1; rows[at + 1] = o / 2 ** 24 & 255; rows[at + 2] = o >>> 16 & 255; rows[at + 3] = o >>> 8 & 255; rows[at + 4] = o & 255; }
-        else { const k = -o - 1, sn = Math.floor(k / OBJSTM), i = k % OBJSTM; rows[at] = 2; rows[at + 1] = sn / 2 ** 24 & 255; rows[at + 2] = sn >>> 16 & 255; rows[at + 3] = sn >>> 8 & 255; rows[at + 4] = sn & 255; rows[at + 6] = i; }
+      place(xn, 1, xref);
+      // compressed a block of entries at a time (fflate's streaming zlib): never all the entries at once
+      const out = /** @type {Uint8Array[]} */ ([]);
+      const zs = new Zlib({ level: 6 }, (d) => { out.push(d); });
+      for (let from = 0; from < size; from += 65536) {
+        const to = Math.min(size, from + 65536), rows = new Uint8Array((to - from) * 7);
+        for (let n = from; n < to; n++) {
+          const at = (n - from) * 7, l = loc[n];
+          if (n === 0) { rows[at + 5] = 0xff; rows[at + 6] = 0xff; continue; } // object 0: free
+          rows[at] = kind[n]; rows[at + 1] = l >>> 24 & 255; rows[at + 2] = l >>> 16 & 255; rows[at + 3] = l >>> 8 & 255; rows[at + 4] = l & 255;
+          if (kind[n] === 2) rows[at + 6] = idx[n];
+        }
+        zs.push(rows, to === size);
       }
+      let zn = 0; for (const c of out) zn += c.length;
+      const z = new Uint8Array(zn); zn = 0; for (const c of out) { z.set(c, zn); zn += c.length; }
       const id = opt.id || [...globalThis.crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
-      const z = await deflate(rows);
       await put(`${xn} 0 obj\n<< /Type /XRef /Size ${size} /W [1 4 2] /Root ${catalog} 0 R /Info ${info} 0 R /ID [<${id}> <${id}>] /Filter /FlateDecode /Length ${z.length} >>\nstream\n`);
       await put(z);
       await put(`\nendstream\nendobj\nstartxref\n${xref}\n%%EOF\n`);
@@ -302,8 +338,8 @@ export function createPdfStream(sink, opt) {
     const { ref, contents, parent, p, z } = /** @type {any} */ (inFlight.shift());
     await writeObj(contents, '<< /Filter /FlateDecode >>', await z);
     const annots = [];
-    for (const a of p.annots || []) annots.push(await w.object(a));
-    await writeObj(ref, `<< /Type /Page /Parent ${parent} 0 R /MediaBox [0 0 ${num(p.width)} ${num(p.height)}] /Resources ${resRef} 0 R /Contents ${contents} 0 R${annots.length ? ` /Annots [${annots.map(a => `${a} 0 R`).join(' ')}]` : ''} >>`);
+    for (const a of p.annots || []) annots.push(typeof a === 'string' ? await w.object(a) : (await writeObj(a.ref, a.dict), a.ref));
+    await writeObj(ref, `<< /Type /Page /Parent ${parent} 0 R /MediaBox [0 0 ${num(p.width)} ${num(p.height)}] /Resources ${resRef} 0 R /Contents ${contents} 0 R${annots.length ? ` /Annots [${annots.map(a => `${a} 0 R`).join(' ')}]` : ''}${p.extra || ''} >>`);
   }
 
   /** @param {{ ref: number, kids: number[], count: number, parent?: number }[]} nodes */
@@ -411,7 +447,8 @@ const utf16 = (t) => { let h = ''; for (let i = 0; i < t.length; i++) h += hex4(
 /** a text string for Info and the outline: UTF-16BE with its byte-order mark, as hex (nothing to escape) @param {any} t */
 const pdfText = (t) => `<feff${utf16(String(t ?? ''))}>`;
 /** @param {Date} d */
-const pdfDate = (d) => `(D:${d.toISOString().replace(/[-:T]/g, '').slice(0, 14)}Z)`;
+/** a date as pdfa.js's setInfoDates writes it (UTC, to the second): the XMP metadata says the same */
+const pdfDate = (d) => `(D:${d.toISOString().replace(/\D/g, '').slice(0, 14)}+00'00')`;
 
 /** Six capital letters from the subset's bytes (FNV-1a), as pdf.js names its subsets. @param {Uint8Array} bytes */
 function subsetTag(bytes) {
@@ -440,7 +477,7 @@ function latin1(s) {
  * @returns {Promise<{ streamed: boolean, pages: number, warnings: string[], why?: string }>}
  */
 export async function exportPdfStream(def, opts, sink) {
-  const why = opts.tagged ? 'tagged' : opts.pdfa ? 'PDF/A' : opts.encrypt ? 'encrypted' : opts.prepare ? 'signed' : opts.save ? 'save options' : null;
+  const why = opts.encrypt ? 'encrypted' : opts.prepare ? 'signed' : opts.save ? 'save options' : opts.pdfa && !opts.pdfa.icc?.length ? 'PDF/A without a colour profile' : null;
   const plan = why ? { why } : await planPaged(def, opts);
   if (plan.why !== undefined) {
     const model = await render(def, opts);
@@ -475,10 +512,17 @@ export async function writePagedPdf(plan, opts, sink) {
     return m;
   };
   const { info, pages } = /** @type {any} */ (plan);
+  // tagged (PDF/UA-1): a structure tree written as the pages are (pdfstreamtags.js)
+  const tags = opts.tagged ? createStreamTagger(w) : null;
+  let pi = -1;
   for await (const pg of pages()) {
+    pi++;
     const H = pg.height ?? info.height, annots = [];
     const c = new Content(shared);
+    if (tags) { c.tagged = true; tags.page(pg.win ?? 0); }
     for (const it of pg.items) {
+      const mark = tags && tags.open(it);
+      if (mark) { c.et(); c.s += mark; }
       if ((it.t !== 'text' && it.t !== 'line') || it.rotate) c.et();
       if (it.rotate) {
         const t = -it.rotate.a * Math.PI / 180, cs = Math.cos(t), sn = Math.sin(t);
@@ -531,16 +575,22 @@ export async function writePagedPdf(plan, opts, sink) {
           const rect = `[${[it.x, H - it.y - it.h, it.x + it.w, H - it.y].map(n2).join(' ')}]`;
           const a = it.action;
           const href = a?.type === 'url' && safeUrl(a.href) ? a.href : a?.type === 'drill' ? drillUrl(opts.drillBase, a) : null;
-          if (href) annots.push(`<< /Type /Annot /Subtype /Link /F 4 /Rect ${rect} /Border [0 0 0] /A << /Type /Action /S /URI /URI (${asciiUrl(href).replace(/[\\()]/g, '\\$&')}) >> >>`);
-          else if (a?.type === 'bookmark' && a.page) annots.push(`<< /Type /Annot /Subtype /Link /F 4 /Rect ${rect} /Border [0 0 0] /Dest [${w.pageRef(a.page - 1)} 0 R /XYZ null ${n2(H - a.y + 4)} null] >>`);
-          break; // ponytail: a jump to a bookmark by name needs every page's bookmarks first: left out while streaming
+          const to = href ? `/A << /Type /Action /S /URI /URI ${lit(asciiUrl(href))} >>` : a?.type === 'bookmark' && a.page ? `/Dest [${w.pageRef(a.page - 1)} 0 R /XYZ null ${n2(H - a.y + 4)} null]` : null;
+          if (!to) break; // ponytail: a jump to a bookmark by name needs every page's bookmarks first: left out while streaming
+          if (!tags) { annots.push(`<< /Type /Annot /Subtype /Link /F 4 /Rect ${rect} /Border [0 0 0] ${to} >>`); break; }
+          // tagged: what the link does, for a screen reader, and its Link element
+          const ref = w.reserve(), key = tags.link(it, ref);
+          const say = coveredText(pg.items, it) || it.tip || href || (a.target ? `Go to ${a.target}` : `Go to page ${a.page}`);
+          annots.push({ ref, dict: `<< /Type /Annot /Subtype /Link /F 4 /Rect ${rect} /Border [0 0 0] ${to} /Contents ${pdfText(say)} /StructParent ${key} >>` });
+          break;
         }
         default: throw new Error(`A ${it.t} item does not stream yet`);
       }
       if (it.rotate) c.Q();
+      if (mark) { c.et(); c.s += 'EMC\n'; }
     }
     c.et();
-    await w.addPage({ width: pg.width ?? info.width, height: H, content: c.s, annots });
+    await w.addPage({ width: pg.width ?? info.width, height: H, content: c.s, annots, extra: tags ? await tags.end(w.pageRef(pi)) : undefined });
   }
   for (const [key, g] of shaped) w.addGlyphs(key, g);
   // the outline as exportPdf makes it: bookmarks and headings in page order, each entry once
@@ -549,6 +599,26 @@ export async function writePagedPdf(plan, opts, sink) {
     .sort((p, q) => p.b.page - q.b.page || (p.b.y ?? 0) - (q.b.y ?? 0) || p.i - q.i).map(({ b }) => b)
     .filter((b) => { const k = `${b.page}|${Math.round(b.y ?? 0)}|${b.label}`; if (seen.has(k)) return false; seen.add(k); return true; })
     .map(b => ({ title: b.label, page: b.page, top: info.height - b.y + 4, level: b.level }));
-  const res = await w.finish({ outline, info: { title: opts.title || 'Report', author: opts.author, creationDate: opts.creationDate } });
+  // PDF/A and PDF/UA: the structure tree's root, XMP metadata, the output intent (as pdfa.js adds them)
+  const title = opts.title || 'Report', when = new Date(Math.floor((opts.creationDate || new Date()).getTime() / 1000) * 1000);
+  let catalog = tags ? await tags.finish({ lang: opts.tagged.lang }) : '';
+  if (opts.pdfa || tags) {
+    const xmp = new TextEncoder().encode(xmpPacket({ title, author: opts.author, stamp: when.toISOString().replace('.000Z', 'Z'), pdfa: opts.pdfa ? (tags ? 'A' : 'B') : null, ua: !!tags }));
+    catalog += ` /Metadata ${await w.object('<< /Type /Metadata /Subtype /XML >>', xmp)} 0 R`;
+  }
+  if (opts.pdfa) {
+    const icc = await w.object('<< /N 3 /Filter /FlateDecode >>', await deflate(opts.pdfa.icc));
+    catalog += ` /OutputIntents [${await w.object(`<< /Type /OutputIntent /S /GTS_PDFA1 /OutputConditionIdentifier (sRGB) /Info (sRGB IEC61966-2.1) /DestOutputProfile ${icc} 0 R >>`)} 0 R]`;
+  }
+  const res = await w.finish({ outline, catalog, info: { title, author: opts.author, creationDate: when } });
   return { pages: res.pages, warnings: info.warnings };
+}
+
+/** a literal string, \ ( ) escaped @param {string} v */
+const lit = (v) => `(${String(v).replace(/[\\()]/g, '\\$&')})`;
+/** The text a link covers (pdf.js's coveredText): the page's lines whose start lies in its box, in reading order. */
+function coveredText(items, box) {
+  const lines = [];
+  for (const t of items) if (t.t === 'text' && t.lines) for (const l of t.lines) if (l.text?.trim() && l.x >= box.x && l.x <= box.x + box.w && l.y >= box.y && l.y <= box.y + box.h) lines.push(l);
+  return lines.sort((a, b) => a.y - b.y || a.x - b.x).map(l => l.text.trim()).join(' ');
 }

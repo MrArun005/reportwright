@@ -14,8 +14,8 @@ export const runtime = 'nodejs';
 
 /** Formats whose output may stream (src/server/pool.js streamInPool). */
 const STREAMS = new Set(['csv', 'xlsx', 'pdf']);
-/** PDF/A, accessible, signed and encrypted PDFs are made whole (the model path), in a big worker. */
-const streams = (o) => { const f = o.format || 'pdf'; return STREAMS.has(f) && !(f === 'pdf' && (o.pdfa || o.ua || o.sign || o.encrypt)); };
+/** Signed and encrypted PDFs are made whole (the model path), in a big worker. */
+const streams = (o) => { const f = o.format || 'pdf'; return STREAMS.has(f) && !(f === 'pdf' && (o.sign || o.encrypt)); };
 
 export async function GET(req, { params }) {
   try {

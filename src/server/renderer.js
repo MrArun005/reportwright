@@ -187,7 +187,7 @@ async function streamTo(d, format, def, renderOpts, opt) {
     maxRows: Number(streamLimits.rows), maxJsonWholeBytes: fetchMaxBytes() };
   try {
     // pdf: the page layout runs window by window over the same rows (engine/paged.js), with render()'s options
-    plan = format === 'pdf' ? await planPaged(d, { ...renderOpts, ...caps })
+    plan = format === 'pdf' ? await planPaged(d, { ...renderOpts, ...caps, tagged: !!opt.ua })
       : await planStream(d, { format, parameters: renderOpts.parameters, timeZone: renderOpts.timeZone, state: renderOpts.state, loadReport: renderOpts.loadReport,
         fetch: renderOpts.fetch, baseUrl: renderOpts.baseUrl, deadline: renderOpts.deadline, timeoutMs: renderOpts.timeoutMs, ...caps });
   } catch { return null; } // a definition or parameter error: the model path reports it as it always has
@@ -196,7 +196,8 @@ async function streamTo(d, format, def, renderOpts, opt) {
   const w = format === 'csv' ? textWriter(opt.out, meta) : byteWriter(opt.out, meta);
   try {
     if (format === 'pdf') {
-      const r = await writePagedPdf(plan, { fontStore: renderOpts.fontStore, subset, title: def.name, drillBase: opt.self || renderOpts.baseUrl }, { write: (u8) => /** @type {any} */ (w).put(u8) });
+      const r = await writePagedPdf(plan, { fontStore: renderOpts.fontStore, subset, title: def.name, drillBase: opt.self || renderOpts.baseUrl,
+        pdfa: opt.pdfa ? { icc: await iccProfile() } : undefined, tagged: opt.ua ? { lang: def.locale || 'en' } : undefined }, { write: (u8) => /** @type {any} */ (w).put(u8) });
       await w.end();
       return { bytes: null, streamed: true, model: { pages: [], regions: null, warnings: r.warnings, streamed: true, stats: { ms: Date.now() - t0, pages: r.pages, rows: {} } }, ...meta };
     }
@@ -254,8 +255,8 @@ export async function renderTo(def, opt = {}) {
     },
   };
   // opt.out (a portSink): the data CSV streams when the report allows it (engine/stream.js), else the model path below
-  // a plain PDF streams too (engine/paged.js); PDF/A, accessible, signed and encrypted files take the model path
-  const pdfStreams = format === 'pdf' && !opt.pdfa && !opt.ua && !opt.sign && !opt.encrypt;
+  // a PDF streams too (engine/paged.js; PDF/A and accessible ones included); signed and encrypted ones take the model path
+  const pdfStreams = format === 'pdf' && !opt.sign && !opt.encrypt;
   if (opt.out && (dataOnly || ((format === 'xlsx' || pdfStreams) && !opt.modelOnly && !opt.firstPages)) && !opt.batch && process.env.PW_STREAM !== '0') {
     const r = await streamTo(d, format, def, renderOpts, opt);
     if (r) return r;

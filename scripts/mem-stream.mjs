@@ -3,7 +3,7 @@
 // a stream that a reader drains, and reports the render process's peak resident memory above its start (engine loaded),
 // sampled every 10 ms. The render process gets the small worker's heap (--max-old-space-size=192), as a streaming render
 // gets in the server's pool.
-//   node scripts/mem-stream.mjs [format=csv|xlsx|pdf] [rows=100000,300000] [shape=plain|sorted|grouped|numbered]
+//   node scripts/mem-stream.mjs [format=csv|xlsx|pdf] [rows=100000,300000] [shape=plain|sorted|grouped|numbered|tagged]
 // pdf: the server's streaming PDF (renderer.js → engine/paged.js windows of rows → exporters/pdfstream.js).
 // Prints one JSON line per run, then the flat-line verdict: peak(last) - peak(first) < FLAT_MB (30).
 // Never run 1M on a small laptop: project it from the slope (rows are linear).
@@ -92,7 +92,7 @@ async function child(format, rows, shape, url) {
   const { port1, port2 } = new MessageChannel();
   const s = portSource(port1);
   const sink = portSink(port2);
-  const done = renderTo(memReport(url, shape, format), { format, out: sink, self: new URL(url).origin });
+  const done = renderTo(memReport(url, shape, format), { format, out: sink, self: new URL(url).origin, ...(shape === 'tagged' ? { ua: true, pdfa: true } : {}) }); // tagged: an accessible PDF/A
   done.then((x) => { if (x.streamed) sink.end(); else s.abandon(); }, () => s.abandon()); // as the render worker does
   let bytes = 0;
   const reader = s.stream.getReader();

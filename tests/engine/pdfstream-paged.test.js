@@ -5,7 +5,7 @@ import { describe, it, expect, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, execFileSync } from 'node:child_process';
 import { PDFDocument } from 'pdf-lib';
 import { render } from '../../src/engine/index.js';
 import { planPaged } from '../../src/engine/paged.js';
@@ -17,6 +17,8 @@ import { fontStore } from '../helpers.js';
 const root = path.join(import.meta.dirname, '../..');
 const subset = createSubsetter(() => fs.promises.readFile(path.join(root, 'public/harfbuzz-subset.wasm')));
 const hasPoppler = spawnSync('pdftotext', ['-v']).status === 0;
+const VERAPDF = process.env.VERAPDF_BIN || (spawnSync('verapdf', ['--version']).status === 0 ? 'verapdf' : null);
+const ICC = fs.readFileSync(path.join(root, 'public/icc/sRGB-v2-magic.icc'));
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pwp-'));
 afterAll(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
 let tmpN = 0;
@@ -148,6 +150,26 @@ describe('exportPdfStream', () => {
     expect(r.pages).toBe(x.getPageCount());
     expect(pdf.length / today.length).toBeLessThan(1.05); // object streams, literal text, zlib 9: about exportPdf's size
   });
+
+  it.skipIf(!VERAPDF || !hasPoppler)('PDF/A-2b, PDF/UA-1 and PDF/A-2a + PDF/UA-1 stream, pass veraPDF and read as exportPdf\'s', async () => {
+    const def = ledger(ledgerRows(1500));
+    const t = def.sections.body.items[1];
+    t.groups = [{ name: 'R', expr: '=Fields.region', header: [{ cells: [{ value: '=Fields.region' }] }], footer: [{ cells: [{ value: 'Total' }, null, null, null, null, { value: '=Sum(Fields.amount)', style: { format: 'N2' } }] }] }];
+    t.detail[0].cells[1].action = { type: 'url', href: '="https://example.com/acct/" & Fields.accountId' };
+    const run = async (o) => { const s = sink(); const r = await exportPdfStream(def, { fontStore, now, subset, creationDate: now, title: 'Ledger', window: 200, ...o }, s); expect(r.streamed).toBe(true); return s.bytes(); };
+    // exportPdf's text for the same options (a tagged file reads in its marked content's order)
+    const want = async (o) => pdftotext(await exportPdf(await render(def, { fontStore, now, exportData: !!o.tagged }), fontStore, { subset, creationDate: now, title: 'Ledger', ...o })).text;
+    for (const [o, profiles] of [[{ pdfa: { icc: ICC } }, ['2b']], [{ tagged: { lang: 'en-IN' } }, ['ua1']], [{ pdfa: { icc: ICC }, tagged: { lang: 'en-IN' } }, ['2a', 'ua1']]]) {
+      const pdf = await run(o);
+      expect(pdftotext(pdf).text).toBe(await want(o));
+      const f = path.join(tmpDir, `v${++tmpN}.pdf`);
+      fs.writeFileSync(f, pdf);
+      for (const p of profiles) {
+        let out; try { out = execFileSync(VERAPDF, ['-f', p, '--format', 'text', f], { encoding: 'utf8', maxBuffer: 1e8 }); } catch (e) { out = e.stdout; }
+        expect(out, p).toMatch(/^PASS /m);
+      }
+    }
+  }, 240000);
 
   it('a report that does not page is exportPdf\'s file, byte for byte', async () => {
     const def = ledger(ledgerRows(50));
