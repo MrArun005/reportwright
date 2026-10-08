@@ -78,11 +78,11 @@ function optionsOf(fn, args, legacy) {
   const [model, second, third] = args;
   checkModel(fn, model);
   if (legacy === 'fonts' && isFontStore(second)) {
-    deprecated(fn, `${fn}(model, fontStore, options) is replaced by ${fn}(model, { fonts: fontStore, ...options }); the old form is removed in 0.9`);
+    deprecated(fn, `${fn}(model, fontStore, options) is replaced by ${fn}(model, { fonts: fontStore, ...options }); the old form will be removed in 1.0`);
     return { ...(third || {}), fonts: second };
   }
   if (legacy === 'excel' && second && (typeof second === 'function' || typeof second.Workbook === 'function')) {
-    deprecated(fn, `${fn}(model, ExcelJS, options) is replaced by ${fn}(model, options): ExcelJS is no longer used; the old form is removed in 0.9`);
+    deprecated(fn, `${fn}(model, ExcelJS, options) is replaced by ${fn}(model, options): ExcelJS is no longer used; the old form will be removed in 1.0`);
     return { ...(third || {}) };
   }
   if (second != null && (typeof second !== 'object' || Array.isArray(second))) throw new TypeError(`${fn}(model, options): options must be an object such as { fonts }, got ${Array.isArray(second) ? 'an array' : typeof second}`);
