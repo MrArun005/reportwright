@@ -65,7 +65,7 @@ describe('embedded TrueType', () => {
     }, { creationDate: DATE, compress: false });
     expect(r.warnings.join()).toMatch(/Inter-Regular has no glyph for "中"/);
     const P = parseFont(INTER), two = (c) => { const g = P.glyphFor(c.codePointAt(0)); return String.fromCharCode(g >> 8, g & 255); };
-    expect(latin(out)).toContain(`(${two('A')}\0\0${two('B')}) Tj`); // A, .notdef (glyph 0), B: two bytes a glyph
+    expect(latin(out)).toContain(`(${two('A')}) Tj\n/Span << /ActualText <feff4e2d> >> BDC\n(\0\0) Tj\nEMC\n(${two('B')}) Tj`); // A, .notdef (glyph 0, standing for 中), B: two bytes a glyph
     const ua = await draw(INTER, undefined, txt, { tagged: { lang: 'en' }, title: 't', compress: false });
     expect(latin(ua)).toContain(`(${two('A')}${two('B')}) Tj`);
   });
@@ -78,6 +78,12 @@ describe('embedded TrueType', () => {
     expect(f.widthOf('Hi', 10)).toBeCloseTo(want, 6);
     expect(f.ascent).toBeCloseTo(p.ascent / p.unitsPerEm);
     expect(f.descent).toBeLessThan(0);
+  });
+
+  it("subsetting leaves the caller's bytes alone (a Node Buffer, whose slice() is a view)", async () => {
+    const b = fs.readFileSync(path.join(ROOT, 'public/fonts/Inter-Regular.ttf')), before = Buffer.from(b);
+    await draw(b);
+    expect(b.equals(before)).toBe(true);
   });
 
   it('accepts an ArrayBuffer', async () => {
