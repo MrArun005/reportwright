@@ -19,7 +19,7 @@ import { baseContext, resolveParameters, ReportError } from './index.js';
 import { validTimeZone, isoDate } from './expr/format.js';
 import { BASE_STYLE, resolveStyle } from './style.js';
 import { evalValue, evaluate, streamable, streamableAst, FOLDS, aggregator, compile, groupKeyText, isDynamic, functionTable } from './expr/evaluate.js';
-import { coerce, detectFields, jsonPath, jsonPathRows, rowFilter, SET_OPS, sortKeys, compareKeys, parseCsv, sourceResponse, csvChar } from './data/index.js';
+import { coerce, badValues, detectFields, jsonPath, jsonPathRows, rowFilter, SET_OPS, sortKeys, compareKeys, parseCsv, sourceResponse, csvChar } from './data/index.js';
 import { jsonRows, csvRows } from './data/stream.js';
 import { textOf, roundFor } from './items/index.js';
 import { rowCells } from './items/cells.js';
@@ -239,8 +239,8 @@ export async function planStream(def0, opts) {
   async function* typed() {
     let fields = ds.fields && ds.fields.length ? ds.fields : null;
     let head = fields ? null : [];
-    const bad = new Map();
-    const optFor = (fd) => ({ locale: ds.locale || baseCtx.locale, timeZone: baseCtx.timeZone, bad: (x) => { const b = bad.get(fd.name); if (b) b.n++; else bad.set(fd.name, { n: 1, v: x, type: fd.type }); } });
+    const watch = badValues(ds.name, warn);
+    const optFor = (fd) => watch.opt(fd, { locale: ds.locale || baseCtx.locale, timeZone: baseCtx.timeZone });
     let plain, calc, fopts, cc;
     const failed = new Set();
     const dsRun = (ds.filters || []), tRun = (item.filters || []);
@@ -250,6 +250,7 @@ export async function planStream(def0, opts) {
       for (const r of list) {
         if (++stats.rows > maxRows) throw Object.assign(new Error(`The data has more than ${maxRows.toLocaleString('en-US')} rows, the most a streaming export reads (PW_STREAM_MAX_ROWS). Filter it.`), { status: 413 });
         if ((stats.rows & 255) === 0) overTime();
+        watch.at(stats.rows);
         const o = {};
         for (const fd of plain) o[fd.name] = coerce(fd.path ? jsonPath(r, fd.path) : r?.[fd.name], fd.type, fopts.get(fd));
         if (calc.length) {
@@ -286,7 +287,7 @@ export async function planStream(def0, opts) {
       yield build(batch);
     }
     if (head) { ready(detectFields(head, { dates: ds.detectDates !== false })); yield build(head); }
-    for (const [f, b] of bad) warn(`Data set "${ds.name}", field "${f}": ${b.n} value${b.n > 1 ? 's do' : ' does'} not read as ${b.type === 'date' ? 'a date' : 'a number'} (for example "${String(b.v).slice(0, 40)}"), so ${b.n > 1 ? 'they are' : 'it is'} blank.`);
+    watch.done();
   }
 
   // ---- order: the table's sort, then the data set's (stable), then the groups (first seen, or by key)

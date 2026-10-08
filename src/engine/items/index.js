@@ -1186,6 +1186,7 @@ register('field', {
   props: [
     { key: 'kind', label: 'Kind', type: 'select', options: FIELD_KINDS, category: 'Field' },
     { key: 'fieldName', label: 'Field name (unique; {Fields.x} allowed)', type: 'expr', category: 'Field' },
+    { key: 'label', label: 'Label (the name a screen reader says)', type: 'expr', category: 'Field' },
     { key: 'value', label: 'Starting value', type: 'expr', category: 'Field' },
     { key: 'options', label: 'Choices (comma-separated or =expression)', type: 'expr', category: 'Field' },
     { key: 'required', label: 'Required', type: 'bool', category: 'Field' },
@@ -1201,6 +1202,8 @@ register('field', {
     const kind = FIELD_KINDS.includes(item.kind) ? item.kind : 'text';
     // "." means a field hierarchy in PDF forms; spaces trip some readers
     const name = String(evalSafe(item.fieldName || item.name || 'field', ctx, lc, who).v || 'field').replace(/[.\s]+/g, '_');
+    const lab = item.label ?? item.tooltip; // the accessible name (a tagged PDF's /TU)
+    const label = lab == null || lab === '' ? '' : String(evalSafe(lab, ctx, lc, who).v ?? '');
     const raw = evalSafe(item.value ?? '', ctx, lc, who).v;
     let options = [];
     if (kind === 'choice') {
@@ -1219,7 +1222,7 @@ register('field', {
       if (kind === 'choice') draw.push({ t: 'path', x: item.x + item.w - 10, y: item.h / 2 - 2, d: 'M 0 0 L 3 3 L 6 0', stroke: '#6b7280', strokeWidth: 1, fill: null });
     }
     const field = {
-      t: 'field', kind, name, value, options, required: !!item.required, readOnly: !!item.readOnly,
+      t: 'field', kind, name, ...(label ? { label } : {}), value, options, required: !!item.required, readOnly: !!item.readOnly,
       x: item.x, y: 0, w: item.w, h: item.h, font: resolveFontKey(st.fontFamily, st.fontWeight, st.fontStyle), size: Number(st.fontSize) || 9, draw,
     };
     return { height: item.h, units: [{ top: 0, height: item.h, items: [field] }] };

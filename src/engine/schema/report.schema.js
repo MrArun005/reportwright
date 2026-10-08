@@ -1263,6 +1263,9 @@ export const REPORT_SCHEMA = {
       "fieldName": {
        "x-ts": "Expr<string>"
       },
+      "label": {
+       "x-ts": "Expr<string>"
+      },
       "value": {
        "x-ts": "Expr"
       },

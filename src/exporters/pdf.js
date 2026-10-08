@@ -320,6 +320,7 @@ async function pdfOf(model, fontStore, opt) {
           if (it.readOnly) field.enableReadOnly();
           if (tags) {
             // an accessible field: its name as the description a screen reader says, its widget in a Form element
+            if (!it.label) opt.onWarning?.(`Form field "${name}" has no label, so a screen reader announces its name; give it a label`);
             field.acroField.dict.set(PDFName.of('TU'), PDFHexString.fromText(it.label || it.name || name));
             const w = field.acroField.getWidgets()[0];
             const ref = w && doc.context.getObjectRef(w.dict);

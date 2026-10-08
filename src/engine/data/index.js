@@ -68,10 +68,10 @@ export function jsonPathRows(obj, path) {
  * A raw value as the field's type. Numbers in text are read the locale's way ("12,5" and "1.234,56" in de-DE, "1,234.5"
  * and "(1,234)" in en-US); dates without a zone are the wall clock of the report's zone. A value that does not read
  * is null, and opt.bad hears of it (the data set warns once).
- * @param {any} v @param {string} type @param {{ locale?: string, timeZone?: string, bad?: (v: any) => void }} [opt]
+ * @param {any} v @param {string} type @param {{ locale?: string, timeZone?: string, bad?: (v: any) => void, empty?: () => void }} [opt]
  */
 export function coerce(v, type, opt) {
-  if (v == null || v === '') return v === '' && type === 'string' ? '' : null;
+  if (v == null || v === '') { if (type === 'number' || type === 'date') opt?.empty?.(); return v === '' && type === 'string' ? '' : null; }
   switch (type) {
     case 'number': {
       const n = typeof v === 'number' ? v : typeof v === 'boolean' ? (v ? 1 : 0) : parseNumber(String(v), opt?.locale);
@@ -89,6 +89,29 @@ export function coerce(v, type, opt) {
     }
     default: return v;
   }
+}
+
+/**
+ * Counts, per field, the values that do not read as the field's type (and the empty ones), for one warning per field.
+ * Shared by the whole render (buildDataSets) and the streaming export, which both type rows with coerce().
+ * @param {string} dsName @param {(msg: string) => void} warn
+ */
+export function badValues(dsName, warn) {
+  const bad = new Map();
+  let row = 0;
+  return {
+    /** the row being typed, 1-based */
+    at: (/** @type {number} */ n) => { row = n; },
+    /** coerce() options for one field, on top of base */
+    opt: (/** @type {any} */ fd, /** @type {any} */ base) => ({
+      ...base,
+      bad: (/** @type {any} */ v) => { const b = bad.get(fd.name); if (b) b.n++; else bad.set(fd.name, { n: 1, v, row, type: fd.type, empty: 0 }); },
+      empty: () => { const b = bad.get(fd.name) || (bad.set(fd.name, { n: 0, v: null, row: 0, type: fd.type, empty: 0 }), bad.get(fd.name)); b.empty++; },
+    }),
+    done: () => {
+      for (const [f, b] of bad) if (b.n) warn(`Data set "${dsName}", field "${f}": ${b.n} value${b.n > 1 ? 's do' : ' does'} not read as ${b.type === 'date' ? 'a date' : 'a number'} (for example "${String(b.v).slice(0, 40)}"), so ${b.n > 1 ? 'they are' : 'it is'} blank. First: row ${b.row}.${b.empty ? ` ${b.empty} ${b.empty > 1 ? 'are' : 'is'} empty.` : ''}`);
+    },
+  };
 }
 
 /**
@@ -477,7 +500,7 @@ export function buildDataSets(def, sources, baseCtx) {
   // rows of a data set that others hang off (relation.parent) keep their raw object
   const raws = new Set((def.dataSets || []).filter(d => d.relation).map(d => d.relation.parent));
   for (const ds of def.dataSets || []) {
-    let list, parents = null, xdoc = null, xels = null;
+    let list, parents = null, xdoc = null, xels = null, asObject = null; // asObject: the path matched one object, not a list
     if (ds.relation) {
       // nested data set: the children of every parent row, each knowing its parent row
       const prows = sets[ds.relation.parent];
@@ -501,7 +524,7 @@ export function buildDataSets(def, sources, baseCtx) {
       } else {
         ({ rows: list, parents } = jsonPathRows(raw, xmlSrc ? '$' : ds.path || '$'));
         if (list == null) list = [];
-        if (!Array.isArray(list)) list = [list];
+        if (!Array.isArray(list)) { asObject = list; list = [list]; }
       }
     }
     // silent blanks: a path that matches nothing, or declared fields that no row has (a renamed column, a CSV read with
@@ -509,6 +532,16 @@ export function buildDataSets(def, sources, baseCtx) {
     if (!ds.relation && !xdoc) {
       const rawSrc = sources[ds.source];
       if (!list.length && ds.path && ds.path !== '$' && rawSrc != null && typeof rawSrc === 'object' && !(Array.isArray(rawSrc) && !rawSrc.length) && jsonPath(rawSrc, ds.path) == null) baseCtx.warn?.(`Data set "${ds.name}": the path ${ds.path} matches nothing in the source "${ds.source}", so it has no rows`);
+      // one object with a list of objects inside it (data.orders = { rows: [...] }) is not rows; $.meta, an object of fields, is
+      if (asObject && typeof asObject === 'object') {
+        const inner = Object.keys(asObject).filter(k => Array.isArray(asObject[k]) && asObject[k].some(x => x && typeof x === 'object'));
+        const declared = (ds.fields || []).filter(fd => !fd.expr && !fd.path);
+        const hasFields = Object.values(asObject).some(v => v != null && typeof v !== 'object'); // ponytail: {rows, total} is missed; an object with fields of its own is a row
+        if (inner.length && !hasFields && !declared.some(fd => Object.hasOwn(asObject, fd.name))) {
+          const at = ds.path && ds.path !== '$' ? ds.path : `$.${ds.source}`;
+          baseCtx.warn?.(`Data set "${ds.name}": ${at} is an object, not a list of rows, so it is one row; expected an array of rows (did you mean ${at}.${inner[0]}?)`);
+        }
+      }
       const keys = new Set();
       for (const r of list.slice(0, 200)) if (r && typeof r === 'object' && !Array.isArray(r)) for (const k of Object.keys(r)) keys.add(k);
       if (keys.size) {
@@ -528,10 +561,10 @@ export function buildDataSets(def, sources, baseCtx) {
     const calc = fields.filter(fd => fd.expr);
     const keepRaw = raws.has(ds.name);
     // values that do not read as their field's type: one warning per field, with the first one
-    const bad = new Map();
-    const optFor = (fd) => ({ locale: ds.locale || baseCtx.locale, timeZone: baseCtx.timeZone, bad: (v) => { const b = bad.get(fd.name); if (b) b.n++; else bad.set(fd.name, { n: 1, v, type: fd.type }); } });
-    const opts = new Map(fields.map(fd => [fd, optFor(fd)]));
+    const watch = badValues(ds.name, baseCtx.warn || (() => {}));
+    const opts = new Map(fields.map(fd => [fd, watch.opt(fd, { locale: ds.locale || baseCtx.locale, timeZone: baseCtx.timeZone })]));
     let rows = list.map((r, i) => {
+      watch.at(i + 1);
       const o = {};
       for (const fd of plain) o[fd.name] = coerce(fd.path ? (xels ? xmlValue(xdoc, xels[i], fd.path) : jsonPath(r, fd.path)) : r?.[fd.name], fd.type, opts.get(fd));
       if (parents && parents[i] != null) ROW_PARENT.set(o, parents[i]);
@@ -552,7 +585,7 @@ export function buildDataSets(def, sources, baseCtx) {
         }
       }
     }
-    for (const [f, b] of bad) baseCtx.warn?.(`Data set "${ds.name}", field "${f}": ${b.n} value${b.n > 1 ? 's do' : ' does'} not read as ${b.type === 'date' ? 'a date' : 'a number'} (for example "${String(b.v).slice(0, 40)}"), so ${b.n > 1 ? 'they are' : 'it is'} blank.`);
+    watch.done();
     // filters and sorts may Lookup into the data sets defined above this one
     const setCtx = { ...baseCtx, dataSets: { ...baseCtx.dataSets, ...sets }, ...(ds.caseSensitive != null ? { caseSensitive: ds.caseSensitive === true } : {}) };
     rows = applyFilters(rows, ds.filters, setCtx);
