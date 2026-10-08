@@ -30,6 +30,7 @@ pw test [folder] [--update] [--layout]
                                    render every <folder>/__tests__/*.test.json case and compare it with its snapshot
                                    (the words; --layout: the layout, see the CLI README)
 pw diff <old.pw.json> <new.pw.json> [-p name=value]… [-d source=data.json]… [--base URL]
+SERVER ONLY (the self-hosted app, run in its folder; the npm CLI does not include these):
 pw audit verify [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--json] [--public-key file.pem]
                                    check the server's audit log (hash chain, signed checkpoints); run it in the app
                                    folder with the server's PW_STORAGE and PW_AUDIT_KEY / PW_SESSION_SECRET
@@ -46,7 +47,7 @@ pw audit rekey --old-secret S | --old-key file.pem
   --ua  an accessible PDF (PDF/UA-1; with --pdfa, PDF/A-2a)   --values  Excel totals as values, not formulas
   --layout  CSV of the printed layout (every table, group lines, totals), not just the data
   --static  an HTML file without its Tables view (sort, groups, filter)
-pw migrate-storage --to <url> [--from file|<url>]
+pw migrate-storage --to <url> [--from file|<url>]   (SERVER ONLY, as above)
                                    copy everything (reports and their versions, users, grants, folders, schedules,
                                    jobs, fonts, settings, blobs, the audit log) from one storage to another, e.g. the
                                    files in this folder to sqlite:/srv/pw.db or postgres://…; stop the server first
