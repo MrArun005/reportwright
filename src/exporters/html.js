@@ -1,6 +1,6 @@
 // @ts-check
 import { pageToSvg, fontFamilyCss } from './svg.js';
-import { safeUrl } from '../engine/url.js';
+import { safeUrl, drillUrl } from '../engine/url.js';
 import { tablesData, DATA_SCRIPT, DATA_CSS, DATA_STRINGS, cspHash } from './htmldata.js';
 import { withDeadline } from './deadline.js';
 import { needsTableData } from './regions.js';
@@ -53,13 +53,7 @@ async function htmlOf(model, fontStore, opt) {
     if (!anchors.has(key)) anchors.set(key, { id: `at-${to.page}-${y}`, page: to.page, y });
     return `#${anchors.get(key).id}`;
   };
-  const drillHref = (a) => {
-    if (!opt.drillBase || !a.report) return null;
-    const q = new URLSearchParams();
-    for (const [k, v] of Object.entries(a.params || {})) for (const x of Array.isArray(v) ? v : [v]) q.append(k, x == null ? '' : String(x));
-    const href = safeUrl(`${String(opt.drillBase).replace(/\/$/, '')}/viewer/${encodeURIComponent(a.report)}${q.size ? `?${q}` : ''}`);
-    return href || null;
-  };
+  const drillHref = (a) => drillUrl(opt.drillBase, a);
   /** @returns {{ href: string, external?: boolean } | { off: string } | null} */
   const target = (a) => {
     if (a?.type === 'url') { const h = safeUrl(a.href); return h ? { href: h, external: true } : null; }

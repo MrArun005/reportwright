@@ -511,7 +511,7 @@ register('table', {
         const tl = lc.dataOnly ? DATA_ONLY_TL : nested ? { ...layoutTextLines('', st, cw, lc.m), lines: [], needed: nested.height } : layoutTextLines(text, st, cw, lc.m, { atom: !toggle && (typeof v === 'number' || v instanceof Date) });
         const c = { x: colX[ci], w: cw, st, tl, numeric: typeof v === 'number', cell, ctx: cctx, raw: v, span, plain: nested ? '' : plain, toggle, nested, ci };
         const rs = Math.floor(Number(cell.rowSpan)) || 1;
-        if (rs > 1) { (started ||= []).push({ ...c, ci, cols: span, left: rs, units: [], kind }); continue; }
+        if (rs > 1) { (started ||= []).push({ ...c, ci, cols: span, left: rs, units: [], kind, level: extra?.level }); continue; }
         // an item in the cell (a table, list, chart) always grows its row, as in SSRS; canGrow: false keeps text to the row
         if ((row.canGrow !== false || nested) && tl.needed > need + GROW_TOLERANCE) need = tl.needed;
         cells.push(c);
@@ -549,7 +549,7 @@ register('table', {
           // cell text knows its table, row and column, so the Word export can rebuild the table
           const tag = lc.regions ? { table: item.name, row: rowId, col: colIdx[c.ci], span: c.span, kind, cols: colWidths, bg: c.st.backgroundColor || null } : null;
           paintBoxAt(c.x, 0, c.w, h, c.st, lines ? { ...c.tl, lines: lines[k] } : c.tl, c.numeric, lc.m, true, items, tag);
-          if (first) cellLinks(items, c, h, kind);
+          if (first) cellLinks(items, c, h, kind, extra?.level);
         });
         if (first) for (const c of cells) if (c.cell.toggle) items.push(toggleLink(c, c.w, h));
         if (first && extra?.toggle) {
@@ -617,10 +617,12 @@ register('table', {
       return { items, height: res.height + pd[0] + pd[2], units: res.units, tables: res.tables, pad: [pd[0], pd[2]] };
     };
     /** Links, bookmarks, sort and toggle hot spots of a cell, on the first piece of its row. */
-    const cellLinks = (items, c, h, kind) => {
+    // a cell's bookmark nests in the outline: under the table's own bookmark, a group's under the groups outside it
+    const tableLevel = item.bookmark ? (item.bookmarkLevel ?? 0) + 1 : (item.bookmarkLevel ?? 0);
+    const cellLinks = (items, c, h, kind, level = 0) => {
       const link = lc.linkFor?.(c.cell, c.ctx, { x: c.x, y: 0, w: c.w, h });
       if (link) items.push(link);
-      if (cell_bookmark(c.cell)) { const b = evalSafe(c.cell.bookmark, c.ctx, lc, 'bookmark').v; if (b) items.push({ t: 'bookmark', label: String(b), x: c.x, y: 0, level: c.cell.bookmarkLevel || 0 }); }
+      if (cell_bookmark(c.cell)) { const b = evalSafe(c.cell.bookmark, c.ctx, lc, 'bookmark').v; if (b) items.push({ t: 'bookmark', label: String(b), x: c.x, y: 0, level: c.cell.bookmarkLevel ?? (tableLevel + (kind === 'header' || kind === 'footer' ? 0 : level)) }); }
       if (c.cell.sortBy && kind === 'header') {
         const cur = (lc.state?.sort?.[item.name] || [])[0];
         const dir = cur && cur.by === c.cell.sortBy && cur.dir === 'asc' ? 'desc' : 'asc';
@@ -642,7 +644,7 @@ register('table', {
           const tag = lc.regions ? { table: item.name, row: u.rowId, col: colX.indexOf(s.x), span: s.cols, rowSpan: n, kind, cols: colWidths, bg: s.st.backgroundColor || null } : null;
           const text = paintBox({ x: s.x, y: 0, w: s.w, h: H, st: { ...s.st, ...NO_BOX }, tl: s.tl, numeric: s.numeric, m: lc.m, cell: tag });
           add.splice(s.st.backgroundColor ? 1 : 0, 0, ...text);
-          cellLinks(add, s, u.height, kind);
+          cellLinks(add, s, u.height, kind, s.level);
           if (s.toggle) add.push(toggleLink(s, s.w, u.height));
         }
         // in reading order: before the cells to its right

@@ -127,7 +127,7 @@ describe('PDF outline', () => {
       tb('A2', 40, { bookmark: 'A2', headingLevel: 2 }), // a bookmarked heading: its level is the heading's
       tb('A2x', 60, { bookmark: 'A2x', bookmarkLevel: 3 }), // a skipped level: still the child of A2
       tb('B', 80, { bookmark: 'B' }),
-      tb('Hd', 100, { headingLevel: 1 }), // a heading without a bookmark stays out of the outline
+      tb('Hd', 100, { headingLevel: 1 }), // a heading is in the outline too (batch 4, item 3), at its level
     ]), { fontStore });
     expect(m.bookmarks.map(b => [b.label, b.level])).toEqual([['A', 0], ['A1', 1], ['A2', 1], ['A2x', 3], ['B', 0]]);
     const doc = await PDFDocument.load(await exportPdf(m, fontStore));
@@ -137,12 +137,12 @@ describe('PDF outline', () => {
     const kids = (d) => { const out = []; for (let k = get(d, 'First'); k; k = get(k, 'Next')) out.push(k); return out; };
     const root = doc.catalog.lookup(PDFName.of('Outlines'));
     const tree = (d) => kids(d).map(k => (kids(k).length ? { [title(k)]: tree(k) } : title(k)));
-    expect(tree(root)).toEqual([{ A: ['A1', { A2: ['A2x'] }] }, 'B']);
-    expect(get(root, 'Count')).toEqual(PDFNumber.of(5));
+    expect(tree(root)).toEqual([{ A: ['A1', { A2: ['A2x'] }] }, 'B', 'Hd']);
+    expect(get(root, 'Count')).toEqual(PDFNumber.of(6));
     const [a, b] = kids(root);
     expect(get(a, 'Count')).toEqual(PDFNumber.of(3)); // open: every descendant shows
     expect(get(b, 'Count')).toBeUndefined();
-    expect(title(get(root, 'Last'))).toBe('B');
+    expect(title(get(root, 'Last'))).toBe('Hd');
     expect(ref(a, 'Parent')).toBe(doc.catalog.get(PDFName.of('Outlines')));
     const [a1, a2] = kids(a);
     expect(ref(a1, 'Parent')).toBe(ref(root, 'First'));

@@ -180,6 +180,7 @@ export async function pdfBlob(model, title, o = {}) {
     title,
     subset: subsetter,
     tagged: o.tagged,
+    drillBase: origin(), // drill-through links open this viewer, as in the HTML export
     pdfa: o.pdfa ? { icc: await iccProfile() } : undefined,
     // a report's image: a GET under the same rules as its data (no cookies to our other routes or to other sites)
     fetchImage: async (src) => { try { const r = await reportFetch(origin())(src); return r.ok ? new Uint8Array(await r.arrayBuffer()) : null; } catch { return null; } },

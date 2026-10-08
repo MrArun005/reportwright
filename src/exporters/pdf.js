@@ -3,7 +3,7 @@ import { PDFDocument, PDFName, PDFString, PDFHexString, PDFRawStream, rgb } from
 import fontkitModule from '@pdf-lib/fontkit';
 import { parseColor } from './color.js';
 import { makePdfA, setUaMetadata } from './pdfa.js';
-import { safeUrl } from '../engine/url.js';
+import { safeUrl, drillUrl, asciiUrl } from '../engine/url.js';
 import { dataUriBytesOf, dataUriBytes, imageInfoOf, IMAGE_LIMITS } from '../engine/image.js';
 import { parseSvg, drawSvg } from './svgimage.js';
 import { encryptPdf } from './encrypt.js';
@@ -40,13 +40,15 @@ const cleanText = (t) => t.replace(/\t|\u0085|\u2028|\u2029/g, '    ').replace(/
  *   subset?: (font: Uint8Array, codePoints: Iterable<number>) => Promise<Uint8Array>,
  *   pdfa?: { icc?: Uint8Array }, prepare?: (doc: PDFDocument) => any, save?: object,
  *   encrypt?: { userPassword?: string, ownerPassword?: string, permissions?: Partial<Record<keyof typeof import('./encrypt.js').PERMISSION_BITS, boolean>> },
- *   tagged?: { lang?: string } }} [opt]
+ *   tagged?: { lang?: string }, drillBase?: string, onWarning?: (message: string) => void, timeoutMs?: number }} [opt]
  *   subset: a HarfBuzz subsetter (see subset.js). Without it, fonts embed in full.
  *   pdfa: make a PDF/A-2b file (needs an sRGB ICC profile). prepare: last change before saving
  *   (the server adds a signature placeholder there). save: extra pdf-lib save options.
  *   encrypt: { userPassword, ownerPassword, permissions } — AES-256 (see encrypt.js); not with pdfa or prepare.
  *   tagged: an accessible PDF (PDF/UA-1, see pdfua.js): structure tree, marked content, artifacts, language, title
  *   shown; with pdfa it is PDF/A-2a. Off, the file is exactly what it was.
+ *   drillBase: the ReportWright server whose viewer a drill-through opens (a URI link); without it a drill-through
+ *   is not a link. onWarning: what was left out (a damaged image). timeoutMs: the export's time limit (504).
  */
 export function exportPdf(model, fontStore, opt = {}) {
   return withDeadline(pdfOf(model, fontStore, opt), /** @type {any} */ (opt).timeoutMs);
@@ -326,6 +328,11 @@ async function pdfOf(model, fontStore, opt) {
         case 'link': {
           const rect = [it.x, H - it.y - it.h, it.x + it.w, H - it.y];
           if (it.action?.type === 'url' && safeUrl(it.action.href)) links.push({ page: p, rect, href: it.action.href, pi, ii, tip: it.tip });
+          // drill-through: the target report in the ReportWright viewer, with its parameters (opt.drillBase: the server)
+          else if (it.action?.type === 'drill') {
+            const href = drillUrl(opt.drillBase, it.action);
+            if (href) links.push({ page: p, rect, href, pi, ii, tip: it.tip || `Open the report "${it.action.report}"` });
+          }
           // a jump: TOC entries from headings carry their place; others go to the first bookmark of that name (as the viewer does)
           else if (it.action?.type === 'bookmark') {
             const to = it.action.page ? it.action : model.bookmarks?.find(b => b.label === it.action.target);
@@ -373,7 +380,7 @@ async function pdfOf(model, fontStore, opt) {
   const dest = (b) => pages[b.page - 1] && [pages[b.page - 1].ref, PDFName.of('XYZ'), null, pageH(b.page) - b.y + 4, null];
   // links as PDF annotations: URLs open, jumps go to their page
   for (const l of links) {
-    const to = l.href ? { A: { Type: 'Action', S: 'URI', URI: pdfLiteral(l.href) } } : { Dest: dest(l.to) };
+    const to = l.href ? { A: { Type: 'Action', S: 'URI', URI: pdfLiteral(asciiUrl(l.href)) } } : { Dest: dest(l.to) };
     if (!l.href && !to.Dest) continue;
     const annot = doc.context.obj({ Type: 'Annot', Subtype: 'Link', F: 4, Rect: l.rect, Border: [0, 0, 0], ...to });
     if (tags) annot.set(PDFName.of('Contents'), PDFHexString.fromText(String(l.tip || l.href || 'Link'))); // what the link does, for a screen reader
@@ -382,7 +389,10 @@ async function pdfOf(model, fontStore, opt) {
     const annots = l.page.node.lookup(PDFName.of('Annots'));
     if (annots) annots.push(ref); else l.page.node.set(PDFName.of('Annots'), doc.context.obj([ref]));
   }
-  if (model.bookmarks?.length) addOutline(doc, model.bookmarks, dest);
+  // the outline: bookmarks and headings (headingLevel) in page order, each at its level
+  const marks = outlineEntries(model);
+  if (marks.length) addOutline(doc, marks, dest);
+  pageLabels(doc, model);
   if (tags) tags.finish({ lang: opt.tagged?.lang, title: opt.title || 'Report' });
   if (opt.prepare) await opt.prepare(doc);
   if (opt.pdfa) makePdfA(doc, { ...opt.pdfa, title: opt.title || 'Report', author: opt.author, ...(tags ? { conformance: 'A', ua: true } : {}) });
@@ -591,6 +601,30 @@ function addGlyphs(pf, glyphs, tagged = false) {
  * the nearest one before it at a lower level (a skipped level still nests one deep). Every item is open.
  * dest(b): its destination. Headings (headingLevel without a bookmark) stay out: they feed a TOC only.
  */
+/**
+ * Bookmarks and headings together, in reading order (page, then height), without the same entry twice (a heading
+ * that is also bookmarked); each at its own level. @param {any} model
+ */
+function outlineEntries(model) {
+  const seen = new Set();
+  return [...(model.bookmarks || []), ...(model.headings || [])]
+    .map((b, i) => ({ b, i }))
+    .sort((p, q) => p.b.page - q.b.page || (p.b.y ?? 0) - (q.b.y ?? 0) || p.i - q.i)
+    .map(({ b }) => b)
+    .filter((b) => { const k = `${b.page}|${Math.round(b.y ?? 0)}|${b.label}`; if (seen.has(k)) return false; seen.add(k); return true; });
+}
+/**
+ * Page labels (what a reader shows as the page number): decimal, restarting at 1 where a section restarts the
+ * report's numbering (model.pageStarts, newSection). @param {PDFDocument} doc @param {any} model
+ */
+function pageLabels(doc, model) {
+  const n = doc.getPageCount();
+  if (!n) return;
+  const starts = [...new Set([0, ...(model.pageStarts || [])])].filter(i => i >= 0 && i < n).sort((a, b) => a - b);
+  const ctx = doc.context;
+  const nums = starts.flatMap(i => [i, ctx.obj({ S: 'D', St: 1 })]);
+  doc.catalog.set(PDFName.of('PageLabels'), ctx.obj({ Nums: nums }));
+}
 function addOutline(doc, bookmarks, dest) {
   const ctx = doc.context;
   const root = { ref: ctx.nextRef(), level: -1, kids: /** @type {any[]} */ ([]) };

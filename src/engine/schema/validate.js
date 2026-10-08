@@ -17,6 +17,16 @@ const ITEM_KEYS = new Set(('id type name x y w h style styleName items hidden la
   + 'rotate shrinkToFit minFontSize shrinkStep tocDots tocLink tocPage format chartType series seriesGroup category title legend palette stacked '
   + 'valueAxis xTitle maxCategories categorySort categoryFormat showValues labelPosition symbology quietZone report params text toggle '
   + 'initiallyCollapsed collapsible expandLevels repeatColumns columnGap rowHeaderWidth anim animation visual comment notes description').split(' '));
+/** Text styled as a link (underlined, in a blue link colour) with no action: a reader clicks it and nothing happens. */
+function looksLikeLink(it) {
+  if (it.type !== 'textbox' || (it.action && it.action.type && it.action.type !== 'none')) return false;
+  const st = it.style && typeof it.style === 'object' ? it.style : {};
+  if (!/underline/i.test(String(st.textDecoration || ''))) return false;
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(st.color || '').trim());
+  if (!m) return false;
+  const [r, g, b] = m.slice(1).map(h => parseInt(h, 16));
+  return b > 150 && b > r + 60 && b > g + 30; // a blue: #2563eb, #0000ee, #1a0dab
+}
 /** Report-level properties. */
 const DEF_KEYS = new Set(('$schema name description locale currency timeZone page parameters dataSources dataSets styles sections functions layers '
   + 'images theme themeDef master nullPropagation caseSensitive naturalSort nullOrder collation arithmetic bandRows version id tags author folder '
@@ -150,6 +160,7 @@ export function validate(def) {
         names.add(it.name);
       }
       for (const k of ['x', 'y', 'w', 'h']) if (typeof it[k] !== 'number' || Number.isNaN(it[k])) errors.push(`${label}: "${k}" must be a number`);
+      if (looksLikeLink(it)) warnings.push(`${label}: its text looks like a link (underlined, in a link colour) but it has no action; give it one (Action) or a plain style`);
       if (it.style != null && (typeof it.style !== 'object' || Array.isArray(it.style))) warnings.push(`${label}: "style" must be an object of style properties, such as { "fontWeight": "bold" }; ${JSON.stringify(it.style).slice(0, 40)} is ignored`);
       // a mistyped property is ignored silently otherwise ("vale" for value: a blank box)
       const own = ownKeys(it.type);

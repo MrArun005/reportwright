@@ -401,7 +401,7 @@ export async function render(def0, opts = {}) {
         }
       }
       for (const pg of pages) for (const it of pg.items) if (it.tocPage != null || it.tocDots != null || it.tocLink != null) { delete it.tocPage; delete it.tocDots; delete it.tocLink; }
-      return { pages, bookmarks, headings, height: pageH, width: first.width };
+      return { pages, bookmarks, headings, pageStarts: [...new Set(secStart)].filter(i => i > 0), height: pageH, width: first.width };
   };
   const tocOf = (r, pending) => [...r.bookmarks.map(b => ({ label: b.label, level: b.level, page: pending ? '…' : b.page })), ...r.headings.map(b => ({ label: b.label, level: b.level, page: pending ? '…' : b.page, y: pending ? undefined : b.y, heading: true }))];
 
@@ -469,7 +469,7 @@ export async function render(def0, opts = {}) {
   }
 
   return {
-    width: result.width ?? page.width, height, pages, warnings, clipped: clipped(), bookmarks, regions: opts.exportData ? regions : null, name: def.name || '', partial: cutRows(),
+    width: result.width ?? page.width, height, pages, warnings, clipped: clipped(), bookmarks, headings: result.headings || [], pageStarts: result.pageStarts || [], regions: opts.exportData ? regions : null, name: def.name || '', partial: cutRows(),
     timeZone: timeZone || null, // the zone dates were shown in (exports write their dates on that clock)
     locale: def.locale || null, // exports format numbers the report's way (Excel: Indian lakh grouping)
     currency: def.currency || null, // Excel's currency symbol (else the locale's, as the page)

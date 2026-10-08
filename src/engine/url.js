@@ -25,3 +25,22 @@ export function safeUrl(v) {
   if (v[0] === '/' && v[1] !== '/') return v;
   return null;
 }
+
+/**
+ * A drill-through's address in the ReportWright viewer: `<base>/viewer/<report>?<parameters>` (a list parameter
+ * repeats its name), checked by safeUrl; null without a base URL or a report. The HTML and PDF exports link to it.
+ * @param {string|undefined|null} base @param {{ report?: string, params?: Record<string, any> }} a @returns {string|null}
+ */
+export function drillUrl(base, a) {
+  if (!base || !a?.report) return null;
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(a.params || {})) for (const x of Array.isArray(v) ? v : [v]) q.append(k, x == null ? '' : String(x));
+  const s = q.toString();
+  return safeUrl(`${String(base).replace(/\/$/, '')}/viewer/${encodeURIComponent(a.report)}${s ? `?${s}` : ''}`);
+}
+
+/** A URL as a PDF URI action may hold it: 7-bit ASCII (an international host as punycode, other characters
+ *  percent-encoded). @param {string} href @returns {string} */
+export function asciiUrl(href) {
+  try { return new URL(href).href; } catch { return encodeURI(href); }
+}
