@@ -91,3 +91,19 @@ describe('9: ids are not amounts', () => {
     expect(find(out, /^1234567$/)).toBeTruthy();
   });
 });
+
+describe('10: no JavaScript values in the output', () => {
+  it('objects, arrays and big numbers read as data, not [object Object] or 1e+21', async () => {
+    const rows = [{ v: { nested: true } }, { v: 1e21 }, { v: [1, { a: 1 }] }, { v: 1e-7 }, { v: -2.5e22 }];
+    const typed = report([table([{ width: 300 }], ['V'], [{ value: '=Fields.v' }])], { data: { rows } });
+    typed.dataSets[0].fields = [{ name: 'v', type: 'string' }];
+    const untyped = report([table([{ width: 300 }], ['V'], [{ value: '=Fields.v' }])], { data: { rows: [{ v: { nested: true } }, { v: 'x' }] } });
+    const all = [...textItems(await render(typed, { fontStore })), ...textItems(await render(untyped, { fontStore }))].map(t => t.lines.map(l => l.text).join(''));
+    expect(all.join('|')).not.toMatch(/object Object|e\+|e-/);
+    expect(all).toContain('{"nested":true}');
+    expect(all).toContain('1000000000000000000000');
+    expect(all).toContain('1, {"a":1}');
+    expect(all).toContain('0.0000001');
+    expect(all).toContain('-25000000000000000000000');
+  });
+});

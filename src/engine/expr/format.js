@@ -283,6 +283,7 @@ export function formatValue(value, fmt, opt = {}) {
     return numberFn(fmt, locale, opt.currency || currencyOf(opt.locale))(value);
   }
   if (typeof value === 'boolean') return value ? 'True' : 'False';
+  if (typeof value === 'object') return plainText(value);
   if (typeof value === 'string' && fmt && /^\d{4}-\d{2}-\d{2}/.test(value)) {
     const memo = opt.fmtMemo && value.length <= 40 ? memoFor(opt.fmtMemo, 's', fmt, locale) : null;
     let out = memo?.get(value);
@@ -294,6 +295,21 @@ export function formatValue(value, fmt, opt = {}) {
     return out;
   }
   return String(value);
+}
+/**
+ * A value from data as text, without JavaScript's own spellings: a number in plain digits (1e21 →
+ * 1000000000000000000000, 1e-7 → 0.0000001), an array as its items joined by ", ", an object as compact JSON
+ * ({"nested":true}), never "[object Object]". Strings and booleans as String() gives them.
+ * @param {any} v @returns {string}
+ */
+export function plainText(v) {
+  if (typeof v === 'number') {
+    const s = String(v);
+    return Number.isFinite(v) && /e/.test(s) ? v.toLocaleString('en-US', { useGrouping: false, maximumFractionDigits: 100 }) : s;
+  }
+  if (Array.isArray(v)) return v.map(x => (x == null ? '' : plainText(x))).join(', ');
+  if (v && typeof v === 'object' && !(v instanceof Date)) { try { return JSON.stringify(v) ?? String(v); } catch { return String(v); } }
+  return String(v);
 }
 /** Formatted dates in one render: by text ('s') or instant ('i'), per format and locale. @param {Map<string, Map<any, string>>} all */
 function memoFor(all, kind, fmt, locale) {

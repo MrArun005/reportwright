@@ -1,6 +1,6 @@
 // @ts-check
 import { evalValue, evaluate, compile, parseValue, toText, functionTable, cmpVal, sortCompare, ROW_PARENT } from '../expr/evaluate.js';
-import { toDate, isoDate, parseNumber } from '../expr/format.js';
+import { toDate, isoDate, parseNumber, plainText } from '../expr/format.js';
 import { xmlDocument, soapBody, xmlEscape, isXmlDoc, xmlRows, xmlValue } from './xml.js';
 import { odataUrl, odataPage, odataClean, ODATA_MAX_PAGES, ODATA_DEFAULT_PAGES } from './odata.js';
 
@@ -79,7 +79,7 @@ export function coerce(v, type, opt) {
     }
     case 'date': { const d = toDate(v, opt); if (!d) opt?.bad?.(v); return d; }
     case 'boolean': return typeof v === 'boolean' ? v : ['true', '1', 'yes', 'y'].includes(String(v).toLowerCase());
-    case 'string': return typeof v === 'string' ? v : String(v);
+    case 'string': return typeof v === 'string' ? v : plainText(v); // 1e21 and {…} as data, not 1e+21 or [object Object]
     // a list of values (a sparkline's points): an array as it is, or text split at commas or semicolons
     case 'list': {
       if (Array.isArray(v)) return v;
