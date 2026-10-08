@@ -1,11 +1,11 @@
 // @ts-check
 /**
  * The 14 standard PDF fonts (Helvetica, Times, Courier in four faces each, Symbol, ZapfDingbats): every PDF reader has
- * them, so a PDF names them and embeds nothing. Their metrics are Adobe's AFM files, as @pdf-lib/standard-fonts (pdf-lib's
- * own dependency) ships them; this wraps one in the part of fontkit's font API the engine and the PDF exporters read, so
- * layout measures with the widths the PDF's /Widths array gives. A glyph ID here is the character's code in the font's
- * encoding (WinAnsi; Symbol and ZapfDingbats have their own), one byte; 0 = not in the encoding.
- */
+ * them, so a PDF names them and embeds nothing. Their metrics are Adobe's AFM files, generated into standard-metrics.js
+ * (scripts/gen-standard-metrics.mjs, from @pdf-lib/standard-fonts); this wraps one in the part of fontkit's font API
+ * the engine and the PDF exporters read, so layout measures with the widths the PDF's /Widths array gives. A glyph ID
+ * here is the character's code in the font's encoding (WinAnsi; Symbol and ZapfDingbats have their own), one byte;
+ * 0 = not in the encoding. */
 
 /** [family, PostScript name, weight, style] */
 export const STANDARD_FACES = [
@@ -22,20 +22,19 @@ export const STANDARD_KEYS = new Set(STANDARD_FACES.map(f => String(f[1])));
 export const isStandard = (key) => STANDARD_KEYS.has(key);
 
 /**
- * A standard font as a fontkit-like object (unitsPerEm 1000). Loaded on first use: the metrics are about 130 KB.
+ * A standard font as a fontkit-like object (unitsPerEm 1000). The tables (about 22 KB) load on first use.
  * @param {string} key a PostScript name of STANDARD_FACES
  */
 export async function standardFont(key) {
-  const { Font, Encodings } = await import('@pdf-lib/standard-fonts');
-  const afm = /** @type {any} */ (Font.load(/** @type {any} */ (key)));
-  const enc = /** @type {any} */ (key === 'Symbol' ? Encodings.Symbol : key === 'ZapfDingbats' ? Encodings.ZapfDingbats : Encodings.WinAnsi);
-  /** code → advance width; cp → code; code → cp */
-  const widths = new Array(256).fill(0), codeOf = new Map(), cpOf = new Array(256).fill(0);
-  for (const [cp, [code, name]] of Object.entries(enc.unicodeMappings)) {
-    if (cp === '173') continue; // a soft hyphen is drawn as nothing (WinAnsi would draw it as a hyphen)
-    codeOf.set(Number(cp), code);
-    widths[code] = afm.CharWidths[name] ?? 250; // pdf-lib's default for a glyph the AFM lacks
-    if (!cpOf[code] || Number(cp) === code) cpOf[code] = Number(cp);
+  const { METRICS, ENCODINGS } = await import('./standard-metrics.js');
+  const m = /** @type {any} */ (METRICS)[key], pairs = /** @type {number[]} */ (/** @type {any} */ (ENCODINGS)[m.encoding]);
+  const widths = m.widths;
+  /** cp → code; code → cp */
+  const codeOf = new Map(), cpOf = new Array(256).fill(0);
+  for (let i = 0; i < pairs.length; i += 2) {
+    const cp = pairs[i], code = pairs[i + 1];
+    codeOf.set(cp, code);
+    if (!cpOf[code] || cp === code) cpOf[code] = cp;
   }
   /** @type {Map<number, any>} */
   const glyphs = new Map();
@@ -44,22 +43,22 @@ export async function standardFont(key) {
     if (!g) glyphs.set(id, g = { id, advanceWidth: widths[id] || 0, codePoints: cpOf[id] ? [cpOf[id]] : [] });
     return g;
   };
-  const [x0, y0, x1, y1] = afm.FontBBox;
+  const [x0, y0, x1, y1] = m.bbox;
   return {
     standard: true,
     postscriptName: key,
-    familyName: afm.FamilyName,
+    familyName: m.familyName,
     unitsPerEm: 1000,
-    ascent: afm.Ascender ?? y1,
-    descent: afm.Descender ?? y0,
-    capHeight: afm.CapHeight ?? y1,
-    xHeight: afm.XHeight ?? 0,
-    italicAngle: Number(afm.ItalicAngle) || 0,
-    underlinePosition: afm.UnderlinePosition ?? -100,
-    underlineThickness: afm.UnderlineThickness ?? 50,
+    ascent: m.ascent,
+    descent: m.descent,
+    capHeight: m.capHeight,
+    xHeight: m.xHeight,
+    italicAngle: m.italicAngle,
+    underlinePosition: m.underlinePosition,
+    underlineThickness: m.underlineThickness,
     bbox: { minX: x0, minY: y0, maxX: x1, maxY: y1 },
     /** WinAnsi for the text fonts (Symbol and ZapfDingbats use their own built-in encodings) */
-    winAnsi: enc === Encodings.WinAnsi,
+    winAnsi: m.encoding === 'WinAnsi',
     widths,
     /** @param {number} cp */
     hasGlyphForCodePoint: (cp) => codeOf.has(cp),

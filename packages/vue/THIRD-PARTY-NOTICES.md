@@ -9,7 +9,7 @@ ReportWright is MIT licensed (see LICENSE). It ships or bundles the following th
 | [HarfBuzz](https://github.com/harfbuzz/harfbuzz), compiled to WebAssembly by [harfbuzzjs](https://github.com/harfbuzz/harfbuzzjs) | harfbuzzjs 1.6.2 | HarfBuzz: "Old MIT" (below); harfbuzzjs: MIT, Copyright (c) 2019-2026 The harfbuzzjs project authors | text shaping (`harfbuzz.wasm`) and font subsetting (`harfbuzz-subset.wasm`) |
 | [pdf-lib](https://github.com/Hopding/pdf-lib) | 1.17.1 | MIT, Copyright (c) 2019 Andrew Dillon | the classic PDF writer (encryption, `prepare`, `save`) |
 | [@pdf-lib/fontkit](https://github.com/Hopding/fontkit) | 1.1.1 | MIT | reading font files |
-| [@pdf-lib/standard-fonts](https://github.com/Hopding/standard-fonts) | 1.0.0 | MIT; the metrics are Adobe's AFM files for the 14 standard PDF fonts | Helvetica, Times and Courier widths |
+| [@pdf-lib/standard-fonts](https://github.com/Hopding/standard-fonts) | 1.0.0 | MIT; the metrics are Adobe's AFM files for the 14 standard PDF fonts | Helvetica, Times and Courier widths: generated from its AFM data into src/engine/text/standard-metrics.js (scripts/gen-standard-metrics.mjs); the package itself is not a runtime dependency |
 | [bwip-js](https://github.com/metafloor/bwip-js) | 4.11.4 | MIT | barcodes |
 | [fflate](https://github.com/101arrowz/fflate) | 0.8.3 | MIT | zip and deflate (Excel, Word, PowerPoint, PDF streams) |
 | [bidi-js](https://github.com/lojjic/bidi-js) | 1.0.3 | MIT | right-to-left text |

@@ -73,7 +73,7 @@ const normal = await run();
 assert.ok(normal.asked.includes('/pw/engine.worker.js'));
 assert.ok(normal.asked.includes('/pw/engine.worker.bwip.js'), 'the worker imported bwip-js for the barcode');
 assert.equal(normal.usesWorker, true);
-assert.ok(normal.asked.includes('/pw/engine.worker.stdfonts.js'), 'the worker imported the standard-font metrics for Helvetica');
+assert.ok(!normal.asked.some(u => u.includes('stdfonts')), 'the standard-font metrics are in the worker (N43), not a file of their own');
 assert.ok(!normal.warnings.some(w => /not available/.test(w)), `no font substitution warning: ${normal.warnings}`);
 const alone = await run({ hideBwip: true });
 assert.ok(alone.warnings.some(w => /rendering on the main thread/.test(w)), `a warning says so: ${alone.warnings}`);

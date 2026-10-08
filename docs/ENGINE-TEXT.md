@@ -4,7 +4,7 @@
   Khmer, Myanmar, Tamil, Bengali, Telugu, Kannada, Gujarati; HarfBuzz (harfbuzz.wasm) shapes complex scripts.
 - The 14 standard PDF fonts (no file, nothing embedded): `Helvetica`, `Times-Roman` and `Courier` (regular, bold,
   italic and bold-italic: Helvetica-Bold, Helvetica-Oblique, Helvetica-BoldOblique, Times-Italic…), `Symbol` and
-  `ZapfDingbats`. A PDF names them (Type1, WinAnsiEncoding, the AFM widths from @pdf-lib/standard-fonts) and every reader
+  `ZapfDingbats`. A PDF names them (Type1, WinAnsiEncoding, the Adobe AFM widths, generated into src/engine/text/standard-metrics.js) and every reader
   draws them; layout measures with the same widths, so line breaks match the PDF. Aliases: `Arial` is Helvetica,
   `Times` and `Times New Roman` are Times-Roman, `Courier New` is Courier (each pair has the same widths); `serif` is
   Times-Roman. A character WinAnsi lacks (Ł, →, Greek, CJK) is drawn in Inter (JetBrains Mono for Courier), or a

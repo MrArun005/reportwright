@@ -42,12 +42,10 @@ export const WORKER = path.join(root, 'src/worker/engine.worker.js');
 // the worker's import('bwip-js') becomes import('./engine.worker.bwip.js'). A worker copied alone still renders every
 // report: a barcode report whose library is missing renders on the main thread (src/worker/engine.worker.js).
 export const BWIP_FILE = 'engine.worker.bwip.js';
-// the standard-14 font metrics (@pdf-lib/standard-fonts, ~100 KB gzipped) the same way: only a report that names
-// Helvetica, Times or Courier loads them
-export const STDFONTS_FILE = 'engine.worker.stdfonts.js';
+// (the standard-14 font metrics were a second such file; they are a generated 5 KB-gzipped table now, in the worker: N43)
 /** each library kept out of the worker, and the file next to it that holds it */
-export const APART = { 'bwip-js': BWIP_FILE, '@pdf-lib/standard-fonts': STDFONTS_FILE };
-export const bwipApart = { name: 'libs-apart', setup: (b) => b.onResolve({ filter: /^(bwip-js|@pdf-lib\/standard-fonts)$/ }, (a) => ({ path: `./${APART[a.path]}`, external: true })) };
+export const APART = { 'bwip-js': BWIP_FILE };
+export const bwipApart = { name: 'libs-apart', setup: (b) => b.onResolve({ filter: /^bwip-js$/ }, (a) => ({ path: `./${APART[a.path]}`, external: true })) };
 /**
  * The output files a page loads up front for an entry: the entry and the chunks it imports statically (import()
  * chunks load on demand). @param {import('esbuild').Metafile} meta @param {string} entry its output path in meta.outputs

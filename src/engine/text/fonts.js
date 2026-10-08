@@ -178,6 +178,21 @@ const FALLBACK = [
 /** Every registered key: bundled and uploaded. */
 export const allFontKeys = () => [...FACES.keys()];
 
+/**
+ * The font keys a page model draws with (text runs, form fields, figures), for an exporter whose store render() did
+ * not fill (N40): load them first. @param {any} model @returns {string[]}
+ */
+export function modelFontKeys(model) {
+  const keys = new Set(), stack = [model?.pages];
+  while (stack.length) {
+    const o = stack.pop();
+    if (!o || typeof o !== 'object' || ArrayBuffer.isView(o)) continue;
+    if (typeof o.font === 'string' && FACES.has(o.font)) keys.add(o.font);
+    for (const v of Array.isArray(o) ? o : Object.values(o)) if (v && typeof v === 'object') stack.push(v);
+  }
+  return [...keys];
+}
+
 /** The bundled fallback faces for `key` (one per script), for CSS font-family lists. */
 export function fallbackKeys(key) {
   const c = fontCss(key);
@@ -223,12 +238,14 @@ const BEYOND_LATIN = /[^\u0000-\u024f\u1e00-\u1eff\u2000-\u20cf\u2100-\u218f]/;
 export function fontsForDef(def, unknown = undefined) {
   const keys = new Set();
   const seen = new Set();
+  const baseFamily = def?.styles?.base?.fontFamily;
   const walk = (/** @type {any} */ o) => {
     if (!o || typeof o !== 'object' || seen.has(o)) return;
     seen.add(o);
     if (Array.isArray(o)) { for (const x of o) walk(x); return; }
-    if (o.fontFamily != null || o.fontWeight != null || o.fontStyle != null) keys.add(resolveFontKey(o.fontFamily, o.fontWeight, o.fontStyle, unknown));
-    if (o.type === 'chart') keys.add(resolveFontKey(o.fontFamily, 'bold', 'normal'));
+    // a style without a family inherits the base style's (N40: a bold title in a Helvetica report is Helvetica-Bold, not Inter)
+    if (o.fontFamily != null || o.fontWeight != null || o.fontStyle != null) keys.add(resolveFontKey(o.fontFamily ?? baseFamily, o.fontWeight, o.fontStyle, unknown));
+    if (o.type === 'chart') keys.add(resolveFontKey(o.fontFamily ?? baseFamily, 'bold', 'normal'));
     for (const [k, v] of Object.entries(o)) if (v && typeof v === 'object' && k !== 'dataSources' && k !== 'data') walk(v);
   };
   walk(def);
@@ -278,6 +295,7 @@ export class FontStore {
         this.pending.set(k, (async () => {
           try {
             if (isStandard(k)) { this.fonts.set(k, await standardFont(k)); return; } // metrics only: no file, no bytes
+            if (typeof this.loader !== 'function') throw new Error(`Font "${k}" needs its file. Install @reportwright/fonts, or pass { fontStore } (defaultFontStore() or new FontStore(loader))`);
             const b = await this.loader(k);
             const u8 = b instanceof Uint8Array ? b : new Uint8Array(b);
             if (k === SHAPER) { this.shaper = await createShaper(u8); return; }

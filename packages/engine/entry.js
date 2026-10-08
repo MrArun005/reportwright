@@ -1,6 +1,6 @@
 // @reportwright/engine: the report engine, the exporters and helpers, for Node and browsers.
 import { FontStore } from '../../src/engine/index.js';
-import { fontFile } from '../../src/engine/text/fonts.js';
+import { fontFile, modelFontKeys } from '../../src/engine/text/fonts.js';
 export { FontStore, ITEMS, parameterOptions, resolveParameters } from '../../src/engine/index.js';
 /** @typedef {import('../../src/engine/index.js').RenderOptions} RenderOptions */
 export { fontFile };
@@ -75,6 +75,17 @@ export function defaultFontStore(opts = {}) {
     return readUrl(/** @type {URL} */ (fontsUrl(`fonts/${file}`)));
   });
 }
+/** @type {FontStore|undefined} */
+let sharedStore;
+/**
+ * The store render() and the exports use when given none (N40): one per process, over @reportwright/fonts. Without
+ * that package it is a store without a loader: the standard fonts still work (metrics only), and any other font fails
+ * with "install @reportwright/fonts, or pass { fontStore }".
+ */
+function defaultStore() {
+  if (!sharedStore) try { sharedStore = defaultFontStore(); } catch { sharedStore = new FontStore(/** @type {any} */ (undefined)); }
+  return sharedStore;
+}
 /** @type {ReturnType<typeof createSubsetter>|undefined} */
 let defaultSubset;
 
@@ -86,6 +97,8 @@ import { checkOptions } from '../../src/engine/options.js';
 /** @type {typeof renderFull} */
 export async function render(def, opts) {
   const warn = checkOptions(opts);
+  // fonts is the exports' name for the store; neither nor a loadFont: the default store (N40)
+  if (!opts?.fontStore && !opts?.loadFont) opts = { ...opts, fontStore: opts?.fonts || defaultStore() };
   const model = await renderFull(def, opts);
   if (warn.length && model?.warnings) model.warnings.push(...warn);
   // A1.5: a model this size is most of render + exportPdf's memory; exportPdfStream lays a flowing table out in windows
@@ -94,12 +107,12 @@ export async function render(def, opts) {
   if (limit && rows > Number(limit) && !opts?.dataOnly && model?.warnings) {
     const w = `Large report (${rows.toLocaleString('en-US')} rows): exportPdfStream writes it in about 320 MB; render + exportPdf holds it all in memory`;
     model.warnings.push(w);
-    if (!warned.has('large')) { warned.add('large'); console.warn(`[@reportwright/engine] ${w}`); }
+    if (!warned.has('large')) { warned.add('large'); console.warn(`[reportwright] ${w}`); }
   }
   return model;
 }
 const LARGE_ROWS = 100_000; // render's largeReportRows default
-const deprecated = (key, msg) => { if (!warned.has(key)) { warned.add(key); console.warn(`[@reportwright/engine] DEPRECATED: ${msg}`); } };
+const deprecated = (key, msg) => { if (!warned.has(key)) { warned.add(key); console.warn(`[reportwright] DEPRECATED: ${msg}`); } };
 const isFontStore = (/** @type {any} */ x) => x instanceof FontStore || (!!x && typeof x === 'object' && typeof x.load === 'function' && typeof x.get === 'function');
 /** @param {string} fn @param {any} model */
 function checkModel(fn, model) {
@@ -126,8 +139,13 @@ function optionsOf(fn, args, legacy) {
   if (o.fonts != null && !isFontStore(o.fonts)) throw new TypeError(`${fn}(model, { fonts }): fonts must be a FontStore (defaultFontStore() or new FontStore(loader)), got ${typeof o.fonts}`);
   return o;
 }
-/** The FontStore of the options, else the one over @reportwright/fonts. @param {any} o */
-const fontsOf = (o) => o.fonts || o.fontStore || defaultFontStore();
+/** The FontStore of the options, else the default one. @param {any} o */
+const fontsOf = (o) => o.fonts || o.fontStore || defaultStore();
+/** The store of the options (else the default one) with the fonts the model draws with loaded. @param {any} model @param {any} o */
+const modelFonts = async (model, o) => {
+  const s = fontsOf(o);
+  try { await s.load(modelFontKeys(model)); return s; } catch { return o.fonts || o.fontStore; } // Office files name their fonts: the store only draws text in pictures
+};
 
 /**
  * @typedef {Omit<NonNullable<Parameters<typeof exportPdfFull>[2]>, 'subset' | 'pdfa'> & {
@@ -135,8 +153,8 @@ const fontsOf = (o) => o.fonts || o.fontStore || defaultFontStore();
  *   pdfa?: boolean | { icc?: Uint8Array, [k: string]: unknown } }} PdfOptions
  */
 /**
- * Page model → PDF bytes: exportPdf(model, { fonts, title, ... }). fonts: the FontStore render() used (default: the
- * one over @reportwright/fonts). Fonts are subset with harfbuzz-subset.wasm from @reportwright/fonts (when it can't be
+ * Page model → PDF bytes: exportPdf(model, { fonts, title, ... }). fonts: optional, any FontStore (render()'s saves
+ * loading the fonts again; default: the one over @reportwright/fonts); the fonts the model uses are loaded into it. Fonts are subset with harfbuzz-subset.wasm from @reportwright/fonts (when it can't be
  * loaded the full font is embedded); `subset: false` embeds every font in full, a function replaces the subsetter.
  * The 0.7 form exportPdf(model, fontStore, options) still works in 0.8 (deprecated).
  * @param {any} model  render() output
@@ -168,7 +186,7 @@ export async function exportPdf(model, options) {
  */
 export function exportXlsx(model, options) {
   const opt = optionsOf('exportXlsx', [...arguments], 'excel');
-  return exportXlsxFull(model, { ...opt, fontStore: opt.fonts || opt.fontStore });
+  return modelFonts(model, opt).then(fontStore => exportXlsxFull(model, { ...opt, fontStore })); // checked now, so a wrong argument throws
 }
 /**
  * Page model → .docx bytes: exportDocx(model, { fonts, ... }) (needs render(def, { exportData: true })).
@@ -177,7 +195,7 @@ export function exportXlsx(model, options) {
  */
 export function exportDocx(model, options) {
   const opt = optionsOf('exportDocx', [...arguments], 'none');
-  return exportDocxFull(model, { ...opt, fontStore: opt.fonts || opt.fontStore });
+  return modelFonts(model, opt).then(fontStore => exportDocxFull(model, { ...opt, fontStore })); // checked now, so a wrong argument throws
 }
 /**
  * Page model → .pptx bytes: exportPptx(model, { fonts, ... }).
@@ -186,7 +204,7 @@ export function exportDocx(model, options) {
  */
 export function exportPptx(model, options) {
   const opt = optionsOf('exportPptx', [...arguments], 'none');
-  return exportPptxFull(model, { ...opt, fontStore: opt.fonts || opt.fontStore });
+  return modelFonts(model, opt).then(fontStore => exportPptxFull(model, { ...opt, fontStore })); // checked now, so a wrong argument throws
 }
 export { exportHtml } from '../../src/exporters/html.js';
 export { exportCsv } from '../../src/exporters/csv.js';
@@ -228,7 +246,7 @@ export { planPaged } from '../../src/engine/paged.js';
 export async function exportPdfStream(def, options, sink) {
   const unknown = checkOptions(options);
   const { fonts, fontStore, subset: sub, pdfa, spill, ...rest } = /** @type {any} */ (options || {});
-  const store = fonts || fontStore || defaultFontStore();
+  const store = fonts || fontStore || defaultStore();
   const subset = sub === false ? undefined : sub || (defaultSubset ||= createSubsetter(async () => {
     const url = fontsUrl('harfbuzz-subset.wasm');
     if (!url) throw new Error('@reportwright/fonts is not installed');
@@ -253,7 +271,7 @@ import { exportDocxStream as exportDocxStreamFull, exportXlsxStream as exportXls
 const officeOpts = (o = {}) => {
   const { fonts, fontStore, spill, ...rest } = o;
   const sorter = rest.sorter || (spill !== false && canSpill() ? spillSorter({ ...(spill?.dir ? { dir: spill.dir } : {}), ...(spill?.maxMB ? { maxMB: spill.maxMB } : {}) }) : undefined);
-  return { ...rest, sorter, fontStore: fonts || fontStore || defaultFontStore() };
+  return { ...rest, sorter, fontStore: fonts || fontStore || defaultStore() };
 };
 /**
  * Report definition → .docx written to a sink as its pages are laid out (exportPdfStream's sink, timeoutMs, signal,

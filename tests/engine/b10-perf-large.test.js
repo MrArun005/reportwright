@@ -20,7 +20,7 @@ describe('B10 A1.5 large classic render', () => {
       const b = await render(report(100_001), { fontStore: fonts });
       expect(a.warnings.filter(w => MSG.test(w))).toHaveLength(1);
       expect(b.warnings.filter(w => MSG.test(w))).toHaveLength(1);
-      expect(warn.mock.calls.filter(c => MSG.test(String(c[0]).replace('[@reportwright/engine] ', '')))).toHaveLength(1);
+      expect(warn.mock.calls.filter(c => MSG.test(String(c[0]).replace('[reportwright] ', '')))).toHaveLength(1);
     } finally { warn.mockRestore(); }
   }, 30000);
 
