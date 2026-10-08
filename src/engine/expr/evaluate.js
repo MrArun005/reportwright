@@ -577,6 +577,8 @@ function mapRows(rows, ast, ctx) {
   for (let i = 0; i < rows.length; i++) { c.fields = rows[i]; out[i] = evaluate(ast, c); }
   return out;
 }
+/** Is this (lower-case) function name an aggregate over rows (Sum, Count, First...)? */
+export const isAggregate = (name) => Object.hasOwn(AGG, name);
 const AGG = {
   // text that is not a number is #Error, as in SSRS (it printed NaN)
   sum: (vals, ctx) => { let s = 0; for (const v of vals) if (v != null && v !== '') { const x = Number(v); if (Number.isNaN(x) && typeof v === 'string') throw new ExprError(`Sum: "${v.slice(0, 40)}" is not a number`); s = add(s, x, ctx); } return s; },

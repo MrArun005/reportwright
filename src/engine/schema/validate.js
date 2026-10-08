@@ -1,5 +1,5 @@
 // @ts-check
-import { checkValue, checkFunctions, parseValue, callIssues, compile } from '../expr/evaluate.js';
+import { checkValue, checkFunctions, parseValue, callIssues, compile, isAggregate } from '../expr/evaluate.js';
 import { ITEMS } from '../items/index.js';
 import { symbologyError } from '../items/barcode.js';
 import { rowCells } from '../items/cells.js';
@@ -158,6 +158,10 @@ export function validate(def) {
     if (p?.required && p.nullable && !p.multi && (p.default == null || p.default === '')) {
       warnings.push(`Parameter "${p.name}" is required and nullable with no default: when no value is given it is null and the report can draw blank; give it a default, or drop "nullable" to require a value`);
     }
+    // an explicit nullable:false or allowBlank:false promises a value, but only "required" asks for one: otherwise an unset parameter is null
+    if (p && !p.required && !p.multi && (p.nullable === false || p.allowBlank === false) && (p.default == null || p.default === '')) {
+      warnings.push(`Parameter "${p.name}" is ${p.nullable === false ? 'nullable: false' : 'allowBlank: false'} but is not required and has no default, so when no value is given it is null; add "required": true or a default`);
+    }
     // a date default is read as a date in the invariant form (2026-12-31); "31/12/2026" is none, and the parameter stays blank
     if (p?.type === 'date' && typeof p.default === 'string' && p.default.trim() && !p.default.startsWith('=') && !toDate(p.default)) {
       warnings.push(`Parameter "${p.name}": its default "${p.default}" is not a date; write it as 2026-12-31 (year-month-day)`);
@@ -302,6 +306,29 @@ export function validate(def) {
     calls(it, it?.name || it?.type, 0, null, true);
     walkItems(it, (x) => { if (x.type === 'barcode' && x.symbology != null) { const e = symbologyError(x.symbology); if (e) callErr(x.name || 'Barcode', e); } });
   }
+  // an aggregate with no scope outside a data region (a table, list, matrix, chart, or an item with a data set) sums the
+  // report's first data set: it works, and says nothing
+  const REGIONS = new Set(['table', 'list', 'matrix', 'chart', 'subreport', 'part']);
+  const bare = (n, out, depth = 0) => {
+    if (!n || typeof n !== 'object' || depth > 200) return;
+    if (Array.isArray(n)) { for (const x of n) bare(x, out, depth + 1); return; }
+    if (n.type === 'call' && !n.obj && isAggregate(String(n.name).toLowerCase()) && n.args?.length === 1) out.add(n.name);
+    for (const k in n) if (k !== 'p' && n[k] && typeof n[k] === 'object') bare(n[k], out, depth + 1);
+  };
+  const strs = (n, f, key = null, depth = 0) => {
+    if (depth > 64 || n == null) return;
+    if (typeof n === 'string') { f(n, key); return; }
+    if (Array.isArray(n)) { for (const x of n) strs(x, f, key, depth + 1); return; }
+    if (typeof n === 'object') for (const [k, v] of Object.entries(n)) if (k !== 'items') strs(v, f, k, depth + 1);
+  };
+  const unscoped = (it) => {
+    if (!it || typeof it !== 'object' || it.dataSet || REGIONS.has(it.type)) return;
+    const found = new Set();
+    strs(it, (v, key) => { for (const a of asts(v, key)) bare(a, found); });
+    if (found.size) warnings.push(`${it.name || it.type}: ${[...found].join(', ')} is outside a table or list and names no scope, so it uses the first data set; name one as the last argument, e.g. ${[...found][0]}(Fields.x, "DataSetName"), or give the item a dataSet`);
+    for (const c of Array.isArray(it.items) ? it.items : []) unscoped(c);
+  };
+  for (const [, items] of lists) for (const it of Array.isArray(items) ? items : []) unscoped(it);
   for (const d of def.dataSets || []) calls(d, `Data set "${d?.name}"`, 0, null);
   for (const p of def.parameters || []) calls(p, `Parameter "${p?.name}"`, 0, null);
   for (const f of Array.isArray(def.functions) ? def.functions : []) {
