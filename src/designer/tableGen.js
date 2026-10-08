@@ -69,8 +69,8 @@ function widths(fields, width) {
 
 /**
  * @param {{ name: string, fields?: { name: string, type?: string }[] }} ds
- * @param {{ layout?: 'list'|'grouped'|'summary', groupBy?: string, width?: number, rows?: any[], fields?: string[] }} opt
- *   fields: which fields, in order (default all); rows: sample rows, to pick number formats
+ * @param {{ layout?: 'list'|'grouped'|'summary', groupBy?: string, width?: number, rows?: any[], fields?: string[], currency?: string }} opt
+ *   fields: which fields, in order (default all); rows: sample rows, to pick number formats; currency: the symbol for money cells
  */
 export function tableFor(ds, opt = {}) {
   CUR = opt.currency || null;
@@ -122,7 +122,7 @@ function tableOf(ds, { layout = 'list', groupBy, width = 523, rows, fields: pick
 
 /**
  * @param {{ name: string, fields?: { name: string, type?: string }[] }} ds
- * @param {{ rows: string, columns: string, value: string, agg?: string, width?: number, sample?: any[] }} opt
+ * @param {{ rows: string, columns: string, value: string, agg?: string, width?: number, sample?: any[], currency?: string }} opt
  */
 export function matrixFor(ds, { rows, columns, value, agg = 'Sum', width = 523, sample, currency }) {
   const vf = (ds.fields || []).find(f => f.name === value);

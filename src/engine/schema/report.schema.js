@@ -425,11 +425,36 @@ export const REPORT_SCHEMA = {
     }
    ]
   },
+  "SortSpec": {
+   "type": "object",
+   "description": "One sort key: the rows (or groups) are ordered by by, ascending or descending.",
+   "properties": {
+    "by": {
+     "x-ts": "Expr",
+     "description": "the expression to sort by, e.g. =Fields.name"
+    },
+    "dir": {
+     "enum": [
+      "asc",
+      "desc"
+     ],
+     "description": "asc (default) or desc"
+    }
+   },
+   "required": [
+    "by"
+   ],
+   "additionalProperties": false
+  },
   "TableCell": {
    "type": "object",
    "properties": {
     "value": {
      "x-ts": "Expr"
+    },
+    "sortBy": {
+     "x-ts": "Expr",
+     "description": "a header cell's interactive sort: the viewer orders the rows by this expression when the header is clicked"
     },
     "style": {
      "$ref": "#/$defs/Style"
@@ -502,7 +527,18 @@ export const REPORT_SCHEMA = {
       "$ref": "#/$defs/TableRow"
      }
     },
-    "sort": {},
+    "sort": {
+     "enum": [
+      "asc",
+      "desc",
+      "none"
+     ],
+     "description": "orders the groups by their value (asc or desc); sortBy orders them by an expression"
+    },
+    "sortBy": {
+     "x-ts": "Expr",
+     "description": "orders the groups by this expression, evaluated in each group's scope (e.g. =Sum(Fields.amount)); the interactive sort on a header wins"
+    },
     "pageBreak": {
      "type": "string"
     },
@@ -596,7 +632,13 @@ export const REPORT_SCHEMA = {
       "noRowsText": {
        "type": "string"
       },
-      "sortBy": {},
+      "sort": {
+       "type": "array",
+       "items": {
+        "$ref": "#/$defs/SortSpec"
+       },
+       "description": "rows ordered by these entries, in order"
+      },
       "filters": {
        "type": "array",
        "items": {}
@@ -682,7 +724,13 @@ export const REPORT_SCHEMA = {
       "pageBreakBetween": {
        "type": "boolean"
       },
-      "sortBy": {},
+      "sort": {
+       "type": "array",
+       "items": {
+        "$ref": "#/$defs/SortSpec"
+       },
+       "description": "rows ordered by these entries, in order"
+      },
       "filters": {
        "type": "array",
        "items": {}
@@ -2217,7 +2265,13 @@ export const REPORT_SCHEMA = {
      "type": "array",
      "items": {}
     },
-    "sort": {}
+    "sort": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/SortSpec"
+     },
+     "description": "rows ordered by these entries, in order"
+    }
    },
    "required": [
     "name",

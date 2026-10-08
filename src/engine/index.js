@@ -35,34 +35,40 @@ const MAX_SUBREPORTS = 2000; // per render, all nesting levels together
 export const BAND_ITEMS = 250000; // page header and footer items drawn per render, all pages and body sections together
 
 /**
- * @param {any} def report definition
- * @param {{
- *   parameters?: Record<string, any>,
- *   fontStore?: FontStore,
- *   loadFont?: (key: string) => Promise<ArrayBuffer|Uint8Array>,
- *   fetch?: typeof fetch,
- *   baseUrl?: string,
- *   sources?: Record<string, any>,
- *   now?: Date,
- *   reportId?: string,
- *   sql?: (src: any, params: Record<string, any>) => Promise<object[]>,
- *   timeoutMs?: number,
- *   onSources?: (sources: Record<string, any>) => void,
- *   deadline?: number,
- *   exportData?: boolean,
- *   dataOnly?: boolean,
- *   unsafeFetch?: boolean, allowHosts?: string[], fetchTimeoutMs?: number, maxFetchBytes?: number,
- * }} opts
- *   reportId: the saved report, whose SQL sources the server runs for a browser render.
- *   sql: runs SQL sources directly (server renders).
- *   timeoutMs: stop with a ReportError (status 504) when the render runs longer; subreports share the deadline.
- *   exportData: keep the table data (model.regions) and cell tags that Excel, CSV, Word, interactive HTML and the
- *   accessible PDF rebuild tables from (needsExportData in exporters/regions.js says which). Off by default: a view
- *   or a plain PDF needs neither, and they are a third of a big table's model.
- *   unsafeFetch, allowHosts: without a fetch option, data is read through the engine's SSRF guard (data/guard.js): public
- *   http(s) hosts only, allowHosts may be private, unsafeFetch: true turns it off. fetchTimeoutMs (30 s) and maxFetchBytes
- *   (64 MB, decoded) bound every data fetch.
- *   dataOnly: the table data only (model.regions; pages is empty): no text layout and no pages, for the data CSV.
+ * Options for render(). All optional.
+ * @typedef {object} RenderOptions
+ * @property {Record<string, any>} [parameters] values of the report's parameters, by name (invariant form: 1234.5, 2026-03-05)
+ * @property {import('./text/fonts.js').FontStore} [fontStore] the fonts; share one across renders (a new one loads them again)
+ * @property {(key: string) => Promise<ArrayBuffer|Uint8Array>} [loadFont] loads a font the store does not have
+ * @property {typeof fetch} [fetch] fetch for data sources (default: the SSRF-guarded fetch, see unsafeFetch)
+ * @property {string} [baseUrl] the origin relative data URLs resolve against
+ * @property {Record<string, any>} [sources] data sources already loaded, by name (skips loading them)
+ * @property {Date} [now] the render's clock: ExecutionTime and =Today() defaults (default: the current time)
+ * @property {string} [reportId] the saved report being rendered; the server runs its SQL sources for a browser render
+ * @property {(src: any, params: Record<string, any>) => Promise<object[]>} [sql] runs SQL sources directly (server renders)
+ * @property {(id: string) => Promise<any>} [loadReport] loads a saved report by id: subreports, masters, part libraries, stylesheets, themes
+ * @property {number} [timeoutMs] stop with a ReportError (status 504) when the render runs longer; subreports share it
+ * @property {number} [deadline] the same limit as an absolute time (ms since the epoch)
+ * @property {(sources: Record<string, any>) => void} [onSources] receives the loaded sources (the worker's first pages hand them to the full render)
+ * @property {boolean} [exportData] keep the table data (model.regions) and cell tags that Excel, CSV, Word, interactive HTML and accessible PDF rebuild tables from
+ * @property {boolean} [dataOnly] the table data only (model.regions; pages is empty): no layout, for the data CSV
+ * @property {boolean} [unsafeFetch] turn off the SSRF guard (data/guard.js): public http(s) hosts only by default
+ * @property {string[]} [allowHosts] private hosts the guard may reach
+ * @property {number} [fetchTimeoutMs] time limit per data fetch (default 30 s)
+ * @property {number} [maxFetchBytes] size limit per data fetch, decoded (default 64 MB)
+ * @property {number} [firstPages] lay out only enough rows for this many pages: a fast first look, not the final render
+ * @property {'screen'|'print'|'export'} [target] which layers draw (default export)
+ * @property {Record<string, any>} [state] the viewer's interactive state: sorts, toggles, selections
+ * @property {string} [timeZone] the zone dates show in, when the report sets none
+ * @property {any} [bodyWidth] internal (subreports): the width the child body is laid out to
+ * @property {number} [depth] internal (subreports): nesting level, at most 3
+ * @property {{ used: number }} [budget] internal (subreports): subreports rendered so far, all levels together
+ * @property {string[]} [chain] internal (subreports): the reports this render sits inside, so one that reaches itself is skipped
+ * @property {boolean} [bodyOnly] internal (subreports): the body alone, no pages
+ * @property {Map<string, any>} [reportCache] internal: reports loaded for this render and its subreports
+ * @property {{ items: number }} [reuseBudget] internal: items drawn through report parts so far
+ * @property {{ n: number }} [fnCount] internal: report function calls so far
+ * @property {any} [imageBudget] internal: the images drawn so far, shared with subreports
  */
 /**
  * The text a render may draw: the definition's own and the string values of the data rows (and one level of nested
@@ -85,6 +91,13 @@ function* textsOf(def, dataSets) {
 /** The start of the warning for CJK text without the optional CJK fonts (the viewer opens its warnings for it). */
 export const NO_CJK_FONTS = 'Text in Japanese/Chinese/Korean needs the optional CJK fonts: npm run fonts:cjk';
 
+/**
+ * Render a report definition to a page model (pages, regions), the input of every exporter. Throws ReportError for a
+ * definition that cannot render at all; everything else is a warning in the model.
+ * @param {any} def0 the report definition (pagewright/report@1), or a saved report's JSON
+ * @param {RenderOptions} [opts]
+ * @returns {Promise<any>} the page model
+ */
 export async function render(def0, opts = {}) {
   const t0 = Date.now();
   // masters, stylesheets and part libraries: other saved reports, each loaded once for this render and its subreports
@@ -620,8 +633,14 @@ function splitMulti(s, options) {
   return out.filter(Boolean);
 }
 
-/** Defaults, types and required checks for report parameters. */
-export function resolveParameters(def, given, { lenient = false, now, timeZone, locale } = {}) {
+/**
+ * Defaults, types and required checks for report parameters.
+ * @param {any} def @param {Record<string, any>} given the values the caller passed, by name
+ * @param {{ lenient?: boolean, now?: Date, timeZone?: string, locale?: string }} [o] lenient: a missing required value is not an error (the option lists); now, timeZone, locale: for defaults such as =Today()
+ * @returns {Record<string, any>}
+ */
+export function resolveParameters(def, given, o = {}) {
+  const { lenient = false, now, timeZone, locale } = o;
   const out = {}, missing = [];
   // defaults such as =Today() read the render's clock (opts.now) and zone
   const ctx = { params: {}, globals: { ExecutionTime: now || new Date() }, dataSets: {}, fields: null, functions: functionTable(def), timeZone, locale };

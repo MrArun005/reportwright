@@ -124,11 +124,21 @@ Also has every property of [ItemBase](#itembase).
 | `type` | "shape" | yes |  |
 | `shape` | "rect" \\| "ellipse" |  |  |
 
+## SortSpec
+
+One sort key: the rows (or groups) are ordered by by, ascending or descending.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `by` | Expr | yes | the expression to sort by, e.g. =Fields.name |
+| `dir` | "asc" \\| "desc" |  | asc (default) or desc |
+
 ## TableCell
 
 | Property | Type | Required | Description |
 |---|---|---|---|
 | `value` | Expr |  |  |
+| `sortBy` | Expr |  | a header cell's interactive sort: the viewer orders the rows by this expression when the header is clicked |
 | `style` | [Style](#style) |  |  |
 | `colSpan` | number |  | columns this cell spans. Either list one entry per column (null under the span), or omit the spanned cells (RDL/HTML style: a row with fewer cells than columns) |
 | `rowSpan` | number |  | merged down over this many rows of the same band (header, a group's rows, one record's detail rows, footer) |
@@ -151,7 +161,8 @@ Also has every property of [ItemBase](#itembase).
 | `name` | string |  |  |
 | `header` | [TableRow](#tablerow)[] |  |  |
 | `footer` | [TableRow](#tablerow)[] |  |  |
-| `sort` | any |  |  |
+| `sort` | "asc" \\| "desc" \\| "none" |  | orders the groups by their value (asc or desc); sortBy orders them by an expression |
+| `sortBy` | Expr |  | orders the groups by this expression, evaluated in each group's scope (e.g. =Sum(Fields.amount)); the interactive sort on a header wins |
 | `pageBreak` | string |  |  |
 | `collapsible` | boolean |  |  |
 | `initiallyCollapsed` | boolean |  |  |
@@ -176,7 +187,7 @@ Also has every property of [ItemBase](#itembase).
 | `widowControl` | boolean |  | Default true: a group of four or more rows never leaves one of its rows alone at a page foot or head, and a group of two or three rows that fits a page moves whole to the next page. false lets a break fall anywhere inside a group. |
 | `fitColumns` | boolean |  | Column widths from the content: the header, the first 50 rows and the footer, in proportion, filling the table's width. Columns without a width are measured anyway. |
 | `noRowsText` | string |  |  |
-| `sortBy` | any |  |  |
+| `sort` | [SortSpec](#sortspec)[] |  | rows ordered by these entries, in order |
 | `filters` | any[] |  |  |
 | `printAtBottom` | boolean |  | the footer at the bottom of the page the table ends on |
 | `overflow` | "clip" \\| "paginate" \\| "shrink" |  | wider than the page: continue on the next page set, repeating the first repeatColumns columns |
@@ -203,7 +214,7 @@ Also has every property of [ItemBase](#itembase).
 | `items` | [Item](#item)[] | yes |  |
 | `groupBy` | Expr<string> |  |  |
 | `pageBreakBetween` | boolean |  |  |
-| `sortBy` | any |  |  |
+| `sort` | [SortSpec](#sortspec)[] |  | rows ordered by these entries, in order |
 | `filters` | any[] |  |  |
 | `columns` | number |  | records across (a grid list) |
 | `columnGap` | number |  |  |
@@ -593,7 +604,7 @@ One of: { name, type, data }, { name, type, data, url }, { name, type, url, meth
 | `detectDates` | boolean |  | false: strings that look like ISO dates stay text (default true: they become dates when fields are detected) |
 | `fields` | [Field](#field)[] |  | the fields, typed; none: detected from the rows |
 | `filters` | any[] |  |  |
-| `sort` | any |  |  |
+| `sort` | [SortSpec](#sortspec)[] |  | rows ordered by these entries, in order |
 
 ## Report
 

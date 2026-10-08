@@ -2,6 +2,7 @@
 import { FontStore } from '../../src/engine/index.js';
 import { fontFile } from '../../src/engine/text/fonts.js';
 export { render, FontStore, ITEMS, parameterOptions, resolveParameters } from '../../src/engine/index.js';
+/** @typedef {import('../../src/engine/index.js').RenderOptions} RenderOptions */
 export { fontFile };
 export { validate } from '../../src/engine/schema/validate.js';
 export { blankReport, blankDashboard } from '../../src/engine/schema/template.js';

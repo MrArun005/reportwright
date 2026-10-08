@@ -111,8 +111,17 @@ export interface Shape extends ItemBase {
   type: 'shape';
   shape?: 'rect' | 'ellipse';
 }
+/** One sort key: the rows (or groups) are ordered by by, ascending or descending. */
+export interface SortSpec {
+  /** the expression to sort by, e.g. =Fields.name */
+  by: Expr;
+  /** asc (default) or desc */
+  dir?: 'asc' | 'desc';
+}
 export interface TableCell {
   value?: Expr;
+  /** a header cell's interactive sort: the viewer orders the rows by this expression when the header is clicked */
+  sortBy?: Expr;
   style?: Style;
   /** columns this cell spans. Either list one entry per column (null under the span), or omit the spanned cells (RDL/HTML style: a row with fewer cells than columns) */
   colSpan?: number;
@@ -134,7 +143,10 @@ export interface TableGroup {
   name?: string;
   header?: TableRow[];
   footer?: TableRow[];
-  sort?: unknown;
+  /** orders the groups by their value (asc or desc); sortBy orders them by an expression */
+  sort?: 'asc' | 'desc' | 'none';
+  /** orders the groups by this expression, evaluated in each group's scope (e.g. =Sum(Fields.amount)); the interactive sort on a header wins */
+  sortBy?: Expr;
   pageBreak?: string;
   collapsible?: boolean;
   initiallyCollapsed?: boolean;
@@ -162,7 +174,8 @@ export interface Table extends ItemBase {
   /** Column widths from the content: the header, the first 50 rows and the footer, in proportion, filling the table's width. Columns without a width are measured anyway. */
   fitColumns?: boolean;
   noRowsText?: string;
-  sortBy?: unknown;
+  /** rows ordered by these entries, in order */
+  sort?: SortSpec[];
   filters?: unknown[];
   /** the footer at the bottom of the page the table ends on */
   printAtBottom?: boolean;
@@ -182,7 +195,8 @@ export interface List extends ItemBase {
   items: Item[];
   groupBy?: Expr<string>;
   pageBreakBetween?: boolean;
-  sortBy?: unknown;
+  /** rows ordered by these entries, in order */
+  sort?: SortSpec[];
   filters?: unknown[];
   /** records across (a grid list) */
   columns?: number;
@@ -366,7 +380,7 @@ export interface MapItem extends ItemBase {
   /** tooltips on hover */
   tooltips?: boolean;
 }
-export interface Sparkline extends ItemBase {
+export interface Sparkline extends Omit<ItemBase, 'style'> {
   type: 'sparkline';
   category?: Expr;
   value?: Expr<number>;
@@ -576,7 +590,8 @@ export interface DataSet {
   /** the fields, typed; none: detected from the rows */
   fields?: Field[];
   filters?: unknown[];
-  sort?: unknown;
+  /** rows ordered by these entries, in order */
+  sort?: SortSpec[];
   [key: string]: unknown;
 }
 /** A ReportWright report definition (pagewright/report@1).

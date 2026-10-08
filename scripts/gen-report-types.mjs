@@ -50,7 +50,11 @@ export function generate(schema = REPORT_SCHEMA) {
     const parts = s.allOf || [s];
     const base = parts.filter(p => p.$ref).map(p => name(p.$ref));
     const own = parts.find(p => p.type === 'object' && p.properties);
-    if (own && !s.anyOf) out.push(`${head}${exp}interface ${n}${base.length ? ` extends ${base.join(', ')}` : ''} ${body(own, '')}`);
+    // a property the item redeclares (Sparkline's style is a chart kind, ItemBase's is a Style) is left out of the base
+    const keysOf = (d) => (d.allOf || [d]).flatMap(p => Object.keys(p.properties || {}));
+    const clash = own ? Object.keys(own.properties).filter(k => base.some(b => keysOf(schema.$defs[b]).includes(k))) : [];
+    const ext = base.map(b => (clash.length ? `Omit<${b}, ${clash.map(k => `'${k}'`).join(' | ')}>` : b));
+    if (own && !s.anyOf) out.push(`${head}${exp}interface ${n}${ext.length ? ` extends ${ext.join(', ')}` : ''} ${body(own, '')}`);
     else out.push(`${head}${exp}type ${n} = ${ts(s)};`);
   }
   return out.join('\n') + '\n';
