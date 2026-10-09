@@ -64,13 +64,13 @@ describe('R3: glyphs are budget steps, every stream counts against maxDecoded, f
     expect(r.ms).toBeLessThan(1500);
   }, 30_000);
   it('extractText takes its own timeoutMs (30 s by default) and checks its options', async () => {
-    const d = await loadPdf(onePage(`BT /F1 1 Tf (${'A'.repeat(1 << 20)}) Tj ET`));
+    const d = await loadPdf(onePage(`BT /F1 1 Tf (${'A'.repeat(999_999)}) Tj ET`)); // under maxTextItems (1 M)
     const t = Date.now();
     expect(() => d.page(0).extractText({ timeoutMs: 5 })).toThrow(expect.objectContaining({ code: 'E_TIMEOUT' }));
     expect(Date.now() - t).toBeLessThan(1500);
     expect(() => d.extractText({ timeoutMs: -1 })).toThrow(TypeError);
     expect(() => d.extractText({ nope: 1 })).toThrow(TypeError);
-    expect(d.page(0).extractText({ timeoutMs: Infinity }).length).toBe(1 << 20);
+    expect(d.page(0).extractText({ timeoutMs: Infinity }).length).toBe(999_999);
   }, 30_000);
 });
 
