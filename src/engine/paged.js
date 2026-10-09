@@ -26,11 +26,46 @@ const WINDOW = 1000; // rows laid out at once (a window grows when its rows do n
 // items are bounded too), so the rows are laid out once; past it, they are counted only and laid out again in a second pass
 // (flat memory). ponytail: a fixed cap; one from the heap's room if a deployment needs it
 const HOLD_ITEMS = 240000;
+// parallel, "of M": the counting pass's windows are laid out by the workers as it goes, each held there until the count
+// is known (then only its bands that read Globals are laid out again), at most this many rows a worker; past them the
+// count goes on alone and a second pass lays out the rest. ponytail: a fixed cap (~40 MB a worker on a 7-column
+// ledger), like HOLD_ITEMS
+const AHEAD_ROWS = 25000;
+// parallel 'auto' without "of M": rows laid out here before the workers start (a report this small is done sooner
+// without them). ponytail: measured on one ledger (README), not per report
+const AUTO_ROWS = 10000;
 const OK_TYPES = new Set(['textbox', 'line', 'shape']);
 
 /**
+ * Held pages (render's pageWindow.hold): their bands that read Globals laid out again with the page count, in one
+ * render of only those bands (def: a window's definition), and put in place of the bands they were laid out with.
+ * @param {any[]} pages @param {number} total @param {any} def @param {any} first the report's first row @param {any} opts render() options
+ * @returns {Promise<string[]>} the render's warnings
+ */
+export async function reband(pages, total, def, first, opts) {
+  const bands = [];
+  for (const p of pages) for (const b of [p.reband?.h, p.reband?.f]) if (b) { b.globals.TotalPages = total; b.globals.OverallTotalPages = total; bands.push(b); }
+  const r = bands.length ? /** @type {any} */ (await render(def, { ...opts, exportData: false, sources: { __rows: { rows: [] } },
+    pageWindow: { offset: 0, total, final: true, first, rowOffset: 0, cont: [], rebands: bands } })) : { bands: [], warnings: [] };
+  let bi = 0;
+  for (const p of pages) {
+    const rb = p.reband;
+    if (!rb) continue;
+    delete p.reband;
+    let items = p.items;
+    if (rb.h) items = r.bands[bi++].concat(items.slice(rb.h.n));
+    if (rb.f) items = items.slice(0, items.length - rb.f.n).concat(r.bands[bi++]);
+    p.items = items;
+  }
+  return r.warnings;
+}
+/** the warning of a render whose page bands were capped: its held pages are not kept (laid out again with the count) */
+export const CAPPED = 'The page headers and footers would draw more than';
+
+/**
  * @param {any} def0 @param {any} opts render() options, and maxRows/sorter/sqlRows as planStream takes them;
- *   window: rows per window (tests); holdItems: the page items a held counting pass keeps at most (tests)
+ *   window: rows per window (tests); holdItems: the page items a held counting pass keeps at most (tests); aheadRows,
+ *   autoRows: AHEAD_ROWS and AUTO_ROWS (tests)
  * @returns {Promise<{ why: string } | { why?: undefined, pages: () => AsyncGenerator<any>, info: { width: number, height: number, bookmarks: any[], headings: any[], warnings: string[], pages: number } }>}
  */
 export async function planPaged(def0, opts = {}) {
@@ -163,12 +198,28 @@ export async function planPaged(def0, opts = {}) {
    * more, which is dropped) and the drawing is checked against the count. starts: filled with where each page starts.
    * @param {number|null} total @param {number[]|null} bounds @param {number[]} [starts]
    */
-  async function* pass(total, bounds, starts, o = /** @type {{ run?: (job: any) => Promise<any>, parallel?: number, hold?: any }} */ ({})) {
+  async function* pass(total, bounds, starts, o = /** @type {{ run?: (job: any) => Promise<any>, parallel?: number, hold?: any, send?: (job: any) => Promise<void>, sending?: (row: number) => boolean, draw?: boolean, full?: () => void, from?: number, fromRow?: number }} */ ({})) {
     const src = rowsOf()[Symbol.asyncIterator]();
     try { yield* passOver(src, total, bounds, starts, o); } finally { await src.return?.(undefined); } // the cursor closes on every exit
   }
+  /** a window's pages laid out (o.run, or here), checked against the count, in order */
+  const handOut = function* (/** @type {any} */ job, /** @type {any} */ r) {
+    // the data changed between the passes (a live source): the page count would be wrong, so stop
+    if (job.last ? r.count !== job.keep : !(r.count > job.keep && r.nextFirst - 1 === job.expect)) throw Object.assign(new Error('The data changed while the PDF was written (its pages were counted first). Export it again.'), { status: 409 });
+    for (const w of r.warnings) if (!info.warnings.includes(w) && info.warnings.length < 200) info.warnings.push(w);
+    for (let k = 0; k < job.keep; k++) {
+      const p = r.pages[k];
+      delete p.firstRow; delete p.rowHead; delete p.headLevel;
+      p.win = job.wn; // the window it came from: row ids are a window's own (pdfstreamtags.js)
+      yield p;
+      r.pages[k] = null;
+    }
+    const isKept = (b) => b.page <= job.off + job.keep;
+    for (const b of r.bookmarks) if (isKept(b)) info.bookmarks.push(b);
+    for (const b of r.headings) if (isKept(b)) info.headings.push(b);
+  };
   /** pass, over the rows of src @param {AsyncIterator<any>} src @param {number|null} total @param {number[]|null} bounds @param {number[]} [starts] */
-  async function* passOver(src, total, bounds, starts, o = /** @type {{ run?: (job: any) => Promise<any>, parallel?: number, hold?: any }} */ ({})) {
+  async function* passOver(src, total, bounds, starts, o = /** @type {{ run?: (job: any) => Promise<any>, parallel?: number, hold?: any, send?: (job: any) => Promise<void>, sending?: (row: number) => boolean, draw?: boolean, full?: () => void, from?: number, fromRow?: number }} */ ({})) {
     let ahead = /** @type {any} */ (null), ended = false;
     let buf = /** @type {any[]} */ ([]), bi = 0; // the batch being read
     const next = async () => {
@@ -229,21 +280,19 @@ export async function planPaged(def0, opts = {}) {
       };
       const run = o.run || local, at = o.run ? 2 * Math.max(1, Number(o.parallel) || 1) : 1; // two jobs a worker: one waits while one runs
       const queue = /** @type {any[]} */ ([]);
-      const handOut = function* (/** @type {any} */ job, /** @type {any} */ r) {
-        // the data changed between the passes (a live source): the page count would be wrong, so stop
-        if (job.last ? r.count !== job.keep : !(r.count > job.keep && r.nextFirst - 1 === job.expect)) throw Object.assign(new Error('The data changed while the PDF was written (its pages were counted first). Export it again.'), { status: 409 });
-        for (const w of r.warnings) if (!info.warnings.includes(w) && info.warnings.length < 200) info.warnings.push(w);
-        for (let k = 0; k < job.keep; k++) {
-          const p = r.pages[k];
-          delete p.firstRow; delete p.rowHead; delete p.headLevel;
-          p.win = job.wn; // the window it came from: row ids are a window's own (pdfstreamtags.js)
-          yield p;
-          r.pages[k] = null;
+      if (o.from) {
+        // the pages before o.from were laid out by the counting pass's jobs: their rows are read (folded, grouped), not
+        // laid out, a batch at a time, and the window starts at that page as if the one before had ended there
+        const to = /** @type {number} */ (o.fromRow); // where the counting pass started that page's window
+        while (base + win.length <= to && !ended) {
+          await read(Math.min(to - base + 1, win.length + size));
+          first0 ??= win[0] ?? null;
+          if (base + win.length <= to && win.length > 1) { base += win.length - 1; win = win.slice(-1); } // the last one: the next window's groups go on from it
         }
-        const isKept = (b) => b.page <= job.off + job.keep;
-        for (const b of r.bookmarks) if (isKept(b)) info.bookmarks.push(b);
-        for (const b of r.headings) if (isKept(b)) info.headings.push(b);
-      };
+        const cut = to - base;
+        for (let l = 0; l < L; l++) cont.push(win[cut].__i[l] === win[cut - 1].__i[l] && (l === 0 || cont[l - 1]) ? { first: win[cut].__i[l].first, before: base + cut - win[cut].__i[l].at } : null);
+        base = to; win = win.slice(cut); first = false; off = o.from;
+      }
       for (;;) {
         let end = -1; // the page this window stops before
         for (let k = Math.min(bounds.length - 1, off + per); k > off && end < 0; k--) if (bounds[k] >= 0) end = k;
@@ -285,11 +334,16 @@ export async function planPaged(def0, opts = {}) {
       const done = last ? folds.map((f, i) => ({ cell: f.cell, value: value(acc[i]) })) : [];
       wn++;
       // tagged: the cell tags an accessible PDF builds its tables from (exportData)
-      const hold = o.hold?.on ? o.hold : null; // the counting pass keeps its pages: they are drawn
-      const model = await render(windowDef(first, last, done), { ...opts, exportData: !!(opts.exportData || opts.tagged), sources: { __rows: { rows: win } },
-        pageWindow: { offset: off, total, final: last, first: first0, rowOffset: base, cont, count: !!starts && !hold, hold: !!hold } });
+      // o.send: this window is a job (laid out again, drawn, elsewhere: a worker), from when o.sending says so
+      const job = !!o.send && (o.sending?.(base) ?? true);
+      const hold = !job && o.hold?.on ? o.hold : null; // the counting pass keeps its pages: they are drawn
+      // only counted (nothing drawn): a counting pass's window that is not held, unless o.draw (its pages are the final ones)
+      const counted = !!starts && !hold && (job || !o.draw);
+      const wdef = windowDef(first, last, done);
+      const model = await render(wdef, { ...opts, exportData: !!(opts.exportData || opts.tagged), sources: { __rows: { rows: win } },
+        pageWindow: { offset: off, total, final: last, first: first0, rowOffset: base, cont, count: counted, hold: !!hold } });
       for (const w of model.warnings) if (!info.warnings.includes(w) && info.warnings.length < 200) info.warnings.push(w);
-      if (hold && model.warnings.some((/** @type {string} */ w) => w.startsWith('The page headers and footers would draw more than'))) drop(hold); // capped bands: as the second pass caps them
+      if (hold && model.warnings.some((/** @type {string} */ w) => w.startsWith(CAPPED))) drop(hold); // capped bands: as the second pass caps them
       const pg = model.pages;
       let keep = pg.length;
       if (!last) {
@@ -302,19 +356,24 @@ export async function planPaged(def0, opts = {}) {
         for (let k = pg.length - 2; k >= 1; k--) if (startsAt(pg[k], win, base) && base + win.length - (pg[k].firstRow - 1) >= 2 * most + 2) { keep = k; break; }
         if (!keep) { want = win.length * 2; continue; } // no page to start the next window at yet: a bigger window
       }
+      // the job: held in its worker for the count when "of M"
+      if (job) await /** @type {any} */ (o.send)({ wn, keep, last, off, expect: last ? null : pg[keep].firstRow - 1, rows: win, def: wdef, defer: totals, rebandDef: totals ? windowDef(false, false, []) : undefined,
+        pageWindow: { offset: off, total: null, final: last, first: first0, rowOffset: base, cont } });
       for (let k = 0; k < keep; k++) {
         const p = pg[k];
         starts?.push(startsAt(p, win, base) ? p.firstRow - 1 : -1);
         delete p.firstRow; delete p.rowHead; delete p.headLevel;
         p.win = wn; // the window it came from: row ids are a window's own (pdfstreamtags.js)
         if (hold?.on) { hold.pages.push(p); hold.items += 1; for (const it of p.items) hold.items += it.t === 'text' ? 1 + it.lines.length : 1; }
-        yield p;
+        if (!counted && !hold) yield p; // drawn, final (a held page waits for the count; a counted one is only counted)
         pg[k] = null;
       }
-      if (hold?.on && hold.items > (opts.holdItems ?? HOLD_ITEMS)) drop(hold);
+      // held past the cap: dropped (laid out again by the second pass), or, with jobs to send (o.full), kept, and the
+      // windows from here on are jobs
+      if (hold?.on && hold.items > (opts.holdItems ?? HOLD_ITEMS)) { if (o.full) o.full(); else drop(hold); }
       if (hold?.on) hold.first = first0;
       const isKept = (b) => b.page <= off + keep;
-      if (!starts || hold?.on) { for (const b of model.bookmarks) if (isKept(b)) info.bookmarks.push(b); for (const b of model.headings) if (isKept(b)) info.headings.push(b); }
+      if (!counted && (!hold || hold.on)) { for (const b of model.bookmarks) if (isKept(b)) info.bookmarks.push(b); for (const b of model.headings) if (isKept(b)) info.headings.push(b); }
       off += keep;
       if (last) { if (starts) /** @type {any} */ (starts).rows = base + win.length; break; }
       const cut = pg[keep].firstRow - 1 - base;
@@ -332,28 +391,73 @@ export async function planPaged(def0, opts = {}) {
   const drop = (hold) => { hold.on = false; hold.pages = []; info.bookmarks.length = 0; info.headings.length = 0; };
   /**
    * The held pages, their bands that read Globals laid out again with the page count (one render of only those bands),
-   * in order. @param {{ pages: any[], first: any }} hold
+   * in order. @param {{ pages: any[], first: any }} hold @param {number} [total] the page count (more than these pages)
    */
-  async function* rebanded(hold) {
-    const total = hold.pages.length, bands = [];
-    for (const p of hold.pages) for (const b of [p.reband?.h, p.reband?.f]) if (b) { b.globals.TotalPages = total; b.globals.OverallTotalPages = total; bands.push(b); }
-    const r = bands.length ? /** @type {any} */ (await render(windowDef(false, false, []), { ...opts, exportData: false, sources: { __rows: { rows: [] } },
-      pageWindow: { offset: 0, total, final: true, first: hold.first, rowOffset: 0, cont: [], rebands: bands } })) : { bands: [], warnings: [] };
-    for (const w of r.warnings) if (!info.warnings.includes(w) && info.warnings.length < 200) info.warnings.push(w);
+  async function* rebanded(hold, total = hold.pages.length) {
+    for (const w of await reband(hold.pages, total, windowDef(false, false, []), hold.first, opts)) if (!info.warnings.includes(w) && info.warnings.length < 200) info.warnings.push(w);
     info.pages = total;
-    let bi = 0;
-    for (let k = 0; k < total; k++) {
-      const p = hold.pages[k], rb = p.reband;
-      hold.pages[k] = null;
-      if (rb) {
-        delete p.reband;
-        let items = p.items;
-        if (rb.h) items = r.bands[bi++].concat(items.slice(rb.h.n));
-        if (rb.f) items = items.slice(0, items.length - rb.f.n).concat(r.bands[bi++]);
-        p.items = items;
+    for (let k = 0; k < hold.pages.length; k++) { const p = hold.pages[k]; hold.pages[k] = null; yield p; }
+  }
+  /**
+   * The pages laid out by o.run (workers) while the counting pass goes on: each of its windows is sent as a job once
+   * counted, and its pages handed out in order. "Of M": a job lays its window out without the count and is held in its
+   * worker until the count is known (o.total); past AHEAD_ROWS rows a worker none is sent, and once counted a second
+   * pass lays out the pages from there. Without "of M": a job is done when sent, so the count waits while two a worker
+   * are out. lazy ('auto'): the first windows are laid out here as without workers (held for the count, or drawn), and
+   * the jobs start only once the report is big: the held pages past HOLD_ITEMS (kept, and handed out first), or past
+   * AUTO_ROWS rows without "of M"; a small report never starts a worker.
+   * @param {{ run: (job: any) => Promise<any>, parallel?: number, total?: (n: number) => void }} o @param {boolean} lazy
+   */
+  async function* overlapped(o, lazy) {
+    const starts = /** @type {number[]} */ ([]);
+    const n = Math.max(1, Number(o.parallel) || 1), at = 2 * n, cap = (opts.aheadRows ?? AHEAD_ROWS) * n;
+    const hold = { on: lazy && !!totals, pages: /** @type {any[]} */ ([]), items: 0, first: null };
+    let full = !lazy; // jobs are sent
+    const queue = /** @type {any[]} */ ([]);
+    let qi = 0, rows = 0, from = -1, fromRow = 0, done = false, stop = false, err = /** @type {any} */ (null);
+    let waits = /** @type {(() => void)[]} */ ([]);
+    const wait = () => new Promise((ok) => waits.push(/** @type {any} */ (ok)));
+    const ping = () => { const w = waits; waits = []; for (const f of w) f(); };
+    let fail = /** @type {(e: any) => void} */ (() => {});
+    const failed = new Promise((_, no) => { fail = no; });
+    failed.catch(() => {});
+    const send = async (/** @type {any} */ job) => {
+      if (from >= 0) return;
+      if (totals && rows + job.rows.length > cap && rows) { from = job.off; fromRow = job.pageWindow.rowOffset; return; } // held enough: the rest later
+      rows += job.rows.length;
+      const res = o.run(job);
+      res.catch(() => {}); // awaited (and thrown) in its turn
+      queue.push({ job, res });
+      ping();
+      if (!totals) while (!stop && queue.length - qi > at) await wait(); // nothing held: as many out as the workers take
+    };
+    const po = { send, hold, draw: !totals, full: () => { full = true; }, sending: (/** @type {number} */ row) => full || (!totals && row >= (opts.autoRows ?? AUTO_ROWS)) };
+    const counting = (async () => {
+      try {
+        for await (const p of pass(null, null, starts, po)) { if (stop) return; queue.push({ page: p }); ping(); } // drawn here: in order with the jobs
+        if (totals) o.total?.(starts.length); // before done: every held job gets it
+      } catch (e) { err = e; fail(e); } finally { done = true; ping(); }
+    })();
+    try {
+      while (hold.on && !done) await wait(); // the held pages go first, once counted (no job is done before either)
+      if (err) throw err;
+      if (hold.on) yield* rebanded(hold, starts.length);
+      for (;;) {
+        if (qi < queue.length) {
+          const q = queue[qi]; queue[qi++] = null; ping();
+          if (q.page) yield q.page;
+          else yield* handOut(q.job, await Promise.race([q.res, failed]));
+          continue;
+        }
+        if (done) break;
+        await wait();
       }
-      yield p;
-    }
+      if (err) throw err;
+      // capped bands dropped the held pages (before any job): all of them laid out again, as without overlap
+      if (lazy && totals && !hold.on && !rows) yield* pass(starts.length, starts, undefined, /** @type {any} */ (starts).rows >= (opts.autoRows ?? AUTO_ROWS) ? o : {});
+      else if (from >= 0) yield* pass(totals ? starts.length : null, starts, undefined, { ...o, from, fromRow });
+      info.pages = starts.length;
+    } finally { stop = true; ping(); await counting; }
   }
   /** the time limit as render() reports it (504), also where an expression of the rows' order or filter met it */
   const limit = (/** @type {any} */ e) => (e?.message === OVER_TIME ? new ReportError(`The report ran longer than ${Math.round(Number(opts.timeoutMs) / 100) / 10} s, the time limit on this server.`, { status: 504, timeout: true }) : e);
@@ -362,11 +466,14 @@ export async function planPaged(def0, opts = {}) {
     /**
      * The final pages in order. o.run: lays out (and may paint) a window elsewhere, o.parallel at a time (parallel.js);
      * it needs the pages counted first, so a report without "of M" gets the counting pass too.
-     * @param {{ run?: (job: any) => Promise<any>, parallel?: number }} [o]
+     * Holdable (or without "of M"), the counting pass's own windows are the jobs (overlapped), and o.total(count) tells
+     * the jobs sent before the count the count.
+     * @param {{ run?: (job: any) => Promise<any>, parallel?: number, total?: (n: number) => void, lazy?: boolean }} [o]
      */
     async *pages(o = {}) {
       try {
         if (opts.deadline && Date.now() > opts.deadline) throw new Error(OVER_TIME);
+        if (o.run && (!totals || holdable)) { yield* overlapped(/** @type {any} */ (o), !!o.lazy); return; }
         if (!totals && !o.run) { yield* pass(null, null); return; }
         // "of M": a first pass counts the pages and notes where each starts (nothing is drawn); the second lays out
         // exactly those pages, window by window. Held (holdable, not parallel): the first pass draws its pages and keeps

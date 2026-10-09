@@ -720,10 +720,13 @@ export async function writePagedPdf(plan, opts, sink) {
   const tags = opts.tagged ? createStreamTagger(w, { maxElements: Number(opts.tagged.maxElements) || Infinity }) : null;
   const env = paintEnv(w, fontStore, { drillBase: opts.drillBase, tags, embedAll: !!(opts.pdfa || tags) });
   const { shaped } = env;
-  // opts.parallel: windows laid out and painted by that many worker threads (Node), their pages written here in order
-  const pool = !tags && Number(opts.parallel) > 1 ? paintPool(Number(opts.parallel), fontStore, opts, info) : null;
+  // opts.parallel: windows laid out and painted by that many worker threads (Node), their pages written here in order;
+  // 'auto': as many as the cores but one (4 at most), started only once the report is big (paged.js, lazy)
+  const auto = opts.parallel === 'auto';
+  const size = auto ? autoWorkers() : Number(opts.parallel);
+  const pool = !tags && (auto ? size > 0 : size > 1) ? paintPool(size, fontStore, opts, info) : null;
   let pi = -1;
-  const it = pages(pool ? { run: pool.run, parallel: pool.size } : {})[Symbol.asyncIterator]();
+  const it = pages(pool ? { run: pool.run, parallel: pool.size, total: pool.total, lazy: auto } : {})[Symbol.asyncIterator]();
   let pending = false; // a read the signal stopped waiting for: the iterator is busy, its return() would wait for it
   try {
     for (;;) {
@@ -926,9 +929,20 @@ export function paintEnv(w, fontStore, o = {}) {
 }
 
 /**
+ * parallel 'auto': the cores but one (the writer's), 4 at most; none below 3 (2 workers did not beat one thread on the
+ * README's ledger) or without Node
+ */
+function autoWorkers() {
+  const os = /** @type {any} */ (globalThis).process?.getBuiltinModule?.('node:os');
+  const n = Math.min(4, (os ? (os.availableParallelism?.() ?? os.cpus().length) : 1) - 1);
+  return n >= 3 ? n : 0;
+}
+
+/**
  * Worker threads that lay out and paint windows of pages (pdfstreamworker.js): run(job) answers as paged.js's own
- * layout does, with pages painted and compressed. Started at the first job, when every font the report uses is loaded
- * (the counting pass loaded them); each worker gets their bytes. Node only.
+ * layout does, with pages painted and compressed. Started at the first job, each worker given the fonts loaded by then;
+ * a font a later row needs is asked of this side (and loaded here too, for the file). A job sent before the pages are
+ * counted (job.defer) waits in its worker for total(n). Node only.
  * @param {number} size @param {any} fontStore @param {any} opts @param {any} info
  */
 function paintPool(size, fontStore, opts, info) {
@@ -936,15 +950,21 @@ function paintPool(size, fontStore, opts, info) {
   if (!wt) return null;
   /** @type {any[]} */
   let workers = [];
-  let seq = 0, turn = 0;
+  let seq = 0, turn = 0, count = /** @type {number|undefined} */ (undefined);
   const waiting = new Map();
-  const clean = (/** @type {any} */ r) => { if (!r) return r; const { __i, ...o } = r; return o; };
+  // the row without its groups (paged.js's own): a copy key by key, as fast on a row in dictionary mode (delete r.__g)
+  const clean = (/** @type {any} */ r) => { if (!r) return r; const o = /** @type {any} */ ({}); for (const k in r) if (k !== '__i') o[k] = r[k]; return o; };
   const start = async () => {
     const fonts = [...fontStore.bytes];
     if (fontStore.shaper) fonts.push(['harfbuzz', await fontStore.loader('harfbuzz')]);
     workers = Array.from({ length: size }, () => {
       const w = new wt.Worker(new URL('./pdfstreamworker.js', import.meta.url), { workerData: { fonts } });
-      w.on('message', (/** @type {any} */ m) => { const p = waiting.get(m.id); waiting.delete(m.id); if (m.error) p.fail(Object.assign(new Error(m.error.message), { status: m.error.status, timeout: m.error.timeout })); else p.ok(m); });
+      w.on('message', (/** @type {any} */ m) => {
+        if (m.font !== undefined) { // a font a later row needs: loaded here too (the file embeds it), its bytes sent
+          fontStore.load([m.font]).catch(() => {}).then(async () => w.postMessage({ font: m.font, bytes: m.font === 'harfbuzz' ? (fontStore.shaper ? await fontStore.loader(m.font) : undefined) : fontStore.bytes.get(m.font) }));
+          return;
+        }
+        const p = waiting.get(m.id); waiting.delete(m.id); if (m.error) p.fail(Object.assign(new Error(m.error.message), { status: m.error.status, timeout: m.error.timeout })); else p.ok(m); });
       w.on('error', (/** @type {any} */ e) => { for (const p of waiting.values()) p.fail(e); waiting.clear(); });
       return w;
     });
@@ -955,16 +975,21 @@ function paintPool(size, fontStore, opts, info) {
     size,
     /** @param {any} job */
     async run(job) {
-      await (started ||= start());
+      // the message now, before any wait: the rows go on changing as the pass reads on (a group's totals when it closes)
       const id = ++seq;
       const pw = job.pageWindow;
       const msg = { id, def: job.def, rows: job.rows.map(clean), keep: job.keep, drillBase: opts.drillBase, embedAll: !!opts.pdfa, height: info.height,
-        opts: Object.fromEntries(pick.filter(k => opts[k] !== undefined).map(k => [k, opts[k]])),
+        opts: Object.fromEntries(pick.filter(k => opts[k] !== undefined).map(k => [k, opts[k]])), defer: job.defer, rebandDef: job.rebandDef,
         pageWindow: { ...pw, first: clean(pw.first), cont: pw.cont.map((/** @type {any} */ c) => c && { first: clean(c.first), before: c.before }) } };
+      await (started ||= start());
+      // the count came while the workers started: the job is sent with it
+      if (msg.defer && count !== undefined) { msg.defer = false; msg.pageWindow.total = count; }
       const r = await new Promise((ok, fail) => { waiting.set(id, { ok, fail }); workers[turn++ % workers.length].postMessage(msg); });
       if (r.pages.length) { r.pages[0].used = r.used; r.pages[0].shaped = r.shaped; r.pages[0].embedded = r.embedded; }
       return r;
     },
+    /** the page count, for the jobs sent before it (each worker's, in order) @param {number} n */
+    total(n) { count = n; for (const w of workers) w.postMessage({ total: n }); },
     async close() { await Promise.all(workers.map(w => w.terminate())); },
   };
 }

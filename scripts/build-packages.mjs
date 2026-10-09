@@ -41,7 +41,8 @@ await build({ entryPoints: [path.join(root, E, 'entry.js')], bundle: true, forma
 {
   const w = fs.readFileSync(path.join(root, 'src/exporters/pdfstreamworker.js'), 'utf8')
     .replace("import { render, FontStore } from '../engine/index.js';", "import { render, FontStore, __streamPaint } from './index.js';")
-    .replace("import { createPdfStream, paintPage, paintEnv } from './pdfstream.js';", 'const { createPdfStream, paintPage, paintEnv, latin1 } = __streamPaint;')
+    .replace("import { reband, CAPPED } from '../engine/paged.js';\n", '')
+    .replace("import { createPdfStream, paintPage, paintEnv } from './pdfstream.js';", 'const { createPdfStream, paintPage, paintEnv, latin1, reband, CAPPED } = __streamPaint;')
     .replace("import { latin1 } from './pdfpaint.js';\n", '');
   if (/from '\.\.?\/(engine|pdf)/.test(w)) throw new Error('pdfstreamworker.js: its imports changed; update build-packages.mjs');
   write(`${E}/dist/pdfstreamworker.js`, w);

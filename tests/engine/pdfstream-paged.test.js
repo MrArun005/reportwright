@@ -211,6 +211,42 @@ describe('exportPdfStream', () => {
     expect((await run(2)).equals(await run(1))).toBe(true);
   }, 120000);
 
+  it('parallel: the counting pass\'s windows go to the workers as it counts; the file is the same in every mode', async () => {
+    const def = grouped(2500);
+    const bytes = async (parallel, o = {}) => { const s = sink(); const r = await exportPdfStream(def, { fontStore, now, subset, creationDate: now, id: '0123456789abcdef0123456789abcdef', window: 250, parallel, ...o }, s); expect(r.streamed).toBe(true); return s.bytes(); };
+    const one = await bytes(1);
+    // held in the workers throughout; past aheadRows (the rest laid out by a second pass from there); 'auto' that stays
+    // here (held, small), and 'auto' that starts the workers once the held pages pass holdItems
+    for (const o of [{ parallel: 2 }, { parallel: 3, aheadRows: 300 }, { parallel: 'auto' }, { parallel: 'auto', holdItems: 3000, aheadRows: 400 }]) {
+      expect((await bytes(o.parallel, o)).equals(one), JSON.stringify(o)).toBe(true);
+    }
+    // without "of M": drawn here, then (autoRows) by the workers
+    def.sections.pageFooter.items[0].value = 'Page {Globals.PageNumber}';
+    const single = await bytes(1);
+    expect((await bytes('auto', { autoRows: 600 })).equals(single)).toBe(true);
+    // not holdable (a bookmark on the table): counted first, then laid out by the workers
+    def.sections.pageFooter.items[0].value = 'Page {Globals.PageNumber} of {Globals.TotalPages}';
+    def.sections.body.items[1].bookmark = '="Ledger"';
+    expect((await bytes(3)).equals(await bytes(1))).toBe(true);
+  }, 240000);
+
+  it('parallel: an abort or the time limit ends the export and every worker', async () => {
+    const wt = process.getBuiltinModule('node:worker_threads');
+    const Real = wt.Worker, made = [], exited = [];
+    wt.Worker = class extends Real { constructor(...a) { super(...a); made.push(this); this.once('exit', () => exited.push(this)); } };
+    try {
+      const def = grouped(4000);
+      const ac = new AbortController();
+      let n = 0;
+      const s = { write: async () => { if (++n === 3) ac.abort(new Error('stop')); } };
+      await expect(exportPdfStream(def, { fontStore, now, subset, window: 250, parallel: 2, signal: ac.signal }, s)).rejects.toThrow('stop');
+      await expect(exportPdfStream(def, { fontStore, now, subset, window: 250, parallel: 2, timeoutMs: 150 }, sink())).rejects.toMatchObject({ status: 504 });
+      expect(made.length).toBeGreaterThan(0);
+      await new Promise((ok) => setTimeout(ok, 200));
+      expect(exited.length).toBe(made.length);
+    } finally { wt.Worker = Real; }
+  }, 120000);
+
   it('a report that does not page is exportPdf\'s file, byte for byte', async () => {
     const def = ledger(ledgerRows(50));
     def.sections.body.items[1].groups = [{ name: 'R', expr: '=Fields.region', newSection: true, header: [{ cells: [{ value: '=Fields.region' }] }] }];
