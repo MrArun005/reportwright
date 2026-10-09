@@ -203,7 +203,7 @@ function driverError(e, url) {
   if (TIMEOUT_CODES.has(e.code)) return fail(`The query ran longer than ${(e.limitMs || limits.ms) / 1000} s.`, 504);
   // the report author sees this message: never the connection URL or a part of it (the password)
   // cut after scrubbing (a cut first could leave half a password); a server message can repeat a long value
-  return Object.assign(new Error(scrub(String(e.message || e), url).slice(0, MAX_ERROR)), { status: e.status, code: e.code });
+  return Object.assign(new Error(scrub(String(e.message || e), url).slice(0, MAX_ERROR)), { status: e.status, code: e.code, ...(e.retryAfter && { retryAfter: e.retryAfter }) });
 }
 
 /** Drivers that hand rows over in batches (ctx.onRows): the others run runSql's way, under its caps. */
@@ -214,15 +214,15 @@ const STREAMING = new Set(['sqlite', 'postgres', 'mysql']);
  * probes, read-only), but the rows are handed over a batch at a time and the next batch is read only when the caller
  * asks (back-pressure down to the database cursor). Caps: streamLimits, and ms (the render's time left). A caller that
  * stops reading ends the query. Connections whose driver cannot stream run runSql (whole, under its caps).
- * @param {any} src @param {Record<string, any>} [params] @param {{ ms?: number }} [o]
+ * @param {any} src @param {Record<string, any>} [params] @param {{ ms?: number, signal?: AbortSignal }} [o] signal: the reader went away (E07)
  * @returns {AsyncGenerator<object[]>}
  */
-export async function* runSqlRows(src, params = {}, { ms = 0 } = {}) {
+export async function* runSqlRows(src, params = {}, { ms = 0, signal = undefined } = {}) {
   const { url, dialect, text, values, names, code, procedure } = prepareSql(src, params, {});
   if (!STREAMING.has(dialect) || procedure) { yield await runSql(src, params); return; }
   const lim = { rows: Number(streamLimits.rows), bytes: Number(streamLimits.bytes), ms: Math.max(Number(limits.ms), Number(ms) || 0) };
   const ch = channel();
-  DRIVERS[dialect](url, text, values, { ...driverContext, limits: lim, code, allowed: procsOf(src.connection), procedure: null, onRows: (rows) => ch.put(rows) })
+  DRIVERS[dialect](url, text, values, { ...driverContext, limits: lim, code, allowed: procsOf(src.connection), procedure: null, signal, onRows: (rows) => ch.put(rows) })
     .then(() => ch.end(null), (e) => ch.end(e === CANCEL ? null : driverError(Object.assign(e, { limitMs: lim.ms }), url)));
   for await (const rows of ch.iter()) yield rows.map(plainRow);
 }
@@ -454,15 +454,39 @@ async function driver(pkg, kind) {
  * (marked `wire`: the connection is gone and must not go back to the pool). `onCut` stops the query on the server.
  * @param {import('node:net').Socket} socket @param {ReturnType<typeof clock>} clk @param {() => Promise<any>} work
  */
-export async function onWire(socket, clk, work, onCut = () => {}, limits = LIMITS) {
-  let n = 0, why = null;
-  const cut = (e) => { if (!why) { why = Object.assign(e, { wire: true }); onCut(); socket.destroy(); } };
+export async function onWire(socket, clk, work, onCut = () => {}, limits = LIMITS, signal = undefined) {
+  let n = 0, why = null, stop = (_) => {};
+  const halt = new Promise((_, reject) => { stop = reject; });
+  halt.catch(() => {});
+  // the work ends when the connection is cut, even if the driver never hears of it (E07: a stalled read)
+  const cut = (e) => { if (!why) { why = Object.assign(e, { wire: true }); onCut(); socket.destroy(); stop(why); } };
+  const onAbort = () => cut(CANCEL); // the reader went away (the request closed): the connection is freed now
+  if (signal?.aborted) onAbort(); else signal?.addEventListener('abort', onAbort, { once: true });
   const data = (b) => { n += b.length; if (n > Number(limits.bytes) / 2 + 65536) cut(fail(`The query returned more than ${Math.round(limits.bytes / 1048576)} MB. Filter or group it in SQL.`, 400)); };
   socket.on('data', data);
   try {
     clk.track({ cancel: () => cut(clk.late()) });
-    return await work();
-  } catch (e) { throw why || e; } finally { socket.off('data', data); }
+    return await Promise.race([work(), halt]);
+  } catch (e) { throw why || e; } finally { socket.off('data', data); signal?.removeEventListener('abort', onAbort); }
+}
+
+/**
+ * E07: a pooled connection within PW_DB_ACQUIRE_MS (default 5 s, at most the deadline). Past it, every connection is
+ * busy: a 503 with Retry-After (not a 500 from the driver's own wait). A reader that aborts while waiting gets CANCEL.
+ * A connection that arrives after either goes straight back to the pool (back).
+ * @param {Promise<any>} p @param {ReturnType<typeof clock>} clk @param {AbortSignal|undefined} signal @param {(c: any) => void} back
+ */
+function acquire(p, clk, signal, back) {
+  const ms = Math.max(0, Math.min(clk.left(), Math.floor(envNum('PW_DB_ACQUIRE_MS', 5000))));
+  return new Promise((resolve, reject) => {
+    let done = false;
+    const end = (/** @type {any} */ e) => { if (done) return; done = true; clearTimeout(t); signal?.removeEventListener('abort', onAbort); reject(e); };
+    const onAbort = () => end(CANCEL);
+    const busy = () => (clk.left() > 0 ? Object.assign(fail(`Every database connection is busy (PW_DB_POOL_MAX is ${poolMax()}). Try again in a moment.`, 503), { retryAfter: 2 }) : clk.late());
+    const t = setTimeout(() => end(busy()), ms);
+    if (signal?.aborted) onAbort(); else signal?.addEventListener('abort', onAbort, { once: true });
+    p.then((c) => { if (done) return back(c); done = true; clearTimeout(t); signal?.removeEventListener('abort', onAbort); resolve(c); }, (e) => end(e));
+  });
 }
 
 const KILL_MS = 5000;
@@ -563,7 +587,7 @@ const DRIVERS = {
     const entry = pools.get(url);
     const clk = clock(Number(limits.ms));
     try {
-      const c = await clk.inTime(entry.pool.connect(), (x) => x.release());
+      const c = await acquire(entry.pool.connect(), clk, ctx?.signal, (x) => x.release());
       if (!c.pwQuiet) { c.pwQuiet = true; c.on('error', () => {}); } // a socket we cut must not crash the server
       let ok = false;
       try {
@@ -579,6 +603,7 @@ const DRIVERS = {
             entry.checked = Date.now();
           }
           await c.query('BEGIN READ ONLY');
+          await c.query(`SET LOCAL statement_timeout = ${Math.max(1, clk.left())}`); // the server stops the query too, not only our clock
           // extended protocol: one statement only, so "…; COMMIT; DELETE …" cannot end the read-only transaction
           await c.query({ text: `DECLARE pw_rows NO SCROLL CURSOR FOR ${text}`, values, queryMode: 'extended' });
           const out = [];
@@ -591,12 +616,12 @@ const DRIVERS = {
             if (onRows) { if (got.length) await onRows(got); } else for (const r of got) out.push(r);
             if (got.length < 500) return out;
           }
-        }, () => killPostgres(entry.pg, url, c.processID), limits);
+        }, () => killPostgres(entry.pg, url, c.processID), limits, ctx?.signal);
         ok = true;
         return rows;
       } finally {
         if (ok) await c.query('ROLLBACK').then(() => c.release(), () => c.release(true));
-        else { killPostgres(entry.pg, url, c.processID); c.release(true); } // any failure: the connection is not reused
+        else { c.release(true); killPostgres(entry.pg, url, c.processID); } // any failure: the connection is not reused
       }
     } finally { clk.stop(); }
   },
@@ -616,7 +641,7 @@ const DRIVERS = {
     const entry = pools.get(url);
     const clk = clock(Number(limits.ms));
     try {
-      const c = await clk.inTime(entry.pool.getConnection(), (x) => x.release());
+      const c = await acquire(entry.pool.getConnection(), clk, ctx?.signal, (x) => x.release());
       if (!c.connection.pwQuiet) { c.connection.pwQuiet = true; c.connection.on('error', () => {}); } // a socket we cut must not crash the server
       const thread = c.connection.threadId;
       let ok = false;
@@ -650,7 +675,7 @@ const DRIVERS = {
           const out = Array.isArray(res[0]) ? res[0] : res; // CALL: the procedure's first result set
           for (const r of out) take(r);
           return out;
-        }, () => killMysql(entry.mysql, url, thread), limits);
+        }, () => killMysql(entry.mysql, url, thread), limits, ctx?.signal);
         ok = true;
         return rows;
       } finally {

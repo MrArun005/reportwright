@@ -183,7 +183,7 @@ async function streamTo(d, format, def, renderOpts, opt) {
   /** @type {any} */
   let plan;
   // the caps are the server's, never the request's (the same for every streaming format)
-  const caps = { sqlRows: (src, p) => runSqlRows(src, p, { ms: Math.max(0, renderOpts.deadline - Date.now()) }), sorter: spillSorter({ maxMB: cnum('PW_SPILL_MAX_MB', 2048, { min: 1 }), totalMB: cnum('PW_SPILL_TOTAL_MB', 8192, { min: 1 }), staleMs: 2 * renderTimeoutMs() + 60000 }),
+  const caps = { sqlRows: (src, p, o) => runSqlRows(src, p, { ms: Math.max(0, renderOpts.deadline - Date.now()), signal: o?.signal }), sorter: spillSorter({ maxMB: cnum('PW_SPILL_MAX_MB', 2048, { min: 1 }), totalMB: cnum('PW_SPILL_TOTAL_MB', 8192, { min: 1 }), staleMs: 2 * renderTimeoutMs() + 60000 }),
     maxRows: Number(streamLimits.rows), maxJsonWholeBytes: fetchMaxBytes() };
   try {
     // pdf: the page layout runs window by window over the same rows (engine/paged.js), with render()'s options
