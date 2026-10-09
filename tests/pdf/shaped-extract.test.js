@@ -85,9 +85,12 @@ describe('extractText: ActualText, and codes with no Unicode', () => {
     expect((await loadPdf(type0('BT /F1 12 Tf 10 10 Td /Span /P0 BDC <0001> Tj EMC ET'))).page(0).extractText()).toBe('Named');
   });
 
-  it('a code with no ToUnicode entry, encoding or glyph name reads as U+FFFD; one mapped to nothing reads as nothing', async () => {
-    // the beta.0 report: a Chrome PDF's minus sign had no mapping, so −1,370.00 read as 1,370.00
-    expect((await loadPdf(type0('BT /F1 12 Tf 10 10 Td <000300010002> Tj ET'))).page(0).extractText()).toBe('�A');
+  it('a code the font has no mapping for at all reads as U+FFFD; one its ToUnicode skips or maps to nothing reads as nothing', async () => {
+    // a ToUnicode that skips 0003: nothing, as pdftotext (beta.1 read U+FFFD)
+    expect((await loadPdf(type0('BT /F1 12 Tf 10 10 Td <000300010002> Tj ET'))).page(0).extractText()).toBe('A');
+    // no ToUnicode and no font program: U+FFFD for every code (the same length: the xref holds)
+    const bare = Buffer.from(type0('BT /F1 12 Tf 10 10 Td <000300010002> Tj ET')).toString('latin1').replace(/ \/ToUnicode 7 0 R/, (m) => ' '.repeat(m.length));
+    expect((await loadPdf(new Uint8Array(Buffer.from(bare, 'latin1')))).page(0).extractText()).toBe('���');
     const simple = (enc) => rawPdf([
       '<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
       '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
@@ -119,6 +122,15 @@ describe('extractText: spaces between objects, order along the line, rotated tex
 });
 
 describe('extractText: a Type0 font with no ToUnicode', () => {
+  it('the beta.0 Chrome ledger: a minus sign its ToUnicode skips reads from the cmap, so −1,370.00 stays negative', async () => {
+    const out = await toBytes(async (pdf) => {
+      pdf.addPage().text('Revenue −1,370.00', { x: 20, y: 20, size: 12, font: await pdf.embedFont(font('Inter-Regular.ttf'), { subset: false }) });
+    }, { creationDate: new Date('2026-01-01'), compress: false });
+    const s0 = Buffer.from(out).toString('latin1'), s = s0.replace(/<[0-9a-f]{4}> <2212>/, (m) => ' '.repeat(m.length)); // the minus's entry gone, same length
+    expect(s).not.toBe(s0);
+    expect((await loadPdf(new Uint8Array(Buffer.from(s, 'latin1')))).page(0).extractText()).toBe('Revenue −1,370.00');
+  });
+
   it('reads its embedded TrueType cmap backwards (glyph → character), as MuPDF and PDFBox do, instead of nothing', async () => {
     const out = await toBytes(async (pdf) => {
       pdf.addPage().text('Revenue 1,370.00', { x: 20, y: 20, size: 12, font: await pdf.embedFont(font('Inter-Regular.ttf'), { subset: false }) });
