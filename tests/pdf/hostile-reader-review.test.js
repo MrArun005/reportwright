@@ -82,9 +82,9 @@ describe('R6: names from the file never reach Object.prototype through a constan
     const d = await loadPdf(font('<< /Type /Font /Subtype /Type1 /BaseFont /__proto__ /Encoding /constructor >>', 'BT /F1 12 Tf 10 10 Td (AB) Tj ET'));
     expect(d.page(0).extractText()).toBe('AB');
   });
-  it('/Differences glyph names toString and valueOf: no text, not a function', async () => {
+  it('/Differences glyph names toString and valueOf: no Unicode (U+FFFD), not a function', async () => {
     const d = await loadPdf(font('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding << /Differences [65 /toString /valueOf] >> >>', 'BT /F1 12 Tf 10 10 Td (ABC) Tj ET'));
-    expect(d.page(0).extractText()).toBe('C');
+    expect(d.page(0).extractText()).toBe('\ufffd\ufffdC');
   });
   it('a field /FT /constructor is unknown; a /DA font /constructor fills in Helvetica', async () => {
     const form = (ft, da) => rawPdf(['<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R] >> >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',

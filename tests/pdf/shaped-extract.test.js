@@ -84,4 +84,18 @@ describe('extractText: ActualText, and codes with no Unicode', () => {
     expect(await t('BT /F1 12 Tf 10 10 Td /Span << /ActualText (Hi) >> BDC ET')).toBe(''); // no glyphs, nothing
     expect((await loadPdf(type0('BT /F1 12 Tf 10 10 Td /Span /P0 BDC <0001> Tj EMC ET'))).page(0).extractText()).toBe('Named');
   });
+
+  it('a code with no ToUnicode entry, encoding or glyph name reads as U+FFFD; one mapped to nothing reads as nothing', async () => {
+    // the beta.0 report: a Chrome PDF's minus sign had no mapping, so −1,370.00 read as 1,370.00
+    expect((await loadPdf(type0('BT /F1 12 Tf 10 10 Td <000300010002> Tj ET'))).page(0).extractText()).toBe('�A');
+    const simple = (enc) => rawPdf([
+      '<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+      ['<< /Length 38 >>', 'BT /F1 12 Tf 10 10 Td <41818243> Tj ET'],
+      `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding ${enc} >>`,
+    ]);
+    // 0x81 has no character in WinAnsi; 0x82 is a glyph named g123 (no Unicode) or quotesinglbase
+    expect((await loadPdf(simple('<< /BaseEncoding /WinAnsiEncoding /Differences [130 /g123] >>'))).page(0).extractText()).toBe('A��C');
+    expect((await loadPdf(simple('/WinAnsiEncoding'))).page(0).extractText()).toBe('A�‚C');
+  });
 });
