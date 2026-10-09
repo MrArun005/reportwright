@@ -192,6 +192,8 @@ def check(job, size, out, fx, spec, h):
             t = {'pageNofM': f'Page {n} of {n}' in re.sub(r'\s+', ' ', last), 'grandTotal': 'Grand total' in last,
                  'sum': any(abs(x - tot['sum']) < 0.011 for x in nums)}
             t['ok'] = all(t.values())
+            if not t['ok']:
+                t['lastPage'] = re.sub(r'\s+', ' ', a)[-200:]  # what the check saw, to tell a harness bug from the library
         elif job in ('invoice', 'invoice-warm', 'pdfa'):
             a, b = text_of(pdf)
             t['ok'] = all(norm(s) in norm(a) or norm(s) in norm(b) for s in ['INVOICE', '37,661.40', 'Contoso Retail plc'])

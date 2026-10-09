@@ -57,7 +57,7 @@ async function engine() {
       for (let p = 0; p < pages; p++) for (let k = 0; k < s.linesPerPage; k++) data.push({ p, t: pool[(p * s.linesPerPage + k) % pool.length] });
       return stream(doc('Plain', [{ type: 'table', name: 'Lines', dataSet: 'L', x: 0, y: 0, w: BODY_W, h: s.leading, widowControl: false, columns: [{ width: BODY_W }],
         groups: [{ name: 'Page', expr: '=Fields.p', pageBreak: 'between' }],
-        detail: [{ height: s.leading, style: { fontSize: s.size, padding: 0, lineHeight: 1 }, cells: [{ value: '=Fields.t' }] }] }], {
+        detail: [{ height: s.leading, canGrow: false, style: { fontSize: s.size, padding: 0 }, cells: [{ value: '=Fields.t' }] }] }], {
         dataSources: [{ name: 'src', type: 'json', data }], dataSets: [{ name: 'L', source: 'src', fields: [{ name: 'p', type: 'number' }, { name: 't', type: 'string' }] }] }), out, data.length);
     },
     async report({ rows }, out) {

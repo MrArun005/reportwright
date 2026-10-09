@@ -279,7 +279,7 @@ sealed class QuestLib : Lib
             {
                 for (int pg = 0; pg < c.Pages; pg++)
                 {
-                    for (int k = 0; k < lpp; k++) col.Item().Height((float)D(s["leading"])).Text(c.Pool[(pg * lpp + k) % c.Pool.Count]).FontSize((float)D(s["size"]));
+                    for (int k = 0; k < lpp; k++) col.Item().Height((float)D(s["leading"])).Text(c.Pool[(pg * lpp + k) % c.Pool.Count]).FontSize((float)D(s["size"])).LineHeight(1); // the row is the leading: the line is drawn at it, as the canvas writers draw it
                     if (pg < c.Pages - 1) col.Item().PageBreak();
                 }
             });

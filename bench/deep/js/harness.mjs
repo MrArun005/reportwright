@@ -104,7 +104,7 @@ async function jspdf() {
       width: (s, size, k) => { use(k, size); return doc.getTextWidth(s); },
       rect(x, y, w, h, c) { doc.setFillColor(c); doc.rect(x, y, w, h, 'F'); },
       hline(x1, x2, y, w, c) { doc.setDrawColor(c); doc.setLineWidth(w); doc.line(x1, y, x2, y); },
-      image: async (file) => { const data = `data:image/${file.endsWith('.png') ? 'png' : 'jpeg'};base64,${fs.readFileSync(file).toString('base64')}`; return { data, fmt: file.endsWith('.png') ? 'PNG' : 'JPEG', ...doc.getImageProperties(data) }; },
+      image: async (file) => { const data = `data:image/${file.endsWith('.png') ? 'png' : 'jpeg'};base64,${fs.readFileSync(file).toString('base64')}`; return { ...doc.getImageProperties(data), data, fmt: file.endsWith('.png') ? 'PNG' : 'JPEG' }; }, // its properties carry a data field of their own
       draw(img, x, y, w, h) { doc.addImage(img.data, img.fmt, x, y, w, h, undefined, 'FAST'); },
       async end() { fs.writeFileSync(out, Buffer.from(doc.output('arraybuffer'))); },
     };
@@ -202,7 +202,8 @@ async function reactpdf() {
     async report({ rows }, out) {
       const groups = groupsOf(rows);
       const cells = (vals, bold) => R.cols.map((c, i) => txt(vals[i], c.w, c.right, bold));
-      const total = (label, g, key) => row(R.rowH, cells([label, '', String(g.count), '', '', money(g.sum), ''], true), { borderBottomWidth: 0 }, { key });
+      // the label spans the first two columns, as in the other writers (one narrow column would wrap it)
+      const total = (label, g, key) => row(R.rowH, [txt(label, R.cols[0].w + R.cols[1].w, false, true), ...cells(['', '', String(g.count), '', '', money(g.sum), ''], true).slice(2)], { borderBottomWidth: 0 }, { key });
       const body = [];
       let count = 0, sum = 0;
       for (const g of groups) {
@@ -243,13 +244,14 @@ async function reactpdf() {
 async function pdfjs() {
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const extract = async (f) => {
-    const doc = await getDocument({ data: new Uint8Array(fs.readFileSync(f)), password: '', isEvalSupported: false, verbosity: 0 }).promise;
+    const task = getDocument({ data: new Uint8Array(fs.readFileSync(f)), password: '', isEvalSupported: false, verbosity: 0 });
+    const doc = await task.promise;
     const out = [];
     for (let i = 1; i <= doc.numPages; i++) {
       const tc = await (await doc.getPage(i)).getTextContent();
       out.push(tc.items.map(it => it.str + (it.hasEOL ? '\n' : ' ')).join(''));
     }
-    await doc.destroy();
+    await task.destroy();
     return out.join('\n');
   };
   return { version: ver('pdfjs-dist'), extract };
