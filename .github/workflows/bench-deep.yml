@@ -20,6 +20,12 @@ on:
       runs:
         description: Measured runs a cell, after one discarded warm-up (100k rows and the 1,200-page read use at most 3; million uses 1)
         default: "5"
+      engine_ref:
+        description: "Git ref of this repo to build @reportwright/engine (+fonts) from; empty = the npm version in bench/deep/ours"
+        default: ""
+      pdf_ref:
+        description: "Git ref of this repo to build @reportwright/pdf from (packages/pdf); empty = npm. Set it with engine_ref when the engine pins an unpublished pdf"
+        default: ""
 concurrency:
   group: bench-deep
   cancel-in-progress: false
@@ -35,12 +41,16 @@ jobs:
     timeout-minutes: 15
     outputs:
       langs: ${{ steps.plan.outputs.langs }}
+      engine_ref: ${{ steps.plan.outputs.engine_ref }}
+      pdf_ref: ${{ steps.plan.outputs.pdf_ref }}
     steps:
       - uses: actions/checkout@v4
       - name: Plan the language jobs
         id: plan
         env:
           LANGS: ${{ inputs.langs || 'all' }}
+          ENGINE_REF: ${{ inputs.engine_ref }}
+          PDF_REF: ${{ inputs.pdf_ref }}
         run: |
           python3 - <<'EOF' >> "$GITHUB_OUTPUT"
           import json, os
@@ -54,6 +64,14 @@ jobs:
               c = json.load(open('bench/deep/contestants.json'))['langs']
               want = [l for l in want if any(v.get('million') for v in c[l]['libs'].values())]
           print('langs=' + json.dumps(want))
+          refs = {'engine_ref': os.environ.get('ENGINE_REF', ''), 'pdf_ref': os.environ.get('PDF_REF', '')}
+          if os.environ['GITHUB_EVENT_NAME'] == 'push' and os.path.exists('bench/deep/.push-refs'):  # branch code on a push (dispatch only works on main)
+              for line in open('bench/deep/.push-refs'):
+                  k, _, v = line.strip().partition('=')
+                  if k in refs:
+                      refs[k] = v.strip()
+          for k, v in refs.items():
+              print(f'{k}={v}')
           EOF
       - uses: actions/setup-python@v5
         with:
@@ -123,6 +141,39 @@ jobs:
         if: matrix.lang == 'ours'
         continue-on-error: true # a broken build still reaches the driver, which records the contestant as not started
         run: npm ci --prefix bench/deep/ours --no-audit --no-fund
+      - name: ours from branch code (engine_ref / pdf_ref)
+        if: matrix.lang == 'ours' && (needs.fixtures.outputs.engine_ref != '' || needs.fixtures.outputs.pdf_ref != '')
+        env:
+          ENGINE_REF: ${{ needs.fixtures.outputs.engine_ref }}
+          PDF_REF: ${{ needs.fixtures.outputs.pdf_ref }}
+        run: |
+          set -euo pipefail
+          SIDE=/tmp/side; mkdir -p "$SIDE/tgz"; SRC=()
+          get() { git clone -q --no-checkout "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" "$SIDE/$1" && git -C "$SIDE/$1" checkout -q "$2"; }
+          if [ -n "$PDF_REF" ]; then
+            get pdf "$PDF_REF"
+            (cd "$SIDE/pdf" && (npm ci --no-audit --no-fund --ignore-scripts || npm install --no-audit --no-fund --ignore-scripts) && node packages/pdf/build.mjs && npm pack ./packages/pdf --pack-destination "$SIDE/tgz")
+            SRC+=("pdf $PDF_REF@$(git -C "$SIDE/pdf" rev-parse --short=9 HEAD)")
+          fi
+          if [ -n "$ENGINE_REF" ]; then
+            get engine "$ENGINE_REF"
+            cd "$SIDE/engine"
+            PDF_TGZ=$(ls "$SIDE"/tgz/reportwright-pdf-*.tgz 2>/dev/null || true)
+            if [ -n "$PDF_TGZ" ]; then  # the engine builds and runs against the pdf_ref library, not npm
+              npm pkg set "dependencies.@reportwright/pdf=file:$PDF_TGZ"
+              npm install --no-audit --no-fund
+            else
+              npm ci --no-audit --no-fund
+            fi
+            npm run build:packages
+            npm pack ./packages/engine ./packages/fonts --pack-destination "$SIDE/tgz"
+            SRC+=("engine $ENGINE_REF@$(git -C "$SIDE/engine" rev-parse --short=9 HEAD)")
+            cd "$GITHUB_WORKSPACE"
+          fi
+          ls -la "$SIDE/tgz"
+          npm install --prefix bench/deep/ours --no-audit --no-fund "$SIDE"/tgz/*.tgz
+          npm ls --prefix bench/deep/ours @reportwright/engine @reportwright/pdf || true
+          (IFS=,; echo "BENCH_SOURCE=${SRC[*]}") >> "$GITHUB_ENV"
       - uses: actions/cache@v4
         if: matrix.lang == 'js'
         with:

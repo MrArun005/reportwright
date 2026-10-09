@@ -321,7 +321,8 @@ def meta(a, langs):
     return {'type': 'meta', 'lang': a.lang, 'tier': a.tier, 'runs': a.runs, 'date': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
             'cpu': cpu.group(1).strip() if cpu else platform.processor(), 'cores': os.cpu_count(),
             'ram_mb': int(mem.group(1)) // 1024 if mem else None, 'os': platform.platform(), 'cap_mb': a.cap_mb,
-            'runner': os.environ.get('RUNNER_NAME'), 'tools': tools}
+            'runner': os.environ.get('RUNNER_NAME'), 'tools': tools,
+            **({'source': os.environ['BENCH_SOURCE']} if os.environ.get('BENCH_SOURCE') else {})}  # branch builds: 'engine <ref>@<sha>,pdf <ref>@<sha>'
 
 
 def main():

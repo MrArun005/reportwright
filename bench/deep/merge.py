@@ -76,7 +76,7 @@ def hw_line(meta, langs, label):
     for m in meta:
         if m['lang'] in langs:
             hw[f'{m["cpu"]} × {m["cores"]} vCPU, {m["ram_mb"] / 1024:.1f} GB RAM'].append(m['lang'])
-    return label + ', ' + '; '.join(f'{k} ({", ".join(sorted(v))})' for k, v in sorted(hw.items()))
+    return label + ', ' + '; '.join(f'{k} ({", ".join(sorted(v))})' for k, v in sorted(hw.items())) + ''.join(f'; {m["lang"]} built from {m["source"]}' for m in meta if m['lang'] in langs and m.get('source'))
 
 
 def build(meta, cells, contestants, label):
