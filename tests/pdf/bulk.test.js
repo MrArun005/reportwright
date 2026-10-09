@@ -1,11 +1,20 @@
 // bulk(): named tasks over many files in worker threads; one bad file never stops the batch.
 import { describe, it, expect } from 'vitest';
+import wt from 'node:worker_threads';
+import zlib from 'node:zlib';
 import { bulk, BULK_TASKS, toBytes, loadPdf } from '../../packages/pdf/src/index.js';
 
 const doc = (label, pages = 2) => toBytes(async (pdf) => {
   const f = pdf.standardFont('Helvetica');
   for (let p = 0; p < pages; p++) { const pg = pdf.addPage(); pg.text(`${label} page ${p + 1}`, { x: 40, y: 40, font: f, size: 12 }); await pg.end(); }
-});
+}, { creationDate: new Date(0), id: '00112233445566778899aabbccddeeff' });
+/** every Worker made while fn runs, and the ones that exited */
+const watchWorkers = async (fn) => {
+  const Real = wt.Worker, made = [], exited = [];
+  wt.Worker = class extends Real { constructor(...a) { super(...a); made.push(this); this.once('exit', () => exited.push(this)); } };
+  try { await fn(); } finally { wt.Worker = Real; }
+  return { made, exited };
+};
 const junk = new Uint8Array([1, 2, 3]);
 
 describe('bulk', () => {
@@ -49,5 +58,48 @@ describe('bulk', () => {
     const r = await bulk([big, small, small], 'extractText', { workers: 2, memoryMb: 16 });
     expect(r[0].ok).toBe(false); expect(r[0].error.code).toBe('E_WORKER');
     expect(r[1].value).toBe('After page 1\fAfter page 2'); expect(r[2].ok).toBe(true);
+  }, 60000);
+  it('gives what a loop in this thread gives, for every task and worker count (small files sent several at a time)', async () => {
+    const files = []; for (let i = 0; i < 30; i++) files.push(await doc(`F${i}`, 1 + (i % 3)));
+    const save = { creationDate: new Date(0) };
+    for (const [task, inputs, o] of [['extractText', files, {}], ['split', files, { save }], ['merge', files.map((f, i) => [f, files[(i + 7) % 30]]), { save }]]) {
+      const one = await bulk(inputs, task, { workers: 1, ...o });
+      for (const workers of [2, 3]) expect(await bulk(inputs, task, { workers, ...o }), `${task} ${workers}`).toEqual(one);
+    }
+    // encrypted files differ by their random IVs: the same text once opened
+    const enc = await bulk(files, 'encrypt', { workers: 3, encrypt: { userPassword: 'u', ownerPassword: 'o' } });
+    const text = await bulk(files, 'extractText', { workers: 1 });
+    for (let i = 0; i < files.length; i++) expect((await loadPdf(enc[i].value, { password: 'u' })).extractText()).toBe(text[i].value);
+  }, 60000);
+  it('a worker that dies fails only the item it was on; the items sent behind it go to a new worker', async () => {
+    const parts = ['BT /F1 6 Tf\n']; for (let i = 0; i < 400_000; i++) parts.push(`1 0 0 1 ${20 + (i % 60) * 9} 800 Tm (a) Tj\n`); parts.push('ET\n');
+    const c = zlib.deflateSync(new TextEncoder().encode(parts.join('')), { level: 9 }); // small on the way: items go behind it
+    const objs = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>', null, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];
+    const enc = (t) => new TextEncoder().encode(t), chunks = [enc('%PDF-1.7\n')]; let off = chunks[0].length; const xref = [];
+    objs.forEach((o, k) => { xref.push(off); const b = o ? enc(`${k + 1} 0 obj\n${o}\nendobj\n`) : new Uint8Array([...enc(`${k + 1} 0 obj\n<< /Length ${c.length} /Filter /FlateDecode >>\nstream\n`), ...c, ...enc('\nendstream\nendobj\n')]); chunks.push(b); off += b.length; });
+    chunks.push(enc(`xref\n0 6\n0000000000 65535 f \n${xref.map((x) => String(x).padStart(10, '0') + ' 00000 n \n').join('')}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${off}\n%%EOF\n`));
+    const big = new Uint8Array(chunks.reduce((n, x) => n + x.length, 0)); { let p = 0; for (const x of chunks) { big.set(x, p); p += x.length; } }
+    // the big file's worker has small ones queued behind it (several are sent at once): none of them is lost
+    const small = await doc('S');
+    const inputs = [small, big, small, small, small, junk, small, small, small, small];
+    const r = await bulk(inputs, 'extractText', { workers: 1 + 1, memoryMb: 16 });
+    expect(r.map((x) => x.ok)).toEqual([true, false, true, true, true, false, true, true, true, true]);
+    expect(r[1].error.code).toBe('E_WORKER'); expect(r[5].error.code).toBe('E_MALFORMED');
+  }, 60000);
+  it('keeps its workers warm between calls, and ends them on an abort or a timeout', async () => {
+    const files = []; for (let i = 0; i < 40; i++) files.push(await doc(`W${i}`, 3));
+    const o = { workers: 2, encrypt: { userPassword: 'u', ownerPassword: 'o' } };
+    await bulk(files, 'encrypt', o);
+    const again = await watchWorkers(() => bulk(files, 'encrypt', o));
+    expect(again.made.length).toBe(0); // the first call's
+    const ac = new AbortController();
+    const aborted = await watchWorkers(async () => {
+      let n = 0;
+      await expect(bulk(files, 'encrypt', { ...o, memoryMb: 64, signal: ac.signal, onResult: () => { if (++n === 3) ac.abort(new Error('stop')); } })).rejects.toThrow('stop');
+      await expect(bulk(files, 'encrypt', { ...o, memoryMb: 64, signal: AbortSignal.timeout(5) })).rejects.toMatchObject({ name: 'TimeoutError' });
+    });
+    await new Promise((ok) => setTimeout(ok, 200));
+    expect(aborted.made.length).toBeGreaterThan(0);
+    expect(aborted.exited.length).toBe(aborted.made.length); // none kept: ended
   }, 60000);
 });
