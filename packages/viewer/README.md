@@ -138,11 +138,11 @@ Types are included (`ViewerOptions`, `DesignerOptions`, …). Framework wrappers
 
 ### Viewer toolbar: `toolbar.hide`
 
-`toolbar: { hide: [...], add: [...] }` hides built-in items. A group key hides the whole group; an item id hides that one item. Hiding every export format also hides the Export menu and its options gear.
+`toolbar: { hide: [...], add: [...] }` hides built-in items. A group key hides the whole group; an item id hides that one item. Hiding every export format also hides the Export menu and its Export options button.
 
 | Key | Hides |
 |---|---|
-| `export` | the Export menu: every format and the options gear (Print stays) |
+| `export` | the Export menu: every format and the Export options button (Print stays) |
 | `pdf`, `excel`, `word`, `powerpoint`, `html`, `csv`, `json` | that one export format |
 | `print` | the Print button |
 | `search` | the search box and its match controls |
@@ -151,9 +151,17 @@ Types are included (`ViewerOptions`, `DesignerOptions`, …). Framework wrappers
 | `sidebar` | the page thumbnails and the document map buttons |
 | `parameters` | the Parameters button |
 | `run`, `viewMode`, `fullScreen`, `stats` | those single items (use their id) |
-| `exportOptions` | the options gear (the formats stay) |
+| `exportOptions` | the Export options button (the formats stay) |
 
 Any other key is taken as an item id. Unknown keys hide nothing.
+
+### Render warnings: `showWarnings`
+
+`showWarnings: true` shows the render's warnings (a data value that does not read as a number, an unknown field, content cut off at the page edge…) under the pages, as a collapsed list headed "8 warnings" or "1 warning". The default is `false`: readers of a finished report do not see them. The designer's Preview always shows them.
+
+```js
+mountViewer('#report', { definition, data, fontsUrl: '/fonts/', showWarnings: true });
+```
 
 ### Controlling a mounted viewer: `ViewerHandle`
 

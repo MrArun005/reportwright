@@ -9,6 +9,7 @@ import { useRef, useState } from 'react';
 import { useDesigner, sectionList, secOf, reorderItem, moveOutOfParent, moveItemTo, findItem, NESTING } from './store.js';
 import { ITEMS } from '@/engine/items/index.js';
 import { t } from '@/i18n/index.js';
+import { InfoTip } from './ui.jsx';
 
 const MIME = 'application/x-pw-outline';
 
@@ -126,13 +127,13 @@ export default function Outline() {
       <li key={it.id} role="none">
         <div className={`trow outline-row${chosen.has(it.id) ? ' sel' : ''}${mark}`} style={{ paddingInlineStart: depth * 14 }} data-outline={it.name} data-outline-id={it.id} {...dragProps(it, i, parent, section)}>
           {!readOnly && <span className="grip" aria-hidden="true">⠿</span>}
-          <button type="button" data-opt="" className="linklike nm" onClick={(e) => pick(e, it.id)} onKeyDown={(e) => onKey(e, it, list, i, parent)} aria-pressed={chosen.has(it.id)} aria-describedby={readOnly ? 'outline-nav' : 'outline-nav outline-keys'} {...roving(it.id)}>{it.name}</button>
-          <span className="ty">{T(`item_${it.type}`) === `item_${it.type}` ? ITEMS[it.type]?.label || it.type : T(`item_${it.type}`)}</span>
+          <button type="button" data-opt="" className="linklike nm" onClick={(e) => pick(e, it.id)} onKeyDown={(e) => onKey(e, it, list, i, parent)} aria-pressed={chosen.has(it.id)} aria-describedby={readOnly ? 'outline-nav' : 'outline-nav outline-keys'} title={it.name} {...roving(it.id)}>{it.name}</button>
+          <span className="outline-meta"><span className="ty">{T(`item_${it.type}`) === `item_${it.type}` ? ITEMS[it.type]?.label || it.type : T(`item_${it.type}`)}</span>
           {!readOnly && <span className="act" style={{ display: 'inline-flex', gap: 2 }}>
             <button type="button" className="btn sm ghost icon" tabIndex={-1} disabled={i === 0} onClick={() => reorderItem(it.id, -1)} title={T('outlineBackward')} aria-label={`${T('outlineBackward')}: ${it.name}`}>↑</button>
             <button type="button" className="btn sm ghost icon" tabIndex={-1} disabled={i === list.length - 1} onClick={() => reorderItem(it.id, 1)} title={T('outlineForward')} aria-label={`${T('outlineForward')}: ${it.name}`}>↓</button>
             {parent && <button type="button" className="btn sm ghost icon" tabIndex={-1} onClick={() => moveOutOfParent(it.id)} title={T('outlineMoveOut', { name: parent.name })} aria-label={`${T('outlineMoveOut', { name: parent.name })}: ${it.name}`}>⇱</button>}
-          </span>}
+          </span>}</span>
         </div>
         {NESTING.has(it.type) && (it.items || []).length > 0 && <ul className="tree" role="none">{rows(it.items, it, depth + 1, section)}</ul>}
       </li>
@@ -140,7 +141,7 @@ export default function Outline() {
   });
   return (
     <div className="pane" data-testid="outline">
-      <h4>{T('outline')}</h4>
+      <h4><span>{T('outline')} <InfoTip text={readOnly ? T('outlineHint') : `${T('outlineHint')} ${T('outlineKeys')}`} /></span></h4>
       <div className="pane-body" ref={body}>
         <div role="group" aria-label={T('outline')} onKeyDown={nav}>
         {sectionList(def).map(({ key, label }) => {
@@ -154,8 +155,7 @@ export default function Outline() {
         })}
         </div>
         <div className="sr-only" id="outline-nav">{T('b9_outlineKeys')}</div>
-        <div className="hint">{T('outlineHint')}</div>
-        {!readOnly && <div className="hint" id="outline-keys">{T('outlineKeys')}</div>}
+        {!readOnly && <div className="sr-only" id="outline-keys">{T('outlineKeys')}</div>}
         <div className="sr-only" role="status" aria-live="polite">{said}</div>
       </div>
     </div>

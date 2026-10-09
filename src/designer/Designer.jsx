@@ -22,7 +22,7 @@ import { PartsPanel, LayersPanel } from './Reuse.jsx';
 import PivotWizard, { InstantVisuals } from './PivotWizard.jsx';
 import { t, dirOf, pickLang } from '@/i18n/index.js';
 import { Icon } from '@/viewer/icons.jsx';
-import { sectionList, findItem, bodyWidth } from './store.js';
+import { sectionList, findItem, bodyWidth, nudgeStep } from './store.js';
 import { resolvePage } from '@/engine/units.js';
 import { readDraft, writeDraft, clearDraft, clearDrafts, mergeDraft, staleDraft } from './draft.js';
 
@@ -161,6 +161,7 @@ function StatusBar({ T, zoom, setZoom }) {
         <button type="button" className="btn sm icon ghost" title={T('zoomIn')} aria-label={T('zoomIn')} onClick={() => step(1)} disabled={zoom !== 'fit' && zoom >= ZOOMS[ZOOMS.length - 1]}><Icon name="zoomIn" /></button>
       </span>
       <span className="dstatus-sel" data-testid="status-selection"><i aria-hidden="true" />{what}</span>
+      <span className="hint dstatus-hint" title={T('canvasHint')}>{T('canvasHint')}</span>
       <span className="dstatus-page">{page}</span>
     </div>
   );
@@ -293,7 +294,7 @@ function isTyping(e) {
 
 const SHORTCUTS = [
   ['⌘/Ctrl S', 'sc_save'], ['⌘/Ctrl Z', 'sc_undo'], ['⇧⌘/Ctrl Z, ⌘/Ctrl Y', 'sc_redo'], ['⌘/Ctrl C / V', 'sc_copy'],
-  ['⌘/Ctrl D', 'sc_duplicate'], ['Delete / Backspace', 'sc_delete'], ['← ↑ → ↓', 'sc_nudge'], ['⇧ ← ↑ → ↓', 'sc_nudge4'],
+  ['⌘/Ctrl D', 'sc_duplicate'], ['Delete / Backspace', 'sc_delete'], ['← ↑ → ↓', 'c132_nudge1'], ['⇧ ← ↑ → ↓', 'c132_nudge10'],
   ['⇧ Click', 'sc_toggle'], ['Drag', 'sc_marquee'], ['Alt + Drag', 'sc_guides'],
   ['Esc', 'sc_clear'], ['?', 'sc_help'],
 ];
@@ -419,7 +420,7 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
       const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
       if (arrows[e.key] && st().sel.kind === 'items') {
         e.preventDefault();
-        const step = st().cells ? st().cellSize : e.shiftKey ? st().grid * 4 : 1; // cell mode: a cell at a time
+        const step = nudgeStep(st(), e.shiftKey);
         const [dx, dy] = arrows[e.key];
         const s = st();
         s.lastKey = null;
@@ -546,7 +547,7 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
       {pivotWizard && <PivotWizard />}
       {instantVisuals && <InstantVisuals />}
       {tab === 'preview' ? (
-        <main className="dpreview"><ReportViewer definition={def} reportId={id} compact lang={lang} /></main>
+        <main className="dpreview"><ReportViewer definition={def} reportId={id} compact lang={lang} showWarnings /></main>
       ) : (
         <div className="dmain" data-left={hasLeft && showLeft ? 'open' : 'closed'} data-right={hasRight && showRight ? 'open' : 'closed'}
           style={{ gridTemplateColumns: `${hasLeft && showLeft ? 'var(--left-w)' : '0px'} minmax(0, 1fr) ${hasRight && showRight ? 'var(--right-w)' : '0px'}` }}>
@@ -567,7 +568,6 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
               </label>
               <AlignBar T={T} />
               <IssuesButton T={T} />
-              <span className="hint cbar-hint">{T('canvasHint')}</span>
             </div>
             <Canvas />
             <StatusBar T={T} zoom={zoom} setZoom={(z) => { st().setUi({ zoom: z }); keepZoom(z); }} />

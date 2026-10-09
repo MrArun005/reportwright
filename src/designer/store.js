@@ -777,6 +777,8 @@ export function alignItems(ids, how, toPage = false) {
 }
 
 export const round = (v) => Math.round(v * 100) / 100;
+/** The arrow keys' step in pt: 1, or one grid step with Snap to grid, or one cell in cell mode; Shift: ten of them. */
+export const nudgeStep = ({ snap, grid, cells, cellSize }, shift) => (cells ? cellSize : snap ? grid : 1) * (shift ? 10 : 1);
 export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 /* ---- cell-based design: whole cells, no overlap (stored as plain x/y/w/h) ---- */

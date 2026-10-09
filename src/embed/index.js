@@ -52,6 +52,7 @@ export function withData(def, data) {
  *   onDrill?: (report: string, params: Record<string, unknown>) => void,
  *   reports?: Record<string, object>, fonts?: Record<string, string>, customFonts?: object[], uiFontCss?: string, snapshot?: Record<string, any>, title?: string,
  *   toolbar?: { hide?: string[], add?: ToolbarButton[] }, viewMode?: 'single' | 'continuous' | 'galley', nonce?: string,
+ *   showWarnings?: boolean,
  *   onReady?: (error: Error | null) => void, allowHosts?: string[], unsafeFetch?: boolean, fetch?: typeof fetch }} ViewerOptions
  * @typedef {'ready' | 'error' | 'page' | 'parameters'} ViewerEvent
  * @typedef {'pdf' | 'xlsx' | 'docx' | 'pptx' | 'html' | 'csv' | 'json' | 'excel' | 'word' | 'powerpoint'} ViewerFormat
@@ -101,7 +102,7 @@ export function mountViewer(target, opts = {}) {
   let wake = () => {};
   const viewerReady = new Promise((resolve) => { wake = () => resolve(undefined); });
   const control = { get current() { return api; }, set current(v) { api = v; if (v) wake(); } };
-  const show0 = (definition) => root.render(createElement(ReportViewer, { definition, reportId: opts.report, params: opts.params, lang: opts.lang, onDrill: opts.onDrill, title: opts.title, toolbar: opts.toolbar, viewMode: opts.viewMode, onReady: opts.onReady, control, onEvent: emit }));
+  const show0 = (definition) => root.render(createElement(ReportViewer, { definition, reportId: opts.report, params: opts.params, lang: opts.lang, onDrill: opts.onDrill, title: opts.title, toolbar: opts.toolbar, viewMode: opts.viewMode, showWarnings: !!opts.showWarnings, onReady: opts.onReady, control, onEvent: emit }));
   // the language's strings first (English is built in; the others load on demand)
   const show = (definition) => loadLanguage(opts.lang).catch(() => {}).then(() => show0(definition));
   if (opts.definition) show(withData(opts.definition, opts.data));

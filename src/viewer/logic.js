@@ -3,8 +3,8 @@
 import { resolvePage } from '../engine/units.js';
 
 /**
- * The toolbar.hide keys that name a group of built-in items. `export` is the Export menu's formats and its options
- * gear (Print is its own key); `navigation` is the paging group (first, previous, page number, next, last).
+ * The toolbar.hide keys that name a group of built-in items. `export` is the Export menu's formats and its Export
+ * options button (Print is its own key); `navigation` is the paging group (first, previous, page number, next, last).
  * @type {Record<string, (i: {id: string, group?: string}) => boolean>}
  */
 export const TOOLBAR_GROUP_KEYS = {
@@ -19,7 +19,7 @@ export const TOOLBAR_ID_KEYS = { sidebar: ['thumbnails', 'documentMap'] };
 /**
  * Built-in toolbar items minus `hide`, plus custom `add` items placed after the item they name (else at the end).
  * A custom item joins the group of the item it follows. A custom id that clashes with a built-in id is ignored.
- * Hiding every export format also hides the Export options gear (no empty gear).
+ * Hiding every export format also hides the Export options button (no empty options menu).
  * @template {{id: string, group?: string}} T
  * @param {T[]} builtIns
  * @param {{ hide?: string[], add?: any[] }} [opt]
