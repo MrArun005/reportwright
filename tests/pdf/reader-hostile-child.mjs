@@ -61,7 +61,20 @@ const CASES = {
     for (let i = 0; i < L; i++) more[4 + i] = '<< /Type /Pages /Kids 3 0 R >>';
     return [build(more), { timeoutMs: 10000 }];
   },
+  // R3: an unfiltered form XObject of a 64 KB Tj drawn 100,000 times: its bytes never counted against maxDecoded
+  'forms-unfiltered': () => [forms(100000, 'A'.repeat(1 << 16)), { budget: { maxDecoded: 4 << 20 } }],
+  // R3: a tiny form drawn 20,000 times: past the cap on form XObjects an extraction draws
+  'forms-many': () => [forms(20000, ''), {}],
+  // R3: one Tj of a 16 MB string, timeoutMs 300: the glyphs were no budget steps (and were 16 M objects at once)
+  'glyphs-one-string': () => [doc('/Resources << /Font << /F1 6 0 R >> >>', `BT /F1 1 Tf (${'A'.repeat(16 << 20)}) Tj ET`, { 6: FONT }), { timeoutMs: 300 }],
 };
+const FONT = '<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding << /Differences [65 /.notdef] >> >>';
+function forms(n, text) {
+  return doc('/Resources << /XObject << /X 5 0 R >> >>', '/X Do\n'.repeat(n), {
+    5: { dict: '<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] /Resources << /Font << /F1 6 0 R >> >> >>', data: Buffer.from(`BT /F1 1 Tf (${text}) Tj ET`) },
+    6: FONT,
+  });
+}
 function type0(w, more = {}) {
   return doc('/Resources << /Font << /F1 5 0 R >> >>', 'BT /F1 12 Tf 10 10 Td <0041> Tj ET', {
     5: '<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /Identity-H /DescendantFonts [6 0 R] >>',
