@@ -4,6 +4,9 @@
 # fixtures (once) -> one job a language (in parallel, same runner type) -> report (merge, summary, artifacts).
 name: bench-deep
 on:
+  push: # a push to this branch runs the quick tier (workflow_dispatch needs the file on main)
+    branches: [bench-deep]
+    paths: ['bench/deep/**', '.github/workflows/bench-deep.yml']
   workflow_dispatch:
     inputs:
       tier:
@@ -24,7 +27,7 @@ permissions:
   contents: read
 env:
   FX: /tmp/fx # fixed: the Jasper fonts and the veraPDF container both expect the fixtures under /tmp
-  TIER: ${{ inputs.tier }}
+  TIER: ${{ inputs.tier || 'quick' }}
 
 jobs:
   fixtures:
@@ -37,7 +40,7 @@ jobs:
       - name: Plan the language jobs
         id: plan
         env:
-          LANGS: ${{ inputs.langs }}
+          LANGS: ${{ inputs.langs || 'all' }}
         run: |
           python3 - <<'EOF' >> "$GITHUB_OUTPUT"
           import json, os
@@ -84,7 +87,7 @@ jobs:
         lang: ${{ fromJSON(needs.fixtures.outputs.langs) }}
     env:
       LANG_: ${{ matrix.lang }}
-      RUNS: ${{ inputs.runs }}
+      RUNS: ${{ inputs.runs || '5' }}
       PUPPETEER_CACHE_DIR: /home/runner/.cache/puppeteer
     steps:
       - uses: actions/checkout@v4
