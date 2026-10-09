@@ -1,5 +1,5 @@
-// Shaped text comes back once, in logical order, from our extractText, poppler's pdftotext and pdf.js (0.1.0-beta.1:
-// beta.0 doubled every multi-glyph cluster: "किकिताताब"). And the reader: ActualText replaces its glyphs; a code with
+// Shaped text comes back once, in logical order, from our extractText and poppler's pdftotext (0.1.0-beta.1:
+// beta.0 doubled every multi-glyph cluster: "किकिताताब"), and MuPDF (beta.2); pdf.js only right to left (see below). And the reader: ActualText replaces its glyphs; a code with
 // no Unicode reads as U+FFFD, one mapped to nothing on purpose as nothing.
 //
 // pdf.js is not a dependency: its part runs when pdfjs-dist can be imported (installed, or PDFJS_DIR=<dir with
@@ -49,8 +49,11 @@ describe('shaped text extracts exactly, once', () => {
       expect(norm((await loadPdf(out)).page(0).extractText())).toBe(text);
       if (HAS.poppler) expect(norm(run('pdftotext', [save(out), '-']))).toBe(text);
     });
-    it.skipIf(!pdfjs)(`${name}: pdf.js`, async () => {
-      expect(norm(await pdfjsText(await shaped(file, text, dir)))).toBe(text);
+    // beta.2 trade-off: a left-to-right cluster in an ActualText span has its text only there (MuPDF read it twice),
+    // and pdf.js ignores ActualText, so it loses those clusters; right to left is unchanged
+    it.skipIf(!pdfjs)(`${name}: pdf.js${dir === 'ltr' ? ' (loses spanned clusters)' : ''}`, async () => {
+      const got = norm(await pdfjsText(await shaped(file, text, dir)));
+      if (dir === 'rtl') expect(got).toBe(text); else expect(got).not.toBe(text);
     });
   }
 
