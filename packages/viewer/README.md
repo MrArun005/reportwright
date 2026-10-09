@@ -314,8 +314,8 @@ document.querySelector('#save-pdf').onclick = async () => {
 };
 ```
 
-`export()` exports the last finished run. Call it after `ready` has been handled (a button, as above): called
-synchronously inside a `ready` listener it can still reject with "the report has not run yet".
+`export()` exports the last finished run. `ready` fires once that run is on screen, so calling `export()` inside a
+`ready` listener (or `onReady`) works.
 
 ## Size
 

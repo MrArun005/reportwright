@@ -166,6 +166,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   // onReady(error | null) once, when the first run ends: null, or the error that stopped it (a font that did not load counts)
   const readied = useRef(false);
   const ready = (error) => { if (!readied.current) { readied.current = true; onReady?.(error); } };
+  const announce = useRef(null); // a finished run, to be announced once its model is rendered
   const [note, setNote] = useState(null); // a one-line notice (the server makes this PDF)
   // a paged report opens showing whole pages; a pageless one (a dashboard) fills the width
   const [zoom, setZoom] = useState(() => (rootDef?.page?.size === 'Pageless' ? 'fit' : 'page'));
@@ -222,8 +223,8 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
       // a font that did not load is named on screen (the report still draws, in a fallback font)
       const fonts = failed.length ? T('fontsDidNotLoad', { fonts: [...new Set(failed.map(f => f.key))].join(', ') }) : null;
       setStatus({ state: 'done', fonts });
-      ready(failed[0]?.error || null);
-      onEvent?.('ready', { pages: m.pages.length });
+      // said once this render commits (the effect after `control` below), so export() inside a ready listener sees the run
+      announce.current = { error: failed[0]?.error || null, pages: m.pages.length };
       if (keepScroll) requestAnimationFrame(() => scroller.current?.scrollTo({ top }));
       else { setCurrent(1); setFrozen(null); scroller.current?.scrollTo({ top: 0 }); }
     } catch (e) {
@@ -579,6 +580,14 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     };
   });
   useEffect(() => () => { if (control) control.current = null; }, [control]);
+  // after the control effect above: control.current already exports this run when onReady and 'ready' fire
+  useEffect(() => {
+    const a = announce.current;
+    if (!a) return;
+    announce.current = null;
+    ready(a.error);
+    onEvent?.('ready', { pages: a.pages });
+  });
   // events: 'page' and 'parameters' fire when they change (not on the first render)
   const lastEvent = useRef({ page: current, params: JSON.stringify(params) });
   useEffect(() => {
