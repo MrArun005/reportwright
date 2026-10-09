@@ -134,4 +134,8 @@ export function mountViewer(target, opts = {}) {
   return handle;
 }
 
-if (typeof window !== 'undefined') window.ReportWright = window.Pagewright = { mountViewer }; // Pagewright: the old name, deprecated (0.9)
+if (typeof window !== 'undefined') {
+  window.ReportWright = { mountViewer };
+  let warned = false; // window.Pagewright: the old name, deprecated (0.9), gone in 1.0; one warning per page
+  Object.defineProperty(window, 'Pagewright', { configurable: true, get() { if (!warned) { warned = true; console.warn('ReportWright: window.Pagewright is deprecated, use window.ReportWright (the old name goes in 1.0).'); } return window.ReportWright; } });
+}

@@ -38,7 +38,9 @@ fs.writeFileSync(path.join(root, 'public/embed/reportwright-viewer.js'), `/* Rep
 (function () {
   var s = document.currentScript, base = s && s.src ? s.src.replace(/[^/]*$/, '') : '/embed/';
   var ready = import(base + 'esm/viewer.js'), designer = null;
-  window.ReportWright = window.Pagewright = { // Pagewright: the old name, deprecated (0.9)
+  var warned = false; // window.Pagewright: the old name, deprecated (0.9), gone in 1.0; one warning per page
+  Object.defineProperty(window, 'Pagewright', { configurable: true, get: function () { if (!warned) { warned = true; console.warn('ReportWright: window.Pagewright is deprecated, use window.ReportWright (the old name goes in 1.0).'); } return window.ReportWright; } });
+  window.ReportWright = {
     mountViewer: function (t, o) { return ready.then(function (m) { return m.mountViewer(t, o); }); },
     // the designer loads only when a page asks for it
     mountDesigner: function (t, o) { designer = designer || import(base + 'esm/designer.js'); return designer.then(function (m) { return m.mountDesigner(t, o); }); },
@@ -47,7 +49,10 @@ fs.writeFileSync(path.join(root, 'public/embed/reportwright-viewer.js'), `/* Rep
 })();
 `);
 // the old file names (embed snippets pasted before the rename) keep working; deprecated (0.9)
-for (const f of ['viewer.js', 'viewer.full.js']) fs.copyFileSync(path.join(root, `public/embed/reportwright-${f}`), path.join(root, `public/embed/pagewright-${f}`));
+for (const f of ['viewer.js', 'viewer.full.js']) {
+  const src = path.join(root, `public/embed/reportwright-${f}`);
+  fs.writeFileSync(path.join(root, `public/embed/pagewright-${f}`), `console.warn('ReportWright: /embed/pagewright-${f} is deprecated, load /embed/reportwright-${f} (the old file goes in 1.0).');\n${fs.readFileSync(src, 'utf8')}`);
+}
 fs.rmSync(path.join(root, 'public/embed/exceljs.min.js'), { force: true }); // the Excel export has its own writer now
 // no backslash line continuation in a string (lineLimit makes them; Vite 7 broke one): fails the build if one is left
 fixDist(path.join(root, 'public/embed'));
