@@ -311,24 +311,37 @@ export async function planStream(def0, opts) {
   /** a row's sort keys (the table's, the data set's) and its place in the data */
   const keyed = (r, s) => { kc.fields = r; dkc.fields = r; return { t: tSort.length ? sortKeys(tSort, kc) : null, d: dSort.length ? sortKeys(dSort, dkc) : null, s, r }; };
   const keyCmp = (a, b) => (tSort.length && compareKeys(a.t, b.t, tSort, tctx)) || (dSort.length && compareKeys(a.d, b.d, dSort, setCtx));
-  /** Rows in the table's order (after its sort), one at a time. grouped: presorted rows are checked by displayOrder. */
+  /**
+   * Rows in the table's order (after its sort), in batches (arrays, maybe empty): a row at a time through these
+   * generators cost more than the rows' layout. grouped: presorted rows are checked by displayOrder.
+   */
   async function* inOrder(grouped = false) {
-    if (!sorted || (grouped && opts.presorted)) { for await (const b of typed()) for (const r of b) yield r; return; }
+    if (!sorted || (grouped && opts.presorted)) { yield* typed(); return; }
     const cmp = (a, b) => keyCmp(a, b) || a.s - b.s;
     const check = opts.presorted ? checked(cmp) : null;
     const s = check ? null : sorter(cmp);
     try {
       let seq = 0;
-      for await (const b of typed()) for (const r of b) {
-        const x = keyed(r, seq++);
-        if (check) { check(x); yield r; } else await s.push(x);
+      for await (const b of typed()) {
+        const out = [];
+        for (const r of b) {
+          const x = keyed(r, seq++);
+          if (check) { check(x); out.push(r); } else await s.push(x);
+        }
+        if (out.length) yield out;
       }
-      if (s) for await (const x of s.drain()) yield x.r;
+      if (s) yield* drained(s, (x) => x.r);
     } finally { await s?.close(); }
   }
-  /** Rows in display order, each with its group path ([ordinal, key] per level). */
+  /** A sorter's rows in batches. @param {any} s @param {(x: any) => any} f */
+  async function* drained(s, f) {
+    let out = [];
+    for await (const x of s.drain()) { out.push(f(x)); if (out.length >= 1000) { yield out; out = []; } }
+    if (out.length) yield out;
+  }
+  /** Rows in display order, each with its group path ([ordinal, key] per level), in batches. */
   async function* displayOrder() {
-    if (!groups.length) { for await (const r of inOrder()) yield { r, g: null }; return; }
+    if (!groups.length) { for await (const b of inOrder()) yield b.map(r => ({ r, g: null })); return; }
     const gc = { ...tctx }, fc = { ...tctx };
     const paths = groups.map(() => new Map()); // per level: path text → [ordinal, the first row's key]
     let ord = 0, keyText = 0; // the groups' key text held, bounded like the groups' number
@@ -348,34 +361,38 @@ export async function planStream(def0, opts) {
     const s = check ? null : sorter(cmp);
     try {
       let seq = 0;
-      for await (const r of inOrder(true)) {
-        gc.fields = r;
-        let path = '';
-        const g = [];
-        for (let l = 0; l < groups.length; l++) {
-          let key;
-          try { key = evalValue(groups[l].expr, gc); } catch (e) { warn(`${item.name || item.type} group: ${e.message}`); key = '#Error'; }
-          path += `\u0000${groupKeyText(key, tctx)}`;
-          let p = paths[l].get(path);
-          if (!p) {
-            keyText += path.length;
-            if (ord > 1e6 || keyText > 64 * 1048576) throw Object.assign(new Error('Too many groups (or group keys too long) to stream: filter the data.'), { status: 413, fallBack: true });
-            paths[l].set(path, p = [ord++, key]);
+      for await (const b of inOrder(true)) {
+        const out = [];
+        for (const r of b) {
+          gc.fields = r;
+          let path = '';
+          const g = [];
+          for (let l = 0; l < groups.length; l++) {
+            let key;
+            try { key = evalValue(groups[l].expr, gc); } catch (e) { warn(`${item.name || item.type} group: ${e.message}`); key = '#Error'; }
+            path += `\u0000${groupKeyText(key, tctx)}`;
+            let p = paths[l].get(path);
+            if (!p) {
+              keyText += path.length;
+              if (ord > 1e6 || keyText > 64 * 1048576) throw Object.assign(new Error('Too many groups (or group keys too long) to stream: filter the data.'), { status: 413, fallBack: true });
+              paths[l].set(path, p = [ord++, key]);
+            }
+            g.push(p);
           }
-          g.push(p);
+          // totals add their rows in the data's order, as the model's aggregates do (a decimal sum in another order
+          // can differ in its last digit): here, before the rows are put in their groups' order
+          if (folds.groups) {
+            fc.fields = r;
+            foldRow(folds.table, fc);
+            for (let l = 0; l < groups.length; l++) { let sc = folds.groups[l].get(g[l][0]); if (!sc) folds.groups[l].set(g[l][0], sc = openScope(l)); foldRow(sc, fc); }
+          }
+          const x = { g, s: seq++, r };
+          if (check) { check({ g, k: sorted ? keyed(r, 0) : null }); out.push(x); } else await s.push(x);
         }
-        // totals add their rows in the data's order, as the model's aggregates do (a decimal sum in another order
-        // can differ in its last digit): here, before the rows are put in their groups' order
-        if (folds.groups) {
-          fc.fields = r;
-          foldRow(folds.table, fc);
-          for (let l = 0; l < groups.length; l++) { let sc = folds.groups[l].get(g[l][0]); if (!sc) folds.groups[l].set(g[l][0], sc = openScope(l)); foldRow(sc, fc); }
-        }
-        const x = { g, s: seq++, r };
-        if (check) { check({ g, k: sorted ? keyed(r, 0) : null }); yield x; } else await s.push(x);
+        if (out.length) yield out;
       }
       for (const m of paths) m.clear();
-      if (s) for await (const x of s.drain()) yield x;
+      if (s) yield* drained(s, (x) => x);
     } finally { await s?.close(); }
   }
 
@@ -428,7 +445,7 @@ export async function planStream(def0, opts) {
         scopes[k] = null;
       }
     };
-    for await (const { r, g } of displayOrder()) {
+    for await (const b of displayOrder()) for (const { r, g } of b) {
       if (!headerDone) { headerDone = true; first = r; yield* header(r); }
       if (g) {
         let l = 0;
@@ -456,7 +473,7 @@ export async function planStream(def0, opts) {
   }
 
   // records: the typed rows in the table's order (filtered and sorted); grouped: in display order, each with its group
-  // path ({ r, g }: [ordinal, key] per level); for the paged PDF (paged.js)
+  // path ({ r, g }: [ordinal, key] per level); for the paged PDF (paged.js). Both in batches (arrays).
   return { name: item.name, columns: cols.map(c => c.width), title: def.name || '', timeZone: timeZone || null, locale: def.locale || null, currency: def.currency || null, warnings, rows, records: inOrder, grouped: displayOrder, fieldList, stats };
 }
 

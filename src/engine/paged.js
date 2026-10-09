@@ -126,10 +126,10 @@ export async function planPaged(def0, opts = {}) {
     fctx.fields = r;
     fs.forEach((f, i) => { const a = acc[i]; if (a.n != null) a.n++; else if (!a.err) { try { a.agg.add(evaluate(f.ast, fctx)); } catch (e) { a.err = e; } } });
   };
-  /** the rows in display order, each with its group instances (__i: { first, acc } per level) */
+  /** the rows in display order, in batches (arrays), each row with its group path (__g; take() turns it into __i) */
   async function* rowsOf() {
-    if (!L) { for await (const r of /** @type {any} */ (plan).records()) yield r; return; }
-    for await (const { r, g } of /** @type {any} */ (plan).grouped()) { r.__g = g; yield r; }
+    if (!L) { yield* /** @type {any} */ (plan).records(); return; }
+    for await (const b of /** @type {any} */ (plan).grouped()) yield b.map((/** @type {any} */ x) => { x.r.__g = x.g; return x.r; });
   }
   /**
    * May a window start at page p? At a row's first piece whose groups all go on from the row before, or at a group's
@@ -158,7 +158,12 @@ export async function planPaged(def0, opts = {}) {
   /** pass, over the rows of src @param {AsyncIterator<any>} src @param {number|null} total @param {number[]|null} bounds @param {number[]} [starts] */
   async function* passOver(src, total, bounds, starts, o = /** @type {{ run?: (job: any) => Promise<any>, parallel?: number }} */ ({})) {
     let ahead = /** @type {any} */ (null), ended = false;
-    const next = async () => { if (ahead) { const a = ahead; ahead = null; return a; } const r = await src.next(); if (r.done) ended = true; return r; };
+    let buf = /** @type {any[]} */ ([]), bi = 0; // the batch being read
+    const next = async () => {
+      if (ahead) { const a = ahead; ahead = null; return a; }
+      while (bi >= buf.length) { const r = await src.next(); if (r.done) { ended = true; return r; } buf = r.value; bi = 0; }
+      return { done: false, value: buf[bi++] };
+    };
     const acc = newAcc(folds);
     /** @type {any[]} */
     const open = new Array(L).fill(null); // the group instance open at each level: { ord, first, acc }
@@ -191,7 +196,10 @@ export async function planPaged(def0, opts = {}) {
     };
     const read = async (upTo) => {
       opts.signal?.throwIfAborted();
-      while (win.length < upTo && !ended) { const r = await next(); if (!r.done) { take(r.value); win.push(r.value); } }
+      while (win.length < upTo && !ended) {
+        if (!ahead && bi < buf.length) { const r = buf[bi++]; take(r); win.push(r); continue; } // the batch's rows: no await each
+        const r = await next(); if (!r.done) { take(r.value); win.push(r.value); }
+      }
       if (ended) close(0);
     };
     // pages per window when the bounds are known: about `size` rows each
