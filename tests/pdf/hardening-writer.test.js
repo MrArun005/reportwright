@@ -168,3 +168,56 @@ describe('passive attachment types', () => {
     expect(latin(out)).toContain('/Subtype /text#2Fxml');
   });
 });
+
+// A CFF font whose every glyph walks close to the per-glyph limit: the repo's CID-keyed fixture with its largest global
+// subroutine turned into pushes and rmovetos, and every glyph calling it ~13,500 times (~990,000 bytes walked a glyph).
+import { sfntTables, parseFont } from '../../packages/pdf/src/fonts/truetype.js';
+import { buildSfnt } from '../../packages/pdf/src/fonts/subset.js';
+import { parseCff } from '../../packages/pdf/src/fonts/cff.js';
+import { ROOT } from './tools.js';
+
+function slowCff(stepsPerGlyph = 990_000) {
+  const SC = fs.readFileSync(`${ROOT}/tests/fixtures/fonts/NotoSansSC-Subset.otf`);
+  const t = sfntTables(SC), F = parseFont(SC), cff = new Uint8Array(t.get('CFF ')), c = parseCff(cff, F.numGlyphs);
+  let gi = 0, L = 0;
+  for (let i = 0; i < c.gsubrs.count; i++) { const [s, e] = c.gsubrs.at(i); if (e - s > L) { L = e - s; gi = i; } }
+  const [gs] = c.gsubrs.at(gi);
+  cff.fill(139, gs, gs + L - 1);
+  for (let k = 0; k + 3 <= L - 1; k += 3) cff.set([139, 139, 21], gs + k); // 0 0 rmoveto…
+  cff[gs + L - 1] = 11; // return
+  const calls = Math.floor(stepsPerGlyph / (L + 2)), body = new Uint8Array(calls * 2 + 1);
+  for (let k = 0; k < calls; k++) body.set([gi - 107 + 139, 29], k * 2); // callgsubr gi (bias 107)
+  body[calls * 2] = 14;
+  const n = c.cs.count, parts = Array.from({ length: n }, (_, g) => (g ? body : cff.subarray(...c.cs.at(g))));
+  const size = parts.reduce((s, x) => s + x.length, 0), ix = new Uint8Array(3 + (n + 1) * 4 + size), dv = new DataView(ix.buffer);
+  dv.setUint16(0, n); ix[2] = 4;
+  let off = 1, at = 3 + (n + 1) * 4;
+  parts.forEach((x, g) => { dv.setUint32(3 + g * 4, off); ix.set(x, at); at += x.length; off += x.length; });
+  dv.setUint32(3 + n * 4, off);
+  const out = new Uint8Array(cff.length + ix.length); out.set(cff); out.set(ix, cff.length);
+  const odv = new DataView(out.buffer), op = out.findIndex((v, i) => v === 29 && odv.getInt32(i + 1) === c.cs.p && out[i + 5] === 17);
+  odv.setInt32(op + 1, cff.length); // the Top DICT's CharStrings offset: the new INDEX
+  t.set('CFF ', out);
+  const chars = [];
+  for (let cp = 0x20; cp < 0x30000 && chars.length < 100; cp++) if (F.glyphFor(cp)) chars.push(String.fromCodePoint(cp));
+  return { bytes: buildSfnt(t, [0x4f, 0x54, 0x54, 0x4f]), chars, steps: calls * (L + 2) };
+}
+
+describe('CFF work budget', () => {
+  it('one budget for the whole font: a font whose every glyph walks ~1M bytes fails at the text that uses it, quickly, with E_FONT_BUDGET', async () => {
+    const { bytes, chars, steps } = slowCff();
+    expect(steps).toBeGreaterThan(900_000);
+    expect(chars.length * steps).toBeGreaterThan(90_000_000); // ~0.6 s of walking at end() before; now refused at the text
+    const t = performance.now();
+    let err;
+    await toBytes(async (pdf) => {
+      const f = await pdf.embedFont(bytes);
+      const p = pdf.addPage();
+      p.text(chars[0], { x: 10, y: 10, font: f }); // one glyph is fine
+      try { p.text(chars.join(''), { x: 10, y: 30, font: f }); } catch (e) { err = e; }
+    });
+    expect(err?.code).toBe('E_FONT_BUDGET');
+    expect(err).toBeInstanceOf(RangeError);
+    expect(performance.now() - t).toBeLessThan(3000);
+  });
+});
