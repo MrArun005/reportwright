@@ -73,7 +73,9 @@ export const BAND_ITEMS = 250000; // page header and footer items drawn per rend
  * @property {{ items: number }} [reuseBudget] internal: items drawn through report parts so far
  * @property {{ n: number }} [fnCount] internal: report function calls so far
  * @property {any} [imageBudget] internal: the images drawn so far, shared with subreports
- * @property {{ offset: number, total?: number|null, final: boolean, first?: any, rowOffset?: number, cont?: ({ first: any }|null)[], count?: boolean }} [pageWindow] count: the page-counting pass, whose pages are only counted (table rows are measured, not drawn)
+ * @property {{ offset: number, total?: number|null, final: boolean, first?: any, rowOffset?: number, cont?: ({ first: any }|null)[], count?: boolean, hold?: boolean, rebands?: any[] }} [pageWindow] count: the page-counting pass, whose pages are only counted (table rows are measured, not drawn).
+ *   hold: the counting pass keeps its pages (paged.js); each says (page.reband) which of its bands read Globals, for
+ *   rebands: those bands laid out again with the page count known, the only thing this render then does ({ bands })
  *   internal (paged.js): these pages are a window of a longer report: numbered from offset + 1 of total ('…' when not known
  *   yet); final: the window holds the report's last page; first: the report's first row; rowOffset: the rows before this
  *   window; cont: per group level, the group the window's first row continues (its first row), or null
@@ -220,6 +222,20 @@ export async function render(def0, opts = {}) {
     };
     return lc;
   };
+
+  // paged.js, after a held first pass: the page bands that read Globals, laid out again with the page count known, as
+  // the page loop below lays them out (a band that reads Globals is laid out for each page and placed, not copied)
+  if (opts.pageWindow?.rebands) {
+    const bands = opts.pageWindow.rebands.map((/** @type {any} */ b) => {
+      const r = layoutItems((b.band === 'header' ? header : footer)?.items || [], makeLc(b.globals, true));
+      const items = [];
+      for (const u of r.units) for (const d of u.items) d.art = 1;
+      for (const u of r.units) placeItems(u.items, b.ml, b.y0 + u.top, items);
+      finishText(items, m);
+      return items.filter(it => it.t !== 'bookmark'); // the first pass took them (their labels do not read Globals: paged.js)
+    });
+    return { bands, warnings };
+  }
 
   /* ---------------- body: layout + push-down ---------------- */
   const firstPages = Number(opts.firstPages) || 0;
@@ -383,6 +399,7 @@ export async function render(def0, opts = {}) {
         };
         // a section's own band: first and last are the section's pages; the shared one: the report's
         band(g.hdr, mt, g.own.h ? k === 0 : isFirst, g.own.h ? last : isLast);
+        const hEnd = items.length;
         const frozen = []; // table headers on this page and where each table ends: viewers keep them in view while scrolling
         for (let c = 0; c < colCount; c++) {
           const p = slices[k * colCount + c];
@@ -408,7 +425,21 @@ export async function render(def0, opts = {}) {
             placeItems(u.items, cx, bodyTop + off + (u.top - p.top), items);
           }
         }
+        const fStart = items.length;
         band(g.ftr, ph - pg.margins.bottom - g.fH, g.own.f ? k === 0 : isFirst, g.own.f ? last : isLast);
+        // paged.js holds this pass's pages: the bands that read Globals are laid out again once the page count is known
+        // (rebands, above); each says where it is (its items: the page's first or last, bookmarks aside)
+        let reband = null;
+        if (win?.hold) {
+          const at = (/** @type {any} */ sec, /** @type {string} */ band, /** @type {number} */ y0, /** @type {number} */ a, /** @type {number} */ b) => {
+            if (a === b || !sec || !pagedBand(sec, def.functions)) return undefined;
+            let n = 0;
+            for (let i = a; i < b; i++) if (items[i].t !== 'bookmark') n++;
+            return { band, y0, ml, globals, n };
+          };
+          const h = at(g.hdr, 'header', mt, 0, hEnd), f = at(g.ftr, 'footer', ph - pg.margins.bottom - g.fH, fStart, items.length);
+          if (h || f) reband = { h, f };
+        }
         let j = 0; // bookmarks leave the page's items (compacted in place: a page holds hundreds of items)
         for (let i = 0; i < items.length; i++) {
           const it = items[i];
@@ -416,7 +447,8 @@ export async function render(def0, opts = {}) {
           else items[j++] = it;
         }
         items.length = j;
-        const out = frozen.length ? { items, frozen } : { items };
+        const out = /** @type {any} */ (frozen.length ? { items, frozen } : { items });
+        if (reband) out.reband = reband;
         if (win) { // where this page starts: a row's first piece, or a group's header (headLevel), else not at a row
           const u = slices[k * colCount]?.units[0];
           if (u?.dataRow != null) { out.firstRow = u.dataRow; out.rowHead = !!u.rowHead; if (u.headLevel != null) out.headLevel = u.headLevel; }

@@ -82,6 +82,25 @@ const grouped = (n, o = {}) => {
   return def;
 };
 describe('paged rendering of a flowing table', () => {
+  it('"Page N of M": the held first pass and the two passes (pages past holdItems) give the whole render\'s pages', async () => {
+    const def = grouped(1500);
+    def.sections.pageHeader = { height: 20, items: [{ type: 'textbox', name: 'H', x: 0, y: 0, w: 300, h: 16, value: 'Ledger', bookmark: 'Ledger' }] }; // the outline comes from the held pass
+    const whole = await render(def, { fontStore, now });
+    expect(whole.bookmarks.length).toBeGreaterThan(3);
+    const outlines = [];
+    for (const holdItems of [undefined, 400, 0]) { // held throughout, dropped part way, dropped at once
+      const plan = await planPaged(def, { fontStore, now, window: 120, holdItems });
+      const pages = [];
+      for await (const p of /** @type {any} */ (plan).pages()) pages.push(p);
+      expect(pages.length, `holdItems ${holdItems}`).toBe(whole.pages.length);
+      if (holdItems === undefined) expect(pages.some((p) => p.items.some((/** @type {any} */ it) => it.lines?.[0]?.text === `Page 3 of ${whole.pages.length}`))).toBe(true);
+      pages.forEach((p, i) => { expect(p.reband).toBeUndefined(); expect(JSON.stringify(p.items), `holdItems ${holdItems}, page ${i + 1}`).toBe(JSON.stringify(whole.pages[i].items)); });
+      outlines.push(JSON.stringify(/** @type {any} */ (plan).info.bookmarks));
+    }
+    expect(outlines[1]).toBe(outlines[0]);
+    expect(outlines[2]).toBe(outlines[0]);
+  });
+
   it('window by window, the pages are the whole render\'s pages', async () => {
     const def = ledger(ledgerRows(1500));
     const whole = await render(def, { fontStore, now });

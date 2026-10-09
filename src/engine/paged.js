@@ -21,11 +21,15 @@ import { compile, evaluate, aggregator, FOLDS, isDynamic, streamable, OVER_TIME 
 import { resolvePage } from './units.js';
 
 const WINDOW = 1000; // rows laid out at once (a window grows when its rows do not fill two pages)
+// "Page N of M": the counting pass keeps its pages (drawn) while they hold at most this many items (~240 bytes each, ~38
+// MB: a 10,000-row, 7-column ledger), so the rows are laid out once; past it, they are counted only and laid out again in a second pass
+// (flat memory). ponytail: a fixed cap; one from the heap's room if a deployment needs it
+const HOLD_ITEMS = 160000;
 const OK_TYPES = new Set(['textbox', 'line', 'shape']);
 
 /**
  * @param {any} def0 @param {any} opts render() options, and maxRows/sorter/sqlRows as planStream takes them;
- *   window: rows per window (tests)
+ *   window: rows per window (tests); holdItems: the page items a held counting pass keeps at most (tests)
  * @returns {Promise<{ why: string } | { why?: undefined, pages: () => AsyncGenerator<any>, info: { width: number, height: number, bookmarks: any[], headings: any[], warnings: string[], pages: number } }>}
  */
 export async function planPaged(def0, opts = {}) {
@@ -62,6 +66,13 @@ export async function planPaged(def0, opts = {}) {
   if ((table.sort?.length || table.filters?.length || groups.some(g => g.sort)) && /Fields\s*[.!]/i.test(JSON.stringify([bandItems, others, table.header || []]))) return no('fields outside the rows of a re-ordered table');
   if (/"(borderRadius|radius|image|backgroundImage)"/.test(JSON.stringify([bandItems, others, table]))) return no('rounded or picture styles');
   const totals = /TotalPages/.test(JSON.stringify(bandItems));
+  // the counting pass may keep its pages when only the page bands read the count, and a band that reads Globals (laid
+  // out again once the count is known) has no bookmark or heading (taken from the first pass, as their labels were).
+  // Nor has the table: a window that starts inside a group repeats its header, bookmark included, and the first pass's
+  // windows start elsewhere than the second's (ponytail: the outline then differs from the two passes' one; held, it
+  // would be right where the second pass is not, but not the same bytes)
+  const holdable = !/TotalPages/.test(JSON.stringify([others, table])) && !/"(bookmark|headingLevel)"/.test(JSON.stringify(table))
+    && [sec.pageHeader, sec.pageFooter].every(b => !b || !/globals/i.test(JSON.stringify([b.items || [], def.functions ?? null])) || !/"(bookmark|headingLevel)"/.test(JSON.stringify(b.items || [])));
 
   // footer totals, folded over every row: the last window draws these values
   const params = resolveParameters(def, opts.parameters || {}, /** @type {any} */ ({ now: opts.now, timeZone: def.timeZone || opts.timeZone, locale: def.locale }));
@@ -151,12 +162,12 @@ export async function planPaged(def0, opts = {}) {
    * more, which is dropped) and the drawing is checked against the count. starts: filled with where each page starts.
    * @param {number|null} total @param {number[]|null} bounds @param {number[]} [starts]
    */
-  async function* pass(total, bounds, starts, o = /** @type {{ run?: (job: any) => Promise<any>, parallel?: number }} */ ({})) {
+  async function* pass(total, bounds, starts, o = /** @type {{ run?: (job: any) => Promise<any>, parallel?: number, hold?: any }} */ ({})) {
     const src = rowsOf()[Symbol.asyncIterator]();
     try { yield* passOver(src, total, bounds, starts, o); } finally { await src.return?.(undefined); } // the cursor closes on every exit
   }
   /** pass, over the rows of src @param {AsyncIterator<any>} src @param {number|null} total @param {number[]|null} bounds @param {number[]} [starts] */
-  async function* passOver(src, total, bounds, starts, o = /** @type {{ run?: (job: any) => Promise<any>, parallel?: number }} */ ({})) {
+  async function* passOver(src, total, bounds, starts, o = /** @type {{ run?: (job: any) => Promise<any>, parallel?: number, hold?: any }} */ ({})) {
     let ahead = /** @type {any} */ (null), ended = false;
     let buf = /** @type {any[]} */ ([]), bi = 0; // the batch being read
     const next = async () => {
@@ -273,9 +284,11 @@ export async function planPaged(def0, opts = {}) {
       const done = last ? folds.map((f, i) => ({ cell: f.cell, value: value(acc[i]) })) : [];
       wn++;
       // tagged: the cell tags an accessible PDF builds its tables from (exportData)
+      const hold = o.hold?.on ? o.hold : null; // the counting pass keeps its pages: they are drawn
       const model = await render(windowDef(first, last, done), { ...opts, exportData: !!(opts.exportData || opts.tagged), sources: { __rows: { rows: win } },
-        pageWindow: { offset: off, total, final: last, first: first0, rowOffset: base, cont, count: !!starts } });
+        pageWindow: { offset: off, total, final: last, first: first0, rowOffset: base, cont, count: !!starts && !hold, hold: !!hold } });
       for (const w of model.warnings) if (!info.warnings.includes(w) && info.warnings.length < 200) info.warnings.push(w);
+      if (hold && model.warnings.some((/** @type {string} */ w) => w.startsWith('The page headers and footers would draw more than'))) drop(hold); // capped bands: as the second pass caps them
       const pg = model.pages;
       let keep = pg.length;
       if (!last) {
@@ -293,11 +306,14 @@ export async function planPaged(def0, opts = {}) {
         starts?.push(startsAt(p, win, base) ? p.firstRow - 1 : -1);
         delete p.firstRow; delete p.rowHead; delete p.headLevel;
         p.win = wn; // the window it came from: row ids are a window's own (pdfstreamtags.js)
+        if (hold?.on) { hold.pages.push(p); hold.items += p.items.length; }
         yield p;
         pg[k] = null;
       }
+      if (hold?.on && hold.items > (opts.holdItems ?? HOLD_ITEMS)) drop(hold);
+      if (hold?.on) hold.first = first0;
       const isKept = (b) => b.page <= off + keep;
-      if (!starts) { for (const b of model.bookmarks) if (isKept(b)) info.bookmarks.push(b); for (const b of model.headings) if (isKept(b)) info.headings.push(b); }
+      if (!starts || hold?.on) { for (const b of model.bookmarks) if (isKept(b)) info.bookmarks.push(b); for (const b of model.headings) if (isKept(b)) info.headings.push(b); }
       off += keep;
       if (last) { if (starts) /** @type {any} */ (starts).rows = base + win.length; break; }
       const cut = pg[keep].firstRow - 1 - base;
@@ -310,6 +326,33 @@ export async function planPaged(def0, opts = {}) {
     info.pages = off;
     // what reading and typing the rows said (text in a number field): the windows only see the rows already typed
     for (const w of /** @type {any} */ (plan).warnings) if (!info.warnings.includes(w) && info.warnings.length < 200) info.warnings.push(w);
+  }
+  /** the held pages no longer kept: past HOLD_ITEMS, or capped bands; the second pass lays them out again @param {any} hold */
+  const drop = (hold) => { hold.on = false; hold.pages = []; info.bookmarks.length = 0; info.headings.length = 0; };
+  /**
+   * The held pages, their bands that read Globals laid out again with the page count (one render of only those bands),
+   * in order. @param {{ pages: any[], first: any }} hold
+   */
+  async function* rebanded(hold) {
+    const total = hold.pages.length, bands = [];
+    for (const p of hold.pages) for (const b of [p.reband?.h, p.reband?.f]) if (b) { b.globals.TotalPages = total; b.globals.OverallTotalPages = total; bands.push(b); }
+    const r = bands.length ? /** @type {any} */ (await render(windowDef(false, false, []), { ...opts, exportData: false, sources: { __rows: { rows: [] } },
+      pageWindow: { offset: 0, total, final: true, first: hold.first, rowOffset: 0, cont: [], rebands: bands } })) : { bands: [], warnings: [] };
+    for (const w of r.warnings) if (!info.warnings.includes(w) && info.warnings.length < 200) info.warnings.push(w);
+    info.pages = total;
+    let bi = 0;
+    for (let k = 0; k < total; k++) {
+      const p = hold.pages[k], rb = p.reband;
+      hold.pages[k] = null;
+      if (rb) {
+        delete p.reband;
+        let items = p.items;
+        if (rb.h) items = [...r.bands[bi++], ...items.slice(rb.h.n)];
+        if (rb.f) items = [...items.slice(0, items.length - rb.f.n), ...r.bands[bi++]];
+        p.items = items;
+      }
+      yield p;
+    }
   }
   /** the time limit as render() reports it (504), also where an expression of the rows' order or filter met it */
   const limit = (/** @type {any} */ e) => (e?.message === OVER_TIME ? new ReportError(`The report ran longer than ${Math.round(Number(opts.timeoutMs) / 100) / 10} s, the time limit on this server.`, { status: 504, timeout: true }) : e);
@@ -325,9 +368,12 @@ export async function planPaged(def0, opts = {}) {
         if (opts.deadline && Date.now() > opts.deadline) throw new Error(OVER_TIME);
         if (!totals && !o.run) { yield* pass(null, null); return; }
         // "of M": a first pass counts the pages and notes where each starts (nothing is drawn); the second lays out
-        // exactly those pages, window by window
+        // exactly those pages, window by window. Held (holdable, not parallel): the first pass draws its pages and keeps
+        // them while they are few enough (HOLD_ITEMS); then only their bands that read Globals are laid out again
         const starts = /** @type {number[]} */ ([]);
-        for await (const p of pass(null, null, starts)) void p;
+        const hold = { on: totals && holdable && !o.run, pages: /** @type {any[]} */ ([]), items: 0, first: null };
+        for await (const p of pass(null, null, starts, { hold })) void p;
+        if (hold.on) { yield* rebanded(hold); return; }
         yield* pass(totals ? starts.length : null, starts, undefined, o);
       } catch (e) { throw limit(e); }
     },
