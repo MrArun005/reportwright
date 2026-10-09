@@ -103,6 +103,22 @@ describe.skipIf(!HAS.poppler)('rendered pixels (pdftoppm)', () => {
     expect(px(75, 75)).toEqual(BLACK); // red × blue
     expect(near(px(25, 75), [191, 191, 191], 3)).toBe(true);
   });
+  it('rect and line take opacity and blendMode (an ExtGState inside q/Q), and the state does not leak', async () => {
+    const px = await render((p) => {
+      p.rect(0, 0, 50, 50, { fill: 0, opacity: 0.5 });
+      p.rect(50, 0, 50, 50, { fill: '#0000ff' });
+      p.rect(50, 0, 50, 50, { fill: '#ff0000', blendMode: 'multiply' });
+      p.rect(0, 50, 50, 50, { stroke: 0, width: 20, strokeOpacity: 0.25 });
+      p.line(50, 75, 100, 75, { color: 0, width: 10, opacity: 0.5 });
+      p.rect(90, 90, 10, 10, { fill: 0 }); // after: opaque again
+    });
+    expect(near(px(25, 25), [128, 128, 128], 3)).toBe(true);
+    expect(px(75, 25)).toEqual(BLACK); // red × blue
+    expect(near(px(2, 75), [191, 191, 191], 3)).toBe(true); // the 25% stroke
+    expect(near(px(70, 75), [128, 128, 128], 3)).toBe(true); // the 50% line
+    expect(px(95, 95)).toEqual(BLACK);
+    await expect(toBytes((pdf) => { pdf.addPage().rect(0, 0, 1, 1, { opacity: 2 }); })).rejects.toThrow(/opacity is 0–1/);
+  });
   it('an SVG arc: the top half of a circle through (50, 10), its chord closed', async () => {
     const px = await render((p) => p.svgPath('M10 50 A40 40 0 0 1 90 50 Z', { fill: '#0000ff' }));
     expect(px(50, 12)).toEqual(BLUE); // near the top of the arc
