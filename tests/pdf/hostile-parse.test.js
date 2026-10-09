@@ -113,3 +113,15 @@ describe('time and abort', () => {
     expect(d).toBeInstanceOf(PdfReadError);
   });
 });
+
+describe('memory held per entry is capped (budget.maxObjects, budget.maxTextItems)', () => {
+  it('cross-reference entries past maxObjects: E_BUDGET, not a map of millions', async () => {
+    const b = rawPdf(['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [] /Count 0 >>'], { xref: () => `xref\n0 3000\n${'0000000000 65535 f\r\n'.repeat(3000)}` });
+    await typed(loadPdf(b, { budget: { maxObjects: 1000 } }), 'E_BUDGET');
+    expect((await loadPdf(b)).pageCount).toBe(0);
+  });
+  it('a page of more text pieces than maxTextItems: E_BUDGET from extractText', async () => {
+    const d = await loadPdf(onePage(enc(`BT /F1 1 Tf ${'(ab) Tj '.repeat(2000)} ET`)), { budget: { maxTextItems: 1000 } });
+    await typed(Promise.resolve().then(() => d.page(0).extractText()), 'E_BUDGET');
+  });
+});
