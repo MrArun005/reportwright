@@ -7,10 +7,9 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { PDFDocument, PDFName, PDFDict, PDFArray, PDFHexString, PDFString } from 'pdf-lib';
 import { toBytes, createPdf } from '../../packages/pdf/src/index.js';
-import { HAS, INTER, ROOT, verapdf, run, save, latin } from './tools.js';
-import { DATE, CSV } from './standards-fixture.js';
+import { HAS, INTER, verapdf, run, save, latin } from './tools.js';
+import { DATE, CSV, EN16931 } from './standards-fixture.js';
 
-export const EN16931 = fs.readFileSync(path.join(ROOT, 'tests/fixtures/facturx/en16931.xml'));
 const withGuideline = (id) => Buffer.from(EN16931.toString('utf8').replace('urn:cen.eu:en16931:2017', id));
 const A3 = { title: 'Invoice 2026-001', pdfa: { part: 3, conformance: 'b' }, creationDate: DATE };
 const page = async (pdf) => { const f = await pdf.embedFont(INTER); pdf.addPage().text('Invoice 2026-001: 120.00 EUR', { x: 40, y: 40, font: f }); };

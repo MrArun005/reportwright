@@ -1,12 +1,16 @@
 // A rich document for the group G standards tests: text, a table, a list, headings, an image, links, a note, form
 // fields, layers and attachments, each as the PDF/A level allows.
-import { INTER } from './tools.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { INTER, ROOT } from './tools.js';
 import { png } from './image-fixtures.js';
 
 export const DATE = new Date('2026-01-01');
 export const RGB = png({ w: 16, h: 16, type: 2, depth: 8, px: (x, y) => [x * 16, y * 16, 128] });
 export const RGBA = png({ w: 16, h: 16, type: 6, depth: 8, px: (x, y) => [x * 16, 64, y * 16, 40 + x * 8] });
 export const CSV = new TextEncoder().encode('item,qty\npen,2\n');
+/** a Factur-X EN 16931 invoice (passes the Factur-X XSD) */
+export const EN16931 = fs.readFileSync(path.join(ROOT, 'tests/fixtures/facturx/en16931.xml'));
 
 /** @param {any} pdf @param {{ part: 1 | 2 | 3 }} o */
 export async function rich(pdf, { part }) {
