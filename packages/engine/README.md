@@ -364,10 +364,30 @@ many.
   a large grouped report: a tester's 1,000,000-row grouped ledger (0.13.0, Node 22, 2 vCPU Linux) peaked at 293 MB
   presorted and 386 MB sorted by the engine; the engine's sort holds less since 0.13.1, but it still reads and writes
   every row to disk once more.
-- **parallel: N** (Node, off by default) lays out and paints with N worker threads; the file is byte for byte the same.
-  Each thread loads the engine and fonts and lays out its own windows: about 150–300 MB a thread (measured: 260 MB
-  serial, 590 MB with 2, 890 MB with 4, for 100,000 rows). It helps only with idle cores and a report whose layout, not
-  its source, is the slow part: 15% faster with 2 threads on a 2-core machine. Leave it off unless you have measured.
+- **parallel: N | 'auto'** (Node, off by default) lays out and paints with N worker threads; the file is byte for byte
+  the same as without them (tested: held, past the hold, `'auto'`, without "of M", not holdable). The counting pass
+  runs here and hands each window it has counted to a worker at once, so layout and paint run while the pages are
+  still being counted; with "of M" each worker holds its windows (25,000 rows a worker at most, then a second pass lays
+  out the rest) until the count is known and then lays out only their page bands again. Compression runs in the
+  workers (and, without them, on libuv's zlib threads). `'auto'` uses the cores but one (4 at most, none below 3) and
+  starts them only once the report is big: past the held pass's cap (~10,000 rows of a ledger) with "of M", past
+  10,000 rows without; a smaller report never starts a worker. Measured on an Apple M2 (4 performance + 4
+  efficiency cores, 8 GB, a busy laptop), Node 22, the 7-column grouped "Page N of M" ledger, warm runs, peak RSS of
+  the process with its workers:
+
+  | rows | workers | ms | peak RSS MB |
+  |---|---|---|---|
+  | 10,000 | off | 200–240 | 295 |
+  | 10,000 | 2 | 350–420 | 390 |
+  | 10,000 | 4 | 390–440 | 495 |
+  | 10,000 | 'auto' (none started) | 195–270 | 300 |
+  | 100,000 | off | 2,400–2,550 | 390 |
+  | 100,000 | 2 | 1,960–2,700 | 750–950 |
+  | 100,000 | 4 | 1,800–2,060 | 970–1,090 |
+  | 100,000 | 'auto' (4) | 1,800–2,100 | 1,080–1,120 |
+
+  About 25% faster at 100,000 rows, for 2.5 times the memory; slower below ~20,000 rows (use `'auto'`). The counting
+  pass is the floor: it stays on one thread. Off by default: turn it on (or `'auto'`) for big reports on idle cores.
 - **Time limit and cancelling.** `timeoutMs` bounds the whole export, including waits for a sink that stops reading
   (an HTTP client gone quiet, a `Writable` that never drains): past it the export rejects with status 504 and
   `code: 'ETIMEDOUT'`. `signal` (an `AbortSignal`) stops it at its next wait (a batch of rows, the sink, a sort, a
