@@ -265,3 +265,30 @@ describe('kerning work bound', () => {
     console.log(`kerning, 40,000 characters: 4,096 subtables ${Math.round(many.ms)} ms, 64 subtables ${Math.round(ok.ms)} ms`);
   });
 });
+
+describe('tiling pattern geometry', () => {
+  it('a cell with no spacing has a /BBox 0.001 pt larger than /XStep × /YStep (PDFium otherwise tiles it a device pixel apart); with spacing the /BBox is the cell', async () => {
+    const out = latin(await toBytes((pdf) => {
+      const p = pdf.addPage();
+      const checks = p.tilingPattern({ width: 20, height: 20 }, (c) => c.fill(c.path().rect(0, 0, 10, 10), { fill: '#1f4e79' }));
+      const dots = p.tilingPattern({ width: 10, height: 10, spacing: 4 }, (c) => c.fill(c.path().rect(0, 0, 5, 5), { fill: '#c00000' }));
+      p.fill(p.path().rect(0, 0, 200, 200), { fill: checks });
+      p.fill(p.path().rect(300, 0, 200, 200), { fill: dots });
+    }, { compress: false, creationDate: DATE }));
+    const pats = [...out.matchAll(/\/BBox \[0 0 ([\d.]+) ([\d.]+)\] \/XStep ([\d.]+) \/YStep ([\d.]+)/g)].map((m) => m.slice(1).map(Number));
+    expect(pats).toContainEqual([20.001, 20.001, 20, 20]);
+    expect(pats).toContainEqual([10, 10, 14, 14]);
+  });
+  it.skipIf(!HAS.poppler)('poppler still tiles a 20 pt cell every 20 pt', async () => {
+    const out = await toBytes((pdf) => {
+      const p = pdf.addPage({ width: 200, height: 40 });
+      p.fill(p.path().rect(0, 0, 200, 40), { fill: p.tilingPattern({ width: 20, height: 20 }, (c) => c.fill(c.path().rect(0, 0, 10, 10), { fill: '#0000ff' })) });
+    }, { creationDate: DATE });
+    const f = save(out);
+    run('pdftoppm', ['-r', '72', '-singlefile', f, f]);
+    const ppm = fs.readFileSync(`${f}.ppm`), w = 200, at = ppm.length - w * 40 * 3, y = 5;
+    const blue = (x) => ppm[at + (y * w + x) * 3 + 2] > 200 && ppm[at + (y * w + x) * 3] < 50;
+    const starts = Array.from({ length: w }, (_, x) => x).filter((x) => blue(x) && (x === 0 || !blue(x - 1)));
+    expect(starts.slice(1).map((x, i) => x - starts[i])).toEqual(Array(starts.length - 1).fill(20));
+  });
+});
