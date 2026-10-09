@@ -11,7 +11,8 @@ const serve = (ready, ok2xx, bad5xx) => new Promise((ok) => {
     if (req.url === '/api/v1/readyz') { res.statusCode = ready; return res.end('{}'); }
     if (req.url === '/api/v1/metrics') {
       if (req.headers.authorization !== 'Bearer k') { res.statusCode = 401; return res.end(); }
-      return res.end(`pagewright_http_requests_total{method="GET",route="reports",status="2xx"} ${ok2xx}\npagewright_http_requests_total{method="POST",route="v1",status="5xx"} ${bad5xx}\n`);
+      const old = `pagewright_http_requests_total{method="GET",route="reports",status="2xx"} ${ok2xx}\npagewright_http_requests_total{method="POST",route="v1",status="5xx"} ${bad5xx}\n`; // as 0.13.2 answers: the new names, then the deprecated old ones (counted once)
+      return res.end(old.replaceAll('pagewright_', 'reportwright_') + old);
     }
     res.statusCode = 404; res.end();
   }).listen(0, () => ok(s));

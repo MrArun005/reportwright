@@ -73,8 +73,8 @@ describe('S-5: errors, health, metrics', () => {
       expect(res.status).toBe(200);
       expect(res.headers.get('content-type')).toMatch(/^text\/plain; version=0.0.4/);
       const text = await res.text();
-      for (const m of ['pagewright_renders_total{outcome="done"}', 'pagewright_render_duration_seconds_bucket{le="+Inf"}', 'pagewright_render_queue{class="interactive"}',
-        'pagewright_render_worker_restarts_total', 'pagewright_sqlite_queries_total{outcome="killed"}', '# TYPE pagewright_render_duration_seconds histogram']) expect(text).toContain(m);
+      for (const m of ['reportwright_renders_total{outcome="done"}', 'reportwright_render_duration_seconds_bucket{le="+Inf"}', 'reportwright_render_queue{class="interactive"}',
+        'reportwright_render_worker_restarts_total', 'reportwright_sqlite_queries_total{outcome="killed"}', '# TYPE reportwright_render_duration_seconds histogram', 'pagewright_renders_total{outcome="done"}', '# TYPE pagewright_render_duration_seconds histogram']) expect(text).toContain(m); // and the deprecated old names
     } finally { delete process.env.PW_API_KEYS; }
   });
 

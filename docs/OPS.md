@@ -56,7 +56,7 @@ The test `tests/engine/b3-backup.test.js` does the drill on SQLite on every run:
 ## Uptime and error alerts
 
 `/api/v1/readyz` (no key) answers 200 when the storage answers and a render worker is ready. `/api/v1/health` and
-`/api/v1/metrics` (a service key, or an admin's key) give the details; `pagewright_http_requests_total` counts answers
+`/api/v1/metrics` (a service key, or an admin's key) give the details; `reportwright_http_requests_total` counts answers
 by status class.
 
 **Free hosted monitor** (UptimeRobot free: 50 monitors at 5-minute intervals; Better Stack free: 10 monitors at
@@ -76,7 +76,7 @@ gh secret set PW_MONITOR_KEY            # a service key from PW_API_KEYS
 Scheduled workflows run only on the default branch, and GitHub pauses them after 60 days without commits. The error
 rate is per server process since it started (on Vercel, one instance's view): for a rate over time across instances,
 scrape `/api/v1/metrics` into Prometheus or Grafana Cloud (free tier) and alert on
-`sum(rate(pagewright_http_requests_total{status="5xx"}[10m])) / sum(rate(pagewright_http_requests_total[10m])) > 0.05`.
+`sum(rate(reportwright_http_requests_total{status="5xx"}[10m])) / sum(rate(reportwright_http_requests_total[10m])) > 0.05`.
 On Vercel, Log Drains or the Observability tab also show 5xx counts per route.
 
 Locally: `BASE=https://reportwright.vercel.app PW_MONITOR_KEY=… node scripts/uptime-check.mjs`.
