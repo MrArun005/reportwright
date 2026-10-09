@@ -425,7 +425,8 @@ function binary(n, ctx) {
   throw new ExprError(`Unknown operator "${op}"`);
 }
 
-const MONTH_NAMES = Array.from({ length: 12 }, (_, i) => new Date(2000, i, 1).toLocaleString('en', { month: 'long' }));
+// written out: building them with toLocaleString started ICU at import (about 4 ms of every cold start)
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 /* ------------------------------------------------------------- aggregates */
 function scopeRows(args, idx, ctx, fname) {
