@@ -93,6 +93,19 @@ function sortIssues(sort, label, out) {
     if (s.dir != null && !['asc', 'desc'].includes(s.dir)) out.push(`${at}: "dir" is ${JSON.stringify(s.dir)}; expected "asc" or "desc"`);
   });
 }
+const FILTER_KEYS = ['expr', 'op', 'value', 'value2', 'skipBlank'];
+const FILTER_ALIAS = { expression: 'expr', field: 'expr', by: 'expr', operator: 'op', comparison: 'op', values: 'value', value1: 'value' };
+/** A filter is {expr, op, value, value2, skipBlank}: any other key is ignored (the filter then matches on undefined), so it says so. */
+function filterIssues(filters, label, out) {
+  filters.forEach((f, i) => {
+    if (!f || typeof f !== 'object' || Array.isArray(f)) return;
+    for (const k of Object.keys(f)) {
+      if (FILTER_KEYS.includes(k) || k.startsWith('_')) continue;
+      const g = FILTER_ALIAS[k] || didYouMean(k, FILTER_KEYS);
+      out.push(`${label}, filter ${i + 1}: "${k}" is ignored; a filter is {${FILTER_KEYS.join(', ')}}${g ? ` (did you mean "${g}"?)` : ''}`);
+    }
+  });
+}
 /** Each item type's properties in the report JSON Schema (its own and ItemBase's): type → Map(key → schema). */
 const SCHEMA_ITEMS = (() => {
   const defs = /** @type {Record<string, any>} */ (REPORT_SCHEMA.$defs);
@@ -185,6 +198,7 @@ export function validate(def) {
     } else if (!srcNames.has(d.source)) errors.push(`Data set "${d.name}" uses the source "${d.source}", which does not exist`);
     dsNames.add(d.name);
     if (Array.isArray(d.sort)) sortIssues(d.sort, `Data set "${d.name}"`, warnings);
+    if (Array.isArray(d.filters)) filterIssues(d.filters, `Data set "${d.name}"`, warnings);
   }
 
   const names = new Set();
@@ -234,6 +248,7 @@ export function validate(def) {
         warnings.push(`${label}: there is no named style "${it.styleName}"${g ? ` (did you mean "${g}"?)` : ''}; it is ignored`);
       }
       if (Array.isArray(it.sort)) sortIssues(it.sort, label, warnings);
+      if (Array.isArray(it.filters)) filterIssues(it.filters, label, warnings);
       if (it.type === 'chart' && it.legend != null && it.legend !== 'bottom' && it.legend !== 'none') {
         const shown = typeof it.legend === 'object' ? `is an object (${JSON.stringify(it.legend).slice(0, 60)})` : `is ${JSON.stringify(it.legend)}`;
         warnings.push(`${label}: "legend" ${shown}; only "bottom" (show the legend) or "none" (hide it) is supported, and the legend is drawn at the bottom`);

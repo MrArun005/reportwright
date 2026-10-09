@@ -41,6 +41,17 @@ describe('validate: silent mistakes', () => {
     const def = base({ dataSets: [{ name: 'Rows', source: 'src', path: '$.rows', sort: [{ by: '=Fields.Name', direction: 'desc' }] }] });
     expectWarning(validate(def).warnings, '"direction"', '"dir"');
   });
+  it('a filter with unknown keys (expression, operator) is flagged, naming the expected keys', () => {
+    const def = base({ dataSets: [{ name: 'Rows', source: 'src', path: '$.rows', filters: [{ expression: '=Fields.Region', operator: '=', value: 'North' }] }] });
+    const ws = validate(def).warnings;
+    expectWarning(ws, 'Data set "Rows", filter 1', '"expression"', '"expr"', '{expr, op, value, value2, skipBlank}');
+    expectWarning(ws, 'Data set "Rows", filter 1', '"operator"', '"op"');
+  });
+  it('a filter on an item is checked too, and a well-formed filter is not flagged', () => {
+    expectWarning(warnings({}, { type: 'table', dataSet: 'Rows', filters: [{ expr: '=Fields.A', opp: '=', value: 1 }] }), 'filter 1', '"opp"', '"op"');
+    const ok = base({ dataSets: [{ name: 'Rows', source: 'src', path: '$.rows', filters: [{ expr: '=Fields.A', op: 'between', value: 1, value2: 2, skipBlank: true }] }] });
+    expect(validate(ok).warnings.some(w => w.includes('filter'))).toBe(false);
+  });
   it('a date parameter default that is not a date is flagged', () => {
     const ws = warnings({ parameters: [{ name: 'asOf', type: 'date', default: '31/12/2026' }] });
     expectWarning(ws, 'Parameter "asOf"', '31/12/2026');
