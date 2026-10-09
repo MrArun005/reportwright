@@ -249,3 +249,16 @@ describe('metadata, compression, determinism', () => {
     expect(() => createPdf(/** @type {any} */ ({}))).toThrow(/sink/);
   });
 });
+
+describe('objectStreamLevel', () => {
+  const build = (pdf) => { const f = pdf.standardFont('Helvetica'); for (let i = 0; i < 300; i++) pdf.addPage({ width: 200 + (i % 7), height: 300 }).text(`Page ${i}`, { x: 10, y: 10, font: f }); };
+  it('compresses the object streams at that zlib level; the default (6) is unchanged; anything but 0–9 is refused', async () => {
+    const def = await toBytes(build, { creationDate: DATE });
+    expect(Buffer.compare(def, await toBytes(build, { creationDate: DATE, objectStreamLevel: 6 }))).toBe(0);
+    const l9 = await toBytes(build, { creationDate: DATE, objectStreamLevel: 9 }), l1 = await toBytes(build, { creationDate: DATE, objectStreamLevel: 1 });
+    expect(l9.length).toBeLessThanOrEqual(def.length);
+    expect(l1.length).toBeGreaterThan(l9.length);
+    for (const b of [l9, l1]) expect((await PDFDocument.load(b)).getPageCount()).toBe(300);
+    for (const bad of [-1, 10, 2.5, '9']) expect(() => createPdf({ write() {} }, { objectStreamLevel: bad })).toThrow(/objectStreamLevel/);
+  });
+});
