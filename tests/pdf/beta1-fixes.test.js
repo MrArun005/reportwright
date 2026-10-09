@@ -39,3 +39,24 @@ describe('PDF-6: a reference loop in one page\'s /Contents', () => {
     expect(merged.extractText()).toBe('\fHello\f\fHello');
   });
 });
+
+describe('PDF-9: createPdf metadata: false', () => {
+  const make = async (o) => {
+    const { toBytes } = await import('../../packages/pdf/src/index.js');
+    return toBytes(async (pdf) => { const p = pdf.addPage(); p.text('Invoice', { x: 36, y: 36, font: pdf.standardFont('Helvetica'), size: 12 }); await p.end(); }, { title: 'Invoice', creationDate: new Date('2026-01-01'), ...o });
+  };
+  it('omits the XMP stream and keeps Info; the file is smaller', async () => {
+    const withXmp = await make({}), without = await make({ metadata: false });
+    expect(without.length).toBeLessThan(withXmp.length - 800);
+    const d = await loadPdf(without);
+    expect(d.xmp).toBeNull();
+    expect(d.info.title).toBe('Invoice');
+    expect(d.extractText()).toBe('Invoice');
+    expect((await loadPdf(withXmp)).xmp).toMatch(/Invoice/);
+  });
+  it('is refused with PDF/A or PDF/UA (both require XMP), and must be a boolean', async () => {
+    await expect(make({ metadata: false, pdfa: true })).rejects.toThrow(/PDF\/A and PDF\/UA require the XMP/);
+    await expect(make({ metadata: false, tagged: { lang: 'en' } })).rejects.toThrow(/PDF\/A and PDF\/UA require the XMP/);
+    await expect(make({ metadata: 'no' })).rejects.toThrow(/metadata is true/);
+  });
+});
