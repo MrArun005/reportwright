@@ -99,3 +99,21 @@ describe('extractText: ActualText, and codes with no Unicode', () => {
     expect((await loadPdf(simple('/WinAnsiEncoding'))).page(0).extractText()).toBe('A�‚C');
   });
 });
+
+describe('extractText: spaces between objects, order along the line, rotated text', () => {
+  const t = (c) => loadPdf(onePage(c)).then((d) => d.page(0).extractText());
+  it('separate text objects a little apart get a space (a spreadsheet\'s "1" and "Alpha"); a kerned word does not', async () => {
+    // Helvetica "1" is 0.556 em: at 11 pt it ends at 76.1, and "Alpha" starts 1.5 pt (0.14 em) later
+    expect(await t('BT /F1 11 Tf 70 100 Td (1) Tj ET BT /F1 11 Tf 77.6 100 Td (Alpha) Tj ET')).toBe('1 Alpha');
+    expect(await t('BT /F1 11 Tf 70 100 Td [(W) 80 (ave) -30 (s)] TJ ET')).toBe('Waves');
+    expect(await t('BT /F1 11 Tf 70 100 Td (A) Tj 7.337 0 Td (B) Tj ET')).toBe('AB'); // glyph by glyph, no gap
+  });
+  it('a glyph drawn after its neighbours goes back in its place along the line', async () => {
+    // "1,200" first, then "₹" (here "R") drawn before it, as office suites draw a fallback font's glyph last
+    expect(await t('BT /F1 10 Tf 60 100 Td (1,200) Tj ET BT /F1 10 Tf 52.78 100 Td (R) Tj ET')).toBe('R1,200');
+  });
+  it('rotated text reads along its baseline', async () => {
+    expect(await t('BT /F1 10 Tf 0 1 -1 0 100 50 Tm (Quarter one) Tj ET')).toBe('Quarter one');
+    expect(await t('BT /F1 10 Tf 0 -1 1 0 100 150 Tm (Reads down) Tj ET')).toBe('Reads down');
+  });
+});
