@@ -98,3 +98,31 @@ describe('R8: the whole-file check finds whether a byte-scan hit is in stream da
     expect(r.ms).toBeLessThan(5000);
   }, 90_000);
 });
+
+describe('an earlier cross-reference section is checked like the latest: each entry must match an object read', () => {
+  /** rev 1: object 4 is at a place no scan reads (in a stream's data, "obj" after a comment) and is a JavaScript
+   * action; rev 2's section moves object 4 to a clean object, so the merged table looks clean */
+  function twoRevisions() {
+    const parts = []; let pos = 0;
+    const add = (s) => { const b = Buffer.from(s, 'latin1'); parts.push(b); pos += b.length; return pos - b.length; };
+    add('%PDF-1.7\n%\xe2\xe3\xcf\xd3\n');
+    const o1 = add('1 0 obj\n<< /Type /Catalog /Pages 2 0 R /OpenAction 4 0 R >>\nendobj\n');
+    const o2 = add('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n');
+    const o3 = add('3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] >>\nendobj\n');
+    const hidden = '\n4 0 %c\nobj << /S /JavaScript /JS (app.alert(1)) >> endobj\n';
+    const o5 = add(`5 0 obj\n<< /Length ${hidden.length} >>\nstream\n`);
+    const o4 = add(hidden) + 1;
+    add('\nendstream\nendobj\n');
+    const row = (o) => `${String(o).padStart(10, '0')} 00000 n\r\n`;
+    const x1 = add(`xref\n0 6\n0000000000 65535 f\r\n${row(o1)}${row(o2)}${row(o3)}${row(o4)}${row(o5)}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n`);
+    add(`${x1}\n%%EOF\n`);
+    const n4 = add('4 0 obj\n<< /S /GoTo /D [3 0 R /Fit] >>\nendobj\n');
+    const x2 = add(`xref\n4 1\n${row(n4)}trailer\n<< /Size 6 /Root 1 0 R /Prev ${x1} >>\nstartxref\n`);
+    add(`${x2}\n%%EOF\n`);
+    return new Uint8Array(Buffer.concat(parts));
+  }
+  it('saveIncremental refuses (fail closed) when an earlier section points at an object the check never read', async () => {
+    const d = await loadPdf(twoRevisions());
+    await expect(d.saveIncremental()).rejects.toMatchObject({ code: 'E_ACTIVE', message: expect.stringMatching(/earlier cross-reference section|could not be checked/) });
+  });
+});
