@@ -117,3 +117,13 @@ describe('extractText: spaces between objects, order along the line, rotated tex
     expect(await t('BT /F1 10 Tf 0 -1 1 0 100 150 Tm (Reads down) Tj ET')).toBe('Reads down');
   });
 });
+
+describe('extractText: a Type0 font with no ToUnicode', () => {
+  it('reads its embedded TrueType cmap backwards (glyph → character), as MuPDF and PDFBox do, instead of nothing', async () => {
+    const out = await toBytes(async (pdf) => {
+      pdf.addPage().text('Revenue 1,370.00', { x: 20, y: 20, size: 12, font: await pdf.embedFont(font('Inter-Regular.ttf'), { subset: false }) });
+    }, { creationDate: new Date('2026-01-01'), compress: false });
+    const s = Buffer.from(out).toString('latin1').replace(/ \/ToUnicode \d+ 0 R/, (m) => ' '.repeat(m.length)); // same length: the xref holds
+    expect((await loadPdf(new Uint8Array(Buffer.from(s, 'latin1')))).page(0).extractText()).toBe('Revenue 1,370.00');
+  });
+});
