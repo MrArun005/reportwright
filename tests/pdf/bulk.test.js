@@ -102,4 +102,28 @@ describe('bulk', () => {
     expect(aborted.made.length).toBeGreaterThan(0);
     expect(aborted.exited.length).toBe(aborted.made.length); // none kept: ended
   }, 60000);
+  it('hostile batch: a stuck item and a worker-killing item fail alone, the rest finish, no worker is left', async () => {
+    const small = await doc('H');
+    // a "stuck" item: a file whose text takes far longer than itemTimeoutMs (stands in for one that never ends)
+    const slowParts = ['BT /F1 6 Tf\n']; for (let i = 0; i < 300_000; i++) slowParts.push(`1 0 0 1 20 800 Tm (a) Tj\n`); slowParts.push('ET\n');
+    const mk = (content) => { const c = zlib.deflateSync(new TextEncoder().encode(content)); const e = (t) => new TextEncoder().encode(t);
+      const objs = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>', null, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];
+      const ch = [e('%PDF-1.7\n')]; let off = ch[0].length; const x = [];
+      objs.forEach((o, k) => { x.push(off); const b = o ? e(`${k + 1} 0 obj\n${o}\nendobj\n`) : new Uint8Array([...e(`${k + 1} 0 obj\n<< /Length ${c.length} /Filter /FlateDecode >>\nstream\n`), ...c, ...e('\nendstream\nendobj\n')]); ch.push(b); off += b.length; });
+      ch.push(e(`xref\n0 6\n0000000000 65535 f \n${x.map((v) => String(v).padStart(10, '0') + ' 00000 n \n').join('')}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${off}\n%%EOF\n`));
+      const out = new Uint8Array(ch.reduce((n, y) => n + y.length, 0)); let p = 0; for (const y of ch) { out.set(y, p); p += y.length; } return out; };
+    const stuck = mk(slowParts.join(''));
+    const killParts = ['BT /F1 6 Tf\n']; for (let i = 0; i < 400_000; i++) killParts.push(`1 0 0 1 ${20 + (i % 60) * 9} 800 Tm (a) Tj\n`); killParts.push('ET\n');
+    const killer = mk(killParts.join(''));
+    const inputs = [small, stuck, small, killer, small, stuck, small, killer, small, junk, small];
+    let r;
+    const w = await watchWorkers(async () => { r = await bulk(inputs, 'extractText', { workers: 2, memoryMb: 16, itemTimeoutMs: 40 }); });
+    expect(r.map((x) => x.ok)).toEqual([true, false, true, false, true, false, true, false, true, false, true]);
+    for (const k of [1, 5]) expect(['E_TIMEOUT', 'E_WORKER']).toContain(r[k].error.code);
+    expect(r[3].error.code).toMatch(/E_WORKER|E_TIMEOUT/);
+    expect(w.made.length).toBeLessThanOrEqual(2 + 4); // one new worker a failed item at most
+    await expect(bulk([small], 'extractText', { workers: 1e6 })).rejects.toThrow(TypeError);
+    await expect(bulk([small, small], 'extractText', { workers: 2, memoryMb: 1e9 })).rejects.toThrow(TypeError);
+    await expect(bulk([small, small], 'extractText', { workers: 2, itemTimeoutMs: -1 })).rejects.toThrow(TypeError);
+  }, 60000);
 });
