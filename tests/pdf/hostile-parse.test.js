@@ -121,7 +121,7 @@ describe('memory held per entry is capped (budget.maxObjects, budget.maxTextItem
     expect((await loadPdf(b)).pageCount).toBe(0);
   });
   it('a page of more text pieces than maxTextItems: E_BUDGET from extractText', async () => {
-    const d = await loadPdf(onePage(enc(`BT /F1 1 Tf ${'(ab) Tj '.repeat(2000)} ET`)), { budget: { maxTextItems: 1000 } });
+    const d = await loadPdf(onePage(enc(`BT /F1 1 Tf ${'0 -2 Td (ab) Tj '.repeat(2000)} ET`)), { budget: { maxTextItems: 1000 } });
     await typed(Promise.resolve().then(() => d.page(0).extractText()), 'E_BUDGET');
   });
 });

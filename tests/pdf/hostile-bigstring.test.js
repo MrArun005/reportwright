@@ -52,6 +52,28 @@ describe('a huge string', () => {
   });
 });
 
+describe('a huge string drawn with Tj', () => {
+  it(`a ${MB} MB (AAAA…) Tj: extractText reads it or stops with E_BUDGET, within a few copies, never out of memory`, () => {
+    const r = spawnSync(process.execPath, ['--expose-gc', '--input-type=module', '-e', `
+      const N = ${MB} << 20, content = 'BT /F1 12 Tf 10 700 Td (' + 'A'.repeat(N) + ') Tj ET';
+      const objs = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>', '<< /Length ' + content.length + ' >>\\nstream\\n' + content + '\\nendstream', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];
+      let s = '%PDF-1.4\\n'; const off = [];
+      objs.forEach((o, i) => { off.push(s.length); s += (i + 1) + ' 0 obj\\n' + o + '\\nendobj\\n'; });
+      const x = s.length; s += 'xref\\n0 6\\n0000000000 65535 f \\n' + off.map((o) => String(o).padStart(10, '0') + ' 00000 n \\n').join('') + 'trailer\\n<< /Size 6 /Root 1 0 R >>\\nstartxref\\n' + x + '\\n%%EOF\\n';
+      const bytes = new Uint8Array(Buffer.from(s, 'latin1')); s = null;
+      const { loadPdf } = await import(${JSON.stringify(new URL('../../packages/pdf/src/index.js', import.meta.url).href)});
+      globalThis.gc(); const base = process.memoryUsage().rss;
+      const d = await loadPdf(bytes); let len = -1, code = null;
+      try { len = d.page(0).extractText().length; } catch (e) { code = e.code ?? String(e); }
+      console.log(JSON.stringify({ len, code, deltaMB: (process.resourceUsage().maxRSS * 1024 - base) / 2 ** 20 }));`], { encoding: 'utf8', timeout: 120_000 });
+    expect(r.status, r.stderr).toBe(0); // an out-of-memory crash is a non-zero exit
+    const o = JSON.parse(r.stdout);
+    // 16 M characters are past MAX_TEXT_CHARS (16,000,000): the clean budget error, as the merge leaves one piece
+    expect(o).toMatchObject({ len: -1, code: 'E_BUDGET' });
+    expect(o.deltaMB).toBeLessThan(MB * 5);
+  }, 120_000);
+});
+
 describe('hexText (strings written by save and copy)', () => {
   it('a 16 MB string becomes one flat hex string, not a rope of 16 M nodes', async () => {
     const { hexText } = await import('../../packages/pdf/src/reader/copy.js');
