@@ -404,3 +404,31 @@ describe('R5 (final review F1): a signature written directly in a field /V still
     await expect(fill(mk(v), { allowFillAfterSigning: true })).rejects.toMatchObject({ code: 'E_SIGNED' });
   });
 });
+
+describe('R5 (final review F1, follow-up): every signature dictionary counts, wherever it is written', async () => {
+  const { rawPdf } = await import('./reader-tools.js');
+  const { loadPdf } = await import('../../packages/pdf/src/index.js');
+  const SIG = '<< /Type /Sig /Filter /Adobe.PPKLite /ByteRange [0 1 2 3] /Contents <00> >>';
+  const fill = async (b, o) => { const d = await loadPdf(b); d.fill({ other: 'x' }); return d.saveIncremental(o); };
+  const base = (sigField, extraCatalog = '') => rawPdf([
+    `<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R 5 0 R] /SigFlags 3 >> ${extraCatalog} >>`, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [4 0 R 6 0 R] >>',
+    '<< /Type /Annot /Subtype /Widget /FT /Tx /T (other) /Rect [40 560 240 580] /P 3 0 R /DA (/Helv 12 Tf 0 g) >>',
+    sigField, '<< /Type /Annot /Subtype /Widget /Parent 5 0 R /Rect [300 600 450 640] /P 3 0 R >>']);
+  it('/FT /Sig inherited from a parent field, the signature written directly in the parent /V', async () => {
+    await expect(fill(base(`<< /FT /Sig /T (sig) /Kids [6 0 R] /V ${SIG} >>`))).rejects.toMatchObject({ code: 'E_SIGNED' });
+  });
+  it('a field with no /FT at all holding a direct signature /V', async () => {
+    await expect(fill(base(`<< /T (sig) /Kids [6 0 R] /V ${SIG} >>`))).rejects.toMatchObject({ code: 'E_SIGNED' });
+  });
+  it('a signature dictionary nested somewhere else in the catalog', async () => {
+    await expect(fill(base('<< /T (sig) /Kids [6 0 R] >>', `/Extra [ << /Deep ${SIG} >> ]`))).rejects.toMatchObject({ code: 'E_SIGNED' });
+  });
+  it('a DocMDP P 1 reference inside a nested signature still refuses with the opt-in', async () => {
+    const v = '<< /Type /Sig /ByteRange [0 1 2 3] /Contents <00> /Reference [<< /TransformMethod /DocMDP /TransformParams << /P 1 >> >>] >>';
+    await expect(fill(base(`<< /T (sig) /Kids [6 0 R] /V ${v} >>`), { allowFillAfterSigning: true })).rejects.toMatchObject({ code: 'E_SIGNED' });
+  });
+  it('an unsigned form still fills without any option', async () => {
+    await expect(fill(base('<< /FT /Sig /T (sig) /Kids [6 0 R] >>'))).resolves.toBeTruthy();
+  });
+});
