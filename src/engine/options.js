@@ -6,7 +6,7 @@
 export const KNOWN_OPTIONS = new Set(`parameters fontStore fonts loadFont fetch baseUrl sources now reportId sql sqlRows loadReport timeoutMs deadline
 onSources exportData dataOnly unsafeFetch allowHosts fetchTimeoutMs maxFetchBytes firstPages target state timeZone bodyWidth depth budget chain
 bodyOnly reportCache reuseBudget fnCount imageBudget pageWindow stats title author creationDate subset pdfa prepare save encrypt tagged drillBase
-onWarning fetchImage window parallel maxRows id presorted signal spill sorter format maxJsonRowBytes maxJsonWholeBytes largeReportRows`.split(/\s+/));
+onWarning fetchImage window parallel maxRows id presorted signal spill sorter format maxJsonRowBytes maxJsonWholeBytes largeReportRows pdfWriter`.split(/\s+/));
 /** a typo of one of these would silently drop security, so it throws */
 const SECURITY = new Set(['encrypt', 'prepare']);
 

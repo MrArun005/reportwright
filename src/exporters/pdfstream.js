@@ -89,6 +89,8 @@ export function raced(p, signal) {
  */
 export function createPdfStream(sink, opt) {
   const { fontStore } = opt;
+  /** the @reportwright/pdf document (opt.pdf's extension API): objects, pages and the file's end go through it */
+  const core = opt.pdf?.core;
   let pos = 0, nextNum = 0;
   // where each object is: kind 1 at byte loc, 2 in object stream loc at index idx, 3 waiting for its object stream; in
   // blocks of XB numbers (7 bytes an object). A tagged file has an element per table cell, millions of objects (N44): a
@@ -106,6 +108,7 @@ export function createPdfStream(sink, opt) {
     b.kind[j] = k; b.loc[j] = l; b.idx[j] = i;
   };
   const reserve = () => {
+    if (core) return core.reserve();
     const n = nextNum++;
     if (!(n & (XB - 1))) {
       blocks.push({ kind: new Uint8Array(XB), loc: new Uint32Array(XB), idx: new Uint16Array(XB) });
@@ -131,7 +134,7 @@ export function createPdfStream(sink, opt) {
     const b = z instanceof Uint8Array ? reading[1] : z;
     return [b.kind[j], b.loc[j], b.idx[j]];
   };
-  reserve(); // object 0: free
+  if (!core) reserve(); // object 0: free
   /** @type {Uint8Array[]} */
   let parts = [];
   let size = 0;
@@ -165,6 +168,7 @@ export function createPdfStream(sink, opt) {
   /** an object: its dictionary (or any value), and its stream's bytes (already filtered) */
   /** @param {number} n @param {string} dict @param {Uint8Array} [stream] */
   const writeObj = async (n, dict, stream) => {
+    if (core) return core.write(n, dict, stream);
     if (!stream) { // small objects go into object streams, OBJSTM at a time (compressed together, as pdf-lib saves)
       batch.push([n, dict]);
       place(n, 3, 0); // placed when its object stream is written
@@ -175,7 +179,7 @@ export function createPdfStream(sink, opt) {
     await put(stream);
     return put('\nendstream\nendobj\n');
   };
-  put('%PDF-1.7\n%\xe2\xe3\xcf\xd3\n');
+  if (!core) put('%PDF-1.7\n%\xe2\xe3\xcf\xd3\n');
 
   // fonts: a resource name and the Type0 font's object number each, now; their glyphs are recorded as pages draw
   /** @type {Map<string, { name: string, ref: number, font: any, cps: Set<number>, glyphs: Map<number, string>, memo: Map<number, string>, lit: Map<number, string> }>} */
@@ -193,7 +197,7 @@ export function createPdfStream(sink, opt) {
     return f;
   };
 
-  const resRef = reserve();
+  const resRef = core ? core.resourcesRef : reserve();
   for (const key of opt.fonts || []) fontOf(key);
   /** @type {Map<string, Map<string, string>>} kind → value → name */
   const res = new Map();
@@ -259,6 +263,7 @@ export function createPdfStream(sink, opt) {
      * @param {'ExtGState'|'XObject'|'Pattern'|'Shading'|'ColorSpace'} kind @param {string} value
      */
     resource(kind, value, name = undefined) {
+      if (core) return core.resource(kind, value, name);
       let m = res.get(kind);
       if (!m) res.set(kind, m = new Map());
       let n = m.get(value);
@@ -293,13 +298,14 @@ export function createPdfStream(sink, opt) {
      * tail; written out in place, never held whole. @param {number} n @param {string} head @param {Iterable<string>} parts @param {string} tail
      */
     async bigObject(n, head, parts, tail) {
+      if (core) return core.writeBig(n, head, parts, tail);
       place(n, 1, pos);
       await put(`${n} 0 obj\n${head}`);
       for (const x of parts) await put(x);
       await put(`${tail}\nendobj\n`);
     },
     /** The object number of page i (0-based), written or not: links and outline entries may point ahead. @param {number} i */
-    pageRef(i) { return (pageRefs[i] ??= reserve()); },
+    pageRef(i) { return core ? core.pageRef(i) : (pageRefs[i] ??= reserve()); },
     /**
      * The total page count, drawn at the end: a Form XObject whose origin is the text's baseline at the box's left;
      * draw it with `q 1 0 0 1 x y cm /<name> Do Q`. align: within width.
@@ -321,6 +327,7 @@ export function createPdfStream(sink, opt) {
     async addPage(p) {
       if (done) throw new Error('The PDF is finished');
       const i = pages++;
+      if (core) return corePage(p);
       const ref = w.pageRef(i);
       if (i % LEAF === 0) leaves.push(reserve());
       const contents = reserve(), parent = leaves[leaves.length - 1];
@@ -341,16 +348,9 @@ export function createPdfStream(sink, opt) {
       if (!pages) await w.addPage({ width: 595.28, height: 841.89, content: '' }); // a PDF has at least one page
       while (inFlight.length) await writeNext();
       done = true;
+      if (core) return coreFinish(o);
       // "of Y": the number's glyphs are recorded before the fonts are subset
-      for (const t of totals) {
-        const F = fontOf(t.font), text = String(pages), hex = w.encode(t.font, text);
-        let adv = 0;
-        for (const ch of text) adv += F.font.glyphForCodePoint(/** @type {number} */ (ch.codePointAt(0))).advanceWidth;
-        const tw = adv * t.size / F.font.unitsPerEm;
-        const dx = t.align === 'right' ? t.width - tw : t.align === 'center' ? (t.width - tw) / 2 : 0;
-        await writeObj(t.ref, `<< /Type /XObject /Subtype /Form /BBox [${num(Math.min(0, dx))} ${num(-t.size)} ${num(Math.max(t.width, dx + tw))} ${num(2 * t.size)}] /Resources << /Font << /${F.name} ${F.ref} 0 R >> >> /Filter /FlateDecode >>`,
-          await deflate(latin1(`${t.color} rg BT /${F.name} ${num(t.size)} Tf ${num(dx)} 0 Td <${hex}> Tj ET`)));
-      }
+      for (const t of totals) await writeTotal(t);
       const fontDict = [];
       for (const [key, F] of fonts) {
         if (F.glyphs.size) { await writeFont(key, F); fontDict.push(`/${F.name} ${F.ref} 0 R`); }
@@ -377,8 +377,8 @@ export function createPdfStream(sink, opt) {
       const outline = await writeOutline(o.outline || []);
       const catalog = reserve();
       await writeObj(catalog, `<< /Type /Catalog /Pages ${pagesRoot} 0 R /PageLabels << /Nums [0 << /S /D /St 1 >>] >>${outline ? ` /Outlines ${outline} 0 R /PageMode /UseOutlines` : ''}${o.catalog || ''} >>`);
-      const info = reserve(), I = o.info || {};
-      await writeObj(info, `<< /Producer ${pdfText('ReportWright')} /Creator ${pdfText('ReportWright')} /Title ${pdfText(I.title || 'Report')}${I.author ? ` /Author ${pdfText(I.author)}` : ''}${I.subject ? ` /Subject ${pdfText(I.subject)}` : ''} /CreationDate ${pdfDate(I.creationDate || new Date())} /ModDate ${pdfDate(I.creationDate || new Date())} >>`);
+      const info = reserve();
+      await writeObj(info, infoDict(o.info));
 
       // object numbers reserved and never used (a link to a page that never came): null objects keep the xref whole
       for (let n = 1; n < nextNum; n++) if (!where(n)[0]) await writeObj(n, 'null');
@@ -419,6 +419,41 @@ export function createPdfStream(sink, opt) {
     },
   };
 
+  /**
+   * A page through @reportwright/pdf: the engine's operators (or a worker's compressed stream) as its content, its
+   * annotations and entries; the writer compresses and writes it in order. @param {any} p
+   */
+  async function corePage(p) {
+    const page = /** @type {any} */ (opt.pdf).addPage({ width: p.width, height: p.height });
+    // ponytail: the page's own content builder is replaced by our stream, compressed by pdfpaint's deflate (level 9, as
+    // the paint workers compress theirs: a parallel export stays the same file, byte for byte)
+    const z = p.deflated ? Promise.resolve(p.deflated) : deflate(typeof p.content === 'string' ? latin1(p.content) : p.content || new Uint8Array(0));
+    z.catch(() => {});
+    page.content = { s: ' ', end: () => '' };
+    for (const a of p.annots || []) {
+      const ref = typeof a === 'string' ? core.reserve() : a.ref, dict = typeof a === 'string' ? a : a.dict;
+      page.annots.push({ ref, make: () => dict });
+    }
+    for (const [k, v] of dictEntries(p.extra || '')) page.entries.set(k, v);
+    const ended = page.end();
+    page.z = z; // set before the writer reads it (queued, written in turn)
+    await ended;
+  }
+  /** The end through @reportwright/pdf: "of Y", fonts, outline in its finisher; Info and catalog entries as ours. @param {any} o */
+  async function coreFinish(o) {
+    core.onFinish(async () => {
+      for (const t of totals) await writeTotal(t);
+      for (const [key, F] of fonts) if (F.glyphs.size) { await writeFont(key, F); core.resource('Font', `${F.ref} 0 R`, F.name); }
+      const outline = await writeOutline(o.outline || []);
+      if (outline) { core.catalog('Outlines', `${outline} 0 R`); core.catalog('PageMode', '/UseOutlines'); }
+    });
+    core.catalog('PageLabels', '<< /Nums [0 << /S /D /St 1 >>] >>');
+    for (const [k, v] of dictEntries(o.catalog || '')) core.catalog(k, v);
+    core.info = infoDict(o.info);
+    const r = await /** @type {any} */ (opt.pdf).end();
+    return { pages: r.pages, bytes: r.bytes };
+  }
+
   /** the oldest page waiting for its compressed stream: written, stream and dictionary */
   async function writeNext() {
     const { ref, contents, parent, p, z } = /** @type {any} */ (inFlight.shift());
@@ -426,6 +461,17 @@ export function createPdfStream(sink, opt) {
     const annots = [];
     for (const a of p.annots || []) annots.push(typeof a === 'string' ? await w.object(a) : (await writeObj(a.ref, a.dict), a.ref));
     await writeObj(ref, `<< /Type /Page /Parent ${parent} 0 R /MediaBox [0 0 ${num(p.width)} ${num(p.height)}] /Resources ${resRef} 0 R /Contents ${contents} 0 R${annots.length ? ` /Annots [${annots.map(a => `${a} 0 R`).join(' ')}]` : ''}${p.extra || ''} >>`);
+  }
+
+  /** "of Y": the total's form XObject (the number's glyphs are recorded before the fonts are subset) @param {typeof totals[number]} t */
+  async function writeTotal(t) {
+    const F = fontOf(t.font), text = String(pages), hex = w.encode(t.font, text);
+    let adv = 0;
+    for (const ch of text) adv += F.font.glyphForCodePoint(/** @type {number} */ (ch.codePointAt(0))).advanceWidth;
+    const tw = adv * t.size / F.font.unitsPerEm;
+    const dx = t.align === 'right' ? t.width - tw : t.align === 'center' ? (t.width - tw) / 2 : 0;
+    await writeObj(t.ref, `<< /Type /XObject /Subtype /Form /BBox [${num(Math.min(0, dx))} ${num(-t.size)} ${num(Math.max(t.width, dx + tw))} ${num(2 * t.size)}] /Resources << /Font << /${F.name} ${F.ref} 0 R >> >> /Filter /FlateDecode >>`,
+      await deflate(latin1(`${t.color} rg BT /${F.name} ${num(t.size)} Tf ${num(dx)} 0 Td <${hex}> Tj ET`)));
   }
 
   /** @param {{ ref: number, kids: number[], count: number, parent?: number }[]} nodes */
@@ -494,7 +540,7 @@ export function createPdfStream(sink, opt) {
       const level = Math.max(0, Math.min(9, Number(e.level) || 0));
       while (stack[stack.length - 1].level >= level) stack.pop();
       /** @type {Node} */
-      const node = { ref: reserve(), level, kids: [], title: e.title, dest: `[${pageRefs[e.page - 1]} 0 R ${e.top == null ? '/Fit' : `/XYZ null ${num(e.top)} null`}]` };
+      const node = { ref: reserve(), level, kids: [], title: e.title, dest: `[${w.pageRef(e.page - 1)} 0 R ${e.top == null ? '/Fit' : `/XYZ null ${num(e.top)} null`}]` };
       stack[stack.length - 1].kids.push(node);
       stack.push(node);
     }
@@ -529,6 +575,37 @@ function toUnicode(glyphs) {
     body += `${chunk.length} beginbfchar\n${chunk.map(([id, t]) => `<${hex4(id)}> <${utf16(t)}>`).join('\n')}\nendbfchar\n`;
   }
   return `/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n1 begincodespacerange\n<0000> <ffff>\nendcodespacerange\n${body}endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n`;
+}
+
+/** The Info dictionary (both writers). @param {{ title?: string, author?: string, subject?: string, creationDate?: Date }} [I] */
+const infoDict = (I = {}) => `<< /Producer ${pdfText('ReportWright')} /Creator ${pdfText('ReportWright')} /Title ${pdfText(I.title || 'Report')}${I.author ? ` /Author ${pdfText(I.author)}` : ''}${I.subject ? ` /Subject ${pdfText(I.subject)}` : ''} /CreationDate ${pdfDate(I.creationDate || new Date())} /ModDate ${pdfDate(I.creationDate || new Date())} >>`;
+
+/**
+ * The entries of a dictionary's body as [key, value] (" /StructTreeRoot 5 0 R /Lang (en)"): values may nest << >>, [ ]
+ * and ( ) strings. Only the engine's own text is read here. @param {string} s @returns {[string, string][]}
+ */
+export function dictEntries(s) {
+  /** @type {[string, string][]} */
+  const out = [];
+  let i = s.indexOf('/');
+  while (i >= 0 && i < s.length) {
+    let k = i + 1;
+    while (k < s.length && !/[\s/<>\[\]()]/.test(s[k])) k++;
+    const key = s.slice(i + 1, k);
+    while (/\s/.test(s[k])) k++;
+    const start = k;
+    let depth = 0;
+    for (; k < s.length; k++) {
+      const c = s[k];
+      if (c === '(') { let d = 1; for (k++; k < s.length && d; k++) { if (s[k] === '\\') k++; else if (s[k] === '(') d++; else if (s[k] === ')') d--; } k--; }
+      else if (c === '<' || c === '[') depth++;
+      else if (c === '>' || c === ']') depth--;
+      else if (c === '/' && !depth && k > start && /\s/.test(s[k - 1])) break;
+    }
+    out.push([key, s.slice(start, k).trim()]);
+    i = k < s.length ? k : -1;
+  }
+  return out;
 }
 
 /** UTF-16BE hex of a string (surrogate pairs as they are in JS). @param {string} t */
@@ -621,7 +698,7 @@ async function streamed(def, opts, sink) {
 export async function writePagedPdf(plan, opts, sink) {
   const { fontStore } = opts;
   if (opts.pdfa || opts.tagged) await fontStore.load(standIns(fontStore)); // standard fonts are drawn in their embedded stand-ins
-  const w = createPdfStream(sink, { fontStore, subset: opts.subset, id: opts.id, signal: opts.signal });
+  const w = createPdfStream(sink, { fontStore, subset: opts.subset, id: opts.id, signal: opts.signal, pdf: await newWriter(sink, opts) });
   const { info, pages } = /** @type {any} */ (plan);
   // tagged (PDF/UA-1): a structure tree written as the pages are (pdfstreamtags.js)
   const tags = opts.tagged ? createStreamTagger(w, { maxElements: Number(opts.tagged.maxElements) || Infinity }) : null;
@@ -681,6 +758,21 @@ export async function writePagedPdf(plan, opts, sink) {
   for (const x of env.embedded ? embeddedWarnings(env.embedded) : []) info.warnings.push(x);
   if (tags && tags.count > TAGGED_LARGE) info.warnings.push(`The tagged PDF has ${tags.count.toLocaleString('en-US')} structure elements (${res.pages.toLocaleString('en-US')} pages): readers open it, but tools that load every object of a file (qpdf, pikepdf) may run out of memory on it. tagged.maxElements caps it.`);
   return { pages: res.pages, warnings: info.warnings };
+}
+
+/**
+ * The @reportwright/pdf writer the file goes through, or null for the engine's own (pdfWriter: 'legacy', kept for one
+ * release). Loaded on first use. It writes our objects as they are; Info, metadata and the tags stay the engine's.
+ * @param {Sink} sink @param {any} opts
+ */
+async function newWriter(sink, opts) {
+  const which = opts.pdfWriter ?? 'pdf';
+  if (which === 'legacy') return null;
+  if (which !== 'pdf') throw Object.assign(new TypeError(`pdfWriter is 'pdf' (the default) or 'legacy', not ${JSON.stringify(which)}`), { status: 400 });
+  const { createPdf } = await import('@reportwright/pdf');
+  // the sink stays the caller's: written with back-pressure as before, never ended here
+  return createPdf({ write: (/** @type {Uint8Array} */ u8) => raced(written(sink, sink.write(u8)), opts.signal) },
+    { metadata: false, id: opts.id, signal: opts.signal, creationDate: opts.creationDate });
 }
 
 /** a literal string, \ ( ) escaped @param {string} v */

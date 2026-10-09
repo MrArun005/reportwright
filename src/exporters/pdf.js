@@ -462,7 +462,7 @@ async function ownWriter(model, fontStore, opt) {
   const parts = [];
   const info = { width: model.width, height: model.height, bookmarks: model.bookmarks || [], headings: model.headings || [], warnings: [] };
   await writePagedPdf({ info, pages: async function* () { yield* model.pages; } },
-    { fontStore, subset: opt.subset, id: fixed ? await contentId(model, opt, when) : undefined, title: opt.title, author: opt.author, creationDate: when, drillBase: opt.drillBase },
+    { fontStore, subset: opt.subset, id: fixed ? await contentId(model, opt, when) : undefined, title: opt.title, author: opt.author, creationDate: when, drillBase: opt.drillBase, pdfWriter: opt.pdfWriter },
     { write: (/** @type {Uint8Array} */ u8) => { parts.push(u8); } });
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
   let at = 0;
