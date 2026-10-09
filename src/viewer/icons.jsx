@@ -12,7 +12,7 @@ const P = {
   search: 'M7 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM14 14l-3.5-3.5',
   print: 'M4.5 6V1.5h7V6M4.5 11.5h-2.5v-5.5h12v5.5h-2.5M4.5 9.5h7v5h-7z',
   download: 'M8 2v8.5M4.5 7L8 10.5 11.5 7M2.5 13.5h11',
-  gear: 'M8 10.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4zM8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4',
+  sliders: 'M2 4h6M11 4h3M9.5 2.5v3M2 8h1.5M6.5 8h7.5M5 6.5v3M2 12h7.5M12.5 12h1.5M11 10.5v3', // Export options (a sun-like gear read as brightness)
   sidebar: 'M2 2.5h12v11H2zM6 2.5v11',
   pages: 'M3 1.5h7l3 3v10H3zM10 1.5v3h3M5.5 8h5M5.5 10.5h5',
   toc: 'M2.5 4h1M6 4h7.5M2.5 8h1M6 8h7.5M2.5 12h1M6 12h7.5',

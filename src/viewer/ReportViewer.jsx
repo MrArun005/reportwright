@@ -661,7 +661,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     {
       id: 'exportOptions', group: 'export',
       node: <span className="vexp">
-        <button type="button" className="btn sm icon" aria-label={T('exportOptions')} title={T('exportOptions')} aria-expanded={xmenu} aria-haspopup="true" data-testid="export-options" onClick={() => setXmenu(v => !v)}><Icon name="gear" /></button>
+        <button type="button" className="btn sm icon" aria-label={T('exportOptions')} title={T('exportOptions')} aria-expanded={xmenu} aria-haspopup="true" data-testid="export-options" onClick={() => setXmenu(v => !v)}><Icon name="sliders" /></button>
       </span>,
     },
   ].filter(Boolean);
