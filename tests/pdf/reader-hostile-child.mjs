@@ -1,6 +1,7 @@
 // Run by hostile-reader-review.test.js in its own process (a time limit and --max-old-space-size): an input that can
 // exhaust the heap kills the process, which no in-process test survives. argv[2] names the case; it prints one JSON
 // line { code, ms, text? } (code: 'OK' or the PdfReadError code).
+import fs from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { loadPdf } from '../../packages/pdf/src/index.js';
 
@@ -80,7 +81,28 @@ const CASES = {
   'actualtext-4k': () => [actual(4000, '/Span << /ActualText 5 0 R >> BDC (A) Tj EMC\n'.repeat(10000)), {}],
   // 10,000 nested spans: the outermost one is read, once
   'actualtext-nested': () => [actual(4000, `${'/Span << /ActualText 5 0 R >> BDC\n'.repeat(10000)}(A) Tj${'\nEMC'.repeat(10000)}`), {}, (d) => String(d.page(0).extractText().length)],
+  // 150 Identity-H fonts with no ToUnicode, each its own (compressed) copy of a 300 KB TrueType program: the cmap
+  // fallback reads at most 100 font programs (E_BUDGET past them)
+  'cmap-fonts-many': () => noToUnicode(150, false),
+  // 1,000 such fonts sharing one program: it is read once, the text comes out
+  'cmap-fonts-shared': () => noToUnicode(1000, true),
 };
+function noToUnicode(n, shared) {
+  const prog = { dict: '<< /Filter /FlateDecode >>', data: deflateSync(fs.readFileSync(new URL('../../public/fonts/Inter-Regular.ttf', import.meta.url))) };
+  const more = {}, fonts = [];
+  let content = 'BT ';
+  for (let i = 0; i < n; i++) {
+    const o = 10 + 3 * i;
+    more[o] = `<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /Identity-H /DescendantFonts [${o + 1} 0 R] >>`;
+    more[o + 1] = `<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /CIDToGIDMap /Identity /FontDescriptor ${o + 2} 0 R >>`;
+    more[o + 2] = `<< /Type /FontDescriptor /FontName /X /FontFile2 ${shared ? 9 : o + 3 * n + 3} 0 R >>`;
+    if (!shared) more[o + 3 * n + 3] = prog;
+    fonts.push(`/F${i} ${o} 0 R`);
+    content += `/F${i} 10 Tf 10 ${10 + (i % 50) * 12} Td <0002> Tj `; // glyph 2: "A" in Inter
+  }
+  if (shared) more[9] = prog;
+  return [doc(`/Resources << /Font << ${fonts.join(' ')} >> >>`, `${content}ET`, more), {}, (d) => { const t = d.page(0).extractText(); return `${t.length} ${t.slice(0, 3)}`; }];
+}
 function actual(n, body) {
   return doc('/Resources << /Font << /F1 6 0 R >> >>', `BT /F1 1 Tf ${body} ET`, { 5: `(${'x'.repeat(n)})`, 6: '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>' });
 }

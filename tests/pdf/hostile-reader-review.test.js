@@ -451,3 +451,18 @@ describe('/ActualText cannot amplify the text an extraction makes', () => {
     expect(r).toMatchObject({ code: 'OK', text: '4000' });
   }, 30_000);
 });
+
+describe('the embedded-cmap fallback (Identity-H, no ToUnicode) has its limits', () => {
+  it('150 fonts, each its own 300 KB font program: E_BUDGET after 100 programs, quickly', () => {
+    const r = child('cmap-fonts-many', 30);
+    expect(r.code).toBe('E_BUDGET');
+    expect(r.message).toMatch(/character maps of more than 100 embedded fonts/);
+    expect(r.ms).toBeLessThan(10_000);
+  }, 40_000);
+  it('1,000 fonts sharing one program read it once: the text comes out', () => {
+    const r = child('cmap-fonts-shared', 30);
+    expect(r).toMatchObject({ code: 'OK' });
+    expect(r.text).toMatch(/A/);
+    expect(r.ms).toBeLessThan(5_000);
+  }, 40_000);
+});
