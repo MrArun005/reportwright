@@ -119,6 +119,8 @@ describe('hostile signers', () => {
     expect((await errOf(sign(n, {}, { timestamp: () => crypto.randomBytes(64) }))).message).toMatch(/TimeStampToken is not a DER CMS/);
     expect((await errOf(sign(n, {}, { timestamp: () => { throw new Error('TSA down'); } }))).message).toBe('TSA down');
     expect((await errOf(sign(n, { timeoutMs: 300 }, { timestamp: () => new Promise(() => {}) }))).name).toBe('TimeoutError');
+    // a custom signer that ignores the timestamp callback would downgrade B-T to B-B silently: refused
+    expect((await errOf(sign((r) => n({ ...r, timestamp: undefined }), {}, { timestamp: () => new Uint8Array(0) }))).message).toMatch(/has no id-aa-timeStampToken/);
     // key material never in an error: a wrong key for the certificate, a broken key
     const e1 = errSync(() => nodeSigner({ key: KEY, certs: ok.certs }));
     const e2 = errSync(() => nodeSigner({ key: ok.key.toString().replace('MI', 'XX'), certs: ok.certs }));
