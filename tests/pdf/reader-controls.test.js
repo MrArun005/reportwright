@@ -146,3 +146,38 @@ describe('reader controls: a certified (DocMDP P 1) document', () => {
     await expect(d.saveIncremental()).rejects.toMatchObject({ code: 'E_SIGNED' });
   });
 });
+
+describe('reader controls: the signature policy of saveIncremental (fail closed, strictest source, fills opted into)', () => {
+  const sig = (more = '') => `<< /Type /Sig /ByteRange [0 1 2 3] /Contents <00> ${more} >>`;
+  /** a hand-made signed form: 4 'name' (or 'group.name' under 9), 5 'other', 6 the signed signature field */
+  const form = ({ sigV = sig(), lock = '', ff = '', parent = false, rects = [] } = {}) => rawPdf([
+    `<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [${parent ? '9 0 R' : '4 0 R'} 5 0 R 6 0 R ${rects.map((_, i) => `${10 + i} 0 R`).join(' ')}] >> >>`, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [4 0 R 5 0 R 6 0 R ${rects.map((_, i) => `${10 + i} 0 R`).join(' ')}] >>`,
+    `<< /Type /Annot /Subtype /Widget /FT /Tx /T (name) /Rect [40 600 240 620] /P 3 0 R /DA (/Helv 12 Tf 0 g) ${parent ? '/Parent 9 0 R' : ff} >>`,
+    '<< /Type /Annot /Subtype /Widget /FT /Tx /T (other) /Rect [40 560 240 580] /P 3 0 R /DA (/Helv 12 Tf 0 g) >>',
+    `<< /Type /Annot /Subtype /Widget /FT /Sig /T (sig) /Rect [300 600 450 640] /P 3 0 R /V 8 0 R ${lock} >>`, '<< >>', sigV,
+    `<< /T (group) /Kids [4 0 R] ${ff} >>`, ...rects.map((r, i) => `<< /Type /Annot /Subtype /Widget /FT /Tx /T (o${i}) /Rect [${r}] /P 3 0 R /DA (/Helv 12 Tf 0 g) >>`)]);
+  const FILL = { allowFillAfterSigning: true };
+  const cases = {
+    'P=1 in a signature\'s /Reference only': [form({ sigV: sig('/Reference [<< /TransformMethod /DocMDP /TransformParams << /P 1 >> >>]') }), (d) => d.fill({ other: 'x' }), FILL],
+    'DocMDP without /P is P=2: rotation refused': [form({ sigV: sig('/Reference [<< /TransformMethod /DocMDP /TransformParams << >> >>]') }), (d) => d.page(0).rotate(90), { allowChangesAfterSigning: true }],
+    'a garbled /Reference (fail closed)': [form({ sigV: sig('/Reference [<< /TransformMethod /Bogus >>]') }), (d) => d.fill({ other: 'x' }), FILL],
+    'a lock from the field /Lock only': [form({ lock: '/Lock << /Action /Include /Fields [(name)] >>' }), (d) => d.fill({ name: 'x' }), FILL],
+    'an /Exclude lock': [form({ lock: '/Lock << /Action /Exclude /Fields [(other)] >>' }), (d) => d.fill({ name: 'x' }), FILL],
+    'a ReadOnly inherited from a parent': [form({ parent: true, ff: '/Ff 1' }), (d) => d.fill({ 'group.name': 'x' }), FILL],
+    'a fill without allowFillAfterSigning': [form(), (d) => d.fill({ other: 'x' }), {}],
+    '10 small overlay widgets over 40% of the page in sum': [form({ rects: Array.from({ length: 10 }, (_, i) => `0 ${i * 70} 612 ${i * 70 + 35}`) }), (d) => d.fill(Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`o${i}`, 'x']))), FILL],
+  };
+  for (const [name, [b, edit, o]] of Object.entries(cases)) {
+    it(`${name}: saveIncremental refuses (E_SIGNED)`, async () => {
+      const d = await loadPdf(b);
+      edit(d);
+      await expect(d.saveIncremental(o)).rejects.toMatchObject({ code: 'E_SIGNED' });
+    });
+  }
+  it('a legitimate fill of a small field, opted into, passes', async () => {
+    const d = await loadPdf(form());
+    d.fill({ other: 'x' });
+    await d.saveIncremental(FILL);
+  });
+});

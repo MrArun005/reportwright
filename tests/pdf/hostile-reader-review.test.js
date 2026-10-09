@@ -270,39 +270,77 @@ describe('R5: saveIncremental enforces what the file\'s signatures permit (DocMD
   });
   const pdfsig = (b) => { const f = path.join(dir, `s${Math.random().toString(36).slice(2)}.pdf`); fs.writeFileSync(f, b); try { return execFileSync('pdfsig', [f], { encoding: 'utf8' }); } catch (e) { return String(e.stdout); } };
   /** a form with a text field (and one more), signed: certify 1–3, or none; o: the text field's options */
-  const signedForm = (certify, o = {}) => toBytes(async (pdf) => {
+  const signedForm = (certify, o = {}, more = () => {}) => toBytes(async (pdf) => {
     const f = pdf.standardFont('Helvetica'), p = pdf.addPage();
     p.text('Contract', { x: 40, y: 40, font: f });
     pdf.form.textField('name', { page: p, x: 40, y: 100, width: 200, height: 20, font: f, ...o });
     pdf.form.textField('other', { page: p, x: 40, y: 140, width: 200, height: 20, font: f });
     pdf.form.signature('later', { page: p, x: 300, y: 300, width: 150, height: 40 });
+    more(pdf, p, f);
     await pdf.sign({ name: 'first', page: p, x: 40, y: 200, width: 200, height: 40 }, { signer, ...(certify ? { certify } : {}) });
   }, { sign: true, creationDate: new Date('2026-01-01') });
-  const signed = /E_SIGNED/;
+  const FILL = { allowFillAfterSigning: true };
   const refuse = async (b, edit, o, re) => { const d = await loadPdf(b); edit(d); await expect(d.saveIncremental(o)).rejects.toMatchObject({ code: 'E_SIGNED', message: expect.stringMatching(re ?? /./) }); };
+  /** a hand-made signed form: objects as text; field 4 'name', 5 'other', 6 the signed signature field whose /V is 8 */
+  const handSigned = ({ sigV = '<< /Type /Sig /Filter /Adobe.PPKLite /ByteRange [0 1 2 3] /Contents <00> >>', lock = '', perms = '', nameFf = '', parent = false } = {}) => rawPdf([
+    `<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [${parent ? '9 0 R' : '4 0 R'} 5 0 R 6 0 R] >> ${perms} >>`, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [4 0 R 5 0 R 6 0 R] >>',
+    `<< /Type /Annot /Subtype /Widget /FT /Tx /T (name) /Rect [40 600 240 620] /P 3 0 R /DA (/Helv 12 Tf 0 g) ${parent ? '/Parent 9 0 R' : nameFf} >>`,
+    '<< /Type /Annot /Subtype /Widget /FT /Tx /T (other) /Rect [40 560 240 580] /P 3 0 R /DA (/Helv 12 Tf 0 g) >>',
+    `<< /Type /Annot /Subtype /Widget /FT /Sig /T (sig) /Rect [300 600 450 640] /P 3 0 R /V 8 0 R ${lock} >>`, '<< >>', sigV,
+    `<< /T (group) /Kids [4 0 R] ${nameFf} >>`]);
 
   it.skipIf(!HAS.poppler)('a certified P=1 file: every update refused (a fill, a new signature); pdfsig says the original is valid', async () => {
     const b = await signedForm(1);
     expect(pdfsig(b)).toMatch(/Signature is Valid/);
-    await refuse(b, (d) => d.fill({ name: 'Arun' }), undefined, /P 1/);
+    await refuse(b, (d) => d.fill({ name: 'Arun' }), FILL, /P 1/);
     await refuse(b, () => {}, { sign: { field: 'later', signer } }, /P 1/);
-    void signed;
   }, 30_000);
-  it.skipIf(!HAS.poppler)('a certified P=2 file: a fill and signing the empty field are allowed (pdfsig: #1 valid, changed after signing); rotation, Info, XMP, a new signature field refused', async () => {
+  it('P=1 from a signature\'s /Reference alone (no /Perms): refused', async () => {
+    await refuse(handSigned({ sigV: '<< /Type /Sig /ByteRange [0 1 2 3] /Contents <00> /Reference [<< /TransformMethod /DocMDP /TransformParams << /P 1 >> >>] >>' }), (d) => d.fill({ other: 'x' }), FILL, /P 1/);
+  });
+  it('a DocMDP without /P is P=2: a fill passes, rotation is refused', async () => {
+    const b = handSigned({ sigV: '<< /Type /Sig /ByteRange [0 1 2 3] /Contents <00> /Reference [<< /TransformMethod /DocMDP /TransformParams << /V /1.2 >> >>] >>' });
+    await refuse(b, (d) => d.page(0).rotate(90), { allowChangesAfterSigning: true }, /P 2/);
+    const d = await loadPdf(b); d.fill({ other: 'x' }); await d.saveIncremental(FILL);
+  });
+  it('a garbled policy fails closed: an unknown /TransformMethod, a /P of 7, a /Reference that is not an array, a /Fields of numbers', async () => {
+    for (const sigV of ['<< /Type /Sig /ByteRange [0 1 2 3] /Contents <00> /Reference [<< /TransformMethod /Bogus >>] >>', '<< /Type /Sig /ByteRange [0 1 2 3] /Contents <00> /Reference [<< /TransformMethod /DocMDP /TransformParams << /P 7 >> >>] >>',
+      '<< /Type /Sig /ByteRange [0 1 2 3] /Contents <00> /Reference 5 >>', '<< /Type /Sig /ByteRange [0 1 2 3] /Contents <00> /Reference [<< /TransformMethod /FieldMDP /TransformParams << /Action /Include /Fields [1 2] >> >>] >>']) {
+      await refuse(handSigned({ sigV }), (d) => d.fill({ other: 'x' }), FILL, /cannot be read/);
+    }
+  });
+  it('a lock from the field /Lock only, an /Exclude lock, a listed parent locking its kid', async () => {
+    await refuse(handSigned({ lock: '/Lock << /Action /Include /Fields [(name)] >>' }), (d) => d.fill({ name: 'x' }), FILL, /locked/);
+    await refuse(handSigned({ lock: '/Lock << /Action /Exclude /Fields [(other)] >>' }), (d) => d.fill({ name: 'x' }), FILL, /locked/);
+    await refuse(handSigned({ parent: true, lock: '/Lock << /Action /Include /Fields [(group)] >>' }), (d) => d.fill({ 'group.name': 'x' }), FILL, /locked/);
+    const d = await loadPdf(handSigned({ lock: '/Lock << /Action /Exclude /Fields [(other)] >>' })); d.fill({ other: 'x' }); await d.saveIncremental(FILL);
+  });
+  it('a ReadOnly flag on a parent applies to its kid (whose own /Ff does not lift it)', async () => {
+    await refuse(handSigned({ parent: true, nameFf: '/Ff 1' }), (d) => d.fill({ 'group.name': 'x' }), FILL, /read-only/);
+  });
+  it('a signed document: a fill without allowFillAfterSigning is refused', async () => {
+    await refuse(await signedForm(0), (d) => d.fill({ name: 'x' }), undefined, /allowFillAfterSigning/);
+  }, 30_000);
+  it('with allowFillAfterSigning: 10 small overlay widgets summing past 40% of the page refused; an opaque one over the signed text refused', async () => {
+    const b = await signedForm(0, {}, (pdf, p, f) => { for (let i = 0; i < 10; i++) pdf.form.textField(`o${i}`, { page: p, x: 0, y: 200 + i * 60, width: 595, height: 40, font: f }); });
+    await refuse(b, (d) => d.fill(Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`o${i}`, 'x']))), FILL, /in sum|cover more than 40%/);
+    await refuse(await signedForm(0, { x: 0, y: 0, width: 595, height: 200, background: '#ffffff' }), (d) => d.fill({ name: 'x' }), FILL, /opaque background/);
+  }, 30_000);
+  it.skipIf(!HAS.poppler)('a certified P=2 file: a small field filled and a signature added (new or the empty field) pass; pdfsig: #1 valid and changed after signing; rotation, Info, XMP refused', async () => {
     const b = await signedForm(2);
     const d = await loadPdf(b);
     d.fill({ name: 'Arun' });
-    const r = await d.saveIncremental({ sign: { field: 'later', signer } });
+    const r = await d.saveIncremental({ ...FILL, sign: { field: 'later', signer } });
     const out = pdfsig(r.bytes); // the certification's own bytes still verify, and poppler says the document changed after it
     expect(out).toMatch(/Field Name: first[^#]*Not total document signed[^#]*Signature is Valid/);
     expect(out).toMatch(/Field Name: later[^#]*Total document signed[^#]*Signature is Valid/);
+    await (await loadPdf(b)).saveIncremental({ sign: { field: { name: 'new', page: 0, x: 300, y: 500, width: 100, height: 30 }, signer } });
     await refuse(b, (x) => x.page(0).rotate(90), undefined, /rotation/);
     await refuse(b, (x) => x.setInfo({ title: 'x' }), { allowChangesAfterSigning: true }, /Info/);
     await refuse(b, (x) => x.setXmp('<x/>'), undefined, /XMP/);
-    await refuse(b, () => {}, { sign: { field: { name: 'new', page: 0, x: 300, y: 500, width: 100, height: 30 }, signer } }, /new field/);
   }, 30_000);
-  it.skipIf(!HAS.poppler)('a field locked by a signature\'s FieldMDP /Lock: its fill refused, another field filled', async () => {
-    // a form whose empty signature field locks "name" when signed; signed incrementally, then filled
+  it.skipIf(!HAS.poppler)('a field locked by a signature\'s FieldMDP /Lock, signed by us: its fill refused, another field filled (pdfsig valid)', async () => {
     const form = rawPdf(['<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R 5 0 R 6 0 R] /DA (/Helv 0 Tf 0 g) /DR << /Font << /Helv 7 0 R >> >> >> >>',
       '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [4 0 R 5 0 R 6 0 R] >>',
       '<< /Type /Annot /Subtype /Widget /FT /Tx /T (name) /Rect [40 600 240 620] /P 3 0 R /DA (/Helv 12 Tf 0 g) >>',
@@ -311,28 +349,19 @@ describe('R5: saveIncremental enforces what the file\'s signatures permit (DocMD
       '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>']);
     const s = await (await loadPdf(form)).saveIncremental({ sign: { field: 'sig', signer } });
     expect(pdfsig(s.bytes)).toMatch(/Signature is Valid/);
-    await refuse(s.bytes, (d) => d.fill({ name: 'Mallory' }), undefined, /locked/);
+    await refuse(s.bytes, (d) => d.fill({ name: 'Mallory' }), FILL, /locked/);
     const d = await loadPdf(s.bytes);
     d.fill({ other: 'fine' });
-    expect(pdfsig((await d.saveIncremental()).bytes)).toMatch(/Signature is Valid/);
+    expect(pdfsig((await d.saveIncremental(FILL)).bytes)).toMatch(/Not total document signed[\s\S]*Signature is Valid/);
   }, 30_000);
-  it('signed without DocMDP: fills and signing allowed; rotation and Info need allowChangesAfterSigning', async () => {
+  it('signed without DocMDP: rotation and Info need allowChangesAfterSigning; a new signature passes', async () => {
     const b = await signedForm(0);
-    const d = await loadPdf(b);
-    d.fill({ name: 'Arun' });
-    await d.saveIncremental({ sign: { field: 'later', signer } });
     await refuse(b, (x) => x.page(0).rotate(90), undefined, /allowChangesAfterSigning/);
     await refuse(b, (x) => x.setInfo({ title: 'x' }), undefined, /allowChangesAfterSigning/);
     const e = await loadPdf(b);
     e.page(0).rotate(90); e.setInfo({ title: 'x' });
     await e.saveIncremental({ allowChangesAfterSigning: true });
-  }, 30_000);
-  it('signed: a ReadOnly field is not filled', async () => {
-    await refuse(await signedForm(0, { readOnly: true }), (d) => d.fill({ name: 'x' }), undefined, /read-only/);
-  }, 30_000);
-  it('signed: a fill whose widget covers most of the page (a planted "replace" shadow attack) is refused', async () => {
-    await refuse(await signedForm(0, { x: 0, y: 0, width: 595, height: 842 }), (d) => d.fill({ name: 'x' }), undefined, /shadow/);
-    await refuse(await signedForm(0, { x: 0, y: 0, width: 595, height: 200, background: '#ffffff' }), (d) => d.fill({ name: 'x' }), undefined, /opaque/);
+    await (await loadPdf(b)).saveIncremental({ sign: { field: 'later', signer } });
   }, 30_000);
 });
 

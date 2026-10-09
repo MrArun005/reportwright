@@ -181,7 +181,7 @@ describe('incremental save and signatures', () => {
       }, { sign: true, creationDate: D, ...(enc2 ? { encrypt: enc2 } : {}) });
       const d = await loadPdf(b);
       d.fill({ name: 'Arun' });
-      const f = await d.saveIncremental();
+      const f = await d.saveIncremental({ allowFillAfterSigning: true }); // a signed document: filling is opted into
       expect(f.bytes.subarray(0, b.length)).toEqual(b); // the signed bytes are untouched
       const s1 = pdfsig(f.bytes);
       // poppler: the first signature's own bytes verify; it says the document changed after it ("Not total document signed")
