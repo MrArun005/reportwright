@@ -1,7 +1,7 @@
 // Regressions for the two independent security reviews of October 2026 (inputs and crypto; output injection).
 // Each describe is one finding; each test failed before its fix.
 import { describe, it, expect } from 'vitest';
-import { createPdf } from '../../packages/pdf/src/index.js';
+import { createPdf, toBytes } from '../../packages/pdf/src/index.js';
 import { buildSfnt } from '../../packages/pdf/src/fonts/subset.js';
 import { sfntTables } from '../../packages/pdf/src/fonts/truetype.js';
 import { INTER } from './tools.js';
@@ -51,5 +51,19 @@ describe('F3: the Factur-X guideline is read from ExchangedDocumentContext only,
   });
   it('the real fixture still reads', () => {
     expect(readInvoice(EN16931)).toEqual({ root: 'CrossIndustryInvoice', guideline: 'urn:cen.eu:en16931:2017' });
+  });
+});
+
+describe('F7: bytes after a JPEG\'s EOI are not embedded', () => {
+  const seg = (m, data) => Buffer.concat([Buffer.from([0xff, m, (data.length + 2) >> 8, (data.length + 2) & 255]), data]);
+  const sof = Buffer.alloc(15); sof[0] = 8; sof.writeUInt16BE(10, 1); sof.writeUInt16BE(10, 3); sof[5] = 3;
+  // two scans (progressive-like, a DHT between them), stuffed FF 00 and a restart marker in the entropy data
+  const scans = Buffer.concat([seg(0xda, Buffer.alloc(10)), Buffer.from([1, 2, 0xff, 0x00, 3, 0xff, 0xd0, 4]), seg(0xc4, Buffer.from([0xff, 0xd9, 0, 0])), seg(0xda, Buffer.alloc(10)), Buffer.from([5, 0xff, 0xff, 0xd9])]);
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8]), seg(0xc0, sof), scans]);
+  it('cuts the stream at the EOI that ends the image data', async () => {
+    const out = Buffer.from(await toBytes(async (pdf) => { await pdf.embedImage(Buffer.concat([jpeg, Buffer.from('APPENDED-SECRET \xff\xd9 more', 'latin1')])); pdf.addPage(); }, { compress: false })).toString('latin1');
+    expect(out).not.toContain('APPENDED-SECRET');
+    expect(out).toContain(`/Length ${jpeg.length}`);
+    expect(out).toContain(jpeg.toString('latin1'));
   });
 });
