@@ -662,6 +662,7 @@ function newContext() {
     /** @type {{ name: string }[]} layers items use without a declaration */ extraLayers: [],
     /** @type {Set<string>} part libraries referenced (report ids) */ libraries: new Set(),
     cells: 0,
+    /** @type {any[]} every item tracked, with what happened to it (see items() in importRdlx's result) */ items: [],
     warn(msg) { if (!cx.warnings.includes(msg)) cx.warnings.push(msg); },
   };
   return cx;
@@ -673,15 +674,21 @@ function newContext() {
 function track(cx, ar, label) {
   cx.stats.items++;
   const name = String(ar?.Name || label || ar?.Type || 'item');
+  /** @param {string} kind @param {string} msg */
+  const say = (kind, msg) => { if (!t.notes.some(n => n.message === msg)) t.notes.push({ kind, message: msg }); cx.warn(`${name}: ${msg}`); };
   const t = {
-    name, state: 'mapped',
+    name, state: 'mapped', pos: typeof ar?.__pos === 'number' ? ar.__pos : undefined,
+    /** @type {{ kind: string, message: string }[]} */ notes: [],
+    /** @type {string[]} expressions that could not be translated */ exprs: [],
     /** in the report, with something lost or changed */
-    approx(msg) { if (t.state === 'mapped') t.state = 'approximated'; cx.warn(`${name}: ${msg}`); },
+    approx(msg) { if (t.state === 'mapped') t.state = 'approximated'; say('approximated', msg); },
     /** for information only */
-    note(msg) { cx.warn(`${name}: ${msg}`); },
+    note(msg) { say('info', msg); },
     /** not in the report */
-    drop(msg) { t.state = 'dropped'; cx.warn(`${name}: ${msg}`); },
+    drop(msg) { t.state = 'dropped'; say('dropped', msg); },
   };
+  cx.items.push(t);
+  for (const x of Array.isArray(ar?.__exprs) ? ar.__exprs : []) if (typeof x === 'string' && !t.exprs.includes(x)) t.exprs.push(x); // a front end's untranslated expressions
   for (const n of Array.isArray(ar?.__notes) ? ar.__notes : []) t.approx(n); // notes from a front end (the .rdl importer)
   for (const n of Array.isArray(ar?.__info) ? ar.__info : []) t.note(n); // information only: nothing is lost
   return t;
@@ -705,6 +712,7 @@ function uniq(cx, base, generated = false) {
  */
 function ex(cx, t, v, ctx, opt = {}) {
   const r = translateExpression(v, { text: opt.text, fields: opt.fields, lit: opt.lit, region: ctx.region, scopes: cx.scopes, runScopes: cx.runScopes });
+  if (!r.ok && typeof v === 'string' && !t.exprs.includes(v)) t.exprs.push(v);
   if (!r.ok) t.approx(`${r.notes.join('; ')}; ${opt.text ? 'the expression is shown as text' : `${opt.what || 'that setting'} is left out`}.`);
   else for (const n of r.notes) t.approx(`${n}.`);
   return r.value;
@@ -931,10 +939,11 @@ function convertItem(ar, cx, ctx) {
     dropInside(ar, cx);
     return finish(cx, t, null);
   }
-  const snap = { ...cx.stats };
+  const snap = { ...cx.stats }, tracked = cx.items.length;
   try { return conv(ar, cx, ctx); } catch (e) {
     if (e instanceof ImportBudgetError) throw e;
     Object.assign(cx.stats, snap);
+    cx.items.length = tracked; // their warnings stay (in warnings); the item is counted once, as dropped
     const t = track(cx, ar);
     t.drop(`it could not be converted (${e instanceof Error ? e.message : e}), so it was left out.`);
     dropInside(ar, cx);
@@ -2746,7 +2755,9 @@ function convertReport(ar, cx, opts) {
  * Convert an ActiveReportsJS report (.rdlx-json: an object, or its text, with or without a BOM).
  * @param {any} input
  * @param {{ name?: string }} [opts] name: the report name (e.g. from the file name); default: the report's Name
- * @returns {{ definition: any, warnings: string[], stats: { items: number, mapped: number, approximated: number, dropped: number } }}
+ * @returns {{ definition: any, warnings: string[], stats: { items: number, mapped: number, approximated: number, dropped: number }, items: ImportedItem[] }}
+ *   items: each item with a note, or approximated or dropped: its notes (each also in warnings, as "Name: message"),
+ *   the expressions that could not be translated, and pos, where its element starts in an XML source (a character offset)
  */
 export function importRdlx(input, opts = {}) {
   const cx = newContext();
@@ -2770,10 +2781,16 @@ export function importRdlx(input, opts = {}) {
   } catch (e) {
     if (e instanceof ImportBudgetError) {
       const error = `The report is too large to import: ${e.message}`;
-      return { definition: convertReport({}, newContext(), opts), warnings: [`${error}.`], stats: { items: 0, mapped: 0, approximated: 0, dropped: 0 }, error };
+      return { definition: convertReport({}, newContext(), opts), warnings: [`${error}.`], stats: { items: 0, mapped: 0, approximated: 0, dropped: 0 }, items: [], error };
     }
     cx.warn(`The import stopped early (${e instanceof Error ? e.message : e}), so parts of the report are missing.`);
     definition = convertReport({}, newContext(), opts);
   }
-  return { definition, warnings: cx.warnings, stats: cx.stats };
+  return { definition, warnings: cx.warnings, stats: cx.stats, items: importedItems(cx.items) };
 }
+/** @typedef {{ name: string, state: 'mapped' | 'approximated' | 'dropped', pos?: number, notes: { kind: string, message: string }[], exprs: string[] }} ImportedItem */
+/** @returns {ImportedItem[]} */
+const importedItems = (items) => items.filter(t => t.state !== 'mapped' || t.notes.length || t.exprs.length)
+  .map(t => ({ name: t.name, state: t.state, ...(t.pos != null ? { pos: t.pos } : {}), notes: t.notes, exprs: t.exprs }));
+/** A front end's items with its wording (e.g. ActiveReports → SSRS), as it words its warnings. @param {ImportedItem[]} items @param {(s: string) => string} f */
+export const rewordItems = (items, f) => (items || []).map(i => ({ ...i, notes: i.notes.map(n => ({ ...n, message: f(n.message) })) }));

@@ -14,7 +14,7 @@
 
 export class XmlError extends Error {}
 
-/** @typedef {{ name: string, ns: string, attrs: Record<string, string>, children: XmlElement[], text: string }} XmlElement */
+/** @typedef {{ name: string, ns: string, attrs: Record<string, string>, children: XmlElement[], text: string, pos?: number }} XmlElement pos: where its start tag begins in the input (a character offset) */
 
 export const XML_LIMITS = { maxChars: 16 * 1024 * 1024, maxDepth: 128, maxElements: 250_000, maxAttributes: 64 };
 
@@ -55,7 +55,8 @@ export function parseXml(src, limits = {}) {
   const L = { ...XML_LIMITS, ...limits };
   if (typeof src !== 'string') throw new XmlError('The file is not text');
   if (src.length > L.maxChars) throw new XmlError(`The file is too large (more than ${L.maxChars} characters)`);
-  if (src.charCodeAt(0) === 0xfeff) src = src.slice(1);
+  const bom = src.charCodeAt(0) === 0xfeff ? 1 : 0; // positions stay offsets in the input as given
+  if (bom) src = src.slice(1);
   /** @type {XmlElement[]} */
   const stack = [];
   /** @type {Record<string, string>[]} prefix → namespace URI, per open element */
@@ -157,7 +158,7 @@ export function parseXml(src, limits = {}) {
     const prefix = colon < 0 ? '' : qname.slice(0, colon);
     const ns = scope[prefix] ?? (prefix ? fail(`The prefix "${prefix}" is not declared`) : '');
     /** @type {any} */
-    const el = { name: colon < 0 ? qname : qname.slice(colon + 1), ns, attrs: attrsOut, children: [], text: '' };
+    const el = { name: colon < 0 ? qname : qname.slice(colon + 1), ns, attrs: attrsOut, children: [], text: '', pos: i + bom };
     if (stack.length) stack[stack.length - 1].children.push(el); else root = el;
     if (!selfClose) { el.qname = qname; stack.push(el); nsStack.push(scope); }
     i = j;

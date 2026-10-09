@@ -18,6 +18,7 @@ import { exportXlsx } from '../src/exporters/xlsx.js';
 import { exportDocx } from '../src/exporters/docx.js';
 import { exportPptx } from '../src/exporters/pptx.js';
 import { textRows } from '../src/exporters/regions.js';
+import enginePkg from '../package.json' with { type: 'json' }; // bundled into the npm CLI: the version of the engine it carries
 
 const ROOT = path.join(import.meta.dirname, '..');
 // fonts, harfbuzz-subset.wasm and the colour profile: the repo's public/, or the @reportwright/fonts package (the npm CLI)
@@ -28,6 +29,11 @@ const HELP = `pw render <report.pw.json> [-p name=value]… [-d source=data.json
           [--password PW] [--owner-password PW] [--deny print|modify|copy|annotate|fillForms|accessibility|assemble|printHighQuality]…
 pw import <report.jrxml|.rdl|.rptdesign> [-o out.pw.json]
                                    convert a JasperReports, SSRS or BIRT report to a ReportWright definition
+pw import <folder> -o <outDir> [--recursive] [--force] [--verify] [--report path] [--max-files N] [--max-bytes N]
+                                   bulk import (.rdl, .rdlc, .rds, .jrxml, .jrtx, .rptdesign, .rdlx-json and images) into
+                                   outDir with import-report.json and .html; never overwrites an output edited since the
+                                   last import (--force does); exit 0 all imported, 2 some failed, 1 none (see the CLI README)
+pw --version, pw -v                the CLI and engine versions
 pw test [folder] [--update] [--layout]
                                    render every <folder>/__tests__/*.test.json case and compare it with its snapshot
                                    (the words; --layout: the layout, see the CLI README)
@@ -148,17 +154,17 @@ function diffLines(a, b, context = 2) {
 }
 
 /** Compare two renders page by page; prints the changes and returns true when they differ. */
-function compare(label, before, after) {
+function compare(label, before, after, out = console.log) {
   const pa = pageTexts(before), pb = pageTexts(after);
   let changed = false;
-  if (pa.length !== pb.length) { console.log(`${label}: ${pa.length} pages → ${pb.length} pages`); changed = true; }
+  if (pa.length !== pb.length) { out(`${label}: ${pa.length} pages → ${pb.length} pages`); changed = true; }
   for (let k = 0; k < Math.max(pa.length, pb.length); k++) {
     const d = diffLines(pa[k] || [], pb[k] || []);
     if (!d.some(l => l[0] !== ' ')) continue;
     changed = true;
-    console.log(`${label}: page ${k + 1} changed`);
-    for (const l of d.slice(0, 60)) console.log(l);
-    if (d.length > 60) console.log(`  … ${d.length - 60} more lines`);
+    out(`${label}: page ${k + 1} changed`);
+    for (const l of d.slice(0, 60)) out(l);
+    if (d.length > 60) out(`  … ${d.length - 60} more lines`);
   }
   return changed;
 }
@@ -311,10 +317,12 @@ async function cmdMigrateStorage(args) {
 }
 
 async function cmdImport(args) {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { o: { type: 'string' } } });
-  if (positionals.length !== 1) usage('give one .jrxml, .rdl or .rptdesign file');
-  const { importXmlReport } = await import('../src/importers/index.js');
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { o: { type: 'string' }, recursive: { type: 'boolean' }, force: { type: 'boolean' }, verify: { type: 'boolean' }, report: { type: 'string' }, 'max-files': { type: 'string' }, 'max-bytes': { type: 'string' } } });
+  if (positionals.length !== 1) usage('give one .jrxml, .rdl or .rptdesign file, or a folder');
   const file = positionals[0];
+  if (fs.statSync(file, { throwIfNoEntry: false })?.isDirectory()) return importFolderCmd(file, values);
+  if (values.recursive || values.force || values.verify || values.report) usage('--recursive, --force, --verify and --report are for a folder');
+  const { importXmlReport } = await import('../src/importers/index.js');
   const r = importXmlReport(fs.readFileSync(file, 'utf8'), { name: path.basename(file).replace(/\.[^.]+$/, '') });
   for (const w of r.warnings) console.error(`pw: ${w}`);
   if (r.error) fail(r.error);
@@ -324,6 +332,49 @@ async function cmdImport(args) {
   if (out !== '-') console.error(`${out}: ${r.stats.items} items (${r.stats.mapped} mapped, ${r.stats.approximated} approximated, ${r.stats.dropped} dropped)`);
 }
 
+/** pw import <folder>: see src/importers/batch.js. */
+async function importFolderCmd(dir, values) {
+  if (!values.o || values.o === '-') usage('pw import <folder> needs -o <outDir>');
+  const num = (k) => { const v = values[k]; if (v == null) return undefined; if (!/^\d+$/.test(v) || !(Number(v) > 0)) usage(`--${k} is a positive whole number`); return Number(v); };
+  const { importFolder, reportHtml, exitCode } = await import('../src/importers/batch.js');
+  const report = await importFolder(dir, values.o, { recursive: !!values.recursive, force: !!values.force, maxFiles: num('max-files'), maxBytes: num('max-bytes'),
+    verify: values.verify ? verifyImported : undefined, log: (m) => console.error(`pw: ${m}`) });
+  const json = values.report && /\.json$/i.test(values.report) ? values.report : path.join(values.report || values.o, 'import-report.json');
+  const html = json.replace(/\.json$/i, '.html');
+  fs.mkdirSync(path.dirname(json), { recursive: true });
+  fs.writeFileSync(json, JSON.stringify(report, null, 2) + '\n');
+  fs.writeFileSync(html, reportHtml(report));
+  const s = report.summary;
+  console.error(`pw: ${s.imported} of ${s.reports} reports imported${s.failed ? `, ${s.failed} failed` : ''}${s.skippedEdited ? `, ${s.skippedEdited} edited outputs kept` : ''}${s.unresolved ? `, ${s.unresolved} unresolved references` : ''}${s.refused ? `, ${s.refused} files refused` : ''}; report: ${html}`);
+  process.exitCode = exitCode(report);
+}
+
+/**
+ * pw import --verify: render an imported report with its embedded data, or <id>.data.json beside it ({ source: rows }),
+ * and compare it with the output it replaced (pw diff's comparison), if any. No network requests.
+ */
+async function verifyImported({ file, definition, baseline }) {
+  const sample = file.replace(/\.pw\.json$/, '.data.json');
+  let data = {};
+  if (fs.existsSync(sample)) data = readJson(sample);
+  const embedded = (s) => (s.type === 'json' && s.data != null) || ((s.type === 'csv' || s.type === 'xml') && !!s.data);
+  const missing = (definition.dataSources || []).filter(s => !embedded(s) && !Object.hasOwn(data, s.name)).map(s => `"${s.name}"`);
+  if (missing.length) return { status: 'skipped', note: `no data for ${missing.join(', ')}: it is not embedded, and there is no ${path.basename(sample)}` };
+  const go = (def) => render({ ...def, dataSources: (def.dataSources || []).map(s => (Object.hasOwn(data, s.name) ? { name: s.name, type: 'json', data: data[s.name] } : s)) },
+    { fontStore, parameters: {}, now: new Date('2026-01-01T09:00:00'), loadReport: siblingLoader(file), fetch: () => Promise.reject(new Error('pw import --verify makes no network requests')) });
+  const model = await go(definition);
+  if (!baseline) return { status: 'ok', pages: model.pages.length, warnings: model.warnings.length, note: 'renders (no earlier output to compare with)' };
+  const diff = [];
+  const changed = compare(path.basename(file), await go(baseline), model, (l) => diff.push(l));
+  return { status: changed ? 'changed' : 'ok', pages: model.pages.length, warnings: model.warnings.length, note: changed ? 'renders differently from the output it replaced' : 'renders the same as the output it replaced', diff };
+}
+
 const commands = { render: cmdRender, import: cmdImport, test: cmdTest, diff: cmdDiff, audit: cmdAudit, 'migrate-storage': cmdMigrateStorage };
+if (cmd === '--version' || cmd === '-v') {
+  // the CLI's package.json (the repository's, or @reportwright/cli's next to dist/), and the engine bundled with it
+  const cli = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  console.log(`pw ${cli.version} (${cli.name}), engine ${enginePkg.version}`);
+  process.exit(0);
+}
 if (!commands[cmd]) usage(cmd && cmd !== 'help' && cmd !== '--help' ? `unknown command "${cmd}"` : '');
 try { await commands[cmd](rest); } catch (e) { fail(e.message); }

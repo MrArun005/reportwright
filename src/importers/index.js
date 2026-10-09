@@ -22,7 +22,7 @@ export function rootName(s) {
 }
 
 /**
- * @param {string} text @param {{ name?: string }} [opts]
+ * @param {string} text @param {{ name?: string, resolve?: (kind: any, ref: string) => string | null | undefined }} [opts] resolve: see importRdl and importJrxml
  * @returns {ReturnType<typeof importRdl>}
  */
 export function importXmlReport(text, opts = {}) {
