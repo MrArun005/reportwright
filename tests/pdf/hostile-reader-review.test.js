@@ -151,6 +151,36 @@ describe('R7: a structure element\'s /A (attributes) is not an action', () => {
     expect(text).toMatch(/\/ColSpan 2/);
     expect(verapdf(r.bytes, 'ua1').failed).toEqual([]);
   }, 60_000);
+  // position, not shape: /A is attributes only for elements the /StructTreeRoot walk reaches, and only when it holds
+  // attribute dictionaries (an /O, no /S, /JS or /Type /Action)
+  const tagged = (elem, extra = []) => rawPdf(['<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 5 0 R /MarkInfo << /Marked true >> >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /X 7 0 R >>', ['<< >>', Buffer.from('')],
+    '<< /Type /StructTreeRoot /K [6 0 R] >>', elem, ...extra]);
+  const after = async (b) => {
+    const r = await (await loadPdf(b)).save();
+    const doc = await PDFDocument.load(r.bytes);
+    return { stripped: r.stripped.map((x) => x.what), text: doc.context.enumerateIndirectObjects().map(([, o]) => String(o)).join('\n') };
+  };
+  const refusedInc = async (b) => { const d = await loadPdf(b); d.setInfo({ title: 'x' }); await expect(d.saveIncremental()).rejects.toMatchObject({ code: 'E_ACTIVE' }); };
+  it('a dictionary shaped as a structure element (/S /Sect, /P) outside the tree: its /A is an action place', async () => {
+    const b = tagged('<< /Type /StructElem /S /P /P 5 0 R /K [] >>', ['<< /S /Sect /P 6 0 R /A << /S /Nonstandard /F (calc.exe) >> >>']);
+    const r = await after(b);
+    expect(r.text).not.toMatch(/Nonstandard|calc\.exe/);
+    expect(r.stripped.join()).toMatch(/Nonstandard action/);
+    await refusedInc(b);
+  });
+  it('a real structure element whose /A is an action dictionary (/S /JavaScript, or any /S): judged as an action', async () => {
+    for (const a of ['<< /S /JavaScript /JS (app.alert\\(1\\)) >>', '<< /S /Nonstandard /F (calc.exe) >>', '[<< /O /Layout /Placement /Block >> << /S /Nonstandard >>]']) {
+      const b = tagged(`<< /Type /StructElem /S /P /P 5 0 R /K [] /A ${a} >>`, ['<< >>']);
+      const r = await after(b);
+      expect(r.text, a).not.toMatch(/JavaScript|Nonstandard|calc\.exe/);
+      await refusedInc(b);
+    }
+  });
+  it('a structure element whose /S is no standard type nor in the /RoleMap is not one', async () => {
+    const b = tagged('<< /Type /StructElem /S /Bogus /P 5 0 R /K [] /A << /O /Layout >> >>', ['<< >>']);
+    expect((await after(b)).stripped.join()).toMatch(/untyped action/);
+  });
   it('an annotation shaped like a structure element (/S, /P) still has its /A checked', async () => {
     const b = rawPdf(['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
       '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Annots [4 0 R] >>',
