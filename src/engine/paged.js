@@ -348,8 +348,8 @@ export async function planPaged(def0, opts = {}) {
       if (rb) {
         delete p.reband;
         let items = p.items;
-        if (rb.h) items = [...r.bands[bi++], ...items.slice(rb.h.n)];
-        if (rb.f) items = [...items.slice(0, items.length - rb.f.n), ...r.bands[bi++]];
+        if (rb.h) items = r.bands[bi++].concat(items.slice(rb.h.n));
+        if (rb.f) items = items.slice(0, items.length - rb.f.n).concat(r.bands[bi++]);
         p.items = items;
       }
       yield p;
