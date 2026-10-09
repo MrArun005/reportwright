@@ -294,7 +294,7 @@ def html_docs(out, sizes, spec):
     # report: a table whose <thead> repeats, "Page N of M" from the @page margin box
     W = sum(c['w'] for c in R['cols'])
     css = (page_css(f'{P["margin"]}pt {P["margin"]}pt {P["margin"] + P["footer"]}pt {P["margin"]}pt')[:-1] +
-           f'@bottom-right{{content:"Page " counter(page) " of " counter(pages);font:8pt Inter;vertical-align:top;padding-top:4pt}}}}'
+           f';@bottom-right{{content:"Page " counter(page) " of " counter(pages);font:8pt Inter;vertical-align:top;padding-top:4pt}}}}'
            f'table{{width:{W}pt;border-collapse:collapse;table-layout:fixed}}th,td{{padding:0 2pt;white-space:nowrap;overflow:hidden;text-align:left;font-weight:400}}'
            f'thead th{{background:{R["headBg"]};height:{R["headH"]}pt;font-weight:700}}td{{height:{R["rowH"]}pt;border-bottom:.5pt solid {R["rule"]}}}'
            f'tr{{break-inside:avoid}}.r{{text-align:right}}.g td{{background:{R["groupBg"]};font-weight:700;height:{R["groupH"]}pt;border:0}}.t td{{font-weight:700;border:0}}')
