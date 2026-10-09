@@ -99,3 +99,28 @@ describe('options are read once', () => {
   });
 });
 
+describe('constant tables are looked up by own key only', () => {
+  for (const k of ['constructor', 'toString', 'hasOwnProperty', '__proto__', 'valueOf']) {
+    it(`pdf.viewer({ ${k}: … }) is refused and the file opens`, async () => {
+      let err;
+      const out = await toBytes((pdf) => {
+        try { pdf.viewer(JSON.parse(`{ "${k}": true }`)); } catch (e) { err = e; }
+        try { pdf.viewer(JSON.parse(`{ "${k}": "L2R" }`)); } catch (e) { err ??= e; }
+        pdf.viewer({ fitWindow: true });
+      }, { compress: false, creationDate: DATE });
+      expect(err?.message).toMatch(/unknown option/);
+      if (HAS.qpdf) expect(qdf(out)).toContain('/FitWindow true');
+      expect(latin(out)).not.toContain('[object');
+    });
+  }
+  it('pdf.standardFont and pdf.facturX refuse inherited names with a clear error', async () => {
+    await toBytes((pdf) => {
+      for (const n of ['constructor', 'toString', '__proto__']) expect(() => pdf.standardFont(n), n).toThrow(/Not a standard font/);
+    });
+    await toBytes(async (pdf) => {
+      pdf.addPage();
+      for (const n of ['constructor', 'toString']) await expect(pdf.facturX(EN16931, { profile: n }), n).rejects.toThrow(/profile is one of/);
+    }, { pdfa: { part: 3, conformance: 'b' }, creationDate: DATE });
+  });
+});
+
