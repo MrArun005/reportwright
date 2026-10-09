@@ -1,12 +1,22 @@
 # @reportwright/engine
 
+Turn a JSON report definition and your data into paged PDF, Excel, Word, PowerPoint, HTML or CSV, in Node or the browser, with no Chromium.
+
 [![npm](https://img.shields.io/npm/v/%40reportwright%2Fengine)](https://www.npmjs.com/package/@reportwright/engine) [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/MrArun005/reportwright/blob/main/LICENSE) [![Socket](https://socket.dev/api/badge/npm/package/@reportwright/engine)](https://socket.dev/npm/package/@reportwright/engine)
 
-The ReportWright report engine for Node and browsers: a JSON report definition and data in, pages out, then PDF (also PDF/A-2b), Word, Excel, PowerPoint (exportPptx), HTML or CSV. The command line is `@reportwright/cli` (`pw`).
+**Live demo:** [mrarun005.github.io/reportwright-demo](https://mrarun005.github.io/reportwright-demo) (the [live gallery](https://mrarun005.github.io/reportwright-demo/#gallery) renders real definitions with this engine; [benchmarks](https://mrarun005.github.io/reportwright-demo/bench.html) compares it with pdfmake, react-pdf, PDFKit and Puppeteer on the same reports).
+
+The engine lays out pages from a definition (bands, tables with groups, matrices, charts, barcodes, subreports) and the exporters write the files. The command line is [`@reportwright/cli`](https://github.com/MrArun005/reportwright/tree/main/packages/cli) (`pw`); the in-browser viewer and designer are [`@reportwright/viewer`](https://github.com/MrArun005/reportwright/tree/main/packages/viewer).
+
+## Install
 
 ```bash
 npm i @reportwright/engine @reportwright/fonts
 ```
+
+`@reportwright/fonts` is a peer dependency: it holds the fonts, the HarfBuzz text shaper, the PDF font subsetter and the PDF/A colour profile.
+
+## Quick start (30 seconds)
 
 Save this as `statement.pw.json` (a minimal report; the repository's `examples/` has more):
 
@@ -30,6 +40,7 @@ Save this as `statement.pw.json` (a minimal report; the repository's `examples/`
 ```
 
 ```js
+// render.mjs: node render.mjs
 import { render, defaultFontStore, exportPdf } from '@reportwright/engine';
 import fs from 'node:fs';
 // the fonts, the text shaper (Arabic, Hebrew, Indic, Thai…) and the PDF subsetter come from @reportwright/fonts;
@@ -45,6 +56,179 @@ const bundledFonts = defaultFontStore({ fontsUrl: '/pw/fonts/' }); // a missing 
 // Excel, CSV, Word, interactive HTML and the accessible PDF rebuild tables from the table data, which render() keeps
 // only when asked: render(def, { exportData: true }) (needsExportData(format) says which formats need it)
 ```
+
+## Examples
+
+Every example below was run against this version in Node 20. They use this report, `orders.pw.json`: a title and a
+table of customers and amounts with a total (it is `examples/report.pw.json` in the repository):
+
+```json
+{
+  "$schema": "pagewright/report@1",
+  "name": "Orders",
+  "page": { "size": "A4", "margins": [36, 36, 36, 36] },
+  "dataSources": [{ "name": "orders", "type": "json", "data": { "rows": [] } }],
+  "dataSets": [{ "name": "Lines", "source": "orders", "path": "$.rows" }],
+  "sections": { "body": { "items": [
+    { "type": "textbox", "name": "Title", "x": 0, "y": 0, "w": 300, "h": 24, "value": "Orders", "style": { "fontSize": 18, "fontWeight": "bold" } },
+    { "type": "table", "name": "Table", "x": 0, "y": 40, "w": 400, "h": 60, "dataSet": "Lines",
+      "columns": [{ "width": 250 }, { "width": 150 }],
+      "header": [{ "height": 18, "cells": [{ "value": "Customer" }, { "value": "Amount", "style": { "textAlign": "right" } }] }],
+      "detail": [{ "height": 18, "cells": [{ "value": "=Fields.customer" }, { "value": "=Fields.amount", "style": { "format": "C2", "textAlign": "right" } }] }],
+      "footer": [{ "height": 18, "cells": [{ "value": "Total" }, { "value": "=Sum(Fields.amount)", "style": { "format": "C2", "textAlign": "right", "fontWeight": "bold" } }] }] }
+  ] } }
+}
+```
+
+### 1. Bind your own data, then write PDF, Excel, Word, PowerPoint, HTML and CSV
+
+`sources` replaces a data source's data by name. The data set reads `$.rows`, so the JSON has a `rows` array; a
+mismatch gives an empty table, not an error.
+
+```js
+import fs from 'node:fs';
+import { render, defaultFontStore, validate, exportPdf, exportXlsx, exportDocx, exportPptx, exportHtml, exportCsv } from '@reportwright/engine';
+
+const def = JSON.parse(fs.readFileSync('orders.pw.json', 'utf8'));
+const orders = { rows: [{ customer: 'Asha Rao', amount: 1200.5 }, { customer: 'Ben Ode', amount: 80 }] };
+
+const { errors } = validate(def);                 // { errors, warnings, exprErrors, checkOnly }
+if (errors.length) throw new Error(errors.join('\n'));
+
+const fonts = defaultFontStore();
+const model = await render(def, { fontStore: fonts, sources: { orders }, exportData: true });
+fs.writeFileSync('orders.pdf', await exportPdf(model, { fonts, title: 'Orders' }));
+fs.writeFileSync('orders.xlsx', await exportXlsx(model, { fonts }));
+fs.writeFileSync('orders.docx', await exportDocx(model, { fonts }));
+fs.writeFileSync('orders.pptx', await exportPptx(model, { fonts }));
+fs.writeFileSync('orders.html', await exportHtml(model, { fonts, title: 'Orders' }));
+fs.writeFileSync('orders.csv', exportCsv(model));  // Customer,Amount / Asha Rao,1200.5 / Ben Ode,80
+```
+
+### 2. Parameters and a filter
+
+```js
+def.parameters = [{ name: 'minAmount', type: 'float', default: 0 }];
+def.dataSets[0].filters = [{ expr: '=Fields.amount', op: '>=', value: '=Parameters.minAmount' }];
+def.sections.body.items[0].value = '="Orders over " & Parameters.minAmount';
+
+const model = await render(def, { fontStore: fonts, sources: { orders }, parameters: { minAmount: 100 } });
+// one row (Asha Rao) under the title "Orders over 100"
+```
+
+### 3. Archival and accessible PDF
+
+```js
+const model = await render(def, { fontStore: fonts, sources: { orders }, exportData: true });
+fs.writeFileSync('orders-pdfa.pdf', await exportPdf(model, { fonts, pdfa: true })); // PDF/A-2b, sRGB profile from @reportwright/fonts
+```
+
+From the command line, `pw render orders.pw.json --pdfa --ua` writes PDF/A-2a with PDF/UA-1 tagging.
+
+### 4. Stream a large report to a file
+
+```js
+import { exportPdfStream } from '@reportwright/engine';
+const out = fs.createWriteStream('orders.pdf');
+const r = await exportPdfStream(def, { sources: { orders }, title: 'Orders' }, out);
+out.end();
+console.log(r.streamed, r.pages);                  // true 1
+```
+
+Details, memory figures and what streams are under [Streaming PDF for large reports](#streaming-pdf-for-large-reports).
+
+### 5. Many reports in parallel (Node worker pool)
+
+```js
+import { createPool } from '@reportwright/engine/pool';
+const pool = createPool({ workers: 2 });
+const pdf = await pool.render(def, { format: 'pdf' }); // Uint8Array
+await pool.close();
+```
+
+## Features
+
+| Area | What the engine does |
+|---|---|
+| Layout | Page header and footer, body bands, absolutely placed items; tables with groups, subtotals, keep-together and page breaks; matrices (pivot); lists; subreports (nested up to 3 levels) |
+| Items | Text and rich text, images, lines and shapes, charts (incl. sparklines and data bars), barcodes, maps |
+| Expressions | `=Fields.x`, `=Parameters.x`, aggregates (`Sum`, `Count`, `Avg`, `Min`, `Max`, `CountRows()`), `RowNumber()`, lookups; an expression that does not parse draws `#Error` with a warning |
+| Data | Inline JSON, `sources` passed to `render()`, REST, GraphQL, SOAP, OData, CSV, XML; SQL through your own `sql` / `sqlRows` callback |
+| Text | HarfBuzz shaping (Arabic, Hebrew, Indic, Thai), bidi; CJK and emoji with [`@reportwright/fonts-cjk`](https://github.com/MrArun005/reportwright/tree/main/packages/fonts-cjk) |
+| PDF | Font subsetting, PDF/A-2b, PDF/A-2a and PDF/UA-1 (validated with veraPDF), AES-256 passwords and permissions |
+| Scale | Streaming PDF, Word and Excel export; disk-spilling sort; worker pool and opt-in worker threads |
+| Safety | SSRF guard on data fetches, per-fetch time and size limits, render `timeoutMs`, misspelled options reported |
+
+## Supported formats
+
+| Direction | Formats |
+|---|---|
+| Export | PDF (`exportPdf`, `exportPdfStream`), PDF/A-2b and PDF/A-2a, PDF/UA-1, Excel `.xlsx` (`exportXlsx`, `exportXlsxStream`), Word `.docx` (`exportDocx`, `exportDocxStream`), PowerPoint `.pptx` (`exportPptx`), HTML (`exportHtml`, with a sortable Tables view unless `static`), CSV (`exportCsv`), SVG per page (`pageToSvg`) |
+| Import | JasperReports `.jrxml`, SSRS `.rdl` / `.rdlc`, BIRT `.rptdesign`, ActiveReports `.rdlx-json`: with `pw import` in [`@reportwright/cli`](https://github.com/MrArun005/reportwright/tree/main/packages/cli) |
+
+## Options reference
+
+From the package's types (`index.d.ts`); the JSDoc in `dist/` has every option.
+
+**`render(definition, options)`** → page model
+
+| Option | Meaning |
+|---|---|
+| `fontStore` | the `FontStore`; share one across renders |
+| `parameters` | report parameter values by name (invariant form: `1234.5`, `2026-03-05`) |
+| `sources` | data already loaded, by data source name (skips loading them) |
+| `exportData` | keep the table data Excel, CSV, Word, interactive HTML and accessible PDF need |
+| `now`, `timeZone` | the render's clock and the zone dates show in |
+| `fetch`, `baseUrl`, `allowHosts`, `unsafeFetch` | how data requests are made (see the network notes below) |
+| `fetchTimeoutMs`, `maxFetchBytes` | per-fetch limits (30 s, 64 MB) |
+| `sql`, `loadReport` | callbacks for SQL sources and for subreports / masters by id |
+| `timeoutMs`, `deadline` | stop with status 504 when the render runs longer |
+| `largeReportRows` | rows past which a data set warns (100,000; `0` or `false` turns it off) |
+
+**`exportPdf(model, options)`** → `Uint8Array`: `fonts`, `title`, `subset` (`false` embeds full fonts), `pdfa`
+(`true` or `{ icc }`), `tagged`, `encrypt`, `onWarning`, `timeoutMs`.
+
+**`exportXlsx` / `exportDocx` / `exportPptx(model, options)`** → `Promise<Uint8Array>`: `fonts`, plus `currency` and
+`formulas` for Excel.
+
+**`exportHtml(model, options)`**: `fonts`, `title`, `static`, `locale`, `currency`, `lang`, `timeoutMs`.
+**`exportCsv(model, options)`**: `all`, `layout` (the printed layout instead of the data), `locale`, `currency`.
+
+**`exportPdfStream` / `exportDocxStream` / `exportXlsxStream(definition, options, sink)`**: `render()`'s and
+`exportPdf`'s options plus `window`, `maxRows`, `presorted`, `spill`, `parallel`, `signal`, `sqlRows`.
+
+Other exports: `validate`, `blankReport`, `blankDashboard`, `FontStore`, `fontFile`, `defaultFontStore`,
+`needsExportData`, `parameterOptions`, `resolveParameters`, `createSubsetter`, `pageToSvg`. Types for the definition
+format: `import type { Report } from '@reportwright/engine/report'`; JSON Schema: `@reportwright/engine/schema.json`.
+
+## Runtime support
+
+- **Node** 20.9 or later (`engines`). The SSRF guard pins the checked address on Node 20.16+ / 22.3+.
+- **Browsers**: the package is ES modules built for ES2022, for modern evergreen browsers through a bundler. In a
+  browser, pass `defaultFontStore({ fontsUrl })` (see the quick start). Sorted or grouped exports hold their rows in
+  memory there (keep them under about 100,000 rows).
+
+## Limits
+
+| Limit | Default | Option |
+|---|---|---|
+| Rows read by a streamed export | 5,000,000 | `maxRows` |
+| Time per data fetch | 30 s | `fetchTimeoutMs` |
+| Size per data fetch (decoded) | 64 MB | `maxFetchBytes` |
+| Redirects per fetch | 5 | none |
+| Subreport nesting | 3 levels | none |
+| Disk used by a spilled sort | 2 GB | `spill: { maxMB }` |
+| Warning threshold for a large data set | 100,000 rows | `largeReportRows` |
+
+## Related packages
+
+| Package | What it is |
+|---|---|
+| [`@reportwright/fonts`](https://github.com/MrArun005/reportwright/tree/main/packages/fonts) | fonts, shaper, subsetter and colour profile (required) |
+| [`@reportwright/fonts-cjk`](https://github.com/MrArun005/reportwright/tree/main/packages/fonts-cjk) | optional Chinese, Japanese, Korean and emoji fonts |
+| [`@reportwright/cli`](https://github.com/MrArun005/reportwright/tree/main/packages/cli) | `pw`: render, test, diff and import reports from the command line |
+| [`@reportwright/viewer`](https://github.com/MrArun005/reportwright/tree/main/packages/viewer) | the in-browser viewer and designer |
+| [`@reportwright/react`](https://github.com/MrArun005/reportwright/tree/main/packages/react), [`/vue`](https://github.com/MrArun005/reportwright/tree/main/packages/vue), [`/svelte`](https://github.com/MrArun005/reportwright/tree/main/packages/svelte), [`/angular`](https://github.com/MrArun005/reportwright/tree/main/packages/angular) | framework wrappers for the viewer and designer |
 
 ## Implicit behaviour, and how to switch it
 
