@@ -10,7 +10,7 @@ import { main } from '../common/frame.mjs';
 import { spec, fx, money, groupsOf } from '../common/data.mjs';
 
 const require = createRequire(import.meta.url);
-const ver = (p) => require(`${p}/package.json`).version;
+const ver = (p) => JSON.parse(fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), 'node_modules', p, 'package.json'), 'utf8')).version; // some packages do not export ./package.json
 const P = spec.page, R = spec.report;
 const font = (k) => fx(spec.fonts[k]);
 const rgb01 = (hex) => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
@@ -18,6 +18,7 @@ const rgb01 = (hex) => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 25
 // ---------------------------------------------------------------- pdf-lib
 async function pdflib() {
   const { PDFDocument, rgb } = await import('pdf-lib');
+  globalThis.regeneratorRuntime ??= require('regenerator-runtime'); // @pdf-lib/fontkit's complex-script shaper expects the global
   const fontkit = (await import('@pdf-lib/fontkit')).default;
   const col = (h) => rgb(...rgb01(h));
   const canvas = async (out, o) => {
@@ -103,7 +104,7 @@ async function jspdf() {
       width: (s, size, k) => { use(k, size); return doc.getTextWidth(s); },
       rect(x, y, w, h, c) { doc.setFillColor(c); doc.rect(x, y, w, h, 'F'); },
       hline(x1, x2, y, w, c) { doc.setDrawColor(c); doc.setLineWidth(w); doc.line(x1, y, x2, y); },
-      image: async (file) => { const data = new Uint8Array(fs.readFileSync(file)); return { data, fmt: file.endsWith('.png') ? 'PNG' : 'JPEG', ...doc.getImageProperties(data) }; },
+      image: async (file) => { const data = `data:image/${file.endsWith('.png') ? 'png' : 'jpeg'};base64,${fs.readFileSync(file).toString('base64')}`; return { data, fmt: file.endsWith('.png') ? 'PNG' : 'JPEG', ...doc.getImageProperties(data) }; },
       draw(img, x, y, w, h) { doc.addImage(img.data, img.fmt, x, y, w, h, undefined, 'FAST'); },
       async end() { fs.writeFileSync(out, Buffer.from(doc.output('arraybuffer'))); },
     };
@@ -141,8 +142,11 @@ async function pdfmake() {
     pdfa: (c, out) => invoice(c, out, { pdfa: true }),
     async plain({ pool, pages }, out) {
       const s = spec.plain, content = [];
-      for (let p = 0; p < pages; p++) for (let k = 0; k < s.linesPerPage; k++)
-        content.push({ text: pool[(p * s.linesPerPage + k) % pool.length], fontSize: s.size, lineHeight: s.leading / s.size / 1.17, ...(k === s.linesPerPage - 1 && p < pages - 1 ? { pageBreak: 'after' } : {}) });
+      // each line at its spec position, as the canvas writers draw it (a flowed line's height depends on the font's metrics)
+      for (let p = 0; p < pages; p++) {
+        if (p) content.push({ text: '', pageBreak: 'before' });
+        for (let k = 0; k < s.linesPerPage; k++) content.push(abs(pool[(p * s.linesPerPage + k) % pool.length], s.x, s.y + k * s.leading, { fontSize: s.size }));
+      }
       await write({ pageMargins: [s.x, s.y, s.x, 0], content }, out, 'Plain');
     },
     async report({ rows }, out) {

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
+using QuestPDF.Fluent; // the extension methods (Page, Column, Table, FontFamily...)
 using static Program;
 
 // ---------------------------------------------------------------- the create jobs over a drawing surface

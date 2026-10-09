@@ -445,7 +445,6 @@
       "report",
       "invoice",
       "invoice-warm",
-      "unicode",
       "images",
       "read-big",
       "read-mixed",
@@ -459,7 +458,8 @@
      ],
      "million": true,
      "na": {
-      "pdfa": "not attempted (needs an ICC profile file)"
+      "pdfa": "not attempted (needs an ICC profile file)",
+      "unicode": "iText 9.8 throws reading a fixture font's GPOS table (IndexOutOfBoundsException in GposLookupType1)"
      }
     },
     "jasperreports": {
