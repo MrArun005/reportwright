@@ -157,7 +157,7 @@ describe('npm packages', () => {
   it('every package ships readable code (not minified); all but the engine also ship source maps', () => {
     // the engine ships its readable bundle without a map: the map was ~0.8 MB and pushed the package past its 2 MB mark
     const MAPLESS = new Set(['engine/dist/index.js']);
-    for (const f of ['engine/dist/index.js', 'cli/dist/pw.mjs', 'viewer/dist/viewer.js', 'viewer/dist/designer.js', 'viewer/dist/peer/viewer.js']) {
+    for (const f of ['engine/dist/index.js', 'cli/dist/cli.mjs', 'viewer/dist/viewer.js', 'viewer/dist/designer.js', 'viewer/dist/peer/viewer.js']) {
       const src = fs.readFileSync(path.join(root, 'packages', f), 'utf8');
       const lines = src.split('\n');
       expect(src.length / lines.length, f).toBeLessThan(120); // minified code is a few very long lines
@@ -186,7 +186,7 @@ describe('npm packages', () => {
   });
 
   it('the CLI is render, test, diff and import only: no server modules, no shell access, only its own PW_* options', () => {
-    const src = fs.readFileSync(path.join(root, 'packages/cli/dist/pw.mjs'), 'utf8');
+    const src = fs.readFileSync(path.join(root, 'packages/cli/dist/cli.mjs'), 'utf8');
     expect(src).not.toMatch(/^\/\/ src\/server\//m); // esbuild marks every bundled file with its path
     expect(src).not.toMatch(/child_process/);
     const env = [...src.matchAll(/process\.env(?:\.(\w+)|\[\s*['"](\w+)['"]\s*\])?/g)].map(m => m[1] || m[2] || '(dynamic)');

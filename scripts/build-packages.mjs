@@ -103,7 +103,10 @@ const serverStub = { name: 'server-stub', setup: (b) => {
   b.onResolve({ filter: /\/src\/server\// }, (a) => ({ path: a.path, namespace: 'server-stub' }));
   b.onLoad({ filter: /.*/, namespace: 'server-stub' }, () => ({ contents: "throw new Error('this is a server command: run it with node bin/pw.mjs in the ReportWright app folder');" }));
 } };
-await build({ entryPoints: [path.join(root, 'bin/pw.mjs')], bundle: true, format: 'esm', platform: 'node', target: 'node22', minify: false, sourcemap: 'linked', sourcesContent: false, charset: 'utf8', lineLimit: 400, outfile: path.join(root, C, 'dist/pw.mjs'), external: [...external, '@reportwright/fonts'], plugins: [serverStub], logLevel: 'warning' }); // esbuild keeps bin/pw.mjs's #! line
+await build({ entryPoints: [path.join(root, 'bin/pw.mjs')], bundle: true, format: 'esm', platform: 'node', target: 'node22', minify: false, sourcemap: 'linked', sourcesContent: false, charset: 'utf8', lineLimit: 400, outfile: path.join(root, C, 'dist/cli.mjs'), external: [...external, '@reportwright/fonts'], plugins: [serverStub], logLevel: 'warning' });
+// pw.mjs turns on Node's compile cache (22.1+; in the OS temp folder, or NODE_COMPILE_CACHE) before it loads the bundle,
+// so a second run skips compiling it: about 10 ms of each cold start
+write(`${C}/dist/pw.mjs`, "#!/usr/bin/env node\n// pw: the ReportWright CLI (cli.mjs), with Node's compile cache on\nimport module from 'node:module';\ntry { module.enableCompileCache?.(); } catch { /* read-only temp folder: no cache */ }\nawait import('./cli.mjs');\n");
 fs.chmodSync(path.join(root, C, 'dist/pw.mjs'), 0o755);
 write(`${C}/package.json`, {
   name: '@reportwright/cli', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT',
