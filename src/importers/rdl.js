@@ -12,7 +12,7 @@
  * Pure JavaScript, no Node APIs and no DOM. It never throws: whatever it cannot map becomes a warning.
  */
 import { parseXml, XmlError } from './xml.js';
-import { importRdlx, toPt, ImportBudgetError, OUTPUT_LIMITS } from './rdlx.js';
+import { importRdlx, toPt, ImportBudgetError, OUTPUT_LIMITS, rewordItems } from './rdlx.js';
 
 const RDL_NS = /^http:\/\/schemas\.microsoft\.com\/sqlserver\/reporting\/(\d{4})\/\d{2}\/reportdefinition$/i;
 const MAX_EXPR = 20_000; // longer expressions are left out (the translation is linear, but its output feeds the engine)
@@ -28,8 +28,9 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 /**
  * Convert an SSRS report.
  * @param {string} input the .rdl / .rdlc text
- * @param {{ name?: string }} [opts] name: the report name (e.g. from the file name)
- * @returns {{ definition: any, warnings: string[], stats: { items: number, mapped: number, approximated: number, dropped: number }, error?: string }}
+ * @param {{ name?: string, resolve?: (kind: 'datasource', ref: string) => string | null | undefined }} [opts] name: the report name (e.g. from the file name);
+ *   resolve: the text of the shared data source (.rds) a DataSourceReference names, when the caller has it (pw import <folder>)
+ * @returns {{ definition: any, warnings: string[], stats: { items: number, mapped: number, approximated: number, dropped: number }, items: import('./rdlx.js').ImportedItem[], error?: string }}
  */
 export function importRdl(input, opts = {}) {
   const name = opts.name || 'Imported SSRS report';
@@ -48,7 +49,7 @@ export function importRdl(input, opts = {}) {
   /** @type {string[]} */
   const notes = [];
   let ar;
-  try { ar = toRdlx(root, notes, m ? Number(m[1]) : 2016); } catch (e) {
+  try { ar = toRdlx(root, notes, m ? Number(m[1]) : 2016, opts.resolve); } catch (e) {
     if (e instanceof ImportBudgetError) {
       const error = `The report is too large to import: ${e.message}`;
       return { ...importRdlx({}, { name }), warnings: [`${error}.`], error };
@@ -61,16 +62,19 @@ export function importRdl(input, opts = {}) {
   const def = r.definition;
   for (const p of def.parameters || []) if (ar.__hidden?.has(p.name)) p.hidden = true;
   if (ar.__code) def.customCode = ar.__code;
-  const warnings = [...notes, ...r.warnings.filter(w => !/is hidden in ActiveReports; ReportWright shows it/.test(w))]
+  const hiddenNote = /is hidden in ActiveReports; ReportWright shows it/;
+  const warnings = [...notes, ...r.warnings.filter(w => !hiddenNote.test(w))]
     .map(w => w.replace(/ActiveReports/g, 'SSRS'));
-  return { definition: def, warnings: [...new Set(warnings)], stats: r.stats };
+  const items = rewordItems(r.items.map(i => ({ ...i, notes: i.notes.filter(n => !hiddenNote.test(n.message)) })), w => w.replace(/ActiveReports/g, 'SSRS'));
+  return { definition: def, warnings: [...new Set(warnings)], stats: r.stats, items };
 }
 
 /**
  * The RDL XML tree → an RDLX-JSON object (what rdlx.js reads).
  * @param {import('./xml.js').XmlElement} root @param {string[]} notes @param {number} year the RDL version
+ * @param {((kind: 'datasource', ref: string) => string | null | undefined)} [resolve]
  */
-function toRdlx(root, notes, year) {
+function toRdlx(root, notes, year, resolve) {
   const NS = root.ns;
   /** @param {any} e @param {string} [name] */
   const kids = (e, name) => (e ? e.children.filter(c => c.ns === NS && (name == null || c.name === name)) : []);
@@ -208,7 +212,7 @@ function toRdlx(root, notes, year) {
     itemNotes = [];
     itemInfo = [];
     return {
-      Type: type, Name: e.attrs.Name, __notes: itemNotes, __info: itemInfo,
+      Type: type, Name: e.attrs.Name, __notes: itemNotes, __info: itemInfo, __pos: e.pos,
       Left: raw(e, 'Left'), Top: raw(e, 'Top'), Width: raw(e, 'Width'), Height: raw(e, 'Height'), ZIndex: raw(e, 'ZIndex'),
       Visibility: visibility(e), PageBreak: pageBreak(e), ToolTip: val(e, 'ToolTip'), DocumentMapLabel: val(e, 'DocumentMapLabel'), Bookmark: val(e, 'Bookmark'),
       KeepTogether: raw(e, 'KeepTogether'), Style: styleOf(e), Action: action(e),
@@ -661,17 +665,35 @@ function toRdlx(root, notes, year) {
     for (const c of e.children) prepass(c, r);
   })(root, null);
 
+  /** A shared data source (.rds: <RptDataSource><ConnectionProperties>, or the server's <DataSourceDefinition>) the caller found. */
+  function sharedSource(ref) {
+    let text;
+    try { text = resolve?.('datasource', ref); } catch { text = null; }
+    if (typeof text !== 'string') return null;
+    let doc;
+    try { doc = parseXml(text); } catch (e) { notes.push(`The shared data source "${ref}" could not be read (${e instanceof Error ? e.message : e}); it is treated as SQL Server.`); return null; }
+    const sub = (e, n) => e?.children.find(c => c.name === n);
+    const props = doc.name === 'RptDataSource' ? sub(doc, 'ConnectionProperties') : doc.name === 'DataSourceDefinition' ? doc : null;
+    if (!props) { notes.push(`The shared data source "${ref}" is not an SSRS data source (its root is <${doc.name}>); it is treated as SQL Server.`); return null; }
+    return { provider: (sub(props, 'Extension')?.text || 'SQL').trim(), connect: (sub(props, 'ConnectString')?.text ?? '').trim() };
+  }
   const TYPE_OF = (t) => (/datetime|date$/i.test(t) ? 'date' : /int|decimal|double|single|byte|float/i.test(t) ? 'number' : /boolean/i.test(t) ? 'boolean' : null);
   const DataSources = list(root, 'DataSources', 'DataSource').map(d => {
     const name = d.attrs.Name;
     const cp = kid(d, 'ConnectionProperties');
     let provider = raw(cp, 'DataProvider') || '';
+    let connect = raw(cp, 'ConnectString') ?? '';
     if (!cp && kid(d, 'DataSourceReference')) {
-      provider = 'SQL';
-      notes.push(`Data source "${name}" is the shared data source "${raw(d, 'DataSourceReference')}", whose connection is not in the file; it is treated as SQL Server.`);
+      const ref = raw(d, 'DataSourceReference') ?? '';
+      const shared = sharedSource(ref);
+      if (shared) ({ provider, connect } = shared);
+      else {
+        provider = 'SQL';
+        notes.push(`Data source "${name}" is the shared data source "${ref}", whose connection is not in the file; it is treated as SQL Server.`);
+      }
     }
     if (/^(OLEDB-MD|ESSBASE|SAPBW|SQLAS|HYPERION)/i.test(provider)) provider = `${provider} (MDX)`; // a cube query, not SQL
-    return { Name: name, ConnectionProperties: { DataProvider: provider, ConnectString: raw(cp, 'ConnectString') ?? '' } };
+    return { Name: name, ConnectionProperties: { DataProvider: provider, ConnectString: connect } };
   });
   /** @type {Map<string, any[]>} rows of the data sets typed into the report */
   const entered = new Map();
