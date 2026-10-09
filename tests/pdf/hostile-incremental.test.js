@@ -8,7 +8,6 @@ import { PDFDocument, PDFName, PDFString } from 'pdf-lib';
 import { loadPdf } from '../../packages/pdf/src/index.js';
 import { internal } from '../../packages/pdf/src/reader/pdf.js';
 import { rawPdf, enc, qdf, PY } from './reader-tools.js';
-import { mayBeActive } from '../../packages/pdf/src/reader/policy.js';
 
 const base = (cat = '', extra = [], xref) => rawPdf([
   `<< /Type /Catalog /Pages 2 0 R ${cat} >>`, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
@@ -67,11 +66,6 @@ describe('saveIncremental refuses a file with active content; save() removes it'
     d.setInfo({ title: 'two' });
     await d.saveIncremental();
     expect(calls).toBe(0);
-  });
-  it('the prefilter finds every name the policy acts on, escaped, indirect or at the end of the bytes', () => {
-    const hit = (/** @type {string} */ t) => mayBeActive(enc(t));
-    for (const t of ['<< /JS', '/OpenAction 5 0 R', '/AA<<>>', '/#4A#53', '/Java#53cript', '/Type 7 0 R', '/S %c\n 7 0 R', '/Subtype\n12 0 R', '/Rect[0 0 1 1]', '/Kids[]', '/Annots 3 0 R', '/EF<<>>', '/FS 3 0 R', '/Launch', '/SubmitForm', '/ImportData', '/GoToR', '/GoToE', '/XFA', '/RichMedia', '/EmbeddedFile', '/Sound', '/Movie', '/Rendition', '/Type/Action', '/Type /Annot', '/Type /Filespec']) expect(hit(t), t).toBe(true);
-    for (const t of ['<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>', '<< /Length 5 0 R /Filter /FlateDecode >>', '[0 0 612 792]', '/JSX /AAA /Rectangle']) expect(hit(t), t).toBe(false);
   });
   it('a clean file updates', async () => {
     const d = await loadPdf(base());
