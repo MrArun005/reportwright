@@ -1,5 +1,5 @@
 {
- "_doc": "Who runs in which job. cmd + [job, size, outdir] is the harness contract (README.md). jobs: what the contestant does; every other job is n/a, with the reason from na (keys: a job, or read/edit/create for a family). million: also runs the 1,000,000-row report in the million tier.",
+ "_doc": "Who runs in which job. cmd + [job, size, outdir] is the harness contract (README.md). jobs: what the contestant does; every other job is n/a, with the reason from na (keys: a job, or read/edit/create for a family). million: also runs the 1,000,000-row report in the million tier. league: engine (lays out pages itself from a table/report definition), writer (executes pre-laid-out draw ops) or read-edit (no create job); merge.py splits the create tables by it.",
  "langs": {
   "ours": {
    "runtime": [
@@ -8,6 +8,7 @@
    ],
    "libs": {
     "@reportwright/engine": {
+     "league": "engine",
      "cmd": [
       "node",
       "bench/deep/ours/harness.mjs",
@@ -29,6 +30,7 @@
      }
     },
     "@reportwright/pdf": {
+     "league": "writer",
      "cmd": [
       "node",
       "bench/deep/ours/harness.mjs",
@@ -63,6 +65,7 @@
    ],
    "libs": {
     "pdf-lib": {
+     "league": "writer",
      "cmd": [
       "node",
       "bench/deep/js/harness.mjs",
@@ -89,6 +92,7 @@
      }
     },
     "pdfkit": {
+     "league": "writer",
      "cmd": [
       "node",
       "bench/deep/js/harness.mjs",
@@ -110,6 +114,7 @@
      }
     },
     "jspdf": {
+     "league": "writer",
      "cmd": [
       "node",
       "bench/deep/js/harness.mjs",
@@ -130,6 +135,7 @@
      }
     },
     "pdfmake": {
+     "league": "engine",
      "cmd": [
       "node",
       "bench/deep/js/harness.mjs",
@@ -150,6 +156,7 @@
      }
     },
     "@react-pdf/renderer": {
+     "league": "engine",
      "cmd": [
       "node",
       "bench/deep/js/harness.mjs",
@@ -170,6 +177,7 @@
      }
     },
     "pdfjs-dist": {
+     "league": "read-edit",
      "cmd": [
       "node",
       "bench/deep/js/harness.mjs",
@@ -186,6 +194,7 @@
      }
     },
     "puppeteer": {
+     "league": "engine",
      "cmd": [
       "node",
       "bench/deep/js/harness.mjs",
@@ -214,6 +223,7 @@
    ],
    "libs": {
     "reportlab": {
+     "league": "writer",
      "cmd": [
       "python3",
       "bench/deep/python/harness.py",
@@ -235,6 +245,7 @@
      }
     },
     "PyMuPDF": {
+     "league": "writer",
      "cmd": [
       "python3",
       "bench/deep/python/harness.py",
@@ -263,6 +274,7 @@
      }
     },
     "pikepdf": {
+     "league": "read-edit",
      "cmd": [
       "python3",
       "bench/deep/python/harness.py",
@@ -283,6 +295,7 @@
      }
     },
     "pypdf": {
+     "league": "read-edit",
      "cmd": [
       "python3",
       "bench/deep/python/harness.py",
@@ -304,6 +317,7 @@
      }
     },
     "pdfminer.six": {
+     "league": "read-edit",
      "cmd": [
       "python3",
       "bench/deep/python/harness.py",
@@ -320,6 +334,7 @@
      }
     },
     "pdfplumber": {
+     "league": "read-edit",
      "cmd": [
       "python3",
       "bench/deep/python/harness.py",
@@ -336,6 +351,7 @@
      }
     },
     "weasyprint": {
+     "league": "engine",
      "cmd": [
       "python3",
       "bench/deep/python/harness.py",
@@ -364,6 +380,7 @@
    ],
    "libs": {
     "pdfbox": {
+     "league": "writer",
      "cmd": [
       "java",
       "-Djava.awt.headless=true",
@@ -397,6 +414,7 @@
      }
     },
     "openpdf": {
+     "league": "writer",
      "cmd": [
       "java",
       "-Djava.awt.headless=true",
@@ -430,6 +448,7 @@
      }
     },
     "itext": {
+     "league": "writer",
      "cmd": [
       "java",
       "-Djava.awt.headless=true",
@@ -463,6 +482,7 @@
      }
     },
     "jasperreports": {
+     "league": "engine",
      "cmd": [
       "java",
       "-Djava.awt.headless=true",
@@ -491,6 +511,7 @@
    ],
    "libs": {
     "QuestPDF": {
+     "league": "engine",
      "cmd": [
       "dotnet",
       "bench/deep/dotnet/out/Bench.dll",
@@ -511,6 +532,7 @@
      }
     },
     "PDFsharp": {
+     "league": "writer",
      "cmd": [
       "dotnet",
       "bench/deep/dotnet/out/Bench.dll",
@@ -537,6 +559,7 @@
      }
     },
     "PdfPig": {
+     "league": "read-edit",
      "cmd": [
       "dotnet",
       "bench/deep/dotnet/out/Bench.dll",
@@ -563,6 +586,7 @@
    ],
    "libs": {
     "fpdf": {
+     "league": "writer",
      "cmd": [
       "bench/deep/go/bench",
       "fpdf"
@@ -582,6 +606,7 @@
      }
     },
     "pdfcpu": {
+     "league": "read-edit",
      "cmd": [
       "bench/deep/go/bench",
       "pdfcpu"
@@ -609,6 +634,7 @@
    ],
    "libs": {
     "printpdf": {
+     "league": "writer",
      "cmd": [
       "bench/deep/rust/target/release/bench",
       "printpdf"
@@ -628,6 +654,7 @@
      }
     },
     "lopdf": {
+     "league": "read-edit",
      "cmd": [
       "bench/deep/rust/target/release/bench",
       "lopdf"
@@ -647,6 +674,7 @@
      }
     },
     "pdf-extract": {
+     "league": "read-edit",
      "cmd": [
       "bench/deep/rust/target/release/bench",
       "pdf-extract"
@@ -670,6 +698,7 @@
    ],
    "libs": {
     "mutool": {
+     "league": "read-edit",
      "cmd": [
       "bash",
       "bench/deep/cli/harness.sh",
@@ -691,6 +720,7 @@
      }
     },
     "qpdf": {
+     "league": "read-edit",
      "cmd": [
       "bash",
       "bench/deep/cli/harness.sh",
@@ -711,6 +741,7 @@
      }
     },
     "pdftotext": {
+     "league": "read-edit",
      "cmd": [
       "bash",
       "bench/deep/cli/harness.sh",
@@ -727,6 +758,7 @@
      }
     },
     "pdfium": {
+     "league": "read-edit",
      "cmd": [
       "bash",
       "bench/deep/cli/harness.sh",

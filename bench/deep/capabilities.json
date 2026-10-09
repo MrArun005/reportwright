@@ -1,0 +1,118 @@
+{
+ "_doc": "Feature matrix for results.md/html (merge.py). Values: yes, no, partial, ? (not verified: listed under 'to verify'). notes: the source or the caveat for a non-obvious cell; a partial cell must have one. Library keys match contestants.json. Checked against the versions in README.md; '?' rather than a guess.",
+ "columns": {
+  "layout": "layout engine", "tables": "tables", "bidi": "bidi (UBA)", "shaping": "complex-script shaping", "streams": "streams pages",
+  "pdfa": "PDF/A", "pdfua": "PDF/UA", "forms": "forms (create/fill)", "sign": "signing", "encrypt": "encryption",
+  "read": "read/extract text", "merge": "merge/split", "deps": "runtime deps", "license": "license"
+ },
+ "libs": {
+  "@reportwright/engine": {
+   "layout": "yes", "tables": "yes", "bidi": "yes", "shaping": "yes", "streams": "yes", "pdfa": "yes", "pdfua": "yes", "forms": "no", "sign": "no", "encrypt": "yes", "read": "no", "merge": "no",
+   "deps": "0.13.1: pdf-lib, @pdf-lib/fontkit, bwip-js, fflate, bidi-js (+ optional peer @reportwright/fonts); perf-startup: fflate replaced by @reportwright/pdf", "license": "MIT",
+   "notes": {
+    "bidi": "bidi-js (src/engine/text/measure.js runs the Unicode bidi algorithm on the complex path)",
+    "shaping": "HarfBuzz wasm called directly (src/engine/text/shaper.js)",
+    "streams": "exportPdfStream (packages/engine/README.md, 'Streaming PDF for large reports')",
+    "pdfa": "PDF/A-2b and 2a, veraPDF-validated (packages/engine/README.md)",
+    "pdfua": "PDF/UA-1 tagging, `pw render --pdfa --ua` (packages/engine/README.md)",
+    "encrypt": "AES-256 passwords and permissions (packages/engine/README.md)",
+    "deps": "scripts/build-packages.mjs `external` on main vs perf-startup"
+   }
+  },
+  "pdfmake": {
+   "layout": "yes", "tables": "yes", "bidi": "no", "shaping": "no", "streams": "no", "pdfa": "?", "pdfua": "?", "forms": "no", "sign": "no", "encrypt": "yes", "read": "no", "merge": "no",
+   "deps": "pdfkit (fontkit), xmldoc", "license": "MIT",
+   "notes": {"encrypt": "through PDFKit's userPassword/ownerPassword", "pdfa": "PDFKit has a PDF/A subset option; whether pdfmake 0.3 exposes it is unverified"}
+  },
+  "@react-pdf/renderer": {
+   "layout": "yes", "tables": "partial", "bidi": "no", "shaping": "?", "streams": "no", "pdfa": "no", "pdfua": "no", "forms": "?", "sign": "no", "encrypt": "?", "read": "no", "merge": "no",
+   "deps": "@react-pdf/* (a PDFKit fork, yoga-layout, fontkit); react as a peer", "license": "MIT",
+   "notes": {"layout": "Yoga flexbox", "tables": "no table primitive: rows and cells are built from flex Views"}
+  },
+  "jasperreports": {
+   "layout": "yes", "tables": "yes", "bidi": "partial", "shaping": "partial", "streams": "partial", "pdfa": "yes", "pdfua": "yes", "forms": "?", "sign": "?", "encrypt": "yes", "read": "no", "merge": "no",
+   "deps": "many: OpenPDF, commons-*, Jackson, ...", "license": "LGPL-3.0",
+   "notes": {
+    "bidi": "run direction from Java's text layout; PDF export through OpenPDF has known gaps with RTL",
+    "shaping": "depends on the PDF exporter's font handling (OpenPDF): Indic shaping is not reliable",
+    "streams": "virtualizers swap filled pages to disk; the print is still built before export",
+    "pdfua": "tagged PDF export with accessibility properties"
+   }
+  },
+  "QuestPDF": {
+   "layout": "yes", "tables": "yes", "bidi": "yes", "shaping": "yes", "streams": "no", "pdfa": "?", "pdfua": "?", "forms": "no", "sign": "no", "encrypt": "?", "read": "no", "merge": "?",
+   "deps": "SkiaSharp-based native renderer (bundled)", "license": "Community licence (free under $1M revenue), else commercial",
+   "notes": {"bidi": "ContentDirection RTL, text through Skia + HarfBuzz", "shaping": "HarfBuzz through Skia"}
+  },
+  "weasyprint": {
+   "layout": "yes", "tables": "yes", "bidi": "yes", "shaping": "yes", "streams": "no", "pdfa": "yes", "pdfua": "yes", "forms": "yes", "sign": "no", "encrypt": "no", "read": "no", "merge": "no",
+   "deps": "Pango (native), pydyf, tinycss2, cssselect2, fontTools, Pillow", "license": "BSD-3-Clause",
+   "notes": {"bidi": "Pango", "shaping": "Pango + HarfBuzz", "pdfa": "--pdf-variant pdf/a-*", "pdfua": "--pdf-variant pdf/ua-1", "forms": "creates AcroForm fields from HTML inputs (--pdf-forms); no filling of existing PDFs"}
+  },
+  "puppeteer": {
+   "layout": "yes", "tables": "yes", "bidi": "yes", "shaping": "yes", "streams": "no", "pdfa": "no", "pdfua": "partial", "forms": "no", "sign": "no", "encrypt": "no", "read": "no", "merge": "no",
+   "deps": "a full Chrome (~170 MB download)", "license": "Apache-2.0 (Chrome: BSD-3-Clause and others)",
+   "notes": {"pdfua": "Chrome writes tagged PDF (tagged: true), not claimed PDF/UA conformance", "streams": "printToPDF can return a stream, but the whole document is laid out first"}
+  },
+  "@reportwright/pdf": {
+   "layout": "no", "tables": "no", "bidi": "no", "shaping": "yes", "streams": "yes", "pdfa": "yes", "pdfua": "?", "forms": "yes", "sign": "yes", "encrypt": "yes", "read": "yes", "merge": "yes",
+   "deps": "0", "license": "MIT",
+   "notes": {"shaping": "through a HarfBuzz hook (the bench passes harfbuzzjs)", "pdfa": "PDF/A-2b, veraPDF in this bench's pdfa job"}
+  },
+  "pdf-lib": {
+   "layout": "no", "tables": "no", "bidi": "no", "shaping": "no", "streams": "no", "pdfa": "no", "pdfua": "no", "forms": "yes", "sign": "no", "encrypt": "no", "read": "no", "merge": "yes",
+   "deps": "@pdf-lib/standard-fonts, @pdf-lib/upng, pako, tslib", "license": "MIT",
+   "notes": {"sign": "needs @signpdf/* on top", "read": "parses and edits, no text extraction"}
+  },
+  "pdfkit": {
+   "layout": "partial", "tables": "partial", "bidi": "no", "shaping": "partial", "streams": "yes", "pdfa": "yes", "pdfua": "partial", "forms": "yes", "sign": "no", "encrypt": "yes", "read": "no", "merge": "no",
+   "deps": "fontkit, crypto-js, linebreak, png-js, jpeg-exif", "license": "MIT",
+   "notes": {"layout": "text flow, wrapping and columns; no page layout from a definition", "tables": "doc.table() since 0.17", "shaping": "fontkit applies OpenType features (Arabic works, Indic is weak)", "streams": "a Node stream; pages are flushed unless bufferPages", "pdfa": "subset: 'PDF/A-1b'..'PDF/A-3a' option", "pdfua": "tagged structure + pdfVersion/subset 'PDF/UA'; conformance is up to the caller"}
+  },
+  "jspdf": {
+   "layout": "no", "tables": "partial", "bidi": "partial", "shaping": "partial", "streams": "no", "pdfa": "no", "pdfua": "no", "forms": "yes", "sign": "no", "encrypt": "partial", "read": "no", "merge": "no",
+   "deps": "fflate, @babel/runtime (+ optional html2canvas, canvg, dompurify)", "license": "MIT",
+   "notes": {"tables": "basic table(); jspdf-autotable plugin for real tables", "bidi": "bundled bidi engine plugin", "shaping": "Arabic plugin only", "encrypt": "RC4 128-bit only"}
+  },
+  "reportlab": {
+   "layout": "yes", "tables": "yes", "bidi": "partial", "shaping": "partial", "streams": "no", "pdfa": "?", "pdfua": "no", "forms": "yes", "sign": "no", "encrypt": "yes", "read": "no", "merge": "no",
+   "deps": "Pillow, charset-normalizer", "license": "BSD-3-Clause",
+   "notes": {"layout": "Platypus flowables, though the bench drives its canvas with pre-laid-out ops", "bidi": "optional (python-bidi) in 4.x+", "shaping": "optional uharfbuzz in 4.x+"}
+  },
+  "PyMuPDF": {
+   "layout": "partial", "tables": "partial", "bidi": "partial", "shaping": "partial", "streams": "no", "pdfa": "no", "pdfua": "no", "forms": "yes", "sign": "no", "encrypt": "yes", "read": "yes", "merge": "yes",
+   "deps": "bundled MuPDF (native)", "license": "AGPL-3.0 or commercial",
+   "notes": {"layout": "Story / insert_htmlbox (HTML subset)", "tables": "through Story HTML tables", "bidi": "in insert_htmlbox only", "shaping": "HarfBuzz in insert_htmlbox only"}
+  },
+  "pdfbox": {
+   "layout": "no", "tables": "no", "bidi": "no", "shaping": "no", "streams": "partial", "pdfa": "partial", "pdfua": "partial", "forms": "yes", "sign": "yes", "encrypt": "yes", "read": "yes", "merge": "yes",
+   "deps": "fontbox, pdfbox-io, commons-logging", "license": "Apache-2.0",
+   "notes": {"streams": "scratch-file memory settings; pages stay in the document until save", "pdfa": "possible by hand (XMP, OutputIntent); Preflight validates", "pdfua": "structure tree API, all by hand"}
+  },
+  "openpdf": {
+   "layout": "partial", "tables": "yes", "bidi": "partial", "shaping": "partial", "streams": "yes", "pdfa": "partial", "pdfua": "no", "forms": "yes", "sign": "yes", "encrypt": "yes", "read": "partial", "merge": "yes",
+   "deps": "none required (BouncyCastle optional, for signing/encryption)", "license": "LGPL-2.1 / MPL-2.0",
+   "notes": {"layout": "Document/ColumnText flow (iText 2 lineage)", "bidi": "RUN_DIRECTION_RTL in ColumnText/PdfPTable", "shaping": "Arabic only", "streams": "pages are written as they close", "pdfa": "PDF/A-1 conformance flags", "read": "basic PdfTextExtractor"}
+  },
+  "itext": {
+   "layout": "yes", "tables": "yes", "bidi": "partial", "shaping": "partial", "streams": "yes", "pdfa": "yes", "pdfua": "yes", "forms": "yes", "sign": "yes", "encrypt": "yes", "read": "yes", "merge": "yes",
+   "deps": "bouncy-castle-adapter, slf4j (core)", "license": "AGPL-3.0 or commercial",
+   "notes": {"layout": "the layout module, though the bench drives it with pre-laid-out ops", "bidi": "pdfCalligraph add-on (commercial)", "shaping": "pdfCalligraph add-on (commercial)", "streams": "flushes closed pages"}
+  },
+  "PDFsharp": {
+   "layout": "no", "tables": "no", "bidi": "no", "shaping": "no", "streams": "no", "pdfa": "partial", "pdfua": "?", "forms": "partial", "sign": "yes", "encrypt": "yes", "read": "no", "merge": "yes",
+   "deps": "none (managed)", "license": "MIT",
+   "notes": {"layout": "MigraDoc (separate package) does layout", "pdfa": "PDF/A support added in 6.x", "forms": "fills existing AcroForm fields", "sign": "digital signatures in 6.x"}
+  },
+  "fpdf": {
+   "layout": "partial", "tables": "no", "bidi": "?", "shaping": "no", "streams": "no", "pdfa": "no", "pdfua": "no", "forms": "no", "sign": "no", "encrypt": "partial", "read": "no", "merge": "no",
+   "deps": "none", "license": "MIT",
+   "notes": {"layout": "MultiCell wrapping only", "encrypt": "RC4 (SetProtection)"}
+  },
+  "printpdf": {
+   "layout": "?", "tables": "?", "bidi": "no", "shaping": "?", "streams": "no", "pdfa": "?", "pdfua": "no", "forms": "no", "sign": "no", "encrypt": "no", "read": "?", "merge": "no",
+   "deps": "lopdf, allsorts, image, ...", "license": "MIT",
+   "notes": {"layout": "0.8+ added an HTML-to-PDF path (azul); not used in the bench"}
+  }
+ }
+}

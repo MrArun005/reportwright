@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Merges results/*.jsonl into results.json, results.md and results.html (self-contained). Standard library only.
 
-    python3 merge.py <dir with *.jsonl> <outdir>
+    python3 merge.py <dir with *.jsonl> <outdir> [--source <dir or results.json> "sandbox run (Claude, 1 vCPU)"]...
+
+The first source is labelled from GITHUB_RUN_ID; each extra source gets its own tables. Create jobs are split into
+leagues (contestants.json "league"); capabilities.json feeds the capability table.
 """
-import json, sys
+import json, os, sys
 from collections import defaultdict
 from pathlib import Path
 
@@ -62,31 +65,53 @@ def cell_text(r):
     return s
 
 
-def build(meta, cells, contestants):
+CREATE = ['plain', 'report', 'invoice', 'invoice-warm', 'unicode', 'images', 'pdfa']
+LEAGUES = {'engine': 'Report engines', 'writer': 'PDF writers', 'read-edit': 'Read & edit'}
+MARK = {'yes': '✅', 'no': '❌', 'partial': 'partial', '?': '?'}
+
+
+def hw_line(meta, langs, label):
+    """'GitHub run 1, ubuntu-latest, <cpu> × 2 vCPU, 7.8 GB RAM (js, ours); ...': each language job ran on its own runner."""
+    hw = defaultdict(list)
+    for m in meta:
+        if m['lang'] in langs:
+            hw[f'{m["cpu"]} × {m["cores"]} vCPU, {m["ram_mb"] / 1024:.1f} GB RAM'].append(m['lang'])
+    return label + ', ' + '; '.join(f'{k} ({", ".join(sorted(v))})' for k, v in sorted(hw.items()))
+
+
+def build(meta, cells, contestants, label):
     langs = contestants['langs']
     libs = {lib: (lang, c) for lang, v in langs.items() for lib, c in v['libs'].items()}
+    ours = {l for l, (lang, _) in libs.items() if lang == 'ours'}
     by = {(r['lib'], r['job'], r['size']): r for r in cells if r.get('job') != 'version'}
     present = sorted({r['lib'] for r in cells}, key=lambda l: (libs.get(l, ('zz',))[0] != 'ours', libs.get(l, ('zz',))[0], l.lower()))
     tables = []
     for job in JOBS:
-        cols = [l for l in present if job in libs.get(l, (0, {}))[1].get('jobs', []) or (job in ('fuzz', 'hostile') and 'parse' in libs[l][1]['jobs'])]
-        if not cols:
-            continue
+        doers = [l for l in present if job in libs.get(l, (0, {}))[1].get('jobs', []) or (job in ('fuzz', 'hostile') and 'parse' in libs[l][1]['jobs'])]
         sizes = sorted({s for (l, j, s) in by if j == job})
-        if not sizes:
+        if not doers or not sizes:
             continue
-        rows = []
-        for s in sizes:
-            ranked = sorted((time_of(by[(l, job, s)]), l) for l in cols if (l, job, s) in by and by[(l, job, s)]['status'] == 'ok' and time_of(by[(l, job, s)]))
-            rows.append({'size': s, 'cells': {l: by.get((l, job, s)) for l in cols}, 'best': ranked[0][1] if ranked else None})
-        na = {l: na_reason(libs[l][1], job) for l in present if l not in cols and l in libs}
-        tables.append({'job': job, 'title': TITLES[job], 'cols': cols, 'rows': rows, 'na': na})
+        for league in (['engine', 'writer'] if job in CREATE else ['read-edit']):
+            pool = [l for l in present if l in libs and (job not in CREATE or libs[l][1].get('league') == league)]
+            cols = [l for l in doers if l in pool]
+            if not cols:
+                continue
+            rows = []
+            for s in sizes:
+                ranked = sorted((time_of(by[(l, job, s)]), l) for l in cols if (l, job, s) in by and by[(l, job, s)]['status'] == 'ok' and time_of(by[(l, job, s)]))
+                rows.append({'size': s, 'cells': {l: by.get((l, job, s)) for l in cols}, 'best': ranked[0][1] if ranked else None,
+                             'best_ms': ranked[0][0] if ranked else None})
+            na = {l: na_reason(libs[l][1], job) for l in pool if l not in cols}
+            tables.append({'job': job, 'league': league, 'title': f'{LEAGUES[league]}: {TITLES[job]}', 'source': label,
+                           'hw': hw_line(meta, {libs[l][0] for l in cols}, label), 'cols': cols, 'rows': rows, 'na': na,
+                           'ours': [l for l in cols if l in ours]})
     summary = []
     for l in present:
         broken = [r for r in cells if r['lib'] == l and r.get('job') == 'version']  # the harness did not even start
         mine = [r for r in cells if r['lib'] == l and r.get('job') != 'version']
         wins = sum(1 for t in tables for row in t['rows'] if row['best'] == l)
-        summary.append({'lib': l, 'lang': libs.get(l, ('?',))[0], 'version': next((r.get('version') for r in mine if r.get('version')), None),
+        summary.append({'lib': l, 'lang': libs.get(l, ('?',))[0], 'league': libs.get(l, (0, {}))[1].get('league', '?'),
+                        'version': next((r.get('version') for r in mine if r.get('version')), None),
                         'cells': len(mine), 'ok': sum(r['status'] == 'ok' for r in mine), 'invalid': sum(r['status'] == 'invalid' for r in mine),
                         'failed': sum(r['status'] in ('timeout', 'oom', 'crash', 'error', 'harness-error') for r in mine),
                         'fastest': wins, 'na': sum(1 for t in tables if l not in t['cols']),
@@ -94,30 +119,124 @@ def build(meta, cells, contestants):
     return tables, summary
 
 
-def markdown(meta, tables, summary):
+def verdicts(tables):
+    """Per timed row where one of ours runs: a win (ours is #1) or a loss (the best, and our time or status against it)."""
+    out = []
+    for t in tables:
+        for row in t['rows']:
+            if row['best'] is None:
+                continue  # robustness tables, or nobody valid: nothing ranked
+            for o in t['ours']:
+                r = row['cells'].get(o)
+                ok = r is not None and r['status'] == 'ok' and time_of(r)
+                out.append({'table': t, 'size': row['size'], 'lib': o, 'win': row['best'] == o, 'best': row['best'],
+                            'ratio': time_of(r) / row['best_ms'] if ok else None, 'status': None if ok else (r['status'] if r else 'no result')})
+    return out
+
+
+def headline(tables):
+    """One factual line per table: rows where ours is #1, and where not, who is and by how much."""
+    lines = []
+    for t in tables:
+        v = verdicts([t])
+        if not v:
+            continue
+        wins = [x for x in v if x['win']]
+        loss = [x for x in v if not x['win']]
+        s = f'{t["title"]}: {", ".join(sorted({x["lib"] for x in v}))} #1 in {len(wins)} of {len(v)} sizes'
+        if loss:
+            g = defaultdict(list)
+            for x in loss:
+                g[x['best']].append(x)
+            parts = []
+            for best, xs in g.items():
+                rs = sorted(x['ratio'] for x in xs if x['ratio'])
+                bad = sorted({x['status'] for x in xs if not x['ratio']})
+                span = (f'{rs[0]:.2f}×' if rs[0] == rs[-1] else f'{rs[0]:.2f}–{rs[-1]:.2f}×') if rs else ''
+                parts.append(f'{best} ({", ".join(filter(None, [span, *bad]))}; {len(xs)} size{"s" * (len(xs) > 1)})')
+            s += '; behind ' + ', '.join(parts)
+        lines.append(s)
+    return lines
+
+
+def where_we_lose(tables):
+    """Per league: every timed row where ours is not fastest, with the ratio to the best."""
+    out = defaultdict(list)
+    for x in verdicts(tables):
+        if not x['win']:
+            t = x['table']
+            out[LEAGUES[t['league']]].append(f'{TITLES[t["job"]]} at {x["size"]:,}: {x["lib"]} ' +
+                                              (f'{x["ratio"]:.2f}× {x["best"]}' if x['ratio'] else f'{x["status"]}; best {x["best"]}'))
+    return dict(out)
+
+
+def capability_rows(caps):
+    """Rows of cells for the capability table, footnote numbers for notes, and the '?' cells to verify."""
+    cols = list(caps['columns'])
+    notes, todo, rows = [], [], []
+    for lib, c in caps['libs'].items():
+        cells = []
+        for k in cols:
+            v = c.get(k, '?')
+            txt = MARK.get(v, v)
+            if k in c.get('notes', {}):
+                notes.append(f'{lib}, {caps["columns"][k]}: {c["notes"][k]}')
+                txt += f' [{len(notes)}]'
+            if v == '?':
+                todo.append(f'{lib}: {caps["columns"][k]}')
+            cells.append(txt)
+        rows.append([lib] + cells)
+    return {'head': ['library'] + [caps['columns'][k] for k in cols], 'rows': rows, 'notes': notes, 'todo': todo}
+
+
+def md_table(head, rows):
+    esc = lambda x: str(x).replace('|', '/')
+    return ['| ' + ' | '.join(map(esc, head)) + ' |', '|' + '---|' * len(head)] + ['| ' + ' | '.join(map(esc, r)) + ' |' for r in rows]
+
+
+def markdown(sources, caps):
     out = ['# Deep PDF benchmark', '']
-    if meta:
-        m = meta[0]
+    m = sources[0]['meta'][0] if sources[0]['meta'] else None
+    if m:
         out += [f'Run {m["date"]}, tier `{m["tier"]}`, {m["runs"]} measured runs a cell after one warm-up (fewer for the biggest '
-                f'sizes, see README). Runner: {m["cpu"]}, {m["cores"]} cores, {m["ram_mb"]} MB RAM, {m["os"]}. Memory cap {m["cap_mb"]} MB a run.', '',
+                f'sizes, see README). Memory cap {m["cap_mb"]} MB a run. Each language ran as its own job; the line above each table '
+                'names the runner hardware of the columns in it.', '',
                 'Cells: median wall time from process start to exit (warm invoice: in-process median) · peak RSS. ✗ = the output failed '
                 'a check (qpdf, MuPDF, pdf.js, or the job\'s own text check) and is not ranked. **Bold** = fastest valid. '
+                'Create jobs are ranked within a league: **report engines** lay pages out themselves from a report/table '
+                'definition; **PDF writers** execute the same pre-laid-out draw ops. Read and edit jobs are one league. '
                 'Full numbers (CPU, min–max, time to first byte, sizes, checks) are in results.json and results.html.', '']
-    for t in tables:
-        out += [f'## {t["title"]}', '', '| size | ' + ' | '.join(t['cols']) + ' |', '|---:|' + '---|' * len(t['cols'])]
-        for row in t['rows']:
-            cs = []
-            for l in t['cols']:
-                s = cell_text(row['cells'][l])
-                cs.append(f'**{s}**' if row['best'] == l else s)
-            out.append(f'| {row["size"]:,} | ' + ' | '.join(cs) + ' |')
-        if t['na']:
-            out += ['', 'n/a: ' + '; '.join(f'{l} ({why})' for l, why in t['na'].items())]
+    for src in sources:
+        out += [f'## Headline ({src["label"]})', ''] + [f'- {l}' for l in src['headline']] + ['']
+    for src in sources:
+        out += [f'## Where we lose ({src["label"]})', '']
+        if not src['lose']:
+            out += ['Nowhere in this source: ours is #1 in every timed row it runs.', '']
+        for league, items in src['lose'].items():
+            out += [f'**{league}**', ''] + [f'- {i}' for i in items] + ['']
+    out += ['## Capabilities', '', 'Not measured: what each library documents. ✅ yes, ❌ no, partial (see note), ? not verified.', '']
+    out += md_table(caps['head'], caps['rows']) + ['']
+    out += [f'{i}. {n}' for i, n in enumerate(caps['notes'], 1)] + ['']
+    if caps['todo']:
+        out += ['To verify: ' + '; '.join(caps['todo']) + '.', '']
+    for src in sources:
+        for t in src['tables']:
+            out += [f'## {t["title"]}' + ('' if src is sources[0] else f' ({src["label"]})'), '', f'_{t["hw"]}_', '',
+                    '| size | ' + ' | '.join(t['cols']) + ' |', '|---:|' + '---|' * len(t['cols'])]
+            for row in t['rows']:
+                cs = []
+                for l in t['cols']:
+                    s = cell_text(row['cells'][l])
+                    cs.append(f'**{s}**' if row['best'] == l else s)
+                out.append(f'| {row["size"]:,} | ' + ' | '.join(cs) + ' |')
+            if t['na']:
+                out += ['', 'n/a: ' + '; '.join(f'{l} ({why})' for l, why in t['na'].items())]
+            out.append('')
+        out += [f'## Per library ({src["label"]})', '', '| library | lang | league | version | cells | ok | invalid | failed | fastest | n/a tables |', '|---|---|---|---|---:|---:|---:|---:|---:|---:|']
+        for s in src['summary']:
+            out.append(f'| {s["lib"]} | {s["lang"]} | {LEAGUES.get(s["league"], "?")} | {s["version"] or ("did not start: " + s["setup_error"][:80].replace("|", "/") if s.get("setup_error") else "?")} | {s["cells"]} | {s["ok"]} | {s["invalid"]} | {s["failed"]} | {s["fastest"]} | {s["na"]} |')
         out.append('')
-    out += ['## Per library', '', '| library | lang | version | cells | ok | invalid | failed | fastest | n/a jobs |', '|---|---|---|---:|---:|---:|---:|---:|---:|']
-    for s in summary:
-        out.append(f'| {s["lib"]} | {s["lang"]} | {s["version"] or ("did not start: " + s["setup_error"][:80].replace("|", "/") if s.get("setup_error") else "?")} | {s["cells"]} | {s["ok"]} | {s["invalid"]} | {s["failed"]} | {s["fastest"]} | {s["na"]} |')
-    return '\n'.join(out) + '\n'
+    return '\n'.join(out)
 
 
 def page(data):
@@ -135,34 +254,37 @@ th,td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:right;whit
 th{background:var(--head);cursor:pointer;position:sticky;top:0}th:first-child,td:first-child{text-align:left}
 td.best{background:var(--best);font-weight:600}td.bad{background:var(--bad)}small{color:var(--mute)}
 .charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px}svg{width:100%;height:auto;border:1px solid var(--line);border-radius:6px}
+h3{font-size:15px;margin:14px 0 4px}ul,ol{margin:4px 0;padding-left:22px}li{margin:2px 0}p.hw{font-size:12px;font-style:italic}table.caps td{text-align:left;white-space:normal}ol.notes{font-size:12px;color:var(--mute)}
 nav{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}nav a{color:var(--acc);text-decoration:none;border:1px solid var(--line);border-radius:4px;padding:2px 8px}
-</style></head><body><h1>Deep PDF benchmark</h1><p id="meta"></p><nav id="nav"></nav><div id="charts" class="charts"></div><div id="tables"></div>
+</style></head><body><h1>Deep PDF benchmark</h1><p id="meta"></p><div id="top"></div><nav id="nav"></nav><div id="charts" class="charts"></div><div id="tables"></div>
 <script>
 const D=''' + payload + ''';
 const $=(t,a={},...k)=>{const e=document.createElement(t);for(const[x,y]of Object.entries(a))x==='html'?e.innerHTML=y:e.setAttribute(x,y);e.append(...k);return e};
 const ms=v=>v==null?'–':v>=10000?(v/1000).toFixed(2)+' s':v>=10?v.toFixed(0)+' ms':v.toFixed(1)+' ms';
 const time=r=>r&&(r.job==='invoice-warm'?r.warm_ms:r.cold_ms)?.median;
-const m=D.meta[0];if(m)document.getElementById('meta').textContent=`${m.date} · tier ${m.tier} · ${m.runs} runs · ${m.cpu}, ${m.cores} cores, ${m.ram_mb} MB · cap ${m.cap_mb} MB a run. Click a header to sort. Cell: median wall time (warm invoice: in-process) · peak RSS; green = fastest valid, red = failed or invalid.`;
-function txt(r){if(!r)return['—',''];if(r.robust)return[Object.entries(r.robust).map(([k,v])=>k+' '+v).join(', '),''];
- if(r.status!=='ok'&&r.status!=='invalid')return[r.status,'bad'];let s=ms(time(r));if(r.rss_mb)s+=' · '+r.rss_mb.median.toFixed(0)+' MB';
- if(r.status==='invalid')return[s+' ✗','bad'];return[s,''];}
-function tip(r){if(!r)return'';const o={cold:r.cold_ms,warm:r.warm_ms,cpu:r.cpu_ms,rss:r.rss_mb,ttfb:r.ttfb_ms,bytes:r.bytes,pages:r.pages,valid:r.valid,check:r.text,pdfa:r.pdfa,note:r.note,error:r.error};return JSON.stringify(o,null,1)}
-const nav=document.getElementById('nav'),host=document.getElementById('tables');
-for(const t of D.tables){const id='t-'+t.job;nav.append($('a',{href:'#'+id},t.title));
+const nav=document.getElementById('nav'),host=document.getElementById('tables'),top=document.getElementById('top');
+const m=D.sources[0].meta[0];if(m)document.getElementById('meta').textContent=`${m.date} · tier ${m.tier} · ${m.runs} runs · cap ${m.cap_mb} MB a run. Each language ran as its own job: the line above each table names its runners. Create jobs are ranked within a league (report engines lay out pages themselves; PDF writers execute the same pre-laid-out draw ops). Click a header to sort. Cell: median wall time (warm invoice: in-process) · peak RSS; green = fastest valid, red = failed or invalid.`;
+const list=items=>$('ul',{},...items.map(i=>$('li',{},i)));
+for(const S of D.sources){top.append($('h2',{},`Headline (${S.label})`),list(S.headline),$('h2',{},`Where we lose (${S.label})`));
+ const L=Object.entries(S.lose);if(!L.length)top.append($('p',{},'Nowhere in this source: ours is #1 in every timed row it runs.'));
+ for(const[lg,items]of L)top.append($('h3',{},lg),list(items));}
+{const C=D.capabilities;top.append($('h2',{id:'caps'},'Capabilities'),$('p',{},'Not measured: what each library documents. ✅ yes, ❌ no, partial (see note), ? not verified.'),
+ $('div',{class:'wrap'},$('table',{class:'caps'},$('thead',{},$('tr',{},...C.head.map(h=>$('th',{},h)))),$('tbody',{},...C.rows.map(r=>$('tr',{},...r.map(v=>$('td',{},v))))))),
+ $('ol',{class:'notes'},...C.notes.map(n=>$('li',{},n))));if(C.todo.length)top.append($('p',{},'To verify: '+C.todo.join('; ')+'.'));nav.append($('a',{href:'#caps'},'Capabilities'));}
+D.sources.forEach((S,si)=>{for(const t of S.tables){const id=`t-${si}-${t.league}-${t.job}`,title=t.title+(si?` (${S.label})`:'');nav.append($('a',{href:'#'+id},title));
  const head=$('tr',{},$('th',{},'size'),...t.cols.map(c=>$('th',{},c)));const body=$('tbody');
  for(const row of t.rows){const tr=$('tr',{},$('td',{'data-v':row.size},row.size.toLocaleString('en-US')));
   for(const c of t.cols){const r=row.cells[c];const[s,cls]=txt(r);tr.append($('td',{class:(row.best===c?'best':cls),title:tip(r),'data-v':time(r)??1e18},s));}body.append(tr);}
  const table=$('table',{},$('thead',{},head),body);
  head.querySelectorAll('th').forEach((th,i)=>th.onclick=()=>{const rs=[...body.rows],d=th.dataset.d=th.dataset.d==='1'?'-1':'1';
   rs.sort((a,b)=>(+a.cells[i].dataset.v-+b.cells[i].dataset.v)*d);body.append(...rs)});
- host.append($('h2',{id},t.title),$('div',{class:'wrap'},table));
+ host.append($('h2',{id},title),$('p',{class:'hw'},t.hw),$('div',{class:'wrap'},table));
  if(Object.keys(t.na).length)host.append($('p',{},'n/a: '+Object.entries(t.na).map(([l,w])=>`${l} (${w})`).join('; ')));}
-// summary
-{const t=$('table',{},$('thead',{},$('tr',{},...['library','lang','version','cells','ok','invalid','failed','fastest','n/a jobs'].map(h=>$('th',{},h)))),
- $('tbody',{},...D.summary.map(s=>$('tr',{},...[s.lib,s.lang,s.version||'?',s.cells,s.ok,s.invalid,s.failed,s.fastest,s.na].map((v,i)=>$('td',{'data-v':typeof v==='number'?v:0},String(v)))))));
- host.append($('h2',{},'Per library'),$('div',{class:'wrap'},t));}
-// charts: report time and RSS against rows, log-log
-function chart(title,val){const t=D.tables.find(t=>t.job==='report');if(!t)return;const W=640,H=360,L=60,B=40,T=28,R=150;
+ const t=$('table',{},$('thead',{},$('tr',{},...['library','lang','league','version','cells','ok','invalid','failed','fastest','n/a tables'].map(h=>$('th',{},h)))),
+ $('tbody',{},...S.summary.map(s=>$('tr',{},...[s.lib,s.lang,s.league,s.version||'?',s.cells,s.ok,s.invalid,s.failed,s.fastest,s.na].map(v=>$('td',{'data-v':typeof v==='number'?v:0},String(v)))))));
+ host.append($('h2',{},`Per library (${S.label})`),$('div',{class:'wrap'},t));});
+// charts: report time and RSS against rows, log-log, one per league (first source)
+function chart(t,title,val){const W=640,H=360,L=60,B=40,T=28,R=150;
  const pts=t.cols.map(c=>({c,p:t.rows.map(r=>[r.size,val(r.cells[c])]).filter(([,v])=>v>0)}));
  const xs=t.rows.map(r=>r.size),ys=pts.flatMap(s=>s.p.map(p=>p[1]));if(!ys.length)return;
  const lx=Math.log10,x0=lx(Math.min(...xs)),x1=lx(Math.max(...xs))||x0+1,y0=Math.floor(lx(Math.min(...ys))),y1=Math.ceil(lx(Math.max(...ys)))||y0+1;
@@ -176,23 +298,45 @@ function chart(title,val){const t=D.tables.find(t=>t.job==='report');if(!t)retur
   const [a,b]=sr.p[sr.p.length-1];s+=`<text x="${X(a)+6}" y="${Y(b)+4}" font-size="11" fill="${col}">${sr.c}</text>`;});
  document.getElementById('charts').insertAdjacentHTML('beforeend',s+`<text x="${(W-R+L)/2}" y="${H-6}" text-anchor="middle" font-size="11" fill="var(--mute)">rows (log)</text></svg>`);}
 const okv=f=>r=>r&&r.status==='ok'?f(r):null;
-chart('Report: wall time against rows',Object.assign(okv(r=>r.cold_ms.median),{unit:ms}));
-chart('Report: peak RSS against rows',Object.assign(okv(r=>r.rss_mb.median),{unit:v=>v.toFixed(0)+' MB'}));
+for(const t of D.sources[0].tables.filter(t=>t.job==='report')){const lg=t.title.split(':')[0];
+ chart(t,lg+', report: wall time against rows',Object.assign(okv(r=>r.cold_ms.median),{unit:ms}));
+ chart(t,lg+', report: peak RSS against rows',Object.assign(okv(r=>r.rss_mb.median),{unit:v=>v.toFixed(0)+' MB'}));}
 </script></body></html>
 '''
 
 
 def main():
-    src, out = Path(sys.argv[1]), Path(sys.argv[2])
+    """merge.py <dir with *.jsonl> <outdir> [--source <dir with *.jsonl or a results.json> "<label>"]...
+    The first source is this GitHub run (label from GITHUB_RUN_ID); every --source gets its own tables, never mixed."""
+    args = sys.argv[1:]
+    src, out = Path(args[0]), Path(args[1])
+    extra = []
+    i = 2
+    while i < len(args):
+        if args[i] != '--source' or i + 2 >= len(args):
+            sys.exit(f'usage: merge.py <dir> <outdir> [--source <dir or results.json> "<label>"]... (got {args[i:]})')
+        extra.append((Path(args[i + 1]), args[i + 2]))
+        i += 3
     out.mkdir(parents=True, exist_ok=True)
     contestants = json.loads((HERE / 'contestants.json').read_text())
-    meta, cells = load(src)
-    tables, summary = build(meta, cells, contestants)
-    data = {'meta': meta, 'cells': cells, 'tables': tables, 'summary': summary}
+    caps = capability_rows(json.loads((HERE / 'capabilities.json').read_text()))
+    run = os.environ.get('GITHUB_RUN_ID')
+    sources = []
+    for d, label in [(src, f'GitHub run {run}, ubuntu-latest' if run else 'local run')] + extra:
+        if d.suffix == '.json':  # another merge's results.json: reuse its raw meta and cells
+            j = json.loads(d.read_text())
+            j = j['sources'][0] if 'sources' in j else j  # a new-format file: its first source
+            meta, cells = j['meta'], j['cells']
+        else:
+            meta, cells = load(d)
+        tables, summary = build(meta, cells, contestants, label)
+        sources.append({'label': label, 'meta': meta, 'cells': cells, 'tables': tables, 'summary': summary,
+                        'headline': headline(tables), 'lose': where_we_lose(tables)})
+    data = {'sources': sources, 'capabilities': caps}
     (out / 'results.json').write_text(json.dumps(data, indent=1, ensure_ascii=False))
-    (out / 'results.md').write_text(markdown(meta, tables, summary))
-    (out / 'results.html').write_text(page(data))
-    print(f'{len(cells)} cells from {len(meta)} jobs -> {out}')
+    (out / 'results.md').write_text(markdown(sources, caps))
+    (out / 'results.html').write_text(page({'sources': [{k: s[k] for k in ('label', 'meta', 'tables', 'summary', 'headline', 'lose')} for s in sources], 'capabilities': caps}))
+    print(f'{sum(len(s["cells"]) for s in sources)} cells from {len(sources)} source(s) -> {out}')
 
 
 if __name__ == '__main__':

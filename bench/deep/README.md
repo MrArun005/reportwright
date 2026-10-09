@@ -16,6 +16,18 @@ The run's summary page shows `results.md`; the `bench-deep-results` artifact hol
 `results.html` (open it in a browser: sortable tables, time and memory charts), every language's raw `*.jsonl` and
 the runner's hardware.
 
+How the results are laid out: a generated headline (per table, how many sizes ours is #1 in and who is ahead of it
+where not, with the ratio), a "Where we lose" list per league, the capability table (`capabilities.json`; "?" cells
+are listed as to verify), then the tables. Create jobs are ranked within a league (`league` in `contestants.json`):
+**report engines** lay out pages themselves from a report/table definition (@reportwright/engine, pdfmake,
+@react-pdf/renderer, JasperReports, QuestPDF, WeasyPrint, Puppeteer); **PDF writers** execute the same pre-laid-out
+draw ops (@reportwright/pdf, pdf-lib, PDFKit, jsPDF, ReportLab, PyMuPDF, PDFBox, OpenPDF, iText, PDFsharp, fpdf,
+printpdf). Read and edit jobs are one league, published whatever the outcome. Each table starts with its source and the
+runner hardware of its columns (each language runs as its own job, so CPUs can differ within a table). Results from
+elsewhere merge in as a separate source with their own tables, never mixed into the GitHub run's:
+`python3 merge.py results out --source other/results.json "sandbox run (Claude, 1 vCPU)"` (a folder of `*.jsonl` works
+too). Changes to `merge.py`, `capabilities.json` or the docs alone do not trigger a benchmark run.
+
 ## Contestants
 
 Exact versions are pinned in each harness's manifest; the version each run actually loaded is recorded in the results.
@@ -127,6 +139,7 @@ bench/deep/
   contestants.json     who does what, how to run it, why n/a
   drive.py             runs one language's cells, measures, validates; writes results/<lang>.jsonl
   merge.py             results.json, results.md, results.html
+  capabilities.json    the capability table in the results (documented features, a source note per non-obvious cell)
   fixtures/make.py     every input, deterministic
   tools/               pdf.js validity check
   common/              the Node frame and the shared create jobs (canvas-jobs.mjs)
