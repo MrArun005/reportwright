@@ -1,0 +1,40 @@
+// A hostile file with one huge string (the gate's bigstring.pdf): load, info, text and save must hold a few copies at
+// most, not a rope of one node per char (a 40 MB title used to peak above 1 GB). Each case runs in its own process so
+// the peak (maxRSS) is its own; 16 MB keeps it laptop-sized, the limit scales with it.
+import { describe, it, expect } from 'vitest';
+import { spawnSync } from 'node:child_process';
+import { PdfString } from '../../packages/pdf/src/reader/lexer.js';
+import { decodeText } from '../../packages/pdf/src/reader/text.js';
+
+const MB = 16;
+const CHILD = `
+const N = ${MB} << 20, kind = process.argv[1];
+const body = kind === 'hex' ? '<' + 'ab'.repeat(N) + '>' : '(' + 'A'.repeat(N) + ')';
+const objs = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>', '<< /Title ' + body + ' >>'];
+let s = '%PDF-1.4\\n'; const off = [];
+objs.forEach((o, i) => { off.push(s.length); s += (i + 1) + ' 0 obj\\n' + o + '\\nendobj\\n'; });
+const x = s.length; s += 'xref\\n0 5\\n0000000000 65535 f \\n' + off.map((o) => String(o).padStart(10, '0') + ' 00000 n \\n').join('') + 'trailer\\n<< /Size 5 /Root 1 0 R /Info 4 0 R >>\\nstartxref\\n' + x + '\\n%%EOF\\n';
+const bytes = new Uint8Array(Buffer.from(s, 'latin1')); s = null;
+const { loadPdf } = await import(${JSON.stringify(new URL('../../packages/pdf/src/index.js', import.meta.url).href)});
+globalThis.gc(); const base = process.memoryUsage().rss;
+const d = await loadPdf(bytes); const len = d.info.title.length; d.page(0).extractText(); await d.save().catch(() => {});
+console.log(JSON.stringify({ len, deltaMB: (process.resourceUsage().maxRSS * 1024 - base) / 2 ** 20 }));
+`;
+const run = (kind) => {
+  const r = spawnSync(process.execPath, ['--expose-gc', '--input-type=module', '-e', CHILD, kind], { encoding: 'utf8', timeout: 60_000 });
+  expect(r.status, r.stderr).toBe(0);
+  return JSON.parse(r.stdout);
+};
+
+describe('a huge string', () => {
+  for (const kind of ['literal', 'hex']) it(`a ${MB} MB ${kind} string stays within a few copies of itself`, () => {
+    const r = run(kind);
+    expect(r.len).toBe(MB << 20);
+    expect(r.deltaMB).toBeLessThan(MB * 5); // was ~28× (a 40 MB literal: 1,151 MB peak)
+  }, 60_000);
+  it('decodeText keeps its mapping: PDFDocEncoding, UTF-16BE with a lone surrogate, UTF-8', () => {
+    expect(decodeText(new PdfString(new Uint8Array([0x41, 0x18, 0x80, 0xe9])))).toBe('A˘•é');
+    expect(decodeText(new PdfString(new Uint8Array([0xfe, 0xff, 0x00, 0x41, 0xd8, 0x00, 0x00, 0x42, 0x00])))).toBe('A\ud800B');
+    expect(decodeText(new PdfString(new Uint8Array([0xef, 0xbb, 0xbf, 0xc3, 0xa9])))).toBe('é');
+  });
+});
