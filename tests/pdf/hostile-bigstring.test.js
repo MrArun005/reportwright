@@ -51,3 +51,19 @@ describe('a huge string', () => {
     expect(decodeText(new PdfString(new Uint8Array([0xef, 0xbb, 0xbf, 0xc3, 0xa9])))).toBe('é');
   });
 });
+
+describe('hexText (strings written by save and copy)', () => {
+  it('a 16 MB string becomes one flat hex string, not a rope of 16 M nodes', async () => {
+    const { hexText } = await import('../../packages/pdf/src/reader/copy.js');
+    const r = spawnSync(process.execPath, ['--expose-gc', '--input-type=module', '-e', `
+      const { hexText } = await import(${JSON.stringify(new URL('../../packages/pdf/src/reader/copy.js', import.meta.url).href)});
+      const b = new Uint8Array(${MB} << 20).fill(0xab); globalThis.gc(); const base = process.memoryUsage().rss;
+      const s = hexText(b); console.log(JSON.stringify({ len: s.length, deltaMB: (process.resourceUsage().maxRSS * 1024 - base) / 2 ** 20 }));`], { encoding: 'utf8', timeout: 60_000 });
+    expect(r.status, r.stderr).toBe(0);
+    const o = JSON.parse(r.stdout);
+    expect(o.len).toBe((MB << 21) + 2);
+    expect(o.deltaMB).toBeLessThan(MB * 6); // the per-byte += rope was ~30× the bytes
+    expect(hexText(new Uint8Array([0, 15, 255]))).toBe('<000fff>');
+    expect(hexText(new Uint8Array(100).fill(1))).toBe(`<${'01'.repeat(100)}>`);
+  }, 60_000);
+});
