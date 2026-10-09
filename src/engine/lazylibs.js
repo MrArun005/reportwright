@@ -46,7 +46,7 @@ const load = async (name, imp) => { if (req) try { return req(name); } catch { /
  * and a Latin report needs none of them. Undefined (plain require) when the anchors are not all in the file, i.e.
  * another fontkit version.
  * ponytail: a text patch of one pinned dependency; the anchors check keeps an upgrade from breaking it, only slower.
- * @returns {Promise<any>|undefined}
+ * @returns {any} the module, or undefined
  */
 function lazyDictFontkit() {
   try {
@@ -66,13 +66,26 @@ function lazyDictFontkit() {
     proc.getBuiltinModule('vm').compileFunction(patched, ['module', 'exports'], { filename: file })(module, module.exports);
     Object.assign(module, { filename: file, loaded: true });
     Module._cache[file] = module; // one fontkit in the process: a later require('@pdf-lib/fontkit') gets this one
-    return Promise.resolve(module.exports);
+    return module.exports;
   } catch { return undefined; }
 }
 /** @type {Promise<void>|undefined} */ let fk;
 /** @type {Promise<void>|undefined} */ let pl;
+/** @param {any} m */
+const setFontkit = (m) => { const d = m.default || m; fontkit = d.default || d; };
 /** @returns {Promise<void>} */
-export const loadFontkit = () => (fk ||= (lazyDictFontkit() || load('@pdf-lib/fontkit', () => import('@pdf-lib/fontkit'))).then((/** @type {any} */ m) => { const d = m.default || m; fontkit = d.default || d; }));
+export const loadFontkit = () => (fk ||= (() => { const m = lazyDictFontkit(); return m ? Promise.resolve(m) : load('@pdf-lib/fontkit', () => import('@pdf-lib/fontkit')); })().then(setFontkit));
+/** Whether fontkitSync() can load fontkit (Node), without loading it. */
+export const canFontkitSync = () => !!req;
+/**
+ * fontkit now, synchronously: Node only (require), else undefined, and the caller loads it with loadFontkit().
+ * @returns {any}
+ */
+export function fontkitSync() {
+  if (fontkit || !req) return fontkit;
+  try { setFontkit(lazyDictFontkit() || req('@pdf-lib/fontkit')); fk ||= Promise.resolve(); } catch { /* not resolvable from here: undefined */ }
+  return fontkit;
+}
 /** pdf-lib and fontkit (exportPdf embeds fonts with both). @returns {Promise<void>} */
 export const loadPdfLib = () => (pl ||= Promise.all([load('pdf-lib', () => import('pdf-lib')), loadFontkit()]).then(([L]) => {
   ({ PDFDocument, PDFName, PDFString, PDFHexString, PDFRawStream, PDFStream, PDFArray, PDFDict, PDFNumber, PDFBool, rgb,

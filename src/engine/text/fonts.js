@@ -1,5 +1,5 @@
 // @ts-check
-import { fontkit, loadFontkit } from '../lazylibs.js';
+import { fontkit, canFontkitSync, fontkitSync, loadFontkit } from '../lazylibs.js';
 import { createShaper } from './shaper.js';
 import { STANDARD_FACES, isStandard, standardFont } from './standard.js';
 export { isStandard };
@@ -299,8 +299,12 @@ export class FontStore {
             const b = await this.loader(k);
             const u8 = b instanceof Uint8Array ? b : new Uint8Array(b);
             if (k === SHAPER) { this.shaper = await createShaper(u8); return; }
-            await loadFontkit(); // on first use: importing the engine does not load fontkit
-            this.fonts.set(k, fontkit.create(u8));
+            // Node: read from its tables (sfnt.js), fontkit parsing it only if something reads more; else fontkit, loaded
+            // on first use (importing the engine does not load it)
+            /** @type {any} */ let full;
+            const lite = canFontkitSync() ? (await import('./sfnt.js')).liteFont(u8, () => (full ||= fontkitSync().create(u8))) : null; // a chunk of its own in a browser build, which never uses it
+            if (!lite) await loadFontkit();
+            this.fonts.set(k, lite || fontkit.create(u8));
             this.bytes.set(k, u8);
           } catch (e) {
             // the core face must load; any other font falls back, and the report warns

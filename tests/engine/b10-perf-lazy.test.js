@@ -26,7 +26,7 @@ describe('B10 A1.1 cold start: pdf-lib and fontkit are not top-level imports', (
     expect(src).toMatch(/import\("@pdf-lib\/fontkit"\)/);
   }, 60000);
 
-  it('importing the engine loads neither; render loads fontkit only; exportPdf loads pdf-lib', async () => {
+  it('importing the engine loads neither; render loads neither in Node (sfnt.js reads the fonts); exportPdf loads pdf-lib', async () => {
     const { execFileSync } = await import('node:child_process');
     // a new process: the test runner may already have them loaded
     const out = execFileSync(process.execPath, ['--input-type=module', '-e', `
@@ -39,7 +39,7 @@ describe('B10 A1.1 cold start: pdf-lib and fontkit are not top-level imports', (
       const s = [!has(FK) && !has(PL)];
       const fonts = new m.FontStore((k) => fs.readFileSync(${JSON.stringify(path.join(root, 'public/fonts'))} + '/' + m.fontFile(k)));
       const model = await m.render(m.blankReport(), { fontStore: fonts });
-      s.push(!has(PL) && has(FK));
+      s.push(!has(PL) && !has(FK));
       const pdf = await m.exportPdf(model, { fonts, subset: false });
       s.push(has(PL), String.fromCharCode(...pdf.slice(0, 5)));
       console.log(JSON.stringify(s));`], { cwd: root, encoding: 'utf8' });

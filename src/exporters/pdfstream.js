@@ -440,18 +440,18 @@ export function createPdfStream(sink, opt) {
    */
   async function writeFont(key, F) {
     if (F.font.standard) { await writeObj(F.ref, standardFontDict(F.font)); return; } // named, not embedded (pdfstandard.js)
-    await loadFontkit(); // checks a subset (loaded already when the FontStore parsed this font; never for a standard font)
     const f = F.font, full = /** @type {Uint8Array} */ (fontStore.bytes.get(key));
+    if (!f.lite) await loadFontkit(); // checks a subset (a font read by sfnt.js checks it the same way, without fontkit)
     let bytes = full, psName = f.postscriptName; // N10: a subset of a variable font says the weight it is cut at
-    if (opt.subset && !f['OS/2']?.fsType?.noSubsetting) {
+    if (opt.subset && !(f.lite ? f.noSubsetting : f['OS/2']?.fsType?.noSubsetting)) {
       try {
         // glyphs given: subset.js keeps their IDs (HB_SUBSET_FLAGS_RETAIN_GIDS), which the pages already drew with
         const sub = await opt.subset(full, F.cps, { glyphs: F.glyphs.keys() });
         // fontkit must read every glyph we drew (16 zero bytes after the tables, as pdf.js pads); else the full font
         const padded = new Uint8Array(sub.length + 16);
         padded.set(sub);
-        const check = fontkit.create(padded);
-        for (const id of F.glyphs.keys()) void check.getGlyph(id).advanceWidth;
+        const check = (f.lite && (await import('../engine/text/sfnt.js')).liteFont(padded, () => { throw new Error('subset: not read by sfnt.js'); })) || (await loadFontkit(), fontkit.create(padded));
+        for (const id of F.glyphs.keys()) { if (check.lite && id >= check.numGlyphs) throw new Error('subset: glyph missing'); void check.getGlyph(id).advanceWidth; }
         bytes = sub;
         psName = check.postscriptName || psName;
       } catch { /* the full font */ }
@@ -464,7 +464,7 @@ export function createPdfStream(sink, opt) {
     const fileDict = cff ? '<< /Subtype /OpenType /Filter /FlateDecode >>' : `<< /Length1 ${bytes.length} /Filter /FlateDecode >>`;
     await writeObj(file, fileDict, await deflate(bytes));
     const bb = f.bbox, italic = f.italicAngle || 0;
-    const flags = (f.post?.isFixedPitch ? 1 : 0) | 4 | (italic ? 64 : 0);
+    const flags = ((f.lite ? f.fixedPitch : f.post?.isFixedPitch) ? 1 : 0) | 4 | (italic ? 64 : 0);
     await writeObj(desc, `<< /Type /FontDescriptor /FontName /${base} /Flags ${flags} /FontBBox [${s(bb.minX)} ${s(bb.minY)} ${s(bb.maxX)} ${s(bb.maxY)}] /ItalicAngle ${num(italic)} /Ascent ${s(f.ascent)} /Descent ${s(f.descent)} /CapHeight ${s(f.capHeight || f.ascent)} /XHeight ${s(f.xHeight || 0)} /StemV 0 /${cff ? 'FontFile3' : 'FontFile2'} ${file} 0 R >>`);
     // widths: runs of consecutive glyph IDs, "first [w w w]"
     const ids = [...F.glyphs.keys()].sort((a, b) => a - b);
