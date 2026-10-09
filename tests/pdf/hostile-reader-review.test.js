@@ -3,7 +3,7 @@
 // (reader-hostile-child.mjs) under a time limit and a 512 MB heap, since a fatal OOM cannot be caught in-process.
 import { describe, it, expect } from 'vitest';
 import { loadPdf } from '../../packages/pdf/src/index.js';
-import { onePage } from './reader-tools.js';
+import { onePage, rawPdf } from './reader-tools.js';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
@@ -65,4 +65,28 @@ describe('R3: glyphs are budget steps, every stream counts against maxDecoded, f
     expect(() => d.extractText({ nope: 1 })).toThrow(TypeError);
     expect(d.page(0).extractText({ timeoutMs: Infinity }).length).toBe(1 << 20);
   }, 30_000);
+});
+
+describe('R6: names from the file never reach Object.prototype through a constant table', () => {
+  const font = (f, s) => rawPdf(['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    [`<< /Length ${s.length} >>`, s], f]);
+  it('/BaseFont /__proto__ and /Encoding /constructor: the standard encoding and widths, not a TypeError', async () => {
+    const d = await loadPdf(font('<< /Type /Font /Subtype /Type1 /BaseFont /__proto__ /Encoding /constructor >>', 'BT /F1 12 Tf 10 10 Td (AB) Tj ET'));
+    expect(d.page(0).extractText()).toBe('AB');
+  });
+  it('/Differences glyph names toString and valueOf: no text, not a function', async () => {
+    const d = await loadPdf(font('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding << /Differences [65 /toString /valueOf] >> >>', 'BT /F1 12 Tf 10 10 Td (ABC) Tj ET'));
+    expect(d.page(0).extractText()).toBe('C');
+  });
+  it('a field /FT /constructor is unknown; a /DA font /constructor fills in Helvetica', async () => {
+    const form = (ft, da) => rawPdf(['<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R] >> >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Annots [4 0 R] >>',
+      `<< /Type /Annot /Subtype /Widget /FT /${ft} /T (f) /Rect [10 10 110 30] /P 3 0 R /DA (/${da} 12 Tf 0 g) >>`]);
+    expect((await loadPdf(form('constructor', 'Helv'))).fields[0].type).toBe('unknown');
+    const d = await loadPdf(form('Tx', 'constructor'));
+    d.fill({ f: 'hello' });
+    const r = await d.save();
+    expect((await loadPdf(r.bytes)).fields[0].value).toBe('hello');
+  });
 });
