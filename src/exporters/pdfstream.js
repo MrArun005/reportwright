@@ -82,10 +82,11 @@ export function raced(p, signal) {
  * @param {Sink} sink
  * @param {{ fontStore: import('../engine/text/fonts.js').FontStore, fonts?: string[],
  *   subset?: (font: Uint8Array, codePoints: Iterable<number>, opt?: { glyphs?: Iterable<number> }) => Promise<Uint8Array>,
- *   id?: string, signal?: AbortSignal }} opt
+ *   id?: string, signal?: AbortSignal, pdf?: any }} opt
  *   fonts: font keys to name now (F1, F2… in this order); any other font is named on first use.
  *   subset: subset.js's subsetter; without it fonts embed in full. id: the file ID (32 hex digits), else random.
- *   signal: stops a wait for the sink (back-pressure) when it aborts.
+ *   signal: stops a wait for the sink (back-pressure) when it aborts. pdf: a @reportwright/pdf document (createPdf) that
+ *   writes the objects, pages and the file's end instead of this writer's own (the sink is then unused).
  */
 export function createPdfStream(sink, opt) {
   const { fontStore } = opt;
