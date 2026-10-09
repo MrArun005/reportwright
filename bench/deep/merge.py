@@ -83,12 +83,14 @@ def build(meta, cells, contestants):
         tables.append({'job': job, 'title': TITLES[job], 'cols': cols, 'rows': rows, 'na': na})
     summary = []
     for l in present:
+        broken = [r for r in cells if r['lib'] == l and r.get('job') == 'version']  # the harness did not even start
         mine = [r for r in cells if r['lib'] == l and r.get('job') != 'version']
         wins = sum(1 for t in tables for row in t['rows'] if row['best'] == l)
         summary.append({'lib': l, 'lang': libs.get(l, ('?',))[0], 'version': next((r.get('version') for r in mine if r.get('version')), None),
                         'cells': len(mine), 'ok': sum(r['status'] == 'ok' for r in mine), 'invalid': sum(r['status'] == 'invalid' for r in mine),
                         'failed': sum(r['status'] in ('timeout', 'oom', 'crash', 'error', 'harness-error') for r in mine),
-                        'fastest': wins, 'na': sum(1 for t in tables if l not in t['cols'])})
+                        'fastest': wins, 'na': sum(1 for t in tables if l not in t['cols']),
+                        **({'setup_error': (broken[0].get('error') or broken[0]['status'])[:300]} if broken else {})})
     return tables, summary
 
 
@@ -114,7 +116,7 @@ def markdown(meta, tables, summary):
         out.append('')
     out += ['## Per library', '', '| library | lang | version | cells | ok | invalid | failed | fastest | n/a jobs |', '|---|---|---|---:|---:|---:|---:|---:|---:|']
     for s in summary:
-        out.append(f'| {s["lib"]} | {s["lang"]} | {s["version"] or "?"} | {s["cells"]} | {s["ok"]} | {s["invalid"]} | {s["failed"]} | {s["fastest"]} | {s["na"]} |')
+        out.append(f'| {s["lib"]} | {s["lang"]} | {s["version"] or ("did not start: " + s["setup_error"][:80].replace("|", "/") if s.get("setup_error") else "?")} | {s["cells"]} | {s["ok"]} | {s["invalid"]} | {s["failed"]} | {s["fastest"]} | {s["na"]} |')
     return '\n'.join(out) + '\n'
 
 
