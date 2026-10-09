@@ -25,3 +25,23 @@ describe('filterRow', () => {
     }
   });
 });
+
+describe('embedImage compression', async () => {
+  const { toBytes } = await import('../../packages/pdf/src/index.js');
+  const { deflateSync } = await import('node:zlib');
+  // an RGBA PNG (so it is re-compressed) of w × h
+  const png = (w, h) => {
+    const crc = (b) => { let c = ~0; for (const x of b) { c ^= x; for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1)); } return ~c >>> 0; };
+    const chunk = (t, d) => { const b = Buffer.alloc(12 + d.length); b.writeUInt32BE(d.length); b.write(t, 4, 'latin1'); Buffer.from(d).copy(b, 8); b.writeUInt32BE(crc(b.subarray(4, 8 + d.length)), 8 + d.length); return b; };
+    const ih = Buffer.alloc(13); ih.writeUInt32BE(w); ih.writeUInt32BE(h, 4); ih[8] = 8; ih[9] = 6;
+    const raw = Buffer.alloc((w * 4 + 1) * h); for (let i = 0; i < raw.length; i++) raw[i] = i % (w * 4 + 1) ? (i * 7) & 255 : 0;
+    return new Uint8Array(Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ih), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]));
+  };
+  const make = (bytes, o) => toBytes(async (pdf) => { const p = pdf.addPage(); p.image(await pdf.embedImage(bytes, o), { width: 10 }); await p.end(); }, { creationDate: new Date(0) });
+  it("'default' is level 6 under 2 MP (small images unchanged) and refuses a bad value", async () => {
+    const b = png(64, 64);
+    expect(Buffer.compare(await make(b), await make(b, { compression: 6 }))).toBe(0);
+    expect(Buffer.compare(await make(b), await make(b, { compression: 1 }))).not.toBe(0);
+    for (const c of [0, 10, 2.5, 'slow']) await expect(make(b, { compression: c })).rejects.toThrow(/compression is/);
+  });
+});
