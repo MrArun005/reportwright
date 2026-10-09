@@ -485,7 +485,7 @@ function toRdlx(root, notes, reportName) {
         if (col != null) {
           const b = c.bindings?.get(col);
           if (b) {
-            try { v = '=' + binding(b, c, 0); } catch (er) { if (!(er instanceof Untranslatable)) throw er; (it.__notes ||= []).push(`its column "${col}" uses ${er.message}, so it is shown as text.`); v = col; }
+            try { v = '=' + binding(b, c, 0); } catch (er) { if (!(er instanceof Untranslatable)) throw er; (it.__exprs ||= []).push(String(prop(b, 'expression') ?? col)); (it.__notes ||= []).push(`its column "${col}" uses ${er.message}, so it is shown as text.`); v = col; }
           } else v = `=${fieldRef(col).s}`;
         } else v = value(ve ?? '', it, c);
         return textItem(v, given || textH('', st));
@@ -505,7 +505,7 @@ function toRdlx(root, notes, reportName) {
           const pieces = [];
           for (const p of parts) {
             if (p.t) pieces.push(`"${p.t.replace(/"/g, '""').replace(/\r?\n/g, '" & vbCrLf & "')}"`);
-            else if (p.e != null) { try { pieces.push(`(${vb(decodeHtml(p.e), c)})`); } catch (er) { if (!(er instanceof Untranslatable)) throw er; (it.__notes ||= []).push(`a <value-of> uses ${er.message}, so it is left out.`); } }
+            else if (p.e != null) { try { pieces.push(`(${vb(decodeHtml(p.e), c)})`); } catch (er) { if (!(er instanceof Untranslatable)) throw er; (it.__exprs ||= []).push(decodeHtml(p.e)); (it.__notes ||= []).push(`a <value-of> uses ${er.message}, so it is left out.`); } }
           }
           v = `=${pieces.join(' & ') || '""'}`;
         } else v = parts.map(p => p.t).join('');
