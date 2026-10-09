@@ -2,6 +2,19 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
+## 0.13.2-rc.2 — 2026-10-09 (release candidate)
+
+### Fixed (from the rc.1 release gate)
+- **E11 Viewer accessibility:** the scrolling page area (`div.vpages`) is keyboard-focusable (`tabindex="0"`), a named `region`, with a visible inset focus ring; the arrow keys scroll it (axe `scrollable-region-focusable`).
+- **E12 Designer arrow keys on pages with margins:** Arrow and Shift+Arrow move the selection by the whole step (1/10 pt, or 1/10 grid steps with Snap to grid). The step used to be clamped to the band's leftover width, so an item as wide as an A4 body with 36 pt margins (523.28 pt) moved 0.28 pt and then not at all. A keyboard nudge still stops at the band's start; overflow past its end shows in the Issues panel. Dragging still keeps items inside the band.
+- **E10 webpack and Next.js builds:** `@reportwright/viewer` (`dist/`, `dist/peer/`) and `@reportwright/cli` ship `pdfstreamworker.js` next to the bundles that name it with `new URL('./pdfstreamworker.js', import.meta.url)`, so bundlers resolve it. The parallel PDF paint worker itself is `@reportwright/engine`'s (Node only); the stand-ins answer that `exportPdfStream` with `parallel` needs the engine.
+- **E13 missing HarfBuzz subset WASM:** when `harfbuzz-subset.wasm` cannot be loaded (fonts then embed in full, PDFs many times larger), `exportPdf` and `exportPdfStream` warn once on the console and add a warning to the result (the model's `warnings`, the stream result's `warnings`), naming the expected path (`@reportwright/fonts/public/harfbuzz-subset.wasm`) and the fix: install `@reportwright/fonts`, or pass `subset: createSubsetter(() => wasmBytes)`.
+- **E09 importer:**
+  - files are read in their own encoding: a UTF-16 LE/BE or UTF-8 byte-order mark, else the XML declaration's `encoding` (ISO-8859-1, Latin-1, windows-1252, …), else UTF-8. `Straße` and `Grüße` survive. Applies to `pw import`, `pw import <folder>` and `POST /api/reports/import`.
+  - a compiled `.jasper` file gets "This is a compiled JasperReports file; import the .jrxml source instead."
+  - `pw import` prints each error once (it printed it twice, the second time cut short).
+- **E07 SQL connection pool:** a PostgreSQL or MySQL query that cannot get a pooled connection within `PW_DB_ACQUIRE_MS` (default 5000) fails with 503 and `Retry-After` instead of a 500; a connection that frees later goes back to the pool. A streaming query whose reader aborts frees its connection at once (the backend is terminated and the connection discarded) instead of holding it until the deadline. PostgreSQL queries run under `statement_timeout` from their first statement.
+
 ## 0.13.2-rc.1 — 2026-10-09 (release candidate)
 
 ### Changed
