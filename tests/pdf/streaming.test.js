@@ -116,12 +116,16 @@ describe('memory and the built package', () => {
   it('memory stays flat: 20,000 pages of text hold about what 1,000 do', () => {
     const out = execFileSync(process.execPath, ['--expose-gc', path.join(import.meta.dirname, 'memory-child.mjs'), '20000'], { encoding: 'utf8', timeout: 120000 });
     const r = JSON.parse(out);
-    const first = r.marks[0], last = r.marks[r.marks.length - 1];
+    // marks[0] is the baseline (the library loaded, 0 pages): the bounds are on what the pages add, so they do not move
+    // when the library's own code grows (the old absolute bound failed ~1 run in 6 once the loaded code reached ~6 MB)
+    const base = r.marks[0], first = r.marks[1], last = r.marks[r.marks.length - 1];
     console.log('memory (MB, after GC):', r.marks.map((m) => `${m.pages} pages: heap ${m.heapMB.toFixed(1)}, buffers ${m.buffersMB.toFixed(1)}, rss ${m.rssMB.toFixed(0)}`).join(' | '), `| file ${(r.bytes / 2 ** 20).toFixed(1)} MB`);
     expect(r.pages).toBe(20000);
-    expect(last.heapMB - first.heapMB).toBeLessThan(4);
+    expect(base.pages).toBe(0); expect(first.pages).toBe(1000);
+    expect(last.heapMB - first.heapMB).toBeLessThan(4); // 20 times the pages, almost no more heap
     expect(last.buffersMB - first.buffersMB).toBeLessThan(4);
-    expect(last.heapMB + last.buffersMB).toBeLessThan(r.bytes / 2 ** 20 / 2); // far less than the file it wrote
+    const held = last.heapMB + last.buffersMB - base.heapMB - base.buffersMB;
+    expect(held).toBeLessThan(r.bytes / 2 ** 20 / 4); // what the document holds is far less than the file it wrote (~2 of 14 MB)
   }, 120000);
 
   it('dist/index.js (fflate bundled) has no imports and writes a valid PDF', async () => {
