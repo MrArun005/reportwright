@@ -91,6 +91,9 @@ describe('extractText: ActualText, and codes with no Unicode', () => {
   it('a code the font has no mapping for at all reads as U+FFFD; one its ToUnicode skips or maps to nothing reads as nothing', async () => {
     // a ToUnicode that skips 0003: nothing, as pdftotext (beta.1 read U+FFFD)
     expect((await loadPdf(type0('BT /F1 12 Tf 10 10 Td <000300010002> Tj ET'))).page(0).extractText()).toBe('A');
+    // a code mapped to WJ (U+2060, our shaped clusters' filler) reads as nothing, so "किताब" stays searchable
+    const wj = Buffer.from(type0('BT /F1 12 Tf 10 10 Td <000100020001> Tj ET')).toString('latin1').replace('<0002> <>', '<0002> <2060>');
+    expect((await loadPdf(new Uint8Array(Buffer.from(wj, 'latin1')))).page(0).extractText()).toBe('AA');
     // no ToUnicode and no font program: U+FFFD for every code (the same length: the xref holds)
     const bare = Buffer.from(type0('BT /F1 12 Tf 10 10 Td <000300010002> Tj ET')).toString('latin1').replace(/ \/ToUnicode 7 0 R/, (m) => ' '.repeat(m.length));
     expect((await loadPdf(new Uint8Array(Buffer.from(bare, 'latin1')))).page(0).extractText()).toBe('���');
