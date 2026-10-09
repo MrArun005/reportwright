@@ -392,6 +392,13 @@ function compileNumber(fmt, locale, currency, grouping) {
  * @param {number} a @param {number} digits
  */
 function fixedShortest(a, digits) {
+  // String(a) is the same shortest digits; with no more than `digits` decimals nothing rounds: only zeros to pad
+  const p = String(a), dot = p.indexOf('.');
+  if (!p.includes('e')) {
+    if (dot < 0) return digits ? `${p}.${'0'.repeat(digits)}` : p;
+    const have = p.length - dot - 1;
+    if (have <= digits && dot > 0) return have === digits ? p : p + '0'.repeat(digits - have);
+  }
   const [m, e] = a.toExponential().split('e');
   const ds = m.replace('.', ''), keep = Number(e) + 1 + digits; // digits of ds left of the cut
   let n = 0n;
