@@ -1,5 +1,5 @@
-// Shaped text comes back once, in logical order, from our extractText and poppler's pdftotext (0.1.0-beta.1:
-// beta.0 doubled every multi-glyph cluster: "किकिताताब"), and MuPDF (beta.2); pdf.js only right to left (see below). And the reader: ActualText replaces its glyphs; a code with
+// Shaped text comes back once, in logical order, from our extractText, poppler's pdftotext and pdf.js (0.1.0-beta.1:
+// beta.0 doubled every multi-glyph cluster: "किकिताताब"); textMapping 'actualText' trades pdf.js's left to right for MuPDF. And the reader: ActualText replaces its glyphs; a code with
 // no Unicode reads as U+FFFD, one mapped to nothing on purpose as nothing.
 //
 // pdf.js is not a dependency: its part runs when pdfjs-dist can be imported (installed, or PDFJS_DIR=<dir with
@@ -25,10 +25,10 @@ const CASES = [
   ['Arabic (lam-alef, tanwin)', 'NotoSansArabic-Regular.ttf', 'السلام عليكم لا إله مرحبًا', 'rtl'],
 ];
 const norm = (s) => s.replace(/[‪-‮‎‏]/g, '').replace(/\s+/g, ' ').trim();
-const shaped = (file, text, direction) => toBytes(async (pdf) => {
+const shaped = (file, text, direction, textMapping, compress) => toBytes(async (pdf) => {
   const b = font(file);
-  pdf.addPage({ width: 600, height: 120 }).text(text, { x: 20, y: 20, size: 24, font: await pdf.embedFont(b, { shaper: harfbuzzShaper(b) }), direction });
-}, { creationDate: new Date('2026-01-01') });
+  pdf.addPage({ width: 600, height: 120 }).text(text, { x: 20, y: 20, size: 24, font: await pdf.embedFont(b, { shaper: harfbuzzShaper(b), textMapping }), direction });
+}, { creationDate: new Date('2026-01-01'), compress });
 
 let pdfjs = null;
 if (typeof Promise.withResolvers === 'function') {
@@ -44,18 +44,33 @@ async function pdfjsText(bytes) {
 
 describe('shaped text extracts exactly, once', () => {
   for (const [name, file, text, dir] of CASES) {
-    it(`${name}: ours${HAS.poppler ? ', poppler' : ''}`, async () => {
-      const out = await shaped(file, text, dir);
+    for (const mode of [undefined, 'actualText']) it(`${name}: ours${HAS.poppler ? ', poppler' : ''} (${mode ?? 'default'})`, async () => {
+      const out = await shaped(file, text, dir, mode);
       expect(norm((await loadPdf(out)).page(0).extractText())).toBe(text);
       if (HAS.poppler) expect(norm(run('pdftotext', [save(out), '-']))).toBe(text);
     });
-    // beta.2 trade-off: a left-to-right cluster in an ActualText span has its text only there (MuPDF read it twice),
-    // and pdf.js ignores ActualText, so it loses those clusters; right to left is unchanged
-    it.skipIf(!pdfjs)(`${name}: pdf.js${dir === 'ltr' ? ' (loses spanned clusters)' : ''}`, async () => {
-      const got = norm(await pdfjsText(await shaped(file, text, dir)));
-      if (dir === 'rtl') expect(got).toBe(text); else expect(got).not.toBe(text);
+    it.skipIf(!pdfjs)(`${name}: pdf.js`, async () => {
+      expect(norm(await pdfjsText(await shaped(file, text, dir)))).toBe(text);
     });
   }
+
+  it("textMapping 'actualText': a spanned cluster's carrier is drawn with a code the ToUnicode maps to WJ; by default with its text", async () => {
+    // the carrier's code drawn in the content stream (uncompressed), and what the ToUnicode maps it to
+    const carrier = async (mode) => {
+      const s = Buffer.from(await shaped('NotoSansDevanagari-Regular.ttf', 'किताब', 'ltr', mode, false)).toString('latin1');
+      const map = new Map([...s.matchAll(/<([0-9A-Fa-f]{4})> <([0-9A-Fa-f]*)>/g)].map((m) => [m[1].toUpperCase(), m[2].toUpperCase()]));
+      const lit = (t) => t.replace(/\\([0-7]{1,3}|.)/g, (_, e) => /^[0-7]/.test(e) ? String.fromCharCode(parseInt(e, 8)) : ({ n: '\n', r: '\r', t: '\t', b: '\b', f: '\f' })[e] ?? e);
+      const hex = (t) => [...lit(t)].map((c) => c.charCodeAt(0).toString(16).padStart(2, '0')).join('').toUpperCase().match(/.{4}/g) ?? [];
+      const drawn = [...s.matchAll(/\/ActualText[\s\S]*?BDC\n\(((?:\\[\s\S]|[^\\)])*)\) Tj\nEMC/g)].flatMap((m) => hex(m[1]));
+      return drawn.map((c) => map.get(c));
+    };
+    const [def, at] = [await carrier(undefined), await carrier('actualText')];
+    expect(def).toContain('0915093F'); // कि on its carrier
+    expect(at).not.toContain('0915093F');
+    expect(at.length).toBeGreaterThan(0);
+    expect(at.every((u) => u === '2060')).toBe(true);
+    await expect(toBytes(async (pdf) => { await pdf.embedFont(font('NotoSansDevanagari-Regular.ttf'), { textMapping: 'nope' }); })).rejects.toThrow(TypeError);
+  });
 
   it('a glyph that stands for different text in different places gets a code for each (a CIDToGIDMap), never one text twice', async () => {
     const out = await toBytes(async (pdf) => {
