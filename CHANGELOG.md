@@ -2,7 +2,7 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
-## 0.13.2 — unreleased
+## 0.13.2-rc.1 — 2026-10-09 (release candidate)
 
 ### Changed
 - **The rename to ReportWright is finished; every old Pagewright name keeps working until 1.0.** New names, with the old one kept as a deprecated alias:

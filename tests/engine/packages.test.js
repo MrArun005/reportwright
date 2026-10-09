@@ -126,7 +126,7 @@ describe('npm packages', () => {
     expect(p.files).toContain('CHANGELOG.md');
     expect(fs.existsSync(path.join(root, `packages/${name}/CHANGELOG.md`))).toBe(true);
     expect(fs.readFileSync(path.join(root, `packages/${name}/README.md`), 'utf8')).toMatch(/socket\.dev\/api\/badge/);
-    for (const v of Object.values(p.dependencies || {})) expect(v).toMatch(/^\d+\.\d+\.\d+$|^0\.\d+\.\d+$/); // pinned
+    for (const v of Object.values(p.dependencies || {})) expect(v).toMatch(/^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/); // pinned
   });
 
   it('the viewer\'s first load is under 860 KB gzipped (other languages, exporters, PDF and barcodes load on demand)', async () => {
