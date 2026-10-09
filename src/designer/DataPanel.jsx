@@ -264,11 +264,11 @@ function ParamDialog({ index, onClose }) {
         <Field label={T('editor')} hint={T(`editorHint_${p.editor || 'auto'}`)}>
           <Select value={p.editor} allowEmpty onChange={setEditor} options={EDITORS.map(e => ({ value: e, label: T(`editor_${e}`) }))} />
         </Field>
-        <Field label={T('panelColumns')} hint={T('panelColumnsHint')}>
+        <Field label={T('panelColumns')} hint={T('c132_panelColumnsHint')}>
           <Select value={columns} onChange={v => setColumns(v || '1')} options={['1', '2', '3', '4']} />
         </Field>
       </div>
-      <Check label={T('liveParams')} checked={live} onChange={setLive} />
+      <Check label={T('c132_liveParams')} checked={live} onChange={setLive} />
       {limits && (
         <div className="grid3">
           <Field label={T('minimum')}><TextInput value={p.min ?? ''} onChange={v => setP({ ...p, min: limit(v) })} mono type={p.type === 'date' ? 'date' : 'text'} /></Field>
