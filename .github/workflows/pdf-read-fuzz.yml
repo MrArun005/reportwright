@@ -3,6 +3,10 @@
 # Run by hand (Actions > pdf-read-fuzz > Run workflow); the artifact holds fuzz.json and bench.txt.
 name: pdf-read-fuzz
 on:
+  # a manual run needs this file on the default branch; until the branch merges, a push of the reader or this file runs it
+  push:
+    branches: [pdf-lib-own]
+    paths: ['packages/pdf/src/reader/**', '.github/workflows/pdf-read-fuzz.yml']
   workflow_dispatch:
     inputs:
       fuzz_iter:
@@ -28,8 +32,8 @@ jobs:
           echo "PIKEPDF_PY=/tmp/pk/bin/python" >> "$GITHUB_ENV"
       - name: Fuzz the reader
         env:
-          FUZZ_ITER: ${{ inputs.fuzz_iter }}
-          FUZZ_SEED: ${{ inputs.fuzz_seed }}
+          FUZZ_ITER: ${{ inputs.fuzz_iter || '20000' }}
+          FUZZ_SEED: ${{ inputs.fuzz_seed || '20261009' }}
           FUZZ_REPORT: out/fuzz.json
         run: mkdir -p out && npx vitest run tests/pdf/fuzz-read.test.js tests/pdf/hostile-parse.test.js tests/pdf/hostile-policy.test.js --maxWorkers=2
       - name: Reading benchmarks at full size
