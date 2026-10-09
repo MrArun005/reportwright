@@ -50,7 +50,7 @@ describe('save() drops active content wherever it is', () => {
       expect(d.get('Subtype')).not.toBe('RichMedia');
     }
     const out = await loadPdf(r.bytes);
-    expect(out.page(0).annotations().map((a) => a.uri).filter(Boolean)).toEqual([LONG]);
+    expect(out.page(0).annotations().map((a) => a.uri).filter(Boolean)).toEqual([LONG.replace('(', '%28').replace(')', '%29')]); // kept, as checkUrl normalised it
     // pdf-lib parses it and finds no such action
     const pl = await PDFDocument.load(r.bytes);
     for (const [, o] of pl.context.enumerateIndirectObjects()) {
