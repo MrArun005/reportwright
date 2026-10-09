@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { useDesigner, activeStore, useDesignerStore, findItem, walk, addItem, cloneWithIds, allNames, secOf, updateItem } from './store.js';
 import { t } from '@/i18n/index.js';
-import { TextInput, NumberInput, Select, ColorInput, Field, Check } from './ui.jsx';
+import { TextInput, NumberInput, Select, ColorInput, Field, Check, InfoTip } from './ui.jsx';
 import { THEME_COLORS, DEFAULT_THEME, findItemNamed } from '@/engine/reuse.js';
 import { useFontFamilies } from './Fonts.jsx';
 import CatHead from './CatHead.jsx';
@@ -173,7 +173,7 @@ export function LayersPanel() {
   const remove = (i) => set((l, d) => { const old = l[i].name; l.splice(i, 1); walk(d, (it) => { if (it.layer === old) delete it.layer; }); });
   return (
     <div className="pane" data-testid="layers">
-      <h4>{T('layers')}</h4>
+      <h4><span>{T('layers')} <InfoTip text={T('layersHint')} /></span></h4>
       <div className="pane-body">
         {layers.map((l, i) => (
           <div key={i} className="layer-row" data-layer={l.name}>
@@ -190,7 +190,6 @@ export function LayersPanel() {
           <button type="button" className="btn sm" disabled={!name.trim() || layers.some(l => l.name === name.trim())} data-testid="layer-add"
             onClick={() => { set(l => { l.push({ name: name.trim() }); }); setName(''); }}>{T('layerAdd')}</button>
         </div>}
-        <div className="hint">{T('layersHint')}</div>
       </div>
     </div>
   );
@@ -273,7 +272,7 @@ export function PartsPanel() {
   const [pick, setPick] = useState('');
   return (
     <div className="pane" data-testid="parts-panel">
-      <h4>{T('parts')}
+      <h4><span>{T('parts')} <InfoTip text={T('partsHint')} /></span>
         {libs.length > 0 && <button type="button" className="btn sm ghost" onClick={() => libs.forEach(l => fetchReused(l, true))} title={T('partsReloadHint')}>{T('partsReload')}</button>}
       </h4>
       <div className="pane-body">
@@ -283,7 +282,6 @@ export function PartsPanel() {
           <button type="button" className="btn sm" disabled={!pick || libs.includes(pick)} data-testid="library-add"
             onClick={() => { apply(d => { (d.libraries ||= []).push(pick); }); setPick(''); }}>{T('libraryAdd')}</button>
         </div>}
-        <div className="hint">{T('partsHint')}</div>
       </div>
     </div>
   );

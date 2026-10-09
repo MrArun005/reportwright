@@ -50,5 +50,6 @@ const ROWS = {
   c132_warning1: ['1 warning', '1 चेतावनी', '1 advertencia', '1 avertissement', '1 Warnung', '警告 1 件', '1 条警告', '1 aviso', 'تحذير واحد'],
   c132_detected: ['detected', 'पहचाना गया', 'detectado', 'détecté', 'erkannt', '検出', '已检测', 'detectado', 'مكتشف'],
   c132_detectedHint: ['Fields detected from the data, not declared in the data set (Edit declares them)', 'डेटा से पहचाने गए फ़ील्ड, डेटा सेट में घोषित नहीं (संपादित करें उन्हें घोषित करता है)', 'Campos detectados en los datos, no declarados en el conjunto de datos (Editar los declara)', 'Champs détectés dans les données, non déclarés dans le jeu de données (Modifier les déclare)', 'Aus den Daten erkannte Felder, im Dataset nicht deklariert (Bearbeiten deklariert sie)', 'データから検出したフィールド (データセットでは未宣言。編集で宣言できます)', '从数据中检测到的字段，未在数据集中声明（编辑可声明它们）', 'Campos detectados nos dados, não declarados no conjunto de dados (Editar os declara)', 'حقول مكتشفة من البيانات، غير معرّفة في مجموعة البيانات (التحرير يعرّفها)'],
+  c132_moreInfo: ['More information', 'अधिक जानकारी', 'Más información', 'Plus d’informations', 'Weitere Informationen', '詳細情報', '更多信息', 'Mais informações', 'مزيد من المعلومات'],
 };
 export default Object.fromEntries(LANGS.map((l, i) => [l, Object.fromEntries(Object.entries(ROWS).map(([k, v]) => [k, v[i]]))]));

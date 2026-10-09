@@ -1,5 +1,5 @@
 'use client';
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useId, useRef, useState } from 'react';
 import { fieldIssues } from './fieldCheck.js';
 import { checkValue } from '@/engine/expr/evaluate.js';
 import { t } from '@/i18n/index.js';
@@ -66,7 +66,32 @@ export function ExprInput({ value, onChange, onOpen, placeholder }) {
   );
 }
 
+/**
+ * Help text behind an ⓘ button: shown on hover, on keyboard focus and on click; Esc closes it. The button is described by
+ * the text (aria-describedby), so a screen reader reads it with the button. `id` names the text for other elements too.
+ */
+export function InfoTip({ text, id }) {
+  const T = useT();
+  const own = useId();
+  const tipId = id || `tip${own.replace(/:/g, '')}`;
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="infotip" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <button type="button" className="infotip-btn" aria-label={T('c132_moreInfo')} aria-describedby={tipId} aria-expanded={open}
+        onClick={() => setOpen(v => !v)} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)}
+        onKeyDown={(e) => { if (e.key === 'Escape' && open) { e.preventDefault(); e.stopPropagation(); setOpen(false); } }}>ⓘ</button>
+      <span role="tooltip" id={tipId} className="infotip-text" hidden={!open}>{text}</span>
+    </span>
+  );
+}
+
+/** Help longer than this goes behind an ⓘ button (InfoTip) instead of a paragraph under the field. */
+const LONG_HINT = 90; // ponytail: a length cut, not a layout measure
+
 export function Field({ label, children, hint }) {
+  if (typeof hint === 'string' && hint.length > LONG_HINT) {
+    return <div className="field-tip"><label className="field"><span>{label}</span>{children}</label><InfoTip text={hint} /></div>;
+  }
   return <label className="field"><span>{label}</span>{children}{hint && <span className="hint">{hint}</span>}</label>;
 }
 

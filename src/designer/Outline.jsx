@@ -9,6 +9,7 @@ import { useRef, useState } from 'react';
 import { useDesigner, sectionList, secOf, reorderItem, moveOutOfParent, moveItemTo, findItem, NESTING } from './store.js';
 import { ITEMS } from '@/engine/items/index.js';
 import { t } from '@/i18n/index.js';
+import { InfoTip } from './ui.jsx';
 
 const MIME = 'application/x-pw-outline';
 
@@ -140,7 +141,7 @@ export default function Outline() {
   });
   return (
     <div className="pane" data-testid="outline">
-      <h4>{T('outline')}</h4>
+      <h4><span>{T('outline')} <InfoTip text={readOnly ? T('outlineHint') : `${T('outlineHint')} ${T('outlineKeys')}`} /></span></h4>
       <div className="pane-body" ref={body}>
         <div role="group" aria-label={T('outline')} onKeyDown={nav}>
         {sectionList(def).map(({ key, label }) => {
@@ -154,8 +155,7 @@ export default function Outline() {
         })}
         </div>
         <div className="sr-only" id="outline-nav">{T('b9_outlineKeys')}</div>
-        <div className="hint">{T('outlineHint')}</div>
-        {!readOnly && <div className="hint" id="outline-keys">{T('outlineKeys')}</div>}
+        {!readOnly && <div className="sr-only" id="outline-keys">{T('outlineKeys')}</div>}
         <div className="sr-only" role="status" aria-live="polite">{said}</div>
       </div>
     </div>

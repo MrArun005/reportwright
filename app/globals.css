@@ -126,6 +126,19 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .input.invalid, .textarea.invalid { border-color: var(--danger); background: var(--danger-soft); }
 .err { color: var(--danger); font-size: var(--fs-xs); }
 .hint { color: var(--faint); font-size: var(--fs-xs); }
+/* ⓘ help (InfoTip): the text opens on hover, focus or click, over the content; Esc closes it */
+.infotip { position: relative; display: inline-flex; vertical-align: middle; text-transform: none; letter-spacing: normal; font-weight: normal; }
+.infotip-btn { border: 0; background: none; padding: 0 2px; margin: 0; font: inherit; font-size: 13px; line-height: 1; color: var(--muted); cursor: help; border-radius: 3px; }
+.infotip-btn:hover, .infotip-btn[aria-expanded=true] { color: var(--accent); }
+.infotip-text { position: absolute; z-index: 30; top: calc(100% + 4px); inset-inline-end: -4px; width: max-content; max-width: min(280px, 70vw); padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); color: var(--ink); box-shadow: 0 4px 14px rgb(0 0 0 / .14); font-size: var(--fs-xs); line-height: 1.45; white-space: normal; text-align: start; }
+.infotip-text[hidden] { display: none; }
+.field-tip { position: relative; min-width: 0; }
+.field-tip > .field > span:first-child { padding-inline-end: 18px; }
+.field-tip > .infotip { position: absolute; top: 0; inset-inline-end: 0; }
+/* in a panel heading the text spans the panel (the heading is its containing block: sticky) */
+.pane > h4 { position: relative; }
+.pane > h4 .infotip { position: static; }
+.pane > h4 .infotip-text { top: 100%; inset-inline: 8px; width: auto; max-width: none; z-index: 5; }
 .check { display: flex; align-items: center; gap: 7px; cursor: pointer; }
 .kbd { font-family: var(--mono); font-size: var(--fs-2xs); padding: 1px 4px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel-2); color: var(--muted); }
 

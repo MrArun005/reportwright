@@ -255,12 +255,11 @@ function ParamDialog({ index, onClose }) {
           onChange={e => { setChoicesText(e.target.value); const list = e.target.value.split('\n').map(l => l.trim()).filter(Boolean).map(l => parseOptionLine(l, p.type)); setP({ ...p, options: list.length ? list : undefined }); }} />
       </Field>
       <div className="grid2">
-        <Field label={T('choicesFrom')}><Select value={p.optionsFrom?.dataSet} options={(def.dataSets || []).map(d => d.name)} allowEmpty onChange={pickChoiceSet} data-testid="param-choices-from" /></Field>
+        <Field label={T('choicesFrom')} hint={T('cascadeHint')}><Select value={p.optionsFrom?.dataSet} options={(def.dataSets || []).map(d => d.name)} allowEmpty onChange={pickChoiceSet} data-testid="param-choices-from" /></Field>
         {p.optionsFrom && <Field label={T('valueField')}><Select value={fieldOf(p.optionsFrom.value) || ''} options={[{ value: '', label: T('ux_choose') }, ...fromFields]} onChange={v => setP({ ...p, optionsFrom: { ...p.optionsFrom, value: v ? `=Fields.${v}` : '' } })} data-testid="param-value-field" aria-invalid={!p.optionsFrom.value || undefined} /></Field>}
         {p.optionsFrom && <Field label={T('labelField')} hint={T('labelFieldHint')}><Select value={p.optionsFrom.label} options={labelOpts} allowEmpty onChange={v => setP({ ...p, optionsFrom: { ...p.optionsFrom, label: v || undefined } })} data-testid="param-label-field" /></Field>}
       </div>
       {p.optionsFrom && choicePreview && <div className="hint" data-testid="param-choice-preview">{T('ux_choicePreview', { n: choicePreview.length, list: choicePreview.slice(0, 5).join(', ') + (choicePreview.length > 5 ? ', …' : '') })}</div>}
-      {p.optionsFrom && <div className="hint">{T('cascadeHint')}</div>}
       <div className="grid2">
         <Field label={T('editor')} hint={T(`editorHint_${p.editor || 'auto'}`)}>
           <Select value={p.editor} allowEmpty onChange={setEditor} options={EDITORS.map(e => ({ value: e, label: T(`editor_${e}`) }))} />
