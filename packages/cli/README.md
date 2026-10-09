@@ -1,15 +1,120 @@
 # @reportwright/cli
 
+`pw`: render, snapshot-test, diff and import ReportWright reports from the command line, with no server.
+
 [![npm](https://img.shields.io/npm/v/%40reportwright%2Fcli)](https://www.npmjs.com/package/@reportwright/cli) [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/MrArun005/reportwright/blob/main/LICENSE) [![Socket](https://socket.dev/api/badge/npm/package/@reportwright/cli)](https://socket.dev/npm/package/@reportwright/cli)
 
-`pw`: render, test and diff ReportWright reports from the command line (no server). Fonts come from `@reportwright/fonts`.
+**Live demo:** [mrarun005.github.io/reportwright-demo](https://mrarun005.github.io/reportwright-demo). [Switch to ReportWright](https://mrarun005.github.io/reportwright-demo/switch.html) runs the same importers as `pw import` in your browser: drop a `.jrxml`, `.rdl` or `.rptdesign` and see what carries over.
+
+The CLI carries [`@reportwright/engine`](https://github.com/MrArun005/reportwright/tree/main/packages/engine); fonts come from [`@reportwright/fonts`](https://github.com/MrArun005/reportwright/tree/main/packages/fonts).
+
+## Install
 
 ```bash
-npx -p @reportwright/cli pw render statement.pw.json -p accountId=LN-1 -d loans=data.json -f pdf -o statement.pdf
-npx -p @reportwright/cli pw test reports        # snapshot tests for reports-as-code
-npx -p @reportwright/cli pw import invoice.jrxml   # JasperReports, SSRS (.rdl) or BIRT → invoice.pw.json
-npx -p @reportwright/cli pw import legacy/ -o imported --recursive   # a whole folder, with a migration report (see Bulk import)
+npm i -D @reportwright/cli @reportwright/fonts     # then: npx pw …
+# or one-off, without installing:
+npx -p @reportwright/cli pw --version
 ```
+
+## Quick start (30 seconds)
+
+`orders.pw.json` is the report from the [engine's examples](https://github.com/MrArun005/reportwright/tree/main/packages/engine#examples) (a table of customers and amounts with a
+total); `orders.json` is its data:
+
+```json
+{ "rows": [{ "customer": "Asha Rao", "amount": 1200.5 }, { "customer": "Ben Ode", "amount": 80 }] }
+```
+
+```bash
+npx pw render orders.pw.json -d orders=orders.json -f pdf -o orders.pdf
+# pw: wrote orders.pdf (1 pages, streamed)
+```
+
+`-d orders=orders.json` replaces the data source named `orders` with the file's JSON.
+
+## Examples
+
+Each was run against this version.
+
+**Render to every format.** `-f` is `pdf`, `xlsx`, `docx`, `pptx`, `html`, `csv`, `json` or `txt`; `-o -` writes to stdout.
+
+```bash
+npx pw render orders.pw.json -d orders=orders.json -f xlsx -o orders.xlsx
+npx pw render orders.pw.json -d orders=orders.json -f csv -o orders.csv      # Customer,Amount / Asha Rao,1200.5 / Ben Ode,80
+npx pw render statement.pw.json -p accountId=LN-1 -f pdf -o statement.pdf     # -p sets a report parameter
+```
+
+**Archival, accessible or protected PDF.**
+
+```bash
+npx pw render orders.pw.json -d orders=orders.json --pdfa --ua -o orders.pdf  # PDF/A-2a + PDF/UA-1
+npx pw render orders.pw.json -d orders=orders.json --password s3cret --deny copy -o locked.pdf
+```
+
+**Bulk import a folder of legacy reports.** One bad file does not stop the batch; the exit code says how it went.
+
+```bash
+npx pw import legacy -o imported --recursive
+# pw: finance/Kitchen Sink.rdl → finance/kitchen-sink.pw.json: written, 2 unresolved
+# pw: truncated.rdl: FAILED: The file is not readable XML: Text outside the root element (character 27503)
+# pw: 1 of 2 reports imported, 1 failed, 2 unresolved references; report: imported/import-report.html
+echo $?   # 2: some failed
+```
+
+**Snapshot-test reports as code.** With `reports/__tests__/orders.test.json`:
+
+```json
+{ "report": "../orders.pw.json", "cases": [{ "name": "two-orders", "data": { "orders": "orders.json" } }] }
+```
+
+```bash
+npx pw test reports --update   # 1 passed, 0 failed, 1 snapshot written
+npx pw test reports            # 1 passed, 0 failed (exit 1 when a case changes)
+```
+
+**Diff two versions of a report** (the words, page by page; exit 1 when they differ):
+
+```bash
+npx pw diff orders.pw.json orders-v2.pw.json -d orders=orders.json
+# orders-v2.pw.json: page 1 changed
+# - Orders
+# + All orders
+```
+
+## Commands and options
+
+| Command | Options |
+|---|---|
+| `pw render <report.pw.json>` | `-p name=value` (repeat), `-d source=data.json` (repeat), `-f` format (default `pdf`), `-o file\|-`, `--base URL` (where relative data URLs go), `--allow-internal`, `--pdfa`, `--ua`, `--values` (Excel totals as values), `--static` (HTML without its Tables view), `--layout` (CSV of the printed layout), `--password`, `--owner-password`, `--deny print\|modify\|copy\|annotate\|fillForms\|accessibility\|assemble\|printHighQuality` |
+| `pw import <file>` | `-o out.pw.json` |
+| `pw import <folder>` | `-o outDir`, `--recursive`, `--force`, `--verify`, `--report path`, `--max-files N` (2000), `--max-bytes N` (16 MB) |
+| `pw test [folder]` | `--update`, `--layout` |
+| `pw diff <old> <new>` | `-p`, `-d`, `--base` |
+| `pw --version` | prints the CLI and engine versions |
+
+Exit codes: 0 ok; 1 a test failed or the pages differ; 2 bad usage (`pw import <folder>`: 2 some failed, 1 none imported).
+
+## Supported formats
+
+| Direction | Formats |
+|---|---|
+| Output (`-f`) | `pdf` (also `--pdfa`, `--ua`, encrypted), `xlsx`, `docx`, `pptx`, `html`, `csv`, `json`, `txt` |
+| Import | SSRS `.rdl` / `.rdlc` (+ shared data sources `.rds`), JasperReports `.jrxml` (+ style templates `.jrtx`), BIRT `.rptdesign`, ActiveReports `.rdlx-json`, referenced images |
+
+## Requirements and limits
+
+- Node 20.9 or later. Install `@reportwright/fonts` next to the CLI.
+- `pw render -f pdf -o file` streams a flowing table, so memory stays flat on large reports (see the engine's
+  [streaming notes](https://github.com/MrArun005/reportwright/tree/main/packages/engine#streaming-pdf-for-large-reports)); other formats render the whole model in memory.
+- Bulk import reads at most `--max-files` files (2000) of at most `--max-bytes` each (16 MB). BIRT libraries
+  (`.rptlibrary`) are listed but not read.
+
+## Related packages
+
+[`@reportwright/engine`](https://github.com/MrArun005/reportwright/tree/main/packages/engine) (the same rendering from code), [`@reportwright/fonts`](https://github.com/MrArun005/reportwright/tree/main/packages/fonts),
+[`@reportwright/fonts-cjk`](https://github.com/MrArun005/reportwright/tree/main/packages/fonts-cjk), [`@reportwright/viewer`](https://github.com/MrArun005/reportwright/tree/main/packages/viewer) (view and design in the browser).
+
+## Notes on `pw render`
 
 `pw render -f pdf -o file` streams a flowing table into the file as it is laid out (`exportPdfStream`; the message says
 `streamed`), so a large report's memory stays flat; other reports, `--password` and `-o -` render the whole model first.
