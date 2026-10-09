@@ -49,7 +49,25 @@ const CASES = {
     }
     return [doc(`/Resources << /Font << ${fonts.join(' ')} >> >>`, `${content}ET`, more), {}];
   },
+  // R2: /W [0 65535 500] 20,000 times (240 KB): 65,536 Map.set each, none a budget step (30 s, timeoutMs 1000 ignored)
+  'w-ranges': () => [type0(`/W [${'0 65535 500 '.repeat(20000)}]`), { timeoutMs: 1000 }],
+  // R2: /W [0 7 0 R …] where 7 is an array of 60,000 widths, 2,000 times
+  'w-arrays': () => [type0(`/W [${'0 7 0 R '.repeat(2000)}]`, { 7: `[${'500 '.repeat(60000)}]` }), { timeoutMs: 1000 }],
+  // R2 (the audit): a /Kids array of 20,000 page-tree nodes, each with that same /Kids: every kid pushed again at
+  // every level (400 M entries)
+  'page-tree-shared-kids': () => {
+    const L = 20000, more = { 1: '<< /Type /Catalog /Pages 2 0 R >>', 2: '<< /Type /Pages /Kids 3 0 R /Count 1 >>' };
+    more[3] = `[${Array.from({ length: L }, (_, i) => `${4 + i} 0 R`).join(' ')}]`;
+    for (let i = 0; i < L; i++) more[4 + i] = '<< /Type /Pages /Kids 3 0 R >>';
+    return [build(more), { timeoutMs: 10000 }];
+  },
 };
+function type0(w, more = {}) {
+  return doc('/Resources << /Font << /F1 5 0 R >> >>', 'BT /F1 12 Tf 10 10 Td <0041> Tj ET', {
+    5: '<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /Identity-H /DescendantFonts [6 0 R] >>',
+    6: `<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X ${w} >>`, ...more,
+  });
+}
 
 const [bytes, o] = CASES[process.argv[2]]();
 const t = Date.now();

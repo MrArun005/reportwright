@@ -27,3 +27,13 @@ describe('R1: a ToUnicode bfrange cannot copy a long destination 65,536 times (h
     expect(child('cmap-many-fonts').code).toBe('E_BUDGET');
   }, 30_000);
 });
+
+describe('R2: a CIDFont /W is a budget step per code, capped in total (timeoutMs honoured)', () => {
+  for (const name of ['w-ranges', 'w-arrays', 'page-tree-shared-kids']) {
+    it(`${name}: stops in well under the 15 s limit with a typed error`, () => {
+      const r = child(name, 15);
+      expect(['E_BUDGET', 'E_TIMEOUT']).toContain(r.code);
+      expect(r.ms).toBeLessThan(3000);
+    }, 30_000);
+  }
+});
