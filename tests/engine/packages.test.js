@@ -24,6 +24,19 @@ describe('npm packages', () => {
     expect(fs.existsSync(path.join(root, `packages/${name}`, pkg.types))).toBe(true);
   });
 
+  it('E10: every file a dist bundle names with new URL(\'./x\', import.meta.url) ships next to it (webpack and Next.js resolve them)', () => {
+    for (const pk of ['engine', 'cli', 'viewer']) {
+      const dir = path.join(root, 'packages', pk, 'dist');
+      for (const f of fs.readdirSync(dir, { recursive: true }).filter(f => /\.m?js$/.test(f))) {
+        const src = fs.readFileSync(path.join(dir, f), 'utf8');
+        for (const m of src.matchAll(/new URL\(\s*["'](\.\/[^"']+)["']\s*,\s*import\.meta\.url\s*\)/g)) {
+          expect(fs.existsSync(path.join(dir, path.dirname(f), m[1])), `${pk}/dist/${f} -> ${m[1]}`).toBe(true);
+        }
+      }
+      expect(json(`packages/${pk}/package.json`).files).toContain('dist');
+    }
+  });
+
   it('the viewer package has the designer entry and generated types; the engine has its API and report types', () => {
     const v = json('packages/viewer/package.json');
     expect(v.exports['./designer'].default).toBe('./dist/designer.js');

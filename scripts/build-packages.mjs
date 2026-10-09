@@ -195,6 +195,19 @@ for (const [name, w] of Object.entries(WRAPPERS)) {
   });
   fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, P, 'LICENSE')); fs.copyFileSync(path.join(root, 'THIRD-PARTY-NOTICES.md'), path.join(root, P, 'THIRD-PARTY-NOTICES.md')); docs(P);
 }
+// E10: the CLI and viewer bundles hold the engine, so they name ./pdfstreamworker.js too; webpack and Next.js resolve
+// every new URL('./x', import.meta.url) at build time and fail when the file is missing. The parallel paint worker
+// is the engine package's (Node only, never started in a browser), so these bundles ship a stand-in that says so.
+{
+  const stub = "// The streaming PDF's parallel paint worker is @reportwright/engine's (dist/pdfstreamworker.js). This stand-in ships so\n"
+    + "// bundlers resolve new URL('./pdfstreamworker.js', import.meta.url) in this package.\n"
+    + "const { parentPort } = globalThis.process.getBuiltinModule('node:worker_threads');\n"
+    + "parentPort.on('message', (job) => parentPort.postMessage({ id: job.id, error: { message: 'exportPdfStream with parallel needs @reportwright/engine' } }));\n";
+  for (const d of ['packages/cli/dist', 'packages/viewer/dist', 'packages/viewer/dist/peer']) {
+    const dir = path.join(root, d);
+    if (fs.readdirSync(dir).some(f => /\.m?js$/.test(f) && fs.readFileSync(path.join(dir, f), 'utf8').includes('./pdfstreamworker.js'))) fs.writeFileSync(path.join(dir, 'pdfstreamworker.js'), stub);
+  }
+}
 // no backslash line continuation in a string in what npm publishes (lineLimit makes them): fails the build if one is left
 for (const P of ['packages/engine/dist', 'packages/cli/dist', 'packages/viewer/dist']) fixDist(path.join(root, P));
 console.log(`packages: @reportwright/engine, /fonts, /fonts-cjk, /cli, /viewer, ${Object.keys(WRAPPERS).map(n => '/' + n).join(', ')} built (npm pack packages/<name>)`);
