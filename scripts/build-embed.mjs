@@ -3,6 +3,7 @@ import { build } from 'esbuild';
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import path from 'node:path';
+import { fixDist } from './line-continuations.mjs';
 import { root, common, readable, workerMin, ENTRIES, WORKER, APART, bwipApart, firstLoad } from './embed-options.mjs';
 const workerBuild = (o) => build({ ...common, entryPoints: [WORKER], format: 'esm', ...workerMin, splitting: false, ...o });
 const workerWithBwip = async (dir, o = {}) => {
@@ -48,6 +49,8 @@ fs.writeFileSync(path.join(root, 'public/embed/reportwright-viewer.js'), `/* Rep
 // the old file names (embed snippets pasted before the rename) keep working; deprecated (0.9)
 for (const f of ['viewer.js', 'viewer.full.js']) fs.copyFileSync(path.join(root, `public/embed/reportwright-${f}`), path.join(root, `public/embed/pagewright-${f}`));
 fs.rmSync(path.join(root, 'public/embed/exceljs.min.js'), { force: true }); // the Excel export has its own writer now
+// no backslash line continuation in a string (lineLimit makes them; Vite 7 broke one): fails the build if one is left
+fixDist(path.join(root, 'public/embed'));
 // what a page loads up front: the entry and the chunks it imports statically
 const dir = path.join(root, 'public/embed/esm');
 const first = new Set(firstLoad(esmBuild.metafile, Object.keys(esmBuild.metafile.outputs).find(f => path.basename(f) === 'viewer.js')).map(f => path.basename(f)));

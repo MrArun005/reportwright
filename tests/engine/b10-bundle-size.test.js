@@ -5,6 +5,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { build } from 'esbuild';
 import zlib from 'node:zlib';
 import path from 'node:path';
+import { splitContinuations } from '../../scripts/line-continuations.mjs';
 import { root, common, readable, workerMin, ENTRIES, WORKER, bwipApart, firstLoad } from '../../scripts/embed-options.mjs';
 
 // gzip -9 KB of the readable (unminified) ES modules, as build-embed.mjs prints them. A ratchet: lower it when the
@@ -24,7 +25,8 @@ beforeAll(async () => {
     inputs: files.flatMap(f => Object.keys(r.metafile.outputs[f].inputs)),
   };
   const w = await build({ ...common, entryPoints: [WORKER], format: 'esm', ...workerMin, sourcemap: false, splitting: false, metafile: true, write: false, outfile: path.join(OUT, 'engine.worker.js'), plugins: [...common.plugins, bwipApart] });
-  worker = { gz: zlib.gzipSync(w.outputFiles[0].contents, { level: 9 }).length / 1024, inputs: Object.keys(Object.values(w.metafile.outputs)[0].inputs), text: w.outputFiles[0].text };
+  const wtext = splitContinuations(w.outputFiles[0].text); // as build-embed.mjs writes it
+  worker = { gz: zlib.gzipSync(wtext, { level: 9 }).length / 1024, inputs: Object.keys(Object.values(w.metafile.outputs)[0].inputs), text: wtext };
 }, 120000);
 
 describe('B10 A1.6 viewer bundle size', () => {
