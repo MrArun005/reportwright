@@ -2,7 +2,8 @@
 // measuring pass per word, long words broken in one pass, layout stopped one line past what can show) and capped.
 import { describe, it, expect } from 'vitest';
 import { PDFDocument } from 'pdf-lib';
-import { toBytes } from '../../packages/pdf/src/index.js';
+import { toBytes, loadPdf } from '../../packages/pdf/src/index.js';
+import { rawPdf } from './reader-tools.js';
 import { INTER } from './tools.js';
 
 /** run box(page, font) on a fresh page; its result and the elapsed ms (the PDF is ended and parsed too) */
@@ -80,4 +81,27 @@ describe('hostile text (each under 1 s)', () => {
     await expect(timed((p, font) => p.textBox(big, { width: 100, font }))).rejects.toThrow(/more than 10000000/);
     await expect(timed((p, font) => p.text(big, { font }))).rejects.toThrow(/more than 10000000/);
   });
+});
+
+describe('a 2-million-operator page (PDF-7)', () => {
+  // made here, not committed: "BT /F1 6 Tf", then (n - 3) / 2 pairs "1 0 0 1 x y Tm (c) Tj", then "ET": n operators, a piece per Tj
+  const opsPage = (n) => {
+    const parts = ['BT /F1 6 Tf\n'];
+    for (let i = 0; i < (n - 3) / 2; i++) parts.push(`1 0 0 1 ${20 + (i % 60) * 9} ${820 - (Math.floor(i / 60) % 100) * 8} Tm (${String.fromCharCode(97 + (i % 26))}) Tj\n`);
+    parts.push('ET\n');
+    const content = Buffer.from(parts.join(''), 'latin1');
+    return rawPdf(['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+      [`<< /Length ${content.length} >>`, content], '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>'],
+    { trailer: '/Size 6' });
+  };
+  it('reads all 999,998 pieces in order, deterministically', async () => {
+    const text = (await loadPdf(opsPage(2_000_000))).extractText();
+    expect(text.length).toBe(1_999_997); // 999,998 letters, a space or a line break between each
+    expect(text.slice(0, 7)).toBe('a b c d');
+  }, 20000);
+  it('one piece past budget.maxTextItems is refused', async () => {
+    const d = await loadPdf(opsPage(2_000_000), { budget: { maxTextItems: 999_997 } });
+    expect(() => d.extractText()).toThrow(/maxTextItems/);
+  }, 20000);
 });
