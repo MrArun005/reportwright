@@ -36,6 +36,7 @@ concurrency:
   cancel-in-progress: false
 permissions:
   contents: read
+  actions: read # prune mode downloads the previous run's merged results
 env:
   FX: /tmp/fx # fixed: the Jasper fonts and the veraPDF container both expect the fixtures under /tmp
   TIER: ${{ inputs.tier || 'quick' }} # a push reads bench/deep/.push-tier instead (the plan step's tier output)
@@ -463,6 +464,17 @@ jobs:
         run: |
           docker pull -q verapdf/cli:latest
           printf '#!/bin/sh\nexec docker run --rm -v /tmp:/tmp verapdf/cli:latest "$@"\n' | sudo tee /usr/local/bin/verapdf >/dev/null && sudo chmod +x /usr/local/bin/verapdf
+      - name: Previous results for prune mode (the latest successful run of this tier)
+        if: env.TIER != 'quick'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for id in $(gh run list -R "${{ github.repository }}" -w bench-deep.yml -s success -L 20 --json databaseId -q '.[].databaseId'); do
+            rm -rf /tmp/prev && gh run download "$id" -R "${{ github.repository }}" -n bench-deep-results -D /tmp/prev 2>/dev/null || continue
+            if python3 -c "import json,sys; j=json.load(open('/tmp/prev/results.json')); sys.exit(j['sources'][0]['meta'][0]['tier'] != '$TIER')"; then
+              echo "PRUNE=/tmp/prev/results.json" >> "$GITHUB_ENV"; echo "pruning against run $id"; break
+            fi
+          done
       - name: Runner
         run: |
           mkdir -p results
@@ -470,7 +482,7 @@ jobs:
       - name: Benchmark
         env:
           BENCH_SOURCE: ${{ needs.build.outputs.engine_src && format('engine {0}', needs.build.outputs.engine_src) }}${{ needs.build.outputs.pdf_src && format(',pdf {0}', needs.build.outputs.pdf_src) }}
-        run: python3 bench/deep/drive.py --group "${{ matrix.group }}" --langs "${{ needs.fixtures.outputs.all_langs }}" --tier "$TIER" --runs "$RUNS" --fixtures "$FX" --out "results/${{ matrix.group }}.jsonl"
+        run: python3 bench/deep/drive.py --group "${{ matrix.group }}" --langs "${{ needs.fixtures.outputs.all_langs }}" --tier "$TIER" --runs "$RUNS" --fixtures "$FX" --out "results/${{ matrix.group }}.jsonl" ${PRUNE:+--prune "$PRUNE"}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

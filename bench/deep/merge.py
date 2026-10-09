@@ -55,6 +55,8 @@ def cell_text(r):
     if r['job'] in ('fuzz', 'hostile'):
         t = r.get('robust', {})
         return ' '.join(f'{k} {t[k]}' for k in ('ok', 'clean-error', 'crash', 'hang', 'oom') if t.get(k))
+    if st == 'skipped':
+        return r.get('error') or 'skipped'
     if st in ('timeout', 'oom', 'crash', 'error', 'harness-error'):
         return st.upper() if st in ('oom',) else st
     s = fmt_ms(time_of(r))
@@ -239,6 +241,9 @@ def markdown(sources, caps):
         if src.get('oldnew'):
             out += [f'## Old vs new, ours on the same machine ({src["label"]})', ''] + [f'- {l}' for l in src['oldnew']] + ['']
     for src in sources:
+        if src.get('pruned'):
+            out += [f'## Not re-measured (more than 20% slower than ReportWright in run {src["pruned_run"]})', ''] + [f'- {l}' for l in src['pruned']] + ['']
+    for src in sources:
         out += [f'## Where we lose ({src["label"]})', '']
         if not src['lose']:
             out += ['Nowhere in this source: ours is #1 in every timed row it runs.', '']
@@ -295,7 +300,7 @@ const time=r=>r&&(r.job==='invoice-warm'?r.warm_ms:r.cold_ms)?.median;
 const nav=document.getElementById('nav'),host=document.getElementById('tables'),top=document.getElementById('top');
 const m=D.sources[0].meta[0];if(m)document.getElementById('meta').textContent=`${m.date} · tier ${m.tier} · ${m.runs} runs · cap ${m.cap_mb} MB a run. The line above each table names the runner (CPU model) its columns ran on. Create jobs are ranked within a league (report engines lay out pages themselves; PDF writers execute the same pre-laid-out draw ops). Click a header to sort. Cell: median wall time (warm invoice: in-process) · peak RSS; green = fastest valid, red = failed or invalid.`;
 const list=items=>$('ul',{},...items.map(i=>$('li',{},i)));
-for(const S of D.sources){top.append($('h2',{},`Headline (${S.label})`),list(S.headline));if(S.oldnew&&S.oldnew.length)top.append($('h2',{},`Old vs new, ours on the same machine (${S.label})`),list(S.oldnew));top.append($('h2',{},`Where we lose (${S.label})`));
+for(const S of D.sources){top.append($('h2',{},`Headline (${S.label})`),list(S.headline));if(S.pruned&&S.pruned.length)top.append($('h2',{},`Not re-measured (more than 20% slower than ReportWright in run ${S.pruned_run})`),list(S.pruned));if(S.oldnew&&S.oldnew.length)top.append($('h2',{},`Old vs new, ours on the same machine (${S.label})`),list(S.oldnew));top.append($('h2',{},`Where we lose (${S.label})`));
  const L=Object.entries(S.lose);if(!L.length)top.append($('p',{},'Nowhere in this source: ours is #1 in every timed row it runs.'));
  for(const[lg,items]of L)top.append($('h3',{},lg),list(items));}
 {const C=D.capabilities;top.append($('h2',{id:'caps'},'Capabilities'),$('p',{},'Not measured: what each library documents. ✅ yes, ❌ no, partial (see note), ? not verified.'),
@@ -359,13 +364,17 @@ def main():
             meta, cells = j['meta'], j['cells']
         else:
             meta, cells = load(d)
+        pruned = [r for r in cells if r.get('status') == 'pruned']
+        cells = [r for r in cells if r.get('status') != 'pruned']
         tables, summary = build(meta, cells, contestants, label)
         sources.append({'label': label, 'meta': meta, 'cells': cells, 'tables': tables, 'summary': summary,
-                        'headline': headline(tables), 'lose': where_we_lose(tables), 'oldnew': old_new(tables)})
+                        'headline': headline(tables), 'lose': where_we_lose(tables), 'oldnew': old_new(tables),
+                        'pruned': [f'{TITLES[r["job"]]} ({LEAGUES.get(r.get("league"), r.get("league"))}): {r["lib"]} {r["ratio"]:.2f}× ours at {r["size"]:,}' for r in pruned],
+                        'pruned_run': next((r['prev_run'] for r in pruned), None)})
     data = {'sources': sources, 'capabilities': caps}
     (out / 'results.json').write_text(json.dumps(data, indent=1, ensure_ascii=False))
     (out / 'results.md').write_text(markdown(sources, caps))
-    (out / 'results.html').write_text(page({'sources': [{k: s[k] for k in ('label', 'meta', 'tables', 'summary', 'headline', 'lose', 'oldnew')} for s in sources], 'capabilities': caps}))
+    (out / 'results.html').write_text(page({'sources': [{k: s[k] for k in ('label', 'meta', 'tables', 'summary', 'headline', 'lose', 'oldnew', 'pruned', 'pruned_run')} for s in sources], 'capabilities': caps}))
     print(f'{sum(len(s["cells"]) for s in sources)} cells from {len(sources)} source(s) -> {out}')
 
 

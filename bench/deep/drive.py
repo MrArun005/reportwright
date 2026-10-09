@@ -290,7 +290,7 @@ def cells(parts, job, size, a, fx, spec, work):
         return [{**base[p['label']], 'status': 'ok', 'robust': dict(tally[p['label']]), 'cases': cases[p['label']], 'files': len(files)} for p in parts]
     heavy = (job == 'report' and size >= 10000) or job == 'read-big'
     # quick is indicative: its heavy cells run once, without a warm-up; full keeps the warm-up and at most 3 runs there
-    runs = 1 if a.tier == 'million' or (heavy and a.tier == 'quick') else min(a.runs, 3) if heavy or a.tier == 'quick' else a.runs
+    runs = 1 if a.tier == 'million' or (heavy and a.tier == 'quick') else min(a.runs, 3) if heavy or size >= 100000 or a.tier == 'quick' else a.runs
     warmup = 0 if a.tier == 'million' or (heavy and a.tier == 'quick') else 1
     extra = {'REPS': '50'} if job == 'invoice-warm' else {}
     res, failed = {p['label']: [] for p in parts}, {}
@@ -393,6 +393,49 @@ def contestants(a, langs, fx, work):
     return parts, broken
 
 
+FAILS = ('timeout', 'oom', 'error', 'crash')
+KEEP_RATIO = 1.2
+
+
+def prune_plan(prev_path, langs):
+    """From a previous merged results.json: per (job, league) the non-ours contestants to drop, {(job, league): {lib: (ratio, size)}},
+    and the previous run id. Kept: ours; anything at most 1.2x our best row at the largest size both completed; any contestant
+    with no shared size, or valid where ours is invalid. A job where ours has no valid result is not pruned. Robustness never is."""
+    j = json.loads(Path(prev_path).read_text())
+    src = j['sources'][0] if 'sources' in j else j
+    run = re.search(r'run (\d+)', src.get('label', '')) or re.search(r'.', '?')
+    league = {lib: c.get('league') for l in langs.values() for lib, c in l['libs'].items()}
+    t = lambda r: (r.get('cold_ms') or r.get('warm_ms') or {}).get('median') if r['job'] != 'invoice-warm' else (r.get('warm_ms') or r.get('cold_ms') or {}).get('median')
+    by = {}
+    for r in src['cells']:
+        if r.get('job') in ROBUST or r.get('job') == 'version':
+            continue
+        lg = league.get(r.get('base') or r['lib']) if r['job'] in CREATE else 'read-edit'
+        by.setdefault((r['job'], lg), []).append(r)
+    drop = {}
+    for key, rs in by.items():
+        ours = [r for r in rs if r['lang'] == 'ours']
+        if not any(r['status'] == 'ok' for r in ours):
+            continue  # rule 4: ours has no valid result in this job
+        best = {}
+        for r in ours:
+            if r['status'] == 'ok' and t(r):
+                best[r['size']] = min(best.get(r['size'], 1e18), t(r))
+        bad_ours = {r['size'] for r in ours if r['status'] != 'ok'} - set(best)
+        for lib in {r['lib'] for r in rs if r['lang'] != 'ours'}:
+            mine = {r['size']: r for r in rs if r['lib'] == lib}
+            if any(r['status'] == 'ok' for sz, r in mine.items() if sz in bad_ours):
+                continue  # rule 4: valid where ours is invalid
+            shared = [sz for sz, r in mine.items() if sz in best and r['status'] == 'ok' and t(r)]
+            if not shared:
+                continue
+            sz = max(shared)
+            ratio = t(mine[sz]) / best[sz]
+            if ratio > KEEP_RATIO:
+                drop.setdefault(key, {})[lib] = (round(ratio, 2), sz)
+    return drop, run.group(1) if run.lastindex else '?'
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--lang', help='one language (the per-language layout)')
@@ -404,6 +447,7 @@ def main():
     p.add_argument('--out', required=True)
     p.add_argument('--work', default='/tmp/deep-work')
     p.add_argument('--cap-mb', type=int, default=int(os.environ.get('MEM_CAP_MB', '6000')))
+    p.add_argument('--prune', default='', help="a previous merged results.json: drop contestants more than 1.2x slower than ours there")
     p.add_argument('--only', default='', help='comma list of jobs, for a partial rerun or to split a group')
     a = p.parse_args()
     assert bool(a.lang) != bool(a.group), 'give --lang or --group'
@@ -425,6 +469,8 @@ def main():
         parts, broken = contestants(a, langs, fx, work)
         for r in broken:
             emit(r)
+        drop, prev_run = prune_plan(a.prune, langs) if a.prune and Path(a.prune).exists() else ({}, None)
+        lg = lambda pt, job: pt['c'].get('league') if job in CREATE else 'read-edit'
         does = lambda pt, job: ('parse' if job in ROBUST else job) in pt['c']['jobs'] and (not a.group or GROUPS[a.group](job, pt['c']))
         batches = [parts] if a.group else [[pt] for pt in parts]  # a group interleaves everyone; a language runs lib by lib
         for batch in batches:
@@ -432,10 +478,26 @@ def main():
                 if job not in plan or (a.only and job not in a.only.split(',')):
                     continue
                 todo = [pt for pt in batch if does(pt, job)]
+                for pt in list(todo):
+                    d = drop.get((job, lg(pt, job)), {}).get(pt['label'])
+                    if d and pt['lang'] != 'ours':
+                        todo.remove(pt)
+                        emit({'type': 'cell', 'lang': pt['lang'], 'lib': pt['label'], 'job': job, 'size': d[1], 'status': 'pruned',
+                              'ratio': d[0], 'prev_run': prev_run, 'league': lg(pt, job)})
+                dead = {}
                 for size in plan[job] if todo else []:
+                    for pt in todo:
+                        if pt['label'] in dead:
+                            emit({'type': 'cell', 'lang': pt['lang'], 'lib': pt['label'], 'version': pt['c'].get('_version'), 'job': job, 'size': size,
+                                  'status': 'skipped', 'error': f'skipped after {dead[pt["label"]][0]} at {dead[pt["label"]][1]:,}', **pt.get('tag', {})})
+                    live = [pt for pt in todo if pt['label'] not in dead]
+                    if not live:
+                        continue
                     try:
-                        for rec in cells(todo, job, size, a, fx, spec, work):
+                        for rec in cells(live, job, size, a, fx, spec, work):
                             emit(rec)
+                            if rec['status'] in FAILS and job not in ROBUST:
+                                dead[rec['lib']] = (rec['status'], size)
                     except Exception as e:  # a bug here must not lose the other cells
                         for pt in todo:
                             emit({'type': 'cell', 'lang': pt['lang'], 'lib': pt['label'], 'version': pt['c'].get('_version'), 'job': job, 'size': size,
