@@ -7,7 +7,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { PDFDocument, PDFName, PDFDict, PDFArray, PDFHexString, PDFString } from 'pdf-lib';
 import { toBytes, createPdf } from '../../packages/pdf/src/index.js';
-import { HAS, INTER, verapdf, run, save, latin } from './tools.js';
+import { HAS, INTER, ROOT, verapdf, run, save, latin } from './tools.js';
 import { DATE, CSV, EN16931 } from './standards-fixture.js';
 
 const withGuideline = (id) => Buffer.from(EN16931.toString('utf8').replace('urn:cen.eu:en16931:2017', id));
@@ -158,5 +158,16 @@ describe('pdf.facturX', () => {
     const py = 'import sys, facturx\nfrom lxml import etree\nn, x = facturx.get_xml_from_pdf(open(sys.argv[1], "rb").read(), check_xsd=True)\nr = etree.fromstring(x)\nprint(n, facturx.get_flavor(r), facturx.get_level(r, "factur-x"))';
     const res = execFileSync(process.env.FACTURX_PY, ['-c', py, file], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     expect(res.trim()).toBe('factur-x.xml factur-x en16931');
+  }, 60000);
+});
+
+describe('examples/factur-x.mjs', () => {
+  it('writes a tagged PDF/A-3a invoice with factur-x.xml that passes veraPDF 3a and PDF/UA-1', async () => {
+    execFileSync(process.execPath, [path.join(ROOT, 'packages/pdf/build.mjs')]);
+    const out = path.join(path.dirname(save(new Uint8Array(0), 'placeholder.pdf')), 'example-fx.pdf');
+    execFileSync(process.execPath, [path.join(ROOT, 'packages/pdf/examples/factur-x.mjs'), path.join(ROOT, 'tests/fixtures/facturx/en16931.xml'), path.join(ROOT, 'public/fonts/Inter-Regular.ttf'), out], { stdio: 'ignore' });
+    const b = new Uint8Array(fs.readFileSync(out));
+    if (HAS.poppler) expect(pdfdetach(b)).toBe('1 embedded files\n1: factur-x.xml\n');
+    if (HAS.verapdf) { expect(verapdf(b, '3a').failed).toEqual([]); expect(verapdf(b, 'ua1').failed).toEqual([]); }
   }, 60000);
 });
