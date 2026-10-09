@@ -1,0 +1,225 @@
+# The deep PDF benchmark (bench/deep/README.md): our two products against the best PDF libraries in JavaScript,
+# Python, Java, .NET, Go, Rust and the command-line tools. Run by hand: Actions > bench-deep > Run workflow, or
+#   gh workflow run bench-deep.yml -f tier=quick -f langs=all -f runs=5
+# fixtures (once) -> one job a language (in parallel, same runner type) -> report (merge, summary, artifacts).
+name: bench-deep
+on:
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: "quick (~15-20 min), full (adds 100k rows, 1,000 pages, 200 fuzzed files), million (the 1M-row report, streaming-capable contestants only)"
+        type: choice
+        options: [quick, full, million]
+        default: quick
+      langs:
+        description: "Comma list of js, python, java, dotnet, go, rust, cli, ours; or all"
+        default: all
+      runs:
+        description: Measured runs a cell, after one discarded warm-up (100k rows and the 1,200-page read use at most 3; million uses 1)
+        default: "5"
+concurrency:
+  group: bench-deep
+  cancel-in-progress: false
+permissions:
+  contents: read
+env:
+  FX: /tmp/fx # fixed: the Jasper fonts and the veraPDF container both expect the fixtures under /tmp
+  TIER: ${{ inputs.tier }}
+
+jobs:
+  fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      langs: ${{ steps.plan.outputs.langs }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Plan the language jobs
+        id: plan
+        env:
+          LANGS: ${{ inputs.langs }}
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_OUTPUT"
+          import json, os
+          known = ['ours', 'js', 'python', 'java', 'dotnet', 'go', 'rust', 'cli']
+          want = known if os.environ['LANGS'].strip() in ('', 'all') else [l.strip() for l in os.environ['LANGS'].split(',')]
+          bad = [l for l in want if l not in known]
+          assert not bad, f'unknown langs: {bad}'
+          if os.environ['TIER'] == 'million':  # only these have contestants flagged "million" in contestants.json
+              c = json.load(open('bench/deep/contestants.json'))['langs']
+              want = [l for l in want if any(v.get('million') for v in c[l]['libs'].values())]
+          print('langs=' + json.dumps(want))
+          EOF
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: bench/deep/fixtures/make.py
+      - name: Tools for the fixtures (Pillow, qpdf, openssl)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq qpdf >/dev/null
+          pip install -q pillow==12.3.0
+      - name: Make the fixtures (seeded, fixed dates)
+        run: |
+          case "$TIER" in
+            quick) ROWS=100,1000,10000 PLAIN=10,100 FUZZ=25 ;;
+            full) ROWS=100,1000,10000,100000 PLAIN=10,100,1000 FUZZ=200 ;;
+            million) ROWS=1000000 PLAIN=10 FUZZ=10 ;;
+          esac
+          python3 bench/deep/fixtures/make.py "$FX" --rows "$ROWS" --plain "$PLAIN" --fuzz "$FUZZ"
+          du -sh "$FX"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fixtures
+          path: /tmp/fx
+          retention-days: 3
+
+  bench:
+    needs: fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.tier == 'million' && 330 || inputs.tier == 'full' && 150 || 40 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        lang: ${{ fromJSON(needs.fixtures.outputs.langs) }}
+    env:
+      LANG_: ${{ matrix.lang }}
+      RUNS: ${{ inputs.runs }}
+      PUPPETEER_CACHE_DIR: /home/runner/.cache/puppeteer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: fixtures
+          path: /tmp/fx
+      - name: Validators (qpdf, MuPDF, Poppler) and GNU time
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qpdf mupdf-tools poppler-utils time >/dev/null
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            bench/deep/tools/package-lock.json
+            bench/deep/js/package-lock.json
+            bench/deep/ours/package-lock.json
+      - name: pdf.js for the validity check
+        run: npm ci --prefix bench/deep/tools --no-audit --no-fund
+      - name: veraPDF (the CLI image) as a command
+        if: contains(fromJSON('["ours","js","python"]'), matrix.lang)
+        run: |
+          docker pull -q verapdf/cli:latest
+          printf '#!/bin/sh\nexec docker run --rm -v /tmp:/tmp verapdf/cli:latest "$@"\n' | sudo tee /usr/local/bin/verapdf >/dev/null && sudo chmod +x /usr/local/bin/verapdf
+          verapdf --version | head -1
+
+      # ---- one setup per language, all cached
+      - name: ours
+        if: matrix.lang == 'ours'
+        run: npm ci --prefix bench/deep/ours --no-audit --no-fund
+      - uses: actions/cache@v4
+        if: matrix.lang == 'js'
+        with:
+          path: /home/runner/.cache/puppeteer
+          key: puppeteer-${{ hashFiles('bench/deep/js/package-lock.json') }}
+      - name: js
+        if: matrix.lang == 'js'
+        run: npm ci --prefix bench/deep/js --no-audit --no-fund
+      - uses: actions/setup-python@v5
+        if: matrix.lang == 'python' || matrix.lang == 'cli'
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: bench/deep/${{ matrix.lang }}/requirements.txt
+      - name: python
+        if: matrix.lang == 'python'
+        run: |
+          sudo apt-get install -y -qq libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 >/dev/null
+          pip install -q -r bench/deep/python/requirements.txt
+      - name: cli
+        if: matrix.lang == 'cli'
+        run: pip install -q -r bench/deep/cli/requirements.txt
+      - uses: actions/setup-java@v4
+        if: matrix.lang == 'java'
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: |
+            bench/deep/java/pom.xml
+            bench/deep/java/jasper/pom.xml
+      - name: java
+        if: matrix.lang == 'java'
+        run: |
+          mvn -q -B -f bench/deep/java/pom.xml package
+          mvn -q -B -f bench/deep/java/jasper/pom.xml package
+      - uses: actions/setup-dotnet@v4
+        if: matrix.lang == 'dotnet'
+        with:
+          dotnet-version: 8.0.x
+      - uses: actions/cache@v4
+        if: matrix.lang == 'dotnet'
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ hashFiles('bench/deep/dotnet/Bench.csproj') }}
+      - name: dotnet
+        if: matrix.lang == 'dotnet'
+        run: dotnet publish bench/deep/dotnet/Bench.csproj -c Release -o bench/deep/dotnet/out --nologo -v q
+      - uses: actions/setup-go@v5
+        if: matrix.lang == 'go'
+        with:
+          go-version: "1.24"
+          cache-dependency-path: bench/deep/go/go.mod
+      - name: go
+        if: matrix.lang == 'go'
+        working-directory: bench/deep/go
+        run: go mod tidy && go build -o bench .
+      - uses: actions/cache@v4
+        if: matrix.lang == 'rust'
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            bench/deep/rust/target
+          key: cargo-${{ hashFiles('bench/deep/rust/Cargo.toml', 'bench/deep/rust/src/**') }}
+          restore-keys: cargo-
+      - name: rust
+        if: matrix.lang == 'rust'
+        working-directory: bench/deep/rust
+        run: cargo build --release --quiet
+
+      - name: Runner
+        run: |
+          mkdir -p results
+          { echo "lang $LANG_ tier $TIER runs $RUNS"; date -u; lscpu | head -20; free -m; df -h /tmp; } | tee "results/$LANG_-runner.txt"
+      - name: Benchmark
+        run: python3 bench/deep/drive.py --lang "$LANG_" --tier "$TIER" --runs "$RUNS" --fixtures "$FX" --out "results/$LANG_.jsonl"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: results-${{ matrix.lang }}
+          path: results/
+          retention-days: 30
+
+  report:
+    needs: [fixtures, bench]
+    if: always() && needs.fixtures.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: results-*
+          path: results
+          merge-multiple: true
+      - name: Merge
+        run: |
+          python3 bench/deep/merge.py results out
+          cp results/*.jsonl results/*-runner.txt out/ 2>/dev/null || true
+          cat out/results.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-deep-results
+          path: out/
+          retention-days: 90

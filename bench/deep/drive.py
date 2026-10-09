@@ -19,7 +19,7 @@ JOBS = ['plain', 'report', 'invoice', 'invoice-warm', 'unicode', 'images', 'pdfa
 CREATE = {'plain', 'report', 'invoice', 'invoice-warm', 'unicode', 'images', 'pdfa'}
 ROBUST = {'fuzz', 'hostile'}
 PLAN = {
-    'quick': {'plain': [10, 100], 'report': [100, 1000, 10000], 'fuzz': [50]},
+    'quick': {'plain': [10, 100], 'report': [100, 1000, 10000], 'fuzz': [25]},
     'full': {'plain': [10, 100, 1000], 'report': [100, 1000, 10000, 100000], 'fuzz': [200]},
     'million': {'report': [1000000]},
 }
@@ -41,7 +41,7 @@ def sh(*cmd, timeout=600, **kw):
 def group_rss(pgid):
     """Summed RSS (bytes) of every process in the group."""
     total = 0
-    for d in os.listdir('/proc'):
+    for d in (os.listdir('/proc') if os.path.isdir('/proc') else []):
         if not d.isdigit():
             continue
         try:
@@ -89,7 +89,11 @@ def run_once(cmd, env, timeout, cap_mb, watch=None):
         os.killpg(p.pid, signal.SIGKILL)  # leftovers (a browser) must not outlive the run
     except ProcessLookupError:
         pass
-    out += p.stdout.read() or b''
+    try:
+        out += p.stdout.read() or b''
+    except BlockingIOError:
+        pass
+    p.returncode = status  # reaped above by wait4
     wall = (time.perf_counter() - t0) * 1000
     r = {'wall_ms': wall, 'cpu_ms': (ru.ru_utime + ru.ru_stime) * 1000, 'rss_mb': max(ru.ru_maxrss / 1024, peak / 2**20), 'ttfb_ms': ttfb}
     line = next((l for l in reversed(out.decode('utf-8', 'replace').splitlines()) if l.startswith('{')), None)
@@ -272,9 +276,10 @@ def cell(lib, c, job, size, a, fx, spec, work):
             if job == 'hostile' or st in ('crash', 'hang', 'oom'):
                 cases[f.name] = st
         return {**base, 'status': 'ok', 'robust': dict(tally), 'cases': cases, 'files': len(files)}
-    heavy = (job == 'report' and size >= 100000) or job == 'read-big'
-    runs = 1 if a.tier == 'million' else min(a.runs, 3) if heavy or a.tier == 'quick' else a.runs
-    warmup = 0 if a.tier == 'million' else 1
+    heavy = (job == 'report' and size >= 10000) or job == 'read-big'
+    # quick is indicative: its heavy cells run once, without a warm-up; full keeps the warm-up and at most 3 runs there
+    runs = 1 if a.tier == 'million' or (heavy and a.tier == 'quick') else min(a.runs, 3) if heavy or a.tier == 'quick' else a.runs
+    warmup = 0 if a.tier == 'million' or (heavy and a.tier == 'quick') else 1
     extra = {'REPS': '50'} if job == 'invoice-warm' else {}
     res = []
     for i in range(warmup + runs):
