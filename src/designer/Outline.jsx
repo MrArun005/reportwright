@@ -126,13 +126,13 @@ export default function Outline() {
       <li key={it.id} role="none">
         <div className={`trow outline-row${chosen.has(it.id) ? ' sel' : ''}${mark}`} style={{ paddingInlineStart: depth * 14 }} data-outline={it.name} data-outline-id={it.id} {...dragProps(it, i, parent, section)}>
           {!readOnly && <span className="grip" aria-hidden="true">⠿</span>}
-          <button type="button" data-opt="" className="linklike nm" onClick={(e) => pick(e, it.id)} onKeyDown={(e) => onKey(e, it, list, i, parent)} aria-pressed={chosen.has(it.id)} aria-describedby={readOnly ? 'outline-nav' : 'outline-nav outline-keys'} {...roving(it.id)}>{it.name}</button>
-          <span className="ty">{T(`item_${it.type}`) === `item_${it.type}` ? ITEMS[it.type]?.label || it.type : T(`item_${it.type}`)}</span>
+          <button type="button" data-opt="" className="linklike nm" onClick={(e) => pick(e, it.id)} onKeyDown={(e) => onKey(e, it, list, i, parent)} aria-pressed={chosen.has(it.id)} aria-describedby={readOnly ? 'outline-nav' : 'outline-nav outline-keys'} title={it.name} {...roving(it.id)}>{it.name}</button>
+          <span className="outline-meta"><span className="ty">{T(`item_${it.type}`) === `item_${it.type}` ? ITEMS[it.type]?.label || it.type : T(`item_${it.type}`)}</span>
           {!readOnly && <span className="act" style={{ display: 'inline-flex', gap: 2 }}>
             <button type="button" className="btn sm ghost icon" tabIndex={-1} disabled={i === 0} onClick={() => reorderItem(it.id, -1)} title={T('outlineBackward')} aria-label={`${T('outlineBackward')}: ${it.name}`}>↑</button>
             <button type="button" className="btn sm ghost icon" tabIndex={-1} disabled={i === list.length - 1} onClick={() => reorderItem(it.id, 1)} title={T('outlineForward')} aria-label={`${T('outlineForward')}: ${it.name}`}>↓</button>
             {parent && <button type="button" className="btn sm ghost icon" tabIndex={-1} onClick={() => moveOutOfParent(it.id)} title={T('outlineMoveOut', { name: parent.name })} aria-label={`${T('outlineMoveOut', { name: parent.name })}: ${it.name}`}>⇱</button>}
-          </span>}
+          </span>}</span>
         </div>
         {NESTING.has(it.type) && (it.items || []).length > 0 && <ul className="tree" role="none">{rows(it.items, it, depth + 1, section)}</ul>}
       </li>
