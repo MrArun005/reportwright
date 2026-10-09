@@ -33,3 +33,24 @@ describe('P1 #3: keyboard nudge', () => {
     });
   });
 });
+
+describe('P1 #5: the Data panel detects the fields of a data set that declares none', async () => {
+  const { detectedFields } = await import('../../src/designer/DataPanel.jsx');
+  const rows = Array.from({ length: 300 }, (_, i) => ({ id: i, region: i % 2 ? 'N' : 'S', on: i % 3 === 0, day: '2024-01-31' }));
+  const def = { dataSources: [{ name: 'src', type: 'json', data: { items: rows } }, { name: 'web', type: 'rest', url: 'https://x.test/a' }] };
+  it('from inline JSON (with the data set path), as the engine types them', () => {
+    expect(detectedFields({ name: 'D', source: 'src', path: '$.items' }, def)).toEqual([
+      { name: 'id', type: 'number' }, { name: 'region', type: 'string' }, { name: 'on', type: 'boolean' }, { name: 'day', type: 'date' }]);
+  });
+  it('detectDates: false keeps a date-like text a string', () => {
+    expect(detectedFields({ name: 'D', source: 'src', path: '$.items', detectDates: false }, def).find(f => f.name === 'day').type).toBe('string');
+  });
+  it('from the first rows of fetched data (the sample)', () => {
+    expect(detectedFields({ name: 'W', source: 'web' }, def, [{ a: 1, b: 'x' }, { a: 2, b: null, c: 'late' }])).toEqual([{ name: 'a', type: 'number' }, { name: 'b', type: 'string' }, { name: 'c', type: 'string' }]);
+  });
+  it('nothing when the data set declares its fields, or there is nothing to read yet', () => {
+    expect(detectedFields({ name: 'D', source: 'src', fields: [{ name: 'id', type: 'number' }] }, def, rows)).toBeNull();
+    expect(detectedFields({ name: 'W', source: 'web' }, def)).toBeNull();
+    expect(detectedFields({ name: 'W', source: 'web' }, def, [])).toBeNull();
+  });
+});

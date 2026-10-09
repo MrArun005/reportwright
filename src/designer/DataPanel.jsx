@@ -40,6 +40,20 @@ export async function loadSample(store) {
   }
 }
 
+/**
+ * The fields of a data set that declares none, detected as the engine does (detectFields, which streaming uses too): from
+ * the sample's first rows (inline or fetched data), else from a JSON source's inline rows. Null when there is nothing to read.
+ */
+export function detectedFields(ds, def, sampleRows) {
+  if ((ds?.fields || []).length) return null;
+  let rows = Array.isArray(sampleRows) ? sampleRows : null;
+  if (!rows) {
+    const src = (def?.dataSources || []).find(x => x.name === ds?.source);
+    try { rows = src?.type === 'json' && src.data != null ? sourceRows(src.data, ds.path) : null; } catch { rows = null; }
+  }
+  return rows?.length ? detectFields(rows.slice(0, 50), { dates: ds.detectDates !== false }) : null;
+}
+
 export default function DataPanel() {
   const def = useDesigner(s => s.def);
   const lang = useDesigner(s => s.lang);
@@ -118,17 +132,22 @@ export default function DataPanel() {
                   <button type="button" className="btn sm ghost" onClick={() => useDesigner.getState().setUi({ instantVisuals: { dataSet: d.name } })} data-testid={`instant-${d.name}`}>{T('instantVisuals')}</button>
                   <button type="button" className="btn sm ghost" onClick={() => useDesigner.getState().setUi({ pivotWizard: { dataSet: d.name } })} data-testid={`pivot-wizard-${d.name}`}>{T('pivotWizard')}</button>
                 </div>}
-                {open.has(d.name) && (
-                  <ul className="tree" style={{ paddingLeft: 18 }}>
-                    {(d.fields || []).flatMap(f => (f.type === 'object' ? (f.fields || []).map(c => ({ name: `${f.name}.${c.name}`, type: c.type, nested: true })) : [f])).map(f => (
-                      <li key={f.name} className={`trow field-chip${f.nested ? ' nested' : ''}`} draggable title="Drag onto the page or a table cell" data-field={f.name}
+                {open.has(d.name) && (() => {
+                  const found = detectedFields(d, def, sample?.dataSets?.[d.name]);
+                  const list = (d.fields || []).length ? d.fields : found || [];
+                  return (
+                  <ul className="tree" style={{ paddingLeft: 18 }} data-testid={`fields-${d.name}`}>
+                    {found && <li className="subtle" data-testid={`detected-${d.name}`}>{T('c132_detectedHint')}</li>}
+                    {list.flatMap(f => (f.type === 'object' ? (f.fields || []).map(c => ({ name: `${f.name}.${c.name}`, type: c.type, nested: true })) : [f])).map(f => (
+                      <li key={f.name} className={`trow field-chip${f.nested ? ' nested' : ''}`} draggable title="Drag onto the page or a table cell" data-field={f.name} data-detected={found ? '' : undefined}
                         onDragStart={(e) => { e.dataTransfer.setData(MIME_FIELD, JSON.stringify({ dataSet: d.name, field: f.name, type: f.type })); e.dataTransfer.effectAllowed = 'copy'; }}>
-                        <span className="nm">{f.name}</span><span className="ty">{f.type}</span>
+                        <span className="nm">{f.name}</span><span className="ty">{f.type}{found ? ` · ${T('c132_detected')}` : ''}</span>
                       </li>
                     ))}
-                    {!(d.fields || []).length && <li className="subtle">No fields. Edit the data set and detect them.</li>}
+                    {!list.length && <li className="subtle">No fields. Edit the data set and detect them.</li>}
                   </ul>
-                )}
+                  );
+                })()}
               </li>
             ))}
             {!(def.dataSets || []).length && <li className="subtle">None</li>}
