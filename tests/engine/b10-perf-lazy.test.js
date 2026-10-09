@@ -19,14 +19,15 @@ describe('B10 A1.1 cold start: pdf-lib and fontkit are not top-level imports', (
 
   it('the built engine bundle (as build-packages.mjs builds it) imports them only dynamically', async () => {
     const r = await build({ entryPoints: [path.join(root, 'packages/engine/entry.js')], bundle: true, format: 'esm', platform: 'neutral', target: 'es2022',
-      write: false, external: ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate', 'bidi-js'], logLevel: 'silent', mainFields: ['module', 'main'] });
+      write: false, external: ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate', 'bidi-js', '@reportwright/pdf'], logLevel: 'silent', mainFields: ['module', 'main'] });
     const src = r.outputFiles[0].text;
     expect(staticImports(src).filter(s => HEAVY.test(s))).toEqual([]);
     expect(src).toMatch(/import\("pdf-lib"\)/);
     expect(src).toMatch(/import\("@pdf-lib\/fontkit"\)/);
+    expect(src).toMatch(/import\("@reportwright\/pdf"\)/); // the PDF writer too: loaded by the first PDF export
   }, 60000);
 
-  it('importing the engine loads neither; render loads neither in Node (sfnt.js reads the fonts); exportPdf loads pdf-lib', async () => {
+  it('importing the engine loads neither; render loads neither in Node (sfnt.js reads the fonts); exportPdf of a plain report loads @reportwright/pdf, not pdf-lib', async () => {
     const { execFileSync } = await import('node:child_process');
     // a new process: the test runner may already have them loaded
     const out = execFileSync(process.execPath, ['--input-type=module', '-e', `
@@ -41,7 +42,7 @@ describe('B10 A1.1 cold start: pdf-lib and fontkit are not top-level imports', (
       const model = await m.render(m.blankReport(), { fontStore: fonts });
       s.push(!has(PL) && !has(FK));
       const pdf = await m.exportPdf(model, { fonts, subset: false });
-      s.push(has(PL), String.fromCharCode(...pdf.slice(0, 5)));
+      s.push(!has(PL), String.fromCharCode(...pdf.slice(0, 5)));
       console.log(JSON.stringify(s));`], { cwd: root, encoding: 'utf8' });
     expect(JSON.parse(out.trim().split('\n').pop())).toEqual([true, true, true, '%PDF-']);
   }, 60000);

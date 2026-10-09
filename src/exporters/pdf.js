@@ -434,12 +434,11 @@ async function pdfOf(model, fontStore, opt) {
 }
 
 /**
- * Can the engine's own PDF writer (pdfstream.js, the one exportPdfStream uses) write this model, with the same text,
- * fonts and page content as pdf-lib? Then pdf-lib (about 35 ms to load) is not needed (A1.1). Kept to what it draws
- * the same: text in the standard fonts, boxes, ellipses, lines and links. Anything else stays on pdf-lib: embedded
- * fonts and shaped runs (pdf-lib subsets them its own way), images, SVG paths, rounded boxes, form fields, PDF/A,
- * tagged PDF, encryption, prepare (signing), save options, page sizes that differ (the outline's places) and page
- * numbering that restarts (page labels).
+ * Can the paged writer (writePagedPdf: @reportwright/pdf, or with pdfWriter 'legacy' the engine's own) draw this model?
+ * Then pdf-lib (about 35 ms to load) is not needed (A1.1). Kept to what it draws: text (any font, shaped runs; with
+ * 'legacy' only the standard fonts, as 0.13 did), boxes, ellipses, lines and links. Anything else stays on pdf-lib:
+ * images, SVG paths, rounded boxes, form fields, PDF/A, tagged PDF, encryption, prepare (signing), save options, page
+ * sizes that differ (the outline's places) and page numbering that restarts (page labels).
  * @param {any} model @param {any} opt
  */
 function ownWriterFits(model, opt) {
@@ -448,7 +447,8 @@ function ownWriterFits(model, opt) {
   for (const pg of model.pages) {
     if ((pg.height ?? model.height) !== model.height) return false;
     for (const it of pg.items) {
-      if (it.t === 'text') { if (!isStandard(it.font) || it.lines.some((/** @type {any} */ l) => l.runs)) return false; }
+      // the old writer (pdfWriter: 'legacy') keeps embedded fonts and shaped runs on pdf-lib, as before; @reportwright/pdf takes them
+      if (it.t === 'text') { if (opt.pdfWriter === 'legacy' && (!isStandard(it.font) || it.lines.some((/** @type {any} */ l) => l.runs))) return false; }
       else if (it.t === 'link') { const a = it.action; if (a?.type === 'bookmark' && !(a.page >= 1 && a.page <= model.pages.length)) return false; }
       else if (!(it.t === 'line' || it.t === 'ellipse' || (it.t === 'rect' && !it.radius))) return false;
     }
