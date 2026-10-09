@@ -160,3 +160,23 @@ describe('R7: a structure element\'s /A (attributes) is not an action', () => {
     await expect((await loadPdf(b)).saveIncremental()).rejects.toMatchObject({ code: 'E_ACTIVE' });
   });
 });
+
+describe('R4: saveIncremental refuses what save() would rewrite, not only what it would drop', () => {
+  const doc = (annot, extra = []) => rawPdf(['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Annots [4 0 R] >>', annot, ...extra]);
+  const csv = ['<< /Type /EmbeddedFile /Subtype /text#2Fcsv >>', Buffer.from('a,b\n')];
+  const refused = async (b) => { const d = await loadPdf(b); d.setInfo({ title: 'x' }); return d.saveIncremental(); };
+  it('a URI that checkUrl normalises (a space): refused', async () => {
+    await expect(refused(doc('<< /Type /Annot /Subtype /Link /Rect [0 0 9 9] /A << /S /URI /URI (https://example.com/a b) >> >>'))).rejects.toMatchObject({ code: 'E_ACTIVE', message: expect.stringMatching(/rewrit/) });
+  });
+  it('a file name with a directory part and trailing dots: refused', async () => {
+    await expect(refused(doc('<< /Type /Annot /Subtype /FileAttachment /Rect [0 0 9 9] /FS << /Type /Filespec /F (..\\\\x\\\\data.csv..) /UF (..\\\\x\\\\data.csv..) /EF << /F 5 0 R >> >> >>', [csv]))).rejects.toMatchObject({ code: 'E_ACTIVE', message: expect.stringMatching(/rewrit/) });
+  });
+  it('/EF with different /F and /UF streams (save() keeps one): refused', async () => {
+    await expect(refused(doc('<< /Type /Annot /Subtype /FileAttachment /Rect [0 0 9 9] /FS << /Type /Filespec /F (data.csv) /UF (data.csv) /EF << /F 5 0 R /UF 6 0 R >> >> >>', [csv, csv]))).rejects.toMatchObject({ code: 'E_ACTIVE' });
+  });
+  it('a URI and a file name save() writes unchanged still update', async () => {
+    const r = await refused(doc('<< /Type /Annot /Subtype /FileAttachment /Rect [0 0 9 9] /A << /S /URI /URI (https://example.com/) >> /FS << /Type /Filespec /F (data.csv) /UF (data.csv) /EF << /F 5 0 R >> >> >>', [csv]));
+    expect(r.activeContent).toEqual([]);
+  });
+});
