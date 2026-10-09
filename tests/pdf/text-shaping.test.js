@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { PDFDocument } from 'pdf-lib';
-import { toBytes } from '../../packages/pdf/src/index.js';
+import { toBytes, loadPdf } from '../../packages/pdf/src/index.js';
 import { parseFont } from '../../packages/pdf/src/fonts/truetype.js';
 import { harfbuzzShaper } from '../../packages/pdf/examples/harfbuzz-shaper.mjs';
 import { INTER, ROOT, HAS, pdftotext, pdffonts, latin, verapdf } from './tools.js';
@@ -37,7 +37,7 @@ describe('the shaping hook', () => {
     return out;
   };
 
-  it('a fake shaper: ligature mapped in ToUnicode, a two-glyph cluster in an ActualText span, offsets as TJ and Ts', async () => {
+  it('a fake shaper: ligature mapped in ToUnicode, an accent with no advance drawn after the run in a span of no text, offsets as TJ and Ts', async () => {
     const calls = [];
     const out = await make(async (p, pdf) => {
       const f = await pdf.embedFont(INTER, { shaper: fake(calls) });
@@ -47,7 +47,10 @@ describe('the shaping hook', () => {
     expect(calls).toEqual([['fix fine', { direction: 'ltr', kerning: true }], ['fi', { direction: 'rtl', kerning: false }]]);
     const s = latin(out), hex = (g) => g.toString(16).padStart(4, '0');
     expect(s).toContain(`<${hex(LIG)}> <00660069>`); // the ligature stands for "fi"
-    expect(s).toMatch(/\/Span << \/ActualText <feff0078> >> BDC\n[^]*?\nEMC\n/); // x + accent: one cluster
+    expect(s).toContain(`<${hex(gid('x'))}> <0078>`); // x + accent: x has the cluster's text, the accent WJ
+    expect(s).toContain(`<${hex(ACUTE)}> <2060>`);
+    expect(s).toMatch(/\/Span << \/ActualText <feff> >> BDC\n0 0 Td\n[^]*?\nEMC\n/); // the accents, out of the flow
+    expect(s).not.toContain('<feff0078>');
     expect(s).toMatch(/\n2\.93 Ts\n[^]*?\n0 Ts\n/); // the accent raised 300 units (20 pt, 2048 an em), then back
     if (HAS.poppler) expect(plain(out).split(/\n+/)).toEqual(['fix fine', 'fi']);
   });
@@ -76,10 +79,16 @@ describe('the shaping hook', () => {
     const drawn = [...latin(out).matchAll(/\(([^)]*)\)/g)].map((m) => m[1].replace(/\\([()\\])/g, '$1').replace(/\\r/g, '\r'));
     const ids = (strs) => strs.flatMap((s) => Array.from({ length: s.length / 2 }, (_, i) => (s.charCodeAt(2 * i) << 8) | s.charCodeAt(2 * i + 1)));
     const all = ids(drawn);
-    expect(all.slice(0, ar.length)).toEqual(ar.map((g) => g.g));
-    expect(all.slice(ar.length, ar.length + hi.length)).toEqual(hi.map((g) => g.g));
-    expect(latin(out)).toContain('/ActualText'); // Devanagari's reordered i-matra cluster
+    // the glyphs with no advance (dots, marks) come after their run, out of the flow; each glyph is drawn once
+    const sorted = (x) => [...x].sort((p, q) => p - q);
+    // a code past the font's glyphs is a second code for a glyph (another text): the CIDToGIDMap says which
+    const maps = [...latin(out).matchAll(/\/CIDToGIDMap (\d+) 0 R/g)].map((m) => { const at = latin(out).indexOf(`\n${m[1]} 0 obj`); const st = latin(out).indexOf('stream\n', at) + 7; return Buffer.from(out.subarray(st, latin(out).indexOf('\nendstream', st))); });
+    const gid = (n) => (c) => (c < n ? c : maps.find((m) => 2 * c + 1 < m.length)?.readUInt16BE(2 * c));
+    expect(sorted(all.slice(0, ar.length).map(gid(parseFont(ARABIC).numGlyphs)))).toEqual(sorted(ar.map((g) => g.g)));
+    expect(sorted(all.slice(ar.length, ar.length + hi.length).map(gid(parseFont(DEVA).numGlyphs)))).toEqual(sorted(hi.map((g) => g.g)));
+    expect(latin(out)).toContain('/ActualText'); // Devanagari's i-matra cluster
     if (HAS.poppler) expect(plain(out).split(/\n+/)).toEqual([AR, HI]);
+    expect((await loadPdf(out)).page(0).extractText().split('\n')).toEqual([AR, HI]);
   });
 });
 

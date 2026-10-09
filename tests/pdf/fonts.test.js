@@ -65,7 +65,8 @@ describe('embedded TrueType', () => {
     }, { creationDate: DATE, compress: false });
     expect(r.warnings.join()).toMatch(/Inter-Regular has no glyph for "中"/);
     const P = parseFont(INTER), two = (c) => { const g = P.glyphFor(c.codePointAt(0)); return String.fromCharCode(g >> 8, g & 255); };
-    expect(latin(out)).toContain(`(${two('A')}) Tj\n/Span << /ActualText <feff4e2d> >> BDC\n(\0\0) Tj\nEMC\n(${two('B')}) Tj`); // A, .notdef (glyph 0, standing for 中), B: two bytes a glyph
+    expect(latin(out)).toContain(`(${two('A')}\0\0${two('B')}) Tj`); // A, .notdef (glyph 0), B: two bytes a glyph
+    expect(latin(out)).toContain('<0000> <4e2d>'); // .notdef stands for 中 in the ToUnicode: copied text keeps it
     const ua = await draw(INTER, undefined, txt, { tagged: { lang: 'en' }, title: 't', compress: false });
     expect(latin(ua)).toContain(`(${two('A')}${two('B')}) Tj`);
   });
