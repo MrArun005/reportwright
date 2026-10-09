@@ -157,18 +157,39 @@ export class TextMeasurer {
     let f = this.faces.get(key);
     if (!f) {
       const font = this.store.get(key);
-      f = { font, upm: font.unitsPerEm, ascent: font.ascent, descent: font.descent, adv: new Map(), words: new Map(), met: new Map() };
+      f = { font, upm: font.unitsPerEm, ascent: font.ascent, descent: font.descent, adv: new Map(), words: new Map(), met: new Map(), lat: new Float64Array(256).fill(NaN) };
       this.faces.set(key, f);
     }
     return f;
   }
 
+  /** A code point's advance in font units, or -1 when it is not on the fast path. @param {any} f a face @param {number} cp */
+  advance(f, cp) {
+    let a = f.adv.get(cp);
+    if (a === undefined) {
+      a = special(cp) || (cp >= 0x20 && !f.font.hasGlyphForCodePoint(cp)) ? -1 : f.font.glyphForCodePoint(cp).advanceWidth || 0;
+      f.adv.set(cp, a);
+    }
+    return a;
+  }
+
   /** Font units of `text` on the fast path, or -1 when it needs the complex path. */
   fast(text, key) {
     const f = this.face(key);
+    // Latin-1 text: summed from a table, no string cache (a column of unique values would only fill it)
+    const lat = f.lat;
+    let sum = 0, i = 0;
+    for (; i < text.length; i++) {
+      const c = text.charCodeAt(i);
+      if (c > 255) break;
+      let a = lat[c];
+      if (a !== a) lat[c] = a = this.advance(f, c);
+      if (a < 0) return -1;
+      sum += a;
+    }
+    if (i === text.length) return sum;
     const hit = f.words.get(text);
     if (hit !== undefined) return hit;
-    const m = f.adv, font = f.font;
     let units = 0;
     for (let i = 0; i < text.length; i++) {
       let cp = text.charCodeAt(i);
@@ -176,11 +197,7 @@ export class TextMeasurer {
         const lo = text.charCodeAt(i + 1);
         if (lo >= 0xdc00 && lo <= 0xdfff) { cp = (cp - 0xd800) * 0x400 + lo - 0xdc00 + 0x10000; i++; }
       }
-      let a = m.get(cp);
-      if (a === undefined) {
-        a = special(cp) || (cp >= 0x20 && !font.hasGlyphForCodePoint(cp)) ? -1 : font.glyphForCodePoint(cp).advanceWidth || 0;
-        m.set(cp, a);
-      }
+      const a = this.advance(f, cp);
       if (a < 0) { units = -1; break; }
       units += a;
     }
