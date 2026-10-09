@@ -40,10 +40,39 @@ const req = (() => { try { return /** @type {any} */ (globalThis).process?.getBu
 /** @param {string} name @param {() => Promise<any>} imp */
 const load = async (name, imp) => { if (req) try { return req(name); } catch { /* not resolvable from here (a bundle): import() */ } return imp(); };
 
+/**
+ * Node: fontkit's UMD file, evaluated with its WOFF2 Brotli dictionary and its four Unicode tries (script, line
+ * break, Indic and Universal shaping data) decoded on first use instead of at load: about 30 ms of every cold start,
+ * and a Latin report needs none of them. Undefined (plain require) when the anchors are not all in the file, i.e.
+ * another fontkit version.
+ * ponytail: a text patch of one pinned dependency; the anchors check keeps an upgrade from breaking it, only slower.
+ * @returns {Promise<any>|undefined}
+ */
+function lazyDictFontkit() {
+  try {
+    const proc = /** @type {any} */ (globalThis).process, file = req?.resolve('@pdf-lib/fontkit');
+    if (!file || !file.endsWith('fontkit.umd.js')) return undefined;
+    const src = proc.getBuiltinModule('fs').readFileSync(file, 'utf8');
+    const eager = '\tdictionary.init(BrotliDecompressBuffer);\n', unused = '\tvar dictionary_2 = dictionary.dictionary;\n';
+    if (src.split(eager).length !== 2 || src.split(unused).length !== 2) return undefined;
+    const lazy = '\tObject.defineProperty(dictionary, "dictionary", { configurable: true, get() { const d = dictionaryDataCompressed.init(BrotliDecompressBuffer); Object.defineProperty(dictionary, "dictionary", { value: d }); return d; } });\n';
+    // var trieData$1 = pako_1.inflate(base64Arraybuffer_2(base64DeflatedTrie$1));\n\tvar trie$1 = new unicodeTrie(trieData$1);  (only trie.get is used)
+    let tries = 0;
+    const patched = src.replace(unused, '').replace(eager, lazy).replace(
+      /\tvar (trieData(?:\$\d)?) = (pako_1\.inflate\(base64Arraybuffer_2\(base64DeflatedTrie(?:\$\d)?\)\));\n((?:\t.*\n){0,3}?)\tvar (trie(?:\$\d)?) = new unicodeTrie\(\1\);\n/g,
+      (_, _data, inflate, between, trie) => { tries++; return `${between}\tvar ${trie} = { get: function (c) { var t = new unicodeTrie(${inflate}); this.get = t.get.bind(t); return t.get(c); } };\n`; });
+    if (tries !== 4) return undefined;
+    const Module = proc.getBuiltinModule('module'), module = new Module(file);
+    proc.getBuiltinModule('vm').compileFunction(patched, ['module', 'exports'], { filename: file })(module, module.exports);
+    Object.assign(module, { filename: file, loaded: true });
+    Module._cache[file] = module; // one fontkit in the process: a later require('@pdf-lib/fontkit') gets this one
+    return Promise.resolve(module.exports);
+  } catch { return undefined; }
+}
 /** @type {Promise<void>|undefined} */ let fk;
 /** @type {Promise<void>|undefined} */ let pl;
 /** @returns {Promise<void>} */
-export const loadFontkit = () => (fk ||= load('@pdf-lib/fontkit', () => import('@pdf-lib/fontkit')).then((/** @type {any} */ m) => { const d = m.default || m; fontkit = d.default || d; }));
+export const loadFontkit = () => (fk ||= (lazyDictFontkit() || load('@pdf-lib/fontkit', () => import('@pdf-lib/fontkit'))).then((/** @type {any} */ m) => { const d = m.default || m; fontkit = d.default || d; }));
 /** pdf-lib and fontkit (exportPdf embeds fonts with both). @returns {Promise<void>} */
 export const loadPdfLib = () => (pl ||= Promise.all([load('pdf-lib', () => import('pdf-lib')), loadFontkit()]).then(([L]) => {
   ({ PDFDocument, PDFName, PDFString, PDFHexString, PDFRawStream, PDFStream, PDFArray, PDFDict, PDFNumber, PDFBool, rgb,
