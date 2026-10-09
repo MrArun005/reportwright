@@ -17,8 +17,14 @@ const x = s.length; s += 'xref\\n0 5\\n0000000000 65535 f \\n' + off.map((o) => 
 const bytes = new Uint8Array(Buffer.from(s, 'latin1')); s = null;
 const { loadPdf } = await import(${JSON.stringify(new URL('../../packages/pdf/src/index.js', import.meta.url).href)});
 globalThis.gc(); const base = process.memoryUsage().rss;
-const d = await loadPdf(bytes); const len = d.info.title.length; d.page(0).extractText(); await d.save().catch(() => {});
-console.log(JSON.stringify({ len, deltaMB: (process.resourceUsage().maxRSS * 1024 - base) / 2 ** 20 }));
+const d = await loadPdf(bytes); const len = d.info.title.length; d.page(0).extractText();
+const sv = await d.save(); const back = await loadPdf(sv.bytes);
+const r = { len, saved: back.info.title.length, warned: sv.warnings.some((w) => /title .* was cut/.test(w)) };
+r.merged = (await (await loadPdf(bytes)).merge([await loadPdf(bytes)]).save()).bytes.length > 0;
+r.split = (await (await loadPdf(bytes)).merge([await loadPdf(bytes)]).removePages([1]).save()).bytes.length > 0;
+r.inc = (await (await loadPdf(bytes)).saveIncremental({})).bytes.length >= bytes.length;
+r.deltaMB = (process.resourceUsage().maxRSS * 1024 - base) / 2 ** 20;
+console.log(JSON.stringify(r));
 `;
 const run = (kind) => {
   const r = spawnSync(process.execPath, ['--expose-gc', '--input-type=module', '-e', CHILD, kind], { encoding: 'utf8', timeout: 60_000 });
@@ -30,8 +36,15 @@ describe('a huge string', () => {
   for (const kind of ['literal', 'hex']) it(`a ${MB} MB ${kind} string stays within a few copies of itself`, () => {
     const r = run(kind);
     expect(r.len).toBe(MB << 20);
-    expect(r.deltaMB).toBeLessThan(MB * 5); // was ~28× (a 40 MB literal: 1,151 MB peak)
+    expect(r).toMatchObject({ saved: 65536, warned: true, merged: true, split: true, inc: true }); // never a failed save on an unedited file
+    expect(r.deltaMB).toBeLessThan(MB * 8); // was ~28× (a 40 MB literal: 1,151 MB peak)
   }, 60_000);
+  it('setInfo still refuses an oversized title', async () => {
+    const { loadPdf } = await import('../../packages/pdf/src/index.js');
+    const { toBytes } = await import('../../packages/pdf/src/index.js');
+    const d = await loadPdf(await toBytes(async (pdf) => { await pdf.addPage().end(); }));
+    expect(() => d.setInfo({ title: 'x'.repeat(65537) })).toThrow(/at most 65,536/);
+  });
   it('decodeText keeps its mapping: PDFDocEncoding, UTF-16BE with a lone surrogate, UTF-8', () => {
     expect(decodeText(new PdfString(new Uint8Array([0x41, 0x18, 0x80, 0xe9])))).toBe('A˘•é');
     expect(decodeText(new PdfString(new Uint8Array([0xfe, 0xff, 0x00, 0x41, 0xd8, 0x00, 0x00, 0x42, 0x00])))).toBe('A\ud800B');
