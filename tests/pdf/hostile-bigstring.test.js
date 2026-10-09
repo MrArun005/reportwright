@@ -67,3 +67,16 @@ describe('hexText (strings written by save and copy)', () => {
     expect(hexText(new Uint8Array(100).fill(1))).toBe(`<${'01'.repeat(100)}>`);
   }, 60_000);
 });
+
+describe('indexOf in a window', () => {
+  it('searching many small windows of a large buffer stays linear (does not scan to the end each time)', async () => {
+    const { indexOf } = await import('../../packages/pdf/src/reader/lexer.js');
+    const b = new Uint8Array(8 << 20).fill(0x20); // 8 MB, no needle
+    b.set([0x58, 0x52, 0x65, 0x66], b.length - 4); // "XRef" only at the very end
+    const t = performance.now();
+    for (let i = 0; i + 4096 < b.length; i += 512) expect(indexOf(b, 'XRef', i, i + 4096)).toBe(-1); // 16 K windows
+    expect(performance.now() - t).toBeLessThan(2000); // to the end each time: 16 K × 8 MB, minutes
+    expect(indexOf(b, 'XRef', 0)).toBe(b.length - 4);
+    expect(indexOf(b, 'XRef', 0, b.length - 1)).toBe(-1); // a match crossing `to` is not one
+  }, 20_000);
+});
