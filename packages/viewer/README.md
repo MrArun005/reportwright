@@ -1,8 +1,135 @@
 # @reportwright/viewer
 
+An embeddable report viewer and drag-and-drop report designer for any web page: view, page, search, drill down and export PDF, Excel, Word, PowerPoint, HTML or CSV in the browser.
+
 [![npm](https://img.shields.io/npm/v/%40reportwright%2Fviewer)](https://www.npmjs.com/package/@reportwright/viewer) [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/MrArun005/reportwright/blob/main/LICENSE) [![Socket](https://socket.dev/api/badge/npm/package/@reportwright/viewer)](https://socket.dev/npm/package/@reportwright/viewer)
 
+**Live demo:** [mrarun005.github.io/reportwright-demo](https://mrarun005.github.io/reportwright-demo): the [gallery](https://mrarun005.github.io/reportwright-demo/#gallery) is this viewer, the [designer playground](https://mrarun005.github.io/reportwright-demo/play.html) is `mountDesigner` with your own pasted JSON or CSV, and [made by hand in the designer](https://mrarun005.github.io/reportwright-demo/learn.html) walks through building reports step by step.
+
 The ReportWright report viewer in any web app (React is bundled inside, in a shadow root, so your styles do not leak in). A React app imports `@reportwright/viewer/react-peer` (and `/react-peer/designer`) instead, the same viewer using the app's own React, so the page loads React once; `@reportwright/react` does this for you:
+
+## Install
+
+```bash
+npm i @reportwright/viewer @reportwright/fonts
+cp -r node_modules/@reportwright/fonts/public public/pw     # serve fonts/, harfbuzz-subset.wasm, icc/ as static files
+```
+
+React and React DOM 18+ are peer dependencies (the default build carries its own copy inside the shadow root; `/react-peer` uses yours).
+
+## Quick start (30 seconds, plain HTML + a bundler)
+
+```html
+<!-- index.html -->
+<div id="report" style="height: 600px"></div>
+<button id="save-pdf">Save PDF</button>
+<script type="module" src="./main.js"></script>
+```
+
+```js
+// main.js
+import { mountViewer } from '@reportwright/viewer';
+import definition from './orders.pw.json';       // the report from @reportwright/engine's README examples
+
+const viewer = mountViewer('#report', {
+  definition,
+  data: { orders: { rows: [{ customer: 'Asha Rao', amount: 1200.5 }, { customer: 'Ben Ode', amount: 80 }] } },
+  fontsUrl: '/pw/fonts/',
+});
+viewer.on('ready', ({ pages }) => console.log(`${pages} page(s)`));
+document.querySelector('#save-pdf').onclick = async () => open(URL.createObjectURL(await viewer.export('pdf')));
+```
+
+Run it with `npx vite` (Vite 7: set `worker: { format: 'es' }`, see below). Verified against this version in Chromium
+with Vite 7.
+
+## Examples
+
+**Embed the designer and keep the definition in your app.**
+
+```js
+import { mountDesigner } from '@reportwright/viewer/designer';
+const designer = mountDesigner('#designer', {
+  definition,
+  fontsUrl: '/pw/fonts/',
+  onSave: (def) => fetch('/api/reports/orders', { method: 'PUT', body: JSON.stringify(def) }),
+  toolbox: { hide: ['map'] },
+});
+designer.isDirty();        // unsaved changes?
+designer.getDefinition();  // the current definition
+```
+
+**Re-run with new parameters without remounting.**
+
+```js
+viewer.setParameters({ minAmount: 100 });
+viewer.on('parameters', (p) => history.replaceState(null, '', '?' + new URLSearchParams(p)));
+```
+
+**Trim the toolbar and show render warnings while developing.**
+
+```js
+mountViewer('#report', { definition, data, fontsUrl: '/pw/fonts/', toolbar: { hide: ['powerpoint', 'csv', 'sidebar'] }, showWarnings: true });
+```
+
+**React, Vue, Svelte, Angular:** use [`@reportwright/react`](https://github.com/MrArun005/reportwright/tree/main/packages/react), [`@reportwright/vue`](https://github.com/MrArun005/reportwright/tree/main/packages/vue),
+[`@reportwright/svelte`](https://github.com/MrArun005/reportwright/tree/main/packages/svelte) or [`@reportwright/angular`](https://github.com/MrArun005/reportwright/tree/main/packages/angular); they take the same options.
+
+## Features
+
+| Area | Viewer | Designer |
+|---|---|---|
+| Navigation | pages, thumbnails, document map, search, zoom, single / continuous / galley view | live preview |
+| Interactivity | parameters, interactive sort, drill-down, drill-through (`onDrill`, `reports`) | data panel, inspector, toolbox (each can be hidden) |
+| Export in the browser | PDF, PDF/A, Excel, Word, PowerPoint, HTML, CSV, JSON; print | the same, from the preview |
+| Embedding | shadow root (no style leaks), CSP without `'unsafe-inline'`, `nonce` | `onSave`, `onOpen`, `readOnly`, `dataSourceTemplates`, `warnOnLeave` |
+| Performance | rendering in a Web Worker; fonts fetched only when the layout needs them | |
+
+## Options reference
+
+From `dist/viewer.d.ts` and `dist/designer.d.ts`.
+
+**`mountViewer(target, options)`** → `ViewerHandle`
+
+| Option | Type | Meaning |
+|---|---|---|
+| `definition` | object | the report JSON |
+| `data` | `Record<string, unknown>` | JSON by data source name (a definition with one source also takes the JSON itself) |
+| `fontsUrl` | string | URL of the served copy of `@reportwright/fonts/public/fonts` |
+| `server`, `report`, `params` | string, string, object | a self-hosted server, a saved report id and its parameters |
+| `reports` | `Record<string, object>` | definitions by id for drill-through and subreports without a server |
+| `lang`, `title`, `height` | string | interface language, document title, element height |
+| `toolbar` | `{ hide?, add? }` | hide built-in items, add buttons (`{ id, label, title?, after?, onClick(api) }`) |
+| `viewMode` | `'single' \| 'continuous' \| 'galley'` | page layout on screen |
+| `showWarnings` | boolean | list the render's warnings under the pages |
+| `onReady` | `(error \| null) => void` | the first run ended |
+| `onDrill` | `(report, params) => void` | handle a drill-through yourself |
+| `fonts`, `customFonts`, `uiFontCss` | | extra report fonts and the interface font |
+| `snapshot` | object | show a stored run |
+| `allowHosts`, `unsafeFetch`, `fetch` | | data request guard (see below) |
+| `nonce` | string | for the fallback `<style>` under a CSP |
+
+**`mountDesigner(target, options)`** → `DesignerHandle` (`unmount`, `getDefinition`, `save`, `isDirty`): `server`,
+`fontsUrl`, `report`, `definition`, `lang`, `height`, `onSave`, `onOpen`, `readOnly`, `toolbox: { hide }`,
+`panels: { data, inspector }`, `dataSourceTemplates`, `nonce`, `allowHosts`, `unsafeFetch`, `fetch`, `warnOnLeave`
+(default `true`), `onDirtyChange`.
+
+## Browser support and limits
+
+- Modern evergreen browsers with ES modules, Web Workers and constructable stylesheets (an older browser without the
+  last gets a `<style>` element). Node 20.9+ for the build tooling (`engines`).
+- Without the worker (a bundler that does not copy it) the report renders on the main thread: it works, but large
+  reports make the page janky.
+- Sorted or grouped exports in the browser hold every row in memory (about 1.3 KB a row measured): keep them under
+  about 100,000 rows, or render on the server with [`@reportwright/engine`](https://github.com/MrArun005/reportwright/tree/main/packages/engine).
+- A browser cannot resolve DNS, so the private-address guard cannot catch a public name that points at a private
+  address (see [Data sources and private addresses](#data-sources-and-private-addresses)).
+
+## Related packages
+
+[`@reportwright/engine`](https://github.com/MrArun005/reportwright/tree/main/packages/engine) (the same rendering in Node), [`@reportwright/fonts`](https://github.com/MrArun005/reportwright/tree/main/packages/fonts) (required),
+[`@reportwright/fonts-cjk`](https://github.com/MrArun005/reportwright/tree/main/packages/fonts-cjk), [`@reportwright/cli`](https://github.com/MrArun005/reportwright/tree/main/packages/cli), and the wrappers
+[`react`](https://github.com/MrArun005/reportwright/tree/main/packages/react), [`vue`](https://github.com/MrArun005/reportwright/tree/main/packages/vue), [`svelte`](https://github.com/MrArun005/reportwright/tree/main/packages/svelte), [`angular`](https://github.com/MrArun005/reportwright/tree/main/packages/angular).
 
 ## Bundler setup (read this first)
 
@@ -175,14 +302,20 @@ mountViewer('#report', { definition, data, fontsUrl: '/fonts/', showWarnings: tr
 | `getPageCount()` | the page count of the last run (0 before the first) |
 | `print()` | opens the print dialog for the PDF |
 | `export(format)` | `Promise<Blob>`: `format` is `pdf`, `xlsx`, `docx`, `pptx`, `html`, `csv` or `json` (or the item ids `excel`, `word`, `powerpoint`) |
-| `on(event, fn)` | listens for `ready` (a run finished, detail: page count), `error` (detail: message), `page` (detail: current page), `parameters` (detail: the parameters); returns an unsubscribe function |
+| `on(event, fn)` | listens for `ready` (a run finished, detail: `{ pages }`), `error` (detail: message), `page` (detail: current page), `parameters` (detail: the parameters); returns an unsubscribe function |
 | `unmount()` | removes the viewer |
 
 ```js
 const viewer = mountViewer('#report', { server, report: 'loan-statement' });
 viewer.setParameters({ accountId: 'LN-2' });      // re-runs; 'ready' fires when it is done
-const pdf = await viewer.export('pdf');           // a Blob
+document.querySelector('#save-pdf').onclick = async () => {
+  const pdf = await viewer.export('pdf');         // a Blob of the report as shown
+  open(URL.createObjectURL(pdf));
+};
 ```
+
+`export()` exports the last finished run. Call it after `ready` has been handled (a button, as above): called
+synchronously inside a `ready` listener it can still reject with "the report has not run yet".
 
 ## Size
 
