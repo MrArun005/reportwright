@@ -14,3 +14,28 @@ describe('PDF-5: a catalog nested past the limit', () => {
     expect(e.message).toMatch(/catalog.*deeper than \d+/);
   });
 });
+
+describe('PDF-6: a reference loop in one page\'s /Contents', () => {
+  const hello = enc('BT /F1 12 Tf 10 10 Td (Hello) Tj ET');
+  const file = () => rawPdf(['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R 6 0 R] /Count 2 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R >>', '5 0 R', '4 0 R',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /Font << /F1 8 0 R >> >> /Contents 7 0 R >>',
+    [`<< /Length ${hello.length} >>`, hello], '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>']);
+  it('that page is empty with a warning; load, extractText, save and merge work for the rest', async () => {
+    const d = await loadPdf(file());
+    expect(d.pageCount).toBe(2);
+    expect(d.extractText()).toBe('\fHello');
+    expect(d.warnings.join()).toMatch(/page 1's \/Contents has a reference loop/);
+    const s = await d.save();
+    expect(s.warnings.join()).toMatch(/reference loop/);
+    const back = await loadPdf(s.bytes);
+    expect(back.pageCount).toBe(2);
+    expect(back.extractText()).toBe('\fHello');
+    const m = await loadPdf(file());
+    m.merge([await loadPdf(file())]);
+    m.page(0).draw((p) => p.rect(0, 0, 1, 1));
+    const merged = await loadPdf((await m.save()).bytes);
+    expect(merged.pageCount).toBe(4);
+    expect(merged.extractText()).toBe('\fHello\f\fHello');
+  });
+});
