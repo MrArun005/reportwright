@@ -56,6 +56,19 @@ describe('PDF/A-1b: PDF 1.4', () => {
     expect(s).toMatch(/\/CIDSet \d+ 0 R/); // subset CIDFonts list their CIDs (ISO 19005-1 6.3.5)
   });
 
+  it.skipIf(!HAS.verapdf)('gradients, a tiling pattern, a clip, a spot colour and dashes pass veraPDF 1b (shadings are PDF 1.3)', async () => {
+    const out = await toBytes(async (pdf) => {
+      const f = await pdf.embedFont(INTER), spot = pdf.spotColor('PANTONE 185 C', [0.9, 0.1, 0.2]), p = pdf.addPage();
+      p.fill(p.path().rect(40, 40, 200, 100), { fill: p.linearGradient(40, 40, 240, 40, [[0, '#f00'], [0.5, '#0f0'], [1, '#00f']]) });
+      p.fill(p.path().rect(40, 160, 200, 100), { fill: p.radialGradient(140, 210, 0, 140, 210, 80, [[0, '#fff'], [1, '#0a0']]) });
+      p.fill(p.path().rect(40, 280, 200, 100), { fill: p.tilingPattern({ width: 10, height: 10 }, (c) => c.fill(c.path().rect(0, 0, 5, 5), { fill: '#333' })) });
+      p.save(); p.clip(p.path().arc(400, 100, 50, 0, 6.28)); p.rect(300, 0, 200, 200, { fill: spot }); p.restore();
+      p.stroke(p.path().moveTo(300, 300).lineTo(500, 350), { stroke: '#000', width: 2, dash: [4, 2] });
+      p.text('Graphics', { x: 40, y: 400, font: f });
+    }, level(1, 'b'));
+    expect(verapdf(out, '1b').failed).toEqual([]);
+  }, 60000);
+
   it('refuses what PDF 1.4 / PDF/A-1 cannot hold: transparency, soft masks, 16-bit images, layers, attachments, UserUnit, 1a', async () => {
     const make = () => createPdf({ write() {} }, level(1, 'b'));
     const pdf = make(), f = await pdf.embedFont(INTER), p = pdf.addPage();
