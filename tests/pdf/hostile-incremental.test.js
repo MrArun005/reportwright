@@ -8,6 +8,7 @@ import { PDFDocument, PDFName, PDFString } from 'pdf-lib';
 import { loadPdf } from '../../packages/pdf/src/index.js';
 import { internal } from '../../packages/pdf/src/reader/pdf.js';
 import { rawPdf, enc, qdf, PY } from './reader-tools.js';
+import { mayBeActive } from '../../packages/pdf/src/reader/policy.js';
 
 const base = (cat = '', extra = [], xref) => rawPdf([
   `<< /Type /Catalog /Pages 2 0 R ${cat} >>`, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
@@ -26,6 +27,9 @@ const CASES = {
   'an object nothing refers to, missing from the cross-reference': () => base('', ['<< /S /JavaScript /JS (x) >>'], (offs) => `xref\n0 5\n0000000000 65535 f\r\n${offs.slice(0, 4).map((o) => `${String(o).padStart(10, '0')} 00000 n\r\n`).join('')}`),
   'an object stream': inObjectStream,
   'a /Next array': () => base('/OpenAction << /S /GoTo /D [3 0 R /Fit] /Next [<< /S /JavaScript /JS (x) >>] >>'),
+  'hex-escaped names (/S /Java#53cript /#4A#53)': () => base('/OpenAction 5 0 R', ['<< /S /Java#53cript /#4A#53 (app.alert(1)) >>']),
+  'hex-escaped names inside an object stream': () => { const m = '6 0 << /S /Java#53cript /#4A#53 (x) >>'; return base('/OpenAction 6 0 R', [[`<< /Type /ObjStm /N 1 /First 4 /Length ${m.length} >>`, enc(m)]]); },
+  'a launch action whose /S is indirect': () => base('/OpenAction << /S 5 0 R /F (calc.exe) >>', ['/Launch']),
   'an XFA form': () => base('/AcroForm << /Fields [] /XFA 5 0 R >>', [['<< /Length 26 >>', enc('<script>app.alert(1)</script>').subarray(0, 26)]]),
 };
 
@@ -52,6 +56,22 @@ describe('saveIncremental refuses a file with active content; save() removes it'
     const d = await loadPdf(base(), { budget: { maxSteps: 1e6 } });
     internal(d, 't').r.src.budget.steps = 1e6 - 5; // the budget runs out during the check
     await expect(d.saveIncremental()).rejects.toMatchObject({ code: 'E_ACTIVE', message: expect.stringMatching(/could not be checked/) });
+  });
+  it('the scan is done once per source: a second update reuses it', async () => {
+    const d = await loadPdf(base());
+    d.setInfo({ title: 'one' });
+    await d.saveIncremental();
+    const src = internal(d, 't').r.src, every = src.everyObject;
+    let calls = 0;
+    src.everyObject = function* () { calls++; yield* every(); };
+    d.setInfo({ title: 'two' });
+    await d.saveIncremental();
+    expect(calls).toBe(0);
+  });
+  it('the prefilter finds every name the policy acts on, escaped, indirect or at the end of the bytes', () => {
+    const hit = (/** @type {string} */ t) => mayBeActive(enc(t));
+    for (const t of ['<< /JS', '/OpenAction 5 0 R', '/AA<<>>', '/#4A#53', '/Java#53cript', '/Type 7 0 R', '/S %c\n 7 0 R', '/Subtype\n12 0 R', '/Rect[0 0 1 1]', '/Kids[]', '/Annots 3 0 R', '/EF<<>>', '/FS 3 0 R', '/Launch', '/SubmitForm', '/ImportData', '/GoToR', '/GoToE', '/XFA', '/RichMedia', '/EmbeddedFile', '/Sound', '/Movie', '/Rendition', '/Type/Action', '/Type /Annot', '/Type /Filespec']) expect(hit(t), t).toBe(true);
+    for (const t of ['<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>', '<< /Length 5 0 R /Filter /FlateDecode >>', '[0 0 612 792]', '/JSX /AAA /Rectangle']) expect(hit(t), t).toBe(false);
   });
   it('a clean file updates', async () => {
     const d = await loadPdf(base());
