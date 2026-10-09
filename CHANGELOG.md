@@ -2,6 +2,22 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
+## 0.13.2 — unreleased
+
+### Fixed
+- **An unchecked check box has no tick on the designer canvas.** The canvas drew ✓ in every check box; it now follows the value as the renderer does (`false`, `=False`, a missing value: empty), and dims the tick of a value only the data decides.
+- **Selecting an item no longer moves the canvas.** The canvas toolbar grew a second row (24 px) when the align buttons of a selection appeared; it now has one fixed height (it scrolls sideways when narrow) and its hint moved to the status bar.
+- **Keyboard nudge steps.** Arrow moves the selection 1 pt, or one grid step with Snap to grid on (a cell in cell mode); Shift+Arrow moves ten of them (it was 4 grid steps); positions stay rounded to 2 decimals.
+- **Render warnings in the viewer read as words.** The count says "8 warnings" or "1 warning", not "warning(s)".
+- **The Data panel lists a data set's fields when it declares none.** It said "No fields" next to 300 rows; it now detects them from inline JSON or the first rows of fetched data with the engine's own detection (`detectFields`, the one streaming uses) and marks them as detected.
+- **No cut-off text in the Inspector and the Outline.** The Regional "Division by zero" choice gets the full width ("Infinity (as SSRS)" was cut); a long name in the Outline wraps inside the panel, with the full name as its tooltip, and the item type and buttons move under it together.
+- **The parameter dialog's help matches the viewer.** The live-parameters option no longer says that turning it off adds a View report button (the button is always there), and the panel-columns help says the grid applies on a wide screen.
+- **Export options icon.** The sun-like gear is a sliders icon; the button keeps its name, Export options.
+
+### Added
+- **`showWarnings`** (viewer option, default `false`): shows the render's warnings under the pages; the designer's Preview always shows them. Documented in the viewer README and typed in `ViewerOptions`.
+- **ⓘ help tooltips in the designer.** Long help paragraphs (the Outline, Layers and Parts panels, field hints over 90 characters) sit behind an ⓘ button that opens on hover, keyboard focus or click and closes with Esc; the button is described by the text (`aria-describedby`).
+
 ## 0.13.1 — 2026-10-09
 
 ### Fixed
