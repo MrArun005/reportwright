@@ -240,6 +240,21 @@ export function createPdfStream(sink, opt) {
     literal(key, text) {
       const F = fontOf(key);
       let out = '';
+      // Latin-1 text (most of a table): each character's escaped bytes from a table, no Map, no string iterator
+      const L = (F.lat ||= new Array(256));
+      let i = 0;
+      for (; i < text.length; i++) {
+        const c = text.charCodeAt(i);
+        if (c > 255) break;
+        let b = L[c];
+        if (b === undefined) {
+          const id = parseInt(w.encode(key, String.fromCharCode(c)), 16);
+          L[c] = b = F.font.standard ? esc(id) : esc(id >> 8) + esc(id & 255);
+        }
+        out += b;
+      }
+      if (i === text.length) return out;
+      text = text.slice(i);
       for (const ch of text) {
         const cp = /** @type {number} */ (ch.codePointAt(0));
         let b = F.lit.get(cp);
