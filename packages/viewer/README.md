@@ -155,6 +155,14 @@ Types are included (`ViewerOptions`, `DesignerOptions`, …). Framework wrappers
 
 Any other key is taken as an item id. Unknown keys hide nothing.
 
+### Render warnings: `showWarnings`
+
+`showWarnings: true` shows the render's warnings (a data value that does not read as a number, an unknown field, content cut off at the page edge…) under the pages, as a collapsed list headed "8 warnings" or "1 warning". The default is `false`: readers of a finished report do not see them. The designer's Preview always shows them.
+
+```js
+mountViewer('#report', { definition, data, fontsUrl: '/fonts/', showWarnings: true });
+```
+
 ### Controlling a mounted viewer: `ViewerHandle`
 
 `mountViewer` returns a handle (the React, Vue, Svelte and Angular wrappers give you the same one through their ready callback or event):

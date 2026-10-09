@@ -146,7 +146,7 @@ const DRILL_KEY = '_drill';
 const drillOfUrl = () => { try { const v = new URL(window.location.href).searchParams.get(DRILL_KEY); const a = v ? JSON.parse(v) : []; return Array.isArray(a) ? a.filter(x => x && typeof x.id === 'string').slice(0, 50) : []; } catch { return []; } };
 const urlWithDrill = (list) => { const u = new URL(window.location.href); if (list.length) u.searchParams.set(DRILL_KEY, JSON.stringify(list)); else u.searchParams.delete(DRILL_KEY); return u.toString(); };
 
-export default function ReportViewer({ definition: rootDef, reportId: rootReportId, params: rootParams, title, compact = false, autoRun = true, lang: langIn = 'en', onDrill, exportHtmlOptions, toolbar, viewMode = 'continuous', onExported, urlState = false, onReady, control, onEvent }) {
+export default function ReportViewer({ definition: rootDef, reportId: rootReportId, params: rootParams, title, compact = false, autoRun = true, lang: langIn = 'en', onDrill, exportHtmlOptions, toolbar, viewMode = 'continuous', onExported, urlState = false, onReady, control, onEvent, showWarnings = false }) {
   const lang = pickLang(langIn);
   const dir = dirOf(lang);
   const T = (k, v) => tr(lang, k, v);
@@ -829,9 +829,9 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
           {note && <div className="vmsg" role="status" data-testid="viewer-note">{note} <button className="btn sm ghost" onClick={() => setNote(null)} aria-label={T('close')}>×</button></div>}
           {status.state === 'running' && status.retry && <div className="vmsg" role="status" data-testid="viewer-busy">{T('r4_busyRetry', { n: status.retry.attempt, max: status.retry.max })}</div>}
           {!model && status.state === 'running' && !status.retry && <Skeleton def={renderDef} scale={zoom === 'fit' || narrow ? fitW / 600 : Math.min(fitW / 600, fitH / 850)} T={T} />}
-          {model?.warnings?.length > 0 && (
+          {showWarnings && model?.warnings?.length > 0 && (
             // content cut off (past the page edge or bottom): the warnings open by themselves and the summary says so
-            <details className="warnings" open={hasErrorCells || model.clipped?.length > 0 || undefined} data-testid="viewer-warnings"><summary>{T('warnings', { n: model.warnings.length })}{model.clipped?.length > 0 && <b data-testid="viewer-clipped"> · {T('r4_clipped', { n: model.clipped.length })}</b>}</summary>
+            <details className="warnings" open={hasErrorCells || model.clipped?.length > 0 || undefined} data-testid="viewer-warnings"><summary>{model.warnings.length === 1 ? T('c132_warning1') : T('c132_warnings', { n: model.warnings.length })}{model.clipped?.length > 0 && <b data-testid="viewer-clipped"> · {T('r4_clipped', { n: model.clipped.length })}</b>}</summary>
               <ul>{model.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul></details>
           )}
           {model && !single && (

@@ -547,7 +547,7 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
       {pivotWizard && <PivotWizard />}
       {instantVisuals && <InstantVisuals />}
       {tab === 'preview' ? (
-        <main className="dpreview"><ReportViewer definition={def} reportId={id} compact lang={lang} /></main>
+        <main className="dpreview"><ReportViewer definition={def} reportId={id} compact lang={lang} showWarnings /></main>
       ) : (
         <div className="dmain" data-left={hasLeft && showLeft ? 'open' : 'closed'} data-right={hasRight && showRight ? 'open' : 'closed'}
           style={{ gridTemplateColumns: `${hasLeft && showLeft ? 'var(--left-w)' : '0px'} minmax(0, 1fr) ${hasRight && showRight ? 'var(--right-w)' : '0px'}` }}>

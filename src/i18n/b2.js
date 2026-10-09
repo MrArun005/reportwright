@@ -46,5 +46,7 @@ const ROWS = {
   // 0.13.2 (designer and viewer UI review)
   c132_nudge1: ['Nudge 1 pt (1 grid step with Snap to grid)', '1 pt खिसकाएँ (स्नैप टू ग्रिड के साथ 1 ग्रिड कदम)', 'Desplazar 1 pt (1 paso de cuadrícula con Ajustar a la cuadrícula)', 'Déplacer de 1 pt (1 pas de grille avec Aligner sur la grille)', 'Um 1 pt verschieben (1 Rasterschritt mit „Am Raster ausrichten“)', '1 pt 移動 (グリッドにスナップ時は 1 目盛り)', '微移 1 pt（启用对齐网格时为 1 个网格单位）', 'Mover 1 pt (1 passo da grade com Ajustar à grade)', 'تحريك 1 نقطة (خطوة شبكة واحدة مع المحاذاة إلى الشبكة)'],
   c132_nudge10: ['Nudge 10 pt (10 grid steps with Snap to grid)', '10 pt खिसकाएँ (स्नैप टू ग्रिड के साथ 10 ग्रिड कदम)', 'Desplazar 10 pt (10 pasos de cuadrícula con Ajustar a la cuadrícula)', 'Déplacer de 10 pt (10 pas de grille avec Aligner sur la grille)', 'Um 10 pt verschieben (10 Rasterschritte mit „Am Raster ausrichten“)', '10 pt 移動 (グリッドにスナップ時は 10 目盛り)', '微移 10 pt（启用对齐网格时为 10 个网格单位）', 'Mover 10 pt (10 passos da grade com Ajustar à grade)', 'تحريك 10 نقاط (10 خطوات شبكة مع المحاذاة إلى الشبكة)'],
+  c132_warnings: ['{n} warnings', '{n} चेतावनियाँ', '{n} advertencias', '{n} avertissements', '{n} Warnungen', '警告 {n} 件', '{n} 条警告', '{n} avisos', '{n} تحذيرات'],
+  c132_warning1: ['1 warning', '1 चेतावनी', '1 advertencia', '1 avertissement', '1 Warnung', '警告 1 件', '1 条警告', '1 aviso', 'تحذير واحد'],
 };
 export default Object.fromEntries(LANGS.map((l, i) => [l, Object.fromEntries(Object.entries(ROWS).map(([k, v]) => [k, v[i]]))]));
