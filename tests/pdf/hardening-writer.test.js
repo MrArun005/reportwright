@@ -124,3 +124,34 @@ describe('constant tables are looked up by own key only', () => {
   });
 });
 
+describe('options that widen what is allowed are own properties only', () => {
+  const inherited = (proto, own) => Object.assign(Object.create(proto), own);
+  it('allowTypes and allowArchives on the prototype do not allow a type', async () => {
+    await toBytes(async (pdf) => {
+      const p = pdf.addPage();
+      expect(() => p.attachFile(FILE, inherited({ allowTypes: ['exe'] }, { name: 'tool.exe' }))).toThrow(/not an allowed type/);
+      expect(() => p.attachFile(FILE, inherited({ allowArchives: true }, { name: 'a.zip' }))).toThrow(/not an allowed type/);
+      await expect(pdf.attach(FILE, inherited({ allowTypes: ['exe'] }, { name: 'tool.exe' }))).rejects.toThrow(/not an allowed type/);
+      expect(() => p.attachFile(FILE, { name: 'tool.exe', allowTypes: ['exe'] })).not.toThrow(); // own: allowed
+    });
+  });
+  it('also where no snapshot is in front of the check (the modules as other modules call them)', async () => {
+    const who = 'test';
+    expect(() => checkFileName('tool.exe', inherited({ allowTypes: ['exe'] }, {}), who)).toThrow(/not an allowed type/);
+    expect(() => checkFileName('a.zip', inherited({ allowArchives: true }, {}), who)).toThrow(/not an allowed type/);
+    expect(checkFileName('tool.exe', { allowTypes: ['exe'] }, who).name).toBe('tool.exe');
+    await toBytes((pdf) => {
+      const p = pdf.addPage();
+      expect(() => link.call(p, 0, 0, 9, 9, { url: 'ftp://x/' }, inherited({ allowSchemes: ['ftp'] }, {}))).toThrow(/ftp: URLs are not allowed/);
+      expect(() => attachFile.call(p, FILE, inherited({ allowTypes: ['exe'] }, { name: 'tool.exe' }))).toThrow(/not an allowed type/);
+    });
+  });
+  it('allowSchemes on the prototype does not allow a scheme', async () => {
+    await toBytes((pdf) => {
+      const p = pdf.addPage();
+      expect(() => p.link(0, 0, 9, 9, { url: 'ftp://x/' }, inherited({ allowSchemes: ['ftp'] }, {}))).toThrow(/ftp: URLs are not allowed/);
+      expect(() => p.link(0, 0, 9, 9, { url: 'ftp://x/' }, { allowSchemes: ['ftp'] })).not.toThrow();
+    });
+  });
+});
+
