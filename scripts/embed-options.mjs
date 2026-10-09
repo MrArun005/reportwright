@@ -34,6 +34,9 @@ export const common = {
 // lineLimit and utf8: no line over a few hundred characters (long lines read as obfuscated to a scanner; \u escapes
 // made translated strings six times longer)
 export const readable = { minify: false, sourcemap: 'linked', sourcesContent: false, legalComments: 'inline', charset: 'utf8', lineLimit: 400 };
+// The render worker and its side file (bwip-js) are minified: 2.2 MB readable was most of what a page downloads after the
+// viewer. The source map is linked (a .map file next to it, not inline) so a stack trace in a worker stays usable.
+export const workerMin = { ...readable, minify: true, lineLimit: 200 }; // lines stay short for the package scanner (it flags over 1000)
 // the ES module builds: the viewer, the designer, and the render worker the viewer starts (src/worker)
 export const ENTRIES = { viewer: path.join(root, 'src/embed/index.js'), designer: path.join(root, 'src/embed/designer.js') };
 // the render worker is one file (no chunk imports; bwip-js is a file of its own, below), so copying it alone works (N18)

@@ -5,13 +5,13 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { build } from 'esbuild';
 import zlib from 'node:zlib';
 import path from 'node:path';
-import { root, common, readable, ENTRIES, WORKER, bwipApart, firstLoad } from '../../scripts/embed-options.mjs';
+import { root, common, readable, workerMin, ENTRIES, WORKER, bwipApart, firstLoad } from '../../scripts/embed-options.mjs';
 
 // gzip -9 KB of the readable (unminified) ES modules, as build-embed.mjs prints them. A ratchet: lower it when the
 // first load shrinks, never raise it. 652 KB on b10-bundle alone; fontkit (1.1 MB, in the first load only because
 // src/engine/text/fonts.js imports it at its top) going lazy (b10-perf) takes it to about 262 KB: lower this then.
 const FIRST_LOAD_KB = 270; // 262 KB with pdf-lib and fontkit lazy (was 827 KB)
-const WORKER_KB = 600; // the render worker without bwip-js (was 908 KB); since N43 it holds the standard-font metrics (+6 KB; the ~100 KB side file is gone)
+const WORKER_KB = 504; // the render worker without bwip-js, minified (503 KB; readable it was 594 KB, budget 600). It holds the standard-font metrics since N43
 
 const OUT = path.join(root, 'public/embed/esm');
 let viewer, worker;
@@ -23,7 +23,7 @@ beforeAll(async () => {
     gz: files.reduce((s, f) => s + zlib.gzipSync(text.get(f), { level: 9 }).length, 0) / 1024,
     inputs: files.flatMap(f => Object.keys(r.metafile.outputs[f].inputs)),
   };
-  const w = await build({ ...common, entryPoints: [WORKER], format: 'esm', ...readable, sourcemap: false, splitting: false, metafile: true, write: false, outfile: path.join(OUT, 'engine.worker.js'), plugins: [...common.plugins, bwipApart] });
+  const w = await build({ ...common, entryPoints: [WORKER], format: 'esm', ...workerMin, sourcemap: false, splitting: false, metafile: true, write: false, outfile: path.join(OUT, 'engine.worker.js'), plugins: [...common.plugins, bwipApart] });
   worker = { gz: zlib.gzipSync(w.outputFiles[0].contents, { level: 9 }).length / 1024, inputs: Object.keys(Object.values(w.metafile.outputs)[0].inputs), text: w.outputFiles[0].text };
 }, 120000);
 
