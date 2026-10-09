@@ -54,6 +54,14 @@ describe('hostile sizes', () => {
     expect(n).toBe(10_000);
   }));
 
+  it('radio buttons: at most 1,000 a group and 50,000 a document', () => fast(() => {
+    const { pdf, p } = fresh();
+    const buttons = Array.from({ length: 1000 }, (_, i) => ({ page: p, width: 1, height: 1, value: `v${i}` }));
+    let n = 0;
+    expect(() => { for (; n < 100; n++) pdf.form.radioGroup(`r${n}`, { buttons }); }).toThrow(/at most 50000 radio buttons/);
+    expect(n).toBe(50);
+  }), 20000);
+
   it('1,000,000 options, 1,000,000 characters of options, 10,000 values: refused before any work', () => fast(() => {
     const { pdf, p, f } = fresh();
     const million = new Array(1_000_000).fill('x');
