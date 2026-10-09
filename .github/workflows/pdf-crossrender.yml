@@ -1,0 +1,182 @@
+# Cross-renderer check of @reportwright/pdf: the corpus (packages/pdf/tools/corpus.mjs) and the print test sheet
+# (tools/print-test.mjs) opened, read and rendered by the engines real users have, on the OS each one lives on.
+#   linux:   poppler, qpdf, MuPDF, Ghostscript (+ pdfwrite and ps2write round trips), PDFium (Chrome/Edge's engine,
+#            via pypdfium2), pdf.js (Firefox's), veraPDF; and the print pipeline: PostScript, PCL XL, PCL 5, CUPS.
+#   windows: real Chrome and Edge built-in PDF viewers (screenshots), and Adobe Acrobat Reader (experimental).
+#   macos:   Apple Quartz (sips/CoreGraphics render, PDFKit text) against poppler.
+#   report:  one merged cross-render-report.md.
+name: PDF cross-render
+on:
+  workflow_dispatch:
+  push:
+    branches: [pdf-lib-own]
+    paths: ['packages/pdf/**', '.github/workflows/pdf-crossrender.yml']
+
+jobs:
+  corpus:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --no-audit --no-fund
+      - name: Fonts and ICC profiles the corpus uses on Linux (STIX for CFF, Ghostscript's CMYK and gray profiles)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-stix ghostscript
+      - name: Build the corpus and the print test sheet
+        run: |
+          node packages/pdf/tools/corpus.mjs "$RUNNER_TEMP/corpus"
+          node packages/pdf/tools/print-test.mjs "$RUNNER_TEMP/print"
+      - uses: actions/upload-artifact@v4
+        with: { name: corpus, path: '${{ runner.temp }}/corpus' }
+      - uses: actions/upload-artifact@v4
+        with: { name: print-test, path: '${{ runner.temp }}/print' }
+
+  linux:
+    needs: corpus
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --no-audit --no-fund # sharp, for the pixel diffs
+      - uses: actions/download-artifact@v4
+        with: { name: corpus, path: /tmp/corpus }
+      - uses: actions/download-artifact@v4
+        with: { name: print-test, path: /tmp/print }
+      - name: Engines (apt)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq poppler-utils qpdf mupdf-tools ghostscript cups cups-client cups-filters
+          echo "/usr/sbin" >> "$GITHUB_PATH"
+      - name: GhostPCL (gpcl6), to render the PCL output back (best effort)
+        continue-on-error: true
+        run: |
+          cd /tmp && curl -fsSL -o pcl.tgz https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostpcl-10.05.1-linux-x86_64.tgz
+          tar xzf pcl.tgz && sudo install -m 755 "$(find /tmp -maxdepth 2 -name 'gpcl6*' -type f | head -1)" /usr/local/bin/gpcl6 && gpcl6 -h | head -2
+      - name: PDFium (pypdfium2) and pdf.js (pdfjs-dist + @napi-rs/canvas)
+        run: |
+          python3 -m venv /tmp/pdfium && /tmp/pdfium/bin/pip install -q pypdfium2 pillow
+          mkdir -p /tmp/pdfjs && cd /tmp/pdfjs && npm init -y >/dev/null && npm i -s --no-audit --no-fund pdfjs-dist @napi-rs/canvas
+      - name: veraPDF (the CLI image) as a command, as ci.yml does
+        run: |
+          docker pull -q verapdf/cli:latest
+          printf '#!/bin/sh\nexec docker run --rm -v /tmp:/tmp verapdf/cli:latest "$@"\n' | sudo tee /usr/local/bin/verapdf && sudo chmod +x /usr/local/bin/verapdf
+      - name: Cross-render the corpus
+        env: { PDFIUM_PY: /tmp/pdfium/bin/python, PDFJS_DIR: /tmp/pdfjs }
+        run: node packages/pdf/tools/cross-render.mjs /tmp/corpus /tmp/xr --label linux --engines qpdf,poppler,mupdf,gs,gs-pdfwrite,gs-ps2write,pdfium,pdfjs
+      - name: Print pipeline on the print test sheet (A4 page, then the Letter page), each output rendered back
+        env: { PDFIUM_PY: /tmp/pdfium/bin/python, PDFJS_DIR: /tmp/pdfjs }
+        run: |
+          E=poppler,mupdf,gs,gs-pdfwrite,gs-ps2write,gs-pxlcolor,gs-ljet4,cups-ps,pdfium,pdfjs
+          node packages/pdf/tools/cross-render.mjs /tmp/print /tmp/xr/print-a4 --label linux-print-A4 --page 1 --engines $E
+          node packages/pdf/tools/cross-render.mjs /tmp/print /tmp/xr/print-letter --label linux-print-Letter --page 2 --engines $E
+      - name: veraPDF on the standards files
+        run: |
+          {
+            echo '## veraPDF (linux)'; echo; echo '| File | Flavour | Result |'; echo '|---|---|---|'
+            for x in pdfa-1b:1b pdfa-2b:2b pdfa-3b-facturx:3b pdfua-tagged:ua1; do
+              f=${x%%:*}; fl=${x##*:}
+              out=$(verapdf --flavour "$fl" --format text "/tmp/corpus/$f.pdf" 2>&1 | tail -1)
+              echo "| $f.pdf | $fl | ${out//|//} |"
+            done
+          } > /tmp/xr/verapdf-linux.md
+          cat /tmp/xr/verapdf-linux.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: reports-linux, path: /tmp/xr }
+
+  windows:
+    needs: corpus
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/download-artifact@v4
+        with: { name: corpus, path: '${{ runner.temp }}\corpus' }
+      - name: Playwright and sharp in a temp folder (Chrome and Edge are on the runner already)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\xrm" | Out-Null
+          Set-Location "$env:RUNNER_TEMP\xrm"; npm init -y | Out-Null
+          npm i -s --no-audit --no-fund playwright sharp
+      - name: Chrome and Edge built-in PDF viewers (headful), a screenshot of each file
+        shell: pwsh
+        env:
+          PLAYWRIGHT_DIR: '${{ runner.temp }}\xrm'
+          XR_MODULES: '${{ runner.temp }}\xrm'
+        run: node packages/pdf/tools/cross-render.mjs "$env:RUNNER_TEMP\corpus" "$env:RUNNER_TEMP\xr" --label windows --engines chrome,msedge
+      - name: Adobe Acrobat Reader install (EXPERIMENTAL, allowed to fail)
+        id: reader
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          choco install adobereader -y --no-progress
+          New-Item -Force 'HKCU:\Software\Adobe\Acrobat Reader\DC\AdobeViewer' | Out-Null
+          Set-ItemProperty 'HKCU:\Software\Adobe\Acrobat Reader\DC\AdobeViewer' -Name EULA -Value 1 -Type DWord
+          New-Item -Force 'HKLM:\SOFTWARE\Policies\Adobe\Acrobat Reader\DC\FeatureLockDown' | Out-Null
+          Set-ItemProperty 'HKLM:\SOFTWARE\Policies\Adobe\Acrobat Reader\DC\FeatureLockDown' -Name bProtectedMode -Value 0 -Type DWord
+          Set-ItemProperty 'HKLM:\SOFTWARE\Policies\Adobe\Acrobat Reader\DC\FeatureLockDown' -Name bUpdater -Value 0 -Type DWord
+      - name: Acrobat Reader opens the signed, encrypted and form files; a screenshot of the screen each time (EXPERIMENTAL)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $exe = Get-ChildItem 'C:\Program Files\Adobe', 'C:\Program Files (x86)\Adobe' -Recurse -Include AcroRd32.exe, Acrobat.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          $dir = New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\xr\acrobat"
+          $md = @('## Adobe Acrobat Reader (windows, experimental)', '', "Reader: $($exe.FullName) $($exe.VersionInfo.ProductVersion)", '', '| File | Screenshot |', '|---|---|')
+          if (-not $exe) { $md += '| — | Reader did not install; nothing to show |'; $md | Set-Content "$env:RUNNER_TEMP\xr\acrobat-windows.md"; exit 0 }
+          foreach ($f in Get-ChildItem "$env:RUNNER_TEMP\corpus" -Filter *.pdf | Where-Object { $_.Name -match '^(sign|encrypt|forms)-' }) {
+            $p = Start-Process $exe.FullName -ArgumentList "`"$($f.FullName)`"" -PassThru
+            Start-Sleep -Seconds 20
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            $shot = Join-Path $dir "$($f.BaseName).acrobat.png"; $bmp.Save($shot); $bmp.Dispose()
+            $md += "| $($f.Name) | acrobat/$($f.BaseName).acrobat.png |"
+            Get-Process AcroRd32, Acrobat, AcroCEF, RdrCEF -ErrorAction SilentlyContinue | Stop-Process -Force
+            Start-Sleep -Seconds 3
+          }
+          $md += '', 'Look at each screenshot: no repair prompt; the encrypted files show the password prompt; the signed files show the signature bar (self-signed: "at least one signature has problems" / identity unknown is expected).'
+          $md | Set-Content "$env:RUNNER_TEMP\xr\acrobat-windows.md"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: reports-windows, path: '${{ runner.temp }}\xr' }
+
+  macos:
+    needs: corpus
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/download-artifact@v4
+        with: { name: corpus, path: '${{ runner.temp }}/corpus' }
+      - name: poppler (brew) and sharp in a temp folder
+        run: |
+          brew install poppler
+          mkdir -p "$RUNNER_TEMP/xrm" && cd "$RUNNER_TEMP/xrm" && npm init -y >/dev/null && npm i -s --no-audit --no-fund sharp
+      - name: Apple Quartz (sips render, PDFKit text) against poppler; every render kept as a screenshot
+        env: { XR_MODULES: '${{ runner.temp }}/xrm', KEEP_PNGS: '1' }
+        run: node packages/pdf/tools/cross-render.mjs "$RUNNER_TEMP/corpus" "$RUNNER_TEMP/xr" --label macos --engines quartz,poppler
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: reports-macos, path: '${{ runner.temp }}/xr' }
+
+  report:
+    needs: [linux, windows, macos]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/download-artifact@v4
+        with: { pattern: reports-*, path: /tmp/reports }
+      - name: Merge the per-OS reports into one
+        run: |
+          node packages/pdf/tools/cross-render.mjs --merge /tmp/cross-render-report.md /tmp/reports
+          for f in /tmp/reports/*/verapdf-*.md /tmp/reports/*/acrobat-*.md; do [ -f "$f" ] && { echo; cat "$f"; } >> /tmp/cross-render-report.md; done
+          cat /tmp/cross-render-report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with: { name: cross-render-report, path: /tmp/cross-render-report.md }
