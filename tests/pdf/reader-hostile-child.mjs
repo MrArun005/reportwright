@@ -74,7 +74,16 @@ const CASES = {
     for (let i = 0; i < 80000; i++) more[4 + i] = { dict: '<< >>', data: Buffer.from(`\n${900000 + i} 0 obj << /Type /ObjStm /N -1 /First 0 /Length 1 >> stream\nx\nendstream\n`) };
     return [build(more), {}, (d) => d.saveIncremental().then((r) => `${r.warnings}`)];
   },
+  // an /ActualText in one object, used by 10,000 spans: 1 MB (past the 4,096 a span may have: ignored, the glyphs read)
+  'actualtext-1mb': () => [actual(1 << 20, '/Span << /ActualText 5 0 R >> BDC (A) Tj EMC\n'.repeat(10000)), {}, (d) => `${d.page(0).extractText().length} ${d.warnings}`],
+  // 4,000 characters (read) used 10,000 times: past the characters an extraction may make (E_BUDGET)
+  'actualtext-4k': () => [actual(4000, '/Span << /ActualText 5 0 R >> BDC (A) Tj EMC\n'.repeat(10000)), {}],
+  // 10,000 nested spans: the outermost one is read, once
+  'actualtext-nested': () => [actual(4000, `${'/Span << /ActualText 5 0 R >> BDC\n'.repeat(10000)}(A) Tj${'\nEMC'.repeat(10000)}`), {}, (d) => String(d.page(0).extractText().length)],
 };
+function actual(n, body) {
+  return doc('/Resources << /Font << /F1 6 0 R >> >>', `BT /F1 1 Tf ${body} ET`, { 5: `(${'x'.repeat(n)})`, 6: '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>' });
+}
 const FONT = '<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding << /Differences [65 /.notdef] >> >>';
 function forms(n, text) {
   return doc('/Resources << /XObject << /X 5 0 R >> >>', '/X Do\n'.repeat(n), {

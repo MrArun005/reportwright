@@ -432,3 +432,22 @@ describe('R5 (final review F1, follow-up): every signature dictionary counts, wh
     await expect(fill(base('<< /FT /Sig /T (sig) /Kids [6 0 R] >>'))).resolves.toBeTruthy();
   });
 });
+
+describe('/ActualText cannot amplify the text an extraction makes', () => {
+  it('a 1 MB ActualText used by 10,000 spans is ignored (a warning), the glyphs read: fast, no blow-up', () => {
+    const r = child('actualtext-1mb', 20);
+    expect(r.code).toBe('OK');
+    expect(r.text).toMatch(/^10000 .*ActualText longer than 4096/);
+    expect(r.ms).toBeLessThan(5000);
+  }, 30_000);
+  it('a 4,000-character ActualText used by 10,000 spans stops at the characters a page may make (E_BUDGET)', () => {
+    const r = child('actualtext-4k', 20);
+    expect(r.code).toBe('E_BUDGET');
+    expect(r.message).toMatch(/characters of text/);
+    expect(r.ms).toBeLessThan(5000);
+  }, 30_000);
+  it('10,000 nested spans: the outermost is read once', () => {
+    const r = child('actualtext-nested', 20);
+    expect(r).toMatchObject({ code: 'OK', text: '4000' });
+  }, 30_000);
+});
