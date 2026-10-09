@@ -125,3 +125,26 @@ describe('memory held per entry is capped (budget.maxObjects, budget.maxTextItem
     await typed(Promise.resolve().then(() => d.page(0).extractText()), 'E_BUDGET');
   });
 });
+
+describe('lexer fast paths keep their bounds (hostile tokens)', async () => {
+  const { Lexer, T, indexOf } = await import('../../packages/pdf/src/reader/lexer.js');
+  const { createBudget } = await import('../../packages/pdf/src/reader/budget.js');
+  const lex = (s) => { const lx = new Lexer(new TextEncoder().encode(s), createBudget()); const out = []; for (let k; (k = lx.next()) !== T.EOF;) out.push([k, lx.val]); return out; };
+  it('a 1 MB name is cut at 4,096 bytes; a #xx escape after a long plain prefix is still decoded', () => {
+    const t = lex('/' + 'A'.repeat(1 << 20) + ' 1');
+    expect(t[0][1].length).toBe(4096); expect(t[1]).toEqual([T.NUM, 1]);
+    expect(lex('/' + 'B'.repeat(100) + '#41')[0][1]).toBe('B'.repeat(100) + 'A');
+  });
+  it('a 1 MB keyword is cut at 128 chars, a 1 MB digit run is one finite number, and both advance', () => {
+    const t = lex('x'.repeat(1 << 20) + ' ' + '9'.repeat(1 << 20) + ' 007 -3');
+    expect(t[0][1].length).toBe(128); expect(Number.isFinite(t[1][1])).toBe(true); expect(t.slice(2)).toEqual([[T.NUM, 7], [T.NUM, -3]]);
+  });
+  it('indexOf never matches past its end or before its start, natively or not', () => {
+    const b = new TextEncoder().encode('x'.repeat(200) + 'endstream' + 'y'.repeat(200));
+    expect(indexOf(b, 'endstream', 0)).toBe(200);
+    expect(indexOf(b, 'endstream', 0, 208)).toBe(-1);
+    expect(indexOf(b, 'endstream', 201)).toBe(-1);
+    expect(indexOf(b, 'endstream', 1e9)).toBe(-1);
+    expect(indexOf(b.subarray(100), 'endstream', 0)).toBe(100);
+  });
+});
