@@ -6,7 +6,7 @@ name: bench-deep
 on:
   push: # a push to this branch runs the quick tier (workflow_dispatch needs the file on main)
     branches: [bench-deep]
-    paths: ['bench/deep/**', '.github/workflows/bench-deep.yml']
+    paths: ['bench/deep/**', '.github/workflows/bench-deep.yml', '!bench/deep/merge.py', '!bench/deep/capabilities.json', '!bench/deep/**/*.md']
   workflow_dispatch:
     inputs:
       tier:
