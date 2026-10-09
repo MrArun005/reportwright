@@ -224,3 +224,29 @@ describe('after pdf.end()', () => {
     await expect(pdf.end()).rejects.toThrow(/has ended/);
   });
 });
+
+describe('automatic image dedup', () => {
+  const a = png({ w: 64, h: 64, type: 6, depth: 8, px: (x, y) => [x * 4, y * 4, 9, 200] });
+  const count = (out) => (latin(out).match(/\/Subtype \/Image/g) || []).length;
+  it('the same bytes twice: one handle, one XObject, a smaller file', async () => {
+    let h1, h2;
+    const twice = await toBytes(async (pdf) => {
+      h1 = await pdf.embedImage(a); h2 = await pdf.embedImage(a.slice());
+      pdf.addPage().image(h1, { width: 50 }).image(h2, { y: 60, width: 50 });
+    }, { creationDate: DATE, compress: false });
+    const distinct = await toBytes(async (pdf) => {
+      const p = pdf.addPage();
+      p.image(await pdf.embedImage(a), { width: 50 });
+      p.image(await pdf.embedImage(a, { maxDecodedBytes: 1 << 20 }), { y: 60, width: 50 }); // other options: not shared
+    }, { creationDate: DATE, compress: false });
+    expect(h1).toBe(h2);
+    expect(count(twice)).toBe(2); // the image and its SMask, once
+    expect(count(distinct)).toBe(4);
+    expect(twice.length).toBeLessThan(distinct.length);
+  });
+  it('per document: a handle from one PDF is still refused in another', async () => {
+    let h;
+    await toBytes(async (pdf) => { h = await pdf.embedImage(a); });
+    await expect(toBytes(async (pdf) => { const h2 = await pdf.embedImage(a); expect(h2).not.toBe(h); pdf.addPage().image(h); })).rejects.toThrow(/another PDF/);
+  });
+});
