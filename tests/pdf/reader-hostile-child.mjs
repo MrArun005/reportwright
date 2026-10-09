@@ -67,6 +67,13 @@ const CASES = {
   'forms-many': () => [forms(20000, ''), {}],
   // R3: one Tj of a 16 MB string, timeoutMs 300: the glyphs were no budget steps (and were 16 M objects at once)
   'glyphs-one-string': () => [doc('/Resources << /Font << /F1 6 0 R >> >>', `BT /F1 1 Tf (${'A'.repeat(16 << 20)}) Tj ET`, { 6: FONT }), { timeoutMs: 300 }],
+  // R8: 80,000 streams, each hiding an unreadable object stream in its data: the whole-file check asked, per hidden
+  // object, whether it lies in stream data by scanning every stream (quadratic)
+  'regions': () => {
+    const more = { 1: '<< /Type /Catalog /Pages 2 0 R >>', 2: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', 3: '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] >>' };
+    for (let i = 0; i < 80000; i++) more[4 + i] = { dict: '<< >>', data: Buffer.from(`\n${900000 + i} 0 obj << /Type /ObjStm /N -1 /First 0 /Length 1 >> stream\nx\nendstream\n`) };
+    return [build(more), {}, (d) => d.saveIncremental().then((r) => `${r.warnings}`)];
+  },
 };
 const FONT = '<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding << /Differences [65 /.notdef] >> >>';
 function forms(n, text) {
@@ -82,8 +89,8 @@ function type0(w, more = {}) {
   });
 }
 
-const [bytes, o] = CASES[process.argv[2]]();
+const [bytes, o, run = (d) => d.page(0).extractText()] = CASES[process.argv[2]]();
 const t = Date.now();
 let r;
-try { const d = await loadPdf(bytes, o); const text = d.page(0).extractText(); r = { code: 'OK', text: text.slice(0, 200) }; } catch (e) { r = { code: e.code ?? e.name, message: String(e.message).slice(0, 300) }; }
+try { const d = await loadPdf(bytes, o); const text = await run(d); r = { code: 'OK', text: text.slice(0, 200) }; } catch (e) { r = { code: e.code ?? e.name, message: String(e.message).slice(0, 300) }; }
 console.log(JSON.stringify({ ...r, ms: Date.now() - t }));

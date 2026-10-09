@@ -90,3 +90,11 @@ describe('R6: names from the file never reach Object.prototype through a constan
     expect((await loadPdf(r.bytes)).fields[0].value).toBe('hello');
   });
 });
+
+describe('R8: the whole-file check finds whether a byte-scan hit is in stream data without scanning every stream', () => {
+  it('80,000 streams each hiding an unreadable object: linear, not quadratic', () => {
+    const r = child('regions', 60);
+    expect(r.code).toBe('OK');
+    expect(r.ms).toBeLessThan(5000);
+  }, 90_000);
+});
