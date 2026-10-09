@@ -116,6 +116,7 @@ jobs:
       # ---- one setup per language, all cached
       - name: ours
         if: matrix.lang == 'ours'
+        continue-on-error: true # a broken build still reaches the driver, which records the contestant as not started
         run: npm ci --prefix bench/deep/ours --no-audit --no-fund
       - uses: actions/cache@v4
         if: matrix.lang == 'js'
@@ -124,6 +125,7 @@ jobs:
           key: puppeteer-${{ hashFiles('bench/deep/js/package-lock.json') }}
       - name: js
         if: matrix.lang == 'js'
+        continue-on-error: true
         run: npm ci --prefix bench/deep/js --no-audit --no-fund
       - uses: actions/setup-python@v5
         if: matrix.lang == 'python' || matrix.lang == 'cli'
@@ -133,11 +135,13 @@ jobs:
           cache-dependency-path: bench/deep/${{ matrix.lang }}/requirements.txt
       - name: python
         if: matrix.lang == 'python'
+        continue-on-error: true
         run: |
           sudo apt-get install -y -qq libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 >/dev/null
           pip install -q -r bench/deep/python/requirements.txt
       - name: cli
         if: matrix.lang == 'cli'
+        continue-on-error: true
         run: pip install -q -r bench/deep/cli/requirements.txt
       - uses: actions/setup-java@v4
         if: matrix.lang == 'java'
@@ -150,6 +154,7 @@ jobs:
             bench/deep/java/jasper/pom.xml
       - name: java
         if: matrix.lang == 'java'
+        continue-on-error: true
         run: |
           mvn -q -B -f bench/deep/java/pom.xml package
           mvn -q -B -f bench/deep/java/jasper/pom.xml package
@@ -164,6 +169,7 @@ jobs:
           key: nuget-${{ hashFiles('bench/deep/dotnet/Bench.csproj') }}
       - name: dotnet
         if: matrix.lang == 'dotnet'
+        continue-on-error: true
         run: dotnet publish bench/deep/dotnet/Bench.csproj -c Release -o bench/deep/dotnet/out --nologo -v q
       - uses: actions/setup-go@v5
         if: matrix.lang == 'go'
@@ -172,6 +178,7 @@ jobs:
           cache-dependency-path: bench/deep/go/go.mod
       - name: go
         if: matrix.lang == 'go'
+        continue-on-error: true
         working-directory: bench/deep/go
         run: go mod tidy && go build -o bench .
       - uses: actions/cache@v4
@@ -185,6 +192,7 @@ jobs:
           restore-keys: cargo-
       - name: rust
         if: matrix.lang == 'rust'
+        continue-on-error: true
         working-directory: bench/deep/rust
         run: cargo build --release --quiet
 
