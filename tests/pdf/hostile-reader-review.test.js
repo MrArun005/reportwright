@@ -2,8 +2,11 @@
 // failed before its fix. Inputs that can exhaust the heap or run for hours are run in a child process
 // (reader-hostile-child.mjs) under a time limit and a 512 MB heap, since a fatal OOM cannot be caught in-process.
 import { describe, it, expect } from 'vitest';
+import { PDFDocument } from 'pdf-lib';
 import { loadPdf } from '../../packages/pdf/src/index.js';
 import { onePage, rawPdf } from './reader-tools.js';
+import { toBytes } from '../../packages/pdf/src/index.js';
+import { HAS, INTER, verapdf } from './tools.js';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
@@ -124,5 +127,36 @@ describe('an earlier cross-reference section is checked like the latest: each en
   it('saveIncremental refuses (fail closed) when an earlier section points at an object the check never read', async () => {
     const d = await loadPdf(twoRevisions());
     await expect(d.saveIncremental()).rejects.toMatchObject({ code: 'E_ACTIVE', message: expect.stringMatching(/earlier cross-reference section|could not be checked/) });
+  });
+});
+
+describe('R7: a structure element\'s /A (attributes) is not an action', () => {
+  it.skipIf(!HAS.verapdf)('a tagged table rewritten by save() keeps /Scope and /ColSpan, and passes PDF/UA-1', async () => {
+    const out = await toBytes(async (pdf) => {
+      const f = await pdf.embedFont(INTER), p = pdf.addPage(), T = (t, fn, o) => p.tag(t, fn, o), t = (s, x, y) => p.text(s, { x, y, font: f, size: 11 });
+      T('H1', () => t('Sales', 40, 50));
+      T('Table', () => {
+        T('THead', () => T('TR', () => ['Region', 'Q1', 'Q2'].forEach((h, i) => T('TH', () => t(h, 40 + i * 120, 145), { scope: 'Column', id: `h${i}` }))));
+        T('TBody', () => T('TR', () => { T('TH', () => t('South', 40, 185), { scope: 'Row', id: 'r1' }); T('TD', () => t('2,581', 160, 185), { headers: ['h1', 'h2', 'r1'], colSpan: 2 }); }));
+      });
+      await p.end();
+    }, { title: 'Sales', tagged: { lang: 'en-GB' }, creationDate: new Date('2026-01-01') });
+    const r = await (await loadPdf(out)).save();
+    expect(r.stripped ?? []).toEqual([]);
+    // every object's text, object streams and all (pdf-lib parses them)
+    const doc = await PDFDocument.load(r.bytes);
+    const text = doc.context.enumerateIndirectObjects().map(([, o]) => String(o)).join('\n');
+    expect(text).toMatch(/\/Scope \/Column/);
+    expect(text).toMatch(/\/Scope \/Row/);
+    expect(text).toMatch(/\/ColSpan 2/);
+    expect(verapdf(r.bytes, 'ua1').failed).toEqual([]);
+  }, 60_000);
+  it('an annotation shaped like a structure element (/S, /P) still has its /A checked', async () => {
+    const b = rawPdf(['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Annots [4 0 R] >>',
+      '<< /Type /Annot /Subtype /Link /S /Table /P 3 0 R /Rect [0 0 10 10] /A << /S /JavaScript /JS (app.alert(1)) >> >>']);
+    const r = await (await loadPdf(b)).save();
+    expect(Buffer.from(r.bytes).toString('latin1')).not.toMatch(/JavaScript/);
+    await expect((await loadPdf(b)).saveIncremental()).rejects.toMatchObject({ code: 'E_ACTIVE' });
   });
 });
