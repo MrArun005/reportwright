@@ -831,7 +831,7 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
             ))}
           </nav>
         ))}
-        <div className="vpages" ref={scroller} role="document" aria-label={definition.name || T('ux_a11yReport')} onScroll={onScroll} onClick={onClick} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+        <div className="vpages" ref={scroller} tabIndex={0} role="region" aria-label={definition.name || T('ux_a11yReport')} onScroll={onScroll} onClick={onClick} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
           {status.state === 'error' && <div className="vmsg error" role="alert"><b>{T('didNotRun')}</b><br />{status.message}
             <div style={{ marginTop: 10 }}><button type="button" className="btn sm" onClick={() => run()} data-testid="viewer-retry">{T('r4_retry')}</button></div></div>}
           {status.state === 'done' && status.fonts && <div className="vmsg error" role="alert" data-testid="viewer-fonts">{status.fonts}</div>}
