@@ -60,3 +60,41 @@ describe('PDF-9: createPdf metadata: false', () => {
     await expect(make({ metadata: 'no' })).rejects.toThrow(/metadata is true/);
   });
 });
+
+describe('PDF-10: a merged PDF/UA file is no longer tagged and says so', () => {
+  const tagged = async (o = {}) => {
+    const { toBytes } = await import('../../packages/pdf/src/index.js');
+    const { INTER } = await import('./tools.js');
+    return toBytes(async (pdf) => {
+      const f = await pdf.embedFont(INTER), p = pdf.addPage();
+      p.tag('P', () => p.text('Tagged', { x: 36, y: 36, font: f, size: 12 }));
+      await p.end();
+    }, { title: 'UA', tagged: { lang: 'en' }, creationDate: new Date('2026-01-01'), ...o });
+  };
+  it('PDF/UA: no StructTreeRoot, no /MarkInfo, no pdfuaid in the XMP; the warning says it', async () => {
+    const a = await loadPdf(await tagged()), b = await loadPdf(await tagged());
+    expect(a.xmp).toMatch(/pdfuaid:part/);
+    const r = await a.fork().merge([b]).save();
+    expect(r.warnings.join()).toMatch(/structure tree \(tags\) was dropped.*no longer PDF\/UA/);
+    const s = Buffer.from(r.bytes).toString('latin1');
+    const m = await loadPdf(r.bytes);
+    const { internal } = await import('../../packages/pdf/src/reader/pdf.js');
+    const root = internal(m, 't').r.root;
+    expect(root.has('StructTreeRoot')).toBe(false);
+    expect(root.has('MarkInfo')).toBe(false);
+    expect(m.xmp ?? '').not.toMatch(/pdfuaid/);
+    expect(m.pageCount).toBe(2);
+    expect(s).not.toMatch(/\/Marked true/);
+    // a single document keeps its tags and its claim
+    const one = await loadPdf((await a.save()).bytes);
+    expect(one.xmp).toMatch(/pdfuaid:part/);
+    expect(internal(one, 't').r.root.has('StructTreeRoot')).toBe(true);
+  });
+  it('PDF/A-2a + PDF/UA merged: PDF/A-2b, no pdfuaid', async () => {
+    const o = { pdfa: { part: 2, conformance: 'a' } };
+    const a = await loadPdf(await tagged(o)), b = await loadPdf(await tagged(o));
+    const m = await loadPdf((await a.fork().merge([b]).save()).bytes);
+    expect(m.pdfa).toEqual({ part: 2, conformance: 'b' });
+    expect(m.xmp).not.toMatch(/pdfuaid/);
+  });
+});
