@@ -76,9 +76,11 @@ export function spillSorter({ runMB = 8, mergeMB = 4, run = 10000, runBytes = ru
   const fs = node('node:fs'), path = node('node:path'), v8 = node('node:v8'), { threadId } = node('node:worker_threads');
   // a folder that is not there (or not writable) says so now, not as a raw mkdtemp error when the first run is written
   try { fs.accessSync(root, fs.constants.W_OK); } catch { throw Object.assign(new Error(`spill.dir "${root}" does not exist or is not writable`), { status: 400 }); }
-  sweepStale(root, staleMs);
+  let swept = false;
   /** @param {(a: any, b: any) => number} cmp */
   return (cmp) => {
+    // on the first sort, not when the sorter is made: a presorted report never sorts, and the sweep reads the temp folder
+    if (!swept) { swept = true; sweepStale(root, staleMs); }
     // held: the run in memory, about (a run ends at run records or runBytes); onDisk: the bytes of the run files there now
     let buf = [], dir = null, onDisk = 0, held = 0, takenKB = 0, seen = 0, seenBytes = 0, made = 0, passes = 0;
     /** @type {string[]} */
