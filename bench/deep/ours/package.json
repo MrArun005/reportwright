@@ -1,0 +1,12 @@
+{
+  "name": "deep-bench-ours",
+  "private": true,
+  "type": "module",
+  "description": "Our contestants in the deep benchmark, from npm at exact versions (bench/deep/README.md).",
+  "dependencies": {
+    "@reportwright/engine": "0.13.1",
+    "@reportwright/fonts": "0.13.1",
+    "@reportwright/pdf": "0.1.0-beta.5",
+    "harfbuzzjs": "1.6.3"
+  }
+}
