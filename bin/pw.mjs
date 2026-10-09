@@ -322,10 +322,11 @@ async function cmdImport(args) {
   const file = positionals[0];
   if (fs.statSync(file, { throwIfNoEntry: false })?.isDirectory()) return importFolderCmd(file, values);
   if (values.recursive || values.force || values.verify || values.report) usage('--recursive, --force, --verify and --report are for a folder');
-  const { importXmlReport } = await import('../src/importers/index.js');
-  const r = importXmlReport(fs.readFileSync(file, 'utf8'), { name: path.basename(file).replace(/\.[^.]+$/, '') });
+  const { importXmlReport, decodeXml } = await import('../src/importers/index.js');
+  const r = importXmlReport(decodeXml(fs.readFileSync(file)), { name: path.basename(file).replace(/\.[^.]+$/, '') });
+  // the error is one of the warnings too (with what it means for the report): print it once
   for (const w of r.warnings) console.error(`pw: ${w}`);
-  if (r.error) fail(r.error);
+  if (r.error) { if (r.warnings.some(w => w.startsWith(r.error))) process.exit(1); fail(r.error); }
   const out = values.o || file.replace(/\.[^.]+$/, '.pw.json');
   const json = JSON.stringify(r.definition, null, 2) + '\n';
   if (out === '-') process.stdout.write(json); else fs.writeFileSync(out, json);

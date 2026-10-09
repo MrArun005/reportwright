@@ -17,7 +17,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { importXmlReport } from './index.js';
+import { importXmlReport, decodeXml } from './index.js';
 import { importRdlx, reportId } from './rdlx.js';
 
 export const BATCH_LIMITS = { maxFiles: 2000, maxBytes: 16 * 1024 * 1024 };
@@ -149,7 +149,7 @@ export async function importFolder(input, output, opts = {}) {
     const cands = files.filter(f => test.test(f.rel) && (path.posix.basename(f.rel).toLowerCase() === base || stemOf(f.rel).toLowerCase() === base));
     return cands.find(f => dirOf(f.rel) === fromDir) || cands[0] || null;
   }
-  const readText = (f) => { if (f.size > maxBytes) throw new Error(`${f.rel} is larger than ${maxBytes} bytes`); return fs.readFileSync(f.abs, 'utf8'); };
+  const readText = (f) => { if (f.size > maxBytes) throw new Error(`${f.rel} is larger than ${maxBytes} bytes`); return decodeXml(fs.readFileSync(f.abs)); };
 
   // where each report goes: <its folder>/<report id>.pw.json (pw render and the server find subreports by that id)
   const reports = files.filter(f => REPORT.test(f.rel));

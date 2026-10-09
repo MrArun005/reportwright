@@ -3,7 +3,7 @@
 // (the home page sends the file name, so drill-through and subreport links between imported reports line up).
 import { readDefinition } from '@/server/reports.js';
 import { importRdlx } from '@/importers/rdlx.js';
-import { importXmlReport } from '@/importers/index.js';
+import { importXmlReport, decodeXml } from '@/importers/index.js';
 import { principalOf, createReport, folderParam } from '@/server/perms.js';
 import { audit } from '@/server/audit.js';
 import { errorResponse } from '@/server/errors.js';
@@ -15,9 +15,9 @@ const AR_KEYS = ['Body', 'ReportSections', 'FixedPage', 'PageHeader', 'PageFoote
 async function readXml(req) {
   const tooBig = () => Object.assign(new Error('A report can be at most 5 MB'), { status: 413 });
   if (Number(req.headers.get('content-length')) > 5 * 1024 * 1024) throw tooBig();
-  const text = await req.text();
-  if (text.length > 5 * 1024 * 1024) throw tooBig();
-  return text;
+  const bytes = new Uint8Array(await req.arrayBuffer());
+  if (bytes.length > 5 * 1024 * 1024) throw tooBig();
+  return decodeXml(bytes); // the file's own encoding (XML declaration, BOM); a compiled .jasper is refused with a message
 }
 
 export async function POST(req) {
