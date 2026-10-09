@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 const BASE = process.env.BASE || 'http://localhost:3000';
 const H = { 'content-type': 'application/json', origin: BASE };
 const step = (s) => console.log('·', s);
-const def = (name) => ({ $schema: 'pagewright/report@1', name, page: { size: 'A4', margins: [36, 36, 36, 36] }, sections: { body: { height: 200, items: [] } } });
+const def = (name) => ({ $schema: 'reportwright/report@1', name, page: { size: 'A4', margins: [36, 36, 36, 36] }, sections: { body: { height: 200, items: [] } } });
 const r = await fetch(`${BASE}/api/reports`, { method: 'POST', headers: H, body: JSON.stringify({ name: 'r3b conflict', definition: def('r3b conflict') }) });
 const { id } = await r.json();
 const read = async () => (await fetch(`${BASE}/api/reports/${id}`, { headers: H })).json();

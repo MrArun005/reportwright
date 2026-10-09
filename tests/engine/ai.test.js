@@ -4,7 +4,7 @@ import { draftReport, systemPrompt } from '../../src/server/ai.js';
 import { fontStore } from '../helpers.js';
 
 const good = {
-  $schema: 'pagewright/report@1', name: 'Sales by city', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'Sales by city', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'data', type: 'json', data: { rows: [] } }],
   dataSets: [{ name: 'Rows', source: 'data', path: '$.rows' }],
   sections: { body: { items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 300, h: 40, dataSet: 'Rows', columns: [{ width: 150 }, { width: 150 }],

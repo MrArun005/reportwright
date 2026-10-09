@@ -13,7 +13,7 @@ describe('Designer import action', () => {
     expect(Array.isArray(r.warnings)).toBe(true);
   });
   it('a .pw.json definition is read as it is', () => {
-    const def = { $schema: 'pagewright/report@1', name: 'x', sections: { body: { items: [] } } };
+    const def = { $schema: 'reportwright/report@1', name: 'x', sections: { body: { items: [] } } };
     expect(readReportFile('x.pw.json', JSON.stringify(def)).definition).toEqual(def);
   });
   it('an unknown file type and a JSON file that is not a report are errors, not definitions', () => {

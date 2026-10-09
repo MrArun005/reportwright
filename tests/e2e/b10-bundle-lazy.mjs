@@ -13,7 +13,7 @@ const ORIGIN = 'http://lazy.test';
 const FILES = { '/pw/': path.join(root, 'public/embed/esm/'), '/pw-fonts/': path.join(root, 'packages/fonts/public/fonts/') };
 const TYPES = { '.js': 'text/javascript', '.ttf': 'font/ttf', '.wasm': 'application/wasm', '.map': 'application/json' };
 const definition = {
-  $schema: 'pagewright/report@1', name: 'Lazy', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'Lazy', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'orders', type: 'json', data: { rows: [] } }],
   dataSets: [{ name: 'Rows', source: 'orders', path: '$.rows' }],
   sections: { body: { items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 400, h: 40, dataSet: 'Rows', columns: [{ width: 200 }, { width: 200 }],

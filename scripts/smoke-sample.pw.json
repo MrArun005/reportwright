@@ -1,5 +1,5 @@
 {
-  "$schema": "pagewright/report@1",
+  "$schema": "reportwright/report@1",
   "name": "Statement",
   "page": { "size": "A4", "margins": [36, 36, 36, 36] },
   "parameters": [{ "name": "accountId", "type": "string" }],

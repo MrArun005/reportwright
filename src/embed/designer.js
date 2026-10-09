@@ -15,7 +15,7 @@ import { setShadowStyles, declareDocumentStyles } from './styles.js';
 
 /* global __PW_CSS__ */
 const CSS = typeof __PW_CSS__ === 'string' ? __PW_CSS__ : '';
-const BLANK = { $schema: 'pagewright/report@1', name: 'Untitled report', page: { size: 'A4', margins: [36, 36, 36, 36] }, dataSources: [], dataSets: [], sections: { body: { items: [] } } };
+const BLANK = { $schema: 'reportwright/report@1', name: 'Untitled report', page: { size: 'A4', margins: [36, 36, 36, 36] }, dataSources: [], dataSets: [], sections: { body: { items: [] } } };
 
 /**
  * @typedef {{ label?: string, source: { name: string, type: string, [key: string]: unknown } }} DataSourceTemplate

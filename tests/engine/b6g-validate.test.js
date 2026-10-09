@@ -5,7 +5,7 @@ import { render } from '../../src/engine/index.js';
 import { fontStore } from '../helpers.js';
 
 const base = (extra = {}, item = {}) => ({
-  $schema: 'pagewright/report@1', name: 'T', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'T', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'src', type: 'json', data: { rows: [] } }],
   dataSets: [{ name: 'Rows', source: 'src', path: '$.rows' }],
   sections: { body: { items: [{ type: 'textbox', name: 'a', x: 0, y: 0, w: 200, h: 18, value: 'hi', ...item }] } },

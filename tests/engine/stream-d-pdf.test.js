@@ -31,7 +31,7 @@ const rows = (n) => Array.from({ length: n }, (_, i) => ({ id: i + 1, account: `
   date: `2025-${String(1 + (i % 12)).padStart(2, '0')}-${String(1 + (i % 28)).padStart(2, '0')}`, amount: Math.round(((i * 7919) % 200000 - 100000) * 1.37) / 100,
   reference: i % 37 === 0 ? `Reversal of an earlier transfer between linked accounts, batch ${i}` : `REF-${i * 31}` }));
 const ledger = (n) => ({
-  $schema: 'pagewright/report@1', name: 'Ledger', locale: 'en-IN', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'Ledger', locale: 'en-IN', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'src', type: 'json', data: { rows: rows(n) } }],
   dataSets: [{ name: 'Tx', source: 'src', path: '$.rows', fields: [{ name: 'id', type: 'number' }, { name: 'account', type: 'string' }, { name: 'region', type: 'string' }, { name: 'date', type: 'date' }, { name: 'amount', type: 'number' }, { name: 'reference', type: 'string' }],
     sort: [{ by: '=Fields.region' }, { by: '=Fields.id', dir: 'desc' }] }],

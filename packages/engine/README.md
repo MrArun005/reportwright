@@ -22,7 +22,7 @@ Save this as `statement.pw.json` (a minimal report; the repository's `examples/`
 
 ```json
 {
-  "$schema": "pagewright/report@1",
+  "$schema": "reportwright/report@1",
   "name": "Statement",
   "page": { "size": "A4", "margins": [36, 36, 36, 36] },
   "parameters": [{ "name": "accountId", "type": "string" }],
@@ -64,7 +64,7 @@ table of customers and amounts with a total (it is `examples/report.pw.json` in 
 
 ```json
 {
-  "$schema": "pagewright/report@1",
+  "$schema": "reportwright/report@1",
   "name": "Orders",
   "page": { "size": "A4", "margins": [36, 36, 36, 36] },
   "dataSources": [{ "name": "orders", "type": "json", "data": { "rows": [] } }],

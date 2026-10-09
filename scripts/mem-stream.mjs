@@ -26,7 +26,7 @@ export function memReport(url, shape = 'plain', format = 'csv') {
     ...(shape === 'grouped' ? { groups: [{ name: 'City', expr: '=Fields.city', header: [{ cells: [{ value: '=Fields.city' }] }], footer: [{ cells: [null, null, null, { value: '=Sum(Fields.qty)' }, { value: '=Sum(Fields.price)', style: { format: 'N2' } }, null] }] }] } : {}),
   };
   return {
-    $schema: 'pagewright/report@1', name: `mem-${shape}`, page: { size: 'A4', margins: [36, 36, 36, 36] },
+    $schema: 'reportwright/report@1', name: `mem-${shape}`, page: { size: 'A4', margins: [36, 36, 36, 36] },
     dataSources: [{ name: 's', type: 'rest', url }],
     dataSets: [{ name: 'D', source: 's', path: '$.rows', fields: [{ name: 'id', type: 'number' }, { name: 'name', type: 'string' }, { name: 'city', type: 'string' }, { name: 'qty', type: 'number' }, { name: 'price', type: 'number' }, { name: 'day', type: 'date' }],
       ...(shape === 'sorted' ? { sort: [{ by: '=Fields.city' }, { by: '=Fields.id', dir: 'desc' }] } : {}) }],

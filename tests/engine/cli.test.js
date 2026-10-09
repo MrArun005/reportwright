@@ -95,7 +95,7 @@ describe('pw import (B5: coming from JasperReports)', () => {
     const r = run(['import', 'tests/fixtures/jrxml/corpus/jr6-table-TableReport.jrxml', '-o', out]);
     expect(r.code).toBe(0);
     expect(r.err).toMatch(/items \(\d+ mapped/);
-    expect(JSON.parse(fs.readFileSync(out, 'utf8')).$schema).toBe('pagewright/report@1');
+    expect(JSON.parse(fs.readFileSync(out, 'utf8')).$schema).toBe('reportwright/report@1');
     expect(run(['render', out, '-f', 'txt', '-o', '-']).code).toBe(0);
   });
 });

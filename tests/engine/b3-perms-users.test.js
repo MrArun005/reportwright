@@ -16,7 +16,7 @@ const ENV = {
 const saved = {};
 const BASE = 'http://pw.test';
 const P = (id) => ({ params: Promise.resolve({ id }) });
-const def = (name) => ({ $schema: 'pagewright/report@1', name, page: { size: 'A4', margins: [36, 36, 36, 36] }, dataSources: [], dataSets: [], sections: { body: { items: [{ type: 'textbox', x: 0, y: 0, w: 200, h: 16, value: name }] } } });
+const def = (name) => ({ $schema: 'reportwright/report@1', name, page: { size: 'A4', margins: [36, 36, 36, 36] }, dataSources: [], dataSets: [], sections: { body: { items: [{ type: 'textbox', x: 0, y: 0, w: 200, h: 16, value: name }] } } });
 
 let cookie = {}, R, users, perms, store;
 const req = (p, { method = 'GET', who, key, body } = {}) => new Request(BASE + p, {

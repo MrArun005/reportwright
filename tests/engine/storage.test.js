@@ -22,7 +22,7 @@ if (process.env.PW_TEST_MYSQL) backends.push(['mysql', () => { process.chdir(hom
 if (process.env.PW_TEST_MSSQL) backends.push(['mssql', () => { process.chdir(home); return process.env.PW_TEST_MSSQL; }]);
 
 const STORE_TABLES = ['pw_reports', 'pw_report_versions', 'pw_schedules', 'pw_jobs', 'pw_users', 'pw_fonts', 'pw_leases', 'pw_folders', 'pw_report_acl', 'pw_tokens'];
-const def = (name, n = 1) => ({ $schema: 'pagewright/report@1', name, parameters: [{ name: 'p', type: 'number', required: true }], sections: { body: { items: Array.from({ length: n }, () => ({ type: 'text' })) } } });
+const def = (name, n = 1) => ({ $schema: 'reportwright/report@1', name, parameters: [{ name: 'p', type: 'number', required: true }], sections: { body: { items: Array.from({ length: n }, () => ({ type: 'text' })) } } });
 const schedule = { template: 'loan-statement', cron: '0 7 1 * *', timezone: 'Asia/Kolkata', items: [{ parameters: {} }] };
 
 describe.each(backends)('storage on %s', (kind, setup) => {

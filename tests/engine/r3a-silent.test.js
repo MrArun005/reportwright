@@ -4,7 +4,7 @@ import { render } from '../../src/engine/index.js';
 import { validate } from '../../src/engine/schema/validate.js';
 import { fontStore } from '../helpers.js';
 
-const def = (src, ds, items = []) => ({ $schema: 'pagewright/report@1', page: { size: 'A4' }, dataSources: [src], dataSets: [ds],
+const def = (src, ds, items = []) => ({ $schema: 'reportwright/report@1', page: { size: 'A4' }, dataSources: [src], dataSets: [ds],
   sections: { body: { height: 40, items: items.length ? items : [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 100, h: 12, value: '=First(Fields.a, "D")' }] } } });
 const warns = async (d) => (await render(d, { fontStore })).warnings.join('\n');
 
@@ -25,7 +25,7 @@ describe('data that yields blanks', () => {
 });
 
 describe('unknown or mistyped properties', () => {
-  const base = { $schema: 'pagewright/report@1', page: { size: 'A4' }, dataSources: [], dataSets: [], sections: { body: { height: 40, items: [] } } };
+  const base = { $schema: 'reportwright/report@1', page: { size: 'A4' }, dataSources: [], dataSets: [], sections: { body: { height: 40, items: [] } } };
   const with_ = (it, top = {}) => validate({ ...base, ...top, sections: { body: { height: 40, items: [{ x: 0, y: 0, w: 10, h: 10, ...it }] } } }).warnings.join('\n');
   it.each([
     [{ type: 'textbox', name: 'T', vale: '=1' }, /T: unknown property "vale" \(did you mean "value"\?\)/],
@@ -38,7 +38,7 @@ describe('unknown or mistyped properties', () => {
 });
 
 describe('N9: items past the right page edge warn', () => {
-  const page = (items) => ({ $schema: 'pagewright/report@1', page: { size: 'A4' }, sections: { body: { height: 60, items } } });
+  const page = (items) => ({ $schema: 'reportwright/report@1', page: { size: 'A4' }, sections: { body: { height: 60, items } } });
   it.each([
     [[{ type: 'textbox', name: 'FarRight', x: 600, y: 0, w: 80, h: 12, value: 'x' }], /FarRight: it reaches 680pt/],
     [[{ type: 'list', name: 'L', x: 0, y: 0, w: 300, h: 20, items: [{ type: 'textbox', name: 'Inner', x: 700, y: 0, w: 40, h: 12, value: 'y' }] }], /Inner: it reaches 740pt/],

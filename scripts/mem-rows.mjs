@@ -12,7 +12,7 @@ const fonts = new FontStore((k) => fs.readFileSync(path.join(root, 'public/fonts
 const heap = () => { global.gc(); global.gc(); return process.memoryUsage().heapUsed; };
 const per = (b) => `${(b / N / 1024).toFixed(2)} KB/row`;
 const cols = ['id', 'name', 'city', 'qty', 'price', 'day'];
-const def = (data) => ({ $schema: 'pagewright/report@1', name: 'Big', page: { size: 'A4', margins: [36, 36, 36, 36] },
+const def = (data) => ({ $schema: 'reportwright/report@1', name: 'Big', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 's', type: 'json', data }], dataSets: [{ name: 'D', source: 's' }],
   sections: { body: { items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 520, h: 40, dataSet: 'D', columns: cols.map(() => ({ width: 86 })),
     header: [{ height: 14, cells: cols.map(c => ({ value: c })) }], detail: [{ height: 14, cells: cols.map(c => ({ value: `=Fields.${c}` })) }] }] } } });

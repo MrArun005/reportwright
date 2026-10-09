@@ -41,7 +41,7 @@ const ledgerRows = (n) => Array.from({ length: n }, (_, i) => ({
   reference: i % 37 === 0 ? `Reversal of an earlier transfer between linked accounts, batch ${i}` : `REF-${i * 31}`,
 }));
 const ledger = (rows, extra = {}) => ({
-  $schema: 'pagewright/report@1', name: 'Ledger', locale: 'en-IN', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'Ledger', locale: 'en-IN', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'src', type: 'json', data: { rows } }],
   dataSets: [{ name: 'Tx', source: 'src', path: '$.rows', fields: [
     { name: 'id', type: 'number' }, { name: 'accountId', type: 'string' }, { name: 'region', type: 'string' }, { name: 'branchId', type: 'string' },

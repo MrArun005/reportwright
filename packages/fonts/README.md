@@ -21,7 +21,7 @@ npm i @reportwright/engine @reportwright/fonts
 ```js
 import { render, defaultFontStore, exportPdf } from '@reportwright/engine';
 const fonts = defaultFontStore();   // reads node_modules/@reportwright/fonts/public/fonts
-const def = { $schema: 'pagewright/report@1', name: 'Hello', page: { size: 'A4', margins: [36, 36, 36, 36] },
+const def = { $schema: 'reportwright/report@1', name: 'Hello', page: { size: 'A4', margins: [36, 36, 36, 36] },
   sections: { body: { items: [{ type: 'textbox', name: 'Hi', x: 0, y: 0, w: 400, h: 24, value: 'नमस्ते · مرحبا · שלום · สวัสดี' }] } } };
 const pdf = await exportPdf(await render(def, { fontStore: fonts }), { fonts });   // shaped, subset, no warnings
 ```

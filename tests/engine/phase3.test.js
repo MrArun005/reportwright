@@ -72,7 +72,7 @@ describe('visuals and barcodes', () => {
 });
 
 describe('subreports', () => {
-  const child = { $schema: 'pagewright/report@1', name: 'Child', page: { size: 'A4' },
+  const child = { $schema: 'reportwright/report@1', name: 'Child', page: { size: 'A4' },
     parameters: [{ name: 'region', type: 'string' }],
     dataSources: [{ name: 'src', type: 'json', data: rows }],
     dataSets: [{ name: 'Rows', source: 'src', path: '$.rows', filters: [{ expr: '=Fields.region', op: '=', value: '=Parameters.region' }] }],

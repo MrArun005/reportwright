@@ -14,7 +14,7 @@ const FILES = { '/pw/': path.join(root, 'public/embed/esm/'), '/pw-fonts/': path
 const TYPES = { '.js': 'text/javascript', '.ttf': 'font/ttf', '.wasm': 'application/wasm', '.map': 'application/json' };
 const rows = [{ region: 'N', city: 'A', loans: 3 }, { region: 'N', city: 'B', loans: 4 }, { region: 'S', city: 'C', loans: 5 }];
 const definition = {
-  $schema: 'pagewright/report@1', name: 'B9', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'B9', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'src', type: 'json', data: rows }],
   dataSets: [{ name: 'D', source: 'src', fields: [{ name: 'region', type: 'string' }, { name: 'city', type: 'string' }, { name: 'loans', type: 'number' }] }],
   sections: { body: { height: 400, items: [

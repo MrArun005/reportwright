@@ -17,7 +17,7 @@ afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
 // one heading (font size, colour) and a two-column table (column width): the same words whatever the style
 const report = ({ size = 10, color = '#155e75', colWidth = 120 } = {}) => ({
-  $schema: 'pagewright/report@1', name: 'Layout', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'Layout', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'src', type: 'json', data: { rows: [{ n: 1, who: 'Asha' }, { n: 2, who: 'Ben' }] } }],
   dataSets: [{ name: 'Rows', source: 'src', path: '$.rows' }],
   sections: { body: { items: [

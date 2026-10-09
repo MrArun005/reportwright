@@ -1,5 +1,5 @@
 {
-  "$schema": "pagewright/report@1",
+  "$schema": "reportwright/report@1",
   "name": "Reuse showcase",
   "locale": "en-IN",
   "currency": "INR",

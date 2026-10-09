@@ -12,7 +12,7 @@ const N = Number(process.argv[2]) || 32, ROWS = Number(process.argv[3]) || 2000,
 const { renderInPool, stopPool, poolStats } = await import('../src/server/pool.js');
 const { OPEN } = await import('../src/server/perms.js');
 const def = {
-  $schema: 'pagewright/report@1', name: 'bench', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'bench', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 's', type: 'json', data: Array.from({ length: ROWS }, (_, i) => ({ id: i, name: `Customer ${i}`, city: ['Pune', 'Delhi', 'Chennai'][i % 3], qty: i % 17, price: (i * 7.31) % 100 })) }],
   dataSets: [{ name: 'D', source: 's' }],
   sections: { pageFooter: { height: 20, items: [{ type: 'textbox', x: 0, y: 4, w: 200, h: 14, value: 'Page {Globals.PageNumber} of {Globals.TotalPages}' }] }, body: { items: [{ type: 'table', name: 'T', dataSet: 'D', x: 0, y: 0, w: 500, h: 40, columns: [{ width: 60 }, { width: 160 }, { width: 100 }, { width: 80 }, { width: 100 }],

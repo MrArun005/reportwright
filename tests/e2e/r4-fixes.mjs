@@ -20,7 +20,7 @@ const rows = Array.from({ length: 40 }, (_, i) => ({ id: i + 1, region: ['North'
 const SALES = { name: 'Sales', source: 'src', path: '$.rows[*]', fields: [
   { name: 'id', type: 'number' }, { name: 'region', type: 'string' }, { name: 'city', type: 'string' }, { name: 'amount', type: 'number' }, { name: 'qty', type: 'number' }] };
 const base = (name, items = [], extra = {}) => ({
-  $schema: 'pagewright/report@1', name, page: { size: 'A4', orientation: 'portrait', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name, page: { size: 'A4', orientation: 'portrait', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'src', type: 'json', data: { rows } }], dataSets: [SALES],
   sections: { body: { height: 400, items } },
   ...extra,

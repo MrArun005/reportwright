@@ -18,7 +18,7 @@ const hasPoppler = spawnSync('pdftotext', ['-v']).status === 0;
 const pdftotext = (f) => spawnSync('pdftotext', ['-layout', f, '-'], { encoding: 'utf8' }).stdout;
 
 /** a grouped ledger with a "Page N of M" footer (pdfstream-paged.test.js's shape, smaller) */
-const ledger = (n) => ({ $schema: 'pagewright/report@1', name: 'Ledger', page: { size: 'A4', margins: [36, 36, 36, 36] },
+const ledger = (n) => ({ $schema: 'reportwright/report@1', name: 'Ledger', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 's', type: 'json', data: { rows: Array.from({ length: n }, (_, i) => ({ id: i + 1, region: ['North', 'South', 'East'][i % 3], amount: ((i * 7919) % 20000 - 10000) / 100, ref: `REF-${i * 31}` })) } }],
   dataSets: [{ name: 'Tx', source: 's', path: '$.rows' }],
   sections: {

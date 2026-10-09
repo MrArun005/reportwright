@@ -14,7 +14,7 @@ export const INVOICE = {
 
 const right = { textAlign: 'right' };
 export const INVOICE_REPORT = {
-  $schema: 'pagewright/report@1',
+  $schema: 'reportwright/report@1',
   name: 'Invoice',
   page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'inv', type: 'json', data: { lines: INVOICE.lines.map(l => ({ ...l, amount: l.qty * l.price })) } }],
@@ -151,7 +151,7 @@ doc.end();` },
 
 /** their concept -> ours; kept to what the engine docs and the check script back up */
 export const CONCEPTS = [
-  ['Document definition object / JSX tree / HTML string / drawing calls', 'A JSON report definition (<code>$schema: "pagewright/report@1"</code>). It is data, so it can be saved, diffed, validated (<code>validate()</code>) and opened in the designer.'],
+  ['Document definition object / JSX tree / HTML string / drawing calls', 'A JSON report definition (<code>$schema: "reportwright/report@1"</code>). It is data, so it can be saved, diffed, validated (<code>validate()</code>) and opened in the designer.'],
   ['A table you build from <code>body</code> rows, <code>&lt;View&gt;</code> rows, <code>&lt;tr&gt;</code> or <code>doc.text(x, y)</code>', 'A <code>table</code> item bound to a data set: one <code>detail</code> row repeated per record, plus <code>header</code> and <code>footer</code> rows. <code>repeatHeader: true</code> repeats the header on each page.'],
   ['<code>invoice.lines.map(...)</code> and <code>reduce</code> for the total', '<code>=Fields.qty</code> in a cell, <code>=Sum(Fields.amount)</code> in the footer. Groups, sorts and filters are properties of the table.'],
   ['<code>toFixed(2)</code>, <code>toLocaleString</code>', 'A cell style <code>format</code> such as <code>N2</code> or <code>C2</code>, read in the report\'s locale.'],

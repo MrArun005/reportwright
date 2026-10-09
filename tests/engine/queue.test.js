@@ -10,7 +10,7 @@ const cwd = process.cwd();
 let store, jobs, schedules;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const def = {
-  $schema: 'pagewright/report@1', name: 'Q', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'Q', page: { size: 'A4', margins: [36, 36, 36, 36] },
   parameters: [{ name: 'n', type: 'string' }], dataSources: [], dataSets: [],
   sections: { body: { items: [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 200, h: 16, value: 'Item {Parameters.n}' }] } },
 };

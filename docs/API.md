@@ -430,7 +430,7 @@ Types: every package ships `.d.ts`. The engine's API and the viewer's options ar
 
 ```ts
 import type { Report, Item } from '@reportwright/engine';
-const report: Report = { $schema: 'pagewright/report@1', sections: { body: { items: [{ type: 'textbox', x: 0, y: 0, w: 200, h: 20, value: '=Fields.name' }] } } };
+const report: Report = { $schema: 'reportwright/report@1', sections: { body: { items: [{ type: 'textbox', x: 0, y: 0, w: 200, h: 20, value: '=Fields.name' }] } } };
 ```
 
 Build them with `npm run build:packages`; `tests/fixtures/types/consumer.ts` is type-checked by the unit tests.

@@ -609,11 +609,11 @@ One of: { name, type, data }, { name, type, data, url }, { name, type, url, meth
 
 ## Report
 
-A ReportWright report definition (pagewright/report@1).
+A ReportWright report definition (reportwright/report@1).
 
 | Property | Type | Required | Description |
 |---|---|---|---|
-| `$schema` | "pagewright/report@1" \\| "reportwright/report@1" | yes | pagewright/report@1; reportwright/report@1 is the same format under the new name. |
+| `$schema` | "reportwright/report@1" \\| "pagewright/report@1" | yes | reportwright/report@1; pagewright/report@1 (deprecated, the name before the rename) is the same format. |
 | `name` | string |  |  |
 | `description` | string |  |  |
 | `locale` | string |  |  |

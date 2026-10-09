@@ -70,7 +70,7 @@ describe('blob stores', () => {
 });
 
 describe('batch output is shared', () => {
-  const def = { $schema: 'pagewright/report@1', name: 'Q', page: { size: 'A4', margins: [36, 36, 36, 36] }, parameters: [{ name: 'n', type: 'string' }], dataSources: [], dataSets: [], sections: { body: { items: [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 200, h: 16, value: 'Item {Parameters.n}' }] } } };
+  const def = { $schema: 'reportwright/report@1', name: 'Q', page: { size: 'A4', margins: [36, 36, 36, 36] }, parameters: [{ name: 'n', type: 'string' }], dataSources: [], dataSets: [], sections: { body: { items: [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 200, h: 16, value: 'Item {Parameters.n}' }] } } };
   it('items and the zip live in the database: another server (another working folder) downloads it', async () => {
     process.env.PW_STORAGE = `sqlite:${path.join(dir, 'jobs.db')}`;
     process.env.PW_SESSION_SECRET = 'l'.repeat(40);

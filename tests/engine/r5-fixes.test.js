@@ -54,7 +54,7 @@ describe('R5 #2: a fetched data source over the size cap', () => {
 });
 
 describe('R5 #5: the Excel formulas option reaches the exporter', () => {
-  const def = { $schema: 'pagewright/report@1', name: 'F', dataSources: [{ name: 's', type: 'json', data: [{ a: 1 }, { a: 2 }, { a: 4 }] }], dataSets: [{ name: 'd', source: 's', fields: [{ name: 'a', type: 'number' }] }],
+  const def = { $schema: 'reportwright/report@1', name: 'F', dataSources: [{ name: 's', type: 'json', data: [{ a: 1 }, { a: 2 }, { a: 4 }] }], dataSets: [{ name: 'd', source: 's', fields: [{ name: 'a', type: 'number' }] }],
     sections: { body: { items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 200, h: 54, dataSet: 'd', columns: [{ width: 200 }], header: [{ height: 18, cells: [{ value: 'A' }] }], detail: [{ height: 18, cells: [{ value: '=Fields.a' }] }], footer: [{ height: 18, cells: [{ value: '=Sum(Fields.a)' }] }] }] } } };
   const sheet = async (formulas) => {
     const { renderTo } = await import('../../src/server/renderer.js');
@@ -108,7 +108,7 @@ describe('R5 #4: a batch fetches each data request once, per principal', () => {
     const srv = http.createServer((q, r) => { hits++; r.setHeader('content-type', 'application/json'); r.end(JSON.stringify([{ a: 1 }, { a: 2 }])); });
     await new Promise(ok => srv.listen(0, '127.0.0.1', ok));
     const self = `http://127.0.0.1:${srv.address().port}`;
-    const def = { $schema: 'pagewright/report@1', name: 'B', parameters: [{ name: 'who', type: 'string' }],
+    const def = { $schema: 'reportwright/report@1', name: 'B', parameters: [{ name: 'who', type: 'string' }],
       dataSources: [{ name: 's', type: 'rest', url: '/rows' }], dataSets: [{ name: 'd', source: 's', fields: [{ name: 'a', type: 'number' }] }],
       sections: { body: { items: [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 200, h: 16, value: '=Parameters.who & Sum(Fields.a, "d")' }] } } };
     const alice = { kind: 'user', email: 'alice@x.test', role: 'viewer' }, bob = { kind: 'user', email: 'bob@x.test', role: 'viewer' };
@@ -182,7 +182,7 @@ describe('R5 #9: health with inline renders and a cron-driven scheduler', () => 
       expect(by.scheduler).toMatchObject({ state: 'off', note: 'cron:daily' });
       expect(by.worker).toMatchObject({ state: 'off', note: 'cron:daily' });
       const before = renderStats().timed;
-      await renderInPool({ def: { $schema: 'pagewright/report@1', name: 'X', sections: { body: { items: [] } } }, opt: { format: 'json' } });
+      await renderInPool({ def: { $schema: 'reportwright/report@1', name: 'X', sections: { body: { items: [] } } }, opt: { format: 'json' } });
       expect(renderStats().timed).toBe(before + 1);
       expect(renderStats().avgMs).not.toBe(null);
     } finally { for (const k of ['PW_RENDER_WORKERS', 'PW_SCHEDULER', 'PW_WORKER', 'PW_CRON']) if (keep[k] == null) delete process.env[k]; else process.env[k] = keep[k]; }

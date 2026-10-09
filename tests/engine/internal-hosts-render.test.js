@@ -20,7 +20,7 @@ beforeAll(async () => {
 beforeEach(() => { hits = []; process.env.PW_STORAGE = `sqlite:${path.join(tmp, `s-${++n}.db`)}`; });
 afterAll(() => { srv.close(); for (const k of ['PW_INTERNAL_HOSTS', 'PW_STORAGE', 'PW_FIXED_FETCH_HOSTS']) if (keep[k] === undefined) delete process.env[k]; else process.env[k] = keep[k]; fs.rmSync(tmp, { recursive: true, force: true }); });
 
-const def = (url, items = []) => ({ $schema: 'pagewright/report@1', name: 'I', page: { size: 'A4' }, parameters: [{ name: 'u', type: 'string', default: '' }],
+const def = (url, items = []) => ({ $schema: 'reportwright/report@1', name: 'I', page: { size: 'A4' }, parameters: [{ name: 'u', type: 'string', default: '' }],
   dataSources: [{ name: 's', type: 'rest', url }], dataSets: [{ name: 'Rows', source: 's', path: '$' }],
   sections: { body: { items: [{ type: 'textbox', x: 0, y: 0, w: 300, h: 20, dataSet: 'Rows', value: '=First(Fields.v)' }, ...items] } } });
 const viewer = { kind: 'user', email: 'v@x.io', role: 'viewer', groups: [] };

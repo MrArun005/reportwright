@@ -10,7 +10,7 @@ const root = path.join(import.meta.dirname, '..', '..');
 const ORIGIN = 'http://two-designers.test';
 const FILES = { '/pw/': path.join(root, 'public/embed/esm/'), '/pw-fonts/': path.join(root, 'packages/fonts/public/fonts/') };
 const TYPES = { '.js': 'text/javascript', '.ttf': 'font/ttf', '.wasm': 'application/wasm', '.map': 'application/json' };
-const def = (name) => ({ $schema: 'pagewright/report@1', name, page: { size: 'A4', margins: [36, 36, 36, 36] }, dataSources: [], dataSets: [], sections: { body: { items: [] } } });
+const def = (name) => ({ $schema: 'reportwright/report@1', name, page: { size: 'A4', margins: [36, 36, 36, 36] }, dataSources: [], dataSets: [], sections: { body: { items: [] } } });
 const app = (delay) => `import { mountDesigner } from '/pw/designer.js';
 window.saves = { a: [], b: [] };
 const opts = (k, name) => ({ definition: ${JSON.stringify(def('X'))}, fontsUrl: '/pw-fonts/', height: '600px', onSave: (d) => { window.saves[k].push({ name: d.name, items: d.sections.body.items.length }); } });

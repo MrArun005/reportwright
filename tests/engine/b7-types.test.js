@@ -29,6 +29,6 @@ describe.skipIf(!fs.existsSync(designerDts))('designer onSave type', () => {
     expect(diagnosticsOf('const o: DesignerOptions = { onSave: (d: number) => { void d; } };').length).toBeGreaterThan(0);
   });
   it('the handler receives the Report type: its $schema and name are typed', () => {
-    expect(diagnosticsOf('const o: DesignerOptions = { onSave: (d) => { const s: "pagewright/report@1" | "reportwright/report@1" = d.$schema; const n: string | undefined = d.name; void s; void n; } };')).toEqual([]);
+    expect(diagnosticsOf('const o: DesignerOptions = { onSave: (d) => { const s: "reportwright/report@1" | "pagewright/report@1" = d.$schema; const n: string | undefined = d.name; void s; void n; } };')).toEqual([]);
   });
 });

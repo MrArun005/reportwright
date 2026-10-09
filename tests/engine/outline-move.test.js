@@ -5,7 +5,7 @@ import { useDesigner, moveItemTo, findItem } from '../../src/designer/store.js';
 const S = () => useDesigner.getState();
 const names = (list) => list.map(i => i.name);
 beforeEach(() => S().init('x', {
-  $schema: 'pagewright/report@1', name: 'x', page: { size: 'A4' },
+  $schema: 'reportwright/report@1', name: 'x', page: { size: 'A4' },
   sections: {
     pageHeader: { height: 40, items: [{ id: 'h', type: 'textbox', name: 'H', x: 0, y: 0, w: 100, h: 20 }] },
     body: { height: 200, items: [

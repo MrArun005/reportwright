@@ -7,8 +7,8 @@ import { REPORT_SCHEMA } from './report.schema.js';
 import { toDate } from '../expr/format.js';
 import { PAGE_SIZES, normalizePageSize, resolvePage } from '../units.js';
 
-export const SCHEMA_ID = 'pagewright/report@1'; // kept after the rename: every saved report carries it
-export const SCHEMA_ALIAS = 'reportwright/report@1'; // the same format under the new name
+export const SCHEMA_ID = 'reportwright/report@1';
+export const SCHEMA_ALIAS = 'pagewright/report@1'; // deprecated: the name before the rename, still read as the same format
 
 /** Properties the engine reads on any item, beyond each type's own (its inspector props and defaults). ponytail: a
  *  list; a new item property is added here (or to the type's props) or validate() calls it unknown. */

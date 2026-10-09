@@ -25,7 +25,7 @@ for (const d of [...Object.keys(pkg.dependencies || {}), 'vite']) {
 assert.ok(fs.existsSync(path.join(nm, '@reportwright/viewer/dist/engine.worker.js')), 'the package ships the worker');
 
 const definition = {
-  $schema: 'pagewright/report@1', name: 'Vite', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'Vite', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'orders', type: 'json', data: { rows: [] } }],
   dataSets: [{ name: 'Rows', source: 'orders', path: '$.rows' }],
   sections: { body: { items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 400, h: 40, dataSet: 'Rows', columns: [{ width: 200 }, { width: 200 }],

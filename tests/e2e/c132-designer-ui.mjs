@@ -23,7 +23,7 @@ try { AXE = fs.readFileSync(createRequire(import.meta.url).resolve('axe-core/axe
 const rows = Array.from({ length: 300 }, (_, i) => ({ id: i, region: i % 2 ? 'N' : 'S', amount: i * 1.5 }));
 const LONG = 'AVeryLongTextboxNameThatKeepsGoingAndGoingForeverAndEver';
 const definition = {
-  $schema: 'pagewright/report@1', name: 'C132', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'C132', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'src', type: 'json', data: rows }],
   // D declares no fields: the Data panel detects them. D2 declares one the rows lack: the Preview has 1 warning
   dataSets: [{ name: 'D', source: 'src' }, { name: 'D2', source: 'src', fields: [{ name: 'id', type: 'number' }, { name: 'ghost', type: 'string' }] }],
@@ -38,7 +38,7 @@ const definition = {
 };
 // the viewer: one data set that declares a field the rows lack (1 warning), a second one too (2 warnings)
 const viewerDef = (n) => ({
-  $schema: 'pagewright/report@1', name: 'W', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'W', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'src', type: 'json', data: rows.slice(0, 3) }],
   dataSets: Array.from({ length: n }, (_, i) => ({ name: `S${i}`, source: 'src', fields: [{ name: 'id', type: 'number' }, { name: `ghost${i}`, type: 'string' }] })),
   sections: { body: { height: 40, items: Array.from({ length: n }, (_, i) => ({ type: 'table', name: `Tb${i}`, x: 0, y: i * 20, w: 200, h: 18, dataSet: `S${i}`, columns: [{ width: 200 }],

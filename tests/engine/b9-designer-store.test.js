@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { newDesignerStore, activateStore, normalize, updateItem, addItem, duplicateSelection, tableAddGroup, setMatrixShow, pasteItems, copySelection, findItem, secOf } from '../../src/designer/store.js';
 
-const report = (body, extra = {}) => ({ $schema: 'pagewright/report@1', name: 'R', page: { size: 'A4' }, dataSources: [], dataSets: [], sections: { body }, ...extra });
+const report = (body, extra = {}) => ({ $schema: 'reportwright/report@1', name: 'R', page: { size: 'A4' }, dataSources: [], dataSets: [], sections: { body }, ...extra });
 const tb = (name, x = 10, y = 10) => ({ type: 'textbox', name, x, y, w: 100, h: 20, value: 'x' });
 let st;
 const load = (def) => { st = newDesignerStore(); activateStore(st); st.getState().init('r', def); return st.getState().def; };

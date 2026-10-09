@@ -24,10 +24,10 @@ function App() {
   useEffect(() => { if (n < 3) setTimeout(() => setN(n + 1), 300); }, [n]);
   return h('div', null,
     h('p', { id: 'n' }, String(n)),
-    h(ReportWrightDesigner, { definition: { $schema: 'pagewright/report@1', name: 'Inline', sections: { body: { items: [] } } }, fontsUrl: '/pw-fonts/', onReady: () => { window.mounts++; }, style: { height: 400 } }),
+    h(ReportWrightDesigner, { definition: { $schema: 'reportwright/report@1', name: 'Inline', sections: { body: { items: [] } } }, fontsUrl: '/pw-fonts/', onReady: () => { window.mounts++; }, style: { height: 400 } }),
     h('div', { id: 'v' }, h(ReportWrightViewer, { definition: DEF, data: { s: { rows: [{ a: 'Hello from React' }] } }, fontsUrl: '/pw-fonts/', params: { x: '1' }, style: { height: 300 } })));
 }
-const DEF = { $schema: 'pagewright/report@1', name: 'R', dataSources: [{ name: 's', type: 'json', data: {} }], dataSets: [{ name: 'D', source: 's', path: '$.rows' }],
+const DEF = { $schema: 'reportwright/report@1', name: 'R', dataSources: [{ name: 's', type: 'json', data: {} }], dataSets: [{ name: 'D', source: 's', path: '$.rows' }],
   sections: { body: { items: [{ type: 'table', x: 0, y: 0, w: 200, h: 20, dataSet: 'D', columns: [{ width: 200 }], detail: [{ cells: [{ value: '=Fields.a' }] }] }] } } };
 createRoot(document.getElementById('root')).render(h(App));
 `;

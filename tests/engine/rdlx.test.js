@@ -134,7 +134,7 @@ describe('invoice (older layout: Body, PageHeader, PageFooter)', () => {
   const { definition: def, warnings, stats } = load('invoice.rdlx-json');
   it('is a valid report', () => {
     expect(validate(def).errors).toEqual([]);
-    expect(def.$schema).toBe('pagewright/report@1');
+    expect(def.$schema).toBe('reportwright/report@1');
     expect(def.name).toBe('Invoice');
   });
   it('maps the page, locale and parameters', () => {

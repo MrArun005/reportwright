@@ -11,7 +11,7 @@ describe('pw render warnings', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-b7-'));
     const file = path.join(dir, 'w.pw.json');
     // an expression that does not parse: validate() names it "textbox: ...", the render names it "TextBox: ..." (no name)
-    fs.writeFileSync(file, JSON.stringify({ $schema: 'pagewright/report@1', name: 'W', page: { size: 'A4' },
+    fs.writeFileSync(file, JSON.stringify({ $schema: 'reportwright/report@1', name: 'W', page: { size: 'A4' },
       sections: { body: { items: [{ type: 'textbox', x: 0, y: 0, w: 200, h: 20, value: '=Fields.zz.' }] } } }));
     try {
       const out = execFileSync(process.execPath, [path.join(root, 'bin/pw.mjs'), 'render', file, '-f', 'json', '-o', '-'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });

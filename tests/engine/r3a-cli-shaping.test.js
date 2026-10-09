@@ -13,7 +13,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-shape-'));
 afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
 const DEF = {
-  $schema: 'pagewright/report@1', page: { size: 'A4' },
+  $schema: 'reportwright/report@1', page: { size: 'A4' },
   sections: { body: { height: 100, items: [
     { type: 'textbox', x: 0, y: 0, w: 400, h: 30, value: 'क्षत्रिय' },
     { type: 'textbox', x: 0, y: 40, w: 400, h: 30, value: 'مرحبا' },

@@ -10,7 +10,7 @@ import { createSubsetter } from '../../src/exporters/subset.js';
 
 const ROOT = path.join(import.meta.dirname, '..', '..');
 const have = fs.existsSync(path.join(ROOT, 'public/fonts/cjk/NotoSansJP.ttf'));
-const def = (value) => ({ $schema: 'pagewright/report@1', page: { size: 'A4' }, sections: { body: { height: 40, items: [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 400, h: 20, value }] } } });
+const def = (value) => ({ $schema: 'reportwright/report@1', page: { size: 'A4' }, sections: { body: { height: 40, items: [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 400, h: 20, value }] } } });
 const TEXT = '日本語 ひらがな カタカナ 한국어 漢字 😀🎉';
 
 describe('CJK and emoji text', () => {

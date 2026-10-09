@@ -2734,7 +2734,7 @@ function convertReport(ar, cx, opts) {
   if (cx.columns) body.columns = cx.columns;
   if (more.length) body.name = sec0?.Name || 'Section1';
   return {
-    $schema: 'pagewright/report@1',
+    $schema: 'reportwright/report@1',
     name,
     locale: lang,
     ...(currencyOf(lang) ? { currency: currencyOf(lang) } : {}), // the Language's country; none for a bare "fr"

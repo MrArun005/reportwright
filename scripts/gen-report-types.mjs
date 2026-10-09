@@ -38,7 +38,7 @@ function body(s, pad) {
 }
 
 export function generate(schema = REPORT_SCHEMA) {
-  const out = ['// Types for a ReportWright report definition (pagewright/report@1), the JSON that render() takes.',
+  const out = ['// Types for a ReportWright report definition (reportwright/report@1), the JSON that render() takes.',
     '// GENERATED from src/engine/schema/report.schema.js by scripts/gen-report-types.mjs: do not edit by hand.',
     '// The same schema is published as @reportwright/engine/schema.json, and validate() checks against it.',
     '// Any value marked Expr may be a literal or an expression string starting with "=" (e.g. "=Fields.amount").', ''];

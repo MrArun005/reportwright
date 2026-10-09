@@ -12,7 +12,7 @@ import { fontStore } from '../helpers.js';
 
 const now = new Date('2026-01-02T03:04:05Z');
 const def = (n = 300, extra = {}) => ({
-  $schema: 'pagewright/report@1', name: 'Ledger', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'Ledger', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 's', type: 'json', data: Array.from({ length: n }, (_, i) => ({ id: i + 1, name: `Name ${i + 1} & <co>`, amt: (i % 7) * 1.5 })) }],
   dataSets: [{ name: 'D', source: 's', fields: [{ name: 'id', type: 'number' }, { name: 'name', type: 'string' }, { name: 'amt', type: 'number' }] }],
   sections: {

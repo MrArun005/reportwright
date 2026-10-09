@@ -12,7 +12,7 @@ const rows = [
   { id: 2788, region: 'East', month: '2026-01-01', amount: 77.25, score: 2 },
 ];
 const base = (items = [], extra = {}) => ({
-  $schema: 'pagewright/report@1', name: 'e2e designer gaps', page: { size: 'A4', orientation: 'portrait', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'e2e designer gaps', page: { size: 'A4', orientation: 'portrait', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'src', type: 'json', data: { rows } }],
   dataSets: [{ name: 'Sales', source: 'src', path: '$.rows[*]', fields: [{ name: 'id', type: 'number' }, { name: 'region', type: 'string' }, { name: 'month', type: 'date' }, { name: 'amount', type: 'number' }, { name: 'score', type: 'number' }] }],
   sections: { body: { height: 400, items } },

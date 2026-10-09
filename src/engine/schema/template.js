@@ -3,7 +3,7 @@
 export function blankReport(name = 'Untitled report') {
   const W = 523.28;
   return {
-    $schema: 'pagewright/report@1',
+    $schema: 'reportwright/report@1',
     name,
     page: { size: 'A4', orientation: 'portrait', margins: [36, 36, 36, 36] },
     parameters: [],
@@ -35,7 +35,7 @@ export function blankDashboard(name = 'Dashboard') {
     { type: 'textbox', name: n, x, y: 54, w: 216, h: 30, value, style: { fontSize: 20, fontWeight: 'bold' } },
   ];
   return {
-    $schema: 'pagewright/report@1',
+    $schema: 'reportwright/report@1',
     name,
     page: { size: 'Pageless', width: 960, margins: [24, 24, 24, 24], minHeight: 540 },
     parameters: [],

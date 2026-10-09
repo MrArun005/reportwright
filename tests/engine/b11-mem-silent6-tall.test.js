@@ -6,7 +6,7 @@ import { render } from '../../src/engine/index.js';
 import { fontStore } from '../helpers.js';
 
 // A4 (842 pt) with 36 pt margins: 770 pt for the body
-const def = (items, sections = {}, page = {}) => ({ $schema: 'pagewright/report@1', page: { size: 'A4', margins: [36, 36, 36, 36], ...page }, sections: { body: { items }, ...sections } });
+const def = (items, sections = {}, page = {}) => ({ $schema: 'reportwright/report@1', page: { size: 'A4', margins: [36, 36, 36, 36], ...page }, sections: { body: { items }, ...sections } });
 const tall = (w) => w.filter(x => /taller than the \d+ pt the page has/.test(x));
 
 describe('SILENT-6: an item taller than the page', () => {

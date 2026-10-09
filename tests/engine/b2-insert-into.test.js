@@ -4,7 +4,7 @@ import { useDesigner, insertSpot, addItem, findItem } from '../../src/designer/s
 
 const S = () => useDesigner.getState();
 beforeEach(() => S().init('x', {
-  $schema: 'pagewright/report@1', name: 'x', page: { size: 'A4' },
+  $schema: 'reportwright/report@1', name: 'x', page: { size: 'A4' },
   sections: {
     pageHeader: { height: 40, items: [{ id: 'box', type: 'container', name: 'Box', x: 0, y: 0, w: 200, h: 30, items: [] }] },
     body: { height: 200, items: [

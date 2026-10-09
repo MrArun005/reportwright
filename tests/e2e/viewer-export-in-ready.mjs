@@ -8,7 +8,7 @@ import path from 'node:path';
 const root = path.join(import.meta.dirname, '..', '..');
 const ORIGIN = 'http://ready.test';
 const definition = {
-  $schema: 'pagewright/report@1', name: 'Ready', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'Ready', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'orders', type: 'json', data: { rows: [{ customer: 'Asha Rao', amount: 1200.5 }] } }],
   dataSets: [{ name: 'Rows', source: 'orders', path: '$.rows' }],
   sections: { body: { items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 400, h: 40, dataSet: 'Rows', columns: [{ width: 200 }, { width: 200 }],

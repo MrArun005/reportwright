@@ -33,7 +33,7 @@ describe('report JSON Schema', () => {
     }
   });
   it('validate() knows the schema\'s properties (no "unknown property dir") and its choices', () => {
-    const def = (tb) => ({ $schema: 'pagewright/report@1', sections: { body: { items: [{ type: 'textbox', x: 0, y: 0, w: 10, h: 10, ...tb }] } } });
+    const def = (tb) => ({ $schema: 'reportwright/report@1', sections: { body: { items: [{ type: 'textbox', x: 0, y: 0, w: 10, h: 10, ...tb }] } } });
     expect(validate(def({ dir: 'rtl', alt: 'x' })).warnings).toEqual([]);
     expect(validate(def({ dir: 'rtl2' })).warnings).toEqual(['textbox: "dir" is "rtl2"; expected one of "ltr", "rtl", "auto"']);
     expect(validate(def({ dir: '=Fields.d' })).warnings).toEqual([]);
@@ -41,7 +41,7 @@ describe('report JSON Schema', () => {
   const examples = [
     ...Object.entries(defs).flatMap(([n, s]) => (s.examples || []).map((e, i) => [`schema ${n} example ${i + 1}`, e])),
     ...['README.md', 'docs/QUICKSTART.md', ...fs.readdirSync('packages').map(p => `packages/${p}/README.md`)].filter(f => fs.existsSync(f)).flatMap(f =>
-      [...fs.readFileSync(f, 'utf8').matchAll(/```json\n([\s\S]*?)```/g)].map((m, i) => [`${f} json block ${i + 1}`, m[1]]).filter(([, t]) => t.includes('pagewright/report@1')).map(([n, t]) => [n, JSON.parse(t)])),
+      [...fs.readFileSync(f, 'utf8').matchAll(/```json\n([\s\S]*?)```/g)].map((m, i) => [`${f} json block ${i + 1}`, m[1]]).filter(([, t]) => t.includes('reportwright/report@1')).map(([n, t]) => [n, JSON.parse(t)])),
   ];
   it.each(examples)('%s validates and renders', async (_, def) => {
     const v = validate(def);

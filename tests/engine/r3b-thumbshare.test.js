@@ -15,7 +15,7 @@ beforeAll(async () => {
 });
 afterAll(() => { for (const k of Object.keys(process.env)) if (!(k in keep)) delete process.env[k]; Object.assign(process.env, keep); });
 
-const def = (value, extra = {}) => ({ $schema: 'pagewright/report@1', name: 'T', page: { size: 'A4', margins: [36, 36, 36, 36] }, sections: { body: { height: 100, items: [{ type: 'textbox', name: 'T1', x: 0, y: 0, w: 200, h: 20, value }] } }, ...extra });
+const def = (value, extra = {}) => ({ $schema: 'reportwright/report@1', name: 'T', page: { size: 'A4', margins: [36, 36, 36, 36] }, sections: { body: { height: 100, items: [{ type: 'textbox', name: 'T1', x: 0, y: 0, w: 200, h: 20, value }] } }, ...extra });
 const draw = async (id, d, e) => { let t = await thumbs.thumbnail(id, d, await P(e), 'http://pw.test'); for (let i = 0; t.pending && i < 5; i++) { await thumbsIdle(); t = await thumbs.thumbnail(id, d, await P(e), 'http://pw.test'); } return t; };
 const thumbsIdle = () => thumbs.thumbsIdle();
 const queued = () => globalThis.__pwThumbJobs.seq;

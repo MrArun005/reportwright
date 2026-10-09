@@ -21,7 +21,7 @@ const bundle = await build({
 
 const rows = (n) => Array.from({ length: n }, (_, i) => ({ n: i + 1, who: i % 2 ? 'Ben Ode' : 'Asha Rao' }));
 const definition = (_title, n = 120) => ({
-  $schema: 'pagewright/report@1', name: _title, page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: _title, page: { size: 'A4', margins: [36, 36, 36, 36] },
   parameters: [{ name: 'who', type: 'string', default: 'Asha Rao' }],
   dataSources: [{ name: 'src', type: 'json', data: { rows: rows(n) } }],
   dataSets: [{ name: 'Rows', source: 'src', path: '$.rows' }],

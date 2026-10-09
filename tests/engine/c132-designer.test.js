@@ -21,7 +21,7 @@ describe('P1 #3: keyboard nudge', () => {
     let st;
     beforeEach(() => {
       st = newDesignerStore(); activateStore(st);
-      st.getState().init('r', { $schema: 'pagewright/report@1', name: 'R', page: { size: 'A4' }, dataSources: [], dataSets: [],
+      st.getState().init('r', { $schema: 'reportwright/report@1', name: 'R', page: { size: 'A4' }, dataSources: [], dataSets: [],
         sections: { body: { height: 200, items: [{ type: 'textbox', name: 'A', x: 0.1, y: 0.2, w: 50, h: 10, value: 'x' }] } } });
     });
     it('0.1 + 1 is 1.1, not 1.1000000000000001; Shift adds exactly 10', () => {

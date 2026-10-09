@@ -13,7 +13,7 @@ const FIELDS = [{ name: 'id', type: 'number' }, { name: 'region', type: 'string'
 const total = (label) => [{ height: 15, cells: [{ value: label }, { value: '=CountRows()' }, null, { value: '=Sum(Fields.amount)', style: { format: 'N1' } }] }];
 /** a ledger over data (an array, or JSON text) at path; groups: by region, then type */
 const ledger = (data, { path, fields = FIELDS, groups } = {}) => ({
-  $schema: 'pagewright/report@1', name: 'L', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'L', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 's', type: 'json', data }],
   dataSets: [{ name: 'T', source: 's', ...(path ? { path } : {}), ...(fields ? { fields } : {}) }],
   sections: {

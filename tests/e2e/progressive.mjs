@@ -5,7 +5,7 @@ const BASE = process.env.BASE || 'http://localhost:3000';
 const N = Number(process.env.ROWS) || 20000;
 const rows = Array.from({ length: N }, (_, i) => ({ n: i + 1, name: `Customer ${i + 1}`, amt: (i * 37) % 1000 + 0.5 }));
 const definition = {
-  $schema: 'pagewright/report@1', name: 'e2e progressive', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'e2e progressive', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 's', type: 'json', data: { rows } }], dataSets: [{ name: 'R', source: 's', path: '$.rows' }],
   sections: { body: { items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 400, h: 54, dataSet: 'R', columns: [{ width: 60 }, { width: 240 }, { width: 100 }],
     header: [{ height: 18, cells: [{ value: '#' }, { value: 'Name' }, { value: 'Amount' }] }],

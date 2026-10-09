@@ -103,7 +103,7 @@ export { NO_CJK_FONTS };
 /**
  * Render a report definition to a page model (pages, regions), the input of every exporter. Throws ReportError for a
  * definition that cannot render at all; everything else is a warning in the model.
- * @param {any} def0 the report definition (pagewright/report@1), or a saved report's JSON
+ * @param {any} def0 the report definition (reportwright/report@1), or a saved report's JSON
  * @param {RenderOptions} [opts]
  * @returns {Promise<any>} the page model
  */

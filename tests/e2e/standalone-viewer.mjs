@@ -22,7 +22,7 @@ await build({ entryPoints: [path.join(tmp, 'viewer.js'), path.join(tmp, 'designe
 const FILES = { '/pw/': path.join(tmp, 'out/'), '/pw-fonts/': path.join(root, 'packages/fonts/public/fonts/'), '/pw-public/': path.join(root, 'packages/fonts/public/') };
 const TYPES = { '.js': 'text/javascript', '.html': 'text/html', '.ttf': 'font/ttf', '.wasm': 'application/wasm', '.icc': 'application/octet-stream', '.map': 'application/json' };
 const definition = {
-  $schema: 'pagewright/report@1', name: 'Standalone', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'Standalone', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'orders', type: 'json', data: { rows: [] } }],
   dataSets: [{ name: 'Rows', source: 'orders', path: '$.rows' }],
   sections: { body: { items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 400, h: 40, dataSet: 'Rows', columns: [{ width: 200 }, { width: 200 }],

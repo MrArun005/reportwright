@@ -4,13 +4,13 @@
 // A definition from a newer ReportWright than this one is refused rather than half-read.
 // Pure: it transforms the one definition it is given and reads nothing else (no storage, no other reports); the server
 // runs it only on a report the reader may open (perms.readReportFor), so its errors are no oracle.
-export const CURRENT = 'pagewright/report@1';
+export const CURRENT = 'reportwright/report@1';
 
 /** @type {Record<string, { to: string, up: (def: any) => any }>} from-version → the step to the next */
 export const STEPS = {
-  // the ReportWright name for the same format (the product was Pagewright until 0.9): read as it is
-  'reportwright/report@1': { to: CURRENT, up: (d) => ({ ...d, $schema: CURRENT }) },
-  // 'pagewright/report@1': { to: 'pagewright/report@2', up: (d) => ({ ...d, $schema: 'pagewright/report@2' }) },
+  // the name from before the rename (Pagewright, until 0.13.2 still the stored name): the same format, read as it is
+  'pagewright/report@1': { to: CURRENT, up: (d) => ({ ...d, $schema: CURRENT }) },
+  // 'reportwright/report@1': { to: 'reportwright/report@2', up: (d) => ({ ...d, $schema: 'reportwright/report@2' }) },
 };
 
 /** A definition as this version reads it. @param {any} def */

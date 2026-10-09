@@ -2,7 +2,7 @@
 import { it, expect } from 'vitest';
 import { renderTo, checkTimeZone } from '../../src/server/renderer.js';
 
-const def = (tz) => ({ $schema: 'pagewright/report@1', name: 'TZ', ...(tz && { timeZone: tz }), sections: { body: { items: [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 300, h: 16, value: '=Format(CDate("2026-01-01T23:30:00Z"), "yyyy-MM-dd HH:mm")' }] } } });
+const def = (tz) => ({ $schema: 'reportwright/report@1', name: 'TZ', ...(tz && { timeZone: tz }), sections: { body: { items: [{ type: 'textbox', name: 'T', x: 0, y: 0, w: 300, h: 16, value: '=Format(CDate("2026-01-01T23:30:00Z"), "yyyy-MM-dd HH:mm")' }] } } });
 const text = (m) => JSON.stringify(m.pages[0]);
 
 it('the viewer\'s zone is used; the report\'s own zone wins; an unknown zone is a 400', async () => {

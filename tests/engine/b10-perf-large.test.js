@@ -6,7 +6,7 @@ import { render, FontStore, fontFile } from '../../packages/engine/entry.js';
 
 const root = path.join(import.meta.dirname, '..', '..');
 const fonts = new FontStore((k) => fs.readFileSync(path.join(root, 'public/fonts', fontFile(k))));
-const report = (n) => ({ $schema: 'pagewright/report@1', name: 'Big',
+const report = (n) => ({ $schema: 'reportwright/report@1', name: 'Big',
   dataSources: [{ name: 's', type: 'json', data: { rows: Array.from({ length: n }, (_, i) => ({ v: i })) } }],
   dataSets: [{ name: 'R', source: 's', path: '$.rows' }],
   sections: { body: { items: [{ type: 'textbox', name: 'N', x: 0, y: 0, w: 200, h: 20, value: '=Count(Fields.v, "R")' }] } } });

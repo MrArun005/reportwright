@@ -19,7 +19,7 @@ const rows = Array.from({ length: 40 }, (_, i) => ({
 const data = { dataSources: [{ name: 'src', type: 'json', data: { rows } }],
   dataSets: [{ name: 'Work', source: 'src', path: '$.rows[*]', fields: [{ name: 'task', type: 'string' }, { name: 'team', type: 'string' }, { name: 'amount', type: 'number' }, { name: 'change', type: 'number' }, { name: 'start', type: 'date' }, { name: 'end', type: 'date' }] }] };
 const sections = {
-  $schema: 'pagewright/report@1', name: 'e2e b4 sections', page: { size: 'A4', margins: [36, 36, 36, 36] }, ...data,
+  $schema: 'reportwright/report@1', name: 'e2e b4 sections', page: { size: 'A4', margins: [36, 36, 36, 36] }, ...data,
   sections: {
     pageHeader: { height: 24, items: [tb('SharedHead', 'SHARED HEADER', 0, 0)] },
     body: [{ name: 'Cover', height: 200, items: [tb('Cover', 'Cover page', 0, 0)] }, { name: 'Data', height: 200, items: [tb('Data', 'Data page', 0, 0)] }],
@@ -27,7 +27,7 @@ const sections = {
   },
 };
 const master = {
-  $schema: 'pagewright/report@1', name: 'e2e b4 master', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'e2e b4 master', page: { size: 'A4', margins: [36, 36, 36, 36] },
   sections: { pageHeader: { height: 20, items: [tb('MHead', 'MASTER HEADER', 0, 0)] }, body: { height: 260, items: [
     tb('MTop', 'MASTER TOP', 0, 0),
     { type: 'placeholder', name: 'Main', x: 0, y: 30, w: 300, h: 120 },
@@ -35,7 +35,7 @@ const master = {
   ] }, pageFooter: { height: 0, items: [] } },
 };
 const charts = {
-  $schema: 'pagewright/report@1', name: 'e2e b4 charts', page: { size: 'A4', orientation: 'landscape', margins: [24, 24, 24, 24] }, ...data,
+  $schema: 'reportwright/report@1', name: 'e2e b4 charts', page: { size: 'A4', orientation: 'landscape', margins: [24, 24, 24, 24] }, ...data,
   sections: { body: { height: 520, items: [] } },
 };
 
@@ -80,7 +80,7 @@ try {
 
   step('a content report fills two placeholders of its master');
   const mid = await create(master);
-  const cid = await create({ $schema: 'pagewright/report@1', name: 'e2e b4 content', master: mid, page: { size: 'A4' }, sections: { pageHeader: { height: 0, items: [] }, body: { height: 120, items: [tb('Main1', 'MAIN CONTENT', 0, 0)] }, pageFooter: { height: 0, items: [] } } });
+  const cid = await create({ $schema: 'reportwright/report@1', name: 'e2e b4 content', master: mid, page: { size: 'A4' }, sections: { pageHeader: { height: 0, items: [] }, body: { height: 120, items: [tb('Main1', 'MAIN CONTENT', 0, 0)] }, pageFooter: { height: 0, items: [] } } });
   await p.goto(`${BASE}/designer/${cid}`);
   await p.waitForSelector('[data-testid=paper]');
   await p.getByTestId('fill-placeholder-Side').click();

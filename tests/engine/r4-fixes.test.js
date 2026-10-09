@@ -188,7 +188,7 @@ describe('saving warns about drill-through reports that do not exist', () => {
     process.env.PW_STORAGE = `sqlite:${path.join(tmp, 's.db')}`;
     try {
       const link = (report) => report && { type: 'report', report, params: {} };
-      const def = (name, report) => ({ ...report && {}, $schema: 'pagewright/report@1', name, page: { size: 'A4' }, sections: { body: { items: [
+      const def = (name, report) => ({ ...report && {}, $schema: 'reportwright/report@1', name, page: { size: 'A4' }, sections: { body: { items: [
         { type: 'textbox', name: 'Go', x: 0, y: 0, w: 100, h: 14, value: 'open', ...(report ? { action: link(report) } : {}) }] } } });
       const a = await put('r4-ledger', def('Ledger', 'account-detail'));
       expect(a.ok).toBe(true);
@@ -207,7 +207,7 @@ describe('render speed: no layout pass for nothing', () => {
     ...extra], { data: { rows } }), functions: [{ name: 'Tick', params: ['x'], body: '=x' }] });
   const passes = async (def, opts = {}) => { const fnCount = { n: 0 }; const { FontStore } = await import('../../src/engine/index.js'); const { fontFile } = await import('../../src/engine/text/fonts.js');
     const store = opts.fresh ? new FontStore(async (k) => fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'public', 'fonts', fontFile(k)))) : fontStore;
-    await render(def, { fontStore: store, fnCount, loadReport: async () => ({ $schema: 'pagewright/report@1', sections: { body: { items: [] } } }) }); return fnCount.n / def.dataSources[0].data.rows.length; };
+    await render(def, { fontStore: store, fnCount, loadReport: async () => ({ $schema: 'reportwright/report@1', sections: { body: { items: [] } } }) }); return fnCount.n / def.dataSources[0].data.rows.length; };
   it('data in Hindi and Arabic: the fallback fonts and the shaper load before the layout, not after a first pass', async () => {
     const rows = Array.from({ length: 50 }, (_, i) => ({ v: i % 2 ? `राधिका ${i}` : `محمد ${i}` }));
     expect(await passes(counted(rows), { fresh: true })).toBe(1);

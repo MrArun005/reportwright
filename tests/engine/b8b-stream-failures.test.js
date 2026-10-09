@@ -15,7 +15,7 @@ const now = new Date('2026-01-02T03:04:05Z');
 
 /** a ledger over a SQL source; "of M" in the footer unless single */
 const def = ({ single = false, sort = false } = {}) => ({
-  $schema: 'pagewright/report@1', name: 'L', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'L', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 's', type: 'sql', connection: 'db', query: 'select id, g from t' }],
   dataSets: [{ name: 'D', source: 's', fields: [{ name: 'id', type: 'number' }, { name: 'g', type: 'string' }] }],
   sections: {

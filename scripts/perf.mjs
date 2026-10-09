@@ -4,7 +4,7 @@ import { fontStore } from '../tests/helpers.js';
 const N = Number(process.argv[2] || 50000);
 const rows = Array.from({ length: N }, (_, i) => ({ n: i + 1, name: `Customer ${i + 1}`, city: ['Bengaluru', 'Pune', 'Delhi'][i % 3], amt: (i * 37) % 1000 + 0.5 }));
 const def = {
-  $schema: 'pagewright/report@1', name: 'Perf', page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name: 'Perf', page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 's', type: 'json', data: { rows } }], dataSets: [{ name: 'R', source: 's', path: '$.rows' }],
   sections: { body: { items: [{ type: 'table', name: 'T', x: 0, y: 0, w: 500, h: 54, dataSet: 'R', columns: [{ width: 60 }, { width: 200 }, { width: 140 }, { width: 100 }],
     header: [{ height: 18, cells: [{ value: '#' }, { value: 'Name' }, { value: 'City' }, { value: 'Amount' }] }],

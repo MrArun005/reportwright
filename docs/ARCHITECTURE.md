@@ -72,7 +72,7 @@ The definition is JSON with a version number. The unit is the **point** (1/72 in
 
 ```json
 {
-  "$schema": "pagewright/report@1",
+  "$schema": "reportwright/report@1",
   "name": "Loan statement",
   "page": { "size": "A4", "orientation": "portrait", "margins": [36, 36, 36, 36] },
   "parameters": [

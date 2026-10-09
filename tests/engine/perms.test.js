@@ -102,7 +102,7 @@ afterAll(() => {
 });
 
 const def = (name, body = [{ type: 'textbox', x: 0, y: 0, w: 200, h: 16, value: name }]) => ({
-  $schema: 'pagewright/report@1', name, page: { size: 'A4', margins: [36, 36, 36, 36] },
+  $schema: 'reportwright/report@1', name, page: { size: 'A4', margins: [36, 36, 36, 36] },
   dataSources: [{ name: 'db', type: 'sql', connection: 'permsdb', query: 'select 1 as n' }], dataSets: [],
   sections: { body: { items: body } },
 });

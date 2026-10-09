@@ -62,7 +62,7 @@ After `npx reportwright-fonts-cjk`, CJK text renders with no other change:
 ```js
 import { render, defaultFontStore, exportPdf } from '@reportwright/engine';
 const fonts = defaultFontStore();   // also reads the CJK cache folder
-const def = { $schema: 'pagewright/report@1', name: 'Hello', page: { size: 'A4', margins: [36, 36, 36, 36] },
+const def = { $schema: 'reportwright/report@1', name: 'Hello', page: { size: 'A4', margins: [36, 36, 36, 36] },
   sections: { body: { items: [{ type: 'textbox', name: 'Hi', x: 0, y: 0, w: 400, h: 24, value: 'こんにちは · 안녕하세요 · 你好' }] } } };
 const pdf = await exportPdf(await render(def, { fontStore: fonts }), { fonts });
 ```

@@ -38,7 +38,7 @@ for (const [format, type] of [['xlsx', 'spreadsheetml'], ['html', 'text/html'], 
 }
 r = await post('/api/v1/render', { template: 'no-such' });
 assert.equal(r.status, 404);
-r = await post('/api/v1/render', { template: { $schema: 'pagewright/report@1', name: 'Inline', parameters: [{ name: 'p', required: true }], sections: { body: { items: [] } } } });
+r = await post('/api/v1/render', { template: { $schema: 'reportwright/report@1', name: 'Inline', parameters: [{ name: 'p', required: true }], sections: { body: { items: [] } } } });
 assert.equal(r.status, 400);
 assert.deepEqual((await r.json()).missingParameters, ['p']);
 
