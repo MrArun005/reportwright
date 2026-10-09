@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 using static Program;
 
 // ---------------------------------------------------------------- the create jobs over a drawing surface
-public interface ICanvas
+interface ICanvas
 {
     void Page();
     void Text(string s, double x, double y, double size, string font, bool rtl = false);
@@ -15,7 +15,7 @@ public interface ICanvas
     void End();
 }
 
-public static class CanvasJobs
+static class CanvasJobs
 {
     public static string? Plain(Func<string, string[], string, ICanvas> open, Ctx c, string out_)
     {
@@ -171,7 +171,7 @@ public static class CanvasJobs
 }
 
 // ---------------------------------------------------------------- PDFsharp 6 (create, merge, split, encrypt)
-public sealed class SharpLib : Lib
+sealed class SharpLib : Lib
 {
     sealed class Resolver : PdfSharp.Fonts.IFontResolver
     {
@@ -244,7 +244,7 @@ public sealed class SharpLib : Lib
 }
 
 // ---------------------------------------------------------------- QuestPDF (Community licence): its own layout
-public sealed class QuestLib : Lib
+sealed class QuestLib : Lib
 {
     static readonly Dictionary<string, string> Family = new() { ["r"] = "Inter", ["b"] = "Inter", ["hi"] = "Noto Sans Devanagari", ["ar"] = "Noto Sans Arabic", ["cjk"] = "Noto Sans SC" };
     static QuestLib()
@@ -409,7 +409,7 @@ public sealed class QuestLib : Lib
 }
 
 // ---------------------------------------------------------------- PdfPig (read; merge)
-public sealed class PigLib : Lib
+sealed class PigLib : Lib
 {
     public override string Version() => Ver(typeof(UglyToad.PdfPig.PdfDocument));
     public override string Extract(string file)

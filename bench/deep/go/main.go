@@ -137,7 +137,11 @@ func open(out string, fonts []string, title string) *canvas {
 	p.SetAutoPageBreak(false, 0)
 	p.SetTitle(title, true)
 	for _, k := range fonts {
-		p.AddUTF8Font(k, "", filepath.Join(fx, S.Fonts[k]))
+		b, err := os.ReadFile(filepath.Join(fx, S.Fonts[k])) // AddUTF8Font joins onto its font dir and drops the leading "/"
+		if err != nil {
+			p.SetError(err)
+		}
+		p.AddUTF8FontFromBytes(k, "", b)
 	}
 	return &canvas{p, out}
 }

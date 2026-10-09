@@ -126,7 +126,7 @@ static class Program
         .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion?.Split('+')[0] ?? t.Assembly.GetName().Version!.ToString();
 }
 
-public abstract class Lib
+abstract class Lib
 {
     public abstract string Version();
     public virtual string? Plain(Program.Ctx c, string out_) => throw new NotSupportedException();

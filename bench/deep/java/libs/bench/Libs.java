@@ -198,7 +198,7 @@ public final class Libs {
       var st = new com.lowagie.text.pdf.PdfStamper(r, new FileOutputStream(out), '\0', true);
       HashMap<String, String> info = new HashMap<>(r.getInfo());
       info.put("Title", title);
-      st.setMoreInfo(info);
+      st.setInfoDictionary(info);
       st.close();
     }
     public void form(String file, String out, Map<String, Object> v) throws Exception {
@@ -293,7 +293,7 @@ public final class Libs {
     }
     public void form(String file, String out, Map<String, Object> v) throws Exception {
       try (var d = new com.itextpdf.kernel.pdf.PdfDocument(new com.itextpdf.kernel.pdf.PdfReader(file), new com.itextpdf.kernel.pdf.PdfWriter(out))) {
-        var af = com.itextpdf.forms.PdfFormCreator.getAcroForm(d, false);
+        var af = com.itextpdf.forms.PdfAcroForm.getAcroForm(d, false);
         af.getField("name").setValue(str(v.get("name")));
         af.getField("amount").setValue(str(v.get("amount")));
         if (Boolean.TRUE.equals(v.get("approved"))) af.getField("approved").setValue("Yes");
@@ -307,7 +307,7 @@ public final class Libs {
       signer.setSignerProperties(new com.itextpdf.signatures.SignerProperties().setFieldName(str(EDIT.get("signField"))));
       Certificate[] chain = e.getCertificateChain();
       signer.signDetached(new com.itextpdf.signatures.BouncyCastleDigest(),
-        new com.itextpdf.signatures.PrivateKeySignature(e.getPrivateKey(), com.itextpdf.signatures.DigestAlgorithms.SHA256, "BC"),
+        new com.itextpdf.signatures.PrivateKeySignature(e.getPrivateKey(), com.itextpdf.kernel.crypto.DigestAlgorithms.SHA256, "BC"),
         chain, null, null, null, 0, com.itextpdf.signatures.PdfSigner.CryptoStandard.CMS);
     }
   }

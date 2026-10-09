@@ -45,6 +45,8 @@ jobs:
           python3 - <<'EOF' >> "$GITHUB_OUTPUT"
           import json, os
           known = ['ours', 'js', 'python', 'java', 'dotnet', 'go', 'rust', 'cli']
+          if os.environ['GITHUB_EVENT_NAME'] == 'push' and os.path.exists('bench/deep/.push-langs'):  # narrows a push run while fixing
+              os.environ['LANGS'] = open('bench/deep/.push-langs').read()
           want = known if os.environ['LANGS'].strip() in ('', 'all') else [l.strip() for l in os.environ['LANGS'].split(',')]
           bad = [l for l in want if l not in known]
           assert not bad, f'unknown langs: {bad}'

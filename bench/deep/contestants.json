@@ -19,13 +19,13 @@
       "invoice",
       "invoice-warm",
       "unicode",
-      "images",
       "pdfa"
      ],
      "million": true,
      "na": {
       "read": "a report engine: reading is @reportwright/pdf's job",
-      "edit": "a report engine: editing is @reportwright/pdf's job"
+      "edit": "a report engine: editing is @reportwright/pdf's job",
+      "images": "a fixture image is over the engine's 10 MB per-image cap, so the engine leaves it out"
      }
     },
     "@reportwright/pdf": {
