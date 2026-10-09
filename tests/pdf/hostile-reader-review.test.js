@@ -384,3 +384,23 @@ describe('control regression: the in-stream test is right whatever order the byt
     await expect(d.saveIncremental()).rejects.toMatchObject({ code: 'E_ACTIVE', message: expect.stringMatching(/could not be checked/) });
   });
 });
+
+describe('R5 (final review F1): a signature written directly in a field /V still makes the document signed', async () => {
+  const { rawPdf } = await import('./reader-tools.js');
+  const { loadPdf } = await import('../../packages/pdf/src/index.js');
+  const SIG = '<< /Type /Sig /Filter /Adobe.PPKLite /ByteRange [0 1 2 3] /Contents <00> >>';
+  const mk = (V, perms = '') => rawPdf([
+    `<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R 5 0 R] /SigFlags 3 >> ${perms} >>`, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [4 0 R 5 0 R] >>',
+    '<< /Type /Annot /Subtype /Widget /FT /Tx /T (other) /Rect [40 560 240 580] /P 3 0 R /DA (/Helv 12 Tf 0 g) >>',
+    `<< /Type /Annot /Subtype /Widget /FT /Sig /T (sig) /Rect [300 600 450 640] /P 3 0 R /V ${V} >>`]);
+  const fill = async (b, o) => { const d = await loadPdf(b); d.fill({ other: 'x' }); return d.saveIncremental(o); };
+  it('a direct /V signature: a fill needs allowFillAfterSigning', async () => {
+    await expect(fill(mk(SIG))).rejects.toMatchObject({ code: 'E_SIGNED' });
+    await expect(fill(mk(SIG), { allowFillAfterSigning: true })).resolves.toBeTruthy();
+  });
+  it('a direct /V with a DocMDP P 1 reference refuses every update, opt-in or not', async () => {
+    const v = '<< /Type /Sig /ByteRange [0 1 2 3] /Contents <00> /Reference [<< /TransformMethod /DocMDP /TransformParams << /P 1 >> >>] >>';
+    await expect(fill(mk(v), { allowFillAfterSigning: true })).rejects.toMatchObject({ code: 'E_SIGNED' });
+  });
+});
