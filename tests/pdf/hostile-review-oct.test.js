@@ -6,7 +6,9 @@ import { buildSfnt } from '../../packages/pdf/src/fonts/subset.js';
 import { sfntTables } from '../../packages/pdf/src/fonts/truetype.js';
 import { INTER } from './tools.js';
 import zlib from 'node:zlib';
-import { SIG, ihdr, chunk } from './image-fixtures.js';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { SIG, ihdr, chunk, png } from './image-fixtures.js';
 import { EN16931 } from './standards-fixture.js';
 import { readInvoice } from '../../packages/pdf/src/standards/facturx.js';
 
@@ -91,4 +93,63 @@ describe('F6: a passed-through PNG (no alpha, not interlaced) is checked row by 
       expect(out).toContain(`/Length ${z.length}`);
     }
   });
+});
+
+describe('F1: decoding a PNG with alpha holds about one decoded copy, and a smaller default cap', () => {
+  /** embed a w × h all-zero RGBA PNG in a child process @returns {{ file: number, decoded: number, growthMB: number, ms: number, error: string | null }} */
+  const child = (w, h, interlace = 0, max = '') => JSON.parse(execFileSync(process.execPath, ['--expose-gc', '--max-old-space-size=1024', path.join(import.meta.dirname, 'png-memory-child.mjs'), String(w), String(h), String(interlace), String(max)], { encoding: 'utf8', timeout: 60000 }));
+  it('a 4000 × 4000 RGBA PNG (64 MB decoded, ~60 KB of file): peak RSS growth under 1.5 × the decoded size, in bounded time', () => {
+    const r = child(4000, 4000);
+    expect(r.error).toBe(null);
+    expect(r.file).toBeLessThan(200_000);
+    expect(r.growthMB * 2 ** 20).toBeLessThan(1.5 * r.decoded);
+    expect(r.ms).toBeLessThan(20000);
+  }, 70000);
+  it('interlaced: one de-interlaced image (6000 × 6000, 144 MB, maxDecodedBytes raised), under 1.5 × too', () => {
+    const r = child(6000, 6000, 1, 160 << 20);
+    expect(r.error).toBe(null);
+    expect(r.growthMB * 2 ** 20).toBeLessThan(1.5 * r.decoded);
+    expect(r.ms).toBeLessThan(20000);
+  }, 70000);
+  it('rows streamed over several strips decode to the same pixels (RGBA 16-bit, gray + alpha, interlaced)', async () => {
+    /** the image XObjects' streams, inflated and unpredicted: [width, colours × bpc / 8, rows] */
+    const images = (pdf) => {
+      const s = Buffer.from(pdf).toString('latin1'), out = [];
+      for (const m of s.matchAll(/<< \/Type \/XObject \/Subtype \/Image \/Width (\d+) \/Height (\d+) \/ColorSpace \/Device(Gray|RGB) \/BitsPerComponent (\d+)[^]*?\/Length (\d+) >>\nstream\n/g)) {
+        const [w, h, cs, bpc, len] = [Number(m[1]), Number(m[2]), m[3], Number(m[4]), Number(m[5])];
+        const bpp = ((cs === 'RGB' ? 3 : 1) * bpc) / 8, rb = w * bpp, raw = zlib.inflateSync(Buffer.from(s.slice(m.index + m[0].length, m.index + m[0].length + len), 'latin1'));
+        const px = Buffer.alloc(rb * h);
+        if (!/Predictor/.test(m[0])) raw.copy(px); else for (let y = 0; y < h; y++) {
+          const f = raw[y * (rb + 1)];
+          for (let i = 0; i < rb; i++) {
+            const a = i >= bpp ? px[y * rb + i - bpp] : 0, u = y ? px[(y - 1) * rb + i] : 0, c = y && i >= bpp ? px[(y - 1) * rb + i - bpp] : 0;
+            const pp = a + u - c, pa = Math.abs(pp - a), pb = Math.abs(pp - u), pc = Math.abs(pp - c);
+            const pr = [0, a, u, (a + u) >> 1, pa <= pb && pa <= pc ? a : pb <= pc ? u : c][f];
+            px[y * rb + i] = (raw[y * (rb + 1) + 1 + i] + pr) & 255;
+          }
+        }
+        out.push({ cs, bpc, px });
+      }
+      return out;
+    };
+    const v = (x, y, k) => (x * 7 + y * 13 + k * 101 + ((x * y) % 17)) & 255;
+    for (const [type, depth, interlace, w, h] of [[6, 16, 0, 400, 900], [4, 8, 1, 1500, 800], [6, 8, 0, 3000, 300]]) {
+      const ch = type === 6 ? 4 : 2, max = depth === 16 ? 65535 : 255;
+      const file = png({ w, h, type, depth, interlace, px: (x, y) => Array.from({ length: ch }, (_, k) => (depth === 16 ? v(x, y, k) * 257 + (x & 255) : v(x, y, k)) & max) });
+      const [alpha, color] = images(await toBytes(async (pdf) => { await pdf.embedImage(file); }));
+      const sb = depth / 8;
+      for (const [x, y] of [[0, 0], [w - 1, h - 1], [w >> 1, h >> 1], [17, h - 3], [w - 5, 200]]) {
+        for (let k = 0; k < ch - 1; k++) for (let b = 0; b < sb; b++) {
+          const want = depth === 16 ? (b ? (v(x, y, k) * 257 + (x & 255)) & 255 : ((v(x, y, k) * 257 + (x & 255)) & 65535) >> 8) : v(x, y, k);
+          expect(alpha.px[(y * w + x) * sb + b]).toBe(depth === 16 ? (b ? (v(x, y, ch - 1) * 257 + (x & 255)) & 255 : ((v(x, y, ch - 1) * 257 + (x & 255)) & 65535) >> 8) : v(x, y, ch - 1));
+          expect(color.px[(y * w + x) * (ch - 1) * sb + k * sb + b]).toBe(want);
+        }
+      }
+    }
+  }, 60000);
+  it('the default cap is 64 MB decoded; maxDecodedBytes raises or lowers it', () => {
+    expect(child(4200, 4200).error).toMatch(/PNG: 4200 × 4200 needs 71 MB decoded; at most 67 MB .*maxDecodedBytes/);
+    expect(child(1000, 1000, 0, 1e6).error).toMatch(/at most 1 MB/);
+    expect(child(4200, 4200, 0, 80 << 20).error).toBe(null);
+  }, 70000);
 });
