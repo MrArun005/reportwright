@@ -7,7 +7,7 @@
  * grow with the rows. Past maxRows (Excel's 1,048,576) the table continues on a new sheet "Name (2)", its header rows
  * again; a total whose rows span two sheets is written as its value.
  */
-import { Zip, ZipDeflate, strToU8 } from 'fflate';
+import { Zip, ZipDeflate, strToU8 } from '@reportwright/pdf/fflate';
 import { Book, colName, sheetHead, sheetTail } from './xlsxwriter.js';
 import { xlsxCell, sheetNamer, currencySymbol, colStats, subtotalFn } from './xlsx.js';
 import { currencyOf } from '../engine/expr/format.js';

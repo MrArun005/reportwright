@@ -4,7 +4,7 @@
 // boxes, ellipses and lines are shapes (fill, border, dash, rounded corners), and charts, pictures, maps, barcodes
 // and in-cell visuals are pictures (SVG with a PNG fallback, as in the Word export). The slide size is the first
 // page's (PowerPoint has one size per file). Written by hand with fflate, like the Word export.
-import { zipSync, strToU8 } from 'fflate';
+import { zipSync, strToU8 } from '@reportwright/pdf/fflate';
 import { visualLines } from './regions.js';
 import { figures, figurePicture, figureSvg, rasterize, hexOrNull, altOf, boxOf } from './figures.js';
 import { alignOf } from './docx.js';

@@ -17,7 +17,7 @@
  * are added by writePagedPdf (pdfstreamtags.js, the XMP and output intent).
  */
 import { fontkit, loadFontkit } from '../engine/lazylibs.js';
-import { Zlib, deflateSync, inflateSync } from 'fflate';
+import { Zlib, deflateSync, inflateSync } from '@reportwright/pdf/fflate';
 import { render } from '../engine/index.js';
 import { planPaged } from '../engine/paged.js';
 import { sqlBatches } from '../engine/stream.js';

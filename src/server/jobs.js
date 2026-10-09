@@ -15,7 +15,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import os from 'node:os';
-import { zipSync } from 'fflate';
+import { zipSync } from '@reportwright/pdf/fflate';
 import { PDFDocument } from 'pdf-lib';
 import { loadTemplate, baseUrl as defaultBase, checkTimeZone } from './renderer.js';
 import { renderInPool, submit } from './pool.js';

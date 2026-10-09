@@ -5,7 +5,7 @@
 // a cell's become the cell's. Charts, pictures, maps, barcodes, shapes and in-cell visuals (sparklines, data bars)
 // become pictures: an SVG with a PNG fallback (Word 2016+ draws the SVG, older Word and other readers the PNG), or the
 // picture's own PNG/JPEG. Written by hand with fflate (WordprocessingML is small), no Word library.
-import { Zip, ZipDeflate, strToU8 } from 'fflate';
+import { Zip, ZipDeflate, strToU8 } from '@reportwright/pdf/fflate';
 import { visualLines, isJustified, needsTableData } from './regions.js';
 import { withDeadline } from './deadline.js';
 import { officeFamily } from '../engine/text/fonts.js';

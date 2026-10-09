@@ -267,6 +267,6 @@ export const NODE_ZLIB = /** @type {any} */ (globalThis).process?.getBuiltinModu
 async function deflateNow(bytes) {
   const zlib = NODE_ZLIB;
   if (zlib) return new Promise((ok, fail) => zlib.deflate(bytes, { level: 9 }, (e, z) => (e ? fail(e) : ok(z))));
-  if (typeof CompressionStream === 'undefined') return (await import('fflate')).zlibSync(bytes);
+  if (typeof CompressionStream === 'undefined') return (await import('@reportwright/pdf/fflate')).zlibSync(bytes);
   return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
 }
