@@ -58,7 +58,10 @@ function scriptOf(cp) {
   return s;
 }
 const INTL = typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function';
-const GRAPHEMES = INTL ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
+// made on first use: the first Intl.Segmenter starts ICU's break iterators (about 10 ms of every cold start)
+/** @type {Intl.Segmenter|null|undefined} */ let graphemeSeg;
+/** @type {Intl.Segmenter|null|undefined} */ let wordSeg;
+const GRAPHEMES = () => (graphemeSeg === undefined ? (graphemeSeg = INTL ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null) : graphemeSeg);
 const JOINS = /[\p{M}\u200c\u200d\ufe00-\ufe0f]/u;
 /**
  * Grapheme clusters: where a too-long word may break. Intl.Segmenter when there is one; else code points with
@@ -66,7 +69,8 @@ const JOINS = /[\p{M}\u200c\u200d\ufe00-\ufe0f]/u;
  * @param {string} s @param {boolean} [intl] false: the fallback (tests)
  */
 export function clusters(s, intl = true) {
-  if (intl && GRAPHEMES) return [...GRAPHEMES.segment(s)].map(x => x.segment);
+  const seg = intl ? GRAPHEMES() : null;
+  if (seg) return [...seg.segment(s)].map(x => x.segment);
   /** @type {string[]} */
   const out = [];
   for (const ch of s) {
@@ -79,7 +83,7 @@ const graphemes = (/** @type {string} */ s) => clusters(s);
 
 /** Scripts written without spaces between words (UAX #14 class SA): Thai, Lao, Myanmar, Khmer, Tai Tham, Tai Viet. */
 const SA = /[\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff\u19e0-\u19ff\u1a20-\u1aaf\ua9e0-\ua9ff\uaa60-\uaadf]/;
-const WORDS = INTL ? new Intl.Segmenter(undefined, { granularity: 'word' }) : null;
+const WORDS = () => (wordSeg === undefined ? (wordSeg = INTL ? new Intl.Segmenter(undefined, { granularity: 'word' }) : null) : wordSeg);
 /**
  * Where a line may break inside text written without spaces: the word boundaries ICU's dictionaries find
  * (Node and browsers ship them for Thai, Lao, Khmer and Myanmar), as UTF-16 indices next to an SA character.
@@ -88,7 +92,7 @@ const WORDS = INTL ? new Intl.Segmenter(undefined, { granularity: 'word' }) : nu
  * @param {string} text @param {Intl.Segmenter|null} [segmenter]
  * @returns {Set<number>}
  */
-export function saBreaks(text, segmenter = WORDS) {
+export function saBreaks(text, segmenter = WORDS()) {
   const out = new Set();
   if (!segmenter) return out;
   for (const { index } of segmenter.segment(text)) {
