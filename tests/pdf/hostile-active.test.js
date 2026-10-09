@@ -74,4 +74,16 @@ describe('save() drops active content wherever it is', () => {
       for (const d of await dicts(r.bytes)) { expect(d.has('JS')).toBe(false); expect(d.get('S')).not.toBe('Launch'); }
     }
   });
+  it('a direct RichMedia annotation in /Annots, an action whose /S is an indirect name, and a Launch behind /Type 12 0 R are dropped', async () => {
+    const b = rawPdf([
+      '<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Annots [<< /Type /Annot /Subtype /RichMedia /Rect [0 0 9 9] >> 4 0 R] >>',
+      '<< /Type /Annot /Subtype /Link /Rect [0 0 9 9] /A << /S 5 0 R /F (calc.exe) >> /PA 6 0 R >>', '/Launch', '<< /Type 7 0 R /S /Launch /F (x) >>', '/Action',
+    ]);
+    const r = await (await loadPdf(b)).save();
+    const R = internal(await loadPdf(r.bytes), 't').r.src.resolve;
+    for (const d of await dicts(r.bytes)) { expect(R(d.get('Subtype'))).not.toBe('RichMedia'); expect(R(d.get('S'))).not.toBe('Launch'); expect(R(d.get('Type'))).not.toBe('Action'); }
+    if (PY) expect(qdf(r.bytes)).not.toMatch(/calc\.exe|\/Launch|\/RichMedia/);
+    expect(r.stripped.map((x) => x.what).join()).toMatch(/RichMedia annotation.*|Launch action/);
+  });
 });
