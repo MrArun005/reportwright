@@ -221,3 +221,47 @@ describe('CFF work budget', () => {
     expect(performance.now() - t).toBeLessThan(3000);
   });
 });
+
+import { INTER } from './tools.js';
+/** Inter with a GPOS whose 'kern' lookup lists n pair-adjustment subtables (all one subtable that kerns nothing) */
+function manySubtables(n) {
+  const g = new Uint8Array(50 + 2 * n), dv = new DataView(g.buffer);
+  dv.setUint16(0, 1); dv.setUint16(4, 10); dv.setUint16(6, 12); dv.setUint16(8, 26); // version 1.0; ScriptList, FeatureList, LookupList
+  // ScriptList at 10: no scripts. FeatureList at 12: one feature 'kern', its table at 20 (8 from the list): lookup 0
+  dv.setUint16(12, 1); g.set([107, 101, 114, 110], 14); dv.setUint16(18, 8); dv.setUint16(22, 1); dv.setUint16(24, 0);
+  // LookupList at 26: one lookup, at 30
+  dv.setUint16(26, 1); dv.setUint16(28, 4);
+  const L = 30; dv.setUint16(L, 2); dv.setUint16(L + 2, 0); dv.setUint16(L + 4, n);
+  const sub = 6 + 2 * n; // from the lookup
+  for (let k = 0; k < n; k++) dv.setUint16(L + 6 + 2 * k, sub);
+  const s = L + sub; dv.setUint16(s, 1); dv.setUint16(s + 2, 10); dv.setUint16(s + 4, 4); dv.setUint16(s + 6, 0); dv.setUint16(s + 8, 0);
+  dv.setUint16(s + 10, 1); dv.setUint16(s + 12, 0); // coverage format 1, no glyphs
+  const t = sfntTables(INTER); t.set('GPOS', g); t.delete('kern');
+  return buildSfnt(t);
+}
+
+describe('kerning work bound', () => {
+  // 40,000 characters in pseudo-random order from ~360 Inter has: mostly distinct pairs, so the pair cache misses and
+  // every lookup walks every subtable (none kerns, so each is tried)
+  const cps = [];
+  for (const [a, z] of [[0x41, 0x5a], [0x61, 0x7a], [0xc0, 0x17f], [0x391, 0x3a1], [0x3a3, 0x3a9], [0x3b1, 0x3c9], [0x410, 0x44f]]) for (let c = a; c <= z; c++) cps.push(c);
+  let seed = 1;
+  const text = Array.from({ length: 40_000 }, () => String.fromCodePoint(cps[(seed = (seed * 1103515245 + 12345) % 2 ** 31) % cps.length])).join('');
+  const timed = async (bytes) => {
+    let warnings = [];
+    const t = performance.now();
+    await toBytes(async (pdf) => {
+      const f = await pdf.embedFont(bytes);
+      pdf.addPage().text(text, { x: 10, y: 10, font: f, size: 6 });
+      const end = pdf.end; pdf.end = async () => { const r = await end(); warnings = r.warnings; return r; };
+    });
+    return { ms: performance.now() - t, warnings };
+  };
+  it('a font listing more than 64 kerning subtables has its kerning turned off with a warning; 64 still kern', async () => {
+    const many = await timed(manySubtables(4096));
+    expect(many.warnings.join('\n')).toMatch(/more than 64 subtables: GPOS kerning is off/);
+    const ok = await timed(manySubtables(64));
+    expect(ok.warnings.join('\n')).not.toMatch(/kerning is off/);
+    console.log(`kerning, 40,000 characters: 4,096 subtables ${Math.round(many.ms)} ms, 64 subtables ${Math.round(ok.ms)} ms`);
+  });
+});
