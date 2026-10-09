@@ -347,7 +347,9 @@ export function minSize(it) {
   for (const k of ['w', 'h']) if (typeof it[k] === 'number' && it[k] < 1) it[k] = 1;
 }
 
-export function moveItems(ids, dx, dy) {
+/** A drag keeps items inside their band; a keyboard nudge ({ nudge: true }) moves the whole step (E12: an item as wide
+ * as the body had 0.28 pt of room on A4 with margins), never before the band's start; the Issues panel flags overflow. */
+export function moveItems(ids, dx, dy, { nudge = false } = {}) {
   if (!dx && !dy) return;
   if (S().cells && wouldOverlap(S().def, ids, (it) => ({ x: it.x + dx, y: it.y + dy, w: it.w, h: it.h }))) { S().setUi({ saveError: CELL_TAKEN() }); setTimeout(() => S().setUi({ saveError: null }), 2500); return; }
   S().apply((d) => {
@@ -355,7 +357,7 @@ export function moveItems(ids, dx, dy) {
       const f = findItem(d, id);
       if (!f) continue;
       const room = roomFor(d, f);
-      f.item.x = round(clamp(f.item.x + dx, 0, Math.max(0, room - f.item.w)));
+      f.item.x = round(nudge ? Math.max(0, f.item.x + dx) : clamp(f.item.x + dx, 0, Math.max(0, room - f.item.w)));
       f.item.y = round(Math.max(0, f.item.y + dy));
       growToFit(d, f);
     }

@@ -34,6 +34,26 @@ describe('P1 #3: keyboard nudge', () => {
   });
 });
 
+describe('E12: the arrow keys move the whole step on a page with margins', () => {
+  // A4 with 36 pt margins: a 523.28 pt body. A 523 pt wide item had 0.28 pt of room, so the keys moved it 0.28, then never.
+  const ui = (o) => ({ snap: false, grid: 4, cells: false, cellSize: 12, ...o });
+  for (const margins of [0, 36]) for (const snap of [false, true]) for (const shift of [false, true]) {
+    it(`margins ${margins}, snap ${snap}, shift ${shift}`, () => {
+      const st = newDesignerStore(); activateStore(st);
+      st.getState().init('r', { $schema: 'reportwright/report@1', name: 'R', page: { size: 'A4', margins }, dataSources: [], dataSets: [],
+        sections: { body: { height: 200, items: [{ type: 'textbox', name: 'A', x: 0, y: 0, w: 523, h: 10, value: 'x' }] } } });
+      const it_ = () => st.getState().def.sections.body.items[0];
+      const step = nudgeStep(ui({ snap }), shift);
+      moveItems([it_().id], step, 0, { nudge: true });
+      expect(it_().x).toBe(step);
+      moveItems([it_().id], step, step, { nudge: true });
+      expect([it_().x, it_().y]).toEqual([2 * step, step]);
+      moveItems([it_().id], -3 * step, -3 * step, { nudge: true });
+      expect([it_().x, it_().y]).toEqual([0, 0]); // never before the band's start
+    });
+  }
+});
+
 describe('P1 #5: the Data panel detects the fields of a data set that declares none', async () => {
   const { detectedFields } = await import('../../src/designer/DataPanel.jsx');
   const rows = Array.from({ length: 300 }, (_, i) => ({ id: i, region: i % 2 ? 'N' : 'S', on: i % 3 === 0, day: '2024-01-31' }));

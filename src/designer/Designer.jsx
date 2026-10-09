@@ -424,7 +424,7 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
         const [dx, dy] = arrows[e.key];
         const s = st();
         s.lastKey = null;
-        moveItems(s.sel.ids, dx * step, dy * step);
+        moveItems(s.sel.ids, dx * step, dy * step, { nudge: true });
       }
     };
     const onLeave = (e) => { if (!st().saved) { e.preventDefault(); e.returnValue = ''; } };
