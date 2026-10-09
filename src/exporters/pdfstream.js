@@ -773,7 +773,8 @@ async function newWriter(sink, opts) {
   const { createPdf } = await import('@reportwright/pdf');
   // the sink stays the caller's: written with back-pressure as before, never ended here
   return createPdf({ write: (/** @type {Uint8Array} */ u8) => raced(written(sink, sink.write(u8)), opts.signal) },
-    { metadata: false, id: opts.id, signal: opts.signal, creationDate: opts.creationDate });
+    // object streams at zlib's level 9, as the engine's own writer packed them (its files are no bigger)
+    { metadata: false, id: opts.id, signal: opts.signal, creationDate: opts.creationDate, objectStreamLevel: 9 });
 }
 
 /** a literal string, \ ( ) escaped @param {string} v */
