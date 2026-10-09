@@ -98,3 +98,32 @@ describe('PDF-10: a merged PDF/UA file is no longer tagged and says so', () => {
     expect(m.xmp).not.toMatch(/pdfuaid/);
   });
 });
+
+describe('PDF-13: the reader holds a bounded cache of parsed objects', () => {
+  it('a file with more objects than the cache saves byte-identically twice, keeps its tags, and merges deduplicated', async () => {
+    const { toBytes } = await import('../../packages/pdf/src/index.js');
+    const { INTER } = await import('./tools.js');
+    const N = 1300; // > 2 × 1,024 objects: pages, contents and structure elements are evicted and parsed again
+    const bytes = await toBytes(async (pdf) => {
+      const f = await pdf.embedFont(INTER);
+      for (let i = 0; i < N; i++) { const p = pdf.addPage({ width: 200, height: 100 }); p.tag('P', () => p.text(`Page ${i + 1}`, { x: 10, y: 10, font: f, size: 10 })); await p.end(); }
+    }, { title: 'Many', tagged: { lang: 'en' }, creationDate: new Date('2026-01-01') });
+    const d = await loadPdf(bytes);
+    const a = await d.save({ creationDate: new Date('2026-01-01') }), b = await d.save({ creationDate: new Date('2026-01-01') });
+    expect(Buffer.compare(Buffer.from(a.bytes), Buffer.from(b.bytes))).toBe(0);
+    expect(a.warnings.join()).not.toMatch(/structure tree/);
+    const back = await loadPdf(a.bytes);
+    expect(back.pageCount).toBe(N);
+    expect(back.xmp).toMatch(/pdfuaid/);
+    expect(back.page(N - 1).extractText()).toBe(`Page ${N}`);
+    expect(a.stripped).toEqual([]);
+    // the font is shared by every page and by both documents: written once
+    const m = await (await loadPdf(bytes)).fork().merge([await loadPdf(bytes)]).save();
+    const mm = await loadPdf(m.bytes);
+    expect(mm.pageCount).toBe(2 * N);
+    const { internal } = await import('../../packages/pdf/src/reader/pdf.js');
+    const r = internal(mm, 't').r, fonts = new Set();
+    for (const i of [0, N - 1, N, 2 * N - 1]) for (const v of r.src.resolve(r.src.resolve(r.pages[i].inh.Resources).get('Font')).values()) fonts.add(v.n);
+    expect(fonts.size).toBe(1);
+  });
+});
