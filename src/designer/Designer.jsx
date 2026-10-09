@@ -161,6 +161,7 @@ function StatusBar({ T, zoom, setZoom }) {
         <button type="button" className="btn sm icon ghost" title={T('zoomIn')} aria-label={T('zoomIn')} onClick={() => step(1)} disabled={zoom !== 'fit' && zoom >= ZOOMS[ZOOMS.length - 1]}><Icon name="zoomIn" /></button>
       </span>
       <span className="dstatus-sel" data-testid="status-selection"><i aria-hidden="true" />{what}</span>
+      <span className="hint dstatus-hint" title={T('canvasHint')}>{T('canvasHint')}</span>
       <span className="dstatus-page">{page}</span>
     </div>
   );
@@ -567,7 +568,6 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
               </label>
               <AlignBar T={T} />
               <IssuesButton T={T} />
-              <span className="hint cbar-hint">{T('canvasHint')}</span>
             </div>
             <Canvas />
             <StatusBar T={T} zoom={zoom} setZoom={(z) => { st().setUi({ zoom: z }); keepZoom(z); }} />

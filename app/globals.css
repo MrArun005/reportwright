@@ -889,19 +889,21 @@ a.cell-name:hover { color: var(--accent); }
 .dleft .tool svg { width: 16px; height: 16px; }
 /* canvas: the page centred on the desk, rulers along the top and beside each band */
 .dcenter { grid-template-rows: auto minmax(0, 1fr) auto; background: var(--desk); }
-.cbar { gap: 8px 16px; padding: 6px 16px; min-height: 40px; background: var(--panel); }
+/* one row of a fixed height: the align buttons that come with a selection never push the canvas down (c132) */
+.cbar { gap: 8px 16px; padding: 6px 16px; height: 40px; box-sizing: border-box; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; background: var(--panel); }
+.cbar > * { flex: none; white-space: nowrap; }
 .cbar .select { height: 28px; }
-.cbar-hint { margin-inline-start: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 120px; text-align: end; }
 .cscroll { padding: 24px 40px 80px 56px; }
 .paper { border-radius: 2px; }
 .ruler.v { position: absolute; left: -44px; top: 0; pointer-events: none; overflow: visible; }
-.dstatus { display: flex; align-items: center; gap: 16px; min-height: 32px; padding: 2px 12px; border-top: 1px solid var(--line); background: var(--panel); font-size: var(--fs-xs); color: var(--muted); }
+.dstatus { display: flex; align-items: center; gap: 16px; height: 32px; box-sizing: border-box; white-space: nowrap; padding: 2px 12px; border-top: 1px solid var(--line); background: var(--panel); font-size: var(--fs-xs); color: var(--muted); }
 .dstatus-zoom { display: inline-flex; align-items: center; gap: 2px; }
 .dstatus-zoom .select { height: 26px; width: 92px; border-color: var(--line); font-size: var(--fs-xs); }
 .dstatus-zoom .btn.icon { width: 26px; height: 26px; }
 .dstatus-sel { display: inline-flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font-family: var(--mono); }
 .dstatus-sel i { flex: none; width: 8px; height: 8px; border-radius: 2px; background: var(--accent); }
-.dstatus-page { margin-inline-start: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dstatus-hint { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: end; }
+.dstatus-page { white-space: nowrap; font-variant-numeric: tabular-nums; }
 /* inspector: roomier sections */
 .dright .insp-head { position: sticky; top: 0; z-index: 3; background: var(--panel); padding: 12px 16px; }
 .dright .cat { padding: 8px 16px 16px; gap: 8px; }
