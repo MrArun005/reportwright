@@ -201,7 +201,7 @@ describe('barcodes', () => {
   };
   it('a 2D code keeps its aspect ratio, fitted and centred in the box (QR is square)', async () => {
     await loadBarcodes();
-    const b = bbox(paintBarcode({ type: 'qrcode', text: 'https://mrarun005.github.io/pagewright-demo/', x: 0, y: 0, w: 130, h: 130 }).items);
+    const b = bbox(paintBarcode({ type: 'qrcode', text: 'https://mrarun005.github.io/reportwright-demo/', x: 0, y: 0, w: 130, h: 130 }).items);
     expect(b.w).toBeCloseTo(130, 1);
     expect(b.h).toBeCloseTo(130, 1);
     const wide = bbox(paintBarcode({ type: 'qrcode', text: 'hello', x: 10, y: 0, w: 200, h: 100 }).items);

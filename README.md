@@ -2,18 +2,20 @@
 
 A report designer, report engine, report viewer and report automation server for the web. Next.js app, JavaScript.
 
-**Renamed from Pagewright** in 0.9.0. The npm packages moved from `@pagewrightjs/*` to `@reportwright/*`; the old
-packages are deprecated. What did not change, so deployments and stored data keep working:
+**Renamed from Pagewright** in 0.9.0 (the npm packages moved from `@pagewrightjs/*` to `@reportwright/*`; the old
+packages are deprecated), finished in 0.13.2. What did not change, so deployments and stored data keep working:
 
 - settings keep the `PW_` prefix (`PW_AUTH`, `PW_BASE_URL`, …), and the CLI is still `pw` (`reportwright` works too);
-- the `x-pagewright-*` HTTP headers (proxy secret, webhook signature, page count…), the `pagewright_*` metric
-  names, cookie names and storage table names;
-- report files: the `.pw.json` extension and `"$schema": "pagewright/report@1"` (`reportwright/report@1` is read as
-  the same format).
+- cookie names and storage table names, and report files keep the `.pw.json` extension.
 
-Deprecated for one version (removed in 1.0): `<pagewright-viewer>` / `<pagewright-designer>`, `PagewrightViewer`,
-`PagewrightDesigner`, `pagewrightViewer`, `definePagewrightElements`, `window.Pagewright` and the
-`/embed/pagewright-viewer.js` loader. Each is an alias of its ReportWright name.
+Deprecated, still working, removed in 1.0 (each is an alias of its ReportWright name):
+
+- `<pagewright-viewer>` / `<pagewright-designer>`, `PagewrightViewer`, `PagewrightDesigner`, `pagewrightViewer`,
+  `pagewrightDesigner`, `definePagewrightElements`, `window.Pagewright` and the `/embed/pagewright-viewer.js` loader
+  (each warns once in the console, except the React and Vue components, which are the same objects);
+- `"$schema": "pagewright/report@1"`, read as `reportwright/report@1`;
+- the `x-pagewright-*` HTTP headers, sent next to their `x-reportwright-*` names (the proxy secret is read under
+  either name), and the `pagewright_*` metrics, emitted next to the `reportwright_*` ones.
 
 The plan is in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). All four phases are done. Status and gaps: [`docs/STATUS.md`](docs/STATUS.md). Automation API: [`docs/API.md`](docs/API.md).
 

@@ -5,6 +5,13 @@ All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. T
 ## 0.13.2 — unreleased
 
 ### Changed
+- **The rename to ReportWright is finished; every old Pagewright name keeps working until 1.0.** New names, with the old one kept as a deprecated alias:
+  - report schema: `reportwright/report@1` is now what new and saved reports carry; `pagewright/report@1` is read as the same format (a server before 0.9 cannot open a report saved by 0.13.2).
+  - HTTP headers: `x-reportwright-pages`, `-ms`, `-warnings`, `-snapshot`, `-pending`, `-signature` (webhooks and the audit SIEM webhook) and `-idempotency-key` (mail) are sent together with the old `x-pagewright-*` header; the proxy secret is read from `x-reportwright-proxy-secret`, else `x-pagewright-proxy-secret`.
+  - Prometheus metrics: `/api/v1/metrics` emits every family as `reportwright_*` and again as `pagewright_*` (the old ones go in 1.0: move dashboards and alerts). `scripts/uptime-check.mjs` reads either.
+  - one console warning per page for `definePagewrightElements`, the `<pagewright-viewer>` / `<pagewright-designer>` tags, the Svelte `pagewrightViewer` / `pagewrightDesigner` actions, `window.Pagewright` and `/embed/pagewright-viewer.js` (and `-viewer.full.js`). The React and Vue `PagewrightViewer` / `PagewrightDesigner` stay the same components, without a warning; all are typed `@deprecated`.
+  - the live demo moved to https://mrarun005.github.io/reportwright-demo/ (the site build's default base is `/reportwright-demo/`).
+  - kept as they are, since changing them would break stored data: the `.pw.json` extension, the designer clipboard format `pagewright/items@1`, and the salts of the TOTP secret key and the audit checkpoint chain.
 - **The render worker is minified.** `engine.worker.js` (and `engine.worker.bwip.js`) in `@reportwright/viewer` and the embed builds are minified, still one file with no chunk imports, with a linked source map (`engine.worker.js.map`) beside it so worker stack traces stay readable. `engine.worker.js` 2,195,290 → 1,218,659 bytes (608 → 503 KB gzipped); `engine.worker.bwip.js` 1,651,602 → 973,261 bytes (315 → 267 KB gzipped). The size budget in tests/engine/b10-bundle-size.test.js is now 504 KB gzipped (was 600).
 - **Publishing verifies before `latest` moves.** The publish workflow publishes to the `next` dist-tag, installs all nine packages from the registry and smoke-tests them (imports, PDF/XLSX/DOCX export, `qpdf --check`, `pw render`, the viewer's files, the wrappers' peer), and only then moves `latest`.
 

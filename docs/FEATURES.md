@@ -3,7 +3,7 @@
 Version 0.6.0+ (`main`, 4 Oct 2026). Everything below is built and covered by tests unless it is marked otherwise.
 
 > **Built, not yet released:** items marked **[not released]** are committed on the local `main` only. SQL data sources: SQLite and MySQL are released; PostgreSQL and SQL Server stay unreleased because the last review round found probe gaps (fixed and live-tested, but that round was not repeated); Oracle, Snowflake and BigQuery are not live-tested. See [DATA-SQL.md](DATA-SQL.md#release-status).
-Live demo: https://mrarun005.github.io/pagewright-demo/
+Live demo: https://mrarun005.github.io/reportwright-demo/
 
 Gate at this commit: 981 unit tests pass (4 skipped), 14/14 report snapshots, 0 PDF-vs-screen mismatches, production build OK.
 
@@ -213,7 +213,7 @@ Sample data APIs (stand-ins for customer data): `/api/sample/hard?rows=N` (nasty
 
 ## 15. Live demo
 
-- https://mrarun005.github.io/pagewright-demo/: a static site (public repo `pagewright-demo`, built files only; source stays private) running 18 reports, a 5k–100k-row browser scale test, the embedded designer and embed code for 6 frameworks, with no server.
+- https://mrarun005.github.io/reportwright-demo/: a static site (public repo `reportwright-demo`, built files only; source stays private) running 18 reports, a 5k–100k-row browser scale test, the embedded designer and embed code for 6 frameworks, with no server.
 - `npm run build:site` now adds the charts and pivot showcases, Stress ledger (+ Account detail), Torture Test (Designer), Reuse showcase and the SSRS-imported transcript; the published copy updates when it is republished.
 
 ---
