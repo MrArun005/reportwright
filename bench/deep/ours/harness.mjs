@@ -44,9 +44,10 @@ async function engine() {
   };
   const stream = async (def, out, rows) => {
     const sink = fs.createWriteStream(out);
-    const r = await exportPdfStream(def, { fonts, title: def.name, presorted: true, maxRows: Math.max(rows, 5_000_000), timeoutMs: 24 * 3600e3 }, sink);
+    const r = await exportPdfStream(def, { fonts, title: def.name, presorted: true, maxRows: Math.max(rows, 5_000_000), timeoutMs: 24 * 3600e3,
+      ...(process.env.BENCH_PARALLEL ? { parallel: /^\d+$/.test(process.env.BENCH_PARALLEL) ? Number(process.env.BENCH_PARALLEL) : process.env.BENCH_PARALLEL } : {}) }, sink);
     await new Promise((ok, fail) => sink.end((e) => (e ? fail(e) : ok())));
-    return { note: r.streamed ? `streamed, ${r.pages} pages` : `written whole: ${r.why}` };
+    return { note: (r.streamed ? `streamed, ${r.pages} pages` : `written whole: ${r.why}`) + (process.env.BENCH_PARALLEL ? `, parallel ${process.env.BENCH_PARALLEL}` : '') };
   };
   return {
     version: `${ver('@reportwright/engine')} (fonts ${ver('@reportwright/fonts')})`,

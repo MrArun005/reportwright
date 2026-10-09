@@ -70,7 +70,11 @@ LEAGUES = {'engine': 'Report engines', 'writer': 'PDF writers', 'read-edit': 'Re
 MARK = {'yes': '✅', 'no': '❌', 'partial': 'partial', '?': '?'}
 
 
-def hw_line(meta, langs, label):
+def hw_line(meta, langs, label, groups=()):
+    if groups:  # same-machine layout: every column of the table ran in one job, interleaved run by run
+        return label + ', ' + '; '.join(f'one job ({m["group"]}): {m["cpu"]} × {m["cores"]} vCPU, {m["ram_mb"] / 1024:.1f} GB RAM, contestants interleaved run by run'
+                                         for m in meta if m.get('group') in groups) + ''.join(sorted({f'; ours built from {m["source"]}' for m in meta if m.get('group') in groups and m.get('source')}))
+
     """'GitHub run 1, ubuntu-latest, <cpu> × 2 vCPU, 7.8 GB RAM (js, ours); ...': each language job ran on its own runner."""
     hw = defaultdict(list)
     for m in meta:
@@ -82,6 +86,9 @@ def hw_line(meta, langs, label):
 def build(meta, cells, contestants, label):
     langs = contestants['langs']
     libs = {lib: (lang, c) for lang, v in langs.items() for lib, c in v['libs'].items()}
+    for r in cells:  # ours in the same-machine layout: '<lib> 0.13.1 (npm)', '<lib> (branch <ref>@<sha>)' are variants of <lib>
+        if r.get('base') in libs:
+            libs.setdefault(r['lib'], libs[r['base']])
     ours = {l for l, (lang, _) in libs.items() if lang == 'ours'}
     by = {(r['lib'], r['job'], r['size']): r for r in cells if r.get('job') != 'version'}
     present = sorted({r['lib'] for r in cells}, key=lambda l: (libs.get(l, ('zz',))[0] != 'ours', libs.get(l, ('zz',))[0], l.lower()))
@@ -103,7 +110,7 @@ def build(meta, cells, contestants, label):
                              'best_ms': ranked[0][0] if ranked else None})
             na = {l: na_reason(libs[l][1], job) for l in pool if l not in cols}
             tables.append({'job': job, 'league': league, 'title': f'{LEAGUES[league]}: {TITLES[job]}', 'source': label,
-                           'hw': hw_line(meta, {libs[l][0] for l in cols}, label), 'cols': cols, 'rows': rows, 'na': na,
+                           'hw': hw_line(meta, {libs[l][0] for l in cols}, label, {r['group'] for r in cells if r.get('group') and r['job'] == job and r['lib'] in cols}), 'cols': cols, 'rows': rows, 'na': na,
                            'ours': [l for l in cols if l in ours]})
     summary = []
     for l in present:
@@ -126,11 +133,14 @@ def verdicts(tables):
         for row in t['rows']:
             if row['best'] is None:
                 continue  # robustness tables, or nobody valid: nothing ranked
-            for o in t['ours']:
+            riv = sorted((time_of(c), l) for l, c in row['cells'].items() if l not in t['ours'] and c and c['status'] == 'ok' and time_of(c))
+            if not riv:
+                continue  # only ours valid here: nothing to beat
+            for o in t['ours']:  # each of ours against the best rival, never against another build of ours
                 r = row['cells'].get(o)
                 ok = r is not None and r['status'] == 'ok' and time_of(r)
-                out.append({'table': t, 'size': row['size'], 'lib': o, 'win': row['best'] == o, 'best': row['best'],
-                            'ratio': time_of(r) / row['best_ms'] if ok else None, 'status': None if ok else (r['status'] if r else 'no result')})
+                out.append({'table': t, 'size': row['size'], 'lib': o, 'win': bool(ok) and time_of(r) <= riv[0][0], 'best': riv[0][1],
+                            'ratio': time_of(r) / riv[0][0] if ok else None, 'status': None if ok else (r['status'] if r else 'no result')})
     return out
 
 
@@ -170,6 +180,23 @@ def where_we_lose(tables):
     return dict(out)
 
 
+def old_new(tables):
+    """Ours, branch build against the npm build in the same table row (same job, same machine): ratio < 1 = faster now."""
+    out = []
+    for t in tables:
+        for row in t['rows']:
+            cs = [c for c in row['cells'].values() if c and c.get('variant')]
+            for npm in [c for c in cs if c['variant'] == 'npm']:
+                for br in [c for c in cs if c['base'] == npm['base'] and c['variant'] != 'npm']:
+                    a, b = time_of(npm), time_of(br)
+                    if npm['status'] == 'ok' and br['status'] == 'ok' and a and b:
+                        out.append(f'{t["title"]} at {row["size"]:,}: {br["lib"]} {fmt_ms(b)} · {br["rss_mb"]["median"]:.0f} MB vs '
+                                   f'{npm["lib"]} {fmt_ms(a)} · {npm["rss_mb"]["median"]:.0f} MB = {b / a:.2f}× time, {br["rss_mb"]["median"] / npm["rss_mb"]["median"]:.2f}× RSS')
+                    else:
+                        out.append(f'{t["title"]} at {row["size"]:,}: {br["lib"]} {br["status"]} vs {npm["lib"]} {npm["status"]}')
+    return out
+
+
 def capability_rows(caps):
     """Rows of cells for the capability table, footnote numbers for notes, and the '?' cells to verify."""
     cols = list(caps['columns'])
@@ -199,8 +226,8 @@ def markdown(sources, caps):
     m = sources[0]['meta'][0] if sources[0]['meta'] else None
     if m:
         out += [f'Run {m["date"]}, tier `{m["tier"]}`, {m["runs"]} measured runs a cell after one warm-up (fewer for the biggest '
-                f'sizes, see README). Memory cap {m["cap_mb"]} MB a run. Each language ran as its own job; the line above each table '
-                'names the runner hardware of the columns in it.', '',
+                f'sizes, see README). Memory cap {m["cap_mb"]} MB a run. ' + ('Same-machine layout: each job group (create-writers, create-engines, read-edit, robustness) ran every contestant in one job, interleaved run by run; ' if m.get('group') else 'Each language ran as its own job; ') + 'the line above each table '
+                'names the runner hardware (CPU model) of the columns in it. Rankings and "where we lose" compare ours with the best other library, never one build of ours with another.', '',
                 'Cells: median wall time from process start to exit (warm invoice: in-process median) · peak RSS. ✗ = the output failed '
                 'a check (qpdf, MuPDF, pdf.js, or the job\'s own text check) and is not ranked. **Bold** = fastest valid. '
                 'Create jobs are ranked within a league: **report engines** lay pages out themselves from a report/table '
@@ -208,6 +235,9 @@ def markdown(sources, caps):
                 'Full numbers (CPU, min–max, time to first byte, sizes, checks) are in results.json and results.html.', '']
     for src in sources:
         out += [f'## Headline ({src["label"]})', ''] + [f'- {l}' for l in src['headline']] + ['']
+    for src in sources:
+        if src.get('oldnew'):
+            out += [f'## Old vs new, ours on the same machine ({src["label"]})', ''] + [f'- {l}' for l in src['oldnew']] + ['']
     for src in sources:
         out += [f'## Where we lose ({src["label"]})', '']
         if not src['lose']:
@@ -263,9 +293,9 @@ const $=(t,a={},...k)=>{const e=document.createElement(t);for(const[x,y]of Objec
 const ms=v=>v==null?'–':v>=10000?(v/1000).toFixed(2)+' s':v>=10?v.toFixed(0)+' ms':v.toFixed(1)+' ms';
 const time=r=>r&&(r.job==='invoice-warm'?r.warm_ms:r.cold_ms)?.median;
 const nav=document.getElementById('nav'),host=document.getElementById('tables'),top=document.getElementById('top');
-const m=D.sources[0].meta[0];if(m)document.getElementById('meta').textContent=`${m.date} · tier ${m.tier} · ${m.runs} runs · cap ${m.cap_mb} MB a run. Each language ran as its own job: the line above each table names its runners. Create jobs are ranked within a league (report engines lay out pages themselves; PDF writers execute the same pre-laid-out draw ops). Click a header to sort. Cell: median wall time (warm invoice: in-process) · peak RSS; green = fastest valid, red = failed or invalid.`;
+const m=D.sources[0].meta[0];if(m)document.getElementById('meta').textContent=`${m.date} · tier ${m.tier} · ${m.runs} runs · cap ${m.cap_mb} MB a run. The line above each table names the runner (CPU model) its columns ran on. Create jobs are ranked within a league (report engines lay out pages themselves; PDF writers execute the same pre-laid-out draw ops). Click a header to sort. Cell: median wall time (warm invoice: in-process) · peak RSS; green = fastest valid, red = failed or invalid.`;
 const list=items=>$('ul',{},...items.map(i=>$('li',{},i)));
-for(const S of D.sources){top.append($('h2',{},`Headline (${S.label})`),list(S.headline),$('h2',{},`Where we lose (${S.label})`));
+for(const S of D.sources){top.append($('h2',{},`Headline (${S.label})`),list(S.headline));if(S.oldnew&&S.oldnew.length)top.append($('h2',{},`Old vs new, ours on the same machine (${S.label})`),list(S.oldnew));top.append($('h2',{},`Where we lose (${S.label})`));
  const L=Object.entries(S.lose);if(!L.length)top.append($('p',{},'Nowhere in this source: ours is #1 in every timed row it runs.'));
  for(const[lg,items]of L)top.append($('h3',{},lg),list(items));}
 {const C=D.capabilities;top.append($('h2',{id:'caps'},'Capabilities'),$('p',{},'Not measured: what each library documents. ✅ yes, ❌ no, partial (see note), ? not verified.'),
@@ -331,11 +361,11 @@ def main():
             meta, cells = load(d)
         tables, summary = build(meta, cells, contestants, label)
         sources.append({'label': label, 'meta': meta, 'cells': cells, 'tables': tables, 'summary': summary,
-                        'headline': headline(tables), 'lose': where_we_lose(tables)})
+                        'headline': headline(tables), 'lose': where_we_lose(tables), 'oldnew': old_new(tables)})
     data = {'sources': sources, 'capabilities': caps}
     (out / 'results.json').write_text(json.dumps(data, indent=1, ensure_ascii=False))
     (out / 'results.md').write_text(markdown(sources, caps))
-    (out / 'results.html').write_text(page({'sources': [{k: s[k] for k in ('label', 'meta', 'tables', 'summary', 'headline', 'lose')} for s in sources], 'capabilities': caps}))
+    (out / 'results.html').write_text(page({'sources': [{k: s[k] for k in ('label', 'meta', 'tables', 'summary', 'headline', 'lose', 'oldnew')} for s in sources], 'capabilities': caps}))
     print(f'{sum(len(s["cells"]) for s in sources)} cells from {len(sources)} source(s) -> {out}')
 
 

@@ -264,47 +264,81 @@ def clean(d):
     d.mkdir(parents=True)
 
 
-def cell(lib, c, job, size, a, fx, spec, work):
-    out = work / f'{lib}-{job}-{size}'
-    base = {'type': 'cell', 'lang': a.lang, 'lib': lib, 'version': c.get('_version'), 'job': job, 'size': size}
+def slug(s):
+    return re.sub(r'[^\w.-]+', '_', s)
+
+
+def cells(parts, job, size, a, fx, spec, work):
+    """One (job, size) for every contestant in parts, interleaved run by run (A, B, C, A, B, C...) so drift in the
+    machine's speed spreads over all of them. parts: dicts with label, lang, c (contestants.json entry), extra fields."""
+    base = {p['label']: {'type': 'cell', 'lang': p['lang'], 'lib': p['label'], 'version': p['c'].get('_version'), 'job': job, 'size': size,
+                         **p.get('tag', {})} for p in parts}
+    out = {p['label']: work / slug(f"{p['label']}-{job}-{size}") for p in parts}
+    env = lambda p, o, extra={}: env_for(fx, o, {**p.get('env', {}), **extra})
     if job in ROBUST:
         files = sorted((fx / spec['robust']['fuzzDir' if job == 'fuzz' else 'hostileDir']).glob('*.pdf'))[:size]
-        tally, cases = Counter(), {}
+        tally, cases = {p['label']: Counter() for p in parts}, {p['label']: {} for p in parts}
         for f in files:
-            clean(out)
-            r = run_once(c['cmd'] + ['parse', '1', str(out)], env_for(fx, out, {'BENCH_INPUT': str(f)}), HANG_S, a.cap_mb)
-            st = {'timeout': 'hang', 'error': 'clean-error'}.get(r['status'], r['status'])
-            tally[st] += 1
-            if job == 'hostile' or st in ('crash', 'hang', 'oom'):
-                cases[f.name] = st
-        return {**base, 'status': 'ok', 'robust': dict(tally), 'cases': cases, 'files': len(files)}
+            for p in parts:
+                o = out[p['label']]
+                clean(o)
+                r = run_once(p['c']['cmd'] + ['parse', '1', str(o)], env(p, o, {'BENCH_INPUT': str(f)}), HANG_S, a.cap_mb)
+                st = {'timeout': 'hang', 'error': 'clean-error'}.get(r['status'], r['status'])
+                tally[p['label']][st] += 1
+                if job == 'hostile' or st in ('crash', 'hang', 'oom'):
+                    cases[p['label']][f.name] = st
+        return [{**base[p['label']], 'status': 'ok', 'robust': dict(tally[p['label']]), 'cases': cases[p['label']], 'files': len(files)} for p in parts]
     heavy = (job == 'report' and size >= 10000) or job == 'read-big'
     # quick is indicative: its heavy cells run once, without a warm-up; full keeps the warm-up and at most 3 runs there
     runs = 1 if a.tier == 'million' or (heavy and a.tier == 'quick') else min(a.runs, 3) if heavy or a.tier == 'quick' else a.runs
     warmup = 0 if a.tier == 'million' or (heavy and a.tier == 'quick') else 1
     extra = {'REPS': '50'} if job == 'invoice-warm' else {}
-    res = []
+    res, failed = {p['label']: [] for p in parts}, {}
     for i in range(warmup + runs):
-        clean(out)
-        r = run_once(c['cmd'] + [job, str(size), str(out)], env_for(fx, out, extra), CELL_TIMEOUT[a.tier], a.cap_mb,
-                     watch=out / 'out.pdf' if job in CREATE else None)
-        if r['status'] != 'ok':
-            return {**base, 'status': r['status'], 'error': r.get('error'), 'wall_ms': round(r['wall_ms']), 'rss_mb': round(r['rss_mb'], 1)}
-        if i >= warmup:
-            res.append(r)
-    rec = {**base, 'status': 'ok', 'runs': runs,
-           'cold_ms': stats([r['wall_ms'] for r in res]),
-           'warm_ms': stats([r['h'].get('warm_ms', r['h'].get('ms')) for r in res]),
-           'cpu_ms': stats([r['cpu_ms'] for r in res]),
-           'rss_mb': stats([r['rss_mb'] for r in res]),
-           'ttfb_ms': stats([r['ttfb_ms'] for r in res]) if job in CREATE else None,
-           'note': res[-1]['h'].get('note')}
-    more, ok = check(job, size, out, fx, spec, res[-1]['h'])
-    rec.update(more)
-    if not ok:
-        rec['status'] = 'invalid'
-    subprocess.run(['rm', '-rf', str(out)])
-    return rec
+        for p in parts:
+            L = p['label']
+            if L in failed:
+                continue
+            clean(out[L])
+            r = run_once(p['c']['cmd'] + [job, str(size), str(out[L])], env(p, out[L], extra), CELL_TIMEOUT[a.tier], a.cap_mb,
+                         watch=out[L] / 'out.pdf' if job in CREATE else None)
+            if r['status'] != 'ok':
+                failed[L] = {**base[L], 'status': r['status'], 'error': r.get('error'), 'wall_ms': round(r['wall_ms']), 'rss_mb': round(r['rss_mb'], 1)}
+                subprocess.run(['rm', '-rf', str(out[L])])
+            elif i >= warmup:
+                res[L].append(r)
+    recs = []
+    for p in parts:
+        L = p['label']
+        if L in failed:
+            recs.append(failed[L])
+            continue
+        rs = res[L]
+        rec = {**base[L], 'status': 'ok', 'runs': runs,
+               'cold_ms': stats([r['wall_ms'] for r in rs]),
+               'warm_ms': stats([r['h'].get('warm_ms', r['h'].get('ms')) for r in rs]),
+               'cpu_ms': stats([r['cpu_ms'] for r in rs]),
+               'rss_mb': stats([r['rss_mb'] for r in rs]),
+               'ttfb_ms': stats([r['ttfb_ms'] for r in rs]) if job in CREATE else None,
+               'note': rs[-1]['h'].get('note')}
+        try:
+            more, ok = check(job, size, out[L], fx, spec, rs[-1]['h'])
+            rec.update(more)
+            if not ok:
+                rec['status'] = 'invalid'
+        except Exception as e:  # a checker bug must not lose the measurement
+            rec.update(status='harness-error', error=repr(e)[:600])
+        subprocess.run(['rm', '-rf', str(out[L])])
+        recs.append(rec)
+    return recs
+
+
+GROUPS = {  # same-machine layout: one job a group runs every contestant of its tables on one runner
+    'create-writers': lambda job, c: job in CREATE and c.get('league') == 'writer',
+    'create-engines': lambda job, c: job in CREATE and c.get('league') == 'engine',
+    'read-edit': lambda job, c: job not in CREATE and job not in ROBUST,
+    'robustness': lambda job, c: job in ROBUST,
+}
 
 
 def meta(a, langs):
@@ -314,28 +348,66 @@ def meta(a, langs):
     tools = {t: first(sh(*cmd)) for t, cmd in {
         'qpdf': ['qpdf', '--version'], 'mutool': ['mutool', '-v'], 'pdftotext': ['pdftotext', '-v'],
         'verapdf': ['verapdf', '--version']}.items()}
-    rt = langs[a.lang].get('runtime')
-    if rt:
-        r = sh(*rt)
-        tools['runtime'] = (r.stdout + r.stderr).strip().splitlines()[0:2]
-    return {'type': 'meta', 'lang': a.lang, 'tier': a.tier, 'runs': a.runs, 'date': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+    for l in a.langs:
+        rt = langs[l].get('runtime')
+        if rt:
+            r = sh(*rt)
+            tools['runtime' if not a.group else f'runtime {l}'] = (r.stdout + r.stderr).strip().splitlines()[0:2]
+    return {'type': 'meta', 'lang': a.group or a.lang, **({'group': a.group, 'langs': a.langs} if a.group else {}),
+            'tier': a.tier, 'runs': a.runs, 'date': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
             'cpu': cpu.group(1).strip() if cpu else platform.processor(), 'cores': os.cpu_count(),
             'ram_mb': int(mem.group(1)) // 1024 if mem else None, 'os': platform.platform(), 'cap_mb': a.cap_mb,
             'runner': os.environ.get('RUNNER_NAME'), 'tools': tools,
             **({'source': os.environ['BENCH_SOURCE']} if os.environ.get('BENCH_SOURCE') else {})}  # branch builds: 'engine <ref>@<sha>,pdf <ref>@<sha>'
 
 
+def contestants(a, langs, fx, work):
+    """The contestants to run, each version-checked. In a group, ours runs as the npm build and, when
+    bench/deep/ours-branch was built (BENCH_SRC_ENGINE / BENCH_SRC_PDF), as the branch build too."""
+    parts, broken = [], []
+    for lang in a.langs:
+        for lib, c in langs[lang]['libs'].items():
+            if a.tier == 'million' and not c.get('million'):
+                continue
+            vs = [{'label': lib, 'lang': lang, 'c': dict(c), 'tag': {}}]
+            if a.group and lang == 'ours':
+                vs[0]['tag'] = {'base': lib, 'variant': 'npm'}
+                src = os.environ.get('BENCH_SRC_' + ('ENGINE' if 'engine' in lib else 'PDF'))
+                if src and (HERE / 'ours-branch').is_dir():
+                    bc = {**c, 'cmd': [x.replace('bench/deep/ours/', 'bench/deep/ours-branch/') for x in c['cmd']]}
+                    if a.tier == 'million' and 'engine' in lib:
+                        vs += [{'label': f'{lib} (branch {src}, parallel off)', 'lang': lang, 'c': dict(bc), 'tag': {'base': lib, 'variant': 'branch'}},
+                               {'label': f"{lib} (branch {src}, parallel 'auto')", 'lang': lang, 'c': dict(bc), 'env': {'BENCH_PARALLEL': 'auto'},
+                                'tag': {'base': lib, 'variant': 'branch-parallel'}}]
+                    else:
+                        vs.append({'label': f'{lib} (branch {src})', 'lang': lang, 'c': dict(bc), 'tag': {'base': lib, 'variant': 'branch'}})
+            for p in vs:
+                v = run_once(p['c']['cmd'] + ['version', '0', str(work)], env_for(fx, work / 'v', p.get('env')), 300, a.cap_mb)
+                p['c']['_version'] = v['h'].get('version') if v['status'] == 'ok' else None
+                if p['tag'].get('variant') == 'npm':
+                    p['label'] = f"{lib} {(p['c']['_version'] or '?').split()[0]} (npm)"
+                if v['status'] != 'ok':
+                    broken.append({'type': 'cell', 'lang': lang, 'lib': p['label'], 'job': 'version', 'size': 0, 'status': v['status'], 'error': v.get('error'), **p['tag']})
+                else:
+                    parts.append(p)
+    return parts, broken
+
+
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument('--lang', required=True)
+    p.add_argument('--lang', help='one language (the per-language layout)')
+    p.add_argument('--group', choices=list(GROUPS), help='a job group over --langs on this one machine (the same-machine layout)')
+    p.add_argument('--langs', default='ours,js,python,java,dotnet,go,rust,cli')
     p.add_argument('--tier', default='quick', choices=list(PLAN))
     p.add_argument('--runs', type=int, default=5)
     p.add_argument('--fixtures', required=True)
     p.add_argument('--out', required=True)
     p.add_argument('--work', default='/tmp/deep-work')
     p.add_argument('--cap-mb', type=int, default=int(os.environ.get('MEM_CAP_MB', '6000')))
-    p.add_argument('--only', default='', help='comma list of jobs, for a partial rerun')
+    p.add_argument('--only', default='', help='comma list of jobs, for a partial rerun or to split a group')
     a = p.parse_args()
+    assert bool(a.lang) != bool(a.group), 'give --lang or --group'
+    a.langs = [a.lang] if a.lang else [l.strip() for l in a.langs.split(',') if l.strip()]
     fx, work = Path(a.fixtures).resolve(), Path(a.work)
     spec = json.loads((fx / 'spec.json').read_text())
     langs = json.loads((HERE / 'contestants.json').read_text())['langs']
@@ -344,27 +416,30 @@ def main():
     plan = {**({} if a.tier == 'million' else DEFAULT_SIZES), **PLAN[a.tier]}
     with open(a.out, 'w') as o:
         def emit(rec):
+            if a.group:
+                rec['group'] = a.group
             o.write(json.dumps(rec, ensure_ascii=False) + '\n')
             o.flush()
             print(json.dumps({k: rec.get(k) for k in ('lib', 'job', 'size', 'status', 'cold_ms', 'robust')}), flush=True)
         emit(meta(a, langs))
-        for lib, c in langs[a.lang]['libs'].items():
-            if a.tier == 'million' and not c.get('million'):
-                continue
-            v = run_once(c['cmd'] + ['version', '0', str(work)], env_for(fx, work / 'v'), 300, a.cap_mb)
-            c['_version'] = v['h'].get('version') if v['status'] == 'ok' else None
-            if v['status'] != 'ok':
-                emit({'type': 'cell', 'lang': a.lang, 'lib': lib, 'job': 'version', 'size': 0, 'status': v['status'], 'error': v.get('error')})
-                continue
+        parts, broken = contestants(a, langs, fx, work)
+        for r in broken:
+            emit(r)
+        does = lambda pt, job: ('parse' if job in ROBUST else job) in pt['c']['jobs'] and (not a.group or GROUPS[a.group](job, pt['c']))
+        batches = [parts] if a.group else [[pt] for pt in parts]  # a group interleaves everyone; a language runs lib by lib
+        for batch in batches:
             for job in JOBS:
-                cap = 'parse' if job in ROBUST else job
-                if cap not in c['jobs'] or job not in plan or (a.only and job not in a.only.split(',')):
+                if job not in plan or (a.only and job not in a.only.split(',')):
                     continue
-                for size in plan[job]:
+                todo = [pt for pt in batch if does(pt, job)]
+                for size in plan[job] if todo else []:
                     try:
-                        emit(cell(lib, c, job, size, a, fx, spec, work))
+                        for rec in cells(todo, job, size, a, fx, spec, work):
+                            emit(rec)
                     except Exception as e:  # a bug here must not lose the other cells
-                        emit({'type': 'cell', 'lang': a.lang, 'lib': lib, 'version': c['_version'], 'job': job, 'size': size, 'status': 'harness-error', 'error': repr(e)[:600]})
+                        for pt in todo:
+                            emit({'type': 'cell', 'lang': pt['lang'], 'lib': pt['label'], 'version': pt['c'].get('_version'), 'job': job, 'size': size,
+                                  'status': 'harness-error', 'error': repr(e)[:600], **pt.get('tag', {})})
 
 
 if __name__ == '__main__':
