@@ -2,6 +2,15 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
+## 0.13.2 — unreleased
+
+### Changed
+- **The render worker is minified.** `engine.worker.js` (and `engine.worker.bwip.js`) in `@reportwright/viewer` and the embed builds are minified, still one file with no chunk imports, with a linked source map (`engine.worker.js.map`) beside it so worker stack traces stay readable. `engine.worker.js` 2,195,290 → 1,218,659 bytes (608 → 503 KB gzipped); `engine.worker.bwip.js` 1,651,602 → 973,261 bytes (315 → 267 KB gzipped). The size budget in tests/engine/b10-bundle-size.test.js is now 504 KB gzipped (was 600).
+- **Publishing verifies before `latest` moves.** The publish workflow publishes to the `next` dist-tag, installs all nine packages from the registry and smoke-tests them (imports, PDF/XLSX/DOCX export, `qpdf --check`, `pw render`, the viewer's files, the wrappers' peer), and only then moves `latest`.
+
+### Performance
+- **Trade-off made by 0.13.1: less memory, about 10–14% slower.** The 0.13.1 fixes for grouped sorts (N44: sort runs spill to disk in smaller runs, about 8 MB) and for streamed tagged PDFs (N44: tagged structure flushed per page) cost time for the memory they save: about 10–14% slower on the tester's 2 vCPU machine (not measured here). Memory: a 200,000-row grouped ledger peaks at 232 MB instead of 280 MB, and the same with 50 runs (1,000,000 rows' run count) 240 MB instead of 296 MB; a tagged streamed PDF at 50k/100k/200k rows holds 6.7/7.3/9.3 MB off-heap instead of 16.8/29.1/36.6 MB. `spillSorter({ runMB, mergeMB })` sets the sort's run size if speed matters more than memory.
+
 ## 0.13.1 — 2026-10-09
 
 ### Fixed
