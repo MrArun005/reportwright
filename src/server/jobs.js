@@ -593,7 +593,7 @@ export async function claimOnce(name, owner) {
 async function notify(job) {
   const body = JSON.stringify({ event: 'batch.finished', job: publicJob(job), downloadUrl: job.download ? `${job.base}/api/v1/batches/${job.id}/download` : null });
   const headers = { 'content-type': 'application/json', 'user-agent': 'ReportWright', 'idempotency-key': `${job.id}:batch.finished` };
-  if (process.env.PW_WEBHOOK_SECRET) headers['x-pagewright-signature'] = 'sha256=' + crypto.createHmac('sha256', process.env.PW_WEBHOOK_SECRET).update(body).digest('hex');
+  if (process.env.PW_WEBHOOK_SECRET) headers['x-reportwright-signature'] = headers['x-pagewright-signature'] = 'sha256=' + crypto.createHmac('sha256', process.env.PW_WEBHOOK_SECRET).update(body).digest('hex'); // the old name too (deprecated 0.13.2)
   try {
     const owner = job.owner ? await principalFromId(job.owner, job.ownerKey, { session: !!job.ownerSession, since: job.ownerSince || null, madeAt: job.createdAt }) : defaultPrincipal(); // as the owner is now
     const res = await serverFetch(job.self, { internal: canDesign(owner) })(job.webhook, { method: 'POST', headers, body });

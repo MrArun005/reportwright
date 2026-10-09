@@ -42,7 +42,7 @@ const rq = (p, { method = 'GET', origin = ORIGIN, body, headers = {} } = {}) => 
 const P = (id) => ({ params: Promise.resolve({ id }) });
 const SQL_DEF = { name: 'Payroll', dataSources: [{ name: 'db', type: 'sql', connection: 'main', query: 'select name, salary from salaries' }], dataSets: [], sections: { body: { items: [] } } };
 const SECRET = 'a-long-secret-the-reverse-proxy-sends';
-const VIA_PROXY = { 'x-pagewright-proxy-secret': SECRET };
+const VIA_PROXY = { 'x-reportwright-proxy-secret': SECRET };
 const runSaved = (id, o = {}) => runSqlRoute(rq('/api/data/sql', { method: 'POST', body: { report: id, source: 'db' }, ...o }));
 
 let tmp, dbn = 0;
@@ -300,10 +300,10 @@ describe('this server\'s own origin and credentials', () => {
 
   it('PW_AUTH=proxy: the server\'s calls to itself carry PW_PROXY_SECRET (and only those)', () => withEnv({ NODE_ENV: 'production', PW_AUTH: 'proxy', PW_PROXY_SECRET: SECRET, PW_INTERNAL_HOSTS: '127.0.0.1', PW_BASE_URL: at(self, '') }, async () => {
     const f = serverFetch(at(self, ''));
-    await f(at(self), { headers: { 'x-pagewright-proxy-secret': 'forged' } });
-    await f(at(other), { headers: { 'x-pagewright-proxy-secret': 'forged' } });
-    expect(seen[0].h['x-pagewright-proxy-secret']).toBe(SECRET);
-    expect(seen[1].h['x-pagewright-proxy-secret']).toBeUndefined();
+    await f(at(self), { headers: { 'x-reportwright-proxy-secret': 'forged' } });
+    await f(at(other), { headers: { 'x-reportwright-proxy-secret': 'forged' } });
+    expect(seen[0].h['x-reportwright-proxy-secret']).toBe(SECRET);
+    expect(seen[1].h['x-reportwright-proxy-secret']).toBeUndefined();
   }));
 
   it('a viewer\'s API key cannot aim batches or schedules at PW_INTERNAL_HOSTS; a designer or service key can', () => withEnv({ PW_INTERNAL_HOSTS: '127.0.0.1' }, async () => {
@@ -404,10 +404,11 @@ describe('records and modes', () => {
   }));
   it('PW_AUTH=proxy with PW_PROXY_SECRET: requests without the reverse proxy\'s header are refused', () => withEnv({ ...PROD_OPEN, PW_AUTH: 'proxy', PW_PROXY_SECRET: SECRET }, async () => {
     expect((await proxy(rq('/designer/x'))).status).toBe(401);
-    expect((await proxy(rq('/designer/x', { headers: { 'x-pagewright-proxy-secret': 'wrong' } }))).status).toBe(401);
+    expect((await proxy(rq('/designer/x', { headers: { 'x-reportwright-proxy-secret': 'wrong' } }))).status).toBe(401);
     expect((await proxy(rq('/api/data/sql', { method: 'POST', body: {} }))).status).toBe(401); // reached around the proxy
     expect(await proxy(rq('/designer/x', { headers: VIA_PROXY }))).toBe(undefined);
     expect(await proxy(rq('/api/v1/templates'))).toBe(undefined); // its own keys
+    expect(await proxy(rq('/designer/x', { headers: { 'x-pagewright-proxy-secret': SECRET } }))).toBe(undefined); // the old name (deprecated 0.13.2) still works
   }));
 });
 

@@ -22,7 +22,7 @@ export async function register() {
     const { openTrusted, accountsOn, publicReadonly, basicOn, NO_AUTH_HELP } = await import('./src/server/session.js');
     if (process.env.PW_BASIC_AUTH && !basicOn()) console.warn('[reportwright] PW_BASIC_AUTH must be "user:password" (both parts set): it is ignored, so nobody signs in.');
     // PW_AUTH=proxy in production without a secret would trust anyone who reaches the port around the proxy: refuse to start
-    if (process.env.PW_AUTH === 'proxy' && !devMode() && (process.env.PW_PROXY_SECRET || '').length < 16) throw new Error('PW_AUTH=proxy needs PW_PROXY_SECRET (16+ random characters) in production, sent by the signing-in reverse proxy as x-pagewright-proxy-secret. Every request is refused until it is set.');
+    if (process.env.PW_AUTH === 'proxy' && !devMode() && (process.env.PW_PROXY_SECRET || '').length < 16) throw new Error('PW_AUTH=proxy needs PW_PROXY_SECRET (16+ random characters) in production, sent by the signing-in reverse proxy as x-reportwright-proxy-secret. Every request is refused until it is set.');
     // a short PW_AUDIT_KEY would leave the audit checkpoints unsigned: production refuses to start, development warns
     const { auditKeyProblem } = await import('./src/server/audit.js');
     if (auditKeyProblem()) { if (!devMode()) throw new Error(auditKeyProblem()); console.error(`[reportwright] WARNING: ${auditKeyProblem()} (development: checkpoints are signed with PW_SESSION_SECRET if that is long enough, else unsigned).`); }

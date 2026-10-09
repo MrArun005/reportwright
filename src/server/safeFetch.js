@@ -98,7 +98,7 @@ export const serverFetch = (selfOrigin, { internal = true, anon = false } = {}) 
   if (url.origin === NO_BASE_URL) throw Object.assign(new Error('A relative data URL needs PW_BASE_URL in production (this server\'s public URL): the server never takes its own address from a request.'), { status: 500 });
   const headers = new Headers(init.headers || {});
   // the connection is ours to frame: a report cannot pick the virtual host (Host) or the body's framing
-  for (const k of ['host', 'content-length', 'transfer-encoding', 'connection', 'te', 'upgrade', 'x-pagewright-proxy-secret']) headers.delete(k);
+  for (const k of ['host', 'content-length', 'transfer-encoding', 'connection', 'te', 'upgrade', 'x-reportwright-proxy-secret', 'x-pagewright-proxy-secret']) headers.delete(k);
   const toSelf = self && url.origin === self;
   // credentials only to the configured self: PW_BASE_URL's exact origin (scheme, host, port); without it, development only
   const credentials = toSelf && (process.env.PW_BASE_URL ? safeOrigin(process.env.PW_BASE_URL) === self : devMode());
@@ -109,7 +109,7 @@ export const serverFetch = (selfOrigin, { internal = true, anon = false } = {}) 
   if (credentials) {
     if (accountsOn()) headers.set('cookie', internalCookie(url.href, { anon })); // anon: the render's caller was not signed in
     else if (basicOn()) headers.set('authorization', `Basic ${Buffer.from(String(process.env.PW_BASIC_AUTH)).toString('base64')}`);
-    if (process.env.PW_AUTH === 'proxy' && process.env.PW_PROXY_SECRET) headers.set('x-pagewright-proxy-secret', process.env.PW_PROXY_SECRET);
+    if (process.env.PW_AUTH === 'proxy' && process.env.PW_PROXY_SECRET) headers.set('x-reportwright-proxy-secret', process.env.PW_PROXY_SECRET);
   }
   return safeFetch(url, { ...init, headers }, { allow: [selfOrigin, ...(internal ? internalHosts() : [])].filter(Boolean) });
 };
@@ -173,7 +173,7 @@ export async function safeFetch(input, init = {}, { allow = [], hops = 3, deadli
     const same = next.origin === url.origin;
     const keepBody = res.statusCode === 307 || res.statusCode === 308;
     // credentials never follow a redirect to another site
-    const h = same ? headers : Object.fromEntries(Object.entries(headers).filter(([k]) => !/^(authorization|cookie|x-api-key|x-pagewright-proxy-secret)$/i.test(k)));
+    const h = same ? headers : Object.fromEntries(Object.entries(headers).filter(([k]) => !/^(authorization|cookie|x-api-key|x-(?:report|page)wright-proxy-secret)$/i.test(k)));
     // a public first hop cannot redirect into the allow list (this server, PW_INTERNAL_HOSTS): its redirects get none
     return safeFetch(next, keepBody ? { ...init, headers: h } : { headers: h }, { allow: trusted ? allow : [], hops: hops - 1, deadline, hostsOnly });
   }

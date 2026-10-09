@@ -1,6 +1,6 @@
 // Regression across every report × 7 formats, through two running servers (an old build and a new one), so a broken
 // total cannot hide behind a speed gain. Compares, per report and format: the HTTP status, the page count
-// (x-pagewright-pages; not for csv, which has no pages), and for csv the row count, every numeric column's sum and the
+// (x-reportwright-pages; not for csv, which has no pages), and for csv the row count, every numeric column's sum and the
 // text itself (a leading BOM aside); for xlsx every sheet's cells (values, types, formulas; not style numbers). A streamed
 // answer has no page count to compare.
 //   BASE_OLD=http://localhost:3400 BASE_NEW=http://localhost:3300 PW_ADMIN_EMAIL=… PW_ADMIN_PASSWORD=… node scripts/regress-all.mjs
@@ -58,7 +58,7 @@ async function facts(base, cookie, id, format) {
   const out = { status: r.status, ms: Date.now() - t, bytes: body.length };
   // a streamed answer (no content-length: the data CSV, Excel) has no page model: its page count is not compared
   out.streamed = r.ok && !r.headers.get('content-length');
-  if (r.ok && format !== 'csv') out.pages = Number(r.headers.get('x-pagewright-pages'));
+  if (r.ok && format !== 'csv') out.pages = Number(r.headers.get('x-reportwright-pages'));
   if (r.ok && format === 'xlsx') out.cells = xlsxCells(new Uint8Array(body)); // the workbook's cells instead
   if (r.ok && format === 'csv') Object.assign(out, csvFacts(body.toString('utf8')), { text: body.toString('utf8').replace(/^\uFEFF/, '') }); // the bytes too (a BOM aside)
   if (r.ok && format === 'json') out.pages = JSON.parse(body.toString('utf8')).pages?.length;

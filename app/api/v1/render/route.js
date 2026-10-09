@@ -10,7 +10,7 @@ import { pdfEncryptOptions } from '@/exporters/encrypt.js';
 import { audit } from '@/server/audit.js';
 import { throughSnapshot } from '@/server/snapshots.js';
 
-import { outputHeaders } from '@/server/headers.js';
+import { outputHeaders, rwHeaders } from '@/server/headers.js';
 
 export const runtime = 'nodejs';
 
@@ -48,10 +48,7 @@ export async function POST(req) {
         ...outputHeaders(r.contentType),
         ...(r.stream ? {} : { 'content-length': String(r.bytes.byteLength) }),
         'content-disposition': `${body.format === 'json' ? 'inline' : 'attachment'}; filename="${name}.${r.ext}"`,
-        'x-pagewright-pages': String(r.pages),
-        'x-pagewright-ms': String(r.ms),
-        'x-pagewright-warnings': String(r.warnings),
-        'x-pagewright-snapshot': r.snapshot,
+        ...rwHeaders({ pages: String(r.pages), ms: String(r.ms), warnings: String(r.warnings), snapshot: r.snapshot }),
       },
     });
   } catch (e) { return fail(e); }

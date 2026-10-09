@@ -3,7 +3,7 @@
 //   PW_AUDIT_SIEM=syslog+tls://host:6514   RFC 5424 messages over TLS (RFC 5425 octet-counted framing), facility local0;
 //                                          PW_AUDIT_SIEM_CA: a PEM file of CAs to trust (default: the system's)
 //   PW_AUDIT_SIEM=https://siem.example.com/hook   a JSON array of events per POST, signed with HMAC-SHA256 of the body
-//                                          (PW_AUDIT_SIEM_SECRET) in X-Pagewright-Signature: sha256=<hex>
+//                                          (PW_AUDIT_SIEM_SECRET) in X-ReportWright-Signature (and X-Pagewright-Signature): sha256=<hex>
 // Events wait in a queue in this process (PW_AUDIT_SIEM_QUEUE, default 10000; past it the oldest are dropped and
 // counted) and are retried with exponential backoff (1 s doubling to 5 minutes) while the SIEM is down. The audit log in
 // storage stays the record: a SIEM that missed events can be filled from the CSV export. ponytail: the queue is in
@@ -68,7 +68,7 @@ async function send(batch) {
   if (t.kind === 'webhook') {
     const body = JSON.stringify(batch);
     const headers = { 'content-type': 'application/json', 'user-agent': 'ReportWright' };
-    if (process.env.PW_AUDIT_SIEM_SECRET) headers['x-pagewright-signature'] = `sha256=${crypto.createHmac('sha256', process.env.PW_AUDIT_SIEM_SECRET).update(body).digest('hex')}`;
+    if (process.env.PW_AUDIT_SIEM_SECRET) headers['x-reportwright-signature'] = headers['x-pagewright-signature'] = `sha256=${crypto.createHmac('sha256', process.env.PW_AUDIT_SIEM_SECRET).update(body).digest('hex')}`; // the old name too (deprecated 0.13.2)
     // through the SSRF guard (the address the operator set is trusted; no redirects anywhere else)
     const { safeFetch } = await import('./safeFetch.js');
     const res = await safeFetch(t.url, { method: 'POST', headers, body }, { allow: [new URL(t.url).origin], hops: 0, deadline: Date.now() + 15000 });

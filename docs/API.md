@@ -51,13 +51,13 @@ const res = await fetch('https://reports.example.com/api/v1/render', {
 const pdf = await res.arrayBuffer();
 ```
 
-Response headers: `x-pagewright-pages`, `x-pagewright-ms`, `x-pagewright-warnings`.
+Response headers: `x-reportwright-pages`, `x-reportwright-ms`, `x-reportwright-warnings`.
 
 **Streaming CSV and Excel.** A data CSV (`format: 'csv'`, not `csv: 'layout'`) or an Excel export (`format: 'xlsx'`) of a
 report with one table and row-by-row expressions (group and table footers may total with Sum, Count, Avg, Min, Max or
 CountRows) streams: rows are read from the source a batch at a time (JSON arrays, CSV, SQLite, PostgreSQL and MySQL cursors),
 sorted and grouped through temporary files when needed, and written as they come, so memory stays flat however many rows
-(1M rows: well under 300 MB for the render). The answer then has no `content-length` and `x-pagewright-pages: 0`. An
+(1M rows: well under 300 MB for the render). The answer then has no `content-length` and `x-reportwright-pages: 0`. An
 Excel table longer than 1,048,576 rows continues on a sheet "Name (2)" with its header rows again (a total whose rows span
 two sheets is then a value, not a SUBTOTAL formula). If the
 render fails after the first bytes, the CSV ends with a last line `#ERROR <reference>` and the connection is broken off
@@ -138,7 +138,7 @@ When `PW_WEBHOOK_SECRET` is set, check the signature before you trust the body:
 ```js
 import crypto from 'node:crypto';
 const expected = 'sha256=' + crypto.createHmac('sha256', process.env.PW_WEBHOOK_SECRET).update(rawBody).digest('hex');
-const ok = crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(req.headers['x-pagewright-signature'] || ''));
+const ok = crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(req.headers['x-reportwright-signature'] || ''));
 ```
 
 ## Schedules

@@ -15,7 +15,7 @@ export const SETTINGS = [
   ['PW_AUTH', 'enum:users|proxy', '(none)', 'users: accounts and roles; proxy: a signing-in reverse proxy in front. Unset in prod: static files and /api/v1 only.'],
   ['PW_SESSION_SECRET', 'secret', '(required with users)', 'Signs session cookies (32+ characters).'],
   ['PW_BASIC_AUTH', 'text', '(off)', '"user:password" for the whole app (no accounts).'],
-  ['PW_PROXY_SECRET', 'secret', '(off)', 'With PW_AUTH=proxy: the header x-pagewright-proxy-secret the proxy adds (16+ characters in prod).'],
+  ['PW_PROXY_SECRET', 'secret', '(off)', 'With PW_AUTH=proxy: the header x-reportwright-proxy-secret (x-pagewright-proxy-secret, deprecated, is still read) the proxy adds (16+ characters in prod).'],
   ['PW_PUBLIC_READONLY', 'flag', '0', '1: without sign-in, anyone may open and render saved reports.'],
   ['PW_ALLOW_KEYLESS', 'flag', '0', '1: /api/v1 answers reads without a key in prod.'],
   ['PW_API_KEYS', 'list', '(none)', 'API keys for /api/v1, comma-separated: "key" (a service key) or "user@x|key" (acts as that user).'],

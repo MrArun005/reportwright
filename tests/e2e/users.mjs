@@ -122,7 +122,7 @@ assert.equal(r.status === 308 ? (await req(new URL(r.headers.get('location'), BA
 // a server render calls /api/sample on this server with a one-GET pass
 r = await req(`/api/reports/${RID}/pdf?accountId=LN-2025-001982`, { cookie: viewer.cookie });
 assert.equal(r.status, 200, await r.clone().text());
-assert.equal(r.headers.get('x-pagewright-pages'), '2');
+assert.equal(r.headers.get('x-reportwright-pages'), '2');
 
 const pv = await page();
 await pv.context().addCookies([{ name: 'pw_session', value: viewer.cookie.split('=')[1], url: BASE }]);

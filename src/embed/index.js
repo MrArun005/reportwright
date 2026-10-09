@@ -27,7 +27,7 @@ function installSnapshot(snapshot) {
       const res = await live(input, init);
       if (res.ok || !(url in snapshot)) return res;
     } catch (e) { if (!(url in snapshot)) throw e; }
-    return new Response(JSON.stringify(snapshot[url]), { status: 200, headers: { 'content-type': 'application/json', 'x-pagewright-snapshot': '1' } });
+    return new Response(JSON.stringify(snapshot[url]), { status: 200, headers: { 'content-type': 'application/json', 'x-reportwright-snapshot': '1', 'x-pagewright-snapshot': '1' } });
   };
 }
 

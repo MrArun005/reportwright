@@ -18,7 +18,7 @@ export default function Thumb({ id, name, lang }) {
     const load = (n) => fetch(`/api/reports/${encodeURIComponent(id)}/thumb`)
       .then(r => {
         if (r.status === 202 && n < 30) { timer = setTimeout(() => live && load(n + 1), Math.min(1000 * 1.5 ** n, 10000)); return null; }
-        return r.ok && r.status === 200 ? r.text().then(svg => ({ svg, pages: Number(r.headers.get('x-pagewright-pages')) || 0 })) : Promise.reject();
+        return r.ok && r.status === 200 ? r.text().then(svg => ({ svg, pages: Number(r.headers.get('x-reportwright-pages') ?? r.headers.get('x-pagewright-pages')) || 0 })) : Promise.reject();
       })
       .then(s => s && live && setState({ ...s, failed: false }))
       .catch(() => live && setState({ svg: null, pages: 0, failed: true }));

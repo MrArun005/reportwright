@@ -8,7 +8,7 @@ import { audit } from '@/server/audit.js';
 import { throughSnapshot } from '@/server/snapshots.js';
 import { errorResponse } from '@/server/errors.js';
 
-import { outputHeaders } from '@/server/headers.js';
+import { outputHeaders, rwHeaders } from '@/server/headers.js';
 
 export const runtime = 'nodejs';
 
@@ -38,9 +38,7 @@ export async function GET(req, { params }) {
         'content-type': r.contentType,
         ...(r.stream ? {} : { 'content-length': String(r.bytes.byteLength) }),
         'content-disposition': `inline; filename="${id}.${r.ext}"`,
-        'x-pagewright-pages': String(r.pages),
-        'x-pagewright-ms': String(r.ms),
-        'x-pagewright-snapshot': r.snapshot,
+        ...rwHeaders({ pages: String(r.pages), ms: String(r.ms), snapshot: r.snapshot }),
         ...outputHeaders(r.contentType), // report output on this origin: never a page of the app
       },
     });

@@ -2,7 +2,7 @@
 // and answer has nosniff, a referrer and permissions policy and frame-ancestors ('none'; the viewer: this origin and
 // PW_EMBED_ORIGINS), and report output served on this origin (thumbnail SVG, server renders, downloads) is sandboxed.
 import { describe, it, expect } from 'vitest';
-import { pageHeaders, outputHeaders } from '../../src/server/headers.js';
+import { pageHeaders, outputHeaders, rwHeaders } from '../../src/server/headers.js';
 import config from '../../next.config.mjs';
 
 const find = (rules, source) => Object.fromEntries(rules.find(r => (source === ALL ? r.source.startsWith('/((?!viewer/') : r.source === source)).headers.map(h => [h.key, h.value]));
@@ -43,4 +43,8 @@ describe('security headers', () => {
     for (const f of ['app/api/reports/[id]/thumb/route.js', 'app/api/reports/[id]/pdf/route.js', 'app/api/v1/render/route.js', 'app/api/v1/batches/[id]/download/route.js'])
       expect(fs.readFileSync(f, 'utf8'), f).toMatch(/\.\.\.outputHeaders\(/);
   });
+});
+
+it('our answer headers go out as x-reportwright-* and, deprecated (0.13.2), as x-pagewright-*', () => {
+  expect(rwHeaders({ pages: '2' })).toEqual({ 'x-reportwright-pages': '2', 'x-pagewright-pages': '2' });
 });
