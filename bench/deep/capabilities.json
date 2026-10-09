@@ -59,6 +59,11 @@
    "deps": "0", "license": "MIT",
    "notes": {"shaping": "through a HarfBuzz hook (the bench passes harfbuzzjs)", "pdfa": "PDF/A-2b, veraPDF in this bench's pdfa job"}
   },
+  "mupdf.js (WASM)": {
+   "layout": "no", "tables": "no", "bidi": "?", "shaping": "?", "streams": "no", "pdfa": "no", "pdfua": "no", "forms": "yes", "sign": "?", "encrypt": "yes", "read": "yes", "merge": "yes",
+   "deps": "none (MuPDF compiled to WebAssembly, bundled)", "license": "AGPL-3.0 or commercial",
+   "notes": {"forms": "PDFWidget fill (mupdf.d.ts); not exercised by this harness", "encrypt": "saveToBuffer encrypt= options; not exercised by this harness", "read": "StructuredText.asText", "merge": "PDFDocument.graftPage"}
+  },
   "pdf-lib": {
    "layout": "no", "tables": "no", "bidi": "no", "shaping": "no", "streams": "no", "pdfa": "no", "pdfua": "no", "forms": "yes", "sign": "no", "encrypt": "no", "read": "no", "merge": "yes",
    "deps": "@pdf-lib/standard-fonts, @pdf-lib/upng, pako, tslib", "license": "MIT",

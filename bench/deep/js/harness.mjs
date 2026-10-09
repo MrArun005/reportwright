@@ -280,4 +280,60 @@ async function puppeteer() {
   };
 }
 
-await main({ 'pdf-lib': pdflib, pdfkit, jspdf, pdfmake, '@react-pdf/renderer': reactpdf, 'pdfjs-dist': pdfjs, puppeteer });
+// ---------------------------------------------------------------- mupdf.js (MuPDF compiled to WebAssembly; not PyMuPDF)
+// Create jobs: raw content streams over Type0/Identity-H fonts (doc.addFont), as the other writers draw (no shaping).
+async function mupdfjs() {
+  const mupdf = await import('mupdf');
+  const hex = (n) => n.toString(16).padStart(4, '0');
+  const num = (n) => +n.toFixed(3);
+  const rgb = (h) => rgb01(h).map(num).join(' ');
+  const canvas = async (out, o) => {
+    const doc = new mupdf.PDFDocument();
+    doc.setMetaData('info:Title', o.title);
+    const fonts = doc.newDictionary(), xobj = doc.newDictionary(), f = {};
+    for (const k of o.fonts) { const ft = new mupdf.Font(k, fs.readFileSync(font(k))); fonts.put('F' + k, doc.addFont(ft)); f[k] = ft; }
+    let ops = null, nImg = 0;
+    const flush = () => {
+      if (ops === null) return;
+      const res = doc.newDictionary(); res.put('Font', fonts); res.put('XObject', xobj);
+      doc.insertPage(-1, doc.addPage([0, 0, P.w, P.h], 0, res, ops.join('\n')));
+    };
+    const gids = (s, k) => Array.from(s, (c) => f[k].encodeCharacter(c.codePointAt(0)));
+    return {
+      page() { flush(); ops = []; },
+      text(s, x, y, size, k) { ops.push(`BT 0 g /F${k} ${size} Tf ${num(x)} ${num(P.h - y - 0.8 * size)} Td <${gids(s, k).map(hex).join('')}> Tj ET`); },
+      width: (s, size, k) => gids(s, k).reduce((w, g) => w + f[k].advanceGlyph(g), 0) * size,
+      rect(x, y, w, h, c) { ops.push(`${rgb(c)} rg ${num(x)} ${num(P.h - y - h)} ${num(w)} ${num(h)} re f`); },
+      hline(x1, x2, y, w, c) { ops.push(`${rgb(c)} RG ${w} w ${num(x1)} ${num(P.h - y)} m ${num(x2)} ${num(P.h - y)} l S`); },
+      image: async (file) => { const im = new mupdf.Image(fs.readFileSync(file)), name = 'Im' + nImg++; xobj.put(name, doc.addImage(im)); return { name, width: im.getWidth(), height: im.getHeight() }; },
+      draw(img, x, y, w, h) { ops.push(`q ${num(w)} 0 0 ${num(h)} ${num(x)} ${num(P.h - y - h)} cm /${img.name} Do Q`); },
+      async end() { flush(); doc.subsetFonts(); fs.writeFileSync(out, doc.saveToBuffer('compress,garbage').asUint8Array()); },
+    };
+  };
+  const open = (f) => { const d = new mupdf.PDFDocument(fs.readFileSync(f)); if (d.needsPassword()) d.authenticatePassword(''); return d; };
+  const save = (d, out) => fs.writeFileSync(out, d.saveToBuffer('compress').asUint8Array());
+  return {
+    version: ver('mupdf'), canvas,
+    async extract(f) {
+      const d = open(f), out = [];
+      for (let i = 0; i < d.countPages(); i++) out.push(d.loadPage(i).toStructuredText().asText());
+      return out.join('\n');
+    },
+    async parse(f) { const d = open(f); for (let i = 0; i < d.countPages(); i++) d.loadPage(i).getBounds(); d.saveToBuffer(''); },
+    async merge(files, out) {
+      const d = new mupdf.PDFDocument();
+      for (const f of files) { const s = open(f); for (let i = 0; i < s.countPages(); i++) d.graftPage(-1, s, i); }
+      save(d, out);
+    },
+    async split(file, dir) {
+      const s = open(file);
+      for (let i = 0; i < s.countPages(); i++) {
+        const d = new mupdf.PDFDocument();
+        d.graftPage(-1, s, i);
+        save(d, path.join(dir, `p-${String(i + 1).padStart(4, '0')}.pdf`));
+      }
+    },
+  };
+}
+
+await main({ 'pdf-lib': pdflib, pdfkit, jspdf, pdfmake, '@react-pdf/renderer': reactpdf, 'pdfjs-dist': pdfjs, puppeteer, 'mupdf.js (WASM)': mupdfjs });

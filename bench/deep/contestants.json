@@ -213,6 +213,34 @@
       "edit": "a writer: it does not open existing PDFs",
       "pdfa": "Chrome prints no PDF/A"
      }
+    },
+    "mupdf.js (WASM)": {
+     "league": "writer",
+     "cmd": [
+      "node",
+      "bench/deep/js/harness.mjs",
+      "mupdf.js (WASM)"
+     ],
+     "jobs": [
+      "plain",
+      "report",
+      "invoice",
+      "invoice-warm",
+      "unicode",
+      "images",
+      "read-big",
+      "read-mixed",
+      "merge",
+      "split",
+      "parse"
+     ],
+     "na": {
+      "pdfa": "no PDF/A output",
+      "encrypt": "not wired in this harness yet (saveToBuffer has encrypt options)",
+      "metadata": "not wired in this harness yet",
+      "form": "not wired in this harness yet",
+      "sign": "not wired in this harness yet"
+     }
     }
    }
   },
