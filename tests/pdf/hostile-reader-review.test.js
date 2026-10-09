@@ -7,6 +7,7 @@ import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { PDFDocument } from 'pdf-lib';
 import { loadPdf } from '../../packages/pdf/src/index.js';
+import { inRegion } from '../../packages/pdf/src/reader/source.js';
 import { onePage, rawPdf } from './reader-tools.js';
 import { toBytes, nodeSigner } from '../../packages/pdf/src/index.js';
 import { HAS, INTER, verapdf } from './tools.js';
@@ -333,4 +334,24 @@ describe('R5: saveIncremental enforces what the file\'s signatures permit (DocMD
     await refuse(await signedForm(0, { x: 0, y: 0, width: 595, height: 842 }), (d) => d.fill({ name: 'x' }), undefined, /shadow/);
     await refuse(await signedForm(0, { x: 0, y: 0, width: 595, height: 200, background: '#ffffff' }), (d) => d.fill({ name: 'x' }), undefined, /opaque/);
   }, 30_000);
+});
+
+describe('control regression: the in-stream test is right whatever order the byte-scan hits come in', () => {
+  it('inRegion: boundaries, adjacent and overlapping regions, unsorted input, regions added later, a query going back', () => {
+    const regions = [[50, 60], [10, 20], [20, 30], [15, 40]];
+    const q = inRegion(regions, { tick() {} });
+    expect([9, 10, 19, 20, 29, 39, 40, 49, 50, 59, 60].map(q)).toEqual([false, true, true, true, true, true, false, false, true, true, false]);
+    regions.push([70, 80]);
+    expect([69, 70, 79, 80].map(q)).toEqual([false, true, true, false]);
+    expect([5, 12, 45, 75].map(q)).toEqual([false, true, false, true]); // back again: still right
+  });
+  it('a hit whose number a comment puts before an earlier hit, unreadable, not in stream data: refused', async () => {
+    // inside a string (the tokens see one string): "9 0" then comment lines then "obj": the scan's hit for it comes
+    // after hits whose stream region lies past its number; read in 'obj' order, that region made it look in a stream
+    const s = ['9 0 %c', '%5 0 obj<</Length 2>>stream', `%7 0 obj ${'['.repeat(300)}`, '%endstream', 'obj << /Type /ObjStm /N -1 /First 0 /Length 1 >> stream', 'x', 'endstream'].join('\n');
+    const b = rawPdf(['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] >>', `(${s})`]);
+    const d = await loadPdf(b);
+    d.setInfo({ title: 'x' });
+    await expect(d.saveIncremental()).rejects.toMatchObject({ code: 'E_ACTIVE', message: expect.stringMatching(/could not be checked/) });
+  });
 });
