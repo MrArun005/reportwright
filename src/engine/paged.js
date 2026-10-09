@@ -266,7 +266,7 @@ export async function planPaged(def0, opts = {}) {
       wn++;
       // tagged: the cell tags an accessible PDF builds its tables from (exportData)
       const model = await render(windowDef(first, last, done), { ...opts, exportData: !!(opts.exportData || opts.tagged), sources: { __rows: { rows: win } },
-        pageWindow: { offset: off, total, final: last, first: first0, rowOffset: base, cont } });
+        pageWindow: { offset: off, total, final: last, first: first0, rowOffset: base, cont, count: !!starts } });
       for (const w of model.warnings) if (!info.warnings.includes(w) && info.warnings.length < 200) info.warnings.push(w);
       const pg = model.pages;
       let keep = pg.length;

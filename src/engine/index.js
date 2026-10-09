@@ -73,7 +73,7 @@ export const BAND_ITEMS = 250000; // page header and footer items drawn per rend
  * @property {{ items: number }} [reuseBudget] internal: items drawn through report parts so far
  * @property {{ n: number }} [fnCount] internal: report function calls so far
  * @property {any} [imageBudget] internal: the images drawn so far, shared with subreports
- * @property {{ offset: number, total?: number|null, final: boolean, first?: any, rowOffset?: number, cont?: ({ first: any }|null)[] }} [pageWindow]
+ * @property {{ offset: number, total?: number|null, final: boolean, first?: any, rowOffset?: number, cont?: ({ first: any }|null)[], count?: boolean }} [pageWindow] count: the page-counting pass, whose pages are only counted (table rows are measured, not drawn)
  *   internal (paged.js): these pages are a window of a longer report: numbered from offset + 1 of total ('…' when not known
  *   yet); final: the window holds the report's last page; first: the report's first row; rowOffset: the rows before this
  *   window; cont: per group level, the group the window's first row continues (its first row), or null
