@@ -2,6 +2,20 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
+## 0.13.2 — unreleased
+
+### Added
+- **`pw import <folder>`: bulk import.** Every `.rdl`, `.rdlc`, `.jrxml`, `.rptdesign` and `.rdlx-json` report in a folder (`--recursive` for subfolders) is imported into `-o <outDir>`, which mirrors the folder.
+  - One bad file never stops the batch. Exit 0 means all were imported, 2 some failed, 1 none.
+  - Subreports, SSRS shared data sources (`.rds`), JasperReports style templates (`.jrtx`) and images are resolved across the batch. Images are copied once per content. Unresolved references are listed per file.
+  - `import-report.json` and a standalone, escaped `import-report.html` give for each file the mapped, approximated and dropped counts, each item's reason, and every expression that was not translated with its line and column.
+  - `.pw-import.json` holds the hash of each written file, and a re-run skips an output the user edited unless `--force`.
+  - `--verify` renders each report with its embedded or sample data and compares it with the output it replaced.
+  - Paths from the folder are untrusted. Links that point outside it are refused, outputs stay in `outDir`, and `--max-files` and `--max-bytes` cap the input.
+  - The importers now return structured `items` (each item's notes, untranslated expressions and source position) and take a `resolve` option for shared data sources and style templates.
+  - Docs: the CLI README, "Bulk import". Test: tests/engine/c132-import-batch.test.js.
+- **`pw --version` / `pw -v`** prints the CLI version (from its package.json) and the version of the engine it carries.
+
 ## 0.13.1 — 2026-10-09
 
 ### Fixed

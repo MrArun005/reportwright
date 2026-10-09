@@ -8,12 +8,60 @@
 npx -p @reportwright/cli pw render statement.pw.json -p accountId=LN-1 -d loans=data.json -f pdf -o statement.pdf
 npx -p @reportwright/cli pw test reports        # snapshot tests for reports-as-code
 npx -p @reportwright/cli pw import invoice.jrxml   # JasperReports, SSRS (.rdl) or BIRT → invoice.pw.json
+npx -p @reportwright/cli pw import legacy/ -o imported --recursive   # a whole folder, with a migration report (see Bulk import)
 ```
 
 `pw render -f pdf -o file` streams a flowing table into the file as it is laid out (`exportPdfStream`; the message says
 `streamed`), so a large report's memory stays flat; other reports, `--password` and `-o -` render the whole model first.
 It writes to a temporary file beside the target and renames it when the export succeeded: a failed run leaves no
 damaged PDF, and an older file at the path stays as it was.
+
+## Bulk import
+
+```bash
+pw import legacy-reports -o imported --recursive [--force] [--verify] [--report path] [--max-files 2000] [--max-bytes 16777216]
+```
+
+`pw import <folder>` imports every SSRS (`.rdl`, `.rdlc`), JasperReports (`.jrxml`), BIRT (`.rptdesign`) and
+ActiveReports (`.rdlx-json`) report in the folder (and its subfolders with `--recursive`) into `<outDir>`, which mirrors
+the folder. Each report becomes `<its folder>/<report id>.pw.json` (the id is the file name in lower case with dashes,
+e.g. `Sales Report.rdl` → `sales-report.pw.json`), because `pw render` and the server find subreports by that id.
+
+- **One bad file never stops the batch.** Its error goes into the report and the rest go on.
+  Exit code: **0** every report was imported, **2** some failed, **1** none was imported (or the folder has none).
+- **References are resolved across the batch.** These are found among the folder's files: by their path relative to
+  the report, else by their file name, nearest first.
+  - subreports by their id;
+  - SSRS shared data sources (`.rds`, named by a `DataSourceReference`): the provider comes from the `.rds`, but the
+    connection string does not (set `PW_DB_<NAME>` on the server, as for any SQL source);
+  - JasperReports style templates (`.jrtx`, nested ones too): the report's own style of the same name wins;
+  - images named by a relative path: copied next to the report once per content (the same picture referenced from two
+    folders is one file) and the report's `src` rewritten to the copy.
+
+  An unresolved reference is listed for its file and does not stop the import. BIRT libraries (`.rptlibrary`) are
+  listed, but the BIRT importer does not read them, so their items are missing.
+- **The migration report** is `import-report.json` and `import-report.html` in `<outDir>`. With
+  `--report file.json` it goes there with the `.html` beside it, and with `--report folder` it goes into that folder.
+  For each file it gives the status, the counts of items mapped, approximated and dropped, and every item approximated
+  or dropped with the reason. It also lists every expression that was not translated with its item and its line and
+  column, and the references with what each resolved to. The rest of the importer's notes are listed under the report.
+  Every importer warning is in the report once. The HTML page stands alone and escapes file names and expressions.
+  Line and column are where the item's element starts in the XML file. ActiveReports `.rdlx-json` is JSON and gives
+  none. A data set's or a filter's expression is reported in that report's notes, not with a line.
+- **Edited outputs are kept.** `<outDir>/.pw-import.json` holds the hash of each file as written. On a re-run, a
+  target whose hash differs (you edited it, or it was there before and is not from an import) is skipped with a message.
+  `--force` overwrites it. Unchanged targets are refreshed, and new ones are written.
+- **`--verify`** renders each imported report with its embedded data, or with `<id>.data.json` beside the output
+  (`{ "<data source>": [rows] }`). A report with neither is skipped with a note. When the run replaced an earlier output,
+  the two are compared with `pw diff`'s comparison (the words, page by page), and the changed lines go into the report.
+  Otherwise the check confirms that it renders. A verify makes no network requests.
+- **The folder is untrusted.** A report never opens a file by the path it names. Only files found by walking the
+  folder are read, so `../` and absolute paths cannot reach outside it. Symbolic links that point out of the folder,
+  or to folders, are refused and listed. Every output path is checked to stay in `<outDir>`, and nothing is written
+  through a link. `--max-files` and `--max-bytes` cap the file count and each file's size. Nothing in an imported file
+  is run: custom code and scriptlets stay text.
+
+`pw --version` (or `-v`) prints the CLI's version and the version of the engine it carries.
 
 ## Snapshot tests: `pw test`
 
