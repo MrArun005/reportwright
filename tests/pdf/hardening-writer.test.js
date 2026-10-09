@@ -155,3 +155,16 @@ describe('options that widen what is allowed are own properties only', () => {
   });
 });
 
+describe('passive attachment types', () => {
+  it('rtf, msg and xml need allowTypes; Factur-X still embeds its XML', async () => {
+    await toBytes((pdf) => {
+      const p = pdf.addPage();
+      for (const ext of ['rtf', 'msg', 'xml']) {
+        expect(() => p.attachFile(FILE, { name: `a.${ext}` }), ext).toThrow(/not an allowed type/);
+        expect(() => p.attachFile(FILE, { name: `b.${ext}`, allowTypes: [ext] }), ext).not.toThrow();
+      }
+    });
+    const out = await toBytes(async (pdf) => { pdf.addPage(); await pdf.facturX(EN16931, { profile: 'EN 16931' }); }, { pdfa: { part: 3, conformance: 'b' }, compress: false, creationDate: DATE });
+    expect(latin(out)).toContain('/Subtype /text#2Fxml');
+  });
+});
