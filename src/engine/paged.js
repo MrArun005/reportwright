@@ -21,10 +21,11 @@ import { compile, evaluate, aggregator, FOLDS, isDynamic, streamable, OVER_TIME 
 import { resolvePage } from './units.js';
 
 const WINDOW = 1000; // rows laid out at once (a window grows when its rows do not fill two pages)
-// "Page N of M": the counting pass keeps its pages (drawn) while they hold at most this many items (~240 bytes each, ~38
-// MB: a 10,000-row, 7-column ledger), so the rows are laid out once; past it, they are counted only and laid out again in a second pass
+// "Page N of M": the counting pass keeps its pages (drawn) while they hold at most this many objects (a page, an item, a
+// text line: ~160 bytes each, ~38 MB: a 10,000-row, 7-column ledger; a wrapped text's lines count, so long texts in few
+// items are bounded too), so the rows are laid out once; past it, they are counted only and laid out again in a second pass
 // (flat memory). ponytail: a fixed cap; one from the heap's room if a deployment needs it
-const HOLD_ITEMS = 160000;
+const HOLD_ITEMS = 240000;
 const OK_TYPES = new Set(['textbox', 'line', 'shape']);
 
 /**
@@ -129,7 +130,7 @@ export async function planPaged(def0, opts = {}) {
     };
   };
 
-  const info = { width: page.width, height: page.height, bookmarks: /** @type {any[]} */ ([]), headings: /** @type {any[]} */ ([]), warnings: /** @type {string[]} */ ([]), pages: 0 };
+  const info = { width: page.width, height: page.height, bookmarks: /** @type {any[]} */ ([]), headings: /** @type {any[]} */ ([]), warnings: /** @type {string[]} */ ([]), pages: 0, held: /** @type {boolean|undefined} */ (undefined) };
   const L = groups.length;
   const newAcc = (/** @type {any[]} */ fs) => fs.map(f => (f.fn === 'countrows' ? { n: 0 } : { agg: aggregator(f.fn, fctx), err: null }));
   const value = (/** @type {any} */ a) => a.n ?? (a.err ? '#Error' : a.agg.value());
@@ -306,7 +307,7 @@ export async function planPaged(def0, opts = {}) {
         starts?.push(startsAt(p, win, base) ? p.firstRow - 1 : -1);
         delete p.firstRow; delete p.rowHead; delete p.headLevel;
         p.win = wn; // the window it came from: row ids are a window's own (pdfstreamtags.js)
-        if (hold?.on) { hold.pages.push(p); hold.items += p.items.length; }
+        if (hold?.on) { hold.pages.push(p); hold.items += 1; for (const it of p.items) hold.items += it.t === 'text' ? 1 + it.lines.length : 1; }
         yield p;
         pg[k] = null;
       }
@@ -373,6 +374,7 @@ export async function planPaged(def0, opts = {}) {
         const starts = /** @type {number[]} */ ([]);
         const hold = { on: totals && holdable && !o.run, pages: /** @type {any[]} */ ([]), items: 0, first: null };
         for await (const p of pass(null, null, starts, { hold })) void p;
+        info.held = hold.on;
         if (hold.on) { yield* rebanded(hold); return; }
         yield* pass(totals ? starts.length : null, starts, undefined, o);
       } catch (e) { throw limit(e); }

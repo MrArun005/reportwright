@@ -101,6 +101,16 @@ describe('paged rendering of a flowing table', () => {
     expect(outlines[2]).toBe(outlines[0]);
   });
 
+  it('the held pass is bounded by what it holds, a long text\'s lines included: a hostile report falls back to two passes', async () => {
+    const words = (i) => Array.from({ length: 300 }, (_, k) => `w${i}x${k}`).join(' '); // distinct words: one cell, ~60 lines
+    const def = ledger(ledgerRows(200).map((r, i) => ({ ...r, account: words(i) })));
+    const count = async (holdItems) => { const plan = /** @type {any} */ (await planPaged(def, { fontStore, now, window: 50, holdItems })); let n = 0; for await (const p of plan.pages()) n += p.items.length; return { n, held: plan.info.held }; };
+    const big = await count(undefined), small = await count(2000);
+    expect(big.held).toBe(true);
+    expect(small.held).toBe(false); // few items, but their lines are over the cap
+    expect(small.n).toBe(big.n);
+  });
+
   it('window by window, the pages are the whole render\'s pages', async () => {
     const def = ledger(ledgerRows(1500));
     const whole = await render(def, { fontStore, now });
