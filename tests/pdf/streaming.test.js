@@ -128,10 +128,14 @@ describe('memory and the built package', () => {
     expect(held).toBeLessThan(r.bytes / 2 ** 20 / 4); // what the document holds is far less than the file it wrote (~2 of 14 MB)
   }, 120000);
 
-  it('dist/index.js (fflate bundled) has no imports and writes a valid PDF', async () => {
+  it('dist/index.js imports nothing but dist/fflate.js (fflate bundled, on first use), which imports nothing; it writes a valid PDF', async () => {
     execFileSync(process.execPath, [path.join(ROOT, 'packages/pdf/build.mjs')]);
     const dist = fs.readFileSync(path.join(ROOT, 'packages/pdf/dist/index.js'), 'utf8');
+    const ff = fs.readFileSync(path.join(ROOT, 'packages/pdf/dist/fflate.js'), 'utf8');
     expect(dist).not.toMatch(/^\s*import\s|\bfrom\s+['"]|require\(/m);
+    expect([...dist.matchAll(/\bimport\s*\(\s*"([^"]*)"\s*\)/g)].map((m) => m[1])).toEqual(['./fflate.js']); // JSDoc's import('…') use single quotes
+    expect(ff).not.toMatch(/^\s*import\s|\bfrom\s+['"]|require\(|\bimport\s*\(/m);
+    expect(ff).toMatch(/export\s*\{[^}]*\bzlibSync\b/);
     const { toBytes: tb } = await import('../../packages/pdf/dist/index.js');
     const out = await tb(async (pdf) => { const f = await pdf.embedFont(INTER); pdf.addPage().text('From dist ✓', { x: 10, y: 10, font: f }); }, { creationDate: DATE });
     if (HAS.poppler) expect(pdftotext(out).trim()).toBe('From dist ✓');

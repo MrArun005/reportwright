@@ -15,9 +15,10 @@ beforeAll(async () => {
   process.getBuiltinModule = (m) => { if (m === 'node:crypto' || m === 'crypto') { denied++; return undefined; } return real.call(process, m); };
   vi.resetModules();
   lib = await import('../../packages/pdf/src/index.js');
+  expect(denied).toBe(0); // importing the library asks for no built-in (core/lazy.js: on first use)
   const c = await import('../../packages/pdf/src/security/crypto.js');
   expect(c.hasher('SHA-256').update).toBeTypeOf('function');
-  expect(denied).toBeGreaterThanOrEqual(2); // crypto.js and cms.js asked for node:crypto and did not get it
+  expect(denied).toBe(1); // the first use asked for node:crypto (once for crypto.js and cms.js) and did not get it
 });
 afterAll(() => { process.getBuiltinModule = real; });
 
