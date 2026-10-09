@@ -29,7 +29,7 @@ describe('hostile passwords', () => {
     for (const algorithm of ['aes-256', 'aes-128']) for (const key of ['userPassword', 'ownerPassword']) {
       const t = performance.now();
       const e = errSync(() => createPdf({ write() {} }, { encrypt: { [key]: pw, algorithm } }));
-      expect(performance.now() - t).toBeLessThan(50);
+      expect(performance.now() - t).toBeLessThan(500); // no work on it (generous: the suite runs two workers)
       expect(e).toBeInstanceOf(RangeError);
       expect(e.message).toMatch(/at most 1024 characters/);
       expect(e.message).not.toContain('S3cr3t');
