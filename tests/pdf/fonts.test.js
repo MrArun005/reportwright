@@ -5,7 +5,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { toBytes, createPdf } from '../../packages/pdf/src/index.js';
 import { parseFont } from '../../packages/pdf/src/fonts/truetype.js';
-import { subsetGlyf } from '../../packages/pdf/src/fonts/subset.js';
+import { subsetGlyf, buildSfnt } from '../../packages/pdf/src/fonts/subset.js';
+import { sfntTables } from '../../packages/pdf/src/fonts/truetype.js';
 import { createSubsetter } from '../../src/exporters/subset.js';
 import { INTER, MONO, ROOT, HAS, pdftotext, pdffonts, latin } from './tools.js';
 
@@ -17,6 +18,21 @@ const draw = (font, opt, txt = TEXT, o = {}) => toBytes(async (pdf) => {
 }, { creationDate: DATE, ...o });
 
 describe('embedded TrueType', () => {
+  it('a variable font (an fvar table) is embedded at its default instance, with a warning that says which', async () => {
+    const fvar = Buffer.alloc(36); // one axis, wght 100 to 900, default 100 (as Noto Sans JP's Thin)
+    fvar.writeUInt16BE(1, 0); fvar.writeUInt16BE(16, 4); fvar.writeUInt16BE(2, 6); fvar.writeUInt16BE(1, 8); fvar.writeUInt16BE(20, 10); fvar.writeUInt16BE(8, 14);
+    fvar.write('wght', 16, 'latin1'); fvar.writeInt32BE(100 << 16, 20); fvar.writeInt32BE(100 << 16, 24); fvar.writeInt32BE(900 << 16, 28);
+    const t = sfntTables(INTER); t.set('fvar', new Uint8Array(fvar));
+    let r;
+    await toBytes(async (pdf) => {
+      pdf.addPage().text('Hi', { font: await pdf.embedFont(buildSfnt(t)) });
+      const end = pdf.end; pdf.end = async () => (r = await end());
+    }, { creationDate: DATE });
+    expect(r.warnings.join()).toMatch(/Inter-Regular is a variable font: it is drawn at its default instance \(wght 100\)/);
+    let plain; await toBytes(async (pdf) => { pdf.addPage().text('Hi', { font: await pdf.embedFont(INTER) }); const end = pdf.end; pdf.end = async () => (plain = await end()); });
+    expect(plain.warnings).toEqual([]);
+  });
+
   it('Unicode text extracts exactly; the font is embedded, subset, with a ToUnicode map', async () => {
     const out = await draw(INTER);
     if (!HAS.poppler) return;
