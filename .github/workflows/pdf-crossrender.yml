@@ -2,7 +2,8 @@
 # (tools/print-test.mjs) opened, read and rendered by the engines real users have, on the OS each one lives on.
 #   linux:   poppler, qpdf, MuPDF, Ghostscript (+ pdfwrite and ps2write round trips), PDFium (Chrome/Edge's engine,
 #            via pypdfium2), pdf.js (Firefox's), veraPDF; and the print pipeline: PostScript, PCL XL, PCL 5, CUPS.
-#   windows: real Chrome and Edge built-in PDF viewers (screenshots), and Adobe Acrobat Reader (experimental).
+#   windows: real Chrome and Edge built-in PDF viewers (screenshots).
+#   acrobat: Adobe Acrobat Reader on windows-2022 (experimental, allowed to fail; reports honestly whether it ran).
 #   macos:   Apple Quartz (sips/CoreGraphics render, PDFKit text) against poppler.
 #   report:  one merged cross-render-report.md.
 name: PDF cross-render
@@ -48,6 +49,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq poppler-utils qpdf mupdf-tools ghostscript cups cups-client cups-filters
           echo "/usr/sbin" >> "$GITHUB_PATH"
+          find /usr/lib/cups/filter -maxdepth 1 -printf '%f ' ; echo; find /usr/share/ppd /usr/share/cups/model -iname '*postscript*' 2>/dev/null | head
       - name: GhostPCL (gpcl6), to render the PCL output back (best effort)
         continue-on-error: true
         run: |
@@ -106,42 +108,97 @@ jobs:
           PLAYWRIGHT_DIR: '${{ runner.temp }}\xrm'
           XR_MODULES: '${{ runner.temp }}\xrm'
         run: node packages/pdf/tools/cross-render.mjs "$env:RUNNER_TEMP\corpus" "$env:RUNNER_TEMP\xr" --label windows --engines chrome,msedge
-      - name: Adobe Acrobat Reader install (EXPERIMENTAL, allowed to fail)
-        id: reader
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          choco install adobereader -y --no-progress
-          New-Item -Force 'HKCU:\Software\Adobe\Acrobat Reader\DC\AdobeViewer' | Out-Null
-          Set-ItemProperty 'HKCU:\Software\Adobe\Acrobat Reader\DC\AdobeViewer' -Name EULA -Value 1 -Type DWord
-          New-Item -Force 'HKLM:\SOFTWARE\Policies\Adobe\Acrobat Reader\DC\FeatureLockDown' | Out-Null
-          Set-ItemProperty 'HKLM:\SOFTWARE\Policies\Adobe\Acrobat Reader\DC\FeatureLockDown' -Name bProtectedMode -Value 0 -Type DWord
-          Set-ItemProperty 'HKLM:\SOFTWARE\Policies\Adobe\Acrobat Reader\DC\FeatureLockDown' -Name bUpdater -Value 0 -Type DWord
-      - name: Acrobat Reader opens the signed, encrypted and form files; a screenshot of the screen each time (EXPERIMENTAL)
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-          $exe = Get-ChildItem 'C:\Program Files\Adobe', 'C:\Program Files (x86)\Adobe' -Recurse -Include AcroRd32.exe, Acrobat.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-          $dir = New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\xr\acrobat"
-          $md = @('## Adobe Acrobat Reader (windows, experimental)', '', "Reader: $($exe.FullName) $($exe.VersionInfo.ProductVersion)", '', '| File | Screenshot |', '|---|---|')
-          if (-not $exe) { $md += '| — | Reader did not install; nothing to show |'; $md | Set-Content "$env:RUNNER_TEMP\xr\acrobat-windows.md"; exit 0 }
-          foreach ($f in Get-ChildItem "$env:RUNNER_TEMP\corpus" -Filter *.pdf | Where-Object { $_.Name -match '^(sign|encrypt|forms)-' }) {
-            $p = Start-Process $exe.FullName -ArgumentList "`"$($f.FullName)`"" -PassThru
-            Start-Sleep -Seconds 20
-            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
-            [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
-            $shot = Join-Path $dir "$($f.BaseName).acrobat.png"; $bmp.Save($shot); $bmp.Dispose()
-            $md += "| $($f.Name) | acrobat/$($f.BaseName).acrobat.png |"
-            Get-Process AcroRd32, Acrobat, AcroCEF, RdrCEF -ErrorAction SilentlyContinue | Stop-Process -Force
-            Start-Sleep -Seconds 3
-          }
-          $md += '', 'Look at each screenshot: no repair prompt; the encrypted files show the password prompt; the signed files show the signature bar (self-signed: "at least one signature has problems" / identity unknown is expected).'
-          $md | Set-Content "$env:RUNNER_TEMP\xr\acrobat-windows.md"
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: reports-windows, path: '${{ runner.temp }}\xr' }
+
+  acrobat:
+    # EXPERIMENTAL: Adobe Acrobat Reader on a Windows runner. Allowed to fail. On windows-latest (Server 2025) Reader
+    # died with "Acrobat failed to load its Core DLL", so this job runs on windows-2022 with Reader's first-run,
+    # protected-mode and upsell switches set for both the Reader and the unified (64-bit) Acrobat registry trees.
+    needs: corpus
+    runs-on: windows-2022
+    continue-on-error: true
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: corpus, path: '${{ runner.temp }}\corpus' }
+      - name: Install Acrobat Reader and pre-set first-run, EULA and protected-mode keys
+        shell: pwsh
+        run: |
+          choco install adobereader -y --no-progress --params '"/DesktopIcon /UpdateMode:4"'
+          foreach ($app in 'Acrobat Reader', 'Adobe Acrobat') {
+            $pol = "HKLM:\SOFTWARE\Policies\Adobe\$app\DC\FeatureLockDown"
+            New-Item -Force $pol | Out-Null
+            foreach ($k in @{ bProtectedMode = 0; bEnableProtectedModeAppContainer = 0; bIsSCReducedModeEnforcedEx = 1; bUpdater = 0; bAcroSuppressUpsell = 1; bToggleFTE = 1 }.GetEnumerator()) {
+              Set-ItemProperty $pol -Name $k.Key -Value $k.Value -Type DWord
+            }
+            $v = "HKCU:\Software\Adobe\$app\DC\AdobeViewer"
+            New-Item -Force $v | Out-Null
+            Set-ItemProperty $v -Name EULA -Value 1 -Type DWord
+            Set-ItemProperty $v -Name Launched -Value 1 -Type DWord
+          }
+      - name: Open the signed, encrypted and form files in Reader; screenshot each, and say honestly whether Reader ran
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          Add-Type -TypeDefinition @'
+          using System; using System.Text; using System.Collections.Generic; using System.Runtime.InteropServices;
+          public static class Win {
+            delegate bool Proc(IntPtr h, IntPtr l);
+            [DllImport("user32.dll")] static extern bool EnumWindows(Proc f, IntPtr l);
+            [DllImport("user32.dll")] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+            [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+            public static List<string> Titles() {
+              var t = new List<string>();
+              EnumWindows((h, l) => { if (IsWindowVisible(h)) { var sb = new StringBuilder(512); GetWindowText(h, sb, 512); if (sb.Length > 0) t.Add(sb.ToString()); } return true; }, IntPtr.Zero);
+              return t;
+            }
+          }
+          '@
+          $exe = Get-ChildItem 'C:\Program Files\Adobe', 'C:\Program Files (x86)\Adobe' -Recurse -Include Acrobat.exe, AcroRd32.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          $out = New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\xr\acrobat"
+          function Shot($name) {
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            $bmp.Save((Join-Path $out "$name.png")); $bmp.Dispose()
+          }
+          function Kill-Reader { Get-Process Acrobat, AcroRd32, AcroCEF, RdrCEF -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 3 }
+          $md = @('## Adobe Acrobat Reader (windows-2022, experimental)', '')
+          if (-not $exe) {
+            $md += 'Reader did not install: **did not run**.'
+          } else {
+            $md += "Reader: ``$($exe.FullName)`` $($exe.VersionInfo.ProductVersion)", ''
+            # first run: let Reader finish its setup, then close it
+            Start-Process $exe.FullName | Out-Null; Start-Sleep 60; Shot 'first-run'
+            $first = [Win]::Titles() | Where-Object { $_ -match 'Acrobat|Adobe|Error|Fatal' }
+            Kill-Reader
+            $md += "First launch (no file), windows seen after 60 s: $($first -join '; ') — screenshot acrobat/first-run.png", ''
+            $md += '| File | Reader status | Windows seen | Screenshot |', '|---|---|---|---|'
+            foreach ($f in Get-ChildItem "$env:RUNNER_TEMP\corpus" -Filter *.pdf | Where-Object { $_.Name -match '^(sign|encrypt|forms)-' }) {
+              Start-Process $exe.FullName -ArgumentList "`"$($f.FullName)`"" | Out-Null
+              Start-Sleep 30
+              $titles = [Win]::Titles()
+              $alive = [bool](Get-Process Acrobat, AcroRd32 -ErrorAction SilentlyContinue)
+              Shot "$($f.BaseName).acrobat"
+              $err = $titles | Where-Object { $_ -match 'Fatal|Core DLL|Error' }
+              $status =
+                if ($err) { "did not run (error: $($err -join ', '))" }
+                elseif (-not $alive) { 'did not run (Reader exited)' }
+                elseif ($titles -match [regex]::Escape($f.Name)) { 'opened' }
+                elseif ($titles -match 'Password') { 'password prompt shown' }
+                else { 'did not run (no window for the file)' }
+              $seen = ($titles | Where-Object { $_ -match 'Acrobat|Adobe|Password|pdf|Error' }) -join '; '
+              $md += "| $($f.Name) | $status | $seen | acrobat/$($f.BaseName).acrobat.png |"
+              Kill-Reader
+            }
+          }
+          $md += '', 'Only "opened" or "password prompt shown" means Reader ran; a screenshot of an error dialog is never a pass. The screenshots still need a human look: no repair prompt, the signature bar on signed files.'
+          $md | Set-Content "$env:RUNNER_TEMP\xr\acrobat-windows.md"
+          Get-Content "$env:RUNNER_TEMP\xr\acrobat-windows.md"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: reports-acrobat, path: '${{ runner.temp }}\xr' }
 
   macos:
     needs: corpus
@@ -164,7 +221,7 @@ jobs:
         with: { name: reports-macos, path: '${{ runner.temp }}/xr' }
 
   report:
-    needs: [linux, windows, macos]
+    needs: [linux, windows, macos, acrobat]
     if: always()
     runs-on: ubuntu-latest
     steps:
