@@ -193,6 +193,27 @@ export function evaluate(n, ctx) {
  */
 export const ROW_PARENT = new WeakMap();
 
+const lev = (a, b) => {
+  if (Math.abs(a.length - b.length) > 2) return 3;
+  const d = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = d[0]; d[0] = i;
+    for (let j = 1; j <= b.length; j++) { const t = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1].toLowerCase() === b[j - 1].toLowerCase() ? 0 : 1)); prev = t; }
+  }
+  return d[b.length];
+};
+/** The nearest known name: a typo (2 edits) or the start of a longer one (noRows → noRowsText). */
+export function didYouMean(k, known) {
+  let best = null, bd = 3;
+  for (const c of known) {
+    const dd = c.toLowerCase().startsWith(k.toLowerCase()) && k.length >= 3 ? 1 : lev(k, c);
+    if (dd < bd) { bd = dd; best = c; }
+  }
+  return best;
+}
+/** The message for Parameters.x the report does not declare. @param {string} name @param {Iterable<string>} declared */
+export const noParam = (name, declared) => { const g = didYouMean(name, declared); return `The parameter "${name}" does not exist${g ? ` (did you mean "${g}"?)` : ''}; declare it under parameters, or check the spelling`; };
+
 function member(o, prop, ctx) {
   if (o && o.__root) {
     const src = o.__root === 'Fields' ? ctx.fields : o.__root === 'Parameters' ? ctx.params
@@ -203,7 +224,7 @@ function member(o, prop, ctx) {
     const lower = prop.toLowerCase();
     for (const k of Object.keys(src)) if (k.toLowerCase() === lower) return src[k];
     if (o.__root === 'Fields' && ctx.fields && Object.keys(ctx.fields).length) throw new ExprError(`The field "${prop}" does not exist; check the spelling, or the data set that has it`);
-    if (o.__root === 'Parameters') throw new ExprError(`The parameter "${prop}" does not exist; declare it under parameters, or check the spelling`);
+    if (o.__root === 'Parameters') throw new ExprError(noParam(prop, Object.keys(src)));
     return null;
   }
   if (o == null) return null;

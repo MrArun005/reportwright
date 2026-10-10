@@ -75,3 +75,19 @@ describe('2. a sort by a bare field name', () => {
     expect(validate(x).warnings.join('\n')).toMatch(/T, group 1: "expr" is "r", the name of a field, so every row is in one group; did you mean "=Fields\.r"\?/);
   });
 });
+
+describe('3. a misspelled parameter', () => {
+  const d = (value) => def([{ a: 1 }], [{ type: 'textbox', name: 'X', x: 0, y: 0, w: 200, h: 20, value }], { parameters: [{ name: 'Region', type: 'string', default: 'North' }, { name: 'Min', type: 'number', default: 1 }] });
+  for (const v of ['=Parameters.Regoin', 'Region: {Parameters.Regoin}']) {
+    it(`${v} is a validation error with a did-you-mean; render() draws #Error with the same words, once`, async () => {
+      const msg = 'X: The parameter "Regoin" does not exist (did you mean "Region"?); declare it under parameters, or check the spelling';
+      expect(validate(d(v)).errors).toContain(msg);
+      const m = await render(d(v), { fontStore });
+      expect(texts(m)).toEqual(['#Error']);
+      expect(m.warnings.filter(w => w.includes('Regoin'))).toEqual([msg]);
+    });
+  }
+  it('a declared parameter, in any case, is no error', () => {
+    expect(validate(d('=Parameters.region')).errors).toEqual([]);
+  });
+});

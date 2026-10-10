@@ -1,5 +1,5 @@
 // @ts-check
-import { checkValue, checkFunctions, parseValue, callIssues, compile, isAggregate } from '../expr/evaluate.js';
+import { checkValue, checkFunctions, parseValue, callIssues, compile, isAggregate, didYouMean, noParam } from '../expr/evaluate.js';
 import { ITEMS } from '../items/index.js';
 import { symbologyError } from '../items/barcode.js';
 import { rowCells } from '../items/cells.js';
@@ -36,24 +36,7 @@ const DEF_KEYS = new Set(('$schema name description locale currency timeZone pag
   + 'images theme themeDef master nullPropagation caseSensitive naturalSort nullOrder collation arithmetic bandRows version id tags author folder '
   + 'stylesheet parts partProperties dashboard comment notes customCode libraries liveParameters parameterLayout drafts history nonFinite').split(' '));
 for (const k of Object.keys(REPORT_SCHEMA.$defs.Report.properties)) DEF_KEYS.add(k); // the schema's, too
-const lev = (a, b) => {
-  if (Math.abs(a.length - b.length) > 2) return 3;
-  const d = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i++) {
-    let prev = d[0]; d[0] = i;
-    for (let j = 1; j <= b.length; j++) { const t = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1].toLowerCase() === b[j - 1].toLowerCase() ? 0 : 1)); prev = t; }
-  }
-  return d[b.length];
-};
-/** The nearest known name: a typo (2 edits) or the start of a longer one (noRows → noRowsText). */
-export function didYouMean(k, known) {
-  let best = null, bd = 3;
-  for (const c of known) {
-    const dd = c.toLowerCase().startsWith(k.toLowerCase()) && k.length >= 3 ? 1 : lev(k, c);
-    if (dd < bd) { bd = dd; best = c; }
-  }
-  return best;
-}
+export { didYouMean };
 /** Colour names the renderer reads (exporters/color.js; the engine does not import the exporters). Another word is not drawn. */
 const COLOUR_NAMES = ['black', 'white', 'red', 'green', 'blue', 'gray', 'grey', 'orange', 'yellow'];
 const COLOUR_KEYS = ['color', 'backgroundColor', 'fill', 'stroke', 'textDecorationColor'];
@@ -241,7 +224,7 @@ export function validate(def) {
       for (const [k, v] of Object.entries(n)) scan(v, k === 'cells' && own === label ? `${label} cell` : own, depth + 1);
     }
   };
-  const lists = [];
+  const lists = [], refErrors = [];
   const fields = inlineFields(def), params = new Set((Array.isArray(def.parameters) ? def.parameters : []).map(p => p?.name));
   for (const where of ['pageHeader', 'body', 'pageFooter']) {
     const sec = def.sections?.[where];
@@ -255,7 +238,7 @@ export function validate(def) {
     for (const it of Array.isArray(items) ? items : []) {
       const label = it.name || it.type;
       if (!ITEMS[it.type]) { warnings.push(`Unknown item type "${it.type}"`); continue; }
-      walkItems(it, (x) => { itemRefs(x, warnings, fields, params); if (Array.isArray(x.filters)) filterShape(x.filters, x.name || x.type, errors); });
+      walkItems(it, (x) => { itemRefs(x, warnings, fields, params, refErrors); if (Array.isArray(x.filters)) filterShape(x.filters, x.name || x.type, errors); });
       if (it.name) {
         if (names.has(it.name)) warnings.push(`Two items have the name "${it.name}"`);
         names.add(it.name);
@@ -328,6 +311,7 @@ export function validate(def) {
       }
     }
   }
+  for (const e of new Set(refErrors)) { errors.push(e); exprErrors.push(e); }
   // functions an expression calls that do not exist, anywhere in the report (items, data sets, parameters, functions)
   const custom = new Set((Array.isArray(def.functions) ? def.functions : []).map(f => String(f?.name ?? '').toLowerCase()));
   const callErr = (label, msg) => { const e = `${label}: ${msg}`; if (!errors.includes(e)) { errors.push(e); exprErrors.push(e); checkOnly.push(e); } };
@@ -444,7 +428,7 @@ export function bareSorts(def) {
  * @param {Set<string>|null} fields
  * @param {Set<string>} params
  */
-function itemRefs(it, warnings, fields, params) {
+function itemRefs(it, warnings, fields, params, exprErrors) {
   const label = it.name || it.type;
   if (!/line/i.test(String(it.type))) for (const [k, what] of [['w', 'width'], ['h', 'height']]) {
     if (typeof it[k] === 'number' && it[k] <= 0) warnings.push(`${label}: ${what} is ${it[k]}, so the item is not drawn; give it a positive ${what}`);
@@ -459,7 +443,9 @@ function itemRefs(it, warnings, fields, params) {
         if (seen.has(key)) continue;
         seen.add(key);
         // the same words as the render's own message, so the two are said once (render() drops a repeated warning)
-        if (m[1] === 'Parameters' && !params.has(m[2])) warnings.push(`${label}: The parameter "${m[2]}" does not exist; declare it under parameters, or check the spelling`);
+        // a near miss of a declared name (Regoin for Region) is an error; another name stays a warning, as imported
+        // reports name their tool's built-in parameters (IS_IGNORE_PAGINATION). render() draws #Error, in the same words
+        if (m[1] === 'Parameters' && ![...params].some(p => String(p).toLowerCase() === m[2].toLowerCase())) (didYouMean(m[2], params) ? exprErrors : warnings).push(`${label}: ${noParam(m[2], params)}`);
         if (m[1] === 'Fields' && fields && !fields.has(m[2])) warnings.push(`${label}: The field "${m[2]}" does not exist; check the spelling, or the data set that has it`);
       }
       return;
