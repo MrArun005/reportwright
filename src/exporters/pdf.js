@@ -56,6 +56,9 @@ async function pdfOf(model, fontStore, opt) {
     deprecationSaid = true;
     globalThis.process?.emitWarning?.('exportPdf: the prepare and save options are deprecated and will be removed in 0.15; sign with the sign option ({ signer, reason, … }, @reportwright/pdf).', 'DeprecationWarning');
   }
+  // refused before anything is loaded (pdf-lib's path said these too)
+  if (opt.pdfa && opt.encrypt) throw Object.assign(new Error('A PDF/A file cannot have a password. Turn off PDF/A or the password.'), { status: 400 });
+  if (opt.pdfa && !opt.pdfa.icc?.length) throw new Error('PDF/A needs an sRGB colour profile: pass pdfa.icc (public/icc/sRGB-v2-magic.icc)');
   await fontStore.load(modelFontKeys(model)); // N40: a store render() did not fill (loaded keys are skipped)
   if (ownWriterFits(model, opt)) return ownWriter(model, fontStore, opt);
   // signed on pdf-lib's path (a tagged file, a URL picture…): the file as it was, then signed by @reportwright/pdf in an
@@ -476,24 +479,25 @@ async function pdfOf(model, fontStore, opt) {
  * Can the paged writer (writePagedPdf: @reportwright/pdf, or with pdfWriter 'legacy' the engine's own) draw this model?
  * Then pdf-lib (about 35 ms to load) is not needed (A1.1). Kept to what it draws: text (any font, shaped runs; with
  * 'legacy' only the standard fonts, as 0.13 did), boxes (rounded too), ellipses, lines, SVG paths, links, and PNG, JPEG and SVG data URIs. Anything else
- * stays on pdf-lib: URL pictures, form fields, PDF/A, tagged PDF, encryption, prepare (signing) and save options.
+ * stays on pdf-lib: the 'legacy' writer's pictures, fields, PDF/A, tagged PDF and encryption, and the deprecated prepare and save options.
  * @param {any} model @param {any} opt
  */
 function ownWriterFits(model, opt) {
   if (forcedPdfLib()) return false;
-  if (opt.tagged || opt.prepare || opt.save || !model.pages.length) return false;
+  if (opt.prepare || opt.save) return false;
+  // tagged (B4): pdfua.js's tree through @reportwright/pdf (pdfstreamtags.js createModelTagger)
+  if (opt.tagged && opt.pdfWriter === 'legacy') return false;
   if (opt.sign && opt.pdfWriter === 'legacy') return false; // signed later, on pdf-lib's file (an incremental update)
-  // encrypted (B7): AES-256 by @reportwright/pdf; with PDF/A it is refused on pdf-lib's path (a 400)
-  if (opt.encrypt && (opt.pdfWriter === 'legacy' || opt.pdfa)) return false;
-  // PDF/A-2b (B5): with its colour profile, through @reportwright/pdf as exportPdfStream writes it
-  if (opt.pdfa && (opt.pdfWriter === 'legacy' || !opt.pdfa.icc?.length)) return false;
+  // encrypted (B7): AES-256 by @reportwright/pdf (with PDF/A refused by pdfOf, a 400)
+  if (opt.encrypt && opt.pdfWriter === 'legacy') return false;
+  // PDF/A-2b (B5): with its colour profile (pdfOf requires one), through @reportwright/pdf as exportPdfStream writes it
+  if (opt.pdfa && opt.pdfWriter === 'legacy') return false;
   for (const pg of model.pages) {
     for (const it of pg.items) {
       // the old writer (pdfWriter: 'legacy') keeps embedded fonts and shaped runs on pdf-lib, as before; @reportwright/pdf takes them
       if (it.t === 'text') { if (opt.pdfWriter === 'legacy' && (!isStandard(it.font) || it.lines.some((/** @type {any} */ l) => l.runs))) return false; }
-      // a jump to a bookmark by name: resolved by ownWriter (the first bookmark of that name, as pdf-lib's path does)
-      else if (it.t === 'link') { const a = it.action; if (a?.type === 'bookmark' && a.page && !(a.page >= 1 && a.page <= model.pages.length)) return false; }
-      // a PNG or JPEG data URI (B2); SVG and URL pictures (their type is known once fetched) stay on pdf-lib
+      // a jump to a bookmark by name, or to a page the file lacks: resolved by ownWriter as pdf-lib's path does
+      else if (it.t === 'link') continue;
       // pictures (B2, B3): PNG, JPEG and SVG, from data URIs or fetchImage; any other is left out with pdf-lib's warning
       else if (it.t === 'image') { if (opt.pdfWriter === 'legacy') return false; }
       // rounded boxes and SVG paths (B3): drawn with pdf-lib's own operators (svgpath.js)
@@ -555,10 +559,14 @@ async function ownWriter(model, fontStore, opt) {
   // a form field's font is embedded (its standard font's stand-in), as on pdf-lib's path
   if (model.pages.some((/** @type {any} */ pg) => pg.items.some((/** @type {any} */ i) => i.t === 'field'))) await fontStore.load(standIns(fontStore));
   const parts = [];
+  if (opt.tagged) needsTableData(model, 'An accessible PDF');
   // a jump to a bookmark by name goes to the first bookmark of that name (none: no link), as on pdf-lib's path
-  if (model.pages.some((/** @type {any} */ pg) => pg.items.some((/** @type {any} */ i) => i.t === 'link' && i.action?.type === 'bookmark' && !i.action.page))) {
+  // a jump to a page the file does not have is no link, as on pdf-lib's path
+  const lost = (/** @type {any} */ i) => i.t === 'link' && i.action?.type === 'bookmark' && (!i.action.page || !(i.action.page >= 1 && i.action.page <= model.pages.length));
+  if (model.pages.some((/** @type {any} */ pg) => pg.items.some(lost))) {
     model = { ...model, pages: model.pages.map((/** @type {any} */ pg) => ({ ...pg, items: pg.items.map((/** @type {any} */ i) => {
-      if (i.t !== 'link' || i.action?.type !== 'bookmark' || i.action.page) return i;
+      if (!lost(i)) return i;
+      if (i.action.page) return { ...i, action: { ...i.action, page: 0 } };
       const b = model.bookmarks?.find((/** @type {any} */ x) => x.label === i.action.target);
       return { ...i, action: b ? { ...i.action, page: b.page, y: b.y } : { ...i.action, page: 0 } };
     }) })) };
@@ -566,7 +574,7 @@ async function ownWriter(model, fontStore, opt) {
   const info = { width: model.width, height: model.height, bookmarks: model.bookmarks || [], headings: model.headings || [], warnings: [],
     pageStarts: model.pageStarts || [], pageHeights: model.pages.map((/** @type {any} */ pg) => pg.height ?? model.height) };
   await writePagedPdf({ info, pages: async function* () { yield* model.pages; } },
-    { fontStore, subset: opt.subset, fetchImage: opt.fetchImage, id: fixed ? await contentId(model, opt, when) : undefined, title: opt.title, author: opt.author, creationDate: when, drillBase: opt.drillBase, pdfWriter: opt.pdfWriter, pdfa: opt.pdfa, encrypt: opt.encrypt, sign: opt.sign },
+    { fontStore, subset: opt.subset, fetchImage: opt.fetchImage, id: fixed ? await contentId(model, opt, when) : undefined, title: opt.title, author: opt.author, creationDate: when, drillBase: opt.drillBase, pdfWriter: opt.pdfWriter, pdfa: opt.pdfa, encrypt: opt.encrypt, sign: opt.sign, tagged: opt.tagged, model: opt.tagged ? model : undefined },
     { write: (/** @type {Uint8Array} */ u8) => { parts.push(u8); } });
   for (const x of info.warnings) opt.onWarning?.(x);
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));

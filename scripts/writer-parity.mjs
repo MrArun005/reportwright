@@ -1,7 +1,9 @@
 // The 0.14 release gate for the PDF writer: every report of the corpus exported with the old writer (pdfWriter:
 // 'legacy') and with @reportwright/pdf (the default), then compared. Bytes may differ; all of these must hold:
-//   1. pixel-identical pages (pdftoppm at 72 dpi, raw PPM, zero differing pixels)
-//   2. the same text per page (pdftotext, one page at a time)
+//   1. tier 1, exact (scripts/parity-tiers.mjs): every word and its box per page (pdftotext -bbox, to 0.01 pt), and
+//      the structure tree (types, order, /Alt /ActualText /Lang, attributes, table structure); never loosened
+//   2. the drawing commands, exact once canonicalised (colours, line widths, dashes, the font of each text op)
+//   pixels: tier 2 (150 dpi grey, scripts/parity-tolerance.json), tier 3 when it fails (600 dpi colour, every pixel)
 //   3. valid: qpdf --check on the new file; veraPDF on the PDF/A and PDF/UA files (when installed)
 //   4. the same features: fonts (embedded, subset), links, outline, structure tree, form fields, attachments,
 //      metadata, page labels (counted with qpdf --json)
@@ -13,7 +15,7 @@
 // bytes ("pdf-lib (same bytes)"). Encrypted files are read with their user password (a case's `password`), are not
 // deterministic (a random key) and must not show their Info, URIs or Lang in plain text; signed files (opts.sign) are
 // signed with a throwaway .p12 through src/server/sign.js and checked with pdfsig. A case's `accept` names an
-// owner-decided difference ({ pixels: reason }), printed instead of failing.
+// owner-decided pixel or drawing difference ({ pixels, drawing: reason }), printed instead of failing; tier 1 takes no exceptions.
 // Usage: node scripts/writer-parity.mjs [--baseline legacy|pdflib] [--corpus path/to/corpus.mjs] [--only id,id] [--keep dir]   Exit 1 on any failure.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -24,6 +26,7 @@ import { fontFile } from '../src/engine/text/fonts.js';
 import { exportPdf } from '../src/exporters/pdf.js';
 import { exportPdfStream } from '../src/exporters/pdfstream.js';
 import { createSubsetter } from '../src/exporters/subset.js';
+import { exactChecks, pixelVerdict, checkRenderer } from './parity-tiers.mjs';
 
 const root = path.join(import.meta.dirname, '..');
 const arg = (k) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : undefined; };
@@ -32,6 +35,7 @@ const baseline = arg('--baseline') || 'legacy';
 if (baseline !== 'legacy' && baseline !== 'pdflib') { console.error('--baseline is legacy or pdflib'); process.exit(2); }
 const has = (cmd, a = ['-v']) => spawnSync(cmd, a).status === 0;
 const VERAPDF = has('verapdf', ['--version']);
+try { checkRenderer(); } catch (e) { console.error(String(/** @type {any} */ (e).message)); process.exit(2); }
 for (const t of ['pdftoppm', 'pdftotext', 'qpdf']) if (!has(t, t === 'qpdf' ? ['--version'] : ['-v'])) { console.error(`${t} is needed`); process.exit(2); }
 
 const fontStore = new FontStore(async (k) => fs.readFileSync(path.join(root, 'public/fonts', fontFile(k))));
@@ -41,17 +45,14 @@ const now = new Date('2026-07-01T12:00:00Z');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-parity-'));
 process.on('exit', () => fs.rmSync(tmp, { recursive: true, force: true }));
 
-/**
- * Differences decided for the repository's reports, each with its reason (the legacy writer sends this report to pdf-lib too).
- * stress-test: its Zalgo line's combining marks extract as "贷" from pdf-lib's file (pdf-lib's ToUnicode gives the mark
- * glyph a wrong code point); @reportwright/pdf's file extracts them as the marks they are. Pixels identical.
- * @type {Record<string, { pixels?: string, text?: string }>}
- */
-const REPO_ACCEPT = { 'stress-test': { text: 'combining marks extract as themselves, not as pdf-lib\'s wrong "贷" (ToUnicode fix)' } };
+/** Owner-decided pixel differences of the repository's reports (none). Tier 1 takes no exceptions. */
+const REPO_ACCEPT = {};
 /** @type {{ id: string, kind: 'pdf'|'stream', def: any, opts?: any, accept?: any }[]} */
 const cases = [];
 for (const f of fs.readdirSync(path.join(root, 'reports')).filter(f => f.endsWith('.pw.json')).sort()) {
   cases.push({ id: `repo/${f.replace('.pw.json', '')}`, kind: 'pdf', accept: REPO_ACCEPT[f.replace('.pw.json', '')], def: JSON.parse(fs.readFileSync(path.join(root, 'reports', f), 'utf8')) });
+  // and tagged (PDF/UA-1, B4): pdfua.js's tree for every repository report, through @reportwright/pdf
+  cases.push({ id: `repo-ua/${f.replace('.pw.json', '')}`, kind: 'pdf', opts: { tagged: { lang: 'en' } }, accept: REPO_ACCEPT[f.replace('.pw.json', '')], def: JSON.parse(fs.readFileSync(path.join(root, 'reports', f), 'utf8')) });
 }
 // the streaming ledger of tests/engine/pdfstream-paged.test.js, in each streamed form
 const rows = (n) => Array.from({ length: n }, (_, i) => ({ id: i + 1, region: ['North', 'South', 'East', 'West'][i % 4], amount: Math.round(((i * 7919) % 200000 - 100000) * 1.37) / 100, ref: i % 37 ? `REF-${i * 31}` : `Reversal of an earlier transfer between linked accounts, batch ${i}` }));
@@ -121,7 +122,7 @@ async function make1(c, writer) {
     return { bytes: Buffer.concat(parts), streamed: r.streamed };
   }
   const { pdfWriter, ...ropts } = opts;
-  const model = await render(c.def, ropts);
+  const model = await render(c.def, { ...ropts, ...(ropts.tagged ? { exportData: true } : {}) });
   const bytes = await exportPdf(model, fontStore, opts);
   // signed: today's way on the baseline (pdf-lib's placeholder, then @signpdf), the sign option on the new side
   return { bytes: Buffer.from(s && old ? await s.sign(bytes) : bytes), streamed: false };
@@ -134,13 +135,6 @@ const run = (cmd, a) => spawnSync(cmd, a, { maxBuffer: 1 << 30 });
 let pw = '';
 const upw = () => (pw ? ['-upw', pw] : []);
 const pages = (f) => Number(run('qpdf', [...(pw ? [`--password=${pw}`] : []), '--show-npages', f]).stdout.toString().trim());
-/** pixels of page p (raw PPM bytes) */
-const pixels = (f, p) => { const o = path.join(tmp, `px${++n}`); run('pdftoppm', [...upw(), '-r', '72', '-f', String(p), '-l', String(p), '-singlefile', f, o]); const b = fs.readFileSync(`${o}.ppm`); fs.rmSync(`${o}.ppm`); return b; };
-const text = (f, p) => run('pdftotext', [...upw(), '-layout', '-f', String(p), '-l', String(p), f, '-']).stdout.toString();
-/** a page's words without bidi marks, sorted (the text compared when only those marks differ) @param {string} t */
-const words = (t) => t.replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, ' ').split(/\s+/).filter(Boolean).sort().join(' ');
-/** differing pixels of two PPMs (same header assumed when same size) */
-const diffPx = (a, b) => { const h = a.indexOf(0x0a, a.indexOf(0x0a, a.indexOf(0x0a) + 1) + 1) + 1; if (a.length !== b.length || !a.subarray(0, h).equals(b.subarray(0, h))) return Infinity; let d = 0; for (let i = h; i < a.length; i += 3) if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2]) d++; return d; };
 /** what the file holds (qpdf's JSON of its objects) */
 function features(f) {
   const j = JSON.parse(run('qpdf', [...(pw ? [`--password=${pw}`] : []), '--json=2', '--json-key=qpdf', f]).stdout.toString());
@@ -165,11 +159,13 @@ function features(f) {
 }
 
 const table = [];
+/** cases decided by tier 3 */
+const tier3 = [];
 let failed = 0;
 for (const c of cases) {
   if (only && !only.some(o => c.id.includes(o))) continue;
   pw = c.password || '';
-  const row = { report: c.id, path: '', pages: 0, pixels: '', text: '', valid: '', features: '', deterministic: '', size: '' };
+  const row = { report: c.id, path: '', pages: 0, text: '', tree: '', drawing: '', pixels: '', valid: '', features: '', deterministic: '', size: '' };
   try {
     const old = await make(c, baseline), neu = await make(c, 'pdf'), again = await make(c, 'pdf');
     const fo = file(old.bytes), fn = file(neu.bytes);
@@ -178,23 +174,15 @@ for (const c of cases) {
     row.path = old.bytes.equals(neu.bytes) ? 'pdf-lib (same bytes)' : baseline === 'pdflib' && viaPdfLib(neu.bytes) ? 'pdf-lib (random bytes)' : c.kind === 'stream' ? 'streamed' : 'new writer';
     const np = pages(fn), op = pages(fo);
     row.pages = np;
-    let px = 0, tx = 0, marks = 0;
-    if (np !== op) { px = Infinity; tx = Infinity; } else for (let p = 1; p <= np; p++) {
-      px += diffPx(pixels(fo, p), pixels(fn, p));
-      const a = text(fo, p), b = text(fn, p);
-      if (a === b) continue;
-      // accepted: the old writer gave the invisible bidi marks of right-to-left numbers (U+200E/F, U+202A–E,
-      // U+2066–9) a glyph and a ToUnicode entry, so pdftotext read them (and reordered "Page 1 of 1" as "1 of 1
-      // Page"); the new writer draws no glyph for them. The same words must remain, page by page.
-      if (words(a) === words(b)) marks++; else tx++;
-    }
-    // a streamed tagged ledger against pdf-lib's whole model: the streamed tagger keeps a table's cells in one text
-    // object (relative Td), pdf-lib's restarts it per cell (absolute Td); the glyphs sit at the same places to 1e-6 pt
-    // (pdftotext -bbox) and are identical at 600 dpi, but the rasterizer rounds the sums differently at 72 dpi. Not a
-    // Phase B change (the streamed path is the same on both sides of the legacy gate).
-    const accept = c.accept?.pixels || (baseline === 'pdflib' && c.kind === 'stream' && c.opts?.tagged ? 'streamed tagged text is one text object (relative Td): sub-pixel rounding at 72 dpi only' : '');
-    row.pixels = px === 0 ? 'ok' : np === op && accept ? `accepted ${px} px: ${accept}` : `FAIL ${np !== op ? `pages ${op}→${np}` : `${px} px`}`;
-    row.text = tx && c.accept?.text ? `accepted ${tx} page(s): ${c.accept.text}` : tx ? `FAIL ${tx} page(s)` : marks ? `ok (${marks} page(s): bidi marks only)` : 'ok';
+    // tier 1 (exact, never loosened) and the exact drawing commands
+    const ex = exactChecks(fo, fn, pw);
+    row.text = ex.words ? `FAIL ${ex.words}` : 'ok';
+    row.tree = ex.tree ? `FAIL ${ex.tree}` : 'ok';
+    row.drawing = !ex.drawing ? 'ok' : c.accept?.drawing ? `accepted (${ex.drawing}): ${c.accept.drawing}` : `FAIL ${ex.drawing}`;
+    // tiers 2 and 3; an owner-decided pixel difference (accept.pixels) is printed instead of failing
+    const px = pixelVerdict(fo, fn, pw);
+    if (px.tier === 3) tier3.push(`${c.id}: ${px.ok ? 'pass' : c.accept?.pixels ? 'fail, owner-accepted' : 'FAIL'} — ${px.detail}`);
+    row.pixels = px.ok ? px.detail : c.accept?.pixels && np === op ? `accepted (${px.detail}): ${c.accept.pixels}` : `FAIL ${px.detail}`;
     const q = run('qpdf', [...(pw ? [`--password=${pw}`] : []), '--check', fn]);
     let valid = q.status === 0 ? 'qpdf ok' : `FAIL qpdf: ${q.stdout.toString().split('\n').find(l => /error|warning/i.test(l)) || q.status}`;
     if ((c.opts?.pdfa || c.opts?.tagged) && VERAPDF) {
@@ -222,18 +210,21 @@ for (const c of cases) {
     row.deterministic = neu.bytes.equals(again.bytes) ? 'ok' : c.opts?.encrypt ? 'n/a (random key)' : c.opts?.sign ? 'n/a (signing time)' : 'FAIL';
     row.size = `${old.bytes.length} → ${neu.bytes.length}`;
     // --keep dir: a failing report's two files, to look at
-    if (arg('--keep') && Object.values(row).some(v => typeof v === 'string' && v.startsWith('FAIL'))) { const k = /** @type {string} */ (arg('--keep')), b = c.id.replace(/\W+/g, '_'); fs.mkdirSync(k, { recursive: true }); fs.copyFileSync(fo, path.join(k, `${b}.old.pdf`)); fs.copyFileSync(fn, path.join(k, `${b}.new.pdf`)); }
+    if (arg('--keep') && Object.values(row).some(v => typeof v === 'string' && v.includes('FAIL'))) { const k = /** @type {string} */ (arg('--keep')), b = c.id.replace(/\W+/g, '_'); fs.mkdirSync(k, { recursive: true }); fs.copyFileSync(fo, path.join(k, `${b}.old.pdf`)); fs.copyFileSync(fn, path.join(k, `${b}.new.pdf`)); }
     fs.rmSync(fo); fs.rmSync(fn);
   } catch (e) {
-    row.path = `not rendered: ${String(/** @type {any} */ (e)?.message || e).slice(0, 80)}`;
+    // a report that cannot be made is 'not rendered' (a data source down); a check that fails on the made files (pdftoppm on a full disk) fails the row
+    const m = String(/** @type {any} */ (e)?.message || e);
+    if (row.path) row.valid = `FAIL ${m.slice(0, 120)}`; else row.path = `not rendered: ${m.slice(0, 80)}`;
   }
-  if (Object.values(row).some(v => typeof v === 'string' && v.startsWith('FAIL'))) failed++;
+  if (Object.values(row).some(v => typeof v === 'string' && v.includes('FAIL'))) failed++;
   table.push(row);
-  console.error(`${row.report}: ${row.path} ${row.pixels} ${row.text} ${row.valid} ${row.deterministic}`);
+  console.error(`${row.report}: ${row.path} words ${row.text} tree ${row.tree} drawing ${row.drawing} pixels ${row.pixels} ${row.valid} ${row.deterministic}`);
 }
-console.log('| report | path | pages | pixels | text | valid | features | deterministic | bytes old → new |');
-console.log('|---|---|---|---|---|---|---|---|---|');
+console.log('| report | path | pages | tier 1 words | tier 1 tree | drawing | pixels (tiers 2/3) | valid | features | deterministic | bytes old → new |');
+console.log('|---|---|---|---|---|---|---|---|---|---|---|');
 for (const r of table) console.log(`| ${Object.values(r).join(' | ')} |`);
 const went = table.filter(r => r.path === 'new writer' || r.path === 'streamed');
 console.log(`\n${table.length} reports, ${went.length} through @reportwright/pdf, ${table.filter(r => r.path.startsWith('pdf-lib')).length} still on pdf-lib, ${table.filter(r => r.path.startsWith('not rendered')).length} not rendered; ${failed} failing.`);
+if (tier3.length) console.log(`\nCases that reached tier 3 (600 dpi):\n${tier3.join('\n')}`);
 process.exit(failed ? 1 : 0);

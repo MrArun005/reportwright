@@ -26,7 +26,7 @@ await workerWithBwip(path.join(root, 'public/embed/esm-peer'), { external: ['rea
 //    (pdf-lib's standard fonts, fontkit's brotli dictionary, bwip-js's barcode tables, bidi-js's Unicode data) and
 //    @reportwright/pdf (with its fflate, @reportwright/pdf/fflate) left as imports: they are the package's pinned
 //    dependencies, so the tarball holds only our code.
-const PKG_EXTERNAL = ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'bidi-js', '@reportwright/pdf']; // fflate: @reportwright/pdf/fflate
+const PKG_EXTERNAL = ['@pdf-lib/fontkit', 'bwip-js', 'bidi-js', '@reportwright/pdf']; // fflate: @reportwright/pdf/fflate
 for (const [dir, ext] of [['esm-pkg', []], ['esm-pkg-peer', ['react', 'react-dom', 'react/*', 'react-dom/*']]]) {
   fs.rmSync(path.join(root, 'public/embed', dir), { recursive: true, force: true });
   await build({ ...common, entryPoints: ENTRIES, format: 'esm', ...readable, splitting: true, outdir: path.join(root, 'public/embed', dir), entryNames: '[name]', chunkNames: 'chunk-[hash]', external: [...ext, ...PKG_EXTERNAL] });

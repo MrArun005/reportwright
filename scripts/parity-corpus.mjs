@@ -108,14 +108,14 @@ const EXIF = 'EXIF-rotated JPEG comes out upright (owner: a bug fix; pdf-lib ign
 const PERMS = { none: {}, printOnly: { modify: false, copy: false, annotate: false, fillForms: false, assemble: false }, noPrint: { print: false, printHighQuality: false }, nothing: { print: false, modify: false, copy: false, annotate: false, fillForms: false, accessibility: false, assemble: false, printHighQuality: false } };
 
 export const CORPUS = [
-  { id: 'images-invoice', def: invoice, accept: { pixels: EXIF } },
+  { id: 'images-invoice', def: invoice, accept: { pixels: EXIF, drawing: EXIF } },
   { id: 'svg-image', def: svgs },
   { id: 'rounded', def: rounded },
   { id: 'paths', def: paths },
   { id: 'fields', def: fields },
-  ...Object.entries(PERMS).map(([k, permissions]) => ({ id: `encrypt-${k}`, def: invoice, opts: { encrypt: { ownerPassword: 'owner-pw', permissions } }, accept: { pixels: EXIF } })),
+  ...Object.entries(PERMS).map(([k, permissions]) => ({ id: `encrypt-${k}`, def: invoice, opts: { encrypt: { ownerPassword: 'owner-pw', permissions } }, accept: { pixels: EXIF, drawing: EXIF } })),
   { id: 'encrypt-userpw', def: fields, opts: { encrypt: { userPassword: 'open-me', ownerPassword: 'owner-pw' } }, password: 'open-me' },
-  { id: 'signed', def: invoice, opts: { sign: true }, accept: { pixels: EXIF } },
+  { id: 'signed', def: invoice, opts: { sign: true }, accept: { pixels: EXIF, drawing: EXIF } },
   { id: 'signed-pdfa', def: noFields(all()), opts: { sign: true, pdfa: { icc: ICC } } },
   { id: 'signed-ua', def: all(), opts: { sign: true, tagged: { lang: 'en' } } },
   { id: 'pdfa-2b', def: all(), opts: { pdfa: { icc: ICC } } },

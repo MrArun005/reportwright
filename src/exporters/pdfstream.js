@@ -27,7 +27,6 @@ import { checkboxAppearance, textAppearance, shapedAppearance } from './pdffield
 import { parseSvg, svgOps } from './svgimage.js';
 import { drawSvgPathOps, pdfNum } from './svgpath.js';
 import { xmpPacket } from './pdfa.js';
-import { createStreamTagger } from './pdfstreamtags.js';
 import { standardFontDict, embeddedPage, embeddedWarnings, standIns } from './pdfstandard.js';
 import { Content, drawRun, glyphText, insideClip, col, BLACK, n2, n4, KAPPA, cleanText, deflate } from './pdfpaint.js';
 import { dataUriBytesOf, dataUriBytes, imageInfoOf, IMAGE_LIMITS } from '../engine/image.js';
@@ -88,12 +87,12 @@ export function raced(p, signal) {
  * @param {Sink} sink
  * @param {{ fontStore: import('../engine/text/fonts.js').FontStore, fonts?: string[],
  *   subset?: (font: Uint8Array, codePoints: Iterable<number>, opt?: { glyphs?: Iterable<number> }) => Promise<Uint8Array>,
- *   id?: string, signal?: AbortSignal, pdf?: any, onWarning?: (message: string) => void }} opt
+ *   id?: string, signal?: AbortSignal, pdf?: any, onWarning?: (message: string) => void, tagged?: boolean }} opt
  *   fonts: font keys to name now (F1, F2… in this order); any other font is named on first use.
  *   subset: subset.js's subsetter; without it fonts embed in full. id: the file ID (32 hex digits), else random.
  *   signal: stops a wait for the sink (back-pressure) when it aborts. pdf: a @reportwright/pdf document (createPdf) that
  *   writes the objects, pages and the file's end instead of this writer's own (the sink is then unused).
- *   onWarning: a font embedded whole because its subset could not be used.
+ *   onWarning: a font embedded whole because its subset could not be used. tagged: every glyph gets a ToUnicode entry.
  */
 export function createPdfStream(sink, opt) {
   const { fontStore } = opt;
@@ -563,7 +562,7 @@ export function createPdfStream(sink, opt) {
       i = j + 1;
     }
     await writeObj(cid, `<< /Type /Font /Subtype /${cff ? 'CIDFontType0' : 'CIDFontType2'} /BaseFont /${base} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ${desc} 0 R /W [${W}]${cff ? '' : ' /CIDToGIDMap /Identity'} >>`);
-    await writeObj(cmap, '<< /Filter /FlateDecode >>', await deflate(latin1(toUnicode(F.glyphs))));
+    await writeObj(cmap, '<< /Filter /FlateDecode >>', await deflate(latin1(toUnicode(F.glyphs, !!opt.tagged))));
     await writeObj(F.ref, `<< /Type /Font /Subtype /Type0 /BaseFont /${base} /Encoding /Identity-H /DescendantFonts [${cid} 0 R] /ToUnicode ${cmap} 0 R >>`);
   }
 
@@ -607,9 +606,13 @@ export function createPdfStream(sink, opt) {
   return w;
 }
 
-/** ToUnicode: each glyph to the text it stands for (UTF-16BE); glyphs that stand for nothing are left out. @param {Map<number, string>} glyphs */
-function toUnicode(glyphs) {
-  const entries = [...glyphs].filter(([, t]) => t).sort((a, b) => a[0] - b[0]);
+/**
+ * ToUnicode: each glyph to the text it stands for (UTF-16BE); glyphs that stand for nothing are left out, or, tagged,
+ * map to U+200D ZERO WIDTH JOINER (every glyph needs an entry, PDF/UA 7.21.7; the run's ActualText gives the real
+ * text), as pdf.js's addGlyphs does. @param {Map<number, string>} glyphs @param {boolean} [tagged]
+ */
+function toUnicode(glyphs, tagged = false) {
+  const entries = [...glyphs].filter(([, t]) => t || tagged).map(([id, t]) => /** @type {[number, string]} */ ([id, t || '\u200d'])).sort((a, b) => a[0] - b[0]);
   let body = '';
   for (let i = 0; i < entries.length; i += 100) {
     const chunk = entries.slice(i, i + 100);
@@ -744,10 +747,12 @@ export async function writePagedPdf(plan, opts, sink) {
   if (opts.pdfa || opts.tagged) await fontStore.load(standIns(fontStore)); // standard fonts are drawn in their embedded stand-ins
   const { info, pages } = /** @type {any} */ (plan);
   const onWarning = (/** @type {string} */ m) => { if (!info.warnings.includes(m)) info.warnings.push(m); };
-  const w = createPdfStream(sink, { fontStore, subset: opts.subset, id: opts.id, signal: opts.signal, pdf: await newWriter(sink, opts), onWarning });
+  const w = createPdfStream(sink, { fontStore, subset: opts.subset, id: opts.id, signal: opts.signal, tagged: !!opts.tagged, pdf: await newWriter(sink, opts), onWarning });
   // tagged (PDF/UA-1): a structure tree written as the pages are (pdfstreamtags.js)
-  const tags = opts.tagged ? createStreamTagger(w, { maxElements: Number(opts.tagged.maxElements) || Infinity }) : null;
-  const env = paintEnv(w, fontStore, { drillBase: opts.drillBase, tags, embedAll: !!(opts.pdfa || tags), pageHeight: info.pageHeights ? (/** @type {number} */ i) => info.pageHeights[i] : undefined });
+  // opts.model (exportPdf's whole page model, B4): pdfua.js's tree for it, element for element
+  const T = opts.tagged ? await import('./pdfstreamtags.js') : null;
+  const tags = !T ? null : opts.model ? T.createModelTagger(w, opts.model) : T.createStreamTagger(w, { maxElements: Number(opts.tagged.maxElements) || Infinity });
+  const env = paintEnv(w, fontStore, { onWarning, drillBase: opts.drillBase, tags, embedAll: !!(opts.pdfa || tags), pageHeight: info.pageHeights ? (/** @type {number} */ i) => info.pageHeights[i] : undefined });
   const { shaped } = env;
   // opts.parallel: windows laid out and painted by that many worker threads (Node), their pages written here in order;
   // 'auto': as many as the cores but one (4 at most), started only once the report is big (paged.js, lazy)
@@ -918,16 +923,13 @@ export function paintPage(pg, H, env) {
   const fields = [];
   const c = new Content(env.shared);
   const { tags } = env;
-  if (tags) { c.tagged = true; c.artLines = true; tags.page(pg.win ?? 0); }
-  for (const it of pg.items) {
-    // tagged: lines wait and are drawn together as one artifact (a table's borders); a cell's plain text is marked inside
-    // the open text object, so the cells' text stays one text object as untagged (BT, then BDC … EMC per cell)
-    const mark = tags && it.t !== 'line' && tags.open(it);
-    const inText = mark && it.t === 'text' && !it.rotate && it.lines.every((/** @type {any} */ l) => !l.runs) && !(it.clip && !insideClip(it, env.vmetrics(it.font)));
-    if (inText) {
-      if (!c.bt) { c._s += 'BT\n'; c.bt = true; c.tx = 0; c.ty = 0; }
-      c._s += mark;
-    } else if (mark) { c.et(); c.s += mark; }
+  if (tags) { c.tagged = true; tags.page(pg.win ?? 0); }
+  for (let ii = 0; ii < pg.items.length; ii++) {
+    const it = pg.items[ii];
+    // tagged: every item in its own marked content, its text in its own text object and its lines one by one, operator
+    // for operator as exportPdf's pdf-lib path draws it (the parity gate compares the drawing commands exactly)
+    const mark = tags && tags.open(it, ii);
+    if (mark) { c.et(); c.s += mark; }
     if ((it.t !== 'text' && it.t !== 'line') || it.rotate) c.et();
     if (it.rotate) {
       const t = -it.rotate.a * Math.PI / 180, cs = Math.cos(t), sn = Math.sin(t);
@@ -972,7 +974,13 @@ export function paintPage(pg, H, env) {
         const clipped = it.clip && !insideClip(it, env.vmetrics(it.font));
         if (clipped) { c.q(); c.s += `${n2(it.clip.x)} ${n2(H - it.clip.y - it.clip.h)} ${n2(it.clip.w)} ${n2(it.clip.h)} re W n\n`; }
         for (const l of it.lines) {
-          if (!l.runs) { c.text(env.pf(it.font), it.size, color, l.x, H - l.y, env.literal(it.font, cleanText(l.text))); continue; }
+          if (!l.runs) {
+            // tagged: a character the font lacks is left out (PDF/UA forbids drawing .notdef), its space kept, as pdf.js's tjOf
+            const str = cleanText(l.text), tj = tags ? notdefTJ(env, it.font, str) : null;
+            if (tj) c.text(env.pf(it.font), it.size, color, l.x, H - l.y, tj, true);
+            else c.text(env.pf(it.font), it.size, color, l.x, H - l.y, env.literal(it.font, str));
+            continue;
+          }
           for (const r of l.runs) {
             const g = env.shapedOf(r.font), spans = new WeakMap();
             glyphText(r, env.font(r.font), g, spans);
@@ -990,8 +998,9 @@ export function paintPage(pg, H, env) {
         if (!to) break; // ponytail: a jump to a bookmark by name needs every page's bookmarks first: left out while streaming
         if (!tags) { annots.push(`<< /Type /Annot /Subtype /Link /F 4 /Rect ${rect} /Border [0 0 0] ${to} >>`); break; }
         // tagged: what the link does, for a screen reader, and its Link element
-        const ref = env.reserve(), key = tags.link(it, ref);
-        const say = coveredText(pg.items, it) || it.tip || href || (a.target ? `Go to ${a.target}` : `Go to page ${a.page}`);
+        const ref = env.reserve(), key = tags.link(it, ref, ii);
+        // as exportPdf's pdf-lib path says it: the covered text, the tip, a drill's report, a jump's target, the URL
+        const say = coveredText(pg.items, it) || it.tip || (a.type === 'drill' ? `Open the report "${a.report}"` : a.type === 'bookmark' ? `Go to ${a.target || `page ${a.page}`}` : href) || 'Link';
         annots.push({ ref, dict: `<< /Type /Annot /Subtype /Link /F 4 /Rect ${rect} /Border [0 0 0] ${to} /Contents ${pdfText(say)} /StructParent ${key} >>` });
         break;
       }
@@ -1026,13 +1035,18 @@ export function paintPage(pg, H, env) {
         const key = fieldFont(it), F = env.font(key), fname = w2name(env, key);
         env.fullFont(key);
         const name = env.uniqueName(it.name);
+        // tagged (whole model): its widget in a Form element, its label as the description a screen reader says
+        const tag = tags?.field ? tags.field(ii) : null;
+        if (tag && !it.label) env.onWarning?.(`Form field "${name}" has no label, so a screen reader announces its name; give it a label`);
+        const acc = tag ? { tooltip: it.label || it.name || name, structParent: tag.key } : {};
+        const made = (/** @type {any} */ f) => { if (tag) tag.made(f.widgetRef); };
         // pdf-lib's addToPage grows the widget by the border width (half on each side); its appearance fills that box
         const W = it.w + 0.75, Hh = it.h + 0.75;
         const box = { x: it.x - 0.375, y: it.y - 0.375, width: W, height: Hh, border: { width: 0.75, color: [0.61, 0.64, 0.69] }, background: [1, 1, 1], readOnly: !!it.readOnly, required: !!it.required };
         const shaped = it.draw.some((/** @type {any} */ d) => d.t === 'text' && d.lines.some((/** @type {any} */ l) => l.runs));
         if (it.kind === 'checkbox') {
           const ap = checkboxAppearance(W, Hh);
-          fields.push((form, page) => form.checkbox(name, { ...box, page, checked: !!it.value, appearance: { on: ap.on, off: ap.off } }));
+          fields.push((form, page) => made(form.checkbox(name, { ...box, ...acc, page, checked: !!it.value, appearance: { on: ap.on, off: ap.off } })));
           break;
         }
         const choice = it.kind === 'choice';
@@ -1041,23 +1055,37 @@ export function paintPage(pg, H, env) {
         // pdf.js's own appearance has the item's box as its BBox, which the viewer stretches to the grown widget
         const normal = shaped ? `${pdfNum(W / it.w)} 0 0 ${pdfNum(Hh / it.h)} 0 0 cm\n${shapedAppearance(it, env)}` : look.normal;
         const raw = { appearance: { normal }, da: look.da };
-        if (choice) fields.push((form, page) => form.comboBox(name, { ...box, page, ...raw, options: it.options, ...(text ? { value: text } : {}) }));
-        else fields.push((form, page) => form.textField(name, { ...box, page, ...raw, value: String(it.value ?? ''), multiline: it.kind === 'multiline' }));
+        if (choice) fields.push((form, page) => made(form.comboBox(name, { ...box, ...acc, page, ...raw, options: it.options, ...(text ? { value: text } : {}) })));
+        else fields.push((form, page) => made(form.textField(name, { ...box, ...acc, page, ...raw, value: String(it.value ?? ''), multiline: it.kind === 'multiline' })));
         break;
       }
       default: throw new Error(`A ${it.t} item does not stream yet`);
     }
     if (it.rotate) c.Q();
-    if (inText) c._s += 'EMC\n';
-    else if (mark) { c.et(); c.s += 'EMC\n'; }
+    if (mark) { c.et(); c.s += 'EMC\n'; }
   }
   c.et();
   return { content: c.s, annots, fields };
 }
 
 /**
+ * A TJ array's body that skips the characters font key has no glyph for, moving on by .notdef's width (pdf.js's tjOf);
+ * null when there are none. @param {any} env @param {string} key @param {string} text
+ */
+function notdefTJ(env, key, text) {
+  const f = env.font(key);
+  if (!f?.glyphForCodePoint) return null;
+  let out = '', cur = '', any = false;
+  for (const ch of text) {
+    if (f.glyphForCodePoint(/** @type {number} */ (ch.codePointAt(0))).id === 0) { any = true; if (cur) out += `(${env.literal(key, cur)})`; cur = ''; out += `${-Math.round(f.getGlyph(0).advanceWidth * 1000 / f.unitsPerEm)}`; continue; }
+    cur += ch;
+  }
+  return any ? out + (cur ? `(${env.literal(key, cur)})` : '') : null;
+}
+
+/**
  * What paintPage draws with: a writer's resource names and glyph records (w), the fonts, shaped glyphs' texts.
- * @param {any} w @param {any} fontStore @param {{ drillBase?: string, pageRef?: (i: number) => any, tags?: any, embedAll?: boolean, pageHeight?: (i: number) => number }} [o]
+ * @param {any} w @param {any} fontStore @param {{ onWarning?: (m: string) => void, drillBase?: string, pageRef?: (i: number) => any, tags?: any, embedAll?: boolean, pageHeight?: (i: number) => number }} [o]
  *   pageHeight: the height of page i (0-based), when pages differ: where a link to it lands
  */
 export function paintEnv(w, fontStore, o = {}) {
@@ -1090,6 +1118,7 @@ export function paintEnv(w, fontStore, o = {}) {
     uniqueName: (/** @type {string} */ n) => { let name = n, i = 1; while (taken.has(name)) name = `${n}_${++i}`; taken.add(name); return name; },
     drillBase: o.drillBase,
     tags: o.tags || null,
+    onWarning: o.onWarning,
     /** PDF/A, PDF/UA: standard fonts drawn in embedded stand-ins; the families that were @type {Set<string>|null} */
     embedded: o.embedAll ? new Set() : null,
   };
