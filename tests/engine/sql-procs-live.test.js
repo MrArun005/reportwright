@@ -91,6 +91,11 @@ describe.each([['pg', 'PW_TEST_PG'], ['my', 'PW_TEST_MYSQL']])('%s: 1,000 aborte
       const c = await M.createConnection({ uri: process.env[envName] });
       try { return (await c.query("select count(*) as n from information_schema.processlist where user = 'pw_reader'"))[0][0].n; } finally { await c.end(); }
     };
+    // 10 callers share 5 connections, each replaced after its stop: on a loaded 2-vCPU runner the first wave (new
+    // connections, the rights probe) can pass the 5 s acquire wait. This test is about leaks, so a waiter may wait up to
+    // the query deadline (as before PW_DB_ACQUIRE_MS): a connection that never comes back still fails it
+    const acq = process.env.PW_DB_ACQUIRE_MS;
+    process.env.PW_DB_ACQUIRE_MS = String(limits.ms);
     try {
       Object.assign(limits, { rows: 3 });
       await Promise.all(Array.from({ length: 10 }, async (_, w) => {
@@ -100,7 +105,7 @@ describe.each([['pg', 'PW_TEST_PG'], ['my', 'PW_TEST_MYSQL']])('%s: 1,000 aborte
       await new Promise(r => setTimeout(r, 1000)); // terminations and kills land
       expect(await sessions()).toBeLessThanOrEqual(1); // every stopped connection was closed, none kept for reuse
       expect(await runSql({ connection: `leak${k}`, query: 'select 1 as a' }, {})).toEqual([{ a: 1 }]);
-    } finally { Object.assign(limits, keep); delete process.env[`PW_DB_LEAK${k.toUpperCase()}`]; }
+    } finally { Object.assign(limits, keep); delete process.env[`PW_DB_LEAK${k.toUpperCase()}`]; if (acq === undefined) delete process.env.PW_DB_ACQUIRE_MS; else process.env.PW_DB_ACQUIRE_MS = acq; }
   }, 240000);
 });
 
