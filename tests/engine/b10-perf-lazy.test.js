@@ -22,7 +22,10 @@ describe('B10 A1.1 cold start: pdf-lib and fontkit are not top-level imports', (
       write: false, external: ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'fflate', 'bidi-js', '@reportwright/pdf'], logLevel: 'silent', mainFields: ['module', 'main'] });
     const src = r.outputFiles[0].text;
     expect(staticImports(src).filter(s => HEAVY.test(s))).toEqual([]);
-    expect(src).toMatch(/import\("pdf-lib"\)/);
+    // pdf-lib is an optional install since B4: imported by a non-literal specifier, so bundlers leave it out
+    expect(src).not.toMatch(/import\("pdf-lib"\)/);
+    expect(src).toMatch(/var PDF_LIB = "pdf-lib";/);
+    expect(src).toMatch(/import\(\s*(\/\*[^*]*\*\/\s*)*PDF_LIB\s*\)/);
     expect(src).toMatch(/import\("@pdf-lib\/fontkit"\)/);
     expect(src).toMatch(/import\("@reportwright\/pdf"\)/); // the PDF writer too: loaded by the first PDF export
   }, 60000);
