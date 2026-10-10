@@ -1129,9 +1129,12 @@ widgets may cover at most 40% of a page in all, and a widget with an opaque back
 ## Known limits
 
 Image masks (stencils) and colour-managed images (embedded ICC profiles of PNG/JPEG files are ignored); the Unicode
-bidi algorithm, hyphenation, kerning of the standard fonts, WOFF fonts; popup annotations; RC4 encryption (refused; read only), public-key (certificate) encryption (neither written nor read), verifying signatures' cryptography (they are listed with their coverage); PDF/A-1a, PDF/X, attachment annotations in PDF/A-3 (use `pdf.attach`), validating a Factur-X invoice's content; layout-perfect text extraction; page edits in an incremental update (use `save()`); reading encrypted files in browsers (WebCrypto has no synchronous AES; Node only). See NOTES.md for the plan. Extending the library: ARCHITECTURE.md.
+bidi algorithm, hyphenation, kerning of the standard fonts, WOFF fonts; popup annotations; RC4 encryption (refused; read only), public-key (certificate) encryption (neither written nor read), verifying signatures' cryptography (they are listed with their coverage); PDF/A-1a, PDF/X, attachment annotations in PDF/A-3 (use `pdf.attach`), validating a Factur-X invoice's content; layout-perfect text extraction; page edits in an incremental update (use `save()`); reading encrypted files in browsers (WebCrypto has no synchronous AES; Node only); with `textMapping: 'actualText'`, readers that ignore ActualText or close it early (pdf.js; a tester saw an older MuPDF drop a line's last Bengali cluster) lose the spanned clusters: the writer closes every span after its cluster's last glyph, and MuPDF 1.28.2 (PyMuPDF) reads Bengali, Devanagari and the other test scripts whole. See NOTES.md for the plan. Extending the library: ARCHITECTURE.md.
 
 ## Changes
+
+0.1.0-beta.10: a WritableStream's writer lock is released when the export ends, fails or is stopped (`timeoutMs`,
+`signal`), so the caller can reuse or cancel the stream; the abort reason is still the original error.
 
 0.1.0-beta.9: stamping every page (`page.draw` then `save()`) is about 35% faster on a 1,000-page file: a page's open
 graphics states are counted with a byte scan instead of a full parse, and FlateDecode inflates whole, valid zlib
