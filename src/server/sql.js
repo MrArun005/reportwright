@@ -471,13 +471,14 @@ export async function onWire(socket, clk, work, onCut = () => {}, limits = LIMIT
 }
 
 /**
- * E07: a pooled connection within PW_DB_ACQUIRE_MS (default 5 s, at most the deadline). Past it, every connection is
+ * E07: a pooled connection before the query's deadline, or within PW_DB_ACQUIRE_MS when it is set (a lower cap). Past it, every connection is
  * busy: a 503 with Retry-After (not a 500 from the driver's own wait). A reader that aborts while waiting gets CANCEL.
  * A connection that arrives after either goes straight back to the pool (back).
  * @param {Promise<any>} p @param {ReturnType<typeof clock>} clk @param {AbortSignal|undefined} signal @param {(c: any) => void} back
  */
 function acquire(p, clk, signal, back, held = () => '') {
-  const ms = Math.max(0, Math.min(clk.left(), Math.floor(envNum('PW_DB_ACQUIRE_MS', 5000))));
+  const cap = process.env.PW_DB_ACQUIRE_MS ? Math.floor(envNum('PW_DB_ACQUIRE_MS', 0)) : Infinity; // unset: up to the deadline
+  const ms = Math.max(0, Math.min(clk.left(), cap));
   return new Promise((resolve, reject) => {
     let done = false;
     const end = (/** @type {any} */ e) => { if (done) return; done = true; clearTimeout(t); signal?.removeEventListener('abort', onAbort); reject(e); };

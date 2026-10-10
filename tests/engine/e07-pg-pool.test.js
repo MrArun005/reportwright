@@ -33,6 +33,17 @@ describe('E07 postgres pool', () => {
     expect(late.released).toBe('returned');
   });
 
+  it('PW_DB_ACQUIRE_MS unset: a waiter waits for a connection up to the deadline, not a fixed 5 s', async () => {
+    delete process.env.PW_DB_ACQUIRE_MS;
+    let free;
+    use({ connect: () => new Promise(r => { free = r; }), totalCount: 10, waitingCount: 1 });
+    const q = runSql({ connection: 'main', query: 'select 1' });
+    await new Promise(r => setTimeout(r, 5300)); // past the old fixed 5 s, well within the 30 s deadline
+    const c = fakeClient(); free(c);
+    expect(await q).toEqual([]);
+    expect(c.released).toBe('returned');
+  }, 15000);
+
   it('sets statement_timeout before the query is declared', async () => {
     const c = fakeClient();
     use({ connect: async () => c });

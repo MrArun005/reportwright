@@ -57,7 +57,7 @@ export const SETTINGS = [
   ['PW_DB_<NAME>', 'url', '', 'A SQL connection named <name> (PW_DB_MAIN, …): sqlite:, postgres://, mysql://, mssql://, oracle://, …'],
   ['PW_DB_<NAME>_PROCS', 'list', '', 'Stored procedures that connection may call.'],
   ['PW_DB_POOL_MAX', 'int', '5', 'Connections per SQL pool per server thread.'],
-  ['PW_DB_ACQUIRE_MS', 'ms', '5000', 'How long a PostgreSQL or MySQL query waits for a free pooled connection before a 503 with Retry-After.'],
+  ['PW_DB_ACQUIRE_MS', 'ms', '', 'A lower cap on how long a PostgreSQL or MySQL query waits for a free pooled connection before a 503 with Retry-After (unset: up to the query deadline).'],
   ['PW_SQL_TIMEOUT_MS', 'ms', '30000', 'A SQL query.'], ['PW_SQL_MAX_ROWS', 'int', '100000', 'Rows a query may return.'], ['PW_SQL_MAX_MB', 'int', '64', 'Megabytes a query may return.'],
   ['PW_SQLITE_PROCESSES', 'int', '2', 'SQLite query processes per server thread.'], ['PW_SQLITE_MEMORY_MB', 'int', '1024', 'Memory one SQLite query process may use.'],
   // rendering
