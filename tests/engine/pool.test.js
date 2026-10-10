@@ -59,11 +59,12 @@ describe('render pool', () => {
     process.env.PW_RENDER_WORKERS = '1';
     process.env.PW_RENDER_QUEUE = '1';
     process.env.PW_RENDER_QUEUE_PER_PRINCIPAL = '1';
-    // the queued renders wait behind a 6 s render: on a loaded machine that can pass the default 30 s wait budget, and a
-    // dropped wait is a 503 this test does not expect. The test checks admission (the queue's places), not the wait budget.
+    // the queued renders wait behind a slow render (each check below runs at once after running(), so a short one holds
+    // the worker long enough; 6,000 rows took over 30 s on a 2-vCPU runner). On a loaded machine the wait can pass the
+    // default 30 s wait budget, and a dropped wait is a 503 this test does not expect. The test checks admission (the queue's places), not the wait budget.
     process.env.PW_RENDER_MAX_WAIT_MS = '300000';
     const r0 = poolStats().totals.rejected;
-    const a = render(slow(6000)); // runs
+    const a = render(slow(2500)); // runs
     await running();
     const b = render(small()); // waits: the queue's one place
     const c = await render(small()).catch(e => e); // OPEN again: the queue is full
@@ -76,7 +77,7 @@ describe('render pool', () => {
     expect(e).toMatchObject({ status: 503 });
     await Promise.all([a, b, d]);
     process.env.PW_RENDER_QUEUE = '10';
-    const f = render(slow(6000));
+    const f = render(slow(2500));
     await running();
     const h = render(small());
     const i = await render(small()).catch(x => x); // OPEN's one place is taken
