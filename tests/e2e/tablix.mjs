@@ -45,7 +45,12 @@ await p.getByTestId('pivot-columnGroups').locator('.group-card').first().getByLa
 await p.waitForFunction(() => {
   const t = [...document.querySelectorAll('[data-item=Matrix1] .live svg text')].map(n => n.textContent);
   return t.includes('Delhi') && t.includes('1,000') && t.includes('▼ North');
-}, null, { timeout: 20000 });
+}, null, { timeout: 20000 }).catch(async (e) => { // what the matrix drew instead, for the CI artifact
+  fs.mkdirSync('/tmp/shots', { recursive: true });
+  await p.screenshot({ path: '/tmp/shots/tablix-fail.png', fullPage: true });
+  console.log('matrix text:', await p.evaluate(() => [...document.querySelectorAll('[data-item=Matrix1] .live svg text')].map(n => n.textContent)), 'errors:', errs);
+  throw e;
+});
 
 step('designer preview shows the pivot with its totals');
 await p.getByTestId('tab-preview').click();
