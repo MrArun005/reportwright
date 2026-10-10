@@ -3,7 +3,7 @@ import { PDFDocument, PDFName, PDFString, PDFHexString, PDFRawStream, PDFImage, 
 import { fontkit } from '../engine/lazylibs.js';
 import { makePdfA, setUaMetadata, setInfoDates } from './pdfa.js';
 import { safeUrl, drillUrl, asciiUrl } from '../engine/url.js';
-import { dataUriBytesOf, dataUriBytes, imageInfoOf, imageInfo, IMAGE_LIMITS } from '../engine/image.js';
+import { dataUriBytesOf, dataUriBytes, imageInfoOf, IMAGE_LIMITS } from '../engine/image.js';
 import { parseSvg, drawSvg } from './svgimage.js';
 import { encryptPdf } from './encrypt.js';
 import { createTagger } from './pdfua.js';
@@ -491,10 +491,11 @@ function ownWriterFits(model, opt) {
     for (const it of pg.items) {
       // the old writer (pdfWriter: 'legacy') keeps embedded fonts and shaped runs on pdf-lib, as before; @reportwright/pdf takes them
       if (it.t === 'text') { if (opt.pdfWriter === 'legacy' && (!isStandard(it.font) || it.lines.some((/** @type {any} */ l) => l.runs))) return false; }
-      else if (it.t === 'link') { const a = it.action; if (a?.type === 'bookmark' && !(a.page >= 1 && a.page <= model.pages.length)) return false; }
+      // a jump to a bookmark by name: resolved by ownWriter (the first bookmark of that name, as pdf-lib's path does)
+      else if (it.t === 'link') { const a = it.action; if (a?.type === 'bookmark' && a.page && !(a.page >= 1 && a.page <= model.pages.length)) return false; }
       // a PNG or JPEG data URI (B2); SVG and URL pictures (their type is known once fetched) stay on pdf-lib
-      // PNG, JPEG and SVG data URIs (B2, B3); a URL picture (its type is known once fetched) stays on pdf-lib
-      else if (it.t === 'image') { if (opt.pdfWriter === 'legacy' || !['png', 'jpeg', 'svg'].includes(/** @type {any} */ (imageInfo(it.src))?.type)) return false; }
+      // pictures (B2, B3): PNG, JPEG and SVG, from data URIs or fetchImage; any other is left out with pdf-lib's warning
+      else if (it.t === 'image') { if (opt.pdfWriter === 'legacy') return false; }
       // rounded boxes and SVG paths (B3): drawn with pdf-lib's own operators (svgpath.js)
       else if (it.t === 'path' || (it.t === 'rect' && it.radius)) { if (opt.pdfWriter === 'legacy') return false; }
       // form fields (B6): the library's fields with pdf-lib's look (pdffields.js)
@@ -554,6 +555,14 @@ async function ownWriter(model, fontStore, opt) {
   // a form field's font is embedded (its standard font's stand-in), as on pdf-lib's path
   if (model.pages.some((/** @type {any} */ pg) => pg.items.some((/** @type {any} */ i) => i.t === 'field'))) await fontStore.load(standIns(fontStore));
   const parts = [];
+  // a jump to a bookmark by name goes to the first bookmark of that name (none: no link), as on pdf-lib's path
+  if (model.pages.some((/** @type {any} */ pg) => pg.items.some((/** @type {any} */ i) => i.t === 'link' && i.action?.type === 'bookmark' && !i.action.page))) {
+    model = { ...model, pages: model.pages.map((/** @type {any} */ pg) => ({ ...pg, items: pg.items.map((/** @type {any} */ i) => {
+      if (i.t !== 'link' || i.action?.type !== 'bookmark' || i.action.page) return i;
+      const b = model.bookmarks?.find((/** @type {any} */ x) => x.label === i.action.target);
+      return { ...i, action: b ? { ...i.action, page: b.page, y: b.y } : { ...i.action, page: 0 } };
+    }) })) };
+  }
   const info = { width: model.width, height: model.height, bookmarks: model.bookmarks || [], headings: model.headings || [], warnings: [],
     pageStarts: model.pageStarts || [], pageHeights: model.pages.map((/** @type {any} */ pg) => pg.height ?? model.height) };
   await writePagedPdf({ info, pages: async function* () { yield* model.pages; } },

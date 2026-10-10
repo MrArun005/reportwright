@@ -41,10 +41,17 @@ const now = new Date('2026-07-01T12:00:00Z');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-parity-'));
 process.on('exit', () => fs.rmSync(tmp, { recursive: true, force: true }));
 
-/** @type {{ id: string, kind: 'pdf'|'stream', def: any, opts?: any }[]} */
+/**
+ * Differences decided for the repository's reports, each with its reason (the legacy writer sends this report to pdf-lib too).
+ * stress-test: its Zalgo line's combining marks extract as "贷" from pdf-lib's file (pdf-lib's ToUnicode gives the mark
+ * glyph a wrong code point); @reportwright/pdf's file extracts them as the marks they are. Pixels identical.
+ * @type {Record<string, { pixels?: string, text?: string }>}
+ */
+const REPO_ACCEPT = { 'stress-test': { text: 'combining marks extract as themselves, not as pdf-lib\'s wrong "贷" (ToUnicode fix)' } };
+/** @type {{ id: string, kind: 'pdf'|'stream', def: any, opts?: any, accept?: any }[]} */
 const cases = [];
 for (const f of fs.readdirSync(path.join(root, 'reports')).filter(f => f.endsWith('.pw.json')).sort()) {
-  cases.push({ id: `repo/${f.replace('.pw.json', '')}`, kind: 'pdf', def: JSON.parse(fs.readFileSync(path.join(root, 'reports', f), 'utf8')) });
+  cases.push({ id: `repo/${f.replace('.pw.json', '')}`, kind: 'pdf', accept: REPO_ACCEPT[f.replace('.pw.json', '')], def: JSON.parse(fs.readFileSync(path.join(root, 'reports', f), 'utf8')) });
 }
 // the streaming ledger of tests/engine/pdfstream-paged.test.js, in each streamed form
 const rows = (n) => Array.from({ length: n }, (_, i) => ({ id: i + 1, region: ['North', 'South', 'East', 'West'][i % 4], amount: Math.round(((i * 7919) % 200000 - 100000) * 1.37) / 100, ref: i % 37 ? `REF-${i * 31}` : `Reversal of an earlier transfer between linked accounts, batch ${i}` }));
@@ -187,7 +194,7 @@ for (const c of cases) {
     // Phase B change (the streamed path is the same on both sides of the legacy gate).
     const accept = c.accept?.pixels || (baseline === 'pdflib' && c.kind === 'stream' && c.opts?.tagged ? 'streamed tagged text is one text object (relative Td): sub-pixel rounding at 72 dpi only' : '');
     row.pixels = px === 0 ? 'ok' : np === op && accept ? `accepted ${px} px: ${accept}` : `FAIL ${np !== op ? `pages ${op}→${np}` : `${px} px`}`;
-    row.text = tx ? `FAIL ${tx} page(s)` : marks ? `ok (${marks} page(s): bidi marks only)` : 'ok';
+    row.text = tx && c.accept?.text ? `accepted ${tx} page(s): ${c.accept.text}` : tx ? `FAIL ${tx} page(s)` : marks ? `ok (${marks} page(s): bidi marks only)` : 'ok';
     const q = run('qpdf', [...(pw ? [`--password=${pw}`] : []), '--check', fn]);
     let valid = q.status === 0 ? 'qpdf ok' : `FAIL qpdf: ${q.stdout.toString().split('\n').find(l => /error|warning/i.test(l)) || q.status}`;
     if ((c.opts?.pdfa || c.opts?.tagged) && VERAPDF) {

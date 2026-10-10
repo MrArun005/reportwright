@@ -235,3 +235,32 @@ describe('B8: signing by @reportwright/pdf', async () => {
     } finally { process.off('warning', on); }
   });
 });
+
+describe('jumps to a bookmark by name and URL pictures leave pdf-lib', async () => {
+  const { PDFDocument, PDFName } = await import('pdf-lib');
+  const png = (await import('../../scripts/parity-corpus.mjs')).CORPUS.find((/** @type {any} */ c) => c.id === 'images-invoice').def.sections.body.items[0].src;
+  const def = report([
+    { type: 'textbox', x: 0, y: 0, w: 200, h: 16, value: 'Go', action: { type: 'bookmark', target: 'Second' } },
+    { type: 'textbox', x: 0, y: 20, w: 200, h: 16, value: 'Nowhere', action: { type: 'bookmark', target: 'Missing' } },
+    { type: 'image', x: 0, y: 40, w: 40, h: 20, src: 'https://example.test/logo.png' },
+    { type: 'textbox', x: 0, y: 900, w: 200, h: 16, value: 'Second', bookmark: 'Second' },
+  ]);
+  afterEach(() => { delete process.env.PW_FORCE_PDFLIB; });
+  it('the same links (to the first bookmark of the name; none for a missing one) and the fetched picture', async () => {
+    const m = await render(def, { fontStore });
+    const fetchImage = async () => new Uint8Array(Buffer.from(png.split(',')[1], 'base64'));
+    const neu = await exportPdf(m, fontStore, { fetchImage });
+    process.env.PW_FORCE_PDFLIB = '1';
+    const old = await exportPdf(m, fontStore, { fetchImage });
+    expect(viaLibrary(neu)).toBe(true);
+    const links = async (/** @type {Uint8Array} */ b) => {
+      const d = await PDFDocument.load(b), refs = d.getPages().map(p => p.ref.toString());
+      return d.getPages().flatMap((p, i) => (/** @type {any} */ (p.node.lookup(PDFName.of('Annots')))?.asArray() || []).map((/** @type {any} */ r) => {
+        const dest = d.context.lookup(r).lookup(PDFName.of('Dest'))?.asArray();
+        return dest ? [i, refs.indexOf(dest[0].toString()), Math.round(dest[3].asNumber())] : [i];
+      }));
+    };
+    expect(await links(neu)).toEqual(await links(old));
+    expect((await links(neu)).length).toBe(1);
+  });
+});
