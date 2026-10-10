@@ -82,11 +82,12 @@ export function raced(p, signal) {
  * @param {Sink} sink
  * @param {{ fontStore: import('../engine/text/fonts.js').FontStore, fonts?: string[],
  *   subset?: (font: Uint8Array, codePoints: Iterable<number>, opt?: { glyphs?: Iterable<number> }) => Promise<Uint8Array>,
- *   id?: string, signal?: AbortSignal, pdf?: any }} opt
+ *   id?: string, signal?: AbortSignal, pdf?: any, onWarning?: (message: string) => void }} opt
  *   fonts: font keys to name now (F1, F2… in this order); any other font is named on first use.
  *   subset: subset.js's subsetter; without it fonts embed in full. id: the file ID (32 hex digits), else random.
  *   signal: stops a wait for the sink (back-pressure) when it aborts. pdf: a @reportwright/pdf document (createPdf) that
  *   writes the objects, pages and the file's end instead of this writer's own (the sink is then unused).
+ *   onWarning: a font embedded whole because its subset could not be used.
  */
 export function createPdfStream(sink, opt) {
   const { fontStore } = opt;
@@ -509,14 +510,16 @@ export function createPdfStream(sink, opt) {
       try {
         // glyphs given: subset.js keeps their IDs (HB_SUBSET_FLAGS_RETAIN_GIDS), which the pages already drew with
         const sub = await opt.subset(full, F.cps, { glyphs: F.glyphs.keys() });
+        const why = (await import('../engine/text/sfnt.js')).subsetProblem(sub); // a cut or damaged subset: the full font
+        if (why) throw new Error(why);
         // fontkit must read every glyph we drew (16 zero bytes after the tables, as pdf.js pads); else the full font
         const padded = new Uint8Array(sub.length + 16);
         padded.set(sub);
         const check = (f.lite && (await import('../engine/text/sfnt.js')).liteFont(padded, () => { throw new Error('subset: not read by sfnt.js'); })) || (await loadFontkit(), fontkit.create(padded));
-        for (const id of F.glyphs.keys()) { if (check.lite && (id >= check.numGlyphs || !check.glyphInBounds(id))) throw new Error('subset: glyph missing'); void check.getGlyph(id).advanceWidth; }
+        for (const id of F.glyphs.keys()) { if (check.lite && id >= check.numGlyphs) throw new Error('subset: glyph missing'); void check.getGlyph(id).advanceWidth; }
         bytes = sub;
         psName = check.postscriptName || psName;
-      } catch { /* the full font */ }
+      } catch (e) { opt.onWarning?.(`The font ${f.postscriptName || key} is embedded whole: its subset could not be used (${/** @type {any} */ (e)?.message || e})`); }
     }
     const cff = 'CFF ' in f.directory.tables || 'CFF2' in f.directory.tables;
     const base = `${bytes === full ? '' : `${subsetTag(bytes)}+`}${String(psName || 'Font').replace(/[^A-Za-z0-9_.-]/g, '')}`;
@@ -715,8 +718,9 @@ async function streamed(def, opts, sink) {
 export async function writePagedPdf(plan, opts, sink) {
   const { fontStore } = opts;
   if (opts.pdfa || opts.tagged) await fontStore.load(standIns(fontStore)); // standard fonts are drawn in their embedded stand-ins
-  const w = createPdfStream(sink, { fontStore, subset: opts.subset, id: opts.id, signal: opts.signal, pdf: await newWriter(sink, opts) });
   const { info, pages } = /** @type {any} */ (plan);
+  const onWarning = (/** @type {string} */ m) => { if (!info.warnings.includes(m)) info.warnings.push(m); };
+  const w = createPdfStream(sink, { fontStore, subset: opts.subset, id: opts.id, signal: opts.signal, pdf: await newWriter(sink, opts), onWarning });
   // tagged (PDF/UA-1): a structure tree written as the pages are (pdfstreamtags.js)
   const tags = opts.tagged ? createStreamTagger(w, { maxElements: Number(opts.tagged.maxElements) || Infinity }) : null;
   const env = paintEnv(w, fontStore, { drillBase: opts.drillBase, tags, embedAll: !!(opts.pdfa || tags) });

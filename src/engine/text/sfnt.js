@@ -78,19 +78,62 @@ export function liteFont(bytes, full) {
       hasGlyphForCodePoint: (/** @type {number} */ cp) => !!lookup(cp),
       glyphForCodePoint: (/** @type {number} */ cp) => getGlyph(lookup(cp), [cp]),
       getGlyph,
-      /** a glyph's outline lies inside glyf (loca in order, in bounds); true for a font without glyf/loca (CFF) */
-      glyphInBounds: (/** @type {number} */ id) => {
-        const { loca, glyf } = tables;
-        if (!loca || !glyf) return true;
-        const long = i16(dv, head + 50) === 1, size = long ? 4 : 2;
-        if (loca.length < (id + 2) * size) return false;
-        const at = (/** @type {number} */ k) => (long ? dv.getUint32(loca.offset + 4 * k) : 2 * u16(dv, loca.offset + 2 * k));
-        const a = at(id), b = at(id + 1);
-        return a <= b && b <= glyf.length && glyf.offset + glyf.length <= bytes.byteLength;
-      },
     };
     return new Proxy(own, { get: (t, p) => (p in t || typeof p === 'symbol' ? /** @type {any} */ (t)[p] : bound(full(), p)) });
   } catch { return null; }
+}
+
+/**
+ * Why a subset cannot be embedded, or '' when it can: its table directory and every table lie inside the bytes, each
+ * glyph's loca range is in order and inside glyf, and a CFF table's header and first INDEXes are in bounds. A cut or
+ * damaged subset would otherwise reach the PDF (fontkit and sfnt.js read past a short buffer without complaint).
+ * @param {Uint8Array} bytes the subset, before any padding
+ */
+export function subsetProblem(bytes) {
+  try {
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), len = bytes.byteLength;
+    const v = dv.getUint32(0);
+    if (v !== 0x00010000 && v !== 0x74727565 && v !== 0x4f54544f) return 'not a TrueType or OpenType font';
+    const n = u16(dv, 4);
+    if (12 + 16 * n > len) return 'its table directory runs past the end';
+    /** @type {Record<string, { offset: number, length: number }>} */
+    const t = {};
+    for (let i = 0; i < n; i++) {
+      const p = 12 + 16 * i, tag = String.fromCharCode(bytes[p], bytes[p + 1], bytes[p + 2], bytes[p + 3]);
+      t[tag] = { offset: dv.getUint32(p + 8), length: dv.getUint32(p + 12) };
+      if (t[tag].offset + t[tag].length > len) return `its ${tag.trim()} table runs past the end`;
+    }
+    if (t.glyf || t.loca) {
+      if (!t.glyf || !t.loca || !t.head || !t.maxp) return 'glyf, loca, head or maxp is missing';
+      const numGlyphs = u16(dv, t.maxp.offset + 4), long = i16(dv, t.head.offset + 50) === 1, size = long ? 4 : 2;
+      if (t.loca.length < (numGlyphs + 1) * size) return 'loca is short';
+      let prev = 0;
+      for (let k = 0; k <= numGlyphs; k++) {
+        const at = long ? dv.getUint32(t.loca.offset + 4 * k) : 2 * u16(dv, t.loca.offset + 2 * k);
+        if (at < prev || at > t.glyf.length) return `glyph ${k - 1} lies outside glyf`;
+        prev = at;
+      }
+    }
+    const cff = t['CFF '] || t.CFF2;
+    if (cff) {
+      const o = cff.offset, major = bytes[o], hdr = bytes[o + 2];
+      if (cff.length < 4 || (t['CFF '] ? major !== 1 : major !== 2) || hdr < 4 || hdr > cff.length) return 'its CFF header is damaged';
+      if (t['CFF ']) { // the Name and Top DICT INDEXes: count, offSize, offsets, data inside the table
+        let p = o + hdr;
+        for (let i = 0; i < 2; i++) {
+          const count = u16(dv, p);
+          if (!count) { p += 2; continue; }
+          const os = bytes[p + 2], last = p + 3 + count * os;
+          if (os < 1 || os > 4 || last + os > o + cff.length) return 'its CFF INDEX runs past the table';
+          let end = 0;
+          for (let b = 0; b < os; b++) end = end * 256 + bytes[last + b];
+          p = last + os - 1 + end;
+          if (p > o + cff.length) return 'its CFF INDEX runs past the table';
+        }
+      }
+    }
+    return '';
+  } catch { return 'it could not be read'; }
 }
 
 /** @param {any} o @param {string|symbol} p */

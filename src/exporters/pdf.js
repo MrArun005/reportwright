@@ -109,7 +109,10 @@ async function pdfOf(model, fontStore, opt) {
         try {
           // fontkit reads a glyph header even for an empty glyph: when the last glyph is empty (often the space) and
           // glyf is the last table, that read runs past the end. Zero padding after the tables makes it read zeros.
-          const sub = withPadding(await /** @type {any} */ (opt.subset)(bytes, cps, glyphs ? { glyphs: glyphs.keys() } : undefined));
+          const raw = await /** @type {any} */ (opt.subset)(bytes, cps, glyphs ? { glyphs: glyphs.keys() } : undefined);
+          const why = (await import('../engine/text/sfnt.js')).subsetProblem(raw); // a cut or damaged subset: the full font
+          if (why) throw new Error(why);
+          const sub = withPadding(raw);
           // Check every glyph we need: a subset fontkit cannot read embeds the full font instead. (The advance reads the
           // glyph header too; pdf-lib needs no more. The outline, which g.bbox would decode, is never read.)
           const f = fontkit.create(sub);
@@ -117,7 +120,7 @@ async function pdfOf(model, fontStore, opt) {
           for (const id of glyphs?.keys() || []) void f.getGlyph(id).advanceWidth;
           bytes = sub;
           psName = f.postscriptName || psName;
-        } catch { /* embed the full font */ }
+        } catch (e) { opt.onWarning?.(`The font ${psName || key} is embedded whole: its subset could not be used (${/** @type {any} */ (e)?.message || e})`); }
       }
       // a subset's name starts with a tag (ABCDEF+), which tells readers (and pdffonts) it is one
       const pf = await doc.embedFont(bytes, { subset: false, customName: bytes === full ? undefined : `${subsetTag(bytes)}+${psName || 'Font'}` });
@@ -518,6 +521,7 @@ async function ownWriter(model, fontStore, opt) {
   await writePagedPdf({ info, pages: async function* () { yield* model.pages; } },
     { fontStore, subset: opt.subset, id: fixed ? await contentId(model, opt, when) : undefined, title: opt.title, author: opt.author, creationDate: when, drillBase: opt.drillBase, pdfWriter: opt.pdfWriter },
     { write: (/** @type {Uint8Array} */ u8) => { parts.push(u8); } });
+  for (const x of info.warnings) opt.onWarning?.(x);
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
   let at = 0;
   for (const p of parts) { out.set(p, at); at += p.length; }
