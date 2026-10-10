@@ -1,7 +1,7 @@
 'use client';
 // Runs the engine in a Web Worker. Falls back to the main thread if the worker cannot start.
 import { reportFetch, policyKeysIn, fetchPolicy } from './dataFetch.js';
-import { fontFile, setCustomFonts, isStandard, SHAPER, CORE_FONT_KEY } from '@/engine/text/fonts.js';
+import { fontFile, setCustomFonts, isStandard, SHAPER, CORE_FONT_KEY, OPTIONAL_KEYS, setOptionalFonts, optionalMissing } from '@/engine/text/fonts.js';
 import { createSubsetter } from '@/exporters/subset.js';
 import { fontFamilyCss, fontKeysOf } from '@/exporters/svg.js';
 
@@ -14,8 +14,12 @@ let fontsUrl = null;
 let standalone = false;
 /** @param {{ standalone?: boolean, fontsUrl?: string|null }} o */
 export function setStandalone({ standalone: on = false, fontsUrl: f = null } = {}) {
-  standalone = !!on; fontsUrl = f ? String(f).replace(/\/?$/, '/') : null; mainStore = null; fontList = null; fontBytes.clear();
+  standalone = !!on; fontsUrl = f ? String(f).replace(/\/?$/, '/') : null; mainStore = null; fontList = null; fontBytes.clear(); optP = null;
 }
+// optional fonts: only those the server has (app/fonts/optional.json)
+if (typeof window < 'u') setOptionalFonts([]);
+let optP = null;
+const optional = () => (optP ||= Promise.resolve(standalone || fetch(`${fontsBase()}optional.json`).then(r => r.json())).then(k => setOptionalFonts(k?.map ? k : null), () => setOptionalFonts(null)));
 /** Where the report fonts are: fontsUrl, else <server>/fonts/. */
 export const fontsBase = () => fontsUrl || `${assetBase}/fonts/`;
 /** A file next to the fonts folder (harfbuzz-subset.wasm, icc/…): ../ of fontsUrl, else the server's root. */
@@ -39,6 +43,7 @@ const fontBytes = new Map();
 const fetchFont = (k) => {
   if (!fontBytes.has(k)) {
     const p = (async () => {
+      if (OPTIONAL_KEYS.includes(k) && (await optional(), optionalMissing(k))) throw Error(k);
       const r = await fetch(`${fontsBase()}${fontFile(k)}`);
       if (!r.ok) throw new Error(`Font "${k}" did not load (HTTP ${r.status})`);
       return r.arrayBuffer();
@@ -74,7 +79,7 @@ let fontList = null;
 export function customFonts(refresh = false) {
   if (!fontList || refresh) {
     fontList = (bundledList ? Promise.resolve(bundledList) : standalone ? Promise.resolve([]) : fetch(`${assetBase}/api/fonts`).then(r => (r.ok ? r.json() : [])).catch(() => []))
-      .then((list) => { setCustomFonts(list); return list; });
+      .then(async (list) => { setCustomFonts(list); await optional(); return list; });
   }
   return fontList;
 }

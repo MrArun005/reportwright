@@ -24,6 +24,11 @@ const BUNDLED = [
 ];
 /** The optional families (scripts/fetch-fonts-cjk.mjs). */
 export const OPTIONAL_KEYS = ['NotoSansJP', 'NotoSansKR', 'NotoSansSC', 'NotoEmoji'];
+/** Installed optional fonts: null = unknown (all may be asked for). */
+let optOn = null;
+/** @param {string[]|null} keys */
+export function setOptionalFonts(keys) { optOn = keys ? new Set(keys) : null; }
+export const optionalMissing = (k) => optOn?.has(k) === false && OPTIONAL_KEYS.includes(k);
 
 /** family → its faces: the bundled families, then the fonts uploaded to the server (setCustomFonts). @type {Record<string, Face[]>} */
 export const FONT_FAMILIES = {};

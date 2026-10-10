@@ -7,7 +7,12 @@ import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import fontkitModule from '@pdf-lib/fontkit';
 import { store } from './storage/index.js';
-import { BUNDLED_FAMILIES } from '../engine/text/fonts.js';
+import { BUNDLED_FAMILIES, OPTIONAL_KEYS, fontFile } from '../engine/text/fonts.js';
+import fs from 'node:fs';
+import path from 'node:path';
+
+/** The optional fonts (npm run fonts:cjk) this server has in public/fonts: pages ask for no others. */
+export const installedOptionalFonts = () => OPTIONAL_KEYS.filter(k => fs.existsSync(path.join(process.cwd(), 'public', 'fonts', fontFile(k))));
 
 const fontkit = /** @type {any} */ (fontkitModule).default || fontkitModule;
 

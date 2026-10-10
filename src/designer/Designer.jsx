@@ -12,7 +12,7 @@ import Outline from './Outline.jsx';
 import ReportViewer from '@/viewer/ReportViewer.jsx';
 import { ITEMS } from '@/engine/items/index.js';
 import { fontFaceCss } from '@/exporters/svg.js';
-import { allFontKeys } from '@/engine/text/fonts.js';
+import { allFontKeys, optionalMissing } from '@/engine/text/fonts.js';
 import { customFonts, fontsBase } from '@/viewer/engineClient.js';
 import ThemeToggle from '@/theme/ThemeToggle.jsx';
 import ChartWizard from './ChartWizard.jsx';
@@ -364,7 +364,7 @@ function DesignerIn({ id, initial, rev = null, lang: langIn, embed = null, user 
   // every report font, bundled and uploaded: the canvas draws text boxes as HTML in them (the browser only
   // downloads the ones it uses, e.g. Noto Sans Devanagari once there is Hindi on the page)
   const fonts = useDesigner(s => s.fonts);
-  const fontCss = useMemo(() => fontFaceCss(allFontKeys(), fontsBase().replace(/\/$/, '')), [fonts]); // eslint-disable-line react-hooks/exhaustive-deps
+  const fontCss = useMemo(() => fontFaceCss(allFontKeys().filter(k => !optionalMissing(k)), fontsBase().replace(/\/$/, '')), [fonts]); // eslint-disable-line react-hooks/exhaustive-deps
   // embedded: @font-face is ignored inside a shadow root, so the report fonts are declared on the host document
   useEffect(() => { if (embed) declareDocumentStyles('pw-designer-fonts', fontCss); }, [embed, fontCss]);
   useEffect(() => { customFonts().then(list => api.getState().setUi({ fonts: list })); }, []);
