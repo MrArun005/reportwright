@@ -27,6 +27,8 @@ import { xmpPacket } from './pdfa.js';
 import { createStreamTagger } from './pdfstreamtags.js';
 import { standardFontDict, embeddedPage, embeddedWarnings, standIns } from './pdfstandard.js';
 import { Content, drawRun, glyphText, insideClip, col, BLACK, n2, n4, KAPPA, cleanText, deflate } from './pdfpaint.js';
+import { dataUriBytesOf, dataUriBytes, imageInfoOf, IMAGE_LIMITS } from '../engine/image.js';
+import { pngProblem } from './png.js';
 
 const CHUNK = 64 * 1024;
 const LEAF = 64; // pages per node of the page tree
@@ -292,6 +294,17 @@ export function createPdfStream(sink, opt) {
      * painted elsewhere, parallel.js, use it too). @param {number} ca @param {number} CA
      */
     gs: (ca, CA) => w.resource('ExtGState', `<< /Type /ExtGState /ca ${num(ca)} /CA ${num(CA)} >>`, `GS${num(ca)}_${num(CA)}`),
+    /**
+     * A PNG or JPEG through @reportwright/pdf (not the legacy writer), written now: its name in the shared Resources,
+     * its size in pixels upright (EXIF orientation applied) and that orientation as a unit-square matrix.
+     * @param {Uint8Array} bytes @param {any} [o] embedImage's options
+     */
+    async image(bytes, o) {
+      if (!core) throw new Error('images need the @reportwright/pdf writer');
+      const img = await /** @type {any} */ (opt.pdf).embedImage(bytes, o);
+      const r = core.imageResource(img);
+      return { name: r.name, width: img.width, height: img.height, orientation: r.orientation };
+    },
     /** What this writer's pages used, for another writer to take over (pages painted elsewhere). */
     used: () => ({ fonts: [...fonts].map(([key, F]) => [key, [...F.cps], [...F.glyphs]]), gs: [...(res.get('ExtGState')?.keys() || [])] }),
     /** Take over what pages painted elsewhere used (used() of their writer). @param {any} u */
@@ -756,6 +769,12 @@ export async function writePagedPdf(plan, opts, sink) {
         await w.addPage({ width: pg.width ?? info.width, height: H, deflated: pg.deflated, annots });
         continue;
       }
+      // the page's pictures, embedded before it is painted (once per source); one left out is said, as pdf-lib's path says it
+      for (const im of pg.items) if (im.t === 'image') {
+        let r = env.images.get(im.src);
+        if (!r) env.images.set(im.src, r = await loadImage(im.src, w, opts));
+        if (!r.img) onWarning(`Image on page ${pi + 1} (${im.tag?.alt ? `"${im.tag.alt}"` : String(im.src).slice(0, 40)}) was left out: ${r.why}`);
+      }
       const { content, annots } = paintPage(pg, H, env);
       await w.addPage({ width: pg.width ?? info.width, height: H, content, annots, extra: tags ? await tags.end(w.pageRef(pi)) : undefined });
     }
@@ -818,6 +837,31 @@ async function newWriter(sink, opts) {
 function pageLabels(starts, n) {
   const at = [...new Set([0, ...(starts || [])])].filter(i => i >= 0 && i < n).sort((a, b) => a - b);
   return `<< /Nums [${at.map(i => `${i} << /S /D /St 1 >>`).join(' ')}] >>`;
+}
+
+/**
+ * A picture's bytes checked as exportPdf's pdf-lib path checks them (size limits, fetchImage, a damaged or huge PNG,
+ * PNG and JPEG only), then embedded: { img } or { why }, the reason it is left out.
+ * ponytail: the same checks as pdf.js's loadImage; one copy once pdf-lib's path goes (Phase C).
+ * @param {string} src @param {any} w the writer @param {any} opts fetchImage
+ * @returns {Promise<{ img?: any, why?: string }>}
+ */
+async function loadImage(src, w, opts) {
+  try {
+    const local = /^data:/i.test(src);
+    if (local && dataUriBytes(src) > IMAGE_LIMITS.bytes) return { why: 'it is larger than the image size limit' };
+    if (!local && !opts.fetchImage) return { why: 'it is a URL, and no fetchImage was given to load it' };
+    const bytes = local ? dataUriBytesOf(src) : await opts.fetchImage(src);
+    if (!bytes?.length) return { why: 'it could not be loaded' };
+    if (bytes.length > IMAGE_LIMITS.bytes) return { why: 'it is larger than the image size limit' };
+    const info = /** @type {any} */ (imageInfoOf(bytes));
+    if (info?.type === 'png') {
+      const why = 'w' in info && !info.suspect && info.w * info.h <= IMAGE_LIMITS.pixels ? pngProblem(bytes) : 'too large or animated';
+      if (why) return { why: `the PNG is not usable (${why})` };
+    } else if (info?.type !== 'jpeg') return { why: info ? `${info.type.toUpperCase()} is not embedded (PNG, JPEG and SVG are)` : 'it is not a PNG, JPEG or SVG' };
+    // ponytail: the decoded-size bound of the pixel limit at 8-bit RGBA; a 16-bit PNG near the limit is refused
+    return { img: await w.image(bytes, { maxDecodedBytes: IMAGE_LIMITS.pixels * 4 }) };
+  } catch (e) { return { why: `it could not be embedded (${/** @type {any} */ (e)?.message || e})` }; }
 }
 
 /** a literal string, \ ( ) escaped @param {string} v */
@@ -912,6 +956,24 @@ export function paintPage(pg, H, env) {
         annots.push({ ref, dict: `<< /Type /Annot /Subtype /Link /F 4 /Rect ${rect} /Border [0 0 0] ${to} /Contents ${pdfText(say)} /StructParent ${key} >>` });
         break;
       }
+      case 'image': {
+        const img = env.images?.get(it.src)?.img;
+        if (!img) break; // left out (said when it was loaded)
+        // as exportPdf's pdf-lib path draws it: the fit in the box, cover and clip cut to it
+        let w = it.w, h = it.h, x = it.x, y = it.y;
+        const clipBox = it.fit === 'clip' ? [it.x, H - it.y - it.ch, it.cw, it.ch] : it.fit === 'cover' ? [it.x, H - it.y - it.h, it.w, it.h] : null;
+        if (it.fit !== 'fill' && it.fit !== 'clip') {
+          const s = it.fit === 'cover' ? Math.max(it.w / img.width, it.h / img.height) : Math.min(it.w / img.width, it.h / img.height);
+          w = img.width * s; h = img.height * s; x = it.x + (it.w - w) / 2; y = it.y + (it.h - h) / 2;
+        }
+        const o = img.orientation, upright = o[0] === 1 && o[1] === 0 && o[2] === 0 && o[3] === 1 && o[4] === 0 && o[5] === 0;
+        c.q();
+        if (clipBox) c.s += `${clipBox.map(n2).join(' ')} re W n\n`;
+        c.alpha(1, c.st.CA);
+        c.s += `${n4(w)} 0 0 ${n4(h)} ${n2(x)} ${n2(H - y - h)} cm${upright ? '' : ` ${o.join(' ')} cm`} /${img.name} Do\n`;
+        c.Q();
+        break;
+      }
       default: throw new Error(`A ${it.t} item does not stream yet`);
     }
     if (it.rotate) c.Q();
@@ -947,6 +1009,8 @@ export function paintEnv(w, fontStore, o = {}) {
     literal: (/** @type {string} */ key, /** @type {string} */ text) => w.literal(key, text),
     pageRef: o.pageRef || ((/** @type {number} */ i) => w.pageRef(i)),
     pageHeight: o.pageHeight,
+    /** the pictures embedded so far, by source: { img } or { why } (writePagedPdf loads a page's before painting it) @type {Map<string, any>} */
+    images: new Map(),
     reserve: () => w.reserve(),
     drillBase: o.drillBase,
     tags: o.tags || null,

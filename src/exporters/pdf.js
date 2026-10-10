@@ -3,7 +3,7 @@ import { PDFDocument, PDFName, PDFString, PDFHexString, PDFRawStream, PDFImage, 
 import { fontkit } from '../engine/lazylibs.js';
 import { makePdfA, setUaMetadata, setInfoDates } from './pdfa.js';
 import { safeUrl, drillUrl, asciiUrl } from '../engine/url.js';
-import { dataUriBytesOf, dataUriBytes, imageInfoOf, IMAGE_LIMITS } from '../engine/image.js';
+import { dataUriBytesOf, dataUriBytes, imageInfoOf, imageInfo, IMAGE_LIMITS } from '../engine/image.js';
 import { parseSvg, drawSvg } from './svgimage.js';
 import { encryptPdf } from './encrypt.js';
 import { createTagger } from './pdfua.js';
@@ -456,8 +456,8 @@ async function pdfOf(model, fontStore, opt) {
 /**
  * Can the paged writer (writePagedPdf: @reportwright/pdf, or with pdfWriter 'legacy' the engine's own) draw this model?
  * Then pdf-lib (about 35 ms to load) is not needed (A1.1). Kept to what it draws: text (any font, shaped runs; with
- * 'legacy' only the standard fonts, as 0.13 did), boxes, ellipses, lines and links. Anything else stays on pdf-lib:
- * images, SVG paths, rounded boxes, form fields, PDF/A, tagged PDF, encryption, prepare (signing) and save options.
+ * 'legacy' only the standard fonts, as 0.13 did), boxes, ellipses, lines, links, and PNG and JPEG data URIs. Anything else stays on pdf-lib:
+ * SVG and URL pictures, SVG paths, rounded boxes, form fields, PDF/A, tagged PDF, encryption, prepare (signing) and save options.
  * @param {any} model @param {any} opt
  */
 function ownWriterFits(model, opt) {
@@ -468,6 +468,8 @@ function ownWriterFits(model, opt) {
       // the old writer (pdfWriter: 'legacy') keeps embedded fonts and shaped runs on pdf-lib, as before; @reportwright/pdf takes them
       if (it.t === 'text') { if (opt.pdfWriter === 'legacy' && (!isStandard(it.font) || it.lines.some((/** @type {any} */ l) => l.runs))) return false; }
       else if (it.t === 'link') { const a = it.action; if (a?.type === 'bookmark' && !(a.page >= 1 && a.page <= model.pages.length)) return false; }
+      // a PNG or JPEG data URI (B2); SVG and URL pictures (their type is known once fetched) stay on pdf-lib
+      else if (it.t === 'image') { if (opt.pdfWriter === 'legacy' || !['png', 'jpeg'].includes(/** @type {any} */ (imageInfo(it.src))?.type)) return false; }
       else if (!(it.t === 'line' || it.t === 'ellipse' || (it.t === 'rect' && !it.radius))) return false;
     }
   }
@@ -521,7 +523,7 @@ async function ownWriter(model, fontStore, opt) {
   const info = { width: model.width, height: model.height, bookmarks: model.bookmarks || [], headings: model.headings || [], warnings: [],
     pageStarts: model.pageStarts || [], pageHeights: model.pages.map((/** @type {any} */ pg) => pg.height ?? model.height) };
   await writePagedPdf({ info, pages: async function* () { yield* model.pages; } },
-    { fontStore, subset: opt.subset, id: fixed ? await contentId(model, opt, when) : undefined, title: opt.title, author: opt.author, creationDate: when, drillBase: opt.drillBase, pdfWriter: opt.pdfWriter },
+    { fontStore, subset: opt.subset, fetchImage: opt.fetchImage, id: fixed ? await contentId(model, opt, when) : undefined, title: opt.title, author: opt.author, creationDate: when, drillBase: opt.drillBase, pdfWriter: opt.pdfWriter },
     { write: (/** @type {Uint8Array} */ u8) => { parts.push(u8); } });
   for (const x of info.warnings) opt.onWarning?.(x);
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));

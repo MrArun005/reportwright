@@ -1,6 +1,6 @@
 // The per-process PNG cache of exportPdf (src/exporters/pdf.js): bounded by entries and bytes, least recently used out,
 // and a cached image gives the same bytes as a fresh decode.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import zlib from 'node:zlib';
 import { render } from '../../src/engine/index.js';
 import { exportPdf, pngCacheStats } from '../../src/exporters/pdf.js';
@@ -18,6 +18,9 @@ const def = (src) => ({ $schema: 'pagewright/report@1', name: 'P', page: { size:
 const pdf = async (src) => Buffer.from(await exportPdf(await render(def(src), { fontStore }), fontStore, { creationDate: new Date(0) }));
 
 describe('PNG cache across exports', () => {
+  // the cache is pdf-lib's path's; a PNG report goes through @reportwright/pdf unless forced (Phase B)
+  beforeAll(() => { process.env.PW_FORCE_PDFLIB = '1'; });
+  afterAll(() => { delete process.env.PW_FORCE_PDFLIB; });
   it('stays under its entry and byte caps with many distinct images, and skips one too large', async () => {
     for (let i = 0; i < 40; i++) {
       await pdf(png(300, 300, i)); // ~0.7 MB held each
@@ -25,6 +28,7 @@ describe('PNG cache across exports', () => {
       expect(s.entries).toBeLessThanOrEqual(s.maxEntries);
       expect(s.bytes).toBeLessThanOrEqual(s.maxBytes);
     }
+    expect(pngCacheStats().entries).toBeGreaterThan(0);
     const before = pngCacheStats().bytes;
     await pdf(png(1100, 1000, 99)); // 4.4 MB of pixels: embedded, not held
     expect(pngCacheStats().bytes).toBeLessThanOrEqual(before + 0);

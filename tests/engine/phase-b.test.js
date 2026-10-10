@@ -66,3 +66,30 @@ describe('B1: page sizes that differ, page numbering that restarts', async () =>
     });
   }
 });
+
+describe('B2: PNG and JPEG images through @reportwright/pdf', async () => {
+  const { CORPUS } = await import('../../scripts/parity-corpus.mjs');
+  const def = (/** @type {string} */ id) => CORPUS.find((/** @type {any} */ c) => c.id === id).def;
+  const CUT = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAf';
+  const img = (/** @type {string} */ name, /** @type {string} */ src, /** @type {number} */ y) => ({ type: 'image', name, x: 0, y, w: 60, h: 40, src, alt: name });
+  afterEach(() => { delete process.env.PW_FORCE_PDFLIB; });
+  it('the logo invoice (PNG 8 and 16 bit, alpha, JPEG, EXIF JPEG) leaves pdf-lib; pdfWriter legacy keeps it there', async () => {
+    const m = await render(def('images-invoice'), { fontStore });
+    expect(viaLibrary(await exportPdf(m, fontStore, {}))).toBe(true);
+    expect(viaLibrary(await exportPdf(m, fontStore, { pdfWriter: 'legacy' }))).toBe(false);
+  });
+  it('an image it cannot embed is left out with the warning pdf-lib gave', async () => {
+    // a cut PNG, and one whose header says 20000 × 20000 pixels (over IMAGE_LIMITS.pixels): both data URIs of a PNG, so
+    // the new path takes them (a GIF or a URL picture stays on pdf-lib)
+    const ihdr = Buffer.from('89504e470d0a1a0a0000000d4948445200004e2000004e200806000000', 'hex');
+    const HUGE = `data:image/png;base64,${Buffer.concat([ihdr, Buffer.alloc(4), Buffer.from('0000000049454e44ae426082', 'hex')]).toString('base64')}`;
+    const m = await render(report([img('Cut', CUT, 0), img('Huge', HUGE, 50), img('Cut again', CUT, 100)]), { fontStore });
+    const run = async () => { const w = /** @type {string[]} */ ([]); const b = await exportPdf(m, fontStore, { onWarning: (x) => w.push(x) }); return { b, w }; };
+    const neu = await run();
+    process.env.PW_FORCE_PDFLIB = '1';
+    const old = await run();
+    expect(viaLibrary(neu.b)).toBe(true);
+    expect(neu.w).toEqual(old.w);
+    expect(neu.w).toHaveLength(3);
+  });
+});

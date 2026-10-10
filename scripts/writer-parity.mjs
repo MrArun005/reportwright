@@ -148,7 +148,7 @@ function features(f) {
     subset: fonts.filter(l => /^[A-Z]{6}\+/.test(l)).length,
     links: count((/** @type {any} */ o) => o['/Subtype'] === '/Link'), outline: count((/** @type {any} */ o) => o['/Title'] !== undefined && o['/Parent'] !== undefined),
     structElems: count((/** @type {any} */ o) => o['/Type'] === '/StructElem' || (o['/S'] !== undefined && o['/P'] !== undefined)),
-    fields: count((/** @type {any} */ o) => o['/FT'] !== undefined), images: count((/** @type {any} */ o) => o['/Subtype'] === '/Image'), attachments: count((/** @type {any} */ o) => o['/Type'] === '/Filespec'),
+    fields: count((/** @type {any} */ o) => o['/FT'] !== undefined), images: count((/** @type {any} */ o) => o['/Subtype'] === '/Image') - count((/** @type {any} */ o) => o['/SMask'] !== undefined && o['/SMask'] !== '/None'), // drawn pictures (an alpha channel's soft mask is part of its picture) attachments: count((/** @type {any} */ o) => o['/Type'] === '/Filespec'),
     metadata: !!cat['/Metadata'], pageLabels: starts, outputIntent: !!cat['/OutputIntents'], lang: cat['/Lang'] ?? null,
   };
 }
