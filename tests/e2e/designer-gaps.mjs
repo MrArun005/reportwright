@@ -140,7 +140,7 @@ try {
   const items = def.sections.body.items;
   assert.deepEqual(items.slice(0, 4).map(i => i.name), ['Cover', 'Under', 'Box', 'Inner'], 'Under drawn after Cover; Inner right after Box');
   const under = items.find(i => i.name === 'Under');
-  assert.deepEqual([under.x, under.y], [21, 21], 'arrow keys moved the item');
+  assert.deepEqual([under.x, under.y], [24, 24], 'arrow keys moved the item one grid step (snap is on, grid 4: 0d7e3062)');
   assert.equal(under.style.backgroundColor, '#dcfce7');
   const inner = items.find(i => i.name === 'Inner');
   assert.deepEqual([inner.x, inner.y], [10, 112], 'same place on the page');
