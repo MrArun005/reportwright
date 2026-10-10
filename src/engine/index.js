@@ -18,7 +18,7 @@ import { loadBarcodes } from './items/barcode.js';
 import { placeItems, shiftItems } from './items/paint.js';
 import { paginate } from './paginate/index.js';
 import { layoutItems } from './layout.js';
-import { validate } from './schema/validate.js';
+import { validate, bareSorts } from './schema/validate.js';
 import { makeLoader, resolveReuse, resolveTheme, flattenNamed, REUSE_LIMITS, isSubreportId } from './reuse.js';
 import { layerFilter } from './layout.js';
 
@@ -120,6 +120,7 @@ export async function render(def0, opts = {}) {
     ({ def, parts } = await resolveReuse(def0, getReport, (m) => { if (!reuseWarnings.includes(m)) reuseWarnings.push(m); }, opts.reportId ? [opts.reportId] : [], opts.reuseBudget || (opts.reuseBudget = { items: 0 })));
   }
   const v = validate(def);
+  def = bareSorts(def); // a sort by "region" sorts by Fields.region (validate() warned)
   // an expression that does not parse stops only its own item or cell (#Error there, a warning here)
   const cellErrors = new Set(v.exprErrors);
   const fatal = v.errors.filter(e => !cellErrors.has(e));

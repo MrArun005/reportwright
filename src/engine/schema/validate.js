@@ -81,10 +81,13 @@ function formatIssue(f, label, out) {
   if (m) out.push(`${label}: the format "${f}" is not a format code (did you mean "${m[1]}${m[2]}"?)`);
 }
 /** A sort is a list of {by, dir}: an entry without "by" (or with other keys) is ignored, so it says so. */
-function sortIssues(sort, label, out) {
+function sortIssues(sort, label, out, known = new Set()) {
   sort.forEach((s, i) => {
     const at = `${label}, sort ${i + 1}`;
     if (!s || typeof s !== 'object' || Array.isArray(s) || !('by' in s)) { out.push(`${at}: a sort entry is {by, dir}, e.g. {"by": "=Fields.Name", "dir": "asc"}; this one has no "by" and is ignored`); return; }
+    // a bare field name sorts by the field (bareSorts); other text is a constant: no order
+    const f = fieldNamed(s.by, known), g = f || (typeof s.by === 'string' && s.by.trim() && !s.by.startsWith('=') && didYouMean(s.by, known));
+    if (f || g !== false) out.push(`${at}: "by" is ${f ? `"${s.by}", the name of a field; it sorts by that field` : `the constant "${s.by}", so the rows are not sorted;`} (did you mean "=Fields.${g || 'Name'}"?)`);
     for (const k of Object.keys(s)) {
       if (k === 'by' || k === 'dir' || k.startsWith('_')) continue;
       const g = SORT_ALIAS[k] || didYouMean(k, ['by', 'dir']);
@@ -106,10 +109,8 @@ function filterIssues(filters, label, out) {
     }
   });
 }
-/** The operators rowFilter() reads (data/index.js), and the set filters (any case). */
-const FILTER_OPS = ['=', '<>', '>', '>=', '<', '<=', 'in', 'like', 'contains', 'between', 'Between'];
-const SET_FILTER_OPS = ['topn', 'bottomn', 'toppercent', 'bottompercent'];
-const blankExpr = (v) => v == null || (typeof v === 'string' && /^=?\s*$/.test(v));
+/** The operators rowFilter() reads (data/index.js); TopN... in any case. */
+const FILTER_OPS = '= <> > >= < <= in like contains between Between TopN BottomN TopPercent BottomPercent'.split(' ');
 /**
  * A half-written filter is an error: with no expr, an unknown op, no value, or a Between with no upper bound it
  * matches every row or none and says nothing. {expr, value} with no op is "=" (documented, kept); with neither op nor
@@ -118,22 +119,12 @@ const blankExpr = (v) => v == null || (typeof v === 'string' && /^=?\s*$/.test(v
  */
 function filterShape(filters, label, out) {
   filters.forEach((f, i) => {
-    if (!f || typeof f !== 'object' || Array.isArray(f)) return;
-    const at = `${label}, filter ${i + 1}`;
-    if (blankExpr(f.expr)) { out.push(`${at} has no expr; a filter is {expr, op, value}, e.g. { expr: '=Fields.a', op: '>=', value: 2 }`); return; }
-    if (f.op == null || f.op === '') {
-      if (f.value == null) out.push(`${at} has no op; a filter is {expr, op, value}, e.g. { expr: '=Fields.a', op: '>=', value: 2 } (with no op and no value it matches no row)`);
-      return;
-    }
-    if (!FILTER_OPS.includes(f.op) && !SET_FILTER_OPS.includes(String(f.op).toLowerCase())) {
-      const g = didYouMean(String(f.op), [...FILTER_OPS.slice(6, 10), 'TopN', 'BottomN', 'TopPercent', 'BottomPercent']);
-      out.push(`${at}: the op ${JSON.stringify(f.op)} is not a filter operator${g ? ` (did you mean "${g}"?)` : ''}; use one of ${[...FILTER_OPS.slice(0, 10), 'TopN', 'BottomN', 'TopPercent', 'BottomPercent'].join(' ')}`);
-      return;
-    }
-    if (f.value == null) { out.push(`${at} (${f.op}) has no value, so it matches no row; e.g. { expr: '=Fields.a', op: '${f.op}', value: 2 }`); return; }
-    if (/^between$/i.test(f.op) && f.value2 == null && !Array.isArray(f.value) && !(typeof f.value === 'string' && f.value.startsWith('='))) {
-      out.push(`${at} (${f.op}) has no value2 (the upper bound), so it matches no row; give value2, or a [low, high] pair as value`);
-    }
+    if (!f || typeof f !== 'object') return;
+    const at = `${label}, filter ${i + 1}`, op = f.op, eg = `; a filter is {expr, op, value}, e.g. { expr: '=Fields.a', op: '>=', value: 2 }`;
+    const msg = /^=?\s*$/.test(f.expr ?? '') ? ' has no expr' : op == null || op === '' ? (f.value == null ? ' has no op' : '')
+      : !FILTER_OPS.some(o => o === op || (o.length > 7 && o.toLowerCase() === String(op).toLowerCase())) ? `: the op ${JSON.stringify(op)} is not a filter operator (${FILTER_OPS.join(' ')})`
+        : f.value == null ? ` (${op}) has no value` : /^between$/i.test(op) && f.value2 == null && !Array.isArray(f.value) && !String(f.value).startsWith('=') ? ` (${op}) has no value2, the upper bound (or give value as [low, high])` : '';
+    if (msg) out.push(at + msg + eg);
   });
 }
 /** Each item type's properties in the report JSON Schema (its own and ItemBase's): type → Map(key → schema). */
@@ -211,7 +202,7 @@ export function validate(def) {
     }
   }
 
-  const srcNames = new Set();
+  const known = fieldNames(def), srcNames = new Set();
   for (const s of def.dataSources || []) {
     if (!s.name) errors.push('A data source has no name');
     if (srcNames.has(s.name)) errors.push(`Two data sources have the name "${s.name}"`);
@@ -227,7 +218,7 @@ export function validate(def) {
       if (d.relation.path != null && typeof d.relation.path !== 'string') errors.push(`Data set "${d.name}": the relation path must be text, e.g. $.items[*]`);
     } else if (!srcNames.has(d.source)) errors.push(`Data set "${d.name}" uses the source "${d.source}", which does not exist`);
     dsNames.add(d.name);
-    if (Array.isArray(d.sort)) sortIssues(d.sort, `Data set "${d.name}"`, warnings);
+    if (Array.isArray(d.sort)) sortIssues(d.sort, `Data set "${d.name}"`, warnings, known);
     if (Array.isArray(d.filters)) { filterIssues(d.filters, `Data set "${d.name}"`, warnings); filterShape(d.filters, `Data set "${d.name}"`, errors); }
   }
 
@@ -277,7 +268,11 @@ export function validate(def) {
         const g = didYouMean(it.styleName, Object.keys(def.styles?.named || {}));
         warnings.push(`${label}: there is no named style "${it.styleName}"${g ? ` (did you mean "${g}"?)` : ''}; it is ignored`);
       }
-      if (Array.isArray(it.sort)) sortIssues(it.sort, label, warnings);
+      if (Array.isArray(it.sort)) sortIssues(it.sort, label, warnings, known);
+      // a group on a constant is one group of every row
+      for (const [g, at] of [...(it.groups || []).map((g, i) => [g, `${label}, group ${i + 1}`]), ...['rowGroups', 'columnGroups'].flatMap(k => (Array.isArray(it[k]) ? it[k] : []).map((g, i) => [g, `${label} ${k} ${i + 1}`]))]) {
+        if (fieldNamed(g?.expr, known)) warnings.push(`${at}: "expr" is "${g.expr}", the name of a field, so every row is in one group; did you mean "=Fields.${g.expr}"?`);
+      }
       if (Array.isArray(it.filters)) filterIssues(it.filters, label, warnings);
       if (it.type === 'chart' && it.legend != null && it.legend !== 'bottom' && it.legend !== 'none') {
         const shown = typeof it.legend === 'object' ? `is an object (${JSON.stringify(it.legend).slice(0, 60)})` : `is ${JSON.stringify(it.legend)}`;
@@ -411,13 +406,36 @@ const TEMPLATE_KEYS = new Set(['value', 'text', 'label', 'tooltip', 'title', 'no
  */
 function inlineFields(def) {
   const srcs = Array.isArray(def.dataSources) ? def.dataSources : [];
-  if (!srcs.length || srcs.some(x => x?.type !== 'json' || !x.data || typeof x.data !== 'object')) return null;
+  const names = srcs.length && srcs.every(x => x?.type === 'json' && x.data && typeof x.data === 'object') ? fieldNames(def) : null;
+  return names?.size ? names : null;
+}
+/** Every field name the report knows: the keys of inline (JSON) rows and the data sets' declared fields. */
+function fieldNames(def) {
   const names = new Set();
   // a top-level object is one row (a data set at $.meta); a list is rows
-  for (const x of srcs) for (const v of Object.values(x.data)) for (const r of (Array.isArray(v) ? v.slice(0, 200) : [v])) if (r && typeof r === 'object' && !Array.isArray(r)) for (const k of Object.keys(r)) names.add(k);
+  for (const x of Array.isArray(def.dataSources) ? def.dataSources : []) if (x?.type === 'json' && x.data && typeof x.data === 'object') for (const v of Object.values(x.data)) for (const r of (Array.isArray(v) ? v.slice(0, 200) : [v])) if (r && typeof r === 'object' && !Array.isArray(r)) for (const k of Object.keys(r)) names.add(k);
   for (const d of Array.isArray(def.dataSets) ? def.dataSets : []) for (const f of Array.isArray(d?.fields) ? d.fields : []) if (f?.name) names.add(f.name);
-  return names.size ? names : null;
+  return names;
 }
+/** The field of that name (any case, as Fields.x reads it) when s is text, not an expression. */
+const fieldNamed = (s, known) => typeof s === 'string' && !s.startsWith('=') && [...known].find(k => k.toLowerCase() === s.trim().toLowerCase());
+/**
+ * A sort "by" a bare field name ("region", not "=Fields.region") sorts by a constant, i.e. not at all: the field is
+ * meant, so it sorts by it (validate() warns). def itself when there is none, else a copy with them rewritten.
+ * @param {any} def
+ */
+export function bareSorts(def) {
+  const known = fieldNames(def || {}), lists = [];
+  for (const d of Array.isArray(def?.dataSets) ? def.dataSets : []) lists.push(d?.sort);
+  walkItems(def?.sections, (x) => lists.push(x.sort));
+  if (!lists.some(l => Array.isArray(l) && l.some(s => fieldNamed(s?.by, known)))) return def;
+  const out = structuredClone(def);
+  const fix = (l) => { if (Array.isArray(l)) for (const s of l) if (fieldNamed(s?.by, known)) s.by = `=Fields.${s.by.trim()}`; };
+  for (const d of out.dataSets || []) fix(d?.sort);
+  walkItems(out.sections, (x) => fix(x.sort));
+  return out;
+}
+
 /**
  * One item's sizes and references: a zero or negative width or height (a line may be flat), and Fields.x or Parameters.x
  * that the report does not declare. Child items are checked on their own (walkItems), so each is said once.

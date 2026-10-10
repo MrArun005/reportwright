@@ -11,7 +11,7 @@
  * page model as before. Group and table footers may hold Sum/Count/Avg/Min/Max(row expression) and CountRows(): they are
  * folded as rows pass (aggregator), the same values the model computes.
  */
-import { validate } from './schema/validate.js';
+import { validate, bareSorts } from './schema/validate.js';
 import { makeLoader, resolveReuse, resolveTheme, flattenNamed } from './reuse.js';
 import { layerFilter } from './layout.js';
 import { resolvePage } from './units.js';
@@ -88,9 +88,10 @@ export async function planStream(def0, opts) {
   const warnings = [];
   const warn = (msg) => { if (warnings.length < 200 && !warnings.includes(msg)) warnings.push(msg); };
   const getReport = makeLoader(opts.loadReport, new Map());
-  const { def, parts } = await resolveReuse(def0, getReport, warn, opts.reportId ? [opts.reportId] : [], { items: 0 });
+  const { def: def1, parts } = await resolveReuse(def0, getReport, warn, opts.reportId ? [opts.reportId] : [], { items: 0 });
   if (parts) return no('report parts');
-  const v = validate(def);
+  const v = validate(def1);
+  const def = bareSorts(def1); // as render()
   if (v.errors.some(e => !v.exprErrors.includes(e))) return no('the definition has errors');
   const fmt = opts.format;
   const state = opts.state || {};

@@ -39,3 +39,39 @@ describe('1. a half-written filter is a validation error', () => {
     expect(texts(m)).toEqual(['3', '2']);
   });
 });
+
+describe('2. a sort by a bare field name', () => {
+  const rows = [{ r: 'b' }, { r: 'a' }, { r: 'c' }];
+  const d = (by, items) => def(rows, items || [table({ sort: [{ by, dir: 'asc' }] }, '=Fields.r')]);
+  it('by: "r" (a field of the data set) sorts by that field, with a warning', async () => {
+    expect(validate(d('r')).warnings.join('\n')).toMatch(/T, sort 1: "by" is "r", the name of a field; it sorts by that field \(did you mean "=Fields\.r"\?\)/);
+    const m = await render(d('r'), { fontStore });
+    expect(texts(m)).toEqual(['a', 'b', 'c']);
+    expect(m.warnings.join('\n')).toMatch(/did you mean "=Fields\.r"/);
+  });
+  it('the data set sort too', async () => {
+    const x = d('r', [table({}, '=Fields.r')]);
+    x.dataSets[0].sort = [{ by: 'r', dir: 'desc' }];
+    expect(texts(await render(x, { fontStore }))).toEqual(['c', 'b', 'a']);
+  });
+  it('the definition passed in is not changed', async () => {
+    const x = d('r');
+    await render(x, { fontStore });
+    expect(x.sections.body.items[0].sort[0].by).toBe('r');
+  });
+  it('"=Fields.r" gives the same rows and no warning', async () => {
+    const m = await render(d('=Fields.r'), { fontStore });
+    expect(texts(m)).toEqual(['a', 'b', 'c']);
+    expect(m.warnings.join('\n')).not.toMatch(/sort/);
+  });
+  it('another constant warns that it does not sort', () => {
+    expect(validate(d('rr')).warnings.join('\n')).toMatch(/T, sort 1: "by" is the constant "rr", so the rows are not sorted; \(did you mean "=Fields\.r"\?\)/);
+  });
+  it('a sort by a field that does not exist warns, with the field name', () => {
+    expect(validate(d('=Fields.rr')).warnings.join('\n')).toMatch(/T: The field "rr" does not exist/);
+  });
+  it('a group on a bare field name warns (a constant group is one group of every row)', () => {
+    const x = def(rows, [table({ groups: [{ expr: 'r' }] }, '=Fields.r')]);
+    expect(validate(x).warnings.join('\n')).toMatch(/T, group 1: "expr" is "r", the name of a field, so every row is in one group; did you mean "=Fields\.r"\?/);
+  });
+});
