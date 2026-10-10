@@ -12,6 +12,10 @@ All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. T
 - **Font subsets:** the smaller subsets of `@reportwright/pdf`'s own subsetter do not change engine PDFs in this release; the engine's subsets (HarfBuzz, glyph IDs kept) are unchanged and as large as in rc.3. Renumbering them on the engine side is a follow-up.
 - The render worker bundles the report schema without its prose (510.6 → 507.2 KB gzipped, `validate()` unchanged).
 
+### Test fixes
+- **The "truncated 20,000-row streamed PDF" CI flake was the tests, not the engine.** The tests' `pdftotext` helpers (4 test files) used Node's default 1 MiB `spawnSync` buffer, which cut a 438-page text at page 285 without an error. They now read the whole output (`maxBuffer` 1 GiB) and fail on an error, and the streamed-PDF test checks every page's footer up to the last.
+- The lazy-load test expects the engine bundle to import pdf-lib by its non-literal specifier (B4 made it an optional install); the examples name 0.14.0-rc.4.
+
 ### Changed
 - **`@reportwright/pdf` 0.1.0-beta.11** (was beta.9), now on npm and in `package-lock.json`; pdf-lib and `@signpdf/placeholder-pdf-lib` are devDependencies.
 - **`exportPdf` of reports whose pages differ in size, or whose page numbering restarts (`newSection`), no longer loads pdf-lib.** The paged writer writes each page's own height into the outline's places and the links' jumps, and the page labels from the sections. Gate: `node scripts/writer-parity.mjs --baseline pdflib --corpus scripts/parity-corpus.mjs` (pixel-identical, same labels, outline and text).
