@@ -1,7 +1,7 @@
 // Deterministic output: two renders of one report give the same page model (tag ids restart per render), and two
 // exports with a fixed date give byte-identical PDFs (dates and the document ID come from the date and the content).
 import { describe, it, expect, afterEach } from 'vitest';
-import { PDFDocument } from 'pdf-lib';
+import { loadPdf } from '@reportwright/pdf';
 import { render } from '../../src/engine/index.js';
 import { exportPdf } from '../../src/exporters/pdf.js';
 import { fontStore, report } from '../helpers.js';
@@ -28,7 +28,7 @@ describe('deterministic output', () => {
     const a = Buffer.from(await exportPdf(m, fontStore, { creationDate: when }));
     const b = Buffer.from(await exportPdf(await render(def(), { fontStore }), fontStore, { creationDate: when }));
     expect(a.equals(b)).toBe(true);
-    expect((await PDFDocument.load(a)).getCreationDate()?.toISOString()).toBe('2026-01-02T03:04:05.000Z');
+    expect((await loadPdf(a)).info.creationDate?.toISOString()).toBe('2026-01-02T03:04:05.000Z');
   });
 
   it('SOURCE_DATE_EPOCH fixes the date when no creationDate is given', async () => {
@@ -38,6 +38,6 @@ describe('deterministic output', () => {
     await new Promise(r => setTimeout(r, 1100));
     const b = Buffer.from(await exportPdf(m, fontStore, {}));
     expect(a.equals(b)).toBe(true);
-    expect((await PDFDocument.load(a)).getCreationDate()?.toISOString()).toBe('2026-01-02T03:04:05.000Z');
+    expect((await loadPdf(a)).info.creationDate?.toISOString()).toBe('2026-01-02T03:04:05.000Z');
   });
 });
