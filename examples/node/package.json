@@ -3,5 +3,5 @@
   "private": true,
   "type": "module",
   "scripts": { "start": "node render.js" },
-  "dependencies": { "@reportwright/engine": "0.14.0-rc.2", "@reportwright/fonts": "0.14.0-rc.2" }
+  "dependencies": { "@reportwright/engine": "0.14.0-rc.3", "@reportwright/fonts": "0.14.0-rc.3" }
 }
