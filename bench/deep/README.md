@@ -1,5 +1,7 @@
 # Deep PDF benchmark
 
+**Latest results:** [RESULTS.md](RESULTS.md) (full + million tiers, 2026-10-10), [RESULTS.html](RESULTS.html), [RESULTS-million.html](RESULTS-million.html), raw data in [results/](results/).
+
 Our two products, `@reportwright/engine` (reports) and `@reportwright/pdf` (writing, reading, editing), against the
 best open-source PDF libraries in seven languages and the standard command-line tools, on the same jobs, data, fonts
 and runner. It runs **only on GitHub Actions** (`.github/workflows/bench-deep.yml`); nothing here is meant to run on a

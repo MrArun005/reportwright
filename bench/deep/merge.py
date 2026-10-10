@@ -155,7 +155,7 @@ def headline(tables):
             continue
         wins = [x for x in v if x['win']]
         loss = [x for x in v if not x['win']]
-        s = f'{t["title"]}: {", ".join(sorted({x["lib"] for x in v}))} #1 in {len(wins)} of {len(v)} sizes'
+        s = f'{t["title"]}: {", ".join(sorted({x["lib"] for x in v}))} #1 in {len(wins)} of {len(v)} (size, build) rows'
         if loss:
             g = defaultdict(list)
             for x in loss:
@@ -165,7 +165,7 @@ def headline(tables):
                 rs = sorted(x['ratio'] for x in xs if x['ratio'])
                 bad = sorted({x['status'] for x in xs if not x['ratio']})
                 span = (f'{rs[0]:.2f}×' if rs[0] == rs[-1] else f'{rs[0]:.2f}–{rs[-1]:.2f}×') if rs else ''
-                parts.append(f'{best} ({", ".join(filter(None, [span, *bad]))}; {len(xs)} size{"s" * (len(xs) > 1)})')
+                parts.append(f'{best} ({", ".join(filter(None, [span, *bad]))}; {len(xs)} row{"s" * (len(xs) > 1)})')
             s += '; behind ' + ', '.join(parts)
         lines.append(s)
     return lines
