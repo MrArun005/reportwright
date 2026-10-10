@@ -192,9 +192,8 @@ describe('exportPdfStream', () => {
     t.groups = [{ name: 'R', expr: '=Fields.region', header: [{ cells: [{ value: '=Fields.region' }] }], footer: [{ cells: [{ value: 'Total' }, null, null, null, null, { value: '=Sum(Fields.amount)', style: { format: 'N2' } }] }] }];
     t.detail[0].cells[1].action = { type: 'url', href: '="https://example.com/acct/" & Fields.accountId' };
     const run = async (o) => { const s = sink(); const r = await exportPdfStream(def, { fontStore, now, subset, creationDate: now, title: 'Ledger', window: 200, ...o }, s); expect(r.streamed).toBe(true); return s.bytes(); };
-    // exportPdf's text for the same options; tagged, the untagged file's (the streamed cells' text is one text object a
-    // page, as untagged, and pdftotext reads it so)
-    const want = async (o) => pdftotext(await exportPdf(await render(def, { fontStore, now }), fontStore, { subset, creationDate: now, title: 'Ledger', ...o, tagged: undefined })).text;
+    // exportPdf's text for the same options (tagged: each item its own marked text object on both)
+    const want = async (o) => pdftotext(await exportPdf(await render(def, { fontStore, now, exportData: !!o.tagged }), fontStore, { subset, creationDate: now, title: 'Ledger', ...o })).text;
     for (const [o, profiles] of [[{ pdfa: { icc: ICC } }, ['2b']], [{ tagged: { lang: 'en-IN' } }, ['ua1']], [{ pdfa: { icc: ICC }, tagged: { lang: 'en-IN' } }, ['2a', 'ua1']]]) {
       const pdf = await run(o);
       expect(pdftotext(pdf).text).toBe(await want(o));

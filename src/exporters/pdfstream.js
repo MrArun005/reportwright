@@ -918,16 +918,12 @@ export function paintPage(pg, H, env) {
   const fields = [];
   const c = new Content(env.shared);
   const { tags } = env;
-  if (tags) { c.tagged = true; c.artLines = true; tags.page(pg.win ?? 0); }
+  if (tags) { c.tagged = true; tags.page(pg.win ?? 0); }
   for (const it of pg.items) {
-    // tagged: lines wait and are drawn together as one artifact (a table's borders); a cell's plain text is marked inside
-    // the open text object, so the cells' text stays one text object as untagged (BT, then BDC … EMC per cell)
-    const mark = tags && it.t !== 'line' && tags.open(it);
-    const inText = mark && it.t === 'text' && !it.rotate && it.lines.every((/** @type {any} */ l) => !l.runs) && !(it.clip && !insideClip(it, env.vmetrics(it.font)));
-    if (inText) {
-      if (!c.bt) { c._s += 'BT\n'; c.bt = true; c.tx = 0; c.ty = 0; }
-      c._s += mark;
-    } else if (mark) { c.et(); c.s += mark; }
+    // tagged: every item in its own marked content, its text in its own text object and its lines one by one, operator
+    // for operator as exportPdf's pdf-lib path draws it (the parity gate compares the drawing commands exactly)
+    const mark = tags && tags.open(it);
+    if (mark) { c.et(); c.s += mark; }
     if ((it.t !== 'text' && it.t !== 'line') || it.rotate) c.et();
     if (it.rotate) {
       const t = -it.rotate.a * Math.PI / 180, cs = Math.cos(t), sn = Math.sin(t);
@@ -1048,8 +1044,7 @@ export function paintPage(pg, H, env) {
       default: throw new Error(`A ${it.t} item does not stream yet`);
     }
     if (it.rotate) c.Q();
-    if (inText) c._s += 'EMC\n';
-    else if (mark) { c.et(); c.s += 'EMC\n'; }
+    if (mark) { c.et(); c.s += 'EMC\n'; }
   }
   c.et();
   return { content: c.s, annots, fields };

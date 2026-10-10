@@ -74,8 +74,9 @@ describe('the server streams a flowing report\'s PDF', () => {
     // an accessible PDF/A of the same report streams too, with the same text
     const pdfa = await pdfRoute(new Request('http://pw.test/api/reports/ledger/pdf?pdfa=1&ua=1', { headers: { host: 'pw.test' } }), { params: Promise.resolve({ id: 'ledger' }) });
     expect(pdfa.headers.get('content-length')).toBeNull();
-    // (its cells' text is one text object a page, as untagged, so it reads as the untagged file in pdftotext's layout)
-    expect(pdftotext(Buffer.from(await pdfa.arrayBuffer())).text).toBe(a.text);
+    // (each item its own marked text object, as exportPdf's tagged file: it reads as that file in pdftotext's layout)
+    const tagged = pdftotext(await exportPdf(await render(def, { fontStore, exportData: true }), fontStore, { subset, tagged: { lang: 'en' } }));
+    expect(pdftotext(Buffer.from(await pdfa.arrayBuffer())).text).toBe(tagged.text);
   }, 240000);
 
   it('a client that leaves stops the render and frees its place in the pool', async () => {

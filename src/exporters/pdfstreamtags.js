@@ -6,7 +6,7 @@
  * ColSpan), Link > OBJR inside the element whose text it covers; page header and footer, borders and boxes artifacts.
  * Each page's rows (TR, TD), its parent-tree array and its links' elements are written when the page ends; what stays
  * is one number per row (the Table's kids) and two per page and link (the parent tree), written at the end.
- * A cell's element is a few dozen bytes in an object stream (no /Type, which is optional; no /A on a plain TD): a
+ * A cell's element is a few dozen bytes in an object stream (no /Type, which is optional; /A << /O /Table >> as pdfua.js): a
  * million-row table has some 8 million of them, the most of the file's objects.
  */
 
@@ -69,8 +69,8 @@ export function createStreamTagger(w, { maxElements = Infinity } = {}) {
       if (!r) { made(); r = { ref: w.reserve(), kind: c.kind, cells: new Map() }; rows.set(rk, r); addRow(r.ref); }
       let cell = r.cells.get(c.col);
       if (!cell) {
-        // a plain TD has no attributes (an /A of /O /Table alone says nothing): the most numerous element, kept short
-        const attrs = c.kind === 'header' || c.span > 1 ? { O: '/Table', ...(c.kind === 'header' ? { Scope: '/Column' } : {}), ...(c.span > 1 ? { ColSpan: c.span } : {}) } : null;
+        // every cell has /A << /O /Table >>, as pdfua.js writes it (the parity gate compares the structure tree exactly)
+        const attrs = { O: '/Table', ...(c.kind === 'header' ? { Scope: '/Column' } : {}), ...(c.span > 1 ? { ColSpan: c.span } : {}) };
         cell = el(c.kind === 'header' ? 'TH' : 'TD', r.ref, attrs);
         r.cells.set(c.col, cell);
       }
@@ -101,7 +101,7 @@ export function createStreamTagger(w, { maxElements = Infinity } = {}) {
         const kids = [];
         for (let col = 0; col < /** @type {any} */ (table).cols;) {
           let cell = r.cells.get(col);
-          if (!cell) { cell = el(r.kind === 'header' ? 'TH' : 'TD', r.ref, r.kind === 'header' ? { O: '/Table', Scope: '/Column' } : null); }
+          if (!cell) { cell = el(r.kind === 'header' ? 'TH' : 'TD', r.ref, r.kind === 'header' ? { O: '/Table', Scope: '/Column' } : { O: '/Table' }); }
           kids.push(cell.ref);
           col += Math.max(1, cell.attrs?.ColSpan || 1);
         }
