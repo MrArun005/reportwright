@@ -40,8 +40,13 @@ describe('render pool', () => {
   });
 
   it('stops a render at the time limit by terminating its worker, and replaces only that worker', async () => {
-    process.env.PW_RENDER_TIMEOUT_MS = '800';
-    const t0 = Date.now();
+    // the limit is calibrated to this machine: well above a small render on a cold worker (a slow 2-vCPU runner takes
+    // over 0.8 s for one), far below the minute the slow render takes
+    let t0 = Date.now();
+    await Promise.all([render(small()), render(small())]);
+    process.env.PW_RENDER_TIMEOUT_MS = String(Math.min(5000, Math.max(800, 4 * (Date.now() - t0))));
+    await stopPool(); // cold workers again, as the limit was measured on
+    t0 = Date.now();
     const [late, fine] = await Promise.all([render(slow(20000)).catch(e => e), render(small())]);
     expect(late.status).toBe(504);
     expect(Date.now() - t0).toBeLessThan(15000); // the limit, not the minute the render would take
