@@ -462,7 +462,9 @@ async function pdfOf(model, fontStore, opt) {
  */
 function ownWriterFits(model, opt) {
   if (forcedPdfLib()) return false;
-  if (opt.tagged || opt.encrypt || opt.prepare || opt.save || !model.pages.length) return false;
+  if (opt.tagged || opt.prepare || opt.save || !model.pages.length) return false;
+  // encrypted (B7): AES-256 by @reportwright/pdf; with PDF/A it is refused on pdf-lib's path (a 400)
+  if (opt.encrypt && (opt.pdfWriter === 'legacy' || opt.pdfa)) return false;
   // PDF/A-2b (B5): with its colour profile, through @reportwright/pdf as exportPdfStream writes it
   if (opt.pdfa && (opt.pdfWriter === 'legacy' || !opt.pdfa.icc?.length)) return false;
   for (const pg of model.pages) {
@@ -528,7 +530,7 @@ async function ownWriter(model, fontStore, opt) {
   const info = { width: model.width, height: model.height, bookmarks: model.bookmarks || [], headings: model.headings || [], warnings: [],
     pageStarts: model.pageStarts || [], pageHeights: model.pages.map((/** @type {any} */ pg) => pg.height ?? model.height) };
   await writePagedPdf({ info, pages: async function* () { yield* model.pages; } },
-    { fontStore, subset: opt.subset, fetchImage: opt.fetchImage, id: fixed ? await contentId(model, opt, when) : undefined, title: opt.title, author: opt.author, creationDate: when, drillBase: opt.drillBase, pdfWriter: opt.pdfWriter, pdfa: opt.pdfa },
+    { fontStore, subset: opt.subset, fetchImage: opt.fetchImage, id: fixed ? await contentId(model, opt, when) : undefined, title: opt.title, author: opt.author, creationDate: when, drillBase: opt.drillBase, pdfWriter: opt.pdfWriter, pdfa: opt.pdfa, encrypt: opt.encrypt },
     { write: (/** @type {Uint8Array} */ u8) => { parts.push(u8); } });
   for (const x of info.warnings) opt.onWarning?.(x);
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));

@@ -31,6 +31,7 @@ import { standardFontDict, embeddedPage, embeddedWarnings, standIns } from './pd
 import { Content, drawRun, glyphText, insideClip, col, BLACK, n2, n4, KAPPA, cleanText, deflate } from './pdfpaint.js';
 import { dataUriBytesOf, dataUriBytes, imageInfoOf, IMAGE_LIMITS } from '../engine/image.js';
 import { pngProblem } from './png.js';
+import { passwordBytes, permissionsValue } from './encrypt.js';
 
 const CHUNK = 64 * 1024;
 const LEAF = 64; // pages per node of the page tree
@@ -829,7 +830,20 @@ async function newWriter(sink, opts) {
   // the sink stays the caller's: written with back-pressure as before, never ended here
   return createPdf({ write: (/** @type {Uint8Array} */ u8) => raced(written(sink, sink.write(u8)), opts.signal) },
     // object streams at zlib's level 9, as the engine's own writer packed them (its files are no bigger)
-    { metadata: false, id: opts.id, signal: opts.signal, creationDate: opts.creationDate, objectStreamLevel: 9 });
+    { metadata: false, id: opts.id, signal: opts.signal, creationDate: opts.creationDate, objectStreamLevel: 9, ...(opts.encrypt ? { encrypt: encryptOptions(opts.encrypt) } : {}) });
+}
+
+/**
+ * The engine's encrypt option ({ userPassword, ownerPassword, permissions }) for @reportwright/pdf: checked as
+ * encrypt.js checks it (the same 400s: a password over 127 bytes, an unknown permission); no owner password (or '')
+ * leaves the library to pick a random one, so the permissions cannot be lifted. AES-256, metadata encrypted.
+ * @param {any} e
+ */
+function encryptOptions(e) {
+  passwordBytes(e.userPassword, 'user');
+  if (e.ownerPassword != null && e.ownerPassword !== '') passwordBytes(e.ownerPassword, 'owner');
+  permissionsValue(e.permissions || {});
+  return { userPassword: e.userPassword ?? '', ...(e.ownerPassword ? { ownerPassword: e.ownerPassword } : {}), algorithm: /** @type {'aes-256'} */ ('aes-256'), permissions: { ...(e.permissions || {}) } };
 }
 
 /**

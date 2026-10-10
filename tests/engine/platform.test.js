@@ -1,5 +1,5 @@
 // Phase 7: TOC numbering, image sources and sizes, barcode options, PDF passwords.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { deflateSync, inflateSync } from 'node:zlib';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -317,6 +317,9 @@ const decrypt = (key, bytes) => aes('aes-256-cbc', key, bytes.subarray(0, 16), b
 const pdfOf = async (opt, def = report([tb('T', 'Hello secret', 0)])) => exportPdf(await render(def, { fontStore }), fontStore, { title: 'Secret title', ...opt });
 
 describe('PDF passwords (AES-256, R6)', () => {
+  // these read encrypt.js's file (pdf-lib's path) with pdf-lib; @reportwright/pdf's: tests/engine/phase-b.test.js (B7)
+  beforeAll(() => { process.env.PW_FORCE_PDFLIB = '1'; });
+  afterAll(() => { delete process.env.PW_FORCE_PDFLIB; });
   it('encrypts strings and streams; the user password unlocks them, a wrong one does not', async () => {
     const pdf = await pdfOf({ encrypt: { userPassword: 'öpen sesame', permissions: { copy: false } } });
     await expect(PDFDocument.load(pdf)).rejects.toThrow(/encrypt/i);

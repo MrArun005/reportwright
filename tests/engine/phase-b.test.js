@@ -148,3 +148,28 @@ describe('B5: PDF/A-2b through @reportwright/pdf', async () => {
     expect(Buffer.from(b).toString('latin1')).toContain('pdfaid');
   });
 });
+
+describe('B7: encryption by @reportwright/pdf', async () => {
+  const { loadPdf } = await import('@reportwright/pdf');
+  const m = await render(report([{ type: 'textbox', x: 0, y: 0, w: 200, h: 20, value: 'Secret', action: { type: 'url', href: 'https://example.com/x' } }]), { fontStore });
+  it('AES-256 with the permissions asked for; nothing readable in the raw file', async () => {
+    const b = await exportPdf(m, fontStore, { title: 'Payroll', encrypt: { ownerPassword: 'o', permissions: { copy: false, print: false } } });
+    expect(viaLibrary(b)).toBe(true);
+    const doc = await loadPdf(b);
+    expect(doc.encryption).toMatchObject({ algorithm: 'aes-256', permissions: { copy: false, print: false, modify: true, fillForms: true } });
+    expect(doc.info.title).toBe('Payroll');
+    expect(doc.extractText()).toContain('Secret');
+    const raw = Buffer.from(b).toString('latin1');
+    for (const t of ['Payroll', 'https://', 'Secret']) expect(raw).not.toContain(t);
+  });
+  it('a user password is needed to open it', async () => {
+    const b = await exportPdf(m, fontStore, { encrypt: { userPassword: 'open me' } });
+    await expect(loadPdf(b)).rejects.toThrow();
+    expect((await loadPdf(b, { password: 'open me' })).extractText()).toContain('Secret');
+  });
+  it('the same 400s as before: an unknown permission, a password over 127 bytes, PDF/A', async () => {
+    await expect(exportPdf(m, fontStore, { encrypt: { permissions: /** @type {any} */ ({ fly: false }) } })).rejects.toMatchObject({ status: 400 });
+    await expect(exportPdf(m, fontStore, { encrypt: { userPassword: 'x'.repeat(200) } })).rejects.toMatchObject({ status: 400 });
+    await expect(exportPdf(m, fontStore, { encrypt: {}, pdfa: { icc: new Uint8Array(10) } })).rejects.toMatchObject({ status: 400 });
+  });
+});

@@ -149,6 +149,8 @@ function features(f) {
     links: count((/** @type {any} */ o) => o['/Subtype'] === '/Link'), outline: count((/** @type {any} */ o) => o['/Title'] !== undefined && o['/Parent'] !== undefined),
     structElems: count((/** @type {any} */ o) => o['/Type'] === '/StructElem' || (o['/S'] !== undefined && o['/P'] !== undefined)),
     fields: count((/** @type {any} */ o) => o['/FT'] !== undefined), images: count((/** @type {any} */ o) => o['/Subtype'] === '/Image') - count((/** @type {any} */ o) => o['/SMask'] !== undefined && o['/SMask'] !== '/None'), // drawn pictures (an alpha channel's soft mask is part of its picture) attachments: count((/** @type {any} */ o) => o['/Type'] === '/Filespec'),
+    // encrypted: what qpdf says it allows (and that it decrypts), the method included
+    encryption: !/not encrypted/.test(run('qpdf', ['--show-encryption', ...(pw ? [`--password=${pw}`] : []), f]).stdout.toString()) ? run('qpdf', [...(pw ? [`--password=${pw}`] : []), '--show-encryption', f]).stdout.toString().split('\n').filter(l => /^(R =|P =|User password|extract|print|modify|stream encryption|string encryption|file encryption)/i.test(l.trim())).map(l => l.trim()).join('; ') : null,
     metadata: !!cat['/Metadata'], pageLabels: starts, outputIntent: !!cat['/OutputIntents'], lang: cat['/Lang'] ?? null,
   };
 }
