@@ -106,6 +106,36 @@ function filterIssues(filters, label, out) {
     }
   });
 }
+/** The operators rowFilter() reads (data/index.js), and the set filters (any case). */
+const FILTER_OPS = ['=', '<>', '>', '>=', '<', '<=', 'in', 'like', 'contains', 'between', 'Between'];
+const SET_FILTER_OPS = ['topn', 'bottomn', 'toppercent', 'bottompercent'];
+const blankExpr = (v) => v == null || (typeof v === 'string' && /^=?\s*$/.test(v));
+/**
+ * A half-written filter is an error: with no expr, an unknown op, no value, or a Between with no upper bound it
+ * matches every row or none and says nothing. {expr, value} with no op is "=" (documented, kept); with neither op nor
+ * value (the whole comparison written in expr) it is an error, not a test of expr's truth: whether a missing op meant
+ * "=" would then hang on whether a value is there.
+ */
+function filterShape(filters, label, out) {
+  filters.forEach((f, i) => {
+    if (!f || typeof f !== 'object' || Array.isArray(f)) return;
+    const at = `${label}, filter ${i + 1}`;
+    if (blankExpr(f.expr)) { out.push(`${at} has no expr; a filter is {expr, op, value}, e.g. { expr: '=Fields.a', op: '>=', value: 2 }`); return; }
+    if (f.op == null || f.op === '') {
+      if (f.value == null) out.push(`${at} has no op; a filter is {expr, op, value}, e.g. { expr: '=Fields.a', op: '>=', value: 2 } (with no op and no value it matches no row)`);
+      return;
+    }
+    if (!FILTER_OPS.includes(f.op) && !SET_FILTER_OPS.includes(String(f.op).toLowerCase())) {
+      const g = didYouMean(String(f.op), [...FILTER_OPS.slice(6, 10), 'TopN', 'BottomN', 'TopPercent', 'BottomPercent']);
+      out.push(`${at}: the op ${JSON.stringify(f.op)} is not a filter operator${g ? ` (did you mean "${g}"?)` : ''}; use one of ${[...FILTER_OPS.slice(0, 10), 'TopN', 'BottomN', 'TopPercent', 'BottomPercent'].join(' ')}`);
+      return;
+    }
+    if (f.value == null) { out.push(`${at} (${f.op}) has no value, so it matches no row; e.g. { expr: '=Fields.a', op: '${f.op}', value: 2 }`); return; }
+    if (/^between$/i.test(f.op) && f.value2 == null && !Array.isArray(f.value) && !(typeof f.value === 'string' && f.value.startsWith('='))) {
+      out.push(`${at} (${f.op}) has no value2 (the upper bound), so it matches no row; give value2, or a [low, high] pair as value`);
+    }
+  });
+}
 /** Each item type's properties in the report JSON Schema (its own and ItemBase's): type → Map(key → schema). */
 const SCHEMA_ITEMS = (() => {
   const defs = /** @type {Record<string, any>} */ (REPORT_SCHEMA.$defs);
@@ -198,7 +228,7 @@ export function validate(def) {
     } else if (!srcNames.has(d.source)) errors.push(`Data set "${d.name}" uses the source "${d.source}", which does not exist`);
     dsNames.add(d.name);
     if (Array.isArray(d.sort)) sortIssues(d.sort, `Data set "${d.name}"`, warnings);
-    if (Array.isArray(d.filters)) filterIssues(d.filters, `Data set "${d.name}"`, warnings);
+    if (Array.isArray(d.filters)) { filterIssues(d.filters, `Data set "${d.name}"`, warnings); filterShape(d.filters, `Data set "${d.name}"`, errors); }
   }
 
   const names = new Set();
@@ -234,7 +264,7 @@ export function validate(def) {
     for (const it of Array.isArray(items) ? items : []) {
       const label = it.name || it.type;
       if (!ITEMS[it.type]) { warnings.push(`Unknown item type "${it.type}"`); continue; }
-      walkItems(it, (x) => itemRefs(x, warnings, fields, params));
+      walkItems(it, (x) => { itemRefs(x, warnings, fields, params); if (Array.isArray(x.filters)) filterShape(x.filters, x.name || x.type, errors); });
       if (it.name) {
         if (names.has(it.name)) warnings.push(`Two items have the name "${it.name}"`);
         names.add(it.name);
