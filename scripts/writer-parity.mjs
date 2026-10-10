@@ -213,7 +213,9 @@ for (const c of cases) {
     if (arg('--keep') && Object.values(row).some(v => typeof v === 'string' && v.includes('FAIL'))) { const k = /** @type {string} */ (arg('--keep')), b = c.id.replace(/\W+/g, '_'); fs.mkdirSync(k, { recursive: true }); fs.copyFileSync(fo, path.join(k, `${b}.old.pdf`)); fs.copyFileSync(fn, path.join(k, `${b}.new.pdf`)); }
     fs.rmSync(fo); fs.rmSync(fn);
   } catch (e) {
-    row.path = `not rendered: ${String(/** @type {any} */ (e)?.message || e).slice(0, 80)}`;
+    // a report that cannot be made is 'not rendered' (a data source down); a check that fails on the made files (pdftoppm on a full disk) fails the row
+    const m = String(/** @type {any} */ (e)?.message || e);
+    if (row.path) row.valid = `FAIL ${m.slice(0, 120)}`; else row.path = `not rendered: ${m.slice(0, 80)}`;
   }
   if (Object.values(row).some(v => typeof v === 'string' && v.includes('FAIL'))) failed++;
   table.push(row);

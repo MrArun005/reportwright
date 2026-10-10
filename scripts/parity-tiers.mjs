@@ -214,16 +214,17 @@ export function readPnm(b) {
   while (f.length < 4) { while (/\s/.test(String.fromCharCode(b[i]))) i++; if (b[i] === 0x23) { while (b[i] !== 0x0a) i++; continue; } let s = ''; while (!/\s/.test(String.fromCharCode(b[i]))) s += String.fromCharCode(b[i++]); f.push(s); }
   return { w: Number(f[1]), h: Number(f[2]), ch: f[0] === 'P6' ? 3 : 1, data: b.subarray(i + 1) };
 }
-/** every page of f at dpi (grayscale, or colour) @param {string} f @returns {ReturnType<typeof readPnm>[]} */
-export function renderPages(f, dpi, gray, pw = '') {
+/** page p of f at dpi (grayscale, or colour), one page at a time (a long report's pages never all sit on disk) @param {string} f @param {number} p */
+export function renderPage(f, p, dpi, gray, pw = '') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-tier-'));
   try {
     // a failed render (a full disk, say) is an error, never a verdict
-    const r = run('pdftoppm', [...pwArgs(pw, '-upw'), '-r', String(dpi), ...(gray ? ['-gray'] : []), f, path.join(dir, 'p')]);
+    const r = run('pdftoppm', [...pwArgs(pw, '-upw'), '-r', String(dpi), ...(gray ? ['-gray'] : []), '-f', String(p), '-l', String(p), '-singlefile', f, path.join(dir, 'p')]);
     if (r.status !== 0) throw new Error(`pdftoppm failed (${r.status}): ${r.stderr.toString().slice(0, 200)}`);
-    return fs.readdirSync(dir).sort((x, y) => Number(x.match(/(\d+)\./)?.[1]) - Number(y.match(/(\d+)\./)?.[1])).map(x => readPnm(fs.readFileSync(path.join(dir, x))));
+    return readPnm(fs.readFileSync(path.join(dir, gray ? 'p.pgm' : 'p.ppm')));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
+const pageCount = (f, pw = '') => Number((run('pdfinfo', [...pwArgs(pw, '-upw'), f]).stdout.toString().match(/^Pages:\s+(\d+)/m) || [])[1]);
 /**
  * Tier 2 on two grayscale rasters: { ok, differing, fraction, block } — block: the top-left of a blockSize square whose
  * every pixel differs by more than the threshold (summed-area table over the difference mask, every position).
@@ -261,29 +262,20 @@ export const tier3 = (a, b) => a.w === b.w && a.h === b.h && Buffer.compare(Buff
  * @param {string} fa @param {string} fb @param {string} [pw]
  */
 export function pixelVerdict(fa, fb, pw = '') {
-  const A = renderPages(fa, DPI, true, pw), B = renderPages(fb, DPI, true, pw);
-  if (A.length !== B.length) return { ok: false, tier: 2, detail: `pages ${A.length}→${B.length}`, tier3Pages: [] };
+  const na = pageCount(fa, pw), nb = pageCount(fb, pw);
+  if (!(na >= 0) || na !== nb) return { ok: false, tier: 2, detail: `pages ${na}→${nb}`, tier3Pages: [] };
   const failing = [];
   let worst = 0, n = 0;
-  for (let p = 0; p < A.length; p++) { const r = tier2(A[p], B[p]); n += r.differing === Infinity ? 0 : r.differing; worst = Math.max(worst, r.fraction); if (!r.ok) failing.push({ p: p + 1, r }); }
-  if (!failing.length) return { ok: true, tier: 2, detail: n ? `ok (tier 2: ${n} px over ${PIXEL_THRESHOLD}, worst page ${(worst * 100).toFixed(3)}%)` : 'ok', tier3Pages: [] };
-  const bad = [];
-  for (const { p } of failing) {
-    const a = renderOne(fa, p, pw), b = renderOne(fb, p, pw);
-    if (!tier3(a, b)) bad.push(p);
+  for (let p = 1; p <= na; p++) {
+    const r = tier2(renderPage(fa, p, DPI, true, pw), renderPage(fb, p, DPI, true, pw));
+    n += r.differing === Infinity ? 0 : r.differing; worst = Math.max(worst, r.fraction);
+    if (!r.ok) failing.push({ p, r });
   }
+  if (!failing.length) return { ok: true, tier: 2, detail: n ? `ok (tier 2: ${n} px over ${PIXEL_THRESHOLD}, worst page ${(worst * 100).toFixed(3)}%)` : 'ok', tier3Pages: [] };
+  const bad = failing.filter(({ p }) => !tier3(renderPage(fa, p, TIE_DPI, false, pw), renderPage(fb, p, TIE_DPI, false, pw))).map(f => f.p);
   const why = (/** @type {any} */ f) => (f.r.size ? 'page size' : f.r.block ? `8×8 block at ${f.r.block}` : `${(f.r.fraction * 100).toFixed(3)}%`);
   if (!bad.length) return { ok: true, tier: 3, detail: `ok (tier 3, anti-aliasing only: page(s) ${failing.map(f => `${f.p} ${why(f)}`).join(', ')} identical at ${TIE_DPI} dpi)`, tier3Pages: failing.map(f => f.p) };
   return { ok: false, tier: 3, detail: `page(s) ${failing.filter(f => bad.includes(f.p)).map(f => `${f.p} ${why(f)}`).join(', ')} fail tier 2 and differ at ${TIE_DPI} dpi`, tier3Pages: failing.map(f => f.p) };
-}
-/** page p at 600 dpi in colour @param {string} f @param {number} p */
-function renderOne(f, p, pw = '') {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-tie-'));
-  try {
-    const r = run('pdftoppm', [...pwArgs(pw, '-upw'), '-r', String(TIE_DPI), '-f', String(p), '-l', String(p), '-singlefile', f, path.join(dir, 'p')]);
-    if (r.status !== 0) throw new Error(`pdftoppm failed (${r.status}): ${r.stderr.toString().slice(0, 200)}`);
-    return readPnm(fs.readFileSync(path.join(dir, 'p.ppm')));
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
 
 /**
