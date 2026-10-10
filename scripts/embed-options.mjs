@@ -48,7 +48,13 @@ export const BWIP_FILE = 'engine.worker.bwip.js';
 // (the standard-14 font metrics were a second such file; they are a generated 5 KB-gzipped table now, in the worker: N43)
 /** each library kept out of the worker, and the file next to it that holds it */
 export const APART = { 'bwip-js': BWIP_FILE };
-export const bwipApart = { name: 'libs-apart', setup: (b) => b.onResolve({ filter: /^bwip-js$/ }, (a) => ({ path: `./${APART[a.path]}`, external: true })) };
+// sfnt.js (fonts.js's Node-only font reader: canFontkitSync() is false in a browser) is a stub in the worker, whose build
+// inlines its import(): liteFont() returning null is the "fontkit reads this font" answer, which a browser always takes
+export const bwipApart = { name: 'libs-apart', setup: (b) => {
+  b.onResolve({ filter: /^bwip-js$/ }, (a) => ({ path: `./${APART[a.path]}`, external: true }));
+  b.onResolve({ filter: /^\.\/sfnt\.js$/ }, () => ({ path: 'sfnt', namespace: 'node-only' }));
+  b.onLoad({ filter: /.*/, namespace: 'node-only' }, () => ({ contents: 'export const liteFont = () => null;', loader: 'js' }));
+} };
 /**
  * The output files a page loads up front for an entry: the entry and the chunks it imports statically (import()
  * chunks load on demand). @param {import('esbuild').Metafile} meta @param {string} entry its output path in meta.outputs
