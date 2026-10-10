@@ -198,7 +198,7 @@ export async function planPaged(def0, opts = {}) {
    * more, which is dropped) and the drawing is checked against the count. starts: filled with where each page starts.
    * @param {number|null} total @param {number[]|null} bounds @param {number[]} [starts]
    */
-  async function* pass(total, bounds, starts, o = /** @type {{ run?: (job: any) => Promise<any>, parallel?: number, hold?: any, send?: (job: any) => Promise<void>, sending?: (row: number) => boolean, draw?: boolean, full?: () => void, from?: number, fromRow?: number }} */ ({})) {
+  async function* pass(total, bounds, starts, o = /** @type {{ run?: (job: any) => Promise<any>, parallel?: number, hold?: any, send?: (job: any) => Promise<void>, sending?: (row: number) => boolean, stopped?: () => boolean, draw?: boolean, full?: () => void, from?: number, fromRow?: number }} */ ({})) {
     const src = rowsOf()[Symbol.asyncIterator]();
     try { yield* passOver(src, total, bounds, starts, o); } finally { await src.return?.(undefined); } // the cursor closes on every exit
   }
@@ -219,7 +219,7 @@ export async function planPaged(def0, opts = {}) {
     for (const b of r.headings) if (isKept(b)) info.headings.push(b);
   };
   /** pass, over the rows of src @param {AsyncIterator<any>} src @param {number|null} total @param {number[]|null} bounds @param {number[]} [starts] */
-  async function* passOver(src, total, bounds, starts, o = /** @type {{ run?: (job: any) => Promise<any>, parallel?: number, hold?: any, send?: (job: any) => Promise<void>, sending?: (row: number) => boolean, draw?: boolean, full?: () => void, from?: number, fromRow?: number }} */ ({})) {
+  async function* passOver(src, total, bounds, starts, o = /** @type {{ run?: (job: any) => Promise<any>, parallel?: number, hold?: any, send?: (job: any) => Promise<void>, sending?: (row: number) => boolean, stopped?: () => boolean, draw?: boolean, full?: () => void, from?: number, fromRow?: number }} */ ({})) {
     let ahead = /** @type {any} */ (null), ended = false;
     let buf = /** @type {any[]} */ ([]), bi = 0; // the batch being read
     const next = async () => {
@@ -259,6 +259,7 @@ export async function planPaged(def0, opts = {}) {
     };
     const read = async (upTo) => {
       opts.signal?.throwIfAborted();
+      if (o.stopped?.()) throw new Error('stopped'); // overlapped's consumer is gone (an error, or it returned): the counting pass ends too
       while (win.length < upTo && !ended) {
         if (!ahead && bi < buf.length) { const r = buf[bi++]; take(r); win.push(r); continue; } // the batch's rows: no await each
         const r = await next(); if (!r.done) { take(r.value); win.push(r.value); }
@@ -431,7 +432,7 @@ export async function planPaged(def0, opts = {}) {
       ping();
       if (!totals) while (!stop && queue.length - qi > at) await wait(); // nothing held: as many out as the workers take
     };
-    const po = { send, hold, draw: !totals, full: () => { full = true; }, sending: (/** @type {number} */ row) => full || (!totals && row >= (opts.autoRows ?? AUTO_ROWS)) };
+    const po = { send, hold, stopped: () => stop, draw: !totals, full: () => { full = true; }, sending: (/** @type {number} */ row) => full || (!totals && row >= (opts.autoRows ?? AUTO_ROWS)) };
     const counting = (async () => {
       try {
         for await (const p of pass(null, null, starts, po)) { if (stop) return; queue.push({ page: p }); ping(); } // drawn here: in order with the jobs
