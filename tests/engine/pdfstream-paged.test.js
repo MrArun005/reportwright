@@ -135,6 +135,12 @@ describe('paged rendering of a flowing table', () => {
   it('groups page window by window as the whole render: headers that repeat, subtotals, RowNumber, header fields', async () => {
     expect(await same(grouped(1500), 120)).toBeGreaterThan(20);
   });
+  it('a zebra detail row (RowNumber() in its style) pages window by window as the whole render, flat and grouped', async () => {
+    // 0.14.0-rc.1: the row style's RowNumber() was refused ("detail expressions"), so the report was rendered whole
+    const zebra = (def) => { const t = def.sections.body.items[1]; t.detail[0].style = { backgroundColor: '=IIf(RowNumber() Mod 2 = 0, "#f3f4f6", "#ffffff")', borderBottom: '=IIf(RowNumber() Mod 2 = 0, "0.5 solid #d1d5db", "0.5 solid #e5e7eb")' }; return def; };
+    expect(await same(zebra(ledger(ledgerRows(1500))), 120)).toBeGreaterThan(8);
+    expect(await same(zebra(grouped(1500)), 120)).toBeGreaterThan(20);
+  });
   it('… with groups kept together, a break between groups, pageBreakEvery, first-last band rows, a sorted inner group', async () => {
     await same(grouped(1500, { outer: { keepTogether: true }, inner: { keepTogether: true } }), 60);
     await same(grouped(1500, { outer: { keepTogether: true }, inner: { keepTogether: true }, single: true }), 60); // one pass (no page count)

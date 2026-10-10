@@ -3,7 +3,7 @@
 // a stream that a reader drains, and reports the render process's peak resident memory above its start (engine loaded),
 // sampled every 10 ms. The render process gets the small worker's heap (--max-old-space-size=192), as a streaming render
 // gets in the server's pool.
-//   node scripts/mem-stream.mjs [format=csv|xlsx|pdf] [rows=100000,300000] [shape=plain|sorted|grouped|numbered|tagged]
+//   node scripts/mem-stream.mjs [format=csv|xlsx|pdf] [rows=100000,300000] [shape=plain|sorted|grouped|numbered|tagged|zebra|zebra3]
 // pdf: the server's streaming PDF (renderer.js → engine/paged.js windows of rows → exporters/pdfstream.js).
 // Prints one JSON line per run, then the flat-line verdict: peak(last) - peak(first) < FLAT_MB (30).
 // Never run 1M on a small laptop: project it from the slope (rows are linear).
@@ -25,6 +25,12 @@ export function memReport(url, shape = 'plain', format = 'csv') {
     footer: [{ height: 14, cells: [{ value: 'Total' }, null, null, { value: '=Sum(Fields.qty)' }, { value: '=Sum(Fields.price)', style: { format: 'N2' } }, null] }],
     ...(shape === 'grouped' ? { groups: [{ name: 'City', expr: '=Fields.city', header: [{ cells: [{ value: '=Fields.city' }] }], footer: [{ cells: [null, null, null, { value: '=Sum(Fields.qty)' }, { value: '=Sum(Fields.price)', style: { format: 'N2' } }, null] }] }] } : {}),
   };
+  // zebra: an expression background per detail row; zebra3 adds expression borders and number formats
+  if (shape === 'zebra' || shape === 'zebra3') table.detail[0].style = { backgroundColor: '=IIf(RowNumber() Mod 2 = 0, "#f3f4f6", "#ffffff")' };
+  if (shape === 'zebra3') {
+    table.detail[0].style.borderBottom = '=IIf(RowNumber() Mod 2 = 0, "0.5pt solid #d1d5db", "0.5pt solid #e5e7eb")';
+    table.detail[0].cells[3].style = { format: '=IIf(Fields.qty > 5, "N0", "N1")' };
+  }
   return {
     $schema: 'reportwright/report@1', name: `mem-${shape}`, page: { size: 'A4', margins: [36, 36, 36, 36] },
     dataSources: [{ name: 's', type: 'rest', url }],

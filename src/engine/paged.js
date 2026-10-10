@@ -75,7 +75,7 @@ export async function planPaged(def0, opts = {}) {
   if (!def0 || typeof def0 !== 'object' || Array.isArray(def0)) return no('not a definition');
   const { def, parts } = await resolveReuse(def0, makeLoader(opts.loadReport, new Map()), () => {}, opts.reportId ? [opts.reportId] : [], { items: 0 });
   if (parts) return no('report parts');
-  const plan = await planStream(def, { ...opts, format: 'xlsx' });
+  const plan = await planStream(def, { ...opts, format: 'xlsx', paged: true });
   if (plan.why !== undefined) return no(plan.why);
   if ((def.dataSets || []).length !== 1) return no('more than one data set');
   let ds = def.dataSets[0];

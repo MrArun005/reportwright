@@ -45,7 +45,7 @@ export function memorySorter(cmp) {
 /** A string value that holds an expression must be row-local. */
 const okValue = (v, o) => typeof v !== 'string' || !isDynamic(v) || streamable(v, o);
 /** Every expression in a style (any depth) is row-local. */
-const okStyle = (st, d = 0) => !st || typeof st !== 'object' || d > 8 || Object.values(st).every(v => (v && typeof v === 'object' ? okStyle(v, d + 1) : okValue(v)));
+const okStyle = (st, o, d = 0) => !st || typeof st !== 'object' || d > 8 || Object.values(st).every(v => (v && typeof v === 'object' ? okStyle(v, o, d + 1) : okValue(v, o)));
 const isHidden = (h) => !(h == null || h === false || h === '');
 
 /** A footer cell folded as rows pass: Sum/Count/Avg/Min/Max of a row expression, or CountRows(). */
@@ -119,8 +119,11 @@ export async function planStream(def0, opts) {
   for (const g of groups) if (g.parent || g.sortBy || (g.collapsible && g.initiallyCollapsed) || g.expandLevels != null || !okValue(g.expr)) return no('group shape');
   const okRow = (row, { rowNumber = false, folds = false } = {}) => {
     if (!row || isHidden(row.hidden) && row.hidden !== true) return false;
-    if (!okStyle(row.style)) return false;
-    return (Array.isArray(row.cells) ? row.cells : []).every(c => !c || (!c.item && !(Number(c.rowSpan) > 1) && !('raw' in c) && okStyle(c.style)
+    // RowNumber() in a detail row's styles (a zebra row): the paged PDF only, where render() lays the rows out with
+    // their numbers carried; the CSV/Excel rows here carry no fills
+    const so = opts.paged ? { rowNumber } : undefined;
+    if (!okStyle(row.style, so)) return false;
+    return (Array.isArray(row.cells) ? row.cells : []).every(c => !c || (!c.item && !(Number(c.rowSpan) > 1) && !('raw' in c) && okStyle(c.style, so)
       && (okValue(c.value, { rowNumber }) || (folds && foldOf(c.value)))));
   };
   if (!(item.detail || []).every(r => okRow(r, { rowNumber: true }))) return no('detail expressions');
