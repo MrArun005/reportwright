@@ -27,7 +27,8 @@
     "build:packages": "node scripts/build-embed.mjs && node scripts/build-packages.mjs",
     "scan:packages": "node scripts/scan-packages.mjs",
     "perf": "node scripts/perf.mjs",
-    "build:site": "node scripts/build-site.mjs"
+    "build:site": "node scripts/build-site.mjs",
+    "format:check": "node scripts/format-check.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
