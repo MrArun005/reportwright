@@ -222,7 +222,7 @@ export async function* runSqlRows(src, params = {}, { ms = 0, signal = undefined
   if (!STREAMING.has(dialect) || procedure) { yield await runSql(src, params); return; }
   const lim = { rows: Number(streamLimits.rows), bytes: Number(streamLimits.bytes), ms: Math.max(Number(limits.ms), Number(ms) || 0) };
   const ch = channel();
-  DRIVERS[dialect](url, text, values, { ...driverContext, limits: lim, code, allowed: procsOf(src.connection), procedure: null, signal, onRows: (rows) => ch.put(rows) })
+  DRIVERS[dialect](url, text, values, { ...driverContext, limits: lim, code, allowed: procsOf(src.connection), procedure: null, .../** @type {any} */ ({ signal }), onRows: (rows) => ch.put(rows) })
     .then(() => ch.end(null), (e) => ch.end(e === CANCEL ? null : driverError(Object.assign(e, { limitMs: lim.ms }), url)));
   for await (const rows of ch.iter()) yield rows.map(plainRow);
 }

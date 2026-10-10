@@ -241,7 +241,7 @@ export function createPdfStream(sink, opt) {
       const F = fontOf(key);
       let out = '';
       // Latin-1 text (most of a table): each character's escaped bytes from a table, no Map, no string iterator
-      const L = (F.lat ||= new Array(256));
+      const L = (/** @type {any} */ (F).lat ||= new Array(256));
       let i = 0;
       for (; i < text.length; i++) {
         const c = text.charCodeAt(i);

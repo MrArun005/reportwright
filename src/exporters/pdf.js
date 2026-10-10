@@ -109,7 +109,7 @@ async function pdfOf(model, fontStore, opt) {
         try {
           // fontkit reads a glyph header even for an empty glyph: when the last glyph is empty (often the space) and
           // glyf is the last table, that read runs past the end. Zero padding after the tables makes it read zeros.
-          const sub = withPadding(await opt.subset(bytes, cps, glyphs ? { glyphs: glyphs.keys() } : undefined));
+          const sub = withPadding(await /** @type {any} */ (opt.subset)(bytes, cps, glyphs ? { glyphs: glyphs.keys() } : undefined));
           // Check every glyph we need: a subset fontkit cannot read embeds the full font instead. (The advance reads the
           // glyph header too; pdf-lib needs no more. The outline, which g.bbox would decode, is never read.)
           const f = fontkit.create(sub);
@@ -161,7 +161,7 @@ async function pdfOf(model, fontStore, opt) {
       if (!local) return { img: await doc.embedPng(bytes) };
       const e = await PngEmbedder.for(bytes);
       // held: the data URI, the decoded pixels and (once embedded) their deflated copies, at most the pixels again
-      const size = src.length + 2 * ((e.image.rgbChannel?.length || 0) + (e.image.alphaChannel?.length || 0));
+      const size = src.length + 2 * ((/** @type {any} */ (e).image.rgbChannel?.length || 0) + (/** @type {any} */ (e).image.alphaChannel?.length || 0));
       if (size > PNG_CACHE_ENTRY) return { img: await doc.embedPng(bytes) };
       const entry = { e, z: /** @type {any[]} */ ([]), size };
       pngCacheBytes += size;
@@ -222,12 +222,12 @@ async function pdfOf(model, fontStore, opt) {
     const c = new Content(shared);
     if (tags) c.tagged = true;
     // pdf-lib draws the rare shapes (SVG paths, rounded boxes, SVG images): its operators join this page's stream
-    p.maybeEmbedGraphicsState = (o) => c.gsFor(o.opacity ?? 1, o.borderOpacity ?? 1);
+    /** @type {any} */ (p).maybeEmbedGraphicsState = (/** @type {any} */ o) => c.gsFor(o.opacity ?? 1, o.borderOpacity ?? 1);
     const viaPdfLib = (draw) => {
       c.et();
       c.lineWidth(1); // what a stroke without a width of its own inherits, as before
       draw();
-      const ops = /** @type {any} */ (p.getContentStream()).operators;
+      const ops = /** @type {any} */ (/** @type {any} */ (p).getContentStream()).operators;
       for (const op of ops) c.s += op.toString() + '\n';
       ops.length = 0;
     };
@@ -428,7 +428,7 @@ async function pdfOf(model, fontStore, opt) {
     const ref = doc.context.register(annot);
     if (tags) tags.annot(l.pi, l.ii, ref, 'link');
     const annots = l.page.node.lookup(PDFName.of('Annots'));
-    if (annots) annots.push(ref); else l.page.node.set(PDFName.of('Annots'), doc.context.obj([ref]));
+    if (annots) /** @type {any} */ (annots).push(ref); else l.page.node.set(PDFName.of('Annots'), doc.context.obj([ref]));
   }
   // the outline: bookmarks and headings (headingLevel) in page order, each at its level
   const marks = outlineEntries(model);
