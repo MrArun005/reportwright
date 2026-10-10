@@ -8,16 +8,52 @@ import { pdflibAddPlaceholder } from '@signpdf/placeholder-pdf-lib';
 import { SignPdf } from '@signpdf/signpdf';
 import { P12Signer } from '@signpdf/signer-p12';
 
-/** @returns {Promise<{ prepare: (doc: any) => void, save: object, sign: (pdf: Uint8Array) => Promise<Uint8Array> }>} */
+/**
+ * options: exportPdf's sign option (@reportwright/pdf signs as it writes, with a .p12 signer through its cmsSigner).
+ * prepare, save and sign: the pdf-lib + @signpdf way, deprecated (removed in 0.15).
+ * @returns {Promise<{ options: { signer: any, name: string, reason: string, location: string, contactInfo: string }, prepare: (doc: any) => void, save: object, sign: (pdf: Uint8Array) => Promise<Uint8Array> }>}
+ */
 export async function pdfSigner({ name = 'ReportWright', reason = 'Issued by ReportWright', location = '', contactInfo = '' } = {}) {
   const file = process.env.PW_SIGN_P12;
   if (!file) throw Object.assign(new Error('Signing is not set up: set PW_SIGN_P12 (a .p12 certificate file) and PW_SIGN_PASSWORD'), { status: 400 });
   let p12;
   try { p12 = await fs.readFile(file); } catch { throw Object.assign(new Error('PW_SIGN_P12 points to a file that cannot be read'), { status: 500 }); }
   const signer = new P12Signer(p12, { passphrase: process.env.PW_SIGN_PASSWORD || '' });
+  const p12signer = await p12Signer(p12, process.env.PW_SIGN_PASSWORD || '');
   return {
+    options: { signer: p12signer, name, reason, location, contactInfo },
     prepare: (doc) => pdflibAddPlaceholder({ pdfDoc: doc, reason, contactInfo, name, location }),
     save: { useObjectStreams: false }, // the signature dictionary must stay findable in the file
     sign: async (pdf) => new Uint8Array(await new SignPdf().sign(Buffer.from(pdf), signer)),
   };
+}
+
+/**
+ * A @reportwright/pdf signer from a PKCS#12 file (its examples/p12-signer.mjs): the key and its certificate chain, the
+ * signer's certificate first; RSA, PKCS#1 v1.5. A wrong password or a file without a key is a 500 (the server's setup).
+ * @param {Uint8Array} p12 @param {string} password
+ */
+export async function p12Signer(p12, password) {
+  const forge = (await import('node-forge')).default;
+  const { cmsSigner } = await import('@reportwright/pdf');
+  const setup = (/** @type {string} */ m) => Object.assign(new Error(m), { status: 500 });
+  let box;
+  try { box = forge.pkcs12.pkcs12FromAsn1(forge.asn1.fromDer(forge.util.createBuffer(Buffer.from(p12).toString('binary'))), password); }
+  catch { throw setup('PW_SIGN_P12 could not be opened (a wrong PW_SIGN_PASSWORD, or not a PKCS#12 file)'); }
+  const bags = (/** @type {string} */ type) => box.getBags({ bagType: type })[type] ?? [];
+  const key = /** @type {any} */ ([...bags(forge.pki.oids.pkcs8ShroudedKeyBag), ...bags(forge.pki.oids.keyBag)][0]?.key);
+  if (!key?.n) throw setup('PW_SIGN_P12 has no RSA private key');
+  const certs = bags(forge.pki.oids.certBag).map((b) => /** @type {any} */ (b.cert)).filter(Boolean);
+  const mine = certs.findIndex((c) => c.publicKey.n?.equals(key.n));
+  if (mine < 0) throw setup("PW_SIGN_P12 has no certificate for its key");
+  certs.unshift(certs.splice(mine, 1)[0]);
+  return cmsSigner({
+    certs: certs.map((c) => forge.pki.certificateToPem(c)).join('\n'),
+    keyAlgorithm: 'rsa',
+    sign(bytes, hash) {
+      const md = { 'SHA-256': forge.md.sha256, 'SHA-384': forge.md.sha384, 'SHA-512': forge.md.sha512 }[hash].create();
+      md.update(Buffer.from(bytes).toString('binary'));
+      return Uint8Array.from(Buffer.from(key.sign(md), 'binary'));
+    },
+  });
 }

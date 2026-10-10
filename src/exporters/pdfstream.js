@@ -22,7 +22,7 @@ import { render } from '../engine/index.js';
 import { planPaged } from '../engine/paged.js';
 import { sqlBatches } from '../engine/stream.js';
 import { safeUrl, drillUrl, asciiUrl } from '../engine/url.js';
-import { exportPdf, forcedPdfLib, roundRect, fieldFont } from './pdf.js';
+import { exportPdf, forcedPdfLib, roundRect, fieldFont, signDetails } from './pdf.js';
 import { checkboxAppearance, textAppearance, shapedAppearance } from './pdffields.js';
 import { parseSvg, svgOps } from './svgimage.js';
 import { drawSvgPathOps, pdfNum } from './svgpath.js';
@@ -716,7 +716,7 @@ export async function exportPdfStream(def, opts, sink) {
 /** @param {any} def @param {any} opts @param {Sink} sink */
 async function streamed(def, opts, sink) {
   const { signal } = opts;
-  const why = forcedPdfLib() ? 'PW_FORCE_PDFLIB' : opts.encrypt ? 'encrypted' : opts.prepare ? 'signed' : opts.save ? 'save options' : opts.pdfa && !opts.pdfa.icc?.length ? 'PDF/A without a colour profile' : null;
+  const why = forcedPdfLib() ? 'PW_FORCE_PDFLIB' : opts.encrypt ? 'encrypted' : opts.prepare || opts.sign ? 'signed' : opts.save ? 'save options' : opts.pdfa && !opts.pdfa.icc?.length ? 'PDF/A without a colour profile' : null;
   const plan = why ? { why } : await raced(planPaged(def, opts), signal);
   if (plan.why !== undefined) {
     // render() reads SQL through opts.sql (whole rows): the sqlRows batches, gathered (this path holds the model whole anyway)
@@ -833,9 +833,12 @@ async function newWriter(sink, opts) {
   if (checkPdfWriter(opts) === 'legacy') return null;
   const { createPdf } = await import('@reportwright/pdf');
   // the sink stays the caller's: written with back-pressure as before, never ended here
-  return createPdf({ write: (/** @type {Uint8Array} */ u8) => raced(written(sink, sink.write(u8)), opts.signal) },
+  const pdf = createPdf({ write: (/** @type {Uint8Array} */ u8) => raced(written(sink, sink.write(u8)), opts.signal) },
     // object streams at zlib's level 9, as the engine's own writer packed them (its files are no bigger)
-    { metadata: false, id: opts.id, signal: opts.signal, creationDate: opts.creationDate, objectStreamLevel: 9, ...(opts.encrypt ? { encrypt: encryptOptions(opts.encrypt) } : {}) });
+    { metadata: false, id: opts.id, signal: opts.signal, creationDate: opts.creationDate, objectStreamLevel: 9, ...(opts.encrypt ? { encrypt: encryptOptions(opts.encrypt) } : {}), ...(opts.sign ? { sign: true } : {}) });
+  // signed (B8): an invisible signature field, signed as the file ends (the signer runs at end())
+  if (opts.sign) pdf.sign({ name: 'Signature1' }, { signer: opts.sign.signer, ...signDetails(opts.sign), ...(opts.creationDate ? { date: opts.creationDate } : {}) });
+  return pdf;
 }
 
 /**

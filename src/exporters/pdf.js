@@ -25,7 +25,9 @@ import { Content, drawRun, glyphText, insideClip, col, BLACK, n2, n4, hex4, KAPP
  *   pdfa?: { icc?: Uint8Array }, prepare?: (doc: PDFDocument) => any, save?: object,
  *   encrypt?: { userPassword?: string, ownerPassword?: string, permissions?: Partial<Record<keyof typeof import('./encrypt.js').PERMISSION_BITS, boolean>> },
  *   tagged?: { lang?: string }, drillBase?: string, onWarning?: (message: string) => void, timeoutMs?: number,
- *   creationDate?: Date }} [opt]
+ *   creationDate?: Date, sign?: { signer: (r: any) => Promise<Uint8Array> | Uint8Array, reason?: string, location?: string, contactInfo?: string, name?: string } }} [opt]
+ *   sign: sign the file (a detached PKCS#7 signature over all of it) with a @reportwright/pdf signer (cmsSigner,
+ *   nodeSigner; the server's p12Signer); not with encrypt. prepare and save are deprecated (removed in 0.15).
  *   subset: a HarfBuzz subsetter (see subset.js). Without it, fonts embed in full.
  *   pdfa: a PDF/A-2b file (2a with tagged): true uses the sRGB profile of @reportwright/fonts, or pass { icc } (this
  *   function itself needs icc; the engine package fills it in). prepare: last change to the pdf-lib PDFDocument before
@@ -45,8 +47,25 @@ export function exportPdf(model, fontStore, opt = {}) {
 /** @type {typeof exportPdf} */
 async function pdfOf(model, fontStore, opt) {
   checkPdfWriter(opt);
+  if (opt.sign) {
+    if (opt.encrypt) throw Object.assign(new Error('A signed PDF cannot have a password here. Turn off signing or the password.'), { status: 400 });
+    if (opt.prepare || opt.save) throw Object.assign(new TypeError('sign replaces prepare and save: pass one or the other'), { status: 400 });
+    if (typeof opt.sign.signer !== 'function') throw Object.assign(new TypeError('sign.signer is a @reportwright/pdf signer (cmsSigner, nodeSigner)'), { status: 400 });
+  }
+  if ((opt.prepare || opt.save) && !deprecationSaid) {
+    deprecationSaid = true;
+    globalThis.process?.emitWarning?.('exportPdf: the prepare and save options are deprecated and will be removed in 0.15; sign with the sign option ({ signer, reason, … }, @reportwright/pdf).', 'DeprecationWarning');
+  }
   await fontStore.load(modelFontKeys(model)); // N40: a store render() did not fill (loaded keys are skipped)
   if (ownWriterFits(model, opt)) return ownWriter(model, fontStore, opt);
+  // signed on pdf-lib's path (a tagged file, a URL picture…): the file as it was, then signed by @reportwright/pdf in an
+  // incremental update (B8)
+  if (opt.sign) {
+    const { sign, ...rest } = opt;
+    const { loadPdf } = await import('@reportwright/pdf');
+    const doc = await loadPdf(await pdfOf(model, fontStore, rest));
+    return (await doc.saveIncremental({ sign: { field: { name: 'Signature1' }, signer: sign.signer, ...signDetails(sign) } })).bytes;
+  }
   await loadPdfLib(); // on first use: importing the engine does not load pdf-lib
   // a fixed date (creationDate, else SOURCE_DATE_EPOCH) makes the file reproducible: its ID then derives from the content
   const fixed = fixedDate(opt);
@@ -463,6 +482,7 @@ async function pdfOf(model, fontStore, opt) {
 function ownWriterFits(model, opt) {
   if (forcedPdfLib()) return false;
   if (opt.tagged || opt.prepare || opt.save || !model.pages.length) return false;
+  if (opt.sign && opt.pdfWriter === 'legacy') return false; // signed later, on pdf-lib's file (an incremental update)
   // encrypted (B7): AES-256 by @reportwright/pdf; with PDF/A it is refused on pdf-lib's path (a 400)
   if (opt.encrypt && (opt.pdfWriter === 'legacy' || opt.pdfa)) return false;
   // PDF/A-2b (B5): with its colour profile, through @reportwright/pdf as exportPdfStream writes it
@@ -484,6 +504,9 @@ function ownWriterFits(model, opt) {
   }
   return true;
 }
+let deprecationSaid = false;
+/** a sign option's reason, location, contact and name, as @reportwright/pdf takes them (adbe.pkcs7.detached, as @signpdf signed) @param {any} s */
+export const signDetails = (s) => ({ ...(s.reason ? { reason: s.reason } : {}), ...(s.location ? { location: s.location } : {}), ...(s.contactInfo ? { contactInfo: s.contactInfo } : {}), ...(s.name ? { name: s.name } : {}), subFilter: /** @type {const} */ ('adbe.pkcs7.detached') });
 /** PW_FORCE_PDFLIB=1: every export takes the pdf-lib whole-model path (the parity gate's baseline, scripts/writer-parity.mjs). */
 export const forcedPdfLib = () => globalThis.process?.env?.PW_FORCE_PDFLIB === '1';
 /**
@@ -534,7 +557,7 @@ async function ownWriter(model, fontStore, opt) {
   const info = { width: model.width, height: model.height, bookmarks: model.bookmarks || [], headings: model.headings || [], warnings: [],
     pageStarts: model.pageStarts || [], pageHeights: model.pages.map((/** @type {any} */ pg) => pg.height ?? model.height) };
   await writePagedPdf({ info, pages: async function* () { yield* model.pages; } },
-    { fontStore, subset: opt.subset, fetchImage: opt.fetchImage, id: fixed ? await contentId(model, opt, when) : undefined, title: opt.title, author: opt.author, creationDate: when, drillBase: opt.drillBase, pdfWriter: opt.pdfWriter, pdfa: opt.pdfa, encrypt: opt.encrypt },
+    { fontStore, subset: opt.subset, fetchImage: opt.fetchImage, id: fixed ? await contentId(model, opt, when) : undefined, title: opt.title, author: opt.author, creationDate: when, drillBase: opt.drillBase, pdfWriter: opt.pdfWriter, pdfa: opt.pdfa, encrypt: opt.encrypt, sign: opt.sign },
     { write: (/** @type {Uint8Array} */ u8) => { parts.push(u8); } });
   for (const x of info.warnings) opt.onWarning?.(x);
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));

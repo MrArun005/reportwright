@@ -193,3 +193,45 @@ describe('B6: form fields through @reportwright/pdf', async () => {
     expect(f.hi.value).toBe('नमस्ते दुनिया');
   });
 });
+
+describe('B8: signing by @reportwright/pdf', async () => {
+  const forge = (await import('node-forge')).default;
+  const { p12Signer } = await import('../../src/server/sign.js');
+  const { loadPdf } = await import('@reportwright/pdf');
+  const keys = forge.pki.rsa.generateKeyPair(2048), cert = forge.pki.createCertificate();
+  cert.publicKey = keys.publicKey; cert.serialNumber = '01'; cert.validity.notBefore = new Date('2026-01-01'); cert.validity.notAfter = new Date('2036-01-01');
+  cert.setSubject([{ name: 'commonName', value: 'Phase B' }]); cert.setIssuer([{ name: 'commonName', value: 'Phase B' }]); cert.sign(keys.privateKey, forge.md.sha256.create());
+  const p12 = Buffer.from(forge.asn1.toDer(forge.pkcs12.toPkcs12Asn1(keys.privateKey, [cert], 'pw', { algorithm: '3des' })).getBytes(), 'binary');
+  const signer = await p12Signer(p12, 'pw');
+  const m = await render(text, { fontStore });
+  it('a plain report is signed as it is written: one signature over the whole file', async () => {
+    const b = await exportPdf(m, fontStore, { sign: { signer, reason: 'Issued' } });
+    expect(viaLibrary(b)).toBe(true);
+    const sigs = (await loadPdf(b)).signatures;
+    expect(sigs).toHaveLength(1);
+    expect(JSON.stringify(sigs[0])).toMatch(/adbe\.pkcs7\.detached/);
+  });
+  it('on pdf-lib\'s path (pdfWriter legacy) it is signed in an incremental update', async () => {
+    const b = await exportPdf(m, fontStore, { pdfWriter: 'legacy', sign: { signer } });
+    expect(viaLibrary(b)).toBe(false);
+    expect((await loadPdf(b)).signatures).toHaveLength(1);
+  });
+  it('a wrong .p12 password is a 500; sign with encrypt or with prepare is a 400', async () => {
+    await expect(p12Signer(p12, 'nope')).rejects.toMatchObject({ status: 500 });
+    await expect(exportPdf(m, fontStore, { sign: { signer }, encrypt: {} })).rejects.toMatchObject({ status: 400 });
+    await expect(exportPdf(m, fontStore, { sign: { signer }, prepare: () => {} })).rejects.toMatchObject({ status: 400 });
+  });
+  it('prepare and save still work, with one deprecation warning', async () => {
+    const said = /** @type {string[]} */ ([]);
+    const on = (/** @type {any} */ w) => { if (w.name === 'DeprecationWarning') said.push(w.message); };
+    process.on('warning', on);
+    try {
+      let seen = 0;
+      await exportPdf(m, fontStore, { prepare: () => { seen++; }, save: { useObjectStreams: false } });
+      await exportPdf(m, fontStore, { prepare: () => { seen++; } });
+      await new Promise((r) => setTimeout(r, 10));
+      expect(seen).toBe(2);
+      expect(said.filter(x => /prepare and save/.test(x))).toHaveLength(1);
+    } finally { process.off('warning', on); }
+  });
+});

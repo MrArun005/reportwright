@@ -106,7 +106,8 @@ async function make(c, writer) {
 async function make1(c, writer) {
   const { sign, ...copts } = c.opts || {};
   const s = sign ? await signer() : null;
-  const opts = { fontStore, subset, now, creationDate: now, title: c.def.name, id: '0123456789abcdef0123456789abcdef', pdfWriter: writer, baseUrl: 'https://sample.test', fetch: sampleFetch, ...copts, ...(s ? { prepare: s.prepare, save: s.save } : {}) };
+  const old = !!process.env.PW_FORCE_PDFLIB || writer === 'legacy';
+  const opts = { fontStore, subset, now, creationDate: now, title: c.def.name, id: '0123456789abcdef0123456789abcdef', pdfWriter: writer, baseUrl: 'https://sample.test', fetch: sampleFetch, ...copts, ...(s ? (old ? { prepare: s.prepare, save: s.save } : { sign: s.options }) : {}) };
   if (c.kind === 'stream') {
     const parts = [];
     const r = await exportPdfStream(c.def, opts, { write: async (/** @type {Uint8Array} */ u8) => { parts.push(Buffer.from(u8)); } });
@@ -115,7 +116,8 @@ async function make1(c, writer) {
   const { pdfWriter, ...ropts } = opts;
   const model = await render(c.def, ropts);
   const bytes = await exportPdf(model, fontStore, opts);
-  return { bytes: Buffer.from(s ? await s.sign(bytes) : bytes), streamed: false };
+  // signed: today's way on the baseline (pdf-lib's placeholder, then @signpdf), the sign option on the new side
+  return { bytes: Buffer.from(s && old ? await s.sign(bytes) : bytes), streamed: false };
 }
 
 let n = 0;
@@ -203,7 +205,7 @@ for (const c of cases) {
     }
     if (c.opts?.sign) {
       const v = run('pdfsig', [fn]).stdout.toString();
-      valid += /Signature Validation: Signature is Valid/.test(v) ? ', pdfsig ok' : ', FAIL pdfsig';
+      valid += /Signature Validation: Signature is Valid/.test(v) && /Total document signed/.test(v) ? ', pdfsig ok (whole file)' : ', FAIL pdfsig';
     }
     row.valid = valid;
     const a = features(fo), b = features(fn);

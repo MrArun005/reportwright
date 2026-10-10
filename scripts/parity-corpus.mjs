@@ -116,6 +116,8 @@ export const CORPUS = [
   ...Object.entries(PERMS).map(([k, permissions]) => ({ id: `encrypt-${k}`, def: invoice, opts: { encrypt: { ownerPassword: 'owner-pw', permissions } }, accept: { pixels: EXIF } })),
   { id: 'encrypt-userpw', def: fields, opts: { encrypt: { userPassword: 'open-me', ownerPassword: 'owner-pw' } }, password: 'open-me' },
   { id: 'signed', def: invoice, opts: { sign: true }, accept: { pixels: EXIF } },
+  { id: 'signed-pdfa', def: noFields(all()), opts: { sign: true, pdfa: { icc: ICC } } },
+  { id: 'signed-ua', def: all(), opts: { sign: true, tagged: { lang: 'en' } } },
   { id: 'pdfa-2b', def: all(), opts: { pdfa: { icc: ICC } } },
   { id: 'pdfa-2b-nofields', def: (() => { const d = noFields(all()); d.sections.body[0].items.push(img(PNGA, 300, 0)); return d; })(), opts: { pdfa: { icc: ICC } } },
   { id: 'pdfua', def: all(), opts: { tagged: { lang: 'en' } } },

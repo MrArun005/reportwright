@@ -273,8 +273,7 @@ export async function renderTo(def, opt = {}) {
   const fetchImage = async (src) => { try { const r = await imageFetch(new URL(src, base)); return r.ok ? new Uint8Array(await r.arrayBuffer()) : null; } catch { return null; } };
   if (format === 'pdf') {
     bytes = await exportPdf(model, fontStore(), { title: def.name, subset, fetchImage, drillBase: opt.self || base, // drill-through opens this server's viewer
-      pdfa: opt.pdfa ? { icc: await iccProfile() } : undefined, tagged: opt.ua ? { lang: def.locale || 'en' } : undefined, prepare: signing?.prepare, save: signing?.save, encrypt: opt.encrypt });
-    if (signing) bytes = await signing.sign(bytes);
+      pdfa: opt.pdfa ? { icc: await iccProfile() } : undefined, tagged: opt.ua ? { lang: def.locale || 'en' } : undefined, sign: signing?.options, encrypt: opt.encrypt });
   }
   else if (format === 'html') bytes = Buffer.from(await exportHtml(model, { fonts: fontStore(), title: def.name, subset, drillBase: opt.self || base, static: !!opt.static, locale: def.locale, currency: def.currency })); // drill-through opens this server's viewer (never a caller's baseUrl)
   else if (format === 'csv') bytes = Buffer.from(exportCsv(model, /** @type {any} */ ({ locale: def.locale, currency: def.currency, layout: opt.csv === 'layout' })));
