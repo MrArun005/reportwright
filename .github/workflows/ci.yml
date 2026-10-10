@@ -82,6 +82,7 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
       - run: sudo apt-get update && sudo apt-get install -y poppler-utils # pdftotext, pdftoppm: the suites read the PDFs they get
+      - run: npm run fonts:cjk # the optional CJK and emoji fonts a developer machine has: the suites expect no 404 for them
       - name: 'Build and start the server as the suites expect (scripts/restart.sh, PW_AUTH=proxy behind scripts/e2e-proxy.mjs, test keys)'
         run: |
           ./scripts/restart.sh
