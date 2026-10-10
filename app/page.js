@@ -1,5 +1,5 @@
 import { listReports } from '@/server/reports.js';
-import { principalFromCookie, visibleReports, visibleFolders, snapshot, folderLevel, atLeast } from '@/server/perms.js';
+import { principalFromCookie, visibleReports, visibleFolders, canCreateIn } from '@/server/perms.js';
 import Shell, { viewer } from '@/home/Shell.jsx';
 import Overview from '@/home/Overview.jsx';
 import Library from '@/home/Library.jsx';
@@ -17,7 +17,7 @@ export default async function Home({ searchParams }) {
   const all = await visibleReports(p, await listReports());
   const folders = await visibleFolders(p, all);
   const libraryOnly = sp.view === 'reports' || typeof sp.folder === 'string' || typeof sp.q === 'string';
-  const canCreate = designer && atLeast(folderLevel(await snapshot(), p, null), 'edit');
+  const canCreate = designer && await canCreateIn(p, null).then(() => true, () => false); // the API's check: at the top, "create" counts too
   return (
     <Shell lang={lang} active={libraryOnly ? 'reports' : 'overview'} search={typeof sp.q === 'string' ? sp.q : ''}>
       <main className="home">

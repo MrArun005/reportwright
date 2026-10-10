@@ -4,7 +4,7 @@ import { ShareButton, NewFolder } from './FolderActions.jsx';
 import Thumb, { ReportFonts } from './Thumb.jsx';
 import ServerPdf from './ServerPdf.jsx';
 import { accountsOn } from '@/server/session.js';
-import { snapshot, folderLevel, atLeast } from '@/server/perms.js';
+import { snapshot, folderLevel, atLeast, canCreateIn } from '@/server/perms.js';
 import { t } from '@/i18n/index.js';
 
 function ago(iso, lang) {
@@ -36,7 +36,7 @@ export default async function Library({ lang, sp, p, all, folders, designer, isA
   for (let f = here, i = 0; f && i < 32; i++, f = byId.get(f)?.parent || null) if (byId.has(f)) crumbs.unshift(byId.get(f));
   // with accounts on, people do not see what they cannot use (creating, designing, sharing, deleting)
   const hereLevel = folderLevel(await snapshot(), p, here);
-  const canCreate = designer && atLeast(hereLevel, 'edit');
+  const canCreate = designer && await canCreateIn(p, here).then(() => true, () => false); // the API's check: at the top, "create" counts too
   const canFolder = designer && atLeast(hereLevel, 'manage');
   const shareProps = { folders, accounts: accountsOn(), lang };
   const link = (folder) => (folder ? `/?folder=${encodeURIComponent(folder)}${qa}` : `/?view=reports${qa}`);

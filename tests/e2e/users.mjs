@@ -95,6 +95,8 @@ r = await req(`/api/reports/${RID}`, { method: 'PUT', cookie: designer.cookie, h
 assert.equal(r.status, 200);
 assert.deepEqual(await (await req(`/api/reports/${RID}`, { cookie: designer.cookie })).json(), def);
 assert.equal((await req(`/designer/${RID}`, { cookie: designer.cookie })).status, 200);
+// a new install gives viewers only what a grant gives them (d44e859b): the designer shares the report with the viewer
+assert.equal((await req(`/api/reports/${RID}/access`, { method: 'PUT', cookie: designer.cookie, headers: H, body: { grants: [{ to: `user:${DESIGNER}`, level: 'manage' }, { to: `user:${VIEWER}`, level: 'view' }] } })).status, 200);
 r = await req('/api/data/sql', { method: 'POST', cookie: designer.cookie, headers: H, body: { connection: 'nope', query: 'select 1' } });
 assert.equal(r.status, 400); // allowed through to the driver: the connection is not set up
 assert.match((await r.json()).error, /not set up/);
@@ -112,7 +114,8 @@ assert.equal((await req('/api/data/sql', { method: 'POST', cookie: viewer.cookie
 const home = async (c) => (await req('/', { cookie: c })).text();
 const vh = await home(viewer.cookie), dh = await home(designer.cookie);
 assert.ok(!vh.includes('New report') && !vh.includes('/designer/'), 'viewer home: no create or design');
-assert.ok(vh.includes('Sign out') && vh.includes(`/viewer/${RID}`), 'viewer home: sign-out and view links');
+assert.ok(vh.includes('Sign out'), 'viewer home: sign-out link');
+assert.ok(vh.includes(`/viewer/${RID}`), 'viewer home: view link');
 assert.ok(dh.includes('New report') && dh.includes(`/designer/${RID}`), 'designer home: create and design');
 // path tricks
 assert.equal((await req('/api/reports%2F..%2Fusers', { cookie: viewer.cookie })).status, 400);
@@ -158,7 +161,7 @@ assert.ok(!(await (await req('/api/users', { cookie: admin.cookie })).text()).in
 step('the last admin cannot be demoted');
 r = await req(`/api/users/${encodeURIComponent(ADMIN)}`, { method: 'PATCH', cookie: admin.cookie, headers: H, body: { role: 'viewer' } });
 const others = JSON.parse(await (await req('/api/users', { cookie: admin.cookie })).text()).filter(u => u.role === 'admin' && !u.disabled && u.email !== ADMIN);
-if (!others.length) { assert.equal(r.status, 409); assert.match((await r.json()).error, /last admin/); }
+if (!others.length) { assert.equal(r.status, 409); assert.match((await r.json()).error, /own account/); } // the admin is the last one, and refused as itself first (cf947ed2)
 
 step('sign-out: the cookie is cleared and the session is dead on the server');
 await pv.goto(`${BASE}/login`);

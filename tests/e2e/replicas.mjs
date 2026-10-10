@@ -27,28 +27,29 @@ process.on('exit', () => { for (const p of Object.values(servers)) p.kill('SIGKI
 
 try {
   await Promise.all([start(3401), start(3402)]);
-  step('a 24-item batch starts on server A; A is killed half-way; B finishes it');
+  const N = 96; // enough that A cannot finish between two polls (24 did, once renders got faster)
+  step(`a ${N}-item batch starts on server A; A is killed half-way; B finishes it`);
   const { sampleLoan } = await import(path.join(root, 'src/sample/loans.js'));
   const loans = sampleLoan('LN-2026-004417');
   // a fresh shared store has no saved reports: send the definition with the batch
   const template = JSON.parse(fs.readFileSync(path.join(root, 'reports/loan-statement.pw.json'), 'utf8'));
-  const items = Array.from({ length: 24 }, (_, i) => ({ name: `statement-${i + 1}`, parameters: { accountId: 'LN-2026-004417' }, data: { loans } }));
+  const items = Array.from({ length: N }, (_, i) => ({ name: `statement-${i + 1}`, parameters: { accountId: 'LN-2026-004417' }, data: { loans } }));
   const created = await (await fetch('http://localhost:3401/api/v1/batches', { method: 'POST', headers: H, body: JSON.stringify({ template, format: 'pdf', items }) })).json();
   assert.ok(created.id, JSON.stringify(created));
   let j;
   for (let i = 0; i < 400; i++) { j = await job(3402, created.id); if (j.done >= 4) break; await sleep(100); }
-  assert.ok(j.done >= 4 && j.done < 24, `A should be part-way, got ${j.done}`);
+  assert.ok(j.done >= 4 && j.done < N, `A should be part-way, got ${j.done}`);
   stop(3401);
   const doneByA = j.done;
   for (let i = 0; i < 600; i++) { j = await job(3402, created.id); if (j.status !== 'running' && j.status !== 'queued') break; await sleep(200); }
   assert.equal(j.status, 'completed', JSON.stringify(j.errors));
-  assert.equal(j.done, 24);
+  assert.equal(j.done, N);
   const by = new Set(j.results.map(r => r.by.split(':').slice(0, 2).join(':')));
   assert.equal(by.size, 2, 'both servers rendered items');
-  assert.equal(new Set(j.results.map(r => r.index)).size, 24, 'no item twice');
+  assert.equal(new Set(j.results.map(r => r.index)).size, N, 'no item twice');
   const zip = unzipSync(new Uint8Array(await (await fetch(`http://localhost:3402/api/v1/batches/${created.id}/download`, { headers: H })).arrayBuffer()));
-  assert.equal(Object.keys(zip).length, 24);
-  console.log(`  A rendered ${doneByA} before it was killed; B rendered the other ${24 - doneByA}; the zip has 24 PDFs`);
+  assert.equal(Object.keys(zip).length, N);
+  console.log(`  A rendered ${doneByA} before it was killed; B rendered the other ${N - doneByA}; the zip has ${N} PDFs`);
 
   step('a schedule every minute, two servers: one run per minute, and the scheduler moves when its server stops');
   await start(3401);
