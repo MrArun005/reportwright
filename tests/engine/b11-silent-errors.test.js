@@ -130,3 +130,20 @@ describe('3. pw render -p with a name the report does not declare', () => {
     expect(r.stderr).toContain('Unknown parameter "Nope"; this report declares: Min, Region');
   }, 60000);
 });
+
+describe('4. siblings', () => {
+  const tb = (extra) => def([{ a: 1 }], [{ type: 'textbox', name: 'X', x: 0, y: 0, w: 200, h: 20, value: 'x', ...extra }]);
+  it('a misspelt style property warns with a did-you-mean (it was ignored silently)', () => {
+    expect(validate(tb({ style: { fontWieght: 'bold' } })).warnings).toContain('X: unknown style property "fontWieght" (did you mean "fontWeight"?); it is ignored');
+    expect(validate(tb({ style: { fontWeight: 'bold', direction: 'rtl', borderStyle: 'solid' } })).warnings.join('\n')).not.toMatch(/style property/);
+  });
+  it('already loud: an unknown field, data set, aggregate scope and item type', async () => {
+    const d = def([{ a: 1 }], [table({ dataSet: 'Rowz' }), { type: 'textbx', x: 0, y: 50, w: 10, h: 10 },
+      { type: 'textbox', name: 'S', x: 0, y: 80, w: 100, h: 20, value: '=Sum(Fields.a, "Rowz")' }, { type: 'textbox', name: 'F', x: 0, y: 110, w: 100, h: 20, value: '=Fields.b' }]);
+    const w = validate(d).warnings.join('\n');
+    expect(w).toMatch(/T: the data set "Rowz" does not exist/);
+    expect(w).toMatch(/Unknown item type "textbx"/);
+    expect(w).toMatch(/F: The field "b" does not exist/);
+    expect((await render(d, { fontStore })).warnings.join('\n')).toMatch(/S: Sum: the scope "Rowz" does not exist/);
+  });
+});

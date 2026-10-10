@@ -47,8 +47,12 @@ const LOCAL_IMAGE = /^(?:[a-z]:[\\/]|\\\\|\.{1,2}[\\/]|file:|[^:/\\\s]+\.(?:png|
 /** Keys a sort entry is often written with, for the one it means: {by, dir}. */
 const SORT_ALIAS = { expr: 'by', expression: 'by', field: 'by', direction: 'dir', order: 'dir' };
 /** Warnings for a style object: an unknown colour name, a numeric format code with a stray letter. */
+/** Style properties the schema lists (it allows others: the engine reads a few more, e.g. direction). */
+const STYLE_KEYS = Object.keys(REPORT_SCHEMA.$defs.Style.properties);
 function styleIssues(st, label, out) {
   if (!st || typeof st !== 'object' || Array.isArray(st)) return;
+  // a near miss of a style property ("fontWieght") is ignored silently otherwise; another name may be read, so says nothing
+  for (const k in st) { const g = !STYLE_KEYS.includes(k) && didYouMean(k, STYLE_KEYS); if (g) out.push(`${label}: unknown style property "${k}" (did you mean "${g}"?); it is ignored`); }
   for (const k of COLOUR_KEYS) {
     const v = st[k];
     if (typeof v !== 'string' || v.startsWith('=')) continue;
