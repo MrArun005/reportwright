@@ -3,7 +3,7 @@
  * pw import <folder>: every SSRS, JasperReports, BIRT and ActiveReports report in a folder becomes a .pw.json file in an
  * output folder that mirrors it, with a migration report (import-report.json and import-report.html).
  *
- * Node only (the file system); the importers themselves stay pure, which is why this lives on the server/CLI side, outside the engine boundary. One file's failure never stops the batch.
+ * Node only (the file system); the importers themselves stay pure, which is why this lives in src/cli, outside the engine boundary. One file's failure never stops the batch.
  * The input is untrusted:
  *   - only files found by walking the input folder are ever read: a reference in a report (an image, a subreport, a
  *     style template, a shared data source) is looked up among them, never opened by its path, so "../" or an absolute

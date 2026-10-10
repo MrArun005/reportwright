@@ -333,11 +333,11 @@ async function cmdImport(args) {
   if (out !== '-') console.error(`${out}: ${r.stats.items} items (${r.stats.mapped} mapped, ${r.stats.approximated} approximated, ${r.stats.dropped} dropped)`);
 }
 
-/** pw import <folder>: see src/server/importBatch.js. */
+/** pw import <folder>: see src/cli/importBatch.js. */
 async function importFolderCmd(dir, values) {
   if (!values.o || values.o === '-') usage('pw import <folder> needs -o <outDir>');
   const num = (k) => { const v = values[k]; if (v == null) return undefined; if (!/^\d+$/.test(v) || !(Number(v) > 0)) usage(`--${k} is a positive whole number`); return Number(v); };
-  const { importFolder, reportHtml, exitCode } = await import('../src/server/importBatch.js');
+  const { importFolder, reportHtml, exitCode } = await import('../src/cli/importBatch.js');
   const report = await importFolder(dir, values.o, { recursive: !!values.recursive, force: !!values.force, maxFiles: num('max-files'), maxBytes: num('max-bytes'),
     verify: values.verify ? verifyImported : undefined, log: (m) => console.error(`pw: ${m}`) });
   const json = values.report && /\.json$/i.test(values.report) ? values.report : path.join(values.report || values.o, 'import-report.json');
