@@ -664,6 +664,7 @@ function latin1(s) {
  */
 export async function exportPdfStream(def, opts, sink) {
   opts.signal?.throwIfAborted();
+  checkPdfWriter(opts);
   const t0 = Date.now();
   const deadline = opts.deadline ?? (Number(opts.timeoutMs) > 0 ? t0 + Number(opts.timeoutMs) : undefined);
   // one signal for every wait: the caller's, the time limit, and an error the sink reports
@@ -779,15 +780,20 @@ export async function writePagedPdf(plan, opts, sink) {
   return { pages: res.pages, warnings: info.warnings };
 }
 
+/** opts.pdfWriter, 'pdf' (the default) or 'legacy'; anything else is a 400 (checked first by both exporters) @param {any} opts */
+export function checkPdfWriter(opts) {
+  const which = opts.pdfWriter ?? 'pdf';
+  if (which !== 'pdf' && which !== 'legacy') throw Object.assign(new TypeError(`pdfWriter is 'pdf' (the default) or 'legacy', not ${JSON.stringify(which)}`), { status: 400 });
+  return which;
+}
+
 /**
  * The @reportwright/pdf writer the file goes through, or null for the engine's own (pdfWriter: 'legacy', kept for one
  * release). Loaded on first use. It writes our objects as they are; Info, metadata and the tags stay the engine's.
  * @param {Sink} sink @param {any} opts
  */
 async function newWriter(sink, opts) {
-  const which = opts.pdfWriter ?? 'pdf';
-  if (which === 'legacy') return null;
-  if (which !== 'pdf') throw Object.assign(new TypeError(`pdfWriter is 'pdf' (the default) or 'legacy', not ${JSON.stringify(which)}`), { status: 400 });
+  if (checkPdfWriter(opts) === 'legacy') return null;
   const { createPdf } = await import('@reportwright/pdf');
   // the sink stays the caller's: written with back-pressure as before, never ended here
   return createPdf({ write: (/** @type {Uint8Array} */ u8) => raced(written(sink, sink.write(u8)), opts.signal) },

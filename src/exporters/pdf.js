@@ -8,7 +8,7 @@ import { encryptPdf } from './encrypt.js';
 import { createTagger } from './pdfua.js';
 import { withDeadline } from './deadline.js';
 import { pngProblem } from './png.js';
-import { writePagedPdf } from './pdfstream.js';
+import { writePagedPdf, checkPdfWriter } from './pdfstream.js';
 import { needsTableData } from './regions.js';
 import { embeddedFace, isStandard, modelFontKeys } from '../engine/text/fonts.js';
 import { standardFontEntries, standardLiteral, embeddedPage, embeddedWarnings, standIns } from './pdfstandard.js';
@@ -43,6 +43,7 @@ export function exportPdf(model, fontStore, opt = {}) {
 }
 /** @type {typeof exportPdf} */
 async function pdfOf(model, fontStore, opt) {
+  checkPdfWriter(opt);
   await fontStore.load(modelFontKeys(model)); // N40: a store render() did not fill (loaded keys are skipped)
   if (ownWriterFits(model, opt)) return ownWriter(model, fontStore, opt);
   await loadPdfLib(); // on first use: importing the engine does not load pdf-lib

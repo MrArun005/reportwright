@@ -5,7 +5,10 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createSubsetter } from '../../src/exporters/subset.js';
-import { createPdfStream } from '../../src/exporters/pdfstream.js';
+import { createPdfStream, exportPdfStream } from '../../src/exporters/pdfstream.js';
+import { exportPdf } from '../../src/exporters/pdf.js';
+import { render } from '../../src/engine/index.js';
+import { report } from '../helpers.js';
 import { planPaged } from '../../src/engine/paged.js';
 import { fontStore } from '../helpers.js';
 
@@ -109,4 +112,15 @@ describe('L3: the test-only knobs can only lower the built-in caps', () => {
     expect(await held(undefined)).toBe(false); // over the default cap: not held
     expect(await held(Infinity)).toBe(false);
   }, 120000);
+});
+
+describe('L4: pdfWriter is checked on every path', () => {
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+  const img = report([{ type: 'image', x: 0, y: 0, w: 20, h: 20, src: PNG }]);
+  it("pdfWriter: 'legcy' on an image report is the same 400 from exportPdf and exportPdfStream", async () => {
+    const m = await render(img, { fontStore, now });
+    const a = await exportPdf(m, fontStore, { pdfWriter: 'legcy' }).catch(e => e);
+    const b = await exportPdfStream(img, { fontStore, now, pdfWriter: 'legcy' }, { write: async () => {} }).catch(e => e);
+    for (const e of [a, b]) expect(e).toMatchObject({ status: 400, message: "pdfWriter is 'pdf' (the default) or 'legacy', not \"legcy\"" });
+  });
 });
