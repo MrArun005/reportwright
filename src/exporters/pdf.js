@@ -1,5 +1,5 @@
 // @ts-check
-import { PDFDocument, PDFName, PDFString, PDFHexString, PDFRawStream, rgb, fontkit, loadPdfLib } from '../engine/lazylibs.js';
+import { PDFDocument, PDFName, PDFString, PDFHexString, PDFRawStream, PDFImage, PngEmbedder, rgb, fontkit, loadPdfLib } from '../engine/lazylibs.js';
 import { makePdfA, setUaMetadata, setInfoDates } from './pdfa.js';
 import { safeUrl, drillUrl, asciiUrl } from '../engine/url.js';
 import { dataUriBytesOf, dataUriBytes, imageInfoOf, IMAGE_LIMITS } from '../engine/image.js';
@@ -153,8 +153,15 @@ async function pdfOf(model, fontStore, opt) {
       // a small PNG can inflate to gigabytes: refuse very large pixel counts before decoding
       // the size is read the way the decoder reads it (last IHDR); animated or multi-IHDR files are refused
       // a cut or damaged PNG can hang pdf-lib's decoder: checked first, left out with a warning
+      const hit = local ? pngCache.get(src) : undefined;
+      if (hit) return { img: embedCachedPng(doc, hit) };
       const why = 'w' in info && !(/** @type {any} */ (info).suspect) && info.w * info.h <= IMAGE_LIMITS.pixels ? pngProblem(bytes) : 'too large or animated';
-      return why ? { img: null, why: `the PNG is not usable (${why})` } : { img: await doc.embedPng(bytes) };
+      if (why) return { img: null, why: `the PNG is not usable (${why})` };
+      if (!local || bytes.length > PNG_CACHE_BYTES) return { img: await doc.embedPng(bytes) };
+      const entry = { e: await PngEmbedder.for(bytes), z: /** @type {any[]} */ ([]) };
+      if (pngCache.size >= PNG_CACHE_SIZE) pngCache.delete(pngCache.keys().next().value);
+      pngCache.set(src, entry);
+      return { img: embedCachedPng(doc, entry) };
     }
     if (info?.type === 'jpeg') return { img: await doc.embedJpg(bytes) };
     // GIF and WebP are not decoded here (no decoder without a new dependency): left out, with a warning
@@ -455,6 +462,38 @@ function ownWriterFits(model, opt) {
   }
   return true;
 }
+/**
+ * A data: URI PNG decoded and deflated once per process: the next document embeds the same image streams, with the
+ * bytes pdf-lib's embedPng writes (its flateStream: the deflated pixels, the dictionary plus Filter FlateDecode), without
+ * decoding and deflating the pixels again (half of a warm one-logo invoice). First in, first out, at most
+ * PNG_CACHE_SIZE images of at most PNG_CACHE_BYTES each.
+ * ponytail: pushes onto pdf-lib's private doc.images, as embedPng does; pdf-lib is pinned (1.17.1).
+ */
+const pngCache = new Map(), PNG_CACHE_SIZE = 16, PNG_CACHE_BYTES = 1 << 20;
+/** @param {any} doc @param {{ e: any, z: any[] }} entry */
+function embedCachedPng(doc, { e, z }) {
+  // the decoded embedder as its prototype: pdf-lib checks instanceof PngEmbedder, and reads width and height from it
+  const embedder = Object.assign(Object.create(e), {
+    /** @param {any} context @param {any} ref */
+    embedIntoContext(context, ref) {
+      let i = 0;
+      const flate = context.flateStream;
+      // the stream dictionary is the document's own; only the deflated pixels are shared (never changed in place)
+      context.flateStream = (/** @type {any} */ contents, /** @type {any} */ dict) => {
+        const k = i++;
+        if (z[k]) return context.stream(z[k], { ...dict, Filter: 'FlateDecode' });
+        const st = flate.call(context, contents, dict);
+        z[k] = st.contents;
+        return st;
+      };
+      try { return e.embedIntoContext(context, ref); } finally { delete context.flateStream; } // its body runs synchronously
+    },
+  });
+  const img = PDFImage.of(doc.context.nextRef(), doc, embedder);
+  doc.images.push(img);
+  return img;
+}
+
 /** The model through the engine's own writer (ownWriterFits): the same metadata, dates and file ID rules as pdf-lib's path. */
 async function ownWriter(model, fontStore, opt) {
   const fixed = fixedDate(opt), when = fixed ?? new Date();

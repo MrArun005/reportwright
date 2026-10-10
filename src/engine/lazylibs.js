@@ -25,6 +25,8 @@
 /** @type {PdfLib['PDFString']} */ export let PDFString;
 /** @type {PdfLib['PDFHexString']} */ export let PDFHexString;
 /** @type {PdfLib['PDFRawStream']} */ export let PDFRawStream;
+/** @type {PdfLib['PDFImage']} */ export let PDFImage;
+/** @type {PdfLib['PngEmbedder']} */ export let PngEmbedder;
 /** @type {PdfLib['PDFStream']} */ export let PDFStream;
 /** @type {PdfLib['PDFArray']} */ export let PDFArray;
 /** @type {PdfLib['PDFDict']} */ export let PDFDict;
@@ -106,6 +108,6 @@ function pdfLibOneFile() {
 }
 /** pdf-lib and fontkit (exportPdf embeds fonts with both). @returns {Promise<void>} */
 export const loadPdfLib = () => (pl ||= Promise.all([(req && pdfLibOneFile()) || load('pdf-lib', () => import('pdf-lib')), loadFontkit()]).then(([L]) => {
-  ({ PDFDocument, PDFName, PDFString, PDFHexString, PDFRawStream, PDFStream, PDFArray, PDFDict, PDFNumber, PDFBool, rgb,
+  ({ PDFDocument, PDFName, PDFString, PDFHexString, PDFRawStream, PDFImage, PngEmbedder, PDFStream, PDFArray, PDFDict, PDFNumber, PDFBool, rgb,
     pushGraphicsState, popGraphicsState, concatTransformationMatrix } = L);
 }));
