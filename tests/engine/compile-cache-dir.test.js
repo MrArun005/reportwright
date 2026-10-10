@@ -8,7 +8,7 @@ import { compileCacheDir } from '../../scripts/compile-cache-dir.mjs';
 describe('CLI compile cache folder', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-cc-'));
   it('is a private (0700) folder under the user cache folder', () => {
-    const dir = compileCacheDir({ XDG_CACHE_HOME: tmp });
+    const dir = compileCacheDir({ XDG_CACHE_HOME: tmp }, tmp);
     expect(dir).toBe(path.join(tmp, 'reportwright', 'compile-cache'));
     if (process.platform !== 'win32') expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
   });
@@ -17,14 +17,14 @@ describe('CLI compile cache folder', () => {
       const open = path.join(tmp, 'open');
       fs.mkdirSync(path.join(open, 'reportwright', 'compile-cache'), { recursive: true });
       fs.chmodSync(path.join(open, 'reportwright', 'compile-cache'), 0o777);
-      expect(compileCacheDir({ XDG_CACHE_HOME: open })).toBeUndefined();
+      expect(compileCacheDir({ XDG_CACHE_HOME: open }, tmp)).toBeUndefined();
       const link = path.join(tmp, 'link');
       fs.mkdirSync(path.join(link, 'reportwright'), { recursive: true });
       fs.symlinkSync(os.tmpdir(), path.join(link, 'reportwright', 'compile-cache'));
-      expect(compileCacheDir({ XDG_CACHE_HOME: link })).toBeUndefined();
+      expect(compileCacheDir({ XDG_CACHE_HOME: link }, tmp)).toBeUndefined();
     }
-    expect(compileCacheDir({ XDG_CACHE_HOME: 'relative/dir' })).toBeUndefined();
-    expect(compileCacheDir({ XDG_CACHE_HOME: tmp, PW_NO_COMPILE_CACHE: '1' })).toBeUndefined();
+    expect(compileCacheDir({ XDG_CACHE_HOME: 'relative/dir' }, tmp)).toBeUndefined();
+    expect(compileCacheDir({ XDG_CACHE_HOME: tmp, PW_NO_COMPILE_CACHE: '1' }, tmp)).toBeUndefined();
   });
   it('the built pw.mjs uses it and never the default (temp folder) cache', () => {
     const src = fs.readFileSync(path.join(import.meta.dirname, '../../scripts/build-packages.mjs'), 'utf8');

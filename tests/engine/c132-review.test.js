@@ -124,3 +124,16 @@ describe('L4: pdfWriter is checked on every path', () => {
     for (const e of [a, b]) expect(e).toMatchObject({ status: 400, message: "pdfWriter is 'pdf' (the default) or 'legacy', not \"legcy\"" });
   });
 });
+
+describe('L2: the compile cache base must be under the home folder', () => {
+  it('XDG_CACHE_HOME=/tmp (or any folder outside home) gives no cache', async () => {
+    const { compileCacheDir } = await import('../../scripts/compile-cache-dir.mjs');
+    const t = fs.mkdtempSync(path.join(os.tmpdir(), 'c132-cc-'));
+    try {
+      expect(compileCacheDir({ XDG_CACHE_HOME: t })).toBeUndefined();
+      expect(fs.existsSync(path.join(t, 'reportwright'))).toBe(false); // nothing made there either
+      expect(compileCacheDir({ XDG_CACHE_HOME: '/tmp' })).toBeUndefined();
+      expect(compileCacheDir({ XDG_CACHE_HOME: path.join(os.homedir(), '..', 'x') })).toBeUndefined();
+    } finally { fs.rmSync(t, { recursive: true, force: true }); }
+  });
+});
