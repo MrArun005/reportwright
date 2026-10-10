@@ -142,11 +142,17 @@ export function createSubsetter(loadWasm) {
     // Node: compiled synchronously, which V8 does lazily (each function when first called). The async compile also
     // optimizes the whole module in the background, and a cold process then waited ~140 ms for it before its first
     // PDF was written (measured: 1-page invoice export 175 ms → 35 ms). Browsers keep the async compile (a large
-    // synchronous one is refused on the main thread).
+    // synchronous one is refused on the main thread). Liftoff only for this module (the flag is read when it is
+    // compiled, then restored): V8's dynamic tier-up recompiled the hot subsetter functions with TurboFan in the
+    // background (~200 ms, ~80 MB), and a short-lived process waited for that at exit (cold 100-row report 376 → 165 ms).
     const src = /** @type {any} */ (u8);
-    const instance = /** @type {any} */ (globalThis).process?.versions?.node
-      ? new WebAssembly.Instance(new WebAssembly.Module(src), {})
-      : (await WebAssembly.instantiate(src, {})).instance;
+    const proc = /** @type {any} */ (globalThis).process;
+    let instance;
+    if (proc?.versions?.node) {
+      const v8 = proc.getBuiltinModule?.('node:v8');
+      v8?.setFlagsFromString('--liftoff-only');
+      try { instance = new WebAssembly.Instance(new WebAssembly.Module(src), {}); } finally { v8?.setFlagsFromString('--no-liftoff-only'); }
+    } else instance = (await WebAssembly.instantiate(src, {})).instance;
     const x = /** @type {any} */ (instance.exports);
     x._initialize?.();
     return x;
