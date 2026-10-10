@@ -17,7 +17,7 @@ export function setStandalone({ standalone: on = false, fontsUrl: f = null } = {
   standalone = !!on; fontsUrl = f ? String(f).replace(/\/?$/, '/') : null; mainStore = null; fontList = null; fontBytes.clear(); optP = null;
 }
 // optional fonts: only those the server has (app/fonts/optional.json)
-if (typeof window < 'u') setOptionalFonts([]);
+setOptionalFonts([]);
 let optP = null;
 const optional = () => (optP ||= Promise.resolve(standalone || fetch(`${fontsBase()}optional.json`).then(r => r.json())).then(k => setOptionalFonts(k?.map ? k : null), () => setOptionalFonts(null)));
 /** Where the report fonts are: fontsUrl, else <server>/fonts/. */
