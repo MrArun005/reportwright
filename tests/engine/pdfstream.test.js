@@ -30,7 +30,8 @@ let tmpN = 0;
 const tmp = (bytes) => { const f = path.join(tmpDir, `${++tmpN}.pdf`); fs.writeFileSync(f, bytes); return f; };
 /** pdftotext's text and its complaints (a broken xref or object makes poppler print "Syntax Error") */
 const pdftotext = (bytes, ...args) => {
-  const r = spawnSync('pdftotext', [...args, tmp(bytes), '-']);
+  const r = spawnSync('pdftotext', [...args, tmp(bytes), '-'], { maxBuffer: 1 << 30 });
+  if (r.error || r.status) throw new Error(`pdftotext failed (${r.error?.code ?? r.status}): ${r.stderr}`); // ENOBUFS cut the text short, silently
   return { text: r.stdout.toString(), err: r.stderr.toString() };
 };
 /**
