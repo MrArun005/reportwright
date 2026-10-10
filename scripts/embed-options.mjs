@@ -2,6 +2,7 @@
 // tests/engine/b10-bundle-size.test.js builds the same in memory to hold the first load to its budget.
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 export const root = path.join(import.meta.dirname, '..');
 // viewer styles, scoped to the shadow root
 let css = fs.readFileSync(path.join(root, 'app/globals.css'), 'utf8')
@@ -50,8 +51,26 @@ export const BWIP_FILE = 'engine.worker.bwip.js';
 export const APART = { 'bwip-js': BWIP_FILE };
 // sfnt.js (fonts.js's Node-only font reader: canFontkitSync() is false in a browser) is a stub in the worker, whose build
 // inlines its import(): liteFont() returning null is the "fontkit reads this font" answer, which a browser always takes
+/** Schema-node keys validate() never reads: prose and the TypeScript hints. */
+const SCHEMA_PROSE = new Set(['description', 'title', 'examples', '$comment', 'x-ts']);
+/**
+ * The report JSON Schema without its prose, for the worker (validate() reads properties, enums, consts and refs only).
+ * A property NAMED title or description (under properties) is kept. @param {any} n @param {string|null} [parent]
+ */
+export function stripSchema(n, parent = null) {
+  if (parent === 'enum' || parent === 'const' || parent === 'default') return n; // values, not schema nodes
+  if (Array.isArray(n)) return n.map(x => stripSchema(x));
+  if (!n || typeof n !== 'object') return n;
+  const keyed = parent === 'properties' || parent === '$defs' || parent === 'patternProperties';
+  return Object.fromEntries(Object.entries(n).filter(([k]) => keyed || !SCHEMA_PROSE.has(k)).map(([k, v]) => [k, stripSchema(v, keyed ? null : k)]));
+}
 export const bwipApart = { name: 'libs-apart', setup: (b) => {
   b.onResolve({ filter: /^bwip-js$/ }, (a) => ({ path: `./${APART[a.path]}`, external: true }));
+  // the report schema without its descriptions (the designer, docs and API keep the full one: they do not use this build)
+  b.onLoad({ filter: /src[\\/]engine[\\/]schema[\\/]report\.schema\.js$/ }, async (a) => {
+    const { REPORT_SCHEMA } = await import(pathToFileURL(a.path).href);
+    return { contents: `export const REPORT_SCHEMA = ${JSON.stringify(stripSchema(REPORT_SCHEMA))};`, loader: 'js' };
+  });
   b.onResolve({ filter: /^\.\/sfnt\.js$/ }, () => ({ path: 'sfnt', namespace: 'node-only' }));
   b.onLoad({ filter: /.*/, namespace: 'node-only' }, () => ({ contents: 'export const liteFont = () => null;', loader: 'js' }));
 } };
