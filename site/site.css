@@ -1,4 +1,4 @@
-/* ReportWright demo site. A proof sheet: warm paper, black ink, a proofreader's red. Full width, no centred column. */
+/* ReportWright demo site. A proof sheet: warm ivory, deep-blue ink, a coral accent. Full width, no centred column. */
 @font-face{font-family:"Plex";src:url("fonts/ui/ibm-plex-sans-latin-400-normal.woff2") format("woff2");font-weight:400;font-display:swap}
 @font-face{font-family:"Plex";src:url("fonts/ui/ibm-plex-sans-latin-500-normal.woff2") format("woff2");font-weight:500;font-display:swap}
 @font-face{font-family:"Plex";src:url("fonts/ui/ibm-plex-sans-latin-600-normal.woff2") format("woff2");font-weight:600;font-display:swap}
@@ -6,19 +6,19 @@
 @font-face{font-family:"Plex Mono";src:url("fonts/ui/ibm-plex-mono-latin-600-normal.woff2") format("woff2");font-weight:600;font-display:swap}
 
 :root {
-  --bg: #f3f0e8;
-  --bg-2: #ebe7dc;
-  --surface: #fbfaf6;
-  --ink: #17150f;
-  --muted: #5a554a;
-  --rule: #d6d0c1;
-  --rule-strong: #1715108c;
-  --accent: #c8321a;
-  --accent-ink: #ffffff;
-  --accent-soft: #f6dcd4;
-  --code-bg: #1b1a17;
-  --code-ink: #ece8dc;
-  --shadow: 0 1px 0 #00000010, 0 10px 30px -12px #2a20102e;
+  --bg: #fbf7ee;
+  --bg-2: #f4eedf;
+  --surface: #fffdf8;
+  --ink: #14254a;
+  --muted: #4b5a76;
+  --rule: #e3dccb;
+  --rule-strong: #14254a8c;
+  --accent: #ff6f4f;
+  --accent-ink: #14254a; /* white on coral is 2.75:1, deep blue is 5.48:1 */
+  --accent-soft: #ffe3d9;
+  --code-bg: #14254a;
+  --code-ink: #f3ecdd;
+  --shadow: 0 1px 0 #00000010, 0 10px 30px -12px #14254a2e;
   --sans: "Plex", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "Plex Mono", ui-monospace, Menlo, monospace;
   --gut: clamp(16px, 2.2vw, 32px);
@@ -26,21 +26,21 @@
   --fs-1: 12px; --fs-2: 13.5px; --fs-3: 15px; --fs-4: 17px; --fs-5: 20px;
   --fs-6: clamp(26px, 2.6vw, 38px);
   --fs-7: clamp(34px, 6vw, 72px);
-  --accent-text: #a8260f; /* the accent as text: 4.5:1 on paper and on the soft tint */
+  --accent-text: #b3401c; /* the accent as text: 4.5:1 on paper and on the soft tint */
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #12110e; --bg-2: #1a1915; --surface: #1d1c18; --ink: #efebe0; --muted: #a8a293;
-    --rule: #34312a; --rule-strong: #efebe08c; --accent: #ff6a4d; --accent-ink: #1a0802; --accent-soft: #3a1b13; --accent-text: #ff8a72;
-    --code-bg: #0b0a08; --code-ink: #ece8dc; --shadow: 0 1px 0 #0000004d, 0 10px 30px -12px #000000a0;
+    --bg: #0e1628; --bg-2: #121c33; --surface: #17223d; --ink: #f3ecdd; --muted: #a9b4c9;
+    --rule: #26324d; --rule-strong: #f3ecdd8c; --accent: #ff8a6b; --accent-ink: #0e1628; --accent-soft: #3a1f1c; --accent-text: #ff9b80;
+    --code-bg: #080e1c; --code-ink: #f3ecdd; --shadow: 0 1px 0 #0000004d, 0 10px 30px -12px #000000a0;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #12110e; --bg-2: #1a1915; --surface: #1d1c18; --ink: #efebe0; --muted: #a8a293;
-  --rule: #34312a; --rule-strong: #efebe08c; --accent: #ff6a4d; --accent-ink: #1a0802; --accent-soft: #3a1b13; --accent-text: #ff8a72;
-  --code-bg: #0b0a08; --code-ink: #ece8dc; --shadow: 0 1px 0 #0000004d, 0 10px 30px -12px #000000a0;
+  --bg: #0e1628; --bg-2: #121c33; --surface: #17223d; --ink: #f3ecdd; --muted: #a9b4c9;
+  --rule: #26324d; --rule-strong: #f3ecdd8c; --accent: #ff8a6b; --accent-ink: #0e1628; --accent-soft: #3a1f1c; --accent-text: #ff9b80;
+  --code-bg: #080e1c; --code-ink: #f3ecdd; --shadow: 0 1px 0 #0000004d, 0 10px 30px -12px #000000a0;
   color-scheme: dark;
 }
 
@@ -48,6 +48,7 @@
 html { scroll-padding-top: calc(var(--bar-h) + 8px); -webkit-text-size-adjust: 100%; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 400 var(--fs-3)/1.55 var(--sans); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
 a { color: inherit; text-decoration-color: var(--accent); text-underline-offset: 3px; }
+a:hover { color: var(--accent-text); }
 h3, h4, h5 { font-size: var(--fs-4); }
 small { font-size: var(--fs-1); }
 small code, .fine code, .subnav code, .spec dt code { font-size: inherit; }
