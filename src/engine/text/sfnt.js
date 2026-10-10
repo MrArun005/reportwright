@@ -78,6 +78,16 @@ export function liteFont(bytes, full) {
       hasGlyphForCodePoint: (/** @type {number} */ cp) => !!lookup(cp),
       glyphForCodePoint: (/** @type {number} */ cp) => getGlyph(lookup(cp), [cp]),
       getGlyph,
+      /** a glyph's outline lies inside glyf (loca in order, in bounds); true for a font without glyf/loca (CFF) */
+      glyphInBounds: (/** @type {number} */ id) => {
+        const { loca, glyf } = tables;
+        if (!loca || !glyf) return true;
+        const long = i16(dv, head + 50) === 1, size = long ? 4 : 2;
+        if (loca.length < (id + 2) * size) return false;
+        const at = (/** @type {number} */ k) => (long ? dv.getUint32(loca.offset + 4 * k) : 2 * u16(dv, loca.offset + 2 * k));
+        const a = at(id), b = at(id + 1);
+        return a <= b && b <= glyf.length && glyf.offset + glyf.length <= bytes.byteLength;
+      },
     };
     return new Proxy(own, { get: (t, p) => (p in t || typeof p === 'symbol' ? /** @type {any} */ (t)[p] : bound(full(), p)) });
   } catch { return null; }

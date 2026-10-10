@@ -513,7 +513,7 @@ export function createPdfStream(sink, opt) {
         const padded = new Uint8Array(sub.length + 16);
         padded.set(sub);
         const check = (f.lite && (await import('../engine/text/sfnt.js')).liteFont(padded, () => { throw new Error('subset: not read by sfnt.js'); })) || (await loadFontkit(), fontkit.create(padded));
-        for (const id of F.glyphs.keys()) { if (check.lite && id >= check.numGlyphs) throw new Error('subset: glyph missing'); void check.getGlyph(id).advanceWidth; }
+        for (const id of F.glyphs.keys()) { if (check.lite && (id >= check.numGlyphs || !check.glyphInBounds(id))) throw new Error('subset: glyph missing'); void check.getGlyph(id).advanceWidth; }
         bytes = sub;
         psName = check.postscriptName || psName;
       } catch { /* the full font */ }
