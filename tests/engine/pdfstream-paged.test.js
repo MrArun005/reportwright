@@ -25,7 +25,8 @@ let tmpN = 0;
 const pdftotext = (bytes, ...args) => {
   const f = path.join(tmpDir, `${++tmpN}.pdf`);
   fs.writeFileSync(f, bytes);
-  const r = spawnSync('pdftotext', [...args, f, '-']);
+  const r = spawnSync('pdftotext', [...args, f, '-'], { maxBuffer: 1 << 30 });
+  if (r.error || r.status) throw new Error(`pdftotext failed (${r.error?.code ?? r.status}): ${r.stderr}`); // ENOBUFS cut the text short, silently
   return { text: r.stdout.toString(), err: r.stderr.toString() };
 };
 const sink = () => { const chunks = []; return { chunks, write: async (u8) => { chunks.push(Buffer.from(u8)); }, bytes: () => Buffer.concat(chunks) }; };
