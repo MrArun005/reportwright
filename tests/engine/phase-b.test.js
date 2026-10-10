@@ -221,6 +221,18 @@ describe('B8: signing by @reportwright/pdf', async () => {
     await expect(exportPdf(m, fontStore, { sign: { signer }, encrypt: {} })).rejects.toMatchObject({ status: 400 });
     await expect(exportPdf(m, fontStore, { sign: { signer }, prepare: () => {} })).rejects.toMatchObject({ status: 400 });
   });
+  const { spawnSync } = await import('node:child_process');
+  const fsx = await import('node:fs'), os = await import('node:os'), pathx = await import('node:path');
+  const PDFSIG = spawnSync('pdfsig', ['-v']).status === 0;
+  /** pdfsig's verdict on a signed file */
+  const pdfsig = (/** @type {Uint8Array} */ b) => { const f = pathx.join(os.tmpdir(), `pb-sig-${process.pid}-${Math.random().toString(36).slice(2)}.pdf`); fsx.writeFileSync(f, b); try { return spawnSync('pdfsig', [f]).stdout.toString(); } finally { fsx.rmSync(f, { force: true }); } };
+  it.skipIf(!PDFSIG)('pdfsig: the signature is valid and covers the whole file, on both paths (needs poppler\'s pdfsig; CI has it)', async () => {
+    for (const o of [{}, { pdfWriter: /** @type {const} */ ('legacy') }]) {
+      const v = pdfsig(await exportPdf(m, fontStore, { ...o, sign: { signer } }));
+      expect(v).toMatch(/Signature is Valid/);
+      expect(v).toMatch(/Total document signed/);
+    }
+  });
   it('prepare and save still work, with one deprecation warning', async () => {
     const said = /** @type {string[]} */ ([]);
     const on = (/** @type {any} */ w) => { if (w.name === 'DeprecationWarning') said.push(w.message); };
