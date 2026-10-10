@@ -86,6 +86,17 @@ describe('stopping', () => {
     await expect(p2.end()).rejects.toThrow('later');
   });
 
+  it('a stop between two calls aborts a WritableStream too', async () => {
+    let aborted = null;
+    const ws = new WritableStream({ write() {}, abort(e) { aborted = e; } });
+    const ctl = new AbortController(), pdf = createPdf(ws, { signal: ctl.signal });
+    await pages(2)(pdf);
+    ctl.abort(new Error('between'));
+    await expect(pdf.end()).rejects.toThrow('between');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(aborted?.message).toBe('between');
+  });
+
   it('an already-aborted signal is refused at once', () => {
     expect(() => createPdf({ write() {} }, { signal: AbortSignal.abort(new Error('early')) })).toThrow('early');
   });
