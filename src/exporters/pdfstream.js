@@ -698,7 +698,9 @@ async function streamed(def, opts, sink) {
   const plan = why ? { why } : await raced(planPaged(def, opts), signal);
   if (plan.why !== undefined) {
     // render() reads SQL through opts.sql (whole rows): the sqlRows batches, gathered (this path holds the model whole anyway)
-    const rOpts = opts.sqlRows && !opts.sql ? { ...opts, sql: async (/** @type {any} */ src, /** @type {any} */ p) => { const all = []; for await (const b of sqlBatches(opts.sqlRows, src, p, signal)) for (const r of b) all.push(r); return all; } } : opts;
+    // tagged: the cell tags an accessible PDF builds its tables from (exportData), as the streamed windows render them
+    const base = opts.tagged && !opts.exportData ? { ...opts, exportData: true } : opts;
+    const rOpts = opts.sqlRows && !opts.sql ? { ...base, sql: async (/** @type {any} */ src, /** @type {any} */ p) => { const all = []; for await (const b of sqlBatches(opts.sqlRows, src, p, signal)) for (const r of b) all.push(r); return all; } } : base;
     const model = await raced(render(def, rOpts), signal);
     const bytes = await raced(exportPdf(model, opts.fontStore, { ...opts, timeoutMs: opts.deadline ? Math.max(1, opts.deadline - Date.now()) : undefined }), signal);
     await raced(written(sink, sink.write(bytes)), signal);
