@@ -42,7 +42,7 @@ export function openSaves(data, budget) {
   let depth = 0;
   for (;;) {
     const v = parseValue(lx);
-    if (v === undefined) break;
+    if (v === undefined) { if (lx.pos < data.length) continue; break; } // a stray ] or >> at the top: skipped, the count goes on
     if (!(v instanceof Op)) continue;
     if (v.v === 'q') depth++;
     else if (v.v === 'Q') depth = Math.max(0, depth - 1);
@@ -53,8 +53,8 @@ export function openSaves(data, budget) {
 
 /**
  * openSaves without building values: the same tokens (reader/lexer.js: white space and comments, strings, names,
- * brackets, runs of regular characters) and the same containers as parseValue (a stray ] or >> at the top ends the
- * scan; an operator ends the open containers), only q and Q counted. Left to openSaves: an inline image (BI), an R in a
+ * brackets, runs of regular characters) and the same containers as parseValue (a stray ] or >> at the top is
+ * skipped; an operator ends the open containers), only q and Q counted. Left to openSaves: an inline image (BI), an R in a
  * container (a reference or an operator), MAX_DEPTH containers (E_DEPTH), data long enough for MAX_ITEMS. A budget step
  * per token and per KB of string, as the lexer. @param {Uint8Array} b @param {any} budget
  */
@@ -70,7 +70,7 @@ export function countSaves(b, budget) {
     budget.tick();
     const c = b[i];
     if (c === 0x5b || (c === 0x3c && b[i + 1] === 0x3c)) { if (st.length >= MAX_DEPTH) return openSaves(b, budget); st.push(c === 0x5b ? 1 : 2); i += c === 0x5b ? 1 : 2; continue; }
-    if (c === 0x5d || c === 0x3e) { if (!st.length) return depth; if (st[st.length - 1] === (c === 0x5d ? 1 : 2)) st.pop(); i += c === 0x3e && b[i + 1] === 0x3e ? 2 : 1; continue; }
+    if (c === 0x5d || c === 0x3e) { if (!st.length) { i += c === 0x3e && b[i + 1] === 0x3e ? 2 : 1; continue; } if (st[st.length - 1] === (c === 0x5d ? 1 : 2)) st.pop(); i += c === 0x3e && b[i + 1] === 0x3e ? 2 : 1; continue; }
     if (c === 0x3c) { const s = i; i++; while (i < e && b[i] !== 0x3e) i++; if (i < e) i++; budget.tick(1 + ((i - s) >> 11)); continue; }
     if (c === 0x28) { const s = i; i++; for (let d = 1; i < e; i++) { const x = b[i]; if (x === 0x5c) i++; else if (x === 0x28) d++; else if (x === 0x29 && --d === 0) break; } i = Math.min(i + 1, e); budget.tick(1 + ((i - s) >> 10)); continue; }
     if (c === 0x2f) { i++; while (i < e && CLASS[b[i]] === 0) i++; continue; }
