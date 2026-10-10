@@ -221,3 +221,22 @@ h2 { font-size: var(--fs-6); letter-spacing: -.025em; line-height: 1.1; margin: 
 
 /* in-text links big enough to tap (24 px) */
 .lede a, .spec a { display: inline-flex; align-items: center; min-height: 24px; }
+
+/* gallery fills exactly one screen below the nav: the list and the viewer scroll inside, the page never does */
+#gallery { height: calc(100vh - var(--bar-h)); height: calc(100dvh - var(--bar-h)); display: flex; flex-direction: column; box-sizing: border-box; scroll-margin-top: -8px; padding-bottom: 12px; }
+#gallery .sect-head { flex: none; }
+#gallery .split { flex: 1; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+#gallery .demo-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; flex-wrap: nowrap; }
+#gallery .stage { min-height: 0; }
+#gallery .viewer-host { flex: 1; height: auto; min-height: 0; }
+@media (max-width: 900px) {
+  #gallery .sect-head { margin-bottom: 10px; }
+  #gallery .sect-note { display: none; }
+  #gallery .split { display: flex; flex-direction: column; gap: 10px; }
+  #gallery .demo-list { flex: none; flex-direction: row; overflow-x: auto; overflow-y: hidden; border-top: 0; border-bottom: 2px solid var(--ink); }
+  #gallery .demo-list li { flex: none; border-bottom: 0; border-right: 1px solid var(--rule); }
+  #gallery .demo-list button { white-space: nowrap; padding: 6px 10px 6px 4px; }
+  #gallery .stage { flex: 1; }
+  #gallery .stage-head { grid-template-columns: minmax(0, 1fr); }
+  #gallery .stage-what, #gallery .stage-try { display: none; }
+}
