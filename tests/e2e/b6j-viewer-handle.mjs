@@ -19,6 +19,8 @@ const bundle = await build({
   logOverride: { 'empty-import-meta': 'silent', 'unsupported-dynamic-import': 'silent' },
 }).then(r => r.outputFiles[0].text);
 
+// inlined as src/viewer/interactiveHtml.js inlines it: "<!--" then "<script" in a string would keep </script> from ending it
+const inline = bundle.replace(/<(!--|\/?script)/gi, '\\x3C$1');
 const rows = (n) => Array.from({ length: n }, (_, i) => ({ n: i + 1, who: i % 2 ? 'Ben Ode' : 'Asha Rao' }));
 const definition = (_title, n = 120) => ({
   $schema: 'reportwright/report@1', name: _title, page: { size: 'A4', margins: [36, 36, 36, 36] },
@@ -32,7 +34,7 @@ const definition = (_title, n = 120) => ({
       detail: [{ height: 16, cells: [{ value: '=Fields.n' }, { value: '=Fields.who' }] }] },
   ] } },
 });
-const html = `<!doctype html><meta charset="utf-8"><div id="r" style="width:700px;height:600px"></div><script>${bundle}</script>
+const html = `<!doctype html><meta charset="utf-8"><div id="r" style="width:700px;height:600px"></div><script>${inline}</script>
 <script>
   window.ev = [];
   window.v = ReportWright.mountViewer('#r', { definition: ${JSON.stringify(definition('Alpha'))}, fontsUrl: '/pw-fonts/' });
@@ -99,7 +101,7 @@ assert.equal(n, 0);
 
 // a server that cannot be reached: 'error' (its own page: the server mode is module-global state)
 const p2 = await (await b.newContext()).newPage();
-await p2.setContent(`<!doctype html><div id="e"></div><script>${bundle}</script><script>window.ev=[];const ve=ReportWright.mountViewer('#e',{server:'http://127.0.0.1:9',report:'nope'});ve.on('error',d=>ev.push(['error',d.message]));</script>`);
+await p2.setContent(`<!doctype html><div id="e"></div><script>${inline}</script><script>window.ev=[];const ve=ReportWright.mountViewer('#e',{server:'http://127.0.0.1:9',report:'nope'});ve.on('error',d=>ev.push(['error',d.message]));</script>`);
 await p2.waitForFunction(() => window.ev.length > 0, null, { timeout: 30000 });
 assert.equal(await p2.evaluate(() => ev[0][0]), 'error');
 
