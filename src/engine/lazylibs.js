@@ -107,7 +107,7 @@ function pdfLibOneFile() {
   } catch { return undefined; }
 }
 /** pdf-lib and fontkit (exportPdf embeds fonts with both). @returns {Promise<void>} */
-export const loadPdfLib = () => (pl ||= Promise.all([(req && pdfLibOneFile()) || load('pdf-lib', () => import('pdf-lib')), loadFontkit()]).then(([L]) => {
+export const loadPdfLib = () => (pl ||= Promise.all([(req && pdfLibOneFile()) || load('pdf-lib', () => import('pdf-lib').then(m => m.PDFDocument ? m : m.default)), loadFontkit()]).then(([L]) => {
   ({ PDFDocument, PDFName, PDFString, PDFHexString, PDFRawStream, PDFImage, PngEmbedder, PDFStream, PDFArray, PDFDict, PDFNumber, PDFBool, rgb,
     pushGraphicsState, popGraphicsState, concatTransformationMatrix } = L);
 }));
