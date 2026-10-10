@@ -23,7 +23,8 @@ let tmp;
 const pdftotext = (bytes) => {
   const f = path.join(tmp, `t${Math.random().toString(36).slice(2)}.pdf`);
   fs.writeFileSync(f, bytes);
-  const r = spawnSync('pdftotext', ['-layout', f, '-']);
+  const r = spawnSync('pdftotext', ['-layout', f, '-'], { maxBuffer: 1 << 30 });
+  if (r.error || r.status) throw new Error(`pdftotext failed (${r.error?.code ?? r.status}): ${r.stderr}`); // ENOBUFS cut the text short, silently
   return { text: r.stdout.toString(), err: r.stderr.toString() };
 };
 const REGIONS = ['North', 'South', 'East', 'West'];
@@ -71,6 +72,10 @@ describe('the server streams a flowing report\'s PDF', () => {
     expect(b.err).toBe('');
     expect(a.text.length).toBeGreaterThan(1e6);
     expect(b.text).toBe(a.text);
+    // the whole text, both sides: every page's footer, up to the last ("Page 438 of 438")
+    const feet = [...b.text.matchAll(/Page (\d+) of (\d+)/g)];
+    expect(feet.length).toBe(Number(feet[0][2]));
+    expect(feet.at(-1)[1]).toBe(feet[0][2]);
     // an accessible PDF/A of the same report streams too, with the same text
     const pdfa = await pdfRoute(new Request('http://pw.test/api/reports/ledger/pdf?pdfa=1&ua=1', { headers: { host: 'pw.test' } }), { params: Promise.resolve({ id: 'ledger' }) });
     expect(pdfa.headers.get('content-length')).toBeNull();
