@@ -280,6 +280,19 @@ garbage V8 has not collected yet, not rows: it does not shrink with a smaller `w
 `node --max-old-space-size=128` holds a 300,000-row export to about 180 MB). The file reads as
 `exportPdf`'s: the same pages, text and positions.
 
+**When memory stays flat.** Only when the report streams: check `r.streamed` (or `r.why`, which says why it did not;
+a report written whole holds every page, about 3–10 KB a row). It then holds when the rows' expressions are row-local
+(styles included: a zebra row, `=IIf(RowNumber() Mod 2 = 0, "#f3f4f6", "#ffffff")`, streams and stays flat, measured
+287 MB against a plain table's 270 MB at 100,000 rows), when an expression style gives a handful of distinct values (up
+to 64 per style are shared; a colour per row works but each row's style is then garbage V8 collects later), and when the
+rows come from a source read in batches (REST, CSV, SQL `sqlRows`) rather than an array you pass in, which stays in
+memory beside the export.
+
+**"Page N of M" costs a counting pass.** With `Globals.TotalPages` in the page bands the rows are read and laid out
+twice (a first pass counts the pages; past ~10,000 rows of a ledger it keeps nothing): about 1.5–1.8× the time and
++10–60 MB peak at 50,000 rows (measured 0.92 s → 1.42 s, 218 → 230 MB on a 6-column table; the 0.14 release gate
+measured ≈1.8× and +~60 MB). Use "Page N" alone when the time matters.
+
 ```js
 import fs from 'node:fs';
 import { exportPdfStream } from '@reportwright/engine';
