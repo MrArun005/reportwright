@@ -11,7 +11,7 @@
 //   visuals; a shape or line only when it has alt text, else decoration), Link > OBJR, Form > OBJR.
 // Reading order: the page model's order (the order the engine lays items out: by position, column by column).
 // Checked with veraPDF's PDF/UA-1 profile (tests/engine/export-pdfua.test.js).
-import { PDFName, PDFNumber, PDFHexString, PDFDict, PDFArray, PDFString } from '../engine/lazylibs.js'; // set once exportPdf has loaded pdf-lib
+import { PDFName, PDFNumber, PDFHexString, PDFDict, PDFArray, PDFString } from '../engine/pdflib.js'; // set once exportPdf has loaded pdf-lib
 import { figures, altOf, cellVisuals } from './figures.js';
 import { visualLines } from './regions.js';
 
