@@ -37,6 +37,19 @@ describe('npm packages', () => {
     }
   });
 
+  it('R12: import \'@reportwright/fonts\' works and names its files; the subpath exports still resolve', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rw-fonts-root-'));
+    try {
+      fs.mkdirSync(path.join(tmp, 'node_modules/@reportwright'), { recursive: true });
+      fs.symlinkSync(path.join(root, 'packages/fonts'), path.join(tmp, 'node_modules/@reportwright/fonts'));
+      const out = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', `
+        import * as f from '@reportwright/fonts'; import fs from 'node:fs'; import { fileURLToPath } from 'node:url';
+        const sub = import.meta.resolve('@reportwright/fonts/public/harfbuzz-subset.wasm');
+        console.log(JSON.stringify({ keys: Object.keys(f).sort(), ok: [f.fontsUrl + 'Inter-Regular.ttf', f.subsetWasmUrl, f.iccUrl, sub].map(u => fs.existsSync(fileURLToPath(u))) }));`], { cwd: tmp, encoding: 'utf8' }));
+      expect(out).toEqual({ keys: ['fontsUrl', 'iccUrl', 'subsetWasmUrl'], ok: [true, true, true, true] });
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  });
+
   it('the viewer package has the designer entry and generated types; the engine has its API and report types', () => {
     const v = json('packages/viewer/package.json');
     expect(v.exports['./designer'].default).toBe('./dist/designer.js');

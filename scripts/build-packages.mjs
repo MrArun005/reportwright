@@ -76,10 +76,18 @@ write(`${F}/package.json`, {
   name: '@reportwright/fonts', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'OFL-1.1 AND MIT',
   ...meta(F, ['fonts', 'harfbuzz', 'noto', 'inter', 'pdf-a', 'icc']),
   description: 'Fonts (Inter, JetBrains Mono, Noto), the HarfBuzz shaper and subsetter for @reportwright/engine.',
-  exports: { './public/*': './public/*', './package.json': './package.json' },
-  files: ['public', 'README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md'],
+  main: './index.mjs', types: './index.d.ts',
+  exports: { '.': { types: './index.d.ts', default: './index.mjs' }, './public/*': './public/*', './package.json': './package.json' },
+  files: ['index.mjs', 'index.d.ts', 'public', 'README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md'],
   sideEffects: false,
 });
+// the root import: where the files are, as URLs (Node: fileURLToPath; a bundler resolves new URL(…, import.meta.url))
+write(`${F}/index.mjs`, `/** The folder of fonts (fontsUrl / defaultFontStore), the PDF font subsetter and the PDF/A sRGB profile, as URLs. */
+export const fontsUrl = new URL('./public/fonts/', import.meta.url).href;
+export const subsetWasmUrl = new URL('./public/harfbuzz-subset.wasm', import.meta.url).href;
+export const iccUrl = new URL('./public/icc/sRGB-v2-magic.icc', import.meta.url).href;
+`);
+write(`${F}/index.d.ts`, 'export declare const fontsUrl: string;\nexport declare const subsetWasmUrl: string;\nexport declare const iccUrl: string;\n');
 fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, F, 'LICENSE')); fs.copyFileSync(path.join(root, 'THIRD-PARTY-NOTICES.md'), path.join(root, F, 'THIRD-PARTY-NOTICES.md')); docs(F); // MIT; each font's OFL is in public/fonts
 
 /* fonts-cjk: a downloader for the CJK and emoji fonts (pinned commit, SHA-256 checked); the fonts are not in the tarball */

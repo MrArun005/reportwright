@@ -6,7 +6,17 @@ The fonts, text shaper, PDF font subsetter and PDF/A colour profile that `@repor
 
 **Live demo:** [mrarun005.github.io/reportwright-demo](https://mrarun005.github.io/reportwright-demo): every report in the [live gallery](https://mrarun005.github.io/reportwright-demo/#gallery) is drawn with these fonts, loaded from a `fontsUrl` folder as described below.
 
-Kept out of the engine so the engine stays small. It has no code: it is a folder of files the engine finds by itself in Node, and that you serve as static files to the browser.
+Kept out of the engine so the engine stays small. It is a folder of files the engine finds by itself in Node, and that you serve as static files to the browser.
+
+Its root import says where those files are, as URLs (no other code):
+
+```js
+import { fontsUrl, subsetWasmUrl, iccUrl } from '@reportwright/fonts';
+import { fileURLToPath } from 'node:url';
+fileURLToPath(fontsUrl);   // …/node_modules/@reportwright/fonts/public/fonts/
+```
+
+The files themselves are the subpath `@reportwright/fonts/public/*` (e.g. `@reportwright/fonts/public/harfbuzz-subset.wasm`).
 
 
 <img src="https://raw.githubusercontent.com/MrArun005/reportwright/main/docs/screenshots/loan-statement-hindi.png" alt="A Hindi loan statement shaped with these fonts" width="40%">
