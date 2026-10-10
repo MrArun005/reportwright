@@ -239,7 +239,7 @@ export async function renderTo(def, opt = {}) {
   let sources;
   const run = (only) => render(d, /** @type {any} */ ({ ...renderOpts, ...(only ? { dataOnly: true, onSources: (s) => { sources = s; } } : sources ? { sources } : {}) }));
   const renderOpts = {
-    parameters: opt.parameters || {}, state: opt.state || {}, fontStore: fontStore(), timeZone: checkTimeZone(opt.timeZone),
+    parameters: opt.parameters || {}, strictParameters: !!opt.strictParameters, state: opt.state || {}, fontStore: fontStore(), timeZone: checkTimeZone(opt.timeZone),
     baseUrl: base, fetch, timeoutMs: renderTimeoutMs(), deadline: Date.now() + renderTimeoutMs(), // one deadline for both CSV passes (dataOnly, then the full fallback)
     maxFetchBytes: fetchMaxBytes(), fetchTimeoutMs: fetchDeadlineMs(), // the engine's own fetch limits: the server's settings (PW_FETCH_MAX_MB, PW_FETCH_DEADLINE_MS)
     exportData: !opt.modelOnly && (format !== 'pdf' || !!opt.ua), // a plain PDF needs no table data

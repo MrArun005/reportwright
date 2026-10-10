@@ -87,9 +87,9 @@ const siblingLoader = (file) => async (id) => {
 /** --allow-internal: the --base host may be a local or private address (the engine's fetch guard refuses one otherwise). */
 const baseHost = (base, internal) => { try { return base && internal ? [new URL(base).hostname.replace(/^\[|\]$/g, '')] : []; } catch { return []; } };
 
-async function renderModel(def, { parameters = {}, data, base, internal = false, now, state, file, exportData = true, dataOnly = false } = {}) {
+async function renderModel(def, { parameters = {}, data, base, internal = false, now, state, file, exportData = true, dataOnly = false, strictParameters = false } = {}) {
   try {
-    const m = await render(withData(def, data), { fontStore, parameters, exportData, dataOnly, baseUrl: base, allowHosts: baseHost(base, internal), now: now ? new Date(now) : undefined, ...(state ? { state } : {}), ...(file ? { loadReport: siblingLoader(file) } : {}) });
+    const m = await render(withData(def, data), { fontStore, parameters, strictParameters, exportData, dataOnly, baseUrl: base, allowHosts: baseHost(base, internal), now: now ? new Date(now) : undefined, ...(state ? { state } : {}), ...(file ? { loadReport: siblingLoader(file) } : {}) });
     // one line per warning: validate() and the render can name the same problem with different labels ("textbox:", "TextBox:")
     return { ...m, warnings: uniq(m.warnings) };
   } catch (e) { renderFailed(e, base); }
@@ -108,7 +108,7 @@ function renderFailed(e, base) {
  * whole model and writes exportPdf's file (encrypted files, reports that cannot stream). Into a temporary file renamed
  * when the export succeeded, so a failed run leaves no damaged PDF (and an older file at the path as it was).
  */
-async function writePdf(def, { parameters = {}, data, base, internal = false, file, exportData = false }, pdfOpts, out) {
+async function writePdf(def, { parameters = {}, data, base, internal = false, file, exportData = false, strictParameters = false }, pdfOpts, out) {
   const d = withData(def, data);
   const tmp = `${out}.${process.pid}.part`;
   const sink = fs.createWriteStream(tmp);
@@ -117,7 +117,7 @@ async function writePdf(def, { parameters = {}, data, base, internal = false, fi
   const sigs = [['SIGINT', 2], ['SIGTERM', 15], ['SIGHUP', 1]].map(([s, n]) => [s, stop(s, n)]);
   for (const [s, f] of sigs) process.once(s, f);
   try {
-    const r = await exportPdfStream(d, { fontStore, subset, parameters, exportData, baseUrl: base, allowHosts: baseHost(base, internal), ...(file ? { loadReport: siblingLoader(file) } : {}),
+    const r = await exportPdfStream(d, { fontStore, subset, parameters, strictParameters, exportData, baseUrl: base, allowHosts: baseHost(base, internal), ...(file ? { loadReport: siblingLoader(file) } : {}),
       sorter: canSpill() ? spillSorter() : undefined, ...pdfOpts }, sink); // a sort's rows spill to temporary files
     await new Promise((ok, no) => { sink.once('error', no); sink.end(ok); });
     fs.renameSync(tmp, out);
@@ -176,7 +176,7 @@ async function cmdRender(args) {
   const data = Object.fromEntries(Object.entries(pairs(values.d)).map(([k, f]) => [k, readJson(f)]));
   const fmt = values.f;
   // a plain PDF needs no table data (Excel, Word, the accessible PDF do)
-  const ro = { parameters: pairs(values.p), data, base: values.base, internal: !!values['allow-internal'], file: positionals[0], exportData: !(fmt === 'pdf' && !values.ua) };
+  const ro = { parameters: pairs(values.p), data, base: values.base, internal: !!values['allow-internal'], file: positionals[0], exportData: !(fmt === 'pdf' && !values.ua), strictParameters: true }; // -p Nope=1: an error
   let encrypt;
   try {
     encrypt = pdfEncryptOptions({ userPassword: values.password, ownerPassword: values['owner-password'], permissions: Object.fromEntries((values.deny || []).map(k => [k, false])) });

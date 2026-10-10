@@ -9,7 +9,7 @@ import { FontStore, CORE_FONT_KEY, PRELOAD_KEYS, fontsFor, fontsForDef, familyOf
 import { safeUrl } from './url.js';
 import { TextMeasurer, finishText } from './text/measure.js';
 import { loadSources, buildDataSets, coerce } from './data/index.js';
-import { evalValue, evaluate, functionTable } from './expr/evaluate.js';
+import { evalValue, evaluate, functionTable, didYouMean } from './expr/evaluate.js';
 import { isoDate, validTimeZone } from './expr/format.js';
 import { BASE_STYLE } from './style.js';
 import { resolveImageSrc } from './image.js';
@@ -138,7 +138,8 @@ export async function render(def0, opts = {}) {
   if (['pageHeader', 'body', 'pageFooter'].some(k => hasType(k === 'body' && Array.isArray(def.sections?.body) ? def.sections.body.flatMap(b => [...(b?.items || []), ...(b?.pageHeader?.items || []), ...(b?.pageFooter?.items || [])]) : def.sections?.[k]?.items, 'barcode'))) await loadBarcodes();
   let timeZone = def.timeZone || opts.timeZone;
   if (timeZone && !validTimeZone(timeZone)) { warn(`The time zone "${String(timeZone).slice(0, 60)}" is not known, so dates show in the server's zone.`); timeZone = undefined; }
-  const params = resolveParameters(def, opts.parameters || {}, { now: opts.now, timeZone, locale: def.locale });
+  // a value given for an undeclared parameter, or not of its type: a warning, or a 400 with strictParameters (the API, the CLI)
+  const params = resolveParameters(def, opts.parameters || {}, { now: opts.now, timeZone, locale: def.locale, issue: opts.strictParameters ? (m) => { throw new ReportError(m, { status: 400 }); } : warn });
 
   /** font names the report asks for that are not available (N39): never swapped without a warning @type {Set<string>} */
   const unknownFonts = new Set();
@@ -276,7 +277,7 @@ export async function render(def0, opts = {}) {
             if ((opts.chain || []).includes(id)) throw new Error('it includes itself');
             if (!defs.has(id)) defs.set(id, await opts.loadReport(id));
             const child = defs.get(id);
-            const r = await render(child, { ...opts, dataOnly: false, target, onSources: undefined, deadline: deadline ?? undefined, reportId: id, budget, fnCount, imageBudget, parameters: rq.params, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, id], bodyWidth: page.bodyWidth, state: {} });
+            const r = await render(child, { ...opts, dataOnly: false, target, onSources: undefined, deadline: deadline ?? undefined, reportId: id, budget, fnCount, imageBudget, parameters: rq.params, strictParameters: false, bodyOnly: true, depth: depth + 1, chain: [...(opts.chain || []), def.name, id], bodyWidth: page.bodyWidth, state: {} });
             results.set(key, r);
             for (const w of r.warnings) warn(`Subreport ${rq.report}: ${w}`, r.clipped?.includes(w));
           } catch (e) { if (e.timeout) throw e; results.set(key, { error: e.message }); }
@@ -714,17 +715,23 @@ function splitMulti(s, options) {
 /**
  * Defaults, types and required checks for report parameters.
  * @param {any} def @param {Record<string, any>} given the values the caller passed, by name
- * @param {{ lenient?: boolean, now?: Date, timeZone?: string, locale?: string }} [o] lenient: a missing required value is not an error (the option lists); now, timeZone, locale: for defaults such as =Today()
+ * @param {{ lenient?: boolean, now?: Date, timeZone?: string, locale?: string, issue?: (msg: string) => void }} [o] lenient: a missing required value is not an error (the option lists); now, timeZone, locale: for defaults such as =Today(); issue: hears of a value given for a parameter the report does not declare, or one that is not of its type or not one of its options
  * @returns {Record<string, any>}
  */
 export function resolveParameters(def, given, o = {}) {
-  const { lenient = false, now, timeZone, locale } = o;
+  const { lenient = false, now, timeZone, locale, issue } = o;
   const out = {}, missing = [];
   // defaults such as =Today() read the render's clock (opts.now) and zone
   const ctx = { params: {}, globals: { ExecutionTime: now || new Date() }, dataSets: {}, fields: null, functions: functionTable(def), timeZone, locale };
-  const copt = { timeZone }; // parameter values arrive in the invariant form (1234.5, 2026-03-05), whatever the locale
+  const decl = (def.parameters || []).map(p => p?.name);
+  if (issue) for (const k in given) if (!decl.includes(k)) { const g = didYouMean(k, decl); issue(`Unknown parameter "${k}"${g ? ` (did you mean "${g}"?)` : ''}; this report declares: ${decl.join(', ')}`); }
   for (const p of def.parameters || []) {
     let val = given[p.name];
+    // a value the caller gave (not a default) that is not of the parameter's type, or not one of its options
+    const own = issue && val != null && val !== '' && [val].flat().length;
+    const bad = (v, what = `takes a ${p.type}`) => issue(`The parameter "${p.name}" ${what}; ${JSON.stringify(v).slice(0, 60)} is not one`);
+    const copt = { timeZone, bad: own && bad }; // parameter values arrive in the invariant form (1234.5, 2026-03-05), whatever the locale
+    if (own && p.type === 'boolean') for (const v of [val].flat()) if (!/^(true|false|1|0|yes|no|y|n)$/i.test(v)) bad(v);
     // nullable: an explicit null is a value, so the default does not replace it
     const chosenNull = val === null && p.nullable && !p.multi && Object.hasOwn(given, p.name);
     if (!chosenNull && (val == null || val === '') && p.default != null && p.default !== '') {
@@ -739,6 +746,10 @@ export function resolveParameters(def, given, o = {}) {
       if (val === '' && (p.type !== 'string' || (p.nullable && !p.allowBlank))) val = null;
       else val = coerce(val, p.type || 'string', copt);
       if (p.required && ((val == null && !p.nullable) || (val === '' && !p.allowBlank))) missing.push(p.name);
+    }
+    if (own && p.options?.map && !p.optionsFrom) {
+      const key = (x) => (x instanceof Date ? isoDate(x, timeZone) : String(x)), ok = p.options.map(x => key(x?.value ?? x));
+      for (const v of [val].flat()) if (v != null && !ok.includes(key(v))) bad(key(v), 'takes one of its options');
     }
     out[p.name] = val;
     ctx.params[p.name] = val;

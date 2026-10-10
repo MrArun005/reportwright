@@ -91,3 +91,42 @@ describe('3. a misspelled parameter', () => {
     expect(validate(d('=Parameters.region')).errors).toEqual([]);
   });
 });
+
+describe('3. parameter values a caller gives', () => {
+  const d = () => def([{ a: 1 }], [{ type: 'textbox', name: 'X', x: 0, y: 0, w: 200, h: 20, value: '=Parameters.Min' }], { parameters: [
+    { name: 'Min', type: 'number', default: 1 }, { name: 'Region', type: 'string', options: ['North', 'South'] },
+    { name: 'On', type: 'boolean' }, { name: 'From', type: 'date' }] });
+  const cases = [
+    [{ Nope: 1 }, 'Unknown parameter "Nope"; this report declares: Min, Region, On, From'],
+    [{ Regoin: 'North' }, 'Unknown parameter "Regoin" (did you mean "Region"?); this report declares: Min, Region, On, From'],
+    [{ min: 2 }, 'Unknown parameter "min" (did you mean "Min"?)'],
+    [{ Min: 'not a number' }, 'The parameter "Min" takes a number; "not a number" is not one'],
+    [{ From: '31/12/2026' }, 'The parameter "From" takes a date; "31/12/2026" is not one'],
+    [{ On: 'maybe' }, 'The parameter "On" takes a boolean; "maybe" is not one'],
+    [{ Region: 'East' }, 'The parameter "Region" takes one of its options; "East" is not one'],
+  ];
+  for (const [given, msg] of cases) {
+    it(`${JSON.stringify(given)}: a warning, and a 400 with strictParameters`, async () => {
+      expect((await render(d(), { fontStore, parameters: given })).warnings.join('\n')).toContain(msg);
+      await expect(render(d(), { fontStore, parameters: given, strictParameters: true })).rejects.toMatchObject({ status: 400, message: expect.stringContaining(msg) });
+    });
+  }
+  it('good values say nothing, strict or not', async () => {
+    const m = await render(d(), { fontStore, strictParameters: true, parameters: { Min: '2', Region: 'North', On: 'true', From: '2026-12-31' } });
+    expect(texts(m)).toEqual(['2']);
+    expect(m.warnings.join('\n')).not.toMatch(/parameter/i);
+  });
+});
+
+describe('3. pw render -p with a name the report does not declare', () => {
+  it('fails, naming the parameter and what the report declares', async () => {
+    const { spawnSync } = await import('node:child_process');
+    const fs = await import('node:fs'), os = await import('node:os'), path = await import('node:path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-p-'));
+    const file = path.join(dir, 'r.pw.json');
+    fs.writeFileSync(file, JSON.stringify(def([{ a: 1 }], [{ type: 'textbox', x: 0, y: 0, w: 100, h: 20, value: 'x' }], { parameters: [{ name: 'Min', type: 'number' }, { name: 'Region', type: 'string' }] })));
+    const r = spawnSync(process.execPath, ['bin/pw.mjs', 'render', file, '-p', 'Nope=1', '-o', path.join(dir, 'r.pdf')], { encoding: 'utf8' });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('Unknown parameter "Nope"; this report declares: Min, Region');
+  }, 60000);
+});
