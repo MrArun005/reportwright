@@ -18,12 +18,18 @@ const ctx = await b.newContext({ viewport: { width: 1280, height: 860 }, acceptD
 const p = await ctx.newPage();
 const errs = [];
 p.on('pageerror', e => errs.push(e.message));
+const logs = [];
+p.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') logs.push(m.text()); });
 const ready = async () => {
   await p.waitForSelector('.vpage svg', { timeout: 60000 });
   await p.waitForFunction(() => !document.querySelector('.stat[title*="still rendering"]'));
 };
 const download = async (testid) => {
-  const [d] = await Promise.all([p.waitForEvent('download', { timeout: 120000 }), openExport(p).then(() => p.getByTestId(testid).click())]);
+  const [d] = await Promise.all([p.waitForEvent('download', { timeout: 120000 }), openExport(p).then(() => p.getByTestId(testid).click())]).catch(async (e) => {
+    await p.screenshot({ path: `/tmp/shots/exports-b2-${testid}-fail.png` }); // what the viewer shows instead (CI artifact)
+    console.log('no download:', testid, 'page errors:', errs, 'console:', logs);
+    throw e;
+  });
   return { name: d.suggestedFilename(), bytes: fs.readFileSync(await d.path()) };
 };
 
