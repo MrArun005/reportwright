@@ -161,7 +161,7 @@ assert.ok(!(await (await req('/api/users', { cookie: admin.cookie })).text()).in
 step('the last admin cannot be demoted');
 r = await req(`/api/users/${encodeURIComponent(ADMIN)}`, { method: 'PATCH', cookie: admin.cookie, headers: H, body: { role: 'viewer' } });
 const others = JSON.parse(await (await req('/api/users', { cookie: admin.cookie })).text()).filter(u => u.role === 'admin' && !u.disabled && u.email !== ADMIN);
-if (!others.length) { assert.equal(r.status, 409); assert.match((await r.json()).error, /last admin/); }
+if (!others.length) { assert.equal(r.status, 409); assert.match((await r.json()).error, /own account/); } // the admin is the last one, and refused as itself first (cf947ed2)
 
 step('sign-out: the cookie is cleared and the session is dead on the server');
 await pv.goto(`${BASE}/login`);
