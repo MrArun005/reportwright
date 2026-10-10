@@ -214,7 +214,9 @@ export async function render(def0, opts = {}) {
         const ds = item.dataSet || defaultDs;
         const rows = (ds && dataSets[ds]) || [];
         // a window of a longer report (paged.js): Fields outside the rows read the report's first row, not the window's
-        return { ...baseCtx, globals, fields: (opts.pageWindow?.first && ds === defaultDs ? opts.pageWindow.first : rows[0]) || null, aggRows: rows };
+        // the data set's caseSensitive (RDL's DataSet CaseSensitivity) holds in the regions over it too: groups, sorts, filters
+        const cs = def.dataSets?.find?.((/** @type {any} */ d) => d?.name === ds)?.caseSensitive;
+        return { ...baseCtx, globals, fields: (opts.pageWindow?.first && ds === defaultDs ? opts.pageWindow.first : rows[0]) || null, aggRows: rows, ...(cs != null ? { caseSensitive: cs === true } : {}) };
       },
       subreports: null,
       bodyWidth: opts.bodyWidth ?? page.bodyWidth,

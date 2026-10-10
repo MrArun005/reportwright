@@ -2310,6 +2310,8 @@ function dataPart(ar, cx) {
     cx.dsFields.set(name, new Set(fields.map(fd => fd.name.toLowerCase())));
     /** @type {Record<string, any>} */
     const out = { name, source: '', path: '$', fields };
+    // RDL's CaseSensitivity="True": its groups, sorts and filters tell "a" from "A" (the default, Auto/False, does not)
+    if (/^true$/i.test(String(d.CaseSensitivity ?? ''))) out.caseSensitive = true;
     const m = /^\$dataset:(.+)$/i.exec(srcRef);
     if (m) { nested.push({ out, chain: m[1].split('/') }); sets.push(out); return; }
     const src = info.get(srcRef);

@@ -727,6 +727,7 @@ function toRdlx(root, notes, year, resolve) {
         ...(xmlQ ? { Xml: xmlQ } : {}),
         QueryParameters: list(q, 'QueryParameters', 'QueryParameter').map(p => ({ Name: String(p.attrs.Name || '').replace(/[^@\w]/g, ''), Value: val(p, 'Value') })) },
       Filters: filters(d),
+      CaseSensitivity: raw(d, 'CaseSensitivity'),
     };
   });
   for (const d of DataSources.filter(x => String(x.ConnectionProperties.DataProvider).toUpperCase() === 'ENTERDATA')) DataSources.splice(DataSources.indexOf(d), 1);

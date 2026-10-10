@@ -147,3 +147,31 @@ describe('4. siblings', () => {
     expect((await render(d, { fontStore })).warnings.join('\n')).toMatch(/S: Sum: the scope "Rowz" does not exist/);
   });
 });
+
+describe('grouping case: case-insensitive by default (RDL), caseSensitive: true tells "a" from "A"', () => {
+  const rows = [{ r: 'a', n: 1 }, { r: 'A', n: 2 }, { r: 'b', n: 4 }];
+  const grouped = (extra = {}, ds = {}) => {
+    const d = def(rows, [table({ groups: [{ expr: '=Fields.r', header: [{ cells: [{ value: '=Fields.r & ":" & Sum(Fields.n)' }] }] }], detail: [] })], extra);
+    Object.assign(d.dataSets[0], ds);
+    return d;
+  };
+  it('by default a and A are one group, showing the first value seen', async () => {
+    expect(texts(await render(grouped(), { fontStore }))).toEqual(['a:3', 'b:4']);
+  });
+  it('caseSensitive: true on the report or the data set keeps them apart', async () => {
+    expect(texts(await render(grouped({ caseSensitive: true }), { fontStore }))).toEqual(['a:1', 'A:2', 'b:4']);
+    expect(texts(await render(grouped({}, { caseSensitive: true }), { fontStore }))).toEqual(['a:1', 'A:2', 'b:4']);
+  });
+});
+
+describe('RDL CaseSensitivity on a data set is imported as caseSensitive', () => {
+  const rdl = (attr) => `<?xml version="1.0"?><Report xmlns="http://schemas.microsoft.com/sqlserver/reporting/2016/01/reportdefinition">
+<DataSources><DataSource Name="D"><ConnectionProperties><DataProvider>JSON</DataProvider><ConnectString/></ConnectionProperties></DataSource></DataSources>
+<DataSets><DataSet Name="Rows"><Query><DataSourceName>D</DataSourceName><CommandText/></Query>${attr}<Fields><Field Name="r"><DataField>r</DataField></Field></Fields></DataSet></DataSets>
+<ReportSections><ReportSection><Body><ReportItems/><Height>1in</Height></Body><Width>6in</Width><Page><PageHeight>11in</PageHeight><PageWidth>8.5in</PageWidth></Page></ReportSection></ReportSections></Report>`;
+  it('True maps to caseSensitive: true; Auto, False or none leave the default', async () => {
+    const { importRdl } = await import('../../src/importers/rdl.js');
+    expect(importRdl(rdl('<CaseSensitivity>True</CaseSensitivity>')).definition.dataSets[0].caseSensitive).toBe(true);
+    for (const a of ['<CaseSensitivity>False</CaseSensitivity>', '<CaseSensitivity>Auto</CaseSensitivity>', '']) expect(importRdl(rdl(a)).definition.dataSets[0]).not.toHaveProperty('caseSensitive');
+  });
+});
