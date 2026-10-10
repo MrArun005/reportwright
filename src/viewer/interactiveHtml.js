@@ -86,7 +86,9 @@ export async function exportInteractiveHtml(def, opt = {}) {
   // the single-file bundle (the loader in reportwright-viewer.js would need the server)
   const bundleRes = await fetch(`${base}/embed/reportwright-viewer.full.js`);
   if (!bundleRes.ok) throw Object.assign(new Error('The viewer bundle is missing. Run "npm run build:embed" (it also runs in "npm run build").'), { code: 'NO_BUNDLE' });
-  const bundle = (await bundleRes.text()).replace(/<\/script/gi, '<\\/script');
+  // inline in <script>: "</script" would end it early, and "<!--" then "<script" would keep the real </script> from
+  // ending it (the rest of the page becomes script); \x3C is the same "<" in a string, a regex or a comment
+  const bundle = (await bundleRes.text()).replace(/<(!--|\/?script)/gi, '\\x3C$1');
 
   // the default fonts, the ones this view draws with (fallbacks, uploaded fonts) and the shaper when text needs it
   const used = fontKeysOf(opt.model);
