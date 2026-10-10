@@ -1,7 +1,7 @@
 # Publishes the @reportwright/* packages to npm with provenance (a signed statement, checked by npm and Socket, that
 # the tarball was built from this repository by this workflow).
-# NOTE: npm provenance is generated only for public repositories. The repository is private, so the --provenance
-# publish below cannot succeed until it is public. Until then, publish by hand (docs/RELEASING.md "By hand").
+# NOTE: npm provenance is generated only for public repositories, so --provenance is added only when the repository is
+# public; while it is private the packages are published without it. The NPM_TOKEN secret is required (checked first).
 #
 # Runs only when the owner starts it: publish a GitHub release, or "Run workflow" on the Actions tab.
 # Before the first run, the owner sets up ONE of:
@@ -51,6 +51,15 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
+      # Fail fast, before any build: the latest job always needs NPM_TOKEN (npm dist-tag has no trusted publishing).
+      - name: Check the NPM_TOKEN secret
+        env:
+          HAS_TOKEN: ${{ secrets.NPM_TOKEN != '' }}
+        run: |
+          if [ "$HAS_TOKEN" != "true" ]; then
+            msg="The repository secret NPM_TOKEN is missing. Create an Automation token on npmjs.com (Access Tokens), then add it under Settings > Secrets and variables > Actions as NPM_TOKEN. See docs/RELEASING.md."
+            echo "::error::$msg"; echo "### publish stopped: $msg" >> "$GITHUB_STEP_SUMMARY"; exit 1
+          fi
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -65,12 +74,15 @@ jobs:
       - id: v
         run: echo "version=$(node -p "require('./packages/engine/package.json').version")" >> "$GITHUB_OUTPUT"
       # fonts first: the engine, the CLI and the viewer depend on it at the same version. --tag next: not `latest` yet.
-      - name: npm publish --provenance --tag next
+      # --provenance only when the repository is public: npm refuses provenance from a private repository.
+      - name: npm publish --tag next (--provenance when public)
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          REPO_PRIVATE: ${{ github.event.repository.private }}
         run: |
+          prov=--provenance; [ "$REPO_PRIVATE" = "false" ] || { prov=; echo "private repository: publishing without --provenance"; }
           for p in $PACKAGES; do
-            npm publish "./packages/$p" --provenance --access public --tag next
+            npm publish "./packages/$p" $prov --access public --tag next
           done
 
   verify:

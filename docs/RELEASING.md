@@ -5,11 +5,17 @@ All `@reportwright/*` packages share one version (the root `package.json`). They
 fonts, fonts-cjk, engine, cli, viewer, react, vue, svelte, angular.
 
 **Provenance needs a public repository.** npm's provenance statement (a signed record that the tarball was built from
-this repository by that workflow) is generated only for public GitHub repositories. The repository is private for now,
-so `--provenance` cannot succeed and no package is published with a provenance badge. The workflow is kept so the
-publish path is ready: until the repository goes public, publish by hand (see "By hand" below), and do not add a
-provenance badge or claim to a README. When the repository goes public: make it public, re-run the publish workflow for
-the next release, then check each package on npmjs.com shows "Provenance" before adding any badge.
+this repository by that workflow) is generated only for public GitHub repositories. The workflow adds `--provenance`
+only when the repository is public (it reads `github.event.repository.private`); while it is private it publishes
+without provenance. Do not add a provenance badge or claim to a README until each package on npmjs.com shows
+"Provenance" after a release from the public repository.
+
+**The workflow must be on `main`.** GitHub only offers "Run workflow" (and runs release-triggered workflows) for a
+workflow file that exists on the default branch. A copy that lives only on a feature branch cannot be dispatched.
+
+**Versions.** The verify and latest jobs accept only a plain `X.Y.Z` version. A pre-release such as `0.14.0-rc.1`
+publishes to `next` from the publish job, then stops at verify ("bad version"), so `latest` never moves for it.
+Publish release candidates by hand (below) or accept that verify stops.
 
 ## The 0.9.0 rename (Pagewright → ReportWright): the owner's steps, in order
 
@@ -56,7 +62,7 @@ publishing (below) can only be added after this first publish.
 
 ## One-time setup (the owner)
 
-Pick one of the two.
+Trusted publishing (A) is optional; the token (B) is required.
 
 **A. Trusted publishing (preferred: no token to leak or rotate).** On npmjs.com, for each package:
 package page > Settings > Trusted Publisher > GitHub Actions, then fill in:
@@ -68,9 +74,17 @@ package page > Settings > Trusted Publisher > GitHub Actions, then fill in:
 
 A trusted publisher can only be added to a package that already exists: publish 0.9.0 by hand first (above).
 
-**B. A token.** On npmjs.com: Access Tokens > Generate New Token > Granular, with read and write on the
-`@reportwright` scope. Save it in GitHub: repository Settings > Secrets and variables > Actions > New repository
-secret, named `NPM_TOKEN`.
+**B. A token (required).** The workflow checks for the `NPM_TOKEN` secret first and stops with a clear message if
+it is missing; the `latest` job always needs it, because `npm dist-tag` has no trusted publishing.
+
+1. On npmjs.com: your avatar > Access Tokens > Generate New Token. Choose an **Automation** token if your account
+   still offers that type; otherwise a Granular token with read and write on the `@reportwright` scope and "Bypass
+   two-factor authentication" ticked (CI cannot answer a 2FA prompt). npm has been retiring classic tokens, so the
+   granular one is the safe choice.
+2. Copy the token (it is shown once).
+3. On GitHub: repository Settings > Secrets and variables > Actions > New repository secret. Name: `NPM_TOKEN`,
+   value: the token.
+4. Rotate it by generating a new token and replacing the secret; then revoke the old one on npmjs.com.
 
 ## Each release
 
