@@ -1,7 +1,7 @@
 // Phase B/C in the browser: dashboard template, map and form-field items, AI box, pageless + PDF/A on the server.
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
-import { PDFDocument } from 'pdf-lib';
+import { loadPdf } from '@reportwright/pdf';
 const BASE = process.env.BASE || 'http://localhost:3000';
 const step = (s) => console.log('·', s);
 const created = [];
@@ -40,9 +40,9 @@ assert.ok(t.includes('No shapes or points to draw'), 'map placeholder drawn');
 step('server renders the pageless dashboard and PDF/A');
 let r = await fetch(`${BASE}/api/reports/${id}/pdf`);
 assert.equal(r.status, 200);
-const doc = await PDFDocument.load(await r.arrayBuffer());
-const { width } = doc.getPage(0).getSize();
-assert.equal(doc.getPageCount(), 1);
+const doc = await loadPdf(await r.arrayBuffer());
+const { width } = doc.page(0);
+assert.equal(doc.pageCount, 1);
 assert.equal(width, 960);
 r = await fetch(`${BASE}/api/reports/${id}/pdf?pdfa=1`);
 assert.equal(r.status, 200);

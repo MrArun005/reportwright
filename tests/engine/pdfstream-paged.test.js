@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync, execFileSync } from 'node:child_process';
-import { PDFDocument } from 'pdf-lib';
+import { loadPdf } from '@reportwright/pdf';
 import { render } from '../../src/engine/index.js';
 import { planPaged } from '../../src/engine/paged.js';
 import { exportPdf } from '../../src/exporters/pdf.js';
@@ -180,9 +180,9 @@ describe('exportPdfStream', () => {
       expect(b.text).toBe(a.text);
     }
     expect(pdftotext(pdf).text).toMatch(/Page 2 of \d+/);
-    const [x, y] = [await PDFDocument.load(today), await PDFDocument.load(pdf)];
-    expect(y.getPageCount()).toBe(x.getPageCount());
-    expect(r.pages).toBe(x.getPageCount());
+    const [x, y] = [await loadPdf(today), await loadPdf(pdf)];
+    expect(y.pageCount).toBe(x.pageCount);
+    expect(r.pages).toBe(x.pageCount);
     expect(pdf.length / today.length).toBeLessThan(1.05); // object streams, literal text, zlib 9: about exportPdf's size
   });
 
