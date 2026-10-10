@@ -94,7 +94,7 @@ start.addEventListener('change', async () => {
   const id = start.value;
   if (id === MINE) return;
   if (!confirmLose()) { start.value = start.dataset.at || ''; return; }
-  start.dataset.at = id;
+  start.dataset.at = id; attached = null; showPick('');
   try { await open(id ? await getJson(`api/reports/${id}`) : structuredClone(BLANK)); say(id ? `Opened "${start.selectedOptions[0].text}". Edits stay in this browser.` : ''); }
   catch (e) { say(`Could not open it: ${e.message}`); }
 });
@@ -102,7 +102,7 @@ $('#fresh').addEventListener('click', async () => {
   if (!confirmLose()) return;
   try { localStorage.removeItem(KEY); } catch {}
   history.replaceState(null, '', location.pathname + location.search);
-  start.value = ''; start.dataset.at = '';
+  start.value = ''; start.dataset.at = ''; attached = null; showPick('');
   await open(structuredClone(BLANK)); say('Started fresh.');
 });
 
@@ -110,15 +110,97 @@ $('#fresh').addEventListener('click', async () => {
 const data = $('#data'), file = $('#file');
 for (const [label, path] of SAMPLES) data.append(el('option', { value: `s:${path}`, textContent: label }));
 data.append(el('option', { value: 'paste', textContent: 'Paste JSON or CSV…' }), el('option', { value: 'file', textContent: 'Load a JSON or CSV file…' }));
-/** Make `payload` (parsed JSON, or CSV text) the report's data source "data", keeping everything else. */
+/* What a data pick added to the report, so the next pick (or "Choose…") takes exactly that back out. */
+let attached = null; // { set, table, rebound: { name: { source, path } } }
+const scalarType = (vals) => {
+  const v = vals.filter(x => x != null && x !== '');
+  if (v.length && v.every(x => typeof x === 'number')) return 'number';
+  if (v.length && v.every(x => typeof x === 'boolean')) return 'boolean';
+  if (v.length && v.every(x => typeof x === 'string' && /^\d{4}-\d\d-\d\d/.test(x))) return 'date';
+  return 'string';
+};
+/** Every list of records (and single record) in the payload, with its JSONPath, row count and scalar fields. */
+function tables(payload) {
+  if (typeof payload === 'string') { // CSV: the header row names the fields
+    const [head, ...rows] = payload.trim().split(/\r?\n/);
+    return [{ path: '$', rows: rows.length, fields: head.split(',').map(n => ({ name: n.trim().replace(/^"|"$/g, ''), type: 'string' })) }];
+  }
+  const out = [];
+  const fieldsOf = (rows) => {
+    const keys = [...new Set(rows.flatMap(r => Object.keys(r)))];
+    return keys.filter(k => rows.every(r => r[k] == null || typeof r[k] !== 'object')).map(k => ({ name: k, type: scalarType(rows.map(r => r[k])) }));
+  };
+  const walk = (o, path) => {
+    if (Array.isArray(o)) {
+      const rows = o.filter(r => r && typeof r === 'object' && !Array.isArray(r));
+      if (rows.length) out.push({ path, rows: o.length, fields: fieldsOf(rows.slice(0, 50)) });
+    } else if (o && typeof o === 'object') {
+      if (path !== '$') out.push({ path, rows: 1, single: true, fields: fieldsOf([o]) });
+      for (const [k, v] of Object.entries(o)) if (/^\w+$/.test(k)) walk(v, `${path}.${k}`);
+    }
+  };
+  walk(payload, '$');
+  return out;
+}
+/** Take out what the last data pick added: the "data" source, its data set and table, and rebound data sets. */
+function detach(def) {
+  def.dataSources = (def.dataSources || []).filter(s => s.name !== 'data');
+  if (!attached) return def;
+  def.dataSets = (def.dataSets || []).filter(d => d.name !== attached.set).map(d => (attached.rebound[d.name] ? { ...d, ...attached.rebound[d.name] } : d));
+  if (attached.table && def.sections?.body?.items) def.sections.body.items = def.sections.body.items.filter(i => i.name !== attached.table);
+  attached = null;
+  return def;
+}
+/**
+ * Make `payload` (parsed JSON, or CSV text) the report's data source "data" and put it to use: data sets of the template
+ * whose fields it has are pointed at it; otherwise it becomes a new data set (fields detected), and a blank page gets a
+ * table of it so Preview shows rows. `payload` null just takes the last pick back out.
+ */
 async function useData(payload, label) {
   if (!designer) return;
-  const def = current();
-  const src = typeof payload === 'string' ? { name: 'data', type: 'csv', data: payload } : { name: 'data', type: 'json', data: payload };
-  const srcs = (def.dataSources || []).filter(s => s.name !== 'data');
-  def.dataSources = [...srcs, src];
+  const def = detach(current());
+  if (payload == null) { await open(def); return say('No data attached. The report uses its own data again.'); }
+  const found = tables(payload);
+  const main = found.filter(t => !t.single).sort((x, y) => y.rows - x.rows)[0] || found[0];
+  if (!main) return say(`"${label}" has no list of records to use as rows.`);
+  def.dataSources.push(typeof payload === 'string' ? { name: 'data', type: 'csv', data: payload } : { name: 'data', type: 'json', data: payload });
+  attached = { set: null, table: null, rebound: {} };
+  // a template's data set "matches" when the data has a list (same path first) with every field it declares
+  const names = (d) => (d.fields || []).filter(f => !f.expr).map(f => f.name);
+  const fits = (d) => names(d).length && [found.find(t => t.path === d.path), ...found].find(t => t && names(d).every(n => t.fields.some(f => f.name === n)));
+  const sets = def.dataSets || (def.dataSets = []);
+  for (const d of sets) {
+    const t = fits(d);
+    if (t) { attached.rebound[d.name] = { source: d.source, path: d.path }; d.source = 'data'; d.path = t.path; }
+  }
+  const rebound = Object.keys(attached.rebound);
+  let name = '';
+  if (!rebound.length) {
+    const base = main.path === '$' ? 'data' : main.path.split('.').pop();
+    name = base; for (let i = 2; sets.some(d => d.name === name); i++) name = `${base}${i}`;
+    sets.push({ name, source: 'data', path: main.path, fields: main.fields });
+    attached.set = name;
+    const body = def.sections?.body;
+    if (body && !(body.items || []).length) { // blank page: a table of the first fields, so Preview has rows to show
+      const cols = main.fields.slice(0, 6), w = Math.floor(523 / cols.length);
+      attached.table = `${name}Table`;
+      body.items = [{ type: 'table', name: attached.table, x: 0, y: 0, w: w * cols.length, h: 40, dataSet: name, repeatHeader: true,
+        columns: cols.map(() => ({ width: w })), style: { fontSize: 8, padding: [3, 4, 3, 4] },
+        header: [{ height: 18, style: { fontWeight: 'bold', borderBottom: '0.5 solid #9ca3af' }, cells: cols.map(f => ({ value: f.name })) }],
+        detail: [{ height: 16, cells: cols.map(f => ({ value: `=Fields.${f.name}`, style: f.type === 'number' ? { textAlign: 'right' } : undefined })) }] }];
+    }
+  }
   await open(def);
-  say(`Data "${label}" added as the data source "data". Open the Data panel to build a data set from it.`);
+  const what = `${label} (${main.rows.toLocaleString('en-US')} ${main.rows === 1 ? 'row' : 'rows'})`;
+  if (rebound.length) say(`${what} now feeds the data set${rebound.length > 1 ? 's' : ''} ${rebound.map(n => `"${n}"`).join(', ')} of this report. Press Preview to see the report with it.`);
+  else if (attached.table) say(`${what} is now data set "${name}" with ${main.fields.length} fields, and the page has a table of it. Press Preview to see the rows, or drag more fields from the Data panel.`);
+  else say(`${what} is now data set "${name}" with ${main.fields.length} fields. Its fields don't match this report's data sets (${sets.filter(d => d.name !== name).map(d => `"${d.name}"`).join(', ') || 'none'}), so the report still shows its own data: drag fields from "${name}" in the Data panel onto the page.`);
+}
+/** Show the picked data in the Data dropdown; a file or pasted text gets its own entry. */
+function showPick(value, label) {
+  data.querySelector('[value="cur"]')?.remove();
+  if (value === 'cur') data.append(el('option', { value: 'cur', textContent: label }));
+  data.value = data.dataset.at = value;
 }
 const parseText = (text, name = '') => {
   const t = text.trim();
@@ -127,21 +209,23 @@ const parseText = (text, name = '') => {
   try { return JSON.parse(t); } catch (e) { throw new Error(`Not valid JSON: ${e.message}`); }
 };
 data.addEventListener('change', async () => {
-  const v = data.value; data.value = '';
-  if (v === 'paste') return $('#paste-dlg').showModal();
-  if (v === 'file') return file.click();
-  if (!v) return;
-  try { await useData(await getJson(`api/sample/${v.slice(2)}`), data.querySelector(`[value="${v}"]`).textContent); }
-  catch (e) { say(`Could not load the sample: ${e.message}`); }
+  const v = data.value;
+  if (v === 'paste' || v === 'file') { data.value = data.dataset.at || ''; return v === 'paste' ? $('#paste-dlg').showModal() : file.click(); }
+  if (v === 'cur') return;
+  try {
+    if (!v) { if (attached) await useData(null); return showPick(''); }
+    const label = data.selectedOptions[0].textContent;
+    await useData(await getJson(`api/sample/${v.slice(2)}`), label); showPick(v);
+  } catch (e) { data.value = data.dataset.at || ''; say(`Could not load the sample: ${e.message}`); }
 });
 file.addEventListener('change', async () => {
   const f = file.files[0]; file.value = '';
   if (!f) return;
-  try { await useData(parseText(await f.text(), f.name), f.name); } catch (e) { say(e.message); }
+  try { await useData(parseText(await f.text(), f.name), f.name); showPick('cur', f.name); } catch (e) { say(e.message); }
 });
 $('#paste-ok').addEventListener('click', async (ev) => {
   ev.preventDefault();
-  try { const p = parseText($('#paste-text').value); $('#paste-err').textContent = ''; $('#paste-dlg').close(); await useData(p, 'pasted data'); }
+  try { const p = parseText($('#paste-text').value); $('#paste-err').textContent = ''; $('#paste-dlg').close(); await useData(p, 'Pasted data'); showPick('cur', 'Pasted data'); }
   catch (e) { $('#paste-err').textContent = e.message; }
 });
 
@@ -164,7 +248,7 @@ async function exportAs(fmt, btn) {
   finally { try { v?.unmount(); } catch {} box.remove(); btn.disabled = false; }
 }
 for (const b of document.querySelectorAll('[data-export]')) b.addEventListener('click', () => exportAs(b.dataset.export, b));
-const downloadJson = () => designer && download(new Blob([JSON.stringify(current(), null, 2)], { type: 'application/json' }), `${fileBase()}.pw.json`);
+const downloadJson = () => { if (!designer) return; download(new Blob([JSON.stringify(current(), null, 2)], { type: "application/json" }), `${fileBase()}.pw.json`); say(`Downloaded ${fileBase()}.pw.json.`); };
 $('#dl-json').addEventListener('click', downloadJson);
 
 /* ---------- share ---------- */
