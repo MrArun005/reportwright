@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { rowArrays, bestRows } from './explore.js';
-import { useDesigner, walk } from './store.js';
+import { useDesigner, walk, activeStore } from './store.js';
 import { MIME_FIELD, MIME_DATASET } from './Canvas.jsx';
 import { loadSources, buildDataSets, detectFields, jsonPath, sourceRows, isXmlDoc, FETCHED_TYPES } from '@/engine/data/index.js';
 import { xmlRowPaths, bestXmlRows } from '@/engine/data/xml.js';
