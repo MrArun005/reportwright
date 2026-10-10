@@ -38,8 +38,9 @@ export function openSink(sink) {
     const w = sink.getWriter();
     return {
       async write(/** @type {Uint8Array} */ b) { await w.ready; await w.write(b); },
-      close: () => w.close(),
-      abort: (/** @type {any} */ e) => { w.abort(e).catch(() => {}); },
+      // every stop releases the lock so the caller can reuse or cancel the stream; close's own error still propagates
+      close: () => w.close().finally(() => w.releaseLock()),
+      abort: (/** @type {any} */ e) => { w.abort(e).catch(() => {}); w.releaseLock(); },
     };
   }
   if (typeof sink.once === 'function' && typeof sink.end === 'function') { // Node Writable
