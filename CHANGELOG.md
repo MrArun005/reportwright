@@ -6,6 +6,7 @@ All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. T
 
 ### Changed
 - **`@reportwright/pdf` 0.1.0-beta.11** (was beta.9). It is not on npm yet: `package.json` names it, and `package-lock.json` updates once beta.11 is published (until then `npm ci` installs beta.9's lock entry; install the tarball over `node_modules/@reportwright/pdf`).
+- **`exportPdf` of reports whose pages differ in size, or whose page numbering restarts (`newSection`), no longer loads pdf-lib.** The paged writer writes each page's own height into the outline's places and the links' jumps, and the page labels from the sections. Gate: `node scripts/writer-parity.mjs --baseline pdflib --corpus scripts/parity-corpus.mjs` (pixel-identical, same labels, outline and text).
 
 ## 0.14.0-rc.3 — 2026-10-10 (release candidate)
 

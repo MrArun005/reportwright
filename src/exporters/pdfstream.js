@@ -356,8 +356,9 @@ export function createPdfStream(sink, opt) {
     },
     /**
      * The end of the file: totals, fonts, resources, page tree, outline, catalog, Info, xref, trailer.
-     * @param {{ outline?: OutlineEntry[], info?: { title?: string, author?: string, subject?: string, creationDate?: Date }, catalog?: string }} [o]
-     *   catalog: more entries for the catalog (the structure tree, metadata, output intents).
+     * @param {{ outline?: OutlineEntry[], info?: { title?: string, author?: string, subject?: string, creationDate?: Date }, catalog?: string, pageStarts?: number[] }} [o]
+     *   catalog: more entries for the catalog (the structure tree, metadata, output intents). pageStarts: the pages
+     *   (0-based) where the numbering restarts at 1 (the page labels).
      * @returns {Promise<{ pages: number, bytes: number }>}
      */
     async finish(o = {}) {
@@ -393,7 +394,7 @@ export function createPdfStream(sink, opt) {
 
       const outline = await writeOutline(o.outline || []);
       const catalog = reserve();
-      await writeObj(catalog, `<< /Type /Catalog /Pages ${pagesRoot} 0 R /PageLabels << /Nums [0 << /S /D /St 1 >>] >>${outline ? ` /Outlines ${outline} 0 R /PageMode /UseOutlines` : ''}${o.catalog || ''} >>`);
+      await writeObj(catalog, `<< /Type /Catalog /Pages ${pagesRoot} 0 R /PageLabels ${pageLabels(o.pageStarts, pages)}${outline ? ` /Outlines ${outline} 0 R /PageMode /UseOutlines` : ''}${o.catalog || ''} >>`);
       const info = reserve();
       await writeObj(info, infoDict(o.info));
 
@@ -464,7 +465,7 @@ export function createPdfStream(sink, opt) {
       const outline = await writeOutline(o.outline || []);
       if (outline) { core.catalog('Outlines', `${outline} 0 R`); core.catalog('PageMode', '/UseOutlines'); }
     });
-    core.catalog('PageLabels', '<< /Nums [0 << /S /D /St 1 >>] >>');
+    core.catalog('PageLabels', pageLabels(o.pageStarts, Math.max(1, pages)));
     for (const [k, v] of dictEntries(o.catalog || '')) core.catalog(k, v);
     core.info = infoDict(o.info);
     const r = await /** @type {any} */ (opt.pdf).end();
@@ -725,7 +726,7 @@ export async function writePagedPdf(plan, opts, sink) {
   const w = createPdfStream(sink, { fontStore, subset: opts.subset, id: opts.id, signal: opts.signal, pdf: await newWriter(sink, opts), onWarning });
   // tagged (PDF/UA-1): a structure tree written as the pages are (pdfstreamtags.js)
   const tags = opts.tagged ? createStreamTagger(w, { maxElements: Number(opts.tagged.maxElements) || Infinity }) : null;
-  const env = paintEnv(w, fontStore, { drillBase: opts.drillBase, tags, embedAll: !!(opts.pdfa || tags) });
+  const env = paintEnv(w, fontStore, { drillBase: opts.drillBase, tags, embedAll: !!(opts.pdfa || tags), pageHeight: info.pageHeights ? (/** @type {number} */ i) => info.pageHeights[i] : undefined });
   const { shaped } = env;
   // opts.parallel: windows laid out and painted by that many worker threads (Node), their pages written here in order;
   // 'auto': as many as the cores but one (4 at most), started only once the report is big (paged.js, lazy)
@@ -733,6 +734,8 @@ export async function writePagedPdf(plan, opts, sink) {
   const size = auto ? autoWorkers() : Number(opts.parallel);
   const pool = !tags && (auto ? size > 0 : size > 1) ? paintPool(size, fontStore, opts, info) : null;
   let pi = -1;
+  /** each page's height, for the outline's places @type {number[]} */
+  const heights = [];
   const it = pages(pool ? { run: pool.run, parallel: pool.size, total: pool.total, lazy: auto } : {})[Symbol.asyncIterator]();
   let pending = false; // a read the signal stopped waiting for: the iterator is busy, its return() would wait for it
   try {
@@ -745,6 +748,7 @@ export async function writePagedPdf(plan, opts, sink) {
       const pg = x.value;
       pi++;
       const H = pg.height ?? info.height;
+      heights[pi] = H;
       if (pg.deflated) { // painted by a worker: its fonts and glyphs first, then its links' pages by number
         for (const f of pg.embedded || []) env.embedded?.add(f);
         if (pg.used) { w.take(pg.used); for (const [k, g] of pg.shaped) { const m = env.shapedOf(k); for (const [id, t] of g) if (!m.has(id)) m.set(id, t); } }
@@ -767,7 +771,7 @@ export async function writePagedPdf(plan, opts, sink) {
   const outline = [...info.bookmarks, ...info.headings].map((b, i) => ({ b, i }))
     .sort((p, q) => p.b.page - q.b.page || (p.b.y ?? 0) - (q.b.y ?? 0) || p.i - q.i).map(({ b }) => b)
     .filter((b) => { const k = `${b.page}|${Math.round(b.y ?? 0)}|${b.label}`; if (seen.has(k)) return false; seen.add(k); return true; })
-    .map(b => ({ title: b.label, page: b.page, top: info.height - b.y + 4, level: b.level }));
+    .map(b => ({ title: b.label, page: b.page, top: (heights[b.page - 1] ?? info.height) - b.y + 4, level: b.level }));
   // PDF/A and PDF/UA: the structure tree's root, XMP metadata, the output intent (as pdfa.js adds them)
   const title = opts.title || 'Report', when = new Date(Math.floor((opts.creationDate || new Date()).getTime() / 1000) * 1000);
   let catalog = tags ? await tags.finish({ lang: opts.tagged.lang }) : '';
@@ -779,7 +783,7 @@ export async function writePagedPdf(plan, opts, sink) {
     const icc = await w.object('<< /N 3 /Filter /FlateDecode >>', await deflate(opts.pdfa.icc));
     catalog += ` /OutputIntents [${await w.object(`<< /Type /OutputIntent /S /GTS_PDFA1 /OutputConditionIdentifier (sRGB) /Info (sRGB IEC61966-2.1) /DestOutputProfile ${icc} 0 R >>`)} 0 R]`;
   }
-  const res = await w.finish({ outline, catalog, info: { title, author: opts.author, creationDate: when } });
+  const res = await w.finish({ outline, catalog, info: { title, author: opts.author, creationDate: when }, pageStarts: info.pageStarts });
   // a tagged file of millions of elements is valid, but tools that load every object (qpdf, pikepdf) need gigabytes
   for (const x of env.embedded ? embeddedWarnings(env.embedded) : []) info.warnings.push(x);
   if (tags && tags.count > TAGGED_LARGE) info.warnings.push(`The tagged PDF has ${tags.count.toLocaleString('en-US')} structure elements (${res.pages.toLocaleString('en-US')} pages): readers open it, but tools that load every object of a file (qpdf, pikepdf) may run out of memory on it. tagged.maxElements caps it.`);
@@ -805,6 +809,15 @@ async function newWriter(sink, opts) {
   return createPdf({ write: (/** @type {Uint8Array} */ u8) => raced(written(sink, sink.write(u8)), opts.signal) },
     // object streams at zlib's level 9, as the engine's own writer packed them (its files are no bigger)
     { metadata: false, id: opts.id, signal: opts.signal, creationDate: opts.creationDate, objectStreamLevel: 9 });
+}
+
+/**
+ * Page labels (what a reader shows as the page number): decimal, restarting at 1 on each page of starts (0-based, a
+ * section that restarts the numbering), as exportPdf's pdf-lib path writes them. @param {number[]|undefined} starts @param {number} n pages
+ */
+function pageLabels(starts, n) {
+  const at = [...new Set([0, ...(starts || [])])].filter(i => i >= 0 && i < n).sort((a, b) => a - b);
+  return `<< /Nums [${at.map(i => `${i} << /S /D /St 1 >>`).join(' ')}] >>`;
 }
 
 /** a literal string, \ ( ) escaped @param {string} v */
@@ -890,7 +903,7 @@ export function paintPage(pg, H, env) {
         const rect = `[${[it.x, H - it.y - it.h, it.x + it.w, H - it.y].map(n2).join(' ')}]`;
         const a = it.action;
         const href = a?.type === 'url' && safeUrl(a.href) ? a.href : a?.type === 'drill' ? drillUrl(env.drillBase, a) : null;
-        const to = href ? `/A << /Type /Action /S /URI /URI ${lit(asciiUrl(href))} >>` : a?.type === 'bookmark' && a.page ? `/Dest [${env.pageRef(a.page - 1)} 0 R /XYZ null ${n2(H - a.y + 4)} null]` : null;
+        const to = href ? `/A << /Type /Action /S /URI /URI ${lit(asciiUrl(href))} >>` : a?.type === 'bookmark' && a.page ? `/Dest [${env.pageRef(a.page - 1)} 0 R /XYZ null ${n2((env.pageHeight?.(a.page - 1) ?? H) - a.y + 4)} null]` : null;
         if (!to) break; // ponytail: a jump to a bookmark by name needs every page's bookmarks first: left out while streaming
         if (!tags) { annots.push(`<< /Type /Annot /Subtype /Link /F 4 /Rect ${rect} /Border [0 0 0] ${to} >>`); break; }
         // tagged: what the link does, for a screen reader, and its Link element
@@ -911,7 +924,8 @@ export function paintPage(pg, H, env) {
 
 /**
  * What paintPage draws with: a writer's resource names and glyph records (w), the fonts, shaped glyphs' texts.
- * @param {any} w @param {any} fontStore @param {{ drillBase?: string, pageRef?: (i: number) => any, tags?: any, embedAll?: boolean }} [o]
+ * @param {any} w @param {any} fontStore @param {{ drillBase?: string, pageRef?: (i: number) => any, tags?: any, embedAll?: boolean, pageHeight?: (i: number) => number }} [o]
+ *   pageHeight: the height of page i (0-based), when pages differ: where a link to it lands
  */
 export function paintEnv(w, fontStore, o = {}) {
   /** @type {Map<string, any>} pdf-lib-like fonts for the shared painter: { key, embedder: { font } } */
@@ -932,6 +946,7 @@ export function paintEnv(w, fontStore, o = {}) {
     },
     literal: (/** @type {string} */ key, /** @type {string} */ text) => w.literal(key, text),
     pageRef: o.pageRef || ((/** @type {number} */ i) => w.pageRef(i)),
+    pageHeight: o.pageHeight,
     reserve: () => w.reserve(),
     drillBase: o.drillBase,
     tags: o.tags || null,

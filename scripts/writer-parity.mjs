@@ -131,13 +131,17 @@ const text = (f, p) => run('pdftotext', [...upw(), '-layout', '-f', String(p), '
 /** a page's words without bidi marks, sorted (the text compared when only those marks differ) @param {string} t */
 const words = (t) => t.replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, ' ').split(/\s+/).filter(Boolean).sort().join(' ');
 /** differing pixels of two PPMs (same header assumed when same size) */
-const diffPx = (a, b) => { if (a.length !== b.length) return Infinity; let d = 0; const h = a.indexOf(0x0a, a.indexOf(0x0a, a.indexOf(0x0a) + 1) + 1) + 1; for (let i = h; i < a.length; i += 3) if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2]) d++; return d; };
+const diffPx = (a, b) => { const h = a.indexOf(0x0a, a.indexOf(0x0a, a.indexOf(0x0a) + 1) + 1) + 1; if (a.length !== b.length || !a.subarray(0, h).equals(b.subarray(0, h))) return Infinity; let d = 0; for (let i = h; i < a.length; i += 3) if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2]) d++; return d; };
 /** what the file holds (qpdf's JSON of its objects) */
 function features(f) {
   const j = JSON.parse(run('qpdf', [...(pw ? [`--password=${pw}`] : []), '--json=2', '--json-key=qpdf', f]).stdout.toString());
   const objs = Object.values(j.qpdf[1]).map((/** @type {any} */ o) => o.value ?? o.stream?.dict).filter(Boolean);
   const count = (pred) => objs.filter(pred).length;
   const cat = objs.find((/** @type {any} */ o) => o['/Type'] === '/Catalog') || {};
+  const deref = (/** @type {any} */ v) => (typeof v === 'string' && / 0 R$/.test(v) ? (j.qpdf[1][`obj:${v}`]?.value ?? v) : v);
+  // where the page numbering restarts (the page labels' starts)
+  const labels = deref(cat['/PageLabels']);
+  const starts = labels ? (deref(labels['/Nums']) || []).filter((/** @type {any} */ _, /** @type {number} */ i) => i % 2 === 0).join(',') : null;
   const fonts = run('pdffonts', [...upw(), f]).stdout.toString().split('\n').slice(2).filter(Boolean);
   return {
     fonts: fonts.length, embedded: fonts.filter(l => /\syes\s+(yes|no)\s+(yes|no)\s+\d+\s+\d+\s*$/.test(l)).length,
@@ -145,7 +149,7 @@ function features(f) {
     links: count((/** @type {any} */ o) => o['/Subtype'] === '/Link'), outline: count((/** @type {any} */ o) => o['/Title'] !== undefined && o['/Parent'] !== undefined),
     structElems: count((/** @type {any} */ o) => o['/Type'] === '/StructElem' || (o['/S'] !== undefined && o['/P'] !== undefined)),
     fields: count((/** @type {any} */ o) => o['/FT'] !== undefined), images: count((/** @type {any} */ o) => o['/Subtype'] === '/Image'), attachments: count((/** @type {any} */ o) => o['/Type'] === '/Filespec'),
-    metadata: !!cat['/Metadata'], pageLabels: !!cat['/PageLabels'], outputIntent: !!cat['/OutputIntents'], lang: cat['/Lang'] ?? null,
+    metadata: !!cat['/Metadata'], pageLabels: starts, outputIntent: !!cat['/OutputIntents'], lang: cat['/Lang'] ?? null,
   };
 }
 

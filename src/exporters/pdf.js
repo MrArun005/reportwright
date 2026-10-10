@@ -457,16 +457,13 @@ async function pdfOf(model, fontStore, opt) {
  * Can the paged writer (writePagedPdf: @reportwright/pdf, or with pdfWriter 'legacy' the engine's own) draw this model?
  * Then pdf-lib (about 35 ms to load) is not needed (A1.1). Kept to what it draws: text (any font, shaped runs; with
  * 'legacy' only the standard fonts, as 0.13 did), boxes, ellipses, lines and links. Anything else stays on pdf-lib:
- * images, SVG paths, rounded boxes, form fields, PDF/A, tagged PDF, encryption, prepare (signing), save options, page
- * sizes that differ (the outline's places) and page numbering that restarts (page labels).
+ * images, SVG paths, rounded boxes, form fields, PDF/A, tagged PDF, encryption, prepare (signing) and save options.
  * @param {any} model @param {any} opt
  */
 function ownWriterFits(model, opt) {
   if (forcedPdfLib()) return false;
   if (opt.pdfa || opt.tagged || opt.encrypt || opt.prepare || opt.save || !model.pages.length) return false;
-  if ((model.pageStarts || []).some((/** @type {number} */ i) => i > 0)) return false;
   for (const pg of model.pages) {
-    if ((pg.height ?? model.height) !== model.height) return false;
     for (const it of pg.items) {
       // the old writer (pdfWriter: 'legacy') keeps embedded fonts and shaped runs on pdf-lib, as before; @reportwright/pdf takes them
       if (it.t === 'text') { if (opt.pdfWriter === 'legacy' && (!isStandard(it.font) || it.lines.some((/** @type {any} */ l) => l.runs))) return false; }
@@ -521,7 +518,8 @@ async function ownWriter(model, fontStore, opt) {
   const fixed = fixedDate(opt), when = fixed ?? new Date();
   /** @type {Uint8Array[]} */
   const parts = [];
-  const info = { width: model.width, height: model.height, bookmarks: model.bookmarks || [], headings: model.headings || [], warnings: [] };
+  const info = { width: model.width, height: model.height, bookmarks: model.bookmarks || [], headings: model.headings || [], warnings: [],
+    pageStarts: model.pageStarts || [], pageHeights: model.pages.map((/** @type {any} */ pg) => pg.height ?? model.height) };
   await writePagedPdf({ info, pages: async function* () { yield* model.pages; } },
     { fontStore, subset: opt.subset, id: fixed ? await contentId(model, opt, when) : undefined, title: opt.title, author: opt.author, creationDate: when, drillBase: opt.drillBase, pdfWriter: opt.pdfWriter },
     { write: (/** @type {Uint8Array} */ u8) => { parts.push(u8); } });

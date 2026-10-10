@@ -39,3 +39,30 @@ describe('exportPdfStream rendered whole', () => {
     expect(Buffer.concat(s.parts).subarray(0, 5).toString()).toBe('%PDF-');
   });
 });
+
+describe('B1: page sizes that differ, page numbering that restarts', async () => {
+  const { PDFDocument, PDFName } = await import('pdf-lib');
+  const { CORPUS } = await import('../../scripts/parity-corpus.mjs');
+  const def = (/** @type {string} */ id) => CORPUS.find((/** @type {any} */ c) => c.id === id).def;
+  /** the page labels' starts, page sizes and the outline's targets (page index, top) */
+  const read = async (/** @type {Uint8Array} */ b) => {
+    const doc = await PDFDocument.load(b);
+    const refs = doc.getPages().map(p => p.ref.toString());
+    const nums = /** @type {any} */ (doc.catalog.lookup(PDFName.of('PageLabels'))).lookup(PDFName.of('Nums')).asArray();
+    const outline = [];
+    const root = /** @type {any} */ (doc.catalog.lookup(PDFName.of('Outlines')));
+    for (let o = root?.lookup(PDFName.of('First')); o; o = o.lookup(PDFName.of('Next'))) { const d = o.lookup(PDFName.of('Dest')).asArray(); outline.push([refs.indexOf(d[0].toString()), d[3].asNumber()]); }
+    return { starts: nums.filter((/** @type {any} */ _, /** @type {number} */ i) => i % 2 === 0).map((/** @type {any} */ n) => n.asNumber()), sizes: doc.getPages().map(p => [Math.round(p.getWidth()), Math.round(p.getHeight())]), outline };
+  };
+  afterEach(() => { delete process.env.PW_FORCE_PDFLIB; });
+  for (const id of ['page-sizes', 'restart-numbers']) {
+    it(`${id}: through @reportwright/pdf, with pdf-lib's labels, sizes and outline`, async () => {
+      const m = await render(def(id), { fontStore });
+      const neu = await exportPdf(m, fontStore, {});
+      process.env.PW_FORCE_PDFLIB = '1';
+      const old = await exportPdf(m, fontStore, {});
+      expect(viaLibrary(neu)).toBe(true);
+      expect(await read(neu)).toEqual(await read(old));
+    });
+  }
+});
