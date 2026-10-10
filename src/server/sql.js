@@ -476,13 +476,13 @@ export async function onWire(socket, clk, work, onCut = () => {}, limits = LIMIT
  * A connection that arrives after either goes straight back to the pool (back).
  * @param {Promise<any>} p @param {ReturnType<typeof clock>} clk @param {AbortSignal|undefined} signal @param {(c: any) => void} back
  */
-function acquire(p, clk, signal, back) {
+function acquire(p, clk, signal, back, held = () => '') {
   const ms = Math.max(0, Math.min(clk.left(), Math.floor(envNum('PW_DB_ACQUIRE_MS', 5000))));
   return new Promise((resolve, reject) => {
     let done = false;
     const end = (/** @type {any} */ e) => { if (done) return; done = true; clearTimeout(t); signal?.removeEventListener('abort', onAbort); reject(e); };
     const onAbort = () => end(CANCEL);
-    const busy = () => (clk.left() > 0 ? Object.assign(fail(`Every database connection is busy (PW_DB_POOL_MAX is ${poolMax()}). Try again in a moment.`, 503), { retryAfter: 2 }) : clk.late());
+    const busy = () => (clk.left() > 0 ? Object.assign(fail(`Every database connection is busy (PW_DB_POOL_MAX is ${poolMax()}${held()}). Try again in a moment.`, 503), { retryAfter: 2 }) : clk.late());
     const t = setTimeout(() => end(busy()), ms);
     if (signal?.aborted) onAbort(); else signal?.addEventListener('abort', onAbort, { once: true });
     p.then((c) => { if (done) return back(c); done = true; clearTimeout(t); signal?.removeEventListener('abort', onAbort); resolve(c); }, (e) => end(e));
@@ -587,7 +587,7 @@ const DRIVERS = {
     const entry = pools.get(url);
     const clk = clock(Number(limits.ms));
     try {
-      const c = await acquire(entry.pool.connect(), clk, ctx?.signal, (x) => x.release());
+      const c = await acquire(entry.pool.connect(), clk, ctx?.signal, (x) => x.release(), () => `; ${entry.pool.totalCount} open, ${entry.pool.idleCount} idle, ${entry.pool.waitingCount} waiting`);
       if (!c.pwQuiet) { c.pwQuiet = true; c.on('error', () => {}); } // a socket we cut must not crash the server
       let ok = false;
       try {
