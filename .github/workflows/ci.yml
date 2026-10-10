@@ -38,7 +38,10 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y poppler-utils # pdftotext: the PDF text, password and script tests read the PDFs they make
       - name: Type check (the server has no errors; the engine's may only go down)
         run: npm run typecheck
-      - run: npx vitest run
+      # storage, perms and audit share the one database per engine (storage.test.js empties its tables between cases),
+      # so they run one file at a time after the rest; in one parallel run they wipe each other's jobs and leases
+      - run: npx vitest run --exclude tests/engine/storage.test.js --exclude tests/engine/perms.test.js --exclude tests/engine/audit.test.js
+      - run: npx vitest run --no-file-parallelism tests/engine/storage.test.js tests/engine/perms.test.js tests/engine/audit.test.js
       - run: node scripts/check-engine-boundary.mjs
       - name: Report snapshots (fails when a page or a total changes)
         run: node bin/pw.mjs test reports
