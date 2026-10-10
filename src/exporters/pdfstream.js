@@ -22,7 +22,9 @@ import { render } from '../engine/index.js';
 import { planPaged } from '../engine/paged.js';
 import { sqlBatches } from '../engine/stream.js';
 import { safeUrl, drillUrl, asciiUrl } from '../engine/url.js';
-import { exportPdf, forcedPdfLib } from './pdf.js';
+import { exportPdf, forcedPdfLib, roundRect } from './pdf.js';
+import { parseSvg, svgOps } from './svgimage.js';
+import { drawSvgPathOps } from './svgpath.js';
 import { xmpPacket } from './pdfa.js';
 import { createStreamTagger } from './pdfstreamtags.js';
 import { standardFontDict, embeddedPage, embeddedWarnings, standIns } from './pdfstandard.js';
@@ -855,6 +857,10 @@ async function loadImage(src, w, opts) {
     if (!bytes?.length) return { why: 'it could not be loaded' };
     if (bytes.length > IMAGE_LIMITS.bytes) return { why: 'it is larger than the image size limit' };
     const info = /** @type {any} */ (imageInfoOf(bytes));
+    if (info?.type === 'svg') {
+      const svg = parseSvg(new TextDecoder().decode(bytes));
+      return svg ? { img: { svg, width: svg.w, height: svg.h } } : { why: 'the SVG could not be read' };
+    }
     if (info?.type === 'png') {
       const why = 'w' in info && !info.suspect && info.w * info.h <= IMAGE_LIMITS.pixels ? pngProblem(bytes) : 'too large or animated';
       if (why) return { why: `the PNG is not usable (${why})` };
@@ -906,7 +912,13 @@ export function paintPage(pg, H, env) {
       case 'rect': {
         const fill = col(it.fill), stroke = col(it.stroke);
         if (!fill && !stroke) break;
-        if (it.radius) throw new Error('rounded boxes do not stream yet');
+        if (it.radius) {
+          // as pdf-lib's drawSvgPath draws it on exportPdf's pdf-lib path, operator for operator (svgpath.js)
+          c.et(); c.lineWidth(1);
+          c.s += drawSvgPathOps(roundRect(it.x, it.y, it.w, it.h, it.radius), { x: 0, y: H, gs: c.gsFor(fill?.opacity ?? 1, stroke?.opacity ?? 1),
+            color: fill?.color, borderColor: stroke?.color, borderWidth: stroke ? it.strokeWidth || 1 : 0, borderDashArray: it.dash || undefined });
+          break;
+        }
         c.paint(fill, stroke, it.strokeWidth || 1, it.dash);
         const x = n2(it.x), y = n2(H - it.y - it.h), rw = n2(it.w), rh = n2(it.h);
         c.s += (stroke && it.dash?.length ? `${x} ${y} m ${x} ${n2(y + rh)} l ${n2(x + rw)} ${n2(y + rh)} l ${n2(x + rw)} ${y} l h` : `${x} ${y} ${rw} ${rh} re`) + (fill && stroke ? ' B\n' : fill ? ' f\n' : ' S\n');
@@ -956,6 +968,13 @@ export function paintPage(pg, H, env) {
         annots.push({ ref, dict: `<< /Type /Annot /Subtype /Link /F 4 /Rect ${rect} /Border [0 0 0] ${to} /Contents ${pdfText(say)} /StructParent ${key} >>` });
         break;
       }
+      case 'path': {
+        const fill = col(it.fill), stroke = col(it.stroke);
+        c.et(); c.lineWidth(1); // what a stroke without a width of its own inherits, as on pdf-lib's path
+        c.s += drawSvgPathOps(it.d, { x: it.x, y: H - it.y, gs: c.gsFor(fill?.opacity ?? 1, stroke?.opacity ?? 1), color: fill?.color, borderColor: stroke?.color,
+          borderWidth: stroke ? it.strokeWidth || 1 : 0, borderLineCap: it.lineCap === 'butt' ? 0 : 1, borderDashArray: it.dash || undefined });
+        break;
+      }
       case 'image': {
         const img = env.images?.get(it.src)?.img;
         if (!img) break; // left out (said when it was loaded)
@@ -966,9 +985,10 @@ export function paintPage(pg, H, env) {
           const s = it.fit === 'cover' ? Math.max(it.w / img.width, it.h / img.height) : Math.min(it.w / img.width, it.h / img.height);
           w = img.width * s; h = img.height * s; x = it.x + (it.w - w) / 2; y = it.y + (it.h - h) / 2;
         }
-        const o = img.orientation, upright = o[0] === 1 && o[1] === 0 && o[2] === 0 && o[3] === 1 && o[4] === 0 && o[5] === 0;
+        const o = img.orientation || [1, 0, 0, 1, 0, 0], upright = o[0] === 1 && o[1] === 0 && o[2] === 0 && o[3] === 1 && o[4] === 0 && o[5] === 0;
         c.q();
         if (clipBox) c.s += `${clipBox.map(n2).join(' ')} re W n\n`;
+        if (img.svg) { c.et(); c.lineWidth(1); c.s += svgOps(img.svg, { x, y: H - y - h, sx: w / img.width, sy: h / img.height }, (a, b) => c.gsFor(a, b)); c.Q(); break; }
         c.alpha(1, c.st.CA);
         c.s += `${n4(w)} 0 0 ${n4(h)} ${n2(x)} ${n2(H - y - h)} cm${upright ? '' : ` ${o.join(' ')} cm`} /${img.name} Do\n`;
         c.Q();

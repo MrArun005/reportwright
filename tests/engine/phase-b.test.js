@@ -93,3 +93,47 @@ describe('B2: PNG and JPEG images through @reportwright/pdf', async () => {
     expect(neu.w).toHaveLength(3);
   });
 });
+
+describe('B3: SVG path operators, as pdf-lib writes them', async () => {
+  const { PDFDocument, rgb } = await import('pdf-lib');
+  const { drawSvgPathOps } = await import('../../src/exporters/svgpath.js');
+  const doc = await PDFDocument.create();
+  /** pdf-lib's own operators for drawSvgPath(d, o) */
+  const viaPdfLib = (/** @type {string} */ d, /** @type {any} */ o) => {
+    const p = /** @type {any} */ (doc.addPage());
+    p.maybeEmbedGraphicsState = (/** @type {any} */ g) => (g.opacity !== undefined || g.borderOpacity !== undefined ? 'GS7' : undefined);
+    p.drawSvgPath(d, o);
+    return p.getContentStream().operators.map((/** @type {any} */ x) => x.toString()).join('\n') + '\n';
+  };
+  const r = (/** @type {number} */ x) => Math.round(x * 1000) / 1000;
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const paths = [
+    'M 6 0 H 114 A 6 6 0 0 1 120 6 V 24 A 6 6 0 0 1 114 30 H 6 A 6 6 0 0 1 0 24 V 6 A 6 6 0 0 1 6 0 Z',
+    'M20 60 A 30 30 0 0 1 80 60 Z', 'M60 20 a 15 25 30 1 0 30 10', 'M10,75 L40,65 70,72 110,62', 'M0 0 C 10 20 30 40 50 60 S 70 80 90 100',
+    'M0 0 Q 10 20 30 40 T 50 60 t 10 10 q 5 5 10 0', 'm1.5.5l-2-3h4v-1.25e-1z M 1 1 A 0 0 0 0 1 2 2', 'M0,0 A 5 10 45 1 1 3 4 a 50 50 0 0 0 -10 -10',
+    ...Array.from({ length: 40 }, () => `M ${r(rnd() * 100)} ${r(rnd() * 100)} A ${r(rnd() * 40)} ${r(rnd() * 40)} ${r(rnd() * 360)} ${rnd() > 0.5 ? 1 : 0} ${rnd() > 0.5 ? 1 : 0} ${r(rnd() * 100)} ${r(rnd() * 100)} L ${r(rnd() * 9)} ${r(rnd() * 9)} Z`),
+  ];
+  const opts = [
+    { x: 0, y: 841.89, color: rgb(0.2, 0.4, 0.6), opacity: 0.5, borderColor: undefined, borderWidth: 0, borderOpacity: undefined, borderDashArray: undefined },
+    { x: 10.5, y: 700, color: undefined, opacity: undefined, borderColor: rgb(1, 0, 1 / 3), borderWidth: 1.6, borderOpacity: 1, borderLineCap: 1, borderDashArray: [4, 3] },
+    { x: 0, y: 0, color: rgb(0, 0, 0), opacity: 1, borderColor: rgb(0.5, 0.5, 0.5), borderWidth: 0.75, borderOpacity: 1, borderLineCap: 0 },
+  ];
+  it('every path and paint is the same operator text', () => {
+    for (const d of paths) for (const o of opts) {
+      const gs = o.opacity !== undefined || o.borderOpacity !== undefined ? 'GS7' : undefined;
+      expect(drawSvgPathOps(d, { ...o, gs }), d).toBe(viaPdfLib(d, { ...o }));
+    }
+  });
+});
+
+describe('B3: rounded boxes, path items and SVG pictures leave pdf-lib', async () => {
+  const { CORPUS } = await import('../../scripts/parity-corpus.mjs');
+  for (const id of ['rounded', 'paths', 'svg-image', 'mixed']) {
+    it(id, async () => {
+      const m = await render(CORPUS.find((/** @type {any} */ c) => c.id === id).def, { fontStore });
+      expect(viaLibrary(await exportPdf(m, fontStore, {}))).toBe(true);
+      expect(viaLibrary(await exportPdf(m, fontStore, { pdfWriter: 'legacy' }))).toBe(false);
+    });
+  }
+});

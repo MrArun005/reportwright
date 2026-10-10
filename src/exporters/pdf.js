@@ -456,8 +456,8 @@ async function pdfOf(model, fontStore, opt) {
 /**
  * Can the paged writer (writePagedPdf: @reportwright/pdf, or with pdfWriter 'legacy' the engine's own) draw this model?
  * Then pdf-lib (about 35 ms to load) is not needed (A1.1). Kept to what it draws: text (any font, shaped runs; with
- * 'legacy' only the standard fonts, as 0.13 did), boxes, ellipses, lines, links, and PNG and JPEG data URIs. Anything else stays on pdf-lib:
- * SVG and URL pictures, SVG paths, rounded boxes, form fields, PDF/A, tagged PDF, encryption, prepare (signing) and save options.
+ * 'legacy' only the standard fonts, as 0.13 did), boxes (rounded too), ellipses, lines, SVG paths, links, and PNG, JPEG and SVG data URIs. Anything else
+ * stays on pdf-lib: URL pictures, form fields, PDF/A, tagged PDF, encryption, prepare (signing) and save options.
  * @param {any} model @param {any} opt
  */
 function ownWriterFits(model, opt) {
@@ -469,8 +469,11 @@ function ownWriterFits(model, opt) {
       if (it.t === 'text') { if (opt.pdfWriter === 'legacy' && (!isStandard(it.font) || it.lines.some((/** @type {any} */ l) => l.runs))) return false; }
       else if (it.t === 'link') { const a = it.action; if (a?.type === 'bookmark' && !(a.page >= 1 && a.page <= model.pages.length)) return false; }
       // a PNG or JPEG data URI (B2); SVG and URL pictures (their type is known once fetched) stay on pdf-lib
-      else if (it.t === 'image') { if (opt.pdfWriter === 'legacy' || !['png', 'jpeg'].includes(/** @type {any} */ (imageInfo(it.src))?.type)) return false; }
-      else if (!(it.t === 'line' || it.t === 'ellipse' || (it.t === 'rect' && !it.radius))) return false;
+      // PNG, JPEG and SVG data URIs (B2, B3); a URL picture (its type is known once fetched) stays on pdf-lib
+      else if (it.t === 'image') { if (opt.pdfWriter === 'legacy' || !['png', 'jpeg', 'svg'].includes(/** @type {any} */ (imageInfo(it.src))?.type)) return false; }
+      // rounded boxes and SVG paths (B3): drawn with pdf-lib's own operators (svgpath.js)
+      else if (it.t === 'path' || (it.t === 'rect' && it.radius)) { if (opt.pdfWriter === 'legacy') return false; }
+      else if (!(it.t === 'line' || it.t === 'ellipse' || it.t === 'rect')) return false;
     }
   }
   return true;
@@ -720,7 +723,8 @@ function subsetTag(bytes) {
 }
 
 
-function roundRect(x, y, w, h, r) {
+/** a rounded box as SVG path data (y down) */
+export function roundRect(x, y, w, h, r) {
   r = Math.min(r, w / 2, h / 2);
   return `M ${x + r} ${y} H ${x + w - r} A ${r} ${r} 0 0 1 ${x + w} ${y + r} V ${y + h - r} A ${r} ${r} 0 0 1 ${x + w - r} ${y + h} H ${x + r} A ${r} ${r} 0 0 1 ${x} ${y + h - r} V ${y + r} A ${r} ${r} 0 0 1 ${x + r} ${y} Z`;
 }
