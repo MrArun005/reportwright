@@ -38,6 +38,10 @@ const download = async (testid) => {
   const [d] = await Promise.all([p.waitForEvent('download', { timeout: 120000 }), openExport(p).then(() => p.getByTestId(testid).click())]).catch(async (e) => {
     await p.screenshot({ path: `/tmp/shots/exports-b2-${testid}-fail.png` }); // what the viewer shows instead (CI artifact)
     console.log('no download:', testid, 'page errors:', errs, 'console:', logs, 'thrown:', thrown);
+    for (const [, url, line, col] of new Set(thrown.join('\n').matchAll(/(http:\/\/[^\s)]+\.js):(\d+):(\d+)/g))) { // the code around each frame
+      const src = (await (await fetch(url)).text()).split('\n')[line - 1] || '';
+      console.log(`${url.split('/').pop()}:${line}:${col}`, src.slice(Math.max(0, col - 400), Number(col) + 200));
+    }
     throw e;
   });
   return { name: d.suggestedFilename(), bytes: fs.readFileSync(await d.path()) };
