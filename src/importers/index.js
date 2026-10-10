@@ -34,7 +34,7 @@ export function decodeXml(bytes) {
   if (b[0] === 0xfe && b[1] === 0xff) return new TextDecoder('utf-16be').decode(b.subarray(2));
   if (b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf) return new TextDecoder('utf-8').decode(b.subarray(3));
   // the declaration is ASCII in every encoding this reads
-  const decl = /^\s*<\?xml[^>]*?\sencoding\s*=\s*["']([A-Za-z0-9._-]+)["']/.exec(String.fromCharCode(...b.subarray(0, 200)));
+  const decl = /^\s*<\?xml[^>]*?\sencoding\s*=\s*["']([A-Za-z0-9._-]+)["']/.exec(Array.from(b.subarray(0, 200), c => String.fromCharCode(c)).join(''));
   let enc = decl ? decl[1].toLowerCase() : 'utf-8';
   if (enc === 'utf-16' || enc === 'unicode') enc = 'utf-8'; // no BOM: a declaration that is readable as ASCII is not UTF-16
   try { return new TextDecoder(enc).decode(b); } catch { return new TextDecoder('utf-8').decode(b); } // an encoding the runtime does not know
