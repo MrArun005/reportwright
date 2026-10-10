@@ -12,7 +12,10 @@ import { root, common, readable, workerMin, ENTRIES, WORKER, bwipApart, firstLoa
 // first load shrinks, never raise it. 652 KB on b10-bundle alone; fontkit (1.1 MB, in the first load only because
 // src/engine/text/fonts.js imports it at its top) going lazy (b10-perf) takes it to about 262 KB: lower this then.
 const FIRST_LOAD_KB = 270; // 262 KB with pdf-lib and fontkit lazy (was 827 KB)
-const WORKER_KB = 507; // 505.7 KB with the 0.13.2 UI changes (minified; was 594 KB before)
+// 510: 505.7 KB at 0.13.2; +1.9 KB from 95dd62ba (the Vite line-continuation rewrite, which this test now measures
+// after), +~2 KB from the 0.14 perf work (b37bfedf, 170a41f6, f3b2f317, the zebra frozen-style change); 509.4 KB with
+// the sfnt.js stub (scripts/embed-options.mjs). Owner-approved; lower it when the worker shrinks, never raise it.
+const WORKER_KB = 510; // was 507, 594 before that
 
 const OUT = path.join(root, 'public/embed/esm');
 let viewer, worker;
