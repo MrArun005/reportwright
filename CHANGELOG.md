@@ -2,6 +2,16 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
+## 0.14.0-rc.2 — 2026-10-10 (release candidate)
+
+### Fixed (from the rc.1 release gate)
+- **Memory of a zebra table in `exportPdfStream`.** A detail row whose style reads `RowNumber()` (`backgroundColor: '=IIf(RowNumber() Mod 2 = 0, "#f3f4f6", "#ffffff")'`) was refused by the streaming planner ("detail expressions", in `r.why`) and rendered whole, so every page stayed in memory: ~3.5–8 KB a row, 558 MB–1 GB at 100,000 rows. It now streams (row styles may read `RowNumber()`, as row values could), and its pages are the whole render's (pixels, text). Peak RSS at 100,000 rows, probe `scripts/eng-probe.mjs`: plain 270 MB, zebra 1,056 → 287 MB, zebra with expression borders and formats 1,261 → 300 MB.
+- **Expression styles that give the same values share one style.** Each row's evaluated style was a new object, and the cell styles built on it a new cache entry per row (garbage V8 collected late: about 2× the peak RSS of a plain table and 2.5× its time). Rows whose expressions give the same plain values now share one frozen style (at most 64 per style), so a zebra table renders at about the plain table's speed (100,000 rows: 5.8 s → 2.1 s; plain 1.6 s). Reports without expression styles are byte-identical; the zebra reports' bytes change only because they now stream (same pages, pixels and text).
+- The zebra PDF stays larger than the plain one (100,000 rows: 7.4 MB against 3.5 MB): each cell's fill is drawn as a rectangle with its colour (`rg … re f`), as the whole render always drew it; there is no resource per row.
+
+### Docs
+- The engine README says when a streamed PDF's memory stays flat, and what "Page N of M" costs (a counting pass: about 1.5–1.8× the time, +10–60 MB at 50,000 rows).
+
 ## 0.14.0-rc.1 — 2026-10-10 (release candidate)
 
 ### Changed
