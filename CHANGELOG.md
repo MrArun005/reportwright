@@ -2,6 +2,12 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
+## 0.14.0-rc.3 — 2026-10-10 (release candidate)
+
+### Fixed (from the rc.2 tester gate)
+- **A cut or damaged font subset no longer reaches the PDF.** `exportPdf` on pdf-lib (images, `pdfWriter: 'legacy'`…) checked a subset only by reading it with fontkit, which reads past a short buffer without complaint, so a truncated subset was embedded as is; the streamed writer's check missed a cut within its 16 bytes of padding. Every path (`exportPdf` on pdf-lib and on `@reportwright/pdf`, `exportPdfStream`, TrueType and CFF fonts) now checks the subset's bytes first: the table directory and every table inside the file, each glyph's `loca` range in order and inside `glyf`, a CFF table's header and Name/Top DICT INDEXes in bounds. A subset that fails, or that cannot be made, embeds the full font with a warning ("The font … is embedded whole: its subset could not be used (…)", `onWarning` / the result's `warnings`). Normal reports are byte-identical.
+- **`import '@reportwright/fonts'` works.** The package had only subpath exports; its root now exports `fontsUrl`, `subsetWasmUrl` and `iccUrl` (with types). `@reportwright/fonts/public/*` is unchanged.
+
 ## 0.14.0-rc.2 — 2026-10-10 (release candidate)
 
 ### Fixed (from the rc.1 release gate)
