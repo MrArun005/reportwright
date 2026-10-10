@@ -99,6 +99,10 @@ describe('job records: small, indexed, kept for a while', () => {
     expect(Math.max(...puts.slice(0, -1))).toBeLessThan(3000); // while it ran: counters only
     expect(JSON.parse(await store().get('settings', 'jobs-open')).ids).not.toContain(job.id);
     expect((await jobs.jobFile(job.id)).bytes.subarray(0, 5).toString()).toBe('%PDF-'); // merged in the pool
+    // merged by @reportwright/pdf (B9): every item's page, in order
+    const merged = await (await import('@reportwright/pdf')).loadPdf((await jobs.jobFile(job.id)).bytes);
+    expect(merged.pageCount).toBe(40);
+    expect(merged.extractText().split('\f').map(t => t.trim())).toEqual(Array.from({ length: 40 }, (_, n) => `Item ${n}`));
     expect(await blobs().list(`jobs/${job.id}/results/`)).toEqual([]);
     expect(await jobs.sweepJobs()).toBe(0); // younger than 30 days
     expect(await jobs.sweepJobs(Date.now() + 31 * 86400000)).toBeGreaterThanOrEqual(1);
