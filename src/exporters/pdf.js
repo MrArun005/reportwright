@@ -476,12 +476,14 @@ async function pdfOf(model, fontStore, opt) {
  * Can the paged writer (writePagedPdf: @reportwright/pdf, or with pdfWriter 'legacy' the engine's own) draw this model?
  * Then pdf-lib (about 35 ms to load) is not needed (A1.1). Kept to what it draws: text (any font, shaped runs; with
  * 'legacy' only the standard fonts, as 0.13 did), boxes (rounded too), ellipses, lines, SVG paths, links, and PNG, JPEG and SVG data URIs. Anything else
- * stays on pdf-lib: URL pictures, form fields, PDF/A, tagged PDF, encryption, prepare (signing) and save options.
+ * stays on pdf-lib: the 'legacy' writer's pictures, fields, PDF/A, tagged PDF and encryption, PDF/A without a colour profile, and the prepare and save options.
  * @param {any} model @param {any} opt
  */
 function ownWriterFits(model, opt) {
   if (forcedPdfLib()) return false;
-  if (opt.tagged || opt.prepare || opt.save || !model.pages.length) return false;
+  if (opt.prepare || opt.save || !model.pages.length) return false;
+  // tagged (B4): pdfua.js's tree through @reportwright/pdf (pdfstreamtags.js createModelTagger)
+  if (opt.tagged && opt.pdfWriter === 'legacy') return false;
   if (opt.sign && opt.pdfWriter === 'legacy') return false; // signed later, on pdf-lib's file (an incremental update)
   // encrypted (B7): AES-256 by @reportwright/pdf; with PDF/A it is refused on pdf-lib's path (a 400)
   if (opt.encrypt && (opt.pdfWriter === 'legacy' || opt.pdfa)) return false;
@@ -555,6 +557,7 @@ async function ownWriter(model, fontStore, opt) {
   // a form field's font is embedded (its standard font's stand-in), as on pdf-lib's path
   if (model.pages.some((/** @type {any} */ pg) => pg.items.some((/** @type {any} */ i) => i.t === 'field'))) await fontStore.load(standIns(fontStore));
   const parts = [];
+  if (opt.tagged) needsTableData(model, 'An accessible PDF');
   // a jump to a bookmark by name goes to the first bookmark of that name (none: no link), as on pdf-lib's path
   if (model.pages.some((/** @type {any} */ pg) => pg.items.some((/** @type {any} */ i) => i.t === 'link' && i.action?.type === 'bookmark' && !i.action.page))) {
     model = { ...model, pages: model.pages.map((/** @type {any} */ pg) => ({ ...pg, items: pg.items.map((/** @type {any} */ i) => {
@@ -566,7 +569,7 @@ async function ownWriter(model, fontStore, opt) {
   const info = { width: model.width, height: model.height, bookmarks: model.bookmarks || [], headings: model.headings || [], warnings: [],
     pageStarts: model.pageStarts || [], pageHeights: model.pages.map((/** @type {any} */ pg) => pg.height ?? model.height) };
   await writePagedPdf({ info, pages: async function* () { yield* model.pages; } },
-    { fontStore, subset: opt.subset, fetchImage: opt.fetchImage, id: fixed ? await contentId(model, opt, when) : undefined, title: opt.title, author: opt.author, creationDate: when, drillBase: opt.drillBase, pdfWriter: opt.pdfWriter, pdfa: opt.pdfa, encrypt: opt.encrypt, sign: opt.sign },
+    { fontStore, subset: opt.subset, fetchImage: opt.fetchImage, id: fixed ? await contentId(model, opt, when) : undefined, title: opt.title, author: opt.author, creationDate: when, drillBase: opt.drillBase, pdfWriter: opt.pdfWriter, pdfa: opt.pdfa, encrypt: opt.encrypt, sign: opt.sign, tagged: opt.tagged, model: opt.tagged ? model : undefined },
     { write: (/** @type {Uint8Array} */ u8) => { parts.push(u8); } });
   for (const x of info.warnings) opt.onWarning?.(x);
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
