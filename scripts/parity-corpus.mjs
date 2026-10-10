@@ -102,6 +102,8 @@ const restart = base('Restarted numbering', [
 ], { data: { rows: months.slice(0, 3) }, footer: { height: 16, items: [tb('Page {Globals.PageNumber} of {Globals.TotalPages}', 323, 2, 200, 12, { textAlign: 'right', fontSize: 7 })] } });
 const all = () => { const d = mixed(); d.sections.body[0].items.push({ ...field('Who', { kind: 'text', fieldName: 'who', value: 'Asha', label: 'Who' }), y: 130 }, { ...img(SVG, 0, 160, { w: 120, h: 80 }), alt: 'Diagram' }, { ...chart('pie', 200, 160), alt: 'Pie chart' }); d.dataSources[0].data = { rows: months }; return d; };
 
+/** the report without its form fields @param {any} d */
+const noFields = (d) => { for (const b of d.sections.body) b.items = b.items.filter((/** @type {any} */ i) => i.type !== 'field'); return d; };
 const EXIF = 'EXIF-rotated JPEG comes out upright (owner: a bug fix; pdf-lib ignored the orientation)';
 const PERMS = { none: {}, printOnly: { modify: false, copy: false, annotate: false, fillForms: false, assemble: false }, noPrint: { print: false, printHighQuality: false }, nothing: { print: false, modify: false, copy: false, annotate: false, fillForms: false, accessibility: false, assemble: false, printHighQuality: false } };
 
@@ -115,6 +117,7 @@ export const CORPUS = [
   { id: 'encrypt-userpw', def: fields, opts: { encrypt: { userPassword: 'open-me', ownerPassword: 'owner-pw' } }, password: 'open-me' },
   { id: 'signed', def: invoice, opts: { sign: true }, accept: { pixels: EXIF } },
   { id: 'pdfa-2b', def: all(), opts: { pdfa: { icc: ICC } } },
+  { id: 'pdfa-2b-nofields', def: (() => { const d = noFields(all()); d.sections.body[0].items.push(img(PNGA, 300, 0)); return d; })(), opts: { pdfa: { icc: ICC } } },
   { id: 'pdfua', def: all(), opts: { tagged: { lang: 'en' } } },
   { id: 'pdfa-ua', def: all(), opts: { pdfa: { icc: ICC }, tagged: { lang: 'en' } } },
   { id: 'page-sizes', def: sizes() },

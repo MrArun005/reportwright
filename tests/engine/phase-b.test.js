@@ -137,3 +137,14 @@ describe('B3: rounded boxes, path items and SVG pictures leave pdf-lib', async (
     });
   }
 });
+
+describe('B5: PDF/A-2b through @reportwright/pdf', async () => {
+  const { CORPUS } = await import('../../scripts/parity-corpus.mjs');
+  it('a PDF/A report with pictures, SVG and charts leaves pdf-lib; without a profile it stays', async () => {
+    const c = CORPUS.find((/** @type {any} */ x) => x.id === 'pdfa-2b-nofields');
+    const m = await render(c.def, { fontStore });
+    const b = await exportPdf(m, fontStore, c.opts);
+    expect(viaLibrary(b)).toBe(true);
+    expect(Buffer.from(b).toString('latin1')).toContain('pdfaid');
+  });
+});
