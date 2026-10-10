@@ -154,13 +154,21 @@ async function pdfOf(model, fontStore, opt) {
       // the size is read the way the decoder reads it (last IHDR); animated or multi-IHDR files are refused
       // a cut or damaged PNG can hang pdf-lib's decoder: checked first, left out with a warning
       const hit = local ? pngCache.get(src) : undefined;
-      if (hit) return { img: embedCachedPng(doc, hit) };
+      if (hit) { pngCache.delete(src); pngCache.set(src, hit); return { img: embedCachedPng(doc, hit) }; } // most recently used last
       const why = 'w' in info && !(/** @type {any} */ (info).suspect) && info.w * info.h <= IMAGE_LIMITS.pixels ? pngProblem(bytes) : 'too large or animated';
       if (why) return { img: null, why: `the PNG is not usable (${why})` };
-      if (!local || bytes.length > PNG_CACHE_BYTES) return { img: await doc.embedPng(bytes) };
-      const entry = { e: await PngEmbedder.for(bytes), z: /** @type {any[]} */ ([]) };
-      if (pngCache.size >= PNG_CACHE_SIZE) pngCache.delete(pngCache.keys().next().value);
+      if (!local) return { img: await doc.embedPng(bytes) };
+      const e = await PngEmbedder.for(bytes);
+      // held: the data URI, the decoded pixels and (once embedded) their deflated copies, at most the pixels again
+      const size = src.length + 2 * ((e.image.rgbChannel?.length || 0) + (e.image.alphaChannel?.length || 0));
+      if (size > PNG_CACHE_ENTRY) return { img: await doc.embedPng(bytes) };
+      const entry = { e, z: /** @type {any[]} */ ([]), size };
+      pngCacheBytes += size;
       pngCache.set(src, entry);
+      for (const [k, v] of pngCache) { // least recently used first
+        if (pngCache.size <= PNG_CACHE_SIZE && pngCacheBytes <= PNG_CACHE_TOTAL) break;
+        pngCache.delete(k); pngCacheBytes -= v.size;
+      }
       return { img: embedCachedPng(doc, entry) };
     }
     if (info?.type === 'jpeg') return { img: await doc.embedJpg(bytes) };
@@ -465,11 +473,17 @@ function ownWriterFits(model, opt) {
 /**
  * A data: URI PNG decoded and deflated once per process: the next document embeds the same image streams, with the
  * bytes pdf-lib's embedPng writes (its flateStream: the deflated pixels, the dictionary plus Filter FlateDecode), without
- * decoding and deflating the pixels again (half of a warm one-logo invoice). First in, first out, at most
- * PNG_CACHE_SIZE images of at most PNG_CACHE_BYTES each.
+ * decoding and deflating the pixels again (half of a warm one-logo invoice). Least recently used out, at most
+ * PNG_CACHE_SIZE images and PNG_CACHE_TOTAL bytes held, none over PNG_CACHE_ENTRY (counting the decoded pixels). The
+ * key is the whole data URI, so a render only reuses an image whose bytes it supplied itself.
  * ponytail: pushes onto pdf-lib's private doc.images, as embedPng does; pdf-lib is pinned (1.17.1).
  */
-const pngCache = new Map(), PNG_CACHE_SIZE = 16, PNG_CACHE_BYTES = 1 << 20;
+/** @type {Map<string, { e: any, z: any[], size: number }>} */
+const pngCache = new Map();
+const PNG_CACHE_SIZE = 16, PNG_CACHE_ENTRY = 4 << 20, PNG_CACHE_TOTAL = 16 << 20;
+let pngCacheBytes = 0;
+/** For tests: what the PNG cache holds. */
+export const pngCacheStats = () => ({ entries: pngCache.size, bytes: pngCacheBytes, maxEntries: PNG_CACHE_SIZE, maxBytes: PNG_CACHE_TOTAL });
 /** @param {any} doc @param {{ e: any, z: any[] }} entry */
 function embedCachedPng(doc, { e, z }) {
   // the decoded embedder as its prototype: pdf-lib checks instanceof PngEmbedder, and reads width and height from it
