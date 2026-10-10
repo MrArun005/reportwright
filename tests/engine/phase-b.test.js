@@ -233,6 +233,37 @@ describe('B8: signing by @reportwright/pdf', async () => {
       expect(v).toMatch(/Total document signed/);
     }
   });
+  /** a .p12 with a certificate valid from..to @param {Date} from @param {Date} to */
+  const p12Of = (from, to) => {
+    const k = forge.pki.rsa.generateKeyPair(1024), c = forge.pki.createCertificate();
+    c.publicKey = k.publicKey; c.serialNumber = '02'; c.validity.notBefore = from; c.validity.notAfter = to;
+    c.setSubject([{ name: 'commonName', value: 'X' }]); c.setIssuer([{ name: 'commonName', value: 'X' }]); c.sign(k.privateKey, forge.md.sha256.create());
+    return Buffer.from(forge.asn1.toDer(forge.pkcs12.toPkcs12Asn1(k.privateKey, [c], 'pw', { algorithm: '3des' })).getBytes(), 'binary');
+  };
+  it('an expired or not yet valid certificate is a 500 that names PW_SIGN_P12, not the password', async () => {
+    for (const [a, b] of [[new Date('2020-01-01'), new Date('2021-01-01')], [new Date('2099-01-01'), new Date('2100-01-01')]]) {
+      const e = await p12Signer(p12Of(a, b), 'pw').catch((/** @type {any} */ x) => x);
+      expect(e).toMatchObject({ status: 500 });
+      expect(e.message).toMatch(/PW_SIGN_P12/);
+      expect(e.message).not.toMatch(/pw\b/);
+    }
+  });
+  it('the .p12 is opened once per process, and again when the file changes', async () => {
+    const { pdfSigner, p12Loads } = await import('../../src/server/sign.js');
+    const f = pathx.join(os.tmpdir(), `pb-${process.pid}.p12`);
+    fsx.writeFileSync(f, p12);
+    process.env.PW_SIGN_P12 = f; process.env.PW_SIGN_PASSWORD = 'pw';
+    try {
+      const n0 = p12Loads();
+      const a = await pdfSigner(), b = await pdfSigner();
+      expect(p12Loads() - n0).toBe(1);
+      expect(b.options.signer).toBe(a.options.signer);
+      const t = new Date(Date.now() + 5000);
+      fsx.utimesSync(f, t, t);
+      await pdfSigner();
+      expect(p12Loads() - n0).toBe(2);
+    } finally { delete process.env.PW_SIGN_P12; delete process.env.PW_SIGN_PASSWORD; fsx.rmSync(f, { force: true }); }
+  });
   it('prepare and save still work, with one deprecation warning', async () => {
     const said = /** @type {string[]} */ ([]);
     const on = (/** @type {any} */ w) => { if (w.name === 'DeprecationWarning') said.push(w.message); };

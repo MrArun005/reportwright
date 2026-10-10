@@ -16,17 +16,32 @@ import { P12Signer } from '@signpdf/signer-p12';
 export async function pdfSigner({ name = 'ReportWright', reason = 'Issued by ReportWright', location = '', contactInfo = '' } = {}) {
   const file = process.env.PW_SIGN_P12;
   if (!file) throw Object.assign(new Error('Signing is not set up: set PW_SIGN_P12 (a .p12 certificate file) and PW_SIGN_PASSWORD'), { status: 400 });
-  let p12;
-  try { p12 = await fs.readFile(file); } catch { throw Object.assign(new Error('PW_SIGN_P12 points to a file that cannot be read'), { status: 500 }); }
-  const signer = new P12Signer(p12, { passphrase: process.env.PW_SIGN_PASSWORD || '' });
-  const p12signer = await p12Signer(p12, process.env.PW_SIGN_PASSWORD || '');
+  const unreadable = () => Object.assign(new Error('PW_SIGN_P12 points to a file that cannot be read'), { status: 500 });
+  const password = process.env.PW_SIGN_PASSWORD || '';
+  let st;
+  try { st = await fs.stat(file); } catch { throw unreadable(); }
+  // the .p12 is opened (its PKCS#12 decrypted) once per process, again when the file or the password changes
+  if (!cached || cached.file !== file || cached.mtimeMs !== st.mtimeMs || cached.size !== st.size || cached.password !== password) {
+    let p12;
+    try { p12 = await fs.readFile(file); } catch { throw unreadable(); }
+    cached = { file, mtimeMs: st.mtimeMs, size: st.size, password, p12, signer: await p12Signer(p12, password) };
+  }
+  const { p12, signer: p12signer } = cached;
+  /** the deprecated @signpdf signer, made only when its sign() is used */
+  let legacy;
   return {
     options: { signer: p12signer, name, reason, location, contactInfo },
     prepare: (doc) => pdflibAddPlaceholder({ pdfDoc: doc, reason, contactInfo, name, location }),
     save: { useObjectStreams: false }, // the signature dictionary must stay findable in the file
-    sign: async (pdf) => new Uint8Array(await new SignPdf().sign(Buffer.from(pdf), signer)),
+    sign: async (pdf) => new Uint8Array(await new SignPdf().sign(Buffer.from(pdf), legacy ??= new P12Signer(p12, { passphrase: password }))),
   };
 }
+
+/** @type {{ file: string, mtimeMs: number, size: number, password: string, p12: Uint8Array, signer: any } | null} */
+let cached = null;
+let loads = 0;
+/** For tests: how many times a .p12 was opened (decrypted) in this process. */
+export const p12Loads = () => loads;
 
 /**
  * A @reportwright/pdf signer from a PKCS#12 file (its examples/p12-signer.mjs): the key and its certificate chain, the
@@ -37,6 +52,7 @@ export async function p12Signer(p12, password) {
   const forge = (await import('node-forge')).default;
   const { cmsSigner } = await import('@reportwright/pdf');
   const setup = (/** @type {string} */ m) => Object.assign(new Error(m), { status: 500 });
+  loads++;
   let box;
   try { box = forge.pkcs12.pkcs12FromAsn1(forge.asn1.fromDer(forge.util.createBuffer(Buffer.from(p12).toString('binary'))), password); }
   catch { throw setup('PW_SIGN_P12 could not be opened (a wrong PW_SIGN_PASSWORD, or not a PKCS#12 file)'); }
@@ -47,6 +63,9 @@ export async function p12Signer(p12, password) {
   const mine = certs.findIndex((c) => c.publicKey.n?.equals(key.n));
   if (mine < 0) throw setup("PW_SIGN_P12 has no certificate for its key");
   certs.unshift(certs.splice(mine, 1)[0]);
+  // an expired or not yet valid certificate signs nothing: readers would show the signature as invalid
+  const now = Date.now(), v = certs[0].validity;
+  if (!(v.notBefore.getTime() <= now && now <= v.notAfter.getTime())) throw setup("PW_SIGN_P12's certificate is expired or not yet valid");
   return cmsSigner({
     certs: certs.map((c) => forge.pki.certificateToPem(c)).join('\n'),
     keyAlgorithm: 'rsa',
