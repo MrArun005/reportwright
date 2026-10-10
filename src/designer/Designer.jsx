@@ -14,6 +14,7 @@ import { ITEMS } from '@/engine/items/index.js';
 import { fontFaceCss } from '@/exporters/svg.js';
 import { allFontKeys, optionalMissing } from '@/engine/text/fonts.js';
 import { customFonts, fontsBase } from '@/viewer/engineClient.js';
+import { setFetchPolicy } from '@/viewer/dataFetch.js';
 import ThemeToggle from '@/theme/ThemeToggle.jsx';
 import ChartWizard from './ChartWizard.jsx';
 import TableWizard from './TableWizard.jsx';
@@ -334,9 +335,11 @@ function HistoryDialog({ id, onClose, T, lang }) {
  *   toolbox?: { hide?: string[] }, panels?: { data?: boolean, inspector?: boolean }, dataSourceTemplates?: object[], server?: string } }} props
  *   embed: set by mountDesigner (another site); none on ReportWright's own pages
  */
-export default function Designer({ store: storeIn = null, ...props }) {
+export default function Designer({ store: storeIn = null, allowHosts = null, ...props }) {
   // its own store (N17: two designers on a page shared one), active from its first render and on every event in it
-  const [store] = useState(() => { const s = storeIn || newDesignerStore(); activateStore(s); return s; });
+  // allowHosts: the app's designer page passes PW_INTERNAL_HOSTS, which designers' data may reach (as in server renders);
+  // the embedded designer sets its policy from mountDesigner's options instead
+  const [store] = useState(() => { if (allowHosts) setFetchPolicy({ allowHosts }); const s = storeIn || newDesignerStore(); activateStore(s); return s; });
   return <DesignerStore.Provider value={store}><DesignerIn {...props} /></DesignerStore.Provider>;
 }
 /** Events that may change a designer's state: each makes this designer's store the active one first (capture phase). */
