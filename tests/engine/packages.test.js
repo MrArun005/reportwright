@@ -180,8 +180,8 @@ describe('npm packages', () => {
     }
   });
 
-  it('the viewer imports pdf-lib, fontkit, bwip-js, bidi-js and @reportwright/pdf (and its fflate) (pinned dependencies) instead of bundling them', () => {
-    const LIBS = ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'bidi-js', '@reportwright/pdf'];
+  it('the viewer imports fontkit, bwip-js, bidi-js and @reportwright/pdf (and its fflate) (pinned dependencies) instead of bundling them, and has no pdf-lib', () => {
+    const LIBS = ['@pdf-lib/fontkit', 'bwip-js', 'bidi-js', '@reportwright/pdf'];
     const v = json('packages/viewer/package.json');
     expect(Object.keys(v.dependencies).sort()).toEqual([...LIBS].sort());
     for (const n of LIBS) expect(v.dependencies[n]).toBe(json(`node_modules/${n}/package.json`).version);
@@ -195,6 +195,8 @@ describe('npm packages', () => {
     const all = files.map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n');
     expect(all).not.toMatch(/code49_patterns|dictionary_bin|Helvetica\w*_compressed/);
     for (const n of LIBS) expect(all).toMatch(new RegExp(`(from |import\\()"${n.replace('/', '\\/')}"`));
+    // pdf-lib (B4): neither imported by name nor bundled (only pdfWriter 'legacy' loads it, by a specifier bundlers leave alone)
+    expect(all).not.toMatch(/(from |import\()"pdf-lib"|node_modules\/pdf-lib\//);
     // one fflate: @reportwright/pdf's, imported by name, never bundled or imported on its own
     expect(all).toMatch(/(from |import\()"@reportwright\/pdf\/fflate"/);
     expect(all).not.toMatch(/(from |import\()"fflate"|node_modules\/fflate\//);

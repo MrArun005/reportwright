@@ -4,7 +4,6 @@
 // PW_SIGN_P12 (its path) and PW_SIGN_PASSWORD. Only routes behind an API key may sign:
 // a signature vouches for the content, and anyone who can reach an open route could choose it.
 import fs from 'node:fs/promises';
-import { pdflibAddPlaceholder } from '@signpdf/placeholder-pdf-lib';
 import { SignPdf } from '@signpdf/signpdf';
 import { P12Signer } from '@signpdf/signer-p12';
 
@@ -31,7 +30,8 @@ export async function pdfSigner({ name = 'ReportWright', reason = 'Issued by Rep
   let legacy;
   return {
     options: { signer: p12signer, name, reason, location, contactInfo },
-    prepare: (doc) => pdflibAddPlaceholder({ pdfDoc: doc, reason, contactInfo, name, location }),
+    // loaded when used: it needs pdf-lib, which is only a development dependency now
+    prepare: async (doc) => (await import('@signpdf/placeholder-pdf-lib')).pdflibAddPlaceholder({ pdfDoc: doc, reason, contactInfo, name, location }),
     save: { useObjectStreams: false }, // the signature dictionary must stay findable in the file
     sign: async (pdf) => new Uint8Array(await new SignPdf().sign(Buffer.from(pdf), legacy ??= new P12Signer(p12, { passphrase: password }))),
   };

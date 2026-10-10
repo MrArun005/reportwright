@@ -31,7 +31,8 @@ const write = (f, s) => fs.writeFileSync(path.join(root, f), typeof s === 'strin
 const E = 'packages/engine';
 // third-party libraries stay imports (pinned dependencies), never bundled: our tarballs hold only our code. fflate is
 // @reportwright/pdf's (src imports '@reportwright/pdf/fflate'): one copy for the PDF writer and the Office exporters
-const external = ['pdf-lib', '@pdf-lib/fontkit', 'bwip-js', 'bidi-js', '@reportwright/pdf'];
+// pdf-lib is no dependency (B4): only pdfWriter 'legacy' and the deprecated prepare/save take it, installed by the caller
+const external = ['@pdf-lib/fontkit', 'bwip-js', 'bidi-js', '@reportwright/pdf'];
 fs.rmSync(path.join(root, E, 'dist'), { recursive: true, force: true });
 fs.rmSync(path.join(root, E, 'public'), { recursive: true, force: true }); // fonts moved to @reportwright/fonts
 // no source map: the bundle is readable (not minified), and the map was ~0.8 MB of a 2 MB package

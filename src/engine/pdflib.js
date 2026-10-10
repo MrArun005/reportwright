@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * pdf-lib, loaded on first use (exportPdf awaits loadPdfLib()); the bindings below are set then (ES modules' live
+ * pdf-lib, loaded on first use (exportPdf awaits loadPdfLib(); an optional install since B4); the bindings below are set then (ES modules' live
  * bindings: `import { PDFName } from './pdflib.js'` sees them). Apart from lazylibs.js (fontkit), so the viewer's first
  * load does not carry it.
  */
@@ -53,8 +53,16 @@ function pdfLibOneFile() {
     return m;
   } catch { return undefined; }
 }
-/** pdf-lib and fontkit (exportPdf embeds fonts with both). @returns {Promise<void>} */
-export const loadPdfLib = () => (pl ||= Promise.all([(req && pdfLibOneFile()) || load('pdf-lib', () => import('pdf-lib')), loadFontkit()]).then(([L]) => {
+/** the specifier, not a literal: bundlers leave pdf-lib out (it is no dependency of the packages any more) */
+const PDF_LIB = 'pdf-lib';
+/**
+ * pdf-lib and fontkit, for what still takes pdf-lib's path: pdfWriter 'legacy' (pictures, fields, PDF/A, tagged,
+ * encryption) and the deprecated prepare and save options, until 0.15. pdf-lib is not installed with the packages: the
+ * caller installs it (npm i pdf-lib@1.17.1). @returns {Promise<void>}
+ */
+export const loadPdfLib = () => (pl ||= Promise.all([(req && pdfLibOneFile()) || load(PDF_LIB, () => import(/* @vite-ignore */ /* webpackIgnore: true */ PDF_LIB)).catch((/** @type {any} */ e) => {
+  throw Object.assign(new Error(`This PDF export takes pdf-lib's path (pdfWriter 'legacy', or the deprecated prepare and save options), and pdf-lib is not installed: npm i pdf-lib@1.17.1, or use the default writer (${e?.code || e?.message || e})`), { status: 501, cause: e });
+}), loadFontkit()]).then(([L]) => {
   // plain assignments, not a destructuring one: Turbopack's build did not update the exported bindings from that
   PDFDocument = L.PDFDocument; PDFName = L.PDFName; PDFString = L.PDFString; PDFHexString = L.PDFHexString; PDFRawStream = L.PDFRawStream; PDFImage = L.PDFImage; PngEmbedder = L.PngEmbedder; PDFStream = L.PDFStream; PDFArray = L.PDFArray; PDFDict = L.PDFDict; PDFNumber = L.PDFNumber; PDFBool = L.PDFBool; rgb = L.rgb; pushGraphicsState = L.pushGraphicsState; popGraphicsState = L.popGraphicsState; concatTransformationMatrix = L.concatTransformationMatrix;
 }));
