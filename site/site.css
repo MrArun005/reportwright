@@ -240,3 +240,45 @@ h2 { font-size: var(--fs-6); letter-spacing: -.025em; line-height: 1.1; margin: 
   #gallery .stage-head { grid-template-columns: minmax(0, 1fr); }
   #gallery .stage-what, #gallery .stage-try { display: none; }
 }
+
+/* home page: one section per screen, snap between them (html.snap is only on index.html) */
+.snap main > section { box-sizing: border-box; height: calc(100vh - var(--bar-h)); height: calc(100dvh - var(--bar-h)); display: flex; flex-direction: column; justify-content: safe center; overflow-y: auto; scroll-margin-top: 0; }
+/* the nav offset lives in scroll-padding alone: adding scroll-margin too would count it twice */
+html.snap { scroll-padding-top: var(--bar-h); }
+.snap #gallery { scroll-margin-top: 0; justify-content: flex-start; overflow-y: hidden; }
+.snap .hero-wrap { justify-content: flex-start; border-bottom: 1px solid var(--rule); }
+.snap .hero-wrap .hero { flex: 1 0 auto; align-content: center; border-bottom: 0; padding-top: clamp(16px, 2.5vw, 40px); padding-bottom: clamp(16px, 2.5vw, 40px); }
+@media (min-width: 1001px) {
+  .snap .hero-wrap .hero { grid-template-columns: minmax(0, .9fr) minmax(0, 1.6fr); }
+  .snap .hero .spec { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 22px; align-self: center; }
+  .snap .hero .spec div { grid-template-columns: minmax(0, 1fr); align-content: start; gap: 2px; padding: 9px 0; }
+}
+.snap #scale .split-scale { flex: 1; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+.snap #scale .scale-panel { min-height: 0; overflow-y: auto; }
+.snap #scale .viewer-host, .snap #designer .designer-host { height: auto; min-height: 0; flex: 1; }
+.snap #designer .designer-host:has(.narrow) { flex: 0 0 auto; min-height: 220px; }
+.snap #scale, .snap #designer { justify-content: flex-start; }
+@media (max-width: 1000px) {
+  .snap #scale .split-scale { grid-template-rows: auto minmax(260px, 1fr); }
+  .snap #scale .scale-panel { overflow: visible; }
+}
+.snap main > section > * { flex-shrink: 0; }
+.snap #scale .split-scale, .snap #gallery .split, .snap .viewer-host { flex-shrink: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  html.snap { scroll-snap-type: y mandatory; }
+  .snap main > section { scroll-snap-align: start; }
+  .snap .foot { scroll-snap-align: end; }
+  /* reveal: opacity/transform only, so content stays in the accessibility tree */
+  .snap.reveal-on [data-rv] { opacity: 0; transform: translateY(18px) scale(.985); transition: opacity .5s cubic-bezier(.2,.7,.2,1) var(--rv-d, 0ms), transform .55s cubic-bezier(.2,.7,.2,1) var(--rv-d, 0ms); }
+  .snap.reveal-on .in [data-rv] { opacity: 1; transform: none; }
+}
+
+/* section progress: dots in the right gutter, ring around the current one */
+.snap-dots { position: fixed; right: max(4px, calc(var(--gut) / 2 - 9px)); top: 50%; transform: translateY(-50%); z-index: 15; display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.snap-dots button { all: unset; box-sizing: border-box; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; cursor: pointer; }
+.snap-dots button::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); opacity: .55; transition: background .3s, opacity .3s; }
+.snap-dots button[aria-current="true"] { box-shadow: inset 0 0 0 2px var(--accent); }
+.snap-dots button[aria-current="true"]::before { background: var(--accent); opacity: 1; }
+.snap-dots button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (min-width: 1001px) and (max-height: 780px) { .snap .hero .spec div { padding: 6px 0; } .snap .hero-wrap .hero { padding-top: 12px; padding-bottom: 12px; } }
+@media (max-width: 600px) { .snap-dots { right: 1px; gap: 6px; } .snap-dots button { width: 14px; height: 18px; } }

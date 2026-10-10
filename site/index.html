@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="snap">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -37,15 +37,15 @@
     </button>
   </div>
 </header>
-<nav class="subnav" aria-label="On this page">
-  <a href="#scale">Scale</a>
-  <a href="#designer">Designer</a>
-  <a href="#embed">Embed</a>
-  <a href="#capabilities">Capabilities</a>
-</nav>
-
 <main id="top">
-  <section class="hero">
+  <section class="hero-wrap" id="intro" aria-label="Introduction">
+  <nav class="subnav" aria-label="On this page">
+    <a href="#scale">Scale</a>
+    <a href="#designer">Designer</a>
+    <a href="#embed">Embed</a>
+    <a href="#capabilities">Capabilities</a>
+  </nav>
+  <div class="hero">
     <div class="hero-copy">
       <p class="kicker"><span class="mark">●</span> Report designer · viewer · engine</p>
       <h1>Report PDFs that pass PDF/A and PDF/UA. <em>No Chromium.</em></h1>
@@ -72,6 +72,7 @@
       <div><dt>Migration</dt><dd>SSRS <code>.rdl</code> / <code>.rdlc</code>, ActiveReportsJS <code>.rdlx-json</code>, JasperReports <code>.jrxml</code>, BIRT <code>.rptdesign</code> <small>(<a href="switch.html">try your own file</a>)</small></dd></div>
       <div><dt>Server</dt><dd>Per-report permissions, audit log, OIDC and SAML sign-in <small>(in the server app, not this static demo)</small></dd></div>
     </dl>
+  </div>
   </section>
 
   <section class="sect" id="gallery" aria-labelledby="gallery-h">
@@ -182,5 +183,6 @@
 </footer>
 <script type="module" src="site.js"></script>
 <script src="nav.js"></script>
+<script src="snap.js"></script>
 </body>
 </html>
