@@ -11,7 +11,7 @@ fs.mkdirSync('/tmp/shots', { recursive: true });
 
 const b = await chromium.launch();
 const p = await (await b.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
-const errs = []; p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
+const errs = []; p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error') errs.push(m.location()?.url ? `${m.text()} (${m.location().url})` : m.text()); });
 const live = (name, sel) => p.locator(`[data-item=${name}] .live svg ${sel}`).count();
 
 /* ---------------- designer ---------------- */
