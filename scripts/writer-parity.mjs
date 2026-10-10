@@ -51,6 +51,8 @@ const REPO_ACCEPT = {};
 const cases = [];
 for (const f of fs.readdirSync(path.join(root, 'reports')).filter(f => f.endsWith('.pw.json')).sort()) {
   cases.push({ id: `repo/${f.replace('.pw.json', '')}`, kind: 'pdf', accept: REPO_ACCEPT[f.replace('.pw.json', '')], def: JSON.parse(fs.readFileSync(path.join(root, 'reports', f), 'utf8')) });
+  // and tagged (PDF/UA-1, B4): pdfua.js's tree for every repository report, through @reportwright/pdf
+  cases.push({ id: `repo-ua/${f.replace('.pw.json', '')}`, kind: 'pdf', opts: { tagged: { lang: 'en' } }, accept: REPO_ACCEPT[f.replace('.pw.json', '')], def: JSON.parse(fs.readFileSync(path.join(root, 'reports', f), 'utf8')) });
 }
 // the streaming ledger of tests/engine/pdfstream-paged.test.js, in each streamed form
 const rows = (n) => Array.from({ length: n }, (_, i) => ({ id: i + 1, region: ['North', 'South', 'East', 'West'][i % 4], amount: Math.round(((i * 7919) % 200000 - 100000) * 1.37) / 100, ref: i % 37 ? `REF-${i * 31}` : `Reversal of an earlier transfer between linked accounts, batch ${i}` }));
@@ -120,7 +122,7 @@ async function make1(c, writer) {
     return { bytes: Buffer.concat(parts), streamed: r.streamed };
   }
   const { pdfWriter, ...ropts } = opts;
-  const model = await render(c.def, ropts);
+  const model = await render(c.def, { ...ropts, ...(ropts.tagged ? { exportData: true } : {}) });
   const bytes = await exportPdf(model, fontStore, opts);
   // signed: today's way on the baseline (pdf-lib's placeholder, then @signpdf), the sign option on the new side
   return { bytes: Buffer.from(s && old ? await s.sign(bytes) : bytes), streamed: false };
@@ -208,12 +210,12 @@ for (const c of cases) {
     row.deterministic = neu.bytes.equals(again.bytes) ? 'ok' : c.opts?.encrypt ? 'n/a (random key)' : c.opts?.sign ? 'n/a (signing time)' : 'FAIL';
     row.size = `${old.bytes.length} → ${neu.bytes.length}`;
     // --keep dir: a failing report's two files, to look at
-    if (arg('--keep') && Object.values(row).some(v => typeof v === 'string' && v.startsWith('FAIL'))) { const k = /** @type {string} */ (arg('--keep')), b = c.id.replace(/\W+/g, '_'); fs.mkdirSync(k, { recursive: true }); fs.copyFileSync(fo, path.join(k, `${b}.old.pdf`)); fs.copyFileSync(fn, path.join(k, `${b}.new.pdf`)); }
+    if (arg('--keep') && Object.values(row).some(v => typeof v === 'string' && v.includes('FAIL'))) { const k = /** @type {string} */ (arg('--keep')), b = c.id.replace(/\W+/g, '_'); fs.mkdirSync(k, { recursive: true }); fs.copyFileSync(fo, path.join(k, `${b}.old.pdf`)); fs.copyFileSync(fn, path.join(k, `${b}.new.pdf`)); }
     fs.rmSync(fo); fs.rmSync(fn);
   } catch (e) {
     row.path = `not rendered: ${String(/** @type {any} */ (e)?.message || e).slice(0, 80)}`;
   }
-  if (Object.values(row).some(v => typeof v === 'string' && v.startsWith('FAIL'))) failed++;
+  if (Object.values(row).some(v => typeof v === 'string' && v.includes('FAIL'))) failed++;
   table.push(row);
   console.error(`${row.report}: ${row.path} words ${row.text} tree ${row.tree} drawing ${row.drawing} pixels ${row.pixels} ${row.valid} ${row.deterministic}`);
 }
