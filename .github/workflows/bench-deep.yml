@@ -67,14 +67,19 @@ jobs:
           import json, os
           push = os.environ['GITHUB_EVENT_NAME'] == 'push'
           if push and os.path.exists('bench/deep/.push-tier'):  # tier[,layout] for push runs
-              t, _, l = open('bench/deep/.push-tier').read().strip().partition(',')
-              os.environ['TIER'], os.environ['LAYOUT'] = t.strip(), (l.strip() or 'auto')
+              t, l, *g = [x.strip() for x in open('bench/deep/.push-tier').read().strip().split(',')] + ['']
+              os.environ['TIER'], os.environ['LAYOUT'], os.environ['ONLY_GROUPS'] = t, (l or 'auto'), ' '.join(x for x in g if x)
           tier = os.environ['TIER']
           layout = os.environ['LAYOUT'] if os.environ['LAYOUT'] != 'auto' else ('per-lang' if tier == 'quick' else 'same-machine')
           print(f'tier={tier}\nlayout={layout}')
           with open(os.environ['GITHUB_ENV'], 'a') as e:
               e.write(f'TIER={tier}\n')
-          groups = ['create-writers', 'create-engines'] + ([] if tier == 'million' else ['read-edit', 'robustness'])
+          # name:jobs; create-engines splits its report table from the rest so one runner death loses less (a table never spans jobs)
+          groups = ['create-writers', 'create-engines:report', 'create-engines:plain,invoice,invoice-warm,unicode,images,pdfa'] + ([] if tier == 'million' else ['read-edit', 'robustness'])
+          if tier == 'million':
+              groups[1:3] = ['create-engines']
+          if os.environ.get('ONLY_GROUPS'):
+              groups = [g for g in groups if g.split(':')[0] in os.environ['ONLY_GROUPS'].split()]
           print('groups=' + json.dumps(groups if layout == 'same-machine' else []))
           known = ['ours', 'js', 'python', 'java', 'dotnet', 'go', 'rust', 'cli']
           if os.environ['GITHUB_EVENT_NAME'] == 'push' and os.path.exists('bench/deep/.push-langs'):  # narrows a push run while fixing
@@ -422,6 +427,7 @@ jobs:
       PUPPETEER_CACHE_DIR: /home/runner/.cache/puppeteer
       BENCH_SRC_ENGINE: ${{ needs.build.outputs.engine_src }}
       BENCH_SRC_PDF: ${{ needs.build.outputs.pdf_src }}
+      MEM_CAP_MB: "4000" # hard (cgroup MemoryMax when systemd-run allows it), well under the runner's 7.8 GB
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -469,24 +475,33 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for id in $(gh run list -R "${{ github.repository }}" -w bench-deep.yml -s success -L 20 --json databaseId -q '.[].databaseId'); do
-            rm -rf /tmp/prev && gh run download "$id" -R "${{ github.repository }}" -n bench-deep-results -D /tmp/prev 2>/dev/null || continue
-            if python3 -c "import json,sys; j=json.load(open('/tmp/prev/results.json')); sys.exit(j['sources'][0]['meta'][0]['tier'] != '$TIER')"; then
-              echo "PRUNE=/tmp/prev/results.json" >> "$GITHUB_ENV"; echo "pruning against run $id"; break
-            fi
+          # newest first; each (job, league) is judged by the newest run that has ours valid there (same tier first, then any)
+          P=""; i=0
+          for want in same any; do
+            for id in $(gh run list -R "${{ github.repository }}" -w bench-deep.yml -s completed -L 30 --json databaseId -q '.[].databaseId'); do
+              [ "$id" = "$GITHUB_RUN_ID" ] && continue
+              d=/tmp/prev/$want-$id; gh run download "$id" -R "${{ github.repository }}" -n bench-deep-results -D "$d" 2>/dev/null || continue
+              python3 -c "import json,sys; j=json.load(open('$d/results.json')); sys.exit('$want'=='same' and j['sources'][0]['meta'][0]['tier'] != '$TIER')" || continue
+              P="$P,$d/results.json"; i=$((i+1)); [ $i -ge 4 ] && break
+            done
           done
+          echo "PRUNE=${P#,}" >> "$GITHUB_ENV"; echo "prune sources: $P"
+      - name: Group name
+        run: |
+          g='${{ matrix.group }}'; echo "G=${g%%:*}" >> "$GITHUB_ENV"; echo "ONLY=$([ "$g" != "${g#*:}" ] && echo "${g#*:}")" >> "$GITHUB_ENV"
+          echo "SLUG=$(echo "$g" | tr ':,' '__')" >> "$GITHUB_ENV"
       - name: Runner
         run: |
           mkdir -p results
-          { echo "group ${{ matrix.group }} tier $TIER runs $RUNS"; date -u; lscpu | head -20; free -m; df -h /tmp; } | tee "results/${{ matrix.group }}-runner.txt"
+          { echo "group ${{ matrix.group }} tier $TIER runs $RUNS"; date -u; lscpu | head -20; free -m; df -h /tmp; } | tee "results/$SLUG-runner.txt"
       - name: Benchmark
         env:
           BENCH_SOURCE: ${{ needs.build.outputs.engine_src && format('engine {0}', needs.build.outputs.engine_src) }}${{ needs.build.outputs.pdf_src && format(',pdf {0}', needs.build.outputs.pdf_src) }}
-        run: python3 bench/deep/drive.py --group "${{ matrix.group }}" --langs "${{ needs.fixtures.outputs.all_langs }}" --tier "$TIER" --runs "$RUNS" --fixtures "$FX" --out "results/${{ matrix.group }}.jsonl" ${PRUNE:+--prune "$PRUNE"}
+        run: python3 bench/deep/drive.py --group "$G" ${ONLY:+--only "$ONLY"} --langs "${{ needs.fixtures.outputs.all_langs }}" --tier "$TIER" --runs "$RUNS" --fixtures "$FX" --out "results/$SLUG.jsonl" ${PRUNE:+--prune "$PRUNE"}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: results-${{ matrix.group }}
+          name: results-${{ env.SLUG }}
           path: results/
           retention-days: 30
 

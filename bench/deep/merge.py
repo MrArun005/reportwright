@@ -364,6 +364,12 @@ def main():
             meta, cells = j['meta'], j['cells']
         else:
             meta, cells = load(d)
+            ids = sorted({m['run_id'] for m in meta if m.get('run_id')})
+            if len(ids) > 1:  # per-group results from several runs: only one report when they measured the same code
+                refs = {m.get('source', 'npm only') for m in meta}
+                if len(refs) > 1:
+                    sys.exit(f'refusing to merge runs {ids}: they built different code ({sorted(refs)})')
+                label = f'GitHub runs {" + ".join(ids)}, ubuntu-latest, same code refs ({refs.pop()}), one run per job group'
         pruned = [r for r in cells if r.get('status') == 'pruned']
         cells = [r for r in cells if r.get('status') != 'pruned']
         tables, summary = build(meta, cells, contestants, label)

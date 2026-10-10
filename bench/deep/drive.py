@@ -54,8 +54,22 @@ def group_rss(pgid):
     return total
 
 
+SCOPE = None  # set in main: a systemd-run prefix that puts a run in its own cgroup with MemoryMax (a hard cap)
+
+
+def find_scope(cap_mb):
+    for pre in (['systemd-run', '--user', '--scope', '-q'], ['sudo', '-n', 'systemd-run', '--scope', '-q', f'--uid={os.getuid()}', f'--gid={os.getgid()}', '-E', 'HOME', '-E', 'PATH']):
+        args = pre + ['-p', f'MemoryMax={cap_mb}M', '-p', 'MemorySwapMax=0']
+        if sh(*args, 'true', timeout=30).returncode == 0:
+            return args
+    return None
+
+
 def run_once(cmd, env, timeout, cap_mb, watch=None):
-    """One process. Returns a dict with status ok|error|crash|timeout|oom and the measurements."""
+    """One process. Returns a dict with status ok|error|crash|timeout|oom and the measurements. With SCOPE the kernel
+    enforces the cap (cgroup MemoryMax, a SIGKILL = oom); the 100 ms RSS poll below enforces it either way."""
+    if SCOPE:
+        cmd = SCOPE + (['--setenv=' + f'{k}={v}' for k, v in env.items()] if SCOPE[0] == 'sudo' else []) + ['--'] + list(cmd)
     t0 = time.perf_counter()
     with open(env['BENCH_LOG'], 'w') as log:
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=log, env=env, start_new_session=True)
@@ -357,7 +371,8 @@ def meta(a, langs):
             'tier': a.tier, 'runs': a.runs, 'date': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
             'cpu': cpu.group(1).strip() if cpu else platform.processor(), 'cores': os.cpu_count(),
             'ram_mb': int(mem.group(1)) // 1024 if mem else None, 'os': platform.platform(), 'cap_mb': a.cap_mb,
-            'runner': os.environ.get('RUNNER_NAME'), 'tools': tools,
+            'runner': os.environ.get('RUNNER_NAME'), 'tools': tools, 'run_id': os.environ.get('GITHUB_RUN_ID'),
+            'mem_cap': ('cgroup MemoryMax ' if SCOPE else 'RSS poll ') + f'{a.cap_mb} MB', **({'only': a.only} if a.only else {}),
             **({'source': os.environ['BENCH_SOURCE']} if os.environ.get('BENCH_SOURCE') else {})}  # branch builds: 'engine <ref>@<sha>,pdf <ref>@<sha>'
 
 
@@ -403,7 +418,8 @@ def prune_plan(prev_path, langs):
     with no shared size, or valid where ours is invalid. A job where ours has no valid result is not pruned. Robustness never is."""
     j = json.loads(Path(prev_path).read_text())
     src = j['sources'][0] if 'sources' in j else j
-    run = re.search(r'run (\d+)', src.get('label', '')) or re.search(r'.', '?')
+    m = re.search(r'runs? ([\d+ ]+)', src.get('label', ''))
+    run = m.group(1).strip() if m else '?'
     league = {lib: c.get('league') for l in langs.values() for lib, c in l['libs'].items()}
     t = lambda r: (r.get('cold_ms') or r.get('warm_ms') or {}).get('median') if r['job'] != 'invoice-warm' else (r.get('warm_ms') or r.get('cold_ms') or {}).get('median')
     by = {}
@@ -417,6 +433,7 @@ def prune_plan(prev_path, langs):
         ours = [r for r in rs if r['lang'] == 'ours']
         if not any(r['status'] == 'ok' for r in ours):
             continue  # rule 4: ours has no valid result in this job
+        drop[key] = {}  # judged here, even if nobody is dropped
         best = {}
         for r in ours:
             if r['status'] == 'ok' and t(r):
@@ -432,8 +449,8 @@ def prune_plan(prev_path, langs):
             sz = max(shared)
             ratio = t(mine[sz]) / best[sz]
             if ratio > KEEP_RATIO:
-                drop.setdefault(key, {})[lib] = (round(ratio, 2), sz)
-    return drop, run.group(1) if run.lastindex else '?'
+                drop[key][lib] = (round(ratio, 2), sz)
+    return drop, run
 
 
 def main():
@@ -446,11 +463,13 @@ def main():
     p.add_argument('--fixtures', required=True)
     p.add_argument('--out', required=True)
     p.add_argument('--work', default='/tmp/deep-work')
-    p.add_argument('--cap-mb', type=int, default=int(os.environ.get('MEM_CAP_MB', '6000')))
+    p.add_argument('--cap-mb', type=int, default=int(os.environ.get('MEM_CAP_MB', '4000')))
     p.add_argument('--prune', default='', help="a previous merged results.json: drop contestants more than 1.2x slower than ours there")
     p.add_argument('--only', default='', help='comma list of jobs, for a partial rerun or to split a group')
     a = p.parse_args()
     assert bool(a.lang) != bool(a.group), 'give --lang or --group'
+    global SCOPE
+    SCOPE = find_scope(a.cap_mb)
     a.langs = [a.lang] if a.lang else [l.strip() for l in a.langs.split(',') if l.strip()]
     fx, work = Path(a.fixtures).resolve(), Path(a.work)
     spec = json.loads((fx / 'spec.json').read_text())
@@ -469,7 +488,12 @@ def main():
         parts, broken = contestants(a, langs, fx, work)
         for r in broken:
             emit(r)
-        drop, prev_run = prune_plan(a.prune, langs) if a.prune and Path(a.prune).exists() else ({}, None)
+        drop, prev_run = {}, None
+        for f in [f for f in a.prune.split(',') if f and Path(f).exists()]:  # the first file that judged a (job, league) decides it
+            d, r = prune_plan(f, langs)
+            for k, v in d.items():
+                if k not in drop:
+                    drop[k] = {lib: (*x, r) for lib, x in v.items()}
         lg = lambda pt, job: pt['c'].get('league') if job in CREATE else 'read-edit'
         does = lambda pt, job: ('parse' if job in ROBUST else job) in pt['c']['jobs'] and (not a.group or GROUPS[a.group](job, pt['c']))
         batches = [parts] if a.group else [[pt] for pt in parts]  # a group interleaves everyone; a language runs lib by lib
@@ -483,7 +507,7 @@ def main():
                     if d and pt['lang'] != 'ours':
                         todo.remove(pt)
                         emit({'type': 'cell', 'lang': pt['lang'], 'lib': pt['label'], 'job': job, 'size': d[1], 'status': 'pruned',
-                              'ratio': d[0], 'prev_run': prev_run, 'league': lg(pt, job)})
+                              'ratio': d[0], 'prev_run': d[2], 'league': lg(pt, job)})
                 dead = {}
                 for size in plan[job] if todo else []:
                     for pt in todo:
