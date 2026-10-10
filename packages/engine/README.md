@@ -255,6 +255,18 @@ format: `import type { Report } from '@reportwright/engine/report'`; JSON Schema
 - **ISO dates.** When a data set has no `fields`, they are detected from the rows, and a string that looks like an ISO
   date (`2024-01-31`, `2024-01-31T10:00:00Z`) becomes a date. Keep such strings as text with `detectDates: false` on
   the data set, or declare the fields and give that one `type: 'string'`.
+- **Case in grouping, sorting and comparing text.** As SSRS on its default (case-insensitive) collation: table and
+  matrix groups, list `groupBy` and every sort compare text ignoring case, so "North" and "north" are one group, shown
+  with the first value met in the data's order. Chart categories, filters with `=`, `<>` and `in`, `CountDistinct`,
+  `Lookup` and `LookupSet` compare exactly (case counts); `contains` and `like` ignore case. Set `caseSensitive: true`
+  on the report, or on one data set (it then holds for the regions over that set), to group and sort upper and lower
+  case apart. An imported RDL data set with `CaseSensitivity` True gets `caseSensitive: true`.
+- **Filters, sorts and parameters fail loudly.** A filter with no `expr`, an unknown `op`, no `op` and no `value`, no
+  `value` or a Between with no `value2` is a validation error (`{ expr, value }` with no `op` is `=`). A sort `by` a bare
+  field name (`'region'`) sorts by that field with a warning (did you mean `=Fields.region`?); another constant warns
+  that it does not sort. `Parameters.x` that is a near miss of a declared name is an error; a value passed in
+  `parameters` for an undeclared name, or not of its parameter's type or options, is a warning, and an error (a
+  `ReportError` with `status: 400`) with `render(def, { strictParameters: true })`, as on the server API and `pw render`.
 - **Chart colours.** By default colours go by position. `colorByCategory: true` on charts gives each category (pie,
   donut and funnel slices; `seriesGroup` series) one colour in every chart of the report that sets it.
 - **Network.** Only data sources of a fetched type (`rest`, `graphql`, `soap`, `odata`, and `csv` or `xml` with a URL) and SQL sources without
