@@ -1133,6 +1133,13 @@ bidi algorithm, hyphenation, kerning of the standard fonts, WOFF fonts; popup an
 
 ## Changes
 
+0.1.0-beta.9: stamping every page (`page.draw` then `save()`) is about 35% faster on a 1,000-page file: a page's open
+graphics states are counted with a byte scan instead of a full parse, and FlateDecode inflates whole, valid zlib
+streams with Node's zlib (damaged, truncated, raw or over-budget streams still go through fflate as before); the output
+is byte-identical. `bulk` starts an item's `itemTimeoutMs` clock when its worker is ready, so a respawned worker's
+start-up no longer fails good files; a stopped export (`timeoutMs` or `signal`) aborts its WritableStream even when
+the stop lands between two calls.
+
 0.1.0-beta.2: a left-to-right shaped cluster in an ActualText span has its text only in the ActualText, so MuPDF
 no longer reads it twice (pdf.js, which ignores ActualText, now misses those clusters; poppler, PDFium and
 `extractText` read them); `extractText` drops WJ (U+2060) and reads a code a ToUnicode skips as nothing (U+FFFD
