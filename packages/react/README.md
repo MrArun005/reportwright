@@ -8,6 +8,9 @@ The ReportWright report viewer and drag-and-drop designer as React components.
 
 React is a peer dependency, and the components use your app's React (through `@reportwright/viewer/react-peer`), so the page loads React once. The viewer loads on mount, so it is safe in server-rendered apps (Next.js, Remix).
 
+
+<img src="https://raw.githubusercontent.com/MrArun005/reportwright/main/docs/screenshots/ui-viewer.jpg" alt="The viewer" width="60%">
+
 ## Install
 
 ```bash

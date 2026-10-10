@@ -8,6 +8,12 @@
 
 The CLI carries [`@reportwright/engine`](https://github.com/MrArun005/reportwright/tree/main/packages/engine); fonts come from [`@reportwright/fonts`](https://github.com/MrArun005/reportwright/tree/main/packages/fonts).
 
+## Screenshots
+
+`pw render` output, page 1 (reports from the repository's `reports/`):
+
+<img src="https://raw.githubusercontent.com/MrArun005/reportwright/main/docs/screenshots/sales-by-region.png" alt="Grouped table" width="32%"> <img src="https://raw.githubusercontent.com/MrArun005/reportwright/main/docs/screenshots/loan-statement.png" alt="Loan statement" width="32%"> <img src="https://raw.githubusercontent.com/MrArun005/reportwright/main/docs/screenshots/tablix-showcase.png" alt="Pivot tables" width="32%">
+
 ## Install
 
 ```bash

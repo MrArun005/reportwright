@@ -8,6 +8,10 @@ An embeddable report viewer and drag-and-drop report designer for any web page: 
 
 The ReportWright report viewer in any web app (React is bundled inside, in a shadow root, so your styles do not leak in). A React app imports `@reportwright/viewer/react-peer` (and `/react-peer/designer`) instead, the same viewer using the app's own React, so the page loads React once; `@reportwright/react` does this for you:
 
+## Screenshots
+
+<img src="https://raw.githubusercontent.com/MrArun005/reportwright/main/docs/screenshots/ui-viewer.jpg" alt="The viewer in the live demo gallery" width="49%"> <img src="https://raw.githubusercontent.com/MrArun005/reportwright/main/docs/screenshots/ui-designer.jpg" alt="The designer in the live demo" width="49%">
+
 ## Install
 
 ```bash

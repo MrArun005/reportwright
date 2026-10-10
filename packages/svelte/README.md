@@ -8,6 +8,9 @@ Svelte actions that mount the ReportWright report viewer and drag-and-drop desig
 
 Plain JavaScript, so no compiler step and any Svelte version.
 
+
+<img src="https://raw.githubusercontent.com/MrArun005/reportwright/main/docs/screenshots/ui-viewer.jpg" alt="The viewer" width="60%">
+
 ## Install
 
 ```bash

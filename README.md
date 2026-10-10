@@ -1,44 +1,91 @@
 # ReportWright
 
-A report designer, report engine, report viewer and report automation server for the web. Next.js app, JavaScript.
+**Paged reports for the web: a drag-and-drop designer, an embeddable viewer and a JavaScript engine that writes PDF, Excel, Word, PowerPoint, HTML and CSV. No Chromium. MIT licensed.**
 
-**Renamed from Pagewright** in 0.9.0 (the npm packages moved from `@pagewrightjs/*` to `@reportwright/*`; the old
-packages are deprecated), finished in 0.13.2. What did not change, so deployments and stored data keep working:
+[![npm](https://img.shields.io/npm/v/%40reportwright%2Fengine?label=%40reportwright%2Fengine)](https://www.npmjs.com/package/@reportwright/engine) [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![node](https://img.shields.io/badge/node-22.x-339933)](package.json) [![live demo](https://img.shields.io/badge/demo-live-c0392b)](https://mrarun005.github.io/reportwright-demo)
 
-- settings keep the `PW_` prefix (`PW_AUTH`, `PW_BASE_URL`, …), and the CLI is still `pw` (`reportwright` works too);
-- cookie names and storage table names, and report files keep the `.pw.json` extension.
+**Live demo:** [mrarun005.github.io/reportwright-demo](https://mrarun005.github.io/reportwright-demo): a gallery of real reports from this repository in the viewer, the designer, a playground and the benchmarks.
 
-Deprecated, still working, removed in 1.0 (each is an alias of its ReportWright name):
+## Install
 
-- `<pagewright-viewer>` / `<pagewright-designer>`, `PagewrightViewer`, `PagewrightDesigner`, `pagewrightViewer`,
-  `pagewrightDesigner`, `definePagewrightElements`, `window.Pagewright` and the `/embed/pagewright-viewer.js` loader
-  (each warns once in the console, except the React and Vue components, which are the same objects);
-- `"$schema": "pagewright/report@1"`, read as `reportwright/report@1`;
-- the `x-pagewright-*` HTTP headers, sent next to their `x-reportwright-*` names (the proxy secret is read under
-  either name), and the `pagewright_*` metrics, emitted next to the `reportwright_*` ones.
+Use the packages in your own app (no server needed):
 
-The plan is in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). All four phases are done. Status and gaps: [`docs/STATUS.md`](docs/STATUS.md). Automation API: [`docs/API.md`](docs/API.md).
+```bash
+npm i @reportwright/engine @reportwright/fonts      # render and export in Node or the browser
+npm i @reportwright/viewer @reportwright/fonts      # the viewer and designer in a web page
+npm i -D @reportwright/cli @reportwright/fonts      # `pw` on the command line
+```
 
-## Status (5 Oct 2026)
+Or run the full self-hosted server (designer, report storage, users, schedules, API) from this repository: see [Run it](#run-it).
 
-**Measured against other engines** (same reports, same data, same Apple M2 laptop; harness in `~/pw-bench`, numbers indicative, not a published benchmark):
+| Package | What it is |
+|---|---|
+| [`@reportwright/engine`](packages/engine) | definition + data → pages → PDF, PDF/A, PDF/UA, XLSX, DOCX, PPTX, HTML, CSV |
+| [`@reportwright/viewer`](packages/viewer) | embeddable viewer and designer (shadow root, Web Worker rendering) |
+| [`@reportwright/cli`](packages/cli) | `pw render`, `pw test`, `pw diff`, `pw import` |
+| [`@reportwright/fonts`](packages/fonts) / [`fonts-cjk`](packages/fonts-cjk) | bundled fonts, HarfBuzz shaper and subsetter; CJK and emoji |
+| [`react`](packages/react) · [`vue`](packages/vue) · [`svelte`](packages/svelte) · [`angular`](packages/angular) | framework wrappers for the viewer and designer |
 
-| 50,000-row report | ReportWright (Node) | JasperReports | BIRT |
-|---|---|---|---|
-| PDF end to end | ~1.0–1.2 s | ~2.2–2.4 s | ~2.3–2.9 s |
-| Pagination only | ~0.45–0.56 s | ~0.51–0.60 s | – |
-| PDF size (962 pages) | 2.28 MB | 3.70 MB | 3.47 MB |
-| Peak memory (after the memory work) | ~0.76–0.83 GB | ~0.8–0.95 GB | ~0.57–0.69 GB |
+## 30-second example
 
-ActiveReportsJS did not finish the 50,000-row reports within 10 minutes; ReportWright renders its charts report ~60× faster and invoices ~25× faster. Telerik, DevExpress, Bold Reports and Stimulsoft were not tested: their licences forbid benchmarking by a competitor.
+```bash
+npm i -D @reportwright/cli @reportwright/fonts
+npx pw render reports/charts-showcase.pw.json -o charts.pdf     # in a clone of this repository: any report in reports/ with inline data
+```
 
-**Independent code-only review (5 Oct):** 6.7 / 10 on features, 6.3 overall (no outside users yet). Strong: speed, PDF output, embedding, deny-by-default security. The ranked fix list from five specialist reviews (security, engine correctness, architecture, UX) is being worked through.
+In code (the full minimal report definition is in the [engine README](packages/engine#quick-start-30-seconds)):
 
-**In progress on `main`:** server stability (SQLite isolation, login throttling, safe default report permissions, memory-aware render pool, logging and health checks), 21 silent wrong-result fixes against SSRS semantics, Designer and viewer accessibility and usability, a conditional formatting wizard, a visual SQL query builder and native Excel charts.
+```js
+import { render, defaultFontStore, exportPdf } from '@reportwright/engine';
+import fs from 'node:fs';
 
-**Not released:** SQL Server, PostgreSQL, Oracle, Snowflake and BigQuery data sources and stored procedures (see `docs/DATA-SQL.md`); the audit log's hash chain is beta. **Deferred:** running SSRS custom VB `Code`, and page-at-a-time streaming layout for millions of rows.
+const fonts = defaultFontStore();
+const model = await render(JSON.parse(fs.readFileSync('statement.pw.json', 'utf8')), { fontStore: fonts });
+fs.writeFileSync('statement.pdf', await exportPdf(model, { fonts, title: 'Statement' }));
+```
 
-**Breaking change:** `render()` keeps table data for Excel, CSV, Word, interactive HTML and accessible PDF only with `render(def, { exportData: true })`; the built-in server, CLI and viewer pass it. After upgrading, re-save SQL reports once in the Designer.
+## Screenshots
+
+Page 1 of reports in [`reports/`](reports), rendered to PDF by this engine with `pw render`, then rasterised with `pdftoppm`.
+
+| | | |
+|---|---|---|
+| ![Sales dashboard](docs/screenshots/sales-dashboard.png)<br>**Sales dashboard**: stacked columns, donut, line, matrix, sparklines, data bars, QR code | ![Charts showcase](docs/screenshots/charts-showcase.png)<br>**Charts**: combo with a second axis, 100% stacked, range band, step line, log scale, bubble | ![Disbursements by region](docs/screenshots/sales-by-region.png)<br>**Grouped table** with drill-down toggles and subtotals |
+| ![Loan statement](docs/screenshots/loan-statement.png)<br>**Loan statement**: a repayment schedule over 8 pages | ![Loan statement in Hindi](docs/screenshots/loan-statement-hindi.png)<br>**The same statement in Hindi**: Devanagari shaped with HarfBuzz | ![Tablix showcase](docs/screenshots/tablix-showcase.png)<br>**Pivots**: row and column groups, recursive hierarchy, merged cells |
+| ![Invoice](docs/screenshots/invoice-gallery.png)<br>**Invoice**: one table plain, one grouped with subtotals | ![Designer](docs/screenshots/ui-designer.jpg)<br>**Designer** (live demo) | ![Viewer](docs/screenshots/ui-viewer.jpg)<br>**Viewer** (live demo gallery) |
+
+## Features
+
+| Area | What you get |
+|---|---|
+| Design | Drag-and-drop designer with toolbox, data panel, inspector, outline, live preview, undo; master reports, part libraries and themes |
+| Layout | Page header and footer, bands, tables with groups, subtotals, keep-together and page breaks; matrices (pivot); lists; subreports |
+| Items | Text and rich text, images, lines and shapes, charts, sparklines, data bars, bullets, barcodes and QR codes, maps, form fields |
+| Data | Inline JSON, REST, GraphQL, SOAP, OData, CSV, XML; SQL through your own callback (server: see [docs/DATA-SQL.md](docs/DATA-SQL.md)) |
+| Text | HarfBuzz shaping (Arabic, Hebrew, Indic, Thai), bidi, font subsetting; CJK and emoji with `@reportwright/fonts-cjk` |
+| Output | PDF, PDF/A-2b and 2a, PDF/UA-1 (checked with veraPDF), AES-256 passwords; Excel, Word, PowerPoint, HTML, CSV, SVG |
+| Viewer | Paging, thumbnails, document map, search, zoom, parameters, interactive sort, drill-down and drill-through, export, print |
+| Import | JasperReports `.jrxml`, SSRS `.rdl`/`.rdlc`, BIRT `.rptdesign`, ActiveReports `.rdlx-json` (`pw import`) |
+| Scale | Streaming PDF, Word and Excel export; disk-spilling sort; worker pool |
+| Testing | `pw test` snapshot tests and `pw diff` between two versions of a report |
+
+The full list, with what is not done yet, is in [docs/FEATURES.md](docs/FEATURES.md) and [docs/STATUS.md](docs/STATUS.md).
+
+## How it works
+
+- A report is a JSON file (`*.pw.json`, schema `reportwright/report@1`): page setup, parameters, data sources, data sets and the items in each band.
+- `render()` fetches and binds the data, evaluates the `=Fields.x` / `=Sum(...)` expressions and paginates into a page model: positioned text runs, boxes, lines and images.
+- The text layer shapes every run with HarfBuzz (WebAssembly) and measures it with the real font, so the page breaks are the same in Node and the browser.
+- Exporters turn the page model into files: PDF through [`@reportwright/pdf`](https://www.npmjs.com/package/@reportwright/pdf) with subset fonts, and XLSX, DOCX, PPTX, HTML and CSV from the same model.
+- The viewer and designer run the same engine in a Web Worker inside a shadow root; the optional Next.js server adds storage, versions, users and roles, schedules and an automation API ([docs/API.md](docs/API.md)).
+
+## Benchmarks (honest summary)
+
+The deep benchmark runs on GitHub's `ubuntu-latest` runners against other PDF libraries and report engines, with every output checked (qpdf, MuPDF, pdf.js, veraPDF). Full tables, including every row where we lose: [`bench/deep/RESULTS.md` on the `bench-deep` branch](https://github.com/MrArun005/reportwright/blob/bench-deep/bench/deep/RESULTS.md) (run of 10 Oct 2026, engine `perf-startup@13fa2cb34`).
+
+- **Where we win.** Among report engines (which lay pages out from a definition), ReportWright is first in 4 of 8 grouped-report rows and 2 of 6 plain-text rows (time or size). pdfmake, @react-pdf/renderer and Puppeteer were 1.4× to 11.8× slower than ReportWright in the earlier run and were not re-measured. As a PDF writer, `@reportwright/pdf` is first on PDF/A-2b, incremental metadata edits, form fill-and-flatten and signing.
+- **Where we lose.** QuestPDF (.NET) is faster on most report-engine rows: 1.1× to 2.0× on plain text, grouped reports at 100 to 1,000 rows, invoices and Unicode text. pdfmake is 1.05× faster on the PDF/A invoice. As a low-level writer, `@reportwright/pdf` is 2× to 6× slower than fpdf on raw drawing, and pdfcpu and pdfium are faster at merge, split, encrypt and text extraction.
+- **This release vs 0.13.1**, same machine: grouped reports 0.70× to 0.94× the time, Hindi/Arabic/CJK 0.70×, cold invoice 0.89×; warm invoice unchanged.
 
 ## Run it
 
@@ -255,3 +302,47 @@ On the home page, **Import ActiveReports file** takes an ActiveReportsJS `.rdlx-
 - **Pushed data**: the render API and batches can send the data in the request. It replaces the source with the same name.
 
 The sample endpoints `/api/sample/loans`, `/api/sample/loans/<account>` and `/api/sample/sales/<year>` serve fictional data.
+
+## Documentation
+
+The plan is in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). All four phases are done. Status and gaps: [`docs/STATUS.md`](docs/STATUS.md). Automation API: [`docs/API.md`](docs/API.md).
+
+## Status (5 Oct 2026)
+
+Earlier numbers from a local harness (`~/pw-bench`, not in this repository, so not reproducible from here); the GitHub-run benchmark above is the reference.
+
+**Measured against other engines** (same reports, same data, same Apple M2 laptop; harness in `~/pw-bench`, numbers indicative, not a published benchmark):
+
+| 50,000-row report | ReportWright (Node) | JasperReports | BIRT |
+|---|---|---|---|
+| PDF end to end | ~1.0–1.2 s | ~2.2–2.4 s | ~2.3–2.9 s |
+| Pagination only | ~0.45–0.56 s | ~0.51–0.60 s | – |
+| PDF size (962 pages) | 2.28 MB | 3.70 MB | 3.47 MB |
+| Peak memory (after the memory work) | ~0.76–0.83 GB | ~0.8–0.95 GB | ~0.57–0.69 GB |
+
+ActiveReportsJS did not finish the 50,000-row reports within 10 minutes; ReportWright renders its charts report ~60× faster and invoices ~25× faster. Telerik, DevExpress, Bold Reports and Stimulsoft were not tested: their licences forbid benchmarking by a competitor.
+
+**Independent code-only review (5 Oct):** 6.7 / 10 on features, 6.3 overall (no outside users yet). Strong: speed, PDF output, embedding, deny-by-default security. The ranked fix list from five specialist reviews (security, engine correctness, architecture, UX) is being worked through.
+
+**In progress on `main`:** server stability (SQLite isolation, login throttling, safe default report permissions, memory-aware render pool, logging and health checks), 21 silent wrong-result fixes against SSRS semantics, Designer and viewer accessibility and usability, a conditional formatting wizard, a visual SQL query builder and native Excel charts.
+
+**Not released:** SQL Server, PostgreSQL, Oracle, Snowflake and BigQuery data sources and stored procedures (see `docs/DATA-SQL.md`); the audit log's hash chain is beta. **Deferred:** running SSRS custom VB `Code`, and page-at-a-time streaming layout for millions of rows.
+
+**Breaking change:** `render()` keeps table data for Excel, CSV, Word, interactive HTML and accessible PDF only with `render(def, { exportData: true })`; the built-in server, CLI and viewer pass it. After upgrading, re-save SQL reports once in the Designer.
+
+## Renamed from Pagewright
+
+**Renamed from Pagewright** in 0.9.0 (the npm packages moved from `@pagewrightjs/*` to `@reportwright/*`; the old
+packages are deprecated), finished in 0.13.2. What did not change, so deployments and stored data keep working:
+
+- settings keep the `PW_` prefix (`PW_AUTH`, `PW_BASE_URL`, …), and the CLI is still `pw` (`reportwright` works too);
+- cookie names and storage table names, and report files keep the `.pw.json` extension.
+
+Deprecated, still working, removed in 1.0 (each is an alias of its ReportWright name):
+
+- `<pagewright-viewer>` / `<pagewright-designer>`, `PagewrightViewer`, `PagewrightDesigner`, `pagewrightViewer`,
+  `pagewrightDesigner`, `definePagewrightElements`, `window.Pagewright` and the `/embed/pagewright-viewer.js` loader
+  (each warns once in the console, except the React and Vue components, which are the same objects);
+- `"$schema": "pagewright/report@1"`, read as `reportwright/report@1`;
+- the `x-pagewright-*` HTTP headers, sent next to their `x-reportwright-*` names (the proxy secret is read under
+  either name), and the `pagewright_*` metrics, emitted next to the `reportwright_*` ones.

@@ -8,6 +8,9 @@
 
 Custom elements need no Angular compiler step, so they work with any Angular version.
 
+
+<img src="https://raw.githubusercontent.com/MrArun005/reportwright/main/docs/screenshots/ui-viewer.jpg" alt="The viewer" width="60%">
+
 ## Install
 
 ```bash

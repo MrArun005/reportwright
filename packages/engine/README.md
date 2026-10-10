@@ -8,6 +8,26 @@ Turn a JSON report definition and your data into paged PDF, Excel, Word, PowerPo
 
 The engine lays out pages from a definition (bands, tables with groups, matrices, charts, barcodes, subreports) and the exporters write the files. The command line is [`@reportwright/cli`](https://github.com/MrArun005/reportwright/tree/main/packages/cli) (`pw`); the in-browser viewer and designer are [`@reportwright/viewer`](https://github.com/MrArun005/reportwright/tree/main/packages/viewer).
 
+## Screenshots
+
+Page 1 of three reports from the repository's `reports/`, rendered to PDF by this engine:
+
+<img src="https://raw.githubusercontent.com/MrArun005/reportwright/main/docs/screenshots/sales-dashboard.png" alt="Sales dashboard" width="32%"> <img src="https://raw.githubusercontent.com/MrArun005/reportwright/main/docs/screenshots/charts-showcase.png" alt="Charts showcase" width="32%"> <img src="https://raw.githubusercontent.com/MrArun005/reportwright/main/docs/screenshots/loan-statement-hindi.png" alt="Loan statement in Hindi" width="32%">
+
+More in the [repository README](https://github.com/MrArun005/reportwright#screenshots).
+
+## How it works
+
+- A report is a JSON definition (`reportwright/report@1`): page setup, parameters, data sources, data sets and the items in each band.
+- `render()` binds the data, evaluates expressions and paginates into a page model (positioned text runs, boxes, lines, images).
+- Text is shaped with HarfBuzz and measured with the real font, so pages break the same in Node and the browser.
+- `exportPdf` writes through [`@reportwright/pdf`](https://www.npmjs.com/package/@reportwright/pdf) with subset fonts; `exportXlsx`, `exportDocx`, `exportPptx`, `exportHtml` and `exportCsv` read the same model.
+- Large reports stream (`exportPdfStream`) and many reports run in a worker pool.
+
+## Benchmarks
+
+Measured on GitHub `ubuntu-latest` against other engines, every output checked. Wins: first among report engines in 4 of 8 grouped-report rows; pdfmake, @react-pdf/renderer and Puppeteer were 1.4× to 11.8× slower. Losses: QuestPDF (.NET) is 1.1× to 2.0× faster on most other rows, pdfmake 1.05× on a PDF/A invoice. All numbers, wins and losses: [bench/deep/RESULTS.md](https://github.com/MrArun005/reportwright/blob/bench-deep/bench/deep/RESULTS.md).
+
 ## Install
 
 ```bash

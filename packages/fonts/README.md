@@ -8,6 +8,9 @@ The fonts, text shaper, PDF font subsetter and PDF/A colour profile that `@repor
 
 Kept out of the engine so the engine stays small. It has no code: it is a folder of files the engine finds by itself in Node, and that you serve as static files to the browser.
 
+
+<img src="https://raw.githubusercontent.com/MrArun005/reportwright/main/docs/screenshots/loan-statement-hindi.png" alt="A Hindi loan statement shaped with these fonts" width="40%">
+
 ## Install
 
 ```bash

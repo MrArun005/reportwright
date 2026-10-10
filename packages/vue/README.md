@@ -8,6 +8,9 @@ The ReportWright report viewer and drag-and-drop designer as Vue 3 components.
 
 Vue is a peer dependency; the viewer loads on mount (SSR-safe).
 
+
+<img src="https://raw.githubusercontent.com/MrArun005/reportwright/main/docs/screenshots/ui-viewer.jpg" alt="The viewer" width="60%">
+
 ## Install
 
 ```bash
