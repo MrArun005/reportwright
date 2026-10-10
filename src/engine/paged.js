@@ -65,10 +65,12 @@ export const CAPPED = 'The page headers and footers would draw more than';
 /**
  * @param {any} def0 @param {any} opts render() options, and maxRows/sorter/sqlRows as planStream takes them;
  *   window: rows per window (tests); holdItems: the page items a held counting pass keeps at most (tests); aheadRows,
- *   autoRows: AHEAD_ROWS and AUTO_ROWS (tests)
+ *   autoRows: AHEAD_ROWS and AUTO_ROWS (tests); the three can only lower their built-in caps
  * @returns {Promise<{ why: string } | { why?: undefined, pages: () => AsyncGenerator<any>, info: { width: number, height: number, bookmarks: any[], headings: any[], warnings: string[], pages: number } }>}
  */
 export async function planPaged(def0, opts = {}) {
+  // the test knobs only lower the built-in caps: a caller cannot raise them (memory bounds)
+  const holdItems = Math.min(opts.holdItems ?? HOLD_ITEMS, HOLD_ITEMS), aheadRows = Math.min(opts.aheadRows ?? AHEAD_ROWS, AHEAD_ROWS), autoRows = Math.min(opts.autoRows ?? AUTO_ROWS, AUTO_ROWS);
   const no = (why) => ({ why });
   if (!def0 || typeof def0 !== 'object' || Array.isArray(def0)) return no('not a definition');
   const { def, parts } = await resolveReuse(def0, makeLoader(opts.loadReport, new Map()), () => {}, opts.reportId ? [opts.reportId] : [], { items: 0 });
@@ -371,7 +373,7 @@ export async function planPaged(def0, opts = {}) {
       }
       // held past the cap: dropped (laid out again by the second pass), or, with jobs to send (o.full), kept, and the
       // windows from here on are jobs
-      if (hold?.on && hold.items > (opts.holdItems ?? HOLD_ITEMS)) { if (o.full) o.full(); else drop(hold); }
+      if (hold?.on && hold.items > holdItems) { if (o.full) o.full(); else drop(hold); }
       if (hold?.on) hold.first = first0;
       const isKept = (b) => b.page <= off + keep;
       if (!counted && (!hold || hold.on)) { for (const b of model.bookmarks) if (isKept(b)) info.bookmarks.push(b); for (const b of model.headings) if (isKept(b)) info.headings.push(b); }
@@ -411,7 +413,7 @@ export async function planPaged(def0, opts = {}) {
    */
   async function* overlapped(o, lazy) {
     const starts = /** @type {number[]} */ ([]);
-    const n = Math.max(1, Number(o.parallel) || 1), at = 2 * n, cap = (opts.aheadRows ?? AHEAD_ROWS) * n;
+    const n = Math.max(1, Number(o.parallel) || 1), at = 2 * n, cap = aheadRows * n;
     const hold = { on: lazy && !!totals, pages: /** @type {any[]} */ ([]), items: 0, first: null };
     let full = !lazy; // jobs are sent
     const queue = /** @type {any[]} */ ([]);
@@ -432,7 +434,7 @@ export async function planPaged(def0, opts = {}) {
       ping();
       if (!totals) while (!stop && queue.length - qi > at) await wait(); // nothing held: as many out as the workers take
     };
-    const po = { send, hold, stopped: () => stop, draw: !totals, full: () => { full = true; }, sending: (/** @type {number} */ row) => full || (!totals && row >= (opts.autoRows ?? AUTO_ROWS)) };
+    const po = { send, hold, stopped: () => stop, draw: !totals, full: () => { full = true; }, sending: (/** @type {number} */ row) => full || (!totals && row >= autoRows) };
     const counting = (async () => {
       try {
         for await (const p of pass(null, null, starts, po)) { if (stop) return; queue.push({ page: p }); ping(); } // drawn here: in order with the jobs
@@ -455,7 +457,7 @@ export async function planPaged(def0, opts = {}) {
       }
       if (err) throw err;
       // capped bands dropped the held pages (before any job): all of them laid out again, as without overlap
-      if (lazy && totals && !hold.on && !rows) yield* pass(starts.length, starts, undefined, /** @type {any} */ (starts).rows >= (opts.autoRows ?? AUTO_ROWS) ? o : {});
+      if (lazy && totals && !hold.on && !rows) yield* pass(starts.length, starts, undefined, /** @type {any} */ (starts).rows >= autoRows ? o : {});
       else if (from >= 0) yield* pass(totals ? starts.length : null, starts, undefined, { ...o, from, fromRow });
       info.pages = starts.length;
     } finally { stop = true; ping(); await counting; }

@@ -88,3 +88,25 @@ describe('L1: the V8 flag toggle stays out of worker threads', () => {
     expect(msg.calls).toEqual([]);
   });
 });
+
+describe('L3: the test-only knobs can only lower the built-in caps', () => {
+  const long = (n) => ({
+    $schema: 'reportwright/report@1', name: 'Long', page: { size: 'A4', margins: [36, 36, 36, 36] },
+    dataSources: [{ name: 's', type: 'json', data: { rows: Array.from({ length: n }, (_, i) => ({ t: Array.from({ length: 300 }, (_, k) => `w${i}x${k}`).join(' ') })) } }],
+    dataSets: [{ name: 'D', source: 's', path: '$.rows' }],
+    sections: {
+      body: { items: [{ type: 'table', name: 'T', dataSet: 'D', x: 0, y: 0, w: 200, h: 40, columns: [{ width: 200 }],
+        detail: [{ height: 14, cells: [{ value: '=Fields.t' }] }] }] },
+      pageFooter: { height: 20, items: [{ type: 'textbox', name: 'P', x: 0, y: 2, w: 300, h: 14, value: 'Page {Globals.PageNumber} of {Globals.TotalPages}' }] },
+    },
+  });
+  it('holdItems: Infinity holds no more than the default cap (240,000 items)', async () => {
+    const held = async (holdItems) => {
+      const plan = /** @type {any} */ (await planPaged(long(4200), { fontStore, now, window: 200, holdItems }));
+      for await (const _ of plan.pages()) { /* drain */ }
+      return plan.info.held;
+    };
+    expect(await held(undefined)).toBe(false); // over the default cap: not held
+    expect(await held(Infinity)).toBe(false);
+  }, 120000);
+});
