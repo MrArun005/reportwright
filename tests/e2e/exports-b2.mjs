@@ -19,6 +19,16 @@ const p = await ctx.newPage();
 const errs = [];
 p.on('pageerror', e => errs.push(e.message));
 const logs = [];
+// every TypeError thrown, caught or not, with where (an export that fails shows only its message)
+const thrown = [];
+const cdp = await ctx.newCDPSession(p);
+await cdp.send('Debugger.enable');
+await cdp.send('Debugger.setPauseOnExceptions', { state: 'all' });
+cdp.on('Debugger.paused', (ev) => {
+  const d = String(ev.data?.description || '');
+  if (/TypeError/.test(d)) thrown.push(`${d.slice(0, 1500)} @ ${ev.callFrames.slice(0, 5).map(f => `${f.functionName}:${f.url.split('/').pop()}:${f.location.lineNumber}:${f.location.columnNumber}`).join(' | ')}`);
+  cdp.send('Debugger.resume').catch(() => {});
+});
 p.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') logs.push(m.text()); });
 const ready = async () => {
   await p.waitForSelector('.vpage svg', { timeout: 60000 });
@@ -27,7 +37,7 @@ const ready = async () => {
 const download = async (testid) => {
   const [d] = await Promise.all([p.waitForEvent('download', { timeout: 120000 }), openExport(p).then(() => p.getByTestId(testid).click())]).catch(async (e) => {
     await p.screenshot({ path: `/tmp/shots/exports-b2-${testid}-fail.png` }); // what the viewer shows instead (CI artifact)
-    console.log('no download:', testid, 'page errors:', errs, 'console:', logs);
+    console.log('no download:', testid, 'page errors:', errs, 'console:', logs, 'thrown:', thrown);
     throw e;
   });
   return { name: d.suggestedFilename(), bytes: fs.readFileSync(await d.path()) };
