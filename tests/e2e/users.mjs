@@ -112,7 +112,8 @@ assert.equal((await req('/api/data/sql', { method: 'POST', cookie: viewer.cookie
 const home = async (c) => (await req('/', { cookie: c })).text();
 const vh = await home(viewer.cookie), dh = await home(designer.cookie);
 assert.ok(!vh.includes('New report') && !vh.includes('/designer/'), 'viewer home: no create or design');
-assert.ok(vh.includes('Sign out') && vh.includes(`/viewer/${RID}`), 'viewer home: sign-out and view links');
+assert.ok(vh.includes('Sign out'), `viewer home: sign-out link; the page: ${vh.replace(/<script[\s\S]*?<\/script>/g, '').slice(0, 6000)}`);
+assert.ok(vh.includes(`/viewer/${RID}`), `viewer home: view link; the reports: ${vh.match(/data-testid="report-list"[\s\S]{0,3000}/)?.[0] ?? 'no report list'}`);
 assert.ok(dh.includes('New report') && dh.includes(`/designer/${RID}`), 'designer home: create and design');
 // path tricks
 assert.equal((await req('/api/reports%2F..%2Fusers', { cookie: viewer.cookie })).status, 400);
