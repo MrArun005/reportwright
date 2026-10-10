@@ -462,6 +462,7 @@ async function pdfOf(model, fontStore, opt) {
  * @param {any} model @param {any} opt
  */
 function ownWriterFits(model, opt) {
+  if (forcedPdfLib()) return false;
   if (opt.pdfa || opt.tagged || opt.encrypt || opt.prepare || opt.save || !model.pages.length) return false;
   if ((model.pageStarts || []).some((/** @type {number} */ i) => i > 0)) return false;
   for (const pg of model.pages) {
@@ -475,6 +476,8 @@ function ownWriterFits(model, opt) {
   }
   return true;
 }
+/** PW_FORCE_PDFLIB=1: every export takes the pdf-lib whole-model path (the parity gate's baseline, scripts/writer-parity.mjs). */
+export const forcedPdfLib = () => globalThis.process?.env?.PW_FORCE_PDFLIB === '1';
 /**
  * A data: URI PNG decoded and deflated once per process: the next document embeds the same image streams, with the
  * bytes pdf-lib's embedPng writes (its flateStream: the deflated pixels, the dictionary plus Filter FlateDecode), without

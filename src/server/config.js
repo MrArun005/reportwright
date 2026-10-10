@@ -77,6 +77,7 @@ export const SETTINGS = [
   ['PW_RENDER_MAX_WAIT_MS', 'ms', '30000', 'Estimated wait past which an interactive render gets 503.'],
   ['PW_MEMORY_LIMIT_MB', 'int', '(cgroup or RAM)', 'Narrows the memory the pool plans for.'], ['PW_CPUS', 'int', '(cgroup or cores)', 'Cores the pool plans for.'],
   ['PW_SIGN_P12', 'text', '(off)', 'A PKCS#12 file that signs PDFs (API renders with sign: true).'], ['PW_SIGN_PASSWORD', 'secret', '', 'Its password.'],
+  ['PW_FORCE_PDFLIB', 'flag', '0', '1: every PDF takes the pdf-lib whole-model path (the writer parity gate\'s baseline; for testing).'],
   ['PW_AI_MODEL', 'text', '(default)', 'Model for AI drafting.'],
   // batches, schedules, mail
   ['PW_WORKER', 'onoff', 'on', 'off: this server runs no queued batches.'], ['PW_SCHEDULER', 'onoff', 'on', 'off: this server runs no schedules.'], ['PW_CRON', 'text', '', 'How often an outside cron calls /api/v1/cron when PW_SCHEDULER/PW_WORKER are off (e.g. daily): shown on the dashboard; the schedule editor warns about faster cadences.'],

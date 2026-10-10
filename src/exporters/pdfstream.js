@@ -22,7 +22,7 @@ import { render } from '../engine/index.js';
 import { planPaged } from '../engine/paged.js';
 import { sqlBatches } from '../engine/stream.js';
 import { safeUrl, drillUrl, asciiUrl } from '../engine/url.js';
-import { exportPdf } from './pdf.js';
+import { exportPdf, forcedPdfLib } from './pdf.js';
 import { xmpPacket } from './pdfa.js';
 import { createStreamTagger } from './pdfstreamtags.js';
 import { standardFontDict, embeddedPage, embeddedWarnings, standIns } from './pdfstandard.js';
@@ -694,7 +694,7 @@ export async function exportPdfStream(def, opts, sink) {
 /** @param {any} def @param {any} opts @param {Sink} sink */
 async function streamed(def, opts, sink) {
   const { signal } = opts;
-  const why = opts.encrypt ? 'encrypted' : opts.prepare ? 'signed' : opts.save ? 'save options' : opts.pdfa && !opts.pdfa.icc?.length ? 'PDF/A without a colour profile' : null;
+  const why = forcedPdfLib() ? 'PW_FORCE_PDFLIB' : opts.encrypt ? 'encrypted' : opts.prepare ? 'signed' : opts.save ? 'save options' : opts.pdfa && !opts.pdfa.icc?.length ? 'PDF/A without a colour profile' : null;
   const plan = why ? { why } : await raced(planPaged(def, opts), signal);
   if (plan.why !== undefined) {
     // render() reads SQL through opts.sql (whole rows): the sqlRows batches, gathered (this path holds the model whole anyway)
