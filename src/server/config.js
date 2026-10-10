@@ -100,6 +100,8 @@ export const SETTINGS = [
   ['PW_CLUSTER', 'internal', '', 'Set by cluster.mjs in its processes.'], ['PW_STANDALONE', 'internal', '', 'Build the Docker standalone server.'],
   ['PW_CGROUP_DIR', 'internal', '', 'Tests: where cgroup files are read.'], ['PW_NEW_PASSWORD', 'internal', '', 'scripts/user.mjs: the new password.'],
   ['PW_BENCH', 'internal', '', 'scripts/perf-pdf.mjs: the bench checkout.'], ['PW_MONITOR_KEY', 'internal', '', 'scripts/uptime-check.mjs: the service key that reads /api/v1/metrics (docs/OPS.md).'], ['PW_MAX_5XX', 'internal', '0.05', 'scripts/uptime-check.mjs: the largest share of 5xx answers before it fails.'], ['PW_SITE_BASE', 'internal', '', 'scripts/build-site.mjs.'], ['PW_SITE_ORIGIN', 'internal', '', 'scripts/build-site.mjs.'],
+  ['PW_NO_COMPILE_CACHE', 'bool', '(off)', 'pw: do not use Node\'s compile cache (a private 0700 folder under the user cache folder).'],
+  ['PW_NO_LIFTOFF', 'bool', '(off)', 'Leave V8\'s flags alone when the font subsetter loads (it briefly sets --liftoff-only; cold renders are slower without it).'],
 ];
 
 const NAMES = new Set(SETTINGS.map(s => s[0]));

@@ -149,7 +149,9 @@ export function createSubsetter(loadWasm) {
     const proc = /** @type {any} */ (globalThis).process;
     let instance;
     if (proc?.versions?.node) {
-      const v8 = proc.getBuiltinModule?.('node:v8');
+      // PW_NO_LIFTOFF=1 leaves V8's flags alone; a process started with --liftoff-only keeps it (never reset to off)
+      const own = /--liftoff-only/.test([...(proc.execArgv ?? []), proc.env?.NODE_OPTIONS ?? ''].join(' '));
+      const v8 = proc.env?.PW_NO_LIFTOFF || own ? null : proc.getBuiltinModule?.('node:v8');
       v8?.setFlagsFromString('--liftoff-only');
       try { instance = new WebAssembly.Instance(new WebAssembly.Module(src), {}); } finally { v8?.setFlagsFromString('--no-liftoff-only'); }
     } else instance = (await WebAssembly.instantiate(src, {})).instance;

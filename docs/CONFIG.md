@@ -135,3 +135,5 @@ Every setting ReportWright reads, from `src/server/config.js` (the table there i
 | `PW_MAX_5XX` | internal | 0.05 | scripts/uptime-check.mjs: the largest share of 5xx answers before it fails. |
 | `PW_SITE_BASE` | internal |  | scripts/build-site.mjs. |
 | `PW_SITE_ORIGIN` | internal |  | scripts/build-site.mjs. |
+| `PW_NO_COMPILE_CACHE` | bool | (off) | pw: do not use Node's compile cache (a private 0700 folder under the user cache folder). |
+| `PW_NO_LIFTOFF` | bool | (off) | Leave V8's flags alone when the font subsetter loads (it briefly sets --liftoff-only; cold renders are slower without it). |
