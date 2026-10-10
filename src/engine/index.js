@@ -39,6 +39,7 @@ export const BAND_ITEMS = 250000; // page header and footer items drawn per rend
  * @typedef {object} RenderOptions
  * @property {{ layoutPasses?: number }} [stats] filled in: how many times the report was laid out (tests, the bench)
  * @property {Record<string, any>} [parameters] values of the report's parameters, by name (invariant form: 1234.5, 2026-03-05)
+ * @property {boolean} [strictParameters] a value for a parameter the report does not declare, or not of its type or options, throws a ReportError (status 400) instead of warning
  * @property {import('./text/fonts.js').FontStore} [fontStore] the fonts; share one across renders (a new one loads them again)
  * @property {boolean} [lazyFonts] the viewer: load only the core face up front; the other bundled faces when the layout first needs one
  * @property {(key: string) => Promise<ArrayBuffer|Uint8Array>} [loadFont] loads a font the store does not have
