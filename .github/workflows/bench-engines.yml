@@ -1,0 +1,54 @@
+# Deep benchmark, the "Report engines" league only (create-engines groups).
+#   push: edit bench/deep/.push-engines (line 1 tier[,layout], then engine_ref=/pdf_ref= lines) and push branch bench-deep
+#   dispatch (file on main): gh workflow run bench-engines.yml -f tier=full
+name: bench-engines
+on:
+  push:
+    branches: [bench-deep]
+    paths: ['bench/deep/.push-engines']
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: "quick (~15-20 min), full (adds 100k rows, 1,000 pages, 200 fuzzed files), million (the 1M-row report, streaming-capable contestants only)"
+        type: choice
+        options: [quick, full, million]
+        default: quick
+      langs:
+        description: "Comma list of js, python, java, dotnet, go, rust, cli, ours; or all"
+        default: all
+      runs:
+        description: Measured runs a cell, after one discarded warm-up (100k rows and the 1,200-page read use at most 3; million uses 1)
+        default: "5"
+      engine_ref:
+        description: "Git ref of this repo to build @reportwright/engine (+fonts) from; empty = the npm version in bench/deep/ours"
+        default: ""
+      pdf_ref:
+        description: "Git ref of this repo to build @reportwright/pdf from (packages/pdf); empty = npm. Set it with engine_ref when the engine pins an unpublished pdf"
+        default: ""
+      layout:
+        description: "same-machine (one job a job group runs every contestant, interleaved; default for full/million) or per-lang (one job a language; default for quick)"
+        type: choice
+        options: [auto, same-machine, per-lang]
+        default: auto
+concurrency:
+  group: bench-engines
+  cancel-in-progress: false
+permissions:
+  contents: read
+  actions: read
+jobs:
+  run:
+    uses: ./.github/workflows/bench-deep-run.yml
+    with:
+      tier: ${{ inputs.tier || 'quick' }}
+      langs: ${{ inputs.langs || 'all' }}
+      runs: ${{ inputs.runs || '5' }}
+      engine_ref: ${{ inputs.engine_ref }}
+      pdf_ref: ${{ inputs.pdf_ref }}
+      layout: ${{ inputs.layout || 'auto' }}
+      groups: "create-engines"
+      control: bench/deep/.push-engines
+      workflow: bench-engines.yml
+      title: "Deep benchmark: report engines"
+      results_md: RESULTS-engines.md
+    secrets: inherit

@@ -224,7 +224,7 @@ def md_table(head, rows):
 
 
 def markdown(sources, caps):
-    out = ['# Deep PDF benchmark', '']
+    out = [f'# {TITLE}', '']
     m = sources[0]['meta'][0] if sources[0]['meta'] else None
     if m:
         out += [f'Run {m["date"]}, tier `{m["tier"]}`, {m["runs"]} measured runs a cell after one warm-up (fewer for the biggest '
@@ -278,7 +278,7 @@ def page(data):
     """A self-contained page: full width, sortable tables, inline SVG charts (time and RSS against rows)."""
     payload = json.dumps(data, ensure_ascii=False).replace('</', '<\\/')
     return '''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Deep PDF Benchmark</title><style>
+<title>'''+TITLE+'''</title><style>
 :root{--bg:#fbfbfa;--fg:#1d1f22;--mute:#666b73;--line:#e3e5e8;--head:#f1f3f5;--best:#e3f4e8;--bad:#fbe5e3;--acc:#1f4e79}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#15171a;--fg:#e6e8eb;--mute:#9aa0a8;--line:#2c3036;--head:#1e2125;--best:#183a24;--bad:#43201d;--acc:#7fb2e5}}
 :root[data-theme=dark]{--bg:#15171a;--fg:#e6e8eb;--mute:#9aa0a8;--line:#2c3036;--head:#1e2125;--best:#183a24;--bad:#43201d;--acc:#7fb2e5}
@@ -291,7 +291,7 @@ td.best{background:var(--best);font-weight:600}td.bad{background:var(--bad)}smal
 .charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px}svg{width:100%;height:auto;border:1px solid var(--line);border-radius:6px}
 h3{font-size:15px;margin:14px 0 4px}ul,ol{margin:4px 0;padding-left:22px}li{margin:2px 0}p.hw{font-size:12px;font-style:italic}table.caps td{text-align:left;white-space:normal}ol.notes{font-size:12px;color:var(--mute)}
 nav{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}nav a{color:var(--acc);text-decoration:none;border:1px solid var(--line);border-radius:4px;padding:2px 8px}
-</style></head><body><h1>Deep PDF benchmark</h1><p id="meta"></p><div id="top"></div><nav id="nav"></nav><div id="charts" class="charts"></div><div id="tables"></div>
+</style></head><body><h1>'''+TITLE+'''</h1><p id="meta"></p><div id="top"></div><nav id="nav"></nav><div id="charts" class="charts"></div><div id="tables"></div>
 <script>
 const D=''' + payload + ''';
 const $=(t,a={},...k)=>{const e=document.createElement(t);for(const[x,y]of Object.entries(a))x==='html'?e.innerHTML=y:e.setAttribute(x,y);e.append(...k);return e};
@@ -340,14 +340,22 @@ for(const t of D.sources[0].tables.filter(t=>t.job==='report')){const lg=t.title
 '''
 
 
+TITLE = 'Deep PDF benchmark'
+
+
 def main():
-    """merge.py <dir with *.jsonl> <outdir> [--source <dir with *.jsonl or a results.json> "<label>"]...
+    """merge.py <dir with *.jsonl> <outdir> [--title "<heading>"] [--source <dir with *.jsonl or a results.json> "<label>"]...
     The first source is this GitHub run (label from GITHUB_RUN_ID); every --source gets its own tables, never mixed."""
     args = sys.argv[1:]
     src, out = Path(args[0]), Path(args[1])
     extra = []
     i = 2
+    global TITLE
     while i < len(args):
+        if args[i] == '--title' and i + 1 < len(args):
+            TITLE = args[i + 1]
+            i += 2
+            continue
         if args[i] != '--source' or i + 2 >= len(args):
             sys.exit(f'usage: merge.py <dir> <outdir> [--source <dir or results.json> "<label>"]... (got {args[i:]})')
         extra.append((Path(args[i + 1]), args[i + 2]))
