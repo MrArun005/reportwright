@@ -477,6 +477,8 @@ function ownWriterFits(model, opt) {
       else if (it.t === 'image') { if (opt.pdfWriter === 'legacy' || !['png', 'jpeg', 'svg'].includes(/** @type {any} */ (imageInfo(it.src))?.type)) return false; }
       // rounded boxes and SVG paths (B3): drawn with pdf-lib's own operators (svgpath.js)
       else if (it.t === 'path' || (it.t === 'rect' && it.radius)) { if (opt.pdfWriter === 'legacy') return false; }
+      // form fields (B6): the library's fields with pdf-lib's look (pdffields.js)
+      else if (it.t === 'field') { if (opt.pdfWriter === 'legacy') return false; }
       else if (!(it.t === 'line' || it.t === 'ellipse' || it.t === 'rect')) return false;
     }
   }
@@ -526,6 +528,8 @@ function embedCachedPng(doc, { e, z }) {
 async function ownWriter(model, fontStore, opt) {
   const fixed = fixedDate(opt), when = fixed ?? new Date();
   /** @type {Uint8Array[]} */
+  // a form field's font is embedded (its standard font's stand-in), as on pdf-lib's path
+  if (model.pages.some((/** @type {any} */ pg) => pg.items.some((/** @type {any} */ i) => i.t === 'field'))) await fontStore.load(standIns(fontStore));
   const parts = [];
   const info = { width: model.width, height: model.height, bookmarks: model.bookmarks || [], headings: model.headings || [], warnings: [],
     pageStarts: model.pageStarts || [], pageHeights: model.pages.map((/** @type {any} */ pg) => pg.height ?? model.height) };
@@ -571,7 +575,7 @@ async function contentId(model, opt, when) {
  * The font a form field names in its default appearance (DA): the report font, or the bundled script font its
  * value is drawn in (Arabic in Inter would be blank boxes once a viewer redraws the field).
  */
-function fieldFont(it) {
+export function fieldFont(it) {
   for (const d of it.draw) if (d.t === 'text') for (const l of d.lines) for (const r of l.runs || []) if (r.font !== it.font && r.text.trim()) return embeddedFace(r.font);
   return embeddedFace(it.font); // a field's font is embedded: what is typed into it later can be any character
 }

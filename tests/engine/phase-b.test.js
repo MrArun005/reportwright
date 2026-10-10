@@ -173,3 +173,23 @@ describe('B7: encryption by @reportwright/pdf', async () => {
     await expect(exportPdf(m, fontStore, { encrypt: {}, pdfa: { icc: new Uint8Array(10) } })).rejects.toMatchObject({ status: 400 });
   });
 });
+
+describe('B6: form fields through @reportwright/pdf', async () => {
+  const { CORPUS } = await import('../../scripts/parity-corpus.mjs');
+  const { loadPdf } = await import('@reportwright/pdf');
+  it('every kind, with its value, flags and unique name; pdfWriter legacy stays on pdf-lib', async () => {
+    const m = await render(CORPUS.find((/** @type {any} */ c) => c.id === 'fields').def, { fontStore });
+    const b = await exportPdf(m, fontStore, {});
+    expect(viaLibrary(b)).toBe(true);
+    expect(viaLibrary(await exportPdf(m, fontStore, { pdfWriter: 'legacy' }))).toBe(false);
+    const f = Object.fromEntries((await loadPdf(b)).fields.map(x => [x.name, x]));
+    expect(Object.keys(f).sort()).toEqual(['agree', 'ar', 'customerName', 'hi', 'notes', 'off', 'plan']);
+    expect(f.customerName).toMatchObject({ type: 'text', value: 'Zoë Ünlü', required: true });
+    expect(f.notes.value).toBe('Line one\nLine two');
+    expect(f.agree.value).not.toBe('Off');
+    expect(f.off.value ?? 'Off').toBe('Off');
+    expect(f.plan).toMatchObject({ type: 'combo', value: 'Plus', readOnly: true });
+    expect(f.ar.value).toBe('مرحبا بالعالم');
+    expect(f.hi.value).toBe('नमस्ते दुनिया');
+  });
+});

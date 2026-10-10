@@ -22,9 +22,10 @@ import { render } from '../engine/index.js';
 import { planPaged } from '../engine/paged.js';
 import { sqlBatches } from '../engine/stream.js';
 import { safeUrl, drillUrl, asciiUrl } from '../engine/url.js';
-import { exportPdf, forcedPdfLib, roundRect } from './pdf.js';
+import { exportPdf, forcedPdfLib, roundRect, fieldFont } from './pdf.js';
+import { checkboxAppearance, textAppearance, shapedAppearance } from './pdffields.js';
 import { parseSvg, svgOps } from './svgimage.js';
-import { drawSvgPathOps } from './svgpath.js';
+import { drawSvgPathOps, pdfNum } from './svgpath.js';
 import { xmpPacket } from './pdfa.js';
 import { createStreamTagger } from './pdfstreamtags.js';
 import { standardFontDict, embeddedPage, embeddedWarnings, standIns } from './pdfstandard.js';
@@ -189,7 +190,7 @@ export function createPdfStream(sink, opt) {
   if (!core) put('%PDF-1.7\n%\xe2\xe3\xcf\xd3\n');
 
   // fonts: a resource name and the Type0 font's object number each, now; their glyphs are recorded as pages draw
-  /** @type {Map<string, { name: string, ref: number, font: any, cps: Set<number>, glyphs: Map<number, string>, memo: Map<number, string>, lit: Map<number, string> }>} */
+  /** @type {Map<string, { name: string, ref: number, font: any, cps: Set<number>, glyphs: Map<number, string>, memo: Map<number, string>, lit: Map<number, string>, full: boolean }>} */
   const fonts = new Map();
   let pages = 0, done = false;
   /** @type {any[]} pages whose streams are compressing */
@@ -199,7 +200,7 @@ export function createPdfStream(sink, opt) {
     let f = fonts.get(key);
     if (!f) {
       if (done) throw new Error('The PDF is finished');
-      fonts.set(key, f = { name: fontRes(key), ref: reserve(), font: fontStore.get(key), cps: new Set([32]), glyphs: new Map(), memo: new Map(), lit: new Map() });
+      fonts.set(key, f = { name: fontRes(key), ref: reserve(), font: fontStore.get(key), cps: new Set([32]), glyphs: new Map(), memo: new Map(), lit: new Map(), full: false });
     }
     return f;
   };
@@ -218,6 +219,8 @@ export function createPdfStream(sink, opt) {
   const w = {
     /** @param {string} key @returns {string} the font's resource name (F1…) */
     fontName: (key) => fontOf(key).name,
+    /** A font a form field uses: embedded whole (what is typed into the field later can be any character) @param {string} key */
+    fullFont: (key) => { fontOf(key).full = true; },
     /**
      * The text's glyphs, one per character (as the engine measured it: no layout features), as hex for <…> Tj, with
      * the glyphs recorded for the subset, W and ToUnicode.
@@ -352,7 +355,7 @@ export function createPdfStream(sink, opt) {
     },
     /**
      * Write a page: its content stream (deflated) and its dictionary, now. Nothing of it stays but two offsets.
-     * @param {{ width: number, height: number, content?: string | Uint8Array, deflated?: Uint8Array, annots?: (string | { ref: number, dict: string })[], extra?: string }} p
+     * @param {{ width: number, height: number, content?: string | Uint8Array, deflated?: Uint8Array, annots?: (string | { ref: number, dict: string })[], extra?: string, fields?: ((form: any, page: any) => void)[] }} p
      *   deflated: the content stream already compressed (zlib), as pages painted elsewhere come.
      *   content: the page's operators (a string holds bytes 0–255, as pdf.js's Content makes). annots: annotation
      *   dictionaries (with a reserved number: { ref, dict }). extra: more entries for the page dictionary (/StructParents 3).
@@ -361,6 +364,7 @@ export function createPdfStream(sink, opt) {
       if (done) throw new Error('The PDF is finished');
       const i = pages++;
       if (core) return corePage(p);
+      if (p.fields?.length) throw new Error('form fields need the @reportwright/pdf writer');
       const ref = w.pageRef(i);
       if (i % LEAF === 0) leaves.push(reserve());
       const contents = reserve(), parent = leaves[leaves.length - 1];
@@ -469,6 +473,7 @@ export function createPdfStream(sink, opt) {
       page.annots.push({ ref, make: () => dict });
     }
     for (const [k, v] of dictEntries(p.extra || '')) page.entries.set(k, v);
+    for (const f of p.fields || []) f(/** @type {any} */ (opt.pdf).form, page); // form fields (B6): the library's, our appearances
     const ended = page.end();
     page.z = z; // set before the writer reads it (queued, written in turn)
     await ended;
@@ -523,7 +528,7 @@ export function createPdfStream(sink, opt) {
     const f = F.font, full = /** @type {Uint8Array} */ (fontStore.bytes.get(key));
     if (!f.lite) await loadFontkit(); // checks a subset (a font read by sfnt.js checks it the same way, without fontkit)
     let bytes = full, psName = f.postscriptName; // N10: a subset of a variable font says the weight it is cut at
-    if (opt.subset && !(f.lite ? f.noSubsetting : f['OS/2']?.fsType?.noSubsetting)) {
+    if (opt.subset && !F.full && !(f.lite ? f.noSubsetting : f['OS/2']?.fsType?.noSubsetting)) {
       try {
         // glyphs given: subset.js keeps their IDs (HB_SUBSET_FLAGS_RETAIN_GIDS), which the pages already drew with
         const sub = await opt.subset(full, F.cps, { glyphs: F.glyphs.keys() });
@@ -778,8 +783,8 @@ export async function writePagedPdf(plan, opts, sink) {
         if (!r) env.images.set(im.src, r = await loadImage(im.src, w, opts));
         if (!r.img) onWarning(`Image on page ${pi + 1} (${im.tag?.alt ? `"${im.tag.alt}"` : String(im.src).slice(0, 40)}) was left out: ${r.why}`);
       }
-      const { content, annots } = paintPage(pg, H, env);
-      await w.addPage({ width: pg.width ?? info.width, height: H, content, annots, extra: tags ? await tags.end(w.pageRef(pi)) : undefined });
+      const { content, annots, fields } = paintPage(pg, H, env);
+      await w.addPage({ width: pg.width ?? info.width, height: H, content, annots, fields, extra: tags ? await tags.end(w.pageRef(pi)) : undefined });
     }
   } finally {
     // the rows' cursors close as the pages' generators unwind; a read still running (its cursor told by the signal)
@@ -884,6 +889,9 @@ async function loadImage(src, w, opts) {
   } catch (e) { return { why: `it could not be embedded (${/** @type {any} */ (e)?.message || e})` }; }
 }
 
+/** a font's resource name through paintEnv @param {any} env @param {string} key */
+const w2name = (env, key) => env.fontName(key);
+
 /** a literal string, \ ( ) escaped @param {string} v */
 const lit = (v) => `(${String(v).replace(/[\\()]/g, '\\$&')})`;
 /** The text a link covers (pdf.js's coveredText): the page's lines whose start lies in its box, in reading order. */
@@ -898,11 +906,13 @@ function coveredText(items, box) {
  * (pdfpaint.js) as exportPdf draws it. env (paintEnv): the writer's names and glyph records, the page refs links jump
  * to, the tagger when tagged. Pages painted in parallel (parallel.js) use a writer of their own and the same names.
  * @param {any} pg @param {number} H @param {any} env
- * @returns {{ content: string, annots: any[] }}
+ * @returns {{ content: string, annots: any[], fields: ((form: any, page: any) => void)[] }}
  */
 export function paintPage(pg, H, env) {
   if (env.embedded) pg = embeddedPage(pg, env.font, env.embedded);
   const annots = [];
+  /** form fields: made on the library's page as it is written (corePage) @type {((form: any, page: any) => void)[]} */
+  const fields = [];
   const c = new Content(env.shared);
   const { tags } = env;
   if (tags) { c.tagged = true; c.artLines = true; tags.page(pg.win ?? 0); }
@@ -1008,6 +1018,30 @@ export function paintPage(pg, H, env) {
         c.Q();
         break;
       }
+      case 'field': {
+        // as exportPdf's pdf-lib path makes it (pdffields.js): the same look, value, flags and name
+        const key = fieldFont(it), F = env.font(key), fname = w2name(env, key);
+        env.fullFont(key);
+        const name = env.uniqueName(it.name);
+        // pdf-lib's addToPage grows the widget by the border width (half on each side); its appearance fills that box
+        const W = it.w + 0.75, Hh = it.h + 0.75;
+        const box = { x: it.x - 0.375, y: it.y - 0.375, width: W, height: Hh, border: { width: 0.75, color: [0.61, 0.64, 0.69] }, background: [1, 1, 1], readOnly: !!it.readOnly, required: !!it.required };
+        const shaped = it.draw.some((/** @type {any} */ d) => d.t === 'text' && d.lines.some((/** @type {any} */ l) => l.runs));
+        if (it.kind === 'checkbox') {
+          const ap = checkboxAppearance(W, Hh);
+          fields.push((form, page) => form.checkbox(name, { ...box, page, checked: !!it.value, appearance: { on: ap.on, off: ap.off } }));
+          break;
+        }
+        const choice = it.kind === 'choice';
+        const text = choice ? (it.options.includes(String(it.value)) ? String(it.value) : '') : String(it.value ?? '');
+        const look = textAppearance(text, it.kind === 'multiline', W, Hh, it.size, F, fname, (t) => `(${env.literal(key, cleanText(t))})`);
+        // pdf.js's own appearance has the item's box as its BBox, which the viewer stretches to the grown widget
+        const normal = shaped ? `${pdfNum(W / it.w)} 0 0 ${pdfNum(Hh / it.h)} 0 0 cm\n${shapedAppearance(it, env)}` : look.normal;
+        const raw = { appearance: { normal }, da: look.da };
+        if (choice) fields.push((form, page) => form.comboBox(name, { ...box, page, ...raw, options: it.options, ...(text ? { value: text } : {}) }));
+        else fields.push((form, page) => form.textField(name, { ...box, page, ...raw, value: String(it.value ?? ''), multiline: it.kind === 'multiline' }));
+        break;
+      }
       default: throw new Error(`A ${it.t} item does not stream yet`);
     }
     if (it.rotate) c.Q();
@@ -1015,7 +1049,7 @@ export function paintPage(pg, H, env) {
     else if (mark) { c.et(); c.s += 'EMC\n'; }
   }
   c.et();
-  return { content: c.s, annots };
+  return { content: c.s, annots, fields };
 }
 
 /**
@@ -1029,6 +1063,7 @@ export function paintEnv(w, fontStore, o = {}) {
   /** @type {Map<string, Map<number, string>>} shaped glyphs per font: the text each stands for */
   const shaped = new Map();
   const vm = new Map();
+  const taken = new Set();
   return {
     shared: { font: (f) => w.fontName(f.key), gs: (ca, CA) => w.gs(ca, CA), image: () => { throw new Error('images do not stream yet'); } },
     pf: (/** @type {string} */ key) => { let f = pfs.get(key); if (!f) pfs.set(key, f = { key, embedder: { font: fontStore.get(key) } }); return f; },
@@ -1046,6 +1081,10 @@ export function paintEnv(w, fontStore, o = {}) {
     /** the pictures embedded so far, by source: { img } or { why } (writePagedPdf loads a page's before painting it) @type {Map<string, any>} */
     images: new Map(),
     reserve: () => w.reserve(),
+    fullFont: (/** @type {string} */ key) => w.fullFont(key),
+    fontName: (/** @type {string} */ key) => w.fontName(key),
+    /** a form field's name, made unique in the document as pdf.js does ("qty", "qty_2") */
+    uniqueName: (/** @type {string} */ n) => { let name = n, i = 1; while (taken.has(name)) name = `${n}_${++i}`; taken.add(name); return name; },
     drillBase: o.drillBase,
     tags: o.tags || null,
     /** PDF/A, PDF/UA: standard fonts drawn in embedded stand-ins; the families that were @type {Set<string>|null} */
