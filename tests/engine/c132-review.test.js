@@ -65,3 +65,26 @@ describe('M2: the subset check reads the drawn glyphs\' outline bounds', () => {
     expect(pdf).toMatch(/^Inter-Regular /m);
   });
 });
+
+describe('L1: the V8 flag toggle stays out of worker threads', () => {
+  it('a subsetter compiled in a worker thread never calls setFlagsFromString', async () => {
+    const { Worker } = await import('node:worker_threads');
+    const root = path.join(import.meta.dirname, '../..');
+    const code = `
+      const { parentPort } = require('node:worker_threads');
+      const v8 = process.getBuiltinModule('node:v8'), fs = require('node:fs'), path = require('node:path');
+      const calls = []; const real = v8.setFlagsFromString; v8.setFlagsFromString = (f) => { calls.push(f); return real(f); };
+      (async () => {
+        const { createSubsetter } = await import(${JSON.stringify(new URL('src/exporters/subset.js', `file://${root}/`).href)});
+        const subset = createSubsetter(() => fs.promises.readFile(${JSON.stringify(path.join(root, 'public/harfbuzz-subset.wasm'))}));
+        const out = await subset(fs.readFileSync(${JSON.stringify(path.join(root, 'public/fonts/Inter-Regular.ttf'))}), [72, 105]);
+        parentPort.postMessage({ calls, bytes: out.length });
+      })().catch((e) => parentPort.postMessage({ error: String(e) }));`;
+    const w = new Worker(code, { eval: true, env: { ...process.env, PW_NO_LIFTOFF: '' } });
+    const msg = await new Promise((ok, no) => { w.once('message', ok); w.once('error', no); });
+    await w.terminate();
+    expect(msg.error).toBeUndefined();
+    expect(msg.bytes).toBeGreaterThan(0);
+    expect(msg.calls).toEqual([]);
+  });
+});

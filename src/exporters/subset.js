@@ -132,6 +132,8 @@ function renameForWeight(tables, weight) {
   }
 }
 
+let liftoffTried = false; // the process's first subsetter compile on the main thread set --liftoff-only (L1)
+
 /** @param {() => Promise<ArrayBuffer|Uint8Array>} loadWasm */
 export function createSubsetter(loadWasm) {
   /** @type {Promise<any>|null} */
@@ -151,7 +153,11 @@ export function createSubsetter(loadWasm) {
     if (proc?.versions?.node) {
       // PW_NO_LIFTOFF=1 leaves V8's flags alone; a process started with --liftoff-only keeps it (never reset to off)
       const own = /--liftoff-only/.test([...(proc.execArgv ?? []), proc.env?.NODE_OPTIONS ?? ''].join(' '));
-      const v8 = proc.env?.PW_NO_LIFTOFF || own ? null : proc.getBuiltinModule?.('node:v8');
+      // the flag is process-wide: set only on the main thread (a worker's compile would race the main thread's and
+      // other workers'), and only for the process's first compile; a worker compiles plainly, as 0.13 did
+      const main = !!proc.getBuiltinModule?.('node:worker_threads')?.isMainThread;
+      const v8 = proc.env?.PW_NO_LIFTOFF || own || !main || liftoffTried ? null : proc.getBuiltinModule?.('node:v8');
+      if (v8) liftoffTried = true;
       v8?.setFlagsFromString('--liftoff-only');
       try { instance = new WebAssembly.Instance(new WebAssembly.Module(src), {}); } finally { v8?.setFlagsFromString('--no-liftoff-only'); }
     } else instance = (await WebAssembly.instantiate(src, {})).instance;
