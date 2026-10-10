@@ -2,6 +2,11 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
+## Unreleased (Phase B: every PDF through `@reportwright/pdf`)
+
+### Changed
+- **`@reportwright/pdf` 0.1.0-beta.11** (was beta.9). It is not on npm yet: `package.json` names it, and `package-lock.json` updates once beta.11 is published (until then `npm ci` installs beta.9's lock entry; install the tarball over `node_modules/@reportwright/pdf`).
+
 ## 0.14.0-rc.3 — 2026-10-10 (release candidate)
 
 ### Fixed (from the rc.2 tester gate)
