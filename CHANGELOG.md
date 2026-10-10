@@ -2,7 +2,7 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
-## 0.14.0 — unreleased
+## 0.14.0-rc.1 — 2026-10-10 (release candidate)
 
 ### Changed
 - **PDFs are written by `@reportwright/pdf`** (pinned `0.1.0-beta.5`, no dependencies of its own), the streaming PDF writer extracted from the engine. `exportPdfStream` (plain, PDF/A, PDF/UA-tagged, `parallel` workers) and `exportPdf` for reports of text (any font, shaped scripts), boxes, ellipses, lines and links go through it. Images, SVG paths, rounded boxes, form fields, encryption, signing (`prepare`), `save` options, and whole-model PDF/A and tagged files stay on pdf-lib for now.
