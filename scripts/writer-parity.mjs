@@ -181,7 +181,7 @@ for (const c of cases) {
     row.drawing = !ex.drawing ? 'ok' : c.accept?.drawing ? `accepted (${ex.drawing}): ${c.accept.drawing}` : `FAIL ${ex.drawing}`;
     // tiers 2 and 3; an owner-decided pixel difference (accept.pixels) is printed instead of failing
     const px = pixelVerdict(fo, fn, pw);
-    if (px.tier === 3) tier3.push(`${c.id}: ${px.detail}`);
+    if (px.tier === 3) tier3.push(`${c.id}: ${px.ok ? 'pass' : c.accept?.pixels ? 'fail, owner-accepted' : 'FAIL'} — ${px.detail}`);
     row.pixels = px.ok ? px.detail : c.accept?.pixels && np === op ? `accepted (${px.detail}): ${c.accept.pixels}` : `FAIL ${px.detail}`;
     const q = run('qpdf', [...(pw ? [`--password=${pw}`] : []), '--check', fn]);
     let valid = q.status === 0 ? 'qpdf ok' : `FAIL qpdf: ${q.stdout.toString().split('\n').find(l => /error|warning/i.test(l)) || q.status}`;
@@ -224,5 +224,5 @@ console.log('|---|---|---|---|---|---|---|---|---|---|---|');
 for (const r of table) console.log(`| ${Object.values(r).join(' | ')} |`);
 const went = table.filter(r => r.path === 'new writer' || r.path === 'streamed');
 console.log(`\n${table.length} reports, ${went.length} through @reportwright/pdf, ${table.filter(r => r.path.startsWith('pdf-lib')).length} still on pdf-lib, ${table.filter(r => r.path.startsWith('not rendered')).length} not rendered; ${failed} failing.`);
-if (tier3.length) console.log(`\nTier 3 (anti-aliasing only):\n${tier3.join('\n')}`);
+if (tier3.length) console.log(`\nCases that reached tier 3 (600 dpi):\n${tier3.join('\n')}`);
 process.exit(failed ? 1 : 0);

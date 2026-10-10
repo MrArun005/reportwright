@@ -1,5 +1,5 @@
 // The parity gate's own checks (scripts/parity-tiers.mjs): what passes and what must fail.
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,6 +8,7 @@ import { exactChecks, pixelVerdict, tier2, canonicalOps, TOLERANCE, checkRendere
 
 const tools = ['pdftoppm', 'pdftotext', 'qpdf'].every(t => spawnSync(t, [t === 'qpdf' ? '--version' : '-v']).status === 0);
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-tiers-'));
+afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
 let n = 0;
 const W = Array(224).fill(500).join(' ');
 /** a one-page PDF (xref rebuilt by qpdf): content, and an optional structure tree of { S, mcid } elements */

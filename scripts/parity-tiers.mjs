@@ -218,7 +218,9 @@ export function readPnm(b) {
 export function renderPages(f, dpi, gray, pw = '') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-tier-'));
   try {
-    run('pdftoppm', [...pwArgs(pw, '-upw'), '-r', String(dpi), ...(gray ? ['-gray'] : []), f, path.join(dir, 'p')]);
+    // a failed render (a full disk, say) is an error, never a verdict
+    const r = run('pdftoppm', [...pwArgs(pw, '-upw'), '-r', String(dpi), ...(gray ? ['-gray'] : []), f, path.join(dir, 'p')]);
+    if (r.status !== 0) throw new Error(`pdftoppm failed (${r.status}): ${r.stderr.toString().slice(0, 200)}`);
     return fs.readdirSync(dir).sort((x, y) => Number(x.match(/(\d+)\./)?.[1]) - Number(y.match(/(\d+)\./)?.[1])).map(x => readPnm(fs.readFileSync(path.join(dir, x))));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
@@ -278,7 +280,8 @@ export function pixelVerdict(fa, fb, pw = '') {
 function renderOne(f, p, pw = '') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-tie-'));
   try {
-    run('pdftoppm', [...pwArgs(pw, '-upw'), '-r', String(TIE_DPI), '-f', String(p), '-l', String(p), '-singlefile', f, path.join(dir, 'p')]);
+    const r = run('pdftoppm', [...pwArgs(pw, '-upw'), '-r', String(TIE_DPI), '-f', String(p), '-l', String(p), '-singlefile', f, path.join(dir, 'p')]);
+    if (r.status !== 0) throw new Error(`pdftoppm failed (${r.status}): ${r.stderr.toString().slice(0, 200)}`);
     return readPnm(fs.readFileSync(path.join(dir, 'p.ppm')));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
