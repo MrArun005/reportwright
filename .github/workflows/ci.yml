@@ -87,6 +87,7 @@ jobs:
         run: |
           ./scripts/restart.sh
           for i in $(seq 1 90); do curl -sf http://localhost:3000/api/v1/livez && break; sleep 1; done
+      - run: node scripts/build-packages.mjs # the embed suites serve packages/fonts/public/fonts and the wrappers' packages, which this builds
       - name: Browser suites
         run: npm run test:e2e
       - name: Firefox and WebKit smoke (viewer, PDF export, designer)
