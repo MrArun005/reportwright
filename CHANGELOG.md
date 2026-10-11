@@ -2,7 +2,12 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
-## 0.14.1 (unreleased)
+## 0.14.0-rc.6 — 2026-10-11 (release candidate)
+
+### Summary
+- **`@reportwright/pdf` 0.1.0-beta.14** (was beta.12; beta.13 changed only its README): a check box's `doc.fields` value is `true`/`false` (its on-state name is `onValue`), the Factur-X example passes the EN 16931 XSD (checked in its CI), `Page` and `__bulkWorker` are declared in its types.
+- **`@reportwright/fonts-cjk`** ships TypeScript types and installs only the `reportwright-fonts-cjk` command (the old `pagewright-fonts-cjk` name is gone); `scan:packages` fails on any `pagewright` command name or a package without types.
+
 
 ### HTML export is configurable at every level
 - **Modes.** `html`: `interactive` (the viewer in one file: groups open and drill-through runs in place) | `tables` (pages and sortable tables) | `static` (pages only, for print). `drillLinks`: `inline` (in place / same tab) | `new-tab` | `off` (shown disabled). Defaults: `interactive`, `inline` — a report sent to a client drills down in place and never opens a tab to a server it cannot reach.
