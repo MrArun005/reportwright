@@ -6,7 +6,7 @@
   "dependencies": {
     "@reportwright/engine": "0.14.0-rc.6",
     "@reportwright/fonts": "0.14.0-rc.6",
-    "@reportwright/pdf": "0.1.0-beta.14",
+    "@reportwright/pdf": "0.1.0-beta.15",
     "harfbuzzjs": "1.6.3"
   }
 }
