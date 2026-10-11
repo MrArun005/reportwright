@@ -587,7 +587,7 @@ jobs:
           mkdir -p results-win
           { echo "windows tier $TIER runs $RUNS"; date -u; systeminfo | grep -E 'OS Name|OS Version|Processor|Total Physical Memory'; nproc; } | tee results-win/windows-runner.txt
       - name: Benchmark (ours and SSRS, the report job)
-        run: PATH="$MSYS_BIN:$PATH" python bench/deep/drive.py --group create-engines --only report --langs ours,ssrs --tier "$TIER" --runs "$RUNS" --fixtures "${{ runner.temp }}/fx" --work "${{ runner.temp }}/work" --out results-win/windows.jsonl
+        run: PATH="$MSYS_BIN:$PATH" PYTHONUTF8=1 "$pythonLocation/python" bench/deep/drive.py --group create-engines --only report --langs ours,ssrs --tier "$TIER" --runs "$RUNS" --fixtures "${{ runner.temp }}/fx" --work "${{ runner.temp }}/work" --out results-win/windows.jsonl
       - uses: actions/upload-artifact@v4
         if: always()
         with:
