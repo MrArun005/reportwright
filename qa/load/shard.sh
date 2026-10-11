@@ -14,9 +14,9 @@ set -u
 NAME=$1; PORT=${2:-3700}; B=http://127.0.0.1:$PORT; # not localhost: k6 tries ::1 first and next start listens on IPv4
  OUT=${QA_DIR:-qa-out}; mkdir -p "$OUT"
 k6r() { # label, rules, env…
-  local label=$1 rules=$2; shift 2
-  env BASE=$B "$@" k6 run --quiet --summary-export "$OUT/$label.json" qa/load/render.js > "$OUT/$label.log" 2>&1
-  node qa/load/judge.mjs "$label" "$OUT/$label.json" "$rules" "k6 run render.js $(echo "$@" | sed 's/KEY=[^ ]*//')"
+  local label=$1 rules=$2; shift 2; local f; f=$(tr -c 'A-Za-z0-9\n-' '_' <<<"$label")
+  env BASE=$B "$@" k6 run --quiet --summary-export "$OUT/$f.json" qa/load/render.js > "$OUT/$f.log" 2>&1
+  node qa/load/judge.mjs "$label" "$OUT/$f.json" "$rules" "k6 run render.js $(echo "$@" | sed 's/KEY=[^ ]*//')"
 }
 alive() { local c; c=$(curl -s -o /dev/null -w '%{http_code}' "$B/api/v1/livez"); node qa/stress/rec.mjs "server alive after $1" "GET /api/v1/livez" 200 "$c" "$([ "$c" = 200 ] && echo PASS || echo FAIL)"; }
 # one render by curl first: its status and body explain a k6 run that gets no 200s
@@ -54,7 +54,7 @@ case "$NAME" in
     node -e '
       const fs=require("fs"),o=process.argv[1];const r=fs.readFileSync(o+"/rss.txt","utf8").trim().split("\n").map(l=>+l.split(" ")[1]);
       const n=Math.floor(r.length/3),avg=a=>a.reduce((x,y)=>x+y,0)/a.length,a=avg(r.slice(0,n)),c=avg(r.slice(-n));
-      const p=i=>{try{return JSON.parse(fs.readFileSync(`${o}/soak third ${i} (10 VUs, ${process.argv[2]}).json`)).metrics.ok_duration["p(95)"]}catch{return NaN}};
+      const p=i=>{try{return JSON.parse(fs.readFileSync(`${o}/${`soak third ${i} (10 VUs, ${process.argv[2]})`.replace(/[^A-Za-z0-9-]/g,"_")}.json`)).metrics.ok_duration["p(95)"]}catch{return NaN}};
       const rec=(c2,e,a2,res)=>require("child_process").execFileSync("node",["qa/stress/rec.mjs",c2,"soak: rss.sh + k6 thirds",e,a2,res],{stdio:"inherit"});
       rec("soak RSS drift","RSS last third ≤ 1.25 × first third",`RSS first ${a.toFixed(0)} MB → last ${c.toFixed(0)} MB (×${(c/a).toFixed(2)}), samples ${r.length}`,c<=1.25*a?"PASS":"FAIL");
       rec("soak latency drift","p95 last third ≤ 1.5 × first third",`p95 ${p(1).toFixed(0)} → ${p(3).toFixed(0)} ms (×${(p(3)/p(1)).toFixed(2)})`,p(3)<=1.5*p(1)?"PASS":"FAIL");
