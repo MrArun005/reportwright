@@ -1,0 +1,66 @@
+# The QA run (docs/QA.md): every suite's reusable workflow in parallel, then one report. Start it with
+# `npm run qa -- all` (scripts/qa.mjs) or from the Actions tab. Merged LAST: it references every suite file by path,
+# and a `uses:` of a file that is not on the branch fails the whole run.
+name: qa
+on:
+  workflow_dispatch:
+    inputs:
+      suites: { description: 'comma list (correctness,conformance,compat,pdf-libs,engines,rival-best,stress,load,security) or all', type: string, default: all }
+      ref: { description: 'git ref the suites test (default: this run''s commit)', type: string, default: '' }
+      tier: { description: 'quick or full', type: string, default: quick }
+
+jobs:
+  correctness:
+    if: inputs.suites == 'all' || contains(format(',{0},', inputs.suites), ',correctness,')
+    uses: ./.github/workflows/qa-correctness.yml
+    with: { ref: '${{ inputs.ref }}', tier: '${{ inputs.tier }}' }
+  conformance:
+    if: inputs.suites == 'all' || contains(format(',{0},', inputs.suites), ',conformance,')
+    uses: ./.github/workflows/qa-conformance.yml
+    with: { ref: '${{ inputs.ref }}', tier: '${{ inputs.tier }}' }
+  compat:
+    if: inputs.suites == 'all' || contains(format(',{0},', inputs.suites), ',compat,')
+    uses: ./.github/workflows/qa-compat.yml
+    with: { ref: '${{ inputs.ref }}', tier: '${{ inputs.tier }}' }
+  # agent B's suites
+  pdf-libs:
+    if: inputs.suites == 'all' || contains(format(',{0},', inputs.suites), ',pdf-libs,')
+    uses: ./.github/workflows/qa-pdf-libs.yml
+    with: { ref: '${{ inputs.ref }}', tier: '${{ inputs.tier }}' }
+  engines:
+    if: inputs.suites == 'all' || contains(format(',{0},', inputs.suites), ',engines,')
+    uses: ./.github/workflows/qa-engines.yml
+    with: { ref: '${{ inputs.ref }}', tier: '${{ inputs.tier }}' }
+  rival-best:
+    if: inputs.suites == 'all' || contains(format(',{0},', inputs.suites), ',rival-best,')
+    uses: ./.github/workflows/qa-rival-best.yml
+    with: { ref: '${{ inputs.ref }}', tier: '${{ inputs.tier }}' }
+  # agent C's suites
+  stress:
+    if: inputs.suites == 'all' || contains(format(',{0},', inputs.suites), ',stress,')
+    uses: ./.github/workflows/qa-stress.yml
+    with: { ref: '${{ inputs.ref }}', tier: '${{ inputs.tier }}' }
+  load:
+    if: inputs.suites == 'all' || contains(format(',{0},', inputs.suites), ',load,')
+    uses: ./.github/workflows/qa-load.yml
+    with: { ref: '${{ inputs.ref }}', tier: '${{ inputs.tier }}' }
+  security:
+    if: inputs.suites == 'all' || contains(format(',{0},', inputs.suites), ',security,')
+    uses: ./.github/workflows/qa-security.yml
+    with: { ref: '${{ inputs.ref }}', tier: '${{ inputs.tier }}' }
+
+  aggregate:
+    needs: [correctness, conformance, compat, pdf-libs, engines, rival-best, stress, load, security]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { sparse-checkout: scripts }
+      - uses: actions/download-artifact@v4
+        with: { pattern: 'qa-*-results', path: results }
+      - run: node scripts/qa.mjs aggregate results qa-report
+      - uses: actions/upload-artifact@v4
+        with: { name: qa-report, path: qa-report }
+      - name: fail when any suite reported a FAIL
+        run: |
+          node -e "process.exit(require('./qa-report/results.json').some(r => r.result === 'FAIL') ? 1 : 0)"
