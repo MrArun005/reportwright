@@ -145,7 +145,7 @@ await until(async () => (await ip.locator('.vpage text').count()) > n0, 'expand'
 await ilink('Open Jaipur month by month').first().click({ modifiers: ['ControlOrMeta'] }); // even with a modifier: in place
 await until(async () => (await ip.locator('nav.vcrumbs li', { hasText: 'Jaipur' }).count()) > 0, 'drill');
 await ip.screenshot({ path: '/tmp/shots/exports-b2-interactive.png' });
-assert.equal(opened.length, before + 1, `no new page or tab opened (only the file itself): ${opened.join(', ')}`);
+assert.equal(opened.length, before, `no new page or tab opened: ${opened.join(', ')}`); // `before` already counts the file's own tab
 assert.deepEqual(ipErrs, [], 'no errors in the interactive file');
 await ip.close();
 
