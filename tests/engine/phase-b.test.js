@@ -186,8 +186,9 @@ describe('B6: form fields through @reportwright/pdf', async () => {
     expect(Object.keys(f).sort()).toEqual(['agree', 'ar', 'customerName', 'hi', 'notes', 'off', 'plan']);
     expect(f.customerName).toMatchObject({ type: 'text', value: 'Zoë Ünlü', required: true });
     expect(f.notes.value).toBe('Line one\nLine two');
-    expect(f.agree.value).not.toBe('Off');
-    expect(f.off.value ?? 'Off').toBe('Off');
+    // @reportwright/pdf 0.1.0-beta.14: a check box's value is true/false (its on-state name is onValue)
+    expect(f.agree.value).toBe(true);
+    expect(f.off.value).toBe(false);
     expect(f.plan).toMatchObject({ type: 'combo', value: 'Plus', readOnly: true });
     expect(f.ar.value).toBe('مرحبا بالعالم');
     expect(f.hi.value).toBe('नमस्ते दुनिया');
