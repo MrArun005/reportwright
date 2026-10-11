@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The ledger report of bench/deep (README.md) as a FastReport Open Source design, the equivalent of
+     java/jasper/resources/ledger.jrxml: a column header band (printed on every page), a Region group header and footer
+     with Count and Sum totals, a report summary with the grand total, "Page N of M" in the page footer ([TotalPages]
+     needs the double pass). Data: the rows list registered as the business object "Ledger". -->
+<Report ScriptLanguage="CSharp" DoublePass="true" ConvertNulls="true">
+  <Dictionary>
+    <BusinessObjectDataSource Name="Ledger" ReferenceName="Ledger" DataType="System.Int32" Enabled="true">
+      <Column Name="Id" DataType="System.Int32"/>
+      <Column Name="Account" DataType="System.String"/>
+      <Column Name="Region" DataType="System.String"/>
+      <Column Name="Type" DataType="System.String"/>
+      <Column Name="Date" DataType="System.String"/>
+      <Column Name="Amount" DataType="System.Double"/>
+      <Column Name="Reference" DataType="System.String"/>
+    </BusinessObjectDataSource>
+    <Total Name="GCount" TotalType="Count" Evaluator="Data1" PrintOn="GroupFooter1"/>
+    <Total Name="GSum" Expression="[Ledger.Amount]" Evaluator="Data1" PrintOn="GroupFooter1"/>
+    <Total Name="TCount" TotalType="Count" Evaluator="Data1" PrintOn="ReportSummary1"/>
+    <Total Name="TSum" Expression="[Ledger.Amount]" Evaluator="Data1" PrintOn="ReportSummary1"/>
+  </Dictionary>
+  <ReportPage Name="Page1" PaperWidth="210" PaperHeight="297" LeftMargin="12.7" TopMargin="12.7" RightMargin="12.7" BottomMargin="12.7">
+    <ColumnHeaderBand Name="ColumnHeader1" Width="697.33" Height="21.33">
+      <TextObject Name="Text1" Left="0" Width="66.67" Height="21.33" Text="Id" Padding="2.67, 0, 2.67, 0" VertAlign="Center" Fill.Color="238, 242, 247" Font="Inter, 9pt, style=Bold"/><TextObject Name="Text2" Left="66.67" Width="82.67" Height="21.33" Text="Account" Padding="2.67, 0, 2.67, 0" VertAlign="Center" Fill.Color="238, 242, 247" Font="Inter, 9pt, style=Bold"/><TextObject Name="Text3" Left="149.33" Width="66.67" Height="21.33" Text="Region" Padding="2.67, 0, 2.67, 0" VertAlign="Center" Fill.Color="238, 242, 247" Font="Inter, 9pt, style=Bold"/><TextObject Name="Text4" Left="216" Width="82.67" Height="21.33" Text="Type" Padding="2.67, 0, 2.67, 0" VertAlign="Center" Fill.Color="238, 242, 247" Font="Inter, 9pt, style=Bold"/><TextObject Name="Text5" Left="298.67" Width="82.67" Height="21.33" Text="Date" Padding="2.67, 0, 2.67, 0" VertAlign="Center" Fill.Color="238, 242, 247" Font="Inter, 9pt, style=Bold"/><TextObject Name="Text6" Left="381.33" Width="93.33" Height="21.33" Text="Amount" Padding="2.67, 0, 2.67, 0" VertAlign="Center" HorzAlign="Right" Fill.Color="238, 242, 247" Font="Inter, 9pt, style=Bold"/><TextObject Name="Text7" Left="474.67" Width="222.67" Height="21.33" Text="Reference" Padding="2.67, 0, 2.67, 0" VertAlign="Center" Fill.Color="238, 242, 247" Font="Inter, 9pt, style=Bold"/>
+    </ColumnHeaderBand>
+    <GroupHeaderBand Name="GroupHeader1" Width="697.33" Height="21.33" Condition="[Ledger.Region]" SortOrder="None">
+      <TextObject Name="Text8" Left="0" Width="697.33" Height="21.33" Text="Region [Ledger.Region]" Padding="2.67, 0, 2.67, 0" VertAlign="Center" Fill.Color="219, 234, 254" Font="Inter, 9pt, style=Bold"/>
+      <DataBand Name="Data1" Width="697.33" Height="18.67" DataSource="Ledger">
+        <TextObject Name="Text9" Left="0" Width="66.67" Height="18.67" Text="[Ledger.Id]" Padding="2.67, 0, 2.67, 0" VertAlign="Center" Font="Inter, 9pt" Border.Lines="Bottom" Border.Color="229, 231, 235" Border.Width="0.67"/><TextObject Name="Text10" Left="66.67" Width="82.67" Height="18.67" Text="[Ledger.Account]" Padding="2.67, 0, 2.67, 0" VertAlign="Center" Font="Inter, 9pt" Border.Lines="Bottom" Border.Color="229, 231, 235" Border.Width="0.67"/><TextObject Name="Text11" Left="149.33" Width="66.67" Height="18.67" Text="[Ledger.Region]" Padding="2.67, 0, 2.67, 0" VertAlign="Center" Font="Inter, 9pt" Border.Lines="Bottom" Border.Color="229, 231, 235" Border.Width="0.67"/><TextObject Name="Text12" Left="216" Width="82.67" Height="18.67" Text="[Ledger.Type]" Padding="2.67, 0, 2.67, 0" VertAlign="Center" Font="Inter, 9pt" Border.Lines="Bottom" Border.Color="229, 231, 235" Border.Width="0.67"/><TextObject Name="Text13" Left="298.67" Width="82.67" Height="18.67" Text="[Ledger.Date]" Padding="2.67, 0, 2.67, 0" VertAlign="Center" Font="Inter, 9pt" Border.Lines="Bottom" Border.Color="229, 231, 235" Border.Width="0.67"/><TextObject Name="Text14" Left="381.33" Width="93.33" Height="18.67" Text="[Ledger.Amount]" Padding="2.67, 0, 2.67, 0" VertAlign="Center" HorzAlign="Right" Font="Inter, 9pt" Border.Lines="Bottom" Border.Color="229, 231, 235" Border.Width="0.67" Format="Number" Format.UseLocale="false" Format.DecimalDigits="2" Format.DecimalSeparator="." Format.GroupSeparator="," Format.NegativePattern="1"/><TextObject Name="Text15" Left="474.67" Width="222.67" Height="18.67" Text="[Ledger.Reference]" Padding="2.67, 0, 2.67, 0" VertAlign="Center" Font="Inter, 9pt" Border.Lines="Bottom" Border.Color="229, 231, 235" Border.Width="0.67"/>
+      </DataBand>
+      <GroupFooterBand Name="GroupFooter1" Width="697.33" Height="18.67">
+        <TextObject Name="Text16" Left="0" Width="149.33" Height="18.67" Text="Region total" Padding="2.67, 0, 2.67, 0" VertAlign="Center" Font="Inter, 9pt, style=Bold"/><TextObject Name="Text17" Left="149.33" Width="66.67" Height="18.67" Text="[GCount]" Padding="2.67, 0, 2.67, 0" VertAlign="Center" Font="Inter, 9pt, style=Bold"/><TextObject Name="Text18" Left="381.33" Width="93.33" Height="18.67" Text="[GSum]" Padding="2.67, 0, 2.67, 0" VertAlign="Center" HorzAlign="Right" Font="Inter, 9pt, style=Bold" Format="Number" Format.UseLocale="false" Format.DecimalDigits="2" Format.DecimalSeparator="." Format.GroupSeparator="," Format.NegativePattern="1"/>
+      </GroupFooterBand>
+    </GroupHeaderBand>
+    <ReportSummaryBand Name="ReportSummary1" Width="697.33" Height="18.67">
+      <TextObject Name="Text19" Left="0" Width="149.33" Height="18.67" Text="Grand total" Padding="2.67, 0, 2.67, 0" VertAlign="Center" Font="Inter, 9pt, style=Bold"/><TextObject Name="Text20" Left="149.33" Width="66.67" Height="18.67" Text="[TCount]" Padding="2.67, 0, 2.67, 0" VertAlign="Center" Font="Inter, 9pt, style=Bold"/><TextObject Name="Text21" Left="381.33" Width="93.33" Height="18.67" Text="[TSum]" Padding="2.67, 0, 2.67, 0" VertAlign="Center" HorzAlign="Right" Font="Inter, 9pt, style=Bold" Format="Number" Format.UseLocale="false" Format.DecimalDigits="2" Format.DecimalSeparator="." Format.GroupSeparator="," Format.NegativePattern="1"/>
+    </ReportSummaryBand>
+    <PageFooterBand Name="PageFooter1" Width="697.33" Height="24">
+      <TextObject Name="Text22" Left="0" Width="697.33" Height="24" Text="Page [Page] of [TotalPages]" Padding="2.67, 0, 2.67, 0" VertAlign="Center" HorzAlign="Right" Font="Inter, 9pt"/>
+    </PageFooterBand>
+  </ReportPage>
+</Report>

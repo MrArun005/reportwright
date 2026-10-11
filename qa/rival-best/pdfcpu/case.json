@@ -1,0 +1,6 @@
+{"rival": "pdfcpu", "case": "merge 100 three-page files and optimize the result",
+ "build": "go install github.com/pdfcpu/pdfcpu/cmd/pdfcpu@v0.11.0",
+ "prep": "node prep.mjs",
+ "theirs": "rm -f \"$OUT/theirs.pdf\" && $(go env GOPATH)/bin/pdfcpu merge -q -optimize=true \"$OUT/theirs.pdf\" \"$OUT\"/in/*.pdf",
+ "ours": "node ours.mjs",
+ "partial": "no optimize pass (resource dedup across the merged files): ours merges only"}

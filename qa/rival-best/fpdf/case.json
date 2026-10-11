@@ -1,0 +1,3 @@
+{"rival": "fpdf (Go)", "case": "plain text, 200 pages x 60 lines in a core font",
+ "build": "go mod tidy && go build -o fpdfcase .",
+ "theirs": "./fpdfcase \"$OUT/theirs.pdf\"", "ours": "node ours.mjs"}
