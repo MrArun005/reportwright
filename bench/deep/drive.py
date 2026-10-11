@@ -172,8 +172,11 @@ def run_once_win(cmd, env, timeout, cap_mb, watch=None):
     """run_once on Windows: one process (no process groups or rusage), measured through its handle, which stays open
     after it exits: CPU from GetProcessTimes, peak RSS = its peak working set; the cap is enforced on the working set."""
     t0 = time.perf_counter()
-    with open(env['BENCH_LOG'], 'w') as log:
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=log, env=env)
+    try:
+        with open(env['BENCH_LOG'], 'w') as log:
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=log, env=env)
+    except OSError as e:  # e.g. a contestant whose build failed: not started
+        return {'wall_ms': 0, 'cpu_ms': 0, 'rss_mb': 0, 'ttfb_ms': None, 'h': {}, 'status': 'crash', 'error': repr(e)[:600]}
     chunks = []
     reader = threading.Thread(target=lambda: chunks.append(p.stdout.read()), daemon=True)
     reader.start()

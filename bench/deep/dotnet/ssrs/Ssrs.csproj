@@ -12,6 +12,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.ReportingServices.ReportViewerControl.Winforms" Version="150.1652.0" />
+    <Reference Include="System.Windows.Forms" /> <!-- ReportDataSource takes a BindingSource overload -->
     <None Include="ledger.rdlc" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
