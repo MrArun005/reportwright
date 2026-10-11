@@ -5,7 +5,7 @@ set -u
 PORT=${1:-3700}
 export PW_AUTH=users PW_SESSION_SECRET=$(openssl rand -hex 32) PW_DATA_KEY=$(openssl rand -hex 32) \
   PW_ADMIN_EMAIL=admin@qa.test PW_ADMIN_PASSWORD='qa admin password 123' PW_STORAGE=sqlite:/tmp/pw-qa.db \
-  PW_API_KEYS="svc-a,svc-b" PW_INTERNAL_HOSTS=127.0.0.1 PW_BASE_URL=http://localhost:$PORT
+  PW_API_KEYS="svc-a,svc-b" PW_INTERNAL_HOSTS="${QA_INTERNAL_HOSTS-127.0.0.1}" PW_QA_CANARY=qa-canary-7f3e91 PW_BASE_URL=http://localhost:$PORT
 nohup npx next start -p "$PORT" > /tmp/next-qa.log 2>&1 &
 for i in $(seq 1 120); do curl -sf "http://localhost:$PORT/api/v1/livez" >/dev/null && break; sleep 1; done
 B=http://localhost:$PORT
