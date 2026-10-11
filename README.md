@@ -8,7 +8,13 @@
 
 ## Install
 
-Use the packages in your own app (no server needed):
+Start a new app with a sample report (Node, React, Vue, Svelte or Angular):
+
+```bash
+npm create reportwright@latest my-app
+```
+
+Or use the packages in your own app (no server needed):
 
 ```bash
 npm i @reportwright/engine @reportwright/fonts      # render and export in Node or the browser

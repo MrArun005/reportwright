@@ -35,7 +35,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - run: sudo apt-get update && sudo apt-get install -y poppler-utils # pdftotext: the PDF text, password and script tests read the PDFs they make
+      - run: sudo apt-get update && sudo apt-get install -y poppler-utils qpdf # qpdf: the create-reportwright step; pdftotext: the PDF text, password and script tests read the PDFs they make
       - name: Type check (the server has no errors; the engine's may only go down)
         run: npm run typecheck
       # storage, perms and audit share the one database per engine (storage.test.js empties its tables between cases),
@@ -47,6 +47,13 @@ jobs:
         run: node bin/pw.mjs test reports
       - name: npm packages, Socket-style scan (install scripts, eval, child_process, long lines, pinned deps, metadata)
         run: npm run build:packages && npm run scan:packages
+      - name: create-reportwright, node template (a new app with this build's engine and fonts renders a PDF qpdf accepts)
+        run: |
+          T=$(mktemp -d)
+          npm pack ./packages/engine ./packages/fonts --pack-destination "$T" --silent
+          node packages/create-reportwright/src/bin.mjs "$T/app" --template node --yes
+          cd "$T/app" && npm i --no-audit --no-fund "$T"/reportwright-engine-*.tgz "$T"/reportwright-fonts-*.tgz
+          npm start && qpdf --check orders.pdf
       - run: npm run build
 
   verapdf:

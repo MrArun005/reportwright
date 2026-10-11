@@ -228,4 +228,34 @@ for (const [name, w] of Object.entries(WRAPPERS)) {
 }
 // no backslash line continuation in a string in what npm publishes (lineLimit makes them): fails the build if one is left
 for (const P of ['packages/engine/dist', 'packages/cli/dist', 'packages/viewer/dist']) fixDist(path.join(root, P));
-console.log(`packages: @reportwright/engine, /fonts, /fonts-cjk, /cli, /viewer, ${Object.keys(WRAPPERS).map(n => '/' + n).join(', ')} built (npm pack packages/<name>)`);
+/* create-reportwright: `npm create reportwright`, zero dependencies; its templates are examples/<name> with the shared
+   report.pw.json and data.json copied in (the imports that read them one folder up are rewritten to the app's own copy) */
+{
+  const CR = 'packages/create-reportwright';
+  const T = path.join(root, CR, 'templates');
+  fs.rmSync(T, { recursive: true, force: true });
+  for (const name of ['node', 'react', 'vue', 'svelte', 'angular']) {
+    const dir = path.join(T, name);
+    fs.cpSync(path.join(root, 'examples', name), dir, { recursive: true, filter: (f) => !/node_modules|[/\\](dist|public)$/.test(f) });
+    for (const f of ['report.pw.json', 'data.json']) fs.copyFileSync(path.join(root, 'examples', f), path.join(dir, f));
+    for (const f of fs.readdirSync(dir, { recursive: true }).filter(f => /\.(m?js|jsx|vue|svelte)$/.test(f))) {
+      const file = path.join(dir, f);
+      const src = fs.readFileSync(file, 'utf8')
+        .replace(/(['"])\.\.\/\.\.\/(report\.pw\.json|data\.json)\1/g, '$1../$2$1') // src/x -> ../report.pw.json
+        .replace(/(['"])\.\.\/(report\.pw\.json|data\.json)\1(?=, import\.meta\.url)/g, '$1./$2$1') // node/render.js
+        .replace(/,? server: \{ fs: \{ allow: \['\.\.'\] \} \}/, '').replace(/ \/\/ the shared report\.pw\.json.*$/m, '');
+      if (/\.\.\/\.\.\/|allow: \['\.\.'\]/.test(src)) throw new Error(`${CR}: ${name}/${f} still reads outside the app; update build-packages.mjs`);
+      fs.writeFileSync(file, src);
+    }
+  }
+  write(`${CR}/package.json`, {
+    name: 'create-reportwright', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT',
+    ...meta(CR, ['create', 'starter', 'template', 'scaffold']),
+    description: 'npm create reportwright: a working ReportWright app (Node, React, Vue, Svelte or Angular) with a sample report, in one command.',
+    bin: { 'create-reportwright': 'src/bin.mjs' },
+    files: ['src', 'templates', 'README.md', 'CHANGELOG.md', 'LICENSE'],
+    engines: { node: '>=20.9' },
+  });
+  fs.copyFileSync(path.join(root, 'LICENSE'), path.join(root, CR, 'LICENSE')); docs(CR);
+}
+console.log(`packages: @reportwright/engine, /fonts, /fonts-cjk, /cli, /viewer, ${Object.keys(WRAPPERS).map(n => '/' + n).join(', ')}, create-reportwright built (npm pack packages/<name>)`);

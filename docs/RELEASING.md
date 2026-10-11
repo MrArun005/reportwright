@@ -101,7 +101,7 @@ Only for a package's very first publish, or if CI is unavailable:
 
 ```bash
 npm run build:packages
-for p in fonts fonts-cjk engine cli viewer react vue svelte angular; do
+for p in fonts fonts-cjk engine cli viewer react vue svelte angular create-reportwright; do
   npm publish ./packages/$p --access public --auth-type=web
 done
 ```
