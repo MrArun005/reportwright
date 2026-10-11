@@ -1,10 +1,5 @@
 // @ts-check
-// How an HTML export is made, at every level. Most specific wins:
-//   viewer prop exportOptions > report definition `export: { html, drillLinks }` > admin setting (Settings page)
-//   > env PW_HTML_EXPORT / PW_HTML_DRILL_LINKS > default (interactive, inline).
-// The viewer user's choice in the Export options panel then applies per export.
-//   html:       interactive (the whole viewer in one file) | tables (pages + sortable tables) | static (pages only, print)
-//   drillLinks: inline (open in place / same tab) | new-tab | off (shown disabled)
+// HTML export config, most specific first: viewer prop > report `export` > Settings page > env > default. docs/CONFIG.md
 export const HTML_MODES = ['interactive', 'tables', 'static'];
 export const DRILL_LINKS = ['inline', 'new-tab', 'off'];
 export const HTML_EXPORT_DEFAULTS = Object.freeze({ html: 'interactive', drillLinks: 'inline' });

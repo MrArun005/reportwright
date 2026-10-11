@@ -170,19 +170,10 @@ export function readingText(page) {
   return [...rows.entries()].sort((a, b) => a[0] - b[0]).map(([, ls]) => ls.sort((a, b) => a.x - b.x).map(l => l.text).join(' ').trim()).filter(Boolean);
 }
 
-/**
- * Export options the viewer offers (its Export options menu) and their defaults. html: interactive (the whole viewer in
- * one file: groups and drill-through work in place), tables (pages and sortable tables) or static (pages only). The
- * viewer passes the resolved config (src/engine/htmlExport.js: prop > report > Settings > env > default) over these.
- */
+/** Export options (Export options menu); html/drillLinks are resolved by src/engine/htmlExport.js. */
 export const EXPORT_DEFAULTS = { pdfua: false, pdfa: false, formulas: true, html: 'interactive', drillLinks: 'inline' };
 
-/**
- * The export options from what this browser stored. The HTML kind is never taken from storage: it comes from the
- * report and the server (a choice in the Export options menu applies for this page only), so an old stored value
- * cannot override what an admin or the report set.
- * @param {any} stored
- */
+/** Stored export options; the HTML kind never comes from storage. @param {any} stored */
 export function exportOptionsFrom(stored) {
   const { v: _v, html: _h, drillLinks: _d, ...rest } = stored && typeof stored === 'object' ? stored : {};
   return { pdfua: EXPORT_DEFAULTS.pdfua, pdfa: EXPORT_DEFAULTS.pdfa, formulas: EXPORT_DEFAULTS.formulas, ...rest };

@@ -159,7 +159,6 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   useEffect(() => { setLevels([{ def: rootDef, params: rootParams, id: rootReportId }]); }, [rootDef]); // eslint-disable-line react-hooks/exhaustive-deps
   const level = levels[levels.length - 1];
   const definition = level.def;
-  // HTML export: prop > report `export` > server (Settings page, env) > default; a choice in Export options wins per page
   const hx = resolveHtmlExport(exportOptions, definition?.export, exportDefaults);
   const given = level.params;
   const reportId = level.id; // the saved report behind this level: its SQL sources run on the server
@@ -195,9 +194,8 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   const [xopt, setXopt] = useState(() => { try { return exportOptionsFrom(JSON.parse(localStorage.getItem('pw-export-options') || '{}')); } catch { return { ...EXPORT_DEFAULTS }; } });
   const [xmenu, setXmenu] = useState(false);
   const [emenu, setEmenu] = useState(false); // the Export menu (the seven formats)
-  // the HTML kind chosen here applies on this page only (never stored): the report and the server set the default
   const setX = (k, v) => setXopt((o) => { const n = { ...o, [k]: v }; try { const { html: _h, ...keep } = n; localStorage.setItem('pw-export-options', JSON.stringify({ ...keep, v: 3 })); } catch { /* private window */ } return n; });
-  const [hxFail, setHxFail] = useState(null); // the interactive HTML file could not be made: { message } until the user decides
+  const [hxFail, setHxFail] = useState(null);
   const [frozen, setFrozen] = useState(null); // { page, region }: the table header kept in view
   const root = useRef(null);
   const scroller = useRef(null);
@@ -459,7 +457,6 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     } else if (a.type === 'drill') {
       if (onDrill) onDrill(a.report, a.params);
       else if (hx.drillLinks === 'off') return;
-      // inline: in place (a modifier key opens a tab only in the app, never in an exported file); new-tab: always a tab
       else drillTo(a.report, a.params, hx.drillLinks === 'new-tab' || (!exportOptions?.drillLinks && (e.metaKey || e.ctrlKey)));
     } else if (a.type === 'params') {
       // cross-filter: set parameters from the clicked value; clicking the same value again clears it
@@ -490,7 +487,6 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
   };
 
   /** The file of one format, as a Blob (the Export menu downloads it; the embed's handle returns it). */
-  // the default HTML kind (a choice in Export options, else the resolved config) and the kind "HTML (print)" makes
   const htmlKind = xopt.html || hx.html;
   const printKind = [xopt.html, hx.html].find(k => k === 'tables' || k === 'static') || 'tables';
   const buildBlob = async (fmt, htmlMode) => {
@@ -523,7 +519,6 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
     exportQueue.current.busy = fmt;
     setExporting(fmt);
     try {
-      // html: the interactive file; html-print: pages only (or pages and tables), for printing and archiving
       const blob = fmt === 'html' ? await buildBlob('html', 'interactive') : fmt === 'html-print' ? await buildBlob('html', printKind) : await buildBlob(fmt);
       const ext = { pdf: 'pdf', xlsx: 'xlsx', docx: 'docx', pptx: 'pptx', html: 'html', 'html-print': 'html', csv: 'csv', json: 'json' }[fmt];
       const url = URL.createObjectURL(blob);
@@ -533,7 +528,6 @@ export default function ReportViewer({ definition: rootDef, reportId: rootReport
       setTimeout(() => URL.revokeObjectURL(url), 10000);
       onExported?.(fmt === 'html-print' ? 'html' : fmt, level.id, params); // the app's own pages tell the server, for the audit log
     } catch (e) {
-      // never a silent fallback: say why, and make the print file only when the user asks
       if (e.code === 'INTERACTIVE_FAILED') setHxFail({ message: e.message });
       else setStatus({ state: 'error', message: T('exportFailed', { fmt: fmt.toUpperCase(), message: e.message }) });
     } finally {

@@ -28,8 +28,7 @@ export async function exportBlob(fmt, model, def, opt = {}) {
   if (fmt === 'json') return new Blob([JSON.stringify(model)], { type: 'application/json' });
   if (fmt === 'csv') return new Blob([(await import('@/exporters/csv.js')).exportCsv(model, { locale: def.locale, currency: def.currency })], { type: 'text/csv;charset=utf-8' });
   if (fmt === 'html' && opt.interactive !== false && o.html === 'interactive') {
-    // interactive when chosen: the downloaded file runs the viewer itself (megabytes: the viewer, fonts, a data snapshot).
-    // No silent fallback: a failure is thrown with code INTERACTIVE_FAILED and the viewer asks before a static file.
+    // no silent fallback: INTERACTIVE_FAILED, the viewer asks before a static file
     try {
       const { exportInteractiveHtml } = await import('./interactiveHtml.js');
       const { html } = await exportInteractiveHtml(def, { params: opt.params, reportId: opt.reportId, lang: opt.lang, model, drillLinks: o.drillLinks });
