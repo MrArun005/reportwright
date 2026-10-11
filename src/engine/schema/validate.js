@@ -409,7 +409,7 @@ function inlineFields(def) {
 function fieldNames(def) {
   const names = new Set();
   // a top-level object is one row (a data set at $.meta); a list is rows
-  for (const x of Array.isArray(def.dataSources) ? def.dataSources : []) if (x?.type === 'json' && x.data && typeof x.data === 'object') for (const v of Object.values(x.data)) for (const r of (Array.isArray(v) ? v.slice(0, 200) : [v])) if (r && typeof r === 'object' && !Array.isArray(r)) for (const k of Object.keys(r)) names.add(k);
+  for (const x of Array.isArray(def.dataSources) ? def.dataSources : []) if (x?.type === 'json' && x.data && typeof x.data === 'object') for (const v of (Array.isArray(x.data) ? [x.data] : Object.values(x.data))) for (const r of (Array.isArray(v) ? v.slice(0, 200) : [v])) if (r && typeof r === 'object' && !Array.isArray(r)) for (const k of Object.keys(r)) names.add(k);
   for (const d of Array.isArray(def.dataSets) ? def.dataSets : []) for (const f of Array.isArray(d?.fields) ? d.fields : []) if (f?.name) names.add(f.name);
   return names;
 }
