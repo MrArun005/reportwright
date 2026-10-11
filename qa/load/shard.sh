@@ -29,7 +29,16 @@ case "$NAME" in
     k6r 'ramp 1→50 VUs mixed' '{"unexpected":0,"noretry":0,"p95warn":3000}' KEY=svc-a MIX=mixed STAGES=10:30s,50:60s,50:60s,0:10s
     alive ramp ;;
   spike)
+    # the pool's queue while the spike runs: shows whether the per-principal cap was ever reached
+    (while true; do curl -s -m 3 -H 'authorization: Bearer svc-a' "$B/api/v1/health" | tr -d '\n'; echo; sleep 3; done) > "$OUT/health-spike.txt" & H=$!
     k6r 'spike 200 VUs one key' '{"unexpected":0,"noretry":0,"minRejected":1}' KEY=svc-a MIX=mixed STAGES=10:10s,200:10s,200:40s,0:10s
+    kill $H
+    node -e '
+      const L=require("fs").readFileSync(process.argv[1],"utf8").split("\n").filter(Boolean).map(l=>{try{return JSON.parse(l)}catch{return null}}).filter(Boolean);
+      const q=L.map(h=>h.render?.queue||{}),max=Math.max(0,...q.map(x=>x.interactive||0)),cap=q.find(x=>x.perPrincipalMax)?.perPrincipalMax;
+      const t=L.at(-1)?.render?.totals||L.at(-1)?.render?.stats||{};
+      require("child_process").execFileSync("node",["qa/stress/rec.mjs","pool queue during the spike","GET /api/v1/health every 3 s","context for the spike row (info)",
+        `${L.length} samples; max interactive queue ${max}; perPrincipalMax ${cap}; last totals ${JSON.stringify(t).slice(0,200)}`,"PASS"],{stdio:"inherit"});' "$OUT/health-spike.txt"
     alive spike
     BASE=$B KEY=svc-a MIX=mixed VUS=100 DURATION=60s k6 run --quiet --summary-export "$OUT/flood-a.json" qa/load/render.js > "$OUT/flood-a.log" 2>&1 &
     sleep 10
