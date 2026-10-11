@@ -39,4 +39,11 @@ describe('scan-packages', () => {
     expect(scanDir(pkg(files), 'fonts-cjk').problems).toEqual([]);
     expect(scanDir(pkg(files), 'engine').problems).toEqual([]);
   });
+
+  it('flags an old pagewright bin name and an entry with no type declarations', () => {
+    const bad = pkg({ 'index.js': '' }, { bin: { 'pagewright-x': 'index.js' }, exports: { '.': './index.js' } });
+    expect(scanDir(bad, 'react').problems).toEqual(['missing: old bin name pagewright-x', 'missing: types']);
+    const good = pkg({ 'index.js': '', 'index.d.ts': '' }, { exports: { '.': { types: './index.d.ts', default: './index.js' } } });
+    expect(scanDir(good, 'react').problems).toEqual([]);
+  });
 });

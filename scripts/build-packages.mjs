@@ -97,8 +97,9 @@ write(`${K}/package.json`, {
   name: '@reportwright/fonts-cjk', version: pkg.version, publishConfig: { access: 'public' }, type: 'module', license: 'MIT AND OFL-1.1',
   description: 'Chinese, Japanese, Korean and emoji fonts (Noto, OFL) for @reportwright/engine, downloaded on demand: npx reportwright-fonts-cjk.',
   ...meta(K, ['fonts', 'cjk', 'noto', 'japanese', 'chinese', 'korean', 'emoji']),
-  bin: { 'reportwright-fonts-cjk': 'src/index.mjs', 'pagewright-fonts-cjk': 'src/index.mjs' }, // old name kept for 0.9
-  exports: { '.': './src/index.mjs', './fonts/*': './fonts/*', './package.json': './package.json' },
+  bin: { 'reportwright-fonts-cjk': 'src/index.mjs' },
+  types: './src/index.d.ts',
+  exports: { '.': { types: './src/index.d.ts', default: './src/index.mjs' }, './fonts/*': './fonts/*', './package.json': './package.json' },
   files: ['src', 'README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md'],
   engines: { node: '>=20.9' },
   sideEffects: false,
