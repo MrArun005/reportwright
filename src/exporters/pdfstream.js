@@ -527,7 +527,14 @@ export function createPdfStream(sink, opt) {
     const f = F.font, full = /** @type {Uint8Array} */ (fontStore.bytes.get(key));
     if (!f.lite) await loadFontkit(); // checks a subset (a font read by sfnt.js checks it the same way, without fontkit)
     let bytes = full, psName = f.postscriptName; // N10: a subset of a variable font says the weight it is cut at
-    if (opt.subset && !F.full && !(f.lite ? f.noSubsetting : f['OS/2']?.fsType?.noSubsetting)) {
+    let zfile = null;
+    const subsetOk = opt.subset && !F.full && !(f.lite ? f.noSubsetting : f['OS/2']?.fsType?.noSubsetting);
+    // the same font bytes, subsetter and glyph set give the same subset: cached (content, never a name: safe across tenants)
+    const perFont = subsetOk ? subsetCacheFor(opt.subset, full) : null;
+    const ck = perFont ? `${[...F.cps].sort((a, b) => a - b).join(',')}|${[...F.glyphs.keys()].sort((a, b) => a - b).join(',')}` : '';
+    const hit = perFont?.get(ck);
+    if (hit) { perFont.delete(ck); perFont.set(ck, hit); ({ bytes, psName, zfile } = hit); }
+    else if (subsetOk) {
       try {
         // glyphs given: subset.js keeps their IDs (HB_SUBSET_FLAGS_RETAIN_GIDS), which the pages already drew with
         const sub = await opt.subset(full, F.cps, { glyphs: F.glyphs.keys() });
@@ -540,6 +547,9 @@ export function createPdfStream(sink, opt) {
         for (const id of F.glyphs.keys()) { if (check.lite && id >= check.numGlyphs) throw new Error('subset: glyph missing'); void check.getGlyph(id).advanceWidth; }
         bytes = sub;
         psName = check.postscriptName || psName;
+        zfile = await deflate(bytes);
+        perFont.set(ck, { bytes, psName, zfile });
+        if (perFont.size > SUBSET_CACHE_PER_FONT) perFont.delete(perFont.keys().next().value);
       } catch (e) { opt.onWarning?.(`The font ${f.postscriptName || key} is embedded whole: its subset could not be used (${/** @type {any} */ (e)?.message || e})`); }
     }
     const cff = 'CFF ' in f.directory.tables || 'CFF2' in f.directory.tables;
@@ -548,7 +558,7 @@ export function createPdfStream(sink, opt) {
     const k = 1000 / f.unitsPerEm, s = (/** @type {number} */ v) => String(v * k);
     const desc = reserve(), file = reserve(), cid = reserve(), cmap = reserve();
     const fileDict = cff ? '<< /Subtype /OpenType /Filter /FlateDecode >>' : `<< /Length1 ${bytes.length} /Filter /FlateDecode >>`;
-    await writeObj(file, fileDict, await deflate(bytes));
+    await writeObj(file, fileDict, zfile ? zfile.slice() : await deflate(bytes)); // a copy: the cached one stays as it is
     const bb = f.bbox, italic = f.italicAngle || 0;
     const flags = ((f.lite ? f.fixedPitch : f.post?.isFixedPitch) ? 1 : 0) | 4 | (italic ? 64 : 0);
     await writeObj(desc, `<< /Type /FontDescriptor /FontName /${base} /Flags ${flags} /FontBBox [${s(bb.minX)} ${s(bb.minY)} ${s(bb.maxX)} ${s(bb.maxY)}] /ItalicAngle ${num(italic)} /Ascent ${s(f.ascent)} /Descent ${s(f.descent)} /CapHeight ${s(f.capHeight || f.ascent)} /XHeight ${s(f.xHeight || 0)} /StemV 0 /${cff ? 'FontFile3' : 'FontFile2'} ${file} 0 R >>`);
@@ -867,6 +877,20 @@ function pageLabels(starts, n) {
   const at = [...new Set([0, ...(starts || [])])].filter(i => i >= 0 && i < n).sort((a, b) => a - b);
   return `<< /Nums [${at.map(i => `${i} << /S /D /St 1 >>`).join(' ')}] >>`;
 }
+
+/** subsets by subsetter, then font bytes (weak: they go with their FontStore), then glyph set: { bytes, psName, zfile } */
+const subsetCache = new WeakMap();
+const SUBSET_CACHE_PER_FONT = 16; // ponytail: LRU per font; fonts themselves are held weakly
+/** @param {Function} fn @param {Uint8Array} full @returns {Map<string, any>} */
+function subsetCacheFor(fn, full) {
+  let byFont = subsetCache.get(fn);
+  if (!byFont) subsetCache.set(fn, byFont = new WeakMap());
+  let m = byFont.get(full);
+  if (!m) byFont.set(full, m = new Map());
+  return m;
+}
+/** entries cached for a subsetter (tests) @param {Function} fn @param {Uint8Array} full */
+export const subsetCacheSize = (fn, full) => subsetCache.get(fn)?.get(full)?.size ?? 0;
 
 /**
  * A picture's bytes checked as exportPdf's pdf-lib path checks them (size limits, fetchImage, a damaged or huge PNG,
