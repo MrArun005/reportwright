@@ -1,7 +1,8 @@
 // k6: POST /api/v1/render. Env: BASE, KEY, MIX (small|mixed), and either VUS+DURATION or STAGES ("1:30s,50:60s" vus:dur).
 // Counters: unexpected (a status other than 200/429/503, or no answer), noretry (a 429/503 without Retry-After),
-// rejected (429/503, deliberate), and http_req_duration tagged ok:true for answered renders.
+// rejected (429/503, deliberate: the VU then sleeps Retry-After before its next try), and http_req_duration tagged ok:true for answered renders.
 import http from 'k6/http';
+import { sleep } from 'k6';
 import { Counter, Trend } from 'k6/metrics';
 
 const unexpected = new Counter('unexpected');
@@ -33,6 +34,12 @@ export default function () {
   const body = mix[Math.floor(Math.random() * mix.length)];
   const r = http.post(`${__ENV.BASE}/api/v1/render`, JSON.stringify(body), { headers: { authorization: `Bearer ${__ENV.KEY}`, 'content-type': 'application/json' }, timeout: '120s' });
   if (r.status === 200) okDur.add(r.timings.duration);
-  else if (r.status === 429 || r.status === 503) { rejected.add(1); if (!r.headers['Retry-After']) noretry.add(1); }
+  else if (r.status === 429 || r.status === 503) {
+    rejected.add(1);
+    const ra = Number(r.headers['Retry-After']);
+    if (!r.headers['Retry-After']) noretry.add(1);
+    // a well-behaved client: wait what the server asked (capped at 10 s, with jitter) before its next try
+    sleep(Math.min(10, Number.isFinite(ra) && ra > 0 ? ra : 1) * (1 + 0.5 * Math.random()));
+  }
   else { unexpected.add(1); if (r.status >= 500) statuses.add(1); else if (r.status >= 400) s4xx.add(1); else if (r.status === 0) neterr.add(1); }
 }
