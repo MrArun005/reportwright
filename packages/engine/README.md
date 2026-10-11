@@ -26,7 +26,17 @@ More in the [repository README](https://github.com/MrArun005/reportwright#screen
 
 ## Benchmarks
 
-Measured on GitHub `ubuntu-latest` against other engines, every output checked. Wins: first among report engines in 4 of 8 grouped-report rows; pdfmake, @react-pdf/renderer and Puppeteer were 1.4× to 11.8× slower. Losses: QuestPDF (.NET) is 1.1× to 2.0× faster on most other rows, pdfmake 1.05× on a PDF/A invoice. All numbers, wins and losses: [bench/deep/RESULTS.md](https://github.com/MrArun005/reportwright/blob/bench-deep/bench/deep/RESULTS.md).
+Measured 2026-10-11 on GitHub `ubuntu-latest` (4 vCPU), median of 5 warm runs, every output checked (qpdf, MuPDF, pdf.js, text). 0.14.0-rc.5 against JasperReports 6.21 and QuestPDF (.NET) (both from the same day's earlier run on the same runner type) and 0.13.1:
+
+| Grouped report | 0.14 | JasperReports | QuestPDF | 0.13.1 |
+|---|---|---|---|---|
+| 100 rows | **145 ms** | 641 ms | 227 ms | 288 ms |
+| 1,000 rows | **280 ms** | 1,286 ms | 499 ms | 532 ms |
+| 10,000 rows | **913 ms** | 3,885 ms | 2,736 ms | 1,494 ms |
+| 100,000 rows | **6.6 s** · 300 MB | 11.8 s | 24.1 s | 8.9 s |
+| 1,000,000 rows (streamed) | **53 s** · 746 MB | — | — | 79 s |
+
+The JavaScript engines are further behind: pdfmake 2.7× to 11× slower, @react-pdf/renderer and Puppeteer 4× to 700× slower or failing at 100,000 rows. First among report engines on the invoice, Unicode (Hindi, Arabic, CJK), PDF/A and plain-page jobs too. Losses: one invoice re-rendered in a warm process (16 ms; QuestPDF 7.4 ms), and 1,000 plain pages are ~6% slower than 0.13.1. All numbers, wins and losses: [bench/deep/RESULTS.md](https://github.com/MrArun005/reportwright/blob/bench-deep/bench/deep/RESULTS.md).
 
 ## Install
 
