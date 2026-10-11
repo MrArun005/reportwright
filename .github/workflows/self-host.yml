@@ -1,0 +1,41 @@
+name: Self-host (compose)
+on:
+  push:
+    branches: [feat/self-host]
+  pull_request:
+    paths: ['deploy/**', 'Dockerfile', '.github/workflows/self-host.yml']
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults: { run: { working-directory: deploy/compose } }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test .env
+        run: |
+          cat > .env <<ENV
+          PW_ADMIN_EMAIL=admin@example.com
+          PW_ADMIN_PASSWORD=ci-Admin-pass-123
+          PW_SESSION_SECRET=$(openssl rand -hex 32)
+          PW_DATA_KEY=$(openssl rand -hex 32)
+          PW_BASE_URL=http://localhost:3000
+          ENV
+      - name: Missing secret fails clearly
+        run: |
+          ! env -u PW_SESSION_SECRET docker compose --env-file /dev/null config 2>err.txt
+          grep -q PW_SESSION_SECRET err.txt
+      - run: docker compose up -d --build --wait --wait-timeout 300
+      - name: Sign in as the first admin, render a repository report to PDF
+        run: |
+          B=http://localhost:3000
+          curl -fsS -c jar -H "Origin: $B" -H 'content-type: application/json' \
+            -d '{"email":"admin@example.com","password":"ci-Admin-pass-123"}' $B/api/auth/login
+          curl -fsS -b jar $B/api/auth/me
+          curl -fsS -b jar -o out.pdf "$B/api/reports/loan-statement/pdf"
+          sudo apt-get install -y qpdf >/dev/null
+          qpdf --check out.pdf
+          test "$(qpdf --show-npages out.pdf)" -ge 1
+      - if: failure()
+        run: docker compose logs app | tail -100
+      - if: always()
+        run: docker compose down -v

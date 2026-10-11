@@ -1,0 +1,62 @@
+# ReportWright on one small server. Guide: deploy/compose/README.md
+#   cp .env.example .env   # then fill in the values marked REQUIRED
+#   docker compose up -d                    # app only, on 127.0.0.1:3000
+#   docker compose --profile https up -d    # plus Caddy with automatic HTTPS for PW_DOMAIN
+name: reportwright
+
+services:
+  app:
+    # ponytail: no published image yet, so it builds from this repository; swap for `image:` once one ships
+    build: { context: ../.. }
+    image: reportwright:local
+    restart: unless-stopped
+    environment:
+      PW_AUTH: users
+      PW_SESSION_SECRET: ${PW_SESSION_SECRET:?set PW_SESSION_SECRET in .env (32+ random characters)}
+      PW_DATA_KEY: ${PW_DATA_KEY:?set PW_DATA_KEY in .env (32+ random characters)}
+      PW_ADMIN_EMAIL: ${PW_ADMIN_EMAIL:?set PW_ADMIN_EMAIL in .env}
+      PW_ADMIN_PASSWORD: ${PW_ADMIN_PASSWORD:?set PW_ADMIN_PASSWORD in .env}
+      PW_BASE_URL: ${PW_BASE_URL:?set PW_BASE_URL in .env (for example https://reports.example.com)}
+      # single box: the default file storage on the two volumes below (reports/ and data/)
+      PW_STORAGE: ${PW_STORAGE:-file}
+      # 2 GB VPS: two render threads, capped heaps
+      PW_RENDER_WORKERS: ${PW_RENDER_WORKERS:-2}
+      PW_RENDER_WORKER_HEAP_MB: ${PW_RENDER_WORKER_HEAP_MB:-512}
+      NODE_OPTIONS: --max-old-space-size=512
+      # optional: scheduled emails
+      PW_SMTP_URL: ${PW_SMTP_URL:-}
+      PW_MAIL_FROM: ${PW_MAIL_FROM:-}
+      PW_MAIL_ALLOWED_DOMAINS: ${PW_MAIL_ALLOWED_DOMAINS:-}
+    volumes:
+      - data:/app/data
+      - reports:/app/reports
+    ports:
+      - ${PW_PUBLISH:-127.0.0.1:3000}:3000
+    deploy:
+      resources:
+        limits: { memory: 1536m, cpus: '2' }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/v1/readyz').then(r=>process.exit(r.status===200?0:1),()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+
+  caddy:
+    image: caddy:2.8.4-alpine
+    profiles: [https]
+    restart: unless-stopped
+    command: caddy reverse-proxy --from ${PW_DOMAIN:?set PW_DOMAIN in .env to use --profile https} --to app:3000
+    ports: ["80:80", "443:443"]
+    volumes:
+      - caddy:/data
+    depends_on:
+      app: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { memory: 128m }
+
+volumes:
+  data:
+  reports:
+  caddy:
