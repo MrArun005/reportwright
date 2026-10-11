@@ -42,8 +42,13 @@ def text_of(f):
     return ' '.join(p.stdout.split())
 
 
+def pages(f):
+    p = subprocess.run(['pdfinfo', str(f)], capture_output=True, text=True)
+    return next((int(l.split()[-1]) for l in p.stdout.splitlines() if l.startswith('Pages:')), 0)
+
+
 def visual_diff(a, b, tmp):
-    """% of pixels that differ (any channel > 48) at 150 dpi, page by page; missing pages count 100%."""
+    """% of pixels that differ (gray > 48) at 150 dpi over the first 20 pages; a page only one side has counts 100%."""
     from PIL import Image, ImageChops
     for f, s in ((a, 'a'), (b, 'b')):
         subprocess.run(['pdftoppm', '-r', '150', '-l', '20', '-gray', '-png', str(f), f'{tmp}/{s}'], check=True)
@@ -56,7 +61,7 @@ def visual_diff(a, b, tmp):
     tot += [100.0] * abs(len(pa) - len(pb))
     for f in pa + pb:
         f.unlink()
-    return (sum(tot) / len(tot) if tot else 100.0), len(pa), len(pb)
+    return (sum(tot) / len(tot) if tot else 100.0), pages(a), pages(b)
 
 
 def valid(f):
