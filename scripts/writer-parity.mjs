@@ -47,12 +47,14 @@ process.on('exit', () => fs.rmSync(tmp, { recursive: true, force: true }));
 
 /** Owner-decided pixel differences of the repository's reports (none). Tier 1 takes no exceptions. */
 const REPO_ACCEPT = {};
-/** @type {{ id: string, kind: 'pdf'|'stream', def: any, opts?: any, accept?: any }[]} */
+/** Owner-accepted re-baselines of tier 1 text (Arun, 2026-10-11): the old writer's word was wrong, the new one is correct. */
+const REPO_REBASE = { 'stress-test': [{ from: 'Z̷贷̛a贷l贷g贷o̷', to: 'Z̷̡̛a̡l̡g̡o̷' }] };
+/** @type {{ id: string, kind: 'pdf'|'stream', def: any, opts?: any, accept?: any, rebase?: { from: string, to: string }[] }[]} */
 const cases = [];
 for (const f of fs.readdirSync(path.join(root, 'reports')).filter(f => f.endsWith('.pw.json')).sort()) {
-  cases.push({ id: `repo/${f.replace('.pw.json', '')}`, kind: 'pdf', accept: REPO_ACCEPT[f.replace('.pw.json', '')], def: JSON.parse(fs.readFileSync(path.join(root, 'reports', f), 'utf8')) });
+  cases.push({ id: `repo/${f.replace('.pw.json', '')}`, kind: 'pdf', accept: REPO_ACCEPT[f.replace('.pw.json', '')], rebase: REPO_REBASE[f.replace('.pw.json', '')], def: JSON.parse(fs.readFileSync(path.join(root, 'reports', f), 'utf8')) });
   // and tagged (PDF/UA-1, B4): pdfua.js's tree for every repository report, through @reportwright/pdf
-  cases.push({ id: `repo-ua/${f.replace('.pw.json', '')}`, kind: 'pdf', opts: { tagged: { lang: 'en' } }, accept: REPO_ACCEPT[f.replace('.pw.json', '')], def: JSON.parse(fs.readFileSync(path.join(root, 'reports', f), 'utf8')) });
+  cases.push({ id: `repo-ua/${f.replace('.pw.json', '')}`, kind: 'pdf', opts: { tagged: { lang: 'en' } }, accept: REPO_ACCEPT[f.replace('.pw.json', '')], rebase: REPO_REBASE[f.replace('.pw.json', '')], def: JSON.parse(fs.readFileSync(path.join(root, 'reports', f), 'utf8')) });
 }
 // the streaming ledger of tests/engine/pdfstream-paged.test.js, in each streamed form
 const rows = (n) => Array.from({ length: n }, (_, i) => ({ id: i + 1, region: ['North', 'South', 'East', 'West'][i % 4], amount: Math.round(((i * 7919) % 200000 - 100000) * 1.37) / 100, ref: i % 37 ? `REF-${i * 31}` : `Reversal of an earlier transfer between linked accounts, batch ${i}` }));
@@ -175,7 +177,7 @@ for (const c of cases) {
     const np = pages(fn), op = pages(fo);
     row.pages = np;
     // tier 1 (exact, never loosened) and the exact drawing commands
-    const ex = exactChecks(fo, fn, pw);
+    const ex = exactChecks(fo, fn, pw, c.rebase);
     row.text = ex.words ? `FAIL ${ex.words}` : 'ok';
     row.tree = ex.tree ? `FAIL ${ex.tree}` : 'ok';
     row.drawing = !ex.drawing ? 'ok' : c.accept?.drawing ? `accepted (${ex.drawing}): ${c.accept.drawing}` : `FAIL ${ex.drawing}`;

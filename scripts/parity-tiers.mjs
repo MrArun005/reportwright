@@ -282,8 +282,10 @@ export function pixelVerdict(fa, fb, pw = '') {
  * Tier 1 and the exact graphics state of two files: { words, tree, state } (each '' when equal, else the first difference).
  * @param {string} fa @param {string} fb @param {string} [pw]
  */
-export function exactChecks(fa, fb, pw = '') {
-  const wa = wordBoxes(fa, pw), wb = wordBoxes(fb, pw);
+export function exactChecks(fa, fb, pw = '', rebase = []) {
+  // rebase: owner-accepted corrections of the baseline's text, [{ from, to }]; a baseline word equal to `from` is
+  // compared as `to`. Exact words only, boxes untouched: the corrected baseline is compared as strictly as any other.
+  const wa = wordBoxes(fa, pw).map(pg => pg.map(w => { const r = rebase.find(x => x.from === w.t); return r ? { ...w, t: r.to } : w; })), wb = wordBoxes(fb, pw);
   let words = wa.length !== wb.length ? `pages ${wa.length}→${wb.length}` : '';
   for (let p = 0; !words && p < wa.length; p++) { const d = wordDiff(wa[p], wb[p]); if (d) words = `page ${p + 1}: ${d}`; }
   const oa = objects(fa, pw), ob = objects(fb, pw);
