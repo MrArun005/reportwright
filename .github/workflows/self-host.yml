@@ -14,7 +14,7 @@ jobs:
       - name: Missing secret fails clearly
         run: |
           ! docker compose --env-file /dev/null config 2>err.txt
-          cat err.txt; grep -q PW_SESSION_SECRET err.txt
+          cat err.txt; grep -q "required variable PW_.* in .env" err.txt
       - name: Test .env (Caddy on localhost with its internal CA)
         run: |
           cat > .env <<ENV
