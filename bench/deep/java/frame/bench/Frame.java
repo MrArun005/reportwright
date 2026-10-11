@@ -143,6 +143,19 @@ public final class Frame {
         Files.createDirectories(Paths.get(out));
         Map<String, Object> c = inputs(job, size);
         a.setup(job, c);
+        int bulk = Integer.parseInt(System.getenv().getOrDefault("BULK", "0"));
+        if (bulk > 0) { // BULK=n: n separate files b-0000.pdf...; the clock covers the renders, not the renames
+          double ms = 0;
+          for (int i = 0; i < bulk; i++) {
+            long t0 = System.nanoTime();
+            run(a, job, c, out);
+            ms += (System.nanoTime() - t0) / 1e6;
+            Files.move(Paths.get(out, "out.pdf"), Paths.get(out, String.format("b-%04d.pdf", i)));
+          }
+          System.out.println("{\"ok\":true,\"ms\":" + ms + "}");
+          System.out.flush();
+          System.exit(0);
+        }
         int reps = Integer.parseInt(System.getenv().getOrDefault("REPS", "1"));
         double[] t = new double[reps];
         String note = null;

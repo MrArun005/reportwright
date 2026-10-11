@@ -46,9 +46,9 @@ jobs:
       engine_ref: ${{ inputs.engine_ref }}
       pdf_ref: ${{ inputs.pdf_ref }}
       layout: ${{ inputs.layout || 'auto' }}
-      groups: "create-engines"
+      groups: "bulk"  # branch bench-bulk: the bulk job only (was "create-engines")
       control: bench/deep/.push-engines
       workflow: bench-engines.yml
-      title: "Deep benchmark: report engines"
+      title: "Deep benchmark: report engines, bulk (1,000 files a kind)"
       results_md: RESULTS-engines.md
     secrets: inherit
