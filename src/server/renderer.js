@@ -278,7 +278,7 @@ export async function renderTo(def, opt = {}) {
   }
   else if (format === 'html') {
     // the server makes static or tables files (interactive needs the viewer in a browser); report > Settings > env
-    const hx = resolveHtmlExport(def.export, (await import('./settings.js').then(m => m.getSettings()).catch(() => ({}))).htmlExport, envHtmlExport());
+    const hx = resolveHtmlExport(def.export, (await import('./settings.js').then(m => m.getSettings()).catch(() => null))?.htmlExport, envHtmlExport());
     bytes = Buffer.from(await exportHtml(model, { fonts: fontStore(), title: def.name, subset, drillBase: opt.self || base, static: !!opt.static || hx.html === 'static', drillLinks: hx.drillLinks, locale: def.locale, currency: def.currency })); // drill-through opens this server's viewer (never a caller's baseUrl)
   }
   else if (format === 'csv') bytes = Buffer.from(exportCsv(model, /** @type {any} */ ({ locale: def.locale, currency: def.currency, layout: opt.csv === 'layout' })));
