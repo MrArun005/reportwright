@@ -11,31 +11,44 @@ jobs:
     defaults: { run: { working-directory: deploy/compose } }
     steps:
       - uses: actions/checkout@v4
-      - name: Test .env
+      - name: Missing secret fails clearly
+        run: |
+          ! docker compose --env-file /dev/null config 2>err.txt
+          cat err.txt; grep -q PW_SESSION_SECRET err.txt
+      - name: Test .env (Caddy on localhost with its internal CA)
         run: |
           cat > .env <<ENV
           PW_ADMIN_EMAIL=admin@example.com
           PW_ADMIN_PASSWORD=ci-Admin-pass-123
           PW_SESSION_SECRET=$(openssl rand -hex 32)
           PW_DATA_KEY=$(openssl rand -hex 32)
-          PW_BASE_URL=http://localhost:3000
+          PW_BASE_URL=https://localhost
+          PW_DOMAIN=localhost
           ENV
-      - name: Missing secret fails clearly
+      - run: docker compose --profile https up -d --build --wait --wait-timeout 400
+      - name: Sign in as the first admin through Caddy, render a repository report to PDF
         run: |
-          ! env -u PW_SESSION_SECRET docker compose --env-file /dev/null config 2>err.txt
-          grep -q PW_SESSION_SECRET err.txt
-      - run: docker compose up -d --build --wait --wait-timeout 300
-      - name: Sign in as the first admin, render a repository report to PDF
-        run: |
-          B=http://localhost:3000
-          curl -fsS -c jar -H "Origin: $B" -H 'content-type: application/json' \
+          B=https://localhost
+          for i in $(seq 30); do curl -ksf -o /dev/null $B/api/v1/readyz && break; sleep 2; done
+          curl -ksfS -c jar -H "Origin: $B" -H 'content-type: application/json' \
             -d '{"email":"admin@example.com","password":"ci-Admin-pass-123"}' $B/api/auth/login
-          curl -fsS -b jar $B/api/auth/me
-          curl -fsS -b jar -o out.pdf "$B/api/reports/loan-statement/pdf"
+          curl -ksfS -b jar $B/api/auth/me
+          curl -ksfS -b jar -o out.pdf "$B/api/reports/invoice-gallery/pdf"
           sudo apt-get install -y qpdf >/dev/null
           qpdf --check out.pdf
           test "$(qpdf --show-npages out.pdf)" -ge 1
+      - name: A forged X-Forwarded-For does not change the login-throttle identity (via Caddy or straight to the port)
+        run: |
+          # 20 failures per network per 10 minutes; each try forges a new address and a new account
+          fail() { curl -ks -o /dev/null -w '%{http_code}' -H "Origin: $1" -H "X-Forwarded-For: 203.0.113.$2" \
+            -H 'content-type: application/json' -d "{\"email\":\"nobody$2@example.com\",\"password\":\"wrong\"}" "$1/api/auth/login"; }
+          for i in $(seq 1 10); do c=$(fail https://localhost $i); echo "caddy $i $c"; test "$c" != 429; done
+          for i in $(seq 11 20); do c=$(fail http://localhost:3000 $i); echo "direct $i $c"; test "$c" != 429; done
+          c=$(fail https://localhost 21); echo "caddy 21 $c"; test "$c" = 429
+          c=$(fail http://localhost:3000 22); echo "direct 22 $c"; test "$c" = 429
+      - name: App port is loopback only
+        run: docker compose port app 3000 | grep -q '^127.0.0.1:'
       - if: failure()
-        run: docker compose logs app | tail -100
+        run: docker compose --profile https logs | tail -150
       - if: always()
-        run: docker compose down -v
+        run: docker compose --profile https down -v
