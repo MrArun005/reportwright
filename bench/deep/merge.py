@@ -72,16 +72,20 @@ LEAGUES = {'engine': 'Report engines', 'writer': 'PDF writers', 'read-edit': 'Re
 MARK = {'yes': '✅', 'no': '❌', 'partial': 'partial', '?': '?'}
 
 
+def ram(m):
+    return f'{m["ram_mb"] / 1024:.1f} GB' if m.get('ram_mb') else '? GB'  # Windows has no /proc/meminfo
+
+
 def hw_line(meta, langs, label, groups=()):
     if groups:  # same-machine layout: every column of the table ran in one job, interleaved run by run
-        return label + ', ' + '; '.join(f'one job ({m["group"]}): {m["cpu"]} × {m["cores"]} vCPU, {m["ram_mb"] / 1024:.1f} GB RAM, contestants interleaved run by run'
+        return label + ', ' + '; '.join(f'one job ({m["group"]}): {m["cpu"]} × {m["cores"]} vCPU, {ram(m)} RAM, contestants interleaved run by run'
                                          for m in meta if m.get('group') in groups) + ''.join(sorted({f'; ours built from {m["source"]}' for m in meta if m.get('group') in groups and m.get('source')}))
 
     """'GitHub run 1, ubuntu-latest, <cpu> × 2 vCPU, 7.8 GB RAM (js, ours); ...': each language job ran on its own runner."""
     hw = defaultdict(list)
     for m in meta:
         if m['lang'] in langs:
-            hw[f'{m["cpu"]} × {m["cores"]} vCPU, {m["ram_mb"] / 1024:.1f} GB RAM'].append(m['lang'])
+            hw[f'{m["cpu"]} × {m["cores"]} vCPU, {ram(m)} RAM'].append(m['lang'])
     return label + ', ' + '; '.join(f'{k} ({", ".join(sorted(v))})' for k, v in sorted(hw.items())) + ''.join(f'; {m["lang"]} built from {m["source"]}' for m in meta if m['lang'] in langs and m.get('source'))
 
 
