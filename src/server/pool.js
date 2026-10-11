@@ -444,6 +444,8 @@ export function arrive(req) {
   bump(P.arriving, who, 1); P.arrivingTotal++;
   const t = {
     release() { if (!live) return; live = false; bump(P.arriving, who, -1); P.arrivingTotal--; },
+    /** auth refused this credential (a revoked key): its later requests count as their own, not as the principal it once was */
+    forget() { P.credWho.delete(cred); },
     /** @param {any} principal */
     bind(principal) {
       const id = principalId(principal);

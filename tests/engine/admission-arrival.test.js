@@ -48,4 +48,14 @@ describe('admission from arrival', () => {
     expect(e.retryAfter).toBeGreaterThanOrEqual(1);
     for (const t of held) t.release();
   });
+  it('a revoked key no longer counts against the principal it was bound to (forget)', () => {
+    Object.assign(process.env, { PW_RENDER_WORKERS: '2', PW_RENDER_QUEUE: '50', PW_RENDER_QUEUE_PER_PRINCIPAL: '2', PW_RENDER_MAX_WAIT_MS: '600000' });
+    const owner = { kind: 'service', key: 'owner' };
+    const t0 = arrive(req('old-key')); t0.bind(owner); t0.release(); // the key once signed in as owner
+    const bad = arrive(req('old-key')); bad.forget(); bad.release(); // now refused by auth
+    const held = [arrive(req('old-key')), arrive(req('old-key'))]; // a flood on the revoked key fills its own bucket
+    expect(refused(() => arrive(req('old-key')))?.status).toBe(429);
+    const t = arrive(req('owner-new-key')); t.bind(owner); // the owner is not starved
+    for (const x of [...held, t]) x.release();
+  });
 });

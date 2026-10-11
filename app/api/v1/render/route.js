@@ -27,7 +27,7 @@ export async function POST(req) {
   try { ticket = arrive(req); } catch (e) { return fail(e); } // counted from arrival: 429/503 before auth or the body
   try {
     const { principal, res } = await apiPrincipal(req, { quiet: true }); // report.render below is this call's event
-    if (res) return res;
+    if (res) { ticket.forget(); return res; }
     ticket.bind(principal); // a caller over the limit hears 429/503 before anything is read
     const body = await req.json().catch(() => { throw Object.assign(new Error('Send a JSON body'), { status: 400 }); });
     const encrypt = pdfEncryptOptions(body.pdf); // 400 on a bad shape, before loading anything
