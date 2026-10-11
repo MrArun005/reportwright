@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import { execFileSync } from 'node:child_process';
 import forge from 'node-forge';
 import { PDFDocument, PDFName, PDFDict, PDFArray, PDFRawStream } from 'pdf-lib';
@@ -43,6 +44,21 @@ describe('PDF/A-2b', () => {
       const annots = page.node.lookup(PDFName.of('Annots'), PDFArray);
       for (let i = 0; annots && i < annots.size(); i++) expect(annots.lookup(i, PDFDict).get(PDFName.of('F'))?.toString()).toBe('4');
     }
+  });
+
+  it('never draws .notdef (glyph 0) for a character the font lacks', async () => {
+    // an emoji is in no font of the store: PDF/A 6.2.11.8 forbids referencing .notdef, so the text is left out
+    const missing = report([{ type: 'textbox', name: 'M', x: 0, y: 0, w: 300, h: 18, value: 'OK \u{1F600} done' }], { def: { name: 'notdef' } });
+    const bytes = await exportPdf(await render(missing, { fontStore }), fontStore, { title: 'notdef', pdfa: { icc: ICC } });
+    const doc = await PDFDocument.load(bytes);
+    const streams = doc.getPages().map((page) => {
+      const refs = page.node.Contents();
+      const list = refs instanceof PDFArray ? [...Array(refs.size()).keys()].map((i) => refs.get(i)) : [refs];
+      return list.map((r) => zlib.inflateSync(Buffer.from(doc.context.lookup(r, PDFRawStream).contents)).toString('latin1')).join('\n');
+    }).join('\n');
+    expect(streams).toMatch(/Tj|TJ/);
+    expect(streams).not.toMatch(/<0000>/);
+    expect(streams).not.toContain('\0\0');
   });
 
   it('refuses PDF/A without the colour profile', async () => {
