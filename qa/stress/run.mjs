@@ -175,13 +175,18 @@ const checks = {
     const faces = Object.values(FONT_FAMILIES).flat();
     const cmd = `render() + exportPdf() with one textbox per bundled face (${faces.length}); pdffonts`;
     await check('every font', cmd, `${faces.length} faces in pdffonts (the brief asks 50; the engine bundles ${faces.length})`, async () => {
-      const sample = (f) => /Arabic/.test(f.family) ? 'مرحبا' : /Hebrew/.test(f.family) ? 'שלום' : /Devanagari/.test(f.family) ? 'नमस्ते' : /Thai/.test(f.family) ? 'สวัสดี' : /Lao/.test(f.family) ? 'ສະບາຍດີ' : /Khmer/.test(f.family) ? 'សួស្តី' : /Myanmar/.test(f.family) ? 'မင်္ဂလာပါ' : /Tamil/.test(f.family) ? 'வணக்கம்' : /Bengali/.test(f.family) ? 'নমস্কার' : /Telugu/.test(f.family) ? 'నమస్కారం' : /Kannada/.test(f.family) ? 'ನಮಸ್ಕಾರ' : /Gujarati/.test(f.family) ? 'નમસ્તે' : /JP/.test(f.family) ? 'こんにちは' : /KR/.test(f.family) ? '안녕하세요' : /SC/.test(f.family) ? '你好' : /Emoji/.test(f.family) ? '🎉' : /Symbol|Zapf/.test(f.family) ? 'abc' : 'Hello';
-      const items = faces.map((f, i) => ({ type: 'textbox', name: `f${i}`, x: (i % 2) * 260, y: Math.floor(i / 2) * 16, w: 250, h: 14, value: `${f.key} ${sample(f)}`, style: { fontFamily: f.family, fontWeight: f.weight >= 600 ? 'bold' : 'normal', fontStyle: f.style, fontSize: 9 } }));
+      const sample = (f) => /Arabic/.test(f.family) ? 'مرحبا' : /Hebrew/.test(f.family) ? 'שלום' : /Devanagari/.test(f.family) ? 'नमस्ते' : /Thai/.test(f.family) ? 'สวัสดี' : /Lao/.test(f.family) ? 'ສະບາຍດີ' : /Khmer/.test(f.family) ? 'សួស្តី' : /Myanmar/.test(f.family) ? 'မင်္ဂလာပါ' : /Tamil/.test(f.family) ? 'வணக்கம்' : /Bengali/.test(f.family) ? 'নমস্কার' : /Telugu/.test(f.family) ? 'నమస్కారం' : /Kannada/.test(f.family) ? 'ನಮಸ್ಕಾರ' : /Gujarati/.test(f.family) ? 'નમસ્તે' : /JP/.test(f.family) ? 'こんにちは' : /KR/.test(f.family) ? '안녕하세요' : /SC/.test(f.family) ? '你好' : /Emoji/.test(f.family) ? '🎉' : /Symbol/.test(f.family) ? 'αβγ' : /Zapf/.test(f.family) ? '✓✔' : `${f.key} Hello`;
+      const items = faces.map((f, i) => ({ type: 'textbox', name: `f${i}`, x: (i % 2) * 260, y: Math.floor(i / 2) * 16, w: 250, h: 14, value: sample(f), style: { fontFamily: f.family, fontWeight: f.weight >= 600 ? 'bold' : 'normal', fontStyle: f.style, fontSize: 9 } }));
       const model = await render({ $schema: 'reportwright/report@1', name: 'Fonts', page: { size: 'A4', margins: [36, 36, 36, 36] }, sections: { body: { items } } }, { fontStore });
       const file = path.join(OUT, 'fonts.pdf');
       fs.writeFileSync(file, await exportPdf(model, fontStore, { subset }));
       const listed = sh('pdffonts', [file]).split('\n').slice(2).filter(Boolean).length;
       record({ check: 'every font', command: cmd, expected: `pdffonts lists ${faces.length} fonts`, actual: `pdffonts lists ${listed}; warnings: ${model.warnings.slice(0, 3).join(' / ') || 'none'}`, result: listed >= faces.length ? 'PASS' : 'FAIL' });
+      // Latin in every family: a face without Latin should fall back (to Inter), never draw boxes
+      const latin = faces.map((f, i) => ({ ...items[i], value: `Latin ${f.key}` }));
+      const m2 = await render({ $schema: 'reportwright/report@1', name: 'Fonts latin', page: { size: 'A4', margins: [36, 36, 36, 36] }, sections: { body: { items: latin } } }, { fontStore });
+      const boxes = m2.warnings.filter(w => /show as boxes/i.test(w));
+      record({ check: 'Latin text in every family falls back', command: 'render() of "Latin <face>" in each family', expected: 'no "show as boxes" warning', actual: boxes.join(' / ').slice(0, 300) || 'none', result: boxes.length ? 'WARN' : 'PASS' });
     });
   },
   async images() {
