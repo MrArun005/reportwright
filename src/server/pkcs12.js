@@ -7,14 +7,16 @@ import crypto from 'node:crypto';
 
 /** @typedef {{ tag: number, at: number, start: number, end: number, next: number, buf: Buffer }} Node */
 
-/** One BER element at off. @param {Buffer} buf @param {number} off @returns {Node} */
-function read(buf, off) {
+/** One BER element at off. @param {Buffer} buf @param {number} off @param {number} [depth] @returns {Node} */
+function read(buf, off, depth = 0) {
   const tag = buf[off];
   if (tag === undefined || (tag & 0x1f) === 0x1f) throw new Error('bad tag');
+  if (off + 1 >= buf.length) throw new Error('truncated');
   let len = buf[off + 1], p = off + 2;
-  if (len === 0x80) { // indefinite: children up to 00 00
+  if (len === 0x80) { // indefinite: children up to 00 00 (constructed only; nesting bounded, a hostile file cannot recurse the stack away)
+    if (!(tag & 0x20) || depth > 32) throw new Error('bad indefinite length');
     let q = p;
-    while (!(buf[q] === 0 && buf[q + 1] === 0)) { if (q >= buf.length) throw new Error('truncated'); q = read(buf, q).next; }
+    while (!(buf[q] === 0 && buf[q + 1] === 0)) { if (q + 1 >= buf.length) throw new Error('truncated'); q = read(buf, q, depth + 1).next; }
     return { tag, at: off, start: p, end: q, next: q + 2, buf };
   }
   if (len > 0x80) { const n = len & 0x7f; if (n > 4) throw new Error('too long'); len = 0; for (let i = 0; i < n; i++) len = len * 256 + buf[p++]; }
@@ -24,7 +26,7 @@ function read(buf, off) {
 /** @param {Node} n */
 const kids = (n) => { const out = []; for (let p = n.start; p < n.end;) { const k = read(n.buf, p); out.push(k); p = k.next; } return out; };
 /** The bytes of an OCTET STRING, primitive or constructed (BER chunks). @param {Node} n @returns {Buffer} */
-const octets = (n) => (n.tag & 0x20 ? Buffer.concat(kids(n).map(octets)) : n.buf.subarray(n.start, n.end));
+const octets = (n, d = 0) => { if (d > 32) throw new Error('too deep'); return n.tag & 0x20 ? Buffer.concat(kids(n).map((k) => octets(k, d + 1))) : n.buf.subarray(n.start, n.end); };
 /** @param {Node} n */
 const oid = (n) => {
   const b = n.buf.subarray(n.start, n.end), out = [Math.floor(b[0] / 40), b[0] % 40];
@@ -32,7 +34,11 @@ const oid = (n) => {
   return out.join('.');
 };
 /** @param {Node} n */
-const int = (n) => { let v = 0; for (let i = n.start; i < n.end; i++) v = v * 256 + n.buf[i]; return v; };
+const int = (n) => { if (n?.tag !== 0x02 || n.end - n.start > 6) throw new Error('bad integer'); let v = 0; for (let i = n.start; i < n.end; i++) v = v * 256 + n.buf[i]; return v; };
+// an iteration count is work the file asks for: OpenSSL writes 2048, Windows 2000; above this it is a hang, not a key
+const MAX_ITER = 1_000_000;
+/** @param {Node} n */
+const iterations = (n) => { const v = int(n); if (v < 1 || v > MAX_ITER) throw new Error(`iteration count ${v} out of range`); return v; };
 /** @param {Buffer} b */
 const root = (b) => read(b, 0);
 
@@ -119,7 +125,7 @@ function decrypt(alg, data, password) {
     const [kdf, enc] = kids(params);
     const [kdfId, kdfP] = kids(kdf);
     if (oid(kdfId) !== '1.2.840.113549.1.5.12') throw new Error('unsupported KDF');
-    const kp = kids(kdfP), salt = octets(kp[0]), iter = int(kp[1]);
+    const kp = kids(kdfP), salt = octets(kp[0]), iter = iterations(kp[1]);
     const prf = kp.find((k, i) => i > 1 && k.tag === 0x30);
     const hash = prf ? HMAC[/** @type {keyof typeof HMAC} */ (oid(kids(prf)[0]))] : 'sha1';
     const [encId, iv] = kids(enc), c = CBC[/** @type {keyof typeof CBC} */ (oid(encId))];
@@ -130,7 +136,7 @@ function decrypt(alg, data, password) {
   }
   const p = P12PBE[/** @type {keyof typeof P12PBE} */ (o)];
   if (!p) throw new Error(`unsupported encryption ${o}`);
-  const [saltN, iterN] = kids(params), salt = octets(saltN), iter = int(iterN), pw = bmp(password);
+  const [saltN, iterN] = kids(params), salt = octets(saltN), iter = iterations(iterN), pw = bmp(password);
   const key = p12kdf('sha1', pw, salt, iter, 1, Number(p[1])), iv = p12kdf('sha1', pw, salt, iter, 2, 8);
   if (p[0] === 'rc2') return rc2Decrypt(key, Number(p[2]), iv, data);
   const d = crypto.createDecipheriv('des-ede3-cbc', p[1] === 16 ? Buffer.concat([key, key.subarray(0, 8)]) : key, iv);
@@ -148,12 +154,13 @@ export function readPkcs12(p12, password) {
   const [ct, body] = kids(pfx[1]);
   if (oid(ct) !== '1.2.840.113549.1.7.1') throw new Error('not a password-protected PKCS#12');
   const safe = octets(kids(body)[0]);
-  if (pfx[2]) { // the MAC: proves the password before anything is decrypted (the server's own file and password: no presented secret, a plain compare)
+  if (!pfx[2]) throw new Error('no MAC: the file\'s integrity cannot be checked');
+  { // the MAC: proves the password before anything is decrypted (the server's own file and password: no presented secret, a plain compare)
     const [di, saltN, iterN] = kids(pfx[2]);
     const [algN, digN] = kids(di), hash = HASH[/** @type {keyof typeof HASH} */ (oid(kids(algN)[0]))];
     if (!hash) throw new Error('unsupported MAC');
     const n = crypto.createHash(hash).digest().length;
-    const key = p12kdf(hash, bmp(password), octets(saltN), iterN ? int(iterN) : 1, 3, n);
+    const key = p12kdf(hash, bmp(password), octets(saltN), iterN ? iterations(iterN) : 1, 3, n);
     const mac = crypto.createHmac(hash, key).update(safe).digest(), want = octets(digN);
     if (!mac.equals(want)) throw new Error('wrong password');
   }

@@ -34,4 +34,25 @@ describe('pkcs12', () => {
       }
     } finally { fs.rmSync(d, { recursive: true, force: true }); }
   });
+  it.skipIf(!OPENSSL)('hostile files throw (or open) quickly: mutations, truncations, length and nesting bombs, huge iteration counts, no MAC', () => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'p12f-'));
+    try {
+      const run = (...a) => { const r = spawnSync('openssl', a, { cwd: d }); if (r.status) throw new Error(r.stderr.toString()); };
+      run('req', '-x509', '-newkey', 'rsa:1024', '-nodes', '-keyout', 'k.pem', '-out', 'c.pem', '-days', '30', '-subj', '/CN=t');
+      run('pkcs12', '-export', '-inkey', 'k.pem', '-in', 'c.pem', '-out', 'a.p12', '-passout', 'pass:pw');
+      const good = fs.readFileSync(path.join(d, 'a.p12'));
+      const ok = (b) => { const t = Date.now(); try { readPkcs12(b, 'pw'); } catch (e) { expect(e).toBeInstanceOf(Error); } expect(Date.now() - t).toBeLessThan(2000); };
+      let seed = 1; const rnd = (n) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n; };
+      for (let i = 0; i < 300; i++) { const b = Buffer.from(good); for (let k = 0, n = 1 + rnd(4); k < n; k++) b[rnd(b.length)] = rnd(256); ok(b); }
+      for (let i = 0; i < good.length; i += 7) ok(good.subarray(0, i));
+      for (let i = 0; i < 200; i++) { const b = Buffer.from(good), at = rnd(b.length - 6); b[at + 1] = 0x84; b.fill(0xff, at + 2, at + 6); ok(b); } // 4 GB lengths
+      ok(Buffer.concat([Buffer.alloc(20000, Buffer.from([0x30, 0x80])), Buffer.alloc(20000, 0)])); // nested indefinite lengths
+      ok(Buffer.from([0x30])); ok(Buffer.alloc(0)); ok(Buffer.from([0x04, 0x80, 0, 0]));
+      // an encryption iteration count over the cap is refused, not run
+      run('pkcs12', '-export', '-iter', '1500000', '-inkey', 'k.pem', '-in', 'c.pem', '-out', 'i.p12', '-passout', 'pass:pw');
+      expect(() => readPkcs12(fs.readFileSync(path.join(d, 'i.p12')), 'pw')).toThrow(/iteration count/);
+      run('pkcs12', '-export', '-nomac', '-inkey', 'k.pem', '-in', 'c.pem', '-out', 'n.p12', '-passout', 'pass:pw');
+      expect(() => readPkcs12(fs.readFileSync(path.join(d, 'n.p12')), 'pw')).toThrow(/no MAC/);
+    } finally { fs.rmSync(d, { recursive: true, force: true }); }
+  }, 120000);
 });
