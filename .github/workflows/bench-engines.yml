@@ -31,7 +31,7 @@ on:
         options: [auto, same-machine, per-lang]
         default: auto
 concurrency:
-  group: bench-engines
+  group: bench-engines-${{ github.ref_name }} # one queue a branch; runs on other branches use other runners
   cancel-in-progress: false
 permissions:
   contents: read

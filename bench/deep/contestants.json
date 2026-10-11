@@ -1,5 +1,5 @@
 {
- "_doc": "Who runs in which job. cmd + [job, size, outdir] is the harness contract (README.md). jobs: what the contestant does; every other job is n/a, with the reason from na (keys: a job, or read/edit/create for a family). million: also runs the 1,000,000-row report in the million tier. league: engine (lays out pages itself from a table/report definition), writer (executes pre-laid-out draw ops) or read-edit (no create job); merge.py splits the create tables by it.",
+ "_doc": "Who runs in which job. cmd + [job, size, outdir] is the harness contract (README.md). jobs: what the contestant does; every other job is n/a, with the reason from na (keys: a job, or read/edit/create for a family). million: also runs the 1,000,000-row report in the million tier. league: engine (lays out pages itself from a table/report definition), writer (executes pre-laid-out draw ops) or read-edit (no create job); merge.py splits the create tables by it. os: windows marks a contestant that runs only on the windows-latest job (with ours, on the same machine; its tables are a separate source, never ranked against the Linux runs).",
  "langs": {
   "ours": {
    "runtime": [
@@ -529,6 +529,27 @@
       "read": "a report generator",
       "edit": "a report generator"
      }
+    },
+    "birt": {
+     "league": "engine",
+     "cmd": [
+      "java",
+      "-Djava.awt.headless=true",
+      "-Duser.language=en",
+      "-Duser.country=US",
+      "-cp",
+      "bench/deep/java/birt/target/classes:bench/deep/java/birt/runtime/lib/*",
+      "bench.Birt",
+      "birt"
+     ],
+     "jobs": [
+      "report"
+     ],
+     "na": {
+      "create": "a report generator: only the report job",
+      "read": "a report generator",
+      "edit": "a report generator"
+     }
     }
    }
   },
@@ -603,6 +624,22 @@
       "create": "its writer has no table or layout; not attempted",
       "split": "not attempted",
       "encrypt": "cannot encrypt"
+     }
+    },
+    "FastReport": {
+     "league": "engine",
+     "cmd": [
+      "dotnet",
+      "bench/deep/dotnet/fastreport/out/FastReportBench.dll",
+      "FastReport"
+     ],
+     "jobs": [
+      "report"
+     ],
+     "na": {
+      "create": "a report generator: only the report job",
+      "read": "a report generator",
+      "edit": "a report generator"
      }
     }
    }
@@ -805,6 +842,31 @@
       "metadata": "not attempted",
       "form": "not attempted",
       "sign": "no signing"
+     }
+    }
+   }
+  },
+  "ssrs": {
+   "runtime": [
+    "cmd",
+    "/c",
+    "ver"
+   ],
+   "os": "windows",
+   "libs": {
+    "SSRS (ReportViewer LocalReport)": {
+     "league": "engine",
+     "cmd": [
+      "bench/deep/dotnet/ssrs/out/Ssrs.exe",
+      "ssrs"
+     ],
+     "jobs": [
+      "report"
+     ],
+     "na": {
+      "create": "a report generator: only the report job",
+      "read": "a report generator",
+      "edit": "a report generator"
      }
     }
    }

@@ -235,6 +235,7 @@ jobs:
         run: |
           mvn -q -B -f bench/deep/java/pom.xml package
           mvn -q -B -f bench/deep/java/jasper/pom.xml package
+          sh bench/deep/java/birt/build.sh
       - uses: actions/setup-dotnet@v4
         if: matrix.lang == 'dotnet'
         with:
@@ -243,11 +244,14 @@ jobs:
         if: matrix.lang == 'dotnet'
         with:
           path: ~/.nuget/packages
-          key: nuget-${{ hashFiles('bench/deep/dotnet/Bench.csproj') }}
+          key: nuget-${{ hashFiles('bench/deep/dotnet/Bench.csproj', 'bench/deep/dotnet/fastreport/FastReportBench.csproj') }}
       - name: dotnet
         if: matrix.lang == 'dotnet'
         continue-on-error: true
-        run: dotnet publish bench/deep/dotnet/Bench.csproj -c Release -o bench/deep/dotnet/out --nologo -v q
+        run: |
+          sudo apt-get install -y -qq libgdiplus >/dev/null # FastReport's System.Drawing on Linux
+          dotnet publish bench/deep/dotnet/Bench.csproj -c Release -o bench/deep/dotnet/out --nologo -v q
+          dotnet publish bench/deep/dotnet/fastreport/FastReportBench.csproj -c Release -o bench/deep/dotnet/fastreport/out --nologo -v q
       - uses: actions/setup-go@v5
         if: matrix.lang == 'go'
         with:
@@ -326,7 +330,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: nuget-${{ hashFiles('bench/deep/dotnet/Bench.csproj') }}
+          key: nuget-${{ hashFiles('bench/deep/dotnet/Bench.csproj', 'bench/deep/dotnet/fastreport/FastReportBench.csproj') }}
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
@@ -381,8 +385,11 @@ jobs:
         run: |
           mvn -q -B -f bench/deep/java/pom.xml package
           mvn -q -B -f bench/deep/java/jasper/pom.xml package
+          sh bench/deep/java/birt/build.sh
       - name: dotnet
-        run: dotnet publish bench/deep/dotnet/Bench.csproj -c Release -o bench/deep/dotnet/out --nologo -v q
+        run: |
+          dotnet publish bench/deep/dotnet/Bench.csproj -c Release -o bench/deep/dotnet/out --nologo -v q
+          dotnet publish bench/deep/dotnet/fastreport/FastReportBench.csproj -c Release -o bench/deep/dotnet/fastreport/out --nologo -v q
       - name: go
         working-directory: bench/deep/go
         run: go mod tidy && go build -o bench .
@@ -394,8 +401,16 @@ jobs:
           tar -I 'zstd -T0 -3' -cf /tmp/build.tar.zst -C / home/runner/.cache/puppeteer \
             -C "$GITHUB_WORKSPACE" bench/deep/tools/node_modules bench/deep/ours/node_modules bench/deep/js/node_modules \
             $(ls -d bench/deep/ours-branch 2>/dev/null) bench/deep/java/target bench/deep/java/jasper/target \
+            bench/deep/java/birt/target bench/deep/java/birt/runtime bench/deep/dotnet/fastreport/out \
             bench/deep/dotnet/out bench/deep/go/bench bench/deep/rust/target/release/bench
           ls -la /tmp/build.tar.zst
+          if [ -d bench/deep/ours-branch ]; then tar -cf /tmp/ours-branch.tar --exclude=.bin bench/deep/ours-branch; fi # pure JS, for the Windows job
+      - uses: actions/upload-artifact@v4
+        if: steps.side.outcome == 'success'
+        with:
+          name: ours-branch
+          path: /tmp/ours-branch.tar
+          retention-days: 3
       - uses: actions/upload-artifact@v4
         with:
           name: build
@@ -437,7 +452,7 @@ jobs:
       - name: Validators (qpdf, MuPDF, Poppler), GNU time, WeasyPrint's libraries
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq qpdf mupdf-tools poppler-utils time libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 >/dev/null
+          sudo apt-get install -y -qq qpdf mupdf-tools poppler-utils time libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 libgdiplus >/dev/null
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -496,8 +511,93 @@ jobs:
           path: results/
           retention-days: 30
 
+  # ---- Windows: SSRS (ReportViewer LocalReport needs .NET Framework) and ours, the report job only, on one windows-latest
+  # runner; merged as a separate source, never ranked against the Linux numbers
+  windows:
+    needs: [fixtures, build]
+    if: needs.fixtures.outputs.layout == 'same-machine' && needs.fixtures.outputs.tier != 'million' && contains(needs.fixtures.outputs.groups, 'create-engines')
+    runs-on: windows-latest
+    timeout-minutes: 300
+    defaults:
+      run:
+        shell: bash
+    env:
+      TIER: ${{ needs.fixtures.outputs.tier }}
+      RUNS: ${{ inputs.runs || '5' }}
+      BENCH_SRC_ENGINE: ${{ needs.build.outputs.engine_src }}
+      BENCH_SRC_PDF: ${{ needs.build.outputs.pdf_src }}
+      MEM_CAP_MB: "4000"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: fixtures
+          path: ${{ runner.temp }}/fx
+      - uses: actions/download-artifact@v4
+        if: needs.build.outputs.engine_src != '' || needs.build.outputs.pdf_src != ''
+        with:
+          name: ours-branch
+          path: ${{ runner.temp }}/ob
+      - name: ours from branch code (built on Linux; pure JS)
+        if: needs.build.outputs.engine_src != '' || needs.build.outputs.pdf_src != ''
+        run: tar -xf "$(cygpath -u '${{ runner.temp }}')/ob/ours-branch.tar"
+      - uses: msys2/setup-msys2@v2
+        id: msys2
+        with:
+          msystem: UCRT64
+          update: false
+          install: mingw-w64-ucrt-x86_64-qpdf mingw-w64-ucrt-x86_64-poppler
+      - name: Validators (qpdf, Poppler, MuPDF from MSYS2) first on PATH in the steps that use them (the image has Xpdf's pdftotext earlier)
+        run: |
+          # MSYS2 has no mutool: Artifex's Windows build, pinned by checksum
+          curl -fsSL --retry 3 -o mu.zip https://github.com/ArtifexSoftware/mupdf-downloads/releases/download/1.28.5/mupdf-1.28.5-windows.zip
+          echo "13476a53e84f5527983158acb6442c7853b3cdc022f3b24880780dcfba1fcc99  mu.zip" | sha256sum -c -
+          unzip -q mu.zip -d "$RUNNER_TEMP" && rm mu.zip
+          echo "MSYS_BIN=$(cygpath -u '${{ steps.msys2.outputs.msys2-location }}')/ucrt64/bin:$(cygpath -u "$RUNNER_TEMP")/mupdf-1.28.5-windows" >> "$GITHUB_ENV"
+      - run: |
+          export PATH="$MSYS_BIN:$PATH"
+          for t in qpdf pdftotext mutool; do command -v $t; done
+          qpdf --version | head -1; (pdftotext -v 2>&1 || true) | head -1; (mutool -v 2>&1 || true) | head -1 # both exit non-zero on -v
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: node contestants (npm) and pdf.js
+        run: |
+          npm ci --prefix bench/deep/tools --no-audit --no-fund
+          npm ci --prefix bench/deep/ours --no-audit --no-fund
+      - name: The fixture fonts installed for GDI (SSRS takes fonts by family name from the system)
+        shell: pwsh
+        run: |
+          Add-Type -Namespace W -Name G -MemberDefinition '[DllImport("gdi32.dll")] public static extern int AddFontResource(string f);'
+          foreach ($f in @(@('Inter-Regular.ttf', 'Inter (TrueType)'), @('Inter-Bold.ttf', 'Inter Bold (TrueType)'))) {
+            $dst = Join-Path $env:WINDIR "Fonts\$($f[0])"
+            Copy-Item (Join-Path '${{ runner.temp }}' "fx\fonts\$($f[0])") $dst -Force
+            New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts' -Name $f[1] -Value $f[0] -PropertyType String -Force | Out-Null
+            [W.G]::AddFontResource($dst) | Out-Null
+          }
+          Add-Type -AssemblyName System.Drawing
+          (New-Object System.Drawing.Text.InstalledFontCollection).Families | Where-Object Name -like 'Inter*' | ForEach-Object Name
+      - name: SSRS (ReportViewer LocalReport, .NET Framework 4.8)
+        continue-on-error: true # a broken build still reaches the driver, which records the contestant as not started
+        run: dotnet build bench/deep/dotnet/ssrs/Ssrs.csproj -c Release -o bench/deep/dotnet/ssrs/out --nologo -v q
+      - name: Runner
+        run: |
+          mkdir -p results-win
+          { echo "windows tier $TIER runs $RUNS"; date -u; systeminfo | grep -E 'OS Name|OS Version|Processor|Total Physical Memory'; nproc; } | tee results-win/windows-runner.txt
+      - name: Benchmark (ours and SSRS, the report job)
+        run: PATH="$MSYS_BIN:$PATH" PYTHONUTF8=1 "$pythonLocation/python" bench/deep/drive.py --group create-engines --only report --langs ours,ssrs --tier "$TIER" --runs "$RUNS" --fixtures "${{ runner.temp }}/fx" --work "${{ runner.temp }}/work" --out results-win/windows.jsonl
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-results
+          path: results-win/
+          retention-days: 30
+
   report:
-    needs: [fixtures, bench, group]
+    needs: [fixtures, bench, group, windows]
     if: always() && needs.fixtures.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -508,9 +608,16 @@ jobs:
           pattern: results-*
           path: results
           merge-multiple: true
+      - uses: actions/download-artifact@v4
+        continue-on-error: true # only same-machine runs with the report engines have it
+        with:
+          name: windows-results
+          path: winres
       - name: Merge
         run: |
-          python3 bench/deep/merge.py results out --title "${{ inputs.title }}"
+          W=(); [ -s winres/windows.jsonl ] && W=(--source winres "windows-latest, ours vs SSRS on one Windows runner (not comparable with the Linux tables)")
+          python3 bench/deep/merge.py results out --title "${{ inputs.title }}" "${W[@]}"
+          cp winres/* out/ 2>/dev/null || true
           cp out/results.md "out/${{ inputs.results_md }}"
           cp results/*.jsonl results/*-runner.txt out/ 2>/dev/null || true
           cat out/results.md >> "$GITHUB_STEP_SUMMARY"
