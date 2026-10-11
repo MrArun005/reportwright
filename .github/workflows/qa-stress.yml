@@ -57,5 +57,8 @@ jobs:
       - run: node qa/stress/summarize.mjs qa-out stress --fail-on-fail
       - if: always()
         uses: actions/upload-artifact@v4
-        with: { name: qa-stress-results, path: 'qa-out/results.json
-qa-out/summary.md' }
+        with:
+          name: qa-stress-results
+          path: |
+            qa-out/results.json
+            qa-out/summary.md
