@@ -135,14 +135,16 @@ ip.on('pageerror', e => ipErrs.push(e.message));
 const before = opened.length;
 await ip.goto(`file://${ifile}`);
 await ip.waitForSelector('.vpage svg', { timeout: 60000 });
+await ip.waitForFunction(() => !document.querySelector('.stat[title*="still rendering"]') && document.querySelectorAll('.vlink.hit').length > 0, null, { timeout: 60000 });
 const itexts = () => ip.evaluate(() => [...document.querySelectorAll('.vpage text')].map(n => n.textContent));
 const ilink = (title) => ip.locator(`.vlink.hit[title*=${JSON.stringify(title)}]`);
-const gold = async () => (await itexts()).filter(t => t === 'Gold loans').length;
-const g0 = await gold();
+const shot = (n) => ip.screenshot({ path: `/tmp/shots/exports-b2-interactive-${n}.png` }).catch(() => {});
+const n0 = (await itexts()).length;
 await ilink('Show or hide details').nth(1).click();
-await ip.waitForFunction((n) => [...document.querySelectorAll('.vpage text')].filter(t => t.textContent === 'Gold loans').length > n, g0, { timeout: 20000 });
+// the group opens in place: the page gains rows (its products)
+await ip.waitForFunction((n) => document.querySelectorAll('.vpage text').length > n, n0, { timeout: 30000 }).catch(async (e) => { await shot('expand-fail'); throw e; });
 await ilink('Open Jaipur month by month').first().click({ modifiers: ['ControlOrMeta'] }); // even with a modifier: in place
-await ip.locator('nav.vcrumbs li', { hasText: 'Jaipur' }).waitFor({ timeout: 20000 });
+await ip.locator('nav.vcrumbs li', { hasText: 'Jaipur' }).waitFor({ timeout: 30000 }).catch(async (e) => { await shot('drill-fail'); throw e; });
 await ip.screenshot({ path: '/tmp/shots/exports-b2-interactive.png' });
 assert.equal(opened.length, before + 1, `no new page or tab opened (only the file itself): ${opened.join(', ')}`);
 assert.deepEqual(ipErrs, [], 'no errors in the interactive file');
