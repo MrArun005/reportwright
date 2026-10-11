@@ -15,7 +15,7 @@
     <Field Name="Reference"><DataField>Reference</DataField><rd:TypeName>System.String</rd:TypeName></Field>
   </Fields></DataSet></DataSets>
   <ReportSections><ReportSection>
-    <Body><ReportItems><Tablix Name="Ledger">
+    <Body><ReportItems><Tablix Name="LedgerTable">
       <TablixBody>
         <TablixColumns><TablixColumn><Width>50pt</Width></TablixColumn><TablixColumn><Width>62pt</Width></TablixColumn><TablixColumn><Width>50pt</Width></TablixColumn><TablixColumn><Width>62pt</Width></TablixColumn><TablixColumn><Width>62pt</Width></TablixColumn><TablixColumn><Width>70pt</Width></TablixColumn><TablixColumn><Width>167pt</Width></TablixColumn></TablixColumns>
         <TablixRows>
