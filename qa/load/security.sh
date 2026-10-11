@@ -31,15 +31,19 @@ code=$(printf '{"template":"invoice-gallery","format":"pdf","parameters":{"x":"=
 alive=$(curl -s -o /dev/null -w '%{http_code}' "$B/api/v1/livez")
 rec 'expression in a parameter value' 'parameters.x = "=constructor…process.exit(1)"' 'server alive (livez 200)' "render $code, livez $alive" "$([ "$alive" = 200 ] && echo PASS || echo FAIL)"
 code=$(printf '{"format":"html","template":{"$schema":"reportwright/report@1","name":"Q","page":{"size":"A4"},"dataSources":[{"name":"s","type":"json","data":{"rows":[{"x":"<script>alert(1)</script><img src=x onerror=alert(2)>"}]}}],"dataSets":[{"name":"D","source":"s","path":"$.rows"}],"sections":{"body":{"items":[{"type":"textbox","name":"T","x":0,"y":0,"w":400,"h":40,"value":"=First(Fields.x, \\"D\\")"},{"type":"richtext","name":"R","x":0,"y":50,"w":400,"h":40,"value":"<b>{Fields.x}</b><script>alert(3)</script>"}]}}}}' | render)
-raw=$(grep -c -E '<script>alert|onerror=alert' /tmp/out)
-rec 'HTML export escapes data' 'format html, field "<script>…", richtext with <script>' 'no raw <script>alert / onerror in the HTML' "status $code; raw matches $raw" "$([ "$code" = 200 ] && [ "$raw" = 0 ] && echo PASS || echo FAIL)"
+raw=$(grep -c -E '<script>alert|onerror=alert' /tmp/out); ctx=$(grep -o -E '.{0,80}(<script>alert|onerror=alert).{0,40}' /tmp/out | head -3 | tr '\n' ' ')
+rec 'HTML export escapes data' 'format html, field "<script>…", richtext with <script>' 'no raw <script>alert / onerror in the HTML' "status $code; raw matches $raw; context: $ctx" "$([ "$code" = 200 ] && [ "$raw" = 0 ] && echo PASS || echo FAIL)"
 # --- oversized inputs ---
-rss() { ps -C node -o rss= | awk '{s+=$1} END {print int(s/1024)}'; }
-r0=$(rss); t0=$(date +%s%N)
-node -e 'process.stdout.write("{\"template\":\"invoice-gallery\",\"data\":{\"big\":\""+"A".repeat(200*1048576)+"\"}}")' > /tmp/big.json
-code=$(curl -s -m 120 -o /tmp/out -w '%{http_code}' -H "$K" -H 'content-type: application/json' --data-binary @/tmp/big.json "$B/api/v1/render"); ms=$(( ($(date +%s%N) - t0) / 1000000 ))
-r1=$(rss); alive=$(curl -s -o /dev/null -w '%{http_code}' "$B/api/v1/livez")
-rec 'oversized body (200 MB JSON)' 'POST /api/v1/render with a 200 MB body' '413 (a body limit), server alive, RSS bounded' "status $code in $ms ms; node RSS $r0→$r1 MB; livez $alive; $(head -c 120 /tmp/out)" "$([ "$code" = 413 ] && [ "$alive" = 200 ] && echo PASS || echo FAIL)"
+rss() { ps -eo rss=,args= | grep -E 'next-server|next start' | grep -v grep | awk '{s+=$1} END {print int(s/1024)}'; }
+for mb in 1 10 50 200; do
+  node -e 'process.stdout.write("{\"template\":\"invoice-gallery\",\"data\":{\"big\":\""+"A".repeat(Number(process.argv[1])*1048576)+"\"}}")' $mb > /tmp/big.json
+  r0=$(rss); t0=$(date +%s%N)
+  code=$(curl -s -m 120 -o /tmp/out -w '%{http_code}' -H "$K" -H 'content-type: application/json' --data-binary @/tmp/big.json "$B/api/v1/render"); ms=$(( ($(date +%s%N) - t0) / 1000000 ))
+  r1=$(rss); alive=$(curl -s -o /dev/null -w '%{http_code}' "$B/api/v1/livez")
+  # expected: a body limit answers 413 (a 4xx at all is a refusal; 400 "Send a JSON body" for a well-formed body is a WARN: wrong status)
+  res=$([ "$alive" != 200 ] && echo FAIL || { [ "$mb" -le 10 ] && echo PASS; } || { [ "$code" = 413 ] && echo PASS; } || { [ "${code:0:1}" = 4 ] && echo WARN; } || echo FAIL)
+  rec "oversized body ($mb MB valid JSON)" "POST /api/v1/render with a $mb MB body" '≤10 MB: any answer, server alive; larger: 413, server alive, RSS bounded' "status $code in $ms ms; server RSS $r0→$r1 MB; livez $alive; $(head -c 100 /tmp/out)" "$res"
+done
 code=$(printf '{"format":"json","template":{"$schema":"reportwright/report@1","name":"Q","page":{"size":"A4"},"sections":{"body":{"items":[{"type":"richtext","name":"R","x":0,"y":0,"w":400,"h":40,"value":"%s"}]}}}}' "$(head -c 300000 /dev/zero | tr '\0' 'x')" | render)
 rec 'oversized rich text (300k chars)' 'richtext value of 300,000 characters' 'cut at 100,000 with a warning (API.md)' "status $code; warning: $(grep -o '[^"]*cut[^"]*' /tmp/out | head -1)" "$([ "$code" = 200 ] && grep -qi 'cut\|limit' /tmp/out && echo PASS || echo FAIL)"
 code=$(printf '{"format":"json","template":{"$schema":"reportwright/report@1","name":"Q","page":{"size":"A4"},"sections":{"body":{"items":[{"type":"textbox","name":"T","x":0,"y":0,"w":400,"h":40,"value":"=%s1%s"}]}}}}' "$(printf '(%.0s' $(seq 5000))" "$(printf ')%.0s' $(seq 5000))" | render)

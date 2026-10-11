@@ -180,8 +180,11 @@ const checks = {
       const model = await render({ $schema: 'reportwright/report@1', name: 'Fonts', page: { size: 'A4', margins: [36, 36, 36, 36] }, sections: { body: { items } } }, { fontStore });
       const file = path.join(OUT, 'fonts.pdf');
       fs.writeFileSync(file, await exportPdf(model, fontStore, { subset }));
-      const listed = sh('pdffonts', [file]).split('\n').slice(2).filter(Boolean).length;
-      record({ check: 'every font', command: cmd, expected: `pdffonts lists ${faces.length} fonts`, actual: `pdffonts lists ${listed}; warnings: ${model.warnings.slice(0, 3).join(' / ') || 'none'}`, result: listed >= faces.length ? 'PASS' : 'FAIL' });
+      const names = sh('pdffonts', [file]).split('\n').slice(2).filter(Boolean).map(l => l.split(/\s+/)[0].replace(/^[A-Z]{6}\+/, ''));
+      const listed = names.length;
+      const norm = (x) => x.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const missing = faces.filter(f => !names.some(n => norm(n).includes(norm(f.key)) || norm(f.key).includes(norm(n)))).map(f => f.key);
+      record({ check: 'every font', command: cmd, expected: `pdffonts lists ${faces.length} fonts`, actual: `pdffonts lists ${listed}; not matched by name: ${missing.join(', ') || 'none'}; listed: ${names.join(' ')}; warnings: ${model.warnings.slice(0, 3).join(' / ') || 'none'}`, result: listed >= faces.length ? 'PASS' : 'FAIL' });
       // Latin in every family: a face without Latin should fall back (to Inter), never draw boxes
       const latin = faces.map((f, i) => ({ ...items[i], value: `Latin ${f.key}` }));
       const m2 = await render({ $schema: 'reportwright/report@1', name: 'Fonts latin', page: { size: 'A4', margins: [36, 36, 36, 36] }, sections: { body: { items: latin } } }, { fontStore });
