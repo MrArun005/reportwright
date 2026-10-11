@@ -62,7 +62,7 @@ static class Program
                     var w = t.Skip(reps >= 50 ? reps - 40 : (int)(reps * 0.2)).OrderBy(x => x).ToArray();
                     line += ",\"warm_ms\":" + w[w.Length / 2].ToString("R", CultureInfo.InvariantCulture);
                 }
-                line += ",\"note\":" + Q(lr.GetTotalPages() + " pages") + "}";
+                line += "}";
             }
         }
         catch (OutOfMemoryException) { Console.Error.WriteLine("OutOfMemoryException"); return 3; }
