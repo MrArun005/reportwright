@@ -69,7 +69,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: '3.12', cache: pip, cache-dependency-path: .github/workflows/qa-conformance.yml }
       - run: npm ci --no-audit --no-fund
-      - run: sudo apt-get update && sudo apt-get install -y poppler-utils qpdf && pip install -q 'pyhanko[opentype]' pyhanko-cli factur-x
+      - run: sudo apt-get update && sudo apt-get install -y poppler-utils qpdf libnss3-tools && mkdir -p ~/.pki/nssdb && certutil -N -d sql:$HOME/.pki/nssdb --empty-password && pip install -q 'pyhanko[opentype]' pyhanko-cli factur-x
       - name: a signed PDF (throwaway self-signed .p12 through src/server/sign.js)
         run: |
           mkdir -p /tmp/sig && cd /tmp/sig
@@ -94,7 +94,7 @@ jobs:
           fs.writeFileSync('/tmp/sig/signed.pdf', Buffer.concat(parts));
           JS
           node scripts/qa.mjs check conformance "sign a PDF" "exportPdfStream(sign) writes a signed PDF" "PW_SIGN_P12=/tmp/sig/signer.p12 PW_SIGN_PASSWORD=qa node /tmp/sig/sign.mjs && ls -l /tmp/sig/signed.pdf"
-          node scripts/qa.mjs check conformance "pdfsig verifies the signature" "Signature is Valid" "pdfsig -nocert /tmp/sig/signed.pdf | tee /dev/stderr | grep -q 'Signature Validation: Signature is Valid'"
+          node scripts/qa.mjs check conformance "pdfsig verifies the signature" "Signature is Valid" "pdfsig -nocert /tmp/sig/signed.pdf > /tmp/sig/pdfsig.txt; cat /tmp/sig/pdfsig.txt; grep -q 'Signature Validation: Signature is Valid' /tmp/sig/pdfsig.txt"
           node scripts/qa.mjs check conformance "pyHanko validates the signature" "INTACT, trusted with the signer's cert" "pyhanko sign validate --pretty-print --trust /tmp/sig/cert.pem /tmp/sig/signed.pdf"
       - name: encrypted PDFs
         run: |
