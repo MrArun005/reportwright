@@ -232,7 +232,8 @@ describe('npm packages', () => {
       expect([...defined.keys()].sort()).toEqual(['pagewright-designer', 'pagewright-viewer', 'reportwright-designer', 'reportwright-viewer']);
     } finally { globalThis.customElements = prev; }
     expect(json('packages/cli/package.json').bin).toEqual({ reportwright: 'dist/pw.mjs', pw: 'dist/pw.mjs' });
-    expect(Object.keys(json('packages/fonts-cjk/package.json').bin)).toEqual(['reportwright-fonts-cjk', 'pagewright-fonts-cjk']);
+    expect(Object.keys(json('packages/fonts-cjk/package.json').bin)).toEqual(['reportwright-fonts-cjk']);
+    expect(fs.existsSync(path.join(root, 'packages/fonts-cjk/src/index.d.ts'))).toBe(true);
     for (const n of ['engine', 'viewer', 'react']) expect(json(`packages/${n}/package.json`).repository.url).toBe('git+https://github.com/MrArun005/reportwright.git');
   });
 
