@@ -78,7 +78,7 @@ async function snapshotData(def, params, model, reports) {
 
 /**
  * @param {any} def report definition
- * @param {{ params?: Record<string,string>, reportId?: string, lang?: string, model?: any }} opt
+ * @param {{ params?: Record<string,string>, reportId?: string, lang?: string, model?: any, drillLinks?: string }} opt drillLinks: inline (default: drill-through opens in place, never a tab to a server the reader may not reach), new-tab, off
  * @returns {Promise<{ html: string, info: { reports: number, missing: string[], bytes: number } }>}
  */
 export async function exportInteractiveHtml(def, opt = {}) {
@@ -113,6 +113,8 @@ export async function exportInteractiveHtml(def, opt = {}) {
   const config = {
     server: base, definition: def, params: opt.params || {}, lang: opt.lang || 'en', reports, fonts, customFonts: uploaded, uiFontCss: uiCss, snapshot,
     height: '100vh', title: def.name,
+    // the file drills in place (inline) unless new-tab; the reader's copy then exports pages only (no server to build from)
+    exportOptions: { drillLinks: opt.drillLinks || 'inline', html: 'tables' },
   };
   const json = JSON.stringify(config).replace(/</g, '\\u003c');
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');

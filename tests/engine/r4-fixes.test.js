@@ -94,12 +94,12 @@ describe('HTML export size', () => {
       expect(fs.statSync(out).size).toBeLessThan(300 * 1024);
     } finally { fs.rmSync(out, { force: true }); }
   });
-  it('the viewer exports HTML as pages + tables by default; an old stored "interactive" default is dropped, a v2 choice kept', async () => {
+  it('the viewer exports interactive HTML by default; the HTML kind is never read from browser storage (0.14.1)', async () => {
     const { EXPORT_DEFAULTS, exportOptionsFrom } = await import('../../src/viewer/logic.js');
-    expect(EXPORT_DEFAULTS.html).toBe('tables');
-    expect(exportOptionsFrom({ pdfua: true, pdfa: false, formulas: true, html: 'interactive' })).toEqual({ ...EXPORT_DEFAULTS, pdfua: true });
-    expect(exportOptionsFrom({ v: 2, html: 'interactive' }).html).toBe('interactive');
-    expect(exportOptionsFrom(null)).toEqual(EXPORT_DEFAULTS);
+    expect(EXPORT_DEFAULTS.html).toBe('interactive');
+    expect(exportOptionsFrom({ pdfua: true, pdfa: false, formulas: true, html: 'static' })).toEqual({ pdfua: true, pdfa: false, formulas: true });
+    expect(exportOptionsFrom({ v: 2, html: 'tables' }).html).toBe(undefined);
+    expect(exportOptionsFrom(null)).toEqual({ pdfua: false, pdfa: false, formulas: true });
   });
   it('the interactive file\'s data snapshot keeps only the values a report can read', async () => {
     const { pruneSnapshot } = await import('../../src/viewer/logic.js');

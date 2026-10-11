@@ -4,6 +4,8 @@ Every setting ReportWright reads, from `src/server/config.js` (the table there i
 
 **Mode.** `PW_MODE=dev|prod`. Unset: development only under `next dev` (`NODE_ENV=development`) or tests; any other `NODE_ENV` (unset under a custom server, `staging`, a typo) is production, so an unknown mode never opens the server. Every development-only behaviour (keyless API, open server, base URL from the request, fetch hosts by expression) follows this one switch.
 
+**HTML export.** Most specific wins: the viewer's `exportOptions` prop > the report's `export: { html, drillLinks }` (designer: Report properties → HTML export) > Settings → HTML export (admins) > `PW_HTML_EXPORT` / `PW_HTML_DRILL_LINKS` > interactive / inline. The viewer user's choice in Export options applies per export.
+
 | Setting | Kind | Default | What it does |
 |---|---|---|---|
 | `PW_MODE` | dev / prod | (from NODE_ENV) | dev or prod. Unset: dev only under next dev or tests; anything else is prod. |
@@ -49,6 +51,8 @@ Every setting ReportWright reads, from `src/server/config.js` (the table there i
 | `PW_SSO_DEFAULT_ROLE` | viewer / designer / admin / none | viewer | Role without a mapped group. |
 | `PW_SSO_ALLOWED_DOMAINS` | list | (any) | Email domains SSO may sign in. |
 | `PW_BASE_URL` | url | (none) | This server's own URL (links, relative data URLs). Needed in prod. |
+| `PW_HTML_EXPORT` | interactive / tables / static | interactive | The HTML file the viewer exports when neither the report nor the Settings page says: interactive (drills in place), tables, or static (print). |
+| `PW_HTML_DRILL_LINKS` | inline / new-tab / off | inline | Drill-through in exported HTML: inline (in place / same tab), new-tab, or off (shown disabled). |
 | `PW_EMBED_ORIGINS` | list | (none) | Sites that may embed the viewer (set at build time too). |
 | `PW_FIXED_FETCH_HOSTS` | flag | 1 in prod, 0 in dev | 1: data source hosts must be written out, not made by expressions. |
 | `PW_INTERNAL_HOSTS` | list | (none) | Private hosts server-side fetches may reach (designers only). |

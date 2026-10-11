@@ -17,6 +17,7 @@ import { checkFunctions, isDynamic } from '@/engine/expr/evaluate.js';
 import { PALETTES } from '@/engine/items/chart-kit.js';
 import { ReuseSection, ThemeSection, LayerField, PartInstance, PartValues, PublishPart, useStyleNames } from './Reuse.jsx';
 import CatHead from './CatHead.jsx';
+import { setExport } from '@/engine/htmlExport.js';
 
 /** The designer's UI language (set by the Designer) as a translate function. */
 function useT() { const lang = useDesigner(s => s.lang); return (k, v) => t(lang, k, v); }
@@ -1109,6 +1110,16 @@ function ReportProps() {
         </div>
         <div className="btnrow"><button className="btn sm" onClick={() => setFontsOpen(true)}>{T('i_uploadFont')}</button></div>
         {fontsOpen && <FontsDialog onClose={() => setFontsOpen(false)} />}
+      </div>
+      <div className="cat" data-testid="report-html-export">
+        <CatHead data-icon="i_regional">{T('hx_title')}</CatHead>
+        <div className="grid2">
+          {/* writes `export: { html, drillLinks }` into the definition; "Use server default" removes the key */}
+          <Field label={T('hx_mode')}><Select value={def.export?.html || ''} options={[{ value: '', label: T('hx_serverDefault') }, { value: 'interactive', label: T('hx_interactiveOpt') }, { value: 'tables', label: T('hx_tablesOpt') }, { value: 'static', label: T('hx_printOpt') }]}
+            onChange={v => set(d => { setExport(d, 'html', v); }, 'exportHtml')} /></Field>
+          <Field label={T('hx_drill')}><Select value={def.export?.drillLinks || ''} options={[{ value: '', label: T('hx_serverDefault') }, { value: 'inline', label: T('hx_inline') }, { value: 'new-tab', label: T('hx_newTab') }, { value: 'off', label: T('hx_off') }]}
+            onChange={v => set(d => { setExport(d, 'drillLinks', v); }, 'exportDrill')} /></Field>
+        </div>
       </div>
       <ReportImages />
       <ReportFunctions />

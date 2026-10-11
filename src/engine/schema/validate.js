@@ -163,6 +163,14 @@ export function validate(def) {
   }
   for (const [n, st] of Object.entries(def.styles?.named || {})) styleIssues(st, `Named style "${n}"`, warnings);
   styleIssues(def.styles?.base, 'Base style', warnings);
+  if (def.export != null) {
+    const xs = REPORT_SCHEMA.$defs.Report.properties.export.properties;
+    if (typeof def.export !== 'object' || Array.isArray(def.export)) warnings.push('"export" must be an object { html?, drillLinks? }; it is ignored');
+    else for (const [k, v] of Object.entries(def.export)) {
+      if (!xs[k]) warnings.push(`Unknown export property "${k}" (expected html or drillLinks); it is ignored`);
+      else { const bad = offEnum(xs[k], v); if (bad) warnings.push(`export.${k} "${v}" is not one of ${bad.join(', ')}; the server's default is used`); }
+    }
+  }
   if (Array.isArray(body)) body.forEach((b, i) => {
     if (!b || typeof b !== 'object' || Array.isArray(b)) errors.push(`Body section ${i + 1} is not an object`);
     else if (b.page != null && (typeof b.page !== 'object' || Array.isArray(b.page))) errors.push(`Body section ${i + 1}: "page" must be an object`);

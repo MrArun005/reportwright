@@ -611,6 +611,13 @@ export interface Report {
   nonFinite?: 'blank' | 'error';
   /** digit grouping of numbers: as the locale's rule (default, Intl/CLDR: es-ES 1234,50), always, or never */
   grouping?: 'always' | 'never';
+  /** how this report's HTML export is made; unset keys: the server's (Settings page, then PW_HTML_EXPORT / PW_HTML_DRILL_LINKS) */
+  export?: {
+    /** interactive: the viewer in one file (drills in place); tables: pages and sortable tables; static: pages only (print) */
+    html?: 'interactive' | 'tables' | 'static';
+    /** drill-through in the HTML file: in place / same tab, a new tab, or shown disabled */
+    drillLinks?: 'inline' | 'new-tab' | 'off';
+  };
   page?: {
     size?: 'A4' | 'A3' | 'A5' | 'Letter' | 'Legal' | 'Pageless' | string | [number, number];
     orientation?: 'portrait' | 'landscape';

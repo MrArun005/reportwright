@@ -91,7 +91,7 @@ npx pw diff orders.pw.json orders-v2.pw.json -d orders=orders.json
 
 | Command | Options |
 |---|---|
-| `pw render <report.pw.json>` | `-p name=value` (repeat), `-d source=data.json` (repeat), `-f` format (default `pdf`), `-o file\|-`, `--base URL` (where relative data URLs go), `--allow-internal`, `--pdfa`, `--ua`, `--values` (Excel totals as values), `--static` (HTML without its Tables view), `--layout` (CSV of the printed layout), `--password`, `--owner-password`, `--deny print\|modify\|copy\|annotate\|fillForms\|accessibility\|assemble\|printHighQuality` |
+| `pw render <report.pw.json>` | `-p name=value` (repeat), `-d source=data.json` (repeat), `-f` format (default `pdf`), `-o file\|-`, `--base URL` (where relative data URLs go), `--allow-internal`, `--pdfa`, `--ua`, `--values` (Excel totals as values), `--html tables\|static` (the HTML file; unset: the report's `export.html`, then `PW_HTML_EXPORT`; interactive needs the viewer), `--drill-links inline\|new-tab\|off` (drill-through needs a public `--base`), `--static` (alias of `--html static`), `--layout` (CSV of the printed layout), `--password`, `--owner-password`, `--deny print\|modify\|copy\|annotate\|fillForms\|accessibility\|assemble\|printHighQuality` |
 | `pw import <file>` | `-o out.pw.json` |
 | `pw import <folder>` | `-o outDir`, `--recursive`, `--force`, `--verify`, `--report path`, `--max-files N` (2000), `--max-bytes N` (16 MB) |
 | `pw test [folder]` | `--update`, `--layout` |

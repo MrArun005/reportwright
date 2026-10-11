@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // pw: render, test and diff ReportWright reports from the command line. No server needed.
 // The same engine and exporters as the app; fonts come from public/fonts.
+import { resolveHtmlExport, envHtmlExport, HTML_MODES, DRILL_LINKS } from '../src/engine/htmlExport.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -25,7 +26,7 @@ const ROOT = path.join(import.meta.dirname, '..');
 const PUB = fs.existsSync(path.join(ROOT, 'public', 'fonts')) ? path.join(ROOT, 'public')
   : path.join(path.dirname(createRequire(import.meta.url).resolve('@reportwright/fonts/package.json')), 'public');
 const HELP = `pw render <report.pw.json> [-p name=value]… [-d source=data.json]… [-f pdf|xlsx|docx|pptx|html|csv|json|txt] [-o file|-] [--base URL [--allow-internal]] [--pdfa] [--ua]
-          [--values] [--static] [--layout]
+          [--values] [--html interactive|tables|static] [--drill-links inline|new-tab|off] [--static] [--layout]
           [--password PW] [--owner-password PW] [--deny print|modify|copy|annotate|fillForms|accessibility|assemble|printHighQuality]…
 pw import <report.jrxml|.rdl|.rptdesign> [-o out.pw.json]
                                    convert a JasperReports, SSRS or BIRT report to a ReportWright definition
@@ -54,7 +55,10 @@ pw audit rekey --old-secret S | --old-key file.pem
   --password, --owner-password, --deny  a password-protected PDF (AES-256); --deny takes away a permission
   --ua  an accessible PDF (PDF/UA-1; with --pdfa, PDF/A-2a)   --values  Excel totals as values, not formulas
   --layout  CSV of the printed layout (every table, group lines, totals), not just the data
-  --static  an HTML file without its Tables view (sort, groups, filter)
+  --html    the HTML file: tables (pages and sortable tables) or static (pages only); interactive needs the viewer
+            (export it from the viewer). Unset: the report's export.html, then PW_HTML_EXPORT, then tables
+  --drill-links  drill-through in HTML: inline (same tab), new-tab or off; links need a public --base, else disabled
+  --static  alias of --html static
 pw migrate-storage --to <url> [--from file|<url>]   (SERVER ONLY, as above)
                                    copy everything (reports and their versions, users, grants, folders, schedules,
                                    jobs, fonts, settings, blobs, the audit log) from one storage to another, e.g. the
@@ -170,7 +174,7 @@ function compare(label, before, after, out = console.log) {
 }
 
 async function cmdRender(args) {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { p: { type: 'string', multiple: true }, d: { type: 'string', multiple: true }, f: { type: 'string', default: 'pdf' }, o: { type: 'string' }, base: { type: 'string' }, 'allow-internal': { type: 'boolean' }, pdfa: { type: 'boolean' }, ua: { type: 'boolean' }, values: { type: 'boolean' }, layout: { type: 'boolean' }, static: { type: 'boolean' }, password: { type: 'string' }, 'owner-password': { type: 'string' }, deny: { type: 'string', multiple: true } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { p: { type: 'string', multiple: true }, d: { type: 'string', multiple: true }, f: { type: 'string', default: 'pdf' }, o: { type: 'string' }, base: { type: 'string' }, 'allow-internal': { type: 'boolean' }, pdfa: { type: 'boolean' }, ua: { type: 'boolean' }, values: { type: 'boolean' }, layout: { type: 'boolean' }, static: { type: 'boolean' }, html: { type: 'string' }, 'drill-links': { type: 'string' }, password: { type: 'string' }, 'owner-password': { type: 'string' }, deny: { type: 'string', multiple: true } } });
   if (positionals.length !== 1) usage('give one report file');
   const def = readJson(positionals[0]);
   const data = Object.fromEntries(Object.entries(pairs(values.d)).map(([k, f]) => [k, readJson(f)]));
@@ -184,6 +188,9 @@ async function cmdRender(args) {
   if (encrypt && fmt !== 'pdf') usage('--password, --owner-password and --deny apply to -f pdf only');
   if (encrypt && values.pdfa) usage('a PDF/A file cannot have a password');
   if (values.ua && fmt !== 'pdf') usage('--ua applies to -f pdf only');
+  if (values.html && !HTML_MODES.includes(values.html)) usage(`--html is one of ${HTML_MODES.join(', ')}`);
+  if (values['drill-links'] && !DRILL_LINKS.includes(values['drill-links'])) usage(`--drill-links is one of ${DRILL_LINKS.join(', ')}`);
+  if (values.html === 'interactive') usage('--html interactive needs the viewer (fonts, the viewer bundle, a data snapshot): export it from the viewer\'s Export menu, or use --html tables|static');
   const out = values.o ?? `${path.basename(positionals[0]).replace(/\.pw\.json$|\.json$/, '')}.${fmt}`;
   const pdfOpts = () => ({ title: def.name, subset, encrypt, drillBase: values.base, pdfa: values.pdfa ? { icc: fs.readFileSync(path.join(PUB, 'icc', 'sRGB-v2-magic.icc')) } : undefined, tagged: values.ua ? { lang: def.locale || 'en' } : undefined });
   if (fmt === 'pdf' && out !== '-') {
@@ -196,7 +203,12 @@ async function cmdRender(args) {
   if (!model?.regions?.length) model = await renderModel(def, ro);
   let bytes;
   if (fmt === 'pdf') bytes = await exportPdf(model, fontStore, pdfOpts()); // -o -: the whole model, nothing half-written to stdout
-  else if (fmt === 'html') bytes = await exportHtml(model, { fonts: fontStore, title: def.name, subset, static: !!values.static, locale: def.locale, currency: def.currency });
+  else if (fmt === 'html') {
+    const hx = resolveHtmlExport({ html: values.static ? 'static' : values.html, drillLinks: values['drill-links'] }, def.export, envHtmlExport());
+    // an interactive default (report or env) is made as tables here, and said so (never silently)
+    if (hx.html === 'interactive' && (def.export?.html === 'interactive' || process.env.PW_HTML_EXPORT === 'interactive')) console.error('pw: interactive HTML needs the viewer; writing pages and sortable tables (--html tables). Use --html static for pages only.');
+    bytes = await exportHtml(model, { fonts: fontStore, title: def.name, subset, static: hx.html === 'static', drillBase: values.base, drillLinks: hx.drillLinks, locale: def.locale, currency: def.currency });
+  }
   else if (fmt === 'csv') bytes = exportCsv(model, { locale: def.locale, currency: def.currency, layout: !!values.layout });
   else if (fmt === 'xlsx') bytes = await exportXlsx(model, { currency: def.currency, title: def.name, formulas: !values.values, fontStore });
   else if (fmt === 'docx') bytes = await exportDocx(model, { title: def.name, lang: def.locale, fontStore });

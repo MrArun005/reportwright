@@ -221,7 +221,7 @@ From the package's types (`index.d.ts`); the JSDoc in `dist/` has every option.
 **`exportXlsx` / `exportDocx` / `exportPptx(model, options)`** → `Promise<Uint8Array>`: `fonts`, plus `currency` and
 `formulas` for Excel.
 
-**`exportHtml(model, options)`**: `fonts`, `title`, `static`, `locale`, `currency`, `lang`, `timeoutMs`.
+**`exportHtml(model, options)`**: `fonts`, `title`, `static`, `drillBase`, `drillLinks`, `locale`, `currency`, `lang`, `timeoutMs`. `drillLinks`: `inline` (default: a drill-through link opens in the same tab), `new-tab`, or `off` (shown disabled). A drill-through links only when `drillBase` is a public http(s) URL; unset, localhost or 127.x shows it disabled with a tooltip. `resolveHtmlExport(...layers)` (from `src/engine/htmlExport.js`) resolves a report's `export: { html, drillLinks }` against other layers, most specific first.
 **`exportCsv(model, options)`**: `all`, `layout` (the printed layout instead of the data), `locale`, `currency`.
 
 **`exportPdfStream` / `exportDocxStream` / `exportXlsxStream(definition, options, sink)`**: `render()`'s and

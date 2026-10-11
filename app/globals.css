@@ -764,6 +764,8 @@ a.cell-name:hover { color: var(--accent); }
 .vdrop-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: 6px; background: none; color: var(--ink); text-align: start; cursor: pointer; }
 .vdrop-item:hover:not(:disabled), .vdrop-item:focus-visible { background: var(--panel-2); }
 .vdrop-item:disabled { opacity: .45; cursor: default; }
+.vdrop-item.is-default { box-shadow: inset 3px 0 0 var(--accent); }
+.vdrop-default { margin-inline-start: 8px; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: var(--fw-strong); color: var(--accent); background: var(--accent-soft); }
 .vdrop-txt { display: grid; line-height: 1.25; }
 .vdrop-txt b { font-weight: var(--fw-medium); }
 .fmt-badge { flex: none; width: 34px; height: 24px; display: grid; place-items: center; border-radius: 5px; font: var(--fw-strong) 9px/1 var(--mono); letter-spacing: .02em; color: #fff; background: #64748b; }

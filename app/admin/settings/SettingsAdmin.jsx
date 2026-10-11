@@ -88,6 +88,26 @@ export default function SettingsAdmin({ lang }) {
               <button type="button" className="btn" onClick={async () => { setErr(null); try { setSnap(await call('/api/admin/snapshots', 'DELETE')); setMsg(T('snapshotsCleared')); } catch (e) { setErr(e.message); } }}>{T('clearSnapshots')}</button>
             </div>
           </form>
+          <form style={box} aria-labelledby="hx-h" data-testid="html-export-settings" onSubmit={(e) => { e.preventDefault(); save({ htmlExport: { html: form.htmlExport?.html || '', drillLinks: form.htmlExport?.drillLinks || '' } }); }}>
+            <h2 id="hx-h" style={{ margin: 0, fontSize: 'var(--fs-lg)' }}>{T('hx_title')}</h2>
+            <label className="field"><span>{T('hx_mode')}</span>
+              <select className="select" data-testid="hx-mode" value={form.htmlExport?.html || ''} onChange={e => setForm({ ...form, htmlExport: { ...form.htmlExport, html: e.target.value } })}>
+                <option value="">{T('hx_notSet')}</option>
+                <option value="interactive">{T('hx_interactiveOpt')}</option>
+                <option value="tables">{T('hx_tablesOpt')}</option>
+                <option value="static">{T('hx_printOpt')}</option>
+              </select></label>
+            <label className="field"><span>{T('hx_drill')}</span>
+              <select className="select" data-testid="hx-drill" value={form.htmlExport?.drillLinks || ''} onChange={e => setForm({ ...form, htmlExport: { ...form.htmlExport, drillLinks: e.target.value } })}>
+                <option value="">{T('hx_notSet')}</option>
+                <option value="inline">{T('hx_inline')}</option>
+                <option value="new-tab">{T('hx_newTab')}</option>
+                <option value="off">{T('hx_off')}</option>
+              </select></label>
+            <p className="hint" style={{ margin: 0 }}>{T('hx_hint')}</p>
+            {data?.htmlExport && <p style={{ margin: 0 }} data-testid="hx-effective">{T('hx_effective', { html: data.htmlExport.html, drill: data.htmlExport.drillLinks })}</p>}
+            <div><button className="btn primary">{T('saveSettings')}</button></div>
+          </form>
           {data?.status && <StatusBox status={data.status} T={T} />}
         </div>
       )}

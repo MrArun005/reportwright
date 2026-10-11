@@ -171,21 +171,21 @@ export function readingText(page) {
 }
 
 /**
- * Export options the viewer offers (its Export options menu) and their defaults. HTML: "tables" (the pages, fonts
- * subset to the characters used, and the Tables view of the rendered tables); "interactive" (the whole viewer, full
- * fonts and a data snapshot: megabytes) and "static" (pages only) are choices.
+ * Export options the viewer offers (its Export options menu) and their defaults. html: interactive (the whole viewer in
+ * one file: groups and drill-through work in place), tables (pages and sortable tables) or static (pages only). The
+ * viewer passes the resolved config (src/engine/htmlExport.js: prop > report > Settings > env > default) over these.
  */
-export const EXPORT_DEFAULTS = { pdfua: false, pdfa: false, formulas: true, html: 'tables' };
+export const EXPORT_DEFAULTS = { pdfua: false, pdfa: false, formulas: true, html: 'interactive', drillLinks: 'inline' };
 
 /**
- * The export options from what this browser stored. Before v2 every option was stored on any change, so a stored
- * "html" was mostly the old default "interactive" (a 10 MB file for one page), not a choice: it is dropped.
+ * The export options from what this browser stored. The HTML kind is never taken from storage: it comes from the
+ * report and the server (a choice in the Export options menu applies for this page only), so an old stored value
+ * cannot override what an admin or the report set.
  * @param {any} stored
  */
 export function exportOptionsFrom(stored) {
-  const { v, ...rest } = stored && typeof stored === 'object' ? stored : {};
-  if (v !== 2) delete rest.html;
-  return { ...EXPORT_DEFAULTS, ...rest };
+  const { v: _v, html: _h, drillLinks: _d, ...rest } = stored && typeof stored === 'object' ? stored : {};
+  return { pdfua: EXPORT_DEFAULTS.pdfua, pdfa: EXPORT_DEFAULTS.pdfa, formulas: EXPORT_DEFAULTS.formulas, ...rest };
 }
 
 /**

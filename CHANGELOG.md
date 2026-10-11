@@ -2,6 +2,17 @@
 
 All `@reportwright/*` packages (formerly `@pagewrightjs/*`) share one version. The versioning policy is in [CONTRIBUTING.md](CONTRIBUTING.md#versioning-semver).
 
+## 0.14.1 (unreleased)
+
+### HTML export is configurable at every level
+- **Modes.** `html`: `interactive` (the viewer in one file: groups open and drill-through runs in place) | `tables` (pages and sortable tables) | `static` (pages only, for print). `drillLinks`: `inline` (in place / same tab) | `new-tab` | `off` (shown disabled). Defaults: `interactive`, `inline` — a report sent to a client drills down in place and never opens a tab to a server it cannot reach.
+- **Precedence**, most specific first: the viewer's `exportOptions` prop (also a `mountViewer` option) > the report's `export: { html, drillLinks }` (schema-checked; designer **Report properties → HTML export**) > the admin **Settings → HTML export** (saved and audited like the other settings) > `PW_HTML_EXPORT` / `PW_HTML_DRILL_LINKS` > the default. The choice in the viewer's Export options menu applies to that page's exports only and is no longer kept in browser storage.
+- **Viewer Export menu:** two entries, **HTML (interactive)** and **HTML (print)**; the one the config makes the default is marked.
+- **No silent fallback.** When the interactive file cannot be made (no viewer bundle, or any other failure) the viewer says why and makes the print file only when asked. `npm run dev` builds `public/embed` once when it is missing (`scripts/ensure-embed.mjs`).
+- **Static HTML drill-through** links only to a public server: with no `drillBase`/`PW_BASE_URL`, or a localhost / 127.x one, drill-through is shown disabled with a tooltip. With a public one, `inline` links in the same tab (was always a new tab), `new-tab` opens one.
+- **CLI:** `pw render -f html --html tables|static` and `--drill-links inline|new-tab|off`; `--static` stays as an alias of `--html static`; `--html interactive` is refused with a clear message (it needs the viewer).
+- `exportHtml(model, { drillLinks })` is the engine option for the drill-through mode.
+
 ## 0.14.0-rc.5 — 2026-10-11 (release candidate)
 
 ### Summary

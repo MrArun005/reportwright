@@ -1,5 +1,6 @@
 // @ts-check
 // Server-side rendering to every format. The same engine as the browser, in Node.
+import { resolveHtmlExport, envHtmlExport } from '../engine/htmlExport.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { localAclGen } from './storage/index.js';
@@ -275,7 +276,11 @@ export async function renderTo(def, opt = {}) {
     bytes = await exportPdf(model, fontStore(), { title: def.name, subset, fetchImage, drillBase: opt.self || base, // drill-through opens this server's viewer
       pdfa: opt.pdfa ? { icc: await iccProfile() } : undefined, tagged: opt.ua ? { lang: def.locale || 'en' } : undefined, sign: signing?.options, encrypt: opt.encrypt });
   }
-  else if (format === 'html') bytes = Buffer.from(await exportHtml(model, { fonts: fontStore(), title: def.name, subset, drillBase: opt.self || base, static: !!opt.static, locale: def.locale, currency: def.currency })); // drill-through opens this server's viewer (never a caller's baseUrl)
+  else if (format === 'html') {
+    // the server makes static or tables files (interactive needs the viewer in a browser); report > Settings > env
+    const hx = resolveHtmlExport(def.export, (await import('./settings.js').then(m => m.getSettings()).catch(() => ({}))).htmlExport, envHtmlExport());
+    bytes = Buffer.from(await exportHtml(model, { fonts: fontStore(), title: def.name, subset, drillBase: opt.self || base, static: !!opt.static || hx.html === 'static', drillLinks: hx.drillLinks, locale: def.locale, currency: def.currency })); // drill-through opens this server's viewer (never a caller's baseUrl)
+  }
   else if (format === 'csv') bytes = Buffer.from(exportCsv(model, /** @type {any} */ ({ locale: def.locale, currency: def.currency, layout: opt.csv === 'layout' })));
   else if (format === 'docx') bytes = Buffer.from(await exportDocx(model, { title: def.name, lang: def.locale, fontStore: fontStore(), fetchImage }));
   else if (format === 'pptx') bytes = Buffer.from(await exportPptx(model, { title: def.name, lang: def.locale, fontStore: fontStore(), fetchImage }));

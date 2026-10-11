@@ -106,6 +106,7 @@ From `dist/viewer.d.ts` and `dist/designer.d.ts`.
 | `toolbar` | `{ hide?, add? }` | hide built-in items, add buttons (`{ id, label, title?, after?, onClick(api) }`) |
 | `viewMode` | `'single' \| 'continuous' \| 'galley'` | page layout on screen |
 | `showWarnings` | boolean | list the render's warnings under the pages |
+| `exportOptions` | `{ html?, drillLinks? }` | the HTML export: `html` `interactive` (default) \| `tables` \| `static`; `drillLinks` `inline` (default) \| `new-tab` \| `off`. Wins over the report's `export` and the server's settings. The Export menu offers **HTML (interactive)** and **HTML (print)**; when the interactive file cannot be made the viewer says why and asks before exporting the print file |
 | `onReady` | `(error \| null) => void` | the first run ended |
 | `onDrill` | `(report, params) => void` | handle a drill-through yourself |
 | `fonts`, `customFonts`, `uiFontCss` | | extra report fonts and the interface font |

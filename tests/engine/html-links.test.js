@@ -36,16 +36,32 @@ describe('static HTML export links', () => {
     // a jump to a bookmark that does not exist is not a link
     expect(html).not.toContain('No such bookmark');
   });
-  it('drill-through opens the report in the viewer, parameters in the query', async () => {
+  it('drill-through opens the report in the viewer, parameters in the query, in the same tab by default', async () => {
     const html = await exportHtml(await render(def(), { exportData: true, fontStore }), fontStore, { drillBase: 'https://reports.example.com/' });
     expect(links(html)).toContain('https://reports.example.com/viewer/loan-statement?loan=LN+1&amp;year=2026');
-    expect(html).toMatch(/<a href="https:\/\/reports\.example\.com\/viewer\/loan-statement[^"]*" target="_blank" rel="noopener">/);
+    expect(html).toMatch(/<a href="https:\/\/reports\.example\.com\/viewer\/loan-statement[^"]*">/);
+  });
+  it('drillLinks: new-tab opens a new tab; off shows it disabled', async () => {
+    const m = await render(def(), { exportData: true, fontStore });
+    const tab = await exportHtml(m, { fonts: fontStore, drillBase: 'https://reports.example.com/', drillLinks: 'new-tab' });
+    expect(tab).toMatch(/<a href="https:\/\/reports\.example\.com\/viewer\/loan-statement[^"]*" target="_blank" rel="noopener">/);
+    const off = await exportHtml(m, { fonts: fontStore, drillBase: 'https://reports.example.com/', drillLinks: 'off' });
+    expect(links(off).some(h => h.includes('/viewer/'))).toBe(false);
+    expect(off).toContain('<g class="pw-off">');
+  });
+  it('a drill base the client cannot reach (localhost, 127.x) is never linked', async () => {
+    const m = await render(def(), { exportData: true, fontStore });
+    for (const drillBase of ['http://localhost:3000', 'http://127.0.0.1:3000/', 'http://[::1]:3000']) {
+      const html = await exportHtml(m, { fonts: fontStore, drillBase, drillLinks: 'new-tab' });
+      expect(links(html).some(h => h.includes('/viewer/'))).toBe(false);
+      expect(html).toContain('no public server address');
+    }
   });
   it('without a server, drill-through is shown disabled; actions that need a re-run are not links', async () => {
     const html = await exportHtml(await render(def(), { exportData: true, fontStore }), fontStore);
     expect(links(html).some(h => h.includes('/viewer/'))).toBe(false);
     expect(html).toContain('<g class="pw-off">');
-    expect(html).toContain('Opens the report &quot;loan-statement&quot; in the ReportWright viewer'.replace(/&quot;/g, '"'));
+    expect(html).toContain('Drill-through to "loan-statement" is not available in this file');
     expect(html).not.toContain('data-action');
   });
 });

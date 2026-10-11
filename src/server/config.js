@@ -41,6 +41,8 @@ export const SETTINGS = [
   ['PW_SSO_ROLE_MAP', 'text', '', 'group=role pairs.'], ['PW_SSO_DEFAULT_ROLE', 'enum:viewer|designer|admin|none', 'viewer', 'Role without a mapped group.'], ['PW_SSO_ALLOWED_DOMAINS', 'list', '(any)', 'Email domains SSO may sign in.'],
   // server reach
   ['PW_BASE_URL', 'url', '(none)', "This server's own URL (links, relative data URLs). Needed in prod."],
+  ['PW_HTML_EXPORT', 'enum:interactive|tables|static', 'interactive', 'The HTML file the viewer exports when neither the report nor the Settings page says: interactive (drills in place), tables, or static (print).'],
+  ['PW_HTML_DRILL_LINKS', 'enum:inline|new-tab|off', 'inline', 'Drill-through in exported HTML: inline (in place / same tab), new-tab, or off (shown disabled).'],
   ['PW_EMBED_ORIGINS', 'list', '(none)', 'Sites that may embed the viewer (set at build time too).'],
   ['PW_FIXED_FETCH_HOSTS', 'flag', '1 in prod, 0 in dev', '1: data source hosts must be written out, not made by expressions.'],
   ['PW_INTERNAL_HOSTS', 'list', '(none)', 'Private hosts server-side fetches may reach (designers only).'],

@@ -2320,6 +2320,29 @@ export const REPORT_SCHEMA = {
      ],
      "description": "digit grouping of numbers: as the locale's rule (default, Intl/CLDR: es-ES 1234,50), always, or never"
     },
+    "export": {
+     "type": "object",
+     "description": "how this report's HTML export is made; unset keys: the server's (Settings page, then PW_HTML_EXPORT / PW_HTML_DRILL_LINKS)",
+     "properties": {
+      "html": {
+       "enum": [
+        "interactive",
+        "tables",
+        "static"
+       ],
+       "description": "interactive: the viewer in one file (drills in place); tables: pages and sortable tables; static: pages only (print)"
+      },
+      "drillLinks": {
+       "enum": [
+        "inline",
+        "new-tab",
+        "off"
+       ],
+       "description": "drill-through in the HTML file: in place / same tab, a new tab, or shown disabled"
+      }
+     },
+     "additionalProperties": false
+    },
     "page": {
      "type": "object",
      "properties": {

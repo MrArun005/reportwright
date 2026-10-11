@@ -4,17 +4,20 @@ import { safeUrl, drillUrl } from '../engine/url.js';
 import { tablesData, DATA_SCRIPT, DATA_CSS, DATA_STRINGS, cspHash } from './htmldata.js';
 import { withDeadline } from './deadline.js';
 import { needsTableData } from './regions.js';
+import { isPublicBase } from '../engine/htmlExport.js';
 
 /**
  * One self-contained HTML file: every page as inline SVG, fonts embedded as
  * base64 (subset when a subsetter is given). URLs open, bookmark jumps and TOC entries scroll to their target, and
- * drill-through opens the ReportWright viewer at drillBase (without one it is shown disabled).
+ * drill-through opens the ReportWright viewer at drillBase. drillLinks: inline (same tab, the default), new-tab, or off;
+ * a drill-through is shown disabled, with a tooltip, when drillLinks is off or drillBase is not a public URL (unset,
+ * localhost, 127.x): a file sent to a client never links to a server it cannot reach.
  * Unless static, a file whose report has tables also gets a Tables view (htmldata.js): the tables as HTML, re-sorted on
  * their interactive-sort columns, groups opened and closed, rows filtered, by one inline script the file's CSP allows.
  * exportHtml(model, { fonts, ...options }). The 0.7 form exportHtml(model, fontStore, options) still works (deprecated).
  * @param {any} model
  * @param {{ fonts?: import('../engine/text/fonts.js').FontStore, fontStore?: import('../engine/text/fonts.js').FontStore, title?: string, drillBase?: string, subset?: (font: Uint8Array, cps: Iterable<number>, o?: { layout?: boolean }) => Promise<Uint8Array>,
- *   static?: boolean, locale?: string, currency?: string, lang?: string, strings?: Partial<typeof DATA_STRINGS>, timeoutMs?: number } | import('../engine/text/fonts.js').FontStore} [options]
+ *   static?: boolean, drillLinks?: 'inline'|'new-tab'|'off', locale?: string, currency?: string, lang?: string, strings?: Partial<typeof DATA_STRINGS>, timeoutMs?: number } | import('../engine/text/fonts.js').FontStore} [options]
  * @param {any} [legacyOpt] the options of the 0.7 form
  */
 export function exportHtml(model, options, legacyOpt) {
@@ -65,12 +68,13 @@ async function htmlOf(model, fontStore, opt) {
     if (!anchors.has(key)) anchors.set(key, { id: `at-${to.page}-${y}`, page: to.page, y });
     return `#${anchors.get(key).id}`;
   };
-  const drillHref = (a) => drillUrl(opt.drillBase, a);
+  const drillOn = opt.drillLinks !== 'off' && isPublicBase(opt.drillBase);
+  const drillHref = (a) => (drillOn ? drillUrl(opt.drillBase, a) : null);
   /** @returns {{ href: string, external?: boolean } | { off: string } | null} */
   const target = (a) => {
     if (a?.type === 'url') { const h = safeUrl(a.href); return h ? { href: h, external: true } : null; }
     if (a?.type === 'bookmark') { const h = jumpTo(a); return h ? { href: h } : null; }
-    if (a?.type === 'drill') { const h = drillHref(a); return h ? { href: h, external: true } : { off: `Opens the report "${a.report}" in the ReportWright viewer` }; }
+    if (a?.type === 'drill') { const h = drillHref(a); return h ? { href: h, external: opt.drillLinks === 'new-tab' } : { off: `Drill-through to "${a.report}" is not available in this file${opt.drillLinks === 'off' ? '' : ' (no public server address)'}` }; }
     return null; // sorting, open/close, filters: they run the report again, which a file cannot
   };
   const svgs = model.pages.map((p) => pageToSvg({ items: p.items.filter(it => it.t !== 'link' || target(it.action)) }, p.width ?? model.width, p.height ?? model.height, { proxyBase: opt.drillBase || '' }) // images by URL: through the server's data proxy
