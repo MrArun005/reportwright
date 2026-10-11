@@ -1,10 +1,61 @@
 # ReportWright
 
+**Live demo: [gallery, designer and viewer](https://mrarun005.github.io/reportwright-demo/) · [Playground](https://mrarun005.github.io/reportwright-demo/play.html) · [Compare with Jasper, SSRS, Puppeteer, pdfmake and Python](#compare)**
+
 **Paged reports for the web: a drag-and-drop designer, an embeddable viewer and a JavaScript engine that writes PDF, Excel, Word, PowerPoint, HTML and CSV. No Chromium. MIT licensed.**
 
 [![npm](https://img.shields.io/npm/v/%40reportwright%2Fengine?label=%40reportwright%2Fengine)](https://www.npmjs.com/package/@reportwright/engine) [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![node](https://img.shields.io/badge/node-22.x-339933)](package.json) [![live demo](https://img.shields.io/badge/demo-live-c0392b)](https://mrarun005.github.io/reportwright-demo)
 
-**Live demo:** [mrarun005.github.io/reportwright-demo](https://mrarun005.github.io/reportwright-demo): a gallery of real reports from this repository in the viewer, the designer, a playground and the benchmarks.
+<p>
+  <a href="https://mrarun005.github.io/reportwright-demo/"><img src="docs/screenshots/ui-designer.jpg" alt="The ReportWright designer: toolbox, page with a grouped invoice table, and the report properties panel" width="64%"></a>
+  <a href="https://mrarun005.github.io/reportwright-demo/#gallery"><img src="docs/screenshots/sales-dashboard.png" alt="A rendered sales dashboard: stacked columns, donut, line chart, matrix and sparklines" width="34%"></a>
+</p>
+
+## Quickstart: JSON definition to PDF
+
+```bash
+mkdir pw-hello && cd pw-hello && npm init -y >/dev/null && npm pkg set type=module
+npm i @reportwright/engine@next @reportwright/fonts@next
+```
+
+Save as `report.mjs` and run `node report.mjs`:
+
+```js
+import { render, defaultFontStore, exportPdf } from '@reportwright/engine';
+import fs from 'node:fs';
+
+const report = {
+  $schema: 'reportwright/report@1', name: 'Invoice', page: { size: 'A4', margins: [48, 48, 48, 48] },
+  dataSources: [{ name: 'src', type: 'json', data: { rows: [{ item: 'Design', amount: 1200 }, { item: 'Hosting', amount: 99.5 }, { item: 'Support', amount: 450 }] } }],
+  dataSets: [{ name: 'Lines', source: 'src', path: '$.rows' }],
+  sections: { body: { items: [
+    { type: 'textbox', name: 'Title', x: 0, y: 0, w: 400, h: 28, value: 'Invoice #1042', style: { fontSize: 20, fontWeight: 'bold' } },
+    { type: 'table', name: 'Lines', x: 0, y: 44, w: 400, h: 60, dataSet: 'Lines', columns: [{ width: 280 }, { width: 120 }],
+      header: [{ height: 20, cells: [{ value: 'Item', style: { fontWeight: 'bold' } }, { value: 'Amount', style: { fontWeight: 'bold', textAlign: 'right' } }] }],
+      detail: [{ height: 20, cells: [{ value: '=Fields.item' }, { value: '=Fields.amount', style: { format: 'C2', textAlign: 'right' } }] }],
+      footer: [{ height: 20, cells: [{ value: 'Total', style: { fontWeight: 'bold' } }, { value: '=Sum(Fields.amount)', style: { format: 'C2', textAlign: 'right', fontWeight: 'bold' } }] }] },
+  ] } },
+};
+
+const fonts = defaultFontStore();
+fs.writeFileSync('invoice.pdf', await exportPdf(await render(report, { fontStore: fonts }), { fonts }));
+```
+
+`invoice.pdf`, page 1 (top), exactly as this script wrote it with `@reportwright/engine@0.14.0-rc.5`:
+
+![The invoice rendered by the quickstart](docs/img/quickstart-invoice.png)
+
+The same definition opens in the designer, renders in the browser viewer, and exports to Excel, Word, PowerPoint, HTML and CSV.
+
+## Compare
+
+Measured on GitHub Actions runners, every output checked; losses included.
+
+- [Coming from JasperReports](docs/compare/jasperreports.md): `pw import` for `.jrxml`, what carries over, numbers
+- [Coming from SSRS / Report Builder](docs/compare/ssrs.md): `pw import` for `.rdl` / `.rdlc`
+- [PDF without Chromium: vs Puppeteer](docs/compare/puppeteer.md)
+- [vs pdfmake, @react-pdf/renderer and jsPDF](docs/compare/pdfmake-react-pdf.md)
+- [JavaScript vs Python for PDFs](docs/compare/python.md): WeasyPrint, ReportLab, PyMuPDF, pypdf, pdfplumber
 
 ## Install
 
@@ -141,6 +192,8 @@ Open the home page. Three sample reports are there: **Loan statement**, **Sales 
 Reports are JSON files in `reports/*.pw.json`. Commit them with your code. Each save keeps a version in `reports/.history/` (last 50). With `PW_STORAGE` set to a database, reports, versions, schedules, job records and users live there instead (see below).
 
 ## Docker
+
+**Self-host for free:** one-command install on a $5–10 VPS with HTTPS, backups and upgrades: [deploy/compose/README.md](deploy/compose/README.md).
 
 ```bash
 docker build -t reportwright .                     # add --build-arg PW_EMBED_ORIGINS=https://your.site for embeds
