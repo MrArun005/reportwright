@@ -1,6 +1,6 @@
 """Grade the deep benchmark's merged results.json (artifact <prefix>bench-deep-results) into QA rows.
 
-usage: grade_bench.py <results.json> <suite> <libs|engines> <outdir> [--expect "rival=why-it-matters" ...]
+usage: grade_bench.py <results.json> <suite> <libs|engines> <outdir> [--expect <rival> <why it may not run> ...]
 
 Per table row and per build of ours: ours vs the fastest valid rival (the leader), ratio and rank.
   libs:    PASS if #1, or the leader is C/Go/Rust (lang go/rust/cli) and we are within 2x and faster than every
@@ -36,7 +36,7 @@ def grade(data, mode):
                 seen.update(l for l, c in cells.items() if c)
                 for o in t['ours']:
                     r = cells.get(o)
-                    check = f"{t['title']} @ {row['size']} [{o}]"
+                    check = f"{t['title']} @ {row['size']} [{o}]" + (' (windows)' if 'windows' in src['label'] else '')
                     base = {'check': check, 'command': cmd}
                     if job in ('fuzz', 'hostile'):
                         rb = (r or {}).get('robust', {})
@@ -66,13 +66,31 @@ def grade(data, mode):
                         res = 'WARN' if ratio <= 3 else 'FAIL'
                     rows.append({**base, 'expected': exp, 'ms': ms, 'mb': mb, 'result': res,
                                  'actual': f"ours {ms:.0f} ms{f' {mb:.0f} MB' if mb else ''} vs leader {leader} ({lc.get('lang')}) {lt:.0f} ms = {ratio:.2f}x, rank {rank}/{len(riv) + 1}"})
+    if mode == 'engines':  # bulk: 1,000 separate files a kind in one process, ranked by the render time of all 1,000
+        for kind in sorted({c['size'] for c in data.get('bulk', [])}):
+            cells = [c for c in data['bulk'] if c['size'] == kind and c.get('status') != 'n/a']
+            seen.update(c['lib'] for c in cells)
+            bt = lambda c: (c.get('warm_ms') or c.get('cold_ms') or {}).get('median')
+            riv = sorted((bt(c), c['lib'], c) for c in cells if not c['lib'].startswith('@reportwright') and c['status'] == 'ok' and bt(c))
+            for o in (c for c in cells if c['lib'].startswith('@reportwright')):
+                base = {'check': f'Bulk: 1,000 {kind} files [{o["lib"]}]', 'command': f'python3 bench/deep/drive.py --group bulk --only {kind}', 'expected': '#1 among engines'}
+                if o['status'] != 'ok' or not bt(o):
+                    rows.append({**base, 'actual': f"ours {o['status']}: {o.get('error') or ''}", 'result': 'FAIL'})
+                elif not riv:
+                    rows.append({**base, 'actual': f"ours {o.get('note')}; no valid rival", 'result': 'PASS', 'ms': bt(o)})
+                else:
+                    ms, (lt, leader, _) = bt(o), riv[0]
+                    ratio, rank = ms / lt, 1 + sum(1 for x in riv if x[0] < ms)
+                    rows.append({**base, 'ms': ms, 'result': 'PASS' if rank == 1 else 'WARN' if ratio <= 3 else 'FAIL',
+                                 'actual': f"ours {o.get('note')} vs leader {leader} {riv[0][2].get('note')} = {ratio:.2f}x time, rank {rank}/{len(riv) + 1}"})
     return rows, seen
 
 
 def main():
     a = sys.argv[1:]
     path, suite, mode, outdir = a[:4]
-    expect = [x.split('=', 1) for x in a[5::2]] if len(a) > 4 else []
+    rest = a[4:]
+    expect = [(rest[i + 1], rest[i + 2]) for i in range(0, len(rest), 3) if rest[i] == '--expect']
     rows = []
     if pathlib.Path(path).exists():
         rows, seen = grade(json.load(open(path)), mode)

@@ -406,7 +406,7 @@ def main():
                         'headline': headline(tables), 'lose': where_we_lose(tables), 'oldnew': old_new(tables),
                         'pruned': [f'{TITLES[r["job"]]} ({LEAGUES.get(r.get("league"), r.get("league"))}): {r["lib"]} {r["ratio"]:.2f}× ours at {r["size"]:,}' for r in pruned],
                         'pruned_run': next((r['prev_run'] for r in pruned), None)})
-    data = {'sources': sources, 'capabilities': caps}
+    data = {'sources': sources, 'capabilities': caps, 'bulk': bulk}
     (out / 'results.json').write_text(json.dumps(data, indent=1, ensure_ascii=False))
     (out / 'results.md').write_text(markdown(sources, caps) + bulk_md(bulk))
     (out / 'results.html').write_text(page({'sources': [{k: s[k] for k in ('label', 'meta', 'tables', 'summary', 'headline', 'lose', 'oldnew', 'pruned', 'pruned_run')} for s in sources], 'capabilities': caps}))
