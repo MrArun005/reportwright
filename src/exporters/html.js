@@ -4,7 +4,6 @@ import { safeUrl, drillUrl } from '../engine/url.js';
 import { tablesData, DATA_SCRIPT, DATA_CSS, DATA_STRINGS, cspHash } from './htmldata.js';
 import { withDeadline } from './deadline.js';
 import { needsTableData } from './regions.js';
-import { isPublicBase } from '../engine/htmlExport.js';
 
 /**
  * One self-contained HTML file: every page as inline SVG, fonts embedded as
@@ -120,4 +119,17 @@ function b64(u8) {
   let s = '';
   for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, /** @type {any} */ (u8.subarray(i, i + 0x8000)));
   return btoa(s);
+}
+
+/**
+ * Whether a drill base is a URL a client who receives the file can open: http(s), not localhost, 127.x, ::1 or 0.0.0.0.
+ * @param {string | undefined | null} base
+ */
+export function isPublicBase(base) {
+  if (!base) return false;
+  let u;
+  try { u = new URL(base); } catch { return false; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+  const h = u.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  return !(h === 'localhost' || h.endsWith('.localhost') || /^127\./.test(h) || h === '::1' || h === '0.0.0.0');
 }

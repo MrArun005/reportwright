@@ -1,6 +1,8 @@
 // The HTML export config: most specific layer wins (viewer prop > report > admin > env > default).
 import { describe, it, expect } from 'vitest';
-import { resolveHtmlExport, envHtmlExport, isPublicBase, setExport, HTML_EXPORT_DEFAULTS } from '../../src/engine/htmlExport.js';
+import { resolveHtmlExport, envHtmlExport, HTML_EXPORT_DEFAULTS } from '../../src/engine/htmlExport.js';
+import { isPublicBase } from '../../src/exporters/html.js';
+import { setExport } from '../../src/designer/htmlExportProps.js';
 
 describe('resolveHtmlExport', () => {
   it('defaults to interactive, inline', () => {
