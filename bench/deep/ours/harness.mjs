@@ -25,7 +25,18 @@ async function engine() {
   const tb = (x, y, w, h, value, style = {}) => ({ type: 'textbox', name: `T${x}_${y}_${String(value).length}`, x, y, w, h, value, style: { fontSize: 9, ...style } });
   const dataUri = (f) => `data:image/${f.endsWith('.png') ? 'png' : 'jpeg'};base64,${fs.readFileSync(f).toString('base64')}`;
   const doc = (name, body, extra = {}) => ({ $schema: 'pagewright/report@1', name, locale: 'en-US', page, ...extra, sections: { body: { items: body } } });
+  // BENCH_POOL=n (the bulk job): every render goes through @reportwright/engine/pool with n workers, fonts from one folder
+  // (the fixture fonts over the faces @reportwright/fonts ships, the same lookup as the FontStore above)
+  let pool;
+  if (process.env.BENCH_POOL) {
+    const { createPool } = await import('@reportwright/engine/pool');
+    const dir = fs.mkdtempSync('/tmp/rw-pool-fonts-');
+    for (const d of [pkgFonts, fx('fonts')]) for (const f of fs.existsSync(d) ? fs.readdirSync(d) : []) if (fs.statSync(path.join(d, f)).isFile()) fs.copyFileSync(path.join(d, f), path.join(dir, f));
+    pool = createPool({ workers: Number(process.env.BENCH_POOL), fontsDir: dir });
+  }
+  const viaPool = async (def, out, o = {}) => fs.promises.writeFile(out, await pool.render(def, { options: { title: def.name, ...(o.pdfa ? { pdfa: true } : {}) } }));
   const whole = async (def, out, o = {}) => {
+    if (pool) return viaPool(def, out, o);
     const model = await render(def, { fontStore: fonts });
     fs.writeFileSync(out, await exportPdf(model, { fonts, title: def.name, ...(o.pdfa ? { pdfa: true } : {}) }));
   };
@@ -43,6 +54,7 @@ async function engine() {
       dataSets: [{ name: 'Items', source: 'inv', fields: T.cols.map((_, i) => ({ name: `c${i}`, type: 'string' })) }] }), out, o);
   };
   const stream = async (def, out, rows) => {
+    if (pool) return viaPool(def, out);
     const sink = fs.createWriteStream(out);
     const r = await exportPdfStream(def, { fonts, title: def.name, presorted: true, maxRows: Math.max(rows, 5_000_000), timeoutMs: 24 * 3600e3,
       ...(process.env.BENCH_PARALLEL ? { parallel: /^\d+$/.test(process.env.BENCH_PARALLEL) ? Number(process.env.BENCH_PARALLEL) : process.env.BENCH_PARALLEL } : {}) }, sink);
@@ -51,6 +63,7 @@ async function engine() {
   };
   return {
     version: `${ver('@reportwright/engine')} (fonts ${ver('@reportwright/fonts')})`,
+    ...(pool ? { warm: () => Promise.all(Array.from({ length: pool.size * 2 }, () => pool.render(doc('Warm', [tb(0, 0, 100, 12, 'warm')])))), close: () => pool.close() } : {}),
     invoice,
     pdfa: (c, out) => invoice(c, out, { pdfa: true }),
     async plain({ pool, pages }, out) {

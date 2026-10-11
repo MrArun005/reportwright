@@ -25,8 +25,8 @@ function inputs(job, size) {
   }
 }
 
-async function runJob(a, job, ctx, out) {
-  const pdf = path.join(out, 'out.pdf');
+async function runJob(a, job, ctx, out, name = 'out.pdf') {
+  const pdf = path.join(out, name);
   if (['plain', 'report', 'invoice', 'invoice-warm', 'unicode', 'images', 'pdfa'].includes(job)) {
     const j = job === 'invoice-warm' ? 'invoice' : job;
     if (a[j]) return a[j](ctx, pdf);
@@ -59,6 +59,19 @@ export async function main(adapters) {
     if (job === 'version') { say({ ok: true, version: typeof a.version === 'function' ? await a.version() : a.version }); process.exit(0); }
     fs.mkdirSync(out, { recursive: true });
     const ctx = inputs(job, Number(size));
+    const bulk = Number(process.env.BULK || 0);
+    if (bulk) { // BULK=n: n separate files b-0000.pdf...; BULK_CONC renders at a time (a worker pool needs several in flight)
+      if (a.warm) await a.warm(); // setup outside the clock (a pool's workers started and loaded)
+      const conc = Number(process.env.BULK_CONC || 1);
+      let next = 0, note;
+      const t = performance.now();
+      await Promise.all(Array.from({ length: conc }, async () => {
+        while (next < bulk) { const i = next++; note = (await runJob(a, job, ctx, out, `b-${String(i).padStart(4, '0')}.pdf`))?.note; }
+      }));
+      say({ ok: true, ms: performance.now() - t, ...(note ? { note } : {}) });
+      if (a.close) await a.close();
+      process.exit(0);
+    }
     const reps = Number(process.env.REPS || 1);
     const times = [];
     let note;

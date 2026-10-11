@@ -101,6 +101,20 @@ static class Program
             {
                 Directory.CreateDirectory(outDir);
                 var c = Inputs(job, size);
+                int bulk = int.Parse(Environment.GetEnvironmentVariable("BULK") ?? "0");
+                if (bulk > 0) // BULK=n: n separate files b-0000.pdf...; the clock covers the renders, not the renames
+                {
+                    double ms = 0;
+                    for (int i = 0; i < bulk; i++)
+                    {
+                        var sw = Stopwatch.StartNew();
+                        Run(a, job, c, outDir);
+                        ms += sw.Elapsed.TotalMilliseconds;
+                        File.Move(Path.Combine(outDir, "out.pdf"), Path.Combine(outDir, $"b-{i:D4}.pdf"));
+                    }
+                    Console.Out.WriteLine(JsonSerializer.Serialize(new Dictionary<string, object> { ["ok"] = true, ["ms"] = ms }));
+                    return 0;
+                }
                 int reps = int.Parse(Environment.GetEnvironmentVariable("REPS") ?? "1");
                 var t = new double[reps];
                 string? note = null;

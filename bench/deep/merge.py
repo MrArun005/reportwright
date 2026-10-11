@@ -343,6 +343,21 @@ for(const t of D.sources[0].tables.filter(t=>t.job==='report')){const lg=t.title
 TITLE = 'Deep PDF benchmark'
 
 
+def bulk_md(cells):
+    """The bulk job: one process writes 1,000 files of a kind. Total = the renders' own time (setup outside the clock)."""
+    if not cells:
+        return ''
+    out = ['', '## Bulk: 1,000 separate files in one process', '',
+           '| kind | contestant | total s | files/s | peak MB | valid | note |', '|---|---|---:|---:|---:|---|---|']
+    for r in sorted(cells, key=lambda r: (r['size'], r['lib'])):
+        ms = (r.get('warm_ms') or {}).get('median')
+        t = r.get('text') or {}
+        valid = 'y' if r['status'] == 'ok' else f"n ({r['status']}: {r.get('error') or t})"[:200]
+        out.append(f"| {r['size']} | {r['lib']} | {ms / 1000:.2f} | {1e6 / ms:.1f} | {(r.get('rss_mb') or {}).get('median', 0):.0f} | {valid} | {r.get('note') or ''} |"
+                   if ms else f"| {r['size']} | {r['lib']} | | | | {valid} | |")
+    return '\n'.join(out) + '\n'
+
+
 def main():
     """merge.py <dir with *.jsonl> <outdir> [--title "<heading>"] [--source <dir with *.jsonl or a results.json> "<label>"]...
     The first source is this GitHub run (label from GITHUB_RUN_ID); every --source gets its own tables, never mixed."""
@@ -364,7 +379,7 @@ def main():
     contestants = json.loads((HERE / 'contestants.json').read_text())
     caps = capability_rows(json.loads((HERE / 'capabilities.json').read_text()))
     run = os.environ.get('GITHUB_RUN_ID')
-    sources = []
+    sources, bulk = [], []
     for d, label in [(src, f'GitHub run {run}, ubuntu-latest' if run else 'local run')] + extra:
         if d.suffix == '.json':  # another merge's results.json: reuse its raw meta and cells
             j = json.loads(d.read_text())
@@ -378,6 +393,8 @@ def main():
                 if len(refs) > 1:
                     sys.exit(f'refusing to merge runs {ids}: they built different code ({sorted(refs)})')
                 label = f'GitHub runs {" + ".join(ids)}, ubuntu-latest, same code refs ({refs.pop()}), one run per job group'
+        bulk += [r for r in cells if r.get('job') == 'bulk']  # its sizes are kinds, not numbers: its own table below
+        cells = [r for r in cells if r.get('job') != 'bulk']
         pruned = [r for r in cells if r.get('status') == 'pruned']
         cells = [r for r in cells if r.get('status') != 'pruned']
         tables, summary = build(meta, cells, contestants, label)
@@ -387,7 +404,7 @@ def main():
                         'pruned_run': next((r['prev_run'] for r in pruned), None)})
     data = {'sources': sources, 'capabilities': caps}
     (out / 'results.json').write_text(json.dumps(data, indent=1, ensure_ascii=False))
-    (out / 'results.md').write_text(markdown(sources, caps))
+    (out / 'results.md').write_text(markdown(sources, caps) + bulk_md(bulk))
     (out / 'results.html').write_text(page({'sources': [{k: s[k] for k in ('label', 'meta', 'tables', 'summary', 'headline', 'lose', 'oldnew', 'pruned', 'pruned_run')} for s in sources], 'capabilities': caps}))
     print(f'{sum(len(s["cells"]) for s in sources)} cells from {len(sources)} source(s) -> {out}')
 

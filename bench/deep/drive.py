@@ -15,7 +15,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 JOBS = ['plain', 'report', 'invoice', 'invoice-warm', 'unicode', 'images', 'pdfa', 'read-big', 'read-mixed',
-        'merge', 'split', 'encrypt', 'metadata', 'form', 'sign', 'fuzz', 'hostile']
+        'merge', 'split', 'encrypt', 'metadata', 'form', 'sign', 'fuzz', 'hostile', 'bulk']
 CREATE = {'plain', 'report', 'invoice', 'invoice-warm', 'unicode', 'images', 'pdfa'}
 ROBUST = {'fuzz', 'hostile'}
 PLAN = {
@@ -26,6 +26,10 @@ PLAN = {
 DEFAULT_SIZES = {'invoice': [1], 'invoice-warm': [50], 'unicode': [1], 'images': [1], 'pdfa': [1], 'read-big': [1200],
                  'read-mixed': [11], 'merge': [100], 'split': [100], 'encrypt': [1], 'metadata': [1], 'form': [1],
                  'sign': [1], 'hostile': [6]}
+# bulk: one process renders BULK_N separate files of one engine-league job ("kind" = the cell's size), group 'bulk' only
+BULK_KINDS = {'plain': 10, 'report': 100, 'invoice': 1, 'unicode': 1, 'pdfa': 1}  # kind -> the job's size
+BULK_N = 1000
+BULK_LIBS = {'@reportwright/engine', 'jasperreports', 'QuestPDF', 'pdfmake'}
 CELL_TIMEOUT = {'quick': 300, 'full': 900, 'million': 1800}
 HANG_S = 30  # robustness: a file that takes longer is a hang
 PAGE_SIZE = os.sysconf('SC_PAGE_SIZE')
@@ -187,6 +191,27 @@ def verapdf(pdf):
     return 'PASS' in r.stdout
 
 
+def check_bulk(kind, out, fx, spec):
+    """Every file: present and qpdf --check clean with the right page count; 20 spread over the run: the kind's full check."""
+    files = sorted(out.glob('b-*.pdf'))
+    bad = []
+    for f in files:
+        q = sh('qpdf', '--check', f, timeout=120)
+        n = npages(f)
+        if q.returncode not in (0, 3) or not n or (kind == 'plain' and n != BULK_KINDS['plain']):
+            bad.append(f.name)
+    sample, sampled = files[::max(1, len(files) // 20)][:20] + files[-1:], {}
+    for f in sample:
+        d = out / ('s-' + f.stem)
+        d.mkdir()
+        os.link(f, d / 'out.pdf')
+        rec, ok = check(kind, BULK_KINDS[kind], d, fx, spec, {})
+        sampled[f.name] = ok if kind != 'pdfa' else ok and rec.get('pdfa') is not False
+    t = {'files': len(files), 'qpdf_bad': bad[:20], 'n_bad': len(bad), 'sampled': len(sampled), 'sample_bad': [k for k, v in sampled.items() if not v]}
+    t['ok'] = len(files) == BULK_N and not bad and not t['sample_bad']
+    return {'text': t, 'bytes': sum(f.stat().st_size for f in files)}, t['ok']
+
+
 def check(job, size, out, fx, spec, h):
     """The job's own correctness check. Returns (fields to merge into the record, pass?)."""
     pdf = out / 'out.pdf'
@@ -302,11 +327,12 @@ def cells(parts, job, size, a, fx, spec, work):
                 if job == 'hostile' or st in ('crash', 'hang', 'oom'):
                     cases[p['label']][f.name] = st
         return [{**base[p['label']], 'status': 'ok', 'robust': dict(tally[p['label']]), 'cases': cases[p['label']], 'files': len(files)} for p in parts]
-    heavy = (job == 'report' and size >= 10000) or job == 'read-big'
+    heavy = (job == 'report' and size >= 10000) or job == 'read-big' or job == 'bulk'
     # quick is indicative: its heavy cells run once, without a warm-up; full keeps the warm-up and at most 3 runs there
-    runs = 1 if a.tier == 'million' or (heavy and a.tier == 'quick') else min(a.runs, 3) if heavy or size >= 100000 or a.tier == 'quick' else a.runs
+    runs = 1 if a.tier == 'million' or job == 'bulk' or (heavy and a.tier == 'quick') else min(a.runs, 3) if heavy or size >= 100000 or a.tier == 'quick' else a.runs
     warmup = 0 if a.tier == 'million' or (heavy and a.tier == 'quick') else 1
-    extra = {'REPS': '50'} if job == 'invoice-warm' else {}
+    extra = {'REPS': '50'} if job == 'invoice-warm' else {'BULK': str(BULK_N)} if job == 'bulk' else {}
+    jobarg = [size, BULK_KINDS[size]] if job == 'bulk' else [job, size]  # bulk runs the kind's own job, BULK_N times
     res, failed = {p['label']: [] for p in parts}, {}
     for i in range(warmup + runs):
         for p in parts:
@@ -314,8 +340,10 @@ def cells(parts, job, size, a, fx, spec, work):
             if L in failed:
                 continue
             clean(out[L])
-            r = run_once(p['c']['cmd'] + [job, str(size), str(out[L])], env(p, out[L], extra), CELL_TIMEOUT[a.tier], a.cap_mb,
+            r = run_once(p['c']['cmd'] + [str(x) for x in jobarg] + [str(out[L])], env(p, out[L], extra), 1800 if job == 'bulk' else CELL_TIMEOUT[a.tier], a.cap_mb,
                          watch=out[L] / 'out.pdf' if job in CREATE else None)
+            if job == 'bulk' and r['status'] == 'ok' and r['h'].get('ms'):
+                r['h']['note'] = f"{BULK_N} files, {BULK_N / r['h']['ms'] * 1000:.1f} files/s" + (f", {r['h']['note']}" if r['h'].get('note') else '')
             if r['status'] != 'ok':
                 failed[L] = {**base[L], 'status': r['status'], 'error': r.get('error'), 'wall_ms': round(r['wall_ms']), 'rss_mb': round(r['rss_mb'], 1)}
                 subprocess.run(['rm', '-rf', str(out[L])])
@@ -336,7 +364,7 @@ def cells(parts, job, size, a, fx, spec, work):
                'ttfb_ms': stats([r['ttfb_ms'] for r in rs]) if job in CREATE else None,
                'note': rs[-1]['h'].get('note')}
         try:
-            more, ok = check(job, size, out[L], fx, spec, rs[-1]['h'])
+            more, ok = check_bulk(size, out[L], fx, spec) if job == 'bulk' else check(job, size, out[L], fx, spec, rs[-1]['h'])
             rec.update(more)
             if not ok:
                 rec['status'] = 'invalid'
@@ -352,6 +380,7 @@ GROUPS = {  # same-machine layout: one job a group runs every contestant of its 
     'create-engines': lambda job, c: job in CREATE and c.get('league') == 'engine',
     'read-edit': lambda job, c: job not in CREATE and job not in ROBUST,
     'robustness': lambda job, c: job in ROBUST,
+    'bulk': lambda job, c: job == 'bulk' and c.get('league') == 'engine',
 }
 
 
@@ -384,8 +413,18 @@ def contestants(a, langs, fx, work):
         for lib, c in langs[lang]['libs'].items():
             if a.tier == 'million' and not c.get('million'):
                 continue
+            if a.group == 'bulk' and lib not in BULK_LIBS:
+                continue
             vs = [{'label': lib, 'lang': lang, 'c': dict(c), 'tag': {}}]
-            if a.group and lang == 'ours':
+            if a.group == 'bulk' and lang == 'ours':
+                src = os.environ.get('BENCH_SRC_ENGINE')
+                if src and (HERE / 'ours-branch').is_dir():
+                    c = {**c, 'cmd': [x.replace('bench/deep/ours/', 'bench/deep/ours-branch/') for x in c['cmd']]}
+                n = os.cpu_count()
+                vs = [{'label': f'{lib} ({"branch " + src if src else "npm"})', 'lang': lang, 'c': dict(c), 'tag': {'base': lib, 'variant': 'single'}},
+                      {'label': f'{lib} ({"branch " + src if src else "npm"}, pool)', 'lang': lang, 'c': dict(c),
+                       'env': {'BENCH_POOL': str(n), 'BULK_CONC': str(n * 2)}, 'tag': {'base': lib, 'variant': 'pool', 'workers': n}}]
+            elif a.group and lang == 'ours':
                 vs[0]['tag'] = {'base': lib, 'variant': 'npm'}
                 src = os.environ.get('BENCH_SRC_' + ('ENGINE' if 'engine' in lib else 'PDF'))
                 if src and (HERE / 'ours-branch').is_dir():
@@ -477,6 +516,8 @@ def main():
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     work.mkdir(parents=True, exist_ok=True)
     plan = {**({} if a.tier == 'million' else DEFAULT_SIZES), **PLAN[a.tier]}
+    if a.group == 'bulk':
+        plan = {'bulk': list(BULK_KINDS)}
     with open(a.out, 'w') as o:
         def emit(rec):
             if a.group:
@@ -495,7 +536,7 @@ def main():
                 if k not in drop:
                     drop[k] = {lib: (*x, r) for lib, x in v.items()}
         lg = lambda pt, job: pt['c'].get('league') if job in CREATE else 'read-edit'
-        does = lambda pt, job: ('parse' if job in ROBUST else job) in pt['c']['jobs'] and (not a.group or GROUPS[a.group](job, pt['c']))
+        does = lambda pt, job: (job == 'bulk' or ('parse' if job in ROBUST else job) in pt['c']['jobs']) and (not a.group or GROUPS[a.group](job, pt['c']))
         batches = [parts] if a.group else [[pt] for pt in parts]  # a group interleaves everyone; a language runs lib by lib
         for batch in batches:
             for job in JOBS:
@@ -515,12 +556,17 @@ def main():
                             emit({'type': 'cell', 'lang': pt['lang'], 'lib': pt['label'], 'version': pt['c'].get('_version'), 'job': job, 'size': size,
                                   'status': 'skipped', 'error': f'skipped after {dead[pt["label"]][0]} at {dead[pt["label"]][1]:,}', **pt.get('tag', {})})
                     live = [pt for pt in todo if pt['label'] not in dead]
+                    if job == 'bulk':  # a contestant without the kind stays n/a with its existing reason
+                        for pt in [pt for pt in live if size not in pt['c']['jobs']]:
+                            live.remove(pt)
+                            emit({'type': 'cell', 'lang': pt['lang'], 'lib': pt['label'], 'job': job, 'size': size, 'status': 'n/a',
+                                  'error': pt['c'].get('na', {}).get(size) or pt['c'].get('na', {}).get('create') or 'not supported', **pt.get('tag', {})})
                     if not live:
                         continue
                     try:
                         for rec in cells(live, job, size, a, fx, spec, work):
                             emit(rec)
-                            if rec['status'] in FAILS and job not in ROBUST:
+                            if rec['status'] in FAILS and job not in ROBUST and job != 'bulk':
                                 dead[rec['lib']] = (rec['status'], size)
                     except Exception as e:  # a bug here must not lose the other cells
                         for pt in todo:
