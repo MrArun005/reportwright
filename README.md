@@ -6,6 +6,11 @@
 
 [![npm](https://img.shields.io/npm/v/%40reportwright%2Fengine?label=%40reportwright%2Fengine)](https://www.npmjs.com/package/@reportwright/engine) [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![node](https://img.shields.io/badge/node-22.x-339933)](package.json) [![live demo](https://img.shields.io/badge/demo-live-c0392b)](https://mrarun005.github.io/reportwright-demo)
 
+<p>
+  <a href="https://mrarun005.github.io/reportwright-demo/"><img src="docs/screenshots/ui-designer.jpg" alt="The ReportWright designer: toolbox, page with a grouped invoice table, and the report properties panel" width="64%"></a>
+  <a href="https://mrarun005.github.io/reportwright-demo/#gallery"><img src="docs/screenshots/sales-dashboard.png" alt="A rendered sales dashboard: stacked columns, donut, line chart, matrix and sparklines" width="34%"></a>
+</p>
+
 ## Quickstart: JSON definition to PDF
 
 ```bash
