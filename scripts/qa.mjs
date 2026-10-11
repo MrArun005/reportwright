@@ -4,7 +4,7 @@
 //       dispatches .github/workflows/qa.yml, follows the run, prints every suite's table, exits 1 on any FAIL
 // The workflows use the same file for their checks (the contract in docs/QA.md):
 //   node scripts/qa.mjs check <suite> <check> <expected> <command> [--warn]   run a shell command, record PASS/FAIL (WARN with --warn)
-//   node scripts/qa.mjs skip <suite> <check> <reason>                         record a SKIP
+//   node scripts/qa.mjs skip|fail <suite> <check> <reason>                    record a SKIP (or a FAIL: a job step outside the checks failed)
 //   node scripts/qa.mjs summarize <suite> [dir] [--no-fail]                   qa-out/*.jsonl (and dir's) -> results.json, summary.md, step summary
 //   node scripts/qa.mjs aggregate <dir> <outDir>                              every results.json under dir -> one report (summary.md, results.json, report.html)
 //   node scripts/qa.mjs sample-server <port>                                  the app's /api/sample/* data, for rendering the repository's reports without the app
@@ -52,9 +52,9 @@ if (cmd === 'check') {
   process.stdout.write(out);
   const ok = r.status === 0;
   record({ suite, check, command, expected, actual: ok ? trim(out) || 'exit 0' : `exit ${r.status ?? r.signal}: ${trim(out)}`, result: ok ? 'PASS' : warn ? 'WARN' : 'FAIL', ms: Date.now() - t });
-} else if (cmd === 'skip') {
+} else if (cmd === 'skip' || cmd === 'fail') {
   const [suite, check, reason] = rest;
-  record({ suite, check, command: '', expected: '', actual: reason, result: 'SKIP' });
+  record({ suite, check, command: '', expected: cmd === 'fail' ? 'the job runs its checks' : '', actual: reason, result: cmd.toUpperCase() });
 } else if (cmd === 'summarize') {
   const noFail = bool('--no-fail');
   const [suite, dir] = rest;

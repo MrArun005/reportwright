@@ -15,7 +15,27 @@ on:
     branches: [qa/core]
 
 jobs:
+  pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref }}' }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build:packages
+      - name: pack engine, fonts, cli; a fresh app from create-reportwright (node template)
+        run: |
+          mkdir -p compat/pkgs
+          npm pack ./packages/engine ./packages/fonts ./packages/cli --pack-destination compat/pkgs --silent
+          node packages/create-reportwright/src/bin.mjs compat/app --template node --yes
+          cp examples/report.pw.json compat/app/qa.pw.json
+      - uses: actions/upload-artifact@v4
+        with: { name: qa-compat-packages, path: compat, retention-days: 3 }
+
   install:
+    needs: pack
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -31,32 +51,51 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-        with: { ref: '${{ inputs.ref }}' }
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm } # builds the packages with the repo's Node; the app below uses matrix.node
-      - run: npm ci --no-audit --no-fund
-      - run: npm run build:packages
-      - name: pack engine, fonts, cli
-        run: |
-          mkdir -p "$RUNNER_TEMP/pkgs"
-          npm pack ./packages/engine ./packages/fonts ./packages/cli --pack-destination "$RUNNER_TEMP/pkgs" --silent
-          node packages/create-reportwright/src/bin.mjs "$RUNNER_TEMP/app" --template node --yes
-          cp examples/report.pw.json "$RUNNER_TEMP/app/qa.pw.json"
+        with: { ref: '${{ inputs.ref }}', sparse-checkout: scripts }
+      - uses: actions/download-artifact@v4
+        with: { name: qa-compat-packages, path: '${{ runner.temp }}/compat' }
       - uses: actions/setup-node@v4
         with: { node-version: '${{ matrix.node }}' }
       - name: install into a fresh app, render PDF + xlsx
         env: { OSN: '${{ matrix.os }} node ${{ matrix.node }}' }
         run: |
-          P="$RUNNER_TEMP/pkgs"; A="$RUNNER_TEMP/app"
+          P="$RUNNER_TEMP/compat/pkgs"; A="$RUNNER_TEMP/compat/app"
           node scripts/qa.mjs check compat "install ($OSN)" "npm i of the packed tarballs succeeds" "cd '$A' && npm i --no-audit --no-fund '$P'/reportwright-engine-*.tgz '$P'/reportwright-fonts-*.tgz '$P'/reportwright-cli-*.tgz 2>&1 | tail -3"
           node scripts/qa.mjs check compat "engine renders PDF ($OSN)" "npm start writes orders.pdf (%PDF-)" "cd '$A' && npm start && head -c 5 orders.pdf | grep -q '%PDF-'"
           node scripts/qa.mjs check compat "cli renders PDF ($OSN)" "npx pw render -f pdf (%PDF-)" "cd '$A' && npx pw render qa.pw.json -f pdf -o qa.pdf && head -c 5 qa.pdf | grep -q '%PDF-'"
           node scripts/qa.mjs check compat "cli renders xlsx ($OSN)" "npx pw render -f xlsx (a zip, PK)" "cd '$A' && npx pw render qa.pw.json -f xlsx -o qa.xlsx && head -c 2 qa.xlsx | grep -q PK"
+      - if: failure()
+        run: node scripts/qa.mjs fail compat "job ${{ github.job }} $QA_SHARD set-up" "a step outside the checks failed (see the job log)"
       - if: always()
         run: node scripts/qa.mjs summarize compat
       - if: always()
         uses: actions/upload-artifact@v4
         with: { name: 'qa-compat-part-install-${{ matrix.os }}-${{ matrix.node }}', path: qa-out/*.jsonl, if-no-files-found: ignore }
+
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      QA_SHARD: build-windows
+      QA_BASH: 'C:\Program Files\Git\bin\bash.exe'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref }}' }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --no-audit --no-fund
+      # WARN, not FAIL: a contributor's build on Windows, not what npm users install
+      - run: node scripts/qa.mjs check compat "build:packages on Windows" "the packages build on a Windows checkout" "npm run build:packages 2>&1 | tail -5" --warn
+      - if: failure()
+        run: node scripts/qa.mjs fail compat "job build-windows set-up" "a step outside the checks failed (see the job log)"
+      - if: always()
+        run: node scripts/qa.mjs summarize compat
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: qa-compat-part-build-windows, path: qa-out/*.jsonl, if-no-files-found: ignore }
 
   bundlers:
     runs-on: ubuntu-latest
@@ -91,6 +130,8 @@ jobs:
             "export default function Page() { return <ReportWrightViewer definition={def} fontsUrl=\"/pw-fonts/\" style={{ height: 300 }} />; }" > app/page.js
           cd "$GITHUB_WORKSPACE"
           node scripts/qa.mjs check compat "Next.js build" "next build of a page with @reportwright/react" "cd '$T/nx' && npm i --no-audit --no-fund next@16 react@19 react-dom@19 '$T'/reportwright-viewer-*.tgz '$T'/reportwright-react-*.tgz 2>&1 | tail -2 && npx next build 2>&1 | tail -20"
+      - if: failure()
+        run: node scripts/qa.mjs fail compat "job ${{ github.job }} $QA_SHARD set-up" "a step outside the checks failed (see the job log)"
       - if: always()
         run: node scripts/qa.mjs summarize compat
       - if: always()
@@ -124,6 +165,8 @@ jobs:
       - if: matrix.browser == 'chromium'
         run: |
           node scripts/qa.mjs check compat "chromium: standalone viewer, no server (tests/e2e/standalone-viewer.mjs)" "renders, no /api, no 404" "node scripts/build-packages.mjs >/dev/null && node tests/e2e/standalone-viewer.mjs"
+      - if: failure()
+        run: node scripts/qa.mjs fail compat "job ${{ github.job }} $QA_SHARD set-up" "a step outside the checks failed (see the job log)"
       - if: always()
         run: node scripts/qa.mjs summarize compat
       - if: always()
@@ -131,7 +174,7 @@ jobs:
         with: { name: 'qa-compat-part-browser-${{ matrix.browser }}', path: qa-out/*.jsonl, if-no-files-found: ignore }
 
   results:
-    needs: [install, bundlers, browsers]
+    needs: [pack, install, build-windows, bundlers, browsers]
     if: always()
     runs-on: ubuntu-latest
     steps:
