@@ -69,7 +69,7 @@ services:
 networks:
   pw:
     ipam:
-      config: [{ subnet: 172.31.250.0/24 }]
+      config: [{ subnet: 172.31.250.0/24, ip_range: 172.31.250.128/25 }] # dynamic addresses stay clear of Caddy's .2
 
 volumes:
   data:
