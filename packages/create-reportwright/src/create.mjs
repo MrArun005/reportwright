@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+export const GITIGNORE = 'node_modules/\ndist/\n.angular/\n.svelte-kit/\n*.log\n.DS_Store\n';
 export const TEMPLATES = ['node', 'react', 'vue', 'svelte', 'angular'];
 export const DESCRIPTIONS = {
   node: 'a Node script that renders the sample report to PDF and Excel',
@@ -60,6 +61,9 @@ export function create({ dir, template, version, templatesDir }) {
   fs.cpSync(path.join(templatesDir, template), dir, { recursive: true });
   const f = path.join(dir, 'package.json');
   fs.writeFileSync(f, JSON.stringify(rewritePackageJson(JSON.parse(fs.readFileSync(f, 'utf8')), appName(dir), version), null, 2) + '\n');
+  // npm strips .gitignore from published packages, so the app gets one written here
+  const gi = path.join(dir, '.gitignore');
+  if (!fs.existsSync(gi)) fs.writeFileSync(gi, GITIGNORE);
 }
 
 export const nextSteps = (dir, template) => `\nDone. Next:\n  cd ${dir}\n  npm i\n  ${template === 'node' ? 'npm start        # writes orders.pdf and orders.xlsx' : 'npm run dev      # opens the viewer with the sample report'}\n`;

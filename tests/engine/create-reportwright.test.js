@@ -55,6 +55,7 @@ describe('create-reportwright', () => {
     create({ dir, template: 'node', version: '9.9.9', templatesDir });
     expect(JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'))).toEqual({ name: 'new-app', dependencies: { '@reportwright/engine': '9.9.9' } });
     expect(fs.existsSync(path.join(dir, 'report.pw.json'))).toBe(true);
+    expect(fs.readFileSync(path.join(dir, '.gitignore'), 'utf8')).toMatch(/^node_modules\//m);
 
     const empty = path.join(base, 'empty'); fs.mkdirSync(path.join(empty, '.git'), { recursive: true });
     expect(isEmptyDir(empty)).toBe(true);
